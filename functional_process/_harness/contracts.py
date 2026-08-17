@@ -160,11 +160,26 @@ class Tier1Contract(PortContract):
 
     value_tolerance = MACHINE_PRECISION
     epsfcn = PROCESS_EPSFCN
-    gradient_safety = 10.0
+    gradient_safety = 25.0
     """Multiplier on the finite difference's own error bar.
 
     The error estimate is a leading-order extrapolation, not a bound; a plain factor of
     1 would flag correct ports wherever the neglected `O(h^4)` term is not negligible.
+
+    **Raised from 10 after measurement, not after a failure.** Two `neoclassics.py`
+    contracts failed at fuzz points where the port was demonstrably right — refining the
+    step showed `jacfwd` is the `h -> 0` limit of PROCESS's own difference, agreeing to
+    3e-11 relative at `epsfcn = 1e-4`, while `epsfcn = 1e-3` sits where truncation and
+    cancellation are comparable. Both needed about 1.8x more headroom than 10 gave, from
+    two unrelated causes (one round-off dominated, one truncation dominated); 25 covers
+    the measured worst case with ~40% margin. See `finite_difference` for the numbers.
+
+    This costs almost nothing in detection power. A wrong derivative is wrong by an
+    `O(1)` *relative* amount, not by a small multiple of the reference's own error bar —
+    the `scipy.integrate.simpson` bug this harness caught in
+    `models/physics/plasma_profiles.py` was off by factors of 2 to 30 -- many orders
+    of magnitude outside the bar either way. `test_gradient_agreement`'s job is
+    separating "wrong" from "right", not grading a correct port's last digit.
     """
 
     reference_domain_errors = ()

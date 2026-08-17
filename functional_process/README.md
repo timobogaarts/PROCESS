@@ -33,10 +33,15 @@ that are actually in scope.
 - `models/`, `core/solver/` — mirrors `process/`'s tree. Each audited unit gets one
   `<name>.md` record at the path corresponding to its source file (or, for constraints/
   switches, one record per registry entry inside `core/solver/`).
-- `total_process.py` — every ported unit's `cottax` node, assembled into one `Graph` via
-  `to_graph(...)`. `render_xdsm.py` draws it to `xdsm.html` for inspection
+- `total_process.py` — every ported unit's `cottax` node, assembled by
+  `graph_for(configuration)`. `GRAPH` is the graph PROCESS's own switch defaults produce;
+  `render_xdsm.py` draws it to `xdsm.html` for inspection
   (`python -m functional_process.render_xdsm`). Both grow as units are ported; neither is
   a claim that the graph is complete.
+- `configuration.py` — graph-assembly-time resolution of topology-changing switches, and
+  the argument for why that is the only correct place for them. A node whose existence
+  depends on a switch is declared as an `Alternative` under that switch rather than being
+  registered unconditionally.
 
 ## Adding a unit
 
@@ -45,6 +50,12 @@ first), `<name>.py` (the port), `test_<name>.py` (the case). The case declares t
 PROCESS reference, the port, and the sample points, then subclasses the contract for the
 tier its record assigns — it does not write test functions. Copy
 `models/stellarator/test_density_limits.py`; it is the worked example.
+
+If the unit's node only exists for some values of a switch, register it as an
+`Alternative` in `total_process.TOPOLOGY_SWITCHES` rather than in `COMMON` — two nodes
+that own the same output cannot both be in one graph, and `to_graph` will say so. Adding
+the arm is what makes it reachable; `test_configuration.py` fails on an arm no
+configuration selects.
 
 ## Scope (current)
 

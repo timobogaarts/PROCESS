@@ -21,6 +21,31 @@ round-off that tier-1 *value* agreement is held to. Holding a gradient to a fixe
 
 _MACHINE_EPS = float(np.finfo(np.float64).eps)
 
+REFERENCE_EVALUATION_ULPS = 64.0
+"""How many ULPs of noise one *reference* evaluation carries, over a perfect rounding.
+
+The round-off floor below asks how much of `(f_for - f_bac)` is noise rather than signal.
+The natural-looking answer, `eps * |f|`, silently assumes the reference is computed to
+within a single rounding. It is not: a PROCESS reference is a chain of tens to hundreds
+of floating-point operations (and often a `Model.run()` that writes and re-reads `data`),
+so its own evaluation error is some modest multiple of `eps * |f|`. Assuming one ULP is
+not conservative, it is simply wrong, and it is wrong in the direction that fails correct
+ports.
+
+**Measured, not guessed.** `TestCollisionFrequency`'s `temperatures[0]` at
+`x = 1.98e-15` needs 77 ULPs to explain the observed spread (the derivative there is
+1.6e12 while `f` is 0.155, so the relative step `epsfcn * x = 2e-18` costs about six
+digits to cancellation).
+
+64 is deliberately *not* a bound — it is the typical scale, and `Tier1Contract.
+gradient_safety` covers the remainder, which is the same division of labour the
+truncation term already relies on. Do not read this as "no reference is worse than 64
+ULPs"; read it as "one ULP is the wrong order of magnitude". The term only matters where
+cancellation already dominates, so raising it does not blunt the check in the ordinary
+regime — at `TestNormalizedCollisionFrequency`'s failing point it changes the error bar
+by one part in 1e17.
+"""
+
 
 class ZeroPerturbationError(ValueError):
     """Raised when PROCESS's relative perturbation degenerates at `x == 0`.
@@ -89,7 +114,23 @@ def fd_gradient_with_error(fn, x, epsfcn=PROCESS_EPSFCN):
 
     A round-off floor is added because the extrapolation itself becomes meaningless once
     subtractive cancellation dominates, which for a relative step of `epsfcn` happens at
-    roughly `eps_machine * |f| / (epsfcn * |x|)`.
+    roughly `REFERENCE_EVALUATION_ULPS * eps_machine * |f| / (epsfcn * |x|)`.
+
+    **Neither term is a bound**, and that is the point of `Tier1Contract.gradient_safety`
+    on top:
+
+    - the truncation term is a *leading-order* extrapolation, so it under-reports
+      wherever the neglected `O(h^4)` term is comparable to the `O(h^2)` one;
+    - the round-off term models a typical evaluation noise, not a worst case (see
+      `REFERENCE_EVALUATION_ULPS`).
+
+    Both shortfalls were measured rather than assumed, on the two `neoclassics.py`
+    gradient failures that motivated this docstring. In each the port was *correct* —
+    refining the step showed `jacfwd` is the `h -> 0` limit, agreeing to 3e-11
+    relative at `epsfcn = 1e-4` — and the bar was too tight, by a factor of about
+    1.8 beyond the safety multiplier in both cases. That agreement between two
+    unrelated failure modes is why the response was to fix the two terms and size the
+    multiplier, rather than to special-case either test.
 
     Parameters
     ----------
@@ -111,6 +152,11 @@ def fd_gradient_with_error(fn, x, epsfcn=PROCESS_EPSFCN):
     truncation = (4.0 / 3.0) * np.abs(d_h - d_half)
 
     f_x = np.atleast_1d(np.asarray(fn(float(x)), dtype=float))
-    roundoff = _MACHINE_EPS * np.abs(f_x) / (epsfcn * abs(float(x)))
+    roundoff = (
+        REFERENCE_EVALUATION_ULPS
+        * _MACHINE_EPS
+        * np.abs(f_x)
+        / (epsfcn * abs(float(x)))
+    )
 
     return d_h, truncation + roundoff

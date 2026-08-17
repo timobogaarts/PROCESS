@@ -202,3 +202,127 @@ is direct supporting evidence for the switch/model-swap design in `../../../CLAU
 **split decision**: split (already effectively split by construction — unit #18 in the
 registry already lists `costs.py`/`costs_2015.py` as two candidate units for this reason).
 **confidence**: high.
+
+---
+
+## Second wave — switches found while auditing, owed since the `build.py`/`st_fwbs` wave
+
+The 10 sections above are the ones scoped up front (read directly in `stellarator.py`,
+found by grepping `self.data.<area>.i_*`). The five below were each found independently
+by two or more unit audits (1E1, 1E2, 1E3, `build.py`, `preset_config.py`) and recorded
+here rather than left in those records, per `_audit/next_steps.md` § 3.
+
+### One result that applies to every switch on this page
+
+**No switch in PROCESS is ever an iteration variable or a scan variable.**
+
+    grep -n "\"i_\|'i_" process/core/solver/iteration_variables.py   -> no matches
+    grep -n "\"i_\|'i_\|istell" process/core/scan.py                 -> no matches
+
+Neither `ITERATION_VARIABLES` nor `ScanVariable` contains a single switch, under either
+the `i_*` convention or the legacy names (`istell`, `blktmodel`, `blkttype`, `ipowerflow`,
+`irefprop` — checked individually). So a switch is constant across every evaluation of one
+assembled graph, carries no derivative, and can never appear on a graph edge. That is what
+licenses `functional_process/configuration.py` to resolve **split** switches at
+graph-assembly time and treat them as absent from the graph entirely, rather than as an
+integer port some node reads. The finding is general, not per-switch: it is the reason the
+"split decision" above has a mechanism to be implemented by at all.
+
+### `data.fwbs.blktmodel`
+**sites** (35 total, 11 files): `data_structure/{fwbs,constraint,cost,build}_variables.py`,
+`models/build.py`, `models/stellarator/build.py`, `models/availability.py`,
+`models/stellarator/stellarator.py`, `models/costs/costs.py`, `core/input.py`,
+`core/solver/constraints.py`. **Default `0`** (`fwbs_variables.py:479`).
+**per-value reads-set**: 13 branch sites in stellarator scope. The decisive one is
+`stellarator/build.py:25` (`blktmodel > 0`), already ported as
+`BlktmodelBlanketThickness`: the `> 0` branch **computes** `.build.dr_blkt_inboard`/
+`dr_blkt_outboard` from six `blb*` layer thicknesses, while the `== 0` branch does not
+write them at all — they stay whatever IN.DAT supplied. Reads-sets are therefore
+`{blbuith, blbmith, blbpith, blbuoth, blbmoth, blbpoth, dr_shld_*}` vs. `{}`. Also
+selects between water and helium coolant-mass constants (`stellarator.py:1269`, jointly
+with `i_blkt_coolant_type`) and gates most of `st_fwbs`'s neutronics.
+**split decision**: **split.** Empty vs. six-field reads-set is the clean case, and it is
+the same *conditional ownership* shape `build.md` recorded — a field the node owns only
+in one arm. Not yet in `TOPOLOGY_SWITCHES`: only the `> 0` arm is ported, so there is no
+second arm to choose between yet (the `== 0` arm is "no node", which is representable but
+pointless to declare until something depends on it).
+**confidence**: high for `build.py`'s site; medium for `st_fwbs`'s, which is entangled in
+the unresolved 1E1/1E2/1E3 boundary.
+
+### `data.fwbs.blkttype`
+**sites** (4 total): `data_structure/fwbs_variables.py`,
+`models/stellarator/stellarator.py`, `core/input.py`. **Default `3`**
+(`fwbs_variables.py:494`).
+**per-value reads-set**: exactly **one** computational site in the whole codebase —
+`stellarator.py:1057`, `if self.data.fwbs.blkttype in {1, 2}:` (liquid breeder, WCLL or
+HCLL) with an `else` for solid breeder (HCPB), and that site is itself nested under
+`blktmodel == 0`. Values 1/2 are one arm; 3 (the default) takes the `else`.
+**split decision**: **split**, but note this is a *three-values-two-arms* switch, the
+first on this page — the node-selection key is `blkttype in {1, 2}`, not `blkttype`
+itself. `configuration.py`'s `Alternative.value` is one integer per arm, so representing
+this needs either three alternatives with two of them sharing declarations, or a
+predicate-keyed arm. Not yet forced: the site falls inside the unresolved `st_fwbs`
+boundary, so nothing is ported from it. **Flagged as the first known case that the current
+`Alternative` shape does not express cleanly.**
+**confidence**: high (a 4-site switch with one branch is fully readable).
+
+### `data.heat_transport.ipowerflow`
+**sites** (14 total, 5 files): `data_structure/{heat_transport,fwbs}_variables.py`,
+`models/stellarator/build.py`, `models/stellarator/stellarator.py`, `core/input.py`.
+**Default `1`** (`heat_transport_variables.py:94`).
+**per-value reads-set**: 11 branch sites in stellarator scope. The ported one is
+`stellarator/build.py:171`: `ipowerflow == 0` computes `.first_wall.a_fw_total` from
+`{a_fw_total_unadjusted, fhole}`, while `ipowerflow == 1` computes the same field from
+`{a_fw_total_unadjusted, fhole, f_ster_div_single, f_a_fw_outboard_hcd}` — **two extra
+reads**, not merely a different constant.
+**split decision**: **split**, and this is the strongest-evidenced split on the page.
+`.fwbs.f_ster_div_single` is owned by `Divertor`, which itself reads
+`.first_wall.a_fw_total` — so the extra read *closes a cycle*: the `ipowerflow == 1`
+graph has a genuine two-node SCC (`Divertor` ↔ `AFwTotalWithPowerflow`) and the
+`ipowerflow == 0` graph is acyclic. A switch here decides not just which formula runs but
+**whether the graph is a DAG**, which no single fused node branching internally could
+express. Asserted in `functional_process/test_configuration.py`.
+**confidence**: high for `build.py`'s site (ported, both arms tested, both assembled);
+medium for the 10 `st_fwbs`/output sites, which are inside the unresolved chunk boundary.
+**Live in `TOPOLOGY_SWITCHES`** — both arms ported and selectable.
+
+### `data.fwbs.irefprop`
+**sites** (3 total): `data_structure/fwbs_variables.py`,
+`models/stellarator/stellarator.py`, `core/input.py`. **Default `1`**
+(`fwbs_variables.py:449`).
+**per-value reads-set**: one site, `stellarator.py:804`, nested under
+`i_blkt_coolant_type == CoolantType.WATER` (this is the `irefprop` that
+`i_blkt_coolant_type`'s section above flagged incidentally and deferred). Truthy: sets
+`temp_blkt_coolant_out` from `FluidProperties.of("Water", pressure=coolp,
+vapor_quality=0) - 20`, a **CoolProp call**. Falsy: the same field from a closed-form
+polynomial. **Both arms read only `.fwbs.coolp`** — identical reads-set, differing only
+in how the number is produced.
+**split decision**: **keep-static is not the point here.** By the reads-set test this is
+the cleanest `keep-static` candidate on the page (identical reads, one output), but the
+truthy arm is not JAX-traceable at all — it is the CoolProp boundary `CLAUDE.md` lists
+under "Not everything is JAX-traceable", reached through a two-level nesting
+(`i_blkt_coolant_type` then `irefprop`) that no earlier record connected. So the split
+decision is subordinate to the traceability decision: **`irefprop` is the switch that
+selects whether this node can be differentiated at all**, and it should be resolved
+together with `density_limits.py`'s CoolProp branch and `st_geom`'s `istell == 6` file
+I/O, not on its own. Recorded here; still open in `_audit/next_steps.md` § 5.
+**confidence**: high on the facts, deliberately undecided on the disposition.
+
+### `data.stellarator.istell` — second role (device-config table selection)
+The section above covers `istell` as the master pipeline switch
+(tokamak/stellarator/IFE). Chunk 1C and `preset_config.py`'s audit independently found a
+**second, structurally different role**: within stellarator mode, `istell` also indexes a
+table of five hardcoded machine presets (Helias 5/4/3, W7-X 30/50) copied onto
+`StellaratorConfigData` by a reflective `hasattr`/`setattr` loop, with `istell == 6`
+reading the config from **file** instead.
+**Why this is not the same kind of switch**: the first role is topology-changing (it picks
+which pipeline runs). The second is **data-table-shaped** — every value produces the same
+computation over a different set of constants, so there is no reads-set difference to
+diff and nothing for a split decision to decide. It is not a switch in this page's sense
+at all; it is a lookup key that happens to share a variable with one.
+**disposition**: neither split nor keep-static. `preset_config.md` recommends replacing
+the reflective copy with static, fully-enumerated per-machine config records selected at
+graph-assembly time — the same policy question as `initialization.py`'s device-preset
+literals and chunk 1D's `fncmass`/`gsmass` constants. Three instances, one decision,
+still open (`_audit/next_steps.md` § 2).
+**confidence**: high (two independent audits agree on the mechanism).
