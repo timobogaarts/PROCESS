@@ -193,6 +193,17 @@ max-locals = 17
     "RUF059",
     "T201",
 ]
+# The pure-functional port's validation harness. Same test idioms as tests/**, plus
+# RUF012: contract classes declare their samples as plain class-level lists, which is
+# the whole point of the declarative shape and not an accidental mutable default.
+"functional_process/**" = [
+    "ARG",
+    "PLR2004",
+    "PLR0904",
+    "RUF012",
+    "S101",
+    "T201",
+]
 "examples/**" = [ 'B018', 'E402']
 "{tests,tracking,documentation/scripts,examples}/**" = ['INP001']
 "process/{core/io/plot/summary.py,data_structure/*}" = ["E501"]

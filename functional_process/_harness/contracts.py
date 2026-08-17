@@ -1,0 +1,375 @@
+"""The per-tier contracts a ported unit subclasses.
+
+A ported unit does not write test functions. It declares what it is — the PROCESS
+reference, the port, the points to check, the audit record it came from — and inherits
+the checks its tier demands:
+
+    class TestSudoDensityLimit(Tier1Contract):
+        audit_record = "models/stellarator/density_limits.md"
+        reference = _reference_sudo_density_limit
+        ported = calculate_sudo_density_limit
+        samples = [...]
+
+Tier is expressed by which class you subclass, which is the same field the unit's audit
+record already carries (`## tier signal`). Porting a unit therefore means reading its
+record and picking a base class, with no second decision to keep in sync.
+
+The tiers differ in *which tests exist*, not merely in tolerance. `Tier2Contract` has no
+value-agreement test at all, because for a unit whose PROCESS implementation is an
+unchecked fixed-iteration loop, PROCESS's answer is not ground truth and diffing against
+it would fail a correct port. Making that test structurally absent is stronger than
+documenting that it should not be written.
+"""
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import pytest
+
+from functional_process._harness.finite_difference import (
+    PROCESS_EPSFCN,
+    ZeroPerturbationError,
+    fd_gradient_with_error,
+)
+from functional_process._harness.tolerance import MACHINE_PRECISION, Tolerance
+
+
+def _as_array(value):
+    """Normalise a scalar, array or tuple return into a flat 1-D float array.
+
+    Flattened in leaf order, structure discarded: every check below compares component
+    by component and has no use for the shape. That is what lets a unit returning
+    `(4, 30)` arrays, or a tuple of four `(4,)` ones, be declared with no per-unit
+    flattening adapter — the reference and the port are flattened by the same rule, so
+    their components line up if and only if they return the same thing.
+    """
+    return np.concatenate([
+        np.ravel(np.asarray(leaf, dtype=float)) for leaf in jax.tree.leaves(value)
+    ])
+
+
+def _as_traced_array(value):
+    """`_as_array`'s traced twin: the same leaf order, in `jnp` so `jacfwd` sees through.
+
+    Separate from `_as_array` rather than parameterised by an array module, because the
+    two are used at different times — one on a concrete PROCESS return, one inside a
+    trace — and `np.asarray` on a tracer is exactly the mistake this keeps out of reach.
+    """
+    return jnp.concatenate([
+        jnp.ravel(jnp.asarray(leaf, dtype=float)) for leaf in jax.tree.leaves(value)
+    ])
+
+
+def _component_label(name, shape, index):
+    """`rho` for a scalar argument, `temperatures[2]` / `kt[1, 7]` for an array one."""
+    if shape == ():
+        return name
+    return f"{name}[{', '.join(str(i) for i in np.unravel_index(index, shape))}]"
+
+
+class PortContract:
+    """Shared declaration surface for every tier.
+
+    Attributes
+    ----------
+    audit_record :
+        Path of the unit's audit record, relative to `functional_process/`. Checked for
+        existence, so a port whose record was moved or never written fails loudly.
+    reference :
+        The PROCESS-side callable, adapted to the port's signature. Where PROCESS's
+        function takes a `DataStructure`, the adapter that binds one lives in the unit's
+        test module — writing it is the point at which the audit's "close the `data`
+        back-door" claim gets tested rather than asserted.
+    ported :
+        The pure JAX callable under test.
+    samples :
+        Evaluation points. See `_harness.sampling`.
+    static_argnames :
+        Arguments that are switches or preconditions rather than continuous inputs.
+        Excluded from differentiation, per `_audit/naming_convention.md` § "switches are
+        not ports".
+    """
+
+    audit_record = None
+    reference = None
+    ported = None
+    samples = ()
+    static_argnames = ()
+
+    def __init_subclass__(cls, **kwargs):
+        """Wrap bare functions assigned to `reference`/`ported` in `staticmethod`.
+
+        Without this, `self.reference` would bind as a method and silently pass the
+        contract instance as the first physics argument. Requiring an explicit
+        `staticmethod(...)` in every subclass would work too, but it is a footgun that
+        costs a confusing failure the first time someone forgets.
+        """
+        super().__init_subclass__(**kwargs)
+        for attr in ("reference", "ported"):
+            value = cls.__dict__.get(attr)
+            if callable(value) and not isinstance(value, staticmethod):
+                setattr(cls, attr, staticmethod(value))
+
+    @classmethod
+    def diff_argnames(cls, sample):
+        """Arguments to differentiate with respect to, for one sample."""
+        return tuple(k for k in sample.kwargs if k not in cls.static_argnames)
+
+    def test_audit_record_exists(self, audit_root):
+        """The unit's audit record must exist.
+
+        `_audit/test_harness.md` makes the audit a precondition of the test, not a
+        parallel activity: the true signature is not known until the record's
+        implicit-io classifications are resolved. This check is what stops that from
+        being an honour system.
+        """
+        assert self.audit_record is not None, (
+            f"{type(self).__name__} must declare `audit_record`"
+        )
+        record = audit_root / self.audit_record
+        assert record.is_file(), f"audit record not found: {record}"
+
+
+class Tier1Contract(PortContract):
+    """Explicit pure functions: no internal iteration, no `self.data` access.
+
+    Three checks, each a separate test node so a failure names itself:
+
+    - value agreement at machine precision (no solver is involved on either side);
+    - gradient agreement against PROCESS's own finite difference, to within that
+      difference's self-estimated error;
+    - finiteness of both value and gradient, which is what catches a `jnp.where` that
+      returns the right number while leaking a NaN through the untaken branch. A
+      value-only diff cannot see that, and it is the failure mode the rewrite is most
+      exposed to.
+
+    **An argument may be an array.** Its components are differentiated one at a time —
+    the PROCESS side by perturbing that one entry, the port side by one `jacfwd` per
+    argument whose columns are those same entries — so a function vectorised over species
+    or over a quadrature grid is checked exactly as densely as a scalar one, with each
+    failure naming the entry (`temperatures[2]`, `kt[1, 7]`). The cost is linear in the
+    number of components: a `(4, 30)` argument means 120 columns and ~4 reference calls
+    each, which is why an array-heavy unit fuzzes at the same count but takes seconds
+    rather than milliseconds.
+
+    Returns are flattened the same way (`_as_array`), so a port returning a tuple of
+    arrays needs no adapter to be compared against a reference returning one array.
+    """
+
+    pytestmark = pytest.mark.tier1
+
+    value_tolerance = MACHINE_PRECISION
+    epsfcn = PROCESS_EPSFCN
+    gradient_safety = 10.0
+    """Multiplier on the finite difference's own error bar.
+
+    The error estimate is a leading-order extrapolation, not a bound; a plain factor of
+    1 would flag correct ports wherever the neglected `O(h^4)` term is not negligible.
+    """
+
+    reference_domain_errors = ()
+    """Exceptions the PROCESS reference raises to signal an out-of-domain input.
+
+    Where PROCESS raises (e.g. `ProcessValueError` on a negative square root), the port
+    is expected to return a non-finite value instead of raising — a traced function
+    cannot raise on a data-dependent condition. Declaring the exception type here turns
+    that expectation into an assertion instead of letting fuzz samples outside the
+    domain fail the run.
+    """
+
+    def _reference_or_domain_error(self, kwargs):
+        """Evaluate the reference, distinguishing a domain error from a real failure."""
+        try:
+            return _as_array(self.reference(**kwargs)), None
+        except self.reference_domain_errors as exc:
+            return None, exc
+
+    def test_value_agreement(self, sample):
+        """Port and PROCESS agree to float64 round-off."""
+        expected, domain_error = self._reference_or_domain_error(dict(sample.kwargs))
+        actual = _as_array(self.ported(**sample.kwargs))
+
+        if domain_error is not None:
+            assert not np.all(np.isfinite(actual)), (
+                f"PROCESS rejects this point ({type(domain_error).__name__}: "
+                f"{domain_error}) but the port returned finite {actual}. A traced port "
+                f"cannot raise, so it must return non-finite here instead"
+            )
+            return
+
+        assert actual.shape == expected.shape, (
+            f"output size mismatch: port produced {actual.size} values, PROCESS "
+            f"{expected.size} (both counted flattened — see `_as_array`)"
+        )
+        bad = self.value_tolerance.mismatches(actual, expected)
+        detail = [
+            f"  output[{i}]: port={a!r} process={e!r} |diff|={err:g} allowed={allowed:g}"
+            for i, a, e, err, allowed in bad
+        ]
+        assert not bad, "\n".join([
+            f"value mismatch at {self.value_tolerance.describe()}:",
+            *detail,
+        ])
+
+    def test_outputs_finite(self, sample):
+        """The port's value and gradient are free of NaN/Inf on an in-domain point."""
+        _, domain_error = self._reference_or_domain_error(dict(sample.kwargs))
+        if domain_error is not None:
+            pytest.skip(f"point is outside PROCESS's domain: {domain_error}")
+
+        value = _as_array(self.ported(**sample.kwargs))
+        assert np.all(np.isfinite(value)), f"non-finite output: {value}"
+
+        for name in self.diff_argnames(sample):
+            jac = self._jacobian(sample, name)
+            assert np.all(np.isfinite(jac)), (
+                f"non-finite d(output)/d({name}) = {jac} at a point where the value "
+                f"itself is finite — the classic symptom of a jnp.where whose untaken "
+                f"branch evaluates to NaN"
+            )
+
+    @pytest.mark.gradient
+    def test_gradient_agreement(self, sample):
+        """`jacfwd` of the port matches PROCESS's finite difference, within its error.
+
+        A function can agree in value everywhere and still be wrong in derivative, and the
+        derivative is what the solver consumes -- but for an *explicit* pure function
+        whose value already agrees, autodiff is hard to get wrong, and this is by far the
+        most expensive check here (four reference evaluations per argument component).
+        So it is **opt-in**: `--fp-gradients`, skipped otherwise. `test_outputs_finite`
+        still differentiates on every run, so a `jnp.where` leaking a NaN through its
+        untaken branch is caught regardless.
+        """
+        _, domain_error = self._reference_or_domain_error(dict(sample.kwargs))
+        if domain_error is not None:
+            pytest.skip(f"point is outside PROCESS's domain: {domain_error}")
+
+        failures = []
+        for name in self.diff_argnames(sample):
+            argument = np.asarray(sample.kwargs[name], dtype=float)
+            jac = self._jacobian(sample, name)
+
+            for component, x in enumerate(argument.ravel()):
+                try:
+                    reference, error_bar = fd_gradient_with_error(
+                        self._reference_along(sample, name, component),
+                        x,
+                        self.epsfcn,
+                    )
+                except ZeroPerturbationError:
+                    continue
+
+                label = _component_label(name, argument.shape, component)
+                allowed = self.gradient_safety * error_bar
+                for i, (got, want, tol) in enumerate(
+                    zip(jac[:, component], reference, allowed, strict=True)
+                ):
+                    if not abs(got - want) <= tol:
+                        failures.append(
+                            f"  d(output[{i}])/d({label}): jacfwd={got!r} "
+                            f"process_fd={want!r} |diff|={abs(got - want):g} "
+                            f"allowed={tol:g} (fd error bar {error_bar[i]:g} "
+                            f"x safety {self.gradient_safety:g})"
+                        )
+
+        header = (
+            f"gradient mismatch vs PROCESS finite difference (epsfcn={self.epsfcn:g}):"
+        )
+        assert not failures, "\n".join([header, *failures])
+
+    def _reference_along(self, sample, name, component):
+        """The PROCESS reference as a function of one flat component of one argument.
+
+        Every other component of that argument, and every other argument, is held fixed.
+        That is what `Evaluators.fcnvmc2` does to one iteration variable at a time, so an
+        array argument is differentiated component by component rather than along some
+        aggregate direction — the reference stays PROCESS's own scheme, and a failure
+        names the entry it is in.
+
+        A scalar argument is handed back as a plain `float`, not a 0-d array, so a
+        reference adapter that does anything but arithmetic with it sees what it always
+        saw.
+        """
+        shape = np.shape(sample.kwargs[name])
+        held = np.asarray(sample.kwargs[name], dtype=float).ravel()
+
+        def along(value):
+            perturbed = held.copy()
+            perturbed[component] = value
+            kwargs = dict(sample.kwargs)
+            kwargs[name] = perturbed.reshape(shape) if shape else float(perturbed[0])
+            return _as_array(self.reference(**kwargs))
+
+        return along
+
+    def _jacobian(self, sample, name):
+        """`jacfwd` of the port with respect to one argument.
+
+        Returns the `(outputs, components)` matrix — one column per flat component of the
+        argument, so a scalar gives a single column and an array one per entry. The traced
+        function takes the argument *flattened* and reshapes it back, which is what makes
+        column `c` the derivative with respect to the component `_reference_along`
+        perturbs at `c`.
+        """
+        shape = np.shape(sample.kwargs[name])
+
+        def along(flat):
+            kwargs = dict(sample.kwargs)
+            kwargs[name] = flat.reshape(shape)
+            return _as_traced_array(self.ported(**kwargs))
+
+        flat = jnp.asarray(np.asarray(sample.kwargs[name], dtype=float).ravel())
+        return np.asarray(jax.jacfwd(along)(flat), dtype=float)
+
+
+class Tier2Contract(PortContract):
+    """Units whose PROCESS implementation closes an internal loop.
+
+    Deliberately has **no** value-agreement test. PROCESS's answer here is often not a
+    converged one — the motivating case, `power_at_ignition_point`, calls `st_phys`
+    exactly twice with no convergence check at all — so a properly convergent port is
+    *expected* to land somewhere numerically different, and diffing values would fail
+    correct work for reasons that have nothing to do with the port.
+
+    The pass criterion is residual-based instead: plug both answers back into the unit's
+    own defining equations, and require the port to be no worse. That sidesteps "whose
+    stopping point is right" entirely. See `_audit/test_harness.md` § Tier 2.
+    """
+
+    pytestmark = pytest.mark.tier2
+
+    residual = None
+    """`(solution, **kwargs) -> array` — the unit's defining equations."""
+
+    residual_tolerance = Tolerance(
+        rtol=0.0,
+        atol=1e-8,
+        reason="absolute, physical: a converged driver should zero its own residual",
+    )
+
+    def test_ported_residual_small(self, sample):
+        """The port's answer actually solves the unit's defining equations."""
+        assert self.residual is not None, (
+            f"{type(self).__name__} must declare `residual` — a tier-2 unit has no "
+            f"pass criterion without one"
+        )
+        solution = self.ported(**sample.kwargs)
+        res = _as_array(self.residual(solution, **sample.kwargs))
+        bad = self.residual_tolerance.mismatches(res, np.zeros_like(res))
+        assert not bad, (
+            f"port's residual is not small at "
+            f"{self.residual_tolerance.describe()}: {res}"
+        )
+
+    def test_ported_residual_no_worse_than_process(self, sample):
+        """The port is at least as converged as PROCESS is at its own stopping point."""
+        ported_res = _as_array(
+            self.residual(self.ported(**sample.kwargs), **sample.kwargs)
+        )
+        process_res = _as_array(
+            self.residual(self.reference(**sample.kwargs), **sample.kwargs)
+        )
+        assert np.linalg.norm(ported_res) <= np.linalg.norm(process_res) * (1 + 1e-9), (
+            f"port residual {np.linalg.norm(ported_res):g} is worse than PROCESS's "
+            f"{np.linalg.norm(process_res):g} at its own stopping point"
+        )
