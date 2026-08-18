@@ -197,6 +197,39 @@ audited, called from two different places with different unpacking (see open que
   `density_limits.md` — `minor` severity, belongs to switch/input validation (checked
   once at graph-build/input-parse time), not something to compile into a traced function.
 
+## synthesis note
+
+Superseded by `stellarator_E_fwbs_synthesis.md`, which reads this chunk + 1E2 + 1E3
+against the full `st_fwbs` source per `_audit/next_steps.md` § 3. Status left at `draft`
+for human re-triage; summary of what changed:
+
+- **Open question 1 (`f_p_blkt_multiplication` "possible stale-state read") is resolved
+  as a false alarm, not a bug.** Traced fully: it's a real `InputVariable`
+  (`core/input.py:391`, range `(1.0, 2.0)`, class default `1.269` — the exact value
+  `blanket_neutronics()` force-writes). The `blktmodel != 1` read at line 690 is an
+  ordinary `explicit-arg` read of an input field, not stale cross-call state. It has
+  nothing to do with `first_call_stfwbs` — the synthesis's § 3 explains why the two
+  looked similar (same "read without a same-run write" symptom, unrelated causes).
+- **Open question 2 (`blktmodel`) confirmed and characterized**: domain is exactly
+  `{0, 1}` (`core/input.py:978`), so the `== 1` (line 608, this chunk) and `== 0`
+  (line 1056, in 1E2's range) spellings partition the same two-element set identically —
+  no silent third case. Full arm-by-arm reads/writes in the synthesis § 4.
+- **Open question 3 (asymmetric `sc_tf_coil_nuclear_heating_iter90()` unpacking)**:
+  resolved — the call *is* made in both `blktmodel==1` (this chunk, discards 9/10) and
+  `blktmodel!=1 & ipowerflow==0` arms (chunk 1E2's range, keeps all 10), but the 9 fields
+  discarded by `blanket_neutronics()` are never used downstream in that arm — no
+  hoisting benefit, this is not actually redundant computation. Not a further finding,
+  just closed out.
+- **Open question 4 (`p_div_rad_total_mw` latent bug) confirmed real** by direct read of
+  lines 768-780 in the `blktmodel!=1 & ipowerflow==1` arm (which spans into 1E2's nominal
+  range) — see synthesis § 6 for the exact mechanism and why the value is
+  deterministically `0.0`, not merely stale.
+- **The 730-880 boundary-crossing locals this record already flagged** (`pnucfwbsi`,
+  `p_fw_inboard/outboard_nuclear_heat_mw`, `psurffwi/o`, `decayfwi/o`, etc.) turn out to
+  stay entirely inside one real function (synthesis's `S2`, ending at line 1030) — they
+  never actually reach 1E2's or 1E3's territory; they only looked cross-chunk because the
+  even-thirds cut sliced through the middle of that one function. See synthesis § 1-2.
+
 ## open questions
 
 1. **Possible stale-state read, not ordinary implicit-io**: `.fwbs.f_p_blkt_multiplication`

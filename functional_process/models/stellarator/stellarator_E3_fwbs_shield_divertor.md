@@ -156,6 +156,31 @@ output.
 - No CoolProp calls, no dynamic shapes, no control flow on a non-switch traced value in
   either section.
 
+## synthesis note
+
+Superseded by `stellarator_E_fwbs_synthesis.md`, which reads this chunk + 1E1 + 1E2
+against the full `st_fwbs` source per `_audit/next_steps.md` § 3 — directly answering
+this record's own open question 1. Status left at `draft` for human re-triage; summary:
+
+- **The `sc_tf_coil_nuclear_heating`-derived locals finding is confirmed and fully
+  traced.** They're produced only in the `blktmodel!=1 & ipowerflow==0` arm
+  (lines 716-728, inside 1E1's nominal range) and consumed only in this chunk's output
+  block (1438-1474), under the *identical* guard condition (`ipowerflow==0 and
+  blktmodel==0`, lines 1434-1436) that produced them — verified there is no path where
+  they're referenced unassigned. Per synthesis § 2, these are an ordinary `In`/`Out`
+  contract between two pieces of one real function (synthesis's `S2` and `S6`), not
+  hidden state; they only span three audit chunks because of how the audit sliced the
+  method, exactly as this record already suspected.
+- **Recommended re-chunking (synthesis § 5) confirms this chunk's own computational
+  section (1282-1330, `calculate_cryostat_and_vv`) is real and independently portable
+  now** — it becomes `S5` in the synthesis's six-piece split, fully self-contained, no
+  dependency on `blktmodel`/`ipowerflow`/any locals from elsewhere in `st_fwbs`.
+  Recommended as one of the two immediately-portable pieces of the whole method.
+- **`.fwbs.blktmodel` and `.heat_transport.ipowerflow`** (open question 2, this chunk's
+  reporting-only sightings) now have full computational-arm characterizations in
+  synthesis § 4 — both confirmed as genuine split candidates, `blktmodel` domain
+  confirmed `{0, 1}` (`core/input.py:978`).
+
 ## open questions
 1. Whether the true function boundary for a pure port should follow 1E1/1E2/1E3 at all,
    given the `sc_tf_coil_nuclear_heating`-derived locals span all three — recommend

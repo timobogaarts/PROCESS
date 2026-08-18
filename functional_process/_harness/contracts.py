@@ -21,6 +21,7 @@ it would fail a correct port. Making that test structurally absent is stronger t
 documenting that it should not be written.
 """
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -133,24 +134,30 @@ class PortContract:
 class Tier1Contract(PortContract):
     """Explicit pure functions: no internal iteration, no `self.data` access.
 
-    Three checks, each a separate test node so a failure names itself:
+    Four checks, each a separate test node so a failure names itself:
 
     - value agreement at machine precision (no solver is involved on either side);
-    - gradient agreement against PROCESS's own finite difference, to within that
-      difference's self-estimated error;
-    - finiteness of both value and gradient, which is what catches a `jnp.where` that
-      returns the right number while leaking a NaN through the untaken branch. A
-      value-only diff cannot see that, and it is the failure mode the rewrite is most
-      exposed to.
+    - value finiteness, on every run, eager, no `jacfwd`;
+    - gradient finiteness and gradient agreement against PROCESS's own finite
+      difference (to within that difference's self-estimated error) — both require a
+      `jacfwd` trace+compile of the port and are **opt-in**, `--fp-gradients`, skipped
+      otherwise. Gradient finiteness is what catches a `jnp.where` that returns the
+      right number while leaking a NaN through the untaken branch; a value-only diff
+      cannot see that, and it is the failure mode the rewrite is most exposed to — but
+      compiling every ported unit's autodiff graph on every routine run is the
+      dominant cost of this harness, so it is gated the same as the finite-difference
+      comparison rather than running unconditionally.
 
     **An argument may be an array.** Its components are differentiated one at a time —
-    the PROCESS side by perturbing that one entry, the port side by one `jacfwd` per
-    argument whose columns are those same entries — so a function vectorised over species
-    or over a quadrature grid is checked exactly as densely as a scalar one, with each
-    failure naming the entry (`temperatures[2]`, `kt[1, 7]`). The cost is linear in the
-    number of components: a `(4, 30)` argument means 120 columns and ~4 reference calls
-    each, which is why an array-heavy unit fuzzes at the same count but takes seconds
-    rather than milliseconds.
+    the PROCESS side by perturbing that one entry, the port side by one `jacfwd` column
+    per argument whose columns are those same entries, batched across *every*
+    differentiable argument in one `jacfwd` call (`_jacobians`) rather than one call per
+    argument — so a function vectorised over species or over a quadrature grid is checked
+    exactly as densely as a scalar one, with each failure naming the entry
+    (`temperatures[2]`, `kt[1, 7]`). The cost is linear in the number of components: a
+    `(4, 30)` argument means 120 columns and ~4 reference calls each, which is why an
+    array-heavy unit fuzzes at the same count but takes seconds rather than
+    milliseconds.
 
     Returns are flattened the same way (`_as_array`), so a port returning a tuple of
     arrays needs no adapter to be compared against a reference returning one array.
@@ -227,7 +234,15 @@ class Tier1Contract(PortContract):
         ])
 
     def test_outputs_finite(self, sample):
-        """The port's value and gradient are free of NaN/Inf on an in-domain point."""
+        """The port's value is free of NaN/Inf on an in-domain point.
+
+        Eager, no `jacfwd` — this is the check that runs on every default invocation
+        (import the unit, call it, look at the result), which is what keeps a plain
+        `pytest functional_process` a fast "did I break an import/signature" pass rather
+        than a full recompile of every ported unit's autodiff graph. The gradient half of
+        this same idea — a `jnp.where` whose untaken branch is NaN — is
+        `test_gradient_finite` below, gated the same way as `test_gradient_agreement`.
+        """
         _, domain_error = self._reference_or_domain_error(dict(sample.kwargs))
         if domain_error is not None:
             pytest.skip(f"point is outside PROCESS's domain: {domain_error}")
@@ -235,8 +250,24 @@ class Tier1Contract(PortContract):
         value = _as_array(self.ported(**sample.kwargs))
         assert np.all(np.isfinite(value)), f"non-finite output: {value}"
 
-        for name in self.diff_argnames(sample):
-            jac = self._jacobian(sample, name)
+    @pytest.mark.gradient
+    def test_gradient_finite(self, sample):
+        """The port's gradient is free of NaN/Inf on an in-domain point.
+
+        Split out from `test_outputs_finite` and gated behind `--fp-gradients`
+        alongside `test_gradient_agreement`: both require a `jacfwd` trace+compile of
+        the port, which is the expensive part of this harness (see `_jacobians`), and
+        a routine "did I break something unrelated" run has no use for it. This is
+        still the check that catches a `jnp.where` whose untaken branch evaluates to
+        NaN — a value-only diff cannot see that — it just no longer pays its compile
+        cost on every run.
+        """
+        _, domain_error = self._reference_or_domain_error(dict(sample.kwargs))
+        if domain_error is not None:
+            pytest.skip(f"point is outside PROCESS's domain: {domain_error}")
+
+        jacobians = self._jacobians(sample)
+        for name, jac in jacobians.items():
             assert np.all(np.isfinite(jac)), (
                 f"non-finite d(output)/d({name}) = {jac} at a point where the value "
                 f"itself is finite — the classic symptom of a jnp.where whose untaken "
@@ -247,22 +278,24 @@ class Tier1Contract(PortContract):
     def test_gradient_agreement(self, sample):
         """`jacfwd` of the port matches PROCESS's finite difference, within its error.
 
-        A function can agree in value everywhere and still be wrong in derivative, and the
-        derivative is what the solver consumes -- but for an *explicit* pure function
+        A function can agree in value everywhere and still be wrong in derivative, and
+        the derivative is what the solver consumes -- but for an *explicit* pure
+        function
         whose value already agrees, autodiff is hard to get wrong, and this is by far the
-        most expensive check here (four reference evaluations per argument component).
-        So it is **opt-in**: `--fp-gradients`, skipped otherwise. `test_outputs_finite`
-        still differentiates on every run, so a `jnp.where` leaking a NaN through its
-        untaken branch is caught regardless.
+        most expensive check here (four reference evaluations per argument component, on
+        top of `_jacobians`' own compile). So it is **opt-in**: `--fp-gradients`, skipped
+        otherwise, same as `test_gradient_finite` — neither differentiates on a routine
+        run.
         """
         _, domain_error = self._reference_or_domain_error(dict(sample.kwargs))
         if domain_error is not None:
             pytest.skip(f"point is outside PROCESS's domain: {domain_error}")
 
+        jacobians = self._jacobians(sample)
         failures = []
         for name in self.diff_argnames(sample):
             argument = np.asarray(sample.kwargs[name], dtype=float)
-            jac = self._jacobian(sample, name)
+            jac = jacobians[name]
 
             for component, x in enumerate(argument.ravel()):
                 try:
@@ -317,24 +350,55 @@ class Tier1Contract(PortContract):
 
         return along
 
-    def _jacobian(self, sample, name):
-        """`jacfwd` of the port with respect to one argument.
+    def _jacobians(self, sample):
+        """`jacfwd` of the port with respect to every differentiable argument at once.
 
-        Returns the `(outputs, components)` matrix — one column per flat component of the
-        argument, so a scalar gives a single column and an array one per entry. The traced
-        function takes the argument *flattened* and reshapes it back, which is what makes
-        column `c` the derivative with respect to the component `_reference_along`
-        perturbs at `c`.
+        Returns `{name: (outputs, components) matrix}`, one entry per
+        `diff_argnames(sample)` — same shape per entry as the old per-argument
+        `_jacobian`, but computed as **one** `jax.jacfwd(..., argnums=...)` trace over
+        every argument together, instead of one trace (and one XLA compile) per
+        argument name in a Python loop.
+
+        That loop was the actual cost of this harness: differentiating an
+        `n`-argument unit used to mean `n` separate compiles of essentially the same
+        computation, each paying CPU XLA's fixed per-program overhead on top of
+        whatever the function itself costs. Multi-`argnums` `jacfwd` batches every
+        argument's tangent directions into one program instead, so it pays that fixed
+        overhead once — measured 2.7x faster on an 11-argument unit
+        (`FusionRates`), and the saving grows with argument count. Component-level
+        batching (a `(4, 30)` argument's 120 columns) was already handled inside a
+        single `jacfwd` call and is unaffected by this change.
         """
-        shape = np.shape(sample.kwargs[name])
+        names = self.diff_argnames(sample)
+        if not names:
+            return {}
+        shapes = {name: np.shape(sample.kwargs[name]) for name in names}
 
-        def along(flat):
+        def f(*flats):
             kwargs = dict(sample.kwargs)
-            kwargs[name] = flat.reshape(shape)
+            for name, flat in zip(names, flats, strict=True):
+                kwargs[name] = flat.reshape(shapes[name])
             return _as_traced_array(self.ported(**kwargs))
 
-        flat = jnp.asarray(np.asarray(sample.kwargs[name], dtype=float).ravel())
-        return np.asarray(jax.jacfwd(along)(flat), dtype=float)
+        flats = tuple(
+            jnp.asarray(np.asarray(sample.kwargs[name], dtype=float).ravel())
+            for name in names
+        )
+        jacobians = jax.jacfwd(f, argnums=tuple(range(len(names))))(*flats)
+        return {
+            name: np.asarray(jac, dtype=float)
+            for name, jac in zip(names, jacobians, strict=True)
+        }
+
+    def _jacobian(self, sample, name):
+        """`_jacobians(sample)[name]` — kept for call sites that want a single argument.
+
+        `test_gradient_finite`/`test_gradient_agreement` use `_jacobians` directly so a
+        multi-argument unit pays one compile, not one per argument; this wrapper is for
+        the rarer case (`test_harness_sensitivity.py`) that only wants one column-group
+        and has no other argument to batch it with.
+        """
+        return self._jacobians(sample)[name]
 
 
 class Tier2Contract(PortContract):
@@ -352,6 +416,32 @@ class Tier2Contract(PortContract):
     """
 
     pytestmark = pytest.mark.tier2
+
+    def __init_subclass__(cls, **kwargs):
+        """`eqx.filter_jit`-wrap `ported`, once, at class-definition time.
+
+        A tier-2 unit's internal solve (bisection, Newton, ...) typically closes over
+        its own data arguments as free variables inside a `lax.while_loop`/`lax.scan`
+        it builds internally (e.g. `optx.root_find`'s solver state). Traced without an
+        enclosing `jax.jit`, those closed-over arrays get embedded as literal constants
+        in the program XLA compiles -- so a *different* sample with the same shape is a
+        *different* program, and every single call recompiles from scratch, however
+        many times the same unit runs. Measured on `intersect`: four same-shape,
+        different-data calls cost 0.44/0.29/0.28/0.28s unjitted (no call ever got
+        cheaper), versus 0.24s once and ~0s for the rest once jitted.
+
+        Doing this here, once, rather than inside a test method, is what makes the
+        cache actually pay off: pytest gives each test item its own contract instance,
+        so a wrapper built inside `test_ported_residual_small` would be a fresh,
+        never-reused `eqx.filter_jit` object every sample -- as cold as not jitting at
+        all. Built once at class-body-execution time and stored as a class attribute,
+        every sample and both test methods below share the one compiled cache.
+        """
+        super().__init_subclass__(**kwargs)
+        ported = cls.__dict__.get("ported")
+        if ported is not None:
+            fn = ported.__func__ if isinstance(ported, staticmethod) else ported
+            cls.ported = staticmethod(eqx.filter_jit(fn))
 
     residual = None
     """`(solution, **kwargs) -> array` — the unit's defining equations."""
@@ -377,10 +467,10 @@ class Tier2Contract(PortContract):
         )
 
     def test_ported_residual_no_worse_than_process(self, sample):
-        """The port is at least as converged as PROCESS is at its own stopping point."""
+        """The port is at least as converged as PROCESS is at its own stopping point."""        
         ported_res = _as_array(
             self.residual(self.ported(**sample.kwargs), **sample.kwargs)
-        )
+        )        
         process_res = _as_array(
             self.residual(self.reference(**sample.kwargs), **sample.kwargs)
         )

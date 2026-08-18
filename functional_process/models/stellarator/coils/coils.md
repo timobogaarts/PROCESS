@@ -1,12 +1,14 @@
 ---
 kind: model-unit
-status: reviewed
+status: draft
 confidence: high
 ---
 
-**Ported (partial).** `coils.py` / `test_coils.py`: `j_crit_cable_from_fraction` and
-`bmax_from_awp`, both tier-1, tests passing (legacy + fuzz). `jcrit_from_material` and
-`intersect` are **not** ported — see below and open questions.
+**Ported (3/4).** `coils.py` / `test_coils.py`: `j_crit_cable_from_fraction` and
+`bmax_from_awp` (tier-1, ported previously), plus `intersect` (tier-2, ported this pass —
+see below). `jcrit_from_material` remains **not** ported — still blocked on
+`process/models/superconductors.py` not being an audited registry unit; re-confirmed by
+this pass, not re-litigated (see below).
 
 ## source
 `process/models/stellarator/coils/coils.py` (303 lines, full file in scope). 4 module-
@@ -24,9 +26,10 @@ directly by unit #9, not by each other).
 | — | — | — | `j_crit_cable_from_fraction` takes no `data` at all — already pure in the source. |
 | `.stellarator_config.stella_config_a1` | read | explicit-arg (via `data` back-door) | `bmax_from_awp` |
 | `.stellarator_config.stella_config_a2` | read | explicit-arg (via `data` back-door) | same |
+| — | — | — | `intersect` takes no `data` at all — already pure in the source (see below). |
 
-`jcrit_from_material`'s and `intersect`'s footprints are call-site-dependent (see below)
-— not tabulated here since neither is ported this pass.
+`jcrit_from_material`'s footprint is call-site-dependent (not tabulated here, since it
+isn't ported this pass — see below).
 
 ## proposed signature(s)
 
@@ -42,7 +45,24 @@ def bmax_from_awp(
     ...
 ```
 
-**Not ported — `jcrit_from_material`.** A genuine 8-way switch on `i_tf_sc_mat`
+Ported, tier-2, this pass:
+```python
+def intersect_residual(x, x1, y1, x2, y2) -> float:
+    """y1_interp(x) - y2_interp(x); vanishes at the crossing."""
+    ...
+
+def intersect(x1, y1, x2, y2, xin) -> float:
+    """The x at which the two curves cross, found by bisection + Newton polish."""
+    ...
+```
+`intersect` was already pure in the source — no `data.*` reads, no calls to any other
+model. Its args are exactly PROCESS's: `x1, y1, x2, y2` (tabulated curves), `xin`
+(starting guess).
+
+**Not ported — `jcrit_from_material`.** Re-confirmed this pass (grepped
+`functional_process` and `process/models/superconductors.py` again — the module is still
+1289 lines, still not an audited registry unit, still not touched by any parallel fork).
+A genuine 8-way switch on `i_tf_sc_mat`
 (`process/data_structure/tfcoil_variables.py:246`, default 1), each branch calling a
 different function in `process.models.superconductors` (`itersc`, `bi2212`,
 `jcrit_nbti`, `western_superconducting_nb3sn`, `jcrit_rebco`, `gl_nbti`, `gl_rebco`) with
@@ -57,16 +77,49 @@ now would mean porting an unaudited module's formula sight-unseen. **Recommend a
 coil code too, per a quick grep of its importers — scoping that precisely is its own small
 task, not done here).
 
-**Not ported — `intersect`.** A generic Newton-Raphson-style root-finder over two
-tabulated `(x, y)` curves: fixed 100-iteration cap, early `break` on
-`abs(y01 - y02) < epsy`, `np.interp` calls each iteration. Self-contained (no calls into
-other models) — a real tier-2 candidate by this audit's own "self-contained internal
-solve" bar. Not ported this pass because its unknowns are whole arrays (`x1, y1, x2, y2`
-are the tabulated curves, `xin` the initial guess), which doesn't fit the harness's
-scalar-kwarg sample/fuzz machinery (`_harness/sampling.py`) without a real design pass —
-flagged as a priority item for whoever picks this up next, not rushed into a fragile
-`ImplicitFunction`/`FixedPointFunction` wrap. See open questions for the residual shape
-this would need.
+## cottax node
+
+**Actually written** for `j_crit_cable_from_fraction`/`bmax_from_awp`'s siblings in other
+units, but **not** for any of the three functions in this file, including the newly
+ported `intersect` — and for the same reason in all three cases. Every one of their real
+call-site arguments (`coilcurrent`, `wp_width_r_min`, `r_coil_major`, `r_coil_minor` for
+`bmax_from_awp`; `j_crit_sc`/`f_tf_conductor_copper`/`f_he` for
+`j_crit_cable_from_fraction`, called from inside `jcrit_from_material`; and, for
+`intersect`, `wp_width_r` (used as both `x1` and `x2`), `lhs`, `rhs`, `wp_width_r_min`) is
+a *local* computed inside `winding_pack_total_size`'s solve loop (`coils/calculate.py`,
+unit #9), not an established `.area.field` this audit has independently verified —
+wrapping any of them as a node now would assert a wiring this pass has no basis for (see
+`schema.md`: "skip this section... while open questions about the signature itself are
+unresolved"). Correct home for all three nodes is wherever unit #9 declares its own
+solve — `calculate.md`'s open question #1 already raises this exact tension for
+`coilcurrent`.
+
+The natural declaration, once unit #9 mints real `VarPath`s for its locals (the same
+minting `calculate.py`'s `CoilCurrent` node already did for `coilcurrent`), is a
+pytree-namespace `ImplicitFunction` pairing `intersect_residual` with a `RootFind` over
+one unknown:
+```python
+class Intersect(ImplicitFunction):
+    wp_width_r_min = Output(lambda s: s.stellarator.wp_width_r_min)
+
+    def residual(
+        self,
+        x1=Input(lambda s: s.stellarator.wp_width_r),
+        y1=Input(lambda s: s.stellarator.lhs),
+        x2=Input(lambda s: s.stellarator.wp_width_r),
+        y2=Input(lambda s: s.stellarator.rhs),
+    ):
+        return intersect_residual(<the unknown>, x1, y1, x2, y2)  # sketch only
+```
+**Open question this sketch surfaces**: `xin` has no place in this shape at all. A
+`RootFind`'s starting guess comes from whatever `Drive`s the block (see `evaluate.py`'s
+`Drive.__call__`: `guess = env[unknowns] if started else None`, handed to the driver
+positionally), not from an `In` on the residual body — so PROCESS's `xin` argument simply
+does not survive into the node-graph port as a port. That is fine for `intersect` itself
+(the pure function below still takes and uses it, faithfully), but it means the *node*
+wrap, once written, has one fewer declared input than the function it wraps — worth
+flagging explicitly, since `_audit/naming_convention.md` has no category yet for "an
+argument that is real in the pure function but has no port in the node."
 
 ## tier signal
 - `j_crit_cable_from_fraction`: **tier 1** — pure, no `data`, no branch.
@@ -74,8 +127,14 @@ this would need.
   shape as `st_sudo_density_limit` in `density_limits.py`).
 - `jcrit_from_material`: tier 1 *per branch*, once split — see above, blocked on
   `process.models.superconductors` being audited.
-- `intersect`: **tier 2**, self-contained, not yet ported (array-valued unknowns — see
-  above).
+- `intersect`: **tier 2, ported this pass.** Self-contained (no calls into other
+  models, no `data` access at all — confirmed by reading the full 100-odd lines): a
+  genuine internal Newton-Raphson-style solve over two tabulated `(x, y)` curves, fixed
+  100-iteration cap with an early `break` on `abs(y01 - y02) < epsy`. Exactly the "internal
+  iterative loop closing over state local to one model" `test_harness.md`'s tier-2 section
+  describes, and — per that same section's own framing — this is the first unit in the
+  registry to actually exercise `Tier2Contract`'s residual-based pass criterion (see
+  `test_coils.py`).
 
 ## switches touched
 - `i_tf_sc_mat` (`.tfcoil.i_tf_sc_mat`) — **new, not in `switches.md`'s original 10.**
@@ -86,46 +145,59 @@ this would need.
   `superconductor()` as a plain array index (`data.tfcoil.dcond[i_tf_sc_mat - 1]`) — a
   data-table lookup, not a formula branch; see `mass.md`'s note on the same field for why
   that use is treated differently.
+- `intersect` touches no switch — genuinely pure over its five array/scalar arguments.
 
 ## calls into other models
 - `jcrit_from_material` calls `process.models.superconductors.{itersc, bi2212,
   jcrit_nbti, western_superconducting_nb3sn, jcrit_rebco, gl_nbti, gl_rebco}` — none of
   these audited yet (not a registry unit as of this pass).
-- Neither ported function calls anything outside this file.
+- Neither `intersect` nor the two previously-ported functions call anything outside this
+  file.
 
 ## JAX-difficulty flags
 - `jcrit_from_material`: `if b_max > bc20m: j_crit_sc = 1.0e-9` (branches 1, 3) is a
   data-dependent branch on a *continuous* traced value, not a switch — `minor`,
   `needs-lax-cond-or-where`, standard `jnp.where` fix once this function is in scope.
-- `intersect`: the `for _i in range(100): ... break` loop is exactly the "fixed
-  iteration count standing in for real convergence" pattern already flagged twice
-  elsewhere in this audit (`power_at_ignition_point`, `stellarator.py`'s `output=True`
-  double-call) — `workaround-known` for the iteration count itself
-  (`lax.while_loop`/`lax.fori_loop` with a real convergence check), but the *early
-  `break`* on a data-dependent condition is the harder part: JAX has no early-exit
-  `break`, so this needs to become a proper `while_loop` cond, not a mechanical
-  `fori_loop` swap. `blocker` for a faithful line-for-line port, `workaround-known` for a
-  from-scratch tier-2 `RootFind` reformulation (which is what this audit recommends
-  anyway, per `CLAUDE.md`'s general stance against porting PROCESS's own ad hoc
-  iteration schemes unchanged).
-- `intersect`'s `logger.error(...)` calls on out-of-range `x` are diagnostic side
-  effects on a data-dependent condition — not traceable as written, but not needed in a
-  proper `RootFind` reformulation either (a real root-finder reports non-convergence
-  through its own return status, not a log line).
+- `intersect`, **resolved this pass**: the source's `for _i in range(100): ... break`
+  loop with a data-dependent early exit had no faithful `jax`-traceable translation (JAX
+  has no early-exit `break`), and its post-loop clamp-and-`logger.error` bail-out on
+  leaving `[xmin, xmax]` is a diagnostic side effect on a data-dependent condition — not
+  traceable as written either. The port does not attempt a line-for-line translation of
+  either: it re-poses the same defining equation (`intersect_residual`) and drives it with
+  `optimistix.root_find`'s `Bisection` (bracket = the curves' full x-overlap, which is a
+  valid sign-changing bracket exactly whenever a crossing exists there — no `xin`-
+  dependent windowing, so, unlike PROCESS's local Newton-Raphson, a bad `xin` cannot walk
+  the solve off the domain or onto the wrong crossing) followed by a fixed few `jax.grad`-
+  based Newton corrections once bisection has localised `x` into the correct linear
+  segment of the piecewise-linear interpolation (see `coils.py`'s
+  `_intersect_newton_polish` docstring for why a Newton step is *exact*, not approximate,
+  once there). `throw=False` on the `root_find` call means non-convergence is reported
+  through `optimistix`'s own `result` field rather than raised or logged — the traced
+  equivalent of PROCESS's `logger.error`, per `traceability_policy.md`.
+- `jnp.interp` (used by `intersect_residual`) is piecewise-linear and therefore not
+  everywhere-differentiable (a kink at each tabulated `x` node) — `minor`, and not a
+  concern for this port specifically: `Tier2Contract` has no gradient-agreement test (see
+  `test_harness.md`), so no check here differentiates through the interpolation's kinks.
+  Worth flagging for whoever eventually drives the `ImplicitFunction`/`RootFind` pair
+  sketched above through an actual `jacfwd`, e.g. for a tier-4 MDA's own sensitivities.
 
 ## open questions
 1. **Should `process/models/superconductors.py` be added as a new registry unit?**
-   Recommended above — not added to `_audit/unit_registry.md` by this fork per the
-   dispatch's scope (only units #10-12/#14 are mine to edit); flagging for whoever
-   consolidates this batch.
-2. **`intersect`'s residual formulation, if/when it's ported as tier-2:** the natural
-   shape is `RootFind` over `x` with residual `y1_interp(x) - y2_interp(x)`, closed
-   form once `x1, y1, x2, y2` are fixed arrays (they're tabulated data, not iteration
-   unknowns) — `x` is the one real unknown. Whether the harness needs an array-valued
-   `Sample.kwargs` extension to test this cleanly, or whether `x1`/`y1`/`x2`/`y2` should
-   be treated as `static_argnames` (fixed per call site, not differentiated) is a
-   harness-design question, not resolved here.
+   Still recommended, still not added to `_audit/unit_registry.md` (out of this fork's
+   scope) — flagging again for whoever consolidates this batch, since `intersect`
+   landing removes the *other* blocker on `winding_pack_total_size` (unit #9), leaving
+   `jcrit_from_material`/`process.models.superconductors` as the one dependency left.
+2. **`xin`'s disappearance from the node wrap** (see `## cottax node` above) — not
+   resolved here, flagged as a naming-convention gap.
 3. **`i_tf_sc_mat`'s split, once `process.models.superconductors` is audited**: whether
    all 8 branches are actually reachable in the stellarator pipeline, or whether some
    are tokamak-only dead paths in this scope — not checked here (would need
    `preset_config.py`/input-file survey, out of this fork's scope).
+4. **`winding_pack_total_size` (unit #9) unblocking**: with `intersect` now ported,
+   `winding_pack_total_size` (`calculate.md`) is blocked on exactly one remaining thing —
+   `jcrit_from_material` (open question 1 above), not on anything in this file anymore.
+   It also still needs its own locals (`wp_width_r`, `lhs`, `rhs`, `wp_width_r_min`,
+   `coilcurrent`) minted as real `VarPath`s before any of the three nodes sketched in
+   this record or in `calculate.md`'s own notes can be written — a design step, not a
+   blocked dependency. Not attempted here; `winding_pack_total_size` is unit #9's to
+   port, not this fork's.

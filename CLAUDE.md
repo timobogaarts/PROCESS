@@ -20,7 +20,7 @@ rewrites are future work that will consume this document.
 
 ## The environment: `process_port`
 
-**`~/miniconda/envs/process_port` is the env for this work** — the one place where
+**`~/miniconda3/envs/process_port` is the env for this work** — the one place where
 `process` and `cottax` are importable in the *same* interpreter. That co-importability is
 the whole point of it: the test harness can call a PROCESS reference function and its JAX
 port in one process and diff them directly, with no serialise-to-golden-file boundary
@@ -29,7 +29,7 @@ between two envs. Do not assume any other env: `stellsim`/`jaxsn`/`beerpy` resol
 raises `PackageNotFoundError`), and only `beerpy` has `cottax` at all.
 
 ```bash
-PY=~/miniconda/envs/process_port/bin/python   # or: conda activate process_port
+PY=~/miniconda3/envs/process_port/bin/python   # or: conda activate process_port
 ```
 
 Python 3.12 (cottax needs ≥3.12, PROCESS ≥3.10). Built with:
@@ -42,10 +42,12 @@ $PY -m pip install -e "$HOME/jaxgraph[dev,viz]"    # editable cottax, same
 
 Both installs are **editable**, so edits to `process/`, `functional_process/` and
 `~/jaxgraph/src/cottax/` are live with no reinstall. Verified state at creation
-(2026-08-17): `process 0.0.1.dev1184+gc0ae5b286`, `cottax 0.1.0`, `jax 0.11.0` (CPU —
-no CUDA jaxlib, and jax warns about that on every import; harmless), `numpy 2.5.2`,
-`pytest 9.1.1`. **`tests/unit` → 846 passed; `~/jaxgraph` → 307 passed.** If either
-number moves without you having changed something, suspect the env before the code.
+(rebuilt 2026-08-18 after the env was lost): `process 0.0.1.dev1186+g769950de1`,
+`cottax 0.1.0`, `jax 0.11.1` (CPU — no CUDA jaxlib, and jax warns about that on every
+import; harmless), `numpy 2.5.2`, `pytest 9.1.1`. **`tests/unit` → 846 passed;
+`~/jaxgraph` → 307 passed.** If either number moves without you having changed something,
+suspect the env before the code. The rebuild reproduced both numbers exactly, so the
+`jax` 0.11.0 → 0.11.1 drift is inert as far as either suite can see.
 
 `graphviz` is deliberately **not** installed: the Python binding came in via cottax's
 `viz` extra but the `dot` executable did not, so `cottax.visualization.render` raises.
@@ -61,8 +63,8 @@ diffs against PROCESS show precision loss that reads like a porting bug
 ### Commands
 
 ```bash
-$PY -m pytest functional_process            # the port's validation harness — 65 + 2
-                                            # skipped, ~2 s. See below.
+$PY -m pytest functional_process            # the port's validation harness — ~1390
+                                            # passed + ~640 skipped, ~60 s. See below.
 $PY -m pytest tests/unit                    # unit tests (models, core) — 846, ~75 s
 $PY -m pytest tests/unit/models -k density_limit
 $PY -m pytest tests/unit/models/stellarator # the in-scope subset — 16, <1 s
@@ -70,7 +72,7 @@ $PY -m pytest tests/integration
 $PY -m pytest tests/regression -k large_tokamak   # tracked reference output; clones
                                             # process-tracking-data into a user cache
 cd ~/jaxgraph && $PY -m pytest              # cottax — 307
-~/miniconda/envs/process_port/bin/ruff check && ... ruff format   # style; see
+~/miniconda3/envs/process_port/bin/ruff check && ... ruff format   # style; see
                                             # standards.md for naming rules
 ```
 
@@ -96,8 +98,10 @@ before touching it. The short version:
 - `--fp-fuzz N` / `--fp-fuzz-seed S` control random sampling; `-k legacy` / `-k fuzz`
   select by sample provenance.
 
-Only `models/stellarator/density_limits.py`'s two tier-1 functions are ported so far.
-Everything else in `functional_process/` is still audit records.
+`_audit/unit_registry.md` is the authoritative per-unit status and
+`_audit/next_steps.md` the priority-ordered punch list — read those, not this paragraph,
+for what is ported. Roughly: most of `models/stellarator/**` and three `models/physics/`
+units are ported and harness-tested; the rest is audit records or still pending.
 
 `hatch` envs are declared in `pyproject.toml` (`tests`, `tests-unit`, `tests-regression`,
 `tests-integration`, `tests-examples`) but `hatch` is not on `PATH` — invoke `pytest`
@@ -203,7 +207,7 @@ IN.DAT --init.init_process--> DataStructure (one big mutable object, ~40 datacla
 | `data.<area>.<name>` field | `VarPath` (`.area.name`) | The dataclass-field dotted path is already exactly cottax's `Path`/`VarPath` shape — `data_structure/*_variables.py` module names are natural root namespaces. Array elements (`f_nd_impurity_electron_array[2]`) need a `SequenceKey`/`FlattenedIndexKey` component. |
 | `Model` subclass (or a `calculate_*` staticmethod within one) | `CallableNode` (or `DeclaredNode` if it's a problem) | The pure `calculate_*` core is the `fn`; the surrounding `run()` is the `In`-read/`Out`-write PROCESS currently writes by hand and untyped. |
 | Hard-coded order in `Caller._call_models_once` | binding order in a `Graph` + `scc_order_graph` | The call order is a *witness* of a topological sort someone worked out by hand; a real `Graph` would derive it (and expose where it *isn't* a DAG). |
-| "Call everything up to 10x until idempotent" (`Caller.call_models`) | `Blocking` (SCCs) + `Drive` steps solved by an explicit algorithm | The current code is Gauss–Seidel-by-accident on the *whole* graph. A cottax graph would isolate just the genuinely coupled nodes into one or more SCCs and drive each with a declared `Square`/`FixedPoint`/`RootFind`, leaving everything else as ordinary acyclic `Call` steps — most of PROCESS is probably *not* actually cyclic once dependencies are made explicit. |
+| "Call everything up to 10x until idempotent" (`Caller.call_models`) | `Blocking` (SCCs) + `Drive` steps solved by an explicit algorithm | The current code is Gauss–Seidel-by-accident on the *whole* graph. A cottax graph would isolate just the genuinely coupled nodes into one or more SCCs and drive each with a declared `Square`/`FixedPoint`/`RootFind`, leaving everything else as ordinary acyclic `Call` steps. **The rewrite's case does not rest on how much of PROCESS turns out to be genuinely cyclic** — that is an open empirical question the audit is tracking (`functional_process/_audit/next_steps.md`; one confirmed SCC among 44 ported nodes so far, with more expected once the orchestration layer, currently unported, is reached). The actual thesis is structural: making the dependency graph explicit is what makes decomposition, reordering, and per-block algorithm choice *possible* at all — whatever coupling genuinely exists gets isolated and driven by an explicit, autodiff-visible algorithm chosen for that block, instead of every evaluation blindly re-running the *entire* pipeline regardless of which parts depend on which. That is the robustness/efficiency case, independent of the eventual cyclic/acyclic split. |
 | `ITERATION_VARIABLES[id]` + `numerics.ixc` | `unknowns` (`owns`) of a `DeclaredNode` | The integer ID and its `(module, name, array_index)` triple is exactly a `VarPath`; the ID itself is throwaway indirection once names are structural. |
 | `ConstraintManager` registry, `numerics.icc` | `reads`/conditions of a `DeclaredNode`, or a `Compare` node | Constraint bodies of the shape "call a `calculate_*`, compare to a `data` field" are already `Compare`-shaped; ones that just threshold one `data` field against a bound are more like a bare residual read with no interesting node. |
 | `numerics.i_figure_merit` branch in `objective_function` | the objective condition of an `Optimise` problem, chosen by `Graph.prune`-style query | Not a node — a per-run selection of which existing output is "wanted", same as cottax's refusal to have an `OutputNode`. |

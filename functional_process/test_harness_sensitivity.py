@@ -77,13 +77,20 @@ def test_values_alone_cannot_see_the_bug(sample):
     case.test_value_agreement(sample)
 
 
+@pytest.mark.gradient
 def test_gradient_check_still_catches_it(sample):
-    """And the derivative check fails it anyway, at the current `gradient_safety`."""
+    """And the derivative check fails it anyway, at the current `gradient_safety`.
+
+    Gated like every other `jacfwd`-driven check: it exists to prove
+    `gradient_safety` still separates a real bug from noise, not to be paid for on a
+    routine run that touches something unrelated.
+    """
     case = _BrokenPedestalContract()
     with pytest.raises(AssertionError, match=r"gradient mismatch"):
         case.test_gradient_agreement(sample)
 
 
+@pytest.mark.gradient
 def test_the_bug_is_far_outside_the_error_bar(sample):
     """Not a marginal catch: the margin is orders of magnitude, not a factor of two.
 

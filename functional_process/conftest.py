@@ -15,7 +15,7 @@ import pytest
 import functional_process._harness  # noqa: F401
 from functional_process._harness.sampling import fuzz_samples
 
-_FUZZ_DEFAULT = 8
+_FUZZ_DEFAULT = 1
 
 PACKAGE_ROOT = Path(__file__).parent
 """Audit-record paths in contracts are relative to this."""

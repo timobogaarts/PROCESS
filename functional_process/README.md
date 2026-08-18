@@ -13,13 +13,13 @@ that are actually in scope.
 - **Current phase: Phase 0 (pre-coding audit), stellarator.py (unit #1) audited in full —
   plus the validation harness and its first ports.** Standing practice: a chunk found to
   be tier-1 and self-contained is ported (function + `## cottax node` wrap + harness
-  test) as soon as its audit lands, not batched for later. Ported so far:
-  `density_limits.py`'s two tier-1 functions, and unit #1's chunks 1D
-  (`calculate_structure_masses`) and 1F (`calculate_sc_tf_coil_nuclear_heating`). See
-  `_audit/unit_registry.md`'s "Ported so far" for the current list and rationale.
+  test) as soon as its audit lands, not batched for later. See
+  `_audit/unit_registry.md` for the per-unit list and rationale, and
+  `_audit/next_steps.md` for what is next — neither is summarised here, so that this
+  file cannot drift away from them.
 
 ```bash
-~/miniconda/envs/process_port/bin/python -m pytest functional_process
+~/miniconda3/envs/process_port/bin/python -m pytest functional_process
 ```
 
 ## Layout

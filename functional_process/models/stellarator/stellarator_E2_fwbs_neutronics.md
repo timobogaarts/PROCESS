@@ -153,6 +153,36 @@ call-history dependency worth the same scrutiny).
   the switch-split already makes it unreachable by construction.
 - No CoolProp, no dynamic shapes elsewhere in this range.
 
+## synthesis note
+
+Superseded by `stellarator_E_fwbs_synthesis.md`, which reads this chunk + 1E1 + 1E3
+against the full `st_fwbs` source per `_audit/next_steps.md` § 3. Status left at `draft`
+for human re-triage; summary of what changed:
+
+- **Open question 1 (`first_call_stfwbs`) is confirmed as the correct and sole
+  finding of its kind in this method** — traced `run()`'s call order (`st_fwbs` before
+  `st_div` in the normal, every-iteration path) and confirmed the source comment at
+  1030-1032 explains exactly the mechanism this record guessed: a one-call-lagged
+  fixed point between `st_fwbs` and `Divertor`/`stdiv` (unit #4), bootstrapped by `50.0`
+  on the true first call only. This record's recommendation to treat it as an explicit
+  boundary condition is refined in the synthesis § 2.1: rather than an
+  `is_first_evaluation` boolean input on one node, the natural cottax shape is a
+  `Blocking` + driven `FixedPoint`/`Square` over the two-node SCC `{this field's
+  producer/consumer pair, Divertor}`, matching the `ipowerflow` SCC shape
+  `next_steps.md` § 1 already found elsewhere — `50.0` becomes the fixed point's initial
+  guess, not a per-object mutable flag.
+- **1E1's `f_p_blkt_multiplication` worry (flagged there as possibly the same mechanism)
+  is *not* the same mechanism** — it's an ordinary input-variable read, unrelated to
+  `first_call_stfwbs`. See synthesis § 3 for the full reconciliation; this record's own
+  finding is unaffected.
+- **This chunk's boundary notes (881 continuing 1E1's outer branch, 1280 being a clean
+  cut) are both confirmed exactly** by the synthesis's line-by-line pass — 1280/1281 is
+  the one place where an even-thirds cut happens to coincide with a real function
+  boundary (`S4`/`S5` in the synthesis's naming).
+- **The `.heat_transport.ipowerflow`/`.fwbs.blktmodel`/`.fwbs.blkttype` switch findings
+  are all confirmed**, with full arm-by-arm reads/writes now recorded in synthesis § 4 —
+  no change to this record's own switch-touched table.
+
 ## open questions
 
 1. **The `first_call_stfwbs` / `a_div_surface_total` pattern is a real pipeline-ordering

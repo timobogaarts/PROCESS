@@ -1,7 +1,7 @@
 ---
 kind: model-unit
-status: draft
-confidence: medium-high
+status: reviewed
+confidence: high
 ---
 
 ## source
@@ -114,6 +114,94 @@ The `aspect` input to the second function is provisional pending open question 1
 `aspect` is an active iteration variable it should not be recomputed by this function at
 all (must arrive as a boundary input from the optimizer, not be produced here).
 
+**Update — ported, open question 1 resolved by precedent.** Between this record's
+`draft` pass and this update, unit #2 (`build.py`) independently found and ported the
+*same* `conditional-ownership-by-run-config` shape for `.build.dr_blkt_inboard`/
+`dr_blkt_outboard` (gated on `blktmodel > 0` rather than `ixc` membership, but
+structurally identical: a field this chunk owns only under one run configuration, and is
+a plain external input under the other). `build.md`/`build.py` resolved it by **splitting
+the maybe-owned field's producer into its own tiny node** (`BlktmodelBlanketThickness`,
+instantiated only when `blktmodel > 0`) and having the downstream function
+(`calculate_build`) take the field as an ordinary explicit arg regardless of source. This
+record adopts the identical resolution for `.physics.aspect`:
+
+- `calculate_default_aspect_ratio(stella_config_aspect_ref) -> aspect` — the `1 not in
+  ixc` branch, its own tier-1 function/node (`DefaultAspectRatio`). The body is a bare
+  passthrough of `stella_config_aspect_ref` (PROCESS's own branch does nothing more than
+  that assignment) — ported as a real function anyway, not inlined as a bare graph edge,
+  because a `Graph` node is what makes "does this chunk own `.physics.aspect` this run?"
+  a structural, inspectable fact rather than a comment. Instantiate this node **only**
+  when `1 not in data.numerics.ixc` for the run being assembled.
+- `calculate_stellarator_scaling_factors(...)` (below) takes `aspect` as a plain
+  explicit arg, sourced from `DefaultAspectRatio`'s output or an external
+  iteration-variable input depending on that same run-config fact — it never re-decides
+  or re-derives it, matching what `st_new_config` itself does after the branch (reads
+  `self.data.physics.aspect` once, whatever value is now there).
+
+This is now a **second confirmed instance** of `conditional-ownership-by-run-config`
+(first: `build.md`), which strengthens (but does not by itself settle — still only two
+data points) the suspicion recorded in the original open question 1 that the `if <id> not
+in ixc: field = <default>` idiom recurs elsewhere; a codebase-wide grep for `not in
+self.data.numerics.ixc` remains undone and is still worth doing before assuming this
+pattern is now fully catalogued.
+
+**A second, new finding from writing the actual port: `f_st_n_coils` is dead
+arithmetic.** `st_new_config` unconditionally overwrites `.tfcoil.n_tf_coils =
+stella_config_coilspermodule * stella_config_symmetry`, then a few lines later computes
+`f_st_n_coils = n_tf_coils / (stella_config_coilspermodule * stella_config_symmetry)` —
+same straight-line function, no branch or call between the two statements that could
+make `n_tf_coils` diverge from that exact product. So under the current PROCESS control
+flow, **`f_st_n_coils` is always identically `1.0`**. Documented, not fixed, per this
+audit's charter: ported faithfully as a genuine division of two arguments (not collapsed
+to a literal), both because collapsing it would be a behaviour change outside this
+audit's scope, and because a future non-PROCESS caller of `calculate_stellarator_scaling_
+factors` could legitimately supply an `n_tf_coils` not freshly derived from the same two
+config fields (e.g. once/if `n_tf_coils`'s own conditional-ownership, if it has any, is
+untangled elsewhere) — collapsing the formula now would quietly foreclose that. Classified
+`local-intermediate` in the data footprint table above (`n_tf_coils` write, then read
+back unconditionally in the same straight-line function) — technically correct per
+`schema.md`'s definition, but this is the degenerate case that definition's `redundant-
+duplicate-write` neighbour was reaching for: not a duplicate *write*, but the *read*
+side is provably redundant (always evaluates to the same known constant, `1.0`), which
+`local-intermediate` alone doesn't capture. Worth a `schema.md` note for whoever
+generalizes these labels next; not resolved here.
+
+## cottax node
+
+Three nodes, all in `stellarator_C_geometry.py` (this record's mirrored `.py` file, per
+`test_harness.md`'s "a unit is a stem" convention):
+
+- `DefaultAspectRatio` — wraps `calculate_default_aspect_ratio`. Owns `.physics.aspect`.
+  **Instantiate only when `1 not in data.numerics.ixc`** for the run being assembled —
+  see open question 1's resolution above. This is a graph-assembly-time decision, the
+  same kind `naming_convention.md`'s "switches are not ports" already describes for
+  ordinary switches, just keyed off iteration-variable membership rather than an `i_*`
+  field.
+- `StellaratorScalingFactors` — wraps `calculate_stellarator_scaling_factors`. Owns
+  `.physics.rminor`, `.physics.eps`, `.tfcoil.n_tf_coils`, and the seven `.stellarator.
+  f_st_*`/`r_coil_*`/`f_coil_shape` fields. Reads `.physics.aspect` as a plain `Input` —
+  agnostic to whether `DefaultAspectRatio` produced it or it arrived as an external
+  iteration-variable value.
+- `StellaratorPlasmaGeometry` — wraps `calculate_stellarator_plasma_geometry`. Owns
+  `.physics.vol_plasma`, `.physics.a_plasma_surface`, `.physics.a_plasma_poloidal`,
+  `.physics.a_plasma_surface_outboard`. No switches, no conditional ownership; a clean
+  consumer of `StellaratorScalingFactors`'s outputs (`f_st_rmajor`, `f_st_rminor`,
+  `rminor`) plus two device-config fields.
+
+Device-config loading (`load_stellarator_config`/`istell` 1–6) is **not** a node here —
+see "switches touched" below and `preset_config.md` (unit #8, reviewed, "not portable as
+a node"). Not registered in `functional_process/total_process.py` — out of this chunk's
+strict file boundary (a concurrent consolidation pass owns that file); whoever next
+touches `total_process.py` should wire in `DefaultAspectRatio` (conditionally),
+`StellaratorScalingFactors`, `StellaratorPlasmaGeometry`.
+
+**Downstream consumers already ported and unaffected.** Checked directly (not assumed):
+`build.py` (unit #2), `stellarator_D_structure.py` (unit #7's sibling chunk 1D), and
+`coils/calculate.py` (unit #6, partial) all already read `f_st_rmajor`, `r_coil_minor`,
+`r_coil_major`, `f_st_n_coils`, `f_st_b`, `n_tf_coils` as plain `Input`s of their own —
+none of them produce these fields, confirming this chunk is their sole producer and that
+porting it introduces no duplicate-ownership conflict with already-ported nodes.
+
 ## tier signal
 
 **Tier 1** for both methods' actual arithmetic. The device-config lookup itself is
@@ -160,12 +248,14 @@ be inside the jitted graph at all.
   `process/models/stellarator/preset_config.py`, **not a `Model` method**, but takes the
   whole `data: DataStructure` object and writes into `data.stellarator_config.*`
   directly (an `implicit-io-via-callee`-shaped call, except the callee isn't a `Model` —
-  the same underlying pattern regardless). `preset_config.py` is registry unit #8,
-  currently `pending`. This chunk's record does not depend on that audit landing first
-  (the config-loading step is being proposed as non-traced setup code regardless of its
-  internal shape), but the full device-config table contents (all `stella_config_*`
-  fields, not just the ones read directly here) are only fully enumerable once unit #8 is
-  audited.
+  the same underlying pattern regardless). `preset_config.py` is registry unit #8.
+  **Update: unit #8 has since landed** (`preset_config.md`, `reviewed`) and confirms this
+  record's own independent finding below: 5 hardcoded machine presets plus a reflective
+  `hasattr`/`setattr` copy, not portable as a cottax node as-is (real output set only
+  knowable by cross-referencing `StellaratorConfigData`'s fields, not a fixed declarable
+  `outputs` list). This chunk's port does not depend on unit #8's internal shape either
+  way — the config-loading step is out of the traced computation regardless — but the two
+  records now corroborate each other rather than one being provisional on the other.
 
 ## JAX-difficulty flags
 
@@ -205,11 +295,54 @@ be inside the jitted graph at all.
    thing to grep for across the remaining units (a quick search: this specific pattern,
    `not in self.data.numerics.ixc`, wasn't checked codebase-wide from this chunk;
    flagging as worth a targeted grep before assuming it's rare).
+
+   **Resolved (this update).** Ported per the `build.py`/unit #2 precedent — see
+   "cottax node" above: split into `DefaultAspectRatio` (owns `.physics.aspect`,
+   instantiated only when `1 not in ixc`) and `StellaratorScalingFactors` (takes `aspect`
+   as a plain `Input` regardless of source). The codebase-wide grep for `not in
+   self.data.numerics.ixc` this note asked for is **still not done** — still worth doing
+   before assuming these two instances (this chunk, `build.py`) are the only ones.
 2. Whether the five hardcoded device-config tables in `preset_config.py` (not fully
    audited here, only spot-checked) are *exactly* schema-uniform, or whether some carry
    extra/missing keys relative to others — would firm up "data-table-shaped, not
    switch-shaped" from a spot-check to a confirmed fact. Cheap follow-up, not done here
-   to stay in this chunk's line range.
+   to stay in this chunk's line range. **Still open** — `preset_config.md` (unit #8,
+   landed since this record's `draft` pass) does not appear to resolve this specific
+   sub-question either (it confirms the `hasattr`/`setattr` reflective-copy shape, not a
+   byte-for-byte key diff across all five tables); still a cheap follow-up for whoever
+   next touches either record.
 3. `physics.a_plasma_surface_outboard`'s "obsolescent fispact calculation" /
    "approximate as for tokamaks" comments — candidate stale/approximate code, flagged for
-   your judgment, not a structural finding.
+   your judgment, not a structural finding. **Still open** — ported faithfully as-is
+   (`calculate_stellarator_plasma_geometry` computes it exactly as PROCESS does); not
+   resolved, not fixed, per this audit's charter.
+4. **New (this update).** `f_st_n_coils` is provably always `1.0` under the current
+   PROCESS control flow (see the "second, new finding" note above, under "proposed
+   signature(s)") — ported faithfully rather than collapsed. Not itself a blocking
+   question, but worth someone's judgment on whether this is intentional
+   defensive/future-proofing code (in case `n_tf_coils` is someday set independently of
+   `coilspermodule * symmetry`) or genuinely dead arithmetic worth flagging upstream to
+   PROCESS's maintainers.
+
+## port status
+
+**Ported and harness-tested** (this update). `stellarator_C_geometry.py`:
+`calculate_default_aspect_ratio`/`DefaultAspectRatio`,
+`calculate_stellarator_scaling_factors`/`StellaratorScalingFactors`,
+`calculate_stellarator_plasma_geometry`/`StellaratorPlasmaGeometry`. Tests in
+`test_stellarator_C_geometry.py`, all `Tier1Contract`. Reference adapters for the two
+`st_new_config`-derived functions stub `load_stellarator_config` to a no-op via
+`unittest.mock.patch` (see that file's module docstring) so a sample's `stella_config_*`
+values aren't clobbered by the real device-config table lookup — the same "config loading
+is out of scope" decision this record already made, just made mechanically necessary by
+needing to call `st_new_config` itself as the oracle.
+
+Verified: `pytest functional_process/models/stellarator/test_stellarator_C_geometry.py
+-q` (15 passed, 12 skipped — gradient/finite-difference checks are `--fp-gradients`
+opt-in) and again with `--fp-gradients --fp-fuzz 50 --fp-fuzz-seed 7` (615 passed, 0
+failed) — both value and gradient agreement hold across a wide fuzz sweep, no domain
+errors encountered (no `reference_domain_errors` needed for any of the three functions;
+all are unconditional arithmetic with no PROCESS-side raise).
+
+Not registered in `functional_process/total_process.py` — out of this chunk's strict file
+boundary; see "cottax node" above.
