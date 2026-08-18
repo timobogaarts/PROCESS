@@ -27,7 +27,15 @@ the full trace.
 
 import jax
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    ImplicitFunction,
+    Input,
+    Output,
+    path_of,
+)
+from cottax.problem import Feasibility
+from cottax.spec import In, Out, VarPath
 
 # Gas-species ordering used throughout `vacuum()`: (N2, D-T, He, D-T again).
 # `process/models/vacuum.py`'s module-level `xmult` list -- conductance-to-nitrogen
@@ -309,6 +317,65 @@ def solve_duct_diameter(l1, l2, l3, xmult_i, ceff_i, max_iter=100, tol=1e-10):
     return d
 
 
+class DuctDiameterRootFind(ImplicitFunction):
+    """cottax node: `duct_diameter_residual` as a genuine `RootFind` implicit model.
+
+    Structural counterpart to `solve_duct_diameter` above -- same defining equation
+    (`duct_diameter_residual`), declared rather than solved eagerly. `next_steps.md`
+    §7 had earlier concluded `solve_duct_diameter` didn't need this treatment (its
+    unknown is fully encapsulated inside `VacuumOld`'s own computation, so no other
+    node reads it) -- that finding is **superseded for this unit by explicit
+    instruction**, not re-derived here; see `vacuum.md` for the fuller discussion.
+    `solve_duct_diameter` itself is kept unchanged and is still what any plain caller
+    (including `solve_duct_geometry` below) should call -- this class exists
+    alongside it, not instead of it, exactly as `duct_conductance` already sits
+    alongside `_newton_function`'s closed-form half.
+
+    Every `VarPath` here is **minted**, not an established `data` field: neither the
+    duct diameter unknown nor `l1`/`l2`/`l3`/`xmult_i`/`ceff_i` has a `data`-reachable
+    home today (all five are locals of `_solve_vacuum_pumping_old`'s per-species loop,
+    see `vacuum.md`'s data footprint) -- same minting precedent as `coils.py`'s
+    `JcritIterNb3sn` (`t_helium`/`b_max`) and the `Intersect` sketch at the bottom of
+    that file. `.vacuum.d_duct` is a fresh name, chosen to avoid colliding with the
+    already-established `.vacuum.dia_vv_vacuum_ducts` (the *final*, post-outer-loop
+    winning diameter `VacuumOld` writes) -- this node's unknown is the per-species,
+    per-outer-iteration Newton unknown, a different quantity at a different point in
+    the computation. `l1`/`l2`/`l3`/`xmult_i`/`ceff_i` keep the plain parameter names
+    `duct_diameter_residual` already uses.
+
+    **Updated, later consolidation pass: registered in `total_process.py`.** Still not
+    wired to any other node registered there -- every one of these six `VarPath`s is
+    minted and unique to this class, so it sits as its own disconnected island in the
+    default graph, same caution `coils.py`'s unregistered `Jcrit*` nodes are flagged
+    with (see `total_process.py`'s own module docstring) -- registered anyway, on
+    explicit instruction, as a perfectly valid undriven `RootFind` problem
+    (`Graph.declared`, same as every other undriven declared node here). It does gain a
+    real neighbour outside `total_process.py`, though: this file's own `DuctFeasibility`
+    (below) reads `.vacuum.d_duct` as an ordinary cross-node `Input`, forming a combined
+    4-node cycle when the two are assembled together (see `DuctFeasibility`'s own
+    docstring and `test_vacuum.py`).
+
+    `functional_process/models/test_vacuum.py`'s
+    `TestDuctDiameterRootFind` builds `to_graph(DuctDiameterRootFind)` directly and
+    drives it with a test-only `AbstractDriver` (see that file) to confirm the two
+    minted nodes (this body, and the `RootFind` problem `ImplicitFunction` also
+    mints) assemble and converge to the same answer `solve_duct_diameter` does.
+    """
+
+    d_duct = Output(lambda s: s.vacuum.d_duct)
+
+    def residual(
+        self,
+        d_duct=Input(lambda s: s.vacuum.d_duct),
+        l1=Input(lambda s: s.vacuum.l1),
+        l2=Input(lambda s: s.vacuum.l2),
+        l3=Input(lambda s: s.vacuum.l3),
+        xmult_i=Input(lambda s: s.vacuum.xmult_i),
+        ceff_i=Input(lambda s: s.vacuum.ceff_i),
+    ):
+        return duct_diameter_residual(d_duct, l1, l2, l3, xmult_i, ceff_i)
+
+
 def solve_duct_geometry(l1, l2, l3, xmult_i, ceff_i_init, a1max, s_i, max_outer=64):
     """Fit a duct to the available inter-coil area, shrinking `ceff_i` if it doesn't.
 
@@ -393,6 +460,128 @@ def solve_duct_geometry(l1, l2, l3, xmult_i, ceff_i_init, a1max, s_i, max_outer=
     )
     d, ceff_used, ceff_final, nflag, _it, _done = jax.lax.while_loop(cond, body, init)
     return d, ceff_used, ceff_final, nflag
+
+
+# `solve_duct_geometry`'s outer 10%-shrink loop above is kept eager, unconverted --
+# deliberately. Not "does something else need this unknown" (the `next_steps.md` §7
+# frame that doesn't apply once `d`/`ceff_i` are minted `VarPath`s, as
+# `DuctDiameterRootFind` above already is), but "what problem shape is this actually":
+# the shrink loop is a crude fixed-step stand-in for **finding a feasible `ceff_i`** --
+# no objective, just
+# "fits and stays above the speed floor" -- not a nested solve:
+#
+#   find           ceff_i
+#   subject to     duct_diameter_residual(d, l1, l2, l3, xmult_i, ceff_i) == 0
+#                      (RootFind, DuctDiameterRootFind above)
+#                  0.25 * pi * d**2 <= a1max            (fits between TF coils)
+#                  ceff_i >= 1.1 * s_i                  (pumping-speed floor)
+#
+# **Updated, later pass**: this was originally sketched (not built) as an `Optimise`,
+# stalled specifically because "find a feasible ceff_i" has no objective to minimise and
+# `cottax` had no shape for pure feasibility -- inventing one (e.g. maximise `ceff_i`)
+# would assert a preference PROCESS's own 10%-shrink-until-it-fits loop neither states
+# nor needs: it stops at the *first* fitting value, not the largest. `cottax.problem.
+# Feasibility` (drafted this same session specifically to fill this gap) is built below,
+# joined with `DuctDiameterRootFind`'s `RootFind` via `Feasibility + RootFind ->
+# Feasibility` (`problem.py`'s own join rule, same SAND composition `Optimise + RootFind`
+# uses). `DuctFeasibilityConditions` mints `.vacuum.a1max`/`.vacuum.s_i` (real locals of
+# `_solve_vacuum_pumping_old`'s per-species loop, same minting precedent as
+# `DuctDiameterRootFind`'s own `l1`/`l2`/`l3`/`xmult_i`/`ceff_i`) and the two inequality
+# residuals as ordinary `Output`s, since a bodyless `DeclaredNode` like `Feasibility`
+# reads pre-computed residual values, it does not compute them itself.
+#
+# **Structural addition only, same discipline as `Intersect`/`DuctDiameterRootFind`
+# themselves**: `solve_duct_geometry`'s eager `jax.lax.while_loop` below is unchanged and
+# still the tested, correct path; this declaration is a second, parallel representation
+# proving the shape is real and drivable (see `test_vacuum.py`'s test-only driver), not a
+# replacement. See `vacuum.md` for the fuller writeup.
+
+
+def duct_fits_residual(d_duct, a1max):
+    """`0.25 * pi * d_duct**2 - a1max` -- the "fits between TF coils" inequality's
+    residual, `<= 0` when the duct fits. `solve_duct_geometry`'s own `fits = a1_new <
+    a1max` test, restated as a signed residual (`Feasibility`'s `inequalities`
+    convention, same shape `duct_diameter_residual` already uses for the equality
+    case)."""
+    return 0.25 * jnp.pi * d_duct * d_duct - a1max
+
+
+def pumping_speed_floor_residual(ceff_i, s_i):
+    """`1.1 * s_i - ceff_i` -- the pumping-speed-floor inequality's residual, `<= 0`
+    when `ceff_i` stays above `1.1 * s_i`. `solve_duct_geometry`'s own `ceff_next <= 1.1
+    * s_i` "too small, give up" test, restated the same way as `duct_fits_residual`."""
+    return 1.1 * s_i - ceff_i
+
+
+class DuctFeasibilityConditions(ExplicitFunction):
+    """cottax node: the two inequality residuals `DuctFeasibility` (below) reads.
+
+    A `DeclaredNode` like `Feasibility` is bodyless -- it owns/reads pre-existing
+    `VarPath`s, it does not compute them -- so the residuals themselves need an ordinary
+    node to produce them, the same role `Intersect.residual`/
+    `DuctDiameterRootFind.residual` play for their own `RootFind` problems. `d_duct` is
+    read as a plain, non-owning
+    `Input` -- `DuctDiameterRootFind`'s `RootFind` problem owns it, an ordinary
+    cross-node edge, not a second self-loop (same shape `WindingPackTotalSizePost`'s read
+    of `.stellarator.wp_width_r_min` already established). `ceff_i` is read the same way
+    -- `DuctFeasibility` (below) owns it as its one `design` unknown.
+    """
+
+    duct_fits_residual = Output(lambda s: s.vacuum.duct_fits_residual)
+    pumping_speed_floor_residual = Output(
+        lambda s: s.vacuum.pumping_speed_floor_residual
+    )
+
+    def __call__(
+        self,
+        d_duct=Input(lambda s: s.vacuum.d_duct),
+        a1max=Input(lambda s: s.vacuum.a1max),
+        ceff_i=Input(lambda s: s.vacuum.ceff_i),
+        s_i=Input(lambda s: s.vacuum.s_i),
+    ):
+        return (
+            duct_fits_residual(d_duct, a1max),
+            pumping_speed_floor_residual(ceff_i, s_i),
+        )
+
+
+DuctFeasibility = Feasibility(
+    design=(Out(path_of(lambda s: s.vacuum.ceff_i, VarPath)),),
+    inequalities=(
+        In(path_of(lambda s: s.vacuum.duct_fits_residual, VarPath)),
+        In(path_of(lambda s: s.vacuum.pumping_speed_floor_residual, VarPath)),
+    ),
+)
+"""The declared problem itself: "find a feasible `ceff_i`", no objective.
+
+A bare `problem.py` `DeclaredNode` instance like this one is not a `NodalDeclaration`
+(`pytree_namespace_module.py`'s own class-based protocol, which `ExplicitFunction`/
+`ImplicitFunction` implement) and, unlike those, carries no class-derived name of its
+own -- `to_graph(DuctFeasibility)` alone raises `TypeError`. `to_graph` itself now
+accepts a `{name: NodeDefinition}` mapping for exactly this case (fixed upstream in
+`cottax.interfaces.{flat,pytree}_namespace_module.node_and_names`, since the same gap
+applied to any bare `RootFind`/`Optimise`/`Feasibility` built directly, not just this
+one): `to_graph(DuctFeasibilityConditions(), DuctDiameterRootFind(),
+{"DuctFeasibility": DuctFeasibility})` assembles the full 4-node block in one call and
+finds the combined cycle (`test_vacuum.py`'s own test does exactly this) -- no manual
+`Graph(path_map(...))` construction needed any more.
+
+Structurally this is `DuctFeasibility + DuctDiameterRootFind's RootFind` --
+`Feasibility.__add__`'s `RootFind` branch (`design`/`equalities`/`inequalities`
+concatenate) -- though the join itself is never invoked directly here: placing both
+problem nodes and `DuctFeasibilityConditions`' residuals in one `Graph` lets
+`Blocking`/`.cycles` find the same combined block structurally, the same way
+`WindingPackIntersectInputs`/`Intersect`/`WindingPackTotalSizePost` never call
+`Feasibility.__add__`/`Optimise.__add__` either -- the algebra states what a rewrite
+*could* fold into one node; a plain shared-`VarPath` cycle across separately-registered
+nodes already gets the same graph-level effect without invoking it.
+
+Not registered in `total_process.py` (same as `Intersect`/`DuctDiameterRootFind` --
+structural admission only, driving deferred) and not itself wired to
+`DuctDiameterRootFind` there either, since `DuctDiameterRootFind` alone is what gets
+registered (see that class's own docstring on why it is presently an island): joining
+the two into one block is demonstrated in `test_vacuum.py`, not asserted by
+registration."""
 
 
 def _solve_vacuum_pumping_old(

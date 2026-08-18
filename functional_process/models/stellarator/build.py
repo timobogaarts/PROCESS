@@ -135,7 +135,26 @@ def calculate_build(
         `(dz_blkt_upper, dr_fw_inboard, dr_fw_outboard, dr_bore, rbld,
         required_radial_space, available_radial_space, r_shld_inboard_inner,
         r_shld_outboard_outer, dr_tf_outboard, dr_shld_vv_gap_outboard,
-        r_tf_outboard_mid, z_tf_inside_half, rspo, a_fw_total_unadjusted)`.
+        r_tf_outboard_mid, rspo, a_fw_total_unadjusted)`.
+
+        **`.build.z_tf_inside_half` is deliberately not returned here, even though
+        `st_build` (this function's source) computes it.** Real PROCESS has two
+        independent, differently-formulated writers of this one field --
+        `st_build`'s (this one) and `st_coil`'s (`coils/calculate.py`,
+        `calculate_z_tf_inside_half`) -- and `stellarator.py`'s `run()` calls them in
+        *opposite* order depending on the `output` flag: mid-solve (`output=False`)
+        `st_coil` runs first so `st_build` wins transiently, but the final report pass
+        every real run ends with (`output=True`, needed to write `OUT.DAT`/
+        `MFILE.DAT`) runs `st_build` first so `st_coil` wins for good -- confirmed
+        directly against a converged run via the block-by-block MDA-vs-PROCESS
+        comparison harness (`functional_process/mda_harness.py`), which caught this
+        port's `Build` node claiming ownership under the wrong (`st_build`'s) formula.
+        `st_coil`'s formula is the one PROCESS's real answer keeps, so
+        `coils/calculate.py`'s new `ZTfInsideHalf` node owns `.build.z_tf_inside_half`
+        instead -- this is an "ordering artifact" in the same family
+        `_audit/next_steps.md` §5 already tracks several instances of (two producers,
+        one wins by call order, not represented structurally), not a bug in either
+        formula.
     """
     dz_blkt_upper = 0.5 * (dr_blkt_inboard + dr_blkt_outboard)
 
@@ -213,7 +232,10 @@ def calculate_build(
         + 0.5 * dr_tf_outboard
     )
 
-    z_tf_inside_half = 0.5 * (
+    # `st_build`'s own `z_tf_inside_half` -- computed (matching the source line for
+    # line) but not returned: PROCESS's real, final answer for this field is
+    # `st_coil`'s formula instead. See this function's own Returns docstring for why.
+    _z_tf_inside_half_st_build = 0.5 * (
         (
             dr_shld_vv_gap_inboard
             + dr_vv_inboard
@@ -252,7 +274,6 @@ def calculate_build(
         dr_tf_outboard,
         dr_shld_vv_gap_outboard,
         r_tf_outboard_mid,
-        z_tf_inside_half,
         rspo,
         a_fw_total_unadjusted,
     )
@@ -341,6 +362,11 @@ class Build(ExplicitFunction):
     `dr_blkt_inboard`/`dr_blkt_outboard` read from wherever the `blktmodel`
     graph-assembly choice puts them -- `BlktmodelBlanketThickness`'s outputs, or an
     external input, per module docstring.
+
+    **Does not own `.build.z_tf_inside_half`** -- `calculate_build`'s own Returns
+    docstring explains why: real PROCESS has two independent writers of that field,
+    and this port's own comparison against a converged PROCESS run showed the other
+    one (`coils/calculate.py`'s `ZTfInsideHalf`) is the one whose value survives.
     """
     dz_blkt_upper = Output(lambda s: s.build.dz_blkt_upper)
     dr_fw_inboard = Output(lambda s: s.build.dr_fw_inboard)
@@ -354,7 +380,6 @@ class Build(ExplicitFunction):
     dr_tf_outboard = Output(lambda s: s.build.dr_tf_outboard)
     dr_shld_vv_gap_outboard = Output(lambda s: s.build.dr_shld_vv_gap_outboard)
     r_tf_outboard_mid = Output(lambda s: s.build.r_tf_outboard_mid)
-    z_tf_inside_half = Output(lambda s: s.build.z_tf_inside_half)
     rspo = Output(lambda s: s.build.rspo)
     # Invented intermediate, not a real PROCESS field -- see module docstring.
     a_fw_total_unadjusted = Output(lambda s: s.first_wall.a_fw_total_unadjusted)

@@ -20,6 +20,25 @@ rather than waiting on it.
 Two real PROCESS bugs, and one real port bug, were found while porting this pass — see
 "real PROCESS bugs found" below.
 
+**Later pass: `winding_pack_total_size` split around `intersect`.** The `WindingPackTotalSize`
+node this section originally described (below, now removed) called `coils.py`'s
+`intersect` eagerly, in the middle of its own `__call__` body. It is replaced by three
+nodes — `WindingPackIntersectInputs` (pre-`intersect`), `coils.py`'s `Intersect` (the
+`intersect` root-find itself, now a genuine `ImplicitFunction`/`RootFind` pair), and
+`WindingPackTotalSizePost` (post-`intersect`) — composing around `coils.py`'s `Intersect`
+node instead of calling the plain function directly. The pure function
+`winding_pack_total_size` itself is unchanged in behaviour (same signature, same return
+values, still calls `intersect` eagerly internally) — only reorganised into
+`winding_pack_pre_intersect`/`winding_pack_post_intersect` halves so both the plain
+function and the node-graph split share one definition of "what happens before/after the
+root-find" rather than two. See "cottax node" below for the full design, and
+`_audit/next_steps.md` §7 / `coils.md`'s `Intersect` docstring for why this split is
+worth doing (a first-class, swappable solver choice) even though nothing else in the
+graph needs `intersect`'s internal unknowns visible (§7's own test for that, unchanged).
+`WindingPackJTfWp`'s own `.tfcoil.j_tf_wp` `FixedPoint` split (this section's own
+original subject) is untouched by this — it still calls the whole
+`winding_pack_total_size` pure function directly, not these node classes.
+
 ## source
 `process/models/stellarator/coils/calculate.py` (593 lines, full file in scope).
 Registry unit #9 — contains `st_coil`, called directly from `Stellarator.run()`
@@ -71,9 +90,12 @@ treatment as `calculate_inductance`'s `msupstr`-style reporting-only output.
 ported) and `winding_pack_total_size` (now also ported, see below) — a real graph edge,
 not reporting. Minted `.stellarator.coilcurrent` for it (see the port's `CoilCurrent`
 node docstring) — **open question 1 below (from the first pass) is now resolved**:
-`WindingPackTotalSize`'s own `coilcurrent` `Input` reads this exact `VarPath`, so three
-nodes (`CoilCurrent`, `CoilsSummaryVariables`, `WindingPackTotalSize`) now genuinely
-share it, confirming it was the right call.
+`WindingPackIntersectInputs`'s and `WindingPackTotalSizePost`'s own `coilcurrent`
+`Input`s both read this exact `VarPath` (the pre-/post-`intersect` split, a later pass —
+see the top-of-file note — kept both halves reading it, since `winding_pack_curves` and
+`winding_pack_post_intersect` each need it independently), so four nodes (`CoilCurrent`,
+`CoilsSummaryVariables`, `WindingPackIntersectInputs`, `WindingPackTotalSizePost`) now
+genuinely share it, confirming it was the right call.
 
 ### `winding_pack_total_size` and `st_coil` (this pass)
 
@@ -98,7 +120,11 @@ composition into fewer functions was done; each is already a natural, independen
 **except** `winding_pack_total_size`, which factors its curve-sampling half out into
 `winding_pack_curves` (an internal seam, not independently audited/tested, that lets the
 harness's residual function rebuild the same `(wp_width_r, lhs, rhs)` curves the solve
-itself uses — see `TestWindingPackTotalSize`'s own `_winding_pack_total_size_residual`).
+itself uses — see `TestWindingPackTotalSize`'s own `_winding_pack_total_size_residual`),
+and, **a later pass**, further into `winding_pack_pre_intersect`/
+`winding_pack_post_intersect` (the same internal-seam status, not independently
+audited/tested; `winding_pack_total_size` itself still composes them, unchanged in
+behaviour — see the top-of-file note and "cottax node" below).
 `_critical_current_density_by_material` is a **local, scoped restatement** of
 `jcrit_from_material`'s 8-way dispatch (`coils/coils.py`, still unported — out of this
 unit's file boundary), calling the real ported material models in
@@ -107,32 +133,149 @@ port of `jcrit_from_material` itself, which stays unit #10's to do (see "switche
 touched").
 
 ## cottax node
-**Actually written**, three more classes on top of the first pass's ten:
+**Actually written**, three more classes on top of the first pass's ten, in this pass —
+**superseded by a later pass**, described further below, which splits the middle one
+(`WindingPackTotalSize`) into three around `coils.py`'s `Intersect`. The original
+description is kept (below) as the accurate record of what the `j_tf_wp`/`FixedPoint`
+split resolved; the split-around-`intersect` section that follows describes only what
+changed on top of it.
 
-- **`WindingPackTotalSize`** (`ExplicitFunction`, `i_tf_sc_mat` a static field, same
-  treatment as `EcrhDensityLimit.i_plasma_pedestal`). Its `.tfcoil.a_tf_wp_with_insulation`/
-  `a_tf_wp_no_insulation` `Output`s are **minted, cross-checked against two already-shipped
+- **`WindingPackTotalSize`** (this pass's `ExplicitFunction`, **removed by the later
+  pass below** — kept here as history) had `i_tf_sc_mat` a static field, same
+  treatment as `EcrhDensityLimit.i_plasma_pedestal`. Its `.tfcoil.a_tf_wp_with_insulation`/
+  `a_tf_wp_no_insulation` `Output`s were **minted, cross-checked against two already-shipped
   consumers**: `coils/mass.py`'s `CoilsMass` and `coils/forces.py`'s `MaxForceDensity`
   (etc.) already declared `Input`s at exactly these two paths (`mass.md`'s own "cottax
-  node" section: "should mint its output under this exact name") — this node is that
+  node" section: "should mint its output under this exact name") — this node was that
   producer, not a fresh, independent choice. Discovering this also surfaced a **real bug
   in the first pass's own `CoilCrossSectionalArea`**, fixed in this pass: its
   `a_tf_wp_with_insulation` `Input` read `s.tfcoil.dr_tf_wp_with_insulation` (a
   dimensionally different field — winding-pack *radial thickness*, not *area*) because
   no producer existed yet for the correct path when it was written; it now reads
-  `s.tfcoil.a_tf_wp_with_insulation`, matching `CoilsMass`/`MaxForceDensity` and this
-  node's own `Output`. `WindingPackTotalSize` also declares `j_tf_wp` as **both** an
-  `Input` and an `Output` on the same `VarPath` — faithful to the source's genuine
+  `s.tfcoil.a_tf_wp_with_insulation`, matching `CoilsMass`/`MaxForceDensity` — unaffected
+  by the later split, since `WindingPackTotalSizePost` (below) is now that producer
+  instead, at the identical `VarPath`.
+
+  **`j_tf_wp` self-loop — resolved (later pass, not the one that first wrote this
+  node)**: `WindingPackTotalSize` originally declared `j_tf_wp` as **both** an `Input`
+  and an `Output` on the same `VarPath` — faithful to the source's genuine
   self-referential read (see data footprint), but `spec.py` forbids a node reading what
-  it owns, so this node **cannot join a `Graph` as declared**; a minted "previous value"
-  copy is needed first — flagged in the class docstring, not resolved here.
+  it owns, so `to_graph(WindingPackTotalSize(...))` raised `ValueError: reads
+  ['.tfcoil.j_tf_wp'], which it also owns` — confirmed directly before making any
+  change, the same failure class `Avail`'s `.costs.cplife` self-loop hits
+  (`_audit/next_steps.md` §5, "Shape B"). Resolved by the same mechanism that section
+  names: `.tfcoil.j_tf_wp`'s ownership is now split out into a new node,
+  **`WindingPackJTfWp`** (`FixedPointFunction`, `i_tf_sc_mat` a static field like
+  `WindingPackTotalSize`'s own) — `step` reads the real `.tfcoil.j_tf_wp` plus every
+  other input `winding_pack_total_size` needs and returns the fresh value as the next
+  iterate; `FixedPointFunction` mints the cut internally (body writes
+  `^cond.tfcoil.j_tf_wp`, a separate bodyless `FixedPoint` problem node owns the real
+  `.tfcoil.j_tf_wp` and reads that minted copy). `WindingPackTotalSize` no longer
+  declares a `j_tf_wp` `Output` at all — it keeps `j_tf_wp` as a plain, non-owning
+  `Input` (the current committed value) and its `__call__` simply discards the
+  `j_tf_wp_new` element of `winding_pack_total_size`'s return tuple, since
+  `WindingPackJTfWp.step` is now where that value is kept and minted. **Untouched by the
+  later split-around-`intersect` pass below**: `WindingPackJTfWp` still calls the whole
+  `winding_pack_total_size` pure function directly (which still composes the same two
+  halves internally, unchanged in behaviour), not the new node classes.
+
+  `WindingPackJTfWp.step` necessarily re-runs the *entire* `winding_pack_total_size`
+  computation (`intersect`'s 200-point sampled crossing included), not some smaller
+  slice: the resolved winding-pack width `dr_tf_wp_with_insulation` itself depends on
+  `j_tf_wp` whenever `i_tf_sc_mat == 2` (Bi-2212), via the `lhs` curve `intersect`
+  crosses, so there is no self-contained sub-computation smaller than the whole function
+  to isolate. This duplicates that sampling between the two nodes, deliberately, rather
+  than factoring a third `wp_width_r_min`-producing node out from under both (that would
+  only relocate the duplication, not remove it, and is an unrequested design change).
+
+  **`i_tf_sc_mat`-conditioning of the self-loop**: no explicit pass-through/identity
+  branch was written for `i_tf_sc_mat != 2` (unlike `plasma_composition`'s `first_call`
+  or `Avail`'s `cplife`, which do special-case their non-cycling branch). It falls out
+  of `_critical_current_density_by_material`'s existing 8-way dispatch instead: only the
+  `i_tf_sc_mat == 2` branch reads `j_wp` at all, and `i_tf_sc_mat` is a static field
+  (resolved at Python/trace time, "switches are not ports" per `naming_convention.md`),
+  so for every other material `step`'s traced body never reads its `j_tf_wp` parameter —
+  `d(step)/d(j_tf_wp) == 0` identically, a degenerate but entirely valid fixed point any
+  correct driver converges to in one iteration, confirmed directly by `jax.grad` at
+  `i_tf_sc_mat` in `{1, 5, 7}` (`test_calculate.py::test_winding_pack_j_tf_wp_step_is_a_degenerate_fixed_point_off_bi2212`).
+  `i_tf_sc_mat == 2` is the one genuine, non-trivial self-loop — not independently
+  gradient-tested here, for the same `bi2212` validity-domain fragility already flagged
+  under "JAX-difficulty flags" and in `TestWindingPackTotalSize`'s own sample-selection
+  docstring (narrow domain, not exercised by this unit's tests either way).
+
+**Update, later consolidation pass: `WindingPackJTfWp` (described just above) is
+deleted.** It duplicated the entire `winding_pack_total_size` computation a second time
+just to isolate `j_tf_wp`, sitting unregistered right next to the three-node split below
+which already recomputed the same thing independently. Once `WindingPackTotalSizePost`
+(below) took ownership of `.tfcoil.j_tf_wp` instead of discarding it, and
+`WindingPackIntersectInputs` (below) kept reading the real value as it already did, the
+self-reference closed through the three real nodes plus `Intersect`'s own `RootFind`
+problem as one ordinary 4-node cross-node cycle ("Shape A", `_audit/next_steps.md` §5) --
+no `FixedPointFunction`/`Cut` needed at all, confirmed via
+`to_graph()`/`.cycles` (`test_calculate.py::
+test_winding_pack_intersect_split_forms_one_combined_cycle`). This is now registered in
+`total_process.py` in place of `WindingPackJTfWp`.
+
+### `winding_pack_total_size` split around `intersect` (later pass)
+
+`WindingPackTotalSize` (above) called `coils.py`'s `intersect` eagerly, in the middle of
+its own `__call__`. Replaced by three nodes, composing around `coils.py`'s `Intersect` —
+now a genuine `ImplicitFunction`/`RootFind` pair (see `coils.md`'s own "cottax node"
+section for `Intersect`'s full design) — instead of calling the plain `intersect`
+function directly:
+
+- **`WindingPackIntersectInputs`** (`ExplicitFunction`, `i_tf_sc_mat` a static field,
+  same treatment as the removed `WindingPackTotalSize`'s own) — the *pre*-`intersect`
+  half. Calls `winding_pack_pre_intersect` (a later-pass split of
+  `winding_pack_total_size`'s own body, sharing `winding_pack_curves` unchanged) and
+  mints `.stellarator.wp_width_r`/`.lhs`/`.rhs` — exactly the `VarPath`s `coils.py`'s
+  `Intersect` reads as its own `Input`s, per `coils.md`'s own earlier sketch of this
+  split, not a fresh invention here. `intersect`'s own starting guess
+  (`wp_width_r_min_guess`) is computed but not wired through as a declared `Output` —
+  `xin` has no port in the `ImplicitFunction`/`RootFind` shape at all (see `Intersect`'s
+  docstring).
+- **`coils.py`'s `Intersect`**, reused directly, unmodified — its minted `VarPath`s
+  happen to match this call site exactly (they were designed to, from `coils.md`'s own
+  draft), so no call-site-specific wrapper class was needed here. `Intersect`'s own
+  `RootFind` problem owns `.stellarator.wp_width_r_min`.
+- **`WindingPackTotalSizePost`** (`ExplicitFunction`, **no `i_tf_sc_mat`** — nothing in
+  `winding_pack_post_intersect` depends on the material dispatch, which is entirely
+  upstream) — the *post*-`intersect` half. Reads `.stellarator.wp_width_r_min` as a
+  plain, ordinary `Input` (owned by `Intersect`'s `RootFind` problem, not by this node —
+  an ordinary cross-node edge, not a second self-loop), calls
+  `winding_pack_post_intersect`, and mints `.tfcoil.a_tf_wp_with_insulation`/
+  `a_tf_wp_no_insulation` at the same `VarPath`s the removed `WindingPackTotalSize`
+  already minted them at — this node is now their producer, `CoilsMass`/`MaxForceDensity`
+  unaffected.
+
+Verified directly, not just asserted: `to_graph(WindingPackIntersectInputs(...),
+Intersect())` assembles into one coupled block with a single `RootFind` problem
+(`test_calculate.py::test_winding_pack_intersect_pair_assembles_around_the_root_find`);
+**updated** -- the full three-node split now merges with `Intersect`'s own `RootFind`
+into a single combined 4-node SCC once `WindingPackTotalSizePost` owns `.tfcoil.j_tf_wp`
+(`test_calculate.py::test_winding_pack_intersect_split_forms_one_combined_cycle`), not
+"assembles alongside a separate `WindingPackJTfWp` split" as an earlier draft of this
+section said (that class is deleted, see above). Driving the merged 4-node block needs a
+*generic* `RootFind` driver, not `coils.py`'s `IntersectBisectionNewtonPolish` --
+that driver reaches into `conditions.context` directly for `wp_width_r`/`lhs`/`rhs`,
+which stops working once `WindingPackIntersectInputs` (their producer) sits *inside* the
+driven block rather than outside it. `test_calculate.py`'s own test-only
+`_GenericBisectionRootFind` (calling `conditions(x)` generically instead) reproduces
+exactly the same `dr_tf_wp_with_insulation`/`a_tf_wp_with_insulation` the plain
+`winding_pack_total_size` function computes by calling `intersect` eagerly
+(`test_calculate.py::test_winding_pack_intersect_driven_matches_the_pure_function`) --
+same numbers, reached through the new driven path instead of the old eager one, per
+`_audit/next_steps.md` §7's own framing of what this conversion is for.
+
 - No node for `st_coil` itself. It is the union of the individual nodes above (this
-  file's 13 plus units #11/#12/#14's own already-registered ones) rather than a
-  computation of its own — writing one more giant `ExplicitFunction` wrapping all of
-  them would duplicate exactly the decomposition `cottax`'s graph exists to replace,
-  and (per `spec.py`) a node cannot both read and own `j_tf_wp` or `len_tf_coil` the way
-  `WindingPackTotalSize` and `st_coil`'s own inline geometry each do — the same
-  same-`VarPath` conflict either way. `st_coil`'s job is the *composition order/wiring*,
+  file's 15 -- 13 tier-1 plus `WindingPackIntersectInputs`/`WindingPackTotalSizePost` --
+  plus `coils.py`'s `Intersect` and units #11/#12/#14's own already-registered ones)
+  rather than a computation of its own — writing one more giant `ExplicitFunction`
+  wrapping all of them would duplicate exactly the decomposition `cottax`'s graph exists
+  to replace, and (per `spec.py`) a node cannot both read and own
+  `j_tf_wp` or `len_tf_coil` the way the pre-split `WindingPackTotalSize` and `st_coil`'s
+  own inline geometry each do — the same same-`VarPath` conflict either way. `st_coil`'s
+  job is the *composition order/wiring*,
   which belongs in `total_process.py`'s `Graph` assembly (out of this unit's scope, see
   `schema.md`), not in a new node. The pure function is still written and tested (see
   `test_calculate.py::test_st_coil_matches_process_end_to_end`) as the artifact that
@@ -181,9 +324,11 @@ an acknowledged, deliberate gap rather than an oversight.
   `== 6`) and inside `_critical_current_density_by_material` (the 8-way material
   dispatch, mirroring `jcrit_from_material`'s own branches — see `coils.md`/
   `superconductors.md`'s switches tables for the full per-branch reads-set). Kept as a
-  **static field** on `WindingPackTotalSize` (`naming_convention.md`'s "switches are not
-  ports"), same treatment as `EcrhDensityLimit.i_plasma_pedestal`. Not read anywhere in
-  the 10 first-pass functions.
+  **static field** on `WindingPackIntersectInputs` (the pre-`intersect` node, since the
+  material dispatch is entirely upstream of `intersect` — `WindingPackTotalSizePost`
+  needs no `i_tf_sc_mat` at all) and on `WindingPackJTfWp`, unchanged by the later split
+  (`naming_convention.md`'s "switches are not ports"), same treatment as
+  `EcrhDensityLimit.i_plasma_pedestal`. Not read anywhere in the 10 first-pass functions.
 - `_critical_current_density_by_material` is this unit's own local dispatcher, not the
   audited port of `jcrit_from_material` (`coils/coils.py`, unit #10) — it exists
   because `winding_pack_total_size` genuinely needs *a* working dispatch and `coils.py`
@@ -267,16 +412,25 @@ an acknowledged, deliberate gap rather than an oversight.
 
 ## open questions
 1. ~~Is `.stellarator.coilcurrent` the right home...~~ **Resolved** — see the
-   data-footprint note above; `WindingPackTotalSize` reading it confirms the minting.
+   data-footprint note above; `WindingPackIntersectInputs`/`WindingPackTotalSizePost`
+   (the pre-split `WindingPackTotalSize`'s replacement) reading it confirms the minting.
 2. ~~`st_coil`'s inline geometry...~~ **Resolved** — ported as ordinary locals inside
    `st_coil` itself, see the data-footprint table's last rows.
-3. **`WindingPackTotalSize`'s `j_tf_wp` self-loop** (finding 3 above) needs a real
-   design decision before this node can join any `Graph`: mint a `^prev`-style copy for
-   the read side (the "previous value" cottax's fixed-point handling already has a
-   shape for, per `~/jaxgraph/CLAUDE.md`'s "The graph" — "a fixed point is always
-   written with a minted copy") is the most likely answer, but is a genuine open
-   modelling question about what "previous" means once this sits inside a real solver
-   loop rather than PROCESS's own ad hoc re-evaluation — not decided here.
+3. ~~`WindingPackTotalSize`'s `j_tf_wp` self-loop...~~ **Resolved** (later pass, see
+   "cottax node" above): split into `WindingPackJTfWp` (`FixedPointFunction`, owns
+   `.tfcoil.j_tf_wp`) and a `WindingPackTotalSize` (subsequently itself split further,
+   into `WindingPackIntersectInputs`/`WindingPackTotalSizePost` — see item 6 below) that
+   only reads it. `to_graph` confirmed to succeed on both individually and together
+   (`test_calculate.py::test_winding_pack_j_tf_wp_assembles_as_a_fixed_point_node`,
+   `::test_winding_pack_intersect_inputs_node_assembles_and_does_not_own_j_tf_wp`,
+   `::test_winding_pack_total_size_post_node_assembles_and_does_not_own_j_tf_wp`,
+   `::test_winding_pack_intersect_split_assembles_end_to_end`). This is a
+   *representability* fix only, per `next_steps.md` §5's own scoping — no `Drive`/solver
+   algorithm is assigned to the resulting `FixedPoint` problem here, and `st_coil`'s
+   separate, still-open `len_tf_coil` self-loop (finding 2) is untouched by this
+   resolution — same bug class, different `VarPath`, not addressed by this pass since
+   `st_coil` has no node of its own to split in the first place (see "cottax node"
+   above, "No node for `st_coil` itself").
 4. **`_critical_current_density_by_material`'s relationship to unit #10's own eventual
    `jcrit_from_material` port** — flagged under "switches touched": whoever ports
    `coils.py`'s `jcrit_from_material` for real should almost certainly replace this
@@ -288,3 +442,13 @@ an acknowledged, deliberate gap rather than an oversight.
    1]`, not resolved by this unit either) — `st_coil`'s own port takes it as a plain
    explicit argument, same as `mass.py`'s `CoilsMass` already does; the real lookup node
    is still unit #10/whoever's design question, per `mass.md`'s own open question 1.
+6. **[RESOLVED, later pass]** `winding_pack_total_size`'s own internal `intersect` call
+   is now also represented structurally, not just called eagerly — see "cottax node"
+   above, "`winding_pack_total_size` split around `intersect`", and `coils.md`'s
+   `Intersect`/`IntersectBisectionNewtonPolish`. Unlike item 3's `j_tf_wp` split, this
+   one *is* accompanied by a concrete driver (`coils.py`'s
+   `IntersectBisectionNewtonPolish`) — but only for test purposes, constructing a `Drive`
+   used in `test_calculate.py`/`test_coils.py`, not registered anywhere as the graph's
+   real answer. The structural declaration (`Intersect` itself, undriven) stays as
+   swappable as any other undriven problem node in `_audit/next_steps.md` §5's own
+   accounting.

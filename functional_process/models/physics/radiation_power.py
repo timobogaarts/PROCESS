@@ -523,6 +523,29 @@ class ImpurityRadiationTotals(ExplicitFunction):
     **Blocked from `total_process.py` on one thing** -- see `imp_indices` below and the
     record's § open questions 2. Everything else about the node is settled.
 
+    **`f_nd_impurity_electron_array` is read as fourteen individual, index-addressed
+    `Input`s**, not one whole-array `Input` -- the same per-index treatment
+    `physics_B_composition.PlasmaComposition`/`CalculateEffectiveChargeIonisationProfiles`
+    now give the identical field (`SequenceKey`-addressed, matching the real
+    `DataStructure` field's own `list[float]` storage, per `naming_convention.md` §
+    "Array elements"). This is what this class's own `__call__` docstring used to flag
+    as the open reason the array stayed whole: "the number of parameters would then vary
+    with the configuration." **That is resolved, not just worked around**: the signature
+    now declares all fourteen indices unconditionally -- the array's length is fixed at
+    14 for every real `DataStructure` (`initialise_imprad`'s hardcoded per-species
+    arguments never vary the count, only which entries are near-zero), so the *port
+    count* no longer depends on `imp_indices` at all. `imp_indices` still selects which
+    of the fourteen feed `calculate_impurity_radiation_totals`, exactly as before -- only
+    now that selection happens on fourteen individually-named `VarPath`s instead of one
+    array `VarPath`, via `jnp.stack` + a static gather inside `__call__`.
+
+    This narrows, but does not close, § open questions 2: the residual blocker there is
+    whether `imp_indices` can silently disagree with which fractions are actually
+    near-zero *during a solve* (the `f_plasma_fuel_helium3 == 0 and
+    f_nd_alpha_thermal_electron == 0` case) -- a data-dependent shape-stability question,
+    not a signature-shape one. Per-index addressing does not touch that; see the record's
+    updated § open questions 2 for exactly what remains.
+
     Three minted `VarPath`s, same justification as `ProfileFactors`' two in
     `plasma_profiles.py`:
 
@@ -569,6 +592,14 @@ class ImpurityRadiationTotals(ExplicitFunction):
     That is a per-run configuration fact, so `imp_indices` *can* be resolved at assembly
     time; nothing in `configuration.py` does it or checks it yet. See the record's § open
     questions 2.
+
+    **Not a signature-shape blocker any more.** Before per-index `Input`s, this field's
+    docstring on `__call__` also worried that addressing individual species by `Input`
+    would make the node's own *parameter count* vary with `imp_indices` -- it does not:
+    `__call__` now always declares fourteen `Input`s (one per index, unconditionally),
+    and `imp_indices` only selects a static gather over them, exactly as it selected a
+    gather over the one whole-array `Input` before. Only the shape-*during-a-solve*
+    question above remains open.
     """
 
     pden_impurity_rad_total_mw = Output(
@@ -585,8 +616,47 @@ class ImpurityRadiationTotals(ExplicitFunction):
         temp_electron_profile_kev=Input(
             lambda s: s.physics.temp_plasma_electron_profile_kev
         ),
-        f_nd_impurity_electron_array=Input(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array
+        f_nd_impurity_electron_array_0=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0]
+        ),
+        f_nd_impurity_electron_array_1=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1]
+        ),
+        f_nd_impurity_electron_array_2=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[2]
+        ),
+        f_nd_impurity_electron_array_3=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[3]
+        ),
+        f_nd_impurity_electron_array_4=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[4]
+        ),
+        f_nd_impurity_electron_array_5=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[5]
+        ),
+        f_nd_impurity_electron_array_6=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[6]
+        ),
+        f_nd_impurity_electron_array_7=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[7]
+        ),
+        f_nd_impurity_electron_array_8=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[8]
+        ),
+        f_nd_impurity_electron_array_9=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[9]
+        ),
+        f_nd_impurity_electron_array_10=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[10]
+        ),
+        f_nd_impurity_electron_array_11=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[11]
+        ),
+        f_nd_impurity_electron_array_12=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[12]
+        ),
+        f_nd_impurity_electron_array_13=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[13]
         ),
         temp_impurity_kev_array=Input(
             lambda s: s.impurity_radiation.temp_impurity_keV_array
@@ -601,15 +671,41 @@ class ImpurityRadiationTotals(ExplicitFunction):
             lambda s: s.impurity_radiation.f_p_plasma_core_rad_reduction
         ),
     ):
-        """Reads the full 14-species arrays and selects `imp_indices` before forwarding.
+        """Reassembles the fourteen individually-addressed fractions and selects
+        `imp_indices` before forwarding.
 
-        The three per-species arrays are declared whole rather than one `Input` per
-        selected species, because `Input`'s recorder does support `[i]` but the number of
-        parameters would then vary with the configuration, and `NodalDeclaration` requires
-        an explicit fixed signature. The selection is a gather on the read, not a second
-        home for the arithmetic.
+        Each species' fraction is its own `Input` (`SequenceKey`-addressed `VarPath`,
+        one per index) rather than one whole-array `Input` -- fourteen ports, always,
+        regardless of `imp_indices`, so the signature stays fixed as
+        `NodalDeclaration` requires. `imp_indices` only changes which of the fourteen
+        are gathered out before being handed to `calculate_impurity_radiation_totals`
+        -- the selection is a gather on the (now reassembled) read, not a second home
+        for the arithmetic, same as before this change. The two 200-wide table
+        arguments stay whole-array `Input`s: they are compile-time constants, not
+        per-species runtime values a caller would ever address individually.
         """
-        selected = list(self.imp_indices)
+        f_nd_impurity_electron_array = jnp.stack([
+            f_nd_impurity_electron_array_0,
+            f_nd_impurity_electron_array_1,
+            f_nd_impurity_electron_array_2,
+            f_nd_impurity_electron_array_3,
+            f_nd_impurity_electron_array_4,
+            f_nd_impurity_electron_array_5,
+            f_nd_impurity_electron_array_6,
+            f_nd_impurity_electron_array_7,
+            f_nd_impurity_electron_array_8,
+            f_nd_impurity_electron_array_9,
+            f_nd_impurity_electron_array_10,
+            f_nd_impurity_electron_array_11,
+            f_nd_impurity_electron_array_12,
+            f_nd_impurity_electron_array_13,
+        ])
+        # A jax array (which `jnp.stack` above always produces) refuses list-shaped
+        # fancy indexing outright (`arr[[0, 8]]` raises `TypeError`, not merely a
+        # deprecation warning -- jax's own message: "use `arr[array(seq)]`"), unlike
+        # a bare numpy array. `jnp.array(...)` once, reused for all three gathers,
+        # is the fix and matches every other gather in this codebase.
+        selected = jnp.array(self.imp_indices)
         return calculate_impurity_radiation_totals(
             profile_x,
             nd_electron_profile,

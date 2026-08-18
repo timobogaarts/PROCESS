@@ -79,16 +79,20 @@ def test_ipowerflow_decides_whether_the_graph_has_a_cycle():
     one fused node branching internally: no such node could express "this configuration
     has no cycle", and the whole point of `_audit/next_steps.md` § 5 is to ask exactly
     that question of the real graph.
+
+    Checks for this specific SCC's presence/absence in `.cycles`, not indices into it or
+    overall `.is_acyclic` -- the graph also carries several *unconditional* declared
+    `FixedPoint` self-loops by now (`EtathLiqStep`, `DeltaEtaStep`, `WindingPackJTfWp`,
+    and others -- each a genuine Shape-B single-node loop, not a modelling accident, see
+    `_audit/next_steps.md` §5), so both configurations are `not is_acyclic` and the
+    number/order of entries in `.cycles` is not stable across unrelated registrations.
     """
     coupled = graph_for(Configuration({".heat_transport.ipowerflow": 1}))
     uncoupled = graph_for(Configuration({".heat_transport.ipowerflow": 0}))
 
-    assert not coupled.is_acyclic
-    assert {n.path_str() for n in coupled.cycles[0]} == {
-        "['Divertor']",
-        "['AFwTotalWithPowerflow']",
-    }
-    assert uncoupled.is_acyclic
+    divertor_cycle = {"['Divertor']", "['AFwTotalWithPowerflow']"}
+    assert divertor_cycle in [{n.path_str() for n in c} for c in coupled.cycles]
+    assert divertor_cycle not in [{n.path_str() for n in c} for c in uncoupled.cycles]
 
 
 def test_default_configuration_matches_process_defaults():

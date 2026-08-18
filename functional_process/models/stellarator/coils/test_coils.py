@@ -2,7 +2,13 @@
 
 from types import MappingProxyType
 
+import jax.numpy as jnp
 import numpy as np
+import pytest
+from cottax.evaluate import schedule_for
+from cottax.interfaces.pytree_namespace_module import path_of, to_graph
+from cottax.problem import RootFind
+from cottax.spec import VarPath
 
 from functional_process._harness import (
     Sample,
@@ -11,17 +17,31 @@ from functional_process._harness import (
     legacy_sample,
 )
 from functional_process.models.stellarator.coils.coils import (
+    Intersect,
+    IntersectBisectionNewtonPolish,
     bmax_from_awp,
     intersect,
     intersect_residual,
     j_crit_cable_from_fraction,
+    jcrit_from_material_bi2212,
+    jcrit_from_material_gl_nbti,
+    jcrit_from_material_gl_rebco,
+    jcrit_from_material_iter_nb3sn,
+    jcrit_from_material_iter_nb3sn_user_defined,
+    jcrit_from_material_nbti_lubell,
+    jcrit_from_material_rebco,
+    jcrit_from_material_wst_nb3sn,
 )
 from process.core.model import DataStructure
+from process.models import superconductors as _process_superconductors
 from process.models.stellarator.coils.coils import (
     intersect as _process_intersect,
 )
 from process.models.stellarator.coils.coils import (
     j_crit_cable_from_fraction as _process_j_crit_cable_from_fraction,
+)
+from process.models.stellarator.coils.coils import (
+    jcrit_from_material as _process_jcrit_from_material,
 )
 
 
@@ -48,6 +68,303 @@ def _reference_bmax_from_awp(
         r_coil_minor=r_coil_minor,
         data=data,
     )
+
+
+def _reference_jcrit_branch(i_tf_sc_mat, **overrides):
+    """Call PROCESS's real `jcrit_from_material` dispatcher, one branch fixed.
+
+    `jcrit_from_material` takes all 11 of its arguments regardless of which
+    `i_tf_sc_mat` branch actually reads them (`coils.md`/`superconductors.md`'s
+    per-branch reads-set table) -- unused slots are filled with `0.0` here, since the
+    branch under test never reads them (confirmed by the reads-set audit, not assumed).
+    """
+    kwargs = dict(
+        b_crit_upper_nbti=0.0,
+        b_crit_sc=0.0,
+        f_a_tf_turn_cable_copper=0.0,
+        f_hts=0.0,
+        t_crit_nbti=0.0,
+        t_crit_sc=0.0,
+        f_a_tf_turn_cable_space_extra_void=0.0,
+        j_wp=0.0,
+    )
+    kwargs.update(overrides)
+    return _process_jcrit_from_material(i_tf_sc_mat=i_tf_sc_mat, **kwargs)
+
+
+def _reference_jcrit_iter_nb3sn(t_helium, b_max):
+    return _reference_jcrit_branch(1, b_max=b_max, t_helium=t_helium)
+
+
+def _reference_jcrit_nbti_lubell(t_helium, b_max):
+    return _reference_jcrit_branch(3, b_max=b_max, t_helium=t_helium)
+
+
+def _reference_jcrit_iter_nb3sn_user_defined(t_helium, b_max, bcritsc, tcritsc):
+    return _reference_jcrit_branch(
+        4, b_max=b_max, t_helium=t_helium, b_crit_sc=bcritsc, t_crit_sc=tcritsc
+    )
+
+
+def _reference_jcrit_wst_nb3sn(t_helium, b_max):
+    return _reference_jcrit_branch(5, b_max=b_max, t_helium=t_helium)
+
+
+def _reference_jcrit_gl_nbti(t_helium, b_max, b_crit_upper_nbti, t_crit_nbti):
+    return _reference_jcrit_branch(
+        7,
+        b_max=b_max,
+        t_helium=t_helium,
+        b_crit_upper_nbti=b_crit_upper_nbti,
+        t_crit_nbti=t_crit_nbti,
+    )
+
+
+def _reference_jcrit_gl_rebco(t_helium, b_max):
+    return _reference_jcrit_branch(8, b_max=b_max, t_helium=t_helium)
+
+
+def _reference_jcrit_bi2212(
+    t_helium, b_max, j_tf_wp, f_a_tf_turn_cable_space_extra_void, fhts, f_a_tf_turn_cable_copper
+):
+    return _reference_jcrit_branch(
+        2,
+        b_max=b_max,
+        t_helium=t_helium,
+        j_wp=j_tf_wp,
+        f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+        f_hts=fhts,
+        f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+    )
+
+
+def _reference_jcrit_rebco(t_helium, b_max):
+    """PROCESS's real `i_tf_sc_mat == 6` call site is unreachable, not a ground truth.
+
+    `jcrit_from_material`'s own `i_tf_sc_mat == 6` branch calls
+    `superconductors.jcrit_rebco(t_helium, b_max, 0)` -- three positional arguments to a
+    two-argument function -- so it raises `TypeError` unconditionally, confirmed directly
+    (see `coils.md`'s open question / `superconductors.md`'s open question 1). There is no
+    PROCESS answer to treat as ground truth for this branch, so this reference instead
+    calls `superconductors.jcrit_rebco` correctly (the same fix
+    `jcrit_from_material_rebco`/`calculate.py`'s `_critical_current_density_by_material`
+    already apply) and reproduces the rest of the branch's real post-processing (the
+    `max(1e-9, ...)` floor, the `1e-6` scaling) by hand -- this is what the port's own
+    branch does, so this is the correct oracle for it, not the (unreachable) dispatcher.
+    """
+    j_crit_sc, _validity, _b_c20max, _temp_c0max = _process_superconductors.jcrit_rebco(
+        t_helium, b_max
+    )
+    return max(1.0e-9, j_crit_sc) * 1.0e-6
+
+
+class TestJcritFromMaterialIterNb3sn(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 1` (ITER Nb3Sn) -> `jcrit_from_material_iter_nb3sn`."""
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_iter_nb3sn)
+    ported = jcrit_from_material_iter_nb3sn
+
+    samples = [
+        Sample(
+            MappingProxyType({"t_helium": 4.75, "b_max": 10.0}),
+            "synthetic",
+            "below-bc20m",
+        ),
+        Sample(
+            MappingProxyType({"t_helium": 4.75, "b_max": 40.0}),
+            "synthetic",
+            "above-bc20m",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 15.5),
+        "b_max": (0.5, 40.0),
+    }
+
+
+class TestJcritFromMaterialBi2212(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 2` (Bi-2212) -> `jcrit_from_material_bi2212`."""
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_bi2212)
+    ported = jcrit_from_material_bi2212
+
+    samples = [
+        Sample(
+            MappingProxyType({
+                "t_helium": 4.75,
+                "b_max": 8.0,
+                "j_tf_wp": 5.0e5,
+                "f_a_tf_turn_cable_space_extra_void": 0.3,
+                "fhts": 0.5,
+                "f_a_tf_turn_cable_copper": 0.4,
+            }),
+            "synthetic",
+            "in-range",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 10.0),
+        "b_max": (6.5, 20.0),
+        "j_tf_wp": (1.0e5, 3.0e7),
+        "f_a_tf_turn_cable_space_extra_void": (0.0, 0.6),
+        "fhts": (0.1, 1.0),
+        "f_a_tf_turn_cable_copper": (0.0, 0.6),
+    }
+
+
+class TestJcritFromMaterialNbtiLubell(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 3` (NbTi, Lubell) -> `jcrit_from_material_nbti_lubell`."""
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_nbti_lubell)
+    ported = jcrit_from_material_nbti_lubell
+
+    samples = [
+        Sample(
+            MappingProxyType({"t_helium": 4.75, "b_max": 8.0}),
+            "synthetic",
+            "below-bc20m",
+        ),
+        Sample(
+            MappingProxyType({"t_helium": 4.75, "b_max": 20.0}),
+            "synthetic",
+            "above-bc20m",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 9.0),
+        "b_max": (0.5, 20.0),
+    }
+
+
+class TestJcritFromMaterialIterNb3snUserDefined(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 4` -> `jcrit_from_material_iter_nb3sn_user_defined`."""
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_iter_nb3sn_user_defined)
+    ported = jcrit_from_material_iter_nb3sn_user_defined
+
+    samples = [
+        Sample(
+            MappingProxyType({
+                "t_helium": 4.75,
+                "b_max": 15.0,
+                "bcritsc": 22.0,
+                "tcritsc": 12.0,
+            }),
+            "synthetic",
+            "user-defined",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 15.5),
+        "b_max": (0.5, 30.0),
+        "bcritsc": (25.0, 35.0),
+        "tcritsc": (14.0, 18.0),
+    }
+
+
+class TestJcritFromMaterialWstNb3sn(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 5` (WST Nb3Sn) -> `jcrit_from_material_wst_nb3sn`."""
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_wst_nb3sn)
+    ported = jcrit_from_material_wst_nb3sn
+
+    samples = [
+        Sample(
+            MappingProxyType({"t_helium": 4.75, "b_max": 20.0}),
+            "synthetic",
+            "in-range",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 15.0),
+        "b_max": (0.5, 26.0),
+    }
+
+
+class TestJcritFromMaterialRebco(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 6` (REBCO) -> `jcrit_from_material_rebco`.
+
+    See `_reference_jcrit_rebco`'s docstring: PROCESS's own dispatcher raises
+    unconditionally for this branch (a real bug, not reproduced), so the reference here
+    calls `superconductors.jcrit_rebco` correctly instead of going through
+    `jcrit_from_material`.
+    """
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_rebco)
+    ported = jcrit_from_material_rebco
+
+    samples = [
+        Sample(
+            MappingProxyType({"t_helium": 4.75, "b_max": 10.0}),
+            "synthetic",
+            "in-range",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 60.0),
+        "b_max": (0.5, 14.0),
+    }
+
+
+class TestJcritFromMaterialGlNbti(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 7` (Durham GL Nb-Ti) -> `jcrit_from_material_gl_nbti`."""
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_gl_nbti)
+    ported = jcrit_from_material_gl_nbti
+
+    samples = [
+        Sample(
+            MappingProxyType({
+                "t_helium": 4.75,
+                "b_max": 6.0,
+                "b_crit_upper_nbti": 14.0,
+                "t_crit_nbti": 8.5,
+            }),
+            "synthetic",
+            "in-range",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 9.0),
+        "b_max": (0.5, 12.0),
+        "b_crit_upper_nbti": (7.0, 12.0),
+        "t_crit_nbti": (10.0, 16.0),
+    }
+
+
+class TestJcritFromMaterialGlRebco(Tier1Contract):
+    """`jcrit_from_material`, `i_tf_sc_mat == 8` (Durham GL REBCO) -> `jcrit_from_material_gl_rebco`."""
+
+    audit_record = "models/stellarator/coils/coils.md"
+    reference = staticmethod(_reference_jcrit_gl_rebco)
+    ported = jcrit_from_material_gl_rebco
+
+    samples = [
+        Sample(
+            MappingProxyType({"t_helium": 4.75, "b_max": 15.0}),
+            "synthetic",
+            "in-range",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "t_helium": (1.0, 9.0),
+        "b_max": (0.5, 30.0),
+    }
 
 
 class TestJCritCableFromFraction(Tier1Contract):
@@ -209,3 +526,103 @@ class TestIntersect(Tier2Contract):
     residual = staticmethod(eqx.filter_jit(_intersect_residual_for_contract))
 
     samples = _intersect_samples()
+
+
+# ---------------------------------------------------------------------------
+# `Intersect` -- `intersect` as a genuine `ImplicitFunction`/`RootFind` pair, plus a
+# concrete, test-only `AbstractDriver` (`IntersectBisectionNewtonPolish`) wrapping
+# `intersect`'s own bisection-then-Newton-polish algorithm exactly.
+#
+# `next_steps.md` §7 already established that nothing else in the graph needs
+# `intersect`'s internal unknowns visible -- that conclusion is unchanged here. The
+# reason to declare `Intersect` anyway: the solver algorithm becomes a first-class,
+# swappable `Drive` choice instead of something hardcoded inside `intersect`'s own body.
+# These checks are the actual point: prove the structure assembles and that a concrete
+# driver still recovers exactly `intersect`'s own answer, not just assert it.
+# ---------------------------------------------------------------------------
+
+
+def test_intersect_declares_a_body_and_a_root_find_problem():
+    """`to_graph(Intersect())` must assemble cleanly into exactly two nodes: the
+    `residual` body (a `CallableNode`) and the `RootFind` problem it feeds -- the pair
+    `ImplicitFunction.node_definitions_and_names` documents.
+    """
+    node = Intersect()
+    graph = to_graph(node)
+    assert len(graph.definitions) == 2
+    assert not graph.is_acyclic
+    assert graph.declared == (node.problem_name,)
+    assert graph.problem_type is RootFind
+
+
+def test_intersect_body_reads_the_unknown_back_without_owning_it():
+    """`residual` reads `.stellarator.wp_width_r_min` (the same `VarPath` its own
+    `Output` declares) alongside the two curves -- not a self-loop: the body node only
+    *reads* the real path and *writes* the minted `^cond` copy; the separate `RootFind`
+    problem node is the one that actually owns `.stellarator.wp_width_r_min`.
+    """
+    node = Intersect()
+    body, problem = node.node_definitions
+    unknown = path_of(lambda s: s.stellarator.wp_width_r_min, VarPath)
+    assert unknown in body.reads
+    assert unknown not in body.owns
+    assert problem.owns == (unknown,)
+    assert problem.reads == body.owns
+
+
+def test_intersect_has_no_port_for_xin():
+    """`intersect`'s `xin` argument has no place in `Intersect`'s declared interface at
+    all -- `residual` declares exactly 4 `Input`s (the unknown plus the two curves), one
+    fewer than `intersect`'s own 5-argument signature -- confirming `coils.md`'s open
+    question 2 directly rather than merely asserting it.
+    """
+    node = Intersect()
+    assert len(node.inputs) == 4
+    assert intersect.__code__.co_argcount == 5
+
+
+def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersect():
+    """The actual numeric point: driving `Intersect`'s declared `RootFind` with
+    `IntersectBisectionNewtonPolish` (test-only, wraps `intersect` exactly) must recover
+    precisely the value `intersect` itself computes on the same curves -- same algorithm,
+    reached through the new structural/driven path instead of a plain eager call.
+
+    Reuses `_intersect_samples()` (the same curated crossing-curve samples
+    `TestIntersect` itself checks against PROCESS) rather than inventing a new fixture --
+    this is checking the *port's own* two ways of getting an answer agree, not a fresh
+    correctness claim about `intersect` itself.
+    """
+    node = Intersect()
+    schedule = schedule_for(
+        to_graph(node), {node.problem_name: IntersectBisectionNewtonPolish()}
+    )
+    wp_width_r_path = path_of(lambda s: s.stellarator.wp_width_r, VarPath)
+    lhs_path = path_of(lambda s: s.stellarator.lhs, VarPath)
+    rhs_path = path_of(lambda s: s.stellarator.rhs, VarPath)
+    wp_width_r_min_path = path_of(lambda s: s.stellarator.wp_width_r_min, VarPath)
+
+    for sample in _intersect_samples():
+        kwargs = sample.kwargs
+        env = {
+            wp_width_r_path: jnp.asarray(kwargs["x1"]),
+            lhs_path: jnp.asarray(kwargs["y1"]),
+            rhs_path: jnp.asarray(kwargs["y2"]),
+            # Seed the same starting guess `intersect` itself was called with below --
+            # `Drive.__call__` treats an already-present unknown as the driver's `start`
+            # (see `evaluate.py`). Some `_crossing_curve_case` samples have more than one
+            # genuine crossing in-domain (only the *sign* of the endpoints is pinned, not
+            # the interior), so bisection's own answer can genuinely depend on where it
+            # starts -- matching `xin` here is what makes this an apples-to-apples check
+            # of "same algorithm, driven instead of eager", not a claim that any starting
+            # guess reaches the same root.
+            wp_width_r_min_path: jnp.asarray(kwargs["xin"]),
+        }
+        out = schedule(env)
+        want = intersect(
+            jnp.asarray(kwargs["x1"]),
+            jnp.asarray(kwargs["y1"]),
+            jnp.asarray(kwargs["x2"]),
+            jnp.asarray(kwargs["y2"]),
+            kwargs["xin"],
+        )
+        assert out[wp_width_r_min_path] == pytest.approx(float(want)), sample.label

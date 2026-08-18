@@ -16,8 +16,18 @@ was computed by calling it, so a regression in its output would show up as a val
 mismatch downstream.
 """
 
+import pytest
+from cottax.interfaces.pytree_namespace_module import Output, to_graph
+from cottax.problem import FixedPoint
+from cottax.spec import CallableNode
+
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.availability import (
+    Avail,
+    Avail2,
+    AvailSt,
+    CplifeAvail,
+    CplifeAvailSt,
     calculate_avail,
     calculate_avail_2,
     calculate_avail_st,
@@ -25,6 +35,9 @@ from functional_process.models.availability import (
     calculate_blanket_lifetime_fpy_simple,
     calculate_cp_lifetime_resistive,
     calculate_cp_lifetime_superconducting,
+    calculate_cplife_avail_st_next,
+    calculate_cplife_lifetime_adjustment,
+    calculate_cplife_next,
     calculate_divertor_lifetime,
     calculate_dpa_per_fpy,
     calculate_redun_vac,
@@ -497,7 +510,8 @@ def _reference_blanket_lifetime_fpy_simple(
 
 class TestBlanketLifetimeFpySimple(Tier1Contract):
     """`calc_u_planned`/`avail_st`'s blanket-lifetime block ->
-    `calculate_blanket_lifetime_fpy_simple`."""
+    `calculate_blanket_lifetime_fpy_simple`.
+    """
 
     audit_record = "models/availability.md"
     reference = _reference_blanket_lifetime_fpy_simple
@@ -652,7 +666,8 @@ def _reference_ward_taylor_availability(
     computes `life_div_fpy`/`life_blkt_fpy` itself earlier in the same call, so this
     unit cannot be exercised through `avail()` without also fixing those upstream
     values; verified against `avail()` with real upstream inputs during porting -- see
-    the audit record)."""
+    the audit record).
+    """
     a = _availability()
     a.data.costs.life_div_fpy = life_div_fpy
     a.data.fwbs.life_blkt_fpy = life_blkt_fpy
@@ -953,7 +968,8 @@ class TestAvail2(Tier1Contract):
     @staticmethod
     def ported(**kwargs):
         """`calculate_avail_2`, dropping `u_planned`/`u_unplanned` (no `VarPath`, see
-        the module docstring) so the return shape matches `reference`'s 7-tuple."""
+        the module docstring) so the return shape matches `reference`'s 7-tuple.
+        """
         (
             life_blkt_fpy,
             life_div_fpy,
@@ -1166,7 +1182,8 @@ class TestAvailSt(Tier1Contract):
         """`calculate_cp_lifetime_resistive` + `calculate_avail_st`, dropping
         `maint_cycle`/`n_cycles_main`/`n_centre_cols`/`u_planned`/`u_unplanned` (no
         `VarPath`, see the module docstring) so the return shape matches `reference`'s
-        7-tuple."""
+        7-tuple.
+        """
         cplife = calculate_cp_lifetime_resistive(
             kwargs["cpstflnc"], kwargs["pflux_fw_neutron_mw"], kwargs["life_plant"]
         )
@@ -1279,3 +1296,328 @@ class TestAvailSt(Tier1Contract):
         "ibkt_life": 0,
         "itart": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# `.costs.cplife`'s Shape B self-reference (`next_steps.md` §5) -- the split's own new
+# pure functions, `calculate_cplife_lifetime_adjustment`/`calculate_cplife_next`/
+# `calculate_cplife_avail_st_next`, that `CplifeAvail`/`CplifeAvailSt` wrap.
+# ---------------------------------------------------------------------------
+
+
+def _reference_cplife_lifetime_adjustment(cplife, life_plant, f_t_plant_available):
+    """Reproduce the `if cplife < life_plant: cplife = min(cplife / f_t_plant_available,
+    life_plant)` block directly (not independently callable through PROCESS -- it is
+    inlined three times, in `avail`, `avail_2`, `avail_st`).
+    """
+    if cplife < life_plant:
+        return min(cplife / f_t_plant_available, life_plant)
+    return cplife
+
+
+class TestCplifeLifetimeAdjustment(Tier1Contract):
+    """The `itart == 1` lifetime-adjustment block ->
+    `calculate_cplife_lifetime_adjustment`.
+    """
+
+    audit_record = "models/availability.md"
+    reference = _reference_cplife_lifetime_adjustment
+    ported = calculate_cplife_lifetime_adjustment
+
+    samples = [
+        legacy_sample(
+            "cplife-adjustment-below-cap",
+            cplife=6.0,
+            life_plant=30.0,
+            f_t_plant_available=0.6,
+        ),
+        legacy_sample(
+            "cplife-adjustment-already-at-plant-life",
+            cplife=35.0,
+            life_plant=30.0,
+            f_t_plant_available=0.6,
+        ),
+    ]
+    fuzz_bounds = {
+        "cplife": (1.0, 15.0),
+        "life_plant": (20.0, 40.0),
+        "f_t_plant_available": (0.3, 0.95),
+    }
+
+
+def _reference_cplife_next(
+    cplife,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    pflux_fw_neutron_mw,
+    life_plant,
+    f_t_plant_available,
+    *,
+    i_tf_sup,
+    itart,
+):
+    """Reproduce `.costs.cplife`'s value after one real `avail()` call, isolating just
+    the centrepost-lifetime handling `CplifeAvail` ports. `i_plant_availability = 0`
+    (USER_INPUT) so `f_t_plant_available` is a genuinely free input -- `avail()` never
+    touches it on that branch (see the module docstring) -- unlike `avail_st()`, where
+    it is derived internally; see `_reference_cplife_avail_st_next`'s docstring for why
+    that one is not a `Tier1Contract`. `ibkt_life = 1` (DEMO) so the unrelated
+    blanket-lifetime block does not also depend on `pflux_fw_neutron_mw`, which this
+    contract varies for the resistive centrepost formula.
+    """
+    a = _availability()
+    a.data.ife.ife = 0
+    a.data.costs.i_plant_availability = 0
+    a.data.costs.f_t_plant_available = f_t_plant_available
+    a.data.physics.itart = itart
+    a.data.tfcoil.i_tf_sup = i_tf_sup
+    a.data.fwbs.neut_flux_cp = neut_flux_cp
+    a.data.constraints.flu_tf_neutron_fast_max = flu_tf_neutron_fast_max
+    a.data.costs.cpstflnc = cpstflnc
+    a.data.physics.pflux_fw_neutron_mw = pflux_fw_neutron_mw
+    a.data.costs.life_plant = life_plant
+    a.data.costs.cplife = cplife
+    # Everything else `avail()` touches, fixed away from any domain edge -- unrelated to
+    # what this contract checks.
+    a.data.physics.p_fusion_total_mw = 4.0e3
+    a.data.fwbs.life_fw_fpy = 1.0
+    a.data.costs.life_dpa = 40.0
+    a.data.costs.ibkt_life = 1
+    a.data.divertor.pflux_div_heat_load_mw = 10.0
+    a.data.costs.adivflnc = 8.0
+    a.data.times.t_plant_pulse_total = 5.0e3
+    a.data.times.t_plant_pulse_burn = 500.0
+    a.avail(output=False)
+    return a.data.costs.cplife
+
+
+class TestCplifeNext(Tier1Contract):
+    """`.costs.cplife`'s next value across one `avail()`/`avail_2()` call ->
+    `calculate_cplife_next` -- `CplifeAvail`'s `step`.
+
+    Legacy samples cover all three shapes: `itart != 1` (identity pass-through,
+    `i_tf_sup` irrelevant), `itart == 1` with each `i_tf_sup` alternative. Fuzzing is
+    restricted to the `itart == 1`/`i_tf_sup == 1` (superconducting) branch --
+    `neut_flux_cp`/`flu_tf_neutron_fast_max` are bounded tighter than
+    `TestCpLifetimeSuperconducting`'s own range so the recomputed value never
+    approaches `calculate_cp_lifetime_superconducting`'s *own*
+    `jnp.minimum(..., life_plant)` cap, which would otherwise put a second, unrelated
+    kink right at this function's own `cplife < life_plant` boundary.
+    """
+
+    audit_record = "models/availability.md"
+    reference = _reference_cplife_next
+    ported = calculate_cplife_next
+    static_argnames = ("i_tf_sup", "itart")
+
+    samples = [
+        legacy_sample(
+            "cplife-next-pass-through",
+            cplife=11.0,
+            neut_flux_cp=5.0e14,
+            flu_tf_neutron_fast_max=1.0e23,
+            cpstflnc=20.0,
+            pflux_fw_neutron_mw=5.0,
+            life_plant=30.0,
+            f_t_plant_available=0.6,
+            i_tf_sup=1,
+            itart=0,
+        ),
+        legacy_sample(
+            "cplife-next-superconducting",
+            cplife=11.0,
+            neut_flux_cp=5.0e14,
+            flu_tf_neutron_fast_max=1.0e23,
+            cpstflnc=20.0,
+            pflux_fw_neutron_mw=5.0,
+            life_plant=30.0,
+            f_t_plant_available=0.6,
+            i_tf_sup=1,
+            itart=1,
+        ),
+        legacy_sample(
+            "cplife-next-resistive",
+            cplife=11.0,
+            neut_flux_cp=5.0e14,
+            flu_tf_neutron_fast_max=1.0e23,
+            cpstflnc=20.0,
+            pflux_fw_neutron_mw=5.0,
+            life_plant=30.0,
+            f_t_plant_available=0.6,
+            i_tf_sup=0,
+            itart=1,
+        ),
+    ]
+    fuzz_bounds = {
+        "cplife": (1.0, 15.0),
+        "neut_flux_cp": (3.0e14, 1.0e15),
+        "flu_tf_neutron_fast_max": (1.0e22, 3.0e22),
+        "life_plant": (25.0, 40.0),
+        "f_t_plant_available": (0.3, 0.95),
+    }
+    fuzz_fixed = {
+        "cpstflnc": 20.0,
+        "pflux_fw_neutron_mw": 5.0,
+        "i_tf_sup": 1,
+        "itart": 1,
+    }
+
+
+def _reference_cplife_avail_st_next(*, i_tf_sup, itart):
+    """Reproduce `.costs.cplife`'s value after one real `avail_st()` call, for a fixed
+    set of inputs (`_AVAIL_ST_FIXED_INPUTS` below).
+
+    **Not a `Tier1Contract`, deliberately**, unlike `TestCplifeNext`: `avail_st()`
+    computes `.costs.f_t_plant_available` *internally* (from `u_planned`/`u_unplanned`,
+    which themselves depend on `cplife` through `shortest_lifetime` -- see `AvailSt`'s
+    docstring), so it is not a free input the way it is in `avail()`'s USER_INPUT branch.
+    `calculate_cplife_avail_st_next` takes it as a plain argument regardless (matching
+    real PROCESS's own call order: `f_t_plant_available` is computed once, earlier in
+    `avail_st()`, then used for the later cplife adjustment). A `Tier1Contract`
+    differentiates every argument independently, including `f_t_plant_available`; doing
+    that against this reference would compare the port's real partial derivative to a
+    finite difference that also captures `f_t_plant_available`'s *own* dependence on the
+    perturbed argument -- not the same quantity, and a guaranteed spurious disagreement,
+    not a bug in either side. The value-level check below (`test_cplife_avail_st_next_*`)
+    still verifies the port against a real `avail_st()` run for both `i_tf_sup`
+    alternatives and both `itart` values.
+    """
+    a = _availability()
+    a.data.costs.ibkt_life = 0
+    a.data.costs.abktflnc = 10.0
+    a.data.physics.pflux_fw_neutron_mw = 10.0
+    a.data.costs.life_dpa = 50.0
+    a.data.physics.p_fusion_total_mw = 0.0
+    a.data.costs.adivflnc = 15.0
+    a.data.divertor.pflux_div_heat_load_mw = 10.0
+    a.data.costs.life_plant = 30.0
+    a.data.costs.tmain = 0.5
+    a.data.tfcoil.temp_tf_superconductor_margin_min = 1.5
+    a.data.tfcoil.temp_cs_superconductor_margin_min = 1.5
+    a.data.costs.conf_mag = 1.0
+    a.data.tfcoil.temp_margin = 2.0
+    a.data.costs.num_rh_systems = 5.0
+    a.data.vacuum.n_vac_pumps_high = 0
+    a.data.costs.redun_vac = 0
+    a.data.costs.u_unplanned_cp = 0.05
+    a.data.times.t_plant_pulse_burn = 5.0
+    a.data.times.t_plant_pulse_total = 5.0e5
+    a.data.physics.itart = itart
+    a.data.tfcoil.i_tf_sup = i_tf_sup
+    a.data.fwbs.neut_flux_cp = 5.0e14
+    a.data.constraints.flu_tf_neutron_fast_max = 1.0e23
+    a.data.costs.cpstflnc = 20.0
+    a.avail_st(output=False)
+    return a.data.costs.cplife, a.data.costs.f_t_plant_available
+
+
+@pytest.mark.parametrize("i_tf_sup", [1, 0])
+@pytest.mark.parametrize("itart", [0, 1])
+def test_cplife_avail_st_next_matches_avail_st(i_tf_sup, itart):
+    """`calculate_cplife_avail_st_next` reproduces `.costs.cplife` from a real
+    `avail_st()` call, fed the *same* run's own `f_t_plant_available` -- see
+    `_reference_cplife_avail_st_next`'s docstring for why this is a direct value check
+    rather than a `Tier1Contract`.
+    """
+    expected_cplife, f_t_plant_available = _reference_cplife_avail_st_next(
+        i_tf_sup=i_tf_sup, itart=itart
+    )
+    actual = calculate_cplife_avail_st_next(
+        neut_flux_cp=5.0e14,
+        flu_tf_neutron_fast_max=1.0e23,
+        cpstflnc=20.0,
+        pflux_fw_neutron_mw=10.0,
+        life_plant=30.0,
+        f_t_plant_available=f_t_plant_available,
+        i_tf_sup=i_tf_sup,
+        itart=itart,
+    )
+    assert float(actual) == pytest.approx(expected_cplife, rel=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Graph assembly -- the whole point of this split (`next_steps.md` §5): `to_graph` on the
+# pre-split `Avail`/`Avail2`/`AvailSt` raised `ValueError: reads ['.costs.cplife'], which
+# it also owns`. Confirms it no longer does, for every one of the five new/changed node
+# classes, standalone and (for one representative pair each) combined.
+# ---------------------------------------------------------------------------
+
+CPLIFE_VAR = Output(lambda s: s.costs.cplife).port().var
+"""`.costs.cplife` as a `VarPath`, for the assembly assertions below."""
+
+
+def test_cplife_avail_to_graph_assembles():
+    """`CplifeAvail` is a genuine Shape B self-loop, cut by `FixedPointFunction` -- its
+    body reads the real `.costs.cplife` (the `itart != 1` pass-through branch), so the
+    body+problem pair is cyclic *by construction* (same as `plasma_composition`'s
+    `first_call`), unlike `CplifeAvailSt` below.
+    """
+    graph = to_graph(CplifeAvail(i_tf_sup=1, itart=1))
+    node = CplifeAvail(i_tf_sup=1, itart=1)
+    body, problem = graph[node.name], graph[node.problem_name]
+    assert isinstance(body, CallableNode)
+    assert isinstance(problem, FixedPoint)
+    assert problem.owns == (CPLIFE_VAR,)
+    assert not graph.is_acyclic
+
+
+def test_cplife_avail_st_to_graph_assembles():
+    """`CplifeAvailSt` also cuts a Shape B self-loop, but its `step` never reads
+    `.costs.cplife` (`avail_st()` recomputes it unconditionally -- see the class
+    docstring), so the resulting body+problem pair is acyclic: a degenerate `FixedPoint`
+    that converges in one iteration regardless of its starting guess.
+    """
+    graph = to_graph(CplifeAvailSt(i_tf_sup=1, itart=1))
+    node = CplifeAvailSt(i_tf_sup=1, itart=1)
+    body, problem = graph[node.name], graph[node.problem_name]
+    assert isinstance(body, CallableNode)
+    assert isinstance(problem, FixedPoint)
+    assert problem.owns == (CPLIFE_VAR,)
+    assert graph.is_acyclic
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        Avail(ibkt_life=0, itart=1),
+        Avail(ibkt_life=1, itart=0),
+        Avail2(ibkt_life=0, itart=1, n_vac_pumps_high=10, redun_vac=2),
+        AvailSt(ibkt_life=0, itart=1, n_vac_pumps_high=10, redun_vac=2, i_tf_sup=1),
+    ],
+    ids=["avail-itart1", "avail-itart0", "avail2", "avail-st"],
+)
+def test_branch_node_to_graph_assembles(node):
+    """`Avail`/`Avail2`/`AvailSt` no longer own `.costs.cplife` -- `to_graph` on each,
+    standalone, no longer raises the pre-split `reads [...], which it also owns` error.
+    """
+    graph = to_graph(node)
+    assert isinstance(graph[node.name], CallableNode)
+
+
+def test_avail_and_cplife_avail_compose_without_ownership_conflict():
+    """The intended full wiring: `CplifeAvail` owns `.costs.cplife`, `Avail` only reads
+    it -- registering both together assembles, and the coupling is a clean two-node
+    acyclic chain into `Avail` on top of `CplifeAvail`'s own internal self-loop (no
+    *new* cycle is introduced by adding `Avail`).
+    """
+    cplife_node = CplifeAvail(i_tf_sup=1, itart=1)
+    avail_node = Avail(ibkt_life=0, itart=1)
+    graph = to_graph(cplife_node, avail_node)
+    assert isinstance(graph[avail_node.name], CallableNode)
+    assert graph[cplife_node.problem_name].owns == (CPLIFE_VAR,)
+    # Same SCC structure as `CplifeAvail` alone: `Avail` hangs off it acyclically.
+    assert not graph.is_acyclic
+
+
+def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
+    """Same wiring check for the `AvailSt` pair -- and here the combination is fully
+    acyclic, since `CplifeAvailSt` alone already is.
+    """
+    cplife_node = CplifeAvailSt(i_tf_sup=1, itart=1)
+    avail_st_node = AvailSt(
+        ibkt_life=0, itart=1, n_vac_pumps_high=10, redun_vac=2, i_tf_sup=1
+    )
+    graph = to_graph(cplife_node, avail_st_node)
+    assert isinstance(graph[avail_st_node.name], CallableNode)
+    assert graph.is_acyclic

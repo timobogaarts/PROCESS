@@ -37,6 +37,20 @@ the record. `avail_st()` differs: it computes `.costs.cplife` **unconditionally*
 only the later *lifetime-adjustment* step is `itart`-gated -- the two `itart` gates are
 not the same gate reused, see the record's data-footprint table.
 
+At the **node** level, this conditional/unconditional read-then-write of `.costs.cplife`
+within one function body is a genuine Shape B self-loop (`next_steps.md` §5): a node
+whose own `Output` and `Input` name the identical `VarPath`, which `cottax.spec`'s
+`__check_init__` refuses outright (`reads [...], which it also owns`). `CplifeAvail`
+(shared by `Avail`/`Avail2`) and `CplifeAvailSt` isolate exactly that self-reference as
+`FixedPointFunction` declarations -- `Avail`/`Avail2`/`AvailSt` themselves are now
+ordinary `ExplicitFunction`s over the *rest* of each branch's outputs, reading
+`.costs.cplife` (or, for `AvailSt`, the same recompute inputs `CplifeAvailSt` uses) as a
+plain value rather than also owning it. See the "cottax node" section below and
+`availability.md`'s "cottax node" section for the split's exact shape and why `AvailSt`'s
+`ExplicitFunction` half cannot simply read `.costs.cplife` back (the mod-adjusted value
+`CplifeAvailSt` owns is not the same number `avail_st()`'s own `shortest_lifetime`
+needs).
+
 `.vacuum.n_vac_pumps_high` and `.costs.redun_vac` feed a Python `range()` inside
 `calculate_u_unplanned_vacuum` (the source's cryopump-redundancy sum) -- both are
 genuinely `int`-typed PROCESS fields, so they are ordinary (non-`jnp`) Python arguments,
@@ -50,7 +64,12 @@ import math
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FixedPointFunction,
+    Input,
+    Output,
+)
 
 DAY_SECONDS = 60 * 60 * 24
 DAYS_IN_YEAR = 365.25
@@ -1019,10 +1038,26 @@ def calculate_avail_st(
 # atomising further -- nothing outside `Availability` ever calls `divertor_lifetime`,
 # `calc_u_planned` etc. independently, so a graph with one node per branch is the
 # faithful shape, not an arbitrary choice. `CpLifetimeSuperconducting`/
-# `CpLifetimeResistive` are the exception: `.costs.cplife` genuinely has two independent
-# producers selected by `.tfcoil.i_tf_sup`, exactly the `i_tf_sup` shape already used in
-# `stellarator_F_tf_nuclear_heating.py`, so `cplife` is wired into `Avail`/`Avail2`/
-# `AvailSt` as an ordinary `Input` rather than computed inline.
+# `CpLifetimeResistive` are a *different* kind of exception: `.costs.cplife` genuinely
+# has two independent producers selected by `.tfcoil.i_tf_sup`, exactly the `i_tf_sup`
+# shape already used in `stellarator_F_tf_nuclear_heating.py`.
+#
+# `.costs.cplife` **also** self-references within `avail`/`avail_2`/`avail_st` themselves
+# (Shape B, `next_steps.md` §5: a node whose own `Output` and `Input` name the identical
+# `VarPath`) -- `to_graph(Avail(...))` raised `ValueError: reads ['.costs.cplife'], which
+# it also owns` directly from `cottax.spec`'s `__check_init__` before this was split.
+# `CplifeAvail` (shared by `Avail`/`Avail2` -- their `itart == 1` cplife-adjustment
+# formula is identical, see the audit record) and `CplifeAvailSt` isolate exactly that
+# self-reference as `FixedPointFunction` declarations, per `next_steps.md` §5's Action.
+# `Avail`/`Avail2`/`AvailSt` themselves are now ordinary `ExplicitFunction`s over each
+# branch's *other* outputs only -- `.costs.cplife` is no longer one of their declared
+# `Output`s. `CpLifetimeSuperconducting`/`CpLifetimeResistive` are left unconsumed by
+# this split (their `i_tf_sup` branch is duplicated inline inside `CplifeAvail`/
+# `CplifeAvailSt` instead, as a static Python `if` -- see those classes' docstrings for
+# why): both those nodes and the new `FixedPoint` problem nodes independently want to
+# own `.costs.cplife`, and only one may in any graph that actually registers them
+# together -- an open question left to whoever designs `total_process.py`'s wiring, not
+# resolved here (registration is explicitly out of this split's scope).
 # ---------------------------------------------------------------------------
 
 
@@ -1105,12 +1140,269 @@ class WardTaylorAvailability(ExplicitFunction):
         )
 
 
+# ---------------------------------------------------------------------------
+# `.costs.cplife`'s Shape B self-reference, isolated (`next_steps.md` §5)
+#
+# Pure step functions first, `FixedPointFunction` wrappers below them -- same pairing as
+# every other `calculate_*` -> node in this file. Neither reads `.costs.cplife` for its
+# *value* except as the pass-through branch's own current value (`calculate_cplife_next`,
+# `itart != 1`); the `itart == 1` recompute never depends on the old value at all (real
+# PROCESS's `cp_lifetime()` doesn't read `.costs.cplife` either -- it only writes it).
+# ---------------------------------------------------------------------------
+
+
+def calculate_cplife_lifetime_adjustment(cplife, life_plant, f_t_plant_available):
+    """The `itart == 1` lifetime-adjustment step applied to a freshly computed `cplife`.
+
+    Reproduces `avail`'s/`avail_2`'s/`avail_st`'s identical
+    `if cplife < life_plant: cplife = min(cplife / f_t_plant_available, life_plant)`
+    block. Kept as a free-standing duplicate of the formula already inlined
+    (independently, three times) inside `calculate_avail`/`calculate_avail_2`/
+    `calculate_avail_st`, rather than factored out and shared with them -- so those three
+    functions' bodies (and `test_availability.py`'s existing contracts, which call them
+    directly) stay byte-for-byte untouched by this split; see the audit record's "cottax
+    node" section.
+
+    Parameters
+    ----------
+    cplife :
+        Centrepost lifetime (FPY) before adjustment.
+    life_plant :
+        Total plant lifetime (years). `.costs.life_plant`.
+    f_t_plant_available :
+        Plant availability fraction. `.costs.f_t_plant_available`.
+
+    Returns
+    -------
+    :
+        The adjusted `cplife`.
+    """
+    return jnp.where(
+        cplife < life_plant,
+        jnp.minimum(cplife / f_t_plant_available, life_plant),
+        cplife,
+    )
+
+
+def calculate_cplife_next(
+    cplife,
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    pflux_fw_neutron_mw,
+    life_plant,
+    f_t_plant_available,
+    *,
+    i_tf_sup,
+    itart,
+):
+    """`.costs.cplife`'s next value across one `avail()`/`avail_2()` call.
+
+    `CplifeAvail`'s `FixedPointFunction` step. `itart != 1`: real PROCESS never touches
+    `.costs.cplife` inside `avail()`/`avail_2()` at all -- a trivial identity fixed point
+    on `cplife`, the value already there (`cplife_in`, in `calculate_avail`'s/
+    `calculate_avail_2`'s own naming). `itart == 1`: `.costs.cplife` is recomputed from
+    scratch via whichever `calculate_cp_lifetime_*` alternative `i_tf_sup` selects (the
+    previous value is never read on this branch), then adjusted by
+    `calculate_cplife_lifetime_adjustment`. `i_tf_sup`/`itart` are static (switches are
+    not ports) -- see `CplifeAvail`'s docstring for why `i_tf_sup`'s branch is duplicated
+    here rather than sourced from `CpLifetimeSuperconducting`/`CpLifetimeResistive`.
+
+    Parameters
+    ----------
+    cplife :
+        The current value of `.costs.cplife` (used only when `itart != 1`).
+    neut_flux_cp, flu_tf_neutron_fast_max :
+        See `calculate_cp_lifetime_superconducting` (used only when `i_tf_sup == 1` and
+        `itart == 1`).
+    cpstflnc, pflux_fw_neutron_mw :
+        See `calculate_cp_lifetime_resistive` (used only when `i_tf_sup != 1` and
+        `itart == 1`).
+    life_plant :
+        Total plant lifetime (years). `.costs.life_plant`.
+    f_t_plant_available :
+        Plant availability fraction. `.costs.f_t_plant_available`.
+    i_tf_sup, itart :
+        Static switches. `.tfcoil.i_tf_sup`, `.physics.itart`.
+
+    Returns
+    -------
+    :
+        `.costs.cplife`'s next value.
+    """
+    if itart != 1:
+        return cplife
+    if i_tf_sup == 1:
+        fresh = calculate_cp_lifetime_superconducting(
+            neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+        )
+    else:
+        fresh = calculate_cp_lifetime_resistive(
+            cpstflnc, pflux_fw_neutron_mw, life_plant
+        )
+    return calculate_cplife_lifetime_adjustment(fresh, life_plant, f_t_plant_available)
+
+
+def calculate_cplife_avail_st_next(
+    neut_flux_cp,
+    flu_tf_neutron_fast_max,
+    cpstflnc,
+    pflux_fw_neutron_mw,
+    life_plant,
+    f_t_plant_available,
+    *,
+    i_tf_sup,
+    itart,
+):
+    """`.costs.cplife`'s next value across one `avail_st()` call.
+
+    `CplifeAvailSt`'s `FixedPointFunction` step. Unlike `calculate_cplife_next`,
+    `avail_st()` recomputes `.costs.cplife` **unconditionally** (the module docstring's
+    "the two `itart` gates are not the same gate reused" finding) -- so this function
+    never reads a previous `.costs.cplife` value at all; the `itart` gate here only
+    selects whether `calculate_cplife_lifetime_adjustment` is applied afterward. The
+    `FixedPoint` this feeds converges in exactly one iteration regardless of its starting
+    guess -- a degenerate but structurally honest use of the same primitive (see
+    `CplifeAvailSt`'s docstring).
+
+    Parameters
+    ----------
+    (see `calculate_cplife_next` for every parameter except `cplife`, which this function
+    has no equivalent of)
+
+    Returns
+    -------
+    :
+        `.costs.cplife`'s next value.
+    """
+    if i_tf_sup == 1:
+        fresh = calculate_cp_lifetime_superconducting(
+            neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+        )
+    else:
+        fresh = calculate_cp_lifetime_resistive(
+            cpstflnc, pflux_fw_neutron_mw, life_plant
+        )
+    if itart != 1:
+        return fresh
+    return calculate_cplife_lifetime_adjustment(fresh, life_plant, f_t_plant_available)
+
+
+class CplifeAvail(FixedPointFunction):
+    """cottax node: `.costs.cplife`'s Shape B self-reference in `Avail`/`Avail2`
+    (`next_steps.md` §5), split out as a `FixedPointFunction`. `step` ->
+    `calculate_cplife_next`.
+
+    Shared by `Avail` and `Avail2`: both branches' `itart == 1` cplife-adjustment formula
+    is identical once `cplife`/`life_plant`/`f_t_plant_available`/`itart` are given
+    (confirmed by direct comparison of `calculate_avail`'s and `calculate_avail_2`'s
+    `itart == 1` blocks -- see the audit record) -- one shared node, not a duplicate per
+    branch, per the task's own preference for this case.
+
+    `i_tf_sup`/`itart` are static (switches are not ports). Note this duplicates
+    `i_tf_sup`'s SC/resistive branch *inline* as a Python `if`, rather than consuming
+    `CpLifetimeSuperconducting`/`CpLifetimeResistive`'s own node outputs -- unlike that
+    pair's top-level split (justified there because `.costs.cplife` had no other owner to
+    conflict with), this node's `FixedPoint` problem *also* wants to own `.costs.cplife`,
+    and only one producer of one `VarPath` may exist in any graph that registers both
+    together. Duplicating the two-line `calculate_cp_lifetime_*` dispatch here avoids
+    that conflict entirely rather than resolving it; `CpLifetimeSuperconducting`/
+    `CpLifetimeResistive` remain valid, independently useful standalone nodes.
+    """
+
+    i_tf_sup: int = eqx.field(static=True)
+    itart: int = eqx.field(static=True)
+
+    cplife = Output(lambda s: s.costs.cplife)
+
+    def step(
+        self,
+        cplife=Input(lambda s: s.costs.cplife),
+        neut_flux_cp=Input(lambda s: s.fwbs.neut_flux_cp),
+        flu_tf_neutron_fast_max=Input(lambda s: s.constraints.flu_tf_neutron_fast_max),
+        cpstflnc=Input(lambda s: s.costs.cpstflnc),
+        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_plant=Input(lambda s: s.costs.life_plant),
+        f_t_plant_available=Input(lambda s: s.costs.f_t_plant_available),
+    ):
+        return calculate_cplife_next(
+            cplife,
+            neut_flux_cp,
+            flu_tf_neutron_fast_max,
+            cpstflnc,
+            pflux_fw_neutron_mw,
+            life_plant,
+            f_t_plant_available,
+            i_tf_sup=self.i_tf_sup,
+            itart=self.itart,
+        )
+
+
+class CplifeAvailSt(FixedPointFunction):
+    """cottax node: `.costs.cplife`'s Shape B self-reference in `AvailSt`
+    (`next_steps.md` §5), split out as a `FixedPointFunction`. `step` ->
+    `calculate_cplife_avail_st_next`.
+
+    `avail_st()` computes `.costs.cplife` **unconditionally** -- no `cplife_in`
+    pass-through branch exists here, unlike `CplifeAvail` -- so this node's `step`
+    ignores whatever the graph currently holds at `.costs.cplife` entirely; its output
+    depends only on the genuine recompute inputs below. Still declared as a
+    `FixedPointFunction` (not a plain `ExplicitFunction`) for the same structural reason
+    as `CplifeAvail`: `AvailSt`'s *other* outputs (`shortest_lifetime` and everything
+    downstream of it) need to read `.costs.cplife` too, so whichever node owns it must
+    not be the same node -- see `AvailSt`'s docstring for why that read cannot simply be
+    `.costs.cplife` fed back in (the value this node owns is the *adjusted* one;
+    `avail_st()`'s `shortest_lifetime` needs the pre-adjustment one).
+
+    `i_tf_sup`/`itart` are static -- see `CplifeAvail`'s docstring for why `i_tf_sup`'s
+    branch is duplicated here rather than sourced from `CpLifetimeSuperconducting`/
+    `CpLifetimeResistive`.
+    """
+
+    i_tf_sup: int = eqx.field(static=True)
+    itart: int = eqx.field(static=True)
+
+    cplife = Output(lambda s: s.costs.cplife)
+
+    def step(
+        self,
+        neut_flux_cp=Input(lambda s: s.fwbs.neut_flux_cp),
+        flu_tf_neutron_fast_max=Input(lambda s: s.constraints.flu_tf_neutron_fast_max),
+        cpstflnc=Input(lambda s: s.costs.cpstflnc),
+        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_plant=Input(lambda s: s.costs.life_plant),
+        f_t_plant_available=Input(lambda s: s.costs.f_t_plant_available),
+    ):
+        return calculate_cplife_avail_st_next(
+            neut_flux_cp,
+            flu_tf_neutron_fast_max,
+            cpstflnc,
+            pflux_fw_neutron_mw,
+            life_plant,
+            f_t_plant_available,
+            i_tf_sup=self.i_tf_sup,
+            itart=self.itart,
+        )
+
+
 class Avail(ExplicitFunction):
-    """cottax node: `calculate_avail`, unchanged, ports declared.
+    """cottax node: `calculate_avail`'s outputs *other* than `.costs.cplife`, unchanged,
+    ports declared. `.costs.cplife` itself is `CplifeAvail`'s (see that class and the
+    module docstring's "cottax nodes" section for why this needed splitting at all --
+    Shape B, `next_steps.md` §5).
 
     `ibkt_life`/`itart` are static -- see module docstring. Mutually exclusive
     alternative to `Avail2`/`AvailSt`: `.costs.i_plant_availability` selects at most one
     of the three branch nodes at graph-assembly time.
+
+    `cplife` is read here as a plain current-value `Input` (`.costs.cplife`, i.e.
+    `CplifeAvail`'s output once both are registered together) and passed to
+    `calculate_avail` unchanged -- but its value is **provably inert** for every output
+    this node declares: inspecting `calculate_avail`'s body shows `cplife`/`cplife_in`
+    feed *only* the `cplife_mod` return slot, which this node discards. Kept as a real
+    `Input` anyway (matching what a full port of `avail()`'s real read/write order would
+    show, and the task's own recipe) rather than a magic constant, even though any value
+    would do here -- unlike `AvailSt` below, where the same-looking read is load-bearing.
     """
 
     ibkt_life: int = eqx.field(static=True)
@@ -1118,7 +1410,6 @@ class Avail(ExplicitFunction):
 
     life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
     life_div_fpy = Output(lambda s: s.costs.life_div_fpy)
-    cplife = Output(lambda s: s.costs.cplife)
     bktcycles = Output(lambda s: s.costs.bktcycles)
     cpfact = Output(lambda s: s.costs.cpfact)
     life_hcd_fpy = Output(lambda s: s.costs.life_hcd_fpy)
@@ -1137,9 +1428,15 @@ class Avail(ExplicitFunction):
         t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
         f_t_plant_available=Input(lambda s: s.costs.f_t_plant_available),
         cplife=Input(lambda s: s.costs.cplife),
-        cplife_in=Input(lambda s: s.costs.cplife),
     ):
-        return calculate_avail(
+        (
+            life_blkt_fpy,
+            life_div_fpy,
+            _cplife_mod,
+            bktcycles,
+            cpfact,
+            life_hcd_fpy,
+        ) = calculate_avail(
             p_fusion_total_mw,
             life_fw_fpy,
             abktflnc,
@@ -1152,20 +1449,28 @@ class Avail(ExplicitFunction):
             t_plant_pulse_burn,
             f_t_plant_available,
             cplife,
-            cplife_in,
+            cplife,
             ibkt_life=self.ibkt_life,
             itart=self.itart,
         )
+        return life_blkt_fpy, life_div_fpy, bktcycles, cpfact, life_hcd_fpy
 
 
 class Avail2(ExplicitFunction):
-    """cottax node: `calculate_avail_2`, unchanged, ports declared, `u_planned`/
-    `u_unplanned` dropped (no `VarPath` -- see the module-level note above).
+    """cottax node: `calculate_avail_2`'s outputs *other* than `.costs.cplife`,
+    unchanged, ports declared, `u_planned`/`u_unplanned` dropped (no `VarPath` -- see the
+    module-level note above). `.costs.cplife` itself is `CplifeAvail`'s -- see that
+    class's docstring; `Avail`/`Avail2` share it since their cplife-adjustment formula is
+    identical.
 
     `ibkt_life`/`itart`/`n_vac_pumps_high`/`redun_vac` are static (the last two because
     they set a Python `range()` bound inside `calculate_u_unplanned_vacuum` -- see
     `calculate_redun_vac`'s docstring). Mutually exclusive alternative to `Avail`/
     `AvailSt`.
+
+    `cplife` is read here as a plain current-value `Input`, same provably-inert role as
+    in `Avail` -- see that class's docstring (`calculate_avail_2`'s `cplife`/`cplife_in`
+    also feed only the discarded `cplife_mod` slot; verified the same way).
     """
 
     ibkt_life: int = eqx.field(static=True)
@@ -1176,7 +1481,6 @@ class Avail2(ExplicitFunction):
     life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
     life_div_fpy = Output(lambda s: s.costs.life_div_fpy)
     life_hcd_fpy = Output(lambda s: s.costs.life_hcd_fpy)
-    cplife = Output(lambda s: s.costs.cplife)
     t_plant_operational_total_yrs = Output(
         lambda s: s.costs.t_plant_operational_total_yrs
     )
@@ -1212,13 +1516,12 @@ class Avail2(ExplicitFunction):
         t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
         t_plant_pulse_total=Input(lambda s: s.times.t_plant_pulse_total),
         cplife=Input(lambda s: s.costs.cplife),
-        cplife_in=Input(lambda s: s.costs.cplife),
     ):
         (
             life_blkt_fpy,
             life_div_fpy,
             life_hcd_fpy,
-            cplife_out,
+            _cplife_mod,
             t_plant_operational_total_yrs,
             _u_planned,
             _u_unplanned,
@@ -1250,7 +1553,7 @@ class Avail2(ExplicitFunction):
             t_plant_pulse_burn,
             t_plant_pulse_total,
             cplife,
-            cplife_in,
+            cplife,
             ibkt_life=self.ibkt_life,
             itart=self.itart,
         )
@@ -1258,7 +1561,6 @@ class Avail2(ExplicitFunction):
             life_blkt_fpy,
             life_div_fpy,
             life_hcd_fpy,
-            cplife_out,
             t_plant_operational_total_yrs,
             f_t_plant_available,
             cpfact,
@@ -1266,23 +1568,45 @@ class Avail2(ExplicitFunction):
 
 
 class AvailSt(ExplicitFunction):
-    """cottax node: `calculate_avail_st`, unchanged, ports declared, `maint_cycle`/
-    `n_cycles_main`/`n_centre_cols`/`u_planned`/`u_unplanned` dropped (no `VarPath`).
+    """cottax node: `calculate_avail_st`'s outputs *other* than `.costs.cplife`,
+    unchanged, ports declared, `maint_cycle`/`n_cycles_main`/`n_centre_cols`/
+    `u_planned`/`u_unplanned` dropped (no `VarPath`). `.costs.cplife` itself is
+    `CplifeAvailSt`'s -- see that class's docstring.
 
     `ibkt_life`/`itart`/`n_vac_pumps_high`/`redun_vac` are static -- see `Avail2`.
-    Reachable on the stellarator pipeline only via `Stellarator.output()`'s final
-    report-writing call, never during the solve loop; see the audit record.
+    `i_tf_sup` is a **new** static field this split needed (see below). Reachable on the
+    stellarator pipeline only via `Stellarator.output()`'s final report-writing call,
+    never during the solve loop; see the audit record.
+
+    **Does not read `.costs.cplife` at all -- deliberately, unlike `Avail`/`Avail2`
+    above.** `calculate_avail_st`'s `cplife` parameter is the *pre-adjustment* value
+    (used for `shortest_lifetime`, hence `maint_cycle`/`u_planned`/
+    `t_plant_operational_total_yrs`/every unplanned-unavailability term/
+    `f_t_plant_available`/every `*_mod` output this node declares -- genuinely
+    load-bearing here, unlike `Avail`/`Avail2`'s provably-inert `cplife`), while
+    `.costs.cplife`'s real, persistent value (what `CplifeAvailSt` owns) is the
+    *post*-adjustment one -- a different number whenever `itart == 1` and the adjustment
+    actually applies (`cplife / f_t_plant_available != cplife` in general). Feeding
+    `.costs.cplife` back into this node's own `cplife` argument would silently double
+    only *some* of the intended dependency and corrupt every output that flows through
+    `shortest_lifetime`. So this node recomputes the same pre-adjustment value
+    `CplifeAvailSt` computes, from the same genuine inputs (`neut_flux_cp`/
+    `flu_tf_neutron_fast_max`/`cpstflnc`/`pflux_fw_neutron_mw`, `i_tf_sup`-gated) --
+    matching `test_availability.py::TestAvailSt`'s own `ported` adapter, which already
+    does exactly this (calls `calculate_cp_lifetime_resistive` before
+    `calculate_avail_st`). The duplicate recompute is the same trade-off `CplifeAvail`'s
+    docstring documents for `i_tf_sup`, not a new one.
     """
 
     ibkt_life: int = eqx.field(static=True)
     itart: int = eqx.field(static=True)
     n_vac_pumps_high: int = eqx.field(static=True)
     redun_vac: int = eqx.field(static=True)
+    i_tf_sup: int = eqx.field(static=True)
 
     life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
     life_div_fpy = Output(lambda s: s.costs.life_div_fpy)
     life_hcd_fpy = Output(lambda s: s.costs.life_hcd_fpy)
-    cplife = Output(lambda s: s.costs.cplife)
     t_plant_operational_total_yrs = Output(
         lambda s: s.costs.t_plant_operational_total_yrs
     )
@@ -1298,7 +1622,9 @@ class AvailSt(ExplicitFunction):
         adivflnc=Input(lambda s: s.costs.adivflnc),
         pflux_div_heat_load_mw=Input(lambda s: s.divertor.pflux_div_heat_load_mw),
         life_plant=Input(lambda s: s.costs.life_plant),
-        cplife=Input(lambda s: s.costs.cplife),
+        neut_flux_cp=Input(lambda s: s.fwbs.neut_flux_cp),
+        flu_tf_neutron_fast_max=Input(lambda s: s.constraints.flu_tf_neutron_fast_max),
+        cpstflnc=Input(lambda s: s.costs.cpstflnc),
         tmain=Input(lambda s: s.costs.tmain),
         temp_tf_superconductor_margin_min=Input(
             lambda s: s.tfcoil.temp_tf_superconductor_margin_min
@@ -1321,11 +1647,19 @@ class AvailSt(ExplicitFunction):
         t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
         t_plant_pulse_total=Input(lambda s: s.times.t_plant_pulse_total),
     ):
+        if self.i_tf_sup == 1:
+            cplife = calculate_cp_lifetime_superconducting(
+                neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+            )
+        else:
+            cplife = calculate_cp_lifetime_resistive(
+                cpstflnc, pflux_fw_neutron_mw, life_plant
+            )
         (
             life_blkt_fpy,
             life_div_fpy,
             life_hcd_fpy,
-            cplife_out,
+            _cplife_mod,
             _maint_cycle,
             _n_cycles_main,
             _n_centre_cols,
@@ -1369,7 +1703,6 @@ class AvailSt(ExplicitFunction):
             life_blkt_fpy,
             life_div_fpy,
             life_hcd_fpy,
-            cplife_out,
             t_plant_operational_total_yrs,
             f_t_plant_available,
             cpfact,

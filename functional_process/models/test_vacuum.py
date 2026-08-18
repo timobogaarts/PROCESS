@@ -15,8 +15,23 @@ Audit record: `functional_process/models/vacuum.md`. Three units:
 
 from types import MappingProxyType
 
+import jax
 import jax.numpy as jnp
 import numpy as np
+import optimistix as optx
+import pytest
+from cottax import (
+    AbstractDriver,
+    CallableNode,
+    Feasibility,
+    Graph,
+    RootFind,
+    schedule_for,
+)
+from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.spec import NodePath
+from cottax.tools.path import path_map
+from jax.tree_util import DictKey
 
 from functional_process._harness import (
     Sample,
@@ -25,12 +40,18 @@ from functional_process._harness import (
     fuzz_samples,
     legacy_sample,
 )
+from functional_process._harness import path as vpath
 from functional_process.models.vacuum import (
     XMULT,
+    DuctDiameterRootFind,
+    DuctFeasibility,
+    DuctFeasibilityConditions,
     _solve_vacuum_pumping_old,
     _solve_vacuum_pumping_old_from_fields,
     calculate_vacuum_pumping_simple,
     duct_diameter_residual,
+    duct_fits_residual,
+    pumping_speed_floor_residual,
     solve_duct_diameter,
 )
 from process.core import constants
@@ -198,6 +219,297 @@ class TestSolveDuctDiameter(Tier2Contract):
     residual = staticmethod(_duct_diameter_residual_for_contract)
 
     samples = _duct_diameter_samples()
+
+
+class _NewtonRootFindDriver(AbstractDriver):
+    """Test-only `AbstractDriver` for `RootFind`, wrapping the exact algorithm
+    `solve_duct_diameter` already uses: `jax.grad`-based Newton inside a
+    `jax.lax.while_loop`, same default `max_iter=100`/`tol=1e-10`, same single fixed
+    `d = 1.0` start when no guess is supplied.
+
+    Exists purely so `TestDuctDiameterRootFind` below gets a real converged number out
+    of `DuctDiameterRootFind`'s structural, undriven `RootFind` declaration -- per
+    `evaluate.py`'s own docstring for `AbstractDriver`, this is "a concrete
+    `AbstractDriver` wrapping the exact Newton scheme this codebase already uses,
+    purely for test purposes". Only handles a single scalar unknown, same shape as
+    `solve_duct_diameter` itself -- not a general-purpose Newton driver.
+    """
+
+    drives = RootFind
+
+    max_iter: int = 100
+    tol: float = 1e-10
+
+    def __call__(self, conditions, start):
+        d0 = jnp.asarray(start[0]) if start is not None else jnp.asarray(1.0)
+
+        def residual_fn(d):
+            (r,) = conditions(d)
+            return r
+
+        def cond(carry):
+            _d, step, it = carry
+            return jnp.logical_and(it < self.max_iter, step > self.tol)
+
+        def body(carry):
+            d, _step, it = carry
+            f = residual_fn(d)
+            df = jax.grad(residual_fn)(d)
+            d_new = d - f / df
+            step = jnp.abs((d - d_new) / d)
+            return (d_new, step, it + 1)
+
+        init = (d0, jnp.asarray(jnp.inf), jnp.asarray(0))
+        d, _step, _it = jax.lax.while_loop(cond, body, init)
+        return (d,)
+
+
+def _duct_diameter_env(kw):
+    """`sample.kwargs` for a `_duct_diameter_samples()` point, as a
+    `DuctDiameterRootFind` env (every minted `VarPath` but the unknown itself).
+    """
+    return {
+        vpath(".vacuum.l1"): jnp.asarray(kw["l1"]),
+        vpath(".vacuum.l2"): jnp.asarray(kw["l2"]),
+        vpath(".vacuum.l3"): jnp.asarray(kw["l3"]),
+        vpath(".vacuum.xmult_i"): jnp.asarray(kw["xmult_i"]),
+        vpath(".vacuum.ceff_i"): jnp.asarray(kw["ceff_i"]),
+    }
+
+
+# `vacuum.DuctDiameterRootFind`: the structural `ImplicitFunction` counterpart to
+# `solve_duct_diameter`, per `vacuum.md`'s discussion. Not a `Tier1Contract`/
+# `Tier2Contract` case -- there is no PROCESS reference for a node PROCESS itself
+# doesn't have -- so three narrower checks instead: the graph it declares assembles
+# (`to_graph`), driving it with `_NewtonRootFindDriver` (the same algorithm
+# `solve_duct_diameter` uses) reaches the same answer `solve_duct_diameter` does on
+# every sample `TestSolveDuctDiameter` already exercises, and that converged answer
+# actually zeroes the defining equation.
+
+
+def test_duct_diameter_root_find_builds_cleanly():
+    """The two minted nodes -- the residual body and the `RootFind` problem -- build
+    into one `Graph` with no errors, and are wired to each other as
+    `ImplicitFunction`'s docstring promises: the problem owns the unknown and reads
+    exactly what the body owns (its residual).
+    """
+    d = DuctDiameterRootFind()
+    g = to_graph(DuctDiameterRootFind)
+
+    assert set(g.nodes) == {d.name, d.problem_name}
+    body, problem = g[d.name], g[d.problem_name]
+    assert isinstance(body, CallableNode)
+    assert isinstance(problem, RootFind)
+    assert problem.owns == (vpath(".vacuum.d_duct"),)
+    assert problem.reads == body.owns
+    assert body.reads == (
+        vpath(".vacuum.d_duct"),
+        vpath(".vacuum.l1"),
+        vpath(".vacuum.l2"),
+        vpath(".vacuum.l3"),
+        vpath(".vacuum.xmult_i"),
+        vpath(".vacuum.ceff_i"),
+    )
+
+
+def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
+    """Driving the declared block with the same Newton scheme `solve_duct_diameter`
+    runs internally reaches the same converged diameter, for every sample
+    `TestSolveDuctDiameter` exercises (the 24 fuzzed geometries plus the
+    `test_old_model` legacy point).
+    """
+    d = DuctDiameterRootFind()
+    schedule = schedule_for(to_graph(d), {d.problem_name: _NewtonRootFindDriver()})
+
+    for sample in _duct_diameter_samples():
+        kw = sample.kwargs
+        out = schedule(_duct_diameter_env(kw))
+        expected = solve_duct_diameter(
+            kw["l1"], kw["l2"], kw["l3"], kw["xmult_i"], kw["ceff_i"]
+        )
+        assert float(out[vpath(".vacuum.d_duct")]) == pytest.approx(
+            float(expected), rel=1e-9, abs=1e-12
+        ), sample.id
+
+
+def test_duct_diameter_root_find_drive_zeroes_the_residual():
+    """The converged diameter actually satisfies the defining equation -- the same
+    residual-based pass criterion `Tier2Contract` uses, checked directly here since
+    this is not a contract case.
+    """
+    d = DuctDiameterRootFind()
+    schedule = schedule_for(to_graph(d), {d.problem_name: _NewtonRootFindDriver()})
+
+    sample = _duct_diameter_samples()[-1]  # the test_old_model legacy point
+    kw = sample.kwargs
+    out = schedule(_duct_diameter_env(kw))
+    residual = duct_diameter_residual(out[vpath(".vacuum.d_duct")], **kw)
+    assert abs(float(residual)) < 1e-8
+
+
+# `vacuum.DuctFeasibility`: "find a feasible `ceff_i`", `solve_duct_geometry`'s outer
+# 10%-shrink loop's real problem shape -- see that function's own module-level comment
+# and `DuctFeasibility`'s own docstring. Joins with `DuctDiameterRootFind`'s `RootFind`
+# problem into one combined block; these checks prove that join is real (the two
+# assemble into one cycle, `+` produces the algebraically-joined `Feasibility`, and the
+# joined block is actually drivable to a feasible point) -- not just that `Feasibility`
+# the type exists.
+
+
+def _duct_feasibility_graph():
+    """`DuctFeasibility` (a bare `problem.py` `DeclaredNode`, not a `NodalDeclaration`,
+    so it carries no class-derived name the way `DuctFeasibilityConditions`/
+    `DuctDiameterRootFind` do) assembled together with `DuctFeasibilityConditions` and
+    `DuctDiameterRootFind` via `to_graph`'s `{name: NodeDefinition}` mapping form --
+    added upstream in `cottax` specifically for this shape, see `DuctFeasibility`'s own
+    docstring.
+    """
+    return to_graph(
+        DuctFeasibilityConditions(),
+        DuctDiameterRootFind(),
+        {"DuctFeasibility": DuctFeasibility},
+    )
+
+
+def test_duct_feasibility_forms_one_combined_cycle_with_the_root_find():
+    """`DuctFeasibility` (owns `.vacuum.ceff_i`), `DuctFeasibilityConditions` (reads
+    `.vacuum.d_duct`/`ceff_i`, owns the two inequality residuals `DuctFeasibility`
+    reads), and `DuctDiameterRootFind` (owns `.vacuum.d_duct`, reads `.vacuum.ceff_i`
+    indirectly through `duct_diameter_residual`'s own `ceff_i` argument) close a single
+    4-node cycle -- the same "Shape A" cross-node-cycle shape
+    `WindingPackIntersectInputs`/`Intersect`/`WindingPackTotalSizePost` already
+    established in `coils/calculate.py`, not a self-loop on any one node.
+    """
+    graph = _duct_feasibility_graph()
+    assert len(graph.definitions) == 4
+    assert not graph.is_acyclic
+    (cycle,) = graph.cycles
+    assert {n.path_str() for n in cycle} == {
+        "['DuctFeasibility']",
+        "['DuctFeasibilityConditions']",
+        "['DuctDiameterRootFind']",
+        "^problem['DuctDiameterRootFind']",
+    }
+
+
+def test_duct_feasibility_joins_algebraically_with_the_root_find_problem():
+    """`DuctFeasibility + DuctDiameterRootFind`'s own `RootFind` problem node produces
+    exactly the `Feasibility` `problem.py`'s join rule promises: the `RootFind`'s one
+    unknown (`d_duct`) joins `design`, its one residual joins `equalities`, and
+    `DuctFeasibility`'s own two inequalities are untouched -- `Feasibility.__add__`'s
+    `RootFind` branch, checked directly rather than trusted from `~/jaxgraph`'s own
+    tests alone, since this is the first real (non-toy) instance of that join in this
+    codebase.
+    """
+    root_find_problem = _duct_feasibility_graph()[DuctDiameterRootFind().problem_name]
+    assert isinstance(root_find_problem, RootFind)
+
+    joined = DuctFeasibility + root_find_problem
+    assert isinstance(joined, Feasibility)
+    assert joined.design == DuctFeasibility.design + root_find_problem.outputs
+    assert joined.equalities == root_find_problem.inputs
+    assert joined.inequalities == DuctFeasibility.inequalities
+
+
+class _MeritFunctionFeasibilityDriver(AbstractDriver):
+    """Test-only `AbstractDriver` answering `Feasibility` by the reduction its own
+    docstring names as the standard move: stack the equality residual with `relu` of
+    the two inequality residuals, and drive the resulting 3-vector to zero as an
+    ordinary least-squares problem (`optx.LevenbergMarquardt`) over the 2 unknowns
+    (`ceff_i`, `d_duct`) -- a `RootFind`-shaped reduction, not a new algorithm family,
+    exactly as `Residualise` does the analogous reduction for `FixedPoint`.
+
+    Assumes exactly one equality followed by two inequalities, in that order (this
+    driver's own `drives = Feasibility` only promises the *type* is answered correctly,
+    not that it is generic over every possible `Feasibility` shape -- same scoping
+    `IntersectBisectionNewtonPolish`/`_GenericBisectionRootFind` accept in
+    `coils/test_calculate.py`).
+    """
+
+    drives = Feasibility
+
+    def __call__(self, conditions, start):
+        x0 = (
+            jnp.asarray(start, dtype=float)
+            if start is not None
+            else jnp.asarray([1.0, 1.0])
+        )
+
+        def merit(x, _):
+            equality, fits, floor = conditions(x[0], x[1])
+            return jnp.stack([equality, jax.nn.relu(fits), jax.nn.relu(floor)])
+
+        solution = optx.least_squares(
+            merit,
+            optx.LevenbergMarquardt(rtol=1e-10, atol=1e-10),
+            x0,
+            throw=False,
+        )
+        return tuple(solution.value)
+
+
+def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
+    """Driving the joined block reaches a point where the equality residual is ~0 and
+    both inequality residuals are `<= 0` -- feasible, not merely converged. Uses the
+    `test_old_model` legacy geometry (same point `test_duct_diameter_root_find_drive_
+    zeroes_the_residual` above already verifies `DuctDiameterRootFind` on) with
+    `a1max`/`s_i` chosen so the unconstrained root of `duct_diameter_residual` at the
+    sample's own `ceff_i` already satisfies both inequalities (`a1max` double the
+    resulting duct's cross-section; `s_i` half `ceff_i`).
+
+    The equality alone (one equation, two unknowns `ceff_i`/`d_duct`) is underdetermined
+    -- an entire curve of `(ceff_i, d_duct)` pairs satisfies it -- and the merit-function
+    reduction has no gradient pressure to prefer any particular point on that curve while
+    both inequalities stay inactive (`relu` of a negative residual contributes nothing to
+    the loss), so the least-squares solve is free to land anywhere feasible along it,
+    including exactly on an inequality's boundary (confirmed empirically: it lands with
+    `pumping_speed_floor_residual == 0.0` here, not strictly interior) -- feasible either
+    way, so the check below is `<=`, not `<`. Discovering the specific point an *outer*
+    preference (e.g. "smallest `ceff_i`") would pick is a harder problem this test does
+    not attempt -- that is exactly the gap a real objective (`Optimise`, not
+    `Feasibility`) would close, not a limitation of this reduction.
+    """
+    sample = _duct_diameter_samples()[-1]
+    kw = sample.kwargs
+    d_at_sample_ceff = solve_duct_diameter(
+        kw["l1"], kw["l2"], kw["l3"], kw["xmult_i"], kw["ceff_i"]
+    )
+    a1max = 2.0 * 0.25 * jnp.pi * d_at_sample_ceff * d_at_sample_ceff
+    s_i = 0.5 * kw["ceff_i"]
+
+    graph = _duct_feasibility_graph()
+    name = NodePath((DictKey("DuctFeasibility"),))
+    root_find_problem = graph[DuctDiameterRootFind().problem_name]
+    joined = DuctFeasibility + root_find_problem
+
+    body = graph.runnable  # every plain node, problem nodes dropped
+    merged = Graph(path_map({**dict(body.definitions), name: joined}))
+
+    schedule = schedule_for(merged, {name: _MeritFunctionFeasibilityDriver()})
+    env = {
+        vpath(".vacuum.l1"): jnp.asarray(kw["l1"]),
+        vpath(".vacuum.l2"): jnp.asarray(kw["l2"]),
+        vpath(".vacuum.l3"): jnp.asarray(kw["l3"]),
+        vpath(".vacuum.xmult_i"): jnp.asarray(kw["xmult_i"]),
+        vpath(".vacuum.a1max"): a1max,
+        vpath(".vacuum.s_i"): s_i,
+    }
+    out = schedule(env)
+
+    d_duct = out[vpath(".vacuum.d_duct")]
+    ceff_i = out[vpath(".vacuum.ceff_i")]
+    # `d_duct` itself is not checked against `d_at_sample_ceff` -- the underdetermined
+    # equality has no reason to keep `ceff_i` near the sample's own value (see docstring
+    # above), so the converged `d_duct` legitimately differs. `a1max` was built from
+    # `d_at_sample_ceff` only to guarantee a feasible region exists at all.
+    assert float(d_duct) > 0.0
+    assert float(
+        duct_diameter_residual(
+            d_duct, kw["l1"], kw["l2"], kw["l3"], kw["xmult_i"], ceff_i
+        )
+    ) == pytest.approx(0.0, abs=1e-6)
+    assert float(duct_fits_residual(d_duct, a1max)) <= 1e-8
+    assert float(pumping_speed_floor_residual(ceff_i, s_i)) <= 1e-8
 
 
 def _reference_vacuum_pumping_old(

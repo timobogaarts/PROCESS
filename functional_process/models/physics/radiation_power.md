@@ -187,9 +187,13 @@ Three, in `radiation_power.py`, in dependency order.
   `.physics` write, nothing minted, no switch, no alternative arm. **Ready for
   `total_process.COMMON`.**
 - **`ImpurityRadiationTotals`** — `calculate_impurity_radiation_totals`. Three minted
-  reads (two reused from unit #12, one new), five real `.impurity_radiation` reads, two
-  minted writes. Carries a static `imp_indices: tuple[int, ...]` field.
-  **Blocked** — see open question 2.
+  reads (two reused from unit #12, one new), two whole-array reads of the compile-time
+  L(Z, Te) tables, two ordinary `.impurity_radiation` scalar reads, two minted writes,
+  and — **updated** — fourteen individually-`SequenceKey`-addressed reads of
+  `.impurity_radiation.f_nd_impurity_electron_array` (one per species index) in place of
+  the one whole-array read this row used to list. Carries a static
+  `imp_indices: tuple[int, ...]` field. **Still blocked** — see open question 2, now
+  narrower than before.
 - **`PlasmaRadiationPowers`** — `combine_radiation_powers`. Structurally settled, but it
   cannot be registered before `ImpurityRadiationTotals` is: two of its three inputs would
   otherwise have no producer.
@@ -295,7 +299,23 @@ There is, however, one thing that *behaves* like a switch without being one:
    just, and for a narrower reason than it first appears.** The static field is the right
    shape (a data-dependent gather cannot live inside a traced node); the question is
    whether the selection can change *during a solve*, which would silently change the
-   node's shape. Three routes into `f_nd_impurity_electron_array`, checked:
+   node's shape.
+
+   **Updated — one part of this question is now closed, a separate part is not.**
+   `f_nd_impurity_electron_array` is now read as fourteen individually-addressed
+   `Input`s rather than one whole-array `Input` (same per-index treatment
+   `physics_B_composition.py`'s `PlasmaComposition`/
+   `CalculateEffectiveChargeIonisationProfiles` give the identical field — see that
+   record's "cottax node" section). Before that change, `__call__`'s own docstring gave
+   *a second, narrower* reason the array stayed whole: "the number of parameters would
+   then vary with the configuration," since `Input`'s recorder supports `[i]` but
+   `NodalDeclaration` requires a fixed signature. **That reason is now closed**: the
+   signature declares all fourteen indices unconditionally, regardless of `imp_indices`,
+   so the node's *port count* no longer depends on the species-selection outcome at all
+   — only the internal gather does, exactly as before. This does **not** touch the
+   question below, which is about whether the *gather's result* (not the node's
+   signature) can change during a solve. Three routes into `f_nd_impurity_electron_array`,
+   checked:
 
    - **Iteration variables 125-136** (array indices 2-13, species 3-14). Bounds are
      `(1e-8, 0.01)` in `iteration_variables.py:104-200` — **22 orders of magnitude above

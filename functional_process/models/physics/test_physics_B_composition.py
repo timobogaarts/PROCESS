@@ -12,15 +12,14 @@ disagree.
 """
 
 import numpy as np
-
 from cottax.interfaces.pytree_namespace_module import path_of, to_graph
 from cottax.spec import VarPath
+
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.physics.physics_B_composition import (
-    NextFirstCall,
+    CalculateEffectiveChargeIonisationProfiles,
     PlasmaComposition,
     calculate_effective_charge_ionisation_profiles,
-    next_first_call,
     plasma_composition,
 )
 from process.core.model import DataStructure
@@ -66,15 +65,18 @@ def _reference_plasma_composition(
     f_plasma_fuel_deuterium,
     f_plasma_fuel_tritium,
     f_plasma_fuel_helium3,
-    first_call,
-    alphan,
-    alphat,
     f_temp_plasma_electron_density_vol_avg,
     f_beam_tritium,
     m_impurity_amu_array,
     is_ignited,
 ):
-    """Call PROCESS's `Physics.plasma_composition` through the port's signature."""
+    """Call PROCESS's `Physics.plasma_composition` through the port's signature.
+
+    `.physics.first_call` is deliberately forced to `0` here regardless of what a
+    `DataStructure()` default would give -- it must select PROCESS's real-profile `pc`
+    branch (not the parabolic-estimate bootstrap) to match what the port always
+    computes now. See `plasma_composition`'s own docstring for why.
+    """
     data = DataStructure()
     impurity.initialise_imprad(data)
 
@@ -95,9 +97,7 @@ def _reference_plasma_composition(
     data.physics.f_plasma_fuel_deuterium = f_plasma_fuel_deuterium
     data.physics.f_plasma_fuel_tritium = f_plasma_fuel_tritium
     data.physics.f_plasma_fuel_helium3 = f_plasma_fuel_helium3
-    data.physics.first_call = first_call
-    data.physics.alphan = alphan
-    data.physics.alphat = alphat
+    data.physics.first_call = 0  # forces PROCESS's real-profile `pc` branch, see above
     data.physics.f_temp_plasma_electron_density_vol_avg = (
         f_temp_plasma_electron_density_vol_avg
     )
@@ -124,7 +124,6 @@ def _reference_plasma_composition(
         data.physics.f_nd_plasma_oxygen_electron,
         data.physics.f_nd_plasma_iron_argon_electron,
         data.physics.n_charge_plasma_effective_vol_avg,
-        data.physics.first_call,
         data.physics.f_alpha_electron,
         data.physics.f_alpha_ion,
         data.physics.m_fuel_amu,
@@ -148,19 +147,8 @@ class TestPlasmaComposition(Tier1Contract):
     # the same kind of constant. `f_nd_impurity_electron_array` is deliberately *not*
     # static -- entries 2/3 are iteration variables 125/126 elsewhere in the graph (see
     # `test_radiation_power.py::TestImpurityRadiationTotals`), so its gradient matters.
-    # `first_call` is also static: it is a discrete `{0, 1}` bookkeeping flag, not a
-    # continuous physical quantity, and `jnp.where(first_call == 1, ...)` is a step
-    # function evaluated *exactly at* its own jump for the `first_call-1` sample --
-    # PROCESS's own finite difference there estimates the slope of the *neighbouring*
-    # branch (the `first_call != 1` pass-through), not this branch's true (zero)
-    # analytic derivative, so the two are answering different questions at that point.
-    # No sample value moves it off the boundary the way `fast_alpha_beta`'s
-    # `low-deuterium-no-alphas` sample does for its own continuous threshold, because
-    # `first_call` has no off-boundary value to hold it at -- 0 and 1 are its only
-    # meaningful values.
     static_argnames = (
         "is_ignited",
-        "first_call",
         "temp_impurity_keV_array",
         "impurity_arr_zav",
         "m_impurity_amu_array",
@@ -168,9 +156,13 @@ class TestPlasmaComposition(Tier1Contract):
 
     # Both points are lifted verbatim from
     # tests/unit/models/physics/test_physics.py::test_plasma_composition
-    # (generated from large_tokamak_nof.IN.DAT) -- the first exercises `first_call == 1`
-    # and `fusden_alpha_total == 0` (both "not yet calculated" branches at once), the
-    # second exercises the opposite of both.
+    # (generated from large_tokamak_nof.IN.DAT) -- the first exercises
+    # `fusden_alpha_total == 0` ("not yet calculated" branch), the second the opposite.
+    # Both originally also exercised `first_call`'s two branches in PROCESS itself; the
+    # port no longer has a `first_call` branch to exercise (see `plasma_composition`'s
+    # docstring), so both points now go through the reference adapter's forced
+    # `first_call = 0` (real-profile `pc`) path -- the sample names are kept as-is since
+    # they still identify the underlying PROCESS legacy points, not the branch tested.
     samples = [
         legacy_sample(
             "large_tokamak_nof-first_call",
@@ -202,9 +194,6 @@ class TestPlasmaComposition(Tier1Contract):
             f_plasma_fuel_deuterium=0.5,
             f_plasma_fuel_tritium=0.5,
             f_plasma_fuel_helium3=0.0,
-            first_call=1,
-            alphan=1,
-            alphat=1.45,
             f_temp_plasma_electron_density_vol_avg=0.0,
             f_beam_tritium=9.9999999999999995e-07,
             m_impurity_amu_array=np.array([
@@ -255,9 +244,6 @@ class TestPlasmaComposition(Tier1Contract):
             f_plasma_fuel_deuterium=0.5,
             f_plasma_fuel_tritium=0.5,
             f_plasma_fuel_helium3=0.0,
-            first_call=0,
-            alphan=1,
-            alphat=1.45,
             f_temp_plasma_electron_density_vol_avg=1.0521775929921553,
             f_beam_tritium=9.9999999999999995e-07,
             m_impurity_amu_array=np.array([
@@ -312,9 +298,6 @@ class TestPlasmaComposition(Tier1Contract):
             f_plasma_fuel_deuterium=0.5,
             f_plasma_fuel_tritium=0.5,
             f_plasma_fuel_helium3=0.0,
-            first_call=0,
-            alphan=1,
-            alphat=1.45,
             f_temp_plasma_electron_density_vol_avg=1.05,
             f_beam_tritium=1e-6,
             m_impurity_amu_array=np.array([
@@ -441,65 +424,139 @@ class TestCalculateEffectiveChargeIonisationProfiles(Tier1Contract):
 
 # ---------------------------------------------------------------- the Shape B split
 #
-# `plasma_composition`'s `.physics.first_call` self-loop cannot be a plain node --
-# `to_graph(Avail(...))` proved that shape raises `ValueError: reads [...], which it
-# also owns` directly from `cottax.spec`'s `__check_init__` (see
-# `_audit/next_steps.md` §5, "Shape B"). `NextFirstCall`/`PlasmaComposition` split that
-# self-loop out via `FixedPointFunction`. These checks are the actual point of the
-# split: prove the shape is now legal, don't just assert it.
+# `.impurity_radiation.f_nd_impurity_electron_array` is both read (indices 2:13) and
+# written (indices 0/1) by `plasma_composition` -- a self-loop shape that would raise
+# `cottax.spec`'s "reads what it also owns" construction error if the array were
+# addressed as one `VarPath` (see `_audit/next_steps.md` §5, "Shape B"). PROCESS's
+# other apparent self-loop in this unit, `.physics.first_call`, was never a genuine
+# cycle at all -- see `plasma_composition`'s own docstring -- so it is not ported and
+# there is no `FixedPointFunction`/`Cut` here for it.
+# `.physics.first_call` above, flagged but *not* resolved by an earlier pass (see
+# `physics_B_composition.md`'s "cottax node" section). It is resolved here, not via
+# `FixedPointFunction` like `first_call`, but by addressing the field at index
+# granularity: the read range (2:13) and the write range (0/1) are disjoint, so once
+# each index is its own `VarPath` (`SequenceKey`-addressed, matching the real
+# `DataStructure` field's own `list[float]` storage) there is no overlap left to
+# conflict. `PlasmaComposition` now owns indices 0/1 outright.
 
 
-def test_next_first_call_matches_the_shared_helper():
-    """`NextFirstCall.step` and `plasma_composition`'s own `first_call_next` return
-    value both call `next_first_call` -- not two independent reimplementations of the
-    same formula. This just confirms the node's `step` body actually is that call.
+def _pure_function_kwargs_to_node_kwargs(kwargs):
+    """Pack/unpack adapter: `plasma_composition`'s one-array-argument kwargs ->
+    `PlasmaComposition.__call__`'s fourteen-individual-index kwargs (minus `is_ignited`,
+    which is the node's static field, not a port).
+
+    Same idiom `coils/calculate.py`'s minted `coilcurrent` adapters use elsewhere in this
+    codebase: a small, explicit translation between the pure function's array-shaped
+    signature and the node's per-index `VarPath`s, not a new pattern.
     """
-    for first_call in (0, 1, 0.0, 1.0):
-        node = NextFirstCall()
-        got = node.step(first_call)
-        want = next_first_call(first_call)
-        assert got == want
+    node_kwargs = {k: v for k, v in kwargs.items() if k != "is_ignited"}
+    array = node_kwargs.pop("f_nd_impurity_electron_array")
+    for i in range(2, 14):
+        node_kwargs[f"f_nd_impurity_electron_array_{i}"] = array[i]
+    return node_kwargs
 
 
-def test_next_first_call_assembles_as_a_fixed_point_node():
-    """The actual point of this split: `to_graph(NextFirstCall())` must succeed.
-
-    Before this split, `plasma_composition`'s `.physics.first_call` self-loop had no
-    node written for it at all, precisely because it was known in advance (from
-    `Avail`'s precedent) that declaring it as a plain node would hit `cottax.spec`'s
-    "reads what it also owns" construction error. `FixedPointFunction` mints the cut
-    internally (`^cond.physics.first_call`), so the body node reads the real
-    `.physics.first_call` and the separate `FixedPoint` problem node owns it --
-    `to_graph` must build both without raising.
-    """
-    graph = to_graph(NextFirstCall())
-    assert graph.definitions
-    # Two nodes: the `step` body and the `FixedPoint` problem it feeds -- exactly the
-    # pair `FixedPointFunction.node_definitions_and_names` documents.
-    assert len(graph.definitions) == 2
-
-
-def test_plasma_composition_node_assembles_and_does_not_own_first_call():
-    """`PlasmaComposition` (the ordinary node) must also assemble on its own, and must
-    not itself own `.physics.first_call` -- that `VarPath` belongs to `NextFirstCall`'s
-    `FixedPoint` problem node alone, not this one.
+def test_plasma_composition_owns_h_and_he_fractions():
+    """The actual point of this split: `PlasmaComposition` now *owns*
+    `.impurity_radiation.f_nd_impurity_electron_array[0]`/`[1]` (the `H_`/`He`
+    fractions it computes), and reads only indices 2-13 -- never the whole array, and
+    never indices 0/1 as a read. `to_graph` succeeding at all is only half the proof;
+    checking exactly which `VarPath`s are owned/read is the other half (a node could
+    assemble while silently reading or owning the wrong indices).
     """
     node = PlasmaComposition(is_ignited=False)
     graph = to_graph(node)
     assert graph.definitions
+
     owned = {out.var for out in node.outputs}
-    # Built the same way the node itself resolves an `Output`'s `where`, rather than
-    # hand-rolling the internal key representation.
-    first_call_path = path_of(lambda s: s.physics.first_call, VarPath)
-    assert first_call_path not in owned
+    read = {inp.var for inp in node.inputs}
+
+    h_path = path_of(
+        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0], VarPath
+    )
+    he_path = path_of(
+        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1], VarPath
+    )
+    assert h_path in owned
+    assert he_path in owned
+    assert h_path not in read
+    assert he_path not in read
+
+    for i in range(2, 14):
+        idx_path = path_of(
+            lambda s, i=i: s.impurity_radiation.f_nd_impurity_electron_array[i],
+            VarPath,
+        )
+        assert idx_path in read
+        assert idx_path not in owned
 
 
-def test_next_first_call_and_plasma_composition_assemble_together():
-    """The two halves of the split coexist in one graph with no naming collision:
-    `NextFirstCall`'s `FixedPoint` problem owns `.physics.first_call`;
-    `PlasmaComposition` only reads it. This is the shape a later consolidation pass
-    (not this one) would register into `total_process.py`.
+def test_calculate_effective_charge_ionisation_profiles_assembles_alone():
+    """`CalculateEffectiveChargeIonisationProfiles` reads all fourteen indices as
+    individual `Input`s (no whole-array read left anywhere in this file) and must still
+    assemble on its own.
     """
-    graph = to_graph(NextFirstCall(), PlasmaComposition(is_ignited=False))
+    graph = to_graph(CalculateEffectiveChargeIonisationProfiles())
     assert graph.definitions
-    assert len(graph.definitions) == 3  # NextFirstCall's 2 + PlasmaComposition's 1
+
+
+def test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_composition():
+    """Combining the two nodes in one graph is now a real dependency, not a coincidence
+    of two boundary inputs: `CalculateEffectiveChargeIonisationProfiles` reads indices
+    0/1 of `f_nd_impurity_electron_array`, and `PlasmaComposition` owns exactly those
+    two -- so the two nodes together have one fewer unowned boundary input than either
+    has alone (12 fewer than the naive count, since indices 0/1 move from "both
+    boundary" to "one boundary, one produced").
+    """
+    plasma_composition_node = PlasmaComposition(is_ignited=False)
+    profiles_node = CalculateEffectiveChargeIonisationProfiles()
+    graph = to_graph(plasma_composition_node, profiles_node)
+    assert graph.definitions
+    assert len(graph.definitions) == 2
+
+    h_path = path_of(
+        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0], VarPath
+    )
+    he_path = path_of(
+        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1], VarPath
+    )
+    boundary_inputs = set(graph.unowned_inputs)
+    assert h_path not in boundary_inputs
+    assert he_path not in boundary_inputs
+
+
+def test_plasma_composition_node_matches_pure_function():
+    """The node's per-index reassembly must be numerically exact against the pure
+    function's own array-shaped call, for both `PlasmaComposition`'s ordinary outputs
+    and the two indices it now owns -- not merely "assembles without raising."
+
+    Uses the same legacy sample points `TestPlasmaComposition` already validates against
+    PROCESS, so this is a second, independent check on top of the value/gradient
+    contract: the node wiring around an already-verified pure function.
+    """
+    for sample in TestPlasmaComposition.samples:
+        kwargs = dict(sample.kwargs)
+        is_ignited = kwargs["is_ignited"]
+
+        want = plasma_composition(
+            **{k: v for k, v in kwargs.items() if k != "is_ignited"},
+            is_ignited=is_ignited,
+        )
+
+        node = PlasmaComposition(is_ignited=is_ignited)
+        node_kwargs = _pure_function_kwargs_to_node_kwargs(kwargs)
+        got = node(**node_kwargs)
+
+        # `want` is the pure function's 17-tuple in its own order: results[:4],
+        # results[4] (the full post-update array -- index into it for H_/He_),
+        # results[5:] (12 more). Splitting index 4 into two elements makes `expected`
+        # 18 long, matching the node's 18 `Output`s.
+        expected = (
+            *want[:4],
+            want[4][0],
+            want[4][1],
+            *want[5:],
+        )
+        assert len(got) == len(expected) == 18
+        for g, e in zip(got, expected, strict=True):
+            np.testing.assert_allclose(np.asarray(g), np.asarray(e), rtol=0, atol=0)

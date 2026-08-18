@@ -1,3 +1,9 @@
+---
+kind: model-unit
+status: reviewed
+confidence: high
+---
+
 # `st_fwbs` S1 + S5 — audit record
 
 Companion to `stellarator_E_fwbs_synthesis.md`, which found six real sub-computations

@@ -4,7 +4,7 @@ status: reviewed
 confidence: high
 ---
 
-**Ported.** `availability.py` / `test_availability.py`, 17 tier-1 contracts passing
+**Ported.** `availability.py` / `test_availability.py`, 19 tier-1 contracts passing
 (legacy + fuzz, value + `--fp-gradients`): the shared leaf helpers
 (`calculate_dpa_per_fpy`, `calculate_divertor_lifetime`,
 `calculate_cp_lifetime_superconducting`/`_resistive`, `calculate_u_unplanned_magnets`/
@@ -13,6 +13,16 @@ confidence: high
 top-level branches (`calculate_avail`, `calculate_avail_2`, `calculate_avail_st`).
 `calculate_redun_vac` is ported but deliberately has no harness contract (plain Python,
 not `jnp`-traceable — see "JAX-difficulty flags").
+
+**Node split done this wave (`next_steps.md` §5, Shape B).** `Avail`/`Avail2`/`AvailSt`
+used to each read and own `.costs.cplife` in one node, which `to_graph` refused outright
+(`ValueError: reads ['.costs.cplife'], which it also owns`). Each is now split into a
+tiny `CplifeAvail`/`CplifeAvailSt` `FixedPointFunction` (owns `.costs.cplife`) plus an
+ordinary `ExplicitFunction` for the branch's other outputs (reads it). `to_graph`
+succeeds on every one of the five resulting node classes, standalone and combined — see
+"cottax node" below for the exact shape and `test_availability.py`'s "Graph assembly"
+section for the tests that prove it. **Still not registered in `total_process.py`** —
+that stays a later, separate consolidation step, per this wave's scope.
 
 ## source
 
@@ -215,18 +225,90 @@ misrepresent the actual call graph). The six `calculate_u_unplanned_*` helpers,
 `u_planned`, etc.) have no `VarPath`, only the composite branch nodes' *aggregated*
 outputs do. `calculate_redun_vac` has no node at all (see JAX-difficulty flags).
 
-`Avail`/`Avail2`/`Avail2St` declare `ibkt_life`/`itart` (and, for `Avail2`/`AvailSt`,
+`Avail`/`Avail2`/`AvailSt` declare `ibkt_life`/`itart` (and, for `Avail2`/`AvailSt`,
 `n_vac_pumps_high`/`redun_vac`) as `eqx.field(static=True)` class fields, following
 `EcrhDensityLimit`'s precedent (`stellarator/density_limits.py`) for a switch resolved
 as a static kwarg rather than a graph `Input`.
 
+**`.costs.cplife` is split out of `Avail`/`Avail2`/`AvailSt` entirely — resolved this
+wave, previously blocking (`next_steps.md` §5, Shape B).** Each of the three branch
+node classes used to declare `.costs.cplife` as *both* an `Input` and an `Output`
+(`Avail`/`Avail2` via a `cplife`/`cplife_in` pair; `AvailSt` via a single bare `cplife`
+pair) — a genuine single-node self-loop, since real `avail()`/`avail_2()`/`avail_st()`
+each read-then-(conditionally-or-unconditionally)-rewrite `.costs.cplife` within one
+call. `to_graph(Avail(...))` raised `ValueError: reads ['.costs.cplife'], which it also
+owns` directly from `cottax.spec`'s `__check_init__` — not representable as a plain
+node at all, independent of any driving decision. Fixed per `next_steps.md` §5's
+Action, using `cottax.interfaces.pytree_namespace_module.FixedPointFunction` (already
+implemented; no new cottax primitive needed):
+
+- **`CplifeAvail`** — a `FixedPointFunction`, shared by `Avail` and `Avail2` (their
+  `itart == 1` cplife-adjustment formula is identical, confirmed by direct comparison of
+  `calculate_avail`'s and `calculate_avail_2`'s `itart == 1` blocks). `step` ->
+  `calculate_cplife_next`: `itart != 1` returns the current `.costs.cplife` value
+  unchanged (a real, if trivial, fixed point — `avail()`/`avail_2()` never touch the
+  field on that branch at all); `itart == 1` recomputes from scratch via whichever
+  `calculate_cp_lifetime_superconducting`/`_resistive` alternative a **static**
+  `i_tf_sup` field selects, then applies the lifetime adjustment
+  (`calculate_cplife_lifetime_adjustment`, a new free-standing duplicate of the formula
+  already inlined three times in `calculate_avail`/`_2`/`_st` — kept a duplicate rather
+  than a shared extraction so those three functions, and their existing harness
+  contracts, stay byte-for-byte untouched). `to_graph(CplifeAvail(...))` alone is
+  **cyclic by construction** (`is_acyclic is False`) — the body genuinely reads the real
+  `.costs.cplife` on the pass-through branch, same shape as
+  `physics_B_composition.py`'s `plasma_composition`/`first_call` precedent.
+- **`CplifeAvailSt`** — a separate `FixedPointFunction` (not shared with `CplifeAvail`):
+  `avail_st()` computes `.costs.cplife` **unconditionally** (the two `itart` gates are
+  not the same gate reused — see the data-footprint table above), so its `step` ->
+  `calculate_cplife_avail_st_next` never reads a previous `.costs.cplife` value at all,
+  only the genuine recompute inputs. `to_graph(CplifeAvailSt(...))` alone is
+  **acyclic** (`is_acyclic is True`) — a degenerate `FixedPoint` that converges in
+  exactly one iteration regardless of its starting guess, still correctly represented as
+  a `FixedPointFunction` for the structural reason given below, not because it needs
+  iterating.
+- **`Avail`/`Avail2`/`AvailSt` themselves** are now ordinary `ExplicitFunction`s over
+  each branch's *other* outputs only — `.costs.cplife` is no longer one of their
+  declared `Output`s. `Avail`/`Avail2` read it back as a plain current-value `Input`;
+  inspection of `calculate_avail`'s/`calculate_avail_2`'s bodies shows this value is
+  **provably inert** for every output either node still declares (`cplife`/`cplife_in`
+  feed only the now-discarded `cplife_mod` return slot) — kept as a real `Input` anyway
+  for documentation fidelity, not because the graph needs it. **`AvailSt` cannot do the
+  same** and does *not* read `.costs.cplife` at all: its `shortest_lifetime` (hence
+  `maint_cycle`/`u_planned`/`t_plant_operational_total_yrs`/every unplanned-
+  unavailability term/`f_t_plant_available`/every `*_mod` output it declares) needs the
+  *pre*-adjustment cplife value, which is a different number from the *post*-adjustment
+  value `CplifeAvailSt` owns whenever `itart == 1` and the adjustment actually applies
+  (`cplife / f_t_plant_available != cplife` in general) — so `AvailSt` instead
+  recomputes that same pre-adjustment value inline via `calculate_cp_lifetime_
+  superconducting`/`_resistive` (a **new** static `i_tf_sup` field on `AvailSt` itself),
+  matching what `test_availability.py::TestAvailSt`'s own `ported` adapter already did
+  before this split.
+- **Registering `CpLifetimeSuperconducting`/`CpLifetimeResistive` alongside
+  `CplifeAvail`/`CplifeAvailSt` is an open question, deliberately not resolved here**
+  (see "open questions" below) — both `i_tf_sup`'s branch inside `CplifeAvail`/
+  `CplifeAvailSt` and the standalone `CpLifetimeSuperconducting`/`CpLifetimeResistive`
+  nodes independently want to own `.costs.cplife`, and only one producer of one
+  `VarPath` may exist in any graph that registers both together. `CplifeAvail`/
+  `CplifeAvailSt` duplicate the two-line SC/resistive dispatch inline instead of
+  consuming those two nodes' outputs, sidestepping the conflict rather than resolving
+  it — `total_process.py`'s eventual wiring is where that resolution belongs.
+
+`to_graph` succeeds on every one of the five node classes above (standalone, and for one
+representative pair each — `CplifeAvail`+`Avail`, `CplifeAvailSt`+`AvailSt` — combined
+with no ownership conflict), confirmed by `test_availability.py`'s "Graph assembly"
+section. **None of the five is registered in `total_process.py`** — that remains a
+later, separate consolidation step; this split only makes the nodes representable.
+
 ## tier signal
 
-**All 18 functions are tier 1** — explicit, no internal iteration, no `scipy.optimize`/
+**All 21 functions are tier 1** — explicit, no internal iteration, no `scipy.optimize`/
 `fsolve`, no calls into any other `Model`. `avail`/`avail_2`/`avail_st` are compositions
 of already-ported tier-1 functions with no solver introduced at the composition level
 (same treatment as `heating.md`'s common-tail functions, kept tier-1 rather than deferred
-to the not-yet-built tier-3 machinery).
+to the not-yet-built tier-3 machinery). `calculate_cplife_lifetime_adjustment`/
+`calculate_cplife_next`/`calculate_cplife_avail_st_next` (the new Shape B split's step
+functions) are the same shape — explicit compositions of already-ported tier-1
+functions, no new solver.
 
 ## switches touched
 
@@ -250,7 +332,11 @@ to the not-yet-built tier-3 machinery).
   costs nothing here that a node split would improve, unlike `i_tf_sup`'s case where the
   two branches read from genuinely different subsystems (superconducting-magnet vs.
   resistive-magnet fields) that a reader benefits from seeing as separate nodes.
-- `.tfcoil.i_tf_sup` — **split** (see "cottax node").
+- `.tfcoil.i_tf_sup` — **split**, at two different granularities now (see "cottax
+  node"): as the top-level `CpLifetimeSuperconducting`/`CpLifetimeResistive` alternative
+  pair, *and*, independently, as a static field duplicated inline inside
+  `CplifeAvail`/`CplifeAvailSt`'s own recompute (necessary, not redundant — see "cottax
+  node" for why those two can't simply consume the top-level pair's output).
 - `.ife.ife` — **resolved above this file, for this port's scope**: never touched by
   `Stellarator.run()`, so effectively fixed at its default (0) on the stellarator
   pipeline. Not implemented as a graph switch at all here (see the `ife.ife` data-footprint
@@ -390,3 +476,22 @@ attached (see data footprint).
    demonstrates `avail_st`/`avail_2` actually running in a real stellarator solve. A
    `tests/regression` case with `istell != 0`, `i_plant_availability = 3`, `itart = 1`
    would be the strongest possible confirmation and does not appear to exist.
+4. **Whether `CpLifetimeSuperconducting`/`CpLifetimeResistive` should ever be registered
+   alongside `CplifeAvail`/`CplifeAvailSt`, and if so how, is unresolved** (new this
+   wave — see "cottax node"). As written, both pairs independently want to own
+   `.costs.cplife`; `CplifeAvail`/`CplifeAvailSt` sidestep the conflict by duplicating
+   `i_tf_sup`'s SC/resistive dispatch inline rather than consuming the standalone pair's
+   output, which leaves `CpLifetimeSuperconducting`/`CpLifetimeResistive` valid but with
+   no consumer in this file's own graph. Whoever designs `total_process.py`'s wiring
+   needs a policy here: keep both pairs and pick one per registration, delete the
+   now-unconsumed standalone pair, or find a cottax modelling convention (not present in
+   `~/jaxgraph` today) for "one node's *intermediate* value, not its persisted one, feeds
+   another node's self-reference" that would let them compose instead of conflict.
+5. **Whether `AvailSt`'s duplicated SC/resistive recompute (inline, alongside
+   `CplifeAvailSt`'s own copy) is worth deduplicating once a driver is assigned.** Two
+   independent evaluations of the same two-line formula per graph run is cheap arithmetic
+   but a real duplication; a rewrite pass after `total_process.py`'s wiring is designed
+   (e.g. `Cut`/`rewrites`-style sharing, or reconsidering whether `AvailSt`'s
+   pre-adjustment need is better modelled as its own minted intermediate) might remove it.
+   Not attempted here — this wave's job was making the nodes representable, not
+   optimising the resulting graph.

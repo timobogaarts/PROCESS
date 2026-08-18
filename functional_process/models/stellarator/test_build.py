@@ -164,7 +164,6 @@ def _reference_build(
         data.build.dr_tf_outboard,
         data.build.dr_shld_vv_gap_outboard,
         data.build.r_tf_outboard_mid,
-        data.build.z_tf_inside_half,
         data.build.rspo,
         data.first_wall.a_fw_total,
     )

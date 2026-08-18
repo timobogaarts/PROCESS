@@ -851,13 +851,19 @@ class FusionRates(ExplicitFunction):
     those names for (`teprofile.profile_y`/`neprofile.profile_y` off the same
     `PlasmaProfile` instance) -- not a new mint.
 
-    **One newly minted `VarPath`**: `.physics.profile_x`. Neither `teprofile.profile_x`
-    nor `neprofile.profile_x` has any existing `VarPath` (`plasma_profiles.md` explicitly
-    left the grid un-minted), and the two are numerically identical (both built by
-    `profiles.py`'s `Profile.normalise_profile_x()` on
-    `np.arange(n_plasma_profile_elements)`, verified in `plasma_profiles.py`'s own test
-    stub) -- so this node takes one shared grid argument. See the audit record's
-    data-footprint table.
+    **A third reused minted `VarPath`, not a new mint.** This class's own earlier
+    draft minted a fresh `.physics.profile_x` here on the reasoning that neither
+    `teprofile.profile_x` nor `neprofile.profile_x` had an existing `VarPath` -- true
+    at the time, but `profiles.py`'s `ProfileGrid` (a source node, no inputs) already
+    mints exactly this grid as `.physics.radius_plasma_profile_norm`, and
+    `radiation_power.py`'s own node already reads it under that name. The two are the
+    same array (`np.arange(n_plasma_profile_elements)`, normalised by
+    `Profile.normalise_profile_x()`, verified in `plasma_profiles.py`'s own test
+    stub) -- confirmed directly, not assumed, by the block-by-block MDA-vs-PROCESS
+    comparison harness surfacing `.physics.profile_x` as an ungrounded boundary input
+    duplicating an already-real one. Fixed by reading `radius_plasma_profile_norm`
+    here too, same as `radiation_power.py` -- three consumers of one mint now, not
+    two plus a stray duplicate. See the audit record's data-footprint table.
     """
 
     pden_plasma_alpha_mw = Output(lambda s: s.physics.pden_plasma_alpha_mw)
@@ -882,7 +888,7 @@ class FusionRates(ExplicitFunction):
 
     def __call__(
         self,
-        profile_x=Input(lambda s: s.physics.profile_x),
+        profile_x=Input(lambda s: s.physics.radius_plasma_profile_norm),
         te_profile_y=Input(lambda s: s.physics.temp_plasma_electron_profile_kev),
         ne_profile_y=Input(lambda s: s.physics.nd_plasma_electron_profile),
         temp_plasma_ion_vol_avg_kev=Input(

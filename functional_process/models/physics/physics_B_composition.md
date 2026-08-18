@@ -41,6 +41,23 @@ blocking dependency resolved during this same session rather than staying open.
 
 ## the `first_call` self-loop
 
+**Updated — removed entirely, not driven or admitted as a `FixedPoint`.** Everything
+below this paragraph (through the "Sketch of what the node would look like" block) is
+the reasoning trail that led to the `NextFirstCall`/`FixedPointFunction` split described
+further down this file — kept for the record, but **that split has since been undone**.
+Checking `pc`'s non-bootstrap value's real producer
+(`.physics.f_temp_plasma_electron_density_vol_avg`, from `physics/plasma_profiles.py`,
+registry unit #12) shows it has **no dependency on anything `plasma_composition`
+produces** — so `first_call` was never a genuine cycle at all, just an artefact of
+PROCESS's own imperative call order running `plasma_composition` before
+`plasma_profiles` the first time through the pipeline. This is the same shape as three
+other findings from the same session: `Divertor`/`DivertorPlateMass`, `beta_fast_alpha`,
+`beta_beam` — all "ordering artifacts," not cycles. `plasma_composition` now always uses
+the real `f_temp_plasma_electron_density_vol_avg` value directly as `pc`; `first_call`,
+`alphan`, `alphat`, and `first_call_next` are no longer ported at all — not read, not
+written, not a parameter, not a return value. `NextFirstCall` no longer exists. See the
+"cottax node" section's own update note, and `_audit/next_steps.md` §5's tally.
+
 `plasma_composition` reads `.physics.first_call` once (to select between two formulas
 for an intermediate, `pc`) and, **only inside the `first_call == 1` branch**, writes it
 back to `0` (`physics.py:1381,1387`) — the other branch leaves the field alone, so
@@ -55,12 +72,18 @@ node. `~/jaxgraph/CLAUDE.md` ("The graph"): *"A node may not read what it owns..
 fixed point is always written with a minted copy, and a cycle is always at least two
 nodes."* A single `cottax` node cannot own `.physics.first_call` and also read it — the
 port (`plasma_composition` the function) exposes `first_call` as an ordinary input and
-`first_call_next` (the pass-through/reset described above) as an
-ordinary output, but **no node class is written for this function in this pass**,
-because wiring that pair back onto one `VarPath` needs the same `Cut` treatment
-`~/jaxgraph/CLAUDE.md`'s mapping table describes for PROCESS's other cross-call state
-flags — a graph-assembly-time decision, not a per-node one, and out of this record's
-authority (it touches `total_process.py`, off-limits per this dispatch's boundary).
+`first_call_next` (the pass-through/reset described above) as an ordinary output.
+
+**Updated — resolved via `FixedPointFunction`, not `Cut`.** A later pass split this
+self-loop into two node classes, `NextFirstCall` (`FixedPointFunction`) and
+`PlasmaComposition` (`ExplicitFunction`) — see the "cottax node" section below for the
+full description and the empirical `to_graph()` proof. The `Cut`-shaped wiring this
+section originally called for turned out not to be needed for *representing* the
+self-loop (only for eventually *driving* it, which stays deferred, and is still a
+`total_process.py` consolidation decision, out of scope here) — `FixedPointFunction`
+mints the cut internally at declaration time, which is exactly what
+`_audit/next_steps.md` §5 ("Shape B") means by "a structural admission requirement, not
+a solver choice."
 
 **Third instance of this exact pattern**, not the first:
 `functional_process/models/stellarator/stellarator_A_orchestration.md` already flagged
@@ -118,9 +141,8 @@ see open questions.
 | `.physics.temp_plasma_electron_vol_avg_kev` | read | explicit-arg | single scalar, evaluated against every species' table |
 | `.impurity_radiation.temp_impurity_keV_array`, `.impurity_radiation.impurity_arr_zav` | read | explicit-arg (constant) | `(14, 200)` each, compile-time |
 | `.physics.f_plasma_fuel_deuterium`, `.f_plasma_fuel_tritium`, `.f_plasma_fuel_helium3` | read | explicit-arg | |
-| `.physics.first_call` | read, then written | **self-loop** — see dedicated section above | not classifiable under the five existing schema categories; evidence for a new `implicit-io-across-calls` category |
-| `.physics.alphan`, `.physics.alphat` | read | explicit-arg | `first_call`-branch only |
-| `.physics.f_temp_plasma_electron_density_vol_avg` | read | explicit-arg | non-`first_call`-branch only; producer is `physics/plasma_profiles.py` (registry unit #12, already ported) |
+| `.physics.first_call`, `.physics.alphan`, `.physics.alphat` | **not read at all** | n/a | **updated**: these three are no longer ported — see "the `first_call` self-loop" section above. Row kept for the historical record of the original data-footprint audit. |
+| `.physics.f_temp_plasma_electron_density_vol_avg` | read | explicit-arg | used unconditionally now (the `first_call`-branch/non-branch split no longer exists); producer is `physics/plasma_profiles.py` (registry unit #12, already ported) |
 | `.current_drive.f_beam_tritium` | read | explicit-arg | cross-area read |
 | `.impurity_radiation.m_impurity_amu_array` | read | explicit-arg (constant) | `(14,)` |
 | `.physics.n_charge_plasma_effective_vol_avg`, `.nd_plasma_impurities_vol_avg`, `.nd_plasma_ions_total_vol_avg`, `.f_nd_plasma_carbon_electron`, `.f_nd_plasma_oxygen_electron`, `.f_nd_plasma_iron_argon_electron`, `.f_alpha_electron`, `.f_alpha_ion`, `.m_fuel_amu`, `.m_beam_amu`, `.m_ions_total_amu`, `.n_charge_plasma_effective_mass_weighted_vol_avg` | write | explicit-arg | ordinary outputs, no further read within this function |
@@ -138,12 +160,14 @@ see open questions.
 
 ## proposed signature(s)
 ```python
+# Updated: first_call/alphan/alphat removed from the signature -- see "the first_call
+# self-loop" section above.
 def plasma_composition(
     nd_plasma_electrons_vol_avg, f_nd_alpha_thermal_electron, fusden_alpha_total,
     f_nd_protium_electrons, proton_rate_density, f_nd_beam_electron,
     f_nd_impurity_electron_array, temp_plasma_electron_vol_avg_kev,
     temp_impurity_keV_array, impurity_arr_zav, f_plasma_fuel_deuterium,
-    f_plasma_fuel_tritium, f_plasma_fuel_helium3, first_call, alphan, alphat,
+    f_plasma_fuel_tritium, f_plasma_fuel_helium3,
     f_temp_plasma_electron_density_vol_avg, f_beam_tritium, m_impurity_amu_array,
     is_ignited,
 ) -> tuple[...]: ...
@@ -156,17 +180,67 @@ def calculate_effective_charge_ionisation_profiles(
 Implemented in `physics_B_composition.py`.
 
 ## cottax node
-`CalculateEffectiveChargeIonisationProfiles` (`ExplicitFunction`) only — see "the
-`first_call` self-loop" above for why `plasma_composition` gets no node class in this
-pass, only the ported function.
+**Updated twice.** First pass: `plasma_composition`'s apparent Shape-B self-loop on
+`.physics.first_call` was split across two node classes, `NextFirstCall`
+(`FixedPointFunction`) and `PlasmaComposition` (`ExplicitFunction`) — `to_graph()`
+verified the split assembled. **Second pass, this pass supersedes it**: investigating
+*why* `first_call` existed (not just how to represent it) found it is not a genuine
+cycle at all — see the "the `first_call` self-loop" section's own update note above.
+`NextFirstCall` has been deleted outright, not driven, not left undriven-but-declared.
+`PlasmaComposition` is now the *only* node class for this function's outputs, one fewer
+than before, and it neither reads nor owns `.physics.first_call` — that `VarPath` is
+untouched by this unit's port. `total_process.py`'s registration was updated to match
+(the `NextFirstCall` import/entry removed). This is the concrete difference this
+session's Shape A/B/"ordering artifact" taxonomy exists to catch: a self-loop shape can
+be *representable* (`FixedPointFunction` proved that) while still being the wrong thing
+to build, if the underlying dependency it is modelling was never really there.
+
+**A second, previously unflagged Shape-B self-loop was found while wiring
+`PlasmaComposition` — updated, now resolved, and by a different route than `first_call`.**
+An earlier pass found that `.impurity_radiation.f_nd_impurity_electron_array` is also
+both read (indices 2:13 only — `znimp`, `nd_plasma_impurities_vol_avg`, the per-species
+fraction outputs, `m_ions_total_amu`, the mass-weighted `zeff` term) and written (indices
+0/1, the H_/He_ update) by `plasma_composition`, and that `to_graph` raises the identical
+construction error if `PlasmaComposition` declares both an `Input` and an `Output` on
+the *whole array* as one `VarPath`. **The resolution is per-index addressing, not a
+second `FixedPointFunction`.** The read range (2:13) and the write range (0/1) are
+disjoint at index granularity — the self-loop was an artefact of naming the field as one
+`VarPath` rather than fourteen. Once each index is its own `VarPath`
+(`s.impurity_radiation.f_nd_impurity_electron_array[i]`, a real `SequenceKey`-addressed
+name per `~/jaxgraph`'s `_Recorder.__getitem__` — matching the real `DataStructure`
+field's own `list[float]` storage, `impurity_radiation_variables.py:91`, not a `jnp`
+array, so per-index addressing is structurally exact, not a naming convenience), the
+conflict disappears entirely: `PlasmaComposition` reads indices 2-13 as twelve ordinary
+`Input`s and **owns** indices 0 (`H_`) and 1 (`He`) as two ordinary `Output`s
+(`f_nd_impurity_electron_array_h`/`_he`) — no minted copy, no `FixedPoint` problem node,
+no deferred solver decision. `to_graph(PlasmaComposition(...))` confirms this
+empirically, and now also confirms *which* `VarPath`s are owned vs. read
+(`test_physics_B_composition.py::test_plasma_composition_owns_h_and_he_fractions`).
+`CalculateEffectiveChargeIonisationProfiles` (the file's other consumer of this field)
+was converted the same way, for consistency and because it is now a genuine dependent
+of `PlasmaComposition`'s two owned indices rather than an unrelated boundary read
+(`test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_composition`).
+`radiation_power.py`'s `ImpurityRadiationTotals` — the field's third real consumer,
+audited under a different unit — received the identical per-index treatment in the same
+session; see that record's own "cottax node" section.
+
+Indices 0/1's *old* values are never read by `plasma_composition` before being
+overwritten (confirmed by reading the function body: `.at[H_INDEX].set(...)`/
+`.at[HE_INDEX].set(...)` are unconditional replacements, not read-modify-writes), so the
+node's `__call__` assembles the full 14-array it hands to the (unchanged) pure function
+with placeholder zeros at those two positions — numerically exact, not an approximation.
+`test_plasma_composition_node_matches_pure_function` checks the node's reassembly
+against the pure function's own array-shaped call on every existing legacy sample, not
+just that `to_graph` succeeds.
 
 ## tier signal
-1 (explicit pure function) for both, **with two caveats that keep them from being a
-"clean" tier-1 in the sense chunk A's five functions are**: `plasma_composition`'s
-`znfuel` domain check is unported (see above) and its node is deferred pending a `Cut`.
-Neither caveat makes either function iterative or dependent on an unconverged internal
-solve — no `scipy.optimize`, no fixed-iteration loop — so tier 1 remains the correct
-classification, not tier 2.
+1 (explicit pure function) for both, **with one remaining caveat that keeps them from
+being a "clean" tier-1 in the sense chunk A's five functions are**: `plasma_composition`'s
+`znfuel` domain check is unported (see above). The other caveat this section used to
+list — `.impurity_radiation.f_nd_impurity_electron_array`'s own Shape-B self-loop — is
+now resolved (see "cottax node" above); it never made either function iterative or
+dependent on an unconverged internal solve — no `scipy.optimize`, no fixed-iteration
+loop — so tier 1 remains the correct classification, not tier 2.
 
 ## switches touched
 - `.physics.i_plasma_ignited` (`PlasmaIgnitionModel`, values `NON_IGNITED`/`IGNITED`):
@@ -205,23 +279,24 @@ see above). No other calls.
   ported. Severity **blocker** for full raise-parity with PROCESS; **not a blocker** for
   the port's own correctness on any input where the check would not have fired (the
   arithmetic is otherwise identical) — flagged, not resolved, see open questions.
-- **First-call self-loop, no node minted** (see dedicated section above). Severity
-  **blocker** for graph registration of `plasma_composition` specifically; does not
-  block the ported function itself, which is fully tested.
-- **Step-function-at-its-own-jump** (new flag): `first_call`'s `jnp.where(first_call ==
-  1, 0, first_call)` is a discrete `{0, 1}` flag evaluated exactly at its own decision
-  boundary in the `large_tokamak_nof-first_call` sample (`first_call=1`). PROCESS's own
-  central finite difference there estimates the slope of the *neighbouring* branch, not
-  this branch's true (zero) analytic derivative — the two are not comparable at that
-  point, through no fault of the port (confirmed: every value/finiteness check passes;
-  only `test_gradient_agreement` disagrees, and only in the direction the discontinuity
-  predicts). Resolved by declaring `first_call` a `static_argnames` entry — it is
-  bookkeeping state, not a continuous design quantity, so excluding it from
-  differentiation is consistent with `i_beta_fast_alpha`/`is_ignited`'s treatment
-  elsewhere in this dispatch, not a special case invented for this failure. Severity
-  minor (resolved); worth recording as a second, independent motivation (beyond "it's a
-  switch") for excluding an argument from `test_gradient_agreement` — the existing
-  `static_argnames` docstring only names the switch case.
+- **First-call self-loop, no node minted** (see dedicated section above). **Resolved by
+  removal, not representation**: `first_call` turned out not to be a genuine dependency
+  at all (an ordering artifact of PROCESS's call sequence), so it is not ported and
+  `NextFirstCall` no longer exists. Severity was **blocker** for graph registration of
+  `plasma_composition`; now not applicable — there is no self-loop left to register.
+- **Second self-loop, `f_nd_impurity_electron_array`, found and resolved** (see "cottax
+  node" section). Severity was **blocker** for `PlasmaComposition` owning the post-update
+  entries at all; now minor — resolved by per-index addressing (twelve read `Input`s,
+  two owned `Output`s, `H_INDEX`/`HE_INDEX`), not a `FixedPointFunction`. The ported
+  function itself was never blocked by this; only the node's ownership of the two
+  updated entries was.
+- **Step-function-at-its-own-jump** (historical, no longer applicable): an earlier draft
+  ported `first_call`'s `jnp.where(first_call == 1, 0, first_call)` and hit a genuine
+  gradient disagreement at the `large_tokamak_nof-first_call` sample's `first_call=1`
+  boundary, resolved at the time by declaring `first_call` `static_argnames`. Moot now
+  that `first_call` is not ported at all (see above) — kept here only as a record that
+  the earlier, since-superseded port was itself gradient-checked carefully, not
+  discovered wrong by this gradient failure.
 
 ## open questions
 1. Should `znfuel < 0` become a real assertion somewhere in the eventual graph (e.g. a
@@ -230,10 +305,15 @@ see above). No other calls.
    behaviour at exactly the input PROCESS considered invalid. Not resolved here —
    needs a decision about where domain validity checks live in the eventual graph, not
    a per-unit call.
-2. `.physics.first_call`'s `Cut` treatment — same open question `stellarator_A_orchestration.md`
-   already raised for its own two instances, now with a third data point. Whether all
-   three should share one graph-assembly convention (a `first_call` root namespace?) or
-   be resolved independently is the coordinating session's call.
+2. **Resolved, differently than first thought**: `.physics.first_call` is not a
+   self-loop needing a node shape at all. The `FixedPointFunction` split
+   (`NextFirstCall`/`PlasmaComposition`) that once answered this question has been
+   undone — `first_call`'s real referent (`f_temp_plasma_electron_density_vol_avg`) has
+   no dependency back on `plasma_composition`, so the "self-loop" was an ordering
+   artifact of PROCESS's own call sequence, not a genuine cycle to represent or drive.
+   `stellarator_A_orchestration.md`'s two instances and this file's second self-loop
+   (item 4 below) are unaffected — each was checked independently and neither turned out
+   to share this one's "not actually a dependency" shape.
 3. Confirm with unit #23's own maintainers (if that record changes) that
    `element2index`'s label order stays `H_, He, Be, C_, N_, O_, Ne, Si, Ar, Fe, Ni, Kr,
    Xe, W_` — this record's hardcoded indices (`H_INDEX=0`, `HE_INDEX=1`,
@@ -241,3 +321,21 @@ see above). No other calls.
    traced against `initialise_imprad`'s literal call order in
    `impurity_radiation.py:27-376`, not merely the default array literal (the two agree,
    confirmed by reading both).
+4. **Resolved**: `.impurity_radiation.f_nd_impurity_electron_array`'s own Shape-B
+   self-loop is answered — **per-index addressing, not `FixedPointFunction`.** The
+   earlier open question here assumed the same shape as `first_call` (a minted-copy
+   split, with the attendant Shape A cross-node-dependency design question about
+   `nd_plasma_protons_vol_avg`/`nd_plasma_fuel_ions_vol_avg`/`nd_beam_ions`). That
+   assumption turned out to be avoidable: the read range (indices 2:13) and write range
+   (indices 0/1) never overlap, so addressing the field at index granularity
+   (`s.impurity_radiation.f_nd_impurity_electron_array[i]`, a real `SequenceKey`-named
+   `VarPath` per index, confirmed against `~/jaxgraph`'s `_Recorder.__getitem__` and
+   against the real `DataStructure` field's own `list[float]` storage) removes the
+   self-loop outright — `PlasmaComposition` simply owns indices 0/1 and reads 2-13,
+   both as ordinary ports on one ordinary node, no minted copy, no `FixedPoint` problem,
+   no Shape A edge to reason about. `to_graph(PlasmaComposition(...))` confirms both that
+   it assembles and that it owns exactly the two intended `VarPath`s
+   (`test_physics_B_composition.py::test_plasma_composition_owns_h_and_he_fractions`).
+   `radiation_power.py`'s `ImpurityRadiationTotals` received the same treatment in the
+   same session (see that record's "cottax node" section) — three real consumers of this
+   field now agree on one convention.

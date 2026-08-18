@@ -4,10 +4,11 @@
 
 Registry unit #9, chunk B. Audit record:
 `functional_process/models/physics/physics_B_composition.md` -- read it first,
-especially "the `first_call` self-loop" and "the `znfuel` raise" sections. The
-`first_call` self-loop's *node* shape (`NextFirstCall`/`PlasmaComposition` below) is now
-resolved via `FixedPointFunction`; the `znfuel` domain check remains deliberately
-unported -- see that section.
+especially "the `first_call` self-loop" and "the `znfuel` raise" sections. `first_call`
+is not ported at all -- it turned out to be an ordering artifact of PROCESS's own
+imperative call sequence, not a genuine cycle; see `plasma_composition`'s own docstring
+for the full account. The `znfuel` domain check remains deliberately unported -- see
+that section.
 
 Both functions were flagged blocked in `unit_registry.md` row #9 (they call
 `impurity_radiation.calculate_average_charge_at_temp`/`element2index`, registry unit
@@ -37,7 +38,6 @@ import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
-    FixedPointFunction,
     Input,
     Output,
 )
@@ -78,33 +78,6 @@ one is provably constant across *every* configuration, so it needs no field at a
 """
 
 
-def next_first_call(first_call):
-    """The next value of `.physics.first_call`, after one call to `plasma_composition`.
-
-    Extracted from `plasma_composition`'s body (not reimplemented) because it is the
-    one piece of that function's computation that reads a `VarPath` it also writes --
-    `.physics.first_call` itself -- the Shape-B self-loop `physics_B_composition.md`'s
-    "the `first_call` self-loop" section describes. `plasma_composition` below calls
-    this helper for its own `first_call_next` return value, and `NextFirstCall` (the
-    `FixedPointFunction` node further down this module) calls it again for `step` --
-    same formula, same helper, two different node bindings of the one `VarPath`.
-
-    PROCESS writes `.physics.first_call = 0` *only inside* the `first_call == 1`
-    branch (`physics.py:1387`) -- not unconditionally. The other branch leaves the
-    field alone, so this is a genuine pass-through there
-    (`d(next_first_call)/d(first_call) == 1`), not a constant reset
-    (`test_gradient_agreement` caught an earlier draft that got this wrong).
-
-    Note what this does *not* depend on: nothing else in `plasma_composition`. Unlike
-    `pc`/`pc_bootstrap` (which shares the same `first_call == 1` branch condition but
-    also needs `alphan`/`alphat`), `next_first_call` is a pure function of `first_call`
-    alone -- confirmed by reading `physics.py:1381-1387` directly, not assumed. So
-    isolating it into its own `FixedPointFunction` node costs nothing extra in inputs;
-    it is not a partial view into a larger coupled computation, just this one `VarPath`.
-    """
-    return jnp.where(first_call == 1, 0, first_call)
-
-
 def plasma_composition(
     nd_plasma_electrons_vol_avg,
     f_nd_alpha_thermal_electron,
@@ -119,9 +92,6 @@ def plasma_composition(
     f_plasma_fuel_deuterium,
     f_plasma_fuel_tritium,
     f_plasma_fuel_helium3,
-    first_call,
-    alphan,
-    alphat,
     f_temp_plasma_electron_density_vol_avg,
     f_beam_tritium,
     m_impurity_amu_array,
@@ -131,23 +101,28 @@ def plasma_composition(
 
     Ports `Physics.plasma_composition` (`physics.py:1166-1491`). Every `self.data`
     read/write in the source becomes an explicit argument/return value, in the order
-    PROCESS computes them; three things could not be ported as straight translations,
+    PROCESS computes them; two things could not be ported as straight translations,
     each documented in full in the audit record's own section:
 
-    - **the `first_call` self-loop**: PROCESS reads `.physics.first_call`, uses it to
-      pick between two formulas for one intermediate (`pc`), and *only on the
-      `first_call == 1` branch* writes it back as `0` -- the other branch leaves it
-      untouched (a real pass-through, not a no-op: `d(first_call_next)/d(first_call) ==
-      1` there, caught by `test_gradient_agreement` when an earlier draft of this port
-      wrote an unconditional `0`). A node cannot read a `VarPath` it also owns
-      (`~/jaxgraph/CLAUDE.md`, "The graph" -- "a node may not read what it owns"), so
-      this function takes `first_call` as an ordinary input and returns the next value
-      (`first_call_next`, via the `next_first_call` helper below) as an ordinary
-      return value under a different name -- **this module now splits that pair
-      across two node classes**, `NextFirstCall` (`FixedPointFunction`, owns
-      `.physics.first_call`) and `PlasmaComposition` (`ExplicitFunction`, everything
-      else, reads `first_call` as a plain cross-node `Input`); see both classes' own
-      docstrings and the audit record.
+    - **`.physics.first_call` is not ported at all -- deliberately, not an oversight.**
+      PROCESS reads it to pick between two formulas for one intermediate (`pc`): a
+      crude parabolic-profile estimate on the very first call, or the real
+      profile-derived value (`.physics.f_temp_plasma_electron_density_vol_avg`,
+      produced by `physics/plasma_profiles.py`, registry unit #12) on every call after.
+      An earlier draft of this port represented that as a genuine `FixedPointFunction`
+      self-loop (`NextFirstCall`, since removed) -- technically valid, `to_graph()`
+      assembled it, but it was solving the wrong problem. Checking `f_temp_plasma_
+      electron_density_vol_avg`'s *real* producer (`plasma_profiles.py:126`, same
+      formula, same two inputs `alphan`/`alphat`) shows it has **no dependency on
+      anything `plasma_composition` produces** -- so, same shape as this session's
+      `Divertor`/`beta_fast_alpha`/`beta_beam` findings, the "first call" branch exists
+      only because PROCESS's own imperative call order happens to run
+      `plasma_composition` before `plasma_profiles` the first time through the
+      pipeline, not because of a genuine cycle. Ordered correctly in a real graph, the
+      bootstrap branch is unreachable dead code. This function therefore always takes
+      the real `f_temp_plasma_electron_density_vol_avg` and uses it directly as `pc` --
+      `first_call`/`alphan`/`alphat` are not parameters here at all, and neither is a
+      `first_call_next` return value.
     - **the `znfuel < 0` domain check**: PROCESS raises `ProcessValueError`. The
       quantity itself (`znfuel`, and hence `nd_plasma_fuel_ions_vol_avg`) is a
       well-defined finite (if unphysical) negative float when this fires, not a NaN or
@@ -196,15 +171,10 @@ def plasma_composition(
         compile-time constants, see `impurity_radiation.py`'s own port.
     f_plasma_fuel_deuterium, f_plasma_fuel_tritium, f_plasma_fuel_helium3 :
         Fuel mix fractions.
-    first_call :
-        `1` on PROCESS's very first call to this function in a run, else `0`. See the
-        docstring section above.
-    alphan, alphat :
-        Density/temperature profile indices, used only by the `first_call` branch's `pc`
-        estimate.
     f_temp_plasma_electron_density_vol_avg :
-        Profile-derived `pc` value, used only by the non-`first_call` branch. Produced
-        by `physics/plasma_profiles.py` (registry unit #12, already ported).
+        Profile-derived `pc` value, used directly -- see the docstring section above
+        for why the `first_call` bootstrap this replaces is not ported. Produced by
+        `physics/plasma_profiles.py` (registry unit #12, already ported).
     f_beam_tritium :
         Tritium fraction of the neutral beam (`.current_drive.f_beam_tritium`).
     m_impurity_amu_array :
@@ -222,9 +192,9 @@ def plasma_composition(
         nd_plasma_impurities_vol_avg, nd_plasma_ions_total_vol_avg,
         f_nd_plasma_carbon_electron, f_nd_plasma_oxygen_electron,
         f_nd_plasma_iron_argon_electron, n_charge_plasma_effective_vol_avg,
-        first_call_next, f_alpha_electron, f_alpha_ion, m_fuel_amu, m_beam_amu,
+        f_alpha_electron, f_alpha_ion, m_fuel_amu, m_beam_amu,
         m_ions_total_amu, n_charge_plasma_effective_mass_weighted_vol_avg)`, matching
-        the order PROCESS computes them in.
+        the order PROCESS computes them in (`first_call_next` omitted -- see above).
     """
     nd_plasma_alphas_thermal_vol_avg = (
         nd_plasma_electrons_vol_avg * f_nd_alpha_thermal_electron
@@ -320,21 +290,11 @@ def plasma_composition(
         f_nd_impurity_electron_array * zav_all**2
     )
 
-    first_call_is_bootstrap = first_call == 1
-    pc_bootstrap = (1.0 + alphan) * (1.0 + alphat) / (1.0 + alphan + alphat)
-    pc = jnp.where(
-        first_call_is_bootstrap, pc_bootstrap, f_temp_plasma_electron_density_vol_avg
-    )
-    # PROCESS writes `.physics.first_call = 0` *only inside* the `first_call == 1`
-    # branch (physics.py:1387) -- not unconditionally, as an earlier draft of this
-    # module's docstring claimed (caught by `test_gradient_agreement`: an unconditional
-    # `0` gives d(first_call_next)/d(first_call) == 0 everywhere, but PROCESS's own
-    # branch structure makes the *other* branch pass `first_call` through unchanged, so
-    # the true derivative there is 1). Ported faithfully as a pass-through on the
-    # non-bootstrap branch. Same formula as `next_first_call` above -- called here,
-    # not duplicated, so the two node bindings below (`plasma_composition`'s own
-    # ordinary return, and `NextFirstCall.step`) can never drift apart.
-    first_call_next = next_first_call(first_call)
+    # `pc`: always the real profile-derived value. PROCESS's own `first_call`-gated
+    # parabolic-estimate fallback is not reproduced -- see the function's own
+    # docstring for why (an ordering artefact of PROCESS's imperative call sequence,
+    # not a genuine dependency this port needs to bootstrap around).
+    pc = f_temp_plasma_electron_density_vol_avg
 
     f_alpha_electron = 0.88155 * jnp.exp(
         -temp_plasma_electron_vol_avg_kev * pc / 67.4036
@@ -393,7 +353,6 @@ def plasma_composition(
         f_nd_plasma_oxygen_electron,
         f_nd_plasma_iron_argon_electron,
         n_charge_plasma_effective_vol_avg,
-        first_call_next,
         f_alpha_electron,
         f_alpha_ion,
         m_fuel_amu,
@@ -403,55 +362,50 @@ def plasma_composition(
     )
 
 
-class NextFirstCall(FixedPointFunction):
-    """cottax node: the `.physics.first_call` self-loop, split out of
-    `plasma_composition` -- see that function's own docstring and the module
-    docstring's "the `first_call` self-loop" cross-reference, and
-    `physics_B_composition.md`'s dedicated section.
-
-    `.physics.first_call` is read by `plasma_composition` (to pick between two `pc`
-    formulas) and, on that same read's `first_call == 1` branch only, overwritten with
-    `0` -- one `VarPath`, read and written by the same underlying PROCESS call. A
-    single `cottax` node cannot own a `VarPath` it also reads
-    (`~/jaxgraph/CLAUDE.md`, "The graph": *"a node may not read what it owns"*) --
-    confirmed the hard way this session by `to_graph(Avail(...))` raising exactly this
-    error for an unrelated unit's identical shape. `FixedPointFunction` is the
-    structural admission requirement this shape needs: `step` reads the real
-    `.physics.first_call` and mints `^cond.physics.first_call`; the `FixedPoint`
-    problem node this class also declares (`node_definitions_and_names`'s second
-    element, bound at `^problem.NextFirstCall`) reads that minted copy and owns the
-    real `.physics.first_call`.
-
-    This is a **structural admission only** -- declaring the shape so it can sit in a
-    `Graph` at all, not a decision to ever drive it. No solver/step algorithm is
-    assigned here; `FixedPoint.declared`/`declared_outside_cycles` exist for exactly
-    this ("perfectly valid to sit undriven in the graph", `next_steps.md` §5).
-
-    Deliberately its own node, not folded into `PlasmaComposition` below: bundling the
-    two would force `plasma_composition`'s other 17 ordinary outputs to be owned by
-    this `FixedPoint` problem node as well, even though none of them need iterating --
-    only `.physics.first_call` does. `step` reuses `next_first_call` rather than
-    reimplementing its formula, so this node and `PlasmaComposition`'s own
-    `first_call_next` (computed but not owned there, see below) can never disagree.
-    """
-
-    first_call = Output(lambda s: s.physics.first_call)
-
-    def step(self, first_call=Input(lambda s: s.physics.first_call)):
-        return next_first_call(first_call)
-
-
 class PlasmaComposition(ExplicitFunction):
-    """cottax node: `plasma_composition`'s ordinary outputs -- everything **except**
-    `.physics.first_call`, which `NextFirstCall` above owns instead.
+    """cottax node: `plasma_composition`'s outputs.
 
-    `first_call` is bound here as a perfectly ordinary `Input` -- the *current* value,
-    read like any other cross-node input, with no write-back. `plasma_composition`
-    (the ported function) still computes and returns `first_call_next` internally
-    (needed for `pc`'s branch selection, computed as a side effect either way), but
-    this node's `__call__` drops that element before returning, since this node does
-    not declare `.physics.first_call` as one of its `Output`s -- `NextFirstCall`
-    declares it, once, alone.
+    `.physics.first_call` is not a port here at all -- earlier this session it was
+    (`NextFirstCall`, a `FixedPointFunction`, since removed): technically valid,
+    `to_graph()` assembled it, but on reflection it was the wrong fix. Checking the
+    real producer of the value `first_call` exists to bootstrap
+    (`.physics.f_temp_plasma_electron_density_vol_avg`, from `plasma_profiles.py`)
+    shows it has no dependency back on anything `plasma_composition` produces -- so,
+    same shape as this session's `Divertor`/`beta_fast_alpha`/`beta_beam` findings,
+    `first_call` was never a genuine cycle, just an artefact of PROCESS's own
+    imperative call order. `plasma_composition` (the ported function) now always uses
+    the real value directly; see its own docstring for the full account. There is
+    nothing left to declare a `FixedPointFunction` for.
+
+    **A second, previously unflagged Shape-B self-loop was found while wiring this
+    node -- and is now resolved, not merely worked around.** The earlier draft found
+    that `.impurity_radiation.f_nd_impurity_electron_array` is both read (for
+    `znimp`/`nd_plasma_impurities_vol_avg`/the per-species fraction outputs -- all read
+    only the `z > 2` slice, indices 2:13, which `plasma_composition`'s H_/He_ writes
+    never touch) and, inside `plasma_composition`, *written* (indices 0/1). Declaring
+    the *whole array* as both an `Input` and an `Output` reproduces the identical
+    `ValueError: reads [...], which it also owns` `Avail`/`NextFirstCall` hit -- but the
+    two ranges that read and write are disjoint at index granularity (2:13 read, 0/1
+    written, no overlap), so the self-loop was an artefact of addressing the field as
+    one `VarPath` rather than fourteen. Per-element addressing
+    (`~/jaxgraph`'s `_Recorder.__getitem__`: an `int` index becomes a `SequenceKey`
+    component, so `s.impurity_radiation.f_nd_impurity_electron_array[i]` is a real,
+    distinct `VarPath` for each `i`, matching the real `DataStructure` field's own
+    `list[float]` storage -- see `impurity_radiation_variables.py`) removes the
+    conflict entirely: this node reads indices 2-13 (`IMPURITY_SLICE = slice(2, 14)`,
+    twelve entries -- `2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13`) as twelve ordinary
+    `Input`s and **owns** indices 0 (`H_`, `f_nd_impurity_electron_array_h`) and 1
+    (`He`, `f_nd_impurity_electron_array_he`) as two ordinary `Output`s -- twelve read
+    plus two owned is the whole fourteen-entry array, with no `FixedPointFunction`/`Cut`
+    machinery needed at all. `to_graph(PlasmaComposition(...))` confirms this
+    empirically (`test_plasma_composition_owns_h_and_he_fractions`).
+
+    Indices 0/1's *old* values are never read by `plasma_composition` before being
+    overwritten (`.at[H_INDEX].set(...)`/`.at[HE_INDEX].set(...)` -- confirmed by
+    reading the function body, not assumed), so `__call__` below assembles the full
+    14-array it hands to `plasma_composition` with placeholder zeros at those two
+    positions; the result is numerically exact, not an approximation -- the two
+    placeholders are unconditionally overwritten before anything downstream reads them.
 
     `is_ignited` is a graph-assembly-time switch, not a port -- `eqx.field(static=True)`,
     same move `ConfinementTime`/`EcrhDensityLimit` already make for their own switches
@@ -471,9 +425,18 @@ class PlasmaComposition(ExplicitFunction):
     nd_plasma_fuel_ions_vol_avg = Output(
         lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
     )
-    f_nd_impurity_electron_array = Output(
-        lambda s: s.impurity_radiation.f_nd_impurity_electron_array
+    f_nd_impurity_electron_array_h = Output(
+        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[H_INDEX]
     )
+    """`f_nd_impurity_electron_array[0]` (PROCESS display label
+    `f_nd_impurity_electrons(01)` per `naming_convention.md` § "Array elements" --
+    record both, they are not the same thing). The `H_` fraction `plasma_composition`
+    computes and writes."""
+    f_nd_impurity_electron_array_he = Output(
+        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[HE_INDEX]
+    )
+    """`f_nd_impurity_electron_array[1]` (display label `f_nd_impurity_electrons(02)`).
+    The `He` fraction `plasma_composition` computes and writes."""
     nd_plasma_impurities_vol_avg = Output(
         lambda s: s.physics.nd_plasma_impurities_vol_avg
     )
@@ -513,8 +476,41 @@ class PlasmaComposition(ExplicitFunction):
         f_nd_protium_electrons=Input(lambda s: s.physics.f_nd_protium_electrons),
         proton_rate_density=Input(lambda s: s.physics.proton_rate_density),
         f_nd_beam_electron=Input(lambda s: s.physics.f_nd_beam_electron),
-        f_nd_impurity_electron_array=Input(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array
+        f_nd_impurity_electron_array_2=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[2]
+        ),
+        f_nd_impurity_electron_array_3=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[3]
+        ),
+        f_nd_impurity_electron_array_4=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[4]
+        ),
+        f_nd_impurity_electron_array_5=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[5]
+        ),
+        f_nd_impurity_electron_array_6=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[6]
+        ),
+        f_nd_impurity_electron_array_7=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[7]
+        ),
+        f_nd_impurity_electron_array_8=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[8]
+        ),
+        f_nd_impurity_electron_array_9=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[9]
+        ),
+        f_nd_impurity_electron_array_10=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[10]
+        ),
+        f_nd_impurity_electron_array_11=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[11]
+        ),
+        f_nd_impurity_electron_array_12=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[12]
+        ),
+        f_nd_impurity_electron_array_13=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[13]
         ),
         temp_plasma_electron_vol_avg_kev=Input(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
@@ -526,9 +522,6 @@ class PlasmaComposition(ExplicitFunction):
         f_plasma_fuel_deuterium=Input(lambda s: s.physics.f_plasma_fuel_deuterium),
         f_plasma_fuel_tritium=Input(lambda s: s.physics.f_plasma_fuel_tritium),
         f_plasma_fuel_helium3=Input(lambda s: s.physics.f_plasma_fuel_helium3),
-        first_call=Input(lambda s: s.physics.first_call),
-        alphan=Input(lambda s: s.physics.alphan),
-        alphat=Input(lambda s: s.physics.alphat),
         f_temp_plasma_electron_density_vol_avg=Input(
             lambda s: s.physics.f_temp_plasma_electron_density_vol_avg
         ),
@@ -537,6 +530,29 @@ class PlasmaComposition(ExplicitFunction):
             lambda s: s.impurity_radiation.m_impurity_amu_array
         ),
     ):
+        # `plasma_composition` (the pure function) is unchanged -- still one 14-array
+        # parameter, physics untouched. Indices 0/1 are placeholders: the function
+        # never reads the *old* values there (see the class docstring), only
+        # overwrites them via `.at[H_INDEX].set(...)`/`.at[HE_INDEX].set(...)`, so
+        # zeros are numerically exact, not an approximation.
+        placeholder = jnp.zeros_like(f_nd_impurity_electron_array_2)
+        f_nd_impurity_electron_array = jnp.stack([
+            placeholder,  # index 0 (H_) -- owned by this node's own Output, not read
+            placeholder,  # index 1 (He) -- ditto
+            f_nd_impurity_electron_array_2,
+            f_nd_impurity_electron_array_3,
+            f_nd_impurity_electron_array_4,
+            f_nd_impurity_electron_array_5,
+            f_nd_impurity_electron_array_6,
+            f_nd_impurity_electron_array_7,
+            f_nd_impurity_electron_array_8,
+            f_nd_impurity_electron_array_9,
+            f_nd_impurity_electron_array_10,
+            f_nd_impurity_electron_array_11,
+            f_nd_impurity_electron_array_12,
+            f_nd_impurity_electron_array_13,
+        ])
+
         results = plasma_composition(
             nd_plasma_electrons_vol_avg,
             f_nd_alpha_thermal_electron,
@@ -551,17 +567,22 @@ class PlasmaComposition(ExplicitFunction):
             f_plasma_fuel_deuterium,
             f_plasma_fuel_tritium,
             f_plasma_fuel_helium3,
-            first_call,
-            alphan,
-            alphat,
             f_temp_plasma_electron_density_vol_avg,
             f_beam_tritium,
             m_impurity_amu_array,
             self.is_ignited,
         )
-        # Drop `first_call_next` (index 11 of `plasma_composition`'s 18-tuple) -- this
-        # node does not own `.physics.first_call`, `NextFirstCall` does.
-        return results[:11] + results[12:]
+        # `results[4]` is the post-update 14-array (index 4 of `plasma_composition`'s
+        # return tuple, see its own docstring); this node owns its two updated entries
+        # individually (`f_nd_impurity_electron_array_h`/`_he`) rather than the whole
+        # array. Order must match the `Output` declarations above: results[:4] (4), the
+        # two extracted H_/He_ entries (2), results[5:] (12) -- 18 total.
+        return (
+            *results[:4],
+            results[4][H_INDEX],
+            results[4][HE_INDEX],
+            *results[5:],
+        )
 
 
 def calculate_effective_charge_ionisation_profiles(
@@ -623,10 +644,21 @@ class CalculateEffectiveChargeIonisationProfiles(ExplicitFunction):
     `radiation_power.md`/`fusion_reactions.md` already record for their own reused
     mints.
 
-    `plasma_composition` is split across two node classes above -- `PlasmaComposition`
-    (its 17 ordinary outputs) and `NextFirstCall` (the `.physics.first_call` Shape-B
-    self-loop, admitted via `FixedPointFunction`) -- see the audit record's "the
-    `first_call` self-loop" section and those two classes' own docstrings.
+    `plasma_composition` is ported as a single node class above, `PlasmaComposition`,
+    with 17 ordinary outputs including the two per-index impurity-fraction outputs
+    below -- see that class's own docstring for why `.physics.first_call` is not a
+    port at all.
+
+    `f_nd_impurity_electron_array` is read here as fourteen individual `Input`s
+    (`SequenceKey`-addressed, one per index, matching `PlasmaComposition`'s own
+    per-index treatment of the same field -- see that class's docstring) rather than
+    one whole-array `Input`. **This is a real dependency, not cosmetic**: two of the
+    fourteen -- indices 0 (`H_`) and 1 (`He`) -- are exactly the entries
+    `PlasmaComposition` owns, so a graph containing both nodes now has a genuine edge
+    from `PlasmaComposition`'s `f_nd_impurity_electron_array_h`/`_he` outputs into this
+    node's own reads, where previously the whole-array `Input` was an unproduced
+    boundary variable no matter what else was in the graph
+    (`test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_composition`).
     """
 
     n_charge_plasma_effective_profile = Output(
@@ -641,14 +673,69 @@ class CalculateEffectiveChargeIonisationProfiles(ExplicitFunction):
         temp_electron_profile_kev=Input(
             lambda s: s.physics.temp_plasma_electron_profile_kev
         ),
-        f_nd_impurity_electron_array=Input(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array
+        f_nd_impurity_electron_array_0=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0]
+        ),
+        f_nd_impurity_electron_array_1=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1]
+        ),
+        f_nd_impurity_electron_array_2=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[2]
+        ),
+        f_nd_impurity_electron_array_3=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[3]
+        ),
+        f_nd_impurity_electron_array_4=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[4]
+        ),
+        f_nd_impurity_electron_array_5=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[5]
+        ),
+        f_nd_impurity_electron_array_6=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[6]
+        ),
+        f_nd_impurity_electron_array_7=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[7]
+        ),
+        f_nd_impurity_electron_array_8=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[8]
+        ),
+        f_nd_impurity_electron_array_9=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[9]
+        ),
+        f_nd_impurity_electron_array_10=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[10]
+        ),
+        f_nd_impurity_electron_array_11=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[11]
+        ),
+        f_nd_impurity_electron_array_12=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[12]
+        ),
+        f_nd_impurity_electron_array_13=Input(
+            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[13]
         ),
         temp_impurity_keV_array=Input(
             lambda s: s.impurity_radiation.temp_impurity_keV_array
         ),
         impurity_arr_zav=Input(lambda s: s.impurity_radiation.impurity_arr_zav),
     ):
+        f_nd_impurity_electron_array = jnp.stack([
+            f_nd_impurity_electron_array_0,
+            f_nd_impurity_electron_array_1,
+            f_nd_impurity_electron_array_2,
+            f_nd_impurity_electron_array_3,
+            f_nd_impurity_electron_array_4,
+            f_nd_impurity_electron_array_5,
+            f_nd_impurity_electron_array_6,
+            f_nd_impurity_electron_array_7,
+            f_nd_impurity_electron_array_8,
+            f_nd_impurity_electron_array_9,
+            f_nd_impurity_electron_array_10,
+            f_nd_impurity_electron_array_11,
+            f_nd_impurity_electron_array_12,
+            f_nd_impurity_electron_array_13,
+        ])
         return calculate_effective_charge_ionisation_profiles(
             temp_electron_profile_kev,
             f_nd_impurity_electron_array,

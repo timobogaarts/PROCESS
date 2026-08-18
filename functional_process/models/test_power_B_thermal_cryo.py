@@ -5,10 +5,25 @@ exist in `tests/unit/models/test_power.py` for
 `component_thermal_powers`/`plant_thermal_efficiency`/`plant_thermal_efficiency_2`
 (fuzz-only, same situation as chunk A); `cryo` does have legacy points there, reused
 below.
+
+The node-level tests at the bottom of this file (`DeltaEtaStep`/`ComponentThermalPowers`
+split) are new -- see `power_B_thermal_cryo.md`'s "The `delta_eta` self-loop" section
+and `DeltaEtaStep`'s own docstring for the full reasoning.
 """
 
+import jax
+import pytest
+
+from cottax.interfaces.pytree_namespace_module import to_graph
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
 from functional_process.models.power_B_thermal_cryo import (
+    ComponentThermalPowers,
+    DeltaEtaStep,
+    EtaTurbineStep,
+    EtathLiqStep,
+    PFwBlktCoolantPumpMwStep,
+    PFwDivHeatDepositedMwStep,
+    TempTurbineCoolantInStep,
     calculate_component_thermal_powers,
     calculate_cryo,
     calculate_cryo_loads,
@@ -545,3 +560,853 @@ class TestCryoLoads(Tier1Contract):
     ported = calculate_cryo_loads
     static_argnames = ("i_tf_sup", "i_pf_conductor", "inuclear")
     samples = _cryo_loads_samples()
+
+
+# ---------------------------------------------------------------------------
+# DeltaEtaStep -- the `.power.delta_eta` self-loop, cut into a FixedPointFunction
+# node, and ComponentThermalPowers's corresponding drop of that Output.
+# ---------------------------------------------------------------------------
+
+_DELTA_ETA_SWITCH_COMBOS = [
+    pytest.param(
+        PumpingPowerModelTypes.USER_INPUT,
+        0,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        id="user_input-0-ccfe_hcpb",
+    ),
+    pytest.param(
+        PumpingPowerModelTypes.FRACTION_OF_HEAT,
+        1,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE_WITH_DIVERTOR,
+        id="fraction_of_heat-1-ccfe_hcpb_with_divertor",
+    ),
+    pytest.param(
+        PumpingPowerModelTypes.MECHANICAL,
+        2,
+        ElectricConversionModelTypes.STEAM_RANKINE_CYCLE,
+        id="mechanical-2-steam_rankine",
+    ),
+    pytest.param(
+        PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+        0,
+        ElectricConversionModelTypes.USER_INPUT,
+        id="mechanical_with_pressure_drop-0-user_input",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("i_p_coolant_pumping", "i_blkt_dual_coolant", "i_thermal_electric_conversion"),
+    _DELTA_ETA_SWITCH_COMBOS,
+)
+def test_delta_eta_step_to_graph_builds(
+    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+):
+    """`to_graph(DeltaEtaStep(...))` succeeds -- the actual point of this split.
+
+    Before this split, `to_graph(ComponentThermalPowers(...))` raised `ValueError:
+    reads ['.power.delta_eta', ...], which it also owns` for every configuration
+    (`cottax` refuses to build a node that both reads and owns one `VarPath`).
+    `DeltaEtaStep`'s built-in `FixedPointFunction` cut mints a `^cond.power.delta_eta`
+    copy for the body to write and the real `.power.delta_eta` for the paired
+    `FixedPoint` problem node to own, so neither piece reads and owns the same path.
+    """
+    node = DeltaEtaStep(
+        i_p_coolant_pumping=int(i_p_coolant_pumping),
+        i_blkt_dual_coolant=i_blkt_dual_coolant,
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+    )
+    graph = to_graph(node)
+    names = {n.path_str() for n in graph.nodes}
+    assert names == {"['DeltaEtaStep']", "^problem['DeltaEtaStep']"}
+
+
+_SIX_SELF_LOOP_VARPATHS = (
+    ".power.delta_eta",
+    ".heat_transport.eta_turbine",
+    ".heat_transport.etath_liq",
+    ".heat_transport.temp_turbine_coolant_in",
+    ".heat_transport.p_fw_div_heat_deposited_mw",
+    ".primary_pumping.p_fw_blkt_coolant_pump_mw",
+)
+
+
+def test_component_thermal_powers_reads_all_six_but_no_longer_owns_any():
+    """All six self-referencing `VarPath`s moved ownership to their own
+    `FixedPointFunction`'s `FixedPoint` problem (`DeltaEtaStep`, `EtaTurbineStep`,
+    `EtathLiqStep`, `TempTurbineCoolantInStep`, `PFwDivHeatDepositedMwStep`,
+    `PFwBlktCoolantPumpMwStep`).
+
+    `ComponentThermalPowers` must still *read* each current value (they feed
+    `calculate_component_thermal_powers` internally, unchanged), but must not declare
+    any of them as an `Output` any more -- two nodes owning the same `VarPath` in one
+    graph is exactly the ownership collision `Graph` construction would need to
+    reject, and would defeat the point of the split.
+    """
+    node = ComponentThermalPowers(
+        i_p_coolant_pumping=int(PumpingPowerModelTypes.USER_INPUT),
+        i_blkt_dual_coolant=0,
+        i_thermal_electric_conversion=int(ElectricConversionModelTypes.CCFE_HCPB_VALUE),
+        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
+        secondary_cycle_liq=2,
+    )
+    owned = {o.var.path_str() for o in node.outputs}
+    read = {i.var.path_str() for i in node.inputs}
+    for path in _SIX_SELF_LOOP_VARPATHS:
+        assert path not in owned
+        assert path in read
+
+
+def test_component_thermal_powers_to_graph_builds_cleanly():
+    """`to_graph(ComponentThermalPowers(...))` no longer raises at all.
+
+    Before this pass, it raised on five self-referencing fields beyond `delta_eta`
+    (`eta_turbine`, `etath_liq`, `temp_turbine_coolant_in`,
+    `p_fw_div_heat_deposited_mw`, `p_fw_blkt_coolant_pump_mw`) -- see
+    `power_B_thermal_cryo.md`. With all six moved to their own `FixedPointFunction`s,
+    `ComponentThermalPowers` reads every one of them as a plain `Input` and owns none,
+    so it assembles as an ordinary single-node graph.
+    """
+    node = ComponentThermalPowers(
+        i_p_coolant_pumping=int(PumpingPowerModelTypes.USER_INPUT),
+        i_blkt_dual_coolant=0,
+        i_thermal_electric_conversion=int(ElectricConversionModelTypes.CCFE_HCPB_VALUE),
+        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
+        secondary_cycle_liq=2,
+    )
+    graph = to_graph(node)
+    assert {n.path_str() for n in graph.nodes} == {"['ComponentThermalPowers']"}
+
+
+def _delta_eta_step_kwargs(**overrides):
+    kwargs = {
+        "p_fw_coolant_pump_mw": 12.0,
+        "p_blkt_coolant_pump_mw": 30.0,
+        "p_fw_blkt_coolant_pump_mw": 45.0,
+        "p_fw_nuclear_heat_total_mw": 80.0,
+        "p_fw_rad_total_mw": 120.0,
+        "p_blkt_nuclear_heat_total_mw": 600.0,
+        "p_blkt_breeder_pump_mw": 3.0,
+        "p_beam_orbit_loss_mw": 2.0,
+        "p_fw_alpha_mw": 15.0,
+        "p_beam_shine_through_mw": 1.0,
+        "p_cp_shield_nuclear_heat_mw": 5.0,
+        "p_shld_nuclear_heat_mw": 20.0,
+        "p_shld_coolant_pump_mw": 8.0,
+        "p_plasma_separatrix_mw": 120.0,
+        "p_div_nuclear_heat_total_mw": 10.0,
+        "p_div_rad_total_mw": 15.0,
+        "p_div_coolant_pump_mw": 6.0,
+        "i_shld_primary_heat": 1.0,
+        "delta_eta": 0.05,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _component_thermal_powers_call_kwargs(step_kwargs):
+    """The subset of `calculate_component_thermal_powers`'s ~30 parameters that
+    `DeltaEtaStep.step`'s inputs correspond to, plus fixed/irrelevant values for the
+    rest (the ones only `eta_turbine`/`etath_liq`/`temp_turbine_coolant_in` depend
+    on) -- used only to cross-check `DeltaEtaStep` against the underlying pure
+    function it shares helpers with, not as a harness sample.
+    """
+    return {
+        "p_fw_coolant_pump_mw": step_kwargs["p_fw_coolant_pump_mw"],
+        "p_blkt_coolant_pump_mw": step_kwargs["p_blkt_coolant_pump_mw"],
+        "p_fw_blkt_coolant_pump_mw": step_kwargs["p_fw_blkt_coolant_pump_mw"],
+        "eta_coolant_pump_electric": 0.85,
+        "p_shld_coolant_pump_mw": step_kwargs["p_shld_coolant_pump_mw"],
+        "p_div_coolant_pump_mw": step_kwargs["p_div_coolant_pump_mw"],
+        "p_blkt_breeder_pump_mw": step_kwargs["p_blkt_breeder_pump_mw"],
+        "p_hcd_electric_total_mw": 200.0,
+        "p_hcd_injected_total_mw": 70.0,
+        "p_blkt_nuclear_heat_total_mw": step_kwargs["p_blkt_nuclear_heat_total_mw"],
+        "f_nuc_pow_bz_liq": 0.5,
+        "p_fw_nuclear_heat_total_mw": step_kwargs["p_fw_nuclear_heat_total_mw"],
+        "p_fw_rad_total_mw": step_kwargs["p_fw_rad_total_mw"],
+        "p_beam_orbit_loss_mw": step_kwargs["p_beam_orbit_loss_mw"],
+        "p_fw_alpha_mw": step_kwargs["p_fw_alpha_mw"],
+        "p_beam_shine_through_mw": step_kwargs["p_beam_shine_through_mw"],
+        "p_cp_shield_nuclear_heat_mw": step_kwargs["p_cp_shield_nuclear_heat_mw"],
+        "p_shld_nuclear_heat_mw": step_kwargs["p_shld_nuclear_heat_mw"],
+        "p_plasma_separatrix_mw": step_kwargs["p_plasma_separatrix_mw"],
+        "p_div_nuclear_heat_total_mw": step_kwargs["p_div_nuclear_heat_total_mw"],
+        "p_div_rad_total_mw": step_kwargs["p_div_rad_total_mw"],
+        "p_fw_div_heat_deposited_mw": 500.0,
+        "p_fw_hcd_nuclear_heat_mw": 1.0,
+        "p_fw_hcd_rad_total_mw": 1.0,
+        "i_shld_primary_heat": step_kwargs["i_shld_primary_heat"],
+        "eta_turbine": 0.4,
+        "etath_liq": 0.4,
+        "delta_eta": step_kwargs["delta_eta"],
+        "temp_blkt_coolant_out": 700.0,
+        "outlet_temp_liq": 700.0,
+        "temp_turbine_coolant_in": 600.0,
+    }
+
+
+@pytest.mark.parametrize(
+    ("i_p_coolant_pumping", "i_blkt_dual_coolant", "i_thermal_electric_conversion"),
+    _DELTA_ETA_SWITCH_COMBOS,
+)
+def test_delta_eta_step_matches_calculate_component_thermal_powers(
+    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+):
+    """`DeltaEtaStep.step` computes exactly the `delta_eta` element
+    `calculate_component_thermal_powers` would, for the same inputs -- both call the
+    same extracted helpers (`calculate_p_fw_blkt_coolant_pump_mw`/
+    `calculate_p_fw_blkt_heat_deposited_mw`/`calculate_p_shld_heat_deposited_mw`/
+    `calculate_p_div_heat_deposited_mw`/`calculate_delta_eta`), so this pins that the
+    node-level split introduced no discrepancy versus the (unmodified, still
+    separately tested) pure function.
+    """
+    step_kwargs = _delta_eta_step_kwargs()
+    node = DeltaEtaStep(
+        i_p_coolant_pumping=int(i_p_coolant_pumping),
+        i_blkt_dual_coolant=i_blkt_dual_coolant,
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+    )
+    (delta_eta_from_step,) = node.step(**step_kwargs)
+
+    full_kwargs = _component_thermal_powers_call_kwargs(step_kwargs)
+    full_result = calculate_component_thermal_powers(
+        int(i_p_coolant_pumping),
+        full_kwargs["p_fw_coolant_pump_mw"],
+        full_kwargs["p_blkt_coolant_pump_mw"],
+        full_kwargs["p_fw_blkt_coolant_pump_mw"],
+        full_kwargs["eta_coolant_pump_electric"],
+        full_kwargs["p_shld_coolant_pump_mw"],
+        full_kwargs["p_div_coolant_pump_mw"],
+        full_kwargs["p_blkt_breeder_pump_mw"],
+        full_kwargs["p_hcd_electric_total_mw"],
+        full_kwargs["p_hcd_injected_total_mw"],
+        i_blkt_dual_coolant,
+        full_kwargs["p_blkt_nuclear_heat_total_mw"],
+        full_kwargs["f_nuc_pow_bz_liq"],
+        full_kwargs["p_fw_nuclear_heat_total_mw"],
+        full_kwargs["p_fw_rad_total_mw"],
+        full_kwargs["p_beam_orbit_loss_mw"],
+        full_kwargs["p_fw_alpha_mw"],
+        full_kwargs["p_beam_shine_through_mw"],
+        full_kwargs["p_cp_shield_nuclear_heat_mw"],
+        full_kwargs["p_shld_nuclear_heat_mw"],
+        full_kwargs["p_plasma_separatrix_mw"],
+        full_kwargs["p_div_nuclear_heat_total_mw"],
+        full_kwargs["p_div_rad_total_mw"],
+        full_kwargs["p_fw_div_heat_deposited_mw"],
+        full_kwargs["p_fw_hcd_nuclear_heat_mw"],
+        full_kwargs["p_fw_hcd_rad_total_mw"],
+        full_kwargs["i_shld_primary_heat"],
+        int(i_thermal_electric_conversion),
+        int(BlktModelTypes.CCFE_HCPB),
+        full_kwargs["eta_turbine"],
+        full_kwargs["etath_liq"],
+        full_kwargs["delta_eta"],
+        full_kwargs["temp_blkt_coolant_out"],
+        full_kwargs["outlet_temp_liq"],
+        full_kwargs["temp_turbine_coolant_in"],
+        2,
+    )
+    delta_eta_from_full = full_result[23]
+
+    assert delta_eta_from_step == pytest.approx(delta_eta_from_full, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("i_p_coolant_pumping", "i_blkt_dual_coolant", "i_thermal_electric_conversion"),
+    _DELTA_ETA_SWITCH_COMBOS,
+)
+def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
+    i_p_coolant_pumping, i_blkt_dual_coolant, i_thermal_electric_conversion
+):
+    """The entering `.power.delta_eta` value has **zero** effect on the value
+    `DeltaEtaStep.step` produces -- not merely "small," exactly zero, confirmed by
+    `jax.grad`.
+
+    This is the surprising finding this split turned up (see `calculate_delta_eta`'s
+    and `DeltaEtaStep`'s docstrings): the two `calculate_plant_thermal_efficiency`
+    branches that read `delta_eta` write `eta_turbine`, and nothing downstream of
+    `eta_turbine` feeds back into computing the next `delta_eta` within this call. So
+    although `.power.delta_eta` is a genuine structural self-reference (same `VarPath`
+    read and owned -- `to_graph` rejects it as a plain node, see
+    `test_delta_eta_step_to_graph_builds`), it is a numerically inert one: were a
+    driver ever assigned to the resulting `FixedPoint` problem, it would converge in
+    exactly one iteration from any starting point. Same lesson `_audit/next_steps.md`
+    § 5's `Divertor` case taught this project -- verify a cycle is real, don't assume
+    it from the shape alone.
+    """
+    node = DeltaEtaStep(
+        i_p_coolant_pumping=int(i_p_coolant_pumping),
+        i_blkt_dual_coolant=i_blkt_dual_coolant,
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+    )
+    base_kwargs = _delta_eta_step_kwargs()
+
+    def delta_eta_next(delta_eta):
+        (out,) = node.step(**{**base_kwargs, "delta_eta": delta_eta})
+        return out
+
+    grad = jax.grad(delta_eta_next)(base_kwargs["delta_eta"])
+    assert grad == 0.0
+
+
+# ---------------------------------------------------------------------------
+# EtaTurbineStep / EtathLiqStep / TempTurbineCoolantInStep /
+# PFwDivHeatDepositedMwStep / PFwBlktCoolantPumpMwStep -- the five remaining
+# ComponentThermalPowers self-loops, cut the same way DeltaEtaStep's was.
+# ---------------------------------------------------------------------------
+
+_CTP_FULL_KWARGS = {
+    "p_fw_coolant_pump_mw": 12.0,
+    "p_blkt_coolant_pump_mw": 30.0,
+    "p_fw_blkt_coolant_pump_mw": 45.0,
+    "eta_coolant_pump_electric": 0.85,
+    "p_shld_coolant_pump_mw": 8.0,
+    "p_div_coolant_pump_mw": 6.0,
+    "p_blkt_breeder_pump_mw": 3.0,
+    "p_hcd_electric_total_mw": 200.0,
+    "p_hcd_injected_total_mw": 70.0,
+    "p_blkt_nuclear_heat_total_mw": 600.0,
+    "f_nuc_pow_bz_liq": 0.5,
+    "p_fw_nuclear_heat_total_mw": 80.0,
+    "p_fw_rad_total_mw": 120.0,
+    "p_beam_orbit_loss_mw": 2.0,
+    "p_fw_alpha_mw": 15.0,
+    "p_beam_shine_through_mw": 1.0,
+    "p_cp_shield_nuclear_heat_mw": 5.0,
+    "p_shld_nuclear_heat_mw": 20.0,
+    "p_plasma_separatrix_mw": 120.0,
+    "p_div_nuclear_heat_total_mw": 10.0,
+    "p_div_rad_total_mw": 15.0,
+    "p_fw_div_heat_deposited_mw": 500.0,
+    "p_fw_hcd_nuclear_heat_mw": 1.0,
+    "p_fw_hcd_rad_total_mw": 1.0,
+    "i_shld_primary_heat": 1.0,
+    "eta_turbine": 0.4,
+    "etath_liq": 0.4,
+    "delta_eta": 0.05,
+    "temp_blkt_coolant_out": 700.0,
+    "outlet_temp_liq": 700.0,
+    "temp_turbine_coolant_in": 600.0,
+}
+
+
+def _call_full_ctp(
+    i_p_coolant_pumping,
+    i_blkt_dual_coolant,
+    i_thermal_electric_conversion,
+    i_blanket_type,
+    secondary_cycle_liq,
+    **overrides,
+):
+    """`calculate_component_thermal_powers`, called with `_CTP_FULL_KWARGS` plus
+    `overrides`, for cross-checking the five node-level splits below against the
+    unmodified pure function -- same role `_component_thermal_powers_call_kwargs`
+    plays for `DeltaEtaStep`'s own test above."""
+    kw = {**_CTP_FULL_KWARGS, **overrides}
+    return calculate_component_thermal_powers(
+        int(i_p_coolant_pumping),
+        kw["p_fw_coolant_pump_mw"],
+        kw["p_blkt_coolant_pump_mw"],
+        kw["p_fw_blkt_coolant_pump_mw"],
+        kw["eta_coolant_pump_electric"],
+        kw["p_shld_coolant_pump_mw"],
+        kw["p_div_coolant_pump_mw"],
+        kw["p_blkt_breeder_pump_mw"],
+        kw["p_hcd_electric_total_mw"],
+        kw["p_hcd_injected_total_mw"],
+        i_blkt_dual_coolant,
+        kw["p_blkt_nuclear_heat_total_mw"],
+        kw["f_nuc_pow_bz_liq"],
+        kw["p_fw_nuclear_heat_total_mw"],
+        kw["p_fw_rad_total_mw"],
+        kw["p_beam_orbit_loss_mw"],
+        kw["p_fw_alpha_mw"],
+        kw["p_beam_shine_through_mw"],
+        kw["p_cp_shield_nuclear_heat_mw"],
+        kw["p_shld_nuclear_heat_mw"],
+        kw["p_plasma_separatrix_mw"],
+        kw["p_div_nuclear_heat_total_mw"],
+        kw["p_div_rad_total_mw"],
+        kw["p_fw_div_heat_deposited_mw"],
+        kw["p_fw_hcd_nuclear_heat_mw"],
+        kw["p_fw_hcd_rad_total_mw"],
+        kw["i_shld_primary_heat"],
+        int(i_thermal_electric_conversion),
+        int(i_blanket_type),
+        kw["eta_turbine"],
+        kw["etath_liq"],
+        kw["delta_eta"],
+        kw["temp_blkt_coolant_out"],
+        kw["outlet_temp_liq"],
+        kw["temp_turbine_coolant_in"],
+        secondary_cycle_liq,
+    )
+
+
+# index of each field in calculate_component_thermal_powers's return tuple -- see
+# that function's own docstring's Returns section.
+_CTP_RETURN_INDEX = {
+    "p_fw_blkt_coolant_pump_mw": 0,
+    "p_fw_div_heat_deposited_mw": 15,
+    "eta_turbine": 16,
+    "etath_liq": 17,
+    "temp_turbine_coolant_in": 18,
+}
+
+
+# ----------------------------------------------------------------- EtaTurbineStep
+
+
+@pytest.mark.parametrize(
+    ("i_thermal_electric_conversion", "i_blanket_type"),
+    [
+        pytest.param(
+            ElectricConversionModelTypes.CCFE_HCPB_VALUE, BlktModelTypes.CCFE_HCPB
+        ),
+        pytest.param(
+            ElectricConversionModelTypes.CCFE_HCPB_VALUE_WITH_DIVERTOR,
+            BlktModelTypes.CCFE_HCPB,
+        ),
+        pytest.param(ElectricConversionModelTypes.USER_INPUT, BlktModelTypes.CCFE_HCPB),
+        pytest.param(
+            ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, BlktModelTypes.CCFE_HCPB
+        ),
+    ],
+)
+def test_eta_turbine_step_to_graph_builds(i_thermal_electric_conversion, i_blanket_type):
+    """`to_graph(EtaTurbineStep(...))` succeeds -- the `.heat_transport.eta_turbine`
+    analogue of `test_delta_eta_step_to_graph_builds`."""
+    node = EtaTurbineStep(
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_blanket_type=int(i_blanket_type),
+    )
+    graph = to_graph(node)
+    names = {n.path_str() for n in graph.nodes}
+    assert names == {"['EtaTurbineStep']", "^problem['EtaTurbineStep']"}
+
+
+@pytest.mark.parametrize(
+    ("i_thermal_electric_conversion", "i_blanket_type"),
+    [
+        pytest.param(
+            ElectricConversionModelTypes.CCFE_HCPB_VALUE, BlktModelTypes.CCFE_HCPB
+        ),
+        pytest.param(
+            ElectricConversionModelTypes.CCFE_HCPB_VALUE_WITH_DIVERTOR,
+            BlktModelTypes.CCFE_HCPB,
+        ),
+        pytest.param(ElectricConversionModelTypes.USER_INPUT, BlktModelTypes.CCFE_HCPB),
+        pytest.param(
+            ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, BlktModelTypes.CCFE_HCPB
+        ),
+    ],
+)
+def test_eta_turbine_step_matches_calculate_component_thermal_powers(
+    i_thermal_electric_conversion, i_blanket_type
+):
+    """`EtaTurbineStep.step` computes exactly the `eta_turbine` element
+    `calculate_component_thermal_powers` would, for the same inputs."""
+    node = EtaTurbineStep(
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_blanket_type=int(i_blanket_type),
+    )
+    (eta_turbine_from_step,) = node.step(
+        eta_turbine=_CTP_FULL_KWARGS["eta_turbine"],
+        delta_eta=_CTP_FULL_KWARGS["delta_eta"],
+        temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
+    )
+    full_result = _call_full_ctp(
+        i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
+        i_blkt_dual_coolant=0,
+        i_thermal_electric_conversion=i_thermal_electric_conversion,
+        i_blanket_type=i_blanket_type,
+        secondary_cycle_liq=2,
+    )
+    eta_turbine_from_full = full_result[_CTP_RETURN_INDEX["eta_turbine"]]
+    assert eta_turbine_from_step == pytest.approx(eta_turbine_from_full, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("i_thermal_electric_conversion", "i_blanket_type", "expected_grad"),
+    [
+        # Overwritten from other inputs -- entering eta_turbine plays no role.
+        pytest.param(
+            ElectricConversionModelTypes.CCFE_HCPB_VALUE, BlktModelTypes.CCFE_HCPB, 0.0
+        ),
+        pytest.param(
+            ElectricConversionModelTypes.CCFE_HCPB_VALUE_WITH_DIVERTOR,
+            BlktModelTypes.CCFE_HCPB,
+            0.0,
+        ),
+        pytest.param(
+            ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, BlktModelTypes.CCFE_HCPB, 0.0
+        ),
+        # Pass-through -- exact identity.
+        pytest.param(
+            ElectricConversionModelTypes.CCFE_HCPB_VALUE, BlktModelTypes.DCLL, 1.0
+        ),
+        pytest.param(ElectricConversionModelTypes.USER_INPUT, BlktModelTypes.CCFE_HCPB, 1.0),
+    ],
+)
+def test_eta_turbine_step_gradient_wrt_eta_turbine(
+    i_thermal_electric_conversion, i_blanket_type, expected_grad
+):
+    """`d(eta_turbine_next)/d(eta_turbine)` is exactly `0` or exactly `1`, never
+    anything between -- unlike `delta_eta` (uniformly zero everywhere), `eta_turbine`'s
+    dependence on its own entering value is branch-dependent. See `EtaTurbineStep`'s
+    own docstring for the full branch-by-branch reasoning."""
+    node = EtaTurbineStep(
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_blanket_type=int(i_blanket_type),
+    )
+
+    def eta_turbine_next(eta_turbine):
+        (out,) = node.step(
+            eta_turbine=eta_turbine,
+            delta_eta=_CTP_FULL_KWARGS["delta_eta"],
+            temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
+        )
+        return out
+
+    grad = jax.grad(eta_turbine_next)(_CTP_FULL_KWARGS["eta_turbine"])
+    assert grad == expected_grad
+
+
+# ------------------------------------------------------------------ EtathLiqStep
+
+
+@pytest.mark.parametrize("secondary_cycle_liq", [2, 4])
+def test_etath_liq_step_to_graph_builds(secondary_cycle_liq):
+    """`to_graph(EtathLiqStep(...))` succeeds -- the `.heat_transport.etath_liq`
+    analogue of `test_delta_eta_step_to_graph_builds`."""
+    node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
+    graph = to_graph(node)
+    names = {n.path_str() for n in graph.nodes}
+    assert names == {"['EtathLiqStep']", "^problem['EtathLiqStep']"}
+
+
+@pytest.mark.parametrize("secondary_cycle_liq", [2, 4])
+def test_etath_liq_step_matches_calculate_component_thermal_powers(secondary_cycle_liq):
+    """`EtathLiqStep.step` computes exactly the `etath_liq` element
+    `calculate_component_thermal_powers` would, for the same inputs."""
+    node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
+    (etath_liq_from_step,) = node.step(
+        etath_liq=_CTP_FULL_KWARGS["etath_liq"],
+        outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"],
+    )
+    full_result = _call_full_ctp(
+        i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
+        i_blkt_dual_coolant=0,
+        i_thermal_electric_conversion=ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=secondary_cycle_liq,
+    )
+    etath_liq_from_full = full_result[_CTP_RETURN_INDEX["etath_liq"]]
+    assert etath_liq_from_step == pytest.approx(etath_liq_from_full, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("secondary_cycle_liq", "expected_grad"),
+    [
+        pytest.param(2, 1.0),  # plain pass-through -- exact identity.
+        pytest.param(4, 0.0),  # recomputed from outlet_temp_liq alone.
+    ],
+)
+def test_etath_liq_step_gradient_wrt_etath_liq(secondary_cycle_liq, expected_grad):
+    """`d(etath_liq_next)/d(etath_liq)` is exactly `0` or exactly `1`."""
+    node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
+
+    def etath_liq_next(etath_liq):
+        (out,) = node.step(
+            etath_liq=etath_liq, outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"]
+        )
+        return out
+
+    grad = jax.grad(etath_liq_next)(_CTP_FULL_KWARGS["etath_liq"])
+    assert grad == expected_grad
+
+
+# ------------------------------------------------------------ TempTurbineCoolantInStep
+
+
+@pytest.mark.parametrize(
+    ("i_thermal_electric_conversion", "secondary_cycle_liq"),
+    [
+        pytest.param(ElectricConversionModelTypes.CCFE_HCPB_VALUE, 2),
+        pytest.param(ElectricConversionModelTypes.CCFE_HCPB_VALUE, 4),
+        pytest.param(ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, 2),
+        pytest.param(ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, 4),
+    ],
+)
+def test_temp_turbine_coolant_in_step_to_graph_builds(
+    i_thermal_electric_conversion, secondary_cycle_liq
+):
+    """`to_graph(TempTurbineCoolantInStep(...))` succeeds -- the
+    `.heat_transport.temp_turbine_coolant_in` analogue of
+    `test_delta_eta_step_to_graph_builds`."""
+    node = TempTurbineCoolantInStep(
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
+        secondary_cycle_liq=secondary_cycle_liq,
+    )
+    graph = to_graph(node)
+    names = {n.path_str() for n in graph.nodes}
+    assert names == {
+        "['TempTurbineCoolantInStep']",
+        "^problem['TempTurbineCoolantInStep']",
+    }
+
+
+@pytest.mark.parametrize(
+    ("i_thermal_electric_conversion", "secondary_cycle_liq"),
+    [
+        pytest.param(ElectricConversionModelTypes.CCFE_HCPB_VALUE, 2),
+        pytest.param(ElectricConversionModelTypes.CCFE_HCPB_VALUE, 4),
+        pytest.param(ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, 2),
+        pytest.param(ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, 4),
+    ],
+)
+def test_temp_turbine_coolant_in_step_matches_calculate_component_thermal_powers(
+    i_thermal_electric_conversion, secondary_cycle_liq
+):
+    """`TempTurbineCoolantInStep.step` computes exactly the `temp_turbine_coolant_in`
+    element `calculate_component_thermal_powers` would, for the same inputs -- both
+    stages (`plant_thermal_efficiency` then `plant_thermal_efficiency_2`), in the same
+    order."""
+    node = TempTurbineCoolantInStep(
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
+        secondary_cycle_liq=secondary_cycle_liq,
+    )
+    (temp_from_step,) = node.step(
+        temp_turbine_coolant_in=_CTP_FULL_KWARGS["temp_turbine_coolant_in"],
+        temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
+        outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"],
+    )
+    full_result = _call_full_ctp(
+        i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
+        i_blkt_dual_coolant=0,
+        i_thermal_electric_conversion=i_thermal_electric_conversion,
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=secondary_cycle_liq,
+    )
+    temp_from_full = full_result[_CTP_RETURN_INDEX["temp_turbine_coolant_in"]]
+    assert temp_from_step == pytest.approx(temp_from_full, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("i_thermal_electric_conversion", "secondary_cycle_liq", "expected_grad"),
+    [
+        # Both stages pass through unchanged -- exact identity.
+        pytest.param(ElectricConversionModelTypes.CCFE_HCPB_VALUE, 2, 1.0),
+        # Second stage overwrites from outlet_temp_liq.
+        pytest.param(ElectricConversionModelTypes.CCFE_HCPB_VALUE, 4, 0.0),
+        # First stage already overwrites from temp_blkt_coolant_out.
+        pytest.param(ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, 2, 0.0),
+        pytest.param(ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, 4, 0.0),
+    ],
+)
+def test_temp_turbine_coolant_in_step_gradient_wrt_temp_turbine_coolant_in(
+    i_thermal_electric_conversion, secondary_cycle_liq, expected_grad
+):
+    """`d(temp_turbine_coolant_in_next)/d(temp_turbine_coolant_in)` is exactly `1`
+    only when *both* stages pass the entering value through unchanged, and exactly
+    `0` the moment either stage overwrites it -- see `TempTurbineCoolantInStep`'s own
+    docstring."""
+    node = TempTurbineCoolantInStep(
+        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
+        secondary_cycle_liq=secondary_cycle_liq,
+    )
+
+    def temp_next(temp_turbine_coolant_in):
+        (out,) = node.step(
+            temp_turbine_coolant_in=temp_turbine_coolant_in,
+            temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
+            outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"],
+        )
+        return out
+
+    grad = jax.grad(temp_next)(_CTP_FULL_KWARGS["temp_turbine_coolant_in"])
+    assert grad == expected_grad
+
+
+# ------------------------------------------------------------- PFwDivHeatDepositedMwStep
+
+_PFW_DIV_STEP_KWARGS = {
+    "p_fw_div_heat_deposited_mw": _CTP_FULL_KWARGS["p_fw_div_heat_deposited_mw"],
+    "p_fw_nuclear_heat_total_mw": _CTP_FULL_KWARGS["p_fw_nuclear_heat_total_mw"],
+    "p_fw_rad_total_mw": _CTP_FULL_KWARGS["p_fw_rad_total_mw"],
+    "p_fw_coolant_pump_mw": _CTP_FULL_KWARGS["p_fw_coolant_pump_mw"],
+    "p_beam_orbit_loss_mw": _CTP_FULL_KWARGS["p_beam_orbit_loss_mw"],
+    "p_fw_alpha_mw": _CTP_FULL_KWARGS["p_fw_alpha_mw"],
+    "p_beam_shine_through_mw": _CTP_FULL_KWARGS["p_beam_shine_through_mw"],
+    "p_plasma_separatrix_mw": _CTP_FULL_KWARGS["p_plasma_separatrix_mw"],
+    "p_div_nuclear_heat_total_mw": _CTP_FULL_KWARGS["p_div_nuclear_heat_total_mw"],
+    "p_div_rad_total_mw": _CTP_FULL_KWARGS["p_div_rad_total_mw"],
+    "p_div_coolant_pump_mw": _CTP_FULL_KWARGS["p_div_coolant_pump_mw"],
+}
+
+
+@pytest.mark.parametrize(
+    "i_p_coolant_pumping",
+    [
+        PumpingPowerModelTypes.USER_INPUT,
+        PumpingPowerModelTypes.FRACTION_OF_HEAT,
+        PumpingPowerModelTypes.MECHANICAL,
+        PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+    ],
+)
+def test_p_fw_div_heat_deposited_mw_step_to_graph_builds(i_p_coolant_pumping):
+    """`to_graph(PFwDivHeatDepositedMwStep(...))` succeeds -- the
+    `.heat_transport.p_fw_div_heat_deposited_mw` analogue of
+    `test_delta_eta_step_to_graph_builds`."""
+    node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    graph = to_graph(node)
+    names = {n.path_str() for n in graph.nodes}
+    assert names == {
+        "['PFwDivHeatDepositedMwStep']",
+        "^problem['PFwDivHeatDepositedMwStep']",
+    }
+
+
+@pytest.mark.parametrize(
+    "i_p_coolant_pumping",
+    [
+        PumpingPowerModelTypes.USER_INPUT,
+        PumpingPowerModelTypes.FRACTION_OF_HEAT,
+        PumpingPowerModelTypes.MECHANICAL,
+        PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+    ],
+)
+def test_p_fw_div_heat_deposited_mw_step_matches_calculate_component_thermal_powers(
+    i_p_coolant_pumping,
+):
+    """`PFwDivHeatDepositedMwStep.step` computes exactly the
+    `p_fw_div_heat_deposited_mw` element `calculate_component_thermal_powers` would,
+    for the same inputs."""
+    node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    (p_from_step,) = node.step(**_PFW_DIV_STEP_KWARGS)
+    full_result = _call_full_ctp(
+        i_p_coolant_pumping=i_p_coolant_pumping,
+        i_blkt_dual_coolant=0,
+        i_thermal_electric_conversion=ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=2,
+    )
+    p_from_full = full_result[_CTP_RETURN_INDEX["p_fw_div_heat_deposited_mw"]]
+    assert p_from_step == pytest.approx(p_from_full, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("i_p_coolant_pumping", "expected_grad"),
+    [
+        pytest.param(PumpingPowerModelTypes.USER_INPUT, 0.0),
+        pytest.param(PumpingPowerModelTypes.FRACTION_OF_HEAT, 0.0),
+        pytest.param(PumpingPowerModelTypes.MECHANICAL, 0.0),
+        # The only switch value that owns the pass-through -- exact identity.
+        pytest.param(PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP, 1.0),
+    ],
+)
+def test_p_fw_div_heat_deposited_mw_step_gradient(i_p_coolant_pumping, expected_grad):
+    """`d(p_fw_div_heat_deposited_mw_next)/d(p_fw_div_heat_deposited_mw)` is exactly
+    `1` for `MECHANICAL_WITH_PRESSURE_DROP` (identity pass-through) and exactly `0`
+    for every other switch value (recomputed from raw inputs alone)."""
+    node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+
+    def p_next(p_fw_div_heat_deposited_mw):
+        (out,) = node.step(
+            **{**_PFW_DIV_STEP_KWARGS, "p_fw_div_heat_deposited_mw": p_fw_div_heat_deposited_mw}
+        )
+        return out
+
+    grad = jax.grad(p_next)(_PFW_DIV_STEP_KWARGS["p_fw_div_heat_deposited_mw"])
+    assert grad == expected_grad
+
+
+# ------------------------------------------------------------- PFwBlktCoolantPumpMwStep
+
+
+@pytest.mark.parametrize(
+    "i_p_coolant_pumping",
+    [
+        PumpingPowerModelTypes.USER_INPUT,
+        PumpingPowerModelTypes.FRACTION_OF_HEAT,
+        PumpingPowerModelTypes.MECHANICAL,
+        PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+    ],
+)
+def test_p_fw_blkt_coolant_pump_mw_step_to_graph_builds(i_p_coolant_pumping):
+    """`to_graph(PFwBlktCoolantPumpMwStep(...))` succeeds -- the
+    `.primary_pumping.p_fw_blkt_coolant_pump_mw` analogue of
+    `test_delta_eta_step_to_graph_builds`."""
+    node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    graph = to_graph(node)
+    names = {n.path_str() for n in graph.nodes}
+    assert names == {
+        "['PFwBlktCoolantPumpMwStep']",
+        "^problem['PFwBlktCoolantPumpMwStep']",
+    }
+
+
+@pytest.mark.parametrize(
+    "i_p_coolant_pumping",
+    [
+        PumpingPowerModelTypes.USER_INPUT,
+        PumpingPowerModelTypes.FRACTION_OF_HEAT,
+        PumpingPowerModelTypes.MECHANICAL,
+        PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+    ],
+)
+def test_p_fw_blkt_coolant_pump_mw_step_matches_calculate_component_thermal_powers(
+    i_p_coolant_pumping,
+):
+    """`PFwBlktCoolantPumpMwStep.step` computes exactly the
+    `p_fw_blkt_coolant_pump_mw` element `calculate_component_thermal_powers` would,
+    for the same inputs."""
+    node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    (p_from_step,) = node.step(
+        p_fw_blkt_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_blkt_coolant_pump_mw"],
+        p_fw_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_coolant_pump_mw"],
+        p_blkt_coolant_pump_mw=_CTP_FULL_KWARGS["p_blkt_coolant_pump_mw"],
+    )
+    full_result = _call_full_ctp(
+        i_p_coolant_pumping=i_p_coolant_pumping,
+        i_blkt_dual_coolant=0,
+        i_thermal_electric_conversion=ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=2,
+    )
+    p_from_full = full_result[_CTP_RETURN_INDEX["p_fw_blkt_coolant_pump_mw"]]
+    assert p_from_step == pytest.approx(p_from_full, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("i_p_coolant_pumping", "expected_grad"),
+    [
+        pytest.param(PumpingPowerModelTypes.USER_INPUT, 0.0),
+        pytest.param(PumpingPowerModelTypes.FRACTION_OF_HEAT, 0.0),
+        # The two switch values that own the pass-through -- exact identity.
+        pytest.param(PumpingPowerModelTypes.MECHANICAL, 1.0),
+        pytest.param(PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP, 1.0),
+    ],
+)
+def test_p_fw_blkt_coolant_pump_mw_step_gradient(i_p_coolant_pumping, expected_grad):
+    """`d(p_fw_blkt_coolant_pump_mw_next)/d(p_fw_blkt_coolant_pump_mw)` is exactly
+    `1` for `MECHANICAL`/`MECHANICAL_WITH_PRESSURE_DROP` (identity pass-through) and
+    exactly `0` for `USER_INPUT`/`FRACTION_OF_HEAT` (recomputed from raw inputs
+    alone)."""
+    node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+
+    def p_next(p_fw_blkt_coolant_pump_mw):
+        (out,) = node.step(
+            p_fw_blkt_coolant_pump_mw=p_fw_blkt_coolant_pump_mw,
+            p_fw_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_coolant_pump_mw"],
+            p_blkt_coolant_pump_mw=_CTP_FULL_KWARGS["p_blkt_coolant_pump_mw"],
+        )
+        return out
+
+    grad = jax.grad(p_next)(_CTP_FULL_KWARGS["p_fw_blkt_coolant_pump_mw"])
+    assert grad == expected_grad

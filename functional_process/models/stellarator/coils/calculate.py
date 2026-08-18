@@ -35,7 +35,6 @@ import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
-    FixedPointFunction,
     Input,
     Output,
 )
@@ -79,9 +78,7 @@ def calculate_coil_toroidal_thickness(
         `dx_tf_inboard_out_toroidal`.
     """
     return (
-        dx_tf_wp_primary_toroidal
-        + 2.0 * dx_tf_side_case_min
-        + 2.0 * dx_tf_wp_insulation
+        dx_tf_wp_primary_toroidal + 2.0 * dx_tf_side_case_min + 2.0 * dx_tf_wp_insulation
     )
 
 
@@ -167,9 +164,7 @@ class CoilCrossSectionalArea(ExplicitFunction):
         self,
         a_tf_wp_with_insulation=Input(lambda s: s.tfcoil.a_tf_wp_with_insulation),
         dr_tf_inboard=Input(lambda s: s.build.dr_tf_inboard),
-        dx_tf_inboard_out_toroidal=Input(
-            lambda s: s.tfcoil.dx_tf_inboard_out_toroidal
-        ),
+        dx_tf_inboard_out_toroidal=Input(lambda s: s.tfcoil.dx_tf_inboard_out_toroidal),
     ):
         return calculate_coil_cross_sectional_area(
             a_tf_wp_with_insulation, dr_tf_inboard, dx_tf_inboard_out_toroidal
@@ -199,14 +194,14 @@ class CoilHalfWidths(ExplicitFunction):
 
     def __call__(
         self,
-        dx_tf_inboard_out_toroidal=Input(
-            lambda s: s.tfcoil.dx_tf_inboard_out_toroidal
-        ),
+        dx_tf_inboard_out_toroidal=Input(lambda s: s.tfcoil.dx_tf_inboard_out_toroidal),
     ):
         return calculate_coil_half_widths(dx_tf_inboard_out_toroidal)
 
 
-def calculate_plasma_facing_coil_area(n_tf_coils, dx_tf_inboard_out_toroidal, len_tf_coil):
+def calculate_plasma_facing_coil_area(
+    n_tf_coils, dx_tf_inboard_out_toroidal, len_tf_coil
+):
     """Total surface area of the coil side facing the plasma, inboard/outboard (m2).
 
     Ports `calculate_plasma_facing_coil_area` -- outboard is identical to inboard in
@@ -228,9 +223,7 @@ class PlasmaFacingCoilArea(ExplicitFunction):
     def __call__(
         self,
         n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
-        dx_tf_inboard_out_toroidal=Input(
-            lambda s: s.tfcoil.dx_tf_inboard_out_toroidal
-        ),
+        dx_tf_inboard_out_toroidal=Input(lambda s: s.tfcoil.dx_tf_inboard_out_toroidal),
         len_tf_coil=Input(lambda s: s.tfcoil.len_tf_coil),
     ):
         return calculate_plasma_facing_coil_area(
@@ -278,9 +271,7 @@ class CoilCoilToroidalGap(ExplicitFunction):
         stella_config_coil_rminor=Input(
             lambda s: s.stellarator_config.stella_config_coil_rminor
         ),
-        dx_tf_inboard_out_toroidal=Input(
-            lambda s: s.tfcoil.dx_tf_inboard_out_toroidal
-        ),
+        dx_tf_inboard_out_toroidal=Input(lambda s: s.tfcoil.dx_tf_inboard_out_toroidal),
     ):
         # `coilcoilgap` is a local in the source (returned to the caller, never
         # written to `data`) -- only `toroidalgap` is a node output here.
@@ -338,12 +329,21 @@ class CoilsSummaryVariables(ExplicitFunction):
         awp_rad=Input(lambda s: s.tfcoil.dr_tf_wp_with_insulation),
     ):
         return calculate_coils_summary_variables(
-            n_tf_coils, a_tf_leg_outboard, coilcurrent, r_coil_major, r_coil_minor, awp_rad
+            n_tf_coils,
+            a_tf_leg_outboard,
+            coilcurrent,
+            r_coil_major,
+            r_coil_minor,
+            awp_rad,
         )
 
 
 def calculate_inductance(
-    stella_config_inductance, f_st_rmajor, r_coil_minor, stella_config_coil_rminor, f_st_n_coils
+    stella_config_inductance,
+    f_st_rmajor,
+    r_coil_minor,
+    stella_config_coil_rminor,
+    f_st_n_coils,
 ):
     """Coil inductance (units as PROCESS's `stella_config_inductance`), scaled a2/R.
 
@@ -386,7 +386,11 @@ def calculate_stored_magnetic_energy(
         `e_tf_magnetic_stored_total_gj`.
     """
     inductance = calculate_inductance(
-        stella_config_inductance, f_st_rmajor, r_coil_minor, stella_config_coil_rminor, f_st_n_coils
+        stella_config_inductance,
+        f_st_rmajor,
+        r_coil_minor,
+        stella_config_coil_rminor,
+        f_st_n_coils,
     )
     return 0.5 * inductance * (c_tf_total / n_tf_coils) ** 2 * 1.0e-9
 
@@ -559,9 +563,7 @@ def _critical_current_density_by_material(
         j_crit_sc = jnp.where(b_max > bc20m, 1.0e-9, j_crit_sc)
         j_crit_sc = jnp.maximum(1.0e-9, j_crit_sc)
     elif i_tf_sc_mat == 4:  # As (1), but user-defined bc20m/tc0m
-        j_crit_sc, _bcrit, _tcrit = itersc(
-            t_helium, b_max, strain, b_crit_sc, t_crit_sc
-        )
+        j_crit_sc, _bcrit, _tcrit = itersc(t_helium, b_max, strain, b_crit_sc, t_crit_sc)
     elif i_tf_sc_mat == 5:  # WST Nb3Sn parameterisation
         bc20m, tc0m = 32.97, 16.06
         j_crit_sc, _bcrit, _tcrit = western_superconducting_nb3sn(
@@ -669,7 +671,7 @@ def winding_pack_curves(
     return wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp
 
 
-def winding_pack_total_size(
+def winding_pack_pre_intersect(
     r_coil_major,
     r_coil_minor,
     coilcurrent,
@@ -691,44 +693,23 @@ def winding_pack_total_size(
     f_j_tf_wp_critical_max,
     a_tf_turn_cable_space_no_void,
     dx_tf_turn_general,
-    dx_tf_wp_insulation,
-    a_tf_turn_steel,
 ):
-    """Winding pack total size: the coil-current-carrying-capacity crossing point.
+    """The half of `winding_pack_total_size` that runs *before* `intersect`: builds the
+    sampled `(wp_width_r, lhs, rhs)` curves (`winding_pack_curves`, unchanged) plus
+    `intersect`'s own starting guess (`wp_width_r_min_guess`).
 
-    Ports `winding_pack_total_size`. Samples 200 points of the operating-current curve
-    (`lhs`, the critical-current-density-derived limit) against the geometric-current
-    curve (`rhs`) over a swept winding-pack radial width, then finds where they cross
-    with `intersect` (`coils/coils.py`, already ported, tier-2 internal solve) -- see
-    the record for why this makes the whole function tier-2 too, `Tier2Contract`, same
-    reasoning as `coils.md`'s `TestIntersect`.
-
-    `j_tf_wp` is a genuine finding, not a modelling choice of this port: the source reads
-    `data.tfcoil.j_tf_wp` here (only used by the `i_tf_sc_mat == 2` branch, inside
-    `_critical_current_density_by_material`) *before* this same function overwrites it
-    near the end (`data.tfcoil.j_tf_wp = coilcurrent * 1e6 / a_tf_wp_no_insulation`) --
-    a self-referential, cross-call read of last call's own output, not this call's. Kept
-    faithful here as two independent things: `j_tf_wp` (an explicit input, the stale
-    prior value) and the new `j_tf_wp` in the return tuple (this call's fresh value) --
-    see the record's data-footprint table and JAX-difficulty flags; a single `cottax`
-    node cannot own and read the same `VarPath` (`spec.py`: "a node may not read what it
-    owns"). Resolved at the node level, not by changing this pure function (which keeps
-    returning both, faithfully): `WindingPackJTfWp` below is a `FixedPointFunction`
-    that owns `.tfcoil.j_tf_wp` and reads a minted `^cond` copy of it; `WindingPackTotalSize`
-    reads the real `.tfcoil.j_tf_wp` as a plain, non-owning `Input`. See both classes'
-    docstrings.
+    Split out so `coils.py`'s `Intersect` (an `ImplicitFunction`/`RootFind` pair, see
+    that class's own docstring) can sit structurally between this function and
+    `winding_pack_post_intersect` below, instead of `intersect` being called eagerly in
+    the middle of one large function -- exactly `winding_pack_total_size`'s own
+    docstring note on why this split exists. Not independently audited/tested on its
+    own, same internal-seam status as `winding_pack_curves` itself.
 
     Returns
     -------
     :
-        `(b_tf_inboard_peak_symmetric, dx_tf_wp_primary_toroidal,
-        dx_tf_wp_secondary_toroidal, dr_tf_wp_with_insulation, j_tf_wp,
-        n_tf_coil_turns, c_tf_turn, a_tf_wp_conductor, a_tf_wp_extra_void,
-        a_tf_coil_wp_turn_insulation, a_tf_wp_steel, a_tf_wp_no_insulation,
-        a_tf_wp_with_insulation, fraction_area_superconductor_of_wp)`. The first entry
-        (`awp_rad` in the source) and `dr_tf_wp_with_insulation` are the same value --
-        the source returns and writes it separately; kept as one entry here
-        (`redundant-duplicate-write`, see `_audit/schema.md`).
+        `(wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp,
+        wp_width_r_min_guess)`.
     """
     wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp = winding_pack_curves(
         r_coil_major,
@@ -753,11 +734,45 @@ def winding_pack_total_size(
         a_tf_turn_cable_space_no_void,
         dx_tf_turn_general,
     )
+    wp_width_r_min_guess = (r_coil_minor / (20.0 if i_tf_sc_mat == 6 else 10.0)) ** 2
+    return wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp, wp_width_r_min_guess
 
-    wp_width_r_min_guess = (
-        r_coil_minor / (20.0 if i_tf_sc_mat == 6 else 10.0)
-    ) ** 2
-    wp_width_r_min = intersect(wp_width_r, lhs, wp_width_r, rhs, wp_width_r_min_guess)
+
+def winding_pack_post_intersect(
+    wp_width_r_min,
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    f_a_tf_turn_cable_space_extra_void,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    dx_tf_wp_insulation,
+    a_tf_turn_steel,
+):
+    """The half of `winding_pack_total_size` that runs *after* `intersect`: the
+    turn-size-floor clamp on the resolved crossing point (`wp_width_r_min`, `intersect`'s
+    raw, unclamped answer here) and everything downstream of it.
+
+    Split out for the same reason as `winding_pack_pre_intersect` above -- see that
+    function's docstring and `coils.py`'s `Intersect`. Unlike the pre-intersect half,
+    nothing here depends on `i_tf_sc_mat` at all (the material dispatch is entirely
+    upstream, inside `winding_pack_curves`), so this function takes no such argument.
+
+    Returns
+    -------
+    :
+        `(b_tf_inboard_peak_symmetric, dx_tf_wp_primary_toroidal,
+        dx_tf_wp_secondary_toroidal, dr_tf_wp_with_insulation, j_tf_wp,
+        n_tf_coil_turns, c_tf_turn, a_tf_wp_conductor, a_tf_wp_extra_void,
+        a_tf_coil_wp_turn_insulation, a_tf_wp_steel, a_tf_wp_no_insulation,
+        a_tf_wp_with_insulation)` -- same as `winding_pack_total_size`'s own return,
+        minus `fraction_area_superconductor_of_wp` (that one belongs to the
+        pre-intersect half, see its own docstring).
+    """
     # Maximum field at superconductor surface is achieved at this minimum WP width --
     # source comment, kept verbatim; the clamp itself is the turn-size floor.
     wp_width_r_min = jnp.maximum(dx_tf_turn_general**2, wp_width_r_min)
@@ -814,69 +829,200 @@ def winding_pack_total_size(
         a_tf_wp_steel,
         a_tf_wp_no_insulation,
         a_tf_wp_with_insulation,
+    )
+
+
+def winding_pack_total_size(
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    i_tf_sc_mat,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    b_crit_upper_nbti,
+    bcritsc,
+    f_a_tf_turn_cable_copper,
+    fhts,
+    t_crit_nbti,
+    tcritsc,
+    f_a_tf_turn_cable_space_extra_void,
+    j_tf_wp,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    dx_tf_wp_insulation,
+    a_tf_turn_steel,
+):
+    """Winding pack total size: the coil-current-carrying-capacity crossing point.
+
+    Ports `winding_pack_total_size`. Samples 200 points of the operating-current curve
+    (`lhs`, the critical-current-density-derived limit) against the geometric-current
+    curve (`rhs`) over a swept winding-pack radial width, then finds where they cross
+    with `intersect` (`coils/coils.py`, already ported, tier-2 internal solve) -- see
+    the record for why this makes the whole function tier-2 too, `Tier2Contract`, same
+    reasoning as `coils.md`'s `TestIntersect`.
+
+    `j_tf_wp` is a genuine finding, not a modelling choice of this port: the source reads
+    `data.tfcoil.j_tf_wp` here (only used by the `i_tf_sc_mat == 2` branch, inside
+    `_critical_current_density_by_material`) *before* this same function overwrites it
+    near the end (`data.tfcoil.j_tf_wp = coilcurrent * 1e6 / a_tf_wp_no_insulation`) --
+    a self-referential, cross-call read of last call's own output, not this call's. Kept
+    faithful here as two independent things: `j_tf_wp` (an explicit input, the stale
+    prior value) and the new `j_tf_wp` in the return tuple (this call's fresh value) --
+    see the record's data-footprint table and JAX-difficulty flags; a single `cottax`
+    node cannot own and read the same `VarPath` (`spec.py`: "a node may not read what it
+    owns"). Resolved at the node level, not by changing this pure function (which keeps
+    returning both, faithfully) -- **and resolved as an ordinary cross-node cycle, not a
+    single-node `FixedPointFunction`**: `WindingPackIntersectInputs` (this function's own
+    pre-intersect node) reads the real `.tfcoil.j_tf_wp` as a plain, non-owning `Input`,
+    and `WindingPackTotalSizePost` (the post-intersect node) owns it as an ordinary
+    `Output`. Since the two are connected through `coils.py`'s `Intersect` in between,
+    this is a real multi-node cycle (`WindingPackIntersectInputs -> Intersect ->
+    WindingPackTotalSizePost -> WindingPackIntersectInputs`), the same "Shape A" shape as
+    `Divertor`/`AFwTotalWithPowerflow` -- `Blocking`/`to_graph()` finds the SCC on its
+    own, no `Cut`/`FixedPointFunction` wrapper needed (`_audit/next_steps.md` §5). An
+    earlier pass wrote a `WindingPackJTfWp` `FixedPointFunction` instead, duplicating
+    this whole function's computation a second time just to isolate `j_tf_wp` alone;
+    deleted now that the split nodes carry the same self-reference without duplication.
+    See `WindingPackIntersectInputs`/`WindingPackTotalSizePost`'s own docstrings.
+
+    **Internally split around `intersect`, this pass** (`_audit/next_steps.md` §7, see
+    `coils.py`'s `Intersect` docstring for why): `winding_pack_pre_intersect` builds the
+    `(wp_width_r, lhs, rhs)` curves and `intersect`'s own starting guess,
+    `winding_pack_post_intersect` takes the converged crossing point and finishes the
+    rest. This function still calls `intersect` eagerly, exactly as before -- the split
+    changes nothing about what this function computes or how it is called, only how the
+    computation is organised internally, so that a `cottax` graph can also assemble the
+    same three pieces (`WindingPackIntersectInputs`, `coils.py`'s `Intersect`,
+    `WindingPackTotalSizePost`) as separate, driven nodes instead.
+
+    Returns
+    -------
+    :
+        `(b_tf_inboard_peak_symmetric, dx_tf_wp_primary_toroidal,
+        dx_tf_wp_secondary_toroidal, dr_tf_wp_with_insulation, j_tf_wp,
+        n_tf_coil_turns, c_tf_turn, a_tf_wp_conductor, a_tf_wp_extra_void,
+        a_tf_coil_wp_turn_insulation, a_tf_wp_steel, a_tf_wp_no_insulation,
+        a_tf_wp_with_insulation, fraction_area_superconductor_of_wp)`. The first entry
+        (`awp_rad` in the source) and `dr_tf_wp_with_insulation` are the same value --
+        the source returns and writes it separately; kept as one entry here
+        (`redundant-duplicate-write`, see `_audit/schema.md`).
+    """
+    wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp, wp_width_r_min_guess = (
+        winding_pack_pre_intersect(
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            i_tf_sc_mat,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            b_crit_upper_nbti,
+            bcritsc,
+            f_a_tf_turn_cable_copper,
+            fhts,
+            t_crit_nbti,
+            tcritsc,
+            f_a_tf_turn_cable_space_extra_void,
+            j_tf_wp,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+    )
+
+    wp_width_r_min = intersect(wp_width_r, lhs, wp_width_r, rhs, wp_width_r_min_guess)
+
+    (
+        b_tf_inboard_peak_symmetric,
+        dx_tf_wp_primary_toroidal,
+        dx_tf_wp_secondary_toroidal,
+        dr_tf_wp_with_insulation,
+        j_tf_wp_new,
+        n_tf_coil_turns,
+        c_tf_turn,
+        a_tf_wp_conductor,
+        a_tf_wp_extra_void,
+        a_tf_coil_wp_turn_insulation,
+        a_tf_wp_steel,
+        a_tf_wp_no_insulation,
+        a_tf_wp_with_insulation,
+    ) = winding_pack_post_intersect(
+        wp_width_r_min,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        f_a_tf_turn_cable_space_extra_void,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+        dx_tf_wp_insulation,
+        a_tf_turn_steel,
+    )
+
+    return (
+        b_tf_inboard_peak_symmetric,
+        dx_tf_wp_primary_toroidal,
+        dx_tf_wp_secondary_toroidal,
+        dr_tf_wp_with_insulation,
+        j_tf_wp_new,
+        n_tf_coil_turns,
+        c_tf_turn,
+        a_tf_wp_conductor,
+        a_tf_wp_extra_void,
+        a_tf_coil_wp_turn_insulation,
+        a_tf_wp_steel,
+        a_tf_wp_no_insulation,
+        a_tf_wp_with_insulation,
         fraction_area_superconductor_of_wp,
     )
 
 
-class WindingPackTotalSize(ExplicitFunction):
-    """cottax node: `winding_pack_total_size`.
+class WindingPackIntersectInputs(ExplicitFunction):
+    """cottax node: the *pre*-`intersect` half of `winding_pack_total_size` -- the
+    sampled `(wp_width_r, lhs, rhs)` curves `coils.py`'s `Intersect`
+    (`ImplicitFunction`/`RootFind`) needs as its own `Input`s.
 
-    `i_tf_sc_mat` is a precondition, not a port -- same treatment as
-    `EcrhDensityLimit.i_plasma_pedestal` (`models/stellarator/density_limits.py`).
+    This, together with `coils.py`'s `Intersect` and `WindingPackTotalSizePost` below,
+    replaces the single `WindingPackTotalSize` node an earlier pass wrote (which called
+    `intersect` eagerly, in the middle of its own `__call__`) -- see
+    `_audit/next_steps.md` §7 and `coils.py`'s `Intersect` docstring for why splitting
+    the *structural* declaration around `intersect` is worth doing even though nothing
+    else in the graph needs `intersect`'s internal unknowns visible (§7's own test for
+    that, unchanged): it makes the root-find's solver algorithm a first-class, swappable
+    `Drive` choice, not something hardcoded inside one node's body.
 
-    `.tfcoil.a_tf_wp_with_insulation`/`.tfcoil.a_tf_wp_no_insulation` are minted, not
-    invented fresh here: `coils/mass.py`'s already-shipped `CoilsMass` node and
-    `coils/forces.py`'s `MaxForceDensity` (etc.) already declared `Input`s at exactly
-    these two paths, as the dangling producer-less edges `mass.md`'s own "cottax node"
-    section flags ("should mint its output under this exact name"). This node is that
-    producer. Note there *is* a same-named pair of real PROCESS fields,
-    `.superconducting_tfcoil.a_tf_wp_with_insulation`/`a_tf_wp_no_insulation` -- but
-    those belong to the tokamak superconducting-TF-coil model
-    (`process/models/tfcoil/superconducting.py`) and are never written by any
-    stellarator code path (grepped). Reusing that pair instead of `.tfcoil.*` would have
-    meant re-deriving names `mass.py`/`forces.py` already committed to, for no
-    correctness gain (`istell` makes the two device modes mutually exclusive at
-    runtime) -- follows the existing precedent rather than the alternative one. This
-    also means `calculate.py`'s own `CoilCrossSectionalArea` node had a real bug fixed
-    in this pass: its `a_tf_wp_with_insulation` `Input` previously read
-    `s.tfcoil.dr_tf_wp_with_insulation` (a different, dimensionally-wrong field -- the
-    winding pack's *radial thickness*, not its *area*) because no producer existed yet
-    for the correct path; it now reads `s.tfcoil.a_tf_wp_with_insulation`, matching
-    `CoilsMass`/`MaxForceDensity` and this node's own `Output`.
+    Mints `.stellarator.wp_width_r`/`.lhs`/`.rhs` at exactly the `VarPath`s `Intersect`
+    reads -- `coils.md`'s own sketch of this split already proposed these names for this
+    exact call site, not a fresh invention here. `i_tf_sc_mat` is a precondition, not a
+    port, same treatment as `WindingPackTotalSize`'s (now `WindingPackTotalSizePost`'s)
+    original.
 
-    **Resolved this pass**: `j_tf_wp` was previously declared as **both** an `Input` and
-    an `Output` on the same `VarPath` (`.tfcoil.j_tf_wp`) -- faithful to the source's
-    genuine self-referential read (see `winding_pack_total_size`'s docstring), but
-    `spec.py` forbids a node reading what it owns, so a `to_graph(WindingPackTotalSize(
-    ...))` call raised `ValueError: reads ['.tfcoil.j_tf_wp'], which it also owns` --
-    confirmed directly, the same failure `Avail`'s `.costs.cplife` self-loop hits
-    (`next_steps.md` §5 "Shape B"). Split in two, per that section's resolution:
-    `.tfcoil.j_tf_wp`'s *ownership* now belongs solely to `WindingPackJTfWp` below (a
-    `FixedPointFunction` -- see its own docstring for why the self-loop is only
-    non-trivial under `i_tf_sc_mat == 2`), and this node only *reads* the current,
-    already-committed value as a plain, non-owning `Input`, the same as any other read.
-    This node no longer computes or returns a fresh `j_tf_wp` at all -- `winding_pack_total_size`
-    (the pure function) still does, faithfully, but this node's `__call__` discards that
-    element of its return tuple; `WindingPackJTfWp.step` is where it is kept and
-    minted.
+    `fraction_area_superconductor_of_wp` (return-only, reporting) and
+    `wp_width_r_min_guess` (`intersect`'s own `xin`) are both computed by
+    `winding_pack_pre_intersect` but not wired through as declared `Output`s here --
+    `xin` has no port in the `ImplicitFunction`/`RootFind` shape at all (see
+    `Intersect`'s own docstring: a `RootFind`'s starting guess comes from whatever
+    `Drive`s the block, not from a graph edge), and `fraction_area_superconductor_of_wp`
+    was already discarded by the pre-split `WindingPackTotalSize` for the same
+    reporting-only reason.
     """
 
     i_tf_sc_mat: int = eqx.field(static=True)
 
-    b_tf_inboard_peak_symmetric = Output(lambda s: s.tfcoil.b_tf_inboard_peak_symmetric)
-    dx_tf_wp_primary_toroidal = Output(lambda s: s.tfcoil.dx_tf_wp_primary_toroidal)
-    dx_tf_wp_secondary_toroidal = Output(lambda s: s.tfcoil.dx_tf_wp_secondary_toroidal)
-    dr_tf_wp_with_insulation = Output(lambda s: s.tfcoil.dr_tf_wp_with_insulation)
-    n_tf_coil_turns = Output(lambda s: s.tfcoil.n_tf_coil_turns)
-    c_tf_turn = Output(lambda s: s.tfcoil.c_tf_turn)
-    a_tf_wp_conductor = Output(lambda s: s.tfcoil.a_tf_wp_conductor)
-    a_tf_wp_extra_void = Output(lambda s: s.tfcoil.a_tf_wp_extra_void)
-    a_tf_coil_wp_turn_insulation = Output(
-        lambda s: s.tfcoil.a_tf_coil_wp_turn_insulation
-    )
-    a_tf_wp_steel = Output(lambda s: s.tfcoil.a_tf_wp_steel)
-    a_tf_wp_no_insulation = Output(lambda s: s.tfcoil.a_tf_wp_no_insulation)
-    a_tf_wp_with_insulation = Output(lambda s: s.tfcoil.a_tf_wp_with_insulation)
+    wp_width_r = Output(lambda s: s.stellarator.wp_width_r)
+    lhs = Output(lambda s: s.stellarator.lhs)
+    rhs = Output(lambda s: s.stellarator.rhs)
 
     def __call__(
         self,
@@ -906,25 +1052,14 @@ class WindingPackTotalSize(ExplicitFunction):
             lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
         ),
         dx_tf_turn_general=Input(lambda s: s.tfcoil.dx_tf_turn_general),
-        dx_tf_wp_insulation=Input(lambda s: s.tfcoil.dx_tf_wp_insulation),
-        a_tf_turn_steel=Input(lambda s: s.tfcoil.a_tf_turn_steel),
     ):
         (
-            b_tf_inboard_peak_symmetric,
-            dx_tf_wp_primary_toroidal,
-            dx_tf_wp_secondary_toroidal,
-            dr_tf_wp_with_insulation,
-            _j_tf_wp_new,  # owned by `WindingPackJTfWp`'s `FixedPoint` problem, not here
-            n_tf_coil_turns,
-            c_tf_turn,
-            a_tf_wp_conductor,
-            a_tf_wp_extra_void,
-            a_tf_coil_wp_turn_insulation,
-            a_tf_wp_steel,
-            a_tf_wp_no_insulation,
-            a_tf_wp_with_insulation,
+            wp_width_r,
+            lhs,
+            rhs,
             _fraction_area_superconductor_of_wp,
-        ) = winding_pack_total_size(
+            _wp_width_r_min_guess,
+        ) = winding_pack_pre_intersect(
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -944,6 +1079,108 @@ class WindingPackTotalSize(ExplicitFunction):
             f_a_tf_turn_cable_space_extra_void,
             j_tf_wp,
             f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+        return wp_width_r, lhs, rhs
+
+
+class WindingPackTotalSizePost(ExplicitFunction):
+    """cottax node: the *post*-`intersect` half of `winding_pack_total_size` --
+    everything downstream of the resolved crossing point.
+
+    Reads `.stellarator.wp_width_r_min` as a plain, ordinary `Input` -- `coils.py`'s
+    `Intersect` (its `RootFind` problem, specifically) owns that `VarPath`, not this
+    node, so this is a genuine cross-node edge, not a self-loop (see `Intersect`'s own
+    docstring for why the pair below it is *not* a self-loop either). Together with
+    `WindingPackIntersectInputs` above and `coils.py`'s `Intersect`, this is
+    `WindingPackTotalSize`'s (an earlier pass's node) replacement -- see that class'
+    removal note and `_audit/next_steps.md` §7 for why the split is worth doing now.
+
+    `.tfcoil.a_tf_wp_with_insulation`/`.tfcoil.a_tf_wp_no_insulation` are minted here,
+    at the same `VarPath`s the pre-split `WindingPackTotalSize` already minted them at
+    (unchanged by this split) -- `coils/mass.py`'s `CoilsMass` and `coils/forces.py`'s
+    `MaxForceDensity` (etc.) already declared `Input`s at exactly these two paths; this
+    node is still their producer. See that removed class' own docstring (preserved
+    below in this module's history/`calculate.md`) for the full reasoning, including the
+    real port bug (`CoilCrossSectionalArea`'s `a_tf_wp_with_insulation` `Input`) that
+    discovering this producer's correct path fixed.
+
+    **Owns `.tfcoil.j_tf_wp`.** Unlike the pre-intersect half, nothing in
+    `winding_pack_post_intersect` *reads* `j_tf_wp` (the material dispatch that does is
+    entirely upstream, in `WindingPackIntersectInputs`), but it does *produce* the fresh
+    `j_tf_wp_new` value -- previously discarded here because an earlier pass gave sole
+    ownership of `.tfcoil.j_tf_wp` to a separate `WindingPackJTfWp` `FixedPointFunction`
+    that duplicated this entire computation just to isolate that one value. That class is
+    gone; this node now declares `j_tf_wp` as an ordinary `Output` instead, and
+    `WindingPackIntersectInputs` reads the real `.tfcoil.j_tf_wp` as an ordinary `Input`
+    -- together with `coils.py`'s `Intersect` sitting between them, this closes a genuine
+    multi-node cycle (see `winding_pack_total_size`'s own docstring), not a self-loop on
+    one node, so no `FixedPointFunction`/`Cut` is needed here either.
+    """
+
+    b_tf_inboard_peak_symmetric = Output(lambda s: s.tfcoil.b_tf_inboard_peak_symmetric)
+    dx_tf_wp_primary_toroidal = Output(lambda s: s.tfcoil.dx_tf_wp_primary_toroidal)
+    dx_tf_wp_secondary_toroidal = Output(lambda s: s.tfcoil.dx_tf_wp_secondary_toroidal)
+    dr_tf_wp_with_insulation = Output(lambda s: s.tfcoil.dr_tf_wp_with_insulation)
+    j_tf_wp = Output(lambda s: s.tfcoil.j_tf_wp)
+    n_tf_coil_turns = Output(lambda s: s.tfcoil.n_tf_coil_turns)
+    c_tf_turn = Output(lambda s: s.tfcoil.c_tf_turn)
+    a_tf_wp_conductor = Output(lambda s: s.tfcoil.a_tf_wp_conductor)
+    a_tf_wp_extra_void = Output(lambda s: s.tfcoil.a_tf_wp_extra_void)
+    a_tf_coil_wp_turn_insulation = Output(
+        lambda s: s.tfcoil.a_tf_coil_wp_turn_insulation
+    )
+    a_tf_wp_steel = Output(lambda s: s.tfcoil.a_tf_wp_steel)
+    a_tf_wp_no_insulation = Output(lambda s: s.tfcoil.a_tf_wp_no_insulation)
+    a_tf_wp_with_insulation = Output(lambda s: s.tfcoil.a_tf_wp_with_insulation)
+
+    def __call__(
+        self,
+        wp_width_r_min=Input(lambda s: s.stellarator.wp_width_r_min),
+        r_coil_major=Input(lambda s: s.stellarator.r_coil_major),
+        r_coil_minor=Input(lambda s: s.stellarator.r_coil_minor),
+        coilcurrent=Input(lambda s: s.stellarator.coilcurrent),
+        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
+        stella_config_a1=Input(lambda s: s.stellarator_config.stella_config_a1),
+        stella_config_a2=Input(lambda s: s.stellarator_config.stella_config_a2),
+        stella_config_wp_ratio=Input(
+            lambda s: s.stellarator_config.stella_config_wp_ratio
+        ),
+        f_a_tf_turn_cable_space_extra_void=Input(
+            lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
+        ),
+        a_tf_turn_cable_space_no_void=Input(
+            lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
+        ),
+        dx_tf_turn_general=Input(lambda s: s.tfcoil.dx_tf_turn_general),
+        dx_tf_wp_insulation=Input(lambda s: s.tfcoil.dx_tf_wp_insulation),
+        a_tf_turn_steel=Input(lambda s: s.tfcoil.a_tf_turn_steel),
+    ):
+        (
+            b_tf_inboard_peak_symmetric,
+            dx_tf_wp_primary_toroidal,
+            dx_tf_wp_secondary_toroidal,
+            dr_tf_wp_with_insulation,
+            j_tf_wp_new,
+            n_tf_coil_turns,
+            c_tf_turn,
+            a_tf_wp_conductor,
+            a_tf_wp_extra_void,
+            a_tf_coil_wp_turn_insulation,
+            a_tf_wp_steel,
+            a_tf_wp_no_insulation,
+            a_tf_wp_with_insulation,
+        ) = winding_pack_post_intersect(
+            wp_width_r_min,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            f_a_tf_turn_cable_space_extra_void,
             a_tf_turn_cable_space_no_void,
             dx_tf_turn_general,
             dx_tf_wp_insulation,
@@ -954,6 +1191,7 @@ class WindingPackTotalSize(ExplicitFunction):
             dx_tf_wp_primary_toroidal,
             dx_tf_wp_secondary_toroidal,
             dr_tf_wp_with_insulation,
+            j_tf_wp_new,
             n_tf_coil_turns,
             c_tf_turn,
             a_tf_wp_conductor,
@@ -963,114 +1201,6 @@ class WindingPackTotalSize(ExplicitFunction):
             a_tf_wp_no_insulation,
             a_tf_wp_with_insulation,
         )
-
-
-class WindingPackJTfWp(FixedPointFunction):
-    """cottax node: the `j_tf_wp` self-loop inside `winding_pack_total_size`, isolated.
-
-    `winding_pack_total_size` reads `.tfcoil.j_tf_wp` (only inside the `i_tf_sc_mat == 2`
-    Bi-2212 branch, via `_critical_current_density_by_material`'s `jstrand = j_wp / (1 -
-    f_he)`) and separately produces a fresh `.tfcoil.j_tf_wp` at the end of the same
-    call -- a genuine self-reference (see `winding_pack_total_size`'s and
-    `WindingPackTotalSize`'s docstrings, and `next_steps.md` §5's "Shape B"). A single
-    node cannot both read and own one `VarPath` (confirmed directly:
-    `to_graph(WindingPackTotalSize(...))` raised `ValueError: reads ['.tfcoil.j_tf_wp'],
-    which it also owns` before this split), so this class isolates *only* that
-    self-loop: `step` reads the real `.tfcoil.j_tf_wp` (like any other `Input`) plus
-    every other value `winding_pack_total_size` needs, and returns the fresh value as
-    its next iterate; the declared `Output` on the same `VarPath` makes
-    `FixedPointFunction` mint the cut for us (body writes `^cond.tfcoil.j_tf_wp`, a
-    separate, bodyless `FixedPoint` problem node owns the real `.tfcoil.j_tf_wp` and
-    reads that minted copy) -- see `pytree_namespace_module.FixedPointFunction`.
-
-    `step` re-runs the *entire* `winding_pack_total_size` computation (same inputs as
-    `WindingPackTotalSize.__call__`, plus `j_tf_wp` itself) and keeps only element `[4]`
-    of its return tuple -- `dr_tf_wp_with_insulation` (the resolved winding-pack width)
-    depends on `j_tf_wp` too whenever `i_tf_sc_mat == 2`, via the `lhs` curve `intersect`
-    crosses, so there is no smaller self-contained slice to isolate; this duplicates the
-    200-point sampling `WindingPackTotalSize` also does, deliberately, rather than
-    sharing a third node for `wp_width_r_min` -- introducing that split is a separate,
-    unrequested design change (it would need its own `j_tf_wp` `Input`, so it does not
-    remove the duplication, only relocates it).
-
-    **`i_tf_sc_mat`-conditioning, decided**: no explicit pass-through/identity branch is
-    written for `i_tf_sc_mat != 2` (unlike `plasma_composition`'s `first_call` or
-    `Avail`'s `cplife`, which do special-case their non-cycling branch). It falls out of
-    `_critical_current_density_by_material`'s existing dispatch instead:
-    `i_tf_sc_mat` is a static field (Python `int`, resolved at trace time, "switches are
-    not ports" per `naming_convention.md`, same treatment as
-    `WindingPackTotalSize.i_tf_sc_mat`), so for every branch except `2`, `step`'s traced
-    body simply never reads its `j_tf_wp` parameter at all -- `d(step)/d(j_tf_wp) == 0`
-    identically, a degenerate but entirely valid fixed point that any correct driver
-    converges to in exactly one iteration, not a special case `FixedPoint` needs telling
-    about. Reusing the dispatch this way (rather than writing a parallel identity branch)
-    keeps the two node classes' notion of "which branch reads `j_tf_wp`" a single source
-    of truth. Only `i_tf_sc_mat == 2` is a genuine, non-trivial self-loop.
-    """
-
-    i_tf_sc_mat: int = eqx.field(static=True)
-
-    j_tf_wp = Output(lambda s: s.tfcoil.j_tf_wp)
-
-    def step(
-        self,
-        j_tf_wp=Input(lambda s: s.tfcoil.j_tf_wp),
-        r_coil_major=Input(lambda s: s.stellarator.r_coil_major),
-        r_coil_minor=Input(lambda s: s.stellarator.r_coil_minor),
-        coilcurrent=Input(lambda s: s.stellarator.coilcurrent),
-        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
-        stella_config_a1=Input(lambda s: s.stellarator_config.stella_config_a1),
-        stella_config_a2=Input(lambda s: s.stellarator_config.stella_config_a2),
-        stella_config_wp_ratio=Input(
-            lambda s: s.stellarator_config.stella_config_wp_ratio
-        ),
-        tftmp=Input(lambda s: s.tfcoil.tftmp),
-        tmargmin=Input(lambda s: s.tfcoil.tmargmin),
-        b_crit_upper_nbti=Input(lambda s: s.tfcoil.b_crit_upper_nbti),
-        bcritsc=Input(lambda s: s.tfcoil.bcritsc),
-        f_a_tf_turn_cable_copper=Input(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
-        fhts=Input(lambda s: s.tfcoil.fhts),
-        t_crit_nbti=Input(lambda s: s.tfcoil.t_crit_nbti),
-        tcritsc=Input(lambda s: s.tfcoil.tcritsc),
-        f_a_tf_turn_cable_space_extra_void=Input(
-            lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
-        ),
-        f_j_tf_wp_critical_max=Input(lambda s: s.constraints.f_j_tf_wp_critical_max),
-        a_tf_turn_cable_space_no_void=Input(
-            lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
-        ),
-        dx_tf_turn_general=Input(lambda s: s.tfcoil.dx_tf_turn_general),
-        dx_tf_wp_insulation=Input(lambda s: s.tfcoil.dx_tf_wp_insulation),
-        a_tf_turn_steel=Input(lambda s: s.tfcoil.a_tf_turn_steel),
-    ):
-        result = winding_pack_total_size(
-            r_coil_major,
-            r_coil_minor,
-            coilcurrent,
-            n_tf_coils,
-            self.i_tf_sc_mat,
-            stella_config_a1,
-            stella_config_a2,
-            stella_config_wp_ratio,
-            tftmp,
-            tmargmin,
-            b_crit_upper_nbti,
-            bcritsc,
-            f_a_tf_turn_cable_copper,
-            fhts,
-            t_crit_nbti,
-            tcritsc,
-            f_a_tf_turn_cable_space_extra_void,
-            j_tf_wp,
-            f_j_tf_wp_critical_max,
-            a_tf_turn_cable_space_no_void,
-            dx_tf_turn_general,
-            dx_tf_wp_insulation,
-            a_tf_turn_steel,
-        )
-        # index 4 == `j_tf_wp_new` -- see `winding_pack_total_size`'s own `Returns`
-        # docstring for the full tuple ordering.
-        return result[4]
 
 
 def calculate_casing(dr_tf_nose_case):
@@ -1097,7 +1227,9 @@ class CoilCasing(ExplicitFunction):
         return calculate_casing(dr_tf_nose_case)
 
 
-def calculate_vertical_ports(stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils):
+def calculate_vertical_ports(
+    stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
+):
     """Maximal vertical port size and clearance area (m, m2).
 
     Ports `calculate_vertical_ports`.
@@ -1131,7 +1263,9 @@ class VerticalPorts(ExplicitFunction):
         )
 
 
-def calculate_horizontal_ports(stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils):
+def calculate_horizontal_ports(
+    stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
+):
     """Maximal horizontal port size and clearance area (m, m2).
 
     Ports `calculate_horizontal_ports`.
@@ -1162,6 +1296,74 @@ class HorizontalPorts(ExplicitFunction):
     ):
         return calculate_horizontal_ports(
             stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
+        )
+
+
+def calculate_z_tf_inside_half(
+    stella_config_maximal_coil_height, r_coil_minor, stella_config_coil_rminor
+):
+    """TF coil inside half-height, `st_coil`'s formula.
+
+    Extracted from `st_coil`'s own inline geometry block (`calculate.md`'s open
+    question #2) into its own function -- previously left inline because it had
+    exactly one call site; it now has two (`st_coil` itself, and `ZTfInsideHalf`
+    below), so one shared source of truth replaced the duplicate. See `ZTfInsideHalf`'s
+    own docstring for why this formula, not `build.py`'s `st_build`-derived one, is
+    the one that owns `.build.z_tf_inside_half` in this port's graph.
+
+    Parameters
+    ----------
+    stella_config_maximal_coil_height :
+        Reference-configuration maximal coil height (m). `.stellarator_config.
+        stella_config_maximal_coil_height`.
+    r_coil_minor :
+        Coil minor radius (m). `.stellarator.r_coil_minor`.
+    stella_config_coil_rminor :
+        Reference-configuration coil minor radius (m). `.stellarator_config.
+        stella_config_coil_rminor`.
+
+    Returns
+    -------
+    :
+        `z_tf_inside_half` (m).
+    """
+    return (
+        0.5 * stella_config_maximal_coil_height * (r_coil_minor / stella_config_coil_rminor)
+    )
+
+
+class ZTfInsideHalf(ExplicitFunction):
+    """cottax node: `calculate_z_tf_inside_half`, owning `.build.z_tf_inside_half`.
+
+    **Why this node, not `build.py`'s `Build`, owns this field**: real PROCESS has two
+    independent writers of `.build.z_tf_inside_half` -- `st_build`'s formula (what
+    `Build` computes) and `st_coil`'s formula (what this node computes, ported here).
+    `stellarator.py`'s `run()` calls them in opposite order depending on the `output`
+    flag; every real run ends with an `output=True` report pass that runs `st_build`
+    then `st_coil`, so `st_coil`'s value is what survives into the converged answer --
+    confirmed directly against a real run via the block-by-block MDA-vs-PROCESS
+    comparison harness (`functional_process/mda_harness.py`), which caught `Build`
+    claiming this field under the wrong (transient, `st_build`) formula. See
+    `build.py`'s `calculate_build`/`Build` docstrings for the fuller account, and
+    `_audit/next_steps.md` §5 for this session's other "ordering artifact" findings --
+    same shape: two producers, one wins by call order, not represented structurally
+    until now.
+    """
+
+    z_tf_inside_half = Output(lambda s: s.build.z_tf_inside_half)
+
+    def __call__(
+        self,
+        stella_config_maximal_coil_height=Input(
+            lambda s: s.stellarator_config.stella_config_maximal_coil_height
+        ),
+        r_coil_minor=Input(lambda s: s.stellarator.r_coil_minor),
+        stella_config_coil_rminor=Input(
+            lambda s: s.stellarator_config.stella_config_coil_rminor
+        ),
+    ):
+        return calculate_z_tf_inside_half(
+            stella_config_maximal_coil_height, r_coil_minor, stella_config_coil_rminor
         )
 
 
@@ -1371,21 +1573,28 @@ def st_coil(
     )
 
     inductance = calculate_inductance(
-        stella_config_inductance, f_st_rmajor, r_coil_minor, stella_config_coil_rminor,
+        stella_config_inductance,
+        f_st_rmajor,
+        r_coil_minor,
+        stella_config_coil_rminor,
         f_st_n_coils,
     )
     e_tf_magnetic_stored_total_gj = calculate_stored_magnetic_energy(
-        stella_config_inductance, f_st_rmajor, r_coil_minor, stella_config_coil_rminor,
-        f_st_n_coils, c_tf_total, n_tf_coils,
+        stella_config_inductance,
+        f_st_rmajor,
+        r_coil_minor,
+        stella_config_coil_rminor,
+        f_st_n_coils,
+        c_tf_total,
+        n_tf_coils,
     )
 
     # Coil dimensions -- source's own inline geometry block (calculate.md's open
-    # question #2), extracted here as ordinary local arithmetic rather than a separate
-    # ported function, since it has exactly one call site.
-    z_tf_inside_half = (
-        0.5
-        * stella_config_maximal_coil_height
-        * (r_coil_minor / stella_config_coil_rminor)
+    # question #2). `z_tf_inside_half` now shares `calculate_z_tf_inside_half` with
+    # `ZTfInsideHalf` (this file, above) rather than duplicating the formula -- see
+    # that function's own docstring for why it has two call sites now.
+    z_tf_inside_half = calculate_z_tf_inside_half(
+        stella_config_maximal_coil_height, r_coil_minor, stella_config_coil_rminor
     )
     len_tf_coil = (
         stella_config_coillength

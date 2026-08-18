@@ -10,6 +10,52 @@ confidence: high
 all tier-1, all tests passing (value + gradient, `--fp-gradients`). Two genuine
 PROCESS bugs found while building the harness (not fixed in `process/`, see below).
 
+**Node-level split: all six `ComponentThermalPowers` self-loops are now
+representable.** `calculate_component_thermal_powers` (the pure function) is
+unchanged -- same signature, same values, all its original tests pass unmodified. At
+the node level, each of the six self-references (`.power.delta_eta`,
+`.heat_transport.eta_turbine`, `.heat_transport.etath_liq`,
+`.heat_transport.temp_turbine_coolant_in`,
+`.heat_transport.p_fw_div_heat_deposited_mw`,
+`.primary_pumping.p_fw_blkt_coolant_pump_mw` -- see § "The `delta_eta` self-loop" and
+§ "The five remaining self-loops" below) is now cut into its own tiny
+`cottax.interfaces.pytree_namespace_module.FixedPointFunction`
+(`DeltaEtaStep`, `EtaTurbineStep`, `EtathLiqStep`, `TempTurbineCoolantInStep`,
+`PFwDivHeatDepositedMwStep`, `PFwBlktCoolantPumpMwStep`); `ComponentThermalPowers`
+(the `ExplicitFunction`) keeps every other output and reads all six as plain,
+current-value `Input`s. Six small pure helpers were extracted from
+`calculate_component_thermal_powers`'s body -- verbatim, not reimplemented --
+(`calculate_p_fw_blkt_coolant_pump_mw`, `calculate_p_fw_blkt_heat_deposited_mw`,
+`calculate_p_shld_heat_deposited_mw`, `calculate_p_div_heat_deposited_mw`,
+`calculate_delta_eta`, `calculate_p_fw_heat_deposited_mw`,
+`calculate_p_fw_div_heat_deposited_mw`) so every `FixedPointFunction`'s `step` and the
+main function share one source of the same logic; the two remaining splits
+(`EtaTurbineStep`, `EtathLiqStep`, `TempTurbineCoolantInStep`) instead reuse the
+already-shared `calculate_plant_thermal_efficiency`/`calculate_plant_thermal_efficiency_2`
+directly, with an unused placeholder for whichever of their two return elements the
+split doesn't need (confirmed by inspection that the entering value of that unused
+parameter never affects the element being isolated -- see each class's own
+docstring). `to_graph(DeltaEtaStep(...))`, `to_graph(EtaTurbineStep(...))`,
+`to_graph(EtathLiqStep(...))`, `to_graph(TempTurbineCoolantInStep(...))`,
+`to_graph(PFwDivHeatDepositedMwStep(...))` and
+`to_graph(PFwBlktCoolantPumpMwStep(...))` all build cleanly (confirmed directly, see
+"cottax node" below); **`to_graph(ComponentThermalPowers(...))` now also builds
+cleanly** -- it no longer raises at all, since none of its six former self-loop
+fields is declared as an `Output` any more.
+
+**Findings**: `delta_eta`'s fixed point is numerically degenerate in a uniform way
+(`d(delta_eta_next)/d(delta_eta) == 0` exactly, for every switch combination -- see
+§ "The `delta_eta` self-loop"). The other five are **not** uniformly degenerate --
+each is a *piecewise* identity/zero split, exactly `1` (pass-through) on the switch
+values PROCESS leaves the field untouched and exactly `0` on the switch values that
+recompute it from other inputs, confirmed by `jax.grad` per switch combination, never
+a value strictly between `0` and `1`. See § "The five remaining self-loops" below for
+the full per-switch table.
+
+`ComponentThermalPowers` and the six `FixedPointFunction`s are **not** registered
+together in any graph by this task -- registration into `total_process.py` is a
+separate, later consolidation step.
+
 ## source
 
 `process/models/power.py` (registry unit #14), chunk B of 3 (see
@@ -55,17 +101,82 @@ separate invocations of `component_thermal_powers` across PROCESS's own
 `Caller.call_models` idempotence loop (up to 10 full-pipeline passes), not two
 explicit calls inside one method.
 
-**Not resolved as a graph-wiring decision here** (out of one audit record's scope,
-per `_audit/naming_convention.md`'s treatment of run-config-dependent ownership) --
-`calculate_component_thermal_powers` takes `delta_eta` as an ordinary `Input` (the
-entering value) and returns a freshly-computed `delta_eta` as an `Output`, on the
-same `VarPath`. Wiring this into a real graph needs either a `Blocking`/`FixedPoint`
-around this self-loop, or an explicit decision to accept one round of staleness
-(matching PROCESS's own current behaviour) -- flagged for whoever does that wiring,
-not decided here. Only reachable when `i_thermal_electric_conversion` selects
+**Node-level resolution (this pass): cut, not decided-and-deferred any more.**
+`calculate_component_thermal_powers` (the pure function) is unchanged -- it still
+takes `delta_eta` as an ordinary parameter (the entering value) and returns a
+freshly-computed `delta_eta` in its return tuple, on the same conceptual `VarPath`.
+At the node level, `power_B_thermal_cryo.py` now declares this self-reference as a
+`cottax.interfaces.pytree_namespace_module.FixedPointFunction`, `DeltaEtaStep`: its
+`step` reads the real `.power.delta_eta` and (via the `FixedPointFunction` base's
+built-in mint) writes a `^cond.power.delta_eta` copy; the paired `FixedPoint` problem
+node reads that copy and owns the real `.power.delta_eta`. Confirmed directly:
+`to_graph(DeltaEtaStep(...))` builds; `to_graph(ComponentThermalPowers(...))` raised
+`ValueError: reads ['.power.delta_eta', ...], which it also owns` before this split
+existed, and (once the five remaining splits below landed in the same pass) no longer
+raises at all. Only reachable when `i_thermal_electric_conversion` selects
 `CCFE_HCPB_VALUE_WITH_DIVERTOR` or `STEAM_RANKINE_CYCLE`; for the other three values
 `delta_eta` is written but never read back by `plant_thermal_efficiency`, so the loop
-is inert.
+is syntactically present but inert for those switch values.
+
+**A driver for the resulting `FixedPoint` problem is still not assigned** (deliberately
+-- `_audit/next_steps.md` § 5's "What stays deferred" applies to this cut exactly as
+to every other Shape B instance; representing the self-reference is a structural
+requirement, driving it is a separate later decision). If one ever is, this task found
+the closure is trivial: `d(delta_eta_next)/d(delta_eta) == 0` **exactly** (confirmed
+by `jax.grad`, not an approximation) -- the two `plant_thermal_efficiency` branches
+that read `delta_eta` only affect `eta_turbine`, and nothing `calculate_delta_eta`
+reads is derived from `eta_turbine`. So any fixed-point iteration here converges in
+exactly one step from any starting value, regardless of algorithm. See
+`calculate_delta_eta`'s and `DeltaEtaStep`'s docstrings in `power_B_thermal_cryo.py`,
+and `test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta` in the test file.
+
+## The five remaining self-loops
+
+Five more genuine single-node self-loops in `calculate_component_thermal_powers`,
+found while resolving `delta_eta` above and resolved in this same pass. Each is read
+as an ordinary parameter (the entering value) and written again, on the same
+`VarPath`, later in the same call -- same shape as `delta_eta`, same
+`FixedPointFunction` cut, same "confirmed by inspection + `jax.grad`, not assumed"
+verification. Unlike `delta_eta`, **none of these five is uniformly degenerate** --
+each is a piecewise identity/zero split across the switch value(s) that gate it,
+confirmed per-combination, not asserted from the shape alone.
+
+| `VarPath` | node | entering value's role | gradient (confirmed by `jax.grad`) |
+|---|---|---|---|
+| `.heat_transport.eta_turbine` | `EtaTurbineStep` | read/written by `calculate_plant_thermal_efficiency` (line 964-ish, `power.py`) | `1` (identity) on the pass-through sub-branches (`USER_INPUT`; `CCFE_HCPB_VALUE`/`CCFE_HCPB_VALUE_WITH_DIVERTOR` with `i_blanket_type != CCFE_HCPB`; the `i_thermal_electric_conversion` default arm); `0` on the sub-branches that overwrite it (`CCFE_HCPB_VALUE`/`CCFE_HCPB_VALUE_WITH_DIVERTOR` with `i_blanket_type == CCFE_HCPB`, `STEAM_RANKINE_CYCLE` with a matching blanket, `SUPERCRITICAL_CO2_BRAYTON_CYCLE`) |
+| `.heat_transport.etath_liq` | `EtathLiqStep` | read/written by `calculate_plant_thermal_efficiency_2` | `1` for `secondary_cycle_liq == 2` (plain pass-through); `0` for `== 4` (recomputed from `outlet_temp_liq` alone) |
+| `.heat_transport.temp_turbine_coolant_in` | `TempTurbineCoolantInStep` | read/written by *both* `calculate_plant_thermal_efficiency` and `calculate_plant_thermal_efficiency_2`, in sequence -- see "Write-ordering" below | `1` only when *both* stages pass it through unchanged (`i_thermal_electric_conversion` selects `CCFE_HCPB_VALUE`/`CCFE_HCPB_VALUE_WITH_DIVERTOR`/`USER_INPUT`/default **and** `secondary_cycle_liq == 2`); `0` for every other combination |
+| `.heat_transport.p_fw_div_heat_deposited_mw` | `PFwDivHeatDepositedMwStep` | conditional-ownership pass-through, `i_p_coolant_pumping` (line 955-961, `power.py`) | `1` for `MECHANICAL_WITH_PRESSURE_DROP` (pass-through, owned elsewhere -- `models/ife.py`); `0` for every other value (recomputed from `p_fw_heat_deposited_mw + p_div_heat_deposited_mw`) |
+| `.primary_pumping.p_fw_blkt_coolant_pump_mw` | `PFwBlktCoolantPumpMwStep` | conditional-ownership pass-through, `i_p_coolant_pumping` (line 815-820, `power.py`) | `1` for `MECHANICAL`/`MECHANICAL_WITH_PRESSURE_DROP` (pass-through, owned elsewhere -- `models/blankets/hcpb.py`/`blanket_library.py`, unit #13); `0` for `USER_INPUT`/`FRACTION_OF_HEAT` (recomputed from `p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw`) |
+
+**Verified against the full function, not just the extracted helpers.** For two full
+switch-combination sweeps (all pass-through and all overwrite, at the
+`calculate_component_thermal_powers` level, not just each `step` in isolation), each
+`FixedPointFunction.step`'s output was checked to match the corresponding element of
+`calculate_component_thermal_powers`'s return tuple exactly (`==`, not `approx`) --
+see each `test_*_step_matches_calculate_component_thermal_powers` test.
+
+**Reuse over reimplementation, same discipline `DeltaEtaStep` established.**
+`PFwDivHeatDepositedMwStep`/`PFwBlktCoolantPumpMwStep` share the extracted helpers
+`calculate_p_fw_heat_deposited_mw`/`calculate_p_fw_div_heat_deposited_mw`/
+`calculate_p_div_heat_deposited_mw`/`calculate_p_fw_blkt_coolant_pump_mw` with
+`calculate_component_thermal_powers` itself (the first two are new this pass, the
+latter two already existed for `DeltaEtaStep`). `EtaTurbineStep`/`EtathLiqStep`/
+`TempTurbineCoolantInStep` instead reuse `calculate_plant_thermal_efficiency`/
+`calculate_plant_thermal_efficiency_2` directly, passing an unused `0.0` placeholder
+for whichever parameter of the *other* return element that split doesn't need
+(`temp_turbine_coolant_in` for the first two; `eta_turbine`/`etath_liq`/`delta_eta`
+for the third) -- confirmed by inspecting every branch of both functions that the
+entering value of the placeholder parameter never influences the element being
+isolated, so `0.0` never leaks into a real output. This was the cheaper path for
+these three: extracting a parallel eta_turbine-only/etath_liq-only/
+temp_turbine_coolant_in-only helper would have meant duplicating the same five-way
+(`calculate_plant_thermal_efficiency`) or two-way (`calculate_plant_thermal_efficiency_2`)
+branch structure a second time, whereas the shared function already *is* that logic.
+
+**All five self-contained, not wired to `ComponentThermalPowers`'s own outputs** --
+same "read the same raw inputs twice, fan out, don't create a two-node cycle" pattern
+`DeltaEtaStep`'s docstring already argues for.
 
 ## Write-ordering on `temp_turbine_coolant_in`
 
@@ -158,6 +269,66 @@ see each function's own docstring for its full parameter list and return tuple.
 parameter to carry an `Input(...)` default, so a static config value cannot be an
 ordinary parameter at all on this surface.
 
+**`DeltaEtaStep`, added this pass**: a `FixedPointFunction` (not an `ExplicitFunction`)
+isolating `.power.delta_eta`'s self-reference out of `ComponentThermalPowers`. Static
+fields: `i_p_coolant_pumping`, `i_blkt_dual_coolant`, `i_thermal_electric_conversion`
+(the three switches its own computation needs; `i_blanket_type`/`secondary_cycle_liq`
+are not, since those only affect `eta_turbine`/`etath_liq`, not `delta_eta`). Its
+`step` deliberately reads the same *raw*, externally-owned inputs
+`calculate_component_thermal_powers` itself reads (via the four shared helper
+functions), rather than `ComponentThermalPowers`'s own `Output`s for the same
+intermediate quantities (`p_fw_blkt_heat_deposited_mw`, `p_shld_heat_deposited_mw`,
+`p_div_heat_deposited_mw`) -- reading those `Output`s instead would recreate a
+two-node cycle (`ComponentThermalPowers` -> `DeltaEtaStep` -> `ComponentThermalPowers`)
+rather than cutting one, exactly the risk `_audit/next_steps.md` § 5 names: *"splitting
+`component_thermal_powers` would very plausibly just turn one self-referencing node
+into two mutually-referencing ones representing the same local loop, not reveal a new
+one."* Confirmed directly: `to_graph(DeltaEtaStep(i_p_coolant_pumping=..., ...))`
+builds a two-node graph (`['DeltaEtaStep']`, `^problem['DeltaEtaStep']`) for every
+switch combination this chunk supports (`test_delta_eta_step_to_graph_builds`,
+parametrised over all four).
+
+**`EtaTurbineStep`/`EtathLiqStep`/`TempTurbineCoolantInStep`/`PFwDivHeatDepositedMwStep`
+/`PFwBlktCoolantPumpMwStep`, added this pass**: five more `FixedPointFunction`s,
+same shape and same "read the same raw inputs, don't recreate a two-node cycle"
+discipline as `DeltaEtaStep`. Static fields: `EtaTurbineStep`
+(`i_thermal_electric_conversion`, `i_blanket_type`); `EtathLiqStep`
+(`secondary_cycle_liq`); `TempTurbineCoolantInStep` (all three:
+`i_thermal_electric_conversion`, `i_blanket_type`, `secondary_cycle_liq`, since both
+stages it composes are switch-gated); `PFwDivHeatDepositedMwStep`/
+`PFwBlktCoolantPumpMwStep` (`i_p_coolant_pumping` only -- each reads a different
+partition of the same switch, see `calculate_component_thermal_powers`'s own
+docstring). `EtaTurbineStep`/`EtathLiqStep`/`TempTurbineCoolantInStep` reuse
+`calculate_plant_thermal_efficiency`/`calculate_plant_thermal_efficiency_2` directly
+with an unused placeholder for the return element they don't need (see § "The five
+remaining self-loops" for why this is safe); `PFwDivHeatDepositedMwStep` uses the two
+newly extracted helpers `calculate_p_fw_heat_deposited_mw`/
+`calculate_p_fw_div_heat_deposited_mw` plus the already-shared
+`calculate_p_div_heat_deposited_mw`; `PFwBlktCoolantPumpMwStep` reuses the
+already-shared `calculate_p_fw_blkt_coolant_pump_mw` directly, unmodified. Confirmed
+directly: `to_graph(...)` builds a two-node graph for each, for every switch
+combination this chunk supports (`test_eta_turbine_step_to_graph_builds`,
+`test_etath_liq_step_to_graph_builds`,
+`test_temp_turbine_coolant_in_step_to_graph_builds`,
+`test_p_fw_div_heat_deposited_mw_step_to_graph_builds`,
+`test_p_fw_blkt_coolant_pump_mw_step_to_graph_builds`).
+
+**`ComponentThermalPowers`, adjusted**: no longer declares any of the six
+self-referencing fields as `Output`s (ownership moved to the six `FixedPointFunction`s'
+`FixedPoint` problem nodes); still reads all six as plain `Input`s (the current
+values), and its `__call__` still calls the unmodified `calculate_component_thermal_powers`
+and forwards every other element of its return tuple, dropped by named unpacking (the
+six dropped indices -- `0`, `15`, `16`, `17`, `18`, `23` -- are not contiguous, so a
+slice no longer suffices the way it did for `delta_eta` alone). **`to_graph(ComponentThermalPowers(...))`
+no longer raises at all** (`test_component_thermal_powers_to_graph_builds_cleanly`) --
+this was the actual point of this pass: before it, the five fields beyond `delta_eta`
+(`.heat_transport.eta_turbine`/`etath_liq`/`temp_turbine_coolant_in`,
+`.heat_transport.p_fw_div_heat_deposited_mw`,
+`.primary_pumping.p_fw_blkt_coolant_pump_mw`) were each a pre-existing self-loop of
+the same shape (`Output`'s `where` equals one `Input`'s `where`), confirmed by direct
+`to_graph` probing while building the `delta_eta` split, and flagged there for
+whoever did this pass next.
+
 ## tier signal
 
 All five **tier 1**: no internal iteration anywhere in this chunk.
@@ -219,9 +390,23 @@ unguarded-branch-NaN risk of the kind chunk A's `res_tf_leg == 0.0` singularity 
    PROCESS's reference raises `TypeError` from inside its own logging call, not a
    `ProcessValueError`/domain rejection. Same open question as #1: a genuine
    PROCESS-crashes-here case, not a porting gap.
-3. **The `delta_eta` self-loop's actual closure behaviour is not verified here** --
-   this record documents the stale-read shape and the pure port's in/out signature
-   faithfully reproduces it, but whether it actually converges over PROCESS's
-   `Caller.call_models` re-run loop (and to what) is not checked, matching
-   `power_at_ignition_point`'s precedent (documented, not solved, until a `Blocking`/
-   `FixedPoint` wiring pass exists to drive it for real).
+3. **[Resolved, both passes] All six `ComponentThermalPowers` self-loops are now
+   represented as `FixedPointFunction`s** (`DeltaEtaStep`, `EtaTurbineStep`,
+   `EtathLiqStep`, `TempTurbineCoolantInStep`, `PFwDivHeatDepositedMwStep`,
+   `PFwBlktCoolantPumpMwStep`) **and every one's closure behaviour is checked, not
+   assumed**: `delta_eta`'s is uniformly degenerate (`d(delta_eta_next)/d(delta_eta)
+   == 0` exactly, every switch combination); the other five are piecewise
+   identity/zero, per switch combination -- see § "The five remaining self-loops"
+   for the full table. `to_graph(ComponentThermalPowers(...))` no longer raises at
+   all (`test_component_thermal_powers_to_graph_builds_cleanly`). **What remains
+   open**: (a) no driver is actually assigned to any of the six resulting
+   `FixedPoint` problem nodes (deliberately deferred, per `_audit/next_steps.md` § 5's
+   "What stays deferred"); (b) `ComponentThermalPowers` and the six
+   `FixedPointFunction`s are not registered together in one graph by this task
+   (deferred to `total_process.py`'s later consolidation pass); and (c) whether
+   PROCESS's own `Caller.call_models` re-run loop actually converges each field to
+   the same fixed point its node's `FixedPoint` problem would (given each gradient is
+   exactly `0` or exactly `1`, trivially yes in exact arithmetic for every case except
+   possibly a chain of several `1`-gradient pass-throughs compounding across
+   `call_models`'s outer iterations, but not cross-checked against a PROCESS run
+   here).

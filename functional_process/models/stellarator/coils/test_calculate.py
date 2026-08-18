@@ -21,14 +21,19 @@ import inspect
 from types import MappingProxyType
 
 import equinox as eqx
+import jax
 import numpy as np
-
+import optimistix as optx
+import pytest
+from cottax.evaluate import AbstractDriver, schedule_for
 from cottax.interfaces.pytree_namespace_module import path_of, to_graph
+from cottax.problem import RootFind
 from cottax.spec import VarPath
+
 from functional_process._harness import Sample, Tier1Contract, Tier2Contract
 from functional_process.models.stellarator.coils.calculate import (
-    WindingPackJTfWp,
-    WindingPackTotalSize,
+    WindingPackIntersectInputs,
+    WindingPackTotalSizePost,
     calculate_casing,
     calculate_coil_coil_toroidal_gap,
     calculate_coil_cross_sectional_area,
@@ -43,11 +48,15 @@ from functional_process.models.stellarator.coils.calculate import (
     calculate_stored_magnetic_energy,
     calculate_vertical_ports,
     calculate_winding_pack_geometry,
+    calculate_z_tf_inside_half,
     st_coil,
     winding_pack_curves,
     winding_pack_total_size,
 )
-from functional_process.models.stellarator.coils.coils import intersect_residual
+from functional_process.models.stellarator.coils.coils import (
+    Intersect,
+    intersect_residual,
+)
 from process.core.model import DataStructure
 from process.models.stellarator.coils import calculate as process_calculate
 from process.models.stellarator.preset_config import load_stellarator_config
@@ -138,7 +147,9 @@ class TestCoilHalfWidths(Tier1Contract):
     fuzz_bounds = {"dx_tf_inboard_out_toroidal": (0.05, 2.0)}
 
 
-def _reference_plasma_facing_coil_area(n_tf_coils, dx_tf_inboard_out_toroidal, len_tf_coil):
+def _reference_plasma_facing_coil_area(
+    n_tf_coils, dx_tf_inboard_out_toroidal, len_tf_coil
+):
     data = DataStructure()
     data.tfcoil.n_tf_coils = n_tf_coils
     data.tfcoil.dx_tf_inboard_out_toroidal = dx_tf_inboard_out_toroidal
@@ -194,6 +205,56 @@ class TestCoilCoilToroidalGap(Tier1Contract):
     }
 
 
+def _reference_z_tf_inside_half(
+    stella_config_maximal_coil_height, r_coil_minor, stella_config_coil_rminor
+):
+    """`0.5 * stella_config_maximal_coil_height * (r_coil_minor /
+    stella_config_coil_rminor)` -- `st_coil`'s own inline formula
+    (`process/models/stellarator/coils/calculate.py:80`), reproduced directly rather
+    than invoked through the full `st_coil` orchestrator: there is no standalone real
+    PROCESS entry point for this one line (same reasoning `test_build.py`'s
+    `_reference_a_fw_total_no_powerflow` gives for its own inline-formula case). The
+    full `st_coil` orchestrator's own end-to-end test below (`checks["z_tf_inside_half"]`)
+    already exercises this same formula against real PROCESS at realistic operating
+    points -- this class adds fuzz coverage and a direct node-level check, not a first
+    check of correctness.
+    """
+    return (
+        0.5 * stella_config_maximal_coil_height * (r_coil_minor / stella_config_coil_rminor)
+    )
+
+
+class TestZTfInsideHalf(Tier1Contract):
+    audit_record = "models/stellarator/coils/calculate.md"
+    reference = _reference_z_tf_inside_half
+    ported = calculate_z_tf_inside_half
+
+    fuzz_bounds = {
+        "stella_config_maximal_coil_height": (1.0, 20.0),
+        "r_coil_minor": (0.5, 3.0),
+        "stella_config_coil_rminor": (0.1, 1.0),
+    }
+
+
+def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
+    """`ZTfInsideHalf` -- the actual point of extracting this formula into its own
+    node: it must assemble via `to_graph` and own `.build.z_tf_inside_half`, not
+    `Build` (which used to, until the block-by-block MDA-vs-PROCESS comparison
+    harness found `.build.z_tf_inside_half` has two independent real PROCESS
+    producers and `Build`'s formula was the wrong one to keep -- see `build.py`'s
+    `calculate_build`/`Build` docstrings and this node's own).
+    """
+    from functional_process.models.stellarator.coils.calculate import ZTfInsideHalf
+
+    node = ZTfInsideHalf()
+    graph = to_graph(node)
+    assert graph.definitions
+
+    owned = {out.var for out in node.outputs}
+    z_tf_inside_half_path = path_of(lambda s: s.build.z_tf_inside_half, VarPath)
+    assert z_tf_inside_half_path in owned
+
+
 def _reference_coils_summary_variables(
     n_tf_coils, a_tf_leg_outboard, coilcurrent, r_coil_major, r_coil_minor, awp_rad
 ):
@@ -227,7 +288,11 @@ class TestCoilsSummaryVariables(Tier1Contract):
 
 
 def _reference_inductance(
-    stella_config_inductance, f_st_rmajor, r_coil_minor, stella_config_coil_rminor, f_st_n_coils
+    stella_config_inductance,
+    f_st_rmajor,
+    r_coil_minor,
+    stella_config_coil_rminor,
+    f_st_n_coils,
 ):
     data = DataStructure()
     data.stellarator_config.stella_config_inductance = stella_config_inductance
@@ -351,7 +416,9 @@ class TestCasing(Tier1Contract):
     fuzz_bounds = {"dr_tf_nose_case": (0.01, 0.5)}
 
 
-def _reference_vertical_ports(stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils):
+def _reference_vertical_ports(
+    stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
+):
     data = DataStructure()
     data.stellarator_config.stella_config_max_portsize_width = (
         stella_config_max_portsize_width
@@ -378,7 +445,9 @@ class TestVerticalPorts(Tier1Contract):
     }
 
 
-def _reference_horizontal_ports(stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils):
+def _reference_horizontal_ports(
+    stella_config_max_portsize_width, f_st_rmajor, f_st_n_coils
+):
     data = DataStructure()
     data.stellarator_config.stella_config_max_portsize_width = (
         stella_config_max_portsize_width
@@ -529,6 +598,7 @@ CLI-controlled seed is the wrong knob for a tier-2 unit whose pass criterion is 
 precision-sensitive. These four points were individually checked to avoid both.
 """
 
+
 def _winding_pack_geometry_samples(base):
     """The 4 `_WINDING_PACK_GEOMETRY_POINTS` as `Sample`s over `base`.
 
@@ -568,9 +638,9 @@ def _winding_pack_total_size_residual(solution, **kwargs):
     `TestIntersect` checks `intersect` against directly.
     """
     dr_tf_wp_with_insulation = solution[3]
-    wp_width_r, lhs, rhs, _fraction = winding_pack_curves(
-        **{name: kwargs[name] for name in _WINDING_PACK_CURVE_PARAMS}
-    )
+    wp_width_r, lhs, rhs, _fraction = winding_pack_curves(**{
+        name: kwargs[name] for name in _WINDING_PACK_CURVE_PARAMS
+    })
     return intersect_residual(dr_tf_wp_with_insulation, wp_width_r, lhs, wp_width_r, rhs)
 
 
@@ -596,10 +666,14 @@ class TestWindingPackTotalSize(Tier2Contract):
     samples = [
         Sample(MappingProxyType(_base), "synthetic", "helias5b-like-mat1"),
         Sample(
-            MappingProxyType({**_base, "i_tf_sc_mat": 5}), "synthetic", "helias5b-like-mat5"
+            MappingProxyType({**_base, "i_tf_sc_mat": 5}),
+            "synthetic",
+            "helias5b-like-mat5",
         ),
         Sample(
-            MappingProxyType({**_base, "i_tf_sc_mat": 7}), "synthetic", "helias5b-like-mat7"
+            MappingProxyType({**_base, "i_tf_sc_mat": 7}),
+            "synthetic",
+            "helias5b-like-mat7",
         ),
         *_winding_pack_geometry_samples(_base),
     ]
@@ -632,79 +706,31 @@ class TestWindingPackTotalSize(Tier2Contract):
     fine on its own terms; there is simply no PROCESS answer to compare it against.
     """
 
+
 # ---------------------------------------------------------------------------
-# the Shape B split: `WindingPackJTfWp` / `WindingPackTotalSize`
+# the Shape A split:
+# `WindingPackIntersectInputs` / `Intersect` / `WindingPackTotalSizePost`
 #
-# `winding_pack_total_size`'s `.tfcoil.j_tf_wp` self-loop cannot be a plain node --
-# `to_graph(WindingPackTotalSize(...))` (pre-split) raised `ValueError: reads
-# ['.tfcoil.j_tf_wp'], which it also owns`, the same failure class `Avail`'s
-# `.costs.cplife` self-loop hits (`_audit/next_steps.md` §5, "Shape B"). `WindingPackJTfWp`
-# (`FixedPointFunction`) / `WindingPackTotalSize` (now an ordinary, non-owning reader of
-# `j_tf_wp`) split that self-loop out, following the same pattern
-# `physics_B_composition.py`'s `NextFirstCall`/`PlasmaComposition` split used for
-# `.physics.first_call`. These checks are the actual point of the split: prove the shape
-# is now legal, don't just assert it.
+# `winding_pack_total_size`'s `.tfcoil.j_tf_wp` self-loop cannot be a plain node -- one
+# node cannot read and own the same `VarPath` (`cottax.spec`'s "reads what it also
+# owns" construction error). An earlier pass isolated it with a `WindingPackJTfWp`
+# `FixedPointFunction` that duplicated this entire function's computation just to
+# extract `j_tf_wp` alone. That class is gone: once `WindingPackTotalSizePost` owns
+# `.tfcoil.j_tf_wp` and `WindingPackIntersectInputs` reads it, the self-reference closes
+# through the two of them plus `coils.py`'s `Intersect` in between -- a genuine
+# multi-node cycle, the same "Shape A" shape as `Divertor`/`AFwTotalWithPowerflow`
+# (`_audit/next_steps.md` §5). No `FixedPointFunction`/`Cut` needed: `Blocking`/
+# `to_graph()` finds the SCC on its own. These checks are the actual point of the split:
+# prove the shape is legal and the cycle actually forms, don't just assert it.
 # ---------------------------------------------------------------------------
 
 
-def test_winding_pack_j_tf_wp_step_matches_pure_function():
-    """`WindingPackJTfWp.step` and `winding_pack_total_size`'s own `j_tf_wp_new`
-    (element `[4]` of its return tuple) both compute the same value -- not two
-    independent reimplementations of the same self-loop.
+def test_winding_pack_intersect_inputs_node_assembles_and_does_not_own_j_tf_wp():
+    """`WindingPackIntersectInputs` (the pre-`intersect` node) must assemble on its own,
+    and must not itself own `.tfcoil.j_tf_wp` -- that `VarPath` belongs to
+    `WindingPackTotalSizePost` alone, not this one (it only reads the real value).
     """
-    base = dict(_helias5b_winding_pack_base())
-    i_tf_sc_mat = base.pop("i_tf_sc_mat")
-    node = WindingPackJTfWp(i_tf_sc_mat=i_tf_sc_mat)
-    got = node.step(**base)
-    want = winding_pack_total_size(**base, i_tf_sc_mat=i_tf_sc_mat)[4]
-    assert got == want
-
-
-def test_winding_pack_j_tf_wp_step_is_a_degenerate_fixed_point_off_bi2212():
-    """For every `i_tf_sc_mat` except `2` (Bi-2212), `step`'s own `j_tf_wp` parameter is
-    never read by `_critical_current_density_by_material` -- so `d(step)/d(j_tf_wp) ==
-    0` identically, and the `FixedPoint` problem converges in exactly one iteration
-    regardless of the value `.tfcoil.j_tf_wp` happens to hold. This is the analytic
-    content behind `WindingPackJTfWp`'s docstring claim that no explicit
-    pass-through/identity branch is needed for these materials -- it already falls out
-    of the existing dispatch. Checked at the three materials `TestWindingPackTotalSize`
-    itself samples (1, 5, 7), so this reuses exactly the geometry already verified to
-    converge to a genuine crossing.
-    """
-    base = dict(_helias5b_winding_pack_base())
-    del base["i_tf_sc_mat"]
-    for i_tf_sc_mat in (1, 5, 7):
-        node = WindingPackJTfWp(i_tf_sc_mat=i_tf_sc_mat)
-        grad = jax.grad(lambda j, b=base, n=node: n.step(**{**b, "j_tf_wp": j}))(
-            base["j_tf_wp"]
-        )
-        assert grad == 0.0, i_tf_sc_mat
-
-
-def test_winding_pack_j_tf_wp_assembles_as_a_fixed_point_node():
-    """The actual point of this split: `to_graph(WindingPackJTfWp(...))` must succeed.
-
-    Before this split, `winding_pack_total_size` had a node (`WindingPackTotalSize`)
-    declaring `.tfcoil.j_tf_wp` as both an `Input` and an `Output` at once -- confirmed
-    directly (see the module docstring) to raise `cottax.spec`'s "reads what it also
-    owns" construction error. `FixedPointFunction` mints the cut internally
-    (`^cond.tfcoil.j_tf_wp`), so the body node reads the real `.tfcoil.j_tf_wp` and a
-    separate `FixedPoint` problem node owns it -- `to_graph` must build both without
-    raising.
-    """
-    graph = to_graph(WindingPackJTfWp(i_tf_sc_mat=1))
-    assert graph.definitions
-    # Two nodes: the `step` body and the `FixedPoint` problem it feeds -- exactly the
-    # pair `FixedPointFunction.node_definitions_and_names` documents.
-    assert len(graph.definitions) == 2
-
-
-def test_winding_pack_total_size_node_assembles_and_does_not_own_j_tf_wp():
-    """`WindingPackTotalSize` (the ordinary node) must also assemble on its own, and
-    must not itself own `.tfcoil.j_tf_wp` -- that `VarPath` belongs to
-    `WindingPackJTfWp`'s `FixedPoint` problem node alone, not this one.
-    """
-    node = WindingPackTotalSize(i_tf_sc_mat=1)
+    node = WindingPackIntersectInputs(i_tf_sc_mat=1)
     graph = to_graph(node)
     assert graph.definitions
     owned = {out.var for out in node.outputs}
@@ -712,15 +738,198 @@ def test_winding_pack_total_size_node_assembles_and_does_not_own_j_tf_wp():
     assert j_tf_wp_path not in owned
 
 
-def test_winding_pack_nodes_assemble_together():
-    """The two halves of the split coexist in one graph with no naming collision:
-    `WindingPackJTfWp`'s `FixedPoint` problem owns `.tfcoil.j_tf_wp`;
-    `WindingPackTotalSize` only reads it. This is the shape a later consolidation pass
-    (not this one) would register into `total_process.py`.
+def test_winding_pack_total_size_post_owns_j_tf_wp():
+    """`WindingPackTotalSizePost` (the post-`intersect` node) must assemble on its own
+    and must now own `.tfcoil.j_tf_wp` -- the fresh value `winding_pack_post_intersect`
+    computes, no longer discarded now that `WindingPackJTfWp` is gone.
     """
-    graph = to_graph(WindingPackJTfWp(i_tf_sc_mat=1), WindingPackTotalSize(i_tf_sc_mat=1))
+    node = WindingPackTotalSizePost()
+    graph = to_graph(node)
     assert graph.definitions
-    assert len(graph.definitions) == 3  # WindingPackJTfWp's 2 + WindingPackTotalSize's 1
+    owned = {out.var for out in node.outputs}
+    j_tf_wp_path = path_of(lambda s: s.tfcoil.j_tf_wp, VarPath)
+    assert j_tf_wp_path in owned
+
+
+def test_winding_pack_intersect_pair_assembles_around_the_root_find():
+    """`WindingPackIntersectInputs` mints exactly the `VarPath`s `coils.py`'s `Intersect`
+    reads (`.stellarator.wp_width_r`/`.lhs`/`.rhs`), so the two assemble together into
+    one coupled block with a single `RootFind` problem -- the actual point of the split
+    around `intersect` this pass makes (`_audit/next_steps.md` §7, `Intersect`'s own
+    docstring).
+    """
+    pre = WindingPackIntersectInputs(i_tf_sc_mat=1)
+    graph = to_graph(pre, Intersect())
+    assert graph.definitions
+    assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
+    assert not graph.is_acyclic
+    (block,) = [b for b in graph.scc_blocks if b.declared]
+    assert block.problem_type is RootFind
+
+
+def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
+    """`WindingPackTotalSizePost` reads `.stellarator.wp_width_r_min` -- the `VarPath`
+    `Intersect`'s `RootFind` problem owns -- as an ordinary `Input`, alongside owning
+    `.tfcoil.j_tf_wp` itself (see above). Two different edges, not a second self-loop.
+    """
+    post = WindingPackTotalSizePost()
+    wp_width_r_min_path = path_of(lambda s: s.stellarator.wp_width_r_min, VarPath)
+    assert wp_width_r_min_path in post.node_definition.reads
+    assert wp_width_r_min_path not in {out.var for out in post.outputs}
+
+
+def test_winding_pack_intersect_split_forms_one_combined_cycle():
+    """The full three-piece split (`WindingPackIntersectInputs`, `coils.py`'s
+    `Intersect`, `WindingPackTotalSizePost`) assembles into one graph, and now that
+    `WindingPackTotalSizePost` owns `.tfcoil.j_tf_wp` (which `WindingPackIntersectInputs`
+    reads), the three nodes plus `Intersect`'s own `RootFind` problem form a **single**
+    SCC -- not `Intersect`'s 2-node self-loop sitting disjoint from two plain
+    acyclic nodes either side of it, the shape the pre-`WindingPackTotalSizePost`
+    ownership change had. `WindingPackJTfWp` (an earlier pass's separate
+    `FixedPointFunction` duplicating this whole computation just to isolate `j_tf_wp`)
+    is gone -- this one merged cycle replaces it, with no duplicated computation.
+    """
+    pre = WindingPackIntersectInputs(i_tf_sc_mat=1)
+    post = WindingPackTotalSizePost()
+    graph = to_graph(pre, Intersect(), post)
+    assert graph.definitions
+    assert len(graph.definitions) == 4  # pre's 1 + Intersect's 2 + post's 1
+    assert not graph.is_acyclic
+
+    (cycle,) = graph.cycles
+    assert {n.path_str() for n in cycle} == {
+        "['WindingPackIntersectInputs']",
+        "['Intersect']",
+        "^problem['Intersect']",
+        "['WindingPackTotalSizePost']",
+    }
+
+
+class _GenericBisectionRootFind(AbstractDriver):
+    """Test-only `AbstractDriver` answering `RootFind` generically, via
+    `ConditionMap.__call__` (`conditions(x) -> residual`) rather than
+    `IntersectBisectionNewtonPolish`'s deliberate shortcut of reaching into
+    `conditions.context` for `coils.py`'s own tabulated curve arrays directly.
+
+    That shortcut stops working once `WindingPackIntersectInputs` (the node producing
+    those curves) is itself *inside* the driven block rather than external to it --
+    exactly what happens now that `WindingPackTotalSizePost` owns `.tfcoil.j_tf_wp` and
+    `WindingPackIntersectInputs` reads it: `wp_width_r`/`lhs`/`rhs` are no longer part of
+    `conditions.context` (`Drive.context` is "what the body reads from outside the
+    block" -- with `pre` now *inside* the block, its own outputs are internal, not
+    external). `conditions.context`'s own docstring already flags this as a deliberate,
+    non-forced choice ("nothing stops a different concrete driver from being fully
+    generic and calling `conditions(x)` instead") -- this class is that generic driver,
+    proving the merged 4-node block (`WindingPackIntersectInputs` -> `Intersect` ->
+    `WindingPackTotalSizePost`, cycling back through `.tfcoil.j_tf_wp`) is drivable at
+    all, not just structurally admissible.
+
+    Unlike `intersect`'s own unconstrained-Newton-after-bisection, `lhs`/`rhs` here can
+    cross more than once outside the physically meaningful band (confirmed empirically:
+    an unconstrained `optx.Newton` from `x0=1.0` converges to a spurious root at ~0.096,
+    well below the sampled curve's own domain floor) -- so this driver still needs a
+    bracket, supplied by the caller (same information `intersect`'s own `lo`/`hi` uses),
+    rather than discovering the domain itself the way the narrower
+    `IntersectBisectionNewtonPolish` can by reaching into `conditions.context` for the
+    tabulated `wp_width_r` array's own min/max.
+    """
+
+    drives = RootFind
+    lower: float
+    upper: float
+
+    def __call__(self, conditions, start):
+        x0 = start[0] if start is not None else 0.5 * (self.lower + self.upper)
+        bracketed = optx.root_find(
+            lambda x, _: conditions(x)[0],
+            optx.Bisection(rtol=0.0, atol=1e-10, flip="detect"),
+            x0,
+            options={"lower": self.lower, "upper": self.upper},
+            throw=False,
+            max_steps=100,
+        ).value
+        return (bracketed,)
+
+
+def test_winding_pack_intersect_driven_matches_the_pure_function():
+    """The actual numeric point of this split: driving the merged four-node block
+    (`WindingPackIntersectInputs` -> `Intersect` -> `WindingPackTotalSizePost`, cycling
+    back to `WindingPackIntersectInputs` through `.tfcoil.j_tf_wp`) with a generic
+    `RootFind` driver reproduces the same `dr_tf_wp_with_insulation`/
+    `a_tf_wp_with_insulation` the plain `winding_pack_total_size` pure function computes
+    eagerly -- same numbers, produced through the driven path instead of the old eager
+    one, and through the *merged* block, not the narrower `Intersect`-alone block an
+    earlier version of this test drove (see `_GenericBisectionRootFind`'s own docstring
+    for why `IntersectBisectionNewtonPolish` alone no longer suffices here).
+
+    Uses `i_tf_sc_mat=1` (ITER Nb3Sn, not Bi-2212) -- `j_tf_wp` doesn't actually affect
+    the curves on this branch (`_critical_current_density_by_material` never reads it
+    off `i_tf_sc_mat == 2`), so the cycle converges in one pass regardless of starting
+    guess; this test proves the *block* drives correctly, not that this particular
+    material genuinely needs iterating -- the Bi-2212 branch would, but has no sample
+    point built for this test yet.
+    """
+    base = dict(_helias5b_winding_pack_base())
+    i_tf_sc_mat = base.pop("i_tf_sc_mat")
+    base.pop("j_tf_wp")  # no longer an external condition -- WindingPackTotalSizePost
+    # owns `.tfcoil.j_tf_wp` now, so it is produced inside the driven block, not fed in.
+
+    field_paths = {
+        "r_coil_major": lambda s: s.stellarator.r_coil_major,
+        "r_coil_minor": lambda s: s.stellarator.r_coil_minor,
+        "coilcurrent": lambda s: s.stellarator.coilcurrent,
+        "n_tf_coils": lambda s: s.tfcoil.n_tf_coils,
+        "stella_config_a1": lambda s: s.stellarator_config.stella_config_a1,
+        "stella_config_a2": lambda s: s.stellarator_config.stella_config_a2,
+        "stella_config_wp_ratio": lambda s: s.stellarator_config.stella_config_wp_ratio,
+        "tftmp": lambda s: s.tfcoil.tftmp,
+        "tmargmin": lambda s: s.tfcoil.tmargmin,
+        "b_crit_upper_nbti": lambda s: s.tfcoil.b_crit_upper_nbti,
+        "bcritsc": lambda s: s.tfcoil.bcritsc,
+        "f_a_tf_turn_cable_copper": lambda s: s.tfcoil.f_a_tf_turn_cable_copper,
+        "fhts": lambda s: s.tfcoil.fhts,
+        "t_crit_nbti": lambda s: s.tfcoil.t_crit_nbti,
+        "tcritsc": lambda s: s.tfcoil.tcritsc,
+        "f_a_tf_turn_cable_space_extra_void": (
+            lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
+        ),
+        "f_j_tf_wp_critical_max": lambda s: s.constraints.f_j_tf_wp_critical_max,
+        "a_tf_turn_cable_space_no_void": (
+            lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
+        ),
+        "dx_tf_turn_general": lambda s: s.tfcoil.dx_tf_turn_general,
+        "dx_tf_wp_insulation": lambda s: s.tfcoil.dx_tf_wp_insulation,
+        "a_tf_turn_steel": lambda s: s.tfcoil.a_tf_turn_steel,
+    }
+    env = {
+        path_of(where, VarPath): jax.numpy.asarray(base[name])
+        for name, where in field_paths.items()
+    }
+
+    pre = WindingPackIntersectInputs(i_tf_sc_mat=i_tf_sc_mat)
+    post = WindingPackTotalSizePost()
+    graph = to_graph(pre, Intersect(), post)
+    # Same domain `winding_pack_curves` itself samples `wp_width_r` over -- see that
+    # function's own `lo`/`hi` (`i_tf_sc_mat == 6` uses a different lower bound, not hit
+    # here since this test uses material 1).
+    r_coil_minor = base["r_coil_minor"]
+    driver = _GenericBisectionRootFind(
+        lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
+    )
+    schedule = schedule_for(graph, {Intersect().problem_name: driver})
+    out = schedule(env)
+
+    reference = winding_pack_total_size(
+        **base, j_tf_wp=jax.numpy.asarray(0.0), i_tf_sc_mat=i_tf_sc_mat
+    )
+    dr_tf_wp_with_insulation_path = path_of(
+        lambda s: s.tfcoil.dr_tf_wp_with_insulation, VarPath
+    )
+    a_tf_wp_with_insulation_path = path_of(
+        lambda s: s.tfcoil.a_tf_wp_with_insulation, VarPath
+    )
+    assert out[dr_tf_wp_with_insulation_path] == pytest.approx(reference[3])
+    assert out[a_tf_wp_with_insulation_path] == pytest.approx(reference[12])
 
 
 # ---------------------------------------------------------------------------

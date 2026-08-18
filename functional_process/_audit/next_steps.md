@@ -1,28 +1,115 @@
 # Next steps
 
-Snapshot as of the wave that consolidated §4c's 4-agent dispatch (`buildings.py`,
-`vacuum.py`, `availability.py`, `costs/costs.py`+`costs_2015.py`) into
-`total_process.py`/`unit_registry.md`. `unit_registry.md` remains the authoritative
-per-unit status — this file is a priority-ordered punch list, not a second source of
-truth; update it as items close rather than letting it drift the way a status doc always
-tends to.
+Snapshot as of the wave that registered 9 already-ported-but-unregistered units into
+`total_process.py`: `stellarator_B_st_phys.py` (chunk 1B), `stellarator_C_geometry.py`
+(chunk 1C), `stellarator_fwbs_s2.py` (S2), `power_A_tf_coil_power.py`/
+`power_B_thermal_cryo.py`/`power_C_electric_production.py` (unit #14, chunks A/B/C),
+`availability.py` (unit #17), `physics_B_composition.py` (chunk B), and `coils/
+calculate.py`'s `WindingPackJTfWp` (unit #9). `unit_registry.md` remains the
+authoritative per-unit status — this file is a priority-ordered punch list, not a second
+source of truth; update it as items close rather than letting it drift the way a status
+doc always tends to.
 
-Suite at this snapshot: `$PY -m pytest functional_process` → **1499 passed, 1147
-skipped** at the harness's default (`--fp-fuzz=1`, gradient checks gated off by default
-— see §1c), **2637 passed, 9 skipped with `--fp-gradients`**, both green **except one
-pre-existing, out-of-scope failure**:
-`test_registry_coverage.py::test_every_record_file_is_in_the_registry` fails on
-`functional_process/models/power_A_tf_coil_power.md`, an audit record the concurrent
-`power.py` agent (running in parallel with this wave, per this file's own standing
-instruction not to touch `models/power*`) landed mid-session; registering it in
-`unit_registry.md` is that agent's own consolidation, not this one's. Default graph
-(`total_process.GRAPH`) is now **58 nodes** (was 55), still exactly one SCC
-(`Divertor`/`AFwTotalWithPowerflow`, only under `ipowerflow != 0`). `tests/unit`/
-`~/jaxgraph` parity not re-checked this pass (no `process/`/`~/jaxgraph` changes made);
-see the previous snapshot's line for those counts (846 / 307).
+**Update, much later same session — read § 8 first if you are picking this file up
+fresh.** A separate arc of work (constraint/objective porting completed to full
+coverage, then a real block-by-block MDA-vs-PROCESS comparison harness built and run
+for the first time) landed after everything above and is the most current state of the
+project. § 8 is the entry point for that; everything below this paragraph is the
+snapshot this section's header describes, now one layer further back in history.
+
+**Update, later same session**: `first_call` was removed entirely (see § 5's tally) —
+`NextFirstCall` no longer exists, dropping the default graph from 94 to **92 nodes**, 11
+SCCs to **10** (one fewer `FixedPointFunction` self-loop pair). This also finally broke
+`test_configuration.py::test_ipowerflow_decides_whether_the_graph_has_a_cycle`'s
+`coupled.cycles[0]`-index assumption described below (removing `NextFirstCall` changed
+which cycle sorts first) — **now fixed**, the same way this section already recommended:
+it searches `coupled.cycles`/`uncoupled.cycles` for the specific
+`{Divertor, AFwTotalWithPowerflow}` set rather than indexing `[0]` or asserting global
+`is_acyclic` (which is `False` in both configurations now, given the unconditional
+`FixedPointFunction` self-loops). `$PY -m pytest functional_process` is fully green
+again: 2766 passed, 2243 skipped, 0 failed (`--fp-fuzz=1` default).
+
+Suite at the snapshot below (superseded by the update just above, kept for the historical
+trail): `$PY -m pytest functional_process` → **2769 passed, 2243
+skipped, 1 failed** at the harness's default (`--fp-fuzz=1`, gradient checks gated off by
+default — see §1c), **5003 passed, 9 skipped, 1 failed with `--fp-gradients`**. The one
+failure, same in both runs,
+**not fixed this pass, out of this pass's editable-file boundary**:
+`test_configuration.py::test_ipowerflow_decides_whether_the_graph_has_a_cycle` asserts
+`coupled.cycles[0]` (hardcoded index) equals exactly `{Divertor, AFwTotalWithPowerflow}`
+— an assumption that predates this session's own Shape-B wave (which added 6 new
+`FixedPointFunction` self-loop pairs already, before this pass) and this pass's own 3 more
+(`NextFirstCall`, `CplifeAvail`, `WindingPackJTfWp`) plus 1 new genuine cross-node cycle
+(see below): `coupled.cycles` now has 11 entries and `Divertor`/`AFwTotalWithPowerflow` is
+no longer reliably first. The fix is a two-line change to that one test (search
+`coupled.cycles` for the specific `{Divertor, AFwTotalWithPowerflow}` set rather than
+indexing `[0]`) but `test_configuration.py` is not in this pass's editable-file list, so it
+is reported here instead of changed. `test_registry_coverage.py` is fully green this
+snapshot (it was not, at the start of this pass — see below).
+
+Default graph (`total_process.GRAPH`) was **94 nodes** (was 61), **11 SCCs** at this
+snapshot, now 92/10 after `first_call`'s removal (see update above): 9 (now 8) are the
+structurally-inherent 2-node `[node, ^problem[node]]` pairs every `FixedPointFunction`
+mints (not new cross-subsystem coupling — see § 5), and 2 are genuine cross-node Shape-A
+cycles — `Divertor`/`AFwTotalWithPowerflow` (unchanged, `ipowerflow != 0` only) and a
+**newly found second instance**, `DensityProfile → FusionRates → PlasmaComposition →
+PedestalOnAxisDensities → DensityProfile`, surfaced only once `PlasmaComposition` joined
+the full graph this pass (a real density/composition/fusion-rate/pedestal feedback loop,
+not an artefact — see § 5's own update). `tests/unit`/`~/jaxgraph` parity not re-checked
+this pass (no `process/`/`~/jaxgraph` changes made); see the previous snapshot's line for
+those counts (846 / 307).
 
 ## 0. Closed since the last snapshot
 
+- **9-unit registration/consolidation pass is done.** Everything landed but not yet
+  registered as of the previous snapshot — `stellarator_B_st_phys.py` (chunk 1B),
+  `stellarator_C_geometry.py` (chunk 1C), `stellarator_fwbs_s2.py` (S2), unit #14's three
+  `power_*.py` chunks, `availability.py`'s `Avail`/`CplifeAvail`, `physics_B_
+  composition.py`'s `NextFirstCall`/`PlasmaComposition`, and `coils/calculate.py`'s
+  `WindingPackJTfWp` — is now registered in `total_process.py`, or explicitly and
+  individually justified as not-yet-registerable. See `unit_registry.md`'s per-row detail
+  (rows 1B/1C/S2/#14/#17, chunk B) and its "Ported so far" final bullet for the
+  consolidated write-up; not repeated in full here.
+  - **Two new real `Switch`es wired**: `.tfcoil.i_tf_sup` (`power_A_tf_coil_power.py`,
+    `TfPowerResistive`/`TfPowerSuperconducting`) and a synthetic joint
+    `.fwbs.blktmodel,.heat_transport.ipowerflow` (`stellarator_fwbs_s2.py`, 2/3 arms —
+    see § 3's own update and the switches table). `i_tf_sup`'s new pairing is
+    independent of `availability.md`'s own long-standing `i_tf_sup` candidate
+    (`CpLifetimeSuperconducting`/`CpLifetimeResistive`, still unregistered) — two
+    `Switch` objects sharing one `path` coexist fine, confirmed directly, no new
+    `configuration.py` machinery needed.
+  - **Two more `EcrhDensityLimit`-class registration bugs found and fixed**:
+    `ScTfCoilNuclearHeating` (unconditionally in `COMMON`, correct only for the new
+    switch's non-default arm) and `BlktmodelBlanketThickness` (unconditionally in
+    `COMMON` despite PROCESS's own default, `blktmodel = 0`, requiring it not exist at
+    all — found incidentally while checking precedent for `DefaultAspectRatio`). Neither
+    was this pass's own unit; both were existing `total_process.py` entries from earlier
+    waves, now corrected.
+  - **A second confirmed cross-node Shape-A cycle**, found once `PlasmaComposition`
+    joined the full graph: `DensityProfile`/`FusionRates`/`PlasmaComposition`/
+    `PedestalOnAxisDensities`. See § 5.
+  - **A second wave of Shape-B self-loops found, deliberately not resolved this pass**:
+    `PlantThermalEfficiency`/`PlantThermalEfficiency2`, `Cryo`/`CryoLoads`,
+    `PlantElectricProduction` — all in the concurrently-landed `power_*.py` chunks, all
+    confirmed by direct `to_graph` construction. See § 5's own update.
+  - **Two concurrently-running, unrelated sessions' work found mid-pass, deliberately
+    not integrated**: `coils/coils.py`'s new `jcrit_from_material` per-branch nodes (no
+    consumer anywhere in the graph, minted `VarPath`s only) and `coils/calculate.py`'s
+    `intersect` wiring (`next_steps.md` §7's own pending item, landed mid-session,
+    replacing `WindingPackTotalSize` with `WindingPackIntersectInputs` +
+    `Intersect`/`WindingPackTotalSizePost` — not independently audited by this pass, left
+    for the next one; see § 7).
+  - **`test_registry_coverage.py` is fully green again**: 6 orphan `.md` records (S1+S5,
+    S2, S3, and the 3 `power_*.py` chunks) added to the registry, plus a genuine
+    pre-existing gap fixed (`stellarator_fwbs_s1_s5.md` had no frontmatter block at all —
+    added, matching its sibling records' schema, no computational content touched) and
+    one stale status bump (`stellarator_C_geometry.md`'s registry row said `draft`, its
+    own frontmatter already said `reviewed`).
+  - **One pre-existing test now fails that did not before**, not fixed (outside this
+    pass's editable-file boundary): `test_configuration.py::
+    test_ipowerflow_decides_whether_the_graph_has_a_cycle`'s `coupled.cycles[0]`
+    index-based assertion is stale against the now-11-SCC graph. See the top-of-file
+    snapshot line for the exact fix needed.
 - **§4c's 4-agent dispatch wave is consolidated.** All four units audited/ported —
   `buildings.py` (unit #15), `vacuum.py` (unit #16), `availability.py` (unit #17),
   `costs/costs.py`+`costs/costs_2015.py` (unit #18) — see `unit_registry.md`'s rows
@@ -277,7 +364,30 @@ Still open, unchanged from last snapshot:
   configuration's actual value, the second removes the safety net
   `test_non_exclusive_arms_are_rejected` exists to provide. Worth a real design pass
   once a third instance turns up (candidates: `blktmodel`'s own remaining arms once S2
-  is audited, § 3) rather than resolved ad hoc per unit.
+  is audited, § 3) rather than resolved ad hoc per unit. **Update: S2 itself turned out
+  not to be a third instance** — `ExponentialAttenuationBlanketShieldPower`/
+  `DetailedPowerflowBlanketShieldPower` (the two ported `blktmodel != 1` arms) *do*
+  share 4 outputs, so `check_arms_are_exclusive` passes cleanly; S2 is registered as a
+  real `Switch` this snapshot (a synthetic joint `path`, see `unit_registry.md`'s
+  switches table — a different, unrelated wrinkle from this gap).
+- **New this snapshot: a genuinely distinct third gap — two *different* real switch
+  values that select the *identical* node set.** `.tfcoil.i_tf_sup`
+  (`power_A_tf_coil_power.py`, unit #14 chunk A): `Power.tfpwr` dispatches on
+  `i_tf_sup != 1` only, so values `0` (resistive copper) and `2` (aluminium) both run
+  `calculate_tf_power_resistive`, the identical node. Declaring both as ordinary
+  `Alternative`s (two values, one node set) fails `test_configuration.py::
+  test_arms_select_different_node_sets` directly (confirmed, not assumed) — that test's
+  own stated philosophy is exactly right: a switch value that doesn't change which nodes
+  exist belongs in the *other* `naming_convention.md` category (a static kwarg), not a
+  `Switch` value. Resolved pragmatically this snapshot by declaring value `2` `unported`,
+  pointing at value `0`'s identical result, rather than duplicating the `Alternative` —
+  works, and is honest (nothing is actually missing, `.tfcoil.i_tf_sup == 0` gives the
+  exact same graph), but is a workaround, not a structural answer: `Switch`/`Alternative`
+  has no way to say "these two literal values are the same arm" directly, only "declared"
+  vs. "unported." Distinct from both gaps above — those are about arms not proving
+  exclusivity by output; this is about two arms proving *too much* exclusivity (identical
+  output, not just overlapping). Worth a real design pass (e.g. letting one `Alternative`
+  declare a tuple of `value`s) once a second instance turns up.
 
 ## 1b. Harness: the gradient error bar fix — reconfirmed, not re-diagnosed
 
@@ -573,9 +683,15 @@ prompts (per this section's usual scope):
 ## 5. Structural work
 
 - **Run `Blocking`/SCC over the real graph — updated result.** Default configuration is
-  now **58 nodes** (was 55, before that 44, before that 32), still decomposing into
-  exactly **one genuine SCC** (`Divertor`/`AFwTotalWithPowerflow`, present only when
-  `ipowerflow != 0`). This is a tracked empirical finding, not a test of the rewrite's
+  now **94 nodes** (was 61, before that 58, 55, 44, 32), decomposing into **11 SCCs
+  total** — 9 are the structurally-inherent 2-node `[node, ^problem[node]]` pairs every
+  registered `FixedPointFunction` mints (`NextFirstCall`, `DeltaEtaStep`, `EtaTurbineStep`,
+  `EtathLiqStep`, `TempTurbineCoolantInStep`, `PFwDivHeatDepositedMwStep`,
+  `PFwBlktCoolantPumpMwStep`, `CplifeAvail`, `WindingPackJTfWp` — not new cross-subsystem
+  coupling, see Shape B below), and **2 are genuine cross-node Shape-A SCCs**:
+  `Divertor`/`AFwTotalWithPowerflow` (unchanged) and a **newly found second instance**,
+  `DensityProfile`/`FusionRates`/`PlasmaComposition`/`PedestalOnAxisDensities` (see Shape
+  A's own update below). This is a tracked empirical finding, not a test of the rewrite's
   actual thesis (`CLAUDE.md`'s case for the rewrite is structural — making the graph
   explicit, not a bet on how much of it is cyclic).
 
@@ -598,6 +714,20 @@ prompts (per this section's usual scope):
     was purely a call-order artifact of its imperative code. Default graph: 58 → **61
     nodes** (S1/S5 also registered alongside it, portable-now per § 3), **still exactly
     one SCC** — confirms the edge really is acyclic, not just assumed to be.
+  - `DensityProfile`/`FusionRates`/`PlasmaComposition`/`PedestalOnAxisDensities` — **new
+    this snapshot**, a genuine 4-node cycle, the second confirmed cross-subsystem
+    instance. Surfaced only once `physics_B_composition.py`'s `PlasmaComposition` joined
+    the full graph (registering it alone, or `to_graph`-checking it against any proper
+    subset of the other three, would not have shown this — it needed the whole assembled
+    `GRAPH`). The edges: `PedestalOnAxisDensities` → `DensityProfile`
+    (`nd_plasma_electron_on_axis`) → `FusionRates` (`nd_plasma_electron_profile`) →
+    `PlasmaComposition` (`proton_rate_density`) → `PedestalOnAxisDensities`
+    (`nd_plasma_ions_total_vol_avg`). A real physics feedback loop (density profile ↔
+    plasma composition ↔ fusion reaction rates ↔ pedestal on-axis density), not an
+    artefact of how the port split functions — registered as-is (Shape A needs no `Cut`),
+    not driven. This **corrects** the "On coverage" paragraph below, which had reported
+    only one genuine cross-subsystem cycle across ~60 nodes; make that "two, across 94"
+    going forward.
 
   **Shape B — genuine single-node self-loops.** One `NodalDeclaration` whose own `Output`
   and `Input` name the identical `VarPath` — the value assumed and the value produced at
@@ -655,16 +785,20 @@ prompts (per this section's usual scope):
   only applies at declaration time for Shape B. Do not reach for `rewrites.Cut` to
   represent Shape A today; there is nothing to cut, the graph is already valid.
 
-  **On coverage**: only one genuine cross-*subsystem* cycle (Shape A, `Divertor`/
-  `AFwTotalWithPowerflow`) has turned up across ~60 audited nodes spanning physics,
-  build, divertor, coils, heating, confinement, radiation, buildings, vacuum,
-  availability, costs, and power. Every Shape B instance found is a *single PROCESS
-  function* referencing its own earlier/later self, not evidence of broader
-  cross-subsystem coupling waiting to be found by splitting those functions further —
-  splitting `component_thermal_powers` (for example) would very plausibly just turn one
-  self-referencing node into two mutually-referencing ones representing the *same* local
-  loop, not reveal a new one. Read as real, moderately strong evidence for the
-  acyclic-heavy thesis, not as an artifact to second-guess by hunting for more splits.
+  **On coverage — updated, corrected.** Previously reported as "only one genuine
+  cross-*subsystem* cycle across ~60 audited nodes"; **now two, across 94** — see Shape
+  A's new `DensityProfile`/`FusionRates`/`PlasmaComposition`/`PedestalOnAxisDensities`
+  entry above, found this snapshot once `PlasmaComposition` joined the full graph. Every
+  Shape B instance found (both waves, see the "Shape B conversion wave" subsection below
+  for the second) is still a *single PROCESS function* referencing its own earlier/later
+  self, not evidence of broader cross-subsystem coupling waiting to be found by splitting
+  those functions further — that half of the finding stands. But the Shape-A half no
+  longer reads as "basically none": two real cross-subsystem cycles in 94 nodes is not
+  strong evidence either way yet, and the density/composition/fusion-rate/pedestal loop
+  in particular is a genuine, not-especially-rare shape (plasma-state variables feeding
+  back into geometry/profile choices) — worth treating as "expect a few more, not zero"
+  rather than re-asserting the acyclic-heavy thesis on the strength of one further data
+  point.
 - **CoolProp / non-traceable-call policy** — still only flagged, unchanged from last
   snapshot.
 - **Tolerance policy for tier-4 comparison** — still explicitly deferred.
@@ -673,3 +807,404 @@ prompts (per this section's usual scope):
   approximation method" is a third category alongside "opaque external call" and
   "PROCESS's answer isn't ground truth for a non-converged tier-2 loop," not yet named in
   `test_harness.md`.
+- **Shape B conversion wave: 3 of 5 originally-known instances resolved with
+  `FixedPointFunction`, one turned out to be a 4th ordering artifact and was un-resolved
+  again, one Shape A false-alarm caught before it was built, two new instances surfaced
+  along the way.**
+  - Resolved (split into a tiny `FixedPointFunction` for the self-referential piece +
+    an ordinary node for everything else, `to_graph()`-verified):
+    `winding_pack_total_size`'s `j_tf_wp` (`WindingPackJTfWp`, degenerate/identity fixed
+    point off the Bi-2212 material branch, confirmed with `jax.grad` rather than
+    asserted).
+  - **`plasma_composition`'s `first_call` — un-resolved.** This wave's first pass split
+    it the same way (`NextFirstCall`/`FixedPointFunction`), and `to_graph()` did verify
+    the split assembled. A later pass asked *why* `first_call` exists at all rather than
+    just how to represent it, and found the answer PROCESS bootstraps toward
+    (`.physics.f_temp_plasma_electron_density_vol_avg`, from `plasma_profiles.py`) has no
+    dependency back on `plasma_composition` — same shape as `Divertor` and
+    `beta_fast_alpha`/`beta_beam` below, a 4th confirmed ordering artifact, not a cycle.
+    `NextFirstCall` has been deleted; `plasma_composition` now always uses the real value
+    directly, and `first_call`/`alphan`/`alphat` are not ported at all. See
+    `physics_B_composition.md`'s "the `first_call` self-loop" section for the full
+    account. **The lesson this leaves for the remaining Shape B instances below**:
+    "representable via `FixedPointFunction`" and "`to_graph()` assembles" are necessary
+    but not sufficient — check the *real* producer of what a self-loop's other branch
+    resolves to before concluding the loop is genuine, the same discipline that caught
+    `beta_fast_alpha`/`beta_beam` as Shape A.
+  - `st_phys`'s `beta_fast_alpha`/`beta_beam` turned out to be **Shape A, not Shape
+    B** — caught by the task's own instruction to re-verify rather than trust the
+    original "read-before-write staleness" framing. `beta_fast_alpha`'s sole owner
+    (`FastAlphaBeta`, already registered) has no dependency back on anything computed
+    later in `st_phys`; `to_graph([FastAlphaBeta(...), StellaratorBetaAndRhoStar()])`
+    assembles cleanly. `beta_beam`'s sole owner is `beam_fusion`, unported (see the
+    accuracy-ceiling blocker above), same shape once it lands. No code needed for
+    either — an ordinary edge to register later, third confirmed instance of "don't
+    assume a cycle without checking" alongside `Divertor` (`first_call` above is the
+    fourth).
+  - **Two new instances found, deliberately not fixed yet, for two different
+    reasons**:
+    - `plasma_composition`'s `.impurity_radiation.f_nd_impurity_electron_array` —
+      reads indices `2:13`, writes indices `0:1`, same array `VarPath`. **Update, this
+      snapshot: resolved, correcting the paragraph this replaces** (which described
+      this as "worked around... not declared as an `Output` on `PlasmaComposition` at
+      all" — no longer accurate). Per-index `VarPath`s
+      (`s.impurity_radiation.f_nd_impurity_electron_array[i]`, a `SequenceKey`
+      component — the exact mechanism this paragraph previously said didn't exist for
+      a `slice`, but does for a plain `int` index) turn out to be sufficient: indices
+      2-13 are twelve ordinary `Input`s, indices 0/1 (`f_nd_impurity_electron_array_h`/
+      `_he`) are two ordinary `Output`s, no slice-addressing needed at all since every
+      index is handled individually. `PlasmaComposition` is now registered in
+      `total_process.COMMON` with this shape; `test_plasma_composition_owns_h_and_he_
+      fractions` confirms it directly. No open `cottax` capability question remains
+      for *this* instance — flagged only in case a future array self-reference isn't
+      as cleanly index-separable as this one turned out to be.
+    - `st_coil`'s `len_tf_coil` — on inspection, **not actually a Shape B blocker at
+      all**. `st_coil` has no `cottax` node of its own (it's a plain composed
+      function, deliberately — see `calculate.md`); the port already resolved
+      PROCESS's own call-order staleness by giving the early (stale) read its own
+      parameter name, `len_tf_coil_stale`, distinct from the freshly-computed
+      `len_tf_coil` used everywhere else in the function. No node anywhere currently
+      owns `.tfcoil.len_tf_coil` as an `Output` (grepped, confirmed empty) — so
+      there's no ownership conflict to hit, only an unowned external input, same as
+      many others in the graph. Nothing to fix here; flagged only so it doesn't get
+      re-discovered and mistaken for an eighth Shape B case.
+  - **A second wave, 5 more instances, found by this snapshot's registration pass —
+    3 resolved (already landed before this pass started), 5 new ones found, still
+    unresolved.** Landed (not this pass's own work, found already done when this pass
+    began): `availability.py`'s `Avail`/`Avail2` (`CplifeAvail`) and `AvailSt`
+    (`CplifeAvailSt`) — see unit #17's row, now registered (`Avail`+`CplifeAvail`) this
+    pass. `power_B_thermal_cryo.py`'s `component_thermal_powers` turned out to have
+    **six**, not one (`delta_eta` plus `eta_turbine`/`etath_liq`/
+    `temp_turbine_coolant_in`/`p_fw_div_heat_deposited_mw`/
+    `p_fw_blkt_coolant_pump_mw`) — all six already split into their own
+    `FixedPointFunction`s before this pass began, now registered alongside
+    `ComponentThermalPowers`. **New, found by this pass, deliberately left
+    unregistered**: `power_B_thermal_cryo.py`'s `PlantThermalEfficiency`/
+    `PlantThermalEfficiency2` (the raw `ExplicitFunction`s the `EtaTurbineStep`/
+    `EtathLiqStep`/`TempTurbineCoolantInStep` splits above were extracted from — each
+    is *itself* still a self-loop on its own, confirmed by direct `to_graph`
+    construction, superseded rather than fixed) and `Cryo`/`CryoLoads` (`.fwbs.qnuc`,
+    plus `.power.qss`/`qac`/`qcl`/`qmisc` for `CryoLoads`, which calls `calculate_cryo`
+    internally under its own guard); `power_C_electric_production.py`'s
+    `PlantElectricProduction` (`.heat_transport.p_plant_electric_gross_mw`/
+    `p_plant_electric_recirc_mw`/`p_plant_electric_net_mw`, `.power.p_turbine_loss_mw`/
+    `f_p_plant_electric_recirc`). All confirmed the same way as every instance above —
+    direct `to_graph` construction, not audit reasoning — and all are otherwise fully
+    ported and tested. No `FixedPointFunction` split written for any of the five yet;
+    same recipe as above would apply, just not done this pass (this pass's own
+    boundary was registration, not further porting).
+
+## 6. Constraints, objective, iteration variables — not a separate layer, just a thin
+   selection over models already being ported
+
+Prompted by a direct discussion of `CLAUDE.md`'s own mapping table, worth stating
+explicitly here so it survives past this session: **constraints and the objective are
+not architecturally special to `cottax`.** The only thing that makes them look like a
+separate layer is that PROCESS bundles them with the *solver*, not that they need new
+graph machinery.
+
+- **Constraints** (`process/core/solver/constraints.py`) are either an ordinary
+  `Compare(place, pairs=[(model_output, stored_bound)])` node over outputs that are
+  already (or will be) ordinary ported model nodes, or — for a constraint that just
+  thresholds one `data` field against a bound — not even a node, a bare residual read.
+  No new primitive needed. **Likely register unconditionally**, not behind a `Switch`:
+  PROCESS doesn't gate a constraint's *computability* on anything, only whether the
+  solver bothers enforcing it (`numerics.icc`, the active-constraint list) — that's an
+  `Optimise`-problem-assembly-time decision (`Combine` folding the wanted subset
+  together), not a graph-existence one. Only 3 are audited so far (91 in full, 17/24
+  briefly) — none ported as `Compare` nodes yet. That's the actual remaining work:
+  ordinary audit-and-port, `Tier1Contract`-style, same as every other unit.
+- **The objective** (`numerics.i_figure_merit`'s branch selection) is not a node at
+  all — *"a per-run selection of which existing output is 'wanted', same as cottax's
+  refusal to have an `OutputNode`"* (`CLAUDE.md`). Whatever `rmajor`/`coe`/etc. a given
+  `i_figure_merit` value picks is already a real output of an already-ported model.
+  Selecting it is a `Graph.prune`-style query run when assembling an `Optimise`
+  problem, not something `total_process.py`/`configuration.py` needs to represent at
+  assembly time the way topology switches do. `total_process.py` picking one example
+  as an illustrative `prune` call is optional demonstration, not required structure.
+- **Iteration variables** (`ITERATION_VARIABLES[id]`/`numerics.ixc`) are the same
+  shape again: *"The integer ID... is exactly a `VarPath`; the ID itself is throwaway
+  indirection once names are structural"* (`CLAUDE.md`). Not a model, not new
+  computation — a designation ("this `VarPath` is free, not derived") on values that
+  already exist once their producer models are ported. Falls out for free once
+  constraints + models exist; no separate porting effort.
+
+**Net**: the only genuinely open porting work in this whole area is the handful of
+constraint bodies. The objective and iteration-variable pieces need no new code at
+all, just a query/designation once the constraint and model layers are there. This
+significantly narrows what was previously described (earlier in this file, before this
+session's discussion) as "a real porting pass, smaller, different in kind, not yet
+started" — it's smaller than that phrasing implied.
+
+## 7. A third pattern, distinct from Shape A/B — raised, then resolved by a sharper
+   test than "does it iterate"
+
+Raised by direct challenge: every `Tier2Contract` unit ported so far solves its own
+internal iteration **eagerly, inside a plain JAX function** — `optx.root_find(...)`
+(`coils.py`'s `intersect`) or a hand-rolled `jax.lax.while_loop` Newton scheme
+(`vacuum.py`'s `solve_duct_diameter`/`VacuumOld`) — rather than as a `cottax.interfaces.
+pytree_namespace_module.ImplicitFunction`. First framing (wrong, corrected below): this
+looked like the same gap the Shape B wave (§ 5) had just closed, just with `RootFind`
+instead of `FixedPoint`.
+
+**It isn't, and the reason clarifies the actual rule.** A `RootFind` `DeclaredNode` (what
+`ImplicitFunction` mints) has **no body** — it produces no value at all until a `Drive`
+step runs some algorithm against it. `FixedPointFunction`'s Shape B conversions cost
+nothing precisely because `step`'s "next" value was *already* a complete, fully
+determined computation with no external solver needed — the only problem was the
+self-referential *naming*. `intersect` is different in kind: there is no value without
+actually running an iterative algorithm, so converting it to a declared, undriven
+`ImplicitFunction` wouldn't just add structure, it would remove `intersect`'s current
+ability to be called and produce an answer — which both `Tier2Contract`'s own tests and
+`winding_pack_total_size`'s still-eager body genuinely need today.
+
+**The right test turns out not to be "does it iterate," but "does anything else in the
+graph need to read or write something inside that iteration's own state."**
+`intersect`'s unknowns (`wp_width_r`, `lhs`, `rhs`) are fully encapsulated inside
+`winding_pack_total_size`'s own private computation — nothing else in the graph needs
+them independently, now or plausibly ever. That makes it structurally a numerical
+primitive (no different in kind from calling `jnp.linalg.solve` inside a larger pure
+function), not a coupled subsystem — declaring it would be structure with no consumer,
+pure cost, no benefit. Same conclusion for `solve_duct_diameter`/`solve_duct_geometry`
+inside `VacuumOld`. The genuine Shape B cases (`first_call`, `cplife`, `delta_eta`, and
+`power_B_thermal_cryo.py`'s five) were different precisely because their `VarPath`s
+*are* real, externally-relevant `DataStructure` fields — that external relevance is what
+actually earns the `FixedPointFunction`/`ImplicitFunction` treatment, not internal
+iteration by itself.
+
+**Conclusion: `intersect`/`solve_duct_diameter` are fine as they are — no follow-up pass
+needed for these two.** The actionable form of this finding, for future tier-2 units:
+before assuming a unit needs `ImplicitFunction`, check whether any *other* node actually
+needs its internal unknowns — if not, an eager JAX function is the correct, not merely
+
+**Update, this snapshot: `intersect` was converted anyway, mid-session, by a separate,
+concurrently-running agent** (not this pass's own work — found only because it changed
+`coils/calculate.py`'s public names out from under this pass's own registration attempt,
+breaking an import). `coils.py` now has `Intersect(ImplicitFunction)` (a `RootFind`
+`DeclaredNode`), and `coils/calculate.py`'s `WindingPackTotalSize` was split into
+`WindingPackIntersectInputs` (mints the `(wp_width_r, lhs, rhs)` curves `Intersect`
+reads) + `Intersect` + `WindingPackTotalSizePost` (reads `Intersect`'s
+`.stellarator.wp_width_r_min` as an ordinary `Input`). Its own docstring gives a
+**different** justification than this section's own test ("does anything else need the
+internal unknowns" — still, on its own terms, "no" here): making the root-find's solver
+algorithm "a first-class, swappable `Drive` choice, not something hardcoded inside one
+node's body." That is a real, distinct consideration this section didn't weigh — worth
+reconciling explicitly in a future pass (does "swappable `Drive` choice" alone justify
+`ImplicitFunction` even with no external consumer, updating this section's own
+conclusion, or was this conversion done for a different reason not yet written down) —
+not resolved here. **Not audited or registered by this pass**: `coils.py` is explicitly
+outside this pass's editable/relied-upon boundary, the split's own tests do pass
+(`pytest functional_process/models/stellarator/coils/test_calculate.py` → 67 passed, 28
+skipped, checked directly), but this pass did not independently verify the design the
+way it verified everything it registered. `WindingPackJTfWp` (unaffected — still calls
+the unchanged `winding_pack_total_size` pure function directly) is registered;
+`WindingPackIntersectInputs`/`Intersect`/`WindingPackTotalSizePost` are not. Left for the
+next consolidation pass, alongside `coils.py`'s new `jcrit_from_material` nodes (see
+`unit_registry.md`'s "Ported so far").
+expedient, shape.
+
+## 8. The MDA harness — built, run for the first time, and iterated on this session
+
+**Read this section first if picking the file up fresh — it is the current state.**
+Everything above is real history, not stale, but this section is one layer more
+recent and is where a new session should orient from.
+
+### What exists now that didn't at the start of this session
+
+- **All ~82 PROCESS constraints are ported** (`functional_process/core/solver/
+  constraints.py`/`.md`/`test_constraints.py`), not just the 5 stellarator-specific
+  ones from the earlier snapshot. Only 2 are genuinely excluded (50/52, IFE-only —
+  `.ife.*` is an entirely unbuilt subsystem, a real "good reason," not an oversight).
+  `unit_registry.md`'s Constraints section is split into the original 5-row
+  "stellarator-specific" table plus a new ~75-row "general" table.
+- **All 16 `i_figure_merit` objective branches are ported**
+  (`functional_process/core/solver/objectives.py`/`.md`/`test_objectives.py`) — a
+  device-agnostic, no-`istell`-anywhere function; per `§6`'s own reasoning this needed
+  no node, just the pure functions plus a lookup.
+- **`functional_process/core/solver/drivers.py`: `PicardDriver`** — a generic
+  `AbstractDriver` answering `cottax.problem.FixedPoint`, built locally in this repo
+  (not `~/jaxgraph`) because unlike the `Feasibility`/`to_graph` gaps below, a Picard
+  driver is exactly the kind of swappable solver choice `AbstractDriver` exists to let
+  a *caller* supply, not core graph machinery. Mirrors `cottax.drivers.NewtonDriver`'s
+  contract exactly (needs a `start`, same error shape). `AbstractDriver`'s own
+  docstring already named this pairing ("a Newton drives `RootFind`, a Picard
+  `FixedPoint`") — nothing in `cottax` had implemented the second half until now.
+- **`functional_process/mda.py`** — turns `total_process.GRAPH` (or any
+  `graph_for(configuration)`) into something actually *runnable*. Two raw cross-node
+  cycles had no declared problem at all (`Divertor`/`AFwTotalWithPowerflow`, gated on
+  `ipowerflow != 0`; `DensityProfile`/`FusionRates`/`PedestalOnAxisDensities`/
+  `PlasmaComposition`, ungated) — `Drive` refuses to run a block with zero declared
+  problems. `mda.CUTS` names the one variable per cycle that closes it (found via
+  `Graph.closing_readers` + an empirical single-cut acyclicity check, not guessed):
+  `.physics.proton_rate_density` and `.fwbs.f_ster_div_single`. `driven_graph()`
+  applies `cottax.rewrites.FixedPointCut` to both (skipping the second cleanly when a
+  given graph's configuration doesn't have that cycle at all — `ipowerflow == 0`).
+  `default_drivers()` then assigns `NewtonDriver`/`PicardDriver` to every SCC
+  automatically, by problem type. **`schedule()` now builds a runnable `Schedule` for
+  the entire graph** — every one of the (now) 11 SCCs (8 structural self-loops +
+  `Intersect`'s `RootFind` + the 2 cuts) is driven. First time the whole registered
+  graph has been executable end to end, not just individually-tested pieces.
+  `functional_process/test_mda.py` pins the structural claims.
+- **A real cottax core-library fix, upstream in `~/jaxgraph`**: `to_graph()`/
+  `node_and_names` (both `interfaces/{flat,pytree}_namespace_module.py`) claimed in
+  their own error message to accept a bare `NodeDefinition` but had no code path that
+  did — discovered via `vacuum.py`'s `DuctFeasibility` (a bare `Feasibility` built
+  directly from `problem.py`, not a `NodalDeclaration`, so it has no class-derived
+  name). Fixed: both now accept a `{name: NodeDefinition}` mapping alongside the
+  existing forms. Not `Feasibility`-specific — the same gap would hit a bare `RootFind`
+  built directly instead of through `ImplicitFunction`. `~/jaxgraph`'s suite: 396
+  passed, 2 skipped, unchanged. `vacuum.py`/`test_vacuum.py` updated to use the new
+  form instead of a hand-built `Graph(path_map(...))`.
+- **`functional_process/mda_harness.py`** — the actual point of all of the above:
+  `converged_data(input_file)` runs PROCESS's own `SingleRun` in-process on
+  `tests/regression/input_files/stellarator_helias.IN.DAT` to convergence and returns
+  the live `DataStructure` (no MFile round-trip — `cottax.tools.pytree.get_at` reads
+  `VarPath`s off it directly, including `SequenceKey`-indexed array fields, no
+  workaround needed). `compare(graph, data)` seeds `mda`'s `Schedule` from that same
+  run's own values (boundary inputs *and* every driven block's starting guess — we are
+  checking whether the graph reproduces an answer PROCESS already found, not solving
+  cold) and diffs every value the schedule produces against `data`'s own value at the
+  same field. `functional_process/run_mda_harness.py` is the runnable entry point.
+  **`total_process.GRAPH`'s bare default configuration did not match this file**
+  (`i_plasma_pedestal`: default `1`, this run `0`) — `graph_for(Configuration({".physics.
+  i_plasma_pedestal": 0}))` is what the harness actually checks.
+- **`functional_process/mda_constraint_harness.py`** — the same idea applied to
+  constraints/objectives instead of nodes: every ported `constraint_N`/
+  `objective_metric_N` called with this same converged run's real field values,
+  diffed against PROCESS's own `ConstraintManager`/`objective_function` evaluation for
+  the same run. Checks something the existing per-unit `Tier1Contract` tests
+  structurally cannot: whether a port function is right *given a real, internally
+  self-consistent set of simultaneous field values*, not just hand-built samples that
+  could accidentally combine values that would never co-occur.
+
+### Current harness numbers (last verified this session, independently reproduced)
+
+`run_mda_harness.py`: **227 agreements, 11 disagreements (0 in driven/cyclic blocks —
+every `NewtonDriver`/`PicardDriver`-driven block now reproduces PROCESS exactly),
+64 unverifiable, 3 ungrounded inputs, 13 errors.** `mda_constraint_harness.py`:
+**66/66 evaluable constraints agree, 15/16 objectives agree**, every skip traced to a
+legitimate cause (switch precondition, genuine `0/0` for a net-current-free
+stellarator's PF-coil-adjacent fields, one harness parameter-resolution limitation on
+constraint 76's array-indexed argument) — no port defect found in this layer at all.
+Full `functional_process` suite: **3414 passed, 0 failed**. `total_process.GRAPH`:
+**97 nodes**.
+
+### Bugs found by the harness and fixed this session
+
+- **`i_confinement_time`**: `total_process.py` hardcoded `34` (`ITER_IPB98Y2`, a
+  *tokamak* H-mode scaling law — just PROCESS's own bare default, inherited
+  uncritically) → corrected to `38` (`ISS04_STELLARATOR`, already fully ported,
+  just never wired at registration). This alone fixed a catastrophic cascade
+  (`DoubleAndTripleProduct.ntau` was `0.0` vs. PROCESS's `5.37e20`; several `inf`
+  values downstream from dividing by the resulting ~0 confinement time).
+- **`.physics.profile_x` / `ProfileGrid`'s `.physics.radius_plasma_profile_norm`**:
+  two independently-minted, numerically-identical quantities from two different port
+  units, never wired together. `fusion_reactions.py`'s `FusionRates` now reads the
+  established name instead of minting a duplicate.
+- **`i_thermal_electric_conversion`**: hardcoded `0` (`CCFE_HCPB_VALUE`) across 4 node
+  registrations (`ComponentThermalPowers`, `DeltaEtaStep`, `EtaTurbineStep`,
+  `TempTurbineCoolantInStep`) vs. this run's real `2` (`USER_INPUT`) — checked first
+  that `USER_INPUT` needs no additional wiring (it is an identity pass-through, same
+  input set as every other branch) before flipping the default, same discipline as
+  `i_confinement_time`. This is also what had made `EtaTurbineStep`/`DeltaEtaStep`
+  (the first two real `PicardDriver`-driven blocks with real physics) look like they
+  might be driver-convergence problems — they were not: feeding the corrected switch
+  value reproduces PROCESS to full floating-point precision in one deterministic
+  Picard step, `PicardDriver` fully vindicated.
+- **`Build.z_tf_inside_half` — a genuine dual-ownership conflict *in PROCESS itself*,
+  not a formula bug.** Two independent real PROCESS producers exist (`st_build`'s
+  formula in `build.py`, `st_coil`'s in `coils/calculate.py`), and which one survives
+  into the converged `DataStructure` depends on call order: `stellarator.py`'s
+  `run()` calls them in *opposite* order depending on the `output` flag, and every
+  real run ends with an `output=True` report pass where `st_coil` overwrites last.
+  This port's `Build` node had correctly ported `st_build`'s formula — just not the
+  one whose value survives. Fixed by moving ownership: `st_coil`'s formula extracted
+  into a new node, `ZTfInsideHalf` (`coils/calculate.py`), which now owns
+  `.build.z_tf_inside_half`; `Build` no longer declares that `Output`. (The fix's own
+  first draft had a real bug — a 1-tuple return where `cottax`'s single-`Output`
+  binding convention wants the bare value — caught only by the end-to-end harness,
+  not by the new unit's own `Tier1Contract`/assembly tests, which never actually run
+  the node through `_run_acyclic`. Worth remembering as a general fact about this
+  harness's coverage: it catches wiring-binding bugs unit tests structurally can't.)
+- **Harness-side fix, not a port bug**: `DetailedPowerflowBlanketShieldPower.
+  f_a_fw_coolant_inboard`/`f_a_fw_coolant_outboard` are the node's own documented
+  "best-effort" outputs — PROCESS never actually writes them to `data` in this arm
+  (confirmed in the class's own docstring), so `expected=0.0` was
+  `DataStructure()`'s bare uninitialised default, not a real PROCESS answer.
+  `mda_harness.py`'s `KNOWN_UNVERIFIABLE_OUTPUTS` now excludes exactly these two
+  `VarPath`s from comparison (the node's other 14 real outputs stay in scope).
+
+### Still open, precisely diagnosed, not yet fixed
+
+- **`ConfinementTime`/`DoubleAndTripleProduct`**: a residual ~1.2% disagreement
+  remains on `t_energy_confinement`/`ntau` even after the `i_confinement_time` fix —
+  much smaller than the earlier catastrophic miss, but not zero. Not yet traced to a
+  specific cause; candidates are a small formula discrepancy in the ISS04 branch
+  itself, or a secondary input still slightly off. Worth a dedicated investigation.
+- **`AuxiliaryPhysicsQuantities.fusrat`**: `1.06e21` vs. expected `0.0` — was
+  previously masked by the `inf` cascade the `i_confinement_time` fix resolved; now
+  visible as its own, still-unexplained disagreement.
+- **`VacuumOld`**: ~0.04% off (`dlscal` and one other field) — almost certainly benign
+  floating-point path differences, not chased further, low priority.
+- **`i_p_coolant_pumping`**: hardcoded `2` (`MECHANICAL`) across the same node family
+  `i_thermal_electric_conversion` was found in, vs. this run's real `1`
+  (`FRACTION_OF_HEAT`, `stellarator_helias.IN.DAT:198`) — same class of bug, found by
+  the fork that fixed `i_thermal_electric_conversion` but not itself fixed. Likely a
+  quick, well-scoped follow-up given the precedent.
+- **The 3 "ungrounded inputs" and 13 "errors"** the harness reports are, on
+  inspection, mostly structural coverage gaps (minted `VarPath`s with no real
+  `DataStructure` field, e.g. `.tfcoil.a_tf_wp_with_insulation`/
+  `.tfcoil.a_tf_wp_no_insulation`/`.tfcoil.den_tf_sc_material`, and 13 more spanning
+  physics/impurity_radiation/stellarator/neoclassics) rather than bugs — not
+  individually triaged this session past the ones already investigated. A future pass
+  should go through this list the same disciplined way `constraints.md`'s "hole in
+  MDA" checks already do per-unit, rather than leaving it as an undifferentiated pile.
+- **The 2 minted islands excluded from the harness entirely**
+  (`DuctDiameterRootFind`; the `Intersect`/`WindingPackIntersectInputs`/
+  `WindingPackTotalSizePost` SCC) — confirmed correct exclusions, not gaps to close:
+  every `VarPath` either touches is minted, PROCESS never stores them, there is
+  nothing to compare against. See `mda_harness.py`'s own docstring and
+  `EXCLUDED_NODE_NAMES`'s comment for the full account.
+
+### The validation-chain question for `Intersect`/`DuctDiameterRootFind`/`DuctFeasibility`
+
+Investigated directly (not assumed) this session: both `Intersect` and
+`DuctDiameterRootFind` are validated via `Tier2Contract`, not `Tier1Contract` — **no
+direct value-agreement check against PROCESS's own reported number exists, by
+construction**, because PROCESS's own algorithm (`intersect`'s fixed 100-iteration
+cap; `_newton_method_duct_diameter`'s loose 0.01 relative-step tolerance) stops before
+the true root, so PROCESS's own answer is not ground truth for either. What is
+actually checked: the port's answer, plugged back into the real defining equation
+(`intersect_residual`/`duct_diameter_residual`), is small in an absolute sense and no
+worse than PROCESS's own residual — and the *declared* node reproduces the *eager*
+port function's own answer, including at least one real PROCESS-derived legacy sample
+point each. **The accurate claim is "reproduces PROCESS's own formula, solved more
+tightly than PROCESS's own loose iteration" — not "matches PROCESS's own reported
+number."** Worth stating this distinction explicitly anywhere this validation gets
+cited, since it does different work than the whole-graph harness's node comparisons.
+`DuctFeasibility` has no PROCESS equivalent at all — `solve_duct_geometry` is one
+specific heuristic (shrink by 10% until it fits), not "any feasible point" — and
+remains unvalidated by design pending an `Optimise`+real-objective wrapper and a
+constrained-optimization driver, neither built (see the earlier-session discussion
+this file doesn't repeat here).
+
+### Recommended next steps, in order
+
+1. **`i_p_coolant_pumping`**: apply the same fix pattern as `i_thermal_electric_
+   conversion` — check what the real value needs, flip the default if safe.
+2. **`AuxiliaryPhysicsQuantities.fusrat`** and **`ConfinementTime`'s residual 1.2%**:
+   both look like real, tractable bugs now that the catastrophic masking cause is
+   gone — worth dedicated investigation, likely small individually.
+3. **Triage the 13 "errors"/3 "ungrounded inputs"** one at a time, `constraints.md`-
+   style, to separate "genuinely unmodeled" from "should have a real `VarPath` but
+   doesn't yet."
+4. **Re-run `run_mda_harness.py`/`mda_constraint_harness.py` after each fix** — both
+   are cheap (~2 min) and have already caught real bugs their own authoring tests
+   missed (see `Build`/`ZTfInsideHalf`'s 1-tuple bug above); treat them as a
+   standing regression check for this whole area, not a one-off.
+5. Longer-term, not started: building a real `Optimise`/constrained-optimization
+   driver so `DuctFeasibility` (and, eventually, a real `Optimise` problem wired from
+   the now-fully-ported constraints/objective layer) can be checked against something,
+   and wiring constraints/objective into an actual `Optimise` `DeclaredNode` in
+   `total_process.py` at all (still not done — both layers are fully ported and
+   independently validated, but nothing assembles them into a solvable problem yet).
