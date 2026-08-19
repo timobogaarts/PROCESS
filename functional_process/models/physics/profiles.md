@@ -265,11 +265,10 @@ registration.
   `n_plasma_profile_elements`); mints both outputs.
 - `NeProfileIntegral`, `TeProfileIntegral` — run in both `i_plasma_pedestal` arms.
 - `DensityProfile` — genuinely switch-independent (see "switches touched"), not an
-  `Alternative`. Caveat: in the parabolic configuration its correctness depends on a
-  graph-assembly-time input coercion (`plasma_profiles.md` open question 2, restated as
-  open question 4 here) that nothing currently performs — registering the node is safe,
-  but a parabolic run without that coercion will not get the value PROCESS's own pipeline
-  produces.
+  `Alternative`. The caveat this entry used to carry (its parabolic-configuration
+  correctness resting on an input coercion nothing performed) is **closed**:
+  `plasma_profiles.LModeProfileReset` is that coercion, registered on the
+  `i_plasma_pedestal == 0` arm, and it owns the three pedestal fields this node reads.
 
 **Blocked on `i_plasma_pedestal`'s two-role reconciliation (unit #12 open question 1,
 `configuration.py`'s missing "switch also supplies its static-kwarg value" mechanism):**
@@ -457,7 +456,13 @@ inlined rather than iterated, so it stays tier 1 too (see "calls into other mode
    intent) would mean deliberately reproducing a `TypeError`, which the port does not do.
    Flagged for whoever eventually audits `current_drive.py`.
 
-4. **`DensityProfile`'s correctness in the parabolic configuration still depends on the
+4. **[RESOLVED — `LModeProfileReset` is that reset, registered on the
+   `i_plasma_pedestal == 0` arm; see `plasma_profiles.md`'s "cottax node" section for the
+   measured effect. The closing paragraph below is superseded: the reset turned out to be
+   an ordinary node, not graph-assembly-time coercion, and until it existed a cold
+   parabolic run really did get a pedestal-shaped density profile — it cost the SAND cold
+   solve a 0.22 % objective gap against the warm one.]**
+   **`DensityProfile`'s correctness in the parabolic configuration still depends on the
    unimplemented L-mode input-validation reset (`plasma_profiles.md` open question 2).**
    Verified algebraically here (not just cited): with `rped = 1`, `nped = nsep = 0` (what
    `plasma_profiles.parabolic_parameterisation`'s reset supplies, confirmed by reading

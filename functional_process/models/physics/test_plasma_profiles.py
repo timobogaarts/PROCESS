@@ -24,6 +24,7 @@ from functional_process.models.physics.plasma_profiles import (
     calculate_parabolic_profile_values,
     calculate_pedestal_profile_values,
     calculate_profile_factors,
+    lmode_profile_reset,
 )
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
@@ -166,6 +167,54 @@ def _reference_pedestal_profile_values(
         physics.nd_plasma_electron_line,
         physics.temp_plasma_electron_line_avg_kev,
         model.data.divertor.prn1,
+    )
+
+
+def _reference_lmode_profile_reset(
+    radius_plasma_pedestal_temp_norm,
+    radius_plasma_pedestal_density_norm,
+    temp_plasma_pedestal_kev,
+    temp_plasma_separatrix_kev,
+    nd_plasma_pedestal_electron,
+    nd_plasma_separatrix_electron,
+    tbeta,
+):
+    """`parabolic_parameterisation`'s L-mode reset, read back off `data`.
+
+    Runs the *whole* branch, not just the `if` block, which is the point: the reset is
+    an ordinary side effect of taking the parabolic arm and this adapter asserts nothing
+    about where inside that arm it happens. The remaining `physics` values are the ones
+    the branch's arithmetic tail needs so that the call completes; none of them is read
+    back.
+    """
+    model = _plasma_profile(
+        ne_profile_y=np.ones(_N_POINTS),
+        te_profile_y=np.ones(_N_POINTS),
+        i_plasma_pedestal=0,
+        radius_plasma_pedestal_temp_norm=radius_plasma_pedestal_temp_norm,
+        radius_plasma_pedestal_density_norm=radius_plasma_pedestal_density_norm,
+        temp_plasma_pedestal_kev=temp_plasma_pedestal_kev,
+        temp_plasma_separatrix_kev=temp_plasma_separatrix_kev,
+        nd_plasma_pedestal_electron=nd_plasma_pedestal_electron,
+        nd_plasma_separatrix_electron=nd_plasma_separatrix_electron,
+        tbeta=tbeta,
+        alphan=1.0,
+        alphat=1.45,
+        nd_plasma_electrons_vol_avg=8.0e19,
+        nd_plasma_ions_total_vol_avg=7.2e19,
+        temp_plasma_electron_vol_avg_kev=12.0,
+        temp_plasma_ion_vol_avg_kev=11.0,
+    )
+    model.parabolic_parameterisation()
+    physics = model.data.physics
+    return (
+        physics.radius_plasma_pedestal_temp_norm,
+        physics.radius_plasma_pedestal_density_norm,
+        physics.temp_plasma_pedestal_kev,
+        physics.temp_plasma_separatrix_kev,
+        physics.nd_plasma_pedestal_electron,
+        physics.nd_plasma_separatrix_electron,
+        physics.tbeta,
     )
 
 
@@ -313,6 +362,63 @@ class TestParabolicProfileValues(Tier1Contract):
         "nd_plasma_electrons_vol_avg": (1.0e19, 2.0e20),
         "temp_plasma_electron_vol_avg_kev": (1.0, 40.0),
         "temp_plasma_ion_vol_avg_kev": (1.0, 40.0),
+    }
+
+
+class TestLModeProfileReset(Tier1Contract):
+    """`parabolic_parameterisation`'s L-mode reset -> `lmode_profile_reset`.
+
+    The claim under test is that the reset's post-condition is **unconditional**: the
+    seven fields hold `(1, 1, 0, 0, 0, 0, 2)` on exit whatever they held on entry, so the
+    `if` guard governs only the `logger.error`. The samples take the guard both ways --
+    `reset-fires` is the reference run's own cold input file, `already-l-mode` is the
+    values PROCESS's converged `DataStructure` carries, where the guard is false and the
+    body never runs -- and the fuzz sweep covers all seven arguments at once. A port that
+    quietly kept an incoming value would fail `reset-fires`; one that reset only when the
+    guard fires would still pass every sample, because both branches leave the same
+    state, which is exactly why the port drops the guard.
+    """
+
+    audit_record = "models/physics/plasma_profiles.md"
+    reference = _reference_lmode_profile_reset
+    ported = lmode_profile_reset
+
+    samples = [
+        legacy_sample(
+            # `tests/regression/input_files/stellarator_helias.IN.DAT` after
+            # `init_process` and before any model has run: four of the seven differ from
+            # their L-mode values, so PROCESS's guard fires.
+            "reset-fires",
+            radius_plasma_pedestal_temp_norm=1.0,
+            radius_plasma_pedestal_density_norm=1.0,
+            temp_plasma_pedestal_kev=1.0,
+            temp_plasma_separatrix_kev=0.1,
+            nd_plasma_pedestal_electron=4.0e19,
+            nd_plasma_separatrix_electron=3.0e19,
+            tbeta=2.0,
+        ),
+        legacy_sample(
+            "already-l-mode",
+            radius_plasma_pedestal_temp_norm=1.0,
+            radius_plasma_pedestal_density_norm=1.0,
+            temp_plasma_pedestal_kev=0.0,
+            temp_plasma_separatrix_kev=0.0,
+            nd_plasma_pedestal_electron=0.0,
+            nd_plasma_separatrix_electron=0.0,
+            tbeta=2.0,
+        ),
+    ]
+
+    # PROCESS's own input ranges for the pedestal fields; the bounds matter only in that
+    # they must straddle the L-mode values so both sides of the guard are sampled.
+    fuzz_bounds = {
+        "radius_plasma_pedestal_temp_norm": (0.8, 1.0),
+        "radius_plasma_pedestal_density_norm": (0.8, 1.0),
+        "temp_plasma_pedestal_kev": (0.0, 6.0),
+        "temp_plasma_separatrix_kev": (0.0, 0.5),
+        "nd_plasma_pedestal_electron": (0.0, 8.0e19),
+        "nd_plasma_separatrix_electron": (0.0, 6.0e19),
+        "tbeta": (1.0, 2.0),
     }
 
 

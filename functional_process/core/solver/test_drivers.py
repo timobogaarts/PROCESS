@@ -104,3 +104,50 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
 
     got = out[vpath(lambda s: s.heat_transport.temp_turbine_coolant_in)]
     assert float(got) == pytest.approx(float(expected), abs=1e-6)
+
+
+# ---------------------------------------------------------------- design scaling
+
+
+@pytest.mark.parametrize(
+    ("value", "scaled"),
+    [
+        (2.0, True),
+        (-4.0, True),
+        (1e-11, True),  # above PROCESS's floor: still conditions its own coordinate
+        (0.0, False),
+        (1e-13, False),
+        (-3.8e-27, False),  # `.power.qac` after a solve -- the value that broke VMCON
+    ],
+)
+def test_a_start_below_processes_own_floor_is_left_unscaled(value, scaled):
+    """`1 / x_start` conditioning needs a floor, and PROCESS supplies the number.
+
+    `check_iteration_variable` rejects `abs(value) <= 1e-12` outright, so below that
+    PROCESS does not believe a value can condition anything. Testing `!= 0.0` instead --
+    as this did -- lets a numerically-zero start through: `.power.qac` is exactly `0.0`
+    on a seeded env but `-3.8e-27` after a solve, which produced a scale of `-2.6e+26`
+    and killed the QP. Only a restart from a solved point ever reached it.
+    """
+    import numpy as np
+
+    from functional_process.core.solver.drivers import UNSCALABLE_BELOW, design_scale
+
+    factor = float(design_scale(np.array([value], dtype=float))[0])
+    if scaled:
+        assert factor == pytest.approx(1.0 / value)
+    else:
+        assert factor == 1.0
+        assert abs(value) <= UNSCALABLE_BELOW
+
+
+def test_scaling_leaves_a_workable_problem_when_a_coordinate_is_unscalable():
+    """The floor degrades to the unscaled problem in that coordinate, not to a
+    divide-by-zero and not to an error: every factor stays finite and non-zero."""
+    import numpy as np
+
+    from functional_process.core.solver.drivers import design_scale
+
+    scale = design_scale(np.array([1e-13, 2.0, 0.0, -4.0, -3.8e-27]))
+    assert np.all(np.isfinite(scale))
+    assert np.all(scale != 0.0)

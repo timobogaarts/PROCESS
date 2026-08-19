@@ -31,6 +31,44 @@ from cottax.tools.path import written
 from jax.flatten_util import ravel_pytree
 
 
+UNSCALABLE_BELOW = 1e-12
+"""Magnitude below which a start value cannot condition its own coordinate.
+
+PROCESS's own threshold, from `check_iteration_variable`
+(`process/core/solver/iteration_variables.py`), where it is a hard error. Here it selects
+`scale = 1` instead, because a coupling unknown may legitimately converge to ~0.
+"""
+
+
+def design_scale(flat_start):
+    """`1 / x_start` per coordinate -- PROCESS's conditioning -- with a floor.
+
+    `np.divide(..., where=)` rather than `np.where(cond, 1/x, 1)`: the latter evaluates
+    `1/x` everywhere first, so a near-zero start warns before the select discards it.
+
+    The floor is **PROCESS's own**, not a number invented here. `check_iteration_variable`
+    rejects any iteration variable with `abs(value) <= 1e-12` outright, so that is where
+    PROCESS itself stops believing a value can condition anything.
+
+    This used to test `flat_start != 0.0`, i.e. exact zero only, reasoning that "exactly
+    zero has no scale". True, and insufficient: a coupling unknown that is *numerically*
+    zero is not exactly zero. `.power.qac` is exactly `0.0` on a seeded env but
+    `-3.8e-27` after a solve, so restarting one solve from another's answer handed VMCON
+    a scale of `-2.6e+26` and its QP died -- a failure reachable only by restarting, never
+    from a cold start, which is why it survived every run until one was tried.
+
+    PROCESS *raises* on such a value. Raising would be wrong here: SAND legitimately owns
+    coupling unknowns whose converged value is genuinely ~0. They are not ill-posed,
+    merely unscalable, and leaving `scale = 1` degrades to the unscaled problem in exactly
+    those coordinates.
+    """
+    scale = np.ones_like(flat_start)
+    np.divide(  # noqa: RUF069
+        1.0, flat_start, out=scale, where=np.abs(flat_start) > UNSCALABLE_BELOW
+    )
+    return scale
+
+
 def scaled_problem(driver, conditions: ConditionMap, start: tuple):
     """The pieces every SQP driver here needs, built once from a block's `ConditionMap`.
 
@@ -54,12 +92,11 @@ def scaled_problem(driver, conditions: ConditionMap, start: tuple):
     flat_start, unravel = ravel_pytree(start)
     flat_start = np.asarray(flat_start, dtype=float)
 
-    scale = np.ones_like(flat_start)
-    if getattr(driver, "scaled", True):
-        # `np.divide(..., where=)` rather than `np.where(cond, 1/x, 1)`: the latter
-        # evaluates `1/x` everywhere first, so a zero start warns before the select
-        # discards it. Exact comparison is deliberate -- exactly zero has no scale.
-        np.divide(1.0, flat_start, out=scale, where=flat_start != 0.0)  # noqa: RUF069
+    scale = (
+        design_scale(flat_start)
+        if getattr(driver, "scaled", True)
+        else np.ones_like(flat_start)
+    )
 
     by_name = {var: float(factor) for var, factor in driver.condition_scale}
     stray = set(by_name) - set(conditions.conditions)

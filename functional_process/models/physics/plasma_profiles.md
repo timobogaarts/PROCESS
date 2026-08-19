@@ -307,6 +307,44 @@ parabolic formula.
 problem — `calculate_profile_factors` runs in both branches, and
 `calculate_parabolic_gradient_lengths` is parabolic-only with no counterpart arm.
 
+**The seven-field L-mode reset now has a node too: `LModeProfileReset`**, registered under
+the same `.physics.i_plasma_pedestal == 0` arm. This closes open question 2 below, and the
+answer is the opposite of what that question proposed: the reset is **not**
+graph-assembly-time input coercion for `configuration.py` to perform, it is an ordinary
+node, because PROCESS applies it inside the pipeline and only on the parabolic arm.
+
+Two things make it a node rather than a special case:
+
+- **Its post-condition is unconditional.** PROCESS's guard is *"if any of the seven differs
+  from its L-mode value, set all seven to their L-mode values"*, so when the guard is false
+  every field already holds what the body would assign. The seven fields hold
+  `(1, 1, 0, 0, 0, 0, 2)` on exit either way; the guard decides only whether `logger.error`
+  fires, which is a diagnostic and is not ported. `TestLModeProfileReset` fuzzes all seven
+  arguments against PROCESS to turn that from a reading into a measurement, with one legacy
+  sample on each side of the guard.
+- **It declares no `Input`**, for the same reason: the result does not depend on the
+  incoming values, so declaring the seven fields as reads as well as writes would state a
+  seven-way self-loop the computation does not have. `lmode_profile_reset` keeps the seven
+  arguments (defaulted to the L-mode values) purely so the independence is testable.
+
+**What leaving it unwritten cost, measured on the reference stellarator run.** Four of the
+seven fields are read by the graph — `radius_plasma_pedestal_density_norm`,
+`nd_plasma_pedestal_electron` and `nd_plasma_separatrix_electron` by
+`profiles.DensityProfile`, `tbeta` by `SynchrotronRadiationPower` — and all four were
+unowned boundary inputs. A **warm** solve seeded from PROCESS's converged `DataStructure`
+therefore got the reset for free (those fields are already `0` there) while a **cold** one
+seeded from the input file carried `nd_plasma_pedestal_electron = 4e19` and
+`nd_plasma_separatrix_electron = 3e19` into `DensityProfile`, whose single formula is the
+pedestal one and only degenerates to the parabolic profile once they are zero. The two
+were solving *different problems*: SAND finished at `objf` 1.217757 warm and 1.215038 cold,
+a 0.22 % gap that `_audit/next_steps.md` §11.10 recorded as *"either several local minima
+or a direction flat enough that two starts stop in different places"*. With this node the
+cold solve lands on the warm one's answer to nine digits (both `1.217757336`, every
+iteration variable agreeing to 6–7 digits) and the median distance to PROCESS's converged
+`x` falls from `1.4e-02` to `8.6e-03`. Same defect class as `_audit/optimise_design.md`
+§10.5a/§10.5c — a missing producer every value test passes — found by a third method again:
+neither a gradient nor a consumer, but two starting points disagreeing.
+
 ## tier signal
 
 **Tier 1** for all five signatures: no internal iteration, no `scipy.optimize`, no call
@@ -381,7 +419,9 @@ Both called **for effect**: the return value is unused, and the caller then read
    decision before either arm gets a node** — probably: a switch declared in
    `TOPOLOGY_SWITCHES` also supplies its value to any node that takes it as a static
    kwarg, so there is one source of truth. Not implemented.
-2. **What should the input-validation reset become?** L92-117 conditionally overwrites
+2. **[RESOLVED — see "cottax node" above. It became `LModeProfileReset`, an ordinary node
+   on the `i_plasma_pedestal == 0` arm, not configuration-time coercion.]**
+   **What should the input-validation reset become?** L92-117 conditionally overwrites
    seven input fields and logs an error when a parabolic run is given pedestal-shaped
    inputs. It is not physics and cannot be traced (data-dependent logging). The natural
    home is graph-assembly-time validation of the configuration, alongside the switch that

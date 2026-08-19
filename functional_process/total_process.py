@@ -154,6 +154,7 @@ from functional_process.models.physics.physics_C_outplas import (
 )
 from functional_process.models.physics.plasma_profiles import (
     IonVolAvgTemperature,
+    LModeProfileReset,
     ParabolicGradientLengths,
     ParabolicProfileValues,
     ProfileFactors,
@@ -563,6 +564,17 @@ TOPOLOGY_SWITCHES = (
                     # inputs and iteration variable 4 had no path into fusion
                     # reactivity or beta -- see that class's docstring.
                     ParabolicProfileValues,
+                    # The seven-field L-mode reset (`plasma_profiles.py:92-117`), the
+                    # producer these fields never had. Belongs on this arm and only this
+                    # arm: PROCESS applies it in `parabolic_parameterisation`, i.e.
+                    # exactly when `i_plasma_pedestal == 0`. Without it a cold run
+                    # carries the input file's `nd_plasma_pedestal_electron`/
+                    # `nd_plasma_separatrix_electron` into `DensityProfile`, whose one
+                    # formula is the pedestal one and only degenerates to the parabolic
+                    # profile once they are zero -- so a parabolic run silently got a
+                    # pedestal density profile. See `LModeProfileReset`'s docstring for
+                    # the measured effect on the SAND cold solve.
+                    LModeProfileReset,
                 ),
             ),
             Alternative(

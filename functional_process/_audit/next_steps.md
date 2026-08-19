@@ -17,16 +17,16 @@ vocabulary — Shape A / Shape B — that the code itself cites).
 
 | check | value |
 |---|---|
-| `pytest functional_process -q` | **3690 passed**, 2955 skipped, 0 failed |
-| `run_mda_harness.py` | **492 agreements** (23 array-valued), **34 disagreements** (0 in driven blocks, 34 acyclic), 3 unverifiable, **0 ungrounded**, 21 errors |
-| … accounting | **550 owned variables walked, 0 unaccounted**; 61 switch kwargs checked / 0 mismatched / 3 not data-backed / **0 unresolved** |
-| `GRAPH` (`REFERENCE_CONFIGURATION`) | **158 nodes**; **137 blocks, 14 driven**; **353 unowned inputs** |
+| `pytest functional_process -q` | **3697 passed**, 3344 skipped, 0 failed |
+| `run_mda_harness.py` | **499 agreements** (23 array-valued), **34 disagreements** (0 in driven blocks, 34 acyclic), 3 unverifiable, **0 ungrounded**, 21 errors |
+| … accounting | **557 owned variables walked, 0 unaccounted**; 61 switch kwargs checked / 0 mismatched / 3 not data-backed / **0 unresolved** |
+| `GRAPH` (`REFERENCE_CONFIGURATION`) | **159 nodes**; **138 blocks, 14 driven**; **349 unowned inputs** — `LModeProfileReset` is the new node and the four fields it owns are the four fewer unowned inputs (deltas measured; the absolute figures carry forward the previously recorded ones) |
 | **MDA from a cold `IN.DAT`** | **137 blocks, 0 failures**, 1 non-finite (`.physics.nu_star`, `nan` in PROCESS too, read by nothing) |
 | SAND | 30 conditions × 23 design, **0 non-finite cells**; graph 171 nodes |
-| SAND C2 (seeded from PROCESS's answer) | **42 SQP iterations, 7.8 s**, conv `9.9e-10` |
-| **SAND C3 (cold start)** | **88 iterations, 7.9 s**, conv `4.7e-09`, feasible |
+| SAND C2 (seeded from PROCESS's answer) | **42 SQP iterations**, conv `9.9e-10`, `objf 1.2177574` |
+| **SAND C3 (cold start)** | **100 iterations**, stalls at conv `1.7e-06` (`max\|eq\| 5.5e-10`, feasible) at `objf 1.2177575` — **the same point as C2 to six digits**; §11.11 |
+| MDF C2 / C3 | **129 iterations, converged** / **200 iterations, not converged** (was 127/converged before §11.11's node; the cold problem it now solves is a different, correct one) |
 | MDF | 15 conditions × 8 design (`icc` × `ixc`), Jacobian compared to PROCESS's **unreduced** |
-| **MDF C3 (cold start)** | **127 iterations, 12.1 s**, conv `4.5e-09`, feasible |
 | PROCESS itself, same problem | 46 VMCON iterations, **94 s**, conv `2.40e-07` |
 
 XDSM/DSM of the assembled SAND graph: `python -m functional_process.render_xdsm sand`
@@ -926,16 +926,15 @@ formatter, and convert one small subsystem — not `costs` or `stellarator`.
 1. **[CLOSED — see 11.8] The cold-start gap.** It was the ceiling on the whole result
    and it is not there any more: the port runs its own pipeline from a cold `IN.DAT`,
    and both SAND and MDF now solve from one.
-2. **The `x109` disagreement, and the L-mode reset behind it.** All four solver/start
-   combinations land 10.9 % from PROCESS on `.physics.f_nd_alpha_thermal_electron` —
-   solver-independent, therefore a **model** difference rather than an optimisation one.
-   The leading candidate is a seventh missing producer: `PlasmaProfile.run` resets six
-   fields to L-mode values (`process/models/physics/plasma_profiles.py:110-117`) and the
-   port has no node for it. Measured (MDF harness): a cold and a converged
-   `DataStructure` differ in exactly **two** of 360 boundary inputs
-   (`.physics.nd_plasma_pedestal_electron`, `.nd_plasma_separatrix_electron`), and
-   emulating the reset moves the cold solve's median distance to PROCESS's `x` from
-   `1.4e-2` to `8.6e-3`.
+2. **[CLOSED — see §11.11, and the conclusion is not the one this item predicted.]**
+   ~~The `x109` disagreement, and the L-mode reset behind it.~~ The L-mode reset was a
+   real missing producer and is now `plasma_profiles.LModeProfileReset` — the **eighth**
+   instance of that class. What it closed is the **warm/cold** split (§11.10's "several
+   local minima?"), not `x109`, which it moves by 0.05 %. `x109` and `x56` are both
+   **flat directions** of the port's own problem: pinned at PROCESS's value and re-solved,
+   `x109` gives a *lower* objective than the port's free optimum (−0.017 %) and `x56`
+   costs +0.004 % to move 5.6 %. The inference "all four solver/start combinations agree,
+   therefore a model difference" is **withdrawn**.
 3. **Hoist `VmconDriver`'s jitted callables** (§11.2) — small, and the prerequisite for
    batched or scanned solves being worth anything.
 4. **The "is the right *node* registered" check** — now **five** instances
@@ -999,7 +998,17 @@ from running something, not from reading harder.
 Two traps have now appeared three times each and should be assumed present until checked:
 **`jnp.sqrt(jnp.maximum(0, x))`** — value-correct, derivative `nan`, visible only to a
 gradient test — and **a missing producer** — every value test passes, and only a gradient,
-or a consumer far downstream, ever notices.
+or a consumer far downstream, ever notices. The missing producer has now been seen
+**eight** times, and §11.11 adds a third way of noticing it: **two different starting
+points converging to different answers**, because a warm seed taken from PROCESS's own
+`DataStructure` silently supplies the value the absent node would have produced and a cold
+seed does not. Any solve that is warm-started off PROCESS is blind to this whole class.
+
+A third entry for the list of confident diagnoses measurement overturned: **"`x109` is a
+model difference because all four solver/start combinations agree"** — they agree because
+the direction is flat, and at PROCESS's own `x109` the port is feasible with a *better*
+objective than at its own converged answer (§11.11). Solver agreement is evidence about the
+optimiser, not about the model.
 
 ### 11.8 The cold start, closed — and what it took
 
@@ -1112,11 +1121,12 @@ the row as a row, or not at all.
 
 **Cold, on SAND, the two solvers land on the same point to five or six digits** (x56
 31.5688 vs 31.5685; x109 0.0299361445 vs 0.0299361385). Two independently written SQPs,
-different QP solvers, different line searches, from a cold start. That is what licenses
-reading the residual gap to PROCESS as a property of the **model** rather than of the
-optimiser — and it decomposes: `x109` is 10.9 % off in all four runs (a real model
-difference, see §11.6 item 2), `x56` moves between 3.9 % and 10.6 % with solver and start
-(a weakly-determined direction), and everything else is within 3 %.
+different QP solvers, different line searches, from a cold start. **What that licenses is
+narrower than this paragraph used to claim — see §11.11.** Solver agreement establishes
+that the *stationary point* is well determined; in a nearly-flat valley that is exactly
+what one gets, and it does not distinguish a model difference from flatness. Measured:
+both `x109` and `x56` are flat, and at PROCESS's own `x109` the port is feasible with a
+*better* objective than at its own answer. Everything else is within 3 %.
 
 **The "within 0.5 %" figure this paragraph used to carry was wrong** — corrected against a
 re-run of the whole ladder rather than restated. The measured cold-start distances to
@@ -1125,14 +1135,17 @@ PROCESS, all eight: `x3` 0.28 %, `x2` 0.45 %, `x10` 0.61 %, `x4` 0.89 %, `x6` 1.
 claim survives — a long tail of near-agreement and two outliers — but the tail is 3 %
 wide, not 0.5 %.
 
-**Warm and cold do not land on the same point**, which qualifies "the optimum" in the
-port's own terms before any comparison with PROCESS: C2 finishes at `objf` 1.217757 and
-C3 at **1.215038**, 0.22 % apart, with `x2` 4.7093 against 4.6827. Both are converged
-(`conv` `9.9e-10` / `4.7e-09`) and both are feasible, so this is not a tolerance artefact
-— the port's problem has either several local minima or a direction flat enough that the
-two starts stop in different places along it. `x56`'s solver- and start-dependence
-(§11.10's table) is the visible end of the same thing. Untested either way; the cheap
-discriminator is to restart C3 from C2's answer and see whether it moves.
+**Warm and cold do not land on the same point** — **[SUPERSEDED; see §11.11. They do
+now, and the cause was neither multi-modality nor flatness but one missing node.]** C2
+finished at `objf` 1.217757 and C3 at 1.215038, 0.22 % apart, with `x2` 4.7093 against
+4.6827; both converged and both feasible, which correctly ruled out a tolerance artefact
+and was then over-read as "several local minima or a flat direction". The cause was
+`plasma_profiles.LModeProfileReset`: the warm seed came from a `DataStructure` where
+PROCESS had already applied the L-mode reset and the cold seed did not, so the two stages
+were solving different problems. The discriminator suggested here ("restart C3 from C2's
+answer") was run, and it is a **trap** — `VmconDriver`'s unfloored `1/x_start` scaling
+makes any restart from a solved point diverge, which is how that driver defect was found.
+See §11.11.
 
 **The objective itself differs from PROCESS's by 1.7 % at PROCESS's own converged point**
 (Stage A: port `1.235974`, PROCESS `1.214917`), so port and PROCESS `objf` *values* are
@@ -1143,3 +1156,140 @@ model difference, in the same family as `x109` and separate from the optimisatio
 and the port does not, which reads like a discrepancy to fix. Measured: warm C2 converges in
 62 iterations under OSQP and runs to `max_iter` **without converging** under CLARABEL, and
 at the cold point both fail. Recorded so the next reader does not "fix" it.
+
+### 11.11 `x56` and `x109` — both diagnosed, and neither is a model difference
+
+**The one-line answer: both are flat directions of the port's own constrained problem, and
+the eighth missing producer that everyone was looking for is real but is the cause of
+something else entirely.** Everything below was run against
+`tests/regression/input_files/stellarator_helias.IN.DAT` off one cached PROCESS run.
+
+#### The missing producer, found and ported — but it is not `x109`'s cause
+
+`LModeProfileReset` (`models/physics/plasma_profiles.py`) owns the seven fields
+`PlasmaProfile.parabolic_parameterisation` resets to L-mode values
+(`process/models/physics/plasma_profiles.py:92-117`), registered under the
+`.physics.i_plasma_pedestal == 0` arm. **Eighth instance of the missing-producer class**
+(§11.7), and the first found by a *third* method — not a gradient, not a downstream
+consumer, but **two starting points disagreeing**.
+
+Its post-condition is unconditional, which is why it can be a node with no `Input` and no
+guard: PROCESS's `if` is *"if any of the seven differs from its L-mode value, set all seven
+to their L-mode values"*, so when the guard is false every field already holds what the
+body would assign. The guard governs only a `logger.error`.
+`TestLModeProfileReset` fuzzes all seven arguments against PROCESS and pins that.
+
+**What it fixes is the warm/cold split, not `x109`.** Four of the seven fields are read by
+the graph (`profiles.DensityProfile` reads three, `SynchrotronRadiationPower` reads
+`tbeta`) and all four were unowned. So a **warm** solve seeded from PROCESS's converged
+`DataStructure` got the reset for free — those fields are already `0` there — and a
+**cold** one carried the input file's `nd_plasma_pedestal_electron = 4e19` /
+`nd_plasma_separatrix_electron = 3e19` into `DensityProfile`, whose single formula is the
+pedestal one and only degenerates to the parabolic profile once they are zero. C2 and C3
+were solving **different problems**:
+
+| | before | after |
+|---|---|---|
+| SAND C2 `objf` | 1.217757336 | 1.217757336 |
+| SAND C3 `objf` | **1.215038106** | **1.217757336** |
+| C3 `x2` | 4.682670 | 4.709285 (C2: 4.709284) |
+| median distance to PROCESS's `x`, cold | 1.42e-02 | 8.62e-03 |
+
+**§11.10's "the port's problem has either several local minima or a direction flat enough
+that the two starts stop in different places" is answered: neither.** It was one missing
+node. The controlled A/B is direct — zero `nd_plasma_pedestal_electron`/
+`nd_plasma_separatrix_electron` on the cold `DataStructure`, change nothing else, and the
+cold solve moves onto the warm one's answer to nine digits. Tightening the tolerance had
+already ruled out a stopping artefact: at `tolerance = 1e-13` the two still converged to
+`1.217757336` and `1.215037642`, both with `conv ~1e-11` and feasible.
+
+The effect on `x109` is **0.05 %** (`1.088e-01` → `1.083e-01`) and on `x56` **0.5 %**
+(`1.062e-01` → `1.008e-01`). So the leading hypothesis in §11.6 item 2 was a real defect
+and *not* the explanation it was proposed as. This should have been visible without
+measuring — C2 seeds from a `DataStructure` where the reset has already fired, and C2's
+`x109` was 10.8 % off — which is a small lesson of its own: §11.7's list is about
+diagnoses that reading overturned, and this is one reading could have narrowed for free.
+
+#### `x56` and `x109`: measure the *cost* of agreeing with PROCESS, not the distance
+
+The decisive experiment for both is the same and it is cheap: **pin the variable at
+PROCESS's own value, re-solve the other seven, and read off what it costs the objective.**
+A flat direction is free to move along; a genuine model disagreement is not. Run on the
+corrected graph, `tolerance = 1e-11`, continuation from the free optimum
+(`objf 1.217757336`):
+
+| pinned | value | `objf` | vs free | `conv` | `max\|eq\|` | feasible |
+|---|---|---|---|---|---|---|
+| — | — | 1.217757336 | — | 8.6e-12 | 1.2e-13 | yes |
+| `x56` | 33.540284 (52 % of the way to PROCESS's 35.32) | 1.217805177 | **+0.0039 %** | 9.4e-12 | 5.2e-13 | yes |
+| `x109` | 0.033590406 (**PROCESS's exact value**) | 1.217549493 | **−0.0171 %** | 9.4e-12 | 3.3e-09 | yes |
+
+Read those two rows carefully:
+
+- **`x56` costs 39 parts per million to move 5.6 %.** The direction is flat. `x56`'s
+  solver- and start-dependence (§11.10's 3.9 %–10.6 % spread, and MDF C3 landing at 36.20
+  where SAND lands at 31.76 — on *opposite sides* of PROCESS's 35.32) is what a flat
+  direction looks like, not a wrong formula. It is interior to its bounds `[1, 50]` at
+  every landing.
+- **`x109` at PROCESS's own value is feasible with a `objf` 0.017 % *lower* than the port's
+  free optimum.** A constrained minimum cannot be improved by adding a constraint, so the
+  port's converged answer is **not** the global optimum of the port's own problem — the
+  landscape has at least two stationary points 12 % apart in `x109` and 1.7e-04 apart in
+  objective. `x109` is interior to `[0.0001, 0.4]`.
+
+**§11.10's inference from "all four solver/start combinations agree to five or six digits"
+is therefore wrong**, and the reason is worth keeping: two independent SQPs agreeing tells
+you the *stationary point* is well determined, which in a nearly-flat valley is exactly
+what you get and says nothing about whether the model is right. The claim
+*"`x109` is a model difference, not an optimisation artefact"* is withdrawn. The
+measurement that separates the two is the pinning cost, not solver agreement.
+
+#### What actually determines the landing point
+
+At the free optimum the active set is `c2`, `c16` (the two equalities), the fifteen SAND
+residual equalities, and exactly four inequalities — `c24` (beta limit), `c83` (place for
+blanket), `c62` (thermal He) and `c35` (quench). Twenty-three unknowns against twenty-one
+binding conditions leaves **two** free directions, and the objective's own gradient in
+those directions is what fixes them. That gradient is the port's weakest quantity: the
+`objf` row of the Stage B Jacobian disagrees with PROCESS's by 18–34 % in *every* column
+(§10.5c), from the `z_tf_inside_half` report-pass/solve-pass inconsistency in PROCESS
+itself. A 20–30 % error in the gradient along a valley this flat moves the landing point
+by ~10 % in the flat coordinates while barely moving anything else — which is exactly the
+observed shape (`x56` and `x109` at ~10 %, everything else inside 3 %).
+
+That is a *consistent* account rather than a demonstrated one. The controlled test would be
+§10.9 item 3 (pin `.heat_transport.p_plant_electric_base_total_mw` to PROCESS's own 89.461
+and re-solve). **The cheaper substitute was tried and is not a substitute**: dropping `c16`
+from the problem entirely does not converge and is not informative — `c16` is the net
+electric power lower limit, so without it the objective runs away (`objf` 0.656, `x3` and
+`x56` both pinned at their upper bounds). Recorded so it is not retried.
+
+#### Two defects in the driver, found on the way
+
+- **`VmconDriver`'s `1/x_start` design scaling has no floor.** The guard is
+  `np.divide(1.0, x, where=x != 0.0)` — exact zero only. `.power.qac` is an unknown that is
+  *identically* `0.0` on any seeded env and `-3.8e-27` after a solve, so **restarting a
+  solve from its own answer** hands VMCON a scale of `-2.6e26` for that column and the
+  QP is destroyed: from C2's converged point (`conv 9.9e-10`) a restart wanders to
+  `objf 1.2228` and fails in 19 iterations. This is a trap for exactly the check §11.10
+  recommended ("restart C3 from C2's answer"), which is how it was found. A relative floor
+  (scale `1.0` when `|x_start|` is below, say, `1e-12` times the vector's median magnitude)
+  would fix it. **Open.**
+- **`pyvmcon`'s reported convergence parameter is not a restartable property of the
+  point.** It is computed from the QP step, which uses the accumulated BFGS Hessian; the
+  same point re-entered with `B = I` reports `6.9e-04` where the run that stopped there
+  reported `9.9e-10`. Do not read a small `conv` as "this point is a KKT point to that
+  tolerance" — read `max|eq|` and the worst inequality, which are properties of the point.
+  C2 at `tolerance = 1e-8` stops with `max|eq| = 2.7e-06`; at `1e-13` it reaches `9.2e-08`.
+
+#### Cost of the new node, stated
+
+MDA harness **492 → 499 agreements**, 34 disagreements unchanged, 550 → 557 owned
+variables, 0 unaccounted. `pytest functional_process -q`: **3697 passed, 0 failed** (the
+seven new tests are `TestLModeProfileReset`'s). **One regression, in the solver and not in
+the model:** at the harness's default `tolerance = 1e-8` the SAND cold solve now runs the
+full 100 iterations and stalls at `conv 1.7e-06` instead of converging in 88, and MDF's
+cold solve runs 200 without converging instead of 127 with. Both land on the right point
+(SAND C3 agrees with C2 to six digits); the corrected cold problem is simply harder for
+the SQP than the incorrect one was. Fixing that is solver work, and the `1/x_start` floor
+above is the first thing to try.

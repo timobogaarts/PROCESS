@@ -203,6 +203,74 @@ def calculate_parabolic_profile_values(
     )
 
 
+L_MODE_PROFILE_VALUES = (1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0)
+"""`parabolic_parameterisation`'s own literals, in this module's argument order."""
+
+
+def lmode_profile_reset(
+    radius_plasma_pedestal_temp_norm=1.0,
+    radius_plasma_pedestal_density_norm=1.0,
+    temp_plasma_pedestal_kev=0.0,
+    temp_plasma_separatrix_kev=0.0,
+    nd_plasma_pedestal_electron=0.0,
+    nd_plasma_separatrix_electron=0.0,
+    tbeta=2.0,
+):
+    """The seven L-mode pedestal fields `parabolic_parameterisation` resets, as a total
+    function of the incoming values (source L92-117).
+
+    **The result does not depend on the arguments, and that is the whole content of the
+    function.** PROCESS's block is `if <any of the seven differs from its L-mode value>:
+    <set all seven to their L-mode values>`; when the guard is false every field already
+    holds the value the body would assign. So the post-condition is unconditional -- the
+    seven fields hold `(1, 1, 0, 0, 0, 0, 2)` on exit whatever they held on entry -- and
+    the guard exists only to decide whether `logger.error` fires. That is a diagnostic,
+    is data-dependent, and is not ported; the coercion it guards is.
+
+    The arguments are kept, defaulted to the L-mode values, for two reasons. They make
+    the independence a *testable* claim rather than a comment
+    (`test_plasma_profiles.TestLModeProfileReset` fuzzes all seven against PROCESS and
+    the reference returns the same constants every time), and they let `LModeProfileReset`
+    call the function with no arguments at all, so the node declares no `Input` and no
+    self-loop.
+
+    `plasma_profiles.md` classified these seven as `input-validation-reset` and its open
+    question 2 asked whether they belonged in `configuration.py` as graph-assembly-time
+    coercion instead. They do not: PROCESS applies them inside the pipeline, on the
+    parabolic arm only, and a node under that arm says exactly that with no new
+    machinery. `profiles.DensityProfile`'s docstring records why it matters -- its single
+    formula is the pedestal one and only degenerates to `n0 * (1 - rho**2) ** alphan`
+    once `radius_plasma_pedestal_density_norm == 1` and the two pedestal densities are
+    zero.
+
+    Parameters
+    ----------
+    radius_plasma_pedestal_temp_norm, radius_plasma_pedestal_density_norm :
+        Incoming normalised pedestal radii for temperature and density.
+    temp_plasma_pedestal_kev, temp_plasma_separatrix_kev :
+        Incoming pedestal and separatrix electron temperatures (keV).
+    nd_plasma_pedestal_electron, nd_plasma_separatrix_electron :
+        Incoming pedestal and separatrix electron densities (m^-3).
+    tbeta :
+        Incoming density-profile core exponent.
+
+    Returns
+    -------
+    tuple
+        The same seven quantities at their L-mode values, in the same order.
+    """
+    del (
+        radius_plasma_pedestal_temp_norm,
+        radius_plasma_pedestal_density_norm,
+        temp_plasma_pedestal_kev,
+        temp_plasma_separatrix_kev,
+        nd_plasma_pedestal_electron,
+        nd_plasma_separatrix_electron,
+        tbeta,
+    )
+    return tuple(jnp.asarray(value) for value in L_MODE_PROFILE_VALUES)
+
+
 def calculate_pedestal_profile_values(
     profile_x,
     ne_profile_y,
@@ -685,3 +753,50 @@ class ParabolicProfileValues(ExplicitFunction):
             temp_plasma_electron_vol_avg_kev,
             temp_plasma_ion_vol_avg_kev,
         )
+
+
+class LModeProfileReset(ExplicitFunction):
+    """cottax node: `lmode_profile_reset`, the `i_plasma_pedestal == 0` arm's
+    input-validation reset, as the producer it always was.
+
+    An `Alternative` under `.physics.i_plasma_pedestal` alongside
+    `ParabolicProfileValues` and the rest of the parabolic arm. This closes
+    `plasma_profiles.md`'s open question 2 and `profiles.md`'s open question about
+    `DensityProfile`: the answer is **not** graph-assembly-time input coercion, it is an
+    ordinary node, because PROCESS performs the reset inside the pipeline and the result
+    is a plain post-condition of selecting the parabolic arm.
+
+    **No inputs, by construction.** `lmode_profile_reset` ignores its arguments, so
+    declaring the seven fields as `Input`s as well as `Output`s would be a seven-way
+    self-loop stating a dependence the computation does not have. The node calls the
+    function at its own defaults, which are the L-mode values themselves.
+
+    **What registering it fixes -- measured, on the reference stellarator run.** Before
+    this node the four of these seven fields the graph touches were unowned boundary
+    inputs, so a cold solve carried the input file's own `nd_plasma_pedestal_electron =
+    4e19` / `nd_plasma_separatrix_electron = 3e19` into `profiles.DensityProfile`, whose
+    single formula only degenerates to the parabolic profile once they are zero. A warm
+    solve seeded from PROCESS's converged `DataStructure` got the reset for free (the
+    fields are already `0` there) and a cold one did not, so the two were solving
+    **different problems**: SAND finished at `objf` 1.217757 warm and 1.215038 cold, a
+    gap read for a while as evidence of several local minima. With this node the cold
+    solve lands on the warm one's answer to nine digits and the median distance to
+    PROCESS's converged `x` falls from `1.4e-02` to `8.6e-03`.
+    """
+
+    radius_plasma_pedestal_temp_norm = Output(
+        lambda s: s.physics.radius_plasma_pedestal_temp_norm
+    )
+    radius_plasma_pedestal_density_norm = Output(
+        lambda s: s.physics.radius_plasma_pedestal_density_norm
+    )
+    temp_plasma_pedestal_kev = Output(lambda s: s.physics.temp_plasma_pedestal_kev)
+    temp_plasma_separatrix_kev = Output(lambda s: s.physics.temp_plasma_separatrix_kev)
+    nd_plasma_pedestal_electron = Output(lambda s: s.physics.nd_plasma_pedestal_electron)
+    nd_plasma_separatrix_electron = Output(
+        lambda s: s.physics.nd_plasma_separatrix_electron
+    )
+    tbeta = Output(lambda s: s.physics.tbeta)
+
+    def __call__(self):
+        return lmode_profile_reset()
