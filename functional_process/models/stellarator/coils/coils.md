@@ -185,6 +185,21 @@ Intersect())` builds cleanly into exactly two nodes (the `residual` body, a
 `CallableNode`, and the `RootFind` problem it feeds) — confirmed directly, not just
 asserted (`test_coils.py::test_intersect_declares_a_body_and_a_root_find_problem`).
 
+**`.stellarator.wp_width_r_min` is minted but not ungrounded** (added by the constraint-32
+investigation, `_audit/constraint_32_investigation.md`). PROCESS stores no
+`wp_width_r_min` field, but it *does* store the same number one line later: after the
+turn-size clamp (`process/models/stellarator/coils/calculate.py:465`), `awp_rad =
+wp_width_r_min` is written straight into `data.tfcoil.dr_tf_wp_with_insulation`
+(`calculate.py:481,489`). So `.tfcoil.dr_tf_wp_with_insulation` *is* this unknown's
+converged value whenever the clamp is inactive — measured on `stellarator_helias`,
+`dx_tf_turn_general**2 = 3.136e-03` against `0.7170`, inactive by 228× — and a lower
+bound otherwise. `mda_harness.KNOWN_MINT_VALUES` now uses exactly that as the `RootFind`'s
+**starting guess**, which is what let `Intersect`'s whole 4-node SCC come out of
+`mda_harness.EXCLUDED_NODE_NAMES`. The port's solved answer is then compared back against
+the same field like any other output, and agrees to the harness's `rtol=1e-6` — the first
+PROCESS-comparable number this node has ever had (its `Tier2Contract` deliberately has
+none, see below).
+
 `residual` reads the unknown itself back (`wp_width_r_min`, the same `VarPath` its own
 `Output` declares), the same shape as `~/jaxgraph`'s own
 `test_interfaces_pytree_namespace.py::Disc1` example — **not** a self-loop:

@@ -767,7 +767,7 @@ def test_delta_eta_step_matches_calculate_component_thermal_powers(
         i_blkt_dual_coolant=i_blkt_dual_coolant,
         i_thermal_electric_conversion=int(i_thermal_electric_conversion),
     )
-    (delta_eta_from_step,) = node.step(**step_kwargs)
+    delta_eta_from_step = node.step(**step_kwargs)
 
     full_kwargs = _component_thermal_powers_call_kwargs(step_kwargs)
     full_result = calculate_component_thermal_powers(
@@ -844,7 +844,7 @@ def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
     base_kwargs = _delta_eta_step_kwargs()
 
     def delta_eta_next(delta_eta):
-        (out,) = node.step(**{**base_kwargs, "delta_eta": delta_eta})
+        out = node.step(**{**base_kwargs, "delta_eta": delta_eta})
         return out
 
     grad = jax.grad(delta_eta_next)(base_kwargs["delta_eta"])
@@ -1012,7 +1012,7 @@ def test_eta_turbine_step_matches_calculate_component_thermal_powers(
         i_thermal_electric_conversion=int(i_thermal_electric_conversion),
         i_blanket_type=int(i_blanket_type),
     )
-    (eta_turbine_from_step,) = node.step(
+    eta_turbine_from_step = node.step(
         eta_turbine=_CTP_FULL_KWARGS["eta_turbine"],
         delta_eta=_CTP_FULL_KWARGS["delta_eta"],
         temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
@@ -1063,7 +1063,7 @@ def test_eta_turbine_step_gradient_wrt_eta_turbine(
     )
 
     def eta_turbine_next(eta_turbine):
-        (out,) = node.step(
+        out = node.step(
             eta_turbine=eta_turbine,
             delta_eta=_CTP_FULL_KWARGS["delta_eta"],
             temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
@@ -1092,7 +1092,7 @@ def test_etath_liq_step_matches_calculate_component_thermal_powers(secondary_cyc
     """`EtathLiqStep.step` computes exactly the `etath_liq` element
     `calculate_component_thermal_powers` would, for the same inputs."""
     node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
-    (etath_liq_from_step,) = node.step(
+    etath_liq_from_step = node.step(
         etath_liq=_CTP_FULL_KWARGS["etath_liq"],
         outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"],
     )
@@ -1119,7 +1119,7 @@ def test_etath_liq_step_gradient_wrt_etath_liq(secondary_cycle_liq, expected_gra
     node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
 
     def etath_liq_next(etath_liq):
-        (out,) = node.step(
+        out = node.step(
             etath_liq=etath_liq, outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"]
         )
         return out
@@ -1180,7 +1180,7 @@ def test_temp_turbine_coolant_in_step_matches_calculate_component_thermal_powers
         i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
         secondary_cycle_liq=secondary_cycle_liq,
     )
-    (temp_from_step,) = node.step(
+    temp_from_step = node.step(
         temp_turbine_coolant_in=_CTP_FULL_KWARGS["temp_turbine_coolant_in"],
         temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
         outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"],
@@ -1222,7 +1222,7 @@ def test_temp_turbine_coolant_in_step_gradient_wrt_temp_turbine_coolant_in(
     )
 
     def temp_next(temp_turbine_coolant_in):
-        (out,) = node.step(
+        out = node.step(
             temp_turbine_coolant_in=temp_turbine_coolant_in,
             temp_blkt_coolant_out=_CTP_FULL_KWARGS["temp_blkt_coolant_out"],
             outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"],
@@ -1288,7 +1288,7 @@ def test_p_fw_div_heat_deposited_mw_step_matches_calculate_component_thermal_pow
     `p_fw_div_heat_deposited_mw` element `calculate_component_thermal_powers` would,
     for the same inputs."""
     node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
-    (p_from_step,) = node.step(**_PFW_DIV_STEP_KWARGS)
+    p_from_step = node.step(**_PFW_DIV_STEP_KWARGS)
     full_result = _call_full_ctp(
         i_p_coolant_pumping=i_p_coolant_pumping,
         i_blkt_dual_coolant=0,
@@ -1317,7 +1317,7 @@ def test_p_fw_div_heat_deposited_mw_step_gradient(i_p_coolant_pumping, expected_
     node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
 
     def p_next(p_fw_div_heat_deposited_mw):
-        (out,) = node.step(
+        out = node.step(
             **{**_PFW_DIV_STEP_KWARGS, "p_fw_div_heat_deposited_mw": p_fw_div_heat_deposited_mw}
         )
         return out
@@ -1367,7 +1367,7 @@ def test_p_fw_blkt_coolant_pump_mw_step_matches_calculate_component_thermal_powe
     `p_fw_blkt_coolant_pump_mw` element `calculate_component_thermal_powers` would,
     for the same inputs."""
     node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
-    (p_from_step,) = node.step(
+    p_from_step = node.step(
         p_fw_blkt_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_blkt_coolant_pump_mw"],
         p_fw_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_coolant_pump_mw"],
         p_blkt_coolant_pump_mw=_CTP_FULL_KWARGS["p_blkt_coolant_pump_mw"],
@@ -1401,7 +1401,7 @@ def test_p_fw_blkt_coolant_pump_mw_step_gradient(i_p_coolant_pumping, expected_g
     node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
 
     def p_next(p_fw_blkt_coolant_pump_mw):
-        (out,) = node.step(
+        out = node.step(
             p_fw_blkt_coolant_pump_mw=p_fw_blkt_coolant_pump_mw,
             p_fw_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_coolant_pump_mw"],
             p_blkt_coolant_pump_mw=_CTP_FULL_KWARGS["p_blkt_coolant_pump_mw"],

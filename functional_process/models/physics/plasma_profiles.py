@@ -25,7 +25,12 @@ reason: it reads and owns the *same* `VarPath`, which is a self-loop, not a node
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FixedPointFunction,
+    Input,
+    Output,
+)
 from jax.scipy.special import gamma, gammaln
 
 # `process/core/constants.py`'s KILOELECTRON_VOLT -- the J-per-keV conversion.
@@ -86,11 +91,7 @@ def _simpson(y, x):
     return jnp.sum(
         hsum
         / 6.0
-        * (
-            (2.0 - h1 / h0) * y0
-            + hsum**2 / (h0 * h1) * y1
-            + (2.0 - h0 / h1) * y2
-        )
+        * ((2.0 - h1 / h0) * y0 + hsum**2 / (h0 * h1) * y1 + (2.0 - h0 / h1) * y2)
     )
 
 
@@ -259,9 +260,7 @@ def calculate_pedestal_profile_values(
 
     # Scrape-off density / volume-averaged density, floored to prevent a later
     # division by zero (the source's own comment, L247).
-    prn1 = jnp.maximum(
-        0.01, nd_plasma_separatrix_electron / nd_plasma_electrons_vol_avg
-    )
+    prn1 = jnp.maximum(0.01, nd_plasma_separatrix_electron / nd_plasma_electrons_vol_avg)
 
     return (
         temp_plasma_electron_density_weighted_kev,
@@ -323,8 +322,7 @@ def calculate_profile_factors(
     pres_plasma_electron_profile = ne_profile_y * (te_profile_y * KILOELECTRON_VOLT)
 
     pres_plasma_ion_total_profile = (
-        nd_plasma_ions_total_vol_avg
-        * (ne_profile_y / nd_plasma_electrons_vol_avg)
+        nd_plasma_ions_total_vol_avg * (ne_profile_y / nd_plasma_electrons_vol_avg)
     ) * (te_profile_y * KILOELECTRON_VOLT * f_temp_plasma_ion_electron)
 
     pres_plasma_thermal_total_profile = (
@@ -344,9 +342,7 @@ def calculate_profile_factors(
     ) * KILOELECTRON_VOLT
 
     # Central plasma current density (A/m^2), assuming a parabolic current profile.
-    j_plasma_on_axis = (
-        plasma_current * 2 / (_beta(0.5, alphaj + 1) * a_plasma_poloidal)
-    )
+    j_plasma_on_axis = plasma_current * 2 / (_beta(0.5, alphaj + 1) * a_plasma_poloidal)
 
     return (
         pres_plasma_thermal_on_axis,
@@ -426,11 +422,7 @@ def _gradient_length(alpha, on_axis_value, rminor):
     # The `0 < alpha <= 1` arm: rho pinned at 0.9, gradient evaluated directly.
     rho_boxy = 0.9
     dvdrho_boxy = (
-        -2.0
-        * alpha
-        * rho_boxy
-        * (1.0 - rho_boxy**2) ** (-1.0 + alpha)
-        * on_axis_value
+        -2.0 * alpha * rho_boxy * (1.0 - rho_boxy**2) ** (-1.0 + alpha) * on_axis_value
     )
 
     rho_max = jnp.where(steep, rho_steep, rho_boxy)
@@ -471,9 +463,7 @@ class ProfileFactors(ExplicitFunction):
     scheme so they read as siblings of it rather than as imports.
     """
 
-    pres_plasma_thermal_on_axis = Output(
-        lambda s: s.physics.pres_plasma_thermal_on_axis
-    )
+    pres_plasma_thermal_on_axis = Output(lambda s: s.physics.pres_plasma_thermal_on_axis)
     pres_plasma_electron_profile = Output(
         lambda s: s.physics.pres_plasma_electron_profile
     )
@@ -485,18 +475,14 @@ class ProfileFactors(ExplicitFunction):
     )
     pres_plasma_fuel_profile = Output(lambda s: s.physics.pres_plasma_fuel_profile)
     alphap = Output(lambda s: s.physics.alphap)
-    pres_plasma_thermal_vol_avg = Output(
-        lambda s: s.physics.pres_plasma_thermal_vol_avg
-    )
+    pres_plasma_thermal_vol_avg = Output(lambda s: s.physics.pres_plasma_thermal_vol_avg)
     j_plasma_on_axis = Output(lambda s: s.physics.j_plasma_on_axis)
 
     def __call__(
         self,
         ne_profile_y=Input(lambda s: s.physics.nd_plasma_electron_profile),
         te_profile_y=Input(lambda s: s.physics.temp_plasma_electron_profile_kev),
-        nd_plasma_electron_on_axis=Input(
-            lambda s: s.physics.nd_plasma_electron_on_axis
-        ),
+        nd_plasma_electron_on_axis=Input(lambda s: s.physics.nd_plasma_electron_on_axis),
         temp_plasma_electron_on_axis_kev=Input(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
@@ -513,9 +499,7 @@ class ProfileFactors(ExplicitFunction):
         nd_plasma_fuel_ions_vol_avg=Input(
             lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
         ),
-        f_temp_plasma_ion_electron=Input(
-            lambda s: s.physics.f_temp_plasma_ion_electron
-        ),
+        f_temp_plasma_ion_electron=Input(lambda s: s.physics.f_temp_plasma_ion_electron),
         temp_plasma_electron_density_weighted_kev=Input(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
@@ -570,9 +554,7 @@ class ParabolicGradientLengths(ExplicitFunction):
         temp_plasma_electron_on_axis_kev=Input(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        nd_plasma_electron_on_axis=Input(
-            lambda s: s.physics.nd_plasma_electron_on_axis
-        ),
+        nd_plasma_electron_on_axis=Input(lambda s: s.physics.nd_plasma_electron_on_axis),
         rminor=Input(lambda s: s.physics.rminor),
     ):
         return calculate_parabolic_gradient_lengths(
@@ -581,4 +563,124 @@ class ParabolicGradientLengths(ExplicitFunction):
             temp_plasma_electron_on_axis_kev,
             nd_plasma_electron_on_axis,
             rminor,
+        )
+
+
+class IonVolAvgTemperature(FixedPointFunction):
+    """cottax node: `calculate_ion_vol_avg_temperature`, as a fixed point.
+
+    **Why a `FixedPointFunction` and not an `ExplicitFunction`.** PROCESS writes
+    `.physics.temp_plasma_ion_vol_avg_kev` **only** when
+    `f_temp_plasma_ion_electron > 0`, and otherwise leaves the input value in place
+    (`process/models/physics/plasma_profiles.py:64-68`). The ported pure function is
+    faithful to that -- it takes the incumbent value as an argument -- which makes the
+    field a read *and* a write of the same node, and `to_graph` refuses that outright.
+    This is `plasma_profiles.md`'s own `conditional-ownership-by-data` classification,
+    and it gets the same treatment as the six `conditional-ownership` fields in
+    `power_B_thermal_cryo.py`: the node owns the field and reads the minted copy, so the
+    "keep the incumbent" arm is a **fixed point** (`u = g(u)`, converging in one Picard
+    step from anywhere) rather than a self-loop.
+
+    That shape is not a formality here, it carries the switch correctly in both
+    directions:
+
+    - `f_temp_plasma_ion_electron > 0` -- `g` does not depend on the unknown at all, so
+      the residual `g(u) - u` has derivative `-1` and the fixed point is well-posed and
+      SAND-solvable.
+    - `f_temp_plasma_ion_electron <= 0` -- `g` is the exact identity, so the residual is
+      structurally zero. `functional_process.sand.degenerate_fixed_points` detects that
+      by differentiation and **drops the problem**, which reverts
+      `.physics.temp_plasma_ion_vol_avg_kev` to an ordinary boundary input -- exactly
+      PROCESS's "use the input value" semantics, recovered from structure rather than
+      declared.
+
+    Registered in `COMMON`, not under `.physics.i_plasma_pedestal`: PROCESS writes this
+    field in `parameterise_plasma` **before** the branch, so it runs in both arms.
+
+    **What registering it fixes.** Before this node existed
+    `.physics.temp_plasma_ion_vol_avg_kev` was a boundary input, so ion temperature was
+    structurally disconnected from `.physics.temp_plasma_electron_vol_avg_kev` --
+    iteration variable 4. Every derivative with respect to that variable was therefore
+    wrong by construction while every *value* was right, which is precisely the defect
+    class only a gradient comparison can find (`_audit/optimise_design.md` §5.2's
+    "x4 column").
+    """
+
+    temp_plasma_ion_vol_avg_kev = Output(lambda s: s.physics.temp_plasma_ion_vol_avg_kev)
+
+    def step(
+        self,
+        f_temp_plasma_ion_electron=Input(lambda s: s.physics.f_temp_plasma_ion_electron),
+        temp_plasma_electron_vol_avg_kev=Input(
+            lambda s: s.physics.temp_plasma_electron_vol_avg_kev
+        ),
+        temp_plasma_ion_vol_avg_kev=Input(
+            lambda s: s.physics.temp_plasma_ion_vol_avg_kev
+        ),
+    ):
+        return calculate_ion_vol_avg_temperature(
+            f_temp_plasma_ion_electron,
+            temp_plasma_electron_vol_avg_kev,
+            temp_plasma_ion_vol_avg_kev,
+        )
+
+
+class ParabolicProfileValues(ExplicitFunction):
+    """cottax node: `calculate_parabolic_profile_values`, the `i_plasma_pedestal == 0`
+    arm of `parameterise_plasma`'s line-average/density-weighted tail.
+
+    An `Alternative` under `.physics.i_plasma_pedestal`, alongside
+    `ParabolicTemperatureProfile`/`ParabolicOnAxisTemperatures`/
+    `ParabolicGradientLengths`, which are already there. `plasma_profiles.md`'s "cottax
+    node" section deferred this one pending open question 1 ("`i_plasma_pedestal` holds
+    two different switch roles across two units"); that question is **settled in
+    practice** -- `total_process.py`'s value-0 arm already co-locates
+    `EcrhDensityLimit(i_plasma_pedestal=0)` with the parabolic profile nodes, so there is
+    exactly one place the value is written and nothing left to reconcile.
+
+    `calculate_pedestal_profile_values` still has no node, so under
+    `i_plasma_pedestal == 1` these five fields stay unproduced. That is the honest state
+    of the port (it needs `profiles.py`'s profile arrays, an unaudited unit), not a
+    silent fallback to the parabolic formula.
+
+    **What registering it fixes**, together with `IonVolAvgTemperature` above: the two
+    density-weighted temperatures were boundary inputs, so `.physics.beta_total_vol_avg`
+    (constraint 24) and every fusion-reactivity quantity had **zero** sensitivity to
+    iteration variable 4. See `IonVolAvgTemperature`'s docstring.
+    """
+
+    f_temp_plasma_electron_density_vol_avg = Output(
+        lambda s: s.physics.f_temp_plasma_electron_density_vol_avg
+    )
+    nd_plasma_electron_line = Output(lambda s: s.physics.nd_plasma_electron_line)
+    temp_plasma_electron_line_avg_kev = Output(
+        lambda s: s.physics.temp_plasma_electron_line_avg_kev
+    )
+    temp_plasma_electron_density_weighted_kev = Output(
+        lambda s: s.physics.temp_plasma_electron_density_weighted_kev
+    )
+    temp_plasma_ion_density_weighted_kev = Output(
+        lambda s: s.physics.temp_plasma_ion_density_weighted_kev
+    )
+
+    def __call__(
+        self,
+        alphan=Input(lambda s: s.physics.alphan),
+        alphat=Input(lambda s: s.physics.alphat),
+        nd_plasma_electrons_vol_avg=Input(
+            lambda s: s.physics.nd_plasma_electrons_vol_avg
+        ),
+        temp_plasma_electron_vol_avg_kev=Input(
+            lambda s: s.physics.temp_plasma_electron_vol_avg_kev
+        ),
+        temp_plasma_ion_vol_avg_kev=Input(
+            lambda s: s.physics.temp_plasma_ion_vol_avg_kev
+        ),
+    ):
+        return calculate_parabolic_profile_values(
+            alphan,
+            alphat,
+            nd_plasma_electrons_vol_avg,
+            temp_plasma_electron_vol_avg_kev,
+            temp_plasma_ion_vol_avg_kev,
         )

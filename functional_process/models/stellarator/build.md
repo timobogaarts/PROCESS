@@ -62,8 +62,28 @@ Names, for cross-reference: `calculate_blktmodel_blanket_thickness`,
 `functional_process/total_process.py`.
 
 `Build.a_fw_total_unadjusted` mints an invented `VarPath`
-(`.first_wall.a_fw_total_unadjusted`) — PROCESS never stores this value, it is a local
-inside `st_build`. Whichever of `AFwTotalNoPowerflow`/`AFwTotalWithPowerflow` is wired in
+(`.first_wall.a_fw_total_unadjusted`) — PROCESS never stores this value.
+
+**Re-checked in the MDA-harness triage (`_audit/next_steps.md` §8.1), and made precise:**
+it is not quite a Python local either. `st_build` assigns the unadjusted area *to the real
+field* `data.first_wall.a_fw_total` (`process/models/stellarator/build.py:166-168`), then
+immediately overwrites the same field in place with the `fhole`-adjusted value in both
+`ipowerflow` arms (`build.py:170-181`). So the unadjusted number exists only between two
+statements; by the end of `st_build` — and therefore in any converged `DataStructure` —
+nothing holds it. The mint is correct and the harness simply cannot check it.
+
+**Near-miss, recorded so it is not "fixed" wrongly later:**
+`process/data_structure/first_wall_variables.py:10` declares
+`a_fw_total_full_coverage`, documented as "First wall total surface area with no holes or
+ports [m^2]" — semantically this exact quantity. It is **not** the right target: nothing
+anywhere in `process/` assigns it (grepped `a_fw_total_full_coverage\s*=`; the only hits
+are reads in the *tokamak* `process/models/fw.py:65,78,223,229,277,283` and one output
+line in `process/models/blankets/hcpb.py:1649`), and
+`tests/regression/input_files/stellarator_helias.IN.DAT` does not set it, so in a
+stellarator run it keeps `DataStructure()`'s `0.0`. Binding to it would produce exactly the
+false comparison `mda_harness.KNOWN_UNVERIFIABLE_OUTPUTS` exists to exclude.
+
+Whichever of `AFwTotalNoPowerflow`/`AFwTotalWithPowerflow` is wired in
 (graph-assembly time, per `ipowerflow`) owns the real `.first_wall.a_fw_total`. This is
 the resolution mechanism `naming_convention.md`'s "switches are not ports" describes:
 neither variant node is instantiated except by the choice made when the graph is built.

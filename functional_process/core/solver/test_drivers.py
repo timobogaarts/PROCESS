@@ -84,7 +84,7 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     )
     temp_blkt_coolant_out = 700.0
     outlet_temp_liq = 700.0
-    (expected,) = node.step(
+    expected = node.step(
         temp_turbine_coolant_in=0.0,  # arbitrary -- ignored in this regime
         temp_blkt_coolant_out=temp_blkt_coolant_out,
         outlet_temp_liq=outlet_temp_liq,

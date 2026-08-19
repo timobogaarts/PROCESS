@@ -20,7 +20,7 @@ rewrites are future work that will consume this document.
 
 ## The environment: `process_port`
 
-**`~/miniconda3/envs/process_port` is the env for this work** — the one place where
+**`process_port` is the env for this work** — the one place where
 `process` and `cottax` are importable in the *same* interpreter. That co-importability is
 the whole point of it: the test harness can call a PROCESS reference function and its JAX
 port in one process and diff them directly, with no serialise-to-golden-file boundary
@@ -30,6 +30,10 @@ raises `PackageNotFoundError`), and only `beerpy` has `cottax` at all.
 
 ```bash
 PY=~/miniconda3/envs/process_port/bin/python   # or: conda activate process_port
+# The conda root differs per machine: if the path above does not exist, try
+#   PY=~/miniconda/envs/process_port/bin/python   (no "3") — this is the live path on
+# at least one machine. Check with `ls -d ~/miniconda*/envs/process_port` before
+# assuming the env is missing; a wrong root looks exactly like a lost env.
 ```
 
 Python 3.12 (cottax needs ≥3.12, PROCESS ≥3.10). Built with:
@@ -72,7 +76,7 @@ $PY -m pytest tests/integration
 $PY -m pytest tests/regression -k large_tokamak   # tracked reference output; clones
                                             # process-tracking-data into a user cache
 cd ~/jaxgraph && $PY -m pytest              # cottax — 307
-~/miniconda3/envs/process_port/bin/ruff check && ... ruff format   # style; see
+$(dirname $PY)/ruff check && $(dirname $PY)/ruff format          # style; see
                                             # standards.md for naming rules
 ```
 

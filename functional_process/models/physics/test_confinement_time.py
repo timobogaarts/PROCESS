@@ -17,9 +17,13 @@ backdoor" technique used throughout this harness.
 """
 
 import pytest
+from cottax.interfaces.pytree_namespace_module import Input
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.physics.confinement_time import (
+    ConfinementTime,
+    StellaratorConfinementTime,
+    _rebound_signature,
     calculate_confinement_time,
     calculate_double_and_triple_product,
     calculate_iter_physics_basis_elongation,
@@ -2124,3 +2128,51 @@ def test_confinement_time_invalid_switches_raise():
         _reference_calculate_confinement_time(**bad)
     with pytest.raises(ValueError, match="Illegal value"):
         calculate_confinement_time(**bad)
+
+
+def test_stellarator_arm_rebinds_only_the_q95_read():
+    """`StellaratorConfinementTime` differs from `ConfinementTime` in exactly one read.
+
+    The regression this pins is the bug itself: PROCESS's `calculate_confinement_time`
+    names its 20th positional parameter `q95`
+    (`process/models/physics/confinement_time.py:79`) and the tokamak caller does pass
+    `.physics.q95`, but the stellarator caller passes `.stellarator.iotabar` into that
+    same slot (`process/models/stellarator/stellarator.py:2312`) -- where ISS04
+    consumes it as `iotabar**0.41`.
+
+    Asserted structurally rather than by value, and *exactly* one difference rather
+    than "the stellarator arm reads iotabar": `_rebound_signature` derives the whole
+    signature from the base, so a future edit to `ConfinementTime` that accidentally
+    rebound a second read would otherwise pass silently here. The outputs are asserted
+    identical because that is what makes the two genuine mutually exclusive `Switch`
+    arms (`configuration.py`'s `check_arms_are_exclusive`).
+    """
+    switches = {"i_confinement_time": 38, "i_rad_loss": 1, "i_plasma_ignited": 1}
+    tokamak = ConfinementTime(**switches)
+    stellarator = StellaratorConfinementTime(**switches)
+
+    tokamak_reads = [i.var.path_str() for i in tokamak.inputs]
+    stellarator_reads = [i.var.path_str() for i in stellarator.inputs]
+
+    assert len(tokamak_reads) == len(stellarator_reads)
+    differences = [
+        (t, s) for t, s in zip(tokamak_reads, stellarator_reads, strict=True) if t != s
+    ]
+    assert differences == [(".physics.q95", ".stellarator.iotabar")]
+    assert tokamak.outputs == stellarator.outputs
+    assert stellarator.name.path_str() == "['StellaratorConfinementTime']"
+
+
+def test_rebound_signature_rejects_an_unknown_parameter():
+    """A `replacements` key that is not a parameter of the base raises at once.
+
+    The point of deriving the signature instead of copying it: if `ConfinementTime`
+    ever renames the parameter this arm rebinds, the rename must fail loudly at import
+    rather than silently leaving the stellarator arm reading `.physics.q95` again --
+    which is precisely the bug that shipped.
+    """
+    with pytest.raises(ValueError, match="no parameter"):
+        _rebound_signature(
+            ConfinementTime.__call__,
+            not_a_parameter=Input(lambda s: s.physics.q95),
+        )

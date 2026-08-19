@@ -27,6 +27,8 @@ thresholds), since `aspect` is a differentiable argument here, not a switch.
 `static_argnames` so `jacfwd` never differentiates through the dispatch itself.
 """
 
+import inspect
+
 import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
@@ -2104,3 +2106,112 @@ class DoubleAndTripleProduct(ExplicitFunction):
             temp_plasma_electrons_vol_avg_kev,
             t_energy_confinement,
         )
+
+
+def _rebound_signature(call, **replacements):
+    """`call`'s signature with the named parameters' `Input` defaults replaced.
+
+    The mechanism a device-mode subclass of a `NodalDeclaration` uses to rebind one
+    read without restating the other 35. `Input` is a *parameter default* on
+    `__call__` (`cottax/interfaces/pytree_namespace_module.py:113-126`), and
+    `ExplicitFunction._params` resolves the reads from `inspect.signature(
+    self.__call__)` (`ibid.:213-215`) -- which honours a `__signature__` attribute --
+    so replacing one default in a derived signature is all a rebinding takes.
+
+    Deriving the signature rather than copying it is the point: a subclass that
+    restated all 36 parameters would silently keep reading the old `VarPath` if the
+    base ever gained, lost or rebound one. Here anything but the named replacement
+    tracks the base automatically, and a `replacements` key that is *not* a parameter
+    of `call` raises immediately -- so a renamed parameter fails loudly at import
+    instead of quietly rebinding nothing.
+
+    Safe to delegate positionally (`Base.__call__(self, *args, **kwargs)`) because
+    `CallableNode`'s body is invoked positionally, in `inputs` order
+    (`cottax/evaluate.py:76`: `node.fn(*_args(env, name, node))`), and `inputs` is
+    built from these same parameters in order (`ibid.:183-185`).
+
+    Not put in `~/jaxgraph` (yet): it is a *caller's* convenience for declaring one
+    node in terms of another, not graph machinery, the same reasoning
+    `_audit/next_steps.md` §8 records for keeping `PicardDriver` in this repo.
+
+    Parameters
+    ----------
+    call :
+        The base declaration's unbound `__call__`.
+    **replacements :
+        `parameter_name=Input(...)` for each read to rebind.
+
+    Returns
+    -------
+    :
+        An `inspect.Signature` to assign to the overriding `__call__`'s
+        `__signature__`.
+
+    Raises
+    ------
+    ValueError
+        If a `replacements` key is not a parameter of `call`.
+    """
+    signature = inspect.signature(call)
+    unseen = dict(replacements)
+    parameters = [
+        parameter.replace(default=unseen.pop(name)) if name in unseen else parameter
+        for name, parameter in signature.parameters.items()
+    ]
+    if unseen:
+        raise ValueError(
+            f"{call.__qualname__} has no parameter(s) {sorted(unseen)} to rebind; "
+            f"its parameters are {sorted(signature.parameters)}"
+        )
+    return signature.replace(parameters=parameters)
+
+
+class StellaratorConfinementTime(ConfinementTime):
+    """`ConfinementTime` with its 20th read bound to `.stellarator.iotabar`.
+
+    **Not a formula change -- the same `calculate_confinement_time` body, reading a
+    different producer.** PROCESS's `calculate_confinement_time` names that parameter
+    `q95` (`process/models/physics/confinement_time.py:79`, the 20th positional), and
+    the *tokamak* caller does pass `.physics.q95`. The stellarator caller passes
+    `self.data.stellarator.iotabar` into the very same slot
+    (`process/models/stellarator/stellarator.py:2312`) -- the parameter is named for
+    the tokamak quantity, but in stellarator mode it carries the rotational
+    transform. `iss04_stellarator_confinement_time` even names its own parameter
+    `iotabar` and raises it to `0.41` (this module, `iss04_stellarator_confinement_
+    time`), so the base class's `.physics.q95` binding fed the ISS04 law a
+    safety factor where PROCESS feeds it a rotational transform.
+
+    **Found by the MDA-vs-PROCESS harness, and confirmed arithmetically, not
+    inferred**: on `stellarator_helias.IN.DAT`'s converged run `q95 = 1.03` and
+    `iotabar = 1.0`, so the base binding overstates `t_energy_confinement` by
+    `1.03**0.41 = 1.0121928428817748` -- against the harness's reported `rel_diff` of
+    `1.219e-02` on `.physics.t_energy_confinement`, and `1.205e-02` on
+    `.physics.f_t_alpha_energy_confinement` downstream (it scales as `1/tau`).
+    `ConfinementTime`'s own docstring had already predicted this exact fix ("a
+    stellarator-mode instantiation of this class would rebind the `q95` input"); it
+    was simply never built, and `total_process.py` registered the base class.
+
+    Why a subclass rather than editing `ConfinementTime`: this module ports ~40
+    scaling laws, most of them tokamak ones for which `.physics.q95` is right, so the
+    binding is genuinely device-dependent and cannot be resolved in one place. Why a
+    subclass rather than a static field on one class: `Input`s are class-level
+    parameter defaults, so an instance's `eqx.field(static=True)` cannot vary them --
+    the declaring class *is* the unit of rebinding, and `NodalDeclaration.name` is
+    `type(self).__name__` (`pytree_namespace_module.py:190-194`), so this arm gets its
+    own node name in the graph for free.
+
+    Registered under `total_process.TOPOLOGY_SWITCHES`'s `.stellarator.istell` switch,
+    not unconditionally -- changing which node produces a read changes an edge, which
+    is `configuration.py`'s own criterion for a topology switch. This class and
+    `ConfinementTime` own byte-identical `Output` sets, so they are genuine mutually
+    exclusive arms and pass `Switch.check_arms_are_exclusive`.
+    """
+
+    def __call__(self, *args, **kwargs):
+        """`ConfinementTime.__call__`'s body, under the rebound signature below."""
+        return ConfinementTime.__call__(self, *args, **kwargs)
+
+    __call__.__signature__ = _rebound_signature(
+        ConfinementTime.__call__,
+        q95=Input(lambda s: s.stellarator.iotabar),
+    )

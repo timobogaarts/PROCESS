@@ -339,11 +339,35 @@ stellarator scalings and all three `i_rad_loss` arms.
   one composite node with two large static-kwarg spaces (this pass's choice, matching
   PROCESS's own granularity) versus 51x3 `Alternative` nodes. Not resolved here;
   flagging for the consolidation pass or a future dedicated design pass.
-- **`q95`'s two producers** (`.physics.q95` tokamak / `.stellarator.iotabar`
-  stellarator) — a device-mode topology question already out of scope per the registry's
-  own scope-rule paragraph (`istell`-gated dispatch, `CLAUDE.md`'s "whole-device mode"
-  variant-dispatch difficulty). The port takes one plain `q95` argument; which producer
-  binds it is the caller's decision.
+- **[RESOLVED] `q95`'s two producers** (`.physics.q95` tokamak / `.stellarator.iotabar`
+  stellarator) — a device-mode topology question, deferred here as the caller's
+  decision. **The caller then got it wrong**: `total_process.py` registered the base
+  `ConfinementTime` unconditionally, binding `.physics.q95`, so the ISS04 branch — whose
+  own parameter is *named* `iotabar` and raises it to `0.41` — was fed a safety factor
+  where PROCESS feeds a rotational transform.
+
+  Found by `mda_harness.py`'s block-by-block comparison, not by this unit's own tests,
+  which structurally cannot see it: every `Tier1Contract` case here passes `q95`
+  positionally to the pure function, and the pure function is correct. Only the
+  *binding* was wrong, and the binding lives in the node declaration. Confirmed
+  arithmetically rather than inferred: on `stellarator_helias.IN.DAT`'s converged run
+  `q95 = 1.03`, `iotabar = 1.0`, and `1.03**0.41 = 1.0121928428817748` against the
+  harness's reported `rel_diff` of `1.219e-02` on `.physics.t_energy_confinement`
+  (`1.205e-02` on `.physics.f_t_alpha_energy_confinement`, which scales as `1/tau`).
+
+  Fixed by `StellaratorConfinementTime`, a subclass rebinding exactly that one read via
+  `_rebound_signature`, registered as the `value=6` arm of `total_process.py`'s
+  `.stellarator.istell` switch. A subclass because `Input`s are class-level `__call__`
+  parameter defaults, so no per-instance static field can vary them; a *derived*
+  signature rather than a restated one so the arm cannot silently drift from the base.
+  `test_confinement_time.py::test_stellarator_arm_rebinds_only_the_q95_read` pins that
+  exactly one read differs.
+
+  **The general lesson, worth carrying**: a positional parameter whose *name* comes from
+  one device's vocabulary is a standing trap in this port. PROCESS calls the slot `q95`
+  in the signature and passes `iotabar` into it; nothing in the pure function's own
+  tests can catch a caller binding the name rather than the role. Any other
+  `calculate_*` with device-dependent call sites deserves the same check.
 - **`USER_INPUT`/`PAZ_SOLDAN_NT` findings are new** and not yet cross-checked against
   whether any tracked regression input file actually sets `i_confinement_time = 0` or
   `51` (if one does, it would currently be hitting/masking these same bugs in real

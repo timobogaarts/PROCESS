@@ -80,9 +80,55 @@ from functional_process.configuration import (
 )
 from functional_process.models.availability import Avail, CplifeAvail
 from functional_process.models.buildings import Bldgs, BldgsSizes, TfCoilEnvelope
+from functional_process.models.costs.costs import (
+    AtmosphericRecoveryCost,
+    AuxiliaryComponentCoolingCost,
+    AuxiliaryFacilityPowerCost,
+    BlanketCost,
+    ConstructedCost,
+    ConvertFpyToCalendar,
+    CostOfElectricity,
+    CryogenicSystemCost,
+    DieselGeneratorsCost,
+    DivertorCost,
+    ElectricPlantEquipmentCost,
+    EnergyStorageCost,
+    FirstWallCost,
+    FuelHandlingCost,
+    FuellingSystemCost,
+    FuelProcessingCost,
+    FusionPowerIslandCost,
+    HeatRejectionCost,
+    HeatTransportSystemCost,
+    IndirectCosts,
+    InstrumentationAndControlCost,
+    LowVoltageCost,
+    MagnetsCost,
+    MaintenanceEquipmentCost,
+    MiscPlantEquipmentCost,
+    NuclearBuildingVentilationCost,
+    PfCoilPowerConditioningCost,
+    PfMagnetCost,
+    PowerConditioningCost,
+    PowerInjectionCost,
+    ReactorCoolingSystemCost,
+    ReactorCost,
+    ReactorStructureCost,
+    ShieldCost,
+    StructuresCost,
+    SwitchyardCost,
+    TfCoilPowerConditioningCost,
+    TfMagnetCostSuperconducting,
+    TotalPlantDirectCost,
+    TransformersCost,
+    TurbinePlantEquipmentCost,
+    VacuumSystemCost,
+    VacuumVesselAssemblyCost,
+)
 from functional_process.models.physics.confinement_time import (
     ConfinementTime,
     DoubleAndTripleProduct,
+    StellaratorConfinementTime,
 )
 from functional_process.models.physics.exhaust import RadiationFraction
 from functional_process.models.physics.fusion_reactions import (
@@ -105,7 +151,9 @@ from functional_process.models.physics.physics_C_outplas import (
     DimensionlessPlasmaParameters,
 )
 from functional_process.models.physics.plasma_profiles import (
+    IonVolAvgTemperature,
     ParabolicGradientLengths,
+    ParabolicProfileValues,
     ProfileFactors,
 )
 from functional_process.models.physics.profiles import (
@@ -140,6 +188,7 @@ from functional_process.models.power_B_thermal_cryo import (
 )
 from functional_process.models.power_C_electric_production import (
     Acpow,
+    PlantElectricProductionReactor,
     PowerProfilesOverTime,
 )
 from functional_process.models.stellarator.build import (
@@ -201,6 +250,7 @@ from functional_process.models.stellarator.stellarator_B_st_phys import (
     NeutronWallLoad,
     PoloidalFieldFromRotationalTransform,
     RadiatedWallLoadAndFraction,
+    StellaratorBetaAndStoredEnergy,
     ThermalEnergyTotals,
     TotalField,
 )
@@ -226,7 +276,177 @@ from functional_process.models.stellarator.stellarator_fwbs_s2 import (
 from functional_process.models.stellarator.stellarator_fwbs_s3 import DivertorPlateMass
 from functional_process.models.vacuum import DuctDiameterRootFind, VacuumOld
 
+COSTS_1990 = (
+    # Registry unit #18, `models/costs/costs.py` -- the whole `.costs.coe` chain, 42 of
+    # `Costs`'s 43 computational methods (`acc2211`..`coelc` plus the two accumulations
+    # `Costs.run()` performs inline). This is the `.costs.i_cost_model == 0`
+    # (`CostModels.PROCESS_1990`) arm of the switch below; see there for why it is an
+    # arm rather than an unconditional `COMMON` entry, and `costs.md`'s coverage map for
+    # the per-method derivation of this list.
+    #
+    # Every static kwarg below is checked against the modelled run on every harness run
+    # by `mda_harness.switch_audit`, so none of them can silently drift the way
+    # `i_confinement_time`/`i_thermal_electric_conversion`/`i_p_coolant_pumping` did
+    # (`next_steps.md` §8.2). Their values here are PROCESS's own bare defaults *and*
+    # the reference run's, except `iohcl` -- flagged individually below.
+    ConvertFpyToCalendar,
+    StructuresCost,  # Account 21
+    # `ife=0` (`ife_variables.py:253`). Each of these five nodes has a real PROCESS
+    # `ife == 1` arm that reads an entirely different set of `.ife.*` fields (2-D
+    # material-mass arrays for the three Account-221 nodes, driver-cost tables for
+    # Account 223, extra cooling loads for 2262, a target-mass model for 2272); none of
+    # `.ife.*` is ported, so the ported functions refuse that value rather than
+    # returning a magnetic-confinement number for an IFE device.
+    FirstWallCost(ife=0),  # Account 221.1
+    BlanketCost(ife=0),  # Account 221.2
+    ShieldCost(ife=0),  # Account 221.3
+    ReactorStructureCost,  # Account 221.4
+    DivertorCost,  # Account 221.5
+    ReactorCost,  # Account 221 total
+    # `supercond_cost_model=0` (`cost_variables.py:552`). **Only the superconducting arm
+    # of `acc2221` is registered.** `TfMagnetCostResistive` is ported (same file) but
+    # not registered: the two arms share no body and read disjoint fields, so they are
+    # two nodes rather than one node with a static `i_tf_sup` kwarg, and pairing them as
+    # a real `Switch` would need that switch to nest inside this one -- nested switches
+    # are a still-open gap (`next_steps.md` §1). `.tfcoil.i_tf_sup == 1` is both
+    # PROCESS's own default (`tfcoil_variables.py:261`) and the reference run's value,
+    # so the registered arm is the right one under either; the `.tfcoil.i_tf_sup`
+    # `Switch` already in this tuple would additionally have to gain a `costs.py` arm
+    # before a resistive run could assemble, which is the honest statement of what is
+    # missing.
+    TfMagnetCostSuperconducting(supercond_cost_model=0),  # Account 222.1
+    # `n_cs_pf_coils=0` (`pfcoil_variables.py:323`) and `iohcl=0` are the two loop
+    # bounds of `acc2222`, which `costs.md` originally recorded as a structural JAX
+    # blocker ("dynamic-length loop"). They are not dynamic: neither is an iteration
+    # variable or a scan variable, so both are graph-assembly-time facts and the loops
+    # unroll at trace time -- the same treatment `ImpurityRadiationTotals.imp_indices`
+    # already gets. **`iohcl=0` is the one deliberate deviation from a PROCESS default
+    # in this tuple** (`build_variables.py:177` says `1`): the reference stellarator run
+    # has no central solenoid, and `switch_audit` confirms `.build.iohcl == 0` on it.
+    # With `n_cs_pf_coils == 0` the default `iohcl = 1` would compute `npf = -1` and
+    # then index `r_pf_coil_middle[-1]`, i.e. price a central solenoid out of the last
+    # (unset) array slot -- reproduced faithfully by the port, but not what this run
+    # does.
+    PfMagnetCost(
+        n_cs_pf_coils=0, iohcl=0, i_pf_conductor=0, supercond_cost_model=0
+    ),  # Account 222.2
+    VacuumVesselAssemblyCost,  # Account 222.3
+    MagnetsCost,  # Account 222 total
+    PowerInjectionCost(ife=0),  # Account 223
+    VacuumSystemCost,  # Account 224
+    TfCoilPowerConditioningCost,  # Account 225.1
+    PfCoilPowerConditioningCost,  # Account 225.2
+    # `i_pulsed_plant=0`/`istore=1` (`pulse_variables.py:30`/`:16`). `istore == 3` is
+    # unported (a third reads-set: `.heat_transport.p_plant_primary_heat_mw`,
+    # `.times.t_plant_pulse_no_burn`, `.pulse.dtstor`) and unreachable here, since a
+    # steady-state plant never enters the `istore` dispatch at all.
+    EnergyStorageCost(i_pulsed_plant=0, istore=1),  # Account 225.3
+    PowerConditioningCost,  # Account 225 total
+    ReactorCoolingSystemCost,  # Account 2261
+    AuxiliaryComponentCoolingCost(ife=0),  # Account 2262
+    CryogenicSystemCost,  # Account 2263
+    HeatTransportSystemCost,  # Account 226 total
+    FuellingSystemCost,  # Account 2271
+    FuelProcessingCost(ife=0),  # Account 2272 -- also the sole producer of
+    # `.physics.wtgpd`, the one field `costs.py` writes outside `.costs.*`.
+    AtmosphericRecoveryCost,  # Account 2273
+    NuclearBuildingVentilationCost,  # Account 2274
+    FuelHandlingCost,  # Account 227 total
+    InstrumentationAndControlCost,  # Account 228
+    MaintenanceEquipmentCost,  # Account 229
+    FusionPowerIslandCost,  # Account 22 total
+    TurbinePlantEquipmentCost,  # Account 23
+    SwitchyardCost,  # Account 241
+    TransformersCost,  # Account 242
+    LowVoltageCost,  # Account 243
+    DieselGeneratorsCost,  # Account 244
+    AuxiliaryFacilityPowerCost,  # Account 245
+    ElectricPlantEquipmentCost,  # Account 24 total
+    MiscPlantEquipmentCost,  # Account 25
+    HeatRejectionCost,  # Account 26
+    TotalPlantDirectCost,  # `.costs.cdirt`, inline in `Costs.run()`
+    IndirectCosts,  # Account 9
+    ConstructedCost,  # `.costs.concost`, inline in `Costs.run()`
+    # `ireactor=1`/`ipnet=0` (`cost_variables.py:521`/`:515`) are preconditions, not
+    # ports: `Costs.run()` calls `coelc()` only when both hold (`costs.py:82-83`), and
+    # the node refuses any other pair rather than producing a `.costs.coe` PROCESS would
+    # have left at its previous value. `itart=0` (`physics_variables.py:994`) selects
+    # the no-centrepost arm; unlike the `ife`/`i_tf_sup` splits above, *both* `itart`
+    # arms are implemented in one function, so this node reads
+    # `.costs.cpstcst`/`cplife_cal`/`cplife` either way -- a deliberate size-aware
+    # deviation from `traceability_policy.md`'s split default, argued in the function's
+    # own docstring.
+    CostOfElectricity(ife=0, itart=0, ireactor=1, ipnet=0),  # `.costs.coe`
+)
+"""`costs.py`'s 1990 cost model: the `.costs.i_cost_model == 0` arm, 43 nodes."""
+
 TOPOLOGY_SWITCHES = (
+    # `.stellarator.istell` -- PROCESS's master pipeline switch (tokamak / stellarator
+    # / IFE), `core/solver/switches.md` § `data.stellarator.istell`. Only ONE block is
+    # filed under it here: `ConfinementTime`'s 20th read. That is not the switch's full
+    # fan-out (switches.md counts 44 sites) -- it is the part this graph currently has
+    # two real arms for, and the switch is declared rather than the binding hardcoded
+    # because changing which node produces a read changes an edge, which is this
+    # module's own criterion for a topology switch (`configuration.py`'s docstring).
+    #
+    # PROCESS names that parameter `q95` and the tokamak caller passes `.physics.q95`,
+    # but the stellarator caller passes `.stellarator.iotabar` into the same positional
+    # slot (`process/models/stellarator/stellarator.py:2312` against the signature at
+    # `process/models/physics/confinement_time.py:79`) -- and ISS04 consumes it as
+    # `iotabar**0.41`. Registering the base class unconditionally therefore fed the
+    # stellarator scaling law a safety factor. Found by `mda_harness.py` and confirmed
+    # arithmetically: `q95 = 1.03`, `iotabar = 1.0`, `1.03**0.41 = 1.01219284...` against
+    # the harness's reported `rel_diff` of `1.219e-02`.
+    #
+    # `default=0` is PROCESS's own (`stellarator_variables.py:46`), per the
+    # `Switch.default` contract -- so the *bare* `GRAPH` keeps the tokamak binding.
+    # **Every stellarator consumer must pass
+    # `Configuration({".stellarator.istell": 6})`**; the MDA harness
+    # does (`run_mda_harness.py`), matching `stellarator_helias.IN.DAT:137`. Note the
+    # rest of this module's registrations are stellarator models regardless of this
+    # switch -- the bare-default graph was already device-incoherent in that sense and
+    # this switch does not fix that, it just stops one binding from being silently wrong.
+    Switch(
+        path=".stellarator.istell",
+        default=0,  # `stellarator_variables.py:46`
+        alternatives=(
+            Alternative(
+                value=0,
+                declarations=(
+                    ConfinementTime(
+                        i_confinement_time=38, i_rad_loss=1, i_plasma_ignited=1
+                    ),
+                ),
+            ),
+            Alternative(
+                value=6,
+                declarations=(
+                    StellaratorConfinementTime(
+                        i_confinement_time=38, i_rad_loss=1, i_plasma_ignited=1
+                    ),
+                ),
+            ),
+            *(
+                Alternative(
+                    value=value,
+                    unported=(
+                        "`istell` in 1..5 selects one of five hardcoded machine presets "
+                        "(Helias 5/4/3, W7-X 30/50) copied onto "
+                        "`StellaratorConfigData` by "
+                        "`preset_config.py`'s reflective `hasattr`/`setattr` loop; only "
+                        "`istell == 6` (config read from file) is in scope. See "
+                        "`core/solver/switches.md` § `data.stellarator.istell` -- "
+                        "second role, whose disposition is still open in "
+                        "`_audit/next_steps.md` § 2. "
+                        "The confinement-time binding itself would be identical to the "
+                        "`value=6` arm; it is the surrounding preset data that is "
+                        "unported"
+                    ),
+                )
+                for value in (1, 2, 3, 4, 5)
+            ),
+        ),
+    ),
     Switch(
         path=".stellarator.isthtr",
         default=1,  # `stellarator_variables.py:87`
@@ -273,6 +493,17 @@ TOPOLOGY_SWITCHES = (
                     ParabolicOnAxisDensities,
                     ParabolicOnAxisTemperatures,
                     ParabolicGradientLengths,
+                    # `ParabolicProfileValues` -- the line-average/density-weighted tail
+                    # of `parabolic_parameterisation`. `plasma_profiles.md`'s "cottax
+                    # node" section deferred it pending that record's open question 1
+                    # ("`i_plasma_pedestal` holds two different switch roles"); the
+                    # comment above on `EcrhDensityLimit(i_plasma_pedestal=0)` is that
+                    # question's answer for this switch's only instance, so the blocker
+                    # is gone. Without it `.physics.temp_plasma_electron_density_
+                    # weighted_kev`/`temp_plasma_ion_density_weighted_kev` were boundary
+                    # inputs and iteration variable 4 had no path into fusion
+                    # reactivity or beta -- see that class's docstring.
+                    ParabolicProfileValues,
                 ),
             ),
             Alternative(
@@ -387,6 +618,135 @@ TOPOLOGY_SWITCHES = (
                     "same node set. Kept as a separate, unported value rather than a "
                     "second Alternative pointing at TfPowerResistive so this switch "
                     "does not fail test_arms_select_different_node_sets."
+                ),
+            ),
+        ),
+    ),
+    # `.costs.i_cost_model` -- which cost model runs at all. Resolved in exactly one
+    # place in PROCESS, `process/main.py`'s `Models.costs` `@property` (lines 745-764),
+    # which picks a whole `Model` instance *before* any model runs and injects it;
+    # neither `costs.py` nor `costs_2015.py` reads the switch internally (grepped, zero
+    # hits in either), and `stellarator.py` only ever calls `self.costs.run()` on
+    # whatever was injected (`stellarator.py:176`, the solve-time call). So this is a
+    # textbook topology switch -- `_audit/schema.md`'s own switch template names it as
+    # the precedent -- and the two arms are genuinely disjoint subgraphs: `costs.py`
+    # writes 114 distinct `.costs.*` fields, `costs_2015.py` writes 4 `.costs_2015.*`
+    # scalars plus a 100-slot `s_*` array, and the *only* two `VarPath`s both write are
+    # `.costs.coe` and `.costs.concost`.
+    #
+    # **What changed since `costs.md`/`unit_registry.md` last recorded this as "not
+    # wireable yet".** That reasoning was right on its own terms and is now obsolete on
+    # both counts. (a) It said the two ported *subsets* shared no output, so
+    # `check_arms_are_exclusive` would reject the pairing -- true when only 23 leaf
+    # sub-accounts were ported, no longer relevant now that this arm owns
+    # `.costs.coe`/`.costs.concost` themselves and `costs_2015.py` has no arm to pair
+    # against at all (a single-ported-arm switch has no pair to check). (b) It said
+    # unconditional registration "would reproduce the `EcrhDensityLimit` bug class,
+    # since `i_cost_model = 1` by default means `costs.py`'s `Costs` model never even
+    # runs" -- correct about PROCESS's *bare* default, but that is not the run this
+    # project validates against: `tests/regression/input_files/
+    # stellarator_helias.IN.DAT:229` selects `i_figure_merit = 6`
+    # (`FiguresOfMerit.COST_OF_ELECTRICITY`, i.e. minimise `.costs.coe`) and line 248
+    # sets `i_cost_model = 0` explicitly, with the file's own comment: "0: 1990 cost
+    # module, the 2015 does not work yet for stellarators". So `costs.py` is the right
+    # arm for every stellarator run in scope, and it is the arm PROCESS itself insists
+    # on for them.
+    #
+    # **Why the default arm is `unproduced` rather than `unported`.** `GRAPH` is built
+    # at import time from the bare default configuration (bottom of this module), so an
+    # `unported` default arm would raise `NotImplementedError` on `import
+    # functional_process.total_process` and break the package. Three ways out were
+    # weighed:
+    #
+    #   1. *Register the 43 nodes unconditionally in `COMMON`.* Rejected: the default
+    #      `GRAPH` would then compute `.costs.coe` with the 1990 model on a
+    #      configuration where PROCESS computes it with the 2015 one. That is worse than
+    #      the `EcrhDensityLimit`/`WardTaylorAvailability` bug class the registry warns
+    #      about twice -- those computed a value the default configuration never
+    #      computes; this would compute a *different number for the same field*.
+    #   2. *Change what `graph_for()`'s bare default means* (e.g. `GRAPH =
+    #      graph_for(REFERENCE_CONFIGURATION)`, or making `GRAPH` lazy so the bare
+    #      default is allowed to fail). Structurally the most honest answer -- asking
+    #      for PROCESS's bare-default configuration *should* fail, because it is not
+    #      fully ported -- but it changes a shared contract (`Switch.default`'s "a
+    #      silent IN.DAT reproduces PROCESS's own defaults", pinned by
+    #      `test_default_configuration_matches_process_defaults`) and every one of
+    #      `test_configuration.py`'s per-switch parametrised assemblies, `test_mda.py`,
+    #      `mda.py`'s default argument and `render_xdsm.py` would have to carry a
+    #      configuration. Left on the table deliberately, not taken here: it is the
+    #      user's call, not a change to make as a side effect of porting `coelc`.
+    #   3. *An arm that assembles as empty* -- taken. It says exactly what is true: in
+    #      the `KOVARI_2014` configuration this port computes no cost of electricity at
+    #      all, so `.costs.coe` has no producer and any consumer of it shows up as an
+    #      unowned (boundary) input rather than being silently handed the 1990 number.
+    #      The default `GRAPH` is byte-for-byte the graph it was before this arm
+    #      existed, so nothing that depended on it moves.
+    #
+    # See `configuration.py`'s `Alternative` docstring for the `unported`/`unproduced`
+    # distinction, and `_audit/next_steps.md` §9 for the write-up.
+    Switch(
+        path=".costs.ireactor",
+        default=1,  # `cost_variables.py:521`
+        alternatives=(
+            # `ireactor == 0`: PROCESS does *not* compute the five electric-production
+            # fields at all (`process/models/power.py`'s `plant_electric_production`
+            # guards them with `if ireactor == 1`), so on this arm they keep whatever
+            # they entered the call with and only the *profiles* are produced. That is
+            # exactly `PowerProfilesOverTime`, which reads the two carried-over values
+            # (`p_plant_electric_gross_mw`, `p_plant_electric_net_mw`) as boundary
+            # inputs -- the honest shape for an arm where nothing in the graph produces
+            # them.
+            Alternative(value=0, declarations=(PowerProfilesOverTime,)),
+            # `ireactor == 1`: the five are computed before use, so the entering values
+            # are dead and the node is ordinary and acyclic. See
+            # `PlantElectricProductionReactor`'s own docstring for why
+            # `PlantElectricProduction` itself is not registerable and why splitting on
+            # this switch (rather than a `FixedPointFunction`, the treatment
+            # `power_B_thermal_cryo.py`'s six `*Step` nodes get) is the correct answer
+            # here: this is not a fixed point, it is a static switch selecting whether a
+            # read exists.
+            Alternative(
+                value=1,
+                declarations=(
+                    PlantElectricProductionReactor(
+                        itart=0,  # `.physics.itart`, `physics_variables.py:994`
+                        i_tf_sup=1,  # `.tfcoil.i_tf_sup`
+                        i_blkt_dual_coolant=0,  # `.fwbs.i_blkt_dual_coolant`
+                        i_p_coolant_pumping=1,  # `.heat_transport.i_p_coolant_pumping`
+                    ),
+                ),
+            ),
+        ),
+    ),
+    Switch(
+        path=".costs.i_cost_model",
+        default=1,  # `cost_variables.py:327`, `CostModels.KOVARI_2014`
+        alternatives=(
+            Alternative(value=0, declarations=COSTS_1990),  # PROCESS_1990
+            Alternative(
+                value=1,  # KOVARI_2014
+                unproduced=(
+                    "costs_2015.py has no cottax nodes at all (2 of its 13 methods are "
+                    "ported as plain functions; the 8 `calc_*` methods that fill its "
+                    "100-slot `s_cost` array, and the `total_costs`/`coe` accumulation "
+                    "on top of them, are not). Assembling this arm therefore leaves "
+                    ".costs.coe and .costs.concost without a producer, which is the "
+                    "true state of this port -- registering costs.py's 1990-model "
+                    "nodes here instead would compute the same two fields by the wrong "
+                    "cost model. stellarator_helias.IN.DAT:248 selects i_cost_model = "
+                    "0 for exactly this reason ('the 2015 does not work yet for "
+                    "stellarators'), so no run in this project's scope needs this arm."
+                ),
+            ),
+            Alternative(
+                value=2,  # USER_PROVIDED
+                unported=(
+                    "i_cost_model == 2 injects a user-supplied Model instance at "
+                    "runtime (process/main.py's `costs` setter, lines 766-768) -- there "
+                    "is no PROCESS-side subgraph to port at all, so no arm can exist "
+                    "here. Refused rather than assembled empty: unlike KOVARI_2014, a "
+                    "caller asking for this has a model in mind that this graph has "
+                    "never seen."
                 ),
             ),
         ),
@@ -529,9 +889,23 @@ COMMON = (
     # at 0/1) is resolved without any `Cut`/`FixedPoint` machinery at all -- per-index
     # `VarPath`s (`s.impurity_radiation.f_nd_impurity_electron_array[i]`) make the read
     # and write ranges genuinely disjoint `VarPath`s, not one whole-array self-reference.
-    # `is_ignited=False` matches `physics_variables.py:881`'s default
-    # (`i_plasma_ignited = 0`, `ConfinementTime`'s same default above).
-    PlasmaComposition(is_ignited=False),
+    # `is_ignited=True` -- **not** `physics_variables.py:881`'s bare default
+    # (`i_plasma_ignited = 0`, NON_IGNITED). `stellarator_helias.IN.DAT:126` sets
+    # `i_plasma_ignited = 1` (IGNITED), and the converged run confirms it: the
+    # `switch_audit` check `mda_harness.py` now runs over every registered static kwarg
+    # reported `registered=False but .physics.i_plasma_ignited == True`. Same defect
+    # class as `i_confinement_time`/`i_thermal_electric_conversion` below -- a bare
+    # `*_variables.py` default copied uncritically into a registration.
+    # `is_ignited` is `bool`, not the raw `int` switch, because
+    # `physics_B_composition.py:134-136`'s port maps it to PROCESS's own
+    # `PlasmaIgnitionModel(i_plasma_ignited) == NON_IGNITED` compare; `True` here means
+    # IGNITED (`physics_variables.py:45-49`).
+    # Checked before flipping, same discipline as `i_thermal_electric_conversion`
+    # below: the IGNITED arm needs no input this port does not already wire --
+    # `physics_B_composition.py:219-222` is `nd_beam_ions = 0` under `is_ignited`
+    # versus `nd_plasma_electrons_vol_avg * f_nd_beam_electron` otherwise, so the
+    # ignited arm reads a strict *subset* of the non-ignited arm's inputs.
+    PlasmaComposition(is_ignited=True),
     CalculateEffectiveChargeIonisationProfiles,
     # unit #9 chunk C, physics/physics_C_outplas.py -- the one real computation inside
     # the 1095-line `outplas` reporting method.
@@ -558,8 +932,24 @@ COMMON = (
     # (tokamak and stellarator scaling laws both); a real `Switch`/`Alternative` covering
     # more of them is a separate, larger follow-up, not done here -- `38` is the
     # pragmatic, scope-appropriate single default for now, same discipline as
-    # `i_rad_loss=1`/`i_plasma_ignited=0` below.
-    ConfinementTime(i_confinement_time=38, i_rad_loss=1, i_plasma_ignited=0),
+    # `i_rad_loss=1` alongside it.
+    #
+    # `i_plasma_ignited=1` (IGNITED) -- **not** `physics_variables.py:881`'s bare
+    # default `0`, which is what this registration originally carried. Found by
+    # `mda_harness.py`'s `switch_audit`, the systemic check added for exactly this
+    # defect class; `stellarator_helias.IN.DAT:126` sets `i_plasma_ignited = 1`.
+    # This was the sole cause of the residual ~1.2% `t_energy_confinement`/`ntau`
+    # disagreement `next_steps.md` §8 previously listed as open and undiagnosed:
+    # `confinement_time.py:1333-1334` adds `p_hcd_injected_total_mw` into
+    # `p_plasma_loss_mw` only under NON_IGNITED, so registering `0` inflated the loss
+    # power PROCESS's real ignited run never adds, and `t_energy_confinement` (and
+    # everything scaled by it) came out correspondingly off.
+    # Checked before flipping, same discipline as `i_thermal_electric_conversion`:
+    # the IGNITED arm simply *omits* that one addition -- it reads a strict subset of
+    # the NON_IGNITED arm's inputs, so it needs nothing this port does not wire.
+    # **Not registered here**: `ConfinementTime`/`StellaratorConfinementTime` are
+    # arms of `TOPOLOGY_SWITCHES`'s `.stellarator.istell` switch -- see that switch
+    # for why the device mode decides which node produces this block's 20th read.
     DoubleAndTripleProduct,
     # unit #11, physics/exhaust.py
     RadiationFraction,
@@ -585,16 +975,22 @@ COMMON = (
     # asserted by this graph.
     DuctDiameterRootFind(),
     # `stellarator_B_st_phys.py` (chunk 1B of unit #1). `StellaratorBetaAndRhoStar` is
-    # deliberately NOT registered: its `.physics.rho_star` output is algebraically
-    # identical to `DimensionlessPlasmaParameters`'s own `rho_star` formula above (same
-    # inputs, same expression, confirmed by direct comparison) -- a genuine
-    # redundant-duplicate-write in PROCESS itself (`st_phys` and `outplas` both compute
-    # it), not a porting choice. Registering both would be a duplicate-ownership
-    # conflict, the same shape as `IterPhysicsBasisElongation`/`ConfinementTime`'s
-    # `kappa_ipb` above -- `StellaratorBetaAndRhoStar` is the one left out, since
-    # `DimensionlessPlasmaParameters` was already registered. This also leaves
-    # `.physics.beta_total_vol_avg`/`.physics.e_plasma_beta` without a producer in this
-    # graph for now -- flagged, not resolved (see the registry).
+    # still NOT registered: its `.physics.rho_star` output is algebraically identical to
+    # `DimensionlessPlasmaParameters`'s own `rho_star` formula above (same inputs, same
+    # expression, confirmed by direct comparison) -- a genuine redundant-duplicate-write
+    # in PROCESS itself (`st_phys` and `outplas` both compute it), not a porting choice.
+    # Registering both would be a duplicate-ownership conflict, the same shape as
+    # `IterPhysicsBasisElongation`/`ConfinementTime`'s `kappa_ipb` above.
+    #
+    # **What is new: dropping that node used to cost `.physics.beta_total_vol_avg` and
+    # `.physics.e_plasma_beta` their only producer as collateral.** They are not in
+    # conflict with anything -- only `rho_star` was. `StellaratorBetaAndStoredEnergy`
+    # (same pure function, same 13 inputs, `rho_star`'s return value discarded) owns
+    # exactly those two and is registered instead. `.physics.beta_total_vol_avg` is
+    # constraint 24's only argument, one of the 14 active constraints of the reference
+    # run, so this is what makes that constraint assemblable at all -- see that class's
+    # own docstring.
+    StellaratorBetaAndStoredEnergy,
     PoloidalFieldFromRotationalTransform,
     TotalField,
     FusionPowerTotalsMw,
@@ -605,7 +1001,14 @@ COMMON = (
     # field; kept matching `.heat_transport.ipowerflow`'s own registered default above
     # for consistency, not because it changes anything here.
     NeutronWallLoad(i_pflux_fw_neutron=1, ipowerflow=1),
-    HeatingAndRadiationPower(i_plasma_ignited=0),  # `physics_variables.py:881` default
+    # `i_plasma_ignited=1` (IGNITED, `stellarator_helias.IN.DAT:126`) -- **not**
+    # `physics_variables.py:881`'s bare default `0`, which this registration used to
+    # carry. Third site of the same mismatch (`PlasmaComposition`/`ConfinementTime` are
+    # the other two), all three found together by `mda_harness.py`'s `switch_audit`.
+    # Checked before flipping: `stellarator_B_st_phys.py:273-274` adds
+    # `p_hcd_injected_total_mw` into `powht` only under NON_IGNITED, so the IGNITED arm
+    # reads a strict subset of the inputs -- nothing new to wire.
+    HeatingAndRadiationPower(i_plasma_ignited=1),
     RadiatedWallLoadAndFraction(i_pflux_fw_neutron=1, ipowerflow=1),
     ThermalEnergyTotals,
     # `stellarator_C_geometry.py` (chunk 1C of unit #1). `DefaultAspectRatio` is the
@@ -657,12 +1060,26 @@ COMMON = (
     # the same `VarPath` later in the same PROCESS call) -- already split this session
     # into their own `FixedPointFunction`s, same "Shape B" treatment as
     # `plasma_composition`'s `first_call`/`Avail`'s `cplife` above.
-    # `i_p_coolant_pumping=2`/`i_blkt_dual_coolant=0`/`i_blanket_type=1`/
-    # `secondary_cycle_liq=4` all match `fwbs_variables.py`'s own defaults (lines 249,
-    # 526, 70, 273) -- `i_p_coolant_pumping` is known to disagree with at least one real
-    # run (`stellarator_helias.IN.DAT` sets `i_p_coolant_pumping = 1`, `FRACTION_OF_HEAT`,
-    # not `2`/`MECHANICAL`), found by the same MDA-vs-PROCESS harness pass as the fix
-    # just below but out of this pass's scope -- flagged, not fixed, here.
+    # `i_blkt_dual_coolant=0`/`i_blanket_type=1`/`secondary_cycle_liq=4` match
+    # `fwbs_variables.py`'s own defaults (lines 526, 70, 273) and agree with this run,
+    # confirmed by `mda_harness.py`'s `switch_audit`.
+    #
+    # `i_p_coolant_pumping=1` (`PumpingPowerModelTypes.FRACTION_OF_HEAT`,
+    # `power.py:23`) -- **not** `fwbs_variables.py:249`'s bare default `2`
+    # (`MECHANICAL`), which all four registrations below used to carry.
+    # `stellarator_helias.IN.DAT:198` sets `1`. Flagged but not fixed by the pass that
+    # corrected `i_thermal_electric_conversion`; fixed here, and now checked
+    # automatically rather than by luck (`switch_audit`). Checked before flipping,
+    # same discipline: the two switch-dependent bodies are conditional-ownership
+    # pass-throughs, and value `1` selects the *recompute* side of both, out of
+    # arguments these nodes already take --
+    # `calculate_p_fw_blkt_coolant_pump_mw` (`power_B_thermal_cryo.py:206-211`)
+    # returns `p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw` for `1 not in
+    # {MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`, and
+    # `calculate_p_fw_div_heat_deposited_mw` (`power_B_thermal_cryo.py:308-310`)
+    # returns `p_fw_heat_deposited_mw + p_div_heat_deposited_mw` for
+    # `1 != MECHANICAL_WITH_PRESSURE_DROP`. Both operands are already `Input`s (or
+    # rebuilt from `Input`s) on every node below, so no arm has a hole in it.
     #
     # `i_thermal_electric_conversion=2` (`ElectricConversionModelTypes.USER_INPUT`) --
     # **not** `0` (`CCFE_HCPB_VALUE`, `fwbs_variables.py:264`'s bare default). Found and
@@ -683,22 +1100,22 @@ COMMON = (
     # `ElectricConversionModelTypes`'s 5 values is a separate, larger follow-up, not
     # done here.
     ComponentThermalPowers(
-        i_p_coolant_pumping=2,
+        i_p_coolant_pumping=1,
         i_blkt_dual_coolant=0,
         i_thermal_electric_conversion=2,
         i_blanket_type=1,
         secondary_cycle_liq=4,
     ),
     DeltaEtaStep(
-        i_p_coolant_pumping=2, i_blkt_dual_coolant=0, i_thermal_electric_conversion=2
+        i_p_coolant_pumping=1, i_blkt_dual_coolant=0, i_thermal_electric_conversion=2
     ),
     EtaTurbineStep(i_thermal_electric_conversion=2, i_blanket_type=1),
     EtathLiqStep(secondary_cycle_liq=4),
     TempTurbineCoolantInStep(
         i_thermal_electric_conversion=2, i_blanket_type=1, secondary_cycle_liq=4
     ),
-    PFwDivHeatDepositedMwStep(i_p_coolant_pumping=2),
-    PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=2),
+    PFwDivHeatDepositedMwStep(i_p_coolant_pumping=1),
+    PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=1),
     # `PlantThermalEfficiency`/`PlantThermalEfficiency2` (the raw, un-split
     # `ExplicitFunction`s `EtaTurbineStep`/`EtathLiqStep`/`TempTurbineCoolantInStep` are
     # extracted from) are NOT registered: each is *itself* a genuine, still-unresolved
@@ -719,16 +1136,8 @@ COMMON = (
     # `power_C_electric_production.py` (unit #14 chunk C). `i_pf_energy_storage_source=2`
     # matches `pf_power_variables.py:18`'s default.
     Acpow(i_pf_energy_storage_source=2),
-    # `PowerProfilesOverTime`'s whole output set is a strict subset of
-    # `PlantElectricProduction`'s (the real PROCESS caller, `plant_electric_production`,
-    # calls `power_profiles_over_time` internally) -- registered here on its own since
-    # `PlantElectricProduction` itself is NOT registerable: found this pass, it owns
-    # *and* reads five more fields (`p_plant_electric_gross_mw`, `p_turbine_loss_mw`,
-    # `p_plant_electric_recirc_mw`, `p_plant_electric_net_mw`,
-    # `f_p_plant_electric_recirc`), a third genuine still-unresolved self-loop alongside
-    # `Cryo`/`CryoLoads` above, confirmed directly via `to_graph`. Left
-    # ported-but-unregistered.
-    PowerProfilesOverTime,
+    # `PowerProfilesOverTime`/`PlantElectricProductionReactor` are the two arms of the
+    # `.costs.ireactor` `Switch` below, not `COMMON` members -- see that switch.
     # `availability.py` (unit #17). `Stellarator.run()`'s solve-time branch calls
     # `self.availability.avail()` directly (`stellarator.py:175`), bypassing
     # `.costs.i_plant_availability`'s dispatch entirely -- so `Avail` (not `Avail2`/
@@ -754,17 +1163,82 @@ COMMON = (
     # `cost_variables.py:416`/`physics_variables.py:994`'s defaults.
     Avail(ibkt_life=0, itart=0),
     CplifeAvail(i_tf_sup=1, itart=0),
+    # `plasma_profiles.py`. In `COMMON` and not under `.physics.i_plasma_pedestal`:
+    # PROCESS writes `.physics.temp_plasma_ion_vol_avg_kev` in `parameterise_plasma`
+    # *before* the branch, so it runs in both arms. A `FixedPointFunction` rather than an
+    # `ExplicitFunction` because the field is conditionally owned by *data*
+    # (`f_temp_plasma_ion_electron > 0`) -- see the class's own docstring for why that is
+    # the honest shape and not a workaround.
+    IonVolAvgTemperature(),
 )
 """Nodes present in every configuration -- everything no topology switch gates."""
 
 
+REFERENCE_INPUT_FILE = "tests/regression/input_files/stellarator_helias.IN.DAT"
+"""The run this whole port is validated against -- `mda_harness.py`, `mda_constraint_
+harness.py` and every number in `_audit/next_steps.md` \u00a7 8 use it. Named here so
+`REFERENCE_CONFIGURATION` can be checked against it mechanically instead of by eye."""
+
+REFERENCE_CONFIGURATION = Configuration({
+    ".stellarator.istell": 6,  # `stellarator_helias.IN.DAT:137`
+    ".stellarator.isthtr": 1,  # `:139` -- equals `Switch.default`, listed anyway
+    ".physics.i_plasma_pedestal": 0,  # `:118`
+    ".costs.i_cost_model": 0,  # `:248`
+    ".costs.ireactor": 1,  # `:245` -- equals `Switch.default`, listed anyway
+})
+"""The topology-switch choices `REFERENCE_INPUT_FILE` actually makes.
+
+**Every switch the input file sets explicitly is listed, including ones whose value
+happens to equal `Switch.default`** (`isthtr = 1`). Listing them regardless makes this a
+faithful transcription of the file rather than a diff against PROCESS's defaults, and
+means a future change to a `Switch.default` cannot silently move the reference run.
+Switches the file never mentions are deliberately absent: they fall through to
+`Switch.default`, which is exactly what a real run does for a variable a silent IN.DAT
+never sets. `test_configuration.py::
+test_reference_configuration_matches_the_input_file` parses the file and checks this
+dict against it, so the two cannot drift.
+
+**Why this exists, and why `graph_for()` defaults to it rather than to `Configuration()`.**
+Five separate registration bugs in this project shared one root cause: a value copied
+from PROCESS's bare `*_variables.py` default rather than from the run being modelled --
+`i_confinement_time` (34 vs 38), `i_thermal_electric_conversion` (0 vs 2),
+`i_p_coolant_pumping` (2 vs 1), `i_plasma_ignited` (0 vs 1), and `i_cost_model` (1 vs 0,
+which left `.costs.coe` with no producer and 43 nodes unregistered). Each was found by
+the MDA harness, individually, after the fact. Making the *bare* graph mean "PROCESS's
+silent-IN.DAT defaults" put that trap directly in the path of anyone assembling a graph
+without thinking about it -- while every consumer that mattered (the harness, the SAND
+prototype) had to remember to pass a configuration, and the ones that forgot were the
+bugs. Reversing the default puts the burden where the unusual case is.
+
+`PROCESS_DEFAULT_CONFIGURATION` below is still available, still meaningful, and still
+tested -- the silent-IN.DAT graph is a real thing to want, just not the thing this
+project's own tooling should get by accident."""
+
+PROCESS_DEFAULT_CONFIGURATION = Configuration()
+"""Every switch at its own `Switch.default`, i.e. the graph a silent IN.DAT produces.
+`Switch.default` remains PROCESS's own value read from `process/data_structure/`, and
+`test_configuration.py::test_switch_defaults_match_process` checks each one against the
+cited field -- changing `graph_for()`'s default does not weaken that contract."""
+
+
 def graph_for(configuration=None):
-    """The assembled graph for one configuration; PROCESS's defaults if unstated."""
-    return build_graph(configuration or Configuration(), COMMON, TOPOLOGY_SWITCHES)
+    """The assembled graph for one configuration; `REFERENCE_CONFIGURATION` if unstated.
+
+    **Not `Configuration()`** -- see `REFERENCE_CONFIGURATION`'s docstring for the five
+    bugs that choice caused. Pass `PROCESS_DEFAULT_CONFIGURATION` explicitly for the
+    silent-IN.DAT graph.
+    """
+    return build_graph(
+        REFERENCE_CONFIGURATION if configuration is None else configuration,
+        COMMON,
+        TOPOLOGY_SWITCHES,
+    )
 
 
 GRAPH = graph_for()
-"""The default configuration's graph: `isthtr = 1` (ECRH), `ipowerflow = 1`."""
+"""`REFERENCE_CONFIGURATION`'s graph -- the `stellarator_helias.IN.DAT` run this port is
+validated against (`istell = 6`, `i_plasma_pedestal = 0`, `i_cost_model = 0`; every other
+switch at PROCESS's own default)."""
 
 if __name__ == "__main__":
     n_vars = sum(

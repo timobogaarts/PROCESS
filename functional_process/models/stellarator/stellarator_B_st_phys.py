@@ -407,7 +407,9 @@ class StellaratorBetaAndRhoStar(ExplicitFunction):
         temp_plasma_electron_density_weighted_kev=Input(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
-        nd_plasma_ions_total_vol_avg=Input(lambda s: s.physics.nd_plasma_ions_total_vol_avg),
+        nd_plasma_ions_total_vol_avg=Input(
+            lambda s: s.physics.nd_plasma_ions_total_vol_avg
+        ),
         temp_plasma_ion_density_weighted_kev=Input(
             lambda s: s.physics.temp_plasma_ion_density_weighted_kev
         ),
@@ -510,9 +512,7 @@ class HeatingAndRadiationPower(ExplicitFunction):
         p_plasma_ohmic_mw=Input(lambda s: s.physics.p_plasma_ohmic_mw),
         pden_plasma_rad_mw=Input(lambda s: s.physics.pden_plasma_rad_mw),
         vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        p_hcd_injected_total_mw=Input(
-            lambda s: s.current_drive.p_hcd_injected_total_mw
-        ),
+        p_hcd_injected_total_mw=Input(lambda s: s.current_drive.p_hcd_injected_total_mw),
         f_rad=Input(lambda s: s.stellarator.f_rad),
     ):
         return calculate_heating_and_radiation_power(
@@ -555,9 +555,7 @@ class RadiatedWallLoadAndFraction(ExplicitFunction):
         p_alpha_total_mw=Input(lambda s: s.physics.p_alpha_total_mw),
         p_non_alpha_charged_mw=Input(lambda s: s.physics.p_non_alpha_charged_mw),
         p_plasma_ohmic_mw=Input(lambda s: s.physics.p_plasma_ohmic_mw),
-        p_hcd_injected_total_mw=Input(
-            lambda s: s.current_drive.p_hcd_injected_total_mw
-        ),
+        p_hcd_injected_total_mw=Input(lambda s: s.current_drive.p_hcd_injected_total_mw),
     ):
         return calculate_radiated_wall_load_and_fraction(
             self.i_pflux_fw_neutron,
@@ -601,3 +599,77 @@ class ThermalEnergyTotals(ExplicitFunction):
             e_plasma_electrons_thermal,
             e_plasma_ions_thermal,
         )
+
+
+class StellaratorBetaAndStoredEnergy(ExplicitFunction):
+    """cottax node: `calculate_stellarator_beta_and_rho_star` minus its `rho_star`
+    output -- the registerable form of `StellaratorBetaAndRhoStar` above.
+
+    `StellaratorBetaAndRhoStar` cannot be registered alongside
+    `DimensionlessPlasmaParameters`: both own `.physics.rho_star`, and `Graph`
+    refuses two producers for one variable. That is a **redundant duplicate write in
+    PROCESS itself** -- `st_phys` and `outplas` compute `rho_star` from the same
+    inputs by the same expression -- not a modelling disagreement, so dropping one of
+    the two writes loses nothing. `total_process.py` used to drop the whole node,
+    which also cost `.physics.beta_total_vol_avg` and `.physics.e_plasma_beta` their
+    only producer; this class drops only the redundant output.
+
+    The two surviving outputs are computed by the same pure function, whose third
+    return value is discarded here (XLA eliminates the dead `sqrt` -- nothing else in
+    the body feeds `beta_total_vol_avg`/`e_plasma_beta` from it). Splitting the pure
+    function in two was rejected: `rho_star`'s formula shares no sub-expression with
+    the other two, so a split would buy nothing the discard does not, and would
+    invalidate `stellarator_B_st_phys.md`'s data-footprint row for a function PROCESS
+    genuinely computes as one block.
+
+    `.physics.beta_total_vol_avg` is constraint 24's only argument
+    (`core/solver/constraints.py`'s `constraint_24`), one of the 14 active
+    constraints of `stellarator_helias.IN.DAT`; without this node that constraint had
+    no live argument and could not be assembled into an `Optimise` at all.
+    """
+
+    beta_total_vol_avg = Output(lambda s: s.physics.beta_total_vol_avg)
+    e_plasma_beta = Output(lambda s: s.physics.e_plasma_beta)
+
+    def __call__(
+        self,
+        beta_fast_alpha=Input(lambda s: s.physics.beta_fast_alpha),
+        beta_beam=Input(lambda s: s.physics.beta_beam),
+        nd_plasma_electrons_vol_avg=Input(
+            lambda s: s.physics.nd_plasma_electrons_vol_avg
+        ),
+        temp_plasma_electron_density_weighted_kev=Input(
+            lambda s: s.physics.temp_plasma_electron_density_weighted_kev
+        ),
+        nd_plasma_ions_total_vol_avg=Input(
+            lambda s: s.physics.nd_plasma_ions_total_vol_avg
+        ),
+        temp_plasma_ion_density_weighted_kev=Input(
+            lambda s: s.physics.temp_plasma_ion_density_weighted_kev
+        ),
+        b_plasma_total=Input(lambda s: s.physics.b_plasma_total),
+        vol_plasma=Input(lambda s: s.physics.vol_plasma),
+        m_ions_total_amu=Input(lambda s: s.physics.m_ions_total_amu),
+        nd_plasma_electron_line=Input(lambda s: s.physics.nd_plasma_electron_line),
+        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        eps=Input(lambda s: s.physics.eps),
+        rmajor=Input(lambda s: s.physics.rmajor),
+    ):
+        beta_total_vol_avg, e_plasma_beta, _rho_star = (
+            calculate_stellarator_beta_and_rho_star(
+                beta_fast_alpha,
+                beta_beam,
+                nd_plasma_electrons_vol_avg,
+                temp_plasma_electron_density_weighted_kev,
+                nd_plasma_ions_total_vol_avg,
+                temp_plasma_ion_density_weighted_kev,
+                b_plasma_total,
+                vol_plasma,
+                m_ions_total_amu,
+                nd_plasma_electron_line,
+                b_plasma_toroidal_on_axis,
+                eps,
+                rmajor,
+            )
+        )
+        return beta_total_vol_avg, e_plasma_beta

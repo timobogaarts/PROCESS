@@ -23,7 +23,6 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
-from functional_process.configuration import Configuration  # noqa: E402
 from functional_process.mda_harness import compare, converged_data  # noqa: E402
 from functional_process.total_process import graph_for  # noqa: E402
 
@@ -42,7 +41,13 @@ def main():
 
         data = converged_data(str(scratch))
 
-    graph = graph_for(Configuration({".physics.i_plasma_pedestal": 0}))
+    # `graph_for()` with no argument IS `REFERENCE_CONFIGURATION` -- the switch
+    # choices `stellarator_helias.IN.DAT` actually makes, checked against the file
+    # itself by `test_configuration.py::test_reference_configuration_matches_the_
+    # input_file`. This used to spell the three choices out here, which is exactly
+    # the arrangement that let five registration bugs through: the harness knew the
+    # run's real configuration and nothing else did.
+    graph = graph_for()
     report = compare(graph, data)
     print(report.summary())
 

@@ -203,6 +203,41 @@ than a call into a PROCESS method — same situation
 functional_process/models/stellarator/test_stellarator_B_st_phys.py -q --fp-gradients`:
 **325 passed**, no skips beyond the standard opt-in gate.
 
+## Update: `StellaratorBetaAndStoredEnergy` — the registerable form, added this pass
+
+`StellaratorBetaAndRhoStar` was never registered, because its `.physics.rho_star` output
+collides with `DimensionlessPlasmaParameters`'s own — a **redundant duplicate write in
+PROCESS itself** (`st_phys` and `outplas` compute it from the same inputs by the same
+expression), not a modelling disagreement, so one of the two writes can simply be dropped.
+Dropping the whole *node* to achieve that also cost `.physics.beta_total_vol_avg` and
+`.physics.e_plasma_beta` their only producer, as collateral: only `rho_star` was ever in
+conflict.
+
+`StellaratorBetaAndStoredEnergy` is the same pure function with the third return value
+discarded, owning exactly the two uncontested outputs. Registered in `COMMON`;
+`StellaratorBetaAndRhoStar` stays written and unregistered.
+
+Splitting `calculate_stellarator_beta_and_rho_star` in two was considered and rejected:
+`rho_star`'s formula shares no sub-expression with the other two, so a split buys nothing
+the discard does not (XLA eliminates the dead `sqrt`), and it would invalidate this
+record's data-footprint row for a block PROCESS genuinely computes as one.
+
+**Why it was worth doing.** `.physics.beta_total_vol_avg` is constraint 24's only
+argument, and constraint 24 is one of the 14 active constraints of
+`stellarator_helias.IN.DAT`. Without a producer it could not be assembled into an
+`Optimise` at all, and `_audit/optimise_design.md` §2.4 had it recorded as permanently
+INERT. See §10.7 there.
+
+**And what it exposed.** Registering it pulled `FastAlphaBeta` into the differentiated set
+for the first time (nothing downstream of `beta_fast_alpha` had previously fed a
+condition), and its whole Jacobian row came back non-finite:
+`jnp.sqrt(jnp.maximum(0.0, temp_sum_20 - 0.65))` in
+`physics_A_pure_formulas.fast_alpha_beta` is the standard clamped-`sqrt` autodiff trap,
+and the clamp is *active* on this run (`temp_sum_20 = 0.6449`). Fixed there with the
+double `jnp.where`; value-identical. The general lesson is worth carrying: a gradient
+defect only becomes visible when something downstream of it reads into a condition, so
+closing a producer gap routinely exposes one.
+
 ## source
 `process/models/stellarator/stellarator.py`, lines 1886-2456: `st_phys()`. Chunk 1B of
 unit #1 (see `../../_audit/unit_registry.md`) — **priority chunk**, read in full.

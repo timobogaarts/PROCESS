@@ -324,9 +324,27 @@ def fast_alpha_beta(
     if i_beta_fast_alpha == 0:
         fact = jnp.minimum(0.3, 0.29 * density_ratio_sq * (temp_sum_20 - 0.37))
     else:
+        # `jnp.sqrt(jnp.maximum(0.0, x))` is value-correct and returns `nan` from
+        # `jacfwd` on the clamped branch, because `sqrt` has an infinite derivative at
+        # zero and `inf * 0` is `nan`. The standard **double `jnp.where`** avoids it:
+        # the inner one keeps a finite argument out of `sqrt`'s reverse/forward rule, the
+        # outer one selects the value. Same defect and same fix as
+        # `costs.py:2874-2888`'s clamped net-electric-power square root
+        # (`_audit/next_steps.md` §9, "a JAX trap worth carrying forward").
+        #
+        # **Live on the reference run, not hypothetical**: the clamp is *active* there
+        # (`temp_sum_20 = 0.6449` against the 0.65 threshold), and this row was the only
+        # non-finite row of the SAND Jacobian once `.physics.beta_total_vol_avg` gained a
+        # producer and constraint 24 started reading it. It was invisible before because
+        # nothing downstream of `beta_fast_alpha` fed a condition, so `jacfwd` never
+        # traced it.
+        above = temp_sum_20 - 0.65
+        positive = above > 0.0
         fact = jnp.minimum(
             0.30,
-            0.26 * density_ratio_sq * jnp.sqrt(jnp.maximum(0.0, temp_sum_20 - 0.65)),
+            0.26
+            * density_ratio_sq
+            * jnp.where(positive, jnp.sqrt(jnp.where(positive, above, 1.0)), 0.0),
         )
     fact = jnp.maximum(fact, 0.0)
 

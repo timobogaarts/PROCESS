@@ -84,11 +84,55 @@ function's own docstring for its full parameter list and return tuple.
 
 ## cottax node
 
-`Acpow`, `PowerProfilesOverTime`, `PlantElectricProduction` -- all
-`ExplicitFunction`, actually written in `power_C_electric_production.py`. Switches
-(`i_pf_energy_storage_source`, `itart`, `i_tf_sup`, `ireactor`,
-`i_blkt_dual_coolant`, `i_p_coolant_pumping`) are `eqx.field(static=True)`, same
-convention as chunks A/B.
+`Acpow`, `PowerProfilesOverTime`, `PlantElectricProduction`, and now
+**`PlantElectricProductionReactor`** -- all `ExplicitFunction`, actually written in
+`power_C_electric_production.py`. Switches (`i_pf_energy_storage_source`, `itart`,
+`i_tf_sup`, `ireactor`, `i_blkt_dual_coolant`, `i_p_coolant_pumping`) are
+`eqx.field(static=True)`, same convention as chunks A/B -- **except `ireactor`, which is
+now structural**, see below.
+
+**`PlantElectricProduction` is not registerable and never was.** It declares
+`p_plant_electric_gross_mw` / `p_turbine_loss_mw` / `p_plant_electric_recirc_mw` /
+`p_plant_electric_net_mw` / `f_p_plant_electric_recirc` as both `Output`s and `Input`s, so
+`to_graph` refuses it outright (*"reads [...], which it also owns"* -- confirmed directly).
+`total_process.py` used to register `PowerProfilesOverTime` alone in `COMMON` to work
+around that, at the cost of leaving all five fields without a producer.
+
+**That refusal is not a modelling cycle, and reading the body says so.** All five are
+assigned inside `if ireactor == 1:`, *before* `power_profiles_over_time` consumes
+`p_plant_electric_gross_mw`/`p_plant_electric_net_mw`, so on that arm not one entering
+value is ever read; the pass-through exists only on `ireactor == 0`. `.costs.ireactor` is
+resolved once per run (`process/main.py`'s cost-model property) and is neither an
+iteration nor a scan variable, so which arm is live is a graph-assembly-time fact --
+`configuration.py`'s category exactly.
+
+So `.costs.ireactor` is now a two-armed topology `Switch`:
+
+| value | arm | why |
+|---|---|---|
+| `0` | `PowerProfilesOverTime` | PROCESS genuinely does not compute the five; they stay boundary inputs, which is the honest shape |
+| `1` | `PlantElectricProductionReactor` | the same call with the five dead reads not declared -- an ordinary acyclic node owning all 23 fields |
+
+The five dead parameters are passed as `jnp.nan` rather than `0.0`: they are provably
+overwritten before use on that arm, so any value would do, and `nan` makes a future edit
+that *starts* reading them fail loudly at the first harness comparison.
+
+**Why this mattered beyond its own values.** `CostOfElectricity` reads
+`.heat_transport.p_plant_electric_net_mw`, so until this arm existed the reference run's
+own objective (`i_figure_merit = 6`) was a function of a *boundary input* along that whole
+path, and constraint 16 -- an **equality** in `stellarator_helias.IN.DAT` -- had no live
+argument at all. See `_audit/optimise_design.md` §10.7.
+
+**One caveat the MDA harness now reports, and it is PROCESS's, not this unit's.**
+`.heat_transport.p_plant_electric_base_total_mw` computes to `107.065` here against
+PROCESS's stored `89.461`. The port's number is what PROCESS's own formula gives from
+PROCESS's own stored `.buildings.a_plant_floor_effective`; PROCESS's stored number was
+computed in the *solve* pass, from the other `.build.z_tf_inside_half`
+(`ZTfInsideHalf`'s dual write), and the report pass never recomputes it because
+`Stellarator.run(output=True)` calls `output_plant_electric_powers()` instead of
+`plant_electric_production()`. Full evidence in
+`mda_harness.EXPLAINED_DISAGREEMENTS[".heat_transport.p_plant_electric_base_total_mw"]`
+and `_audit/optimise_design.md` §10.4.
 
 ## tier signal
 

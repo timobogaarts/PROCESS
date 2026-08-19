@@ -172,3 +172,27 @@ into `impurity_radiation.py`/`fusion_reactions.py`/etc.
    tokamak path. `AuxiliaryPhysicsQuantities.fusrat` is declared anyway, matching the
    function's true output set — whether `total_process.py`'s stellarator `GRAPH` should
    wire it to anything is the coordinating session's call, not this record's.
+
+
+## Update: `fast_alpha_beta`'s clamped square root — a real autodiff defect, fixed
+
+`i_beta_fast_alpha != 0` (the Ward branch) computed
+`jnp.sqrt(jnp.maximum(0.0, temp_sum_20 - 0.65))`. That is value-correct and returns `nan`
+from `jax.jacfwd` **on the clamped branch**: `sqrt` has an infinite derivative at zero and
+`inf * 0` is `nan`. Exactly the trap `_audit/next_steps.md` §9 records for
+`costs.py:2874-2888`'s clamped net-electric-power square root, and the fix is the same
+standard **double `jnp.where`** — the inner one keeps a finite argument out of `sqrt`'s
+differentiation rule, the outer one selects the value.
+
+**Not hypothetical: the clamp is active on the reference run.** `temp_sum_20` is `0.6449`
+against the `0.65` threshold, so `fast_alpha_beta`'s derivative was `nan` every time it
+was differentiated. It went unnoticed because nothing downstream of
+`.physics.beta_fast_alpha` fed a condition until `StellaratorBetaAndStoredEnergy` was
+registered and constraint 24 started reading `.physics.beta_total_vol_avg`; at that point
+it was the only non-finite row of the SAND Jacobian, and it made the whole SQP
+unsolvable. See `_audit/optimise_design.md` §10.5b.
+
+Every value test passed throughout, before and after — which is the point. This is the
+second instance in this project of "a `jnp.maximum` guard in front of a function with an
+unbounded derivative *at the guard point*", and it should now be treated as a known
+pattern to grep for rather than a surprise.

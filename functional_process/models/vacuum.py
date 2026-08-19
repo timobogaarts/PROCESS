@@ -177,7 +177,7 @@ class VacuumPumpingSimple(ExplicitFunction):
             outgasindex,
             t_plant_pulse_dwell,
         )
-        return (npump,)
+        return npump
 
 
 # ---------------------------------------------------------------------------

@@ -1005,9 +1005,12 @@ expedient, shape.
 
 ## 8. The MDA harness — built, run for the first time, and iterated on this session
 
-**Read this section first if picking the file up fresh — it is the current state.**
-Everything above is real history, not stale, but this section is one layer more
-recent and is where a new session should orient from.
+**Read this section first if picking the file up fresh — then § 9, which is one layer
+more recent still.** Everything above is real history, not stale, but this section and
+§ 9 are where a new session should orient from. § 9 closes the single blocker
+`_audit/optimise_design.md` names (`.costs.coe` had no producer) and adds a third
+`Alternative` state to `configuration.py`; it also supersedes recommended-next-step 5
+below in part.
 
 ### What exists now that didn't at the start of this session
 
@@ -1136,29 +1139,40 @@ Full `functional_process` suite: **3414 passed, 0 failed**. `total_process.GRAPH
 
 ### Still open, precisely diagnosed, not yet fixed
 
-- **`ConfinementTime`/`DoubleAndTripleProduct`**: a residual ~1.2% disagreement
-  remains on `t_energy_confinement`/`ntau` even after the `i_confinement_time` fix —
-  much smaller than the earlier catastrophic miss, but not zero. Not yet traced to a
-  specific cause; candidates are a small formula discrepancy in the ISS04 branch
-  itself, or a secondary input still slightly off. Worth a dedicated investigation.
-- **`AuxiliaryPhysicsQuantities.fusrat`**: `1.06e21` vs. expected `0.0` — was
-  previously masked by the `inf` cascade the `i_confinement_time` fix resolved; now
-  visible as its own, still-unexplained disagreement.
-- **`VacuumOld`**: ~0.04% off (`dlscal` and one other field) — almost certainly benign
-  floating-point path differences, not chased further, low priority.
-- **`i_p_coolant_pumping`**: hardcoded `2` (`MECHANICAL`) across the same node family
-  `i_thermal_electric_conversion` was found in, vs. this run's real `1`
-  (`FRACTION_OF_HEAT`, `stellarator_helias.IN.DAT:198`) — same class of bug, found by
-  the fork that fixed `i_thermal_electric_conversion` but not itself fixed. Likely a
-  quick, well-scoped follow-up given the precedent.
-- **The 3 "ungrounded inputs" and 13 "errors"** the harness reports are, on
-  inspection, mostly structural coverage gaps (minted `VarPath`s with no real
-  `DataStructure` field, e.g. `.tfcoil.a_tf_wp_with_insulation`/
-  `.tfcoil.a_tf_wp_no_insulation`/`.tfcoil.den_tf_sc_material`, and 13 more spanning
-  physics/impurity_radiation/stellarator/neoclassics) rather than bugs — not
-  individually triaged this session past the ones already investigated. A future pass
-  should go through this list the same disciplined way `constraints.md`'s "hole in
-  MDA" checks already do per-unit, rather than leaving it as an undifferentiated pile.
+- **`ConfinementTime`/`DoubleAndTripleProduct`**: **CLOSED — fixed in § 8.3.** The
+  diagnosis below stood up exactly; the fix turned out not to be a one-liner (the
+  binding is device-dependent and `Input`s are class-level, so it needed a subclass
+  under a new `.stellarator.istell` `Switch`). It is
+  neither an ISS04 formula discrepancy nor `i_plasma_ignited`: `ConfinementTime`'s
+  `q95` port is bound to `.physics.q95` (`confinement_time.py:2027`) while PROCESS's
+  stellarator call site passes `.stellarator.iotabar` into that same positional slot
+  (`process/models/stellarator/stellarator.py:2312`). This run has `q95 = 1.03`,
+  `iotabar = 1.0`, and ISS04 goes as `iotabar**0.41`
+  (`process/models/physics/confinement_time.py:3379-3386`) — `1.03**0.41 =
+  1.0121928428817748`, which *is* the reported `rel_diff` to every digit. Rebinding and
+  re-running the ported function on the converged run's own field values reproduces all
+  nine `ConfinementTime` outputs to 12 significant figures.
+- **`AuxiliaryPhysicsQuantities.fusrat`**: **closed — reclassified, not a bug** (§ 8.2).
+  `phyaux`'s stellarator caller unpacks this one return value into a bare local
+  `_fusrat` (`process/models/stellarator/stellarator.py:2383`), so `expected=0.0` was
+  `physics_variables.py:1730`'s uninitialised default, not a PROCESS answer. Now in
+  `mda_harness.KNOWN_UNVERIFIABLE_OUTPUTS`, same treatment as
+  `.fwbs.f_a_fw_coolant_inboard`/`_outboard`.
+- **`VacuumOld`**: **explained, not benign-floating-point — see § 8.2.** It is a
+  deliberate, already-documented solver-tolerance difference (this port solves the duct
+  diameter to `tol=1e-10`, PROCESS stops at a 1% relative step,
+  `process/models/vacuum.py:469-477`), and the two off fields are one cause, not two.
+  Recorded in `mda_harness.EXPLAINED_DISAGREEMENTS`; deliberately *not* suppressed.
+- **`i_p_coolant_pumping`**: **closed** — corrected from `2` to `1` at all four
+  registration sites (§ 8.2), and now checked automatically rather than by luck.
+- **The 3 "ungrounded inputs" and 13 "errors"** the harness reports: **now triaged
+  individually — see § 8.1 below, which supersedes this bullet.** The guess recorded
+  here ("mostly structural coverage gaps ... rather than bugs") was right in aggregate
+  (15 of 16 are correct mints) but wrong in one specific and findable place:
+  `.tfcoil.den_tf_sc_material` had a real `DataStructure` field behind it all along,
+  `.tfcoil.dcond[i_tf_sc_mat - 1]`, and is now fixed at the source. Three others had a
+  plausible-looking real field one namespace away that would have compared against
+  `0.0` — recorded in § 8.1 so they are not "fixed" wrongly later.
 - **The 2 minted islands excluded from the harness entirely**
   (`DuctDiameterRootFind`; the `Intersect`/`WindingPackIntersectInputs`/
   `WindingPackTotalSizePost` SCC) — confirmed correct exclusions, not gaps to close:
@@ -1190,14 +1204,27 @@ this file doesn't repeat here).
 
 ### Recommended next steps, in order
 
-1. **`i_p_coolant_pumping`**: apply the same fix pattern as `i_thermal_electric_
-   conversion` — check what the real value needs, flip the default if safe.
-2. **`AuxiliaryPhysicsQuantities.fusrat`** and **`ConfinementTime`'s residual 1.2%**:
+1. ~~**`i_p_coolant_pumping`**: apply the same fix pattern as `i_thermal_electric_
+   conversion` — check what the real value needs, flip the default if safe.~~
+   **Done — § 8.2**, together with a third instance of the same defect
+   (`i_plasma_ignited`) and a systemic check that ends the class.
+2. ~~**`AuxiliaryPhysicsQuantities.fusrat`** and **`ConfinementTime`'s residual 1.2%**:
    both look like real, tractable bugs now that the catastrophic masking cause is
-   gone — worth dedicated investigation, likely small individually.
-3. **Triage the 13 "errors"/3 "ungrounded inputs"** one at a time, `constraints.md`-
+   gone — worth dedicated investigation, likely small individually.~~ **Both
+   diagnosed — § 8.2.** `fusrat` was not a bug (reclassified). `ConfinementTime`'s 1.2%
+   *is* a real bug with an exactly-confirmed cause, but the fix is one line in
+   `models/physics/confinement_time.py:2027` (bind `q95` to `.stellarator.iotabar`),
+   outside that pass's editable-file boundary. **Successor item, and the highest-value
+   single line left in this section: make that rebinding.** Note it is a device-mode
+   (`istell`) question, so decide deliberately whether it belongs in the node
+   (a stellarator-mode `ConfinementTime`) or in `total_process.py` (which would need a
+   rebind `GraphOp` that `cottax` does not have — `Cut` mints a *new* name and cannot
+   point a port at an existing variable, checked directly in `rewrites.py:38-77`).
+3. ~~**Triage the 13 "errors"/3 "ungrounded inputs"** one at a time, `constraints.md`-
    style, to separate "genuinely unmodeled" from "should have a real `VarPath` but
-   doesn't yet."
+   doesn't yet."~~ **Done — § 8.1.** Successor item: the two `KNOWN_MINT_VALUES`
+   follow-ups § 8.1 ends with (both `mda_harness.py` edits), plus the judgement call on
+   whether to ground rows 1/2 and thereby stop excluding the winding-pack SCC.
 4. **Re-run `run_mda_harness.py`/`mda_constraint_harness.py` after each fix** — both
    are cheap (~2 min) and have already caught real bugs their own authoring tests
    missed (see `Build`/`ZTfInsideHalf`'s 1-tuple bug above); treat them as a
@@ -1208,3 +1235,901 @@ this file doesn't repeat here).
    and wiring constraints/objective into an actual `Optimise` `DeclaredNode` in
    `total_process.py` at all (still not done — both layers are fully ported and
    independently validated, but nothing assembles them into a solvable problem yet).
+   **Partly superseded by § 9**: the specific gap `optimise_design.md` named as *its*
+   blocker — "this run's own objective is not computable", i.e. `.costs.coe` had no
+   producer anywhere in the ported graph — is closed. `i_figure_merit = 6`'s objective
+   now evaluates from the graph and agrees with PROCESS's converged run to
+   `rel_diff = 1.704e-06`. What remains of this item is the driver and the assembly,
+   not the objective.
+
+### 8.1 Triage of the 3 "ungrounded inputs" and 13 "errors" — done, one at a time
+
+This closes recommended-next-step 3 above ("Triage the 13 errors/3 ungrounded inputs one
+at a time, `constraints.md`-style, to separate 'genuinely unmodeled' from 'should have a
+real `VarPath` but doesn't yet'"). All 16 were checked **individually against
+`process/`**, not batched — including the six `.physics.*profile*` entries, which do turn
+out to share one root cause but were verified separately rather than assumed to.
+
+Recall what the two columns mean in `mda_harness.compare`: an **ungrounded input** is an
+unowned (boundary) `VarPath`, or a driven block's unknown, that `_ground_truth` cannot
+resolve to a `DataStructure` field (`mda_harness.py`, the `driven.unowned_inputs` loop);
+an **error** is an *owned output* whose `VarPath` has no field either (the
+`for var, owner in driven.owners.items()` loop). Same underlying condition, opposite side
+of the edge.
+
+Classification key: **(a)** genuine mint, no PROCESS counterpart, correct as-is;
+**(b)** duplicate of an existing real field under a different minted name — a bug;
+**(c)** should map to a real field, wrong/renamed spelling — a bug; **(d)** genuinely
+unmodeled / out of scope.
+
+| # | `VarPath` | column | class | evidence (`file:line`) |
+|---|---|---|---|---|
+| 1 | `.tfcoil.a_tf_wp_with_insulation` | ungrounded | **(a)** | Python local in `winding_pack_total_size`, `process/models/stellarator/coils/calculate.py:496-499`; the source's own comment on `:496` says "(not global)". Produced in this port by `WindingPackTotalSizePost` (`functional_process/models/stellarator/coils/calculate.py:1136-1137`) — it reads as *ungrounded* only because `mda_harness.EXCLUDED_NODE_NAMES` deletes that node's whole SCC. **Near-miss:** a field of exactly this name exists at `.superconducting_tfcoil.*` (`process/data_structure/superconducting_tf_coil_variables.py:35`) but is written only by the tokamak resistive TF model (`process/models/tfcoil/resistive.py:310`), never in a stellarator run — rebinding there would compare against `DataStructure()`'s bare `0.0`. |
+| 2 | `.tfcoil.a_tf_wp_no_insulation` | ungrounded | **(a)** | Same, `process/models/stellarator/coils/calculate.py:500`; same `.superconducting_tfcoil` near-miss (`superconducting_tf_coil_variables.py:40`, written at `process/models/tfcoil/resistive.py:334`). |
+| 3 | `.tfcoil.den_tf_sc_material` | ungrounded | **(c) — FIXED** | No such name anywhere in `process/` (grepped). The real read is `data.tfcoil.dcond[data.tfcoil.i_tf_sc_mat - 1]` at `process/models/stellarator/coils/mass.py:88`; `dcond` is a real nine-entry field (`process/data_structure/tfcoil_variables.py:157-170`). `i_tf_sc_mat` is 1 both by PROCESS default (`tfcoil_variables.py:246`) and in this run's input (`tests/regression/input_files/stellarator_helias.IN.DAT:235`), so the element is `dcond[0] == 6080.0`. **Fixed at the source:** `functional_process/models/stellarator/coils/mass.py`'s `CoilsMass` now reads `.tfcoil.dcond[0]` — an array-element `VarPath` exactly as `naming_convention.md` § "Array elements" prescribes and as `physics/radiation_power.py:619-660` already binds `.impurity_radiation.f_nd_impurity_electron_array[0..13]`. |
+| 4 | `.first_wall.a_fw_total_unadjusted` | error | **(a)** | Not even a local: `st_build` assigns the unadjusted area *to the real field* `data.first_wall.a_fw_total` (`process/models/stellarator/build.py:166-168`) and then overwrites the same field in place in both `ipowerflow` arms (`build.py:170-181`). Nothing holds the unadjusted number at the end of the call. **Near-miss:** `process/data_structure/first_wall_variables.py:10` declares `a_fw_total_full_coverage`, documented as "First wall total surface area with no holes or ports" — but nothing in `process/` ever assigns it (only reads, all in the tokamak `process/models/fw.py:65,78,223,229,277,283`), so it stays `0.0` here. |
+| 5 | `.physics.radius_plasma_profile_norm` | error | **(a)** | `Profile.profile_x`, an instance attribute created in `Profile.run` (`process/models/physics/profiles.py:61`) and normalised at `:84`. No field of this name in `process/data_structure/physics_variables.py`. This is the *established* name — it is what `.physics.profile_x` was corrected **to** in the earlier fix `mda_harness.KNOWN_MINT_VALUES`' docstring records; it is not itself a duplicate. |
+| 6 | `.physics.dradius_plasma_profile_norm` | error | **(a)** | `Profile.profile_dx`, set in `Profile.calculate_profile_dx` (`process/models/physics/profiles.py:93`). No field. Also has no traced consumer (`scipy` ignores `dx=` whenever `x=` is given) — declared only because the source computes it. |
+| 7 | `.physics.nd_plasma_electron_profile` | error | **(a)** | `neprofile.profile_y`, created in `Profile.run` (`process/models/physics/profiles.py:64`), filled by `NeProfile.calculate_profile_y` (`:192-210`). No field (`physics_variables.py` has `nd_plasma_electron_line`/`_on_axis`/`_max_array`, none of them a rho-profile). |
+| 8 | `.physics.temp_plasma_electron_profile_kev` | error | **(a)** | `teprofile.profile_y`, same mechanism, filled by `TeProfile.calculate_profile_y`. No field. |
+| 9 | `.physics.nd_plasma_electron_profile_integral` | error | **(a)** | `neprofile.profile_integ`, set in `Profile.integrate_profile_y` (`process/models/physics/profiles.py:110`). **Checked hardest of the six, because it looks like a (b):** PROCESS *does* store this value at the real field `.physics.nd_plasma_electron_line` — but only in the **pedestal** arm (`process/models/physics/plasma_profiles.py:234`). In the **parabolic** arm, which is what this harness's run uses (`i_plasma_pedestal == 0`), that same field is instead the closed-form gamma expression (`plasma_profiles.py:136-142`), computed without touching `profile_integ`, while `neprofile.run()` still computes and discards it. Collapsing the mint onto `nd_plasma_electron_line` would put two producers on one field. The pedestal-arm identity is already modelled correctly as a pass-through (`functional_process/models/physics/plasma_profiles.py:208-209,270-271`). |
+| 10 | `.physics.temp_plasma_electron_profile_integral_kev` | error | **(a)** | `teprofile.profile_integ`, exact sibling of row 9: stored as `.physics.temp_plasma_electron_line_avg_kev` in the pedestal arm (`plasma_profiles.py:236-238`), closed-form in the parabolic arm (`plasma_profiles.py:144-150`). |
+| 11 | `.neoclassics.chi_process_e` | error | **(a)** | `chi_PROCESS_e`, assigned at `process/models/stellarator/neoclassics.py:396`, returned as the 22nd tuple element (`:426`), unpacked into a local at `process/models/stellarator/stellarator.py:2426`, and from there reaching only `st_phys_output` (`:2439`) which prints it (`:2512-2513`). `process/data_structure/neoclassics_variables.py` has no `chi_*` field at all. |
+| 12 | `.impurity_radiation.pden_impurity_rad_total_mw` | error | **(a)** | Instance attribute of `ImpurityRadiation`, initialised at `process/models/physics/impurity_radiation.py:667`, assigned at `:737`, read back off the instance at `process/models/physics/radiation_power.py:107,132`. No `pden_impurity_*` field in `process/data_structure/impurity_radiation_variables.py`. (It *is* reconstructible: `radiation_power.py:132` gives `pden_plasma_rad_mw = this + pden_plasma_sync_mw`, both real and written unclipped at `process/models/stellarator/stellarator.py:2147,2151`.) |
+| 13 | `.impurity_radiation.pden_impurity_core_rad_total_mw` | error | **(a)** | Same, `impurity_radiation.py:668` / `radiation_power.py:107,128`. **Not** reconstructible the way row 12 is: `process/models/stellarator/stellarator.py:2153-2155` clips `.physics.pden_plasma_core_rad_mw` at 0 after writing it. |
+| 14 | `.stellarator.coilcurrent` | error | **(a)** | Local at `process/models/stellarator/coils/calculate.py:46`, returned bare from `calculate_current` (`:378`); no field in `process/data_structure/stellarator_variables.py`. Exactly recoverable from a real field though — `calculate.py:276` writes `data.tfcoil.c_tf_total = n_tf_coils * coilcurrent * 1e6`, and this port's `coils/quench.py:201` already inverts it. |
+| 15 | `.stellarator.dlimit_ecrh` | error | **(a)** | `st_d_limit_ecrh` returns it (`process/models/stellarator/density_limits.py:152`); both callers keep it local — `st_density_limits` as `ne0_max_ECRH` (`:40`), `min`-clamped (`:46`) and passed to `output()` (`:50`); `power_at_ignition_point` as `ne0_max` (`:191`), used only on a deep-copied proxy `DataStructure` (`:185,198-206`) that is discarded. |
+| 16 | `.stellarator.bt_max_ecrh` | error | **(a)** | Same call sites, as `bt_ecrh` (`density_limits.py:40,47,50`) / `bt_ecrh_max` (`:191,204-206`). |
+
+**Result: 15 × (a), 1 × (c), 0 × (b), 0 × (d).** The single real bug is row 3. Every other
+one of the sixteen is a correct mint that the harness structurally cannot check — which is
+the answer §8 asked for, and it is a better answer than "mostly structural coverage gaps"
+because three of them (rows 1/2/4) had a plausible-looking real field one namespace away
+that a less careful pass would have bound to and got `0.0` from.
+
+Per-unit records updated to match the code and to carry this evidence:
+`models/stellarator/coils/mass.md` (the fix, plus its open question 1 marked resolved),
+`models/stellarator/coils/calculate.md` (rows 1/2/14),
+`models/stellarator/build.md` (row 4), `models/physics/profiles.md` (rows 5-10),
+`models/stellarator/neoclassics.md` (row 11),
+`models/physics/radiation_power.md` (rows 12/13),
+`models/stellarator/density_limits.md` (rows 15/16).
+
+#### Measured effect of the row-3 fix
+
+Measured by toggling **only** `models/stellarator/coils/mass.py` against an otherwise
+identical tree, because `mda_harness.py`/`total_process.py` were being edited concurrently
+by another agent during this session and a plain before/after would have attributed their
+changes to this one:
+
+| | control (`mass.py` at `HEAD`) | with the fix |
+|---|---|---|
+| agreements | 227 | 227 |
+| disagreements | 10 | 10 |
+| unverifiable | 65 | 65 |
+| **ungrounded inputs** | **3** | **2** |
+| errors | 13 | 13 |
+
+Exactly one column moves and nothing regresses. Note honestly what the fix does *not* buy:
+`CoilsMass`'s eight outputs stay `unverifiable`, because the same node still reads rows 1
+and 2, which are genuine mints. What it does buy is fidelity — before the fix
+`den_tf_sc_material` was seeded with `compare`'s `0.0` placeholder, so
+`m_tf_coil_superconductor` was identically zero in every schedule run; it now carries the
+real 6080 kg/m³. `$PY -m pytest functional_process -q`: 3414 passed, 2783 skipped, unchanged.
+
+#### Two harness-side follow-ups, deliberately *not* made here
+
+`mda_harness.py` is owned by another agent this session, so these are recorded rather than
+applied. Both are `KNOWN_MINT_VALUES` entries — exactly the mechanism that dict's docstring
+says it is kept (as an empty dict) for. Each turns one row above from an unscored mint into
+a real comparison:
+
+1. `".stellarator.coilcurrent": lambda d: d.tfcoil.c_tf_total / (d.tfcoil.n_tf_coils * 1e6)`
+   — the inverse of `process/models/stellarator/coils/calculate.py:276`, already
+   implemented in this port at `models/stellarator/coils/quench.py:201`. Moves row 14 out of
+   `errors` and scores `CoilCurrent`.
+2. `".impurity_radiation.pden_impurity_rad_total_mw": lambda d: d.physics.pden_plasma_rad_mw - d.physics.pden_plasma_sync_mw`
+   — the inverse of `process/models/physics/radiation_power.py:132`, valid because both
+   fields are written unclipped (`process/models/stellarator/stellarator.py:2147,2151`).
+   Moves row 12 out of `errors`. **Do not** add the `core` sibling (row 13): its field is
+   clipped at 0 (`stellarator.py:2153-2155`).
+
+Rows 1 and 2 are *also* reconstructible —
+`a_tf_wp_no_insulation == .tfcoil.dx_tf_wp_primary_toroidal * .tfcoil.dr_tf_wp_with_insulation`
+and
+`a_tf_wp_with_insulation == (.tfcoil.dr_tf_wp_with_insulation + 2*.tfcoil.dx_tf_wp_insulation) * (.tfcoil.dx_tf_wp_primary_toroidal + 2*.tfcoil.dx_tf_wp_insulation)`,
+both read off `process/models/stellarator/coils/calculate.py:483-501`, all three inputs real
+fields. Grounding those two would additionally unblock `CoilsMass`/`MaxForceDensity` and
+their descendants out of the `unverifiable` column, which is where most of the 65 sit.
+Flagged as the highest-value of the three, and as the one that most needs a second opinion
+first, since it hands real seed values to an SCC the harness currently excludes wholesale.
+
+### 8.2 The systemic static-switch audit — the whole defect class, closed at once
+
+**Concurrency note**: this pass ran alongside § 8.1's, which was editing
+`functional_process/models/**` while this one held only `total_process.py` and
+`mda_harness.py`. The numbers below were measured before § 8.1's
+`.tfcoil.den_tf_sc_material` grounding landed, so the ungrounded/unverifiable/error
+counts here are this pass's own before/after, not the merged state. A final run made
+once § 8.1's change had landed reads **227 agreements, 10 disagreements (0 driven), 65
+unverifiable, 2 ungrounded inputs, 13 errors, 34 switch kwargs checked / 0 mismatched** --
+i.e. identical to this pass's "after" column except for `ungrounded inputs` 3 -> 2, which
+is § 8.1's `.tfcoil.den_tf_sc_material` grounding, not anything here. The switch-audit and
+disagreement figures are unaffected by that change.
+
+#### The check
+
+Four bugs found in this project so far are one defect: a `total_process.py` registration
+carrying a hardcoded static switch kwarg copied from the corresponding
+`process/data_structure/*_variables.py` bare Python default rather than from the run
+being modelled (`i_confinement_time`, `i_thermal_electric_conversion`,
+`i_p_coolant_pumping`, `i_plasma_ignited`). Nothing checked any of them; each was found
+only when a downstream value happened to diverge loudly enough to notice, so a wrong
+switch that moved no compared output would never have been found at all.
+
+`mda_harness.switch_audit(graph, data)` now checks every one of them on every harness
+run, and `ComparisonReport.summary()` reports the counts alongside the existing ones.
+**By introspection, not source parsing**: the kwargs are `eqx.field(static=True)`
+attributes on the declaration instances the assembled graph actually holds (reachable as
+`CallableNode.fn.__self__`; the walk is generic so `FixedPointFunction`/problem nodes are
+covered too), so what is checked is what the graph carries, not what `total_process.py`'s
+text says. The kwarg name is resolved to a `DataStructure` field by scanning every area
+for an attribute of exactly that name — which works because PROCESS's own naming scheme
+makes field names globally unique, and is *checked* rather than assumed (a name found in
+two areas is reported unresolved, never silently resolved to whichever area came first).
+
+Three-way classification, the same discipline the harness already applies to
+ungrounded/unverifiable/errors:
+
+- **checked** — resolved to a real field and compared. 34 of the 35 static kwargs on the
+  default stellarator graph.
+- **not data-backed** — declared in `STATIC_KWARGS_WITHOUT_BACKING_FIELD` with a reason.
+  Exactly one: `ImpurityRadiationTotals.imp_indices`.
+- **unresolved** — neither. Reported, never silently dropped. Currently zero.
+
+One alias was needed and is declared explicitly in `STATIC_KWARG_ALIASES`:
+`PlasmaComposition.is_ignited` is a `bool` standing for `i_plasma_ignited == IGNITED`
+(`physics_B_composition.py:134-136`, `physics_variables.py:45-49`), which name-based
+resolution cannot recover. That is the only case; the other 33 resolve by name alone.
+
+A useful property, confirmed directly: run against a bare `DataStructure()` (PROCESS's
+own defaults) instead of a converged run, the audit flags exactly the two *deliberate*
+deviations already documented in `total_process.py` (`i_confinement_time = 38`,
+`i_thermal_electric_conversion = 2`) plus the requested `i_plasma_pedestal` — i.e. it
+reads as a diff against PROCESS's defaults, which is precisely the axis the bug class
+lives on.
+
+#### What it found, and what was done
+
+7 mismatches across 2 switches, no others:
+
+| node | kwarg | was | this run | source |
+|---|---|---|---|---|
+| `PlasmaComposition` | `is_ignited` | `False` | `True` | `stellarator_helias.IN.DAT:126` |
+| `ConfinementTime` | `i_plasma_ignited` | `0` | `1` | same |
+| `HeatingAndRadiationPower` | `i_plasma_ignited` | `0` | `1` | same |
+| `ComponentThermalPowers` | `i_p_coolant_pumping` | `2` | `1` | `stellarator_helias.IN.DAT:198` |
+| `DeltaEtaStep` | `i_p_coolant_pumping` | `2` | `1` | same |
+| `PFwDivHeatDepositedMwStep` | `i_p_coolant_pumping` | `2` | `1` | same |
+| `PFwBlktCoolantPumpMwStep` | `i_p_coolant_pumping` | `2` | `1` | same |
+
+(§ 8's earlier "5 sites" for `i_p_coolant_pumping` was one too many — there are four.)
+
+All seven corrected. Each flip was checked first for a hole in the target arm, the same
+discipline the `i_thermal_electric_conversion` fix used, and in every case the correct
+arm reads a strict *subset* of the wrong arm's inputs:
+
+- `physics_B_composition.py:219-222` — IGNITED sets `nd_beam_ions = 0`; NON_IGNITED needs
+  `nd_plasma_electrons_vol_avg * f_nd_beam_electron`.
+- `confinement_time.py:1333-1334` and `stellarator_B_st_phys.py:273-274` — NON_IGNITED
+  *adds* `p_hcd_injected_total_mw`; IGNITED omits the term.
+- `power_B_thermal_cryo.py:206-211` and `:308-310` — both are conditional-ownership
+  pass-throughs, and `FRACTION_OF_HEAT` selects the *recompute* side of both, out of
+  operands every affected node already takes as `Input`s.
+
+After the fixes: **0 mismatches, 34 checked, 1 not data-backed, 0 unresolved.**
+
+#### The `i_plasma_ignited` hypothesis: correct as a registration bug, wrong as the cause
+
+The strong prior going in was that `i_plasma_ignited` was the sole cause of the residual
+1.219e-02 on `ConfinementTime`/`DoubleAndTripleProduct`, via
+`confinement_time.py:1333-1334`. **It is not, and the fix changed those numbers by
+exactly zero** — `t_energy_confinement` is bit-identical before and after. Reason,
+measured on the converged run: `.current_drive.p_hcd_injected_total_mw == 0.0`, so the
+term the two arms differ by is numerically inert in this run. The registration was
+genuinely wrong and is genuinely fixed; it was simply never this symptom's cause. Worth
+remembering as a general caution — "this switch is wrong *and* would produce a difference
+of about this size" is two claims, and this project's harness can check the first
+directly but not the second.
+
+The real cause is § 8's `q95`/`iotabar` binding, above; see that bullet. It was found by
+reading PROCESS's own stellarator call site rather than by reasoning about magnitudes, and
+confirmed two independent ways: `1.03**0.41 == 1.0121928428817748` matches the reported
+`rel_diff` digit for digit, and re-running the ported function with `q95` bound to
+`iotabar` on the converged run's own field values reproduces **all nine** `ConfinementTime`
+outputs to 12 significant figures. `confinement_time.py`'s own class docstring had already
+flagged the binding as a device-mode question and predicted that "a stellarator-mode
+instantiation of this class would rebind the `q95` input" — it is now measured, not
+predicted.
+
+#### Two reclassifications, both confirmed against `process/` directly
+
+- **`.physics.fusrat`** → `mda_harness.KNOWN_UNVERIFIABLE_OUTPUTS`. `phyaux` returns seven
+  values and the stellarator caller assigns six to `self.data.physics.*` fields but
+  unpacks the third into a bare local `_fusrat`
+  (`process/models/stellarator/stellarator.py:2383`); the tokamak caller
+  (`process/models/physics/physics.py:961`) does store it. So the field is real but
+  unwritten on this pipeline, and `expected=0.0` was `physics_variables.py:1730`'s
+  declared default. Exactly the `.fwbs.f_a_fw_coolant_*` case.
+- **`VacuumOld`** — § 8 called this "almost certainly benign floating-point path
+  differences." It is better than that: it is a *deliberate, already-documented*
+  algorithmic difference. This port solves the duct-diameter equation to a relative-step
+  tolerance of `1e-10` (`functional_process/models/vacuum.py:250`, whose docstring at
+  262-271 states and justifies the deviation); PROCESS stops the same Newton iteration at
+  `dd <= 0.01` (`process/models/vacuum.py:469-477`), a bound ~34x *looser* than the
+  observed difference — so PROCESS's number is not ground truth for this field, the same
+  Tier2 framing this section already records for `Intersect`/`DuctDiameterRootFind`. The
+  two off fields are one cause, not two: `dlscal ∝ d**1.4`
+  (`process/models/vacuum.py:424`), and `1.4 × 2.941e-04 = 4.117e-04` against a measured
+  `4.118e-04`. Recorded in `mda_harness.EXPLAINED_DISAGREEMENTS` — **documentation only,
+  deliberately not wired into `compare()`**, since a per-field tolerance would mask a
+  future real regression on the same field.
+
+#### Report change: every disagreement, not just each node's worst
+
+`summary()` kept the per-node "worst offenders" block and gained a full `all
+disagreements` listing. This was not cosmetic: the per-node summary had hidden
+`AuxiliaryPhysicsQuantities`'s second off variable
+(`.physics.f_t_alpha_energy_confinement`) from a reader who had only the summary, and a
+node's largest `rel_diff` is not reliably its most diagnostic one — here the *hidden* one
+shared the `ConfinementTime` root cause while the *reported* one (`fusrat`) was not a bug
+at all.
+
+#### Numbers
+
+| | before | after |
+|---|---|---|
+| agreements | 227 | 227 |
+| disagreements | 11 | 10 |
+| … in driven blocks | 0 | 0 |
+| unverifiable | 64 | 65 |
+| ungrounded inputs | 3 | 3 |
+| errors | 13 | 13 |
+| static switch kwargs checked / mismatched | — (no check existed) | 34 / **0** |
+| `pytest functional_process -q` | 3414 passed, 2783 skipped | 3414 passed, 2783 skipped |
+
+The only count that moved is `fusrat`'s reclassification (disagreements 11 → 10,
+unverifiable 64 → 65). **The seven switch corrections moved no compared value** — and
+that is the point of the check, not a disappointment: `i_plasma_ignited`'s term is inert
+at `p_hcd_injected_total_mw == 0`, and `i_p_coolant_pumping`'s two pass-throughs had been
+sitting on their *identity* arm, so those nodes were agreeing with PROCESS only because
+the harness seeds them from PROCESS's own converged value. On the corrected arm they
+recompute from raw inputs and still agree — the same count, but a real check where there
+had been a tautology. Four bugs of this class were found by luck before this run; the
+class is now checked on every run.
+
+
+### 8.3 The `q95`/`iotabar` binding bug — the residual 1.2%, closed
+
+**Read this before §8's "Still open" list, which it supersedes in part.** §8 recorded a
+residual ~1.2% disagreement on `t_energy_confinement`/`ntau` as "not yet traced to a
+specific cause", with a wrong `i_plasma_ignited` registration as the leading hypothesis.
+That hypothesis was wrong. `i_plasma_ignited` *was* mis-registered (§8.2 fixed it) but
+changed the numbers by exactly zero: `.current_drive.p_hcd_injected_total_mw == 0.0` on
+this run, so the only term the two arms differ by is inert.
+
+**The real cause is a wrong input binding, not a formula.** PROCESS's
+`calculate_confinement_time` names its 20th positional parameter `q95`
+(`process/models/physics/confinement_time.py:79`) and its *tokamak* caller does pass
+`.physics.q95` — but the stellarator caller passes `self.data.stellarator.iotabar` into
+that same slot (`process/models/stellarator/stellarator.py:2312`), and
+`iss04_stellarator_confinement_time` consumes it as `iotabar**0.41`. The port's
+`ConfinementTime` bound `.physics.q95`, so the ISS04 law was fed a safety factor.
+
+Confirmed arithmetically, not inferred: `q95 = 1.03`, `iotabar = 1.0`,
+`1.03**0.41 = 1.0121928428817748` — the reported `rel_diff` of `1.219e-02` to every
+digit, with `1.205e-02` on `.physics.f_t_alpha_energy_confinement` downstream (it scales
+as `1/tau`).
+
+**Fix**: `StellaratorConfinementTime` (`models/physics/confinement_time.py`), a subclass
+rebinding exactly that one read, registered as the `value=6` arm of a new
+`.stellarator.istell` `Switch` in `total_process.py`. Three points worth carrying:
+
+- **A subclass is the unit of rebinding, structurally.** `Input` is a class-level
+  `__call__` parameter default (`cottax/interfaces/pytree_namespace_module.py:113-126`),
+  so no `eqx.field(static=True)` on an instance can vary a read. `NodalDeclaration.name`
+  is `type(self).__name__` (`ibid.:190-194`), so the arm gets its own node name free.
+- **The signature is derived, not restated.** `_rebound_signature` copies the base
+  signature and replaces one default, so the arm cannot drift if `ConfinementTime` ever
+  gains or rebinds a parameter — and a renamed parameter raises at import instead of
+  silently rebinding nothing. Restating all 36 parameters would have reintroduced exactly
+  the class of bug being fixed.
+- **A `Switch`, not a hardcoded binding**, because changing which node produces a read
+  changes an edge — `configuration.py`'s own criterion for a topology switch. `default=0`
+  is PROCESS's own (`stellarator_variables.py:46`), so **every stellarator consumer must
+  pass `Configuration({".stellarator.istell": 6})`**; `run_mda_harness.py` does. `istell`
+  in 1..5 is declared `unported` (the `preset_config.py` machine-preset tables, still
+  open in §2), so a wrong device config fails loudly instead of assembling silently.
+
+**The general lesson**: a positional parameter named from one device's vocabulary is a
+standing trap here. No `Tier1Contract` in `test_confinement_time.py` could ever have
+caught this — every case passes `q95` positionally to the pure function, and the pure
+function is correct. Only the *binding* was wrong, and bindings live in node
+declarations, which per-unit tests do not exercise. This is the third distinct bug class
+(after `ZTfInsideHalf`'s 1-tuple return and §8.2's static-switch defaults) that the
+end-to-end harness catches and unit tests structurally cannot. Any other `calculate_*`
+with device-dependent call sites deserves the same check.
+
+### 8.4 Harness state after §8.1–8.3
+
+| | §8 baseline | now |
+|---|---|---|
+| agreements | 227 | **237** |
+| disagreements | 11 (0 driven) | **2** (0 driven) |
+| unverifiable | 64 | 65 |
+| ungrounded inputs | 3 | 2 |
+| errors | 13 | 11 |
+| static switch kwargs | *unchecked* | 34 checked, 0 mismatched |
+| `pytest functional_process` | 3414 passed | 3418 passed |
+
+**Both remaining disagreements are one documented, deliberate cause** — `VacuumOld`'s
+`dlscal` (4.118e-04) and `dia_vv_vacuum_ducts` (2.941e-04), where this port solves the
+duct diameter to `tol=1e-10` and PROCESS stops at a 1% relative step
+(`models/vacuum.py:250` and its docstring; `process/models/vacuum.py:469-477`). One
+cause, not two: `dlscal ∝ d^1.4`, and `1.4 × 2.941e-04 = 4.117e-04`. PROCESS's own
+number is not ground truth here, so this is recorded in `EXPLAINED_DISAGREEMENTS` and
+deliberately *not* wired into `compare()` — a future real regression on the same field
+must still show.
+
+The +10 agreements come from §8.1's two `KNOWN_MINT_VALUES` reconstructions
+(`.stellarator.coilcurrent` from `calculate.py:276`;
+`.impurity_radiation.pden_impurity_rad_total_mw` from `radiation_power.py:132`). The
+`pden_impurity_core_rad_total_mw` sibling deliberately gets none — PROCESS clips
+`.physics.pden_plasma_core_rad_mw` at zero after storing it
+(`process/models/stellarator/stellarator.py:2153-2155`), so it is not recoverable back
+through the sum.
+
+## 9. `.costs.coe` has a producer — the `Optimise` layer's stated blocker, closed
+
+**Read this after §8; it is the layer §8's harness was built to make checkable, applied
+to the one field the objective needs.** `_audit/optimise_design.md` names exactly one
+blocker for wiring a real `Optimise` problem: "this run's own objective is not
+computable". `tests/regression/input_files/stellarator_helias.IN.DAT:229` sets
+`i_figure_merit = 6` (`FiguresOfMerit.COST_OF_ELECTRICITY` ->
+`objective_metric_6(coe) = coe / 100.0`, `core/solver/objectives.py:88-90`, ported since
+§8), and until this pass nothing in the ported graph produced `.costs.coe`. Now
+`CostOfElectricity` does.
+
+### What was ported
+
+Registry unit #18's `costs.py` went from 23/43 methods (leaf accounts, none registered)
+to **41/43 methods, 44 pure functions, 44 nodes, 43 registered**. The two left out are
+`run` (the call-order dispatcher a `Graph` replaces — its two *computations*,
+`.costs.cdirt` and `.costs.concost`, are ported as their own nodes) and `output`
+(reporting). `costs.md`'s new § "coverage map for `.costs.coe`" derives the chain and its
+headline result, which is worth repeating because it decided the size of this pass:
+**`.costs.coe` depends on every computational method in the file.** The accumulation is a
+plain sum of all nine Account-22 sub-totals and all six top-level accounts, none of which
+PROCESS ever skips, so "port only what `coe` needs" and "port everything except
+`run`/`output`" are the same instruction here. That was checked (by walking
+`costs.py:2990` backwards) before any code was written, not assumed.
+
+Three of the first wave's own conclusions are **corrected**, each in place in `costs.md`:
+
+- **`acc2222`'s "dynamic-length loop", recorded as "the one real structural JAX blocker
+  in the whole file", is not one.** The bound is `.pf_coil.n_cs_pf_coils`, which is
+  neither an iteration variable nor a scan variable (`grep` over
+  `process/core/solver/iteration_variables.py` and `process/core/scan.py`: no match), so
+  it is constant for a whole solve and belongs in `naming_convention.md`'s static-kwarg
+  category — exactly `ImpurityRadiationTotals.imp_indices`'s case. Neither
+  `lax.fori_loop` nor padding is needed; the loop unrolls at trace time. There is now no
+  structural JAX blocker anywhere in `costs.py`. Worth generalising: "dynamic-length
+  loop" is the wrong first question. The right one is *whether the length can change
+  between two evaluations of one assembled graph*, which for PROCESS is answered by the
+  iteration-variable and scan-variable lists, not by reading the loop.
+- **`i_cost_model` "is not wireable as a `Switch`"** — it is; see below.
+- **`unit_registry.md`'s framing that `costs.py`'s `Costs` model "never even runs by
+  default", so its nodes must stay unregistered.** True of PROCESS's bare default
+  (`cost_variables.py:327` -> `1`, `KOVARI_2014`), and irrelevant to the run this
+  project validates against: `stellarator_helias.IN.DAT:248` sets `i_cost_model = 0`
+  explicitly, with the file's own comment "0: 1990 cost module, the 2015 does not work
+  yet for stellarators". Reasoning from the bare `*_variables.py` default rather than
+  from the reference IN.DAT is the same habit §8.2's static-switch audit found four
+  separate instances of; this is a fifth, at the level of *whether a node exists* rather
+  than what value a kwarg takes. **No systemic check catches this one** — `switch_audit`
+  checks the kwargs a registered node carries, not whether the right nodes are
+  registered. That gap is real and is not closed by this pass.
+
+### The registration decision — a new third `Alternative` state
+
+`.costs.i_cost_model` is a textbook topology switch (resolved once in
+`process/main.py`'s `Models.costs` `@property`, lines 745-764, which picks a whole
+`Model` instance before any model runs; never read inside either cost file). The trap is
+that **`GRAPH = graph_for()` is evaluated at import time from the bare default
+configuration**, and the default arm (`1`, `KOVARI_2014`) has no ported nodes at all —
+`costs_2015.py` still has zero. Declaring it `unported` would raise `NotImplementedError`
+on `import functional_process.total_process`, breaking the package and every one of
+`test_configuration.py`'s per-switch parametrised assemblies besides.
+
+Three readings were weighed; the argument is kept in full in `total_process.py`'s own
+comment block on the switch, and summarised here:
+
+1. **Register the 43 nodes unconditionally in `COMMON`.** Rejected. This is *worse* than
+   the `EcrhDensityLimit`/`WardTaylorAvailability` bug class this file already tracks,
+   not an instance of it: those computed a value the default configuration never
+   computes, whereas PROCESS's default *does* compute `.costs.coe` — by the 2015 model.
+   An unconditional registration would put a **different number in the same field**.
+2. **Change what `graph_for()`'s bare default means** — either `GRAPH =
+   graph_for(REFERENCE_CONFIGURATION)`, or making `GRAPH` lazy so that asking for the
+   bare default is allowed to fail. Structurally this is the most honest answer:
+   PROCESS's bare-default configuration is *not* fully ported, and asking for it
+   arguably should fail loudly. **Deliberately not taken here, and flagged as the user's
+   call.** It changes a shared contract (`Switch.default`'s "a silent IN.DAT reproduces
+   PROCESS's own defaults", pinned by
+   `test_configuration.py::test_default_configuration_matches_process_defaults`) and
+   would make `test_configuration.py`, `test_mda.py`, `mda.py`'s default argument and
+   `render_xdsm.py` all carry a configuration. Note the tension it would resolve is
+   already visible: `run_mda_harness.py` overrides three switches (`i_plasma_pedestal`,
+   `istell`, and now `i_cost_model`) because the bare default matches no real run, and
+   `total_process.py`'s own docstring already concedes the bare-default graph is
+   "device-incoherent". A future pass that wants to take option 2 should do it as its
+   own change, with that whole tension in view — not as a side effect of porting a cost
+   model.
+3. **An arm that assembles as empty** — taken. `Alternative` gains a third state,
+   `unproduced`, alongside `declarations` and `unported`. It contributes no nodes and
+   does not raise, so under `KOVARI_2014` `.costs.coe`/`.costs.concost` simply have no
+   producer and any consumer surfaces as an unowned (boundary) input rather than being
+   silently handed the 1990 model's formula. `check_arms_are_exclusive` skips it the same
+   way it skips `unported` arms (a single-ported-arm switch has no pair to check), and
+   `Alternative.__post_init__` now *requires* exactly one of the three to be given — an
+   arm that declares nothing at all is rejected, so an empty arm can never be confused
+   with an oversight.
+
+**The measured cost of option 3 is zero**: the default `GRAPH` is still exactly 97 nodes,
+byte-for-byte the graph it was before this arm existed, so nothing that depended on it
+moved. The honest cost is conceptual, and worth stating rather than burying —
+`unproduced` is a *weaker* guarantee than `unported`. It is only sound when the arm's
+outputs have no other producer in the assembled graph, and nothing checks that for you,
+because "no producer" is exactly what it is being told to produce.
+`test_configuration.py` pins both halves of the claim on the real instance:
+`.costs.coe` has an owner under `i_cost_model == 0` and none under `== 1`.
+
+`i_cost_model == 2` (`USER_PROVIDED`) is `unported`, not `unproduced`, and the contrast
+is the clearest statement of the distinction: it injects a user-supplied `Model` at
+runtime (`process/main.py:766-768`), so there is no PROCESS-side subgraph to port at
+all, and a caller asking for it has a model in mind this graph has never seen. Refusing
+is right there; assembling empty would not be.
+
+### Harness effect — measured as a controlled A/B, not against §8.4's numbers
+
+`mda_harness.py` was being edited by a concurrently-running agent during this pass (the
+`constraint_32_investigation.md` work, which took the winding-pack coil island out of
+`EXCLUDED_NODE_NAMES` and added three `KNOWN_MINT_VALUES` entries). A plain before/after
+against §8.4's column would have attributed that agent's +59 agreements to this one, so
+the numbers below are **control vs. treatment on the same tree**, identical in every
+respect except `.costs.i_cost_model` — the same discipline §8.1 used for its own
+row-3 fix:
+
+| | control (`i_cost_model = 1`, empty arm) | treatment (`i_cost_model = 0`) |
+|---|---|---|
+| nodes | 99 | **142** (+43) |
+| agreements | 296 | **397** (+101) |
+| disagreements | 2 | **14** (+12) |
+| … in driven (cyclic) blocks | 0 | **0** |
+| unverifiable | 3 | 3 |
+| ungrounded inputs | 0 | 0 |
+| errors | 21 | 21 |
+| static switch kwargs checked / mismatched | 34 / 0 | **51 / 0** (+17) |
+
+`pytest functional_process -q`: **3575 passed, 2909 skipped**, up from 3420/2783 at the
+start of this pass, 0 failed. `--fp-gradients --fp-fuzz=3` on `test_costs.py`: 884
+passed.
+
+Three things are worth reading off that table rather than just the headline:
+
+- **Nothing lands in `errors`, `ungrounded` or `unverifiable`.** All three columns are
+  unchanged. This unit mints no `VarPath`s at all — every one of the 43 nodes' inputs
+  and outputs is a real `DataStructure` field — which is why the whole chain scores
+  instead of being structurally uncheckable, and it is the first wave of this size where
+  that is true.
+- **+17 static switch kwargs, 0 mismatched.** Every one of this wave's static values
+  (`ife`, `itart`, `ireactor`, `ipnet`, `supercond_cost_model`, `n_cs_pf_coils`,
+  `iohcl`, `i_pf_conductor`, `i_pulsed_plant`, `istore`) resolves to a real field and is
+  now checked on every harness run. §8.2 built that check for a defect class found four
+  times by luck; this is the first wave to be born under it. One of the ten is a
+  deliberate departure from a PROCESS default — `iohcl = 0` against
+  `build_variables.py:177`'s `1` — and it is exactly the kind that used to go unnoticed.
+- **All 12 new disagreements are one already-documented cause, and it is not this
+  unit's.** `VacuumOld` solves the vacuum-duct diameter to `tol=1e-10` where PROCESS
+  stops at a 1% relative step (`models/vacuum.py:250`,
+  `process/models/vacuum.py:469-477`, `mda_harness.EXPLAINED_DISAGREEMENTS`), and
+  `.vacuum.dlscal`/`.dia_vv_vacuum_ducts` feed Account 224, which feeds `c22`, `cdirt`,
+  `cindrt`/`ccont`, `concost`, and finally `coe`. **Demonstrated, not argued**: fed
+  PROCESS's own converged values for those two fields, `calculate_vacuum_system_cost`
+  reproduces all seven of PROCESS's Account-224 numbers at *exactly zero* relative
+  difference, and every downstream absolute delta is that one `c224` delta pushed
+  through the linear accumulation chain —
+
+      delta c224 = delta c22 = delta cdirt = 1.226201741e-02
+      delta cindrt = cfind[lsa-1]*(1+cowner)*delta cdirt   (predicted to 11 s.f.)
+      delta ccont  = fcontng*(delta cdirt + delta cindrt)  (predicted to 11 s.f.)
+      delta concost = delta cdirt + delta cindrt + delta ccont
+
+  `.costs.coe` itself agrees with PROCESS's converged run to `rel_diff = 1.704e-06`
+  (`121.49188552` against `121.49167845`), and that residual is entirely the above.
+  Deliberately *not* suppressed, per §8.2's own reasoning: a per-field tolerance would
+  mask a future real regression. This is also the first time the `VacuumOld` deviation
+  has been shown to *propagate* rather than sit in two fields — worth knowing before
+  anyone treats it as cosmetic, since it now reaches the objective.
+
+### Findings, none fixed
+
+- **A second `acc223` defect**, alongside the `c2233` one the first wave found: `fkind`
+  (the Nth-of-a-kind multiplier) is applied **only** on the `ifueltyp == 1` branch, for
+  all three sub-accounts (`process/models/costs/costs.py:1877-1881`, `1899-1903`,
+  `1917-1921`) — PROCESS computes each `cNNNN` unconditionally and then applies both
+  `(1 - fcdfuel)` *and* `fkind` inside the `if`. Every other account in the file applies
+  `fkind` unconditionally, so Account 223 silently escapes it on any run with
+  `ifueltyp != 1`. Reproduced as written.
+- **The `c2233` defect is more precisely characterised than before, and the refinement
+  matters.** The first wave recorded it as "the same history-dependence shape as
+  `cdrlife_cal`". It is not. `ifueltyp` is a run-configuration constant, so "never
+  assigned in *this* call" implies "never assigned in *any* call of the run", and the
+  field can only ever hold `cost_variables.py:165`'s dataclass default `0.0` — making
+  the port's `0.0` exact rather than an approximation. `cdrlife_cal`'s gate
+  (`life_blkt_fpy < life_plant`) genuinely moves between VMCON iterations, which is what
+  makes *that* one a real unrepresentable-state gap. Two superficially identical
+  patterns, opposite conclusions, and the discriminator is the same
+  iteration-variable/scan-variable question the `acc2222` correction turned on.
+- **`.costs.c2234` is a dead field**: a term of `c223` (`costs.py:1976`) written in
+  exactly one place in all of `process/` (`costs.py:1968`), to `0.0`, inside the IFE
+  *and* `ifueltyp == 1` branch. Folded to the literal rather than declaring an `Output`
+  nothing produces.
+- **A JAX trap worth carrying forward, caught only by `test_gradient_finite`.** PROCESS
+  clamps a negative net electric power to zero before a square root
+  (`costs.py:2874-2888`). The obvious port, `jnp.sqrt(jnp.maximum(p, 0.0))`, is
+  value-correct and returns `nan` from `jacfwd` on the clamped branch, because `sqrt`
+  has an infinite derivative at zero. Fixed with the standard *double* `jnp.where`. The
+  general shape — a `jnp.maximum` guard in front of a function with an unbounded
+  derivative *at the guard point* — is not specific to this unit, and the value tests
+  passed throughout.
+
+### Left undone, with reasons
+
+- **`costs_2015.py` is untouched**: still 2/13 functions ported, still zero nodes. Its
+  `run()`-level accumulation (`costs_2015.py:52-102`, eight `calc_*` methods filling a
+  100-slot `s_cost` array) is the single change that would turn `i_cost_model` into an
+  ordinary two-armed `Switch` with no further machinery, since `.costs.coe`/
+  `.costs.concost` are exactly the outputs the two arms share. Out of this pass's scope
+  and not needed by any run in this project's stellarator scope.
+- **`TfMagnetCostResistive` is written but not registered.** `acc2221`'s two arms share
+  no body and read disjoint fields, so they are two nodes (the split default), not one
+  node with a static `i_tf_sup` kwarg. Registering both is a duplicate-ownership
+  conflict on `.costs.c22211`/`c22212`/`c2221`; pairing them as a `Switch` would require
+  that switch to **nest** inside `.costs.i_cost_model`. That is a **third instance of the
+  nested-switch gap** §1 tracks (after `irefprop` under `i_blkt_coolant_type` and
+  `i_nd_plasma_pedestal_separatrix` under `i_plasma_pedestal`) — and unlike those two,
+  **this one is on a reachable node**, which is the condition §1 itself set for taking
+  the question seriously ("worth a real decision once a third shows up on a *reachable*
+  node"). That condition is now met. `.tfcoil.i_tf_sup == 1` is both PROCESS's default
+  and the reference run's, so nothing is currently wrong; what is missing is the ability
+  to assemble a resistive-TF cost graph at all.
+- **The IFE arms of six methods are not ported** (`ife` static, refused). `.ife.*` has no
+  unit in `unit_registry.md` at all, and the 2-D `fwmatm`/`blmatm`/`shmatm` `VarPath`
+  question the first wave flagged is deferred, not answered.
+- **The split-default deviation count is now six, not three.** §1 records three instances
+  of "reads-set genuinely differs, kept static anyway" and asks whether
+  `traceability_policy.md` needs a size/entanglement-aware exception. This wave adds
+  three more (`supercond_cost_model` on two nodes, `i_pf_conductor`, and `itart` on
+  `CostOfElectricity`) — and, unusually, a controlled contrast *inside one file*:
+  `acc2221` **was** split (two arms, no shared body, disjoint reads) while `coelc`'s
+  `itart` was **not** (15 lines of a 290-line function, ~275 shared). Those two together
+  are the clearest evidence this project has of what the missing rule would have to say,
+  and they are in the same unit, ported the same day, by the same reasoning. §1's open
+  question is now well-posed enough to answer.
+- **No systemic check exists for "is the right *node* registered".** `switch_audit`
+  checks the static kwargs a registered node carries against the run; nothing checks that
+  the set of registered nodes matches the configuration the run describes. The
+  `i_cost_model` case above is the fifth instance of a registration derived from a bare
+  `*_variables.py` default rather than the modelled run, and the first where the
+  consequence was 43 nodes missing rather than one kwarg wrong. A check in the shape of
+  `switch_audit` — walk `TOPOLOGY_SWITCHES`, resolve each `path` against the converged
+  `DataStructure`, and report where the assembled configuration disagrees — would be
+  cheap and would have found this. Not built here (`mda_harness.py` was owned by another
+  agent this session); recommended as the direct successor to §8.2.
+
+## 10. The `Optimise` layer — built, and the ladder run end to end
+
+**`_audit/optimise_design.md` §10 is the record; this section is the index and the parts
+that belong to *this* file** (harness numbers, the punch list, and the defects found).
+§8's recommended-next-step 5 ("building a real `Optimise`/constrained-optimization driver
+… and wiring constraints/objective into an actual `Optimise` `DeclaredNode` … still not
+done") is closed.
+
+### What now exists
+
+`core/solver/drivers.py` grew **`VmconDriver`** — `pyvmcon` (PROCESS's own SQP) fed one
+`jax.jacfwd` of the block's `ConditionMap` instead of `Evaluators.fcnvmc2`'s
+1 %-step finite differences. `sand.py` assembles PROCESS's actual problem onto the graph
+as SAND, `sand_harness.py`/`run_sand_harness.py` run the three-stage ladder, and
+`test_sand.py` adds 16 tests that need no PROCESS run. `mda.default_drivers` grew an
+`Optimise` arm that reads the equality/inequality counts off the `Optimise` node itself.
+
+### Harness numbers, controlled per change
+
+| | start of session | +c16/c24 producers | +the x4 fix |
+|---|---|---|---|
+| `graph_for()` nodes | 142 | 143 | **146** |
+| agreements | 397 | 397 | **404** |
+| disagreements | 14 | 32 | **32** |
+| … in driven (cyclic) blocks | **0** | **0** | **0** |
+| unverifiable / ungrounded / errors | 3 / 0 / 21 | 3 / 0 / 21 | 3 / 0 / 21 |
+| static switch kwargs / mismatched | 51 / 0 | 55 / 0 | **55 / 0** |
+| `pytest functional_process` | 3577 passed | 3581 | **3597 passed, 0 failed** |
+
+The 18 new disagreements are **one cause**, proven arithmetically rather than asserted —
+see below.
+
+### Defects found and fixed this session
+
+- **Iteration variable 4 had no path into the physics.** `.physics.temp_plasma_ion_vol_avg_kev`,
+  `.physics.temp_plasma_electron_density_weighted_kev` and
+  `.physics.temp_plasma_ion_density_weighted_kev` were boundary inputs with no producer,
+  so ion temperature was structurally disconnected from the electron temperature the
+  optimiser varies. Every *value* was right; every derivative w.r.t. `x4` was ~0 where
+  PROCESS's is O(1), and `FusionRates`' `sigmav_dt_average` (roughly `T²`) had a relative
+  sensitivity of `2.4e-16`. Both pure functions were already ported — only the nodes were
+  missing, deferred by `plasma_profiles.md`'s open question 1, which
+  `total_process.py`'s own `i_plasma_pedestal` arm had already answered. Fixed by
+  registering `IonVolAvgTemperature` and `ParabolicProfileValues`; +7 agreements, 0 new
+  disagreements, and every affected Jacobian cell now agrees with PROCESS to between
+  `4e-6` and `1e-3`.
+  **This is the defect class §8's harness cannot reach, found by the thing built to reach
+  it.**
+- **`fast_alpha_beta`'s clamped square root returned `nan` from `jacfwd`.**
+  `jnp.sqrt(jnp.maximum(0.0, x))` with the clamp **active** on this run
+  (`temp_sum_20 = 0.6449` against `0.65`) — the same trap §9 records for
+  `costs.py:2874-2888`, now a second instance. Fixed with the double `jnp.where`;
+  value-identical, and it took the SAND Jacobian from 17 non-finite cells to 0. It had
+  been latent because nothing downstream of `.physics.beta_fast_alpha` fed a condition
+  until constraint 24 got a producer. **Generalise: a gradient defect only becomes
+  visible once something downstream reads into a condition, so closing a producer gap
+  routinely exposes one.**
+- **Seven 1-tuple returns** (`power_B_thermal_cryo.py` ×6, `vacuum.py` ×1) — the
+  `ZTfInsideHalf` bug class, third wave. Invisible to `PicardDriver`, fatal to
+  `Residualise`. The full sweep is recorded in `power_B_thermal_cryo.md`.
+
+### Two constraints un-blocked, and the registration gaps behind them
+
+`optimise_design.md` §2.4 recorded constraints **16** and **24** as permanently INERT.
+Both are now live, which matters because an `Optimise` over 12 of PROCESS's 14 active
+constraints is a *different problem* and comparing its answer to PROCESS's would be
+meaningless. `sand.constraint_nodes` now raises on any active `icc` entry it cannot
+assemble rather than dropping it.
+
+- `PlantElectricProductionReactor` (new, `power_C_electric_production.py`) — the
+  `ireactor == 1` arm of `plant_electric_production`, whose five "self-referential"
+  fields are dead reads on that arm. `.costs.ireactor` becomes a two-armed topology
+  `Switch`. **This also gave `.costs.coe` — the run's own objective — a real dependence
+  on the design along the net-electric-power path, where before it read a boundary
+  input.**
+- `StellaratorBetaAndStoredEnergy` (new, `stellarator_B_st_phys.py`) —
+  `StellaratorBetaAndRhoStar` minus the one output (`rho_star`) that actually collided
+  with `DimensionlessPlasmaParameters`. Dropping the whole node to resolve that collision
+  had cost `.physics.beta_total_vol_avg` and `.physics.e_plasma_beta` their only producer
+  as collateral.
+
+**Both are further instances of §9's "no systemic check exists for *is the right node
+registered*".** That gap is now four instances deep (`i_cost_model`'s 43 nodes,
+`PlantElectricProduction`, `StellaratorBetaAndRhoStar`, and `plasma_profiles.py`'s two)
+and every one of them was found by a *downstream consumer* noticing, never by a check.
+The recommended shape is unchanged and now clearly worth building: walk the ported units'
+node classes, and report every one that is written but registered nowhere, with the
+reason recorded beside it.
+
+### A finding about PROCESS itself, not the port
+
+**PROCESS's converged `DataStructure` is internally inconsistent, and the port is the
+self-consistent side.** Measured by instrumenting a real solve:
+`Buildings.run(output=False)` leaves `.buildings.a_plant_floor_effective = 563075.16` and
+`Buildings.run(output=True)` leaves `680433.44` — the *same method*, differing only via
+`.build.z_tf_inside_half` (`4.1556` at solve time, `7.3592` in the report pass), which is
+§8's `ZTfInsideHalf` dual write. `Stellarator.run(output=True)` then calls
+`power.output_plant_electric_powers()` rather than `plant_electric_production()`, so
+`.heat_transport.p_plant_electric_base_total_mw` is never recomputed and keeps its
+solve-pass value while `a_plant_floor_effective` moves.
+
+The resulting **`+17.604 MW`** offset accounts for *all eighteen* new harness
+disagreements, exactly and linearly, through `Acpow` and the cost chain to `.costs.coe`
+(`rel = 1.73e-2`). Recorded in `mda_harness.EXPLAINED_DISAGREEMENTS`, deliberately not
+suppressed. It is also the largest identified reason the port's optimiser does not land
+on PROCESS's `x`.
+
+**Consequence for §8's framing:** the harness's `expected` column is PROCESS's *reported*
+state, which for any field the report pass recomputes is not the state the solver used.
+That is a third category alongside `KNOWN_UNVERIFIABLE_OUTPUTS` and
+`EXPLAINED_DISAGREEMENTS`, and nothing currently detects it in general — a field is only
+noticed when a consumer of it disagrees.
+
+### Recommended next steps, in order
+
+1. **`c62`'s Jacobian row.** `.physics.f_t_alpha_energy_confinement`'s value is exact and
+   its derivative is wrong by ~5× with a sign flip on `x4`. The only cell in the whole
+   Jacobian disagreeing for an unknown reason. Use the same topological
+   sensitivity walk that found `x4` (`optimise_design.md` §10.5a).
+2. **The cold-start gap.** The port cannot run its own pipeline from a cold input file at
+   all — 20 of 24 SAND conditions are `nan` there, because the block reads 330 context
+   variables and the cold `DataStructure` has `0.0` in every model-computed field. This
+   blocks `optimise_design.md` §5.3's C3, the only check that would license "the port
+   reproduces PROCESS's optimisation". It is a graph-completeness question, not an
+   `Optimise` one.
+3. **The "is the right node registered" check**, per the four instances above.
+4. **`costs_2015.py`** and the other items of §9's "left undone" — unchanged.
+
+## 11. Session wrap — verified state, and what to pick up first
+
+**Read this section first tomorrow.** §§ 8-10 are the detailed records written as the work
+landed; this is the consolidated state, the measurements that exist only here, and the
+priority order. Everything below was independently re-verified on a quiet tree at the end
+of the session, not taken from an agent's report.
+
+### 11.1 Verified state
+
+| check | value |
+|---|---|
+| `pytest functional_process -q` | **3597 passed**, 2909 skipped |
+| `run_mda_harness.py` | **404 agreements, 32 disagreements** (0 in driven blocks), 3 unverifiable, **0 ungrounded**, 21 errors, 55 switch kwargs / 0 mismatched |
+| `GRAPH` (`REFERENCE_CONFIGURATION`) | 146 nodes; 148 after `driven_graph`'s cuts |
+| SAND | 24 conditions x 17 design, **0 non-finite cells** |
+| Stage C2 | converges, 47 SQP iterations, feasible, convergence 7.4e-9 (PROCESS's own: 2.4e-7) |
+
+**The 32 disagreements are three causes, not thirty-two.** 18 of them are a single
+`+17.604 MW` offset propagating linearly — verified arithmetically, identical to six
+decimals across seven fields with the sign correctly flipping on
+`p_plant_electric_net_mw` (net = gross - recirc). Its cause is an inconsistency **in
+PROCESS**, not the port (see § 10's "A finding about PROCESS itself"). The rest are the
+`VacuumOld` tolerance difference (§ 8.4) and its propagation into Account 224 and the cost
+chain.
+
+### 11.2 The Stage C timing, corrected — compilation, not the optimiser
+
+§ 10 reports the C2 solve as "7.5 s against PROCESS's 96.8 s". That number has trace and
+compilation **inside** the timed region (`run_sand_harness.py` wraps
+`solve_schedule(...)`, and `VmconDriver.__call__` builds its `jax.jit` closures inside
+that call). Split by timestamping the SQP callback, 47 iterations reproduced:
+
+| | |
+|---|---|
+| total wall time | 6.69 s |
+| **trace + compilation** | **5.63 s — 84 % of total** |
+| the remaining 46 iterations | **0.72 s** |
+| median per iteration | **14.7 ms** (min 12.7, max 27.1) |
+
+So the honest comparison against PROCESS's 96.8 s is **0.72 s of solving** plus a one-time
+5.6 s compile — the port was being undersold, not oversold. Two consequences:
+
+- **The optimiser plumbing is the per-iteration cost, not the graph.** 14.7 ms against a
+  0.69 ms Jacobian is ~21x overhead: `pyvmcon`'s line search makes several `evaluate`
+  calls per iteration, each crossing the JAX/numpy boundary. That is where to look if
+  per-iteration cost ever matters — not at the derivative.
+- **`VmconDriver.__call__` rebuilds its `jax.jit` closures on every call**, so each is a
+  fresh cache key and every solve pays the 5.6 s again. One solve absorbs it; **a `Scan` of
+  N points would recompile N times.** Given § 11.4's measured 46x batching win, this is
+  the single change that would matter most for the scan use case, and it is small: hoist
+  the jitted callables so they are built once per graph shape.
+
+### 11.3 Boundary inputs — audited, and much smaller than it looked
+
+Full record: **`_audit/boundary_inputs_audit.md`**. Of 379 unowned inputs, only 79 are set
+by the input file — but of the remaining 300, **only 12 are real cut edges**: 242 are
+genuine inputs (207 never assigned anywhere in `process/`, 35 assigned only to a constant),
+and 46 are off-path for a stellarator (`caller.py:272-275` returns after
+`stellarator.run()`; `Power.pfpwr` alone accounts for 19).
+
+**`len_tf_coil` does not hide a cross-subsystem cycle** — measured, not inspected: its
+producer's inputs are owned by `StellaratorScalingFactors`, unreachable from all four
+readers. The only cycle among the twelve is `fusden_alpha_total`, and it lands *inside* an
+SCC `mda.CUTS` already cuts. **So closing all twelve leaves "zero SCCs crossing a subsystem
+boundary" intact** (§ 11.4).
+
+Two findings from that audit matter more than the cut edges themselves, and **both are
+open**:
+
+1. **`ProfileValues.rho` is bound to `.neoclassics.r_eff`, a field PROCESS never writes**
+   (default `0.0`); PROCESS passes the literal `0.6` (`neoclassics.py:290`). Measured:
+   `dr_densities` is identically zero at rho=0 against `-4.2e19` at rho=0.6. This is a
+   **wrong answer**, not a coverage gap — same class as the `q95`/`iotabar` bug (§ 8.3).
+2. **`mda_harness.compare` silently drops every array-valued output.**
+   `float(np.asarray(got))` sits inside a bare `except: continue` (`mda_harness.py:695-699`),
+   *before* any bookkeeping, so **29 of 487 owned variables are counted as neither
+   agreement, disagreement, unverifiable, nor error.** That blind spot is why (1) was
+   invisible, and it means § 11.1's 404/32 has 29 unexamined variables behind it.
+
+Fix (2) before (1): (2) is what makes (1) verifiable.
+
+### 11.4 Structure — provenance vs derived clustering, measured
+
+Recorded in `_audit/switch_elimination_design.md` § 11. Comparing the port's module layout
+(provenance) against `Blocking.scc`:
+
+| grouping grain | real SCCs | crossing a boundary |
+|---|---|---|
+| subsystem (`stellarator`, `physics`, `costs`) | 3 | **0** |
+| source file | 3 | **3** |
+
+Every cycle is contained within one subsystem and spans several files inside it, while
+**346 cross-subsystem edges** exist — so subsystems are heavily coupled but *acyclically*,
+which is why the MDA needs only 11 driven blocks of 128. **The subsystem is the right grain
+for a model group; the file is not.**
+
+Caveat: this measures PROCESS's *filing habits*, since provenance here is the module tree.
+Declaring the grouping on physical grounds and finding the same containment would be the
+stronger claim.
+
+Also measured (§ 4.4 of `optimise_design.md`): the **driven** MDA schedule — all 9
+Newton/Picard blocks, `while_loop`s included — `vmap`s cleanly, **~46x throughput at
+B=64**, guarded against dead-code elimination (169 of 573 outputs genuinely vary). The
+payoff target is `Scan`, which today re-solves every point from scratch.
+
+### 11.5 Design work recorded today, not yet implemented
+
+**`_audit/switch_elimination_design.md`** — replacing integer `i_*` switches with model
+selection. Conclusions: it is already the declared policy (`traceability_policy.md`'s split
+default), `COMMON` is *already* the model list (79 declarations; a `Switch` is just
+`int -> tuple[declaration]`), and the settled target is **three trees** — model tree
+(structure, provenance intrinsic to each model's own module, namespaces as classes/modules
+rather than dicts to mirror how `DataStructure` addresses variables), settings tree (same
+shape, `None` where absent, schema *derivable* from each model's `eqx.field(static=True)`
+declarations), and `env` (traced boundary inputs, already separate). `materialise(models,
+settings)` zips the first two and replaces the integer `Configuration` outright.
+
+Two cottax changes are required, both small: `NodalDeclaration.name` must be position-derived
+rather than `type(self).__name__`, and `to_graph`/`node_and_names` must accept a namespace of
+`NodalDeclaration`s (today the mapping form takes only raw `NodeDefinition`s — it wants
+`.owns`). **Hierarchical `NodePath`s already work** in `Graph`/`Blocking`/`topological_order`,
+verified directly; only the declaration surface cannot express one. Instance-derived ports
+**also already work** (`_params` is an ordinary property) — an earlier claim that this needed
+an upstream change was tested and retracted.
+
+Undecided, and worth settling before writing code: whether `graph.under(prefix)` sees through
+mint prefixes (`^problem.physics.profiles.x` does not live under `physics`, so subtree swaps
+would strand minted nodes).
+
+### 11.6 Priority order
+
+1. **`mda_harness.compare`'s dropped arrays** (§ 11.3.2) — a 29-variable hole in the
+   measurement everything else is judged by. Cheap, and it gates the next item.
+2. **`ProfileValues.rho` / `r_eff`** (§ 11.3.1) — a known wrong answer.
+3. **`c62`'s Jacobian row** (§ 10) — value exact, derivative wrong by ~5x with a sign flip
+   on x4; the only cell disagreeing for an unknown reason. The same topological walk that
+   found the x4 defect should settle it.
+4. **Hoist `VmconDriver`'s jitted callables** (§ 11.2) — small, and the prerequisite for
+   batched/scanned solves being worth anything.
+5. **The cold-start gap** (§ 10, Stage C3) — 20 of 24 conditions are `nan` at the cold
+   point because the cold `DataStructure` has `0.0` in every model-computed field. **The
+   port cannot yet run its own pipeline from a cold input file at all**, optimiser or not.
+   This is the ceiling on the whole result: today's claim is "the port solves its own
+   problem faster and tighter than PROCESS solves PROCESS's, *seeded from PROCESS's
+   answer*". "Reproduces PROCESS's optimisation from scratch" stays undemonstrated until
+   this closes, and § 11.3's twelve cut edges are part of what a cold start must produce
+   for itself.
+6. **The two systemic gaps, now at four instances each** — "is the right *node*
+   registered" (every instance found by a downstream consumer, never by a check;
+   `switch_audit` checks kwargs on nodes that are already present) and PROCESS's
+   report-pass/solve-pass inconsistency as an undetected category, alongside
+   `KNOWN_UNVERIFIABLE_OUTPUTS`/`EXPLAINED_DISAGREEMENTS`.
+7. **The switch-elimination work** (§ 11.5) — scheduled next, per the design doc's own
+   order: enum-aware `switch_audit` first so the net that caught five bugs is not lost in
+   the act of acting on it.
+
+### 11.7 A recurring lesson, worth keeping
+
+Five confident diagnoses were overturned by measurement this session, several of them mine:
+`i_plasma_ignited` as the cause of the 1.2 % confinement gap (it was the `q95`/`iotabar`
+binding); `sig_tf_wp_max = 0.0` as the cause of c32's `inf` (it was the coil-island
+placeholder feeding `a_tf_wp_no_insulation`, one node further up); "no speed win at this
+size" (an unjitted cold timing); "costs is unported" (23 nodes existed); and "instance
+fields cannot drive a node's reads-set" (they can). In every case the correction came from
+running something, not from reading harder. The `jnp.sqrt(jnp.maximum(0, x))` nan-gradient
+trap has now appeared **twice** for the same reason — value-correct, derivative `nan` — and
+only the gradient tests see it.

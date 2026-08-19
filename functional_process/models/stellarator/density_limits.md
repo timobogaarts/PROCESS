@@ -10,7 +10,20 @@ two tier-1 functions below unchanged), registered in `functional_process/total_p
 `EcrhDensityLimit.dlimit_ecrh`/`.bt_max_ecrh` mint `.stellarator.dlimit_ecrh`/
 `.bt_max_ecrh` — invented names, since `st_d_limit_ecrh`'s return values are never
 stored to `data` anywhere in the source (confirmed by grep: they stay locals in
-`st_density_limits`, clamped, then passed straight into `output()`). Record stays `draft`
+`st_density_limits`, clamped, then passed straight into `output()`).
+
+**Re-verified in the MDA triage (`_audit/next_steps.md` §8.1), with line references.**
+`st_d_limit_ecrh` returns `(dlimit_ecrh, bt_max)` at
+`process/models/stellarator/density_limits.py:152`. Its only two callers both keep the
+pair as locals: `st_density_limits` binds them to `ne0_max_ECRH`/`bt_ecrh`
+(`density_limits.py:40-43`), `min`-clamps both (`:46-47`) and passes them to `output()`
+(`:50`); `power_at_ignition_point` binds them to `ne0_max`/`bt_ecrh_max`
+(`:191`) and uses them only to mutate a *deep-copied* proxy `DataStructure` (`:197-206`)
+that is discarded. `process/data_structure/stellarator_variables.py` has neither name, nor
+any `dlimit`/`bt_max` field. Class (a): genuine mints, correct as-is, unverifiable by the
+harness.
+
+Record stays `draft`
 overall — the port only covers the tier-1 half, `power_at_ignition_point` is still
 unported (see open question 3, now unblocked by 1B but not yet acted on).
 

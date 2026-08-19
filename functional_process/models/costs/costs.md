@@ -1,8 +1,31 @@
 ---
 kind: model-unit
-status: draft
+status: reviewed
 confidence: high
 ---
+
+**Second porting wave (`.costs.coe`): 41/43 methods ported, 44 nodes written, 43
+registered.** The first wave ported 23 self-contained leaf accounts and left
+`.costs.coe` -- the `i_figure_merit == 6` objective
+(`tests/regression/input_files/stellarator_helias.IN.DAT:229`,
+`functional_process/core/solver/objectives.py:88-90`) -- without a producer anywhere in
+the ported graph, which `_audit/optimise_design.md` names as its single blocker. This
+wave ports the whole transitive chain (§ "coverage map for `.costs.coe`" below) and
+registers it in `total_process.COSTS_1990`, under a new
+`.costs.i_cost_model` `Switch`. The two methods left unported are `run` (the call-order
+dispatcher, which a `Graph` replaces -- its two *computations*, `cdirt` and `concost`,
+are ported as their own nodes) and `output` (reporting only).
+
+Three of the first wave's own conclusions are **corrected** by this wave, each in place
+below: `acc2222`'s "dynamic-length loop is a structural JAX blocker" (open question 3 --
+the bound is a run-configuration constant, so it is a static kwarg and the loop unrolls);
+"`i_cost_model` is not wireable as a `Switch`" (§ `i_cost_model` -- it is, now that this
+arm owns `.costs.coe`/`.costs.concost` themselves); and `unit_registry.md`'s reasoning
+that `costs.py` "never even runs by default" so its nodes must stay unregistered (true of
+PROCESS's bare default, `cost_variables.py:327`; irrelevant to the run this project
+validates against, which sets `i_cost_model = 0` explicitly at
+`stellarator_helias.IN.DAT:248` with the comment "0: 1990 cost module, the 2015 does not
+work yet for stellarators").
 
 **The `i_cost_model` finding (this dispatch's main ask): confirmed genuine topology
 `Switch`, disjoint subgraphs.** `.costs.i_cost_model` is read in exactly one place in the
@@ -32,17 +55,32 @@ literally commented `# Save as concost, the variable used as a Figure of Merit` 
 `Switch.check_arms_are_exclusive` requires of a real `Alternative` pair (own at least one
 output in common, or they are not alternatives at all — they could coexist). Confirms
 this is the third real `TOPOLOGY_SWITCHES` entry after `isthtr`/`ipowerflow`/
-`i_plasma_pedestal`. **Not wired into `total_process.TOPOLOGY_SWITCHES` here** — reserved
-for the consolidation pass, per this dispatch's boundary.
+`i_plasma_pedestal`. ~~**Not wired into `total_process.TOPOLOGY_SWITCHES` here** —
+reserved for the consolidation pass, per this dispatch's boundary.~~ **Now wired**, by
+the second wave, but *not* as the two-real-arm pairing this paragraph anticipated:
+`costs_2015.py` still has zero `cottax` nodes, so its arm (`value == 1`, PROCESS's own
+default) is declared `unproduced` -- a new third `Alternative` state that assembles as
+empty instead of raising, added to `configuration.py` for exactly this case. The
+alternative readings were weighed and rejected; the full argument, including why an
+`unported` default arm would break `import functional_process.total_process` outright,
+is in `total_process.py`'s own comment block on the switch and in `_audit/next_steps.md`
+§9. The claim above that the two arms *would* satisfy `check_arms_are_exclusive` once
+both were ported still stands and is now half-demonstrated: this arm owns
+`.costs.coe`/`.costs.concost`, so the moment `costs_2015.py` grows a `run()`-level node
+the pairing becomes a real two-armed switch with no further machinery.
 
-**Ported: 23 of 43 methods** in `costs.py` (`costs.py` in this directory,
-`test_costs.py`), all tier-1, all self-contained (no calls into any other `Model`, no
-internal iteration, no `scipy`). See "method inventory" below for the full 43-row table
-(23 ported, 20 audit-only) and their reasons. **Three real findings, none fixed**: a
-genuine PROCESS bug in `acc223` (§ open questions #1), a history-dependence gap the port
-cannot reproduce (`cdrlife_cal`/`cplife_cal`, § open questions #2), and a dynamic-length
-loop in `acc2222` that blocks porting it under this project's current JAX-difficulty
-conventions (§ open questions #3).
+**Ported: 41 of 43 methods** in `costs.py` (`costs.py` in this directory,
+`test_costs.py`) -- 23 in the first wave, 18 in the second -- plus the two computations
+`Costs.run()` performs inline (`cdirt`, `concost`), giving 44 pure functions and 44
+`cottax` nodes. All tier-1, all self-contained (no calls into any other `Model`, no
+internal iteration, no `scipy`). 43 of the 44 nodes are registered; only
+`TfMagnetCostResistive` is not (see the coverage map). See "method inventory" below for
+the full 43-row table and the per-method reasons. **Findings, none fixed**: two genuine
+PROCESS defects in `acc223` (§ open questions #1), a history-dependence gap the port
+cannot reproduce (`cdrlife_cal`/`cplife_cal`, § open questions #2), and one dead field
+(`.costs.c2234`, § open questions #6). Open question #3 (`acc2222`'s "dynamic-length
+loop") is **resolved and was wrong**: the bound is a run-configuration constant, so it
+is a static kwarg and the loop unrolls at trace time.
 
 ## source
 
@@ -52,66 +90,113 @@ then 40 `accNNNN`-named account methods plus `coelc` and `convert_fpy_to_calenda
 **Transitive-closure check**: no method in this file calls any other `Model`'s method,
 `scipy`, or CoolProp (`grep -nP '^\s+self\.\w+\.\w+\(' costs.py` matching anything but
 `self.accNNNN(`/`self.coelc(`/`self.convert_fpy_to_calendar(` returns nothing; `grep -n
-"scipy\|fsolve\|optimize"` returns nothing). The only loop anywhere in the file is
-`acc2222`'s `for i in range(self.data.pf_coil.n_cs_pf_coils)` — a **dynamic-length**
-loop (see JAX-difficulty flags), the sole structural blocker in the whole file.
+"scipy\|fsolve\|optimize"` returns nothing). The only loops anywhere in the file are
+`acc2222`'s two `for i in range(...)` loops over the PF coil count -- **not**
+dynamic-length, as the first wave recorded: `.pf_coil.n_cs_pf_coils` and `.build.iohcl`
+are neither iteration variables nor scan variables (`grep -n n_cs_pf_coils
+process/core/solver/iteration_variables.py process/core/scan.py` -> no match), so both
+are graph-assembly-time constants and the loops unroll at trace time. There is no
+structural JAX blocker anywhere in this file.
 
 ### method inventory (43 methods)
 
-| method | account | ported? | note |
-|---|---|---|---|
-| `convert_fpy_to_calendar` | — | **yes** | branch-free besides 3 independent thresholds |
-| `acc21` | 21 | **yes** | structures/buildings, one `ireactor` branch (`c213`) |
-| `acc2211` | 221.1 | no | first wall; `ife.ife` branch reads 2-D `ife.fwmatm[i,j]` arrays — deferred, see open questions |
-| `acc2212` | 221.2 | no | blanket; same `ife.fwmatm`/`ife.blmatm` 2-D-array shape as `acc2211` |
-| `acc2213` | 221.3 | no | shield; same `ife.shmatm` 2-D-array shape |
-| `acc2214` | 221.4 | **yes** | reactor structure, branch-free |
-| `acc2215` | 221.5 | **yes** | divertor, trivial `ife.ife` zero-branch (no 2-D arrays) |
-| `acc221` | 221 (total) | no | sum of the five above; not worth porting with 3/5 unported |
-| `acc2221` | 222.1 | no | TF magnets; `i_tf_sup`/`itart`/`ifueltyp` 3-way nested branching, `supercond_cost_model` sub-branch — left for a future pass, no blocker found, just out of this pass's bounded scope |
-| `acc2222` | 222.2 | no | PF magnets; **dynamic-length** `for i in range(n_cs_pf_coils)` loop — structural JAX blocker, see open questions #3 |
-| `acc2223` | 222.3 | **yes** | vacuum vessel assembly, branch-free |
-| `acc222` | 222 (total) | no | sum incl. unported `acc2221`/`acc2222`; also has its own `ife.ife==1: c222=0` branch |
-| `acc2231`/`acc2232`/`acc2233` (inside `acc223`) | 223 | no | power injection; **a real PROCESS bug found**, see open questions #1 — deferred pending that bug's resolution, entangled with unported `current_drive.py` fields anyway |
-| `acc224` | 224 | **yes** | vacuum system, one `VacuumPumpType` branch |
-| `acc2251` | 225.1 | **yes** | TF coil power conditioning, `i_tf_sup` branches (x2) |
-| `acc2252` | 225.2 | **yes** | PF coil power conditioning, one guarded-division branch |
-| `acc2253` | 225.3 | no | energy storage/thermal storage; `pulse.i_pulsed_plant`-gated, `istore`-switched (4-way, raises `ProcessValueError` on an illegal value) — left for a future pass, no blocker found beyond size/time budget |
-| `acc225` | 225 (total) | no | sum incl. unported `acc2253`; also `ife.ife==1: c225=0` branch |
-| `acc2261` | 2261 | **yes** | reactor cooling, branch-free |
-| `acc2262` | 2262 | no | auxiliary component cooling — not read this pass, time budget |
-| `acc2263` | 2263 | no | cryogenic system — not read this pass, time budget |
-| `acc226` | 226 (total) | no | sum incl. unported `acc2262`/`acc2263` |
-| `acc2271` | 2271 | **yes** | fuelling system, branch-free |
-| `acc2272` | 2272 | no | fuel processing; `ife.ife` branch **also writes `.physics.wtgpd`** (a cross-area write feeding `acc2272`'s own next line), not a plain `explicit-arg` shape — deferred |
-| `acc2273` | 2273 | no | atmospheric recovery; `f_plasma_fuel_tritium` threshold branch, straightforward but not read in enough depth this pass — time budget |
-| `acc2274` | 2274 | **yes** | nuclear building ventilation, branch-free |
-| `acc227` | 227 (total) | no | sum incl. unported `acc2272`/`acc2273` |
-| `acc228` | 228 | **yes** | instrumentation and control, branch-free |
-| `acc229` | 229 | **yes** | maintenance equipment, branch-free |
-| `acc23` | 23 | **yes** | turbine plant equipment; PROCESS only computes it when `ireactor==1`, see open questions #4 |
-| `acc241`..`acc245` | 241-245 | **yes** (all 5) | electric plant equipment sub-accounts, all branch-free |
-| `acc24` | 24 (total) | **yes** | sum of the five above — all 5 inputs are ported, so the total is too |
-| `acc25` | 25 | **yes** | misc plant equipment, branch-free |
-| `acc26` | 26 | **yes** | heat rejection, one `ireactor` branch (formula selection, not a default-zero case like `acc23`) |
-| `acc9` | 9 | **yes** | indirect cost/contingency, branch-free besides `cfind[lsa-1]` |
-| `coelc` | — | no | cost of electricity, ~290 lines, several branches (`istore`, `ireactor`, NaN-guard clamping) — large, out of this pass's bounded scope, no structural blocker found |
-| `run` | — | no (orchestration) | the call-order dispatcher itself; not a computation to port — cottax's graph replaces it |
-| `output` | — | no | pure reporting, calls `self.run()` first then only `ovarre`/`oheadr` calls — same "reporting isn't quite inert but nothing to extract" shape as `coils/output.py` |
+`wave` is 1 (the first, leaf-account wave) or 2 (this one, the `.costs.coe` chain).
+`registered` says whether the node is in `total_process.COSTS_1990`.
 
-**23/43 ported. 20 audit-only**, none blocked by entanglement with an unported *unit* in
-the graph-topology sense (no method in this file calls another `Model`) — the 20 are
-either genuinely out of this pass's bounded time budget (most of them: straightforward,
-same shape as the 23 that *are* ported, just not gotten to), or hit one of three real
-structural issues (2-D `ife.*` arrays in `acc2211`/`acc2212`/`acc2213`; the dynamic-length
-loop in `acc2222`; the live bug in `acc223`).
+| method | account | wave | registered | note |
+|---|---|---|---|---|
+| `convert_fpy_to_calendar` | — | 1 | yes | branch-free besides 3 independent thresholds |
+| `acc21` | 21 | 1 | yes | structures/buildings, one `ireactor` branch (`c213`) |
+| `acc2211` | 221.1 | **2** | yes | first wall; `ife` is a **static** kwarg and only `ife != 1` is ported -- the IFE arm reads the 2-D `.ife.fwmatm`, a different reads-set over an unbuilt subsystem |
+| `acc2212` | 221.2 | **2** | yes | blanket; same static-`ife` treatment (`.ife.blmatm`). `c22128` is deliberately not an output -- written only in the IFE arm and not a term of `c2212` in either |
+| `acc2213` | 221.3 | **2** | yes | shield; same static-`ife` treatment (`.ife.shmatm`) |
+| `acc2214` | 221.4 | 1 | yes | reactor structure, branch-free |
+| `acc2215` | 221.5 | 1 | yes | divertor, trivial `ife.ife` zero-branch (no 2-D arrays), kept traced |
+| `acc221` | 221 (total) | **2** | yes | sum of the five above; ported as its own node with PROCESS's five sub-calls neutralised in the test wrapper |
+| `acc2221` | 222.1 | **2** | **SC arm only** | **split into two functions/nodes**, per the split default: `TfMagnetCostSuperconducting` (`i_tf_sup == 1`) and `TfMagnetCostResistive` (`!= 1`) share no body and read disjoint fields. Only the SC one is registered -- see the coverage map |
+| `acc2222` | 222.2 | **2** | yes | PF magnets; the "dynamic-length loop" turned out to be static (see § source). `n_cs_pf_coils`/`iohcl`/`i_pf_conductor`/`supercond_cost_model` are static kwargs |
+| `acc2223` | 222.3 | 1 | yes | vacuum vessel assembly, branch-free |
+| `acc222` | 222 (total) | **2** | yes | sum; its `ife == 1` arm is a bare `c222 = 0`, so `ife` stays *traced* here (unlike 2211-2213) |
+| `acc223` | 223 | **2** | yes | power injection; **two real PROCESS defects reproduced**, see open questions #1. Static `ife` (four-way IFE driver dispatch unported); `i_hcd_primary` traced |
+| `acc224` | 224 | 1 | yes | vacuum system, one `VacuumPumpType` branch |
+| `acc2251` | 225.1 | 1 | yes | TF coil power conditioning, `i_tf_sup` branches (x2), traced |
+| `acc2252` | 225.2 | 1 | yes | PF coil power conditioning, one guarded-division branch |
+| `acc2253` | 225.3 | **2** | yes | energy storage; static `i_pulsed_plant`/`istore`. `istore == 3` refused (a third reads-set: `p_plant_primary_heat_mw`/`t_plant_pulse_no_burn`/`dtstor`); options 1/2 are literal sums |
+| `acc225` | 225 (total) | **2** | yes | sum; traced `ife`, same shape as `acc222` |
+| `acc2261` | 2261 | 1 | yes | reactor cooling, branch-free |
+| `acc2262` | 2262 | **2** | yes | auxiliary component cooling; static `ife` -- the IFE arm *adds* terms reading `.ife.tdspmw`/`.tfacmw` |
+| `acc2263` | 2263 | **2** | yes | cryogenic system, branch-free |
+| `acc226` | 226 (total) | **2** | yes | pure sum in the source (does not call its sub-accounts) |
+| `acc2271` | 2271 | 1 | yes | fuelling system, branch-free |
+| `acc2272` | 2272 | **2** | yes | fuel processing; static `ife`. **The only method in the file that writes outside `.costs.*`** -- it owns `.physics.wtgpd`, and nothing else in `process/` writes that field |
+| `acc2273` | 2273 | **2** | yes | atmospheric recovery; the tritium threshold is a plain traced `jnp.where` (same reads both sides) |
+| `acc2274` | 2274 | 1 | yes | nuclear building ventilation, branch-free |
+| `acc227` | 227 (total) | **2** | yes | pure sum in the source |
+| `acc228` | 228 | 1 | yes | instrumentation and control, branch-free |
+| `acc229` | 229 | 1 | yes | maintenance equipment, branch-free |
+| `acc23` | 23 | 1 | yes | turbine plant equipment; PROCESS only computes it when `ireactor==1`, see open questions #4 |
+| `acc241`..`acc245` | 241-245 | 1 | yes (all 5) | electric plant equipment sub-accounts, all branch-free |
+| `acc24` | 24 (total) | 1 | yes | sum of the five above |
+| `acc25` | 25 | 1 | yes | misc plant equipment, branch-free |
+| `acc26` | 26 | 1 | yes | heat rejection, one `ireactor` branch |
+| `acc9` | 9 | 1 | yes | indirect cost/contingency, branch-free besides `cfind[lsa-1]` |
+| `acc22` | 22 (total) | **2** | yes | sum of 221-229 plus `crctcore`; sub-calls neutralised in the test wrapper |
+| `coelc` | — | **2** | yes | **cost of electricity -- `.costs.coe` itself.** ~290 lines, static `ife`/`itart`/`ireactor`/`ipnet`, traced `ifueltyp` |
+| `run` | — | **n/a (orchestration)** | — | the call-order dispatcher; a `Graph` replaces it. Its two *computations* are ported as `TotalPlantDirectCost` (`.costs.cdirt`) and `ConstructedCost` (`.costs.concost`) |
+| `output` | — | **n/a (reporting)** | — | calls `self.run()` then only `ovarre`/`oheadr` -- the same "reporting isn't quite inert but nothing to extract" shape as `coils/output.py` |
+
+**41/43 methods ported (23 + 18), 44 pure functions, 44 nodes, 43 registered.** The two
+unported methods are orchestration and reporting; nothing is left blocked.
+
+### coverage map for `.costs.coe`
+
+Derived before any code was written, by walking the chain backwards from
+`process/models/costs/costs.py:2990`. It is worth stating the result plainly because it
+is the reason this wave is as large as it is:
+
+    coe = coecap + coefuelt + coeoam + coedecom                        (coelc, :2990)
+      coecap   <- capcost <- moneyint <- concost                       (:2735-2757)
+      coefuelt = coefwbl + coediv + coecdr + coecp + coefuel + coewst  (:2982)
+                 <- fwallcst (acc2211), blkcst (acc2212), divcst (acc2215),
+                    cpstcst (acc2221), cdcost (acc223), life_blkt/cdrlife_cal/
+                    life_div/cplife_cal (convert_fpy_to_calendar), wtgpd (acc2272)
+      coedecom <- concost                                              (:2960-2970)
+    concost = cdirt + cindrt + ccont                                   (run, :77-79)
+      cindrt, ccont <- acc9 <- cdirt
+    cdirt   = c21 + c22 + c23 + c24 + c25 + c26                        (run, :64-71)
+      c22   = c221+c222+c223+c224+c225+c226+c227+c228+c229             (acc22, :923-933)
+        c221 <- acc2211 acc2212 acc2213 acc2214 acc2215
+        c222 <- acc2221 acc2222 acc2223
+        c225 <- acc2251 acc2252 acc2253
+        c226 <- acc2261 acc2262 acc2263
+        c227 <- acc2271 acc2272 acc2273 acc2274
+
+**`.costs.coe` therefore depends on every computational method in the file.** There is no
+smaller sufficient subset: the accumulation is a plain sum of all nine Account-22
+sub-totals and all six top-level accounts, none of which PROCESS ever skips. "Port only
+what `coe` needs" and "port everything except `run`/`output`" are the same instruction
+here, and that was checked rather than assumed -- the 18 second-wave methods are exactly
+the 20 first-wave audit-only entries minus `run` and `output`.
+
+Two nodes are **written but deliberately not registered**:
+
+- `TfMagnetCostResistive` (`acc2221`'s `i_tf_sup != 1` arm). Registering it alongside
+  `TfMagnetCostSuperconducting` would be a duplicate-ownership conflict on
+  `.costs.c22211`/`c22212`/`c2221`; pairing them as a real `Switch` would require that
+  switch to nest inside `.costs.i_cost_model`, and nested switches are a still-open gap
+  (`next_steps.md` §1, now with a third instance). `.tfcoil.i_tf_sup == 1` is both
+  PROCESS's own default (`tfcoil_variables.py:261`) and the reference run's value, so
+  the registered arm is correct under either -- this is a missing *generalisation*, not
+  a wrong registration.
+- `calculate_tf_magnet_cost_resistive`'s sibling is the only such case. Everything else
+  written by either wave is now in `total_process.COSTS_1990`.
 
 ## data footprint
 
 Full per-argument tables are in each ported function's own docstring in `costs.py`
 (right above its `def`) — not duplicated here, per this project's practice of keeping the
 signature and its documentation next to each other rather than in two places that can
-drift. Every read across all 23 functions is `explicit-arg` (plain parameter, no
+drift. Every read across all 44 functions is `explicit-arg` (plain parameter, no
 mid-function re-read, no branching on the same field it also writes) **except**:
 
 - `convert_fpy_to_calendar`'s `cdrlife_cal`/`cplife_cal` — `implicit-io`, not
@@ -129,27 +214,50 @@ mid-function re-read, no branching on the same field it also writes) **except**:
   this is flagged as an assumption anyway, cross-referenced against `cdrlife_cal` so the
   two similar-looking cases aren't conflated.
 
-No `redundant-duplicate-write`s and no `implicit-io-via-callee` found in any of the 23
-(no `copy.deepcopy`, no calls into another model).
+- `acc223`'s `c2233` -- looks like the same shape but is **not** history-dependent in
+  practice, and this is the one place where saying so precisely matters. PROCESS never
+  assigns it unless `ifueltyp == 1` (open questions #1), so on any other run it holds
+  `cost_variables.py:165`'s dataclass default `0.0` -- and because `ifueltyp` is a
+  run-configuration constant, "never assigned in this call" implies "never assigned in
+  any call of the run". The port's `0.0` is therefore *exact* there, unlike
+  `cdrlife_cal`'s, whose gate can flip between iterations. Confirmed on the converged
+  reference run: `.costs.c2233 == 0.0` with `ifueltyp == 0`.
+- `coelc`'s `cpstcst`/`cplife_cal`/`cplife` -- read unconditionally by the ported node
+  even though PROCESS only reads them under `itart == 1`. A deliberate deviation from
+  the split default, argued at the function's docstring and in "switches touched" below.
+
+No `redundant-duplicate-write`s and no `implicit-io-via-callee` found in any of the 44
+(no `copy.deepcopy`, no calls into another model). One cross-area write:
+`acc2272` owns `.physics.wtgpd` (see the method inventory).
 
 ## proposed signature(s)
 
-See `costs.py` — 23 `calculate_*` functions (one `convert_*`, matching PROCESS's own
-verb-named method), each documented in place. Not repeated here.
+See `costs.py` — 44 functions (43 `calculate_*` plus `convert_fpy_to_calendar`,
+matching PROCESS's own verb-named method), each documented in place. Not repeated here.
 
 ## cottax node
 
-23 `ExplicitFunction` nodes, one per function, written in `costs.py` immediately after
-each function — every input/output is an ordinary `VarPath`, no minted names, no
-switches-as-ports beyond the plain static-looking device/config values already discussed
-under "switches touched". `ElectricPlantEquipmentCost` reads the other five Account-24x
-nodes' own outputs (`c241`..`c245`), matching `Costs.acc24`'s own call order.
+44 `ExplicitFunction` nodes, one per function -- the first wave's 23 written
+immediately after their functions, the second wave's 21 in a block at the end of the
+file. Every input/output is an ordinary `VarPath`; **no minted names anywhere in this
+unit**, which is why the whole chain scores in the MDA harness rather than landing in
+`errors`/`unverifiable`. The accumulator nodes (`ReactorCost`, `MagnetsCost`,
+`PowerConditioningCost`, `HeatTransportSystemCost`, `FuelHandlingCost`,
+`FusionPowerIslandCost`, `TotalPlantDirectCost`, `ConstructedCost`,
+`ElectricPlantEquipmentCost`) read their sub-accounts' own outputs, so the graph
+reproduces `Costs.run()`'s call order structurally instead of by hand.
+
+43 of the 44 are registered, in `total_process.COSTS_1990`, as the
+`.costs.i_cost_model == 0` arm of a new `Switch`. `TfMagnetCostResistive` is the one
+exception -- see the coverage map.
 
 ## tier signal
 
-All 23: **tier 1**. No internal iteration, no calls into other models, no `scipy`. Ported
-as part of finishing this pass's bounded scope, per `unit_registry.md`'s "standing
-practice going forward".
+All 44: **tier 1**. No internal iteration, no calls into other models, no `scipy`.
+Every one has a `Tier1Contract` in `test_costs.py`, checked against PROCESS's own method
+(for the six accumulators PROCESS calls its sub-accounts before summing, the reference
+wrapper neutralises those sub-calls with instance-level no-ops so the check exercises the
+accumulation and nothing else -- the sub-accounts have their own contracts alongside).
 
 ## switches touched
 
@@ -185,23 +293,72 @@ business to split either).
   `uchts`/`ucturb` tables in `acc2261`/`acc23`. Array index, not a formula switch. Kept
   static.
 
-None of these seven appear in `_audit/core/solver/switches.md` under this file yet (out
-of this file's boundary to add — reserved for the consolidation pass, same as
-`i_cost_model` itself).
+**Second wave, all genuinely `static`** (`eqx.field(static=True)` on the node, so
+`mda_harness.switch_audit` checks each against the modelled run on every harness run --
+17 new checked kwargs, 0 mismatched). Each is listed with *why* it is static rather than
+traced, because the split default (`traceability_policy.md`) says a differing reads-set
+means split, and three of these deviate from it deliberately:
+
+- **`ife`** (`.ife.ife`) on `FirstWallCost`/`BlanketCost`/`ShieldCost`/
+  `PowerInjectionCost`/`AuxiliaryComponentCoolingCost`/`FuelProcessingCost`/
+  `CostOfElectricity` — split, only `ife != 1` implemented, the other arm raises. Each
+  of these IFE arms reads fields no non-IFE arm does (2-D `.ife.fwmatm`/`blmatm`/
+  `shmatm`; the `.ife.cdriv*`/`dcdrv*`/`edrive` driver-cost tables; `.ife.tdspmw`/
+  `tfacmw`; `.ife.gain`/`fburn`/`reprat`/`uctarg`), and `.ife.*` has no unit in
+  `unit_registry.md` at all. **Note this is a different treatment from the first wave's**
+  `acc2215`/`acc222`/`acc225`, where the IFE arm is a bare zero with no new reads and
+  `ife` is a plain traced `jnp.where` — the criterion is the reads-set, not the field.
+- **`supercond_cost_model`** (`.costs.supercond_cost_model`, default `0`,
+  `cost_variables.py:552`) on `TfMagnetCostSuperconducting`/`PfMagnetCost` — **deviates
+  from the split default**: the two arms differ by three scalar reads inside an otherwise
+  shared body (~100 and ~200 lines respectively). Fourth and fifth instance of the
+  size-aware exception `next_steps.md` §1 tracks.
+- **`n_cs_pf_coils`/`iohcl`** (`.pf_coil.n_cs_pf_coils`, `.build.iohcl`) on
+  `PfMagnetCost` — loop bounds. Static because they must be: `range()` needs a Python
+  int. Legitimate because neither is an iteration or scan variable, so both are
+  graph-assembly-time facts, exactly `ImpurityRadiationTotals.imp_indices`'s case.
+  `iohcl = 0` at registration is the one deliberate departure from a PROCESS default in
+  this unit (`build_variables.py:177` says `1`); the reference stellarator has no central
+  solenoid and `switch_audit` confirms it.
+- **`i_pf_conductor`** (`.pf_coil.i_pf_conductor`, default `0`) on `PfMagnetCost` —
+  same size-aware exception as `supercond_cost_model`.
+- **`i_pulsed_plant`/`istore`** (`.pulse.i_pulsed_plant`, `.pulse.istore`) on
+  `EnergyStorageCost` — split: `istore == 3` reads three fields options 1/2 do not, and
+  is refused. Options 1/2 add no reads at all (literal sums), so they stay in one body.
+- **`itart`** (`.physics.itart`) on `CostOfElectricity` — **deviates from the split
+  default**, sixth instance: the centrepost block is 15 lines of a ~290-line function
+  and both arms are implemented in one body, so the node reads
+  `.costs.cpstcst`/`cplife_cal`/`cplife` even at `itart == 0`. Contrast
+  `TfMagnetCostSuperconducting`/`_resistive` in this same file, which *were* split
+  because they share no body at all -- the two cases together are the clearest statement
+  this project has of what the missing size/entanglement-aware rule would have to say.
+- **`ireactor`/`ipnet`** (`.costs.ireactor`, `.costs.ipnet`) on `CostOfElectricity` —
+  not switches but *preconditions*: `Costs.run()` calls `coelc()` only when
+  `ireactor == 1 and ipnet == 0` (`costs.py:82-83`), so the node's `__check_init__`
+  refuses any other pair rather than producing a `.costs.coe` PROCESS would have left
+  untouched. Same move as `EcrhDensityLimit(i_plasma_pedestal=0)`.
+
+None of these appear in `_audit/core/solver/switches.md` under this file yet (out
+of this file's boundary to add — reserved for the consolidation pass). `i_cost_model`
+itself now has a row in `unit_registry.md`'s switches table.
 
 ## calls into other models
 
-None. Confirmed by grep and by direct read of all 23 ported bodies (see "source").
+None. Confirmed by grep and by direct read of all 44 ported bodies (see "source").
 
 ## JAX-difficulty flags
 
-- **`acc2222`'s dynamic-length loop**, `minor`→`workaround-known` in principle but
-  **not exercised here**: `for i in range(self.data.pf_coil.n_cs_pf_coils)` sums a
-  per-PF-coil winding length, where `n_cs_pf_coils` is a run-time count, not a
-  compile-time constant. `jax.lax.fori_loop`/a fixed-size-padded-array-plus-mask are the
-  two standard workarounds; neither is applied here since `acc2222` itself is out of
-  this pass's ported set (see method inventory). Flagged as the one real structural
-  blocker in the file, for whoever picks up `acc2222`/`acc222` next.
+- ~~**`acc2222`'s dynamic-length loop**, the one real structural blocker in the
+  file.~~ **Withdrawn -- the premise was wrong.** `for i in
+  range(self.data.pf_coil.n_cs_pf_coils)` is not a run-time count in any sense that
+  matters here: `n_cs_pf_coils` is not an iteration variable
+  (`process/core/solver/iteration_variables.py`, no match) and not a scan variable
+  (`process/core/scan.py`, no match), so it is constant for a whole solve and belongs in
+  `naming_convention.md`'s static-kwarg category. Neither `lax.fori_loop` nor padding is
+  needed: the loop unrolls at trace time, exactly as `ImpurityRadiationTotals`'s
+  `imp_indices` tuple already does for "which impurity species exist". `.build.iohcl`
+  (the second loop's bound, via `npf`) gets the same treatment. **There is now no
+  structural JAX blocker anywhere in `costs.py`.**
 - **Enum comparisons against plain ints** (`i_tf_sup == 1`, `i_vacuum_pump_type == 1`)
   rather than `TFConductorModel.SUPERCONDUCTING`/`VacuumPumpType.COMPOUND_CRYOPUMP` —
   `minor`, `workaround-known`. Keeps `costs.py` (the port) free of any `process.*` import
@@ -218,35 +375,56 @@ None. Confirmed by grep and by direct read of all 23 ported bodies (see "source"
   handling needed (verified these compile fine under `jax.jacfwd` — the index arguments
   are `static_argnames`, excluded from differentiation, so there is no question of
   differentiating *through* an index).
-- No CoolProp, no `scipy`, no data-dependent early exit anywhere in the 23 ported bodies.
+- **`coelc`'s clamped square root** — `needs-lax-cond-or-where`, and a real trap.
+  PROCESS zeroes `sqrt(p_plant_electric_net_mw / 1200)` when the power is negative
+  (`costs.py:2874-2888`). The obvious port, `jnp.sqrt(jnp.maximum(p, 0.0))`, is
+  value-correct and returns `nan` from `jacfwd` on the clamped branch, because `sqrt`
+  has an infinite derivative at zero. Caught by `test_gradient_finite` on the
+  `negative-net-electric-power-clamps-to-zero` sample, not by inspection; fixed with the
+  standard *double* `jnp.where` (the inner one keeps the untaken branch's argument away
+  from zero, the outer one discards its value). PROCESS's own finite difference there is
+  identically zero, which is what the fixed form differentiates to. Worth carrying
+  forward as a general note: every `jnp.maximum`-guard in front of a function with an
+  unbounded derivative at the guard point has this shape.
+- No CoolProp, no `scipy`, no data-dependent early exit anywhere in the 44 ported bodies.
 
 ## open questions
 
-1. **A real PROCESS bug in `acc223`** (Account 223, power injection — not ported, see
-   method inventory). Structure:
+1. **Two real PROCESS defects in `acc223`** (Account 223, power injection). **Now
+   ported, reproducing both faithfully** rather than fixing them, per this project's
+   standing policy (`radiation_power.md`'s precedent). Structure
+   (`process/models/costs/costs.py:1866-1922`):
    ```
    if ife.ife != 1:
        c2231 = ...                    # 223.1 ECH
-       if ifueltyp == 1: c2231 = ...
+       if ifueltyp == 1: c2231 = (1-fcdfuel)*c2231; c2231 = fkind*c2231
        if i_hcd_primary != 2: c2232 = ...(LH)   else: c2232 = ...(ICH)   # 223.2
        if ifueltyp == 1:
-           c2232 = ...
+           c2232 = (1-fcdfuel)*c2232; c2232 = fkind*c2232
            c2233 = ...                # 223.3 Neutral Beam -- nested INSIDE this if!
        if ifueltyp == 1:
-           c2233 = ...
+           c2233 = (1-fcdfuel)*c2233; c2233 = fkind*c2233
    ```
-   **`c2233` (neutral beam cost) is only ever computed when `ifueltyp == 1`** — its
-   assignment is nested inside the `if ifueltyp == 1:` block that also finishes `c2232`,
-   not inside its own top-level `#  Account 223.3` section the comment claims it starts.
-   Whenever `ifueltyp != 1` (the common case — `ifueltyp` defaults to something other
-   than 1 in most configurations), `c2233` is never assigned at all in this call and
-   stays at whatever it held from a previous iteration (same history-dependence shape as
-   `cdrlife_cal`, open question #2) or its dataclass default. **Not fixed** (out of this
-   file's scope decision to leave `acc223` audit-only this pass; documented so whoever
-   ports it next sees it immediately rather than re-deriving it). Confirmed by direct
-   read of `costs.py:1867-1978`, not by running PROCESS (no existing PROCESS test
-   exercises `ifueltyp != 1` for this specific method per a quick check of
-   `tests/unit/models/test_costs_1990.py::test_acc223`'s fixture — not chased further).
+   (a) **`c2233` (neutral beam cost) is only ever computed when `ifueltyp == 1`** — its
+   assignment (`costs.py:1909-1915`) is nested inside the `if ifueltyp == 1:` block that
+   also finishes `c2232`, not inside its own top-level `#  Account 223.3` section the
+   comment claims it starts. Whenever `ifueltyp != 1` the field is never assigned in
+   this call. **Refinement on the first wave's write-up**: it recorded this as "the same
+   history-dependence shape as `cdrlife_cal`". It is not, and the difference is what
+   makes it portable exactly. `ifueltyp` is a run-configuration constant (not an
+   iteration variable, not a scan variable), so "never assigned in *this* call" implies
+   "never assigned in *any* call of the run" — the field can only ever hold
+   `cost_variables.py:165`'s dataclass default `0.0`. `cdrlife_cal`'s gate, by contrast,
+   is `life_blkt_fpy < life_plant`, whose left side genuinely moves between VMCON
+   iterations. The port returns `0.0` on that branch, which is therefore exact, not an
+   approximation. Confirmed on the converged reference run: `.costs.c2233 == 0.0` with
+   `.costs.ifueltyp == 0`.
+   (b) **`fkind` is applied only on the `ifueltyp == 1` branch**, for all three
+   sub-accounts (`costs.py:1877-1881`, `1899-1903`, `1917-1921`): PROCESS computes
+   `cNNNN` unconditionally and then applies both `(1 - fcdfuel)` *and* the
+   Nth-of-a-kind multiplier inside the `if`. So Account 223 silently escapes `fkind` on
+   every run with `ifueltyp != 1`, unlike every other account in the file, which applies
+   it unconditionally. New this wave, found while porting; reproduced as written.
 2. **`cdrlife_cal`/`cplife_cal`'s history dependence** (`convert_fpy_to_calendar`, see
    data footprint) — the port cannot reproduce PROCESS's "leave it at whatever a
    previous solver iteration wrote" behaviour, because a pure function has no notion of
@@ -256,20 +434,48 @@ None. Confirmed by grep and by direct read of all 23 ported bodies (see "source"
    flips between iterations. Not resolved — this is a structural gap in what a pure
    function *can* represent, not a bug in this port; flagged for whoever designs the
    `Cut`/state-carrying machinery `next_steps.md` §5 already tracks for the unrelated but
-   structurally similar `.physics.first_call` self-loop.
-3. **`acc2222`'s dynamic-length loop** — see JAX-difficulty flags. The one real
-   structural blocker found in the whole file; everything else audit-only this pass is a
-   time-budget decision, not a blocker.
+   structurally similar `.physics.first_call` self-loop. **Inert on the reference run**:
+   `life_blkt_fpy = 25.98 < life_plant = 40`, so the fast branch is taken and
+   `cdrlife_cal` is genuinely written; `itart == 0`, so `cplife_cal` is `0.0` in both
+   PROCESS and the port.
+3. ~~**`acc2222`'s dynamic-length loop** — the one real structural blocker found in the
+   whole file.~~ **RESOLVED, and the finding was wrong.** See JAX-difficulty flags: the
+   loop bound is a run-configuration constant, so it is a static kwarg and the loop
+   unrolls at trace time. `acc2222` is ported and registered. There is no structural JAX
+   blocker anywhere in `costs.py`.
 4. **`acc23`'s and `acc21`'s `c213`'s default-zero-on-`ireactor==0`** assumption — unlike
    `cdrlife_cal` (open question #2), `ireactor` is a run-configuration constant set once
    from IN.DAT and never touched again during a solve (confirmed: not in
    `process/core/solver/iteration_variables.py`, not in `process/core/scan.py`, same
    evidence `configuration.py`'s own module docstring already uses for every topology
    switch), so the port's `0.0` default is safe — flagged only so a reader does not
-   conflate this case with `cdrlife_cal`'s genuine one.
-5. **20 audit-only methods, most with no blocker beyond this pass's time budget** — see
-   the method inventory table's "note" column. A follow-up pass should be able to port
-   most of `acc241`-adjacent accounts (`acc2262`/`acc2263`/`acc2273`) quickly; `acc2211`/
-   `acc2212`/`acc2213` need a decision on how to represent PROCESS's 2-D `ife.fwmatm`/
-   `blmatm`/`shmatm` arrays as `VarPath`s (mechanical, not a design blocker); `acc2221`/
-   `acc2253`/`coelc` are larger and were simply not reached this pass.
+   conflate this case with `cdrlife_cal`'s genuine one. `CostOfElectricity` makes the
+   same constancy argument load-bearing rather than merely reassuring: it *refuses* to
+   be constructed unless `ireactor == 1 and ipnet == 0`.
+5. ~~**20 audit-only methods**~~ — **closed**: 18 of the 20 are ported this wave; the
+   remaining two are `run` (orchestration) and `output` (reporting), neither of which is
+   a computation. The IFE arms of six of them are *not* ported (static `ife`, refused),
+   which is the honest residue of that item: `.ife.*` has no unit in `unit_registry.md`
+   at all, and the 2-D `fwmatm`/`blmatm`/`shmatm` `VarPath` question the first wave
+   flagged is deferred, not answered — it will be whoever ports the IFE device mode's to
+   make, and nothing in this project's stellarator scope needs it.
+6. **`.costs.c2234` is a dead field.** It is a term of `c223` (`costs.py:1976`) but is
+   written in exactly one place in all of `process/`: `costs.py:1968`, inside the IFE
+   *and* `ifueltyp == 1` branch, where it is set to `0.0` (grepped, no other writer).
+   So it is `0.0` on every possible run, and the port folds it to the literal rather
+   than declaring an `Output` nothing produces. New this wave; not fixed.
+7. **The residual `.costs.coe` disagreement is `VacuumOld`'s, not this unit's.** The MDA
+   harness reports 12 disagreements across the cost chain at `rel_diff` between 1.7e-06
+   and 4.1e-04, and all twelve are one already-documented cause: this port solves the
+   vacuum-duct diameter to `tol=1e-10` where PROCESS stops at a 1% relative step
+   (`models/vacuum.py:250`, `process/models/vacuum.py:469-477`,
+   `mda_harness.EXPLAINED_DISAGREEMENTS`), and `.vacuum.dlscal`/`dia_vv_vacuum_ducts`
+   feed Account 224. Demonstrated, not argued: fed PROCESS's own converged values for
+   those two fields, `calculate_vacuum_system_cost` reproduces all seven of PROCESS's
+   Account-224 numbers at **exactly zero** relative difference, and every downstream
+   absolute delta is that one `c224` delta pushed through the (linear) accumulation
+   chain — `delta c224 = delta c22 = delta cdirt = 1.226201741e-02`, `delta cindrt =
+   cfind[lsa-1]*(1+cowner)*delta cdirt` and `delta ccont = fcontng*(delta cdirt + delta
+   cindrt)` both predicted to 11 significant figures, `delta concost` their sum. Nothing
+   in this unit is off; deliberately not suppressed, so a future real regression on the
+   same fields still shows.

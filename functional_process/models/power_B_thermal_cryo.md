@@ -410,3 +410,24 @@ unguarded-branch-NaN risk of the kind chunk A's `res_tf_leg == 0.0` singularity 
    possibly a chain of several `1`-gradient pass-throughs compounding across
    `call_models`'s outer iterations, but not cross-checked against a PROCESS run
    here).
+
+
+## Update: six 1-tuple returns fixed
+
+`DeltaEtaStep`, `EtaTurbineStep`, `EtathLiqStep`, `TempTurbineCoolantInStep`,
+`PFwDivHeatDepositedMwStep` and `PFwBlktCoolantPumpMwStep` each ended their `step` with
+`return (x,)` while declaring a **single** `Output`. `cottax.evaluate._bind`'s
+`len(owns) == 1` branch takes the whole return as that one output, so the env held
+`(value,)` instead of `value`.
+
+Invisible to `PicardDriver` -- `ravel_pytree` flattens a 1-tuple happily and the
+comparison happens on the flat vector -- and **fatal to `rewrites.Residualise`**, whose
+minted `Compare` body is `operator.sub(condition, unknown)` and raises
+`TypeError: unsupported operand type(s) for -: 'tuple' and 'ArrayImpl'`. So this was a
+prerequisite for the `Optimise` layer, not a tidy-up: see
+`_audit/optimise_design.md` §6.4a and §10.3.
+
+Same bug class as `ZTfInsideHalf`'s (`next_steps.md` §8), now three instances. A sweep of
+`grep -n 'return (.*,)$' functional_process/models/` found one more genuine case
+(`VacuumPumpingSimple`, `vacuum.py:180`, also fixed) and two false positives in
+`AbstractDriver.__call__` implementations, where a tuple **is** the contract.

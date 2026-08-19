@@ -233,13 +233,45 @@ def calculate_parabolic_gradient_lengths(
 
 ## cottax node
 
-**Deliberately deferred** for `calculate_parabolic_profile_values` and
-`calculate_pedestal_profile_values`, per the schema's rule about wrapping before the
-signature is settled: both are arms of the `i_plasma_pedestal` topology switch and both
-own an overlapping set of `.physics` fields, so their nodes are `Alternative`s under that
-switch (`total_process.TOPOLOGY_SWITCHES`) — but the switch also has to reconcile with
-`density_limits.py`'s static-kwarg use of the same switch (see "switches touched"), and
-that is unresolved. Wrapping now would bake in a wiring the next question may change.
+**`calculate_parabolic_profile_values` and `calculate_ion_vol_avg_temperature` now have
+nodes, and both are registered** — `ParabolicProfileValues` (under the
+`.physics.i_plasma_pedestal == 0` arm) and `IonVolAvgTemperature` (in `COMMON`, since
+PROCESS writes that field in `parameterise_plasma` *before* the branch). This reverses
+the deferral recorded here, and the reason is worth keeping:
+
+> The deferral rested on open question 1 below ("`i_plasma_pedestal` holds two different
+> switch roles"). That question was **already settled in practice** by the time it was
+> read again: `total_process.py`'s value-0 arm co-locates
+> `EcrhDensityLimit(i_plasma_pedestal=0)` with the parabolic profile nodes, so there is
+> exactly one place the value is written and nothing left to reconcile. The record was
+> stale, not wrong.
+
+Leaving them unwritten had a cost nobody had measured. `.physics.temp_plasma_ion_vol_avg_kev`,
+`.physics.temp_plasma_electron_density_weighted_kev` and
+`.physics.temp_plasma_ion_density_weighted_kev` were **boundary inputs**, so ion
+temperature was structurally disconnected from `.physics.temp_plasma_electron_vol_avg_kev`
+— which is iteration variable 4. Every *value* in the graph was still right; every
+*derivative* with respect to that variable was ~0 where PROCESS's is O(1), and
+`FusionRates`' `sigmav_dt_average` (which goes roughly as `T²`) had a relative sensitivity
+of `2.4e-16`. Found by `_audit/optimise_design.md` §10.5a's Jacobian comparison, which is
+the only check in this project that could have found it. Registering the two nodes fixed
+every affected cell and added +7 MDA-harness agreements with 0 new disagreements.
+
+**`IonVolAvgTemperature` is a `FixedPointFunction`, not an `ExplicitFunction`**, and that
+is the interesting part. `calculate_ion_vol_avg_temperature` takes the incumbent value as
+an argument (faithfully — PROCESS writes the field only when
+`f_temp_plasma_ion_electron > 0`), so the field is a read *and* a write of the node and
+`to_graph` refuses it. The fixed-point shape carries the conditional-ownership-by-data
+classification in both directions: with the ratio positive the residual has derivative
+`-1` and the problem is well-posed; with it non-positive `g` is the exact identity, the
+residual is structurally zero, and `functional_process.sand.degenerate_fixed_points`
+detects that by differentiation and drops the problem — reverting the field to a boundary
+input, which *is* PROCESS's "use the input value" semantics, recovered from structure.
+
+**`calculate_pedestal_profile_values` still has no node.** Under `i_plasma_pedestal == 1`
+these five fields therefore have no producer at all, which is the honest state of the port
+(that arm needs `profiles.py`'s profile arrays) rather than a silent fallback to the
+parabolic formula.
 
 `calculate_profile_factors` and `calculate_parabolic_gradient_lengths` have no such
 problem — `calculate_profile_factors` runs in both branches, and
@@ -309,7 +341,8 @@ Both called **for effect**: the return value is unused, and the caller then read
 
 ## open questions
 
-1. **`i_plasma_pedestal` holds two different switch roles across two units.** Topology-
+1. **[RESOLVED IN PRACTICE — see "cottax node" above.]** **`i_plasma_pedestal` holds two
+   different switch roles across two units.** Topology-
    changing in `plasma_profiles.py`/`profiles.py`; a static kwarg on one node in
    `density_limits.py`. `configuration.py`'s `TOPOLOGY_SWITCHES` is a flat list of
    independent choices with no way to say "when this switch's arm is selected, that

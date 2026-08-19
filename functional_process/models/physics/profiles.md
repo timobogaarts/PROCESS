@@ -164,6 +164,31 @@ has as its producer.
 | `.physics.nd_plasma_electron_profile_integral` | `neprofile.profile_integ` | `NeProfileIntegral` | new mint. Consumed by `plasma_profiles.pedestal_parameterisation` (pedestal-only consumer; the node itself runs in both arms). |
 | `.physics.temp_plasma_electron_profile_integral_kev` | `teprofile.profile_integ` | `TeProfileIntegral` | new mint, sibling of the row above. |
 
+**All six re-verified in the MDA-harness triage (`_audit/next_steps.md` §8.1), against
+`process/models/physics/profiles.py` directly rather than against each other.** Every one
+is an instance attribute of a `Profile` object, not a `DataStructure` field:
+`profile_x`/`profile_y` are created in `Profile.run` (`profiles.py:61,64`), `profile_dx`
+in `calculate_profile_dx` (`profiles.py:93`), `profile_integ` in `integrate_profile_y`
+(`profiles.py:110`). `process/data_structure/physics_variables.py` has no field of any of
+these six names (grepped; it does carry many other `*_profile` arrays, and
+`nd_plasma_electron_*` / `temp_plasma_electron_*` scalars — none of them these). So all six
+are class (a) in that triage: genuine mints with no PROCESS counterpart, correct as-is,
+and unverifiable by the harness by construction.
+
+One relationship worth recording, because it looks like a duplicate and is not. In the
+**pedestal** arm PROCESS *does* store the two `profile_integ` values, at real fields:
+`plasma_profiles.py:234` writes `neprofile.profile_integ` to
+`.physics.nd_plasma_electron_line` and `plasma_profiles.py:236-238` writes
+`teprofile.profile_integ` to `.physics.temp_plasma_electron_line_avg_kev`. That is not a
+second name for the mint — it is the pass-through this port already models
+(`plasma_profiles.calculate_pedestal_profile_values` takes `ne_profile_integ`/
+`te_profile_integ` and returns them under the real names). In the **parabolic** arm
+(`i_plasma_pedestal == 0`, which is what the MDA harness's run uses) those same two real
+fields are instead the closed-form gamma expressions
+(`plasma_profiles.py:134-152`), computed without touching `profile_integ` at all, while
+`neprofile.run()`/`teprofile.run()` still compute and discard it. Collapsing the mint onto
+`.physics.nd_plasma_electron_line` would therefore put two producers on one field.
+
 Three independent units (#12, #20, #21) now agree on the same spelling for the two profile
 arrays and the radius grid — the naming convention's "port the existing name, don't invent"
 default has nothing to invent here, but where an attribute genuinely has no PROCESS name at

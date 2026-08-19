@@ -9,15 +9,47 @@ this is `local-intermediate` exactly like `stellarator_D_structure.md`'s `aintma
 chain, just one file over. Ported here as one straight-line function with ordinary
 Python locals instead of eight `data`-mediated steps.
 
-`superconductor()`'s `data.tfcoil.dcond[data.tfcoil.i_tf_sc_mat - 1]` is a data-table
-lookup (material density), not a formula branch -- `den_tf_sc_material` below stands in
-for the already-indexed scalar, so the port isn't the one deciding how `i_tf_sc_mat`
-resolves (see the record's note on this).
+`superconductor()`'s `data.tfcoil.dcond[data.tfcoil.i_tf_sc_mat - 1]`
+(`process/models/stellarator/coils/mass.py:88`) is a data-table lookup (material
+density), not a formula branch. The *pure function* below still takes it as one
+already-indexed scalar argument, `den_tf_sc_material` -- that part is unchanged.
+
+**What changed** (MDA triage, `_audit/next_steps.md` §8.1, row
+`.tfcoil.den_tf_sc_material`): **`CoilsMass`'s `Input` no longer mints
+`.tfcoil.den_tf_sc_material`.** `dcond` is a real
+`DataStructure` field (`process/data_structure/tfcoil_variables.py:157-170`, nine fixed
+material densities), so the read has a real `VarPath` and does not need one invented:
+`.tfcoil.dcond[i_tf_sc_mat - 1]`, an array-element path exactly as
+`_audit/naming_convention.md` § "Array elements" prescribes and as
+`physics/radiation_power.py:619-660` already binds
+`.impurity_radiation.f_nd_impurity_electron_array[0..13]`. This also answers the record's
+own open question 1 ("should whoever designs the `i_tf_sc_mat` node mint its output under
+this exact name") in the negative: no lookup node is needed at all, because the lookup's
+*input* is already a real place and its index is static.
+
+`i_tf_sc_mat` is a topology switch, so per `_audit/naming_convention.md` § "switches are
+not ports" it is resolved when the graph is assembled, not carried as a port -- and an
+`Input` default is fixed at class-definition time, so the index it selects is fixed with
+it. `CoilsMass` below is therefore the `i_tf_sc_mat == 1` (ITER Nb3Sn) arm; see
+`I_TF_SC_MAT_ITER_NB3SN`.
 """
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
 from process.core import constants
+
+I_TF_SC_MAT_ITER_NB3SN = 1
+"""`i_tf_sc_mat`'s ITER-Nb3Sn value, and PROCESS's own default
+(`process/data_structure/tfcoil_variables.py:246`). `tests/regression/input_files/
+stellarator_helias.IN.DAT:235` sets it explicitly to the same 1, so the MDA harness's run
+selects `dcond[0] == 6080.0` (`tfcoil_variables.py:158`).
+
+The same value is already hardcoded one node over, at graph assembly, for the same switch
+(`WindingPackIntersectInputs(i_tf_sc_mat=1)` in `functional_process/total_process.py`).
+A different material needs a sibling node class overriding only `den_tf_sc_material`'s
+`Input`, in the style `coils.py` already uses to give `jcrit_from_material` one node
+class per `i_tf_sc_mat` value (`coils.py:123,178,232,267,309,347,384,421`).
+"""
 
 
 def calculate_coils_mass(
@@ -140,7 +172,20 @@ def calculate_coils_mass(
 
 
 class CoilsMass(ExplicitFunction):
-    """cottax node: `calculate_coils_mass`."""
+    """cottax node: `calculate_coils_mass`, the `i_tf_sc_mat == 1` arm.
+
+    Every `Input` is a real `DataStructure` field. `den_tf_sc_material` reads
+    `.tfcoil.dcond[0]` -- see the module docstring for why the index is baked in here
+    rather than passed, and `I_TF_SC_MAT_ITER_NB3SN` for which value it is.
+
+    Its two winding-pack area `Input`s (`.tfcoil.a_tf_wp_with_insulation`/
+    `.a_tf_wp_no_insulation`) *are* minted, but by this port's own
+    `coils/calculate.py:1136-1137` (`WindingPackTotalSizePost`), which is their producer;
+    they are locals in PROCESS (`process/models/stellarator/coils/calculate.py:496-501`,
+    the source's own comment: "not global"). They show up as "ungrounded inputs" in the
+    MDA harness only because that harness excludes their producer's whole SCC -- see
+    `_audit/next_steps.md` §8.1.
+    """
 
     m_tf_coil_case = Output(lambda s: s.tfcoil.m_tf_coil_case)
     m_tf_coil_wp_insulation = Output(lambda s: s.tfcoil.m_tf_coil_wp_insulation)
@@ -170,7 +215,7 @@ class CoilsMass(ExplicitFunction):
         ),
         f_a_tf_turn_cable_copper=Input(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
         a_tf_wp_coolant_channels=Input(lambda s: s.tfcoil.a_tf_wp_coolant_channels),
-        den_tf_sc_material=Input(lambda s: s.tfcoil.den_tf_sc_material),
+        den_tf_sc_material=Input(lambda s: s.tfcoil.dcond[I_TF_SC_MAT_ITER_NB3SN - 1]),
         a_tf_turn_steel=Input(lambda s: s.tfcoil.a_tf_turn_steel),
         den_steel=Input(lambda s: s.fwbs.den_steel),
         a_tf_coil_wp_turn_insulation=Input(

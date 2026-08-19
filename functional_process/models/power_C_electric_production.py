@@ -187,9 +187,7 @@ def power_profiles_over_time(
     p_plant_electric_base_total_profile_mw = _plateau(
         -p_plant_electric_base_total_mw, always_active
     )
-    p_cryo_plant_electric_profile_mw = _plateau(
-        -p_cryo_plant_electric_mw, always_active
-    )
+    p_cryo_plant_electric_profile_mw = _plateau(-p_cryo_plant_electric_mw, always_active)
     p_tritium_plant_electric_profile_mw = _plateau(
         -p_tritium_plant_electric_mw, always_active
     )
@@ -381,9 +379,7 @@ def calculate_plant_electric_production(
             + p_hcd_electric_total_mw
             + p_coolant_pump_elec_total_mw
         )
-        p_plant_electric_net_mw = (
-            p_plant_electric_gross_mw - p_plant_electric_recirc_mw
-        )
+        p_plant_electric_net_mw = p_plant_electric_gross_mw - p_plant_electric_recirc_mw
         f_p_plant_electric_recirc = (
             p_plant_electric_gross_mw - p_plant_electric_net_mw
         ) / p_plant_electric_gross_mw
@@ -613,9 +609,7 @@ class PlantElectricProduction(ExplicitFunction):
         lambda s: s.heat_transport.p_plant_electric_base_total_mw
     )
     fachtmw = Output(lambda s: s.heat_transport.fachtmw)
-    p_plant_core_systems_elec_mw = Output(
-        lambda s: s.power.p_plant_core_systems_elec_mw
-    )
+    p_plant_core_systems_elec_mw = Output(lambda s: s.power.p_plant_core_systems_elec_mw)
     p_plant_secondary_heat_mw = Output(
         lambda s: s.heat_transport.p_plant_secondary_heat_mw
     )
@@ -626,9 +620,7 @@ class PlantElectricProduction(ExplicitFunction):
     p_plant_electric_recirc_mw = Output(
         lambda s: s.heat_transport.p_plant_electric_recirc_mw
     )
-    p_plant_electric_net_mw = Output(
-        lambda s: s.heat_transport.p_plant_electric_net_mw
-    )
+    p_plant_electric_net_mw = Output(lambda s: s.heat_transport.p_plant_electric_net_mw)
     f_p_plant_electric_recirc = Output(
         lambda s: s.heat_transport.f_p_plant_electric_recirc
     )
@@ -672,9 +664,7 @@ class PlantElectricProduction(ExplicitFunction):
         self,
         p_cp_coolant_pump_elec=Input(lambda s: s.tfcoil.p_cp_coolant_pump_elec),
         p_plant_electric_base=Input(lambda s: s.heat_transport.p_plant_electric_base),
-        a_plant_floor_effective=Input(
-            lambda s: s.buildings.a_plant_floor_effective
-        ),
+        a_plant_floor_effective=Input(lambda s: s.buildings.a_plant_floor_effective),
         pflux_plant_floor_electric=Input(
             lambda s: s.heat_transport.pflux_plant_floor_electric
         ),
@@ -689,9 +679,7 @@ class PlantElectricProduction(ExplicitFunction):
         ),
         vachtmw=Input(lambda s: s.heat_transport.vachtmw),
         p_pf_electric_supplies_mw=Input(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
-        p_hcd_electric_loss_mw=Input(
-            lambda s: s.heat_transport.p_hcd_electric_loss_mw
-        ),
+        p_hcd_electric_loss_mw=Input(lambda s: s.heat_transport.p_hcd_electric_loss_mw),
         p_coolant_pump_loss_total_mw=Input(
             lambda s: s.heat_transport.p_coolant_pump_loss_total_mw
         ),
@@ -778,6 +766,212 @@ class PlantElectricProduction(ExplicitFunction):
             p_plant_electric_recirc_mw,
             p_plant_electric_net_mw,
             f_p_plant_electric_recirc,
+            p_fusion_total_mw,
+            t_plant_pulse_coil_precharge,
+            t_plant_pulse_plasma_current_ramp_up,
+            t_plant_pulse_fusion_ramp,
+            t_plant_pulse_burn,
+            t_plant_pulse_plasma_current_ramp_down,
+            t_plant_pulse_dwell,
+        )
+
+
+class PlantElectricProductionReactor(ExplicitFunction):
+    """cottax node: `calculate_plant_electric_production` at `ireactor == 1`.
+
+    **Why this exists as a separate class, and why `PlantElectricProduction` above is
+    not registerable.** `PlantElectricProduction` declares
+    `p_plant_electric_gross_mw` / `p_turbine_loss_mw` / `p_plant_electric_recirc_mw` /
+    `p_plant_electric_net_mw` / `f_p_plant_electric_recirc` as both `Output`s and
+    `Input`s, so `to_graph` refuses it outright (*"reads [...], which it also owns"*,
+    confirmed directly -- `total_process.py`'s own comment records the same refusal).
+    That is not a modelling cycle: it is PROCESS's conditional-ownership
+    pass-through, and it exists **only on the `ireactor == 0` arm**. Read
+    `calculate_plant_electric_production`'s body: all five are assigned inside
+    `if ireactor == 1:`, before `power_profiles_over_time` consumes
+    `p_plant_electric_gross_mw`/`p_plant_electric_net_mw`, so on that arm not one of
+    the five entering values is ever read. `.costs.ireactor` is a static switch
+    (`process/main.py` resolves the cost model once per run; it is neither an
+    iteration variable nor a scan variable), so which arm is live is a
+    graph-assembly-time fact -- exactly `configuration.py`'s category. This class is
+    the `ireactor == 1` arm with the five dead reads simply not declared, which makes
+    it an ordinary acyclic node owning all 23 fields.
+
+    **The five dead parameters are passed as `jnp.nan`, deliberately.** They are
+    provably overwritten before use on this arm, so any value would do; `nan` is the
+    one that makes a future edit which *starts* reading them fail loudly (a `nan`
+    reaching `.heat_transport.p_plant_electric_net_mw` is caught by the very first
+    comparison in `mda_harness.compare`) instead of silently substituting a zero.
+
+    `ireactor` is therefore **not** a static field here -- it is structural, spent by
+    picking this class over the `ireactor == 0` arm, which is
+    `PowerProfilesOverTime` (whose 13 outputs are a strict subset of this node's, and
+    which reads the two carried-over values as boundary inputs, exactly as PROCESS's
+    `ireactor == 0` run does).
+
+    Registering this closes `.heat_transport.p_plant_electric_net_mw`'s producer gap,
+    which matters beyond its own value: `CostOfElectricity` reads that field, so
+    without a producer `.costs.coe` -- this run's own objective -- was a function of a
+    *boundary input* rather than of the design variables along that whole path, and
+    constraint 16 (net electric power, an equality in
+    `stellarator_helias.IN.DAT`) had no live argument at all.
+    """
+
+    itart: int = eqx.field(static=True)
+    i_tf_sup: int = eqx.field(static=True)
+    i_blkt_dual_coolant: int = eqx.field(static=True)
+    i_p_coolant_pumping: int = eqx.field(static=True)
+
+    p_cp_coolant_pump_elec_mw = Output(lambda s: s.power.p_cp_coolant_pump_elec_mw)
+    p_plant_electric_base_total_mw = Output(
+        lambda s: s.heat_transport.p_plant_electric_base_total_mw
+    )
+    fachtmw = Output(lambda s: s.heat_transport.fachtmw)
+    p_plant_core_systems_elec_mw = Output(lambda s: s.power.p_plant_core_systems_elec_mw)
+    p_plant_secondary_heat_mw = Output(
+        lambda s: s.heat_transport.p_plant_secondary_heat_mw
+    )
+    p_plant_electric_gross_mw = Output(
+        lambda s: s.heat_transport.p_plant_electric_gross_mw
+    )
+    p_turbine_loss_mw = Output(lambda s: s.power.p_turbine_loss_mw)
+    p_plant_electric_recirc_mw = Output(
+        lambda s: s.heat_transport.p_plant_electric_recirc_mw
+    )
+    p_plant_electric_net_mw = Output(lambda s: s.heat_transport.p_plant_electric_net_mw)
+    f_p_plant_electric_recirc = Output(
+        lambda s: s.heat_transport.f_p_plant_electric_recirc
+    )
+    e_plant_net_electric_pulse_kwh = Output(
+        lambda s: s.power.e_plant_net_electric_pulse_kwh
+    )
+    e_plant_net_electric_pulse_mj = Output(
+        lambda s: s.power.e_plant_net_electric_pulse_mj
+    )
+    p_plant_electric_base_total_profile_mw = Output(
+        lambda s: s.power.p_plant_electric_base_total_profile_mw
+    )
+    p_plant_electric_gross_profile_mw = Output(
+        lambda s: s.power.p_plant_electric_gross_profile_mw
+    )
+    p_plant_electric_net_profile_mw = Output(
+        lambda s: s.power.p_plant_electric_net_profile_mw
+    )
+    p_hcd_electric_total_profile_mw = Output(
+        lambda s: s.power.p_hcd_electric_total_profile_mw
+    )
+    p_coolant_pump_elec_total_profile_mw = Output(
+        lambda s: s.power.p_coolant_pump_elec_total_profile_mw
+    )
+    p_tf_electric_supplies_profile_mw = Output(
+        lambda s: s.power.p_tf_electric_supplies_profile_mw
+    )
+    p_pf_electric_supplies_profile_mw = Output(
+        lambda s: s.power.p_pf_electric_supplies_profile_mw
+    )
+    vachtmw_profile_mw = Output(lambda s: s.power.vachtmw_profile_mw)
+    p_tritium_plant_electric_profile_mw = Output(
+        lambda s: s.power.p_tritium_plant_electric_profile_mw
+    )
+    p_cryo_plant_electric_profile_mw = Output(
+        lambda s: s.power.p_cryo_plant_electric_profile_mw
+    )
+    p_fusion_total_profile_mw = Output(lambda s: s.power.p_fusion_total_profile_mw)
+
+    def __call__(
+        self,
+        p_cp_coolant_pump_elec=Input(lambda s: s.tfcoil.p_cp_coolant_pump_elec),
+        p_plant_electric_base=Input(lambda s: s.heat_transport.p_plant_electric_base),
+        a_plant_floor_effective=Input(lambda s: s.buildings.a_plant_floor_effective),
+        pflux_plant_floor_electric=Input(
+            lambda s: s.heat_transport.pflux_plant_floor_electric
+        ),
+        p_cryo_plant_electric_mw=Input(
+            lambda s: s.heat_transport.p_cryo_plant_electric_mw
+        ),
+        p_tf_electric_supplies_mw=Input(
+            lambda s: s.heat_transport.p_tf_electric_supplies_mw
+        ),
+        p_tritium_plant_electric_mw=Input(
+            lambda s: s.heat_transport.p_tritium_plant_electric_mw
+        ),
+        vachtmw=Input(lambda s: s.heat_transport.vachtmw),
+        p_pf_electric_supplies_mw=Input(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
+        p_hcd_electric_loss_mw=Input(lambda s: s.heat_transport.p_hcd_electric_loss_mw),
+        p_coolant_pump_loss_total_mw=Input(
+            lambda s: s.heat_transport.p_coolant_pump_loss_total_mw
+        ),
+        p_div_secondary_heat_mw=Input(
+            lambda s: s.heat_transport.p_div_secondary_heat_mw
+        ),
+        p_shld_secondary_heat_mw=Input(
+            lambda s: s.heat_transport.p_shld_secondary_heat_mw
+        ),
+        p_hcd_secondary_heat_mw=Input(
+            lambda s: s.heat_transport.p_hcd_secondary_heat_mw
+        ),
+        p_tf_nuclear_heat_mw=Input(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
+        p_plant_primary_heat_mw=Input(
+            lambda s: s.heat_transport.p_plant_primary_heat_mw
+        ),
+        p_blkt_liquid_breeder_heat_deposited_mw=Input(
+            lambda s: s.power.p_blkt_liquid_breeder_heat_deposited_mw
+        ),
+        eta_turbine=Input(lambda s: s.heat_transport.eta_turbine),
+        etath_liq=Input(lambda s: s.heat_transport.etath_liq),
+        p_hcd_electric_total_mw=Input(
+            lambda s: s.heat_transport.p_hcd_electric_total_mw
+        ),
+        p_coolant_pump_elec_total_mw=Input(
+            lambda s: s.heat_transport.p_coolant_pump_elec_total_mw
+        ),
+        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
+        t_plant_pulse_coil_precharge=Input(
+            lambda s: s.times.t_plant_pulse_coil_precharge
+        ),
+        t_plant_pulse_plasma_current_ramp_up=Input(
+            lambda s: s.times.t_plant_pulse_plasma_current_ramp_up
+        ),
+        t_plant_pulse_fusion_ramp=Input(lambda s: s.times.t_plant_pulse_fusion_ramp),
+        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
+        t_plant_pulse_plasma_current_ramp_down=Input(
+            lambda s: s.times.t_plant_pulse_plasma_current_ramp_down
+        ),
+        t_plant_pulse_dwell=Input(lambda s: s.times.t_plant_pulse_dwell),
+    ):
+        dead = jnp.nan  # see the class docstring: provably overwritten at ireactor == 1
+        return calculate_plant_electric_production(
+            self.itart,
+            self.i_tf_sup,
+            p_cp_coolant_pump_elec,
+            p_plant_electric_base,
+            a_plant_floor_effective,
+            pflux_plant_floor_electric,
+            p_cryo_plant_electric_mw,
+            p_tf_electric_supplies_mw,
+            p_tritium_plant_electric_mw,
+            vachtmw,
+            p_pf_electric_supplies_mw,
+            p_hcd_electric_loss_mw,
+            p_coolant_pump_loss_total_mw,
+            p_div_secondary_heat_mw,
+            p_shld_secondary_heat_mw,
+            p_hcd_secondary_heat_mw,
+            p_tf_nuclear_heat_mw,
+            1,  # ireactor -- structural, see the class docstring
+            self.i_blkt_dual_coolant,
+            self.i_p_coolant_pumping,
+            p_plant_primary_heat_mw,
+            p_blkt_liquid_breeder_heat_deposited_mw,
+            eta_turbine,
+            etath_liq,
+            p_hcd_electric_total_mw,
+            p_coolant_pump_elec_total_mw,
+            dead,  # p_plant_electric_gross_mw
+            dead,  # p_turbine_loss_mw
+            dead,  # p_plant_electric_recirc_mw
+            dead,  # p_plant_electric_net_mw
+            dead,  # f_p_plant_electric_recirc
             p_fusion_total_mw,
             t_plant_pulse_coil_precharge,
             t_plant_pulse_plasma_current_ramp_up,

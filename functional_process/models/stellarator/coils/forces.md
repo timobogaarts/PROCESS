@@ -74,6 +74,25 @@ None.
 ## JAX-difficulty flags
 None. Plain scalar arithmetic throughout.
 
+**One diagnostic note, not a defect** (constraint-32 investigation,
+`_audit/constraint_32_investigation.md`). Three of the seven —
+`calculate_max_force_density`, `calculate_max_lateral_force_density`,
+`calculate_max_radial_force_density` — end in `/ a_tf_wp_no_insulation`, faithfully
+reproducing `process/models/stellarator/coils/forces.py:24`, `:68`, `:90`, which divide by
+the identically-named explicit argument at exactly the same place. That division is the point
+at which the SAND `Optimise` block's `jax.jacfwd` Jacobian first went non-finite: with
+`WindingPackTotalSizePost` excluded from the MDA harness its `a_tf_wp_no_insulation`
+output fell back to the `0.0` placeholder, giving `.tfcoil.max_force_density = inf`, then
+`.tfcoil.sig_tf_wp = inf` (via `calculate_maximum_stress`) and a wholly non-finite
+`^cond.constraints.c32` row (2 `inf` + 15 `nan` across all 17 design variables). **Not a
+`jnp.where`/`sqrt(0)`-style NaN-gradient trap** — the *value* was already `inf`, not
+finite — and not fixable here: `a_tf_wp_no_insulation` is a winding-pack cross-sectional
+area, physically nonzero, and PROCESS guards it no more than this port does. Fixed at its
+real cause, by grounding the placeholder (`mda_harness.KNOWN_MINT_VALUES`); the c32 row is
+now fully finite. `TestMaxForceDensity`/`TestMaximumStress` (`test_forces.py:233,258`)
+already pin the gradient at real, nonzero operating points via `Tier1Contract`'s
+`test_gradient_finite`/`test_gradient_agreement`, so no new coverage was added.
+
 ## open questions
 1. Whether the "sibling functions chained only through `data`" pattern
    (`calculate_max_force_density` → `calculate_maximum_stress`) recurs often enough

@@ -115,6 +115,22 @@ constructs and discards. Minted as `.impurity_radiation.pden_impurity_rad_total_
 `.impurity_radiation.pden_impurity_core_rad_total_mw` — the area whose tables and
 fractions produce them, and the spelling `ImpurityRadiation` already uses for them.
 
+**Re-verified in the MDA triage (`_audit/next_steps.md` §8.1).** Both are initialised as
+instance attributes in `ImpurityRadiation.__init__`
+(`process/models/physics/impurity_radiation.py:667-668`), assigned their real values in
+`calculate_radiation_totals` (`impurity_radiation.py:737+`), and read back off the
+instance by `calculate_radiation_powers` (`process/models/physics/radiation_power.py:107,
+128,132`). `process/data_structure/impurity_radiation_variables.py` has no `pden_impurity_*`
+field (its only `pden_*` entry is `pden_impurity_lz_nd_temp_array`, the L_z lookup table).
+So both are class (a): genuine mints, correct as-is, unverifiable by the harness.
+
+Note that `pden_impurity_rad_total_mw` alone *is* reconstructible from real fields —
+`radiation_power.py:132` gives `pden_plasma_rad_mw = pden_impurity_rad_total_mw +
+pden_plasma_sync_mw`, and both of those are real `.physics.*` fields written unclipped
+(`process/models/stellarator/stellarator.py:2147,2151`). Its `core` sibling is **not**:
+`stellarator.py:2153-2155` clips `.physics.pden_plasma_core_rad_mw` at 0 after writing it,
+so inverting that relation would silently be wrong wherever the clip bites.
+
 ## proposed signature(s)
 
 Five pure units. Every one is straight-line arithmetic over scalars and profile arrays;

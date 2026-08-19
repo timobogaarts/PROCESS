@@ -22,11 +22,11 @@ from cottax.blocking import Blocking
 from cottax.drivers import NewtonDriver
 from cottax.evaluate import Schedule, schedule_for
 from cottax.interfaces.pytree_namespace_module import path_of
-from cottax.problem import FixedPoint, RootFind
+from cottax.problem import FixedPoint, Optimise, RootFind
 from cottax.rewrites import Cut, FixedPointCut
 from cottax.spec import VarPath
 
-from functional_process.core.solver.drivers import PicardDriver
+from functional_process.core.solver.drivers import PicardDriver, VmconDriver
 from functional_process.total_process import GRAPH
 
 CUTS = (
@@ -81,16 +81,34 @@ def driven_graph(graph=GRAPH):
     return graph
 
 
-def default_drivers(blocking: Blocking) -> dict:
+def default_drivers(
+    blocking: Blocking, bounds=(), callback=None, condition_scale=()
+) -> dict:
     """One driver per driven block, assigned mechanically by problem type -- a Newton
     for every `RootFind` (`Intersect`, `DuctDiameterRootFind`), a Picard for every
-    `FixedPoint` (the 8 structural self-loops plus the two cuts above). No bespoke
-    per-block choice: every block in this graph is one of exactly these two shapes.
+    `FixedPoint` (the 8 structural self-loops plus the two cuts above), and a
+    `VmconDriver` for an `Optimise` (only `functional_process.sand` registers one). No
+    bespoke per-block choice: every block in this graph is one of exactly these shapes.
+
+    **The `Optimise` arm is where the equality/inequality split is settled.**
+    `ConditionMap` carries a flat condition tuple with no type information
+    (`~/jaxgraph/src/cottax/evaluate.py:135-178`), so a driver cannot ask which of its
+    conditions is the objective. It does not have to guess either: this function has the
+    problem's own definition in hand, so the counts are **read off `Optimise.equalities`/
+    `Optimise.inequalities`** and never counted by a caller. That is the whole of
+    `_audit/optimise_design.md` §4.1's "positional contract" worry, removed by asking the
+    node instead of the reader.
+
+    `bounds`/`callback`/`condition_scale` are forwarded to the `VmconDriver` and ignored
+    by the others -- all three are algorithm choices with no home on `Optimise` (see
+    `VmconDriver`'s docstring on why bounds are not extra inequality constraints, and on
+    why the residual equalities need scaling that PROCESS's own constraints must not
+    get).
 
     Raises
     ------
     TypeError
-        If a block declares a problem type that is neither -- e.g. an `Optimise` or
+        If a block declares a problem type none of the three answers -- e.g. a
         `Feasibility`, which this graph does not currently register any of.
     """
     drivers = {}
@@ -103,6 +121,15 @@ def default_drivers(blocking: Blocking) -> dict:
             drivers[problem] = NewtonDriver()
         elif issubclass(problem_type, FixedPoint):
             drivers[problem] = PicardDriver()
+        elif issubclass(problem_type, Optimise):
+            definition = blocking.graph[problem]
+            drivers[problem] = VmconDriver(
+                n_equality=len(definition.equalities),
+                n_inequality=len(definition.inequalities),
+                bounds=bounds,
+                callback=callback,
+                condition_scale=condition_scale,
+            )
         else:
             raise TypeError(
                 f"block {block!r} declares a {problem_type.__name__}, and "

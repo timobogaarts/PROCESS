@@ -216,7 +216,7 @@ this fork's) but ready to be:
 class VacuumPumpingSimple(ExplicitFunction):
     n_iter_vacuum_pumps = Output(lambda s: s.vacuum.n_iter_vacuum_pumps)
     def __call__(self, molflow_plasma_fuelling_required=Input(...), ...):
-        return (calculate_vacuum_pumping_simple(...),)
+        return calculate_vacuum_pumping_simple(...)
 ```
 Full form in `vacuum.py`.
 

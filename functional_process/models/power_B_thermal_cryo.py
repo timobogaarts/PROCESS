@@ -1205,7 +1205,7 @@ class DeltaEtaStep(FixedPointFunction):
             p_div_heat_deposited_mw,
             self.i_thermal_electric_conversion,
         )
-        return (delta_eta_next,)
+        return delta_eta_next
 
 
 class EtaTurbineStep(FixedPointFunction):
@@ -1264,7 +1264,7 @@ class EtaTurbineStep(FixedPointFunction):
             self.i_thermal_electric_conversion,
             self.i_blanket_type,
         )
-        return (eta_turbine_next,)
+        return eta_turbine_next
 
 
 class EtathLiqStep(FixedPointFunction):
@@ -1305,7 +1305,7 @@ class EtathLiqStep(FixedPointFunction):
             0.0,  # temp_turbine_coolant_in placeholder -- see class docstring
             self.secondary_cycle_liq,
         )
-        return (etath_liq_next,)
+        return etath_liq_next
 
 
 class TempTurbineCoolantInStep(FixedPointFunction):
@@ -1368,7 +1368,7 @@ class TempTurbineCoolantInStep(FixedPointFunction):
             temp_turbine_coolant_in_mid,
             self.secondary_cycle_liq,
         )
-        return (temp_turbine_coolant_in_next,)
+        return temp_turbine_coolant_in_next
 
 
 class PFwDivHeatDepositedMwStep(FixedPointFunction):
@@ -1440,7 +1440,7 @@ class PFwDivHeatDepositedMwStep(FixedPointFunction):
             p_div_heat_deposited_mw,
             p_fw_div_heat_deposited_mw,
         )
-        return (p_fw_div_heat_deposited_mw_next,)
+        return p_fw_div_heat_deposited_mw_next
 
 
 class PFwBlktCoolantPumpMwStep(FixedPointFunction):
@@ -1485,7 +1485,7 @@ class PFwBlktCoolantPumpMwStep(FixedPointFunction):
             p_blkt_coolant_pump_mw,
             p_fw_blkt_coolant_pump_mw,
         )
-        return (p_fw_blkt_coolant_pump_mw_next,)
+        return p_fw_blkt_coolant_pump_mw_next
 
 
 class Cryo(ExplicitFunction):

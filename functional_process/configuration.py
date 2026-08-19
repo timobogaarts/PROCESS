@@ -57,6 +57,30 @@ class Alternative:
     requested-but-unported value then fails with the reason it is missing, instead of
     silently assembling a graph with a hole where the arm's outputs should be.
 
+    `unproduced` is the third state, and it is deliberately *not* the same as `unported`
+    even though both mean "no nodes were written for this arm". The difference is what
+    happens when a caller asks for the value:
+
+    - `unported` **raises**. Use it when assembling anyway would hand the caller a graph
+      that looks complete but is wrong -- e.g. `.stellarator.istell in 1..5`, where the
+      machine-preset tables the arm needs are missing but every *other* node still
+      assembles, so the graph would silently run with the wrong preset data.
+    - `unproduced` **assembles nothing**, leaving the fields that arm would own with no
+      producer at all. Use it when the honest answer is "this configuration's graph does
+      not compute these values", so a consumer surfaces as an unowned (boundary) input
+      rather than being silently satisfied by the *other* arm's formula. That is a
+      weaker guarantee than `unported`'s, and it is only correct when the arm's outputs
+      have no other producer in the assembled graph -- which `build_graph` cannot check
+      for you, since "no producer" is exactly what it is being told to produce.
+
+    The first real instance is `.costs.i_cost_model == 1` (`KOVARI_2014`, PROCESS's own
+    default): `costs_2015.py` has no `cottax` nodes at all, so its arm contributes
+    nothing, and the alternative -- registering `costs.py`'s 1990-model nodes
+    unconditionally instead -- would make the default graph compute `.costs.coe` by the
+    *wrong* cost model, the `EcrhDensityLimit` bug class this whole module exists to
+    make impossible. See `total_process.py`'s `.costs.i_cost_model` switch for the full
+    write-up, including the two rejected alternatives.
+
     Attributes
     ----------
     value :
@@ -64,20 +88,43 @@ class Alternative:
     declarations :
         The `NodalDeclaration` classes/instances this arm contributes.
     unported :
-        Why this arm has no declarations, or `None` if it is ported.
+        Why this arm has no declarations *and must be refused*, or `None`.
+    unproduced :
+        Why this arm has no declarations *and assembles as empty*, or `None`.
     """
 
     value: int
     declarations: tuple = ()
     unported: str | None = None
+    unproduced: str | None = None
 
     def __post_init__(self):
-        if self.unported is not None and self.declarations:
-            raise ValueError(
-                f"alternative {self.value} is marked unported ({self.unported!r}) but "
-                f"still declares {len(self.declarations)} node(s) -- it is one or the "
-                f"other"
+        states = [
+            name
+            for name, given in (
+                ("declarations", bool(self.declarations)),
+                ("unported", self.unported is not None),
+                ("unproduced", self.unproduced is not None),
             )
+            if given
+        ]
+        if len(states) > 1:
+            raise ValueError(
+                f"alternative {self.value} declares {sorted(states)} together -- an arm "
+                f"is exactly one of ported (declarations), refused (unported) or empty "
+                f"(unproduced)"
+            )
+        if not states:
+            raise ValueError(
+                f"alternative {self.value} declares nothing at all -- say which of "
+                f"declarations/unported/unproduced it is, so a reader can tell an "
+                f"empty arm from an oversight"
+            )
+
+    @property
+    def is_ported(self):
+        """Whether this arm contributes nodes. `unported`/`unproduced` arms do not."""
+        return bool(self.declarations)
 
 
 @dataclass(frozen=True)
@@ -122,7 +169,7 @@ class Switch:
                         f"{self.path} == {value} is a real PROCESS branch but is not "
                         f"ported: {alternative.unported}"
                     )
-                return alternative.declarations
+                return alternative.declarations  # `()` for an `unproduced` arm
         raise ValueError(
             f"{self.path} == {value} is not a known alternative; declared values are "
             f"{sorted(a.value for a in self.alternatives)}"
@@ -137,9 +184,10 @@ class Switch:
         exists is that `Graph` raises on duplicate ownership, the arms are checked to be
         the thing that would have raised.
 
-        A single-ported-arm switch (the rest unported) has no pair to check and passes.
+        A single-ported-arm switch (the rest `unported` or `unproduced`) has no pair to
+        check and passes.
         """
-        ported = [a for a in self.alternatives if a.unported is None]
+        ported = [a for a in self.alternatives if a.is_ported]
         owned = {
             alternative.value: {
                 output
