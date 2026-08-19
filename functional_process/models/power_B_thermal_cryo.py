@@ -27,8 +27,21 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     FixedPointFunction,
-    Input,
-    Output,
+    From,
+    OutputInto,
+)
+
+from functional_process.paths import (
+    current_drive,
+    fwbs,
+    heat_transport,
+    pf_power,
+    physics,
+    power,
+    primary_pumping,
+    structure,
+    tfcoil,
+    times,
 )
 
 from process.core import constants
@@ -112,10 +125,7 @@ def calculate_plant_thermal_efficiency(
     if i_thermal_electric_conversion == ElectricConversionModelTypes.USER_INPUT:
         return eta_turbine, temp_turbine_coolant_in
 
-    if (
-        i_thermal_electric_conversion
-        == ElectricConversionModelTypes.STEAM_RANKINE_CYCLE
-    ):
+    if i_thermal_electric_conversion == ElectricConversionModelTypes.STEAM_RANKINE_CYCLE:
         if i_blanket_type == BlktModelTypes.CCFE_HCPB:
             temp_turbine_coolant_in = temp_blkt_coolant_out - 20.0e0
             eta_turbine = (
@@ -343,8 +353,7 @@ def calculate_delta_eta(
     """
     if i_thermal_electric_conversion == ElectricConversionModelTypes.CCFE_HCPB_VALUE:
         p_plant_primary_heat_mw = (
-            p_fw_blkt_heat_deposited_mw
-            + i_shld_primary_heat * p_shld_heat_deposited_mw
+            p_fw_blkt_heat_deposited_mw + i_shld_primary_heat * p_shld_heat_deposited_mw
         )
         p_div_secondary_heat_mw = p_div_heat_deposited_mw
         i_div_primary_heat = 0
@@ -478,9 +487,7 @@ def calculate_component_thermal_powers(
         + p_shld_coolant_pump_elec_mw
         + p_div_coolant_pump_elec_mw
     )
-    p_coolant_pump_loss_total_mw = (
-        p_coolant_pump_elec_total_mw - p_coolant_pump_total_mw
-    )
+    p_coolant_pump_loss_total_mw = p_coolant_pump_elec_total_mw - p_coolant_pump_total_mw
 
     p_hcd_electric_loss_mw = p_hcd_electric_total_mw - p_hcd_injected_total_mw
 
@@ -1031,17 +1038,15 @@ class PlantThermalEfficiency(ExplicitFunction):
     i_thermal_electric_conversion: int = eqx.field(static=True)
     i_blanket_type: int = eqx.field(static=True)
 
-    eta_turbine = Output(lambda s: s.heat_transport.eta_turbine)
-    temp_turbine_coolant_in = Output(lambda s: s.heat_transport.temp_turbine_coolant_in)
+    eta_turbine = OutputInto(heat_transport)
+    temp_turbine_coolant_in = OutputInto(heat_transport)
 
     def __call__(
         self,
-        eta_turbine=Input(lambda s: s.heat_transport.eta_turbine),
-        delta_eta=Input(lambda s: s.power.delta_eta),
-        temp_blkt_coolant_out=Input(lambda s: s.fwbs.temp_blkt_coolant_out),
-        temp_turbine_coolant_in=Input(
-            lambda s: s.heat_transport.temp_turbine_coolant_in
-        ),
+        eta_turbine=From(heat_transport),
+        delta_eta=From(power),
+        temp_blkt_coolant_out=From(fwbs),
+        temp_turbine_coolant_in=From(heat_transport),
     ):
         return calculate_plant_thermal_efficiency(
             eta_turbine,
@@ -1058,16 +1063,14 @@ class PlantThermalEfficiency2(ExplicitFunction):
 
     secondary_cycle_liq: int = eqx.field(static=True)
 
-    etath_liq = Output(lambda s: s.heat_transport.etath_liq)
-    temp_turbine_coolant_in = Output(lambda s: s.heat_transport.temp_turbine_coolant_in)
+    etath_liq = OutputInto(heat_transport)
+    temp_turbine_coolant_in = OutputInto(heat_transport)
 
     def __call__(
         self,
-        etath_liq=Input(lambda s: s.heat_transport.etath_liq),
-        outlet_temp_liq=Input(lambda s: s.fwbs.outlet_temp_liq),
-        temp_turbine_coolant_in=Input(
-            lambda s: s.heat_transport.temp_turbine_coolant_in
-        ),
+        etath_liq=From(heat_transport),
+        outlet_temp_liq=From(fwbs),
+        temp_turbine_coolant_in=From(heat_transport),
     ):
         return calculate_plant_thermal_efficiency_2(
             etath_liq,
@@ -1111,22 +1114,20 @@ class ComponentThermalPowers(ExplicitFunction):
     # .primary_pumping.p_fw_blkt_coolant_pump_mw is NOT declared here -- owned by
     # PFwBlktCoolantPumpMwStep's FixedPoint problem node (see below). Still read
     # below, as a plain Input.
-    p_fw_blkt_coolant_pump_elec_mw = Output(lambda s: s.power.p_fw_blkt_coolant_pump_elec_mw)
-    p_shld_coolant_pump_elec_mw = Output(lambda s: s.power.p_shld_coolant_pump_elec_mw)
-    p_div_coolant_pump_elec_mw = Output(lambda s: s.power.p_div_coolant_pump_elec_mw)
-    p_blkt_breeder_pump_elec_mw = Output(lambda s: s.power.p_blkt_breeder_pump_elec_mw)
-    p_coolant_pump_total_mw = Output(lambda s: s.power.p_coolant_pump_total_mw)
-    p_coolant_pump_elec_total_mw = Output(lambda s: s.heat_transport.p_coolant_pump_elec_total_mw)
-    p_coolant_pump_loss_total_mw = Output(lambda s: s.heat_transport.p_coolant_pump_loss_total_mw)
-    p_hcd_electric_loss_mw = Output(lambda s: s.heat_transport.p_hcd_electric_loss_mw)
-    p_blkt_liquid_breeder_heat_deposited_mw = Output(
-        lambda s: s.power.p_blkt_liquid_breeder_heat_deposited_mw
-    )
-    p_fw_blkt_heat_deposited_mw = Output(lambda s: s.power.p_fw_blkt_heat_deposited_mw)
-    p_fw_heat_deposited_mw = Output(lambda s: s.power.p_fw_heat_deposited_mw)
-    p_blkt_heat_deposited_mw = Output(lambda s: s.power.p_blkt_heat_deposited_mw)
-    p_shld_heat_deposited_mw = Output(lambda s: s.power.p_shld_heat_deposited_mw)
-    p_div_heat_deposited_mw = Output(lambda s: s.power.p_div_heat_deposited_mw)
+    p_fw_blkt_coolant_pump_elec_mw = OutputInto(power)
+    p_shld_coolant_pump_elec_mw = OutputInto(power)
+    p_div_coolant_pump_elec_mw = OutputInto(power)
+    p_blkt_breeder_pump_elec_mw = OutputInto(power)
+    p_coolant_pump_total_mw = OutputInto(power)
+    p_coolant_pump_elec_total_mw = OutputInto(heat_transport)
+    p_coolant_pump_loss_total_mw = OutputInto(heat_transport)
+    p_hcd_electric_loss_mw = OutputInto(heat_transport)
+    p_blkt_liquid_breeder_heat_deposited_mw = OutputInto(power)
+    p_fw_blkt_heat_deposited_mw = OutputInto(power)
+    p_fw_heat_deposited_mw = OutputInto(power)
+    p_blkt_heat_deposited_mw = OutputInto(power)
+    p_shld_heat_deposited_mw = OutputInto(power)
+    p_div_heat_deposited_mw = OutputInto(power)
     # .heat_transport.p_fw_div_heat_deposited_mw is NOT declared here -- owned by
     # PFwDivHeatDepositedMwStep's FixedPoint problem node (see below). Still read
     # below, as a plain Input.
@@ -1137,56 +1138,50 @@ class ComponentThermalPowers(ExplicitFunction):
     # .heat_transport.temp_turbine_coolant_in is NOT declared here -- owned by
     # TempTurbineCoolantInStep's FixedPoint problem node (see below). Still read
     # below, as a plain Input.
-    p_plant_primary_heat_mw = Output(lambda s: s.heat_transport.p_plant_primary_heat_mw)
-    p_div_secondary_heat_mw = Output(lambda s: s.heat_transport.p_div_secondary_heat_mw)
-    i_div_primary_heat = Output(lambda s: s.power.i_div_primary_heat)
-    f_p_div_primary_heat = Output(lambda s: s.power.f_p_div_primary_heat)
+    p_plant_primary_heat_mw = OutputInto(heat_transport)
+    p_div_secondary_heat_mw = OutputInto(heat_transport)
+    i_div_primary_heat = OutputInto(power)
+    f_p_div_primary_heat = OutputInto(power)
     # .power.delta_eta is NOT declared here -- DeltaEtaStep's FixedPoint problem node
     # owns it (see the class docstring above and "The delta_eta self-loop" in
     # power_B_thermal_cryo.md). delta_eta is still read below, as a plain Input.
-    p_shld_secondary_heat_mw = Output(lambda s: s.heat_transport.p_shld_secondary_heat_mw)
-    p_hcd_secondary_heat_mw = Output(lambda s: s.heat_transport.p_hcd_secondary_heat_mw)
-    n_primary_heat_exchangers = Output(lambda s: s.heat_transport.n_primary_heat_exchangers)
+    p_shld_secondary_heat_mw = OutputInto(heat_transport)
+    p_hcd_secondary_heat_mw = OutputInto(heat_transport)
+    n_primary_heat_exchangers = OutputInto(heat_transport)
 
     def __call__(
         self,
-        p_fw_coolant_pump_mw=Input(lambda s: s.heat_transport.p_fw_coolant_pump_mw),
-        p_blkt_coolant_pump_mw=Input(lambda s: s.heat_transport.p_blkt_coolant_pump_mw),
-        p_fw_blkt_coolant_pump_mw=Input(
-            lambda s: s.primary_pumping.p_fw_blkt_coolant_pump_mw
-        ),
-        eta_coolant_pump_electric=Input(lambda s: s.fwbs.eta_coolant_pump_electric),
-        p_shld_coolant_pump_mw=Input(lambda s: s.heat_transport.p_shld_coolant_pump_mw),
-        p_div_coolant_pump_mw=Input(lambda s: s.heat_transport.p_div_coolant_pump_mw),
-        p_blkt_breeder_pump_mw=Input(lambda s: s.heat_transport.p_blkt_breeder_pump_mw),
-        p_hcd_electric_total_mw=Input(lambda s: s.heat_transport.p_hcd_electric_total_mw),
-        p_hcd_injected_total_mw=Input(lambda s: s.current_drive.p_hcd_injected_total_mw),
-        p_blkt_nuclear_heat_total_mw=Input(lambda s: s.fwbs.p_blkt_nuclear_heat_total_mw),
-        f_nuc_pow_bz_liq=Input(lambda s: s.fwbs.f_nuc_pow_bz_liq),
-        p_fw_nuclear_heat_total_mw=Input(lambda s: s.fwbs.p_fw_nuclear_heat_total_mw),
-        p_fw_rad_total_mw=Input(lambda s: s.fwbs.p_fw_rad_total_mw),
-        p_beam_orbit_loss_mw=Input(lambda s: s.current_drive.p_beam_orbit_loss_mw),
-        p_fw_alpha_mw=Input(lambda s: s.physics.p_fw_alpha_mw),
-        p_beam_shine_through_mw=Input(lambda s: s.current_drive.p_beam_shine_through_mw),
-        p_cp_shield_nuclear_heat_mw=Input(lambda s: s.fwbs.p_cp_shield_nuclear_heat_mw),
-        p_shld_nuclear_heat_mw=Input(lambda s: s.fwbs.p_shld_nuclear_heat_mw),
-        p_plasma_separatrix_mw=Input(lambda s: s.physics.p_plasma_separatrix_mw),
-        p_div_nuclear_heat_total_mw=Input(lambda s: s.fwbs.p_div_nuclear_heat_total_mw),
-        p_div_rad_total_mw=Input(lambda s: s.fwbs.p_div_rad_total_mw),
-        p_fw_div_heat_deposited_mw=Input(
-            lambda s: s.heat_transport.p_fw_div_heat_deposited_mw
-        ),
-        p_fw_hcd_nuclear_heat_mw=Input(lambda s: s.fwbs.p_fw_hcd_nuclear_heat_mw),
-        p_fw_hcd_rad_total_mw=Input(lambda s: s.fwbs.p_fw_hcd_rad_total_mw),
-        i_shld_primary_heat=Input(lambda s: s.heat_transport.i_shld_primary_heat),
-        eta_turbine=Input(lambda s: s.heat_transport.eta_turbine),
-        etath_liq=Input(lambda s: s.heat_transport.etath_liq),
-        delta_eta=Input(lambda s: s.power.delta_eta),
-        temp_blkt_coolant_out=Input(lambda s: s.fwbs.temp_blkt_coolant_out),
-        outlet_temp_liq=Input(lambda s: s.fwbs.outlet_temp_liq),
-        temp_turbine_coolant_in=Input(
-            lambda s: s.heat_transport.temp_turbine_coolant_in
-        ),
+        p_fw_coolant_pump_mw=From(heat_transport),
+        p_blkt_coolant_pump_mw=From(heat_transport),
+        p_fw_blkt_coolant_pump_mw=From(primary_pumping),
+        eta_coolant_pump_electric=From(fwbs),
+        p_shld_coolant_pump_mw=From(heat_transport),
+        p_div_coolant_pump_mw=From(heat_transport),
+        p_blkt_breeder_pump_mw=From(heat_transport),
+        p_hcd_electric_total_mw=From(heat_transport),
+        p_hcd_injected_total_mw=From(current_drive),
+        p_blkt_nuclear_heat_total_mw=From(fwbs),
+        f_nuc_pow_bz_liq=From(fwbs),
+        p_fw_nuclear_heat_total_mw=From(fwbs),
+        p_fw_rad_total_mw=From(fwbs),
+        p_beam_orbit_loss_mw=From(current_drive),
+        p_fw_alpha_mw=From(physics),
+        p_beam_shine_through_mw=From(current_drive),
+        p_cp_shield_nuclear_heat_mw=From(fwbs),
+        p_shld_nuclear_heat_mw=From(fwbs),
+        p_plasma_separatrix_mw=From(physics),
+        p_div_nuclear_heat_total_mw=From(fwbs),
+        p_div_rad_total_mw=From(fwbs),
+        p_fw_div_heat_deposited_mw=From(heat_transport),
+        p_fw_hcd_nuclear_heat_mw=From(fwbs),
+        p_fw_hcd_rad_total_mw=From(fwbs),
+        i_shld_primary_heat=From(heat_transport),
+        eta_turbine=From(heat_transport),
+        etath_liq=From(heat_transport),
+        delta_eta=From(power),
+        temp_blkt_coolant_out=From(fwbs),
+        outlet_temp_liq=From(fwbs),
+        temp_turbine_coolant_in=From(heat_transport),
     ):
         result = calculate_component_thermal_powers(
             self.i_p_coolant_pumping,
@@ -1353,33 +1348,29 @@ class DeltaEtaStep(FixedPointFunction):
     i_blkt_dual_coolant: int = eqx.field(static=True)
     i_thermal_electric_conversion: int = eqx.field(static=True)
 
-    delta_eta = Output(lambda s: s.power.delta_eta)
+    delta_eta = OutputInto(power)
 
     def step(
         self,
-        p_fw_coolant_pump_mw=Input(lambda s: s.heat_transport.p_fw_coolant_pump_mw),
-        p_blkt_coolant_pump_mw=Input(lambda s: s.heat_transport.p_blkt_coolant_pump_mw),
-        p_fw_blkt_coolant_pump_mw=Input(
-            lambda s: s.primary_pumping.p_fw_blkt_coolant_pump_mw
-        ),
-        p_fw_nuclear_heat_total_mw=Input(lambda s: s.fwbs.p_fw_nuclear_heat_total_mw),
-        p_fw_rad_total_mw=Input(lambda s: s.fwbs.p_fw_rad_total_mw),
-        p_blkt_nuclear_heat_total_mw=Input(
-            lambda s: s.fwbs.p_blkt_nuclear_heat_total_mw
-        ),
-        p_blkt_breeder_pump_mw=Input(lambda s: s.heat_transport.p_blkt_breeder_pump_mw),
-        p_beam_orbit_loss_mw=Input(lambda s: s.current_drive.p_beam_orbit_loss_mw),
-        p_fw_alpha_mw=Input(lambda s: s.physics.p_fw_alpha_mw),
-        p_beam_shine_through_mw=Input(lambda s: s.current_drive.p_beam_shine_through_mw),
-        p_cp_shield_nuclear_heat_mw=Input(lambda s: s.fwbs.p_cp_shield_nuclear_heat_mw),
-        p_shld_nuclear_heat_mw=Input(lambda s: s.fwbs.p_shld_nuclear_heat_mw),
-        p_shld_coolant_pump_mw=Input(lambda s: s.heat_transport.p_shld_coolant_pump_mw),
-        p_plasma_separatrix_mw=Input(lambda s: s.physics.p_plasma_separatrix_mw),
-        p_div_nuclear_heat_total_mw=Input(lambda s: s.fwbs.p_div_nuclear_heat_total_mw),
-        p_div_rad_total_mw=Input(lambda s: s.fwbs.p_div_rad_total_mw),
-        p_div_coolant_pump_mw=Input(lambda s: s.heat_transport.p_div_coolant_pump_mw),
-        i_shld_primary_heat=Input(lambda s: s.heat_transport.i_shld_primary_heat),
-        delta_eta=Input(lambda s: s.power.delta_eta),
+        p_fw_coolant_pump_mw=From(heat_transport),
+        p_blkt_coolant_pump_mw=From(heat_transport),
+        p_fw_blkt_coolant_pump_mw=From(primary_pumping),
+        p_fw_nuclear_heat_total_mw=From(fwbs),
+        p_fw_rad_total_mw=From(fwbs),
+        p_blkt_nuclear_heat_total_mw=From(fwbs),
+        p_blkt_breeder_pump_mw=From(heat_transport),
+        p_beam_orbit_loss_mw=From(current_drive),
+        p_fw_alpha_mw=From(physics),
+        p_beam_shine_through_mw=From(current_drive),
+        p_cp_shield_nuclear_heat_mw=From(fwbs),
+        p_shld_nuclear_heat_mw=From(fwbs),
+        p_shld_coolant_pump_mw=From(heat_transport),
+        p_plasma_separatrix_mw=From(physics),
+        p_div_nuclear_heat_total_mw=From(fwbs),
+        p_div_rad_total_mw=From(fwbs),
+        p_div_coolant_pump_mw=From(heat_transport),
+        i_shld_primary_heat=From(heat_transport),
+        delta_eta=From(power),
     ):
         del delta_eta  # see class docstring -- verified numerically inert here
 
@@ -1459,13 +1450,13 @@ class EtaTurbineStep(FixedPointFunction):
     i_thermal_electric_conversion: int = eqx.field(static=True)
     i_blanket_type: int = eqx.field(static=True)
 
-    eta_turbine = Output(lambda s: s.heat_transport.eta_turbine)
+    eta_turbine = OutputInto(heat_transport)
 
     def step(
         self,
-        eta_turbine=Input(lambda s: s.heat_transport.eta_turbine),
-        delta_eta=Input(lambda s: s.power.delta_eta),
-        temp_blkt_coolant_out=Input(lambda s: s.fwbs.temp_blkt_coolant_out),
+        eta_turbine=From(heat_transport),
+        delta_eta=From(power),
+        temp_blkt_coolant_out=From(fwbs),
     ):
         eta_turbine_next, _ = calculate_plant_thermal_efficiency(
             eta_turbine,
@@ -1503,12 +1494,12 @@ class EtathLiqStep(FixedPointFunction):
 
     secondary_cycle_liq: int = eqx.field(static=True)
 
-    etath_liq = Output(lambda s: s.heat_transport.etath_liq)
+    etath_liq = OutputInto(heat_transport)
 
     def step(
         self,
-        etath_liq=Input(lambda s: s.heat_transport.etath_liq),
-        outlet_temp_liq=Input(lambda s: s.fwbs.outlet_temp_liq),
+        etath_liq=From(heat_transport),
+        outlet_temp_liq=From(fwbs),
     ):
         etath_liq_next, _ = calculate_plant_thermal_efficiency_2(
             etath_liq,
@@ -1555,15 +1546,13 @@ class TempTurbineCoolantInStep(FixedPointFunction):
     i_blanket_type: int = eqx.field(static=True)
     secondary_cycle_liq: int = eqx.field(static=True)
 
-    temp_turbine_coolant_in = Output(lambda s: s.heat_transport.temp_turbine_coolant_in)
+    temp_turbine_coolant_in = OutputInto(heat_transport)
 
     def step(
         self,
-        temp_turbine_coolant_in=Input(
-            lambda s: s.heat_transport.temp_turbine_coolant_in
-        ),
-        temp_blkt_coolant_out=Input(lambda s: s.fwbs.temp_blkt_coolant_out),
-        outlet_temp_liq=Input(lambda s: s.fwbs.outlet_temp_liq),
+        temp_turbine_coolant_in=From(heat_transport),
+        temp_blkt_coolant_out=From(fwbs),
+        outlet_temp_liq=From(fwbs),
     ):
         _, temp_turbine_coolant_in_mid = calculate_plant_thermal_efficiency(
             0.0,  # eta_turbine placeholder -- see class docstring
@@ -1611,25 +1600,21 @@ class PFwDivHeatDepositedMwStep(FixedPointFunction):
 
     i_p_coolant_pumping: int = eqx.field(static=True)
 
-    p_fw_div_heat_deposited_mw = Output(
-        lambda s: s.heat_transport.p_fw_div_heat_deposited_mw
-    )
+    p_fw_div_heat_deposited_mw = OutputInto(heat_transport)
 
     def step(
         self,
-        p_fw_div_heat_deposited_mw=Input(
-            lambda s: s.heat_transport.p_fw_div_heat_deposited_mw
-        ),
-        p_fw_nuclear_heat_total_mw=Input(lambda s: s.fwbs.p_fw_nuclear_heat_total_mw),
-        p_fw_rad_total_mw=Input(lambda s: s.fwbs.p_fw_rad_total_mw),
-        p_fw_coolant_pump_mw=Input(lambda s: s.heat_transport.p_fw_coolant_pump_mw),
-        p_beam_orbit_loss_mw=Input(lambda s: s.current_drive.p_beam_orbit_loss_mw),
-        p_fw_alpha_mw=Input(lambda s: s.physics.p_fw_alpha_mw),
-        p_beam_shine_through_mw=Input(lambda s: s.current_drive.p_beam_shine_through_mw),
-        p_plasma_separatrix_mw=Input(lambda s: s.physics.p_plasma_separatrix_mw),
-        p_div_nuclear_heat_total_mw=Input(lambda s: s.fwbs.p_div_nuclear_heat_total_mw),
-        p_div_rad_total_mw=Input(lambda s: s.fwbs.p_div_rad_total_mw),
-        p_div_coolant_pump_mw=Input(lambda s: s.heat_transport.p_div_coolant_pump_mw),
+        p_fw_div_heat_deposited_mw=From(heat_transport),
+        p_fw_nuclear_heat_total_mw=From(fwbs),
+        p_fw_rad_total_mw=From(fwbs),
+        p_fw_coolant_pump_mw=From(heat_transport),
+        p_beam_orbit_loss_mw=From(current_drive),
+        p_fw_alpha_mw=From(physics),
+        p_beam_shine_through_mw=From(current_drive),
+        p_plasma_separatrix_mw=From(physics),
+        p_div_nuclear_heat_total_mw=From(fwbs),
+        p_div_rad_total_mw=From(fwbs),
+        p_div_coolant_pump_mw=From(heat_transport),
     ):
         p_fw_heat_deposited_mw = calculate_p_fw_heat_deposited_mw(
             p_fw_nuclear_heat_total_mw,
@@ -1678,17 +1663,13 @@ class PFwBlktCoolantPumpMwStep(FixedPointFunction):
 
     i_p_coolant_pumping: int = eqx.field(static=True)
 
-    p_fw_blkt_coolant_pump_mw = Output(
-        lambda s: s.primary_pumping.p_fw_blkt_coolant_pump_mw
-    )
+    p_fw_blkt_coolant_pump_mw = OutputInto(primary_pumping)
 
     def step(
         self,
-        p_fw_blkt_coolant_pump_mw=Input(
-            lambda s: s.primary_pumping.p_fw_blkt_coolant_pump_mw
-        ),
-        p_fw_coolant_pump_mw=Input(lambda s: s.heat_transport.p_fw_coolant_pump_mw),
-        p_blkt_coolant_pump_mw=Input(lambda s: s.heat_transport.p_blkt_coolant_pump_mw),
+        p_fw_blkt_coolant_pump_mw=From(primary_pumping),
+        p_fw_coolant_pump_mw=From(heat_transport),
+        p_blkt_coolant_pump_mw=From(heat_transport),
     ):
         p_fw_blkt_coolant_pump_mw_next = calculate_p_fw_blkt_coolant_pump_mw(
             self.i_p_coolant_pumping,
@@ -1720,25 +1701,23 @@ class Cryo(ExplicitFunction):
     i_tf_sup: int = eqx.field(static=True)
     inuclear: int = eqx.field(static=True)
 
-    helpow = Output(lambda s: s.heat_transport.helpow)
-    qss = Output(lambda s: s.power.qss)
-    qac = Output(lambda s: s.power.qac)
-    qcl = Output(lambda s: s.power.qcl)
-    qmisc = Output(lambda s: s.power.qmisc)
-    qnuc = Output(lambda s: s.fwbs.qnuc)
+    helpow = OutputInto(heat_transport)
+    qss = OutputInto(power)
+    qac = OutputInto(power)
+    qcl = OutputInto(power)
+    qmisc = OutputInto(power)
+    qnuc = OutputInto(fwbs)
 
     def __call__(
         self,
-        tfcryoarea=Input(lambda s: s.tfcoil.tfcryoarea),
-        coldmass=Input(lambda s: s.structure.coldmass),
-        p_tf_nuclear_heat_mw=Input(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
-        ensxpfm=Input(lambda s: s.pf_power.ensxpfm),
-        t_plant_pulse_plasma_present=Input(
-            lambda s: s.times.t_plant_pulse_plasma_present
-        ),
-        c_tf_turn=Input(lambda s: s.tfcoil.c_tf_turn),
-        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
-        qnuc=Input(lambda s: s.fwbs.qnuc),
+        tfcryoarea=From(tfcoil),
+        coldmass=From(structure),
+        p_tf_nuclear_heat_mw=From(fwbs),
+        ensxpfm=From(pf_power),
+        t_plant_pulse_plasma_present=From(times),
+        c_tf_turn=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        qnuc=From(fwbs),
     ):
         return calculate_cryo(
             self.i_tf_sup,
@@ -1798,12 +1777,12 @@ class CryoQNucStep(FixedPointFunction):
     i_tf_sup: int = eqx.field(static=True)
     inuclear: int = eqx.field(static=True)
 
-    qnuc = Output(lambda s: s.fwbs.qnuc)
+    qnuc = OutputInto(fwbs)
 
     def step(
         self,
-        qnuc=Input(lambda s: s.fwbs.qnuc),
-        p_tf_nuclear_heat_mw=Input(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
+        qnuc=From(fwbs),
+        p_tf_nuclear_heat_mw=From(fwbs),
     ):
         return calculate_cryo_qnuc(
             self.i_tf_sup, self.inuclear, p_tf_nuclear_heat_mw, qnuc
@@ -1844,26 +1823,24 @@ class CryoQLoadsStep(FixedPointFunction):
     i_tf_sup: int = eqx.field(static=True)
     i_pf_conductor: int = eqx.field(static=True)
 
-    qss = Output(lambda s: s.power.qss)
-    qac = Output(lambda s: s.power.qac)
-    qcl = Output(lambda s: s.power.qcl)
-    qmisc = Output(lambda s: s.power.qmisc)
+    qss = OutputInto(power)
+    qac = OutputInto(power)
+    qcl = OutputInto(power)
+    qmisc = OutputInto(power)
 
     def step(
         self,
-        qss=Input(lambda s: s.power.qss),
-        qac=Input(lambda s: s.power.qac),
-        qcl=Input(lambda s: s.power.qcl),
-        qmisc=Input(lambda s: s.power.qmisc),
-        qnuc=Input(lambda s: s.fwbs.qnuc),
-        tfcryoarea=Input(lambda s: s.tfcoil.tfcryoarea),
-        coldmass=Input(lambda s: s.structure.coldmass),
-        ensxpfm=Input(lambda s: s.pf_power.ensxpfm),
-        t_plant_pulse_plasma_present=Input(
-            lambda s: s.times.t_plant_pulse_plasma_present
-        ),
-        c_tf_turn=Input(lambda s: s.tfcoil.c_tf_turn),
-        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
+        qss=From(power),
+        qac=From(power),
+        qcl=From(power),
+        qmisc=From(power),
+        qnuc=From(fwbs),
+        tfcryoarea=From(tfcoil),
+        coldmass=From(structure),
+        ensxpfm=From(pf_power),
+        t_plant_pulse_plasma_present=From(times),
+        c_tf_turn=From(tfcoil),
+        n_tf_coils=From(tfcoil),
     ):
         if not cryo_is_active(self.i_tf_sup, self.i_pf_conductor):
             return qss, qac, qcl, qmisc
@@ -1905,27 +1882,25 @@ class CryoLoads(ExplicitFunction):
     i_tf_sup: int = eqx.field(static=True)
     i_pf_conductor: int = eqx.field(static=True)
 
-    helpow = Output(lambda s: s.heat_transport.helpow)
-    p_cryo_plant_electric_mw = Output(
-        lambda s: s.heat_transport.p_cryo_plant_electric_mw
-    )
-    helpow_cryal = Output(lambda s: s.heat_transport.helpow_cryal)
-    cryo_cool_req = Output(lambda s: s.tfcoil.cryo_cool_req)
+    helpow = OutputInto(heat_transport)
+    p_cryo_plant_electric_mw = OutputInto(heat_transport)
+    helpow_cryal = OutputInto(heat_transport)
+    cryo_cool_req = OutputInto(tfcoil)
 
     def __call__(
         self,
-        eff_tf_cryo=Input(lambda s: s.tfcoil.eff_tf_cryo),
-        temp_tf_cryo=Input(lambda s: s.tfcoil.temp_tf_cryo),
-        p_cp_resistive=Input(lambda s: s.tfcoil.p_cp_resistive),
-        p_tf_leg_resistive=Input(lambda s: s.tfcoil.p_tf_leg_resistive),
-        p_tf_joints_resistive=Input(lambda s: s.tfcoil.p_tf_joints_resistive),
-        pnuc_cp_tf=Input(lambda s: s.fwbs.pnuc_cp_tf),
-        temp_cp_coolant_inlet=Input(lambda s: s.tfcoil.temp_cp_coolant_inlet),
-        qss=Input(lambda s: s.power.qss),
-        qac=Input(lambda s: s.power.qac),
-        qcl=Input(lambda s: s.power.qcl),
-        qmisc=Input(lambda s: s.power.qmisc),
-        qnuc=Input(lambda s: s.fwbs.qnuc),
+        eff_tf_cryo=From(tfcoil),
+        temp_tf_cryo=From(tfcoil),
+        p_cp_resistive=From(tfcoil),
+        p_tf_leg_resistive=From(tfcoil),
+        p_tf_joints_resistive=From(tfcoil),
+        pnuc_cp_tf=From(fwbs),
+        temp_cp_coolant_inlet=From(tfcoil),
+        qss=From(power),
+        qac=From(power),
+        qcl=From(power),
+        qmisc=From(power),
+        qnuc=From(fwbs),
     ):
         return calculate_cryo_plant_loads(
             self.i_tf_sup,
