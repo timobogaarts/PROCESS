@@ -572,3 +572,26 @@ results**.
 and export the formatter, **change nothing else**, then convert **one small subsystem**
 (`vacuum` or `power_B_thermal_cryo`) — **not** `costs` (43 declarations) or `stellarator`
 (53).
+
+## 14. Where this stands now
+
+**The cottax half is landed** (`~/jaxgraph` `789df8b`, "hierarchical node paths"), so §13's
+"one blocking change in one file" is no longer blocking. `total_process.COMMON` is still a
+flat tuple; that half is purely client work.
+
+**`power_B_thermal_cryo` was converted, but for the other reason.** It was §13's
+recommended pilot subsystem and it is now converted — to the `From`/`OutputInto`
+declaration surface, not to a model tree. Those are independent: the declaration surface
+carries **variable** paths into the caller's data structure (`.area.field`), the model tree
+carries **node** names. Different namespaces, no overlap. The declaration work went first
+because it touches 2158 sites where the model tree touches ~80, and doing the larger one
+twice was the thing to avoid.
+
+**What is now the real prerequisite is not in this file.** `next_steps.md` §12 (`free`) is
+what makes a *selection* mean something; the model and settings trees are how you spell
+one. §12.2 in particular revises this document's treatment of alternatives: ownership
+collision — which `Switch.check_arms_are_exclusive` already uses as its only proof of
+exclusivity — is **sound but not a definition**, and the case that matters is *partial*
+output overlap, where choosing an arm silently leaves one of the loser's outputs with no
+producer. The check for that belongs on consumers, not producers, and it is the same
+postcondition `free` needs. Read §12 before acting on §§10–13.

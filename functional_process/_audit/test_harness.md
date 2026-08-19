@@ -18,6 +18,31 @@ exists and where the tier descriptions below were refined by building them.
 a tier-1/2 test can be written for it — the true signature isn't known until then. The
 harness consumes audit records, it doesn't precede them.
 
+
+## Declaration surface — `From` / `OutputInto`
+
+Reads and writes are declared by **area plus the name being declared**:
+
+    helpow = OutputInto(heat_transport)      # -> .heat_transport.helpow
+
+    def __call__(self, tfcryoarea=From(tfcoil)): ...   # -> .tfcoil.tfcryoarea
+
+The parameter name **is** the field name and there is no second spelling — `From` takes an
+area and refuses a path, so nothing can be misread. A body wanting a shorter local name
+renames in the body. `Input(lambda s: ...)` / `Output(...)` remain for places no name can
+spell (elements of `f_nd_impurity_electron_array`), so sugar and escape hatch are told
+apart by which function you call.
+
+Areas come from `functional_process/paths.py`, generated from
+`dataclasses.fields(DataStructure)` so they cannot drift; `data` is the whole namespace and
+refuses a misspelled area at declaration time with a suggestion.
+
+**This changes nothing a case declares.** `audit_record`/`reference`/`ported`/`samples` and
+the tier base classes are untouched, and the conversion is provably inert: the pilot
+module's 158 ports were compared against the pre-conversion module loaded side by side and
+are identical. Converted so far: `power_B_thermal_cryo.py`. The rest is censused in
+`next_steps.md`'s Verified-state table.
+
 ## Tier 1 — explicit pure functions
 
 Functions with no internal iteration and (once the audit's promotion work is applied) an

@@ -17,7 +17,8 @@ vocabulary — Shape A / Shape B — that the code itself cites).
 
 | check | value |
 |---|---|
-| `pytest functional_process -q` | **3697 passed**, 3344 skipped, 0 failed |
+| `pytest functional_process -q` | **3704 passed**, 3344 skipped, 0 failed |
+| `cd ~/jaxgraph && pytest` | **482 passed**, 3 skipped — cottax is a dependency this port now changes, so it belongs in the same table |
 | `run_mda_harness.py` | **499 agreements** (23 array-valued), **34 disagreements** (0 in driven blocks, 34 acyclic), 3 unverifiable, **0 ungrounded**, 21 errors |
 | … accounting | **557 owned variables walked, 0 unaccounted**; 61 switch kwargs checked / 0 mismatched / 3 not data-backed / **0 unresolved** |
 | `GRAPH` (`REFERENCE_CONFIGURATION`) | **159 nodes**; **138 blocks, 14 driven**; **349 unowned inputs** — `LModeProfileReset` is the new node and the four fields it owns are the four fewer unowned inputs (deltas measured; the absolute figures carry forward the previously recorded ones) |
@@ -28,6 +29,20 @@ vocabulary — Shape A / Shape B — that the code itself cites).
 | MDF C2 / C3 | **129 iterations, converged** / **200 iterations, not converged** (was 127/converged before §11.11's node; the cold problem it now solves is a different, correct one) |
 | MDF | 15 conditions × 8 design (`icc` × `ixc`), Jacobian compared to PROCESS's **unreduced** |
 | PROCESS itself, same problem | 46 VMCON iterations, **94 s**, conv `2.40e-07` |
+
+**Declaration surface.** Reads and writes are declared `From(area)` / `OutputInto(area)`,
+which complete the area with the name being declared (`functional_process/paths.py`, and
+cottax's `Area`/`Root`). `power_B_thermal_cryo.py` is converted (158 declarations, ports
+proved identical against the pre-conversion module loaded side by side); the rest is
+censused and not yet done — **2078 convertible mechanically, 36 needing a body rename,
+43 keeping `Input(lambda ...)`** for array elements no parameter name can spell. §12.3.
+
+**Open, result pending.** An agent is verifying §11.11's load-bearing claim — that the
+pinned-`x109` point is genuinely better rather than paying for its objective with
+constraint violation (it is feasible only to `max|eq| 3.3e-09` against the free point's
+`1.2e-13`, and a multiplier of ~6.3e+04 would account for the whole gain). Its answer is
+not in this file yet. Until it is, "the port's free answer is not globally optimal" is a
+**hypothesis**, and §11.11 should be read with that caveat.
 
 XDSM/DSM of the assembled SAND graph: `python -m functional_process.render_xdsm sand`
 writes `xdsm_sand.html`/`dsm_sand.html` (self-contained, pan/zoom). The bare form renders
@@ -921,6 +936,12 @@ version: the blocking cottax change is **one change in one file**, hierarchical 
 already work end to end, and the sensible first move is to land it, export the flat XDSM
 formatter, and convert one small subsystem — not `costs` or `stellarator`.
 
+**Update: the cottax half has landed** (`~/jaxgraph` `789df8b`, "hierarchical node
+paths"). So §13's "blocking change" is no longer blocking anything, and
+`total_process.COMMON` still being a flat tuple is **purely client work**. What remains
+before the model tree is worth building is §12 — `free`, which is what makes a selection
+*mean* something, where the trees are only how you *spell* one.
+
 ### 11.6 Priority order
 
 1. **[CLOSED — see 11.8] The cold-start gap.** It was the ceiling on the whole result
@@ -935,27 +956,30 @@ formatter, and convert one small subsystem — not `costs` or `stellarator`.
    `x109` gives a *lower* objective than the port's free optimum (−0.017 %) and `x56`
    costs +0.004 % to move 5.6 %. The inference "all four solver/start combinations agree,
    therefore a model difference" is **withdrawn**.
-3. **Hoist `VmconDriver`'s jitted callables** (§11.2) — small, and the prerequisite for
+3. **`free`, and what a design variable means** — §12. This is the item that grew out of
+   `x109` being a flat direction nobody could see, and it subsumes the switch work (§11.7
+   below is *not* the reason to do it; §12.1's postcondition is).
+4. **Hoist `VmconDriver`'s jitted callables** (§11.2) — small, and the prerequisite for
    batched or scanned solves being worth anything.
-4. **The "is the right *node* registered" check** — now **five** instances
+5. **The "is the right *node* registered" check** — now **five** instances
    (`i_cost_model`'s 43 nodes, `PlantElectricProduction`, `StellaratorBetaAndRhoStar`,
    `plasma_profiles.py`'s two, and `FusionTotalsNoBeam`), **every one found by a downstream
    consumer, never by a check**. `switch_audit` checks the kwargs of nodes that are already
    present. The recommended shape is unchanged and now clearly worth building: walk the
    ported units' node classes and report every one that is written but registered nowhere,
    with the reason recorded beside it.
-5. **A third measurement hole, of the same family as the dropped arrays.**
+6. **A third measurement hole, of the same family as the dropped arrays.**
    `mda_harness.compare`'s `atol=1e-9` makes any field whose natural magnitude is below
    that **vacuously agree**. `.neoclassics.temperatures`/`dr_temperatures` are stored in
    Joules (~1e-15), so they "agreed" both before and after the `ProfileValues.rho` fix and
    are **not actually checked by anything**. Not yet fixed; a per-field relative floor, or
    a unit-aware scale, is what it needs.
-6. **PROCESS's report-pass/solve-pass inconsistency as an undetected category** (§10) —
+7. **PROCESS's report-pass/solve-pass inconsistency as an undetected category** (§10) —
    nothing detects it in general; a field is noticed only when a consumer disagrees.
-7. **The switch-elimination work** (§11.5) — per the design doc's own order: enum-aware
+8. **The switch-elimination work** (§11.5) — per the design doc's own order: enum-aware
    `switch_audit` first, so the net that caught five bugs is not lost in the act of acting
    on it.
-8. **[CLOSED] `boundary_inputs_audit.md` §7** — all seven items are done; that
+9. **[CLOSED] `boundary_inputs_audit.md` §7** — all seven items are done; that
    file's §9 records what they bought.
 
 **Closed, and how** — kept here because each closed item names a defect class that will
@@ -970,6 +994,16 @@ recur:
   PROCESS never assigns; registered in `mda_harness.STATIC_KWARGS_WITHOUT_BACKING_FIELD`.
   `.neoclassics.densities`/`dr_densities` went from disagreeing (`dr_densities` was `-0.0`
   against `-6.1e19`) to agreeing.
+- **`design_scale`'s missing floor.** `1 / x_start` conditioning tested `flat_start != 0.0`
+  — exact zero only — where PROCESS's own `check_iteration_variable` rejects
+  `abs(value) <= 1e-12`. `.power.qac` is exactly `0.0` on a seeded env and `-3.8e-27`
+  after a solve, so **restarting one solve from another's answer** handed VMCON a scale of
+  `-2.6e+26` and its QP died. Reachable only by restarting, never from a cold start, which
+  is why every run passed until one was tried. Now floored at PROCESS's own threshold,
+  with `scale = 1` rather than PROCESS's hard error, because SAND legitimately owns
+  coupling unknowns that converge to ~0 — unscalable, not ill-posed. Seven tests pin it.
+  A **second** argument for §12's dimensional scaling: a start-dependent scale conditions
+  the same problem differently warm and cold.
 - **`c62`'s Jacobian row**, "the only cell in the whole Jacobian disagreeing for an unknown
   reason". Diagnosed and closed, **and the cause was not local to `c62`**:
   `.physics.fusden_total`/`.fusden_alpha_total`/`.p_dt_total_mw` had no producer, so
@@ -1293,3 +1327,115 @@ cold solve runs 200 without converging instead of 127 with. Both land on the rig
 (SAND C3 agrees with C2 to six digits); the corrected cold problem is simply harder for
 the SQP than the incorrect one was. Fixing that is solver work, and the `1/x_start` floor
 above is the first thing to try.
+
+## 12. `free`, alternatives, and what a design variable means — brainstormed, to crystallize
+
+**Status: a brainstorm, not a design.** Recorded so tomorrow starts from here rather than
+from scratch. Nothing in this section is implemented, and the three parts are one
+mechanism seen from three angles rather than three projects.
+
+The thing that provoked it: `x109` cost a day. Two solvers agreed to six digits, the
+value sat 10.9 % from PROCESS, and the whole apparatus reported that as a discrepancy to
+hunt. It was a **flat direction** — a coordinate this problem does not determine — and
+nothing in the port could say so, because an iteration variable here is an integer with a
+value and no other properties. Meaning is the fix, and `free` is where meaning would come
+from.
+
+### 12.1 `free(graph, paths)` — drop the producer, promote to unknown
+
+The operation PROCESS spells `numerics.ixc`. Today the port applies it by *conditionally
+registering* nodes (`DefaultAspectRatio` carries a docstring saying "only instantiate this
+node when `1 not in ixc`", enforced by nothing), which means the design vector is a
+**precondition for assembling the graph**. `free` inverts that: assemble everything once,
+then apply the design vector as a rewrite. "Which models does this design vector kill?"
+becomes a query instead of something you had to know in advance.
+
+**Two cases, and conflating them is how you lose track.** Measured on the reference run:
+all 8 iteration variables are *inputs* PROCESS promotes to unknowns; `.physics.aspect` is
+the rare one that has a producer.
+
+- **unowned path** → promote input to unknown. Graph unchanged.
+- **owned path** → drop the producer *and* promote. One fewer equation.
+
+**It is not `Residualise`.** `Residualise` keeps the equation as a condition (unknown +
+condition, square preserved); `free` discards it (one net degree of freedom for the
+objective). `aspect = stella_config_aspect_ref` is a *default* and discarding it is
+right; a coupling variable's equation is *physics* and discarding it under-determines the
+system. Which is a pleasant collapse: **that distinction is SAND vs MDF.** Free a coupling
+variable and let the optimiser close the loop → SAND. Keep the producer and drive the
+cycle → MDF. The port hand-builds both today; they would become one parameterised rewrite.
+
+**Preconditions.**
+
+1. **Sole ownership.** The producer must own that path alone, or dropping it orphans its
+   siblings — the missing-producer class, **eight instances**. Refuse, or make the caller
+   say what happens to each sibling.
+2. **Cycle membership.** Inside an SCC, refuse and say `Residualise` was meant.
+3. **Bounds.** Part of the *selection*, not of the variable: `boundl`/`boundu` are
+   per-ID and this run's `IN.DAT` overrides five of eight.
+4. **A seed**, with provenance. This is exactly where `run_sand_harness._seed` went wrong
+   (§11.8 item 3): 12 of 23 unknowns started at `0.0`.
+5. **`prune` afterwards**, for ancestors that existed only to feed the dropped producer —
+   and `wanted` must include **reporting outputs**, or `OUT.DAT` gets pruned away. That
+   set is currently declared nowhere.
+6. **Existence.** A typo'd path fails; it does not silently free nothing.
+
+**The postcondition is the whole point.** `unowned_inputs` must not grow. Every new entry
+is a variable that just became a frozen constant with a structurally-zero derivative,
+which is the defect this project has found eight times and never by a check.
+
+### 12.2 Alternatives are keyed on output — nearly
+
+`Switch.check_arms_are_exclusive` already accepts colliding output ownership as its only
+proof of exclusivity, so "these nodes cannot coexist" is detected exactly that way today.
+**Collision proves exclusivity but does not define it**: two real cases are exclusive by
+PROCESS's own `if`/`elif` with *disjoint* outputs — `.vacuum.i_vacuum_pumping` and
+`.costs.i_cost_model` (§1). So the mechanism needs collision *plus* a way to declare
+exclusivity without it.
+
+**Partial overlap is the hazard.** A owns `{x, y}`, B owns `{x}`: they collide on `x`, so
+they are detected as alternatives, and choosing B leaves `y` with no producer — silently a
+boundary input. So the check belongs on **consumers, not producers**: after selecting an
+arm, does every remaining read still have an owner or a declared input? That is §12.1's
+postcondition again, and it is why these are one mechanism.
+
+**Do not** require arms to have equal output sets. `i_cost_model`'s arms genuinely compute
+different things, and forcing a common set means inventing fields that exist only to
+satisfy a check.
+
+### 12.3 Iteration variables need meaning, and the port already computes it
+
+PROCESS's own users feel this: the reference `IN.DAT` annotates **every** `ixc` by hand in
+a comment (`ixc = 109 * f_nd_alpha_thermal_electron: thermal alpha density / electron
+density`), which is unchecked, unparsed prose. Measured on this run: all 8 are **interior
+to their bounds**, so no bound is active and every gradient is balanced by constraint
+multipliers alone.
+
+Ranked by value/cost:
+
+1. **Address by path, never by integer.** The ID is an `IN.DAT`-boundary concern. Nearly
+   free, and it removes `x109` from every report.
+2. **Sensitivity and multipliers, printed every solve.** Reduced gradient per variable,
+   multiplier per binding constraint, distance to each bound. The `jax.jacfwd` Jacobian is
+   already built; a near-zero column **is** a flat direction, detected rather than
+   discovered a day later. This is the item that would have prevented §11.11 entirely.
+3. **Dimensional scaling instead of `1/x_start`.** Start-dependent conditioning means the
+   same problem is conditioned differently warm and cold, and it is what produced the
+   `-2.6e+26` in §11.6's closed list. A characteristic magnitude per quantity type is
+   stable and **derivable from the name** — `standards.md`'s
+   `<type>_<system>_<description>_<units>` already encodes the dimension.
+4. **Separate physical design variables from f-value slacks.** 28 of 83 iteration
+   variables start with `f`; some are genuine physics (`f_nd_alpha_thermal_electron` is an
+   alpha-ash fraction), others are PROCESS's f-value idiom — slacks paired with an
+   inequality to make it an equality. Those are not design freedom and reporting them
+   beside real variables is noise. Needs checking per variable: the prefix does not
+   distinguish them.
+5. **Graph-derived role** — which conditions a variable can reach, which nodes read it.
+   Straight from the graph, and it is what the `IN.DAT` comment gestures at in prose.
+6. **Bounds with provenance.** `boundu(10) = 1.2` on `hfact` is a physics judgement
+   nobody wrote down.
+
+**These are properties of the selection, not of the variable** — which is what `free`
+returns. So a `DesignVariable(path, bounds, scale, dimension, role, seed)` is `free`'s
+natural return type, and (2) is what you print about the set it returns: the same object,
+before and after the solve.
