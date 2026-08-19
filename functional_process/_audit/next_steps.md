@@ -30,6 +30,14 @@ vocabulary — Shape A / Shape B — that the code itself cites).
 | MDF | 15 conditions × 8 design (`icc` × `ixc`), Jacobian compared to PROCESS's **unreduced** |
 | PROCESS itself, same problem | 46 VMCON iterations, **94 s**, conv `2.40e-07` |
 
+**A gap this exposed, cheap to close.** SAND has **no Stage B0** — no check of its own
+`jax.jacfwd` Jacobian against a central difference of its own condition map. Adding one is
+what found the `c24` kink above, in 2 of 690 cells, and nothing else in the repo looks for
+this failure. Note it is a *different* class from the audited one: §9/§10.5b/§11.8 are
+about `nan` derivatives **at exactly zero**, where this is a finite derivative on one side
+and an unbounded one on the other, `1.9e-09` from the switch. How many other clamped roots
+the solve is sitting on is unknown and unlooked-for.
+
 **Declaration surface.** Reads and writes are declared `From(area)` / `OutputInto(area)`,
 which complete the area with the name being declared (`functional_process/paths.py`, and
 cottax's `Area`/`Root`). `power_B_thermal_cryo.py` is converted (158 declarations, ports
@@ -42,12 +50,22 @@ The plan for finishing it, and for the node-name conversion beside it, is
 digit for digit; the 43 escapes lose their lambdas too, so the endpoint is `lambda s:` →
 **0**, not 2078 of 2157).
 
-**Open, result pending.** An agent is verifying §11.11's load-bearing claim — that the
-pinned-`x109` point is genuinely better rather than paying for its objective with
-constraint violation (it is feasible only to `max|eq| 3.3e-09` against the free point's
-`1.2e-13`, and a multiplier of ~6.3e+04 would account for the whole gain). Its answer is
-not in this file yet. Until it is, "the port's free answer is not globally optimal" is a
-**hypothesis**, and §11.11 should be read with that caveat.
+**Closed, and the answer is not what either side of it expected.**
+`_audit/x109_pinning_verification.md` settled the feasibility question — the pinned point
+is genuinely better (`max|eq| 2.1e-12`, no inequality violated) and the multiplier
+hypothesis is refuted by five orders of magnitude (`Σ|λ_eq| = 1.22`, not `6.3e+04`).
+`_audit/x109_hypotheses.md` then settled *why*, and the cause is a **kink in the model**:
+at every converged point the design sits on `(Te + Ti)/20 == 0.65`, the threshold of
+`fast_alpha_beta`'s clamped square root (`physics_A_pure_formulas.py:342-348`) — `1.9e-09`
+from it at the free optimum — where `c24` rises like `2√h` on one side and linearly on the
+other. AD reports one side. Of 690 Jacobian cells exactly two disagree with a central
+difference of the port's own condition map, both in the `c24` row, and `c24` alone drifts
+like `h^0.52` where every other condition drifts like `h^2.00`. **The SQP is stopping
+correctly against an incorrect linear model of one constraint** — not terminating
+prematurely, and not descending a wrong objective (the `objf` row is correct to `7.7e-10`
+against the same central difference). PROCESS is unaffected: its answer sits `5.8e-03`
+below the switch and its `epsfcn = 0.01` finite difference is 10⁵ times wider than the
+feature.
 
 XDSM/DSM of the assembled SAND graph: `python -m functional_process.render_xdsm sand`
 writes `xdsm_sand.html`/`dsm_sand.html` (self-contained, pan/zoom). The bare form renders
@@ -1198,9 +1216,14 @@ at the cold point both fail. Recorded so the next reader does not "fix" it.
 
 ### 11.11 `x56` and `x109` — both diagnosed, and neither is a model difference
 
-**The one-line answer: both are flat directions of the port's own constrained problem, and
-the eighth missing producer that everyone was looking for is real but is the cause of
-something else entirely.** Everything below was run against
+**The one-line answer: `x56` is a flat direction of the port's own constrained problem;
+`x109` is not.** The port's answer is the point where the design first reaches
+`(Te + Ti)/20 == 0.65` — the kink in `fast_alpha_beta`'s clamped square root, which the
+port stops on to `1.9e-09` — and the solvers are held there by a `c24` Jacobian row that is
+not the derivative of the `c24` they evaluate (`_audit/x109_hypotheses.md`). Treating the
+two variables as one thing is what sent two investigations down the same wrong road. **The
+eighth missing producer that everyone was looking for is real but is the cause of something
+else entirely.** Everything below was run against
 `tests/regression/input_files/stellarator_helias.IN.DAT` off one cached PROCESS run.
 
 #### The missing producer, found and ported — but it is not `x109`'s cause
@@ -1271,10 +1294,16 @@ Read those two rows carefully:
   direction looks like, not a wrong formula. It is interior to its bounds `[1, 50]` at
   every landing.
 - **`x109` at PROCESS's own value is feasible with a `objf` 0.017 % *lower* than the port's
-  free optimum.** A constrained minimum cannot be improved by adding a constraint, so the
-  port's converged answer is **not** the global optimum of the port's own problem — the
-  landscape has at least two stationary points 12 % apart in `x109` and 1.7e-04 apart in
-  objective. `x109` is interior to `[0.0001, 0.4]`.
+  free optimum** — re-verified to `max|eq| 2.1e-12` with no inequality violated. A
+  constrained minimum cannot be improved by adding a constraint, so the port's converged
+  answer is **not** the global optimum of the port's own problem. The landscape is
+  confirmed multi-modal — a barrier of height `1.2e-05` at `x109 ≈ 0.0300` and a strictly
+  better feasible region beyond `0.031`, reaching `objf 1.21757404` at `0.0320` with
+  `max|eq| 4.0e-14` — but **the port's answer is not the other minimum of it**. Released
+  *inside* the better region, both VMCON and SLSQP walk back out of it uphill; with
+  `x109 >= 0.031` imposed they converge **on that bound**. A correct local method does not
+  do that, which is what points at the Jacobian and not at the landscape. `x109` is
+  interior to `[0.0001, 0.4]`. See `_audit/x109_hypotheses.md`.
 
 **§11.10's inference from "all four solver/start combinations agree to five or six digits"
 is therefore wrong**, and the reason is worth keeping: two independent SQPs agreeing tells
@@ -1289,16 +1318,29 @@ At the free optimum the active set is `c2`, `c16` (the two equalities), the fift
 residual equalities, and exactly four inequalities — `c24` (beta limit), `c83` (place for
 blanket), `c62` (thermal He) and `c35` (quench). Twenty-three unknowns against twenty-one
 binding conditions leaves **two** free directions, and the objective's own gradient in
-those directions is what fixes them. That gradient is the port's weakest quantity: the
-`objf` row of the Stage B Jacobian disagrees with PROCESS's by 18–34 % in *every* column
-(§10.5c), from the `z_tf_inside_half` report-pass/solve-pass inconsistency in PROCESS
-itself. A 20–30 % error in the gradient along a valley this flat moves the landing point
-by ~10 % in the flat coordinates while barely moving anything else — which is exactly the
-observed shape (`x56` and `x109` at ~10 %, everything else inside 3 %).
+those directions is what would fix them, and **it is not what does**.
 
-That is a *consistent* account rather than a demonstrated one. The controlled test would be
+The account this section used to give — that the `objf` row of the Stage B Jacobian
+disagrees with PROCESS's by 18–34 % in every column (§10.5c), and that a 20–30 % gradient
+error along a flat valley moves the landing point by ~10 % — has been **measured and is
+wrong**. Against a central difference of the port's *own* condition map the `objf` row is
+correct to `7.7e-10`; §10.5c's 18–34 % is a *port-vs-PROCESS* difference, not an error in
+the port's own descent direction. What fixes the landing point is one row of the
+**constraint** Jacobian: `c24`, at a point where its function is not differentiable (see
+this file's opening summary, and `_audit/x109_hypotheses.md` §3). Of 690 cells exactly the
+two `c24` cells disagree with that same central difference, and `c24` alone drifts like
+`h^0.52` along the null direction where every other condition drifts like `h^2.00`. The
+active-set reading above was re-measured and stands: same four inequalities, `A` is 21×23
+of rank 21, LICQ holds.
+
+**Architecture is excluded as a cause.** MDF warm converges at `x109 = 0.0299518328`
+against SAND's `0.0299518330` — nine digits — so exposing the coupling to the optimiser is
+not it. That also supersedes §11.10's "MDF C3 landing at 36.20 where SAND lands at 31.76":
+warm, the two give `x56` 31.7606 / 31.7570.
+
 §10.9 item 3 (pin `.heat_transport.p_plant_electric_base_total_mw` to PROCESS's own 89.461
-and re-solve). **The cheaper substitute was tried and is not a substitute**: dropping `c16`
+and re-solve) is **no longer the controlled test for `x109`** — it tests the `objf`/`c16`
+difference, which is real and is a separate question. **The cheaper substitute was tried and is not a substitute**: dropping `c16`
 from the problem entirely does not converge and is not informative — `c16` is the net
 electric power lower limit, so without it the objective runs away (`objf` 0.656, `x3` and
 `x56` both pinned at their upper bounds). Recorded so it is not retried.
