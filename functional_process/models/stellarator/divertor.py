@@ -16,6 +16,7 @@ anything about this file: `st_div` itself has no missing input and no internal s
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from functional_process.models.safe_math import safe_sqrt
 
 _ELECTRON_CHARGE = 1.602176634e-19
 """Coulombs. `process/core/constants.py::ELECTRON_CHARGE`."""
@@ -92,14 +93,14 @@ def calculate_divertor(
         area fraction of the first wall.
     """
     e = tdiv * _ELECTRON_CHARGE
-    c_s = jnp.sqrt(e / (m_fuel_amu * _ATOMIC_MASS_UNIT))
+    c_s = safe_sqrt(e / (m_fuel_amu * _ATOMIC_MASS_UNIT))
 
-    w_r = 4.0 * jnp.sqrt(bmn * rmajor / (shear * n_res))
+    w_r = 4.0 * safe_sqrt(bmn * rmajor / (shear * n_res))
     delta = f_w * w_r
     l_p = 2.0 * jnp.pi * rmajor * m_res / n_res
     l_x_t = delta / flpitch
-    l_q = jnp.sqrt(xpertin * (l_x_t / c_s))
-    l_b = jnp.sqrt(xpertin * l_p / c_s)
+    l_q = safe_sqrt(xpertin * (l_x_t / c_s))
+    l_b = safe_sqrt(xpertin * l_p / c_s)
     f_x = 1.0 + (l_b / (l_p * flpitch))
     l_d = f_x * l_p * (flpitch / anginc)
     l_t = 2.0 * n_res * l_d

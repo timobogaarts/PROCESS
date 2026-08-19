@@ -39,9 +39,8 @@ individually justified and recorded, none reversed.
 
 ## 3. The trap: "switch" is four different things
 
-Measured on the assembled graph: **143 nodes, of which 31 carry static kwargs, spanning 29
-distinct kwarg names** (51 kwarg sites, per `mda_harness.switch_audit`). They are not one
-category:
+A "switch" is not one category, and conflating them is the main way this refactor could go
+wrong. (Current counts are in §13; the taxonomy is what matters here.)
 
 | kind | examples | should it become a model choice? |
 |---|---|---|
@@ -50,8 +49,10 @@ category:
 | **(c) set membership** | `imp_indices=(0..13)` — which impurity species exist | **No, but not a switch either.** A set, not a choice. Already flagged by `switch_audit` as having no backing `DataStructure` field. |
 | **(d) alias / noise** | `is_ignited=True` (a bool restatement of `i_plasma_ignited == 1`) | **Delete, don't rename.** Pure redundancy; `switch_audit` already needs a special case for it. |
 
-Conflating (a) with (b)/(c) is the main way this refactor could go wrong. A JSON document
-that lists `n_plasma_profile_elements` as a "model" would be worse than what exists now.
+A JSON document that lists `n_plasma_profile_elements` as a "model" would be worse than
+what exists now. Only (a) is the target; **(b)/(c)/(d) must be explicitly reclassified so
+they stop being counted as switches at all**, otherwise the goal is stated as a count that
+can never reach zero.
 
 ## 4. The names already exist upstream — this is the big enabler
 
@@ -74,41 +75,27 @@ Two things about *where* they live are diagnostic:
 
 ## 5. Recommendation: two separable changes, not one
 
-### (A) Rename the selection layer — cheap, do this first
+*Superseded by §10.5's revised order; the two halves it named survive there.* What is worth
+carrying out of it:
 
-Replace integer values with named identities in `configuration.py`'s vocabulary only:
+- **(A) Rename the selection layer.** `Configuration({".costs.i_cost_model": 0})` becomes
+  `Configuration({"costs": "PROCESS_1990"})` — no node split, no graph shape change.
+  **This alone kills the bug class that has cost this project five separate defects**
+  (`i_confinement_time` 34/38, `i_thermal_electric_conversion` 0/2, `i_p_coolant_pumping`
+  2/1, `i_plasma_ignited` 0/1, `i_cost_model` 1/0), because a name cannot be silently
+  copied off the wrong default the way an integer can: `PROCESS_1990` versus `KOVARI_2014`
+  does not typo into itself; `0` versus `1` does.
+- **(B) Split nodes per branch**, on the reads-set criterion, incrementally. Two facts that
+  bound it: `i_confinement_time` has 52 enum members, only one in scope, so
+  `Alternative(unported=...)` keeps the cost bounded but it is still 52 declarations; and
+  **selection does not always factor per-switch** — `.fwbs.blktmodel,.heat_transport.
+  ipowerflow` is already declared under a *synthetic* comma-joined path whose `value` is an
+  arm index rather than a field value, because the dispatch is genuinely joint. Any "one
+  JSON key per switch" scheme must accommodate that; it is existing evidence, not a
+  hypothetical.
 
-```python
-Configuration({".costs.i_cost_model": 0})          # today
-Configuration({"costs": "PROCESS_1990"})           # after (A)
-```
-
-No node is split; no graph shape changes. **This alone kills the bug class that has cost
-this project five separate defects** (`i_confinement_time` 34/38, `i_thermal_electric_conversion`
-0/2, `i_p_coolant_pumping` 2/1, `i_plasma_ignited` 0/1, `i_cost_model` 1/0) — because a
-name cannot be silently copied off the wrong default the way an integer can. `PROCESS_1990`
-versus `KOVARI_2014` does not typo into itself; `0` versus `1` does.
-
-### (B) Split nodes per branch — expensive, keep incremental
-
-Eliminating static kwargs means one node class per branch. Correct where reads-sets differ
-(the policy's own criterion), and genuinely hard where they do not:
-
-- **`ComponentThermalPowers` carries five static kwargs simultaneously**
-  (`i_p_coolant_pumping`, `i_blkt_dual_coolant`, `i_thermal_electric_conversion`,
-  `i_blanket_type`, `secondary_cycle_liq`). A full cartesian split is a combinatorial
-  explosion of node classes. This is *why* the six deviations exist, not an oversight.
-- **`i_confinement_time` has 52 enum members.** Only one is in scope; `Alternative(unported=...)`
-  already handles the rest, so the cost is bounded — but it is 52 declarations to write out.
-- **Selection does not always factor per-switch.** `.fwbs.blktmodel,.heat_transport.ipowerflow`
-  is already declared under a *synthetic* comma-joined path whose `value` is an arm index,
-  not a field value, because the dispatch is genuinely joint. Any "one JSON key per switch"
-  scheme must accommodate this; it is existing evidence, not a hypothetical.
-
-**So the honest end state is not "zero static kwargs".** It is "static kwargs only where
-the reads-set is provably identical" — i.e. the policy as written, actually enforced, with
-(b)/(c)-class parameters explicitly reclassified so they stop being counted as switches at
-all.
+§5(B)'s "combinatorial explosion" objection to splitting `ComponentThermalPowers`'s five
+simultaneous static kwargs is **withdrawn** — see §10.3, which replaces it.
 
 ## 6. The JSON shape
 
@@ -153,14 +140,10 @@ enum-aware `switch_audit` *before* changing the registrations, not after.
 
 ## 9. Verdict
 
-- **Feasible**: yes, and the enabling property is already proven and already relied on.
-- **Already policy**: yes; (B) is enforcement, not redesign.
-- **Do (A) first**: bounded, mechanical, and it removes by construction the single most
-  expensive recurring defect class in this project's history.
-- **Do (B) incrementally**, per unit, on the existing reads-set criterion — and first
-  reclassify the (b)/(c)/(d) kwargs so the target is stated honestly instead of as a
-  count that can never reach zero.
-
+**Feasible, and it is enforcement rather than redesign.** The enabling property (§1) is
+already proven and already relied on; the split default (§2) is already the declared policy.
+The order to do it in is §10.5's, not this section's original two-step; §13 records what a
+feasibility investigation then measured.
 
 ## 10. Revision after discussion — composition, not enumeration
 
@@ -169,7 +152,7 @@ because the correction is the useful part.
 
 ### 10.1 It is sugar over a model list, and the list already exists
 
-Measured: `total_process.COMMON` is a **tuple of 79 declarations** (21 instances + 58 bare
+Measured: `total_process.COMMON` is a **tuple of 80 declarations** (22 instances + 58 bare
 classes). A `Switch` is nothing more than a mapping `int -> tuple[declaration]` — the
 `.costs.i_cost_model == 0` arm simply contributes 43 more entries to that same list.
 `declarations_for` concatenates. There is no other mechanism. So "replace switches with a
@@ -224,51 +207,38 @@ the split is designed.
 
 ### 10.4 [RETRACTED] "The real blocker: ports are class-derived, not instance-derived"
 
-**This section claimed instance fields cannot change a node's reads-set, and that fixing
-it needed an upstream `~/jaxgraph` change. That is false.** Tested directly:
-`ExplicitFunction._params` is an ordinary property, so a declaration can override it to
-compute its ports from its own static fields, and `to_graph` accepts the resulting
-*instance* and builds correctly:
-
-```python
-class Composed(ExplicitFunction):
-    source: str = eqx.field(static=True)
-    ...
-    @property
-    def _params(self):                      # ports derived from the instance
-        ...                                 # -> Composed(source="b1") reads .q.b1
-                                            #    Composed(source="b2") reads .q.b2
-```
-
-Both assemble; the base class is unaffected. `COMMON` already mixes 21 instances with 58
-bare classes, so instance-passing was never in question — what was wrong was the claim
-that an instance's *fields* cannot drive its ports.
-
-Consequences of the retraction:
+**The claim that instance fields cannot change a node's reads-set is false**, tested
+directly: `ExplicitFunction._params` is an ordinary property, so a declaration can override
+it to compute its ports from its own static fields, and `to_graph` accepts the resulting
+*instance* and builds correctly. Three consequences:
 
 - **No upstream prerequisite.** This whole direction is unblocked today.
 - **`StellaratorConfinementTime` need not have been a subclass.**
-  `ConfinementTime(q95_source=...)` with an instance-derived `_params` would have worked
-  and is simpler. The subclass is not wrong — it also gives the arm its own node name,
-  since `NodalDeclaration.name` is `type(self).__name__` — but it was not forced, and
-  `next_steps.md` § 8.3's reasoning ("the declaring class *is* the unit of rebinding")
+  `ConfinementTime(q95_source=...)` with an instance-derived `_params` would have worked and
+  is simpler. The subclass is not wrong — it also gives the arm its own node name, since
+  `NodalDeclaration.name` is `type(self).__name__` — but it was not forced, and
+  `next_steps.md` §8.3's reasoning ("the declaring class *is* the unit of rebinding")
   overstates the constraint.
-- **One real caveat remains**: `_params` is underscore-private, so overriding it reaches
-  into cottax's internals rather than a documented extension point. Promoting it to a
-  supported hook is a small, worthwhile upstream change — but a convenience, not a
-  blocker.
+- **One real caveat remains**: `_params` is underscore-private, so overriding it reaches into
+  cottax's internals rather than a documented extension point. Promoting it to a supported
+  hook is a small, worthwhile upstream change — a convenience, not a blocker.
 
 ### 10.5 Revised order
 
-1. **Enum-aware `switch_audit`** — § 8's warning stands and comes first: it is the check
-   that caught five bugs, and it must not be lost in the act of acting on this.
+1. **Enum-aware `switch_audit`** — §8's warning stands and comes first: it is the check that
+   caught five bugs, and it must not be lost in the act of acting on this.
 2. **Name the list directly**, deleting `Switch`/`Alternative`/`Configuration`'s integer
-   indirection; group by provenance while touching it.
-3. **Split fused nodes** (`ComponentThermalPowers` first) on the reads-set criterion, one
-   model choice per node — preceded by the per-branch reads/writes analysis § 10.3 says
-   is missing.
-4. **JSON**: a name -> class registry over the result. Cheap once 2 lands.
+   indirection (§5's half (A) — the half that kills the recurring wrong-default defect
+   class); group by provenance while touching it, and reclassify §3's (b)/(c)/(d) kwargs so
+   the target is stated honestly.
+3. **Split fused nodes** (§5's half (B); `ComponentThermalPowers` first) on the reads-set
+   criterion, one model choice per node — preceded by the per-branch reads/writes analysis
+   §10.3 says is missing.
+4. **JSON**: a name → class registry over the result. Cheap once 2 lands.
 5. *Optional, upstream*: promote `_params` (or an equivalent) to a documented hook.
+
+§13 revises the *first increment* of step 2 in light of a feasibility investigation, and
+sequences the cottax-side change ahead of it.
 
 ## 11. Provenance grouping vs. derived structure — measured
 
@@ -296,8 +266,8 @@ it**:
 
 Meanwhile there are **346 cross-subsystem edges** (`stellarator -> power_B_thermal_cryo`
 35, `physics -> stellarator` 30, `stellarator -> costs` 19, ...). So subsystems are heavily
-coupled — just **acyclically**. That is precisely why the MDA needs only 11 driven blocks
-out of 128.
+coupled — just **acyclically**. That is precisely why the MDA needs only 12 driven blocks
+out of 131.
 
 ### 11.2 What the comparison actually bought
 
@@ -557,3 +527,48 @@ not the same operation as a scan over `rmajor`.
 
 **`materialise` belongs to the caller, not cottax.** cottax receives an already-materialised
 tree and stays thin.
+
+## 13. Feasibility investigation — what was measured, and the first increment
+
+§§10–12 are the design. This section records only the **results** of prototyping and
+measuring it; it does not restate the design.
+
+**The two blocking cottax changes are one change in one file — and it is
+`pytree_namespace_module.py`, not `flat_namespace_module.py`.** §12.3 items 1 and 2
+(`NodalDeclaration.name` becoming position-derived, and `to_graph`/`node_and_names`
+accepting a namespace of `NodalDeclaration`s) turn out to be a single edit — `named(at)`
+plus `node_and_names(xs, at=None)` — on the pytree surface, which is the one this repo
+imports. Prototyped at **+108/−19 lines**, with `~/jaxgraph` (**318 passed**) and
+`functional_process` (**3597 passed** at the time) both unchanged, and `graph_for()`
+rebuilding to the same node set and the same binding order.
+
+**Hierarchical `NodePath`s already work end to end**, and not only in principle: two 3-key
+minted names — `^problem.physics.proton_rate_density` and `^problem.fwbs.f_ster_div_single`
+— **already exist in the driven graph today**. The declaration surface is the only thing
+that cannot express one.
+
+**§12.6's dichotomy is a false one.** It posed "provenance outermost" against "prefix
+outermost with a mint-aware `graph.under()`". Neither is needed: **mint-prefix-outermost,
+plus comparing `KeyEntry`s by *kind* as well as value**, distinguishes a model-tree position
+(`DictKey`) from a `VarPath` place (`GetAttrKey`) for free. Provenance-outermost would in
+addition require changing `rewrites.py` and renaming 12 existing minted nodes.
+
+**§12.7's "absence is `None`" claim is wrong for declaration *instances*.** An `eqx.Module`
+of all-static fields flattens to **zero leaves**, so `materialise` must pass `is_leaf`; the
+`None`-shaped settings tree alone is not sufficient to keep the zip well-defined.
+
+**§12.3 item 3 is already done, on the other surface.** `xDSMFormatterFlat` exists; it needs
+an export, and it takes XDSM's bracket-spelled labels from **136 to 0**.
+
+**Blast radius today**, measured on the assembled graph: **80 `COMMON` entries** (58 bare
+classes, 22 instances), **147 registered declarations**, **9 topology switches**, and **60
+static-field slots across 33 declarations, 30 distinct names, 58 of them `int`**. That last
+figure is the one that decides what a derived settings schema (§12.7) is worth: with almost
+every slot an `int`, the schema catches **misspelled keys**, and essentially never a wrong
+*type*. Both harnesses were run end to end against a 2-level model tree with **byte-identical
+results**.
+
+**Recommended first increment**: land the `named(at)` + `node_and_names(xs, at=None)` change
+and export the formatter, **change nothing else**, then convert **one small subsystem**
+(`vacuum` or `power_B_thermal_cryo`) — **not** `costs` (43 declarations) or `stellarator`
+(53).

@@ -64,6 +64,7 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
 from process.core import constants
+from functional_process.models.safe_math import safe_sqrt
 
 
 def calculate_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_average):
@@ -74,7 +75,9 @@ def calculate_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_a
     is a separate node from `calculate_poloidal_field_from_rotational_transform`, which
     produces the *next* value of the same `VarPath`.
     """
-    return jnp.sqrt(b_plasma_toroidal_on_axis**2 + b_plasma_surface_poloidal_average**2)
+    return safe_sqrt(
+        b_plasma_toroidal_on_axis**2 + b_plasma_surface_poloidal_average**2
+    )
 
 
 def calculate_poloidal_field_from_rotational_transform(
@@ -174,13 +177,11 @@ def calculate_stellarator_beta_and_rho_star(
         / (2.0e0 * constants.RMU0)
         * vol_plasma
     )
-    rho_star = jnp.sqrt(
-        2.0e0
+    rho_star = safe_sqrt(2.0e0
         * constants.PROTON_MASS
         * m_ions_total_amu
         * e_plasma_beta
-        / (3.0e0 * vol_plasma * nd_plasma_electron_line)
-    ) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
+        / (3.0e0 * vol_plasma * nd_plasma_electron_line)) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
 
     return beta_total_vol_avg, e_plasma_beta, rho_star
 
@@ -197,6 +198,114 @@ def calculate_fusion_power_totals_mw(
     p_dhe3_total_mw = dhe3_power_density * vol_plasma
     p_dd_total_mw = dd_power_density * vol_plasma
     return p_plasma_dt_mw, p_dhe3_total_mw, p_dd_total_mw
+
+
+def calculate_fusion_totals_no_beam(
+    fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
+):
+    """Total fusion rates and D-T power with **no neutral beam** -- three identities.
+
+    Ports the `else` arm of `stellarator.py:2002-2054`. PROCESS adds a beam-driven
+    contribution to each of these three totals when
+    `p_hcd_beam_injected_total_mw != 0` *and* the plasma is not ignited; otherwise
+    "the total alpha rates and power are the same as the plasma values"
+    (`stellarator.py:2048-2049`, PROCESS's own comment), which is this arm.
+
+    Arithmetically trivial, structurally not: without it `.physics.fusden_total`,
+    `.physics.fusden_alpha_total` and `.physics.p_dt_total_mw` are **boundary inputs**
+    of the port's graph -- frozen constants seeded from the converged run -- while
+    `FusionRates` computes `fusden_plasma`/`fusden_plasma_alpha` right next to them and
+    nothing reads the result. Every value was therefore correct at the reference point
+    and every *derivative* through them was zero, which is exactly the defect class
+    `_audit/optimise_design.md` §10.5a records for iteration variable 4.
+
+    The beam arm is deliberately not ported: it calls `reactions.beam_fusion`, which
+    unit #19 records as audit-only (a `scipy.integrate.quad` call that is both
+    non-traceable and accurate only to ~1e-6 in PROCESS's own hands -- four orders
+    outside tier-1's tolerance). See `_audit/boundary_inputs_audit.md` §4c (b7)/(b8).
+
+    Parameters
+    ----------
+    fusden_plasma :
+        Fusion reaction rate from the plasma alone (/m3/s). `.physics.fusden_plasma`.
+    fusden_plasma_alpha :
+        Alpha production rate from the plasma alone (/m3/s).
+        `.physics.fusden_plasma_alpha`.
+    p_plasma_dt_mw :
+        D-T fusion power from the plasma alone (MW). `.physics.p_plasma_dt_mw`.
+
+    Returns
+    -------
+    tuple
+        `(fusden_total, fusden_alpha_total, p_dt_total_mw)`.
+    """
+    return fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
+
+
+def calculate_clipped_radiation_powers(
+    pden_plasma_core_rad_mw_unclipped, pden_plasma_outer_rad_mw_unclipped, vol_plasma
+):
+    """`st_phys`'s two zero-clips on the radiation power densities, and the two total
+    powers it forms from them.
+
+    Ports `stellarator.py:2152-2166`. Four writes, one node, because they are one
+    straight-line block with no branch between them: the clips and the products PROCESS
+    computes *from the clipped values*.
+
+    **The clips belong here rather than in `radiation_power.py`** and that is a
+    modelling fact, not a filing choice: `calculate_radiation_powers` has two callers
+    and only this one clips (`physics.PhysicsCalculations.physics()`,
+    `physics.py:750-753`, does not). A clip inside the callee would be wrong for the
+    other caller. `PlasmaRadiationPowers` therefore mints
+    `pden_plasma_core_rad_mw_unclipped`/`pden_plasma_outer_rad_mw_unclipped` and this
+    function owns the real fields.
+
+    `jnp.maximum(x, 0.0)` rather than `jnp.clip`: PROCESS's own expression is
+    `max(x, 0.0)`, one-sided, and there is no upper bound to state. Its derivative is
+    the step function -- well defined either side and conventionally `0` at the join.
+    This is **not** the `jnp.sqrt(jnp.maximum(0.0, x))` trap that has bitten this port
+    twice: there is no infinite-derivative outer function here, so no `inf * 0`.
+
+    Measured at this run's converged point, both clips are **inactive** -- core
+    `0.0575`, outer `0.0553`, against a threshold of `0.0` -- so registering this
+    changes no value here. What it changes is that `.physics.p_plasma_inner_rad_mw`
+    acquires a producer at all: `StellaratorConfinementTime` reads it, and until now it
+    read a frozen boundary input. That is the defect class this project has now found
+    five times, every one invisible to a value comparison
+    (`_audit/boundary_inputs_audit.md` §7 item 6).
+
+    `p_plasma_rad_mw` (`stellarator.py:2168-2170`) is deliberately not here -- it is
+    already owned by `HeatingAndRadiationPower`, and it is formed from the *unclipped*
+    `pden_plasma_rad_mw`, so it is not part of this block's arithmetic.
+
+    Parameters
+    ----------
+    pden_plasma_core_rad_mw_unclipped :
+        Core radiation power density before the clip (MW/m3).
+        `.physics.pden_plasma_core_rad_mw_unclipped`, minted by `PlasmaRadiationPowers`.
+    pden_plasma_outer_rad_mw_unclipped :
+        Edge radiation power density before the clip (MW/m3).
+        `.physics.pden_plasma_outer_rad_mw_unclipped`, same origin.
+    vol_plasma :
+        Plasma volume (m3). `.physics.vol_plasma`.
+
+    Returns
+    -------
+    tuple
+        `(pden_plasma_core_rad_mw, pden_plasma_outer_rad_mw, p_plasma_inner_rad_mw,
+        p_plasma_outer_rad_mw)` -- the two clipped densities and the two total powers,
+        in PROCESS's own write order.
+    """
+    pden_plasma_core_rad_mw = jnp.maximum(pden_plasma_core_rad_mw_unclipped, 0.0)
+    pden_plasma_outer_rad_mw = jnp.maximum(pden_plasma_outer_rad_mw_unclipped, 0.0)
+    # PROCESS's own comment on the first of these: "Should probably be vol_core".
+    # Reproduced as written.
+    return (
+        pden_plasma_core_rad_mw,
+        pden_plasma_outer_rad_mw,
+        pden_plasma_core_rad_mw * vol_plasma,
+        pden_plasma_outer_rad_mw * vol_plasma,
+    )
 
 
 def calculate_neutron_wall_load(
@@ -268,7 +377,7 @@ def calculate_heating_and_radiation_power(
         + p_plasma_ohmic_mw
         - p_plasma_rad_mw_raw
     )
-    powht = jnp.maximum(0.00001e0, powht)  # noqa: PLR2004 -- ported literal, see source
+    powht = jnp.maximum(0.00001e0, powht)
 
     if i_plasma_ignited == 0:  # PlasmaIgnitionModel.NON_IGNITED
         powht = powht + p_hcd_injected_total_mw
@@ -372,7 +481,8 @@ class TotalField(ExplicitFunction):
 
 class PoloidalFieldFromRotationalTransform(ExplicitFunction):
     """cottax node: `calculate_poloidal_field_from_rotational_transform`, ports
-    declared."""
+    declared.
+    """
 
     b_plasma_surface_poloidal_average = Output(
         lambda s: s.physics.b_plasma_surface_poloidal_average
@@ -454,6 +564,64 @@ class FusionPowerTotalsMw(ExplicitFunction):
     ):
         return calculate_fusion_power_totals_mw(
             dt_power_density_plasma, dhe3_power_density, dd_power_density, vol_plasma
+        )
+
+
+class FusionTotalsNoBeam(ExplicitFunction):
+    """cottax node: `calculate_fusion_totals_no_beam`, ports declared.
+
+    Registered unconditionally, and the reason is stronger than "this run happens to
+    have no beam": PROCESS's gate is `p_hcd_beam_injected_total_mw != 0` **and**
+    `i_plasma_ignited == NON_IGNITED` (`stellarator.py:2005-2009`), and this run is
+    IGNITED (`stellarator_helias.IN.DAT:126`, the same value
+    `HeatingAndRadiationPower(i_plasma_ignited=1)` is registered with). An ignited
+    plasma takes this arm whatever the beam power is. The other arm cannot be written
+    at all (see the function's docstring), so a `Switch` -- which needs two arms --
+    is not available even in principle here.
+    """
+
+    fusden_total = Output(lambda s: s.physics.fusden_total)
+    fusden_alpha_total = Output(lambda s: s.physics.fusden_alpha_total)
+    p_dt_total_mw = Output(lambda s: s.physics.p_dt_total_mw)
+
+    def __call__(
+        self,
+        fusden_plasma=Input(lambda s: s.physics.fusden_plasma),
+        fusden_plasma_alpha=Input(lambda s: s.physics.fusden_plasma_alpha),
+        p_plasma_dt_mw=Input(lambda s: s.physics.p_plasma_dt_mw),
+    ):
+        return calculate_fusion_totals_no_beam(
+            fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
+        )
+
+
+class ClippedRadiationPowers(ExplicitFunction):
+    """cottax node: `calculate_clipped_radiation_powers`, ports declared.
+
+    Owns the two real clipped `.physics.pden_plasma_*_rad_mw` fields (which
+    `PlasmaRadiationPowers` used to claim while computing the pre-clip value) and gives
+    `.physics.p_plasma_inner_rad_mw` its first producer. See the function's docstring.
+    """
+
+    pden_plasma_core_rad_mw = Output(lambda s: s.physics.pden_plasma_core_rad_mw)
+    pden_plasma_outer_rad_mw = Output(lambda s: s.physics.pden_plasma_outer_rad_mw)
+    p_plasma_inner_rad_mw = Output(lambda s: s.physics.p_plasma_inner_rad_mw)
+    p_plasma_outer_rad_mw = Output(lambda s: s.physics.p_plasma_outer_rad_mw)
+
+    def __call__(
+        self,
+        pden_plasma_core_rad_mw_unclipped=Input(
+            lambda s: s.physics.pden_plasma_core_rad_mw_unclipped
+        ),
+        pden_plasma_outer_rad_mw_unclipped=Input(
+            lambda s: s.physics.pden_plasma_outer_rad_mw_unclipped
+        ),
+        vol_plasma=Input(lambda s: s.physics.vol_plasma),
+    ):
+        return calculate_clipped_radiation_powers(
+            pden_plasma_core_rad_mw_unclipped,
+            pden_plasma_outer_rad_mw_unclipped,
+            vol_plasma,
         )
 
 

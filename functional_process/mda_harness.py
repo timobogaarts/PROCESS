@@ -36,7 +36,10 @@ PROCESS-faithful, registered vacuum path). `compare` drops it (and its own
 """
 
 import dataclasses
+import os
+import pickle
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -89,6 +92,22 @@ KNOWN_MINT_VALUES = {
     # unclipped (`ibid.:2151`), which is what makes the entry above sound.
     ".impurity_radiation.pden_impurity_rad_total_mw": (
         lambda d: d.physics.pden_plasma_rad_mw - d.physics.pden_plasma_sync_mw
+    ),
+    # `.physics.pden_plasma_core_rad_mw_unclipped` / `..._outer_...` --
+    # `PlasmaRadiationPowers`'s outputs *before* `st_phys`'s zero-clip
+    # (`stellarator.py:2152-2159`), which `ClippedRadiationPowers` applies. PROCESS
+    # overwrites the field in place, so only the post-clip value is ever stored: these
+    # two mints equal the stored field **exactly whenever the clip is inactive**, and
+    # are a lower bound on it otherwise -- the same discipline, and the same caveat, as
+    # `.stellarator.wp_width_r_min` below. Measured on this run: core `0.0575`, outer
+    # `0.0553`, both positive, so both are exact here. A run that clipped would show up
+    # as a disagreement on these two mints and *not* on the real fields, which is the
+    # right way round: the real fields would still be right.
+    ".physics.pden_plasma_core_rad_mw_unclipped": (
+        lambda d: d.physics.pden_plasma_core_rad_mw
+    ),
+    ".physics.pden_plasma_outer_rad_mw_unclipped": (
+        lambda d: d.physics.pden_plasma_outer_rad_mw
     ),
     # --- the three entries that let the coil island come out of EXCLUDED_NODE_NAMES ---
     #
@@ -216,6 +235,21 @@ it is declared here rather than silently reported as "no backing field".
 """
 
 STATIC_KWARGS_WITHOUT_BACKING_FIELD = {
+    "machine_config": (
+        "the parsed contents of this machine's `stella_conf.json` -- a "
+        "graph-assembly-time fact with no `DataStructure` field of its own (PROCESS "
+        "reads the file and scatters its values straight into "
+        "`.stellarator_config.*`, keeping the mapping nowhere). "
+        "`StellaratorMachineConfig` owns those 34 fields, and *they* are checked by "
+        "ordinary value comparison; the payload it selects them from is not a switch"
+    ),
+    "rho": (
+        "the normalised radius the neoclassical profiles are sampled at -- PROCESS "
+        "passes the literal `0.6` at `neoclassics.py:290` and stores it nowhere. The "
+        "same-named field `.neoclassics.r_eff` is declared `= 0.0` and never assigned "
+        "by anything in `process/`, so binding it as an `Input` (which this node did "
+        "until `_audit/boundary_inputs_audit.md` §6.1) evaluated every profile on axis"
+    ),
     "imp_indices": (
         "which impurity species exist -- a graph-assembly-time fact with no "
         "`DataStructure` field of its own, see `ImpurityRadiationTotals`'s docstring "
@@ -468,16 +502,80 @@ it has already been chased, not a filter.
 """
 
 
-def converged_data(input_file: str):
+def _cache_key(input_file: str) -> str:
+    """A digest of everything a converged run depends on: the run's **input** files
+    (the `.IN.DAT` and its `.stella_conf.json` companion) and the state of the
+    `process/` source tree.
+
+    Only inputs, deliberately -- not every file beside them. PROCESS writes
+    `OUT.DAT`/`MFILE.DAT` into that same directory, and `SingleRun.__init__` creates
+    some of them before this is ever called, so hashing the directory wholesale makes
+    the key depend on whether anything has run there yet. That produced a cache miss on
+    a run whose inputs were byte-identical, which is the failure mode a cache is
+    supposed to not have.
+
+    The source fingerprint is `(relative path, size, mtime_ns)` per `.py` file, not
+    their contents -- ~600 `stat` calls instead of ~10 MB of hashing, and it changes on
+    every edit, which is the property that matters. A checkout that restores an old
+    mtime would collide; nothing here does that.
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    inputs = Path(input_file).parent
+    for path in sorted(inputs.iterdir()):
+        if path.is_file() and (path.name.endswith("IN.DAT") or path.suffix == ".json"):
+            h.update(path.name.encode())
+            h.update(path.read_bytes())
+    import process as _process
+
+    root = Path(_process.__file__).parent
+    for path in sorted(root.rglob("*.py")):
+        stat = path.stat()
+        h.update(str(path.relative_to(root)).encode())
+        h.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
+    return h.hexdigest()[:32]
+
+
+CACHE_DIR = Path(
+    os.environ.get("FP_HARNESS_CACHE_DIR", Path.home() / ".cache/functional_process")
+)
+"""Where converged `DataStructure`s are cached. Override with `FP_HARNESS_CACHE_DIR`;
+disable the cache entirely with `FP_HARNESS_NO_CACHE=1`."""
+
+
+def converged_data(input_file: str, use_cache: bool = True):
     """Run PROCESS's own `SingleRun` on `input_file` to convergence, in-process, and
     return the resulting live `DataStructure`. Writes the usual `OUT.DAT`/`MFILE.DAT`
     beside `input_file` as a side effect (same as any real PROCESS run) -- not
     suppressed, since nothing here depends on it not happening.
+
+    **Cached on disk**, because this solve is ~95 s and dominates every harness run:
+    changing one line of `functional_process/` and re-measuring should cost the graph
+    evaluation, not another full PROCESS solve. The key covers the input files *and*
+    the `process/` source tree (see `_cache_key`), so editing the reference
+    implementation invalidates it -- which is the case that would otherwise produce a
+    silently stale "expected" column, the single worst failure mode a harness can have.
+    Pass `use_cache=False`, or set `FP_HARNESS_NO_CACHE=1`, to force the solve.
     """
     from process.main import SingleRun
 
+    use_cache = use_cache and not os.environ.get("FP_HARNESS_NO_CACHE")
+    cached = CACHE_DIR / f"converged-{_cache_key(input_file)}.pkl" if use_cache else None
+    if cached is not None and cached.exists():
+        with cached.open("rb") as f:
+            return pickle.load(f)  # noqa: S301 -- our own file, written just below
+
     run = SingleRun(input_file, "vmcon")
     run.run()
+    if cached is not None:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        # Write-then-rename: an interrupted run leaves no half-written cache entry to
+        # be read back as a converged solve.
+        partial = cached.with_suffix(".partial")
+        with partial.open("wb") as f:
+            pickle.dump(run.data, f)
+        partial.replace(cached)
     return run.data
 
 
@@ -495,18 +593,40 @@ def _without_excluded(graph):
 @dataclass
 class Disagreement:
     """One `VarPath` where the schedule's answer and `data`'s own converged value
-    don't agree within tolerance."""
+    don't agree within tolerance.
+
+    For an array-valued variable, `got`/`expected` are the **worst single element**
+    (largest relative difference), and `shape`/`index`/`n_off` say which one and how
+    many of its siblings are also off -- so one array is one disagreement, not one per
+    element, and the printed number is still a number a reader can chase.
+    """
 
     var: VarPath
     owner: NodePath
     got: float
     expected: float
+    shape: tuple | None = None
+    """`None` for a scalar; the array's shape otherwise."""
+    index: tuple | None = None
+    """`None` for a scalar; the multi-index of the worst element otherwise."""
+    n_off: int | None = None
+    """`None` for a scalar; how many elements are outside tolerance otherwise."""
 
     @property
     def rel_diff(self) -> float:
         """`|got - expected| / |expected|` (or `/1` at `expected == 0`)."""
         denom = abs(self.expected) if self.expected != 0 else 1.0
         return abs(self.got - self.expected) / denom
+
+    @property
+    def where(self) -> str:
+        """`""` for a scalar; ` [shape=(201,) worst [37], 12/201 off]` otherwise."""
+        if self.shape is None:
+            return ""
+        size = int(np.prod(self.shape)) if self.shape else 1
+        return (
+            f" [shape={self.shape} worst {list(self.index)}, {self.n_off}/{size} off]"
+        )
 
 
 @dataclass
@@ -536,10 +656,28 @@ class ComparisonReport:
     against the value this run actually used. Independent of the value comparison
     below: a wrong switch can be caught here even when it moves no compared output.
     """
+    owned_total: int = 0
+    """How many owned variables `compare()` walked. Every one of them must land in
+    exactly one of `agreements`/`disagreements`/`unverifiable`/`errors` -- see
+    `unaccounted`.
+    """
+    unaccounted: list = field(default_factory=list)
+    """Owned variables that landed in no bucket at all. **Must always be empty.**
+    It exists because it once was not: array-valued outputs were dropped by a bare
+    `continue` inside the float conversion, so 29 of 487 owned variables were scored
+    as neither pass nor fail and nothing said so (`_audit/boundary_inputs_audit.md`
+    §6.2). The invariant is cheap; the hole it closes cost a real wrong answer
+    (`ProfileValues.rho`) its visibility for as long as it was open.
+    """
+    array_agreements: int = 0
+    """How many of `agreements` were array-valued (compared elementwise). Reported
+    separately only so a change in array handling is visible in the summary.
+    """
 
     def summary(self) -> str:
         lines = [
-            f"agreements: {self.agreements}",
+            f"agreements: {self.agreements} "
+            f"(of which array-valued: {self.array_agreements})",
             f"disagreements: {len(self.disagreements)}",
             f"  in driven (cyclic) blocks: {len(self.driven_block_disagreements)}",
             f"  in ordinary acyclic nodes: {len(self.acyclic_disagreements)}",
@@ -547,6 +685,9 @@ class ComparisonReport:
             f"ungrounded inputs (no real DataStructure field): "
             f"{len(self.ungrounded_inputs)}",
             f"errors (could not evaluate at all): {len(self.errors)}",
+            f"owned variables walked: {self.owned_total}, unaccounted: "
+            f"{len(self.unaccounted)}"
+            + ("" if not self.unaccounted else "  <-- MUST BE 0"),
             f"static switch kwargs checked: {self.switches.checked}, "
             f"mismatched: {len(self.switches.mismatches)}, "
             f"not data-backed: {len(self.switches.no_backing_field)}, "
@@ -582,6 +723,7 @@ class ComparisonReport:
                 f"  {owner}: {len(ds)} var(s) off, worst "
                 f"{worst_d.var.path_str()} got={worst_d.got!r} "
                 f"expected={worst_d.expected!r} rel_diff={worst_d.rel_diff:.3e}"
+                f"{worst_d.where}"
             )
         # Every disagreement, not just each node's worst. The per-node summary above
         # reports only one variable per node, which is what hid
@@ -595,6 +737,7 @@ class ComparisonReport:
                     lines.append(
                         f"  {owner} {d.var.path_str()}: got={d.got!r} "
                         f"expected={d.expected!r} rel_diff={d.rel_diff:.3e}"
+                        f"{d.where}"
                     )
         if self.errors:
             lines.append("\nerrors:")
@@ -624,6 +767,51 @@ def _ground_truth(data, var: VarPath):
     if known is not None:
         return known(data)
     return get_at(data, unminted(var).keys)
+
+
+def _diff(var: VarPath, owner: NodePath, got, expected, *, rtol, atol):
+    """Compare one owned variable's computed value against `data`'s own.
+
+    Returns `None` if they agree, a `Disagreement` if they don't, and a **string** if
+    the pair cannot be compared at all (non-numeric, or shapes that don't match) --
+    three outcomes and no fourth, because the fourth used to be a silent `continue`.
+
+    Arrays are compared elementwise and reported as one disagreement carrying their
+    worst element, so an off-by-one profile is one line in the report rather than 201.
+    """
+    try:
+        got_a = np.asarray(got, dtype=float)
+        expected_a = np.asarray(expected, dtype=float)
+    except (TypeError, ValueError) as e:
+        return f"not numeric, cannot compare {var.path_str()} (owned by {owner}): {e}"
+    if got_a.shape != expected_a.shape:
+        return (
+            f"shape mismatch for {var.path_str()} (owned by {owner}): port "
+            f"{got_a.shape} vs data {expected_a.shape}"
+        )
+    close = np.isclose(got_a, expected_a, rtol=rtol, atol=atol, equal_nan=True)
+    if close.all():
+        return None
+    if got_a.ndim == 0:
+        return Disagreement(
+            var=var, owner=owner, got=float(got_a), expected=float(expected_a)
+        )
+    denom = np.where(expected_a == 0.0, 1.0, np.abs(expected_a))
+    rel = np.abs(got_a - expected_a) / denom
+    # `nan` sorts last under `argmax`, and a `nan` element is exactly the one worth
+    # reporting, so name it explicitly rather than letting it lose to a finite cell.
+    bad = ~np.isfinite(rel)
+    flat = int(np.argmax(np.where(bad, np.inf, rel)) if bad.any() else np.argmax(rel))
+    index = np.unravel_index(flat, got_a.shape)
+    return Disagreement(
+        var=var,
+        owner=owner,
+        got=float(got_a[index]),
+        expected=float(expected_a[index]),
+        shape=tuple(got_a.shape),
+        index=tuple(int(i) for i in index),
+        n_off=int((~close).sum()),
+    )
 
 
 def compare(graph, data, rtol=1e-6, atol=1e-9) -> ComparisonReport:
@@ -680,6 +868,7 @@ def compare(graph, data, rtol=1e-6, atol=1e-9) -> ComparisonReport:
         return report
 
     for var, owner in driven.owners.items():
+        report.owned_total += 1
         if owner in unverifiable_owners or var.path_str() in KNOWN_UNVERIFIABLE_OUTPUTS:
             report.unverifiable.append(var)
             continue
@@ -691,21 +880,30 @@ def compare(graph, data, rtol=1e-6, atol=1e-9) -> ComparisonReport:
         if var not in out:
             report.errors.append(f"schedule did not produce {var.path_str()}")
             continue
-        got = out[var]
-        try:
-            got_f = float(np.asarray(got))
-            expected_f = float(np.asarray(expected))
-        except (TypeError, ValueError):
-            continue  # non-scalar or non-numeric field, skip
-        if np.isclose(got_f, expected_f, rtol=rtol, atol=atol, equal_nan=True):
+        d = _diff(var, owner, out[var], expected, rtol=rtol, atol=atol)
+        if isinstance(d, str):  # not comparable at all -- say so, never drop it
+            report.errors.append(d)
+        elif d is None:
             report.agreements += 1
+            if np.asarray(expected).ndim:
+                report.array_agreements += 1
         else:
-            d = Disagreement(var=var, owner=owner, got=got_f, expected=expected_f)
             report.disagreements.append(d)
             block_index = blocking.index[owner]
             if blocking.problem_types[block_index] is not None:
                 report.driven_block_disagreements.append(d)
             else:
                 report.acyclic_disagreements.append(d)
+
+    accounted = (
+        report.agreements
+        + len(report.disagreements)
+        + len(report.unverifiable)
+        + len(report.errors)
+    )
+    if accounted != report.owned_total:
+        # Not raised: a harness that refuses to report because its own bookkeeping is
+        # off is worse than one that reports and says so. The summary flags it.
+        report.unaccounted = [f"{report.owned_total - accounted} owned variable(s)"]
 
     return report

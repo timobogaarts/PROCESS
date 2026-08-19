@@ -52,6 +52,7 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
 from functional_process.models.physics.plasma_profiles import _simpson
+from functional_process.models.safe_math import safe_pow
 
 W_TO_MW = 1.0e-6
 """`integrate_radiation_loss_profiles`'s W/m^3 -> MW/m^3 factor."""
@@ -328,18 +329,18 @@ def psync_albajar_fidone(
     dum = (
         1.0
         + 0.12
-        * (temp_plasma_electron_on_axis_kev / p_a0**0.41)
-        * (1.0 - f_sync_reflect) ** 0.41
+        * (temp_plasma_electron_on_axis_kev / safe_pow(p_a0, 0.41))
+        * safe_pow(1.0 - f_sync_reflect, 0.41)
     ) ** -1.51
 
     p_sync_mw = (
         3.84e-8
-        * (1.0 - f_sync_reflect) ** 0.62
+        * safe_pow(1.0 - f_sync_reflect, 0.62)
         * rmajor
         * rminor**1.38
-        * kappa**0.79
+        * safe_pow(kappa, 0.79)
         * b_plasma_toroidal_on_axis**2.62
-        * ne0_20**0.38
+        * safe_pow(ne0_20, 0.38)
         * temp_plasma_electron_on_axis_kev
         * (16.0 + temp_plasma_electron_on_axis_kev) ** 2.61
         * dum
@@ -726,17 +727,33 @@ class PlasmaRadiationPowers(ExplicitFunction):
     once `ImpurityRadiationTotals` is, since without that node its two impurity inputs
     have no producer.
 
-    Note what this node does **not** do: `stellarator.py:2152-2158` clips
+    Note what this node does **not** do: `stellarator.py:2152-2159` clips
     `pden_plasma_core_rad_mw` and `pden_plasma_outer_rad_mw` at zero *after* assigning
     them. That `max(..., 0)` is in `st_phys` (unit #1, chunk 1B), not in
     `calculate_radiation_powers`, so it belongs to the caller's node; ported here it would
     double-own the fields. **The other caller,
     `physics.PhysicsCalculations.physics()` (`physics.py:750-753`), does not clip at
-    all** -- the two call sites disagree. See the record's § open questions 4.
+    all** -- the two call sites disagree, which is the whole reason the clip cannot live
+    in this node: it is not a property of the radiation model, it is a property of one
+    of its two callers.
+
+    **So this node's two clipped outputs are minted `_unclipped` names**, and
+    `stellarator_B_st_phys.py`'s `ClippedRadiationPowers` owns the real
+    `.physics.pden_plasma_core_rad_mw`/`pden_plasma_outer_rad_mw` fields. Before that
+    split this node claimed the real fields while computing the *pre*-clip value -- a
+    latent divergence from PROCESS, invisible only because the clip happens to be
+    inactive on this run (measured: core `0.0575`, outer `0.0553`, both comfortably
+    positive). `pden_plasma_rad_mw` keeps its real name: PROCESS never clips it
+    (`stellarator.py:2151`), which is also what makes `KNOWN_MINT_VALUES`'s
+    `pden_impurity_rad_total_mw` inversion sound where the core one is not.
     """
 
-    pden_plasma_core_rad_mw = Output(lambda s: s.physics.pden_plasma_core_rad_mw)
-    pden_plasma_outer_rad_mw = Output(lambda s: s.physics.pden_plasma_outer_rad_mw)
+    pden_plasma_core_rad_mw_unclipped = Output(
+        lambda s: s.physics.pden_plasma_core_rad_mw_unclipped
+    )
+    pden_plasma_outer_rad_mw_unclipped = Output(
+        lambda s: s.physics.pden_plasma_outer_rad_mw_unclipped
+    )
     pden_plasma_rad_mw = Output(lambda s: s.physics.pden_plasma_rad_mw)
 
     def __call__(

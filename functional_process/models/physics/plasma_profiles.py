@@ -32,6 +32,7 @@ from cottax.interfaces.pytree_namespace_module import (
     Output,
 )
 from jax.scipy.special import gamma, gammaln
+from functional_process.models.safe_math import safe_sqrt
 
 # `process/core/constants.py`'s KILOELECTRON_VOLT -- the J-per-keV conversion.
 KILOELECTRON_VOLT = 1.602176634e-16
@@ -410,7 +411,7 @@ def _gradient_length(alpha, on_axis_value, rminor):
     # `jnp.where` would then propagate through the gradient.
     safe_alpha = jnp.where(steep, alpha, 2.0)
 
-    rho_steep = 1.0 / jnp.sqrt(-1.0 + 2.0 * safe_alpha)
+    rho_steep = 1.0 / safe_sqrt(-1.0 + 2.0 * safe_alpha)
     dvdrho_steep = (
         -(2.0**safe_alpha)
         * (-1.0 + safe_alpha) ** (-1.0 + safe_alpha)

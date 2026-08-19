@@ -180,20 +180,49 @@ No `implicit-io-via-callee` or `redundant-duplicate-write` anywhere in this file
 
 ```python
 def calculate_vacuum_pumping_simple(
-    molflow_plasma_fuelling_required, molflow_vac_pumps, volflow_vac_pumps_max,
-    f_a_vac_pump_port_plasma_surface, f_volflow_vac_pumps_impedance, a_plasma_surface,
-    n_tf_coils, outgasfactor, pres_vv_chamber_base, outgasindex, t_plant_pulse_dwell,
+    molflow_plasma_fuelling_required,
+    molflow_vac_pumps,
+    volflow_vac_pumps_max,
+    f_a_vac_pump_port_plasma_surface,
+    f_volflow_vac_pumps_impedance,
+    a_plasma_surface,
+    n_tf_coils,
+    outgasfactor,
+    pres_vv_chamber_base,
+    outgasindex,
+    t_plant_pulse_dwell,
 ) -> float:  # npump, -> .vacuum.n_iter_vacuum_pumps
     ...
 
-def solve_duct_diameter(l1, l2, l3, xmult_i, ceff_i, max_iter=100, tol=1e-10) -> float:
-    ...  # tier-2, see "cottax node" -- not directly a VarPath producer, see below
+
+def solve_duct_diameter(
+    l1, l2, l3, xmult_i, ceff_i, max_iter=100, tol=1e-10
+) -> (
+    float
+): ...  # tier-2, see "cottax node" -- not directly a VarPath producer, see below
+
 
 def calculate_vacuum_pumping_old(
-    p_fusion_total_mw, rmajor, rminor, dsol, a_plasma_surface, vol_plasma,
-    dr_shld_outboard, dr_shld_inboard, dr_tf_inboard, ritf, n_tf_coils,
-    t_plant_pulse_dwell, n_divertors, qtorus, gasld, i_vac_pump_dwell,
-    i_vacuum_pump_type, pres_vv_chamber_base, pres_div_chamber_burn, outgrat_fw,
+    p_fusion_total_mw,
+    rmajor,
+    rminor,
+    dsol,
+    a_plasma_surface,
+    vol_plasma,
+    dr_shld_outboard,
+    dr_shld_inboard,
+    dr_tf_inboard,
+    ritf,
+    n_tf_coils,
+    t_plant_pulse_dwell,
+    n_divertors,
+    qtorus,
+    gasld,
+    i_vac_pump_dwell,
+    i_vacuum_pump_type,
+    pres_vv_chamber_base,
+    pres_div_chamber_burn,
+    outgrat_fw,
     t_plant_pulse_coil_precharge,
 ) -> tuple[float, float, float, float, float]:
     # (n_vac_pumps_high, n_vv_vacuum_ducts, dlscal, m_vv_vacuum_duct_shield,

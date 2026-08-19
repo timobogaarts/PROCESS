@@ -20,6 +20,7 @@ reasoning, as `coils.py`'s own three unwrapped functions (`j_crit_cable_from_fra
 """
 
 import jax.numpy as jnp
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 
 def jcrit_rebco(temp_conductor, b_conductor):
@@ -142,16 +143,16 @@ def bottura_scaling(
     tuple
         `(j_scaling, b_critical, temp_critical)`.
     """
-    epsilon_sh = (c_a2 * epsilon_0a) / jnp.sqrt(c_a1**2 - c_a2**2)
+    epsilon_sh = (c_a2 * epsilon_0a) / safe_sqrt(c_a1**2 - c_a2**2)
 
-    strain_func = jnp.sqrt(epsilon_sh**2 + epsilon_0a**2) - jnp.sqrt(
+    strain_func = safe_sqrt(epsilon_sh**2 + epsilon_0a**2) - safe_sqrt(
         (epsilon - epsilon_sh) ** 2 + epsilon_0a**2
     )
     strain_func = strain_func * c_a1 - (c_a2 * epsilon)
     strain_func = 1.0 + (1.0 / (1.0 - c_a1 * epsilon_0a)) * strain_func
 
     b_c20_eps = b_c20max * strain_func
-    temp_c0_eps = temp_c0max * strain_func ** (1.0 / 3.0)
+    temp_c0_eps = temp_c0max * safe_pow(strain_func, 1.0 / 3.0)
 
     f_temp_conductor_critical_no_field = temp_conductor / temp_c0_eps
     f_b_conductor_critical_no_temp = b_conductor / b_c20_eps
@@ -160,8 +161,9 @@ def bottura_scaling(
     safe_complement = jnp.where(normal_field, 1.0 - f_b_conductor_critical_no_temp, 1.0)
     temp_critical = jnp.where(
         normal_field,
-        temp_c0_eps * safe_complement ** (1.0 / 1.52),
-        -temp_c0_eps * jnp.abs(1.0 - f_b_conductor_critical_no_temp) ** (1.0 / 1.52),
+        temp_c0_eps * safe_pow(safe_complement, 1.0 / 1.52),
+        -temp_c0_eps
+        * safe_pow(jnp.abs(1.0 - f_b_conductor_critical_no_temp), 1.0 / 1.52),
     )
 
     b_critical = b_c20_eps * (1.0 - f_temp_conductor_critical_no_field**1.52)
@@ -279,7 +281,7 @@ def jcrit_nbti(temp_conductor, b_conductor, c0, b_c20max, temp_c0max):
     safe_complement = jnp.where(below_critical_field, 1.0 - bratio, 0.0)
     temp_critical = jnp.where(
         below_critical_field,
-        temp_c0max * safe_complement**0.59,
+        temp_c0max * safe_pow(safe_complement, 0.59),
         temp_c0max * (1.0 - bratio),
     )
 

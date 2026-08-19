@@ -20,6 +20,7 @@ PROCESS storage: `st_d_limit_ecrh`'s return values are locals in its caller
 import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from functional_process.models.safe_math import safe_sqrt
 
 _SUDO_COEFFICIENT = 0.25e20
 """Sudo et al. (Nucl. Fusion 30, 11, 1990) line-averaged density limit prefactor."""
@@ -81,7 +82,7 @@ def calculate_sudo_density_limit(
     safe_arg = jnp.where(valid, arg, 1.0)
 
     # Maximum line-averaged electron density.
-    dnlamx = _SUDO_COEFFICIENT * jnp.sqrt(safe_arg)
+    dnlamx = _SUDO_COEFFICIENT * safe_sqrt(safe_arg)
 
     # Scale to the volume-averaged electron density.
     limit = dnlamx * nd_plasma_electrons_vol_avg / nd_plasma_electron_line

@@ -51,32 +51,42 @@ differ in kind, not just value:
 
 ```python
 def calculate_ecrh_heating(
-    p_hcd_primary_extra_heat_mw: float, eta_ecrh_injector_wall_plug: float,
+    p_hcd_primary_extra_heat_mw: float,
+    eta_ecrh_injector_wall_plug: float,
 ) -> tuple[float, float, float, float, float]:
     # (p_hcd_ecrh_injected_total_mw, p_hcd_injected_ions_mw, p_hcd_injected_electrons_mw,
     #  eta_hcd_primary_injector_wall_plug, p_hcd_electric_total_mw)
     ...
 
+
 def calculate_lowhyb_heating(
-    p_hcd_primary_extra_heat_mw: float, eta_lowhyb_injector_wall_plug: float,
+    p_hcd_primary_extra_heat_mw: float,
+    eta_lowhyb_injector_wall_plug: float,
 ) -> tuple[float, float, float, float, float]:
     # (p_hcd_lowhyb_injected_total_mw, p_hcd_injected_ions_mw, p_hcd_injected_electrons_mw,
     #  eta_hcd_primary_injector_wall_plug, p_hcd_electric_total_mw)
     ...
 
+
 def calculate_injected_power_total(
-    p_hcd_injected_electrons_mw: float, p_hcd_injected_ions_mw: float,
+    p_hcd_injected_electrons_mw: float,
+    p_hcd_injected_ions_mw: float,
 ) -> float:  # p_hcd_injected_total_mw
     ...
 
+
 def calculate_beam_current(
-    p_hcd_beam_injected_total_mw: float, e_beam_kev: float,
+    p_hcd_beam_injected_total_mw: float,
+    e_beam_kev: float,
 ) -> float:  # c_beam_total
     ...
 
+
 def calculate_fusion_gain(
-    p_fusion_total_mw: float, p_hcd_injected_total_mw: float,
-    p_beam_orbit_loss_mw: float, p_plasma_ohmic_mw: float,
+    p_fusion_total_mw: float,
+    p_hcd_injected_total_mw: float,
+    p_beam_orbit_loss_mw: float,
+    p_plasma_ohmic_mw: float,
 ) -> float:  # big_q_plasma
     ...
 ```

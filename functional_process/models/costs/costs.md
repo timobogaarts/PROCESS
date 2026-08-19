@@ -388,6 +388,82 @@ None. Confirmed by grep and by direct read of all 44 ported bodies (see "source"
   unbounded derivative at the guard point has this shape.
 - No CoolProp, no `scipy`, no data-dependent early exit anywhere in the 44 ported bodies.
 
+## cold-start finding: `acc2221`'s `nan` is a missing producer, not a costs defect
+
+Found by the MDA cold-start catalogue — `TfMagnetCostSuperconducting` was one of only two
+blocks (of 134) that ran and emitted a non-finite value from a cold `DataStructure`,
+producing `nan` for `.costs.c22211` and `.costs.c2221`. **The costs port is faithful and
+was not changed.** The root cause is upstream and already on the punch list.
+
+**The arithmetic.** `costs.py:1300` (port) / `costs.py:1505` (PROCESS):
+
+```python
+costtfcu = uccu * m_tf_coil_copper / (len_tf_coil * n_tf_coil_turns)
+```
+
+and the same denominator one line up in `costtfsc` (`supercond_cost_model == 0` arm,
+which is the active one for `stellarator_helias.IN.DAT`). At the cold point
+`.tfcoil.len_tf_coil == 0.0`, so the denominator is `0.0 * 136.6 == 0.0`; the numerators
+are `600.0 * 0.0` and `75.0 * 0.0`, because `.tfcoil.m_tf_coil_superconductor` and
+`.tfcoil.m_tf_coil_copper` are `CoilsMass` outputs and every one of `coils/mass.py`'s
+mass expressions is directly proportional to `len_tf_coil`. So both are `0.0 / 0.0`.
+`ctfconpm` becomes `nan`, and `c22211 = fkind * 1e-6 * ctfconpm * winding_length` is
+`nan * 0.0 = nan` (`winding_length` is also zero), hence `c2221 = nan`. `c22212`,
+`c22213` are a clean `0.0`; `c22214`/`c22215` read `.structure.aintmass`/`clgsmass`,
+which do not depend on `len_tf_coil`, and stay finite and correct.
+
+**PROCESS does the same thing, only louder.** `Costs.acc2221`'s superconducting arm is
+character-equivalent, and calling the reference wrapper
+(`test_costs._reference_tf_magnet_cost_superconducting`) with the cold argument tuple
+gives `ZeroDivisionError: float division by zero` at `costs.py:1489`. The difference is
+dtype, not logic: PROCESS's `ucsc` is a plain Python list, so the division is Python
+float arithmetic and raises; the port's `jnp.asarray(ucsc)[...]` makes it array
+arithmetic, which returns `nan`. This is the harness's standard domain-guard shape
+(`_harness/contracts.py`'s `reference_domain_errors`) and the port is on the correct side
+of it — a traced function cannot raise on a data-dependent condition. Note the port
+*also* raises `ZeroDivisionError` if handed plain Python floats at this point; inside the
+graph its inputs are always `jnp` arrays, so it yields `nan` there.
+
+**Root cause: `.tfcoil.len_tf_coil` has no producer.** It is an *unowned input* of both
+the full and the driven graph — no ported node owns it — while PROCESS writes it at
+`process/models/stellarator/coils/calculate.py:87`. Four ported nodes read it
+(`StructureMasses`, `PlasmaFacingCoilArea`, `CoilsMass`, `TfMagnetCostSuperconducting`).
+Cold value `0.0`, PROCESS-converged value `40.8655 m`; with the converged value the port
+reproduces PROCESS exactly (`c22211 = 566.001`, `c2221 = 989.525`). This is the
+already-documented "missing producer" case, deliberately left open because giving
+`len_tf_coil` an owner would silently switch `PlasmaFacingCoilArea` from PROCESS's stale
+read to the fresh value — a decision, not a port. See
+`_audit/boundary_inputs_audit.md` §4c (c1) and §7 item 4, `coils/calculate.md`'s "real
+PROCESS bugs found" finding 2, and `_audit/next_steps.md:274`. **Fixing that fixes this;
+nothing in `costs.py` needs to change.**
+
+**Value and gradient** (`jax.jacfwd` over
+`m_tf_coil_superconductor`/`len_tf_coil`/`m_tf_coil_copper`/`m_tf_coil_case`): at the
+cold point both the value and the Jacobian rows for `c22211`/`c2221` are `nan`; at the
+converged point the value and the full Jacobian are finite. This is *not* the
+`jnp.sqrt(jnp.maximum(0, x))` shape — there is no value-correct-but-gradient-`nan`
+asymmetry to miss, both go wrong together.
+
+**Recommendation: leave `costs.py` alone.** A guarded denominator
+(`jnp.where(len_tf_coil * n_tf_coil_turns > 0, ..., 0.0)`) would be value-identical
+wherever PROCESS is defined — PROCESS raises when the denominator is zero — but it is the
+wrong fix twice over. It would return a *fabricated* `0.0` capital cost at the cold
+point instead of the `nan` that correctly signals "an input you need has not been
+produced yet", masking exactly the missing-producer signal the catalogue exists to
+surface; and unlike the dead-sink `nu_star` case, `.costs.c2221` is read by `MagnetsCost`
+and propagates up the cost tree into `coe`, the run's objective — so a plausible-looking
+zero here would silently corrupt the figure of merit, where a `nan` cannot. (The single
+`jnp.where` would also still leave a `nan` gradient, needing the double-`where` of
+`coelc` above, for a branch that should never be taken in the first place.)
+
+A note on the inactive arm: `supercond_cost_model != 0` computes
+`sc_mat_cost_0[i] * j_crit_str_0[i] / j_crit_str_tf`, and `.tfcoil.j_crit_str_tf` is
+`0.0` at the cold point *and* at PROCESS's converged point (it is another unowned input,
+never written in the stellarator pipeline). That arm would be `inf` rather than `nan`.
+It is unreached for this input file (`supercond_cost_model == 0`, bound as a static
+switch kwarg), so it is not the finding above — but it is the same class of problem and
+will need the same upstream answer if a tokamak input ever selects it.
+
 ## open questions
 
 1. **Two real PROCESS defects in `acc223`** (Account 223, power injection). **Now
@@ -479,3 +555,33 @@ None. Confirmed by grep and by direct read of all 44 ported bodies (see "source"
    cindrt)` both predicted to 11 significant figures, `delta concost` their sum. Nothing
    in this unit is off; deliberately not suppressed, so a future real regression on the
    same fields still shows.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+17 fractional power laws and 1 square root in this file have been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

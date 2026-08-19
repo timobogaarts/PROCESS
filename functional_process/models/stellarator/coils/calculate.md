@@ -122,7 +122,7 @@ two `a_tf_wp_*` ones below and `.stellarator.wp_width_r_min` — see
 | `.stellarator.r_coil_major`/`r_coil_minor`, `.tfcoil.dx_tf_turn_steel`/`dx_tf_turn_insulation`, `.stellarator.f_st_b`, `.stellarator_config.stella_config_i0`, `.stellarator.f_st_rmajor`/`f_st_n_coils`, `.tfcoil.dr_tf_nose_case`, `.stellarator_config.stella_config_max_portsize_width`/`_dmin`/`_coil_rmajor`/`_coil_rminor`/`_inductance`/`_maximal_coil_height`/`_coillength`/`_coilsurface`/`_min_bend_radius`, `.tfcoil.den_tf_coil_case`/`den_tf_wp_turn_insulation`/`a_tf_wp_coolant_channels`, `.physics.rmajor`/`rminor`/`b_plasma_toroidal_on_axis`, `.build.dr_fw_plasma_gap_inboard`/`dr_fw_inboard`/`dr_blkt_inboard`/`dr_shld_blkt_gap`/`dr_shld_inboard`/`dr_fw_plasma_gap_outboard`/`dr_fw_outboard`/`dr_blkt_outboard`/`dr_shld_outboard`/`dr_vv_inboard`/`dr_vv_outboard`, `.tfcoil.t_tf_superconductor_quench`/`t_tf_quench_detection`, `.stellarator_config.stella_config_max_force_density`/`_max_force_density_mnm`/`_max_lateral_force_density`/`_max_radial_force_density`/`_wp_bmax`/`_wp_area`/`_centering_force_max_mn`/`_min_mn`/`_avg_mn` | read | explicit-arg | `st_coil`'s own further reads, beyond what `winding_pack_total_size` needs (feeding `mass.py`/`quench.py`/`forces.py`) |
 | `.fwbs.den_steel`, `.tfcoil.dcond[i_tf_sc_mat - 1]` | read | explicit-arg (`den_steel`, `den_tf_sc_material`) | `st_coil` → `calculate_coils_mass` (`process/models/stellarator/coils/mass.py:88`). The *pure function* still takes the already-indexed scalar; **the node no longer mints a `VarPath` for it** — `CoilsMass` reads the real `.tfcoil.dcond[0]` since the MDA triage (`_audit/next_steps.md` §8.1), see `mass.md`'s cottax-node section for the full argument |
 | `.tfcoil.len_tf_coil` | **read before this same call's own write** | **implicit-io, cross-call — a second, independent instance of the same bug class as `j_tf_wp` above** | see "real PROCESS bugs found"; kept as `len_tf_coil_stale` (explicit input, feeds only `calculate_plasma_facing_coil_area`) vs. `len_tf_coil` (fresh local, feeds `calculate_coils_mass`/`forces.calculate_centering_force_*`) — never collapsed into one |
-| `.build.z_tf_inside_half`, `.tfcoil.len_tf_coil` (fresh write), `.tfcoil.tfcryoarea` | write | explicit-arg | `st_coil`'s inline geometry block — **open question 2 from the first pass, now resolved**: kept as ordinary locals inside `st_coil` itself (one call site each), not extracted into a separate function/node |
+| `.build.z_tf_inside_half`, `.tfcoil.len_tf_coil` (fresh write), `.tfcoil.tfcryoarea` | write | explicit-arg | `st_coil`'s inline geometry block — open question 2 from the first pass. Resolved twice over, in the same direction each time: **two of the three are now their own function + node** (`calculate_z_tf_inside_half`/`ZTfInsideHalf`, then `calculate_tfcryoarea`/`TfCryoArea`), because "one call site, keep it inline" stops holding the moment the graph needs an owner for the field and the eager `st_coil` orchestrator is not registered. `len_tf_coil` stays inline: it is the stale-read bug row above, and giving it a producer would silently switch `PlasmaFacingCoilArea` from the stale value to the fresh one (`_audit/boundary_inputs_audit.md` §4c (c1)) — a decision, not a port. `min_bending_radius` stays inline because nothing reads it. |
 | — (return-only) | — | reporting-only | `min_bending_radius`, `inductance` (`st_coil` locals only reaching `write()`) |
 | every `data.tfcoil.*`/`.build.*` field written by `calculate_coils_mass`/`calculate_quench_protection`/`forces.calculate_*` | write | explicit-arg | via the already-ported functions from units #11/#12/#14, called unchanged |
 
@@ -465,3 +465,34 @@ an acknowledged, deliberate gap rather than an oversight.
    real answer. The structural declaration (`Intersect` itself, undriven) stays as
    swappable as any other undriven problem node in `_audit/next_steps.md` §5's own
    accounting.
+
+
+## Update: `TfCryoArea` — the second node carved out of the inline geometry block
+
+`.tfcoil.tfcryoarea` (`process/models/stellarator/coils/calculate.py:92-101`) had **no
+producer anywhere in the graph**: the formula was ported, but only inside the eager
+`st_coil` orchestrator, which `total_process.py` deliberately does not register. It is
+now `calculate_tfcryoarea` + `TfCryoArea`, shaped exactly like
+`calculate_z_tf_inside_half`/`ZTfInsideHalf` — a shared function with two call sites
+(`st_coil` itself and the node), so the formula is not duplicated.
+
+Why now: `.tfcoil.tfcryoarea` is an input of `power_B_thermal_cryo.py`'s
+`CryoQLoadsStep` (it feeds `Power.cryo`'s `qss` term). Registering the cryogenic-load
+nodes without it would have closed two boundary inputs and opened one
+(`_audit/boundary_inputs_audit.md` §4c (c1)'s "sibling gap in the same three lines",
+and §7 items 4 and 7).
+
+One faithfulness note worth recording, because it looks like a simplification and is
+not: PROCESS's `tfcryoarea` line reads `data.stellarator.r_coil_minor` where the two
+lines above it use `st_coil`'s local `r_coil_minor`. They are the same value — the
+local is bound from the field at `calculate.py:41` and nothing between writes it — so
+the single parameter is faithful.
+
+Cycle risk: none, measured. Its inputs are `.stellarator_config.stella_config_coilsurface`
+and `_coil_rminor` (both boundary) and `.stellarator.f_st_rmajor`/`r_coil_minor` (both
+owned by `StellaratorScalingFactors`, which is upstream of every reader).
+
+Tested as `TestTfCryoArea` (`Tier1Contract`, `fuzz_bounds`-only, same provenance
+argument as `TestZTfInsideHalf` — there is no standalone PROCESS entry point for one
+inline line, and `st_coil`'s own end-to-end test already checks `checks["tfcryoarea"]`
+against real PROCESS) plus a node-level assembly/ownership test.

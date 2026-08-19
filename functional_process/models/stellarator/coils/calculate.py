@@ -1367,6 +1367,192 @@ class ZTfInsideHalf(ExplicitFunction):
         )
 
 
+def calculate_len_tf_coil(
+    stella_config_coillength, r_coil_minor, stella_config_coil_rminor, n_tf_coils
+):
+    """Estimated average length of one coil (m), `st_coil`'s formula
+    (`process/models/stellarator/coils/calculate.py:87-91`).
+
+    Extracted for the same reason `calculate_z_tf_inside_half` and
+    `calculate_tfcryoarea` were: it now has two call sites (`st_coil` itself and
+    `LenTfCoil` below) instead of one.
+
+    Parameters
+    ----------
+    stella_config_coillength :
+        Reference-configuration total coil length (m).
+        `.stellarator_config.stella_config_coillength`.
+    r_coil_minor :
+        Coil minor radius (m). `.stellarator.r_coil_minor`.
+    stella_config_coil_rminor :
+        Reference-configuration coil minor radius (m).
+        `.stellarator_config.stella_config_coil_rminor`.
+    n_tf_coils :
+        Number of coils. `.tfcoil.n_tf_coils`.
+
+    Returns
+    -------
+    :
+        `len_tf_coil` (m).
+    """
+    return stella_config_coillength * (r_coil_minor / stella_config_coil_rminor) / n_tf_coils
+
+
+def calculate_tfcryoarea(
+    stella_config_coilsurface, f_st_rmajor, r_coil_minor, stella_config_coil_rminor
+):
+    """Total surface area of the toroidal shells covering the coils, `st_coil`'s
+    formula (`process/models/stellarator/coils/calculate.py:92-101`).
+
+    Extracted from `st_coil`'s inline geometry block for exactly the reason
+    `calculate_z_tf_inside_half` (above) was: it now has two call sites (`st_coil`
+    itself and `TfCryoArea` below) rather than one, so a shared source of truth
+    replaces a duplicate formula.
+
+    The trailing `1.1` is PROCESS's own, with PROCESS's own comment: *"1.1 to scale
+    it out a bit, as the shell must be bigger than WP"*.
+
+    **Faithfulness note on `r_coil_minor`.** PROCESS's line reads
+    `data.stellarator.r_coil_minor` here, while the two formulas immediately above it
+    (`z_tf_inside_half`, `len_tf_coil`) use `st_coil`'s local `r_coil_minor`. They are
+    the same value -- the local is bound from the field at
+    `process/models/stellarator/coils/calculate.py:41` and nothing between writes it --
+    so the single parameter here is faithful, not a simplification.
+
+    Parameters
+    ----------
+    stella_config_coilsurface :
+        Reference-configuration total coil surface area (m2).
+        `.stellarator_config.stella_config_coilsurface`.
+    f_st_rmajor :
+        Major-radius scaling factor of this machine against the reference
+        configuration. `.stellarator.f_st_rmajor`.
+    r_coil_minor :
+        Coil minor radius (m). `.stellarator.r_coil_minor`.
+    stella_config_coil_rminor :
+        Reference-configuration coil minor radius (m).
+        `.stellarator_config.stella_config_coil_rminor`.
+
+    Returns
+    -------
+    :
+        `tfcryoarea` (m2).
+    """
+    return (
+        stella_config_coilsurface
+        * f_st_rmajor
+        * (r_coil_minor / stella_config_coil_rminor)
+        * 1.1
+    )
+
+
+class LenTfCoil(ExplicitFunction):
+    """cottax node: `calculate_len_tf_coil`, owning `.tfcoil.len_tf_coil`.
+
+    Carved out of `st_coil`'s inline geometry block like `ZTfInsideHalf` and
+    `TfCryoArea`. Four registered nodes read `.tfcoil.len_tf_coil` -- `StructureMasses`,
+    `PlasmaFacingCoilArea`, `CoilsMass`, `TfMagnetCostSuperconducting` -- and until this
+    landed it was a **boundary input** with no producer, so all four consumed a frozen
+    seed. Cold, that seed is `0.0`, which is what made
+    `TfMagnetCostSuperconducting`'s `.costs.c22211`/`.c2221` come out `nan`
+    (`costs.md`'s cold-start finding): every coil mass in `coils/mass.py` is
+    proportional to `len_tf_coil`, so `costtfcu = uccu * m_tf_coil_copper /
+    (len_tf_coil * n_tf_coil_turns)` is `0.0 / 0.0` there.
+
+    **The stale-vs-fresh question this node was held back for, resolved.**
+    `st_coil` calls `calculate_plasma_facing_coil_area` at
+    `process/models/stellarator/coils/calculate.py:68`, **19 lines before** `:87` writes
+    `len_tf_coil` -- so within one `Caller` round `PlasmaFacingCoilArea` reads the
+    *previous* round's value, and the eager port preserves that faithfully with a
+    separate `len_tf_coil_stale` parameter (`calculate.md:124`). Giving the field a
+    producer switches the declared `PlasmaFacingCoilArea` node from stale to fresh, and
+    the question was whether that needs modelling as a `FixedPointFunction` self-loop.
+
+    **It does not, and the reason is structural rather than numerical.** There is no
+    feedback path: `len_tf_coil`'s own inputs are two `stellarator_config` boundary
+    values plus `.stellarator.r_coil_minor`/`.tfcoil.n_tf_coils`, owned by
+    `StellaratorScalingFactors`, which is **not reachable from any of the four readers**
+    (measured -- `_audit/boundary_inputs_audit.md` §4c (c1)). So the loop equation would
+    be `x = g()` with `g` not depending on `x`: a degenerate fixed point, which
+    `sand.degenerate_fixed_points` drops on sight, exactly as it already drops
+    `EtaTurbineStep` and `CplifeAvail`. Modelling PROCESS's read-before-write as a cycle
+    would not be more faithful -- it would add a block that is deleted for being an
+    identity. The staleness is a property of PROCESS's Gauss-Seidel *schedule*, not of
+    the dependency structure, and this port does not model PROCESS's round structure at
+    all.
+
+    The honest caveat: `Caller.call_models` checks idempotence on the objective and
+    constraints at `rtol=1e-6`, not per field, so stale and fresh can differ
+    *transiently* while upstream is still moving. They cannot differ at a converged
+    point, which is what every harness here compares.
+    """
+
+    len_tf_coil = Output(lambda s: s.tfcoil.len_tf_coil)
+
+    def __call__(
+        self,
+        stella_config_coillength=Input(
+            lambda s: s.stellarator_config.stella_config_coillength
+        ),
+        r_coil_minor=Input(lambda s: s.stellarator.r_coil_minor),
+        stella_config_coil_rminor=Input(
+            lambda s: s.stellarator_config.stella_config_coil_rminor
+        ),
+        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
+    ):
+        return calculate_len_tf_coil(
+            stella_config_coillength,
+            r_coil_minor,
+            stella_config_coil_rminor,
+            n_tf_coils,
+        )
+
+
+class TfCryoArea(ExplicitFunction):
+    """cottax node: `calculate_tfcryoarea`, owning `.tfcoil.tfcryoarea`.
+
+    Carved out of `st_coil`'s inline geometry block exactly as `ZTfInsideHalf` (above)
+    was, and for the same structural reason: the eager `st_coil` orchestrator is
+    deliberately not registered, so a formula that lives only inside it has no owner
+    in the graph and its output stays a boundary input.
+
+    **Why it was worth carving out now.** `.tfcoil.tfcryoarea` is an input of
+    `power_B_thermal_cryo.py`'s cryogenic-load nodes (`CryoQLoadsStep`, via
+    `Power.cryo`'s `qss` term). Registering those without this node would have traded
+    two boundary inputs (`.heat_transport.helpow`,
+    `.heat_transport.p_cryo_plant_electric_mw`) for one new one -- see
+    `_audit/boundary_inputs_audit.md` §4c (c1)'s "sibling gap in the same three lines"
+    and §7 items 4 and 7.
+
+    **Its two siblings in the same block are deliberately left alone**:
+    `.tfcoil.len_tf_coil` carries an unresolved stale-vs-fresh design decision
+    (`PlasmaFacingCoilArea` reads it 19 lines before `st_coil` writes it, and the
+    eager port preserves that with a separate `len_tf_coil_stale` parameter --
+    `calculate.md:124`), and `min_bending_radius` has no reader at all. `tfcryoarea`
+    has neither complication: nothing reads it before `st_coil` writes it.
+    """
+
+    tfcryoarea = Output(lambda s: s.tfcoil.tfcryoarea)
+
+    def __call__(
+        self,
+        stella_config_coilsurface=Input(
+            lambda s: s.stellarator_config.stella_config_coilsurface
+        ),
+        f_st_rmajor=Input(lambda s: s.stellarator.f_st_rmajor),
+        r_coil_minor=Input(lambda s: s.stellarator.r_coil_minor),
+        stella_config_coil_rminor=Input(
+            lambda s: s.stellarator_config.stella_config_coil_rminor
+        ),
+    ):
+        return calculate_tfcryoarea(
+            stella_config_coilsurface,
+            f_st_rmajor,
+            r_coil_minor,
+            stella_config_coil_rminor,
+        )
+
+
 def st_coil(
     *,
     r_coil_major,
@@ -1592,20 +1778,18 @@ def st_coil(
     # Coil dimensions -- source's own inline geometry block (calculate.md's open
     # question #2). `z_tf_inside_half` now shares `calculate_z_tf_inside_half` with
     # `ZTfInsideHalf` (this file, above) rather than duplicating the formula -- see
-    # that function's own docstring for why it has two call sites now.
+    # that function's own docstring for why it has two call sites now. `tfcryoarea`
+    # is now split out the same way (`calculate_tfcryoarea`/`TfCryoArea`).
+    # `len_tf_coil` is now split out the same way too (`calculate_len_tf_coil`/
+    # `LenTfCoil`); only `min_bending_radius` still stays inline, for want of a reader.
     z_tf_inside_half = calculate_z_tf_inside_half(
         stella_config_maximal_coil_height, r_coil_minor, stella_config_coil_rminor
     )
-    len_tf_coil = (
-        stella_config_coillength
-        * (r_coil_minor / stella_config_coil_rminor)
-        / n_tf_coils
+    len_tf_coil = calculate_len_tf_coil(
+        stella_config_coillength, r_coil_minor, stella_config_coil_rminor, n_tf_coils
     )
-    tfcryoarea = (
-        stella_config_coilsurface
-        * f_st_rmajor
-        * (r_coil_minor / stella_config_coil_rminor)
-        * 1.1
+    tfcryoarea = calculate_tfcryoarea(
+        stella_config_coilsurface, f_st_rmajor, r_coil_minor, stella_config_coil_rminor
     )
     min_bending_radius = (
         stella_config_min_bend_radius

@@ -116,7 +116,9 @@ own footprint.
 
 ```python
 def calculate_average_charge_at_temp(
-    temp_electron_kev, temp_impurity_kev, impurity_arr_zav,
+    temp_electron_kev,
+    temp_impurity_kev,
+    impurity_arr_zav,
 ):
     """`impurity_radiation.py:437-510`, for one species, with its table row passed in
     rather than indexed out of `data`. Log-x, linear-y interpolation of <Z>(T_e). Drops
@@ -125,6 +127,7 @@ def calculate_average_charge_at_temp(
     argument and the value-agreement test for the confirmation).
     -> n_charge_impurity_average (dimensionless, same shape as temp_electron_kev)
     """
+
 
 def element2index(element, impurity_arr_label):
     """`impurity_radiation.py:605-627`, with the label array passed in rather than

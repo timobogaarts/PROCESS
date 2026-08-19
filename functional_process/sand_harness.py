@@ -204,8 +204,14 @@ def ground_truth(data, var):
     return get_at(data, unminted(var).keys)
 
 
-def mda_env(reference, graph=None):
-    """Run the plain MDA schedule seeded from `reference.data`; return its output env.
+def mda_env(reference, graph=None, data=None):
+    """Run the plain MDA schedule seeded from `data` (default `reference.data`); return
+    its output env.
+
+    `data` exists so a **cold** env can be built the same way as the warm one: pass
+    `reference.cold` and every coupling variable comes back at the cold design instead
+    of at PROCESS's converged one. That is what `run_sand_harness._seed` hands a cold
+    SAND solve, and it is the difference between that solve taking 0 steps and 85.
 
     Stage A's `Drive` needs a value for every one of its ~340 context variables, and some
     have no `DataStructure` field at all -- a scalar `0.0` placeholder for an
@@ -216,13 +222,14 @@ def mda_env(reference, graph=None):
     """
     from functional_process.total_process import graph_for
 
+    data = reference.data if data is None else data
     driven = driven_graph(_without_excluded(graph if graph is not None else graph_for()))
     blocking = Blocking.scc(driven)
     schedule = schedule_for(blocking, default_drivers(blocking))
     env = {}
     for var in driven.unowned_inputs:
         try:
-            env[var] = jnp.asarray(ground_truth(reference.data, var))
+            env[var] = jnp.asarray(ground_truth(data, var))
         except (AttributeError, KeyError):
             env[var] = jnp.asarray(0.0)
     for problem, problem_type in zip(
@@ -232,7 +239,7 @@ def mda_env(reference, graph=None):
             continue
         for var in driven[problem].owns:
             try:
-                env[var] = jnp.asarray(ground_truth(reference.data, var))
+                env[var] = jnp.asarray(ground_truth(data, var))
             except (AttributeError, KeyError):
                 env[var] = jnp.asarray(0.0)
     return driven, schedule(dict(env))

@@ -73,24 +73,59 @@ branch between computation and use) and are not separately tabulated.
 ## proposed signature(s)
 
 ```python
-def rether(alphan, alphat, nd_plasma_electrons_vol_avg, dlamie, te,
-           temp_plasma_ion_vol_avg_kev, n_charge_plasma_effective_mass_weighted_vol_avg): ...
+def rether(
+    alphan,
+    alphat,
+    nd_plasma_electrons_vol_avg,
+    dlamie,
+    te,
+    temp_plasma_ion_vol_avg_kev,
+    n_charge_plasma_effective_mass_weighted_vol_avg,
+): ...
 
-def phyaux(aspect, nd_plasma_fuel_ions_vol_avg, fusden_total, fusden_alpha_total,
-           plasma_current, sbar, nd_plasma_alphas_thermal_vol_avg, t_energy_confinement,
-           vol_plasma, burnup_in, tauratio) -> tuple[float, ...]: ...
 
-def calculate_total_plasma_heating_power(f_p_alpha_plasma_deposited, p_alpha_total_mw,
-           p_non_alpha_charged_mw, p_plasma_ohmic_mw, p_hcd_injected_total_mw) -> float: ...
+def phyaux(
+    aspect,
+    nd_plasma_fuel_ions_vol_avg,
+    fusden_total,
+    fusden_alpha_total,
+    plasma_current,
+    sbar,
+    nd_plasma_alphas_thermal_vol_avg,
+    t_energy_confinement,
+    vol_plasma,
+    burnup_in,
+    tauratio,
+) -> tuple[float, ...]: ...
 
-def calaculate_stored_thermal_energy(vol_plasma, nd_plasma_vol_avg,
-           temp_plasma_density_weighted_vol_avg_kev) -> tuple[float, float]: ...
 
-def fast_alpha_beta(b_plasma_poloidal_average, b_plasma_toroidal_on_axis,
-           nd_plasma_electrons_vol_avg, nd_plasma_fuel_ions_vol_avg,
-           nd_plasma_ions_total_vol_avg, temp_plasma_electron_density_weighted_kev,
-           temp_plasma_ion_density_weighted_kev, pden_alpha_total_mw,
-           pden_plasma_alpha_mw, i_beta_fast_alpha, f_plasma_fuel_deuterium) -> float: ...
+def calculate_total_plasma_heating_power(
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+) -> float: ...
+
+
+def calaculate_stored_thermal_energy(
+    vol_plasma, nd_plasma_vol_avg, temp_plasma_density_weighted_vol_avg_kev
+) -> tuple[float, float]: ...
+
+
+def fast_alpha_beta(
+    b_plasma_poloidal_average,
+    b_plasma_toroidal_on_axis,
+    nd_plasma_electrons_vol_avg,
+    nd_plasma_fuel_ions_vol_avg,
+    nd_plasma_ions_total_vol_avg,
+    temp_plasma_electron_density_weighted_kev,
+    temp_plasma_ion_density_weighted_kev,
+    pden_alpha_total_mw,
+    pden_plasma_alpha_mw,
+    i_beta_fast_alpha,
+    f_plasma_fuel_deuterium,
+) -> float: ...
 ```
 Argument order and spelling copied verbatim from the source signatures. Implemented in
 `physics_A_pure_formulas.py`.
@@ -196,3 +231,33 @@ Every value test passed throughout, before and after — which is the point. Thi
 second instance in this project of "a `jnp.maximum` guard in front of a function with an
 unbounded derivative *at the guard point*", and it should now be treated as a known
 pattern to grep for rather than a surprise.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+2 square roots in this file have been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

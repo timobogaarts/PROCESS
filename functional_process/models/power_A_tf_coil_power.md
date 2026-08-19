@@ -97,16 +97,32 @@ this chunk.
 
 ```python
 def calculate_tf_power_resistive(
-    c_tf_turn, j_tf_bus, rho_tf_bus, len_tf_bus, n_tf_coils, res_tf_leg,
-    p_cp_resistive, c_tf_total, p_tf_joints_resistive, p_tf_leg_resistive, etatf,
+    c_tf_turn,
+    j_tf_bus,
+    rho_tf_bus,
+    len_tf_bus,
+    n_tf_coils,
+    res_tf_leg,
+    p_cp_resistive,
+    c_tf_total,
+    p_tf_joints_resistive,
+    p_tf_leg_resistive,
+    etatf,
 ) -> tuple[float, float, float, float, float, float, float]:
     # (m_tf_bus, vtfkv, p_cp_resistive_mw, p_tf_leg_resistive_mw,
     #  p_tf_joints_resistive_mw, tfcmw, p_tf_electric_supplies_mw)
     ...
 
+
 def calculate_tf_power_superconducting(
-    c_tf_turn, e_tf_magnetic_stored_total_gj, n_tf_coils, rmajor,
-    v_tf_coil_dump_quench_kv, res_tf_leg, rho_tf_bus, etatf,
+    c_tf_turn,
+    e_tf_magnetic_stored_total_gj,
+    n_tf_coils,
+    rmajor,
+    v_tf_coil_dump_quench_kv,
+    res_tf_leg,
+    rho_tf_bus,
+    etatf,
 ) -> tuple[float, float, float, float, float]:
     # (tfckw, len_tf_bus, drarea, tfcbv, p_tf_electric_supplies_mw)
     ...
@@ -180,3 +196,33 @@ call into it, it only writes a `VarPath` `buildings.py` may read).
    (see JAX-difficulty flags). If `_harness/contracts.py` ever grows a per-sample
    gradient-test opt-out, this point is a good candidate to add back for permanent
    value-level regression coverage.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+4 fractional power laws and 1 square root in this file have been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

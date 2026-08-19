@@ -4,10 +4,13 @@ How the pure-functional port gets validated against PROCESS. Four tiers, increas
 both scope and in how hard "agreement" is to even define. Revise as real tier-2/4 units
 surface cases the design doesn't cover yet (the worked example below is the first one).
 
-**Tiers 1 and 2 are built** (`functional_process/_harness/`, run with
-`pytest functional_process`); tiers 3 and 4 remain design only. See § As built at the
-bottom for the implementation's shape and for the two places it refines what the tier
-descriptions below say.
+**All four tiers are built.** Tiers 1 and 2 are `functional_process/_harness/`; tiers 3
+and 4 are the graph and harness layer — `mda.py`, `mda_harness.py`,
+`mda_constraint_harness.py`, `sand.py`, `sand_harness.py`, `total_process.py`,
+`configuration.py` — all run by `pytest functional_process` and by the two runnable entry
+points `run_mda_harness.py` / `run_sand_harness.py`. That layer has caught bug classes
+tiers 1 and 2 structurally cannot; see § As built, which is the current record of what
+exists and where the tier descriptions below were refined by building them.
 
 **Precondition, not a parallel activity**: a unit's Phase-0 audit record
 (`schema.md`'s model-unit/constraint records) has to exist and its `implicit-io` /
@@ -49,7 +52,15 @@ or an ad hoc fixed-iteration-count pattern) closing over state local to one mode
 
 **PROCESS's own answer is not ground truth here — this is the tier where value-equality
 testing breaks down**, because the "convergence" being reproduced is often not real
-convergence. Two concrete strategies, not mutually exclusive:
+convergence. A second, distinct reason has since been found and is worth naming beside it:
+**PROCESS's own answer can have a bounded accuracy ceiling independent of approximation
+method.** `beam_fusion` is the recorded instance — the reference number itself is only good
+to a certain number of digits, so no porting strategy, however faithful, can be validated
+past that ceiling. That is a third category alongside "opaque external call" and "PROCESS's
+answer isn't ground truth for a non-converged tier-2 loop", and a unit that hits it should
+say so in its record rather than loosening a tolerance until it passes.
+
+Two concrete strategies, not mutually exclusive:
 
 1. **Residual-based pass criterion.** Plug both PROCESS's answer and the ported driver's
    answer back into the unit's own defining equations; assert the ported driver's residual
@@ -107,10 +118,14 @@ tier system isolates this problem to one tier instead of letting it contaminate 
 1-3's much simpler pass criteria. Revisit once tiers 1-3 give confidence in the
 individual pieces.
 
-Reuses `tests/regression`'s existing tracked-reference-data infrastructure largely
-unmodified once cottax's `Schedule` sits where VMCON currently sits in
-`process/core/solver/solver.py` — the same mfile-comparison, tolerance-based machinery
-already there, not new infrastructure.
+**How it was actually built, which is not what this section predicted.** The plan was to
+reuse `tests/regression`'s tracked-reference-data machinery once cottax's `Schedule` sat
+where VMCON sits. Instead `mda_harness.converged_data` runs PROCESS's own `SingleRun`
+**in-process** and reads `VarPath`s straight off the live `DataStructure` — no MFile
+round-trip, no golden file, no tolerance file. That is only possible because `process` and
+`cottax` are importable in the same interpreter (`CLAUDE.md`, the `process_port` env), and
+it is strictly better: the comparison is per *variable* rather than per reported output, and
+a disagreement names the node that produced it.
 
 ## Scope note
 
@@ -182,9 +197,55 @@ pilot port to confirm the checks bite: perturbing a coefficient by `4e-7` relati
 any value — failed 10 tests, all of them `test_gradient_agreement`, with every value test
 still passing. That second one is the case for the gradient tier existing at all.
 
+### The tier-3/4 layer, and what it catches that tiers 1-2 cannot
+
+Tier 3's structural assertions ("every `In` is bound", no cross-talk) turned out to be
+cottax's job, as predicted — `Graph` construction refuses an unbound `In`, so there is no
+test to write here. What the tier-3/4 layer actually buys is a different, and larger, list:
+**a binding can be wrong while every pure function it binds is right**, and only running the
+assembled graph sees it. Real instances, each recorded in `next_steps.md` §8: a 1-tuple
+return from a single-`Output` node (eight instances); a static switch kwarg copied from a
+`*_variables.py` default rather than from the run being modelled (four); a correct function
+bound to the wrong `VarPath` (`q95` vs `iotabar`); and **a missing producer, where every
+value is right and only a derivative is wrong** (three).
+
+**Three declared policies carry what cannot be compared**, and all three are deliberately
+documentation rather than suppression — a per-field tolerance would mask the next real
+regression:
+
+- `KNOWN_UNVERIFIABLE_OUTPUTS` — a `VarPath` PROCESS's own pipeline never writes on this
+  device path, so the "expected" value is a dataclass default, not an answer.
+- `EXPLAINED_DISAGREEMENTS` — a disagreement with a named, understood cause (the
+  `VacuumOld` duct-diameter tolerance; PROCESS's `+17.604 MW` report-pass offset). Recorded,
+  reported, and **not** subtracted from the comparison.
+- `KNOWN_MINT_VALUES` — a mint reconstructed from real stored fields by an identity read off
+  PROCESS's own source, which turns an unscorable node into a scored one.
+
+**A fourth category is owed and does not exist yet: PROCESS's report-pass/solve-pass
+inconsistency.** For any field PROCESS's `output=True` pass recomputes, the harness's
+`expected` column is PROCESS's *reported* state, which is not the state its solver used —
+`.build.z_tf_inside_half` and `.buildings.a_plant_floor_effective` are the measured
+instance. Nothing detects this in general; a field is noticed only when a consumer of it
+disagrees. It belongs beside the three policies above, as a check rather than a list.
+
+**The accounting invariant.** `ComparisonReport` carries `owned_total` and `unaccounted`
+and enforces that **every owned variable lands in exactly one bucket** (agreement /
+disagreement / unverifiable / error). This exists because it did not: array-valued outputs
+used to be dropped inside a bare `except: continue` *before* any bookkeeping, and the hole
+was 25 variables — 21 silently agreeing and 4 silently disagreeing. Arrays are now compared
+elementwise and reported as one disagreement carrying the worst element
+(`shape`/`index`/`n_off`), and a non-comparable pair becomes an explicit error. **Any future
+comparison must be accounted for the same way**: a bucket that can silently drop a case is
+worse than no check, because it reads as a pass.
+
+**A blind spot of the same family, still open.** `compare`'s `atol=1e-9` makes any field
+whose natural magnitude is below that **vacuously agree**.
+`.neoclassics.temperatures`/`dr_temperatures` are stored in Joules (~1e-15), so they agreed
+both before and after a fix that materially changed them, and are **not actually checked by
+anything**. A per-field relative floor, or a unit-aware scale, is what it needs.
+
 ### Not built
 
-Tier 3, tier 4, and `converged` sampling. Tier 3's structural assertions ("every `In` is
-bound", no cross-talk) are arguably cottax's job rather than the harness's — if `Graph`
-construction accepts an unbound `In`, that is a cottax bug to fix upstream, not a test to
-write here.
+`converged` sampling (it raises rather than skipping quietly), and a cold-start path: every
+tier-3/4 harness seeds from a converged PROCESS run, so nothing yet validates the graph
+from a cold input file (`optimise_design.md` §10.6).

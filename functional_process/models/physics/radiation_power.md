@@ -138,8 +138,11 @@ there is no iteration anywhere in this unit.
 
 ```python
 def calculate_impurity_radiation_power_density(
-    nd_electron_profile, temp_electron_profile_kev, f_nd_impurity_electron,
-    temp_impurity_kev, pden_impurity_lz_nd_temp,
+    nd_electron_profile,
+    temp_electron_profile_kev,
+    f_nd_impurity_electron,
+    temp_impurity_kev,
+    pden_impurity_lz_nd_temp,
 ):
     """`impurity_radiation.py:513-602`, for one species, with the two table rows and the
     fraction passed in rather than indexed out of `data`. `n_i n_e L(Z, Te)`, `L`
@@ -148,17 +151,25 @@ def calculate_impurity_radiation_power_density(
     -> pden_impurity_profile (W/m^3, profile-shaped)
     """
 
+
 def create_f_rad_core_profile(
-    profile_x, radius_plasma_core_norm, f_p_plasma_core_rad_reduction,
+    profile_x,
+    radius_plasma_core_norm,
+    f_p_plasma_core_rad_reduction,
 ):
     """`impurity_radiation.py:379-405`. A step function; strict `<` as in the source.
     -> f_rad_core_profile (profile-shaped)
     """
 
+
 def calculate_impurity_radiation_totals(
-    profile_x, nd_electron_profile, temp_electron_profile_kev,
-    f_nd_impurity_electron_array, temp_impurity_kev_array,
-    pden_impurity_lz_nd_temp_array, radius_plasma_core_norm,
+    profile_x,
+    nd_electron_profile,
+    temp_electron_profile_kev,
+    f_nd_impurity_electron_array,
+    temp_impurity_kev_array,
+    pden_impurity_lz_nd_temp_array,
+    radius_plasma_core_norm,
     f_p_plasma_core_rad_reduction,
 ):
     """The whole of `ImpurityRadiation.calculate_imprad()` (`:677-755`) as one function.
@@ -167,9 +178,19 @@ def calculate_impurity_radiation_totals(
     -> (pden_impurity_rad_total_mw, pden_impurity_core_rad_total_mw)  [MW/m^3]
     """
 
+
 def psync_albajar_fidone(
-    nd_plasma_electron_on_axis, rminor, b_plasma_toroidal_on_axis, aspect, alphan,
-    alphat, tbeta, temp_plasma_electron_on_axis_kev, f_sync_reflect, rmajor, kappa,
+    nd_plasma_electron_on_axis,
+    rminor,
+    b_plasma_toroidal_on_axis,
+    aspect,
+    alphan,
+    alphat,
+    tbeta,
+    temp_plasma_electron_on_axis_kev,
+    f_sync_reflect,
+    rmajor,
+    kappa,
     vol_plasma,
 ):
     """`radiation_power.py:142-243`, unchanged. Already pure and already explicit;
@@ -177,8 +198,11 @@ def psync_albajar_fidone(
     -> pden_plasma_sync_mw  [MW/m^3]
     """
 
+
 def combine_radiation_powers(
-    pden_impurity_rad_total_mw, pden_impurity_core_rad_total_mw, pden_plasma_sync_mw,
+    pden_impurity_rad_total_mw,
+    pden_impurity_core_rad_total_mw,
+    pden_plasma_sync_mw,
 ):
     """`radiation_power.py:106-139`'s own three lines. Synchrotron radiation is booked
     entirely to the core. `pden_plasma_sync_mw` is an argument, not a return, because
@@ -289,7 +313,7 @@ There is, however, one thing that *behaves* like a switch without being one:
    ~1e-33) directly into the *power density* array (W/m^3, ~1e6):
 
    ```python
-   pden_impurity_profile[less_than_imp_temp_mask]    = pden_impurity_lz_nd_temp_array[i, 0]
+   pden_impurity_profile[less_than_imp_temp_mask] = pden_impurity_lz_nd_temp_array[i, 0]
    pden_impurity_profile[greater_than_imp_temp_mask] = pden_impurity_lz_nd_temp_array[i, -1]
    ```
 
@@ -393,3 +417,33 @@ There is, however, one thing that *behaves* like a switch without being one:
    `physics.py:734`, and both pass `self.plasma_profile`, but whether the tokamak pipeline
    guarantees the same profile-array state at that point was not verified — it is unit
    #22's question, not this one's.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+5 fractional power laws in this file have been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

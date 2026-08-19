@@ -654,12 +654,105 @@ def calculate_cryo(
         value (`.heat_transport.helpow` once written by the caller); the rest are the
         `.power.*`/`.fwbs.qnuc` fields `cryo` writes directly.
     """
+    qnuc = calculate_cryo_qnuc(i_tf_sup, inuclear, p_tf_nuclear_heat_mw, qnuc)
+    qss, qac, qcl, qmisc = calculate_cryo_q_loads(
+        i_tf_sup,
+        tfcryoarea,
+        coldmass,
+        ensxpfm,
+        t_plant_pulse_plasma_present,
+        c_tf_turn,
+        n_tf_coils,
+        qnuc,
+    )
+    helpow = calculate_helpow(qss, qnuc, qac, qcl, qmisc)
+
+    return helpow, qss, qac, qcl, qmisc, qnuc
+
+
+def calculate_cryo_qnuc(i_tf_sup, inuclear, p_tf_nuclear_heat_mw, qnuc):
+    """`Power.cryo`'s nuclear-heating line, `process/models/power.py:1823-1825`.
+
+    Split out of `calculate_cryo` because `.fwbs.qnuc` is the one field of the five
+    `cryo` writes whose ownership is gated by a **different** condition
+    (`inuclear == 0 and i_tf_sup == 1`) from the other four
+    (`calculate_cryo_loads`'s outer superconducting guard). Keeping the two
+    conditions in separate functions -- and therefore in separate
+    `FixedPointFunction` nodes, `CryoQNucStep` and `CryoQLoadsStep` -- is what makes
+    each resulting `FixedPoint` problem *uniformly* degenerate or non-degenerate.
+    A single node owning all five would be an identity on the `qnuc` row and a
+    constant on the other four whenever `inuclear == 1`, which is a rank-deficient
+    SAND equality block `sand.degenerate_fixed_points` could not drop (it drops only
+    problems whose residual vanishes entirely).
+
+    `i_tf_sup == 1` implies `calculate_cryo_loads`'s outer guard, so this condition
+    alone is exactly PROCESS's: `cryo()` runs, and inside it the `inuclear` test
+    passes.
+
+    Parameters
+    ----------
+    i_tf_sup, inuclear :
+        Static switches -- see `calculate_cryo`.
+    p_tf_nuclear_heat_mw :
+        Nuclear heating in TF coils (MW). `.fwbs.p_tf_nuclear_heat_mw`.
+    qnuc :
+        Entering value of `.fwbs.qnuc` (W), returned unchanged when this function
+        does not own it ("Issue #511: if inuclear = 1: qnuc is input").
+
+    Returns
+    -------
+    :
+        `qnuc` (W).
+    """
+    if inuclear == 0 and i_tf_sup == 1:
+        qnuc = 1.0e6 * p_tf_nuclear_heat_mw
+    return qnuc
+
+
+def calculate_cryo_q_loads(
+    i_tf_sup,
+    tfcryoarea,
+    coldmass,
+    ensxpfm,
+    t_plant_pulse_plasma_present,
+    c_tf_turn,
+    n_tf_coils,
+    qnuc,
+):
+    """`Power.cryo`'s four unconditional load terms, `power.py:1820-1841`.
+
+    `qss` (conduction/radiation), `qac` (AC losses), `qcl` (current leads) and
+    `qmisc` (the 45% miscellaneous allowance) -- everything `cryo()` writes except
+    `.fwbs.qnuc`, which `calculate_cryo_qnuc` above owns. `qmisc` is a function of
+    the other three **and** of the post-`calculate_cryo_qnuc` `qnuc`, which is why
+    `qnuc` is a parameter here and why `CryoQLoadsStep` reads `.fwbs.qnuc` (the field
+    `CryoQNucStep` owns) rather than recomputing it.
+
+    Unlike `calculate_cryo_qnuc` this carries no guard of its own: within `cryo()`
+    all four are written unconditionally. Their conditional ownership is one level
+    up -- `calculate_cryo_loads` only calls `cryo()` at all when
+    `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` -- and that guard lives in
+    `CryoQLoadsStep.step`, not here, so this function stays a plain formula.
+
+    Parameters
+    ----------
+    i_tf_sup :
+        Static switch -- see `calculate_cryo`.
+    tfcryoarea, coldmass, ensxpfm, t_plant_pulse_plasma_present, c_tf_turn,
+    n_tf_coils :
+        See `calculate_cryo`.
+    qnuc :
+        `.fwbs.qnuc` (W) **after** `calculate_cryo_qnuc`, i.e. the value `qmisc` is
+        actually built from in PROCESS's own statement order.
+
+    Returns
+    -------
+    :
+        `(qss, qac, qcl, qmisc)`, all in W.
+    """
     qss = 4.3e-4 * coldmass
     if i_tf_sup == 1:
         qss = qss + 2.0e0 * tfcryoarea
-
-    if inuclear == 0 and i_tf_sup == 1:
-        qnuc = 1.0e6 * p_tf_nuclear_heat_mw
 
     qac = 1.0e3 * ensxpfm / t_plant_pulse_plasma_present
 
@@ -669,9 +762,31 @@ def calculate_cryo(
         qcl = 0.0e0
 
     qmisc = 0.45e0 * (qss + qnuc + qac + qcl)
-    helpow = jnp.maximum(0.0e0, qmisc + qss + qnuc + qac + qcl)
 
-    return helpow, qss, qac, qcl, qmisc, qnuc
+    return qss, qac, qcl, qmisc
+
+
+def calculate_helpow(qss, qnuc, qac, qcl, qmisc):
+    """`Power.cryo`'s return value, `power.py:1843-1852` -- total helium heat removal
+    at cryogenic temperature (W), clipped at zero.
+
+    Its own function because it has two call sites: `calculate_cryo` (the un-split
+    port of `Power.cryo`, kept for the Tier-1 contract against PROCESS) and
+    `calculate_cryo_plant_loads` (the node-level split, which gets the five `q*`
+    terms from the graph rather than recomputing them).
+
+    The `jnp.maximum(0, ...)` is PROCESS's own `max(0.0e0, ...)`, reproduced. It is a
+    clip on a **sum**, not on the argument of a square root, so it carries none of
+    the `jnp.sqrt(jnp.maximum(0, x))` derivative hazard recorded elsewhere in this
+    port -- the subgradient at the kink is JAX's usual choice and the value is
+    correct on both sides.
+
+    Returns
+    -------
+    :
+        `helpow` (W).
+    """
+    return jnp.maximum(0.0e0, qmisc + qss + qnuc + qac + qcl)
 
 
 def calculate_cryo_loads(
@@ -699,6 +814,17 @@ def calculate_cryo_loads(
     qmisc,
 ):
     """`Power.calculate_cryo_loads`.
+
+    **This is the un-split port**, kept as the function the Tier-1 contract compares
+    against PROCESS. Its body is now assembled from the same four pieces the
+    registered nodes use -- `calculate_cryo_qnuc` (`CryoQNucStep`),
+    `calculate_cryo_q_loads` (`CryoQLoadsStep`), `cryo_is_active` and
+    `calculate_cryo_plant_loads` (`CryoLoads`) -- so the node-level split cannot
+    drift from the function this contract validates. One rearrangement is worth
+    stating: `calculate_cryo_qnuc` is called *outside* the superconducting guard,
+    where PROCESS's `qnuc` write sits inside it. That is an identity, not a change --
+    the inner condition is `inuclear == 0 and i_tf_sup == 1`, and `i_tf_sup == 1`
+    already implies the outer guard.
 
     Ports `process/models/power.py:1037-1118`. `i_tf_sup`/`i_pf_conductor` gate
     whether `calculate_cryo` runs at all (a whole-function conditional call, same
@@ -756,19 +882,114 @@ def calculate_cryo_loads(
         `(helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req, qss, qac,
         qcl, qmisc, qnuc)`.
     """
-    if i_tf_sup == 1 or i_pf_conductor == PFConductorModel.SUPERCONDUCTING:
-        helpow, qss, qac, qcl, qmisc, qnuc = calculate_cryo(
+    qnuc = calculate_cryo_qnuc(i_tf_sup, inuclear, p_tf_nuclear_heat_mw, qnuc)
+    if cryo_is_active(i_tf_sup, i_pf_conductor):
+        qss, qac, qcl, qmisc = calculate_cryo_q_loads(
             i_tf_sup,
-            inuclear,
             tfcryoarea,
             coldmass,
-            p_tf_nuclear_heat_mw,
             ensxpfm,
             t_plant_pulse_plasma_present,
             c_tf_turn,
             n_tf_coils,
             qnuc,
         )
+    helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req = (
+        calculate_cryo_plant_loads(
+            i_tf_sup,
+            i_pf_conductor,
+            eff_tf_cryo,
+            temp_tf_cryo,
+            p_cp_resistive,
+            p_tf_leg_resistive,
+            p_tf_joints_resistive,
+            pnuc_cp_tf,
+            temp_cp_coolant_inlet,
+            qss,
+            qac,
+            qcl,
+            qmisc,
+            qnuc,
+        )
+    )
+
+    return (
+        helpow,
+        p_cryo_plant_electric_mw,
+        helpow_cryal,
+        cryo_cool_req,
+        qss,
+        qac,
+        qcl,
+        qmisc,
+        qnuc,
+    )
+
+
+def cryo_is_active(i_tf_sup, i_pf_conductor):
+    """PROCESS's guard on whether `Power.cryo` is called at all
+    (`process/models/power.py:1054-1057`).
+
+    Named rather than repeated because three places need exactly this predicate:
+    `calculate_cryo_loads` (the un-split port, kept for the Tier-1 contract),
+    `calculate_cryo_plant_loads`, and `CryoQLoadsStep.step`. Both arguments are
+    static configuration switches, so this is an ordinary Python `bool`, never a
+    traced value.
+    """
+    return i_tf_sup == 1 or i_pf_conductor == PFConductorModel.SUPERCONDUCTING
+
+
+def calculate_cryo_plant_loads(
+    i_tf_sup,
+    i_pf_conductor,
+    eff_tf_cryo,
+    temp_tf_cryo,
+    p_cp_resistive,
+    p_tf_leg_resistive,
+    p_tf_joints_resistive,
+    pnuc_cp_tf,
+    temp_cp_coolant_inlet,
+    qss,
+    qac,
+    qcl,
+    qmisc,
+    qnuc,
+):
+    """The four fields `Power.calculate_cryo_loads` owns **unconditionally**.
+
+    `.heat_transport.helpow`, `.heat_transport.p_cryo_plant_electric_mw`,
+    `.heat_transport.helpow_cryal` and `.tfcoil.cryo_cool_req` are all written on
+    every path through `power.py:1049-1118` (the first two are re-initialised to
+    `0.0` at `:1049-1050` before the guard, the third is safe to compute
+    unconditionally for the reason `calculate_cryo_loads`'s docstring gives, and the
+    fourth is outside every branch) -- so unlike the five `q*` fields they are not
+    conditionally owned and need no fixed point. This function is the part of
+    `calculate_cryo_loads` that `CryoLoads` (an ordinary `ExplicitFunction`) owns,
+    with the five `q*` terms arriving as plain inputs from `CryoQNucStep`/
+    `CryoQLoadsStep` instead of being recomputed here.
+
+    `helpow` is `calculate_helpow` of the five `q*` terms -- the same expression
+    `Power.cryo` returns -- under the guard, and exactly `0.0` outside it.
+
+    Parameters
+    ----------
+    i_tf_sup, i_pf_conductor :
+        Static switches -- see `calculate_cryo_loads`.
+    eff_tf_cryo, temp_tf_cryo, p_cp_resistive, p_tf_leg_resistive,
+    p_tf_joints_resistive, pnuc_cp_tf, temp_cp_coolant_inlet :
+        See `calculate_cryo_loads`.
+    qss, qac, qcl, qmisc, qnuc :
+        `.power.qss`/`qac`/`qcl`/`qmisc` and `.fwbs.qnuc` (W), as they stand after
+        `Power.cryo` would have run -- i.e. the values `CryoQLoadsStep` and
+        `CryoQNucStep` own.
+
+    Returns
+    -------
+    :
+        `(helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req)`.
+    """
+    if cryo_is_active(i_tf_sup, i_pf_conductor):
+        helpow = calculate_helpow(qss, qnuc, qac, qcl, qmisc)
         p_cryo_plant_electric_mw = (
             1.0e-6
             * (constants.TEMP_ROOM - temp_tf_cryo)
@@ -801,17 +1022,7 @@ def calculate_cryo_loads(
         + helpow_cryal * ((293 / temp_cp_coolant_inlet) - 1) / ((293 / 4.5) - 1)
     ) / 1.0e3
 
-    return (
-        helpow,
-        p_cryo_plant_electric_mw,
-        helpow_cryal,
-        cryo_cool_req,
-        qss,
-        qac,
-        qcl,
-        qmisc,
-        qnuc,
-    )
+    return helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req
 
 
 class PlantThermalEfficiency(ExplicitFunction):
@@ -1489,7 +1700,22 @@ class PFwBlktCoolantPumpMwStep(FixedPointFunction):
 
 
 class Cryo(ExplicitFunction):
-    """cottax node: `calculate_cryo`."""
+    """cottax node: `calculate_cryo`. **Not registered** -- superseded by the split.
+
+    Same position as `PlantThermalEfficiency`/`PlantThermalEfficiency2` in this file:
+    the raw, un-split node for a PROCESS function that both reads and owns fields, so
+    `to_graph(Cryo(...))` raises `ValueError: reads ['.fwbs.qnuc'], which it also
+    owns` and no graph can contain it. It is kept because `calculate_cryo` is still
+    the function the Tier-1 contract compares against `Power.cryo` directly, and the
+    class documents the node that function *would* be.
+
+    What is registered instead is the three-way split of
+    `Power.calculate_cryo_loads` (which is the only caller of `Power.cryo`):
+    `CryoQNucStep` owns `.fwbs.qnuc`, `CryoQLoadsStep` owns
+    `.power.qss`/`qac`/`qcl`/`qmisc`, and `CryoLoads` owns the four unconditionally
+    written `.heat_transport`/`.tfcoil` outputs. See `CryoQLoadsStep`'s docstring for
+    why the five `q*` fields are two nodes rather than one.
+    """
 
     i_tf_sup: int = eqx.field(static=True)
     inuclear: int = eqx.field(static=True)
@@ -1528,35 +1754,166 @@ class Cryo(ExplicitFunction):
         )
 
 
-class CryoLoads(ExplicitFunction):
-    """cottax node: `calculate_cryo_loads`."""
+class CryoQNucStep(FixedPointFunction):
+    """The `.fwbs.qnuc` self-loop, cut.
+
+    `Power.cryo` writes `.fwbs.qnuc` only when `inuclear == 0 and i_tf_sup == 1` and
+    otherwise leaves the entering value in place -- PROCESS's own comment at
+    `process/models/power.py:1825` says so outright: *"Issue #511: if inuclear = 1:
+    qnuc is input"*. The ported `calculate_cryo_qnuc` is faithful to that, taking the
+    incumbent as an argument, which makes the field a read **and** a write of one
+    node and `to_graph` refuses it (`ValueError: reads ['.fwbs.qnuc'], which it also
+    owns`). This is `_audit/next_steps.md` §5's Shape B, and it gets §5's answer: the
+    node owns the field and reads the minted `^cond` copy, so the "keep the
+    incumbent" arm is a **fixed point** (`u = g(u)`), not a self-loop.
+
+    The shape carries the switch correctly in both directions, exactly as
+    `plasma_profiles.py`'s `IonVolAvgTemperature` does for
+    `.physics.temp_plasma_ion_vol_avg_kev`:
+
+    - `inuclear == 0 and i_tf_sup == 1` -- `g` is `1e6 * p_tf_nuclear_heat_mw`, with
+      no dependence on the unknown at all, so the residual `g(u) - u` has derivative
+      `-1`: well-posed, one Picard step from anywhere, and SAND-solvable.
+    - otherwise -- `g` is the exact identity, the residual is structurally zero, and
+      `functional_process.sand.degenerate_fixed_points` detects that by
+      differentiation and drops the problem, reverting `.fwbs.qnuc` to an ordinary
+      boundary input. Which *is* PROCESS's "qnuc is input" semantics, recovered from
+      structure rather than from a comment.
+
+    **Why this is its own node and not merged into `CryoQLoadsStep`.** The other four
+    `q*` fields are gated by a different condition (`calculate_cryo_loads`'s outer
+    superconducting guard). One node owning all five would, at `inuclear == 1` with
+    `i_tf_sup == 1`, be an identity on the `qnuc` row and a constant on the other
+    four: a residual block with one structurally-zero row that
+    `degenerate_fixed_points` could **not** drop, because it drops only problems whose
+    residual vanishes entirely. Splitting keeps each problem uniformly degenerate or
+    uniformly well-posed.
+
+    Registered unconditionally rather than behind a `Switch`: `.fwbs.inuclear` and
+    `.tfcoil.i_tf_sup` select which arm of one function body runs, not which of two
+    node definitions exists, and the "keep the incumbent" arm is representable here --
+    that is the whole point of the fixed-point shape.
+    """
+
+    i_tf_sup: int = eqx.field(static=True)
+    inuclear: int = eqx.field(static=True)
+
+    qnuc = Output(lambda s: s.fwbs.qnuc)
+
+    def step(
+        self,
+        qnuc=Input(lambda s: s.fwbs.qnuc),
+        p_tf_nuclear_heat_mw=Input(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
+    ):
+        return calculate_cryo_qnuc(
+            self.i_tf_sup, self.inuclear, p_tf_nuclear_heat_mw, qnuc
+        )
+
+
+class CryoQLoadsStep(FixedPointFunction):
+    """The `.power.qss`/`qac`/`qcl`/`qmisc` self-loop, cut -- one node, four unknowns.
+
+    `Power.calculate_cryo_loads` calls `Power.cryo` only when
+    `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` (`power.py:1054-1057`);
+    outside that guard these four fields are left exactly as they entered, so the
+    ported `calculate_cryo_loads` threads them through as pass-through parameters and
+    the corresponding node both reads and owns them. Shape B again, same treatment as
+    the six self-loops above and as `CryoQNucStep`.
+
+    All four share **one** guard and are written together by one PROCESS statement
+    block, so they are one `FixedPointFunction` with four `Output`s rather than four
+    nodes: `g` is either constant in all four unknowns (guard true) or the identity in
+    all four (guard false), never a mixture. That homogeneity is what
+    `sand.degenerate_fixed_points` needs -- see `CryoQNucStep`'s docstring for why
+    `.fwbs.qnuc` is *not* folded in here despite being written by the same PROCESS
+    function.
+
+    **`qnuc` is read, not recomputed.** `qmisc = 0.45 * (qss + qnuc + qac + qcl)` uses
+    the value `Power.cryo` has just written, so this node reads `.fwbs.qnuc` -- the
+    real `VarPath` `CryoQNucStep`'s paired `FixedPoint` owns. That is an ordinary
+    edge, not a cycle: `CryoQNucStep` reads only `.fwbs.p_tf_nuclear_heat_mw` and its
+    own minted copy, neither of which this node owns. (The "rebuild from raw inputs
+    rather than read another node's `Output`" rule `DeltaEtaStep` follows exists to
+    avoid recreating a two-node cycle; there is no cycle to avoid here.)
+
+    **Under the reference configuration the fixed point is well-posed, not
+    degenerate**: `i_tf_sup = 1` makes the guard true, so `g` does not depend on any
+    of the four unknowns and the residual Jacobian is exactly `-I`.
+    """
 
     i_tf_sup: int = eqx.field(static=True)
     i_pf_conductor: int = eqx.field(static=True)
-    inuclear: int = eqx.field(static=True)
 
-    helpow = Output(lambda s: s.heat_transport.helpow)
-    p_cryo_plant_electric_mw = Output(lambda s: s.heat_transport.p_cryo_plant_electric_mw)
-    helpow_cryal = Output(lambda s: s.heat_transport.helpow_cryal)
-    cryo_cool_req = Output(lambda s: s.tfcoil.cryo_cool_req)
     qss = Output(lambda s: s.power.qss)
     qac = Output(lambda s: s.power.qac)
     qcl = Output(lambda s: s.power.qcl)
     qmisc = Output(lambda s: s.power.qmisc)
-    qnuc = Output(lambda s: s.fwbs.qnuc)
 
-    def __call__(
+    def step(
         self,
+        qss=Input(lambda s: s.power.qss),
+        qac=Input(lambda s: s.power.qac),
+        qcl=Input(lambda s: s.power.qcl),
+        qmisc=Input(lambda s: s.power.qmisc),
+        qnuc=Input(lambda s: s.fwbs.qnuc),
         tfcryoarea=Input(lambda s: s.tfcoil.tfcryoarea),
         coldmass=Input(lambda s: s.structure.coldmass),
-        p_tf_nuclear_heat_mw=Input(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
         ensxpfm=Input(lambda s: s.pf_power.ensxpfm),
         t_plant_pulse_plasma_present=Input(
             lambda s: s.times.t_plant_pulse_plasma_present
         ),
         c_tf_turn=Input(lambda s: s.tfcoil.c_tf_turn),
         n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
-        qnuc=Input(lambda s: s.fwbs.qnuc),
+    ):
+        if not cryo_is_active(self.i_tf_sup, self.i_pf_conductor):
+            return qss, qac, qcl, qmisc
+        return calculate_cryo_q_loads(
+            self.i_tf_sup,
+            tfcryoarea,
+            coldmass,
+            ensxpfm,
+            t_plant_pulse_plasma_present,
+            c_tf_turn,
+            n_tf_coils,
+            qnuc,
+        )
+
+
+class CryoLoads(ExplicitFunction):
+    """cottax node: `calculate_cryo_plant_loads` -- the unconditionally-owned part of
+    `Power.calculate_cryo_loads`.
+
+    Owns the four fields that method writes on every path through it:
+    `.heat_transport.helpow`, `.heat_transport.p_cryo_plant_electric_mw`,
+    `.heat_transport.helpow_cryal` and `.tfcoil.cryo_cool_req`. The five conditionally
+    owned `q*` fields moved to `CryoQNucStep`/`CryoQLoadsStep` and are read here as
+    plain `Input`s -- the same division `ComponentThermalPowers` has with the six
+    `*Step` nodes above it, and for the same reason: two nodes owning one `VarPath`
+    is an ownership collision `Graph` would reject, and would defeat the split.
+
+    `.fwbs.inuclear` is no longer a static field of this node: `qnuc` arrives already
+    resolved from `CryoQNucStep`, which is the only place that switch is read.
+
+    **What registering it closes.** `.heat_transport.helpow` (read by `Bldgs` and
+    `CryogenicSystemCost`) and `.heat_transport.p_cryo_plant_electric_mw` (read by
+    `Acpow`, `PlantElectricProductionReactor` and `AuxiliaryComponentCoolingCost`)
+    were boundary inputs -- five registered readers consuming seeded values for a
+    quantity PROCESS computes on this run's path. See
+    `_audit/boundary_inputs_audit.md` §4c (b9)/(b10) and §7 item 7.
+    """
+
+    i_tf_sup: int = eqx.field(static=True)
+    i_pf_conductor: int = eqx.field(static=True)
+
+    helpow = Output(lambda s: s.heat_transport.helpow)
+    p_cryo_plant_electric_mw = Output(
+        lambda s: s.heat_transport.p_cryo_plant_electric_mw
+    )
+    helpow_cryal = Output(lambda s: s.heat_transport.helpow_cryal)
+    cryo_cool_req = Output(lambda s: s.tfcoil.cryo_cool_req)
+
+    def __call__(
+        self,
         eff_tf_cryo=Input(lambda s: s.tfcoil.eff_tf_cryo),
         temp_tf_cryo=Input(lambda s: s.tfcoil.temp_tf_cryo),
         p_cp_resistive=Input(lambda s: s.tfcoil.p_cp_resistive),
@@ -1568,19 +1925,11 @@ class CryoLoads(ExplicitFunction):
         qac=Input(lambda s: s.power.qac),
         qcl=Input(lambda s: s.power.qcl),
         qmisc=Input(lambda s: s.power.qmisc),
+        qnuc=Input(lambda s: s.fwbs.qnuc),
     ):
-        return calculate_cryo_loads(
+        return calculate_cryo_plant_loads(
             self.i_tf_sup,
             self.i_pf_conductor,
-            self.inuclear,
-            tfcryoarea,
-            coldmass,
-            p_tf_nuclear_heat_mw,
-            ensxpfm,
-            t_plant_pulse_plasma_present,
-            c_tf_turn,
-            n_tf_coils,
-            qnuc,
             eff_tf_cryo,
             temp_tf_cryo,
             p_cp_resistive,
@@ -1592,4 +1941,5 @@ class CryoLoads(ExplicitFunction):
             qac,
             qcl,
             qmisc,
+            qnuc,
         )

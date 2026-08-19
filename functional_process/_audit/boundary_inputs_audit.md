@@ -454,7 +454,7 @@ actually executes"**, not "PROCESS has no cross-subsystem feedback".
 
 ## 6. Two things found on the way that are worse than a missing producer
 
-### 6.1 `ProfileValues.rho` is bound to a field PROCESS never writes — the `q95`/`iotabar` bug class again
+### 6.1 [CLOSED — see §7 item 1] `ProfileValues.rho` is bound to a field PROCESS never writes — the `q95`/`iotabar` bug class again
 
 `.neoclassics.r_eff` sits in the 207 "never assigned" list, and by the letter of the
 classification that makes it a genuine input. It is not.
@@ -498,7 +498,7 @@ shape `next_steps.md` §8.3 already settled once for `ConfinementTime`'s `q95`/`
 `rho` is not an `Input` at all, it is a static `0.6` on the node — which also removes
 `.neoclassics.r_eff` from the boundary set entirely.
 
-### 6.2 `mda_harness.compare` silently drops every array-valued output
+### 6.2 [CLOSED — see §7 item 2] `mda_harness.compare` silently drops every array-valued output
 
 The reason §6.1 has never shown up as a harness disagreement:
 
@@ -556,38 +556,166 @@ picks it up should re-run before diagnosing.
 Ordered by (value ÷ risk), with the expected harness effect stated so it can be checked
 rather than assumed.
 
-1. **`.neoclassics.r_eff` → static `0.6` on `ProfileValues`** (§6.1). One line, no new
-   node, no cycle, removes a boundary input, and fixes a *wrong answer* rather than a
-   missing edge. Do this first because it is the only item that is currently incorrect
-   rather than merely incomplete. Expected harness effect: **none visible** until item 2 is
-   done — which is the point.
-2. **Make `mda_harness.compare` stop swallowing arrays** (§6.2). Until this exists there is
-   no way to verify item 1, and 29 outputs stay unmeasured. Expected effect: up to +29
-   compared outputs; at least `ProfileValues`'s four should move from invisible to
-   agreeing-after-item-1.
-3. **`.fwbs` S4 masses — 6 fields, one unit, zero cycle risk.** Port
+**Status: all seven items are CLOSED.** Each
+closed item carries its measured result inline below — including where the prediction
+was wrong, which is the only reason to have written predictions down. Verified state
+after all seven, plus the `st_new_config`/`preset_config` port that landed alongside
+them: MDA harness **492 agreements** (23 array-valued), 34 disagreements (0 in driven
+blocks), 3 unverifiable, 0 ungrounded, 21 errors, **550 owned variables walked, 0
+unaccounted**, 61 switch kwargs / 0 mismatched / 0 unresolved; `GRAPH` **158 nodes**,
+**353 unowned inputs**; `pytest functional_process` **3677 passed**.
+
+**And the result these seven items were for: the port now runs its own MDA pipeline
+from a cold `IN.DAT`.** Verified directly, with no manual initialisation: 137 blocks,
+**0 failures**, one non-finite value (`.physics.nu_star`) which is `nan` in PROCESS too
+and which nothing in the graph reads. That closes `next_steps.md` §11.6 item 5, recorded
+there as the ceiling on the whole result. What remains is the *optimiser's* first cold
+step, not the graph's ability to run cold — see §9 below.
+
+1. **[CLOSED] `.neoclassics.r_eff` → static `0.6` on `ProfileValues`** (§6.1). Done as
+   `rho: float = eqx.field(static=True, default=0.6)`, with the reason in the node's own
+   docstring and an entry in `mda_harness.STATIC_KWARGS_WITHOUT_BACKING_FIELD` so the
+   switch audit does not flag a static kwarg it cannot map to a field. Measured, after
+   item 2 made it visible: `.neoclassics.densities` (`2.357e20` against `2.016e20`, the
+   exact `(1-0.6²)^alphan` factor) and `.neoclassics.dr_densities` (`-0.0` against
+   `-6.104e19`) went from disagreeing to agreeing. The prediction that nothing would be
+   visible until item 2 landed was **correct**.
+
+   **But the fix is larger than the harness can still show, and that is a new finding.**
+   `.neoclassics.temperatures`/`.dr_temperatures` were *equally* wrong before and are
+   reported as agreements both before and after — they are stored in Joules (~`1e-15`),
+   and `compare`'s `atol=1e-9` makes any field whose natural magnitude is below that
+   vacuously close whatever its value. That is a **third measurement hole of the same
+   family as §6.2**, found by chasing this one, and it is not yet fixed: an `atol` in
+   absolute units cannot serve a `DataStructure` whose fields span `1e-15` to `1e20`.
+2. **[CLOSED] Make `mda_harness.compare` stop swallowing arrays** (§6.2). Arrays are now
+   compared elementwise and reported as **one** `Disagreement` carrying the worst element
+   (`shape`/`index`/`n_off`), so an off-by-one profile is one line and not 201; a pair
+   that cannot be compared at all (non-numeric, or mismatched shapes) becomes an explicit
+   `errors` entry rather than a `continue`; and `ComparisonReport` gained
+   `owned_total`/`unaccounted`, an invariant that every owned variable lands in exactly
+   one bucket. Measured: **the hole was 25 variables, not 29** — 21 arrays were silently
+   *agreeing* and 4 silently *disagreeing* (`ProfileValues`'s two, and
+   `PlantElectricProductionReactor`'s two profile arrays, which are the
+   `a_plant_floor_effective` offset §6.3 already explains, in array form). The estimate of
+   29 was the count of array-valued owned variables, not of ones reaching the comparison.
+3. **[CLOSED] `.fwbs` S4 masses — 6 fields, one unit, zero cycle risk.** Ported as the
+   new unit `stellarator_fwbs_s4.py`: `BlanketComponentMasses` (under a new synthetic
+   joint `Switch` on `.fwbs.blktmodel,.fwbs.blkttype` — the `blktmodel != 0` arm never
+   writes `m_blkt_li2o`/`m_blkt_vanadium` at all, so an unconditional registration would
+   have been the `EcrhDensityLimit` bug class again) and `ShieldMass` (`COMMON`,
+   unbranched in `st_fwbs`). Measured: **+7 compared outputs, all agreements, no new
+   disagreement, no new SCC**; the zero-cycle-risk claim held. **The prediction "−6
+   boundary inputs" was wrong**: six edges closed but five new genuine inputs appeared
+   behind them (`fblli2o`, `fblbe`, `fblss`, `fblvd`, `vfshld`, each checked individually
+   and each assigned nowhere in `process/`), so the count went 376 → 375, not 370.
+   Incidental: `.fwbs.vol_blkt_total`/`vol_shld_total` had **zero readers** before this —
+   S1 computed both and the graph discarded them.
+
+   Original entry, for the record: port
    `stellarator.py:1045-1274`'s mass block as ordinary `ExplicitFunction`s reading
    `FwBlanketShieldGeometry`'s `vol_blkt_total`/`vol_shld_total`. `unit_registry.md`:63's
    stated blocker (S2/S3 signatures) is discharged. Expected effect: −6 boundary inputs,
    +6 comparable outputs, no new SCC. Watch `BlanketCost`/`ShieldCost`/`Bldgs`, which
    currently consume the seeded values and would start consuming computed ones.
-4. **`.tfcoil.len_tf_coil` (+ `.tfcoil.tfcryoarea`)** — a `ZTfInsideHalf`-shaped node pair
-   in the same file, formulas already written at
-   `functional_process/models/stellarator/coils/calculate.py:1599-1608`. **Needs the design
-   decision in (c1)** about `PlasmaFacingCoilArea`'s stale read; do not close it silently.
-   Expected effect: −1 boundary input (−2 once `Cryo`/`CryoLoads` land), +2 comparable
-   outputs.
-5. **`.physics.fusden_total` / `.fusden_alpha_total`** — port `stellarator.py:2002-2054`.
-   Cheap arithmetically (two identities on this run), but it is the **one** item that
-   touches a driven block, and it turns a `PicardDriver` starting guess into something a
-   branch predicate depends on. Do it after 3 and 4 so that a harness move can be
-   attributed.
-6. **`.physics.p_plasma_inner_rad_mw`** — **blocked on a decision, not on work**: the zero
-   clip at `stellarator.py:2152-2155` must be given an owner first, or `PlasmaRadiationPowers`
-   would feed an unclipped value into the product. Resolve that (it also unblocks
-   `mda_harness.KNOWN_MINT_VALUES`'s deliberately-absent
-   `pden_impurity_core_rad_total_mw` entry) and this becomes a one-line node.
-7. **`Cryo`/`CryoLoads`** — largest design cost, lowest ratio. Needs the Shape-B
+4. **[CLOSED] `.tfcoil.len_tf_coil` (+ `.tfcoil.tfcryoarea`)** — both ported as
+   `ZTfInsideHalf`-shaped nodes in the same file (`TfCryoArea`, then `LenTfCoil`);
+   `min_bending_radius`, the third formula in that block, still has no reader and stays
+   inline.
+
+   **The (c1) design decision is resolved: bind fresh.** The question was whether
+   `PlasmaFacingCoilArea`'s read-before-write needs modelling as a `FixedPointFunction`
+   self-loop. It does not, and the reason is structural rather than numerical: there is
+   **no feedback path**. `len_tf_coil`'s own inputs are two `stellarator_config`
+   boundary values plus `.stellarator.r_coil_minor`/`.tfcoil.n_tf_coils`, owned by
+   `StellaratorScalingFactors`, which §4c (c1) already measured to be unreachable from
+   all four readers. So the loop equation would be `x = g()` with `g` not depending on
+   `x` — a **degenerate** fixed point, which `sand.degenerate_fixed_points` drops on
+   sight (it already drops `EtaTurbineStep` and `CplifeAvail`). Modelling PROCESS's
+   Gauss-Seidel read-before-write as a cycle would not be more faithful; it would add a
+   block that is deleted for being an identity. The staleness is a property of PROCESS's
+   *schedule*, not of the dependency structure, and this port does not model PROCESS's
+   round structure at all.
+
+   Confirmed empirically, which is what makes it more than an argument: registering
+   `LenTfCoil` gave **+1 agreement and no change to the 34 disagreements** — so
+   `PlasmaFacingCoilArea` reading the *fresh* value still reproduces PROCESS's converged
+   answer exactly. The honest caveat: `Caller.call_models` checks idempotence on the
+   objective and constraints at `rtol=1e-6`, not per field, so stale and fresh can
+   differ *transiently* while upstream is still moving. They cannot differ at a
+   converged point, which is what every harness here compares.
+
+   **It also closed a cold-start `nan`.** `.costs.c22211`/`.c2221` came out `nan` from a
+   cold `DataStructure` because every coil mass is proportional to `len_tf_coil`, making
+   `costtfcu = uccu * m_tf_coil_copper / (len_tf_coil * n_tf_coil_turns)` a `0.0 / 0.0`
+   — diagnosed as a missing producer, not a costs defect, and fixed by the producer.
+5. **[CLOSED, and it was worth more than this entry predicted] `.physics.fusden_total` /
+   `.fusden_alpha_total`** — ported as `FusionTotalsNoBeam`
+   (`stellarator_B_st_phys.py`), the `else` arm of `stellarator.py:2002-2054`, three
+   identities including `.physics.p_dt_total_mw`. Registered unconditionally: the arm is
+   selected by `i_plasma_ignited == IGNITED` on this run, not merely by the absence of a
+   beam, and the beam arm calls the unportable `reactions.beam_fusion` (unit #19), so
+   there is no second arm to switch between.
+
+   **This closed `next_steps.md` §11.6 item 3 — `c62`'s Jacobian row, "the only cell in
+   the whole Jacobian disagreeing for an unknown reason".** The reason was here:
+   `t_alpha_confinement = nd_plasma_alphas_thermal_vol_avg / fusden_alpha_total`, and
+   with the denominator frozen as a boundary input the ratio had no temperature
+   derivative at all. Measured on the c62 row, before → after: x4 `5.10e+00*` →
+   `5.42e-04`, x6 `6.66e+00*` → `3.99e-05`, x109 `1.41e-01*` → `3.25e-07`; c2, c8, c17,
+   c18 and c67 improved too, several losing their error-bar stars. The only starred
+   cells left in the whole Jacobian are `objf`/`c16` (PROCESS's own report-pass
+   inconsistency) and `c24 x3` (a division by PROCESS's exact zero). Stage C2 went from
+   47 to 34 SQP iterations. **Third instance of the iteration-variable-4 defect class**:
+   a missing producer that every value test passes and only a gradient sees.
+
+   The cycle warning in the original entry was right. The density/fusion cycle now needs
+   **two** cuts — `mda.CUTS` gained `.physics.fusden_alpha_total`, and `driven_graph`
+   groups a cycle's cuts into one `FixedPointCut` so the block declares one `FixedPoint`
+   over both unknowns rather than two problems one driver cannot answer. Which second cut
+   was **measured, not chosen**: of the 42 variables owned inside the enlarged 6-node
+   cycle it is the only one that works paired with `proton_rate_density`, and no single
+   variable works alone.
+6. **[CLOSED] `.physics.p_plasma_inner_rad_mw`** — ported as `ClippedRadiationPowers`
+   (`stellarator_B_st_phys.py`), which owns four outputs rather than the one this entry
+   anticipated: `stellarator.py:2152-2166` is a single straight-line block containing
+   **two** clips (core *and* outer, not just core as this entry said) and the two total
+   powers PROCESS forms from the clipped values.
+
+   **The clip's owner, decided.** It belongs to the caller, and that is a modelling fact
+   rather than a filing preference: `calculate_radiation_powers` has two callers in
+   PROCESS and only `st_phys` clips (`physics.PhysicsCalculations.physics()`,
+   `physics.py:750-753`, does not). A clip inside the callee would be wrong for the other
+   caller. So `PlasmaRadiationPowers` now mints
+   `.physics.pden_plasma_core_rad_mw_unclipped`/`..._outer_...`, and this node owns the
+   real fields. That also removes a **latent divergence** nobody had noticed: the port
+   previously claimed the real, clipped fields while computing the *pre*-clip value.
+
+   The clip itself turned out to be the least interesting part — `jnp.maximum(x, 0.0)`,
+   one line, no `sqrt`-style gradient trap, and **measured inactive** at this run's
+   converged point (core `0.0575`, outer `0.0553`), so no value moved. The prize was the
+   missing producer: `.physics.p_plasma_inner_rad_mw` is read by
+   `StellaratorConfinementTime` and had been a frozen boundary input. **+4 agreements, 34
+   disagreements unchanged.** Two `KNOWN_MINT_VALUES` entries keep the unclipped mints
+   comparable, exact while the clip is inactive and a lower bound otherwise — the same
+   discipline `.stellarator.wp_width_r_min` already uses.
+7. **[CLOSED] `Cryo`/`CryoLoads`** — split into `CryoQNucStep` (owning `.fwbs.qnuc`)
+   and `CryoQLoadsStep` (owning `.power.qss`/`qac`/`qcl`/`qmisc`), two
+   `FixedPointFunction`s rather than one, **because the five fields carry two different
+   ownership conditions**: one node owning all five would give a residual block that is
+   identity on the `qnuc` row and constant on the other four at `inuclear == 1`, a
+   rank-deficient equality `degenerate_fixed_points` cannot drop (it drops only when the
+   *whole* residual vanishes). Plus `CryoLoads` (unconditional) owning `helpow`,
+   `p_cryo_plant_electric_mw`, `helpow_cryal`, `cryo_cool_req`. Measured: **+15 compared
+   outputs, no new disagreement, 2 new driven blocks**, and — the interesting part —
+   **four of `c16`'s six error-bar stars vanished from the Stage B Jacobian**: with the
+   `q*` fields frozen, the whole `helpow → p_cryo_plant_electric_mw →` net-electric-power
+   path had *zero* sensitivity to `coldmass`, `n_tf_coils`, `tfcryoarea` and three
+   others. Fourth instance of the iteration-variable-4 defect class. Boundary inputs went
+   **up** (2 closed, 6 opened, four of them on an `i_tf_sup == 2` branch this
+   configuration never takes) — the same 6-for-5 shape item 3 produced.
+
+   Original entry: largest design cost, lowest ratio. Needs the Shape-B
    `FixedPointFunction` split for `.fwbs.qnuc` and `.power.qss`/`qac`/`qcl`/`qmisc`
    (`total_process.py:1127-1134`), *and* item 4 for `.tfcoil.tfcryoarea`. Note the file is
    concurrently owned. Expected effect: −2 boundary inputs, +9 comparable outputs, +1 or +2
@@ -624,3 +752,39 @@ existing owner.
   `blktmodel = 1`, `isthtr = 3`, `i_tf_sup = 0` or tokamak configuration would reclassify
   many of the 46 as real gaps. The (d) table records the switch and the value each time so
   that re-running the classification for another configuration is mechanical.
+
+## 9. Cold start: what these seven items bought, and what is left
+
+The audit's own framing was "which boundary inputs should not be boundary inputs". The
+answer turned out to matter for a bigger reason than tidiness: a boundary input is a
+**frozen constant**, so every one of them is a derivative that is structurally zero, and
+a cold `DataStructure` has `0.0` in every model-computed field, so every one of them is
+also a cold-start `nan` waiting to happen. Both showed up:
+
+- **Six instances of the same defect class** were closed by these items and their
+  neighbours — iteration variable 4's temperatures, `c62`'s `fusden_alpha_total`, the
+  cryogenic `q*` fields, `len_tf_coil`, `p_plasma_inner_rad_mw`, and the whole
+  `stellarator_config` table. In *every* case the value at the converged point was
+  already right and only a gradient (or a cold run) could see the defect. That is the
+  rewrite's case, made six times in one day.
+- **Cold start went from "nan immediately" to "runs".** The largest single contributor
+  was not on this list at all: `load_stellarator_config` was unported, so
+  `.stellarator_config.*` were all `0.0` and `n_tf_coils` was `0` cold. Two others were:
+  `len_tf_coil` (the TF cost `nan`s) and the `Intersect` starting guess — the latter not
+  a producer gap but a *driver* one, since the residual is exactly flat below `x ~ 0.1`
+  and Newton cannot move from `0.0`. See `SeededNewtonDriver`.
+
+**Where this handed over** (updated -- the item below is **closed**, see
+`next_steps.md` §11.8): at the time of writing, the SAND optimisation still took **zero**
+SQP steps from a cold start (`cvxpy`/OSQP reporting a non-convex KKT matrix) where PROCESS
+solved the same cold problem in 46 VMCON iterations, and that was correctly called a
+solver/formulation question rather than a graph-completeness one. It was neither. The
+cause was in the *harness*: `run_sand_harness._seed` tried `ground_truth` first for every
+unknown, and since every coupling unknown has a `DataStructure` field holding the default
+`0.0`, twelve of twenty-three unknowns started at exactly zero -- a physically impossible
+point (net electric `-1.9e6` MW) whose Jacobian carried 46 `nan` cells. With the seeding
+rule made stage-dependent, cold SAND solves in **91 SQP steps**, conv `1.86e-09`.
+
+Recorded rather than deleted because the misattribution is the lesson: a graph that is
+complete can still be handed a starting point that no amount of solver work will rescue,
+and "the optimiser cannot start" looked exactly like a formulation defect.

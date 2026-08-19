@@ -35,6 +35,7 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
 from process.core import constants
+from functional_process.models.safe_math import safe_sqrt
 
 
 def rether(
@@ -76,7 +77,7 @@ def rether(
         Ion/electron equilibration power density (MW/m^3).
     """
     profie = (1.0 + alphan) ** 2 / (
-        (2.0 * alphan - 0.5 * alphat + 1.0) * jnp.sqrt(1.0 + alphat)
+        (2.0 * alphan - 0.5 * alphat + 1.0) * safe_sqrt(1.0 + alphat)
     )
     conie = (
         2.42165e-41
@@ -344,7 +345,7 @@ def fast_alpha_beta(
             0.30,
             0.26
             * density_ratio_sq
-            * jnp.where(positive, jnp.sqrt(jnp.where(positive, above, 1.0)), 0.0),
+            * jnp.where(positive, safe_sqrt(jnp.where(positive, above, 1.0)), 0.0),
         )
     fact = jnp.maximum(fact, 0.0)
 

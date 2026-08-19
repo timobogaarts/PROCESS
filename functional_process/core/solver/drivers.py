@@ -23,11 +23,355 @@ candidate for `PicardDriver` -- it answers any `FixedPoint`, generically, the sa
 import jax
 import jax.numpy as jnp
 import numpy as np
+import optimistix as optx
 from cottax.evaluate import AbstractDriver, ConditionMap
-from cottax.problem import FixedPoint, Optimise
+from cottax.problem import FixedPoint, Optimise, RootFind
 from cottax.spec import VarPath
 from cottax.tools.path import written
 from jax.flatten_util import ravel_pytree
+
+
+def scaled_problem(driver, conditions: ConditionMap, start: tuple):
+    """The pieces every SQP driver here needs, built once from a block's `ConditionMap`.
+
+    Returns `(evaluate, jacobian, unravel, scale, condition_scale, bounds)`, where
+    `evaluate`/`jacobian` take a **scaled** flat design vector and return
+    already-scaled values and Jacobian, `unravel` puts a flat vector back into the
+    block's unknown pytree, and `bounds` is `(lower, upper)` in scaled coordinates.
+
+    Extracted so `VmconDriver` and `SlsqpDriver` differ **only** in which solver they
+    hand the same problem to. That is the whole point of having two: if one takes a
+    step from a point where the other cannot, the difference is the solver's QP
+    handling, and if neither can, the difference is the problem. A shared builder is
+    what makes that a controlled comparison rather than two implementations that might
+    be scaling differently.
+
+    The scaling rules are `VmconDriver`'s, unchanged and deliberately not re-derived
+    here -- design variables by `1 / x_start` (PROCESS's own conditioning, from
+    `load_iteration_variables`), conditions by `driver.condition_scale`, and bounds by
+    the same design factor with the swap a negative scale forces.
+    """
+    flat_start, unravel = ravel_pytree(start)
+    flat_start = np.asarray(flat_start, dtype=float)
+
+    scale = np.ones_like(flat_start)
+    if getattr(driver, "scaled", True):
+        # `np.divide(..., where=)` rather than `np.where(cond, 1/x, 1)`: the latter
+        # evaluates `1/x` everywhere first, so a zero start warns before the select
+        # discards it. Exact comparison is deliberate -- exactly zero has no scale.
+        np.divide(1.0, flat_start, out=scale, where=flat_start != 0.0)  # noqa: RUF069
+
+    by_name = {var: float(factor) for var, factor in driver.condition_scale}
+    stray = set(by_name) - set(conditions.conditions)
+    if stray:
+        raise ValueError(
+            f"condition_scale names {written(tuple(stray))}, which this block does not "
+            f"read as a condition (it reads {written(conditions.conditions)})"
+        )
+    condition_scale = np.array(
+        [by_name.get(c, 1.0) for c in conditions.conditions], dtype=float
+    )
+
+    def flat_conditions(flat_x):
+        return jnp.stack([jnp.asarray(v) for v in conditions(*unravel(flat_x))])
+
+    _evaluate = jax.jit(flat_conditions)
+    _jacobian = jax.jit(jax.jacfwd(flat_conditions))
+
+    def evaluate(x_scaled):
+        flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
+        return np.asarray(_evaluate(flat_x), dtype=float) * condition_scale
+
+    def jacobian(x_scaled):
+        flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
+        # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column, one
+        # `condition_scale` factor per row.
+        return (
+            np.asarray(_jacobian(flat_x), dtype=float)
+            * condition_scale[:, None]
+            / scale[None, :]
+        )
+
+    limits = {var: (lo, hi) for var, lo, hi in driver.bounds}
+    lower = np.array(
+        [limits.get(v, (-np.inf, np.inf))[0] for v in conditions.unknowns], dtype=float
+    )
+    upper = np.array(
+        [limits.get(v, (-np.inf, np.inf))[1] for v in conditions.unknowns], dtype=float
+    )
+    # A negative scale (a variable starting below zero) swaps which bound is which.
+    scaled_lower = np.where(scale > 0, lower * scale, upper * scale)
+    scaled_upper = np.where(scale > 0, upper * scale, lower * scale)
+    return evaluate, jacobian, unravel, scale, condition_scale, (scaled_lower, scaled_upper)
+
+
+def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
+    """Raise if any condition value or derivative is not finite, naming which.
+
+    This is the port's missing analogue of PROCESS's own guard: `constraint_eqns`
+    refuses `nan`, `inf` or `|cc| > 9.99e99` before its solver ever sees them
+    (`process/core/solver/constraints.py:1997-2002`). Without it a `nan` row reaches
+    `cvxpy` and comes back as *"the problem seems to be non-convex"* -- a message that
+    points at the Hessian when the fault is in the constraint matrix.
+
+    That is not hypothetical: it cost a full investigation. A cold SAND start produced
+    46 non-finite Jacobian cells confined to exactly two rows, and the whole diagnosis
+    was reconstructing which rows they were. This message says it outright.
+
+    Values and derivatives are reported separately because they fail separately: every
+    one of the 30 conditions was **finite in value** at that point and only the
+    derivatives were `nan`, which is precisely what made the failure look mysterious.
+    """
+    names = [c.path_str() for c in conditions.conditions]
+    bad_values = [n for n, v in zip(names, values, strict=True) if not np.isfinite(v)]
+    bad_rows = [
+        n
+        for n, row in zip(names, jacobian, strict=True)
+        if not np.all(np.isfinite(row))
+    ]
+    if not bad_values and not bad_rows:
+        return
+    unknowns = [u.path_str() for u in conditions.unknowns]
+    zeroed = [
+        u for u, col in zip(unknowns, jacobian.T, strict=True) if not np.any(col != 0.0)
+    ]
+    raise ValueError(
+        "the SQP was handed a non-finite problem, so its QP subproblem cannot be "
+        "trusted (a solver will usually report this as non-convexity or infeasibility, "
+        "which is not what is wrong):\n"
+        f"  non-finite condition values:      {bad_values or 'none'}\n"
+        f"  non-finite derivative rows:       {bad_rows or 'none'}\n"
+        f"  unknowns with an all-zero column: {zeroed or 'none'}\n"
+        "A derivative that is `nan` where the value is finite usually means an "
+        "unbounded slope evaluated at its boundary -- `x ** p` with `0 < p < 1`, or "
+        "`sqrt`, at exactly `0.0` -- reached because an unknown was started there."
+    )
+
+
+class SlsqpDriver(AbstractDriver):
+    """`scipy.optimize.minimize(method="SLSQP")` answering `Optimise`, on exactly the
+    problem `VmconDriver` receives.
+
+    **Why a second SQP.** PROCESS solves this design problem from a cold `IN.DAT` in 46
+    VMCON iterations; the port's SAND formulation, cold, takes **zero** steps --
+    `cvxpy`/OSQP reports a non-convex KKT matrix inside `pyvmcon` and the line search
+    never starts. Two explanations fit that equally well: the QP subproblem's handling,
+    or the problem's own conditioning at a cold point. A second, independently written
+    SQP with its own QP solver, its own line search and its own Hessian update
+    (SLSQP maintains a BFGS approximation with a positive-definite safeguard, where
+    `pyvmcon` builds its QP directly) **separates them**: if SLSQP steps where VMCON
+    cannot, it is the solver; if neither steps, it is the problem. That experiment is
+    the reason this class exists, and it is worth more than either solver's convergence
+    record.
+
+    Both drivers build their problem through `scaled_problem` above, so the comparison
+    is controlled: same scaling, same bounds, same `jax.jacfwd` Jacobian, same sign
+    convention translation. Only the solver differs.
+
+    **Sign conventions.** cottax states inequalities as `g <= 0`; SLSQP's `ineq`
+    constraints are `c(x) >= 0`, so they are negated -- the same flip `VmconDriver`
+    documents for VMCON's `i >= 0`, arrived at independently for a different library.
+    The objective is condition 0, equalities follow, inequalities last: the positional
+    contract `ConditionMap` cannot carry (see `VmconDriver.n_equality`).
+
+    Not a replacement for `VmconDriver`: PROCESS's own solver stays the reference for
+    any claim about reproducing PROCESS. This is a second opinion, which this project's
+    own history says is worth having -- five confident diagnoses were overturned by
+    measurement in one session.
+    """
+
+    drives = Optimise
+
+    n_equality: int = 0
+    n_inequality: int = 0
+    bounds: tuple = ()
+    scaled: bool = True
+    condition_scale: tuple = ()
+    max_iter: int = 100
+    tolerance: float = 1e-8
+    callback: object = None
+    """`f(iteration, x_unscaled) -> None`, or `None`. Plain callable, leaf-free, same
+    treatment as `VmconDriver.callback`."""
+
+    def __call__(self, conditions: ConditionMap, start: tuple | None) -> tuple:
+        """Values for the block's unknowns, positionally.
+
+        Raises
+        ------
+        ValueError
+            If `start` is `None`, or if the declared equality/inequality counts do not
+            account for every condition the block reads.
+        """
+        from scipy.optimize import minimize
+
+        if start is None:
+            raise ValueError(
+                f"SlsqpDriver needs a starting value for every unknown "
+                f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply "
+                f"one in env, same as any other unowned input"
+            )
+        expected = 1 + self.n_equality + self.n_inequality
+        if expected != len(conditions.conditions):
+            raise ValueError(
+                f"SlsqpDriver was told {self.n_equality} equalities and "
+                f"{self.n_inequality} inequalities, i.e. {expected} conditions with the "
+                f"objective, but the block declares {len(conditions.conditions)} "
+                f"({', '.join(written(conditions.conditions))})"
+            )
+
+        evaluate, jacobian, unravel, scale, _, (lower, upper) = scaled_problem(
+            self, conditions, start
+        )
+        meq = self.n_equality
+        x0 = np.asarray(ravel_pytree(start)[0], dtype=float) * scale
+
+        # One evaluation per point, reused by objective and every constraint: SLSQP
+        # calls `fun`, `jac` and each constraint separately at the same `x`, and an
+        # evaluation here converges a whole block.
+        cache: dict = {}
+
+        def at(x):
+            key = x.tobytes()
+            if key not in cache:
+                cache.clear()  # only the current point is ever wanted
+                cache[key] = (evaluate(x), jacobian(x))
+            return cache[key]
+
+        iteration = [0]
+
+        def objective(x):
+            return float(at(np.asarray(x))[0][0])
+
+        def objective_gradient(x):
+            return at(np.asarray(x))[1][0]
+
+        constraints = [
+            {
+                "type": "eq",
+                "fun": lambda x: at(np.asarray(x))[0][1 : 1 + meq],
+                "jac": lambda x: at(np.asarray(x))[1][1 : 1 + meq],
+            },
+            {
+                # cottax `g <= 0` -> SLSQP `c(x) >= 0`.
+                "type": "ineq",
+                "fun": lambda x: -at(np.asarray(x))[0][1 + meq :],
+                "jac": lambda x: -at(np.asarray(x))[1][1 + meq :],
+            },
+        ]
+        constraints = [c for c in constraints if len(np.atleast_1d(c["fun"](x0)))]
+
+        def on_step(xk):
+            iteration[0] += 1
+            if self.callback is not None:
+                self.callback(iteration[0], np.asarray(xk) / scale)
+
+        result = minimize(
+            objective,
+            x0,
+            jac=objective_gradient,
+            bounds=list(zip(lower, upper, strict=True)),
+            constraints=constraints,
+            method="SLSQP",
+            options={"maxiter": self.max_iter, "ftol": self.tolerance},
+            callback=on_step,
+        )
+        # No `self.last_result = ...`: an `eqx.Module` is frozen, and a driver that
+        # mutated itself would not survive being reused across blocks anyway. What the
+        # solver said is reported through `callback`, like `VmconDriver`'s.
+        if self.callback is not None:
+            self.callback(-1, np.asarray(result.x, dtype=float) / scale)
+        return unravel(jnp.asarray(np.asarray(result.x, dtype=float) / scale))
+
+
+class SeededNewtonDriver(AbstractDriver):
+    """`cottax.drivers.NewtonDriver`, plus a fallback starting guess derived from the
+    block's own **context** when the one supplied in `env` is unusable.
+
+    Exists because a `RootFind`'s starting guess is seeded from the converged
+    `DataStructure` (`mda_harness.KNOWN_MINT_VALUES`), and some of those seeds are
+    fields PROCESS only has *after* a run. Cold, they are `0.0`. That is fatal rather
+    than merely inaccurate for the coil island: measured at a cold design point, the
+    `Intersect` residual is **exactly flat** (`-8329.4857`) everywhere below
+    `x ~ 0.1`, so at `0.0` the derivative is zero and Newton cannot move at all --
+    `optimistix` aborts and takes the whole schedule with it.
+
+    The fallback is not an invention: `winding_pack_pre_intersect` already computes
+    PROCESS's own guess for this unknown,
+    `wp_width_r_min_guess = (r_coil_minor / (20 if i_tf_sc_mat == 6 else 10)) ** 2`
+    (`coils/calculate.py:737`), which `WindingPackIntersectInputs` deliberately does not
+    wire through as an `Output` -- a starting guess is a property of the algorithm, not
+    an edge of the model, and putting it in the graph would say the opposite. But the
+    quantity it is computed *from* is graph-owned, so it cannot be read off a cold
+    `DataStructure` either. The resolution is that `ConditionMap.context` carries every
+    value the block closed over, at the moment the block runs: the driver reads
+    `r_coil_minor` from there, live, with no new edge and no new node. Measured cold:
+    Newton from `0.0` fails, Newton from the guess (`0.1786`) converges.
+
+    `seed` is only consulted when the supplied `start` is missing or unusable, so a
+    warm run -- every harness here -- keeps its existing starting values and its
+    existing answers bit for bit.
+    """
+
+    drives = RootFind
+
+    rtol: float = 1e-4
+    atol: float = 1e-4
+    seed: object = None
+    """`f(ConditionMap) -> tuple` giving one starting value per unknown, or `None`.
+
+    Not `eqx.field(static=True)`: a plain callable is already a leaf-free static field,
+    the same treatment `VmconDriver.callback` documents.
+    """
+
+    def __call__(self, conditions: ConditionMap, start: tuple | None) -> tuple:
+        if self.seed is not None and not _usable(start):
+            start = self.seed(conditions)
+        if start is None:
+            raise ValueError(
+                f"SeededNewtonDriver needs a starting value for every unknown "
+                f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply "
+                f"one in env, or give this driver a `seed`"
+            )
+        flat_guess, unravel = ravel_pytree(start)
+
+        def residual(flat, args=None):
+            out, _ = ravel_pytree(conditions(*unravel(flat)))
+            return out
+
+        solution = optx.root_find(
+            residual, optx.Newton(rtol=self.rtol, atol=self.atol), flat_guess
+        )
+        return unravel(solution.value)
+
+
+def _usable(start) -> bool:
+    """Whether `start` is a starting guess at all.
+
+    Exactly zero counts as unusable, not as a value. That is a judgement, and it is the
+    right one *here*: `0.0` is what this port's seeding writes when a field has no
+    converged value to copy, so it means "absent", and a root find started at a
+    structural placeholder is not a solve. A block whose true root is genuinely `0.0`
+    would be re-seeded to the same neighbourhood by its own `seed` anyway.
+    """
+    if start is None:
+        return False
+    flat, _ = ravel_pytree(start)
+    if isinstance(flat, jax.core.Tracer):
+        # Under a trace there is no value to inspect, and `np.asarray` on a tracer
+        # raises. Treat it as usable: a tracer is by construction not the concrete
+        # `0.0` placeholder this guard exists to catch, and refusing here would make
+        # every `Schedule` containing a seeded Newton unjittable and
+        # undifferentiable -- which it was, until `mdf.py` hit exactly that.
+        return True
+    flat = np.asarray(flat)
+    return (
+        bool(flat.size)
+        and bool(np.all(np.isfinite(flat)))
+        # Exact comparison is deliberate, as in `VmconDriver`'s own scaling: it is
+        # exactly zero -- the placeholder this port's seeding writes -- that means
+        # "absent", not a neighbourhood of zero.
+        and bool(np.any(flat != 0.0))  # noqa: RUF069
+    )
 
 
 class PicardDriver(AbstractDriver):
@@ -210,7 +554,27 @@ class VmconDriver(AbstractDriver):
     Deliberately **explicit and per-condition rather than automatic**: PROCESS's own
     fourteen constraints must keep scale `1.0` or the iterates stop being comparable with
     PROCESS's. `functional_process.sand.residual_condition_scales` supplies factors for
-    exactly the residual conditions and nothing else."""
+    exactly the residual conditions and nothing else.
+
+    Nothing here bounds the factors, and that is the caller's problem to get right: a
+    single row weighted far above the rest wrecks the QP for every *other* row too. Once
+    measured, in exactly this driver -- one residual whose unknown was identically zero
+    was handed `1e12` by a clamped `1/max(|u|, floor)`, which took the condition number
+    of the Jacobian this driver hands VMCON (rows by `condition_scale`, columns by
+    `scaled`) from `2.1e4` to `6.7e12`, and Stage C2 from 62 SQP iterations to 73 -- and,
+    on the tree state where it was first seen, to `max_iter` without converging.
+    `functional_process.sand.residual_condition_scales`' docstring records the rule that
+    replaced it and the caveats on that iteration count.
+
+    **Small factors are not the safe direction either.** Down-weighting a row buys
+    conditioning by telling VMCON that constraint matters less. Measured on the
+    coil-island (`Intersect`) residual, which is the largest row left and the only one
+    whose units are genuinely *not* its unknown's: equilibrating it by its own row norm
+    takes the condition number `2.1e4` -> `85`, and C2 from converging in 62 iterations
+    to `max_iter` without converging. Condition number is a diagnostic here, not an
+    objective to minimise, and the residue -- a fifth to a third of QP subproblems
+    solving inaccurately by `cvxpy`'s own warning -- is not obviously a scaling problem
+    at all."""
     scaled: bool = True
     """Whether to solve in PROCESS's `x * (1/x_start)` scaled coordinates."""
     max_iter: int = 100
@@ -298,6 +662,7 @@ class VmconDriver(AbstractDriver):
                     * condition_scale[:, None]
                     / scale[None, :]
                 )
+                _refuse_non_finite(values, full, conditions)
                 return Result(
                     f=values[0],
                     df=full[0],

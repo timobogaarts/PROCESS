@@ -28,8 +28,8 @@ fusion_reactions.deuterium_branching(self.data.physics.temp_plasma_ion_vol_avg_k
 fusion_reactions.calculate_fusion_rates()
 fusion_reactions.set_physics_variables()
 ...
-reactions.beam_fusion(...)               # only under `p_hcd_beam_injected_total_mw != 0`
-                                          # and non-ignited plasma
+reactions.beam_fusion(...)  # only under `p_hcd_beam_injected_total_mw != 0`
+# and non-ignited plasma
 ...
 reactions.set_fusion_powers(...)
 ```
@@ -104,11 +104,13 @@ def calculate_deuterium_branching_trit(ion_temperature: float) -> float:
     """Ports `.deuterium_branching()`."""
     ...
 
+
 def bosch_hale_reactivity(
     ion_temperature_profile: jax.Array, reaction_constants: BoschHaleConstants
 ) -> jax.Array:
     """Ports the module-level function of the same name, unchanged in shape."""
     ...
+
 
 def calculate_fusion_rates(
     profile_x: jax.Array,
@@ -127,6 +129,7 @@ def calculate_fusion_rates(
     'cottax node' below for why these two collapse into one pure function rather than
     staying separate."""
     ...
+
 
 def set_fusion_powers(
     f_alpha_electron: float,
@@ -271,6 +274,7 @@ caution.
 ```python
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
+
 class FusionRates(ExplicitFunction):
     pden_plasma_alpha_mw = Output(lambda s: s.physics.pden_plasma_alpha_mw)
     pden_non_alpha_charged_mw = Output(lambda s: s.physics.pden_non_alpha_charged_mw)
@@ -297,24 +301,36 @@ class FusionRates(ExplicitFunction):
         profile_x=Input(lambda s: s.physics.radius_plasma_profile_norm),
         te_profile_y=Input(lambda s: s.physics.temp_plasma_electron_profile_kev),
         ne_profile_y=Input(lambda s: s.physics.nd_plasma_electron_profile),
-        temp_plasma_ion_vol_avg_kev=Input(lambda s: s.physics.temp_plasma_ion_vol_avg_kev),
+        temp_plasma_ion_vol_avg_kev=Input(
+            lambda s: s.physics.temp_plasma_ion_vol_avg_kev
+        ),
         temp_plasma_electron_vol_avg_kev=Input(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
         f_plasma_fuel_deuterium=Input(lambda s: s.physics.f_plasma_fuel_deuterium),
         f_plasma_fuel_tritium=Input(lambda s: s.physics.f_plasma_fuel_tritium),
         f_plasma_fuel_helium3=Input(lambda s: s.physics.f_plasma_fuel_helium3),
-        nd_plasma_fuel_ions_vol_avg=Input(lambda s: s.physics.nd_plasma_fuel_ions_vol_avg),
-        nd_plasma_electrons_vol_avg=Input(lambda s: s.physics.nd_plasma_electrons_vol_avg),
+        nd_plasma_fuel_ions_vol_avg=Input(
+            lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
+        ),
+        nd_plasma_electrons_vol_avg=Input(
+            lambda s: s.physics.nd_plasma_electrons_vol_avg
+        ),
     ):
         f_dd_branching_trit = calculate_deuterium_branching_trit(
             temp_plasma_ion_vol_avg_kev
         )
         return calculate_fusion_rates(
-            profile_x, te_profile_y, ne_profile_y,
-            temp_plasma_ion_vol_avg_kev, temp_plasma_electron_vol_avg_kev,
-            f_plasma_fuel_deuterium, f_plasma_fuel_tritium, f_plasma_fuel_helium3,
-            nd_plasma_fuel_ions_vol_avg, nd_plasma_electrons_vol_avg,
+            profile_x,
+            te_profile_y,
+            ne_profile_y,
+            temp_plasma_ion_vol_avg_kev,
+            temp_plasma_electron_vol_avg_kev,
+            f_plasma_fuel_deuterium,
+            f_plasma_fuel_tritium,
+            f_plasma_fuel_helium3,
+            nd_plasma_fuel_ions_vol_avg,
+            nd_plasma_electrons_vol_avg,
             f_dd_branching_trit,
         )
 ```
@@ -342,3 +358,33 @@ above for the one input with no current producer, `.physics.p_beam_alpha_mw`).
    the minted-`VarPath` note above) — low-confidence on this point specifically, since it
    rests on reading `profiles.py`'s constructors rather than unit #21's own (still
    pending) audit.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+1 fractional power law and 5 square roots in this file have been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

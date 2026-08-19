@@ -135,6 +135,7 @@ deliberately not part of this signature (see "Framing" above).
 ```python
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
+
 class DivertorPlateMass(ExplicitFunction):
     m_div_plate = Output(lambda s: s.divertor.m_div_plate)
 

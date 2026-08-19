@@ -521,6 +521,42 @@ def residual_condition_scales(drive, env, floor=1e-12):
     `^hat.X`; and an `ImplicitFunction`'s (`Intersect`) is `^cond.X` against `.X`.
     Stripping every minted root with `unminted` collapses all three to the same place,
     which is what makes one rule cover them.
+
+    An unknown with no scale of its own keeps a factor of `1.0`
+    -------------------------------------------------------------
+    `floor` is the magnitude below which `|u|` stops being a usable scale, and the
+    answer there is **`1.0`, not `1/floor`**. Clamping the *magnitude* instead --
+    `1 / max(|u|, floor)` -- looks like the same guard and is not: it turns "this
+    quantity has no natural scale" into "weight this row by `1e12`", which is the
+    largest number in the whole problem by nine orders of magnitude.
+
+    **Measured, and this is the bug it caused.** `.power.qac` (cryogenic AC-loss load,
+    one of `CryoQLoadsStep`'s four unknowns) is *identically* zero on the reference run
+    -- `ensxpfm = 0`, there being no PF energy swing to dissipate -- so its residual row
+    is exactly `(0, ..., -1, ..., 0)`: the trivial, perfectly well-posed equality
+    `u = 0`. Clamped, that row entered VMCON's QP at `-1e12`, nine orders of magnitude
+    above every other row, and the Jacobian VMCON actually sees (rows by their condition
+    scale, columns by `VmconDriver.scaled`'s `1/x_start`) had condition number
+    **6.68e12**, equality block `2.00e12`. With the row left alone: **2.09e4** and
+    `6.25e3`. Stage C2 from PROCESS's own converged point ran to `max_iter = 100`
+    without formally converging, oscillating around `objf ~ 1.2179`.
+
+    Two honest qualifications on that last sentence, both measured. The `max_iter`
+    symptom was recorded on one tree state; on a later one, an A/B of the two rules in a
+    single process off one PROCESS run gives **73** iterations clamped against **62**
+    here, both converging -- so the clamp is not always fatal, and iteration count on
+    this problem is noisy enough (33 to 73 across a sweep of factors for this one row)
+    that it is weak evidence on its own. The conditioning figure is the durable one. And
+    a fifth to a third of the QP subproblems solve inaccurately (`cvxpy`'s own warning:
+    26 of 73 clamped, 21 of 62 here) either way, so this row was never the *only* thing
+    straining the QP -- see `VmconDriver.condition_scale` for what is left.
+
+    `1.0` is also the value the *design* side already degrades to for exactly the same
+    reason -- `VmconDriver.scaled` keeps `scale = 1.0` for an unknown starting at `0.0`
+    (its docstring says so) -- so the two scalings now agree instead of one degrading
+    to neutral while the other blows up. Neutral is the honest reading: a residual
+    whose unknown is zero has no relative form, and its row is already O(1) in the
+    only column it touches.
     """
     from cottax.tools.minting import unminted
 
@@ -538,7 +574,8 @@ def residual_condition_scales(drive, env, floor=1e-12):
         if unknown is None or unknown not in env:
             continue
         magnitude = abs(float(np.asarray(env[unknown])))
-        scales.append((condition, 1.0 / max(magnitude, floor)))
+        usable = np.isfinite(magnitude) and magnitude > floor
+        scales.append((condition, 1.0 / magnitude if usable else 1.0))
     return tuple(scales)
 
 

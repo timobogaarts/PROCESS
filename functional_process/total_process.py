@@ -72,6 +72,8 @@ plain `.fwbs.blktmodel` switch, is what the real 3-arm dispatch needs, and for t
 of bug already fixed once for `EcrhDensityLimit`).
 """
 
+from pathlib import Path
+
 from functional_process.configuration import (
     Alternative,
     Configuration,
@@ -179,6 +181,9 @@ from functional_process.models.power_A_tf_coil_power import (
 )
 from functional_process.models.power_B_thermal_cryo import (
     ComponentThermalPowers,
+    CryoLoads,
+    CryoQLoadsStep,
+    CryoQNucStep,
     DeltaEtaStep,
     EtathLiqStep,
     EtaTurbineStep,
@@ -212,8 +217,10 @@ from functional_process.models.stellarator.coils.calculate import (
     CoilsSummaryVariables,
     CoilToroidalThickness,
     HorizontalPorts,
+    LenTfCoil,
     PlasmaFacingCoilArea,
     StoredMagneticEnergy,
+    TfCryoArea,
     VerticalPorts,
     WindingPackGeometry,
     WindingPackIntersectInputs,
@@ -244,8 +251,14 @@ from functional_process.models.stellarator.neoclassics import (
     EffectiveThermalDiffusivity,
     ProfileValues,
 )
+from functional_process.models.stellarator.preset_config import (
+    StellaratorMachineConfig,
+    read_stellarator_config_file,
+)
 from functional_process.models.stellarator.stellarator_B_st_phys import (
     FusionPowerTotalsMw,
+    ClippedRadiationPowers,
+    FusionTotalsNoBeam,
     HeatingAndRadiationPower,
     NeutronWallLoad,
     PoloidalFieldFromRotationalTransform,
@@ -274,6 +287,10 @@ from functional_process.models.stellarator.stellarator_fwbs_s2 import (
     ExponentialAttenuationBlanketShieldPower,
 )
 from functional_process.models.stellarator.stellarator_fwbs_s3 import DivertorPlateMass
+from functional_process.models.stellarator.stellarator_fwbs_s4 import (
+    BlanketComponentMasses,
+    ShieldMass,
+)
 from functional_process.models.vacuum import DuctDiameterRootFind, VacuumOld
 
 COSTS_1990 = (
@@ -380,6 +397,24 @@ COSTS_1990 = (
 )
 """`costs.py`'s 1990 cost model: the `.costs.i_cost_model == 0` arm, 43 nodes."""
 
+REFERENCE_STELLA_CONF = (
+    Path(__file__).resolve().parent.parent
+    / "tests/regression/input_files/stellarator_helias.stella_conf.json"
+)
+"""`REFERENCE_INPUT_FILE`'s `istell == 6` machine-config companion.
+
+`Stellarator.st_new_config()` opens `f"{data.globals.output_prefix}stella_conf.json"`
+before anything else runs, so for the reference run this file *is* the machine being
+designed. Read here, at assembly time, and handed to `StellaratorMachineConfig` as static
+data -- the whole point of unit #8's shape decision (`preset_config.md`): `istell == 6`'s
+file I/O is a `non-traceable-external-call` that never has to enter a traced body,
+because which machine is being designed cannot change during a solve.
+
+Named next to `TOPOLOGY_SWITCHES` rather than beside `REFERENCE_INPUT_FILE` below only
+because the `.stellarator.istell` switch needs it; the two must stay companions (same
+stem, same directory), which is what PROCESS's own `output_prefix` convention enforces
+for a real run."""
+
 TOPOLOGY_SWITCHES = (
     # `.stellarator.istell` -- PROCESS's master pipeline switch (tokamak / stellarator
     # / IFE), `core/solver/switches.md` § `data.stellarator.istell`. Only ONE block is
@@ -423,6 +458,30 @@ TOPOLOGY_SWITCHES = (
                 declarations=(
                     StellaratorConfinementTime(
                         i_confinement_time=38, i_rad_loss=1, i_plasma_ignited=1
+                    ),
+                    # `preset_config.py` (unit #8). The 34 numeric
+                    # `.stellarator_config.stella_config_*` fields, read from
+                    # `REFERENCE_STELLA_CONF` at assembly time and owned by a node with
+                    # **no inputs** -- the machine config is strictly upstream of every
+                    # design variable, so this adds a source to the DAG and no cycle.
+                    #
+                    # Filed under `istell` rather than in `COMMON` because it is
+                    # genuinely `istell`-gated: `istell == 0` is a tokamak and has no
+                    # `stella_config_*` at all, so registering it unconditionally would
+                    # make the tokamak graph produce stellarator machine data. Arms 1..5
+                    # stay `unported` (their five preset tables are not transcribed);
+                    # `select_stellarator_config_scalars` is already generic over any
+                    # config mapping, so porting them is transcription, not design.
+                    #
+                    # **This is what makes the graph runnable from a cold
+                    # `DataStructure`.** Before it, these 34 fields were unowned boundary
+                    # inputs seeded from a converged run; stepped cold they were all
+                    # `0.0`, `.tfcoil.n_tf_coils` (=`coilspermodule * symmetry`) was `0`,
+                    # and the first division by it made 16 blocks emit non-finite values.
+                    StellaratorMachineConfig(
+                        machine_config=read_stellarator_config_file(
+                            REFERENCE_STELLA_CONF
+                        )
                     ),
                 ),
             ),
@@ -587,6 +646,69 @@ TOPOLOGY_SWITCHES = (
             Alternative(
                 value=2,  # blktmodel != 1, ipowerflow == 1 -- the "new model" (default)
                 declarations=(DetailedPowerflowBlanketShieldPower,),
+            ),
+        ),
+    ),
+    Switch(
+        # Second synthetic joint key, same shape and for the same reason as S2's above:
+        # `st_fwbs` S4's blanket-mass block (`stellarator.py:1056-1181`,
+        # `stellarator_fwbs_s4.md`) dispatches on `.fwbs.blktmodel` *and*, nested inside
+        # its `== 0` arm, on `.fwbs.blkttype`. It cannot join S2's switch (that one's
+        # arms are indexed by `ipowerflow`, which this block never reads, so this node
+        # would have to be duplicated across two of its arms), and it does not factor
+        # into two independent real-field switches either: `.fwbs.m_blkt_total` is
+        # accumulated *across* both axes (breeder part chosen by `blkttype`, then
+        # steel + vanadium added, both inside `blktmodel == 0`), so a `blktmodel`-only
+        # node plus a `blkttype`-only node would need a third node invented to own a
+        # sum PROCESS writes as two statements in one straight line. `value` is an arm
+        # index, not a literal field value. The full write-up, including the rejected
+        # alternatives, is in `stellarator_fwbs_s4.md` § "registration".
+        #
+        # Known gap, recorded rather than hidden: `.fwbs.blktmodel` is now an axis of
+        # two synthetic keys, and `configuration.py` cannot check that a caller keeps
+        # them consistent about it -- arm indices on a comma-joined path are opaque to
+        # it. Both switches default to the `blktmodel = 0` arm and S2's
+        # `blktmodel == 1` arm is `unported` (so it raises first), so no assemblable
+        # configuration is affected today. See `stellarator_fwbs_s4.md`'s open
+        # question 1.
+        path=".fwbs.blktmodel,.fwbs.blkttype",
+        default=2,  # blktmodel = 0 (`fwbs_variables.py:479`) and blkttype = 3 (`:494`),
+        # neither set by `stellarator_helias.IN.DAT` -- so PROCESS's own default *and*
+        # the reference run both land on arm 2.
+        alternatives=(
+            Alternative(
+                value=0,  # blktmodel != 0
+                unported=(
+                    "the blktmodel != 0 blanket-mass arm (stellarator.py:1093-1181) "
+                    "computes m_blkt_steel_total/m_blkt_beryllium from six .build."
+                    "bl{u,m,p}{i,o}th sub-assembly thicknesses, additionally writes "
+                    ".fwbs.whtblbreed and .fwbs.f_a_blkt_cooling_channels, and writes "
+                    "neither .fwbs.m_blkt_li2o nor .fwbs.m_blkt_vanadium at all -- a "
+                    "different node with a different port set, not written yet. "
+                    "Refused rather than assembled empty: BlanketCost reads all four "
+                    "masses unconditionally, so an empty arm would silently hand it "
+                    "boundary values for fields PROCESS does compute on that arm."
+                ),
+            ),
+            Alternative(
+                value=1,  # blktmodel == 0, blkttype in {1, 2} -- liquid breeder
+                unported=(
+                    "the liquid-breeder sub-arm (blkttype in {1, 2}, WCLL/HCLL, "
+                    "stellarator.py:1058-1066) writes .fwbs.wtbllipb and .fwbs."
+                    "m_blkt_lithium in place of .fwbs.m_blkt_li2o/.m_blkt_beryllium -- "
+                    "different fields, not a different formula for the same ones. Not "
+                    "ported: neither replacement field has a reader in this graph, and "
+                    "stellarator_helias.IN.DAT leaves blkttype at its default of 3. "
+                    "Values 1 and 2 select the identical formula (the same 'three "
+                    "values, two arms' shape as .tfcoil.i_tf_sup's {0, 2}), so this "
+                    "one arm covers both; there is no separate value=2 alternative "
+                    "because there is no separate behaviour to name."
+                ),
+            ),
+            Alternative(
+                value=2,  # blktmodel == 0, blkttype not in {1, 2} -- solid breeder
+                # (HCPB), PROCESS's default and the reference run's arm
+                declarations=(BlanketComponentMasses,),
             ),
         ),
     ),
@@ -812,6 +934,14 @@ COMMON = (
     # topological order) is strictly more self-consistent than PROCESS's own lagged
     # read -- confirmed by the build below staying at the same SCC count.
     DivertorPlateMass,
+    # `st_fwbs` S4's shield-mass block (`stellarator_fwbs_s4.md`). In `COMMON` and not
+    # behind a `Switch` because `stellarator.py:1195-1206` is outside every branch in
+    # `st_fwbs` -- no `blktmodel`, `blkttype` or `ipowerflow` guard -- so both outputs
+    # exist in every configuration. Its sibling `BlanketComponentMasses` *is* switched,
+    # see `TOPOLOGY_SWITCHES`'s `.fwbs.blktmodel,.fwbs.blkttype` entry. Closes
+    # `_audit/boundary_inputs_audit.md` § 4c (b5)/(b6): `Bldgs` and `ShieldCost` were
+    # reading `.fwbs.whtshld`, and `ShieldCost` `.fwbs.wpenshld`, as boundary inputs.
+    ShieldMass,
     # unit #5, heating.py
     InjectedPowerTotal,
     BeamCurrent,
@@ -860,6 +990,26 @@ COMMON = (
     # `st_coil`'s formula for `.build.z_tf_inside_half` -- see `Build`'s own comment
     # above (unit #2, build.py) for why this one, not `Build`'s, owns the field.
     ZTfInsideHalf,
+    # `.tfcoil.tfcryoarea`, carved out of the same inline `st_coil` geometry block as
+    # `ZTfInsideHalf` and for the same reason (the eager `st_coil` orchestrator is not
+    # registered, so anything only it computes has no owner). Prerequisite for
+    # `CryoQLoadsStep` below: without it, registering the cryo nodes would have traded
+    # two boundary inputs for one new one (`_audit/boundary_inputs_audit.md` §4c (c1)'s
+    # sibling gap, §7 items 4 and 7). Of its two neighbours in that block,
+    # `min_bending_radius` still stays unported for want of any reader.
+    TfCryoArea,
+    # `.tfcoil.len_tf_coil`, the third formula from that same block, and the one held
+    # back longest: four registered nodes read it (`StructureMasses`,
+    # `PlasmaFacingCoilArea`, `CoilsMass`, `TfMagnetCostSuperconducting`) while it had
+    # no producer at all. **The stale-vs-fresh decision it was waiting on is resolved,
+    # in favour of binding fresh** -- there is no feedback path back into it (measured:
+    # its producer's owned input comes from `StellaratorScalingFactors`, unreachable
+    # from all four readers), so a `FixedPointFunction` self-loop modelling PROCESS's
+    # read-before-write would be a degenerate fixed point that
+    # `degenerate_fixed_points` deletes on sight. See `LenTfCoil`'s own docstring for
+    # the full argument and the one honest caveat. This also closes the cold-start
+    # `nan` in `.costs.c22211`/`.c2221` (`costs.md`).
+    LenTfCoil,
     # unit #12, coils/mass.py
     CoilsMass,
     # unit #11, coils/forces.py
@@ -994,6 +1144,22 @@ COMMON = (
     PoloidalFieldFromRotationalTransform,
     TotalField,
     FusionPowerTotalsMw,
+    # The `else` arm of `stellarator.py:2002-2054`, three identities -- and the only
+    # producer of `.physics.fusden_total`/`.fusden_alpha_total`/`.p_dt_total_mw`,
+    # which were boundary inputs until it landed. Unconditional because the arm is
+    # selected by `i_plasma_ignited == IGNITED` on this run, not merely by the absence
+    # of a beam, and because the beam arm calls the unportable `reactions.beam_fusion`
+    # (unit #19) -- there is no second arm to switch between. See
+    # `_audit/boundary_inputs_audit.md` §4c (b7)/(b8) and the class's own docstring.
+    FusionTotalsNoBeam,
+    # `stellarator.py:2152-2166`: `st_phys`'s two zero-clips on the radiation power
+    # densities and the two total powers formed from them. Owns the real
+    # `.physics.pden_plasma_*_rad_mw` fields, which `PlasmaRadiationPowers` now mints
+    # as `*_unclipped` -- the clip has two disagreeing call sites in PROCESS, so it
+    # belongs to this caller, not to `calculate_radiation_powers`. Also gives
+    # `.physics.p_plasma_inner_rad_mw` (read by `StellaratorConfinementTime`) its first
+    # producer -- `_audit/boundary_inputs_audit.md` §7 item 6.
+    ClippedRadiationPowers,
     # `i_pflux_fw_neutron`/`ipowerflow` static, per `physics_variables.py:1006`/
     # `heat_transport_variables.py:94`'s defaults (`1`). With `i_pflux_fw_neutron == 1`
     # both functions take their first branch unconditionally -- `ipowerflow`'s value is
@@ -1124,15 +1290,33 @@ COMMON = (
     # merely asserted), since both own and read `eta_turbine`/`temp_turbine_coolant_in`
     # (`etath_liq`/`temp_turbine_coolant_in` for the second). They are superseded by the
     # three `*Step` `FixedPointFunction`s above for graph purposes, not usable
-    # standalone. `Cryo`/`CryoLoads` are also NOT registered for the same reason, found
-    # this pass and not yet fixed: `Cryo` reads and owns `.fwbs.qnuc`
-    # (`conditional-ownership-by-run-config`, its own docstring already names the
-    # shape); `CryoLoads` reads and owns `.fwbs.qnuc` plus `.power.qss`/`qac`/`qcl`/
-    # `qmisc` (it calls `calculate_cryo` internally under its own guard, inheriting the
-    # same self-reference on four more fields). Both confirmed directly via `to_graph`,
-    # not just asserted -- see `unit_registry.md`/`next_steps.md` for the write-up. No
-    # `FixedPointFunction` split exists yet for either; left as ported-but-unregistered,
-    # a second wave of the same Shape-B gap `next_steps.md` §5 already tracks.
+    # standalone.
+    #
+    # `Power.calculate_cryo_loads` (`_audit/boundary_inputs_audit.md` §7 item 7) is the
+    # second wave of exactly that Shape-B gap, and it is now split the same way. Its
+    # raw node `Cryo` stays NOT registered for the same reason
+    # `PlantThermalEfficiency` does -- `to_graph(Cryo(...))` raises `ValueError: reads
+    # ['.fwbs.qnuc'], which it also owns` -- and the three nodes below replace it:
+    #   * `CryoQNucStep` owns `.fwbs.qnuc`, conditionally written by PROCESS under
+    #     `inuclear == 0 and i_tf_sup == 1` ("Issue #511: if inuclear = 1: qnuc is
+    #     input", `power.py:1825`);
+    #   * `CryoQLoadsStep` owns `.power.qss`/`qac`/`qcl`/`qmisc`, conditionally written
+    #     under the *other* guard, `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING`
+    #     (`power.py:1054-1057`), which is why the five fields are two nodes and not
+    #     one -- see `CryoQNucStep`'s docstring for the degeneracy argument;
+    #   * `CryoLoads` owns the four fields written on every path
+    #     (`.heat_transport.helpow`, `.p_cryo_plant_electric_mw`, `.helpow_cryal`,
+    #     `.tfcoil.cryo_cool_req`) and reads the five `q*` as plain `Input`s.
+    # This closes `.heat_transport.helpow` (read by `Bldgs`, `CryogenicSystemCost`) and
+    # `.heat_transport.p_cryo_plant_electric_mw` (read by `Acpow`,
+    # `PlantElectricProductionReactor`, `AuxiliaryComponentCoolingCost`) as boundary
+    # inputs. `inuclear=0`/`i_pf_conductor=0` are `fwbs_variables.py:81`/
+    # `pfcoil_variables.py:230`'s defaults, neither set by `REFERENCE_INPUT_FILE`;
+    # `i_tf_sup=1` is `tfcoil_variables.py:261`'s, likewise unset -- the same value the
+    # rest of this file's TF-coil registrations already carry.
+    CryoQNucStep(i_tf_sup=1, inuclear=0),
+    CryoQLoadsStep(i_tf_sup=1, i_pf_conductor=0),
+    CryoLoads(i_tf_sup=1, i_pf_conductor=0),
     # `power_C_electric_production.py` (unit #14 chunk C). `i_pf_energy_storage_source=2`
     # matches `pf_power_variables.py:18`'s default.
     Acpow(i_pf_energy_storage_source=2),

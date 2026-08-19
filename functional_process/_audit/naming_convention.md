@@ -51,9 +51,25 @@ cores already use (see `PlasmaDensityLimit.calculate_density_limit` in
 `process/models/physics/density_limit.py`) — port the existing name where one already
 exists rather than inventing a new one.
 
+## Resolved questions
+
+- **Nested/sub-object reads like `self.physics.confinement.calculate_confinement_time(...)`
+  — is `confinement` a namespace component (`.physics.confinement.*`) or does its output
+  get a flat `VarPath` under `.physics.*` directly? Answered: flat.** The first real
+  example is shipped: `models/physics/confinement_time.py`'s `ConfinementTime` binds its
+  outputs to plain `.physics.*` paths (`.physics.t_energy_confinement` and siblings), not
+  to a `.physics.confinement.*` sub-namespace. The reason generalises and is the rule to
+  apply next time: **a `VarPath` names a place in `DataStructure`, and `DataStructure` has
+  no such sub-namespace** — `confinement` is a Python attribute on a `Model` instance, a
+  *call-site* structure, not a storage one. The nesting in `self.physics.confinement.…`
+  describes how PROCESS wires its model objects, which is exactly the thing a `VarPath`
+  must not encode.
+
+  Note this is the *variable* side only. Hierarchical **node** names are a live design
+  question with the opposite answer — see `switch_elimination_design.md` §12, where the
+  model tree's own structure is what a node path should reflect. The two are deliberately
+  independent: a variable's place is `DataStructure`'s, a node's is the model tree's.
+
 ## Open questions (do not resolve silently in an individual audit record)
 
-- Nested/sub-object reads like `self.physics.confinement.calculate_confinement_time(...)`
-  — is `confinement` a namespace component (`.physics.confinement.*`) or does its output
-  get a flat `VarPath` under `.physics.*` directly? Pending first real example from the
-  pilot.
+- *(none currently open.)*

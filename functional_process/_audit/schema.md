@@ -31,7 +31,7 @@ partial, e.g. "only methods called by Stellarator.run(), see unit_registry.md").
 | `.stellarator.powerht_constraint` | write | explicit-arg | ... |
 | `.physics.rmajor` | read | implicit-io | read again after `plasma_profile.run()` call, value may differ from entry |
 
-Classification values (five now — added incrementally after real findings, see
+Classification values (six now — added incrementally after real findings, see
 `unit_registry.md`'s pilot-batch section and the stellarator.py chunk audits for the
 concrete examples that motivated each):
 - **`explicit-arg`** — read once, used as a plain parameter.
@@ -56,6 +56,10 @@ concrete examples that motivated each):
   codebase's universal idiom for any value, not because it's actually shared or order-
   sensitive. Use this instead of `implicit-io` whenever the write-then-read has no
   possibility of diverging from what was just computed (no intervening branch, no loop,
+  no call to anything that could also touch the same field). This label exists
+  specifically to keep `implicit-io` reserved for cases that need a careful read — applied
+  loosely, almost every Fortran-derived function in this codebase would show several
+  "implicit-io" entries that are actually trivial.
 - **`conditional-ownership-by-run-config`** — the write only happens when a specific
   `VarPath` (typically the same field, or a related one) is *not* currently an active
   entry in `data.numerics.ixc` (the iteration-variable set). Found in
@@ -68,10 +72,6 @@ concrete examples that motivated each):
   not a static property of the function — the pure port's graph-assembly step needs to
   read `ixc` at the same place it resolves other run-config-driven structure (see
   `naming_convention.md`'s "switches are not ports").
-  no call to anything that could also touch the same field). This label exists
-  specifically to keep `implicit-io` reserved for cases that need a careful read — applied
-  loosely, almost every Fortran-derived function in this codebase would show several
-  "implicit-io" entries that are actually trivial.
 
 ## proposed signature(s)
 ```python

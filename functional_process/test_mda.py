@@ -10,20 +10,32 @@ runnable."
 """
 
 from cottax.blocking import Blocking
-from cottax.drivers import NewtonDriver
 from cottax.problem import FixedPoint, RootFind
 from cottax.rewrites import Cut
 
-from functional_process.core.solver.drivers import PicardDriver
-from functional_process.mda import CUTS, default_drivers, driven_graph, schedule
+from functional_process.core.solver.drivers import PicardDriver, SeededNewtonDriver
+from functional_process.mda import (
+    CUTS,
+    ROOT_FIND_SEEDS,
+    default_drivers,
+    driven_graph,
+    schedule,
+)
 from functional_process.total_process import GRAPH
 
 
-def test_both_cuts_are_the_only_variable_that_fully_breaks_their_own_cycle():
-    """Pinned so a future edit to either cycle's membership (a new node reading/
-    owning something in it) is forced to re-check this rather than silently keep a
-    now-partial cut. Re-derives the claim `mda.CUTS`'s own docstring makes, rather
-    than trusting it.
+def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
+    """Every raw cycle's `CUTS` entries break it completely, and dropping any one of
+    them leaves it cyclic -- i.e. the cut set is sufficient *and* minimal.
+
+    Pinned so a future edit to a cycle's membership (a new node reading or owning
+    something in it) is forced to re-check rather than silently keep a now-partial cut.
+    That is not hypothetical: registering `FusionTotalsNoBeam` added a second
+    `FusionRates -> PlasmaComposition` path and made the single
+    `proton_rate_density` cut insufficient, which `Blocking` caught only because it
+    refuses a block that is *"still cyclic with its problem(s) removed"*. This test
+    now states the property directly. It re-derives `mda.CUTS`'s own claim rather than
+    trusting the docstring.
     """
     for cycle in GRAPH.cycles:
         names = {n.path_str() for n in cycle}
@@ -31,13 +43,30 @@ def test_both_cuts_are_the_only_variable_that_fully_breaks_their_own_cycle():
             continue  # already a declared block, not a raw cycle to cut
         sub = GRAPH.subgraph(cycle)
         cutting_vars = [v for v in CUTS if v in sub.owners]
-        assert len(cutting_vars) == 1, (
-            f"cycle {sorted(names)} should have exactly one CUTS entry among its "
-            f"owned variables, found {len(cutting_vars)}"
+        assert cutting_vars, (
+            f"cycle {sorted(names)} has no CUTS entry among its owned variables"
         )
-        (var,) = cutting_vars
-        cut = Cut(var=var, readers=sub.closing_readers(var))
-        assert cut.apply(sub).is_acyclic
+
+        def cut_all(vars_, sub=sub):
+            out = sub
+            for v in vars_:
+                readers = out.closing_readers(v)
+                if not readers:
+                    return None
+                out = Cut(var=v, readers=readers).apply(out)
+            return out
+
+        assert cut_all(cutting_vars).is_acyclic, (
+            f"cycle {sorted(names)} is still cyclic after cutting "
+            f"{[v.path_str() for v in cutting_vars]}"
+        )
+        for dropped in cutting_vars:
+            rest = [v for v in cutting_vars if v != dropped]
+            without = cut_all(rest)
+            assert without is None or not without.is_acyclic, (
+                f"{dropped.path_str()} is redundant: cycle {sorted(names)} is already "
+                f"acyclic without it, so it should not be in CUTS"
+            )
 
 
 def test_driven_graph_has_no_raw_cycles_left():
@@ -57,8 +86,9 @@ def test_driven_graph_has_no_raw_cycles_left():
 
 def test_default_drivers_assigns_newton_to_root_find_and_picard_to_fixed_point():
     """Every driven block gets the driver matching its own declared problem type --
-    no bespoke per-block choice, since every block in this graph is one of exactly
-    these two shapes.
+    still assigned by type, not per block. The `RootFind` driver is
+    `SeededNewtonDriver` (a Newton with a fallback starting guess, see its docstring);
+    which *guess* it falls back to is per-unknown, but the driver choice is not.
     """
     graph = driven_graph()
     blocking = Blocking.scc(graph)
@@ -71,9 +101,33 @@ def test_default_drivers_assigns_newton_to_root_find_and_picard_to_fixed_point()
             continue
         driver = drivers[problem]
         if issubclass(problem_type, RootFind):
-            assert isinstance(driver, NewtonDriver)
+            assert isinstance(driver, SeededNewtonDriver)
         elif issubclass(problem_type, FixedPoint):
             assert isinstance(driver, PicardDriver)
+
+
+def test_every_root_find_unknown_has_a_fallback_starting_guess():
+    """Every `RootFind` block in the graph can name a starting guess without `data`.
+
+    Pinned because the failure it prevents is not local: seeded from a cold
+    `DataStructure`, `Intersect`'s unknown is `0.0`, the residual is exactly flat there,
+    and `optimistix` aborts -- taking the **whole schedule** down, not just its own
+    block. A new `RootFind` with no `ROOT_FIND_SEEDS` entry would reintroduce that the
+    moment anyone ran the port cold.
+    """
+    graph = driven_graph()
+    blocking = Blocking.scc(graph)
+    for problem, problem_type in zip(
+        blocking.problems, blocking.problem_types, strict=True
+    ):
+        if problem_type is None or not issubclass(problem_type, RootFind):
+            continue
+        unknowns = graph[problem].owns
+        assert any(u.path_str() in ROOT_FIND_SEEDS for u in unknowns), (
+            f"{problem.path_str()} solves for "
+            f"{[u.path_str() for u in unknowns]}, none of which has a "
+            f"`ROOT_FIND_SEEDS` entry -- it would fail from a cold start"
+        )
 
 
 def test_schedule_builds_for_the_whole_graph():

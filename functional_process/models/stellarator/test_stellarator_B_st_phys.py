@@ -17,6 +17,8 @@ import numpy as np
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
 from functional_process.models.stellarator.stellarator_B_st_phys import (
     calculate_fusion_power_totals_mw,
+    calculate_clipped_radiation_powers,
+    calculate_fusion_totals_no_beam,
     calculate_heating_and_radiation_power,
     calculate_neutron_wall_load,
     calculate_poloidal_field_from_rotational_transform,
@@ -209,6 +211,81 @@ class TestFusionPowerTotalsMw(Tier1Contract):
                 "dt_power_density_plasma": (0.0, 2.0),
                 "dhe3_power_density": (0.0, 1.0),
                 "dd_power_density": (0.0, 0.5),
+                "vol_plasma": (100.0, 3000.0),
+            },
+            count=5,
+            seed=0,
+        ),
+    ]
+
+
+def _reference_fusion_totals_no_beam(
+    fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
+):
+    """`stellarator.py:2045-2054`, the `else` (no-beam) arm."""
+    return fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
+
+
+class TestFusionTotalsNoBeam(Tier1Contract):
+    audit_record = "models/stellarator/stellarator_B_st_phys.md"
+    reference = _reference_fusion_totals_no_beam
+    ported = calculate_fusion_totals_no_beam
+
+    samples = [
+        legacy_sample(
+            "typical-helias",
+            fusden_plasma=1.2e18,
+            fusden_plasma_alpha=1.1e18,
+            p_plasma_dt_mw=700.0,
+        ),
+        *fuzz_samples(
+            {
+                "fusden_plasma": (1.0e16, 1.0e20),
+                "fusden_plasma_alpha": (1.0e16, 1.0e20),
+                "p_plasma_dt_mw": (0.0, 3000.0),
+            },
+            count=5,
+            seed=0,
+        ),
+    ]
+
+
+def _reference_clipped_radiation_powers(
+    pden_plasma_core_rad_mw_unclipped, pden_plasma_outer_rad_mw_unclipped, vol_plasma
+):
+    """`stellarator.py:2152-2166`, transcribed from source: two `max(..., 0.0)` clips
+    and the two products formed from the clipped values."""
+    core = max(pden_plasma_core_rad_mw_unclipped, 0.0)
+    outer = max(pden_plasma_outer_rad_mw_unclipped, 0.0)
+    return core, outer, core * vol_plasma, outer * vol_plasma
+
+
+class TestClippedRadiationPowers(Tier1Contract):
+    audit_record = "models/stellarator/stellarator_B_st_phys.md"
+    reference = _reference_clipped_radiation_powers
+    ported = calculate_clipped_radiation_powers
+
+    samples = [
+        legacy_sample(
+            "clip-inactive-helias",
+            pden_plasma_core_rad_mw_unclipped=0.057544135593658154,
+            pden_plasma_outer_rad_mw_unclipped=0.05525606,
+            vol_plasma=2475.6886164316024,
+        ),
+        # The clip's *active* side, which this run never reaches. Kept because the whole
+        # reason this block is its own node is that PROCESS clips here and does not clip
+        # at `calculate_radiation_powers`'s other call site -- an arm that is only ever
+        # exercised by a sample.
+        legacy_sample(
+            "clip-active-negative-core",
+            pden_plasma_core_rad_mw_unclipped=-0.01,
+            pden_plasma_outer_rad_mw_unclipped=-0.002,
+            vol_plasma=1400.0,
+        ),
+        *fuzz_samples(
+            {
+                "pden_plasma_core_rad_mw_unclipped": (-0.05, 0.5),
+                "pden_plasma_outer_rad_mw_unclipped": (-0.05, 0.5),
                 "vol_plasma": (100.0, 3000.0),
             },
             count=5,

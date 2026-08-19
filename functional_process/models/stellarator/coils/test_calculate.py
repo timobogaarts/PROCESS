@@ -46,6 +46,8 @@ from functional_process.models.stellarator.coils.calculate import (
     calculate_inductance,
     calculate_plasma_facing_coil_area,
     calculate_stored_magnetic_energy,
+    calculate_len_tf_coil,
+    calculate_tfcryoarea,
     calculate_vertical_ports,
     calculate_winding_pack_geometry,
     calculate_z_tf_inside_half,
@@ -253,6 +255,101 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     owned = {out.var for out in node.outputs}
     z_tf_inside_half_path = path_of(lambda s: s.build.z_tf_inside_half, VarPath)
     assert z_tf_inside_half_path in owned
+
+
+def _reference_len_tf_coil(
+    stella_config_coillength, r_coil_minor, stella_config_coil_rminor, n_tf_coils
+):
+    """`stella_config_coillength * (r_coil_minor / stella_config_coil_rminor) /
+    n_tf_coils` -- `st_coil`'s own inline formula
+    (`process/models/stellarator/coils/calculate.py:87-91`), reproduced directly for the
+    same reason `_reference_tfcryoarea` below gives: no standalone PROCESS entry point
+    exists for it, and `st_coil`'s end-to-end test already checks it against real
+    PROCESS at realistic operating points.
+    """
+    return (
+        stella_config_coillength * (r_coil_minor / stella_config_coil_rminor) / n_tf_coils
+    )
+
+
+class TestLenTfCoil(Tier1Contract):
+    audit_record = "models/stellarator/coils/calculate.md"
+    reference = _reference_len_tf_coil
+    ported = calculate_len_tf_coil
+
+    fuzz_bounds = {
+        "stella_config_coillength": (10.0, 2000.0),
+        "r_coil_minor": (0.5, 3.0),
+        "stella_config_coil_rminor": (0.1, 1.0),
+        "n_tf_coils": (4.0, 100.0),
+    }
+
+
+def test_len_tf_coil_node_assembles_and_owns_the_right_varpath():
+    """`LenTfCoil` must own `.tfcoil.len_tf_coil`, which had **no** producer in the
+    graph before it -- four registered nodes read it and all four consumed a frozen
+    boundary value. See that class's docstring for why binding it fresh (rather than
+    modelling PROCESS's read-before-write as a fixed point) is the faithful choice.
+    """
+    from functional_process.models.stellarator.coils.calculate import LenTfCoil
+
+    node = LenTfCoil()
+    graph = to_graph(node)
+    assert graph.definitions
+
+    owned = {out.var for out in node.outputs}
+    assert path_of(lambda s: s.tfcoil.len_tf_coil, VarPath) in owned
+
+
+def _reference_tfcryoarea(
+    stella_config_coilsurface, f_st_rmajor, r_coil_minor, stella_config_coil_rminor
+):
+    """`stella_config_coilsurface * f_st_rmajor * (r_coil_minor /
+    stella_config_coil_rminor) * 1.1` -- `st_coil`'s own inline formula
+    (`process/models/stellarator/coils/calculate.py:92-101`), reproduced directly for
+    exactly the reason `_reference_z_tf_inside_half` above gives for its own line:
+    there is no standalone real PROCESS entry point for it, and the full `st_coil`
+    orchestrator's end-to-end test below already checks `checks["tfcryoarea"]` against
+    real PROCESS at realistic operating points. This class adds fuzz coverage and a
+    node-level check.
+    """
+    return (
+        stella_config_coilsurface
+        * f_st_rmajor
+        * (r_coil_minor / stella_config_coil_rminor)
+        * 1.1
+    )
+
+
+class TestTfCryoArea(Tier1Contract):
+    audit_record = "models/stellarator/coils/calculate.md"
+    reference = _reference_tfcryoarea
+    ported = calculate_tfcryoarea
+
+    fuzz_bounds = {
+        "stella_config_coilsurface": (10.0, 2000.0),
+        "f_st_rmajor": (0.5, 3.0),
+        "r_coil_minor": (0.5, 3.0),
+        "stella_config_coil_rminor": (0.1, 1.0),
+    }
+
+
+def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
+    """`TfCryoArea` -- the point of carving this formula out of `st_coil`'s inline
+    geometry block: it must assemble via `to_graph` and own `.tfcoil.tfcryoarea`,
+    which had **no** producer in the graph at all before (the eager `st_coil`
+    orchestrator that computes it is deliberately unregistered). It is a prerequisite
+    for `power_B_thermal_cryo.py`'s `CryoQLoadsStep`, which reads it -- see
+    `_audit/boundary_inputs_audit.md` §7 items 4 and 7.
+    """
+    from functional_process.models.stellarator.coils.calculate import TfCryoArea
+
+    node = TfCryoArea()
+    graph = to_graph(node)
+    assert graph.definitions
+
+    owned = {out.var for out in node.outputs}
+    assert path_of(lambda s: s.tfcoil.tfcryoarea, VarPath) in owned
 
 
 def _reference_coils_summary_variables(

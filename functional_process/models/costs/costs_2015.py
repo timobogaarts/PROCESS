@@ -25,6 +25,7 @@ here, just for a different reason).
 """
 
 import jax.numpy as jnp
+from functional_process.models.safe_math import safe_pow
 
 
 def calculate_building_costs(
@@ -178,10 +179,10 @@ def calculate_land_costs(
     s_kref = jnp.array([638.0e0, 638.0e0, 14.0e0, 0.0e0])
 
     s_cost_9 = f[0] * s_cref[0] * (
-        iter_key_buildings_land_area * (s_k[0] / s_kref[0]) ** costexp
+        iter_key_buildings_land_area * safe_pow(s_k[0] / s_kref[0], costexp)
         + iter_buffer_land_area
     )
-    s_cost_10 = f[1] * (s_k[1] / s_kref[1]) ** costexp * s_cref[1]
+    s_cost_10 = f[1] * safe_pow(s_k[1] / s_kref[1], costexp) * s_cref[1]
     s_cost_11 = f[2] * s_cref[2] * (s_k[2] / s_kref[2]) ** costexp
     s_cost_12 = s_cost_9 + s_cost_10 + s_cost_11  # range(9, 12) == [9, 10, 11], all three
 

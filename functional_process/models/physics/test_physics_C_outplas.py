@@ -95,6 +95,16 @@ class TestDimensionlessPlasmaParameters(Tier1Contract):
     # `tests/unit`), chosen only to keep every intermediate finite and positive
     # (`nu_star`/`rho_star` both take a `sqrt` and divide by `e_plasma_beta`/`vol_plasma`,
     # neither of which is ever zero or negative in a real operating point).
+    #
+    # `plasma_current` and `dlamie`, however, ARE both exactly zero in a real
+    # *stellarator* operating point -- neither is ever written outside
+    # `Physics.physics()`, which the stellarator pipeline never calls -- so PROCESS's own
+    # converged Helias solve stores `nu_star = nan`. The sampling below is deliberately
+    # tokamak-only (`plasma_current` bounded away from 0) because that `nan` is
+    # PROCESS's, not the port's: see `physics_C_outplas.md` section "real PROCESS defect
+    # found" for the measurement and for why no guard was added. Do not "fix" it by
+    # widening these bounds to include 0 -- that would only assert that the port
+    # reproduces an upstream defect it already does.
     samples = [
         legacy_sample(
             "large-tokamak-scale",

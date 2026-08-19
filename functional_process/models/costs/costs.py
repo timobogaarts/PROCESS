@@ -41,6 +41,7 @@ consolidation pass, per this dispatch's boundary.
 import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 
 def convert_fpy_to_calendar(
@@ -572,11 +573,11 @@ def calculate_pf_coil_power_conditioning_cost(
     safe_pfckts = jnp.where(pfckts == 0.0, 1.0, pfckts)
     c22524 = fkind * jnp.where(
         pfckts != 0.0,
-        1.0e-6 * ucpfbs * pfckts * (srcktpm / safe_pfckts) ** 0.7e0,
+        1.0e-6 * ucpfbs * pfckts * safe_pow(srcktpm / safe_pfckts, 0.7e0),
         0.0,
     )
 
-    c22525 = fkind * (1.0e-6 * ucpfbk * pfckts * (acptmax * vpfskv) ** 0.7e0)
+    c22525 = fkind * (1.0e-6 * ucpfbk * pfckts * safe_pow(acptmax * vpfskv, 0.7e0))
     c22526 = fkind * (1.0e-6 * ucpfdr1 * ensxpfm)
     c22527 = fkind * (1.0e-6 * ucpfcb * pfckts)
     c2252 = c22521 + c22522 + c22523 + c22524 + c22525 + c22526 + c22527
@@ -639,9 +640,9 @@ def calculate_reactor_cooling_system_cost(
         1.0e-6
         * jnp.asarray(uchts)[i_blkt_coolant_type - 1]
         * (
-            (1.0e6 * p_fw_div_heat_deposited_mw) ** exphts
-            + (1.0e6 * p_blkt_nuclear_heat_total_mw) ** exphts
-            + (1.0e6 * p_shld_nuclear_heat_mw) ** exphts
+            safe_pow(1.0e6 * p_fw_div_heat_deposited_mw, exphts)
+            + safe_pow(1.0e6 * p_blkt_nuclear_heat_total_mw, exphts)
+            + safe_pow(1.0e6 * p_shld_nuclear_heat_mw, exphts)
         )
         * cmlsa
     )
@@ -649,7 +650,7 @@ def calculate_reactor_cooling_system_cost(
         1.0e-6
         * UCPHX
         * n_primary_heat_exchangers
-        * (1.0e6 * p_plant_primary_heat_mw / n_primary_heat_exchangers) ** exphts
+        * safe_pow(1.0e6 * p_plant_primary_heat_mw / n_primary_heat_exchangers, exphts)
         * cmlsa
     )
     c2261 = chx + cpp
@@ -694,7 +695,7 @@ def calculate_nuclear_building_ventilation_cost(UCNBV, volrci, wsvol, fkind):
     float
         `c2274`.
     """
-    return fkind * (1.0e-6 * UCNBV * (volrci + wsvol) ** 0.8e0)
+    return fkind * (1.0e-6 * UCNBV * safe_pow(volrci + wsvol, 0.8e0))
 
 
 def calculate_instrumentation_and_control_cost(uciac, fkind):
@@ -764,7 +765,7 @@ def calculate_turbine_plant_equipment_cost(
     computed = (
         1.0e-6
         * jnp.asarray(ucturb)[i_blkt_coolant_type - 1]
-        * (p_plant_electric_gross_mw / 1200.0e0) ** exptpe
+        * safe_pow(p_plant_electric_gross_mw / 1200.0e0, exptpe)
     )
     return jnp.where(ireactor == 1, computed, 0.0)
 
@@ -812,7 +813,7 @@ def calculate_transformers_cost(UCPP, pacpmw, UCAP, p_plant_electric_base_total_
     cmlsa = jnp.asarray([0.5700e0, 0.7850e0, 0.8925e0, 1.0000e0])[lsa - 1]
     expepe = 0.9e0
     c242 = 1.0e-6 * (
-        UCPP * (pacpmw * 1.0e3) ** expepe
+        UCPP * safe_pow(pacpmw * 1.0e3, expepe)
         + UCAP * (p_plant_electric_base_total_mw * 1.0e3)
     )
     return c242 * cmlsa
@@ -1869,11 +1870,11 @@ def calculate_auxiliary_component_cooling_cost(
         1.0e-6
         * UCAHTS
         * (
-            (1.0e6 * p_hcd_electric_loss_mw) ** exphts
-            + (1.0e6 * p_cryo_plant_electric_mw) ** exphts
-            + (1.0e6 * vachtmw) ** exphts
-            + (1.0e6 * p_tritium_plant_electric_mw) ** exphts
-            + (1.0e6 * fachtmw) ** exphts
+            safe_pow(1.0e6 * p_hcd_electric_loss_mw, exphts)
+            + safe_pow(1.0e6 * p_cryo_plant_electric_mw, exphts)
+            + safe_pow(1.0e6 * vachtmw, exphts)
+            + safe_pow(1.0e6 * p_tritium_plant_electric_mw, exphts)
+            + safe_pow(1.0e6 * fachtmw, exphts)
         )
     )
     cppa = fkind * cppa * cmlsa
@@ -1904,7 +1905,7 @@ def calculate_cryogenic_system_cost(lsa, uccry, temp_tf_cryo, helpow, fkind):
     """
     cmlsa = jnp.asarray([0.4000e0, 0.7000e0, 0.8500e0, 1.0000e0])[lsa - 1]
     expcry = 0.67e0
-    c2263 = 1.0e-6 * uccry * 4.5e0 / temp_tf_cryo * helpow**expcry
+    c2263 = 1.0e-6 * uccry * 4.5e0 / temp_tf_cryo * safe_pow(helpow, expcry)
     return fkind * c2263 * cmlsa
 
 
@@ -1966,7 +1967,7 @@ def calculate_fuel_processing_cost(ife, rndfuel, m_fuel_amu, UCFPR, fkind):
     wtgpd = 2.0e0 * rndfuel * m_fuel_amu * _UMASS * 1000.0e0 * 86400.0e0
 
     #  Assumes He3 costs the same as tritium to process.
-    c2272 = 1.0e-6 * UCFPR * (0.5e0 + 0.5e0 * (wtgpd / 60.0e0) ** 0.67e0)
+    c2272 = 1.0e-6 * UCFPR * (0.5e0 + 0.5e0 * safe_pow(wtgpd / 60.0e0, 0.67e0))
     return wtgpd, fkind * c2272
 
 
@@ -1998,7 +1999,7 @@ def calculate_atmospheric_recovery_cost(
     cfrht = 1.0e5
     c2273 = jnp.where(
         f_plasma_fuel_tritium > 1.0e-3,
-        1.0e-6 * UCDTC * ((cfrht / 1.0e4) ** 0.6e0 * (volrci + wsvol)),
+        1.0e-6 * UCDTC * (safe_pow(cfrht / 1.0e4, 0.6e0) * (volrci + wsvol)),
         0.0,
     )
     return fkind * c2273
@@ -2306,7 +2307,7 @@ def calculate_cost_of_electricity(
     sqrt_p_plant_electric_net_mw_1200 = jnp.where(
         is_negative,
         0.0,
-        jnp.sqrt(jnp.where(is_negative, 1.0, p_plant_electric_net_mw) / 1200.0e0),
+        safe_sqrt(jnp.where(is_negative, 1.0, p_plant_electric_net_mw) / 1200.0e0),
     )
     annoam = jnp.asarray(ucoam)[lsa - 1] * sqrt_p_plant_electric_net_mw_1200
     coeoam = 1.0e9 * annoam / kwhpy

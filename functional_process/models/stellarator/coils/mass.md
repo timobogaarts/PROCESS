@@ -52,12 +52,22 @@ intervening branch or loop (textbook `local-intermediate`, same as
 
 ```python
 def calculate_coils_mass(
-    a_tf_wp_with_insulation, a_tf_wp_no_insulation, len_tf_coil,
-    a_tf_coil_inboard_case, den_tf_coil_case, den_tf_wp_turn_insulation,
-    n_tf_coil_turns, a_tf_turn_cable_space_no_void,
-    f_a_tf_turn_cable_space_extra_void, f_a_tf_turn_cable_copper,
-    a_tf_wp_coolant_channels, den_tf_sc_material, a_tf_turn_steel, den_steel,
-    a_tf_coil_wp_turn_insulation, n_tf_coils,
+    a_tf_wp_with_insulation,
+    a_tf_wp_no_insulation,
+    len_tf_coil,
+    a_tf_coil_inboard_case,
+    den_tf_coil_case,
+    den_tf_wp_turn_insulation,
+    n_tf_coil_turns,
+    a_tf_turn_cable_space_no_void,
+    f_a_tf_turn_cable_space_extra_void,
+    f_a_tf_turn_cable_copper,
+    a_tf_wp_coolant_channels,
+    den_tf_sc_material,
+    a_tf_turn_steel,
+    den_steel,
+    a_tf_coil_wp_turn_insulation,
+    n_tf_coils,
 ) -> tuple[float, float, float, float, float, float, float, float]:
     # (m_tf_coil_case, m_tf_coil_wp_insulation, m_tf_coil_superconductor,
     #  m_tf_coil_copper, m_tf_wp_steel_conduit, m_tf_coil_wp_turn_insulation,

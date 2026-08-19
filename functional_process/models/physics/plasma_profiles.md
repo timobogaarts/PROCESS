@@ -173,7 +173,8 @@ input-validation reset is straight-line arithmetic over scalars and profile arra
 
 ```python
 def calculate_ion_vol_avg_temperature(
-    f_temp_plasma_ion_electron, temp_plasma_electron_vol_avg_kev,
+    f_temp_plasma_ion_electron,
+    temp_plasma_electron_vol_avg_kev,
     temp_plasma_ion_vol_avg_kev,
 ):
     """`parameterise_plasma`'s conditional write, as a total function.
@@ -183,9 +184,14 @@ def calculate_ion_vol_avg_temperature(
     both arms, so the field is both a read and a write. -> temp_plasma_ion_vol_avg_kev
     """
 
+
 def calculate_parabolic_profile_values(
-    alphan, alphat, nd_plasma_electrons_vol_avg, nd_plasma_ions_total_vol_avg,
-    temp_plasma_electron_vol_avg_kev, temp_plasma_ion_vol_avg_kev,
+    alphan,
+    alphat,
+    nd_plasma_electrons_vol_avg,
+    nd_plasma_ions_total_vol_avg,
+    temp_plasma_electron_vol_avg_kev,
+    temp_plasma_ion_vol_avg_kev,
 ):
     """`parabolic_parameterisation`'s arithmetic tail (L126-181), minus the four
     redundant-duplicate on-axis writes.
@@ -194,10 +200,18 @@ def calculate_parabolic_profile_values(
         temp_plasma_ion_density_weighted_kev)
     """
 
+
 def calculate_pedestal_profile_values(
-    rho, dens, temp, profile_dx, nd_profile_integ, temp_profile_integ,
-    temp_plasma_ion_vol_avg_kev, temp_plasma_electron_vol_avg_kev,
-    nd_plasma_separatrix_electron, nd_plasma_electrons_vol_avg,
+    rho,
+    dens,
+    temp,
+    profile_dx,
+    nd_profile_integ,
+    temp_profile_integ,
+    temp_plasma_ion_vol_avg_kev,
+    temp_plasma_electron_vol_avg_kev,
+    nd_plasma_separatrix_electron,
+    nd_plasma_electrons_vol_avg,
 ):
     """`pedestal_parameterisation` (L205-247). `rho`/`dens`/`temp` are the profile
     arrays; Simpson's rule is reimplemented in `jnp` (see JAX-difficulty flags).
@@ -206,14 +220,25 @@ def calculate_pedestal_profile_values(
         temp_plasma_electron_line_avg_kev, prn1)
     """
 
+
 def calculate_profile_factors(
-    ne_profile_y, te_profile_y, nd_plasma_electron_on_axis,
-    temp_plasma_electron_on_axis_kev, nd_plasma_ions_on_axis,
-    temp_plasma_ion_on_axis_kev, nd_plasma_ions_total_vol_avg,
-    nd_plasma_electrons_vol_avg, nd_plasma_fuel_ions_vol_avg,
-    f_temp_plasma_ion_electron, temp_plasma_electron_density_weighted_kev,
-    temp_plasma_ion_density_weighted_kev, alphan, alphat, alphaj,
-    plasma_current, a_plasma_poloidal,
+    ne_profile_y,
+    te_profile_y,
+    nd_plasma_electron_on_axis,
+    temp_plasma_electron_on_axis_kev,
+    nd_plasma_ions_on_axis,
+    temp_plasma_ion_on_axis_kev,
+    nd_plasma_ions_total_vol_avg,
+    nd_plasma_electrons_vol_avg,
+    nd_plasma_fuel_ions_vol_avg,
+    f_temp_plasma_ion_electron,
+    temp_plasma_electron_density_weighted_kev,
+    temp_plasma_ion_density_weighted_kev,
+    alphan,
+    alphat,
+    alphaj,
+    plasma_current,
+    a_plasma_poloidal,
 ):
     """L259-324. Four of the eight returns are arrays of `n_plasma_profile_elements`.
     -> (pres_plasma_thermal_on_axis, pres_plasma_electron_profile,
@@ -221,8 +246,13 @@ def calculate_profile_factors(
         pres_plasma_fuel_profile, alphap, pres_plasma_thermal_vol_avg, j_plasma_on_axis)
     """
 
+
 def calculate_parabolic_gradient_lengths(
-    alphat, alphan, temp_plasma_electron_on_axis_kev, nd_plasma_electron_on_axis, rminor,
+    alphat,
+    alphan,
+    temp_plasma_electron_on_axis_kev,
+    nd_plasma_electron_on_axis,
+    rminor,
 ):
     """L342-430, with the dead `i_plasma_pedestal` guard dropped.
     Raises on negative alphat/alphan in PROCESS; the port returns non-finite instead
@@ -375,3 +405,33 @@ Both called **for effect**: the return value is unused, and the caller then read
    profile array (default 201). In a traced port it is a static shape parameter; it is
    read from `data.physics` in `profiles.py:62-64`. Needs the `Out.static`-like treatment
    or to be fixed at graph-assembly time. Deferred to the `profiles.py` unit.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+1 square root in this file has been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

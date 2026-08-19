@@ -25,6 +25,7 @@ import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
 from process.core import constants
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 
 def calculate_tf_power_resistive(
@@ -194,7 +195,7 @@ def calculate_tf_power_superconducting(
     len_tf_bus = (
         8.0e0 * np.pi * rmajor
         + (1.0e0 + ntfbkr) * (12.0e0 * rmajor + 80.0e0)
-        + 0.2e0 * itfka * jnp.sqrt(n_tf_coils * res_tf_leg * 1000.0e0)
+        + 0.2e0 * itfka * safe_sqrt(n_tf_coils * res_tf_leg * 1000.0e0)
     )
     rtfbus = rho_tf_bus * len_tf_bus / (albusa / 10000)
     rcoils = n_tf_coils * res_tf_leg
@@ -211,11 +212,13 @@ def calculate_tf_power_superconducting(
     r1emj = nsptfc * ettfc / (ntfbkr * 4.0e0 + 0.0001e0)
     rpower = (n_tf_coils * res_tf_leg + rtfbus) * itfka**2
 
-    part1 = fspc1 * ntfpm * tfpmkw**0.667e0
-    part2 = fspc2 * ntfbkr * (v_tf_coil_dump_quench_kv * itfka) ** 0.667e0
-    part3 = fspc3 * (tfackw / (2.4e0 * nsptfc + 13.8e0 * (1.0e0 - nsptfc))) ** 0.667e0
+    part1 = fspc1 * ntfpm * safe_pow(tfpmkw, 0.667e0)
+    part2 = fspc2 * ntfbkr * safe_pow(v_tf_coil_dump_quench_kv * itfka, 0.667e0)
+    part3 = fspc3 * safe_pow(
+        tfackw / (2.4e0 * nsptfc + 13.8e0 * (1.0e0 - nsptfc)), 0.667e0
+    )
     tfcfsp = part1 + part2 + part3
-    drarea = 0.5e0 * (ntfbkr * 4.0e0) * (1.0e0 + r1emj) ** 0.667e0
+    drarea = 0.5e0 * (ntfbkr * 4.0e0) * safe_pow(1.0e0 + r1emj, 0.667e0)
     tfcbv = 6.0e0 * tfcfsp
 
     p_tf_electric_supplies_mw = rpower / etatf

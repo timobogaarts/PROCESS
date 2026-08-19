@@ -20,7 +20,10 @@ nor `TeProfile.run()` call it — confirmed by reading both bodies (L145-159, L3
 and its only call site anywhere in `process/` is `physics.py:365-368`:
 
 ```python
-if PlasmaProfileShapeType(self.data.physics.i_plasma_pedestal) == PlasmaProfileShapeType.PEDESTAL_PROFILE:
+if (
+    PlasmaProfileShapeType(self.data.physics.i_plasma_pedestal)
+    == PlasmaProfileShapeType.PEDESTAL_PROFILE
+):
     self.plasma_profile.neprofile.set_pedestal_and_separatrix_values()
 ```
 

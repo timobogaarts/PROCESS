@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 
 from process.core import constants
+from functional_process.models.safe_math import safe_sqrt
 
 
 def calculate_dimensionless_plasma_parameters(
@@ -67,19 +68,17 @@ def calculate_dimensionless_plasma_parameters(
         * vol_plasma**2
         * rmajor**2
         * b_plasma_toroidal_on_axis
-        * jnp.sqrt(eps)
+        * safe_sqrt(eps)
         * nd_plasma_electron_line**3
         * kappa
         / (e_plasma_beta**2 * plasma_current)
     )
 
-    rho_star = jnp.sqrt(
-        2.0
+    rho_star = safe_sqrt(2.0
         * constants.PROTON_MASS
         * m_ions_total_amu
         * e_plasma_beta
-        / (3.0 * vol_plasma * nd_plasma_electron_line)
-    ) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
+        / (3.0 * vol_plasma * nd_plasma_electron_line)) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
 
     beta_mcdonald = (
         4.0

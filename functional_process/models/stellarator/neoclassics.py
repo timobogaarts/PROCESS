@@ -23,10 +23,12 @@ would need (a per-component fuzz+differentiate scheme, most likely). Do not add 
 "ported" as "validated."
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
 from process.core import constants
+from functional_process.models.safe_math import safe_sqrt
 
 KEV = 1e3 * constants.ELECTRON_CHARGE
 
@@ -294,7 +296,7 @@ def calculate_kt(temperatures):
 def _pitch_angle_factor(xk):
     """Chandrasekhar-style erf-based collision factor, shared by `nu`/`nu_star_fromT`."""
     expxk = jnp.exp(-xk)
-    t = 1.0 / (1.0 + 0.3275911 * jnp.sqrt(xk))
+    t = 1.0 / (1.0 + 0.3275911 * safe_sqrt(xk))
     erfn = (
         1.0
         - t
@@ -304,7 +306,7 @@ def _pitch_angle_factor(xk):
         )
         * expxk
     )
-    return (1.0 - 0.5 / xk) * erfn + expxk / jnp.sqrt(jnp.pi * xk)
+    return (1.0 - 0.5 / xk) * erfn + expxk / safe_sqrt(jnp.pi * xk)
 
 
 def calculate_collision_frequency(densities, temperatures):
@@ -336,7 +338,7 @@ def calculate_collision_frequency(densities, temperatures):
         for k in range(4):
             xk = (_SPECIES_MASS[k] / _SPECIES_MASS[j]) * (temperatures[j] / temperatures[k]) * ROOTS
             phixmgx = _pitch_angle_factor(xk)
-            v = jnp.sqrt(2.0 * ROOTS * temperatures[j] / _SPECIES_MASS[j])
+            v = safe_sqrt(2.0 * ROOTS * temperatures[j] / _SPECIES_MASS[j])
             out = out.at[j, :].add(
                 densities[k]
                 * (_SPECIES_CHARGE[j] * _SPECIES_CHARGE[k]) ** 2
@@ -373,7 +375,7 @@ def calculate_normalized_collision_frequency(temperatures, nu, iota, rmajor):
     k = jnp.repeat(ROOTS[:, None], 4, axis=1)
     kk = (k * temperatures).T
 
-    v = constants.SPEED_LIGHT * jnp.sqrt(
+    v = constants.SPEED_LIGHT * safe_sqrt(
         1.0 - (kk / (_SPECIES_MASS[:, None] * constants.SPEED_LIGHT**2) + 1.0) ** (-1)
     )
     return rmajor * nu / (iota * v)
@@ -437,13 +439,13 @@ def calculate_normalized_collision_frequency_from_temperature(
 
     out = jnp.zeros((4,))
     for j in range(4):
-        v = jnp.sqrt(2.0 * temp[j] / _SPECIES_MASS[j])
+        v = safe_sqrt(2.0 * temp[j] / _SPECIES_MASS[j])
         for k in range(4):
             xk = (_SPECIES_MASS[k] / _SPECIES_MASS[j]) * (temp[j] / temp[k])
             # Source guards `exp(-xk)` with `if xk < 200.0 else 0.0` to avoid
             # underflow noise; `jnp.where` is the traced equivalent.
             expxk = jnp.where(xk < 200.0, jnp.exp(-xk), 0.0)
-            t = 1.0 / (1.0 + 0.3275911 * jnp.sqrt(xk))
+            t = 1.0 / (1.0 + 0.3275911 * safe_sqrt(xk))
             erfn = (
                 1.0
                 - t
@@ -453,7 +455,7 @@ def calculate_normalized_collision_frequency_from_temperature(
                 )
                 * expxk
             )
-            phixmgx = (1.0 - 0.5 / xk) * erfn + expxk / jnp.sqrt(jnp.pi * xk)
+            phixmgx = (1.0 - 0.5 / xk) * erfn + expxk / safe_sqrt(jnp.pi * xk)
             out = out.at[j].add(
                 density[k]
                 * (_SPECIES_CHARGE[j] * _SPECIES_CHARGE[k]) ** 2
@@ -521,7 +523,7 @@ def calculate_plateau_transport_coefficient(kt, vd, rmajor, iota):
     :
         `(4, NO_ROOTS)` plateau transport coefficient.
     """
-    v = constants.SPEED_LIGHT * jnp.sqrt(
+    v = constants.SPEED_LIGHT * safe_sqrt(
         1.0 - (kt / (_SPECIES_MASS[:, None] * constants.SPEED_LIGHT**2) + 1.0) ** (-1)
     )
     return jnp.pi / 4.0 * vd**2 * rmajor / iota / v
@@ -571,7 +573,7 @@ def calculate_integrated_radial_transport_coefficient(d11_mono, index):
         `(4,)` integrated transport coefficient.
     """
     return jnp.sum(
-        2.0 / jnp.sqrt(jnp.pi) * d11_mono * ROOTS ** (index - 0.5) * WEIGHTS, axis=1
+        2.0 / safe_sqrt(jnp.pi) * d11_mono * ROOTS ** (index - 0.5) * WEIGHTS, axis=1
     )
 
 
@@ -637,6 +639,28 @@ class ProfileValues(ExplicitFunction):
     Mints under `.neoclassics.*` -- the source stores this call's four outputs there
     (`init_neoclassics`), even though the `rho=0.6` argument used at that one call site
     is itself a literal, not read from `data` (see `neoclassics.md`).
+
+    That literal is `rho`, below. It was previously bound as
+    `Input(lambda s: s.neoclassics.r_eff)`, which was a **wrong answer, not a coverage
+    gap**: `.neoclassics.r_eff` is declared `= 0.0` in
+    `process/data_structure/neoclassics_variables.py:87` and PROCESS never assigns it
+    anywhere -- the real argument is `init_neoclassics`'s local parameter `r_effin`,
+    passed the literal `0.6` at `process/models/stellarator/neoclassics.py:290`. The
+    port therefore evaluated every profile on axis instead of at mid-radius:
+    `dr_densities` came out identically `-0.0` against PROCESS's `-6.1e19`. Found by
+    `_audit/boundary_inputs_audit.md` §6.1 and invisible to the MDA harness until its
+    §6.2 array-comparison hole was closed, because all four outputs are arrays.
+    """
+
+    rho: float = eqx.field(static=True, default=0.6)
+    """Normalised radius the neoclassical profiles are evaluated at -- PROCESS's own
+    literal at its one call site, hoisted to a graph-assembly-time fact.
+
+    Static rather than an `Input` because there is no field to read it from: it is a
+    modelling choice about where to sample, and the only `DataStructure` field with the
+    right name (`.neoclassics.r_eff`) is a permanently-zero placeholder. Same move as
+    `ImpurityRadiationTotals.imp_indices`, and declared in
+    `mda_harness.STATIC_KWARGS_WITHOUT_BACKING_FIELD` for the same reason.
     """
 
     densities = Output(lambda s: s.neoclassics.densities)
@@ -646,7 +670,6 @@ class ProfileValues(ExplicitFunction):
 
     def __call__(
         self,
-        rho=Input(lambda s: s.neoclassics.r_eff),
         temp_plasma_electron_on_axis_kev=Input(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
@@ -662,7 +685,7 @@ class ProfileValues(ExplicitFunction):
         rminor=Input(lambda s: s.physics.rminor),
     ):
         return calculate_profile_values(
-            rho,
+            self.rho,
             temp_plasma_electron_on_axis_kev,
             temp_plasma_ion_on_axis_kev,
             alphat,

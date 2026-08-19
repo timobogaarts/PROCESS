@@ -163,18 +163,31 @@ see open questions.
 # Updated: first_call/alphan/alphat removed from the signature -- see "the first_call
 # self-loop" section above.
 def plasma_composition(
-    nd_plasma_electrons_vol_avg, f_nd_alpha_thermal_electron, fusden_alpha_total,
-    f_nd_protium_electrons, proton_rate_density, f_nd_beam_electron,
-    f_nd_impurity_electron_array, temp_plasma_electron_vol_avg_kev,
-    temp_impurity_keV_array, impurity_arr_zav, f_plasma_fuel_deuterium,
-    f_plasma_fuel_tritium, f_plasma_fuel_helium3,
-    f_temp_plasma_electron_density_vol_avg, f_beam_tritium, m_impurity_amu_array,
+    nd_plasma_electrons_vol_avg,
+    f_nd_alpha_thermal_electron,
+    fusden_alpha_total,
+    f_nd_protium_electrons,
+    proton_rate_density,
+    f_nd_beam_electron,
+    f_nd_impurity_electron_array,
+    temp_plasma_electron_vol_avg_kev,
+    temp_impurity_keV_array,
+    impurity_arr_zav,
+    f_plasma_fuel_deuterium,
+    f_plasma_fuel_tritium,
+    f_plasma_fuel_helium3,
+    f_temp_plasma_electron_density_vol_avg,
+    f_beam_tritium,
+    m_impurity_amu_array,
     is_ignited,
 ) -> tuple[...]: ...
 
+
 def calculate_effective_charge_ionisation_profiles(
-    temp_electron_profile_kev, f_nd_impurity_electron_array,
-    temp_impurity_keV_array, impurity_arr_zav,
+    temp_electron_profile_kev,
+    f_nd_impurity_electron_array,
+    temp_impurity_keV_array,
+    impurity_arr_zav,
 ) -> tuple[jax.Array, jax.Array]: ...
 ```
 Implemented in `physics_B_composition.py`.

@@ -33,8 +33,9 @@ own convention (formatted-output writers are never pure-port candidates).
 ## proposed signature(s)
 
 ```python
-def calculate_radiation_fraction(p_plasma_rad_mw: float, p_plasma_heating_mw: float) -> float:
-    ...
+def calculate_radiation_fraction(
+    p_plasma_rad_mw: float, p_plasma_heating_mw: float
+) -> float: ...
 ```
 Unchanged from source's own signature and body shape (one domain guard, one division).
 
@@ -42,6 +43,7 @@ Unchanged from source's own signature and body shape (one domain guard, one divi
 
 ```python
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+
 
 class RadiationFraction(ExplicitFunction):
     f_p_plasma_separatrix_rad = Output(lambda s: s.physics.f_p_plasma_separatrix_rad)

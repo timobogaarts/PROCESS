@@ -72,14 +72,18 @@ directly rather than by inference.
 
 Ported, tier-1, as written (see `coils.py`):
 ```python
-def j_crit_cable_from_fraction(j_crit_sc, f_tf_conductor_copper, f_he) -> float:
-    ...
+def j_crit_cable_from_fraction(j_crit_sc, f_tf_conductor_copper, f_he) -> float: ...
+
 
 def bmax_from_awp(
-    wp_width_radial, current, n_tf_coils, r_coil_major, r_coil_minor,
-    stella_config_a1, stella_config_a2,
-) -> float:
-    ...
+    wp_width_radial,
+    current,
+    n_tf_coils,
+    r_coil_major,
+    r_coil_minor,
+    stella_config_a1,
+    stella_config_a2,
+) -> float: ...
 ```
 
 Ported, tier-2, this pass:
@@ -87,6 +91,7 @@ Ported, tier-2, this pass:
 def intersect_residual(x, x1, y1, x2, y2) -> float:
     """y1_interp(x) - y2_interp(x); vanishes at the crossing."""
     ...
+
 
 def intersect(x1, y1, x2, y2, xin) -> float:
     """The x at which the two curves cross, found by bisection + Newton polish."""
@@ -107,17 +112,25 @@ separately (nothing left over to share once the material-model call itself diffe
 per branch):
 
 ```python
-def jcrit_from_material_iter_nb3sn(t_helium, b_max) -> float: ...              # i_tf_sc_mat == 1
-def jcrit_from_material_bi2212(t_helium, b_max, j_tf_wp,
-    f_a_tf_turn_cable_space_extra_void, fhts, f_a_tf_turn_cable_copper) -> float: ...  # == 2
-def jcrit_from_material_nbti_lubell(t_helium, b_max) -> float: ...             # == 3
+def jcrit_from_material_iter_nb3sn(t_helium, b_max) -> float: ...  # i_tf_sc_mat == 1
+def jcrit_from_material_bi2212(
+    t_helium,
+    b_max,
+    j_tf_wp,
+    f_a_tf_turn_cable_space_extra_void,
+    fhts,
+    f_a_tf_turn_cable_copper,
+) -> float: ...  # == 2
+def jcrit_from_material_nbti_lubell(t_helium, b_max) -> float: ...  # == 3
 def jcrit_from_material_iter_nb3sn_user_defined(
-    t_helium, b_max, bcritsc, tcritsc) -> float: ...                           # == 4
-def jcrit_from_material_wst_nb3sn(t_helium, b_max) -> float: ...               # == 5
-def jcrit_from_material_rebco(t_helium, b_max) -> float: ...                   # == 6
+    t_helium, b_max, bcritsc, tcritsc
+) -> float: ...  # == 4
+def jcrit_from_material_wst_nb3sn(t_helium, b_max) -> float: ...  # == 5
+def jcrit_from_material_rebco(t_helium, b_max) -> float: ...  # == 6
 def jcrit_from_material_gl_nbti(
-    t_helium, b_max, b_crit_upper_nbti, t_crit_nbti) -> float: ...             # == 7
-def jcrit_from_material_gl_rebco(t_helium, b_max) -> float: ...                # == 8
+    t_helium, b_max, b_crit_upper_nbti, t_crit_nbti
+) -> float: ...  # == 7
+def jcrit_from_material_gl_rebco(t_helium, b_max) -> float: ...  # == 8
 ```
 
 Each returns `j_crit_sc` (MA/m2), matching the source's `j_crit_sc * 1e-6`. Verified

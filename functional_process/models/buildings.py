@@ -46,6 +46,7 @@ from process.models.physics.current_drive import (
     CurrentDriveMethodType,
     CurrentDriveModel,
 )
+from functional_process.models.safe_math import safe_pow
 
 
 def _safe_ratio(numerator, denominator):
@@ -279,7 +280,7 @@ def calculate_bldgs(
     wsa = (rmbw + 7.0) * 20.0 + rmbl * 7.0
     wsv = wsvfac * wsa * rmbh
 
-    cryv = 55.0 * helpow**0.5
+    cryv = 55.0 * safe_pow(helpow, 0.5)
 
     elev = tfcbv + pfbldgm3 + esbldgm3 + pibv
 
@@ -626,7 +627,7 @@ def calculate_bldgs_sizes(
 
     hotcell_vol = ib_hotcell_vol + ob_hotcell_vol + div_hotcell_vol + cp_hotcell_vol
     hotcell_area = hotcell_vol / hotcell_h
-    hotcell_l = hotcell_area**0.5
+    hotcell_l = safe_pow(hotcell_area, 0.5)
     hotcell_w = hotcell_l
     hotcell_area_ext = (hotcell_l + 2.0 * reactor_wall_thk) * (
         hotcell_w + 2.0 * reactor_wall_thk

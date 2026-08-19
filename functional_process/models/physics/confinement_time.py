@@ -38,6 +38,7 @@ from process.data_structure.physics_variables import (
     ConfinementTimeModel,
     PlasmaIgnitionModel,
 )
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 # ---------------------------------------------------------------------------
 # `plasma_geometry.py::PlasmaGeom.calculate_iter_physics_basis_elongation` --
@@ -72,7 +73,7 @@ def neo_alcator_confinement_time(dene20, rminor, rmajor, qstar):
 
 def mirnov_confinement_time(rminor, kappa95, cur_plasma_ma):
     """Mirnov-like (H-mode) scaling. `ConfinementTimeModel.MIRNOV` (2)."""
-    return 0.2 * rminor * jnp.sqrt(kappa95) * cur_plasma_ma
+    return 0.2 * rminor * safe_sqrt(kappa95) * cur_plasma_ma
 
 
 def merezhkin_muhkovatov_confinement_time(
@@ -84,12 +85,12 @@ def merezhkin_muhkovatov_confinement_time(
     return (
         3.5e-3
         * rmajor**2.75
-        * rminor**0.25
-        * kappa95**0.125
+        * safe_pow(rminor, 0.25)
+        * safe_pow(kappa95, 0.125)
         * qstar
         * nd_plasma_electron_line_20
-        * jnp.sqrt(afuel)
-        / jnp.sqrt(ten / 10.0)
+        * safe_sqrt(afuel)
+        / safe_sqrt(ten / 10.0)
     )
 
 
@@ -102,8 +103,8 @@ def shimomura_confinement_time(
         * rmajor
         * rminor
         * b_plasma_toroidal_on_axis
-        * jnp.sqrt(kappa95)
-        * jnp.sqrt(afuel)
+        * safe_sqrt(kappa95)
+        * safe_sqrt(afuel)
     )
 
 
@@ -127,12 +128,16 @@ def kaye_goldston_confinement_time(
     """
     return (
         0.055
-        * kappa95**0.28
+        * safe_pow(kappa95, 0.28)
         * cur_plasma_ma**1.24
-        * n20**0.26
+        * safe_pow(n20, 0.26)
         * rmajor**1.65
-        * jnp.sqrt(afuel / 1.5)
-        / (b_plasma_toroidal_on_axis**0.09 * rminor**0.49 * p_plasma_loss_mw**0.58)
+        * safe_sqrt(afuel / 1.5)
+        / (
+            safe_pow(b_plasma_toroidal_on_axis, 0.09)
+            * safe_pow(rminor, 0.49)
+            * safe_pow(p_plasma_loss_mw, 0.58)
+        )
     )
 
 
@@ -149,14 +154,14 @@ def iter_89p_confinement_time(
     """ITER Power scaling - ITER 89-P (L-mode). `ConfinementTimeModel.ITER_89P` (6)."""
     return (
         0.048
-        * cur_plasma_ma**0.85
+        * safe_pow(cur_plasma_ma, 0.85)
         * rmajor**1.2
-        * rminor**0.3
-        * jnp.sqrt(kappa)
-        * nd_plasma_electron_line_20**0.1
-        * b_plasma_toroidal_on_axis**0.2
-        * jnp.sqrt(afuel)
-        / jnp.sqrt(p_plasma_loss_mw)
+        * safe_pow(rminor, 0.3)
+        * safe_sqrt(kappa)
+        * safe_pow(nd_plasma_electron_line_20, 0.1)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.2)
+        * safe_sqrt(afuel)
+        / safe_sqrt(p_plasma_loss_mw)
     )
 
 
@@ -174,17 +179,22 @@ def iter_89_0_confinement_time(
     (7).
     """
     term1 = (
-        0.04 * cur_plasma_ma**0.5 * rmajor**0.3 * rminor**0.8 * kappa**0.6 * afuel**0.5
+        0.04
+        * safe_pow(cur_plasma_ma, 0.5)
+        * safe_pow(rmajor, 0.3)
+        * safe_pow(rminor, 0.8)
+        * safe_pow(kappa, 0.6)
+        * safe_pow(afuel, 0.5)
     )
     term2 = (
         0.064
-        * cur_plasma_ma**0.8
+        * safe_pow(cur_plasma_ma, 0.8)
         * rmajor**1.6
-        * rminor**0.6
-        * kappa**0.5
-        * nd_plasma_electron_line_20**0.6
-        * b_plasma_toroidal_on_axis**0.35
-        * afuel**0.2
+        * safe_pow(rminor, 0.6)
+        * safe_pow(kappa, 0.5)
+        * safe_pow(nd_plasma_electron_line_20, 0.6)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.35)
+        * safe_pow(afuel, 0.2)
         / p_plasma_loss_mw
     )
     return term1 + term2
@@ -204,18 +214,18 @@ def rebut_lallia_confinement_time(
     """Rebut-Lallia offset linear scaling (L-mode). `ConfinementTimeModel.REBUT_LALLIA`
     (8).
     """
-    rll = (rminor**2 * rmajor * kappa) ** (1.0 / 3.0)
-    term1 = 1.2e-2 * cur_plasma_ma * rll**1.5 / jnp.sqrt(zeff)
+    rll = safe_pow(rminor**2 * rmajor * kappa, 1.0 / 3.0)
+    term1 = 1.2e-2 * cur_plasma_ma * rll**1.5 / safe_sqrt(zeff)
     term2 = (
         0.146
-        * nd_plasma_electron_line_20**0.75
-        * jnp.sqrt(cur_plasma_ma)
-        * jnp.sqrt(b_plasma_toroidal_on_axis)
+        * safe_pow(nd_plasma_electron_line_20, 0.75)
+        * safe_sqrt(cur_plasma_ma)
+        * safe_sqrt(b_plasma_toroidal_on_axis)
         * rll**2.75
-        * zeff**0.25
+        * safe_pow(zeff, 0.25)
         / p_plasma_loss_mw
     )
-    return 1.65 * jnp.sqrt(afuel / 2.0) * (term1 + term2)
+    return 1.65 * safe_sqrt(afuel / 2.0) * (term1 + term2)
 
 
 def goldston_confinement_time(
@@ -227,9 +237,9 @@ def goldston_confinement_time(
         * cur_plasma_ma
         * rmajor**1.75
         * rminor ** (-0.37)
-        * jnp.sqrt(kappa95)
-        * jnp.sqrt(afuel / 1.5)
-        / jnp.sqrt(p_plasma_loss_mw)
+        * safe_sqrt(kappa95)
+        * safe_sqrt(afuel / 1.5)
+        / safe_sqrt(p_plasma_loss_mw)
     )
 
 
@@ -254,11 +264,13 @@ def t10_confinement_time(
         * rmajor
         * rminor
         * b_plasma_toroidal_on_axis
-        * jnp.sqrt(kappa95)
+        * safe_sqrt(kappa95)
         * denfac
-        / p_plasma_loss_mw**0.4
-        * (zeff**2 * cur_plasma_ma**4 / (rmajor * rminor * qstar**3 * kappa95**1.5))
-        ** 0.08
+        / safe_pow(p_plasma_loss_mw, 0.4)
+        * safe_pow(
+            zeff**2 * cur_plasma_ma**4 / (rmajor * rminor * qstar**3 * kappa95**1.5),
+            0.08,
+        )
     )
 
 
@@ -276,21 +288,23 @@ def jaeri_confinement_time(
 ):
     """JAERI / Odajima-Shimomura L-mode scaling. `ConfinementTimeModel.JAERI` (11)."""
     gjaeri = (
-        zeff**0.4
-        * ((15.0 - zeff) / 20.0) ** 0.6
-        * (3.0 * qstar * (qstar + 5.0) / ((qstar + 2.0) * (qstar + 7.0))) ** 0.6
+        safe_pow(zeff, 0.4)
+        * safe_pow((15.0 - zeff) / 20.0, 0.6)
+        * safe_pow(
+            3.0 * qstar * (qstar + 5.0) / ((qstar + 2.0) * (qstar + 7.0)), 0.6
+        )
     )
     return (
-        0.085 * kappa95 * rminor**2 * jnp.sqrt(afuel)
+        0.085 * kappa95 * rminor**2 * safe_sqrt(afuel)
         + 0.069
-        * n20**0.6
+        * safe_pow(n20, 0.6)
         * cur_plasma_ma
-        * b_plasma_toroidal_on_axis**0.2
-        * rminor**0.4
+        * safe_pow(b_plasma_toroidal_on_axis, 0.2)
+        * safe_pow(rminor, 0.4)
         * rmajor**1.6
-        * jnp.sqrt(afuel)
+        * safe_sqrt(afuel)
         * gjaeri
-        * kappa95**0.2
+        * safe_pow(kappa95, 0.2)
         / p_plasma_loss_mw
     )
 
@@ -310,14 +324,14 @@ def kaye_big_confinement_time(
     """
     return (
         0.105
-        * jnp.sqrt(rmajor)
-        * rminor**0.8
-        * b_plasma_toroidal_on_axis**0.3
-        * kappa95**0.25
-        * cur_plasma_ma**0.85
-        * n20**0.1
-        * jnp.sqrt(afuel)
-        / jnp.sqrt(p_plasma_loss_mw)
+        * safe_sqrt(rmajor)
+        * safe_pow(rminor, 0.8)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.3)
+        * safe_pow(kappa95, 0.25)
+        * safe_pow(cur_plasma_ma, 0.85)
+        * safe_pow(n20, 0.1)
+        * safe_sqrt(afuel)
+        / safe_sqrt(p_plasma_loss_mw)
     )
 
 
@@ -334,14 +348,14 @@ def iter_h90_p_confinement_time(
     """ITER H-mode scaling - ITER H90-P. `ConfinementTimeModel.ITER_H90_P` (13)."""
     return (
         0.064
-        * cur_plasma_ma**0.87
+        * safe_pow(cur_plasma_ma, 0.87)
         * rmajor**1.82
         * rminor ** (-0.12)
-        * kappa**0.35
-        * nd_plasma_electron_line_20**0.09
-        * b_plasma_toroidal_on_axis**0.15
-        * jnp.sqrt(afuel)
-        / jnp.sqrt(p_plasma_loss_mw)
+        * safe_pow(kappa, 0.35)
+        * safe_pow(nd_plasma_electron_line_20, 0.09)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.15)
+        * safe_sqrt(afuel)
+        / safe_sqrt(p_plasma_loss_mw)
     )
 
 
@@ -357,13 +371,13 @@ def riedel_l_confinement_time(
     """Riedel scaling (L-mode). `ConfinementTimeModel.RIEDEL_L` (15)."""
     return (
         0.044
-        * cur_plasma_ma**0.93
+        * safe_pow(cur_plasma_ma, 0.93)
         * rmajor**1.37
         * rminor ** (-0.049)
-        * kappa95**0.588
-        * nd_plasma_electron_line_20**0.078
-        * b_plasma_toroidal_on_axis**0.152
-        / p_plasma_loss_mw**0.537
+        * safe_pow(kappa95, 0.588)
+        * safe_pow(nd_plasma_electron_line_20, 0.078)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.152)
+        / safe_pow(p_plasma_loss_mw, 0.537)
     )
 
 
@@ -380,13 +394,13 @@ def christiansen_confinement_time(
     """Christiansen et al scaling (L-mode). `ConfinementTimeModel.CHRISTIANSEN` (16)."""
     return (
         0.24
-        * cur_plasma_ma**0.79
-        * rmajor**0.56
+        * safe_pow(cur_plasma_ma, 0.79)
+        * safe_pow(rmajor, 0.56)
         * rminor**1.46
-        * kappa95**0.73
-        * nd_plasma_electron_line_20**0.41
-        * b_plasma_toroidal_on_axis**0.29
-        / (p_plasma_loss_mw**0.79 * afuel**0.02)
+        * safe_pow(kappa95, 0.73)
+        * safe_pow(nd_plasma_electron_line_20, 0.41)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.29)
+        / (safe_pow(p_plasma_loss_mw, 0.79) * safe_pow(afuel, 0.02))
     )
 
 
@@ -410,14 +424,14 @@ def lackner_gottardi_confinement_time(
     )
     return (
         0.12
-        * cur_plasma_ma**0.8
+        * safe_pow(cur_plasma_ma, 0.8)
         * rmajor**1.8
-        * rminor**0.4
+        * safe_pow(rminor, 0.4)
         * kappa95
         * (1.0 + kappa95) ** (-0.8)
-        * nd_plasma_electron_line_20**0.6
-        * qhat**0.4
-        / p_plasma_loss_mw**0.6
+        * safe_pow(nd_plasma_electron_line_20, 0.6)
+        * safe_pow(qhat, 0.4)
+        / safe_pow(p_plasma_loss_mw, 0.6)
     )
 
 
@@ -436,10 +450,10 @@ def neo_kaye_confinement_time(
         * cur_plasma_ma**1.12
         * rmajor**1.3
         * rminor ** (-0.04)
-        * kappa95**0.28
-        * nd_plasma_electron_line_20**0.14
-        * b_plasma_toroidal_on_axis**0.04
-        / p_plasma_loss_mw**0.59
+        * safe_pow(kappa95, 0.28)
+        * safe_pow(nd_plasma_electron_line_20, 0.14)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.04)
+        / safe_pow(p_plasma_loss_mw, 0.59)
     )
 
 
@@ -456,14 +470,14 @@ def riedel_h_confinement_time(
     """Riedel scaling (H-mode). `ConfinementTimeModel.RIEDEL_H` (19)."""
     return (
         0.1
-        * jnp.sqrt(afuel)
-        * cur_plasma_ma**0.884
+        * safe_sqrt(afuel)
+        * safe_pow(cur_plasma_ma, 0.884)
         * rmajor**1.24
         * rminor ** (-0.23)
-        * kappa95**0.317
-        * b_plasma_toroidal_on_axis**0.207
-        * nd_plasma_electron_line_20**0.105
-        / p_plasma_loss_mw**0.486
+        * safe_pow(kappa95, 0.317)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.207)
+        * safe_pow(nd_plasma_electron_line_20, 0.105)
+        / safe_pow(p_plasma_loss_mw, 0.486)
     )
 
 
@@ -474,10 +488,10 @@ def iter_h90_p_amended_confinement_time(
     return (
         0.082
         * cur_plasma_ma**1.02
-        * b_plasma_toroidal_on_axis**0.15
-        * jnp.sqrt(afuel)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.15)
+        * safe_sqrt(afuel)
         * rmajor**1.60
-        / (p_plasma_loss_mw**0.47 * kappa**0.19)
+        / (safe_pow(p_plasma_loss_mw, 0.47) * safe_pow(kappa, 0.19))
     )
 
 
@@ -493,10 +507,10 @@ def sudo_et_al_confinement_time(
     """
     return (
         0.17
-        * rmajor**0.75
+        * safe_pow(rmajor, 0.75)
         * rminor**2
-        * nd_plasma_electron_line_20**0.69
-        * b_plasma_toroidal_on_axis**0.84
+        * safe_pow(nd_plasma_electron_line_20, 0.69)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.84)
         * p_plasma_loss_mw ** (-0.58)
     )
 
@@ -511,11 +525,11 @@ def gyro_reduced_bohm_confinement_time(
     """Gyro-reduced Bohm scaling. `ConfinementTimeModel.GYRO_REDUCED_BOHM` (22)."""
     return (
         0.25
-        * b_plasma_toroidal_on_axis**0.8
-        * nd_plasma_electron_line_20**0.6
+        * safe_pow(b_plasma_toroidal_on_axis, 0.8)
+        * safe_pow(nd_plasma_electron_line_20, 0.6)
         * p_plasma_loss_mw ** (-0.6)
         * rminor**2.4
-        * rmajor**0.6
+        * safe_pow(rmajor, 0.6)
     )
 
 
@@ -534,10 +548,10 @@ def lackner_gottardi_stellarator_confinement_time(
         0.17
         * rmajor
         * rminor**2
-        * nd_plasma_electron_line_20**0.6
-        * b_plasma_toroidal_on_axis**0.8
+        * safe_pow(nd_plasma_electron_line_20, 0.6)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.8)
         * p_plasma_loss_mw ** (-0.6)
-        * q**0.4
+        * safe_pow(q, 0.4)
     )
 
 
@@ -555,13 +569,13 @@ def iter_93h_confinement_time(
     return (
         0.036
         * cur_plasma_ma**1.06
-        * b_plasma_toroidal_on_axis**0.32
+        * safe_pow(b_plasma_toroidal_on_axis, 0.32)
         * p_plasma_loss_mw ** (-0.67)
-        * afuel**0.41
+        * safe_pow(afuel, 0.41)
         * rmajor**1.79
-        * nd_plasma_electron_line_20**0.17
-        * aspect**0.11
-        * kappa**0.66
+        * safe_pow(nd_plasma_electron_line_20, 0.17)
+        * safe_pow(aspect, 0.11)
+        * safe_pow(kappa, 0.66)
     )
 
 
@@ -580,14 +594,14 @@ def iter_h97p_confinement_time(
     """
     return (
         0.031
-        * cur_plasma_ma**0.95
-        * b_plasma_toroidal_on_axis**0.25
+        * safe_pow(cur_plasma_ma, 0.95)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.25)
         * p_plasma_loss_mw ** (-0.67)
-        * nd_plasma_electron_line_19**0.35
+        * safe_pow(nd_plasma_electron_line_19, 0.35)
         * rmajor**1.92
         * aspect ** (-0.08)
-        * kappa**0.63
-        * afuel**0.42
+        * safe_pow(kappa, 0.63)
+        * safe_pow(afuel, 0.42)
     )
 
 
@@ -606,14 +620,14 @@ def iter_h97p_elmy_confinement_time(
     """
     return (
         0.029
-        * cur_plasma_ma**0.90
-        * b_plasma_toroidal_on_axis**0.20
+        * safe_pow(cur_plasma_ma, 0.90)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.20)
         * p_plasma_loss_mw ** (-0.66)
-        * nd_plasma_electron_line_19**0.40
+        * safe_pow(nd_plasma_electron_line_19, 0.40)
         * rmajor**2.03
         * aspect ** (-0.19)
-        * kappa**0.92
-        * afuel**0.2
+        * safe_pow(kappa, 0.92)
+        * safe_pow(afuel, 0.2)
     )
 
 
@@ -630,13 +644,13 @@ def iter_96p_confinement_time(
     """ITER-96P (= ITER-97L) L-mode scaling. `ConfinementTimeModel.ITER_96P` (28)."""
     return (
         0.023
-        * cur_plasma_ma**0.96
-        * b_plasma_toroidal_on_axis**0.03
-        * kappa95**0.64
+        * safe_pow(cur_plasma_ma, 0.96)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.03)
+        * safe_pow(kappa95, 0.64)
         * rmajor**1.83
-        * aspect**0.06
-        * nd_plasma_electron_line_19**0.40
-        * afuel**0.20
+        * safe_pow(aspect, 0.06)
+        * safe_pow(nd_plasma_electron_line_19, 0.40)
+        * safe_pow(afuel, 0.20)
         * p_plasma_loss_mw ** (-0.73)
     )
 
@@ -656,13 +670,13 @@ def valovic_elmy_confinement_time(
     """
     return (
         0.067
-        * cur_plasma_ma**0.9
-        * b_plasma_toroidal_on_axis**0.17
-        * nd_plasma_electron_line_19**0.45
-        * afuel**0.05
+        * safe_pow(cur_plasma_ma, 0.9)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.17)
+        * safe_pow(nd_plasma_electron_line_19, 0.45)
+        * safe_pow(afuel, 0.05)
         * rmajor**1.316
-        * rminor**0.79
-        * kappa**0.56
+        * safe_pow(rminor, 0.79)
+        * safe_pow(kappa, 0.56)
         * p_plasma_loss_mw ** (-0.68)
     )
 
@@ -682,13 +696,13 @@ def kaye_confinement_time(
     """
     return (
         0.021
-        * cur_plasma_ma**0.81
-        * b_plasma_toroidal_on_axis**0.14
-        * kappa**0.7
+        * safe_pow(cur_plasma_ma, 0.81)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.14)
+        * safe_pow(kappa, 0.7)
         * rmajor**2.01
         * aspect ** (-0.18)
-        * nd_plasma_electron_line_19**0.47
-        * afuel**0.25
+        * safe_pow(nd_plasma_electron_line_19, 0.47)
+        * safe_pow(afuel, 0.25)
         * p_plasma_loss_mw ** (-0.73)
     )
 
@@ -716,14 +730,14 @@ def iter_pb98py_confinement_time(
     """
     return (
         0.0615
-        * cur_plasma_ma**0.9
-        * b_plasma_toroidal_on_axis**0.1
-        * nd_plasma_electron_line_19**0.4
+        * safe_pow(cur_plasma_ma, 0.9)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.1)
+        * safe_pow(nd_plasma_electron_line_19, 0.4)
         * p_plasma_loss_mw ** (-0.66)
         * rmajor**2
-        * kappa**0.75
+        * safe_pow(kappa, 0.75)
         * aspect ** (-0.66)
-        * afuel**0.2
+        * safe_pow(afuel, 0.2)
     )
 
 
@@ -742,14 +756,14 @@ def iter_ipb98y_confinement_time(
     """
     return (
         0.0365
-        * cur_plasma_ma**0.97
-        * b_plasma_toroidal_on_axis**0.08
-        * nd_plasma_electron_line_19**0.41
+        * safe_pow(cur_plasma_ma, 0.97)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.08)
+        * safe_pow(nd_plasma_electron_line_19, 0.41)
         * p_plasma_loss_mw ** (-0.63)
         * rmajor**1.93
-        * kappa**0.67
+        * safe_pow(kappa, 0.67)
         * aspect ** (-0.23)
-        * afuel**0.2
+        * safe_pow(afuel, 0.2)
     )
 
 
@@ -766,14 +780,14 @@ def iter_ipb98y1_confinement_time(
     """IPB98(y,1) ELMy H-mode scaling. `ConfinementTimeModel.ITER_IPB98Y1` (33)."""
     return (
         0.0503
-        * cur_plasma_ma**0.91
-        * b_plasma_toroidal_on_axis**0.15
-        * nd_plasma_electron_line_19**0.44
+        * safe_pow(cur_plasma_ma, 0.91)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.15)
+        * safe_pow(nd_plasma_electron_line_19, 0.44)
         * p_plasma_loss_mw ** (-0.65)
         * rmajor**2.05
-        * kappa_ipb**0.72
+        * safe_pow(kappa_ipb, 0.72)
         * aspect ** (-0.57)
-        * afuel**0.13
+        * safe_pow(afuel, 0.13)
     )
 
 
@@ -790,14 +804,14 @@ def iter_ipb98y2_confinement_time(
     """IPB98(y,2) ELMy H-mode scaling. `ConfinementTimeModel.ITER_IPB98Y2` (34)."""
     return (
         0.0562
-        * cur_plasma_ma**0.93
-        * b_plasma_toroidal_on_axis**0.15
-        * nd_plasma_electron_line_19**0.41
+        * safe_pow(cur_plasma_ma, 0.93)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.15)
+        * safe_pow(nd_plasma_electron_line_19, 0.41)
         * p_plasma_loss_mw ** (-0.69)
         * rmajor**1.97
-        * kappa_ipb**0.78
+        * safe_pow(kappa_ipb, 0.78)
         * aspect ** (-0.58)
-        * afuel**0.19
+        * safe_pow(afuel, 0.19)
     )
 
 
@@ -814,14 +828,14 @@ def iter_ipb98y3_confinement_time(
     """IPB98(y,3) ELMy H-mode scaling. `ConfinementTimeModel.ITER_IPB98Y3` (35)."""
     return (
         0.0564
-        * cur_plasma_ma**0.88
-        * b_plasma_toroidal_on_axis**0.07
-        * nd_plasma_electron_line_19**0.40
+        * safe_pow(cur_plasma_ma, 0.88)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.07)
+        * safe_pow(nd_plasma_electron_line_19, 0.40)
         * p_plasma_loss_mw ** (-0.69)
         * rmajor**2.15
-        * kappa_ipb**0.78
+        * safe_pow(kappa_ipb, 0.78)
         * aspect ** (-0.64)
-        * afuel**0.20
+        * safe_pow(afuel, 0.20)
     )
 
 
@@ -838,14 +852,14 @@ def iter_ipb98y4_confinement_time(
     """IPB98(y,4) ELMy H-mode scaling. `ConfinementTimeModel.ITER_IPB98Y4` (36)."""
     return (
         0.0587
-        * cur_plasma_ma**0.85
-        * b_plasma_toroidal_on_axis**0.29
-        * nd_plasma_electron_line_19**0.39
+        * safe_pow(cur_plasma_ma, 0.85)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.29)
+        * safe_pow(nd_plasma_electron_line_19, 0.39)
         * p_plasma_loss_mw ** (-0.70)
         * rmajor**2.08
-        * kappa_ipb**0.76
+        * safe_pow(kappa_ipb, 0.76)
         * aspect ** (-0.69)
-        * afuel**0.17
+        * safe_pow(afuel, 0.17)
     )
 
 
@@ -861,11 +875,11 @@ def iss95_stellarator_confinement_time(
     return (
         0.079
         * rminor**2.21
-        * rmajor**0.65
-        * nd_plasma_electron_line_19**0.51
-        * b_plasma_toroidal_on_axis**0.83
+        * safe_pow(rmajor, 0.65)
+        * safe_pow(nd_plasma_electron_line_19, 0.51)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.83)
         * p_plasma_loss_mw ** (-0.59)
-        * iotabar**0.4
+        * safe_pow(iotabar, 0.4)
     )
 
 
@@ -881,11 +895,11 @@ def iss04_stellarator_confinement_time(
     return (
         0.134
         * rminor**2.28
-        * rmajor**0.64
-        * nd_plasma_electron_line_19**0.54
-        * b_plasma_toroidal_on_axis**0.84
+        * safe_pow(rmajor, 0.64)
+        * safe_pow(nd_plasma_electron_line_19, 0.54)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.84)
         * p_plasma_loss_mw ** (-0.61)
-        * iotabar**0.41
+        * safe_pow(iotabar, 0.41)
     )
 
 
@@ -902,14 +916,14 @@ def ds03_confinement_time(
     """DS03 beta-independent H-mode scaling. `ConfinementTimeModel.DS03` (39)."""
     return (
         0.028
-        * cur_plasma_ma**0.83
-        * b_plasma_toroidal_on_axis**0.07
-        * nd_plasma_electron_line_19**0.49
+        * safe_pow(cur_plasma_ma, 0.83)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.07)
+        * safe_pow(nd_plasma_electron_line_19, 0.49)
         * p_plasma_loss_mw ** (-0.55)
         * rmajor**2.11
-        * kappa95**0.75
+        * safe_pow(kappa95, 0.75)
         * aspect ** (-0.3)
-        * afuel**0.14
+        * safe_pow(afuel, 0.14)
     )
 
 
@@ -929,7 +943,7 @@ def murari_confinement_time(
         * kappa_ipb**1.450
         * p_plasma_loss_mw ** (-0.735)
         * (
-            nd_plasma_electron_line_19**0.448
+            safe_pow(nd_plasma_electron_line_19, 0.448)
             / (
                 1.0
                 + jnp.exp(
@@ -955,12 +969,12 @@ def petty08_confinement_time(
     """
     return (
         0.052
-        * cur_plasma_ma**0.75
-        * b_plasma_toroidal_on_axis**0.3
-        * nd_plasma_electron_line_19**0.32
+        * safe_pow(cur_plasma_ma, 0.75)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.3)
+        * safe_pow(nd_plasma_electron_line_19, 0.32)
         * p_plasma_loss_mw ** (-0.47)
         * rmajor**2.09
-        * kappa_ipb**0.88
+        * safe_pow(kappa_ipb, 0.88)
         * aspect ** (-0.84)
     )
 
@@ -987,16 +1001,16 @@ def lang_high_density_confinement_time(
     return (
         6.94e-7
         * plasma_current**1.3678
-        * b_plasma_toroidal_on_axis**0.12
-        * nd_plasma_electron_line**0.032236
+        * safe_pow(b_plasma_toroidal_on_axis, 0.12)
+        * safe_pow(nd_plasma_electron_line, 0.032236)
         * (p_plasma_loss_mw * 1.0e6) ** (-0.74)
         * rmajor**1.2345
-        * kappa_ipb**0.37
+        * safe_pow(kappa_ipb, 0.37)
         * aspect**2.48205
-        * afuel**0.2
-        * qratio**0.77
-        * aspect ** (-0.9 * jnp.log(aspect))
-        * nratio ** (-0.22 * jnp.log(nratio))
+        * safe_pow(afuel, 0.2)
+        * safe_pow(qratio, 0.77)
+        * safe_pow(aspect, -0.9 * jnp.log(aspect))
+        * safe_pow(nratio, -0.22 * jnp.log(nratio))
     )
 
 
@@ -1011,9 +1025,9 @@ def hubbard_nominal_confinement_time(
     """
     return (
         0.014
-        * cur_plasma_ma**0.68
-        * b_plasma_toroidal_on_axis**0.77
-        * nd_plasma_electron_line_20**0.02
+        * safe_pow(cur_plasma_ma, 0.68)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.77)
+        * safe_pow(nd_plasma_electron_line_20, 0.02)
         * p_plasma_loss_mw ** (-0.29)
     )
 
@@ -1029,8 +1043,8 @@ def hubbard_lower_confinement_time(
     """
     return (
         0.014
-        * cur_plasma_ma**0.60
-        * b_plasma_toroidal_on_axis**0.70
+        * safe_pow(cur_plasma_ma, 0.60)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.70)
         * nd_plasma_electron_line_20 ** (-0.03)
         * p_plasma_loss_mw ** (-0.33)
     )
@@ -1047,9 +1061,9 @@ def hubbard_upper_confinement_time(
     """
     return (
         0.014
-        * cur_plasma_ma**0.76
-        * b_plasma_toroidal_on_axis**0.84
-        * nd_plasma_electron_line_20**0.07
+        * safe_pow(cur_plasma_ma, 0.76)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.84)
+        * safe_pow(nd_plasma_electron_line_20, 0.07)
         * p_plasma_loss_mw ** (-0.25)
     )
 
@@ -1067,14 +1081,14 @@ def menard_nstx_confinement_time(
     """Menard NSTX ELMy H-mode scaling. `ConfinementTimeModel.MENARD_NSTX` (46)."""
     return (
         0.095
-        * cur_plasma_ma**0.57
+        * safe_pow(cur_plasma_ma, 0.57)
         * b_plasma_toroidal_on_axis**1.08
-        * nd_plasma_electron_line_19**0.44
+        * safe_pow(nd_plasma_electron_line_19, 0.44)
         * p_plasma_loss_mw ** (-0.73)
         * rmajor**1.97
-        * kappa_ipb**0.78
+        * safe_pow(kappa_ipb, 0.78)
         * aspect ** (-0.58)
-        * afuel**0.19
+        * safe_pow(afuel, 0.19)
     )
 
 
@@ -1133,8 +1147,8 @@ def nstx_gyro_bohm_confinement_time(
     """NSTX gyro-Bohm (Buxton) scaling. `ConfinementTimeModel.NSTX_GYRO_BOHM` (48)."""
     return (
         0.21
-        * cur_plasma_ma**0.54
-        * b_plasma_toroidal_on_axis**0.91
+        * safe_pow(cur_plasma_ma, 0.54)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.91)
         * p_plasma_loss_mw ** (-0.38)
         * rmajor**2.14
         * nd_plasma_electron_line_20 ** (-0.05)
@@ -1155,15 +1169,15 @@ def itpa20_confinement_time(
     """ITPA20 (Issue #3164) scaling. `ConfinementTimeModel.ITPA20` (49)."""
     return (
         0.0534
-        * cur_plasma_ma**0.976
-        * b_plasma_toroidal_on_axis**0.218
-        * nd_plasma_electron_line_19**0.2442
+        * safe_pow(cur_plasma_ma, 0.976)
+        * safe_pow(b_plasma_toroidal_on_axis, 0.218)
+        * safe_pow(nd_plasma_electron_line_19, 0.2442)
         * p_plasma_loss_mw ** (-0.6687)
         * rmajor**1.710
-        * (1 + triang) ** 0.362
-        * kappa_ipb**0.799
-        * eps**0.354
-        * aion**0.195
+        * safe_pow(1 + triang, 0.362)
+        * safe_pow(kappa_ipb, 0.799)
+        * safe_pow(eps, 0.354)
+        * safe_pow(aion, 0.195)
     )
 
 
@@ -1182,12 +1196,12 @@ def itpa20_il_confinement_time(
         0.0670
         * cur_plasma_ma**1.291
         * b_plasma_toroidal_on_axis**-0.134
-        * nd_plasma_electron_line_19**0.1473
+        * safe_pow(nd_plasma_electron_line_19, 0.1473)
         * p_plasma_loss_mw ** (-0.6442)
         * rmajor**1.194
-        * (1 + triang) ** 0.560
-        * kappa_ipb**0.673
-        * aion**0.302
+        * safe_pow(1 + triang, 0.560)
+        * safe_pow(kappa_ipb, 0.673)
+        * safe_pow(aion, 0.302)
     )
 
 
@@ -1200,7 +1214,7 @@ def ncst_confinement_time(
     """NCST spherical tokamak L-mode scaling. `ConfinementTimeModel.NCST` (51)."""
     return (
         0.11
-        * cur_plasma_ma**0.33
+        * safe_pow(cur_plasma_ma, 0.33)
         * b_plasma_toroidal_on_axis**1.03
         * p_plasma_loss_mw ** (-0.07)
         * nd_plasma_electron_line_19 ** (-0.01)
@@ -1226,8 +1240,8 @@ def paz_soldan_nt_confinement_time(
     return (
         0.0821
         * cur_plasma_ma**1.02
-        * b_plasma_toroidal_on_axis**0.11
-        * nd_plasma_electron_line_19**0.51
+        * safe_pow(b_plasma_toroidal_on_axis, 0.11)
+        * safe_pow(nd_plasma_electron_line_19, 0.51)
         * p_plasma_loss_mw ** (-0.91)
     )
 
@@ -1890,21 +1904,21 @@ def calculate_confinement_time(
     if rad_loss_model == ConfinementRadiationLossModel.CORE_ONLY:
         hstar = (
             hfact
-            * (
-                p_plasma_loss_mw
+            * safe_pow(p_plasma_loss_mw
                 / (
                     p_plasma_loss_mw
                     + pden_plasma_sync_mw * vol_plasma
                     + p_plasma_inner_rad_mw
-                )
-            )
-            ** 0.31
+                ), 0.31)
         )
     elif rad_loss_model == ConfinementRadiationLossModel.FULL_RADIATION:
         hstar = (
             hfact
-            * (p_plasma_loss_mw / (p_plasma_loss_mw + pden_plasma_rad_mw * vol_plasma))
-            ** 0.31
+            * safe_pow(
+                p_plasma_loss_mw
+                / (p_plasma_loss_mw + pden_plasma_rad_mw * vol_plasma),
+                0.31,
+            )
         )
     else:  # NO_RADIATION
         hstar = hfact

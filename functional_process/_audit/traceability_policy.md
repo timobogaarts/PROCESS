@@ -39,6 +39,35 @@ Every switch touched by an audited unit gets a row in the registry with this dec
 and the reads-set evidence, even if the decision is provisional pending other units that
 touch the same switch.
 
+### The rule is stated unconditionally; six recorded instances deviate from it deliberately
+
+This is not drift and it is not six oversights — each was justified in its own record, none
+was reversed, and together they are evidence that the rule as written is missing a clause.
+The deviations are: `i_confinement_time` and `i_rad_loss` (`confinement_time.md`),
+`i_plasma_ignited` (`confinement_time.md` and `physics_B_composition.md`, independently),
+`supercond_cost_model` (two nodes), `i_pf_conductor`, and `itart` on `CostOfElectricity`
+(all `costs.md`). In every one the branches' reads-sets **do** differ — so the split default
+applies on its face — but the differing part of the body is a handful of lines inside a
+large shared one (2–6 lines inside a 48-branch dispatcher; 15 lines of a 290-line function),
+and splitting would duplicate the shared remainder.
+
+**The question is now well-posed**, which it was not when this file was written, because the
+contrast cases exist and two of them are in the same file, ported the same day, by the same
+reasoning:
+
+- `i_tf_sc_mat` (`superconductors.md`) — **split**, 8 genuinely different reads-sets and no
+  shared body to speak of: one function per branch.
+- `costs.py`'s `acc2221` — **split** (two arms, no shared body, disjoint reads) while the
+  same file's `coelc` kept `itart` **static** (15 lines of 290, ~275 shared).
+
+So the missing clause is about **the size or entanglement of the shared remainder**, not
+about whether the reads-sets differ — something of the shape "split only when the differing
+body exceeds N lines or M% of the function, or when the branches share no body at all".
+Deciding it is a policy call, not another per-unit judgement; until it is made, each new unit
+re-derives it independently. `next_steps.md` §1 and §9 track the same question from the
+`Switch`/`Alternative` side, and `switch_elimination_design.md` §2 reads the deviation count
+as the enforcement gap it is.
+
 ## Non-traceable external calls
 
 CoolProp calls (`process/core/coolprop_interface.py`) and anything else that reaches an

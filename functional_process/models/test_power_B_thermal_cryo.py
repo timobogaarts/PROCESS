@@ -11,6 +11,7 @@ split) are new -- see `power_B_thermal_cryo.md`'s "The `delta_eta` self-loop" se
 and `DeltaEtaStep`'s own docstring for the full reasoning.
 """
 
+import numpy as np
 import jax
 import pytest
 
@@ -18,6 +19,10 @@ from cottax.interfaces.pytree_namespace_module import to_graph
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
 from functional_process.models.power_B_thermal_cryo import (
     ComponentThermalPowers,
+    Cryo,
+    CryoLoads,
+    CryoQLoadsStep,
+    CryoQNucStep,
     DeltaEtaStep,
     EtaTurbineStep,
     EtathLiqStep,
@@ -27,6 +32,9 @@ from functional_process.models.power_B_thermal_cryo import (
     calculate_component_thermal_powers,
     calculate_cryo,
     calculate_cryo_loads,
+    calculate_cryo_plant_loads,
+    calculate_cryo_q_loads,
+    calculate_cryo_qnuc,
     calculate_plant_thermal_efficiency,
     calculate_plant_thermal_efficiency_2,
 )
@@ -1410,3 +1418,283 @@ def test_p_fw_blkt_coolant_pump_mw_step_gradient(i_p_coolant_pumping, expected_g
 
     grad = jax.grad(p_next)(_CTP_FULL_KWARGS["p_fw_blkt_coolant_pump_mw"])
     assert grad == expected_grad
+
+
+# ---------------------------------------------------------------------------
+# CryoQNucStep / CryoQLoadsStep / CryoLoads -- `Power.calculate_cryo_loads`'s five
+# conditionally-owned `q*` fields cut into two `FixedPointFunction`s, and the four
+# unconditionally-owned outputs left as an ordinary `ExplicitFunction`.
+# ---------------------------------------------------------------------------
+
+_CRYO_KWARGS = {
+    "tfcryoarea": 1200.0,
+    "coldmass": 4.7e7,
+    "p_tf_nuclear_heat_mw": 0.045,
+    "ensxpfm": 37429.5,
+    "t_plant_pulse_plasma_present": 10364.4,
+    "c_tf_turn": 74026.75,
+    "n_tf_coils": 16.0,
+    "qnuc": 12920.0,
+    "eff_tf_cryo": 0.13,
+    "temp_tf_cryo": 4.5,
+    "p_cp_resistive": 1.0e6,
+    "p_tf_leg_resistive": 2.0e6,
+    "p_tf_joints_resistive": 1.0e5,
+    "pnuc_cp_tf": 1.5,
+    "temp_cp_coolant_inlet": 313.15,
+    "qss": 21000.0,
+    "qac": 3600.0,
+    "qcl": 16100.0,
+    "qmisc": 18700.0,
+}
+
+# (i_tf_sup, i_pf_conductor, inuclear) -- the same five switch triples
+# `_cryo_loads_samples` fuzzes, so the node split is exercised on every arm the
+# Tier-1 contract covers, not only the reference configuration's.
+_CRYO_SWITCH_COMBOS = [
+    pytest.param(1, PFConductorModel.RESISTIVE, 1, id="sc_tf-resistive_pf-inuclear1"),
+    pytest.param(1, PFConductorModel.RESISTIVE, 0, id="sc_tf-resistive_pf-inuclear0"),
+    pytest.param(0, PFConductorModel.SUPERCONDUCTING, 1, id="res_tf-sc_pf-inuclear1"),
+    pytest.param(2, PFConductorModel.RESISTIVE, 1, id="al_tf-resistive_pf-inuclear1"),
+    pytest.param(0, PFConductorModel.RESISTIVE, 1, id="res_tf-resistive_pf-inuclear1"),
+]
+
+
+def test_cryo_cannot_be_a_plain_node():
+    """`Cryo` stays unregistered because `cottax` will not build it -- the same
+    position `PlantThermalEfficiency` is in, and the reason the split below exists.
+
+    `Power.cryo` reads `.fwbs.qnuc` (the incumbent, kept when `inuclear == 1`) and
+    writes it (when `inuclear == 0 and i_tf_sup == 1`), which is `_audit/
+    next_steps.md` §5's Shape B: *"a node may not read what it owns"*, a hard
+    construction error rather than a style preference. Asserted by construction here,
+    not merely stated in a comment.
+    """
+    with pytest.raises(ValueError, match="which it also owns"):
+        to_graph(Cryo(i_tf_sup=1, inuclear=0))
+
+
+@pytest.mark.parametrize(
+    ("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS
+)
+def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
+    """Each of the three replacement nodes builds a graph on every switch arm.
+
+    `CryoQNucStep`/`CryoQLoadsStep` mint their own `^cond` copies (so the body writes
+    the copy and the paired `FixedPoint` owns the real `VarPath`); `CryoLoads` reads
+    all five `q*` as plain `Input`s and owns none of them, so it is an ordinary
+    single-node graph.
+    """
+    qnuc_node = CryoQNucStep(i_tf_sup=i_tf_sup, inuclear=inuclear)
+    assert {n.path_str() for n in to_graph(qnuc_node).nodes} == {
+        "['CryoQNucStep']",
+        "^problem['CryoQNucStep']",
+    }
+
+    q_node = CryoQLoadsStep(i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor))
+    assert {n.path_str() for n in to_graph(q_node).nodes} == {
+        "['CryoQLoadsStep']",
+        "^problem['CryoQLoadsStep']",
+    }
+
+    loads = CryoLoads(i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor))
+    assert {n.path_str() for n in to_graph(loads).nodes} == {"['CryoLoads']"}
+
+
+def test_cryo_split_ownership_is_a_partition():
+    """The three nodes own exactly the nine `VarPath`s `Power.calculate_cryo_loads`
+    writes, with no overlap.
+
+    Overlap would be an ownership collision `Graph` rejects; a gap would leave a field
+    PROCESS computes on this run's path as a boundary input, which is the defect
+    `_audit/boundary_inputs_audit.md` §4c (b9)/(b10) records.
+    """
+    qnuc_node = CryoQNucStep(i_tf_sup=1, inuclear=0)
+    q_node = CryoQLoadsStep(i_tf_sup=1, i_pf_conductor=0)
+    loads = CryoLoads(i_tf_sup=1, i_pf_conductor=0)
+
+    owned = [
+        {o.var.path_str() for o in n.outputs} for n in (qnuc_node, q_node, loads)
+    ]
+    assert owned[0] == {".fwbs.qnuc"}
+    assert owned[1] == {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
+    assert owned[2] == {
+        ".heat_transport.helpow",
+        ".heat_transport.p_cryo_plant_electric_mw",
+        ".heat_transport.helpow_cryal",
+        ".tfcoil.cryo_cool_req",
+    }
+    assert owned[0] & owned[1] == set()
+    assert (owned[0] | owned[1]) & owned[2] == set()
+
+    # `CryoLoads` must still *read* every `q*` -- it builds `helpow` from them.
+    read = {i.var.path_str() for i in loads.inputs}
+    assert owned[0] | owned[1] <= read
+
+
+@pytest.mark.parametrize(
+    ("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS
+)
+def test_cryo_split_reproduces_calculate_cryo_loads(
+    i_tf_sup, i_pf_conductor, inuclear
+):
+    """Running the three nodes in schedule order reproduces `calculate_cryo_loads`
+    exactly, on every switch arm.
+
+    This is what makes the split safe to register: `calculate_cryo_loads` is the
+    function the Tier-1 contract validates against real PROCESS
+    (`TestCryoLoads`), so pinning the node-level composition to it transfers that
+    validation to the nodes without a second reference run.
+    """
+    qnuc = CryoQNucStep(i_tf_sup=i_tf_sup, inuclear=inuclear).step(
+        qnuc=_CRYO_KWARGS["qnuc"],
+        p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"],
+    )
+    qss, qac, qcl, qmisc = CryoQLoadsStep(
+        i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor)
+    ).step(
+        qss=_CRYO_KWARGS["qss"],
+        qac=_CRYO_KWARGS["qac"],
+        qcl=_CRYO_KWARGS["qcl"],
+        qmisc=_CRYO_KWARGS["qmisc"],
+        qnuc=qnuc,
+        tfcryoarea=_CRYO_KWARGS["tfcryoarea"],
+        coldmass=_CRYO_KWARGS["coldmass"],
+        ensxpfm=_CRYO_KWARGS["ensxpfm"],
+        t_plant_pulse_plasma_present=_CRYO_KWARGS["t_plant_pulse_plasma_present"],
+        c_tf_turn=_CRYO_KWARGS["c_tf_turn"],
+        n_tf_coils=_CRYO_KWARGS["n_tf_coils"],
+    )
+    helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req = CryoLoads(
+        i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor)
+    )(
+        eff_tf_cryo=_CRYO_KWARGS["eff_tf_cryo"],
+        temp_tf_cryo=_CRYO_KWARGS["temp_tf_cryo"],
+        p_cp_resistive=_CRYO_KWARGS["p_cp_resistive"],
+        p_tf_leg_resistive=_CRYO_KWARGS["p_tf_leg_resistive"],
+        p_tf_joints_resistive=_CRYO_KWARGS["p_tf_joints_resistive"],
+        pnuc_cp_tf=_CRYO_KWARGS["pnuc_cp_tf"],
+        temp_cp_coolant_inlet=_CRYO_KWARGS["temp_cp_coolant_inlet"],
+        qss=qss,
+        qac=qac,
+        qcl=qcl,
+        qmisc=qmisc,
+        qnuc=qnuc,
+    )
+
+    expected = calculate_cryo_loads(
+        i_tf_sup,
+        int(i_pf_conductor),
+        inuclear,
+        _CRYO_KWARGS["tfcryoarea"],
+        _CRYO_KWARGS["coldmass"],
+        _CRYO_KWARGS["p_tf_nuclear_heat_mw"],
+        _CRYO_KWARGS["ensxpfm"],
+        _CRYO_KWARGS["t_plant_pulse_plasma_present"],
+        _CRYO_KWARGS["c_tf_turn"],
+        _CRYO_KWARGS["n_tf_coils"],
+        _CRYO_KWARGS["qnuc"],
+        _CRYO_KWARGS["eff_tf_cryo"],
+        _CRYO_KWARGS["temp_tf_cryo"],
+        _CRYO_KWARGS["p_cp_resistive"],
+        _CRYO_KWARGS["p_tf_leg_resistive"],
+        _CRYO_KWARGS["p_tf_joints_resistive"],
+        _CRYO_KWARGS["pnuc_cp_tf"],
+        _CRYO_KWARGS["temp_cp_coolant_inlet"],
+        _CRYO_KWARGS["qss"],
+        _CRYO_KWARGS["qac"],
+        _CRYO_KWARGS["qcl"],
+        _CRYO_KWARGS["qmisc"],
+    )
+    got = (
+        helpow,
+        p_cryo_plant_electric_mw,
+        helpow_cryal,
+        cryo_cool_req,
+        qss,
+        qac,
+        qcl,
+        qmisc,
+        qnuc,
+    )
+    for g, e in zip(got, expected, strict=True):
+        assert g == pytest.approx(e, rel=1e-14, abs=0.0)
+
+
+@pytest.mark.parametrize(
+    ("i_tf_sup", "inuclear", "expected_grad"),
+    [
+        pytest.param(1, 0, 0.0, id="owned-recomputed"),
+        pytest.param(1, 1, 1.0, id="inuclear1-identity"),
+        pytest.param(0, 0, 1.0, id="resistive_tf-identity"),
+        pytest.param(2, 0, 1.0, id="aluminium_tf-identity"),
+    ],
+)
+def test_cryo_q_nuc_step_gradient(i_tf_sup, inuclear, expected_grad):
+    """`d(qnuc_next)/d(qnuc)` is exactly `0` where PROCESS recomputes `.fwbs.qnuc`
+    and exactly `1` everywhere else -- the two arms of the fixed point, confirmed by
+    `jax.grad` rather than asserted from the source's shape.
+
+    `1` is the degenerate case: the residual `g(u) - u` is then structurally zero and
+    `functional_process.sand.degenerate_fixed_points` drops the problem, reverting
+    `.fwbs.qnuc` to a boundary input -- which is exactly PROCESS's *"if inuclear = 1:
+    qnuc is input"* (`process/models/power.py:1825`), recovered from structure.
+    """
+    node = CryoQNucStep(i_tf_sup=i_tf_sup, inuclear=inuclear)
+
+    def qnuc_next(qnuc):
+        return node.step(
+            qnuc=qnuc, p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"]
+        )
+
+    assert jax.grad(qnuc_next)(_CRYO_KWARGS["qnuc"]) == expected_grad
+
+
+@pytest.mark.parametrize(
+    ("i_tf_sup", "i_pf_conductor", "expected_grad"),
+    [
+        pytest.param(1, PFConductorModel.RESISTIVE, 0.0, id="sc_tf-recomputed"),
+        pytest.param(0, PFConductorModel.SUPERCONDUCTING, 0.0, id="sc_pf-recomputed"),
+        pytest.param(0, PFConductorModel.RESISTIVE, 1.0, id="neither-identity"),
+        pytest.param(2, PFConductorModel.RESISTIVE, 1.0, id="aluminium_tf-identity"),
+    ],
+)
+def test_cryo_q_loads_step_gradient(i_tf_sup, i_pf_conductor, expected_grad):
+    """`d(qss_next)/d(qss)` -- and every other diagonal entry -- is exactly `0` when
+    `Power.cryo` runs and exactly `1` when it does not.
+
+    All four unknowns move together, which is the property that lets them share one
+    `FixedPointFunction`: the Jacobian is either `0` or the identity in all four, so
+    `sand.degenerate_fixed_points` (which drops a problem only when the whole residual
+    vanishes) can classify the block as a whole. Contrast `.fwbs.qnuc`, whose guard is
+    different -- hence `CryoQNucStep`.
+    """
+    node = CryoQLoadsStep(i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor))
+    names = ("qss", "qac", "qcl", "qmisc")
+
+    def q_next(qss, qac, qcl, qmisc):
+        return jax.numpy.stack(
+            list(
+                node.step(
+                    qss=qss,
+                    qac=qac,
+                    qcl=qcl,
+                    qmisc=qmisc,
+                    qnuc=_CRYO_KWARGS["qnuc"],
+                    tfcryoarea=_CRYO_KWARGS["tfcryoarea"],
+                    coldmass=_CRYO_KWARGS["coldmass"],
+                    ensxpfm=_CRYO_KWARGS["ensxpfm"],
+                    t_plant_pulse_plasma_present=_CRYO_KWARGS[
+                        "t_plant_pulse_plasma_present"
+                    ],
+                    c_tf_turn=_CRYO_KWARGS["c_tf_turn"],
+                    n_tf_coils=_CRYO_KWARGS["n_tf_coils"],
+                )
+            )
+        )
+
+    jacobian = jax.jacfwd(q_next, argnums=(0, 1, 2, 3))(
+        *(_CRYO_KWARGS[n] for n in names)
+    )
+    block = np.stack([np.asarray(c, dtype=float) for c in jacobian], axis=1)
+    assert np.array_equal(block, expected_grad * np.eye(4))

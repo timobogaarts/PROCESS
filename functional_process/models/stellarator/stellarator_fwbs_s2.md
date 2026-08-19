@@ -96,9 +96,9 @@ would `TypeError` immediately. Confirmed by direct re-read.
 argument-list bug aside, **neither call's return value is captured at all**:
 
 ```python
-self.hcpb.nuclear_heating_blanket()      # line 440 -- no assignment
+self.hcpb.nuclear_heating_blanket()  # line 440 -- no assignment
 ...
-self.hcpb.nuclear_heating_shield()       # line 458 -- no assignment
+self.hcpb.nuclear_heating_shield()  # line 458 -- no assignment
 ```
 
 Both `nuclear_heating_blanket` and `nuclear_heating_shield` are pure `@staticmethod`s
@@ -219,8 +219,13 @@ project's standing policy against re-porting an already-validated node.
 
 ```python
 def calculate_exponential_attenuation_blanket_shield_power(
-    p_neutron_total_mw, pnucloss, f_p_blkt_multiplication,
-    f_a_blkt_cooling_channels, fblli2o, fblbe, dr_blkt_outboard,
+    p_neutron_total_mw,
+    pnucloss,
+    f_p_blkt_multiplication,
+    f_a_blkt_cooling_channels,
+    fblli2o,
+    fblbe,
+    dr_blkt_outboard,
 ) -> tuple[float, float, float]:
     """(p_blkt_multiplication_mw, p_blkt_nuclear_heat_total_mw, p_shld_nuclear_heat_mw)"""
 ```
@@ -300,7 +305,7 @@ self.data.heat_transport.p_div_coolant_pump_mw = (
     * (
         self.data.physics.p_plasma_separatrix_mw
         + self.data.fwbs.p_div_nuclear_heat_total_mw
-        + self.data.fwbs.p_div_rad_total_mw          # <- same bug, second site
+        + self.data.fwbs.p_div_rad_total_mw  # <- same bug, second site
     )
 )
 ```

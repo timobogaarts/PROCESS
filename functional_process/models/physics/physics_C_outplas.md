@@ -60,8 +60,16 @@ port, confirmed by the write-count grep above, not by inspection of a sample.
 ## proposed signature(s)
 ```python
 def calculate_dimensionless_plasma_parameters(
-    dlamie, vol_plasma, rmajor, b_plasma_toroidal_on_axis, eps,
-    nd_plasma_electron_line, kappa, e_plasma_beta, plasma_current, m_ions_total_amu,
+    dlamie,
+    vol_plasma,
+    rmajor,
+    b_plasma_toroidal_on_axis,
+    eps,
+    nd_plasma_electron_line,
+    kappa,
+    e_plasma_beta,
+    plasma_current,
+    m_ions_total_amu,
 ) -> tuple[float, float, float]: ...
 ```
 Implemented in `physics_C_outplas.py`.
@@ -95,5 +103,112 @@ non-negative arguments in every real PROCESS configuration (`eps` is an inverse 
 ratio; the `rho_star` radicand is a product of positive densities/temperatures/masses) —
 no domain guard added, consistent with `rether`'s treatment in chunk A.
 
+## real PROCESS defect found: `nu_star` is `nan` for **every** stellarator run
+
+Found by the MDA cold-start catalogue (`DimensionlessPlasmaParameters` was one of two
+blocks that ran and emitted a non-finite value from a cold `DataStructure`), then traced
+and confirmed against PROCESS itself. **The port is faithful; PROCESS has the defect. No
+code change made.**
+
+The last factor of `nu_star` is a division by
+`e_plasma_beta**2 * plasma_current` (`physics.py:1801`, ported verbatim at
+`physics_C_outplas.py:73`), and the numerator's second factor is
+`15 * ELECTRON_CHARGE**4 * dlamie` (`physics.py:1792`).
+
+`.physics.dlamie` and `.physics.plasma_current` are written in exactly one place each —
+`Physics.physics()` at `physics.py:279` and `:286` — and **`Physics.physics()` is never
+called in the stellarator pipeline**: `Caller._call_models_once` routes to
+`Stellarator.run()`, which calls `self.physics.outplas()` directly
+(`stellarator.py:130`) without ever running `Physics.physics()`. Both fields therefore
+keep their `physics_variables.py` initial value of `0.0` for the whole run. So the final
+division is a literal `0.0 / (e_plasma_beta**2 * 0.0)` = `0.0 / 0.0`.
+
+Measured, not inferred, on `stellarator_helias.IN.DAT`:
+
+| quantity | cold (after `st_new_config`) | PROCESS converged |
+|---|---|---|
+| `.physics.dlamie` | `0.0` | `0.0` |
+| `.physics.plasma_current` | `0.0` | `0.0` |
+| `.physics.nu_star` | — | **`nan`** |
+
+The converged column is PROCESS's own `SingleRun(...).run()` result, read straight off
+the live `DataStructure` — i.e. **PROCESS's finished stellarator solve stores `nan` in
+`.physics.nu_star`**, not just the cold point. Calling the reference wrapper
+(`test_physics_C_outplas._reference_dimensionless_plasma_parameters`) with the cold
+argument tuple reproduces it directly, with two `RuntimeWarning`s from
+`physics.py:1791` (`divide by zero`, then `invalid value`):
+
+```
+PROCESS reference, cold args -> (nan, 0.0022367072720761564, 0.042798566786907036)
+port,              cold args -> (nan, 0.0022367072720761564, 0.042798566786907036)
+```
+
+Which operand does what, isolated one at a time against the same reference:
+
+- `dlamie = 17`, `plasma_current = 0` → `inf` (`plasma_current` alone is fatal);
+- `dlamie = 0`, `plasma_current = 1e6` → `0.0`;
+- both zero (the real stellarator state) → `nan`.
+
+`rho_star` and `beta_mcdonald` are unaffected — neither reads either field, and both are
+finite at the cold point.
+
+**Why this is benign in PROCESS, and why it is benign here.** The whole
+`beta_mcdonald`/`rho_star`/`nu_star` reporting block in `outplas` sits inside
+`if self.data.stellarator.istell == 0:` (`physics.py:2784`), so the `nan` is computed
+unconditionally at the top of the method and then never displayed for a stellarator; it
+is a dead store. In the ported graph it is likewise a dead sink — **no node reads
+`.physics.nu_star` or `.physics.rho_star`** (checked against the driven graph), so the
+`nan` cannot propagate into any driver, residual or objective.
+
+**Value *and* gradient, checked separately** (the `jnp.sqrt(jnp.maximum(0, x))` trap this
+project has been bitten by twice is *not* what this is — the value is already `nan`, so
+there is nothing for a gradient test to catch that a value test misses):
+
+- `jax.jacfwd` at the cold point: `dnu_star` is `nan` w.r.t. all ten inputs; `drho_star`
+  and `dbeta_mcdonald` are finite.
+- `jax.jacfwd` at a tokamak-like point (`dlamie = 17.5`, `plasma_current = 1.8e7`, rest
+  cold): the full 3x10 Jacobian is finite.
+
+There is no derivative to lose here, because PROCESS's own value is undefined.
+
+**Recommendation: leave it.** Guarding the denominator would make the port disagree with
+PROCESS at the only point where they differ from "both undefined", and would report a
+fabricated finite collisionality for a device whose net toroidal current is genuinely
+zero — a modelling claim, not a port. The real defect ("PROCESS applies a
+current-normalised tokamak collisionality formula to a currentless stellarator, then
+hides the resulting `nan` behind an `istell` guard") is PROCESS's to fix, and belongs
+upstream. Recorded here rather than acted on, per the standing
+`radiation_power.md`/`acc223` precedent of reproducing PROCESS defects faithfully.
+
 ## open questions
 None.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+2 square roots in this file have been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

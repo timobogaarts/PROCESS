@@ -309,6 +309,60 @@ def test_design_bounds_are_processs_own_table():
         assert var in {iteration_variable_path(i) for i in REFERENCE_IXC}
 
 
+class _Conditions:
+    """The two attributes `residual_condition_scales` reads off a `Drive`.
+
+    A stub rather than a real `Drive`: the function is pure name arithmetic over
+    `unknowns`/`conditions` plus a lookup in `env`, so assembling a 130-node graph to
+    exercise it would test the assembly, not the rule.
+    """
+
+    def __init__(self, unknowns, conditions):
+        self.unknowns = unknowns
+        self.conditions = conditions
+
+
+def test_a_residual_whose_unknown_has_no_scale_keeps_a_factor_of_one():
+    """`1/|u|` degrades to **`1.0`**, never to `1/floor`.
+
+    Regression pin for a measured defect, not a hypothetical: `.power.qac` is
+    identically zero on the reference run (no PF energy swing to dissipate), so
+    `1 / max(|u|, 1e-12)` weighted its residual row -- the trivial equality `u = 0`,
+    whose Jacobian row is exactly `-1` in one column -- by `1e12`, nine orders of
+    magnitude above every other row in the problem. The condition number of the Jacobian
+    `VmconDriver` hands VMCON was `6.7e12` against `2.1e4` without it, and Stage C2 went
+    from 62 SQP iterations to 73 -- and, on the tree state where this was first seen, to
+    `max_iter` without converging at all. `1.0` is what `VmconDriver.scaled` already
+    degrades to for a design variable starting at `0.0`, so the two scalings agree.
+    """
+    from cottax.tools.minting import prefix_path
+
+    from functional_process.sand import COND, residual_condition_scales
+
+    zero = VarPath((GetAttrKey("power"), GetAttrKey("qac")))
+    real = VarPath((GetAttrKey("power"), GetAttrKey("qss")))
+    constraint = prefix_path(
+        VarPath((GetAttrKey("constraints"), GetAttrKey("c2"))), COND
+    )
+    # A residualised `FixedPoint`'s condition is `^cond^cond.X` against the unknown `.X`
+    # -- two mints, which `residual_condition_scales` strips to pair them.
+    residual = {v: prefix_path(prefix_path(v, COND), COND) for v in (zero, real)}
+    drive = _Conditions(
+        unknowns=(zero, real),
+        conditions=(constraint, residual[zero], residual[real]),
+    )
+    scales = dict(residual_condition_scales(drive, {zero: 0.0, real: 4.0}, floor=1e-12))
+
+    # Exact comparison is the point: both factors are computed by a single division of
+    # exactly representable values, and the whole defect was a factor being *silently*
+    # something other than the one the rule names.
+    assert scales[residual[zero]] == 1.0  # noqa: RUF069
+    assert scales[residual[real]] == 0.25  # noqa: RUF069
+    # PROCESS's own constraints are never touched -- that is what keeps the iterates
+    # comparable with PROCESS's own.
+    assert constraint not in scales
+
+
 # ---------------------------------------------------------------- the driver
 
 

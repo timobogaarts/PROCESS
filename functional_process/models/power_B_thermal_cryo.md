@@ -431,3 +431,119 @@ Same bug class as `ZTfInsideHalf`'s (`next_steps.md` §8), now three instances. 
 `grep -n 'return (.*,)$' functional_process/models/` found one more genuine case
 (`VacuumPumpingSimple`, `vacuum.py:180`, also fixed) and two false positives in
 `AbstractDriver.__call__` implementations, where a tuple **is** the contract.
+
+
+## Update: the `Cryo`/`CryoLoads` self-loops, cut — the unit is now fully registered
+
+`boundary_inputs_audit.md` §7 item 7. `Cryo` and `CryoLoads` were ported and
+deliberately unregistered because each reads and owns `.fwbs.qnuc` (and `CryoLoads`
+also `.power.qss`/`qac`/`qcl`/`qmisc`), the Shape-B construction error
+`next_steps.md` §5 defines. Both are conditional-ownership pass-throughs, described
+in "`calculate_cryo_loads`'s outer guard" above; that section is the design input for
+this split and is unchanged.
+
+**The split written, and why this shape.** `calculate_cryo_loads` keeps its signature
+and its Tier-1 contract against real PROCESS, but its body is now assembled from four
+pieces, so the node-level split cannot drift from the function that contract
+validates:
+
+| piece | node | owns | condition |
+|---|---|---|---|
+| `calculate_cryo_qnuc` | `CryoQNucStep` (`FixedPointFunction`) | `.fwbs.qnuc` | `inuclear == 0 and i_tf_sup == 1` |
+| `calculate_cryo_q_loads` | `CryoQLoadsStep` (`FixedPointFunction`) | `.power.qss`/`qac`/`qcl`/`qmisc` | `cryo_is_active` — `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` |
+| `calculate_cryo_plant_loads` | `CryoLoads` (`ExplicitFunction`) | `.heat_transport.helpow`/`p_cryo_plant_electric_mw`/`helpow_cryal`, `.tfcoil.cryo_cool_req` | unconditional |
+| `calculate_helpow` | — (shared helper) | — | — |
+
+`Cryo` itself stays **unregistered**, in exactly the position
+`PlantThermalEfficiency`/`PlantThermalEfficiency2` hold: the raw un-split node for a
+function `to_graph` will not build, kept because `calculate_cryo` is still what the
+Tier-1 contract compares against `Power.cryo`.
+
+**Two fixed points, not one, and that is the load-bearing decision.** The five `q*`
+fields are written by one PROCESS function but carry **two different** ownership
+conditions. A single `FixedPointFunction` owning all five would, whenever
+`inuclear == 1` with `i_tf_sup == 1`, produce a residual block that is the identity on
+the `qnuc` row and constant on the other four — one structurally-zero row in an
+otherwise well-posed block. `sand.degenerate_fixed_points` drops a problem only when
+the residual vanishes *entirely*, so it could not drop that, and the SAND equality
+block would be silently rank-deficient. Splitting by condition keeps each problem
+uniformly degenerate or uniformly well-posed, which is the property that detector
+needs. Under `REFERENCE_CONFIGURATION` (`i_tf_sup = 1`, `inuclear = 0`,
+`i_pf_conductor = 0`) both are well-posed and neither is dropped —
+`run_sand_harness.py` lists both under `residualised`, and both SAND residuals are
+exactly `0.0` at PROCESS's converged point.
+
+`CryoQLoadsStep` reads `.fwbs.qnuc` (the real path `CryoQNucStep`'s `FixedPoint` owns)
+rather than recomputing it, because `qmisc = 0.45 * (qss + qnuc + qac + qcl)` uses the
+value `Power.cryo` has just written. That is an ordinary edge, not a cycle:
+`CryoQNucStep` reads only `.fwbs.p_tf_nuclear_heat_mw` and its own minted copy.
+`DeltaEtaStep`'s "rebuild from raw inputs rather than read another node's `Output`"
+rule exists to avoid recreating a two-node cycle; there is no cycle to avoid here.
+
+**One rearrangement inside `calculate_cryo_loads`, stated because it looks like a
+change and is not**: `calculate_cryo_qnuc` is now called *outside* the superconducting
+guard, where PROCESS's `qnuc` write sits inside it. The inner condition is
+`inuclear == 0 and i_tf_sup == 1`, and `i_tf_sup == 1` already implies the outer guard,
+so the two are identical on every input.
+
+**Prerequisite closed with it**: `.tfcoil.tfcryoarea` had no producer anywhere in the
+graph. It is now `coils/calculate.py`'s `TfCryoArea`, carved out of `st_coil`'s inline
+geometry block exactly as `ZTfInsideHalf` was — see `calculate.md`. Without it,
+registering these nodes would have traded two boundary inputs for one new one.
+
+**Measured.** `pytest functional_process` 3619 → 3643 passed, 0 failed (24 new tests,
+20 of them node-level: `to_graph` assembly on all five switch arms, the ownership
+partition, composition-equals-`calculate_cryo_loads` on all five arms, and the two
+fixed points' Jacobians as exactly `0` or exactly `I`). MDA harness: **438 → 453
+agreements, and nothing else in the report moved at all** — 34 disagreements (0 in
+driven blocks), 3 unverifiable, 0 ungrounded, 21 errors, all byte-identical before and
+after; owned variables walked 496 → 511 (10 real fields plus the 5 minted `^cond`
+copies), unaccounted still 0; static switch kwargs 55 → 61, 0 mismatched. Graph: 149 →
+155 nodes, 12 → 14 driven blocks (the two new `[node, ^problem[node]]` pairs), boundary
+inputs 375 → 379.
+
+**The boundary-input count went *up*, and that is the honest result.** Two edges closed
+(`.heat_transport.helpow`, `.heat_transport.p_cryo_plant_electric_mw`) and six genuine
+inputs appeared behind them: `.tfcoil.eff_tf_cryo` and `.tfcoil.temp_cp_coolant_inlet`
+(read unconditionally, both ordinary `*_variables.py` inputs), and
+`.tfcoil.p_cp_resistive`/`p_tf_leg_resistive`/`p_tf_joints_resistive`/`.fwbs.pnuc_cp_tf`,
+which are read **only** on the `i_tf_sup == 2` cryogenic-aluminium branch this
+configuration never takes. Same shape as `stellarator_fwbs_s4.py`'s 6-for-5 trade
+(`boundary_inputs_audit.md` §7 item 3), where the same prediction was also wrong in the
+same direction.
+
+**What it bought, which is a gradient, not a value.** Every one of the 15 new outputs
+agrees with PROCESS to the harness's tolerance, so no *value* moved. The Jacobian did:
+`run_sand_harness.py` Stage B, `objf` row (`i_figure_merit = 6`, net electric power) and
+`c16` row, before → after —
+
+```
+objf  x2 1.90e-01* -> 1.26e-02*   x3 2.36e-01* -> 1.03e-01*   x4 1.66e-01* -> 9.47e-02*
+      x6 1.66e-01* -> 9.48e-02*   x56 1.97e-02* -> 1.97e-02*  x59 3.38e-01* -> 4.82e-02*
+      x109 2.27e-01* -> 1.51e-01*
+c16   x2 4.78e-01* -> 2.18e-02    x3 4.15e-02* -> 1.51e-02*   x4 4.96e-02* -> 3.09e-05
+      x6 4.94e-02* -> 1.80e-09    x59 4.81e-01* -> 4.07e-03*  x109 4.95e-02* -> 9.07e-12
+```
+
+Four of `c16`'s six starred cells lost their star; no cell anywhere got worse, no new
+row starred, still 0 non-finite cells. **Attributed by measurement, not inference**: a
+run with `CryoLoads` + `TfCryoArea` registered but the two `*Step` nodes withheld
+reproduces the *old* Jacobian bit-for-bit. So the gain comes entirely from
+`.power.q*`/`.fwbs.qnuc` acquiring producers — with them frozen as boundary constants,
+`helpow` (and therefore `p_cryo_plant_electric_mw`, and therefore net electric power)
+had **zero** sensitivity to `coldmass`, `c_tf_turn`, `n_tf_coils`, `tfcryoarea`,
+`p_tf_nuclear_heat_mw` and `t_plant_pulse_plasma_present`, all of which depend on
+iteration variables. Fourth instance of the iteration-variable-4 defect class: every
+value test passes and only a gradient sees it.
+
+**Left open, and it is not in Stage A or B**: `run_sand_harness.py` Stage C2 went from
+34 SQP iterations (converging to `conv = 1.4e-09`) to the full 100 without formally
+converging, oscillating around `objf ≈ 1.2179`. The same withheld-`*Step` run pins this
+to the two new fixed points as well. Its final point is *closer* to PROCESS on five of
+the eight iteration variables (x2 1.85e-03 → 9.15e-05, x3 3.33e-03 → 7.21e-04, x56
+1.61e-01 → 3.29e-02, x59 4.56e-02 → 8.37e-03), so the SQP is now solving a more
+accurate problem rather than a broken one — but the five new design unknowns are
+O(1e4) magnitudes entering an unscaled design vector alongside 1e20 and 3e-02, and
+`sand.residual_condition_scales` scales only the *conditions*, not the unknowns. That
+is a `sand.py` scaling question, not a modelling one, and it is left for whoever owns
+that layer.

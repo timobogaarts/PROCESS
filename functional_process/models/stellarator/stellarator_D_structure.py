@@ -22,6 +22,7 @@ section for why the pytree-namespace surface
 """
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from functional_process.models.safe_math import safe_pow
 
 _INTERCOIL_THICKNESS_COEFFICIENT = 0.18
 """Effective thickness (m) scaled by the empirical 1.5-power law below."""
@@ -125,7 +126,7 @@ def calculate_intercoil_mass_scaling_reference(e_tf_magnetic_stored_total_gj):
     """
     m_struc = (
         _SCALING_LAW_COEFFICIENT
-        * (1000.0 * e_tf_magnetic_stored_total_gj) ** _SCALING_LAW_EXPONENT
+        * safe_pow(1000.0 * e_tf_magnetic_stored_total_gj, _SCALING_LAW_EXPONENT)
     )
     return 1000.0 * m_struc
 

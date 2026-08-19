@@ -27,11 +27,16 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from functional_process._harness.boundary import (
+    DIVISION_BY_ZERO_AT_BOUNDARY,
+    registered_reason,
+)
 from functional_process._harness.finite_difference import (
     PROCESS_EPSFCN,
     ZeroPerturbationError,
     fd_gradient_with_error,
 )
+from functional_process._harness.sampling import fuzz_samples
 from functional_process._harness.tolerance import MACHINE_PRECISION, Tolerance
 
 
@@ -389,6 +394,109 @@ class Tier1Contract(PortContract):
             name: np.asarray(jac, dtype=float)
             for name, jac in zip(names, jacobians, strict=True)
         }
+
+    @pytest.mark.gradient
+    def test_gradient_finite_at_zero(self):
+        """No argument may be finite in value and non-finite in gradient at `x == 0`.
+
+        The class-closing check for `_audit/next_steps.md` §9's trap: `x ** p` with
+        `0 < p < 1` (`jnp.sqrt` included) at exactly zero is value-correct and
+        differentiates to `inf`/`nan`, so every other test in this file passes while a
+        solver's whole Jacobian row is poisoned. See `_harness/boundary.py` for why the
+        criterion is "value finite implies gradient finite" and why the register there
+        holds a *different* class (unguarded division) rather than instances of this one.
+
+        Deliberately **not** parametrized over `sample`. The defect is a property of the
+        function's structure at a boundary point, not of the sample it was reached from,
+        so one deterministic point per contract -- the first declared sample, or one
+        fuzz draw at seed 0 for a fuzz-only unit -- exercises the same code path that
+        every other sample would, at a fraction of the cost. That cost is not small: one
+        `jacfwd` trace per argument *component*, because each zeroed component is a
+        different input point and cannot be batched into one trace the way
+        `_jacobians` batches directions at a single point.
+
+        An argument component already `0.0` at the sample point is skipped -- there is
+        no boundary to move to -- and so is any component whose *value* goes non-finite
+        when zeroed, which is an out-of-domain point that `test_outputs_finite` owns.
+        """
+        sample = self._boundary_sample()
+        failures = []
+        excused = set()
+
+        for name in self.diff_argnames(sample):
+            base = np.asarray(sample.kwargs[name], dtype=float)
+            shape = base.shape
+            reason = registered_reason(type(self).__name__, name)
+            for component in range(base.size):
+                if base.ravel()[component] == 0.0:
+                    continue
+                value, jacobian = self._value_and_jacobian_at_zero(
+                    sample, name, component, shape
+                )
+                if not np.all(np.isfinite(value)):
+                    continue
+                if np.all(np.isfinite(jacobian)):
+                    continue
+                if reason is not None:
+                    excused.add(name)
+                    continue
+                failures.append(
+                    f"  d(output)/d({_component_label(name, shape, component)}) = "
+                    f"{jacobian} at a point where the value {value} is finite"
+                )
+
+        assert not failures, "\n".join([
+            "non-finite gradient at a zero-valued argument, where the value itself is "
+            "finite -- the `x ** p` (0 < p < 1) / `jnp.sqrt` trap of "
+            "`_audit/next_steps.md` §9. Fix it with `models/safe_math.py`'s `safe_pow` "
+            "/ `safe_sqrt`, or register it in `_harness/boundary.py` with the reason:",
+            *failures,
+        ])
+
+        stale = {
+            argument
+            for (contract, argument) in DIVISION_BY_ZERO_AT_BOUNDARY
+            if contract == type(self).__name__
+        } - excused
+        assert not stale, (
+            f"{type(self).__name__} registers {sorted(stale)} in "
+            f"`_harness/boundary.py` as non-finite at the zero boundary, but they are "
+            f"finite now. Delete the entries -- a register that outlives its defect is "
+            f"an excuse, not a record"
+        )
+
+    def _boundary_sample(self):
+        """The single deterministic point `test_gradient_finite_at_zero` probes from."""
+        samples = list(getattr(self, "samples", ()))
+        if samples:
+            return samples[0]
+        bounds = getattr(self, "fuzz_bounds", None)
+        assert bounds, (
+            f"{type(self).__name__} declares neither `samples` nor `fuzz_bounds`, so "
+            f"there is no point to probe the zero boundary from"
+        )
+        return fuzz_samples(bounds, 1, 0, fixed=getattr(self, "fuzz_fixed", None))[0]
+
+    def _value_and_jacobian_at_zero(self, sample, name, component, shape):
+        """Value and `jacfwd` of the port with one flat component of `name` set to zero.
+
+        The other arguments are held at the sample's own values, exactly as
+        `_reference_along` holds them for the finite-difference comparison -- so a
+        failure names one argument, not a direction in the whole input space.
+        """
+        flat = np.asarray(sample.kwargs[name], dtype=float).ravel().copy()
+        flat[component] = 0.0
+        kwargs = dict(sample.kwargs)
+
+        def f(x):
+            kwargs[name] = x.reshape(shape) if shape else x.reshape(())
+            return _as_traced_array(self.ported(**kwargs))
+
+        at_zero = jnp.asarray(flat)
+        return (
+            np.asarray(f(at_zero), dtype=float),
+            np.asarray(jax.jacfwd(f)(at_zero), dtype=float),
+        )
 
     def _jacobian(self, sample, name):
         """`_jacobians(sample)[name]` — kept for call sites that want a single argument.

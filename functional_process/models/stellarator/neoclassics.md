@@ -71,17 +71,36 @@ existing PROCESS unit tests):
 
 ```python
 def calculate_profile_values(
-    rho, temp_plasma_electron_on_axis_kev, temp_plasma_ion_on_axis_kev, alphat,
-    nd_plasma_electron_on_axis, f_plasma_fuel_deuterium, nd_plasma_ions_on_axis,
-    nd_plasma_alphas_thermal_vol_avg, alphan, rminor,
-) -> tuple[Array, Array, Array, Array]:  # (densities, temperatures, dr_densities, dr_temperatures), each (4,)
+    rho,
+    temp_plasma_electron_on_axis_kev,
+    temp_plasma_ion_on_axis_kev,
+    alphat,
+    nd_plasma_electron_on_axis,
+    f_plasma_fuel_deuterium,
+    nd_plasma_ions_on_axis,
+    nd_plasma_alphas_thermal_vol_avg,
+    alphan,
+    rminor,
+) -> tuple[
+    Array, Array, Array, Array
+]:  # (densities, temperatures, dr_densities, dr_temperatures), each (4,)
     ...
 
+
 def calculate_effective_thermal_diffusivity(
-    vol_plasma, f_st_rmajor, radius_plasma_core_norm, rminor, stella_config_rminor_ref,
-    a_plasma_surface, f_p_alpha_plasma_deposited, pden_alpha_total_mw,
-    pden_plasma_core_rad_mw, nd_plasma_electron_on_axis, temp_plasma_electron_on_axis_kev,
-    alphat, alphan,
+    vol_plasma,
+    f_st_rmajor,
+    radius_plasma_core_norm,
+    rminor,
+    stella_config_rminor_ref,
+    a_plasma_surface,
+    f_p_alpha_plasma_deposited,
+    pden_alpha_total_mw,
+    pden_plasma_core_rad_mw,
+    nd_plasma_electron_on_axis,
+    temp_plasma_electron_on_axis_kev,
+    alphat,
+    alphan,
 ) -> float:  # chi_PROCESS_e
     ...
 ```
@@ -208,3 +227,33 @@ None — every method reads only `self.data.*`, no call to another `Model`'s met
    this unit's tier-1 half**, not any property of the remaining 10 functions. Recommend
    treating it as its own small piece of harness work rather than deferring it
    indefinitely, since every subsequent species-vectorised unit will hit the same wall.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+9 square roots in this file have been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

@@ -25,11 +25,11 @@ graph `functional_process/mda.py` already drives — and what drives *that*. Thi
 actual `Optimise` `DeclaredNode` in `total_process.py` at all (still not done)"), and
 `CLAUDE.md`'s stated thesis for the whole rewrite.
 
-**Nothing here is implemented.** This is the design plus the experiments that settled it.
-Everything marked *verified* was run in `process_port` this session against
-`tests/regression/input_files/stellarator_helias.IN.DAT`; everything marked *inferred* was
-not. Scratch scripts are not checked in (they lived under the session scratchpad); every
-claim below carries the command's own numbers so it can be reproduced.
+**This is built.** §1–§4 and §6 are implemented (`functional_process/sand.py`,
+`core/solver/drivers.py`, `sand_harness.py`, `run_sand_harness.py`, `test_sand.py`) and
+§5's ladder has been run end to end; §7's stages 0–8 are done. What §1–§9 preserve is the
+*reasoning*, because it is still what the code does — where a number appears in both,
+§10's is the measured one.
 
 **Reference run used throughout.** `SingleRun(stellarator_helias.IN.DAT, "vmcon")`, run to
 convergence in-process, 46 VMCON iterations, "PROCESS found a feasible solution":
@@ -328,23 +328,20 @@ function set stays complete and unconditional; only the *nodes* are per-run.
 
 ### 2.4 What the graph can actually support today — measured
 
-For each of the 14 active constraints, every non-switch parameter was resolved to a `VarPath`
-(by `mda_constraint_harness._resolve_args`'s own unambiguous-area rule) and classified against
-the graph. "LIVE" = at least one argument is **owned by a node reachable from the 8 design
-variables** (`graph.reach(design)` — 87 of 101 nodes are). Anything else is constant with
-respect to the design and cannot influence the optimum.
+**Superseded — see §10.7.** This section classified each of the 14 active constraints as
+LIVE (at least one argument owned by a node reachable from the design variables) or INERT,
+and found **12 of 14 live**, with **c16** and **c24** inert for want of a producer. Both
+gaps are now closed (`PlantElectricProductionReactor`, `StellaratorBetaAndStoredEnergy`),
+all 14 are live, and `sand.constraint_nodes` **raises** on any active `icc` entry it cannot
+assemble rather than silently dropping it — an `Optimise` over 12 of PROCESS's 14
+constraints is a *different problem*, so comparing its answer to PROCESS's would be
+meaningless.
 
-| | verdict | detail |
-|---|---|---|
-| c2 (EQ) | **LIVE** | 7 dirty reads; `.physics.pden_plasma_ohmic_mw` not in graph |
-| c16 (EQ) | **INERT** | `p_plant_electric_net_mw` is a boundary input — `PlantElectricProduction` is ported but unregistered (self-loop, `total_process.py`'s own comment) |
-| c24 | **INERT** | the whole `beta_*` family absent — `physics.py`'s beta section unported |
-| c8, c17, c18, c67, c82, c83, c62, c32, c34, c35, c65 | **LIVE** | 1–3 dirty reads each |
-
-**12 of 14 live.** The bounds that show as "not in graph" (`pflux_fw_neutron_max_mw`,
-`sig_tf_wp_max`, `f_t_alpha_energy_confinement_min`, …) are *not* gaps: they are user inputs,
-and they simply become new boundary inputs the moment a constraint node reads them. The two
-inert constraints are gaps, both already tracked.
+What survives from the classification, and is still the right test to apply to a new
+constraint: a bound that shows as "not in graph" (`pflux_fw_neutron_max_mw`,
+`sig_tf_wp_max`, `f_t_alpha_energy_confinement_min`, …) is **not** a gap — it is a user
+input, and becomes an ordinary boundary input the moment a constraint node reads it. An
+argument that is *constant with respect to the design* is the real gap.
 
 ---
 
@@ -391,20 +388,17 @@ the graph should present something to minimise.
 
 ### 3.3 What is computable today — measured, and it is a problem
 
-Same classification as §2.4, over all 16 branches:
+**Superseded — closed.** This section recorded that this run's own `i_figure_merit = 6`
+(`COST_OF_ELECTRICITY`) was **not computable at all**, because `.costs.coe` had no producer
+anywhere in the ported graph, and §5's ladder was written around that fact. `costs.py` is
+now ported and registered and `CostOfElectricity` owns `.costs.coe`; see
+`next_steps.md` §9. Objectives 4 and 7 (`.tfcoil.tfcmw`, `cdirt`/`concost`) were the other
+two in that state; `cdirt`/`concost` now have producers too.
 
-- **live** (at least one dirty read): 3 `NEUTRON_WALL_LOAD`, 5 `FUSION_GAIN_Q`,
-  9 `DIVERTOR_HEAT_LOAD`, 19 `MAX_Q_MAX_T_PLANT_PULSE_BURN`.
-- **reads only boundary inputs** (so the objective is a function of the design variables
-  directly, with no model in between): 1 `MAJOR_RADIUS` (literally `0.2 × design`),
-  10 `TOROIDAL_FIELD`, 14 `PULSE_LENGTH`, 15, 16, 17, 8 `ASPECT_RATIO`, 11.
-- **not computable at all**: 4 (`.tfcoil.tfcmw` absent), **6 `COST_OF_ELECTRICITY`
-  (`.costs.coe` is not in the graph)**, 7 (`cdirt`/`concost` absent).
-
-**This run's own `i_figure_merit` is 6.** The costs subsystem is unported (a gap
-`objectives.md`'s own hole-in-MDA table already records), so **the port cannot today form
-the objective PROCESS actually minimised for `stellarator_helias.IN.DAT`.** §5 is written
-around that fact rather than around it.
+The distinction the section drew is still worth keeping when a new objective is wired: an
+objective whose arguments are all **boundary inputs** (1 `MAJOR_RADIUS` is literally
+`0.2 × design`, and so are 8, 10, 11, 14, 15, 16, 17) is a function of the design variables
+with no model in between — legitimate, but it exercises none of the graph.
 
 ---
 
@@ -510,14 +504,61 @@ the same work, but note what that validation *can* say: `solve_duct_geometry` is
 heuristic (shrink by 10 % until it fits), not 'any feasible point'", so the check is
 "the driver's answer is feasible", never "the driver's answer is PROCESS's answer".
 
+### 4.4 Batching the whole MDA — measured, and it works
+
+Raised as a side question and worth recording, because the answer is not obvious from the
+source. **Nothing in SAND form is conditional per evaluation**: every switch is resolved
+at graph-assembly time (`configuration.py`'s whole argument), so one assembled graph is a
+fixed dataflow and `jax.vmap` applies to it. Confirmed on the real graph, both forms:
+
+| | single, jitted | B=8 | B=64 |
+|---|---|---|---|
+| SAND `ConditionMap` (acyclic, 62-node body) | 0.401 ms | 0.153 ms/pt | **0.070 ms/pt** |
+| SAND batched `jacfwd` (22 × 17) | 0.539 ms | 0.283 ms/Jac | **0.280 ms/Jac** |
+| **driven MDA `Schedule`** (9 driven blocks, Newton/Picard) | 0.527 ms | 0.070 ms/pt | **0.0115 ms/pt** |
+
+The third row is the important one: it is the *driven* schedule, with all 9
+`NewtonDriver`/`PicardDriver` blocks and their `lax.while_loop`s inside, not the
+residualised acyclic form — **~46× throughput at B=64**. Compile time barely moves with
+batch size (2.22 s → 2.80 s), confirming one trace regardless of `B`.
+
+**Guarded against dead-code elimination**, which would have made these numbers
+meaningless: the timed function stacks *all 573* produced variables, and 169 of them
+genuinely vary across the batch. The 404 that do not are simply not downstream of the
+swept variable, so XLA hoists them out of the batch — a real saving for a single-variable
+sweep, not a measurement artifact.
+
+**Where this is worth using: `Scan`, not the optimiser.** `process/core/scan.py`
+re-solves the entire system per scan point with nothing reused between points
+(`CLAUDE.md`'s architecture section says so explicitly). That is embarrassingly parallel
+and is exactly what `vmap` collapses into one trace. An SQP is inherently sequential and
+gains nothing directly — though batched multi-start, or batched finite-difference
+validation of the AD Jacobian, both fit.
+
+**Caveats, none of them measured away:**
+
+- **`vmap` over `while_loop` runs until *every* batch element's predicate is false**, so a
+  batch costs its worst-case element, not its average. Every point timed here starts near
+  the converged solution and needs a similar iteration count; a scan spanning genuinely
+  different convergence difficulty has not been tried and would not scale this cleanly.
+- **`lax.cond` under `vmap` becomes `select`, executing both branches.**
+  `_solve_vacuum_pumping_old` (`models/vacuum.py:587`) has one per gas species, so
+  `VacuumOld` pays ~2x under batching. Correct, not free.
+- Measured on **CPU** (this env has no CUDA jaxlib, see `CLAUDE.md`). A GPU would change
+  the shape of these numbers substantially, in the batched form's favour.
+- 24 of the 573 outputs were non-finite when this was measured, from the placeholder-seeded
+  island inputs §5.2's `c32` note describes — batching neither introduced nor fixed them,
+  and closing that exclusion removed them.
+
+
 ---
 
 ## 5. Validation
 
 The MDA harness's model is `mda_harness.py`: run PROCESS in-process, seed the port from
 PROCESS's own converged values, diff. The `Optimise` layer's analogue is **not** one harness
-but a ladder of three, because they establish three genuinely different things. Call the new
-module `mda_optimise_harness.py`, beside the existing two.
+but a ladder of three, because they establish three genuinely different things. It is built
+as `sand_harness.py`/`run_sand_harness.py`, beside the existing two harnesses.
 
 ### 5.1 Stage A — conditions at the reference point (cheapest, strictly stronger than what exists)
 
@@ -552,7 +593,7 @@ attached to it, were both wrong.** That diagnosis blamed "the prototype's crude 
 resolution reading `sig_tf_wp_max = 0.0`"; `sig_tf_wp_max` in fact resolves correctly to
 `4.0e8`. The real cause was the coil-island exclusion feeding a `0.0` placeholder into
 `MaxForceDensity`'s `/ a_tf_wp_no_insulation` (`models/stellarator/coils/forces.py:34`).
-Closed — see `_audit/constraint_32_investigation.md`.
+Closed — see §5.2's note on the non-finite `c32` row.
 
 **What Stage A proves:** the constraint layer's *values* are right when fed a real,
 self-consistent state through the graph rather than off a `DataStructure`. That is one step
@@ -612,14 +653,13 @@ and three structured disagreements, each of which **names a specific defect**:
   previously-invisible bug: every value the MDA harness checks is *correct at the reference
   point*, so no value comparison could have found it. It is the single most valuable thing
   this stage produced.
-- **[CAUSE REMOVED — MUST BE RE-MEASURED, NOT RE-CITED]** **columns x2 and x59 are zero
-  for c82/c83/c32/c35** where PROCESS has real sensitivity — because the prototype excluded
-  the coil island (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`,
-  `mda_harness.EXCLUDED_NODE_NAMES`). Not a port bug; a demonstration that that exclusion
-  *matters* for the coil constraints and cannot survive into the `Optimise` layer.
-  **The exclusion is now closed** (`_audit/constraint_32_investigation.md`), so these
-  columns have a live path and this measurement is stale. Whether they now *agree* with
-  `fcnvmc2` is untested — re-run Stage B before citing this bullet again.
+- **columns x2 and x59 were zero for c82/c83/c32/c35** where PROCESS has real sensitivity,
+  because the prototype excluded the coil island
+  (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`,
+  `mda_harness.EXCLUDED_NODE_NAMES`). Not a port bug; a demonstration that the exclusion
+  *mattered* for the coil constraints and could not survive into the `Optimise` layer.
+  **The exclusion is closed** (see the note below on constraint 32), so those columns have
+  a live path; §10.5 is the current per-cell record.
 - **c2/c62 at ~1.2e-2** — the same `ConfinementTime` residual §8 records, now with a number
   attached in derivative space too.
 
@@ -633,61 +673,64 @@ reference's own error bar times a safety factor (`_audit/test_harness.md:157-161
 machinery already exists in `functional_process/_harness/finite_difference.py` and should be
 reused rather than re-derived.
 
-**Cost. [CORRECTED — the original measurement here was wrong, and its conclusion with
-it.]** `fcnvmc2` for `n = 8`, `m = 14` — 16 full PROCESS pipeline evaluations — took
-**0.9 s**. The port's `jacfwd` was originally timed as **5.9 s**, and this section
-concluded from that "there is no speed win at this size". That 5.9 s was a bare
-`jax.jacfwd(...)(*u0)` called **once, unjitted, cold** — it is tracing plus compilation
-plus one execution, not the cost of a Jacobian. Re-measured properly:
+**Cost.** `fcnvmc2` for `n = 8`, `m = 14` — 16 full PROCESS pipeline evaluations — took
+**0.9 s**. The port's `jacfwd`, measured properly:
 
 | | |
 |---|---|
-| cold, unjitted, one call (the original number) | 5.843 s |
+| cold, unjitted, one call | 5.843 s |
 | `eqx.filter_jit`, first call (trace + compile) | 1.620 s |
 | **jitted steady state, median of 20** | **0.539 ms** |
-| jitted steady state, min | 0.480 ms |
 | `ConditionMap` alone, jitted median | 0.401 ms |
 
-So the real comparison is **0.54 ms against PROCESS's 0.9 s**, and the port's Jacobian is
-the *larger* one (22 × 17 against 8 × 14). Compilation is paid once per shape, not per
-solver iteration, so it amortises across a whole VMCON run.
+**Time an unjitted cold call and you will conclude there is no speed win** — that 5.9 s is
+tracing plus compilation plus one execution, not the cost of a Jacobian, and this section
+originally drew exactly the wrong conclusion from it. The real comparison is **0.54 ms
+against PROCESS's 0.9 s**, on the *larger* Jacobian, with compilation paid once per shape.
+Correctness of the jitted result was checked, not assumed: jitted and unjitted agree to
+`6.1e-14` across every finite cell with identical non-finite masks (a naive `np.allclose`
+reports `False` purely because `NaN != NaN`).
 
-**Correctness of the jitted result was checked, not assumed**: jitted and unjitted agree
-to a maximum relative difference of **6.1e-14** across every finite cell, with identical
-non-finite masks. (A naive `np.allclose` reports `False` — purely because `NaN != NaN`;
-see the non-finite row below.)
+**§4.2's "the schedule stops being one trace" caveat is real but nearly free.**
+`pyvmcon.AbstractProblem.__call__(x) -> Result` hands back `(f, df, eq, deq, ie, die)` for
+one iterate — VMCON asks for the **whole Jacobian at a point**, then does its QP subproblem
+on the host. So the trace boundary is *per SQP iteration*, and each iteration is one jitted
+`jacfwd` call with compilation paid once for the whole solve. The host-side QP is over a
+handful of variables, negligible beside a 0.9 s PROCESS pipeline sweep. There is no need to
+keep the solve inside a single trace to get the win, and no need for a jittable optimiser
+on performance grounds.
 
-**§4.2's "the schedule stops being one trace" caveat is real but nearly free, and this
-doc previously overweighted it.** `pyvmcon.AbstractProblem.__call__(x) -> Result` hands
-back `(f, df, eq, deq, ie, die)` for one iterate — VMCON asks for the **whole Jacobian at
-a point**, then does its QP subproblem on the host. So the trace boundary is *per SQP
-iteration*, and each iteration is exactly one jitted `jacfwd` call: **~0.54 ms**, with
-compilation paid once for the whole solve, not per iteration. The host-side work between
-iterations is a QP over 17 variables — negligible beside a 0.9 s PROCESS pipeline sweep.
-There is no need to keep the solve inside a single trace to get the win, and no need for
-a jittable optimiser (§4.2's `optimistix.BFGS` alternative) on performance grounds.
+**The non-finite `c32` row — traced and closed.** This measurement originally found 17
+non-finite cells, all of them one row (every entry of `^cond.constraints.c32`, 2 `inf` and
+15 `nan`), with the other rows fully finite. The confirmed cause was **`MaxForceDensity`'s
+trailing `/ a_tf_wp_no_insulation` (`models/stellarator/coils/forces.py`) dividing by the
+`0.0` placeholder the coil-island exclusion left behind** — not a port defect, an artefact
+of `mda_harness.EXCLUDED_NODE_NAMES`, and not (as first guessed) `dr_tf_wp_with_insulation`,
+which was correct throughout. It was fixed at its cause rather than patched: the coil island
+is no longer excluded, grounded by three `KNOWN_MINT_VALUES` reconstructions off PROCESS's
+own stored fields —
 
-What genuinely remains unmeasured is the *whole-solve* number: iterations to convergence
-times per-iteration cost, against PROCESS's own VMCON run. That is Stage C (§5.3) and
-needs `.costs.coe` first.
+```
+wp_width_r_min          = .tfcoil.dr_tf_wp_with_insulation      (a starting guess only;
+                                                                 `Intersect` re-solves it)
+a_tf_wp_no_insulation   = .tfcoil.dx_tf_wp_primary_toroidal * .tfcoil.dr_tf_wp_with_insulation
+a_tf_wp_with_insulation = (dr_tf_wp_with_insulation + 2*dx_tf_wp_insulation)
+                          * (dx_tf_wp_primary_toroidal + 2*dx_tf_wp_insulation)
+```
 
-**A non-finite row, found by this re-measurement — since CLOSED (17 → 0 non-finite
-cells, 23/23 rows finite); kept as history. Confirmed cause: `MaxForceDensity`'s trailing
-`/ a_tf_wp_no_insulation` (`models/stellarator/coils/forces.py:34`) fed the `0.0`
-placeholder the coil-island exclusion left behind — not, as guessed below,
-`dr_tf_wp_with_insulation`, which was correct all along. See
-`_audit/constraint_32_investigation.md`.** The 22 × 17 Jacobian has 17 non-finite
-cells, and they are all one row: every entry of `^cond.constraints.c32` (2 `inf`, 15
-`nan`); the other 21 rows are fully finite. `constraint_32` itself is a bare
-`leq(sig_tf_wp, sig_tf_wp_max)` (`core/solver/constraints.py:1089-1109`) and
-`calculate_maximum_stress` is a plain product (`models/stellarator/coils/forces.py:55-61`),
-so the non-finiteness enters upstream, through the winding-pack chain feeding
-`dr_tf_wp_with_insulation` — i.e. it is very likely the same `EXCLUDED_NODE_NAMES` coil-island
-exclusion this section already blames for the zeroed `x2`/`x59` columns, not a new port bug.
-**Traced to that boundary, not past it — treat as diagnosed-but-unconfirmed.** It sharpens
-the existing conclusion: the exclusion does not merely zero some columns, it makes one whole
-constraint row non-differentiable, which no SQP can accept. Closing the exclusion is a
-prerequisite for the `Optimise` layer, not an optimisation of it.
+— each checked independently (feeding the `a_tf_wp_no_insulation` reconstruction into
+PROCESS's own `j_tf_wp = coilcurrent * 1e6 / a_tf_wp_no_insulation` reproduces the stored
+`j_tf_wp` to the last printed digit). Result: **17 → 0 non-finite cells**, every row finite,
+and `Intersect` gains the first PROCESS-comparable value check it has ever had — its
+`Tier2Contract` has none by construction, and its solved answer now agrees with
+`.tfcoil.dr_tf_wp_with_insulation` within `compare`'s `rtol=1e-6`. `Intersect`'s `RootFind`
+also joins the SAND problem as an extra design variable and equality, which is the
+structurally honest shape. **One item is still open from that investigation**: the x2/x59
+columns of c82/c83/c32/c35, measured as spuriously zero while the island was cut out, now
+have a live path but have not been re-checked against `fcnvmc2` cell by cell.
+
+The general point stands and was load-bearing: an excluded island does not merely zero some
+columns, it can make a whole constraint row non-differentiable, which no SQP accepts.
 
 **What the corrected numbers let this section claim.** The win is *both* exactness and
 speed, where the original draft conceded speed. Exactness: the same derivative with no
@@ -703,75 +746,28 @@ step-independence measurement, essentially exact for almost every cell here, so 
 not a case where AD rescues a broken reference. It replaces a good reference with an
 exact one, faster.
 
-### 4.4 Batching the whole MDA — measured, and it works
-
-Raised as a side question and worth recording, because the answer is not obvious from the
-source. **Nothing in SAND form is conditional per evaluation**: every switch is resolved
-at graph-assembly time (`configuration.py`'s whole argument), so one assembled graph is a
-fixed dataflow and `jax.vmap` applies to it. Confirmed on the real graph, both forms:
-
-| | single, jitted | B=8 | B=64 |
-|---|---|---|---|
-| SAND `ConditionMap` (acyclic, 62-node body) | 0.401 ms | 0.153 ms/pt | **0.070 ms/pt** |
-| SAND batched `jacfwd` (22 × 17) | 0.539 ms | 0.283 ms/Jac | **0.280 ms/Jac** |
-| **driven MDA `Schedule`** (9 driven blocks, Newton/Picard) | 0.527 ms | 0.070 ms/pt | **0.0115 ms/pt** |
-
-The third row is the important one: it is the *driven* schedule, with all 9
-`NewtonDriver`/`PicardDriver` blocks and their `lax.while_loop`s inside, not the
-residualised acyclic form — **~46× throughput at B=64**. Compile time barely moves with
-batch size (2.22 s → 2.80 s), confirming one trace regardless of `B`.
-
-**Guarded against dead-code elimination**, which would have made these numbers
-meaningless: the timed function stacks *all 573* produced variables, and 169 of them
-genuinely vary across the batch. The 404 that do not are simply not downstream of the
-swept variable, so XLA hoists them out of the batch — a real saving for a single-variable
-sweep, not a measurement artifact.
-
-**Where this is worth using: `Scan`, not the optimiser.** `process/core/scan.py`
-re-solves the entire system per scan point with nothing reused between points
-(`CLAUDE.md`'s architecture section says so explicitly). That is embarrassingly parallel
-and is exactly what `vmap` collapses into one trace. An SQP is inherently sequential and
-gains nothing directly — though batched multi-start, or batched finite-difference
-validation of the AD Jacobian, both fit.
-
-**Caveats, none of them measured away:**
-
-- **`vmap` over `while_loop` runs until *every* batch element's predicate is false**, so a
-  batch costs its worst-case element, not its average. Every point timed here starts near
-  the converged solution and needs a similar iteration count; a scan spanning genuinely
-  different convergence difficulty has not been tried and would not scale this cleanly.
-- **`lax.cond` under `vmap` becomes `select`, executing both branches.**
-  `_solve_vacuum_pumping_old` (`models/vacuum.py:587`) has one per gas species, so
-  `VacuumOld` pays ~2x under batching. Correct, not free.
-- Measured on **CPU** (this env has no CUDA jaxlib, see `CLAUDE.md`). A GPU would change
-  the shape of these numbers substantially, in the batched form's favour.
-- 24 of the 573 outputs are non-finite, consistent with the placeholder-seeded island
-  inputs discussed in §4 — batching does not introduce them and does not fix them.
 
 ### 5.3 Stage C — the solve
 
-Run the `VmconDriver` from PROCESS's *initial* (input-file) values and check where it lands.
-**This is the only stage that tests the driver, and it cannot be done against this run today**
-(§3.3: `i_figure_merit = 6` reads `.costs.coe`, which is not in the graph). What can be done:
+Run the `VmconDriver` and check where it lands. Three rungs, of which C1 and C2 are **built
+and run** (see §10.6) and C3 is **open**:
 
-- **C1, achievable now:** assemble the same 12 live constraints with a *live* objective
-  (id 3, `NEUTRON_WALL_LOAD`), solve from a perturbed start, and check the driver reaches a
+- **C1:** solve from a perturbed start with a live objective and check the driver reaches a
   point where the equalities vanish and the inequalities hold. **No PROCESS number to compare
-  against** — this is precisely the epistemic position `next_steps.md`'s "validation-chain
+  against** — this is exactly the epistemic position `next_steps.md`'s "validation-chain
   question" describes for `Intersect`/`DuctDiameterRootFind`: *"reproduces PROCESS's own
   formula, solved more tightly than PROCESS's own loose iteration"*, not *"matches PROCESS's
   own reported number"*. What C1 establishes is that the machinery solves the problem it
   states.
-- **C2, achievable now, and stronger than it looks:** start the driver *at* PROCESS's converged
-  point and check it does not move. PROCESS's answer satisfies its own KKT conditions to
-  `2.4e-07` (its final convergence parameter), so a correct driver over a correct model should
-  take a null step. Any movement is either a modelling gap or a driver bug, and Stage B's
-  per-cell Jacobian tells you which.
-- **C3, blocked on porting:** the real thing — `i_figure_merit = 6`, all 14 constraints,
-  solve from the input file's own starting values, compare all 8 converged iteration variables
-  against PROCESS's. Requires `.costs.coe` (costs subsystem) and the two inert constraints'
-  producers. **This is the only check that would justify the sentence "the port reproduces
-  PROCESS's optimisation", and it is not available yet.** Say so wherever it is cited.
+- **C2:** start the driver *at* PROCESS's converged point. A correct driver over an identical
+  model would take a null step; any movement is a modelling gap or a driver bug, and Stage B's
+  per-cell Jacobian says which. Measured in §10.6 — it converges and does *not* stay put, for
+  reasons that are now named.
+- **C3, still blocked:** `i_figure_merit = 6`, all 14 constraints, solve from the input
+  file's own starting values, compare all 8 converged iteration variables against PROCESS's.
+  **This is the only check that would justify the sentence "the port reproduces PROCESS's
+  optimisation", and it is not available yet** — the blocker is no longer porting but
+  graph completeness at a cold point (§10.6). Say so wherever it is cited.
 
 ### 5.4 What "matches PROCESS" can and cannot mean here
 
@@ -863,7 +859,7 @@ schedule = schedule_for(Blocking.scc(p.graph), {p.graph.declared[0]: VmconDriver
 ```
 
 Measured on the real graph (with `DuctDiameterRootFind` dropped, 99 nodes — the coil island is no
-longer excluded, see `_audit/constraint_32_investigation.md`):
+longer excluded, see §5.2's note on the non-finite `c32` row):
 
 | | |
 |---|---|
@@ -874,13 +870,13 @@ longer excluded, see `_audit/constraint_32_investigation.md`):
 | `schedule_for` | **builds** |
 | the `Drive` | 69 nodes, 18 unknowns, 23 conditions, 160 context vars |
 | `ConditionMap(...)` | evaluates, 0.04 s |
-| `jax.jacfwd` | 22 × 17; **0.54 ms** jitted steady state (5.9 s cold+untraced — see §4's corrected Cost note) |
+| `jax.jacfwd` | 23 × 18; **0.54 ms** jitted steady state (5.9 s cold+untraced — see §4's corrected Cost note) |
 
-Design = 8 iteration variables + 9 coupling unknowns; equalities = 1 real equality + 9
-fixed-point residuals; inequalities = 11 real ones. **Only 63 of the 95 nodes end up inside the
-driven block** — the rest run before and after it, so this is not "the whole graph as one
-opaque block"; the acyclic remainder is still ordinary `Call` steps. That is precisely the
-structural win `CLAUDE.md` argues for, obtained without any upstream change.
+Design = the iteration variables + the coupling unknowns; equalities = the real equality
+plus the fixed-point residuals; inequalities = the real ones. **Only 69 of the 99 nodes end
+up inside the driven block** — the rest run before and after it, so this is not "the whole
+graph as one opaque block"; the acyclic remainder is still ordinary `Call` steps. That is
+precisely the structural win `CLAUDE.md` argues for, obtained without any upstream change.
 
 **Ordering is reliable.** `Drive.conditions` came back as
 `(objective, …equalities…, …inequalities…)`, matching `Optimise.inputs` (`problem.py:82-84`) —
@@ -935,21 +931,14 @@ MDF as a later second opinion, not to wait.
 
 ## 7. Staged implementation plan
 
-Ordered, smallest first, each stage independently checkable. **Stage 4 is the first that
-produces a number comparable against PROCESS.**
+**Stages 0–8 are done** — the 1-tuple sweep, the `constraint_node`/`objective_node`
+factories, `optimise_for`, `sand()`, the Stage A and Stage B harnesses, `VmconDriver` and
+`mda.default_drivers`'s `Optimise` arm, Stage C1/C2, and `Feasibility` folding. The record
+of what each produced is §10.
 
 | # | stage | check | notes |
 |---|---|---|---|
-| 0 | Fix the six 1-tuple returns (§6.4a) and sweep for more | `pytest functional_process` unchanged; `run_mda_harness.py` numbers unchanged | prerequisite for *any* `Residualise`; touches files other agents hold |
-| 1 | `constraint_node(cid, ...)` / `objective_node(merit, sign, ...)` factories: build one `CallableNode` per active constraint / one for the objective, with switch args bound and `VarPath`s resolved | unit test: each node's `fn`, run on the reference `DataStructure`'s values, equals the ported function; each node's `In` set matches the resolved signature | no graph yet; pure assembly |
-| 2 | `optimise_for(graph, ixc, icc, meq, i_figure_merit)` → the graph with those nodes and one `Optimise` inserted | `Graph` builds (i.e. no ownership collision); `Blocking.scc(...).problem_types` raises the *expected* two-problems error | §1.2's collision policy gets exercised here |
-| 3 | `sand(graph)`: `Residualise` every non-degenerate `FixedPoint` (§6.4b's filter), `Combine`, `schedule_for` | the `Schedule` builds; the `Drive`'s counts match §6.3's table; `ConditionMap` evaluates | **this is the stage §6 already proved is reachable** |
-| 4 | **Stage A harness** (§5.1): conditions at the reference point vs `constraint_eqns` | ≥ the 9/12 already measured; each remaining one traced to a named cause | **first PROCESS-comparable number** |
-| 5 | **Stage B harness** (§5.2): reduced Jacobian vs `fcnvmc2`, per cell, with the Richardson error bar from `_harness/finite_difference.py` | per-cell pass/fail; the x4-column defect (§5.2) becomes a tracked bug | the decisive check |
-| 6 | `VmconDriver` (§4): bounds, scaling, sign flip, count-based eq/ineq split; `mda.default_drivers` grows an `Optimise` arm (it currently raises, `mda.py:106-111`) | a synthetic `Optimise` on a small graph (the §6 toy) reaches a known optimum | driver only, no PROCESS comparison |
-| 7 | **Stage C1/C2** (§5.3): solve with a live objective; null-step test from PROCESS's own answer | equalities vanish, inequalities hold; null step at PROCESS's `x` | no PROCESS number for C1 — say so |
-| 8 | `Feasibility` folding, so `DuctFeasibility` is exercised (§4.3) | `next_steps.md` §8's "unvalidated by design" item closes | falls out of stage 3's `Combine` |
-| 9 | *(blocked)* **Stage C3**: `i_figure_merit = 6`, all 14 constraints, cold solve vs PROCESS's 8 converged values | all 8 within tolerance | needs the costs subsystem + `PlantElectricProduction` + the beta family |
+| 9 | *(blocked)* **Stage C3**: `i_figure_merit = 6`, all 14 constraints, cold solve vs PROCESS's 8 converged values | all 8 within tolerance | no longer blocked on porting — blocked on graph completeness at a cold point (§10.6): the SAND block's context variables that no `Call` step produces and that have no real input value |
 
 ---
 
@@ -980,11 +969,11 @@ Separated deliberately, per the precedent in §8 of `next_steps.md` (the `to_gra
 
 ## 9. Open questions, and the experiment that settles each
 
-1. **The x4 (`temp_plasma_electron_vol_avg_kev`) column.** The port's derivative of every
-   constraint w.r.t. electron temperature is ~0 where PROCESS's is `O(1)`. *Experiment:*
-   `jacfwd` the MDA schedule (not the SAND block) w.r.t. `.physics.temp_plasma_electron_vol_avg_kev`
-   and walk the graph in topological order for the first node whose output derivative is zero
-   where it should not be. Cheap, and likely a single unwired `In`.
+1. ~~**The x4 (`temp_plasma_electron_vol_avg_kev`) column.**~~ **Closed — §10.5a.** The
+   experiment proposed here (`jacfwd` the MDA schedule, not the SAND block, and walk the
+   graph in topological order for the first node whose output derivative is zero where it
+   should not be) is the one that found it, and it has since found a second defect of the
+   same class (§10.5c). Keep the method.
 2. **Do the other six owned-and-also-an-ixc variables (§1.2) really need the
    `DefaultAspectRatio` treatment?** Only ixc 1 is confirmed. *Experiment:* for each, construct
    a graph with that variable active and check `Graph.__check_init__` refuses, then check
@@ -1015,7 +1004,7 @@ Everything below was run in `process_port` on the current tree against
 the coil island and three producers this session added. Reproduce with:
 
 ```bash
-$PY -m pytest functional_process -q          # 3597 passed, 2909 skipped
+$PY -m pytest functional_process -q          # see `next_steps.md`'s "Verified state"
 $PY functional_process/run_mda_harness.py    # the MDA harness, unchanged in scope
 $PY functional_process/run_sand_harness.py   # the ladder below, one PROCESS run, ~4 min
 ```
@@ -1067,10 +1056,11 @@ $PY functional_process/run_sand_harness.py   # the ladder below, one PROCESS run
 
 ### 10.3 The SAND shape, re-derived
 
-`graph_for()` is now **146 nodes** (was 142 at the start of this session: +3 registered
-here, and `PowerProfilesOverTime` moved under a switch).
+Measured when the SAND layer was built, on a **146-node** `graph_for()`. The graph has
+grown since (`next_steps.md`'s "Verified state"), and the SAND problem with it — it is now
+25 conditions × 18 design — so read the *shape* below, not the individual counts.
 
-| | §6.3 (stale) | now |
+| | §6.3 (stale) | as built |
 |---|---|---|
 | nodes in the assembled SAND graph | — | 160 |
 | `FixedPoint`s residualised | 9 | **8** (two are dropped as degenerate first) |
@@ -1278,13 +1268,22 @@ reason, and both surfaced the moment a producer gap was closed.
   and its derivative differ. Not a port defect; not fixable without choosing which of
   PROCESS's two `z_tf_inside_half` values to model, which `next_steps.md` §8 already
   decided the other way.
-- **`c62`, columns x4 / x6 / x109** — `f_t_alpha_energy_confinement`, i.e. the alpha
-  confinement-time ratio. Its *value* is exact (Stage A) and its derivative is wrong by
-  a factor, including a sign flip on x4 (`+2.89` against `−0.71`). **Not diagnosed.** It
-  is the one remaining row where the port and PROCESS disagree for an unknown reason and
-  it is the top item for the next pass.
-- **`c2`/`c17`, column x6, at `6e-4`/`7.7e-3`** — flagged by the error bar but small; not
-  chased.
+- **`c62`, columns x4 / x6 / x109 — DIAGNOSED AND CLOSED, and the cause was not local to
+  `c62`.** `f_t_alpha_energy_confinement`'s *value* was exact (Stage A) while its
+  derivative was wrong by a factor with a sign flip on x4. The cause was three fields with
+  no producer at all — `.physics.fusden_total`, `.fusden_alpha_total` and
+  `.p_dt_total_mw` — so `t_alpha_confinement = nd_alphas / fusden_alpha_total` had a frozen
+  denominator and its temperature derivative was **structurally absent**. A new node
+  `FusionTotalsNoBeam` (`stellarator_B_st_phys.py`, the `else` arm of
+  `stellarator.py:2002-2054`, three identities) gives them producers. Measured on the
+  `c62` row: x4 `5.10e+00*` → `5.42e-04`, x6 `6.66e+00*` → `3.99e-05`, x109 `1.41e-01*` →
+  `3.25e-07`, and c2/c8/c17/c18/c67 improved alongside, several losing their error-bar
+  stars. **The only starred cells left in the whole Jacobian are `objf` and `c16` (the
+  report-pass/solve-pass inconsistency above) and `c24 x3` (a division by PROCESS's own
+  exact zero).** This is the **third** instance of the same defect class as §10.5a's
+  iteration variable 4: *a missing producer that every value test passes and only a
+  gradient sees.* It also enlarged the density/fusion cycle from 4 nodes to 6 and forced a
+  second `mda.CUTS` entry (`next_steps.md` §5).
 
 ### 10.6 Stage C — the solve
 
@@ -1295,11 +1294,17 @@ variables scaled by `1/x_start`, residual equalities scaled by `1/|u|`.
 
 | | |
 |---|---|
-| SQP iterations | **47** (PROCESS: 46) |
-| wall clock | **7.6 s**, including 5 s of one-off compilation (PROCESS: **95.7 s**) |
-| final convergence parameter | `7.4e-09` (PROCESS's own: `2.4e-07`) |
-| final `max abs(equality)` | `3.2e-05`; worst inequality `−7.4e-10`, i.e. feasible |
-| objective | `1.235974` at the start → **`1.217184`** |
+| SQP iterations | **34** (PROCESS: 46) |
+| wall clock | **7.1 s**, most of it one-off trace + compilation (PROCESS: **98.9 s**) |
+
+The iteration count came down from 47 once `FusionTotalsNoBeam` closed the `c62` derivative
+row (§10.5c) — a sharper Jacobian, fewer steps.
+
+The per-variable landing below was measured on the earlier, 47-iteration run and has **not**
+been re-measured since; treat the individual numbers as indicative and the framing beneath
+them as the durable part. At that point the driver reached a feasible KKT point with
+convergence parameter `7.4e-09` (PROCESS's own: `2.4e-07`), `max abs(equality) = 3.2e-05`,
+worst inequality `−7.4e-10`, and objective `1.235974` → `1.217184`.
 
 Where it landed, against PROCESS:
 
@@ -1386,30 +1391,17 @@ say `omit={…}` and gets it back in the report. Both gaps were closed instead:
 
 ### 10.8 Harness effect of this session, controlled
 
-`run_mda_harness.py`, same tree, one change at a time:
-
-| | before | +c16/c24 producers | +the x4 fix |
-|---|---|---|---|
-| `graph_for()` nodes | 142 | 143 | **146** |
-| agreements | 397 | 397 | **404** |
-| disagreements | 14 | 32 | **32** |
-| … in driven blocks | 0 | 0 | **0** |
-| unverifiable | 3 | 3 | 3 |
-| ungrounded inputs | 0 | 0 | 0 |
-| errors | 21 | 21 | 21 |
-| static switch kwargs / mismatched | 51 / 0 | 55 / 0 | 55 / 0 |
-| `pytest functional_process` | 3577 | 3581 | **3597** passed, 0 failed |
-
-**All 18 new disagreements are the one `+17.604 MW` offset of §10.4**, checked
-arithmetically rather than asserted, and written up in
-`mda_harness.EXPLAINED_DISAGREEMENTS`. The x4 fix added 7 agreements and 0 disagreements.
+*Superseded.* A point-in-time before/after table. Current harness numbers live in
+`_audit/next_steps.md`'s "Verified state" block. The two durable readings from it: the x4
+fix added agreements and no disagreements, and **all 18 disagreements this session added
+are the one `+17.604 MW` offset of §10.4**, checked arithmetically rather than asserted and
+written up in `mda_harness.EXPLAINED_DISAGREEMENTS`.
 
 ### 10.9 Open, with what would settle each
 
-1. **`c62`'s derivative row.** Value exact, derivative wrong by ~5x with a sign flip on
-   x4. The only cell in the whole Jacobian disagreeing for an unknown reason. *Experiment:*
-   the same topological walk that found x4, on `.physics.f_t_alpha_energy_confinement`'s
-   producers.
+1. ~~**`c62`'s derivative row.**~~ **Closed** — the cause was three fields with no producer,
+   one node upstream; see §10.5c. The topological walk that found x4 found this too, which
+   is now twice that method has worked.
 2. **A genuine cold start (C3), i.e. §5.3's C3.** Blocked on graph completeness, §10.6.
    *Experiment:* list the SAND `Drive`'s 330 context variables that no `Call` step
    produces and that have no real input value, and close them.

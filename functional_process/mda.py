@@ -1,45 +1,78 @@
 """Turning `total_process.GRAPH` into something that can actually be run.
 
-`total_process.GRAPH` is 96 nodes and 11 SCCs, but 2 of those 11 are still raw
-cross-node cycles with no declared problem at all (`Blocking` found them; nobody has
-said what solves them) -- `Divertor`/`AFwTotalWithPowerflow` and
-`DensityProfile`/`FusionRates`/`PedestalOnAxisDensities`/`PlasmaComposition`. A
-`Drive` refuses to run a block that declares zero problems (`cottax.evaluate.Drive.
-__check_init__`: *"block ... declares no problem: it is run, not driven"*), so those
-two are not runnable as-is -- everything else (the 8 structural `FixedPointFunction`/
-`ImplicitFunction` self-loop pairs, plus `Intersect`/`WindingPackIntersectInputs`/
-`WindingPackTotalSizePost`) already declares exactly one problem per block and needs
-only a driver.
+Most of `total_process.GRAPH`'s SCCs already declare a problem and need only a driver:
+the structural `FixedPointFunction`/`ImplicitFunction` self-loop pairs, plus the coil
+island (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`). Two are
+**raw cross-node cycles with no declared problem at all** -- `Blocking` finds them;
+nobody has said what solves them. A `Drive` refuses such a block outright
+(`cottax.evaluate.Drive.__check_init__`: *"block ... declares no problem: it is run,
+not driven"*), so the graph is not runnable until something says what closes them.
 
-This module does two things: cut the two raw cycles into declared `FixedPoint`
-problems (via `cottax.rewrites.FixedPointCut`, using `Graph.closing_readers` to find
-the minimal cut and an empirical single-variable check that it actually breaks the
-whole cycle -- neither is guesswork, both are computed), and assign a driver to every
-block automatically, by problem type.
+The two are `Divertor`/`AFwTotalWithPowerflow` (`ipowerflow != 0` only) and the
+density/fusion/composition cycle around `DensityProfile`/`FusionRates`/
+`PlasmaComposition`/`ParabolicOnAxisDensities`.
+
+This module does two things: cut those raw cycles into declared `FixedPoint` problems
+(via `cottax.rewrites.FixedPointCut`, using `Graph.closing_readers` to find the cut and
+an empirical check that the cut set actually breaks the whole cycle -- neither is
+guesswork, both are computed), and assign a driver to every block automatically, by
+problem type.
+
+**Deliberately no node/SCC/cut counts here.** They moved on every porting wave, and a
+docstring stating last wave's number is worse than one stating none -- five different
+node counts, all present tense, once coexisted in a single audit document. The cycles
+and their cuts are named in `CUTS` below and re-derived by
+`test_mda.py::test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer`, which
+fails if either membership changes.
 """
 
 from cottax.blocking import Blocking
-from cottax.drivers import NewtonDriver
 from cottax.evaluate import Schedule, schedule_for
 from cottax.interfaces.pytree_namespace_module import path_of
 from cottax.problem import FixedPoint, Optimise, RootFind
 from cottax.rewrites import Cut, FixedPointCut
-from cottax.spec import VarPath
+from cottax.spec import NodePath, VarPath
+from cottax.tools.path import written
+from jax.tree_util import GetAttrKey
 
-from functional_process.core.solver.drivers import PicardDriver, VmconDriver
+from functional_process.core.solver.drivers import (
+    PicardDriver,
+    SeededNewtonDriver,
+    VmconDriver,
+)
 from functional_process.total_process import GRAPH
 
 CUTS = (
     path_of(lambda s: s.physics.proton_rate_density, VarPath),
+    path_of(lambda s: s.physics.fusden_alpha_total, VarPath),
     path_of(lambda s: s.fwbs.f_ster_div_single, VarPath),
 )
-"""The one variable cut per raw cross-node cycle. Both are the *only* single-variable
-cut (out of every variable owned inside each cycle) that makes that cycle's own
-subgraph fully acyclic on its own -- checked directly, not assumed, by cutting each
-candidate in turn and checking `.is_acyclic` on the result. `proton_rate_density`
-(owned by `FusionRates`, read by `PlasmaComposition`) closes the 4-node density/
-fusion/pedestal/composition loop; `f_ster_div_single` (owned by `Divertor`, read by
-`AFwTotalWithPowerflow`) closes the 2-node divertor/first-wall loop -- see
+"""The variables cut to turn each raw cross-node cycle into a declared `FixedPoint`.
+
+**`fusden_alpha_total` is the density/fusion cycle's *second* cut**, added when
+`FusionTotalsNoBeam` gave `.physics.fusden_total`/`.fusden_alpha_total`/`.p_dt_total_mw`
+their first producers (`_audit/boundary_inputs_audit.md` §4c (b7)/(b8)). That edge
+(`FusionRates -> FusionTotalsNoBeam -> PlasmaComposition`) runs parallel to the one
+`proton_rate_density` already cut, so one cut no longer breaks the cycle: `Blocking`
+raised *"still cyclic with its problem(s) removed"* until this was added. Which second
+cut to use was **measured, not chosen** -- of all 42 variables owned inside the enlarged
+6-node cycle, `.physics.fusden_alpha_total` is the only one that makes the cycle acyclic
+when paired with `proton_rate_density`, and no single variable does it alone.
+
+**Watch this one on a cold start.** `PlasmaComposition` branches on
+`fusden_alpha_total < 1e-6` as a "not yet calculated" bootstrap
+(`physics_B_composition.py:203-210`), so cutting it makes a Picard iterate drive a
+*branch predicate*, not just a value. Seeded from a converged run (every harness here)
+the branch never flips; from a cold `DataStructure` it starts on the other side.
+
+`proton_rate_density` and `f_ster_div_single` were each, when added, the *only*
+single-variable cut (out of every variable owned inside their own cycle) that made that
+cycle's subgraph fully acyclic on its own -- checked directly, not assumed, by cutting
+each candidate in turn and checking `.is_acyclic` on the result. `proton_rate_density`
+(owned by `FusionRates`, read by `PlasmaComposition`) was sufficient for the
+density/fusion/pedestal/composition loop as it stood then, before `FusionTotalsNoBeam`
+enlarged it; `f_ster_div_single` (owned by `Divertor`, read by
+`AFwTotalWithPowerflow`) still is, on its own, for the divertor/first-wall loop -- see
 `_audit/next_steps.md` §5 for the cycle's own discovery. Neither is a `Feasibility`/
 `Optimise` question: both are genuine "PROCESS iterates this to a fixed point"
 couplings, so `FixedPointCut` (not `RootFindCut`) is the right closure -- matching
@@ -73,12 +106,108 @@ def driven_graph(graph=GRAPH):
     run against whichever graph is actually being checked, not silently default to
     the wrong one.
     """
+    # Cuts are grouped by the cycle they break, and each group becomes **one**
+    # `FixedPointCut` -- i.e. one `FixedPoint` problem over however many unknowns that
+    # cycle needed. Applying them one at a time instead mints one problem per cut, and
+    # `Blocking` then refuses the block outright: *"declares 2 problems -- one driver
+    # answers one problem, so `Combine` them into a single problem over every unknown,
+    # or nest one inside the other. Which of those is a modelling decision"*. It is,
+    # and this is the decision: PROCESS iterates its whole pipeline to idempotence, so
+    # the two cut variables of the density/fusion cycle are two unknowns of one Picard
+    # iteration, not two nested loops.
+    #
+    # Every `closing_readers` call is made on the **uncut** graph, before any of the
+    # group is applied, so the readers a cut re-routes are the ones the original cycle
+    # had rather than ones a sibling cut already moved.
+    by_cycle: dict = {}
+    cycles = [frozenset(c) for c in graph.cycles]
     for var in CUTS:
         readers = graph.closing_readers(var)
         if not readers:
             continue  # this cycle does not exist in this configuration
-        graph = FixedPointCut((Cut(var=var, readers=readers),)).apply(graph)
+        owner = graph.owners[var]
+        key = next((i for i, c in enumerate(cycles) if owner in c), var)
+        by_cycle.setdefault(key, []).append(Cut(var=var, readers=readers))
+    for cuts in by_cycle.values():
+        # One cut keeps its historical name (`^problem.physics.proton_rate_density`);
+        # several need an explicit `place`, since no single variable names what closes
+        # them. Named after the first cut's own place with a `.cycle` component, which
+        # is unique (a variable is cut at most once) and reads as what it is:
+        # `^problem.physics.proton_rate_density.cycle`.
+        place = (
+            None
+            if len(cuts) == 1
+            else NodePath((*cuts[0].var.keys, GetAttrKey("cycle")))
+        )
+        graph = FixedPointCut(tuple(cuts), place=place).apply(graph)
     return graph
+
+
+ROOT_FIND_SEEDS = {
+    ".stellarator.wp_width_r_min": lambda context: (
+        (context[_var(context, ".stellarator.r_coil_minor")] / 10.0) ** 2,
+    ),
+    # PROCESS's own starting value, `d = np.full(4, 1e-6)`
+    # (`process/models/vacuum.py:379`) -- a flat constant there, so a flat constant
+    # here. Every `VarPath` of this node is minted, so cold or warm there is nothing in
+    # `data` to seed it from: this is its *only* starting guess, not a fallback.
+    ".vacuum.d_duct": lambda context: (1.0e-6,),
+}
+"""Fallback starting guesses for `RootFind` unknowns, as `f(context) -> tuple`, used
+only when the value seeded from `data` is unusable (see `SeededNewtonDriver`).
+
+`wp_width_r_min`'s entry is **PROCESS's own guess**, not a fitted constant:
+`winding_pack_pre_intersect` computes
+`(r_coil_minor / (20 if i_tf_sc_mat == 6 else 10)) ** 2` at `coils/calculate.py:737`
+and hands it to `intersect` as `xin`. The `20` arm is `i_tf_sc_mat == 6` (REBCO), which
+`WindingPackIntersectInputs` is not registered with in any configuration here; if that
+changes, this needs the same branch, and `switch_audit` will not catch it because a
+driver carries no static switch kwarg. Recorded rather than guarded, because a wrong
+starting guess is a slower solve, not a wrong answer -- unlike a wrong switch.
+
+Keyed by `path_str()` rather than by `VarPath` so the table reads as a table; resolved
+against the block's own context at use, which is also the check that the block really
+does close over what the guess needs.
+"""
+
+
+def _var(context, path_str):
+    """The `VarPath` in `context` spelled `path_str`.
+
+    Raises
+    ------
+    KeyError
+        If the block does not close over it -- a seed that silently fell back would be
+        indistinguishable from no seed at all.
+    """
+    for var in context:
+        if var.path_str() == path_str:
+            return var
+    raise KeyError(
+        f"{path_str} is not in this block's context, so no starting guess can be "
+        f"derived from it"
+    )
+
+
+def _root_find_seed(problem):
+    """The seed for the block whose problem is `problem`, or `None`.
+
+    Matched on the problem's own name, which for a `FixedPointCut`/`ImplicitFunction`
+    is minted from the unknown's place -- so `^problem['Intersect']` is matched by the
+    *unknown* it owns, resolved from the context at call time.
+    """
+
+    def seed(conditions):
+        for var in conditions.unknowns:
+            entry = ROOT_FIND_SEEDS.get(var.path_str())
+            if entry is not None:
+                return entry(conditions.context)
+        raise KeyError(
+            f"no starting guess for {written(conditions.unknowns)}, and the one seeded "
+            f"from `data` was unusable -- add an entry to `ROOT_FIND_SEEDS`"
+        )
+
+    return seed
 
 
 def default_drivers(
@@ -118,7 +247,7 @@ def default_drivers(
         if problem_type is None:
             continue
         if issubclass(problem_type, RootFind):
-            drivers[problem] = NewtonDriver()
+            drivers[problem] = SeededNewtonDriver(seed=_root_find_seed(problem))
         elif issubclass(problem_type, FixedPoint):
             drivers[problem] = PicardDriver()
         elif issubclass(problem_type, Optimise):

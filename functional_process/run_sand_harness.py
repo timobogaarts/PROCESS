@@ -36,18 +36,53 @@ from functional_process.sand_harness import (  # noqa: E402
 from process.core.solver.iteration_variables import ITERATION_VARIABLES  # noqa: E402
 
 
-def _seed(schedule, drive, base, fallback):
-    """Every schedule input and every block unknown, from `base`'s own fields where it
-    has one and from `fallback` (a completed MDA env) otherwise.
+def _seed(schedule, drive, base, fallback, design=()):
+    """Every schedule input and every block unknown: **design** variables from `base`,
+    every other unknown from `fallback` (a completed MDA env at the same design).
 
-    The fallback is not a convenience: the SAND block's unknowns include nine **coupling
-    variables** that PROCESS never exposes as unknowns and therefore has no starting
-    value for, plus a handful of minted `VarPath`s with no `DataStructure` field at all.
-    A cold solve is cold in its *design* variables; its coupling guesses come from an MDA
-    run, which is exactly what an MDF architecture would hand iteration 0 anyway.
+    A SAND solve is cold in its *design* variables. Its **coupling** unknowns are a
+    different thing entirely -- quantities PROCESS never exposes as unknowns, because
+    its own architecture (MDF) converges them by re-running the whole pipeline before
+    every evaluation. They have to start somewhere consistent, and an MDA run at the
+    same design is exactly what MDF would hand iteration 0.
+
+    **This function used to say that and do something else, and it cost a cold start.**
+    The old rule tried `ground_truth(base, var)` first for *every* unknown and fell back
+    to the MDA env only on `AttributeError`/`KeyError`. But every coupling unknown *has*
+    a `DataStructure` field -- holding the dataclass default `0.0` in a cold structure --
+    so the lookup always succeeded and the fallback was never reached (the harness's own
+    report line read `0 unknown(s)/input(s) seeded from the MDA env` on every cold run).
+    Twelve of twenty-three unknowns therefore started at exactly zero, which is not a
+    cold design but a **physically impossible state**: net electric power `-1.9e6` MW,
+    `coe = 1.0e25`.
+
+    What that did to the solve, measured at the cold point, old rule -> new:
+
+    | | as-was | MDA-seeded |
+    |---|---|---|
+    | non-finite Jacobian cells | 46 / 690 | **0** |
+    | condition number VMCON receives | >= 1.1e23 | **2.87e4** |
+    | SQP iterations | **0** | **85, converged** |
+
+    The 46 non-finite cells sat in exactly two rows (the objective and `c16`) and came
+    from `x ** p` with `0 < p < 1` evaluated at `x == 0` -- value `0`, derivative `+inf`,
+    and `inf * 0 = nan` under JVP -- at `buildings.py:282`'s `55.0 * helpow**0.5` and
+    three sibling sites in `costs.py`, all reachable only because the cryogenic loads
+    were seeded to zero. Those sites are worth fixing in their own right (same defect
+    class as `next_steps.md` §9's `sqrt(maximum(...))`), but they are the symptom; this
+    is the disease.
+
+    `design` names the unknowns that genuinely come from `base` -- the run's iteration
+    variables. Anything else is coupling.
     """
+    design = set(design)
     env, borrowed = {}, []
     for var in list(schedule.inputs) + list(drive.unknowns):
+        coupling = var in drive.unknowns and var not in design
+        if coupling and var in fallback:
+            env[var] = fallback[var]
+            borrowed.append(var)
+            continue
         try:
             env[var] = jnp.asarray(ground_truth(base, var))
             continue
@@ -161,10 +196,20 @@ def main():
         row(f"c{cid}", port_constraints[j], process[1:][j], process_error[1:][j])
 
     # ---------------------------------------------------------------- C
+    # The design variables -- everything else the block solves for is coupling, and is
+    # seeded from an MDA run rather than from a `DataStructure` field that a cold run
+    # has never written.
+    design_paths = {sand.iteration_variable_path(i) for i in reference.ixc}
     for label, base, starts in (
         ("C2 (start at PROCESS's converged x)", reference.data, reference.converged),
         ("C3 (cold start from the IN.DAT values)", reference.cold, reference.initial),
     ):
+        # The coupling unknowns are seeded from an MDA run **at this stage's own
+        # design** -- `env` (built from PROCESS's converged state) for C2, a fresh cold
+        # MDA for C3. Seeding a cold solve's coupling from a converged run would make
+        # "cold" a half-truth; seeding it from the cold `DataStructure`'s zeros made the
+        # solve impossible. See `_seed`.
+        stage_env = env if base is reference.data else mda_env(reference, data=base)[1]
         trace: list = []
 
         def record(i, result, _x, convergence, _trace=trace):
@@ -184,7 +229,21 @@ def main():
             callback=record,
         )
         solve_drive = sand.sand_shape(solve_schedule)["drive"]
-        seeded, borrowed = _seed(solve_schedule, solve_drive, base, env)
+        # Which unknowns count as "design" differs by stage, because the stages mean
+        # different things. C2's premise is *start where PROCESS ended*, so every
+        # unknown PROCESS has a value for should come from PROCESS -- that is the
+        # definition of the stage. C3's premise is *start from the input file*, and an
+        # input file carries values for design variables only; everything else has to
+        # come from an MDA at that design, because the `DataStructure` field behind it
+        # holds a dataclass default that no run has ever written.
+        from_process = base is reference.data
+        seeded, borrowed = _seed(
+            solve_schedule,
+            solve_drive,
+            base,
+            stage_env,
+            design=set(solve_drive.unknowns) if from_process else design_paths,
+        )
         started = time.perf_counter()
         out = solve_schedule(dict(seeded))
         elapsed = time.perf_counter() - started

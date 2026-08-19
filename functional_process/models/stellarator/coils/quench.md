@@ -63,17 +63,31 @@ realistic point.
 
 ```python
 def calculate_quench_protection(
-    rmajor: float, rminor: float,
-    dr_fw_plasma_gap_inboard: float, dr_fw_inboard: float, dr_blkt_inboard: float,
-    dr_shld_blkt_gap: float, dr_shld_inboard: float,
-    dr_fw_plasma_gap_outboard: float, dr_fw_outboard: float, dr_blkt_outboard: float,
+    rmajor: float,
+    rminor: float,
+    dr_fw_plasma_gap_inboard: float,
+    dr_fw_inboard: float,
+    dr_blkt_inboard: float,
+    dr_shld_blkt_gap: float,
+    dr_shld_inboard: float,
+    dr_fw_plasma_gap_outboard: float,
+    dr_fw_outboard: float,
+    dr_blkt_outboard: float,
     dr_shld_outboard: float,
-    b_plasma_toroidal_on_axis: float, c_tf_total: float,
-    t_tf_superconductor_quench: float, dr_vv_inboard: float, dr_vv_outboard: float,
-    t_tf_quench_detection: float, f_a_tf_turn_cable_copper: float,
-    f_a_tf_turn_cable_space_extra_void: float, tftmp: float,
-    a_tf_turn_cable_space_no_void: float, dx_tf_turn_general: float,
-    a_tf_wp_conductor: float, e_tf_magnetic_stored_total_gj: float, n_tf_coils: float,
+    b_plasma_toroidal_on_axis: float,
+    c_tf_total: float,
+    t_tf_superconductor_quench: float,
+    dr_vv_inboard: float,
+    dr_vv_outboard: float,
+    t_tf_quench_detection: float,
+    f_a_tf_turn_cable_copper: float,
+    f_a_tf_turn_cable_space_extra_void: float,
+    tftmp: float,
+    a_tf_turn_cable_space_no_void: float,
+    dx_tf_turn_general: float,
+    a_tf_wp_conductor: float,
+    e_tf_magnetic_stored_total_gj: float,
+    n_tf_coils: float,
     c_tf_turn: float,
 ) -> tuple[float, float, float, float, float]:
     # (f_vv_actual, vv_stress_quench, j_tf_wp_quench_heat_max, coppera_m2,
@@ -136,3 +150,33 @@ None found. Plain scalar arithmetic (`jnp.log`), no CoolProp, no dynamic shapes.
 1. Whether `.superconducting_tfcoil.f_vv_actual`'s invented name/area is the one a
    later synthesis pass will want — it's a genuinely reporting-only value in PROCESS
    today (see above), so there's no existing field to check it against.
+
+## Derivative-safe power laws (`safe_pow` / `safe_sqrt`)
+
+1 square root in this file has been rewritten from `x ** p` / `jnp.sqrt(x)` to
+`models/safe_math.py`'s `safe_pow(x, p)` / `safe_sqrt(x)`.
+
+**Why.** For `0 < p < 1` the function is continuous at `x == 0` and its derivative is
+not: `d/dx x**p = p * x**(p-1) -> +inf`. JAX's JVP then returns `inf` along the
+direction that perturbs `x` and `nan` (`inf * 0`) along every other, so the *value* is
+right everywhere and the *Jacobian row* is poisoned. That is the defect class
+`_audit/next_steps.md` §9 records; the most recent instance produced 46 non-finite
+Jacobian cells and stalled a cold optimiser start at zero SQP steps, reported by the
+solver as "the problem seems to be non-convex".
+
+**Value identity, checked not asserted.** `safe_pow`/`safe_sqrt` dispatch on `x == 0`
+and evaluate the identical expression otherwise, so every `x != 0` result is bit-for-bit
+what it was, and the `x == 0` result is `0.0 ** p` / `sqrt(0.0)` -- again exactly what
+the bare expression returns. Verified two ways: a hex-exact diff of every Tier-1
+contract's output over every declared sample plus eight fresh fuzz draws (3655 points,
+zero differing bits), and `run_mda_harness.py` unchanged at 492 agreements / 34
+disagreements. PROCESS itself does not raise at `x == 0` here -- it is plain Python
+`float.__pow__` / `numpy.sqrt`, both of which return `0.0` -- and the reference was
+re-evaluated at each boundary point to confirm it returns the port's number.
+
+**What changed is only the derivative at exactly `x == 0`**, which becomes `0` instead
+of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
+
+`Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
+class automatically: it zeroes each differentiable argument in turn and requires a
+finite Jacobian wherever the value is finite.

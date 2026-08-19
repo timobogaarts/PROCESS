@@ -23,6 +23,7 @@ from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, O
 
 from functional_process.models.physics.plasma_profiles import _simpson
 from process.core import constants
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 REACTION_CONSTANTS_DT = {
     "bg": 34.3827,
@@ -102,13 +103,13 @@ def bosch_hale_reactivity(ion_temperature_profile, reaction_constants):
     )
     theta = t / (1.0 - theta1)
 
-    xi = ((rc["bg"] ** 2) / (4.0 * theta)) ** (1 / 3)
+    xi = safe_pow((rc["bg"] ** 2) / (4.0 * theta), 1 / 3)
 
     sigmav = (
         1.0e-6
         * rc["cc1"]
         * theta
-        * jnp.sqrt(xi / (rc["mrc2"] * t**3))
+        * safe_sqrt(xi / (rc["mrc2"] * t**3))
         * jnp.exp(-3.0 * xi)
     )
 
@@ -642,7 +643,7 @@ def beam_fusion_cross_section(vrelsq):
     e_beam_kev = 0.5 * constants.M_DEUTERON_AMU * vrelsq
 
     t1 = a2 / (1.0 + (a3 * e_beam_kev - a4) ** 2) + a5
-    t2 = e_beam_kev * (jnp.exp(a1 / jnp.sqrt(e_beam_kev)) - 1.0)
+    t2 = e_beam_kev * (jnp.exp(a1 / safe_sqrt(e_beam_kev)) - 1.0)
     mid = 1.0e-24 * t1 / t2
 
     low = jnp.asarray(1.0e-27) + 0.0 * e_beam_kev
@@ -692,7 +693,7 @@ def fast_ion_pressure_integral(e_beam_kev, critical_energy):
         Dimensionless pressure integral factor.
     """
     xcs = e_beam_kev / critical_energy
-    xc = jnp.sqrt(xcs)
+    xc = safe_sqrt(xcs)
 
     t1 = xcs / 2.0
     t2 = jnp.log((xcs + 2.0 * xc + 1.0) / (xcs - xc + 1.0)) / 6.0
@@ -754,18 +755,14 @@ def beam_slowing_down_state(
 
     nd_beam_hot = deuterium_beam_density + tritium_beam_density
 
-    deuterium_critical_energy_speed = jnp.sqrt(
-        2.0
+    deuterium_critical_energy_speed = safe_sqrt(2.0
         * constants.KILOELECTRON_VOLT
         * critical_energy_deuterium
-        / (constants.ATOMIC_MASS_UNIT * constants.M_DEUTERON_AMU)
-    )
-    tritium_critical_energy_speed = jnp.sqrt(
-        2.0
+        / (constants.ATOMIC_MASS_UNIT * constants.M_DEUTERON_AMU))
+    tritium_critical_energy_speed = safe_sqrt(2.0
         * constants.KILOELECTRON_VOLT
         * critical_energy_tritium
-        / (constants.ATOMIC_MASS_UNIT * constants.M_TRITON_AMU)
-    )
+        / (constants.ATOMIC_MASS_UNIT * constants.M_TRITON_AMU))
 
     source_deuterium = beam_current_deuterium / (constants.ELECTRON_CHARGE * vol_plasma)
     source_tritium = beam_current_tritium / (constants.ELECTRON_CHARGE * vol_plasma)

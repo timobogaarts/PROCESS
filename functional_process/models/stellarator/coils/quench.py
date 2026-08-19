@@ -10,6 +10,7 @@ treatment as `mass.py`'s 8-step chain.
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from functional_process.models.safe_math import safe_sqrt
 
 _FORCE_DENSITY_REF_MN_PER_M3 = 2.54
 _B_REF_T = 3.0
@@ -77,11 +78,9 @@ def calculate_quench_protection_current_density(
     q_he = jnp.interp(temp, jnp.asarray(_TEMP_K), jnp.asarray(_Q_HE_ARRAY_SA2M4))
     q_cu = jnp.interp(temp, jnp.asarray(_TEMP_K), jnp.asarray(_Q_CU_ARRAY_SA2M4))
 
-    return (a_cable / a_turn) * jnp.sqrt(
-        1
+    return (a_cable / a_turn) * safe_sqrt(1
         / (0.5 * tau_quench + t_detect)
-        * (f_cu**2 * f_cond**2 * q_cu + f_cu * f_cond * (1 - f_cond) * q_he)
-    )
+        * (f_cu**2 * f_cond**2 * q_cu + f_cu * f_cond * (1 - f_cond) * q_he))
 
 
 def calculate_quench_protection(
