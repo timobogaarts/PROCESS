@@ -23,7 +23,11 @@ for the reasoning. Three tier-1 functions result:
   `.first_wall.a_fw_total`.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def calculate_blktmodel_blanket_thickness(
@@ -335,14 +339,14 @@ class BlktmodelBlanketThickness(ExplicitFunction):
 
     def __call__(
         self,
-        blbuith=Input(lambda s: s.build.blbuith),
-        blbmith=Input(lambda s: s.build.blbmith),
-        blbpith=Input(lambda s: s.build.blbpith),
-        blbuoth=Input(lambda s: s.build.blbuoth),
-        blbmoth=Input(lambda s: s.build.blbmoth),
-        blbpoth=Input(lambda s: s.build.blbpoth),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
+        blbuith=FromExactly(lambda s: s.build.blbuith),
+        blbmith=FromExactly(lambda s: s.build.blbmith),
+        blbpith=FromExactly(lambda s: s.build.blbpith),
+        blbuoth=FromExactly(lambda s: s.build.blbuoth),
+        blbmoth=FromExactly(lambda s: s.build.blbmoth),
+        blbpoth=FromExactly(lambda s: s.build.blbpoth),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
     ):
         return calculate_blktmodel_blanket_thickness(
             blbuith,
@@ -386,33 +390,33 @@ class Build(ExplicitFunction):
 
     def __call__(
         self,
-        dr_blkt_inboard=Input(lambda s: s.build.dr_blkt_inboard),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
-        radius_fw_channel=Input(lambda s: s.fwbs.radius_fw_channel),
-        dr_fw_wall=Input(lambda s: s.fwbs.dr_fw_wall),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        rminor=Input(lambda s: s.physics.rminor),
-        dr_cs=Input(lambda s: s.build.dr_cs),
-        dr_cs_tf_gap=Input(lambda s: s.build.dr_cs_tf_gap),
-        dr_tf_inboard=Input(lambda s: s.build.dr_tf_inboard),
-        dr_shld_vv_gap_inboard=Input(lambda s: s.build.dr_shld_vv_gap_inboard),
-        dr_vv_inboard=Input(lambda s: s.build.dr_vv_inboard),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        dr_fw_plasma_gap_inboard=Input(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        r_coil_minor=Input(lambda s: s.stellarator.r_coil_minor),
-        f_coil_shape=Input(lambda s: s.stellarator.f_coil_shape),
-        stella_config_derivative_min_lcfs_coils_dist=Input(
+        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
+        radius_fw_channel=FromExactly(lambda s: s.fwbs.radius_fw_channel),
+        dr_fw_wall=FromExactly(lambda s: s.fwbs.dr_fw_wall),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        dr_cs=FromExactly(lambda s: s.build.dr_cs),
+        dr_cs_tf_gap=FromExactly(lambda s: s.build.dr_cs_tf_gap),
+        dr_tf_inboard=FromExactly(lambda s: s.build.dr_tf_inboard),
+        dr_shld_vv_gap_inboard=FromExactly(lambda s: s.build.dr_shld_vv_gap_inboard),
+        dr_vv_inboard=FromExactly(lambda s: s.build.dr_vv_inboard),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
+        r_coil_minor=FromExactly(lambda s: s.stellarator.r_coil_minor),
+        f_coil_shape=FromExactly(lambda s: s.stellarator.f_coil_shape),
+        stella_config_derivative_min_lcfs_coils_dist=FromExactly(
             lambda s: s.stellarator_config.stella_config_derivative_min_lcfs_coils_dist
         ),
-        f_st_rmajor=Input(lambda s: s.stellarator.f_st_rmajor),
-        stella_config_rminor_ref=Input(
+        f_st_rmajor=FromExactly(lambda s: s.stellarator.f_st_rmajor),
+        stella_config_rminor_ref=FromExactly(
             lambda s: s.stellarator_config.stella_config_rminor_ref
         ),
-        dr_fw_plasma_gap_outboard=Input(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        gapomin=Input(lambda s: s.build.gapomin),
-        dr_vv_outboard=Input(lambda s: s.build.dr_vv_outboard),
-        a_plasma_surface=Input(lambda s: s.physics.a_plasma_surface),
+        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        gapomin=FromExactly(lambda s: s.build.gapomin),
+        dr_vv_outboard=FromExactly(lambda s: s.build.dr_vv_outboard),
+        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
     ):
         return calculate_build(
             dr_blkt_inboard,
@@ -448,8 +452,8 @@ class AFwTotalNoPowerflow(ExplicitFunction):
 
     def __call__(
         self,
-        a_fw_total_unadjusted=Input(lambda s: s.first_wall.a_fw_total_unadjusted),
-        fhole=Input(lambda s: s.fwbs.fhole),
+        a_fw_total_unadjusted=FromExactly(lambda s: s.first_wall.a_fw_total_unadjusted),
+        fhole=FromExactly(lambda s: s.fwbs.fhole),
     ):
         return calculate_a_fw_total_no_powerflow(a_fw_total_unadjusted, fhole)
 
@@ -461,10 +465,10 @@ class AFwTotalWithPowerflow(ExplicitFunction):
 
     def __call__(
         self,
-        a_fw_total_unadjusted=Input(lambda s: s.first_wall.a_fw_total_unadjusted),
-        fhole=Input(lambda s: s.fwbs.fhole),
-        f_ster_div_single=Input(lambda s: s.fwbs.f_ster_div_single),
-        f_a_fw_outboard_hcd=Input(lambda s: s.fwbs.f_a_fw_outboard_hcd),
+        a_fw_total_unadjusted=FromExactly(lambda s: s.first_wall.a_fw_total_unadjusted),
+        fhole=FromExactly(lambda s: s.fwbs.fhole),
+        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
+        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
     ):
         return calculate_a_fw_total_with_powerflow(
             a_fw_total_unadjusted, fhole, f_ster_div_single, f_a_fw_outboard_hcd

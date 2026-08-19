@@ -31,14 +31,18 @@ import inspect
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
     PlasmaIgnitionModel,
 )
-from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 # ---------------------------------------------------------------------------
 # `plasma_geometry.py::PlasmaGeom.calculate_iter_physics_basis_elongation` --
@@ -1963,9 +1967,9 @@ class IterPhysicsBasisElongation(ExplicitFunction):
 
     def __call__(
         self,
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        rminor=Input(lambda s: s.physics.rminor),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        rminor=FromExactly(lambda s: s.physics.rminor),
     ):
         return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
 
@@ -1975,7 +1979,7 @@ class ConfinementTime(ExplicitFunction):
 
     `i_confinement_time`, `i_rad_loss` and `i_plasma_ignited` are switches resolved once
     at node-instantiation (graph-assembly) time -- `eqx.field(static=True)`, not
-    `Input`s, per `_audit/naming_convention.md` § "switches are not ports" (same move as
+    `FromExactly`s, per `_audit/naming_convention.md` § "switches are not ports" (same move as
     `EcrhDensityLimit(i_plasma_pedestal=...)` in `models/stellarator/density_
     limits.py`). Which concrete value(s) belong in `total_process.py`'s default graph
     is a registration decision left to the consolidation pass, not decided here -- all
@@ -1985,7 +1989,7 @@ class ConfinementTime(ExplicitFunction):
     **Consolidation-pass fix**: the audit record's own "switches touched" section
     already concludes `i_plasma_ignited` needs the same static treatment as the other
     two (its reads-set differs by one term, same shape as `i_rad_loss`/
-    `i_confinement_time`) -- this class originally bound it as an ordinary `Input`
+    `i_confinement_time`) -- this class originally bound it as an ordinary `FromExactly`
     instead, and all three fields were missing `eqx.field(static=True)` entirely (plain
     `int`-annotated fields on an `eqx.Module` are still dynamic pytree leaves). Both are
     fixed here: `calculate_confinement_time`'s internal `if`/`elif` dispatch on these
@@ -2019,46 +2023,46 @@ class ConfinementTime(ExplicitFunction):
 
     def __call__(
         self,
-        m_fuel_amu=Input(lambda s: s.physics.m_fuel_amu),
-        p_alpha_total_mw=Input(lambda s: s.physics.p_alpha_total_mw),
-        aspect=Input(lambda s: s.physics.aspect),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        nd_plasma_electrons_vol_avg=Input(
+        m_fuel_amu=FromExactly(lambda s: s.physics.m_fuel_amu),
+        p_alpha_total_mw=FromExactly(lambda s: s.physics.p_alpha_total_mw),
+        aspect=FromExactly(lambda s: s.physics.aspect),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        nd_plasma_electron_line=Input(lambda s: s.physics.nd_plasma_electron_line),
-        eps=Input(lambda s: s.physics.eps),
-        hfact=Input(lambda s: s.physics.hfact),
-        kappa=Input(lambda s: s.physics.kappa),
-        kappa95=Input(lambda s: s.physics.kappa95),
-        p_non_alpha_charged_mw=Input(lambda s: s.physics.p_non_alpha_charged_mw),
-        p_hcd_injected_total_mw=Input(lambda s: s.current_drive.p_hcd_injected_total_mw),
-        plasma_current=Input(lambda s: s.physics.plasma_current),
-        pden_plasma_core_rad_mw=Input(lambda s: s.physics.pden_plasma_core_rad_mw),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        rminor=Input(lambda s: s.physics.rminor),
-        temp_plasma_electron_density_weighted_kev=Input(
+        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
+        eps=FromExactly(lambda s: s.physics.eps),
+        hfact=FromExactly(lambda s: s.physics.hfact),
+        kappa=FromExactly(lambda s: s.physics.kappa),
+        kappa95=FromExactly(lambda s: s.physics.kappa95),
+        p_non_alpha_charged_mw=FromExactly(lambda s: s.physics.p_non_alpha_charged_mw),
+        p_hcd_injected_total_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_total_mw),
+        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
+        pden_plasma_core_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_core_rad_mw),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        temp_plasma_electron_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
-        q95=Input(lambda s: s.physics.q95),
-        qstar=Input(lambda s: s.physics.qstar),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        zeff=Input(lambda s: s.physics.n_charge_plasma_effective_vol_avg),
-        eden_plasma_electrons_thermal_vol_avg=Input(
+        q95=FromExactly(lambda s: s.physics.q95),
+        qstar=FromExactly(lambda s: s.physics.qstar),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        zeff=FromExactly(lambda s: s.physics.n_charge_plasma_effective_vol_avg),
+        eden_plasma_electrons_thermal_vol_avg=FromExactly(
             lambda s: s.physics.eden_plasma_electrons_thermal_vol_avg
         ),
-        eden_plasma_ions_thermal_vol_avg=Input(
+        eden_plasma_ions_thermal_vol_avg=FromExactly(
             lambda s: s.physics.eden_plasma_ions_thermal_vol_avg
         ),
-        f_p_alpha_plasma_deposited=Input(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        p_plasma_ohmic_mw=Input(lambda s: s.physics.p_plasma_ohmic_mw),
-        pden_plasma_rad_mw=Input(lambda s: s.physics.pden_plasma_rad_mw),
-        pden_plasma_sync_mw=Input(lambda s: s.physics.pden_plasma_sync_mw),
-        p_plasma_inner_rad_mw=Input(lambda s: s.physics.p_plasma_inner_rad_mw),
-        triang=Input(lambda s: s.physics.triang),
-        m_ions_total_amu=Input(lambda s: s.physics.m_ions_total_amu),
-        e_plasma_beta=Input(lambda s: s.physics.e_plasma_beta),
-        tauee_in=Input(lambda s: s.physics.tauee_in),
+        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
+        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
+        pden_plasma_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_rad_mw),
+        pden_plasma_sync_mw=FromExactly(lambda s: s.physics.pden_plasma_sync_mw),
+        p_plasma_inner_rad_mw=FromExactly(lambda s: s.physics.p_plasma_inner_rad_mw),
+        triang=FromExactly(lambda s: s.physics.triang),
+        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
+        e_plasma_beta=FromExactly(lambda s: s.physics.e_plasma_beta),
+        tauee_in=FromExactly(lambda s: s.physics.tauee_in),
     ):
         return calculate_confinement_time(
             m_fuel_amu,
@@ -2107,13 +2111,13 @@ class DoubleAndTripleProduct(ExplicitFunction):
 
     def __call__(
         self,
-        nd_plasma_electrons_vol_avg=Input(
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        temp_plasma_electrons_vol_avg_kev=Input(
+        temp_plasma_electrons_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
-        t_energy_confinement=Input(lambda s: s.physics.t_energy_confinement),
+        t_energy_confinement=FromExactly(lambda s: s.physics.t_energy_confinement),
     ):
         return calculate_double_and_triple_product(
             nd_plasma_electrons_vol_avg,
@@ -2123,10 +2127,10 @@ class DoubleAndTripleProduct(ExplicitFunction):
 
 
 def _rebound_signature(call, **replacements):
-    """`call`'s signature with the named parameters' `Input` defaults replaced.
+    """`call`'s signature with the named parameters' `FromExactly` defaults replaced.
 
     The mechanism a device-mode subclass of a `NodalDeclaration` uses to rebind one
-    read without restating the other 35. `Input` is a *parameter default* on
+    read without restating the other 35. `FromExactly` is a *parameter default* on
     `__call__` (`cottax/interfaces/pytree_namespace_module.py:113-126`), and
     `ExplicitFunction._params` resolves the reads from `inspect.signature(
     self.__call__)` (`ibid.:213-215`) -- which honours a `__signature__` attribute --
@@ -2153,7 +2157,7 @@ def _rebound_signature(call, **replacements):
     call :
         The base declaration's unbound `__call__`.
     **replacements :
-        `parameter_name=Input(...)` for each read to rebind.
+        `parameter_name=FromExactly(...)` for each read to rebind.
 
     Returns
     -------
@@ -2208,7 +2212,7 @@ class StellaratorConfinementTime(ConfinementTime):
     Why a subclass rather than editing `ConfinementTime`: this module ports ~40
     scaling laws, most of them tokamak ones for which `.physics.q95` is right, so the
     binding is genuinely device-dependent and cannot be resolved in one place. Why a
-    subclass rather than a static field on one class: `Input`s are class-level
+    subclass rather than a static field on one class: `FromExactly`s are class-level
     parameter defaults, so an instance's `eqx.field(static=True)` cannot vary them --
     the declaring class *is* the unit of rebinding, and `NodalDeclaration.name` is
     `type(self).__name__` (`pytree_namespace_module.py:190-194`), so this arm gets its
@@ -2227,5 +2231,5 @@ class StellaratorConfinementTime(ConfinementTime):
 
     __call__.__signature__ = _rebound_signature(
         ConfinementTime.__call__,
-        q95=Input(lambda s: s.stellarator.iotabar),
+        q95=FromExactly(lambda s: s.stellarator.iotabar),
     )

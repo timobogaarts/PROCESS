@@ -29,7 +29,7 @@ Reads and writes are declared by **area plus the name being declared**:
 
 The parameter name **is** the field name and there is no second spelling — `From` takes an
 area and refuses a path, so nothing can be misread. A body wanting a shorter local name
-renames in the body. `Input(lambda s: ...)` / `Output(...)` remain for places no name can
+renames in the body. `FromExactly(...)` / `Output(...)` remain for places no name can
 spell (elements of `f_nd_impurity_electron_array`), so sugar and escape hatch are told
 apart by which function you call.
 
@@ -41,7 +41,8 @@ refuses a misspelled area at declaration time with a suggestion.
 the tier base classes are untouched, and the conversion is provably inert: the pilot
 module's 158 ports were compared against the pre-conversion module loaded side by side and
 are identical. Converted so far: `power_B_thermal_cryo.py`. The rest is censused in
-`next_steps.md`'s Verified-state table.
+`next_steps.md`'s Verified-state table, and the plan for converting it is
+`_audit/path_refactor.md`.
 
 ## Tier 1 — explicit pure functions
 

@@ -46,6 +46,16 @@ reads-set, kept as a static kwarg on one node's `fn`) stays where it is: that is
 from dataclasses import dataclass, field
 
 from cottax.interfaces.pytree_namespace_module import node_and_names, to_graph
+from cottax.spec import NodePath
+
+ROOT = NodePath(())
+"""The empty node path, as a mapping key.
+
+A namespace class contributes its own class name as the outermost key when nothing
+placed it, so `to_graph(COMMON)` would name every node `COMMON.stellarator....`.
+Keying it at the root strips that container name and lets several subtrees --
+`COMMON` plus each selected arm -- merge as siblings rather than nest.
+"""
 
 
 @dataclass(frozen=True)
@@ -239,11 +249,14 @@ def declarations_for(configuration, common, switches):
             f"topology switches are {sorted(known)}"
         )
     selected = [switch.choose(configuration.value_for(switch)) for switch in switches]
-    return (*common, *(d for arm in selected for d in arm))
+    return (common, *(arm for arm in selected if arm))
 
 
 def build_graph(configuration, common, switches):
     """`to_graph` of exactly the arms `configuration` selects."""
     for switch in switches:
         switch.check_arms_are_exclusive()
-    return to_graph(*declarations_for(configuration, common, switches))
+    return to_graph(*(
+        {ROOT: subtree}
+        for subtree in declarations_for(configuration, common, switches)
+    ))

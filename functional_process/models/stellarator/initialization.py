@@ -6,7 +6,11 @@ genuine, tiny pure function -- the pulse-duration sums -- ported here. See the r
 "proposed signature(s)" for why the 16 literals are not ported as a node.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def calculate_pulse_durations(
@@ -77,18 +81,18 @@ class PulseDurations(ExplicitFunction):
 
     def __call__(
         self,
-        t_plant_pulse_coil_precharge=Input(
+        t_plant_pulse_coil_precharge=FromExactly(
             lambda s: s.times.t_plant_pulse_coil_precharge
         ),
-        t_plant_pulse_plasma_current_ramp_up=Input(
+        t_plant_pulse_plasma_current_ramp_up=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_up
         ),
-        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_plasma_current_ramp_down=Input(
+        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
+        t_plant_pulse_plasma_current_ramp_down=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_down
         ),
-        t_plant_pulse_fusion_ramp=Input(lambda s: s.times.t_plant_pulse_fusion_ramp),
-        t_plant_pulse_dwell=Input(lambda s: s.times.t_plant_pulse_dwell),
+        t_plant_pulse_fusion_ramp=FromExactly(lambda s: s.times.t_plant_pulse_fusion_ramp),
+        t_plant_pulse_dwell=FromExactly(lambda s: s.times.t_plant_pulse_dwell),
     ):
         return calculate_pulse_durations(
             t_plant_pulse_coil_precharge,

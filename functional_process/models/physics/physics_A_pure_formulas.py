@@ -32,10 +32,14 @@ becomes `jnp.where`/`jnp.minimum`/`jnp.maximum`.
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
-from process.core import constants
 from functional_process.models.safe_math import safe_sqrt
+from process.core import constants
 
 
 def rether(
@@ -364,17 +368,17 @@ class IonElectronEquilibration(ExplicitFunction):
 
     def __call__(
         self,
-        alphan=Input(lambda s: s.physics.alphan),
-        alphat=Input(lambda s: s.physics.alphat),
-        nd_plasma_electrons_vol_avg=Input(
+        alphan=FromExactly(lambda s: s.physics.alphan),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        dlamie=Input(lambda s: s.physics.dlamie),
-        te=Input(lambda s: s.physics.temp_plasma_electron_vol_avg_kev),
-        temp_plasma_ion_vol_avg_kev=Input(
+        dlamie=FromExactly(lambda s: s.physics.dlamie),
+        te=FromExactly(lambda s: s.physics.temp_plasma_electron_vol_avg_kev),
+        temp_plasma_ion_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_vol_avg_kev
         ),
-        n_charge_plasma_effective_mass_weighted_vol_avg=Input(
+        n_charge_plasma_effective_mass_weighted_vol_avg=FromExactly(
             lambda s: s.physics.n_charge_plasma_effective_mass_weighted_vol_avg
         ),
     ):
@@ -394,7 +398,7 @@ class AuxiliaryPhysicsQuantities(ExplicitFunction):
 
     `sbar` is not a `VarPath`: PROCESS's stellarator caller (`stellarator.py:2378`)
     always passes the Python literal `1.0`, never a `data` field -- kept as a plain
-    (non-`Input`) field here rather than hardcoded into the body, so it stays visible and
+    (non-`FromExactly`) field here rather than hardcoded into the body, so it stays visible and
     overridable rather than silently baked in. `fusrat`'s output is minted to the real
     `.physics.fusrat` field even though the stellarator call site discards it (assigns to
     `_fusrat`) -- see the audit record; `physics.py`'s own (tokamak, unit #22) caller
@@ -417,20 +421,20 @@ class AuxiliaryPhysicsQuantities(ExplicitFunction):
 
     def __call__(
         self,
-        aspect=Input(lambda s: s.physics.aspect),
-        nd_plasma_fuel_ions_vol_avg=Input(
+        aspect=FromExactly(lambda s: s.physics.aspect),
+        nd_plasma_fuel_ions_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
         ),
-        fusden_total=Input(lambda s: s.physics.fusden_total),
-        fusden_alpha_total=Input(lambda s: s.physics.fusden_alpha_total),
-        plasma_current=Input(lambda s: s.physics.plasma_current),
-        nd_plasma_alphas_thermal_vol_avg=Input(
+        fusden_total=FromExactly(lambda s: s.physics.fusden_total),
+        fusden_alpha_total=FromExactly(lambda s: s.physics.fusden_alpha_total),
+        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
+        nd_plasma_alphas_thermal_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_alphas_thermal_vol_avg
         ),
-        t_energy_confinement=Input(lambda s: s.physics.t_energy_confinement),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        burnup_in=Input(lambda s: s.physics.burnup_in),
-        tauratio=Input(lambda s: s.physics.tauratio),
+        t_energy_confinement=FromExactly(lambda s: s.physics.t_energy_confinement),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        burnup_in=FromExactly(lambda s: s.physics.burnup_in),
+        tauratio=FromExactly(lambda s: s.physics.tauratio),
     ):
         return phyaux(
             aspect,
@@ -454,11 +458,11 @@ class TotalPlasmaHeatingPower(ExplicitFunction):
 
     def __call__(
         self,
-        f_p_alpha_plasma_deposited=Input(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        p_alpha_total_mw=Input(lambda s: s.physics.p_alpha_total_mw),
-        p_non_alpha_charged_mw=Input(lambda s: s.physics.p_non_alpha_charged_mw),
-        p_plasma_ohmic_mw=Input(lambda s: s.physics.p_plasma_ohmic_mw),
-        p_hcd_injected_total_mw=Input(lambda s: s.current_drive.p_hcd_injected_total_mw),
+        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
+        p_alpha_total_mw=FromExactly(lambda s: s.physics.p_alpha_total_mw),
+        p_non_alpha_charged_mw=FromExactly(lambda s: s.physics.p_non_alpha_charged_mw),
+        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
+        p_hcd_injected_total_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_total_mw),
     ):
         return calculate_total_plasma_heating_power(
             f_p_alpha_plasma_deposited,
@@ -484,9 +488,9 @@ class ElectronThermalEnergy(ExplicitFunction):
 
     def __call__(
         self,
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        nd_plasma_vol_avg=Input(lambda s: s.physics.nd_plasma_electrons_vol_avg),
-        temp_plasma_density_weighted_vol_avg_kev=Input(
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        nd_plasma_vol_avg=FromExactly(lambda s: s.physics.nd_plasma_electrons_vol_avg),
+        temp_plasma_density_weighted_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
     ):
@@ -507,9 +511,9 @@ class IonThermalEnergy(ExplicitFunction):
 
     def __call__(
         self,
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        nd_plasma_vol_avg=Input(lambda s: s.physics.nd_plasma_ions_total_vol_avg),
-        temp_plasma_density_weighted_vol_avg_kev=Input(
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        nd_plasma_vol_avg=FromExactly(lambda s: s.physics.nd_plasma_ions_total_vol_avg),
+        temp_plasma_density_weighted_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_density_weighted_kev
         ),
     ):
@@ -521,7 +525,7 @@ class IonThermalEnergy(ExplicitFunction):
 class FastAlphaBeta(ExplicitFunction):
     """cottax node: `fast_alpha_beta`, ports declared.
 
-    `i_beta_fast_alpha` is a **static** field, not an `Input`. Per
+    `i_beta_fast_alpha` is a **static** field, not an `FromExactly`. Per
     `_audit/traceability_policy.md`'s switch-split default, this is the "exception:
     static kwarg" case, not the default "split": both branches read exactly the same
     variables (`nd_plasma_fuel_ions_vol_avg`, `nd_plasma_electrons_vol_avg`,
@@ -538,28 +542,28 @@ class FastAlphaBeta(ExplicitFunction):
 
     def __call__(
         self,
-        b_plasma_poloidal_average=Input(
+        b_plasma_poloidal_average=FromExactly(
             lambda s: s.physics.b_plasma_surface_poloidal_average
         ),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        nd_plasma_electrons_vol_avg=Input(
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        nd_plasma_fuel_ions_vol_avg=Input(
+        nd_plasma_fuel_ions_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
         ),
-        nd_plasma_ions_total_vol_avg=Input(
+        nd_plasma_ions_total_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_ions_total_vol_avg
         ),
-        temp_plasma_electron_density_weighted_kev=Input(
+        temp_plasma_electron_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
-        temp_plasma_ion_density_weighted_kev=Input(
+        temp_plasma_ion_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_density_weighted_kev
         ),
-        pden_alpha_total_mw=Input(lambda s: s.physics.pden_alpha_total_mw),
-        pden_plasma_alpha_mw=Input(lambda s: s.physics.pden_plasma_alpha_mw),
-        f_plasma_fuel_deuterium=Input(lambda s: s.physics.f_plasma_fuel_deuterium),
+        pden_alpha_total_mw=FromExactly(lambda s: s.physics.pden_alpha_total_mw),
+        pden_plasma_alpha_mw=FromExactly(lambda s: s.physics.pden_plasma_alpha_mw),
+        f_plasma_fuel_deuterium=FromExactly(lambda s: s.physics.f_plasma_fuel_deuterium),
     ):
         return fast_alpha_beta(
             b_plasma_poloidal_average,

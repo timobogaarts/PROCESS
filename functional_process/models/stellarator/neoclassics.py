@@ -26,9 +26,14 @@ would need (a per-component fuzz+differentiate scheme, most likely). Do not add 
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
-from process.core import constants
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
+
 from functional_process.models.safe_math import safe_sqrt
+from process.core import constants
 
 KEV = 1e3 * constants.ELECTRON_CHARGE
 
@@ -641,7 +646,7 @@ class ProfileValues(ExplicitFunction):
     is itself a literal, not read from `data` (see `neoclassics.md`).
 
     That literal is `rho`, below. It was previously bound as
-    `Input(lambda s: s.neoclassics.r_eff)`, which was a **wrong answer, not a coverage
+    `FromExactly(lambda s: s.neoclassics.r_eff)`, which was a **wrong answer, not a coverage
     gap**: `.neoclassics.r_eff` is declared `= 0.0` in
     `process/data_structure/neoclassics_variables.py:87` and PROCESS never assigns it
     anywhere -- the real argument is `init_neoclassics`'s local parameter `r_effin`,
@@ -656,7 +661,7 @@ class ProfileValues(ExplicitFunction):
     """Normalised radius the neoclassical profiles are evaluated at -- PROCESS's own
     literal at its one call site, hoisted to a graph-assembly-time fact.
 
-    Static rather than an `Input` because there is no field to read it from: it is a
+    Static rather than an `FromExactly` because there is no field to read it from: it is a
     modelling choice about where to sample, and the only `DataStructure` field with the
     right name (`.neoclassics.r_eff`) is a permanently-zero placeholder. Same move as
     `ImpurityRadiationTotals.imp_indices`, and declared in
@@ -670,19 +675,19 @@ class ProfileValues(ExplicitFunction):
 
     def __call__(
         self,
-        temp_plasma_electron_on_axis_kev=Input(
+        temp_plasma_electron_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        temp_plasma_ion_on_axis_kev=Input(lambda s: s.physics.temp_plasma_ion_on_axis_kev),
-        alphat=Input(lambda s: s.physics.alphat),
-        nd_plasma_electron_on_axis=Input(lambda s: s.physics.nd_plasma_electron_on_axis),
-        f_plasma_fuel_deuterium=Input(lambda s: s.physics.f_plasma_fuel_deuterium),
-        nd_plasma_ions_on_axis=Input(lambda s: s.physics.nd_plasma_ions_on_axis),
-        nd_plasma_alphas_thermal_vol_avg=Input(
+        temp_plasma_ion_on_axis_kev=FromExactly(lambda s: s.physics.temp_plasma_ion_on_axis_kev),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        nd_plasma_electron_on_axis=FromExactly(lambda s: s.physics.nd_plasma_electron_on_axis),
+        f_plasma_fuel_deuterium=FromExactly(lambda s: s.physics.f_plasma_fuel_deuterium),
+        nd_plasma_ions_on_axis=FromExactly(lambda s: s.physics.nd_plasma_ions_on_axis),
+        nd_plasma_alphas_thermal_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_alphas_thermal_vol_avg
         ),
-        alphan=Input(lambda s: s.physics.alphan),
-        rminor=Input(lambda s: s.physics.rminor),
+        alphan=FromExactly(lambda s: s.physics.alphan),
+        rminor=FromExactly(lambda s: s.physics.rminor),
     ):
         return calculate_profile_values(
             self.rho,
@@ -710,25 +715,25 @@ class EffectiveThermalDiffusivity(ExplicitFunction):
 
     def __call__(
         self,
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        f_st_rmajor=Input(lambda s: s.stellarator.f_st_rmajor),
-        radius_plasma_core_norm=Input(
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        f_st_rmajor=FromExactly(lambda s: s.stellarator.f_st_rmajor),
+        radius_plasma_core_norm=FromExactly(
             lambda s: s.impurity_radiation.radius_plasma_core_norm
         ),
-        rminor=Input(lambda s: s.physics.rminor),
-        stella_config_rminor_ref=Input(
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        stella_config_rminor_ref=FromExactly(
             lambda s: s.stellarator_config.stella_config_rminor_ref
         ),
-        a_plasma_surface=Input(lambda s: s.physics.a_plasma_surface),
-        f_p_alpha_plasma_deposited=Input(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        pden_alpha_total_mw=Input(lambda s: s.physics.pden_alpha_total_mw),
-        pden_plasma_core_rad_mw=Input(lambda s: s.physics.pden_plasma_core_rad_mw),
-        nd_plasma_electron_on_axis=Input(lambda s: s.physics.nd_plasma_electron_on_axis),
-        temp_plasma_electron_on_axis_kev=Input(
+        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
+        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
+        pden_alpha_total_mw=FromExactly(lambda s: s.physics.pden_alpha_total_mw),
+        pden_plasma_core_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_core_rad_mw),
+        nd_plasma_electron_on_axis=FromExactly(lambda s: s.physics.nd_plasma_electron_on_axis),
+        temp_plasma_electron_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        alphat=Input(lambda s: s.physics.alphat),
-        alphan=Input(lambda s: s.physics.alphan),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        alphan=FromExactly(lambda s: s.physics.alphan),
     ):
         return calculate_effective_thermal_diffusivity(
             vol_plasma,

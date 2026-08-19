@@ -23,7 +23,11 @@ separate return values, same convention `stellarator_D_structure.py` uses.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def calculate_fw_blanket_shield_geometry(
@@ -274,28 +278,28 @@ class FwBlanketShieldGeometry(ExplicitFunction):
 
     def __call__(
         self,
-        abktflnc=Input(lambda s: s.costs.abktflnc),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_plant=Input(lambda s: s.costs.life_plant),
-        a_fw_total=Input(lambda s: s.first_wall.a_fw_total),
-        rminor=Input(lambda s: s.physics.rminor),
-        dr_fw_plasma_gap_inboard=Input(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        dr_fw_inboard=Input(lambda s: s.build.dr_fw_inboard),
-        dr_fw_plasma_gap_outboard=Input(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        dr_fw_outboard=Input(lambda s: s.build.dr_fw_outboard),
-        ipowerflow=Input(lambda s: s.heat_transport.ipowerflow),
-        a_plasma_surface=Input(lambda s: s.physics.a_plasma_surface),
-        fhole=Input(lambda s: s.fwbs.fhole),
-        f_ster_div_single=Input(lambda s: s.fwbs.f_ster_div_single),
-        f_a_fw_outboard_hcd=Input(lambda s: s.fwbs.f_a_fw_outboard_hcd),
-        dr_blkt_inboard=Input(lambda s: s.build.dr_blkt_inboard),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
-        fvolsi=Input(lambda s: s.fwbs.fvolsi),
-        fvolso=Input(lambda s: s.fwbs.fvolso),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        p_neutron_total_mw=Input(lambda s: s.physics.p_neutron_total_mw),
-        stella_config_neutron_peakfactor=Input(
+        abktflnc=FromExactly(lambda s: s.costs.abktflnc),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
+        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
+        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
+        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
+        ipowerflow=FromExactly(lambda s: s.heat_transport.ipowerflow),
+        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
+        fhole=FromExactly(lambda s: s.fwbs.fhole),
+        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
+        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
+        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
+        fvolsi=FromExactly(lambda s: s.fwbs.fvolsi),
+        fvolso=FromExactly(lambda s: s.fwbs.fvolso),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        p_neutron_total_mw=FromExactly(lambda s: s.physics.p_neutron_total_mw),
+        stella_config_neutron_peakfactor=FromExactly(
             lambda s: s.stellarator_config.stella_config_neutron_peakfactor
         ),
     ):
@@ -329,7 +333,7 @@ class CryostatAndVvGeometry(ExplicitFunction):
     """cottax node: `calculate_cryostat_and_vv_geometry` (S5), unchanged.
 
     `dewmkg` is a real downstream dependency: `stellarator_D_structure.py`'s
-    `StructureMasses` node already declares `dewmkg=Input(lambda s: s.fwbs.dewmkg)`.
+    `StructureMasses` node already declares `dewmkg=FromExactly(lambda s: s.fwbs.dewmkg)`.
     """
 
     r_cryostat_inboard = Output(lambda s: s.fwbs.r_cryostat_inboard)
@@ -340,25 +344,25 @@ class CryostatAndVvGeometry(ExplicitFunction):
 
     def __call__(
         self,
-        r_tf_outboard_mid=Input(lambda s: s.build.r_tf_outboard_mid),
-        dr_tf_outboard=Input(lambda s: s.build.dr_tf_outboard),
-        dr_pf_cryostat=Input(lambda s: s.fwbs.dr_pf_cryostat),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        dr_cryostat=Input(lambda s: s.build.dr_cryostat),
-        dr_fw_plasma_gap_inboard=Input(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        dr_fw_inboard=Input(lambda s: s.build.dr_fw_inboard),
-        dr_blkt_inboard=Input(lambda s: s.build.dr_blkt_inboard),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        dr_fw_plasma_gap_outboard=Input(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        dr_fw_outboard=Input(lambda s: s.build.dr_fw_outboard),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        rminor=Input(lambda s: s.physics.rminor),
-        dr_vv_inboard=Input(lambda s: s.build.dr_vv_inboard),
-        dr_vv_outboard=Input(lambda s: s.build.dr_vv_outboard),
-        a_plasma_surface=Input(lambda s: s.physics.a_plasma_surface),
-        fvoldw=Input(lambda s: s.fwbs.fvoldw),
-        den_steel=Input(lambda s: s.fwbs.den_steel),
+        r_tf_outboard_mid=FromExactly(lambda s: s.build.r_tf_outboard_mid),
+        dr_tf_outboard=FromExactly(lambda s: s.build.dr_tf_outboard),
+        dr_pf_cryostat=FromExactly(lambda s: s.fwbs.dr_pf_cryostat),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        dr_cryostat=FromExactly(lambda s: s.build.dr_cryostat),
+        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
+        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
+        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
+        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        dr_vv_inboard=FromExactly(lambda s: s.build.dr_vv_inboard),
+        dr_vv_outboard=FromExactly(lambda s: s.build.dr_vv_outboard),
+        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
+        fvoldw=FromExactly(lambda s: s.fwbs.fvoldw),
+        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
     ):
         return calculate_cryostat_and_vv_geometry(
             r_tf_outboard_mid,

@@ -38,7 +38,11 @@ Neither ported function calls into another model -- confirmed by reading the who
 record's "no cross-model calls of its own".
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def calculate_blanket_component_masses(
@@ -171,12 +175,12 @@ class BlanketComponentMasses(ExplicitFunction):
 
     def __call__(
         self,
-        vol_blkt_total=Input(lambda s: s.fwbs.vol_blkt_total),
-        fblli2o=Input(lambda s: s.fwbs.fblli2o),
-        fblbe=Input(lambda s: s.fwbs.fblbe),
-        den_steel=Input(lambda s: s.fwbs.den_steel),
-        fblss=Input(lambda s: s.fwbs.fblss),
-        fblvd=Input(lambda s: s.fwbs.fblvd),
+        vol_blkt_total=FromExactly(lambda s: s.fwbs.vol_blkt_total),
+        fblli2o=FromExactly(lambda s: s.fwbs.fblli2o),
+        fblbe=FromExactly(lambda s: s.fwbs.fblbe),
+        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
+        fblss=FromExactly(lambda s: s.fwbs.fblss),
+        fblvd=FromExactly(lambda s: s.fwbs.fblvd),
     ):
         return calculate_blanket_component_masses(
             vol_blkt_total, fblli2o, fblbe, den_steel, fblss, fblvd
@@ -197,8 +201,8 @@ class ShieldMass(ExplicitFunction):
 
     def __call__(
         self,
-        vol_shld_total=Input(lambda s: s.fwbs.vol_shld_total),
-        den_steel=Input(lambda s: s.fwbs.den_steel),
-        vfshld=Input(lambda s: s.fwbs.vfshld),
+        vol_shld_total=FromExactly(lambda s: s.fwbs.vol_shld_total),
+        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
+        vfshld=FromExactly(lambda s: s.fwbs.vfshld),
     ):
         return calculate_shield_mass(vol_shld_total, den_steel, vfshld)

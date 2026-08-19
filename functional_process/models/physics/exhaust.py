@@ -10,7 +10,11 @@ ported here.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_mw):
@@ -37,7 +41,7 @@ class RadiationFraction(ExplicitFunction):
 
     def __call__(
         self,
-        p_plasma_rad_mw=Input(lambda s: s.physics.p_plasma_rad_mw),
-        p_plasma_heating_mw=Input(lambda s: s.physics.p_plasma_heating_total_mw),
+        p_plasma_rad_mw=FromExactly(lambda s: s.physics.p_plasma_rad_mw),
+        p_plasma_heating_mw=FromExactly(lambda s: s.physics.p_plasma_heating_total_mw),
     ):
         return calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_mw)

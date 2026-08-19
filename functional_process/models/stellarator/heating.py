@@ -25,7 +25,11 @@ zero -- see the record's open questions.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 _ZERO_DIVISION_GUARD_MW = 1e-8
 """Below this, the source treats injected beam power as exactly zero (line 112)."""
@@ -213,10 +217,10 @@ class EcrhHeating(ExplicitFunction):
 
     def __call__(
         self,
-        p_hcd_primary_extra_heat_mw=Input(
+        p_hcd_primary_extra_heat_mw=FromExactly(
             lambda s: s.current_drive.p_hcd_primary_extra_heat_mw
         ),
-        eta_ecrh_injector_wall_plug=Input(
+        eta_ecrh_injector_wall_plug=FromExactly(
             lambda s: s.current_drive.eta_ecrh_injector_wall_plug
         ),
     ):
@@ -245,10 +249,10 @@ class LowhybHeating(ExplicitFunction):
 
     def __call__(
         self,
-        p_hcd_primary_extra_heat_mw=Input(
+        p_hcd_primary_extra_heat_mw=FromExactly(
             lambda s: s.current_drive.p_hcd_primary_extra_heat_mw
         ),
-        eta_lowhyb_injector_wall_plug=Input(
+        eta_lowhyb_injector_wall_plug=FromExactly(
             lambda s: s.current_drive.eta_lowhyb_injector_wall_plug
         ),
     ):
@@ -264,10 +268,10 @@ class InjectedPowerTotal(ExplicitFunction):
 
     def __call__(
         self,
-        p_hcd_injected_electrons_mw=Input(
+        p_hcd_injected_electrons_mw=FromExactly(
             lambda s: s.current_drive.p_hcd_injected_electrons_mw
         ),
-        p_hcd_injected_ions_mw=Input(lambda s: s.current_drive.p_hcd_injected_ions_mw),
+        p_hcd_injected_ions_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_ions_mw),
     ):
         return calculate_injected_power_total(
             p_hcd_injected_electrons_mw, p_hcd_injected_ions_mw
@@ -287,10 +291,10 @@ class BeamCurrent(ExplicitFunction):
 
     def __call__(
         self,
-        p_hcd_beam_injected_total_mw=Input(
+        p_hcd_beam_injected_total_mw=FromExactly(
             lambda s: s.current_drive.p_hcd_beam_injected_total_mw
         ),
-        e_beam_kev=Input(lambda s: s.current_drive.e_beam_kev),
+        e_beam_kev=FromExactly(lambda s: s.current_drive.e_beam_kev),
     ):
         return calculate_beam_current(p_hcd_beam_injected_total_mw, e_beam_kev)
 
@@ -305,12 +309,12 @@ class FusionGain(ExplicitFunction):
 
     def __call__(
         self,
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
-        p_hcd_injected_total_mw=Input(
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
+        p_hcd_injected_total_mw=FromExactly(
             lambda s: s.current_drive.p_hcd_injected_total_mw
         ),
-        p_beam_orbit_loss_mw=Input(lambda s: s.current_drive.p_beam_orbit_loss_mw),
-        p_plasma_ohmic_mw=Input(lambda s: s.physics.p_plasma_ohmic_mw),
+        p_beam_orbit_loss_mw=FromExactly(lambda s: s.current_drive.p_beam_orbit_loss_mw),
+        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
     ):
         return calculate_fusion_gain(
             p_fusion_total_mw,

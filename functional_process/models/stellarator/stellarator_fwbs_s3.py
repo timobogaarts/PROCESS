@@ -14,7 +14,7 @@ either a hardcoded `50.0` bootstrap (the true first call) or the *previous* call
 later composition pass once the whole graph's shape is known. `calculate_
 divertor_plate_mass` below is therefore the fragment's arithmetic core only, taking
 `a_div_surface_total` as a plain, ordinary argument -- exactly as any other cross-unit
-`Input` would be declared. The source's `first_call_stfwbs` branch and its `50.0` literal
+`FromExactly` would be declared. The source's `first_call_stfwbs` branch and its `50.0` literal
 are real and important (see the audit record's "the cross-call read/bootstrap,
 precisely" section) but are a fact about *which value a future driver feeds in*, not
 something this function's own signature encodes. `self.first_call_stfwbs` is also not a
@@ -29,7 +29,11 @@ node reads -- wiring both into one graph unconditionally today would pick an eva
 order rather than reproduce PROCESS's real one-call-lagged semantics.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def calculate_divertor_plate_mass(
@@ -85,10 +89,10 @@ class DivertorPlateMass(ExplicitFunction):
 
     def __call__(
         self,
-        a_div_surface_total=Input(lambda s: s.divertor.a_div_surface_total),
-        den_div_structure=Input(lambda s: s.divertor.den_div_structure),
-        f_vol_div_coolant=Input(lambda s: s.divertor.f_vol_div_coolant),
-        dx_div_plate=Input(lambda s: s.divertor.dx_div_plate),
+        a_div_surface_total=FromExactly(lambda s: s.divertor.a_div_surface_total),
+        den_div_structure=FromExactly(lambda s: s.divertor.den_div_structure),
+        f_vol_div_coolant=FromExactly(lambda s: s.divertor.f_vol_div_coolant),
+        dx_div_plate=FromExactly(lambda s: s.divertor.dx_div_plate),
     ):
         return calculate_divertor_plate_mass(
             a_div_surface_total, den_div_structure, f_vol_div_coolant, dx_div_plate

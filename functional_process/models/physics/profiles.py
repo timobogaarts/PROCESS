@@ -50,7 +50,11 @@ producer, so unit #12's largest dangling edge closes on this unit landing.
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 from functional_process.models.physics.plasma_profiles import _beta, _simpson
 
@@ -127,7 +131,7 @@ def calculate_profile_grid(n_plasma_profile_elements):
 class ProfileGrid(ExplicitFunction):
     """cottax node: `calculate_profile_grid`, unchanged, ports declared.
 
-    A **source node**: it has no `Input`s at all, because its only argument is a static
+    A **source node**: it has no `FromExactly`s at all, because its only argument is a static
     shape. That is the honest shape of it -- the radius grid is decided when the graph is
     assembled and never flows.
 
@@ -194,8 +198,8 @@ class NeProfileIntegral(ExplicitFunction):
 
     def __call__(
         self,
-        profile_y=Input(lambda s: s.physics.nd_plasma_electron_profile),
-        profile_x=Input(lambda s: s.physics.radius_plasma_profile_norm),
+        profile_y=FromExactly(lambda s: s.physics.nd_plasma_electron_profile),
+        profile_x=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
     ):
         return integrate_profile_y(profile_y, profile_x)
 
@@ -213,8 +217,8 @@ class TeProfileIntegral(ExplicitFunction):
 
     def __call__(
         self,
-        profile_y=Input(lambda s: s.physics.temp_plasma_electron_profile_kev),
-        profile_x=Input(lambda s: s.physics.radius_plasma_profile_norm),
+        profile_y=FromExactly(lambda s: s.physics.temp_plasma_electron_profile_kev),
+        profile_x=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
     ):
         return integrate_profile_y(profile_y, profile_x)
 
@@ -320,20 +324,20 @@ class DensityProfile(ExplicitFunction):
 
     def __call__(
         self,
-        rho=Input(lambda s: s.physics.radius_plasma_profile_norm),
-        radius_plasma_pedestal_density_norm=Input(
+        rho=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
+        radius_plasma_pedestal_density_norm=FromExactly(
             lambda s: s.physics.radius_plasma_pedestal_density_norm
         ),
-        nd_plasma_electron_on_axis=Input(
+        nd_plasma_electron_on_axis=FromExactly(
             lambda s: s.physics.nd_plasma_electron_on_axis
         ),
-        nd_plasma_pedestal_electron=Input(
+        nd_plasma_pedestal_electron=FromExactly(
             lambda s: s.physics.nd_plasma_pedestal_electron
         ),
-        nd_plasma_separatrix_electron=Input(
+        nd_plasma_separatrix_electron=FromExactly(
             lambda s: s.physics.nd_plasma_separatrix_electron
         ),
-        alphan=Input(lambda s: s.physics.alphan),
+        alphan=FromExactly(lambda s: s.physics.alphan),
     ):
         return calculate_density_profile(
             rho,
@@ -401,11 +405,11 @@ class ParabolicTemperatureProfile(ExplicitFunction):
 
     def __call__(
         self,
-        rho=Input(lambda s: s.physics.radius_plasma_profile_norm),
-        temp_plasma_electron_on_axis_kev=Input(
+        rho=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
+        temp_plasma_electron_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        alphat=Input(lambda s: s.physics.alphat),
+        alphat=FromExactly(lambda s: s.physics.alphat),
     ):
         return calculate_parabolic_temperature_profile(
             rho, temp_plasma_electron_on_axis_kev, alphat
@@ -507,19 +511,19 @@ class PedestalTemperatureProfile(ExplicitFunction):
 
     def __call__(
         self,
-        rho=Input(lambda s: s.physics.radius_plasma_profile_norm),
-        radius_plasma_pedestal_temp_norm=Input(
+        rho=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
+        radius_plasma_pedestal_temp_norm=FromExactly(
             lambda s: s.physics.radius_plasma_pedestal_temp_norm
         ),
-        temp_plasma_electron_on_axis_kev=Input(
+        temp_plasma_electron_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        temp_plasma_pedestal_kev=Input(lambda s: s.physics.temp_plasma_pedestal_kev),
-        temp_plasma_separatrix_kev=Input(
+        temp_plasma_pedestal_kev=FromExactly(lambda s: s.physics.temp_plasma_pedestal_kev),
+        temp_plasma_separatrix_kev=FromExactly(
             lambda s: s.physics.temp_plasma_separatrix_kev
         ),
-        alphat=Input(lambda s: s.physics.alphat),
-        tbeta=Input(lambda s: s.physics.tbeta),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        tbeta=FromExactly(lambda s: s.physics.tbeta),
     ):
         return calculate_pedestal_temperature_profile(
             rho,
@@ -699,13 +703,13 @@ class ParabolicOnAxisDensities(ExplicitFunction):
 
     def __call__(
         self,
-        nd_plasma_electrons_vol_avg=Input(
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        nd_plasma_ions_total_vol_avg=Input(
+        nd_plasma_ions_total_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_ions_total_vol_avg
         ),
-        alphan=Input(lambda s: s.physics.alphan),
+        alphan=FromExactly(lambda s: s.physics.alphan),
     ):
         return calculate_parabolic_on_axis_densities(
             nd_plasma_electrons_vol_avg, nd_plasma_ions_total_vol_avg, alphan
@@ -764,22 +768,22 @@ class PedestalOnAxisDensities(ExplicitFunction):
 
     def __call__(
         self,
-        radius_plasma_pedestal_density_norm=Input(
+        radius_plasma_pedestal_density_norm=FromExactly(
             lambda s: s.physics.radius_plasma_pedestal_density_norm
         ),
-        nd_plasma_pedestal_electron=Input(
+        nd_plasma_pedestal_electron=FromExactly(
             lambda s: s.physics.nd_plasma_pedestal_electron
         ),
-        nd_plasma_separatrix_electron=Input(
+        nd_plasma_separatrix_electron=FromExactly(
             lambda s: s.physics.nd_plasma_separatrix_electron
         ),
-        nd_plasma_electrons_vol_avg=Input(
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        nd_plasma_ions_total_vol_avg=Input(
+        nd_plasma_ions_total_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_ions_total_vol_avg
         ),
-        alphan=Input(lambda s: s.physics.alphan),
+        alphan=FromExactly(lambda s: s.physics.alphan),
     ):
         return calculate_pedestal_on_axis_densities(
             radius_plasma_pedestal_density_norm,
@@ -839,13 +843,13 @@ class ParabolicOnAxisTemperatures(ExplicitFunction):
 
     def __call__(
         self,
-        temp_plasma_electron_vol_avg_kev=Input(
+        temp_plasma_electron_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
-        temp_plasma_ion_vol_avg_kev=Input(
+        temp_plasma_ion_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_vol_avg_kev
         ),
-        alphat=Input(lambda s: s.physics.alphat),
+        alphat=FromExactly(lambda s: s.physics.alphat),
     ):
         return calculate_parabolic_on_axis_temperatures(
             temp_plasma_electron_vol_avg_kev, temp_plasma_ion_vol_avg_kev, alphat
@@ -910,21 +914,21 @@ class PedestalOnAxisTemperatures(ExplicitFunction):
 
     def __call__(
         self,
-        radius_plasma_pedestal_temp_norm=Input(
+        radius_plasma_pedestal_temp_norm=FromExactly(
             lambda s: s.physics.radius_plasma_pedestal_temp_norm
         ),
-        temp_plasma_pedestal_kev=Input(lambda s: s.physics.temp_plasma_pedestal_kev),
-        temp_plasma_separatrix_kev=Input(
+        temp_plasma_pedestal_kev=FromExactly(lambda s: s.physics.temp_plasma_pedestal_kev),
+        temp_plasma_separatrix_kev=FromExactly(
             lambda s: s.physics.temp_plasma_separatrix_kev
         ),
-        temp_plasma_electron_vol_avg_kev=Input(
+        temp_plasma_electron_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
-        temp_plasma_ion_vol_avg_kev=Input(
+        temp_plasma_ion_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_vol_avg_kev
         ),
-        alphat=Input(lambda s: s.physics.alphat),
-        tbeta=Input(lambda s: s.physics.tbeta),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        tbeta=FromExactly(lambda s: s.physics.tbeta),
     ):
         return calculate_pedestal_on_axis_temperatures(
             radius_plasma_pedestal_temp_norm,
@@ -995,14 +999,14 @@ class GreenwaldDensityFractions(ExplicitFunction):
 
     def __call__(
         self,
-        nd_plasma_pedestal_electron=Input(
+        nd_plasma_pedestal_electron=FromExactly(
             lambda s: s.physics.nd_plasma_pedestal_electron
         ),
-        nd_plasma_separatrix_electron=Input(
+        nd_plasma_separatrix_electron=FromExactly(
             lambda s: s.physics.nd_plasma_separatrix_electron
         ),
-        plasma_current=Input(lambda s: s.physics.plasma_current),
-        rminor=Input(lambda s: s.physics.rminor),
+        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
+        rminor=FromExactly(lambda s: s.physics.rminor),
     ):
         return calculate_greenwald_density_fractions(
             nd_plasma_pedestal_electron,
@@ -1071,14 +1075,14 @@ class PedestalSeparatrixDensities(ExplicitFunction):
 
     def __call__(
         self,
-        f_nd_plasma_pedestal_greenwald=Input(
+        f_nd_plasma_pedestal_greenwald=FromExactly(
             lambda s: s.physics.f_nd_plasma_pedestal_greenwald
         ),
-        f_nd_plasma_separatrix_greenwald=Input(
+        f_nd_plasma_separatrix_greenwald=FromExactly(
             lambda s: s.physics.f_nd_plasma_separatrix_greenwald
         ),
-        plasma_current=Input(lambda s: s.physics.plasma_current),
-        rminor=Input(lambda s: s.physics.rminor),
+        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
+        rminor=FromExactly(lambda s: s.physics.rminor),
     ):
         return calculate_pedestal_separatrix_densities(
             f_nd_plasma_pedestal_greenwald,

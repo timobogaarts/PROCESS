@@ -508,6 +508,7 @@ def _intersect_residual_for_contract(solution, x1, y1, x2, y2, xin):
     return intersect_residual(solution, x1, y1, x2, y2)
 import equinox as eqx
 
+
 class TestIntersect(Tier2Contract):
     """`intersect` -> `intersect`: a genuine internal solve (see `coils.md`).
 
@@ -572,7 +573,7 @@ def test_intersect_body_reads_the_unknown_back_without_owning_it():
 
 def test_intersect_has_no_port_for_xin():
     """`intersect`'s `xin` argument has no place in `Intersect`'s declared interface at
-    all -- `residual` declares exactly 4 `Input`s (the unknown plus the two curves), one
+    all -- `residual` declares exactly 4 `FromExactly`s (the unknown plus the two curves), one
     fewer than `intersect`'s own 5-argument signature -- confirming `coils.md`'s open
     question 2 directly rather than merely asserting it.
     """

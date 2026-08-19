@@ -9,7 +9,12 @@ treatment as `mass.py`'s 8-step chain.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
+
 from functional_process.models.safe_math import safe_sqrt
 
 _FORCE_DENSITY_REF_MN_PER_M3 = 2.54
@@ -263,40 +268,40 @@ class QuenchProtection(ExplicitFunction):
 
     def __call__(
         self,
-        rmajor=Input(lambda s: s.physics.rmajor),
-        rminor=Input(lambda s: s.physics.rminor),
-        dr_fw_plasma_gap_inboard=Input(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        dr_fw_inboard=Input(lambda s: s.build.dr_fw_inboard),
-        dr_blkt_inboard=Input(lambda s: s.build.dr_blkt_inboard),
-        dr_shld_blkt_gap=Input(lambda s: s.build.dr_shld_blkt_gap),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        dr_fw_plasma_gap_outboard=Input(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        dr_fw_outboard=Input(lambda s: s.build.dr_fw_outboard),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        c_tf_total=Input(lambda s: s.tfcoil.c_tf_total),
-        t_tf_superconductor_quench=Input(
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
+        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
+        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
+        dr_shld_blkt_gap=FromExactly(lambda s: s.build.dr_shld_blkt_gap),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
+        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        c_tf_total=FromExactly(lambda s: s.tfcoil.c_tf_total),
+        t_tf_superconductor_quench=FromExactly(
             lambda s: s.tfcoil.t_tf_superconductor_quench
         ),
-        dr_vv_inboard=Input(lambda s: s.build.dr_vv_inboard),
-        dr_vv_outboard=Input(lambda s: s.build.dr_vv_outboard),
-        t_tf_quench_detection=Input(lambda s: s.tfcoil.t_tf_quench_detection),
-        f_a_tf_turn_cable_copper=Input(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
-        f_a_tf_turn_cable_space_extra_void=Input(
+        dr_vv_inboard=FromExactly(lambda s: s.build.dr_vv_inboard),
+        dr_vv_outboard=FromExactly(lambda s: s.build.dr_vv_outboard),
+        t_tf_quench_detection=FromExactly(lambda s: s.tfcoil.t_tf_quench_detection),
+        f_a_tf_turn_cable_copper=FromExactly(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
+        f_a_tf_turn_cable_space_extra_void=FromExactly(
             lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
         ),
-        tftmp=Input(lambda s: s.tfcoil.tftmp),
-        a_tf_turn_cable_space_no_void=Input(
+        tftmp=FromExactly(lambda s: s.tfcoil.tftmp),
+        a_tf_turn_cable_space_no_void=FromExactly(
             lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
         ),
-        dx_tf_turn_general=Input(lambda s: s.tfcoil.dx_tf_turn_general),
-        a_tf_wp_conductor=Input(lambda s: s.tfcoil.a_tf_wp_conductor),
-        e_tf_magnetic_stored_total_gj=Input(
+        dx_tf_turn_general=FromExactly(lambda s: s.tfcoil.dx_tf_turn_general),
+        a_tf_wp_conductor=FromExactly(lambda s: s.tfcoil.a_tf_wp_conductor),
+        e_tf_magnetic_stored_total_gj=FromExactly(
             lambda s: s.tfcoil.e_tf_magnetic_stored_total_gj
         ),
-        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
-        c_tf_turn=Input(lambda s: s.tfcoil.c_tf_turn),
+        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
+        c_tf_turn=FromExactly(lambda s: s.tfcoil.c_tf_turn),
     ):
         return calculate_quench_protection(
             rmajor,

@@ -17,11 +17,16 @@ node at all is a policy question, not resolved here, so neither is wrapped in a
 wrapping `calculate_structure_masses` unchanged. See `_audit/schema.md`'s "cottax node"
 section for why the pytree-namespace surface
 (`cottax.interfaces.pytree_namespace_module`) rather than a hand-built `CallableNode`:
-`Output`/`Input` read like the PROCESS `data.<area>.<field>` path they name, instead of a
+`Output`/`FromExactly` read like the PROCESS `data.<area>.<field>` path they name, instead of a
 `VarPath` built from a string one node at a time.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
+
 from functional_process.models.safe_math import safe_pow
 
 _INTERCOIL_THICKNESS_COEFFICIENT = 0.18
@@ -145,23 +150,23 @@ class StructureMasses(ExplicitFunction):
 
     def __call__(
         self,
-        stella_config_coilsurface=Input(
+        stella_config_coilsurface=FromExactly(
             lambda s: s.stellarator_config.stella_config_coilsurface
         ),
-        f_st_rmajor=Input(lambda s: s.stellarator.f_st_rmajor),
-        r_coil_minor=Input(lambda s: s.stellarator.r_coil_minor),
-        stella_config_coil_rminor=Input(
+        f_st_rmajor=FromExactly(lambda s: s.stellarator.f_st_rmajor),
+        r_coil_minor=FromExactly(lambda s: s.stellarator.r_coil_minor),
+        stella_config_coil_rminor=FromExactly(
             lambda s: s.stellarator_config.stella_config_coil_rminor
         ),
-        dx_tf_inboard_out_toroidal=Input(
+        dx_tf_inboard_out_toroidal=FromExactly(
             lambda s: s.tfcoil.dx_tf_inboard_out_toroidal
         ),
-        len_tf_coil=Input(lambda s: s.tfcoil.len_tf_coil),
-        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        den_steel=Input(lambda s: s.fwbs.den_steel),
-        m_tf_coils_total=Input(lambda s: s.tfcoil.m_tf_coils_total),
-        dewmkg=Input(lambda s: s.fwbs.dewmkg),
+        len_tf_coil=FromExactly(lambda s: s.tfcoil.len_tf_coil),
+        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
+        m_tf_coils_total=FromExactly(lambda s: s.tfcoil.m_tf_coils_total),
+        dewmkg=FromExactly(lambda s: s.fwbs.dewmkg),
     ):
         return calculate_structure_masses(
             stella_config_coilsurface,

@@ -15,7 +15,12 @@ anything about this file: `st_div` itself has no missing input and no internal s
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
+
 from functional_process.models.safe_math import safe_sqrt
 
 _ELECTRON_CHARGE = 1.602176634e-19
@@ -124,21 +129,21 @@ class Divertor(ExplicitFunction):
 
     def __call__(
         self,
-        flpitch=Input(lambda s: s.stellarator.flpitch),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        p_plasma_separatrix_mw=Input(lambda s: s.physics.p_plasma_separatrix_mw),
-        anginc=Input(lambda s: s.divertor.anginc),
-        xpertin=Input(lambda s: s.divertor.xpertin),
-        tdiv=Input(lambda s: s.divertor.tdiv),
-        m_fuel_amu=Input(lambda s: s.physics.m_fuel_amu),
-        bmn=Input(lambda s: s.stellarator.bmn),
-        shear=Input(lambda s: s.stellarator.shear),
-        n_res=Input(lambda s: s.stellarator.n_res),
-        f_w=Input(lambda s: s.stellarator.f_w),
-        m_res=Input(lambda s: s.stellarator.m_res),
-        fdivwet=Input(lambda s: s.stellarator.fdivwet),
-        f_asym=Input(lambda s: s.stellarator.f_asym),
-        a_fw_total=Input(lambda s: s.first_wall.a_fw_total),
+        flpitch=FromExactly(lambda s: s.stellarator.flpitch),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        p_plasma_separatrix_mw=FromExactly(lambda s: s.physics.p_plasma_separatrix_mw),
+        anginc=FromExactly(lambda s: s.divertor.anginc),
+        xpertin=FromExactly(lambda s: s.divertor.xpertin),
+        tdiv=FromExactly(lambda s: s.divertor.tdiv),
+        m_fuel_amu=FromExactly(lambda s: s.physics.m_fuel_amu),
+        bmn=FromExactly(lambda s: s.stellarator.bmn),
+        shear=FromExactly(lambda s: s.stellarator.shear),
+        n_res=FromExactly(lambda s: s.stellarator.n_res),
+        f_w=FromExactly(lambda s: s.stellarator.f_w),
+        m_res=FromExactly(lambda s: s.stellarator.m_res),
+        fdivwet=FromExactly(lambda s: s.stellarator.fdivwet),
+        f_asym=FromExactly(lambda s: s.stellarator.f_asym),
+        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
     ):
         return calculate_divertor(
             flpitch,

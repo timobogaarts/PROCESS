@@ -28,10 +28,11 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     FixedPointFunction,
-    Input,
+    FromExactly,
     Output,
 )
 from jax.scipy.special import gamma, gammaln
+
 from functional_process.models.safe_math import safe_sqrt
 
 # `process/core/constants.py`'s KILOELECTRON_VOLT -- the J-per-keV conversion.
@@ -231,7 +232,7 @@ def lmode_profile_reset(
     the independence a *testable* claim rather than a comment
     (`test_plasma_profiles.TestLModeProfileReset` fuzzes all seven against PROCESS and
     the reference returns the same constants every time), and they let `LModeProfileReset`
-    call the function with no arguments at all, so the node declares no `Input` and no
+    call the function with no arguments at all, so the node declares no `FromExactly` and no
     self-loop.
 
     `plasma_profiles.md` classified these seven as `input-validation-reset` and its open
@@ -549,37 +550,37 @@ class ProfileFactors(ExplicitFunction):
 
     def __call__(
         self,
-        ne_profile_y=Input(lambda s: s.physics.nd_plasma_electron_profile),
-        te_profile_y=Input(lambda s: s.physics.temp_plasma_electron_profile_kev),
-        nd_plasma_electron_on_axis=Input(lambda s: s.physics.nd_plasma_electron_on_axis),
-        temp_plasma_electron_on_axis_kev=Input(
+        ne_profile_y=FromExactly(lambda s: s.physics.nd_plasma_electron_profile),
+        te_profile_y=FromExactly(lambda s: s.physics.temp_plasma_electron_profile_kev),
+        nd_plasma_electron_on_axis=FromExactly(lambda s: s.physics.nd_plasma_electron_on_axis),
+        temp_plasma_electron_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        nd_plasma_ions_on_axis=Input(lambda s: s.physics.nd_plasma_ions_on_axis),
-        temp_plasma_ion_on_axis_kev=Input(
+        nd_plasma_ions_on_axis=FromExactly(lambda s: s.physics.nd_plasma_ions_on_axis),
+        temp_plasma_ion_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_on_axis_kev
         ),
-        nd_plasma_ions_total_vol_avg=Input(
+        nd_plasma_ions_total_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_ions_total_vol_avg
         ),
-        nd_plasma_electrons_vol_avg=Input(
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        nd_plasma_fuel_ions_vol_avg=Input(
+        nd_plasma_fuel_ions_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
         ),
-        f_temp_plasma_ion_electron=Input(lambda s: s.physics.f_temp_plasma_ion_electron),
-        temp_plasma_electron_density_weighted_kev=Input(
+        f_temp_plasma_ion_electron=FromExactly(lambda s: s.physics.f_temp_plasma_ion_electron),
+        temp_plasma_electron_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
-        temp_plasma_ion_density_weighted_kev=Input(
+        temp_plasma_ion_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_density_weighted_kev
         ),
-        alphan=Input(lambda s: s.physics.alphan),
-        alphat=Input(lambda s: s.physics.alphat),
-        alphaj=Input(lambda s: s.physics.alphaj),
-        plasma_current=Input(lambda s: s.physics.plasma_current),
-        a_plasma_poloidal=Input(lambda s: s.physics.a_plasma_poloidal),
+        alphan=FromExactly(lambda s: s.physics.alphan),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        alphaj=FromExactly(lambda s: s.physics.alphaj),
+        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
+        a_plasma_poloidal=FromExactly(lambda s: s.physics.a_plasma_poloidal),
     ):
         return calculate_profile_factors(
             ne_profile_y,
@@ -618,13 +619,13 @@ class ParabolicGradientLengths(ExplicitFunction):
 
     def __call__(
         self,
-        alphat=Input(lambda s: s.physics.alphat),
-        alphan=Input(lambda s: s.physics.alphan),
-        temp_plasma_electron_on_axis_kev=Input(
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        alphan=FromExactly(lambda s: s.physics.alphan),
+        temp_plasma_electron_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        nd_plasma_electron_on_axis=Input(lambda s: s.physics.nd_plasma_electron_on_axis),
-        rminor=Input(lambda s: s.physics.rminor),
+        nd_plasma_electron_on_axis=FromExactly(lambda s: s.physics.nd_plasma_electron_on_axis),
+        rminor=FromExactly(lambda s: s.physics.rminor),
     ):
         return calculate_parabolic_gradient_lengths(
             alphat,
@@ -679,11 +680,11 @@ class IonVolAvgTemperature(FixedPointFunction):
 
     def step(
         self,
-        f_temp_plasma_ion_electron=Input(lambda s: s.physics.f_temp_plasma_ion_electron),
-        temp_plasma_electron_vol_avg_kev=Input(
+        f_temp_plasma_ion_electron=FromExactly(lambda s: s.physics.f_temp_plasma_ion_electron),
+        temp_plasma_electron_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
-        temp_plasma_ion_vol_avg_kev=Input(
+        temp_plasma_ion_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_vol_avg_kev
         ),
     ):
@@ -734,15 +735,15 @@ class ParabolicProfileValues(ExplicitFunction):
 
     def __call__(
         self,
-        alphan=Input(lambda s: s.physics.alphan),
-        alphat=Input(lambda s: s.physics.alphat),
-        nd_plasma_electrons_vol_avg=Input(
+        alphan=FromExactly(lambda s: s.physics.alphan),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        temp_plasma_electron_vol_avg_kev=Input(
+        temp_plasma_electron_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
-        temp_plasma_ion_vol_avg_kev=Input(
+        temp_plasma_ion_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_vol_avg_kev
         ),
     ):
@@ -767,7 +768,7 @@ class LModeProfileReset(ExplicitFunction):
     is a plain post-condition of selecting the parabolic arm.
 
     **No inputs, by construction.** `lmode_profile_reset` ignores its arguments, so
-    declaring the seven fields as `Input`s as well as `Output`s would be a seven-way
+    declaring the seven fields as `FromExactly`s as well as `Output`s would be a seven-way
     self-loop stating a dependence the computation does not have. The node calls the
     function at its own defaults, which are the L-mode values themselves.
 

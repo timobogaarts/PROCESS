@@ -170,7 +170,7 @@ duplicate of `ProfileGrid`'s own `.physics.radius_plasma_profile_norm` (same
 harness's own comparison run surfaced -- `fusion_reactions.py`/`.md` were corrected to
 read `radius_plasma_profile_norm` directly, so `.physics.profile_x` is no longer read
 by anything (confirmed: `grep -rn "physics\\.profile_x" functional_process/models/`
-finds no remaining `Input`/`Output` binding, only historical docstring mentions). Kept
+finds no remaining `FromExactly`/`Output` binding, only historical docstring mentions). Kept
 as an empty dict, not deleted outright, since a future ungrounded-and-wrong-shaped
 case is exactly what this mechanism is for.
 """
@@ -247,7 +247,7 @@ STATIC_KWARGS_WITHOUT_BACKING_FIELD = {
         "the normalised radius the neoclassical profiles are sampled at -- PROCESS "
         "passes the literal `0.6` at `neoclassics.py:290` and stores it nowhere. The "
         "same-named field `.neoclassics.r_eff` is declared `= 0.0` and never assigned "
-        "by anything in `process/`, so binding it as an `Input` (which this node did "
+        "by anything in `process/`, so binding it as an `FromExactly` (which this node did "
         "until `_audit/boundary_inputs_audit.md` §6.1) evaluated every profile on axis"
     ),
     "imp_indices": (

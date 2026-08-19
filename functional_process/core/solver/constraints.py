@@ -580,7 +580,7 @@ def constraint_13(t_plant_pulse_burn, t_burn_min):
     producer (`pulse.py`'s `calculate_burn_time`) on the pulsed-tokamak path, out of
     this codebase's current scope. Treated as an ordinary explicit-arg here, matching
     how `PulseDurations` (`stellarator/initialization.py`, already ported) reads it as
-    a plain `Input` rather than expecting an upstream producer. `t_burn_min` is a plain
+    a plain `FromExactly` rather than expecting an upstream producer. `t_burn_min` is a plain
     input constant.
 
     Parameters
@@ -2438,7 +2438,7 @@ def constraint_92(f_plasma_fuel_deuterium, f_plasma_fuel_tritium, f_plasma_fuel_
     All three operands are plain user-input fractions (`physics_variables.py`), not
     computed outputs of any model -- `plasma_composition`
     (`functional_process/models/physics/physics_B_composition.py`) already reads all
-    three as ordinary boundary `Input`s, confirming they are leaf inputs, not a
+    three as ordinary boundary `FromExactly`s, confirming they are leaf inputs, not a
     hole-in-MDA candidate at all (nothing produces them; nothing needs to).
 
     Parameters

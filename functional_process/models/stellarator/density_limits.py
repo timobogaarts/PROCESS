@@ -19,7 +19,12 @@ PROCESS storage: `st_d_limit_ecrh`'s return values are locals in its caller
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
+
 from functional_process.models.safe_math import safe_sqrt
 
 _SUDO_COEFFICIENT = 0.25e20
@@ -157,14 +162,14 @@ class SudoDensityLimit(ExplicitFunction):
 
     def __call__(
         self,
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        p_plasma_loss_mw=Input(lambda s: s.physics.p_plasma_loss_mw),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        rminor=Input(lambda s: s.physics.rminor),
-        nd_plasma_electrons_vol_avg=Input(
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        p_plasma_loss_mw=FromExactly(lambda s: s.physics.p_plasma_loss_mw),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        nd_plasma_electron_line=Input(lambda s: s.physics.nd_plasma_electron_line),
+        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
     ):
         return calculate_sudo_density_limit(
             b_plasma_toroidal_on_axis,
@@ -191,8 +196,8 @@ class EcrhDensityLimit(ExplicitFunction):
 
     def __call__(
         self,
-        gyro_frequency_max=Input(lambda s: s.stellarator.max_gyrotron_frequency),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        gyro_frequency_max=FromExactly(lambda s: s.stellarator.max_gyrotron_frequency),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
     ):
         return calculate_ecrh_density_limit(
             gyro_frequency_max, b_plasma_toroidal_on_axis, self.i_plasma_pedestal

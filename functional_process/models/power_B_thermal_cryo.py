@@ -15,7 +15,7 @@ but at the node level each of the six self-references is cut into its own tiny
 `TempTurbineCoolantInStep`, `PFwDivHeatDepositedMwStep`, `PFwBlktCoolantPumpMwStep`
 -- per `cottax.interfaces.pytree_namespace_module`), separate from
 `ComponentThermalPowers` (an ordinary `ExplicitFunction` for every other output,
-reading all six current values as plain `Input`s). See each class's own docstring.
+reading all six current values as plain `FromExactly`s). See each class's own docstring.
 
 All five source methods are tier-1 once ported: no internal iteration anywhere in
 this chunk (the `cryo`/`calculate_cryo_loads` pair looks like it could be tier-2 from
@@ -43,7 +43,6 @@ from functional_process.paths import (
     tfcoil,
     times,
 )
-
 from process.core import constants
 from process.core.exceptions import ProcessValueError
 from process.data_structure.blanket_variables import BlktModelTypes
@@ -63,7 +62,7 @@ def calculate_plant_thermal_efficiency(
 
     Ports `process/models/power.py:1935-2071`. `i_thermal_electric_conversion` and
     `i_blanket_type` are static configuration switches (per
-    `_audit/naming_convention.md`), not `Input`s -- ordinary Python `if`/`elif`, not
+    `_audit/naming_convention.md`), not `FromExactly`s -- ordinary Python `if`/`elif`, not
     `jnp.where`, since each of the five values reads/writes a genuinely different set
     of fields (not the "identical reads-set" exception `FastAlphaBeta`'s
     `i_beta_fast_alpha` uses), and only one is ever selected for a given run.
@@ -1089,12 +1088,12 @@ class ComponentThermalPowers(ExplicitFunction):
     `calculate_component_thermal_powers` itself reads the entering value of each of
     those six `VarPath`s and also produces a freshly-computed value on the same
     `VarPath` later in the same call -- six genuine single-node self-loops (`Output`'s
-    `where` and one `Input`'s `where` naming the identical `VarPath`), which `cottax`
+    `where` and one `FromExactly`'s `where` naming the identical `VarPath`), which `cottax`
     refuses to build as one node (`ValueError: reads [...], which it also owns`,
     confirmed directly against this class before these splits existed). Each
     `FixedPointFunction` below isolates one self-reference; this class keeps every
     *other* output of `calculate_component_thermal_powers` and takes all six fields as
-    ordinary plain-`Input`s (the current/entering values), same as every other
+    ordinary plain-`FromExactly`s (the current/entering values), same as every other
     parameter here. Ownership of the six real `VarPath`s belongs to the six
     `FixedPoint` problem nodes, not to this class -- see `power_B_thermal_cryo.md`.
 
@@ -1113,7 +1112,7 @@ class ComponentThermalPowers(ExplicitFunction):
 
     # .primary_pumping.p_fw_blkt_coolant_pump_mw is NOT declared here -- owned by
     # PFwBlktCoolantPumpMwStep's FixedPoint problem node (see below). Still read
-    # below, as a plain Input.
+    # below, as a plain FromExactly.
     p_fw_blkt_coolant_pump_elec_mw = OutputInto(power)
     p_shld_coolant_pump_elec_mw = OutputInto(power)
     p_div_coolant_pump_elec_mw = OutputInto(power)
@@ -1130,21 +1129,21 @@ class ComponentThermalPowers(ExplicitFunction):
     p_div_heat_deposited_mw = OutputInto(power)
     # .heat_transport.p_fw_div_heat_deposited_mw is NOT declared here -- owned by
     # PFwDivHeatDepositedMwStep's FixedPoint problem node (see below). Still read
-    # below, as a plain Input.
+    # below, as a plain FromExactly.
     # .heat_transport.eta_turbine is NOT declared here -- owned by EtaTurbineStep's
-    # FixedPoint problem node (see below). Still read below, as a plain Input.
+    # FixedPoint problem node (see below). Still read below, as a plain FromExactly.
     # .heat_transport.etath_liq is NOT declared here -- owned by EtathLiqStep's
-    # FixedPoint problem node (see below). Still read below, as a plain Input.
+    # FixedPoint problem node (see below). Still read below, as a plain FromExactly.
     # .heat_transport.temp_turbine_coolant_in is NOT declared here -- owned by
     # TempTurbineCoolantInStep's FixedPoint problem node (see below). Still read
-    # below, as a plain Input.
+    # below, as a plain FromExactly.
     p_plant_primary_heat_mw = OutputInto(heat_transport)
     p_div_secondary_heat_mw = OutputInto(heat_transport)
     i_div_primary_heat = OutputInto(power)
     f_p_div_primary_heat = OutputInto(power)
     # .power.delta_eta is NOT declared here -- DeltaEtaStep's FixedPoint problem node
     # owns it (see the class docstring above and "The delta_eta self-loop" in
-    # power_B_thermal_cryo.md). delta_eta is still read below, as a plain Input.
+    # power_B_thermal_cryo.md). delta_eta is still read below, as a plain FromExactly.
     p_shld_secondary_heat_mw = OutputInto(heat_transport)
     p_hcd_secondary_heat_mw = OutputInto(heat_transport)
     n_primary_heat_exchangers = OutputInto(heat_transport)
@@ -1864,7 +1863,7 @@ class CryoLoads(ExplicitFunction):
     `.heat_transport.helpow`, `.heat_transport.p_cryo_plant_electric_mw`,
     `.heat_transport.helpow_cryal` and `.tfcoil.cryo_cool_req`. The five conditionally
     owned `q*` fields moved to `CryoQNucStep`/`CryoQLoadsStep` and are read here as
-    plain `Input`s -- the same division `ComponentThermalPowers` has with the six
+    plain `FromExactly`s -- the same division `ComponentThermalPowers` has with the six
     `*Step` nodes above it, and for the same reason: two nodes owning one `VarPath`
     is an ownership collision `Graph` would reject, and would defeat the split.
 

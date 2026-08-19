@@ -19,11 +19,15 @@ that blocker is resolved.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 from functional_process.models.physics.plasma_profiles import _simpson
-from process.core import constants
 from functional_process.models.safe_math import safe_pow, safe_sqrt
+from process.core import constants
 
 REACTION_CONSTANTS_DT = {
     "bg": 34.3827,
@@ -123,7 +127,7 @@ def calculate_deuterium_branching_trit(ion_temperature):
 
     Ports `.deuterium_branching()`. No cottax node of its own -- see the audit record's
     "cottax node" section: its only consumer within scope is `FusionRates`, which calls
-    this internally rather than taking the result as a separate `Input`, since PROCESS's
+    this internally rather than taking the result as a separate `FromExactly`, since PROCESS's
     own `.f_dd_branching_trit` never has a `VarPath` until `.set_physics_variables()`
     writes it.
 
@@ -885,22 +889,22 @@ class FusionRates(ExplicitFunction):
 
     def __call__(
         self,
-        profile_x=Input(lambda s: s.physics.radius_plasma_profile_norm),
-        te_profile_y=Input(lambda s: s.physics.temp_plasma_electron_profile_kev),
-        ne_profile_y=Input(lambda s: s.physics.nd_plasma_electron_profile),
-        temp_plasma_ion_vol_avg_kev=Input(
+        profile_x=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
+        te_profile_y=FromExactly(lambda s: s.physics.temp_plasma_electron_profile_kev),
+        ne_profile_y=FromExactly(lambda s: s.physics.nd_plasma_electron_profile),
+        temp_plasma_ion_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_vol_avg_kev
         ),
-        temp_plasma_electron_vol_avg_kev=Input(
+        temp_plasma_electron_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
-        f_plasma_fuel_deuterium=Input(lambda s: s.physics.f_plasma_fuel_deuterium),
-        f_plasma_fuel_tritium=Input(lambda s: s.physics.f_plasma_fuel_tritium),
-        f_plasma_fuel_helium3=Input(lambda s: s.physics.f_plasma_fuel_helium3),
-        nd_plasma_fuel_ions_vol_avg=Input(
+        f_plasma_fuel_deuterium=FromExactly(lambda s: s.physics.f_plasma_fuel_deuterium),
+        f_plasma_fuel_tritium=FromExactly(lambda s: s.physics.f_plasma_fuel_tritium),
+        f_plasma_fuel_helium3=FromExactly(lambda s: s.physics.f_plasma_fuel_helium3),
+        nd_plasma_fuel_ions_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
         ),
-        nd_plasma_electrons_vol_avg=Input(
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
     ):
@@ -945,14 +949,14 @@ class SetFusionPowers(ExplicitFunction):
 
     def __call__(
         self,
-        f_alpha_electron=Input(lambda s: s.physics.f_alpha_electron),
-        f_alpha_ion=Input(lambda s: s.physics.f_alpha_ion),
-        p_beam_alpha_mw=Input(lambda s: s.physics.p_beam_alpha_mw),
-        pden_non_alpha_charged_mw=Input(lambda s: s.physics.pden_non_alpha_charged_mw),
-        pden_plasma_neutron_mw=Input(lambda s: s.physics.pden_plasma_neutron_mw),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        pden_plasma_alpha_mw=Input(lambda s: s.physics.pden_plasma_alpha_mw),
-        f_p_alpha_plasma_deposited=Input(lambda s: s.physics.f_p_alpha_plasma_deposited),
+        f_alpha_electron=FromExactly(lambda s: s.physics.f_alpha_electron),
+        f_alpha_ion=FromExactly(lambda s: s.physics.f_alpha_ion),
+        p_beam_alpha_mw=FromExactly(lambda s: s.physics.p_beam_alpha_mw),
+        pden_non_alpha_charged_mw=FromExactly(lambda s: s.physics.pden_non_alpha_charged_mw),
+        pden_plasma_neutron_mw=FromExactly(lambda s: s.physics.pden_plasma_neutron_mw),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        pden_plasma_alpha_mw=FromExactly(lambda s: s.physics.pden_plasma_alpha_mw),
+        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
     ):
         return set_fusion_powers(
             f_alpha_electron,

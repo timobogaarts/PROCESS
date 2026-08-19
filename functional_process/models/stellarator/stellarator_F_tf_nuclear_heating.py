@@ -20,7 +20,11 @@ audits 1E1/1E2 to confirm.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 # TF coil nuclear heating coefficients (stainless-steel shield only -- see module
 # docstring). `fact[i]`/`coef[i]`/`decay[i]` index the same physical quantity as the
@@ -188,20 +192,20 @@ class ScTfCoilNuclearHeating(ExplicitFunction):
 
     def __call__(
         self,
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        dr_fw_inboard=Input(lambda s: s.build.dr_fw_inboard),
-        dr_blkt_inboard=Input(lambda s: s.build.dr_blkt_inboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        dr_fw_outboard=Input(lambda s: s.build.dr_fw_outboard),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
-        dr_tf_wp_with_insulation=Input(lambda s: s.tfcoil.dr_tf_wp_with_insulation),
-        dx_tf_wp_insulation=Input(lambda s: s.tfcoil.dx_tf_wp_insulation),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        tfsai=Input(lambda s: s.tfcoil.tfsai),
-        tfsao=Input(lambda s: s.tfcoil.tfsao),
-        dr_tf_plasma_case=Input(lambda s: s.tfcoil.dr_tf_plasma_case),
-        f_t_plant_available=Input(lambda s: s.costs.f_t_plant_available),
-        life_plant=Input(lambda s: s.costs.life_plant),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
+        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
+        dr_tf_wp_with_insulation=FromExactly(lambda s: s.tfcoil.dr_tf_wp_with_insulation),
+        dx_tf_wp_insulation=FromExactly(lambda s: s.tfcoil.dx_tf_wp_insulation),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        tfsai=FromExactly(lambda s: s.tfcoil.tfsai),
+        tfsao=FromExactly(lambda s: s.tfcoil.tfsao),
+        dr_tf_plasma_case=FromExactly(lambda s: s.tfcoil.dr_tf_plasma_case),
+        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
     ):
         return calculate_sc_tf_coil_nuclear_heating(
             dr_shld_inboard,

@@ -12,7 +12,11 @@ sites already use correctly.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 from process.core import constants
 
@@ -263,8 +267,8 @@ class NuclearHeatingBlanket(ExplicitFunction):
 
     def __call__(
         self,
-        m_blkt_total=Input(lambda s: s.fwbs.m_blkt_total),
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
+        m_blkt_total=FromExactly(lambda s: s.fwbs.m_blkt_total),
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
     ):
         return nuclear_heating_blanket(m_blkt_total, p_fusion_total_mw)
 
@@ -284,13 +288,13 @@ class NuclearHeatingShield(ExplicitFunction):
 
     def __call__(
         self,
-        itart=Input(lambda s: s.physics.itart),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        shield_density=Input(lambda s: s.ccfe_hcpb.shield_density),
-        whtshld=Input(lambda s: s.fwbs.whtshld),
-        x_blanket=Input(lambda s: s.ccfe_hcpb.x_blanket),
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
+        itart=FromExactly(lambda s: s.physics.itart),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        shield_density=FromExactly(lambda s: s.ccfe_hcpb.shield_density),
+        whtshld=FromExactly(lambda s: s.fwbs.whtshld),
+        x_blanket=FromExactly(lambda s: s.ccfe_hcpb.x_blanket),
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
     ):
         return nuclear_heating_shield(
             itart,
@@ -325,28 +329,28 @@ class NuclearHeatingMagnets(ExplicitFunction):
 
     def __call__(
         self,
-        radius_fw_channel=Input(lambda s: s.fwbs.radius_fw_channel),
-        dx_fw_module=Input(lambda s: s.fwbs.dx_fw_module),
-        dr_fw_inboard=Input(lambda s: s.build.dr_fw_inboard),
-        dr_fw_outboard=Input(lambda s: s.build.dr_fw_outboard),
-        den_steel=Input(lambda s: s.fwbs.den_steel),
-        m_blkt_total=Input(lambda s: s.fwbs.m_blkt_total),
-        vol_blkt_total=Input(lambda s: s.fwbs.vol_blkt_total),
-        whtshld=Input(lambda s: s.fwbs.whtshld),
-        vol_shld_total=Input(lambda s: s.fwbs.vol_shld_total),
-        dr_vv_inboard=Input(lambda s: s.build.dr_vv_inboard),
-        dr_vv_outboard=Input(lambda s: s.build.dr_vv_outboard),
-        m_vv=Input(lambda s: s.fwbs.m_vv),
-        vol_vv=Input(lambda s: s.fwbs.vol_vv),
-        itart=Input(lambda s: s.physics.itart),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
-        dr_blkt_inboard=Input(lambda s: s.build.dr_blkt_inboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        fw_armour_thickness=Input(lambda s: s.fwbs.fw_armour_thickness),
-        whttflgs=Input(lambda s: s.tfcoil.whttflgs),
-        m_tf_coils_total=Input(lambda s: s.tfcoil.m_tf_coils_total),
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
+        radius_fw_channel=FromExactly(lambda s: s.fwbs.radius_fw_channel),
+        dx_fw_module=FromExactly(lambda s: s.fwbs.dx_fw_module),
+        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
+        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
+        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
+        m_blkt_total=FromExactly(lambda s: s.fwbs.m_blkt_total),
+        vol_blkt_total=FromExactly(lambda s: s.fwbs.vol_blkt_total),
+        whtshld=FromExactly(lambda s: s.fwbs.whtshld),
+        vol_shld_total=FromExactly(lambda s: s.fwbs.vol_shld_total),
+        dr_vv_inboard=FromExactly(lambda s: s.build.dr_vv_inboard),
+        dr_vv_outboard=FromExactly(lambda s: s.build.dr_vv_outboard),
+        m_vv=FromExactly(lambda s: s.fwbs.m_vv),
+        vol_vv=FromExactly(lambda s: s.fwbs.vol_vv),
+        itart=FromExactly(lambda s: s.physics.itart),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
+        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        fw_armour_thickness=FromExactly(lambda s: s.fwbs.fw_armour_thickness),
+        whttflgs=FromExactly(lambda s: s.tfcoil.whttflgs),
+        m_tf_coils_total=FromExactly(lambda s: s.tfcoil.m_tf_coils_total),
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
     ):
         return calculate_nuclear_heating_magnets(
             radius_fw_channel,

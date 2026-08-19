@@ -61,10 +61,14 @@ calc_neoclassics' incomplete orchestrator -- all audit-only, see the record).
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
-from process.core import constants
 from functional_process.models.safe_math import safe_sqrt
+from process.core import constants
 
 
 def calculate_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_average):
@@ -469,8 +473,8 @@ class TotalField(ExplicitFunction):
 
     def __call__(
         self,
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        b_plasma_surface_poloidal_average=Input(
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        b_plasma_surface_poloidal_average=FromExactly(
             lambda s: s.physics.b_plasma_surface_poloidal_average
         ),
     ):
@@ -490,10 +494,10 @@ class PoloidalFieldFromRotationalTransform(ExplicitFunction):
 
     def __call__(
         self,
-        rminor=Input(lambda s: s.physics.rminor),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        iotabar=Input(lambda s: s.stellarator.iotabar),
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        iotabar=FromExactly(lambda s: s.stellarator.iotabar),
     ):
         return calculate_poloidal_field_from_rotational_transform(
             rminor, b_plasma_toroidal_on_axis, rmajor, iotabar
@@ -509,27 +513,27 @@ class StellaratorBetaAndRhoStar(ExplicitFunction):
 
     def __call__(
         self,
-        beta_fast_alpha=Input(lambda s: s.physics.beta_fast_alpha),
-        beta_beam=Input(lambda s: s.physics.beta_beam),
-        nd_plasma_electrons_vol_avg=Input(
+        beta_fast_alpha=FromExactly(lambda s: s.physics.beta_fast_alpha),
+        beta_beam=FromExactly(lambda s: s.physics.beta_beam),
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        temp_plasma_electron_density_weighted_kev=Input(
+        temp_plasma_electron_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
-        nd_plasma_ions_total_vol_avg=Input(
+        nd_plasma_ions_total_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_ions_total_vol_avg
         ),
-        temp_plasma_ion_density_weighted_kev=Input(
+        temp_plasma_ion_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_density_weighted_kev
         ),
-        b_plasma_total=Input(lambda s: s.physics.b_plasma_total),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        m_ions_total_amu=Input(lambda s: s.physics.m_ions_total_amu),
-        nd_plasma_electron_line=Input(lambda s: s.physics.nd_plasma_electron_line),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        eps=Input(lambda s: s.physics.eps),
-        rmajor=Input(lambda s: s.physics.rmajor),
+        b_plasma_total=FromExactly(lambda s: s.physics.b_plasma_total),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
+        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        eps=FromExactly(lambda s: s.physics.eps),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
     ):
         return calculate_stellarator_beta_and_rho_star(
             beta_fast_alpha,
@@ -557,10 +561,10 @@ class FusionPowerTotalsMw(ExplicitFunction):
 
     def __call__(
         self,
-        dt_power_density_plasma=Input(lambda s: s.physics.dt_power_density_plasma),
-        dhe3_power_density=Input(lambda s: s.physics.dhe3_power_density),
-        dd_power_density=Input(lambda s: s.physics.dd_power_density),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
+        dt_power_density_plasma=FromExactly(lambda s: s.physics.dt_power_density_plasma),
+        dhe3_power_density=FromExactly(lambda s: s.physics.dhe3_power_density),
+        dd_power_density=FromExactly(lambda s: s.physics.dd_power_density),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
     ):
         return calculate_fusion_power_totals_mw(
             dt_power_density_plasma, dhe3_power_density, dd_power_density, vol_plasma
@@ -586,9 +590,9 @@ class FusionTotalsNoBeam(ExplicitFunction):
 
     def __call__(
         self,
-        fusden_plasma=Input(lambda s: s.physics.fusden_plasma),
-        fusden_plasma_alpha=Input(lambda s: s.physics.fusden_plasma_alpha),
-        p_plasma_dt_mw=Input(lambda s: s.physics.p_plasma_dt_mw),
+        fusden_plasma=FromExactly(lambda s: s.physics.fusden_plasma),
+        fusden_plasma_alpha=FromExactly(lambda s: s.physics.fusden_plasma_alpha),
+        p_plasma_dt_mw=FromExactly(lambda s: s.physics.p_plasma_dt_mw),
     ):
         return calculate_fusion_totals_no_beam(
             fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
@@ -610,13 +614,13 @@ class ClippedRadiationPowers(ExplicitFunction):
 
     def __call__(
         self,
-        pden_plasma_core_rad_mw_unclipped=Input(
+        pden_plasma_core_rad_mw_unclipped=FromExactly(
             lambda s: s.physics.pden_plasma_core_rad_mw_unclipped
         ),
-        pden_plasma_outer_rad_mw_unclipped=Input(
+        pden_plasma_outer_rad_mw_unclipped=FromExactly(
             lambda s: s.physics.pden_plasma_outer_rad_mw_unclipped
         ),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
     ):
         return calculate_clipped_radiation_powers(
             pden_plasma_core_rad_mw_unclipped,
@@ -638,13 +642,13 @@ class NeutronWallLoad(ExplicitFunction):
 
     def __call__(
         self,
-        ffwal=Input(lambda s: s.physics.ffwal),
-        p_neutron_total_mw=Input(lambda s: s.physics.p_neutron_total_mw),
-        a_plasma_surface=Input(lambda s: s.physics.a_plasma_surface),
-        fhole=Input(lambda s: s.fwbs.fhole),
-        a_fw_total=Input(lambda s: s.first_wall.a_fw_total),
-        f_a_fw_outboard_hcd=Input(lambda s: s.fwbs.f_a_fw_outboard_hcd),
-        f_ster_div_single=Input(lambda s: s.fwbs.f_ster_div_single),
+        ffwal=FromExactly(lambda s: s.physics.ffwal),
+        p_neutron_total_mw=FromExactly(lambda s: s.physics.p_neutron_total_mw),
+        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
+        fhole=FromExactly(lambda s: s.fwbs.fhole),
+        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
+        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
+        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
     ):
         return calculate_neutron_wall_load(
             self.i_pflux_fw_neutron,
@@ -674,14 +678,14 @@ class HeatingAndRadiationPower(ExplicitFunction):
 
     def __call__(
         self,
-        f_p_alpha_plasma_deposited=Input(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        p_alpha_total_mw=Input(lambda s: s.physics.p_alpha_total_mw),
-        p_non_alpha_charged_mw=Input(lambda s: s.physics.p_non_alpha_charged_mw),
-        p_plasma_ohmic_mw=Input(lambda s: s.physics.p_plasma_ohmic_mw),
-        pden_plasma_rad_mw=Input(lambda s: s.physics.pden_plasma_rad_mw),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        p_hcd_injected_total_mw=Input(lambda s: s.current_drive.p_hcd_injected_total_mw),
-        f_rad=Input(lambda s: s.stellarator.f_rad),
+        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
+        p_alpha_total_mw=FromExactly(lambda s: s.physics.p_alpha_total_mw),
+        p_non_alpha_charged_mw=FromExactly(lambda s: s.physics.p_non_alpha_charged_mw),
+        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
+        pden_plasma_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_rad_mw),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        p_hcd_injected_total_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_total_mw),
+        f_rad=FromExactly(lambda s: s.stellarator.f_rad),
     ):
         return calculate_heating_and_radiation_power(
             f_p_alpha_plasma_deposited,
@@ -711,19 +715,19 @@ class RadiatedWallLoadAndFraction(ExplicitFunction):
 
     def __call__(
         self,
-        ffwal=Input(lambda s: s.physics.ffwal),
-        p_plasma_rad_mw=Input(lambda s: s.physics.p_plasma_rad_mw),
-        a_plasma_surface=Input(lambda s: s.physics.a_plasma_surface),
-        fhole=Input(lambda s: s.fwbs.fhole),
-        a_fw_total=Input(lambda s: s.first_wall.a_fw_total),
-        f_a_fw_outboard_hcd=Input(lambda s: s.fwbs.f_a_fw_outboard_hcd),
-        f_ster_div_single=Input(lambda s: s.fwbs.f_ster_div_single),
-        f_fw_rad_max=Input(lambda s: s.constraints.f_fw_rad_max),
-        f_p_alpha_plasma_deposited=Input(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        p_alpha_total_mw=Input(lambda s: s.physics.p_alpha_total_mw),
-        p_non_alpha_charged_mw=Input(lambda s: s.physics.p_non_alpha_charged_mw),
-        p_plasma_ohmic_mw=Input(lambda s: s.physics.p_plasma_ohmic_mw),
-        p_hcd_injected_total_mw=Input(lambda s: s.current_drive.p_hcd_injected_total_mw),
+        ffwal=FromExactly(lambda s: s.physics.ffwal),
+        p_plasma_rad_mw=FromExactly(lambda s: s.physics.p_plasma_rad_mw),
+        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
+        fhole=FromExactly(lambda s: s.fwbs.fhole),
+        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
+        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
+        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
+        f_fw_rad_max=FromExactly(lambda s: s.constraints.f_fw_rad_max),
+        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
+        p_alpha_total_mw=FromExactly(lambda s: s.physics.p_alpha_total_mw),
+        p_non_alpha_charged_mw=FromExactly(lambda s: s.physics.p_non_alpha_charged_mw),
+        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
+        p_hcd_injected_total_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_total_mw),
     ):
         return calculate_radiated_wall_load_and_fraction(
             self.i_pflux_fw_neutron,
@@ -752,14 +756,14 @@ class ThermalEnergyTotals(ExplicitFunction):
 
     def __call__(
         self,
-        eden_plasma_electrons_thermal_vol_avg=Input(
+        eden_plasma_electrons_thermal_vol_avg=FromExactly(
             lambda s: s.physics.eden_plasma_electrons_thermal_vol_avg
         ),
-        eden_plasma_ions_thermal_vol_avg=Input(
+        eden_plasma_ions_thermal_vol_avg=FromExactly(
             lambda s: s.physics.eden_plasma_ions_thermal_vol_avg
         ),
-        e_plasma_electrons_thermal=Input(lambda s: s.physics.e_plasma_electrons_thermal),
-        e_plasma_ions_thermal=Input(lambda s: s.physics.e_plasma_ions_thermal),
+        e_plasma_electrons_thermal=FromExactly(lambda s: s.physics.e_plasma_electrons_thermal),
+        e_plasma_ions_thermal=FromExactly(lambda s: s.physics.e_plasma_ions_thermal),
     ):
         return calculate_thermal_energy_totals(
             eden_plasma_electrons_thermal_vol_avg,
@@ -801,27 +805,27 @@ class StellaratorBetaAndStoredEnergy(ExplicitFunction):
 
     def __call__(
         self,
-        beta_fast_alpha=Input(lambda s: s.physics.beta_fast_alpha),
-        beta_beam=Input(lambda s: s.physics.beta_beam),
-        nd_plasma_electrons_vol_avg=Input(
+        beta_fast_alpha=FromExactly(lambda s: s.physics.beta_fast_alpha),
+        beta_beam=FromExactly(lambda s: s.physics.beta_beam),
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        temp_plasma_electron_density_weighted_kev=Input(
+        temp_plasma_electron_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_density_weighted_kev
         ),
-        nd_plasma_ions_total_vol_avg=Input(
+        nd_plasma_ions_total_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_ions_total_vol_avg
         ),
-        temp_plasma_ion_density_weighted_kev=Input(
+        temp_plasma_ion_density_weighted_kev=FromExactly(
             lambda s: s.physics.temp_plasma_ion_density_weighted_kev
         ),
-        b_plasma_total=Input(lambda s: s.physics.b_plasma_total),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        m_ions_total_amu=Input(lambda s: s.physics.m_ions_total_amu),
-        nd_plasma_electron_line=Input(lambda s: s.physics.nd_plasma_electron_line),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        eps=Input(lambda s: s.physics.eps),
-        rmajor=Input(lambda s: s.physics.rmajor),
+        b_plasma_total=FromExactly(lambda s: s.physics.b_plasma_total),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
+        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        eps=FromExactly(lambda s: s.physics.eps),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
     ):
         beta_total_vol_avg, e_plasma_beta, _rho_star = (
             calculate_stellarator_beta_and_rho_star(

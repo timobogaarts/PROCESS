@@ -36,7 +36,11 @@ a second formula to port -- see the audit record's "switches touched" section.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 
 def calculate_exponential_attenuation_blanket_shield_power(
@@ -111,13 +115,13 @@ class ExponentialAttenuationBlanketShieldPower(ExplicitFunction):
 
     def __call__(
         self,
-        p_neutron_total_mw=Input(lambda s: s.physics.p_neutron_total_mw),
-        pnucloss=Input(lambda s: s.fwbs.pnucloss),
-        f_p_blkt_multiplication=Input(lambda s: s.fwbs.f_p_blkt_multiplication),
-        f_a_blkt_cooling_channels=Input(lambda s: s.fwbs.f_a_blkt_cooling_channels),
-        fblli2o=Input(lambda s: s.fwbs.fblli2o),
-        fblbe=Input(lambda s: s.fwbs.fblbe),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
+        p_neutron_total_mw=FromExactly(lambda s: s.physics.p_neutron_total_mw),
+        pnucloss=FromExactly(lambda s: s.fwbs.pnucloss),
+        f_p_blkt_multiplication=FromExactly(lambda s: s.fwbs.f_p_blkt_multiplication),
+        f_a_blkt_cooling_channels=FromExactly(lambda s: s.fwbs.f_a_blkt_cooling_channels),
+        fblli2o=FromExactly(lambda s: s.fwbs.fblli2o),
+        fblbe=FromExactly(lambda s: s.fwbs.fblbe),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
     ):
         return calculate_exponential_attenuation_blanket_shield_power(
             p_neutron_total_mw,
@@ -403,38 +407,38 @@ class DetailedPowerflowBlanketShieldPower(ExplicitFunction):
 
     def __call__(
         self,
-        p_neutron_total_mw=Input(lambda s: s.physics.p_neutron_total_mw),
-        f_ster_div_single=Input(lambda s: s.fwbs.f_ster_div_single),
-        f_a_fw_outboard_hcd=Input(lambda s: s.fwbs.f_a_fw_outboard_hcd),
-        pnucloss=Input(lambda s: s.fwbs.pnucloss),
-        a_fw_inboard=Input(lambda s: s.first_wall.a_fw_inboard),
-        a_fw_outboard=Input(lambda s: s.first_wall.a_fw_outboard),
-        a_fw_total=Input(lambda s: s.first_wall.a_fw_total),
-        p_plasma_rad_mw=Input(lambda s: s.physics.p_plasma_rad_mw),
-        fhole=Input(lambda s: s.fwbs.fhole),
-        dr_fw_inboard=Input(lambda s: s.build.dr_fw_inboard),
-        dr_fw_outboard=Input(lambda s: s.build.dr_fw_outboard),
-        radius_fw_channel=Input(lambda s: s.fwbs.radius_fw_channel),
-        declfw=Input(lambda s: s.fwbs.declfw),
-        dr_blkt_inboard=Input(lambda s: s.build.dr_blkt_inboard),
-        dr_blkt_outboard=Input(lambda s: s.build.dr_blkt_outboard),
-        declblkt=Input(lambda s: s.fwbs.declblkt),
-        f_p_fw_coolant_pump_total_heat=Input(
+        p_neutron_total_mw=FromExactly(lambda s: s.physics.p_neutron_total_mw),
+        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
+        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
+        pnucloss=FromExactly(lambda s: s.fwbs.pnucloss),
+        a_fw_inboard=FromExactly(lambda s: s.first_wall.a_fw_inboard),
+        a_fw_outboard=FromExactly(lambda s: s.first_wall.a_fw_outboard),
+        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
+        p_plasma_rad_mw=FromExactly(lambda s: s.physics.p_plasma_rad_mw),
+        fhole=FromExactly(lambda s: s.fwbs.fhole),
+        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
+        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
+        radius_fw_channel=FromExactly(lambda s: s.fwbs.radius_fw_channel),
+        declfw=FromExactly(lambda s: s.fwbs.declfw),
+        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
+        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
+        declblkt=FromExactly(lambda s: s.fwbs.declblkt),
+        f_p_fw_coolant_pump_total_heat=FromExactly(
             lambda s: s.heat_transport.f_p_fw_coolant_pump_total_heat
         ),
-        p_beam_orbit_loss_mw=Input(lambda s: s.current_drive.p_beam_orbit_loss_mw),
-        f_p_blkt_coolant_pump_total_heat=Input(
+        p_beam_orbit_loss_mw=FromExactly(lambda s: s.current_drive.p_beam_orbit_loss_mw),
+        f_p_blkt_coolant_pump_total_heat=FromExactly(
             lambda s: s.heat_transport.f_p_blkt_coolant_pump_total_heat
         ),
-        f_p_blkt_multiplication=Input(lambda s: s.fwbs.f_p_blkt_multiplication),
-        declshld=Input(lambda s: s.fwbs.declshld),
-        dr_shld_inboard=Input(lambda s: s.build.dr_shld_inboard),
-        dr_shld_outboard=Input(lambda s: s.build.dr_shld_outboard),
-        f_p_shld_coolant_pump_total_heat=Input(
+        f_p_blkt_multiplication=FromExactly(lambda s: s.fwbs.f_p_blkt_multiplication),
+        declshld=FromExactly(lambda s: s.fwbs.declshld),
+        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
+        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        f_p_shld_coolant_pump_total_heat=FromExactly(
             lambda s: s.heat_transport.f_p_shld_coolant_pump_total_heat
         ),
-        p_plasma_separatrix_mw=Input(lambda s: s.physics.p_plasma_separatrix_mw),
-        f_p_div_coolant_pump_total_heat=Input(
+        p_plasma_separatrix_mw=FromExactly(lambda s: s.physics.p_plasma_separatrix_mw),
+        f_p_div_coolant_pump_total_heat=FromExactly(
             lambda s: s.heat_transport.f_p_div_coolant_pump_total_heat
         ),
     ):

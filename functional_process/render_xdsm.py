@@ -4,10 +4,17 @@ Run directly:
 
     ~/miniconda/envs/process_port/bin/python -m functional_process.render_xdsm
     ~/miniconda/envs/process_port/bin/python -m functional_process.render_xdsm sand
+    ~/miniconda/envs/process_port/bin/python -m functional_process.render_xdsm grouped
 
 The bare form writes `xdsm.html`/`dsm.html` for `total_process.GRAPH` -- the declared
 model graph, before anything is cut, driven or optimised. Re-run after porting a new
 unit to see it join the diagram.
+
+`grouped` writes `dsm_provenance.html`/`dsm_scc.html`: the same graph twice, once with
+every subsystem's nodes adjacent and once in the order `Blocking` actually runs, rows
+coloured by subsystem in both. That is `switch_elimination_design.md` § 11's
+provenance-against-structure comparison as a picture instead of a table -- see `grouped`
+below, and `_audit/grouping_visualisation.md` for what the two of them show.
 
 `sand` writes `xdsm_sand.html`/`dsm_sand.html` for **the graph the SAND solve actually
 runs**, which is a different and much more informative object: `GRAPH` with its raw
@@ -29,18 +36,37 @@ copied from the harness, where the solve is needed because the harness *compares
 PROCESS's answers -- a renderer compares against nothing.
 """
 
+import re
 import sys
 from pathlib import Path
 
+from cottax.interfaces.pytree_namespace_module import xDSMFormatterFlat
 from cottax.visualization import render_dsm_html, render_xdsm_html
 
 from functional_process.total_process import GRAPH
 
 OUTDIR = Path(__file__).parent
 
+SPELLING = xDSMFormatterFlat()
+"""How every diagram here writes a name.
+
+`cottax`'s default `NoFormat` spells a `NodePath` the way jax does -- `['Build']`, and
+`['physics']['profiles']['DensityProfile']` once names are hierarchical. Both surfaces
+name a node with string `DictKey`s, so the brackets and the quotes say nothing a reader
+of *this* port does not already know; `xDSMFormatterFlat` drops them and joins with dots.
+
+Measured, not assumed. Over every string in the struct `xdsm_struct` ships for
+`Blocking.fused(GRAPH)`: **910** bracket-spelled before, **0** after -- 159 step labels,
+159 block-membership entries, 24 in the returned-variable lists and the rest in the
+per-variable producer entries. § 13 of `switch_elimination_design.md` records this as
+"136 to 0"; the shape of the claim holds and the figure does not, which is what
+re-running a measurement is for -- that count was taken on a graph that has since grown
+from 143 nodes to 161, and it does not match this count on any grouping of today's.
+"""
+
 
 def main():
-    """Write `xdsm.html`/`dsm.html` for the declared model graph; return the XDSM path."""
+    """Write `xdsm.html`/`dsm.html` for the model graph; return the XDSM path."""
     from cottax import Blocking
 
     render_xdsm_html(
@@ -51,9 +77,97 @@ def main():
         collapse_names=True,
         blocks=True,
         collapse_models=True,
+        formatter=SPELLING,
     )
-    render_dsm_html(Blocking.fused(GRAPH), file_name="dsm", outdir=str(OUTDIR), write=True)
+    render_dsm_html(
+        Blocking.fused(GRAPH),
+        file_name="dsm",
+        outdir=str(OUTDIR),
+        write=True,
+        formatter=SPELLING,
+    )
     return OUTDIR / "xdsm.html"
+
+
+# ==================================================== provenance, until the tree lands
+_MODELS = "functional_process.models."
+_SPLIT_FILE = re.compile(r"_[A-Z](?:_.*)?$")
+
+
+def grouped(depth: int = 1):
+    """Write `dsm_provenance.html`/`dsm_scc.html`: § 11's comparison, drawn.
+
+    Both pictures are of **the driven graph** (`mda.driven_graph(GRAPH)`), not of `GRAPH`
+    -- which is what § 11.1 measured, and the only one where "structure" means anything:
+    a raw cycle has no order, so `Blocking.scc` on the undriven graph would be reporting
+    on a schedule nothing can run. `driven_graph` is a pure structural transform and
+    needs no PROCESS solve, exactly as `sand` does not.
+
+    Everything but the row order is held fixed between the two files, because the row
+    order is the entire comparison.
+    """
+    from cottax import Blocking
+    from functional_process.visualization.grouping import (
+        grouping_report,
+        provenance_order,
+        render_grouped_dsm_html,
+        structure_order,
+    )
+
+    from functional_process.mda import driven_graph
+
+    # The model tree is real now, so node names already carry their own prefix --
+    # `by_subsystem`'s module-derived relabelling was scaffolding for before it
+    # landed and is gone. `group_of` reads the grouping straight off the name.
+    graph = driven_graph(GRAPH)
+    blocking = Blocking.scc(graph)
+    report = grouping_report(blocking, depth=depth)
+    print(f"grouped: {report.summary()}")
+    for block in report.crossing:
+        print(
+            "  CROSSES: "
+            + ", ".join(sorted(".".join(g) for g in block.named_groups))
+            + " -- "
+            + ", ".join(sorted(SPELLING.node((m, graph[m])) for m in block.members))
+        )
+
+    common = {
+        "depth": depth,
+        "outdir": str(OUTDIR),
+        "write": True,
+        "formatter": SPELLING,
+    }
+    render_grouped_dsm_html(
+        blocking,
+        order=provenance_order(graph.nodes, depth=depth),
+        title="PROCESS port -- ordered by provenance",
+        subtitle=(
+            "The driven model graph with every subsystem's nodes adjacent, "
+            "subsystems in declaration order. <b>This is not a run order</b> -- "
+            "nothing here consulted an edge -- so a mark above the diagonal is not "
+            "feedback, it is a place where provenance and dependency disagree. "
+            "Compare with <b>dsm_scc.html</b>: the same graph, the same colours and "
+            "the same cells, in the order it runs. "
+            f"{report.summary()}"
+        ),
+        file_name="dsm_provenance",
+        **common,
+    )
+    render_grouped_dsm_html(
+        blocking,
+        order=structure_order(blocking),
+        title="PROCESS port -- ordered by structure (SCC)",
+        subtitle=(
+            "The same graph in <code>Blocking.scc</code>'s order: the order it actually "
+            "runs in. A subsystem that is also a schedulable unit shows as one unbroken "
+            "colour band; one interleaved with others shows as stripes, and is a "
+            "label rather than a module. Compare with <b>dsm_provenance.html</b>. "
+            f"{report.summary()}"
+        ),
+        file_name="dsm_scc",
+        **common,
+    )
+    return OUTDIR / "dsm_provenance.html"
 
 
 def cold_reference(input_file=None):
@@ -153,39 +267,62 @@ def sand():
             collapse_names=True,
             blocks=True,
             collapse_models=True,
+            formatter=SPELLING,
         )
-        render_dsm_html(blocking, file_name=f"dsm_{name[5:]}", outdir=str(OUTDIR), write=True)
+        render_dsm_html(
+            blocking,
+            file_name=f"dsm_{name[5:]}",
+            outdir=str(OUTDIR),
+            write=True,
+            formatter=SPELLING,
+        )
         print(f"  {name}: {len(blocking.blocks)} blocks")
     render_dsm_html(
-        Blocking.scc(combined), file_name="dsm_sand", outdir=str(OUTDIR), write=True
+        Blocking.scc(combined),
+        file_name="dsm_sand",
+        outdir=str(OUTDIR),
+        write=True,
+        formatter=SPELLING,
     )
     return OUTDIR / "xdsm_sand.html"
 
 
-USAGE = """usage: python -m functional_process.render_xdsm [sand]
+MODES = {"sand": sand, "grouped": grouped}
+
+USAGE = """usage: python -m functional_process.render_xdsm [sand|grouped]
 
   (no argument)  the declared model graph  -> xdsm.html, dsm.html        (fast)
   sand           the assembled SAND graph  -> xdsm_sand.html,
-                                              xdsm_sand_fused.html,
                                               dsm_sand.html
+  grouped        provenance vs. structure  -> dsm_provenance.html,
+                                              dsm_scc.html               (fast)
 """
 
 
-def wants_sand(argv) -> bool:
-    """Whether `argv` asks for the SAND graph.
+def mode(argv):
+    """Which renderer `argv` asks for, as the function to call.
 
-    Accepts `sand`, `--sand` and `-sand`, because there is no reason to make
-    somebody guess which one this module chose. Anything else is a usage error
-    rather than a silent fall-through to the other graph -- a mistyped argument
-    that quietly renders a *different* graph and prints "wrote ..." is worse than
-    one that says it does not understand.
+    Each mode is accepted bare, `--`-prefixed and `-`-prefixed, because there is no
+    reason to make somebody guess which one this module chose. Anything else is a usage
+    error rather than a silent fall-through to another graph -- a mistyped argument that
+    quietly renders a *different* graph and prints "wrote ..." is worse than one that
+    says it does not understand. More than one mode at once is the same kind of mistake:
+    only one path can be reported as the one written.
     """
-    rest = [a for a in argv if a not in ("sand", "--sand", "-sand")]
+    asked = [MODES[a.lstrip("-")] for a in argv if a.lstrip("-") in MODES]
+    rest = [a for a in argv if a.lstrip("-") not in MODES]
     if rest:
         raise SystemExit(f"unrecognised argument(s): {' '.join(rest)}\n\n{USAGE}")
-    return len(argv) > 0
+    if len(asked) > 1:
+        raise SystemExit(f"one mode at a time, not {len(asked)}\n\n{USAGE}")
+    return asked[0] if asked else main
+
+
+def wants_sand(argv) -> bool:
+    """Whether `argv` asks for the SAND graph. Kept for callers that predate `mode`."""
+    return mode(argv) is sand
 
 
 if __name__ == "__main__":
-    path = sand() if wants_sand(sys.argv[1:]) else main()
+    path = mode(sys.argv[1:])()
     print(f"wrote {path}")

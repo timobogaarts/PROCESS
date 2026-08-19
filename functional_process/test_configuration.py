@@ -9,6 +9,8 @@ selects is dead code that passes its own tests.
 
 import pytest
 
+from cottax.interfaces.pytree_namespace_module import spell_flat
+
 from functional_process.configuration import Alternative, Configuration, Switch
 from functional_process.models.stellarator.density_limits import SudoDensityLimit
 from functional_process.models.stellarator.initialization import PulseDurations
@@ -96,9 +98,13 @@ def test_ipowerflow_decides_whether_the_graph_has_a_cycle():
     coupled = graph_for(Configuration({".heat_transport.ipowerflow": 1}))
     uncoupled = graph_for(Configuration({".heat_transport.ipowerflow": 0}))
 
-    divertor_cycle = {"['Divertor']", "['AFwTotalWithPowerflow']"}
-    assert divertor_cycle in [{n.path_str() for n in c} for c in coupled.cycles]
-    assert divertor_cycle not in [{n.path_str() for n in c} for c in uncoupled.cycles]
+    # Spelled with `spell_flat`, not `path_str()`: node names are hierarchical now
+    # (`stellarator.Divertor`), and jax's own bracket spelling of a three-key path is
+    # unreadable. `AFwTotalWithPowerflow` is still bare because switch arms are not yet
+    # placed in the model tree -- see `path_refactor.md` §B.4.
+    divertor_cycle = {"stellarator.Divertor", "AFwTotalWithPowerflow"}
+    assert divertor_cycle in [{spell_flat(n) for n in c} for c in coupled.cycles]
+    assert divertor_cycle not in [{spell_flat(n) for n in c} for c in uncoupled.cycles]
 
 
 def test_process_default_configuration_matches_process_defaults():

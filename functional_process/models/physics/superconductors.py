@@ -20,6 +20,7 @@ reasoning, as `coils.py`'s own three unwrapped functions (`j_crit_cable_from_fra
 """
 
 import jax.numpy as jnp
+
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 
@@ -536,8 +537,8 @@ def western_superconducting_nb3sn(
 #
 #       def __call__(
 #           self,
-#           t_helium=Input(lambda s: s.tfcoil.t_helium),  # sketch only -- VarPath TBD
-#           b_max=Input(lambda s: s.tfcoil.b_max),  # sketch only -- VarPath TBD
+#           t_helium=FromExactly(lambda s: s.tfcoil.t_helium),  # sketch only -- VarPath TBD
+#           b_max=FromExactly(lambda s: s.tfcoil.b_max),  # sketch only -- VarPath TBD
 #           strain=-0.005,  # static, per jcrit_from_material
 #           b_c20max=32.97,  # static literal, i_tf_sc_mat == 1
 #           temp_c0max=16.06,  # static literal, i_tf_sc_mat == 1

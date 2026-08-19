@@ -39,7 +39,7 @@ not the same gate reused, see the record's data-footprint table.
 
 At the **node** level, this conditional/unconditional read-then-write of `.costs.cplife`
 within one function body is a genuine Shape B self-loop (`next_steps.md` §5): a node
-whose own `Output` and `Input` name the identical `VarPath`, which `cottax.spec`'s
+whose own `Output` and `FromExactly` name the identical `VarPath`, which `cottax.spec`'s
 `__check_init__` refuses outright (`reads [...], which it also owns`). `CplifeAvail`
 (shared by `Avail`/`Avail2`) and `CplifeAvailSt` isolate exactly that self-reference as
 `FixedPointFunction` declarations -- `Avail`/`Avail2`/`AvailSt` themselves are now
@@ -67,7 +67,7 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     FixedPointFunction,
-    Input,
+    FromExactly,
     Output,
 )
 
@@ -1043,7 +1043,7 @@ def calculate_avail_st(
 # shape already used in `stellarator_F_tf_nuclear_heating.py`.
 #
 # `.costs.cplife` **also** self-references within `avail`/`avail_2`/`avail_st` themselves
-# (Shape B, `next_steps.md` §5: a node whose own `Output` and `Input` name the identical
+# (Shape B, `next_steps.md` §5: a node whose own `Output` and `FromExactly` name the identical
 # `VarPath`) -- `to_graph(Avail(...))` raised `ValueError: reads ['.costs.cplife'], which
 # it also owns` directly from `cottax.spec`'s `__check_init__` before this was split.
 # `CplifeAvail` (shared by `Avail`/`Avail2` -- their `itart == 1` cplife-adjustment
@@ -1073,9 +1073,9 @@ class CpLifetimeSuperconducting(ExplicitFunction):
 
     def __call__(
         self,
-        neut_flux_cp=Input(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=Input(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        life_plant=Input(lambda s: s.costs.life_plant),
+        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
+        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
     ):
         return calculate_cp_lifetime_superconducting(
             neut_flux_cp, flu_tf_neutron_fast_max, life_plant
@@ -1092,9 +1092,9 @@ class CpLifetimeResistive(ExplicitFunction):
 
     def __call__(
         self,
-        cpstflnc=Input(lambda s: s.costs.cpstflnc),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_plant=Input(lambda s: s.costs.life_plant),
+        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
     ):
         return calculate_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant)
 
@@ -1111,18 +1111,18 @@ class WardTaylorAvailability(ExplicitFunction):
 
     def __call__(
         self,
-        life_div_fpy=Input(lambda s: s.costs.life_div_fpy),
-        life_blkt_fpy=Input(lambda s: s.fwbs.life_blkt_fpy),
-        t_div_replace_yrs=Input(lambda s: s.costs.t_div_replace_yrs),
-        t_blkt_replace_yrs=Input(lambda s: s.costs.t_blkt_replace_yrs),
-        tcomrepl=Input(lambda s: s.costs.tcomrepl),
-        uubop=Input(lambda s: s.costs.uubop),
-        uucd=Input(lambda s: s.costs.uucd),
-        uudiv=Input(lambda s: s.costs.uudiv),
-        uufuel=Input(lambda s: s.costs.uufuel),
-        uufw=Input(lambda s: s.costs.uufw),
-        uumag=Input(lambda s: s.costs.uumag),
-        uuves=Input(lambda s: s.costs.uuves),
+        life_div_fpy=FromExactly(lambda s: s.costs.life_div_fpy),
+        life_blkt_fpy=FromExactly(lambda s: s.fwbs.life_blkt_fpy),
+        t_div_replace_yrs=FromExactly(lambda s: s.costs.t_div_replace_yrs),
+        t_blkt_replace_yrs=FromExactly(lambda s: s.costs.t_blkt_replace_yrs),
+        tcomrepl=FromExactly(lambda s: s.costs.tcomrepl),
+        uubop=FromExactly(lambda s: s.costs.uubop),
+        uucd=FromExactly(lambda s: s.costs.uucd),
+        uudiv=FromExactly(lambda s: s.costs.uudiv),
+        uufuel=FromExactly(lambda s: s.costs.uufuel),
+        uufw=FromExactly(lambda s: s.costs.uufw),
+        uumag=FromExactly(lambda s: s.costs.uumag),
+        uuves=FromExactly(lambda s: s.costs.uuves),
     ):
         return calculate_ward_taylor_availability(
             life_div_fpy,
@@ -1317,13 +1317,13 @@ class CplifeAvail(FixedPointFunction):
 
     def step(
         self,
-        cplife=Input(lambda s: s.costs.cplife),
-        neut_flux_cp=Input(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=Input(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        cpstflnc=Input(lambda s: s.costs.cpstflnc),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_plant=Input(lambda s: s.costs.life_plant),
-        f_t_plant_available=Input(lambda s: s.costs.f_t_plant_available),
+        cplife=FromExactly(lambda s: s.costs.cplife),
+        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
+        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
+        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
     ):
         return calculate_cplife_next(
             cplife,
@@ -1366,12 +1366,12 @@ class CplifeAvailSt(FixedPointFunction):
 
     def step(
         self,
-        neut_flux_cp=Input(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=Input(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        cpstflnc=Input(lambda s: s.costs.cpstflnc),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_plant=Input(lambda s: s.costs.life_plant),
-        f_t_plant_available=Input(lambda s: s.costs.f_t_plant_available),
+        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
+        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
+        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
     ):
         return calculate_cplife_avail_st_next(
             neut_flux_cp,
@@ -1395,12 +1395,12 @@ class Avail(ExplicitFunction):
     alternative to `Avail2`/`AvailSt`: `.costs.i_plant_availability` selects at most one
     of the three branch nodes at graph-assembly time.
 
-    `cplife` is read here as a plain current-value `Input` (`.costs.cplife`, i.e.
+    `cplife` is read here as a plain current-value `FromExactly` (`.costs.cplife`, i.e.
     `CplifeAvail`'s output once both are registered together) and passed to
     `calculate_avail` unchanged -- but its value is **provably inert** for every output
     this node declares: inspecting `calculate_avail`'s body shows `cplife`/`cplife_in`
     feed *only* the `cplife_mod` return slot, which this node discards. Kept as a real
-    `Input` anyway (matching what a full port of `avail()`'s real read/write order would
+    `FromExactly` anyway (matching what a full port of `avail()`'s real read/write order would
     show, and the task's own recipe) rather than a magic constant, even though any value
     would do here -- unlike `AvailSt` below, where the same-looking read is load-bearing.
     """
@@ -1416,18 +1416,18 @@ class Avail(ExplicitFunction):
 
     def __call__(
         self,
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
-        life_fw_fpy=Input(lambda s: s.fwbs.life_fw_fpy),
-        abktflnc=Input(lambda s: s.costs.abktflnc),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_dpa=Input(lambda s: s.costs.life_dpa),
-        life_plant=Input(lambda s: s.costs.life_plant),
-        pflux_div_heat_load_mw=Input(lambda s: s.divertor.pflux_div_heat_load_mw),
-        adivflnc=Input(lambda s: s.costs.adivflnc),
-        t_plant_pulse_total=Input(lambda s: s.times.t_plant_pulse_total),
-        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
-        f_t_plant_available=Input(lambda s: s.costs.f_t_plant_available),
-        cplife=Input(lambda s: s.costs.cplife),
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
+        life_fw_fpy=FromExactly(lambda s: s.fwbs.life_fw_fpy),
+        abktflnc=FromExactly(lambda s: s.costs.abktflnc),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_dpa=FromExactly(lambda s: s.costs.life_dpa),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        pflux_div_heat_load_mw=FromExactly(lambda s: s.divertor.pflux_div_heat_load_mw),
+        adivflnc=FromExactly(lambda s: s.costs.adivflnc),
+        t_plant_pulse_total=FromExactly(lambda s: s.times.t_plant_pulse_total),
+        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
+        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
+        cplife=FromExactly(lambda s: s.costs.cplife),
     ):
         (
             life_blkt_fpy,
@@ -1468,7 +1468,7 @@ class Avail2(ExplicitFunction):
     `calculate_redun_vac`'s docstring). Mutually exclusive alternative to `Avail`/
     `AvailSt`.
 
-    `cplife` is read here as a plain current-value `Input`, same provably-inert role as
+    `cplife` is read here as a plain current-value `FromExactly`, same provably-inert role as
     in `Avail` -- see that class's docstring (`calculate_avail_2`'s `cplife`/`cplife_in`
     also feed only the discarded `cplife_mod` slot; verified the same way).
     """
@@ -1489,33 +1489,33 @@ class Avail2(ExplicitFunction):
 
     def __call__(
         self,
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
-        abktflnc=Input(lambda s: s.costs.abktflnc),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_dpa=Input(lambda s: s.costs.life_dpa),
-        adivflnc=Input(lambda s: s.costs.adivflnc),
-        pflux_div_heat_load_mw=Input(lambda s: s.divertor.pflux_div_heat_load_mw),
-        life_plant=Input(lambda s: s.costs.life_plant),
-        num_rh_systems=Input(lambda s: s.costs.num_rh_systems),
-        temp_tf_superconductor_margin_min=Input(
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
+        abktflnc=FromExactly(lambda s: s.costs.abktflnc),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_dpa=FromExactly(lambda s: s.costs.life_dpa),
+        adivflnc=FromExactly(lambda s: s.costs.adivflnc),
+        pflux_div_heat_load_mw=FromExactly(lambda s: s.divertor.pflux_div_heat_load_mw),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        num_rh_systems=FromExactly(lambda s: s.costs.num_rh_systems),
+        temp_tf_superconductor_margin_min=FromExactly(
             lambda s: s.tfcoil.temp_tf_superconductor_margin_min
         ),
-        temp_cs_superconductor_margin_min=Input(
+        temp_cs_superconductor_margin_min=FromExactly(
             lambda s: s.tfcoil.temp_cs_superconductor_margin_min
         ),
-        conf_mag=Input(lambda s: s.costs.conf_mag),
-        temp_margin=Input(lambda s: s.tfcoil.temp_margin),
-        div_prob_fail=Input(lambda s: s.costs.div_prob_fail),
-        div_umain_time=Input(lambda s: s.costs.div_umain_time),
-        div_nu=Input(lambda s: s.costs.div_nu),
-        div_nref=Input(lambda s: s.costs.div_nref),
-        fwbs_prob_fail=Input(lambda s: s.costs.fwbs_prob_fail),
-        fwbs_umain_time=Input(lambda s: s.costs.fwbs_umain_time),
-        fwbs_nu=Input(lambda s: s.costs.fwbs_nu),
-        fwbs_nref=Input(lambda s: s.costs.fwbs_nref),
-        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_total=Input(lambda s: s.times.t_plant_pulse_total),
-        cplife=Input(lambda s: s.costs.cplife),
+        conf_mag=FromExactly(lambda s: s.costs.conf_mag),
+        temp_margin=FromExactly(lambda s: s.tfcoil.temp_margin),
+        div_prob_fail=FromExactly(lambda s: s.costs.div_prob_fail),
+        div_umain_time=FromExactly(lambda s: s.costs.div_umain_time),
+        div_nu=FromExactly(lambda s: s.costs.div_nu),
+        div_nref=FromExactly(lambda s: s.costs.div_nref),
+        fwbs_prob_fail=FromExactly(lambda s: s.costs.fwbs_prob_fail),
+        fwbs_umain_time=FromExactly(lambda s: s.costs.fwbs_umain_time),
+        fwbs_nu=FromExactly(lambda s: s.costs.fwbs_nu),
+        fwbs_nref=FromExactly(lambda s: s.costs.fwbs_nref),
+        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
+        t_plant_pulse_total=FromExactly(lambda s: s.times.t_plant_pulse_total),
+        cplife=FromExactly(lambda s: s.costs.cplife),
     ):
         (
             life_blkt_fpy,
@@ -1615,37 +1615,37 @@ class AvailSt(ExplicitFunction):
 
     def __call__(
         self,
-        abktflnc=Input(lambda s: s.costs.abktflnc),
-        pflux_fw_neutron_mw=Input(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_dpa=Input(lambda s: s.costs.life_dpa),
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
-        adivflnc=Input(lambda s: s.costs.adivflnc),
-        pflux_div_heat_load_mw=Input(lambda s: s.divertor.pflux_div_heat_load_mw),
-        life_plant=Input(lambda s: s.costs.life_plant),
-        neut_flux_cp=Input(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=Input(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        cpstflnc=Input(lambda s: s.costs.cpstflnc),
-        tmain=Input(lambda s: s.costs.tmain),
-        temp_tf_superconductor_margin_min=Input(
+        abktflnc=FromExactly(lambda s: s.costs.abktflnc),
+        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
+        life_dpa=FromExactly(lambda s: s.costs.life_dpa),
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
+        adivflnc=FromExactly(lambda s: s.costs.adivflnc),
+        pflux_div_heat_load_mw=FromExactly(lambda s: s.divertor.pflux_div_heat_load_mw),
+        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
+        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
+        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
+        tmain=FromExactly(lambda s: s.costs.tmain),
+        temp_tf_superconductor_margin_min=FromExactly(
             lambda s: s.tfcoil.temp_tf_superconductor_margin_min
         ),
-        temp_cs_superconductor_margin_min=Input(
+        temp_cs_superconductor_margin_min=FromExactly(
             lambda s: s.tfcoil.temp_cs_superconductor_margin_min
         ),
-        conf_mag=Input(lambda s: s.costs.conf_mag),
-        temp_margin=Input(lambda s: s.tfcoil.temp_margin),
-        div_prob_fail=Input(lambda s: s.costs.div_prob_fail),
-        div_umain_time=Input(lambda s: s.costs.div_umain_time),
-        div_nu=Input(lambda s: s.costs.div_nu),
-        div_nref=Input(lambda s: s.costs.div_nref),
-        fwbs_prob_fail=Input(lambda s: s.costs.fwbs_prob_fail),
-        fwbs_umain_time=Input(lambda s: s.costs.fwbs_umain_time),
-        fwbs_nu=Input(lambda s: s.costs.fwbs_nu),
-        fwbs_nref=Input(lambda s: s.costs.fwbs_nref),
-        num_rh_systems=Input(lambda s: s.costs.num_rh_systems),
-        u_unplanned_cp=Input(lambda s: s.costs.u_unplanned_cp),
-        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_total=Input(lambda s: s.times.t_plant_pulse_total),
+        conf_mag=FromExactly(lambda s: s.costs.conf_mag),
+        temp_margin=FromExactly(lambda s: s.tfcoil.temp_margin),
+        div_prob_fail=FromExactly(lambda s: s.costs.div_prob_fail),
+        div_umain_time=FromExactly(lambda s: s.costs.div_umain_time),
+        div_nu=FromExactly(lambda s: s.costs.div_nu),
+        div_nref=FromExactly(lambda s: s.costs.div_nref),
+        fwbs_prob_fail=FromExactly(lambda s: s.costs.fwbs_prob_fail),
+        fwbs_umain_time=FromExactly(lambda s: s.costs.fwbs_umain_time),
+        fwbs_nu=FromExactly(lambda s: s.costs.fwbs_nu),
+        fwbs_nref=FromExactly(lambda s: s.costs.fwbs_nref),
+        num_rh_systems=FromExactly(lambda s: s.costs.num_rh_systems),
+        u_unplanned_cp=FromExactly(lambda s: s.costs.u_unplanned_cp),
+        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
+        t_plant_pulse_total=FromExactly(lambda s: s.times.t_plant_pulse_total),
     ):
         if self.i_tf_sup == 1:
             cplife = calculate_cp_lifetime_superconducting(

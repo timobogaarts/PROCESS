@@ -44,9 +44,9 @@ from functional_process.models.stellarator.coils.calculate import (
     calculate_current,
     calculate_horizontal_ports,
     calculate_inductance,
+    calculate_len_tf_coil,
     calculate_plasma_facing_coil_area,
     calculate_stored_magnetic_energy,
-    calculate_len_tf_coil,
     calculate_tfcryoarea,
     calculate_vertical_ports,
     calculate_winding_pack_geometry,
@@ -866,7 +866,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
 
 def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
     """`WindingPackTotalSizePost` reads `.stellarator.wp_width_r_min` -- the `VarPath`
-    `Intersect`'s `RootFind` problem owns -- as an ordinary `Input`, alongside owning
+    `Intersect`'s `RootFind` problem owns -- as an ordinary `FromExactly`, alongside owning
     `.tfcoil.j_tf_wp` itself (see above). Two different edges, not a second self-loop.
     """
     post = WindingPackTotalSizePost()

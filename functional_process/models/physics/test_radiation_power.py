@@ -600,8 +600,8 @@ class TestRadiationPowers(Tier1Contract):
 # `calculate_impurity_radiation_totals` (the pure function, tested above) is unchanged.
 # What changes here is only `ImpurityRadiationTotals.__call__`'s *signature*:
 # `.impurity_radiation.f_nd_impurity_electron_array` is now fourteen individually
-# `SequenceKey`-addressed `Input`s (one per species index) instead of one whole-array
-# `Input`, matching `physics_B_composition.py`'s identical treatment of the same field.
+# `SequenceKey`-addressed `FromExactly`s (one per species index) instead of one whole-array
+# `FromExactly`, matching `physics_B_composition.py`'s identical treatment of the same field.
 # `imp_indices` still selects a static gather over them before forwarding to the pure
 # function -- these checks confirm the node still assembles and still computes the
 # identical answer, not just that the signature changed shape.
@@ -634,7 +634,7 @@ def _node_kwargs_from_totals_kwargs(kwargs, full_fractions):
 
 def test_impurity_radiation_totals_assembles_alone():
     """`ImpurityRadiationTotals` must assemble on its own with the new per-index
-    signature -- fourteen `Input`s on `f_nd_impurity_electron_array`'s indices, none of
+    signature -- fourteen `FromExactly`s on `f_nd_impurity_electron_array`'s indices, none of
     them the whole-array `VarPath`.
     """
     node = ImpurityRadiationTotals(imp_indices=(_HYDROGEN, _ARGON))

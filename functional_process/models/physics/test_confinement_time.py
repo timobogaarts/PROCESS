@@ -17,7 +17,7 @@ backdoor" technique used throughout this harness.
 """
 
 import pytest
-from cottax.interfaces.pytree_namespace_module import Input
+from cottax.interfaces.pytree_namespace_module import FromExactly
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.physics.confinement_time import (
@@ -2174,5 +2174,5 @@ def test_rebound_signature_rejects_an_unknown_parameter():
     with pytest.raises(ValueError, match="no parameter"):
         _rebound_signature(
             ConfinementTime.__call__,
-            not_a_parameter=Input(lambda s: s.physics.q95),
+            not_a_parameter=FromExactly(lambda s: s.physics.q95),
         )

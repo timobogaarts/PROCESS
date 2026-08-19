@@ -493,7 +493,7 @@ def test_plasma_composition_owns_h_and_he_fractions():
 
 def test_calculate_effective_charge_ionisation_profiles_assembles_alone():
     """`CalculateEffectiveChargeIonisationProfiles` reads all fourteen indices as
-    individual `Input`s (no whole-array read left anywhere in this file) and must still
+    individual `FromExactly`s (no whole-array read left anywhere in this file) and must still
     assemble on its own.
     """
     graph = to_graph(CalculateEffectiveChargeIonisationProfiles())

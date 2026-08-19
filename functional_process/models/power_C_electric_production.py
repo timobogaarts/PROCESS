@@ -15,7 +15,11 @@ a static, compile-time-known shape; there is no dynamic-shape difficulty here at
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 from process.models.power import PumpingPowerModelTypes
 
@@ -294,7 +298,7 @@ def calculate_plant_electric_production(
     **`p_plant_electric_gross_mw`/`p_turbine_loss_mw`/`p_plant_electric_recirc_mw`/
     `p_plant_electric_net_mw`/`f_p_plant_electric_recirc` are a conditional-ownership
     pass-through** on the static switch `ireactor` (`.costs.ireactor`, unit #18's
-    field, not yet ported -- an ordinary `Input`, not a call into unit #18's
+    field, not yet ported -- an ordinary `FromExactly`, not a call into unit #18's
     methods): PROCESS only computes these five when `ireactor == 1`; otherwise they
     keep whatever value they entered this call with. `power_profiles_over_time` is
     then called **unconditionally**, using `p_plant_electric_gross_mw`/
@@ -455,28 +459,28 @@ class Acpow(ExplicitFunction):
 
     def __call__(
         self,
-        p_tf_electric_supplies_mw=Input(
+        p_tf_electric_supplies_mw=FromExactly(
             lambda s: s.heat_transport.p_tf_electric_supplies_mw
         ),
-        srcktpm=Input(lambda s: s.pf_power.srcktpm),
-        peakmva=Input(lambda s: s.heat_transport.peakmva),
-        p_hcd_electric_total_mw=Input(
+        srcktpm=FromExactly(lambda s: s.pf_power.srcktpm),
+        peakmva=FromExactly(lambda s: s.heat_transport.peakmva),
+        p_hcd_electric_total_mw=FromExactly(
             lambda s: s.heat_transport.p_hcd_electric_total_mw
         ),
-        p_cryo_plant_electric_mw=Input(
+        p_cryo_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_cryo_plant_electric_mw
         ),
-        vachtmw=Input(lambda s: s.heat_transport.vachtmw),
-        p_coolant_pump_elec_total_mw=Input(
+        vachtmw=FromExactly(lambda s: s.heat_transport.vachtmw),
+        p_coolant_pump_elec_total_mw=FromExactly(
             lambda s: s.heat_transport.p_coolant_pump_elec_total_mw
         ),
-        p_tritium_plant_electric_mw=Input(
+        p_tritium_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_tritium_plant_electric_mw
         ),
-        p_plant_electric_base_total_mw=Input(
+        p_plant_electric_base_total_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_electric_base_total_mw
         ),
-        fmgdmw=Input(lambda s: s.heat_transport.fmgdmw),
+        fmgdmw=FromExactly(lambda s: s.heat_transport.fmgdmw),
     ):
         return calculate_acpow(
             p_tf_electric_supplies_mw,
@@ -534,45 +538,45 @@ class PowerProfilesOverTime(ExplicitFunction):
 
     def __call__(
         self,
-        p_plant_electric_base_total_mw=Input(
+        p_plant_electric_base_total_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_electric_base_total_mw
         ),
-        p_cryo_plant_electric_mw=Input(
+        p_cryo_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_cryo_plant_electric_mw
         ),
-        p_tritium_plant_electric_mw=Input(
+        p_tritium_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_tritium_plant_electric_mw
         ),
-        vachtmw=Input(lambda s: s.heat_transport.vachtmw),
-        p_tf_electric_supplies_mw=Input(
+        vachtmw=FromExactly(lambda s: s.heat_transport.vachtmw),
+        p_tf_electric_supplies_mw=FromExactly(
             lambda s: s.heat_transport.p_tf_electric_supplies_mw
         ),
-        p_pf_electric_supplies_mw=Input(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
-        p_coolant_pump_elec_total_mw=Input(
+        p_pf_electric_supplies_mw=FromExactly(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
+        p_coolant_pump_elec_total_mw=FromExactly(
             lambda s: s.heat_transport.p_coolant_pump_elec_total_mw
         ),
-        p_hcd_electric_total_mw=Input(
+        p_hcd_electric_total_mw=FromExactly(
             lambda s: s.heat_transport.p_hcd_electric_total_mw
         ),
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
-        p_plant_electric_gross_mw=Input(
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
+        p_plant_electric_gross_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_electric_gross_mw
         ),
-        p_plant_electric_net_mw=Input(
+        p_plant_electric_net_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_electric_net_mw
         ),
-        t_plant_pulse_coil_precharge=Input(
+        t_plant_pulse_coil_precharge=FromExactly(
             lambda s: s.times.t_plant_pulse_coil_precharge
         ),
-        t_plant_pulse_plasma_current_ramp_up=Input(
+        t_plant_pulse_plasma_current_ramp_up=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_up
         ),
-        t_plant_pulse_fusion_ramp=Input(lambda s: s.times.t_plant_pulse_fusion_ramp),
-        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_plasma_current_ramp_down=Input(
+        t_plant_pulse_fusion_ramp=FromExactly(lambda s: s.times.t_plant_pulse_fusion_ramp),
+        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
+        t_plant_pulse_plasma_current_ramp_down=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_down
         ),
-        t_plant_pulse_dwell=Input(lambda s: s.times.t_plant_pulse_dwell),
+        t_plant_pulse_dwell=FromExactly(lambda s: s.times.t_plant_pulse_dwell),
     ):
         return power_profiles_over_time(
             p_plant_electric_base_total_mw,
@@ -662,77 +666,77 @@ class PlantElectricProduction(ExplicitFunction):
 
     def __call__(
         self,
-        p_cp_coolant_pump_elec=Input(lambda s: s.tfcoil.p_cp_coolant_pump_elec),
-        p_plant_electric_base=Input(lambda s: s.heat_transport.p_plant_electric_base),
-        a_plant_floor_effective=Input(lambda s: s.buildings.a_plant_floor_effective),
-        pflux_plant_floor_electric=Input(
+        p_cp_coolant_pump_elec=FromExactly(lambda s: s.tfcoil.p_cp_coolant_pump_elec),
+        p_plant_electric_base=FromExactly(lambda s: s.heat_transport.p_plant_electric_base),
+        a_plant_floor_effective=FromExactly(lambda s: s.buildings.a_plant_floor_effective),
+        pflux_plant_floor_electric=FromExactly(
             lambda s: s.heat_transport.pflux_plant_floor_electric
         ),
-        p_cryo_plant_electric_mw=Input(
+        p_cryo_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_cryo_plant_electric_mw
         ),
-        p_tf_electric_supplies_mw=Input(
+        p_tf_electric_supplies_mw=FromExactly(
             lambda s: s.heat_transport.p_tf_electric_supplies_mw
         ),
-        p_tritium_plant_electric_mw=Input(
+        p_tritium_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_tritium_plant_electric_mw
         ),
-        vachtmw=Input(lambda s: s.heat_transport.vachtmw),
-        p_pf_electric_supplies_mw=Input(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
-        p_hcd_electric_loss_mw=Input(lambda s: s.heat_transport.p_hcd_electric_loss_mw),
-        p_coolant_pump_loss_total_mw=Input(
+        vachtmw=FromExactly(lambda s: s.heat_transport.vachtmw),
+        p_pf_electric_supplies_mw=FromExactly(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
+        p_hcd_electric_loss_mw=FromExactly(lambda s: s.heat_transport.p_hcd_electric_loss_mw),
+        p_coolant_pump_loss_total_mw=FromExactly(
             lambda s: s.heat_transport.p_coolant_pump_loss_total_mw
         ),
-        p_div_secondary_heat_mw=Input(
+        p_div_secondary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_div_secondary_heat_mw
         ),
-        p_shld_secondary_heat_mw=Input(
+        p_shld_secondary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_shld_secondary_heat_mw
         ),
-        p_hcd_secondary_heat_mw=Input(
+        p_hcd_secondary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_hcd_secondary_heat_mw
         ),
-        p_tf_nuclear_heat_mw=Input(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
-        p_plant_primary_heat_mw=Input(
+        p_tf_nuclear_heat_mw=FromExactly(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
+        p_plant_primary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_primary_heat_mw
         ),
-        p_blkt_liquid_breeder_heat_deposited_mw=Input(
+        p_blkt_liquid_breeder_heat_deposited_mw=FromExactly(
             lambda s: s.power.p_blkt_liquid_breeder_heat_deposited_mw
         ),
-        eta_turbine=Input(lambda s: s.heat_transport.eta_turbine),
-        etath_liq=Input(lambda s: s.heat_transport.etath_liq),
-        p_hcd_electric_total_mw=Input(
+        eta_turbine=FromExactly(lambda s: s.heat_transport.eta_turbine),
+        etath_liq=FromExactly(lambda s: s.heat_transport.etath_liq),
+        p_hcd_electric_total_mw=FromExactly(
             lambda s: s.heat_transport.p_hcd_electric_total_mw
         ),
-        p_coolant_pump_elec_total_mw=Input(
+        p_coolant_pump_elec_total_mw=FromExactly(
             lambda s: s.heat_transport.p_coolant_pump_elec_total_mw
         ),
-        p_plant_electric_gross_mw=Input(
+        p_plant_electric_gross_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_electric_gross_mw
         ),
-        p_turbine_loss_mw=Input(lambda s: s.power.p_turbine_loss_mw),
-        p_plant_electric_recirc_mw=Input(
+        p_turbine_loss_mw=FromExactly(lambda s: s.power.p_turbine_loss_mw),
+        p_plant_electric_recirc_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_electric_recirc_mw
         ),
-        p_plant_electric_net_mw=Input(
+        p_plant_electric_net_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_electric_net_mw
         ),
-        f_p_plant_electric_recirc=Input(
+        f_p_plant_electric_recirc=FromExactly(
             lambda s: s.heat_transport.f_p_plant_electric_recirc
         ),
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
-        t_plant_pulse_coil_precharge=Input(
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
+        t_plant_pulse_coil_precharge=FromExactly(
             lambda s: s.times.t_plant_pulse_coil_precharge
         ),
-        t_plant_pulse_plasma_current_ramp_up=Input(
+        t_plant_pulse_plasma_current_ramp_up=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_up
         ),
-        t_plant_pulse_fusion_ramp=Input(lambda s: s.times.t_plant_pulse_fusion_ramp),
-        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_plasma_current_ramp_down=Input(
+        t_plant_pulse_fusion_ramp=FromExactly(lambda s: s.times.t_plant_pulse_fusion_ramp),
+        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
+        t_plant_pulse_plasma_current_ramp_down=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_down
         ),
-        t_plant_pulse_dwell=Input(lambda s: s.times.t_plant_pulse_dwell),
+        t_plant_pulse_dwell=FromExactly(lambda s: s.times.t_plant_pulse_dwell),
     ):
         return calculate_plant_electric_production(
             self.itart,
@@ -783,7 +787,7 @@ class PlantElectricProductionReactor(ExplicitFunction):
     not registerable.** `PlantElectricProduction` declares
     `p_plant_electric_gross_mw` / `p_turbine_loss_mw` / `p_plant_electric_recirc_mw` /
     `p_plant_electric_net_mw` / `f_p_plant_electric_recirc` as both `Output`s and
-    `Input`s, so `to_graph` refuses it outright (*"reads [...], which it also owns"*,
+    `FromExactly`s, so `to_graph` refuses it outright (*"reads [...], which it also owns"*,
     confirmed directly -- `total_process.py`'s own comment records the same refusal).
     That is not a modelling cycle: it is PROCESS's conditional-ownership
     pass-through, and it exists **only on the `ireactor == 0` arm**. Read
@@ -880,64 +884,64 @@ class PlantElectricProductionReactor(ExplicitFunction):
 
     def __call__(
         self,
-        p_cp_coolant_pump_elec=Input(lambda s: s.tfcoil.p_cp_coolant_pump_elec),
-        p_plant_electric_base=Input(lambda s: s.heat_transport.p_plant_electric_base),
-        a_plant_floor_effective=Input(lambda s: s.buildings.a_plant_floor_effective),
-        pflux_plant_floor_electric=Input(
+        p_cp_coolant_pump_elec=FromExactly(lambda s: s.tfcoil.p_cp_coolant_pump_elec),
+        p_plant_electric_base=FromExactly(lambda s: s.heat_transport.p_plant_electric_base),
+        a_plant_floor_effective=FromExactly(lambda s: s.buildings.a_plant_floor_effective),
+        pflux_plant_floor_electric=FromExactly(
             lambda s: s.heat_transport.pflux_plant_floor_electric
         ),
-        p_cryo_plant_electric_mw=Input(
+        p_cryo_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_cryo_plant_electric_mw
         ),
-        p_tf_electric_supplies_mw=Input(
+        p_tf_electric_supplies_mw=FromExactly(
             lambda s: s.heat_transport.p_tf_electric_supplies_mw
         ),
-        p_tritium_plant_electric_mw=Input(
+        p_tritium_plant_electric_mw=FromExactly(
             lambda s: s.heat_transport.p_tritium_plant_electric_mw
         ),
-        vachtmw=Input(lambda s: s.heat_transport.vachtmw),
-        p_pf_electric_supplies_mw=Input(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
-        p_hcd_electric_loss_mw=Input(lambda s: s.heat_transport.p_hcd_electric_loss_mw),
-        p_coolant_pump_loss_total_mw=Input(
+        vachtmw=FromExactly(lambda s: s.heat_transport.vachtmw),
+        p_pf_electric_supplies_mw=FromExactly(lambda s: s.pf_coil.p_pf_electric_supplies_mw),
+        p_hcd_electric_loss_mw=FromExactly(lambda s: s.heat_transport.p_hcd_electric_loss_mw),
+        p_coolant_pump_loss_total_mw=FromExactly(
             lambda s: s.heat_transport.p_coolant_pump_loss_total_mw
         ),
-        p_div_secondary_heat_mw=Input(
+        p_div_secondary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_div_secondary_heat_mw
         ),
-        p_shld_secondary_heat_mw=Input(
+        p_shld_secondary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_shld_secondary_heat_mw
         ),
-        p_hcd_secondary_heat_mw=Input(
+        p_hcd_secondary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_hcd_secondary_heat_mw
         ),
-        p_tf_nuclear_heat_mw=Input(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
-        p_plant_primary_heat_mw=Input(
+        p_tf_nuclear_heat_mw=FromExactly(lambda s: s.fwbs.p_tf_nuclear_heat_mw),
+        p_plant_primary_heat_mw=FromExactly(
             lambda s: s.heat_transport.p_plant_primary_heat_mw
         ),
-        p_blkt_liquid_breeder_heat_deposited_mw=Input(
+        p_blkt_liquid_breeder_heat_deposited_mw=FromExactly(
             lambda s: s.power.p_blkt_liquid_breeder_heat_deposited_mw
         ),
-        eta_turbine=Input(lambda s: s.heat_transport.eta_turbine),
-        etath_liq=Input(lambda s: s.heat_transport.etath_liq),
-        p_hcd_electric_total_mw=Input(
+        eta_turbine=FromExactly(lambda s: s.heat_transport.eta_turbine),
+        etath_liq=FromExactly(lambda s: s.heat_transport.etath_liq),
+        p_hcd_electric_total_mw=FromExactly(
             lambda s: s.heat_transport.p_hcd_electric_total_mw
         ),
-        p_coolant_pump_elec_total_mw=Input(
+        p_coolant_pump_elec_total_mw=FromExactly(
             lambda s: s.heat_transport.p_coolant_pump_elec_total_mw
         ),
-        p_fusion_total_mw=Input(lambda s: s.physics.p_fusion_total_mw),
-        t_plant_pulse_coil_precharge=Input(
+        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
+        t_plant_pulse_coil_precharge=FromExactly(
             lambda s: s.times.t_plant_pulse_coil_precharge
         ),
-        t_plant_pulse_plasma_current_ramp_up=Input(
+        t_plant_pulse_plasma_current_ramp_up=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_up
         ),
-        t_plant_pulse_fusion_ramp=Input(lambda s: s.times.t_plant_pulse_fusion_ramp),
-        t_plant_pulse_burn=Input(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_plasma_current_ramp_down=Input(
+        t_plant_pulse_fusion_ramp=FromExactly(lambda s: s.times.t_plant_pulse_fusion_ramp),
+        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
+        t_plant_pulse_plasma_current_ramp_down=FromExactly(
             lambda s: s.times.t_plant_pulse_plasma_current_ramp_down
         ),
-        t_plant_pulse_dwell=Input(lambda s: s.times.t_plant_pulse_dwell),
+        t_plant_pulse_dwell=FromExactly(lambda s: s.times.t_plant_pulse_dwell),
     ):
         dead = jnp.nan  # see the class docstring: provably overwritten at ireactor == 1
         return calculate_plant_electric_production(

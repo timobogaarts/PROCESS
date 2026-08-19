@@ -595,3 +595,10 @@ exclusivity — is **sound but not a definition**, and the case that matters is 
 output overlap, where choosing an arm silently leaves one of the loser's outputs with no
 producer. The check for that belongs on consumers, not producers, and it is the same
 postcondition `free` needs. Read §12 before acting on §§10–13.
+
+**The node-tree half now has a plan**: `_audit/path_refactor.md` Part B, which settles
+this document's §12.4 grain question (subsystem, two levels — file grain rejected because
+this project re-chunks files routinely). §13's reading of the formatter still holds:
+`spell_flat`/`xDSMFormatterFlat` are written, in `cottax/interfaces/spelling.py`; what is
+missing is the `cottax.visualization` export and the wiring in `render_xdsm.py`, which
+passes no formatter at all today.

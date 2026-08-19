@@ -38,7 +38,7 @@ import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
-    Input,
+    FromExactly,
     Output,
 )
 
@@ -383,7 +383,7 @@ class PlasmaComposition(ExplicitFunction):
     `znimp`/`nd_plasma_impurities_vol_avg`/the per-species fraction outputs -- all read
     only the `z > 2` slice, indices 2:13, which `plasma_composition`'s H_/He_ writes
     never touch) and, inside `plasma_composition`, *written* (indices 0/1). Declaring
-    the *whole array* as both an `Input` and an `Output` reproduces the identical
+    the *whole array* as both an `FromExactly` and an `Output` reproduces the identical
     `ValueError: reads [...], which it also owns` `Avail`/`NextFirstCall` hit -- but the
     two ranges that read and write are disjoint at index granularity (2:13 read, 0/1
     written, no overlap), so the self-loop was an artefact of addressing the field as
@@ -394,7 +394,7 @@ class PlasmaComposition(ExplicitFunction):
     `list[float]` storage -- see `impurity_radiation_variables.py`) removes the
     conflict entirely: this node reads indices 2-13 (`IMPURITY_SLICE = slice(2, 14)`,
     twelve entries -- `2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13`) as twelve ordinary
-    `Input`s and **owns** indices 0 (`H_`, `f_nd_impurity_electron_array_h`) and 1
+    `FromExactly`s and **owns** indices 0 (`H_`, `f_nd_impurity_electron_array_h`) and 1
     (`He`, `f_nd_impurity_electron_array_he`) as two ordinary `Output`s -- twelve read
     plus two owned is the whole fourteen-entry array, with no `FixedPointFunction`/`Cut`
     machinery needed at all. `to_graph(PlasmaComposition(...))` confirms this
@@ -466,67 +466,67 @@ class PlasmaComposition(ExplicitFunction):
 
     def __call__(
         self,
-        nd_plasma_electrons_vol_avg=Input(
+        nd_plasma_electrons_vol_avg=FromExactly(
             lambda s: s.physics.nd_plasma_electrons_vol_avg
         ),
-        f_nd_alpha_thermal_electron=Input(
+        f_nd_alpha_thermal_electron=FromExactly(
             lambda s: s.physics.f_nd_alpha_thermal_electron
         ),
-        fusden_alpha_total=Input(lambda s: s.physics.fusden_alpha_total),
-        f_nd_protium_electrons=Input(lambda s: s.physics.f_nd_protium_electrons),
-        proton_rate_density=Input(lambda s: s.physics.proton_rate_density),
-        f_nd_beam_electron=Input(lambda s: s.physics.f_nd_beam_electron),
-        f_nd_impurity_electron_array_2=Input(
+        fusden_alpha_total=FromExactly(lambda s: s.physics.fusden_alpha_total),
+        f_nd_protium_electrons=FromExactly(lambda s: s.physics.f_nd_protium_electrons),
+        proton_rate_density=FromExactly(lambda s: s.physics.proton_rate_density),
+        f_nd_beam_electron=FromExactly(lambda s: s.physics.f_nd_beam_electron),
+        f_nd_impurity_electron_array_2=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[2]
         ),
-        f_nd_impurity_electron_array_3=Input(
+        f_nd_impurity_electron_array_3=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[3]
         ),
-        f_nd_impurity_electron_array_4=Input(
+        f_nd_impurity_electron_array_4=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[4]
         ),
-        f_nd_impurity_electron_array_5=Input(
+        f_nd_impurity_electron_array_5=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[5]
         ),
-        f_nd_impurity_electron_array_6=Input(
+        f_nd_impurity_electron_array_6=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[6]
         ),
-        f_nd_impurity_electron_array_7=Input(
+        f_nd_impurity_electron_array_7=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[7]
         ),
-        f_nd_impurity_electron_array_8=Input(
+        f_nd_impurity_electron_array_8=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[8]
         ),
-        f_nd_impurity_electron_array_9=Input(
+        f_nd_impurity_electron_array_9=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[9]
         ),
-        f_nd_impurity_electron_array_10=Input(
+        f_nd_impurity_electron_array_10=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[10]
         ),
-        f_nd_impurity_electron_array_11=Input(
+        f_nd_impurity_electron_array_11=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[11]
         ),
-        f_nd_impurity_electron_array_12=Input(
+        f_nd_impurity_electron_array_12=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[12]
         ),
-        f_nd_impurity_electron_array_13=Input(
+        f_nd_impurity_electron_array_13=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[13]
         ),
-        temp_plasma_electron_vol_avg_kev=Input(
+        temp_plasma_electron_vol_avg_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_vol_avg_kev
         ),
-        temp_impurity_keV_array=Input(
+        temp_impurity_keV_array=FromExactly(
             lambda s: s.impurity_radiation.temp_impurity_keV_array
         ),
-        impurity_arr_zav=Input(lambda s: s.impurity_radiation.impurity_arr_zav),
-        f_plasma_fuel_deuterium=Input(lambda s: s.physics.f_plasma_fuel_deuterium),
-        f_plasma_fuel_tritium=Input(lambda s: s.physics.f_plasma_fuel_tritium),
-        f_plasma_fuel_helium3=Input(lambda s: s.physics.f_plasma_fuel_helium3),
-        f_temp_plasma_electron_density_vol_avg=Input(
+        impurity_arr_zav=FromExactly(lambda s: s.impurity_radiation.impurity_arr_zav),
+        f_plasma_fuel_deuterium=FromExactly(lambda s: s.physics.f_plasma_fuel_deuterium),
+        f_plasma_fuel_tritium=FromExactly(lambda s: s.physics.f_plasma_fuel_tritium),
+        f_plasma_fuel_helium3=FromExactly(lambda s: s.physics.f_plasma_fuel_helium3),
+        f_temp_plasma_electron_density_vol_avg=FromExactly(
             lambda s: s.physics.f_temp_plasma_electron_density_vol_avg
         ),
-        f_beam_tritium=Input(lambda s: s.current_drive.f_beam_tritium),
-        m_impurity_amu_array=Input(
+        f_beam_tritium=FromExactly(lambda s: s.current_drive.f_beam_tritium),
+        m_impurity_amu_array=FromExactly(
             lambda s: s.impurity_radiation.m_impurity_amu_array
         ),
     ):
@@ -649,14 +649,14 @@ class CalculateEffectiveChargeIonisationProfiles(ExplicitFunction):
     below -- see that class's own docstring for why `.physics.first_call` is not a
     port at all.
 
-    `f_nd_impurity_electron_array` is read here as fourteen individual `Input`s
+    `f_nd_impurity_electron_array` is read here as fourteen individual `FromExactly`s
     (`SequenceKey`-addressed, one per index, matching `PlasmaComposition`'s own
     per-index treatment of the same field -- see that class's docstring) rather than
-    one whole-array `Input`. **This is a real dependency, not cosmetic**: two of the
+    one whole-array `FromExactly`. **This is a real dependency, not cosmetic**: two of the
     fourteen -- indices 0 (`H_`) and 1 (`He`) -- are exactly the entries
     `PlasmaComposition` owns, so a graph containing both nodes now has a genuine edge
     from `PlasmaComposition`'s `f_nd_impurity_electron_array_h`/`_he` outputs into this
-    node's own reads, where previously the whole-array `Input` was an unproduced
+    node's own reads, where previously the whole-array `FromExactly` was an unproduced
     boundary variable no matter what else was in the graph
     (`test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_composition`).
     """
@@ -670,55 +670,55 @@ class CalculateEffectiveChargeIonisationProfiles(ExplicitFunction):
 
     def __call__(
         self,
-        temp_electron_profile_kev=Input(
+        temp_electron_profile_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_profile_kev
         ),
-        f_nd_impurity_electron_array_0=Input(
+        f_nd_impurity_electron_array_0=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0]
         ),
-        f_nd_impurity_electron_array_1=Input(
+        f_nd_impurity_electron_array_1=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1]
         ),
-        f_nd_impurity_electron_array_2=Input(
+        f_nd_impurity_electron_array_2=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[2]
         ),
-        f_nd_impurity_electron_array_3=Input(
+        f_nd_impurity_electron_array_3=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[3]
         ),
-        f_nd_impurity_electron_array_4=Input(
+        f_nd_impurity_electron_array_4=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[4]
         ),
-        f_nd_impurity_electron_array_5=Input(
+        f_nd_impurity_electron_array_5=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[5]
         ),
-        f_nd_impurity_electron_array_6=Input(
+        f_nd_impurity_electron_array_6=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[6]
         ),
-        f_nd_impurity_electron_array_7=Input(
+        f_nd_impurity_electron_array_7=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[7]
         ),
-        f_nd_impurity_electron_array_8=Input(
+        f_nd_impurity_electron_array_8=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[8]
         ),
-        f_nd_impurity_electron_array_9=Input(
+        f_nd_impurity_electron_array_9=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[9]
         ),
-        f_nd_impurity_electron_array_10=Input(
+        f_nd_impurity_electron_array_10=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[10]
         ),
-        f_nd_impurity_electron_array_11=Input(
+        f_nd_impurity_electron_array_11=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[11]
         ),
-        f_nd_impurity_electron_array_12=Input(
+        f_nd_impurity_electron_array_12=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[12]
         ),
-        f_nd_impurity_electron_array_13=Input(
+        f_nd_impurity_electron_array_13=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[13]
         ),
-        temp_impurity_keV_array=Input(
+        temp_impurity_keV_array=FromExactly(
             lambda s: s.impurity_radiation.temp_impurity_keV_array
         ),
-        impurity_arr_zav=Input(lambda s: s.impurity_radiation.impurity_arr_zav),
+        impurity_arr_zav=FromExactly(lambda s: s.impurity_radiation.impurity_arr_zav),
     ):
         f_nd_impurity_electron_array = jnp.stack([
             f_nd_impurity_electron_array_0,

@@ -15,7 +15,7 @@ density), not a formula branch. The *pure function* below still takes it as one
 already-indexed scalar argument, `den_tf_sc_material` -- that part is unchanged.
 
 **What changed** (MDA triage, `_audit/next_steps.md` §8.1, row
-`.tfcoil.den_tf_sc_material`): **`CoilsMass`'s `Input` no longer mints
+`.tfcoil.den_tf_sc_material`): **`CoilsMass`'s `FromExactly` no longer mints
 `.tfcoil.den_tf_sc_material`.** `dcond` is a real
 `DataStructure` field (`process/data_structure/tfcoil_variables.py:157-170`, nine fixed
 material densities), so the read has a real `VarPath` and does not need one invented:
@@ -29,12 +29,16 @@ this exact name") in the negative: no lookup node is needed at all, because the 
 
 `i_tf_sc_mat` is a topology switch, so per `_audit/naming_convention.md` § "switches are
 not ports" it is resolved when the graph is assembled, not carried as a port -- and an
-`Input` default is fixed at class-definition time, so the index it selects is fixed with
+`FromExactly` default is fixed at class-definition time, so the index it selects is fixed with
 it. `CoilsMass` below is therefore the `i_tf_sc_mat == 1` (ITER Nb3Sn) arm; see
 `I_TF_SC_MAT_ITER_NB3SN`.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 from process.core import constants
 
@@ -47,7 +51,7 @@ selects `dcond[0] == 6080.0` (`tfcoil_variables.py:158`).
 The same value is already hardcoded one node over, at graph assembly, for the same switch
 (`WindingPackIntersectInputs(i_tf_sc_mat=1)` in `functional_process/total_process.py`).
 A different material needs a sibling node class overriding only `den_tf_sc_material`'s
-`Input`, in the style `coils.py` already uses to give `jcrit_from_material` one node
+`FromExactly`, in the style `coils.py` already uses to give `jcrit_from_material` one node
 class per `i_tf_sc_mat` value (`coils.py:123,178,232,267,309,347,384,421`).
 """
 
@@ -174,11 +178,11 @@ def calculate_coils_mass(
 class CoilsMass(ExplicitFunction):
     """cottax node: `calculate_coils_mass`, the `i_tf_sc_mat == 1` arm.
 
-    Every `Input` is a real `DataStructure` field. `den_tf_sc_material` reads
+    Every `FromExactly` is a real `DataStructure` field. `den_tf_sc_material` reads
     `.tfcoil.dcond[0]` -- see the module docstring for why the index is baked in here
     rather than passed, and `I_TF_SC_MAT_ITER_NB3SN` for which value it is.
 
-    Its two winding-pack area `Input`s (`.tfcoil.a_tf_wp_with_insulation`/
+    Its two winding-pack area `FromExactly`s (`.tfcoil.a_tf_wp_with_insulation`/
     `.a_tf_wp_no_insulation`) *are* minted, but by this port's own
     `coils/calculate.py:1136-1137` (`WindingPackTotalSizePost`), which is their producer;
     they are locals in PROCESS (`process/models/stellarator/coils/calculate.py:496-501`,
@@ -200,28 +204,28 @@ class CoilsMass(ExplicitFunction):
 
     def __call__(
         self,
-        a_tf_wp_with_insulation=Input(lambda s: s.tfcoil.a_tf_wp_with_insulation),
-        a_tf_wp_no_insulation=Input(lambda s: s.tfcoil.a_tf_wp_no_insulation),
-        len_tf_coil=Input(lambda s: s.tfcoil.len_tf_coil),
-        a_tf_coil_inboard_case=Input(lambda s: s.tfcoil.a_tf_coil_inboard_case),
-        den_tf_coil_case=Input(lambda s: s.tfcoil.den_tf_coil_case),
-        den_tf_wp_turn_insulation=Input(lambda s: s.tfcoil.den_tf_wp_turn_insulation),
-        n_tf_coil_turns=Input(lambda s: s.tfcoil.n_tf_coil_turns),
-        a_tf_turn_cable_space_no_void=Input(
+        a_tf_wp_with_insulation=FromExactly(lambda s: s.tfcoil.a_tf_wp_with_insulation),
+        a_tf_wp_no_insulation=FromExactly(lambda s: s.tfcoil.a_tf_wp_no_insulation),
+        len_tf_coil=FromExactly(lambda s: s.tfcoil.len_tf_coil),
+        a_tf_coil_inboard_case=FromExactly(lambda s: s.tfcoil.a_tf_coil_inboard_case),
+        den_tf_coil_case=FromExactly(lambda s: s.tfcoil.den_tf_coil_case),
+        den_tf_wp_turn_insulation=FromExactly(lambda s: s.tfcoil.den_tf_wp_turn_insulation),
+        n_tf_coil_turns=FromExactly(lambda s: s.tfcoil.n_tf_coil_turns),
+        a_tf_turn_cable_space_no_void=FromExactly(
             lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
         ),
-        f_a_tf_turn_cable_space_extra_void=Input(
+        f_a_tf_turn_cable_space_extra_void=FromExactly(
             lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
         ),
-        f_a_tf_turn_cable_copper=Input(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
-        a_tf_wp_coolant_channels=Input(lambda s: s.tfcoil.a_tf_wp_coolant_channels),
-        den_tf_sc_material=Input(lambda s: s.tfcoil.dcond[I_TF_SC_MAT_ITER_NB3SN - 1]),
-        a_tf_turn_steel=Input(lambda s: s.tfcoil.a_tf_turn_steel),
-        den_steel=Input(lambda s: s.fwbs.den_steel),
-        a_tf_coil_wp_turn_insulation=Input(
+        f_a_tf_turn_cable_copper=FromExactly(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
+        a_tf_wp_coolant_channels=FromExactly(lambda s: s.tfcoil.a_tf_wp_coolant_channels),
+        den_tf_sc_material=FromExactly(lambda s: s.tfcoil.dcond[I_TF_SC_MAT_ITER_NB3SN - 1]),
+        a_tf_turn_steel=FromExactly(lambda s: s.tfcoil.a_tf_turn_steel),
+        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
+        a_tf_coil_wp_turn_insulation=FromExactly(
             lambda s: s.tfcoil.a_tf_coil_wp_turn_insulation
         ),
-        n_tf_coils=Input(lambda s: s.tfcoil.n_tf_coils),
+        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
     ):
         return calculate_coils_mass(
             a_tf_wp_with_insulation,

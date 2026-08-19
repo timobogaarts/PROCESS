@@ -35,7 +35,12 @@ which complete the area with the name being declared (`functional_process/paths.
 cottax's `Area`/`Root`). `power_B_thermal_cryo.py` is converted (158 declarations, ports
 proved identical against the pre-conversion module loaded side by side); the rest is
 censused and not yet done — **2078 convertible mechanically, 36 needing a body rename,
-43 keeping `Input(lambda ...)`** for array elements no parameter name can spell. §12.3.
+43 keeping the escape hatch** for array elements no parameter name can spell (that hatch
+is now spelled `FromExactly`, renamed from `Input`; `path_refactor.md` §A.7). §12.3.
+The plan for finishing it, and for the node-name conversion beside it, is
+`_audit/path_refactor.md` (the census above was re-measured against it and reproduces
+digit for digit; the 43 escapes lose their lambdas too, so the endpoint is `lambda s:` →
+**0**, not 2078 of 2157).
 
 **Open, result pending.** An agent is verifying §11.11's load-bearing claim — that the
 pinned-`x109` point is genuinely better rather than paying for its objective with

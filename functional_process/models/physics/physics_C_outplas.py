@@ -7,10 +7,14 @@ Registry unit #9, chunk C. Audit record:
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
-from process.core import constants
 from functional_process.models.safe_math import safe_sqrt
+from process.core import constants
 
 
 def calculate_dimensionless_plasma_parameters(
@@ -100,16 +104,16 @@ class DimensionlessPlasmaParameters(ExplicitFunction):
 
     def __call__(
         self,
-        dlamie=Input(lambda s: s.physics.dlamie),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        eps=Input(lambda s: s.physics.eps),
-        nd_plasma_electron_line=Input(lambda s: s.physics.nd_plasma_electron_line),
-        kappa=Input(lambda s: s.physics.kappa),
-        e_plasma_beta=Input(lambda s: s.physics.e_plasma_beta),
-        plasma_current=Input(lambda s: s.physics.plasma_current),
-        m_ions_total_amu=Input(lambda s: s.physics.m_ions_total_amu),
+        dlamie=FromExactly(lambda s: s.physics.dlamie),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        eps=FromExactly(lambda s: s.physics.eps),
+        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
+        kappa=FromExactly(lambda s: s.physics.kappa),
+        e_plasma_beta=FromExactly(lambda s: s.physics.e_plasma_beta),
+        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
+        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
     ):
         return calculate_dimensionless_plasma_parameters(
             dlamie,

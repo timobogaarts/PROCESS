@@ -21,8 +21,8 @@ import optimistix as optx
 from cottax.evaluate import AbstractDriver, ConditionMap
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
+    FromExactly,
     ImplicitFunction,
-    Input,
     Output,
     path_of,
 )
@@ -124,7 +124,7 @@ class JcritIterNb3sn(ExplicitFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 1` (ITER Nb3Sn).
 
     `.tfcoil.j_crit_sc` (this node's `Output`) and `.tfcoil.t_helium`/`.tfcoil.b_max`
-    (its `Input`s) are **minted**, not established PROCESS `data` fields -- `j_crit_sc`
+    (its `FromExactly`s) are **minted**, not established PROCESS `data` fields -- `j_crit_sc`
     is a local of `jcrit_from_material` itself (never stored to `data` anywhere PROCESS
     calls it, confirmed at its one real call site, `winding_pack_total_size`), and
     `t_helium`/`b_max` are themselves locals of that same call site's 200-point sampling
@@ -138,8 +138,8 @@ class JcritIterNb3sn(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
     ):
         return jcrit_from_material_iter_nb3sn(t_helium, b_max)
 
@@ -179,9 +179,9 @@ class JcritBi2212(ExplicitFunction):
     """cottax node: `jcrit_from_material`, `i_tf_sc_mat == 2` (Bi-2212).
 
     `j_tf_wp`, `f_a_tf_turn_cable_space_extra_void`, `fhts`, `f_a_tf_turn_cable_copper`
-    are real, established `.tfcoil.*` fields -- already read as `Input`s by
+    are real, established `.tfcoil.*` fields -- already read as `FromExactly`s by
     `calculate.py`'s `WindingPackTotalSize`/`WindingPackJTfWp` nodes under these exact
-    names, so this node's `Input`s line up with those, not a fresh minting. Only
+    names, so this node's `FromExactly`s line up with those, not a fresh minting. Only
     `t_helium`/`b_max` (and the shared `.tfcoil.j_crit_sc` output) are minted -- see
     `JcritIterNb3sn`'s docstring.
     """
@@ -190,14 +190,14 @@ class JcritBi2212(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
-        j_tf_wp=Input(lambda s: s.tfcoil.j_tf_wp),
-        f_a_tf_turn_cable_space_extra_void=Input(
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
+        j_tf_wp=FromExactly(lambda s: s.tfcoil.j_tf_wp),
+        f_a_tf_turn_cable_space_extra_void=FromExactly(
             lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
         ),
-        fhts=Input(lambda s: s.tfcoil.fhts),
-        f_a_tf_turn_cable_copper=Input(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
+        fhts=FromExactly(lambda s: s.tfcoil.fhts),
+        f_a_tf_turn_cable_copper=FromExactly(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
     ):
         return jcrit_from_material_bi2212(
             t_helium,
@@ -236,8 +236,8 @@ class JcritNbtiLubell(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
     ):
         return jcrit_from_material_nbti_lubell(t_helium, b_max)
 
@@ -276,10 +276,10 @@ class JcritIterNb3snUserDefined(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
-        bcritsc=Input(lambda s: s.tfcoil.bcritsc),
-        tcritsc=Input(lambda s: s.tfcoil.tcritsc),
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
+        bcritsc=FromExactly(lambda s: s.tfcoil.bcritsc),
+        tcritsc=FromExactly(lambda s: s.tfcoil.tcritsc),
     ):
         return jcrit_from_material_iter_nb3sn_user_defined(
             t_helium, b_max, bcritsc, tcritsc
@@ -313,8 +313,8 @@ class JcritWstNb3sn(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
     ):
         return jcrit_from_material_wst_nb3sn(t_helium, b_max)
 
@@ -355,8 +355,8 @@ class JcritRebco(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
     ):
         return jcrit_from_material_rebco(t_helium, b_max)
 
@@ -388,10 +388,10 @@ class JcritGlNbti(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
-        b_crit_upper_nbti=Input(lambda s: s.tfcoil.b_crit_upper_nbti),
-        t_crit_nbti=Input(lambda s: s.tfcoil.t_crit_nbti),
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
+        b_crit_upper_nbti=FromExactly(lambda s: s.tfcoil.b_crit_upper_nbti),
+        t_crit_nbti=FromExactly(lambda s: s.tfcoil.t_crit_nbti),
     ):
         return jcrit_from_material_gl_nbti(
             t_helium, b_max, b_crit_upper_nbti, t_crit_nbti
@@ -425,8 +425,8 @@ class JcritGlRebco(ExplicitFunction):
 
     def __call__(
         self,
-        t_helium=Input(lambda s: s.tfcoil.t_helium),
-        b_max=Input(lambda s: s.tfcoil.b_max),
+        t_helium=FromExactly(lambda s: s.tfcoil.t_helium),
+        b_max=FromExactly(lambda s: s.tfcoil.b_max),
     ):
         return jcrit_from_material_gl_rebco(t_helium, b_max)
 
@@ -569,10 +569,10 @@ class Intersect(ImplicitFunction):
 
     def residual(
         self,
-        wp_width_r_min=Input(lambda s: s.stellarator.wp_width_r_min),
-        wp_width_r=Input(lambda s: s.stellarator.wp_width_r),
-        lhs=Input(lambda s: s.stellarator.lhs),
-        rhs=Input(lambda s: s.stellarator.rhs),
+        wp_width_r_min=FromExactly(lambda s: s.stellarator.wp_width_r_min),
+        wp_width_r=FromExactly(lambda s: s.stellarator.wp_width_r),
+        lhs=FromExactly(lambda s: s.stellarator.lhs),
+        rhs=FromExactly(lambda s: s.stellarator.rhs),
     ):
         return intersect_residual(wp_width_r_min, wp_width_r, lhs, wp_width_r, rhs)
 

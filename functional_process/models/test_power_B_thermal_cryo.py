@@ -11,11 +11,11 @@ split) are new -- see `power_B_thermal_cryo.md`'s "The `delta_eta` self-loop" se
 and `DeltaEtaStep`'s own docstring for the full reasoning.
 """
 
-import numpy as np
 import jax
+import numpy as np
 import pytest
-
 from cottax.interfaces.pytree_namespace_module import to_graph
+
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
 from functional_process.models.power_B_thermal_cryo import (
     ComponentThermalPowers,
@@ -24,8 +24,8 @@ from functional_process.models.power_B_thermal_cryo import (
     CryoQLoadsStep,
     CryoQNucStep,
     DeltaEtaStep,
-    EtaTurbineStep,
     EtathLiqStep,
+    EtaTurbineStep,
     PFwBlktCoolantPumpMwStep,
     PFwDivHeatDepositedMwStep,
     TempTurbineCoolantInStep,
@@ -41,7 +41,11 @@ from functional_process.models.power_B_thermal_cryo import (
 from process.core.model import DataStructure
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.data_structure.pfcoil_variables import PFConductorModel
-from process.models.power import ElectricConversionModelTypes, Power, PumpingPowerModelTypes
+from process.models.power import (
+    ElectricConversionModelTypes,
+    Power,
+    PumpingPowerModelTypes,
+)
 
 # ---------------------------------------------------------------------------
 # plant_thermal_efficiency
@@ -672,7 +676,7 @@ def test_component_thermal_powers_to_graph_builds_cleanly():
     (`eta_turbine`, `etath_liq`, `temp_turbine_coolant_in`,
     `p_fw_div_heat_deposited_mw`, `p_fw_blkt_coolant_pump_mw`) -- see
     `power_B_thermal_cryo.md`. With all six moved to their own `FixedPointFunction`s,
-    `ComponentThermalPowers` reads every one of them as a plain `Input` and owns none,
+    `ComponentThermalPowers` reads every one of them as a plain `FromExactly` and owns none,
     so it assembles as an ordinary single-node graph.
     """
     node = ComponentThermalPowers(
@@ -1482,7 +1486,7 @@ def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
 
     `CryoQNucStep`/`CryoQLoadsStep` mint their own `^cond` copies (so the body writes
     the copy and the paired `FixedPoint` owns the real `VarPath`); `CryoLoads` reads
-    all five `q*` as plain `Input`s and owns none of them, so it is an ordinary
+    all five `q*` as plain `FromExactly`s and owns none of them, so it is an ordinary
     single-node graph.
     """
     qnuc_node = CryoQNucStep(i_tf_sup=i_tf_sup, inuclear=inuclear)

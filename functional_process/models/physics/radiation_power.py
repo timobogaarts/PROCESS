@@ -49,7 +49,11 @@ questions. Reproduced exactly here; **not** silently fixed.
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    FromExactly,
+    Output,
+)
 
 from functional_process.models.physics.plasma_profiles import _simpson
 from functional_process.models.safe_math import safe_pow
@@ -485,22 +489,22 @@ class SynchrotronRadiationPower(ExplicitFunction):
 
     def __call__(
         self,
-        nd_plasma_electron_on_axis=Input(
+        nd_plasma_electron_on_axis=FromExactly(
             lambda s: s.physics.nd_plasma_electron_on_axis
         ),
-        rminor=Input(lambda s: s.physics.rminor),
-        b_plasma_toroidal_on_axis=Input(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        aspect=Input(lambda s: s.physics.aspect),
-        alphan=Input(lambda s: s.physics.alphan),
-        alphat=Input(lambda s: s.physics.alphat),
-        tbeta=Input(lambda s: s.physics.tbeta),
-        temp_plasma_electron_on_axis_kev=Input(
+        rminor=FromExactly(lambda s: s.physics.rminor),
+        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        aspect=FromExactly(lambda s: s.physics.aspect),
+        alphan=FromExactly(lambda s: s.physics.alphan),
+        alphat=FromExactly(lambda s: s.physics.alphat),
+        tbeta=FromExactly(lambda s: s.physics.tbeta),
+        temp_plasma_electron_on_axis_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_on_axis_kev
         ),
-        f_sync_reflect=Input(lambda s: s.physics.f_sync_reflect),
-        rmajor=Input(lambda s: s.physics.rmajor),
-        kappa=Input(lambda s: s.physics.kappa),
-        vol_plasma=Input(lambda s: s.physics.vol_plasma),
+        f_sync_reflect=FromExactly(lambda s: s.physics.f_sync_reflect),
+        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        kappa=FromExactly(lambda s: s.physics.kappa),
+        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
     ):
         return psync_albajar_fidone(
             nd_plasma_electron_on_axis,
@@ -525,7 +529,7 @@ class ImpurityRadiationTotals(ExplicitFunction):
     record's § open questions 2. Everything else about the node is settled.
 
     **`f_nd_impurity_electron_array` is read as fourteen individual, index-addressed
-    `Input`s**, not one whole-array `Input` -- the same per-index treatment
+    `FromExactly`s**, not one whole-array `FromExactly` -- the same per-index treatment
     `physics_B_composition.PlasmaComposition`/`CalculateEffectiveChargeIonisationProfiles`
     now give the identical field (`SequenceKey`-addressed, matching the real
     `DataStructure` field's own `list[float]` storage, per `naming_convention.md` §
@@ -594,12 +598,12 @@ class ImpurityRadiationTotals(ExplicitFunction):
     time; nothing in `configuration.py` does it or checks it yet. See the record's § open
     questions 2.
 
-    **Not a signature-shape blocker any more.** Before per-index `Input`s, this field's
-    docstring on `__call__` also worried that addressing individual species by `Input`
+    **Not a signature-shape blocker any more.** Before per-index `FromExactly`s, this field's
+    docstring on `__call__` also worried that addressing individual species by `FromExactly`
     would make the node's own *parameter count* vary with `imp_indices` -- it does not:
-    `__call__` now always declares fourteen `Input`s (one per index, unconditionally),
+    `__call__` now always declares fourteen `FromExactly`s (one per index, unconditionally),
     and `imp_indices` only selects a static gather over them, exactly as it selected a
-    gather over the one whole-array `Input` before. Only the shape-*during-a-solve*
+    gather over the one whole-array `FromExactly` before. Only the shape-*during-a-solve*
     question above remains open.
     """
 
@@ -612,77 +616,77 @@ class ImpurityRadiationTotals(ExplicitFunction):
 
     def __call__(
         self,
-        profile_x=Input(lambda s: s.physics.radius_plasma_profile_norm),
-        nd_electron_profile=Input(lambda s: s.physics.nd_plasma_electron_profile),
-        temp_electron_profile_kev=Input(
+        profile_x=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
+        nd_electron_profile=FromExactly(lambda s: s.physics.nd_plasma_electron_profile),
+        temp_electron_profile_kev=FromExactly(
             lambda s: s.physics.temp_plasma_electron_profile_kev
         ),
-        f_nd_impurity_electron_array_0=Input(
+        f_nd_impurity_electron_array_0=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0]
         ),
-        f_nd_impurity_electron_array_1=Input(
+        f_nd_impurity_electron_array_1=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1]
         ),
-        f_nd_impurity_electron_array_2=Input(
+        f_nd_impurity_electron_array_2=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[2]
         ),
-        f_nd_impurity_electron_array_3=Input(
+        f_nd_impurity_electron_array_3=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[3]
         ),
-        f_nd_impurity_electron_array_4=Input(
+        f_nd_impurity_electron_array_4=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[4]
         ),
-        f_nd_impurity_electron_array_5=Input(
+        f_nd_impurity_electron_array_5=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[5]
         ),
-        f_nd_impurity_electron_array_6=Input(
+        f_nd_impurity_electron_array_6=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[6]
         ),
-        f_nd_impurity_electron_array_7=Input(
+        f_nd_impurity_electron_array_7=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[7]
         ),
-        f_nd_impurity_electron_array_8=Input(
+        f_nd_impurity_electron_array_8=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[8]
         ),
-        f_nd_impurity_electron_array_9=Input(
+        f_nd_impurity_electron_array_9=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[9]
         ),
-        f_nd_impurity_electron_array_10=Input(
+        f_nd_impurity_electron_array_10=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[10]
         ),
-        f_nd_impurity_electron_array_11=Input(
+        f_nd_impurity_electron_array_11=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[11]
         ),
-        f_nd_impurity_electron_array_12=Input(
+        f_nd_impurity_electron_array_12=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[12]
         ),
-        f_nd_impurity_electron_array_13=Input(
+        f_nd_impurity_electron_array_13=FromExactly(
             lambda s: s.impurity_radiation.f_nd_impurity_electron_array[13]
         ),
-        temp_impurity_kev_array=Input(
+        temp_impurity_kev_array=FromExactly(
             lambda s: s.impurity_radiation.temp_impurity_keV_array
         ),
-        pden_impurity_lz_nd_temp_array=Input(
+        pden_impurity_lz_nd_temp_array=FromExactly(
             lambda s: s.impurity_radiation.pden_impurity_lz_nd_temp_array
         ),
-        radius_plasma_core_norm=Input(
+        radius_plasma_core_norm=FromExactly(
             lambda s: s.impurity_radiation.radius_plasma_core_norm
         ),
-        f_p_plasma_core_rad_reduction=Input(
+        f_p_plasma_core_rad_reduction=FromExactly(
             lambda s: s.impurity_radiation.f_p_plasma_core_rad_reduction
         ),
     ):
         """Reassembles the fourteen individually-addressed fractions and selects
         `imp_indices` before forwarding.
 
-        Each species' fraction is its own `Input` (`SequenceKey`-addressed `VarPath`,
-        one per index) rather than one whole-array `Input` -- fourteen ports, always,
+        Each species' fraction is its own `FromExactly` (`SequenceKey`-addressed `VarPath`,
+        one per index) rather than one whole-array `FromExactly` -- fourteen ports, always,
         regardless of `imp_indices`, so the signature stays fixed as
         `NodalDeclaration` requires. `imp_indices` only changes which of the fourteen
         are gathered out before being handed to `calculate_impurity_radiation_totals`
         -- the selection is a gather on the (now reassembled) read, not a second home
         for the arithmetic, same as before this change. The two 200-wide table
-        arguments stay whole-array `Input`s: they are compile-time constants, not
+        arguments stay whole-array `FromExactly`s: they are compile-time constants, not
         per-species runtime values a caller would ever address individually.
         """
         f_nd_impurity_electron_array = jnp.stack([
@@ -758,13 +762,13 @@ class PlasmaRadiationPowers(ExplicitFunction):
 
     def __call__(
         self,
-        pden_impurity_rad_total_mw=Input(
+        pden_impurity_rad_total_mw=FromExactly(
             lambda s: s.impurity_radiation.pden_impurity_rad_total_mw
         ),
-        pden_impurity_core_rad_total_mw=Input(
+        pden_impurity_core_rad_total_mw=FromExactly(
             lambda s: s.impurity_radiation.pden_impurity_core_rad_total_mw
         ),
-        pden_plasma_sync_mw=Input(lambda s: s.physics.pden_plasma_sync_mw),
+        pden_plasma_sync_mw=FromExactly(lambda s: s.physics.pden_plasma_sync_mw),
     ):
         return combine_radiation_powers(
             pden_impurity_rad_total_mw,
