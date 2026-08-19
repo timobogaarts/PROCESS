@@ -63,9 +63,16 @@ difference of the port's own condition map, both in the `c24` row, and `c24` alo
 like `h^0.52` where every other condition drifts like `h^2.00`. **The SQP is stopping
 correctly against an incorrect linear model of one constraint** — not terminating
 prematurely, and not descending a wrong objective (the `objf` row is correct to `7.7e-10`
-against the same central difference). PROCESS is unaffected: its answer sits `5.8e-03`
-below the switch and its `epsfcn = 0.01` finite difference is 10⁵ times wider than the
-feature.
+against the same central difference). PROCESS is unaffected, and the reason is worth stating as a
+mechanism rather than a coincidence: its answer sits `5.8e-03` below the switch, and its
+finite difference (`epsfcn = 1.0e-3`, `numerics.py:595`) is **six orders of magnitude wider
+than the feature**. A coarse finite difference is a low-pass filter on the derivative — it
+cannot resolve a kink narrower than its own step, so it returns a chord *across* it where
+AD returns the exact one-sided slope. The exact derivative is the correct answer to a
+question an SQP is not asking: it wants a model valid over a finite step. **Here the
+approximate gradient is the more useful one precisely because it is approximate.**
+(`x109_hypotheses.md` says `epsfcn = 0.01`; the value is `1.0e-3`, matching
+`_harness/finite_difference.py`'s `PROCESS_EPSFCN`. The argument is unchanged.)
 
 XDSM/DSM of the assembled SAND graph: `python -m functional_process.render_xdsm sand`
 writes `xdsm_sand.html`/`dsm_sand.html` (self-contained, pan/zoom). The bare form renders
