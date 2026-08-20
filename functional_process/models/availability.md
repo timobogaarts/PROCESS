@@ -228,11 +228,11 @@ outputs do. `calculate_redun_vac` has no node at all (see JAX-difficulty flags).
 `Avail`/`Avail2`/`AvailSt` declare `ibkt_life`/`itart` (and, for `Avail2`/`AvailSt`,
 `n_vac_pumps_high`/`redun_vac`) as `eqx.field(static=True)` class fields, following
 `EcrhDensityLimit`'s precedent (`stellarator/density_limits.py`) for a switch resolved
-as a static kwarg rather than a graph `Input`.
+as a static kwarg rather than a graph `From` read.
 
 **`.costs.cplife` is split out of `Avail`/`Avail2`/`AvailSt` entirely — resolved this
 wave, previously blocking (`next_steps.md` §5, Shape B).** Each of the three branch
-node classes used to declare `.costs.cplife` as *both* an `Input` and an `Output`
+node classes used to declare `.costs.cplife` as *both* a `From` read and an `OutputInto` write
 (`Avail`/`Avail2` via a `cplife`/`cplife_in` pair; `AvailSt` via a single bare `cplife`
 pair) — a genuine single-node self-loop, since real `avail()`/`avail_2()`/`avail_st()`
 each read-then-(conditionally-or-unconditionally)-rewrite `.costs.cplife` within one
@@ -268,10 +268,10 @@ implemented; no new cottax primitive needed):
   iterating.
 - **`Avail`/`Avail2`/`AvailSt` themselves** are now ordinary `ExplicitFunction`s over
   each branch's *other* outputs only — `.costs.cplife` is no longer one of their
-  declared `Output`s. `Avail`/`Avail2` read it back as a plain current-value `Input`;
+  declared `Output`s. `Avail`/`Avail2` read it back as a plain current-value `From` read;
   inspection of `calculate_avail`'s/`calculate_avail_2`'s bodies shows this value is
   **provably inert** for every output either node still declares (`cplife`/`cplife_in`
-  feed only the now-discarded `cplife_mod` return slot) — kept as a real `Input` anyway
+  feed only the now-discarded `cplife_mod` return slot) — kept as a real `From` read anyway
   for documentation fidelity, not because the graph needs it. **`AvailSt` cannot do the
   same** and does *not* read `.costs.cplife` at all: its `shortest_lifetime` (hence
   `maint_cycle`/`u_planned`/`t_plant_operational_total_yrs`/every unplanned-

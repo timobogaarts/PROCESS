@@ -40,11 +40,7 @@ consolidation pass, per this dispatch's boundary.
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.models.switch_enums import (
@@ -56,6 +52,23 @@ from functional_process.models.switch_enums import (
     SphericalTokamakModel,
     SuperconductorCostModel,
     ThermalStorageModel,
+)
+from functional_process.paths import (
+    buildings,
+    costs,
+    current_drive,
+    divertor,
+    first_wall,
+    fwbs,
+    heat_transport,
+    ife,
+    pf_coil,
+    pf_power,
+    physics,
+    structure,
+    tfcoil,
+    times,
+    vacuum,
 )
 from process.data_structure.pfcoil_variables import PFConductorModel
 
@@ -2362,19 +2375,19 @@ def calculate_cost_of_electricity(
 class ConvertFpyToCalendar(ExplicitFunction):
     """cottax node: `convert_fpy_to_calendar`."""
 
-    life_blkt = Output(lambda s: s.fwbs.life_blkt)
-    cdrlife_cal = Output(lambda s: s.costs.cdrlife_cal)
-    life_div = Output(lambda s: s.costs.life_div)
-    cplife_cal = Output(lambda s: s.costs.cplife_cal)
+    life_blkt = OutputInto(fwbs)
+    cdrlife_cal = OutputInto(costs)
+    life_div = OutputInto(costs)
+    cplife_cal = OutputInto(costs)
 
     def __call__(
         self,
-        life_blkt_fpy=FromExactly(lambda s: s.fwbs.life_blkt_fpy),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
-        life_div_fpy=FromExactly(lambda s: s.costs.life_div_fpy),
-        itart=FromExactly(lambda s: s.physics.itart),
-        cplife=FromExactly(lambda s: s.costs.cplife),
+        life_blkt_fpy=From(fwbs),
+        life_plant=From(costs),
+        f_t_plant_available=From(costs),
+        life_div_fpy=From(costs),
+        itart=From(physics),
+        cplife=From(costs),
     ):
         return convert_fpy_to_calendar(
             life_blkt_fpy, life_plant, f_t_plant_available, life_div_fpy, itart, cplife
@@ -2384,46 +2397,46 @@ class ConvertFpyToCalendar(ExplicitFunction):
 class StructuresCost(ExplicitFunction):
     """cottax node: `calculate_structures_cost` (Account 21)."""
 
-    c211 = Output(lambda s: s.costs.c211)
-    c212 = Output(lambda s: s.costs.c212)
-    c213 = Output(lambda s: s.costs.c213)
-    c2141 = Output(lambda s: s.costs.c2141)
-    c2142 = Output(lambda s: s.costs.c2142)
-    c214 = Output(lambda s: s.costs.c214)
-    c215 = Output(lambda s: s.costs.c215)
-    c216 = Output(lambda s: s.costs.c216)
-    c2171 = Output(lambda s: s.costs.c2171)
-    c2172 = Output(lambda s: s.costs.c2172)
-    c2173 = Output(lambda s: s.costs.c2173)
-    c2174 = Output(lambda s: s.costs.c2174)
-    c217 = Output(lambda s: s.costs.c217)
-    c21 = Output(lambda s: s.costs.c21)
+    c211 = OutputInto(costs)
+    c212 = OutputInto(costs)
+    c213 = OutputInto(costs)
+    c2141 = OutputInto(costs)
+    c2142 = OutputInto(costs)
+    c214 = OutputInto(costs)
+    c215 = OutputInto(costs)
+    c216 = OutputInto(costs)
+    c2171 = OutputInto(costs)
+    c2172 = OutputInto(costs)
+    c2173 = OutputInto(costs)
+    c2174 = OutputInto(costs)
+    c217 = OutputInto(costs)
+    c21 = OutputInto(costs)
 
     def __call__(
         self,
-        csi=FromExactly(lambda s: s.costs.csi),
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        cland=FromExactly(lambda s: s.costs.cland),
-        ucrb=FromExactly(lambda s: s.costs.ucrb),
-        rbvol=FromExactly(lambda s: s.buildings.rbvol),
-        UCMB=FromExactly(lambda s: s.costs.UCMB),
-        rmbvol=FromExactly(lambda s: s.buildings.rmbvol),
-        UCWS=FromExactly(lambda s: s.costs.UCWS),
-        wsvol=FromExactly(lambda s: s.buildings.wsvol),
-        UCTR=FromExactly(lambda s: s.costs.UCTR),
-        triv=FromExactly(lambda s: s.buildings.triv),
-        UCEL=FromExactly(lambda s: s.costs.UCEL),
-        elevol=FromExactly(lambda s: s.buildings.elevol),
-        UCAD=FromExactly(lambda s: s.costs.UCAD),
-        admvol=FromExactly(lambda s: s.buildings.admvol),
-        UCCO=FromExactly(lambda s: s.costs.UCCO),
-        convol=FromExactly(lambda s: s.buildings.convol),
-        UCSH=FromExactly(lambda s: s.costs.UCSH),
-        shovol=FromExactly(lambda s: s.buildings.shovol),
-        UCCR=FromExactly(lambda s: s.costs.UCCR),
-        cryvol=FromExactly(lambda s: s.buildings.cryvol),
-        ireactor=FromExactly(lambda s: s.costs.ireactor),
-        cturbb=FromExactly(lambda s: s.costs.cturbb),
+        csi=From(costs),
+        lsa=From(costs),
+        cland=From(costs),
+        ucrb=From(costs),
+        rbvol=From(buildings),
+        UCMB=From(costs),
+        rmbvol=From(buildings),
+        UCWS=From(costs),
+        wsvol=From(buildings),
+        UCTR=From(costs),
+        triv=From(buildings),
+        UCEL=From(costs),
+        elevol=From(buildings),
+        UCAD=From(costs),
+        admvol=From(buildings),
+        UCCO=From(costs),
+        convol=From(buildings),
+        UCSH=From(costs),
+        shovol=From(buildings),
+        UCCR=From(costs),
+        cryvol=From(buildings),
+        ireactor=From(costs),
+        cturbb=From(costs),
     ):
         return calculate_structures_cost(
             csi,
@@ -2455,16 +2468,16 @@ class StructuresCost(ExplicitFunction):
 class IndirectCosts(ExplicitFunction):
     """cottax node: `calculate_indirect_costs` (Account 9)."""
 
-    cindrt = Output(lambda s: s.costs.cindrt)
-    ccont = Output(lambda s: s.costs.ccont)
+    cindrt = OutputInto(costs)
+    ccont = OutputInto(costs)
 
     def __call__(
         self,
-        cfind=FromExactly(lambda s: s.costs.cfind),
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        cdirt=FromExactly(lambda s: s.costs.cdirt),
-        cowner=FromExactly(lambda s: s.costs.cowner),
-        fcontng=FromExactly(lambda s: s.costs.fcontng),
+        cfind=From(costs),
+        lsa=From(costs),
+        cdirt=From(costs),
+        cowner=From(costs),
+        fcontng=From(costs),
     ):
         return calculate_indirect_costs(cfind, lsa, cdirt, cowner, fcontng)
 
@@ -2472,14 +2485,14 @@ class IndirectCosts(ExplicitFunction):
 class ReactorStructureCost(ExplicitFunction):
     """cottax node: `calculate_reactor_structure_cost` (Account 221.4)."""
 
-    c2214 = Output(lambda s: s.costs.c2214)
+    c2214 = OutputInto(costs)
 
     def __call__(
         self,
-        gsmass=FromExactly(lambda s: s.structure.gsmass),
-        UCGSS=FromExactly(lambda s: s.costs.UCGSS),
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        gsmass=From(structure),
+        UCGSS=From(costs),
+        lsa=From(costs),
+        fkind=From(costs),
     ):
         return calculate_reactor_structure_cost(gsmass, UCGSS, lsa, fkind)
 
@@ -2487,14 +2500,14 @@ class ReactorStructureCost(ExplicitFunction):
 class VacuumVesselAssemblyCost(ExplicitFunction):
     """cottax node: `calculate_vacuum_vessel_assembly_cost` (Account 222.3)."""
 
-    c2223 = Output(lambda s: s.costs.c2223)
+    c2223 = OutputInto(costs)
 
     def __call__(
         self,
-        m_vv=FromExactly(lambda s: s.fwbs.m_vv),
-        uccryo=FromExactly(lambda s: s.costs.uccryo),
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        m_vv=From(fwbs),
+        uccryo=From(costs),
+        lsa=From(costs),
+        fkind=From(costs),
     ):
         return calculate_vacuum_vessel_assembly_cost(m_vv, uccryo, lsa, fkind)
 
@@ -2502,16 +2515,16 @@ class VacuumVesselAssemblyCost(ExplicitFunction):
 class DivertorCost(ExplicitFunction):
     """cottax node: `calculate_divertor_cost` (Account 221.5)."""
 
-    c2215 = Output(lambda s: s.costs.c2215)
-    divcst = Output(lambda s: s.costs.divcst)
+    c2215 = OutputInto(costs)
+    divcst = OutputInto(costs)
 
     def __call__(
         self,
-        ife=FromExactly(lambda s: s.ife.ife),
-        a_div_surface_total=FromExactly(lambda s: s.divertor.a_div_surface_total),
-        ucdiv=FromExactly(lambda s: s.costs.ucdiv),
-        fkind=FromExactly(lambda s: s.costs.fkind),
-        ifueltyp=FromExactly(lambda s: s.costs.ifueltyp),
+        ife=From(ife),
+        a_div_surface_total=From(divertor),
+        ucdiv=From(costs),
+        fkind=From(costs),
+        ifueltyp=From(costs),
     ):
         return calculate_divertor_cost(ife, a_div_surface_total, ucdiv, fkind, ifueltyp)
 
@@ -2519,30 +2532,30 @@ class DivertorCost(ExplicitFunction):
 class VacuumSystemCost(ExplicitFunction):
     """cottax node: `calculate_vacuum_system_cost` (Account 224)."""
 
-    c2241 = Output(lambda s: s.costs.c2241)
-    c2242 = Output(lambda s: s.costs.c2242)
-    c2243 = Output(lambda s: s.costs.c2243)
-    c2244 = Output(lambda s: s.costs.c2244)
-    c2245 = Output(lambda s: s.costs.c2245)
-    c2246 = Output(lambda s: s.costs.c2246)
-    c224 = Output(lambda s: s.costs.c224)
+    c2241 = OutputInto(costs)
+    c2242 = OutputInto(costs)
+    c2243 = OutputInto(costs)
+    c2244 = OutputInto(costs)
+    c2245 = OutputInto(costs)
+    c2246 = OutputInto(costs)
+    c224 = OutputInto(costs)
 
     def __call__(
         self,
-        i_vacuum_pump_type=FromExactly(lambda s: s.vacuum.i_vacuum_pump_type),
-        n_vac_pumps_high=FromExactly(lambda s: s.vacuum.n_vac_pumps_high),
-        UCCPMP=FromExactly(lambda s: s.costs.UCCPMP),
-        UCTPMP=FromExactly(lambda s: s.costs.UCTPMP),
-        n_vv_vacuum_ducts=FromExactly(lambda s: s.vacuum.n_vv_vacuum_ducts),
-        UCBPMP=FromExactly(lambda s: s.costs.UCBPMP),
-        dlscal=FromExactly(lambda s: s.vacuum.dlscal),
-        UCDUCT=FromExactly(lambda s: s.costs.UCDUCT),
-        dia_vv_vacuum_ducts=FromExactly(lambda s: s.vacuum.dia_vv_vacuum_ducts),
-        UCVALV=FromExactly(lambda s: s.costs.UCVALV),
-        m_vv_vacuum_duct_shield=FromExactly(lambda s: s.vacuum.m_vv_vacuum_duct_shield),
-        UCVDSH=FromExactly(lambda s: s.costs.UCVDSH),
-        UCVIAC=FromExactly(lambda s: s.costs.UCVIAC),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        i_vacuum_pump_type=From(vacuum),
+        n_vac_pumps_high=From(vacuum),
+        UCCPMP=From(costs),
+        UCTPMP=From(costs),
+        n_vv_vacuum_ducts=From(vacuum),
+        UCBPMP=From(costs),
+        dlscal=From(vacuum),
+        UCDUCT=From(costs),
+        dia_vv_vacuum_ducts=From(vacuum),
+        UCVALV=From(costs),
+        m_vv_vacuum_duct_shield=From(vacuum),
+        UCVDSH=From(costs),
+        UCVIAC=From(costs),
+        fkind=From(costs),
     ):
         return calculate_vacuum_system_cost(
             i_vacuum_pump_type,
@@ -2565,35 +2578,33 @@ class VacuumSystemCost(ExplicitFunction):
 class TfCoilPowerConditioningCost(ExplicitFunction):
     """cottax node: `calculate_tf_coil_power_conditioning_cost` (Account 225.1)."""
 
-    c22511 = Output(lambda s: s.costs.c22511)
-    c22512 = Output(lambda s: s.costs.c22512)
-    c22513 = Output(lambda s: s.costs.c22513)
-    c22514 = Output(lambda s: s.costs.c22514)
-    c22515 = Output(lambda s: s.costs.c22515)
-    c2251 = Output(lambda s: s.costs.c2251)
+    c22511 = OutputInto(costs)
+    c22512 = OutputInto(costs)
+    c22513 = OutputInto(costs)
+    c22514 = OutputInto(costs)
+    c22515 = OutputInto(costs)
+    c2251 = OutputInto(costs)
 
     def __call__(
         self,
-        uctfps=FromExactly(lambda s: s.costs.uctfps),
-        tfckw=FromExactly(lambda s: s.tfcoil.tfckw),
-        tfcmw=FromExactly(lambda s: s.tfcoil.tfcmw),
-        i_tf_sup=FromExactly(lambda s: s.tfcoil.i_tf_sup),
-        uctfbr=FromExactly(lambda s: s.costs.uctfbr),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        c_tf_turn=FromExactly(lambda s: s.tfcoil.c_tf_turn),
-        v_tf_coil_dump_quench_kv=FromExactly(lambda s: s.tfcoil.v_tf_coil_dump_quench_kv),
-        uctfsw=FromExactly(lambda s: s.costs.uctfsw),
-        UCTFDR=FromExactly(lambda s: s.costs.UCTFDR),
-        e_tf_magnetic_stored_total_gj=FromExactly(
-            lambda s: s.tfcoil.e_tf_magnetic_stored_total_gj
-        ),
-        UCTFGR=FromExactly(lambda s: s.costs.UCTFGR),
-        UCTFIC=FromExactly(lambda s: s.costs.UCTFIC),
-        uctfbus=FromExactly(lambda s: s.costs.uctfbus),
-        m_tf_bus=FromExactly(lambda s: s.tfcoil.m_tf_bus),
-        ucbus=FromExactly(lambda s: s.costs.ucbus),
-        len_tf_bus=FromExactly(lambda s: s.tfcoil.len_tf_bus),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        uctfps=From(costs),
+        tfckw=From(tfcoil),
+        tfcmw=From(tfcoil),
+        i_tf_sup=From(tfcoil),
+        uctfbr=From(costs),
+        n_tf_coils=From(tfcoil),
+        c_tf_turn=From(tfcoil),
+        v_tf_coil_dump_quench_kv=From(tfcoil),
+        uctfsw=From(costs),
+        UCTFDR=From(costs),
+        e_tf_magnetic_stored_total_gj=From(tfcoil),
+        UCTFGR=From(costs),
+        UCTFIC=From(costs),
+        uctfbus=From(costs),
+        m_tf_bus=From(tfcoil),
+        ucbus=From(costs),
+        len_tf_bus=From(tfcoil),
+        fkind=From(costs),
     ):
         return calculate_tf_coil_power_conditioning_cost(
             uctfps,
@@ -2620,32 +2631,32 @@ class TfCoilPowerConditioningCost(ExplicitFunction):
 class PfCoilPowerConditioningCost(ExplicitFunction):
     """cottax node: `calculate_pf_coil_power_conditioning_cost` (Account 225.2)."""
 
-    c22521 = Output(lambda s: s.costs.c22521)
-    c22522 = Output(lambda s: s.costs.c22522)
-    c22523 = Output(lambda s: s.costs.c22523)
-    c22524 = Output(lambda s: s.costs.c22524)
-    c22525 = Output(lambda s: s.costs.c22525)
-    c22526 = Output(lambda s: s.costs.c22526)
-    c22527 = Output(lambda s: s.costs.c22527)
-    c2252 = Output(lambda s: s.costs.c2252)
+    c22521 = OutputInto(costs)
+    c22522 = OutputInto(costs)
+    c22523 = OutputInto(costs)
+    c22524 = OutputInto(costs)
+    c22525 = OutputInto(costs)
+    c22526 = OutputInto(costs)
+    c22527 = OutputInto(costs)
+    c2252 = OutputInto(costs)
 
     def __call__(
         self,
-        ucpfps=FromExactly(lambda s: s.costs.ucpfps),
-        peakmva=FromExactly(lambda s: s.heat_transport.peakmva),
-        ucpfic=FromExactly(lambda s: s.costs.ucpfic),
-        pfckts=FromExactly(lambda s: s.pf_power.pfckts),
-        ucpfb=FromExactly(lambda s: s.costs.ucpfb),
-        spfbusl=FromExactly(lambda s: s.pf_power.spfbusl),
-        acptmax=FromExactly(lambda s: s.pf_power.acptmax),
-        ucpfbs=FromExactly(lambda s: s.costs.ucpfbs),
-        srcktpm=FromExactly(lambda s: s.pf_power.srcktpm),
-        ucpfbk=FromExactly(lambda s: s.costs.ucpfbk),
-        vpfskv=FromExactly(lambda s: s.pf_power.vpfskv),
-        ucpfdr1=FromExactly(lambda s: s.costs.ucpfdr1),
-        ensxpfm=FromExactly(lambda s: s.pf_power.ensxpfm),
-        ucpfcb=FromExactly(lambda s: s.costs.ucpfcb),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        ucpfps=From(costs),
+        peakmva=From(heat_transport),
+        ucpfic=From(costs),
+        pfckts=From(pf_power),
+        ucpfb=From(costs),
+        spfbusl=From(pf_power),
+        acptmax=From(pf_power),
+        ucpfbs=From(costs),
+        srcktpm=From(pf_power),
+        ucpfbk=From(costs),
+        vpfskv=From(pf_power),
+        ucpfdr1=From(costs),
+        ensxpfm=From(pf_power),
+        ucpfcb=From(costs),
+        fkind=From(costs),
     ):
         return calculate_pf_coil_power_conditioning_cost(
             ucpfps,
@@ -2669,30 +2680,22 @@ class PfCoilPowerConditioningCost(ExplicitFunction):
 class ReactorCoolingSystemCost(ExplicitFunction):
     """cottax node: `calculate_reactor_cooling_system_cost` (Account 2261)."""
 
-    cpp = Output(lambda s: s.costs.cpp)
-    chx = Output(lambda s: s.costs.chx)
-    c2261 = Output(lambda s: s.costs.c2261)
+    cpp = OutputInto(costs)
+    chx = OutputInto(costs)
+    c2261 = OutputInto(costs)
 
     def __call__(
         self,
-        uchts=FromExactly(lambda s: s.costs.uchts),
-        i_blkt_coolant_type=FromExactly(lambda s: s.fwbs.i_blkt_coolant_type),
-        p_fw_div_heat_deposited_mw=FromExactly(
-            lambda s: s.heat_transport.p_fw_div_heat_deposited_mw
-        ),
-        p_blkt_nuclear_heat_total_mw=FromExactly(
-            lambda s: s.fwbs.p_blkt_nuclear_heat_total_mw
-        ),
-        p_shld_nuclear_heat_mw=FromExactly(lambda s: s.fwbs.p_shld_nuclear_heat_mw),
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        fkind=FromExactly(lambda s: s.costs.fkind),
-        UCPHX=FromExactly(lambda s: s.costs.UCPHX),
-        n_primary_heat_exchangers=FromExactly(
-            lambda s: s.heat_transport.n_primary_heat_exchangers
-        ),
-        p_plant_primary_heat_mw=FromExactly(
-            lambda s: s.heat_transport.p_plant_primary_heat_mw
-        ),
+        uchts=From(costs),
+        i_blkt_coolant_type=From(fwbs),
+        p_fw_div_heat_deposited_mw=From(heat_transport),
+        p_blkt_nuclear_heat_total_mw=From(fwbs),
+        p_shld_nuclear_heat_mw=From(fwbs),
+        lsa=From(costs),
+        fkind=From(costs),
+        UCPHX=From(costs),
+        n_primary_heat_exchangers=From(heat_transport),
+        p_plant_primary_heat_mw=From(heat_transport),
     ):
         return calculate_reactor_cooling_system_cost(
             uchts,
@@ -2711,12 +2714,12 @@ class ReactorCoolingSystemCost(ExplicitFunction):
 class FuellingSystemCost(ExplicitFunction):
     """cottax node: `calculate_fuelling_system_cost` (Account 2271)."""
 
-    c2271 = Output(lambda s: s.costs.c2271)
+    c2271 = OutputInto(costs)
 
     def __call__(
         self,
-        ucf1=FromExactly(lambda s: s.costs.ucf1),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        ucf1=From(costs),
+        fkind=From(costs),
     ):
         return calculate_fuelling_system_cost(ucf1, fkind)
 
@@ -2724,14 +2727,14 @@ class FuellingSystemCost(ExplicitFunction):
 class NuclearBuildingVentilationCost(ExplicitFunction):
     """cottax node: `calculate_nuclear_building_ventilation_cost` (Account 2274)."""
 
-    c2274 = Output(lambda s: s.costs.c2274)
+    c2274 = OutputInto(costs)
 
     def __call__(
         self,
-        UCNBV=FromExactly(lambda s: s.costs.UCNBV),
-        volrci=FromExactly(lambda s: s.buildings.volrci),
-        wsvol=FromExactly(lambda s: s.buildings.wsvol),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        UCNBV=From(costs),
+        volrci=From(buildings),
+        wsvol=From(buildings),
+        fkind=From(costs),
     ):
         return calculate_nuclear_building_ventilation_cost(UCNBV, volrci, wsvol, fkind)
 
@@ -2739,12 +2742,12 @@ class NuclearBuildingVentilationCost(ExplicitFunction):
 class InstrumentationAndControlCost(ExplicitFunction):
     """cottax node: `calculate_instrumentation_and_control_cost` (Account 228)."""
 
-    c228 = Output(lambda s: s.costs.c228)
+    c228 = OutputInto(costs)
 
     def __call__(
         self,
-        uciac=FromExactly(lambda s: s.costs.uciac),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        uciac=From(costs),
+        fkind=From(costs),
     ):
         return calculate_instrumentation_and_control_cost(uciac, fkind)
 
@@ -2752,12 +2755,12 @@ class InstrumentationAndControlCost(ExplicitFunction):
 class MaintenanceEquipmentCost(ExplicitFunction):
     """cottax node: `calculate_maintenance_equipment_cost` (Account 229)."""
 
-    c229 = Output(lambda s: s.costs.c229)
+    c229 = OutputInto(costs)
 
     def __call__(
         self,
-        ucme=FromExactly(lambda s: s.costs.ucme),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        ucme=From(costs),
+        fkind=From(costs),
     ):
         return calculate_maintenance_equipment_cost(ucme, fkind)
 
@@ -2765,16 +2768,14 @@ class MaintenanceEquipmentCost(ExplicitFunction):
 class TurbinePlantEquipmentCost(ExplicitFunction):
     """cottax node: `calculate_turbine_plant_equipment_cost` (Account 23)."""
 
-    c23 = Output(lambda s: s.costs.c23)
+    c23 = OutputInto(costs)
 
     def __call__(
         self,
-        ireactor=FromExactly(lambda s: s.costs.ireactor),
-        ucturb=FromExactly(lambda s: s.costs.ucturb),
-        i_blkt_coolant_type=FromExactly(lambda s: s.fwbs.i_blkt_coolant_type),
-        p_plant_electric_gross_mw=FromExactly(
-            lambda s: s.heat_transport.p_plant_electric_gross_mw
-        ),
+        ireactor=From(costs),
+        ucturb=From(costs),
+        i_blkt_coolant_type=From(fwbs),
+        p_plant_electric_gross_mw=From(heat_transport),
     ):
         return calculate_turbine_plant_equipment_cost(
             ireactor, ucturb, i_blkt_coolant_type, p_plant_electric_gross_mw
@@ -2784,12 +2785,12 @@ class TurbinePlantEquipmentCost(ExplicitFunction):
 class SwitchyardCost(ExplicitFunction):
     """cottax node: `calculate_switchyard_cost` (Account 241)."""
 
-    c241 = Output(lambda s: s.costs.c241)
+    c241 = OutputInto(costs)
 
     def __call__(
         self,
-        UCSWYD=FromExactly(lambda s: s.costs.UCSWYD),
-        lsa=FromExactly(lambda s: s.costs.lsa),
+        UCSWYD=From(costs),
+        lsa=From(costs),
     ):
         return calculate_switchyard_cost(UCSWYD, lsa)
 
@@ -2797,17 +2798,15 @@ class SwitchyardCost(ExplicitFunction):
 class TransformersCost(ExplicitFunction):
     """cottax node: `calculate_transformers_cost` (Account 242)."""
 
-    c242 = Output(lambda s: s.costs.c242)
+    c242 = OutputInto(costs)
 
     def __call__(
         self,
-        UCPP=FromExactly(lambda s: s.costs.UCPP),
-        pacpmw=FromExactly(lambda s: s.heat_transport.pacpmw),
-        UCAP=FromExactly(lambda s: s.costs.UCAP),
-        p_plant_electric_base_total_mw=FromExactly(
-            lambda s: s.heat_transport.p_plant_electric_base_total_mw
-        ),
-        lsa=FromExactly(lambda s: s.costs.lsa),
+        UCPP=From(costs),
+        pacpmw=From(heat_transport),
+        UCAP=From(costs),
+        p_plant_electric_base_total_mw=From(heat_transport),
+        lsa=From(costs),
     ):
         return calculate_transformers_cost(
             UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, lsa
@@ -2817,13 +2816,13 @@ class TransformersCost(ExplicitFunction):
 class LowVoltageCost(ExplicitFunction):
     """cottax node: `calculate_low_voltage_cost` (Account 243)."""
 
-    c243 = Output(lambda s: s.costs.c243)
+    c243 = OutputInto(costs)
 
     def __call__(
         self,
-        UCLV=FromExactly(lambda s: s.costs.UCLV),
-        tlvpmw=FromExactly(lambda s: s.heat_transport.tlvpmw),
-        lsa=FromExactly(lambda s: s.costs.lsa),
+        UCLV=From(costs),
+        tlvpmw=From(heat_transport),
+        lsa=From(costs),
     ):
         return calculate_low_voltage_cost(UCLV, tlvpmw, lsa)
 
@@ -2831,12 +2830,12 @@ class LowVoltageCost(ExplicitFunction):
 class DieselGeneratorsCost(ExplicitFunction):
     """cottax node: `calculate_diesel_generators_cost` (Account 244)."""
 
-    c244 = Output(lambda s: s.costs.c244)
+    c244 = OutputInto(costs)
 
     def __call__(
         self,
-        UCDGEN=FromExactly(lambda s: s.costs.UCDGEN),
-        lsa=FromExactly(lambda s: s.costs.lsa),
+        UCDGEN=From(costs),
+        lsa=From(costs),
     ):
         return calculate_diesel_generators_cost(UCDGEN, lsa)
 
@@ -2844,12 +2843,12 @@ class DieselGeneratorsCost(ExplicitFunction):
 class AuxiliaryFacilityPowerCost(ExplicitFunction):
     """cottax node: `calculate_auxiliary_facility_power_cost` (Account 245)."""
 
-    c245 = Output(lambda s: s.costs.c245)
+    c245 = OutputInto(costs)
 
     def __call__(
         self,
-        UCAF=FromExactly(lambda s: s.costs.UCAF),
-        lsa=FromExactly(lambda s: s.costs.lsa),
+        UCAF=From(costs),
+        lsa=From(costs),
     ):
         return calculate_auxiliary_facility_power_cost(UCAF, lsa)
 
@@ -2861,15 +2860,15 @@ class ElectricPlantEquipmentCost(ExplicitFunction):
     `Costs.acc24`'s own call order (`acc241`..`acc245` before `acc24`).
     """
 
-    c24 = Output(lambda s: s.costs.c24)
+    c24 = OutputInto(costs)
 
     def __call__(
         self,
-        c241=FromExactly(lambda s: s.costs.c241),
-        c242=FromExactly(lambda s: s.costs.c242),
-        c243=FromExactly(lambda s: s.costs.c243),
-        c244=FromExactly(lambda s: s.costs.c244),
-        c245=FromExactly(lambda s: s.costs.c245),
+        c241=From(costs),
+        c242=From(costs),
+        c243=From(costs),
+        c244=From(costs),
+        c245=From(costs),
     ):
         return calculate_electric_plant_equipment_cost(c241, c242, c243, c244, c245)
 
@@ -2877,12 +2876,12 @@ class ElectricPlantEquipmentCost(ExplicitFunction):
 class MiscPlantEquipmentCost(ExplicitFunction):
     """cottax node: `calculate_misc_plant_equipment_cost` (Account 25)."""
 
-    c25 = Output(lambda s: s.costs.c25)
+    c25 = OutputInto(costs)
 
     def __call__(
         self,
-        ucmisc=FromExactly(lambda s: s.costs.ucmisc),
-        lsa=FromExactly(lambda s: s.costs.lsa),
+        ucmisc=From(costs),
+        lsa=From(costs),
     ):
         return calculate_misc_plant_equipment_cost(ucmisc, lsa)
 
@@ -2890,24 +2889,18 @@ class MiscPlantEquipmentCost(ExplicitFunction):
 class HeatRejectionCost(ExplicitFunction):
     """cottax node: `calculate_heat_rejection_cost` (Account 26)."""
 
-    c26 = Output(lambda s: s.costs.c26)
+    c26 = OutputInto(costs)
 
     def __call__(
         self,
-        ireactor=FromExactly(lambda s: s.costs.ireactor),
-        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
-        p_hcd_electric_total_mw=FromExactly(
-            lambda s: s.heat_transport.p_hcd_electric_total_mw
-        ),
-        tfcmw=FromExactly(lambda s: s.tfcoil.tfcmw),
-        p_plant_primary_heat_mw=FromExactly(
-            lambda s: s.heat_transport.p_plant_primary_heat_mw
-        ),
-        p_plant_electric_gross_mw=FromExactly(
-            lambda s: s.heat_transport.p_plant_electric_gross_mw
-        ),
-        uchrs=FromExactly(lambda s: s.costs.uchrs),
-        lsa=FromExactly(lambda s: s.costs.lsa),
+        ireactor=From(costs),
+        p_fusion_total_mw=From(physics),
+        p_hcd_electric_total_mw=From(heat_transport),
+        tfcmw=From(tfcoil),
+        p_plant_primary_heat_mw=From(heat_transport),
+        p_plant_electric_gross_mw=From(heat_transport),
+        uchrs=From(costs),
+        lsa=From(costs),
     ):
         return calculate_heat_rejection_cost(
             ireactor,
@@ -2932,18 +2925,18 @@ class FirstWallCost(ExplicitFunction):
 
     ife: IFEModel = eqx.field(static=True)
 
-    c2211 = Output(lambda s: s.costs.c2211)
-    fwallcst = Output(lambda s: s.costs.fwallcst)
+    c2211 = OutputInto(costs)
+    fwallcst = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        UCFWA=FromExactly(lambda s: s.costs.UCFWA),
-        UCFWS=FromExactly(lambda s: s.costs.UCFWS),
-        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
-        UCFWPS=FromExactly(lambda s: s.costs.UCFWPS),
-        fkind=FromExactly(lambda s: s.costs.fkind),
-        ifueltyp=FromExactly(lambda s: s.costs.ifueltyp),
+        lsa=From(costs),
+        UCFWA=From(costs),
+        UCFWS=From(costs),
+        a_fw_total=From(first_wall),
+        UCFWPS=From(costs),
+        fkind=From(costs),
+        ifueltyp=From(costs),
     ):
         return calculate_first_wall_cost(
             self.ife, lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind, ifueltyp
@@ -2955,29 +2948,29 @@ class BlanketCost(ExplicitFunction):
 
     ife: IFEModel = eqx.field(static=True)
 
-    c22121 = Output(lambda s: s.costs.c22121)
-    c22122 = Output(lambda s: s.costs.c22122)
-    c22123 = Output(lambda s: s.costs.c22123)
-    c22124 = Output(lambda s: s.costs.c22124)
-    c22125 = Output(lambda s: s.costs.c22125)
-    c22126 = Output(lambda s: s.costs.c22126)
-    c22127 = Output(lambda s: s.costs.c22127)
-    c2212 = Output(lambda s: s.costs.c2212)
-    blkcst = Output(lambda s: s.costs.blkcst)
+    c22121 = OutputInto(costs)
+    c22122 = OutputInto(costs)
+    c22123 = OutputInto(costs)
+    c22124 = OutputInto(costs)
+    c22125 = OutputInto(costs)
+    c22126 = OutputInto(costs)
+    c22127 = OutputInto(costs)
+    c2212 = OutputInto(costs)
+    blkcst = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        m_blkt_beryllium=FromExactly(lambda s: s.fwbs.m_blkt_beryllium),
-        ucblbe=FromExactly(lambda s: s.costs.ucblbe),
-        m_blkt_li2o=FromExactly(lambda s: s.fwbs.m_blkt_li2o),
-        ucblli2o=FromExactly(lambda s: s.costs.ucblli2o),
-        m_blkt_steel_total=FromExactly(lambda s: s.fwbs.m_blkt_steel_total),
-        ucblss=FromExactly(lambda s: s.costs.ucblss),
-        m_blkt_vanadium=FromExactly(lambda s: s.fwbs.m_blkt_vanadium),
-        ucblvd=FromExactly(lambda s: s.costs.ucblvd),
-        fkind=FromExactly(lambda s: s.costs.fkind),
-        ifueltyp=FromExactly(lambda s: s.costs.ifueltyp),
+        lsa=From(costs),
+        m_blkt_beryllium=From(fwbs),
+        ucblbe=From(costs),
+        m_blkt_li2o=From(fwbs),
+        ucblli2o=From(costs),
+        m_blkt_steel_total=From(fwbs),
+        ucblss=From(costs),
+        m_blkt_vanadium=From(fwbs),
+        ucblvd=From(costs),
+        fkind=From(costs),
+        ifueltyp=From(costs),
     ):
         return calculate_blanket_cost(
             self.ife,
@@ -3000,18 +2993,18 @@ class ShieldCost(ExplicitFunction):
 
     ife: IFEModel = eqx.field(static=True)
 
-    c22131 = Output(lambda s: s.costs.c22131)
-    c22132 = Output(lambda s: s.costs.c22132)
-    c2213 = Output(lambda s: s.costs.c2213)
+    c22131 = OutputInto(costs)
+    c22132 = OutputInto(costs)
+    c2213 = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        whtshld=FromExactly(lambda s: s.fwbs.whtshld),
-        ucshld=FromExactly(lambda s: s.costs.ucshld),
-        wpenshld=FromExactly(lambda s: s.fwbs.wpenshld),
-        ucpens=FromExactly(lambda s: s.costs.ucpens),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        lsa=From(costs),
+        whtshld=From(fwbs),
+        ucshld=From(costs),
+        wpenshld=From(fwbs),
+        ucpens=From(costs),
+        fkind=From(costs),
     ):
         return calculate_shield_cost(
             self.ife, lsa, whtshld, ucshld, wpenshld, ucpens, fkind
@@ -3021,15 +3014,15 @@ class ShieldCost(ExplicitFunction):
 class ReactorCost(ExplicitFunction):
     """cottax node: `calculate_reactor_cost` (Account 221 total)."""
 
-    c221 = Output(lambda s: s.costs.c221)
+    c221 = OutputInto(costs)
 
     def __call__(
         self,
-        c2211=FromExactly(lambda s: s.costs.c2211),
-        c2212=FromExactly(lambda s: s.costs.c2212),
-        c2213=FromExactly(lambda s: s.costs.c2213),
-        c2214=FromExactly(lambda s: s.costs.c2214),
-        c2215=FromExactly(lambda s: s.costs.c2215),
+        c2211=From(costs),
+        c2212=From(costs),
+        c2213=From(costs),
+        c2214=From(costs),
+        c2215=From(costs),
     ):
         return calculate_reactor_cost(c2211, c2212, c2213, c2214, c2215)
 
@@ -3040,37 +3033,37 @@ class TfMagnetCostSuperconducting(ExplicitFunction):
 
     supercond_cost_model: SuperconductorCostModel = eqx.field(static=True)
 
-    c22211 = Output(lambda s: s.costs.c22211)
-    c22212 = Output(lambda s: s.costs.c22212)
-    c22213 = Output(lambda s: s.costs.c22213)
-    c22214 = Output(lambda s: s.costs.c22214)
-    c22215 = Output(lambda s: s.costs.c22215)
-    c2221 = Output(lambda s: s.costs.c2221)
+    c22211 = OutputInto(costs)
+    c22212 = OutputInto(costs)
+    c22213 = OutputInto(costs)
+    c22214 = OutputInto(costs)
+    c22215 = OutputInto(costs)
+    c2221 = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        ucsc=FromExactly(lambda s: s.costs.ucsc),
-        i_tf_sc_mat=FromExactly(lambda s: s.tfcoil.i_tf_sc_mat),
-        m_tf_coil_superconductor=FromExactly(lambda s: s.tfcoil.m_tf_coil_superconductor),
-        len_tf_coil=FromExactly(lambda s: s.tfcoil.len_tf_coil),
-        n_tf_coil_turns=FromExactly(lambda s: s.tfcoil.n_tf_coil_turns),
-        sc_mat_cost_0=FromExactly(lambda s: s.costs.sc_mat_cost_0),
-        j_crit_str_0=FromExactly(lambda s: s.tfcoil.j_crit_str_0),
-        j_crit_str_tf=FromExactly(lambda s: s.tfcoil.j_crit_str_tf),
-        uccu=FromExactly(lambda s: s.costs.uccu),
-        m_tf_coil_copper=FromExactly(lambda s: s.tfcoil.m_tf_coil_copper),
-        cconshtf=FromExactly(lambda s: s.costs.cconshtf),
-        cconfix=FromExactly(lambda s: s.costs.cconfix),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        ucwindtf=FromExactly(lambda s: s.costs.ucwindtf),
-        m_tf_coil_case=FromExactly(lambda s: s.tfcoil.m_tf_coil_case),
-        uccase=FromExactly(lambda s: s.costs.uccase),
-        aintmass=FromExactly(lambda s: s.structure.aintmass),
-        UCINT=FromExactly(lambda s: s.costs.UCINT),
-        clgsmass=FromExactly(lambda s: s.structure.clgsmass),
-        UCGSS=FromExactly(lambda s: s.costs.UCGSS),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        lsa=From(costs),
+        ucsc=From(costs),
+        i_tf_sc_mat=From(tfcoil),
+        m_tf_coil_superconductor=From(tfcoil),
+        len_tf_coil=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        sc_mat_cost_0=From(costs),
+        j_crit_str_0=From(tfcoil),
+        j_crit_str_tf=From(tfcoil),
+        uccu=From(costs),
+        m_tf_coil_copper=From(tfcoil),
+        cconshtf=From(costs),
+        cconfix=From(costs),
+        n_tf_coils=From(tfcoil),
+        ucwindtf=From(costs),
+        m_tf_coil_case=From(tfcoil),
+        uccase=From(costs),
+        aintmass=From(structure),
+        UCINT=From(costs),
+        clgsmass=From(structure),
+        UCGSS=From(costs),
+        fkind=From(costs),
     ):
         return calculate_tf_magnet_cost_superconducting(
             self.supercond_cost_model,
@@ -3104,21 +3097,21 @@ class TfMagnetCostResistive(ExplicitFunction):
     `.tfcoil.i_tf_sup != 1`). Ported but **not registered** -- see the function's own
     docstring and `total_process.py`'s `.costs.i_cost_model` switch comment."""
 
-    c22211 = Output(lambda s: s.costs.c22211)
-    c22212 = Output(lambda s: s.costs.c22212)
-    c2221 = Output(lambda s: s.costs.c2221)
-    cpstcst = Output(lambda s: s.costs.cpstcst)
+    c22211 = OutputInto(costs)
+    c22212 = OutputInto(costs)
+    c2221 = OutputInto(costs)
+    cpstcst = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        whtcp=FromExactly(lambda s: s.tfcoil.whtcp),
-        uccpcl1=FromExactly(lambda s: s.costs.uccpcl1),
-        whttflgs=FromExactly(lambda s: s.tfcoil.whttflgs),
-        uccpclb=FromExactly(lambda s: s.costs.uccpclb),
-        itart=FromExactly(lambda s: s.physics.itart),
-        ifueltyp=FromExactly(lambda s: s.costs.ifueltyp),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        lsa=From(costs),
+        whtcp=From(tfcoil),
+        uccpcl1=From(costs),
+        whttflgs=From(tfcoil),
+        uccpclb=From(costs),
+        itart=From(physics),
+        ifueltyp=From(costs),
+        fkind=From(costs),
     ):
         return calculate_tf_magnet_cost_resistive(
             lsa, whtcp, uccpcl1, whttflgs, uccpclb, itart, ifueltyp, fkind
@@ -3133,41 +3126,41 @@ class PfMagnetCost(ExplicitFunction):
     i_pf_conductor: PFConductorModel = eqx.field(static=True)
     supercond_cost_model: SuperconductorCostModel = eqx.field(static=True)
 
-    c22221 = Output(lambda s: s.costs.c22221)
-    c22222 = Output(lambda s: s.costs.c22222)
-    c22223 = Output(lambda s: s.costs.c22223)
-    c22224 = Output(lambda s: s.costs.c22224)
-    c2222 = Output(lambda s: s.costs.c2222)
+    c22221 = OutputInto(costs)
+    c22222 = OutputInto(costs)
+    c22223 = OutputInto(costs)
+    c22224 = OutputInto(costs)
+    c2222 = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        r_pf_coil_middle=FromExactly(lambda s: s.pf_coil.r_pf_coil_middle),
-        n_pf_coil_turns=FromExactly(lambda s: s.pf_coil.n_pf_coil_turns),
-        cconshpf=FromExactly(lambda s: s.costs.cconshpf),
-        ucsc=FromExactly(lambda s: s.costs.ucsc),
-        i_pf_superconductor=FromExactly(lambda s: s.pf_coil.i_pf_superconductor),
-        fcupfsu=FromExactly(lambda s: s.pf_coil.fcupfsu),
-        f_a_pf_coil_void=FromExactly(lambda s: s.pf_coil.f_a_pf_coil_void),
-        c_pf_cs_coils_peak_ma=FromExactly(lambda s: s.pf_coil.c_pf_cs_coils_peak_ma),
-        j_pf_coil_wp_peak=FromExactly(lambda s: s.pf_coil.j_pf_coil_wp_peak),
-        dcond=FromExactly(lambda s: s.tfcoil.dcond),
-        sc_mat_cost_0=FromExactly(lambda s: s.costs.sc_mat_cost_0),
-        j_crit_str_0=FromExactly(lambda s: s.tfcoil.j_crit_str_0),
-        j_crit_str_pf=FromExactly(lambda s: s.pf_coil.j_crit_str_pf),
-        uccu=FromExactly(lambda s: s.costs.uccu),
-        cconfix=FromExactly(lambda s: s.costs.cconfix),
-        i_cs_superconductor=FromExactly(lambda s: s.pf_coil.i_cs_superconductor),
-        a_cs_cable_space=FromExactly(lambda s: s.pf_coil.a_cs_cable_space),
-        f_a_cs_void=FromExactly(lambda s: s.pf_coil.f_a_cs_void),
-        fcuohsu=FromExactly(lambda s: s.pf_coil.fcuohsu),
-        j_crit_str_cs=FromExactly(lambda s: s.pf_coil.j_crit_str_cs),
-        ucwindpf=FromExactly(lambda s: s.costs.ucwindpf),
-        uccase=FromExactly(lambda s: s.costs.uccase),
-        m_pf_coil_structure_total=FromExactly(lambda s: s.pf_coil.m_pf_coil_structure_total),
-        ucfnc=FromExactly(lambda s: s.costs.ucfnc),
-        fncmass=FromExactly(lambda s: s.structure.fncmass),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        lsa=From(costs),
+        r_pf_coil_middle=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        cconshpf=From(costs),
+        ucsc=From(costs),
+        i_pf_superconductor=From(pf_coil),
+        fcupfsu=From(pf_coil),
+        f_a_pf_coil_void=From(pf_coil),
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        dcond=From(tfcoil),
+        sc_mat_cost_0=From(costs),
+        j_crit_str_0=From(tfcoil),
+        j_crit_str_pf=From(pf_coil),
+        uccu=From(costs),
+        cconfix=From(costs),
+        i_cs_superconductor=From(pf_coil),
+        a_cs_cable_space=From(pf_coil),
+        f_a_cs_void=From(pf_coil),
+        fcuohsu=From(pf_coil),
+        j_crit_str_cs=From(pf_coil),
+        ucwindpf=From(costs),
+        uccase=From(costs),
+        m_pf_coil_structure_total=From(pf_coil),
+        ucfnc=From(costs),
+        fncmass=From(structure),
+        fkind=From(costs),
     ):
         return calculate_pf_magnet_cost(
             self.n_cs_pf_coils,
@@ -3207,14 +3200,14 @@ class PfMagnetCost(ExplicitFunction):
 class MagnetsCost(ExplicitFunction):
     """cottax node: `calculate_magnets_cost` (Account 222 total)."""
 
-    c222 = Output(lambda s: s.costs.c222)
+    c222 = OutputInto(costs)
 
     def __call__(
         self,
-        ife=FromExactly(lambda s: s.ife.ife),
-        c2221=FromExactly(lambda s: s.costs.c2221),
-        c2222=FromExactly(lambda s: s.costs.c2222),
-        c2223=FromExactly(lambda s: s.costs.c2223),
+        ife=From(ife),
+        c2221=From(costs),
+        c2222=From(costs),
+        c2223=From(costs),
     ):
         return calculate_magnets_cost(ife, c2221, c2222, c2223)
 
@@ -3224,29 +3217,25 @@ class PowerInjectionCost(ExplicitFunction):
 
     ife: IFEModel = eqx.field(static=True)
 
-    c2231 = Output(lambda s: s.costs.c2231)
-    c2232 = Output(lambda s: s.costs.c2232)
-    c2233 = Output(lambda s: s.costs.c2233)
-    c223 = Output(lambda s: s.costs.c223)
-    cdcost = Output(lambda s: s.costs.cdcost)
+    c2231 = OutputInto(costs)
+    c2232 = OutputInto(costs)
+    c2233 = OutputInto(costs)
+    c223 = OutputInto(costs)
+    cdcost = OutputInto(costs)
 
     def __call__(
         self,
-        ucech=FromExactly(lambda s: s.costs.ucech),
-        p_hcd_ecrh_injected_total_mw=FromExactly(
-            lambda s: s.current_drive.p_hcd_ecrh_injected_total_mw
-        ),
-        i_hcd_primary=FromExactly(lambda s: s.current_drive.i_hcd_primary),
-        uclh=FromExactly(lambda s: s.costs.uclh),
-        ucich=FromExactly(lambda s: s.costs.ucich),
-        p_hcd_lowhyb_injected_total_mw=FromExactly(
-            lambda s: s.current_drive.p_hcd_lowhyb_injected_total_mw
-        ),
-        ucnbi=FromExactly(lambda s: s.costs.ucnbi),
-        p_beam_injected_mw=FromExactly(lambda s: s.current_drive.p_beam_injected_mw),
-        ifueltyp=FromExactly(lambda s: s.costs.ifueltyp),
-        fcdfuel=FromExactly(lambda s: s.costs.fcdfuel),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        ucech=From(costs),
+        p_hcd_ecrh_injected_total_mw=From(current_drive),
+        i_hcd_primary=From(current_drive),
+        uclh=From(costs),
+        ucich=From(costs),
+        p_hcd_lowhyb_injected_total_mw=From(current_drive),
+        ucnbi=From(costs),
+        p_beam_injected_mw=From(current_drive),
+        ifueltyp=From(costs),
+        fcdfuel=From(costs),
+        fkind=From(costs),
     ):
         return calculate_power_injection_cost(
             self.ife,
@@ -3270,14 +3259,12 @@ class EnergyStorageCost(ExplicitFunction):
     i_pulsed_plant: PlantOperationModel = eqx.field(static=True)
     istore: ThermalStorageModel = eqx.field(static=True)
 
-    c2253 = Output(lambda s: s.costs.c2253)
+    c2253 = OutputInto(costs)
 
     def __call__(
         self,
-        p_plant_electric_net_mw=FromExactly(
-            lambda s: s.heat_transport.p_plant_electric_net_mw
-        ),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        p_plant_electric_net_mw=From(heat_transport),
+        fkind=From(costs),
     ):
         return calculate_energy_storage_cost(
             self.i_pulsed_plant, self.istore, p_plant_electric_net_mw, fkind
@@ -3287,14 +3274,14 @@ class EnergyStorageCost(ExplicitFunction):
 class PowerConditioningCost(ExplicitFunction):
     """cottax node: `calculate_power_conditioning_cost` (Account 225 total)."""
 
-    c225 = Output(lambda s: s.costs.c225)
+    c225 = OutputInto(costs)
 
     def __call__(
         self,
-        ife=FromExactly(lambda s: s.ife.ife),
-        c2251=FromExactly(lambda s: s.costs.c2251),
-        c2252=FromExactly(lambda s: s.costs.c2252),
-        c2253=FromExactly(lambda s: s.costs.c2253),
+        ife=From(ife),
+        c2251=From(costs),
+        c2252=From(costs),
+        c2253=From(costs),
     ):
         return calculate_power_conditioning_cost(ife, c2251, c2252, c2253)
 
@@ -3304,23 +3291,19 @@ class AuxiliaryComponentCoolingCost(ExplicitFunction):
 
     ife: IFEModel = eqx.field(static=True)
 
-    cppa = Output(lambda s: s.costs.cppa)
-    c2262 = Output(lambda s: s.costs.c2262)
+    cppa = OutputInto(costs)
+    c2262 = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        UCAHTS=FromExactly(lambda s: s.costs.UCAHTS),
-        p_hcd_electric_loss_mw=FromExactly(lambda s: s.heat_transport.p_hcd_electric_loss_mw),
-        p_cryo_plant_electric_mw=FromExactly(
-            lambda s: s.heat_transport.p_cryo_plant_electric_mw
-        ),
-        vachtmw=FromExactly(lambda s: s.heat_transport.vachtmw),
-        p_tritium_plant_electric_mw=FromExactly(
-            lambda s: s.heat_transport.p_tritium_plant_electric_mw
-        ),
-        fachtmw=FromExactly(lambda s: s.heat_transport.fachtmw),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        lsa=From(costs),
+        UCAHTS=From(costs),
+        p_hcd_electric_loss_mw=From(heat_transport),
+        p_cryo_plant_electric_mw=From(heat_transport),
+        vachtmw=From(heat_transport),
+        p_tritium_plant_electric_mw=From(heat_transport),
+        fachtmw=From(heat_transport),
+        fkind=From(costs),
     ):
         return calculate_auxiliary_component_cooling_cost(
             self.ife,
@@ -3338,15 +3321,15 @@ class AuxiliaryComponentCoolingCost(ExplicitFunction):
 class CryogenicSystemCost(ExplicitFunction):
     """cottax node: `calculate_cryogenic_system_cost` (Account 2263)."""
 
-    c2263 = Output(lambda s: s.costs.c2263)
+    c2263 = OutputInto(costs)
 
     def __call__(
         self,
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        uccry=FromExactly(lambda s: s.costs.uccry),
-        temp_tf_cryo=FromExactly(lambda s: s.tfcoil.temp_tf_cryo),
-        helpow=FromExactly(lambda s: s.heat_transport.helpow),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        lsa=From(costs),
+        uccry=From(costs),
+        temp_tf_cryo=From(tfcoil),
+        helpow=From(heat_transport),
+        fkind=From(costs),
     ):
         return calculate_cryogenic_system_cost(lsa, uccry, temp_tf_cryo, helpow, fkind)
 
@@ -3354,13 +3337,13 @@ class CryogenicSystemCost(ExplicitFunction):
 class HeatTransportSystemCost(ExplicitFunction):
     """cottax node: `calculate_heat_transport_system_cost` (Account 226 total)."""
 
-    c226 = Output(lambda s: s.costs.c226)
+    c226 = OutputInto(costs)
 
     def __call__(
         self,
-        c2261=FromExactly(lambda s: s.costs.c2261),
-        c2262=FromExactly(lambda s: s.costs.c2262),
-        c2263=FromExactly(lambda s: s.costs.c2263),
+        c2261=From(costs),
+        c2262=From(costs),
+        c2263=From(costs),
     ):
         return calculate_heat_transport_system_cost(c2261, c2262, c2263)
 
@@ -3371,15 +3354,15 @@ class FuelProcessingCost(ExplicitFunction):
 
     ife: IFEModel = eqx.field(static=True)
 
-    wtgpd = Output(lambda s: s.physics.wtgpd)
-    c2272 = Output(lambda s: s.costs.c2272)
+    wtgpd = OutputInto(physics)
+    c2272 = OutputInto(costs)
 
     def __call__(
         self,
-        rndfuel=FromExactly(lambda s: s.physics.rndfuel),
-        m_fuel_amu=FromExactly(lambda s: s.physics.m_fuel_amu),
-        UCFPR=FromExactly(lambda s: s.costs.UCFPR),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        rndfuel=From(physics),
+        m_fuel_amu=From(physics),
+        UCFPR=From(costs),
+        fkind=From(costs),
     ):
         return calculate_fuel_processing_cost(
             self.ife, rndfuel, m_fuel_amu, UCFPR, fkind
@@ -3389,15 +3372,15 @@ class FuelProcessingCost(ExplicitFunction):
 class AtmosphericRecoveryCost(ExplicitFunction):
     """cottax node: `calculate_atmospheric_recovery_cost` (Account 2273)."""
 
-    c2273 = Output(lambda s: s.costs.c2273)
+    c2273 = OutputInto(costs)
 
     def __call__(
         self,
-        f_plasma_fuel_tritium=FromExactly(lambda s: s.physics.f_plasma_fuel_tritium),
-        UCDTC=FromExactly(lambda s: s.costs.UCDTC),
-        volrci=FromExactly(lambda s: s.buildings.volrci),
-        wsvol=FromExactly(lambda s: s.buildings.wsvol),
-        fkind=FromExactly(lambda s: s.costs.fkind),
+        f_plasma_fuel_tritium=From(physics),
+        UCDTC=From(costs),
+        volrci=From(buildings),
+        wsvol=From(buildings),
+        fkind=From(costs),
     ):
         return calculate_atmospheric_recovery_cost(
             f_plasma_fuel_tritium, UCDTC, volrci, wsvol, fkind
@@ -3407,14 +3390,14 @@ class AtmosphericRecoveryCost(ExplicitFunction):
 class FuelHandlingCost(ExplicitFunction):
     """cottax node: `calculate_fuel_handling_cost` (Account 227 total)."""
 
-    c227 = Output(lambda s: s.costs.c227)
+    c227 = OutputInto(costs)
 
     def __call__(
         self,
-        c2271=FromExactly(lambda s: s.costs.c2271),
-        c2272=FromExactly(lambda s: s.costs.c2272),
-        c2273=FromExactly(lambda s: s.costs.c2273),
-        c2274=FromExactly(lambda s: s.costs.c2274),
+        c2271=From(costs),
+        c2272=From(costs),
+        c2273=From(costs),
+        c2274=From(costs),
     ):
         return calculate_fuel_handling_cost(c2271, c2272, c2273, c2274)
 
@@ -3422,20 +3405,20 @@ class FuelHandlingCost(ExplicitFunction):
 class FusionPowerIslandCost(ExplicitFunction):
     """cottax node: `calculate_fusion_power_island_cost` (Account 22 total)."""
 
-    crctcore = Output(lambda s: s.costs.crctcore)
-    c22 = Output(lambda s: s.costs.c22)
+    crctcore = OutputInto(costs)
+    c22 = OutputInto(costs)
 
     def __call__(
         self,
-        c221=FromExactly(lambda s: s.costs.c221),
-        c222=FromExactly(lambda s: s.costs.c222),
-        c223=FromExactly(lambda s: s.costs.c223),
-        c224=FromExactly(lambda s: s.costs.c224),
-        c225=FromExactly(lambda s: s.costs.c225),
-        c226=FromExactly(lambda s: s.costs.c226),
-        c227=FromExactly(lambda s: s.costs.c227),
-        c228=FromExactly(lambda s: s.costs.c228),
-        c229=FromExactly(lambda s: s.costs.c229),
+        c221=From(costs),
+        c222=From(costs),
+        c223=From(costs),
+        c224=From(costs),
+        c225=From(costs),
+        c226=From(costs),
+        c227=From(costs),
+        c228=From(costs),
+        c229=From(costs),
     ):
         return calculate_fusion_power_island_cost(
             c221, c222, c223, c224, c225, c226, c227, c228, c229
@@ -3445,16 +3428,16 @@ class FusionPowerIslandCost(ExplicitFunction):
 class TotalPlantDirectCost(ExplicitFunction):
     """cottax node: `calculate_total_plant_direct_cost`."""
 
-    cdirt = Output(lambda s: s.costs.cdirt)
+    cdirt = OutputInto(costs)
 
     def __call__(
         self,
-        c21=FromExactly(lambda s: s.costs.c21),
-        c22=FromExactly(lambda s: s.costs.c22),
-        c23=FromExactly(lambda s: s.costs.c23),
-        c24=FromExactly(lambda s: s.costs.c24),
-        c25=FromExactly(lambda s: s.costs.c25),
-        c26=FromExactly(lambda s: s.costs.c26),
+        c21=From(costs),
+        c22=From(costs),
+        c23=From(costs),
+        c24=From(costs),
+        c25=From(costs),
+        c26=From(costs),
     ):
         return calculate_total_plant_direct_cost(c21, c22, c23, c24, c25, c26)
 
@@ -3462,13 +3445,13 @@ class TotalPlantDirectCost(ExplicitFunction):
 class ConstructedCost(ExplicitFunction):
     """cottax node: `calculate_constructed_cost`."""
 
-    concost = Output(lambda s: s.costs.concost)
+    concost = OutputInto(costs)
 
     def __call__(
         self,
-        cdirt=FromExactly(lambda s: s.costs.cdirt),
-        cindrt=FromExactly(lambda s: s.costs.cindrt),
-        ccont=FromExactly(lambda s: s.costs.ccont),
+        cdirt=From(costs),
+        cindrt=From(costs),
+        ccont=From(costs),
     ):
         return calculate_constructed_cost(cdirt, cindrt, ccont)
 
@@ -3489,12 +3472,12 @@ class CostOfElectricity(ExplicitFunction):
     ireactor: CostOfElectricityModel = eqx.field(static=True)
     ipnet: NetElectricPowerModel = eqx.field(static=True)
 
-    moneyint = Output(lambda s: s.costs.moneyint)
-    capcost = Output(lambda s: s.costs.capcost)
-    coecap = Output(lambda s: s.costs.coecap)
-    coeoam = Output(lambda s: s.costs.coeoam)
-    coefuelt = Output(lambda s: s.costs.coefuelt)
-    coe = Output(lambda s: s.costs.coe)
+    moneyint = OutputInto(costs)
+    capcost = OutputInto(costs)
+    coecap = OutputInto(costs)
+    coeoam = OutputInto(costs)
+    coefuelt = OutputInto(costs)
+    coe = OutputInto(costs)
 
     def __check_init__(self):  # noqa: PLW3201 -- equinox's own validation hook
         if self.ireactor != 1 or self.ipnet != 0:
@@ -3507,43 +3490,41 @@ class CostOfElectricity(ExplicitFunction):
 
     def __call__(
         self,
-        p_plant_electric_net_mw=FromExactly(
-            lambda s: s.heat_transport.p_plant_electric_net_mw
-        ),
-        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
-        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_total=FromExactly(lambda s: s.times.t_plant_pulse_total),
-        concost=FromExactly(lambda s: s.costs.concost),
-        fcap0=FromExactly(lambda s: s.costs.fcap0),
-        fcr0=FromExactly(lambda s: s.costs.fcr0),
-        discount_rate=FromExactly(lambda s: s.costs.discount_rate),
-        life_blkt=FromExactly(lambda s: s.fwbs.life_blkt),
-        fwallcst=FromExactly(lambda s: s.costs.fwallcst),
-        blkcst=FromExactly(lambda s: s.costs.blkcst),
-        cfind=FromExactly(lambda s: s.costs.cfind),
-        lsa=FromExactly(lambda s: s.costs.lsa),
-        fcap0cp=FromExactly(lambda s: s.costs.fcap0cp),
-        ifueltyp=FromExactly(lambda s: s.costs.ifueltyp),
-        life_blkt_fpy=FromExactly(lambda s: s.fwbs.life_blkt_fpy),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        life_div=FromExactly(lambda s: s.costs.life_div),
-        divcst=FromExactly(lambda s: s.costs.divcst),
-        life_div_fpy=FromExactly(lambda s: s.costs.life_div_fpy),
-        cplife_cal=FromExactly(lambda s: s.costs.cplife_cal),
-        cpstcst=FromExactly(lambda s: s.costs.cpstcst),
-        cplife=FromExactly(lambda s: s.costs.cplife),
-        cdrlife_cal=FromExactly(lambda s: s.costs.cdrlife_cal),
-        cdcost=FromExactly(lambda s: s.costs.cdcost),
-        fcdfuel=FromExactly(lambda s: s.costs.fcdfuel),
-        ucoam=FromExactly(lambda s: s.costs.ucoam),
-        ucfuel=FromExactly(lambda s: s.costs.ucfuel),
-        f_plasma_fuel_helium3=FromExactly(lambda s: s.physics.f_plasma_fuel_helium3),
-        wtgpd=FromExactly(lambda s: s.physics.wtgpd),
-        uche3=FromExactly(lambda s: s.costs.uche3),
-        ucwst=FromExactly(lambda s: s.costs.ucwst),
-        decomf=FromExactly(lambda s: s.costs.decomf),
-        dintrt=FromExactly(lambda s: s.costs.dintrt),
-        dtlife=FromExactly(lambda s: s.costs.dtlife),
+        p_plant_electric_net_mw=From(heat_transport),
+        f_t_plant_available=From(costs),
+        t_plant_pulse_burn=From(times),
+        t_plant_pulse_total=From(times),
+        concost=From(costs),
+        fcap0=From(costs),
+        fcr0=From(costs),
+        discount_rate=From(costs),
+        life_blkt=From(fwbs),
+        fwallcst=From(costs),
+        blkcst=From(costs),
+        cfind=From(costs),
+        lsa=From(costs),
+        fcap0cp=From(costs),
+        ifueltyp=From(costs),
+        life_blkt_fpy=From(fwbs),
+        life_plant=From(costs),
+        life_div=From(costs),
+        divcst=From(costs),
+        life_div_fpy=From(costs),
+        cplife_cal=From(costs),
+        cpstcst=From(costs),
+        cplife=From(costs),
+        cdrlife_cal=From(costs),
+        cdcost=From(costs),
+        fcdfuel=From(costs),
+        ucoam=From(costs),
+        ucfuel=From(costs),
+        f_plasma_fuel_helium3=From(physics),
+        wtgpd=From(physics),
+        uche3=From(costs),
+        ucwst=From(costs),
+        decomf=From(costs),
+        dintrt=From(costs),
+        dtlife=From(costs),
     ):
         return calculate_cost_of_electricity(
             self.ife,

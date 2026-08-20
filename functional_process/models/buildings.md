@@ -138,7 +138,7 @@ instantiated is the `i_bldgs_size` topology switch (see below) — a graph-assem
 choice, same resolution mechanism as `build.md`'s `blktmodel`/`ipowerflow`.
 
 `calculate_shield_height` gets no node of its own — it is called inline inside
-`Bldgs.__call__` (four raw `Input`s in, one local `shh` out, immediately forwarded to
+`Bldgs.__call__` (four raw `From` reads in, one local `shh` out, immediately forwarded to
 `calculate_bldgs`), the same treatment `build.py` gives `awall`. Unlike `awall` it is
 still a separately-defined, separately-testable pure function (its own `Tier1Contract`
 in `test_buildings.py`), since — unlike `awall` — it is a nameable, non-trivial
@@ -152,7 +152,7 @@ names (`cryv`, `vrci`, ...) — those two naming layers genuinely differ in PROC
 (see data-footprint table), and the node's job is to reproduce what actually lands in
 `data`, not `bldgs()`'s internal vocabulary.
 
-`BldgsSizes.i_hcd_primary` is a static field (not an `Input`), matching
+`BldgsSizes.i_hcd_primary` is a static field (not a `From` read), matching
 `naming_convention.md`'s "switches are not ports": the enum lookup
 `CurrentDriveModel(i_hcd_primary).method == CurrentDriveMethodType.NEUTRAL_BEAM` cannot
 be traced, so it is resolved once, in Python, at node-construction/call time, and the

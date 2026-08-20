@@ -67,13 +67,22 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     FixedPointFunction,
-    FromExactly,
-    Output,
+    From,
+    OutputInto,
 )
 
 from functional_process.models.switch_enums import (
     BlanketLifetimeModel,
     SphericalTokamakModel,
+)
+from functional_process.paths import (
+    constraints,
+    costs,
+    divertor,
+    fwbs,
+    physics,
+    tfcoil,
+    times,
 )
 from process.models.tfcoil.base import TFConductorModel
 
@@ -132,7 +141,9 @@ def calculate_divertor_lifetime(adivflnc, pflux_div_heat_load_mw, life_plant):
     return jnp.maximum(0.0, jnp.minimum(adivflnc / pflux_div_heat_load_mw, life_plant))
 
 
-def calculate_cp_lifetime_superconducting(neut_flux_cp, flu_tf_neutron_fast_max, life_plant):
+def calculate_cp_lifetime_superconducting(
+    neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+):
     """Centrepost lifetime, `.tfcoil.i_tf_sup == SUPERCONDUCTING` branch.
 
     Ports `Availability.cp_lifetime`'s SC branch. Mutually exclusive alternative to
@@ -155,7 +166,9 @@ def calculate_cp_lifetime_superconducting(neut_flux_cp, flu_tf_neutron_fast_max,
     """
     no_flux = neut_flux_cp <= 0.0
     safe_flux = jnp.where(no_flux, 1.0, neut_flux_cp)
-    limited = jnp.minimum(flu_tf_neutron_fast_max / (safe_flux * YEAR_SECONDS), life_plant)
+    limited = jnp.minimum(
+        flu_tf_neutron_fast_max / (safe_flux * YEAR_SECONDS), life_plant
+    )
     return jnp.where(no_flux, life_plant, limited)
 
 
@@ -265,14 +278,21 @@ def calculate_u_unplanned_divertor(
     above = n >= div_nu
     edge = below | above
     safe_n = jnp.where(edge, 1.0, n)
-    between = (a0 / (div_nu - div_nref)) * (div_nu - 0.5 * div_nref**2.0 / safe_n - 0.5 * safe_n)
+    between = (a0 / (div_nu - div_nref)) * (
+        div_nu - 0.5 * div_nref**2.0 / safe_n - 0.5 * safe_n
+    )
 
     div_avail = jnp.where(below, a0, jnp.where(above, 0.0, between))
     return 1.0 - div_avail
 
 
 def calculate_u_unplanned_fwbs(
-    life_blkt_fpy, t_plant_pulse_total, fwbs_prob_fail, fwbs_umain_time, fwbs_nu, fwbs_nref
+    life_blkt_fpy,
+    t_plant_pulse_total,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
 ):
     """Unplanned unavailability of the first wall / blanket.
 
@@ -601,7 +621,13 @@ def calculate_avail(
     """
     dpa_fpy = calculate_dpa_per_fpy(p_fusion_total_mw)
     life_blkt_fpy = calculate_blanket_lifetime_fpy_avail(
-        life_fw_fpy, ibkt_life, abktflnc, pflux_fw_neutron_mw, life_dpa, dpa_fpy, life_plant
+        life_fw_fpy,
+        ibkt_life,
+        abktflnc,
+        pflux_fw_neutron_mw,
+        life_dpa,
+        dpa_fpy,
+        life_plant,
     )
     pflux_div_heat_load_mw_clamped = jnp.maximum(pflux_div_heat_load_mw, 1.0e-10)
     life_div_fpy = calculate_divertor_lifetime(
@@ -635,7 +661,14 @@ def calculate_avail(
 
     life_hcd_fpy = life_blkt_fpy_mod
 
-    return life_blkt_fpy_mod, life_div_fpy_mod, cplife_mod, bktcycles, cpfact, life_hcd_fpy
+    return (
+        life_blkt_fpy_mod,
+        life_div_fpy_mod,
+        cplife_mod,
+        bktcycles,
+        cpfact,
+        life_hcd_fpy,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -710,7 +743,9 @@ def calculate_u_planned(
     life_blkt_fpy = calculate_blanket_lifetime_fpy_simple(
         ibkt_life, abktflnc, pflux_fw_neutron_mw, life_dpa, dpa_fpy, life_plant
     )
-    life_div_fpy = calculate_divertor_lifetime(adivflnc, pflux_div_heat_load_mw, life_plant)
+    life_div_fpy = calculate_divertor_lifetime(
+        adivflnc, pflux_div_heat_load_mw, life_plant
+    )
     life_hcd_fpy = life_blkt_fpy
 
     mttr_blanket = (21.0 * num_rh_systems ** (-0.9) + 2.0) / 12.0
@@ -802,15 +837,29 @@ def calculate_avail_2(
         temp_margin,
     )
     u_unplanned_div = calculate_u_unplanned_divertor(
-        life_div_fpy, t_plant_pulse_total, div_prob_fail, div_umain_time, div_nu, div_nref
+        life_div_fpy,
+        t_plant_pulse_total,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
     )
     u_unplanned_fwbs = calculate_u_unplanned_fwbs(
-        life_blkt_fpy, t_plant_pulse_total, fwbs_prob_fail, fwbs_umain_time, fwbs_nu, fwbs_nref
+        life_blkt_fpy,
+        t_plant_pulse_total,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
     )
     u_unplanned_bop = calculate_u_unplanned_bop(t_plant_operational_total_yrs)
     u_unplanned_hcd = calculate_u_unplanned_hcd()
     u_unplanned_vacuum = calculate_u_unplanned_vacuum(
-        t_plant_operational_total_yrs, life_plant, num_rh_systems, n_vac_pumps_high, redun_vac
+        t_plant_operational_total_yrs,
+        life_plant,
+        num_rh_systems,
+        n_vac_pumps_high,
+        redun_vac,
     )
 
     u_unplanned = jnp.minimum(
@@ -832,7 +881,9 @@ def calculate_avail_2(
         jnp.minimum(life_blkt_fpy / f_t_plant_available, life_plant),
         life_blkt_fpy,
     )
-    life_hcd_fpy_mod = jnp.where(life_blkt_fpy < life_plant, life_blkt_fpy_mod, life_hcd_fpy)
+    life_hcd_fpy_mod = jnp.where(
+        life_blkt_fpy < life_plant, life_blkt_fpy_mod, life_hcd_fpy
+    )
     life_div_fpy_mod = jnp.where(
         life_div_fpy < life_plant,
         jnp.minimum(life_div_fpy / f_t_plant_available, life_plant),
@@ -941,7 +992,9 @@ def calculate_avail_st(
     life_blkt_fpy = calculate_blanket_lifetime_fpy_simple(
         ibkt_life, abktflnc, pflux_fw_neutron_mw, life_dpa, dpa_fpy, life_plant
     )
-    life_div_fpy = calculate_divertor_lifetime(adivflnc, pflux_div_heat_load_mw, life_plant)
+    life_div_fpy = calculate_divertor_lifetime(
+        adivflnc, pflux_div_heat_load_mw, life_plant
+    )
     life_hcd_fpy = life_blkt_fpy
 
     shortest_lifetime = jnp.minimum(
@@ -963,15 +1016,29 @@ def calculate_avail_st(
         temp_margin,
     )
     u_unplanned_div = calculate_u_unplanned_divertor(
-        life_div_fpy, t_plant_pulse_total, div_prob_fail, div_umain_time, div_nu, div_nref
+        life_div_fpy,
+        t_plant_pulse_total,
+        div_prob_fail,
+        div_umain_time,
+        div_nu,
+        div_nref,
     )
     u_unplanned_fwbs = calculate_u_unplanned_fwbs(
-        life_blkt_fpy, t_plant_pulse_total, fwbs_prob_fail, fwbs_umain_time, fwbs_nu, fwbs_nref
+        life_blkt_fpy,
+        t_plant_pulse_total,
+        fwbs_prob_fail,
+        fwbs_umain_time,
+        fwbs_nu,
+        fwbs_nref,
     )
     u_unplanned_bop = calculate_u_unplanned_bop(t_plant_operational_total_yrs)
     u_unplanned_hcd = calculate_u_unplanned_hcd()
     u_unplanned_vacuum = calculate_u_unplanned_vacuum(
-        t_plant_operational_total_yrs, life_plant, num_rh_systems, n_vac_pumps_high, redun_vac
+        t_plant_operational_total_yrs,
+        life_plant,
+        num_rh_systems,
+        n_vac_pumps_high,
+        redun_vac,
     )
 
     u_unplanned = jnp.minimum(
@@ -994,7 +1061,9 @@ def calculate_avail_st(
         jnp.minimum(life_blkt_fpy / f_t_plant_available, life_plant),
         life_blkt_fpy,
     )
-    life_hcd_fpy_mod = jnp.where(life_blkt_fpy < life_plant, life_blkt_fpy_mod, life_hcd_fpy)
+    life_hcd_fpy_mod = jnp.where(
+        life_blkt_fpy < life_plant, life_blkt_fpy_mod, life_hcd_fpy
+    )
     life_div_fpy_mod = jnp.where(
         life_div_fpy < life_plant,
         jnp.minimum(life_div_fpy / f_t_plant_available, life_plant),
@@ -1075,13 +1144,13 @@ class CpLifetimeSuperconducting(ExplicitFunction):
     `stellarator_F_tf_nuclear_heating.py`).
     """
 
-    cplife = Output(lambda s: s.costs.cplife)
+    cplife = OutputInto(costs)
 
     def __call__(
         self,
-        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        neut_flux_cp=From(fwbs),
+        flu_tf_neutron_fast_max=From(constraints),
+        life_plant=From(costs),
     ):
         return calculate_cp_lifetime_superconducting(
             neut_flux_cp, flu_tf_neutron_fast_max, life_plant
@@ -1094,13 +1163,13 @@ class CpLifetimeResistive(ExplicitFunction):
     Mutually exclusive alternative to `CpLifetimeSuperconducting`.
     """
 
-    cplife = Output(lambda s: s.costs.cplife)
+    cplife = OutputInto(costs)
 
     def __call__(
         self,
-        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
-        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        cpstflnc=From(costs),
+        pflux_fw_neutron_mw=From(physics),
+        life_plant=From(costs),
     ):
         return calculate_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant)
 
@@ -1113,22 +1182,22 @@ class WardTaylorAvailability(ExplicitFunction):
     input); see module docstring.
     """
 
-    f_t_plant_available = Output(lambda s: s.costs.f_t_plant_available)
+    f_t_plant_available = OutputInto(costs)
 
     def __call__(
         self,
-        life_div_fpy=FromExactly(lambda s: s.costs.life_div_fpy),
-        life_blkt_fpy=FromExactly(lambda s: s.fwbs.life_blkt_fpy),
-        t_div_replace_yrs=FromExactly(lambda s: s.costs.t_div_replace_yrs),
-        t_blkt_replace_yrs=FromExactly(lambda s: s.costs.t_blkt_replace_yrs),
-        tcomrepl=FromExactly(lambda s: s.costs.tcomrepl),
-        uubop=FromExactly(lambda s: s.costs.uubop),
-        uucd=FromExactly(lambda s: s.costs.uucd),
-        uudiv=FromExactly(lambda s: s.costs.uudiv),
-        uufuel=FromExactly(lambda s: s.costs.uufuel),
-        uufw=FromExactly(lambda s: s.costs.uufw),
-        uumag=FromExactly(lambda s: s.costs.uumag),
-        uuves=FromExactly(lambda s: s.costs.uuves),
+        life_div_fpy=From(costs),
+        life_blkt_fpy=From(fwbs),
+        t_div_replace_yrs=From(costs),
+        t_blkt_replace_yrs=From(costs),
+        tcomrepl=From(costs),
+        uubop=From(costs),
+        uucd=From(costs),
+        uudiv=From(costs),
+        uufuel=From(costs),
+        uufw=From(costs),
+        uumag=From(costs),
+        uuves=From(costs),
     ):
         return calculate_ward_taylor_availability(
             life_div_fpy,
@@ -1319,17 +1388,17 @@ class CplifeAvail(FixedPointFunction):
     i_tf_sup: TFConductorModel = eqx.field(static=True)
     itart: SphericalTokamakModel = eqx.field(static=True)
 
-    cplife = Output(lambda s: s.costs.cplife)
+    cplife = OutputInto(costs)
 
     def step(
         self,
-        cplife=FromExactly(lambda s: s.costs.cplife),
-        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
-        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
+        cplife=From(costs),
+        neut_flux_cp=From(fwbs),
+        flu_tf_neutron_fast_max=From(constraints),
+        cpstflnc=From(costs),
+        pflux_fw_neutron_mw=From(physics),
+        life_plant=From(costs),
+        f_t_plant_available=From(costs),
     ):
         return calculate_cplife_next(
             cplife,
@@ -1368,16 +1437,16 @@ class CplifeAvailSt(FixedPointFunction):
     i_tf_sup: TFConductorModel = eqx.field(static=True)
     itart: SphericalTokamakModel = eqx.field(static=True)
 
-    cplife = Output(lambda s: s.costs.cplife)
+    cplife = OutputInto(costs)
 
     def step(
         self,
-        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
-        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
+        neut_flux_cp=From(fwbs),
+        flu_tf_neutron_fast_max=From(constraints),
+        cpstflnc=From(costs),
+        pflux_fw_neutron_mw=From(physics),
+        life_plant=From(costs),
+        f_t_plant_available=From(costs),
     ):
         return calculate_cplife_avail_st_next(
             neut_flux_cp,
@@ -1414,26 +1483,26 @@ class Avail(ExplicitFunction):
     ibkt_life: BlanketLifetimeModel = eqx.field(static=True)
     itart: SphericalTokamakModel = eqx.field(static=True)
 
-    life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
-    life_div_fpy = Output(lambda s: s.costs.life_div_fpy)
-    bktcycles = Output(lambda s: s.costs.bktcycles)
-    cpfact = Output(lambda s: s.costs.cpfact)
-    life_hcd_fpy = Output(lambda s: s.costs.life_hcd_fpy)
+    life_blkt_fpy = OutputInto(fwbs)
+    life_div_fpy = OutputInto(costs)
+    bktcycles = OutputInto(costs)
+    cpfact = OutputInto(costs)
+    life_hcd_fpy = OutputInto(costs)
 
     def __call__(
         self,
-        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
-        life_fw_fpy=FromExactly(lambda s: s.fwbs.life_fw_fpy),
-        abktflnc=FromExactly(lambda s: s.costs.abktflnc),
-        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_dpa=FromExactly(lambda s: s.costs.life_dpa),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        pflux_div_heat_load_mw=FromExactly(lambda s: s.divertor.pflux_div_heat_load_mw),
-        adivflnc=FromExactly(lambda s: s.costs.adivflnc),
-        t_plant_pulse_total=FromExactly(lambda s: s.times.t_plant_pulse_total),
-        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
-        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
-        cplife=FromExactly(lambda s: s.costs.cplife),
+        p_fusion_total_mw=From(physics),
+        life_fw_fpy=From(fwbs),
+        abktflnc=From(costs),
+        pflux_fw_neutron_mw=From(physics),
+        life_dpa=From(costs),
+        life_plant=From(costs),
+        pflux_div_heat_load_mw=From(divertor),
+        adivflnc=From(costs),
+        t_plant_pulse_total=From(times),
+        t_plant_pulse_burn=From(times),
+        f_t_plant_available=From(costs),
+        cplife=From(costs),
     ):
         (
             life_blkt_fpy,
@@ -1484,44 +1553,38 @@ class Avail2(ExplicitFunction):
     n_vac_pumps_high: int = eqx.field(static=True)
     redun_vac: int = eqx.field(static=True)
 
-    life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
-    life_div_fpy = Output(lambda s: s.costs.life_div_fpy)
-    life_hcd_fpy = Output(lambda s: s.costs.life_hcd_fpy)
-    t_plant_operational_total_yrs = Output(
-        lambda s: s.costs.t_plant_operational_total_yrs
-    )
-    f_t_plant_available = Output(lambda s: s.costs.f_t_plant_available)
-    cpfact = Output(lambda s: s.costs.cpfact)
+    life_blkt_fpy = OutputInto(fwbs)
+    life_div_fpy = OutputInto(costs)
+    life_hcd_fpy = OutputInto(costs)
+    t_plant_operational_total_yrs = OutputInto(costs)
+    f_t_plant_available = OutputInto(costs)
+    cpfact = OutputInto(costs)
 
     def __call__(
         self,
-        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
-        abktflnc=FromExactly(lambda s: s.costs.abktflnc),
-        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_dpa=FromExactly(lambda s: s.costs.life_dpa),
-        adivflnc=FromExactly(lambda s: s.costs.adivflnc),
-        pflux_div_heat_load_mw=FromExactly(lambda s: s.divertor.pflux_div_heat_load_mw),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        num_rh_systems=FromExactly(lambda s: s.costs.num_rh_systems),
-        temp_tf_superconductor_margin_min=FromExactly(
-            lambda s: s.tfcoil.temp_tf_superconductor_margin_min
-        ),
-        temp_cs_superconductor_margin_min=FromExactly(
-            lambda s: s.tfcoil.temp_cs_superconductor_margin_min
-        ),
-        conf_mag=FromExactly(lambda s: s.costs.conf_mag),
-        temp_margin=FromExactly(lambda s: s.tfcoil.temp_margin),
-        div_prob_fail=FromExactly(lambda s: s.costs.div_prob_fail),
-        div_umain_time=FromExactly(lambda s: s.costs.div_umain_time),
-        div_nu=FromExactly(lambda s: s.costs.div_nu),
-        div_nref=FromExactly(lambda s: s.costs.div_nref),
-        fwbs_prob_fail=FromExactly(lambda s: s.costs.fwbs_prob_fail),
-        fwbs_umain_time=FromExactly(lambda s: s.costs.fwbs_umain_time),
-        fwbs_nu=FromExactly(lambda s: s.costs.fwbs_nu),
-        fwbs_nref=FromExactly(lambda s: s.costs.fwbs_nref),
-        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_total=FromExactly(lambda s: s.times.t_plant_pulse_total),
-        cplife=FromExactly(lambda s: s.costs.cplife),
+        p_fusion_total_mw=From(physics),
+        abktflnc=From(costs),
+        pflux_fw_neutron_mw=From(physics),
+        life_dpa=From(costs),
+        adivflnc=From(costs),
+        pflux_div_heat_load_mw=From(divertor),
+        life_plant=From(costs),
+        num_rh_systems=From(costs),
+        temp_tf_superconductor_margin_min=From(tfcoil),
+        temp_cs_superconductor_margin_min=From(tfcoil),
+        conf_mag=From(costs),
+        temp_margin=From(tfcoil),
+        div_prob_fail=From(costs),
+        div_umain_time=From(costs),
+        div_nu=From(costs),
+        div_nref=From(costs),
+        fwbs_prob_fail=From(costs),
+        fwbs_umain_time=From(costs),
+        fwbs_nu=From(costs),
+        fwbs_nref=From(costs),
+        t_plant_pulse_burn=From(times),
+        t_plant_pulse_total=From(times),
+        cplife=From(costs),
     ):
         (
             life_blkt_fpy,
@@ -1610,48 +1673,42 @@ class AvailSt(ExplicitFunction):
     redun_vac: int = eqx.field(static=True)
     i_tf_sup: TFConductorModel = eqx.field(static=True)
 
-    life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
-    life_div_fpy = Output(lambda s: s.costs.life_div_fpy)
-    life_hcd_fpy = Output(lambda s: s.costs.life_hcd_fpy)
-    t_plant_operational_total_yrs = Output(
-        lambda s: s.costs.t_plant_operational_total_yrs
-    )
-    f_t_plant_available = Output(lambda s: s.costs.f_t_plant_available)
-    cpfact = Output(lambda s: s.costs.cpfact)
+    life_blkt_fpy = OutputInto(fwbs)
+    life_div_fpy = OutputInto(costs)
+    life_hcd_fpy = OutputInto(costs)
+    t_plant_operational_total_yrs = OutputInto(costs)
+    f_t_plant_available = OutputInto(costs)
+    cpfact = OutputInto(costs)
 
     def __call__(
         self,
-        abktflnc=FromExactly(lambda s: s.costs.abktflnc),
-        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
-        life_dpa=FromExactly(lambda s: s.costs.life_dpa),
-        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
-        adivflnc=FromExactly(lambda s: s.costs.adivflnc),
-        pflux_div_heat_load_mw=FromExactly(lambda s: s.divertor.pflux_div_heat_load_mw),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        neut_flux_cp=FromExactly(lambda s: s.fwbs.neut_flux_cp),
-        flu_tf_neutron_fast_max=FromExactly(lambda s: s.constraints.flu_tf_neutron_fast_max),
-        cpstflnc=FromExactly(lambda s: s.costs.cpstflnc),
-        tmain=FromExactly(lambda s: s.costs.tmain),
-        temp_tf_superconductor_margin_min=FromExactly(
-            lambda s: s.tfcoil.temp_tf_superconductor_margin_min
-        ),
-        temp_cs_superconductor_margin_min=FromExactly(
-            lambda s: s.tfcoil.temp_cs_superconductor_margin_min
-        ),
-        conf_mag=FromExactly(lambda s: s.costs.conf_mag),
-        temp_margin=FromExactly(lambda s: s.tfcoil.temp_margin),
-        div_prob_fail=FromExactly(lambda s: s.costs.div_prob_fail),
-        div_umain_time=FromExactly(lambda s: s.costs.div_umain_time),
-        div_nu=FromExactly(lambda s: s.costs.div_nu),
-        div_nref=FromExactly(lambda s: s.costs.div_nref),
-        fwbs_prob_fail=FromExactly(lambda s: s.costs.fwbs_prob_fail),
-        fwbs_umain_time=FromExactly(lambda s: s.costs.fwbs_umain_time),
-        fwbs_nu=FromExactly(lambda s: s.costs.fwbs_nu),
-        fwbs_nref=FromExactly(lambda s: s.costs.fwbs_nref),
-        num_rh_systems=FromExactly(lambda s: s.costs.num_rh_systems),
-        u_unplanned_cp=FromExactly(lambda s: s.costs.u_unplanned_cp),
-        t_plant_pulse_burn=FromExactly(lambda s: s.times.t_plant_pulse_burn),
-        t_plant_pulse_total=FromExactly(lambda s: s.times.t_plant_pulse_total),
+        abktflnc=From(costs),
+        pflux_fw_neutron_mw=From(physics),
+        life_dpa=From(costs),
+        p_fusion_total_mw=From(physics),
+        adivflnc=From(costs),
+        pflux_div_heat_load_mw=From(divertor),
+        life_plant=From(costs),
+        neut_flux_cp=From(fwbs),
+        flu_tf_neutron_fast_max=From(constraints),
+        cpstflnc=From(costs),
+        tmain=From(costs),
+        temp_tf_superconductor_margin_min=From(tfcoil),
+        temp_cs_superconductor_margin_min=From(tfcoil),
+        conf_mag=From(costs),
+        temp_margin=From(tfcoil),
+        div_prob_fail=From(costs),
+        div_umain_time=From(costs),
+        div_nu=From(costs),
+        div_nref=From(costs),
+        fwbs_prob_fail=From(costs),
+        fwbs_umain_time=From(costs),
+        fwbs_nu=From(costs),
+        fwbs_nref=From(costs),
+        num_rh_systems=From(costs),
+        u_unplanned_cp=From(costs),
+        t_plant_pulse_burn=From(times),
+        t_plant_pulse_total=From(times),
     ):
         if self.i_tf_sup == 1:
             cplife = calculate_cp_lifetime_superconducting(

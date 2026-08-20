@@ -22,13 +22,10 @@ into any other model.
 
 import jax.numpy as jnp
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
+from functional_process.paths import buildings, heat_transport, physics, tfcoil
 from process.core import constants
 
 
@@ -239,27 +236,27 @@ class TfPowerResistive(ExplicitFunction):
     `calculate_vacuum_pumping_old` split on `.vacuum.i_vacuum_pumping`).
     """
 
-    m_tf_bus = Output(lambda s: s.tfcoil.m_tf_bus)
-    vtfkv = Output(lambda s: s.tfcoil.vtfkv)
-    p_cp_resistive_mw = Output(lambda s: s.tfcoil.p_cp_resistive_mw)
-    p_tf_leg_resistive_mw = Output(lambda s: s.tfcoil.p_tf_leg_resistive_mw)
-    p_tf_joints_resistive_mw = Output(lambda s: s.tfcoil.p_tf_joints_resistive_mw)
-    tfcmw = Output(lambda s: s.tfcoil.tfcmw)
-    p_tf_electric_supplies_mw = Output(lambda s: s.heat_transport.p_tf_electric_supplies_mw)
+    m_tf_bus = OutputInto(tfcoil)
+    vtfkv = OutputInto(tfcoil)
+    p_cp_resistive_mw = OutputInto(tfcoil)
+    p_tf_leg_resistive_mw = OutputInto(tfcoil)
+    p_tf_joints_resistive_mw = OutputInto(tfcoil)
+    tfcmw = OutputInto(tfcoil)
+    p_tf_electric_supplies_mw = OutputInto(heat_transport)
 
     def __call__(
         self,
-        c_tf_turn=FromExactly(lambda s: s.tfcoil.c_tf_turn),
-        j_tf_bus=FromExactly(lambda s: s.tfcoil.j_tf_bus),
-        rho_tf_bus=FromExactly(lambda s: s.tfcoil.rho_tf_bus),
-        len_tf_bus=FromExactly(lambda s: s.tfcoil.len_tf_bus),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        res_tf_leg=FromExactly(lambda s: s.tfcoil.res_tf_leg),
-        p_cp_resistive=FromExactly(lambda s: s.tfcoil.p_cp_resistive),
-        c_tf_total=FromExactly(lambda s: s.tfcoil.c_tf_total),
-        p_tf_joints_resistive=FromExactly(lambda s: s.tfcoil.p_tf_joints_resistive),
-        p_tf_leg_resistive=FromExactly(lambda s: s.tfcoil.p_tf_leg_resistive),
-        etatf=FromExactly(lambda s: s.heat_transport.etatf),
+        c_tf_turn=From(tfcoil),
+        j_tf_bus=From(tfcoil),
+        rho_tf_bus=From(tfcoil),
+        len_tf_bus=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        res_tf_leg=From(tfcoil),
+        p_cp_resistive=From(tfcoil),
+        c_tf_total=From(tfcoil),
+        p_tf_joints_resistive=From(tfcoil),
+        p_tf_leg_resistive=From(tfcoil),
+        etatf=From(heat_transport),
     ):
         return calculate_tf_power_resistive(
             c_tf_turn,
@@ -282,24 +279,22 @@ class TfPowerSuperconducting(ExplicitFunction):
     Only reached when `.tfcoil.i_tf_sup == 1` -- see `TfPowerResistive`'s docstring.
     """
 
-    tfckw = Output(lambda s: s.tfcoil.tfckw)
-    len_tf_bus = Output(lambda s: s.tfcoil.len_tf_bus)
-    drarea = Output(lambda s: s.tfcoil.drarea)
-    tfcbv = Output(lambda s: s.buildings.tfcbv)
-    p_tf_electric_supplies_mw = Output(lambda s: s.heat_transport.p_tf_electric_supplies_mw)
+    tfckw = OutputInto(tfcoil)
+    len_tf_bus = OutputInto(tfcoil)
+    drarea = OutputInto(tfcoil)
+    tfcbv = OutputInto(buildings)
+    p_tf_electric_supplies_mw = OutputInto(heat_transport)
 
     def __call__(
         self,
-        c_tf_turn=FromExactly(lambda s: s.tfcoil.c_tf_turn),
-        e_tf_magnetic_stored_total_gj=FromExactly(
-            lambda s: s.tfcoil.e_tf_magnetic_stored_total_gj
-        ),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        v_tf_coil_dump_quench_kv=FromExactly(lambda s: s.tfcoil.v_tf_coil_dump_quench_kv),
-        res_tf_leg=FromExactly(lambda s: s.tfcoil.res_tf_leg),
-        rho_tf_bus=FromExactly(lambda s: s.tfcoil.rho_tf_bus),
-        etatf=FromExactly(lambda s: s.heat_transport.etatf),
+        c_tf_turn=From(tfcoil),
+        e_tf_magnetic_stored_total_gj=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        rmajor=From(physics),
+        v_tf_coil_dump_quench_kv=From(tfcoil),
+        res_tf_leg=From(tfcoil),
+        rho_tf_bus=From(tfcoil),
+        etatf=From(heat_transport),
     ):
         return calculate_tf_power_superconducting(
             c_tf_turn,

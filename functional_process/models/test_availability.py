@@ -54,6 +54,7 @@ from functional_process.models.switch_enums import (
     BlanketLifetimeModel,
     SphericalTokamakModel,
 )
+from functional_process.paths import costs
 from process.core.model import DataStructure
 from process.models.availability import Availability
 from process.models.tfcoil.base import TFConductorModel
@@ -124,7 +125,9 @@ class TestDivertorLifetime(Tier1Contract):
     }
 
 
-def _reference_cp_lifetime_superconducting(neut_flux_cp, flu_tf_neutron_fast_max, life_plant):
+def _reference_cp_lifetime_superconducting(
+    neut_flux_cp, flu_tf_neutron_fast_max, life_plant
+):
     a = _availability()
     a.data.tfcoil.i_tf_sup = 1
     a.data.fwbs.neut_flux_cp = neut_flux_cp
@@ -297,7 +300,12 @@ class TestUUnplannedDivertor(Tier1Contract):
 
 
 def _reference_u_unplanned_fwbs(
-    life_blkt_fpy, t_plant_pulse_total, fwbs_prob_fail, fwbs_umain_time, fwbs_nu, fwbs_nref
+    life_blkt_fpy,
+    t_plant_pulse_total,
+    fwbs_prob_fail,
+    fwbs_umain_time,
+    fwbs_nu,
+    fwbs_nref,
 ):
     a = _availability()
     a.data.times.t_plant_pulse_total = t_plant_pulse_total
@@ -384,7 +392,11 @@ class TestUUnplannedHcd(Tier1Contract):
 
 
 def _reference_u_unplanned_vacuum(
-    t_plant_operational_total_yrs, life_plant, num_rh_systems, n_vac_pumps_high, redun_vac
+    t_plant_operational_total_yrs,
+    life_plant,
+    num_rh_systems,
+    n_vac_pumps_high,
+    redun_vac,
 ):
     a = _availability()
     a.data.costs.t_plant_operational_total_yrs = t_plant_operational_total_yrs
@@ -439,7 +451,14 @@ class TestUUnplannedVacuum(Tier1Contract):
 
 
 def _reference_blanket_lifetime_fpy_avail(
-    life_fw_fpy, abktflnc, pflux_fw_neutron_mw, life_dpa, dpa_fpy, life_plant, *, ibkt_life
+    life_fw_fpy,
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_dpa,
+    dpa_fpy,
+    life_plant,
+    *,
+    ibkt_life,
 ):
     """Reproduce `avail`'s blanket-lifetime block directly (not independently callable)."""
     if life_fw_fpy < 0.0001:
@@ -966,9 +985,9 @@ class TestAvail2(Tier1Contract):
 
     @staticmethod
     def reference(**kwargs):
-        return _reference_avail_2(
-            **{k: v for k, v in kwargs.items() if k not in TestAvail2._NOT_REFERENCE_ARGS}
-        )
+        return _reference_avail_2(**{
+            k: v for k, v in kwargs.items() if k not in TestAvail2._NOT_REFERENCE_ARGS
+        })
 
     @staticmethod
     def ported(**kwargs):
@@ -1548,7 +1567,7 @@ def test_cplife_avail_st_next_matches_avail_st(i_tf_sup, itart):
 # classes, standalone and (for one representative pair each) combined.
 # ---------------------------------------------------------------------------
 
-CPLIFE_VAR = Output(lambda s: s.costs.cplife).port().var
+CPLIFE_VAR = Output(costs.cplife).port().var
 """`.costs.cplife` as a `VarPath`, for the assembly assertions below."""
 
 
@@ -1558,10 +1577,12 @@ def test_cplife_avail_to_graph_assembles():
     body+problem pair is cyclic *by construction* (same as `plasma_composition`'s
     `first_call`), unlike `CplifeAvailSt` below.
     """
-    graph = to_graph(CplifeAvail(
-        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-    ))
+    graph = to_graph(
+        CplifeAvail(
+            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        )
+    )
     node = CplifeAvail(
         i_tf_sup=TFConductorModel.SUPERCONDUCTING,
         itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
@@ -1579,10 +1600,12 @@ def test_cplife_avail_st_to_graph_assembles():
     docstring), so the resulting body+problem pair is acyclic: a degenerate `FixedPoint`
     that converges in one iteration regardless of its starting guess.
     """
-    graph = to_graph(CplifeAvailSt(
-        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-    ))
+    graph = to_graph(
+        CplifeAvailSt(
+            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        )
+    )
     node = CplifeAvailSt(
         i_tf_sup=TFConductorModel.SUPERCONDUCTING,
         itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,

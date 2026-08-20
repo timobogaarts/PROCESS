@@ -35,13 +35,13 @@ Full parameter lists are in each ported function's docstring
 | VarPath | read/write | classification | note |
 |---|---|---|---|
 | `.power.p_cp_coolant_pump_elec_mw` | write, conditional on `itart == 1 and i_tf_sup == 0` | conditional-ownership, but empirically inert in the else arm | `0.0` when not owned -- no other producer confirmed by grep |
-| `.heat_transport.p_plant_electric_gross_mw`, `.power.p_turbine_loss_mw`, `.heat_transport.p_plant_electric_recirc_mw`, `.heat_transport.p_plant_electric_net_mw`, `.heat_transport.f_p_plant_electric_recirc` | write, conditional on `.costs.ireactor == 1` | **conditional-ownership-by-run-config** | `.costs.ireactor` belongs to unit #18 (`costs.py`, not yet ported per the registry, but read here as an ordinary `Input`, not a call into unit #18) -- see below |
+| `.heat_transport.p_plant_electric_gross_mw`, `.power.p_turbine_loss_mw`, `.heat_transport.p_plant_electric_recirc_mw`, `.heat_transport.p_plant_electric_net_mw`, `.heat_transport.f_p_plant_electric_recirc` | write, conditional on `.costs.ireactor == 1` | **conditional-ownership-by-run-config** | `.costs.ireactor` belongs to unit #18 (`costs.py`, not yet ported per the registry, but read here as an ordinary `From` read, not a call into unit #18) -- see below |
 | `.heat_transport.p_plant_electric_gross_mw`, `.heat_transport.p_plant_electric_net_mw` | read, unconditionally, by `power_profiles_over_time` | **implicit-io** (downstream of the above) | `plant_electric_production` calls `power_profiles_over_time` regardless of `ireactor`, so if `ireactor != 1` these two are whatever they entered the call with (stale/default), not values this call computed -- ported faithfully, not resolved, same shape as `power_B_thermal_cryo.md`'s `.power.delta_eta` |
 
 **`ireactor`'s pass-through is not resolved here as a graph-wiring decision** --
 same policy as chunk B's `delta_eta` self-loop and `p_fw_blkt_coolant_pump_mw`
 conditional ownership: `calculate_plant_electric_production` takes the five fields as
-ordinary `Input`s (entering values) and only overwrites them internally when
+ordinary `From` reads (entering values) and only overwrites them internally when
 `ireactor == 1`, exactly mirroring PROCESS's own conditional write. Whether a real
 graph should drive this with a `Blocking`/`FixedPoint`, or simply route unit #18's
 `ireactor` output into this node once it exists, is a later wiring question.
@@ -93,7 +93,7 @@ now structural**, see below.
 
 **`PlantElectricProduction` is not registerable and never was.** It declares
 `p_plant_electric_gross_mw` / `p_turbine_loss_mw` / `p_plant_electric_recirc_mw` /
-`p_plant_electric_net_mw` / `f_p_plant_electric_recirc` as both `Output`s and `Input`s, so
+`p_plant_electric_net_mw` / `f_p_plant_electric_recirc` as both `OutputInto` writes and `From` reads, so
 `to_graph` refuses it outright (*"reads [...], which it also owns"* -- confirmed directly).
 `total_process.py` used to register `PowerProfilesOverTime` alone in `COMMON` to work
 around that, at the cost of leaving all five fields without a producer.

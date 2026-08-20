@@ -132,8 +132,8 @@ Both actually written in `power_A_tf_coil_power.py`.
 ## cottax node
 
 `TfPowerResistive` and `TfPowerSuperconducting`, both `ExplicitFunction`, actually
-written in `power_A_tf_coil_power.py`. Neither declares `.tfcoil.i_tf_sup` as an
-`Input` or a static field -- per `_audit/naming_convention.md`, a topology-changing
+written in `power_A_tf_coil_power.py`. Neither declares `.tfcoil.i_tf_sup` as a
+`From` read or a static field -- per `_audit/naming_convention.md`, a topology-changing
 switch is consumed by the code that assembles the graph (choosing which of the two
 nodes to instantiate), not represented on either node. Same convention as `vacuum.py`'s
 `VacuumPumpingSimple`/`calculate_vacuum_pumping_old` split.

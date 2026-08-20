@@ -41,13 +41,20 @@ centre-post calculations two sections later correctly do.
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_pow
+from functional_process.paths import (
+    build,
+    buildings,
+    costs,
+    divertor,
+    fwbs,
+    heat_transport,
+    pf_coil,
+    physics,
+    tfcoil,
+)
 from process.models.physics.current_drive import (
     CurrentDriveMethodType,
     CurrentDriveModel,
@@ -486,9 +493,7 @@ def calculate_bldgs_sizes(
         jnp.maximum(jnp.maximum(r_pf_coil_outer_max, r_cryostat_inboard), tf_radial_dim)
         + bioshld_thk
     )
-    key_width = (
-        2.0 * width_reactor_piece + reactor_clrnc + transp_clrnc + crane_clrnc_h
-    )
+    key_width = 2.0 * width_reactor_piece + reactor_clrnc + transp_clrnc + crane_clrnc_h
     reactor_hall_w = 3.0 * key_width
     reactor_hall_l = 3.0 * key_width
 
@@ -529,9 +534,7 @@ def calculate_bldgs_sizes(
     reactor_basement_l = reactor_hall_w
     reactor_basement_w = reactor_hall_w
     reactor_basement_area = reactor_basement_l * reactor_basement_w
-    reactor_basement_h = (
-        tf_vertical_dim + transp_clrnc + crane_clrnc_h + crane_arm_h
-    )
+    reactor_basement_h = tf_vertical_dim + transp_clrnc + crane_clrnc_h + crane_arm_h
     reactor_basement_vol = reactor_basement_area * reactor_basement_h
 
     reactor_build_totvol = reactor_building_vol + reactor_basement_vol
@@ -541,7 +544,8 @@ def calculate_bldgs_sizes(
     life_plant_nonzero = life_plant != 0.0
 
     hcomp_height_shield = 2.0 * (
-        z_tf_inside_half - (dr_tf_inboard + dr_tf_shld_gap + dz_shld_thermal + dz_shld_vv_gap)
+        z_tf_inside_half
+        - (dr_tf_inboard + dr_tf_shld_gap + dz_shld_thermal + dz_shld_vv_gap)
     )
 
     hcomp_rad_thk_ib = dr_shld_inboard + dr_blkt_inboard + dr_fw_inboard
@@ -623,12 +627,12 @@ def calculate_bldgs_sizes(
     cplife_nonzero = cplife != 0.0
     hcomp_height_cp = 2.0 * z_tf_inside_half
     hcomp_rad_thk_cp = jnp.where(i_tf_sup != 1, r_cp_top, dr_tf_inboard)
-    hcomp_footprint_cp = (hcomp_height_cp + hot_sepdist) * (hcomp_rad_thk_cp + hot_sepdist)
+    hcomp_footprint_cp = (hcomp_height_cp + hot_sepdist) * (
+        hcomp_rad_thk_cp + hot_sepdist
+    )
     hcomp_vol_cp = hcomp_footprint_cp * (hcomp_rad_thk_cp + hot_sepdist)
     hcomp_req_supply_cp = _safe_ratio(life_plant, cplife) * qnty_sfty_fac
-    cp_hotcell_vol = jnp.where(
-        cplife_nonzero, hcomp_req_supply_cp * hcomp_vol_cp, 0.0
-    )
+    cp_hotcell_vol = jnp.where(cplife_nonzero, hcomp_req_supply_cp * hcomp_vol_cp, 0.0)
 
     hotcell_vol = ib_hotcell_vol + ob_hotcell_vol + div_hotcell_vol + cp_hotcell_vol
     hotcell_area = hotcell_vol / hotcell_h
@@ -718,7 +722,11 @@ def calculate_bldgs_sizes(
     tw_storage_area = tw_storage_l * tw_storage_w
     tw_storage_vol = tw_storage_area * tw_storage_h
     waste_buildings_vol = (
-        ilw_smelter_vol + ilw_storage_vol + llw_storage_vol + hw_storage_vol + tw_storage_vol
+        ilw_smelter_vol
+        + ilw_storage_vol
+        + llw_storage_vol
+        + hw_storage_vol
+        + tw_storage_vol
     )
     buildings_total_vol = buildings_total_vol + waste_buildings_vol
 
@@ -740,7 +748,13 @@ def calculate_bldgs_sizes(
     a_plant_floor_effective = buildings_total_vol / 6.0
     volnucb = reactor_build_totvol + hotcell_vol_ext
 
-    return reactor_hall_l, reactor_hall_w, reactor_hall_h, a_plant_floor_effective, volnucb
+    return (
+        reactor_hall_l,
+        reactor_hall_w,
+        reactor_hall_h,
+        a_plant_floor_effective,
+        volnucb,
+    )
 
 
 class TfCoilEnvelope(ExplicitFunction):
@@ -753,21 +767,21 @@ class TfCoilEnvelope(ExplicitFunction):
     for `Bldgs`/`BldgsSizes` to read from.
     """
 
-    tfro = Output(lambda s: s.buildings.tfro)
-    tfri = Output(lambda s: s.buildings.tfri)
-    tf_radial_dim = Output(lambda s: s.buildings.tf_radial_dim)
-    tf_vertical_dim = Output(lambda s: s.buildings.tf_vertical_dim)
-    tfmtn = Output(lambda s: s.buildings.tfmtn)
+    tfro = OutputInto(buildings)
+    tfri = OutputInto(buildings)
+    tf_radial_dim = OutputInto(buildings)
+    tf_vertical_dim = OutputInto(buildings)
+    tfmtn = OutputInto(buildings)
 
     def __call__(
         self,
-        r_tf_outboard_mid=FromExactly(lambda s: s.build.r_tf_outboard_mid),
-        dr_tf_outboard=FromExactly(lambda s: s.build.dr_tf_outboard),
-        r_tf_inboard_mid=FromExactly(lambda s: s.build.r_tf_inboard_mid),
-        dr_tf_inboard=FromExactly(lambda s: s.build.dr_tf_inboard),
-        z_tf_inside_half=FromExactly(lambda s: s.build.z_tf_inside_half),
-        m_tf_coils_total=FromExactly(lambda s: s.tfcoil.m_tf_coils_total),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
+        r_tf_outboard_mid=From(build),
+        dr_tf_outboard=From(build),
+        r_tf_inboard_mid=From(build),
+        dr_tf_inboard=From(build),
+        z_tf_inside_half=From(build),
+        m_tf_coils_total=From(tfcoil),
+        n_tf_coils=From(tfcoil),
     ):
         return calculate_tf_coil_envelope(
             r_tf_outboard_mid,
@@ -783,79 +797,79 @@ class TfCoilEnvelope(ExplicitFunction):
 class Bldgs(ExplicitFunction):
     """cottax node: `calculate_bldgs`. Instantiate iff `i_bldgs_size == ITER_1992`."""
 
-    cryvol = Output(lambda s: s.buildings.cryvol)
-    volrci = Output(lambda s: s.buildings.volrci)
-    rbvol = Output(lambda s: s.buildings.rbvol)
-    rmbvol = Output(lambda s: s.buildings.rmbvol)
-    wsvol = Output(lambda s: s.buildings.wsvol)
-    elevol = Output(lambda s: s.buildings.elevol)
-    wrbi = Output(lambda s: s.buildings.wrbi)
-    a_plant_floor_effective = Output(lambda s: s.buildings.a_plant_floor_effective)
-    admvol = Output(lambda s: s.buildings.admvol)
-    shovol = Output(lambda s: s.buildings.shovol)
-    convol = Output(lambda s: s.buildings.convol)
-    volnucb = Output(lambda s: s.buildings.volnucb)
+    cryvol = OutputInto(buildings)
+    volrci = OutputInto(buildings)
+    rbvol = OutputInto(buildings)
+    rmbvol = OutputInto(buildings)
+    wsvol = OutputInto(buildings)
+    elevol = OutputInto(buildings)
+    wrbi = OutputInto(buildings)
+    a_plant_floor_effective = OutputInto(buildings)
+    admvol = OutputInto(buildings)
+    shovol = OutputInto(buildings)
+    convol = OutputInto(buildings)
+    volnucb = OutputInto(buildings)
 
     def __call__(
         self,
-        pfr=FromExactly(lambda s: s.pf_coil.r_pf_coil_outer_max),
-        pfm=FromExactly(lambda s: s.pf_coil.m_pf_coil_max),
-        tfro=FromExactly(lambda s: s.buildings.tfro),
-        tfri=FromExactly(lambda s: s.buildings.tfri),
-        tfh=FromExactly(lambda s: s.buildings.tf_vertical_dim),
-        tfm=FromExactly(lambda s: s.buildings.tfmtn),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        shro=FromExactly(lambda s: s.build.r_shld_outboard_outer),
-        shri=FromExactly(lambda s: s.build.r_shld_inboard_inner),
-        z_tf_inside_half=FromExactly(lambda s: s.build.z_tf_inside_half),
-        dz_shld_vv_gap=FromExactly(lambda s: s.build.dz_shld_vv_gap),
-        dz_vv_upper=FromExactly(lambda s: s.build.dz_vv_upper),
-        dz_vv_lower=FromExactly(lambda s: s.build.dz_vv_lower),
-        shm=FromExactly(lambda s: s.fwbs.whtshld),
-        crr=FromExactly(lambda s: s.fwbs.r_cryostat_inboard),
-        helpow=FromExactly(lambda s: s.heat_transport.helpow),
-        rxcl=FromExactly(lambda s: s.buildings.rxcl),
-        trcl=FromExactly(lambda s: s.buildings.trcl),
-        row=FromExactly(lambda s: s.buildings.row),
-        wgt=FromExactly(lambda s: s.buildings.wgt),
-        shmf=FromExactly(lambda s: s.buildings.shmf),
-        clh2=FromExactly(lambda s: s.buildings.clh2),
-        dz_tf_cryostat=FromExactly(lambda s: s.buildings.dz_tf_cryostat),
-        stcl=FromExactly(lambda s: s.buildings.stcl),
-        rbvfac=FromExactly(lambda s: s.buildings.rbvfac),
-        rbwt=FromExactly(lambda s: s.buildings.rbwt),
-        rbrt=FromExactly(lambda s: s.buildings.rbrt),
-        fndt=FromExactly(lambda s: s.buildings.fndt),
-        hcwt=FromExactly(lambda s: s.buildings.hcwt),
-        hccl=FromExactly(lambda s: s.buildings.hccl),
-        wgt2=FromExactly(lambda s: s.buildings.wgt2),
-        mbvfac=FromExactly(lambda s: s.buildings.mbvfac),
-        wsvfac=FromExactly(lambda s: s.buildings.wsvfac),
-        tfcbv=FromExactly(lambda s: s.buildings.tfcbv),
-        pfbldgm3=FromExactly(lambda s: s.buildings.pfbldgm3),
-        esbldgm3=FromExactly(lambda s: s.buildings.esbldgm3),
-        pibv=FromExactly(lambda s: s.buildings.pibv),
-        triv=FromExactly(lambda s: s.buildings.triv),
-        conv=FromExactly(lambda s: s.buildings.conv),
-        admv=FromExactly(lambda s: s.buildings.admv),
-        shov=FromExactly(lambda s: s.buildings.shov),
+        r_pf_coil_outer_max=From(pf_coil),
+        m_pf_coil_max=From(pf_coil),
+        tfro=From(buildings),
+        tfri=From(buildings),
+        tf_vertical_dim=From(buildings),
+        tfmtn=From(buildings),
+        n_tf_coils=From(tfcoil),
+        r_shld_outboard_outer=From(build),
+        r_shld_inboard_inner=From(build),
+        z_tf_inside_half=From(build),
+        dz_shld_vv_gap=From(build),
+        dz_vv_upper=From(build),
+        dz_vv_lower=From(build),
+        whtshld=From(fwbs),
+        r_cryostat_inboard=From(fwbs),
+        helpow=From(heat_transport),
+        rxcl=From(buildings),
+        trcl=From(buildings),
+        row=From(buildings),
+        wgt=From(buildings),
+        shmf=From(buildings),
+        clh2=From(buildings),
+        dz_tf_cryostat=From(buildings),
+        stcl=From(buildings),
+        rbvfac=From(buildings),
+        rbwt=From(buildings),
+        rbrt=From(buildings),
+        fndt=From(buildings),
+        hcwt=From(buildings),
+        hccl=From(buildings),
+        wgt2=From(buildings),
+        mbvfac=From(buildings),
+        wsvfac=From(buildings),
+        tfcbv=From(buildings),
+        pfbldgm3=From(buildings),
+        esbldgm3=From(buildings),
+        pibv=From(buildings),
+        triv=From(buildings),
+        conv=From(buildings),
+        admv=From(buildings),
+        shov=From(buildings),
     ):
         shh = calculate_shield_height(
             z_tf_inside_half, dz_shld_vv_gap, dz_vv_upper, dz_vv_lower
         )
         return calculate_bldgs(
-            pfr,
-            pfm,
+            r_pf_coil_outer_max,
+            m_pf_coil_max,
             tfro,
             tfri,
-            tfh,
-            tfm,
+            tf_vertical_dim,
+            tfmtn,
             n_tf_coils,
-            shro,
-            shri,
+            r_shld_outboard_outer,
+            r_shld_inboard_inner,
             shh,
-            shm,
-            crr,
+            whtshld,
+            r_cryostat_inboard,
             helpow,
             rxcl,
             trcl,
@@ -894,137 +908,137 @@ class BldgsSizes(ExplicitFunction):
 
     i_hcd_primary: CurrentDriveModel = eqx.field(static=True)
 
-    reactor_hall_l = Output(lambda s: s.buildings.reactor_hall_l)
-    reactor_hall_w = Output(lambda s: s.buildings.reactor_hall_w)
-    reactor_hall_h = Output(lambda s: s.buildings.reactor_hall_h)
-    a_plant_floor_effective = Output(lambda s: s.buildings.a_plant_floor_effective)
-    volnucb = Output(lambda s: s.buildings.volnucb)
+    reactor_hall_l = OutputInto(buildings)
+    reactor_hall_w = OutputInto(buildings)
+    reactor_hall_h = OutputInto(buildings)
+    a_plant_floor_effective = OutputInto(buildings)
+    volnucb = OutputInto(buildings)
 
     def __call__(
         self,
-        r_pf_coil_outer_max=FromExactly(lambda s: s.pf_coil.r_pf_coil_outer_max),
-        r_cryostat_inboard=FromExactly(lambda s: s.fwbs.r_cryostat_inboard),
-        tf_radial_dim=FromExactly(lambda s: s.buildings.tf_radial_dim),
-        bioshld_thk=FromExactly(lambda s: s.buildings.bioshld_thk),
-        reactor_clrnc=FromExactly(lambda s: s.buildings.reactor_clrnc),
-        transp_clrnc=FromExactly(lambda s: s.buildings.transp_clrnc),
-        crane_clrnc_h=FromExactly(lambda s: s.buildings.crane_clrnc_h),
-        cryostat_clrnc=FromExactly(lambda s: s.buildings.cryostat_clrnc),
-        ground_clrnc=FromExactly(lambda s: s.buildings.ground_clrnc),
-        crane_arm_h=FromExactly(lambda s: s.buildings.crane_arm_h),
-        tf_vertical_dim=FromExactly(lambda s: s.buildings.tf_vertical_dim),
-        nbi_sys_l=FromExactly(lambda s: s.buildings.nbi_sys_l),
-        nbi_sys_w=FromExactly(lambda s: s.buildings.nbi_sys_w),
-        hcd_building_l=FromExactly(lambda s: s.buildings.hcd_building_l),
-        hcd_building_w=FromExactly(lambda s: s.buildings.hcd_building_w),
-        hcd_building_h=FromExactly(lambda s: s.buildings.hcd_building_h),
-        fc_building_l=FromExactly(lambda s: s.buildings.fc_building_l),
-        fc_building_w=FromExactly(lambda s: s.buildings.fc_building_w),
-        reactor_wall_thk=FromExactly(lambda s: s.buildings.reactor_wall_thk),
-        reactor_roof_thk=FromExactly(lambda s: s.buildings.reactor_roof_thk),
-        reactor_fndtn_thk=FromExactly(lambda s: s.buildings.reactor_fndtn_thk),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
-        z_tf_inside_half=FromExactly(lambda s: s.build.z_tf_inside_half),
-        dr_tf_inboard=FromExactly(lambda s: s.build.dr_tf_inboard),
-        dr_tf_shld_gap=FromExactly(lambda s: s.build.dr_tf_shld_gap),
-        dz_shld_thermal=FromExactly(lambda s: s.build.dz_shld_thermal),
-        dz_shld_vv_gap=FromExactly(lambda s: s.build.dz_shld_vv_gap),
-        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
-        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
-        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        hot_sepdist=FromExactly(lambda s: s.buildings.hot_sepdist),
-        qnty_sfty_fac=FromExactly(lambda s: s.buildings.qnty_sfty_fac),
-        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
-        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
-        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
-        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        life_div_fpy=FromExactly(lambda s: s.costs.life_div_fpy),
-        dz_divertor=FromExactly(lambda s: s.divertor.dz_divertor),
-        cplife=FromExactly(lambda s: s.costs.cplife),
-        i_tf_sup=FromExactly(lambda s: s.tfcoil.i_tf_sup),
-        r_cp_top=FromExactly(lambda s: s.build.r_cp_top),
-        hotcell_h=FromExactly(lambda s: s.buildings.hotcell_h),
-        chemlab_l=FromExactly(lambda s: s.buildings.chemlab_l),
-        chemlab_w=FromExactly(lambda s: s.buildings.chemlab_w),
-        chemlab_h=FromExactly(lambda s: s.buildings.chemlab_h),
-        heat_sink_l=FromExactly(lambda s: s.buildings.heat_sink_l),
-        heat_sink_w=FromExactly(lambda s: s.buildings.heat_sink_w),
-        heat_sink_h=FromExactly(lambda s: s.buildings.heat_sink_h),
-        aux_build_l=FromExactly(lambda s: s.buildings.aux_build_l),
-        aux_build_w=FromExactly(lambda s: s.buildings.aux_build_w),
-        aux_build_h=FromExactly(lambda s: s.buildings.aux_build_h),
-        magnet_trains_l=FromExactly(lambda s: s.buildings.magnet_trains_l),
-        magnet_trains_w=FromExactly(lambda s: s.buildings.magnet_trains_w),
-        magnet_trains_h=FromExactly(lambda s: s.buildings.magnet_trains_h),
-        magnet_pulse_l=FromExactly(lambda s: s.buildings.magnet_pulse_l),
-        magnet_pulse_w=FromExactly(lambda s: s.buildings.magnet_pulse_w),
-        magnet_pulse_h=FromExactly(lambda s: s.buildings.magnet_pulse_h),
-        control_buildings_l=FromExactly(lambda s: s.buildings.control_buildings_l),
-        control_buildings_w=FromExactly(lambda s: s.buildings.control_buildings_w),
-        control_buildings_h=FromExactly(lambda s: s.buildings.control_buildings_h),
-        warm_shop_l=FromExactly(lambda s: s.buildings.warm_shop_l),
-        warm_shop_w=FromExactly(lambda s: s.buildings.warm_shop_w),
-        warm_shop_h=FromExactly(lambda s: s.buildings.warm_shop_h),
-        workshop_l=FromExactly(lambda s: s.buildings.workshop_l),
-        workshop_w=FromExactly(lambda s: s.buildings.workshop_w),
-        workshop_h=FromExactly(lambda s: s.buildings.workshop_h),
-        robotics_l=FromExactly(lambda s: s.buildings.robotics_l),
-        robotics_w=FromExactly(lambda s: s.buildings.robotics_w),
-        robotics_h=FromExactly(lambda s: s.buildings.robotics_h),
-        maint_cont_l=FromExactly(lambda s: s.buildings.maint_cont_l),
-        maint_cont_w=FromExactly(lambda s: s.buildings.maint_cont_w),
-        maint_cont_h=FromExactly(lambda s: s.buildings.maint_cont_h),
-        cryomag_l=FromExactly(lambda s: s.buildings.cryomag_l),
-        cryomag_w=FromExactly(lambda s: s.buildings.cryomag_w),
-        cryomag_h=FromExactly(lambda s: s.buildings.cryomag_h),
-        cryostore_l=FromExactly(lambda s: s.buildings.cryostore_l),
-        cryostore_w=FromExactly(lambda s: s.buildings.cryostore_w),
-        cryostore_h=FromExactly(lambda s: s.buildings.cryostore_h),
-        auxcool_l=FromExactly(lambda s: s.buildings.auxcool_l),
-        auxcool_w=FromExactly(lambda s: s.buildings.auxcool_w),
-        auxcool_h=FromExactly(lambda s: s.buildings.auxcool_h),
-        elecdist_l=FromExactly(lambda s: s.buildings.elecdist_l),
-        elecdist_w=FromExactly(lambda s: s.buildings.elecdist_w),
-        elecdist_h=FromExactly(lambda s: s.buildings.elecdist_h),
-        elecload_l=FromExactly(lambda s: s.buildings.elecload_l),
-        elecload_w=FromExactly(lambda s: s.buildings.elecload_w),
-        elecload_h=FromExactly(lambda s: s.buildings.elecload_h),
-        elecstore_l=FromExactly(lambda s: s.buildings.elecstore_l),
-        elecstore_w=FromExactly(lambda s: s.buildings.elecstore_w),
-        elecstore_h=FromExactly(lambda s: s.buildings.elecstore_h),
-        turbine_hall_l=FromExactly(lambda s: s.buildings.turbine_hall_l),
-        turbine_hall_w=FromExactly(lambda s: s.buildings.turbine_hall_w),
-        turbine_hall_h=FromExactly(lambda s: s.buildings.turbine_hall_h),
-        ilw_smelter_l=FromExactly(lambda s: s.buildings.ilw_smelter_l),
-        ilw_smelter_w=FromExactly(lambda s: s.buildings.ilw_smelter_w),
-        ilw_smelter_h=FromExactly(lambda s: s.buildings.ilw_smelter_h),
-        ilw_storage_l=FromExactly(lambda s: s.buildings.ilw_storage_l),
-        ilw_storage_w=FromExactly(lambda s: s.buildings.ilw_storage_w),
-        ilw_storage_h=FromExactly(lambda s: s.buildings.ilw_storage_h),
-        llw_storage_l=FromExactly(lambda s: s.buildings.llw_storage_l),
-        llw_storage_w=FromExactly(lambda s: s.buildings.llw_storage_w),
-        llw_storage_h=FromExactly(lambda s: s.buildings.llw_storage_h),
-        hw_storage_l=FromExactly(lambda s: s.buildings.hw_storage_l),
-        hw_storage_w=FromExactly(lambda s: s.buildings.hw_storage_w),
-        hw_storage_h=FromExactly(lambda s: s.buildings.hw_storage_h),
-        tw_storage_l=FromExactly(lambda s: s.buildings.tw_storage_l),
-        tw_storage_w=FromExactly(lambda s: s.buildings.tw_storage_w),
-        tw_storage_h=FromExactly(lambda s: s.buildings.tw_storage_h),
-        gas_buildings_l=FromExactly(lambda s: s.buildings.gas_buildings_l),
-        gas_buildings_w=FromExactly(lambda s: s.buildings.gas_buildings_w),
-        gas_buildings_h=FromExactly(lambda s: s.buildings.gas_buildings_h),
-        water_buildings_l=FromExactly(lambda s: s.buildings.water_buildings_l),
-        water_buildings_w=FromExactly(lambda s: s.buildings.water_buildings_w),
-        water_buildings_h=FromExactly(lambda s: s.buildings.water_buildings_h),
-        sec_buildings_l=FromExactly(lambda s: s.buildings.sec_buildings_l),
-        sec_buildings_w=FromExactly(lambda s: s.buildings.sec_buildings_w),
-        sec_buildings_h=FromExactly(lambda s: s.buildings.sec_buildings_h),
-        staff_buildings_area=FromExactly(lambda s: s.buildings.staff_buildings_area),
-        staff_buildings_h=FromExactly(lambda s: s.buildings.staff_buildings_h),
+        r_pf_coil_outer_max=From(pf_coil),
+        r_cryostat_inboard=From(fwbs),
+        tf_radial_dim=From(buildings),
+        bioshld_thk=From(buildings),
+        reactor_clrnc=From(buildings),
+        transp_clrnc=From(buildings),
+        crane_clrnc_h=From(buildings),
+        cryostat_clrnc=From(buildings),
+        ground_clrnc=From(buildings),
+        crane_arm_h=From(buildings),
+        tf_vertical_dim=From(buildings),
+        nbi_sys_l=From(buildings),
+        nbi_sys_w=From(buildings),
+        hcd_building_l=From(buildings),
+        hcd_building_w=From(buildings),
+        hcd_building_h=From(buildings),
+        fc_building_l=From(buildings),
+        fc_building_w=From(buildings),
+        reactor_wall_thk=From(buildings),
+        reactor_roof_thk=From(buildings),
+        reactor_fndtn_thk=From(buildings),
+        life_plant=From(costs),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        dr_tf_shld_gap=From(build),
+        dz_shld_thermal=From(build),
+        dz_shld_vv_gap=From(build),
+        dr_shld_inboard=From(build),
+        dr_blkt_inboard=From(build),
+        dr_fw_inboard=From(build),
+        rmajor=From(physics),
+        rminor=From(physics),
+        dr_fw_plasma_gap_inboard=From(build),
+        n_tf_coils=From(tfcoil),
+        hot_sepdist=From(buildings),
+        qnty_sfty_fac=From(buildings),
+        dr_fw_outboard=From(build),
+        dr_blkt_outboard=From(build),
+        dr_shld_outboard=From(build),
+        dr_fw_plasma_gap_outboard=From(build),
+        life_div_fpy=From(costs),
+        dz_divertor=From(divertor),
+        cplife=From(costs),
+        i_tf_sup=From(tfcoil),
+        r_cp_top=From(build),
+        hotcell_h=From(buildings),
+        chemlab_l=From(buildings),
+        chemlab_w=From(buildings),
+        chemlab_h=From(buildings),
+        heat_sink_l=From(buildings),
+        heat_sink_w=From(buildings),
+        heat_sink_h=From(buildings),
+        aux_build_l=From(buildings),
+        aux_build_w=From(buildings),
+        aux_build_h=From(buildings),
+        magnet_trains_l=From(buildings),
+        magnet_trains_w=From(buildings),
+        magnet_trains_h=From(buildings),
+        magnet_pulse_l=From(buildings),
+        magnet_pulse_w=From(buildings),
+        magnet_pulse_h=From(buildings),
+        control_buildings_l=From(buildings),
+        control_buildings_w=From(buildings),
+        control_buildings_h=From(buildings),
+        warm_shop_l=From(buildings),
+        warm_shop_w=From(buildings),
+        warm_shop_h=From(buildings),
+        workshop_l=From(buildings),
+        workshop_w=From(buildings),
+        workshop_h=From(buildings),
+        robotics_l=From(buildings),
+        robotics_w=From(buildings),
+        robotics_h=From(buildings),
+        maint_cont_l=From(buildings),
+        maint_cont_w=From(buildings),
+        maint_cont_h=From(buildings),
+        cryomag_l=From(buildings),
+        cryomag_w=From(buildings),
+        cryomag_h=From(buildings),
+        cryostore_l=From(buildings),
+        cryostore_w=From(buildings),
+        cryostore_h=From(buildings),
+        auxcool_l=From(buildings),
+        auxcool_w=From(buildings),
+        auxcool_h=From(buildings),
+        elecdist_l=From(buildings),
+        elecdist_w=From(buildings),
+        elecdist_h=From(buildings),
+        elecload_l=From(buildings),
+        elecload_w=From(buildings),
+        elecload_h=From(buildings),
+        elecstore_l=From(buildings),
+        elecstore_w=From(buildings),
+        elecstore_h=From(buildings),
+        turbine_hall_l=From(buildings),
+        turbine_hall_w=From(buildings),
+        turbine_hall_h=From(buildings),
+        ilw_smelter_l=From(buildings),
+        ilw_smelter_w=From(buildings),
+        ilw_smelter_h=From(buildings),
+        ilw_storage_l=From(buildings),
+        ilw_storage_w=From(buildings),
+        ilw_storage_h=From(buildings),
+        llw_storage_l=From(buildings),
+        llw_storage_w=From(buildings),
+        llw_storage_h=From(buildings),
+        hw_storage_l=From(buildings),
+        hw_storage_w=From(buildings),
+        hw_storage_h=From(buildings),
+        tw_storage_l=From(buildings),
+        tw_storage_w=From(buildings),
+        tw_storage_h=From(buildings),
+        gas_buildings_l=From(buildings),
+        gas_buildings_w=From(buildings),
+        gas_buildings_h=From(buildings),
+        water_buildings_l=From(buildings),
+        water_buildings_w=From(buildings),
+        water_buildings_h=From(buildings),
+        sec_buildings_l=From(buildings),
+        sec_buildings_w=From(buildings),
+        sec_buildings_h=From(buildings),
+        staff_buildings_area=From(buildings),
+        staff_buildings_h=From(buildings),
     ):
         is_neutral_beam = (
             CurrentDriveModel(self.i_hcd_primary).method
