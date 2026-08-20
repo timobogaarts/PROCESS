@@ -235,6 +235,18 @@ module is converted, in the same commit, so the two never disagree. `_audit/sche
 
 ## Part B — `NodePath`: hierarchical node names
 
+> **SUPERSEDED in design by `_audit/model_tree_design.md`.** The tree is now `eqx.Module`
+> namespaces with typed snake_case slots (instances, not nested classes — a class
+> attribute has no `tree_at`, so B.3's surface cannot express a swap), node identity is
+> the slot path, and the switch arms B.4 could not place become slot occupants chosen by
+> a `machine_from_indat` factory. Still live below: B.1 (what landed in cottax), B.5 (the
+> measured reference surface), and B.4's exclusivity-by-construction observation, which
+> the new design adopts. B.2's formatter-wiring item is mooted for the Machine tree —
+> slots mint `GetAttrKey`s, which `keystr` already renders readably
+> (`model_tree_design.md` §3.1/§3.3) — and remains open only for the legacy `DictKey`
+> surfaces it was written about; B.3, B.4, B.4b and B.6 are replaced by that document's
+> §§3–6. The Part-A-first sequencing rule stands unchanged.
+
 ### B.1 Already landed in cottax — verified, not assumed
 
 `to_graph({'physics': {'profiles': [DensityProfile]}, 'costs': [Costs1990]})` builds, and

@@ -39,6 +39,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.models.switch_enums import FastAlphaPressureModel
 from process.core import constants
 
 
@@ -536,7 +537,7 @@ class FastAlphaBeta(ExplicitFunction):
     (`models/stellarator/density_limits.py`).
     """
 
-    i_beta_fast_alpha: int = eqx.field(static=True)
+    i_beta_fast_alpha: FastAlphaPressureModel = eqx.field(static=True)
 
     beta_fast_alpha = Output(lambda s: s.physics.beta_fast_alpha)
 

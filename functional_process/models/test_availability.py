@@ -50,8 +50,13 @@ from functional_process.models.availability import (
     calculate_u_unplanned_vacuum,
     calculate_ward_taylor_availability,
 )
+from functional_process.models.switch_enums import (
+    BlanketLifetimeModel,
+    SphericalTokamakModel,
+)
 from process.core.model import DataStructure
 from process.models.availability import Availability
+from process.models.tfcoil.base import TFConductorModel
 
 
 def _availability():
@@ -1553,8 +1558,14 @@ def test_cplife_avail_to_graph_assembles():
     body+problem pair is cyclic *by construction* (same as `plasma_composition`'s
     `first_call`), unlike `CplifeAvailSt` below.
     """
-    graph = to_graph(CplifeAvail(i_tf_sup=1, itart=1))
-    node = CplifeAvail(i_tf_sup=1, itart=1)
+    graph = to_graph(CplifeAvail(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    ))
+    node = CplifeAvail(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    )
     body, problem = graph[node.name], graph[node.problem_name]
     assert isinstance(body, CallableNode)
     assert isinstance(problem, FixedPoint)
@@ -1568,8 +1579,14 @@ def test_cplife_avail_st_to_graph_assembles():
     docstring), so the resulting body+problem pair is acyclic: a degenerate `FixedPoint`
     that converges in one iteration regardless of its starting guess.
     """
-    graph = to_graph(CplifeAvailSt(i_tf_sup=1, itart=1))
-    node = CplifeAvailSt(i_tf_sup=1, itart=1)
+    graph = to_graph(CplifeAvailSt(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    ))
+    node = CplifeAvailSt(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    )
     body, problem = graph[node.name], graph[node.problem_name]
     assert isinstance(body, CallableNode)
     assert isinstance(problem, FixedPoint)
@@ -1580,10 +1597,27 @@ def test_cplife_avail_st_to_graph_assembles():
 @pytest.mark.parametrize(
     "node",
     [
-        Avail(ibkt_life=0, itart=1),
-        Avail(ibkt_life=1, itart=0),
-        Avail2(ibkt_life=0, itart=1, n_vac_pumps_high=10, redun_vac=2),
-        AvailSt(ibkt_life=0, itart=1, n_vac_pumps_high=10, redun_vac=2, i_tf_sup=1),
+        Avail(
+            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        ),
+        Avail(
+            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
+            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        ),
+        Avail2(
+            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+            n_vac_pumps_high=10,
+            redun_vac=2,
+        ),
+        AvailSt(
+            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+            n_vac_pumps_high=10,
+            redun_vac=2,
+            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        ),
     ],
     ids=["avail-itart1", "avail-itart0", "avail2", "avail-st"],
 )
@@ -1601,8 +1635,14 @@ def test_avail_and_cplife_avail_compose_without_ownership_conflict():
     acyclic chain into `Avail` on top of `CplifeAvail`'s own internal self-loop (no
     *new* cycle is introduced by adding `Avail`).
     """
-    cplife_node = CplifeAvail(i_tf_sup=1, itart=1)
-    avail_node = Avail(ibkt_life=0, itart=1)
+    cplife_node = CplifeAvail(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    )
+    avail_node = Avail(
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    )
     graph = to_graph(cplife_node, avail_node)
     assert isinstance(graph[avail_node.name], CallableNode)
     assert graph[cplife_node.problem_name].owns == (CPLIFE_VAR,)
@@ -1614,9 +1654,16 @@ def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
     """Same wiring check for the `AvailSt` pair -- and here the combination is fully
     acyclic, since `CplifeAvailSt` alone already is.
     """
-    cplife_node = CplifeAvailSt(i_tf_sup=1, itart=1)
+    cplife_node = CplifeAvailSt(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+    )
     avail_st_node = AvailSt(
-        ibkt_life=0, itart=1, n_vac_pumps_high=10, redun_vac=2, i_tf_sup=1
+        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
+        n_vac_pumps_high=10,
+        redun_vac=2,
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
     )
     graph = to_graph(cplife_node, avail_st_node)
     assert isinstance(graph[avail_st_node.name], CallableNode)

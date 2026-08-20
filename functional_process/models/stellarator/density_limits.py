@@ -26,6 +26,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.models.safe_math import safe_sqrt
+from process.models.physics.profiles import PlasmaProfileShapeType
 
 _SUDO_COEFFICIENT = 0.25e20
 """Sudo et al. (Nucl. Fusion 30, 11, 1990) line-averaged density limit prefactor."""
@@ -189,7 +190,7 @@ class EcrhDensityLimit(ExplicitFunction):
     relying on, rather than silently inheriting one.
     """
 
-    i_plasma_pedestal: int = eqx.field(static=True)
+    i_plasma_pedestal: PlasmaProfileShapeType = eqx.field(static=True)
 
     dlimit_ecrh = Output(lambda s: s.stellarator.dlimit_ecrh)
     bt_max_ecrh = Output(lambda s: s.stellarator.bt_max_ecrh)

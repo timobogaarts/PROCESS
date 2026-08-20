@@ -18,10 +18,22 @@ and `configuration.py` explains why assembly time is the only correct place to r
 them (short version: no switch in PROCESS is ever an iteration variable or a scan
 variable, so no switch can change between two evaluations of one assembled graph).
 
-`EcrhDensityLimit(i_plasma_pedestal=0)` is deliberately *not* a `Switch` here. It is
-`naming_convention.md`'s other category -- a formula-changing switch kept as a static
-kwarg on one node's `fn` -- because `i_plasma_pedestal != 0` has no formula at all in
-`density_limits.py` and no node's existence depends on it.
+`EcrhDensityLimit(i_plasma_pedestal=PlasmaProfileShapeType.PARABOLIC_PROFILE)` is
+deliberately *not* a `Switch` here. It is `naming_convention.md`'s other category -- a
+formula-changing switch kept as a static kwarg on one node's `fn` -- because
+`i_plasma_pedestal != PARABOLIC_PROFILE` has no formula at all in `density_limits.py`
+and no node's existence depends on it.
+
+**Every such static kwarg is enum-typed**, per `_audit/model_tree_design.md` §4
+("Settings stay on the occupant, enum-typed"): the upstream `IntEnum` where PROCESS
+declares one, and `functional_process/models/switch_enums.py`'s minimal local
+definition where it does not. `IntEnum` members compare and hash equal to their `int`
+values, so nothing numeric moves -- what moves is that `PROCESS_1990` cannot typo into
+`KOVARI_2014` the way `0` typos into `1`, the defect class with five recorded instances
+(`_audit/switch_elimination_design.md` §5(A)). The bare integers below are exactly the
+two categories that are *not* switches: shape/resolution counts
+(`n_plasma_profile_elements`, `n_cs_pf_coils`) and set membership (`imp_indices`),
+§3(b)/(c) of that same document.
 
 **Update, later pass**: `coils/coils.py`'s `intersect` is now registered, as `Intersect`
 (an `ImplicitFunction`/`RootFind` pair) -- see below, near `WindingPackIntersectInputs`/
@@ -292,7 +304,36 @@ from functional_process.models.stellarator.stellarator_fwbs_s4 import (
     BlanketComponentMasses,
     ShieldMass,
 )
+from functional_process.models.switch_enums import (
+    BlanketDualCoolantModel,
+    BlanketLifetimeModel,
+    CentralSolenoidConfiguration,
+    CoilNuclearHeatingModel,
+    CostOfElectricityModel,
+    FastAlphaPressureModel,
+    IFEModel,
+    NetElectricPowerModel,
+    NeutronWallLoadModel,
+    PFEnergyStorageSource,
+    PlantOperationModel,
+    PowerFlowModel,
+    SphericalTokamakModel,
+    SuperconductorCostModel,
+    ThermalStorageModel,
+)
 from functional_process.models.vacuum import DuctDiameterRootFind, VacuumOld
+from process.data_structure.blanket_variables import BlktModelTypes
+from process.data_structure.pfcoil_variables import PFConductorModel
+from process.data_structure.physics_variables import (
+    ConfinementRadiationLossModel,
+    ConfinementTimeModel,
+    PlasmaIgnitionModel,
+)
+from process.models.physics.current_drive import CurrentDriveModel
+from process.models.physics.profiles import PlasmaProfileShapeType
+from process.models.power import ElectricConversionModelTypes, PumpingPowerModelTypes
+from process.models.superconductors import SuperconductorModel
+from process.models.tfcoil.base import TFConductorModel
 
 COSTS_1990 = (
     # Registry unit #18, `models/costs/costs.py` -- the whole `.costs.coe` chain, 42 of
@@ -315,9 +356,9 @@ COSTS_1990 = (
     # Account 223, extra cooling loads for 2262, a target-mass model for 2272); none of
     # `.ife.*` is ported, so the ported functions refuse that value rather than
     # returning a magnetic-confinement number for an IFE device.
-    FirstWallCost(ife=0),  # Account 221.1
-    BlanketCost(ife=0),  # Account 221.2
-    ShieldCost(ife=0),  # Account 221.3
+    FirstWallCost(ife=IFEModel.MAGNETIC_CONFINEMENT),  # Account 221.1
+    BlanketCost(ife=IFEModel.MAGNETIC_CONFINEMENT),  # Account 221.2
+    ShieldCost(ife=IFEModel.MAGNETIC_CONFINEMENT),  # Account 221.3
     ReactorStructureCost,  # Account 221.4
     DivertorCost,  # Account 221.5
     ReactorCost,  # Account 221 total
@@ -332,7 +373,8 @@ COSTS_1990 = (
     # `Switch` already in this tuple would additionally have to gain a `costs.py` arm
     # before a resistive run could assemble, which is the honest statement of what is
     # missing.
-    TfMagnetCostSuperconducting(supercond_cost_model=0),  # Account 222.1
+    # Account 222.1
+    TfMagnetCostSuperconducting(supercond_cost_model=SuperconductorCostModel.PER_KG),
     # `n_cs_pf_coils=0` (`pfcoil_variables.py:323`) and `iohcl=0` are the two loop
     # bounds of `acc2222`, which `costs.md` originally recorded as a structural JAX
     # blocker ("dynamic-length loop"). They are not dynamic: neither is an iteration
@@ -346,11 +388,14 @@ COSTS_1990 = (
     # (unset) array slot -- reproduced faithfully by the port, but not what this run
     # does.
     PfMagnetCost(
-        n_cs_pf_coils=0, iohcl=0, i_pf_conductor=0, supercond_cost_model=0
+        n_cs_pf_coils=0,
+        iohcl=CentralSolenoidConfiguration.NOT_PRESENT,
+        i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+        supercond_cost_model=SuperconductorCostModel.PER_KG,
     ),  # Account 222.2
     VacuumVesselAssemblyCost,  # Account 222.3
     MagnetsCost,  # Account 222 total
-    PowerInjectionCost(ife=0),  # Account 223
+    PowerInjectionCost(ife=IFEModel.MAGNETIC_CONFINEMENT),  # Account 223
     VacuumSystemCost,  # Account 224
     TfCoilPowerConditioningCost,  # Account 225.1
     PfCoilPowerConditioningCost,  # Account 225.2
@@ -358,14 +403,18 @@ COSTS_1990 = (
     # unported (a third reads-set: `.heat_transport.p_plant_primary_heat_mw`,
     # `.times.t_plant_pulse_no_burn`, `.pulse.dtstor`) and unreachable here, since a
     # steady-state plant never enters the `istore` dispatch at all.
-    EnergyStorageCost(i_pulsed_plant=0, istore=1),  # Account 225.3
+    EnergyStorageCost(
+        i_pulsed_plant=PlantOperationModel.CONTINUOUS,
+        istore=ThermalStorageModel.ELECTROWATT_OPTION_1,
+    ),  # Account 225.3
     PowerConditioningCost,  # Account 225 total
     ReactorCoolingSystemCost,  # Account 2261
-    AuxiliaryComponentCoolingCost(ife=0),  # Account 2262
+    AuxiliaryComponentCoolingCost(ife=IFEModel.MAGNETIC_CONFINEMENT),  # Account 2262
     CryogenicSystemCost,  # Account 2263
     HeatTransportSystemCost,  # Account 226 total
     FuellingSystemCost,  # Account 2271
-    FuelProcessingCost(ife=0),  # Account 2272 -- also the sole producer of
+    # Account 2272 -- also the sole producer of
+    FuelProcessingCost(ife=IFEModel.MAGNETIC_CONFINEMENT),
     # `.physics.wtgpd`, the one field `costs.py` writes outside `.costs.*`.
     AtmosphericRecoveryCost,  # Account 2273
     NuclearBuildingVentilationCost,  # Account 2274
@@ -394,7 +443,12 @@ COSTS_1990 = (
     # `.costs.cpstcst`/`cplife_cal`/`cplife` either way -- a deliberate size-aware
     # deviation from `traceability_policy.md`'s split default, argued in the function's
     # own docstring.
-    CostOfElectricity(ife=0, itart=0, ireactor=1, ipnet=0),  # `.costs.coe`
+    CostOfElectricity(
+        ife=IFEModel.MAGNETIC_CONFINEMENT,
+        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        ireactor=CostOfElectricityModel.CALCULATED,
+        ipnet=NetElectricPowerModel.SCALED_POSITIVE,
+    ),  # `.costs.coe`
 )
 """`costs.py`'s 1990 cost model: the `.costs.i_cost_model == 0` arm, 43 nodes."""
 
@@ -450,7 +504,9 @@ TOPOLOGY_SWITCHES = (
                 value=0,
                 declarations=(
                     ConfinementTime(
-                        i_confinement_time=38, i_rad_loss=1, i_plasma_ignited=1
+                        i_confinement_time=ConfinementTimeModel.ISS04_STELLARATOR,
+                        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+                        i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
                     ),
                 ),
             ),
@@ -458,7 +514,9 @@ TOPOLOGY_SWITCHES = (
                 value=6,
                 declarations=(
                     StellaratorConfinementTime(
-                        i_confinement_time=38, i_rad_loss=1, i_plasma_ignited=1
+                        i_confinement_time=ConfinementTimeModel.ISS04_STELLARATOR,
+                        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+                        i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
                     ),
                     # `preset_config.py` (unit #8). The 34 numeric
                     # `.stellarator_config.stella_config_*` fields, read from
@@ -548,7 +606,9 @@ TOPOLOGY_SWITCHES = (
                     # it is what next_steps.md's "one source of truth" proposal reduces
                     # to for this single instance, with no extra machinery needed: there
                     # is only one place `i_plasma_pedestal=0` is written now.
-                    EcrhDensityLimit(i_plasma_pedestal=0),
+                    EcrhDensityLimit(
+                        i_plasma_pedestal=PlasmaProfileShapeType.PARABOLIC_PROFILE
+                    ),
                     ParabolicTemperatureProfile,
                     ParabolicOnAxisDensities,
                     ParabolicOnAxisTemperatures,
@@ -604,7 +664,7 @@ TOPOLOGY_SWITCHES = (
                     # function (an enum lookup) -- static kwarg, not an `FromExactly`. Default
                     # `5` per `current_drive_variables.py:190`, same move as
                     # `ConfinementTime`'s static switches.
-                    BldgsSizes(i_hcd_primary=5),
+                    BldgsSizes(i_hcd_primary=CurrentDriveModel.ITER_NEUTRAL_BEAM),
                 ),
             ),
         ),
@@ -843,10 +903,16 @@ TOPOLOGY_SWITCHES = (
                 value=1,
                 declarations=(
                     PlantElectricProductionReactor(
-                        itart=0,  # `.physics.itart`, `physics_variables.py:994`
-                        i_tf_sup=1,  # `.tfcoil.i_tf_sup`
-                        i_blkt_dual_coolant=0,  # `.fwbs.i_blkt_dual_coolant`
-                        i_p_coolant_pumping=1,  # `.heat_transport.i_p_coolant_pumping`
+                        # `.physics.itart`, `physics_variables.py:994`
+                        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+                        # `.tfcoil.i_tf_sup`
+                        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+                        # `.fwbs.i_blkt_dual_coolant`
+                        i_blkt_dual_coolant=(
+                            BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER
+                        ),
+                        # `.heat_transport.i_p_coolant_pumping`
+                        i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT,
                     ),
                 ),
             ),
@@ -1002,7 +1068,9 @@ class COMMON:
             # `Intersect` (like every other undriven declared node in this graph) needs no
             # production driver to be registered here -- structural admission only, driving
             # deferred, per `_audit/next_steps.md` §5.
-            WindingPackIntersectInputs = WindingPackIntersectInputs(i_tf_sc_mat=1)
+            WindingPackIntersectInputs = WindingPackIntersectInputs(
+                i_tf_sc_mat=SuperconductorModel.ITER_NB3SN
+            )
             Intersect = Intersect()
             WindingPackTotalSizePost = WindingPackTotalSizePost()
 
@@ -1095,7 +1163,10 @@ class COMMON:
         # inert for the actual computed result at this default, but still required as a
         # field; kept matching `.heat_transport.ipowerflow`'s own registered default above
         # for consistency, not because it changes anything here.
-        NeutronWallLoad = NeutronWallLoad(i_pflux_fw_neutron=1, ipowerflow=1)
+        NeutronWallLoad = NeutronWallLoad(
+            i_pflux_fw_neutron=NeutronWallLoadModel.SCALED_PLASMA_SURFACE_AREA,
+            ipowerflow=PowerFlowModel.COMPREHENSIVE_2014,
+        )
         # `i_plasma_ignited=1` (IGNITED, `stellarator_helias.IN.DAT:126`) -- **not**
         # `physics_variables.py:881`'s bare default `0`, which this registration used to
         # carry. Third site of the same mismatch (`PlasmaComposition`/`ConfinementTime` are
@@ -1103,8 +1174,13 @@ class COMMON:
         # Checked before flipping: `stellarator_B_st_phys.py:273-274` adds
         # `p_hcd_injected_total_mw` into `powht` only under NON_IGNITED, so the IGNITED arm
         # reads a strict subset of the inputs -- nothing new to wire.
-        HeatingAndRadiationPower = HeatingAndRadiationPower(i_plasma_ignited=1)
-        RadiatedWallLoadAndFraction = RadiatedWallLoadAndFraction(i_pflux_fw_neutron=1, ipowerflow=1)
+        HeatingAndRadiationPower = HeatingAndRadiationPower(
+            i_plasma_ignited=PlasmaIgnitionModel.IGNITED
+        )
+        RadiatedWallLoadAndFraction = RadiatedWallLoadAndFraction(
+            i_pflux_fw_neutron=NeutronWallLoadModel.SCALED_PLASMA_SURFACE_AREA,
+            ipowerflow=PowerFlowModel.COMPREHENSIVE_2014,
+        )
         ThermalEnergyTotals = ThermalEnergyTotals()
         # `stellarator_C_geometry.py` (chunk 1C of unit #1). `DefaultAspectRatio` is the
         # `1 not in data.numerics.ixc` conditional-ownership case (module docstring): the
@@ -1221,9 +1297,10 @@ class COMMON:
         ElectronThermalEnergy = ElectronThermalEnergy()
         IonThermalEnergy = IonThermalEnergy()
         # `i_beta_fast_alpha` kept as a static kwarg, not a Switch -- both branches read the
-        # same six variables (physics_A_pure_formulas.md's "switches touched"), same shape as
-        # `EcrhDensityLimit(i_plasma_pedestal=0)`. Default `1`, `physics_variables.py:875`.
-        FastAlphaBeta = FastAlphaBeta(i_beta_fast_alpha=1)
+        # same six variables (physics_A_pure_formulas.md's "switches touched"), same
+        # shape as `EcrhDensityLimit`'s `i_plasma_pedestal`. Default `1` (WARD),
+        # `physics_variables.py:875`.
+        FastAlphaBeta = FastAlphaBeta(i_beta_fast_alpha=FastAlphaPressureModel.WARD)
         # unit #9 chunk B, physics/physics_B_composition.py. `plasma_composition`'s
         # `.physics.first_call` turned out not to be a genuine cycle at all -- its real
         # referent (`f_temp_plasma_electron_density_vol_avg`, from `plasma_profiles.py`) has
@@ -1235,23 +1312,27 @@ class COMMON:
             # at 0/1) is resolved without any `Cut`/`FixedPoint` machinery at all -- per-index
         # `VarPath`s (`s.impurity_radiation.f_nd_impurity_electron_array[i]`) make the read
         # and write ranges genuinely disjoint `VarPath`s, not one whole-array self-reference.
-        # `is_ignited=True` -- **not** `physics_variables.py:881`'s bare default
-        # (`i_plasma_ignited = 0`, NON_IGNITED). `stellarator_helias.IN.DAT:126` sets
-        # `i_plasma_ignited = 1` (IGNITED), and the converged run confirms it: the
+        # `i_plasma_ignited=IGNITED` -- **not** `physics_variables.py:881`'s bare
+        # default (`i_plasma_ignited = 0`, NON_IGNITED). `stellarator_helias.IN.DAT:126`
+        # sets `i_plasma_ignited = 1` (IGNITED), and the converged run confirms it: the
         # `switch_audit` check `mda_harness.py` now runs over every registered static kwarg
         # reported `registered=False but .physics.i_plasma_ignited == True`. Same defect
         # class as `i_confinement_time`/`i_thermal_electric_conversion` below -- a bare
         # `*_variables.py` default copied uncritically into a registration.
-        # `is_ignited` is `bool`, not the raw `int` switch, because
-        # `physics_B_composition.py:134-136`'s port maps it to PROCESS's own
-        # `PlasmaIgnitionModel(i_plasma_ignited) == NON_IGNITED` compare; `True` here means
-        # IGNITED (`physics_variables.py:45-49`).
+        # This node used to spell the same fact as a `bool` named `is_ignited`, which
+        # `switch_elimination_design.md` §3 classifies as kind (d) alias/noise and which
+        # cost `mda_harness.STATIC_KWARG_ALIASES` a hand-written `bool(v == 1)` entry
+        # just so `switch_audit` could resolve it. It is now spelled and typed as
+        # PROCESS spells it, `PlasmaIgnitionModel` under PROCESS's own field name, and
+        # resolves by name like every other static kwarg.
         # Checked before flipping, same discipline as `i_thermal_electric_conversion`
         # below: the IGNITED arm needs no input this port does not already wire --
-        # `physics_B_composition.py:219-222` is `nd_beam_ions = 0` under `is_ignited`
+        # `physics_B_composition.py:219-222` is `nd_beam_ions = 0` under IGNITED
         # versus `nd_plasma_electrons_vol_avg * f_nd_beam_electron` otherwise, so the
         # ignited arm reads a strict *subset* of the non-ignited arm's inputs.
-        PlasmaComposition = PlasmaComposition(is_ignited=True)
+        PlasmaComposition = PlasmaComposition(
+            i_plasma_ignited=PlasmaIgnitionModel.IGNITED
+        )
         CalculateEffectiveChargeIonisationProfiles = CalculateEffectiveChargeIonisationProfiles()
         # unit #9 chunk C, physics/physics_C_outplas.py -- the one real computation inside
         # the 1095-line `outplas` reporting method.
@@ -1309,22 +1390,41 @@ class COMMON:
         # `ElectricConversionModelTypes`'s 5 values is a separate, larger follow-up, not
         # done here.
         ComponentThermalPowers = ComponentThermalPowers(
-            i_p_coolant_pumping=1,
-            i_blkt_dual_coolant=0,
-            i_thermal_electric_conversion=2,
-            i_blanket_type=1,
-            secondary_cycle_liq=4,
+            i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT,
+            i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
+            i_blanket_type=BlktModelTypes.CCFE_HCPB,
+            secondary_cycle_liq=(
+                ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
+            ),
         )
         DeltaEtaStep = DeltaEtaStep(
-            i_p_coolant_pumping=1, i_blkt_dual_coolant=0, i_thermal_electric_conversion=2
+            i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT,
+            i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
         )
-        EtaTurbineStep = EtaTurbineStep(i_thermal_electric_conversion=2, i_blanket_type=1)
-        EtathLiqStep = EtathLiqStep(secondary_cycle_liq=4)
+        EtaTurbineStep = EtaTurbineStep(
+            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
+            i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        )
+        EtathLiqStep = EtathLiqStep(
+            secondary_cycle_liq=(
+                ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
+            )
+        )
         TempTurbineCoolantInStep = TempTurbineCoolantInStep(
-            i_thermal_electric_conversion=2, i_blanket_type=1, secondary_cycle_liq=4
+            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
+            i_blanket_type=BlktModelTypes.CCFE_HCPB,
+            secondary_cycle_liq=(
+                ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
+            ),
         )
-        PFwDivHeatDepositedMwStep = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=1)
-        PFwBlktCoolantPumpMwStep = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=1)
+        PFwDivHeatDepositedMwStep = PFwDivHeatDepositedMwStep(
+            i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT
+        )
+        PFwBlktCoolantPumpMwStep = PFwBlktCoolantPumpMwStep(
+            i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT
+        )
         # `PlantThermalEfficiency`/`PlantThermalEfficiency2` (the raw, un-split
             # `ExplicitFunction`s `EtaTurbineStep`/`EtathLiqStep`/`TempTurbineCoolantInStep` are
             # extracted from) are NOT registered: each is *itself* a genuine, still-unresolved
@@ -1357,12 +1457,21 @@ class COMMON:
         # `pfcoil_variables.py:230`'s defaults, neither set by `REFERENCE_INPUT_FILE`;
         # `i_tf_sup=1` is `tfcoil_variables.py:261`'s, likewise unset -- the same value the
         # rest of this file's TF-coil registrations already carry.
-        CryoQNucStep = CryoQNucStep(i_tf_sup=1, inuclear=0)
-        CryoQLoadsStep = CryoQLoadsStep(i_tf_sup=1, i_pf_conductor=0)
-        CryoLoads = CryoLoads(i_tf_sup=1, i_pf_conductor=0)
+        CryoQNucStep = CryoQNucStep(
+            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+            inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
+        )
+        CryoQLoadsStep = CryoQLoadsStep(
+            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+            i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+        )
+        CryoLoads = CryoLoads(
+            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+            i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+        )
         # `power_C_electric_production.py` (unit #14 chunk C). `i_pf_energy_storage_source=2`
         # matches `pf_power_variables.py:18`'s default.
-        Acpow = Acpow(i_pf_energy_storage_source=2)
+        Acpow = Acpow(i_pf_energy_storage_source=PFEnergyStorageSource.LINE)
 
     class buildings:
         # unit #15, buildings.py -- unconditional preamble, feeds both `i_bldgs_size` arms
@@ -1415,8 +1524,14 @@ class COMMON:
             # `check_arms_are_exclusive` would reject a one-real-arm pairing, same as
             # `i_vacuum_pumping`/`i_cost_model`). `ibkt_life=0`/`itart=0` match
         # `cost_variables.py:416`/`physics_variables.py:994`'s defaults.
-        Avail = Avail(ibkt_life=0, itart=0)
-        CplifeAvail = CplifeAvail(i_tf_sup=1, itart=0)
+        Avail = Avail(
+            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
+            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        )
+        CplifeAvail = CplifeAvail(
+            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        )
 
 
 REFERENCE_INPUT_FILE = "tests/regression/input_files/stellarator_helias.IN.DAT"

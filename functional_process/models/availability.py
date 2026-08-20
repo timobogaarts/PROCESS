@@ -71,6 +71,12 @@ from cottax.interfaces.pytree_namespace_module import (
     Output,
 )
 
+from functional_process.models.switch_enums import (
+    BlanketLifetimeModel,
+    SphericalTokamakModel,
+)
+from process.models.tfcoil.base import TFConductorModel
+
 DAY_SECONDS = 60 * 60 * 24
 DAYS_IN_YEAR = 365.25
 YEAR_SECONDS = DAY_SECONDS * DAYS_IN_YEAR
@@ -1310,8 +1316,8 @@ class CplifeAvail(FixedPointFunction):
     `CpLifetimeResistive` remain valid, independently useful standalone nodes.
     """
 
-    i_tf_sup: int = eqx.field(static=True)
-    itart: int = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
 
     cplife = Output(lambda s: s.costs.cplife)
 
@@ -1359,8 +1365,8 @@ class CplifeAvailSt(FixedPointFunction):
     `CpLifetimeResistive`.
     """
 
-    i_tf_sup: int = eqx.field(static=True)
-    itart: int = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
 
     cplife = Output(lambda s: s.costs.cplife)
 
@@ -1405,8 +1411,8 @@ class Avail(ExplicitFunction):
     would do here -- unlike `AvailSt` below, where the same-looking read is load-bearing.
     """
 
-    ibkt_life: int = eqx.field(static=True)
-    itart: int = eqx.field(static=True)
+    ibkt_life: BlanketLifetimeModel = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
 
     life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
     life_div_fpy = Output(lambda s: s.costs.life_div_fpy)
@@ -1473,8 +1479,8 @@ class Avail2(ExplicitFunction):
     also feed only the discarded `cplife_mod` slot; verified the same way).
     """
 
-    ibkt_life: int = eqx.field(static=True)
-    itart: int = eqx.field(static=True)
+    ibkt_life: BlanketLifetimeModel = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
     n_vac_pumps_high: int = eqx.field(static=True)
     redun_vac: int = eqx.field(static=True)
 
@@ -1598,11 +1604,11 @@ class AvailSt(ExplicitFunction):
     docstring documents for `i_tf_sup`, not a new one.
     """
 
-    ibkt_life: int = eqx.field(static=True)
-    itart: int = eqx.field(static=True)
+    ibkt_life: BlanketLifetimeModel = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
     n_vac_pumps_high: int = eqx.field(static=True)
     redun_vac: int = eqx.field(static=True)
-    i_tf_sup: int = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
 
     life_blkt_fpy = Output(lambda s: s.fwbs.life_blkt_fpy)
     life_div_fpy = Output(lambda s: s.costs.life_div_fpy)

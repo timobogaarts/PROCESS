@@ -68,7 +68,7 @@ def _reference_plasma_composition(
     f_temp_plasma_electron_density_vol_avg,
     f_beam_tritium,
     m_impurity_amu_array,
-    is_ignited,
+    i_plasma_ignited,
 ):
     """Call PROCESS's `Physics.plasma_composition` through the port's signature.
 
@@ -105,9 +105,7 @@ def _reference_plasma_composition(
     data.impurity_radiation.m_impurity_amu_array = np.asarray(
         m_impurity_amu_array, dtype=float
     )
-    data.physics.i_plasma_ignited = (
-        PlasmaIgnitionModel.IGNITED if is_ignited else PlasmaIgnitionModel.NON_IGNITED
-    )
+    data.physics.i_plasma_ignited = PlasmaIgnitionModel(i_plasma_ignited)
 
     physics = _physics(data)
     physics.plasma_composition()
@@ -148,7 +146,7 @@ class TestPlasmaComposition(Tier1Contract):
     # static -- entries 2/3 are iteration variables 125/126 elsewhere in the graph (see
     # `test_radiation_power.py::TestImpurityRadiationTotals`), so its gradient matters.
     static_argnames = (
-        "is_ignited",
+        "i_plasma_ignited",
         "temp_impurity_keV_array",
         "impurity_arr_zav",
         "m_impurity_amu_array",
@@ -212,7 +210,7 @@ class TestPlasmaComposition(Tier1Contract):
                 131.30000000000001,
                 183.84999999999999,
             ]),
-            is_ignited=False,
+            i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED,
         ),
         legacy_sample(
             "large_tokamak_nof-steady",
@@ -262,9 +260,9 @@ class TestPlasmaComposition(Tier1Contract):
                 131.30000000000001,
                 183.84999999999999,
             ]),
-            is_ignited=False,
+            i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED,
         ),
-        # A hand-built ignited point (`is_ignited=True`) -- neither PROCESS legacy point
+        # A hand-built ignited point (`IGNITED`) -- neither PROCESS legacy point
         # exercises this branch (`large_tokamak_nof.IN.DAT` is non-ignited). Values are
         # a scaled-down variant of the two points above, not a validated operating
         # point -- realistic magnitudes only, per `test_harness.md`'s fuzz-domain intent.
@@ -316,7 +314,7 @@ class TestPlasmaComposition(Tier1Contract):
                 131.30,
                 183.85,
             ]),
-            is_ignited=True,
+            i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
         ),
     ]
 
@@ -442,14 +440,14 @@ class TestCalculateEffectiveChargeIonisationProfiles(Tier1Contract):
 
 def _pure_function_kwargs_to_node_kwargs(kwargs):
     """Pack/unpack adapter: `plasma_composition`'s one-array-argument kwargs ->
-    `PlasmaComposition.__call__`'s fourteen-individual-index kwargs (minus `is_ignited`,
-    which is the node's static field, not a port).
+    `PlasmaComposition.__call__`'s fourteen-individual-index kwargs (minus
+    `i_plasma_ignited`, which is the node's static field, not a port).
 
     Same idiom `coils/calculate.py`'s minted `coilcurrent` adapters use elsewhere in this
     codebase: a small, explicit translation between the pure function's array-shaped
     signature and the node's per-index `VarPath`s, not a new pattern.
     """
-    node_kwargs = {k: v for k, v in kwargs.items() if k != "is_ignited"}
+    node_kwargs = {k: v for k, v in kwargs.items() if k != "i_plasma_ignited"}
     array = node_kwargs.pop("f_nd_impurity_electron_array")
     for i in range(2, 14):
         node_kwargs[f"f_nd_impurity_electron_array_{i}"] = array[i]
@@ -464,7 +462,7 @@ def test_plasma_composition_owns_h_and_he_fractions():
     checking exactly which `VarPath`s are owned/read is the other half (a node could
     assemble while silently reading or owning the wrong indices).
     """
-    node = PlasmaComposition(is_ignited=False)
+    node = PlasmaComposition(i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED)
     graph = to_graph(node)
     assert graph.definitions
 
@@ -508,7 +506,9 @@ def test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_compos
     has alone (12 fewer than the naive count, since indices 0/1 move from "both
     boundary" to "one boundary, one produced").
     """
-    plasma_composition_node = PlasmaComposition(is_ignited=False)
+    plasma_composition_node = PlasmaComposition(
+        i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED
+    )
     profiles_node = CalculateEffectiveChargeIonisationProfiles()
     graph = to_graph(plasma_composition_node, profiles_node)
     assert graph.definitions
@@ -536,14 +536,14 @@ def test_plasma_composition_node_matches_pure_function():
     """
     for sample in TestPlasmaComposition.samples:
         kwargs = dict(sample.kwargs)
-        is_ignited = kwargs["is_ignited"]
+        i_plasma_ignited = kwargs["i_plasma_ignited"]
 
         want = plasma_composition(
-            **{k: v for k, v in kwargs.items() if k != "is_ignited"},
-            is_ignited=is_ignited,
+            **{k: v for k, v in kwargs.items() if k != "i_plasma_ignited"},
+            i_plasma_ignited=i_plasma_ignited,
         )
 
-        node = PlasmaComposition(is_ignited=is_ignited)
+        node = PlasmaComposition(i_plasma_ignited=i_plasma_ignited)
         node_kwargs = _pure_function_kwargs_to_node_kwargs(kwargs)
         got = node(**node_kwargs)
 

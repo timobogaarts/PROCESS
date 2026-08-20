@@ -68,7 +68,9 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.models.switch_enums import NeutronWallLoadModel, PowerFlowModel
 from process.core import constants
+from process.data_structure.physics_variables import PlasmaIgnitionModel
 
 
 def calculate_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_average):
@@ -635,8 +637,8 @@ class NeutronWallLoad(ExplicitFunction):
     `i_pflux_fw_neutron`/`ipowerflow` static, per this module's docstring.
     """
 
-    i_pflux_fw_neutron: int = eqx.field(static=True)
-    ipowerflow: int = eqx.field(static=True)
+    i_pflux_fw_neutron: NeutronWallLoadModel = eqx.field(static=True)
+    ipowerflow: PowerFlowModel = eqx.field(static=True)
 
     pflux_fw_neutron_mw = Output(lambda s: s.physics.pflux_fw_neutron_mw)
 
@@ -669,7 +671,7 @@ class HeatingAndRadiationPower(ExplicitFunction):
     `i_plasma_ignited` static, per this module's docstring.
     """
 
-    i_plasma_ignited: int = eqx.field(static=True)
+    i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
 
     p_plasma_rad_mw = Output(lambda s: s.physics.p_plasma_rad_mw)
     psolradmw = Output(lambda s: s.physics.psolradmw)
@@ -706,8 +708,8 @@ class RadiatedWallLoadAndFraction(ExplicitFunction):
     `i_pflux_fw_neutron`/`ipowerflow` static, per this module's docstring.
     """
 
-    i_pflux_fw_neutron: int = eqx.field(static=True)
-    ipowerflow: int = eqx.field(static=True)
+    i_pflux_fw_neutron: NeutronWallLoadModel = eqx.field(static=True)
+    ipowerflow: PowerFlowModel = eqx.field(static=True)
 
     pflux_fw_rad_mw = Output(lambda s: s.physics.pflux_fw_rad_mw)
     pflux_fw_rad_max_mw = Output(lambda s: s.constraints.pflux_fw_rad_max_mw)

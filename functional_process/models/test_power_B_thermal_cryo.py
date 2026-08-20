@@ -38,6 +38,10 @@ from functional_process.models.power_B_thermal_cryo import (
     calculate_plant_thermal_efficiency,
     calculate_plant_thermal_efficiency_2,
 )
+from functional_process.models.switch_enums import (
+    BlanketDualCoolantModel,
+    CoilNuclearHeatingModel,
+)
 from process.core.model import DataStructure
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.data_structure.pfcoil_variables import PFConductorModel
@@ -46,6 +50,7 @@ from process.models.power import (
     Power,
     PumpingPowerModelTypes,
 )
+from process.models.tfcoil.base import TFConductorModel
 
 # ---------------------------------------------------------------------------
 # plant_thermal_efficiency
@@ -624,9 +629,11 @@ def test_delta_eta_step_to_graph_builds(
     `FixedPoint` problem node to own, so neither piece reads and owns the same path.
     """
     node = DeltaEtaStep(
-        i_p_coolant_pumping=int(i_p_coolant_pumping),
-        i_blkt_dual_coolant=i_blkt_dual_coolant,
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping)),
+        i_blkt_dual_coolant=BlanketDualCoolantModel(int(i_blkt_dual_coolant)),
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
     )
     graph = to_graph(node)
     names = {n.path_str() for n in graph.nodes}
@@ -656,11 +663,11 @@ def test_component_thermal_powers_reads_all_six_but_no_longer_owns_any():
     reject, and would defeat the point of the split.
     """
     node = ComponentThermalPowers(
-        i_p_coolant_pumping=int(PumpingPowerModelTypes.USER_INPUT),
-        i_blkt_dual_coolant=0,
-        i_thermal_electric_conversion=int(ElectricConversionModelTypes.CCFE_HCPB_VALUE),
-        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
-        secondary_cycle_liq=2,
+        i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
+        i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        i_thermal_electric_conversion=ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=ElectricConversionModelTypes.USER_INPUT,
     )
     owned = {o.var.path_str() for o in node.outputs}
     read = {i.var.path_str() for i in node.inputs}
@@ -680,11 +687,11 @@ def test_component_thermal_powers_to_graph_builds_cleanly():
     so it assembles as an ordinary single-node graph.
     """
     node = ComponentThermalPowers(
-        i_p_coolant_pumping=int(PumpingPowerModelTypes.USER_INPUT),
-        i_blkt_dual_coolant=0,
-        i_thermal_electric_conversion=int(ElectricConversionModelTypes.CCFE_HCPB_VALUE),
-        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
-        secondary_cycle_liq=2,
+        i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
+        i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+        i_thermal_electric_conversion=ElectricConversionModelTypes.CCFE_HCPB_VALUE,
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=ElectricConversionModelTypes.USER_INPUT,
     )
     graph = to_graph(node)
     assert {n.path_str() for n in graph.nodes} == {"['ComponentThermalPowers']"}
@@ -775,9 +782,11 @@ def test_delta_eta_step_matches_calculate_component_thermal_powers(
     """
     step_kwargs = _delta_eta_step_kwargs()
     node = DeltaEtaStep(
-        i_p_coolant_pumping=int(i_p_coolant_pumping),
-        i_blkt_dual_coolant=i_blkt_dual_coolant,
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping)),
+        i_blkt_dual_coolant=BlanketDualCoolantModel(int(i_blkt_dual_coolant)),
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
     )
     delta_eta_from_step = node.step(**step_kwargs)
 
@@ -849,9 +858,11 @@ def test_delta_eta_step_gradient_is_exactly_zero_wrt_delta_eta(
     it from the shape alone.
     """
     node = DeltaEtaStep(
-        i_p_coolant_pumping=int(i_p_coolant_pumping),
-        i_blkt_dual_coolant=i_blkt_dual_coolant,
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping)),
+        i_blkt_dual_coolant=BlanketDualCoolantModel(int(i_blkt_dual_coolant)),
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
     )
     base_kwargs = _delta_eta_step_kwargs()
 
@@ -991,8 +1002,10 @@ def test_eta_turbine_step_to_graph_builds(i_thermal_electric_conversion, i_blank
     """`to_graph(EtaTurbineStep(...))` succeeds -- the `.heat_transport.eta_turbine`
     analogue of `test_delta_eta_step_to_graph_builds`."""
     node = EtaTurbineStep(
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
-        i_blanket_type=int(i_blanket_type),
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
+        i_blanket_type=BlktModelTypes(int(i_blanket_type)),
     )
     graph = to_graph(node)
     names = {n.path_str() for n in graph.nodes}
@@ -1021,8 +1034,10 @@ def test_eta_turbine_step_matches_calculate_component_thermal_powers(
     """`EtaTurbineStep.step` computes exactly the `eta_turbine` element
     `calculate_component_thermal_powers` would, for the same inputs."""
     node = EtaTurbineStep(
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
-        i_blanket_type=int(i_blanket_type),
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
+        i_blanket_type=BlktModelTypes(int(i_blanket_type)),
     )
     eta_turbine_from_step = node.step(
         eta_turbine=_CTP_FULL_KWARGS["eta_turbine"],
@@ -1070,8 +1085,10 @@ def test_eta_turbine_step_gradient_wrt_eta_turbine(
     dependence on its own entering value is branch-dependent. See `EtaTurbineStep`'s
     own docstring for the full branch-by-branch reasoning."""
     node = EtaTurbineStep(
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
-        i_blanket_type=int(i_blanket_type),
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
+        i_blanket_type=BlktModelTypes(int(i_blanket_type)),
     )
 
     def eta_turbine_next(eta_turbine):
@@ -1093,7 +1110,9 @@ def test_eta_turbine_step_gradient_wrt_eta_turbine(
 def test_etath_liq_step_to_graph_builds(secondary_cycle_liq):
     """`to_graph(EtathLiqStep(...))` succeeds -- the `.heat_transport.etath_liq`
     analogue of `test_delta_eta_step_to_graph_builds`."""
-    node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
+    node = EtathLiqStep(
+        secondary_cycle_liq=ElectricConversionModelTypes(int(secondary_cycle_liq))
+    )
     graph = to_graph(node)
     names = {n.path_str() for n in graph.nodes}
     assert names == {"['EtathLiqStep']", "^problem['EtathLiqStep']"}
@@ -1103,7 +1122,9 @@ def test_etath_liq_step_to_graph_builds(secondary_cycle_liq):
 def test_etath_liq_step_matches_calculate_component_thermal_powers(secondary_cycle_liq):
     """`EtathLiqStep.step` computes exactly the `etath_liq` element
     `calculate_component_thermal_powers` would, for the same inputs."""
-    node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
+    node = EtathLiqStep(
+        secondary_cycle_liq=ElectricConversionModelTypes(int(secondary_cycle_liq))
+    )
     etath_liq_from_step = node.step(
         etath_liq=_CTP_FULL_KWARGS["etath_liq"],
         outlet_temp_liq=_CTP_FULL_KWARGS["outlet_temp_liq"],
@@ -1128,7 +1149,9 @@ def test_etath_liq_step_matches_calculate_component_thermal_powers(secondary_cyc
 )
 def test_etath_liq_step_gradient_wrt_etath_liq(secondary_cycle_liq, expected_grad):
     """`d(etath_liq_next)/d(etath_liq)` is exactly `0` or exactly `1`."""
-    node = EtathLiqStep(secondary_cycle_liq=secondary_cycle_liq)
+    node = EtathLiqStep(
+        secondary_cycle_liq=ElectricConversionModelTypes(int(secondary_cycle_liq))
+    )
 
     def etath_liq_next(etath_liq):
         out = node.step(
@@ -1159,9 +1182,11 @@ def test_temp_turbine_coolant_in_step_to_graph_builds(
     `.heat_transport.temp_turbine_coolant_in` analogue of
     `test_delta_eta_step_to_graph_builds`."""
     node = TempTurbineCoolantInStep(
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
-        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
-        secondary_cycle_liq=secondary_cycle_liq,
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=ElectricConversionModelTypes(int(secondary_cycle_liq)),
     )
     graph = to_graph(node)
     names = {n.path_str() for n in graph.nodes}
@@ -1188,9 +1213,11 @@ def test_temp_turbine_coolant_in_step_matches_calculate_component_thermal_powers
     stages (`plant_thermal_efficiency` then `plant_thermal_efficiency_2`), in the same
     order."""
     node = TempTurbineCoolantInStep(
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
-        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
-        secondary_cycle_liq=secondary_cycle_liq,
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=ElectricConversionModelTypes(int(secondary_cycle_liq)),
     )
     temp_from_step = node.step(
         temp_turbine_coolant_in=_CTP_FULL_KWARGS["temp_turbine_coolant_in"],
@@ -1228,9 +1255,11 @@ def test_temp_turbine_coolant_in_step_gradient_wrt_temp_turbine_coolant_in(
     `0` the moment either stage overwrites it -- see `TempTurbineCoolantInStep`'s own
     docstring."""
     node = TempTurbineCoolantInStep(
-        i_thermal_electric_conversion=int(i_thermal_electric_conversion),
-        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
-        secondary_cycle_liq=secondary_cycle_liq,
+        i_thermal_electric_conversion=ElectricConversionModelTypes(
+            int(i_thermal_electric_conversion)
+        ),
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=ElectricConversionModelTypes(int(secondary_cycle_liq)),
     )
 
     def temp_next(temp_turbine_coolant_in):
@@ -1275,7 +1304,9 @@ def test_p_fw_div_heat_deposited_mw_step_to_graph_builds(i_p_coolant_pumping):
     """`to_graph(PFwDivHeatDepositedMwStep(...))` succeeds -- the
     `.heat_transport.p_fw_div_heat_deposited_mw` analogue of
     `test_delta_eta_step_to_graph_builds`."""
-    node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    node = PFwDivHeatDepositedMwStep(
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping))
+    )
     graph = to_graph(node)
     names = {n.path_str() for n in graph.nodes}
     assert names == {
@@ -1299,7 +1330,9 @@ def test_p_fw_div_heat_deposited_mw_step_matches_calculate_component_thermal_pow
     """`PFwDivHeatDepositedMwStep.step` computes exactly the
     `p_fw_div_heat_deposited_mw` element `calculate_component_thermal_powers` would,
     for the same inputs."""
-    node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    node = PFwDivHeatDepositedMwStep(
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping))
+    )
     p_from_step = node.step(**_PFW_DIV_STEP_KWARGS)
     full_result = _call_full_ctp(
         i_p_coolant_pumping=i_p_coolant_pumping,
@@ -1326,7 +1359,9 @@ def test_p_fw_div_heat_deposited_mw_step_gradient(i_p_coolant_pumping, expected_
     """`d(p_fw_div_heat_deposited_mw_next)/d(p_fw_div_heat_deposited_mw)` is exactly
     `1` for `MECHANICAL_WITH_PRESSURE_DROP` (identity pass-through) and exactly `0`
     for every other switch value (recomputed from raw inputs alone)."""
-    node = PFwDivHeatDepositedMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    node = PFwDivHeatDepositedMwStep(
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping))
+    )
 
     def p_next(p_fw_div_heat_deposited_mw):
         out = node.step(
@@ -1354,7 +1389,9 @@ def test_p_fw_blkt_coolant_pump_mw_step_to_graph_builds(i_p_coolant_pumping):
     """`to_graph(PFwBlktCoolantPumpMwStep(...))` succeeds -- the
     `.primary_pumping.p_fw_blkt_coolant_pump_mw` analogue of
     `test_delta_eta_step_to_graph_builds`."""
-    node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    node = PFwBlktCoolantPumpMwStep(
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping))
+    )
     graph = to_graph(node)
     names = {n.path_str() for n in graph.nodes}
     assert names == {
@@ -1378,7 +1415,9 @@ def test_p_fw_blkt_coolant_pump_mw_step_matches_calculate_component_thermal_powe
     """`PFwBlktCoolantPumpMwStep.step` computes exactly the
     `p_fw_blkt_coolant_pump_mw` element `calculate_component_thermal_powers` would,
     for the same inputs."""
-    node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    node = PFwBlktCoolantPumpMwStep(
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping))
+    )
     p_from_step = node.step(
         p_fw_blkt_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_blkt_coolant_pump_mw"],
         p_fw_coolant_pump_mw=_CTP_FULL_KWARGS["p_fw_coolant_pump_mw"],
@@ -1410,7 +1449,9 @@ def test_p_fw_blkt_coolant_pump_mw_step_gradient(i_p_coolant_pumping, expected_g
     `1` for `MECHANICAL`/`MECHANICAL_WITH_PRESSURE_DROP` (identity pass-through) and
     exactly `0` for `USER_INPUT`/`FRACTION_OF_HEAT` (recomputed from raw inputs
     alone)."""
-    node = PFwBlktCoolantPumpMwStep(i_p_coolant_pumping=int(i_p_coolant_pumping))
+    node = PFwBlktCoolantPumpMwStep(
+        i_p_coolant_pumping=PumpingPowerModelTypes(int(i_p_coolant_pumping))
+    )
 
     def p_next(p_fw_blkt_coolant_pump_mw):
         out = node.step(
@@ -1475,7 +1516,12 @@ def test_cryo_cannot_be_a_plain_node():
     not merely stated in a comment.
     """
     with pytest.raises(ValueError, match="which it also owns"):
-        to_graph(Cryo(i_tf_sup=1, inuclear=0))
+        to_graph(
+            Cryo(
+                i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+                inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -1489,19 +1535,28 @@ def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
     all five `q*` as plain `FromExactly`s and owns none of them, so it is an ordinary
     single-node graph.
     """
-    qnuc_node = CryoQNucStep(i_tf_sup=i_tf_sup, inuclear=inuclear)
+    qnuc_node = CryoQNucStep(
+        i_tf_sup=TFConductorModel(int(i_tf_sup)),
+        inuclear=CoilNuclearHeatingModel(int(inuclear)),
+    )
     assert {n.path_str() for n in to_graph(qnuc_node).nodes} == {
         "['CryoQNucStep']",
         "^problem['CryoQNucStep']",
     }
 
-    q_node = CryoQLoadsStep(i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor))
+    q_node = CryoQLoadsStep(
+        i_tf_sup=TFConductorModel(int(i_tf_sup)),
+        i_pf_conductor=PFConductorModel(int(i_pf_conductor)),
+    )
     assert {n.path_str() for n in to_graph(q_node).nodes} == {
         "['CryoQLoadsStep']",
         "^problem['CryoQLoadsStep']",
     }
 
-    loads = CryoLoads(i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor))
+    loads = CryoLoads(
+        i_tf_sup=TFConductorModel(int(i_tf_sup)),
+        i_pf_conductor=PFConductorModel(int(i_pf_conductor)),
+    )
     assert {n.path_str() for n in to_graph(loads).nodes} == {"['CryoLoads']"}
 
 
@@ -1513,9 +1568,18 @@ def test_cryo_split_ownership_is_a_partition():
     PROCESS computes on this run's path as a boundary input, which is the defect
     `_audit/boundary_inputs_audit.md` §4c (b9)/(b10) records.
     """
-    qnuc_node = CryoQNucStep(i_tf_sup=1, inuclear=0)
-    q_node = CryoQLoadsStep(i_tf_sup=1, i_pf_conductor=0)
-    loads = CryoLoads(i_tf_sup=1, i_pf_conductor=0)
+    qnuc_node = CryoQNucStep(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
+    )
+    q_node = CryoQLoadsStep(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+    )
+    loads = CryoLoads(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+    )
 
     owned = [
         {o.var.path_str() for o in n.outputs} for n in (qnuc_node, q_node, loads)
@@ -1550,7 +1614,10 @@ def test_cryo_split_reproduces_calculate_cryo_loads(
     (`TestCryoLoads`), so pinning the node-level composition to it transfers that
     validation to the nodes without a second reference run.
     """
-    qnuc = CryoQNucStep(i_tf_sup=i_tf_sup, inuclear=inuclear).step(
+    qnuc = CryoQNucStep(
+        i_tf_sup=TFConductorModel(int(i_tf_sup)),
+        inuclear=CoilNuclearHeatingModel(int(inuclear)),
+    ).step(
         qnuc=_CRYO_KWARGS["qnuc"],
         p_tf_nuclear_heat_mw=_CRYO_KWARGS["p_tf_nuclear_heat_mw"],
     )
@@ -1644,7 +1711,10 @@ def test_cryo_q_nuc_step_gradient(i_tf_sup, inuclear, expected_grad):
     `.fwbs.qnuc` to a boundary input -- which is exactly PROCESS's *"if inuclear = 1:
     qnuc is input"* (`process/models/power.py:1825`), recovered from structure.
     """
-    node = CryoQNucStep(i_tf_sup=i_tf_sup, inuclear=inuclear)
+    node = CryoQNucStep(
+        i_tf_sup=TFConductorModel(int(i_tf_sup)),
+        inuclear=CoilNuclearHeatingModel(int(inuclear)),
+    )
 
     def qnuc_next(qnuc):
         return node.step(
@@ -1673,7 +1743,10 @@ def test_cryo_q_loads_step_gradient(i_tf_sup, i_pf_conductor, expected_grad):
     vanishes) can classify the block as a whole. Contrast `.fwbs.qnuc`, whose guard is
     different -- hence `CryoQNucStep`.
     """
-    node = CryoQLoadsStep(i_tf_sup=i_tf_sup, i_pf_conductor=int(i_pf_conductor))
+    node = CryoQLoadsStep(
+        i_tf_sup=TFConductorModel(int(i_tf_sup)),
+        i_pf_conductor=PFConductorModel(int(i_pf_conductor)),
+    )
     names = ("qss", "qac", "qcl", "qmisc")
 
     def q_next(qss, qac, qcl, qmisc):

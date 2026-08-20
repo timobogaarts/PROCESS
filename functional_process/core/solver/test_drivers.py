@@ -76,11 +76,9 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     gives the same answer.
     """
     node = TempTurbineCoolantInStep(
-        i_thermal_electric_conversion=int(
-            ElectricConversionModelTypes.STEAM_RANKINE_CYCLE
-        ),
-        i_blanket_type=int(BlktModelTypes.CCFE_HCPB),
-        secondary_cycle_liq=2,
+        i_thermal_electric_conversion=ElectricConversionModelTypes.STEAM_RANKINE_CYCLE,
+        i_blanket_type=BlktModelTypes.CCFE_HCPB,
+        secondary_cycle_liq=ElectricConversionModelTypes.USER_INPUT,
     )
     temp_blkt_coolant_out = 700.0
     outlet_temp_liq = 700.0

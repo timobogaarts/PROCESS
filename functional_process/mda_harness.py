@@ -25,6 +25,17 @@ have been found in this project so far (`i_confinement_time`,
 being modelled, and each found only by luck when a downstream value happened to diverge
 loudly. Nothing checked them directly before this.
 
+**The audit is enum-aware.** Every model-selection static kwarg is typed with an
+`IntEnum` (`_audit/model_tree_design.md` §4; the upstream one where PROCESS declares
+one, `functional_process/models/switch_enums.py`'s otherwise), so a mismatch is reported
+in the vocabulary the mistake was actually made in -- `PROCESS_1990 != KOVARI_2014`
+rather than `0 != 1`. The comparison itself is unchanged and still numeric: `IntEnum`
+members equal their `int` values, so the check is exactly as strict as before and works
+identically against a `DataStructure` field that stores a bare `int`. The two static
+kwargs that are deliberately *not* switches -- shape/resolution counts and set
+membership, `_audit/switch_elimination_design.md` §3(b)/(c) -- are classified as such in
+the report rather than passing silently as anonymous integers.
+
 **`DuctDiameterRootFind` is excluded.** Confirmed directly in its own docstring
 (`vacuum.py:334-344`): every one of its `VarPath`s (`l1`, `l2`, `l3`, `xmult_i`,
 `ceff_i`, `d_duct`) is minted, not a real PROCESS `data` field -- in real PROCESS
@@ -38,7 +49,9 @@ PROCESS-faithful, registered vacuum path). `compare` drops it (and its own
 import dataclasses
 import os
 import pickle
+import sys
 from dataclasses import dataclass, field
+from enum import IntEnum
 from pathlib import Path
 
 import equinox as eqx
@@ -215,23 +228,53 @@ two `f_a_fw_coolant_*` entries get.
 """
 
 
-STATIC_KWARG_ALIASES = {
-    "is_ignited": (
-        ".physics.i_plasma_ignited",
-        lambda v: bool(v == 1),
-    ),
-}
-"""`{static kwarg name: (backing dotted path, data value -> expected kwarg value)}`,
-for the one case where a node's static kwarg is *not* spelled like the PROCESS field
-it stands for.
+SWITCH = "switch"
+"""Kind (a), `_audit/switch_elimination_design.md` §3: a model-selection switch. The
+default classification, and the only one `switch_audit` treats as a switch. Every one of
+these must be `IntEnum`-typed (`_audit/model_tree_design.md` §4); `SwitchAudit.
+not_enum_typed` reports any that is not."""
 
-`PlasmaComposition.is_ignited` (`physics_B_composition.py:418`) is a plain `bool`, not
-the raw `int` switch: its body is `if is_ignited:` (`physics_B_composition.py:219`),
-and its own docstring (`physics_B_composition.py:134-136`) records that it stands for
-PROCESS's `PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.NON_IGNITED`
-compare -- i.e. it is `i_plasma_ignited == 1` (`IGNITED`,
-`physics_variables.py:45-49`). Name-based resolution cannot recover that mapping, so
-it is declared here rather than silently reported as "no backing field".
+SHAPE = "shape/resolution (kind b)"
+"""Kind (b): an array shape or loop trip count. Static because `jit` needs it concrete,
+not because anything is being chosen. Still resolved and value-checked against the run
+where a same-named `DataStructure` field exists -- a wrong resolution is as much a bug as
+a wrong switch -- but reported as what it is, not as a model choice."""
+
+SET_MEMBERSHIP = "set membership (kind c)"
+"""Kind (c): which members exist. A set, not a choice."""
+
+ASSEMBLY_PAYLOAD = "assembly-time payload"
+"""Neither a switch nor a shape: a value the graph carries that PROCESS never stores."""
+
+STATIC_KWARG_KINDS = {
+    "n_plasma_profile_elements": SHAPE,
+    "n_cs_pf_coils": SHAPE,
+    # `Avail2`/`AvailSt`'s pump counts. Not on the reference graph today (neither node
+    # is registered on this configuration), classified anyway so that registering one
+    # later does not have to remember to: the classification belongs with the kwarg,
+    # not with whichever graph happens to carry it.
+    "n_vac_pumps_high": SHAPE,
+    "redun_vac": SHAPE,
+    "imp_indices": SET_MEMBERSHIP,
+    "machine_config": ASSEMBLY_PAYLOAD,
+    "rho": ASSEMBLY_PAYLOAD,
+}
+"""`{static kwarg name: kind}` for every static kwarg that is **not** a model-selection
+switch. Anything absent is kind (a), a switch.
+
+`_audit/switch_elimination_design.md` §3's whole warning is that "switch" names four
+different things and that conflating them is the main way this refactor goes wrong: a
+document listing `n_plasma_profile_elements=201` as a "model" would be worse than what
+exists now. So (b) and (c) are named here rather than left to pass as anonymous
+integers through a line that says "static switch kwargs checked" -- the classification
+is data, visible in the report, not a silent convention.
+
+It is a *classification*, not an exemption. `n_plasma_profile_elements` and
+`n_cs_pf_coils` still resolve to real `DataStructure` fields and are still compared
+against the converged run exactly as before; they simply count as shape rather than as
+choice. `imp_indices`/`machine_config`/`rho` have no backing field at all and are
+carried by `STATIC_KWARGS_WITHOUT_BACKING_FIELD` below, which holds the evidence for
+*why* -- this table holds only which of the four kinds each one is.
 """
 
 STATIC_KWARGS_WITHOUT_BACKING_FIELD = {
@@ -257,10 +300,19 @@ STATIC_KWARGS_WITHOUT_BACKING_FIELD = {
     ),
 }
 """Static kwargs confirmed *not* to be switches backed by a real `DataStructure` field,
-with the reason. Anything static that is neither here nor resolvable by name (nor in
-`STATIC_KWARG_ALIASES`) is reported as an unresolved entry, not silently dropped --
-the same three-way discipline `ComparisonReport` already applies to
-ungrounded/unverifiable/errors.
+with the reason. Anything static that is neither here nor resolvable by name is
+reported as an unresolved entry, not silently dropped -- the same three-way discipline
+`ComparisonReport` already applies to ungrounded/unverifiable/errors.
+
+**There is no alias table any more.** One used to exist, for exactly one entry:
+`PlasmaComposition.is_ignited` was a plain `bool` restating `i_plasma_ignited == 1`, so
+name-based resolution could not reach the field it stood for and the mapping had to be
+written out by hand as `(".physics.i_plasma_ignited", lambda v: bool(v == 1))`. That
+kwarg is now spelled and typed as PROCESS spells it (`i_plasma_ignited`, typed
+`PlasmaIgnitionModel`), which is `_audit/switch_elimination_design.md` §3(d)'s
+prescription for kind-(d) aliases -- *delete, don't rename* -- and it resolves by name
+like everything else. The entry did not move between the audit's categories: it was
+counted in `checked` through the alias and is counted in `checked` by name now.
 """
 
 
@@ -275,6 +327,21 @@ class SwitchMismatch:
     path: str
     registered: object
     actual: object
+    enum: type | None = None
+    """The `IntEnum` this kwarg is typed with, when it has one. Carried so the report
+    can say `PROCESS_1990 != KOVARI_2014` instead of `0 != 1` -- which is the
+    vocabulary the mistake was actually made in (`_audit/switch_elimination_design.md`
+    §5(A): a name cannot be silently copied off the wrong default the way an integer
+    can). `None` for kinds (b)/(c), which are numbers and sets and have no member names.
+    """
+
+    def spell_registered(self) -> str:
+        """The registered value, with its enum member name where it has one."""
+        return spell_switch_value(self.registered, self.enum)
+
+    def spell_actual(self) -> str:
+        """The converged run's value, with its enum member name where it has one."""
+        return spell_switch_value(self.actual, self.enum)
 
 
 @dataclass
@@ -290,6 +357,24 @@ class SwitchAudit:
     """`(node, kwarg, why)` -- static kwargs this check could not map to a
     `DataStructure` field *and* that are not declared non-switches. These are the
     entries a future pass must triage; they are neither passes nor failures."""
+    not_switches: list = field(default_factory=list)
+    """`(node, kwarg, kind, disposition)` -- every static kwarg classified as something
+    other than a model-selection switch by `STATIC_KWARG_KINDS`, with what the audit
+    then did with it. Cuts across the three counted categories rather than replacing
+    any of them: a kind-(b) shape that resolves to a real field is *both* `checked` and
+    listed here. It exists so `switch_elimination_design.md` §3's "(b)/(c)/(d) must be
+    explicitly reclassified so they stop being counted as switches at all" is something
+    the report states, rather than something a reader has to know.
+    """
+    not_enum_typed: list = field(default_factory=list)
+    """`(node, kwarg, type name)` -- kind-(a) switches whose registered value is a bare
+    `int`/`bool` rather than an `IntEnum` member. **Must always be empty**:
+    `_audit/model_tree_design.md` §4 makes enum typing the rule for every
+    model-selection setting, and this is what keeps a new registration from quietly
+    reintroducing the bare integer. Not a value failure -- the value may well be right
+    -- so it is reported separately from `mismatches` and does not move the
+    checked/mismatched/not-data-backed/unresolved line.
+    """
 
 
 def _declaration_modules(obj, seen):
@@ -344,6 +429,45 @@ def _backing_field(data, name: str):
     return f".{hits[0]}.{name}", getattr(getattr(data, hits[0]), name)
 
 
+def _switch_enum(declaration, f, registered) -> type | None:
+    """The `IntEnum` a static kwarg is typed with, or `None`.
+
+    Two sources, in order. The **registered value's own type** is the authority: it is
+    what the assembled graph actually carries, which is the same "introspection, not
+    source parsing" principle `switch_audit` is built on. Falling back to the
+    **annotation** covers the case where a registration passed a bare `int` into an
+    enum-typed slot -- exactly the mistake `SwitchAudit.not_enum_typed` reports, and
+    the case where naming the enum in the report is most useful.
+    """
+    if isinstance(registered, IntEnum):
+        return type(registered)
+    annotation = f.type
+    if isinstance(annotation, str):
+        # `from __future__ import annotations` (or a quoted annotation) leaves the
+        # string; resolve it against the declaring class's own module namespace.
+        module = sys.modules.get(type(declaration).__module__)
+        annotation = getattr(module, annotation, None) if module else None
+    if isinstance(annotation, type) and issubclass(annotation, IntEnum):
+        return annotation
+    return None
+
+
+def spell_switch_value(value, enum: type | None) -> str:
+    """`"IGNITED (1)"` where `enum` names the value, `repr(value)` otherwise.
+
+    Both halves on purpose: the member name is what a reader reasons about, the integer
+    is what the `DataStructure` field literally holds and what a stale audit record or
+    IN.DAT line will be spelled with. A value with no member in `enum` (a genuinely
+    out-of-range integer, which is itself worth seeing) falls back to the bare `repr`.
+    """
+    if enum is None:
+        return repr(value)
+    try:
+        return f"{enum(int(value)).name} ({int(value)})"
+    except (ValueError, TypeError):
+        return repr(value)
+
+
 def _same_switch_value(registered, actual) -> bool:
     """Registered-vs-actual comparison that survives `IntEnum`/`numpy` scalars.
 
@@ -375,8 +499,19 @@ def switch_audit(graph, data) -> SwitchAudit:
 
     Introspection, not source parsing: the kwargs are `eqx.field(static=True)`
     attributes on the assembled graph's own declaration instances (see
-    `confinement_time.py:1986-1988`), so what is checked is what the graph actually
+    `confinement_time.py:2006-2008`), so what is checked is what the graph actually
     carries, not what `total_process.py`'s text says.
+
+    **Enum-aware, and kind-aware.** The mechanism above is unchanged -- same walk, same
+    name resolution, same numeric comparison -- but two things are now reported rather
+    than left implicit. A kwarg typed with an `IntEnum` (`_audit/model_tree_design.md`
+    §4) has both sides of a mismatch spelled with member names, because
+    `PROCESS_1990 != KOVARI_2014` is the form in which the mistake is legible and
+    `0 != 1` is not. And a kwarg that is not a model-selection switch at all --
+    `_audit/switch_elimination_design.md` §3's kind (b) shapes and kind (c) sets -- is
+    recorded as such in `not_switches`, so the report never presents an array length as
+    a model choice. Kind (d), the `bool` alias, no longer exists to classify: it was
+    deleted rather than renamed, which is what §3(d) prescribes.
     """
     audit = SwitchAudit()
     seen_pairs = set()
@@ -391,36 +526,51 @@ def switch_audit(graph, data) -> SwitchAudit:
                     continue
                 seen_pairs.add(key)
                 registered = getattr(declaration, f.name, None)
+                kind = STATIC_KWARG_KINDS.get(f.name, SWITCH)
+                enum = _switch_enum(declaration, f, registered)
+                if kind is SWITCH and not isinstance(registered, IntEnum):
+                    audit.not_enum_typed.append((
+                        node_name,
+                        f.name,
+                        type(registered).__name__,
+                    ))
                 reason = STATIC_KWARGS_WITHOUT_BACKING_FIELD.get(f.name)
                 if reason is not None:
                     audit.no_backing_field.append((node_name, f.name, reason))
+                    if kind is not SWITCH:
+                        audit.not_switches.append((
+                            node_name,
+                            f.name,
+                            kind,
+                            "no backing DataStructure field",
+                        ))
                     continue
-                alias = STATIC_KWARG_ALIASES.get(f.name)
-                if alias is not None:
-                    path, convert = alias
-                    _, _, field_name = path.rpartition(".")
-                    resolved, live = _backing_field(data, field_name)
-                    if resolved is None:
-                        audit.unresolved.append((
+                path, live = _backing_field(data, f.name)
+                if path is None:
+                    audit.unresolved.append((
+                        node_name,
+                        f.name,
+                        "no DataStructure field of this name"
+                        if not live
+                        else f"name exists in several areas: {live}",
+                    ))
+                    if kind is not SWITCH:
+                        audit.not_switches.append((
                             node_name,
                             f.name,
-                            f"alias target {path} resolved to areas {live}",
+                            kind,
+                            "unresolved",
                         ))
-                        continue
-                    actual = convert(live)
-                else:
-                    path, live = _backing_field(data, f.name)
-                    if path is None:
-                        audit.unresolved.append((
-                            node_name,
-                            f.name,
-                            "no DataStructure field of this name"
-                            if not live
-                            else f"name exists in several areas: {live}",
-                        ))
-                        continue
-                    actual = live
+                    continue
+                actual = live
                 audit.checked += 1
+                if kind is not SWITCH:
+                    audit.not_switches.append((
+                        node_name,
+                        f.name,
+                        kind,
+                        f"value-checked against {path}",
+                    ))
                 if not _same_switch_value(registered, actual):
                     audit.mismatches.append(
                         SwitchMismatch(
@@ -429,6 +579,7 @@ def switch_audit(graph, data) -> SwitchAudit:
                             path=path,
                             registered=registered,
                             actual=actual,
+                            enum=enum,
                         )
                     )
     return audit
@@ -697,9 +848,24 @@ class ComparisonReport:
             lines.append("\nstatic switch mismatches (registered vs. this run):")
             for m in self.switches.mismatches:
                 lines.append(
-                    f"  {m.node}.{m.kwarg}: registered={m.registered!r} "
-                    f"but {m.path} == {m.actual!r}"
+                    f"  {m.node}.{m.kwarg}: "
+                    f"{m.spell_registered()} != {m.spell_actual()} "
+                    f"(registered vs. {m.path})"
                 )
+        if self.switches.not_enum_typed:
+            lines.append(
+                "\nstatic switch kwargs NOT IntEnum-typed  <-- MUST BE EMPTY "
+                "(model_tree_design.md §4):"
+            )
+            for node, kwarg, type_name in self.switches.not_enum_typed:
+                lines.append(f"  {node}.{kwarg}: registered as bare {type_name}")
+        if self.switches.not_switches:
+            lines.append(
+                "\nstatic kwargs classified as NOT model-selection switches "
+                "(switch_elimination_design.md §3):"
+            )
+            for node, kwarg, kind, disposition in self.switches.not_switches:
+                lines.append(f"  {node}.{kwarg}: {kind} -- {disposition}")
         if self.switches.unresolved:
             lines.append("\nstatic kwargs neither checked nor declared non-switches:")
             for node, kwarg, why in self.switches.unresolved:
@@ -821,7 +987,7 @@ def compare(graph, data, rtol=1e-6, atol=1e-9) -> ComparisonReport:
     report = ComparisonReport()
     # Audited on the graph *as passed in*, before `_without_excluded`: the excluded
     # nodes are minted islands with nothing to compare numerically, but their static
-    # switch kwargs (e.g. `WindingPackIntersectInputs(i_tf_sc_mat=1)`) are registered
+    # switch kwargs (e.g. `WindingPackIntersectInputs`'s `i_tf_sc_mat`) are registered
     # values like any other and are just as capable of being wrong.
     report.switches = switch_audit(graph, data)
 

@@ -17,7 +17,7 @@ vocabulary — Shape A / Shape B — that the code itself cites).
 
 | check | value |
 |---|---|
-| `pytest functional_process -q` | **3704 passed**, 3344 skipped, 0 failed |
+| `pytest functional_process -q` | **3724 passed**, 3344 skipped, 0 failed (re-measured 2026-08-20 — the previously recorded 3704 had gone stale; a `git worktree` at `aca0fb6d` also measures 3724, so the enum conversion of `model_tree_design.md` §8 step 1 added and moved nothing) |
 | `cd ~/jaxgraph && pytest` | **482 passed**, 3 skipped — cottax is a dependency this port now changes, so it belongs in the same table |
 | `run_mda_harness.py` | **499 agreements** (23 array-valued), **34 disagreements** (0 in driven blocks, 34 acyclic), 3 unverifiable, **0 ungrounded**, 21 errors |
 | … accounting | **557 owned variables walked, 0 unaccounted**; 61 switch kwargs checked / 0 mismatched / 3 not data-backed / **0 unresolved** |
@@ -101,6 +101,13 @@ expressed that way.
 
 Four real gaps in `Switch`/`Alternative` remain open. None blocks anything today; each is
 recorded here so the next instance is recognised as an instance rather than re-derived.
+
+**All four (plus the joint-switch synthetic path and §9's nested-switch instance) have a
+designed resolution: `_audit/model_tree_design.md`**, which replaces the
+`Switch`/`Alternative` mechanism outright with a typed model tree and an IN.DAT factory —
+see its §2 for the gap-by-gap mapping. They stay listed here as *open* until that design
+lands (its §8 steps 3–4); do not patch the old mechanism for a new instance of any of
+them in the meantime.
 
 - **One arm, several literal values.** `blkttype` is three values over two arms
   (`blkttype in {1, 2}` vs. `3`), which `Alternative.value` — one integer per arm — does
@@ -606,9 +613,14 @@ covered too), so what is checked is what the graph carries, not what `total_proc
 text says. A kwarg name is resolved to a `DataStructure` field by scanning every area for
 an attribute of exactly that name — which works because PROCESS's naming scheme makes field
 names globally unique, and is *checked*, not assumed (a name found in two areas is reported
-unresolved, never silently resolved to whichever area came first). One alias is needed and
-is declared in `STATIC_KWARG_ALIASES`: `PlasmaComposition.is_ignited` is a `bool` standing
-for `i_plasma_ignited == IGNITED`.
+unresolved, never silently resolved to whichever area came first). ~~One alias is needed
+and is declared in `STATIC_KWARG_ALIASES`~~ — **the alias is gone**:
+`model_tree_design.md` §8 step 1 deleted `PlasmaComposition.is_ignited` (the field is now
+`i_plasma_ignited: PlasmaIgnitionModel`, resolving by name like every other switch) and
+`STATIC_KWARG_ALIASES` with it. The same step enum-typed every model-selection kwarg the
+audit walks, so a mismatch now prints member names beside the integers, and a new
+always-empty `not_enum_typed` list guards against a bare-integer registration returning.
+The 61 / 0 / 3 / 0 totals were unmoved by all of it.
 
 Three-way classification, the same discipline the harness applies to
 ungrounded/unverifiable/errors: **checked** (resolved to a real field and compared);
@@ -952,25 +964,23 @@ every point from scratch and would recompile every point besides (§11.2).
 
 ### 11.5 Design work recorded today, not yet implemented
 
-**`_audit/switch_elimination_design.md`** — replacing integer `i_*` switches with model
-selection. The settled target is **three trees**: a model tree (structure, provenance
-intrinsic to each model's own module, namespaces as classes/modules rather than dicts to
-mirror how `DataStructure` addresses variables), a settings tree (same shape, schema
-*derivable* from each model's `eqx.field(static=True)` declarations), and `env` (traced
-boundary inputs, already separate). `materialise(models, settings)` zips the first two and
-replaces the integer `Configuration` outright.
+**The settled design is `_audit/model_tree_design.md`**, which supersedes
+`switch_elimination_design.md`'s three-tree/`materialise` shape (that file's banner maps
+which of its sections stay live — the measurements do, the design does not). One tree,
+not three: `eqx.Module` namespaces with typed snake_case slots, occupants carrying their
+own settings as enum-typed `eqx.field(static=True)` fields, `Machine()` defaults =
+PROCESS defaults, and a single `machine_from_indat` factory as the only place an `i_*`
+integer is ever read. `Switch`/`Alternative`/`Configuration` are deleted by its §8
+step 4; the migration order, per-step gates, and the one small cottax change
+(`ModelNamespace` in `node_and_names`, minting `GetAttrKey` slot names so a node name
+is a working address into the machine tree — no rendering change needed) are in its
+§§3 and 8.
 
-A feasibility investigation has since measured the blast radius and prototyped the cottax
-side; see that file's §13 for the results and the recommended first increment. The short
-version: the blocking cottax change is **one change in one file**, hierarchical `NodePath`s
-already work end to end, and the sensible first move is to land it, export the flat XDSM
-formatter, and convert one small subsystem — not `costs` or `stellarator`.
-
-**Update: the cottax half has landed** (`~/jaxgraph` `789df8b`, "hierarchical node
-paths"). So §13's "blocking change" is no longer blocking anything, and
-`total_process.COMMON` still being a flat tuple is **purely client work**. What remains
-before the model tree is worth building is §12 — `free`, which is what makes a selection
-*mean* something, where the trees are only how you *spell* one.
+**The cottax hierarchical-`NodePath` half has landed** (`~/jaxgraph` `789df8b`), so
+nothing upstream blocks step 3. §12's `free` remains the companion question — the tree
+is how a selection is *spelled*, `free` is what one *means* — but is no longer framed as
+a prerequisite: the two share only the boundary postcondition
+(`model_tree_design.md` §6).
 
 ### 11.6 Priority order
 
@@ -1439,6 +1449,12 @@ is a variable that just became a frozen constant with a structurally-zero deriva
 which is the defect this project has found eight times and never by a check.
 
 ### 12.2 Alternatives are keyed on output — nearly
+
+*(Resolution designed: `_audit/model_tree_design.md` — exclusivity becomes
+by-construction (one slot, one occupant) and this section's real content, the
+partial-overlap hazard and "the check belongs on consumers", becomes that design's §6
+boundary postcondition. Kept in full below because the reasoning is what that section
+implements.)*
 
 `Switch.check_arms_are_exclusive` already accepts colliding output ownership as its only
 proof of exclusivity, so "these nodes cannot coexist" is detected exactly that way today.

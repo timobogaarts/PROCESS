@@ -80,6 +80,11 @@ from functional_process.models.physics.confinement_time import (
 )
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
+from process.data_structure.physics_variables import (
+    ConfinementRadiationLossModel,
+    ConfinementTimeModel,
+    PlasmaIgnitionModel,
+)
 from process.models.physics.confinement_time import PlasmaConfinementTime
 from process.models.physics.plasma_geometry import PlasmaGeom
 
@@ -2147,7 +2152,11 @@ def test_stellarator_arm_rebinds_only_the_q95_read():
     identical because that is what makes the two genuine mutually exclusive `Switch`
     arms (`configuration.py`'s `check_arms_are_exclusive`).
     """
-    switches = {"i_confinement_time": 38, "i_rad_loss": 1, "i_plasma_ignited": 1}
+    switches = {
+        "i_confinement_time": ConfinementTimeModel.ISS04_STELLARATOR,
+        "i_rad_loss": ConfinementRadiationLossModel.CORE_ONLY,
+        "i_plasma_ignited": PlasmaIgnitionModel.IGNITED,
+    }
     tokamak = ConfinementTime(**switches)
     stellarator = StellaratorConfinementTime(**switches)
 

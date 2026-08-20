@@ -2003,9 +2003,9 @@ class ConfinementTime(ExplicitFunction):
     a stellarator-mode instantiation of this class would rebind the `q95` input.
     """
 
-    i_confinement_time: int = eqx.field(static=True)
-    i_rad_loss: int = eqx.field(static=True)
-    i_plasma_ignited: int = eqx.field(static=True)
+    i_confinement_time: ConfinementTimeModel = eqx.field(static=True)
+    i_rad_loss: ConfinementRadiationLossModel = eqx.field(static=True)
+    i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
 
     pden_electron_transport_loss_mw = Output(
         lambda s: s.physics.pden_electron_transport_loss_mw

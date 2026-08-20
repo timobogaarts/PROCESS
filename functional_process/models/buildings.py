@@ -892,7 +892,7 @@ class BldgsSizes(ExplicitFunction):
     `i_hcd_primary` is a static field (not an `FromExactly`) -- see module docstring.
     """
 
-    i_hcd_primary: int = eqx.field(static=True)
+    i_hcd_primary: CurrentDriveModel = eqx.field(static=True)
 
     reactor_hall_l = Output(lambda s: s.buildings.reactor_hall_l)
     reactor_hall_w = Output(lambda s: s.buildings.reactor_hall_w)

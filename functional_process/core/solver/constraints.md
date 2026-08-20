@@ -86,7 +86,8 @@ computed before constraints run.
 `.physics.i_plasma_ignited` (`PlasmaIgnitionModel`, selects whether injected power is
 in the denominator) -- both static, reads-set differs slightly by branch but the
 difference is one term each, kept as plain `if`/`elif` in one function (same
-proportionality judgement `physics_B_composition.md`'s `is_ignited` entry already makes
+proportionality judgement `physics_B_composition.md`'s `i_plasma_ignited` entry (formerly
+spelled `is_ignited`) already makes
 for a two-line differing branch inside an otherwise-shared body).
 
 ---

@@ -21,7 +21,14 @@ from cottax.interfaces.pytree_namespace_module import (
     Output,
 )
 
+from functional_process.models.switch_enums import (
+    BlanketDualCoolantModel,
+    CostOfElectricityModel,
+    PFEnergyStorageSource,
+    SphericalTokamakModel,
+)
 from process.models.power import PumpingPowerModelTypes
+from process.models.tfcoil.base import TFConductorModel
 
 
 def calculate_acpow(
@@ -452,7 +459,7 @@ def calculate_plant_electric_production(
 class Acpow(ExplicitFunction):
     """cottax node: `calculate_acpow`."""
 
-    i_pf_energy_storage_source: int = eqx.field(static=True)
+    i_pf_energy_storage_source: PFEnergyStorageSource = eqx.field(static=True)
 
     pacpmw = Output(lambda s: s.heat_transport.pacpmw)
     tlvpmw = Output(lambda s: s.heat_transport.tlvpmw)
@@ -602,11 +609,11 @@ class PowerProfilesOverTime(ExplicitFunction):
 class PlantElectricProduction(ExplicitFunction):
     """cottax node: `calculate_plant_electric_production`."""
 
-    itart: int = eqx.field(static=True)
-    i_tf_sup: int = eqx.field(static=True)
-    ireactor: int = eqx.field(static=True)
-    i_blkt_dual_coolant: int = eqx.field(static=True)
-    i_p_coolant_pumping: int = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    ireactor: CostOfElectricityModel = eqx.field(static=True)
+    i_blkt_dual_coolant: BlanketDualCoolantModel = eqx.field(static=True)
+    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
 
     p_cp_coolant_pump_elec_mw = Output(lambda s: s.power.p_cp_coolant_pump_elec_mw)
     p_plant_electric_base_total_mw = Output(
@@ -821,10 +828,10 @@ class PlantElectricProductionReactor(ExplicitFunction):
     `stellarator_helias.IN.DAT`) had no live argument at all.
     """
 
-    itart: int = eqx.field(static=True)
-    i_tf_sup: int = eqx.field(static=True)
-    i_blkt_dual_coolant: int = eqx.field(static=True)
-    i_p_coolant_pumping: int = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    i_blkt_dual_coolant: BlanketDualCoolantModel = eqx.field(static=True)
+    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
 
     p_cp_coolant_pump_elec_mw = Output(lambda s: s.power.p_cp_coolant_pump_elec_mw)
     p_plant_electric_base_total_mw = Output(

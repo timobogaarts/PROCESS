@@ -31,6 +31,10 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.models.switch_enums import (
+    BlanketDualCoolantModel,
+    CoilNuclearHeatingModel,
+)
 from functional_process.paths import (
     current_drive,
     fwbs,
@@ -48,6 +52,7 @@ from process.core.exceptions import ProcessValueError
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.data_structure.pfcoil_variables import PFConductorModel
 from process.models.power import ElectricConversionModelTypes, PumpingPowerModelTypes
+from process.models.tfcoil.base import TFConductorModel
 
 
 def calculate_plant_thermal_efficiency(
@@ -1034,8 +1039,8 @@ def calculate_cryo_plant_loads(
 class PlantThermalEfficiency(ExplicitFunction):
     """cottax node: `calculate_plant_thermal_efficiency`."""
 
-    i_thermal_electric_conversion: int = eqx.field(static=True)
-    i_blanket_type: int = eqx.field(static=True)
+    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
+    i_blanket_type: BlktModelTypes = eqx.field(static=True)
 
     eta_turbine = OutputInto(heat_transport)
     temp_turbine_coolant_in = OutputInto(heat_transport)
@@ -1060,7 +1065,7 @@ class PlantThermalEfficiency(ExplicitFunction):
 class PlantThermalEfficiency2(ExplicitFunction):
     """cottax node: `calculate_plant_thermal_efficiency_2`."""
 
-    secondary_cycle_liq: int = eqx.field(static=True)
+    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
 
     etath_liq = OutputInto(heat_transport)
     temp_turbine_coolant_in = OutputInto(heat_transport)
@@ -1104,11 +1109,11 @@ class ComponentThermalPowers(ExplicitFunction):
     `FixedPointFunction` docstrings below for each split's own `to_graph` check).
     """
 
-    i_p_coolant_pumping: int = eqx.field(static=True)
-    i_blkt_dual_coolant: int = eqx.field(static=True)
-    i_thermal_electric_conversion: int = eqx.field(static=True)
-    i_blanket_type: int = eqx.field(static=True)
-    secondary_cycle_liq: int = eqx.field(static=True)
+    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
+    i_blkt_dual_coolant: BlanketDualCoolantModel = eqx.field(static=True)
+    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
+    i_blanket_type: BlktModelTypes = eqx.field(static=True)
+    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
 
     # .primary_pumping.p_fw_blkt_coolant_pump_mw is NOT declared here -- owned by
     # PFwBlktCoolantPumpMwStep's FixedPoint problem node (see below). Still read
@@ -1343,9 +1348,9 @@ class DeltaEtaStep(FixedPointFunction):
     one iteration regardless of algorithm, from any starting value.
     """
 
-    i_p_coolant_pumping: int = eqx.field(static=True)
-    i_blkt_dual_coolant: int = eqx.field(static=True)
-    i_thermal_electric_conversion: int = eqx.field(static=True)
+    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
+    i_blkt_dual_coolant: BlanketDualCoolantModel = eqx.field(static=True)
+    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
 
     delta_eta = OutputInto(power)
 
@@ -1446,8 +1451,8 @@ class EtaTurbineStep(FixedPointFunction):
     combinations land on which value.
     """
 
-    i_thermal_electric_conversion: int = eqx.field(static=True)
-    i_blanket_type: int = eqx.field(static=True)
+    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
+    i_blanket_type: BlktModelTypes = eqx.field(static=True)
 
     eta_turbine = OutputInto(heat_transport)
 
@@ -1491,7 +1496,7 @@ class EtathLiqStep(FixedPointFunction):
     `test_etath_liq_step_gradient_wrt_etath_liq`.
     """
 
-    secondary_cycle_liq: int = eqx.field(static=True)
+    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
 
     etath_liq = OutputInto(heat_transport)
 
@@ -1541,9 +1546,9 @@ class TempTurbineCoolantInStep(FixedPointFunction):
     `test_temp_turbine_coolant_in_step_gradient_wrt_temp_turbine_coolant_in`.
     """
 
-    i_thermal_electric_conversion: int = eqx.field(static=True)
-    i_blanket_type: int = eqx.field(static=True)
-    secondary_cycle_liq: int = eqx.field(static=True)
+    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
+    i_blanket_type: BlktModelTypes = eqx.field(static=True)
+    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
 
     temp_turbine_coolant_in = OutputInto(heat_transport)
 
@@ -1597,7 +1602,7 @@ class PFwDivHeatDepositedMwStep(FixedPointFunction):
     `test_p_fw_div_heat_deposited_mw_step_gradient`.
     """
 
-    i_p_coolant_pumping: int = eqx.field(static=True)
+    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
 
     p_fw_div_heat_deposited_mw = OutputInto(heat_transport)
 
@@ -1660,7 +1665,7 @@ class PFwBlktCoolantPumpMwStep(FixedPointFunction):
     `jax.grad` in `test_p_fw_blkt_coolant_pump_mw_step_gradient`.
     """
 
-    i_p_coolant_pumping: int = eqx.field(static=True)
+    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
 
     p_fw_blkt_coolant_pump_mw = OutputInto(primary_pumping)
 
@@ -1697,8 +1702,8 @@ class Cryo(ExplicitFunction):
     why the five `q*` fields are two nodes rather than one.
     """
 
-    i_tf_sup: int = eqx.field(static=True)
-    inuclear: int = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    inuclear: CoilNuclearHeatingModel = eqx.field(static=True)
 
     helpow = OutputInto(heat_transport)
     qss = OutputInto(power)
@@ -1773,8 +1778,8 @@ class CryoQNucStep(FixedPointFunction):
     that is the whole point of the fixed-point shape.
     """
 
-    i_tf_sup: int = eqx.field(static=True)
-    inuclear: int = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    inuclear: CoilNuclearHeatingModel = eqx.field(static=True)
 
     qnuc = OutputInto(fwbs)
 
@@ -1819,8 +1824,8 @@ class CryoQLoadsStep(FixedPointFunction):
     of the four unknowns and the residual Jacobian is exactly `-I`.
     """
 
-    i_tf_sup: int = eqx.field(static=True)
-    i_pf_conductor: int = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    i_pf_conductor: PFConductorModel = eqx.field(static=True)
 
     qss = OutputInto(power)
     qac = OutputInto(power)
@@ -1878,8 +1883,8 @@ class CryoLoads(ExplicitFunction):
     `_audit/boundary_inputs_audit.md` §4c (b9)/(b10) and §7 item 7.
     """
 
-    i_tf_sup: int = eqx.field(static=True)
-    i_pf_conductor: int = eqx.field(static=True)
+    i_tf_sup: TFConductorModel = eqx.field(static=True)
+    i_pf_conductor: PFConductorModel = eqx.field(static=True)
 
     helpow = OutputInto(heat_transport)
     p_cryo_plant_electric_mw = OutputInto(heat_transport)

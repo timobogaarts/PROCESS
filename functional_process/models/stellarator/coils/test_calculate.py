@@ -62,6 +62,7 @@ from functional_process.models.stellarator.coils.coils import (
 from process.core.model import DataStructure
 from process.models.stellarator.coils import calculate as process_calculate
 from process.models.stellarator.preset_config import load_stellarator_config
+from process.models.superconductors import SuperconductorModel
 
 
 def _reference_coil_toroidal_thickness(
@@ -827,7 +828,7 @@ def test_winding_pack_intersect_inputs_node_assembles_and_does_not_own_j_tf_wp()
     and must not itself own `.tfcoil.j_tf_wp` -- that `VarPath` belongs to
     `WindingPackTotalSizePost` alone, not this one (it only reads the real value).
     """
-    node = WindingPackIntersectInputs(i_tf_sc_mat=1)
+    node = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel.ITER_NB3SN)
     graph = to_graph(node)
     assert graph.definitions
     owned = {out.var for out in node.outputs}
@@ -855,7 +856,7 @@ def test_winding_pack_intersect_pair_assembles_around_the_root_find():
     around `intersect` this pass makes (`_audit/next_steps.md` §7, `Intersect`'s own
     docstring).
     """
-    pre = WindingPackIntersectInputs(i_tf_sc_mat=1)
+    pre = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel.ITER_NB3SN)
     graph = to_graph(pre, Intersect())
     assert graph.definitions
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
@@ -886,7 +887,7 @@ def test_winding_pack_intersect_split_forms_one_combined_cycle():
     `FixedPointFunction` duplicating this whole computation just to isolate `j_tf_wp`)
     is gone -- this one merged cycle replaces it, with no duplicated computation.
     """
-    pre = WindingPackIntersectInputs(i_tf_sc_mat=1)
+    pre = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel.ITER_NB3SN)
     post = WindingPackTotalSizePost()
     graph = to_graph(pre, Intersect(), post)
     assert graph.definitions
@@ -1003,7 +1004,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
         for name, where in field_paths.items()
     }
 
-    pre = WindingPackIntersectInputs(i_tf_sc_mat=i_tf_sc_mat)
+    pre = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel(int(i_tf_sc_mat)))
     post = WindingPackTotalSizePost()
     graph = to_graph(pre, Intersect(), post)
     # Same domain `winding_pack_curves` itself samples `wp_width_r` over -- see that

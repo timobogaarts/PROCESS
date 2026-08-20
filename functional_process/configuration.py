@@ -39,7 +39,7 @@ asserts both halves so the claim stays checked rather than narrated.
 Only *topology-changing* switches belong here -- the first of the two categories in
 `naming_convention.md`. The second (a formula-changing switch with a provably identical
 reads-set, kept as a static kwarg on one node's `fn`) stays where it is: that is
-`EcrhDensityLimit(i_plasma_pedestal=0)` in `total_process.py`, and it is deliberately
+`EcrhDensityLimit`'s `i_plasma_pedestal` in `total_process.py`, and it is deliberately
 *not* modelled as a `Switch` here, because nothing about the graph's shape depends on it.
 """
 

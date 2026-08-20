@@ -63,6 +63,7 @@ from functional_process.models.stellarator.coils.mass import calculate_coils_mas
 from functional_process.models.stellarator.coils.quench import (
     calculate_quench_protection,
 )
+from process.models.superconductors import SuperconductorModel
 
 
 def calculate_coil_toroidal_thickness(
@@ -1018,7 +1019,7 @@ class WindingPackIntersectInputs(ExplicitFunction):
     reporting-only reason.
     """
 
-    i_tf_sc_mat: int = eqx.field(static=True)
+    i_tf_sc_mat: SuperconductorModel = eqx.field(static=True)
 
     wp_width_r = Output(lambda s: s.stellarator.wp_width_r)
     lhs = Output(lambda s: s.stellarator.lhs)

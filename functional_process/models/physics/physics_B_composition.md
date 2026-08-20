@@ -133,7 +133,7 @@ see open questions.
 | `.physics.fusden_alpha_total` | read | explicit-arg | branch selector (`< 1e-6`) and, on the other branch, a divisor |
 | `.physics.f_nd_protium_electrons` | read | explicit-arg | |
 | `.physics.nd_plasma_protons_vol_avg` | write then read | local-intermediate | |
-| `.physics.i_plasma_ignited` | read | explicit-arg, **switch** | see switches section — kept as static `is_ignited` bool |
+| `.physics.i_plasma_ignited` | read | explicit-arg, **switch** | see switches section — static `i_plasma_ignited: PlasmaIgnitionModel` (was a `bool` `is_ignited` alias; deleted per `_audit/model_tree_design.md` §8 step 1) |
 | `.physics.f_nd_beam_electron` | read | explicit-arg | non-ignited branch only |
 | `.physics.nd_beam_ions` | write then read | local-intermediate | |
 | `.impurity_radiation.impurity_arr_z` | read | **not a port argument** | used only to build the `z > 2` mask, which is provably constant across every real configuration — see `IMPURITY_SLICE` in the port; not threaded through as a value |
@@ -179,7 +179,7 @@ def plasma_composition(
     f_temp_plasma_electron_density_vol_avg,
     f_beam_tritium,
     m_impurity_amu_array,
-    is_ignited,
+    i_plasma_ignited,
 ) -> tuple[...]: ...
 
 
@@ -263,7 +263,10 @@ loop — so tier 1 remains the correct classification, not tier 2.
   policy deviation rather than silently applied: the differing branch is two lines deep
   inside an otherwise-identical 328-line function, and splitting would duplicate the
   other ~95% of the body across two top-level functions for a two-line difference.
-  Kept as a static `is_ignited: bool` parameter instead. Recommend the coordinating
+  Kept as a static parameter instead — originally a `bool` `is_ignited`, since retyped to
+  `i_plasma_ignited: PlasmaIgnitionModel` when the alias category was deleted
+  (`_audit/model_tree_design.md` §8 step 1; the deviation from the split default itself
+  is unchanged by the retyping). Recommend the coordinating
   session treat this as a second data point (alongside `i_beta_fast_alpha` in chunk A,
   a case where the policy's "identical reads" exception cleanly applied) for whether
   `traceability_policy.md`'s switch-split default needs a size/entanglement-aware

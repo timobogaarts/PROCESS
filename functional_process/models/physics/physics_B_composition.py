@@ -46,6 +46,7 @@ from functional_process.models.physics.impurity_radiation import (
     calculate_average_charge_at_temp,
 )
 from process.core import constants
+from process.data_structure.physics_variables import PlasmaIgnitionModel
 
 H_INDEX = 0
 """`element2index("H_", ...)` -- always 0, see module docstring."""
@@ -95,7 +96,7 @@ def plasma_composition(
     f_temp_plasma_electron_density_vol_avg,
     f_beam_tritium,
     m_impurity_amu_array,
-    is_ignited,
+    i_plasma_ignited,
 ):
     """Plasma component fractional makeup -- density, charge and mass bookkeeping.
 
@@ -131,14 +132,22 @@ def plasma_composition(
       cleanly. The check is simply **not ported**; a negative `nd_plasma_fuel_ions_vol_avg`
       flows through unchanged rather than raising or becoming NaN. See the audit
       record's open questions.
-    - **`is_ignited`**: PROCESS's `PlasmaIgnitionModel(i_plasma_ignited) ==
+    - **`i_plasma_ignited`**: PROCESS's `PlasmaIgnitionModel(i_plasma_ignited) ==
       PlasmaIgnitionModel.NON_IGNITED` compare selects between two `nd_beam_ions`
       formulas with genuinely different read sets (`traceability_policy.md`'s default
-      would be "split"). Kept as a plain Python `bool` parameter (static, resolved
-      before tracing) instead, because it is two lines deep inside an otherwise-shared
-      328-line function -- splitting would duplicate the other ~95% of the body across
-      two top-level functions. Flagged as a policy deviation, not silently applied; see
-      the audit record's switches section.
+      would be "split"). Kept as a static, resolved-before-tracing parameter instead,
+      because it is two lines deep inside an otherwise-shared 328-line function --
+      splitting would duplicate the other ~95% of the body across two top-level
+      functions. Flagged as a policy deviation, not silently applied; see the audit
+      record's switches section.
+
+      **It is spelled and typed as PROCESS spells it**: the `PlasmaIgnitionModel`
+      enum, under PROCESS's own field name. An earlier draft restated it as a plain
+      `bool` named `is_ignited`, which `_audit/switch_elimination_design.md` §3
+      classifies as kind (d), "alias / noise -- delete, don't rename": it forced
+      `mda_harness.STATIC_KWARG_ALIASES` to carry a hand-written
+      `bool(v == 1)` reconstruction of the mapping purely so `switch_audit` could
+      check the field at all. With the enum there is nothing to reconstruct.
 
     Every impurity-species sum (`znimp`, the total-impurity-density loop, the
     charge-weighted accumulators) is a `for imp in range(14): if z[imp] > 2: ...` in the
@@ -179,10 +188,11 @@ def plasma_composition(
         Tritium fraction of the neutral beam (`.current_drive.f_beam_tritium`).
     m_impurity_amu_array :
         `(14,)` impurity atomic masses (amu) -- compile-time constant.
-    is_ignited :
-        `True` selects the ignited case (`nd_beam_ions = 0`); `False` (PROCESS's
-        default) selects the non-ignited case. Static -- see the docstring section
-        above.
+    i_plasma_ignited :
+        `PlasmaIgnitionModel.IGNITED` selects the ignited case (`nd_beam_ions = 0`);
+        `PlasmaIgnitionModel.NON_IGNITED` (PROCESS's default,
+        `physics_variables.py:881`) selects the non-ignited case. Static -- see the
+        docstring section above.
 
     Returns
     -------
@@ -216,7 +226,7 @@ def plasma_composition(
         protons_not_yet_calculated, protons_early, protons_later
     )
 
-    if is_ignited:
+    if PlasmaIgnitionModel(i_plasma_ignited) is PlasmaIgnitionModel.IGNITED:
         nd_beam_ions = jnp.zeros_like(nd_plasma_electrons_vol_avg)
     else:
         nd_beam_ions = nd_plasma_electrons_vol_avg * f_nd_beam_electron
@@ -407,15 +417,16 @@ class PlasmaComposition(ExplicitFunction):
     positions; the result is numerically exact, not an approximation -- the two
     placeholders are unconditionally overwritten before anything downstream reads them.
 
-    `is_ignited` is a graph-assembly-time switch, not a port -- `eqx.field(static=True)`,
-    same move `ConfinementTime`/`EcrhDensityLimit` already make for their own switches
+    `i_plasma_ignited` is a graph-assembly-time switch, not a port --
+    `eqx.field(static=True)`, typed with PROCESS's own `PlasmaIgnitionModel`, the same
+    move `ConfinementTime`/`EcrhDensityLimit` already make for their own switches
     (`physics_B_composition.md`'s "switches touched" section: the two branches'
     reads-sets genuinely differ, but the differing part is two lines inside an
     otherwise-shared 328-line function, so it stays a static kwarg rather than an
     `Alternative` split).
     """
 
-    is_ignited: bool = eqx.field(static=True)
+    i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
 
     nd_plasma_alphas_thermal_vol_avg = Output(
         lambda s: s.physics.nd_plasma_alphas_thermal_vol_avg
@@ -570,7 +581,7 @@ class PlasmaComposition(ExplicitFunction):
             f_temp_plasma_electron_density_vol_avg,
             f_beam_tritium,
             m_impurity_amu_array,
-            self.is_ignited,
+            self.i_plasma_ignited,
         )
         # `results[4]` is the post-update 14-array (index 4 of `plasma_composition`'s
         # return tuple, see its own docstring); this node owns its two updated entries

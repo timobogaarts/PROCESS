@@ -1,5 +1,20 @@
 # Replacing integer switches with model selection — feasibility and blast radius
 
+> **SUPERSEDED in design by `model_tree_design.md`** — one typed `eqx.Module` tree of
+> models carrying their own settings, a single `machine_from_indat` factory as the only
+> place integers live, and no `Switch`/`Alternative`/`Configuration`/settings-tree/
+> `materialise` at all. Nothing is renumbered here; what follows is kept because other
+> records and live code cite it. Per-section status:
+>
+> - **Still live (measurements and standing warnings):** §1 (the enabling property),
+>   §3 (the four-kinds taxonomy — `model_tree_design.md` §8 step 1 acts on (b)/(c)/(d)),
+>   §4 (the upstream `IntEnum`s), §8 (the `switch_audit` warning, carried into
+>   `model_tree_design.md` §6/§8 step 1), §11 (provenance vs derived structure — cited
+>   by `total_process.py` and `render_xdsm.py`), and §13's *measurements* (blast radius,
+>   the prototyping results).
+> - **Superseded (design content):** §5, §6, §10, §12 (including §12.7's three trees and
+>   `materialise` — replaced by the one-tree design), §13's *recommended increment*, §14.
+
 **Question asked**: get rid of the `i_*` integer switch mechanism entirely — "models should
 be swapped, not arbitrary switches that mean nothing" — and make the selection
 JSON-serialisable: which models are included, plus specific selections for particular
@@ -47,7 +62,7 @@ wrong. (Current counts are in §13; the taxonomy is what matters here.)
 | **(a) model selection** | `i_confinement_time` (52 values), `i_cost_model`, `i_thermal_electric_conversion`, `i_p_coolant_pumping`, `i_blanket_type`, `i_tf_sup` | **Yes.** This is the question's target. |
 | **(b) shape / resolution** | `n_plasma_profile_elements=201`, `n_cs_pf_coils=0` | **No.** Static because array shapes and loop trip counts must be concrete under `jit`. They are numbers and should stay numbers; calling them "models" would be a category error. |
 | **(c) set membership** | `imp_indices=(0..13)` — which impurity species exist | **No, but not a switch either.** A set, not a choice. Already flagged by `switch_audit` as having no backing `DataStructure` field. |
-| **(d) alias / noise** | `is_ignited=True` (a bool restatement of `i_plasma_ignited == 1`) | **Delete, don't rename.** Pure redundancy; `switch_audit` already needs a special case for it. |
+| **(d) alias / noise** | `is_ignited=True` (a bool restatement of `i_plasma_ignited == 1`) | **Delete, don't rename.** Pure redundancy; `switch_audit` already needs a special case for it. *(Done — `model_tree_design.md` §8 step 1 deleted both the alias and the special case.)* |
 
 A JSON document that lists `n_plasma_profile_elements` as a "model" would be worse than
 what exists now. Only (a) is the target; **(b)/(c)/(d) must be explicitly reclassified so
@@ -63,10 +78,14 @@ would not be inventing a vocabulary; we would be promoting one.
 
 Two things about *where* they live are diagnostic:
 
-- Many live in **`process/core/io/plot/summary.py`** — PROCESS invented these names for
-  **reports**, not for model selection. The names exist precisely because the integers
-  "mean nothing" to a human reading output. That is the question's own complaint,
-  independently confirmed by PROCESS's own codebase.
+- ~~Many live in **`process/core/io/plot/summary.py`**~~ — **checked during the step-1
+  implementation and wrong**: `summary.py` contains no enums today; the 51 live in
+  `process/data_structure/*_variables.py` and `process/models/**`. The reports-first
+  diagnostic point this bullet drew from that location is withdrawn with it. (The count
+  and the "promote, don't invent" conclusion stand — 12 of the port's converted switch
+  families reused upstream enums directly; the 16 with no upstream enum got local ones in
+  `functional_process/models/switch_enums.py`, member names cited to the
+  `*_variables.py` lines they came from.)
 - This port **already converts int → name at node entry** in several places
   (`PlasmaIgnitionModel(i_plasma_ignited)` ×8, `ConfinementRadiationLossModel(int(i_rad_loss))`,
   `ConfinementTimeModel(...)`). The integer is already noise in the middle of the pipeline:
@@ -562,7 +581,11 @@ an export, and it takes XDSM's bracket-spelled labels from **136 to 0**.
 
 **Blast radius today**, measured on the assembled graph: **80 `COMMON` entries** (58 bare
 classes, 22 instances), **147 registered declarations**, **9 topology switches**, and **60
-static-field slots across 33 declarations, 30 distinct names, 58 of them `int`**. That last
+static-field slots across 33 declarations, 30 distinct names, 58 of them `int`**.
+*(Re-measured at `model_tree_design.md` §8 step 1's landing: 64 slots / 36 declarations /
+32 distinct names — and after that step, 56 enum-typed, 6 `int` all kind (b), 2 payloads,
+0 bare-integer model switches, with `switch_audit.not_enum_typed` pinning the zero.)*
+That last
 figure is the one that decides what a derived settings schema (§12.7) is worth: with almost
 every slot an `int`, the schema catches **misspelled keys**, and essentially never a wrong
 *type*. Both harnesses were run end to end against a 2-level model tree with **byte-identical

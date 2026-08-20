@@ -47,6 +47,17 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
+from functional_process.models.switch_enums import (
+    CentralSolenoidConfiguration,
+    CostOfElectricityModel,
+    IFEModel,
+    NetElectricPowerModel,
+    PlantOperationModel,
+    SphericalTokamakModel,
+    SuperconductorCostModel,
+    ThermalStorageModel,
+)
+from process.data_structure.pfcoil_variables import PFConductorModel
 
 
 def convert_fpy_to_calendar(
@@ -2919,7 +2930,7 @@ class HeatRejectionCost(ExplicitFunction):
 class FirstWallCost(ExplicitFunction):
     """cottax node: `calculate_first_wall_cost` (Account 221.1)."""
 
-    ife: int = eqx.field(static=True)
+    ife: IFEModel = eqx.field(static=True)
 
     c2211 = Output(lambda s: s.costs.c2211)
     fwallcst = Output(lambda s: s.costs.fwallcst)
@@ -2942,7 +2953,7 @@ class FirstWallCost(ExplicitFunction):
 class BlanketCost(ExplicitFunction):
     """cottax node: `calculate_blanket_cost` (Account 221.2)."""
 
-    ife: int = eqx.field(static=True)
+    ife: IFEModel = eqx.field(static=True)
 
     c22121 = Output(lambda s: s.costs.c22121)
     c22122 = Output(lambda s: s.costs.c22122)
@@ -2987,7 +2998,7 @@ class BlanketCost(ExplicitFunction):
 class ShieldCost(ExplicitFunction):
     """cottax node: `calculate_shield_cost` (Account 221.3)."""
 
-    ife: int = eqx.field(static=True)
+    ife: IFEModel = eqx.field(static=True)
 
     c22131 = Output(lambda s: s.costs.c22131)
     c22132 = Output(lambda s: s.costs.c22132)
@@ -3027,7 +3038,7 @@ class TfMagnetCostSuperconducting(ExplicitFunction):
     """cottax node: `calculate_tf_magnet_cost_superconducting` (Account 222.1,
     `.tfcoil.i_tf_sup == 1`)."""
 
-    supercond_cost_model: int = eqx.field(static=True)
+    supercond_cost_model: SuperconductorCostModel = eqx.field(static=True)
 
     c22211 = Output(lambda s: s.costs.c22211)
     c22212 = Output(lambda s: s.costs.c22212)
@@ -3118,9 +3129,9 @@ class PfMagnetCost(ExplicitFunction):
     """cottax node: `calculate_pf_magnet_cost` (Account 222.2)."""
 
     n_cs_pf_coils: int = eqx.field(static=True)
-    iohcl: int = eqx.field(static=True)
-    i_pf_conductor: int = eqx.field(static=True)
-    supercond_cost_model: int = eqx.field(static=True)
+    iohcl: CentralSolenoidConfiguration = eqx.field(static=True)
+    i_pf_conductor: PFConductorModel = eqx.field(static=True)
+    supercond_cost_model: SuperconductorCostModel = eqx.field(static=True)
 
     c22221 = Output(lambda s: s.costs.c22221)
     c22222 = Output(lambda s: s.costs.c22222)
@@ -3211,7 +3222,7 @@ class MagnetsCost(ExplicitFunction):
 class PowerInjectionCost(ExplicitFunction):
     """cottax node: `calculate_power_injection_cost` (Account 223)."""
 
-    ife: int = eqx.field(static=True)
+    ife: IFEModel = eqx.field(static=True)
 
     c2231 = Output(lambda s: s.costs.c2231)
     c2232 = Output(lambda s: s.costs.c2232)
@@ -3256,8 +3267,8 @@ class PowerInjectionCost(ExplicitFunction):
 class EnergyStorageCost(ExplicitFunction):
     """cottax node: `calculate_energy_storage_cost` (Account 225.3)."""
 
-    i_pulsed_plant: int = eqx.field(static=True)
-    istore: int = eqx.field(static=True)
+    i_pulsed_plant: PlantOperationModel = eqx.field(static=True)
+    istore: ThermalStorageModel = eqx.field(static=True)
 
     c2253 = Output(lambda s: s.costs.c2253)
 
@@ -3291,7 +3302,7 @@ class PowerConditioningCost(ExplicitFunction):
 class AuxiliaryComponentCoolingCost(ExplicitFunction):
     """cottax node: `calculate_auxiliary_component_cooling_cost` (Account 2262)."""
 
-    ife: int = eqx.field(static=True)
+    ife: IFEModel = eqx.field(static=True)
 
     cppa = Output(lambda s: s.costs.cppa)
     c2262 = Output(lambda s: s.costs.c2262)
@@ -3358,7 +3369,7 @@ class FuelProcessingCost(ExplicitFunction):
     """cottax node: `calculate_fuel_processing_cost` (Account 2272). Sole producer of
     `.physics.wtgpd`."""
 
-    ife: int = eqx.field(static=True)
+    ife: IFEModel = eqx.field(static=True)
 
     wtgpd = Output(lambda s: s.physics.wtgpd)
     c2272 = Output(lambda s: s.costs.c2272)
@@ -3473,10 +3484,10 @@ class CostOfElectricity(ExplicitFunction):
     makes, and `mda_harness.switch_audit` then checks them against the real run.
     """
 
-    ife: int = eqx.field(static=True)
-    itart: int = eqx.field(static=True)
-    ireactor: int = eqx.field(static=True)
-    ipnet: int = eqx.field(static=True)
+    ife: IFEModel = eqx.field(static=True)
+    itart: SphericalTokamakModel = eqx.field(static=True)
+    ireactor: CostOfElectricityModel = eqx.field(static=True)
+    ipnet: NetElectricPowerModel = eqx.field(static=True)
 
     moneyint = Output(lambda s: s.costs.moneyint)
     capcost = Output(lambda s: s.costs.capcost)
