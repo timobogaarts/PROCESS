@@ -33,11 +33,13 @@ import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
+    From,
     FromExactly,
-    Output,
+    OutputInto,
 )
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
+from functional_process.paths import current_drive, physics, stellarator
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
@@ -294,9 +296,7 @@ def jaeri_confinement_time(
     gjaeri = (
         safe_pow(zeff, 0.4)
         * safe_pow((15.0 - zeff) / 20.0, 0.6)
-        * safe_pow(
-            3.0 * qstar * (qstar + 5.0) / ((qstar + 2.0) * (qstar + 7.0)), 0.6
-        )
+        * safe_pow(3.0 * qstar * (qstar + 5.0) / ((qstar + 2.0) * (qstar + 7.0)), 0.6)
     )
     return (
         0.085 * kappa95 * rminor**2 * safe_sqrt(afuel)
@@ -1906,23 +1906,19 @@ def calculate_confinement_time(
     t_ion_energy_confinement = t_electron_energy_confinement
 
     if rad_loss_model == ConfinementRadiationLossModel.CORE_ONLY:
-        hstar = (
-            hfact
-            * safe_pow(p_plasma_loss_mw
-                / (
-                    p_plasma_loss_mw
-                    + pden_plasma_sync_mw * vol_plasma
-                    + p_plasma_inner_rad_mw
-                ), 0.31)
+        hstar = hfact * safe_pow(
+            p_plasma_loss_mw
+            / (
+                p_plasma_loss_mw
+                + pden_plasma_sync_mw * vol_plasma
+                + p_plasma_inner_rad_mw
+            ),
+            0.31,
         )
     elif rad_loss_model == ConfinementRadiationLossModel.FULL_RADIATION:
-        hstar = (
-            hfact
-            * safe_pow(
-                p_plasma_loss_mw
-                / (p_plasma_loss_mw + pden_plasma_rad_mw * vol_plasma),
-                0.31,
-            )
+        hstar = hfact * safe_pow(
+            p_plasma_loss_mw / (p_plasma_loss_mw + pden_plasma_rad_mw * vol_plasma),
+            0.31,
         )
     else:  # NO_RADIATION
         hstar = hfact
@@ -1963,13 +1959,13 @@ def calculate_confinement_time(
 class IterPhysicsBasisElongation(ExplicitFunction):
     """cottax node: `calculate_iter_physics_basis_elongation`, ports declared."""
 
-    kappa_ipb = Output(lambda s: s.physics.kappa_ipb)
+    kappa_ipb = OutputInto(physics)
 
     def __call__(
         self,
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
+        vol_plasma=From(physics),
+        rmajor=From(physics),
+        rminor=From(physics),
     ):
         return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
 
@@ -1979,7 +1975,7 @@ class ConfinementTime(ExplicitFunction):
 
     `i_confinement_time`, `i_rad_loss` and `i_plasma_ignited` are switches resolved once
     at node-instantiation (graph-assembly) time -- `eqx.field(static=True)`, not
-    `FromExactly`s, per `_audit/naming_convention.md` § "switches are not ports" (same move as
+    reads, per `_audit/naming_convention.md` § "switches are not ports" (same move as
     `EcrhDensityLimit(i_plasma_pedestal=...)` in `models/stellarator/density_
     limits.py`). Which concrete value(s) belong in `total_process.py`'s default graph
     is a registration decision left to the consolidation pass, not decided here -- all
@@ -1989,7 +1985,7 @@ class ConfinementTime(ExplicitFunction):
     **Consolidation-pass fix**: the audit record's own "switches touched" section
     already concludes `i_plasma_ignited` needs the same static treatment as the other
     two (its reads-set differs by one term, same shape as `i_rad_loss`/
-    `i_confinement_time`) -- this class originally bound it as an ordinary `FromExactly`
+    `i_confinement_time`) -- this class originally bound it as an ordinary read
     instead, and all three fields were missing `eqx.field(static=True)` entirely (plain
     `int`-annotated fields on an `eqx.Module` are still dynamic pytree leaves). Both are
     fixed here: `calculate_confinement_time`'s internal `if`/`elif` dispatch on these
@@ -2007,62 +2003,50 @@ class ConfinementTime(ExplicitFunction):
     i_rad_loss: ConfinementRadiationLossModel = eqx.field(static=True)
     i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
 
-    pden_electron_transport_loss_mw = Output(
-        lambda s: s.physics.pden_electron_transport_loss_mw
-    )
-    pden_ion_transport_loss_mw = Output(lambda s: s.physics.pden_ion_transport_loss_mw)
-    t_electron_energy_confinement = Output(
-        lambda s: s.physics.t_electron_energy_confinement
-    )
-    t_ion_energy_confinement = Output(lambda s: s.physics.t_ion_energy_confinement)
-    t_energy_confinement = Output(lambda s: s.physics.t_energy_confinement)
-    p_plasma_loss_mw = Output(lambda s: s.physics.p_plasma_loss_mw)
-    hstar = Output(lambda s: s.physics.hstar)
-    kappa_ipb = Output(lambda s: s.physics.kappa_ipb)
-    t_energy_confinement_beta = Output(lambda s: s.physics.t_energy_confinement_beta)
+    pden_electron_transport_loss_mw = OutputInto(physics)
+    pden_ion_transport_loss_mw = OutputInto(physics)
+    t_electron_energy_confinement = OutputInto(physics)
+    t_ion_energy_confinement = OutputInto(physics)
+    t_energy_confinement = OutputInto(physics)
+    p_plasma_loss_mw = OutputInto(physics)
+    hstar = OutputInto(physics)
+    kappa_ipb = OutputInto(physics)
+    t_energy_confinement_beta = OutputInto(physics)
 
     def __call__(
         self,
-        m_fuel_amu=FromExactly(lambda s: s.physics.m_fuel_amu),
-        p_alpha_total_mw=FromExactly(lambda s: s.physics.p_alpha_total_mw),
-        aspect=FromExactly(lambda s: s.physics.aspect),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        nd_plasma_electrons_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_electrons_vol_avg
-        ),
-        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
-        eps=FromExactly(lambda s: s.physics.eps),
-        hfact=FromExactly(lambda s: s.physics.hfact),
-        kappa=FromExactly(lambda s: s.physics.kappa),
-        kappa95=FromExactly(lambda s: s.physics.kappa95),
-        p_non_alpha_charged_mw=FromExactly(lambda s: s.physics.p_non_alpha_charged_mw),
-        p_hcd_injected_total_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_total_mw),
-        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
-        pden_plasma_core_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_core_rad_mw),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        temp_plasma_electron_density_weighted_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_density_weighted_kev
-        ),
-        q95=FromExactly(lambda s: s.physics.q95),
-        qstar=FromExactly(lambda s: s.physics.qstar),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        zeff=FromExactly(lambda s: s.physics.n_charge_plasma_effective_vol_avg),
-        eden_plasma_electrons_thermal_vol_avg=FromExactly(
-            lambda s: s.physics.eden_plasma_electrons_thermal_vol_avg
-        ),
-        eden_plasma_ions_thermal_vol_avg=FromExactly(
-            lambda s: s.physics.eden_plasma_ions_thermal_vol_avg
-        ),
-        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
-        pden_plasma_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_rad_mw),
-        pden_plasma_sync_mw=FromExactly(lambda s: s.physics.pden_plasma_sync_mw),
-        p_plasma_inner_rad_mw=FromExactly(lambda s: s.physics.p_plasma_inner_rad_mw),
-        triang=FromExactly(lambda s: s.physics.triang),
-        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
-        e_plasma_beta=FromExactly(lambda s: s.physics.e_plasma_beta),
-        tauee_in=FromExactly(lambda s: s.physics.tauee_in),
+        m_fuel_amu=From(physics),
+        p_alpha_total_mw=From(physics),
+        aspect=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
+        nd_plasma_electron_line=From(physics),
+        eps=From(physics),
+        hfact=From(physics),
+        kappa=From(physics),
+        kappa95=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
+        plasma_current=From(physics),
+        pden_plasma_core_rad_mw=From(physics),
+        rmajor=From(physics),
+        rminor=From(physics),
+        temp_plasma_electron_density_weighted_kev=From(physics),
+        q95=From(physics),
+        qstar=From(physics),
+        vol_plasma=From(physics),
+        n_charge_plasma_effective_vol_avg=From(physics),
+        eden_plasma_electrons_thermal_vol_avg=From(physics),
+        eden_plasma_ions_thermal_vol_avg=From(physics),
+        f_p_alpha_plasma_deposited=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        pden_plasma_rad_mw=From(physics),
+        pden_plasma_sync_mw=From(physics),
+        p_plasma_inner_rad_mw=From(physics),
+        triang=From(physics),
+        m_ions_total_amu=From(physics),
+        e_plasma_beta=From(physics),
+        tauee_in=From(physics),
     ):
         return calculate_confinement_time(
             m_fuel_amu,
@@ -2087,7 +2071,7 @@ class ConfinementTime(ExplicitFunction):
             q95,
             qstar,
             vol_plasma,
-            zeff,
+            n_charge_plasma_effective_vol_avg,
             eden_plasma_electrons_thermal_vol_avg,
             eden_plasma_ions_thermal_vol_avg,
             f_p_alpha_plasma_deposited,
@@ -2106,22 +2090,18 @@ class ConfinementTime(ExplicitFunction):
 class DoubleAndTripleProduct(ExplicitFunction):
     """cottax node: `calculate_double_and_triple_product`, ports declared."""
 
-    ntau = Output(lambda s: s.physics.ntau)
-    nTtau = Output(lambda s: s.physics.nTtau)
+    ntau = OutputInto(physics)
+    nTtau = OutputInto(physics)
 
     def __call__(
         self,
-        nd_plasma_electrons_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_electrons_vol_avg
-        ),
-        temp_plasma_electrons_vol_avg_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_vol_avg_kev
-        ),
-        t_energy_confinement=FromExactly(lambda s: s.physics.t_energy_confinement),
+        nd_plasma_electrons_vol_avg=From(physics),
+        temp_plasma_electron_vol_avg_kev=From(physics),
+        t_energy_confinement=From(physics),
     ):
         return calculate_double_and_triple_product(
             nd_plasma_electrons_vol_avg,
-            temp_plasma_electrons_vol_avg_kev,
+            temp_plasma_electron_vol_avg_kev,
             t_energy_confinement,
         )
 
@@ -2212,7 +2192,7 @@ class StellaratorConfinementTime(ConfinementTime):
     Why a subclass rather than editing `ConfinementTime`: this module ports ~40
     scaling laws, most of them tokamak ones for which `.physics.q95` is right, so the
     binding is genuinely device-dependent and cannot be resolved in one place. Why a
-    subclass rather than a static field on one class: `FromExactly`s are class-level
+    subclass rather than a static field on one class: reads are class-level
     parameter defaults, so an instance's `eqx.field(static=True)` cannot vary them --
     the declaring class *is* the unit of rebinding, and `NodalDeclaration.name` is
     `type(self).__name__` (`pytree_namespace_module.py:190-194`), so this arm gets its
@@ -2231,5 +2211,5 @@ class StellaratorConfinementTime(ConfinementTime):
 
     __call__.__signature__ = _rebound_signature(
         ConfinementTime.__call__,
-        q95=FromExactly(lambda s: s.stellarator.iotabar),
+        q95=FromExactly(stellarator.iotabar),
     )

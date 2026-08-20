@@ -272,58 +272,47 @@ independently-typed copy of a correctness-critical quadrature formula is a liabi
 caution.
 
 ```python
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from functional_process.paths import physics
 
 
 class FusionRates(ExplicitFunction):
-    pden_plasma_alpha_mw = Output(lambda s: s.physics.pden_plasma_alpha_mw)
-    pden_non_alpha_charged_mw = Output(lambda s: s.physics.pden_non_alpha_charged_mw)
-    pden_plasma_neutron_mw = Output(lambda s: s.physics.pden_plasma_neutron_mw)
-    fusden_plasma = Output(lambda s: s.physics.fusden_plasma)
-    fusden_plasma_alpha = Output(lambda s: s.physics.fusden_plasma_alpha)
-    proton_rate_density = Output(lambda s: s.physics.proton_rate_density)
-    sigmav_dt_average = Output(lambda s: s.physics.sigmav_dt_average)
-    dt_power_density_plasma = Output(lambda s: s.physics.dt_power_density_plasma)
-    dhe3_power_density = Output(lambda s: s.physics.dhe3_power_density)
-    dd_power_density = Output(lambda s: s.physics.dd_power_density)
-    f_dd_branching_trit = Output(lambda s: s.physics.f_dd_branching_trit)
-    fusrat_plasma_dt_profile = Output(lambda s: s.physics.fusrat_plasma_dt_profile)
-    fusrat_plasma_dhe3_profile = Output(lambda s: s.physics.fusrat_plasma_dhe3_profile)
-    fusrat_plasma_dd_helion_profile = Output(
-        lambda s: s.physics.fusrat_plasma_dd_helion_profile
-    )
-    fusrat_plasma_dd_triton_profile = Output(
-        lambda s: s.physics.fusrat_plasma_dd_triton_profile
-    )
+    pden_plasma_alpha_mw = OutputInto(physics)
+    pden_non_alpha_charged_mw = OutputInto(physics)
+    pden_plasma_neutron_mw = OutputInto(physics)
+    fusden_plasma = OutputInto(physics)
+    fusden_plasma_alpha = OutputInto(physics)
+    proton_rate_density = OutputInto(physics)
+    sigmav_dt_average = OutputInto(physics)
+    dt_power_density_plasma = OutputInto(physics)
+    dhe3_power_density = OutputInto(physics)
+    dd_power_density = OutputInto(physics)
+    f_dd_branching_trit = OutputInto(physics)
+    fusrat_plasma_dt_profile = OutputInto(physics)
+    fusrat_plasma_dhe3_profile = OutputInto(physics)
+    fusrat_plasma_dd_helion_profile = OutputInto(physics)
+    fusrat_plasma_dd_triton_profile = OutputInto(physics)
 
     def __call__(
         self,
-        profile_x=Input(lambda s: s.physics.radius_plasma_profile_norm),
-        te_profile_y=Input(lambda s: s.physics.temp_plasma_electron_profile_kev),
-        ne_profile_y=Input(lambda s: s.physics.nd_plasma_electron_profile),
-        temp_plasma_ion_vol_avg_kev=Input(
-            lambda s: s.physics.temp_plasma_ion_vol_avg_kev
-        ),
-        temp_plasma_electron_vol_avg_kev=Input(
-            lambda s: s.physics.temp_plasma_electron_vol_avg_kev
-        ),
-        f_plasma_fuel_deuterium=Input(lambda s: s.physics.f_plasma_fuel_deuterium),
-        f_plasma_fuel_tritium=Input(lambda s: s.physics.f_plasma_fuel_tritium),
-        f_plasma_fuel_helium3=Input(lambda s: s.physics.f_plasma_fuel_helium3),
-        nd_plasma_fuel_ions_vol_avg=Input(
-            lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
-        ),
-        nd_plasma_electrons_vol_avg=Input(
-            lambda s: s.physics.nd_plasma_electrons_vol_avg
-        ),
+        radius_plasma_profile_norm=From(physics),
+        temp_plasma_electron_profile_kev=From(physics),
+        nd_plasma_electron_profile=From(physics),
+        temp_plasma_ion_vol_avg_kev=From(physics),
+        temp_plasma_electron_vol_avg_kev=From(physics),
+        f_plasma_fuel_deuterium=From(physics),
+        f_plasma_fuel_tritium=From(physics),
+        f_plasma_fuel_helium3=From(physics),
+        nd_plasma_fuel_ions_vol_avg=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
     ):
         f_dd_branching_trit = calculate_deuterium_branching_trit(
             temp_plasma_ion_vol_avg_kev
         )
         return calculate_fusion_rates(
-            profile_x,
-            te_profile_y,
-            ne_profile_y,
+            radius_plasma_profile_norm,
+            temp_plasma_electron_profile_kev,
+            nd_plasma_electron_profile,
             temp_plasma_ion_vol_avg_kev,
             temp_plasma_electron_vol_avg_kev,
             f_plasma_fuel_deuterium,
@@ -335,7 +324,7 @@ class FusionRates(ExplicitFunction):
         )
 ```
 
-`SetFusionPowers` is a direct 1:1 wrap of `set_fusion_powers`, Inputs/Outputs read
+`SetFusionPowers` is a direct 1:1 wrap of `set_fusion_powers`, reads/writes taken
 straight off the `st_phys` call site's argument/assignment lists (see "data footprint"
 above for the one input with no current producer, `.physics.p_beam_alpha_mw`).
 

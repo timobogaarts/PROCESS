@@ -43,7 +43,7 @@ All five functions: **zero `self.data` reads, zero `self.data` writes** inside t
 function bodies themselves — every value is an explicit parameter or local. The table
 below is instead the *call-site* footprint: which `VarPath` each parameter is bound to
 where PROCESS calls the function, and which `VarPath` each return value is written to.
-This is what the `cottax` node classes below encode as `Input`/`Output`; the audit
+This is what the `cottax` node classes below encode as `From`/`OutputInto`; the audit
 schema's five read/write classifications (`explicit-arg` etc.) do not really apply here
 since the function itself performs no `self.data` access — every row is `explicit-arg`
 by construction, both call sites (`stellarator.py` and `physics.py`'s own `Physics.run()`)

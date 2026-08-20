@@ -533,12 +533,12 @@ def western_superconducting_nb3sn(
 # reads-set evidence in the audit record's "switches touched" section), e.g.:
 #
 #   class ItersMaterial(ExplicitFunction):
-#       j_crit_sc = Output(lambda s: s.tfcoil.j_crit_sc)  # sketch only -- VarPath TBD
+#       j_crit_sc = Output(tfcoil.j_crit_sc)  # sketch only -- VarPath TBD
 #
 #       def __call__(
 #           self,
-#           t_helium=FromExactly(lambda s: s.tfcoil.t_helium),  # sketch only -- VarPath TBD
-#           b_max=FromExactly(lambda s: s.tfcoil.b_max),  # sketch only -- VarPath TBD
+#           t_helium=FromExactly(tfcoil.t_helium),  # sketch only -- VarPath TBD
+#           b_max=FromExactly(tfcoil.b_max),  # sketch only -- VarPath TBD
 #           strain=-0.005,  # static, per jcrit_from_material
 #           b_c20max=32.97,  # static literal, i_tf_sc_mat == 1
 #           temp_c0max=16.06,  # static literal, i_tf_sc_mat == 1

@@ -322,7 +322,7 @@ Two things make it a node rather than a special case:
   fires, which is a diagnostic and is not ported. `TestLModeProfileReset` fuzzes all seven
   arguments against PROCESS to turn that from a reading into a measurement, with one legacy
   sample on each side of the guard.
-- **It declares no `Input`**, for the same reason: the result does not depend on the
+- **It declares no read**, for the same reason: the result does not depend on the
   incoming values, so declaring the seven fields as reads as well as writes would state a
   seven-way self-loop the computation does not have. `lmode_profile_reset` keeps the seven
   arguments (defaulted to the L-mode values) purely so the independence is testable.

@@ -7,13 +7,10 @@ Registry unit #9, chunk C. Audit record:
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.paths import physics
 from process.core import constants
 
 
@@ -78,11 +75,13 @@ def calculate_dimensionless_plasma_parameters(
         / (e_plasma_beta**2 * plasma_current)
     )
 
-    rho_star = safe_sqrt(2.0
+    rho_star = safe_sqrt(
+        2.0
         * constants.PROTON_MASS
         * m_ions_total_amu
         * e_plasma_beta
-        / (3.0 * vol_plasma * nd_plasma_electron_line)) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
+        / (3.0 * vol_plasma * nd_plasma_electron_line)
+    ) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
 
     beta_mcdonald = (
         4.0
@@ -98,22 +97,22 @@ def calculate_dimensionless_plasma_parameters(
 class DimensionlessPlasmaParameters(ExplicitFunction):
     """cottax node: `calculate_dimensionless_plasma_parameters`, ports declared."""
 
-    nu_star = Output(lambda s: s.physics.nu_star)
-    rho_star = Output(lambda s: s.physics.rho_star)
-    beta_mcdonald = Output(lambda s: s.physics.beta_mcdonald)
+    nu_star = OutputInto(physics)
+    rho_star = OutputInto(physics)
+    beta_mcdonald = OutputInto(physics)
 
     def __call__(
         self,
-        dlamie=FromExactly(lambda s: s.physics.dlamie),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        eps=FromExactly(lambda s: s.physics.eps),
-        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
-        kappa=FromExactly(lambda s: s.physics.kappa),
-        e_plasma_beta=FromExactly(lambda s: s.physics.e_plasma_beta),
-        plasma_current=FromExactly(lambda s: s.physics.plasma_current),
-        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
+        dlamie=From(physics),
+        vol_plasma=From(physics),
+        rmajor=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        eps=From(physics),
+        nd_plasma_electron_line=From(physics),
+        kappa=From(physics),
+        e_plasma_beta=From(physics),
+        plasma_current=From(physics),
+        m_ions_total_amu=From(physics),
     ):
         return calculate_dimensionless_plasma_parameters(
             dlamie,

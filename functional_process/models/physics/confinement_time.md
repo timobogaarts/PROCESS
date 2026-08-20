@@ -207,26 +207,28 @@ def calculate_double_and_triple_product(
 ## cottax node
 
 ```python
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from functional_process.paths import physics
 
 class IterPhysicsBasisElongation(ExplicitFunction):
-    kappa_ipb = Output(lambda s: s.physics.kappa_ipb)
-    def __call__(self, vol_plasma=Input(...), rmajor=Input(...), rminor=Input(...)):
+    kappa_ipb = OutputInto(physics)
+    def __call__(self, vol_plasma=From(physics), rmajor=From(physics),
+                 rminor=From(physics)):
         return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
 
 class ConfinementTime(ExplicitFunction):
-    i_confinement_time: int   # static field, not Input — resolved at graph-assembly time
+    i_confinement_time: int   # static field, not a read — resolved at graph-assembly time
     i_rad_loss: int           # ″
-    pden_electron_transport_loss_mw = Output(...)
-    # ... 6 more Outputs, one per calculate_confinement_time return value ...
-    def __call__(self, m_fuel_amu=Input(...), ...):
+    pden_electron_transport_loss_mw = OutputInto(physics)
+    # ... 6 more writes, one per calculate_confinement_time return value ...
+    def __call__(self, m_fuel_amu=From(physics), ...):
         return calculate_confinement_time(..., self.i_confinement_time, ...,
                                            self.i_rad_loss, ...)
 
 class DoubleAndTripleProduct(ExplicitFunction):
-    ntau = Output(lambda s: s.physics.ntau)
-    nTtau = Output(lambda s: s.physics.nTtau)
-    def __call__(self, nd_plasma_electrons_vol_avg=Input(...), ...): ...
+    ntau = OutputInto(physics)
+    nTtau = OutputInto(physics)
+    def __call__(self, nd_plasma_electrons_vol_avg=From(physics), ...): ...
 ```
 
 Full bodies in `confinement_time.py`. `i_confinement_time`/`i_rad_loss` are `ConfinementTime`'s
@@ -357,7 +359,7 @@ stellarator scalings and all three `i_rad_loss` arms.
 
   Fixed by `StellaratorConfinementTime`, a subclass rebinding exactly that one read via
   `_rebound_signature`, registered as the `value=6` arm of `total_process.py`'s
-  `.stellarator.istell` switch. A subclass because `Input`s are class-level `__call__`
+  `.stellarator.istell` switch. A subclass because reads are class-level `__call__`
   parameter defaults, so no per-instance static field can vary them; a *derived*
   signature rather than a restated one so the arm cannot silently drift from the base.
   `test_confinement_time.py::test_stellarator_arm_rebinds_only_the_q95_read` pins that

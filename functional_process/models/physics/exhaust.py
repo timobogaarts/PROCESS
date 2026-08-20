@@ -12,9 +12,11 @@ ported here.
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
-    FromExactly,
-    Output,
+    From,
+    OutputInto,
 )
+
+from functional_process.paths import physics
 
 
 def calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_mw):
@@ -37,11 +39,11 @@ def calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_mw):
 class RadiationFraction(ExplicitFunction):
     """cottax node: `calculate_radiation_fraction`, ports declared."""
 
-    f_p_plasma_separatrix_rad = Output(lambda s: s.physics.f_p_plasma_separatrix_rad)
+    f_p_plasma_separatrix_rad = OutputInto(physics)
 
     def __call__(
         self,
-        p_plasma_rad_mw=FromExactly(lambda s: s.physics.p_plasma_rad_mw),
-        p_plasma_heating_mw=FromExactly(lambda s: s.physics.p_plasma_heating_total_mw),
+        p_plasma_rad_mw=From(physics),
+        p_plasma_heating_total_mw=From(physics),
     ):
-        return calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_mw)
+        return calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_total_mw)

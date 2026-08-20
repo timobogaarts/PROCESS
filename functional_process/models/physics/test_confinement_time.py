@@ -78,6 +78,7 @@ from functional_process.models.physics.confinement_time import (
     t10_confinement_time,
     valovic_elmy_confinement_time,
 )
+from functional_process.paths import physics
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
 from process.data_structure.physics_variables import (
@@ -2183,5 +2184,5 @@ def test_rebound_signature_rejects_an_unknown_parameter():
     with pytest.raises(ValueError, match="no parameter"):
         _rebound_signature(
             ConfinementTime.__call__,
-            not_a_parameter=FromExactly(lambda s: s.physics.q95),
+            not_a_parameter=FromExactly(physics.q95),
         )

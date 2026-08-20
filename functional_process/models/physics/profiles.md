@@ -261,7 +261,7 @@ Twelve, all `ExplicitFunction`s, in `profiles.py`. **None are registered in
 registration.
 
 **Ready for `total_process.COMMON`, switch-independent:**
-- `ProfileGrid` — no `Input`s at all (its only argument is the static
+- `ProfileGrid` — no reads at all (its only argument is the static
   `n_plasma_profile_elements`); mints both outputs.
 - `NeProfileIntegral`, `TeProfileIntegral` — run in both `i_plasma_pedestal` arms.
 - `DensityProfile` — genuinely switch-independent (see "switches touched"), not an
@@ -379,7 +379,7 @@ inlined rather than iterated, so it stays tier 1 too (see "calls into other mode
   example next_steps.md's flag should point to.
 - **`n_plasma_profile_elements` as a static shape, not a value** — flagged in both prior
   records. Landed exactly as predicted: `ProfileGrid.n_plasma_profile_elements: int =
-  eqx.field(static=True)`, no `Input` for it, not differentiated.
+  eqx.field(static=True)`, no read for it, not differentiated.
 - **Three independent `0**x` / division-by-zero derivative traps**, one per profile
   function, each guarded the same way (`jnp.where` selecting a safe base before
   exponentiating, substituting the true value back after) — **workaround-known, minor**:

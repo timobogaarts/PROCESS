@@ -12,7 +12,7 @@ disagree.
 """
 
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import path_of, to_graph
+from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process._harness import Tier1Contract, legacy_sample
@@ -22,6 +22,7 @@ from functional_process.models.physics.physics_B_composition import (
     calculate_effective_charge_ionisation_profiles,
     plasma_composition,
 )
+from functional_process.paths import impurity_radiation
 from process.core.model import DataStructure
 from process.data_structure.physics_variables import PlasmaIgnitionModel
 from process.models.physics import impurity_radiation as impurity
@@ -469,19 +470,15 @@ def test_plasma_composition_owns_h_and_he_fractions():
     owned = {out.var for out in node.outputs}
     read = {inp.var for inp in node.inputs}
 
-    h_path = path_of(
-        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0], VarPath
-    )
-    he_path = path_of(
-        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1], VarPath
-    )
+    h_path = resolve(impurity_radiation.f_nd_impurity_electron_array[0], VarPath)
+    he_path = resolve(impurity_radiation.f_nd_impurity_electron_array[1], VarPath)
     assert h_path in owned
     assert he_path in owned
     assert h_path not in read
     assert he_path not in read
 
     for i in range(2, 14):
-        idx_path = path_of(
+        idx_path = resolve(
             lambda s, i=i: s.impurity_radiation.f_nd_impurity_electron_array[i],
             VarPath,
         )
@@ -514,12 +511,8 @@ def test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_compos
     assert graph.definitions
     assert len(graph.definitions) == 2
 
-    h_path = path_of(
-        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0], VarPath
-    )
-    he_path = path_of(
-        lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1], VarPath
-    )
+    h_path = resolve(impurity_radiation.f_nd_impurity_electron_array[0], VarPath)
+    he_path = resolve(impurity_radiation.f_nd_impurity_electron_array[1], VarPath)
     boundary_inputs = set(graph.unowned_inputs)
     assert h_path not in boundary_inputs
     assert he_path not in boundary_inputs

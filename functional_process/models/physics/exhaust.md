@@ -42,18 +42,19 @@ Unchanged from source's own signature and body shape (one domain guard, one divi
 ## cottax node
 
 ```python
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from functional_process.paths import physics
 
 
 class RadiationFraction(ExplicitFunction):
-    f_p_plasma_separatrix_rad = Output(lambda s: s.physics.f_p_plasma_separatrix_rad)
+    f_p_plasma_separatrix_rad = OutputInto(physics)
 
     def __call__(
         self,
-        p_plasma_rad_mw=Input(lambda s: s.physics.p_plasma_rad_mw),
-        p_plasma_heating_mw=Input(lambda s: s.physics.p_plasma_heating_total_mw),
+        p_plasma_rad_mw=From(physics),
+        p_plasma_heating_total_mw=From(physics),
     ):
-        return calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_mw)
+        return calculate_radiation_fraction(p_plasma_rad_mw, p_plasma_heating_total_mw)
 ```
 Registered in `exhaust.py`, not yet wired into `total_process.py` — reserved for the
 consolidation pass per this wave's boundary.
@@ -78,7 +79,7 @@ in-scope methods, currently being audited by another agent in this same wave. Th
 data dependency at the *caller's* call site, not a call this unit's own body makes, so
 it does not block porting `calculate_radiation_fraction` itself (its own signature takes
 the value as a plain argument, same as every other unit's "close the `data` back door"
-treatment) — flagged for whoever wires this node's `Input` up against unit #9's eventual
+treatment) — flagged for whoever wires this node's read up against unit #9's eventual
 `total_process.py` registration, not resolved here.
 
 ## JAX-difficulty flags

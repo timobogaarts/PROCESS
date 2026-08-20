@@ -20,7 +20,7 @@ would otherwise overwrite the profile arrays a case needs to control.
 """
 
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import path_of, to_graph
+from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process._harness import Tier1Contract, legacy_sample
@@ -33,6 +33,7 @@ from functional_process.models.physics.radiation_power import (
     calculate_radiation_powers,
     psync_albajar_fidone,
 )
+from functional_process.paths import impurity_radiation
 from process.core.model import DataStructure
 from process.models.physics import impurity_radiation as impurity
 from process.models.physics import radiation_power as reference_module
@@ -600,8 +601,8 @@ class TestRadiationPowers(Tier1Contract):
 # `calculate_impurity_radiation_totals` (the pure function, tested above) is unchanged.
 # What changes here is only `ImpurityRadiationTotals.__call__`'s *signature*:
 # `.impurity_radiation.f_nd_impurity_electron_array` is now fourteen individually
-# `SequenceKey`-addressed `FromExactly`s (one per species index) instead of one whole-array
-# `FromExactly`, matching `physics_B_composition.py`'s identical treatment of the same field.
+# `SequenceKey`-addressed reads (one per species index) instead of one whole-array
+# read, matching `physics_B_composition.py`'s identical treatment of the same field.
 # `imp_indices` still selects a static gather over them before forwarding to the pure
 # function -- these checks confirm the node still assembles and still computes the
 # identical answer, not just that the signature changed shape.
@@ -619,10 +620,10 @@ def _node_kwargs_from_totals_kwargs(kwargs, full_fractions):
     `coils/calculate.py`'s `coilcurrent` precedent.
     """
     node_kwargs = {
-        "profile_x": kwargs["profile_x"],
-        "nd_electron_profile": kwargs["nd_electron_profile"],
-        "temp_electron_profile_kev": kwargs["temp_electron_profile_kev"],
-        "temp_impurity_kev_array": _TEMP_TABLE,
+        "radius_plasma_profile_norm": kwargs["profile_x"],
+        "nd_plasma_electron_profile": kwargs["nd_electron_profile"],
+        "temp_plasma_electron_profile_kev": kwargs["temp_electron_profile_kev"],
+        "temp_impurity_keV_array": _TEMP_TABLE,
         "pden_impurity_lz_nd_temp_array": _LZ_TABLE,
         "radius_plasma_core_norm": kwargs["radius_plasma_core_norm"],
         "f_p_plasma_core_rad_reduction": kwargs["f_p_plasma_core_rad_reduction"],
@@ -634,7 +635,7 @@ def _node_kwargs_from_totals_kwargs(kwargs, full_fractions):
 
 def test_impurity_radiation_totals_assembles_alone():
     """`ImpurityRadiationTotals` must assemble on its own with the new per-index
-    signature -- fourteen `FromExactly`s on `f_nd_impurity_electron_array`'s indices, none of
+    signature -- fourteen per-index reads of `f_nd_impurity_electron_array`, none of
     them the whole-array `VarPath`.
     """
     node = ImpurityRadiationTotals(imp_indices=(_HYDROGEN, _ARGON))
@@ -643,14 +644,12 @@ def test_impurity_radiation_totals_assembles_alone():
 
     read = {inp.var for inp in node.inputs}
     for i in range(14):
-        idx_path = path_of(
+        idx_path = resolve(
             lambda s, i=i: s.impurity_radiation.f_nd_impurity_electron_array[i],
             VarPath,
         )
         assert idx_path in read
-    whole_array_path = path_of(
-        lambda s: s.impurity_radiation.f_nd_impurity_electron_array, VarPath
-    )
+    whole_array_path = resolve(impurity_radiation.f_nd_impurity_electron_array, VarPath)
     assert whole_array_path not in read
 
 

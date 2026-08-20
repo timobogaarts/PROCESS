@@ -21,12 +21,13 @@ that blocker is resolved.
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
-    FromExactly,
-    Output,
+    From,
+    OutputInto,
 )
 
 from functional_process.models.physics.plasma_profiles import _simpson
 from functional_process.models.safe_math import safe_pow, safe_sqrt
+from functional_process.paths import physics
 from process.core import constants
 
 REACTION_CONSTANTS_DT = {
@@ -127,7 +128,7 @@ def calculate_deuterium_branching_trit(ion_temperature):
 
     Ports `.deuterium_branching()`. No cottax node of its own -- see the audit record's
     "cottax node" section: its only consumer within scope is `FusionRates`, which calls
-    this internally rather than taking the result as a separate `FromExactly`, since PROCESS's
+    this internally rather than taking the result as a separate read, since PROCESS's
     own `.f_dd_branching_trit` never has a `VarPath` until `.set_physics_variables()`
     writes it.
 
@@ -759,14 +760,18 @@ def beam_slowing_down_state(
 
     nd_beam_hot = deuterium_beam_density + tritium_beam_density
 
-    deuterium_critical_energy_speed = safe_sqrt(2.0
+    deuterium_critical_energy_speed = safe_sqrt(
+        2.0
         * constants.KILOELECTRON_VOLT
         * critical_energy_deuterium
-        / (constants.ATOMIC_MASS_UNIT * constants.M_DEUTERON_AMU))
-    tritium_critical_energy_speed = safe_sqrt(2.0
+        / (constants.ATOMIC_MASS_UNIT * constants.M_DEUTERON_AMU)
+    )
+    tritium_critical_energy_speed = safe_sqrt(
+        2.0
         * constants.KILOELECTRON_VOLT
         * critical_energy_tritium
-        / (constants.ATOMIC_MASS_UNIT * constants.M_TRITON_AMU))
+        / (constants.ATOMIC_MASS_UNIT * constants.M_TRITON_AMU)
+    )
 
     source_deuterium = beam_current_deuterium / (constants.ELECTRON_CHARGE * vol_plasma)
     source_tritium = beam_current_tritium / (constants.ELECTRON_CHARGE * vol_plasma)
@@ -867,54 +872,42 @@ class FusionRates(ExplicitFunction):
     two plus a stray duplicate. See the audit record's data-footprint table.
     """
 
-    pden_plasma_alpha_mw = Output(lambda s: s.physics.pden_plasma_alpha_mw)
-    pden_non_alpha_charged_mw = Output(lambda s: s.physics.pden_non_alpha_charged_mw)
-    pden_plasma_neutron_mw = Output(lambda s: s.physics.pden_plasma_neutron_mw)
-    fusden_plasma = Output(lambda s: s.physics.fusden_plasma)
-    fusden_plasma_alpha = Output(lambda s: s.physics.fusden_plasma_alpha)
-    proton_rate_density = Output(lambda s: s.physics.proton_rate_density)
-    sigmav_dt_average = Output(lambda s: s.physics.sigmav_dt_average)
-    dt_power_density_plasma = Output(lambda s: s.physics.dt_power_density_plasma)
-    dhe3_power_density = Output(lambda s: s.physics.dhe3_power_density)
-    dd_power_density = Output(lambda s: s.physics.dd_power_density)
-    f_dd_branching_trit = Output(lambda s: s.physics.f_dd_branching_trit)
-    fusrat_plasma_dt_profile = Output(lambda s: s.physics.fusrat_plasma_dt_profile)
-    fusrat_plasma_dhe3_profile = Output(lambda s: s.physics.fusrat_plasma_dhe3_profile)
-    fusrat_plasma_dd_helion_profile = Output(
-        lambda s: s.physics.fusrat_plasma_dd_helion_profile
-    )
-    fusrat_plasma_dd_triton_profile = Output(
-        lambda s: s.physics.fusrat_plasma_dd_triton_profile
-    )
+    pden_plasma_alpha_mw = OutputInto(physics)
+    pden_non_alpha_charged_mw = OutputInto(physics)
+    pden_plasma_neutron_mw = OutputInto(physics)
+    fusden_plasma = OutputInto(physics)
+    fusden_plasma_alpha = OutputInto(physics)
+    proton_rate_density = OutputInto(physics)
+    sigmav_dt_average = OutputInto(physics)
+    dt_power_density_plasma = OutputInto(physics)
+    dhe3_power_density = OutputInto(physics)
+    dd_power_density = OutputInto(physics)
+    f_dd_branching_trit = OutputInto(physics)
+    fusrat_plasma_dt_profile = OutputInto(physics)
+    fusrat_plasma_dhe3_profile = OutputInto(physics)
+    fusrat_plasma_dd_helion_profile = OutputInto(physics)
+    fusrat_plasma_dd_triton_profile = OutputInto(physics)
 
     def __call__(
         self,
-        profile_x=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
-        te_profile_y=FromExactly(lambda s: s.physics.temp_plasma_electron_profile_kev),
-        ne_profile_y=FromExactly(lambda s: s.physics.nd_plasma_electron_profile),
-        temp_plasma_ion_vol_avg_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_ion_vol_avg_kev
-        ),
-        temp_plasma_electron_vol_avg_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_vol_avg_kev
-        ),
-        f_plasma_fuel_deuterium=FromExactly(lambda s: s.physics.f_plasma_fuel_deuterium),
-        f_plasma_fuel_tritium=FromExactly(lambda s: s.physics.f_plasma_fuel_tritium),
-        f_plasma_fuel_helium3=FromExactly(lambda s: s.physics.f_plasma_fuel_helium3),
-        nd_plasma_fuel_ions_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_fuel_ions_vol_avg
-        ),
-        nd_plasma_electrons_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_electrons_vol_avg
-        ),
+        radius_plasma_profile_norm=From(physics),
+        temp_plasma_electron_profile_kev=From(physics),
+        nd_plasma_electron_profile=From(physics),
+        temp_plasma_ion_vol_avg_kev=From(physics),
+        temp_plasma_electron_vol_avg_kev=From(physics),
+        f_plasma_fuel_deuterium=From(physics),
+        f_plasma_fuel_tritium=From(physics),
+        f_plasma_fuel_helium3=From(physics),
+        nd_plasma_fuel_ions_vol_avg=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
     ):
         f_dd_branching_trit = calculate_deuterium_branching_trit(
             temp_plasma_ion_vol_avg_kev
         )
         return calculate_fusion_rates(
-            profile_x,
-            te_profile_y,
-            ne_profile_y,
+            radius_plasma_profile_norm,
+            temp_plasma_electron_profile_kev,
+            nd_plasma_electron_profile,
             temp_plasma_ion_vol_avg_kev,
             temp_plasma_electron_vol_avg_kev,
             f_plasma_fuel_deuterium,
@@ -935,28 +928,28 @@ class SetFusionPowers(ExplicitFunction):
     value to arrive at that `VarPath`, not a specific producer.
     """
 
-    pden_neutron_total_mw = Output(lambda s: s.physics.pden_neutron_total_mw)
-    p_plasma_alpha_mw = Output(lambda s: s.physics.p_plasma_alpha_mw)
-    p_alpha_total_mw = Output(lambda s: s.physics.p_alpha_total_mw)
-    p_plasma_neutron_mw = Output(lambda s: s.physics.p_plasma_neutron_mw)
-    p_neutron_total_mw = Output(lambda s: s.physics.p_neutron_total_mw)
-    p_non_alpha_charged_mw = Output(lambda s: s.physics.p_non_alpha_charged_mw)
-    pden_alpha_total_mw = Output(lambda s: s.physics.pden_alpha_total_mw)
-    f_pden_alpha_electron_mw = Output(lambda s: s.physics.f_pden_alpha_electron_mw)
-    f_pden_alpha_ions_mw = Output(lambda s: s.physics.f_pden_alpha_ions_mw)
-    p_charged_particle_mw = Output(lambda s: s.physics.p_charged_particle_mw)
-    p_fusion_total_mw = Output(lambda s: s.physics.p_fusion_total_mw)
+    pden_neutron_total_mw = OutputInto(physics)
+    p_plasma_alpha_mw = OutputInto(physics)
+    p_alpha_total_mw = OutputInto(physics)
+    p_plasma_neutron_mw = OutputInto(physics)
+    p_neutron_total_mw = OutputInto(physics)
+    p_non_alpha_charged_mw = OutputInto(physics)
+    pden_alpha_total_mw = OutputInto(physics)
+    f_pden_alpha_electron_mw = OutputInto(physics)
+    f_pden_alpha_ions_mw = OutputInto(physics)
+    p_charged_particle_mw = OutputInto(physics)
+    p_fusion_total_mw = OutputInto(physics)
 
     def __call__(
         self,
-        f_alpha_electron=FromExactly(lambda s: s.physics.f_alpha_electron),
-        f_alpha_ion=FromExactly(lambda s: s.physics.f_alpha_ion),
-        p_beam_alpha_mw=FromExactly(lambda s: s.physics.p_beam_alpha_mw),
-        pden_non_alpha_charged_mw=FromExactly(lambda s: s.physics.pden_non_alpha_charged_mw),
-        pden_plasma_neutron_mw=FromExactly(lambda s: s.physics.pden_plasma_neutron_mw),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        pden_plasma_alpha_mw=FromExactly(lambda s: s.physics.pden_plasma_alpha_mw),
-        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
+        f_alpha_electron=From(physics),
+        f_alpha_ion=From(physics),
+        p_beam_alpha_mw=From(physics),
+        pden_non_alpha_charged_mw=From(physics),
+        pden_plasma_neutron_mw=From(physics),
+        vol_plasma=From(physics),
+        pden_plasma_alpha_mw=From(physics),
+        f_p_alpha_plasma_deposited=From(physics),
     ):
         return set_fusion_powers(
             f_alpha_electron,

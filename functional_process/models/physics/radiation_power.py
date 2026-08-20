@@ -51,12 +51,14 @@ import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
+    From,
     FromExactly,
-    Output,
+    OutputInto,
 )
 
 from functional_process.models.physics.plasma_profiles import _simpson
 from functional_process.models.safe_math import safe_pow
+from functional_process.paths import impurity_radiation, physics
 
 W_TO_MW = 1.0e-6
 """`integrate_radiation_loss_profiles`'s W/m^3 -> MW/m^3 factor."""
@@ -485,26 +487,22 @@ class SynchrotronRadiationPower(ExplicitFunction):
     output and PROCESS's field are the same quantity with no post-processing.
     """
 
-    pden_plasma_sync_mw = Output(lambda s: s.physics.pden_plasma_sync_mw)
+    pden_plasma_sync_mw = OutputInto(physics)
 
     def __call__(
         self,
-        nd_plasma_electron_on_axis=FromExactly(
-            lambda s: s.physics.nd_plasma_electron_on_axis
-        ),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        aspect=FromExactly(lambda s: s.physics.aspect),
-        alphan=FromExactly(lambda s: s.physics.alphan),
-        alphat=FromExactly(lambda s: s.physics.alphat),
-        tbeta=FromExactly(lambda s: s.physics.tbeta),
-        temp_plasma_electron_on_axis_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_on_axis_kev
-        ),
-        f_sync_reflect=FromExactly(lambda s: s.physics.f_sync_reflect),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        kappa=FromExactly(lambda s: s.physics.kappa),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        nd_plasma_electron_on_axis=From(physics),
+        rminor=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        aspect=From(physics),
+        alphan=From(physics),
+        alphat=From(physics),
+        tbeta=From(physics),
+        temp_plasma_electron_on_axis_kev=From(physics),
+        f_sync_reflect=From(physics),
+        rmajor=From(physics),
+        kappa=From(physics),
+        vol_plasma=From(physics),
     ):
         return psync_albajar_fidone(
             nd_plasma_electron_on_axis,
@@ -598,89 +596,75 @@ class ImpurityRadiationTotals(ExplicitFunction):
     time; nothing in `configuration.py` does it or checks it yet. See the record's § open
     questions 2.
 
-    **Not a signature-shape blocker any more.** Before per-index `FromExactly`s, this field's
-    docstring on `__call__` also worried that addressing individual species by `FromExactly`
-    would make the node's own *parameter count* vary with `imp_indices` -- it does not:
-    `__call__` now always declares fourteen `FromExactly`s (one per index, unconditionally),
+    **Not a signature-shape blocker any more.** Before per-index reads, this field's
+    docstring on `__call__` also worried that addressing individual species one at a
+    time would make the node's own *parameter count* vary with `imp_indices` -- it does
+    not: `__call__` now always declares fourteen (one per index, unconditionally),
     and `imp_indices` only selects a static gather over them, exactly as it selected a
     gather over the one whole-array `FromExactly` before. Only the shape-*during-a-solve*
     question above remains open.
     """
 
-    pden_impurity_rad_total_mw = Output(
-        lambda s: s.impurity_radiation.pden_impurity_rad_total_mw
-    )
-    pden_impurity_core_rad_total_mw = Output(
-        lambda s: s.impurity_radiation.pden_impurity_core_rad_total_mw
-    )
+    pden_impurity_rad_total_mw = OutputInto(impurity_radiation)
+    pden_impurity_core_rad_total_mw = OutputInto(impurity_radiation)
 
     def __call__(
         self,
-        profile_x=FromExactly(lambda s: s.physics.radius_plasma_profile_norm),
-        nd_electron_profile=FromExactly(lambda s: s.physics.nd_plasma_electron_profile),
-        temp_electron_profile_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_profile_kev
-        ),
+        radius_plasma_profile_norm=From(physics),
+        nd_plasma_electron_profile=From(physics),
+        temp_plasma_electron_profile_kev=From(physics),
         f_nd_impurity_electron_array_0=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[0]
+            impurity_radiation.f_nd_impurity_electron_array[0]
         ),
         f_nd_impurity_electron_array_1=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[1]
+            impurity_radiation.f_nd_impurity_electron_array[1]
         ),
         f_nd_impurity_electron_array_2=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[2]
+            impurity_radiation.f_nd_impurity_electron_array[2]
         ),
         f_nd_impurity_electron_array_3=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[3]
+            impurity_radiation.f_nd_impurity_electron_array[3]
         ),
         f_nd_impurity_electron_array_4=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[4]
+            impurity_radiation.f_nd_impurity_electron_array[4]
         ),
         f_nd_impurity_electron_array_5=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[5]
+            impurity_radiation.f_nd_impurity_electron_array[5]
         ),
         f_nd_impurity_electron_array_6=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[6]
+            impurity_radiation.f_nd_impurity_electron_array[6]
         ),
         f_nd_impurity_electron_array_7=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[7]
+            impurity_radiation.f_nd_impurity_electron_array[7]
         ),
         f_nd_impurity_electron_array_8=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[8]
+            impurity_radiation.f_nd_impurity_electron_array[8]
         ),
         f_nd_impurity_electron_array_9=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[9]
+            impurity_radiation.f_nd_impurity_electron_array[9]
         ),
         f_nd_impurity_electron_array_10=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[10]
+            impurity_radiation.f_nd_impurity_electron_array[10]
         ),
         f_nd_impurity_electron_array_11=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[11]
+            impurity_radiation.f_nd_impurity_electron_array[11]
         ),
         f_nd_impurity_electron_array_12=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[12]
+            impurity_radiation.f_nd_impurity_electron_array[12]
         ),
         f_nd_impurity_electron_array_13=FromExactly(
-            lambda s: s.impurity_radiation.f_nd_impurity_electron_array[13]
+            impurity_radiation.f_nd_impurity_electron_array[13]
         ),
-        temp_impurity_kev_array=FromExactly(
-            lambda s: s.impurity_radiation.temp_impurity_keV_array
-        ),
-        pden_impurity_lz_nd_temp_array=FromExactly(
-            lambda s: s.impurity_radiation.pden_impurity_lz_nd_temp_array
-        ),
-        radius_plasma_core_norm=FromExactly(
-            lambda s: s.impurity_radiation.radius_plasma_core_norm
-        ),
-        f_p_plasma_core_rad_reduction=FromExactly(
-            lambda s: s.impurity_radiation.f_p_plasma_core_rad_reduction
-        ),
+        temp_impurity_keV_array=From(impurity_radiation),
+        pden_impurity_lz_nd_temp_array=From(impurity_radiation),
+        radius_plasma_core_norm=From(impurity_radiation),
+        f_p_plasma_core_rad_reduction=From(impurity_radiation),
     ):
         """Reassembles the fourteen individually-addressed fractions and selects
         `imp_indices` before forwarding.
 
-        Each species' fraction is its own `FromExactly` (`SequenceKey`-addressed `VarPath`,
-        one per index) rather than one whole-array `FromExactly` -- fourteen ports, always,
+        Each species' fraction is its own read (`SequenceKey`-addressed `VarPath`, one
+        per index) rather than one whole-array read -- fourteen ports, always,
         regardless of `imp_indices`, so the signature stays fixed as
         `NodalDeclaration` requires. `imp_indices` only changes which of the fourteen
         are gathered out before being handed to `calculate_impurity_radiation_totals`
@@ -712,11 +696,11 @@ class ImpurityRadiationTotals(ExplicitFunction):
         # is the fix and matches every other gather in this codebase.
         selected = jnp.array(self.imp_indices)
         return calculate_impurity_radiation_totals(
-            profile_x,
-            nd_electron_profile,
-            temp_electron_profile_kev,
+            radius_plasma_profile_norm,
+            nd_plasma_electron_profile,
+            temp_plasma_electron_profile_kev,
             f_nd_impurity_electron_array[selected],
-            temp_impurity_kev_array[selected],
+            temp_impurity_keV_array[selected],
             pden_impurity_lz_nd_temp_array[selected],
             radius_plasma_core_norm,
             f_p_plasma_core_rad_reduction,
@@ -752,23 +736,15 @@ class PlasmaRadiationPowers(ExplicitFunction):
     `pden_impurity_rad_total_mw` inversion sound where the core one is not.
     """
 
-    pden_plasma_core_rad_mw_unclipped = Output(
-        lambda s: s.physics.pden_plasma_core_rad_mw_unclipped
-    )
-    pden_plasma_outer_rad_mw_unclipped = Output(
-        lambda s: s.physics.pden_plasma_outer_rad_mw_unclipped
-    )
-    pden_plasma_rad_mw = Output(lambda s: s.physics.pden_plasma_rad_mw)
+    pden_plasma_core_rad_mw_unclipped = OutputInto(physics)
+    pden_plasma_outer_rad_mw_unclipped = OutputInto(physics)
+    pden_plasma_rad_mw = OutputInto(physics)
 
     def __call__(
         self,
-        pden_impurity_rad_total_mw=FromExactly(
-            lambda s: s.impurity_radiation.pden_impurity_rad_total_mw
-        ),
-        pden_impurity_core_rad_total_mw=FromExactly(
-            lambda s: s.impurity_radiation.pden_impurity_core_rad_total_mw
-        ),
-        pden_plasma_sync_mw=FromExactly(lambda s: s.physics.pden_plasma_sync_mw),
+        pden_impurity_rad_total_mw=From(impurity_radiation),
+        pden_impurity_core_rad_total_mw=From(impurity_radiation),
+        pden_plasma_sync_mw=From(physics),
     ):
         return combine_radiation_powers(
             pden_impurity_rad_total_mw,
