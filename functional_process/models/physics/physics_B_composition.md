@@ -214,17 +214,17 @@ An earlier pass found that `.impurity_radiation.f_nd_impurity_electron_array` is
 both read (indices 2:13 only — `znimp`, `nd_plasma_impurities_vol_avg`, the per-species
 fraction outputs, `m_ions_total_amu`, the mass-weighted `zeff` term) and written (indices
 0/1, the H_/He_ update) by `plasma_composition`, and that `to_graph` raises the identical
-construction error if `PlasmaComposition` declares both an `Input` and an `Output` on
+construction error if `PlasmaComposition` declares both a read and a write on
 the *whole array* as one `VarPath`. **The resolution is per-index addressing, not a
 second `FixedPointFunction`.** The read range (2:13) and the write range (0/1) are
 disjoint at index granularity — the self-loop was an artefact of naming the field as one
 `VarPath` rather than fourteen. Once each index is its own `VarPath`
-(`s.impurity_radiation.f_nd_impurity_electron_array[i]`, a real `SequenceKey`-addressed
+(`FromExactly(impurity_radiation.f_nd_impurity_electron_array[i])`, a real `SequenceKey`-addressed
 name per `~/jaxgraph`'s `_Recorder.__getitem__` — matching the real `DataStructure`
 field's own `list[float]` storage, `impurity_radiation_variables.py:91`, not a `jnp`
 array, so per-index addressing is structurally exact, not a naming convenience), the
 conflict disappears entirely: `PlasmaComposition` reads indices 2-13 as twelve ordinary
-`Input`s and **owns** indices 0 (`H_`) and 1 (`He`) as two ordinary `Output`s
+`FromExactly`s and **owns** indices 0 (`H_`) and 1 (`He`) as two ordinary `Output`s
 (`f_nd_impurity_electron_array_h`/`_he`) — no minted copy, no `FixedPoint` problem node,
 no deferred solver decision. `to_graph(PlasmaComposition(...))` confirms this
 empirically, and now also confirms *which* `VarPath`s are owned vs. read
@@ -302,8 +302,9 @@ see above). No other calls.
   `plasma_composition`; now not applicable — there is no self-loop left to register.
 - **Second self-loop, `f_nd_impurity_electron_array`, found and resolved** (see "cottax
   node" section). Severity was **blocker** for `PlasmaComposition` owning the post-update
-  entries at all; now minor — resolved by per-index addressing (twelve read `Input`s,
-  two owned `Output`s, `H_INDEX`/`HE_INDEX`), not a `FixedPointFunction`. The ported
+  entries at all; now minor — resolved by per-index addressing (twelve read
+  `FromExactly`s, two owned `Output`s, `H_INDEX`/`HE_INDEX`), not a `FixedPointFunction`.
+  The ported
   function itself was never blocked by this; only the node's ownership of the two
   updated entries was.
 - **Step-function-at-its-own-jump** (historical, no longer applicable): an earlier draft
