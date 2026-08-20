@@ -11,11 +11,9 @@ an implicit `data` read, so the two functions compose by ordinary argument-passi
 rather than through a shared mutable object.
 """
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import stellarator, stellarator_config, tfcoil
 
 
 def calculate_max_force_density(
@@ -179,21 +177,17 @@ def calculate_centering_force_avg_mn(
 class MaxForceDensity(ExplicitFunction):
     """cottax node: `calculate_max_force_density`."""
 
-    max_force_density = Output(lambda s: s.tfcoil.max_force_density)
+    max_force_density = OutputInto(tfcoil)
 
     def __call__(
         self,
-        a_tf_wp_no_insulation=FromExactly(lambda s: s.tfcoil.a_tf_wp_no_insulation),
-        stella_config_max_force_density=FromExactly(
-            lambda s: s.stellarator_config.stella_config_max_force_density
-        ),
-        f_st_i_total=FromExactly(lambda s: s.stellarator.f_st_i_total),
-        f_st_n_coils=FromExactly(lambda s: s.stellarator.f_st_n_coils),
-        b_tf_inboard_peak_symmetric=FromExactly(
-            lambda s: s.tfcoil.b_tf_inboard_peak_symmetric
-        ),
-        stella_config_wp_bmax=FromExactly(lambda s: s.stellarator_config.stella_config_wp_bmax),
-        stella_config_wp_area=FromExactly(lambda s: s.stellarator_config.stella_config_wp_area),
+        a_tf_wp_no_insulation=From(tfcoil),
+        stella_config_max_force_density=From(stellarator_config),
+        f_st_i_total=From(stellarator),
+        f_st_n_coils=From(stellarator),
+        b_tf_inboard_peak_symmetric=From(tfcoil),
+        stella_config_wp_bmax=From(stellarator_config),
+        stella_config_wp_area=From(stellarator_config),
     ):
         return calculate_max_force_density(
             a_tf_wp_no_insulation,
@@ -213,11 +207,11 @@ class MaximumStress(ExplicitFunction):
     `data`-mediated re-read -- see module docstring.
     """
 
-    sig_tf_wp = Output(lambda s: s.tfcoil.sig_tf_wp)
+    sig_tf_wp = OutputInto(tfcoil)
 
     def __call__(
         self,
-        max_force_density=FromExactly(lambda s: s.tfcoil.max_force_density),
-        dr_tf_wp_with_insulation=FromExactly(lambda s: s.tfcoil.dr_tf_wp_with_insulation),
+        max_force_density=From(tfcoil),
+        dr_tf_wp_with_insulation=From(tfcoil),
     ):
         return calculate_maximum_stress(max_force_density, dr_tf_wp_with_insulation)

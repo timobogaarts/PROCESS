@@ -26,7 +26,7 @@ import numpy as np
 import optimistix as optx
 import pytest
 from cottax.evaluate import AbstractDriver, schedule_for
-from cottax.interfaces.pytree_namespace_module import path_of, to_graph
+from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind
 from cottax.spec import VarPath
 
@@ -58,6 +58,13 @@ from functional_process.models.stellarator.coils.calculate import (
 from functional_process.models.stellarator.coils.coils import (
     Intersect,
     intersect_residual,
+)
+from functional_process.paths import (
+    build,
+    constraints,
+    stellarator,
+    stellarator_config,
+    tfcoil,
 )
 from process.core.model import DataStructure
 from process.models.stellarator.coils import calculate as process_calculate
@@ -223,7 +230,9 @@ def _reference_z_tf_inside_half(
     check of correctness.
     """
     return (
-        0.5 * stella_config_maximal_coil_height * (r_coil_minor / stella_config_coil_rminor)
+        0.5
+        * stella_config_maximal_coil_height
+        * (r_coil_minor / stella_config_coil_rminor)
     )
 
 
@@ -254,7 +263,7 @@ def test_z_tf_inside_half_node_assembles_and_owns_the_right_varpath():
     assert graph.definitions
 
     owned = {out.var for out in node.outputs}
-    z_tf_inside_half_path = path_of(lambda s: s.build.z_tf_inside_half, VarPath)
+    z_tf_inside_half_path = resolve(build.z_tf_inside_half, VarPath)
     assert z_tf_inside_half_path in owned
 
 
@@ -269,7 +278,9 @@ def _reference_len_tf_coil(
     PROCESS at realistic operating points.
     """
     return (
-        stella_config_coillength * (r_coil_minor / stella_config_coil_rminor) / n_tf_coils
+        stella_config_coillength
+        * (r_coil_minor / stella_config_coil_rminor)
+        / n_tf_coils
     )
 
 
@@ -299,7 +310,7 @@ def test_len_tf_coil_node_assembles_and_owns_the_right_varpath():
     assert graph.definitions
 
     owned = {out.var for out in node.outputs}
-    assert path_of(lambda s: s.tfcoil.len_tf_coil, VarPath) in owned
+    assert resolve(tfcoil.len_tf_coil, VarPath) in owned
 
 
 def _reference_tfcryoarea(
@@ -350,7 +361,7 @@ def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
     assert graph.definitions
 
     owned = {out.var for out in node.outputs}
-    assert path_of(lambda s: s.tfcoil.tfcryoarea, VarPath) in owned
+    assert resolve(tfcoil.tfcryoarea, VarPath) in owned
 
 
 def _reference_coils_summary_variables(
@@ -832,7 +843,7 @@ def test_winding_pack_intersect_inputs_node_assembles_and_does_not_own_j_tf_wp()
     graph = to_graph(node)
     assert graph.definitions
     owned = {out.var for out in node.outputs}
-    j_tf_wp_path = path_of(lambda s: s.tfcoil.j_tf_wp, VarPath)
+    j_tf_wp_path = resolve(tfcoil.j_tf_wp, VarPath)
     assert j_tf_wp_path not in owned
 
 
@@ -845,7 +856,7 @@ def test_winding_pack_total_size_post_owns_j_tf_wp():
     graph = to_graph(node)
     assert graph.definitions
     owned = {out.var for out in node.outputs}
-    j_tf_wp_path = path_of(lambda s: s.tfcoil.j_tf_wp, VarPath)
+    j_tf_wp_path = resolve(tfcoil.j_tf_wp, VarPath)
     assert j_tf_wp_path in owned
 
 
@@ -871,7 +882,7 @@ def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
     `.tfcoil.j_tf_wp` itself (see above). Two different edges, not a second self-loop.
     """
     post = WindingPackTotalSizePost()
-    wp_width_r_min_path = path_of(lambda s: s.stellarator.wp_width_r_min, VarPath)
+    wp_width_r_min_path = resolve(stellarator.wp_width_r_min, VarPath)
     assert wp_width_r_min_path in post.node_definition.reads
     assert wp_width_r_min_path not in {out.var for out in post.outputs}
 
@@ -973,34 +984,32 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     # owns `.tfcoil.j_tf_wp` now, so it is produced inside the driven block, not fed in.
 
     field_paths = {
-        "r_coil_major": lambda s: s.stellarator.r_coil_major,
-        "r_coil_minor": lambda s: s.stellarator.r_coil_minor,
-        "coilcurrent": lambda s: s.stellarator.coilcurrent,
-        "n_tf_coils": lambda s: s.tfcoil.n_tf_coils,
-        "stella_config_a1": lambda s: s.stellarator_config.stella_config_a1,
-        "stella_config_a2": lambda s: s.stellarator_config.stella_config_a2,
-        "stella_config_wp_ratio": lambda s: s.stellarator_config.stella_config_wp_ratio,
-        "tftmp": lambda s: s.tfcoil.tftmp,
-        "tmargmin": lambda s: s.tfcoil.tmargmin,
-        "b_crit_upper_nbti": lambda s: s.tfcoil.b_crit_upper_nbti,
-        "bcritsc": lambda s: s.tfcoil.bcritsc,
-        "f_a_tf_turn_cable_copper": lambda s: s.tfcoil.f_a_tf_turn_cable_copper,
-        "fhts": lambda s: s.tfcoil.fhts,
-        "t_crit_nbti": lambda s: s.tfcoil.t_crit_nbti,
-        "tcritsc": lambda s: s.tfcoil.tcritsc,
+        "r_coil_major": stellarator.r_coil_major,
+        "r_coil_minor": stellarator.r_coil_minor,
+        "coilcurrent": stellarator.coilcurrent,
+        "n_tf_coils": tfcoil.n_tf_coils,
+        "stella_config_a1": stellarator_config.stella_config_a1,
+        "stella_config_a2": stellarator_config.stella_config_a2,
+        "stella_config_wp_ratio": stellarator_config.stella_config_wp_ratio,
+        "tftmp": tfcoil.tftmp,
+        "tmargmin": tfcoil.tmargmin,
+        "b_crit_upper_nbti": tfcoil.b_crit_upper_nbti,
+        "bcritsc": tfcoil.bcritsc,
+        "f_a_tf_turn_cable_copper": tfcoil.f_a_tf_turn_cable_copper,
+        "fhts": tfcoil.fhts,
+        "t_crit_nbti": tfcoil.t_crit_nbti,
+        "tcritsc": tfcoil.tcritsc,
         "f_a_tf_turn_cable_space_extra_void": (
-            lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
+            tfcoil.f_a_tf_turn_cable_space_extra_void
         ),
-        "f_j_tf_wp_critical_max": lambda s: s.constraints.f_j_tf_wp_critical_max,
-        "a_tf_turn_cable_space_no_void": (
-            lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
-        ),
-        "dx_tf_turn_general": lambda s: s.tfcoil.dx_tf_turn_general,
-        "dx_tf_wp_insulation": lambda s: s.tfcoil.dx_tf_wp_insulation,
-        "a_tf_turn_steel": lambda s: s.tfcoil.a_tf_turn_steel,
+        "f_j_tf_wp_critical_max": constraints.f_j_tf_wp_critical_max,
+        "a_tf_turn_cable_space_no_void": (tfcoil.a_tf_turn_cable_space_no_void),
+        "dx_tf_turn_general": tfcoil.dx_tf_turn_general,
+        "dx_tf_wp_insulation": tfcoil.dx_tf_wp_insulation,
+        "a_tf_turn_steel": tfcoil.a_tf_turn_steel,
     }
     env = {
-        path_of(where, VarPath): jax.numpy.asarray(base[name])
+        resolve(where, VarPath): jax.numpy.asarray(base[name])
         for name, where in field_paths.items()
     }
 
@@ -1020,12 +1029,8 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     reference = winding_pack_total_size(
         **base, j_tf_wp=jax.numpy.asarray(0.0), i_tf_sc_mat=i_tf_sc_mat
     )
-    dr_tf_wp_with_insulation_path = path_of(
-        lambda s: s.tfcoil.dr_tf_wp_with_insulation, VarPath
-    )
-    a_tf_wp_with_insulation_path = path_of(
-        lambda s: s.tfcoil.a_tf_wp_with_insulation, VarPath
-    )
+    dr_tf_wp_with_insulation_path = resolve(tfcoil.dr_tf_wp_with_insulation, VarPath)
+    a_tf_wp_with_insulation_path = resolve(tfcoil.a_tf_wp_with_insulation, VarPath)
     assert out[dr_tf_wp_with_insulation_path] == pytest.approx(reference[3])
     assert out[a_tf_wp_with_insulation_path] == pytest.approx(reference[12])
 

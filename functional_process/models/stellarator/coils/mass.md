@@ -83,7 +83,7 @@ diverge from what was just computed).
 `CoilsMass`, an `ExplicitFunction` wrapping `calculate_coils_mass` unchanged, registered
 in `functional_process/total_process.py:504`.
 
-`den_tf_sc_material`'s `Input` reads **`.tfcoil.dcond[0]`, a real `DataStructure` field
+`den_tf_sc_material`'s `FromExactly` reads **`.tfcoil.dcond[0]`, a real `DataStructure` field
 element** — not the invented `.tfcoil.den_tf_sc_material` an earlier pass minted. Changed
 during the MDA-harness triage of `_audit/next_steps.md` §8.1, where that mint was one of
 the three "ungrounded inputs" the harness reported; it is the only one of the sixteen
@@ -99,16 +99,16 @@ triaged paths that turned out to have a real field behind it. Evidence and reaso
   `.impurity_radiation.f_nd_impurity_electron_array[0..13]` that way, so this needs no new
   mechanism.
 - The index is static because `i_tf_sc_mat` is a topology switch
-  (`_audit/naming_convention.md` § "switches are not ports") *and* because an `Input`
+  (`_audit/naming_convention.md` § "switches are not ports") *and* because a `FromExactly`
   default is fixed at class-definition time. `CoilsMass` is therefore the
   `i_tf_sc_mat == 1` (ITER Nb3Sn) arm: PROCESS's own default
   (`process/data_structure/tfcoil_variables.py:246`), the value
   `tests/regression/input_files/stellarator_helias.IN.DAT:235` sets, and the value
   `total_process.py` already hardcodes for the same switch on the sibling node
   `WindingPackIntersectInputs`. A different material needs a sibling class overriding just
-  this one `Input`, in the style of `coils.py`'s eight `jcrit_from_material` node classes.
+  this one `FromExactly`, in the style of `coils.py`'s eight `jcrit_from_material` node classes.
 
-The node's other two invented-looking `Input`s, `.tfcoil.a_tf_wp_with_insulation` and
+The node's other two invented-looking `From`s, `.tfcoil.a_tf_wp_with_insulation` and
 `.tfcoil.a_tf_wp_no_insulation`, are **genuine mints and stay minted**: PROCESS keeps both
 as Python locals in `winding_pack_total_size`
 (`process/models/stellarator/coils/calculate.py:496-501`, with the source's own comment

@@ -9,13 +9,16 @@ treatment as `mass.py`'s 8-step chain.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.paths import (
+    build,
+    physics,
+    rebco,
+    superconducting_tfcoil,
+    tfcoil,
+)
 
 _FORCE_DENSITY_REF_MN_PER_M3 = 2.54
 _B_REF_T = 3.0
@@ -27,20 +30,45 @@ _DR_VV_REF_M = 14e-3
 
 _TEMP_K = (4, 14, 24, 34, 44, 54, 64, 74, 84, 94, 104, 114, 124)
 _Q_CU_ARRAY_SA2M4 = (
-    1.08514e17, 1.12043e17, 1.12406e17, 1.05940e17, 9.49741e16, 8.43757e16,
-    7.56346e16, 6.85924e16, 6.28575e16, 5.81004e16, 5.40838e16, 5.06414e16,
+    1.08514e17,
+    1.12043e17,
+    1.12406e17,
+    1.05940e17,
+    9.49741e16,
+    8.43757e16,
+    7.56346e16,
+    6.85924e16,
+    6.28575e16,
+    5.81004e16,
+    5.40838e16,
+    5.06414e16,
     4.76531e16,
 )
 _Q_HE_ARRAY_SA2M4 = (
-    3.44562e16, 9.92398e15, 4.90462e15, 2.41524e15, 1.26368e15, 7.51617e14,
-    5.01632e14, 3.63641e14, 2.79164e14, 2.23193e14, 1.83832e14, 1.54863e14,
+    3.44562e16,
+    9.92398e15,
+    4.90462e15,
+    2.41524e15,
+    1.26368e15,
+    7.51617e14,
+    5.01632e14,
+    3.63641e14,
+    2.79164e14,
+    2.23193e14,
+    1.83832e14,
+    1.54863e14,
     1.32773e14,
 )
 
 
 def calculate_vv_max_force_density_from_w7x_scaling(
-    rad_vv, b_plasma_toroidal_on_axis, c_tf_total, rminor, t_tf_superconductor_quench,
-    dr_vv_inboard, dr_vv_outboard,
+    rad_vv,
+    b_plasma_toroidal_on_axis,
+    c_tf_total,
+    rminor,
+    t_tf_superconductor_quench,
+    dr_vv_inboard,
+    dr_vv_outboard,
 ):
     """Actual vacuum-vessel force density from W7-X scaling (MN/m3)."""
     return (
@@ -83,9 +111,11 @@ def calculate_quench_protection_current_density(
     q_he = jnp.interp(temp, jnp.asarray(_TEMP_K), jnp.asarray(_Q_HE_ARRAY_SA2M4))
     q_cu = jnp.interp(temp, jnp.asarray(_TEMP_K), jnp.asarray(_Q_CU_ARRAY_SA2M4))
 
-    return (a_cable / a_turn) * safe_sqrt(1
+    return (a_cable / a_turn) * safe_sqrt(
+        1
         / (0.5 * tau_quench + t_detect)
-        * (f_cu**2 * f_cond**2 * q_cu + f_cu * f_cond * (1 - f_cond) * q_he))
+        * (f_cu**2 * f_cond**2 * q_cu + f_cu * f_cond * (1 - f_cond) * q_he)
+    )
 
 
 def calculate_quench_protection(
@@ -232,9 +262,7 @@ def calculate_quench_protection(
 
     v_tf_coil_dump_quench_kv = (
         max_dump_voltage(
-            tf_energy_stored=(
-                e_tf_magnetic_stored_total_gj / n_tf_coils * 1.0e9
-            ),
+            tf_energy_stored=(e_tf_magnetic_stored_total_gj / n_tf_coils * 1.0e9),
             t_dump=t_tf_superconductor_quench,
             current=c_tf_turn,
         )
@@ -260,48 +288,40 @@ class QuenchProtection(ExplicitFunction):
     source assigns it there (`data.superconducting_tfcoil.vv_stress_quench`).
     """
 
-    f_vv_actual = Output(lambda s: s.superconducting_tfcoil.f_vv_actual)
-    vv_stress_quench = Output(lambda s: s.superconducting_tfcoil.vv_stress_quench)
-    j_tf_wp_quench_heat_max = Output(lambda s: s.tfcoil.j_tf_wp_quench_heat_max)
-    coppera_m2 = Output(lambda s: s.rebco.coppera_m2)
-    v_tf_coil_dump_quench_kv = Output(lambda s: s.tfcoil.v_tf_coil_dump_quench_kv)
+    f_vv_actual = OutputInto(superconducting_tfcoil)
+    vv_stress_quench = OutputInto(superconducting_tfcoil)
+    j_tf_wp_quench_heat_max = OutputInto(tfcoil)
+    coppera_m2 = OutputInto(rebco)
+    v_tf_coil_dump_quench_kv = OutputInto(tfcoil)
 
     def __call__(
         self,
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
-        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
-        dr_shld_blkt_gap=FromExactly(lambda s: s.build.dr_shld_blkt_gap),
-        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
-        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
-        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
-        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        c_tf_total=FromExactly(lambda s: s.tfcoil.c_tf_total),
-        t_tf_superconductor_quench=FromExactly(
-            lambda s: s.tfcoil.t_tf_superconductor_quench
-        ),
-        dr_vv_inboard=FromExactly(lambda s: s.build.dr_vv_inboard),
-        dr_vv_outboard=FromExactly(lambda s: s.build.dr_vv_outboard),
-        t_tf_quench_detection=FromExactly(lambda s: s.tfcoil.t_tf_quench_detection),
-        f_a_tf_turn_cable_copper=FromExactly(lambda s: s.tfcoil.f_a_tf_turn_cable_copper),
-        f_a_tf_turn_cable_space_extra_void=FromExactly(
-            lambda s: s.tfcoil.f_a_tf_turn_cable_space_extra_void
-        ),
-        tftmp=FromExactly(lambda s: s.tfcoil.tftmp),
-        a_tf_turn_cable_space_no_void=FromExactly(
-            lambda s: s.tfcoil.a_tf_turn_cable_space_no_void
-        ),
-        dx_tf_turn_general=FromExactly(lambda s: s.tfcoil.dx_tf_turn_general),
-        a_tf_wp_conductor=FromExactly(lambda s: s.tfcoil.a_tf_wp_conductor),
-        e_tf_magnetic_stored_total_gj=FromExactly(
-            lambda s: s.tfcoil.e_tf_magnetic_stored_total_gj
-        ),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        c_tf_turn=FromExactly(lambda s: s.tfcoil.c_tf_turn),
+        rmajor=From(physics),
+        rminor=From(physics),
+        dr_fw_plasma_gap_inboard=From(build),
+        dr_fw_inboard=From(build),
+        dr_blkt_inboard=From(build),
+        dr_shld_blkt_gap=From(build),
+        dr_shld_inboard=From(build),
+        dr_fw_plasma_gap_outboard=From(build),
+        dr_fw_outboard=From(build),
+        dr_blkt_outboard=From(build),
+        dr_shld_outboard=From(build),
+        b_plasma_toroidal_on_axis=From(physics),
+        c_tf_total=From(tfcoil),
+        t_tf_superconductor_quench=From(tfcoil),
+        dr_vv_inboard=From(build),
+        dr_vv_outboard=From(build),
+        t_tf_quench_detection=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        tftmp=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+        a_tf_wp_conductor=From(tfcoil),
+        e_tf_magnetic_stored_total_gj=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        c_tf_turn=From(tfcoil),
     ):
         return calculate_quench_protection(
             rmajor,

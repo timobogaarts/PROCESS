@@ -243,8 +243,8 @@ yet (registration is the coordinating session's job per this dispatch's boundary
 this fork's) but ready to be:
 ```python
 class VacuumPumpingSimple(ExplicitFunction):
-    n_iter_vacuum_pumps = Output(lambda s: s.vacuum.n_iter_vacuum_pumps)
-    def __call__(self, molflow_plasma_fuelling_required=Input(...), ...):
+    n_iter_vacuum_pumps = OutputInto(vacuum)
+    def __call__(self, molflow_plasma_fuelling_required=From(physics), ...):
         return calculate_vacuum_pumping_simple(...)
 ```
 Full form in `vacuum.py`.
@@ -253,8 +253,9 @@ Full form in `vacuum.py`.
 genuinely blocked, not merely deferred. Three of its real inputs (`dsol`, `ritf`,
 `gasld`) are composite `Vacuum.run()`-locals, each combining more than one `data`
 field (see the data-footprint table above), and `cottax.interfaces.
-pytree_namespace_module.Input(where)` requires `where` to be a bare attribute-access
-chain -- `path_of`'s `_Recorder` rejects any arithmetic, so a single `Input` cannot
+pytree_namespace_module.FromExactly(place)` requires `place` to be a bare
+attribute-access chain -- the `_Recorder` behind it rejects any arithmetic, so a
+single read cannot
 express `0.5*(a+b)`. Same open question `coils.md` already raised for `coilcurrent`/
 `wp_width_r_min` (a minting decision, not a blocked dependency) -- not resolved here.
 The full sketch (what the node would look like once `dsol`/`ritf`/`gasld` are minted as
@@ -280,16 +281,16 @@ here", not as refuted.
 
 ```python
 class DuctDiameterRootFind(ImplicitFunction):
-    d_duct = Output(lambda s: s.vacuum.d_duct)
+    d_duct = OutputInto(vacuum)
 
     def residual(
         self,
-        d_duct=Input(lambda s: s.vacuum.d_duct),
-        l1=Input(lambda s: s.vacuum.l1),
-        l2=Input(lambda s: s.vacuum.l2),
-        l3=Input(lambda s: s.vacuum.l3),
-        xmult_i=Input(lambda s: s.vacuum.xmult_i),
-        ceff_i=Input(lambda s: s.vacuum.ceff_i),
+        d_duct=From(vacuum),
+        l1=From(vacuum),
+        l2=From(vacuum),
+        l3=From(vacuum),
+        xmult_i=From(vacuum),
+        ceff_i=From(vacuum),
     ):
         return duct_diameter_residual(d_duct, l1, l2, l3, xmult_i, ceff_i)
 ```
@@ -297,7 +298,7 @@ class DuctDiameterRootFind(ImplicitFunction):
 `ImplicitFunction.node_definitions` mints two nodes from this one declaration:
 
 - the body, `NodePath(['DuctDiameterRootFind'])` -- a `CallableNode` reading all six
-  `Input`s above (**including** `d_duct` itself -- see below) and owning
+  `From`s above (**including** `d_duct` itself -- see below) and owning
   `^cond.vacuum.d_duct` (the residual);
 - the problem, `NodePath(^problem['DuctDiameterRootFind'])` -- a `RootFind`
   `DeclaredNode` owning `.vacuum.d_duct` (the real unknown) and reading
@@ -327,7 +328,7 @@ per-iteration array elements). Naming choices:
   matching `naming_convention.md`'s "port the existing name" rule and the
   `t_helium`/`b_max` precedent (kept as bare locals, not renamed for disambiguation).
 
-**Why `d_duct` is also read as an `Input` on the residual, not just declared as the
+**Why `d_duct` is also read as a `From` on the residual, not just declared as the
 `Output`**: this is not redundant, and it's what makes the pair a genuine two-node
 cycle rather than a self-loop. The `CallableNode` (the body) owns `^cond.vacuum.d_duct`
 and reads `.vacuum.d_duct` -- reading a variable it does not itself own is allowed

@@ -54,7 +54,7 @@ minted `VarPath`s where PROCESS has none:
 | `.tfcoil.j_crit_sc` | write (minted) | — | the return value of `jcrit_from_material` (`j_crit_sc * 1e-6`) has no PROCESS storage location at all — it's consumed immediately, still inside the same sampling loop, by `winding_pack_total_size`'s `lhs = f_j_tf_wp_critical_max * jcrit_vector`. Minted per `coilcurrent`'s precedent (`calculate.md`). |
 | `.tfcoil.b_max` | read (minted) | local-intermediate | one element (`b_max_k[k]`) of `bmax_from_awp`'s own 200-point sample vector — a solve-loop local, not an established field, same status `coils.md`'s earlier snapshot gave `bmax_from_awp`'s own call-site arguments. |
 | `.tfcoil.t_helium` | read (minted) | local-intermediate | `data.tfcoil.tftmp + data.tfcoil.tmargmin`, computed once per call, constant across the sampling loop — a derived local, not itself a field. |
-| `.tfcoil.j_tf_wp` | read | explicit-arg | real, established field — already an `Input` on `calculate.py`'s `WindingPackTotalSize`/`WindingPackJTfWp` under this name. Only read by branch 2 (Bi-2212). |
+| `.tfcoil.j_tf_wp` | read | explicit-arg | real, established field — already an `From` on `calculate.py`'s `WindingPackTotalSize`/`WindingPackJTfWp` under this name. Only read by branch 2 (Bi-2212). |
 | `.tfcoil.f_a_tf_turn_cable_space_extra_void` | read | explicit-arg | real field, read by branch 2. |
 | `.tfcoil.fhts` | read | explicit-arg | real field (source parameter name `f_hts`), read by branch 2. |
 | `.tfcoil.f_a_tf_turn_cable_copper` | read | explicit-arg | real field, read by branch 2. |
@@ -176,14 +176,14 @@ almost unchanged from the draft:
 
 ```python
 class Intersect(ImplicitFunction):
-    wp_width_r_min = Output(lambda s: s.stellarator.wp_width_r_min)
+    wp_width_r_min = OutputInto(stellarator)
 
     def residual(
         self,
-        wp_width_r_min=Input(lambda s: s.stellarator.wp_width_r_min),
-        wp_width_r=Input(lambda s: s.stellarator.wp_width_r),
-        lhs=Input(lambda s: s.stellarator.lhs),
-        rhs=Input(lambda s: s.stellarator.rhs),
+        wp_width_r_min=From(stellarator),
+        wp_width_r=From(stellarator),
+        lhs=From(stellarator),
+        rhs=From(stellarator),
     ):
         return intersect_residual(wp_width_r_min, wp_width_r, lhs, wp_width_r, rhs)
 ```
@@ -257,7 +257,7 @@ same root.
 
 **`xin` still has no port on `Intersect`, confirmed directly, not merely asserted**
 (open question 2, below, now resolved by direct construction rather than left as a
-prediction): `residual` declares exactly 4 `Input`s (the unknown plus the two curves),
+prediction): `residual` declares exactly 4 `From`s (the unknown plus the two curves),
 one fewer than `intersect`'s own 5-argument signature
 (`test_coils.py::test_intersect_has_no_port_for_xin`) — a `RootFind`'s starting guess
 comes from whatever `Drive`s the block (`evaluate.py`'s `Drive.__call__`: `guess =
@@ -278,20 +278,20 @@ it was real code:
 
 ```python
 # class Intersect(ImplicitFunction):
-#     wp_width_r_min = Output(lambda s: s.stellarator.wp_width_r_min)
+#     wp_width_r_min = OutputInto(stellarator)
 #
 #     def residual(
 #         self,
-#         x1=Input(lambda s: s.stellarator.wp_width_r),
-#         y1=Input(lambda s: s.stellarator.lhs),
-#         x2=Input(lambda s: s.stellarator.wp_width_r),
-#         y2=Input(lambda s: s.stellarator.rhs),
+#         x1=FromExactly(stellarator.wp_width_r),
+#         y1=FromExactly(stellarator.lhs),
+#         x2=FromExactly(stellarator.wp_width_r),
+#         y2=FromExactly(stellarator.rhs),
 #     ):
 #         return intersect_residual(self.owns[0], x1, y1, x2, y2)  # sketch only
 ```
 The draft's `self.owns[0]` for the unknown was never valid (`NodalDeclaration` has no
 `owns` property; `DeclaredNode.owns` belongs to the *problem*, not the body) — the real
-`residual` reads the unknown back as an ordinary `Input` on the same `VarPath` its
+`residual` reads the unknown back as an ordinary `From` on the same `VarPath` its
 `Output` declares instead, per `Disc1`'s own precedent, confirmed above.
 
 **`jcrit_from_material`'s 8 branches are the exception — 8 `ExplicitFunction` nodes
@@ -313,7 +313,7 @@ All 8 classes mint the identical output `VarPath` (`.tfcoil.j_crit_sc`) — exac
 `configuration.py`'s `Switch.check_arms_are_exclusive` needs to accept them as one
 mutually-exclusive `Switch` group, syntactically. **Updated, later consolidation pass:
 investigated and deliberately still not registered — not an oversight, a real structural
-gap.** `.tfcoil.t_helium`/`.tfcoil.b_max` (this sketch's own `Input`s, and the real
+gap.** `.tfcoil.t_helium`/`.tfcoil.b_max` (this sketch's own `From`s, and the real
 classes') are locals of `winding_pack_curves`'s 200-point sampling loop
 (`b_max = b_max_k[k]`, an *array* value per sample, not a single scalar `VarPath`), and
 PROCESS has exactly one real call site for the whole `jcrit_from_material` dispatch,
@@ -360,14 +360,14 @@ pytree-namespace `ImplicitFunction` pairing `intersect_residual` with a `RootFin
 one unknown:
 ```python
 class Intersect(ImplicitFunction):
-    wp_width_r_min = Output(lambda s: s.stellarator.wp_width_r_min)
+    wp_width_r_min = OutputInto(stellarator)
 
     def residual(
         self,
-        x1=Input(lambda s: s.stellarator.wp_width_r),
-        y1=Input(lambda s: s.stellarator.lhs),
-        x2=Input(lambda s: s.stellarator.wp_width_r),
-        y2=Input(lambda s: s.stellarator.rhs),
+        x1=FromExactly(stellarator.wp_width_r),
+        y1=FromExactly(stellarator.lhs),
+        x2=FromExactly(stellarator.wp_width_r),
+        y2=FromExactly(stellarator.rhs),
     ):
         return intersect_residual(<the unknown>, x1, y1, x2, y2)  # sketch only
 ```
@@ -483,7 +483,7 @@ argument that is real in the pure function but has no port in the node."
    this pass.
 2. **[RESOLVED, a later pass]** ~~`xin`'s disappearance from the node wrap~~ — `Intersect`
    (`## cottax node` above) is now real code, and the disappearance is confirmed
-   directly rather than left as a naming-convention gap: `residual` declares 4 `Input`s
+   directly rather than left as a naming-convention gap: `residual` declares 4 `From`s
    against `intersect`'s 5-argument signature
    (`test_coils.py::test_intersect_has_no_port_for_xin`). Still worth a real
    `naming_convention.md` category for "an argument that is real in the pure function

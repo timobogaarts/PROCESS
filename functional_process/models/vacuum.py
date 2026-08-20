@@ -29,13 +29,15 @@ import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
-    FromExactly,
+    From,
     ImplicitFunction,
-    Output,
-    path_of,
+    OutputInto,
+    resolve,
 )
 from cottax.problem import Feasibility
 from cottax.spec import In, Out, VarPath
+
+from functional_process.paths import build, divertor, physics, tfcoil, times, vacuum
 
 # Gas-species ordering used throughout `vacuum()`: (N2, D-T, He, D-T again).
 # `process/models/vacuum.py`'s module-level `xmult` list -- conductance-to-nitrogen
@@ -142,27 +144,21 @@ class VacuumPumpingSimple(ExplicitFunction):
     `"simple"` branch (`vp.n_iter_vacuum_pumps = self.vacuum_simple(output=output)`).
     """
 
-    n_iter_vacuum_pumps = Output(lambda s: s.vacuum.n_iter_vacuum_pumps)
+    n_iter_vacuum_pumps = OutputInto(vacuum)
 
     def __call__(
         self,
-        molflow_plasma_fuelling_required=FromExactly(
-            lambda s: s.physics.molflow_plasma_fuelling_required
-        ),
-        molflow_vac_pumps=FromExactly(lambda s: s.vacuum.molflow_vac_pumps),
-        volflow_vac_pumps_max=FromExactly(lambda s: s.vacuum.volflow_vac_pumps_max),
-        f_a_vac_pump_port_plasma_surface=FromExactly(
-            lambda s: s.vacuum.f_a_vac_pump_port_plasma_surface
-        ),
-        f_volflow_vac_pumps_impedance=FromExactly(
-            lambda s: s.vacuum.f_volflow_vac_pumps_impedance
-        ),
-        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        outgasfactor=FromExactly(lambda s: s.vacuum.outgasfactor),
-        pres_vv_chamber_base=FromExactly(lambda s: s.vacuum.pres_vv_chamber_base),
-        outgasindex=FromExactly(lambda s: s.vacuum.outgasindex),
-        t_plant_pulse_dwell=FromExactly(lambda s: s.times.t_plant_pulse_dwell),
+        molflow_plasma_fuelling_required=From(physics),
+        molflow_vac_pumps=From(vacuum),
+        volflow_vac_pumps_max=From(vacuum),
+        f_a_vac_pump_port_plasma_surface=From(vacuum),
+        f_volflow_vac_pumps_impedance=From(vacuum),
+        a_plasma_surface=From(physics),
+        n_tf_coils=From(tfcoil),
+        outgasfactor=From(vacuum),
+        pres_vv_chamber_base=From(vacuum),
+        outgasindex=From(vacuum),
+        t_plant_pulse_dwell=From(times),
     ):
         npump = calculate_vacuum_pumping_simple(
             molflow_plasma_fuelling_required,
@@ -351,7 +347,7 @@ class DuctDiameterRootFind(ImplicitFunction):
     explicit instruction, as a perfectly valid undriven `RootFind` problem
     (`Graph.declared`, same as every other undriven declared node here). It does gain a
     real neighbour outside `total_process.py`, though: this file's own `DuctFeasibility`
-    (below) reads `.vacuum.d_duct` as an ordinary cross-node `FromExactly`, forming a combined
+    (below) reads `.vacuum.d_duct` as an ordinary cross-node `From`, forming a combined
     4-node cycle when the two are assembled together (see `DuctFeasibility`'s own
     docstring and `test_vacuum.py`).
 
@@ -362,16 +358,16 @@ class DuctDiameterRootFind(ImplicitFunction):
     mints) assemble and converge to the same answer `solve_duct_diameter` does.
     """
 
-    d_duct = Output(lambda s: s.vacuum.d_duct)
+    d_duct = OutputInto(vacuum)
 
     def residual(
         self,
-        d_duct=FromExactly(lambda s: s.vacuum.d_duct),
-        l1=FromExactly(lambda s: s.vacuum.l1),
-        l2=FromExactly(lambda s: s.vacuum.l2),
-        l3=FromExactly(lambda s: s.vacuum.l3),
-        xmult_i=FromExactly(lambda s: s.vacuum.xmult_i),
-        ceff_i=FromExactly(lambda s: s.vacuum.ceff_i),
+        d_duct=From(vacuum),
+        l1=From(vacuum),
+        l2=From(vacuum),
+        l3=From(vacuum),
+        xmult_i=From(vacuum),
+        ceff_i=From(vacuum),
     ):
         return duct_diameter_residual(d_duct, l1, l2, l3, xmult_i, ceff_i)
 
@@ -521,23 +517,21 @@ class DuctFeasibilityConditions(ExplicitFunction):
     node to produce them, the same role `Intersect.residual`/
     `DuctDiameterRootFind.residual` play for their own `RootFind` problems. `d_duct` is
     read as a plain, non-owning
-    `FromExactly` -- `DuctDiameterRootFind`'s `RootFind` problem owns it, an ordinary
+    `From` -- `DuctDiameterRootFind`'s `RootFind` problem owns it, an ordinary
     cross-node edge, not a second self-loop (same shape `WindingPackTotalSizePost`'s read
     of `.stellarator.wp_width_r_min` already established). `ceff_i` is read the same way
     -- `DuctFeasibility` (below) owns it as its one `design` unknown.
     """
 
-    duct_fits_residual = Output(lambda s: s.vacuum.duct_fits_residual)
-    pumping_speed_floor_residual = Output(
-        lambda s: s.vacuum.pumping_speed_floor_residual
-    )
+    duct_fits_residual = OutputInto(vacuum)
+    pumping_speed_floor_residual = OutputInto(vacuum)
 
     def __call__(
         self,
-        d_duct=FromExactly(lambda s: s.vacuum.d_duct),
-        a1max=FromExactly(lambda s: s.vacuum.a1max),
-        ceff_i=FromExactly(lambda s: s.vacuum.ceff_i),
-        s_i=FromExactly(lambda s: s.vacuum.s_i),
+        d_duct=From(vacuum),
+        a1max=From(vacuum),
+        ceff_i=From(vacuum),
+        s_i=From(vacuum),
     ):
         return (
             duct_fits_residual(d_duct, a1max),
@@ -546,10 +540,10 @@ class DuctFeasibilityConditions(ExplicitFunction):
 
 
 DuctFeasibility = Feasibility(
-    design=(Out(path_of(lambda s: s.vacuum.ceff_i, VarPath)),),
+    design=(Out(resolve(vacuum.ceff_i, VarPath)),),
     inequalities=(
-        In(path_of(lambda s: s.vacuum.duct_fits_residual, VarPath)),
-        In(path_of(lambda s: s.vacuum.pumping_speed_floor_residual, VarPath)),
+        In(resolve(vacuum.duct_fits_residual, VarPath)),
+        In(resolve(vacuum.pumping_speed_floor_residual, VarPath)),
     ),
 )
 """The declared problem itself: "find a feasible `ceff_i`", no objective.
@@ -992,48 +986,44 @@ def calculate_vacuum_pumping_old(
 class VacuumOld(ExplicitFunction):
     """cottax node: `calculate_vacuum_pumping_old`'s five real outputs.
 
-    Every `FromExactly` below is a genuine, already-existing `VarPath` -- no minting needed.
-    `qtorus` is hardcoded `0.0` (not `FromExactly`-wrapped) since it is always `0.0` at
+    Every read below is a genuine, already-existing `VarPath` -- no minting needed.
+    `qtorus` is hardcoded `0.0` (not `From`-wrapped) since it is always `0.0` at
     `Vacuum.run()`'s only call site (see `vacuum.md`), a static default rather than a
     place in `data`.
     """
 
-    n_vac_pumps_high = Output(lambda s: s.vacuum.n_vac_pumps_high)
-    n_vv_vacuum_ducts = Output(lambda s: s.vacuum.n_vv_vacuum_ducts)
-    dlscal = Output(lambda s: s.vacuum.dlscal)
-    m_vv_vacuum_duct_shield = Output(lambda s: s.vacuum.m_vv_vacuum_duct_shield)
-    dia_vv_vacuum_ducts = Output(lambda s: s.vacuum.dia_vv_vacuum_ducts)
+    n_vac_pumps_high = OutputInto(vacuum)
+    n_vv_vacuum_ducts = OutputInto(vacuum)
+    dlscal = OutputInto(vacuum)
+    m_vv_vacuum_duct_shield = OutputInto(vacuum)
+    dia_vv_vacuum_ducts = OutputInto(vacuum)
 
     def __call__(
         self,
-        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
-        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
-        dr_tf_inboard=FromExactly(lambda s: s.build.dr_tf_inboard),
-        r_shld_inboard_inner=FromExactly(lambda s: s.build.r_shld_inboard_inner),
-        dr_shld_vv_gap_inboard=FromExactly(lambda s: s.build.dr_shld_vv_gap_inboard),
-        dr_vv_inboard=FromExactly(lambda s: s.build.dr_vv_inboard),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        t_plant_pulse_dwell=FromExactly(lambda s: s.times.t_plant_pulse_dwell),
-        n_divertors=FromExactly(lambda s: s.divertor.n_divertors),
-        molflow_plasma_fuelling_required=FromExactly(
-            lambda s: s.physics.molflow_plasma_fuelling_required
-        ),
-        m_fuel_amu=FromExactly(lambda s: s.physics.m_fuel_amu),
-        i_vac_pump_dwell=FromExactly(lambda s: s.vacuum.i_vac_pump_dwell),
-        i_vacuum_pump_type=FromExactly(lambda s: s.vacuum.i_vacuum_pump_type),
-        pres_vv_chamber_base=FromExactly(lambda s: s.vacuum.pres_vv_chamber_base),
-        pres_div_chamber_burn=FromExactly(lambda s: s.vacuum.pres_div_chamber_burn),
-        outgrat_fw=FromExactly(lambda s: s.vacuum.outgrat_fw),
-        t_plant_pulse_coil_precharge=FromExactly(
-            lambda s: s.times.t_plant_pulse_coil_precharge
-        ),
+        p_fusion_total_mw=From(physics),
+        rmajor=From(physics),
+        rminor=From(physics),
+        dr_fw_plasma_gap_inboard=From(build),
+        dr_fw_plasma_gap_outboard=From(build),
+        a_plasma_surface=From(physics),
+        vol_plasma=From(physics),
+        dr_shld_outboard=From(build),
+        dr_shld_inboard=From(build),
+        dr_tf_inboard=From(build),
+        r_shld_inboard_inner=From(build),
+        dr_shld_vv_gap_inboard=From(build),
+        dr_vv_inboard=From(build),
+        n_tf_coils=From(tfcoil),
+        t_plant_pulse_dwell=From(times),
+        n_divertors=From(divertor),
+        molflow_plasma_fuelling_required=From(physics),
+        m_fuel_amu=From(physics),
+        i_vac_pump_dwell=From(vacuum),
+        i_vacuum_pump_type=From(vacuum),
+        pres_vv_chamber_base=From(vacuum),
+        pres_div_chamber_burn=From(vacuum),
+        outgrat_fw=From(vacuum),
+        t_plant_pulse_coil_precharge=From(times),
     ):
         return calculate_vacuum_pumping_old(
             p_fusion_total_mw,

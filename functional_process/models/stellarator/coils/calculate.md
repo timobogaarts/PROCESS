@@ -91,7 +91,7 @@ ported) and `winding_pack_total_size` (now also ported, see below) — a real gr
 not reporting. Minted `.stellarator.coilcurrent` for it (see the port's `CoilCurrent`
 node docstring) — **open question 1 below (from the first pass) is now resolved**:
 `WindingPackIntersectInputs`'s and `WindingPackTotalSizePost`'s own `coilcurrent`
-`Input`s both read this exact `VarPath` (the pre-/post-`intersect` split, a later pass —
+`From`s both read this exact `VarPath` (the pre-/post-`intersect` split, a later pass —
 see the top-of-file note — kept both halves reading it, since `winding_pack_curves` and
 `winding_pack_post_intersect` each need it independently), so four nodes (`CoilCurrent`,
 `CoilsSummaryVariables`, `WindingPackIntersectInputs`, `WindingPackTotalSizePost`) now
@@ -115,9 +115,9 @@ two `a_tf_wp_*` ones below and `.stellarator.wp_width_r_min` — see
 | VarPath | read/write | classification | note |
 |---|---|---|---|
 | `.tfcoil.n_tf_coils`, `.tfcoil.i_tf_sc_mat` (switch, static), `.stellarator_config.stella_config_a1`/`_a2`/`_wp_ratio`, `.tfcoil.tftmp`/`tmargmin`/`b_crit_upper_nbti`/`bcritsc`/`f_a_tf_turn_cable_copper`/`fhts`/`t_crit_nbti`/`tcritsc`/`f_a_tf_turn_cable_space_extra_void`, `.constraints.f_j_tf_wp_critical_max`, `.tfcoil.a_tf_turn_cable_space_no_void` (from `WindingPackGeometry`), `.tfcoil.dx_tf_turn_general`, `.tfcoil.dx_tf_wp_insulation`, `.tfcoil.a_tf_turn_steel` (from `WindingPackGeometry`) | read | explicit-arg | `winding_pack_total_size` |
-| `.tfcoil.j_tf_wp` | read, then written to the same field later in the same call | **implicit-io, cross-call** | see "real PROCESS bugs found" — the read is genuinely a *previous call's* output, not this call's; kept as two independent things (an `Input` and an `Output` on the same `VarPath`) rather than collapsed, since collapsing would hide the bug |
+| `.tfcoil.j_tf_wp` | read, then written to the same field later in the same call | **implicit-io, cross-call** | see "real PROCESS bugs found" — the read is genuinely a *previous call's* output, not this call's; kept as two independent things (an `From` and an `Output` on the same `VarPath`) rather than collapsed, since collapsing would hide the bug |
 | `.tfcoil.b_tf_inboard_peak_symmetric`, `.dx_tf_wp_primary_toroidal`, `.dx_tf_wp_secondary_toroidal` (same value as primary — see the four-functions note above, same treatment), `.dr_tf_wp_with_insulation`, `.j_tf_wp` (fresh value), `.n_tf_coil_turns`, `.c_tf_turn`, `.a_tf_wp_conductor`, `.a_tf_wp_extra_void`, `.a_tf_coil_wp_turn_insulation`, `.a_tf_wp_steel` | write | explicit-arg | `winding_pack_total_size` |
-| `.tfcoil.a_tf_wp_no_insulation`, `.tfcoil.a_tf_wp_with_insulation` | write | **minted** | see "cottax node" below — matches `mass.py`'s/`forces.py`'s already-shipped `Input`s at these exact paths, not a fresh invention. Re-verified in the MDA triage (`_audit/next_steps.md` §8.1): both are plain Python locals in `winding_pack_total_size` (`process/models/stellarator/coils/calculate.py:496-501`), and the source itself says so in the comment on line 496 ("not global"). **Trap:** fields with exactly these two names *do* exist, at `.superconducting_tfcoil.*` (`process/data_structure/superconducting_tf_coil_variables.py:35,40`) — but they are written only by the tokamak resistive TF model (`process/models/tfcoil/resistive.py:310,334`), which never runs for a stellarator, so rebinding the mints there would compare against `DataStructure()`'s bare `0.0`. Both are nonetheless *reconstructible* from real fields at any converged state: `a_tf_wp_no_insulation == .tfcoil.dx_tf_wp_primary_toroidal * .tfcoil.dr_tf_wp_with_insulation` and `a_tf_wp_with_insulation == (.tfcoil.dr_tf_wp_with_insulation + 2*.tfcoil.dx_tf_wp_insulation) * (.tfcoil.dx_tf_wp_primary_toroidal + 2*.tfcoil.dx_tf_wp_insulation)` — both read straight off `calculate.py:483-501`, which writes the three real fields and then forms the two locals from them. **Both reconstructions are now live** in `mda_harness.KNOWN_MINT_VALUES` (constraint-32 investigation, `_audit/constraint_32_investigation.md`), which is part of what took this node's whole SCC out of `mda_harness.EXCLUDED_NODE_NAMES`; the `a_tf_wp_no_insulation` identity was cross-checked against PROCESS's own `data.tfcoil.j_tf_wp = coilcurrent * 1e6 / a_tf_wp_no_insulation` (`calculate.py:499`), which it reproduces to the last printed digit. |
+| `.tfcoil.a_tf_wp_no_insulation`, `.tfcoil.a_tf_wp_with_insulation` | write | **minted** | see "cottax node" below — matches `mass.py`'s/`forces.py`'s already-shipped `From`s at these exact paths, not a fresh invention. Re-verified in the MDA triage (`_audit/next_steps.md` §8.1): both are plain Python locals in `winding_pack_total_size` (`process/models/stellarator/coils/calculate.py:496-501`), and the source itself says so in the comment on line 496 ("not global"). **Trap:** fields with exactly these two names *do* exist, at `.superconducting_tfcoil.*` (`process/data_structure/superconducting_tf_coil_variables.py:35,40`) — but they are written only by the tokamak resistive TF model (`process/models/tfcoil/resistive.py:310,334`), which never runs for a stellarator, so rebinding the mints there would compare against `DataStructure()`'s bare `0.0`. Both are nonetheless *reconstructible* from real fields at any converged state: `a_tf_wp_no_insulation == .tfcoil.dx_tf_wp_primary_toroidal * .tfcoil.dr_tf_wp_with_insulation` and `a_tf_wp_with_insulation == (.tfcoil.dr_tf_wp_with_insulation + 2*.tfcoil.dx_tf_wp_insulation) * (.tfcoil.dx_tf_wp_primary_toroidal + 2*.tfcoil.dx_tf_wp_insulation)` — both read straight off `calculate.py:483-501`, which writes the three real fields and then forms the two locals from them. **Both reconstructions are now live** in `mda_harness.KNOWN_MINT_VALUES` (constraint-32 investigation, `_audit/constraint_32_investigation.md`), which is part of what took this node's whole SCC out of `mda_harness.EXCLUDED_NODE_NAMES`; the `a_tf_wp_no_insulation` identity was cross-checked against PROCESS's own `data.tfcoil.j_tf_wp = coilcurrent * 1e6 / a_tf_wp_no_insulation` (`calculate.py:499`), which it reproduces to the last printed digit. |
 | — (return-only) | — | reporting-only | `fraction_area_superconductor_of_wp` (`f_a_scu_of_wp` in `st_coil`) only ever reaches `write()`, same treatment as `coilcoilgap` |
 | `.stellarator.r_coil_major`/`r_coil_minor`, `.tfcoil.dx_tf_turn_steel`/`dx_tf_turn_insulation`, `.stellarator.f_st_b`, `.stellarator_config.stella_config_i0`, `.stellarator.f_st_rmajor`/`f_st_n_coils`, `.tfcoil.dr_tf_nose_case`, `.stellarator_config.stella_config_max_portsize_width`/`_dmin`/`_coil_rmajor`/`_coil_rminor`/`_inductance`/`_maximal_coil_height`/`_coillength`/`_coilsurface`/`_min_bend_radius`, `.tfcoil.den_tf_coil_case`/`den_tf_wp_turn_insulation`/`a_tf_wp_coolant_channels`, `.physics.rmajor`/`rminor`/`b_plasma_toroidal_on_axis`, `.build.dr_fw_plasma_gap_inboard`/`dr_fw_inboard`/`dr_blkt_inboard`/`dr_shld_blkt_gap`/`dr_shld_inboard`/`dr_fw_plasma_gap_outboard`/`dr_fw_outboard`/`dr_blkt_outboard`/`dr_shld_outboard`/`dr_vv_inboard`/`dr_vv_outboard`, `.tfcoil.t_tf_superconductor_quench`/`t_tf_quench_detection`, `.stellarator_config.stella_config_max_force_density`/`_max_force_density_mnm`/`_max_lateral_force_density`/`_max_radial_force_density`/`_wp_bmax`/`_wp_area`/`_centering_force_max_mn`/`_min_mn`/`_avg_mn` | read | explicit-arg | `st_coil`'s own further reads, beyond what `winding_pack_total_size` needs (feeding `mass.py`/`quench.py`/`forces.py`) |
 | `.fwbs.den_steel`, `.tfcoil.dcond[i_tf_sc_mat - 1]` | read | explicit-arg (`den_steel`, `den_tf_sc_material`) | `st_coil` → `calculate_coils_mass` (`process/models/stellarator/coils/mass.py:88`). The *pure function* still takes the already-indexed scalar; **the node no longer mints a `VarPath` for it** — `CoilsMass` reads the real `.tfcoil.dcond[0]` since the MDA triage (`_audit/next_steps.md` §8.1), see `mass.md`'s cottax-node section for the full argument |
@@ -158,11 +158,11 @@ changed on top of it.
   treatment as `EcrhDensityLimit.i_plasma_pedestal`. Its `.tfcoil.a_tf_wp_with_insulation`/
   `a_tf_wp_no_insulation` `Output`s were **minted, cross-checked against two already-shipped
   consumers**: `coils/mass.py`'s `CoilsMass` and `coils/forces.py`'s `MaxForceDensity`
-  (etc.) already declared `Input`s at exactly these two paths (`mass.md`'s own "cottax
+  (etc.) already declared `From`s at exactly these two paths (`mass.md`'s own "cottax
   node" section: "should mint its output under this exact name") — this node was that
   producer, not a fresh, independent choice. Discovering this also surfaced a **real bug
   in the first pass's own `CoilCrossSectionalArea`**, fixed in this pass: its
-  `a_tf_wp_with_insulation` `Input` read `s.tfcoil.dr_tf_wp_with_insulation` (a
+  `a_tf_wp_with_insulation` `From` read `s.tfcoil.dr_tf_wp_with_insulation` (a
   dimensionally different field — winding-pack *radial thickness*, not *area*) because
   no producer existed yet for the correct path when it was written; it now reads
   `s.tfcoil.a_tf_wp_with_insulation`, matching `CoilsMass`/`MaxForceDensity` — unaffected
@@ -170,7 +170,7 @@ changed on top of it.
   instead, at the identical `VarPath`.
 
   **`j_tf_wp` self-loop — resolved (later pass, not the one that first wrote this
-  node)**: `WindingPackTotalSize` originally declared `j_tf_wp` as **both** an `Input`
+  node)**: `WindingPackTotalSize` originally declared `j_tf_wp` as **both** an `From`
   and an `Output` on the same `VarPath` — faithful to the source's genuine
   self-referential read (see data footprint), but `spec.py` forbids a node reading what
   it owns, so `to_graph(WindingPackTotalSize(...))` raised `ValueError: reads
@@ -185,7 +185,7 @@ changed on top of it.
   `^cond.tfcoil.j_tf_wp`, a separate bodyless `FixedPoint` problem node owns the real
   `.tfcoil.j_tf_wp` and reads that minted copy). `WindingPackTotalSize` no longer
   declares a `j_tf_wp` `Output` at all — it keeps `j_tf_wp` as a plain, non-owning
-  `Input` (the current committed value) and its `__call__` simply discards the
+  `From` (the current committed value) and its `__call__` simply discards the
   `j_tf_wp_new` element of `winding_pack_total_size`'s return tuple, since
   `WindingPackJTfWp.step` is now where that value is kept and minted. **Untouched by the
   later split-around-`intersect` pass below**: `WindingPackJTfWp` still calls the whole
@@ -242,7 +242,7 @@ function directly:
   half. Calls `winding_pack_pre_intersect` (a later-pass split of
   `winding_pack_total_size`'s own body, sharing `winding_pack_curves` unchanged) and
   mints `.stellarator.wp_width_r`/`.lhs`/`.rhs` — exactly the `VarPath`s `coils.py`'s
-  `Intersect` reads as its own `Input`s, per `coils.md`'s own earlier sketch of this
+  `Intersect` reads as its own `From`s, per `coils.md`'s own earlier sketch of this
   split, not a fresh invention here. `intersect`'s own starting guess
   (`wp_width_r_min_guess`) is computed but not wired through as a declared `Output` —
   `xin` has no port in the `ImplicitFunction`/`RootFind` shape at all (see `Intersect`'s
@@ -254,7 +254,7 @@ function directly:
 - **`WindingPackTotalSizePost`** (`ExplicitFunction`, **no `i_tf_sc_mat`** — nothing in
   `winding_pack_post_intersect` depends on the material dispatch, which is entirely
   upstream) — the *post*-`intersect` half. Reads `.stellarator.wp_width_r_min` as a
-  plain, ordinary `Input` (owned by `Intersect`'s `RootFind` problem, not by this node —
+  plain, ordinary `From` (owned by `Intersect`'s `RootFind` problem, not by this node —
   an ordinary cross-node edge, not a second self-loop), calls
   `winding_pack_post_intersect`, and mints `.tfcoil.a_tf_wp_with_insulation`/
   `a_tf_wp_no_insulation` at the same `VarPath`s the removed `WindingPackTotalSize`
@@ -419,7 +419,7 @@ an acknowledged, deliberate gap rather than an oversight.
    value) — see the `WindingPackTotalSize` node docstring for why this also means the
    node cannot currently join a `Graph` as declared.
 4. **Port bug (not PROCESS's), found and fixed this pass**: `calculate.py`'s own
-   `CoilCrossSectionalArea` node (first pass) had its `a_tf_wp_with_insulation` `Input`
+   `CoilCrossSectionalArea` node (first pass) had its `a_tf_wp_with_insulation` `From`
    wired to the wrong `VarPath` (`.tfcoil.dr_tf_wp_with_insulation`, a *length*, instead
    of an *area*) — see "cottax node" above.
 

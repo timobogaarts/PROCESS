@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.evaluate import schedule_for
-from cottax.interfaces.pytree_namespace_module import path_of, to_graph
+from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind
 from cottax.spec import VarPath
 
@@ -32,6 +32,7 @@ from functional_process.models.stellarator.coils.coils import (
     jcrit_from_material_rebco,
     jcrit_from_material_wst_nb3sn,
 )
+from functional_process.paths import stellarator
 from process.core.model import DataStructure
 from process.models import superconductors as _process_superconductors
 from process.models.stellarator.coils.coils import (
@@ -125,7 +126,12 @@ def _reference_jcrit_gl_rebco(t_helium, b_max):
 
 
 def _reference_jcrit_bi2212(
-    t_helium, b_max, j_tf_wp, f_a_tf_turn_cable_space_extra_void, fhts, f_a_tf_turn_cable_copper
+    t_helium,
+    b_max,
+    j_tf_wp,
+    f_a_tf_turn_cable_space_extra_void,
+    fhts,
+    f_a_tf_turn_cable_copper,
 ):
     return _reference_jcrit_branch(
         2,
@@ -506,6 +512,8 @@ def _intersect_residual_for_contract(solution, x1, y1, x2, y2, xin):
     """
     del xin
     return intersect_residual(solution, x1, y1, x2, y2)
+
+
 import equinox as eqx
 
 
@@ -564,7 +572,7 @@ def test_intersect_body_reads_the_unknown_back_without_owning_it():
     """
     node = Intersect()
     body, problem = node.node_definitions
-    unknown = path_of(lambda s: s.stellarator.wp_width_r_min, VarPath)
+    unknown = resolve(stellarator.wp_width_r_min, VarPath)
     assert unknown in body.reads
     assert unknown not in body.owns
     assert problem.owns == (unknown,)
@@ -597,10 +605,10 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
     schedule = schedule_for(
         to_graph(node), {node.problem_name: IntersectBisectionNewtonPolish()}
     )
-    wp_width_r_path = path_of(lambda s: s.stellarator.wp_width_r, VarPath)
-    lhs_path = path_of(lambda s: s.stellarator.lhs, VarPath)
-    rhs_path = path_of(lambda s: s.stellarator.rhs, VarPath)
-    wp_width_r_min_path = path_of(lambda s: s.stellarator.wp_width_r_min, VarPath)
+    wp_width_r_path = resolve(stellarator.wp_width_r, VarPath)
+    lhs_path = resolve(stellarator.lhs, VarPath)
+    rhs_path = resolve(stellarator.rhs, VarPath)
+    wp_width_r_min_path = resolve(stellarator.wp_width_r_min, VarPath)
 
     for sample in _intersect_samples():
         kwargs = sample.kwargs

@@ -107,13 +107,13 @@ registered in `functional_process/total_process.py`:
 
 ```python
 class QuenchProtection(ExplicitFunction):
-    f_vv_actual = Output(lambda s: s.superconducting_tfcoil.f_vv_actual)
-    vv_stress_quench = Output(lambda s: s.superconducting_tfcoil.vv_stress_quench)
-    j_tf_wp_quench_heat_max = Output(lambda s: s.tfcoil.j_tf_wp_quench_heat_max)
-    coppera_m2 = Output(lambda s: s.rebco.coppera_m2)
-    v_tf_coil_dump_quench_kv = Output(lambda s: s.tfcoil.v_tf_coil_dump_quench_kv)
+    f_vv_actual = OutputInto(superconducting_tfcoil)
+    vv_stress_quench = OutputInto(superconducting_tfcoil)
+    j_tf_wp_quench_heat_max = OutputInto(tfcoil)
+    coppera_m2 = OutputInto(rebco)
+    v_tf_coil_dump_quench_kv = OutputInto(tfcoil)
 
-    def __call__(self, rmajor=Input(...), ..., c_tf_turn=Input(...)):
+    def __call__(self, rmajor=From(physics), ..., c_tf_turn=From(tfcoil)):
         return calculate_quench_protection(rmajor, ..., c_tf_turn)
 ```
 `.superconducting_tfcoil.f_vv_actual` is an **invented** `VarPath`: the source itself
