@@ -40,7 +40,7 @@ dot, the path is written out in full and nothing is appended to it.
 
 **The escape hatch does not need a lambda.** A recorded chain off an area is a whole
 place already, so `FromExactly(impurity_radiation.f_nd_impurity_electron_array[2])` is
-the address it reads as. A callable (`FromExactly(lambda s: s.physics.q)`) is still
+the address it reads as. A callable (`FromExactly(lambda root: root.physics.q)`) is still
 accepted and is not deprecated -- cottax supplies its root, so it cannot be built
 against the wrong data structure -- but the recorder form is built off `data` below,
 which refuses a misspelled area, so it carries the same guarantee with less ceremony.

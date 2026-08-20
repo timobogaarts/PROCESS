@@ -1,8 +1,17 @@
 # The two path refactors — variable ports, then node names
 
-**What this file is.** The plan for the two remaining naming conversions in this port,
-both of them client work against cottax features that are already landed. It is a plan,
-not a record: nothing in Part A or Part B is done yet beyond the pilot each cites.
+**What this file is.** The plan for the two naming conversions in this port, both of
+them client work against cottax features that are already landed. **Part A is DONE**
+(2026-08-20): all 36 files converted by the §A.3 codemod, every file proven by the §A.4
+side-by-side checker (**2222 ports total across the wave commits, all identical and in
+order**), all 36 §A.5 renames applied with pure functions and sample keys untouched, all
+43 §A.6 escapes de-lambda'd, and the out-of-census `path_of`/`FromExactly` lambda sites
+converted through cottax's `resolve(area.field, VarPath)` — so the §A.6 postcondition
+holds flat: `grep -rn "lambda s:" functional_process --include='*.py'` → **0**. Gates
+after the whole conversion: `pytest functional_process -q` **3724 passed** and the MDA
+harness line **byte-identical** (499/34/3/0 · 557/0 · 61/0/3/0). The one-shot `_codemod/`
+tooling lived and died inside the Part A commits, per its own docstring. Part B is
+superseded by `model_tree_design.md` (see its banner below).
 
 They are **two refactors, not one**, and the distinction is the reason they can be
 sequenced rather than negotiated: the declaration surface carries **variable** paths into

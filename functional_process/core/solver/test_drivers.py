@@ -9,18 +9,23 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 import jax.numpy as jnp
 import pytest
 from cottax.evaluate import Drive
-from cottax.interfaces.pytree_namespace_module import path_of, to_graph
+from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process.core.solver.drivers import PicardDriver
 from functional_process.models.power_B_thermal_cryo import TempTurbineCoolantInStep
+from functional_process.paths import fwbs, heat_transport
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.models.power import ElectricConversionModelTypes
 
+toy = area("toy")
+"""A synthetic area for the contraction toy problem -- not a `DataStructure` area, so
+it is built with cottax's bare `area()` rather than off `functional_process.paths`."""
+
 
 def vpath(where):
-    """`path_of(where, VarPath)`, short enough to write at every call site below."""
-    return path_of(where, VarPath)
+    """`resolve(where, VarPath)`, short enough to write at every call site below."""
+    return resolve(where, VarPath)
 
 
 class _Contraction:
@@ -30,7 +35,7 @@ class _Contraction:
     any real graph.
     """
 
-    unknowns = (vpath(lambda s: s.toy.u),)
+    unknowns = (vpath(toy.u),)
 
     def __call__(self, u):
         # Fixed point at u = 6.0 (u = 0.5u + 3 => u = 6), |derivative| = 0.5 < 1, so
@@ -91,16 +96,14 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     graph = to_graph(node)
     drive = Drive(subgraph=graph, driver=PicardDriver())
     env = {
-        vpath(lambda s: s.heat_transport.temp_turbine_coolant_in): jnp.asarray(300.0),
-        vpath(lambda s: s.fwbs.temp_blkt_coolant_out): jnp.asarray(
-            temp_blkt_coolant_out
-        ),
-        vpath(lambda s: s.fwbs.outlet_temp_liq): jnp.asarray(outlet_temp_liq),
+        vpath(heat_transport.temp_turbine_coolant_in): jnp.asarray(300.0),
+        vpath(fwbs.temp_blkt_coolant_out): jnp.asarray(temp_blkt_coolant_out),
+        vpath(fwbs.outlet_temp_liq): jnp.asarray(outlet_temp_liq),
     }
 
     out = drive(env)
 
-    got = out[vpath(lambda s: s.heat_transport.temp_turbine_coolant_in)]
+    got = out[vpath(heat_transport.temp_turbine_coolant_in)]
     assert float(got) == pytest.approx(float(expected), abs=1e-6)
 
 

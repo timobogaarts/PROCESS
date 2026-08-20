@@ -8,7 +8,6 @@ selects is dead code that passes its own tests.
 """
 
 import pytest
-
 from cottax.interfaces.pytree_namespace_module import spell_flat
 
 from functional_process.configuration import Alternative, Configuration, Switch
@@ -46,7 +45,7 @@ def test_every_ported_arm_assembles(switch, value):
     assert graph.definitions, f"{switch.path} == {value} assembled an empty graph"
 
 
-@pytest.mark.parametrize("switch", TOPOLOGY_SWITCHES, ids=lambda s: s.path)
+@pytest.mark.parametrize("switch", TOPOLOGY_SWITCHES, ids=lambda sw: sw.path)
 def test_arms_are_mutually_exclusive(switch):
     """Arms filed under one switch collide on ownership -- otherwise they aren't arms.
 
@@ -56,7 +55,7 @@ def test_arms_are_mutually_exclusive(switch):
     switch.check_arms_are_exclusive()
 
 
-@pytest.mark.parametrize("switch", TOPOLOGY_SWITCHES, ids=lambda s: s.path)
+@pytest.mark.parametrize("switch", TOPOLOGY_SWITCHES, ids=lambda sw: sw.path)
 def test_arms_select_different_node_sets(switch):
     """A switch that selects the same nodes whatever its value is not a topology switch.
 

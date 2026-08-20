@@ -28,7 +28,7 @@ fails if either membership changes.
 
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule, schedule_for
-from cottax.interfaces.pytree_namespace_module import path_of
+from cottax.interfaces.pytree_namespace_module import resolve
 from cottax.problem import FixedPoint, Optimise, RootFind
 from cottax.rewrites import Cut, FixedPointCut
 from cottax.spec import NodePath, VarPath
@@ -40,12 +40,13 @@ from functional_process.core.solver.drivers import (
     SeededNewtonDriver,
     VmconDriver,
 )
+from functional_process.paths import fwbs, physics
 from functional_process.total_process import GRAPH
 
 CUTS = (
-    path_of(lambda s: s.physics.proton_rate_density, VarPath),
-    path_of(lambda s: s.physics.fusden_alpha_total, VarPath),
-    path_of(lambda s: s.fwbs.f_ster_div_single, VarPath),
+    resolve(physics.proton_rate_density, VarPath),
+    resolve(physics.fusden_alpha_total, VarPath),
+    resolve(fwbs.f_ster_div_single, VarPath),
 )
 """The variables cut to turn each raw cross-node cycle into a declared `FixedPoint`.
 

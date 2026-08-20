@@ -38,17 +38,17 @@ about `nan` derivatives **at exactly zero**, where this is a finite derivative o
 and an unbounded one on the other, `1.9e-09` from the switch. How many other clamped roots
 the solve is sitting on is unknown and unlooked-for.
 
-**Declaration surface.** Reads and writes are declared `From(area)` / `OutputInto(area)`,
-which complete the area with the name being declared (`functional_process/paths.py`, and
-cottax's `Area`/`Root`). `power_B_thermal_cryo.py` is converted (158 declarations, ports
-proved identical against the pre-conversion module loaded side by side); the rest is
-censused and not yet done — **2078 convertible mechanically, 36 needing a body rename,
-43 keeping the escape hatch** for array elements no parameter name can spell (that hatch
-is now spelled `FromExactly`, renamed from `Input`; `path_refactor.md` §A.7). §12.3.
-The plan for finishing it, and for the node-name conversion beside it, is
-`_audit/path_refactor.md` (the census above was re-measured against it and reproduces
-digit for digit; the 43 escapes lose their lambdas too, so the endpoint is `lambda s:` →
-**0**, not 2078 of 2157).
+**Declaration surface — Part A is DONE** (2026-08-20). Every read and write is declared
+`From(area)` / `OutputInto(area)` (or `FromExactly`/`Output` for the 43 array-element
+escapes, now lambda-free recorder chains), all 36 files converted and each proven by
+`path_refactor.md` §A.4's side-by-side port-identity checker — identical `VarPath`s, in
+order, per declaration. The 36 body renames landed with pure functions and sample keys
+untouched; the out-of-census `path_of` lambda sites went through cottax's
+`resolve(area.field, VarPath)`. The flat endpoint holds:
+`grep -rn "lambda s:" functional_process --include='*.py'` → **0**, and the suite and
+MDA harness are byte-identical (see the Verified state table). The record is
+`path_refactor.md`'s header; the node-name half (Part B) proceeds as
+`model_tree_design.md` §8 steps 3–4.
 
 **Closed, and the answer is not what either side of it expected.**
 `_audit/x109_pinning_verification.md` settled the feasibility question — the pinned point

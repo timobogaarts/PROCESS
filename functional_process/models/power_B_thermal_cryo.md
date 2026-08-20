@@ -265,9 +265,9 @@ see each function's own docstring for its full parameter list and return tuple.
 `i_blkt_dual_coolant`, `i_tf_sup`, `i_pf_conductor`, `inuclear`) is a plain
 `eqx.field(static=True)` on the relevant node, per `naming_convention.md` and the
 `FastAlphaBeta` precedent (`physics_A_pure_formulas.py`) -- none is wrapped in
-`Input`, since `cottax`'s `NodalDeclaration.__check_init__` requires every `__call__`
-parameter to carry an `Input(...)` default, so a static config value cannot be an
-ordinary parameter at all on this surface.
+a read, since `cottax`'s `NodalDeclaration.__check_init__` requires every `__call__`
+parameter to carry a `From(...)`/`FromExactly(...)` default, so a static config value
+cannot be an ordinary parameter at all on this surface.
 
 **`DeltaEtaStep`, added this pass**: a `FixedPointFunction` (not an `ExplicitFunction`)
 isolating `.power.delta_eta`'s self-reference out of `ComponentThermalPowers`. Static
