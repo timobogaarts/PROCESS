@@ -133,18 +133,20 @@ deliberately not part of this signature (see "Framing" above).
 ## cottax node
 
 ```python
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Input, Output
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import divertor
 
 
 class DivertorPlateMass(ExplicitFunction):
-    m_div_plate = Output(lambda s: s.divertor.m_div_plate)
+    m_div_plate = OutputInto(divertor)
 
     def __call__(
         self,
-        a_div_surface_total=Input(lambda s: s.divertor.a_div_surface_total),
-        den_div_structure=Input(lambda s: s.divertor.den_div_structure),
-        f_vol_div_coolant=Input(lambda s: s.divertor.f_vol_div_coolant),
-        dx_div_plate=Input(lambda s: s.divertor.dx_div_plate),
+        a_div_surface_total=From(divertor),
+        den_div_structure=From(divertor),
+        f_vol_div_coolant=From(divertor),
+        dx_div_plate=From(divertor),
     ):
         return calculate_divertor_plate_mass(
             a_div_surface_total, den_div_structure, f_vol_div_coolant, dx_div_plate

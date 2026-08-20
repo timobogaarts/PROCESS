@@ -53,7 +53,7 @@ themselves written to `data` — not part of the port's return, same convention
 
 **Real downstream dependency**: `.fwbs.dewmkg` (S5's output) is already read by chunk
 1D's registered `StructureMasses` node (`stellarator_D_structure.py`,
-`dewmkg=Input(lambda s: s.fwbs.dewmkg)`) — a genuine graph edge, not just a coincidence
+`dewmkg=From(fwbs)`) — a genuine graph edge, not just a coincidence
 of naming.
 
 ## proposed signature(s)

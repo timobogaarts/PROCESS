@@ -166,9 +166,7 @@ silently dropped, since it is the one field of the 35 that does not appear.
 class StellaratorMachineConfig(ExplicitFunction):
     machine_config: tuple = eqx.field(static=True)
 
-    stella_config_symmetry = Output(
-        lambda s: s.stellarator_config.stella_config_symmetry
-    )
+    stella_config_symmetry = OutputInto(stellarator_config)
     ...  # 34 in STELLA_CONFIG_SCALAR_FIELDS order
 
     def __call__(self):

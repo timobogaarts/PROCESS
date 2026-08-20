@@ -26,13 +26,16 @@ would need (a per-component fuzz+differentiate scheme, most likely). Do not add 
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.paths import (
+    impurity_radiation,
+    neoclassics,
+    physics,
+    stellarator,
+    stellarator_config,
+)
 from process.core import constants
 
 KEV = 1e3 * constants.ELECTRON_CHARGE
@@ -179,7 +182,9 @@ def calculate_profile_values(
     densities = jnp.array([
         nd_plasma_electron_on_axis * one_minus_rho2**alphan,
         f_plasma_fuel_deuterium * nd_plasma_ions_on_axis * one_minus_rho2**alphan,
-        (1.0 - f_plasma_fuel_deuterium) * nd_plasma_ions_on_axis * one_minus_rho2**alphan,
+        (1.0 - f_plasma_fuel_deuterium)
+        * nd_plasma_ions_on_axis
+        * one_minus_rho2**alphan,
         nd_plasma_alphas_thermal_vol_avg * (1.0 + alphan) * one_minus_rho2**alphan,
     ])
 
@@ -265,15 +270,19 @@ def calculate_effective_thermal_diffusivity(
     # here "for obvious reasons" -- ported as PROCESS's Python already reads, not
     # re-derived.
     denominator = (
-        3.0
-        * nd_plasma_electron_on_axis
-        * constants.ELECTRON_CHARGE
-        * temp_plasma_electron_on_axis_kev
-        * 1e3
-        * alphat
-        * radius_plasma_core_norm
-        * (1.0 - radius_plasma_core_norm**2) ** (alphan + alphat - 1.0)
-    ) * surfacescaling * 1e-6
+        (
+            3.0
+            * nd_plasma_electron_on_axis
+            * constants.ELECTRON_CHARGE
+            * temp_plasma_electron_on_axis_kev
+            * 1e3
+            * alphat
+            * radius_plasma_core_norm
+            * (1.0 - radius_plasma_core_norm**2) ** (alphan + alphat - 1.0)
+        )
+        * surfacescaling
+        * 1e-6
+    )
 
     return nominator / denominator
 
@@ -307,7 +316,8 @@ def _pitch_angle_factor(xk):
         - t
         * (
             0.254829592
-            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))
+            + t
+            * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))
         )
         * expxk
     )
@@ -341,7 +351,11 @@ def calculate_collision_frequency(densities, temperatures):
     out = jnp.zeros((4, NO_ROOTS))
     for j in range(4):
         for k in range(4):
-            xk = (_SPECIES_MASS[k] / _SPECIES_MASS[j]) * (temperatures[j] / temperatures[k]) * ROOTS
+            xk = (
+                (_SPECIES_MASS[k] / _SPECIES_MASS[j])
+                * (temperatures[j] / temperatures[k])
+                * ROOTS
+            )
             phixmgx = _pitch_angle_factor(xk)
             v = safe_sqrt(2.0 * ROOTS * temperatures[j] / _SPECIES_MASS[j])
             out = out.at[j, :].add(
@@ -423,12 +437,15 @@ def calculate_normalized_collision_frequency_from_temperature(
     :
         `(4,)` normalised collision frequency, per species.
     """
-    temp = jnp.array([
-        temp_plasma_electron_vol_avg_kev,
-        temp_plasma_ion_vol_avg_kev,
-        temp_plasma_ion_vol_avg_kev,
-        temp_plasma_ion_vol_avg_kev,
-    ]) * KEV
+    temp = (
+        jnp.array([
+            temp_plasma_electron_vol_avg_kev,
+            temp_plasma_ion_vol_avg_kev,
+            temp_plasma_ion_vol_avg_kev,
+            temp_plasma_ion_vol_avg_kev,
+        ])
+        * KEV
+    )
     density = jnp.array([
         nd_plasma_electrons_vol_avg,
         nd_plasma_fuel_ions_vol_avg * f_plasma_fuel_deuterium,
@@ -456,7 +473,11 @@ def calculate_normalized_collision_frequency_from_temperature(
                 - t
                 * (
                     0.254829592
-                    + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))
+                    + t
+                    * (
+                        -0.284496736
+                        + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))
+                    )
                 )
                 * expxk
             )
@@ -495,9 +516,7 @@ def calculate_drift_velocity(temperatures, rmajor, b_plasma_toroidal_on_axis):
     """
     # Species 3 (alpha) alone has an extra factor of 2 in the denominator (charge 2).
     charge_factor = jnp.array([1.0, 1.0, 1.0, 2.0])
-    return jnp.outer(
-        temperatures, ROOTS
-    ) / (
+    return jnp.outer(temperatures, ROOTS) / (
         constants.ELECTRON_CHARGE
         * rmajor
         * b_plasma_toroidal_on_axis
@@ -582,7 +601,9 @@ def calculate_integrated_radial_transport_coefficient(d11_mono, index):
     )
 
 
-def calculate_gamma_flux(densities, temperatures, dr_densities, dr_temperatures, d111, d112, er):
+def calculate_gamma_flux(
+    densities, temperatures, dr_densities, dr_temperatures, d111, d112, er
+):
     """Neoclassical particle flux, per species.
 
     Ports `Neoclassics.neoclassics_calc_gamma_flux`. **Not harness-tested** -- see
@@ -604,13 +625,19 @@ def calculate_gamma_flux(densities, temperatures, dr_densities, dr_temperatures,
         `(4,)` particle flux, per species.
     """
     z = jnp.array([-1.0, 1.0, 1.0, 2.0])
-    return -densities * d111 * (
-        (dr_densities / densities - z * er / temperatures)
-        + (d112 / d111 - 1.5) * dr_temperatures / temperatures
+    return (
+        -densities
+        * d111
+        * (
+            (dr_densities / densities - z * er / temperatures)
+            + (d112 / d111 - 1.5) * dr_temperatures / temperatures
+        )
     )
 
 
-def calculate_q_flux(densities, temperatures, dr_densities, dr_temperatures, d112, d113, er):
+def calculate_q_flux(
+    densities, temperatures, dr_densities, dr_temperatures, d112, d113, er
+):
     """Neoclassical energy flux, per species.
 
     Ports `Neoclassics.neoclassics_calc_q_flux`. **Not harness-tested** -- see module
@@ -632,9 +659,14 @@ def calculate_q_flux(densities, temperatures, dr_densities, dr_temperatures, d11
         `(4,)` energy flux, per species.
     """
     z = jnp.array([-1.0, 1.0, 1.0, 2.0])
-    return -densities * temperatures * d112 * (
-        (dr_densities / densities - z * er / temperatures)
-        + (d113 / d112 - 1.5) * dr_temperatures / temperatures
+    return (
+        -densities
+        * temperatures
+        * d112
+        * (
+            (dr_densities / densities - z * er / temperatures)
+            + (d113 / d112 - 1.5) * dr_temperatures / temperatures
+        )
     )
 
 
@@ -646,7 +678,7 @@ class ProfileValues(ExplicitFunction):
     is itself a literal, not read from `data` (see `neoclassics.md`).
 
     That literal is `rho`, below. It was previously bound as
-    `FromExactly(lambda s: s.neoclassics.r_eff)`, which was a **wrong answer, not a coverage
+    `FromExactly(neoclassics.r_eff)`, which was a **wrong answer, not a coverage
     gap**: `.neoclassics.r_eff` is declared `= 0.0` in
     `process/data_structure/neoclassics_variables.py:87` and PROCESS never assigns it
     anywhere -- the real argument is `init_neoclassics`'s local parameter `r_effin`,
@@ -668,26 +700,22 @@ class ProfileValues(ExplicitFunction):
     `mda_harness.STATIC_KWARGS_WITHOUT_BACKING_FIELD` for the same reason.
     """
 
-    densities = Output(lambda s: s.neoclassics.densities)
-    temperatures = Output(lambda s: s.neoclassics.temperatures)
-    dr_densities = Output(lambda s: s.neoclassics.dr_densities)
-    dr_temperatures = Output(lambda s: s.neoclassics.dr_temperatures)
+    densities = OutputInto(neoclassics)
+    temperatures = OutputInto(neoclassics)
+    dr_densities = OutputInto(neoclassics)
+    dr_temperatures = OutputInto(neoclassics)
 
     def __call__(
         self,
-        temp_plasma_electron_on_axis_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_on_axis_kev
-        ),
-        temp_plasma_ion_on_axis_kev=FromExactly(lambda s: s.physics.temp_plasma_ion_on_axis_kev),
-        alphat=FromExactly(lambda s: s.physics.alphat),
-        nd_plasma_electron_on_axis=FromExactly(lambda s: s.physics.nd_plasma_electron_on_axis),
-        f_plasma_fuel_deuterium=FromExactly(lambda s: s.physics.f_plasma_fuel_deuterium),
-        nd_plasma_ions_on_axis=FromExactly(lambda s: s.physics.nd_plasma_ions_on_axis),
-        nd_plasma_alphas_thermal_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_alphas_thermal_vol_avg
-        ),
-        alphan=FromExactly(lambda s: s.physics.alphan),
-        rminor=FromExactly(lambda s: s.physics.rminor),
+        temp_plasma_electron_on_axis_kev=From(physics),
+        temp_plasma_ion_on_axis_kev=From(physics),
+        alphat=From(physics),
+        nd_plasma_electron_on_axis=From(physics),
+        f_plasma_fuel_deuterium=From(physics),
+        nd_plasma_ions_on_axis=From(physics),
+        nd_plasma_alphas_thermal_vol_avg=From(physics),
+        alphan=From(physics),
+        rminor=From(physics),
     ):
         return calculate_profile_values(
             self.rho,
@@ -711,29 +739,23 @@ class EffectiveThermalDiffusivity(ExplicitFunction):
     same situation as `EcrhDensityLimit`'s outputs, see that module's docstring.
     """
 
-    chi_process_e = Output(lambda s: s.neoclassics.chi_process_e)
+    chi_process_e = OutputInto(neoclassics)
 
     def __call__(
         self,
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        f_st_rmajor=FromExactly(lambda s: s.stellarator.f_st_rmajor),
-        radius_plasma_core_norm=FromExactly(
-            lambda s: s.impurity_radiation.radius_plasma_core_norm
-        ),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        stella_config_rminor_ref=FromExactly(
-            lambda s: s.stellarator_config.stella_config_rminor_ref
-        ),
-        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
-        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        pden_alpha_total_mw=FromExactly(lambda s: s.physics.pden_alpha_total_mw),
-        pden_plasma_core_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_core_rad_mw),
-        nd_plasma_electron_on_axis=FromExactly(lambda s: s.physics.nd_plasma_electron_on_axis),
-        temp_plasma_electron_on_axis_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_on_axis_kev
-        ),
-        alphat=FromExactly(lambda s: s.physics.alphat),
-        alphan=FromExactly(lambda s: s.physics.alphan),
+        vol_plasma=From(physics),
+        f_st_rmajor=From(stellarator),
+        radius_plasma_core_norm=From(impurity_radiation),
+        rminor=From(physics),
+        stella_config_rminor_ref=From(stellarator_config),
+        a_plasma_surface=From(physics),
+        f_p_alpha_plasma_deposited=From(physics),
+        pden_alpha_total_mw=From(physics),
+        pden_plasma_core_rad_mw=From(physics),
+        nd_plasma_electron_on_axis=From(physics),
+        temp_plasma_electron_on_axis_kev=From(physics),
+        alphat=From(physics),
+        alphan=From(physics),
     ):
         return calculate_effective_thermal_diffusivity(
             vol_plasma,

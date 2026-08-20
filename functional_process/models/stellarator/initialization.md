@@ -78,11 +78,13 @@ future non-stellarator caller (there is none today) could feed it different valu
 
 ```python
 class PulseDurations(ExplicitFunction):
-    t_plant_pulse_plasma_present = Output(lambda s: s.times.t_plant_pulse_plasma_present)
-    t_plant_pulse_no_burn = Output(lambda s: s.times.t_plant_pulse_no_burn)
-    t_plant_pulse_total = Output(lambda s: s.times.t_plant_pulse_total)
+    t_plant_pulse_plasma_present = OutputInto(times)
+    t_plant_pulse_no_burn = OutputInto(times)
+    t_plant_pulse_total = OutputInto(times)
 
-    def __call__(self, t_plant_pulse_coil_precharge=Input(...), ..., t_plant_pulse_dwell=Input(...)):
+    def __call__(
+        self, t_plant_pulse_coil_precharge=From(times), ..., t_plant_pulse_dwell=From(times)
+    ):
         return calculate_pulse_durations(t_plant_pulse_coil_precharge, ..., t_plant_pulse_dwell)
 ```
 

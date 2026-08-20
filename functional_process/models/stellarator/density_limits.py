@@ -21,11 +21,12 @@ import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
-    FromExactly,
-    Output,
+    From,
+    OutputInto,
 )
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.paths import physics, stellarator
 from process.models.physics.profiles import PlasmaProfileShapeType
 
 _SUDO_COEFFICIENT = 0.25e20
@@ -159,18 +160,16 @@ def calculate_ecrh_density_limit(
 class SudoDensityLimit(ExplicitFunction):
     """cottax node: `calculate_sudo_density_limit`, unchanged, ports declared."""
 
-    nd_plasma_electrons_max = Output(lambda s: s.physics.nd_plasma_electrons_max)
+    nd_plasma_electrons_max = OutputInto(physics)
 
     def __call__(
         self,
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        p_plasma_loss_mw=FromExactly(lambda s: s.physics.p_plasma_loss_mw),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        nd_plasma_electrons_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_electrons_vol_avg
-        ),
-        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
+        b_plasma_toroidal_on_axis=From(physics),
+        p_plasma_loss_mw=From(physics),
+        rmajor=From(physics),
+        rminor=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
+        nd_plasma_electron_line=From(physics),
     ):
         return calculate_sudo_density_limit(
             b_plasma_toroidal_on_axis,
@@ -192,14 +191,14 @@ class EcrhDensityLimit(ExplicitFunction):
 
     i_plasma_pedestal: PlasmaProfileShapeType = eqx.field(static=True)
 
-    dlimit_ecrh = Output(lambda s: s.stellarator.dlimit_ecrh)
-    bt_max_ecrh = Output(lambda s: s.stellarator.bt_max_ecrh)
+    dlimit_ecrh = OutputInto(stellarator)
+    bt_max_ecrh = OutputInto(stellarator)
 
     def __call__(
         self,
-        gyro_frequency_max=FromExactly(lambda s: s.stellarator.max_gyrotron_frequency),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
+        max_gyrotron_frequency=From(stellarator),
+        b_plasma_toroidal_on_axis=From(physics),
     ):
         return calculate_ecrh_density_limit(
-            gyro_frequency_max, b_plasma_toroidal_on_axis, self.i_plasma_pedestal
+            max_gyrotron_frequency, b_plasma_toroidal_on_axis, self.i_plasma_pedestal
         )

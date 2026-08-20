@@ -15,13 +15,10 @@ anything about this file: `st_div` itself has no missing input and no internal s
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.paths import divertor, first_wall, fwbs, physics, stellarator
 
 _ELECTRON_CHARGE = 1.602176634e-19
 """Coulombs. `process/core/constants.py::ELECTRON_CHARGE`."""
@@ -123,27 +120,27 @@ def calculate_divertor(
 class Divertor(ExplicitFunction):
     """cottax node: `calculate_divertor`, unchanged, ports declared."""
 
-    pflux_div_heat_load_mw = Output(lambda s: s.divertor.pflux_div_heat_load_mw)
-    a_div_surface_total = Output(lambda s: s.divertor.a_div_surface_total)
-    f_ster_div_single = Output(lambda s: s.fwbs.f_ster_div_single)
+    pflux_div_heat_load_mw = OutputInto(divertor)
+    a_div_surface_total = OutputInto(divertor)
+    f_ster_div_single = OutputInto(fwbs)
 
     def __call__(
         self,
-        flpitch=FromExactly(lambda s: s.stellarator.flpitch),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        p_plasma_separatrix_mw=FromExactly(lambda s: s.physics.p_plasma_separatrix_mw),
-        anginc=FromExactly(lambda s: s.divertor.anginc),
-        xpertin=FromExactly(lambda s: s.divertor.xpertin),
-        tdiv=FromExactly(lambda s: s.divertor.tdiv),
-        m_fuel_amu=FromExactly(lambda s: s.physics.m_fuel_amu),
-        bmn=FromExactly(lambda s: s.stellarator.bmn),
-        shear=FromExactly(lambda s: s.stellarator.shear),
-        n_res=FromExactly(lambda s: s.stellarator.n_res),
-        f_w=FromExactly(lambda s: s.stellarator.f_w),
-        m_res=FromExactly(lambda s: s.stellarator.m_res),
-        fdivwet=FromExactly(lambda s: s.stellarator.fdivwet),
-        f_asym=FromExactly(lambda s: s.stellarator.f_asym),
-        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
+        flpitch=From(stellarator),
+        rmajor=From(physics),
+        p_plasma_separatrix_mw=From(physics),
+        anginc=From(divertor),
+        xpertin=From(divertor),
+        tdiv=From(divertor),
+        m_fuel_amu=From(physics),
+        bmn=From(stellarator),
+        shear=From(stellarator),
+        n_res=From(stellarator),
+        f_w=From(stellarator),
+        m_res=From(stellarator),
+        fdivwet=From(stellarator),
+        f_asym=From(stellarator),
+        a_fw_total=From(first_wall),
     ):
         return calculate_divertor(
             flpitch,

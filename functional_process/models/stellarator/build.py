@@ -23,10 +23,15 @@ for the reasoning. Three tier-1 functions result:
   `.first_wall.a_fw_total`.
 """
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import (
+    build,
+    first_wall,
+    fwbs,
+    physics,
+    stellarator,
+    stellarator_config,
 )
 
 
@@ -333,20 +338,20 @@ class BlktmodelBlanketThickness(ExplicitFunction):
     Only instantiate this node when `blktmodel > 0` -- see module docstring.
     """
 
-    dr_blkt_inboard = Output(lambda s: s.build.dr_blkt_inboard)
-    dr_blkt_outboard = Output(lambda s: s.build.dr_blkt_outboard)
-    dz_shld_upper = Output(lambda s: s.build.dz_shld_upper)
+    dr_blkt_inboard = OutputInto(build)
+    dr_blkt_outboard = OutputInto(build)
+    dz_shld_upper = OutputInto(build)
 
     def __call__(
         self,
-        blbuith=FromExactly(lambda s: s.build.blbuith),
-        blbmith=FromExactly(lambda s: s.build.blbmith),
-        blbpith=FromExactly(lambda s: s.build.blbpith),
-        blbuoth=FromExactly(lambda s: s.build.blbuoth),
-        blbmoth=FromExactly(lambda s: s.build.blbmoth),
-        blbpoth=FromExactly(lambda s: s.build.blbpoth),
-        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
-        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
+        blbuith=From(build),
+        blbmith=From(build),
+        blbpith=From(build),
+        blbuoth=From(build),
+        blbmoth=From(build),
+        blbpoth=From(build),
+        dr_shld_inboard=From(build),
+        dr_shld_outboard=From(build),
     ):
         return calculate_blktmodel_blanket_thickness(
             blbuith,
@@ -372,51 +377,48 @@ class Build(ExplicitFunction):
     and this port's own comparison against a converged PROCESS run showed the other
     one (`coils/calculate.py`'s `ZTfInsideHalf`) is the one whose value survives.
     """
-    dz_blkt_upper = Output(lambda s: s.build.dz_blkt_upper)
-    dr_fw_inboard = Output(lambda s: s.build.dr_fw_inboard)
-    dr_fw_outboard = Output(lambda s: s.build.dr_fw_outboard)
-    dr_bore = Output(lambda s: s.build.dr_bore)
-    rbld = Output(lambda s: s.build.rbld)
-    required_radial_space = Output(lambda s: s.build.required_radial_space)
-    available_radial_space = Output(lambda s: s.build.available_radial_space)
-    r_shld_inboard_inner = Output(lambda s: s.build.r_shld_inboard_inner)
-    r_shld_outboard_outer = Output(lambda s: s.build.r_shld_outboard_outer)
-    dr_tf_outboard = Output(lambda s: s.build.dr_tf_outboard)
-    dr_shld_vv_gap_outboard = Output(lambda s: s.build.dr_shld_vv_gap_outboard)
-    r_tf_outboard_mid = Output(lambda s: s.build.r_tf_outboard_mid)
-    rspo = Output(lambda s: s.build.rspo)
+
+    dz_blkt_upper = OutputInto(build)
+    dr_fw_inboard = OutputInto(build)
+    dr_fw_outboard = OutputInto(build)
+    dr_bore = OutputInto(build)
+    rbld = OutputInto(build)
+    required_radial_space = OutputInto(build)
+    available_radial_space = OutputInto(build)
+    r_shld_inboard_inner = OutputInto(build)
+    r_shld_outboard_outer = OutputInto(build)
+    dr_tf_outboard = OutputInto(build)
+    dr_shld_vv_gap_outboard = OutputInto(build)
+    r_tf_outboard_mid = OutputInto(build)
+    rspo = OutputInto(build)
     # Invented intermediate, not a real PROCESS field -- see module docstring.
-    a_fw_total_unadjusted = Output(lambda s: s.first_wall.a_fw_total_unadjusted)
+    a_fw_total_unadjusted = OutputInto(first_wall)
 
     def __call__(
         self,
-        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
-        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
-        radius_fw_channel=FromExactly(lambda s: s.fwbs.radius_fw_channel),
-        dr_fw_wall=FromExactly(lambda s: s.fwbs.dr_fw_wall),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        dr_cs=FromExactly(lambda s: s.build.dr_cs),
-        dr_cs_tf_gap=FromExactly(lambda s: s.build.dr_cs_tf_gap),
-        dr_tf_inboard=FromExactly(lambda s: s.build.dr_tf_inboard),
-        dr_shld_vv_gap_inboard=FromExactly(lambda s: s.build.dr_shld_vv_gap_inboard),
-        dr_vv_inboard=FromExactly(lambda s: s.build.dr_vv_inboard),
-        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
-        dr_fw_plasma_gap_inboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_inboard),
-        r_coil_minor=FromExactly(lambda s: s.stellarator.r_coil_minor),
-        f_coil_shape=FromExactly(lambda s: s.stellarator.f_coil_shape),
-        stella_config_derivative_min_lcfs_coils_dist=FromExactly(
-            lambda s: s.stellarator_config.stella_config_derivative_min_lcfs_coils_dist
-        ),
-        f_st_rmajor=FromExactly(lambda s: s.stellarator.f_st_rmajor),
-        stella_config_rminor_ref=FromExactly(
-            lambda s: s.stellarator_config.stella_config_rminor_ref
-        ),
-        dr_fw_plasma_gap_outboard=FromExactly(lambda s: s.build.dr_fw_plasma_gap_outboard),
-        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
-        gapomin=FromExactly(lambda s: s.build.gapomin),
-        dr_vv_outboard=FromExactly(lambda s: s.build.dr_vv_outboard),
-        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
+        dr_blkt_inboard=From(build),
+        dr_blkt_outboard=From(build),
+        radius_fw_channel=From(fwbs),
+        dr_fw_wall=From(fwbs),
+        rmajor=From(physics),
+        rminor=From(physics),
+        dr_cs=From(build),
+        dr_cs_tf_gap=From(build),
+        dr_tf_inboard=From(build),
+        dr_shld_vv_gap_inboard=From(build),
+        dr_vv_inboard=From(build),
+        dr_shld_inboard=From(build),
+        dr_fw_plasma_gap_inboard=From(build),
+        r_coil_minor=From(stellarator),
+        f_coil_shape=From(stellarator),
+        stella_config_derivative_min_lcfs_coils_dist=From(stellarator_config),
+        f_st_rmajor=From(stellarator),
+        stella_config_rminor_ref=From(stellarator_config),
+        dr_fw_plasma_gap_outboard=From(build),
+        dr_shld_outboard=From(build),
+        gapomin=From(build),
+        dr_vv_outboard=From(build),
+        a_plasma_surface=From(physics),
     ):
         return calculate_build(
             dr_blkt_inboard,
@@ -448,12 +450,12 @@ class Build(ExplicitFunction):
 class AFwTotalNoPowerflow(ExplicitFunction):
     """cottax node: `calculate_a_fw_total_no_powerflow`. Instantiate iff `ipowerflow == 0`."""
 
-    a_fw_total = Output(lambda s: s.first_wall.a_fw_total)
+    a_fw_total = OutputInto(first_wall)
 
     def __call__(
         self,
-        a_fw_total_unadjusted=FromExactly(lambda s: s.first_wall.a_fw_total_unadjusted),
-        fhole=FromExactly(lambda s: s.fwbs.fhole),
+        a_fw_total_unadjusted=From(first_wall),
+        fhole=From(fwbs),
     ):
         return calculate_a_fw_total_no_powerflow(a_fw_total_unadjusted, fhole)
 
@@ -461,14 +463,14 @@ class AFwTotalNoPowerflow(ExplicitFunction):
 class AFwTotalWithPowerflow(ExplicitFunction):
     """cottax node: `calculate_a_fw_total_with_powerflow`. Instantiate iff `ipowerflow != 0`."""
 
-    a_fw_total = Output(lambda s: s.first_wall.a_fw_total)    
+    a_fw_total = OutputInto(first_wall)
 
     def __call__(
         self,
-        a_fw_total_unadjusted=FromExactly(lambda s: s.first_wall.a_fw_total_unadjusted),
-        fhole=FromExactly(lambda s: s.fwbs.fhole),
-        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
-        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
+        a_fw_total_unadjusted=From(first_wall),
+        fhole=From(fwbs),
+        f_ster_div_single=From(fwbs),
+        f_a_fw_outboard_hcd=From(fwbs),
     ):
         return calculate_a_fw_total_with_powerflow(
             a_fw_total_unadjusted, fhole, f_ster_div_single, f_a_fw_outboard_hcd

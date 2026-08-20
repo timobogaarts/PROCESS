@@ -21,13 +21,17 @@ section for why the pytree-namespace surface
 `VarPath` built from a string one node at a time.
 """
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_pow
+from functional_process.paths import (
+    fwbs,
+    physics,
+    stellarator,
+    stellarator_config,
+    structure,
+    tfcoil,
+)
 
 _INTERCOIL_THICKNESS_COEFFICIENT = 0.18
 """Effective thickness (m) scaled by the empirical 1.5-power law below."""
@@ -129,9 +133,8 @@ def calculate_intercoil_mass_scaling_reference(e_tf_magnetic_stored_total_gj):
     :
         `msupstr`, the scaling-law comparison mass (kg).
     """
-    m_struc = (
-        _SCALING_LAW_COEFFICIENT
-        * safe_pow(1000.0 * e_tf_magnetic_stored_total_gj, _SCALING_LAW_EXPONENT)
+    m_struc = _SCALING_LAW_COEFFICIENT * safe_pow(
+        1000.0 * e_tf_magnetic_stored_total_gj, _SCALING_LAW_EXPONENT
     )
     return 1000.0 * m_struc
 
@@ -144,29 +147,23 @@ class StructureMasses(ExplicitFunction):
     sit as a node with no reader.
     """
 
-    aintmass = Output(lambda s: s.structure.aintmass)
-    clgsmass = Output(lambda s: s.structure.clgsmass)
-    coldmass = Output(lambda s: s.structure.coldmass)
+    aintmass = OutputInto(structure)
+    clgsmass = OutputInto(structure)
+    coldmass = OutputInto(structure)
 
     def __call__(
         self,
-        stella_config_coilsurface=FromExactly(
-            lambda s: s.stellarator_config.stella_config_coilsurface
-        ),
-        f_st_rmajor=FromExactly(lambda s: s.stellarator.f_st_rmajor),
-        r_coil_minor=FromExactly(lambda s: s.stellarator.r_coil_minor),
-        stella_config_coil_rminor=FromExactly(
-            lambda s: s.stellarator_config.stella_config_coil_rminor
-        ),
-        dx_tf_inboard_out_toroidal=FromExactly(
-            lambda s: s.tfcoil.dx_tf_inboard_out_toroidal
-        ),
-        len_tf_coil=FromExactly(lambda s: s.tfcoil.len_tf_coil),
-        n_tf_coils=FromExactly(lambda s: s.tfcoil.n_tf_coils),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
-        m_tf_coils_total=FromExactly(lambda s: s.tfcoil.m_tf_coils_total),
-        dewmkg=FromExactly(lambda s: s.fwbs.dewmkg),
+        stella_config_coilsurface=From(stellarator_config),
+        f_st_rmajor=From(stellarator),
+        r_coil_minor=From(stellarator),
+        stella_config_coil_rminor=From(stellarator_config),
+        dx_tf_inboard_out_toroidal=From(tfcoil),
+        len_tf_coil=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        b_plasma_toroidal_on_axis=From(physics),
+        den_steel=From(fwbs),
+        m_tf_coils_total=From(tfcoil),
+        dewmkg=From(fwbs),
     ):
         return calculate_structure_masses(
             stella_config_coilsurface,

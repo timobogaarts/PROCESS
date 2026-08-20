@@ -61,14 +61,18 @@ calc_neoclassics' incomplete orchestrator -- all audit-only, see the record).
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.models.switch_enums import NeutronWallLoadModel, PowerFlowModel
+from functional_process.paths import (
+    constraints,
+    current_drive,
+    first_wall,
+    fwbs,
+    physics,
+    stellarator,
+)
 from process.core import constants
 from process.data_structure.physics_variables import PlasmaIgnitionModel
 
@@ -81,9 +85,7 @@ def calculate_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_a
     is a separate node from `calculate_poloidal_field_from_rotational_transform`, which
     produces the *next* value of the same `VarPath`.
     """
-    return safe_sqrt(
-        b_plasma_toroidal_on_axis**2 + b_plasma_surface_poloidal_average**2
-    )
+    return safe_sqrt(b_plasma_toroidal_on_axis**2 + b_plasma_surface_poloidal_average**2)
 
 
 def calculate_poloidal_field_from_rotational_transform(
@@ -183,11 +185,13 @@ def calculate_stellarator_beta_and_rho_star(
         / (2.0e0 * constants.RMU0)
         * vol_plasma
     )
-    rho_star = safe_sqrt(2.0e0
+    rho_star = safe_sqrt(
+        2.0e0
         * constants.PROTON_MASS
         * m_ions_total_amu
         * e_plasma_beta
-        / (3.0e0 * vol_plasma * nd_plasma_electron_line)) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
+        / (3.0e0 * vol_plasma * nd_plasma_electron_line)
+    ) / (constants.ELECTRON_CHARGE * b_plasma_toroidal_on_axis * eps * rmajor)
 
     return beta_total_vol_avg, e_plasma_beta, rho_star
 
@@ -206,9 +210,7 @@ def calculate_fusion_power_totals_mw(
     return p_plasma_dt_mw, p_dhe3_total_mw, p_dd_total_mw
 
 
-def calculate_fusion_totals_no_beam(
-    fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
-):
+def calculate_fusion_totals_no_beam(fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw):
     """Total fusion rates and D-T power with **no neutral beam** -- three identities.
 
     Ports the `else` arm of `stellarator.py:2002-2054`. PROCESS adds a beam-driven
@@ -471,14 +473,12 @@ def calculate_thermal_energy_totals(
 class TotalField(ExplicitFunction):
     """cottax node: `calculate_total_field`, ports declared."""
 
-    b_plasma_total = Output(lambda s: s.physics.b_plasma_total)
+    b_plasma_total = OutputInto(physics)
 
     def __call__(
         self,
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        b_plasma_surface_poloidal_average=FromExactly(
-            lambda s: s.physics.b_plasma_surface_poloidal_average
-        ),
+        b_plasma_toroidal_on_axis=From(physics),
+        b_plasma_surface_poloidal_average=From(physics),
     ):
         return calculate_total_field(
             b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_average
@@ -490,16 +490,14 @@ class PoloidalFieldFromRotationalTransform(ExplicitFunction):
     declared.
     """
 
-    b_plasma_surface_poloidal_average = Output(
-        lambda s: s.physics.b_plasma_surface_poloidal_average
-    )
+    b_plasma_surface_poloidal_average = OutputInto(physics)
 
     def __call__(
         self,
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        iotabar=FromExactly(lambda s: s.stellarator.iotabar),
+        rminor=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        rmajor=From(physics),
+        iotabar=From(stellarator),
     ):
         return calculate_poloidal_field_from_rotational_transform(
             rminor, b_plasma_toroidal_on_axis, rmajor, iotabar
@@ -509,33 +507,25 @@ class PoloidalFieldFromRotationalTransform(ExplicitFunction):
 class StellaratorBetaAndRhoStar(ExplicitFunction):
     """cottax node: `calculate_stellarator_beta_and_rho_star`, ports declared."""
 
-    beta_total_vol_avg = Output(lambda s: s.physics.beta_total_vol_avg)
-    e_plasma_beta = Output(lambda s: s.physics.e_plasma_beta)
-    rho_star = Output(lambda s: s.physics.rho_star)
+    beta_total_vol_avg = OutputInto(physics)
+    e_plasma_beta = OutputInto(physics)
+    rho_star = OutputInto(physics)
 
     def __call__(
         self,
-        beta_fast_alpha=FromExactly(lambda s: s.physics.beta_fast_alpha),
-        beta_beam=FromExactly(lambda s: s.physics.beta_beam),
-        nd_plasma_electrons_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_electrons_vol_avg
-        ),
-        temp_plasma_electron_density_weighted_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_density_weighted_kev
-        ),
-        nd_plasma_ions_total_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_ions_total_vol_avg
-        ),
-        temp_plasma_ion_density_weighted_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_ion_density_weighted_kev
-        ),
-        b_plasma_total=FromExactly(lambda s: s.physics.b_plasma_total),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
-        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        eps=FromExactly(lambda s: s.physics.eps),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        beta_fast_alpha=From(physics),
+        beta_beam=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
+        temp_plasma_electron_density_weighted_kev=From(physics),
+        nd_plasma_ions_total_vol_avg=From(physics),
+        temp_plasma_ion_density_weighted_kev=From(physics),
+        b_plasma_total=From(physics),
+        vol_plasma=From(physics),
+        m_ions_total_amu=From(physics),
+        nd_plasma_electron_line=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        eps=From(physics),
+        rmajor=From(physics),
     ):
         return calculate_stellarator_beta_and_rho_star(
             beta_fast_alpha,
@@ -557,16 +547,16 @@ class StellaratorBetaAndRhoStar(ExplicitFunction):
 class FusionPowerTotalsMw(ExplicitFunction):
     """cottax node: `calculate_fusion_power_totals_mw`, ports declared."""
 
-    p_plasma_dt_mw = Output(lambda s: s.physics.p_plasma_dt_mw)
-    p_dhe3_total_mw = Output(lambda s: s.physics.p_dhe3_total_mw)
-    p_dd_total_mw = Output(lambda s: s.physics.p_dd_total_mw)
+    p_plasma_dt_mw = OutputInto(physics)
+    p_dhe3_total_mw = OutputInto(physics)
+    p_dd_total_mw = OutputInto(physics)
 
     def __call__(
         self,
-        dt_power_density_plasma=FromExactly(lambda s: s.physics.dt_power_density_plasma),
-        dhe3_power_density=FromExactly(lambda s: s.physics.dhe3_power_density),
-        dd_power_density=FromExactly(lambda s: s.physics.dd_power_density),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        dt_power_density_plasma=From(physics),
+        dhe3_power_density=From(physics),
+        dd_power_density=From(physics),
+        vol_plasma=From(physics),
     ):
         return calculate_fusion_power_totals_mw(
             dt_power_density_plasma, dhe3_power_density, dd_power_density, vol_plasma
@@ -586,15 +576,15 @@ class FusionTotalsNoBeam(ExplicitFunction):
     is not available even in principle here.
     """
 
-    fusden_total = Output(lambda s: s.physics.fusden_total)
-    fusden_alpha_total = Output(lambda s: s.physics.fusden_alpha_total)
-    p_dt_total_mw = Output(lambda s: s.physics.p_dt_total_mw)
+    fusden_total = OutputInto(physics)
+    fusden_alpha_total = OutputInto(physics)
+    p_dt_total_mw = OutputInto(physics)
 
     def __call__(
         self,
-        fusden_plasma=FromExactly(lambda s: s.physics.fusden_plasma),
-        fusden_plasma_alpha=FromExactly(lambda s: s.physics.fusden_plasma_alpha),
-        p_plasma_dt_mw=FromExactly(lambda s: s.physics.p_plasma_dt_mw),
+        fusden_plasma=From(physics),
+        fusden_plasma_alpha=From(physics),
+        p_plasma_dt_mw=From(physics),
     ):
         return calculate_fusion_totals_no_beam(
             fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
@@ -609,20 +599,16 @@ class ClippedRadiationPowers(ExplicitFunction):
     `.physics.p_plasma_inner_rad_mw` its first producer. See the function's docstring.
     """
 
-    pden_plasma_core_rad_mw = Output(lambda s: s.physics.pden_plasma_core_rad_mw)
-    pden_plasma_outer_rad_mw = Output(lambda s: s.physics.pden_plasma_outer_rad_mw)
-    p_plasma_inner_rad_mw = Output(lambda s: s.physics.p_plasma_inner_rad_mw)
-    p_plasma_outer_rad_mw = Output(lambda s: s.physics.p_plasma_outer_rad_mw)
+    pden_plasma_core_rad_mw = OutputInto(physics)
+    pden_plasma_outer_rad_mw = OutputInto(physics)
+    p_plasma_inner_rad_mw = OutputInto(physics)
+    p_plasma_outer_rad_mw = OutputInto(physics)
 
     def __call__(
         self,
-        pden_plasma_core_rad_mw_unclipped=FromExactly(
-            lambda s: s.physics.pden_plasma_core_rad_mw_unclipped
-        ),
-        pden_plasma_outer_rad_mw_unclipped=FromExactly(
-            lambda s: s.physics.pden_plasma_outer_rad_mw_unclipped
-        ),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
+        pden_plasma_core_rad_mw_unclipped=From(physics),
+        pden_plasma_outer_rad_mw_unclipped=From(physics),
+        vol_plasma=From(physics),
     ):
         return calculate_clipped_radiation_powers(
             pden_plasma_core_rad_mw_unclipped,
@@ -640,17 +626,17 @@ class NeutronWallLoad(ExplicitFunction):
     i_pflux_fw_neutron: NeutronWallLoadModel = eqx.field(static=True)
     ipowerflow: PowerFlowModel = eqx.field(static=True)
 
-    pflux_fw_neutron_mw = Output(lambda s: s.physics.pflux_fw_neutron_mw)
+    pflux_fw_neutron_mw = OutputInto(physics)
 
     def __call__(
         self,
-        ffwal=FromExactly(lambda s: s.physics.ffwal),
-        p_neutron_total_mw=FromExactly(lambda s: s.physics.p_neutron_total_mw),
-        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
-        fhole=FromExactly(lambda s: s.fwbs.fhole),
-        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
-        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
-        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
+        ffwal=From(physics),
+        p_neutron_total_mw=From(physics),
+        a_plasma_surface=From(physics),
+        fhole=From(fwbs),
+        a_fw_total=From(first_wall),
+        f_a_fw_outboard_hcd=From(fwbs),
+        f_ster_div_single=From(fwbs),
     ):
         return calculate_neutron_wall_load(
             self.i_pflux_fw_neutron,
@@ -673,21 +659,21 @@ class HeatingAndRadiationPower(ExplicitFunction):
 
     i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
 
-    p_plasma_rad_mw = Output(lambda s: s.physics.p_plasma_rad_mw)
-    psolradmw = Output(lambda s: s.physics.psolradmw)
-    p_plasma_separatrix_mw = Output(lambda s: s.physics.p_plasma_separatrix_mw)
-    p_fw_alpha_mw = Output(lambda s: s.physics.p_fw_alpha_mw)
+    p_plasma_rad_mw = OutputInto(physics)
+    psolradmw = OutputInto(physics)
+    p_plasma_separatrix_mw = OutputInto(physics)
+    p_fw_alpha_mw = OutputInto(physics)
 
     def __call__(
         self,
-        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        p_alpha_total_mw=FromExactly(lambda s: s.physics.p_alpha_total_mw),
-        p_non_alpha_charged_mw=FromExactly(lambda s: s.physics.p_non_alpha_charged_mw),
-        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
-        pden_plasma_rad_mw=FromExactly(lambda s: s.physics.pden_plasma_rad_mw),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        p_hcd_injected_total_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_total_mw),
-        f_rad=FromExactly(lambda s: s.stellarator.f_rad),
+        f_p_alpha_plasma_deposited=From(physics),
+        p_alpha_total_mw=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        pden_plasma_rad_mw=From(physics),
+        vol_plasma=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
+        f_rad=From(stellarator),
     ):
         return calculate_heating_and_radiation_power(
             f_p_alpha_plasma_deposited,
@@ -711,25 +697,25 @@ class RadiatedWallLoadAndFraction(ExplicitFunction):
     i_pflux_fw_neutron: NeutronWallLoadModel = eqx.field(static=True)
     ipowerflow: PowerFlowModel = eqx.field(static=True)
 
-    pflux_fw_rad_mw = Output(lambda s: s.physics.pflux_fw_rad_mw)
-    pflux_fw_rad_max_mw = Output(lambda s: s.constraints.pflux_fw_rad_max_mw)
-    rad_fraction_total = Output(lambda s: s.physics.rad_fraction_total)
+    pflux_fw_rad_mw = OutputInto(physics)
+    pflux_fw_rad_max_mw = OutputInto(constraints)
+    rad_fraction_total = OutputInto(physics)
 
     def __call__(
         self,
-        ffwal=FromExactly(lambda s: s.physics.ffwal),
-        p_plasma_rad_mw=FromExactly(lambda s: s.physics.p_plasma_rad_mw),
-        a_plasma_surface=FromExactly(lambda s: s.physics.a_plasma_surface),
-        fhole=FromExactly(lambda s: s.fwbs.fhole),
-        a_fw_total=FromExactly(lambda s: s.first_wall.a_fw_total),
-        f_a_fw_outboard_hcd=FromExactly(lambda s: s.fwbs.f_a_fw_outboard_hcd),
-        f_ster_div_single=FromExactly(lambda s: s.fwbs.f_ster_div_single),
-        f_fw_rad_max=FromExactly(lambda s: s.constraints.f_fw_rad_max),
-        f_p_alpha_plasma_deposited=FromExactly(lambda s: s.physics.f_p_alpha_plasma_deposited),
-        p_alpha_total_mw=FromExactly(lambda s: s.physics.p_alpha_total_mw),
-        p_non_alpha_charged_mw=FromExactly(lambda s: s.physics.p_non_alpha_charged_mw),
-        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
-        p_hcd_injected_total_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_total_mw),
+        ffwal=From(physics),
+        p_plasma_rad_mw=From(physics),
+        a_plasma_surface=From(physics),
+        fhole=From(fwbs),
+        a_fw_total=From(first_wall),
+        f_a_fw_outboard_hcd=From(fwbs),
+        f_ster_div_single=From(fwbs),
+        f_fw_rad_max=From(constraints),
+        f_p_alpha_plasma_deposited=From(physics),
+        p_alpha_total_mw=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
     ):
         return calculate_radiated_wall_load_and_fraction(
             self.i_pflux_fw_neutron,
@@ -753,19 +739,15 @@ class RadiatedWallLoadAndFraction(ExplicitFunction):
 class ThermalEnergyTotals(ExplicitFunction):
     """cottax node: `calculate_thermal_energy_totals`, ports declared."""
 
-    eden_plasma_thermal_vol_avg = Output(lambda s: s.physics.eden_plasma_thermal_vol_avg)
-    e_plasma_thermal_total = Output(lambda s: s.physics.e_plasma_thermal_total)
+    eden_plasma_thermal_vol_avg = OutputInto(physics)
+    e_plasma_thermal_total = OutputInto(physics)
 
     def __call__(
         self,
-        eden_plasma_electrons_thermal_vol_avg=FromExactly(
-            lambda s: s.physics.eden_plasma_electrons_thermal_vol_avg
-        ),
-        eden_plasma_ions_thermal_vol_avg=FromExactly(
-            lambda s: s.physics.eden_plasma_ions_thermal_vol_avg
-        ),
-        e_plasma_electrons_thermal=FromExactly(lambda s: s.physics.e_plasma_electrons_thermal),
-        e_plasma_ions_thermal=FromExactly(lambda s: s.physics.e_plasma_ions_thermal),
+        eden_plasma_electrons_thermal_vol_avg=From(physics),
+        eden_plasma_ions_thermal_vol_avg=From(physics),
+        e_plasma_electrons_thermal=From(physics),
+        e_plasma_ions_thermal=From(physics),
     ):
         return calculate_thermal_energy_totals(
             eden_plasma_electrons_thermal_vol_avg,
@@ -802,32 +784,24 @@ class StellaratorBetaAndStoredEnergy(ExplicitFunction):
     no live argument and could not be assembled into an `Optimise` at all.
     """
 
-    beta_total_vol_avg = Output(lambda s: s.physics.beta_total_vol_avg)
-    e_plasma_beta = Output(lambda s: s.physics.e_plasma_beta)
+    beta_total_vol_avg = OutputInto(physics)
+    e_plasma_beta = OutputInto(physics)
 
     def __call__(
         self,
-        beta_fast_alpha=FromExactly(lambda s: s.physics.beta_fast_alpha),
-        beta_beam=FromExactly(lambda s: s.physics.beta_beam),
-        nd_plasma_electrons_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_electrons_vol_avg
-        ),
-        temp_plasma_electron_density_weighted_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_electron_density_weighted_kev
-        ),
-        nd_plasma_ions_total_vol_avg=FromExactly(
-            lambda s: s.physics.nd_plasma_ions_total_vol_avg
-        ),
-        temp_plasma_ion_density_weighted_kev=FromExactly(
-            lambda s: s.physics.temp_plasma_ion_density_weighted_kev
-        ),
-        b_plasma_total=FromExactly(lambda s: s.physics.b_plasma_total),
-        vol_plasma=FromExactly(lambda s: s.physics.vol_plasma),
-        m_ions_total_amu=FromExactly(lambda s: s.physics.m_ions_total_amu),
-        nd_plasma_electron_line=FromExactly(lambda s: s.physics.nd_plasma_electron_line),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        eps=FromExactly(lambda s: s.physics.eps),
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
+        beta_fast_alpha=From(physics),
+        beta_beam=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
+        temp_plasma_electron_density_weighted_kev=From(physics),
+        nd_plasma_ions_total_vol_avg=From(physics),
+        temp_plasma_ion_density_weighted_kev=From(physics),
+        b_plasma_total=From(physics),
+        vol_plasma=From(physics),
+        m_ions_total_amu=From(physics),
+        nd_plasma_electron_line=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        eps=From(physics),
+        rmajor=From(physics),
     ):
         beta_total_vol_avg, e_plasma_beta, _rho_star = (
             calculate_stellarator_beta_and_rho_star(

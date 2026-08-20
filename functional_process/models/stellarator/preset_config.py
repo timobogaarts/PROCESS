@@ -47,7 +47,9 @@ import json
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, Output
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, OutputInto
+
+from functional_process.paths import stellarator_config
 
 STELLA_CONFIG_SCALAR_FIELDS = (
     "stella_config_symmetry",
@@ -229,92 +231,40 @@ class StellaratorMachineConfig(ExplicitFunction):
 
     machine_config: tuple = eqx.field(static=True)
 
-    stella_config_symmetry = Output(
-        lambda s: s.stellarator_config.stella_config_symmetry
-    )
-    stella_config_coilspermodule = Output(
-        lambda s: s.stellarator_config.stella_config_coilspermodule
-    )
-    stella_config_rmajor_ref = Output(
-        lambda s: s.stellarator_config.stella_config_rmajor_ref
-    )
-    stella_config_rminor_ref = Output(
-        lambda s: s.stellarator_config.stella_config_rminor_ref
-    )
-    stella_config_coil_rmajor = Output(
-        lambda s: s.stellarator_config.stella_config_coil_rmajor
-    )
-    stella_config_coil_rminor = Output(
-        lambda s: s.stellarator_config.stella_config_coil_rminor
-    )
-    stella_config_aspect_ref = Output(
-        lambda s: s.stellarator_config.stella_config_aspect_ref
-    )
-    stella_config_bt_ref = Output(lambda s: s.stellarator_config.stella_config_bt_ref)
-    stella_config_wp_area = Output(lambda s: s.stellarator_config.stella_config_wp_area)
-    stella_config_wp_bmax = Output(lambda s: s.stellarator_config.stella_config_wp_bmax)
-    stella_config_i0 = Output(lambda s: s.stellarator_config.stella_config_i0)
-    stella_config_a1 = Output(lambda s: s.stellarator_config.stella_config_a1)
-    stella_config_a2 = Output(lambda s: s.stellarator_config.stella_config_a2)
-    stella_config_dmin = Output(lambda s: s.stellarator_config.stella_config_dmin)
-    stella_config_inductance = Output(
-        lambda s: s.stellarator_config.stella_config_inductance
-    )
-    stella_config_coilsurface = Output(
-        lambda s: s.stellarator_config.stella_config_coilsurface
-    )
-    stella_config_coillength = Output(
-        lambda s: s.stellarator_config.stella_config_coillength
-    )
-    stella_config_max_portsize_width = Output(
-        lambda s: s.stellarator_config.stella_config_max_portsize_width
-    )
-    stella_config_maximal_coil_height = Output(
-        lambda s: s.stellarator_config.stella_config_maximal_coil_height
-    )
-    stella_config_min_plasma_coil_distance = Output(
-        lambda s: s.stellarator_config.stella_config_min_plasma_coil_distance
-    )
-    stella_config_derivative_min_lcfs_coils_dist = Output(
-        lambda s: s.stellarator_config.stella_config_derivative_min_lcfs_coils_dist
-    )
-    stella_config_vol_plasma = Output(
-        lambda s: s.stellarator_config.stella_config_vol_plasma
-    )
-    stella_config_plasma_surface = Output(
-        lambda s: s.stellarator_config.stella_config_plasma_surface
-    )
-    stella_config_wp_ratio = Output(
-        lambda s: s.stellarator_config.stella_config_wp_ratio
-    )
-    stella_config_max_force_density = Output(
-        lambda s: s.stellarator_config.stella_config_max_force_density
-    )
-    stella_config_max_force_density_mnm = Output(
-        lambda s: s.stellarator_config.stella_config_max_force_density_mnm
-    )
-    stella_config_min_bend_radius = Output(
-        lambda s: s.stellarator_config.stella_config_min_bend_radius
-    )
-    stella_config_epseff = Output(lambda s: s.stellarator_config.stella_config_epseff)
-    stella_config_max_lateral_force_density = Output(
-        lambda s: s.stellarator_config.stella_config_max_lateral_force_density
-    )
-    stella_config_max_radial_force_density = Output(
-        lambda s: s.stellarator_config.stella_config_max_radial_force_density
-    )
-    stella_config_centering_force_max_mn = Output(
-        lambda s: s.stellarator_config.stella_config_centering_force_max_mn
-    )
-    stella_config_centering_force_min_mn = Output(
-        lambda s: s.stellarator_config.stella_config_centering_force_min_mn
-    )
-    stella_config_centering_force_avg_mn = Output(
-        lambda s: s.stellarator_config.stella_config_centering_force_avg_mn
-    )
-    stella_config_neutron_peakfactor = Output(
-        lambda s: s.stellarator_config.stella_config_neutron_peakfactor
-    )
+    stella_config_symmetry = OutputInto(stellarator_config)
+    stella_config_coilspermodule = OutputInto(stellarator_config)
+    stella_config_rmajor_ref = OutputInto(stellarator_config)
+    stella_config_rminor_ref = OutputInto(stellarator_config)
+    stella_config_coil_rmajor = OutputInto(stellarator_config)
+    stella_config_coil_rminor = OutputInto(stellarator_config)
+    stella_config_aspect_ref = OutputInto(stellarator_config)
+    stella_config_bt_ref = OutputInto(stellarator_config)
+    stella_config_wp_area = OutputInto(stellarator_config)
+    stella_config_wp_bmax = OutputInto(stellarator_config)
+    stella_config_i0 = OutputInto(stellarator_config)
+    stella_config_a1 = OutputInto(stellarator_config)
+    stella_config_a2 = OutputInto(stellarator_config)
+    stella_config_dmin = OutputInto(stellarator_config)
+    stella_config_inductance = OutputInto(stellarator_config)
+    stella_config_coilsurface = OutputInto(stellarator_config)
+    stella_config_coillength = OutputInto(stellarator_config)
+    stella_config_max_portsize_width = OutputInto(stellarator_config)
+    stella_config_maximal_coil_height = OutputInto(stellarator_config)
+    stella_config_min_plasma_coil_distance = OutputInto(stellarator_config)
+    stella_config_derivative_min_lcfs_coils_dist = OutputInto(stellarator_config)
+    stella_config_vol_plasma = OutputInto(stellarator_config)
+    stella_config_plasma_surface = OutputInto(stellarator_config)
+    stella_config_wp_ratio = OutputInto(stellarator_config)
+    stella_config_max_force_density = OutputInto(stellarator_config)
+    stella_config_max_force_density_mnm = OutputInto(stellarator_config)
+    stella_config_min_bend_radius = OutputInto(stellarator_config)
+    stella_config_epseff = OutputInto(stellarator_config)
+    stella_config_max_lateral_force_density = OutputInto(stellarator_config)
+    stella_config_max_radial_force_density = OutputInto(stellarator_config)
+    stella_config_centering_force_max_mn = OutputInto(stellarator_config)
+    stella_config_centering_force_min_mn = OutputInto(stellarator_config)
+    stella_config_centering_force_avg_mn = OutputInto(stellarator_config)
+    stella_config_neutron_peakfactor = OutputInto(stellarator_config)
 
     def __call__(self):
         return select_stellarator_config_scalars(dict(self.machine_config))

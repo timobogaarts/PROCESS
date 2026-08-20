@@ -135,23 +135,23 @@ not independently value-checked against PROCESS, since the harness cannot yet do
 
 ```python
 class ProfileValues(ExplicitFunction):
-    densities = Output(lambda s: s.neoclassics.densities)
-    temperatures = Output(lambda s: s.neoclassics.temperatures)
-    dr_densities = Output(lambda s: s.neoclassics.dr_densities)
-    dr_temperatures = Output(lambda s: s.neoclassics.dr_temperatures)
+    densities = OutputInto(neoclassics)
+    temperatures = OutputInto(neoclassics)
+    dr_densities = OutputInto(neoclassics)
+    dr_temperatures = OutputInto(neoclassics)
 
-    def __call__(self, rho=Input(lambda s: s.neoclassics.r_eff), ..., rminor=Input(...)):
+    def __call__(self, rho=FromExactly(neoclassics.r_eff), ..., rminor=From(physics)):
         return calculate_profile_values(rho, ..., rminor)
 
 
 class EffectiveThermalDiffusivity(ExplicitFunction):
-    chi_process_e = Output(lambda s: s.neoclassics.chi_process_e)  # invented VarPath, see data footprint
+    chi_process_e = OutputInto(neoclassics)  # invented VarPath, see data footprint
 
-    def __call__(self, vol_plasma=Input(...), ..., alphan=Input(...)):
+    def __call__(self, vol_plasma=From(physics), ..., alphan=From(physics)):
         return calculate_effective_thermal_diffusivity(vol_plasma, ..., alphan)
 ```
 
-`ProfileValues.rho`'s `Input` maps it to `.neoclassics.r_eff` — a guess, not confirmed:
+`ProfileValues.rho`'s read maps it to `.neoclassics.r_eff` — a guess, not confirmed:
 the only call site (`calc_neoclassics`) passes the literal `0.6`, not a `data` read, so
 there is no existing PROCESS storage location for "the rho this call uses" to port. If
 `preset_config.py`'s audit (unit #8) turns up a real `.neoclassics.r_eff`/similar field

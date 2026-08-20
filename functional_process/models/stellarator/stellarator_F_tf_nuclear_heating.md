@@ -104,11 +104,11 @@ switch, not a bug, just note: the ported function can drop the unused second col
 
 ```python
 class ScTfCoilNuclearHeating(ExplicitFunction):
-    coilhtmx = Output(lambda s: s.fwbs.coilhtmx)
+    coilhtmx = OutputInto(fwbs)
     ...
-    p_tf_nuclear_heat_mw = Output(lambda s: s.fwbs.p_tf_nuclear_heat_mw)
+    p_tf_nuclear_heat_mw = OutputInto(fwbs)
 
-    def __call__(self, dr_shld_inboard=Input(...), ..., life_plant=Input(...)):
+    def __call__(self, dr_shld_inboard=From(build), ..., life_plant=From(costs)):
         return calculate_sc_tf_coil_nuclear_heating(dr_shld_inboard, ..., life_plant)
 ```
 Output `VarPath` areas are best-effort (`coilhtmx`/`dpacop`/`htheci`/`pheci`/`pheco`/

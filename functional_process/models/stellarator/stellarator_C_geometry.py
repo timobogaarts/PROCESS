@@ -43,11 +43,9 @@ conditional-ownership, if any, is untangled elsewhere).
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import physics, stellarator, stellarator_config, tfcoil
 
 
 def calculate_default_aspect_ratio(stella_config_aspect_ref):
@@ -137,9 +135,7 @@ def calculate_stellarator_scaling_factors(
     f_st_aspect = aspect / stella_config_aspect_ref
     # Algebraically forced to 1.0 given the `n_tf_coils` assignment above -- see module
     # docstring's "real finding".
-    f_st_n_coils = n_tf_coils / (
-        stella_config_coilspermodule * stella_config_symmetry
-    )
+    f_st_n_coils = n_tf_coils / (stella_config_coilspermodule * stella_config_symmetry)
     f_st_b = b_plasma_toroidal_on_axis / stella_config_bt_ref
 
     f_coil_aspect = f_st_coil_aspect
@@ -216,13 +212,11 @@ class DefaultAspectRatio(ExplicitFunction):
     owns `.physics.aspect` at all.
     """
 
-    aspect = Output(lambda s: s.physics.aspect)
+    aspect = OutputInto(physics)
 
     def __call__(
         self,
-        stella_config_aspect_ref=FromExactly(
-            lambda s: s.stellarator_config.stella_config_aspect_ref
-        ),
+        stella_config_aspect_ref=From(stellarator_config),
     ):
         return calculate_default_aspect_ratio(stella_config_aspect_ref)
 
@@ -235,49 +229,33 @@ class StellaratorScalingFactors(ExplicitFunction):
     docstring.
     """
 
-    rminor = Output(lambda s: s.physics.rminor)
-    eps = Output(lambda s: s.physics.eps)
-    n_tf_coils = Output(lambda s: s.tfcoil.n_tf_coils)
-    f_st_rmajor = Output(lambda s: s.stellarator.f_st_rmajor)
-    f_st_rminor = Output(lambda s: s.stellarator.f_st_rminor)
-    f_st_aspect = Output(lambda s: s.stellarator.f_st_aspect)
-    f_st_n_coils = Output(lambda s: s.stellarator.f_st_n_coils)
-    f_st_b = Output(lambda s: s.stellarator.f_st_b)
-    r_coil_major = Output(lambda s: s.stellarator.r_coil_major)
-    r_coil_minor = Output(lambda s: s.stellarator.r_coil_minor)
-    f_coil_shape = Output(lambda s: s.stellarator.f_coil_shape)
+    rminor = OutputInto(physics)
+    eps = OutputInto(physics)
+    n_tf_coils = OutputInto(tfcoil)
+    f_st_rmajor = OutputInto(stellarator)
+    f_st_rminor = OutputInto(stellarator)
+    f_st_aspect = OutputInto(stellarator)
+    f_st_n_coils = OutputInto(stellarator)
+    f_st_b = OutputInto(stellarator)
+    r_coil_major = OutputInto(stellarator)
+    r_coil_minor = OutputInto(stellarator)
+    f_coil_shape = OutputInto(stellarator)
 
     def __call__(
         self,
-        rmajor=FromExactly(lambda s: s.physics.rmajor),
-        aspect=FromExactly(lambda s: s.physics.aspect),
-        b_plasma_toroidal_on_axis=FromExactly(lambda s: s.physics.b_plasma_toroidal_on_axis),
-        f_st_coil_aspect=FromExactly(lambda s: s.stellarator.f_st_coil_aspect),
-        stella_config_coilspermodule=FromExactly(
-            lambda s: s.stellarator_config.stella_config_coilspermodule
-        ),
-        stella_config_symmetry=FromExactly(
-            lambda s: s.stellarator_config.stella_config_symmetry
-        ),
-        stella_config_rmajor_ref=FromExactly(
-            lambda s: s.stellarator_config.stella_config_rmajor_ref
-        ),
-        stella_config_rminor_ref=FromExactly(
-            lambda s: s.stellarator_config.stella_config_rminor_ref
-        ),
-        stella_config_aspect_ref=FromExactly(
-            lambda s: s.stellarator_config.stella_config_aspect_ref
-        ),
-        stella_config_bt_ref=FromExactly(lambda s: s.stellarator_config.stella_config_bt_ref),
-        stella_config_coil_rmajor=FromExactly(
-            lambda s: s.stellarator_config.stella_config_coil_rmajor
-        ),
-        stella_config_coil_rminor=FromExactly(
-            lambda s: s.stellarator_config.stella_config_coil_rminor
-        ),
-        stella_config_min_plasma_coil_distance=FromExactly(
-            lambda s: s.stellarator_config.stella_config_min_plasma_coil_distance
-        ),
+        rmajor=From(physics),
+        aspect=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        f_st_coil_aspect=From(stellarator),
+        stella_config_coilspermodule=From(stellarator_config),
+        stella_config_symmetry=From(stellarator_config),
+        stella_config_rmajor_ref=From(stellarator_config),
+        stella_config_rminor_ref=From(stellarator_config),
+        stella_config_aspect_ref=From(stellarator_config),
+        stella_config_bt_ref=From(stellarator_config),
+        stella_config_coil_rmajor=From(stellarator_config),
+        stella_config_coil_rminor=From(stellarator_config),
+        stella_config_min_plasma_coil_distance=From(stellarator_config),
     ):
         return calculate_stellarator_scaling_factors(
             rmajor,
@@ -299,22 +277,18 @@ class StellaratorScalingFactors(ExplicitFunction):
 class StellaratorPlasmaGeometry(ExplicitFunction):
     """cottax node: `calculate_stellarator_plasma_geometry`, ports declared."""
 
-    vol_plasma = Output(lambda s: s.physics.vol_plasma)
-    a_plasma_surface = Output(lambda s: s.physics.a_plasma_surface)
-    a_plasma_poloidal = Output(lambda s: s.physics.a_plasma_poloidal)
-    a_plasma_surface_outboard = Output(lambda s: s.physics.a_plasma_surface_outboard)
+    vol_plasma = OutputInto(physics)
+    a_plasma_surface = OutputInto(physics)
+    a_plasma_poloidal = OutputInto(physics)
+    a_plasma_surface_outboard = OutputInto(physics)
 
     def __call__(
         self,
-        f_st_rmajor=FromExactly(lambda s: s.stellarator.f_st_rmajor),
-        f_st_rminor=FromExactly(lambda s: s.stellarator.f_st_rminor),
-        rminor=FromExactly(lambda s: s.physics.rminor),
-        stella_config_vol_plasma=FromExactly(
-            lambda s: s.stellarator_config.stella_config_vol_plasma
-        ),
-        stella_config_plasma_surface=FromExactly(
-            lambda s: s.stellarator_config.stella_config_plasma_surface
-        ),
+        f_st_rmajor=From(stellarator),
+        f_st_rminor=From(stellarator),
+        rminor=From(physics),
+        stella_config_vol_plasma=From(stellarator_config),
+        stella_config_plasma_surface=From(stellarator_config),
     ):
         return calculate_stellarator_plasma_geometry(
             f_st_rmajor,

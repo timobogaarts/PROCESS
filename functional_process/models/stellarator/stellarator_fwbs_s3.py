@@ -29,11 +29,9 @@ node reads -- wiring both into one graph unconditionally today would pick an eva
 order rather than reproduce PROCESS's real one-call-lagged semantics.
 """
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import divertor
 
 
 def calculate_divertor_plate_mass(
@@ -85,14 +83,14 @@ class DivertorPlateMass(ExplicitFunction):
     `functional_process/total_process.py` yet.
     """
 
-    m_div_plate = Output(lambda s: s.divertor.m_div_plate)
+    m_div_plate = OutputInto(divertor)
 
     def __call__(
         self,
-        a_div_surface_total=FromExactly(lambda s: s.divertor.a_div_surface_total),
-        den_div_structure=FromExactly(lambda s: s.divertor.den_div_structure),
-        f_vol_div_coolant=FromExactly(lambda s: s.divertor.f_vol_div_coolant),
-        dx_div_plate=FromExactly(lambda s: s.divertor.dx_div_plate),
+        a_div_surface_total=From(divertor),
+        den_div_structure=From(divertor),
+        f_vol_div_coolant=From(divertor),
+        dx_div_plate=From(divertor),
     ):
         return calculate_divertor_plate_mass(
             a_div_surface_total, den_div_structure, f_vol_div_coolant, dx_div_plate

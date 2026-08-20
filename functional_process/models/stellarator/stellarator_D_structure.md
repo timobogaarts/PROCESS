@@ -83,11 +83,13 @@ for why), and registered in `functional_process/total_process.py`:
 
 ```python
 class StructureMasses(ExplicitFunction):
-    aintmass = Output(lambda s: s.structure.aintmass)
-    clgsmass = Output(lambda s: s.structure.clgsmass)
-    coldmass = Output(lambda s: s.structure.coldmass)
+    aintmass = OutputInto(structure)
+    clgsmass = OutputInto(structure)
+    coldmass = OutputInto(structure)
 
-    def __call__(self, stella_config_coilsurface=Input(...), ..., dewmkg=Input(...)):
+    def __call__(
+        self, stella_config_coilsurface=From(stellarator_config), ..., dewmkg=From(fwbs)
+    ):
         return calculate_structure_masses(stella_config_coilsurface, ..., dewmkg)
 ```
 `calculate_intercoil_mass_scaling_reference` is not wrapped — it feeds no other node

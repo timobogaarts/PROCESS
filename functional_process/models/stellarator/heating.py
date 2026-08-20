@@ -25,11 +25,9 @@ zero -- see the record's open questions.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import current_drive, heat_transport, physics
 
 _ZERO_DIVISION_GUARD_MW = 1e-8
 """Below this, the source treats injected beam power as exactly zero (line 112)."""
@@ -203,26 +201,16 @@ class EcrhHeating(ExplicitFunction):
     NBI node): `isthtr` selects at most one at graph-assembly time.
     """
 
-    p_hcd_ecrh_injected_total_mw = Output(
-        lambda s: s.current_drive.p_hcd_ecrh_injected_total_mw
-    )
-    p_hcd_injected_ions_mw = Output(lambda s: s.current_drive.p_hcd_injected_ions_mw)
-    p_hcd_injected_electrons_mw = Output(
-        lambda s: s.current_drive.p_hcd_injected_electrons_mw
-    )
-    eta_hcd_primary_injector_wall_plug = Output(
-        lambda s: s.current_drive.eta_hcd_primary_injector_wall_plug
-    )
-    p_hcd_electric_total_mw = Output(lambda s: s.heat_transport.p_hcd_electric_total_mw)
+    p_hcd_ecrh_injected_total_mw = OutputInto(current_drive)
+    p_hcd_injected_ions_mw = OutputInto(current_drive)
+    p_hcd_injected_electrons_mw = OutputInto(current_drive)
+    eta_hcd_primary_injector_wall_plug = OutputInto(current_drive)
+    p_hcd_electric_total_mw = OutputInto(heat_transport)
 
     def __call__(
         self,
-        p_hcd_primary_extra_heat_mw=FromExactly(
-            lambda s: s.current_drive.p_hcd_primary_extra_heat_mw
-        ),
-        eta_ecrh_injector_wall_plug=FromExactly(
-            lambda s: s.current_drive.eta_ecrh_injector_wall_plug
-        ),
+        p_hcd_primary_extra_heat_mw=From(current_drive),
+        eta_ecrh_injector_wall_plug=From(current_drive),
     ):
         return calculate_ecrh_heating(
             p_hcd_primary_extra_heat_mw, eta_ecrh_injector_wall_plug
@@ -235,26 +223,16 @@ class LowhybHeating(ExplicitFunction):
     See module docstring -- mutually exclusive with `EcrhHeating`.
     """
 
-    p_hcd_lowhyb_injected_total_mw = Output(
-        lambda s: s.current_drive.p_hcd_lowhyb_injected_total_mw
-    )
-    p_hcd_injected_ions_mw = Output(lambda s: s.current_drive.p_hcd_injected_ions_mw)
-    p_hcd_injected_electrons_mw = Output(
-        lambda s: s.current_drive.p_hcd_injected_electrons_mw
-    )
-    eta_hcd_primary_injector_wall_plug = Output(
-        lambda s: s.current_drive.eta_hcd_primary_injector_wall_plug
-    )
-    p_hcd_electric_total_mw = Output(lambda s: s.heat_transport.p_hcd_electric_total_mw)
+    p_hcd_lowhyb_injected_total_mw = OutputInto(current_drive)
+    p_hcd_injected_ions_mw = OutputInto(current_drive)
+    p_hcd_injected_electrons_mw = OutputInto(current_drive)
+    eta_hcd_primary_injector_wall_plug = OutputInto(current_drive)
+    p_hcd_electric_total_mw = OutputInto(heat_transport)
 
     def __call__(
         self,
-        p_hcd_primary_extra_heat_mw=FromExactly(
-            lambda s: s.current_drive.p_hcd_primary_extra_heat_mw
-        ),
-        eta_lowhyb_injector_wall_plug=FromExactly(
-            lambda s: s.current_drive.eta_lowhyb_injector_wall_plug
-        ),
+        p_hcd_primary_extra_heat_mw=From(current_drive),
+        eta_lowhyb_injector_wall_plug=From(current_drive),
     ):
         return calculate_lowhyb_heating(
             p_hcd_primary_extra_heat_mw, eta_lowhyb_injector_wall_plug
@@ -264,14 +242,12 @@ class LowhybHeating(ExplicitFunction):
 class InjectedPowerTotal(ExplicitFunction):
     """cottax node: `calculate_injected_power_total`, unchanged, ports declared."""
 
-    p_hcd_injected_total_mw = Output(lambda s: s.current_drive.p_hcd_injected_total_mw)
+    p_hcd_injected_total_mw = OutputInto(current_drive)
 
     def __call__(
         self,
-        p_hcd_injected_electrons_mw=FromExactly(
-            lambda s: s.current_drive.p_hcd_injected_electrons_mw
-        ),
-        p_hcd_injected_ions_mw=FromExactly(lambda s: s.current_drive.p_hcd_injected_ions_mw),
+        p_hcd_injected_electrons_mw=From(current_drive),
+        p_hcd_injected_ions_mw=From(current_drive),
     ):
         return calculate_injected_power_total(
             p_hcd_injected_electrons_mw, p_hcd_injected_ions_mw
@@ -287,14 +263,12 @@ class BeamCurrent(ExplicitFunction):
     audit record's open questions.
     """
 
-    c_beam_total = Output(lambda s: s.current_drive.c_beam_total)
+    c_beam_total = OutputInto(current_drive)
 
     def __call__(
         self,
-        p_hcd_beam_injected_total_mw=FromExactly(
-            lambda s: s.current_drive.p_hcd_beam_injected_total_mw
-        ),
-        e_beam_kev=FromExactly(lambda s: s.current_drive.e_beam_kev),
+        p_hcd_beam_injected_total_mw=From(current_drive),
+        e_beam_kev=From(current_drive),
     ):
         return calculate_beam_current(p_hcd_beam_injected_total_mw, e_beam_kev)
 
@@ -305,16 +279,14 @@ class FusionGain(ExplicitFunction):
     Not yet registered in `total_process.py` -- same reason as `BeamCurrent`.
     """
 
-    big_q_plasma = Output(lambda s: s.current_drive.big_q_plasma)
+    big_q_plasma = OutputInto(current_drive)
 
     def __call__(
         self,
-        p_fusion_total_mw=FromExactly(lambda s: s.physics.p_fusion_total_mw),
-        p_hcd_injected_total_mw=FromExactly(
-            lambda s: s.current_drive.p_hcd_injected_total_mw
-        ),
-        p_beam_orbit_loss_mw=FromExactly(lambda s: s.current_drive.p_beam_orbit_loss_mw),
-        p_plasma_ohmic_mw=FromExactly(lambda s: s.physics.p_plasma_ohmic_mw),
+        p_fusion_total_mw=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
+        p_beam_orbit_loss_mw=From(current_drive),
+        p_plasma_ohmic_mw=From(physics),
     ):
         return calculate_fusion_gain(
             p_fusion_total_mw,

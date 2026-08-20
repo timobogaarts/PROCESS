@@ -119,8 +119,8 @@ already done by other forks working the physics-unit registry rows in parallel.
      Verified directly: `to_graph([FastAlphaBeta(i_beta_fast_alpha=1),
      StellaratorBetaAndRhoStar()])` assembles with no error (two ordinary nodes, no
      "reads ... which it also owns"). **No `FixedPointFunction` was built — none is
-     needed.** `StellaratorBetaAndRhoStar`'s existing `Input(lambda s:
-     s.physics.beta_fast_alpha)` already points at `FastAlphaBeta`'s real `VarPath`;
+     needed.** `StellaratorBetaAndRhoStar`'s existing
+     `beta_fast_alpha=From(physics)` already points at `FastAlphaBeta`'s real `VarPath`;
      this is a plain registrable edge (`FastAlphaBeta` upstream of
      `StellaratorBetaAndRhoStar`), noted here for the later consolidation/wiring pass,
      not registered by this pass (out of boundary, `total_process.py` untouched).

@@ -93,11 +93,11 @@ in `functional_process/total_process.py`:
 
 ```python
 class Divertor(ExplicitFunction):
-    pflux_div_heat_load_mw = Output(lambda s: s.divertor.pflux_div_heat_load_mw)
-    a_div_surface_total = Output(lambda s: s.divertor.a_div_surface_total)
-    f_ster_div_single = Output(lambda s: s.fwbs.f_ster_div_single)
+    pflux_div_heat_load_mw = OutputInto(divertor)
+    a_div_surface_total = OutputInto(divertor)
+    f_ster_div_single = OutputInto(fwbs)
 
-    def __call__(self, flpitch=Input(...), ..., a_fw_total=Input(...)):
+    def __call__(self, flpitch=From(stellarator), ..., a_fw_total=From(first_wall)):
         return calculate_divertor(flpitch, ..., a_fw_total)
 ```
 

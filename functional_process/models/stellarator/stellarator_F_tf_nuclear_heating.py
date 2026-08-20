@@ -20,11 +20,9 @@ audits 1E1/1E2 to confirm.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import build, costs, fwbs, physics, tfcoil
 
 # TF coil nuclear heating coefficients (stainless-steel shield only -- see module
 # docstring). `fact[i]`/`coef[i]`/`decay[i]` index the same physical quantity as the
@@ -101,9 +99,7 @@ def calculate_sc_tf_coil_nuclear_heating(
         * jnp.exp(-_DECAY[5] * (dshieq + dr_tf_plasma_case))
     )
 
-    ptfiwp = (
-        coilhtmx * tfsai * (1.0 - jnp.exp(-_DECAY[0] * wpthk)) / _DECAY[0]
-    )
+    ptfiwp = coilhtmx * tfsai * (1.0 - jnp.exp(-_DECAY[0] * wpthk)) / _DECAY[0]
     ptfowp = (
         _FACT[0]
         * pflux_fw_neutron_mw
@@ -114,15 +110,8 @@ def calculate_sc_tf_coil_nuclear_heating(
         / _DECAY[0]
     )
 
-    htheci = (
-        _FACT[1] * pflux_fw_neutron_mw * _COEF[1] * jnp.exp(-_DECAY[6] * dshieq)
-    )
-    pheci = (
-        htheci
-        * tfsai
-        * (1.0 - jnp.exp(-_DECAY[1] * dr_tf_plasma_case))
-        / _DECAY[1]
-    )
+    htheci = _FACT[1] * pflux_fw_neutron_mw * _COEF[1] * jnp.exp(-_DECAY[6] * dshieq)
+    pheci = htheci * tfsai * (1.0 - jnp.exp(-_DECAY[1] * dr_tf_plasma_case)) / _DECAY[1]
     pheco = (
         _FACT[1]
         * pflux_fw_neutron_mw
@@ -179,33 +168,33 @@ def calculate_sc_tf_coil_nuclear_heating(
 class ScTfCoilNuclearHeating(ExplicitFunction):
     """cottax node: `calculate_sc_tf_coil_nuclear_heating`, unchanged, ports declared."""
 
-    coilhtmx = Output(lambda s: s.fwbs.coilhtmx)
-    dpacop = Output(lambda s: s.fwbs.dpacop)
-    htheci = Output(lambda s: s.fwbs.htheci)
-    flu_tf_neutron_fast_peak = Output(lambda s: s.fwbs.flu_tf_neutron_fast_peak)
-    pheci = Output(lambda s: s.fwbs.pheci)
-    pheco = Output(lambda s: s.fwbs.pheco)
-    ptfiwp = Output(lambda s: s.fwbs.ptfiwp)
-    ptfowp = Output(lambda s: s.fwbs.ptfowp)
-    raddose = Output(lambda s: s.fwbs.raddose)
-    p_tf_nuclear_heat_mw = Output(lambda s: s.fwbs.p_tf_nuclear_heat_mw)
+    coilhtmx = OutputInto(fwbs)
+    dpacop = OutputInto(fwbs)
+    htheci = OutputInto(fwbs)
+    flu_tf_neutron_fast_peak = OutputInto(fwbs)
+    pheci = OutputInto(fwbs)
+    pheco = OutputInto(fwbs)
+    ptfiwp = OutputInto(fwbs)
+    ptfowp = OutputInto(fwbs)
+    raddose = OutputInto(fwbs)
+    p_tf_nuclear_heat_mw = OutputInto(fwbs)
 
     def __call__(
         self,
-        dr_shld_inboard=FromExactly(lambda s: s.build.dr_shld_inboard),
-        dr_fw_inboard=FromExactly(lambda s: s.build.dr_fw_inboard),
-        dr_blkt_inboard=FromExactly(lambda s: s.build.dr_blkt_inboard),
-        dr_shld_outboard=FromExactly(lambda s: s.build.dr_shld_outboard),
-        dr_fw_outboard=FromExactly(lambda s: s.build.dr_fw_outboard),
-        dr_blkt_outboard=FromExactly(lambda s: s.build.dr_blkt_outboard),
-        dr_tf_wp_with_insulation=FromExactly(lambda s: s.tfcoil.dr_tf_wp_with_insulation),
-        dx_tf_wp_insulation=FromExactly(lambda s: s.tfcoil.dx_tf_wp_insulation),
-        pflux_fw_neutron_mw=FromExactly(lambda s: s.physics.pflux_fw_neutron_mw),
-        tfsai=FromExactly(lambda s: s.tfcoil.tfsai),
-        tfsao=FromExactly(lambda s: s.tfcoil.tfsao),
-        dr_tf_plasma_case=FromExactly(lambda s: s.tfcoil.dr_tf_plasma_case),
-        f_t_plant_available=FromExactly(lambda s: s.costs.f_t_plant_available),
-        life_plant=FromExactly(lambda s: s.costs.life_plant),
+        dr_shld_inboard=From(build),
+        dr_fw_inboard=From(build),
+        dr_blkt_inboard=From(build),
+        dr_shld_outboard=From(build),
+        dr_fw_outboard=From(build),
+        dr_blkt_outboard=From(build),
+        dr_tf_wp_with_insulation=From(tfcoil),
+        dx_tf_wp_insulation=From(tfcoil),
+        pflux_fw_neutron_mw=From(physics),
+        tfsai=From(tfcoil),
+        tfsao=From(tfcoil),
+        dr_tf_plasma_case=From(tfcoil),
+        f_t_plant_available=From(costs),
+        life_plant=From(costs),
     ):
         return calculate_sc_tf_coil_nuclear_heating(
             dr_shld_inboard,

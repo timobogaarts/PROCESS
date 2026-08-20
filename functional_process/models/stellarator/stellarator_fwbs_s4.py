@@ -38,11 +38,9 @@ Neither ported function calls into another model -- confirmed by reading the who
 record's "no cross-model calls of its own".
 """
 
-from cottax.interfaces.pytree_namespace_module import (
-    ExplicitFunction,
-    FromExactly,
-    Output,
-)
+from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+
+from functional_process.paths import fwbs
 
 
 def calculate_blanket_component_masses(
@@ -167,20 +165,20 @@ class BlanketComponentMasses(ExplicitFunction):
     of what the source writes for no reason other than current demand.
     """
 
-    m_blkt_li2o = Output(lambda s: s.fwbs.m_blkt_li2o)
-    m_blkt_beryllium = Output(lambda s: s.fwbs.m_blkt_beryllium)
-    m_blkt_steel_total = Output(lambda s: s.fwbs.m_blkt_steel_total)
-    m_blkt_vanadium = Output(lambda s: s.fwbs.m_blkt_vanadium)
-    m_blkt_total = Output(lambda s: s.fwbs.m_blkt_total)
+    m_blkt_li2o = OutputInto(fwbs)
+    m_blkt_beryllium = OutputInto(fwbs)
+    m_blkt_steel_total = OutputInto(fwbs)
+    m_blkt_vanadium = OutputInto(fwbs)
+    m_blkt_total = OutputInto(fwbs)
 
     def __call__(
         self,
-        vol_blkt_total=FromExactly(lambda s: s.fwbs.vol_blkt_total),
-        fblli2o=FromExactly(lambda s: s.fwbs.fblli2o),
-        fblbe=FromExactly(lambda s: s.fwbs.fblbe),
-        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
-        fblss=FromExactly(lambda s: s.fwbs.fblss),
-        fblvd=FromExactly(lambda s: s.fwbs.fblvd),
+        vol_blkt_total=From(fwbs),
+        fblli2o=From(fwbs),
+        fblbe=From(fwbs),
+        den_steel=From(fwbs),
+        fblss=From(fwbs),
+        fblvd=From(fwbs),
     ):
         return calculate_blanket_component_masses(
             vol_blkt_total, fblli2o, fblbe, den_steel, fblss, fblvd
@@ -196,13 +194,13 @@ class ShieldMass(ExplicitFunction):
     `Bldgs` and `ShieldCost` read `.fwbs.whtshld`, `ShieldCost` reads `.fwbs.wpenshld`.
     """
 
-    whtshld = Output(lambda s: s.fwbs.whtshld)
-    wpenshld = Output(lambda s: s.fwbs.wpenshld)
+    whtshld = OutputInto(fwbs)
+    wpenshld = OutputInto(fwbs)
 
     def __call__(
         self,
-        vol_shld_total=FromExactly(lambda s: s.fwbs.vol_shld_total),
-        den_steel=FromExactly(lambda s: s.fwbs.den_steel),
-        vfshld=FromExactly(lambda s: s.fwbs.vfshld),
+        vol_shld_total=From(fwbs),
+        den_steel=From(fwbs),
+        vfshld=From(fwbs),
     ):
         return calculate_shield_mass(vol_shld_total, den_steel, vfshld)
