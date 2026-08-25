@@ -67,9 +67,9 @@ diffs against PROCESS show precision loss that reads like a porting bug
 ### Commands
 
 ```bash
-$PY -m pytest functional_process            # the port's validation harness — ~1390
-                                            # passed + ~640 skipped, ~60 s. See below.
-$PY -m pytest tests/unit                    # unit tests (models, core) — 846, ~75 s
+$PY -m pytest functional_process            # the port's validation harness — 3752
+                                            # passed + 3347 skipped, ~65 s. See below.
+$PY -m pytest tests/unit                    # unit tests (models, core) — 846, ~4 s
 $PY -m pytest tests/unit/models -k density_limit
 $PY -m pytest tests/unit/models/stellarator # the in-scope subset — 16, <1 s
 $PY -m pytest tests/integration
