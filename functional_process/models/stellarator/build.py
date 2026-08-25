@@ -10,7 +10,7 @@ for the reasoning. Three tier-1 functions result:
   instantiated as a node when `blktmodel > 0`; when it isn't, `dr_blkt_inboard`/
   `dr_blkt_outboard` are plain external inputs to `calculate_build` instead (this is
   `conditional-ownership-by-run-config`, the same pattern as `.physics.aspect` in
-  `stellarator_C_geometry.md` -- a graph-assembly-time decision, not resolved here).
+  `geometry.md` -- a graph-assembly-time decision, not resolved here).
 - `calculate_build` -- everything the source runs unconditionally. Reads
   `dr_blkt_inboard`/`dr_blkt_outboard` as ordinary explicit args regardless of where
   they came from, which is exactly what the source does too (it never branches on

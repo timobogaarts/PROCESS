@@ -171,7 +171,7 @@ tuple-unpacked, which is why a naive regex misses it) is unreachable behind
 `caller.py:272-275`. The IFE producer (`process/models/ife.py:1665-1666`) likewise.
 
 The port's decision is already on the record and is not merely implicit:
-`functional_process/models/stellarator/stellarator_D_structure.py:11` — "`fncmass` and
+`functional_process/models/stellarator/structure.py:11` — "`fncmass` and
 `gsmass` are not ported: both are unconditional literal `0.0`". This **confirms**
 `boundary_inputs_audit.md` §4a, which classified both as category (a) with the same
 evidence.
@@ -290,7 +290,7 @@ was made rather than assumed:
   for any of them; the only mention of `.pf_power.*` in it is `objectives.md`'s
   hole-in-MDA note that `pf_power.srcktpm` has no producer.
 - **`.structure.gsmass` / `.fncmass`** — a port exists for the surrounding unit
-  (`stellarator_D_structure.py`, registered) and deliberately excludes these two fields,
+  (`structure.py`, registered) and deliberately excludes these two fields,
   with the reason in its module docstring. Registering them would add two constant-`0.0`
   nodes and change no number.
 - The only ported-but-unregistered node anywhere in the cost unit is

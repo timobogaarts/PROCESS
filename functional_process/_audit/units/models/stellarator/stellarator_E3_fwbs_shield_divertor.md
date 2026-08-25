@@ -21,11 +21,11 @@ across the whole file restricted to lines < 1683: they're unpacked from
 `sc_tf_coil_nuclear_heating_iter90()`'s return tuple around line 709-728 — **inside
 chunk 1E1's territory (422-880), skipping over 1E2 entirely**. This is independently
 confirmed by chunk 1F's own record
-(`functional_process/_audit/units/models/stellarator/stellarator_F_tf_nuclear_heating.md`), which
+(`functional_process/_audit/units/models/stellarator/tf_nuclear_heating.md`), which
 already flagged the same two call sites (lines 476, 728) from the producer side. Not a
 bug — `st_fwbs` is one continuous 1200-line function; these are ordinary Python locals
 that happen to live across ~730 lines of it. Reinforces 1D's proposed fifth
-classification (`local-intermediate`, see `stellarator_D_structure.md`'s open questions)
+classification (`local-intermediate`, see `structure.md`'s open questions)
 from a different angle: this case isn't even `self.data`-mediated, it's a plain local
 surviving across three audit-chunk boundaries that only exist because of how this audit
 was sliced, not because of anything in the source. **The pure port cannot treat 1E1/1E2/1E3

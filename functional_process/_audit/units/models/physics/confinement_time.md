@@ -25,7 +25,7 @@ direction, and the two `output_*` methods are reporting shells).
 scaling-law functions (one per `ConfinementTimeModel` enum value, `physics_variables.py:
 90-353`) — all reachable only from this one dispatcher, so all 48 are in scope
 transitively, same "the registry names the entry point, not everything it reaches"
-situation `fusion_reactions.md`/`stellarator_B_st_phys.md` already established. Verified
+situation `fusion_reactions.md`/`plasma_physics.md` already established. Verified
 exhaustively (not sampled): every one of the 48 already takes plain arguments with no
 `self.data` access of its own — the pure/impure split for this unit is entirely at the
 `calculate_confinement_time` level, not distributed across the 48.

@@ -351,7 +351,7 @@ def calculate_inductance(
 
     Ports `calculate_inductance`. Reporting-only in the source (printed by `write()`,
     never stored to `data`) -- no `ExplicitFunction` wrap, same treatment as
-    `calculate_intercoil_mass_scaling_reference` in `stellarator_D_structure.py`.
+    `calculate_intercoil_mass_scaling_reference` in `structure.py`.
 
     Returns
     -------
@@ -1491,7 +1491,7 @@ class TfCryoArea(ExplicitFunction):
     in the graph and its output stays a boundary input.
 
     **Why it was worth carving out now.** `.tfcoil.tfcryoarea` is an input of
-    `power_B_thermal_cryo.py`'s cryogenic-load nodes (`CryoQLoadsStep`, via
+    `thermal_cryo.py`'s cryogenic-load nodes (`CryoQLoadsStep`, via
     `Power.cryo`'s `qss` term). Registering those without this node would have traded
     two boundary inputs (`.heat_transport.helpow`,
     `.heat_transport.p_cryo_plant_electric_mw`) for one new one -- see

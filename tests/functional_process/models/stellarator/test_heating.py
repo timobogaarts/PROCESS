@@ -76,7 +76,7 @@ def _reference_injected_power_total(p_hcd_injected_electrons_mw, p_hcd_injected_
     Not independently reachable through `st_heat` without also exercising a full
     `isthtr` branch (it is one line inside that same function, not callable alone), so
     this reference is the source line copied verbatim rather than re-derived --
-    consistent with `stellarator_D_structure.py`'s `msupstr` precedent.
+    consistent with `structure.py`'s `msupstr` precedent.
     """
     return p_hcd_injected_electrons_mw + p_hcd_injected_ions_mw
 

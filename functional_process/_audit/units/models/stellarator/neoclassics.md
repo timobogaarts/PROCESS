@@ -31,7 +31,7 @@ record, several proposed signatures).
 Methods are grouped by call order in `init_neoclassics`/`calc_neoclassics`. `.neoclassics.roots`/
 `.weights` (30-point Gauss-Laguerre quadrature, hardcoded array literals with no PROCESS
 input) are treated as **fixed numerical-method constants**, not ports — same treatment as
-stellarator_F's `coef`/`decay` tables. `.neoclassics.no_roots` is a derived property
+`tf_nuclear_heating.py`'s `coef`/`decay` tables. `.neoclassics.no_roots` is a derived property
 (`len(roots)`), likewise not a port.
 
 | VarPath | read/write | classification | note |

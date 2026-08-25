@@ -890,7 +890,7 @@ are reported, not fixed.
 **(a) Six 1-tuple returns.** `Residualise` mints a `Compare` whose body is
 `operator.sub(condition, unknown)`, and it raised
 `TypeError: unsupported operand type(s) for -: 'tuple' and 'ArrayImpl'`. Cause:
-`functional_process/models/power_B_thermal_cryo.py` lines **1208, 1267, 1308, 1371, 1443,
+`functional_process/models/power/thermal_cryo.py` lines **1208, 1267, 1308, 1371, 1443,
 1488** each `return (x,)` from a `FixedPointFunction.step` with a single `Output`. cottax's
 `_bind` (`evaluate.py:52-69`, the `len(owns) == 1` branch at `:54-56`) puts the whole return
 under a single output, so the env holds
@@ -1077,7 +1077,7 @@ than listing names: a `FixedPointFunction` that is an identity in the active
 configuration is a well-posed Picard problem and a rank-deficient SAND equality, and
 which ones those are is a per-configuration fact.
 
-**§6.4a's six 1-tuple returns are fixed** (`power_B_thermal_cryo.py:1208,1267,1308,1371,
+**§6.4a's six 1-tuple returns are fixed** (`thermal_cryo.py:1208,1267,1308,1371,
 1443,1488`), and the sweep found a seventh (`vacuum.py:180`, `VacuumPumpingSimple`).
 `coils.py:619` and the two in test files are `AbstractDriver.__call__` returns, where a
 tuple is the contract — not instances.
@@ -1250,7 +1250,7 @@ could have found it. That is the case for building Stage B, made concrete.
 Registering `StellaratorBetaAndStoredEnergy` gave constraint 24 a live argument, which
 pulled `FastAlphaBeta` into the differentiated set for the first time — and its whole row
 came back non-finite. Cause: `jnp.sqrt(jnp.maximum(0.0, temp_sum_20 - 0.65))`
-(`physics_A_pure_formulas.py`), the exact JAX trap `next_steps.md` §9 already records for
+(`pure_formulas.py`), the exact JAX trap `next_steps.md` §9 already records for
 `costs.py:2874-2888` — `sqrt` has an infinite derivative at zero and `inf * 0` is `nan`.
 **The clamp is *active* on this run** (`temp_sum_20 = 0.6449` against the `0.65`
 threshold), so this was not hypothetical. Fixed with the standard double `jnp.where`;
@@ -1274,7 +1274,7 @@ reason, and both surfaced the moment a producer gap was closed.
   no producer at all — `.physics.fusden_total`, `.fusden_alpha_total` and
   `.p_dt_total_mw` — so `t_alpha_confinement = nd_alphas / fusden_alpha_total` had a frozen
   denominator and its temperature derivative was **structurally absent**. A new node
-  `FusionTotalsNoBeam` (`stellarator_B_st_phys.py`, the `else` arm of
+  `FusionTotalsNoBeam` (`plasma_physics.py`, the `else` arm of
   `stellarator.py:2002-2054`, three identities) gives them producers. Measured on the
   `c62` row: x4 `5.10e+00*` → `5.42e-04`, x6 `6.66e+00*` → `3.99e-05`, x109 `1.41e-01*` →
   `3.25e-07`, and c2/c8/c17/c18/c67 improved alongside, several losing their error-bar

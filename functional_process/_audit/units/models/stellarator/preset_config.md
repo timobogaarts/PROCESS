@@ -17,12 +17,12 @@ ixc` aspect-ratio default, `rminor`/`eps`, the `n_tf_coils` overwrite, the seven
 `f_st_*`/`r_coil_*`/`f_coil_shape` scaling factors, and nothing else (it ends at
 `f_coil_shape`, line 275; `st_geom` is the next method) — is **already ported**, as
 `DefaultAspectRatio`/`StellaratorScalingFactors` in
-`stellarator_C_geometry.py`/`.md` (chunk 1C of unit #1). This unit is therefore the
+`geometry.py`/`.md` (chunk 1C of unit #1). This unit is therefore the
 last unported piece of `st_new_config`, and porting it is what closes it.
 
 ## data footprint
 
-**Confirms and extends chunk 1C's finding** (`stellarator_C_geometry.md`): `istell`
+**Confirms and extends chunk 1C's finding** (`geometry.md`): `istell`
 plays a second role here beyond the top-level tokamak/stellarator pipeline split
 (`switches.md`) — it selects one of five hardcoded machine-preset tables (`istell` 1-5),
 or an externally-loaded JSON file (`istell == 6`). This is a **data-table selector, not

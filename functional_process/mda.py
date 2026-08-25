@@ -62,7 +62,7 @@ when paired with `proton_rate_density`, and no single variable does it alone.
 
 **Watch this one on a cold start.** `PlasmaComposition` branches on
 `fusden_alpha_total < 1e-6` as a "not yet calculated" bootstrap
-(`physics_B_composition.py:203-210`), so cutting it makes a Picard iterate drive a
+(`composition.py:203-210`), so cutting it makes a Picard iterate drive a
 *branch predicate*, not just a value. Seeded from a converged run (every harness here)
 the branch never flips; from a cold `DataStructure` it starts on the other side.
 

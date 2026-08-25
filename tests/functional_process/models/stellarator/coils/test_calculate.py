@@ -1,7 +1,7 @@
 """Harness cases for the ported `coils/calculate.py` functions (registry unit #9).
 
 No `legacy_sample` for the tier-1 functions below: unlike `density_limits.py`/
-`stellarator_D`/`stellarator_F`, none of the ten has a matching test in
+`structure.py`/`tf_nuclear_heating.py`, none of the ten has a matching test in
 `tests/unit/models/stellarator/` (checked by grep -- there is no dedicated
 stellarator-coils test file in PROCESS's own suite), so there is no literal point to
 lift. Coverage is `fuzz_bounds`-only; agreement is still checked live against the real
@@ -351,7 +351,7 @@ def test_tf_cryo_area_node_assembles_and_owns_the_right_varpath():
     geometry block: it must assemble via `to_graph` and own `.tfcoil.tfcryoarea`,
     which had **no** producer in the graph at all before (the eager `st_coil`
     orchestrator that computes it is deliberately unregistered). It is a prerequisite
-    for `power_B_thermal_cryo.py`'s `CryoQLoadsStep`, which reads it -- see
+    for `thermal_cryo.py`'s `CryoQLoadsStep`, which reads it -- see
     `_audit/boundary_inputs_audit.md` §7 items 4 and 7.
     """
     from functional_process.models.stellarator.coils.calculate import TfCryoArea

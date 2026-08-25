@@ -21,7 +21,7 @@ unlike `density_limits.py`'s `output()`).
 | `.build.blbuith`, `.blbmith`, `.blbpith` | read | explicit-arg | only inside `blktmodel > 0` branch |
 | `.build.blbuoth`, `.blbmoth`, `.blbpoth` | read | explicit-arg | same |
 | `.build.dr_shld_inboard`, `.dr_shld_outboard` | read | explicit-arg | read twice each: once inside the `blktmodel > 0` branch (feeds `dz_shld_upper`), again later unconditionally (feeds `r_shld_inboard_inner`/`r_shld_outboard_outer` etc.) — same value both times, no risk, but worth noting since it crosses the switch boundary |
-| `.build.dr_blkt_inboard`, `.dr_blkt_outboard` | write (`blktmodel > 0`) **or** read as a plain external input (`blktmodel <= 0`) | **conditional-ownership-by-run-config** | identical pattern to `.physics.aspect` in `stellarator_C_geometry.md` — ownership is a run-configuration fact, not a static property of the function. See "cottax node" below for how the port handles this. |
+| `.build.dr_blkt_inboard`, `.dr_blkt_outboard` | write (`blktmodel > 0`) **or** read as a plain external input (`blktmodel <= 0`) | **conditional-ownership-by-run-config** | identical pattern to `.physics.aspect` in `geometry.md` — ownership is a run-configuration fact, not a static property of the function. See "cottax node" below for how the port handles this. |
 | `.build.dz_shld_upper` | write (`blktmodel > 0` only) | explicit-arg | never read again *within this file*; consumed by `st_fwbs` output (`stellarator.py` ~line 1371, chunks 1E1-1E3) — confirmed by grep, out of this unit's scope to verify further |
 | `.fwbs.radius_fw_channel`, `.fwbs.dr_fw_wall` | read | explicit-arg | |
 | `.physics.rmajor`, `.physics.rminor` | read | explicit-arg | `rminor` used as a divisor (`a_fw_total` calc) — defaults to `0.0` in a bare `DataStructure()`, a real degenerate-input risk worth flagging for whoever assembles the graph (not a bug in this file, just a precondition: `rminor != 0`) |
@@ -133,7 +133,8 @@ None. Plain arithmetic throughout, no external calls, no dynamic shapes.
    thicknesses. Flagging rather than guessing.
 3. **No existing PROCESS unit test covers `st_build`.** Every sample in `test_build.py`
    is `fuzz`; there is no "legacy" validated operating point pinning this file down the
-   way `helias_5b.IN.DAT`-derived tests do for `density_limits.py`/`stellarator_D`/`_F`.
+   way `helias_5b.IN.DAT`-derived tests do for
+   `density_limits.py`/`structure.py`/`tf_nuclear_heating.py`.
    Value/gradient agreement is still checked against a real call into PROCESS's own
    `st_build` (not re-derived), so this isn't a weaker *correctness* check, just a
    narrower *coverage* one — worth a legacy sample if/when a stellarator input file is

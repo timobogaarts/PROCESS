@@ -626,7 +626,7 @@ class IonVolAvgTemperature(FixedPointFunction):
     field a read *and* a write of the same node, and `to_graph` refuses that outright.
     This is `plasma_profiles.md`'s own `conditional-ownership-by-data` classification,
     and it gets the same treatment as the six `conditional-ownership` fields in
-    `power_B_thermal_cryo.py`: the node owns the field and reads the minted copy, so the
+    `thermal_cryo.py`: the node owns the field and reads the minted copy, so the
     "keep the incumbent" arm is a **fixed point** (`u = g(u)`, converging in one Picard
     step from anywhere) rather than a self-loop.
 

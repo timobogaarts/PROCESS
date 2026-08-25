@@ -15,7 +15,7 @@ round-trip rounding error into a comparison whose whole purpose is to detect exa
 size of discrepancy.
 
 So this module follows the S3 precedent instead (`test_stellarator_fwbs_s3.py`, itself
-following `test_stellarator_D_structure.py`'s `msupstr` adapter): the references below
+following `test_structure.py`'s `msupstr` adapter): the references below
 reproduce PROCESS's statements directly, transcribed from the source range and textually
 independent of `stellarator_fwbs_s4.py`. The end-to-end grounding for this unit comes
 from `run_mda_harness.py`, which compares these nodes' outputs against a real converged

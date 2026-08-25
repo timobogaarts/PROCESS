@@ -45,7 +45,7 @@ touch the same switch.
 This is not drift and it is not six oversights — each was justified in its own record, none
 was reversed, and together they are evidence that the rule as written is missing a clause.
 The deviations are: `i_confinement_time` and `i_rad_loss` (`confinement_time.md`),
-`i_plasma_ignited` (`confinement_time.md` and `physics_B_composition.md`, independently),
+`i_plasma_ignited` (`confinement_time.md` and `composition.md`, independently),
 `supercond_cost_model` (two nodes), `i_pf_conductor`, and `itart` on `CostOfElectricity`
 (all `costs.md`). In every one the branches' reads-sets **do** differ — so the split default
 applies on its face — but the differing part of the body is a handful of lines inside a

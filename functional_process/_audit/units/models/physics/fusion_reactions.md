@@ -15,7 +15,7 @@ blocker resolves.
 ## source
 
 `process/models/physics/fusion_reactions.py` (1597 lines). Registry unit #19: scope is
-whatever `stellarator.py`'s `st_phys()` (chunk 1B, `stellarator_B_st_phys.md`) actually
+whatever `stellarator.py`'s `st_phys()` (chunk 1B, `plasma_physics.md`) actually
 calls, found via a bare `import ... as reactions` module alias.
 
 **Scope check against the actual call site** (`process/models/stellarator/stellarator.py`

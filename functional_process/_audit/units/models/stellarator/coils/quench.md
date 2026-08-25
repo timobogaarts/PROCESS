@@ -128,7 +128,7 @@ and assigns the latter there.
 call site several of their arguments (`tf_energy_stored`, `f_cond`, `rad_vv`) are derived
 intermediates, not raw `data` fields — a standalone node for any of them would need
 invented `VarPath`s for values that only exist inside this composed chain, same treatment
-`stellarator_D_structure.md` gave `calculate_structure_masses`'s internal
+`structure.md` gave `calculate_structure_masses`'s internal
 `intercoil_surface`.
 
 ## tier signal

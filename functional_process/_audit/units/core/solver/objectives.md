@@ -44,20 +44,20 @@ tests/`_wip`).
 
 | id | name | field(s) read | producer found? | note |
 |---|---|---|---|---|
-| 1 | `MAJOR_RADIUS` | `.physics.rmajor` | **no `Output` found anywhere** | read as `Input` throughout (`Build`, `stellarator_C_geometry.py`, etc.) but never owned — consistent with `rmajor` being a genuine free design variable (PROCESS iteration variable candidate), not a hole. Not re-verified against `iteration_variables.py`'s ID table this pass — flagged as an open question below, not asserted as fact. |
-| 3 | `NEUTRON_WALL_LOAD` | `.physics.pflux_fw_neutron_mw` | yes | `stellarator_B_st_phys.py` |
-| 4 | `P_TF_PLUS_P_PF` | `.tfcoil.tfcmw`, `.pf_power.srcktpm` | `tfcmw`: yes (`power_A_tf_coil_power.py`). `srcktpm`: **no `Output` found** | `srcktpm` (PF coil circuit power) — `pf_power.py` itself is out of this session's stellarator scope entirely (no file of that name under `functional_process/models/`); a real hole, not a design-variable case like `rmajor`. |
+| 1 | `MAJOR_RADIUS` | `.physics.rmajor` | **no `Output` found anywhere** | read as `Input` throughout (`Build`, `geometry.py`, etc.) but never owned — consistent with `rmajor` being a genuine free design variable (PROCESS iteration variable candidate), not a hole. Not re-verified against `iteration_variables.py`'s ID table this pass — flagged as an open question below, not asserted as fact. |
+| 3 | `NEUTRON_WALL_LOAD` | `.physics.pflux_fw_neutron_mw` | yes | `plasma_physics.py` |
+| 4 | `P_TF_PLUS_P_PF` | `.tfcoil.tfcmw`, `.pf_power.srcktpm` | `tfcmw`: yes (`tf_coil_power.py`). `srcktpm`: **no `Output` found** | `srcktpm` (PF coil circuit power) — `pf_power.py` itself is out of this session's stellarator scope entirely (no file of that name under `functional_process/models/`); a real hole, not a design-variable case like `rmajor`. |
 | 5 | `FUSION_GAIN_Q` | `.current_drive.big_q_plasma` | yes | `stellarator/heating.py` |
 | 6 | `COST_OF_ELECTRICITY` | `.costs.coe` | **no `Output` found** | `costs.py`'s node classes are ported as pure functions but almost entirely unregistered per this session's own consolidation audit (see `_audit/next_steps.md`'s alternates-audit item) — real hole, tracked there already, not new. |
 | 7 | `CAPITAL_COST` | `.costs.cdirt`, `.costs.concost`, `.costs.ireactor` (switch) | **no `Output` found for either** | same `costs.py` gap as id 6. |
-| 8 | `ASPECT_RATIO` | `.physics.aspect` | yes | `stellarator_C_geometry.py` |
+| 8 | `ASPECT_RATIO` | `.physics.aspect` | yes | `geometry.py` |
 | 9 | `DIVERTOR_HEAT_LOAD` | `.divertor.pflux_div_heat_load_mw` | yes | `stellarator/divertor.py` |
-| 10 | `TOROIDAL_FIELD` | `.physics.b_plasma_toroidal_on_axis` | **no `Output` found** | read everywhere (`stellarator_D_structure.py`, `density_limits.py`, ...) but not owned — same "possible free/input variable" caveat as `rmajor`, not independently confirmed this pass. |
+| 10 | `TOROIDAL_FIELD` | `.physics.b_plasma_toroidal_on_axis` | **no `Output` found** | read everywhere (`structure.py`, `density_limits.py`, ...) but not owned — same "possible free/input variable" caveat as `rmajor`, not independently confirmed this pass. |
 | 11 | `TOTAL_INJECTED_POWER` | `.current_drive.p_hcd_injected_total_mw` | yes | `stellarator/heating.py` |
 | 14 | `PULSE_LENGTH` | `.times.t_plant_pulse_burn` | **no `Output` found** | `times.py`/pulse-timing model is out of this session's stellarator scope entirely — real hole. |
 | 15 | `PLANT_AVAILABILITY_FACTOR` | `.costs.i_plant_availability` (switch, input not output), `.costs.f_t_plant_available` | yes | `availability.py` — three separate producer classes (per-availability-model arms), consistent with `availability.py`'s already-known alternate-arm registration gaps (see the alternates audit). |
 | 16 | `MIN_R0_MAX_TAU_BURN` | `.physics.rmajor`, `.times.t_plant_pulse_burn` | see ids 1, 14 | |
-| 17 | `NET_ELECTRICAL_OUTPUT` | `.heat_transport.p_plant_electric_net_mw` | **no `Output` found** | `power_C_electric_production.py` reads it but a producer wasn't found this pass — flagged, not fully traced (this file's own output set wasn't exhaustively checked; may be a false negative from the grep pattern used, see open questions). |
+| 17 | `NET_ELECTRICAL_OUTPUT` | `.heat_transport.p_plant_electric_net_mw` | **no `Output` found** | `electric_production.py` reads it but a producer wasn't found this pass — flagged, not fully traced (this file's own output set wasn't exhaustively checked; may be a false negative from the grep pattern used, see open questions). |
 | 18 | `NULL_FIGURE_OF_MERIT` | none | n/a | `f(x) = 1`, no data access at all. |
 | 19 | `MAX_Q_MAX_T_PLANT_PULSE_BURN` | `.current_drive.big_q_plasma`, `.times.t_plant_pulse_burn` | see ids 5, 14 | |
 
@@ -65,7 +65,7 @@ tests/`_wip`).
 verified against PROCESS below) regardless of hole-in-MDA status — a hole here means
 "this objective can't yet be assembled into a real `Optimise` problem against the
 current graph," not "this port is wrong." None of the holes found are new; they're the
-same costs.py/`pf_power.py`/`times.py`/`power_C_electric_production.py` coverage gaps
+same costs.py/`pf_power.py`/`times.py`/`electric_production.py` coverage gaps
 already tracked elsewhere in this session's audit trail.
 
 ## two real PROCESS docstring inaccuracies found (not code bugs)
@@ -109,7 +109,7 @@ table above lists.
    `ITERATION_VARIABLES` table before assuming either way.
 2. `.heat_transport.p_plant_electric_net_mw` (id 17) — no producer found, but this
    pass's search was a single grep pattern (`Output(lambda s: s.<path>)` on one line);
-   `power_C_electric_production.py` reads the field, so a multi-line `Output(...)`
+   `electric_production.py` reads the field, so a multi-line `Output(...)`
    definition there is plausible and would be a false negative here. Worth a direct
    check before treating this as a confirmed hole.
 3. The `costs.py`/`pf_power.py`/`times.py` coverage gaps (ids 4, 6, 7, 14) are not new

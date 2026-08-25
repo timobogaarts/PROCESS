@@ -164,7 +164,7 @@ mechanically across all 36, not sampled). So each is a two-line edit and none ca
 rebind an argument. Two are more than a rename and get individual attention, both flagged
 by the pilot commit:
 
-- `physics_A_pure_formulas.py` binds `nd_plasma_vol_avg` to `.physics.nd_plasma_electrons_vol_avg`
+- `pure_formulas.py` binds `nd_plasma_vol_avg` to `.physics.nd_plasma_electrons_vol_avg`
   in `ElectronThermalEnergy` and to `.physics.nd_plasma_ions_total_vol_avg` in
   `IonThermalEnergy` — **electrons and ions under one local name**. This is precisely the
   confusion the naming rule removes, and the conversion is what surfaces it.
@@ -237,9 +237,9 @@ deliberately.
 ### A.8 Order
 
 Largest first, so the biggest diff lands against the quietest tree: `costs/costs.py` (453),
-`buildings.py` (193), `power_C_electric_production.py` (149),
+`buildings.py` (193), `electric_production.py` (149),
 `stellarator/coils/calculate.py` (136), `availability.py` (115),
-`stellarator_B_st_phys.py` (101), then the tail of 30 files. One commit per file or per
+`plasma_physics.py` (101), then the tail of 30 files. One commit per file or per
 small group, each with its inertness count in the message — a 2157-site single commit is
 unreviewable and unbisectable.
 
@@ -327,9 +327,11 @@ configuration (`ComponentThermalPowers(i_p_coolant_pumping=1, ...)`).
 lives in it (`stellarator.coils`, `physics.profiles`), or it is a slot something could be
 swapped into (`physics.confinement_time`) — never merely a filename. §11.1 measured why:
 every genuine cycle is contained within one subsystem and spans several files inside it. So
-no audit-chunk letters survive into identity: `physics_A_pure_formulas`, `power_B_thermal_
-cryo` and `stellarator_fwbs_s1_s5` are how the port was *chunked for auditing*, and
-`st_fwbs`'s S1–S6 re-chunking is still live (§3), so a name carrying it would move again.
+no audit-chunk letters survive into identity — nor, since `model_tree_design.md` §10,
+into filenames: `physics/pure_formulas.py` and `power/thermal_cryo.py` are named for what
+is in them. `stellarator_fwbs_s1_s5` still carries how the port was *chunked for
+auditing*, because `st_fwbs`'s S1–S6 re-chunking is still live (§3) and a name carrying
+it would move again.
 
 11 groups, 88 nodes placed. `to_graph` receives `{ROOT: COMMON}` rather than `COMMON` — a
 namespace class contributes its own class name as the outermost key when nothing placed it,

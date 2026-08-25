@@ -65,7 +65,7 @@ def _safe_ratio(numerator, denominator):
     """`numerator / denominator`, with the denominator floored to keep the gradient of
     the *unselected* branch of a caller's `jnp.where` finite when `denominator == 0`.
 
-    Same pattern as `physics_A_pure_formulas.md`'s `phyaux`/`fast_alpha_beta` guards:
+    Same pattern as `pure_formulas.md`'s `phyaux`/`fast_alpha_beta` guards:
     the value is only ever used where `denominator != 0` is true (a caller wraps this
     in an outer `jnp.where`), but `jax.jacfwd` differentiates both branches of a
     `jnp.where`, so a literal `0/0` here would leak a NaN gradient into the selected

@@ -117,7 +117,7 @@ healthy relationship and it should keep working the same way.
 biggest single win from `VarPath` was not readability: it was that
 `.impurity_radiation.f_nd_impurity_electron_array[i]` as a `SequenceKey` component turned
 an apparent self-loop into an ordinary node, because indices 0-1 are written and 2-13 are
-read (`_audit/unit_registry.md` row B; `models/physics/physics_B_composition.py:386`). No
+read (`_audit/unit_registry.md` row B; `models/physics/composition.py:386`). No
 `Cut`, no `FixedPoint`, no machinery — the naming scheme was fine-grained enough to say
 what was true.
 
@@ -210,7 +210,7 @@ But four narrower things *are* cottax's, and they are where it is genuinely too 
 `(x,)` for a single `Output` puts a tuple in the env, silently. I reproduced it (§ M6):
 `env['.a.y']` came back as `(Array(6.),)` and the downstream `jnp` consumer swallowed it
 without complaint. This is not hypothetical — `_audit/optimise_design.md:889-899` records
-**six** live instances in `models/power_B_thermal_cryo.py` (lines 1208, 1267, 1308, 1371,
+**six** live instances in `models/power/thermal_cryo.py` (lines 1208, 1267, 1308, 1371,
 1443, 1488), invisible under `PicardDriver` (`ravel_pytree` flattens a 1-tuple happily)
 and fatal the moment `Residualise` mints a `Compare` that subtracts. A seventh
 (`ZTfInsideHalf`) is recorded separately in `_audit/next_steps.md` § 8.

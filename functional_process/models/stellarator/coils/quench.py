@@ -357,5 +357,5 @@ class QuenchProtection(ExplicitFunction):
 # real call site (`calculate_quench_protection` above) several of their arguments are
 # derived intermediates (`tf_energy_stored`, `f_cond`, `rad_vv`), not raw `data` fields,
 # so a standalone node for any of them would need invented `VarPath`s for values that
-# only exist inside this composed chain -- same treatment as `stellarator_D_structure.md`
+# only exist inside this composed chain -- same treatment as `structure.md`
 # gave `calculate_structure_masses`'s internal `intercoil_surface`.

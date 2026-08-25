@@ -42,7 +42,7 @@ KEV = 1e3 * constants.ELECTRON_CHARGE
 
 # 30-point Gauss-Laguerre quadrature nodes/weights (`Neoclassics.init_neoclassics`).
 # Fixed numerical-method constants, not physics inputs -- module-level, not a port
-# argument, same treatment as stellarator_F's `_FACT`/`_COEF`/`_DECAY`.
+# argument, same treatment as `tf_nuclear_heating.py`'s `_FACT`/`_COEF`/`_DECAY`.
 ROOTS = np.array([
     4.740718054080526184e-2,
     2.499239167531593919e-1,

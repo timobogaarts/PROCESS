@@ -56,7 +56,7 @@ The other five (`calculate_max_force_density_mnm`, `calculate_max_lateral_force_
 `calculate_centering_force_min_mn`, `calculate_centering_force_avg_mn`) are **not**
 wrapped: none of their return values are written to `data` anywhere — `coils/calculate.py`
 consumes every one of them only as a local passed into `write()` (unit #13, confirmed
-reporting-only). Same convention already applied to `stellarator_D_structure.md`'s
+reporting-only). Same convention already applied to `structure.md`'s
 `calculate_intercoil_mass_scaling_reference`: a function whose only consumer is the
 report gets no node, since there is nothing downstream in the computational graph for it
 to feed.

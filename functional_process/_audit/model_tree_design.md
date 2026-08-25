@@ -740,3 +740,94 @@ files to change a noun would cost more than it clarifies.
   `switch_elimination_design.md` §10.3) — still real, still gated on the per-branch
   reads/writes analysis that section says is missing. The tree gives each fragment a
   slot to land in; it does not do the split.
+
+## 10. Filenames follow the slot names — the audit chunk letters are gone
+
+**Done 2026-08-25.** Ten modules still carried the audit's chunking in their filenames
+(`physics_A_pure_formulas.py`, `power_B_thermal_cryo.py`,
+`stellarator_F_tf_nuclear_heating.py`, ...). §3.2 already ruled that a node's identity is
+the *place* it occupies, not the class that fills it, and `total_process.py`'s
+`StellaratorProcess` docstring had already applied that to slot names, saying in as many
+words that the chunk letters "are how the port was chunked for auditing, not what the
+machine is made of". The filesystem was the last place still showing the scaffolding. It
+now shows the machine.
+
+**The rule, stated so it is checkable and not relitigated per file** — the same standard
+§3.2 sets for slot names:
+
+> **The stem names what is in the file; the directory names the subsystem.** Drop the
+> audit chunk letter and the subsystem prefix, because the directory already carries the
+> subsystem. Where no directory carries it, create one rather than folding the subsystem
+> into the stem. Where the residue is PROCESS's abbreviated source-routine name rather
+> than a description of the content, use the content name — which is what this
+> directory's existing modules already do (`st_build` → `build.py`, `st_div` →
+> `divertor.py`, `st_init` → `initialization.py`).
+
+| old | new |
+|---|---|
+| `models/physics/physics_A_pure_formulas.py` | `models/physics/pure_formulas.py` |
+| `models/physics/physics_B_composition.py` | `models/physics/composition.py` |
+| `models/physics/physics_C_outplas.py` | `models/physics/dimensionless_parameters.py` |
+| `models/power_A_tf_coil_power.py` | `models/power/tf_coil_power.py` |
+| `models/power_B_thermal_cryo.py` | `models/power/thermal_cryo.py` |
+| `models/power_C_electric_production.py` | `models/power/electric_production.py` |
+| `models/stellarator/stellarator_B_st_phys.py` | `models/stellarator/plasma_physics.py` |
+| `models/stellarator/stellarator_C_geometry.py` | `models/stellarator/geometry.py` |
+| `models/stellarator/stellarator_D_structure.py` | `models/stellarator/structure.py` |
+| `models/stellarator/stellarator_F_tf_nuclear_heating.py` | `models/stellarator/tf_nuclear_heating.py` |
+
+Each rename is three files — the module, its record under `_audit/units/**`, and its case
+under `tests/functional_process/**` — moved together with `git mv` so the three mirrors
+stay in step and history follows.
+
+**The three `power_*` were the only real decision.** They sat at `models/` top level, so
+stripping alone would have lost the subsystem: `models/thermal_cryo.py` says less than
+`power_B_thermal_cryo.py` did. `models/` already namespaces by subsystem (`physics/`,
+`stellarator/`, `costs/`, `blankets/`), so the rule's second clause applies and
+`models/power/` was created — one package per PROCESS source model, which is what the
+other four are. `tf_coil_power.py` keeps `power` in the stem even inside `power/`,
+because that is its subject (TF coil *power conversion*, not a TF coil model); the same
+mild repetition already stands in `costs/costs.py`.
+
+**Two names are content names, not the mechanical strip, per the rule's third clause.**
+`physics_C_outplas` → `dimensionless_parameters.py`: `outplas` is PROCESS's *reporting*
+routine, and the record's own finding is that its 1095 lines contain one computation and
+no output at all, so the stripped residue would have named the file after the one thing
+that is not in it. `stellarator_B_st_phys` → `plasma_physics.py`: `st_phys` is an
+abbreviation, and this directory already expands them; `physics.py` would have been the
+literal precedent but makes a bare "physics.py" reference ambiguous against
+`process/models/physics/physics.py`, which the records cite constantly.
+
+**One name is weaker than the rest, and it is worth saying which.** `pure_formulas.py`
+describes provenance (five functions that were already pure `@staticmethod`s in PROCESS),
+not a subject — and "pure" is true of every module in this package. It survives because
+the chunk genuinely has no single subject: ion/electron equilibration, burnup and
+fuelling rate, heating power, stored thermal energy, and fast-alpha beta. A subject name
+here would be a worse lie than a provenance one.
+
+**The four `stellarator_fwbs_s*.py` were deliberately held back.** `next_steps.md` §3 is
+still open on `st_fwbs`: S2 (`blanket_shield_tf_nuclear_power`) and S3
+(`divertor_mass_and_first_call_seed`) are unported, and the S1–S6 re-chunking that would
+decide what the surviving files are called is live. Renaming them now would rename them
+twice; renaming late is cheaper than that. `stellarator_fwbs_s1_s5.py` is therefore the
+one place the audit's chunking is still legible in the tree, which
+`total_process.py`'s docstring and `path_refactor.md` both now say explicitly.
+
+**Gates, measured before and after:** `pytest tests/functional_process -q` → 3755 passed,
+3347 skipped, unchanged; `len(GRAPH.nodes)` → 156, unchanged (node names are slot paths,
+so a filename cannot move them, and this confirms it); `--collect-only` test ids →
+set-identical after substituting the ten renamed stems, 2717 ids remapped, none added or
+lost. `ruff format --check` delta is zero. `ruff check`'s delta is the six `N999 Invalid
+module name` findings the capitals were raising, now gone — which is also why
+`pyproject.toml`'s `N999` entry in `per-file-ignores` for `tests/functional_process/**`
+was removed: no filename in the port or its cases has a capital letter any more.
+
+**Two stale references were left, both deliberately:** `next_steps.md` and
+`mda_harness.py` were being edited concurrently in another session and are not this
+change's to touch. Between them they still name `physics_A_pure_formulas`,
+`physics_B_composition`, `power_B_thermal_cryo`, `power_C_electric_production` and
+`stellarator_B_st_phys`. Everything else in the repo was swept, including three
+references that were line-wrapped mid-stem and so invisible to a line-based grep
+(`path_refactor.md`, `stellarator_fwbs_s2.md`, `test_tf_coil_power.py`) — worth
+remembering next time a stem is renamed, because a `grep` that finds nothing is not
+proof.

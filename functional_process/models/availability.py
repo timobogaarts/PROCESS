@@ -11,7 +11,7 @@ from a shared set of leaf helpers used by two or three of the branches at once
 
 Two switches are split into **separate node alternatives** rather than kept as a static
 branch inside one function, matching `i_tf_sup`'s precedent in
-`stellarator_F_tf_nuclear_heating.py`:
+`tf_nuclear_heating.py`:
 
 - `.tfcoil.i_tf_sup` selects between `calculate_cp_lifetime_superconducting` and
   `calculate_cp_lifetime_resistive` -- both branches of the source's `cp_lifetime` are
@@ -32,7 +32,7 @@ record's "switches touched" section for why these were not also split.
 
 `.physics.itart` gates whether `.costs.cplife` is *computed* by `avail()`/`avail_2()`'s
 `calc_u_planned` at all (a `conditional-ownership-by-run-config` case, same shape as
-`stellarator_C_geometry.md`'s `.physics.aspect` finding) -- ported by threading a
+`geometry.md`'s `.physics.aspect` finding) -- ported by threading a
 `cplife_in` passthrough argument rather than resolving the ownership question here; see
 the record. `avail_st()` differs: it computes `.costs.cplife` **unconditionally**, and
 only the later *lifetime-adjustment* step is `itart`-gated -- the two `itart` gates are
@@ -1116,7 +1116,7 @@ def calculate_avail_st(
 # faithful shape, not an arbitrary choice. `CpLifetimeSuperconducting`/
 # `CpLifetimeResistive` are a *different* kind of exception: `.costs.cplife` genuinely
 # has two independent producers selected by `.tfcoil.i_tf_sup`, exactly the `i_tf_sup`
-# shape already used in `stellarator_F_tf_nuclear_heating.py`.
+# shape already used in `tf_nuclear_heating.py`.
 #
 # `.costs.cplife` **also** self-references within `avail`/`avail_2`/`avail_st` themselves
 # (Shape B, `next_steps.md` §5: a node whose own `Output` and `FromExactly` name the identical
@@ -1142,7 +1142,7 @@ class CpLifetimeSuperconducting(ExplicitFunction):
 
     Mutually exclusive alternative to `CpLifetimeResistive` -- `.tfcoil.i_tf_sup` selects
     at most one at graph-assembly time (same shape as `i_tf_sup` in
-    `stellarator_F_tf_nuclear_heating.py`).
+    `tf_nuclear_heating.py`).
     """
 
     cplife = OutputInto(costs)

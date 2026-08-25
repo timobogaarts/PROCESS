@@ -326,7 +326,7 @@ port takes as given.
   `PlasmaRadiationPowers` (`functional_process/models/physics/radiation_power.py:721`),
   `.physics.vol_plasma` by `StellaratorPlasmaGeometry` — and the immediately following lines
   (`:2175-2220`) are ported and registered as `HeatingAndRadiationPower`
-  (`functional_process/models/stellarator/stellarator_B_st_phys.py:233-528`, whose docstring
+  (`functional_process/models/stellarator/plasma_physics.py:233-528`, whose docstring
   states it also folds in `:2167`). Only `:2152-2165` fell between the two nodes. Chunk 1B is
   registered; this output is not declared by any of its nodes.
 - **Cycle risk: none.** Measured — neither `PlasmaRadiationPowers` nor
@@ -374,7 +374,7 @@ port takes as given.
 - **Why (b)**: `stellarator.py:2002-2054` is unported. Chunk 1B's ported ranges are
   `1916-1919`, `1930-1968`, `1971-1976`, `1991-2001`, `2095-2117`, `2175-2220`, `2223-2257`,
   `2282-2290` (each stated in its own function docstring in
-  `functional_process/models/stellarator/stellarator_B_st_phys.py`); `2002-2094` is a hole.
+  `functional_process/models/stellarator/plasma_physics.py`); `2002-2094` is a hole.
   Both operands are already owned by `FusionRates` and — measured — currently have **zero
   readers** in the graph, i.e. the port computes them and then throws them away while
   reading the boundary value of the same quantity two lines later.
@@ -388,7 +388,7 @@ port takes as given.
   does not create a new SCC and does not cross a subsystem boundary.**
 - **Second-order consideration**: `PlasmaComposition` branches on
   `fusden_alpha_total < 1e-6` as a "not yet calculated" bootstrap
-  (`functional_process/models/physics/physics_B_composition.py:203-210`). Turning that from a
+  (`functional_process/models/physics/composition.py:203-210`). Turning that from a
   seeded boundary constant into a driven unknown makes the `PicardDriver`'s starting guess
   load-bearing on a branch, not just on a value.
 
@@ -400,7 +400,7 @@ port takes as given.
   `PlantElectricProductionReactor`, `AuxiliaryComponentCoolingCost`
   (`p_cryo_plant_electric_mw`).
 - **Why (b)**: **ported but deliberately unregistered.** `Cryo` and `CryoLoads` exist in
-  `functional_process/models/power_B_thermal_cryo.py` (as of this audit at `:1491` and
+  `functional_process/models/power/thermal_cryo.py` (as of this audit at `:1491` and
   `:1531`; that file is being edited concurrently, so treat the line numbers as indicative
   and the class names as authoritative) and both declare these `Output`s.
   `total_process.py:1127-1134` records exactly why they are not registered: each reads and
@@ -547,7 +547,7 @@ records 237/2/65/2/11. The agreement count rising is expected (§9 registered ~4
 nodes via `i_cost_model = 0`), but **`PlantElectricProductionReactor` is now 9 fields off,
 worst `.heat_transport.p_plant_electric_base_total_mw` at `rel_diff = 1.968e-01`, and
 `.costs.coe` is off by `1.733e-02` where §9 recorded `1.704e-06`.** A concurrently-running
-session owns `power_B_thermal_cryo.py` and `core/solver/drivers.py`, so this is recorded as
+session owns `thermal_cryo.py` and `core/solver/drivers.py`, so this is recorded as
 an observation with a timestamp and explicitly **not** attributed to anything; whoever
 picks it up should re-run before diagnosing.
 
@@ -661,7 +661,7 @@ step, not the graph's ability to run cold — see §9 below.
    — diagnosed as a missing producer, not a costs defect, and fixed by the producer.
 5. **[CLOSED, and it was worth more than this entry predicted] `.physics.fusden_total` /
    `.fusden_alpha_total`** — ported as `FusionTotalsNoBeam`
-   (`stellarator_B_st_phys.py`), the `else` arm of `stellarator.py:2002-2054`, three
+   (`plasma_physics.py`), the `else` arm of `stellarator.py:2002-2054`, three
    identities including `.physics.p_dt_total_mw`. Registered unconditionally: the arm is
    selected by `i_plasma_ignited == IGNITED` on this run, not merely by the absence of a
    beam, and the beam arm calls the unportable `reactions.beam_fusion` (unit #19), so
@@ -687,7 +687,7 @@ step, not the graph's ability to run cold — see §9 below.
    cycle it is the only one that works paired with `proton_rate_density`, and no single
    variable works alone.
 6. **[CLOSED] `.physics.p_plasma_inner_rad_mw`** — ported as `ClippedRadiationPowers`
-   (`stellarator_B_st_phys.py`), which owns four outputs rather than the one this entry
+   (`plasma_physics.py`), which owns four outputs rather than the one this entry
    anticipated: `stellarator.py:2152-2166` is a single straight-line block containing
    **two** clips (core *and* outer, not just core as this entry said) and the two total
    powers PROCESS forms from the clipped values.

@@ -124,7 +124,7 @@ nodes at once — the body (`residual`/`step`) and the problem that closes it �
 body reads the very unknown the problem owns: that mutual read/write is the "hole" the
 problem drives to close, not a bug to route around. Only reach for these once a chunk's
 internal solve is confirmed self-contained (calls no other not-yet-ported unit) — see
-`stellarator_B_st_phys.md`'s `power_at_ignition_point` for a tier-2 unit that is *not*
+`plasma_physics.md`'s `power_at_ignition_point` for a tier-2 unit that is *not*
 self-contained (it calls into unit #1's `st_phys`) and therefore cannot get one of these
 yet.
 

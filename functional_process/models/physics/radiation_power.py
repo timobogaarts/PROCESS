@@ -529,7 +529,7 @@ class ImpurityRadiationTotals(ExplicitFunction):
 
     **`f_nd_impurity_electron_array` is read as fourteen individual, index-addressed
     `FromExactly`s**, not one whole-array `FromExactly` -- the same per-index treatment
-    `physics_B_composition.PlasmaComposition`/`CalculateEffectiveChargeIonisationProfiles`
+    `composition.PlasmaComposition`/`CalculateEffectiveChargeIonisationProfiles`
     now give the identical field (`SequenceKey`-addressed, matching the real
     `DataStructure` field's own `list[float]` storage, per `naming_convention.md` §
     "Array elements"). This is what this class's own `__call__` docstring used to flag
@@ -727,7 +727,7 @@ class PlasmaRadiationPowers(ExplicitFunction):
     of its two callers.
 
     **So this node's two clipped outputs are minted `_unclipped` names**, and
-    `stellarator_B_st_phys.py`'s `ClippedRadiationPowers` owns the real
+    `plasma_physics.py`'s `ClippedRadiationPowers` owns the real
     `.physics.pden_plasma_core_rad_mw`/`pden_plasma_outer_rad_mw` fields. Before that
     split this node claimed the real fields while computing the *pre*-clip value -- a
     latent divergence from PROCESS, invisible only because the clip happens to be

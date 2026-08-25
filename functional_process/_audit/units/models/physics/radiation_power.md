@@ -344,7 +344,7 @@ There is, however, one thing that *behaves* like a switch without being one:
    **Updated — one part of this question is now closed, a separate part is not.**
    `f_nd_impurity_electron_array` is now read as fourteen individually-addressed
    reads rather than one whole-array read (same per-index treatment
-   `physics_B_composition.py`'s `PlasmaComposition`/
+   `composition.py`'s `PlasmaComposition`/
    `CalculateEffectiveChargeIonisationProfiles` give the identical field — see that
    record's "cottax node" section). Before that change, `__call__`'s own docstring gave
    *a second, narrower* reason the array stayed whole: "the number of parameters would

@@ -9,7 +9,7 @@ The shape is `x ** p` with `0 < p < 1` (`jnp.sqrt` being `p = 0.5`) evaluated at
 and JAX's JVP then computes `inf * dx`, which is `+inf` in the tangent direction that
 perturbs `x` and `nan` (`inf * 0`) in every other direction. The project has hit this
 four times -- twice behind a `jnp.maximum` clamp (`costs.py`'s net-electric-power square
-root, `physics_A_pure_formulas.py`'s `fast_alpha_beta`) and twice as a bare power law --
+root, `pure_formulas.py`'s `fast_alpha_beta`) and twice as a bare power law --
 and the last instance cost hours, because the SQP solver reported 46 non-finite Jacobian
 cells as "the problem seems to be non-convex".
 

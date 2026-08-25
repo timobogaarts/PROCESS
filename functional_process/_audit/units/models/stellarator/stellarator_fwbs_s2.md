@@ -79,7 +79,7 @@ Then: `.fwbs.f_p_blkt_multiplication = 1.269` (unconditional overwrite -- confir
 not-a-bug by `stellarator_E_fwbs_synthesis.md` § 3, since it happens to match the field's
 own class default), and a call to `self.sc_tf_coil_nuclear_heating_iter90()` (chunk 1F,
 already ported as `calculate_sc_tf_coil_nuclear_heating` in
-`stellarator_F_tf_nuclear_heating.py`) keeping only the 4th return value
+`tf_nuclear_heating.py`) keeping only the 4th return value
 (`flu_tf_neutron_fast_peak`) and discarding the rest, including its own
 `p_tf_nuclear_heat_mw` -- correct as written, source comment confirms intent ("Use older
 model to calculate neutron fluence since it is not calculated in the CCFE blanket
@@ -161,7 +161,7 @@ outputs -- confirmed by direct read (no `else` at 611), matching
 | `.physics.itart`, `.build.dr_shld_outboard/inboard`, `.fwbs.whtshld` | read | explicit-arg | `nuclear_heating_shield`'s remaining args (`shield_density`/`x_blanket` come from `nuclear_heating_magnets` above) |
 | `.fwbs.p_shld_nuclear_heat_mw`, `.ccfe_hcpb.exp_shield1/exp_shield2/shld_u_nuc_heating` | **not written** (bug) | -- | should be `nuclear_heating_shield`'s captured return, see § 2.2 |
 | `.fwbs.f_p_blkt_multiplication` | write | own-write | unconditional `1.269` literal, confirmed not-a-bug (matches class default) |
-| (`sc_tf_coil_nuclear_heating_iter90`'s full read-set, chunk 1F) | read | explicit-arg (tier-3 edge) | see `stellarator_F_tf_nuclear_heating.md` |
+| (`sc_tf_coil_nuclear_heating_iter90`'s full read-set, chunk 1F) | read | explicit-arg (tier-3 edge) | see `tf_nuclear_heating.md` |
 | `.fwbs.flu_tf_neutron_fast_peak` | write | own-write | only the 4th of `sc_tf_coil_nuclear_heating_iter90`'s 10 outputs is kept here; correct as written |
 
 ## proposed signature -- arm 1 (not ported; recorded for whoever does)
@@ -177,7 +177,7 @@ def calculate_blanket_neutronics(m_blkt_total, p_fusion_total_mw, ...) -> tuple:
 ## tier signal -- arm 1
 
 **Tier 3** (composes three already-ported `hcpb.py` nodes plus one already-ported
-`stellarator_F_tf_nuclear_heating.py` node) -- not ported per this project's tier-3
+`tf_nuclear_heating.py` node) -- not ported per this project's tier-3
 policy (structural composition, no new solver, `test_harness.md`'s "Not built" section).
 Blocked additionally by the two live bugs in § 2.2, which mean *any* port of this arm
 must first decide how to route around PROCESS's own broken call site -- a design
@@ -195,7 +195,7 @@ blanket heating, shield heating as the remainder, then a call to
 Ported: `calculate_exponential_attenuation_blanket_shield_power` in
 `stellarator_fwbs_s2.py` (the arm's own 5-line arithmetic only, 686-714). The
 `sc_tf_coil_nuclear_heating_iter90()` tail (716-728) is **not** reproduced here -- it is
-an ordinary tier-3 composition edge onto `stellarator_F_tf_nuclear_heating.py`'s
+an ordinary tier-3 composition edge onto `tf_nuclear_heating.py`'s
 already-ported, already-tested `calculate_sc_tf_coil_nuclear_heating`, per this
 project's standing policy against re-porting an already-validated node.
 
@@ -212,7 +212,7 @@ project's standing policy against re-porting an already-validated node.
 | `.fwbs.p_blkt_multiplication_mw` | write | own-write (returned) | |
 | `.fwbs.p_blkt_nuclear_heat_total_mw` | write | own-write (returned) | |
 | `.fwbs.p_shld_nuclear_heat_mw` | write | own-write (returned) | |
-| (10-output `sc_tf_coil_nuclear_heating_iter90` read-set) | read | explicit-arg (tier-3 edge) | see `stellarator_F_tf_nuclear_heating.md`; not this unit's own footprint |
+| (10-output `sc_tf_coil_nuclear_heating_iter90` read-set) | read | explicit-arg (tier-3 edge) | see `tf_nuclear_heating.md`; not this unit's own footprint |
 | `.fwbs.flu_tf_neutron_fast_peak`, `.fwbs.p_tf_nuclear_heat_mw` | write (via that call) | own-write (returned, tier-3 edge) | 2 of the 10 outputs kept; other 8 stay Python-local (consumed by S6, out of this unit's scope) |
 
 ## proposed signature -- arm 2
@@ -330,14 +330,14 @@ reference (verified: `test_value_agreement`/`test_gradient_agreement` both pass,
   (1, computes both from local nuclear-heating/radiation intermediates). Reads-sets
   genuinely differ (nominally calls for a split per `traceability_policy.md`'s default),
   but the `USER_INPUT` branch is not a computation to port at all (literally `pass`) --
-  same shape `stellarator_F_tf_nuclear_heating.py` already used for its own trivial
+  same shape `tf_nuclear_heating.py` already used for its own trivial
   switch branch (see next bullet), not a fresh judgment call. The port always computes
   as if `FRACTION_OF_HEAT`; `USER_INPUT` and the two raising values are out of port
   scope, flagged here rather than silently defaulted.
 - **`.tfcoil.i_tf_sup`** (`TFConductorModel`): gates `p_tf_nuclear_heat_mw` between
   `pnucsi + pnucso - pnucshldi - pnucshldo` (`SUPERCONDUCTING`) and the literal `0.0`
-  (resistive). **Direct precedent already on record**: `stellarator_F_tf_nuclear_
-  heating.py`'s own module docstring drops the identical switch's resistive branch from
+  (resistive). **Direct precedent already on record**: `tf_nuclear_heating.py`'s own
+  module docstring drops the identical switch's resistive branch from
   `sc_tf_coil_nuclear_heating_iter90`'s port entirely ("the resistive branch takes no
   inputs and always returns ten zeros, so it is not a computation to port, it is the
   absence of this node in the graph"). Same treatment applied here for the same switch on
@@ -386,7 +386,7 @@ copies drifting; this table gives the classification pass over the same list).
 | `.fwbs.pradloss` | write | own-write (returned) | |
 | `.fwbs.p_div_rad_total_mw` | **never written** (bug) | -- | reproduced as literal `0.0`, see § 4.2 |
 | `.fwbs.p_fw_rad_total_mw` | write | own-write (returned) | wrong by the omitted `p_div_rad_total_mw` term, reproduced exactly, see § 4.2 |
-| `f_a_fw_coolant_inboard`, `f_a_fw_coolant_outboard` (Python locals, **not** `.fwbs.*` in this arm) | write | own-write (returned) | `stellarator_E_fwbs_synthesis.md` § 2's "same names, disjoint formulas" wrinkle -- consumed by S4, out of this unit's scope; given best-effort `.fwbs.*` `VarPath`s on the cottax node anyway, per `stellarator_F_tf_nuclear_heating.py`'s own precedent for best-effort output paths |
+| `f_a_fw_coolant_inboard`, `f_a_fw_coolant_outboard` (Python locals, **not** `.fwbs.*` in this arm) | write | own-write (returned) | `stellarator_E_fwbs_synthesis.md` § 2's "same names, disjoint formulas" wrinkle -- consumed by S4, out of this unit's scope; given best-effort `.fwbs.*` `VarPath`s on the cottax node anyway, per `tf_nuclear_heating.py`'s own precedent for best-effort output paths |
 | `.fwbs.p_fw_nuclear_heat_total_mw` | write | own-write (returned) | |
 | `.fwbs.p_blkt_multiplication_mw` | write (x2, `=` then `+=`, source 930/948) | own-write (returned) | combined into one closed-form expression in the port, not a bug -- both source writes are unconditional, no branch between them |
 | `.fwbs.p_blkt_nuclear_heat_total_mw` | write | own-write (returned) | |

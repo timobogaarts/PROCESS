@@ -46,7 +46,7 @@ or elsewhere). Called once, from `coils/calculate.py` (registry unit #9).
 No `implicit-io`, `implicit-io-via-callee`, or `redundant-duplicate-write` — every
 internal write is read back exactly once more, in the same orchestrating call, with no
 intervening branch or loop (textbook `local-intermediate`, same as
-`stellarator_D_structure.md`'s `aintmass` chain).
+`structure.md`'s `aintmass` chain).
 
 ## proposed signature(s)
 
@@ -148,5 +148,5 @@ None. Plain scalar arithmetic throughout.
    `.tfcoil.dcond[0]` and no name is invented and no lookup node exists. The general rule
    this establishes: a mint is warranted only once it is confirmed that *no* real field —
    **including an array element** — holds the value. (The original wording cross-referenced
-   a matching concern in `stellarator_F_tf_nuclear_heating.md`; no such note is present in
+   a matching concern in `tf_nuclear_heating.md`; no such note is present in
    that file today, so that pointer is dropped rather than repeated.)

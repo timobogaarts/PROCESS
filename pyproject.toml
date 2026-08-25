@@ -207,10 +207,7 @@ max-locals = 17
 # The port's validation harness. Its cases live under tests/ (mirroring the package)
 # while the audit records stay next to the modules they justify, so it picks up the
 # tests/** ignores above and needs only RUF012 added back, for the same reason.
-# N999: three cases are named after the section of PROCESS they cover
-# (`test_physics_A_pure_formulas.py`); the capitals only became a lint once the
-# `__init__.py` chain made these directories packages.
-"tests/functional_process/**" = ["RUF012", "N999"]
+"tests/functional_process/**" = ["RUF012"]
 "examples/**" = [ 'B018', 'E402']
 "{tests,tracking,documentation/scripts,examples}/**" = ['INP001']
 "process/{core/io/plot/summary.py,data_structure/*}" = ["E501"]

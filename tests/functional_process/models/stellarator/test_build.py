@@ -6,7 +6,7 @@ no `test_build.py`), so there is no golden legacy point to lift -- every sample 
 
 `st_build` is a module-level function taking `(stellarator, f_output, data)`; `stellarator`
 is only dereferenced inside the `if f_output:` branch (for `.outfile`), so `None` stands
-in for it here, same reasoning as `test_stellarator_D_structure.py`'s use of `None` for
+in for it here, same reasoning as `test_structure.py`'s use of `None` for
 unused injected sub-models.
 
 A full `DataStructure()` has `rminor = 0.0` by default (`physics_variables.py`), which

@@ -96,7 +96,7 @@ def eq(value, bound):
 def calculate_plasma_beta(pres_plasma, b_field):
     """Plasma beta from pressure and field. Ports `PlasmaBeta.calculate_plasma_beta`
     (`process/models/physics/physics.py:3920`) verbatim -- already pure in the source,
-    no `self.data` access, same lift-as-is treatment `physics_A_pure_formulas.py`
+    no `self.data` access, same lift-as-is treatment `pure_formulas.py`
     already gives five other already-pure formulas from this same class of source.
 
     `beta = 2 * mu0 * pressure / B**2`.
@@ -629,7 +629,7 @@ def constraint_15(p_plasma_separatrix_mw, p_l_h_threshold_mw, f_h_mode_margin):
 
     Bare residual read, no switch. **Hole-in-MDA: partial.**
     `p_plasma_separatrix_mw` is produced by `functional_process/models/stellarator/
-    stellarator_B_st_phys.py` (already ported). `p_l_h_threshold_mw` is produced by
+    plasma_physics.py` (already ported). `p_l_h_threshold_mw` is produced by
     `process/models/physics/l_h_transition.py:86` — unported in this codebase. Ported
     anyway, same reasoning as constraint 12. `f_h_mode_margin` is a plain input
     constant (margin multiplier, default `1.0`).
@@ -655,7 +655,7 @@ def constraint_16(p_plant_electric_net_mw, p_plant_electric_net_required_mw):
     """Net electric power lower limit. Ports `constraint_equation_16`.
 
     Bare residual read, no switch, no hole-in-MDA: `p_plant_electric_net_mw` is
-    produced by `functional_process/models/power_C_electric_production.py`'s
+    produced by `functional_process/models/power/electric_production.py`'s
     `PlantElectricProduction` node — built and harness-tested, though **not yet
     registered** in `total_process.py` (a separate, already-known gap, see
     `_audit/next_steps.md`'s alternates-audit backlog, not this constraint's concern).
@@ -1521,7 +1521,7 @@ def constraint_53(flu_tf_neutron_fast_peak, flu_tf_neutron_fast_max):
     """Fast neutron fluence on TF coil, upper limit. Ports `constraint_equation_53`.
 
     Bare residual read, no switch, **no hole-in-MDA**: `flu_tf_neutron_fast_peak`'s
-    real producer is already ported (`stellarator_F_tf_nuclear_heating.py`'s
+    real producer is already ported (`tf_nuclear_heating.py`'s
     `.fwbs.flu_tf_neutron_fast_peak` `Output`); `flu_tf_neutron_fast_max` is a plain
     input constant (`_audit` convention: bounds with no producer are ordinary inputs,
     not holes).
@@ -1967,7 +1967,7 @@ def constraint_76(
     codebase's standard `local-intermediate` classification for exactly this shape (a
     value computed and used once, never itself part of the constraint's port
     signature) -- the two `data` writes are a PROCESS-internal side effect this port
-    does not reproduce, same policy `physics_B_composition.py`'s docstring states for
+    does not reproduce, same policy `composition.py`'s docstring states for
     unported side effects elsewhere in this codebase.
 
     `nd_plasma_electron_max_array(7)` in the source docstring is 1-indexed Fortran-style
@@ -2273,7 +2273,7 @@ def constraint_87(p_cryo_plant_electric_mw, p_cryo_plant_electric_max_mw):
 
     General constraint, no switch. Both operands are plain already-produced fields --
     see the audit record for `p_cryo_plant_electric_mw`'s real producer
-    (`power_B_thermal_cryo.py`'s `CryoLoads`, already ported, not yet registered in
+    (`thermal_cryo.py`'s `CryoLoads`, already ported, not yet registered in
     `total_process.py`).
 
     Parameters
@@ -2437,7 +2437,7 @@ def constraint_92(f_plasma_fuel_deuterium, f_plasma_fuel_tritium, f_plasma_fuel_
     Equality constraint -- the first one audited in this codebase, hence `eq` above.
     All three operands are plain user-input fractions (`physics_variables.py`), not
     computed outputs of any model -- `plasma_composition`
-    (`functional_process/models/physics/physics_B_composition.py`) already reads all
+    (`functional_process/models/physics/composition.py`) already reads all
     three as ordinary boundary `FromExactly`s, confirming they are leaf inputs, not a
     hole-in-MDA candidate at all (nothing produces them; nothing needs to).
 

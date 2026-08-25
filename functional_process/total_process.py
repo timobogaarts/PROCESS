@@ -145,30 +145,22 @@ from functional_process.models.costs.costs import (
     VacuumSystemCost,
     VacuumVesselAssemblyCost,
 )
+from functional_process.models.physics.composition import (
+    CalculateEffectiveChargeIonisationProfiles,
+    PlasmaComposition,
+)
 from functional_process.models.physics.confinement_time import (
     ConfinementTime,
     DoubleAndTripleProduct,
     StellaratorConfinementTime,
 )
+from functional_process.models.physics.dimensionless_parameters import (
+    DimensionlessPlasmaParameters,
+)
 from functional_process.models.physics.exhaust import RadiationFraction
 from functional_process.models.physics.fusion_reactions import (
     FusionRates,
     SetFusionPowers,
-)
-from functional_process.models.physics.physics_A_pure_formulas import (
-    AuxiliaryPhysicsQuantities,
-    ElectronThermalEnergy,
-    FastAlphaBeta,
-    IonElectronEquilibration,
-    IonThermalEnergy,
-    TotalPlasmaHeatingPower,
-)
-from functional_process.models.physics.physics_B_composition import (
-    CalculateEffectiveChargeIonisationProfiles,
-    PlasmaComposition,
-)
-from functional_process.models.physics.physics_C_outplas import (
-    DimensionlessPlasmaParameters,
 )
 from functional_process.models.physics.plasma_profiles import (
     IonVolAvgTemperature,
@@ -189,16 +181,29 @@ from functional_process.models.physics.profiles import (
     ProfileGrid,
     TeProfileIntegral,
 )
+from functional_process.models.physics.pure_formulas import (
+    AuxiliaryPhysicsQuantities,
+    ElectronThermalEnergy,
+    FastAlphaBeta,
+    IonElectronEquilibration,
+    IonThermalEnergy,
+    TotalPlasmaHeatingPower,
+)
 from functional_process.models.physics.radiation_power import (
     ImpurityRadiationTotals,
     PlasmaRadiationPowers,
     SynchrotronRadiationPower,
 )
-from functional_process.models.power_A_tf_coil_power import (
+from functional_process.models.power.electric_production import (
+    Acpow,
+    PlantElectricProductionReactor,
+    PowerProfilesOverTime,
+)
+from functional_process.models.power.tf_coil_power import (
     TfPowerResistive,
     TfPowerSuperconducting,
 )
-from functional_process.models.power_B_thermal_cryo import (
+from functional_process.models.power.thermal_cryo import (
     ComponentThermalPowers,
     CryoLoads,
     CryoQLoadsStep,
@@ -209,11 +214,6 @@ from functional_process.models.power_B_thermal_cryo import (
     PFwBlktCoolantPumpMwStep,
     PFwDivHeatDepositedMwStep,
     TempTurbineCoolantInStep,
-)
-from functional_process.models.power_C_electric_production import (
-    Acpow,
-    PlantElectricProductionReactor,
-    PowerProfilesOverTime,
 )
 from functional_process.models.stellarator.build import (
     AFwTotalNoPowerflow,
@@ -258,6 +258,11 @@ from functional_process.models.stellarator.density_limits import (
     SudoDensityLimit,
 )
 from functional_process.models.stellarator.divertor import Divertor
+from functional_process.models.stellarator.geometry import (
+    DefaultAspectRatio,
+    StellaratorPlasmaGeometry,
+    StellaratorScalingFactors,
+)
 from functional_process.models.stellarator.heating import (
     BeamCurrent,
     EcrhHeating,
@@ -270,11 +275,7 @@ from functional_process.models.stellarator.neoclassics import (
     EffectiveThermalDiffusivity,
     ProfileValues,
 )
-from functional_process.models.stellarator.preset_config import (
-    StellaratorMachineConfig,
-    read_stellarator_config_file,
-)
-from functional_process.models.stellarator.stellarator_B_st_phys import (
+from functional_process.models.stellarator.plasma_physics import (
     ClippedRadiationPowers,
     FusionPowerTotalsMw,
     FusionTotalsNoBeam,
@@ -286,16 +287,9 @@ from functional_process.models.stellarator.stellarator_B_st_phys import (
     ThermalEnergyTotals,
     TotalField,
 )
-from functional_process.models.stellarator.stellarator_C_geometry import (
-    DefaultAspectRatio,
-    StellaratorPlasmaGeometry,
-    StellaratorScalingFactors,
-)
-from functional_process.models.stellarator.stellarator_D_structure import (
-    StructureMasses,
-)
-from functional_process.models.stellarator.stellarator_F_tf_nuclear_heating import (
-    ScTfCoilNuclearHeating,
+from functional_process.models.stellarator.preset_config import (
+    StellaratorMachineConfig,
+    read_stellarator_config_file,
 )
 from functional_process.models.stellarator.stellarator_fwbs_s1_s5 import (
     CryostatAndVvGeometry,
@@ -309,6 +303,12 @@ from functional_process.models.stellarator.stellarator_fwbs_s3 import DivertorPl
 from functional_process.models.stellarator.stellarator_fwbs_s4 import (
     BlanketComponentMasses,
     ShieldMass,
+)
+from functional_process.models.stellarator.structure import (
+    StructureMasses,
+)
+from functional_process.models.stellarator.tf_nuclear_heating import (
+    ScTfCoilNuclearHeating,
 )
 from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
@@ -874,7 +874,7 @@ class Stellarator(ModelNamespace):
     effective_thermal_diffusivity: EffectiveThermalDiffusivity = (
         EffectiveThermalDiffusivity()
     )
-    # `stellarator_B_st_phys.py` (chunk 1B of unit #1). `StellaratorBetaAndRhoStar` is
+    # `plasma_physics.py` (chunk 1B of unit #1). `StellaratorBetaAndRhoStar` is
     # still NOT registered: its `.physics.rho_star` output is algebraically identical to
     # `DimensionlessPlasmaParameters`'s own `rho_star` formula above (same inputs, same
     # expression, confirmed by direct comparison) -- a genuine redundant-duplicate-write
@@ -919,7 +919,7 @@ class Stellarator(ModelNamespace):
     # `physics_variables.py:881`'s bare default `0`, which this registration used to
     # carry. Third site of the same mismatch (`PlasmaComposition`/`ConfinementTime` are
     # the other two), all three found together by `mda_harness.py`'s `switch_audit`.
-    # Checked before flipping: `stellarator_B_st_phys.py:273-274` adds
+    # Checked before flipping: `plasma_physics.py:273-274` adds
     # `p_hcd_injected_total_mw` into `powht` only under NON_IGNITED, so the IGNITED arm
     # reads a strict subset of the inputs -- nothing new to wire.
     heating_and_radiation_power: HeatingAndRadiationPower = HeatingAndRadiationPower(
@@ -932,7 +932,7 @@ class Stellarator(ModelNamespace):
         )
     )
     thermal_energy_totals: ThermalEnergyTotals = ThermalEnergyTotals()
-    # `stellarator_C_geometry.py` (chunk 1C of unit #1). `DefaultAspectRatio` is the
+    # `geometry.py` (chunk 1C of unit #1). `DefaultAspectRatio` is the
     # `1 not in data.numerics.ixc` conditional-ownership case (module docstring): the
     # bare `NumericsData` dataclass default (`ixc = [0, 0, ...]`, no real iteration-
     # variable ID ever present) makes `1 not in ixc` true, so this node is instantiated
@@ -1094,7 +1094,7 @@ class Physics(ModelNamespace):
         imp_indices=tuple(range(14))
     )
     plasma_radiation_powers: PlasmaRadiationPowers = PlasmaRadiationPowers()
-    # unit #9 chunk A, physics/physics_A_pure_formulas.py -- five already-pure formulas
+    # unit #9 chunk A, physics/pure_formulas.py -- five already-pure formulas
     # lifted verbatim, no entanglement, no switch-driven topology split.
     ion_electron_equilibration: IonElectronEquilibration = IonElectronEquilibration()
     auxiliary_physics_quantities: AuxiliaryPhysicsQuantities = (
@@ -1104,13 +1104,13 @@ class Physics(ModelNamespace):
     electron_thermal_energy: ElectronThermalEnergy = ElectronThermalEnergy()
     ion_thermal_energy: IonThermalEnergy = IonThermalEnergy()
     # `i_beta_fast_alpha` kept as a static kwarg, not a Switch -- both branches read the
-    # same six variables (physics_A_pure_formulas.md's "switches touched"), same
+    # same six variables (pure_formulas.md's "switches touched"), same
     # shape as `EcrhDensityLimit`'s `i_plasma_pedestal`. Default `1` (WARD),
     # `physics_variables.py:875`.
     fast_alpha_beta: FastAlphaBeta = FastAlphaBeta(
         i_beta_fast_alpha=FastAlphaPressureModel.WARD
     )
-    # unit #9 chunk B, physics/physics_B_composition.py. `plasma_composition`'s
+    # unit #9 chunk B, physics/composition.py. `plasma_composition`'s
     # `.physics.first_call` turned out not to be a genuine cycle at all -- its real
     # referent (`f_temp_plasma_electron_density_vol_avg`, from `plasma_profiles.py`) has
     # no dependency back on this node, so `first_call` is an ordering artifact of
@@ -1136,7 +1136,7 @@ class Physics(ModelNamespace):
     # resolves by name like every other static kwarg.
     # Checked before flipping, same discipline as `i_thermal_electric_conversion`
     # below: the IGNITED arm needs no input this port does not already wire --
-    # `physics_B_composition.py:219-222` is `nd_beam_ions = 0` under IGNITED
+    # `composition.py:219-222` is `nd_beam_ions = 0` under IGNITED
     # versus `nd_plasma_electrons_vol_avg * f_nd_beam_electron` otherwise, so the
     # ignited arm reads a strict *subset* of the non-ignited arm's inputs.
     plasma_composition: PlasmaComposition = PlasmaComposition(
@@ -1146,8 +1146,8 @@ class Physics(ModelNamespace):
     # this long, and the annotation cannot be wrapped -- `ruff format` strips
     # parentheses from around an annotation. An import alias would hide the class name.
     calculate_effective_charge_ionisation_profiles: CalculateEffectiveChargeIonisationProfiles = CalculateEffectiveChargeIonisationProfiles()  # noqa: E501
-    # unit #9 chunk C, physics/physics_C_outplas.py -- the one real computation inside
-    # the 1095-line `outplas` reporting method.
+    # unit #9 chunk C, physics/dimensionless_parameters.py -- the one real
+    # computation inside the 1095-line `outplas` reporting method.
     dimensionless_plasma_parameters: DimensionlessPlasmaParameters = (
         DimensionlessPlasmaParameters()
     )
@@ -1168,10 +1168,10 @@ class Power(ModelNamespace):
     keeps the claim visible instead of burying it in a shared occupant.
     """
 
-    # `power_A_tf_coil_power.py` (unit #14 chunk A). `TfPowerResistive`/
+    # `tf_coil_power.py` (unit #14 chunk A). `TfPowerResistive`/
     # `TfPowerSuperconducting` are registered under `TOPOLOGY_SWITCHES`'s new
     # `.tfcoil.i_tf_sup` switch instead of here -- see that switch's own comment.
-    # `power_B_thermal_cryo.py` (unit #14 chunk B). Six of `calculate_
+    # `thermal_cryo.py` (unit #14 chunk B). Six of `calculate_
     # component_thermal_powers`'s outputs are genuine single-node self-loops (each
     # field's *entering* value is read, then a freshly-computed value is written back to
     # the same `VarPath` later in the same PROCESS call) -- already split this session
@@ -1190,10 +1190,10 @@ class Power(ModelNamespace):
     # same discipline: the two switch-dependent bodies are conditional-ownership
     # pass-throughs, and value `1` selects the *recompute* side of both, out of
     # arguments these nodes already take --
-    # `calculate_p_fw_blkt_coolant_pump_mw` (`power_B_thermal_cryo.py:206-211`)
+    # `calculate_p_fw_blkt_coolant_pump_mw` (`thermal_cryo.py:206-211`)
     # returns `p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw` for `1 not in
     # {MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`, and
-    # `calculate_p_fw_div_heat_deposited_mw` (`power_B_thermal_cryo.py:308-310`)
+    # `calculate_p_fw_div_heat_deposited_mw` (`thermal_cryo.py:308-310`)
     # returns `p_fw_heat_deposited_mw + p_div_heat_deposited_mw` for
     # `1 != MECHANICAL_WITH_PRESSURE_DROP`. Both operands are already `FromExactly`s (or
     # rebuilt from `FromExactly`s) on every node below, so no arm has a hole in it.
@@ -1298,7 +1298,7 @@ class Power(ModelNamespace):
         i_tf_sup=TFConductorModel.SUPERCONDUCTING,
         i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
     )
-    # `power_C_electric_production.py` (unit #14 chunk C). `i_pf_energy_storage_source=2`
+    # `electric_production.py` (unit #14 chunk C). `i_pf_energy_storage_source=2`
     # matches `pf_power_variables.py:18`'s default.
     acpow: Acpow = Acpow(i_pf_energy_storage_source=PFEnergyStorageSource.LINE)
 
@@ -1363,7 +1363,7 @@ class Availability(ModelNamespace):
     # `AvailSt`) is the node actually exercised at solve time regardless of that
     # switch's value, and belongs in the unswitched part, not behind a slot. Its
     # `.costs.cplife` self-loop is resolved the same way as `plasma_composition`'s
-    # `first_call`/`power_B_thermal_cryo.py`'s six fields above: `CplifeAvail`
+    # `first_call`/`thermal_cryo.py`'s six fields above: `CplifeAvail`
     # (`FixedPointFunction`) owns `.costs.cplife` alone; `Avail` (`ExplicitFunction`)
     # owns every other output, reading `cplife` as a plain `FromExactly`.
     # `CpLifetimeSuperconducting`/`CpLifetimeResistive` are deliberately NOT registered:
@@ -1433,10 +1433,13 @@ class StellaratorProcess(ModelNamespace):
     filename. `switch_elimination_design.md` §11.1 measured why: every genuine cycle is
     contained within one subsystem and spans several files inside it, so the subsystem is
     the right grain for a model group and the file is not. That is also why the audit
-    chunk letters do not appear here -- `physics_A_pure_formulas`, `power_B_thermal_cryo`
-    and `stellarator_fwbs_s1_s5` are how the port was chunked for auditing, not what the
-    machine is made of, and `st_fwbs`'s S1-S6 re-chunking is still live (`next_steps.md`
-        §3), so a name carrying it would move again.
+    chunk letters do not appear here -- and, since `model_tree_design.md` §10, not in
+    the filenames either: `physics/pure_formulas.py`, `power/thermal_cryo.py` and
+    `stellarator/plasma_physics.py` are named for what is in them, not for the letter the
+    port was chunked under for auditing. `stellarator_fwbs_s1_s5` is the one place the
+    chunking is still legible, held back from that rename because `st_fwbs`'s S1-S6
+    re-chunking is still live (`next_steps.md` §3), so a name carrying it would move
+    again.
 
     Binding order is the order written here (`vars()`, not the MRO -- a namespace is
         written, not inherited), and it is only a tiebreak: the run order is derived.

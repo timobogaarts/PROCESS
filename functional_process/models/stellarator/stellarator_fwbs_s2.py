@@ -15,7 +15,7 @@ Two ported arms, both `blktmodel != 1` (`stellarator.py:680`'s `else` branch):
 - **Arm 2** (`ipowerflow == 0`, `stellarator.py:684-728`, the "old model"):
   `calculate_exponential_attenuation_blanket_shield_power` below. Small, self-contained,
   no bug. The arm also calls `self.sc_tf_coil_nuclear_heating_iter90()` (chunk 1F,
-  `stellarator_F_tf_nuclear_heating.py`'s `calculate_sc_tf_coil_nuclear_heating`,
+  `tf_nuclear_heating.py`'s `calculate_sc_tf_coil_nuclear_heating`,
   already ported) for `flu_tf_neutron_fast_peak`/`p_tf_nuclear_heat_mw` -- that call is
   a tier-3 composition edge onto an already-validated node, not reproduced here.
 - **Arm 3** (`ipowerflow == 1`, `stellarator.py:730-1029`, the "new model"):
@@ -30,7 +30,7 @@ Two ported arms, both `blktmodel != 1` (`stellarator.py:680`'s `else` branch):
   PROCESS's own actual runtime behaviour.
 
 Both arms drop the trivial branches of two switches they read, matching the precedent
-`stellarator_F_tf_nuclear_heating.py` already set for `i_tf_sup` on a sibling field (see
+`tf_nuclear_heating.py` already set for `i_tf_sup` on a sibling field (see
 this file's own docstring): `i_tf_sup != SUPERCONDUCTING` and
 `i_p_coolant_pumping != FRACTION_OF_HEAT` are both "the absence of the computation," not
 a second formula to port -- see the audit record's "switches touched" section.
@@ -389,7 +389,7 @@ class DetailedPowerflowBlanketShieldPower(ExplicitFunction):
     `f_a_fw_coolant_inboard`/`f_a_fw_coolant_outboard` are given best-effort `VarPath`s
     under `.fwbs.*` (matching their PROCESS field names) even though the source never
     actually writes them there in this arm (they stay Python-locals, consumed by S4
-    within the same call frame) -- same treatment `stellarator_F_tf_nuclear_heating.py`
+    within the same call frame) -- same treatment `tf_nuclear_heating.py`
     gives its own best-effort output paths, flagged here for whoever wires S4.
 
     Not registered in `total_process.py` -- same reservation as the sibling arm above.

@@ -86,7 +86,7 @@ computed before constraints run.
 `.physics.i_plasma_ignited` (`PlasmaIgnitionModel`, selects whether injected power is
 in the denominator) -- both static, reads-set differs slightly by branch but the
 difference is one term each, kept as plain `if`/`elif` in one function (same
-proportionality judgement `physics_B_composition.md`'s `i_plasma_ignited` entry (formerly
+proportionality judgement `composition.md`'s `i_plasma_ignited` entry (formerly
 spelled `is_ignited`) already makes
 for a two-line differing branch inside an otherwise-shared body).
 
@@ -373,7 +373,7 @@ not `Compare`-shaped).
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.physics.p_plasma_separatrix_mw` | read | explicit-arg | produced by `functional_process/models/stellarator/stellarator_B_st_phys.py` (already ported) |
+| `.physics.p_plasma_separatrix_mw` | read | explicit-arg | produced by `functional_process/models/stellarator/plasma_physics.py` (already ported) |
 | `.physics.p_l_h_threshold_mw` | read | explicit-arg | produced by `process/models/physics/l_h_transition.py:86` — **unported** |
 | `.constraints.f_h_mode_margin` | read | explicit-arg | plain input constant, default `1.0` |
 
@@ -399,7 +399,7 @@ data.constraints.p_plant_electric_net_required_mw)`.
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.heat_transport.p_plant_electric_net_mw` | read | explicit-arg | produced by `functional_process/models/power_C_electric_production.py`'s `PlantElectricProduction` node — built and harness-tested, **not yet registered** in `total_process.py` (a known, separate gap, not this constraint's concern) |
+| `.heat_transport.p_plant_electric_net_mw` | read | explicit-arg | produced by `functional_process/models/power/electric_production.py`'s `PlantElectricProduction` node — built and harness-tested, **not yet registered** in `total_process.py` (a known, separate gap, not this constraint's concern) |
 | `.constraints.p_plant_electric_net_required_mw` | read | explicit-arg | plain input constant |
 
 **hole-in-MDA**: **No** — the producer exists and is tested, just not yet wired into
@@ -522,7 +522,7 @@ pattern, which would be `Compare`-shaped). `istell` is a static kwarg selecting 
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.tfcoil.p_cp_resistive_mw`, `.tfcoil.p_tf_leg_resistive_mw` | read | explicit-arg | both produced by `power_A_tf_coil_power.py` (already ported, confirmed via `grep`) |
+| `.tfcoil.p_cp_resistive_mw`, `.tfcoil.p_tf_leg_resistive_mw` | read | explicit-arg | both produced by `tf_coil_power.py` (already ported, confirmed via `grep`) |
 | `.constraints.mvalim` | read | explicit-arg | input constant, default `40.0` (`constraint_variables.py:60`), no producer |
 
 **proposed signature**: `constraint_19(p_cp_resistive_mw, p_tf_leg_resistive_mw, mvalim)`.
@@ -559,7 +559,7 @@ but wiring it into any real `Optimise` assembly against a stellarator run would 
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.physics.rminor` | read | explicit-arg | produced by `stellarator_C_geometry.py`'s `StellaratorGeometry`-family node (confirmed: `Output(lambda s: s.physics.rminor)`) |
+| `.physics.rminor` | read | explicit-arg | produced by `geometry.py`'s `StellaratorGeometry`-family node (confirmed: `Output(lambda s: s.physics.rminor)`) |
 | `.build.rminor_min` | read | explicit-arg | input constant, default `0.25` (`build_variables.py:58`), no producer |
 
 **proposed signature**: `constraint_21(rminor, rminor_min)`.
@@ -578,7 +578,7 @@ but wiring it into any real `Optimise` assembly against a stellarator run would 
 |---|---|---|---|
 | `.physics.p_l_h_threshold_mw` | read | explicit-arg | **no ported producer found** — default `0.0` (`physics_variables.py:1237`); the L-H threshold scaling model that would compute this is not ported |
 | `.constraints.f_l_mode_margin` | read | explicit-arg | input constant, default `1.0` (`constraint_variables.py:128`) |
-| `.physics.p_plasma_separatrix_mw` | read | explicit-arg | produced by `stellarator_B_st_phys.py` (confirmed: `Output(lambda s: s.physics.p_plasma_separatrix_mw)`) |
+| `.physics.p_plasma_separatrix_mw` | read | explicit-arg | produced by `plasma_physics.py` (confirmed: `Output(lambda s: s.physics.p_plasma_separatrix_mw)`) |
 
 **proposed signature**: `constraint_22(p_l_h_threshold_mw, f_l_mode_margin, p_plasma_separatrix_mw)`.
 
@@ -1011,7 +1011,7 @@ domain-validity check on a computed value. `temp_fw_peak` itself is a well-defin
 number regardless; the raise protects against a `numerics.icc` misconfiguration this
 pure function receives no information about (it only sees its own two operands, not
 which constraints are active or `i_pulsed_plant`'s value). Not reproduced, per the
-same policy this codebase already applies to `physics_B_composition.py`'s `znfuel`
+same policy this codebase already applies to `composition.py`'s `znfuel`
 raise — flagged here, not silently dropped.
 
 **proposed signature**:
@@ -1276,8 +1276,8 @@ switch resolved before tracing.
 | VarPath | read/write | classification | note |
 |---|---|---|---|
 | `.physics.itart` | read | explicit-arg (switch) | same TART gate as constraint 45 |
-| `.physics.eps` | read | explicit-arg | producer ported: `stellarator_C_geometry.py`/`physics_C_outplas.py` both mint `.physics.eps` as `Output` |
-| `.physics.plasma_current` | read | explicit-arg | producer ported: `physics_A_pure_formulas.py`/`physics_C_outplas.py`/`profiles.py` all read it as an established field with real producers upstream |
+| `.physics.eps` | read | explicit-arg | producer ported: `geometry.py`/`dimensionless_parameters.py` both mint `.physics.eps` as `Output` |
+| `.physics.plasma_current` | read | explicit-arg | producer ported: `pure_formulas.py`/`dimensionless_parameters.py`/`profiles.py` all read it as an established field with real producers upstream |
 | `.tfcoil.c_tf_total` | read | explicit-arg | producer ported: `coils/calculate.py`'s `Output` |
 
 **proposed signature**: see `batch5_constraints.py`'s `constraint_46`.
@@ -1381,7 +1381,7 @@ above for the full reasoning, which applies identically here.
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.fwbs.flu_tf_neutron_fast_peak` | read | explicit-arg | producer **ported**: `stellarator_F_tf_nuclear_heating.py`'s `Output` |
+| `.fwbs.flu_tf_neutron_fast_peak` | read | explicit-arg | producer **ported**: `tf_nuclear_heating.py`'s `Output` |
 | `.constraints.flu_tf_neutron_fast_max` | read | explicit-arg | plain input constant; already read elsewhere as an `Input` by several `availability.py` nodes, confirming it is a stable, unproduced bound field |
 
 **proposed signature**: see `batch5_constraints.py`'s `constraint_53`.
@@ -1523,7 +1523,7 @@ conditional-producer caveat as constraint 59/61 above, not a missing-producer ho
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.physics.n_charge_plasma_effective_vol_avg` | read | explicit-arg | producer: `physics.py:1359` sets a `0.0` default, then `physics_B_composition.py`'s ported `plasma_composition`/`PlasmaComposition` node computes the real value (registry unit #9 chunk B, already ported this session) |
+| `.physics.n_charge_plasma_effective_vol_avg` | read | explicit-arg | producer: `physics.py:1359` sets a `0.0` default, then `composition.py`'s ported `plasma_composition`/`PlasmaComposition` node computes the real value (registry unit #9 chunk B, already ported this session) |
 | `.constraints.n_charge_plasma_effective_vol_avg_max` | read | explicit-arg | plain input constant |
 **switches**: none.
 **hole-in-MDA**: No. Real producer (`plasma_composition`) is unconditional and already
@@ -1765,7 +1765,7 @@ and the source itself carries a `# TODO: why on earth are these variables being 
 here!? Should they be local?` comment, i.e. this is a PROCESS-acknowledged quirk, not
 a hidden one. Ported as ordinary local intermediates (computed, used once, not part of
 the port's own return/side effects) -- the `data` writes are not reproduced, same policy
-this codebase applies to other unported side effects (see `physics_B_composition.py`'s
+this codebase applies to other unported side effects (see `composition.py`'s
 precedent).
 
 **data footprint**:
@@ -1905,7 +1905,7 @@ p_plasma_separatrix_mw, p_plasma_separatrix_min_mw)`.
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.physics.p_plasma_separatrix_mw` | read | explicit-arg | produced by `stellarator_B_st_phys.py`'s ported node (`p_plasma_separatrix_mw = Output(...)`, stellarator_B_st_phys.py:502) |
+| `.physics.p_plasma_separatrix_mw` | read | explicit-arg | produced by `plasma_physics.py`'s ported node (`p_plasma_separatrix_mw = Output(...)`, plasma_physics.py:502) |
 | `.constraints.p_plasma_separatrix_min_mw` | read | explicit-arg | plain input constant (`constraint_variables.py:73`, default `150.0`) |
 
 **proposed signature**:
@@ -2054,7 +2054,7 @@ beta_vol_avg_min)`.
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.physics.beta_total_vol_avg` | read | explicit-arg | produced by `stellarator_B_st_phys.py`'s ported node (same field already used by canonical constraint 24) |
+| `.physics.beta_total_vol_avg` | read | explicit-arg | produced by `plasma_physics.py`'s ported node (same field already used by canonical constraint 24) |
 | `.physics.beta_vol_avg_min` | read | explicit-arg | plain input constant (`physics_variables.py:530`, default `0.0`) |
 
 **proposed signature**:
@@ -2157,7 +2157,7 @@ directly and calls `leq(...)`.
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.heat_transport.p_cryo_plant_electric_mw` | read | explicit-arg | cryogenic plant electric power. Real producer: `functional_process/models/power_B_thermal_cryo.py`'s `CryoLoads` node (already ported, harness-tested; **not yet registered** in `total_process.py` -- confirmed by cross-checking the current registration audit, same "ported but unregistered" status as several other units this session found). PROCESS's own source (`process/models/power.py:1050,1076`) initialises it unconditionally to `0.0` then overwrites it -- always available by the time constraints run. |
+| `.heat_transport.p_cryo_plant_electric_mw` | read | explicit-arg | cryogenic plant electric power. Real producer: `functional_process/models/power/thermal_cryo.py`'s `CryoLoads` node (already ported, harness-tested; **not yet registered** in `total_process.py` -- confirmed by cross-checking the current registration audit, same "ported but unregistered" status as several other units this session found). PROCESS's own source (`process/models/power.py:1050,1076`) initialises it unconditionally to `0.0` then overwrites it -- always available by the time constraints run. |
 | `.heat_transport.p_cryo_plant_electric_max_mw` | read | explicit-arg | plain input constant (`heat_transport_variables.py:18`, default `50.0`); grepped for any producer -- none found (only a `process/core/scan.py` scan-variable entry, which is user-input addressing, not a model output) |
 
 **proposed signature**:
@@ -2490,7 +2490,7 @@ and calls `eq(...)`.
 **data footprint**:
 | VarPath | read/write | classification | note |
 |---|---|---|---|
-| `.physics.f_plasma_fuel_deuterium` | read | explicit-arg | plain user-input fuel fraction (`physics_variables.py`) -- already an ordinary boundary `Input` of `functional_process/models/physics/physics_B_composition.py`'s `PlasmaComposition` node, confirming it is a leaf input, not computed by any model |
+| `.physics.f_plasma_fuel_deuterium` | read | explicit-arg | plain user-input fuel fraction (`physics_variables.py`) -- already an ordinary boundary `Input` of `functional_process/models/physics/composition.py`'s `PlasmaComposition` node, confirming it is a leaf input, not computed by any model |
 | `.physics.f_plasma_fuel_tritium` | read | explicit-arg | same as above |
 | `.physics.f_plasma_fuel_helium3` | read | explicit-arg | same as above |
 

@@ -40,7 +40,7 @@ refuses a misspelled area at declaration time with a suggestion.
 **This changes nothing a case declares.** `audit_record`/`reference`/`ported`/`samples` and
 the tier base classes are untouched, and the conversion is provably inert: the pilot
 module's 158 ports were compared against the pre-conversion module loaded side by side and
-are identical. Converted so far: `power_B_thermal_cryo.py`. The rest is censused in
+are identical. Converted so far: `thermal_cryo.py`. The rest is censused in
 `next_steps.md`'s Verified-state table, and the plan for converting it is
 `_audit/path_refactor.md`.
 
@@ -202,7 +202,7 @@ in one place. Two things dissolved that. The cases moved out, so the triple was 
 broken — record and port in the package, case in the mirror. And the model-tree refactor
 changed node identity: a node is the slot path it occupies in the `StellaratorProcess`
 tree, not a filename. The records are keyed to the *port's audit chunking* — which is
-why their names still carry chunk letters (`physics_A_pure_formulas`) that the tree
+why their names still carry chunk letters (`pure_formulas`) that the tree
 deliberately refuses to carry — so keeping them stem-adjacent to the modules bound them
 to a decomposition the machine no longer uses.
 

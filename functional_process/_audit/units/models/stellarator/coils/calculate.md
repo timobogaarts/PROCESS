@@ -476,7 +476,7 @@ now `calculate_tfcryoarea` + `TfCryoArea`, shaped exactly like
 `calculate_z_tf_inside_half`/`ZTfInsideHalf` — a shared function with two call sites
 (`st_coil` itself and the node), so the formula is not duplicated.
 
-Why now: `.tfcoil.tfcryoarea` is an input of `power_B_thermal_cryo.py`'s
+Why now: `.tfcoil.tfcryoarea` is an input of `thermal_cryo.py`'s
 `CryoQLoadsStep` (it feeds `Power.cryo`'s `qss` term). Registering the cryogenic-load
 nodes without it would have closed two boundary inputs and opened one
 (`_audit/boundary_inputs_audit.md` §4c (c1)'s "sibling gap in the same three lines",

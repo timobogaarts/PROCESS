@@ -114,10 +114,10 @@ DIVISION_BY_ZERO_AT_BOUNDARY = {
     ),
     # ---- physics: a density/geometry ratio whose denominator is the zeroed argument.
     ("TestFastAlphaBetaIpdg89", "nd_plasma_electrons_vol_avg"): (
-        "physics_A_pure_formulas.py:323, (nd_fuel_ions / nd_electrons) ** 2"
+        "pure_formulas.py:323, (nd_fuel_ions / nd_electrons) ** 2"
     ),
     ("TestFastAlphaBetaWard", "nd_plasma_electrons_vol_avg"): (
-        "physics_A_pure_formulas.py:323, same ratio"
+        "pure_formulas.py:323, same ratio"
     ),
     ("TestGreenwaldDensityFractions", "rminor"): (
         "profiles.py:88, plasma_current / (pi * rminor ** 2)"

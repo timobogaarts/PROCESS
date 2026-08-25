@@ -6,7 +6,7 @@ source's `calculate_coils_mass` orchestrates 8 sub-functions (`casing`,
 `total_conductor`, `total_coil`), each writing one `data.tfcoil.*` field that a later
 sub-function reads straight back off `data` -- unconditional, unbranched, same-call
 produce-then-consume, so this is `local-intermediate` exactly like
-`stellarator_D_structure.md`'s `aintmass` chain, just one file over. Ported here as one
+`structure.md`'s `aintmass` chain, just one file over. Ported here as one
 straight-line function with ordinary Python locals instead of eight `data`-mediated
 steps.
 

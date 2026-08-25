@@ -41,7 +41,7 @@ both branches share the same output shape, only the subtracted loss terms differ
 `.fwbs.vol_shld_total`, `.fwbs.pnucloss`, `.fwbs.wallpf`. `local-intermediate`:
 `vol_shld_inboard`/`vol_shld_outboard` — computed, summed into `vol_shld_total`, never
 themselves written to `data` — not part of the port's return, same convention
-`stellarator_D_structure.py` uses for its own dropped locals.
+`structure.py` uses for its own dropped locals.
 
 **S5** — `explicit-arg` reads: `.build.r_tf_outboard_mid`/`dr_tf_outboard`,
 `.fwbs.dr_pf_cryostat`, `.physics.rmajor`, `.build.dr_cryostat`,
@@ -52,7 +52,7 @@ themselves written to `data` — not part of the port's return, same convention
 `.fwbs.vol_cryostat`, `.fwbs.vol_vv`, `.fwbs.m_vv`, `.fwbs.dewmkg`.
 
 **Real downstream dependency**: `.fwbs.dewmkg` (S5's output) is already read by chunk
-1D's registered `StructureMasses` node (`stellarator_D_structure.py`,
+1D's registered `StructureMasses` node (`structure.py`,
 `dewmkg=From(fwbs)`) — a genuine graph edge, not just a coincidence
 of naming.
 

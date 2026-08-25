@@ -83,7 +83,7 @@ def calculate_divertor(
 ```
 Drops the seven reporting-only intermediates (`a_eff`, `l_d`, `l_w`, `f_x`, `l_q`, `w_r`,
 `Delta`) that `output()` prints but nothing downstream reads -- same convention as
-`stellarator_D_structure.md`/`stellarator_F_tf_nuclear_heating.md` for locals that exist
+`structure.md`/`tf_nuclear_heating.md` for locals that exist
 only to be displayed.
 
 ## cottax node

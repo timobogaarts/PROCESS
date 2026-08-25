@@ -13,7 +13,7 @@ alternatives**: both write the same four downstream fields
 selects exactly one of the three source branches to run -- never more than one node from
 {`EcrhHeating`, `LowhybHeating`, an eventual NBI node} belongs in an assembled graph at
 once. This is the same "switch picks which node exists" shape as `i_tf_sup` in
-`stellarator_F_tf_nuclear_heating.py`, not a naming collision to fix.
+`tf_nuclear_heating.py`, not a naming collision to fix.
 
 `calculate_beam_current`/`calculate_fusion_gain` (the source's common tail, after the
 `isthtr` branch) read `p_hcd_beam_injected_total_mw`/`p_beam_orbit_loss_mw`, which only

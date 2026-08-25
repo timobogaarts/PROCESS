@@ -197,7 +197,7 @@ construction. One does not:
 
 ### The site
 
-`functional_process/models/physics/physics_A_pure_formulas.py:342-348`, in
+`functional_process/models/physics/pure_formulas.py:342-348`, in
 `fast_alpha_beta` — a faithful port of `process/models/physics/physics.py:4265-4392`:
 
 ```python

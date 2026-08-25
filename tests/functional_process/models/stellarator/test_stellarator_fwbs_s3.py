@@ -4,13 +4,14 @@ Audit record: `functional_process/_audit/units/models/stellarator/stellarator_fw
 
 `st_fwbs` (`process/models/stellarator/stellarator.py:481-1682`) is one 1200-line method;
 S3 is a 14-line fragment inside it, not a separately callable `Stellarator` method the
-way `st_strc`/`sc_tf_coil_nuclear_heating_iter90` are for the sibling `stellarator_D`/`_F`
+way `st_strc`/`sc_tf_coil_nuclear_heating_iter90` are for the sibling
+`structure.py`/`tf_nuclear_heating.py`
 units. Calling `st_fwbs` itself to exercise just S3 would also run S1/S2 first (many more
 inputs, a `blktmodel == 1` arm that calls into not-fully-wired `hcpb.py` staticmethods
 with a known `TypeError` bug on record -- `unit_registry.md` row 13), which is out of
 this unit's scope and would make the test depend on machinery this audit deliberately
-does not touch. Per the same precedent as `stellarator_D_structure.md`'s `msupstr`
-(`test_stellarator_D_structure.py::_reference_intercoil_mass_scaling_reference`), the
+does not touch. Per the same precedent as `structure.md`'s `msupstr`
+(`test_structure.py::_reference_intercoil_mass_scaling_reference`), the
 reference below reproduces the fragment's one formula directly from source rather than
 invoking `st_fwbs`, textually independent of the port in `stellarator_fwbs_s3.py`.
 

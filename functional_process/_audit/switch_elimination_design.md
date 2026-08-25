@@ -283,7 +283,7 @@ it**:
   `stellarator.coils`.
 - `Divertor` / `AFwTotalWithPowerflow` — `stellarator.divertor` + `stellarator.build`.
 
-Meanwhile there are **346 cross-subsystem edges** (`stellarator -> power_B_thermal_cryo`
+Meanwhile there are **346 cross-subsystem edges** (`stellarator -> thermal_cryo`
 35, `physics -> stellarator` 30, `stellarator -> costs` 19, ...). So subsystems are heavily
 coupled — just **acyclically**. That is precisely why the MDA needs only 12 driven blocks
 out of 131.
@@ -593,7 +593,7 @@ results**.
 
 **Recommended first increment**: land the `named(at)` + `node_and_names(xs, at=None)` change
 and export the formatter, **change nothing else**, then convert **one small subsystem**
-(`vacuum` or `power_B_thermal_cryo`) — **not** `costs` (43 declarations) or `stellarator`
+(`vacuum` or `thermal_cryo`) — **not** `costs` (43 declarations) or `stellarator`
 (53).
 
 ## 14. Where this stands now
@@ -602,7 +602,7 @@ and export the formatter, **change nothing else**, then convert **one small subs
 "one blocking change in one file" is no longer blocking. `total_process.COMMON` is still a
 flat tuple; that half is purely client work.
 
-**`power_B_thermal_cryo` was converted, but for the other reason.** It was §13's
+**`thermal_cryo` was converted, but for the other reason.** It was §13's
 recommended pilot subsystem and it is now converted — to the `From`/`OutputInto`
 declaration surface, not to a model tree. Those are independent: the declaration surface
 carries **variable** paths into the caller's data structure (`.area.field`), the model tree

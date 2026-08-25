@@ -102,7 +102,7 @@ def calculate_fusion_gain(
 `EcrhHeating`/`LowhybHeating` are **not both registered in `total_process.py` at
 once** — see the data-footprint table, both write the same four downstream fields, so
 only one belongs in an assembled graph, selected by `isthtr` at build time (same shape
-as `i_tf_sup` in `stellarator_F_tf_nuclear_heating.md`). `BeamCurrent`/`FusionGain` are
+as `i_tf_sup` in `tf_nuclear_heating.md`). `BeamCurrent`/`FusionGain` are
 **not yet registered** in `total_process.py` at all: `p_hcd_beam_injected_total_mw`/
 `p_beam_orbit_loss_mw` have no producing node once NBI is unported (see open question 1)
 — wiring them now would either dangle an unowned input or silently hardcode the "assume
@@ -163,7 +163,7 @@ zero" behaviour as a phantom producer, and this record isn't the place to decide
    either confirmation that `DataStructure`'s dataclass defaults are `0.0` for both
    (making the port's "caller passes 0.0" choice provably faithful) or a decision that
    this is itself a `conditional-ownership-by-run-config` case, symmetric to
-   `stellarator_C_geometry.md`'s `.physics.aspect` finding but gated by `isthtr` instead
+   `geometry.md`'s `.physics.aspect` finding but gated by `isthtr` instead
    of `ixc`.
 2. Whether `EcrhHeating`/`LowhybHeating` sharing four output `VarPath`s (only
    discriminated by which "total" field is minted) is a pattern the graph-assembly

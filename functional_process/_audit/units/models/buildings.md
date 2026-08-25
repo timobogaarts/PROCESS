@@ -223,7 +223,7 @@ None. All three functions read only `data.*`/plain arguments; no call to another
   (`life_plant/life_plant`, `life_plant/life_div_fpy`, `life_plant/cplife`) — ported
   with the project's now-standard safe-divide pattern (denominator replaced by `1.0`
   wherever it is zero, *then* the outer `jnp.where` zeroes the whole sub-result), same
-  shape as `physics_A_pure_formulas.md`'s `phyaux`/`fast_alpha_beta` guards — needed so
+  shape as `pure_formulas.md`'s `phyaux`/`fast_alpha_beta` guards — needed so
   `jax.jacfwd` does not see a `0/0` on the untaken branch and leak a NaN gradient
   through the selected one.
 - **`bldgs_sizes`'s `i_tf_sup != 1` centre-post branch.** `jnp.where`, no domain risk.

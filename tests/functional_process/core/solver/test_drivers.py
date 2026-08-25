@@ -13,7 +13,7 @@ from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process.core.solver.drivers import PicardDriver
-from functional_process.models.power_B_thermal_cryo import TempTurbineCoolantInStep
+from functional_process.models.power.thermal_cryo import TempTurbineCoolantInStep
 from functional_process.paths import fwbs, heat_transport
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.models.power import ElectricConversionModelTypes
@@ -72,11 +72,11 @@ def test_picard_driver_requires_a_start():
 def test_picard_driver_drives_a_real_fixed_point_function_node():
     """`TempTurbineCoolantInStep` in the `STEAM_RANKINE_CYCLE`/`secondary_cycle_liq=2`
     regime has `d(temp_turbine_coolant_in_next)/d(temp_turbine_coolant_in) == 0`
-    (`test_power_B_thermal_cryo.py`'s own gradient test already pins this): the first
+    (`test_thermal_cryo.py`'s own gradient test already pins this): the first
     stage overwrites the entering value from `temp_blkt_coolant_out` unconditionally,
     so the fixed point does not depend on the starting guess at all and Picard
     iteration reaches it in exactly one step. Ground truth is computed the same way
-    `test_power_B_thermal_cryo.py` does -- one direct call to `step` -- not a
+    `test_thermal_cryo.py` does -- one direct call to `step` -- not a
     hardcoded number, since the whole point of this regime is that any entering value
     gives the same answer.
     """

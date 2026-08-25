@@ -602,7 +602,7 @@ class TestRadiationPowers(Tier1Contract):
 # What changes here is only `ImpurityRadiationTotals.__call__`'s *signature*:
 # `.impurity_radiation.f_nd_impurity_electron_array` is now fourteen individually
 # `SequenceKey`-addressed reads (one per species index) instead of one whole-array
-# read, matching `physics_B_composition.py`'s identical treatment of the same field.
+# read, matching `composition.py`'s identical treatment of the same field.
 # `imp_indices` still selects a static gather over them before forwarding to the pure
 # function -- these checks confirm the node still assembles and still computes the
 # identical answer, not just that the signature changed shape.
@@ -616,7 +616,7 @@ def _node_kwargs_from_totals_kwargs(kwargs, full_fractions):
     `full_fractions` supplies all fourteen species' fractions (only `imp_indices`'
     positions need to agree with `kwargs["f_nd_impurity_electron_array"]`, which is
     already the pre-gathered subset) -- same small, explicit pack/unpack idiom
-    `physics_B_composition.py`'s equivalent adapter uses, itself following
+    `composition.py`'s equivalent adapter uses, itself following
     `coils/calculate.py`'s `coilcurrent` precedent.
     """
     node_kwargs = {
