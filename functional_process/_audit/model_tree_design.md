@@ -1,6 +1,13 @@
 # The model tree — one typed pytree of models, superseding switches, the settings tree, and `Configuration`
 
-**Status: settled design; §8 steps 1-4 are implemented and committed.** Step 4 landed
+**Status: settled design; §8 steps 1–4c are implemented.** Step 4c landed 2026-08-25 and
+is two corrections rather than a re-spelling: the joint blanket keys are derived from
+legal switch values by two named functions instead of from an illegal `blktmodel = 2`
+sentinel, and three cost nodes for a subsystem a stellarator does not have are deleted.
+**The tree is 156 nodes, not 159.** Full account in step 4c below. Step 5 is next and
+unblocked.
+
+*(Earlier status.)* Step 4 landed
 2026-08-25: the ten switches are ten typed slots, `machine_from_indat` is the only place
 an `i_*` integer is read, and `configuration.py` — `Switch`, `Alternative`,
 `Configuration`, `build_graph`, `declarations_for` — is deleted along with
@@ -539,6 +546,150 @@ static constructor kwarg** — measured, not estimated: 32 slots carry construct
 at all, less `profile_grid` and `impurity_radiation_totals`, whose kwargs are the
 shape/membership counts §3(b)/(c) exempts. That is step 6's job, family by family; this
 step moved only the switches that were already slots.
+
+**Step 4c — the joint blanket keys stop lying, and three cost nodes for a subsystem
+this device does not have are deleted. [DONE 2026-08-25.]**
+*(functional_process; one sitting, `total_process.py` and `test_switch_coverage.py` only)*
+Two corrections, neither of them a re-spelling. Both were found by audits this design
+commissioned — `switch_kwarg_survey.md` §4.3 and `cost_boundary_inputs.md` §§4–6 — and
+neither could have been found by any gate this file names, which is the general lesson
+worth keeping: **every gate in §8 is a same-configuration identity check, and both of
+these defects were invisible on the reference configuration.**
+
+*(a) The joint keys.* `machine_from_indat` derived the two joint registry keys as
+
+```python
+blktmodel = switches.get("blktmodel", 2)                 # PROCESS's default is 0
+... blktmodel if switches.get("ipowerflow", 1) else 0    # blktmodel_ipowerflow
+... blktmodel if switches.get("blkttype", 3) >= 3 else 1 # blktmodel_blkttype
+```
+
+i.e. it passed a switch *value* where an **arm index** was wanted, and made that fit by
+defaulting `blktmodel` to `2` — **not a legal value of `blktmodel` at all**
+(`fwbs_variables.py:479`: `{0, 1}`, default `0`). That is a sentinel meaning "the file
+did not say", chosen so the reference run landed on the right arm, and it inverted the
+mapping: stating PROCESS's own default `blktmodel = 0` explicitly was **refused**, while
+leaving it unstated worked — the exact opposite of `switches_from_indat`'s documented
+contract that a name the file never mentions falls through to the default.
+
+The true branch structure, read off `st_fwbs` rather than inferred:
+
+| | `stellarator.py` | arm | occupant |
+|---|---|---:|---|
+| `blktmodel == 1` | `:608`, `blanket_neutronics()` | 0 | none — `UNPORTED` |
+| `blktmodel == 0 & ipowerflow == 0` | `:683-729`, exponential attenuation + ITER-90 SC heating | 1 | `BlanketShieldPowerExponential` |
+| `blktmodel == 0 & ipowerflow == 1` | `:730-…`, detailed powerflow | 2 | `DetailedPowerflowBlanketShieldPower` |
+| `blktmodel == 1` | `:1093-1181`, sub-assembly thicknesses | 0 | none — `UNPORTED` |
+| `blktmodel == 0 & blkttype ∈ {1,2}` | `:1058-1066`, liquid breeder | 1 | none — `UNPORTED` |
+| `blktmodel == 0 & blkttype ∉ {1,2}` | `:1067-1075`, solid breeder | 2 | `BlanketComponentMasses` |
+
+`blktmodel` is the **outer** test in both dispatches and the second switch only separates
+the two arms *inside* `blktmodel == 0`. **So the mapping was inverted in exactly the
+sense that `blktmodel`'s two legal values reached each other's arms**, and one further
+arm (`ipowerflow == 0`, a *ported* occupant) was unreachable at every input. Measured,
+before and after:
+
+| override | before | after |
+|---|---|---|
+| reference (nothing set) | arm 2 + arm 2 | **unchanged** |
+| `blktmodel = 0` (PROCESS's own default) | `NotImplementedError` | arm 2 + arm 2 — the reference machine |
+| `blktmodel = 1` | assembles `BlanketShieldPowerExponential`, then refuses at the mass slot citing the *liquid-breeder* reason | refuses citing `blanket_neutronics()`, which is `blktmodel == 1`'s actual reason |
+| `ipowerflow = 0` | `NotImplementedError` | `BlanketShieldPowerExponential` — reachable at last |
+| `blkttype ∈ {1,2}` | refuses, liquid-breeder reason | unchanged |
+
+The `blktmodel = 1` row is the serious one and is the `ScTfCoilNuclearHeating` bug class
+this document already records as found-and-fixed once: a configuration silently
+assembling a node written for a *different* switch's arm. It was reintroduced by a key
+derivation rather than by a registration, which is why no registration review caught it.
+
+The fix keeps the arm-index keys — `unit_registry.md`'s rows and every `UNPORTED` reason
+already describe arms, and re-keying to pairs would have meant enumerating `blkttype`'s
+whole domain — but derives them from **legal switch values only**, in two named
+functions, `_blanket_shield_power_arm(blktmodel, ipowerflow)` and
+`_blanket_mass_arm(blktmodel, blkttype)`, whose docstrings are the transcription above.
+`blktmodel` defaults to PROCESS's `0`. Both are resolved into named locals before the
+`StellaratorProcess(...)` call, for the same reason `istell` is: so a refused
+configuration reports the arm the caller asked for and not whichever slot Python reached
+first. `BlanketShieldPowerExponential`'s own docstring said "the `blktmodel == 1`
+occupant" and was simply wrong; it is corrected in place.
+
+`("blktmodel_blkttype", 0)` is now unreachable through the factory — `blktmodel == 1`
+selects arm 0 of both dispatches and the shield-power slot resolves first — and is
+**kept**, because it remains the correct record of what `stellarator.py:1093-1181` does
+and is what an occupant of that arm has to answer. That is said at `UNPORTED`.
+
+*(b) Three cost slots deleted.* `cost_boundary_inputs.md` measured four cost nodes whose
+every output is exactly `0.0` in PROCESS's own converged reference run. Three of them —
+`.costs.pf_magnet_cost` (222.2), `.costs.pf_coil_power_conditioning_cost` (225.2),
+`.costs.reactor_structure_cost` (221.4) — are zero because a **stellarator has no such
+subsystem**, not because a switch is off: `caller.py:272-275` returns before
+`pfcoil.run()` and `Power.pfpwr`, and `st_strc` (`stellarator.py:334-337`) sets both
+structure masses to a literal `0.0` with its own reason ("to avoid double-counting …
+specified differently for tokamaks"). With `n_cs_pf_coils = 0` both of `acc2222`'s loops
+unrolled to zero iterations, leaving **21 of `PfMagnetCost`'s 27 declared reads dead**,
+not merely multiplied by zero. A node whose ports assert a dependence on a subsystem the
+configuration does not have is the `EcrhDensityLimit` bug class, and the reason
+`WardTaylorAvailability` is deliberately unregistered; these three landed on the right
+number by luck, which is why nothing caught them. **`.costs.energy_storage_cost` is
+deliberately kept**: it is zero because of `i_pulsed_plant`, a switch, and a pulsed
+stellarator would want it — that one belongs to step 6.
+
+Deleted outright, not made a switched slot: there is no tokamak occupant to switch
+*against*, and a variant mechanism for a family with one member and no alternative is
+the paradigm-for-nothing this project declines elsewhere. **`Costs` splits when the
+tokamak arrives**; `cost_boundary_inputs.md` §12 records exactly what has to come back
+and from which producer.
+
+*Gates, as run.* Both changes measured against a `git archive HEAD` copy of the tree with
+`cottax` pinned to its own `HEAD` (a concurrent refactor in `~/jaxgraph` was mid-flight
+and briefly unimportable; pinning both sides is what makes the comparison a comparison).
+
+- **(a) alone moved nothing**: 159 nodes, 348 unowned inputs, 14 cycles and the per-node
+  (inputs, outputs, type) sha all identical to `HEAD` — which is the correct result for a
+  key derivation that was already landing on the right arm for *this* file.
+- **(b)**: **159 → 156 nodes**, exactly the three removed. Blocks 139 → 136, SAND graph
+  172 → 169 nodes / 43 → 40 blocks, grouped DSM **144 cross-group edges, unchanged** —
+  the three were leaves in their own subsystem. (The grouped DSM reports **7** groups on
+  both sides, not the 8 step 4 recorded; measured before and after with one binary, so
+  the 8 is stale, not something this step moved.)
+- **MDA harness, the safety argument, quoted rather than summarised**: `499 / 34 / 3 / 0
+  · 557 walked, 0 unaccounted · 61 kwargs, 0 mismatched` becomes `485 / 34 / 3 / 0 · 543
+  walked, 0 unaccounted · 57 kwargs, 0 mismatched`. Every one of the 14 lost agreements
+  came out of `both-sides-exactly-zero` (73 → 59) — i.e. the port lost 14 *vacuous*
+  agreements and no real one — and **the `all disagreements:` block is byte-identical**,
+  `.costs.c22`/`.c2`/`.cdirt`/`.concost`/`.coe` included. The 4 kwargs are
+  `PfMagnetCost`'s four statics. Nothing else moved.
+- **Boundary**: `.costs.c2214`, `.costs.c2222` and `.costs.c2252` become unowned inputs
+  and are seeded from their `cost_variables.py` defaults of `0.0`, which is the value the
+  nodes produced. Their fourteen sub-accounts (`c22221`-`c22224`, `c22521`-`c22527`) had
+  no reader in the graph and simply leave it. **The boundary does not grow, it shrinks,
+  348 → 320**: the three added are outnumbered by 31 removed, and *what* is removed is
+  the point — every `.pf_coil.*` and `.pf_power.*` read, plus `.structure.fncmass` and
+  `.structure.gsmass`. Those were precisely `boundary_inputs_audit.md`'s category (d),
+  "correct for this configuration and wrong for any other". Deleting the nodes deletes
+  the category. §6's `check_boundary` is step 5's and does not exist yet, so there was no
+  pin to update; **step 5's pin should be generated after this step, not before.**
+- `pytest tests/functional_process -q` → **3752 passed, 3347 skipped**, unchanged; the
+  three render entry points exit 0.
+
+*Tests re-targeted.* `test_switch_coverage.py`'s `_CAUSES_A_REFUSAL` had three rows
+asserting the pre-fix behaviour, and two of them were wrong about it. `("ipowerflow", 0,
+…)` **moves to `_CHANGES_A_SLOT`** — its arm has a ported occupant, so a refusal was
+never the right assertion — probing the joint slot rather than `fw_area`, which would
+have passed either way. `("blktmodel", 1, …)` stays a refusal but its key changes from
+`("blktmodel_blkttype", 1)` to `("blktmodel_ipowerflow", 0)`: the old row passed because
+the *mass* slot refused, which happened only after the shield-power slot had already
+chosen the wrong node. `("blkttype", 1, …)` is unchanged and was always right. Net
+collection is unchanged, five and five becoming six and four.
+
+*A note on what this step says about §8's gates.* Every step above gates on "identical",
+which is right for a re-spelling and blind to a defect that is correct on the reference
+configuration and wrong everywhere else. Both of 4c's defects are of that shape, and both
+were found by reading PROCESS's own source against the tree — `switch_kwarg_survey.md`'s
+method (4) and `cost_boundary_inputs.md`'s check 2 — not by any number.
+`switch_kwarg_survey.md` §7's proposed "no declared read may be dead at the value the
+slot holds" test is the one gate that would have caught (b) mechanically; there is still
+nothing that would catch (a) but reading the branch.
 
 **Step 5 — the boundary postcondition.** *(functional_process; small)* §6's
 `check_boundary` + the pinned reference boundary set, generated from

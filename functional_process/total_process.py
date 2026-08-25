@@ -130,13 +130,10 @@ from functional_process.models.costs.costs import (
     MaintenanceEquipmentCost,
     MiscPlantEquipmentCost,
     NuclearBuildingVentilationCost,
-    PfCoilPowerConditioningCost,
-    PfMagnetCost,
     PowerConditioningCost,
     PowerInjectionCost,
     ReactorCoolingSystemCost,
     ReactorCost,
-    ReactorStructureCost,
     ShieldCost,
     StructuresCost,
     SwitchyardCost,
@@ -316,7 +313,6 @@ from functional_process.models.stellarator.stellarator_fwbs_s4 import (
 from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
     BlanketLifetimeModel,
-    CentralSolenoidConfiguration,
     CoilNuclearHeatingModel,
     CostOfElectricityModel,
     FastAlphaPressureModel,
@@ -377,9 +373,15 @@ class Costs(ModelNamespace):
     shield_cost: ShieldCost = ShieldCost(
         ife=IFEModel.MAGNETIC_CONFINEMENT
     )  # Account 221.3
-    reactor_structure_cost: ReactorStructureCost = (
-        ReactorStructureCost()
-    )  # Account 221.4
+    # Account 221.4 (reactor structure) has **no slot here, deliberately**: a
+    # stellarator has no reactor-structure account to compute. `st_strc`
+    # (`stellarator.py:334-337`) sets `.structure.fncmass` and `.structure.gsmass` to a
+    # literal `0.0` with its own reason -- "many of the masses are simply set to zero to
+    # avoid double-counting of structural components that are specified differently for
+    # tokamaks" -- so `ReactorStructureCost` computed an exact zero, and landed on the
+    # right number by luck rather than by modelling anything this device has. See the
+    # note next to `pf_magnet_cost`'s former slot below for the full argument and what a
+    # tokamak has to restore.
     divertor_cost: DivertorCost = DivertorCost()  # Account 221.5
     reactor_cost: ReactorCost = ReactorCost()  # Account 221 total
     # `supercond_cost_model=0` (`cost_variables.py:552`). **Only the superconducting arm
@@ -397,24 +399,39 @@ class Costs(ModelNamespace):
     tf_magnet_cost_superconducting: TfMagnetCostSuperconducting = (
         TfMagnetCostSuperconducting(supercond_cost_model=SuperconductorCostModel.PER_KG)
     )
-    # `n_cs_pf_coils=0` (`pfcoil_variables.py:323`) and `iohcl=0` are the two loop
-    # bounds of `acc2222`, which `costs.md` originally recorded as a structural JAX
-    # blocker ("dynamic-length loop"). They are not dynamic: neither is an iteration
-    # variable or a scan variable, so both are graph-assembly-time facts and the loops
-    # unroll at trace time -- the same treatment `ImpurityRadiationTotals.imp_indices`
-    # already gets. **`iohcl=0` is the one deliberate deviation from a PROCESS default
-    # in this tuple** (`build_variables.py:177` says `1`): the reference stellarator run
-    # has no central solenoid, and `switch_audit` confirms `.build.iohcl == 0` on it.
-    # With `n_cs_pf_coils == 0` the default `iohcl = 1` would compute `npf = -1` and
-    # then index `r_pf_coil_middle[-1]`, i.e. price a central solenoid out of the last
-    # (unset) array slot -- reproduced faithfully by the port, but not what this run
-    # does.
-    pf_magnet_cost: PfMagnetCost = PfMagnetCost(
-        n_cs_pf_coils=0,
-        iohcl=CentralSolenoidConfiguration.NOT_PRESENT,
-        i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
-        supercond_cost_model=SuperconductorCostModel.PER_KG,
-    )  # Account 222.2
+    # **Accounts 222.2 (PF magnets) and 225.2 (PF coil power conditioning) have no slot
+    # here, and 221.4 (reactor structure) above has none, deliberately. A stellarator
+    # has no PF coil system and no separately-accounted reactor structure, so this tree
+    # has no node for their costs.**
+    #
+    # The evidence is `_audit/cost_boundary_inputs.md` §§4-6, which measured all three:
+    # every output of all three is exactly `0.0` in PROCESS's own converged reference
+    # run, and their agreement in the MDA harness was vacuous (`trivial_agreements`).
+    # They were not merely zero. `caller.py:272-275` returns before `pfcoil.run()` and
+    # `Power.pfpwr` on a stellarator, so all twelve `.pf_coil.*` and all seven
+    # `.pf_power.*` reads kept their dataclass defaults for the whole run; with
+    # `n_cs_pf_coils = 0` both of `acc2222`'s loops unrolled to zero iterations, leaving
+    # **21 of `PfMagnetCost`'s 27 declared reads dead**, not merely multiplied by zero
+    # (§5.1). A node whose ports assert a dependence on a subsystem the device does not
+    # have is the `EcrhDensityLimit` bug class this tree already names twice, and the
+    # reason `WardTaylorAvailability` is deliberately unregistered: it computes a value
+    # the configuration never computes, and lands on the right number by luck.
+    #
+    # Deleted outright rather than made a switched slot: there is no tokamak occupant to
+    # switch *against*, and inventing a variant mechanism for a family with one member
+    # and no alternative is exactly the paradigm-for-nothing this project declines
+    # elsewhere. **When the tokamak arrives, `Costs` splits then** --
+    # `_audit/cost_boundary_inputs.md`'s category (d) rows already record every producer
+    # file:line the three nodes need (`pfcoil.py`'s `PFCoil.pfcoil`/`CSCoil.ohcalc`,
+    # `power.py`'s `Power.pfpwr`, `structure.py:47-52`), so bringing them back is
+    # mechanical, and §12 of that file says what to restore.
+    #
+    # What this costs the graph: `.costs.c2214`, `.costs.c2222` and `.costs.c2252`
+    # become unowned boundary inputs, seeded from their `cost_variables.py` defaults of
+    # `0.0` -- the same value the nodes produced -- so `.costs.c221`/`.c222`/`.c225`
+    # and everything above them (`c22`, `c2`, `cdirt`, `concost`, `coe`) are unmoved,
+    # measured rather than argued. Their fourteen sub-accounts (`c22221`-`c22224`,
+    # `c22521`-`c22527`) had no reader in this graph at all and simply leave it.
     vacuum_vessel_assembly_cost: VacuumVesselAssemblyCost = (
         VacuumVesselAssemblyCost()
     )  # Account 222.3
@@ -426,9 +443,12 @@ class Costs(ModelNamespace):
     tf_coil_power_conditioning_cost: TfCoilPowerConditioningCost = (
         TfCoilPowerConditioningCost()
     )  # Account 225.1
-    pf_coil_power_conditioning_cost: PfCoilPowerConditioningCost = (
-        PfCoilPowerConditioningCost()
-    )  # Account 225.2
+    # Account 225.2 (PF coil power conditioning) has no slot -- see the note above
+    # `vacuum_vessel_assembly_cost`. **`energy_storage_cost` below is deliberately
+    # *kept*** even though its outputs are zero too: it is zero because of
+    # `i_pulsed_plant`, a switch, not because of a subsystem this device lacks. A pulsed
+    # stellarator would want it, so it belongs to the switch-conversion work
+    # (`model_tree_design.md` §8 step 6), not here.
     # `i_pulsed_plant=0`/`istore=1` (`pulse_variables.py:30`/`:16`). `istore == 3` is
     # unported (a third reads-set: `.heat_transport.p_plant_primary_heat_mw`,
     # `.times.t_plant_pulse_no_burn`, `.pulse.dtstor`) and unreachable here, since a
@@ -599,7 +619,15 @@ class ProfileParameterisationPedestal(ModelNamespace):
 
 
 class BlanketShieldPowerExponential(ModelNamespace):
-    """Exponential-attenuation blanket/shield power: the `blktmodel == 1` occupant."""
+    """Exponential-attenuation blanket/shield power: `blktmodel == 0 & ipowerflow == 0`.
+
+    That is arm **1** of `_blanket_shield_power_arm`, `st_fwbs`'s
+    `stellarator.py:683-729`. This docstring used to say "the `blktmodel == 1`
+    occupant", which was simply wrong -- `blktmodel == 1` is `blanket_neutronics()`,
+    the arm that has no occupant at all (arm 0, `UNPORTED`). The mislabelling and the
+    inverted key derivation it belonged to were fixed together; see
+    `_blanket_shield_power_arm`.
+    """
 
     # Over the line length and left that way -- see `Physics`'s own note: the slot
     # name and the occupant class are both this long and `ruff format` strips
@@ -608,11 +636,12 @@ class BlanketShieldPowerExponential(ModelNamespace):
     # `ScTfCoilNuclearHeating` moved here from the unswitched part -- this arm is
     # its one genuine caller that keeps its `p_tf_nuclear_heat_mw`
     # output (`stellarator.py:727-728`); the `blktmodel == 1` arm calls
-    # it too but discards that particular output, and arm 3 (value=2,
-    # below) computes its own, different `p_tf_nuclear_heat_mw` formula.
+    # it too but discards that particular output (`stellarator.py:465-476`
+    # unpacks nine `_`s and keeps only `flu_tf_neutron_fast_peak`), and arm 2
+    # computes its own, different `p_tf_nuclear_heat_mw` formula.
     # Leaving it unconditional was a real bug, the same
     # class already fixed once for `EcrhDensityLimit`: PROCESS's actual
-    # default configuration lands in arm 3 below, not this one, so the
+    # default configuration lands in arm 2, not this one, so the
     # old unconditional placement was computing SC-coil TF nuclear
     # heating via the wrong formula for the default `GRAPH`.
     sc_tf_coil_nuclear_heating: ScTfCoilNuclearHeating = ScTfCoilNuclearHeating()
@@ -708,28 +737,33 @@ class StellaratorFwbs(ModelNamespace):
         BlanketShieldPowerExponential | DetailedPowerflowBlanketShieldPower
     ) = dataclasses.field(kw_only=True)
     """Blanket/shield power deposition, on `.fwbs.blktmodel` x `.heat_transport.
-    ipowerflow` jointly -- one slot, two integers, resolved in `machine_from_indat`.
+    ipowerflow` jointly -- one slot, two integers, resolved by
+    `_blanket_shield_power_arm` in `machine_from_indat`.
 
-    A **ragged** family, which is allowed and deliberate: the `blktmodel == 1` occupant
-    is a two-node namespace (it also owns the TF-coil nuclear heating), the
-    `blktmodel == 2` one a single node. Occupants of one slot need not have equal shape
-    or equal output sets; what checks the consequences is the boundary postcondition,
-    not a shape rule.
+    A **ragged** family, which is allowed and deliberate: the arm-1 occupant
+    (`blktmodel == 0 & ipowerflow == 0`) is a two-node namespace (it also owns the
+    TF-coil nuclear heating), the arm-2 one (`blktmodel == 0 & ipowerflow == 1`,
+    PROCESS's own default and the reference run) a single node. Occupants of one slot
+    need not have equal shape or equal output sets; what checks the consequences is the
+    boundary postcondition, not a shape rule.
 
-    The `blktmodel == 0` arm is refused: it is `blanket_neutronics()`, which calls
-    `hcpb.nuclear_heating_*`, unported. That is also why the `| None` this annotation
-    used to carry was **dead**: `0` is the only joint key outside the registry that
-    PROCESS has, it is in `UNPORTED`, and it raises -- absence was never reachable.
+    Arm 0 -- `blktmodel == 1`, at either `ipowerflow` -- is refused: it is
+    `blanket_neutronics()`, which calls `hcpb.nuclear_heating_*`, unported. That is also
+    why the `| None` this annotation used to carry was **dead**: `0` is the only arm
+    outside the registry, it is in `UNPORTED`, and it raises -- absence was never
+    reachable.
     """
 
     blanket_masses: BlanketComponentMasses = dataclasses.field(kw_only=True)
-    """Blanket component masses, on `.fwbs.blktmodel` x `.fwbs.blkttype` jointly.
+    """Blanket component masses, on `.fwbs.blktmodel` x `.fwbs.blkttype` jointly,
+    resolved by `_blanket_mass_arm`.
 
-    Only the `blkttype == 2` (helium-cooled solid breeder) occupant exists; the
-    liquid-breeder sub-arm and the `blktmodel != 0` mass arm are refused with their
-    reasons in `UNPORTED`. Same dead `| None` as the slot above, for the same reason:
-    joint keys `0` and `1` are the only others `machine_from_indat` can derive and both
-    raise.
+    Only arm 2 -- `blktmodel == 0` with a solid breeder, `blkttype not in {1, 2}`,
+    which is PROCESS's own default and the reference run -- has an occupant; the
+    liquid-breeder sub-arm (1) and the `blktmodel != 0` mass arm (0) are refused with
+    their reasons in `UNPORTED`. Same dead `| None` as the slot above, for the same
+    reason: arms `0` and `1` are the only others `_blanket_mass_arm` can return and
+    both raise.
     """
 
     # `st_fwbs` S1/S5 (`stellarator_E_fwbs_synthesis.md`), portable now, no blocker.
@@ -1562,8 +1596,17 @@ survives only in the reasons: `i_cost_model == 1` would hand you a graph that co
 cost of electricity, `== 2` and `istell == 0` would hand you one that looks complete and
 is wrong.
 
-Keyed by `(field, value)`, using the joint keys `blktmodel_ipowerflow` /
-`blktmodel_blkttype` for the two dispatches that read two integers at once.
+Keyed by `(field, value)`. For the two dispatches that read two integers at once the
+`field` is the joint name `blktmodel_ipowerflow` / `blktmodel_blkttype` and the `value`
+is an **arm index**, not a switch value -- see `_blanket_shield_power_arm` /
+`_blanket_mass_arm`, whose docstrings are the mapping.
+
+One of those arms, `("blktmodel_blkttype", 0)`, is unreachable through
+`machine_from_indat` and kept anyway: `blktmodel == 1` selects arm 0 of *both*
+dispatches, and the shield-power slot is resolved first, so the reason that surfaces is
+the `blanket_neutronics()` one. The mass-arm reason is still the correct record of what
+`stellarator.py:1093-1181` does, and it is what a future occupant of that arm has to
+answer; it is not deleted merely because a sibling refusal masks it.
 """
 
 
@@ -1644,11 +1687,57 @@ BLANKET_SHIELD_POWER = {
     1: BlanketShieldPowerExponential,
     2: DetailedPowerflowBlanketShieldPower,
 }
-"""`.fwbs.blktmodel` x `.heat_transport.ipowerflow` -> the blanket/shield-power occupant,
-keyed by the joint value `machine_from_indat` derives."""
+"""`_blanket_shield_power_arm(blktmodel, ipowerflow)` -> the blanket/shield-power
+occupant. Keyed by the **arm index** that function documents, never by a switch value."""
 
 BLANKET_MASSES = {2: BlanketComponentMasses}
-"""`.fwbs.blktmodel` x `.fwbs.blkttype` -> the blanket-mass occupant, same joint key."""
+"""`_blanket_mass_arm(blktmodel, blkttype)` -> the blanket-mass occupant, same kind of
+key."""
+
+
+def _blanket_shield_power_arm(blktmodel: int, ipowerflow: int) -> int:
+    """Which arm of `st_fwbs`'s blanket/shield-power dispatch a pair of switches selects.
+
+    `stellarator.py:608-...`, transcribed:
+
+    ```
+    if blktmodel == 1:              -> arm 0   blanket_neutronics(); UNPORTED
+    else:                           # blktmodel == 0
+        if ipowerflow == 0:         -> arm 1   BlanketShieldPowerExponential
+        else:                       -> arm 2   DetailedPowerflowBlanketShieldPower
+    ```
+
+    So `blktmodel` is the **outer** test and `ipowerflow` only distinguishes the two
+    arms *inside* `blktmodel == 0`. Arm 2 is PROCESS's own default (`blktmodel = 0`,
+    `ipowerflow = 1`) and the reference run.
+    """
+    if blktmodel == 1:
+        return 0
+    return 2 if ipowerflow == 1 else 1
+
+
+def _blanket_mass_arm(blktmodel: int, blkttype: int) -> int:
+    """Which arm of `st_fwbs`'s blanket-mass dispatch a pair of switches selects.
+
+    `stellarator.py:1056-1091`, transcribed:
+
+    ```
+    if blktmodel == 0:
+        if blkttype in {1, 2}:      -> arm 1   liquid breeder (WCLL/HCLL); UNPORTED
+        else:                       -> arm 2   BlanketComponentMasses (solid breeder)
+    else:                           # blktmodel == 1
+                                    -> arm 0   sub-assembly thicknesses; UNPORTED
+    ```
+
+    Again `blktmodel` is the outer test; `blkttype` is consulted only inside
+    `blktmodel == 0`. Arm 2 is PROCESS's own default (`blktmodel = 0`, `blkttype = 3`)
+    and the reference run. `blkttype`'s values 1 and 2 select the identical formula, so
+    they share arm 1.
+    """
+    if blktmodel != 0:
+        return 0
+    return 1 if blkttype in {1, 2} else 2
+
 
 COST_MODEL = {0: Costs}
 """`.costs.i_cost_model` -> the cost-model occupant. `1` (KOVARI_2014, PROCESS's own
@@ -1708,10 +1797,13 @@ def machine_from_indat(input_file, stella_conf=None):
     could express.
 
     Joint dispatch is ordinary code here rather than a mechanism: `blktmodel` is read
-    together with `ipowerflow` for one slot and with `blkttype` for another. So is
-    cross-slot coherence -- `istell == 6` sets both the machine config and the
-    confinement binding, because they are two consequences of one choice, which is why
-    the two are resolved together, into named locals, before anything else.
+    together with `ipowerflow` for one slot and with `blkttype` for another, by
+    `_blanket_shield_power_arm`/`_blanket_mass_arm`, each of which turns a pair of
+    **legal switch values** into the **arm index** its registry is keyed on. No switch
+    value is ever used as a key, and no switch has a default outside its own declared
+    domain. So is cross-slot coherence -- `istell == 6` sets both the machine config and
+    the confinement binding, because they are two consequences of one choice, which is
+    why the two are resolved together, into named locals, before anything else.
 
     Raises
     ------
@@ -1751,7 +1843,33 @@ def machine_from_indat(input_file, stella_conf=None):
             i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
         ),
     )
-    blktmodel = switches.get("blktmodel", 2)
+    # The two joint dispatches, resolved into named locals before the constructor call
+    # for the same reason `istell` is: so the *first* thing a refused combination
+    # reports is the one the caller asked for, not whichever slot Python evaluated
+    # first. Every default here is PROCESS's own -- `fwbs_variables.py:479` for
+    # `blktmodel`, `:494` for `blkttype`, `heat_transport_variables.py:94` for
+    # `ipowerflow` -- and the switch *values* are turned into **arm indices** by the two
+    # named functions above, which is the only thing the registries are keyed on.
+    #
+    # This used to read `blktmodel = switches.get("blktmodel", 2)` and pass that value
+    # through where an arm index was wanted. `2` is not a legal `blktmodel` at all: it
+    # was a sentinel meaning "not set", picked so the reference run happened to land on
+    # arm 2. The consequence was an inverted mapping -- stating PROCESS's own default
+    # `blktmodel = 0` was refused, while `blktmodel = 1` (KIT HCPB neutronics) silently
+    # assembled `BlanketShieldPowerExponential`, a node written for a different switch's
+    # arm. That is the `ScTfCoilNuclearHeating` bug class, reintroduced by a key
+    # derivation instead of by a registration.
+    blktmodel = switches.get("blktmodel", 0)
+    blanket_shield_power = _slot_occupant(
+        "blktmodel_ipowerflow",
+        _blanket_shield_power_arm(blktmodel, switches.get("ipowerflow", 1)),
+        BLANKET_SHIELD_POWER,
+    )
+    blanket_masses = _slot_occupant(
+        "blktmodel_blkttype",
+        _blanket_mass_arm(blktmodel, switches.get("blkttype", 3)),
+        BLANKET_MASSES,
+    )
     return StellaratorProcess(
         costs=pick("i_cost_model", COST_MODEL, 1),
         stellarator=Stellarator(
@@ -1759,16 +1877,8 @@ def machine_from_indat(input_file, stella_conf=None):
             heating=pick("isthtr", HEATING, 1),
             fw_area=pick("ipowerflow", FW_AREA, 1),
             fwbs=StellaratorFwbs(
-                blanket_shield_power=_slot_occupant(
-                    "blktmodel_ipowerflow",
-                    blktmodel if switches.get("ipowerflow", 1) else 0,
-                    BLANKET_SHIELD_POWER,
-                ),
-                blanket_masses=_slot_occupant(
-                    "blktmodel_blkttype",
-                    blktmodel if switches.get("blkttype", 3) >= 3 else 1,
-                    BLANKET_MASSES,
-                ),
+                blanket_shield_power=blanket_shield_power,
+                blanket_masses=blanket_masses,
             ),
         ),
         physics=Physics(
@@ -1825,9 +1935,20 @@ if __name__ == "__main__":
     for label, machine in (
         ("the reference machine", REFERENCE_MACHINE),
         (
+            # Both slots `ipowerflow` decides, not just `fw_area`: it also picks arm 1
+            # of the blanket/shield-power dispatch. Swapping one and not the other used
+            # to be the only spelling available, because arm 1 was unreachable through
+            # `machine_from_indat` at all -- the joint key was derived from an illegal
+            # `blktmodel` sentinel. It is reachable now, and this what-if says
+            # `ipowerflow = 0` coherently.
             "ipowerflow = 0",
             eqx.tree_at(
-                lambda m: m.stellarator.fw_area, REFERENCE_MACHINE, AFwTotalNoPowerflow()
+                lambda m: (
+                    m.stellarator.fw_area,
+                    m.stellarator.fwbs.blanket_shield_power,
+                ),
+                REFERENCE_MACHINE,
+                (AFwTotalNoPowerflow(), BlanketShieldPowerExponential()),
             ),
         ),
     ):
