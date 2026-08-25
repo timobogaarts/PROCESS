@@ -1,11 +1,19 @@
 # The model tree — one typed pytree of models, superseding switches, the settings tree, and `Configuration`
 
-**Status: settled design; §8 steps 1–4c are implemented.** Step 4c landed 2026-08-25 and
+**Status: settled design; §8 steps 1–4d are implemented.** Step 4d landed 2026-08-25
+and closes the last four of `switch_kwarg_survey.md` band (a)'s live incoherences: a
+switch that decides a slot is now read in exactly one place and threaded, one switch the
+factory had no business reading at all (`i_plasma_pedestal`, which `st_init` overwrites)
+is read from PROCESS's forcing instead, and `costs.cost_of_electricity` becomes a slot
+whose other arm is **absent** rather than a node its own constructor says must not exist.
+**The reference machine does not move by one number**; the reference tree is still 156
+nodes. Full account in step 4d below. Step 5 is next and unblocked.
+
+*(Earlier status.)* Step 4c landed 2026-08-25 and
 is two corrections rather than a re-spelling: the joint blanket keys are derived from
 legal switch values by two named functions instead of from an illegal `blktmodel = 2`
 sentinel, and three cost nodes for a subsystem a stellarator does not have are deleted.
-**The tree is 156 nodes, not 159.** Full account in step 4c below. Step 5 is next and
-unblocked.
+**The tree is 156 nodes, not 159.** Full account in step 4c below.
 
 *(Earlier status.)* Step 4 landed
 2026-08-25: the ten switches are ten typed slots, `machine_from_indat` is the only place
@@ -514,7 +522,10 @@ and were checked to be dead before removal**: `BLANKET_MASSES` is `{2: …}` and
 `BLANKET_SHIELD_POWER` is `{1: …, 2: …}`, and every other joint key `machine_from_indat`
 can derive is in `UNPORTED` (`0`, plus `1` for the mass slot) and raises — `None` was
 unreachable on both. `UNPORTED`'s docstring loses its "refusal, not absence" distinction
-accordingly: absence has no spelling left in the tree. **(d) `COMMON` is deleted** —
+accordingly: absence has no spelling left in the tree. **(Corrected by step 4d, which
+puts one `| None` back**: `costs.cost_of_electricity` at `ireactor != 1 or ipnet != 0`,
+the one configuration in the survey where PROCESS itself computes nothing. The
+distinction is back in use; what stays true is the reason each of *these four* went.) **(d) `COMMON` is deleted** —
 `COMMON = Machine()` was vestigial, reached by nothing but its own docstring and prose.
 
 *Gates, all met.* `GRAPH` **159 nodes, unchanged**; `python -m
@@ -690,6 +701,147 @@ method (4) and `cost_boundary_inputs.md`'s check 2 — not by any number.
 `switch_kwarg_survey.md` §7's proposed "no declared read may be dead at the value the
 slot holds" test is the one gate that would have caught (b) mechanically; there is still
 nothing that would catch (a) but reading the branch.
+
+**Step 4d — a switch is answered once. [DONE 2026-08-25.]**
+*(functional_process; one sitting, `total_process.py`, `test_machine.py` and
+`test_switch_coverage.py` only)* `switch_kwarg_survey.md` §5 band (a) is five **live
+incoherences** — cases where the tree holds two different answers to one question, as
+opposed to the merely untidy 32-slot kwarg surface the rest of that survey measures. Step
+4c closed the first. This closes the other four, and they share one shape: *a switch that
+decides which node exists was also written into a constructor kwarg somewhere else, and
+the two could disagree.* Measured, before, by building the machine and reading the tree:
+
+| override | assembled | and also held |
+|---|---|---|
+| `i_tf_sup = 0` | `TfPowerResistive` at `power.tf_power` | `SUPERCONDUCTING` at **five** other slots |
+| `ipowerflow = 0` | `AFwTotalNoPowerflow` + `BlanketShieldPowerExponential` | `COMPREHENSIVE_2014` at the two `stellarator.*_wall_load*` slots |
+| `ireactor = 0` | `PowerProfilesOverTime` (which computes no `.heat_transport.p_plant_electric_net_mw`) | a `CostOfElectricity` reading it, carrying `ireactor = 1` |
+| `i_plasma_pedestal = 1` | `ProfileParameterisationPedestal` | — a machine PROCESS cannot produce at all |
+
+*(a) `i_tf_sup` and `ipowerflow` are threaded, not split.* Both are resolved into a named
+local in `machine_from_indat` and passed to the occupants that branch on them; the five
+`i_tf_sup` kwargs (`power.cryo_q_nuc_step`, `cryo_q_loads_step`, `cryo_loads`,
+`availability.cplife_avail`, and the one inside `ELECTRIC_PRODUCTION`'s `functools.
+partial`, which becomes a pair of named builder functions taking the switch) and the two
+`ipowerflow` kwargs are gone. **Threading is the right size of fix here and splitting is
+not**: a split gives each arm its own reads, which is worth having and is
+`switch_kwarg_survey.md` band (b)'s whole subject — seven of these eight (slot, switch)
+pairs are on band (b)'s list and stay there. Band (a)'s defect is narrower and cheaper:
+two places answering one question. `availability.cplife_avail` is the case where
+splitting would have been actively wrong today, and the survey's §4.8 says why —
+`CpLifetime{Superconducting,Resistive}` return the *fresh* centrepost lifetime while
+`CplifeAvail.step` returns the availability-adjusted one, so dropping either in as an
+occupant silently loses the adjustment; and the switch that actually matters at that slot
+is `itart`, not `i_tf_sup`. The slot is resolved **before** the local is threaded, so
+`i_tf_sup == 2`'s `UNPORTED` refusal still fires before any occupant can be handed an
+unported value.
+
+*(b) `costs.cost_of_electricity` becomes a slot, and its other arm is `None`.* PROCESS
+calls `coelc()` only when `ireactor == 1 and ipnet == 0` (`costs.py:82-83`); on any other
+pair it leaves `.costs.coe` and its five companions at whatever they held, and
+`CostOfElectricity.__check_init__` already said so — *"this node must not exist"*. It
+existed anyway. It is keyed now on the arm index `_cost_of_electricity_arm(ireactor,
+ipnet)` returns, the same discipline `_blanket_shield_power_arm`/`_blanket_mass_arm`
+follow, and taking `ipnet` in was not optional: it is the other half of one precondition,
+so an `ireactor`-only fix would have left the identical defect reachable by one line of
+IN.DAT.
+
+**This puts a `| None` back, and step 4b's own reasoning is the argument for it.**
+`switch_kwarg_survey.md` §4.2 called this conversion "blocked on the tree regaining a way
+to say 'no occupant', which step 4b deliberately closed off". That is wrong, and it is
+worth saying why, because the mistake is easy to repeat: cottax has always spelled
+absence — `ModelNamespace`'s docstring shows it, `node_and_names` has the branch
+(*"an unproduced slot: it assembles nothing, and whatever read its outputs surfaces as a
+boundary input. Absence, spelled as absence."*), and
+`test_the_1990_cost_model_is_the_only_producer_of_coe` was already building a
+`costs = None` tree. What step 4b removed was **four particular `| None`s**, and its own
+account of why is the test this one has to pass: two were unreachable, two stood for
+configurations *this port* cannot honestly assemble, and **none of the four was a case
+where PROCESS itself computes nothing**. This is that case, and it is the only one in the
+survey. `UNPORTED`'s docstring loses nothing: refusal and absence are different, they
+always were, and the distinction is back in use rather than merely described.
+
+The alternative the survey recommended — refuse `ireactor = 0` outright — was rejected
+because it would have made `PowerProfilesOverTime`, a ported and registered occupant,
+unreachable through the factory. That is exactly the defect step 4c had just finished
+removing from `BlanketShieldPowerExponential`, and trading one for the other is not a fix.
+
+*(c) `i_plasma_pedestal` stops being read from the IN.DAT.* `st_init`
+(`process/models/stellarator/initialization.py:31`) assigns
+`data.physics.i_plasma_pedestal = 0` unconditionally on every `istell != 0` run, in the
+same block that zeroes the central solenoid. So the file's value is **dead on this
+device**, and the factory was assembling the pedestal arm for runs PROCESS executes with
+parabolic profiles. `PROFILE_PARAMETERISATION` is resolved from a named constant,
+`ST_INIT_I_PLASMA_PEDESTAL = 0`, whose docstring is the citation.
+
+The other option was to refuse a file that sets it to something PROCESS will overwrite.
+Rejected on fidelity: PROCESS runs such a file happily, and a port that declines an input
+PROCESS accepts is modelling something other than the run. **Silently ignoring a
+user's value is the cost, and it is paid visibly** — in that constant's docstring, in a
+new `ForcedByProcess` category in `test_switch_coverage.SWITCH_INVENTORY`, and in
+`test_a_process_forced_switch_cannot_move_the_machine`, which asserts that overriding
+`i_plasma_pedestal` leaves the *whole* assembled machine identical.
+`ProfileParameterisationPedestal` stays registered and unreachable through the factory,
+for the reason `("blktmodel_blkttype", 0)` stays in `UNPORTED`: it is the correct record
+of a real PROCESS branch, and `eqx.tree_at` reaches it the way every structural what-if
+does. `switch_kwarg_survey.md` §7 records `iohcl` as the same shape, forced by the same
+`st_init` block, and it has no slot at all — so nothing about it changes here.
+
+*Measured, after.* `i_tf_sup = 0` → all five sites read `0`. `ipowerflow = 0` → both
+wall-load nodes read `0`, 157 nodes. `ireactor = 0` (or `ipnet = 1`) → **155 nodes**, the
+six `.costs.coe`-chain fields leaving the graph. `i_plasma_pedestal = 1` → the reference
+machine, unchanged, `repr`-identical.
+
+*Gates, all met, and every one of them is a same-configuration identity check by design —
+this step removes duplicate answers that all currently agree, so nothing about the
+reference run may move.*
+
+- `GRAPH` **156 nodes, 136 blocks / 14 driven, 320 unowned inputs**, all unchanged, and
+  the per-node (name, type, sorted inputs, sorted outputs) sha256 is **identical**
+  (`ae3c93c7…`), measured on both sides with one binary.
+- **MDA harness identical**: `485 / 34 / 3 / 0 · 543 walked, 0 unaccounted · 57 kwargs,
+  0 mismatched`, and the `all disagreements:` block **byte-identical** by `diff`.
+- `pytest tests/functional_process` **3755 → 3770 passed**, 3347 skipped on both sides.
+  The 15 are all this step's: 12 in `test_switch_coverage.py` (10 coherence cases, its
+  completeness check, the forced-switch test; net of one `_CHANGES_A_SLOT` row leaving
+  and one joining) and 3 in `test_machine.py` (the new `ireactor_ipnet` slot, through
+  `test_every_registered_occupant_assembles` ×2 and `test_occupants_of_one_slot_differ`).
+- `render_xdsm` and `render_xdsm grouped` exit 0; grouped still reports 7 groups, 136
+  blocks, **144 cross-group edges**.
+- `ruff check` on the three files: **7 findings before, 7 after**, the same seven
+  pre-existing `E501`s; `ruff format --check`'s one pre-existing diff is unchanged.
+
+*A measurement caveat, recorded because it cost an hour.* `~/jaxgraph` was being edited
+by a concurrent session mid-step, and a mid-flight `cottax` makes `run_mda_harness` raise
+`TypeError: condition map of ['.physics.profiles.ion_vol_avg_temperature'] takes 1
+unknown(s) …, got 0` — **on a clean `PROCESS` tree as well as on this one**, which is how
+it was identified. Every number above is measured with `cottax` pinned to its own `HEAD`
+(`git archive` into a scratch dir, `PYTHONPATH` ahead of the editable install), both
+sides, the same discipline step 4c used and for the same reason.
+
+*Tests re-targeted, and one added that is not a re-target.*
+`test_switch_coverage.py`'s `_CHANGES_A_SLOT` loses `i_plasma_pedestal` — it is not a
+`FACTORY_READ_SWITCHES` member any more — and gains `ipnet`, whose probe is the one place
+in that list where the expected occupant type is `NoneType`. `SWITCH_INVENTORY` gains a
+fourth category, `ForcedByProcess`, for the switch the file sets and the factory
+deliberately does not read. `test_machine.py`'s `SLOTS` gains the `ireactor_ipnet` row
+and two build helpers, `_electric_production` (the registry's entries are builders taking
+`.tfcoil.i_tf_sup` now) and `_costs` (`Costs` has a slot of its own and can no longer be
+default-constructed).
+
+**The addition is `test_no_slot_contradicts_a_factory_switch`**, and it is the gate this
+step's whole class of defect was missing. For every switch that decides a slot *and*
+appears as a static field on some occupant, it assembles a machine at every value that
+assembles and asserts that **every** field of that name in the whole tree holds the value
+the factory resolved — one walk per case, so a site added later is covered the day it is
+added rather than the day someone remembers to list it. Its companion,
+`test_every_factory_switch_with_a_static_field_is_covered`, intersects
+`FACTORY_READ_SWITCHES` with the field names actually present in `REFERENCE_MACHINE` and
+requires the case table to match, so a newly-hardcoded switch cannot escape by not being
+listed; it doubles as the positive control for the walker. All four of this step's
+defects fail it, and — the point — **none of them could be seen by any gate in §8**,
+every one of which is an identity check on the reference configuration. That is the same
+lesson step 4c recorded, now with a mechanical answer for one of its two halves.
 
 **Step 5 — the boundary postcondition.** *(functional_process; small)* §6's
 `check_boundary` + the pinned reference boundary set, generated from

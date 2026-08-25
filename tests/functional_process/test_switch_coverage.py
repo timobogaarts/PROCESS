@@ -17,8 +17,13 @@ dispatch on it never runs, because `Stellarator.run()` calls `self.availability.
 directly (`stellarator.py:175`), bypassing `.costs.i_plant_availability` entirely.
 
 This module is the inventory of that gap, `SWITCH_INVENTORY`, plus tests that keep the
-inventory honest against the live tree and the live file. **None of these tests fix the
-gap** -- `test_hardcoded_values_agree_with_the_reference_file` passes today because the
+inventory honest against the live tree and the live file, plus -- since step 4d --
+`COHERENCE_CASES` and `test_no_slot_contradicts_a_factory_switch`, which are about the
+sharper half of the same question: not *"is this transcription right for the reference
+run"* but *"can two places in one machine give different answers to one switch"*. They
+could, in four ways, and `switch_kwarg_survey.md` band (a) is the record of it.
+**None of the inventory tests fix the gap** --
+`test_hardcoded_values_agree_with_the_reference_file` passes today because the
 six transcriptions are, in fact, all correct today. What changes is that a future drift
 (a transcription going stale, a new switch joining the six-transcribed/one-bypassed set
 without a decision, a slot silently losing its static kwarg) now fails a test instead of
@@ -42,6 +47,7 @@ import pytest
 from functional_process.total_process import (
     REFERENCE_INPUT_FILE,
     REFERENCE_MACHINE,
+    ST_INIT_I_PLASMA_PEDESTAL,
     UNPORTED,
     machine_from_indat,
     switches_from_indat,
@@ -85,6 +91,23 @@ class Hardcoded:
 
 
 @dataclasses.dataclass(frozen=True)
+class ForcedByProcess:
+    """Set in the file, read by nothing in the factory *on purpose*: PROCESS itself
+    overwrites it before any model runs, so the file's value is dead and assembling from
+    it would build a configuration PROCESS cannot produce.
+
+    `value` is what the file says; `forced_to` is what PROCESS makes of it. The two
+    agree for `REFERENCE_INPUT_FILE` and are recorded separately anyway, so a file that
+    started disagreeing would show up here as a diff rather than as a silently-ignored
+    input.
+    """
+
+    value: int
+    forced_to: int
+    reason: str
+
+
+@dataclasses.dataclass(frozen=True)
 class Bypassed:
     """Set in the file, consulted by nothing: the PROCESS dispatch this switch would
     drive is itself skipped by a hardcoded solve-time call, so there is no slot for the
@@ -97,13 +120,26 @@ class Bypassed:
     reason: str
 
 
-SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | Bypassed] = {
+SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | ForcedByProcess | Bypassed] = {
     # --- Read by machine_from_indat, and (incidentally) set explicitly by the
     # reference file rather than left at its default. `switches_from_indat` line
     # references are `stellarator_helias.IN.DAT`'s.
     "istell": ReadByFactory(6),  # :137
     "isthtr": ReadByFactory(1),  # :138 -- equals the bare default, set anyway
-    "i_plasma_pedestal": ReadByFactory(0),  # :127
+    "i_plasma_pedestal": ForcedByProcess(  # :127
+        value=0,
+        forced_to=ST_INIT_I_PLASMA_PEDESTAL,
+        reason=(
+            "process/models/stellarator/initialization.py:31 -- st_init sets "
+            "data.physics.i_plasma_pedestal = 0 unconditionally on every istell != 0 "
+            "run, in the same block that zeroes the central solenoid. So the file's "
+            "value cannot decide the .physics.profiles.parameterisation slot, and "
+            "machine_from_indat reads ST_INIT_I_PLASMA_PEDESTAL instead of the file. "
+            "It used to read the file: an IN.DAT saying istell = 6, "
+            "i_plasma_pedestal = 1 assembled ProfileParameterisationPedestal for a run "
+            "PROCESS executes with parabolic profiles."
+        ),
+    ),
     "i_cost_model": ReadByFactory(0),  # :248
     "ireactor": ReadByFactory(1),  # :260 -- equals the bare default, set anyway
     # --- Hand-transcribed as a static kwarg, matching the file today, checked nowhere.
@@ -212,17 +248,19 @@ SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | Bypassed] = {
 }
 """Every switch `REFERENCE_INPUT_FILE` sets that bears on which node occupies a slot in
 `REFERENCE_MACHINE` -- a record of a known gap, deliberately pinned so it cannot grow
-silently. Twelve entries: five the factory reads (and which happen to be set explicitly
+silently. Twelve entries: four the factory reads (and which happen to be set explicitly
 rather than left at their default), six hand-transcribed as static kwargs (matching the
-file today, checked nowhere before this module), and one -- `i_plant_availability` --
-set by the file and consulted by no code path in this port at all.
+file today, checked nowhere before this module), one -- `i_plasma_pedestal` -- the
+factory deliberately *stopped* reading because PROCESS overwrites it, and one --
+`i_plant_availability` -- set by the file and consulted by no code path in this port at
+all.
 
-Deliberately excludes the five further switches `machine_from_indat` reads that this
+Deliberately excludes the six further switches `machine_from_indat` reads that this
 particular file leaves at their PROCESS default (`ipowerflow`, `blktmodel`, `blkttype`,
-`i_tf_sup`, `i_bldgs_size`, see `FACTORY_READ_SWITCHES` below) -- they are not switches
-"the reference IN.DAT sets", so they have no value to pin here. Also excludes ten more
-integers `switches_from_indat` picks up from this same file that are not model-tree
-switches at all -- see `OUT_OF_SCOPE_INTEGERS`.
+`i_tf_sup`, `i_bldgs_size`, `ipnet`, see `FACTORY_READ_SWITCHES` below) -- they are not
+switches "the reference IN.DAT sets", so they have no value to pin here. Also excludes
+ten more integers `switches_from_indat` picks up from this same file that are not
+model-tree switches at all -- see `OUT_OF_SCOPE_INTEGERS`.
 """
 
 FACTORY_READ_SWITCHES = frozenset({
@@ -231,21 +269,28 @@ FACTORY_READ_SWITCHES = frozenset({
     "ipowerflow",
     "blktmodel",
     "blkttype",
-    "i_plasma_pedestal",
     "i_cost_model",
     "i_tf_sup",
     "i_bldgs_size",
     "ireactor",
+    "ipnet",
 })
 """Every switch name `machine_from_indat` itself reads via `switches.get(...)` --
 confirmed by grep (`switches.get("<name>"` / `pick("<name>"`, ten hits, no more) and
 exercised dynamically, one by one, by
 `test_factory_switches_actually_change_the_assembled_machine` below -- so this list is
 checked against the factory's real behaviour, not merely its source text.
-Superset of `SWITCH_INVENTORY`'s five `ReadByFactory` entries: the other five names here
-(`ipowerflow`, `blktmodel`, `blkttype`, `i_tf_sup`, `i_bldgs_size`) are read the same way
-but are not set by `REFERENCE_INPUT_FILE`, so `SWITCH_INVENTORY` -- "switches the file
-sets" -- has no entry for them.
+Superset of `SWITCH_INVENTORY`'s four `ReadByFactory` entries: the other six names here
+(`ipowerflow`, `blktmodel`, `blkttype`, `i_tf_sup`, `i_bldgs_size`, `ipnet`) are read the
+same way but are not set by `REFERENCE_INPUT_FILE`, so `SWITCH_INVENTORY` -- "switches
+the file sets" -- has no entry for them.
+
+`i_plasma_pedestal` **is not here**, although the file sets it and the tree has a slot
+for it: `machine_from_indat` reads `ST_INIT_I_PLASMA_PEDESTAL` for that slot instead,
+because `st_init` overwrites the field on every stellarator run. It is a
+`ForcedByProcess` entry in `SWITCH_INVENTORY` and is pinned by
+`test_a_process_forced_switch_cannot_move_the_machine`, which asserts the opposite of
+what a membership here would claim.
 """
 
 OUT_OF_SCOPE_INTEGERS = {
@@ -452,14 +497,10 @@ def _indat_with_override(tmp_path, name, value):
 # the switch's value reached the slot.
 _CHANGES_A_SLOT = (
     ("isthtr", 2, lambda m: type(m.stellarator.heating).__name__),
-    (
-        "i_plasma_pedestal",
-        1,
-        lambda m: type(m.physics.profiles.parameterisation).__name__,
-    ),
     ("i_tf_sup", 0, lambda m: type(m.power.tf_power).__name__),
     ("i_bldgs_size", 1, lambda m: type(m.buildings.sizing).__name__),
     ("ireactor", 0, lambda m: type(m.availability.electric_production).__name__),
+    ("ipnet", 1, lambda m: type(m.costs.cost_of_electricity).__name__),
     (
         "ipowerflow",
         0,
@@ -469,6 +510,17 @@ _CHANGES_A_SLOT = (
 """Six of the ten `FACTORY_READ_SWITCHES`: each has a second registered occupant that
 `_indat_with_override` can select on its own, so the "really reads it" proof is
 "the assembled tree's occupant type changes".
+
+`i_plasma_pedestal` **left this list** and is not a `FACTORY_READ_SWITCHES` member any
+more: `st_init` forces it to `0` on every stellarator run, so the factory reads
+`ST_INIT_I_PLASMA_PEDESTAL` and the file's value decides nothing. The *inverse* claim is
+pinned instead, by `test_a_process_forced_switch_cannot_move_the_machine`.
+
+`ipnet` **joined it**, and it is the one row here whose occupant is `None`:
+`.costs.cost_of_electricity` is a slot now, keyed on `ireactor` and `ipnet` jointly, and
+`ipnet = 1` ("let go < 0 (no c-o-e)") empties it -- which is what PROCESS does, since
+`Costs.run()` calls `coelc()` only when `ireactor == 1 and ipnet == 0`. `NoneType` is
+the probed type name, and that is the point: absence is an occupant.
 
 `ipowerflow` **moved here from `_CAUSES_A_REFUSAL`**, and the old row was pinning a bug.
 `BlanketShieldPowerExponential` is a ported occupant of the joint blanket/shield-power
@@ -532,6 +584,161 @@ def test_factory_switches_actually_change_the_assembled_machine(
         f"setting {switch} = {value} did not change the probed slot's occupant type "
         f"(still {baseline!r}) -- machine_from_indat may not actually be reading "
         f"{switch}."
+    )
+
+
+def test_a_process_forced_switch_cannot_move_the_machine(tmp_path):
+    """`i_plasma_pedestal`'s inverse of the test above: overriding it in the IN.DAT
+    changes **nothing** in the assembled machine, because PROCESS overwrites it.
+
+    `st_init` (`process/models/stellarator/initialization.py:31`) assigns
+    `data.physics.i_plasma_pedestal = 0` on every `istell != 0` run, so a file saying
+    `i_plasma_pedestal = 1` is a file PROCESS runs with parabolic profiles. The factory
+    used to read that `1` and assemble `ProfileParameterisationPedestal` for it. The
+    machines are compared whole, not at the one slot: a forced switch must not move
+    *any* part of the tree, and comparing the repr is the cheapest total comparison.
+
+    Deliberately not a refusal. Rejecting the file would make this port decline an input
+    PROCESS runs happily; reproducing the forcing is what modelling the run means. That
+    the value is ignored is recorded in `SWITCH_INVENTORY`'s `ForcedByProcess` entry and
+    in `ST_INIT_I_PLASMA_PEDESTAL`'s own docstring, so it is ignored *visibly*.
+    """
+    for value in (0, 1):
+        perturbed = machine_from_indat(
+            _indat_with_override(tmp_path, "i_plasma_pedestal", value)
+        )
+        assert repr(perturbed) == repr(REFERENCE_MACHINE), (
+            f"i_plasma_pedestal = {value} moved the assembled machine, but st_init "
+            f"forces the field to {ST_INIT_I_PLASMA_PEDESTAL} on every stellarator run "
+            "-- the factory is reading the file again."
+        )
+
+
+def _static_fields_named(obj, name, path="", seen=None):
+    """Every `eqx.field(static=True)` field called `name` anywhere in `obj`, as
+    (attribute path, value) pairs.
+
+    `_field_names`' sibling, and the reason it is separate: that one proves a name is
+    *absent*, this one collects the values a name is held at so they can be compared
+    against each other and against what the factory decided.
+
+    Yields
+    ------
+    tuple[str, object]
+        The attribute path to the field, and the value held there.
+    """
+    if seen is None:
+        seen = set()
+    if id(obj) in seen:
+        return
+    seen.add(id(obj))
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        for f in dataclasses.fields(obj):
+            value = getattr(obj, f.name)
+            if f.name == name and f.metadata.get("static"):
+                yield (f"{path}.{f.name}", value)
+            yield from _static_fields_named(value, name, f"{path}.{f.name}", seen)
+    elif isinstance(obj, (tuple, list)):
+        for item in obj:
+            yield from _static_fields_named(item, name, path, seen)
+    elif isinstance(obj, dict):
+        for item in obj.values():
+            yield from _static_fields_named(item, name, path, seen)
+
+
+COHERENCE_CASES = (
+    # (switch, what the IN.DAT says, what the factory must resolve it to)
+    ("i_tf_sup", 0, 0),
+    ("i_tf_sup", 1, 1),
+    ("ipowerflow", 0, 0),
+    ("ipowerflow", 1, 1),
+    ("ireactor", 0, 0),
+    ("ireactor", 1, 1),
+    ("ipnet", 0, 0),
+    ("ipnet", 1, 1),
+    ("i_plasma_pedestal", 0, ST_INIT_I_PLASMA_PEDESTAL),
+    ("i_plasma_pedestal", 1, ST_INIT_I_PLASMA_PEDESTAL),
+)
+"""Every (switch, file value) pair that assembles, for the switches that both drive a
+slot **and** appear as a static field on some occupant -- with the value the factory is
+required to resolve it to.
+
+The third column is the switch's own value everywhere except `i_plasma_pedestal`, whose
+resolved value is `ST_INIT_I_PLASMA_PEDESTAL` at either file value: PROCESS overwrites
+it, so the tree must hold what PROCESS will hold and not what the file said. That is the
+one place these three columns are allowed to disagree, and it is the reason the table
+has three columns rather than two.
+
+`blktmodel`/`blkttype`/`istell`/`isthtr`/`i_bldgs_size`/`i_cost_model` are absent because
+no occupant carries a static field of that name --
+`test_every_factory_switch_with_a_static_field_is_covered` is what keeps that true."""
+
+
+@pytest.mark.parametrize(
+    ("switch", "file_value", "resolved"),
+    COHERENCE_CASES,
+    ids=[f"{sw}={v}" for sw, v, _r in COHERENCE_CASES],
+)
+def test_no_slot_contradicts_a_factory_switch(tmp_path, switch, file_value, resolved):
+    """**The mechanical coherence check.** For a switch that decides which node exists,
+    no *other* slot in the assembled machine may hold a different answer to the same
+    question.
+
+    Walks the whole machine `machine_from_indat` builds for one override and compares
+    every static field named after the switch against the value the factory resolved.
+    One walk per case beats one assertion per known site: it needs no list of the sites,
+    so a site added later is covered the day it is added.
+
+    This is the test that would have caught all four of `switch_kwarg_survey.md` band
+    (a)'s live incoherences, none of which any gate could see on the reference machine:
+
+    * `i_tf_sup = 0` built `TfPowerResistive` at `power.tf_power` and left five nodes
+      (`power.cryo_q_nuc_step`, `cryo_q_loads_step`, `cryo_loads`,
+      `availability.electric_production`, `cplife_avail`) saying `SUPERCONDUCTING`;
+    * `ipowerflow = 0` built `AFwTotalNoPowerflow` and `BlanketShieldPowerExponential`
+      and left `stellarator.neutron_wall_load` /
+      `radiated_wall_load_and_fraction` saying `COMPREHENSIVE_2014`;
+    * `ireactor = 0` built `PowerProfilesOverTime` and kept a `CostOfElectricity`
+      carrying `ireactor = 1` -- a node whose own `__check_init__` says it must not
+      exist on that value;
+    * `i_plasma_pedestal = 1` built the pedestal arm for a run `st_init` forces to
+      parabolic.
+    """
+    machine = machine_from_indat(_indat_with_override(tmp_path, switch, file_value))
+    held = dict(_static_fields_named(machine, switch))
+    contradictions = {
+        path: int(value) for path, value in held.items() if int(value) != resolved
+    }
+    assert not contradictions, (
+        f"{switch} = {file_value} resolves to {resolved}, but the assembled machine "
+        f"holds {contradictions} -- a slot is answering a switch the factory already "
+        "answered. A switch that decides which node exists belongs in one place; where "
+        "an occupant genuinely needs the value, thread it from machine_from_indat "
+        "rather than transcribing it."
+    )
+
+
+def test_every_factory_switch_with_a_static_field_is_covered():
+    """`COHERENCE_CASES` covers every factory-read switch that any occupant also spells
+    as a static field -- so a slot that newly hardcodes one cannot go unchecked.
+
+    Doubles as the positive control for `_static_fields_named`: if the walker found
+    nothing, the intersection would be empty and this would fail rather than letting
+    every case above pass vacuously.
+    """
+    names = set(_field_names(REFERENCE_MACHINE))
+    forced = {
+        name
+        for name, entry in SWITCH_INVENTORY.items()
+        if isinstance(entry, ForcedByProcess)
+    }
+    should_be_covered = (FACTORY_READ_SWITCHES | forced) & names
+    covered = {switch for switch, _v, _r in COHERENCE_CASES}
+    assert should_be_covered == covered, (
+        f"uncovered: {sorted(should_be_covered - covered)}; stale: "
+        f"{sorted(covered - should_be_covered)}. A switch that both decides a slot and "
+        "appears as a static kwarg is exactly the shape that goes incoherent -- add "
+        "every value of it that assembles to COHERENCE_CASES."
     )
 
 

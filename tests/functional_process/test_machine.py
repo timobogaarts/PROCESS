@@ -29,6 +29,7 @@ from functional_process.total_process import (
     BUILDING_SIZING,
     CONFINEMENT_TIME,
     COST_MODEL,
+    COST_OF_ELECTRICITY,
     ELECTRIC_PRODUCTION,
     FW_AREA,
     HEATING,
@@ -36,6 +37,7 @@ from functional_process.total_process import (
     REFERENCE_INPUT_FILE,
     REFERENCE_MACHINE,
     REFERENCE_MACHINE_SWITCHES,
+    ST_INIT_I_PLASMA_PEDESTAL,
     TF_POWER,
     UNPORTED,
     AFwTotalNoPowerflow,
@@ -48,6 +50,7 @@ from process.data_structure.physics_variables import (
     ConfinementTimeModel,
     PlasmaIgnitionModel,
 )
+from process.models.tfcoil.base import TFConductorModel
 
 
 def occupant_class(entry):
@@ -66,6 +69,22 @@ def _confinement(entry):
         i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
         i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
     )
+
+
+def _electric_production(entry):
+    """`ELECTRIC_PRODUCTION`'s entries are builders taking `.tfcoil.i_tf_sup`, which
+    `machine_from_indat` resolves from the `tf_power` slot and threads in rather than
+    letting the occupant hardcode. The reference machine's value is what these swap
+    tests hold it at.
+    """
+    return entry(TFConductorModel.SUPERCONDUCTING)
+
+
+def _costs(entry):
+    """`Costs` has one slot of its own -- `cost_of_electricity`, whose occupant may be
+    `None` -- so it cannot be default-constructed. Built with the reference machine's.
+    """
+    return entry(cost_of_electricity=REFERENCE_MACHINE.costs.cost_of_electricity)
 
 
 SLOTS = [
@@ -94,6 +113,12 @@ SLOTS = [
         "ireactor",
         ELECTRIC_PRODUCTION,
         lambda m: m.availability.electric_production,
+        _electric_production,
+    ),
+    (
+        "ireactor_ipnet",
+        COST_OF_ELECTRICITY,
+        lambda m: m.costs.cost_of_electricity,
         _plain,
     ),
     (
@@ -108,11 +133,19 @@ SLOTS = [
         lambda m: m.stellarator.fwbs.blanket_masses,
         _plain,
     ),
-    ("i_cost_model", COST_MODEL, lambda m: m.costs, _plain),
+    ("i_cost_model", COST_MODEL, lambda m: m.costs, _costs),
 ]
 
-SINGLE_FIELDS = [f for f, _r, _w, _b in SLOTS if not f.startswith("blktmodel_")]
-"""The slots addressed by one integer -- the joint keys are derived, not written."""
+SINGLE_FIELDS = [
+    f
+    for f, _r, _w, _b in SLOTS
+    if not f.startswith("blktmodel_") and f != "ireactor_ipnet"
+]
+"""The slots addressed by one integer -- the joint keys are derived, not written.
+
+`ireactor_ipnet` joins the two `blktmodel_*` keys here: `_cost_of_electricity_arm`
+turns `.costs.ireactor` and `.costs.ipnet` into one arm index, so there is no single
+integer named `ireactor_ipnet` for an IN.DAT to set."""
 
 BASELINE_INDAT = {"istell": 6, "i_cost_model": 0}
 """The least an IN.DAT must say for `machine_from_indat` to get past the two slots whose
@@ -283,8 +316,14 @@ def test_reference_machine_is_what_the_factory_builds():
     assert type(REFERENCE_MACHINE.physics.confinement_time.model) is occupant_class(
         CONFINEMENT_TIME[REFERENCE_MACHINE_SWITCHES["istell"]]
     )
+    # `i_plasma_pedestal` is the one slot the file does *not* decide: `st_init` forces
+    # it to `0` on every stellarator run, so the factory reads
+    # `ST_INIT_I_PLASMA_PEDESTAL` and not the file. The reference file happens to agree,
+    # which is why this assertion could be written either way and is deliberately
+    # written both -- the two must not be allowed to drift apart silently.
+    assert REFERENCE_MACHINE_SWITCHES["i_plasma_pedestal"] == ST_INIT_I_PLASMA_PEDESTAL
     assert type(REFERENCE_MACHINE.physics.profiles.parameterisation) is occupant_class(
-        PROFILE_PARAMETERISATION[REFERENCE_MACHINE_SWITCHES["i_plasma_pedestal"]]
+        PROFILE_PARAMETERISATION[ST_INIT_I_PLASMA_PEDESTAL]
     )
     assert type(REFERENCE_MACHINE.costs) is occupant_class(
         COST_MODEL[REFERENCE_MACHINE_SWITCHES["i_cost_model"]]

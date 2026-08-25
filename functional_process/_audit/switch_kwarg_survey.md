@@ -1,6 +1,17 @@
 # The switches that are still constructor kwargs — a survey, not a conversion
 
-**Status: survey only. No code changed.** This is the per-case evidence
+**Status: band (a) is closed (`model_tree_design.md` §8 step 4d, 2026-08-25); bands (b),
+(c) and (d) are survey only.** All five of §5 band (a)'s live incoherences are fixed —
+(a1) the joint blanket keys in step 4c, and (a2)/(a4)/(a5)/(a3-`ireactor`) in step 4d —
+and each §4 section below carries a **Fixed** note saying what landed and what the
+measured effect was. Two of this survey's own claims did not survive the fix and are
+corrected in place, marked *(survey wrong)*: §4.2's "blocked on the tree regaining a way
+to say 'no occupant'", and §4.1/§4.3's count of `i_tf_sup`'s resolution sites. **The
+numbers in §3's table are the pre-fix measurement and are deliberately not re-run** — it
+is the record of what was found, and §3.1 below says which of its rows the fix moved.
+
+*(Original status, and still true of everything below band (a).)* This is the per-case
+evidence
 `model_tree_design.md` §8 step 4b's follow-up (ii) records as outstanding — "30 slots
 still pass a switch as a static constructor kwarg … that is step 6's job, family by
 family" — and step 6's own list ("the six recorded split-default deviations plus any
@@ -82,7 +93,9 @@ so their kwargs are in the factory rather than in a slot default:
   `i_rad_loss=CORE_ONLY`, `i_plasma_ignited=IGNITED` inside the `istell` resolution;
 - `availability.electric_production` — `ELECTRIC_PRODUCTION[1]` is a
   `functools.partial(PlantElectricProductionReactor, itart=…, i_tf_sup=…,
-  i_blkt_dual_coolant=…, i_p_coolant_pumping=…)`.
+  i_blkt_dual_coolant=…, i_p_coolant_pumping=…)`. *(Since step 4d it is a named builder
+  function taking `i_tf_sup`, which the factory threads; the other three are still
+  literals, and the slot is still one of the two a class-body walk cannot see.)*
 
 Both are *switched slots that additionally hardcode four more switches inside their
 occupant*, which is the shape most likely to be missed by any source-level count.
@@ -186,6 +199,38 @@ so the count is attributed to the pair, not split: `electric_production`'s
 `i_blkt_dual_coolant > 0 and i_p_coolant_pumping == MECHANICAL`; `cplife_avail`'s six
 need `itart == 1` before `i_tf_sup` can choose between them.
 
+### 3.1 Which rows band (a)'s fix moved — and which it deliberately did not
+
+Nothing in the table above is re-measured; this says how to read it now.
+
+**Eight (slot, switch) pairs stopped being *hardcoded* without ceasing to be static
+fields.** Threading a value from `machine_from_indat` does not delete the field — the
+node still declares the union of both arms' reads, so every `reads` and `live (n)` count
+in the table stands, and every one of those pairs is still band (b)'s work. What changed
+is that the value can no longer disagree with the slot the same switch decides:
+
+| slot | switch | was | is |
+|---|---|---|---|
+| `power.cryo_q_nuc_step` | `i_tf_sup` | literal `1` | threaded |
+| `power.cryo_q_loads_step` | `i_tf_sup` | literal `1` | threaded |
+| `power.cryo_loads` | `i_tf_sup` | literal `1` | threaded |
+| `availability.electric_production` | `i_tf_sup` | literal `1` in a `functools.partial` | threaded |
+| `availability.cplife_avail` | `i_tf_sup` | literal `1` | threaded |
+| `stellarator.neutron_wall_load` | `ipowerflow` | literal `1` | threaded |
+| `stellarator.radiated_wall_load_and_fraction` | `ipowerflow` | literal `1` | threaded |
+| `costs.cost_of_electricity` | `ireactor`, `ipnet` | literal, on a node that always existed | literal, on a node that exists **only** where the literals hold |
+
+The last row is a different move from the seven above it and the reason `writes` is not
+uniformly `no` any more: that slot's other arm has **no occupant at all**, so its six
+outputs leave the graph (§4.2). The `split` column's `Rp` on those rows now means
+"registry **and** port", not "registry, port and a third literal answer".
+
+**Two rows left the survey's remit entirely.** `physics.profiles.…parabolic.
+ecrh_density_limit`'s `i_plasma_pedestal` is unchanged as a kwarg but its `R` is no
+longer a split at all: `machine_from_indat` stopped reading that switch from the file
+(§4.4), so the only thing that decides that slot is `ST_INIT_I_PLASMA_PEDESTAL`, and the
+container this node sits in is that constant's one consequence.
+
 **Totals.** Of 345 declared reads on the 32 switch-carrying slots, **79 are dead on the
 reference machine's live arm and recoverable by changing one of that slot's own
 switches** — invented edges, in `machine_from_indat`'s sense, 23 % of the surface. Nine
@@ -214,6 +259,22 @@ where PROCESS does not call `coelc()` at all on the other arm.
 
 ### 4.1 `i_tf_sup` — a live incoherence, confirmed by running it
 
+> **Fixed** (step 4d). `machine_from_indat` resolves `i_tf_sup` into a local once, uses
+> it for the `TF_POWER` slot **first** — so `i_tf_sup == 2`'s `UNPORTED` refusal still
+> fires before any occupant can be handed an unported value — and then threads that same
+> local into all five occupants, which lost their constructor kwarg. Measured:
+> `i_tf_sup = 0` now assembles `TfPowerResistive` with all five sites reading `0`.
+> Threading and not splitting, exactly as §5 band (a) argued: the five nodes still
+> declare the union of both arms' reads, and shrinking that is band (b)'s job.
+>
+> *(survey wrong)* "resolved in **seven** places" double-counts. There are **six**: one
+> registry slot, five static kwargs, one declared port — and the list below names seven
+> because it counts `availability.electric_production` twice, once in the parenthesis and
+> once implicitly. The port (`.costs.tf_coil_power_conditioning_cost` reads
+> `.tfcoil.i_tf_sup`) is untouched and is §4.11's problem, not band (a)'s: a port reads
+> the live `DataStructure` value, so it cannot contradict the factory the way a literal
+> can.
+
 `i_tf_sup` is resolved in **seven** places: the `TF_POWER` registry
 (`power.tf_power`), five static kwargs (`power.cryo_q_nuc_step`,
 `power.cryo_q_loads_step`, `power.cryo_loads`, `availability.electric_production`,
@@ -234,6 +295,31 @@ override** (`("i_tf_sup", 0, lambda m: type(m.power.tf_power).__name__)`) and as
 that `tf_power`'s occupant changed. Nothing asserts the rest of the tree followed.
 
 ### 4.2 `ireactor` — a second live incoherence, and a node that should not exist
+
+> **Fixed** (step 4d), and *not* by the refusal this section recommends.
+> `costs.cost_of_electricity` is a slot now, keyed on the **arm index**
+> `_cost_of_electricity_arm(ireactor, ipnet)` returns — the same joint-key discipline the
+> two blanket dispatches follow, and it takes `ipnet` in as well, which was the second
+> half of the same precondition and was never going to be caught by an `ireactor`-only
+> fix. Arm 1 is `CostOfElectricity`; **arm 0 is `None`**. Measured: `ireactor = 0` (or
+> `ipnet = 1`) assembles 155 nodes instead of 156, and `.costs.coe`, `coecap`, `coeoam`,
+> `coefuelt`, `moneyint` and `capcost` leave the graph — which is what PROCESS does, since
+> `Costs.run()` never calls `coelc()` there. The reference machine is untouched.
+>
+> *(survey wrong)* **"Converting this one requires deciding how the tree says 'no
+> occupant' again, which step 4b deliberately closed off" is not true.** cottax has always
+> spelled absence, and says so in `ModelNamespace`'s own docstring and in
+> `node_and_names`' `None` branch (*"an unproduced slot: it assembles nothing, and
+> whatever read its outputs surfaces as a boundary input. Absence, spelled as absence."*);
+> `test_machine.test_the_1990_cost_model_is_the_only_producer_of_coe` was already building
+> a `costs = None` tree through `eqx.tree_at`. What step 4b removed was **four particular
+> `| None`s**, and its own account of why is the argument for putting this one back: two
+> were unreachable and two stood for configurations *this port* cannot honestly assemble.
+> None of the four was a case where **PROCESS itself** computes nothing. This one is, and
+> it is the only one in the survey. Refusing instead would have made
+> `PowerProfilesOverTime` — a ported, registered occupant — unreachable through the
+> factory, which is precisely the defect step 4c had just finished removing from
+> `BlanketShieldPowerExponential`.
 
 `ireactor` drives the `ELECTRIC_PRODUCTION` registry, is a static on
 `costs.cost_of_electricity`, and is a declared port on three further cost nodes
@@ -257,6 +343,20 @@ this one requires deciding how the tree says "no occupant" again, which step 4b
 deliberately closed off; see §6.
 
 ### 4.3 `ipowerflow`, `blktmodel`, `blkttype` — the joint keys are arm indices, and the factory feeds them switch values
+
+> **Fixed**, in two steps. The joint-key inversion landed in step 4c and is written up in
+> `model_tree_design.md` §8 step 4c(a) — that is what made `ipowerflow = 0` assemble at
+> all. Step 4d closed the rest: `ipowerflow` is resolved into a local once and threaded
+> into `stellarator.neutron_wall_load` and `radiated_wall_load_and_fraction`, which lost
+> their kwarg. Measured: `ipowerflow = 0` now assembles `AFwTotalNoPowerflow`,
+> `BlanketShieldPowerExponential` **and** two wall-load nodes reading `PRE_2014` — 157
+> nodes, and internally consistent for the first time.
+>
+> *(survey wrong)* "resolved in five places" is right, but note what threading does and
+> does not buy here: with `i_pflux_fw_neutron == 1` both wall-load bodies take their
+> first branch regardless of `ipowerflow`, so **no computed number moves** on any
+> configuration this port can build today. The fix is about the tree not holding two
+> answers, not about a value.
 
 `ipowerflow` is resolved in five places: `FW_AREA` (`stellarator.fw_area`), the
 `BLANKET_SHIELD_POWER` joint key, two static kwargs (`neutron_wall_load`,
@@ -307,6 +407,19 @@ correct behaviour. Those two parametrisations are where I disagree with that mod
 not with its inventory, which is complete and correct for the six switches it covers.
 
 ### 4.4 `i_plasma_pedestal` — the factory reads a value PROCESS overrides
+
+> **Fixed** (step 4d) by the first of §5 band (a)'s two options: the factory **stops
+> reading it** and resolves `PROFILE_PARAMETERISATION` from a named constant,
+> `ST_INIT_I_PLASMA_PEDESTAL = 0`, whose docstring is the citation to
+> `initialization.py:31`. Refusing was rejected on fidelity: PROCESS runs such a file
+> happily, with parabolic profiles, and a port that declines an input PROCESS accepts is
+> modelling something other than the run. That the file's value is ignored is said in
+> three places rather than none — the constant's docstring, a `ForcedByProcess` entry in
+> `test_switch_coverage.SWITCH_INVENTORY`, and
+> `test_a_process_forced_switch_cannot_move_the_machine`, which asserts that overriding
+> `i_plasma_pedestal` leaves the **whole** assembled machine identical.
+> `ProfileParameterisationPedestal` stays registered and unreachable-through-the-factory,
+> for the reason `("blktmodel_blkttype", 0)` stays in `UNPORTED`.
 
 `machine_from_indat` reads `i_plasma_pedestal` from the IN.DAT to pick
 `PROFILE_PARAMETERISATION`. But `process/models/stellarator/initialization.py:31`
@@ -484,10 +597,15 @@ Four bands. Within a band, order by the size of the invented fan-in.
 
 ### Band (a) — live incoherences. Do these first; they are bugs, not tidying
 
+**All five are done** — (a1) in `model_tree_design.md` §8 step 4c, (a2)–(a5) in step 4d.
+The list below is kept as written, with what actually landed noted per item, because two
+of the five were carried out differently from the recommendation and the difference is
+the interesting part. What follows band (a) is unchanged and still outstanding.
+
 Not conversions at all in three of the five cases: the tree already has a slot, and the
 defect is that the same switch is *also* answered somewhere else.
 
-1. **`blktmodel`/`blkttype`/`ipowerflow` joint keys** (§4.3). Derive the arm index from
+1. ***[done, step 4c.]*** **`blktmodel`/`blkttype`/`ipowerflow` joint keys** (§4.3). Derive the arm index from
    the switch values instead of passing `blktmodel` through, and delete the illegal
    default of `2`. Concretely: `key1 = 0 if blktmodel == 1 else (2 if ipowerflow else 1)`,
    `key2 = 1 if blkttype in {1,2} else (0 if blktmodel else 2)`, both with
@@ -495,20 +613,20 @@ defect is that the same switch is *also* answered somewhere else.
    (`BlanketShieldPowerExponential`) reachable and stops one override selecting the wrong
    node. It also requires re-pinning two `test_switch_coverage._CAUSES_A_REFUSAL` rows,
    which currently assert the wrong behaviour.
-2. **`i_tf_sup`** (§4.1). Five static kwargs must follow the registry's answer. The
+2. ***[done, step 4d — threaded, as recommended.]*** **`i_tf_sup`** (§4.1). Five static kwargs must follow the registry's answer. The
    cheapest correct step is not conversion but *threading*: `machine_from_indat` already
    reads `i_tf_sup`; pass it to the five slots instead of letting each hardcode `1`. That
    turns a five-way incoherence into a one-line dependency and is strictly smaller than
    splitting five nodes into occupant pairs — which is band (b)'s job anyway.
-3. **`ireactor`/`ipnet` on `costs.cost_of_electricity`** (§4.2). This is a node-existence
+3. ***[done, step 4d — but as an absent occupant, not a refusal; see §4.2.]*** **`ireactor`/`ipnet` on `costs.cost_of_electricity`** (§4.2). This is a node-existence
    condition, and its conversion is blocked on the tree regaining a way to say "no
    occupant" — step 4b removed all four `| None`s deliberately. Until that is decided, the
    minimum honest fix is to have `machine_from_indat` refuse `ireactor = 0` outright
    (an `UNPORTED` entry) rather than assemble a machine whose own constructor comment says
    it must not exist. Same for the three `.costs.ireactor` ports.
-4. **`ipowerflow`** (§4.3), once (1) makes `ipowerflow = 0` reachable: thread it to the
+4. ***[done, step 4d — threaded, as recommended.]*** **`ipowerflow`** (§4.3), once (1) makes `ipowerflow = 0` reachable: thread it to the
    two `stellarator.*_wall_load*` slots the way (2) threads `i_tf_sup`.
-5. **`i_plasma_pedestal`** (§4.4). Either stop reading it from the IN.DAT (it is forced to
+5. ***[done, step 4d — the first option.]*** **`i_plasma_pedestal`** (§4.4). Either stop reading it from the IN.DAT (it is forced to
    `0` by `st_init` on every stellarator run) or assert that the file agrees with what
    `st_init` will do. The first is more honest: `PROFILE_PARAMETERISATION` has only one
    reachable arm on this device.
@@ -652,6 +770,19 @@ Nine slots invent nothing. Splitting them changes no edge and no number.
    not checked.
 
 ## 7. One test this survey would like to leave behind
+
+**Not the one that got written, and both are still wanted.** Step 4d left behind
+`test_switch_coverage.test_no_slot_contradicts_a_factory_switch`: for every switch that
+decides a slot *and* appears as a static field somewhere, assemble a machine at every
+value that assembles and check that **every** field of that name holds the value the
+factory resolved. It is a different question from the one below — coherence, not dead
+reads — and it is the one that catches all four of band (a)'s remaining defects
+mechanically, which the dead-read test below would not have: at `i_tf_sup = 0` every one
+of the five stale kwargs still made its node's reads *live*, just live for the wrong arm.
+Its companion, `test_every_factory_switch_with_a_static_field_is_covered`, is what stops
+a newly-hardcoded switch from escaping the case list. The test proposed below is still
+unwritten, and is still the one that would shrink the 79.
+
 
 Measurement (3)/(4) is a test, not a script: *for every slot carrying a static switch,
 no declared read may be dead at the value that slot actually holds*, with an explicit
