@@ -1,4 +1,10 @@
-"""The machine tree: what each slot may hold, and that `Machine()` means PROCESS.
+"""The machine tree: what each slot may hold, and that only an IN.DAT may fill one.
+
+**There is no bare tree to test any more.** `StellaratorProcess()` raises: every slot
+`machine_from_indat` fills lost its default, so the tree carries no configuration of its
+own and there is nothing to compare against PROCESS's `*_variables.py` defaults. What
+replaced that test is the factory's own refusals -- a silent IN.DAT, an unported value,
+a typo -- since the factory is now the only thing that builds a machine.
 
 **Exclusivity is not tested here any more, because it is no longer testable.** It used
 to be the point of this file: `Switch.check_arms_are_exclusive` detected "these nodes
@@ -34,7 +40,6 @@ from functional_process.total_process import (
     UNPORTED,
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
-    Machine,
     machine_from_indat,
     switches_from_indat,
 )
@@ -64,52 +69,69 @@ def _confinement(entry):
 
 
 SLOTS = [
-    # (field, registry, where the occupant sits, PROCESS's own default, how to build)
+    # (field, registry, where the occupant sits, how to build one)
+    # No "PROCESS's own default" column any more: no slot the factory fills has a
+    # default, so there is nothing for one to be compared against. Where PROCESS's
+    # default matters it is the `switches.get` fallback inside `machine_from_indat`,
+    # exercised through `test_a_silent_indat_is_refused_naming_istell`.
     (
         "istell",
         CONFINEMENT_TIME,
         lambda m: m.physics.confinement_time.model,
-        0,
         _confinement,
     ),
-    ("isthtr", HEATING, lambda m: m.stellarator.heating, 1, _plain),
-    ("ipowerflow", FW_AREA, lambda m: m.stellarator.fw_area, 1, _plain),
+    ("isthtr", HEATING, lambda m: m.stellarator.heating, _plain),
+    ("ipowerflow", FW_AREA, lambda m: m.stellarator.fw_area, _plain),
     (
         "i_plasma_pedestal",
         PROFILE_PARAMETERISATION,
         lambda m: m.physics.profiles.parameterisation,
-        1,
         _plain,
     ),
-    ("i_bldgs_size", BUILDING_SIZING, lambda m: m.buildings.sizing, 0, _plain),
-    ("i_tf_sup", TF_POWER, lambda m: m.power.tf_power, 1, _plain),
+    ("i_bldgs_size", BUILDING_SIZING, lambda m: m.buildings.sizing, _plain),
+    ("i_tf_sup", TF_POWER, lambda m: m.power.tf_power, _plain),
     (
         "ireactor",
         ELECTRIC_PRODUCTION,
         lambda m: m.availability.electric_production,
-        1,
         _plain,
     ),
     (
         "blktmodel_ipowerflow",
         BLANKET_SHIELD_POWER,
         lambda m: m.stellarator.fwbs.blanket_shield_power,
-        2,
         _plain,
     ),
     (
         "blktmodel_blkttype",
         BLANKET_MASSES,
         lambda m: m.stellarator.fwbs.blanket_masses,
-        2,
         _plain,
     ),
-    ("i_cost_model", COST_MODEL, lambda m: m.costs, None, _plain),
+    ("i_cost_model", COST_MODEL, lambda m: m.costs, _plain),
 ]
+
+SINGLE_FIELDS = [f for f, _r, _w, _b in SLOTS if not f.startswith("blktmodel_")]
+"""The slots addressed by one integer -- the joint keys are derived, not written."""
+
+BASELINE_INDAT = {"istell": 6, "i_cost_model": 0}
+"""The least an IN.DAT must say for `machine_from_indat` to get past the two slots whose
+PROCESS default is refused. Written into every temp file below so a test about one field
+fails on that field and not on `istell`."""
+
+
+def write_indat(tmp_path, **switches):
+    """A temp IN.DAT setting `BASELINE_INDAT` plus `switches` (which win on a clash)."""
+    indat = tmp_path / "IN.DAT"
+    indat.write_text(
+        "".join(f"{f} = {v}\n" for f, v in {**BASELINE_INDAT, **switches}.items())
+    )
+    return indat
+
 
 OCCUPANTS = [
     (field, registry, where, value, build)
-    for field, registry, where, _, build in SLOTS
+    for field, registry, where, build in SLOTS
     for value in registry
 ]
 
@@ -135,8 +157,8 @@ def test_every_registered_occupant_assembles(field, registry, where, value, buil
 
 @pytest.mark.parametrize(
     ("field", "registry", "where", "build"),
-    [(f, r, w, b) for f, r, w, _, b in SLOTS if len(r) > 1],
-    ids=[f for f, r, _, _, _b in SLOTS if len(r) > 1],
+    [(f, r, w, b) for f, r, w, b in SLOTS if len(r) > 1],
+    ids=[f for f, r, _w, _b in SLOTS if len(r) > 1],
 )
 def test_occupants_of_one_slot_differ(field, registry, where, build):
     """Two occupants of one slot must actually differ in the graph they produce.
@@ -150,6 +172,10 @@ def test_occupants_of_one_slot_differ(field, registry, where, build):
     the family is spurious, or one occupant is a mis-registration of the other.
     `i_tf_sup == 2` is the recorded case where PROCESS really does run the identical
     branch, and it is refused rather than registered twice for exactly this reason.
+
+    Slots with one occupant are skipped by the `len(r) > 1` filter, which since the
+    tokamak arm was deleted includes `istell` -- a one-member family decides nothing
+    *here*, but it is still the slot the whole device hangs from.
     """
     ports = {}
     for value, entry in registry.items():
@@ -202,50 +228,26 @@ def test_ipowerflow_decides_whether_the_graph_has_a_cycle():
     assert cycle not in [{spell_flat(n) for n in c} for c in uncoupled.cycles]
 
 
-@pytest.mark.parametrize(
-    ("field", "registry", "where", "default"),
-    [(f, r, w, d) for f, r, w, d, _b in SLOTS if "_" not in f or f.startswith("i_")],
-    ids=[f for f, _, _, _d, _b in SLOTS if "_" not in f or f.startswith("i_")],
-)
-def test_machine_defaults_are_process_defaults(field, registry, where, default):
-    """`Machine()`'s field defaults **are** PROCESS's bare defaults, slot by slot.
+def test_a_silent_indat_is_refused_naming_istell(tmp_path):
+    """An IN.DAT that sets nothing yields no machine at all -- it names `istell`.
 
-    Read off the live `DataStructure` dataclass rather than re-parsing source, so a
-    renamed or retyped field fails here instead of drifting. This is the contract that
-    used to be `Switch.default`'s, and it is the reason a silent IN.DAT still reproduces
-    the run PROCESS itself would do.
+    **Replaces `test_machine_defaults_are_process_defaults`**, whose premise --
+    *"`Machine()`'s field defaults are PROCESS's bare defaults"* -- is gone by
+    construction: no slot the factory fills has a default, so there is no bare tree whose
+    defaults could be read. That contract was never true either. PROCESS defaults
+    `i_confinement_time = 34` and `i_plasma_ignited = 0`; the tree carried `38` and `1`,
+    because the reference run's values had been transcribed into the slot's *constructor
+    kwargs*, where the old test -- which compared occupant classes only -- could not see
+    them. A test that cannot fail on the thing it is named for is worse than no test.
 
-    An absent occupant (`costs = None` at `i_cost_model == 1`) is checked as absence:
-    the registry has no entry, and the slot holds `None`.
+    What is checkable is the refusal. PROCESS's own default is `istell = 0`, a tokamak;
+    this tree has no tokamak, so a silent file is refused with that reason rather than
+    quietly assembling stellarator geometry under a tokamak confinement law.
     """
-    from process.core.model import DataStructure
-
-    if field in ("blktmodel_ipowerflow", "blktmodel_blkttype"):
-        pytest.skip("a synthetic joint key -- no single DataStructure field to compare")
-
-    area = {
-        "istell": "stellarator",
-        "isthtr": "stellarator",
-        "ipowerflow": "heat_transport",
-        "i_plasma_pedestal": "physics",
-        "i_bldgs_size": "buildings",
-        "i_tf_sup": "tfcoil",
-        "ireactor": "costs",
-        "i_cost_model": "costs",
-    }[field]
-    actual = int(getattr(getattr(DataStructure(), area), field))
-    occupant = where(Machine())
-    if actual not in registry:
-        assert occupant is None, (
-            f"{field}: PROCESS defaults to {actual}, which has no occupant, so "
-            f"Machine()'s slot must be None -- it holds {type(occupant).__name__}"
-        )
-    else:
-        assert type(occupant) is occupant_class(registry[actual]), (
-            f"{field}: PROCESS defaults to {actual}, which the registry maps to "
-            f"{occupant_class(registry[actual]).__name__}, but Machine() holds "
-            f"{type(occupant).__name__}"
-        )
+    indat = tmp_path / "IN.DAT"
+    indat.write_text("")
+    with pytest.raises(NotImplementedError, match=re.escape("istell == 0")):
+        machine_from_indat(indat)
 
 
 def test_reference_machine_matches_the_input_file():
@@ -261,19 +263,18 @@ def test_reference_machine_matches_the_input_file():
     transcribed, and every transcribed entry must be one the file really sets.
     """
     in_file = switches_from_indat(REFERENCE_INPUT_FILE)
-    ours = {f for f, _, _, _d, _b in SLOTS if "_" not in f or f.startswith("i_")}
 
     for field, value in REFERENCE_MACHINE_SWITCHES.items():
         assert in_file.get(field) == value, (
             f"REFERENCE_MACHINE_SWITCHES says {field} = {value}, but "
             f"{REFERENCE_INPUT_FILE} says {in_file.get(field)!r}"
         )
-    for field in ours:
+    for field in SINGLE_FIELDS:
         if field in in_file:
             assert field in REFERENCE_MACHINE_SWITCHES, (
                 f"{REFERENCE_INPUT_FILE} sets {field} = {in_file[field]}, but "
                 f"REFERENCE_MACHINE_SWITCHES does not transcribe it -- it would fall "
-                f"through to the Machine() default"
+                f"through to PROCESS's own default"
             )
 
 
@@ -298,11 +299,15 @@ def test_a_refused_value_says_why(tmp_path, field, value):
     The reason strings are audit content -- they moved verbatim out of the
     `Alternative(unported=...)` declarations this replaced. A refusal that did not name
     one would be indistinguishable from a value PROCESS never had.
+
+    Every file is written over `BASELINE_INDAT`, because two of PROCESS's own defaults
+    (`istell = 0`, `i_cost_model = 1`) are themselves refused: without it every case
+    here would fail on whichever of those the constructor reached first, rather than on
+    the value under test.
     """
-    if "_" in field and not field.startswith("i_"):
+    if field.startswith("blktmodel_"):
         pytest.skip("joint key -- exercised through the two integers it derives from")
-    indat = tmp_path / "IN.DAT"
-    indat.write_text(f"{field} = {value}\n")
+    indat = write_indat(tmp_path, **{field: value})
     with pytest.raises(NotImplementedError, match=re.escape(f"{field} == {value}")):
         machine_from_indat(indat)
 
@@ -311,36 +316,36 @@ def test_an_unknown_value_is_rejected_naming_what_exists(tmp_path):
     """A typo'd value fails loudly rather than falling through to a default -- the one
     property of `Switch.choose` worth keeping verbatim.
     """
-    indat = tmp_path / "IN.DAT"
-    indat.write_text("isthtr = 99\n")
     with pytest.raises(ValueError, match="not a known value"):
-        machine_from_indat(indat)
+        machine_from_indat(write_indat(tmp_path, isthtr=99))
 
 
-def test_an_absent_occupant_assembles_as_nothing(tmp_path):
-    """`costs = None` contributes no nodes and does not refuse.
+def test_the_default_cost_model_is_refused_with_its_reason(tmp_path):
+    """`i_cost_model == 1` raises, and says `costs_2015.py` is what is missing.
 
-    Absence is `refusal`'s quieter sibling and the two sit on one switch:
-    `i_cost_model == 1` (PROCESS's own default) is absent because the honest answer is
-    *"this configuration computes no cost of electricity"*; `== 2` is refused because
-    assembling anything would be a guess at a model the caller supplies at runtime.
+    **This used to be a test of absence**: the slot was `Costs | None` and PROCESS's own
+    default filled it with `None`, on the reasoning that *"this configuration computes no
+    cost of electricity"* is the honest answer. It is refused now, because the tree has
+    no optional slots left -- a graph silently missing `.costs.coe` and `.costs.concost`
+    is exactly the sort of thing that should be said out loud rather than assembled.
+    `== 2` sits on the same switch and was already refused, for the other reason: it
+    injects a `Model` at runtime that this graph has never seen.
     """
-    assert Machine().costs is None
-    without = to_graph(
-        eqx.tree_at(
-            lambda m: m.costs, REFERENCE_MACHINE, None, is_leaf=lambda x: x is None
-        )
-    )
-    assert {n.path_str() for n in without.nodes} < {
-        n.path_str() for n in to_graph(REFERENCE_MACHINE).nodes
-    }
+    with pytest.raises(NotImplementedError, match=re.escape("i_cost_model == 1")) as exc:
+        machine_from_indat(write_indat(tmp_path, i_cost_model=1))
+    assert "costs_2015.py" in str(exc.value)
+    assert UNPORTED["i_cost_model", 1] in str(exc.value)
 
 
 def test_the_1990_cost_model_is_the_only_producer_of_coe():
-    """`.costs.coe` -- the `i_figure_merit == 6` objective -- has a producer with the
-    1990 occupant and, honestly, none at all at PROCESS's default. The second half is the
-    claim absence exists to make checkable: a consumer of `.costs.coe` must surface as an
-    unowned input there, not be silently satisfied by the 1990 model's formula.
+    """`.costs.coe` -- the `i_figure_merit == 6` objective -- has exactly one producer.
+
+    Removing the occupant is a **structural what-if**, not a configuration this tree
+    admits any more: `i_cost_model == 1` is refused, so `costs = None` is reachable only
+    by `eqx.tree_at`. The claim is still worth pinning, and it is about the graph rather
+    than about any switch -- deleting a node makes its outputs surface as unowned inputs
+    at the consumers, instead of being silently satisfied by some other node's formula.
+    `.costs.coe` is the sharpest instance, being an objective.
     """
     with_costs = to_graph(REFERENCE_MACHINE)
     without = to_graph(

@@ -11,13 +11,21 @@ ported unit joins, and one place to point a visual inspection at. See
 `_audit/unit_registry.md`'s "Ported so far" for what is and isn't in it.
 
 **There is no single graph, and the tree is what says so.** A topology-changing switch
-selects which nodes exist, so what this module exports is a `Machine` -- a tree of typed
-slots, each holding the model that fills it -- and `to_graph(machine)`. `GRAPH` is
-`REFERENCE_MACHINE`'s, kept as a module-level name because `render_xdsm.py` and the smoke
-check want a default to point at. `machine_from_indat` is the only place an `i_*` integer
-is read, and its docstring explains why assembly time is the only correct place to resolve
-one (short version: no switch in PROCESS is ever an iteration variable or a scan variable,
-so no switch can change between two evaluations of one assembled graph).
+selects which nodes exist, so what this module exports is a `StellaratorProcess` -- a
+tree of typed slots, each holding the model that fills it -- and `to_graph(machine)`.
+`GRAPH` is `REFERENCE_MACHINE`'s, kept as a module-level name because `render_xdsm.py`
+and the smoke check want a default to point at. `machine_from_indat` is the only place
+an `i_*` integer is read, and its docstring explains why assembly time is the only
+correct place to resolve one (short version: no switch in PROCESS is ever an iteration
+variable or a scan variable, so no switch can change between two evaluations of one
+assembled graph).
+
+**The tree itself carries no configuration.** Every slot the factory fills has *no
+default*, so `StellaratorProcess()` raises `TypeError` rather than quietly producing one
+particular machine; a default is admissible only where there is nothing to decide. That
+is the property that would have caught the `i_confinement_time` 34-vs-38 and
+`i_plasma_ignited` 0-vs-1 registration bugs, both of which lived in a slot default where
+nothing was looking.
 
 `EcrhDensityLimit(i_plasma_pedestal=PlasmaProfileShapeType.PARABOLIC_PROFILE)` keeps its
 setting as a static kwarg rather than becoming a slot of its own. It is `naming_convention.md`'s other category -- a
@@ -81,10 +89,11 @@ a joint `Switch` below (`ExponentialAttenuationBlanketShieldPower`/
 single joint switch over `.fwbs.blktmodel`/`.heat_transport.ipowerflow` together, not a
 plain `.fwbs.blktmodel` switch, is what the real 3-arm dispatch needs, and for the
 `ScTfCoilNuclearHeating` registration bug this wiring found and fixed along the way
-(unconditional-in-`COMMON` was wrong for PROCESS's own default configuration, same class
+(unconditional registration was wrong for PROCESS's own default configuration, same
 of bug already fixed once for `EcrhDensityLimit`).
 """
 
+import dataclasses
 import functools
 import re
 from pathlib import Path
@@ -213,7 +222,7 @@ from functional_process.models.stellarator.build import (
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
     # `BlktmodelBlanketThickness` deliberately NOT imported/registered here any more --
-    # see `COMMON`'s own comment next to `Build`, and `unit_registry.md` row 2: PROCESS's
+    # see the comment next to `Build` below, and `unit_registry.md` row 2: PROCESS's
     # own default is `blktmodel = 0`, under which this node's own docstring says it must
     # not be instantiated at all (`conditional-ownership-by-run-config`, same shape as
     # `.physics.aspect`). Unconditional registration was a real bug, the same class
@@ -343,7 +352,7 @@ class Costs(ModelNamespace):
     # `Costs`'s 43 computational methods (`acc2211`..`coelc` plus the two accumulations
     # `Costs.run()` performs inline). This is the `.costs.i_cost_model == 0`
     # (`CostModels.PROCESS_1990`) arm of the switch below; see there for why it is an
-    # arm rather than an unconditional `COMMON` entry, and `costs.md`'s coverage map for
+    # arm rather than an unconditional entry, and `costs.md`'s coverage map for
     # the per-method derivation of this list.
     #
     # Every static kwarg below is checked against the modelled run on every harness run
@@ -596,12 +605,12 @@ class BlanketShieldPowerExponential(ModelNamespace):
     # name and the occupant class are both this long and `ruff format` strips
     # parentheses from around an annotation.
     exponential_attenuation_blanket_shield_power: ExponentialAttenuationBlanketShieldPower = ExponentialAttenuationBlanketShieldPower()  # noqa: E501
-    # `ScTfCoilNuclearHeating` moved here from `COMMON` -- this arm is
+    # `ScTfCoilNuclearHeating` moved here from the unswitched part -- this arm is
     # its one genuine caller that keeps its `p_tf_nuclear_heat_mw`
     # output (`stellarator.py:727-728`); the `blktmodel == 1` arm calls
     # it too but discards that particular output, and arm 3 (value=2,
     # below) computes its own, different `p_tf_nuclear_heat_mw` formula.
-    # Leaving it unconditionally in `COMMON` was a real bug, the same
+    # Leaving it unconditional was a real bug, the same
     # class already fixed once for `EcrhDensityLimit`: PROCESS's actual
     # default configuration lands in arm 3 below, not this one, so the
     # old unconditional placement was computing SC-coil TF nuclear
@@ -696,8 +705,8 @@ class StellaratorFwbs(ModelNamespace):
     """First wall, blanket and shield -- the `st_fwbs` chunk's registered nodes."""
 
     blanket_shield_power: (
-        BlanketShieldPowerExponential | DetailedPowerflowBlanketShieldPower | None
-    ) = DetailedPowerflowBlanketShieldPower()
+        BlanketShieldPowerExponential | DetailedPowerflowBlanketShieldPower
+    ) = dataclasses.field(kw_only=True)
     """Blanket/shield power deposition, on `.fwbs.blktmodel` x `.heat_transport.
     ipowerflow` jointly -- one slot, two integers, resolved in `machine_from_indat`.
 
@@ -708,15 +717,19 @@ class StellaratorFwbs(ModelNamespace):
     not a shape rule.
 
     The `blktmodel == 0` arm is refused: it is `blanket_neutronics()`, which calls
-    `hcpb.nuclear_heating_*`, unported.
+    `hcpb.nuclear_heating_*`, unported. That is also why the `| None` this annotation
+    used to carry was **dead**: `0` is the only joint key outside the registry that
+    PROCESS has, it is in `UNPORTED`, and it raises -- absence was never reachable.
     """
 
-    blanket_masses: BlanketComponentMasses | None = BlanketComponentMasses()
+    blanket_masses: BlanketComponentMasses = dataclasses.field(kw_only=True)
     """Blanket component masses, on `.fwbs.blktmodel` x `.fwbs.blkttype` jointly.
 
     Only the `blkttype == 2` (helium-cooled solid breeder) occupant exists; the
     liquid-breeder sub-arm and the `blktmodel != 0` mass arm are refused with their
-    reasons in `machine_from_indat`.
+    reasons in `UNPORTED`. Same dead `| None` as the slot above, for the same reason:
+    joint keys `0` and `1` are the only others `machine_from_indat` can derive and both
+    raise.
     """
 
     # `st_fwbs` S1/S5 (`stellarator_E_fwbs_synthesis.md`), portable now, no blocker.
@@ -732,7 +745,7 @@ class StellaratorFwbs(ModelNamespace):
     # topological order) is strictly more self-consistent than PROCESS's own lagged
     # read -- confirmed by the build below staying at the same SCC count.
     divertor_plate_mass: DivertorPlateMass = DivertorPlateMass()
-    # `st_fwbs` S4's shield-mass block (`stellarator_fwbs_s4.md`). In `COMMON` and not
+    # `st_fwbs` S4's shield-mass block (`stellarator_fwbs_s4.md`). Unswitched, not
     # behind a `Switch` because `stellarator.py:1195-1206` is outside every branch in
     # `st_fwbs` -- no `blktmodel`, `blkttype` or `ipowerflow` guard -- so both outputs
     # exist in every configuration. Its sibling `BlanketComponentMasses` *is* switched,
@@ -750,14 +763,15 @@ class Stellarator(ModelNamespace):
     stellarator's, whatever area PROCESS files the field under.
     """
 
-    machine_config: StellaratorMachineConfig | None = None
+    machine_config: StellaratorMachineConfig = dataclasses.field(kw_only=True)
     """The 34 `.stellarator_config.stella_config_*` fields, from a `stella_conf.json`.
 
-    `None` at PROCESS's own default (`.stellarator.istell = 0`), which is a **tokamak**
-    and has no `stella_config_*` at all -- filling this unconditionally would make the
-    tokamak graph produce stellarator machine data. `istell in 1..5` selects one of five
-    hardcoded presets whose tables are not transcribed; `machine_from_indat` refuses
-    those by registry absence, with the reason.
+    Filled at `.stellarator.istell == 6` (machine config read from file) and at no other
+    value, because there is no other value: `istell == 0` is a **tokamak**, which this
+    tree has no counterpart namespace for, and `istell in 1..5` selects one of five
+    hardcoded presets whose tables are not transcribed. All six are in `UNPORTED` and
+    raise, which is why this slot needs no `| None` -- it used to hold one for the
+    tokamak, and the tokamak is gone.
 
     A node with **no inputs**: the machine config is strictly upstream of every design
     variable, so it adds a source to the DAG and no cycle. **This is what makes the graph
@@ -767,14 +781,16 @@ class Stellarator(ModelNamespace):
     in 16 blocks.
     """
 
-    heating: EcrhHeating | LowhybHeating = EcrhHeating()
+    heating: EcrhHeating | LowhybHeating = dataclasses.field(kw_only=True)
     """Which auxiliary heating model runs (`.stellarator.isthtr`, default 1 = ECRH).
 
     The NBI arm (`isthtr == 3`) is refused: `st_heat`'s NBI branch calls
     `current_drive.culnbi()`, a model this port has not audited.
     """
 
-    fw_area: AFwTotalNoPowerflow | AFwTotalWithPowerflow = AFwTotalWithPowerflow()
+    fw_area: AFwTotalNoPowerflow | AFwTotalWithPowerflow = dataclasses.field(
+        kw_only=True
+    )
     """First-wall area (`.heat_transport.ipowerflow`, default 1).
 
     **The switch that decides whether the graph has a cycle**, which is why it is a slot
@@ -787,7 +803,7 @@ class Stellarator(ModelNamespace):
 
     coils: StellaratorCoils = StellaratorCoils()
 
-    fwbs: StellaratorFwbs = StellaratorFwbs()
+    fwbs: StellaratorFwbs = dataclasses.field(kw_only=True)
 
     # unit #1 chunks
     sudo_density_limit: SudoDensityLimit = SudoDensityLimit()
@@ -905,7 +921,7 @@ class PhysicsProfiles(ModelNamespace):
 
     parameterisation: (
         ProfileParameterisationParabolic | ProfileParameterisationPedestal
-    ) = ProfileParameterisationPedestal()
+    ) = dataclasses.field(kw_only=True)
     """How the plasma profiles are shaped (`.physics.i_plasma_pedestal`, default 1).
 
     Not a formula switch: the parabolic occupant carries `EcrhDensityLimit` as well, a
@@ -924,7 +940,7 @@ class PhysicsProfiles(ModelNamespace):
     ne_profile_integral: NeProfileIntegral = NeProfileIntegral()
     te_profile_integral: TeProfileIntegral = TeProfileIntegral()
     density_profile: DensityProfile = DensityProfile()
-    # `plasma_profiles.py`. In `COMMON` and not under `.physics.i_plasma_pedestal`:
+    # `plasma_profiles.py`. Unswitched, not under `.physics.i_plasma_pedestal`:
     # PROCESS writes `.physics.temp_plasma_ion_vol_avg_kev` in `parameterise_plasma`
     # *before* the branch, so it runs in both arms. A `FixedPointFunction` rather than an
     # `ExplicitFunction` because the field is conditionally owned by *data*
@@ -936,25 +952,26 @@ class PhysicsProfiles(ModelNamespace):
 class PhysicsConfinementTime(ModelNamespace):
     """Energy confinement, and what is derived from it."""
 
-    model: ConfinementTime = ConfinementTime(
-        i_confinement_time=ConfinementTimeModel.ISS04_STELLARATOR,
-        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
-        i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
-    )
-    """Which confinement-time scaling runs (`.stellarator.istell`: 0 tokamak, 6 Helias).
+    model: ConfinementTime = dataclasses.field(kw_only=True)
+    """Which confinement-time scaling runs (`.stellarator.istell == 6`, Helias).
 
     **The one slot whose family already existed**: `StellaratorConfinementTime`
     subclasses
-    `ConfinementTime`, so the annotation is the base and both occupants satisfy it --
+    `ConfinementTime`, so the annotation is the base and the occupant satisfies it --
     `model_tree_design.md` §4 case 1, the shared-body case. Every other switched slot in
     this tree is annotated with a union of its occupants, because no base was ever
-    written for them; see this module's own note above `machine_from_indat`.
+    written for them; see this module's own note above `machine_from_indat`. The bare
+    `ConfinementTime` was this slot's `istell == 0` occupant until that arm was deleted;
+    a one-member family is what remains, not a spurious one.
 
-    The three settings are the reference run's, not `physics_variables.py`'s bare
-    defaults, and each was a registration bug once: `i_confinement_time` was `34`
-    (IPB98(y,2), a tokamak H-mode law) against ISS04's `38`, and `i_plasma_ignited` was
-    `0` against the input file's `1`, which alone was the residual ~1.2 %
-    `t_energy_confinement` disagreement. Both found by the MDA harness, never by a check.
+    **The three settings live in the factory, and this slot has no default, because of
+    them.** They are the reference run's, not `physics_variables.py`'s bare defaults, and
+    each was a registration bug once: `i_confinement_time` was `34` (IPB98(y,2), a
+    tokamak H-mode law) against ISS04's `38`, and `i_plasma_ignited` was `0` against the
+    input file's `1`, which alone was the residual ~1.2 % `t_energy_confinement`
+    disagreement. Both found by the MDA harness, never by a check -- and a slot default
+    is exactly where a check could not see them, since the defaults test compared
+    occupant *classes* only.
     """
 
     # unit #10, physics/confinement_time.py. `IterPhysicsBasisElongation` (the standalone
@@ -1022,9 +1039,9 @@ class Physics(ModelNamespace):
     # (unit #19) -- there is no second arm to switch between. See
     # `_audit/boundary_inputs_audit.md` §4c (b7)/(b8) and the class's own docstring.
     fusion_totals_no_beam: FusionTotalsNoBeam = FusionTotalsNoBeam()
-    profiles: PhysicsProfiles = PhysicsProfiles()
+    profiles: PhysicsProfiles = dataclasses.field(kw_only=True)
 
-    confinement_time: PhysicsConfinementTime = PhysicsConfinementTime()
+    confinement_time: PhysicsConfinementTime = dataclasses.field(kw_only=True)
 
     # unit #19, physics/fusion_reactions.py
     fusion_rates: FusionRates = FusionRates()
@@ -1107,7 +1124,9 @@ class Physics(ModelNamespace):
 class Power(ModelNamespace):
     """Thermal and electric power flows, cryogenics, and the plant's own consumption."""
 
-    tf_power: TfPowerResistive | TfPowerSuperconducting = TfPowerSuperconducting()
+    tf_power: TfPowerResistive | TfPowerSuperconducting = dataclasses.field(
+        kw_only=True
+    )
     """TF-coil power supplies (`.tfcoil.i_tf_sup`, default 1 = superconducting).
 
     The aluminium arm (`i_tf_sup == 2`) is refused rather than aliased onto the resistive
@@ -1253,7 +1272,7 @@ class Power(ModelNamespace):
 class Buildings(ModelNamespace):
     """Plant buildings."""
 
-    sizing: Bldgs | BldgsSizes = Bldgs()
+    sizing: Bldgs | BldgsSizes = dataclasses.field(kw_only=True)
     """Which building-size model runs (`.buildings.i_bldgs_size`, default 0 = ITER 1992).
 
     The two occupants share `a_plant_floor_effective`/`volnucb`, which is what proved
@@ -1293,12 +1312,7 @@ class Availability(ModelNamespace):
     """Plant availability and component lifetimes."""
 
     electric_production: PowerProfilesOverTime | PlantElectricProductionReactor = (
-        PlantElectricProductionReactor(
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-            i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-            i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT,
-        )
+        dataclasses.field(kw_only=True)
     )
     """Net electric power over the pulse cycle (`.costs.ireactor`, default 1).
 
@@ -1308,12 +1322,12 @@ class Availability(ModelNamespace):
     """
 
     # `PowerProfilesOverTime`/`PlantElectricProductionReactor` are the two arms of the
-    # `.costs.ireactor` `Switch` below, not `COMMON` members -- see that switch.
+    # `.costs.ireactor` slot below, not unswitched members -- see that slot.
     # `availability.py` (unit #17). `Stellarator.run()`'s solve-time branch calls
     # `self.availability.avail()` directly (`stellarator.py:175`), bypassing
     # `.costs.i_plant_availability`'s dispatch entirely -- so `Avail` (not `Avail2`/
     # `AvailSt`) is the node actually exercised at solve time regardless of that
-    # switch's value, and belongs in `COMMON`, not behind a `Switch`. Its
+    # switch's value, and belongs in the unswitched part, not behind a slot. Its
     # `.costs.cplife` self-loop is resolved the same way as `plasma_composition`'s
     # `first_call`/`power_B_thermal_cryo.py`'s six fields above: `CplifeAvail`
     # (`FixedPointFunction`) owns `.costs.cplife` alone; `Avail` (`ExplicitFunction`)
@@ -1342,8 +1356,25 @@ class Availability(ModelNamespace):
     )
 
 
-class Machine(ModelNamespace):
-    """Nodes present in every configuration -- everything no topology switch gates.
+class StellaratorProcess(ModelNamespace):
+    """One device, configured whole: every slot in this port, and what fills it.
+
+    **Named for the device, because that is what it is.** There is no tokamak arm and
+    `Stellarator` below has no counterpart namespace, so a general "machine" is not what
+    this class describes. *Machine* stays the noun for an **instance** of it --
+    `machine_from_indat`, `REFERENCE_MACHINE`, `graph_for(machine=...)` -- and the mixed
+    vocabulary is deliberate: the class is a device, an instance of it is a machine.
+
+    **A slot the factory fills has no default.** Every slot `machine_from_indat` passes
+    is `dataclasses.field(kw_only=True)`, here and in the sub-namespaces; every other
+    slot keeps its default. A default is admissible only where there is nothing to
+    decide. `StellaratorProcess()` therefore raises `TypeError` instead of silently
+    producing one particular machine -- which is what it did until this pass, with the
+    reference run's switch values transcribed into slot constructor kwargs
+    (`i_confinement_time = 38`, `i_plasma_ignited = 1`, against PROCESS's own `34` and
+    `0`) where the test that claimed to police defaults could not see them, because it
+    compared occupant classes only. `kw_only` is what lets a defaulted and an
+    undefaulted slot sit in any order, so no sub-namespace had to be reordered.
 
     **The tree is the configuration.** A node is named by the path that reaches it, so
     `.stellarator.coils.coil_current` says where a model belongs, and every line below
@@ -1377,59 +1408,34 @@ class Machine(ModelNamespace):
         written, not inherited), and it is only a tiebreak: the run order is derived.
     """
 
-    costs: Costs | None = None
-    """The cost model (`.costs.i_cost_model`), and the first slot whose default is
-    **absence**.
+    costs: Costs = dataclasses.field(kw_only=True)
+    """The cost model (`.costs.i_cost_model`), and a slot with exactly one occupant.
 
-    `None` is PROCESS's own default (`KOVARI_2014`), and it is the honest answer rather
-    than a gap: `costs_2015.py` has no `cottax` nodes, so in that configuration this port
-    computes no cost of electricity at all and `.costs.coe`/`.costs.concost` surface as
-    unowned boundary inputs. Filling the slot with `Costs()` (the 1990 model) instead
-    would compute *a different number for the same field* -- worse than the
-    `EcrhDensityLimit` bug class, which merely computed a value the configuration never
-    asks for.
-
-    `i_cost_model == 2` injects a user-supplied `Model` at runtime and has no
-    PROCESS-side subgraph at all, so it is refused rather than left empty: a caller
-    asking for it has a model in mind this graph has never seen.
+    The 1990 model is it. Both other values are in `UNPORTED` and raise, for different
+    reasons that are recorded there: `== 1` (KOVARI_2014) is PROCESS's own default and
+    would compute no cost of electricity at all; `== 2` injects a user-supplied `Model`
+    at runtime and has no PROCESS-side subgraph to port.
 
     The reference run sets `i_cost_model = 0` explicitly -- the input file's own comment
     is *"the 2015 does not work yet for stellarators"* -- so `Costs()` is the occupant
     for every run in this project's scope.
     """
 
-    stellarator: Stellarator = Stellarator()
+    stellarator: Stellarator = dataclasses.field(kw_only=True)
 
-    physics: Physics = Physics()
+    physics: Physics = dataclasses.field(kw_only=True)
 
-    power: Power = Power()
+    power: Power = dataclasses.field(kw_only=True)
 
-    buildings: Buildings = Buildings()
+    buildings: Buildings = dataclasses.field(kw_only=True)
 
     vacuum: Vacuum = Vacuum()
+    """The one sub-namespace that keeps a default: nothing inside it is switched, so
+    there is nothing for `machine_from_indat` to decide and no configuration for a
+    default to smuggle in. The other five hold a switched slot somewhere beneath them,
+    which is why they cannot be default-constructed either."""
 
-    availability: Availability = Availability()
-
-
-COMMON = Machine()
-"""The common machine -- every node no topology switch gates, as one `Machine` instance.
-
-**Still named `COMMON` on purpose.** In this step it is exactly what the nested-class
-`COMMON` was: the unconditional part, which `build_graph` merges with whichever switch
-arms a `Configuration` selects. `model_tree_design.md` §8 step 4 is what folds the arms
-into slots and makes a machine the *whole* configuration; renaming before then would
-make ~20 comments across this file and `models/**` say "COMMON" about something that no
-longer exists, for no gain at the step that actually earns the name.
-
-**An instance, not a class, and that is the load-bearing change.** A namespace class is a
-definition and keeps its class name, so `to_graph(COMMON)` used to name every node
-`COMMON.stellarator....` and had to be keyed at the root to strip it. An instance is a
-composition -- many machines are instances of one `Machine` -- so it has no name of its
-own and its slots name the nodes directly (`cottax` `node_and_names`; the design's §3.1).
-That is what retired the `{ROOT: subtree}` idiom, and what makes a `NodePath` here a
-working address: `eqx.tree_at(lambda m: m.physics.profiles.grid, COMMON, ...)` reaches
-the same place the node name spells.
-"""
+    availability: Availability = dataclasses.field(kw_only=True)
 
 
 REFERENCE_INPUT_FILE = "tests/regression/input_files/stellarator_helias.IN.DAT"
@@ -1450,16 +1456,15 @@ _ISTELL_PRESET_REASON = (
 
 REFERENCE_MACHINE_SWITCHES = {
     "istell": 6,  # `stellarator_helias.IN.DAT:137`
-    "isthtr": 1,  # `:139` -- equals the `Machine()` default, listed anyway
+    "isthtr": 1,  # `:139` -- equals PROCESS's own default, listed anyway
     "i_plasma_pedestal": 0,  # `:118`
     "i_cost_model": 0,  # `:248`
-    "ireactor": 1,  # `:245` -- equals the `Machine()` default, listed anyway
+    "ireactor": 1,  # `:245` -- equals PROCESS's own default, listed anyway
 }
 """The switch values `REFERENCE_INPUT_FILE` actually sets, as a faithful transcription.
 
 **Every switch the file sets explicitly is listed, including ones whose value happens to
-equal the `Machine()` default** (`isthtr`, `ireactor`). Listing them regardless makes
-this
+equal PROCESS's own default** (`isthtr`, `ireactor`). Listing them regardless makes this
 a transcription of the file rather than a diff against PROCESS's defaults, and means a
 future change to a default cannot silently move the reference run.
 `test_machine.py` parses the file and checks this dict against it, both ways, so
@@ -1470,6 +1475,16 @@ here so the check has something to compare against.
 """
 
 UNPORTED = {
+    ("istell", 0): (
+        "istell == 0 is a tokamak, and this tree has no tokamak: `Stellarator` has no "
+        "counterpart namespace, so assembling it would give stellarator geometry, "
+        "stellarator coils and stellarator FWBS driven by a tokamak confinement "
+        "scaling -- a device nobody has built and this port has never tested. Refused "
+        "rather than absent, because it is the kind where assembling anyway hands you a "
+        "graph that looks complete and is wrong. Consequence, stated rather than "
+        "papered over: `istell` has no usable default here, so an IN.DAT that does not "
+        "set `istell = 6` is refused"
+    ),
     ("istell", 1): _ISTELL_PRESET_REASON,
     ("istell", 2): _ISTELL_PRESET_REASON,
     ("istell", 3): _ISTELL_PRESET_REASON,
@@ -1515,6 +1530,16 @@ UNPORTED = {
         "slot with the same occupant. Kept as a refused value rather than a second "
         "registry entry pointing at TfPowerResistive so the claim stays visible."
     ),
+    ("i_cost_model", 1): (
+        "KOVARI_2014 (i_cost_model == 1) is PROCESS's own default cost model and is "
+        "unported: costs_2015.py has no cottax nodes, so on that arm this port computes "
+        "no cost of electricity at all and .costs.coe/.costs.concost would surface as "
+        "unowned boundary inputs. Filling the slot with the 1990 model instead would "
+        "compute *a different number for the same field* -- worse than the "
+        "EcrhDensityLimit bug class, which merely computed a value the configuration "
+        "never asks for. This used to be spelled as a slot holding None; it is a "
+        "refusal now, because a tree with no optional slots cannot say 'absent'"
+    ),
     ("i_cost_model", 2): (
         "i_cost_model == 2 injects a user-supplied Model instance at runtime "
         "(process/main.py's `costs` setter, lines 766-768) -- there is no PROCESS-side "
@@ -1526,11 +1551,16 @@ UNPORTED = {
 """Why a known PROCESS value has no occupant, verbatim from the `Alternative(unported=)`
 declarations this replaced.
 
-**Refusal, not absence.** A value in here raises `NotImplementedError` naming the reason.
-That is the difference between *"this configuration's graph does not compute these
-values"* -- spelled as a slot holding `None`, e.g. `Machine().costs` -- and *"assembling
-anyway would hand you a graph that looks complete and is wrong"*. `i_cost_model == 1` is
-the first kind; `i_cost_model == 2` is the second, and they sit on the same switch.
+**Refusal, and nothing else.** A value in here raises `NotImplementedError` naming the
+reason. It used to have a quieter sibling -- a slot holding `None`, meaning *"this
+configuration's graph does not compute these values"* -- and that spelling is gone: all
+four `| None`s left the tree, two because they were unreachable (every joint key outside
+`BLANKET_MASSES`/`BLANKET_SHIELD_POWER` already raised) and two because the
+configurations they stood for, `i_cost_model == 1` and `istell == 0`, are ones this port
+cannot honestly assemble. Both kinds of value are refused now and the distinction
+survives only in the reasons: `i_cost_model == 1` would hand you a graph that computes no
+cost of electricity, `== 2` and `istell == 0` would hand you one that looks complete and
+is wrong.
 
 Keyed by `(field, value)`, using the joint keys `blktmodel_ipowerflow` /
 `blktmodel_blkttype` for the two dispatches that read two integers at once.
@@ -1567,9 +1597,15 @@ def _slot_occupant(field, value, registry, *, build=None):
     )
 
 
-CONFINEMENT_TIME = {0: ConfinementTime, 6: StellaratorConfinementTime}
-"""`.stellarator.istell` -> the confinement-time occupant. The one real family: both are
-`ConfinementTime`, one subclassing the other."""
+CONFINEMENT_TIME = {6: StellaratorConfinementTime}
+"""`.stellarator.istell` -> the confinement-time occupant.
+
+One entry, because this tree has one device. The tokamak arm (`istell == 0`, the bare
+`ConfinementTime`) is in `UNPORTED`: it was never a real configuration here, only a
+tokamak scaling law bolted onto stellarator geometry, coils and FWBS. `ConfinementTime`
+remains the annotation on `PhysicsConfinementTime.model`, since
+`StellaratorConfinementTime` subclasses it -- the family is real, and has one member.
+"""
 
 HEATING = {1: EcrhHeating, 2: LowhybHeating}
 """.stellarator.isthtr` -> the auxiliary-heating occupant."""
@@ -1615,9 +1651,9 @@ BLANKET_MASSES = {2: BlanketComponentMasses}
 """`.fwbs.blktmodel` x `.fwbs.blkttype` -> the blanket-mass occupant, same joint key."""
 
 COST_MODEL = {0: Costs}
-"""`.costs.i_cost_model` -> the cost-model occupant. `1` (KOVARI_2014) is deliberately
-absent rather than refused -- see `Machine.costs`, whose default is `None` for exactly
-that value."""
+"""`.costs.i_cost_model` -> the cost-model occupant. `1` (KOVARI_2014, PROCESS's own
+default) and `2` are both refused, with their reasons in `UNPORTED`; the slot used to
+default to `None` for the first of them and no longer can."""
 
 _INDAT_INTEGER = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$")
 
@@ -1640,7 +1676,12 @@ def switches_from_indat(input_file):
 
 
 def machine_from_indat(input_file, stella_conf=None):
-    r"""The `Machine` an IN.DAT describes: `Machine()` with its deltas applied.
+    r"""The `StellaratorProcess` an IN.DAT describes -- the only thing that builds one.
+
+    Every slot below is passed explicitly because every slot below has no default: there
+    is no `StellaratorProcess()` to apply deltas to any more. A switch the file does not
+    mention still falls through to PROCESS's own default, but it falls through *here*,
+    as the second argument to `switches.get`, where it is visible and cited.
 
     **The only place in this port an `i_*` integer is ever read.** Everything downstream
     sees a tree of model instances; nothing else has to know that `6` means Helias or
@@ -1669,33 +1710,52 @@ def machine_from_indat(input_file, stella_conf=None):
     Joint dispatch is ordinary code here rather than a mechanism: `blktmodel` is read
     together with `ipowerflow` for one slot and with `blkttype` for another. So is
     cross-slot coherence -- `istell == 6` sets both the machine config and the
-    confinement binding, because they are two consequences of one choice.
+    confinement binding, because they are two consequences of one choice, which is why
+    the two are resolved together, into named locals, before anything else.
+
+    Raises
+    ------
+    NotImplementedError
+        The file asks for a real PROCESS branch this port has no occupant for. **A file
+        that sets nothing at all raises here**, on `istell`: PROCESS's own default is
+        `0`, a tokamak, and this tree has none. `istell` has no usable default and that
+        is the intent.
     """
     switches = switches_from_indat(input_file)
 
     def pick(field, registry, default, **kw):
         return _slot_occupant(field, switches.get(field, default), registry, **kw)
 
+    # The device is resolved first, on its own, and both its consequences together:
+    # PROCESS's own default is `istell = 0`, a tokamak, which is in `UNPORTED`, so a
+    # file that never mentions `istell` is refused naming `istell` rather than whichever
+    # slot the constructor happened to evaluate first.
     istell = switches.get("istell", 0)
-    blktmodel = switches.get("blktmodel", 2)
-    return Machine(
-        costs=(
-            None
-            if switches.get("i_cost_model", 1) == 1
-            else pick("i_cost_model", COST_MODEL, 1)
+    machine_config = _slot_occupant(
+        "istell",
+        istell,
+        {6: StellaratorMachineConfig},
+        build=lambda cls: cls(
+            machine_config=read_stellarator_config_file(
+                REFERENCE_STELLA_CONF if stella_conf is None else stella_conf
+            )
         ),
+    )
+    confinement_time = _slot_occupant(
+        "istell",
+        istell,
+        CONFINEMENT_TIME,
+        build=lambda cls: cls(
+            i_confinement_time=ConfinementTimeModel.ISS04_STELLARATOR,
+            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+            i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
+        ),
+    )
+    blktmodel = switches.get("blktmodel", 2)
+    return StellaratorProcess(
+        costs=pick("i_cost_model", COST_MODEL, 1),
         stellarator=Stellarator(
-            machine_config=(
-                StellaratorMachineConfig(
-                    machine_config=read_stellarator_config_file(
-                        REFERENCE_STELLA_CONF if stella_conf is None else stella_conf
-                    )
-                )
-                if istell == 6
-                else _slot_occupant(
-                    "istell", istell, {0: type(None)}, build=lambda _: None
-                )
-            ),
+            machine_config=machine_config,
             heating=pick("isthtr", HEATING, 1),
             fw_area=pick("ipowerflow", FW_AREA, 1),
             fwbs=StellaratorFwbs(
@@ -1715,18 +1775,7 @@ def machine_from_indat(input_file, stella_conf=None):
             profiles=PhysicsProfiles(
                 parameterisation=pick("i_plasma_pedestal", PROFILE_PARAMETERISATION, 1),
             ),
-            confinement_time=PhysicsConfinementTime(
-                model=_slot_occupant(
-                    "istell",
-                    istell,
-                    CONFINEMENT_TIME,
-                    build=lambda cls: cls(
-                        i_confinement_time=ConfinementTimeModel.ISS04_STELLARATOR,
-                        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
-                        i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
-                    ),
-                ),
-            ),
+            confinement_time=PhysicsConfinementTime(model=confinement_time),
         ),
         power=Power(tf_power=pick("i_tf_sup", TF_POWER, 1)),
         buildings=Buildings(sizing=pick("i_bldgs_size", BUILDING_SIZING, 0)),
@@ -1745,17 +1794,17 @@ PROCESS's own default)."""
 def graph_for(machine=None):
     """The assembled graph for one machine; `REFERENCE_MACHINE` if unstated.
 
-    **Not `Machine()`** -- five registration bugs here shared one root cause: a
-    value copied from PROCESS's bare `*_variables.py` defaults rather than from the run
-    modelled (`i_confinement_time` 34 vs 38, `i_thermal_electric_conversion` 0 vs 2,
-    `i_p_coolant_pumping` 2 vs 1, `i_plasma_ignited` 0 vs 1, and `i_cost_model` 1 vs 0,
-    which left `.costs.coe` with no producer and 43 nodes unregistered). Each was
-    found by
-    the MDA harness after the fact. Making the *bare* form mean "PROCESS's silent-IN.DAT
-    defaults" put that trap in the path of anyone assembling a graph without thinking
-    about it, while every consumer that mattered had to remember to pass a configuration
-    -- and the ones that forgot were the bugs. Pass `Machine()` explicitly for the
-    silent-IN.DAT graph; it is still a real thing to want, just not the default.
+    **There is no bare form to fall back to any more, and that is the point.** Five
+    registration bugs here shared one root cause: a value copied from PROCESS's bare
+    `*_variables.py` defaults rather than from the run modelled (`i_confinement_time` 34
+    vs 38, `i_thermal_electric_conversion` 0 vs 2, `i_p_coolant_pumping` 2 vs 1,
+    `i_plasma_ignited` 0 vs 1, and `i_cost_model` 1 vs 0, which left `.costs.coe` with no
+    producer and 43 nodes unregistered), each found by the MDA harness after the fact.
+    The first fix was to stop *defaulting* to the silent-IN.DAT graph; this argument's
+    default has been `REFERENCE_MACHINE` since. The second is that the silent-IN.DAT
+    graph can no longer be built at all -- `StellaratorProcess()` raises, because every
+    switched slot lost its default -- so a machine comes from an IN.DAT or from an
+    explicit `eqx.tree_at` on one, and from nowhere else.
     """
     return to_graph(REFERENCE_MACHINE if machine is None else machine)
 

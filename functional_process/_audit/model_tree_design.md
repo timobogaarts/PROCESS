@@ -466,6 +466,80 @@ cross-group edges / 1-of-7 contiguous to **8 / 144 / 0-of-8**. That is §11.4's
 provenance-against-structure measurement finally including the cost model, not a
 regression — and it says the run order interleaves every subsystem, none contiguous.
 
+**Step 4b — the tree stops carrying configuration; `Machine` → `StellaratorProcess`.
+[DONE 2026-08-25.]**
+*(functional_process; one sitting, no numeric movement expected and none found)* Step 4
+left the configuration in two places: the factory *and* the slot defaults. The defaults
+were the worse of the two, because nothing checked them —
+`test_machine_defaults_are_process_defaults` compared occupant *classes* only, so the
+reference run's `i_confinement_time = 38` / `i_plasma_ignited = 1` sat in the occupant's
+constructor kwargs where no test could see that PROCESS's own defaults are `34` / `0`.
+**The contract §2 and §5 above spell as "`Machine()`'s field defaults *are* PROCESS's
+bare defaults" was therefore never true, and is retired rather than repaired**: a slot
+`machine_from_indat` fills gets `dataclasses.field(kw_only=True)` and no default, every
+other slot keeps its default, and a default is admissible only where there is nothing to
+decide. `StellaratorProcess()` raises `TypeError`. `kw_only` works on `eqx.Module`, so
+no sub-namespace had to be reordered. Eleven switched slots and the five spine
+namespaces above them lost their defaults; `vacuum` is the one sub-namespace that keeps
+one, because nothing inside it is switched.
+
+*Four things went with it.* **(a) The class is `StellaratorProcess`** — the tree is this
+project's configuration for one device, not a general machine abstraction. The
+sub-namespace `Stellarator` keeps its name, and *machine* stays the noun for an
+**instance** (`machine_from_indat`, `REFERENCE_MACHINE`, `graph_for(machine=)`), which
+the class docstring says out loud so the mixed vocabulary reads as chosen rather than
+drifted. **(b) The `istell == 0` arm is deleted**: `CONFINEMENT_TIME` is
+`{6: StellaratorConfinementTime}` and `("istell", 0)` is an `UNPORTED` entry. There is no
+`Tokamak` namespace mirroring `Stellarator`, so that arm assembled stellarator geometry,
+stellarator coils and stellarator FWBS under a *tokamak* confinement scaling — a device
+nobody has built and this port has never tested. It is the "assembling anyway hands you a
+graph that looks complete and is wrong" kind, hence refused and not merely absent.
+*Consequence, stated rather than papered over:* `istell` has no usable default, so
+`machine_from_indat` on a file that does not set `istell = 6` raises. The factory now
+resolves `istell`'s two consequences (machine config, confinement binding) into named
+locals **before** the constructor call, so a silent IN.DAT is refused for `istell` rather
+than for whichever slot Python happened to evaluate first. **(c) All four `| None`s are
+gone.** Two stood for live configurations and are `UNPORTED` entries now (`istell == 0`;
+`i_cost_model == 1`, KOVARI_2014, PROCESS's own default — `costs_2015.py` has no cottax
+nodes, so that arm computes no cost of electricity at all and `.costs.coe` /
+`.costs.concost` would surface as unowned boundary inputs). The other two were **dead,
+and were checked to be dead before removal**: `BLANKET_MASSES` is `{2: …}` and
+`BLANKET_SHIELD_POWER` is `{1: …, 2: …}`, and every other joint key `machine_from_indat`
+can derive is in `UNPORTED` (`0`, plus `1` for the mass slot) and raises — `None` was
+unreachable on both. `UNPORTED`'s docstring loses its "refusal, not absence" distinction
+accordingly: absence has no spelling left in the tree. **(d) `COMMON` is deleted** —
+`COMMON = Machine()` was vestigial, reached by nothing but its own docstring and prose.
+
+*Gates, all met.* `GRAPH` **159 nodes, unchanged**; `python -m
+functional_process.render_xdsm` exits 0; `pytest functional_process` **3732 → 3725
+passed**, 3347 skipped on both sides, and the `--collect-only` id diff is exactly the
+seven `test_machine.py` ids this step removes or adds — no other file's collection moved
+by one test. `ruff check` on the two files goes 11 → 7 findings, all seven pre-existing
+`E501`s on lines this change did not touch.
+
+*Tests re-targeted.* `test_machine_defaults_are_process_defaults` (8 params) is deleted
+and **replaced** by `test_a_silent_indat_is_refused_naming_istell` — the same question
+put to the only thing that still answers it. `test_an_absent_occupant_assembles_as_
+nothing` becomes `test_the_default_cost_model_is_refused_with_its_reason`.
+`test_the_1990_cost_model_is_the_only_producer_of_coe` is kept and reworded: dropping the
+occupant is a structural what-if reachable only through `eqx.tree_at`, not "PROCESS's
+default", which is not a configuration this tree admits any more. Because two of
+PROCESS's own defaults are now refused, every temp IN.DAT in the refusal tests is written
+over a `BASELINE_INDAT` of `{istell: 6, i_cost_model: 0}` — without it each case would
+fail on whichever of those two the constructor reached first instead of on the value
+under test. `SLOTS` loses its "PROCESS's own default" column, which had no reader left.
+
+*Follow-ups, deliberately not done here.* **(i)** Seven comments under `models/**` still
+say `COMMON` (`plasma_profiles.py` ×4, `profiles.py`, `radiation_power.py`,
+`stellarator_fwbs_s4.py`). The nine inside `total_process.py` were reworded because this
+change was already editing those lines; a sweeping reword of the rest would be
+unreviewable next to this diff, which is the same call §8's vocabulary note already made
+for `Switch`/`Alternative`/`Configuration`. **(ii) 30 slots still pass a switch as a
+static constructor kwarg** — measured, not estimated: 32 slots carry constructor kwargs
+at all, less `profile_grid` and `impurity_radiation_totals`, whose kwargs are the
+shape/membership counts §3(b)/(c) exempts. That is step 6's job, family by family; this
+step moved only the switches that were already slots.
+
 **Step 5 — the boundary postcondition.** *(functional_process; small)* §6's
 `check_boundary` + the pinned reference boundary set, generated from
 `boundary_inputs_audit.md`'s accounting rather than typed. Wire it into graph assembly
