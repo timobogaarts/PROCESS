@@ -75,7 +75,7 @@ None.
 None. Plain scalar arithmetic throughout.
 
 **One diagnostic note, not a defect** (constraint-32 investigation,
-`_audit/constraint_32_investigation.md`). Three of the seven —
+`_audit/closed/constraint_32_investigation.md`). Three of the seven —
 `calculate_max_force_density`, `calculate_max_lateral_force_density`,
 `calculate_max_radial_force_density` — end in `/ a_tf_wp_no_insulation`, faithfully
 reproducing `process/models/stellarator/coils/forces.py:24`, `:68`, `:90`, which divide by

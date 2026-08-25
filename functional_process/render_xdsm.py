@@ -24,7 +24,8 @@ unit to see it join the diagram.
 every subsystem's nodes adjacent and once in the order `Blocking` actually runs, rows
 coloured by subsystem in both. That is `switch_elimination_design.md` § 11's
 provenance-against-structure comparison as a picture instead of a table -- see `grouped`
-below, and `_audit/grouping_visualisation.md` for what the two of them show.
+below, and `visualization/grouping.py`'s module docstring for what the two of them
+show and for why the grouping lives here rather than in `cottax.visualization`.
 
 `sand` writes `xdsm_sand.html`/`dsm_sand.html` for **the graph the SAND solve actually
 runs**, which is a different and much more informative object: `GRAPH` with its raw

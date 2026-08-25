@@ -74,7 +74,7 @@ sits in the machine tree, and the class name no longer appears in the name at al
 
 **The coil island (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`)
 used to be here too, and is not any more** -- see
-`_audit/constraint_32_investigation.md` for the full evidence. The exclusion rested on
+`_audit/closed/constraint_32_investigation.md` for the full evidence. The exclusion rested on
 one true fact (`.stellarator.wp_width_r_min`, `Intersect`'s own unknown, is minted, so
 `_ground_truth` fell back to the `0.0` placeholder, which is a bad enough starting
 guess that `NewtonDriver`'s `optx.root_find` failed within `max_steps` and aborted the

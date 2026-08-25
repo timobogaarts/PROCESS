@@ -199,7 +199,7 @@ Intersect())` builds cleanly into exactly two nodes (the `residual` body, a
 asserted (`test_coils.py::test_intersect_declares_a_body_and_a_root_find_problem`).
 
 **`.stellarator.wp_width_r_min` is minted but not ungrounded** (added by the constraint-32
-investigation, `_audit/constraint_32_investigation.md`). PROCESS stores no
+investigation, `_audit/closed/constraint_32_investigation.md`). PROCESS stores no
 `wp_width_r_min` field, but it *does* store the same number one line later: after the
 turn-size clamp (`process/models/stellarator/coils/calculate.py:465`), `awp_rad =
 wp_width_r_min` is written straight into `data.tfcoil.dr_tf_wp_with_insulation`

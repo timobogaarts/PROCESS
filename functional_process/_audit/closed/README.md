@@ -30,3 +30,10 @@ cited from `next_steps.md` at their new paths.
   difference of the port's own condition map. Its §8 records what is *not* settled
   (what to do about the kink, how wide the ridge is); those are open questions the
   investigation deliberately left open, not open questions about its own conclusion.
+- **`constraint_32_investigation.md`** — settled why constraint 32 forced the coils SCC out
+  of the MDA harness. Its own frontmatter records `status: closed; merged into
+  optimise_design.md §5.2`, and its two reconstructions of `a_tf_wp_no_insulation`/
+  `a_tf_wp_with_insulation` are live in `mda_harness.KNOWN_MINT_VALUES` — which is what
+  took the whole SCC back out of `EXCLUDED_NODE_NAMES`. It stayed in the live set after
+  the first pass purely because it was acting as a forwarding stub for four citers
+  (`mda_harness.py` and three `coils/*.md` records); all four now name it here.
