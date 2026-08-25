@@ -264,11 +264,21 @@ elementwise and reported as one disagreement carrying the worst element
 comparison must be accounted for the same way**: a bucket that can silently drop a case is
 worse than no check, because it reads as a pass.
 
-**A blind spot of the same family, still open.** `compare`'s `atol=1e-9` makes any field
-whose natural magnitude is below that **vacuously agree**.
+**A blind spot of the same family — [CLOSED 2026-08-25].** `compare`'s `atol=1e-9` made
+any field whose natural magnitude was below that **vacuously agree**.
 `.neoclassics.temperatures`/`dr_temperatures` are stored in Joules (~1e-15), so they agreed
-both before and after a fix that materially changed them, and are **not actually checked by
-anything**. A per-field relative floor, or a unit-aware scale, is what it needs.
+both before and after a fix that materially changed them. `compare`'s `atol` is now `0.0`
+and the comparison is purely relative; `test_mda_harness.py` pins it.
+
+**The way it was closed is the transferable part.** On the current code the floor is inert
+— 0 of 499 agreements depend on it — so the obvious measurement says the trap was never
+sprung and removal is free. That is wrong: it is inert only because the one wrong answer it
+hid had since been fixed. Reintroducing that defect (`ProfileValues.rho` back to `0.0`)
+shows `atol=1e-9` reporting a 71 %-wrong and a 100 %-wrong field as agreements. **The
+measurement that establishes a guard's worth is taken with the defect present**, and this
+project's own closed-items list is a supply of defects to reintroduce for exactly that
+purpose (`next_steps.md` §11.7). The same question is open for every other tolerance and
+skip in this harness.
 
 ### Not built
 

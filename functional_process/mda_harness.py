@@ -824,11 +824,25 @@ class ComparisonReport:
     """How many of `agreements` were array-valued (compared elementwise). Reported
     separately only so a change in array handling is visible in the summary.
     """
+    trivial_agreements: list = field(default_factory=list)
+    """Agreements where the port and `data` are **both exactly zero** everywhere.
+
+    They are real agreements and stay counted in `agreements` (the accounting
+    invariant is over buckets, not over how much each bucket proves), but they say
+    "this path is switched off in this configuration", not "the port reproduces
+    PROCESS" -- no arithmetic in the node was exercised. Reported separately so the
+    headline agreement count cannot be read as more coverage than it is.
+
+    Named because `next_steps.md` §11.6 item 6's `atol` hole -- real, and closed by
+    `compare`'s `atol=0.0` -- turned out not to be the only vacuous agreement here,
+    and this is the larger of the two: 73 of the reference run's 499.
+    """
 
     def summary(self) -> str:
         lines = [
             f"agreements: {self.agreements} "
-            f"(of which array-valued: {self.array_agreements})",
+            f"(of which array-valued: {self.array_agreements}, "
+            f"both-sides-exactly-zero: {len(self.trivial_agreements)})",
             f"disagreements: {len(self.disagreements)}",
             f"  in driven (cyclic) blocks: {len(self.driven_block_disagreements)}",
             f"  in ordinary acyclic nodes: {len(self.acyclic_disagreements)}",
@@ -980,9 +994,40 @@ def _diff(var: VarPath, owner: NodePath, got, expected, *, rtol, atol):
     )
 
 
-def compare(graph, data, rtol=1e-6, atol=1e-9) -> ComparisonReport:
+def _is_trivially_zero(got, expected) -> bool:
+    """Is this agreeing pair zero on **both** sides, everywhere?
+
+    Split out of `compare`'s classification only so it is directly testable -- the
+    category it names is `ComparisonReport.trivial_agreements`, and the reason it is
+    worth naming is in that field's docstring.
+    """
+    return not np.asarray(expected, dtype=float).any() and not np.asarray(
+        got, dtype=float
+    ).any()
+
+
+def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
     """Drive `graph` (any `total_process`-shaped `Graph`) from `data`'s own converged
     values, and diff every value the schedule produces against `data` itself.
+
+    **`atol` is 0.0 -- the comparison is purely relative.** It used to be `1e-9`, on
+    the reasoning that a variable small enough should not be held to `rtol`. An
+    absolute floor cannot serve a `DataStructure` whose fields span 1e-15 to 1e+20:
+    it silently exempts whole subsystems chosen by their units.
+
+    On the code as it stands the floor is **inert** -- of 499 agreements, 0 depend on
+    it -- which is not the argument for removing it, because it is inert only while
+    nothing is wrong down there. Measured with a known bug reintroduced
+    (`ProfileValues.rho` set back to `0.0`, the old `r_eff` binding's value):
+    `.neoclassics.temperatures` comes out `1.9997e-15` against PROCESS's `1.1705e-15`
+    and `.neoclassics.dr_temperatures` comes out `-0.0` against `-1.215e-15` -- **71 %
+    and 100 % wrong, and `atol=1e-9` reports both as agreements.** At `atol=0.0` both
+    are disagreements, and the harness sees 4 of that bug's fields rather than 2.
+    That is what the floor costs, stated as a defect it actually hides rather than as
+    a defect it might.
+
+    A pair that is genuinely zero on both sides still agrees (`|0 - 0| <= rtol * 0`)
+    and is counted in `trivial_agreements`.
     """
     report = ComparisonReport()
     # Audited on the graph *as passed in*, before `_without_excluded`: the excluded
@@ -1053,6 +1098,10 @@ def compare(graph, data, rtol=1e-6, atol=1e-9) -> ComparisonReport:
             report.agreements += 1
             if np.asarray(expected).ndim:
                 report.array_agreements += 1
+            # Both conversions already succeeded inside `_diff` (it returns a string
+            # otherwise), so neither `asarray` can raise here.
+            if _is_trivially_zero(out[var], expected):
+                report.trivial_agreements.append(var)
         else:
             report.disagreements.append(d)
             block_index = blocking.index[owner]

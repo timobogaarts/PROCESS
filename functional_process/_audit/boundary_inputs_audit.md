@@ -581,13 +581,23 @@ step, not the graph's ability to run cold — see §9 below.
    `-6.104e19`) went from disagreeing to agreeing. The prediction that nothing would be
    visible until item 2 landed was **correct**.
 
-   **But the fix is larger than the harness can still show, and that is a new finding.**
-   `.neoclassics.temperatures`/`.dr_temperatures` were *equally* wrong before and are
+   **But the fix is larger than the harness could then show, and that is a new finding.**
+   `.neoclassics.temperatures`/`.dr_temperatures` were *equally* wrong before and were
    reported as agreements both before and after — they are stored in Joules (~`1e-15`),
    and `compare`'s `atol=1e-9` makes any field whose natural magnitude is below that
    vacuously close whatever its value. That is a **third measurement hole of the same
-   family as §6.2**, found by chasing this one, and it is not yet fixed: an `atol` in
-   absolute units cannot serve a `DataStructure` whose fields span `1e-15` to `1e20`.
+   family as §6.2**, found by chasing this one: an `atol` in absolute units cannot serve
+   a `DataStructure` whose fields span `1e-15` to `1e20`.
+
+   **[CLOSED 2026-08-25 — `compare`'s `atol` is now `0.0`, and this item is what proved
+   it was worth doing.]** On the fixed code the floor is inert (0 of 499 agreements
+   depend on it), so removing it moved nothing and looked like a tidy-up. Reintroducing
+   *this* bug — `rho` back to `0.0` — is what showed otherwise: `.temperatures` comes out
+   `1.9997e-15` against `1.1705e-15` and `.dr_temperatures` `-0.0` against `-1.215e-15`,
+   **71 % and 100 % wrong, both reported as agreements at `atol=1e-9` and as
+   disagreements at `atol=0.0`**. The prediction in this paragraph was exactly right;
+   what it could not do was demonstrate itself on a codebase where the defect had been
+   fixed. See `next_steps.md` §11.6 item 6 and §11.7.
 2. **[CLOSED] Make `mda_harness.compare` stop swallowing arrays** (§6.2). Arrays are now
    compared elementwise and reported as **one** `Disagreement` carrying the worst element
    (`shape`/`index`/`n_off`), so an off-by-one profile is one line and not 201; a pair

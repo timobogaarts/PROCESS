@@ -17,9 +17,9 @@ vocabulary — Shape A / Shape B — that the code itself cites).
 
 | check | value |
 |---|---|
-| `pytest functional_process -q` | **3724 passed**, 3344 skipped, 0 failed (re-measured 2026-08-20 — the previously recorded 3704 had gone stale; a `git worktree` at `aca0fb6d` also measures 3724, so the enum conversion of `model_tree_design.md` §8 step 1 added and moved nothing) |
-| `cd ~/jaxgraph && pytest` | **482 passed**, 3 skipped — cottax is a dependency this port now changes, so it belongs in the same table |
-| `run_mda_harness.py` | **499 agreements** (23 array-valued), **34 disagreements** (0 in driven blocks, 34 acyclic), 3 unverifiable, **0 ungrounded**, 21 errors |
+| `pytest functional_process -q` | **3730 passed**, 3344 skipped, 0 failed (the 6 added are `test_mda_harness.py`; 3724 re-confirmed 2026-08-25 before it landed. Previously: re-measured 2026-08-20 — a `git worktree` at `aca0fb6d` also measures 3724, so the enum conversion of `model_tree_design.md` §8 step 1 added and moved nothing) |
+| `cd ~/jaxgraph && pytest` | **738 passed**, 3 skipped (re-measured 2026-08-25; the recorded 482 was stale by ~250 tests — cottax has moved through `fdc4f5e` since, and the port's own numbers are unmoved by all of it) |
+| `run_mda_harness.py` | **499 agreements** (23 array-valued, **73 both-sides-exactly-zero**), **34 disagreements** (0 in driven blocks, 34 acyclic), 3 unverifiable, **0 ungrounded**, 21 errors |
 | … accounting | **557 owned variables walked, 0 unaccounted**; 61 switch kwargs checked / 0 mismatched / 3 not data-backed / **0 unresolved** |
 | `GRAPH` (`REFERENCE_CONFIGURATION`) | **159 nodes**; **138 blocks, 14 driven**; **349 unowned inputs** — `LModeProfileReset` is the new node and the four fields it owns are the four fewer unowned inputs (deltas measured; the absolute figures carry forward the previously recorded ones) |
 | **MDA from a cold `IN.DAT`** | **137 blocks, 0 failures**, 1 non-finite (`.physics.nu_star`, `nan` in PROCESS too, read by nothing) |
@@ -1008,12 +1008,52 @@ a prerequisite: the two share only the boundary postcondition
    present. The recommended shape is unchanged and now clearly worth building: walk the
    ported units' node classes and report every one that is written but registered nowhere,
    with the reason recorded beside it.
-6. **A third measurement hole, of the same family as the dropped arrays.**
+6. **[CLOSED.]** ~~A third measurement hole, of the same family as the dropped arrays:
    `mda_harness.compare`'s `atol=1e-9` makes any field whose natural magnitude is below
-   that **vacuously agree**. `.neoclassics.temperatures`/`dr_temperatures` are stored in
-   Joules (~1e-15), so they "agreed" both before and after the `ProfileValues.rho` fix and
-   are **not actually checked by anything**. Not yet fixed; a per-field relative floor, or
-   a unit-aware scale, is what it needs.
+   that vacuously agree.~~ **Closed by `atol=0.0`** — the comparison is now purely
+   relative. Two measurements settled it, and they had to be taken in that order.
+
+   **On the code as it stands, the floor is inert.** Of 499 agreements, **0** depend on
+   it: every one still agrees at `atol=0.0`, and the three fields this item named as
+   "not actually checked by anything" (`.neoclassics.temperatures`/`dr_temperatures` at
+   ~1e-15 J, `.physics.sigmav_dt_average` at 6.4e-23) agree **bit-exactly**, to every
+   digit. Taken alone that reads as "the trap was never sprung, remove it for free".
+
+   **That reading is wrong, and reintroducing the bug proves it.** The floor was inert
+   only because the one wrong answer it was hiding had been fixed by another route
+   (`ProfileValues.rho`, closed below). Set `rho` back to `0.0` — the old `r_eff`
+   binding's value — and re-run the harness:
+
+   | field | port | PROCESS | `atol=1e-9` | `atol=0.0` |
+   |---|---|---|---|---|
+   | `.neoclassics.densities` | 2.357e+20 | 2.016e+20 | DIFFER | DIFFER |
+   | `.neoclassics.dr_densities` | -0.0 | -6.104e+19 | DIFFER | DIFFER |
+   | `.neoclassics.temperatures` | 1.9997e-15 | 1.1705e-15 | **AGREE** | DIFFER |
+   | `.neoclassics.dr_temperatures` | -0.0 | -1.215e-15 | **AGREE** | DIFFER |
+
+   The two Joule-valued fields are **71 % and 100 % wrong** and the old floor reports
+   both as agreements. So `atol=0.0` is not a tidy-up: it converts a demonstrated,
+   previously-invisible wrong answer into a reported disagreement, and it doubles what
+   the harness sees of that specific bug (2 disagreements → 4). `boundary_inputs_audit.md`
+   §7.1 and `test_harness.md` were right about the mechanism; this item was wrong only in
+   its present tense, and only because the bug behind it had since been fixed.
+
+   **The vacuous category that is *also* there is larger and different: 73 of the 499
+   agreements are zero on *both* sides**, port and PROCESS alike
+   (`.physics.beta_fast_alpha`, `.current_drive.c_beam_total`, 40-odd `.costs.c22*`
+   accounts, ...). They are real agreements and stay counted, but they say *"this path is
+   switched off in this configuration"*, not *"the port reproduces PROCESS"* — no
+   arithmetic in the node was exercised. Now reported as
+   `ComparisonReport.trivial_agreements` and printed beside the array count
+   (`agreements: 499 (of which array-valued: 23, both-sides-exactly-zero: 73)`), so the
+   headline number cannot be read as more coverage than it is. Policy and the `rho=0.0`
+   numbers above are pinned by `test_mda_harness.py`.
+
+   **What this leaves open, stated so it is not read as closed:** those 73 are ~15 % of
+   the agreement count and the port's evidence for each is nil. Whether each *should* be
+   zero on this run is a separate question, unasked — the reference `IN.DAT` is one
+   stellarator configuration, and a second configuration that switches some of those
+   paths on is the only thing that would actually exercise them.
 7. **PROCESS's report-pass/solve-pass inconsistency as an undetected category** (§10) —
    nothing detects it in general; a field is noticed only when a consumer disagrees.
 8. **The switch-elimination work** (§11.5) — per the design doc's own order: enum-aware
@@ -1083,6 +1123,23 @@ model difference because all four solver/start combinations agree"** — they ag
 the direction is flat, and at PROCESS's own `x109` the port is feasible with a *better*
 objective than at its own converged answer (§11.11). Solver agreement is evidence about the
 optimiser, not about the model.
+
+A fourth, and this one caught *this document's own author mid-correction*. Measuring
+`atol`'s effect on the current code showed it carrying **zero** agreements, which reads
+cleanly as "the trap was never sprung" — and §11.6 item 6 was briefly rewritten to say so.
+It is false. The floor was inert only because the single wrong answer it had been hiding
+was fixed by an unrelated change; reintroducing that bug shows the floor concealing a 71 %
+and a 100 % error. **A guard that currently catches nothing is not thereby shown to be
+unnecessary — it may be that nothing is currently wrong.** The measurement that settles a
+guard's worth is taken with the defect *present*, and the cheapest way to get one is to
+reintroduce a defect the project has already fixed and still has written down. This
+project's closed-items list is, in that sense, a test corpus nobody has been using as one.
+
+The companion rule survives the correction and is worth keeping in its own right: **a fix
+that changes no measurement has not been shown to have fixed anything.** A per-field
+relative floor — item 6's proposed fix — would have passed every gate, moved not one
+number, and closed the item, all without either establishing that a hole existed or that
+it had been shut.
 
 ### 11.8 The cold start, closed — and what it took
 
