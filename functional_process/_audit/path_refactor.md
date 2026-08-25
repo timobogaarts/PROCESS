@@ -13,6 +13,13 @@ harness line **byte-identical** (499/34/3/0 · 557/0 · 61/0/3/0). The one-shot 
 tooling lived and died inside the Part A commits, per its own docstring. Part B is
 superseded by `model_tree_design.md` (see its banner below).
 
+**Every node name this file spells is now historical.** `model_tree_design.md` §8 step 3
+landed the machine tree, and a node is named by the **snake_case slot path** that reaches
+it: `physics.profiles.DensityProfile` below is `.physics.profiles.density_profile` today,
+`stellarator.Divertor` is `.stellarator.divertor`, and the class name is gone from the
+name entirely (identity is the *place*, that design's §3.2). The reasoning in these
+sections stands; the spellings are what they were when it was written.
+
 They are **two refactors, not one**, and the distinction is the reason they can be
 sequenced rather than negotiated: the declaration surface carries **variable** paths into
 the caller's data structure (`.area.field`, a `VarPath`), the model tree carries **node**
@@ -405,6 +412,17 @@ there is exactly **one** hardcoded node-name string in the whole port,
 against `path_str()`, so it survives the rename to `vacuum.DuctDiameterRootFind`
 unchanged. Every other `path_str()` call site compares names to each other, not to a
 literal.
+
+**[The survival half of that was wrong, and step 3 is what showed it.]** The *count* was
+right — one hardcoded node-name string, plus one more in a test (`test_configuration.py`'s
+`divertor_cycle`), and nothing else in the port compares a name to a literal. But the
+string did **not** survive: the machine tree drops the class name from a node's name
+altogether, so `"DuctDiameterRootFind"` matched nothing and the entry had to become
+`"duct_diameter_root_find"`. Matching with `in` buys tolerance to a *prefix* changing, not
+to the matched substring itself being replaced — and a rename that renames the whole name
+is exactly the case a substring match cannot absorb. The failure would have been silent
+(one extra node entering the comparison, no exception), which is why the step's gate is
+the MDA harness's numbers being *identical* rather than the suite being green.
 
 That is a small enough surface that Part B is a one-sitting change once the tree is written
 — the work is in writing **35** modules' namespace classes (the number that contribute a

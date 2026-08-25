@@ -64,9 +64,13 @@ from cottax.spec import NodePath, VarPath
 
 from functional_process.mda import default_drivers, driven_graph
 
-EXCLUDED_NODE_NAMES = ("DuctDiameterRootFind",)
-"""`DuctDiameterRootFind`: see this module's own docstring -- no real `DataStructure`
-field backs any of its `VarPath`s.
+EXCLUDED_NODE_NAMES = ("duct_diameter_root_find",)
+"""`.vacuum.duct_diameter_root_find`: see this module's own docstring -- no real
+`DataStructure` field backs any of its `VarPath`s.
+
+Matched with `in` against a node's `path_str()`, so the entry is the **slot name**, not
+the occupant class: since `model_tree_design.md` §8 step 3 a node is named by where it
+sits in the machine tree, and the class name no longer appears in the name at all.
 
 **The coil island (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`)
 used to be here too, and is not any more** -- see
@@ -775,9 +779,7 @@ class Disagreement:
         if self.shape is None:
             return ""
         size = int(np.prod(self.shape)) if self.shape else 1
-        return (
-            f" [shape={self.shape} worst {list(self.index)}, {self.n_off}/{size} off]"
-        )
+        return f" [shape={self.shape} worst {list(self.index)}, {self.n_off}/{size} off]"
 
 
 @dataclass
@@ -1001,9 +1003,10 @@ def _is_trivially_zero(got, expected) -> bool:
     category it names is `ComparisonReport.trivial_agreements`, and the reason it is
     worth naming is in that field's docstring.
     """
-    return not np.asarray(expected, dtype=float).any() and not np.asarray(
-        got, dtype=float
-    ).any()
+    return (
+        not np.asarray(expected, dtype=float).any()
+        and not np.asarray(got, dtype=float).any()
+    )
 
 
 def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:

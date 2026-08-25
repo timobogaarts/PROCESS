@@ -97,11 +97,15 @@ def test_ipowerflow_decides_whether_the_graph_has_a_cycle():
     coupled = graph_for(Configuration({".heat_transport.ipowerflow": 1}))
     uncoupled = graph_for(Configuration({".heat_transport.ipowerflow": 0}))
 
-    # Spelled with `spell_flat`, not `path_str()`: node names are hierarchical now
-    # (`stellarator.Divertor`), and jax's own bracket spelling of a three-key path is
-    # unreadable. `AFwTotalWithPowerflow` is still bare because switch arms are not yet
-    # placed in the model tree -- see `path_refactor.md` §B.4.
-    divertor_cycle = {"stellarator.Divertor", "AFwTotalWithPowerflow"}
+    # Spelled with `spell_flat`, not `path_str()`: node names are hierarchical, and
+    # jax's own spelling of a mixed attribute/dict path is unreadable.
+    # `.stellarator.divertor` is a **slot** in the machine tree, so it is snake_case,
+    # carries no class name (`model_tree_design.md` §3.2 -- identity is the place), and
+    # keeps its leading dot even under `spell_flat`, which flattens `DictKey`s and
+    # leaves attribute access spelled as attribute access. `AFwTotalWithPowerflow` is
+    # still bare and still class-named because switch arms are not placed in the tree
+    # until that design's §8 step 4.
+    divertor_cycle = {".stellarator.divertor", "AFwTotalWithPowerflow"}
     assert divertor_cycle in [{spell_flat(n) for n in c} for c in coupled.cycles]
     assert divertor_cycle not in [{spell_flat(n) for n in c} for c in uncoupled.cycles]
 

@@ -21,7 +21,7 @@ vocabulary — Shape A / Shape B — that the code itself cites).
 | `cd ~/jaxgraph && pytest` | **738 passed**, 3 skipped (re-measured 2026-08-25; the recorded 482 was stale by ~250 tests — cottax has moved through `fdc4f5e` since, and the port's own numbers are unmoved by all of it) |
 | `run_mda_harness.py` | **499 agreements** (23 array-valued, **73 both-sides-exactly-zero**), **34 disagreements** (0 in driven blocks, 34 acyclic), 3 unverifiable, **0 ungrounded**, 21 errors |
 | … accounting | **557 owned variables walked, 0 unaccounted**; 61 switch kwargs checked / 0 mismatched / 3 not data-backed / **0 unresolved** |
-| `GRAPH` (`REFERENCE_CONFIGURATION`) | **159 nodes**; **138 blocks, 14 driven**; **349 unowned inputs** — `LModeProfileReset` is the new node and the four fields it owns are the four fewer unowned inputs (deltas measured; the absolute figures carry forward the previously recorded ones) |
+| `GRAPH` (`REFERENCE_CONFIGURATION`) | **159 nodes**; **139 blocks, 14 driven**; **348 unowned inputs** (re-measured 2026-08-25 against `Blocking.scc(driven_graph(GRAPH))`; the 138/349 carried here since `LModeProfileReset` were stale by one, and the model-tree conversion did not move them — before == after) |
 | **MDA from a cold `IN.DAT`** | **137 blocks, 0 failures**, 1 non-finite (`.physics.nu_star`, `nan` in PROCESS too, read by nothing) |
 | SAND | 30 conditions × 23 design, **0 non-finite cells**; graph 171 nodes |
 | SAND C2 (seeded from PROCESS's answer) | **42 SQP iterations**, conv `9.9e-10`, `objf 1.2177574` |
@@ -37,6 +37,21 @@ this failure. Note it is a *different* class from the audited one: §9/§10.5b/�
 about `nan` derivatives **at exactly zero**, where this is a finite derivative on one side
 and an unbounded one on the other, `1.9e-09` from the switch. How many other clamped roots
 the solve is sitting on is unknown and unlooked-for.
+
+**Model tree — `model_tree_design.md` §8 step 3 is DONE** (2026-08-25). `COMMON` is a
+`Machine()` **instance** of eleven `ModelNamespace` classes, so a node is named by the
+snake_case slot path that reaches it (`.stellarator.coils.coil_current`) and the class
+name is gone from the name: identity is the *place*. `configuration.ROOT` and the
+`{ROOT: subtree}` idiom are deleted — an instance is a composition with no name of its
+own, so nothing has to be stripped. Switch arms are still bare tuples named by class at
+the root; step 4 places them. Every gate identical, measured before-and-after with one
+script rather than against this table: 159 nodes, 139 blocks / 14 driven, 348 unowned
+inputs, and a sha of every node's `(inputs, outputs, type)` unchanged. Exactly two name
+literals existed in the port and both needed re-pinning
+(`mda_harness.EXCLUDED_NODE_NAMES`, `test_configuration.py`'s `divertor_cycle`) — the
+prediction that the first would survive is corrected in `path_refactor.md` §B.5, and it
+is worth reading: **`in`-matching buys tolerance to a prefix changing, not to the matched
+substring being replaced**, and the failure was silent.
 
 **Declaration surface — Part A is DONE** (2026-08-20). Every read and write is declared
 `From(area)` / `OutputInto(area)` (or `FromExactly`/`Output` for the 43 array-element

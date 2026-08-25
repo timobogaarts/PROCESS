@@ -1,6 +1,16 @@
 # The model tree — one typed pytree of models, superseding switches, the settings tree, and `Configuration`
 
-**Status: settled design; §8 steps 1 and 2 are implemented (2026-08-20, uncommitted) —
+**Status: settled design; §8 steps 1, 2 and 3 are implemented and committed.** Step 3
+landed 2026-08-25: `total_process.COMMON`'s nested-class tree is eleven `ModelNamespace`
+classes and `COMMON` is now a `Machine()` **instance**, so every node is named by its
+snake_case slot path (`.stellarator.coils.coil_current`) and `configuration.ROOT` /
+the `{ROOT: subtree}` idiom are deleted. Gates all identical: 159 nodes, 139 blocks /
+14 driven, 348 unowned inputs, a byte-identical per-node input/output/type signature,
+MDA harness 499/34/3/0 · 557/0 · 61/0/3/0, suite 3730. Two name literals needed
+re-pinning and both are recorded (`path_refactor.md` §B.5's correction). Steps 4–6 are
+next and unblocked.
+
+*(Earlier status, kept for the step 1/2 gate numbers.)* §8 steps 1 and 2 (2026-08-20) —
 step 1 with every gate identical (3724 passed; harness 499/34/3/0, 61/0/3/0,
 `not_enum_typed` empty; the 16 local enums live in
 `functional_process/models/switch_enums.py`), step 2 green in `~/jaxgraph` (501 passed,
@@ -369,7 +379,8 @@ change (§3.3).
 *Gates:* `~/jaxgraph` suite green including new tests; `pytest functional_process`
 byte-identical in outcome (the change is purely additive upstream).
 
-**Step 3 — convert the node tree: nested classes → `Machine` Module tree.**
+**Step 3 — convert the node tree: nested classes → `Machine` Module tree. [DONE
+2026-08-25.]**
 *(functional_process; after Part A lands, per the sequencing rule)* Rewrite
 `path_refactor.md` §B.3's `COMMON` class tree as `ModelNamespace`s with snake_case
 slots; `to_graph(machine)` directly, `{ROOT: ...}` deleted. **Node names change once,
@@ -378,6 +389,16 @@ dribbled across steps.
 *Gates:* 159 nodes, 138 blocks / 14 driven, MDA harness 499 / 34 and 557 / 0
 **identical** (values do not move when names do); `EXCLUDED_NODE_NAMES` still matches;
 grep for stale spelled node names in `_audit/*.md` and fix the citations.
+
+*As run:* all identical, **measured before and after with one script rather than against
+the recorded figures** — 159 nodes, **139** blocks / 14 driven, 348 unowned inputs, and a
+sha of every node's (inputs, outputs, type) unchanged. The 139/348 differ from the 138/349
+recorded above and in `next_steps.md`'s table; the conversion did not move them (before ==
+after), so the recorded pair was stale and is corrected there. `EXCLUDED_NODE_NAMES` did
+**not** still match and had to be re-pinned — `path_refactor.md` §B.5 predicted it would
+survive, and why that prediction failed is recorded there. `test_configuration.py`'s
+`divertor_cycle` was the one test holding a node name; the two were the whole surface, as
+that section's *count* correctly said.
 
 **Step 4 — switches → slots + `machine_from_indat`; delete the old mechanism.**
 *(functional_process; the flag-day step, one sitting)* Move each of the 10 switches'

@@ -46,16 +46,6 @@ reads-set, kept as a static kwarg on one node's `fn`) stays where it is: that is
 from dataclasses import dataclass, field
 
 from cottax.interfaces.pytree_namespace_module import node_and_names, to_graph
-from cottax.spec import NodePath
-
-ROOT = NodePath(())
-"""The empty node path, as a mapping key.
-
-A namespace class contributes its own class name as the outermost key when nothing
-placed it, so `to_graph(COMMON)` would name every node `COMMON.stellarator....`.
-Keying it at the root strips that container name and lets several subtrees --
-`COMMON` plus each selected arm -- merge as siblings rather than nest.
-"""
 
 
 @dataclass(frozen=True)
@@ -253,10 +243,16 @@ def declarations_for(configuration, common, switches):
 
 
 def build_graph(configuration, common, switches):
-    """`to_graph` of exactly the arms `configuration` selects."""
+    """`to_graph` of exactly the arms `configuration` selects.
+
+    Each subtree is passed **unwrapped**. `common` is a `ModelNamespace` *instance*, and
+    an instance is a composition with no name of its own, so its slots name the nodes
+    directly (`.physics.profiles.grid`); a selected arm is a tuple of declarations, and a
+    sequence names nothing either, so each member keeps its own class name. Neither needs
+    a container key stripped, which is why the `{ROOT: subtree}` wrapper this function
+    used to build is gone -- it existed only because `common` was a namespace *class*,
+    which does keep its class name (`model_tree_design.md` §3.1).
+    """
     for switch in switches:
         switch.check_arms_are_exclusive()
-    return to_graph(*(
-        {ROOT: subtree}
-        for subtree in declarations_for(configuration, common, switches)
-    ))
+    return to_graph(*declarations_for(configuration, common, switches))
