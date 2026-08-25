@@ -426,6 +426,64 @@ about the shape and wrong about the difficulty: nothing needed a new primitive, 
 real obstacle was a **missing producer** for a field a constraint reads (§10's
 "is the right node registered" gap), not anything about constraints as such.
 
+### 6.1 Which constraints are cycles the graph is holding open — measured, and it is one
+
+The question: is a PROCESS constraint sometimes not a *requirement* at all, but a
+consistency equation closing a loop the graph could close itself? Asked structurally on
+the reference run: for each active `icc` entry, which of its reads have producers, and are
+those producers already connected to each other. A constraint that compares a computed
+quantity to an **input bound** adds no edge and cannot be a closure; one that equates two
+computed quantities on the *same dependency chain* is the return edge of a cycle.
+
+**Result: 1 of 14, and PROCESS labels it itself.**
+
+- **`c2`, global power balance, is a held-open cycle.** Eight of its ten reads are
+  produced, and **20 ordered pairs of those producers are already connected** — every
+  heating and radiation term flows into `StellaratorConfinementTime`, which produces the
+  two transport-loss terms `c2` compares them against. Wiring "losses = heating" in
+  closes the loop. `stellarator_helias.IN.DAT:16` says so in its own comment:
+  `icc = 2  *Global power balance (consistency equation)`.
+- **Nine cannot be closures at all**: exactly one produced read against an input bound
+  (`.constraints.*`, `.tfcoil.*_max`, `.divertor.*_max`).
+- **Four compare two produced quantities and are still genuine limits** — `c17`, `c82`,
+  `c35` (connected producers) and `c83` (not connected). All `leq`/`geq`: *"the gap must
+  be at least the coil thickness"*, *"available radial space ≥ required"*. Two computed
+  quantities related by an inequality is a feasibility requirement, not a closure —
+  nothing says they must be equal.
+
+**And the variable that closes `c2` is the narrowest in the run.** `x10 = hfact` has
+**one** reader and reaches only constraints `[2, 62]`; `rmajor` and
+`b_plasma_toroidal_on_axis` each reach **all 14**. So `(c2, hfact)` is very nearly a
+separable block: a `RootFind` on `hfact` zeroing `c2` would lift one unknown and one
+equality out of the optimiser, leaving `c62` as an ordinary inequality on what remains.
+That is §12.1's trade stated concretely — *"free a coupling variable and let the optimiser
+close the loop → SAND; keep the producer and drive the cycle → MDF"* — and **neither
+architecture does the latter today**: SAND and MDF both hand all 8 to the optimiser.
+
+**What would decide it is the bound, not the physics.** A `RootFind` does not respect
+`boundl`/`boundu`, so lifting `c2` out is only equivalent while `hfact`'s root is interior.
+This `IN.DAT` sets no bound on `x10` at all (it bounds 1, 2, 3, 4, 6 only), so `hfact`
+carries the defaults `[0.1, 3.0]` from a start of `1.0`, and §12.3 measured all 8
+iteration variables interior on this run. Cited, not re-measured here.
+
+### 6.2 `c16` is a `geq` counted as an equality, and nothing checks that
+
+`n_equality_constraints = 2` is set **by hand in the input file**
+(`stellarator_helias.IN.DAT:12`), and `process/core/init.py:1285-1293` never compares it
+against the constraint bodies — it takes the number and computes
+`n_inequality = total - n_equality`. The split is positional and user-declared, exactly as
+`CLAUDE.md` says, and on this run the two disagree: position 1 is `icc = 16`,
+`*Net electric power lower limit`, whose body is `return geq(p_plant_electric_net_mw,
+p_plant_electric_net_required_mw)`. VMCON therefore receives it as `h(x) = 0` — the plant
+is pinned **exactly** at the required net power instead of being allowed to exceed it.
+
+That may well be intended (a design study minimising cost has no reason to overbuild), and
+it is not a port defect: the port reproduces PROCESS faithfully. It is worth writing down
+because the intent is expressed as *a count and an ordering*, checked by nothing, and a
+constraint's own `eq`/`leq`/`geq` is the one place that intent could have been declared and
+verified. A cheap check — "every constraint inside `n_equality_constraints` returns `eq`" —
+would either confirm the choice is deliberate or find the next one that is not.
+
 ## 7. A third pattern, distinct from Shape A/B — raised, then resolved by a sharper
    test than "does it iterate"
 
