@@ -53,6 +53,29 @@ prediction that the first would survive is corrected in `path_refactor.md` §B.5
 is worth reading: **`in`-matching buys tolerance to a prefix changing, not to the matched
 substring being replaced**, and the failure was silent.
 
+**Two renderer defects fixed alongside it, both invisible to every gate** (2026-08-25).
+
+- **The coloured DSM was destroyed by step 3 and reported success.**
+  `visualization/grouping.py` read a node's group off its leading `DictKey`s; step 3 made
+  slots `GetAttrKey`s, so every machine node fell to `UNGROUPED`, `grouped` printed
+  `1 group(s) at depth 1` where there are six, exited 0 and wrote both files. Now counts
+  both kinds, and asks `group_of(..., among=graph.nodes)` for what the kind was a proxy
+  for — a name minted over a node unmints to a node, one minted over a variable does not,
+  which keeps `^problem.fwbs.f_ster_div_single` from inventing an `fwbs` subsystem.
+  Restored: **7 groups, 57 cross-group edges, 1/7 contiguous in run order**.
+- **`dsm_sand.html` had never rendered at all**, despite this file claiming the command
+  writes it. `cottax`'s `to_ragraph` did
+  `formatter = RaGraphFormat() if formatter is None else formatter` — a caller's
+  formatter *replaced* the flat-namespace adaptation instead of being its `base`, which
+  is what `MINTED_NODE_SUFFIX` exists for (`^cond.y2` is both a `Compare` and what it
+  produces). Passing `xDSMFormatterFlat` therefore disarmed the disambiguation and
+  `_check_names` refused a well-formed graph. Now composed. **Uncommitted in
+  `~/jaxgraph`** — that tree had other live work in it; see the session note.
+
+Both were found by *looking at the output*, not by a check, and neither could have been:
+one exits 0 with a wrong picture, the other never ran. That is the same shape as the
+`atol` floor above — a guard's absence is only visible when something is wrong.
+
 **Declaration surface — Part A is DONE** (2026-08-20). Every read and write is declared
 `From(area)` / `OutputInto(area)` (or `FromExactly`/`Output` for the 43 array-element
 escapes, now lambda-free recorder chains), all 36 files converted and each proven by

@@ -27,12 +27,24 @@ those two, and `render_grouped_dsm_html` draws them.
 
 Three rules are load-bearing and are stated once.
 
-**A group is the leading `DictKey`s of a name, minus the node's own final key.** Asked by
-*kind* and not only by value: a `DictKey` is a position in a declaration surface's
-namespace, a `GetAttrKey` is a place in the caller's own pytree, and only the first is a
-grouping. A name with no such prefix -- a flat `['Build']`, or a node minted over a
-variable place rather than over another node -- is `UNGROUPED` and says so, rather than
-being filed under whatever its first key happened to spell.
+**A group is the leading namespace keys of a name, minus the node's own final key.**
+Both key kinds count, because in a `NodePath` both are namespace positions: a
+`GetAttrKey` is a slot in the machine tree and a `DictKey` a mapping key, and the kind
+follows the container rather than marking naming apart from grouping. A name with no
+such prefix -- a flat `['Build']` -- is `UNGROUPED` and says so, rather than being filed
+under whatever its first key happened to spell.
+
+*(This rule used to be "the leading `DictKey`s, asked by kind", with a `GetAttrKey` read
+as a place in the caller's pytree. `model_tree_design.md` §8 step 3 inverted that: slots
+mint `GetAttrKey`s deliberately, so the kind stopped separating a model-tree position
+from a variable place and every machine node silently fell to `UNGROUPED`. See
+`_tree_keys`.)*
+
+**A node minted over a *variable* place is `UNGROUPED`, and that is asked of the graph,
+not of a key kind.** `^problem.fwbs.f_ster_div_single` is a `FixedPointCut`'s problem
+named after the variable it cuts; `.fwbs` is a `DataStructure` area, and grouping by it
+would invent a subsystem. `group_of`'s `among` is how the question is put -- a minted
+name whose unminted form is not itself a node.
 
 **A minted name is unwrapped first, so a minted node inherits the group of what it was
 minted over.** `^problem.stellarator.coils.Intersect` is the driver of
@@ -53,7 +65,7 @@ from collections.abc import Iterable, Mapping, Sequence
 import dataclasses
 import json
 
-from jax.tree_util import DictKey
+from jax.tree_util import DictKey, GetAttrKey
 
 from cottax.blocking import Blocking
 from cottax.graph import Graph
@@ -80,22 +92,40 @@ UNGROUPED_LABEL = '(ungrouped)'
 # ================================================================== reading the prefix
 def _tree_keys(path: NodePath) -> tuple[str, ...]:
     '''
-    The leading run of string `DictKey`s of `path`, once any minted root is dropped.
+    The leading run of namespace keys of `path`, once any minted root is dropped.
 
-    Stops at the first key of another kind, rather than skipping it: a `GetAttrKey` means
-    the rest of the name is a place in the caller's data structure, and nothing after it
-    is a position in a model tree.
+    **Both key kinds count, because in a `NodePath` both are namespace positions.** A
+    `GetAttrKey` is a slot in the machine tree (`.stellarator.coils.coil_current`) and a
+    `DictKey` a mapping key (`['MiscPlantEquipmentCost']`, a switch arm) -- the kind
+    follows the container, which is cottax's `node_and_names` rule, not a distinction
+    between naming and grouping.
+
+    **This tested for `DictKey` alone, and `model_tree_design.md` §8 step 3 made that
+    wrong in the worst way: silently.** Before step 3 a model-tree position was a
+    `DictKey` and a `GetAttrKey` could only be a variable place, so the kind was a sound
+    proxy for "is this a position in a model tree". Step 3 made slots mint `GetAttrKey`s
+    on purpose (that design's §3.1, so a node name is a working address into the tree),
+    which inverted the proxy: every machine node stopped having any leading key at all
+    and fell to `UNGROUPED`, while `grouped` still exited 0 and wrote both files. The
+    report said `1 group(s) at depth 1` where there are six, and a picture whose whole
+    subject is the grouping drew one colour.
+
+    What the kind stood in for -- model-tree position against a node minted over a
+    *variable* place -- is now asked directly, by `group_of`'s `among`.
     '''
     out: list[str] = []
     for key in unminted(path).keys:
         if isinstance(key, DictKey) and isinstance(key.key, str):
             out.append(key.key)
+        elif isinstance(key, GetAttrKey):
+            out.append(key.name)
         else:
             break
     return tuple(out)
 
 
-def group_of(path: NodePath, *, depth: int = 1) -> Group:
+def group_of(path: NodePath, *, depth: int = 1,
+             among: 'Iterable[NodePath] | None' = None) -> Group:
     '''
     The group `path` declares it belongs to: its leading keys, without its own name.
 
@@ -107,9 +137,21 @@ def group_of(path: NodePath, *, depth: int = 1) -> Group:
 
     The node's own final key is never part of its group -- `['Build']` is `UNGROUPED`,
     not a group of one called `Build`.
+
+    **`among` is the node set, and it separates a minted model-tree position from a
+    minted variable place.** A name minted over a node unmints to a name that is *in* the
+    graph (`^problem.stellarator.coils.intersect`); one minted over a variable does not
+    (`^problem.fwbs.f_ster_div_single` -- `.fwbs` is a `DataStructure` area, and reading
+    it as a group invents a subsystem). Omitting `among` does not ask, and reads every
+    minted name as a tree position -- the honest fallback for a caller with no graph to
+    consult. Measured on the reference graph: one node of 159 is in the second category,
+    and unasked it forms a phantom `fwbs` group of one, a seventh subsystem in the legend
+    beside the six real ones.
     '''
     if depth < 1:
         raise ValueError(f'depth must be at least 1, not {depth}')
+    if among is not None and is_minted(path) and unminted(path) not in among:
+        return UNGROUPED
     keys = _tree_keys(path)
     return keys[: min(depth, max(len(keys) - 1, 0))]
 
@@ -129,9 +171,11 @@ def group_sequence(names: Iterable[NodePath], *, depth: int = 1) -> tuple[Group,
     added. Deliberately not alphabetical -- sorting would impose an order the declaration
     never claimed, and the point of the provenance view is to show the one it did.
     '''
+    names = tuple(names)
+    among = frozenset(names)
     seen: dict[Group, None] = {}
     for name in names:
-        seen.setdefault(group_of(name, depth=depth), None)
+        seen.setdefault(group_of(name, depth=depth, among=among), None)
     return tuple(seen)
 
 
@@ -154,15 +198,16 @@ def provenance_order(
     must appear in it.
     '''
     names = tuple(names)
+    among = frozenset(names)
     order = tuple(groups) if groups is not None else group_sequence(names, depth=depth)
     index = {g: i for i, g in enumerate(order)}
-    missing = {group_of(n, depth=depth) for n in names} - set(index)
+    missing = {group_of(n, depth=depth, among=among) for n in names} - set(index)
     if missing:
         raise KeyError(
             f'group(s) {sorted(group_label(g) for g in missing)} are in the graph but not '
             f'in the `groups` order given'
         )
-    return tuple(sorted(names, key=lambda n: index[group_of(n, depth=depth)]))
+    return tuple(sorted(names, key=lambda n: index[group_of(n, depth=depth, among=among)]))
 
 
 def structure_order(blocking: Blocking) -> tuple[NodePath, ...]:
@@ -254,7 +299,8 @@ def grouping_report(blocking: Blocking, *, depth: int = 1) -> GroupingReport:
     graph = blocking.graph
     order = structure_order(blocking)
     groups = group_sequence(graph.nodes, depth=depth)
-    at = {name: group_of(name, depth=depth) for name in graph.nodes}
+    among = frozenset(graph.nodes)
+    at = {name: group_of(name, depth=depth, among=among) for name in graph.nodes}
 
     sizes = {g: 0 for g in groups}
     for name in graph.nodes:
@@ -352,7 +398,8 @@ def _matrix_struct(
             f'node(s) -- a DSM is a permutation of the whole graph, not a selection'
         )
 
-    at = {name: group_of(name, depth=depth) for name in graph.nodes}
+    among = frozenset(graph.nodes)
+    at = {name: group_of(name, depth=depth, among=among) for name in graph.nodes}
     groups = group_sequence(graph.nodes, depth=depth)
     palette = {g: group_style(i) for i, g in enumerate(groups)}
     palette[UNGROUPED] = (UNGROUPED_COLOUR, None)

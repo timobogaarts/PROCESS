@@ -77,11 +77,27 @@ def test_a_name_minted_over_a_variable_place_is_ungrouped():
 
     Its second key spells `.physics`, which is a place in the caller's data structure and
     not a position in a model tree -- reading it as a group would file the node under a
-    group that does not exist. Asked by *kind*, so this holds for every namespace at once.
+    group that does not exist.
+
+    **Asked of the graph, not of the key kind.** This used to rely on `GetAttrKey`
+    meaning "a variable place"; `model_tree_design.md` §8 step 3 made a `GetAttrKey` the
+    spelling of a machine *slot* too, so the kind cannot separate the two any more. What
+    can is whether the unminted name is itself a node -- which is what `among` asks.
     '''
     minted = NodePath((MintKey('problem'), GetAttrKey('physics'),
                        GetAttrKey('proton_rate_density')))
-    assert group_of(minted) == UNGROUPED
+    real = NodePath((GetAttrKey('physics'), GetAttrKey('density_profile')))
+
+    assert group_of(minted, among=[real]) == UNGROUPED
+    assert group_of(minted, among=[]) == UNGROUPED
+    # The other half of the rule: a name minted over a node that *is* there keeps its
+    # group, so a block's problem sits beside its block.
+    assert group_of(NodePath((MintKey('problem'), *real.keys)), among=[real]) == (
+        'physics',
+    )
+    # Nothing to ask: the prefix is read as written. Pinned so the fallback is
+    # deliberate rather than discovered.
+    assert group_of(minted) == ('physics',)
 
 
 def test_depth_must_be_at_least_one():

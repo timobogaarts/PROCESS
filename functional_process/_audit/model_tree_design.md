@@ -390,6 +390,21 @@ dribbled across steps.
 **identical** (values do not move when names do); `EXCLUDED_NODE_NAMES` still matches;
 grep for stale spelled node names in `_audit/*.md` and fix the citations.
 
+*A second silent breakage, found only by looking at the picture.* The gates above are
+about the graph, and they all held while the **coloured DSM was destroyed**:
+`visualization/grouping.py`'s `_tree_keys` read a group off the leading `DictKey`s of a
+node name, on the rule that a `GetAttrKey` means a variable place. Step 3 inverted that
+premise by design (§3.1: slots mint `GetAttrKey`s so a name is a working address), so
+every machine node lost its prefix, `grouped` reported **`1 group(s) at depth 1`** where
+there are six, exited 0, and wrote both files. Nothing in the suite covers what the
+picture looks like. Fixed by counting both key kinds -- in a `NodePath` both *are*
+namespace positions -- and asking the question the kind was standing in for directly:
+`group_of(..., among=graph.nodes)`, since a name minted over a node unmints to a node
+and one minted over a variable does not. Restored to 7 groups (six subsystems plus
+`UNGROUPED`), 57 cross-group edges, 1/7 contiguous in run order. **The lesson generalises
+past this step: a gate on numbers cannot see a renderer, and every proxy-by-key-kind in
+the port is now suspect for the same reason.**
+
 *As run:* all identical, **measured before and after with one script rather than against
 the recorded figures** — 159 nodes, **139** blocks / 14 driven, 348 unowned inputs, and a
 sha of every node's (inputs, outputs, type) unchanged. The 139/348 differ from the 138/349
