@@ -118,7 +118,7 @@ is genuinely better (`max|eq| 2.1e-12`, no inequality violated) and the multipli
 hypothesis is refuted by five orders of magnitude (`Σ|λ_eq| = 1.22`, not `6.3e+04`).
 `_audit/closed/x109_hypotheses.md` then settled *why*, and the cause is a **kink in the model**:
 at every converged point the design sits on `(Te + Ti)/20 == 0.65`, the threshold of
-`fast_alpha_beta`'s clamped square root (`physics_A_pure_formulas.py:342-348`) — `1.9e-09`
+`fast_alpha_beta`'s clamped square root (`pure_formulas.py:342-348`) — `1.9e-09`
 from it at the free optimum — where `c24` rises like `2√h` on one side and linearly on the
 other. AD reports one side. Of 690 Jacobian cells exactly two disagree with a central
 difference of the port's own condition map, both in the `c24` row, and `c24` alone drifts
@@ -184,7 +184,7 @@ them in the meantime.
   resistive-TF cost graph cannot be assembled at all.
 - **"Reads-set genuinely differs, kept static anyway" — now six instances, not three.**
   `i_confinement_time`/`i_rad_loss` (`confinement_time.md`), `i_plasma_ignited`
-  (`confinement_time.md` and `physics_B_composition.md` independently),
+  (`confinement_time.md` and `composition.md` independently),
   `supercond_cost_model` (two nodes), `i_pf_conductor`, and `itart` on `CostOfElectricity`
   (§9) are all cases where `traceability_policy.md`'s default ("reads-set differs →
   split") technically applies but was **not followed**, because the differing part of the
@@ -371,7 +371,7 @@ Keep the two definitions intact; the counts are current-state and move.
   graph, same as Shape A's undriven SCCs.
 
   Converted and registered: `availability.py`'s `CplifeAvail`/`CplifeAvailSt`
-  (`.costs.cplife`), `power_B_thermal_cryo.py`'s six (`delta_eta`, `eta_turbine`,
+  (`.costs.cplife`), `thermal_cryo.py`'s six (`delta_eta`, `eta_turbine`,
   `etath_liq`, `temp_turbine_coolant_in`, `p_fw_div_heat_deposited_mw`,
   `p_fw_blkt_coolant_pump_mw`), and `winding_pack_total_size`'s `j_tf_wp`
   (`WindingPackJTfWp`, a degenerate/identity fixed point off the Bi-2212 branch, confirmed
@@ -379,9 +379,9 @@ Keep the two definitions intact; the counts are current-state and move.
 
   Written but still unconverted, all otherwise fully ported and tested, all confirmed by
   direct `to_graph` construction rather than by audit reasoning:
-  `power_B_thermal_cryo.py`'s `PlantThermalEfficiency`/`PlantThermalEfficiency2` and
+  `thermal_cryo.py`'s `PlantThermalEfficiency`/`PlantThermalEfficiency2` and
   `Cryo`/`CryoLoads` (`.fwbs.qnuc`, plus `.power.qss`/`qac`/`qcl`/`qmisc`);
-  `power_C_electric_production.py`'s `PlantElectricProduction`.
+  `electric_production.py`'s `PlantElectricProduction`.
 
   **The discipline that matters more than either shape**: "representable via
   `FixedPointFunction`" and "`to_graph()` assembles" are necessary but not sufficient —
@@ -389,7 +389,7 @@ Keep the two definitions intact; the counts are current-state and move.
   concluding the loop is genuine. Four apparent self-loops dissolved that way
   (`plasma_composition`'s `first_call`, whose bootstrap target has no dependency back on it,
   so `NextFirstCall` was deleted and `first_call`/`alphan`/`alphat` are not ported at all —
-  see `physics_B_composition.md`; `st_phys`'s `beta_fast_alpha` and `beta_beam`, both Shape
+  see `composition.md`; `st_phys`'s `beta_fast_alpha` and `beta_beam`, both Shape
   A; and `Divertor`/`DivertorPlateMass`). Two more needed nothing: `plasma_composition`'s
   `.impurity_radiation.f_nd_impurity_electron_array` (reads indices 2-13, writes 0-1 —
   per-index `VarPath`s with a `SequenceKey` component are sufficient, no slice addressing
@@ -590,7 +590,7 @@ durable content of the section, and each is a real instance, not a hypothetical:
 
 1. **Wiring/binding bugs.** `ZTfInsideHalf`'s 1-tuple return (a single-`Output` node
    returning `(x,)`), caught only by running the node through `_run_acyclic`. Seven more of
-   the same class turned up later (`power_B_thermal_cryo.py` ×6, `vacuum.py` ×1) —
+   the same class turned up later (`thermal_cryo.py` ×6, `vacuum.py` ×1) —
    invisible to `PicardDriver`, fatal to `Residualise`.
 2. **Static switch kwargs copied from a `*_variables.py` default instead of the run being
    modelled** — four instances found by luck before the class was closed by §8.2's
@@ -956,9 +956,9 @@ an `Optimise` arm that reads the equality/inequality counts off the `Optimise` n
   nothing downstream of `.physics.beta_fast_alpha` fed a condition until constraint 24 got a
   producer. **Generalise: a gradient defect only becomes visible once something downstream
   reads into a condition, so closing a producer gap routinely exposes one.**
-- **Seven 1-tuple returns** (`power_B_thermal_cryo.py` ×6, `vacuum.py` ×1) — the
+- **Seven 1-tuple returns** (`thermal_cryo.py` ×6, `vacuum.py` ×1) — the
   `ZTfInsideHalf` bug class, third wave. Invisible to `PicardDriver`, fatal to
-  `Residualise`. The full sweep is in `power_B_thermal_cryo.md`.
+  `Residualise`. The full sweep is in `thermal_cryo.md`.
 
 ### Two constraints un-blocked, and the registration gaps behind them
 
@@ -968,12 +968,12 @@ a *different problem* and comparing its answer to PROCESS's would be meaningless
 `sand.constraint_nodes` now raises on any active `icc` entry it cannot assemble rather than
 dropping it.
 
-- `PlantElectricProductionReactor` (`power_C_electric_production.py`) — the `ireactor == 1`
+- `PlantElectricProductionReactor` (`electric_production.py`) — the `ireactor == 1`
   arm of `plant_electric_production`, whose five "self-referential" fields are dead reads on
   that arm. `.costs.ireactor` becomes a two-armed topology `Switch`. **This also gave
   `.costs.coe` — the run's own objective — a real dependence on the design along the
   net-electric-power path, where before it read a boundary input.**
-- `StellaratorBetaAndStoredEnergy` (`stellarator_B_st_phys.py`) —
+- `StellaratorBetaAndStoredEnergy` (`plasma_physics.py`) —
   `StellaratorBetaAndRhoStar` minus the one output (`rho_star`) that actually collided with
   `DimensionlessPlasmaParameters`. Dropping the whole node to resolve that collision had
   cost `.physics.beta_total_vol_avg` and `.physics.e_plasma_beta` their only producer as
@@ -1209,7 +1209,7 @@ recur:
   `.physics.fusden_total`/`.fusden_alpha_total`/`.p_dt_total_mw` had no producer, so
   `t_alpha_confinement = nd_alphas / fusden_alpha_total` had a frozen denominator and its
   temperature derivative was structurally absent. `FusionTotalsNoBeam`
-  (`stellarator_B_st_phys.py`, the `else` arm of `stellarator.py:2002-2054`, three
+  (`plasma_physics.py`, the `else` arm of `stellarator.py:2002-2054`, three
   identities) gives them producers. Measured on the `c62` row: x4 `5.10e+00*` → `5.42e-04`,
   x6 `6.66e+00*` → `3.99e-05`, x109 `1.41e-01*` → `3.25e-07`, with c2/c8/c17/c18/c67 also
   improving. **The only starred cells left in the whole Jacobian are `objf` and `c16` (the
