@@ -25,6 +25,19 @@ the signal: a group scattered across the run order is a *label*, not a module, a
 spanning groups is a genuine cross-group feedback loop. `grouping_report` measures exactly
 those two, and `render_grouped_dsm_html` draws them.
 
+**The group *axis* of the provenance picture is a third thing again, and it is not
+free.**
+Nodes have to be laid out in some order, so a picture that ordered groups by declaration
+was not abstaining from a claim -- it was making one by accident, and on this graph the
+accident was `costs` at the top left, which reads as "everything depends on costs" about
+the one subsystem nothing in the graph reads from. `dependency_group_sequence` contracts
+each group to a vertex and orders *that* by SCC, so the axis says only what it can
+support: A before B when A's output reaches B and B's does not reach A, mutually coupled
+groups adjacent, ties by declaration order. Within a group nothing moves, so the
+provenance reading survives exactly where it is about how the file was written. What that
+buys is that a cross-group mark above the diagonal now means something -- real
+feedback -- where before it meant nothing.
+
 Three rules are load-bearing and are stated once.
 
 **A group is the leading namespace keys of a name, minus the node's own final key.**
@@ -40,11 +53,14 @@ mint `GetAttrKey`s deliberately, so the kind stopped separating a model-tree pos
 from a variable place and every machine node silently fell to `UNGROUPED`. See
 `_tree_keys`.)*
 
-**A node minted over a *variable* place is `UNGROUPED`, and that is asked of the graph,
-not of a key kind.** `^problem.fwbs.f_ster_div_single` is a `FixedPointCut`'s problem
-named after the variable it cuts; `.fwbs` is a `DataStructure` area, and grouping by it
-would invent a subsystem. `group_of`'s `among` is how the question is put -- a minted
-name whose unminted form is not itself a node.
+**A node minted over a *variable* place borrows the group of whoever owns that
+variable, and only falls to `UNGROUPED` if even that fails.** `^problem.fwbs.
+f_ster_div_single` is a `FixedPointCut`'s problem named after the variable it cuts;
+`.fwbs` is a `DataStructure` area, and grouping by it directly would invent a phantom
+subsystem. `group_of`'s `among` is how that question is put -- a minted name whose
+unminted form is not itself a node -- and `owners`, when given, is where the fallback
+looks: `.fwbs.f_ster_div_single` is owned by `.stellarator.divertor`, so the problem
+groups with `stellarator`, not `fwbs`. This is asked of the graph, not of a key kind.
 
 **A minted name is unwrapped first, so a minted node inherits the group of what it was
 minted over.** `^problem.stellarator.coils.Intersect` is the driver of
@@ -64,6 +80,8 @@ import os
 from collections.abc import Iterable, Mapping, Sequence
 import dataclasses
 import json
+
+import networkx as nx
 
 from jax.tree_util import DictKey, GetAttrKey
 
@@ -124,8 +142,33 @@ def _tree_keys(path: NodePath) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _cut_owner(path: NodePath, owners: 'Mapping[VarPath, NodePath]') -> 'NodePath | None':
+    '''
+    The node that owns the variable a problem-over-a-variable was minted over, or `None`.
+
+    `FixedPointCut.at` (`~jaxgraph/src/cottax/rewrites.py`) names such a problem after
+    its cut variable's own place -- or, when several variables close one cycle together,
+    that place with one `.cycle` key appended (`mda.py::driven_graph`, the only caller
+    that ever passes `place=`). Either way the cut variable's own keys are a leading run
+    of the problem's unminted name, so trying the full run first and then trimming one
+    key at a time off the end finds it in `owners` without hard-coding `.cycle` by name --
+    it stops the moment a trimmed path is a variable `owners` actually recognises.
+    `graph[path].reads` would name the same variable more directly (it is exactly what a
+    `FixedPoint` problem's inputs are), but that needs the node itself, not just the
+    owners map every call site already has to hand; verified to agree with `reads` on
+    both cases the reference graph has.
+    '''
+    keys = unminted(path).keys
+    for end in range(len(keys), 0, -1):
+        var = VarPath(keys[:end])
+        if var in owners:
+            return owners[var]
+    return None
+
+
 def group_of(path: NodePath, *, depth: int = 1,
-             among: 'Iterable[NodePath] | None' = None) -> Group:
+             among: 'Iterable[NodePath] | None' = None,
+             owners: 'Mapping[VarPath, NodePath] | None' = None) -> Group:
     '''
     The group `path` declares it belongs to: its leading keys, without its own name.
 
@@ -144,13 +187,27 @@ def group_of(path: NodePath, *, depth: int = 1,
     (`^problem.fwbs.f_ster_div_single` -- `.fwbs` is a `DataStructure` area, and reading
     it as a group invents a subsystem). Omitting `among` does not ask, and reads every
     minted name as a tree position -- the honest fallback for a caller with no graph to
-    consult. Measured on the reference graph: one node of 159 is in the second category,
-    and unasked it forms a phantom `fwbs` group of one, a seventh subsystem in the legend
-    beside the six real ones.
+    consult.
+
+    **The guard still stands -- grouping `f_ster_div_single` by its own leading key would
+    invent a phantom `fwbs` subsystem** (no node in the graph has a path starting
+    `.fwbs`; the real group is `stellarator`). What changes is what happens *before*
+    giving up: `owners`, when given, lets a problem minted over a variable borrow the
+    group of whoever actually computes that variable (`_cut_owner`) -- `fwbs.f_ster_div_single`
+    is a `DataStructure` area, not a subsystem, but the node that owns it,
+    `.stellarator.divertor`, is, and the problem that converges the variable belongs
+    beside the node that produces it. Only once that also fails does the node fall to
+    `UNGROUPED`. Measured on the reference driven graph: two nodes of 161 are minted over
+    a variable place, and both now resolve -- `^problem.fwbs.f_ster_div_single` to
+    `stellarator` and `^problem.physics.proton_rate_density.cycle` to `physics`.
     '''
     if depth < 1:
         raise ValueError(f'depth must be at least 1, not {depth}')
     if among is not None and is_minted(path) and unminted(path) not in among:
+        if owners is not None:
+            owner = _cut_owner(path, owners)
+            if owner is not None:
+                return group_of(owner, depth=depth, among=among, owners=owners)
         return UNGROUPED
     keys = _tree_keys(path)
     return keys[: min(depth, max(len(keys) - 1, 0))]
@@ -162,7 +219,12 @@ def group_label(group: Group) -> str:
 
 
 # ================================================================== the two orderings
-def group_sequence(names: Iterable[NodePath], *, depth: int = 1) -> tuple[Group, ...]:
+def group_sequence(
+    names: Iterable[NodePath],
+    *,
+    depth: int = 1,
+    owners: 'Mapping[VarPath, NodePath] | None' = None,
+) -> tuple[Group, ...]:
     '''
     Every group present, in **first-appearance order** over `names`.
 
@@ -170,13 +232,92 @@ def group_sequence(names: Iterable[NodePath], *, depth: int = 1) -> tuple[Group,
     the groups were first written down in, and it does not move when an unrelated node is
     added. Deliberately not alphabetical -- sorting would impose an order the declaration
     never claimed, and the point of the provenance view is to show the one it did.
+
+    `owners`, when given (`graph.owners`), is threaded straight to `group_of` so a
+    problem minted over a variable place still lands in its cut variable's owner's
+    group instead of falling to `UNGROUPED` -- see `group_of`.
     '''
     names = tuple(names)
     among = frozenset(names)
     seen: dict[Group, None] = {}
     for name in names:
-        seen.setdefault(group_of(name, depth=depth, among=among), None)
+        seen.setdefault(group_of(name, depth=depth, among=among, owners=owners), None)
     return tuple(seen)
+
+
+def dependency_group_sequence(graph: Graph, *, depth: int = 1) -> tuple[Group, ...]:
+    '''
+    Every group present, in **dependency order**: contract each group, then sort that.
+
+    `group_sequence` reads the order off the *declaration* and never looks at an edge,
+    which is honest and, for the group axis of a whole-machine picture, actively
+    misleading. On the port's graph `costs` is the first slot written in the top-level
+    namespace, so it came out first, and a matrix whose first rows are `costs` reads as
+    "everything depends on costs" when the truth is the exact opposite -- `costs` reads
+    from five other subsystems and **nothing in the graph reads from it**. That is a
+    picture that lies about the one thing a DSM is for.
+
+    So: contract every group to a single vertex, put an edge from A to B when some node
+    in A owns a variable some node in B reads (self-edges dropped -- a group reading its
+    own output says nothing about where the group goes), condense *that* by SCC and sort
+    it topologically. Groups that genuinely feed each other collapse into one SCC and are
+    emitted adjacent, which is the honest answer: there is no order between them.
+
+    **What this claims and what it does not.** It claims only that if group A's output
+    reaches group B and B's does not reach A, A comes first. It is *not* a run order and
+    is not derived from `Blocking`: the group graph is far coarser than the node graph,
+    so a group pair that is acyclic here can still contain nodes that interleave in the
+    schedule (`GroupingReport.runs` is what measures that, and on the port's graph it is
+    0/7 contiguous). Within a group nothing is reordered at all -- `provenance_order`
+    keeps declaration order there, deliberately, so that the provenance reading survives
+    exactly where it is about how the file was written. See `provenance_order`.
+
+    **Ties are broken by first-appearance order, at every level.** Members of one SCC are
+    emitted in `group_sequence` order, and SCCs whose predecessors are all already placed
+    are taken lowest-first-appearance first (`nx.lexicographical_topological_sort` with
+    that rank as its key -- not the plain `topological_sort`, whose output depends on the
+    order vertices happened to be inserted). Both matter because these diagrams are
+    regenerated and eyeballed against the previous version: an order that shuffled
+    when an unrelated node was added would make every re-render unreadable.
+
+    Built on `networkx` directly, as `Graph.strongly_connected_components` itself is
+    (`nx.condensation` + a topological sort, ~jaxgraph/src/cottax/graph.py). Reusing
+    `Blocking`/`Graph.strongly_connected_components` was tried first and does not fit:
+    both want a `Graph` of `Node`s keyed by `NodePath`, and a group is neither -- it has
+    no ports and its identity is a `tuple[str, ...]`. Synthesising a node per group to
+    get at the same three lines of `networkx` would be a worse lie than calling it.
+
+    `UNGROUPED`, when present, is contracted like any other group. That is a bucket of
+    unrelated flat-named nodes rather than a subsystem, so it will tend to absorb into
+    whatever SCC its members touch; on a graph where it is large, read its position as
+    meaningless rather than as a claim.
+    '''
+    owners = graph.owners
+    among = frozenset(graph.nodes)
+    at = {name: group_of(name, depth=depth, among=among, owners=owners)
+          for name in graph.nodes}
+    declared = group_sequence(graph.nodes, depth=depth, owners=owners)
+    rank = {g: i for i, g in enumerate(declared)}
+
+    contracted = nx.DiGraph()
+    contracted.add_nodes_from(declared)
+    for name in graph.nodes:
+        for var in graph[name].reads:
+            source = owners.get(var)
+            if source is None:
+                continue
+            if at[source] != at[name]:
+                contracted.add_edge(at[source], at[name])
+
+    condensed = nx.condensation(contracted)
+    order = nx.lexicographical_topological_sort(
+        condensed, key=lambda c: min(rank[g] for g in condensed.nodes[c]['members'])
+    )
+    return tuple(
+        g
+        for c in order
+        for g in sorted(condensed.nodes[c]['members'], key=rank.__getitem__)
+    )
 
 
 def provenance_order(
@@ -184,30 +325,53 @@ def provenance_order(
     *,
     depth: int = 1,
     groups: Sequence[Group] | None = None,
+    owners: 'Mapping[VarPath, NodePath] | None' = None,
 ) -> tuple[NodePath, ...]:
     '''
-    `names` regrouped so every member of a group is adjacent, groups in declared order.
+    `names` regrouped so every member of a group is adjacent, groups in `groups`' order.
 
     Within a group the input order is kept, so the only thing this changes is which nodes
     sit next to which. **It is not a run order** and makes no claim to be one: nothing
-    here consults an edge. Marks above the diagonal of a DSM drawn in this order are
-    therefore *not* feedback -- they are places where provenance and dependency disagree,
-    which is the comparison the picture exists to make.
+    *inside a group* consults an edge, and no node is ever moved past another node of its
+    own group. A mark above the diagonal within one group's band is therefore not
+    feedback -- it is a place where provenance and dependency disagree, which is the
+    comparison the picture exists to make.
 
-    `groups` overrides the group order (`group_sequence`'s otherwise); every group present
-    must appear in it.
+    **Between groups that claim depends on `groups`, and the two callers differ.** With
+    `group_sequence`'s declared order (the default) nothing anywhere consulted an edge,
+    so a cross-group mark above the diagonal says nothing at all: the group axis was
+    arbitrary. With `dependency_group_sequence`'s order the group axis *is* a dependency
+    order, so a cross-group mark above the diagonal means one of exactly two things --
+    real feedback between subsystems, or a pair of subsystems that are mutually coupled
+    and were therefore emitted adjacent with no order between them. `render_xdsm.grouped`
+    passes the latter, because a group axis that has to be arbitrary somewhere should at
+    least not be arbitrary in a way that reads as a claim (`costs` first says "everything
+    depends on costs"; `costs` is a sink). The default stays the declared order: it is
+    what a caller asking for "as written" means, and the tests lean on it.
+
+    `groups` overrides the group order (`group_sequence`'s otherwise -- pass
+    `dependency_group_sequence(graph, depth=depth)` for the dependency-ordered axis);
+    every group present must appear in it.
+
+    `owners` (`graph.owners`) is threaded to every `group_of`/`group_sequence` call
+    below, for the same reason `group_of` wants it: without it, the two problems minted
+    over a variable place (rather than a node) would be `UNGROUPED` here too, and
+    `missing` would then demand `UNGROUPED` be in `groups` whenever it is passed.
     '''
     names = tuple(names)
     among = frozenset(names)
-    order = tuple(groups) if groups is not None else group_sequence(names, depth=depth)
+    order = (tuple(groups) if groups is not None
+             else group_sequence(names, depth=depth, owners=owners))
     index = {g: i for i, g in enumerate(order)}
-    missing = {group_of(n, depth=depth, among=among) for n in names} - set(index)
+    missing = {group_of(n, depth=depth, among=among, owners=owners) for n in names} - set(index)
     if missing:
         raise KeyError(
             f'group(s) {sorted(group_label(g) for g in missing)} are in the graph but not '
             f'in the `groups` order given'
         )
-    return tuple(sorted(names, key=lambda n: index[group_of(n, depth=depth, among=among)]))
+    return tuple(sorted(
+        names, key=lambda n: index[group_of(n, depth=depth, among=among, owners=owners)]
+    ))
 
 
 def structure_order(blocking: Blocking) -> tuple[NodePath, ...]:
@@ -298,9 +462,10 @@ def grouping_report(blocking: Blocking, *, depth: int = 1) -> GroupingReport:
     '''
     graph = blocking.graph
     order = structure_order(blocking)
-    groups = group_sequence(graph.nodes, depth=depth)
+    owners = graph.owners
+    groups = group_sequence(graph.nodes, depth=depth, owners=owners)
     among = frozenset(graph.nodes)
-    at = {name: group_of(name, depth=depth, among=among) for name in graph.nodes}
+    at = {name: group_of(name, depth=depth, among=among, owners=owners) for name in graph.nodes}
 
     sizes = {g: 0 for g in groups}
     for name in graph.nodes:
@@ -318,7 +483,6 @@ def grouping_report(blocking: Blocking, *, depth: int = 1) -> GroupingReport:
         for block in blocking.blocks
     )
 
-    owners = graph.owners
     crossing = {
         (owners[var], name)
         for name in graph.nodes
@@ -398,9 +562,10 @@ def _matrix_struct(
             f'node(s) -- a DSM is a permutation of the whole graph, not a selection'
         )
 
+    owners = graph.owners
     among = frozenset(graph.nodes)
-    at = {name: group_of(name, depth=depth, among=among) for name in graph.nodes}
-    groups = group_sequence(graph.nodes, depth=depth)
+    at = {name: group_of(name, depth=depth, among=among, owners=owners) for name in graph.nodes}
+    groups = group_sequence(graph.nodes, depth=depth, owners=owners)
     palette = {g: group_style(i) for i, g in enumerate(groups)}
     palette[UNGROUPED] = (UNGROUPED_COLOUR, None)
     index = {name: i for i, name in enumerate(order)}

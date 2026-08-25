@@ -118,6 +118,8 @@ def grouped(depth: int = 1):
     """
     from cottax import Blocking
     from functional_process.visualization.grouping import (
+        dependency_group_sequence,
+        group_label,
         grouping_report,
         provenance_order,
         render_grouped_dsm_html,
@@ -133,6 +135,15 @@ def grouped(depth: int = 1):
     blocking = Blocking.scc(graph)
     report = grouping_report(blocking, depth=depth)
     print(f"grouped: {report.summary()}")
+
+    # The group *axis* of the provenance picture, in dependency order rather than
+    # declaration order -- see `dependency_group_sequence`. Declaration order put `costs`
+    # first (it is the first slot written in the top-level namespace), which drew the one
+    # subsystem nothing reads from at the top left of the matrix and read as "everything
+    # depends on costs". Row order *within* a group is still declaration order, so the
+    # provenance claim is unchanged where it is actually about how the file was written.
+    axis = dependency_group_sequence(graph, depth=depth)
+    print("  group axis: " + " -> ".join(group_label(g) for g in axis))
     for block in report.crossing:
         print(
             "  CROSSES: "
@@ -149,13 +160,19 @@ def grouped(depth: int = 1):
     }
     render_grouped_dsm_html(
         blocking,
-        order=provenance_order(graph.nodes, depth=depth),
+        order=provenance_order(graph.nodes, depth=depth, owners=graph.owners,
+                               groups=axis),
         title="PROCESS port -- ordered by provenance",
         subtitle=(
-            "The driven model graph with every subsystem's nodes adjacent, "
-            "subsystems in declaration order. <b>This is not a run order</b> -- "
-            "nothing here consulted an edge -- so a mark above the diagonal is not "
-            "feedback, it is a place where provenance and dependency disagree. "
+            "The driven model graph with every subsystem's nodes adjacent. "
+            "Subsystems are ordered by <i>dependency</i> -- each contracted to one "
+            "vertex, that graph SCC'd and sorted, mutually coupled subsystems left "
+            "adjacent; rows <i>within</i> a subsystem stay in declaration order. "
+            "<b>This is still not a run order</b>: the group graph is far coarser than "
+            "the node graph, so nothing here says a subsystem's nodes run together "
+            "(they mostly do not). A mark above the diagonal <i>inside</i> a colour "
+            "band is a place where provenance and dependency disagree; one "
+            "<i>across</i> bands is real feedback between subsystems. "
             "Compare with <b>dsm_scc.html</b>: the same graph, the same colours and "
             "the same cells, in the order it runs. "
             f"{report.summary()}"

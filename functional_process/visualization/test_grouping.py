@@ -22,8 +22,9 @@ from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey
 from cottax.tools.path import path_map
 from functional_process.visualization.grouping import (PALETTE, TIER_OVERLAY, UNGROUPED, _matrix_struct,
-                                           group_label, group_of, group_sequence,
-                                           group_style, grouping_report, provenance_order,
+                                           dependency_group_sequence, group_label,
+                                           group_of, group_sequence, group_style,
+                                           grouping_report, provenance_order,
                                            render_grouped_dsm_html, structure_order)
 
 
@@ -100,6 +101,57 @@ def test_a_name_minted_over_a_variable_place_is_ungrouped():
     assert group_of(minted) == ('physics',)
 
 
+def test_a_name_minted_over_a_variable_place_falls_back_to_its_owner_s_group():
+    '''
+    `group_of`'s other half: when unminting a problem's name does not land on a node,
+    `owners` lets it land on the group of whoever *does* compute the variable it was
+    minted over, instead of falling straight to `UNGROUPED`.
+
+    Mirrors the two `FixedPointCut` problems the reference driven graph actually has --
+    `^problem.fwbs.f_ster_div_single` (cut over one variable, named after its own place,
+    so the direct lookup in `owners` hits immediately) and
+    `^problem.physics.proton_rate_density.cycle` (cut over two, named after the first
+    plus one extra `.cycle` key, so `_cut_owner` has to trim before it hits) -- and
+    checks the phantom `fwbs`/one-off `physics` group the guard exists to prevent does
+    not appear in `group_sequence` either.
+    '''
+    divertor = NodePath((GetAttrKey('stellarator'), GetAttrKey('divertor')))
+    fusion_rates = NodePath((GetAttrKey('physics'), GetAttrKey('fusion_rates')))
+    fusion_totals = NodePath((GetAttrKey('physics'), GetAttrKey('fusion_totals_no_beam')))
+    f_ster = V('fwbs', 'f_ster_div_single')
+    proton = V('physics', 'proton_rate_density')
+    fusden = V('physics', 'fusden_alpha_total')
+
+    single = NodePath((MintKey('problem'), GetAttrKey('fwbs'),
+                       GetAttrKey('f_ster_div_single')))
+    cyclic = NodePath((MintKey('problem'), GetAttrKey('physics'),
+                       GetAttrKey('proton_rate_density'), GetAttrKey('cycle')))
+
+    graph = Graph(path_map({
+        divertor: call([], [f_ster]),
+        fusion_rates: call([], [proton]),
+        fusion_totals: call([], [fusden]),
+        single: call([f_ster], [V('hat', 'fwbs', 'f_ster_div_single')]),
+        cyclic: call([proton, fusden],
+                     [V('hat', 'physics', 'proton_rate_density'),
+                      V('hat', 'physics', 'fusden_alpha_total')]),
+    }))
+    owners = graph.owners
+    among = frozenset(graph.nodes)
+
+    assert group_of(single, among=among, owners=owners) == ('stellarator',)
+    assert group_of(cyclic, among=among, owners=owners) == ('physics',)
+    # Without `owners` the guard still holds: no `graph` to consult means no fallback,
+    # and the honest answer stays `UNGROUPED` rather than inventing a phantom group
+    # (`fwbs`, or a one-off `physics.proton_rate_density`) from the minted name itself.
+    assert group_of(single, among=among) == UNGROUPED
+    assert group_of(cyclic, among=among) == UNGROUPED
+
+    groups = group_sequence(graph.nodes, owners=owners)
+    assert ('fwbs',) not in groups
+    assert set(groups) == {('stellarator',), ('physics',)}
+
+
 def test_depth_must_be_at_least_one():
     with pytest.raises(ValueError, match='at least 1'):
         group_of(N('a', 'b'), depth=0)
@@ -156,6 +208,109 @@ def test_structure_order_is_the_blocking_s_own(coupled):
     blocking = Blocking.scc(coupled)
     assert structure_order(blocking) == tuple(
         name for block in blocking.blocks for name in block)
+
+
+# =========================================================== the dependency group axis
+_LAYERED = {
+    N('z', 'total'): call([V('m'), V('n')], [V('z')]),
+    N('a', 'src'): call([], [V('a')]),
+    N('n', 'y'): call([V('a')], [V('n')]),
+    N('m', 'x'): call([V('a')], [V('m')]),
+}
+'''
+Four groups in a chain with the **sink declared first** -- the shape of the complaint.
+
+`z` reads from `m` and `n` and nothing in the graph reads from `z`, yet it is bound
+first, so `group_sequence` puts it at the top left of the matrix and the picture reads as
+"everything depends on `z`". That is `costs` in the port's own graph, in miniature. `m`
+and `n` are both immediately downstream of `a` and independent of each other, so they are
+also the tie that the fallback to declaration order has to break.
+'''
+
+
+@pytest.fixture
+def layered():
+    return Graph(path_map(dict(_LAYERED)))
+
+
+def test_the_dependency_axis_puts_a_sink_group_last(layered):
+    '''The complaint, and the fix, in one assertion pair.'''
+    assert group_sequence(layered.nodes) == (('z',), ('a',), ('n',), ('m',))
+    assert dependency_group_sequence(layered) == (('a',), ('n',), ('m',), ('z',))
+
+
+def test_the_dependency_axis_is_a_topological_order_of_the_group_graph(layered):
+    '''
+    Every cross-group edge points forward, which is the whole claim the axis makes.
+
+    Checked on a fixture with no group-level cycle, so "forward" is unconditional here;
+    the coupled case is `test_mutually_dependent_groups_collapse_into_one_scc`, where
+    there is no forward to point in.
+    '''
+    order = dependency_group_sequence(layered)
+    assert set(order) == set(group_sequence(layered.nodes))
+    rank = {g: i for i, g in enumerate(order)}
+    owners = layered.owners
+    for name in layered.nodes:
+        for var in layered[name].reads:
+            source = owners.get(var)
+            if source is None or group_of(source) == group_of(name):
+                continue
+            assert rank[group_of(source)] < rank[group_of(name)], (
+                f'{group_label(group_of(source))} -> {group_label(group_of(name))} '
+                f'runs backwards in {[group_label(g) for g in order]}'
+            )
+
+
+def test_the_tie_break_is_declaration_order_and_is_stable(layered):
+    '''
+    `m` and `n` are at the same level; declaration order decides, and keeps deciding.
+
+    Both halves matter because these diagrams are regenerated and eyeballed against the
+    previous version: an axis that answered differently on a second call, or shuffled
+    when an unrelated node joined a group, would make every re-render unreadable. The
+    added node reads `a` and is in `m`, so it adds no group edge that was not there.
+    '''
+    assert dependency_group_sequence(layered) == dependency_group_sequence(layered)
+    grown = Graph(path_map({**_LAYERED, N('m', 'extra'): call([V('a')], [V('extra')])}))
+    assert dependency_group_sequence(grown) == dependency_group_sequence(layered)
+
+
+def test_mutually_dependent_groups_collapse_into_one_scc():
+    '''
+    `a` and `b` feed each other, so there is no order between them: emit both, adjacent.
+
+    The point is that this does not raise. A topological sort of the *contracted* graph
+    has to survive a cycle in it -- two subsystems that genuinely exchange values are the
+    normal case, not an error -- and the honest answer is "adjacent, in declaration
+    order", which is what condensing before sorting gives. The whole SCC still sorts
+    ahead of the sink `z` that reads it.
+    '''
+    mutual = Graph(path_map({
+        N('z', 'sink'): call([V('q')], [V('z')]),
+        N('a', 'p'): call([V('r')], [V('p')]),
+        N('b', 'q'): call([V('p')], [V('q')]),
+        N('a', 'r'): call([V('q')], [V('r')]),
+    }))
+    assert dependency_group_sequence(mutual) == (('a',), ('b',), ('z',))
+
+
+def test_a_wholly_coupled_group_graph_falls_back_to_declaration_order(coupled):
+    '''`a <-> b <-> c`: one SCC, nothing to order, so the axis is `group_sequence`.'''
+    assert dependency_group_sequence(coupled) == group_sequence(coupled.nodes)
+
+
+def test_provenance_order_takes_the_dependency_axis(layered):
+    '''
+    How `render_xdsm.grouped` wires the two together -- through the existing `groups=`.
+
+    `provenance_order`'s signature does not change: the dependency axis is just another
+    group order to hand it, and rows *inside* a group are still in declaration order,
+    which is where the provenance reading is actually about how the file was written.
+    '''
+    order = provenance_order(layered.nodes, groups=dependency_group_sequence(layered))
+    assert [group_of(n) for n in order] == [('a',), ('n',), ('m',), ('z',)]
+    assert set(order) == set(layered.nodes)
 
 
 # ============================================================== the measurement
