@@ -1,10 +1,20 @@
 """Render the port's graphs as self-contained, interactive XDSM/DSM HTML pages.
 
-Run directly:
+Run directly, from the repo root, in the `process_port` env:
 
-    ~/miniconda/envs/process_port/bin/python -m functional_process.render_xdsm
-    ~/miniconda/envs/process_port/bin/python -m functional_process.render_xdsm sand
-    ~/miniconda/envs/process_port/bin/python -m functional_process.render_xdsm grouped
+    $PY -m functional_process.render_xdsm            # xdsm.html, dsm.html
+    $PY -m functional_process.render_xdsm grouped    # dsm_provenance.html, dsm_scc.html
+    $PY -m functional_process.render_xdsm sand       # xdsm_sand.html, dsm_sand.html
+
+`$PY` is deliberately not spelled out: **the conda root differs per machine**
+(`~/miniconda3` on one, `~/miniconda` on another -- `CLAUDE.md` records both), and this
+docstring used to hardcode the wrong one, so copy-pasting it gave
+`No such file or directory` and read as "the renderer is broken". Set it once:
+
+    PY=~/miniconda3/envs/process_port/bin/python   # or ~/miniconda/envs/...
+
+or `conda activate process_port` and use plain `python`. `ls -d ~/miniconda*/envs/
+process_port` answers which you have.
 
 The bare form writes `xdsm.html`/`dsm.html` for `total_process.GRAPH` -- the declared
 model graph, before anything is cut, driven or optimised. Re-run after porting a new
