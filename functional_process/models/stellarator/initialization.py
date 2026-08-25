@@ -1,10 +1,10 @@
 """Pure-functional port of `st_init`'s only real computation (registry unit #6).
 
-Audit record: `functional_process/models/stellarator/initialization.md`. `st_init` is
-mostly a stellarator-mode device-preset table (16 unconditional literal writes) plus one
-genuine, tiny pure function -- the pulse-duration sums -- ported here. See the record's
-"proposed signature(s)" for why the 16 literals are not ported as a node.
-"""
+Audit record: `functional_process/_audit/units/models/stellarator/initialization.md`.
+`st_init` is mostly a stellarator-mode device-preset table (16 unconditional literal
+writes) plus one genuine, tiny pure function -- the pulse-duration sums -- ported here.
+See the record's "proposed signature(s)" for why the 16 literals are not ported as a
+node."""
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 

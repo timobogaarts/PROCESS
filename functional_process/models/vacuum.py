@@ -1,8 +1,9 @@
 """Pure-functional port of `process/models/vacuum.py` (registry unit #16).
 
-Audit record: `functional_process/models/vacuum.md`. Entry point is `Vacuum.run()`,
-which dispatches on the topology-changing switch `.vacuum.i_vacuum_pumping`
-(`"old"`/`"simple"`) to one of two, essentially disjoint, computations:
+Audit record: `functional_process/_audit/units/models/vacuum.md`. Entry point is
+`Vacuum.run()`, which dispatches on the topology-changing switch
+`.vacuum.i_vacuum_pumping` (`"old"`/`"simple"`) to one of two, essentially disjoint,
+computations:
 
 - **`"simple"`** -- `vacuum_simple`: straight-line algebra, no iteration.
   `calculate_vacuum_pumping_simple` below, tier-1.

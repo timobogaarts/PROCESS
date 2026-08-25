@@ -1,7 +1,8 @@
 """Pure-functional port of S2 (`blanket_shield_tf_nuclear_power`), the `blktmodel` x
 `ipowerflow` dispatch inside `Stellarator.st_fwbs` (registry unit #1's `stellarator.py`).
 
-Audit record: `functional_process/models/stellarator/stellarator_fwbs_s2.md` (read it
+Audit record:
+`functional_process/_audit/units/models/stellarator/stellarator_fwbs_s2.md` (read it
 first) -- this file only implements the two of S2's three arms that are self-contained
 tier-1 and do not touch the buggy `blanket_neutronics()` call site. The third arm
 (`blktmodel == 1`, i.e. `blanket_neutronics()` + its `ipowerflow`-nested tail) is

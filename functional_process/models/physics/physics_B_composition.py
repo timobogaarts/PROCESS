@@ -3,12 +3,12 @@
 (`process/models/physics/physics.py`).
 
 Registry unit #9, chunk B. Audit record:
-`functional_process/models/physics/physics_B_composition.md` -- read it first,
-especially "the `first_call` self-loop" and "the `znfuel` raise" sections. `first_call`
-is not ported at all -- it turned out to be an ordering artifact of PROCESS's own
-imperative call sequence, not a genuine cycle; see `plasma_composition`'s own docstring
-for the full account. The `znfuel` domain check remains deliberately unported -- see
-that section.
+`functional_process/_audit/units/models/physics/physics_B_composition.md` -- read it
+first, especially "the `first_call` self-loop" and "the `znfuel` raise" sections.
+`first_call` is not ported at all -- it turned out to be an ordering artifact of
+PROCESS's own imperative call sequence, not a genuine cycle; see `plasma_composition`'s
+own docstring for the full account. The `znfuel` domain check remains deliberately
+unported -- see that section.
 
 Both functions were flagged blocked in `unit_registry.md` row #9 (they call
 `impurity_radiation.calculate_average_charge_at_temp`/`element2index`, registry unit

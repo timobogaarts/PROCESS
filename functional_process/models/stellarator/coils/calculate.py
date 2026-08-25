@@ -1,18 +1,18 @@
 """Pure-functional port of the tier-1 functions in `coils/calculate.py` (registry unit #9).
 
-Audit record: `functional_process/models/stellarator/coils/calculate.md`. That file's
-`st_coil` (593 lines) is the orchestrator called directly from `Stellarator.run()`; most
-of its body is 12 short, independent helper functions, 10 of which are tier-1 (pure
-arithmetic, no internal solve, no calls into any other file) and were ported first. The
-other two -- `winding_pack_total_size` (a 200-point sampled curve fed into `intersect`, a
-Newton-Raphson root-find in `coils/coils.py`) and `st_coil` itself (the orchestrator,
-which also calls `coils/mass.py`, `coils/quench.py`, `coils/forces.py`,
-`coils/output.py`) -- were blocked on registry units #10-14. Units #10 (partially, see
-below), #11, #12 and #14 are now ported, and #13 is confirmed pure reporting with nothing
-to port, which unblocked both: `winding_pack_total_size` is ported below (tier-2, a
-`Tier2Contract`, same pattern as `coils.py`'s own `intersect`), and `st_coil` is ported as
-a plain composed function (tier-3; see the record for why it gets no `cottax` node of its
-own).
+Audit record: `functional_process/_audit/units/models/stellarator/coils/calculate.md`.
+That file's `st_coil` (593 lines) is the orchestrator called directly from
+`Stellarator.run()`; most of its body is 12 short, independent helper functions, 10 of
+which are tier-1 (pure arithmetic, no internal solve, no calls into any other file) and
+were ported first. The other two -- `winding_pack_total_size` (a 200-point sampled curve
+fed into `intersect`, a Newton-Raphson root-find in `coils/coils.py`) and `st_coil`
+itself (the orchestrator, which also calls `coils/mass.py`, `coils/quench.py`,
+`coils/forces.py`, `coils/output.py`) -- were blocked on registry units #10-14. Units
+#10 (partially, see below), #11, #12 and #14 are now ported, and #13 is confirmed pure
+reporting with nothing to port, which unblocked both: `winding_pack_total_size` is
+ported below (tier-2, a `Tier2Contract`, same pattern as `coils.py`'s own `intersect`),
+and `st_coil` is ported as a plain composed function (tier-3; see the record for why it
+gets no `cottax` node of its own).
 
 `winding_pack_total_size` calls `intersect`/`bmax_from_awp` (`coils/coils.py`, already
 ported) directly, and needs `jcrit_from_material`'s dispatch on `i_tf_sc_mat` -- which

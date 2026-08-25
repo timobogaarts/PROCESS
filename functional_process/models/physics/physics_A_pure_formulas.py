@@ -2,7 +2,7 @@
 `process/models/physics/physics.py`.
 
 Registry unit #9, chunk A. Audit record:
-`functional_process/models/physics/physics_A_pure_formulas.md`.
+`functional_process/_audit/units/models/physics/physics_A_pure_formulas.md`.
 
 All five source functions are, in PROCESS's own code, already `@staticmethod`s (or, for
 `rether`, a bare module-level function) with an explicit signature and no `self.data`

@@ -19,20 +19,25 @@ that are actually in scope.
   file cannot drift away from them.
 
 ```bash
-~/miniconda3/envs/process_port/bin/python -m pytest functional_process
+~/miniconda3/envs/process_port/bin/python -m pytest tests/functional_process
 ```
 
 ## Layout
 
-- `_audit/` — the meta-documents: schema, naming convention, JAX-traceability policy,
-  the unit registry (master list of what's in/out of scope and its status), and
+- `_audit/` — the meta-documents, flat: schema, naming convention, JAX-traceability
+  policy, the unit registry (master list of what's in/out of scope and its status), and
   `test_harness.md` (the four-tier validation design, and what of it is built).
+- `_audit/units/` — the per-unit audit records, mirroring this tree record for record:
+  one `<name>.md` at the path corresponding to its source file (or, for constraints/
+  switches, one record per registry entry under `core/solver/`). They are bound to their
+  units by `_audit/unit_registry.md`, which names each record's path, not by sitting next
+  to the module — see `_audit/test_harness.md` § As built for why that changed.
 - `_harness/` — the validation machinery: tier contracts, PROCESS's finite-difference
   scheme and its error bar, sampling, tolerances. Design and rationale in
   `_audit/test_harness.md` § As built.
-- `models/`, `core/solver/` — mirrors `process/`'s tree. Each audited unit gets one
-  `<name>.md` record at the path corresponding to its source file (or, for constraints/
-  switches, one record per registry entry inside `core/solver/`).
+- `models/`, `core/solver/` — the ports themselves, mirroring `process/`'s tree.
+- `../tests/functional_process/` — the harness cases, mirroring this tree file for file,
+  with `conftest.py` (markers, `--fp-fuzz`, sample parametrization) at its root.
 - `total_process.py` — every ported unit's `cottax` node, assembled by
   `graph_for(configuration)`. `GRAPH` is the graph PROCESS's own switch defaults produce;
   `render_xdsm.py` draws it to `xdsm.html` for inspection
@@ -45,11 +50,22 @@ that are actually in scope.
 
 ## Adding a unit
 
-One unit is one stem, three files in the same directory: `<name>.md` (audit record,
-first), `<name>.py` (the port), `test_<name>.py` (the case). The case declares the
-PROCESS reference, the port, and the sample points, then subclasses the contract for the
-tier its record assigns — it does not write test functions. Copy
-`models/stellarator/test_density_limits.py`; it is the worked example.
+One unit is one stem, three files at the same relative path in three trees:
+`<name>.md` (audit record, first) under `_audit/units/`, `<name>.py` (the port) here, and
+`test_<name>.py` (the case) under `../tests/functional_process/`. So the record for
+`models/stellarator/density_limits.py` is
+`_audit/units/models/stellarator/density_limits.md` and its case is
+`../tests/functional_process/models/stellarator/test_density_limits.py`. Add the record's
+path to `_audit/unit_registry.md` as you write it — that row, not the file's location, is
+what binds record to unit, and `test_registry_coverage.py` fails on a record the registry
+does not name and on a registry row whose record is missing.
+
+The case declares the PROCESS reference, the port, and the sample points, then subclasses
+the contract for the tier its record assigns — it does not write test functions. Its
+`audit_record` is the record's path relative to `_audit/units/`, i.e. the mirrored path,
+the same string in every tree. Copy
+`../tests/functional_process/models/stellarator/test_density_limits.py`; it is the worked
+example.
 
 If the unit's node only exists for some values of a switch, register it as an
 `Alternative` in `total_process.TOPOLOGY_SWITCHES` rather than in `COMMON` — two nodes

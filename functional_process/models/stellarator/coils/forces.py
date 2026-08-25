@@ -1,15 +1,15 @@
 """Pure-functional port of `process/models/stellarator/coils/forces.py` (registry #11).
 
-Audit record: `functional_process/models/stellarator/coils/forces.md`. All seven source
-functions share one shape: a handful of `.stellarator_config.*`/`.stellarator.*`/
-`.tfcoil.*` reads combined by straight-line arithmetic, no switches, no internal loop, no
-calls into other models -- the cleanest file in the coil subsystem. `calculate_maximum_stress`
-is the one exception worth a note: the source reads `.tfcoil.max_force_density` off
-`data`, which is itself written by `calculate_max_force_density` earlier in the same
-caller (`st_coil`) -- ported here as an explicit `max_force_density` argument instead of
-an implicit `data` read, so the two functions compose by ordinary argument-passing
-rather than through a shared mutable object.
-"""
+Audit record: `functional_process/_audit/units/models/stellarator/coils/forces.md`. All
+seven source functions share one shape: a handful of
+`.stellarator_config.*`/`.stellarator.*`/ `.tfcoil.*` reads combined by straight-line
+arithmetic, no switches, no internal loop, no calls into other models -- the cleanest
+file in the coil subsystem. `calculate_maximum_stress` is the one exception worth a
+note: the source reads `.tfcoil.max_force_density` off `data`, which is itself written
+by `calculate_max_force_density` earlier in the same caller (`st_coil`) -- ported here
+as an explicit `max_force_density` argument instead of an implicit `data` read, so the
+two functions compose by ordinary argument-passing rather than through a shared mutable
+object."""
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 

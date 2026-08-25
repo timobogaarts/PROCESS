@@ -1,15 +1,15 @@
 """Pure-functional port of `process/models/blankets/hcpb.py`'s in-scope methods.
 
 Registry unit #13. In scope: `nuclear_heating_blanket`, `nuclear_heating_shield`,
-`nuclear_heating_magnets` -- see `functional_process/models/blankets/hcpb.md` (read it
-first), which found all three self-contained tier-1 (no calls into other models, no
-internal iteration) and ported all three. This was the sole blocker on `st_fwbs`'s S2
-sub-computation (`stellarator_E_fwbs_synthesis.md`); the record also flags a live
-call-site bug in `stellarator.py`'s `blanket_neutronics()` that S2's port will hit next
-(see the record's "open questions" #1) -- not a blocker for this unit, since the port
-targets the staticmethods' own declared signatures, the ones `CCFE_HCPB.run()`'s own call
-sites already use correctly.
-"""
+`nuclear_heating_magnets` -- see
+`functional_process/_audit/units/models/blankets/hcpb.md` (read it first), which found
+all three self-contained tier-1 (no calls into other models, no internal iteration) and
+ported all three. This was the sole blocker on `st_fwbs`'s S2 sub-computation
+(`stellarator_E_fwbs_synthesis.md`); the record also flags a live call-site bug in
+`stellarator.py`'s `blanket_neutronics()` that S2's port will hit next (see the record's
+"open questions" #1) -- not a blocker for this unit, since the port targets the
+staticmethods' own declared signatures, the ones `CCFE_HCPB.run()`'s own call sites
+already use correctly."""
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto

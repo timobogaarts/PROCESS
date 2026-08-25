@@ -12,17 +12,18 @@ signature assumes `jax.config.update("jax_enable_x64", True)`.
 
 ## Switches — the split default
 
-**"Switch" means any parameter that changes which nodes run, not only a `data.<area>.i_*`
-field.** Found via `stellarator.py`'s `run(output: bool)`: a plain Python bool, not a
-`DataStructure` field, but it selects between two call sequences with entirely different
-reads/writes (see `functional_process/models/stellarator/stellarator_A_orchestration.md`
-— `output=True` and `output=False` don't even call the same set of stellarator
+**"Switch" means any parameter that changes which nodes run, not only a
+`data.<area>.i_*` field.** Found via `stellarator.py`'s `run(output: bool)`: a plain
+Python bool, not a `DataStructure` field, but it selects between two call sequences with
+entirely different reads/writes (see
+`functional_process/_audit/units/models/stellarator/stellarator_A_orchestration.md` —
+`output=True` and `output=False` don't even call the same set of stellarator
 submodules). It fails the split-default's own criterion exactly as a `data.*` switch
 would, so it gets the same treatment: the pure port should have two separate top-level
 functions (e.g. `compute` and `report`), not one function with an `if output:` branch
-threaded through it. Anything whose value is read once to decide *which nodes exist*
-(a Python kwarg, a config value, a `data.*` switch — the mechanism doesn't matter) is
-in scope for this section.
+threaded through it. Anything whose value is read once to decide *which nodes exist* (a
+Python kwarg, a config value, a `data.*` switch — the mechanism doesn't matter) is in
+scope for this section.
 
 **Default: split.** A switch whose branches read different `VarPath` sets (the common
 case — PROCESS's alternate formulas are almost always alternate physics with different

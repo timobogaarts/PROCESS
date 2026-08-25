@@ -79,8 +79,13 @@ class PortContract:
     Attributes
     ----------
     audit_record :
-        Path of the unit's audit record, relative to `functional_process/`. Checked for
-        existence, so a port whose record was moved or never written fails loudly.
+        Path of the unit's audit record, relative to `functional_process/_audit/units/`
+        — the record tree, which mirrors the package layout, as does the
+        `tests/functional_process/` tree this case lives in. Records and cases each moved
+        out of the package into their own mirror, so this stays the package-relative path
+        it always was; only the root it resolves against moved. Resolved by
+        `conftest.py`'s `audit_root`. Checked for existence, so a port whose record was
+        moved or never written fails loudly.
     reference :
         The PROCESS-side callable, adapted to the port's signature. Where PROCESS's
         function takes a `DataStructure`, the adapter that binds one lives in the unit's
@@ -243,9 +248,9 @@ class Tier1Contract(PortContract):
 
         Eager, no `jacfwd` — this is the check that runs on every default invocation
         (import the unit, call it, look at the result), which is what keeps a plain
-        `pytest functional_process` a fast "did I break an import/signature" pass rather
-        than a full recompile of every ported unit's autodiff graph. The gradient half of
-        this same idea — a `jnp.where` whose untaken branch is NaN — is
+        `pytest tests/functional_process` a fast "did I break an import/signature" pass
+        rather than a full recompile of every ported unit's autodiff graph. The gradient
+        half of this same idea — a `jnp.where` whose untaken branch is NaN — is
         `test_gradient_finite` below, gated the same way as `test_gradient_agreement`.
         """
         _, domain_error = self._reference_or_domain_error(dict(sample.kwargs))

@@ -1,6 +1,7 @@
 """Pure-functional port of `process/models/physics/radiation_power.py`.
 
-Registry unit #20. Audit record: `functional_process/models/physics/radiation_power.md`.
+Registry unit #20. Audit record:
+`functional_process/_audit/units/models/physics/radiation_power.md`.
 
 PROCESS's entry point is
 

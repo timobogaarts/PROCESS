@@ -1,9 +1,10 @@
 """Pure-functional port of `process/models/physics/confinement_time.py`.
 
-Registry unit #10. Audit record: `functional_process/models/physics/confinement_time.md`.
-Read it first, especially "A latent PROCESS bug, ported faithfully" (the
-`KAYE_GOLDSTON` branch) and "A dead branch" (`PAZ_SOLDAN_NT`) before trusting any single
-scaling law's numbers against `calculate_confinement_time`'s dispatch.
+Registry unit #10. Audit record:
+`functional_process/_audit/units/models/physics/confinement_time.md`. Read it first,
+especially "A latent PROCESS bug, ported faithfully" (the `KAYE_GOLDSTON` branch) and "A
+dead branch" (`PAZ_SOLDAN_NT`) before trusting any single scaling law's numbers against
+`calculate_confinement_time`'s dispatch.
 
 In scope: `calculate_confinement_time` and `calculate_double_and_triple_product`
 (registry's stated method list), plus everything they call transitively within this same

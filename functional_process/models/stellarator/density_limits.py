@@ -1,8 +1,8 @@
 """Pure-functional port of `process/models/stellarator/density_limits.py`.
 
-Audit record: `functional_process/models/stellarator/density_limits.md`. Only the two
-tier-1 functions are ported here. `power_at_ignition_point` is tier 2 and remains
-blocked on registry unit #1 (`st_phys`), and `output` is a reporting shell.
+Audit record: `functional_process/_audit/units/models/stellarator/density_limits.md`.
+Only the two tier-1 functions are ported here. `power_at_ignition_point` is tier 2 and
+remains blocked on registry unit #1 (`st_phys`), and `output` is a reporting shell.
 
 Signatures follow the record's `## proposed signature(s)` verbatim, including its
 argument spellings, so that the record stays the thing you read to know what a port

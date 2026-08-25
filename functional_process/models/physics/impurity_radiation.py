@@ -3,7 +3,7 @@
 not need.
 
 Registry unit #23. Audit record:
-`functional_process/models/physics/impurity_radiation.md`.
+`functional_process/_audit/units/models/physics/impurity_radiation.md`.
 
 Most of this file's source range -- `ImpurityRadiation`, `create_f_rad_core_profile`,
 `calculate_impurity_radiation_power_density` (roughly L379-755) -- is **already ported**,

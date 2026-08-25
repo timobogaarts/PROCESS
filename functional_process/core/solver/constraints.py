@@ -1,7 +1,7 @@
 """Pure-functional port of PROCESS's constraint set
 (`process/core/solver/constraints.py`).
 
-Audit record: `functional_process/core/solver/constraints.md`.
+Audit record: `functional_process/_audit/units/core/solver/constraints.md`.
 
 Covers every constraint PROCESS registers (`@ConstraintManager.register_constraint`,
 ~82 of them) except 50 and 52, which are IFE-only (`data.ife.ife`-gated) -- the entire

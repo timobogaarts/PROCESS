@@ -1,10 +1,10 @@
 """Pure-functional port of `process/models/stellarator/heating.py` (registry unit #5).
 
-Audit record: `functional_process/models/stellarator/heating.md`. Only the `isthtr`
-branches that are self-contained (call no other model) are ported: ECRH (`isthtr == 1`)
-and lower-hybrid (`isthtr == 2`). The NBI branch (`isthtr == 3`) calls
-`stellarator.current_drive.culnbi()` -- a not-yet-audited model -- so it stays audit-only
-per the record.
+Audit record: `functional_process/_audit/units/models/stellarator/heating.md`. Only the
+`isthtr` branches that are self-contained (call no other model) are ported: ECRH
+(`isthtr == 1`) and lower-hybrid (`isthtr == 2`). The NBI branch (`isthtr == 3`) calls
+`stellarator.current_drive.culnbi()` -- a not-yet-audited model -- so it stays
+audit-only per the record.
 
 `calculate_ecrh_heating`/`calculate_lowhyb_heating` are **mutually exclusive
 alternatives**: both write the same four downstream fields

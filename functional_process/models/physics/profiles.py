@@ -1,6 +1,7 @@
 """Pure-functional port of `process/models/physics/profiles.py`.
 
-Registry unit #21. Audit record: `functional_process/models/physics/profiles.md`.
+Registry unit #21. Audit record:
+`functional_process/_audit/units/models/physics/profiles.md`.
 
 This is the unit `plasma_profiles.py` (unit #12) is blocked on. `PlasmaProfile` holds two
 injected `Profile` sub-models -- `NeProfile()` / `TeProfile()`, built in

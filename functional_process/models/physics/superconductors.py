@@ -1,8 +1,8 @@
 """Pure-functional port of `process/models/superconductors.py` (registry unit #22).
 
-Audit record: `functional_process/models/physics/superconductors.md`. Read it first,
-especially "tier signal" for why all 7 in-scope functions land tier-1 (not the tier-2
-the registry anticipated -- the file's one `scipy.optimize` call, in
+Audit record: `functional_process/_audit/units/models/physics/superconductors.md`. Read
+it first, especially "tier signal" for why all 7 in-scope functions land tier-1 (not the
+tier-2 the registry anticipated -- the file's one `scipy.optimize` call, in
 `current_sharing_rebco`, is out of scope and calls `jcrit_rebco`, not the other way
 round) and "JAX-difficulty flags" for the domain guards each `jnp.where` needed to keep
 its untaken branch finite under `jax.jacfwd`.

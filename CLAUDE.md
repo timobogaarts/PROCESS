@@ -49,8 +49,8 @@ Both installs are **editable**, so edits to `process/`, `functional_process/` an
 (rebuilt 2026-08-18 after the env was lost): `process 0.0.1.dev1186+g769950de1`,
 `cottax 0.1.0`, `jax 0.11.1` (CPU — no CUDA jaxlib, and jax warns about that on every
 import; harmless), `numpy 2.5.2`, `pytest 9.1.1`. **`tests/unit` → 846 passed;
-`~/jaxgraph` → 307 passed.** If either number moves without you having changed something,
-suspect the env before the code. The rebuild reproduced both numbers exactly, so the
+`~/jaxgraph` → 740 passed, 3 skipped.** If either number moves without you having
+changed something, suspect the env before the code. The rebuild reproduced both numbers exactly, so the
 `jax` 0.11.0 → 0.11.1 drift is inert as far as either suite can see.
 
 `graphviz` is deliberately **not** installed: the Python binding came in via cottax's
@@ -67,15 +67,17 @@ diffs against PROCESS show precision loss that reads like a porting bug
 ### Commands
 
 ```bash
-$PY -m pytest functional_process            # the port's validation harness — 3752
-                                            # passed + 3347 skipped, ~65 s. See below.
+$PY -m pytest tests/functional_process      # the port's validation harness — 3752
+                                            # passed + 3347 skipped, ~60 s. The cases
+                                            # mirror `functional_process/`; the audit
+                                            # records stay next to the port. See below.
 $PY -m pytest tests/unit                    # unit tests (models, core) — 846, ~4 s
 $PY -m pytest tests/unit/models -k density_limit
 $PY -m pytest tests/unit/models/stellarator # the in-scope subset — 16, <1 s
 $PY -m pytest tests/integration
 $PY -m pytest tests/regression -k large_tokamak   # tracked reference output; clones
                                             # process-tracking-data into a user cache
-cd ~/jaxgraph && $PY -m pytest              # cottax — 307
+cd ~/jaxgraph && $PY -m pytest              # cottax — 740, 3 skipped
 $(dirname $PY)/ruff check && $(dirname $PY)/ruff format          # style; see
                                             # standards.md for naming rules
 ```
@@ -89,8 +91,12 @@ Built and green; the design and the reasoning behind every choice live in
 `functional_process/_audit/test_harness.md` (§ As built), which is the file to read
 before touching it. The short version:
 
-- **A unit is a stem, not a file**: `density_limits.md` (audit record), `density_limits.py`
-  (the port), `test_density_limits.py` (the case) sit together at the mirrored path.
+- **A unit's three files share a stem at the same relative path in three trees**:
+  `density_limits.py` (the port) in `functional_process/`, `density_limits.md` (the audit
+  record) under `functional_process/_audit/units/`, and `test_density_limits.py` (the
+  case) under `tests/functional_process/`. What binds a record to its unit is its row in
+  `_audit/unit_registry.md`, which names the path explicitly and is enforced by the
+  meta-tests in `tests/functional_process/test_registry_coverage.py` — not adjacency.
 - **Tier is a base class.** A case declares `audit_record`/`reference`/`ported`/`samples`
   and subclasses `Tier1Contract` or `Tier2Contract`; it writes no test functions. Tier 2
   has no value-agreement test *by construction*, because PROCESS's answer is not ground

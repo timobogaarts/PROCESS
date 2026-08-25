@@ -1,12 +1,13 @@
 """Pure-functional port of `st_fwbs`'s S3 fragment (`stellarator.py:1030-1043`).
 
-Audit record: `functional_process/models/stellarator/stellarator_fwbs_s3.md`.
+Audit record:
+`functional_process/_audit/units/models/stellarator/stellarator_fwbs_s3.md`.
 `stellarator_E_fwbs_synthesis.md` names this fragment
 `divertor_mass_and_first_call_seed` and flags it as the one piece of `st_fwbs` that is
 genuine cross-call state rather than ordinary same-call dataflow: `.divertor.
 a_div_surface_total` is written by `Divertor` (unit #4, `st_div`, `divertor.py`), which
-runs *after* `st_fwbs` in `Stellarator.run()`'s call order, so this fragment always reads
-either a hardcoded `50.0` bootstrap (the true first call) or the *previous* call's
+runs *after* `st_fwbs` in `Stellarator.run()`'s call order, so this fragment always
+reads either a hardcoded `50.0` bootstrap (the true first call) or the *previous* call's
 `Divertor` output (every call after).
 
 **This port does not decide how that cycle is driven.** Per this task's brief, the

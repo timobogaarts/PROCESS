@@ -1,8 +1,8 @@
 """Pure-functional port of the AC/electric-production sub-unit of
 `process/models/power.py` (registry unit #14, chunk C).
 
-Audit record: `functional_process/models/power_C_electric_production.md`. Covers
-`Power.acpow` (696-813), `Power.power_profiles_over_time` (2632-2825) and
+Audit record: `functional_process/_audit/units/models/power_C_electric_production.md`.
+Covers `Power.acpow` (696-813), `Power.power_profiles_over_time` (2632-2825) and
 `Power.plant_electric_production` (1631-1772) -- see the audit record's data-footprint
 table for the full trace.
 

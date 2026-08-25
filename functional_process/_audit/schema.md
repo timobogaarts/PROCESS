@@ -1,9 +1,11 @@
 # Audit record schema (draft)
 
 Three record shapes: model-unit, constraint, switch. Every record is one markdown file
-at the mirrored path (model-units, `core/solver/constraints.md`, `core/solver/switches.md`
-— the latter two are single files holding one section per entry, since constraints/
-switches don't have their own source file to mirror).
+under `_audit/units/`, at the path mirroring its source file within
+`functional_process/` (model-units, `core/solver/constraints.md`,
+`core/solver/switches.md` — the latter two are single files holding one section per
+entry, since constraints/switches don't have their own source file to mirror). Paths
+named in this document are relative to `_audit/units/`.
 
 Every record starts with frontmatter:
 

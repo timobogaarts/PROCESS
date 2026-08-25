@@ -1,7 +1,8 @@
 """Pure-functional port of `st_fwbs`'s S4 component-mass block
 (`process/models/stellarator/stellarator.py:1045-1274`, excluding S3's 1030-1043).
 
-Audit record: `functional_process/models/stellarator/stellarator_fwbs_s4.md`.
+Audit record:
+`functional_process/_audit/units/models/stellarator/stellarator_fwbs_s4.md`.
 `stellarator_E_fwbs_synthesis.md` § 1 names this piece `blanket_shield_fw_coolant_mass`
 and § 5 recorded it as "portable once S2 and S3's signatures exist" -- both have since
 landed (`stellarator_fwbs_s2.py`, `stellarator_fwbs_s3.py`), so the stated blocker is

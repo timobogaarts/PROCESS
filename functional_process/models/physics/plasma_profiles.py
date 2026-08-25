@@ -2,10 +2,10 @@
 
 Registry unit #12.
 
-Audit record: `functional_process/models/physics/plasma_profiles.md`. Read its **scope
-correction** first: `PlasmaProfile.run()` is not portable end-to-end from this file
-alone: both of its branches call `neprofile.run()`/`teprofile.run()` for effect and then
-read four `.physics` fields those calls wrote. Those classes live in
+Audit record: `functional_process/_audit/units/models/physics/plasma_profiles.md`. Read
+its **scope correction** first: `PlasmaProfile.run()` is not portable end-to-end from
+this file alone: both of its branches call `neprofile.run()`/`teprofile.run()` for
+effect and then read four `.physics` fields those calls wrote. Those classes live in
 `process/models/physics/profiles.py` (558 LOC), which is **not in the unit registry** —
 the same class of scoping miss as `coils/` and `rether`.
 

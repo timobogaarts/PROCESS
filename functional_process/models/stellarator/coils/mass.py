@@ -1,13 +1,14 @@
 """Pure-functional port of `process/models/stellarator/coils/mass.py` (registry #12).
 
-Audit record: `functional_process/models/stellarator/coils/mass.md`. The source's
-`calculate_coils_mass` orchestrates 8 sub-functions (`casing`, `ground_insulation`,
-`superconductor`, `copper`, `conduit_steel`, `conduit_insulation`, `total_conductor`,
-`total_coil`), each writing one `data.tfcoil.*` field that a later sub-function reads
-straight back off `data` -- unconditional, unbranched, same-call produce-then-consume, so
-this is `local-intermediate` exactly like `stellarator_D_structure.md`'s `aintmass`
-chain, just one file over. Ported here as one straight-line function with ordinary
-Python locals instead of eight `data`-mediated steps.
+Audit record: `functional_process/_audit/units/models/stellarator/coils/mass.md`. The
+source's `calculate_coils_mass` orchestrates 8 sub-functions (`casing`,
+`ground_insulation`, `superconductor`, `copper`, `conduit_steel`, `conduit_insulation`,
+`total_conductor`, `total_coil`), each writing one `data.tfcoil.*` field that a later
+sub-function reads straight back off `data` -- unconditional, unbranched, same-call
+produce-then-consume, so this is `local-intermediate` exactly like
+`stellarator_D_structure.md`'s `aintmass` chain, just one file over. Ported here as one
+straight-line function with ordinary Python locals instead of eight `data`-mediated
+steps.
 
 `superconductor()`'s `data.tfcoil.dcond[data.tfcoil.i_tf_sc_mat - 1]`
 (`process/models/stellarator/coils/mass.py:88`) is a data-table lookup (material

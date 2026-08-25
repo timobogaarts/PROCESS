@@ -1,6 +1,7 @@
 """Pure-functional port of `Stellarator.sc_tf_coil_nuclear_heating_iter90` (chunk 1F).
 
-Audit record: `functional_process/models/stellarator/stellarator_F_tf_nuclear_heating.md`.
+Audit record:
+`functional_process/_audit/units/models/stellarator/stellarator_F_tf_nuclear_heating.md`.
 Ports only the SUPERCONDUCTING branch of the source's `i_tf_sup` switch -- per
 `core/solver/switches.md`'s `i_tf_sup` entry (split, high confidence, three independent
 data points including this unit) and `naming_convention.md`'s "switches are not ports":

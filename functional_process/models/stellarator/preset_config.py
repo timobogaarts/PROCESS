@@ -1,8 +1,8 @@
 """Pure-functional port of `load_stellarator_config` (registry unit #8).
 
-Audit record: `functional_process/models/stellarator/preset_config.md`. Source:
-`process/models/stellarator/preset_config.py` (the five machine-preset dict literals and
-`load_stellarator_config`).
+Audit record: `functional_process/_audit/units/models/stellarator/preset_config.md`.
+Source: `process/models/stellarator/preset_config.py` (the five machine-preset dict
+literals and `load_stellarator_config`).
 
 `load_stellarator_config` is called by `Stellarator.st_new_config()` before anything
 else in the stellarator pipeline and fills the ~35 `.stellarator_config.stella_config_*`

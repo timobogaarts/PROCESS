@@ -1,12 +1,13 @@
 """Pure-functional port of `process/models/availability.py` (registry unit #17).
 
-Audit record: `functional_process/models/availability.md`. `Availability.run()` dispatches
-on `.costs.i_plant_availability` (`AvailabilityModel`) to one of three whole-branch
-alternatives -- `avail()` (USER_INPUT/WARD_TAYLOR, 0/1), `avail_2()` (MORRIS, 2), `avail_st()`
-(ST, 3). All three are self-contained (no calls into other, unported `Model`s) and are
-ported here as tier-1 pure functions, composed from a shared set of leaf helpers used by
-two or three of the branches at once (`calculate_divertor_lifetime`,
-`calculate_u_unplanned_*`, the two `calculate_cp_lifetime_*` alternatives).
+Audit record: `functional_process/_audit/units/models/availability.md`.
+`Availability.run()` dispatches on `.costs.i_plant_availability` (`AvailabilityModel`)
+to one of three whole-branch alternatives -- `avail()` (USER_INPUT/WARD_TAYLOR, 0/1),
+`avail_2()` (MORRIS, 2), `avail_st()` (ST, 3). All three are self-contained (no calls
+into other, unported `Model`s) and are ported here as tier-1 pure functions, composed
+from a shared set of leaf helpers used by two or three of the branches at once
+(`calculate_divertor_lifetime`, `calculate_u_unplanned_*`, the two
+`calculate_cp_lifetime_*` alternatives).
 
 Two switches are split into **separate node alternatives** rather than kept as a static
 branch inside one function, matching `i_tf_sup`'s precedent in

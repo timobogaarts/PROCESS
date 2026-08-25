@@ -1,12 +1,11 @@
 """Pure-functional port of `process/models/stellarator/coils/quench.py` (registry #14).
 
-Audit record: `functional_process/models/stellarator/coils/quench.md`. The source's
-`calculate_quench_protection` orchestrates one sub-call
+Audit record: `functional_process/_audit/units/models/stellarator/coils/quench.md`. The
+source's `calculate_quench_protection` orchestrates one sub-call
 (`calculate_vv_max_force_density_from_W7X_scaling`) plus two already-pure functions
 (`max_dump_voltage`, `calculate_quench_protection_current_density`), chained through
-straight-line, unconditional `data` reads/writes -- `local-intermediate` throughout, same
-treatment as `mass.py`'s 8-step chain.
-"""
+straight-line, unconditional `data` reads/writes -- `local-intermediate` throughout,
+same treatment as `mass.py`'s 8-step chain."""
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto

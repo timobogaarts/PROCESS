@@ -1,6 +1,7 @@
 """Pure-functional port of `process/models/physics/exhaust.py`.
 
-Registry unit #11. Audit record: `functional_process/models/physics/exhaust.md`.
+Registry unit #11. Audit record:
+`functional_process/_audit/units/models/physics/exhaust.md`.
 
 In scope: `calculate_radiation_fraction` only (the registry's stated method). The other
 three `PlasmaExhaust` statics (`calculate_separatrix_power`,

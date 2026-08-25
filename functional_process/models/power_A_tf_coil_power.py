@@ -1,7 +1,7 @@
 """Pure-functional port of the TF coil power conversion sub-unit of
 `process/models/power.py` (registry unit #14, chunk A).
 
-Audit record: `functional_process/models/power_A_tf_coil_power.md`. Covers
+Audit record: `functional_process/_audit/units/models/power_A_tf_coil_power.md`. Covers
 `Power.tfpwr` (2117-2287), `Power.tfpwcall` (2291-2330) and `Power.tfcpwr`
 (2332-2629) -- see the audit record's data-footprint table for the full trace.
 

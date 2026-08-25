@@ -1,6 +1,6 @@
 """Pure-functional port of `process/models/stellarator/neoclassics.py` (registry unit #7).
 
-Audit record: `functional_process/models/stellarator/neoclassics.md`.
+Audit record: `functional_process/_audit/units/models/stellarator/neoclassics.md`.
 
 Only two functions are ported *and* validated by the harness here:
 `calculate_profile_values` (`init_profile_values_from_PROCESS`) and

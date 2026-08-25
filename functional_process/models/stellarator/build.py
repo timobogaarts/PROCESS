@@ -1,7 +1,7 @@
 """Pure-functional port of `process/models/stellarator/build.py`'s `st_build` (unit #2).
 
-Audit record: `functional_process/models/stellarator/build.md`. The source is one
-straight-line function gated by two switches, `.fwbs.blktmodel` and
+Audit record: `functional_process/_audit/units/models/stellarator/build.md`. The source
+is one straight-line function gated by two switches, `.fwbs.blktmodel` and
 `.heat_transport.ipowerflow`. Both are split per `_audit/traceability_policy.md`'s
 default and `_audit/naming_convention.md`'s "switches are not ports" -- see the record
 for the reasoning. Three tier-1 functions result:

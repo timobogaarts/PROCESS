@@ -67,15 +67,58 @@ The areas, and what they hold -- PROCESS's own names, which are not always self-
 """
 
 import dataclasses
+import difflib
 
-from cottax.interfaces.pytree_namespace_module import Root
+from cottax.interfaces.pytree_namespace_module import Area
+from jax.tree_util import GetAttrKey
 
 from process.core.model import DataStructure
 
 AREAS = tuple(f.name for f in dataclasses.fields(DataStructure))
 """Every area PROCESS has, straight from `DataStructure` -- 36 of them."""
 
-data = Root(AREAS)
+
+class _Root:
+    """The areas of a `DataStructure`, as something whole paths hang off.
+
+    Was `cottax.interfaces.pytree_namespace_module.Root` until cottax deleted it (no
+    replacement anywhere in that package; its own suite green at the time, so the removal
+    was deliberate rather than in-flight). Reimplemented here rather than re-imported
+    because it was never really cottax's: the area list comes from PROCESS's own
+    `DataStructure`, and every area name it accepts or rejects is a PROCESS fact. What is
+    cottax's is `Area`, which this still returns, so nothing downstream changes -- a
+    `From`/`FromExactly` cannot tell the difference.
+
+    The name check is the part worth keeping, and it earns its place for a reason
+    specific to this port: a misspelled area is otherwise a boundary input nothing ever
+    writes, and **no value test can see it**, because the field reads as its
+    default. It is caught here, at declaration time, or not at all.
+    """
+
+    __slots__ = ("_names",)
+
+    def __init__(self, names):
+        object.__setattr__(self, "_names", frozenset(names))
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(
+                f"{name!r}: a path is built from ordinary attribute access, not a "
+                f"private or dunder name"
+            )
+        if name not in self._names:
+            close = difflib.get_close_matches(name, sorted(self._names), n=3)
+            hint = f" Did you mean {', '.join(close)}?" if close else ""
+            raise AttributeError(
+                f"{name!r} is not an area of this data structure.{hint}"
+            )
+        return Area((GetAttrKey(name),))
+
+    def __repr__(self):
+        return f"<PROCESS data structure: {len(self._names)} areas>"
+
+
+data = _Root(AREAS)
 """The whole namespace, for the escape hatch:
 `FromExactly(data.impurity_radiation.arr[2])`.
 

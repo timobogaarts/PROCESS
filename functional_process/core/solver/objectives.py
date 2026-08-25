@@ -1,7 +1,7 @@
 """Pure-functional port of `process/core/solver/objective_function`
 (`process/core/solver/objectives.py`).
 
-Audit record: `functional_process/core/solver/objectives.md`.
+Audit record: `functional_process/_audit/units/core/solver/objectives.md`.
 
 **No stellarator/`istell` special-casing anywhere in the source** (verified:
 `grep -n "istell\\|stellarator" process/core/solver/objectives.py` returns nothing) --

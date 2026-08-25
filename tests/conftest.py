@@ -11,12 +11,15 @@ import matplotlib as mpl
 import pytest
 from _pytest.fixtures import SubRequest
 from click.testing import CliRunner
-from system_check import system_compatible
 
 from process import main
 from process.core.log import logging_model_handler
 from process.core.model import DataStructure
 from process.main import Models
+
+# `tests/` is a package (see `tests/__init__.py`), so this conftest is imported as
+# `tests.conftest` and pytest puts the *repo root* on `sys.path`, not `tests/`.
+from tests.system_check import system_compatible
 
 
 def pytest_addoption(parser):

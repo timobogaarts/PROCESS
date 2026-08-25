@@ -2,16 +2,16 @@
 
 Registry unit #19.
 
-Audit record: `functional_process/models/physics/fusion_reactions.md`. Read it first,
-especially "cottax node" for why `.deuterium_branching()` gets no node of its own
-(its only externally-visible effect has no `VarPath` until `.set_physics_variables()`
-runs) and "tier signal" for why `beam_fusion()`/`beam_reaction_rate_coefficient()` are
-**not** ported: PROCESS's own `scipy.integrate.quad` answer there is bounded to ~1e-6
-relative accuracy (measured, not assumed -- replacing it with fixed-order Gauss-Legendre
-quadrature at up to 256 nodes plateaus at the same disagreement, the signature of the
-integrand's own kinks rather than of quadrature error), four orders outside this
-harness's tier-1 `rtol=1e-12` value bar, and it is not JAX-traceable as written
-regardless.
+Audit record: `functional_process/_audit/units/models/physics/fusion_reactions.md`.
+Read it first, especially "cottax node" for why `.deuterium_branching()` gets no node
+of its own (its only externally-visible effect has no `VarPath` until
+`.set_physics_variables()` runs) and "tier signal" for why `beam_fusion()`/
+`beam_reaction_rate_coefficient()` are **not** ported: PROCESS's own
+`scipy.integrate.quad` answer there is bounded to ~1e-6 relative accuracy (measured,
+not assumed -- replacing it with fixed-order Gauss-Legendre quadrature at up to 256
+nodes plateaus at the same disagreement, the signature of the integrand's own kinks
+rather than of quadrature error), four orders outside this harness's tier-1
+`rtol=1e-12` value bar, and it is not JAX-traceable as written regardless.
 
 Everything else in `beam_fusion`'s dependency chain -- everything the `quad` call does
 not touch -- is ported below as plain functions with no cottax node, ready for whenever

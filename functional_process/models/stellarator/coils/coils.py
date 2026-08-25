@@ -1,19 +1,18 @@
 """Pure-functional port of `process/models/stellarator/coils/coils.py` (registry #10).
 
-Audit record: `functional_process/models/stellarator/coils/coils.md`. All four source
-functions are now ported: `j_crit_cable_from_fraction`/`bmax_from_awp` (tier-1),
-`intersect` (tier-2), and `jcrit_from_material` -- a genuine 8-way switch (`i_tf_sc_mat`)
-whose branches each call one already-ported material model from
+Audit record: `functional_process/_audit/units/models/stellarator/coils/coils.md`. All
+four source functions are now ported: `j_crit_cable_from_fraction`/`bmax_from_awp`
+(tier-1), `intersect` (tier-2), and `jcrit_from_material` -- a genuine 8-way switch
+(`i_tf_sc_mat`) whose branches each call one already-ported material model from
 `functional_process.models.physics.superconductors` (`itersc`, `bi2212`, `jcrit_nbti`,
 `western_superconducting_nb3sn`, `jcrit_rebco`, `gl_nbti`, `gl_rebco`), with genuinely
 different reads-sets per branch (only branch 4 reads `bcritsc`/`tcritsc`, only branch 7
 reads `b_crit_upper_nbti`/`t_crit_nbti`, branches 1/3/5/8 use fixed literals, branches
 2/6 use neither) -- per `traceability_policy.md`'s split-by-default, ported as **8
-separate pure functions and 8 separate `ExplicitFunction` nodes**, one per
-`i_tf_sc_mat` value, all minting the same output `VarPath` (`.tfcoil.j_crit_sc`) so a
-later consolidation pass can assemble them into one `Switch`/`Alternative` group in
-`total_process.py` -- not done here, see `coils.md`.
-"""
+separate pure functions and 8 separate `ExplicitFunction` nodes**, one per `i_tf_sc_mat`
+value, all minting the same output `VarPath` (`.tfcoil.j_crit_sc`) so a later
+consolidation pass can assemble them into one `Switch`/`Alternative` group in
+`total_process.py` -- not done here, see `coils.md`."""
 
 import jax
 import jax.numpy as jnp

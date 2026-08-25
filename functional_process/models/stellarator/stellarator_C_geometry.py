@@ -1,6 +1,7 @@
 """Pure-functional port of `Stellarator.st_new_config`/`st_geom` (chunk 1C of unit #1).
 
-Audit record: `functional_process/models/stellarator/stellarator_C_geometry.md`. Source:
+Audit record:
+`functional_process/_audit/units/models/stellarator/stellarator_C_geometry.md`. Source:
 `process/models/stellarator/stellarator.py`, lines 191-319.
 
 Three tier-1 functions result:

@@ -1,7 +1,7 @@
 """Pure-functional port of the thermal-power-balance and cryogenics sub-unit of
 `process/models/power.py` (registry unit #14, chunk B).
 
-Audit record: `functional_process/models/power_B_thermal_cryo.md`. Covers
+Audit record: `functional_process/_audit/units/models/power_B_thermal_cryo.md`. Covers
 `Power.component_thermal_powers` (814-1036), `Power.plant_thermal_efficiency`
 (1935-2071), `Power.plant_thermal_efficiency_2` (2073-2116),
 `Power.calculate_cryo_loads` (1037-1118) and `Power.cryo` (1773-1852) -- see the

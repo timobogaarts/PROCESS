@@ -1,7 +1,7 @@
 """Pure-functional port of `process/models/buildings.py`'s `Buildings.run()` (unit #15).
 
-Audit record: `functional_process/models/buildings.md`. `run()` is a short preamble
-(TF coil envelope geometry, unconditional) followed by a dispatch, keyed by
+Audit record: `functional_process/_audit/units/models/buildings.md`. `run()` is a short
+preamble (TF coil envelope geometry, unconditional) followed by a dispatch, keyed by
 `.buildings.i_bldgs_size`, to exactly one of `bldgs` (`BuildingsModel.ITER_1992`, the
 legacy model) or `bldgs_sizes` (`BuildingsModel.CHAPMAN_2024`). All three pieces are
 tier-1: no internal solve, no calls into another `Model`, no loops.

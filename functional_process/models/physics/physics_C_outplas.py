@@ -2,9 +2,9 @@
 `Physics.outplas` (`process/models/physics/physics.py`).
 
 Registry unit #9, chunk C. Audit record:
-`functional_process/models/physics/physics_C_outplas.md` -- read it first for why
-`outplas` (1095 source lines) reduces to a single 3-output, 9-input pure function.
-"""
+`functional_process/_audit/units/models/physics/physics_C_outplas.md` -- read it first
+for why `outplas` (1095 source lines) reduces to a single 3-output, 9-input pure
+function."""
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto

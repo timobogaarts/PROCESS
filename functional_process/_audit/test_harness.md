@@ -7,8 +7,8 @@ surface cases the design doesn't cover yet (the worked example below is the firs
 **All four tiers are built.** Tiers 1 and 2 are `functional_process/_harness/`; tiers 3
 and 4 are the graph and harness layer — `mda.py`, `mda_harness.py`,
 `mda_constraint_harness.py`, `sand.py`, `sand_harness.py`, `total_process.py`,
-`configuration.py` — all run by `pytest functional_process` and by the two runnable entry
-points `run_mda_harness.py` / `run_sand_harness.py`. That layer has caught bug classes
+`configuration.py` — all run by `pytest tests/functional_process` and by the two runnable
+entry points `run_mda_harness.py` / `run_sand_harness.py`. That layer has caught bug classes
 tiers 1 and 2 structurally cannot; see § As built, which is the current record of what
 exists and where the tier descriptions below were refined by building them.
 
@@ -107,8 +107,10 @@ fully converged." It deep-copies the entire stellarator model, mutates the copy,
 calls `st_phys()` on it **exactly twice, hardcoded** — the source comment: *"The second
 call seems to be necessary for all values to 'converge' (and is sufficient)."* There is
 **no convergence check at all**, not even a loose one — two calls, unconditionally,
-treated as the answer. (Full audit: `functional_process/models/stellarator/density_limits.md`;
-also load-bearing for constraint 91's operands, see `functional_process/core/solver/constraints.md`.)
+treated as the answer. (Full audit:
+`functional_process/_audit/units/models/stellarator/density_limits.md`; also
+load-bearing for constraint 91's operands, see
+`functional_process/_audit/units/core/solver/constraints.md`.)
 
 This is not an edge case to special-case around — value-diffing a real convergence-checked
 driver against "whatever two hardcoded calls happened to produce" would almost certainly
@@ -160,11 +162,11 @@ only the tier-1 pure-function layer — not parameterized variants of one harnes
 
 ## As built
 
-Run with `pytest functional_process` in the `process_port` env (see `../../CLAUDE.md`).
+Run with `pytest tests/functional_process` in the `process_port` env (see
+`../../CLAUDE.md`).
 
 ```
-functional_process/
-  conftest.py                    markers, --fp-fuzz options, sample parametrization
+functional_process/              the port
   _harness/
     __init__.py                  enables x64 on import — see below
     contracts.py                 Tier1Contract / Tier2Contract
@@ -173,15 +175,59 @@ functional_process/
     tolerance.py                 Tolerance objects
     registry.py                  parses unit_registry.md
   models/stellarator/
-    density_limits.md            audit record  \
-    density_limits.py            the port       > one unit, one stem, three files
-    test_density_limits.py       the case      /
+    density_limits.py            the port
+
+  _audit/                        design documents, flat
+    unit_registry.md             names every record's path — the binding
+    units/                       mirrors the package tree, record for record
+      models/stellarator/
+        density_limits.md        the audit record
+
+tests/functional_process/        mirrors the package tree, case for case
+  conftest.py                    markers, --fp-fuzz options, sample parametrization
+  models/stellarator/
+    test_density_limits.py       the case
   test_registry_coverage.py      meta-tests against the registry
 ```
 
-**A unit is a stem, not a file.** The record, the port and the case share a name and sit
-together, so a stale pair is visible in one `ls` and the record is what you read to write
-the other two.
+**A unit's three files share a stem, at the same relative path in three trees.** They no
+longer share a *directory*: the port stays in the package, the case mirrors it under
+`tests/functional_process/`, and the record mirrors it under `_audit/units/`. The first
+split was for readability — colocating 52 `test_*.py` with 72 modules and 51 records made
+a directory listing unreadable (`ls models/physics/` showed 33 entries for 11 modules).
+The second is about what a unit now *is*.
+
+This document used to say "a unit is a stem, not a file", with the three files together
+in one place. Two things dissolved that. The cases moved out, so the triple was already
+broken — record and port in the package, case in the mirror. And the model-tree refactor
+changed node identity: a node is the slot path it occupies in the `StellaratorProcess`
+tree, not a filename. The records are keyed to the *port's audit chunking* — which is
+why their names still carry chunk letters (`physics_A_pure_formulas`) that the tree
+deliberately refuses to carry — so keeping them stem-adjacent to the modules bound them
+to a decomposition the machine no longer uses.
+
+The argument for colocation was that a record far from the code it justifies drifts
+silently. That does not survive contact with the code: the binding is
+`_audit/unit_registry.md`, which names each record's path explicitly, and five meta-tests
+in `tests/functional_process/test_registry_coverage.py` enforce it — every started unit's
+record exists, every record's own frontmatter agrees with its registry row, no record
+exists that the registry does not name. Adjacency was a convenience on top of a mechanism
+that works at any path.
+
+What the three-way split costs is real and worth naming. `ls` shows none of the three
+together, so nothing physical reminds you that a record exists for the module you are
+editing — the registry has to be consulted, where before the filename did it for free.
+Moving a port between directories now means moving three files in three trees or leaving
+two of the mirrors stale, and only the record half of that is checked. And a reader
+arriving at a module has one more hop to make before finding the reasoning behind it.
+What it buys is that the records are now one tree, readable and greppable as a body of
+work in the place the rest of the audit already lives, and no longer pinned to a file
+layout the graph has stopped using. `-k <UnitName>` still selects everything about one
+unit. `contracts.py`'s `audit_record` paths are unchanged — still the package-relative
+mirrored path — but `conftest.py`'s `audit_root` now resolves them against
+`functional_process/_audit/units/` rather than the package root; it is still anchored on
+the *package*, not on `__file__`, since anchoring on the test file would resolve every
+record under `tests/`, where none exist, and fail every contract at once.
 
 **Tier is a base class.** A unit declares `audit_record`, `reference`, `ported`,
 `samples`, and inherits its tier's checks; there are no test functions in a unit's test

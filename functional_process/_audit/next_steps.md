@@ -113,10 +113,10 @@ MDA harness are byte-identical (see the Verified state table). The record is
 `model_tree_design.md` §8 steps 3–4.
 
 **Closed, and the answer is not what either side of it expected.**
-`_audit/x109_pinning_verification.md` settled the feasibility question — the pinned point
+`_audit/closed/x109_pinning_verification.md` settled the feasibility question — the pinned point
 is genuinely better (`max|eq| 2.1e-12`, no inequality violated) and the multiplier
 hypothesis is refuted by five orders of magnitude (`Σ|λ_eq| = 1.22`, not `6.3e+04`).
-`_audit/x109_hypotheses.md` then settled *why*, and the cause is a **kink in the model**:
+`_audit/closed/x109_hypotheses.md` then settled *why*, and the cause is a **kink in the model**:
 at every converged point the design sits on `(Te + Ti)/20 == 0.65`, the threshold of
 `fast_alpha_beta`'s clamped square root (`physics_A_pure_formulas.py:342-348`) — `1.9e-09`
 from it at the free optimum — where `c24` rises like `2√h` on one side and linearly on the
@@ -133,7 +133,7 @@ cannot resolve a kink narrower than its own step, so it returns a chord *across*
 AD returns the exact one-sided slope. The exact derivative is the correct answer to a
 question an SQP is not asking: it wants a model valid over a finite step. **Here the
 approximate gradient is the more useful one precisely because it is approximate.**
-(`x109_hypotheses.md` says `epsfcn = 0.01`; the value is `1.0e-3`, matching
+(`_audit/closed/x109_hypotheses.md` says `epsfcn = 0.01`; the value is `1.0e-3`, matching
 `_harness/finite_difference.py`'s `PROCESS_EPSFCN`. The argument is unchanged.)
 
 XDSM/DSM of the assembled SAND graph: `python -m functional_process.render_xdsm sand`
@@ -1414,7 +1414,7 @@ at the cold point both fail. Recorded so the next reader does not "fix" it.
 `x109` is not.** The port's answer is the point where the design first reaches
 `(Te + Ti)/20 == 0.65` — the kink in `fast_alpha_beta`'s clamped square root, which the
 port stops on to `1.9e-09` — and the solvers are held there by a `c24` Jacobian row that is
-not the derivative of the `c24` they evaluate (`_audit/x109_hypotheses.md`). Treating the
+not the derivative of the `c24` they evaluate (`_audit/closed/x109_hypotheses.md`). Treating the
 two variables as one thing is what sent two investigations down the same wrong road. **The
 eighth missing producer that everyone was looking for is real but is the cause of something
 else entirely.** Everything below was run against
@@ -1497,7 +1497,7 @@ Read those two rows carefully:
   *inside* the better region, both VMCON and SLSQP walk back out of it uphill; with
   `x109 >= 0.031` imposed they converge **on that bound**. A correct local method does not
   do that, which is what points at the Jacobian and not at the landscape. `x109` is
-  interior to `[0.0001, 0.4]`. See `_audit/x109_hypotheses.md`.
+  interior to `[0.0001, 0.4]`. See `_audit/closed/x109_hypotheses.md`.
 
 **§11.10's inference from "all four solver/start combinations agree to five or six digits"
 is therefore wrong**, and the reason is worth keeping: two independent SQPs agreeing tells
@@ -1521,7 +1521,7 @@ wrong**. Against a central difference of the port's *own* condition map the `obj
 correct to `7.7e-10`; §10.5c's 18–34 % is a *port-vs-PROCESS* difference, not an error in
 the port's own descent direction. What fixes the landing point is one row of the
 **constraint** Jacobian: `c24`, at a point where its function is not differentiable (see
-this file's opening summary, and `_audit/x109_hypotheses.md` §3). Of 690 cells exactly the
+this file's opening summary, and `_audit/closed/x109_hypotheses.md` §3). Of 690 cells exactly the
 two `c24` cells disagree with that same central difference, and `c24` alone drifts like
 `h^0.52` along the null direction where every other condition drifts like `h^2.00`. The
 active-set reading above was re-measured and stands: same four inequalities, `A` is 21×23

@@ -1,12 +1,14 @@
 """Pure-functional port of `Stellarator.st_strc` (chunk 1D of unit #1).
 
-Audit record: `functional_process/models/stellarator/stellarator_D_structure.md`. The
+Audit record:
+`functional_process/_audit/units/models/stellarator/stellarator_D_structure.md`. The
 record proposes splitting the source method in two: the real structural masses (this
 module's `calculate_structure_masses`), and the "previous scaling law, kept for
-comparison, not fully trusted" reporting value (`calculate_intercoil_mass_scaling_reference`),
-which never feeds `aintmass`/`clgsmass`/`coldmass` and is only ever printed. Splitting it
-out drops one otherwise-unused argument (`e_tf_magnetic_stored_total_gj`) from the real
-function's signature.
+comparison, not fully trusted" reporting value
+(`calculate_intercoil_mass_scaling_reference`), which never feeds
+`aintmass`/`clgsmass`/`coldmass` and is only ever printed. Splitting it out drops one
+otherwise-unused argument (`e_tf_magnetic_stored_total_gj`) from the real function's
+signature.
 
 `fncmass` and `gsmass` are not ported: both are unconditional literal `0.0` in the
 source (open question 1 in the record -- whether a constant "producer" should be a graph
