@@ -19,7 +19,7 @@ documents for `st_build`.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.buildings import (
+from functional_process.models.buildings.buildings import (
     calculate_bldgs,
     calculate_bldgs_sizes,
     calculate_shield_height,

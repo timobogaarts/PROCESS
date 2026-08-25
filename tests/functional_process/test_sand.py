@@ -27,6 +27,7 @@ from jax.tree_util import GetAttrKey
 import functional_process
 from functional_process.core.solver import constraints as ported_constraints
 from functional_process.core.solver.drivers import VmconDriver
+from functional_process.indat import GRAPH
 from functional_process.sand import (
     REFERENCE_SWITCH_VALUES,
     constraint_nodes,
@@ -35,10 +36,9 @@ from functional_process.sand import (
     objective_node,
     optimise_graph,
     sand_graph,
-    sand_shape,
     sand_schedule,
+    sand_shape,
 )
-from functional_process.total_process import GRAPH
 from process.core.solver.iteration_variables import ITERATION_VARIABLES
 
 REPO_ROOT = Path(functional_process.__file__).resolve().parent.parent

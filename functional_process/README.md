@@ -38,15 +38,18 @@ that are actually in scope.
 - `models/`, `core/solver/` — the ports themselves, mirroring `process/`'s tree.
 - `../tests/functional_process/` — the harness cases, mirroring this tree file for file,
   with `conftest.py` (markers, `--fp-fuzz`, sample parametrization) at its root.
-- `total_process.py` — every ported unit's `cottax` node, assembled by
-  `graph_for(configuration)`. `GRAPH` is the graph PROCESS's own switch defaults produce;
-  `render_xdsm.py` draws it to `xdsm.html` for inspection
-  (`python -m functional_process.render_xdsm`). Both grow as units are ported; neither is
-  a claim that the graph is complete.
-- `configuration.py` — graph-assembly-time resolution of topology-changing switches, and
-  the argument for why that is the only correct place for them. A node whose existence
-  depends on a switch is declared as an `Alternative` under that switch rather than being
-  registered unconditionally.
+- `models/<subsystem>/namespace.py` — the subsystem's naming scope: the `ModelNamespace`
+  classes whose slots name that subsystem's ported nodes. They sit beside the models they
+  name, and none of them reads a switch.
+- `total_process.py` — `StellaratorProcess`, the whole device: one slot per subsystem,
+  and nothing else. Not one `i_*` integer anywhere in it.
+- `indat.py` — PROCESS's input encoding, and the one place this port reads it:
+  `switches_from_indat`, the registries mapping each switch value to the occupant it
+  selects, `UNPORTED`'s recorded refusals, and `machine_from_indat`, which assembles the
+  `StellaratorProcess` an IN.DAT describes. `graph_for(machine)` and `GRAPH` (the
+  reference IN.DAT's graph) live here for the same reason; `render_xdsm.py` draws `GRAPH`
+  to `xdsm.html` for inspection (`python -m functional_process.render_xdsm`). Both grow
+  as units are ported; neither is a claim that the graph is complete.
 
 ## Adding a unit
 
@@ -67,11 +70,13 @@ the same string in every tree. Copy
 `../tests/functional_process/models/stellarator/test_density_limits.py`; it is the worked
 example.
 
-If the unit's node only exists for some values of a switch, register it as an
-`Alternative` in `total_process.TOPOLOGY_SWITCHES` rather than in `COMMON` — two nodes
-that own the same output cannot both be in one graph, and `to_graph` will say so. Adding
-the arm is what makes it reachable; `test_configuration.py` fails on an arm no
-configuration selects.
+A node is registered by naming it in a slot of its subsystem's
+`models/<subsystem>/namespace.py`. If it only exists for some values of a switch, the
+slot is annotated with the union of its occupants and left without a default, and the
+registry mapping that switch's values to occupants goes in `indat.py` — two nodes that
+own the same output cannot both be in one graph, and `to_graph` will say so. The tree
+knows no switches and `indat.py` knows them all; `test_switch_coverage.py` and
+`test_machine.py` are what check that split holds.
 
 ## Scope (current)
 

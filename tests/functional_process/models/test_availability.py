@@ -22,7 +22,7 @@ from cottax.problem import FixedPoint
 from cottax.spec import CallableNode
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.availability import (
+from functional_process.models.availability.availability import (
     Avail,
     Avail2,
     AvailSt,

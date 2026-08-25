@@ -983,3 +983,215 @@ references that were line-wrapped mid-stem and so invisible to a line-based grep
 (`path_refactor.md`, `stellarator_fwbs_s2.md`, `test_tf_coil_power.py`) — worth
 remembering next time a stem is renamed, because a `grep` that finds nothing is not
 proof.
+
+## 11. The three-way split — the subsystems, the input adapter, and the device
+
+`total_process.py` was 2186 lines: 1114 of them in fifteen `ModelNamespace` classes, the
+rest in 188 imported names over 246 lines, ten registries, `UNPORTED` and the factory.
+Exactly one of those fifteen classes, `StellaratorProcess` (83 lines, 7 slots), was about
+the whole machine. Twenty modules of `models/stellarator/` were imported into that file
+for no reason but to be named in a stellarator slot, and `Costs` was 211 lines naming 40
+nodes that all live in `models/costs/costs.py`.
+
+Two observations drive the split, and neither is about file length:
+
+1. **A subsystem's namespace belongs with its models.** The namespace is not a separate
+   artefact from the port; it is the port's naming scope. `Costs` names `costs.py`'s
+   nodes and nothing else, so it sits in `models/costs/`.
+2. **The factory is not part of the tree — it is an adapter to PROCESS's legacy input
+   format.** Step 4d established that the tree carries no switches and that
+   `machine_from_indat` is the only place an `i_*` integer is read. If that holds, then
+   everything switch-shaped is PROCESS's *input encoding*, not the machine, and it
+   belongs behind one named boundary rather than beside the tree.
+
+### 11.1 The rule for what goes where
+
+- **`models/<subsystem>/namespace.py`** — the `ModelNamespace` classes that name that
+  subsystem's nodes, including the ones that are *occupants of a switched slot*
+  (`ProfileParameterisationParabolic`/`Pedestal`, `BlanketShieldPowerExponential`). An
+  occupant is a namespace like any other; what makes it an occupant is a registry entry,
+  and the registry is not here.
+- **`indat.py`** — everything that knows PROCESS's input encoding: `switches_from_indat`,
+  the ten registries, `UNPORTED`, `_slot_occupant`, the three arm-derivation functions,
+  `ST_INIT_I_PLASMA_PEDESTAL`, `REFERENCE_INPUT_FILE`, `REFERENCE_STELLA_CONF`,
+  `REFERENCE_MACHINE_SWITCHES`, `REFERENCE_MACHINE`, `machine_from_indat`, and (see
+  §11.3) `graph_for`/`GRAPH`.
+- **`total_process.py`** — `StellaratorProcess`, and nothing else.
+
+**The registries go in `indat.py`, not with their subsystems.** A registry maps a switch
+*value* to an occupant, which is switch knowledge; `COST_MODEL` in `models/costs/` would
+re-scatter exactly what steps 4b–4d consolidated. The standing rule is unchanged and is
+now enforced by file boundary rather than by discipline: *the tree knows no switches and
+the factory knows them all*.
+
+### 11.2 A dedicated `namespace.py`, not the package `__init__.py`
+
+Both were available and the choice is applied uniformly. `__init__.py` was rejected for
+two reasons, in this order:
+
+- **Cost.** An `__init__.py` that imports every model in the package makes
+  `import functional_process.models.costs.anything` — including a single unit's harness
+  case importing a single function — drag in the whole subsystem plus every foreign model
+  its namespace names. `models/physics/namespace.py` imports from
+  `models/stellarator/plasma_physics.py`; putting that in `models/physics/__init__.py`
+  would mean no physics unit could be imported without the stellarator ones.
+- **Cycle surface.** The namespaces genuinely import across subsystems (physics names two
+  `stellarator/plasma_physics.py` nodes on physical grounds, §11.5; availability names two
+  `power/electric_production.py` ones). Package `__init__.py`s that import each other's
+  contents are the standard way that becomes a cycle at import time rather than a readable
+  edge. A leaf module named `namespace.py` cannot participate in one that a subsystem's
+  *models* do not already have.
+
+The `__init__.py`s that exist stay one-line docstrings, which is what
+`models/power/__init__.py` and `models/stellarator/__init__.py` already were.
+
+Three subsystems were still single flat modules and became packages, matching what
+`models/power/` already is: `models/availability.py` → `models/availability/availability.py`,
+and likewise `buildings` and `vacuum`, each with a one-line `__init__.py` and a
+`namespace.py`. Their audit records (`_audit/units/models/availability.md`, …) and harness
+cases (`tests/functional_process/models/test_availability.py`, …) deliberately did **not**
+move: the record ↔ unit binding is `unit_registry.md`'s row, not adjacency
+(`test_harness.md` § As built), and moving the cases would have changed `--collect-only`
+ids, which this change is gated on not doing. The mirrored-path convention is therefore
+one component short for these three until someone renames the records too; recorded here
+rather than fixed, because fixing it costs test ids for nothing.
+
+### 11.3 `GRAPH` follows the adapter — and the alternative is not a preference
+
+`GRAPH = graph_for()` is *the reference IN.DAT's* graph. Two placements were considered:
+
+- **(a)** `graph_for`/`GRAPH` follow the adapter into `indat.py`.
+- **(b)** they stay in `total_process.py`, importing `REFERENCE_MACHINE` from `indat.py`.
+
+**(b) is a genuine import cycle, not merely churn-minimising**, and that settles it:
+`indat.py` must import `StellaratorProcess` from `total_process.py` in order to build one,
+so `total_process.py` importing `REFERENCE_MACHINE` back closes the loop. It is only
+breakable by a function-local import, i.e. by hiding the cycle rather than not having one.
+
+(a) is also the honest filing independently of that. `graph_for()`'s entire defaulting
+behaviour is "the machine one particular legacy input file describes", and **every caller
+in the package calls it with no argument** (`mdf.py` twice, `sand_harness.py`,
+`run_mda_harness.py`) — so `graph_for` is an IN.DAT artefact in practice, not only in
+principle. The cost is real and paid: five modules and four test modules now import
+`GRAPH`/`graph_for` from `functional_process.indat`, and the well-known name moved. The
+benefit is that importing the tree no longer drags the IN.DAT parser in —
+`total_process.py`'s only imports are `dataclasses`, `ModelNamespace`, and seven
+namespaces.
+
+The `if __name__ == "__main__"` smoke check moved with them, so
+`python -m functional_process.indat` is what prints the node/port counts and the
+per-machine cycle lists.
+
+### 11.4 What the files are now
+
+| file | lines | what it is |
+|---|---:|---|
+| `total_process.py` | 145 | `StellaratorProcess` — one slot per subsystem |
+| `indat.py` | 809 | the input adapter: switches, registries, `UNPORTED`, factory, `GRAPH` |
+| `models/stellarator/namespace.py` | 486 | `BlanketShieldPowerExponential`, `StellaratorCoils`, `StellaratorFwbs`, `Stellarator` |
+| `models/physics/namespace.py` | 349 | `ProfileParameterisation{Parabolic,Pedestal}`, `PhysicsProfiles`, `PhysicsConfinementTime`, `Physics` |
+| `models/costs/namespace.py` | 274 | `Costs` |
+| `models/power/namespace.py` | 185 | `Power` |
+| `models/availability/namespace.py` | 75 | `Availability` |
+| `models/buildings/namespace.py` | 29 | `Buildings` |
+| `models/vacuum/namespace.py` | 32 | `Vacuum` |
+
+2384 lines against the old file's 2186. The growth is one import block per file instead of
+one shared one, and is the price of the split; the 246-line import block is gone and no
+file now imports a module it does not name something from.
+
+`total_process.py`'s module docstring kept every paragraph about the tree's own
+conventions — no defaults on a factory-filled slot, enum-typed static kwargs, why a
+static kwarg is not a slot. Its opening paragraph is the one thing rewritten rather than
+moved: it described a graph assembly and a `render_xdsm.py` import that this file no
+longer performs. The three paragraphs that were a *registry-coverage* record
+("`intersect` is now registered…", "Still not included despite being ported…",
+"`blankets/hcpb.py` … deliberately still not registered") moved verbatim into
+`models/stellarator/namespace.py`'s docstring, which is where the nodes they talk about
+now live; the one directional word that would have become false ("`plasma_composition`,
+itself registered below") was repointed at `models/physics/namespace.py`, and
+`REFERENCE_STELLA_CONF`'s "Named next to `TOPOLOGY_SWITCHES` rather than beside
+`REFERENCE_INPUT_FILE`" sentence was repointed for the same reason — it is now beside
+`REFERENCE_INPUT_FILE`. Nothing else in any moved docstring was reworded.
+
+### 11.5 What a namespace here is — the depth-1 interface widths
+
+Measured on `GRAPH` (156 nodes), per depth-1 group. `internal` = read edges whose
+producer is in the same group, `imported` = whose producer is in another, `boundary` =
+unowned, `exported` = this group's outputs read from another group (edge-counted, so
+`Σ exported = Σ imported = 218`).
+
+| group | nodes | internal | imported | boundary | exported |
+|---|---:|---:|---:|---:|---:|
+| stellarator | 54 | 192 | 32 | 173 | 122 |
+| costs | 40 | 49 | 69 | 164 | 0 |
+| physics | 33 | 94 | 25 | 123 | 40 |
+| power | 20 | 39 | 47 | 40 | 25 |
+| availability | 4 | 3 | 22 | 23 | 13 |
+| vacuum | 3 | 2 | 9 | 20 | 5 |
+| buildings | 2 | 4 | 14 | 30 | 13 |
+
+**Grouping related physics together is the goal; encapsulation is not.** `stellarator`
+and `physics` have 6× and 3.8× more internal than imported edges; `costs` has 0.7× and
+**exports nothing at all** — a pure sink. That is not a defect and not a scorecard for
+whether a namespace deserves to exist. A cost model is downstream of everything by
+nature: its whole job is to read the machine and produce one number nothing else consumes.
+The table is recorded because it says what a namespace here *is* — a naming scope
+grouping related physics — and heads off the opposite reading, in which someone sees
+`costs`' 69 imported and 164 boundary reads and concludes the grouping is wrong, or
+expects a subsystem boundary to be an interface that can be narrowed.
+
+The one place the grouping was declared *against* PROCESS's own filing is already
+recorded in `Physics`'s own comment and §11.1 of `switch_elimination_design.md`:
+`FusionPowerTotalsMw`/`FusionTotalsNoBeam` live in `stellarator.py`'s `st_phys` but own
+only `.physics.*`, and filing them under `stellarator` was the sole reason the
+density/fusion/pedestal cycle crossed a subsystem boundary. Grouping on physical grounds
+is what the table above measures; grouping mirrored from PROCESS's file layout is not.
+
+### 11.6 Gates
+
+Measured on both sides against `cottax` pinned at its own HEAD
+(`PYTHONPATH=<pin>/src`), because `~/jaxgraph` is mid-refactor in a concurrent session and
+an unpinned run reports 9 failures on a *clean* PROCESS tree (`next_steps.md` §13.1).
+
+- `pytest tests/functional_process -q` → **3770 passed, 3347 skipped**, before and after.
+- `pytest tests/unit -q` → **846 passed**, before and after.
+- `GRAPH`: **156 nodes, 136 blocks, 14 driven, 320 unowned**, before and after.
+- Per-node sha over `(name, type, sorted inputs, sorted outputs)`:
+  `ae3c93c705c46c2187597509d351fffe5038d24c62b2cf6f6121a74979033e51`, **identical**. Node
+  names are slot paths, so this is the check that no slot moved — and binding order
+  (`vars()`, not the MRO) is preserved because each class's fields were moved as one
+  contiguous block, never reordered.
+- `--collect-only` ids: **7117, set-identical**, none added or lost.
+- `python -m functional_process.render_xdsm` and `… grouped` both exit 0; `grouped` still
+  reports 7 groups at depth 1, 136 blocks, 3 with more than one real node, 0 crossing a
+  group boundary.
+- **No import cycles**, checked rather than assumed: a static `ast` walk over all 83
+  modules of `functional_process/` finds 184 intra-package edges and no cycle. The
+  direction is the intended one — `total_process` imports the seven namespaces and
+  nothing else; `indat` imports the namespaces, the occupants, and `total_process`;
+  nothing imports `indat` except the five run/render entry points.
+- `ruff check` delta: **−2** (2765 → 2763; one `I001`, one `INP001`). `ruff format`
+  delta is zero: the one hunk `total_process.py` was already unformatted at
+  (`Power.tf_power`'s wrapped `dataclasses.field`) travelled unchanged into
+  `models/power/namespace.py`.
+
+### 11.7 Left undone, deliberately
+
+About twenty-five model docstrings say "registered in `total_process.py`" or "not
+registered in `total_process.py`". They now mean "in this subsystem's `namespace.py`",
+and were not swept: the correct replacement differs per file (`Physics` names two
+`stellarator/plasma_physics.py` nodes), so a mechanical `sed` would have written the wrong
+filename into several of them. Four references that named a moved *attribute* rather than
+the file — `total_process.GRAPH` in `sand.py`/`test_mda.py`, `total_process.graph_for()`
+in `stellarator_fwbs_s4.py`, `total_process.REFERENCE_INPUT_FILE` in
+`test_preset_config.py` — were repointed, because those were made wrong by this change
+rather than merely imprecise. Several older references to `total_process.TOPOLOGY_SWITCHES`
+and `total_process.COMMON` were already stale before this pass and are left for whoever
+sweeps the rest.
+
+`models/costs/` and `models/physics/` are still implicit namespace packages (no
+`__init__.py`), which is what `ruff`'s `INP001` findings on them are. Giving them the
+one-line `__init__.py` that `models/power/` and `models/stellarator/` have would remove
+fifteen of `ruff`'s twenty-one `INP001` findings and make the layout uniform; it is
+unrelated to this split and was left out of it.

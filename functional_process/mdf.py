@@ -159,10 +159,10 @@ from cottax.tools.path import path_map
 
 from functional_process import sand
 from functional_process.core.solver.drivers import SeededNewtonDriver, VmconDriver
+from functional_process.indat import graph_for
 from functional_process.mda import default_drivers, driven_graph
 from functional_process.mda_harness import _without_excluded
 from functional_process.sand_harness import ground_truth
-from functional_process.total_process import graph_for
 
 
 @dataclasses.dataclass(frozen=True)
@@ -347,7 +347,7 @@ def seed(mdf: Mdf, data, design_values=None):
     `plasma_profiles.calculate_parabolic_profile_values`' `prn1`. Emulating the reset by
     hand takes the cold solve from a median `1.4e-02` distance to PROCESS's converged `x`
     to `8.6e-03`. Reported rather than patched -- registering the node is
-    `total_process.py`'s business. It is the same defect class as
+    the model tree's business (`models/*/namespace.py`). It is the same defect class as
     `_audit/optimise_design.md` §10.5a/§10.5c (a missing producer no value test can see),
     found by a third method: a cold start rather than a gradient.
     """

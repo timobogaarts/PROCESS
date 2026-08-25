@@ -1,7 +1,7 @@
 """The `Optimise` layer: PROCESS's own optimisation problem, assembled onto the graph
 and solved as **SAND** (Simultaneous ANalysis and Design).
 
-`mda.py` turns `total_process.GRAPH` into something that can be *run*. This module turns
+`mda.py` turns `indat.GRAPH` into something that can be *run*. This module turns
 it into something that can be *solved*: it registers one `CallableNode` per active
 constraint and one for the objective (each owning a minted `^cond.*`), inserts an
 `Optimise` `DeclaredNode` owning the active iteration variables' `VarPath`s, then

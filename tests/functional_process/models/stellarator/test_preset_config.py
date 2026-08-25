@@ -57,7 +57,7 @@ REFERENCE_STELLA_CONF = (
     / "tests/regression/input_files/stellarator_helias.stella_conf.json"
 )
 """`stellarator_helias.IN.DAT`'s companion config -- the run this whole port validates
-against (`total_process.REFERENCE_INPUT_FILE`)."""
+against (`indat.REFERENCE_INPUT_FILE`)."""
 
 
 def _reference_config_scalars(machine_config):

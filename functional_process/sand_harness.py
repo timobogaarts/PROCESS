@@ -220,7 +220,7 @@ def mda_env(reference, graph=None, data=None):
     `DataStructure` removes that whole class of hole: everything the graph produces is
     grounded by the graph.
     """
-    from functional_process.total_process import graph_for
+    from functional_process.indat import graph_for
 
     data = reference.data if data is None else data
     driven = driven_graph(_without_excluded(graph if graph is not None else graph_for()))

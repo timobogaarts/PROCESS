@@ -7,7 +7,7 @@ Copies the input file (and its `.stella_conf.json` companion, required for
 `istell == 6`) into a scratch directory first, since `SingleRun` writes
 `OUT.DAT`/`MFILE.DAT` beside its input.
 
-`total_process.GRAPH`'s bare default does **not** match this file: it sets
+`indat.GRAPH`'s bare default does **not** match this file: it sets
 `i_plasma_pedestal = 0`, differing from `graph_for()`'s own default (`1`). Every
 other topology switch (`isthtr`, `ipowerflow`, `i_bldgs_size`, the joint
 `blktmodel,ipowerflow` switch, `i_tf_sup`) matches PROCESS's own default, confirmed
@@ -23,8 +23,8 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
+from functional_process.indat import graph_for  # noqa: E402
 from functional_process.mda_harness import compare, converged_data  # noqa: E402
-from functional_process.total_process import graph_for  # noqa: E402
 
 INPUT_FILE = (
     Path(__file__).resolve().parent.parent

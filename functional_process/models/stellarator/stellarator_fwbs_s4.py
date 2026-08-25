@@ -31,7 +31,7 @@ The split is not by convenience; it is by whether the sub-block's operands exist
   them, and `stellarator_fwbs_s2.py`'s ported arms do not return them either. Measured,
   not assumed: `.fwbs.m_fw_total`, `.fwbs.fwclfr` and
   `.fwbs.m_fw_blkt_div_coolant_total` currently have **zero** readers in
-  `total_process.graph_for()`, so leaving them unowned closes no edge that any consumer
+  `indat.graph_for()`, so leaving them unowned closes no edge that any consumer
   is waiting on -- see the audit record's "what this port leaves undone".
 
 Neither ported function calls into another model -- confirmed by reading the whole

@@ -16,7 +16,7 @@ docstring used to hardcode the wrong one, so copy-pasting it gave
 or `conda activate process_port` and use plain `python`. `ls -d ~/miniconda*/envs/
 process_port` answers which you have.
 
-The bare form writes `xdsm.html`/`dsm.html` for `total_process.GRAPH` -- the declared
+The bare form writes `xdsm.html`/`dsm.html` for `indat.GRAPH` -- the declared
 model graph, before anything is cut, driven or optimised. Re-run after porting a new
 unit to see it join the diagram.
 
@@ -54,7 +54,7 @@ from pathlib import Path
 from cottax.interfaces.pytree_namespace_module import xDSMFormatterFlat
 from cottax.visualization import render_dsm_html, render_xdsm_html
 
-from functional_process.total_process import GRAPH
+from functional_process.indat import GRAPH
 
 OUTDIR = Path(__file__).parent
 

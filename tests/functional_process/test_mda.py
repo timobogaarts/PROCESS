@@ -2,7 +2,7 @@
 
 Not a numerical test (nothing here checks a value against PROCESS -- that's the
 block-by-block comparison harness's job, a separate, larger piece) -- this only pins
-the structural claim: every one of `total_process.GRAPH`'s 11 SCCs, after the two
+the structural claim: every one of `indat.GRAPH`'s 11 SCCs, after the two
 `FixedPointCut`s, declares exactly one problem, and every driven block gets a driver.
 Both facts fail loudly (a `Schedule`/`Drive`/`Blocking` construction error) if either
 stops being true -- see `Schedule`'s own docstring: "a `Schedule` that exists is
@@ -14,6 +14,7 @@ from cottax.problem import FixedPoint, RootFind
 from cottax.rewrites import Cut
 
 from functional_process.core.solver.drivers import PicardDriver, SeededNewtonDriver
+from functional_process.indat import GRAPH
 from functional_process.mda import (
     CUTS,
     ROOT_FIND_SEEDS,
@@ -21,7 +22,6 @@ from functional_process.mda import (
     driven_graph,
     schedule,
 )
-from functional_process.total_process import GRAPH
 
 
 def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
@@ -132,7 +132,7 @@ def test_every_root_find_unknown_has_a_fallback_starting_guess():
 
 def test_schedule_builds_for_the_whole_graph():
     """The actual point of this module: one `Schedule` answering every block in
-    `total_process.GRAPH`, not just a hand-picked slice.
+    `indat.GRAPH`, not just a hand-picked slice.
     """
     s = schedule()
     assert len(s.blocking.blocks) > 0

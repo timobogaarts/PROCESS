@@ -1,6 +1,6 @@
-"""Turning `total_process.GRAPH` into something that can actually be run.
+"""Turning `indat.GRAPH` into something that can actually be run.
 
-Most of `total_process.GRAPH`'s SCCs already declare a problem and need only a driver:
+Most of `indat.GRAPH`'s SCCs already declare a problem and need only a driver:
 the structural `FixedPointFunction`/`ImplicitFunction` self-loop pairs, plus the coil
 island (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`). Two are
 **raw cross-node cycles with no declared problem at all** -- `Blocking` finds them;
@@ -40,8 +40,8 @@ from functional_process.core.solver.drivers import (
     SeededNewtonDriver,
     VmconDriver,
 )
+from functional_process.indat import GRAPH
 from functional_process.paths import fwbs, physics
-from functional_process.total_process import GRAPH
 
 CUTS = (
     resolve(physics.proton_rate_density, VarPath),
@@ -92,7 +92,7 @@ so both cuts apply there.
 
 
 def driven_graph(graph=GRAPH):
-    """`graph` (default: `total_process.GRAPH`, the default-configuration graph), with
+    """`graph` (default: `indat.GRAPH`, the default-configuration graph), with
     every raw cycle in `CUTS` that actually exists in `graph` cut into a declared
     `FixedPoint` problem. Every remaining multi-node SCC now declares exactly one
     problem -- confirmed below, not assumed, by `driven_graph()`'s own doctest-free
@@ -100,7 +100,7 @@ def driven_graph(graph=GRAPH):
     would raise if not).
 
     Takes `graph` rather than always using the module's default so a caller checking
-    this against a specific real `IN.DAT` can pass `total_process.graph_for(
+    this against a specific real `IN.DAT` can pass `indat.graph_for(
     configuration_matching_that_file)` instead -- which nodes exist at all (and
     therefore which of `CUTS` even applies -- see that tuple's own docstring on the
     `ipowerflow`-gated second cycle) can differ by configuration, so this should be
@@ -270,7 +270,7 @@ def default_drivers(
 
 
 def schedule(graph=GRAPH) -> Schedule:
-    """`graph` (default: `total_process.GRAPH`), block by block, every cyclic block
+    """`graph` (default: `indat.GRAPH`), block by block, every cyclic block
     driven by its default driver. `Drive`/`Schedule`'s own construction is what
     checks this is actually runnable -- a `Schedule` that builds is a `Schedule` that
     can be called. See `driven_graph`'s own docstring for why `graph` is a parameter,

@@ -44,7 +44,7 @@ from pathlib import Path
 
 import pytest
 
-from functional_process.total_process import (
+from functional_process.indat import (
     REFERENCE_INPUT_FILE,
     REFERENCE_MACHINE,
     ST_INIT_I_PLASMA_PEDESTAL,

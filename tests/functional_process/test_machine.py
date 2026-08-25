@@ -23,7 +23,7 @@ import equinox as eqx
 import pytest
 from cottax.interfaces.pytree_namespace_module import spell_flat, to_graph
 
-from functional_process.total_process import (
+from functional_process.indat import (
     BLANKET_MASSES,
     BLANKET_SHIELD_POWER,
     BUILDING_SIZING,
