@@ -10,8 +10,15 @@ per-unit `.md` records, and from live `.py` docstrings (`total_process.py` cites
 `mda_harness.py` §8, `sand.py` §6, among others). A section whose material is closed is
 emptied to a stub that says where the live material went; nothing is ever renumbered.
 
-**Where to start:** §11 (verified state and priority order), then §5 (the structural
-vocabulary — Shape A / Shape B — that the code itself cites).
+**Where to start:** §13 (the current priority order, 2026-08-25), then §5 (the structural
+vocabulary — Shape A / Shape B — that the code itself cites). §11 is the previous
+session's wrap and its priority order is superseded by §13; its measurements stay live.
+
+**The `Verified state` table below is stale** where it says 159 nodes / 348 unowned
+inputs — the live graph is 156 / 320 (`model_tree_design.md` step 4c removed three cost
+nodes for a subsystem a stellarator does not have). Re-measure it; and see §13.1 first,
+because `cottax` is mid-refactor and gates measured against its working tree do not mean
+what they say.
 
 ## Verified state
 
@@ -1686,3 +1693,247 @@ Ranked by value/cost:
 returns. So a `DesignVariable(path, bounds, scale, dimension, role, seed)` is `free`'s
 natural return type, and (2) is what you print about the set it returns: the same object,
 before and after the solve.
+
+## 13. Priority order, 2026-08-25 — what to pick up next
+
+Written at the end of a session that closed §11.6's `atol` item, `model_tree_design.md`
+§8 steps 3–4d, the three-mirror layout and the chunk-letter renames. The **Verified state**
+table at the head of this file is stale where it says 159 nodes / 348 unowned inputs; the
+live graph is **156 / 320**, and the split in §13.2 may move file layout but must not move
+either number. Re-measure the whole table on a settled tree before trusting it.
+
+### 13.1 The blocker: `cottax` is mid-refactor and the gates are not trustworthy against it
+
+`~/jaxgraph`'s working tree is being changed by a concurrent session. Two symptoms hit
+this port today, both on a **clean** `PROCESS` tree (verified by stashing):
+
+- `cottax.interfaces.pytree_namespace_module.Root` was deleted outright — gone from the
+  whole package, no replacement — which `functional_process/paths.py` imported. Nothing in
+  the port could import at all. Resolved here by reimplementing `_Root` locally: it was
+  never really cottax's, since the area list comes from PROCESS's own `DataStructure` and
+  every name it accepts or rejects is a PROCESS fact. It still returns cottax's `Area`, so
+  nothing downstream can tell.
+- A condition-map arity changed: `run_mda_harness` raises `TypeError: condition map of
+  ['.physics.profiles.ion_vol_avg_temperature'] takes 1 unknown(s) ..., got 0`, failing 9
+  tests and erroring 4. **Not resolved.** This one is not ours to fix by guessing.
+
+**Until that settles, every measurement must pin `cottax` at its own `HEAD`**, on both
+sides of every comparison:
+
+```bash
+SP=<scratch>; (cd ~/jaxgraph && git archive HEAD src/cottax) | tar -x -C $SP
+PYTHONPATH=$SP/src $PY -m pytest tests/functional_process -q     # 3770 passed, 3347 skipped
+```
+
+Steps 4c and 4d were both measured this way. A run that reports 9 failures is a missing
+`PYTHONPATH`, not a regression. **Reconciling with the new `cottax` API is the first
+thing to do**, because until then no gate in this file means what it says.
+
+### 13.2 In flight — `total_process.py`'s three-way split
+
+2178 lines: 1114 in fifteen `ModelNamespace` classes, 1064 in imports (188 names over 246
+lines), registries, `UNPORTED` and the factory. Only `StellaratorProcess` (83 lines, 7
+slots) is about the whole machine; `Costs` is 211 lines naming 40 nodes that all live in
+`models/costs/costs.py`, and 20 stellarator modules are imported solely to be named in
+stellarator slots.
+
+- **Subsystem namespaces → their packages.** A subsystem's namespace belongs with its
+  models.
+- **The switch layer → `functional_process/indat.py`.** The factory is not part of the
+  tree; it is an adapter to PROCESS's legacy input format. If the tree carries no switches
+  and `machine_from_indat` is the only place an `i_*` integer is read, then everything
+  switch-shaped — the ten registries, `UNPORTED`, the arm functions, `REFERENCE_MACHINE` —
+  is PROCESS's input *encoding*, not the machine. Registries go here and **not** with the
+  subsystems, which would re-scatter what steps 4b–4d consolidated.
+- **`total_process.py` keeps** `StellaratorProcess` and `graph_for`, ~150 lines.
+
+Node names are slot paths, so nothing here may move one: 156 nodes and the per-node
+`(name, type, sorted inputs, sorted outputs)` sha are the gate.
+
+### 13.3 The namespaces are naming scopes, not encapsulation boundaries
+
+Each depth-1 group's interface, measured on the 156-node graph (`internal` = reads whose
+producer is in the same group, `imported` = from another group, `boundary` = unowned,
+`exported` = this group's outputs read by another):
+
+| group | nodes | internal | imported | boundary | exported |
+|---|---|---|---|---|---|
+| stellarator | 54 | 192 | 32 | 173 | 122 |
+| costs | 40 | 49 | 69 | 164 | **0** |
+| physics | 33 | 94 | 25 | 123 | 40 |
+| power | 20 | 39 | 47 | 40 | 25 |
+| availability | 4 | 3 | 22 | 23 | 13 |
+| vacuum | 3 | 2 | 9 | 20 | 5 |
+| buildings | 2 | 4 | 14 | 30 | 13 |
+
+**Grouping related physics together is the goal; encapsulation is not.** `stellarator`
+and `physics` have 6x and 3.8x more internal than imported edges; `costs` has 0.7x and
+exports nothing at all — a pure sink, which is why the dependency ordering puts it last.
+That is not a defect and not a scorecard for whether a namespace deserves to exist: a cost
+model is downstream of everything by nature. It is recorded because it says what a
+namespace here *is*, and heads off reading one as a component and then being surprised
+that all its inputs are foreign.
+
+### 13.4 Grouping depth — the "0 crossing blocks" headline is an artefact of the grain
+
+`depth` is plumbed through `grouped()`, `group_of`, `grouping_report` and
+`dependency_group_sequence` and has never been called with anything but `1`.
+
+| depth | groups | blocks crossing a group boundary |
+|---|---|---|
+| 1 | 7 | **0** |
+| 2 | 11 | **1** |
+| 3 | 12 | 1 |
+
+At depth 2 the crossing block is the density/composition/fusion-rate loop straddling
+`physics` and `physics.profiles`:
+
+```
+.physics.fusion_power_totals_mw, .physics.fusion_totals_no_beam,
+.physics.profiles.parameterisation.parabolic_on_axis_densities,
+.physics.profiles.density_profile, .physics.fusion_rates,
+.physics.plasma_composition, ^problem.physics.proton_rate_density.cycle
+```
+
+Depth 1 hides it by swallowing the whole thing inside `physics`. Depth 2 should be the
+report's default for exactly that reason. Two cautions: the group axis is a weaker claim
+at depth 2 (more groups fall inside one condensed component, so the tie-break carries more
+weight), and `group_of`'s `among` guard and `_cut_owner` fallback were written and tested
+at depth 1 only — the minted node above is *in* the crossing block, so it is precisely the
+case that exercises the fallback at depth > 1. Pin it.
+
+Then the picture per subsystem, which `structure_order`'s own docstring already
+anticipates ("a block's interior is its own blocking and draws its own picture") and
+nothing does. `stellarator` at 54 nodes and `costs` at 40 are past the size where one
+156-node matrix is readable. This only becomes well-posed *after* §13.2: a per-subsystem
+picture is a real object only if the subsystem is one.
+
+### 13.5 The switch survey's remaining bands
+
+`switch_kwarg_survey.md` found 32 slots hardcoding a PROCESS switch as a static kwarg, 59
+`(slot, switch)` pairs over 26 switches. Band (a)'s five live incoherences are closed
+(steps 4c, 4d). What remains:
+
+- **(b) 23 slots whose branches differ in declared reads — 79 invented edges, 23% of the
+  345 declared reads on switch-carrying slots.** This is the correctness band: a node
+  branching internally declares the union of both arms' reads and so claims dependencies
+  the run does not have, which is exactly what `machine_from_indat`'s own docstring says
+  was rejected for switched slots. Sub-banded (b1) 10 slots where conversion changes block
+  structure, (b2) 8 with large fan-in, (b3) 4 small.
+- **(c) 9 slots, reads identical.** Tidying; zero invented edges.
+- **(d) 3 high-arity families** — `i_confinement_time` (49 reachable values),
+  `i_tf_sc_mat` (9), and the `i_thermal_electric_conversion` x `i_blanket_type` x
+  `secondary_cycle_liq` triple shared by 4 slots. One occupant per value is the wrong
+  answer here; the rule is an occupant per value *this port supports*, everything else in
+  `UNPORTED`.
+
+Also still unwritten, and named in the survey's §7: **no declared read may be dead at the
+value the slot holds.** Note it would *not* have caught band (a)'s four — at
+`i_tf_sup = 0` every stale kwarg still made its node's reads live, just live for the wrong
+arm — so it complements `test_no_slot_contradicts_a_factory_switch` rather than
+subsuming it.
+
+### 13.6 Two structural findings from the survey, neither acted on
+
+- **A switch is inventing a cycle.** `.tfcoil.j_tf_wp` is dead at `i_tf_sc_mat = 1` and is
+  machine-checked to be the *sole* back-edge closing the 4-node coils SCC. Remove it and
+  the driven block collapses to 2. This is the port's central thesis showing up as a
+  measurement, and it is the most valuable single item in §13.5's band (b).
+- **Two `FixedPoint`s are the identity map** on the reference machine: `cplife_avail`
+  (`itart = 0`, six of seven declared reads dead) and `eta_turbine_step`. The second owns
+  `.heat_transport.eta_turbine`, which reaches `.costs.coe`, this run's objective. A fixed
+  point that determines nothing is being driven anyway.
+
+### 13.7 `check_boundary` — generate the pin now, on the smaller boundary
+
+`model_tree_design.md` §8 step 5's `check_boundary` **does not exist yet**; step 4c found
+this when it expected a pin to trip and there was none. The boundary is now 320, not 348 —
+step 4c's cost-slot removal *shrank* it (3 added, 31 removed; category (d) is empty in the
+cost model). Generating the pin against 320 rather than 348 is strictly better, and it is
+the precondition `free`'s design (§12.1) also wants.
+
+### 13.8 The input format — `indat_to_python`, and the 109 numbers
+
+`stellarator_helias.IN.DAT`'s 168 assignments are 22 `icc`/`ixc` ID lines, 15
+`boundl`/`boundu`, 22 integer switches, and **109 float-valued inputs**. The tree covers
+the switches. The 109 still arrive because `SingleRun.__init__` runs `init_process` and
+populates the whole `DataStructure` (`sand_harness.py:117` states this), from which the
+graph reads anything no node owns — the 320 of §13.7.
+
+So "author the machine in Python" is half an input format today: correct models, no
+numbers. The cheap first move is an `indat_to_python(file) -> str` emitter next to
+`machine_from_indat` in the new `indat.py` — same parse, prints the literal instead of
+building it, testable by emit/exec/compare against `REFERENCE_MACHINE`. It forces the
+question of what the Python surface must cover, which surfaces the numeric gap
+concretely. The two halves of PROCESS's file format then live in one module, in both
+directions.
+
+Note the split the format should keep, which `IN.DAT` conflates: the **machine** (a tree
+of choices) and the **study** (objective, unknowns, conditions — `icc`/`ixc`, where the
+integer-ID indirection is worst and where structural names already exist).
+
+### 13.9 The tokamak — sized, and cheaper than expected for the conventional case
+
+Structurally the tree already supports it: a `device: Stellarator | Tokamak` slot is the
+mechanism steps 4b–4d bought, and `istell` already picks. The blocker is models.
+`switches_from_indat` over the tokamak regression inputs, against the ten the factory
+reads and the switches the tree hardcodes:
+
+| input | switch-shaped ints | factory reads | tree hardcodes | unknown |
+|---|---|---|---|---|
+| `large_tokamak_eval` | 27 | 3 | 5 | 19 |
+| `low_aspect_ratio_DEMO` | 33 | 3 | 5 | 25 |
+| `spherical_tokamak_eval` | 54 | 5 | 4 | 45 |
+
+Net of noise (`icc`/`ixc` are array-parse artefacts; `i_process_run_mode`,
+`i_figure_merit`, `lsa`, `ifueltyp` are run control and cost inputs, not topology):
+**~16 genuinely new topology decisions for a conventional large tokamak, ~40 for a
+spherical one.** Do the conventional case first.
+
+Two consequences for ordering. `itart` is hardcoded `CONVENTIONAL_ASPECT_RATIO` and
+`spherical_tokamak_eval` sets it, so §13.5's band (b) is on the tokamak critical path, not
+parallel tidying. And the five switches `large_tokamak_eval` shares with the Helias run
+are exactly the ones already hardcoded, so converting those *is* the first tokamak
+deliverable rather than a prerequisite to it.
+
+The bounded next step is to adopt `large_tokamak_eval.IN.DAT` as a **second reference run**
+and let the boundary check report what is missing, instead of estimating from
+`unit_registry.md`. `cost_boundary_inputs.md`'s category (d) rows already carry the
+producer `file:line` for every PF/CS/structure variable a tokamak must restore.
+
+### 13.10 Smaller open items
+
+- **§6.2's cheap check, still unwritten**: every constraint inside `n_equality_constraints`
+  returns `eq`. `c16` is written `geq` and sits inside `n_equality_constraints = 2`, which
+  `process/core/init.py:1285-1293` takes from the input file and never checks.
+- **The converged `DataStructure`, not the IN.DAT, is the right oracle** for switch
+  checks. All 26 hardcoded switches agree with PROCESS's converged state; six differ from
+  its bare default, and one of those — `iohcl = 0` — is set by neither the file nor the
+  factory (it comes from `st_init`), so **no input-file-based test can ever see it**.
+- **Six chunk-lettered `.md` records remain** under `_audit/units/models/stellarator/`
+  (`stellarator_A_orchestration`, `stellarator_E{1,2,3}_*`, `stellarator_E_fwbs_synthesis`,
+  `stellarator_G_output`). They have no module behind them, so there was nothing to rename
+  them alongside; they resolve when those units are ported.
+- **The four `stellarator_fwbs_s*.py`** keep their chunk letters until §3's S1–S6
+  re-chunking lands, because those names will move again on their own.
+- **`.costs.coe`'s `rel_diff = 1.733e-02`** is the report-pass
+  `z_tf_inside_half`/`a_plant_floor_effective` inconsistency, a `+17.604 MW` offset
+  propagated linearly and confirmed on `.heat_transport.tlvpmw`. Two records still say
+  otherwise and want correcting: `models/costs/costs.md`'s open question 7 blames
+  `VacuumOld` (which contributes `1.195e-04`, ~140x below the real cause), and
+  `unit_registry.md`:113 still records `1.704e-06`.
+
+### 13.11 A lesson from this session, in the shape of §11.7's
+
+**A grep that finds nothing is not proof.** The chunk-letter rename had to update
+references that a line-based grep could not see: three were line-wrapped *mid-stem*
+(`` `power_B_thermal_\ncryo` ``), six cited abbreviated letters (`physics_A/B/C.md`,
+`stellarator_D`) rather than full stems, and two passages named the old filenames *as
+examples of chunk letters*, so a mechanical substitution would have silently destroyed
+their point. Flatten whitespace before searching, search for the abbreviation as well as
+the stem, and read the surrounding sentence before substituting.
+
+The same session's companion: **a number carried in a document is not a measurement.**
+`CLAUDE.md` recorded `pytest functional_process` at ~1390 passed + ~640 skipped against an
+actual 3752 + 3347, and `~/jaxgraph` at 307 against 740 — both stale by more than double,
+in a file whose own instruction is to suspect the env when a number moves.
