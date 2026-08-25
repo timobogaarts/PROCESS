@@ -442,7 +442,7 @@ def degenerate_fixed_points(graph, env, problems=None):
     Detected, not listed: each candidate's `d(g(u) - u)/du` is differentiated at `env`'s
     own values and reported degenerate when the whole row **and** column vanish. Listing
     them by name would bake one configuration into the code, which is exactly what
-    `configuration.py` exists to avoid.
+    `machine_from_indat` exists to avoid.
 
     Returns
     -------

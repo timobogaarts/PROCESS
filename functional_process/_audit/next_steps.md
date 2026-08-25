@@ -38,7 +38,31 @@ about `nan` derivatives **at exactly zero**, where this is a finite derivative o
 and an unbounded one on the other, `1.9e-09` from the switch. How many other clamped roots
 the solve is sitting on is unknown and unlooked-for.
 
-**Model tree — `model_tree_design.md` §8 step 3 is DONE** (2026-08-25). `COMMON` is a
+**Model tree — `model_tree_design.md` §8 step 4 is DONE** (2026-08-25). The ten topology
+switches are ten typed **slots**; `machine_from_indat` is the only place an `i_*` integer
+is read; `configuration.py` (`Switch`/`Alternative`/`Configuration`/`build_graph`) and
+`TOPOLOGY_SWITCHES` are deleted, 505 lines of it. **All 159 nodes are in the tree now** —
+the 59 that were bare class-named tuples at the root have slot names, 43 of them under
+`.costs.*`, which is a module for the first time. `test_configuration.py` becomes
+`test_machine.py`: exclusivity is by construction (one slot, one occupant) so those tests
+are gone, and what replaced them compares occupants **by ports rather than by node
+names** — step 3 made node identity the slot, so a name comparison would now pass
+vacuously for every single-node slot.
+
+Every gate identical, and **measured against `HEAD` rather than against this file's
+recorded numbers**: 159 nodes, 139 blocks / 14 driven, 348 unowned inputs, the per-node
+(inputs, outputs, type) sha unchanged; MDA harness 499/34/3/0 · 557/0 · 61/0/3/0; SAND C2
+and C3 **byte-identical** (31 it / `objf 1.217757347`, 99 it / `1.217757378`). The C2/C3
+figures recorded in the table above (42 it, 100 it) were stale by several intervening
+changes — comparing against them would have reported a failure that was not one, which is
+the same trap as §11.6 item 6's.
+
+The **grouped DSM moved, correctly**: `costs` is a 43-node subsystem instead of 43
+root-level singletons, taking the picture from 7 groups / 57 cross-group edges / 1-of-7
+contiguous to **8 / 144 / 0-of-8**. §11.4's provenance-against-structure measurement now
+includes the cost model, and says no subsystem is contiguous in the run order.
+
+**Model tree — §8 step 3 is DONE** (2026-08-25). `COMMON` is a
 `Machine()` **instance** of eleven `ModelNamespace` classes, so a node is named by the
 snake_case slot path that reaches it (`.stellarator.coils.coil_current`) and the class
 name is gone from the name: identity is the *place*. `configuration.ROOT` and the

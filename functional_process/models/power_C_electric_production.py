@@ -685,7 +685,7 @@ class PlantElectricProductionReactor(ExplicitFunction):
     the five entering values is ever read. `.costs.ireactor` is a static switch
     (`process/main.py` resolves the cost model once per run; it is neither an
     iteration variable nor a scan variable), so which arm is live is a
-    graph-assembly-time fact -- exactly `configuration.py`'s category. This class is
+    graph-assembly-time fact -- exactly `machine_from_indat`'s category. This class is
     the `ireactor == 1` arm with the five dead reads simply not declared, which makes
     it an ordinary acyclic node owning all 23 fields.
 

@@ -1,6 +1,27 @@
 # The model tree — one typed pytree of models, superseding switches, the settings tree, and `Configuration`
 
-**Status: settled design; §8 steps 1, 2 and 3 are implemented and committed.** Step 3
+**Status: settled design; §8 steps 1-4 are implemented and committed.** Step 4 landed
+2026-08-25: the ten switches are ten typed slots, `machine_from_indat` is the only place
+an `i_*` integer is read, and `configuration.py` — `Switch`, `Alternative`,
+`Configuration`, `build_graph`, `declarations_for` — is deleted along with
+`TOPOLOGY_SWITCHES` (505 lines). All 159 nodes are now in the tree; the 59 that were bare
+class-named tuples at the root are slot-named, 43 of them under `.costs.*`. Gates, all
+strict and all met: node count, block count, driven count, unowned inputs and the per-node
+(inputs, outputs, type) signature identical; MDA harness identical; SAND C2 and C3
+**byte-identical** to the pre-step-4 run (31 it / `objf 1.217757347`, 99 it /
+`1.217757378` — measured against `HEAD`, not against this file's stale 42/100). Step 5 is
+next and unblocked.
+
+**One deviation from §4, stated rather than hidden:** a switched slot whose occupants
+share no base is annotated with a **union of its occupant classes**, not with an empty
+abstract family base. Only `ConfinementTime` had a real family
+(`StellaratorConfinementTime` subclasses it); creating eight new abstract bases across
+eight model modules is churn this step did not need, and §4's own stated purpose for a
+base — "the slot's type and the family's documentation" — is served by the union plus the
+slot docstring. Step 6 is where families acquire bases, and promoting a union to a base is
+the *local* edit §4 already promises it is.
+
+*(Earlier status.)* Step 3
 landed 2026-08-25: `total_process.COMMON`'s nested-class tree is eleven `ModelNamespace`
 classes and `COMMON` is now a `Machine()` **instance**, so every node is named by its
 snake_case slot path (`.stellarator.coils.coil_current`) and `configuration.ROOT` /
@@ -415,7 +436,8 @@ survive, and why that prediction failed is recorded there. `test_configuration.p
 `divertor_cycle` was the one test holding a node name; the two were the whole surface, as
 that section's *count* correctly said.
 
-**Step 4 — switches → slots + `machine_from_indat`; delete the old mechanism.**
+**Step 4 — switches → slots + `machine_from_indat`; delete the old mechanism. [DONE
+2026-08-25.]**
 *(functional_process; the flag-day step, one sitting)* Move each of the 10 switches'
 arms into slot occupants (§4), write the factory and registries (§5) with the
 `unported` reasons carried verbatim, define `Machine()` defaults = PROCESS defaults,
@@ -429,6 +451,20 @@ become per-occupant `to_graph(eqx.tree_at(...))` tests.
 (42 it, `objf 1.2177574`) and C3 land on the same point as baseline; `switch_audit`'s
 line unchanged. Every one of these must be **identical**, not merely green — this step
 is a re-spelling, and any numeric movement is a bug in the conversion.
+
+*As run:* all met, and **compared against `HEAD` rather than against the numbers recorded
+here**, which is what the gate should have said: the recorded SAND C2 (42 it) and C3 (100
+it, stalling) were stale by several intervening changes, and measuring against them would
+have reported a failure that was not one. Run side by side, before and after are
+byte-identical — C2 31 it / `objf 1.217757347`, C3 99 it / `1.217757378`. Also identical:
+159 nodes, 139 blocks / 14 driven, 348 unowned inputs, the per-node (inputs, outputs,
+type) sha, and the MDA harness's 499/34/3/0 · 557/0 · 61/0/3/0.
+
+*What did move, correctly:* the **grouped DSM**. `costs` is a real subsystem of 43 nodes
+now rather than 43 root-level singletons, so the picture goes from 7 groups / 57
+cross-group edges / 1-of-7 contiguous to **8 / 144 / 0-of-8**. That is §11.4's
+provenance-against-structure measurement finally including the cost model, not a
+regression — and it says the run order interleaves every subsystem, none contiguous.
 
 **Step 5 — the boundary postcondition.** *(functional_process; small)* §6's
 `check_boundary` + the pinned reference boundary set, generated from
@@ -458,6 +494,15 @@ posture. Per the standing dispatch conventions
 (`next_steps.md` §4b): an agent touches only its own step's files and runs its own
 tests plus the gates named for its step; registry/`next_steps` bookkeeping is the
 consolidation pass's job.
+
+**A vocabulary note, since the old names outlived their code.** `Switch`, `Alternative`,
+`Configuration`, `check_arms_are_exclusive` and `TOPOLOGY_SWITCHES` are gone, but they are
+still named in per-unit `.md` records and a few model docstrings, where they describe
+reasoning that remains true. The translation: an *arm* is an **occupant**, a *switch* is a
+**slot**, `Alternative(unported=)` is an entry in **`UNPORTED`**, `Alternative(unproduced=)`
+is a slot holding **`None`**, and `Configuration` is a **`Machine`**. Those records were
+deliberately not swept: the concepts moved, the prose did not, and rewriting twenty audit
+files to change a noun would cost more than it clarifies.
 
 ## 9. What this does not solve, stated so nobody reads it as solved
 

@@ -52,7 +52,7 @@ run so these tests need no PROCESS execution; `run_sand_harness.py` reads the re
 def test_reference_problem_matches_the_input_file():
     """The four constants above really are what the reference `IN.DAT` asks for.
 
-    Same discipline as `test_configuration.py::
+    Same discipline as `test_machine.py::
     test_reference_configuration_matches_the_input_file`: a transcription that nothing
     checks is a transcription that drifts. `ixc`/`icc` are not parsed (they are
     multi-line lists with per-entry comments); the three scalars that decide the

@@ -41,12 +41,12 @@ def main():
 
         data = converged_data(str(scratch))
 
-    # `graph_for()` with no argument IS `REFERENCE_CONFIGURATION` -- the switch
-    # choices `stellarator_helias.IN.DAT` actually makes, checked against the file
-    # itself by `test_configuration.py::test_reference_configuration_matches_the_
-    # input_file`. This used to spell the three choices out here, which is exactly
-    # the arrangement that let five registration bugs through: the harness knew the
-    # run's real configuration and nothing else did.
+    # `graph_for()` with no argument IS `REFERENCE_MACHINE` -- `machine_from_indat`
+    # applied to `stellarator_helias.IN.DAT`, checked against the file itself by
+    # `test_machine.py::test_reference_machine_matches_the_input_file`. This used to
+    # spell the switch choices out here, which is exactly the arrangement that let five
+    # registration bugs through: the harness knew the run's real configuration and
+    # nothing else did.
     graph = graph_for()
     report = compare(graph, data)
     print(report.summary())
