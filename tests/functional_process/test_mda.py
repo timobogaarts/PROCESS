@@ -10,7 +10,7 @@ runnable."
 """
 
 from cottax.blocking import Blocking
-from cottax.problem import FixedPoint, RootFind
+from cottax.problem import Driven, FixedPoint, RootFind
 from cottax.rewrites import Cut
 
 from functional_process.core.solver.drivers import PicardDriver, SeededNewtonDriver
@@ -92,7 +92,15 @@ def test_default_drivers_assigns_newton_to_root_find_and_picard_to_fixed_point()
     """
     graph = driven_graph()
     blocking = Blocking.scc(graph)
-    drivers = default_drivers(blocking)
+    # Read off the graph, not from `default_drivers`: `driven_graph` has already
+    # `Assign`ed every driver, and `default_drivers` skips a problem that carries one --
+    # so asking it again would return an empty map. The driver is a property of the node
+    # now, which is the whole point of the change.
+    drivers = {
+        name: node.driver
+        for name, node in graph.definitions.items()
+        if isinstance(node, Driven)
+    }
 
     for problem, problem_type in zip(
         blocking.problems, blocking.problem_types, strict=True

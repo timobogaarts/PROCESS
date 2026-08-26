@@ -28,9 +28,7 @@ thresholds), since `aspect` is a differentiable argument here, not a switch.
 `static_argnames` so `jacfwd` never differentiates through the dispatch itself.
 """
 
-import inspect
 
-import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -40,7 +38,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
-from functional_process.paths import current_drive, physics, stellarator
+from functional_process.paths import physics, stellarator
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
@@ -1282,6 +1280,133 @@ def calculate_double_and_triple_product(
 # ---------------------------------------------------------------------------
 
 
+def plasma_power_loss_mw(
+    *,
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+    pden_plasma_rad_mw,
+    pden_plasma_core_rad_mw,
+    vol_plasma,
+    i_plasma_ignited,
+    i_rad_loss,
+):
+    """The power crossing the separatrix -- every scaling's `p_plasma_loss_mw` input.
+
+    **The head of `calculate_confinement_time`, extracted verbatim**, because it is a
+    separable computation that two switches decide and ~40 scalings consume. Splitting
+    it out is what lets the graph say so: `i_plasma_ignited` decides whether injected
+    heating counts (2 arms, differing by one read), `i_rad_loss` decides which radiation
+    term is subtracted (3 arms, reading *different* variables -- `pden_plasma_rad_mw`,
+    `pden_plasma_core_rad_mw`, or neither). Declared as one node branching internally,
+    those become reads the run does not make; declared as occupants, they are edges that
+    are there.
+
+    PROCESS has no function of this shape, so there is no Tier-1 reference to diff this
+    against on its own. What proves it is that `calculate_confinement_time` calls it and
+    that function *is* diffed against `PlasmaConfinementTime.calculate_confinement_time`,
+    sample by sample, values and gradients -- an extraction that changed anything would
+    fail there. That is the trade this decomposition makes and it is worth stating: the
+    port can only get a 1:1 comparison at boundaries PROCESS itself has.
+    """
+    p_plasma_loss_mw = (
+        f_p_alpha_plasma_deposited * p_alpha_total_mw
+        + p_non_alpha_charged_mw
+        + p_plasma_ohmic_mw
+    )
+    if PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.NON_IGNITED:
+        p_plasma_loss_mw += p_hcd_injected_total_mw
+
+    rad_loss_model = ConfinementRadiationLossModel(int(i_rad_loss))
+    if rad_loss_model == ConfinementRadiationLossModel.FULL_RADIATION:
+        p_plasma_loss_mw -= pden_plasma_rad_mw * vol_plasma
+    elif rad_loss_model == ConfinementRadiationLossModel.CORE_ONLY:
+        p_plasma_loss_mw -= pden_plasma_core_rad_mw * vol_plasma
+    # NO_RADIATION: no adjustment.
+
+    return jnp.maximum(p_plasma_loss_mw, 1.0e-3)
+
+
+def confinement_from_scaling(
+    *,
+    t_electron_confinement,
+    hfact,
+    p_plasma_loss_mw,
+    i_rad_loss,
+    pden_plasma_sync_mw,
+    p_plasma_inner_rad_mw,
+    pden_plasma_rad_mw,
+    vol_plasma,
+    eden_plasma_ions_thermal_vol_avg,
+    eden_plasma_electrons_thermal_vol_avg,
+    e_plasma_beta,
+):
+    """Everything downstream of the chosen scaling law: the tail, extracted verbatim.
+
+    One scaling law produces one number, `t_electron_confinement`. This is all of what
+    PROCESS then does with it -- the `hfact` scaling, the `hstar` degradation factor,
+    the two transport-loss densities, the combined confinement time and the beta-derived
+    one -- and it is identical for every one of the ~40 laws. Keeping it inside the
+    dispatching node is why that node declares 32 reads when a law needs 6 to 8.
+
+    **`i_rad_loss` appears here a second time**, and here its three arms read genuinely
+    different variables: `CORE_ONLY` reads `pden_plasma_sync_mw` and
+    `p_plasma_inner_rad_mw`, `FULL_RADIATION` reads `pden_plasma_rad_mw`, `NO_RADIATION`
+    reads neither and is `hfact` unchanged. Three occupants, and the invented edges go.
+
+    Returns the seven values that depend on the law; `p_plasma_loss_mw` and `kappa_ipb`
+    are the head's and are not recomputed here.
+    """
+    t_electron_energy_confinement = hfact * t_electron_confinement
+    t_ion_energy_confinement = t_electron_energy_confinement
+
+    rad_loss_model = ConfinementRadiationLossModel(int(i_rad_loss))
+    if rad_loss_model == ConfinementRadiationLossModel.CORE_ONLY:
+        hstar = hfact * safe_pow(
+            p_plasma_loss_mw
+            / (
+                p_plasma_loss_mw
+                + pden_plasma_sync_mw * vol_plasma
+                + p_plasma_inner_rad_mw
+            ),
+            0.31,
+        )
+    elif rad_loss_model == ConfinementRadiationLossModel.FULL_RADIATION:
+        hstar = hfact * safe_pow(
+            p_plasma_loss_mw / (p_plasma_loss_mw + pden_plasma_rad_mw * vol_plasma),
+            0.31,
+        )
+    else:  # NO_RADIATION
+        hstar = hfact
+
+    pden_ion_transport_loss_mw = (
+        eden_plasma_ions_thermal_vol_avg / t_ion_energy_confinement
+    ) / 1e6
+    pden_electron_transport_loss_mw = (
+        eden_plasma_electrons_thermal_vol_avg / t_electron_energy_confinement
+    ) / 1e6
+
+    ratio = eden_plasma_ions_thermal_vol_avg / eden_plasma_electrons_thermal_vol_avg
+
+    t_energy_confinement = (ratio + 1.0) / (
+        ratio / t_ion_energy_confinement + 1.0 / t_electron_energy_confinement
+    )
+
+    t_energy_confinement_beta = (e_plasma_beta / 1e6) / p_plasma_loss_mw
+
+    return (
+        pden_electron_transport_loss_mw,
+        pden_ion_transport_loss_mw,
+        t_electron_energy_confinement,
+        t_ion_energy_confinement,
+        t_energy_confinement,
+        hstar,
+        t_energy_confinement_beta,
+    )
+
+
 def calculate_confinement_time(
     m_fuel_amu,
     p_alpha_total_mw,
@@ -1346,22 +1471,19 @@ def calculate_confinement_time(
         switch-driven, never traced. `USER_INPUT` is a confirmed dead branch in
         PROCESS itself; see the audit record's "A dead branch: `USER_INPUT`".
     """
-    p_plasma_loss_mw = (
-        f_p_alpha_plasma_deposited * p_alpha_total_mw
-        + p_non_alpha_charged_mw
-        + p_plasma_ohmic_mw
+    p_plasma_loss_mw = plasma_power_loss_mw(
+        f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+        p_alpha_total_mw=p_alpha_total_mw,
+        p_non_alpha_charged_mw=p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw=p_plasma_ohmic_mw,
+        p_hcd_injected_total_mw=p_hcd_injected_total_mw,
+        pden_plasma_rad_mw=pden_plasma_rad_mw,
+        pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
+        vol_plasma=vol_plasma,
+        i_plasma_ignited=i_plasma_ignited,
+        i_rad_loss=i_rad_loss,
     )
-    if PlasmaIgnitionModel(i_plasma_ignited) == PlasmaIgnitionModel.NON_IGNITED:
-        p_plasma_loss_mw += p_hcd_injected_total_mw
-
     rad_loss_model = ConfinementRadiationLossModel(int(i_rad_loss))
-    if rad_loss_model == ConfinementRadiationLossModel.FULL_RADIATION:
-        p_plasma_loss_mw -= pden_plasma_rad_mw * vol_plasma
-    elif rad_loss_model == ConfinementRadiationLossModel.CORE_ONLY:
-        p_plasma_loss_mw -= pden_plasma_core_rad_mw * vol_plasma
-    # NO_RADIATION: no adjustment.
-
-    p_plasma_loss_mw = jnp.maximum(p_plasma_loss_mw, 1.0e-3)
 
     nd_plasma_electron_line_20 = nd_plasma_electron_line * 1.0e-20
     nd_plasma_electron_line_19 = nd_plasma_electron_line * 1.0e-19
@@ -1903,41 +2025,27 @@ def calculate_confinement_time(
     else:
         raise ValueError(f"Illegal value for i_confinement_time: {i_confinement_time}")
 
-    t_electron_energy_confinement = hfact * t_electron_confinement
-    t_ion_energy_confinement = t_electron_energy_confinement
-
-    if rad_loss_model == ConfinementRadiationLossModel.CORE_ONLY:
-        hstar = hfact * safe_pow(
-            p_plasma_loss_mw
-            / (
-                p_plasma_loss_mw
-                + pden_plasma_sync_mw * vol_plasma
-                + p_plasma_inner_rad_mw
-            ),
-            0.31,
-        )
-    elif rad_loss_model == ConfinementRadiationLossModel.FULL_RADIATION:
-        hstar = hfact * safe_pow(
-            p_plasma_loss_mw / (p_plasma_loss_mw + pden_plasma_rad_mw * vol_plasma),
-            0.31,
-        )
-    else:  # NO_RADIATION
-        hstar = hfact
-
-    pden_ion_transport_loss_mw = (
-        eden_plasma_ions_thermal_vol_avg / t_ion_energy_confinement
-    ) / 1e6
-    pden_electron_transport_loss_mw = (
-        eden_plasma_electrons_thermal_vol_avg / t_electron_energy_confinement
-    ) / 1e6
-
-    ratio = eden_plasma_ions_thermal_vol_avg / eden_plasma_electrons_thermal_vol_avg
-
-    t_energy_confinement = (ratio + 1.0) / (
-        ratio / t_ion_energy_confinement + 1.0 / t_electron_energy_confinement
+    (
+        pden_electron_transport_loss_mw,
+        pden_ion_transport_loss_mw,
+        t_electron_energy_confinement,
+        t_ion_energy_confinement,
+        t_energy_confinement,
+        hstar,
+        t_energy_confinement_beta,
+    ) = confinement_from_scaling(
+        t_electron_confinement=t_electron_confinement,
+        hfact=hfact,
+        p_plasma_loss_mw=p_plasma_loss_mw,
+        i_rad_loss=i_rad_loss,
+        pden_plasma_sync_mw=pden_plasma_sync_mw,
+        p_plasma_inner_rad_mw=p_plasma_inner_rad_mw,
+        pden_plasma_rad_mw=pden_plasma_rad_mw,
+        vol_plasma=vol_plasma,
+        eden_plasma_ions_thermal_vol_avg=eden_plasma_ions_thermal_vol_avg,
+        eden_plasma_electrons_thermal_vol_avg=eden_plasma_electrons_thermal_vol_avg,
+        e_plasma_beta=e_plasma_beta,
     )
-
-    t_energy_confinement_beta = (e_plasma_beta / 1e6) / p_plasma_loss_mw
 
     return (
         pden_electron_transport_loss_mw,
@@ -1971,121 +2079,225 @@ class IterPhysicsBasisElongation(ExplicitFunction):
         return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
 
 
-class ConfinementTime(ExplicitFunction):
-    """cottax node: `calculate_confinement_time`, ports declared.
+class ConfinementScalingInputs(ExplicitFunction):
+    """The unit conversions every scaling law takes as arguments.
 
-    `i_confinement_time`, `i_rad_loss` and `i_plasma_ignited` are switches resolved once
-    at node-instantiation (graph-assembly) time -- `eqx.field(static=True)`, not
-    reads, per `_audit/naming_convention.md` § "switches are not ports" (same move as
-    `EcrhDensityLimit(i_plasma_pedestal=...)` in `models/stellarator/density_
-    limits.py`). Which concrete value(s) belong in `total_process.py`'s default graph
-    is a registration decision left to the consolidation pass, not decided here -- all
-    three fields are required, with no default, so an un-instantiated choice fails
-    loudly rather than silently picking one scaling law.
+    PROCESS computes these inline at the head of `calculate_confinement_time` and stores
+    none of them, so `.physics.nd_plasma_electron_line_19` and `.physics.cur_plasma_ma`
+    have no backing `DataStructure` field. That is PROCESS's omission, not a reason to
+    invent a namespace for them: they are values one node computes and several others
+    consume, which is what a graph variable *is*. The consequence is bookkeeping and is
+    stated where it lands -- the MDA harness cannot compare them against PROCESS's
+    converged state, so they join its not-data-backed category.
 
-    **Consolidation-pass fix**: the audit record's own "switches touched" section
-    already concludes `i_plasma_ignited` needs the same static treatment as the other
-    two (its reads-set differs by one term, same shape as `i_rad_loss`/
-    `i_confinement_time`) -- this class originally bound it as an ordinary read
-    instead, and all three fields were missing `eqx.field(static=True)` entirely (plain
-    `int`-annotated fields on an `eqx.Module` are still dynamic pytree leaves). Both are
-    fixed here: `calculate_confinement_time`'s internal `if`/`elif` dispatch on these
-    three values requires them to be concrete Python ints, not JAX tracers, under any
-    `jax.jit`/`jacfwd` a driver might wrap this node in.
-
-    `q95` is bound to `.physics.q95` here, the tokamak-mode producer -- `stellarator.py`
-    instead feeds this same parameter from `.stellarator.iotabar` at its call site (see
-    the audit record's data footprint table). Which producer is correct is a
-    device-mode (`istell`) topology question, out of scope for this node declaration;
-    a stellarator-mode instantiation of this class would rebind the `q95` input.
+    Owning them here is what lets a scaling node's signature be **exactly** its law's:
+    no argument preparation in the node body, so the node is callable as the function it
+    declares and the harness can diff the node itself against PROCESS's own staticmethod.
     """
 
-    i_confinement_time: ConfinementTimeModel = eqx.field(static=True)
-    i_rad_loss: ConfinementRadiationLossModel = eqx.field(static=True)
-    i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
+    nd_plasma_electron_line_19 = OutputInto(physics)
+    cur_plasma_ma = OutputInto(physics)
+
+    def __call__(
+        self,
+        nd_plasma_electron_line=From(physics),
+        plasma_current=From(physics),
+    ):
+        return nd_plasma_electron_line * 1.0e-19, plasma_current / 1.0e6
+
+
+class PlasmaPowerLoss(ExplicitFunction):
+    """The family that owns `.physics.p_plasma_loss_mw`: the head, one occupant per arm.
+
+    Two switches decide it -- `i_plasma_ignited` (whether injected heating counts) and
+    `i_rad_loss` (which radiation term is subtracted) -- and both change the *reads*, so
+    both are occupants rather than static kwargs (`traceability_policy.md`'s
+    split-by-default). Only the arm this port supports is written; the rest are
+    `UNPORTED` entries in `indat.py`, which is `switch_kwarg_survey.md` band (d)'s rule:
+    an occupant per value *this port supports*, not per value PROCESS has.
+    """
+
+
+class PlasmaPowerLossIgnitedCoreRadiation(PlasmaPowerLoss):
+    """`i_plasma_ignited == IGNITED` and `i_rad_loss == CORE_ONLY` -- both runs' arm.
+
+    **This arm is the measured case for two invented edges.** Ignited means the
+    `p_hcd_injected_total_mw` term is not taken, and core-only radiation means
+    `pden_plasma_rad_mw` is not the term subtracted -- yet the composite node declared
+    both, so the graph claimed a `.current_drive -> .physics` dependency this run does
+    not have. Declaring the arm removes them: this class reads neither.
+
+    It calls `plasma_power_loss_mw` with those two arguments at `0.0` rather than
+    inlining the arithmetic, so there stays exactly one source of truth for the formula
+    -- the one `calculate_confinement_time` is diffed against PROCESS through. A dead
+    argument passed as zero is not a read: it never reaches a port.
+    """
+
+    p_plasma_loss_mw = OutputInto(physics)
+
+    def __call__(
+        self,
+        f_p_alpha_plasma_deposited=From(physics),
+        p_alpha_total_mw=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        pden_plasma_core_rad_mw=From(physics),
+        vol_plasma=From(physics),
+    ):
+        return plasma_power_loss_mw(
+            f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+            p_alpha_total_mw=p_alpha_total_mw,
+            p_non_alpha_charged_mw=p_non_alpha_charged_mw,
+            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
+            p_hcd_injected_total_mw=0.0,
+            pden_plasma_rad_mw=0.0,
+            pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
+            vol_plasma=vol_plasma,
+            i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
+            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+        )
+
+
+class ConfinementTimeScaling(ExplicitFunction):
+    """The family that owns `.physics.t_electron_confinement`: one occupant per law.
+
+    This is what `i_confinement_time` was: ~40 scaling laws behind one static kwarg on
+    one node, which therefore declared the union of all their reads -- 32, where a law
+    needs 6 to 8. Each law is already a separate, separately-validated pure function in
+    this module; an occupant is that function with its own ports, and nothing else.
+
+    **The device rebinding disappears with it.** `StellaratorConfinementTime` existed
+    solely to rebind one parameter that PROCESS's own caller passes differently in
+    stellarator mode: the source calls its 20th argument `q95` and hands ISS04 the
+    rotational transform. With one class per law that is not a rebinding at all --
+    `iss04_stellarator_confinement_time`'s own parameter *is* `iotabar`, so the occupant
+    reads `.stellarator.iotabar` because that is what the law takes. The read follows
+    from the law, not from the device, and `CONFINEMENT_TIME` keyed on `istell` has
+    nothing left to decide.
+    """
+
+
+class Iss04ConfinementTime(ConfinementTimeScaling):
+    """ISS04 stellarator scaling. `ConfinementTimeModel.ISS04_STELLARATOR` (38)."""
+
+    t_electron_confinement = OutputInto(physics)
+
+    def __call__(
+        self,
+        rminor=From(physics),
+        rmajor=From(physics),
+        nd_plasma_electron_line_19=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        p_plasma_loss_mw=From(physics),
+        iotabar=FromExactly(stellarator.iotabar),
+    ):
+        return iss04_stellarator_confinement_time(
+            rminor,
+            rmajor,
+            nd_plasma_electron_line_19,
+            b_plasma_toroidal_on_axis,
+            p_plasma_loss_mw,
+            iotabar,
+        )
+
+
+class IterIpb98y2ConfinementTime(ConfinementTimeScaling):
+    """IPB98(y,2) ELMy H-mode scaling. `ConfinementTimeModel.ITER_IPB98Y2` (34).
+
+    The conventional tokamak's law, and the reason this family exists before there is a
+    tokamak to use it: `large_tokamak_eval.IN.DAT` sets `i_confinement_time = 34` where
+    the tree pinned `38`, which is one of the four contradictions
+    `_audit/tokamak_scope.md` names as the first tokamak deliverable.
+    """
+
+    t_electron_confinement = OutputInto(physics)
+
+    def __call__(
+        self,
+        cur_plasma_ma=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        nd_plasma_electron_line_19=From(physics),
+        p_plasma_loss_mw=From(physics),
+        rmajor=From(physics),
+        kappa_ipb=From(physics),
+        aspect=From(physics),
+        afuel=FromExactly(physics.m_fuel_amu),
+    ):
+        return iter_ipb98y2_confinement_time(
+            cur_plasma_ma,
+            b_plasma_toroidal_on_axis,
+            nd_plasma_electron_line_19,
+            p_plasma_loss_mw,
+            rmajor,
+            kappa_ipb,
+            aspect,
+            afuel,
+        )
+
+
+class ConfinementTail(ExplicitFunction):
+    """The family that owns everything downstream of the chosen law.
+
+    Identical for all ~40 laws, which is why keeping it inside the dispatching node was
+    what forced that node to declare 32 reads. `i_rad_loss` decides it a second time,
+    and here the three arms read genuinely different variables.
+    """
+
+
+class ConfinementTailCoreRadiation(ConfinementTail):
+    """`i_rad_loss == CORE_ONLY`: `hstar` degrades on synchrotron plus inner radiation.
+
+    Reads `pden_plasma_sync_mw` and `p_plasma_inner_rad_mw` and **not**
+    `pden_plasma_rad_mw`, which is the `FULL_RADIATION` arm's read.
+    """
 
     pden_electron_transport_loss_mw = OutputInto(physics)
     pden_ion_transport_loss_mw = OutputInto(physics)
     t_electron_energy_confinement = OutputInto(physics)
     t_ion_energy_confinement = OutputInto(physics)
     t_energy_confinement = OutputInto(physics)
-    p_plasma_loss_mw = OutputInto(physics)
     hstar = OutputInto(physics)
-    kappa_ipb = OutputInto(physics)
     t_energy_confinement_beta = OutputInto(physics)
 
     def __call__(
         self,
-        m_fuel_amu=From(physics),
-        p_alpha_total_mw=From(physics),
-        aspect=From(physics),
-        b_plasma_toroidal_on_axis=From(physics),
-        nd_plasma_electrons_vol_avg=From(physics),
-        nd_plasma_electron_line=From(physics),
-        eps=From(physics),
+        t_electron_confinement=From(physics),
         hfact=From(physics),
-        kappa=From(physics),
-        kappa95=From(physics),
-        p_non_alpha_charged_mw=From(physics),
-        p_hcd_injected_total_mw=From(current_drive),
-        plasma_current=From(physics),
-        pden_plasma_core_rad_mw=From(physics),
-        rmajor=From(physics),
-        rminor=From(physics),
-        temp_plasma_electron_density_weighted_kev=From(physics),
-        q95=From(physics),
-        qstar=From(physics),
-        vol_plasma=From(physics),
-        n_charge_plasma_effective_vol_avg=From(physics),
-        eden_plasma_electrons_thermal_vol_avg=From(physics),
-        eden_plasma_ions_thermal_vol_avg=From(physics),
-        f_p_alpha_plasma_deposited=From(physics),
-        p_plasma_ohmic_mw=From(physics),
-        pden_plasma_rad_mw=From(physics),
+        p_plasma_loss_mw=From(physics),
         pden_plasma_sync_mw=From(physics),
         p_plasma_inner_rad_mw=From(physics),
-        triang=From(physics),
-        m_ions_total_amu=From(physics),
+        vol_plasma=From(physics),
+        eden_plasma_ions_thermal_vol_avg=From(physics),
+        eden_plasma_electrons_thermal_vol_avg=From(physics),
         e_plasma_beta=From(physics),
-        tauee_in=From(physics),
     ):
-        return calculate_confinement_time(
-            m_fuel_amu,
-            p_alpha_total_mw,
-            aspect,
-            b_plasma_toroidal_on_axis,
-            nd_plasma_electrons_vol_avg,
-            nd_plasma_electron_line,
-            eps,
-            hfact,
-            self.i_confinement_time,
-            self.i_plasma_ignited,
-            kappa,
-            kappa95,
-            p_non_alpha_charged_mw,
-            p_hcd_injected_total_mw,
-            plasma_current,
-            pden_plasma_core_rad_mw,
-            rmajor,
-            rminor,
-            temp_plasma_electron_density_weighted_kev,
-            q95,
-            qstar,
-            vol_plasma,
-            n_charge_plasma_effective_vol_avg,
-            eden_plasma_electrons_thermal_vol_avg,
-            eden_plasma_ions_thermal_vol_avg,
-            f_p_alpha_plasma_deposited,
-            p_plasma_ohmic_mw,
-            self.i_rad_loss,
-            pden_plasma_rad_mw,
-            pden_plasma_sync_mw,
-            p_plasma_inner_rad_mw,
-            triang,
-            m_ions_total_amu,
-            e_plasma_beta,
-            tauee_in,
+        return confinement_from_scaling(
+            t_electron_confinement=t_electron_confinement,
+            hfact=hfact,
+            p_plasma_loss_mw=p_plasma_loss_mw,
+            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+            pden_plasma_sync_mw=pden_plasma_sync_mw,
+            p_plasma_inner_rad_mw=p_plasma_inner_rad_mw,
+            pden_plasma_rad_mw=0.0,
+            vol_plasma=vol_plasma,
+            eden_plasma_ions_thermal_vol_avg=eden_plasma_ions_thermal_vol_avg,
+            eden_plasma_electrons_thermal_vol_avg=eden_plasma_electrons_thermal_vol_avg,
+            e_plasma_beta=e_plasma_beta,
         )
+
+
+# `ConfinementTime` and `StellaratorConfinementTime` stood here: one node carrying
+# `i_confinement_time` (~40 laws), `i_rad_loss` (3) and `i_plasma_ignited` (2) as
+# `eqx.field(static=True)` kwargs, and a subclass of it whose only difference was
+# rebinding one read. Both are **deleted**, not deprecated: the switches became slots
+# (`PhysicsConfinementTime`), so the composite node has no occupant and the subclass has
+# nothing to rebind -- `iss04_stellarator_confinement_time`'s own parameter is `iotabar`.
+#
+# `calculate_confinement_time` above stays and is not dead: it is the composite PROCESS
+# itself has, and `TestConfinementTime` diffs it against
+# `PlasmaConfinementTime.calculate_confinement_time` sample by sample. That is the
+# boundary the port can compare at; the node split is finer than anything PROCESS
+# exposes, which is the trade recorded in `plasma_power_loss_mw`'s docstring.
 
 
 class DoubleAndTripleProduct(ExplicitFunction):
@@ -2105,112 +2317,3 @@ class DoubleAndTripleProduct(ExplicitFunction):
             temp_plasma_electron_vol_avg_kev,
             t_energy_confinement,
         )
-
-
-def _rebound_signature(call, **replacements):
-    """`call`'s signature with the named parameters' `FromExactly` defaults replaced.
-
-    The mechanism a device-mode subclass of a `NodalDeclaration` uses to rebind one
-    read without restating the other 35. `FromExactly` is a *parameter default* on
-    `__call__` (`cottax/interfaces/pytree_namespace_module.py:113-126`), and
-    `ExplicitFunction._params` resolves the reads from `inspect.signature(
-    self.__call__)` (`ibid.:213-215`) -- which honours a `__signature__` attribute --
-    so replacing one default in a derived signature is all a rebinding takes.
-
-    Deriving the signature rather than copying it is the point: a subclass that
-    restated all 36 parameters would silently keep reading the old `VarPath` if the
-    base ever gained, lost or rebound one. Here anything but the named replacement
-    tracks the base automatically, and a `replacements` key that is *not* a parameter
-    of `call` raises immediately -- so a renamed parameter fails loudly at import
-    instead of quietly rebinding nothing.
-
-    Safe to delegate positionally (`Base.__call__(self, *args, **kwargs)`) because
-    `CallableNode`'s body is invoked positionally, in `inputs` order
-    (`cottax/evaluate.py:76`: `node.fn(*_args(env, name, node))`), and `inputs` is
-    built from these same parameters in order (`ibid.:183-185`).
-
-    Not put in `~/jaxgraph` (yet): it is a *caller's* convenience for declaring one
-    node in terms of another, not graph machinery, the same reasoning
-    `_audit/next_steps.md` §8 records for keeping `PicardDriver` in this repo.
-
-    Parameters
-    ----------
-    call :
-        The base declaration's unbound `__call__`.
-    **replacements :
-        `parameter_name=FromExactly(...)` for each read to rebind.
-
-    Returns
-    -------
-    :
-        An `inspect.Signature` to assign to the overriding `__call__`'s
-        `__signature__`.
-
-    Raises
-    ------
-    ValueError
-        If a `replacements` key is not a parameter of `call`.
-    """
-    signature = inspect.signature(call)
-    unseen = dict(replacements)
-    parameters = [
-        parameter.replace(default=unseen.pop(name)) if name in unseen else parameter
-        for name, parameter in signature.parameters.items()
-    ]
-    if unseen:
-        raise ValueError(
-            f"{call.__qualname__} has no parameter(s) {sorted(unseen)} to rebind; "
-            f"its parameters are {sorted(signature.parameters)}"
-        )
-    return signature.replace(parameters=parameters)
-
-
-class StellaratorConfinementTime(ConfinementTime):
-    """`ConfinementTime` with its 20th read bound to `.stellarator.iotabar`.
-
-    **Not a formula change -- the same `calculate_confinement_time` body, reading a
-    different producer.** PROCESS's `calculate_confinement_time` names that parameter
-    `q95` (`process/models/physics/confinement_time.py:79`, the 20th positional), and
-    the *tokamak* caller does pass `.physics.q95`. The stellarator caller passes
-    `self.data.stellarator.iotabar` into the very same slot
-    (`process/models/stellarator/stellarator.py:2312`) -- the parameter is named for
-    the tokamak quantity, but in stellarator mode it carries the rotational
-    transform. `iss04_stellarator_confinement_time` even names its own parameter
-    `iotabar` and raises it to `0.41` (this module, `iss04_stellarator_confinement_
-    time`), so the base class's `.physics.q95` binding fed the ISS04 law a
-    safety factor where PROCESS feeds it a rotational transform.
-
-    **Found by the MDA-vs-PROCESS harness, and confirmed arithmetically, not
-    inferred**: on `stellarator_helias.IN.DAT`'s converged run `q95 = 1.03` and
-    `iotabar = 1.0`, so the base binding overstates `t_energy_confinement` by
-    `1.03**0.41 = 1.0121928428817748` -- against the harness's reported `rel_diff` of
-    `1.219e-02` on `.physics.t_energy_confinement`, and `1.205e-02` on
-    `.physics.f_t_alpha_energy_confinement` downstream (it scales as `1/tau`).
-    `ConfinementTime`'s own docstring had already predicted this exact fix ("a
-    stellarator-mode instantiation of this class would rebind the `q95` input"); it
-    was simply never built, and `total_process.py` registered the base class.
-
-    Why a subclass rather than editing `ConfinementTime`: this module ports ~40
-    scaling laws, most of them tokamak ones for which `.physics.q95` is right, so the
-    binding is genuinely device-dependent and cannot be resolved in one place. Why a
-    subclass rather than a static field on one class: reads are class-level
-    parameter defaults, so an instance's `eqx.field(static=True)` cannot vary them --
-    the declaring class *is* the unit of rebinding, and `NodalDeclaration.name` is
-    `type(self).__name__` (`pytree_namespace_module.py:190-194`), so this arm gets its
-    own node name in the graph for free.
-
-    Registered under `total_process.TOPOLOGY_SWITCHES`'s `.stellarator.istell` switch,
-    not unconditionally -- changing which node produces a read changes an edge, which
-    is `configuration.py`'s own criterion for a topology switch. This class and
-    `ConfinementTime` own byte-identical `Output` sets, so they are genuine mutually
-    exclusive arms and pass `Switch.check_arms_are_exclusive`.
-    """
-
-    def __call__(self, *args, **kwargs):
-        """`ConfinementTime.__call__`'s body, under the rebound signature below."""
-        return ConfinementTime.__call__(self, *args, **kwargs)
-
-    __call__.__signature__ = _rebound_signature(
-        ConfinementTime.__call__,
-        q95=FromExactly(stellarator.iotabar),
-    )

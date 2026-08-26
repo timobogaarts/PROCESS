@@ -40,6 +40,23 @@ feedback -- where before it meant nothing.
 
 Three rules are load-bearing and are stated once.
 
+**The grain is the tree's, not a number.** A node's group is *the namespace it lives
+in* -- every leading key of its name but its own -- and no caller has to say how deep to
+look. This graph is ragged (2 to 4 keys; five of seven subsystems flat), so an integer
+depth applied uniformly was one number standing in for a shape, and the headline it
+produced moved with the number: at `depth=1` "0 blocks cross a group boundary", at
+`depth=2` one, on an unchanged graph. `depth` survives only as a *zoom* for a picture,
+never as the grain of a measurement. See `group_of`.
+
+**Crossing is containment, not distinctness.** A block spanning `physics` and
+`physics.profiles` spans two groups and stays inside one subtree; calling that a
+cross-group loop reports a subsystem's internals as coupling between subsystems. So
+`BlockGrouping.crosses` asks whether *any* namespace contains the whole block
+(`containing`, the longest common prefix), and `container` names the smallest one that
+does. On the reference machine that turns a number which was 0 or 1 depending on a knob
+into a fact that needs neither: **no coupling leaves a subsystem, and one loop spans
+three levels inside `physics`.**
+
 **A group is the leading namespace keys of a name, minus the node's own final key.**
 Both key kinds count, because in a `NodePath` both are namespace positions: a
 `GetAttrKey` is a slot in the machine tree and a `DictKey` a mapping key, and the kind
@@ -166,17 +183,25 @@ def _cut_owner(path: NodePath, owners: 'Mapping[VarPath, NodePath]') -> 'NodePat
     return None
 
 
-def group_of(path: NodePath, *, depth: int = 1,
+def group_of(path: NodePath, *, depth: int | None = None,
              among: 'Iterable[NodePath] | None' = None,
              owners: 'Mapping[VarPath, NodePath] | None' = None) -> Group:
     '''
     The group `path` declares it belongs to: its leading keys, without its own name.
 
-    `depth` is the grain. `depth=1` gives the top-level subsystem
-    (`stellarator.coils.Intersect -> ('stellarator',)`), `depth=2` the one below it
-    (`('stellarator', 'coils')`). A name shallower than `depth` gives whatever prefix it
-    has, so a two-level and a three-level name can be grouped together without either
-    being special-cased.
+    **`depth=None`, the default, is the tree's own answer: the namespace the node
+    actually lives in.** `.stellarator.coils.intersect` is in `stellarator.coils`,
+    `.costs.acc22` is in `costs`, and nothing had to say how deep to look -- the name
+    already carries it. That matters because the tree is *ragged*: names run 2 to 4 keys
+    on this graph and five of its seven subsystems are flat, so one integer applied to
+    all of them was a number standing in for a shape.
+
+    `depth` truncates that, and only ever shallower: `depth=1` files every node under its
+    top-level subsystem. Read it as a **zoom for a picture**, not as a claim about
+    structure -- a measurement whose answer moves with an integer nobody derived reports
+    the integer as much as the graph. It also saturates, since the cut is capped at the
+    node's own parent: on this graph `depth=3` and `depth=99` are one grouping, and a
+    name shallower than `depth` gives whatever prefix it has.
 
     The node's own final key is never part of its group -- `['Build']` is `UNGROUPED`,
     not a group of one called `Build`.
@@ -201,7 +226,7 @@ def group_of(path: NodePath, *, depth: int = 1,
     a variable place, and both now resolve -- `^problem.fwbs.f_ster_div_single` to
     `stellarator` and `^problem.physics.proton_rate_density.cycle` to `physics`.
     '''
-    if depth < 1:
+    if depth is not None and depth < 1:
         raise ValueError(f'depth must be at least 1, not {depth}')
     if among is not None and is_minted(path) and unminted(path) not in among:
         if owners is not None:
@@ -210,7 +235,8 @@ def group_of(path: NodePath, *, depth: int = 1,
                 return group_of(owner, depth=depth, among=among, owners=owners)
         return UNGROUPED
     keys = _tree_keys(path)
-    return keys[: min(depth, max(len(keys) - 1, 0))]
+    own = max(len(keys) - 1, 0)
+    return keys[: own if depth is None else min(depth, own)]
 
 
 def group_label(group: Group) -> str:
@@ -218,11 +244,59 @@ def group_label(group: Group) -> str:
     return '.'.join(group) if group else UNGROUPED_LABEL
 
 
+def top_of(group: Group) -> Group:
+    '''The subsystem a group is in: its first key. `stellarator.coils -> stellarator`.
+
+    What a *colour* is keyed on, where `group_of` is what a *group* is. A stellarator is
+    its coils and its fwbs, and giving those three unrelated hues would draw the tree as
+    a flat list of twelve things. The substructure is shown by nesting the ribbon
+    instead, which is what containment actually looks like.
+    '''
+    return group[:1]
+
+
+def containing(groups: 'Iterable[Group]') -> Group:
+    '''
+    The smallest namespace holding every one of `groups`: their longest common prefix.
+
+    `UNGROUPED` members are skipped rather than dragging the answer to the root -- a
+    flat-named node says nothing about containment, the same reading
+    `BlockGrouping.named_groups` already takes. All-ungrouped gives `UNGROUPED`, and so
+    does a genuinely cross-subsystem set: what separates the two is whether there was
+    anything named to contain, not this function.
+    '''
+    named = [g for g in groups if g != UNGROUPED]
+    if not named:
+        return UNGROUPED
+    common = named[0]
+    for group in named[1:]:
+        keep = 0
+        while keep < min(len(common), len(group)) and common[keep] == group[keep]:
+            keep += 1
+        common = common[:keep]
+    return common
+
+
+def hierarchical(groups: 'Iterable[Group]') -> tuple[Group, ...]:
+    '''
+    `groups` re-ordered so a namespace is followed by the namespaces inside it.
+
+    First-appearance order decides the subsystems and, within one, the order among
+    siblings; nesting decides the rest. For a legend only -- the matrix axes are
+    `dependency_group_sequence`'s or `group_sequence`'s, and neither is this.
+    '''
+    groups = tuple(dict.fromkeys(groups))
+    rank = {g: i for i, g in enumerate(groups)}
+    return tuple(sorted(groups, key=lambda g: tuple(
+        rank.get(g[:i + 1], len(groups)) for i in range(len(g))
+    )))
+
+
 # ================================================================== the two orderings
 def group_sequence(
     names: Iterable[NodePath],
     *,
-    depth: int = 1,
+    depth: int | None = None,
     owners: 'Mapping[VarPath, NodePath] | None' = None,
 ) -> tuple[Group, ...]:
     '''
@@ -245,7 +319,7 @@ def group_sequence(
     return tuple(seen)
 
 
-def dependency_group_sequence(graph: Graph, *, depth: int = 1) -> tuple[Group, ...]:
+def dependency_group_sequence(graph: Graph, *, depth: int | None = None) -> tuple[Group, ...]:
     '''
     Every group present, in **dependency order**: contract each group, then sort that.
 
@@ -323,7 +397,7 @@ def dependency_group_sequence(graph: Graph, *, depth: int = 1) -> tuple[Group, .
 def provenance_order(
     names: Iterable[NodePath],
     *,
-    depth: int = 1,
+    depth: int | None = None,
     groups: Sequence[Group] | None = None,
     owners: 'Mapping[VarPath, NodePath] | None' = None,
 ) -> tuple[NodePath, ...]:
@@ -404,16 +478,50 @@ class BlockGrouping:
         return tuple(g for g in self.groups if g != UNGROUPED)
 
     @property
-    def crosses(self) -> bool:
-        '''Whether it spans more than one *named* group: a cross-group feedback loop.'''
+    def container(self) -> Group:
+        '''The smallest namespace holding every named group its members declare.'''
+        return containing(self.groups)
+
+    @property
+    def spans(self) -> bool:
+        '''Whether its members declare more than one named group at all.'''
         return len(self.named_groups) > 1
+
+    @property
+    def crosses(self) -> bool:
+        '''
+        Whether it couples namespaces that **nothing smaller than the machine contains**.
+
+        *This is not "spans more than one group", which is what it used to mean, and the
+        difference changes a headline.* Once the grain is the tree's own
+        (`group_of`'s `depth=None`) a block can span `physics` and `physics.profiles` --
+        two groups, one subtree, a loop that never leaves `physics`. Counting that as a
+        cross-group loop reports a subsystem's internals as coupling between subsystems,
+        which is the opposite of what the reader takes from it. So the test is
+        containment, not distinctness: `crosses` is a block whose `container` is
+        `UNGROUPED`, i.e. one whose members share no namespace at all.
+
+        Measured on the reference machine's declared graph: 14 multi-node SCCs, 13 of
+        them inside a single namespace, **one** spanning `physics`,
+        `physics.profiles` and `physics.profiles.parameterisation` -- and **zero**
+        crossing. The old rule read that last one as a cross-group loop; at `depth=1` it
+        read it as nothing at all, because the whole subtree collapsed to `physics`.
+        Neither was the fact, which is: *no coupling in this graph leaves a subsystem,
+        and one loop spans three levels inside `physics`.*
+        '''
+        return self.spans and self.container == UNGROUPED
+
+    @property
+    def nests(self) -> bool:
+        '''Spans namespaces, but all inside one -- `physics` with `physics.profiles`.'''
+        return self.spans and self.container != UNGROUPED
 
 
 @dataclasses.dataclass(frozen=True)
 class GroupingReport:
     '''What provenance and structure agree and disagree about, on one graph.'''
 
-    depth: int
+    depth: int | None
     groups: tuple[Group, ...]
     sizes: Mapping[Group, int]
     runs: Mapping[Group, int]
@@ -431,6 +539,16 @@ class GroupingReport:
     cross_group_edges: int
     '''Node-to-node edges whose endpoints are in different named groups.'''
 
+    cross_subsystem_edges: int
+    '''
+    Of those, the ones whose endpoints are in different *subsystems* (`top_of`).
+
+    Both are reported because at the tree's own grain the first alone misleads: an edge
+    from `.physics.fusion_rates` into `.physics.profiles.density_profile` is a
+    cross-group edge and is not a subsystem talking to another subsystem. The pair is
+    what says how much of the crossing is a subsystem's internal structure.
+    '''
+
     @property
     def coupled(self) -> tuple[BlockGrouping, ...]:
         '''The blocks that genuinely couple: more than one non-minted node.'''
@@ -438,21 +556,35 @@ class GroupingReport:
 
     @property
     def crossing(self) -> tuple[BlockGrouping, ...]:
-        '''Of those, the ones spanning more than one group.'''
+        '''Of those, the ones no single namespace contains -- see
+        `BlockGrouping.crosses`.'''
         return tuple(b for b in self.coupled if b.crosses)
 
+    @property
+    def nesting(self) -> tuple[BlockGrouping, ...]:
+        '''Of those, the ones spanning namespaces that one namespace still contains.'''
+        return tuple(b for b in self.coupled if b.nests)
+
+    @property
+    def levels(self) -> int:
+        '''How deep the grouping actually goes: the longest group present.'''
+        return max((len(g) for g in self.groups), default=0)
+
     def summary(self) -> str:
+        grain = 'the tree' if self.depth is None else f'depth {self.depth}'
         return (
-            f'{len(self.groups)} group(s) at depth {self.depth}; '
+            f'{len(self.groups)} group(s) over {self.levels} level(s), by {grain}; '
             f'{len(self.blocks)} block(s), {len(self.coupled)} with more than one real '
-            f'node, {len(self.crossing)} of those crossing a group boundary; '
-            f'{self.cross_group_edges} cross-group edge(s); '
+            f'node, {len(self.crossing)} of those crossing a subsystem boundary and '
+            f'{len(self.nesting)} spanning namespaces inside one; '
+            f'{self.cross_group_edges} cross-group edge(s), '
+            f'{self.cross_subsystem_edges} between subsystems; '
             f'{sum(1 for g in self.groups if self.runs.get(g, 0) == 1)}/'
             f'{len(self.groups)} group(s) contiguous in the run order'
         )
 
 
-def grouping_report(blocking: Blocking, *, depth: int = 1) -> GroupingReport:
+def grouping_report(blocking: Blocking, *, depth: int | None = None) -> GroupingReport:
     '''
     Measure provenance against structure on `blocking`: § 11's table, for any graph.
 
@@ -490,7 +622,10 @@ def grouping_report(blocking: Blocking, *, depth: int = 1) -> GroupingReport:
         if var in owners and at[owners[var]] != at[name]
         and at[owners[var]] != UNGROUPED and at[name] != UNGROUPED
     }
-    return GroupingReport(depth, groups, sizes, runs, blocks, len(crossing))
+    between = {(source, target) for source, target in crossing
+               if top_of(at[source]) != top_of(at[target])}
+    return GroupingReport(depth, groups, sizes, runs, blocks,
+                          len(crossing), len(between))
 
 
 # ================================================================== the drawing
@@ -545,7 +680,7 @@ def _matrix_struct(
     blocking: Blocking,
     order: Sequence[NodePath],
     *,
-    depth: int,
+    depth: int | None,
     formatter: Formatter,
 ) -> dict:
     '''
@@ -566,16 +701,21 @@ def _matrix_struct(
     among = frozenset(graph.nodes)
     at = {name: group_of(name, depth=depth, among=among, owners=owners) for name in graph.nodes}
     groups = group_sequence(graph.nodes, depth=depth, owners=owners)
-    palette = {g: group_style(i) for i, g in enumerate(groups)}
+    # Colour is keyed on the *subsystem*, not on the group: see `top_of`. The ribbon
+    # nests instead, so `stellarator.coils` is stellarator's blue in a second lane
+    # rather than a colour of its own that says nothing about where it lives.
+    subsystems = tuple(dict.fromkeys(top_of(g) for g in groups))
+    palette = {top: group_style(i) for i, top in enumerate(subsystems)}
     palette[UNGROUPED] = (UNGROUPED_COLOUR, None)
+    hue = {name: palette[top_of(at[name])] for name in graph.nodes}
     index = {name: i for i, name in enumerate(order)}
 
     rows = [
         {
             'name': formatter.node((name, graph[name])),
             'group': group_label(at[name]),
-            'colour': palette[at[name]][0],
-            'overlay': palette[at[name]][1],
+            'colour': hue[name][0],
+            'overlay': hue[name][1],
             'problem': isinstance(graph[name], DeclaredNode),
             'minted': is_minted(name),
         }
@@ -588,22 +728,36 @@ def _matrix_struct(
             'c': index[source],          # ... from this column
             'n': len(shared),
             'v': [formatter.var(v) for v in shared[:12]],
-            'colour': palette[at[source]][0],
+            'colour': hue[source][0],
         }
         for (source, target), shared in _edges(graph).items()
     ]
 
+    # One ribbon lane per level of the tree, outermost nearest the labels: a run of
+    # `stellarator` in lane 0 with `coils` and `fwbs` drawn inside it in lane 1. This is
+    # where `depth` used to be spent -- truncating the grain to make one flat ribbon
+    # drawable -- and nesting the lanes is what buys the grain back without a knob. A
+    # node shallower than the lane contributes nothing to it, which is how a ragged tree
+    # draws: `costs` has lane 0 and simply no lane 1.
+    levels = max((len(at[name]) for name in order), default=0)
     bands: list[dict] = []
-    start = 0
-    for i, name in enumerate(order):
-        if i + 1 == len(order) or at[order[i + 1]] != at[name]:
-            bands.append({
-                'from': start, 'to': i,
-                'label': group_label(at[name]),
-                'colour': palette[at[name]][0],
-                'overlay': palette[at[name]][1],
-            })
-            start = i + 1
+    for level in range(levels):
+        run: Group | None = None
+        start = 0
+        for i, name in enumerate((*order, None)):
+            group = at[name] if name is not None else None
+            key = (group[:level + 1] if group is not None and len(group) > level
+                   else None)
+            if key != run:
+                if run is not None:
+                    bands.append({
+                        'level': level, 'from': start, 'to': i - 1,
+                        'label': group_label(run) if level == 0 else run[-1],
+                        'full': group_label(run),
+                        'colour': palette[top_of(run)][0],
+                        'overlay': palette[top_of(run)][1],
+                    })
+                run, start = key, i
 
     report = grouping_report(blocking, depth=depth)
     boxes = [
@@ -613,6 +767,8 @@ def _matrix_struct(
             'size': len(b.members),
             'real': b.real,
             'crosses': b.crosses,
+            'nests': b.nests,
+            'container': group_label(b.container),
             'contiguous': (max(index[m] for m in b.members)
                            - min(index[m] for m in b.members) + 1) == len(b.members),
             'groups': [group_label(g) for g in b.groups],
@@ -624,13 +780,15 @@ def _matrix_struct(
 
     legend = [
         {
-            'label': group_label(g),
-            'colour': palette[g][0],
-            'overlay': palette[g][1],
+            'label': group_label(g) if len(g) <= 1 else g[-1],
+            'full': group_label(g),
+            'level': max(len(g) - 1, 0),
+            'colour': palette[top_of(g)][0],
+            'overlay': palette[top_of(g)][1],
             'size': report.sizes[g],
             'runs': report.runs[g],
         }
-        for g in groups
+        for g in hierarchical(groups)
     ]
     return {
         'rows': rows, 'cells': cells, 'bands': bands, 'boxes': boxes,
@@ -638,9 +796,11 @@ def _matrix_struct(
         'backward': sum(c['n'] for c in cells if c['r'] < c['c']),
         'reads': sum(c['n'] for c in cells),
         'coupled': len(report.coupled), 'crossing': len(report.crossing),
+        'nesting': len(report.nesting), 'levels': levels,
         'crossEdges': report.cross_group_edges,
+        'subsystemEdges': report.cross_subsystem_edges,
         'tiers': len(TIER_OVERLAY),
-        'recycled': len(groups) > len(PALETTE) * len(TIER_OVERLAY),
+        'recycled': len(subsystems) > len(PALETTE) * len(TIER_OVERLAY),
     }
 
 
@@ -721,8 +881,17 @@ const el = (tag, a = {}) => { const e = document.createElementNS(NS, tag);
 const n = D.rows.length;
 const charW = 5.1;
 const lblW = Math.min(340, 20 + charW * Math.max(...D.rows.map(r => r.name.length)));
-const gutter = 16 + 6.2 * Math.max(...D.bands.map(b => b.label.length));
-const X0 = lblW + BAND + GAP, Y0 = lblW + BAND + GAP;
+/* One ribbon lane per level, so the axis is as wide as the tree is deep. Labels get a
+   gutter column per level for the same reason: an inner stretch sits inside its outer
+   one, so their labels share a y and would collide in a single column. */
+const LEVELS = Math.max(1, ...D.bands.map(b => b.level + 1));
+const BANDW = BAND * LEVELS;
+const lvlW = [];
+for (const b of D.bands) lvlW[b.level] = Math.max(lvlW[b.level] || 0, b.label.length);
+const lvlX = []; let gut = 6;
+for (let L = 0; L < LEVELS; L++) { lvlX[L] = gut; gut += 8 + 6.2 * (lvlW[L] || 0); }
+const gutter = 10 + gut;
+const X0 = lblW + BANDW + GAP, Y0 = lblW + BANDW + GAP;
 const W = X0 + n * CELL + gutter + PAD, H = Y0 + n * CELL + PAD;
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
@@ -741,14 +910,23 @@ svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%');
 const band = el('g', {class: 'band'});
 for (const b of D.bands) {
   const len = (b.to - b.from + 1) * CELL;
+  const off = lblW + b.level * BAND;
+  /* Depth is drawn as tint, not as hue: every lane of one subsystem is that
+     subsystem's colour, and the inner ones sit lighter so containment reads without
+     inventing a second palette. */
+  const tint = 1 - .3 * b.level;
   for (const axis of [0, 1]) {
-    const x = axis ? X0 + b.from * CELL : lblW, y = axis ? lblW : Y0 + b.from * CELL;
+    const x = axis ? X0 + b.from * CELL : off, y = axis ? off : Y0 + b.from * CELL;
     const w = axis ? len : BAND, h = axis ? BAND : len;
-    band.appendChild(el('rect', {x, y, width: w, height: h, fill: b.colour, rx: 2}));
+    band.appendChild(el('rect', {x, y, width: w, height: h, fill: b.colour, rx: 2,
+      'fill-opacity': tint}));
     if (b.overlay)
-      band.appendChild(el('rect', {x, y, width: w, height: h, fill: `url(#${b.overlay})`, rx: 2}));
+      band.appendChild(el('rect', {x, y, width: w, height: h, fill: `url(#${b.overlay})`,
+        rx: 2, 'fill-opacity': tint}));
   }
-  for (const p of [b.from, b.to + 1]) {
+  /* Separators mark subsystems only. A rule across the whole matrix for every level of
+     every namespace would be a grid, not a separator. */
+  for (const p of (b.level ? [] : [b.from, b.to + 1])) {
     band.appendChild(el('line', {class: 'sep', x1: X0 + p * CELL, y1: lblW,
       x2: X0 + p * CELL, y2: Y0 + n * CELL}));
     band.appendChild(el('line', {class: 'sep', x1: lblW, y1: Y0 + p * CELL,
@@ -764,8 +942,9 @@ for (const b of D.bands) {
      and the row's own dotted name all still say which group it is; what would be lost is
      only a third copy of it, and what would be gained is a gutter of mush. */
   if (b.to > b.from) {
-    const name = el('text', {class: 'gname', x: X0 + n * CELL + 6,
-      y: Y0 + (b.from + (b.to - b.from + 1) / 2) * CELL + 3.5, fill: b.colour});
+    const name = el('text', {class: 'gname', x: X0 + n * CELL + lvlX[b.level],
+      y: Y0 + (b.from + (b.to - b.from + 1) / 2) * CELL + 3.5, fill: b.colour,
+      'fill-opacity': 1 - .25 * b.level});
     name.textContent = b.label;
     band.appendChild(name);
   }
@@ -858,7 +1037,8 @@ side.innerHTML =
         : g.overlay === 'hatch-dot'
         ? ';background-image:radial-gradient(#fff9 22%,#0000 23%);background-size:4px 4px'
         : ''}"></div>` +
-    `<div class="nm">${esc(g.label)}</div>` +
+    `<div class="nm" style="padding-left:${g.level * 11}px" ` +
+    `title="${esc(g.full)}">${esc(g.label)}</div>` +
     `<div class="ct" title="nodes / contiguous stretches in the run order">${g.size}` +
     (g.runs > 1 ? ` <span class="scatter">&times;${g.runs}</span>` : '') + '</div>'
   ).join('') + '</div>' +
@@ -873,9 +1053,12 @@ side.innerHTML =
   '<code>dsm.html</code> uses the mirrored <code>IC_FBD</code>).</p>' +
   '<p class="note">A <b>ring</b> on a diagonal cell marks a node in a block that genuinely ' +
   'couples (more than one non-minted node), and the outline around them is that block. ' +
-  '<b>Red</b> means the block <b>spans</b> more than one group -- a cross-group feedback ' +
-  'loop, the most interesting thing this comparison can find; grey means it is contained ' +
-  'in one group. A <b>faint dashed</b> outline is a block whose members are not adjacent ' +
+  '<b>Red</b> means <b>no namespace contains it</b> -- a loop coupling one ' +
+  'subsystem to ' +
+  'another, the most interesting thing this comparison can find. Grey means some ' +
+  'namespace does: either one group, or several inside one subtree (`physics` with ' +
+  '`physics.profiles`), which the tooltip names as the block\'s container. A ' +
+  '<b>faint dashed</b> outline is a block whose members are not adjacent ' +
   'in this ordering: it is a bounding box, not the block, and the rings inside it are ' +
   'where the block actually is.</p>' +
   '<h2>Totals</h2><p class="note"><b>' + D.backward + ' of ' + D.reads +
@@ -899,7 +1082,9 @@ stage.addEventListener('mousemove', e => {
     const d = JSON.parse(t.dataset.i);
     if (d.box) {
       show(e, `<b>block of ${d.box.size} (${d.box.real} not minted)</b>\n` +
-        `groups: ${esc(d.box.groups.join(', '))}\n` + esc(d.box.members.join('\n')));
+        `groups: ${esc(d.box.groups.join(', '))}\n` +
+        `contained in: ${esc(d.box.container)}${d.box.crosses ? ' (nothing)' : ''}\n` +
+        esc(d.box.members.join('\n')));
     } else {
       const r = D.rows[d.r], c = D.rows[d.c];
       show(e, `<b>${esc(r.name)}</b>\n  ${d.r < d.c ? '&#8593; reads backwards' : 'reads'} ` +
@@ -956,7 +1141,7 @@ def render_grouped_dsm_html(
     blocking: Blocking,
     *,
     order: Sequence[NodePath] | None = None,
-    depth: int = 1,
+    depth: int | None = None,
     title: str = 'Grouped DSM',
     subtitle: str = '',
     file_name: str = 'dsm_grouped',

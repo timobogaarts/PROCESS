@@ -17,27 +17,38 @@ not this file's.
 """
 
 import functools
+import os
 import re
 
 import equinox as eqx
 import pytest
 from cottax.interfaces.pytree_namespace_module import spell_flat, to_graph
 
+from functional_process import boundary as fp_boundary
+from functional_process.boundary import orphaned_by
 from functional_process.indat import (
     BLANKET_MASSES,
     BLANKET_SHIELD_POWER,
     BUILDING_SIZING,
-    CONFINEMENT_TIME,
+    CONFINEMENT_SCALING,
+    CRYO_Q_NUC,
+    ENERGY_STORAGE,
+    EnergyStorageCostUnpulsed,
+    ThermalStorageModel,
+    CONFINEMENT_TAIL,
+    PLASMA_POWER_LOSS,
     COST_MODEL,
     COST_OF_ELECTRICITY,
     ELECTRIC_PRODUCTION,
     FW_AREA,
+    GRAPH,
     HEATING,
     PROFILE_PARAMETERISATION,
     REFERENCE_INPUT_FILE,
     REFERENCE_MACHINE,
     REFERENCE_MACHINE_SWITCHES,
     ST_INIT_I_PLASMA_PEDESTAL,
+    ProfileParameterisationPedestal,
     TF_POWER,
     UNPORTED,
     AFwTotalNoPowerflow,
@@ -45,6 +56,7 @@ from functional_process.indat import (
     machine_from_indat,
     switches_from_indat,
 )
+from functional_process.total_process import TokamakProcess
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
@@ -62,15 +74,6 @@ def _plain(entry):
     return entry()
 
 
-def _confinement(entry):
-    """`ConfinementTime`'s three settings, which both occupants of that slot carry."""
-    return entry(
-        i_confinement_time=ConfinementTimeModel.ISS04_STELLARATOR,
-        i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
-        i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
-    )
-
-
 def _electric_production(entry):
     """`ELECTRIC_PRODUCTION`'s entries are builders taking `.tfcoil.i_tf_sup`, which
     `machine_from_indat` resolves from the `tf_power` slot and threads in rather than
@@ -81,10 +84,31 @@ def _electric_production(entry):
 
 
 def _costs(entry):
-    """`Costs` has one slot of its own -- `cost_of_electricity`, whose occupant may be
-    `None` -- so it cannot be default-constructed. Built with the reference machine's.
+    """`Costs` has two slots of its own -- `cost_of_electricity`, whose occupant may be
+    `None`, and `energy_storage_cost` -- so it cannot be default-constructed. Built with
+    the reference machine's.
     """
-    return entry(cost_of_electricity=REFERENCE_MACHINE.costs.cost_of_electricity)
+    return entry(
+        cost_of_electricity=REFERENCE_MACHINE.costs.cost_of_electricity,
+        energy_storage_cost=REFERENCE_MACHINE.costs.energy_storage_cost,
+    )
+
+
+def _profile_parameterisation(entry):
+    """The parabolic arm has a slot of its own -- `ecrh_density_limit`, which is the
+    `EcrhDensityLimit` node on a stellarator and `None` on a tokamak, because
+    `st_d_limit_ecrh` is reached only from `st_phys`. So it cannot be
+    default-constructed either; built with the reference (stellarator) machine's, which
+    is the arm these swap tests are about.
+
+    The pedestal arm has no such slot and takes no argument, so the `getattr` fallback
+    rather than a second table: it is the same registry.
+    """
+    if entry is ProfileParameterisationPedestal:
+        return entry()
+    return entry(
+        ecrh_density_limit=REFERENCE_MACHINE.physics.profiles.parameterisation.ecrh_density_limit
+    )
 
 
 SLOTS = [
@@ -92,12 +116,24 @@ SLOTS = [
     # No "PROCESS's own default" column any more: no slot the factory fills has a
     # default, so there is nothing for one to be compared against. Where PROCESS's
     # default matters it is the `switches.get` fallback inside `machine_from_indat`,
-    # exercised through `test_a_silent_indat_is_refused_naming_istell`.
+    # exercised through `test_a_silent_indat_is_still_refused_but_no_longer_on_istell`.
     (
-        "istell",
-        CONFINEMENT_TIME,
-        lambda m: m.physics.confinement_time.model,
-        _confinement,
+        "i_confinement_time",
+        CONFINEMENT_SCALING,
+        lambda m: m.physics.confinement_time.scaling,
+        _plain,
+    ),
+    (
+        "i_rad_loss",
+        CONFINEMENT_TAIL,
+        lambda m: m.physics.confinement_time.tail,
+        _plain,
+    ),
+    (
+        "i_plasma_ignited_i_rad_loss",
+        PLASMA_POWER_LOSS,
+        lambda m: m.physics.confinement_time.power_loss,
+        _plain,
     ),
     ("isthtr", HEATING, lambda m: m.stellarator.heating, _plain),
     ("ipowerflow", FW_AREA, lambda m: m.stellarator.fw_area, _plain),
@@ -105,7 +141,7 @@ SLOTS = [
         "i_plasma_pedestal",
         PROFILE_PARAMETERISATION,
         lambda m: m.physics.profiles.parameterisation,
-        _plain,
+        _profile_parameterisation,
     ),
     ("i_bldgs_size", BUILDING_SIZING, lambda m: m.buildings.sizing, _plain),
     ("i_tf_sup", TF_POWER, lambda m: m.power.tf_power, _plain),
@@ -134,6 +170,22 @@ SLOTS = [
         _plain,
     ),
     ("i_cost_model", COST_MODEL, lambda m: m.costs, _costs),
+    (
+        "inuclear_i_tf_sup",
+        CRYO_Q_NUC,
+        lambda m: m.power.cryo_q_nuc,
+        lambda entry: None if entry is None else entry(),
+    ),
+    (
+        "i_pulsed_plant_istore",
+        ENERGY_STORAGE,
+        lambda m: m.costs.energy_storage_cost,
+        lambda entry: (
+            entry()
+            if entry is EnergyStorageCostUnpulsed
+            else entry(istore=ThermalStorageModel.ELECTROWATT_OPTION_1)
+        ),
+    ),
 ]
 
 SINGLE_FIELDS = [
@@ -147,10 +199,16 @@ SINGLE_FIELDS = [
 turns `.costs.ireactor` and `.costs.ipnet` into one arm index, so there is no single
 integer named `ireactor_ipnet` for an IN.DAT to set."""
 
-BASELINE_INDAT = {"istell": 6, "i_cost_model": 0}
-"""The least an IN.DAT must say for `machine_from_indat` to get past the two slots whose
+BASELINE_INDAT = {"istell": 6, "i_cost_model": 0, "i_plasma_ignited": 1}
+"""The least an IN.DAT must say for `machine_from_indat` to get past the slots whose
 PROCESS default is refused. Written into every temp file below so a test about one field
-fails on that field and not on `istell`."""
+fails on that field and not on `istell`.
+
+`i_plasma_ignited` joined them when the confinement node became slots: PROCESS's own
+default is `NON_IGNITED`, whose head arm adds injected heating and therefore reads a
+variable the written arm does not, so it is a real branch this port has not written.
+Refusing is the same honest answer `istell` gives -- a machine assembled from the wrong
+arm's reads is exactly the invented-edge defect the split removes."""
 
 
 def write_indat(tmp_path, **switches):
@@ -188,44 +246,111 @@ def test_every_registered_occupant_assembles(field, registry, where, value, buil
     assert graph.definitions, f"{field} == {value} assembled an empty graph"
 
 
+SWAP_PIN = os.path.join(os.path.dirname(fp_boundary.__file__), "reference_swaps.txt")
+"""Which reads each alternative occupant leaves without a producer.
+
+Generated -- `FP_WRITE_SWAP_PIN=1 $PY -m pytest tests/functional_process/test_machine.py
+-k orphans` -- and never hand-edited, same discipline as the boundary pin beside it.
+"""
+
+
+def _swap_orphans():
+    """Every registered occupant, and what swapping it in orphans."""
+    out = {}
+    for field, registry, where, build in SLOTS:
+        for value, occupant in registry.items():
+            machine = eqx.tree_at(where, REFERENCE_MACHINE, build(occupant),
+                                  is_leaf=lambda x: x is None)
+            for var in orphaned_by(GRAPH, to_graph(machine)):
+                out.setdefault(f"{field}={value}", []).append(var.path_str())
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def test_swapping_an_occupant_orphans_only_what_is_recorded():
+    """**The swap contract**: swap the occupant, rebuild, and account for every read
+    that lost its owner.
+
+    `next_steps.md` §12.2 designed this and nothing implemented it until
+    `functional_process/boundary.py`. The hazard is *partial overlap* -- an occupant
+    owning a subset of what it replaces, leaving the difference with no producer and its
+    consumers silently reading PROCESS's `DataStructure`. Same defect class as a missing
+    producer: eight recorded instances, none ever found by a check.
+
+    **The first run of this check found that every multi-arm slot in the tree has one**
+    -- six slots, thirty-seven reads. That is not a bug list yet and the test does not
+    pretend it is one: under `isthtr = 2` there is no ECRH power to compute, and PROCESS
+    genuinely leaves `.current_drive.p_hcd_ecrh_injected_total_mw` at its initialised
+    value. What the port cannot say today is *which* of the thirty-seven are that and
+    which are a producer someone forgot, because a read served by a `DataStructure`
+    default and a read served by nothing look identical from inside the graph. They stop
+    looking identical exactly when the boundary becomes declared rather than implied,
+    which is where this port is going.
+
+    So it is pinned rather than asserted away: the set is recorded, a **new** overlap
+    fails, and the recorded ones are a work list with a name. Deliberately *not*
+    asserted: that two occupants own the same set. §12.2 rejects that outright --
+    `i_cost_model`'s arms genuinely compute different things and forcing a common set
+    means inventing fields that exist only to satisfy a test.
+    """
+    orphans = _swap_orphans()
+    if os.environ.get("FP_WRITE_SWAP_PIN"):
+        with open(SWAP_PIN, "w", encoding="utf-8") as handle:
+            handle.write(
+                "# Reads each alternative occupant leaves with no producer, against the\n"
+                "# reference machine. Generated by FP_WRITE_SWAP_PIN=1 pytest -k orphans;\n"
+                "# do not hand-edit. A new line here is a new partial overlap -- see\n"
+                "# test_machine.test_swapping_an_occupant_orphans_only_what_is_recorded.\n"
+            )
+            for arm, paths in sorted(orphans.items()):
+                for path in paths:
+                    handle.write(f"{arm} {path}\n")
+
+    with open(SWAP_PIN, encoding="utf-8") as handle:
+        pinned = {}
+        for line in handle:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                arm, _, path = line.partition(" ")
+                pinned.setdefault(arm, []).append(path)
+
+    assert orphans == {k: sorted(v) for k, v in pinned.items()}
+
+
 @pytest.mark.parametrize(
     ("field", "registry", "where", "build"),
     [(f, r, w, b) for f, r, w, b in SLOTS if len(r) > 1],
     ids=[f for f, r, _w, _b in SLOTS if len(r) > 1],
 )
 def test_occupants_of_one_slot_differ(field, registry, where, build):
-    """Two occupants of one slot must actually differ in the graph they produce.
+    """Two occupants of one slot must actually be different models.
 
-    **Compared by ports, not by node names, and that is the change step 3 forced.** Node
-    identity is the slot path now, so swapping an occupant renames nothing -- the old
-    form of this test compared node *name sets* and would pass vacuously for every
-    single-node slot. What still distinguishes two occupants is what they read and own.
+    **Compared by class, not by ports, and that is a deliberate loosening.** The earlier
+    form asserted the occupants' *ports* differ, on the reasoning that a slot whose
+    occupants read and own the same things decides nothing. That reasoning holds only
+    while a switch may also live as a static kwarg: it is what makes "these two branches
+    read the same variables, so keep the kwarg" (`switch_kwarg_survey.md` band (c)) the
+    right answer, and the by-ports check was that policy's enforcement.
 
-    A slot whose occupants have identical ports is a slot that decides nothing: either
-    the family is spurious, or one occupant is a mis-registration of the other.
-    `i_tf_sup == 2` is the recorded case where PROCESS really does run the identical
-    branch, and it is refused rather than registered twice for exactly this reason.
+    **The policy is now that no switch is a static kwarg, whatever its reads.** A switch
+    value selects an occupant, full stop -- including two occupants that read and own the
+    same things and differ only in a literal (Account 225.3's two ELECTROWATT designs are
+    the standing example: same two reads, different itemised sum). Under that rule the
+    by-ports assertion is not a safety net, it is a blocker on the conversion, so what is
+    checked is what still means something: **each value selects a distinct occupant
+    class**, so a registry cannot quietly map two values to one entry.
 
-    Slots with one occupant are skipped by the `len(r) > 1` filter, which since the
-    tokamak arm was deleted includes `istell` -- a one-member family decides nothing
-    *here*, but it is still the slot the whole device hangs from.
+    That is weaker, and the gap it opens is worth naming: it no longer catches a family
+    whose occupants are genuinely identical in *behaviour* too. Nothing checks that, and
+    nothing cheaply can -- two bodies differing in one constant are indistinguishable
+    without evaluating them. `i_tf_sup == 2`, the recorded case where PROCESS runs the
+    byte-identical branch to `== 0`, is still handled by refusing it rather than
+    registering it twice; that refusal is now the only thing standing there.
     """
-    ports = {}
-    for value, entry in registry.items():
-        machine = eqx.tree_at(
-            where, REFERENCE_MACHINE, build(entry), is_leaf=lambda x: x is None
-        )
-        graph = to_graph(machine)
-        ports[value] = frozenset(
-            (
-                name.path_str(),
-                frozenset(i.var.path_str() for i in node.inputs),
-                frozenset(o.var.path_str() for o in node.outputs),
-            )
-            for name, node in graph.definitions.items()
-        )
-    assert len(set(ports.values())) == len(ports), (
-        f"{field}: occupants {sorted(ports)} read and own exactly the same things"
+    occupants = {value: entry for value, entry in registry.items()}
+    distinct = {id(entry) for entry in occupants.values()}
+    assert len(distinct) == len(occupants), (
+        f"{field}: occupants {sorted(occupants)} are not distinct models -- two values "
+        f"map to one entry, so at least one of them decides nothing"
     )
 
 
@@ -261,8 +386,9 @@ def test_ipowerflow_decides_whether_the_graph_has_a_cycle():
     assert cycle not in [{spell_flat(n) for n in c} for c in uncoupled.cycles]
 
 
-def test_a_silent_indat_is_refused_naming_istell(tmp_path):
-    """An IN.DAT that sets nothing yields no machine at all -- it names `istell`.
+def test_a_silent_indat_is_still_refused_but_no_longer_on_istell(tmp_path):
+    """An IN.DAT that sets nothing yields no machine -- and the reason moved to
+    `i_cost_model`.
 
     **Replaces `test_machine_defaults_are_process_defaults`**, whose premise --
     *"`Machine()`'s field defaults are PROCESS's bare defaults"* -- is gone by
@@ -273,14 +399,50 @@ def test_a_silent_indat_is_refused_naming_istell(tmp_path):
     kwargs*, where the old test -- which compared occupant classes only -- could not see
     them. A test that cannot fail on the thing it is named for is worse than no test.
 
-    What is checkable is the refusal. PROCESS's own default is `istell = 0`, a tokamak;
-    this tree has no tokamak, so a silent file is refused with that reason rather than
-    quietly assembling stellarator geometry under a tokamak confinement law.
+    **Re-targeted, not deleted, when `TokamakProcess` landed.** This test was
+    `test_a_silent_indat_is_refused_naming_istell`, and its stated ground was *"PROCESS's
+    own default is `istell = 0`, a tokamak; this tree has no tokamak"*. It has one now --
+    an empty `Tokamak` namespace inside a `TokamakProcess`, which assembles the shared
+    subsystems and nothing stellarator-specific -- so `istell == 0` is a device rather
+    than a refusal and asserting otherwise would be asserting a fact that stopped being
+    true. What the test was *for* survives untouched and is what it asserts now:
+
+    1. **PROCESS's bare defaults still do not silently assemble.** The refusal a silent
+       file now gets is `i_plasma_ignited = 0` with `i_rad_loss = 1` -- PROCESS's own
+       defaults, and the confinement head arm that adds injected heating, which this
+       port has not written. That is the same refusal `large_tokamak_eval.IN.DAT`
+       itself gets (`_audit/tokamak_boundary.md` §"What blocked the real file"), so it
+       is not an artefact of an empty file: it is the first thing a real conventional
+       tokamak asks for that this port has not got. `i_cost_model = 1` (KOVARI_2014) is
+       refused behind it, which is why `BASELINE_INDAT` sets both.
+    2. **The device is still resolved first.** A file whose *only* content is a refused
+       `istell` value reports `istell`, not `i_cost_model`, even though `i_cost_model`'s
+       default is refused too and the constructor would reach it. That ordering is the
+       property the old name was really guarding, and it is the half of the old test
+       that had nothing to do with the tokamak.
+    3. **The default device is the one PROCESS names.** Given only the two switches whose
+       PROCESS defaults this port refuses, a file that never mentions `istell` builds a
+       `TokamakProcess` -- not a `StellaratorProcess`, and not an error.
     """
     indat = tmp_path / "IN.DAT"
     indat.write_text("")
-    with pytest.raises(NotImplementedError, match=re.escape("istell == 0")):
+    with pytest.raises(
+        NotImplementedError, match=re.escape("i_plasma_ignited_i_rad_loss == -1")
+    ):
         machine_from_indat(indat)
+    ignited = tmp_path / "IGNITED.DAT"
+    ignited.write_text("i_plasma_ignited = 1\n")
+    with pytest.raises(NotImplementedError, match=re.escape("i_cost_model == 1")):
+        machine_from_indat(ignited)
+
+    preset = tmp_path / "PRESET.DAT"
+    preset.write_text("istell = 3\n")
+    with pytest.raises(NotImplementedError, match=re.escape("istell == 3")):
+        machine_from_indat(preset)
+
+    silent_device = tmp_path / "TOK.DAT"
+    silent_device.write_text("i_cost_model = 0\ni_plasma_ignited = 1\n")
+    assert type(machine_from_indat(silent_device)) is TokamakProcess
 
 
 def test_reference_machine_matches_the_input_file():
@@ -313,9 +475,19 @@ def test_reference_machine_matches_the_input_file():
 
 def test_reference_machine_is_what_the_factory_builds():
     """`machine_from_indat` on the reference file picks the occupants the file names."""
-    assert type(REFERENCE_MACHINE.physics.confinement_time.model) is occupant_class(
-        CONFINEMENT_TIME[REFERENCE_MACHINE_SWITCHES["istell"]]
+    confinement = REFERENCE_MACHINE.physics.confinement_time
+    assert type(confinement.scaling) is occupant_class(
+        CONFINEMENT_SCALING[
+            ConfinementTimeModel(REFERENCE_MACHINE_SWITCHES["i_confinement_time"])
+        ]
     )
+    assert type(confinement.tail) is occupant_class(
+        CONFINEMENT_TAIL[
+            ConfinementRadiationLossModel(REFERENCE_MACHINE_SWITCHES["i_rad_loss"])
+        ]
+    )
+    # The head is a joint dispatch, so what it proves is that both integers reached it.
+    assert type(confinement.power_loss) is occupant_class(PLASMA_POWER_LOSS[0])
     # `i_plasma_pedestal` is the one slot the file does *not* decide: `st_init` forces
     # it to `0` on every stellarator run, so the factory reads
     # `ST_INIT_I_PLASMA_PEDESTAL` and not the file. The reference file happens to agree,
@@ -344,7 +516,7 @@ def test_a_refused_value_says_why(tmp_path, field, value):
     here would fail on whichever of those the constructor reached first, rather than on
     the value under test.
     """
-    if field.startswith("blktmodel_"):
+    if field.startswith(("blktmodel_", "i_plasma_ignited_", "i_pulsed_plant_")):
         pytest.skip("joint key -- exercised through the two integers it derives from")
     indat = write_indat(tmp_path, **{field: value})
     with pytest.raises(NotImplementedError, match=re.escape(f"{field} == {value}")):

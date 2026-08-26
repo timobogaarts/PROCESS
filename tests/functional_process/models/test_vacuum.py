@@ -26,9 +26,11 @@ from cottax import (
     Feasibility,
     Graph,
     RootFind,
+    Start,
     schedule_for,
 )
 from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.rewrites import Assign
 from cottax.spec import NodePath
 from cottax.tools.path import path_map
 from jax.tree_util import DictKey
@@ -240,7 +242,8 @@ class _NewtonRootFindDriver(AbstractDriver):
     max_iter: int = 100
     tol: float = 1e-10
 
-    def __call__(self, conditions, start):
+    def __call__(self, conditions, data):
+        start = data.get(Start)
         d0 = jnp.asarray(start[0]) if start is not None else jnp.asarray(1.0)
 
         def residual_fn(d):
@@ -319,7 +322,9 @@ def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
     `test_old_model` legacy point).
     """
     d = DuctDiameterRootFind()
-    schedule = schedule_for(to_graph(d), {d.problem_name: _NewtonRootFindDriver()})
+    schedule = schedule_for(
+        Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
+    )
 
     for sample in _duct_diameter_samples():
         kw = sample.kwargs
@@ -338,7 +343,9 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
     this is not a contract case.
     """
     d = DuctDiameterRootFind()
-    schedule = schedule_for(to_graph(d), {d.problem_name: _NewtonRootFindDriver()})
+    schedule = schedule_for(
+        Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
+    )
 
     sample = _duct_diameter_samples()[-1]  # the test_old_model legacy point
     kw = sample.kwargs
@@ -428,7 +435,8 @@ class _MeritFunctionFeasibilityDriver(AbstractDriver):
 
     drives = Feasibility
 
-    def __call__(self, conditions, start):
+    def __call__(self, conditions, data):
+        start = data.get(Start)
         x0 = (
             jnp.asarray(start, dtype=float)
             if start is not None
@@ -485,7 +493,9 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     body = graph.runnable  # every plain node, problem nodes dropped
     merged = Graph(path_map({**dict(body.definitions), name: joined}))
 
-    schedule = schedule_for(merged, {name: _MeritFunctionFeasibilityDriver()})
+    schedule = schedule_for(
+        Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged)
+    )
     env = {
         vpath(".vacuum.l1"): jnp.asarray(kw["l1"]),
         vpath(".vacuum.l2"): jnp.asarray(kw["l2"]),

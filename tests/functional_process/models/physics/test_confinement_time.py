@@ -17,13 +17,11 @@ backdoor" technique used throughout this harness.
 """
 
 import pytest
-from cottax.interfaces.pytree_namespace_module import FromExactly
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.physics.confinement_time import (
-    ConfinementTime,
-    StellaratorConfinementTime,
-    _rebound_signature,
+    Iss04ConfinementTime,
+    IterIpb98y2ConfinementTime,
     calculate_confinement_time,
     calculate_double_and_triple_product,
     calculate_iter_physics_basis_elongation,
@@ -78,14 +76,8 @@ from functional_process.models.physics.confinement_time import (
     t10_confinement_time,
     valovic_elmy_confinement_time,
 )
-from functional_process.paths import physics
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
-from process.data_structure.physics_variables import (
-    ConfinementRadiationLossModel,
-    ConfinementTimeModel,
-    PlasmaIgnitionModel,
-)
 from process.models.physics.confinement_time import PlasmaConfinementTime
 from process.models.physics.plasma_geometry import PlasmaGeom
 
@@ -2136,53 +2128,34 @@ def test_confinement_time_invalid_switches_raise():
         calculate_confinement_time(**bad)
 
 
-def test_stellarator_arm_rebinds_only_the_q95_read():
-    """`StellaratorConfinementTime` differs from `ConfinementTime` in exactly one read.
+def test_the_law_decides_which_variable_feeds_it_not_the_device():
+    """The `q95`/`iotabar` binding follows the **scaling law**, not the device.
 
-    The regression this pins is the bug itself: PROCESS's `calculate_confinement_time`
-    names its 20th positional parameter `q95`
+    This is the same regression the old `StellaratorConfinementTime` test pinned, and it
+    is now asserted on the objects the graph actually holds. PROCESS's
+    `calculate_confinement_time` names its 20th positional parameter `q95`
     (`process/models/physics/confinement_time.py:79`) and the tokamak caller does pass
-    `.physics.q95`, but the stellarator caller passes `.stellarator.iotabar` into that
-    same slot (`process/models/stellarator/stellarator.py:2312`) -- where ISS04
-    consumes it as `iotabar**0.41`.
+    `.physics.q95` -- but the stellarator caller passes `.stellarator.iotabar` into that
+    same slot (`process/models/stellarator/stellarator.py:2312`), where ISS04 consumes it
+    as `iotabar**0.41`.
 
-    Asserted structurally rather than by value, and *exactly* one difference rather
-    than "the stellarator arm reads iotabar": `_rebound_signature` derives the whole
-    signature from the base, so a future edit to `ConfinementTime` that accidentally
-    rebound a second read would otherwise pass silently here. The outputs are asserted
-    identical because that is what makes the two genuine mutually exclusive `Switch`
-    arms (`configuration.py`'s `check_arms_are_exclusive`).
+    **A subclass existed only to rebind that one read, and splitting the switch deleted
+    it.** `iss04_stellarator_confinement_time`'s own parameter *is* `iotabar`, so its
+    occupant reads `.stellarator.iotabar` because that is what its law takes;
+    `iter_ipb98y2_confinement_time` takes `cur_plasma_ma` and never asks for either. The
+    read follows from the law, which is why `CONFINEMENT_SCALING` is keyed on
+    `i_confinement_time` and not on `istell`.
     """
-    switches = {
-        "i_confinement_time": ConfinementTimeModel.ISS04_STELLARATOR,
-        "i_rad_loss": ConfinementRadiationLossModel.CORE_ONLY,
-        "i_plasma_ignited": PlasmaIgnitionModel.IGNITED,
-    }
-    tokamak = ConfinementTime(**switches)
-    stellarator = StellaratorConfinementTime(**switches)
+    iss04 = [i.var.path_str() for i in Iss04ConfinementTime().inputs]
+    ipb98 = [i.var.path_str() for i in IterIpb98y2ConfinementTime().inputs]
 
-    tokamak_reads = [i.var.path_str() for i in tokamak.inputs]
-    stellarator_reads = [i.var.path_str() for i in stellarator.inputs]
+    assert ".stellarator.iotabar" in iss04
+    assert ".physics.q95" not in iss04
+    # The tokamak's law asks for neither: its own parameters are the plasma current and
+    # the IPB elongation, so the question the subclass existed to answer is not asked.
+    assert ".stellarator.iotabar" not in ipb98
+    assert ".physics.q95" not in ipb98
 
-    assert len(tokamak_reads) == len(stellarator_reads)
-    differences = [
-        (t, s) for t, s in zip(tokamak_reads, stellarator_reads, strict=True) if t != s
-    ]
-    assert differences == [(".physics.q95", ".stellarator.iotabar")]
-    assert tokamak.outputs == stellarator.outputs
-    assert stellarator.name.path_str() == "['StellaratorConfinementTime']"
-
-
-def test_rebound_signature_rejects_an_unknown_parameter():
-    """A `replacements` key that is not a parameter of the base raises at once.
-
-    The point of deriving the signature instead of copying it: if `ConfinementTime`
-    ever renames the parameter this arm rebinds, the rename must fail loudly at import
-    rather than silently leaving the stellarator arm reading `.physics.q95` again --
-    which is precisely the bug that shipped.
-    """
-    with pytest.raises(ValueError, match="no parameter"):
-        _rebound_signature(
-            ConfinementTime.__call__,
-            not_a_parameter=FromExactly(physics.q95),
-        )
+    # Same output either way -- one field, whichever law owns it -- which is what makes
+    # them genuine alternatives for one slot.
+    assert Iss04ConfinementTime().outputs == IterIpb98y2ConfinementTime().outputs

@@ -69,7 +69,12 @@ from cottax.tools.minting import unminted
 from cottax.tools.pytree import get_at
 
 from functional_process._harness.finite_difference import fd_gradient_with_error
-from functional_process.mda import default_drivers, driven_graph
+from functional_process.mda import (
+    assign_drivers,
+    default_drivers,
+    cut_graph,
+    starts_for,
+)
 from functional_process.mda_harness import KNOWN_MINT_VALUES, _without_excluded
 from functional_process.sand import (
     degenerate_fixed_points,
@@ -223,11 +228,25 @@ def mda_env(reference, graph=None, data=None):
     from functional_process.indat import graph_for
 
     data = reference.data if data is None else data
-    driven = driven_graph(_without_excluded(graph if graph is not None else graph_for()))
+    driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
     blocking = Blocking.scc(driven)
-    schedule = schedule_for(blocking, default_drivers(blocking))
+    schedule = schedule_for(
+        Blocking.scc(assign_drivers(blocking.graph, default_drivers(blocking.graph)))
+    )
     env = {}
+    # `^guess.*` ports are seeded below from the unknown each one starts; there is
+    # nothing in `data` spelled that way.
+    starts = {
+        guess
+        for problem, problem_type in zip(
+            blocking.problems, blocking.problem_types, strict=True
+        )
+        if problem_type is not None
+        for _, guess in starts_for(driven, problem)
+    }
     for var in driven.unowned_inputs:
+        if var in starts:
+            continue
         try:
             env[var] = jnp.asarray(ground_truth(data, var))
         except (AttributeError, KeyError):
@@ -237,11 +256,11 @@ def mda_env(reference, graph=None, data=None):
     ):
         if problem_type is None:
             continue
-        for var in driven[problem].owns:
+        for var, guess in starts_for(driven, problem):
             try:
-                env[var] = jnp.asarray(ground_truth(data, var))
+                env[guess] = jnp.asarray(ground_truth(data, var))
             except (AttributeError, KeyError):
-                env[var] = jnp.asarray(0.0)
+                env[guess] = jnp.asarray(0.0)
     return driven, schedule(dict(env))
 
 

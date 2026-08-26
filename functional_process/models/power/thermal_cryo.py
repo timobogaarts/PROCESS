@@ -238,7 +238,8 @@ def calculate_p_fw_blkt_heat_deposited_mw(
 ):
     """Extracted verbatim from `calculate_component_thermal_powers`
     (`power.py:857-878`) -- see that function's docstring, reused by `DeltaEtaStep`
-    below."""
+    below.
+    """
     if i_blkt_dual_coolant in (1, 2):
         return (
             p_fw_nuclear_heat_total_mw
@@ -265,7 +266,8 @@ def calculate_p_shld_heat_deposited_mw(
     p_cp_shield_nuclear_heat_mw, p_shld_nuclear_heat_mw, p_shld_coolant_pump_mw
 ):
     """Extracted verbatim from `calculate_component_thermal_powers`
-    (`power.py:895-897`), reused by `DeltaEtaStep` below."""
+    (`power.py:895-897`), reused by `DeltaEtaStep` below.
+    """
     return p_cp_shield_nuclear_heat_mw + p_shld_nuclear_heat_mw + p_shld_coolant_pump_mw
 
 
@@ -276,7 +278,8 @@ def calculate_p_div_heat_deposited_mw(
     p_div_coolant_pump_mw,
 ):
     """Extracted verbatim from `calculate_component_thermal_powers`
-    (`power.py:898-902`), reused by `DeltaEtaStep` below."""
+    (`power.py:898-902`), reused by `DeltaEtaStep` below.
+    """
     return (
         p_plasma_separatrix_mw
         + (p_div_nuclear_heat_total_mw + p_div_rad_total_mw)
@@ -295,7 +298,8 @@ def calculate_p_fw_heat_deposited_mw(
     """Extracted verbatim from `calculate_component_thermal_powers`
     (`power.py:923-930`, the inline `p_fw_heat_deposited_mw` sum), reused by
     `PFwDivHeatDepositedMwStep` below -- see `thermal_cryo.md`'s "The
-    `p_fw_div_heat_deposited_mw` self-loop" section."""
+    `p_fw_div_heat_deposited_mw` self-loop" section.
+    """
     return (
         p_fw_nuclear_heat_total_mw
         + p_fw_rad_total_mw
@@ -318,7 +322,8 @@ def calculate_p_fw_div_heat_deposited_mw(
     `PFwDivHeatDepositedMwStep` below share one body. See
     `calculate_component_thermal_powers`'s own docstring for the conditional-ownership
     finding this implements (a *different* partition of `i_p_coolant_pumping` than
-    `calculate_p_fw_blkt_coolant_pump_mw`'s)."""
+    `calculate_p_fw_blkt_coolant_pump_mw`'s).
+    """
     if i_p_coolant_pumping != PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP:
         return p_fw_heat_deposited_mw + p_div_heat_deposited_mw
     return p_fw_div_heat_deposited_mw
@@ -1735,6 +1740,33 @@ class Cryo(ExplicitFunction):
             n_tf_coils,
             qnuc,
         )
+
+
+class CryoQNuc(ExplicitFunction):
+    """`.fwbs.qnuc` when PROCESS computes it: `inuclear == 0` and `i_tf_sup == 1`.
+
+    **This replaces a `FixedPointFunction`, and the fixed point was an artefact of the
+    switch.** `calculate_cryo_qnuc` is `if inuclear == 0 and i_tf_sup == 1: qnuc = 1e6 *
+    p_tf_nuclear_heat_mw; return qnuc` -- so one arm computes the field from another
+    field and the other returns the incumbent untouched, which is PROCESS's own *"Issue
+    #511: if inuclear = 1: qnuc is input"*. Written as one node carrying `inuclear` as a
+    static kwarg, that body both reads and owns `.fwbs.qnuc`, which `to_graph` refuses
+    outright -- Shape B -- so it had to be declared as a fixed point over a minted
+    `^cond` copy, and the "qnuc is input" arm then showed up as a *structurally
+    degenerate* problem that `sand.degenerate_fixed_points` detected at runtime by
+    differentiating the residual and dropped.
+
+    Split into occupants, none of that exists. The computed arm reads
+    `p_tf_nuclear_heat_mw` and **not** the incumbent, so it is an ordinary
+    `ExplicitFunction`; the input arm is not a node at all, it is an empty slot, and
+    `.fwbs.qnuc` is an ordinary boundary input. What was recovered by differentiating a
+    residual is now stated by the tree, and one driven block goes with it.
+    """
+
+    qnuc = OutputInto(fwbs)
+
+    def __call__(self, p_tf_nuclear_heat_mw=From(fwbs)):
+        return 1.0e6 * p_tf_nuclear_heat_mw
 
 
 class CryoQNucStep(FixedPointFunction):

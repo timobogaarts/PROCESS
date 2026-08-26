@@ -199,10 +199,6 @@ SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | ForcedByProcess | Bypass
                 lambda m: m.stellarator.heating_and_radiation_power.i_plasma_ignited,
             ),
             Slot(
-                "physics.confinement_time.model.i_plasma_ignited",
-                lambda m: m.physics.confinement_time.model.i_plasma_ignited,
-            ),
-            Slot(
                 "physics.plasma_composition.i_plasma_ignited",
                 lambda m: m.physics.plasma_composition.i_plasma_ignited,
             ),
@@ -217,24 +213,17 @@ SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | ForcedByProcess | Bypass
             ),
         ),
     ),
-    "i_confinement_time": Hardcoded(  # :129
-        value=38,
-        slots=(
-            Slot(
-                "physics.confinement_time.model.i_confinement_time",
-                lambda m: m.physics.confinement_time.model.i_confinement_time,
-            ),
-        ),
-    ),
-    "i_rad_loss": Hardcoded(  # :128
-        value=1,
-        slots=(
-            Slot(
-                "physics.confinement_time.model.i_rad_loss",
-                lambda m: m.physics.confinement_time.model.i_rad_loss,
-            ),
-        ),
-    ),
+    "i_confinement_time": ReadByFactory(38),  # :129 -- ISS04
+    "i_rad_loss": ReadByFactory(1),  # :128 -- CORE_ONLY
+    # Both were `Hardcoded` here until
+    # the confinement node became slots. They are **read by the factory** now, not
+    # transcribed into a static kwarg, so there is no hardcoded field left for this
+    # inventory to police -- `REFERENCE_MACHINE_SWITCHES` carries them instead and
+    # `test_reference_machine_matches_the_input_file` is what checks them against the
+    # file. That is the stronger check of the two: a value read from the file cannot
+    # drift from it, which is the whole defect class this module exists for
+    # (`i_confinement_time` was `34` against the file's `38` once, found by the MDA
+    # harness and by nothing here).
     # --- Set by the file, read by nothing, transcribed nowhere.
     "i_plant_availability": Bypassed(  # :258
         value=0,
@@ -496,6 +485,7 @@ def _indat_with_override(tmp_path, name, value):
 # of the same class with different fields, so "the type changed" is unambiguous proof
 # the switch's value reached the slot.
 _CHANGES_A_SLOT = (
+    ("istell", 0, lambda m: type(m).__name__),
     ("isthtr", 2, lambda m: type(m.stellarator.heating).__name__),
     ("i_tf_sup", 0, lambda m: type(m.power.tf_power).__name__),
     ("i_bldgs_size", 1, lambda m: type(m.buildings.sizing).__name__),
@@ -507,9 +497,28 @@ _CHANGES_A_SLOT = (
         lambda m: type(m.stellarator.fwbs.blanket_shield_power).__name__,
     ),
 )
-"""Six of the ten `FACTORY_READ_SWITCHES`: each has a second registered occupant that
+"""Seven of the ten `FACTORY_READ_SWITCHES`: each has a second registered occupant that
 `_indat_with_override` can select on its own, so the "really reads it" proof is
 "the assembled tree's occupant type changes".
+
+**`istell` moved here from `_CAUSES_A_REFUSAL`**, and it is the one row whose probe is
+the machine's *own* type rather than a slot's. That is not a weaker probe, it is the
+right one: `istell` does not choose an occupant, it chooses which **device class** is
+built -- `TokamakProcess` or `StellaratorProcess`, siblings in `total_process.py`. It was
+in `_CAUSES_A_REFUSAL` because `istell == 0` had no tokamak to be; it has one now, whose
+device slot is twenty-five empty slots, so the value assembles and the stronger
+"different thing was built" evidence is available where only "assembly failed" was
+before.
+
+The perturbed machine is a real what-if and deliberately not a curated one: taking
+`stellarator_helias.IN.DAT` and changing only `istell` yields a tokamak carrying that
+file's `i_confinement_time = 38` (ISS04) and `i_plasma_pedestal = 0` (parabolic). Both
+assemble, because `CONFINEMENT_SCALING` is keyed on the *law* and not on the device --
+which is the point that registry's docstring makes -- and because the parabolic arm's
+one device-specific node, `ecrh_density_limit`, is `None` on a tokamak. That last part
+was a bug this row found: the slot used to carry `EcrhDensityLimit` unconditionally, so
+this override would have put `st_d_limit_ecrh` (reached only from `st_phys`) into a
+tokamak.
 
 `i_plasma_pedestal` **left this list** and is not a `FACTORY_READ_SWITCHES` member any
 more: `st_init` forces it to `0` on every stellarator run, so the factory reads
@@ -533,18 +542,26 @@ not `fw_area`, which `ipowerflow` also selects on its own: `fw_area` would pass 
 or not the joint key were fixed."""
 
 _CAUSES_A_REFUSAL = (
-    ("istell", 0, ("istell", 0)),
+    ("istell", 3, ("istell", 3)),
     ("i_cost_model", 1, ("i_cost_model", 1)),
     ("blktmodel", 1, ("blktmodel_ipowerflow", 0)),
     ("blkttype", 1, ("blktmodel_blkttype", 1)),
 )
-"""The remaining four `FACTORY_READ_SWITCHES`, refused for two different reasons.
+"""Four refusals, for two different reasons -- and `istell` appears in **both** tables.
 
-`istell`/`i_cost_model`: the switch has exactly one registered occupant, so its *other*
-value cannot select a second one -- there is none to select. `istell == 0` is a tokamak,
-which this tree has no namespace for, and `i_cost_model == 1` is KOVARI_2014, unported.
-Both were spelled as a slot holding `None` until the tree stopped carrying optional
-slots; they are refusals now, which is why they moved here from `_CHANGES_A_SLOT`.
+`i_cost_model`: the switch has exactly one registered occupant, so its *other* value
+cannot select a second one -- there is none to select. `i_cost_model == 1` is
+KOVARI_2014, unported. It was spelled as a slot holding `None` until the tree stopped
+carrying optional slots; it is a refusal now, which is why it moved here from
+`_CHANGES_A_SLOT`.
+
+`istell`: **the value under test changed from `0` to `3`, and it is the one switch this
+module exercises from both tables.** `0` moved to `_CHANGES_A_SLOT` because it now
+assembles a `TokamakProcess`. `3` is one of the five hardcoded machine presets
+(`_ISTELL_PRESET_REASON`), which are still unported, so the refusal evidence this row
+carries is still available -- it just comes from a value that is genuinely refused rather
+than from one that used to be. Keeping the row rather than dropping it is deliberate: the
+refusal path through `istell` is real and is what an unrecognised device must hit.
 
 `blktmodel`/`blkttype`: each feeds a *joint* dispatch (`.fwbs.blktmodel` x
 `.heat_transport.ipowerflow`, and x `.fwbs.blkttype`) alongside a second switch, and the

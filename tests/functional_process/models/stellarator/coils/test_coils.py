@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 from cottax.evaluate import schedule_for
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.problem import RootFind
+from cottax.problem import RootFind, Start, driver_vars
+from cottax.rewrites import Assign
 from cottax.spec import VarPath
 
 from functional_process._harness import (
@@ -602,9 +603,15 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
     correctness claim about `intersect` itself.
     """
     node = Intersect()
-    schedule = schedule_for(
-        to_graph(node), {node.problem_name: IntersectBisectionNewtonPolish()}
+    # `Initialise` declares the problem's `Start` port, which is where the driver now
+    # reads its guess from; without it `Drive` refuses the pair, and seeding the
+    # unknown's own name would silently fall back to the median instead (a different
+    # root -- see the `env` comment below).
+    graph = Assign(node.problem_name, IntersectBisectionNewtonPolish()).apply(
+        to_graph(node)
     )
+    (guess_path,) = driver_vars(graph[node.problem_name], Start)
+    schedule = schedule_for(graph)
     wp_width_r_path = resolve(stellarator.wp_width_r, VarPath)
     lhs_path = resolve(stellarator.lhs, VarPath)
     rhs_path = resolve(stellarator.rhs, VarPath)
@@ -616,15 +623,15 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
             wp_width_r_path: jnp.asarray(kwargs["x1"]),
             lhs_path: jnp.asarray(kwargs["y1"]),
             rhs_path: jnp.asarray(kwargs["y2"]),
-            # Seed the same starting guess `intersect` itself was called with below --
-            # `Drive.__call__` treats an already-present unknown as the driver's `start`
-            # (see `evaluate.py`). Some `_crossing_curve_case` samples have more than one
-            # genuine crossing in-domain (only the *sign* of the endpoints is pinned, not
-            # the interior), so bisection's own answer can genuinely depend on where it
-            # starts -- matching `xin` here is what makes this an apples-to-apples check
-            # of "same algorithm, driven instead of eager", not a claim that any starting
-            # guess reaches the same root.
-            wp_width_r_min_path: jnp.asarray(kwargs["xin"]),
+            # Seed the same starting guess `intersect` itself was called with below,
+            # at the problem's `^guess.*` port -- a start is declared driver data now,
+            # not an already-present unknown. Some `_crossing_curve_case` samples have
+            # more than one genuine crossing in-domain (only the *sign* of the endpoints
+            # is pinned, not the interior), so bisection's own answer can genuinely
+            # depend on where it starts -- matching `xin` here is what makes this an
+            # apples-to-apples check of "same algorithm, driven instead of eager", not a
+            # claim that any starting guess reaches the same root.
+            guess_path: jnp.asarray(kwargs["xin"]),
         }
         out = schedule(env)
         want = intersect(

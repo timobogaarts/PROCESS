@@ -22,10 +22,11 @@ from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey
 from cottax.tools.path import path_map
 from functional_process.visualization.grouping import (PALETTE, TIER_OVERLAY, UNGROUPED, _matrix_struct,
-                                           dependency_group_sequence, group_label,
-                                           group_of, group_sequence, group_style,
-                                           grouping_report, provenance_order,
-                                           render_grouped_dsm_html, structure_order)
+                                           containing, dependency_group_sequence,
+                                           group_label, group_of, group_sequence,
+                                           group_style, grouping_report, hierarchical,
+                                           provenance_order, render_grouped_dsm_html,
+                                           structure_order, top_of)
 
 
 def V(*keys) -> VarPath:
@@ -56,11 +57,22 @@ def test_the_node_s_own_key_is_never_its_group():
     assert group_label(UNGROUPED) == '(ungrouped)'
 
 
-def test_depth_selects_the_grain():
+def test_the_grain_is_the_tree_s_own_by_default():
+    '''No argument: a node's group is the namespace it lives in, however deep that is.'''
+    assert group_of(N('stellarator', 'coils', 'Intersect')) == ('stellarator', 'coils')
+    assert group_of(N('costs', 'Acc22')) == ('costs',)
+    assert group_of(N('physics', 'profiles', 'parameterisation', 'OnAxis')) == (
+        'physics', 'profiles', 'parameterisation')
+
+
+def test_depth_selects_the_grain_and_only_ever_truncates():
     name = N('stellarator', 'coils', 'Intersect')
     assert group_of(name, depth=1) == ('stellarator',)
     assert group_of(name, depth=2) == ('stellarator', 'coils')
     assert group_label(group_of(name, depth=2)) == 'stellarator.coils'
+    # It saturates at the node's own parent, so past the tree's depth it stops moving --
+    # which is why an integer was never the grain, only a zoom on it.
+    assert group_of(name, depth=99) == group_of(name) == ('stellarator', 'coils')
 
 
 def test_a_name_shallower_than_the_depth_gives_what_it_has():
@@ -69,7 +81,11 @@ def test_a_name_shallower_than_the_depth_gives_what_it_has():
 
 
 def test_a_minted_name_inherits_the_group_of_what_it_was_minted_over():
-    assert group_of(M('problem', 'stellarator', 'coils', 'Intersect')) == ('stellarator',)
+    '''At the tree's grain that is the node's own namespace, not its subsystem: a
+    problem drawn beside `stellarator.coils.Intersect` belongs in `stellarator.coils`.'''
+    minted = M('problem', 'stellarator', 'coils', 'Intersect')
+    assert group_of(minted) == ('stellarator', 'coils')
+    assert group_of(minted, depth=1) == ('stellarator',)
 
 
 def test_a_name_minted_over_a_variable_place_is_ungrouped():
@@ -401,3 +417,118 @@ def test_the_two_orderings_differ_only_in_their_rows(coupled):
     assert by_structure['legend'] == by_provenance['legend']
     assert by_structure['reads'] == by_provenance['reads']
     assert {r['name'] for r in by_structure['rows']} == {r['name'] for r in by_provenance['rows']}
+
+
+# ====================================================== containment, not distinctness
+def test_containing_is_the_longest_common_prefix():
+    assert containing([('a', 'b'), ('a', 'b', 'c')]) == ('a', 'b')
+    assert containing([('a', 'b'), ('a', 'c')]) == ('a',)
+    assert containing([('a',), ('b',)]) == UNGROUPED
+    assert containing([]) == UNGROUPED
+
+
+def test_containing_ignores_ungrouped_members():
+    '''A flat name says nothing about containment, so it must not drag it to the root --
+    the same reading `named_groups` takes, and what keeps
+    `test_an_ungrouped_member_does_not_make_a_block_cross` true.'''
+    assert containing([('a', 'b'), UNGROUPED]) == ('a', 'b')
+
+
+def test_top_of_is_the_subsystem():
+    assert top_of(('stellarator', 'coils')) == ('stellarator',)
+    assert top_of(UNGROUPED) == UNGROUPED
+
+
+@pytest.fixture
+def nested():
+    '''
+    A loop spanning `p` and `p.q` -- two groups, one subtree, and *not* a crossing.
+
+    The shape the reference machine actually has: its one multi-group SCC spans
+    `physics`, `physics.profiles` and `physics.profiles.parameterisation`. Reported as a
+    cross-group loop it reads as two subsystems coupling, which is false; reported at
+    `depth=1` it vanishes entirely, which is also false.
+    '''
+    return Graph(path_map({
+        N('p', 'x'): call([V('c')], [V('a')]),
+        N('p', 'q', 'y'): call([V('a')], [V('b')]),
+        N('p', 'q', 'r', 'z'): call([V('b')], [V('c')]),
+        N('t', 'w'): call([V('a')], [V('w')]),
+    }))
+
+
+def test_a_block_inside_one_subtree_does_not_cross(nested):
+    (block,) = grouping_report(Blocking.scc(nested)).coupled
+    assert block.real == 3
+    assert block.spans and block.nests and not block.crosses
+    assert block.container == ('p',)
+    assert grouping_report(Blocking.scc(nested)).crossing == ()
+    assert grouping_report(Blocking.scc(nested)).nesting == (block,)
+
+
+def test_a_block_across_subsystems_still_crosses(coupled):
+    (block,) = grouping_report(Blocking.scc(coupled)).coupled
+    assert block.spans and block.crosses and not block.nests
+    assert block.container == UNGROUPED
+
+
+def test_edges_are_counted_twice_over_group_and_over_subsystem(nested):
+    '''`p.x -> p.q.y` is a cross-group edge and is not two subsystems talking. Both
+    figures are reported because at the tree's grain the first alone misleads.'''
+    report = grouping_report(Blocking.scc(nested))
+    assert report.cross_group_edges > report.cross_subsystem_edges
+    assert report.cross_subsystem_edges == 1          # only `p.x -> t.w`
+
+
+def test_the_summary_says_which_grain_it_used(nested):
+    blocking = Blocking.scc(nested)
+    assert 'by the tree' in grouping_report(blocking).summary()
+    assert 'by depth 1' in grouping_report(blocking, depth=1).summary()
+    assert grouping_report(blocking).levels == 3
+
+
+# ============================================================== the nested ribbon
+def test_the_ribbon_has_one_lane_per_level(nested):
+    blocking = Blocking.scc(nested)
+    struct = _matrix_struct(blocking, structure_order(blocking), depth=None,
+                            formatter=xDSMFormatterFlat())
+    assert struct['levels'] == 3
+    assert {b['level'] for b in struct['bands']} == {0, 1, 2}
+    outer = [b for b in struct['bands'] if b['level'] == 0]
+    assert {b['label'] for b in outer} == {'p', 't'}
+    # An inner lane is labelled by its own key, and its full path is kept for the title.
+    inner = [b for b in struct['bands'] if b['level'] == 1]
+    assert [(b['label'], b['full']) for b in inner] == [('q', 'p.q')]
+
+
+def test_a_shallow_name_simply_has_no_inner_lane(nested):
+    '''How a ragged tree draws: `t` has a lane 0 and no lane 1, rather than a padded
+    one or a special case.'''
+    blocking = Blocking.scc(nested)
+    struct = _matrix_struct(blocking, structure_order(blocking), depth=None,
+                            formatter=xDSMFormatterFlat())
+    rows = {r['name']: r for r in struct['rows']}
+    covered = {b['level'] for b in struct['bands']
+               if b['from'] <= list(rows).index('t.w') <= b['to']}
+    assert covered == {0}
+
+
+def test_colour_is_the_subsystem_s_so_a_subtree_reads_as_one_thing(nested):
+    blocking = Blocking.scc(nested)
+    struct = _matrix_struct(blocking, structure_order(blocking), depth=None,
+                            formatter=xDSMFormatterFlat())
+    by_group = {r['name']: r['colour'] for r in struct['rows']}
+    assert by_group['p.x'] == by_group['p.q.y'] == by_group['p.q.r.z']
+    assert by_group['t.w'] != by_group['p.x']
+
+
+def test_the_legend_is_hierarchical_and_indented(nested):
+    blocking = Blocking.scc(nested)
+    struct = _matrix_struct(blocking, structure_order(blocking), depth=None,
+                            formatter=xDSMFormatterFlat())
+    assert [(g['full'], g['level']) for g in struct['legend']] == [
+        ('p', 0), ('p.q', 1), ('p.q.r', 2), ('t', 0)]
+
+
+def test_hierarchical_puts_a_namespace_before_what_is_inside_it():
+    assert hierarchical([('t',), ('p', 'q'), ('p',)]) == (('t',), ('p',), ('p', 'q'))

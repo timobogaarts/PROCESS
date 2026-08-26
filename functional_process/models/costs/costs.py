@@ -3029,7 +3029,8 @@ class ReactorCost(ExplicitFunction):
 
 class TfMagnetCostSuperconducting(ExplicitFunction):
     """cottax node: `calculate_tf_magnet_cost_superconducting` (Account 222.1,
-    `.tfcoil.i_tf_sup == 1`)."""
+    `.tfcoil.i_tf_sup == 1`).
+    """
 
     supercond_cost_model: SuperconductorCostModel = eqx.field(static=True)
 
@@ -3095,7 +3096,8 @@ class TfMagnetCostSuperconducting(ExplicitFunction):
 class TfMagnetCostResistive(ExplicitFunction):
     """cottax node: `calculate_tf_magnet_cost_resistive` (Account 222.1,
     `.tfcoil.i_tf_sup != 1`). Ported but **not registered** -- see the function's own
-    docstring and `total_process.py`'s `.costs.i_cost_model` switch comment."""
+    docstring and `total_process.py`'s `.costs.i_cost_model` switch comment.
+    """
 
     c22211 = OutputInto(costs)
     c22212 = OutputInto(costs)
@@ -3254,12 +3256,52 @@ class PowerInjectionCost(ExplicitFunction):
 
 
 class EnergyStorageCost(ExplicitFunction):
-    """cottax node: `calculate_energy_storage_cost` (Account 225.3)."""
+    """The family owning `.costs.c2253` (Account 225.3): one occupant per arm.
 
-    i_pulsed_plant: PlantOperationModel = eqx.field(static=True)
-    istore: ThermalStorageModel = eqx.field(static=True)
+    `i_pulsed_plant` and `istore` were `eqx.field(static=True)` kwargs on one node
+    declaring two reads. **At the tree's own value both reads are dead**: with
+    `i_pulsed_plant == 0` the body sets `c2253 = 0.0`, scales zero by
+    `p_plant_electric_net_mw`, multiplies by `fkind` and returns zero -- so the graph
+    carried a `.heat_transport -> .costs` edge and a `.costs.fkind` edge that no run
+    makes. The unpulsed occupant below reads nothing at all, which is the same statement
+    made structurally.
+    """
 
     c2253 = OutputInto(costs)
+
+
+class EnergyStorageCostUnpulsed(EnergyStorageCost):
+    """`i_pulsed_plant == 0`: no storage, so `.costs.c2253` is zero and nothing is read.
+
+    A zero-input node, the same shape as `StellaratorMachineConfig` -- and the same
+    open policy question (`next_steps.md` §2, "this node always/only produces
+    literals"). It is a node here because something must own the field: an unowned
+    `.costs.c2253` would be a boundary input read from the `DataStructure`, which is the
+    defect this port exists to remove, not a simplification.
+    """
+
+    def __call__(self):
+        return 0.0
+
+
+class EnergyStorageCostPulsed(EnergyStorageCost):
+    """`i_pulsed_plant == 1`: an ELECTROWATT thermal-storage design, scaled by net
+    electric power.
+
+    **`istore` stays a static kwarg here, deliberately.** Options 1 and 2 are two
+    itemised literal sums (`costs.py:2617-2643` and `:2645-2682`) reading the *same* two
+    variables, so they are `switch_kwarg_survey.md` band (c): a kwarg invents no edge and
+    two occupants would be indistinguishable by ports -- which
+    `test_occupants_of_one_slot_differ` refuses, correctly, since a value that does not
+    change which nodes exist is not a topology choice. They were split for one commit and
+    that test caught it; the rule is "no static kwarg where the branches differ in I/O",
+    not "no static kwarg".
+
+    Option 3 is the contrast case and is `UNPORTED`: it reads three variables the others
+    do not, so it is a different occupant, not a different literal.
+    """
+
+    istore: ThermalStorageModel = eqx.field(static=True)
 
     def __call__(
         self,
@@ -3267,7 +3309,10 @@ class EnergyStorageCost(ExplicitFunction):
         fkind=From(costs),
     ):
         return calculate_energy_storage_cost(
-            self.i_pulsed_plant, self.istore, p_plant_electric_net_mw, fkind
+            PlantOperationModel.PULSED,
+            self.istore,
+            p_plant_electric_net_mw,
+            fkind,
         )
 
 
@@ -3350,7 +3395,8 @@ class HeatTransportSystemCost(ExplicitFunction):
 
 class FuelProcessingCost(ExplicitFunction):
     """cottax node: `calculate_fuel_processing_cost` (Account 2272). Sole producer of
-    `.physics.wtgpd`."""
+    `.physics.wtgpd`.
+    """
 
     ife: IFEModel = eqx.field(static=True)
 

@@ -8,8 +8,10 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 
 import jax.numpy as jnp
 import pytest
-from cottax.evaluate import Drive
+from cottax.evaluate import schedule_for
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
+from cottax.problem import Start, driver_vars
+from cottax.rewrites import Assign
 from cottax.spec import VarPath
 
 from functional_process.core.solver.drivers import PicardDriver
@@ -30,7 +32,7 @@ def vpath(where):
 
 class _Contraction:
     """A minimal stand-in for `ConditionMap`: `PicardDriver` only ever calls it
-    positionally and reads `.unknowns` in its `start is None` error message, so a
+    positionally and reads `.unknowns` in its missing-`Start` error message, so a
     plain callable with that much is enough to test the iteration in isolation from
     any real graph.
     """
@@ -46,7 +48,7 @@ class _Contraction:
 def test_picard_driver_converges_on_a_contraction_mapping():
     """`u = 0.5u + 3` has the exact fixed point `u = 6`; Picard must find it."""
     driver = PicardDriver(rtol=1e-10, atol=1e-12, max_iter=100)
-    (result,) = driver(_Contraction(), start=(jnp.asarray(0.0),))
+    (result,) = driver(_Contraction(), {Start: (jnp.asarray(0.0),)})
     assert float(result) == pytest.approx(6.0, abs=1e-8)
 
 
@@ -56,17 +58,22 @@ def test_picard_driver_converges_regardless_of_starting_point():
     """
     driver = PicardDriver(rtol=1e-10, atol=1e-12, max_iter=100)
     for start in (0.0, 100.0, -50.0):
-        (result,) = driver(_Contraction(), start=(jnp.asarray(start),))
+        (result,) = driver(_Contraction(), {Start: (jnp.asarray(start),)})
         assert float(result) == pytest.approx(6.0, abs=1e-8)
 
 
 def test_picard_driver_requires_a_start():
     """Same requirement and same reasoning as `NewtonDriver`: no shape to guess a
-    pytree from, so a missing `start` is a clear error, not a silent default.
+    pytree from, so a missing start is a clear error, not a silent default.
+
+    Spelled as an empty driver-data mapping rather than the old `start=None`, which is
+    what "no start supplied" now looks like: `Drive.role_data` builds this mapping from
+    the driver's `requires`, so a driver called directly with `{}` is the one path that
+    still reaches the refusal.
     """
     driver = PicardDriver()
     with pytest.raises(ValueError, match="needs a starting value"):
-        driver(_Contraction(), start=None)
+        driver(_Contraction(), {})
 
 
 def test_picard_driver_drives_a_real_fixed_point_function_node():
@@ -94,14 +101,27 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     )
 
     graph = to_graph(node)
-    drive = Drive(subgraph=graph, driver=PicardDriver())
+    # `Assign` attaches the driver *and* mints the ports that driver's own `requires`
+    # names -- one `^guess.<place>` per unknown here. The starting guess is supplied at
+    # `^guess.*` rather than at the unknown's own name; writing the latter would be
+    # seeding the answer. `mda.driven_graph` does exactly this to every problem in the
+    # real graph.
+    (problem,) = graph.declared
+    graph = Assign(problem, PicardDriver()).apply(graph)
+    # Built through `schedule_for` rather than by constructing a `Drive` directly: the
+    # schedule is what the port actually runs, and it assembles the `Drive` itself, so
+    # this test does not restate `Drive`'s constructor signature.
+    schedule = schedule_for(graph)
+    # The guess port is read off the problem rather than spelled out, the same way
+    # `mda.starts_for` does it: the node is the authority on where its start is read.
+    (guess,) = driver_vars(graph[problem], Start)
     env = {
-        vpath(heat_transport.temp_turbine_coolant_in): jnp.asarray(300.0),
+        guess: jnp.asarray(300.0),
         vpath(fwbs.temp_blkt_coolant_out): jnp.asarray(temp_blkt_coolant_out),
         vpath(fwbs.outlet_temp_liq): jnp.asarray(outlet_temp_liq),
     }
 
-    out = drive(env)
+    out = schedule(env)
 
     got = out[vpath(heat_transport.temp_turbine_coolant_in)]
     assert float(got) == pytest.approx(float(expected), abs=1e-6)

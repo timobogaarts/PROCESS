@@ -25,7 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
 from cottax.evaluate import AbstractDriver, ConditionMap
-from cottax.problem import FixedPoint, Optimise, RootFind
+from cottax.problem import FixedPoint, Optimise, RootFind, Start
 from cottax.spec import VarPath
 from cottax.tools.path import written
 from jax.flatten_util import ravel_pytree
@@ -185,6 +185,29 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     )
 
 
+def start_from(data, driver_name: str, conditions: ConditionMap) -> tuple:
+    """The `Start` tuple out of a driver's `data` mapping, or a clear refusal.
+
+    `cottax.evaluate.AbstractDriver.__call__` takes `data`, one tuple per kind named in
+    `requires`, rather than the bare `start` these drivers used to receive. Going
+    through `Drive`, `Start` is guaranteed present two ways over -- `Drive.__check_init__`
+    refuses a driver requiring a kind the problem does not declare, and `Drive.role_data`
+    raises on a declared port with no value in `env` -- so this only ever fires for a
+    driver called **directly**, which the unit tests do.
+
+    The requirement it states is unchanged and still real: there is no shape to guess a
+    pytree of unknowns from, so an absent start is an error, not a silent default.
+    """
+    start = data.get(Start)
+    if start is None:
+        raise ValueError(
+            f"{driver_name} needs a starting value for every unknown "
+            f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply one "
+            f"in env at its `^guess.*` port, or give this driver a `seed`"
+        )
+    return start
+
+
 class SlsqpDriver(AbstractDriver):
     """`scipy.optimize.minimize(method="SLSQP")` answering `Optimise`, on exactly the
     problem `VmconDriver` receives.
@@ -218,6 +241,7 @@ class SlsqpDriver(AbstractDriver):
     """
 
     drives = Optimise
+    requires = (Start,)
 
     n_equality: int = 0
     n_inequality: int = 0
@@ -230,23 +254,18 @@ class SlsqpDriver(AbstractDriver):
     """`f(iteration, x_unscaled) -> None`, or `None`. Plain callable, leaf-free, same
     treatment as `VmconDriver.callback`."""
 
-    def __call__(self, conditions: ConditionMap, start: tuple | None) -> tuple:
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
         """Values for the block's unknowns, positionally.
 
         Raises
         ------
         ValueError
-            If `start` is `None`, or if the declared equality/inequality counts do not
-            account for every condition the block reads.
+            If no `Start` data is supplied, or if the declared equality/inequality
+            counts do not account for every condition the block reads.
         """
         from scipy.optimize import minimize
 
-        if start is None:
-            raise ValueError(
-                f"SlsqpDriver needs a starting value for every unknown "
-                f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply "
-                f"one in env, same as any other unowned input"
-            )
+        start = start_from(data, "SlsqpDriver", conditions)
         expected = 1 + self.n_equality + self.n_inequality
         if expected != len(conditions.conditions):
             raise ValueError(
@@ -350,6 +369,7 @@ class SeededNewtonDriver(AbstractDriver):
     """
 
     drives = RootFind
+    requires = (Start,)
 
     rtol: float = 1e-4
     atol: float = 1e-4
@@ -360,14 +380,15 @@ class SeededNewtonDriver(AbstractDriver):
     the same treatment `VmconDriver.callback` documents.
     """
 
-    def __call__(self, conditions: ConditionMap, start: tuple | None) -> tuple:
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
+        start = data.get(Start)
         if self.seed is not None and not _usable(start):
             start = self.seed(conditions)
         if start is None:
             raise ValueError(
                 f"SeededNewtonDriver needs a starting value for every unknown "
                 f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply "
-                f"one in env, or give this driver a `seed`"
+                f"one in env at its `^guess.*` port, or give this driver a `seed`"
             )
         flat_guess, unravel = ravel_pytree(start)
 
@@ -432,26 +453,22 @@ class PicardDriver(AbstractDriver):
     """
 
     drives = FixedPoint
+    requires = (Start,)
 
     rtol: float = 1e-6
     atol: float = 1e-8
     max_iter: int = 20
 
-    def __call__(self, conditions: ConditionMap, start: tuple | None) -> tuple:
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
         """Values for the block's unknowns, positionally -- `AbstractDriver`'s own
         contract, see its abstract `__call__` docstring.
 
         Raises
         ------
         ValueError
-            If `start` is `None` -- there is no shape to guess a pytree from.
+            If no `Start` data is supplied -- there is no shape to guess a pytree from.
         """
-        if start is None:
-            raise ValueError(
-                f"PicardDriver needs a starting value for every unknown "
-                f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply "
-                f"one in env, same as any other unowned input"
-            )
+        start = start_from(data, "PicardDriver", conditions)
         flat_start, unravel = ravel_pytree(start)
 
         def cond_fn(carry):
@@ -567,6 +584,7 @@ class VmconDriver(AbstractDriver):
     """
 
     drives = Optimise
+    requires = (Start,)
 
     n_equality: int
     n_inequality: int
@@ -623,23 +641,18 @@ class VmconDriver(AbstractDriver):
     -- a plain callable is already a static leaf-free field for `eqx.filter_jit`, and
     nothing jits this driver."""
 
-    def __call__(self, conditions: ConditionMap, start: tuple | None) -> tuple:
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
         """Values for the block's unknowns, positionally -- `AbstractDriver`'s own
         contract, see its abstract `__call__` docstring.
 
         Raises
         ------
         ValueError
-            If `start` is `None` (there is no shape to guess a pytree from), or if
-            `n_equality + n_inequality + 1` does not equal the number of conditions the
-            block declares.
+            If no `Start` data is supplied (there is no shape to guess a pytree from),
+            or if `n_equality + n_inequality + 1` does not equal the number of
+            conditions the block declares.
         """
-        if start is None:
-            raise ValueError(
-                f"VmconDriver needs a starting value for every unknown "
-                f"({', '.join(v.path_str() for v in conditions.unknowns)}) -- supply "
-                f"one in env, same as any other unowned input"
-            )
+        start = start_from(data, "VmconDriver", conditions)
         expected = 1 + self.n_equality + self.n_inequality
         if expected != len(conditions.conditions):
             raise ValueError(

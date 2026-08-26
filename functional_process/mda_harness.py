@@ -62,7 +62,7 @@ from cottax.evaluate import schedule_for
 from cottax.plan import Delete
 from cottax.spec import NodePath, VarPath
 
-from functional_process.mda import default_drivers, driven_graph
+from functional_process.mda import driven_graph, starts_for
 
 EXCLUDED_NODE_NAMES = ("duct_diameter_root_find",)
 """`.vacuum.duct_diameter_root_find`: see this module's own docstring -- no real
@@ -1042,28 +1042,44 @@ def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
     graph = _without_excluded(graph)
     driven = driven_graph(graph)
     blocking = Blocking.scc(driven)
-    schedule = schedule_for(blocking, default_drivers(blocking))
+    # Drivers live in the graph now (`Assign`, applied by `driven_graph`), so
+    # `schedule_for` takes none.
+    schedule = schedule_for(blocking)
 
     env = {}
     ungrounded = []
+    # `^guess.*` ports are unowned inputs like any other, but there is nothing in
+    # `data` spelled that way -- they are seeded below, from the unknown each one
+    # starts. Grounding them here would report every one as ungrounded.
+    starts = {
+        guess
+        for problem, problem_type in zip(
+            blocking.problems, blocking.problem_types, strict=True
+        )
+        if problem_type is not None
+        for _, guess in starts_for(driven, problem)
+    }
     for var in driven.unowned_inputs:
+        if var in starts:
+            continue
         try:
             env[var] = jnp.asarray(_ground_truth(data, var))
         except (AttributeError, KeyError):
             ungrounded.append(var)
             env[var] = jnp.asarray(0.0)  # placeholder -- see `ungrounded_inputs`
-    # Starting guesses for every driven unknown -- same converged run's own value.
+    # Starting guesses for every driven unknown -- same converged run's own value,
+    # written to the unknown's `^guess.*` port.
     for problem, problem_type in zip(
         blocking.problems, blocking.problem_types, strict=True
     ):
         if problem_type is None:
             continue
-        for var in driven[problem].owns:
+        for var, guess in starts_for(driven, problem):
             try:
-                env[var] = jnp.asarray(_ground_truth(data, var))
+                env[guess] = jnp.asarray(_ground_truth(data, var))
             except (AttributeError, KeyError):
                 ungrounded.append(var)
-                env[var] = jnp.asarray(0.0)
+                env[guess] = jnp.asarray(0.0)
 
     report.ungrounded_inputs = ungrounded
     # Everything that reads an ungrounded input, directly or transitively, can only

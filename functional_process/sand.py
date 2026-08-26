@@ -75,8 +75,10 @@ from cottax.blocking import Blocking
 from cottax.evaluate import Drive, Schedule, schedule_for
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
-from cottax.problem import FixedPoint, Optimise
-from cottax.rewrites import Combine, Residualise
+from cottax.problem import Driven, FixedPoint, Optimise, conditions_of
+from cottax.rewrites import Assign, Combine, Residualise
+
+from functional_process.core.solver.drivers import VmconDriver
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, prefix_path
 from cottax.tools.path import path_map
@@ -84,7 +86,7 @@ from jax.tree_util import GetAttrKey
 
 from functional_process.core.solver import constraints as ported_constraints
 from functional_process.core.solver import objectives as ported_objectives
-from functional_process.mda import default_drivers, driven_graph
+from functional_process.mda import assign_drivers, cut_graph, default_drivers
 from process.core.model import DataStructure
 from process.core.solver.iteration_variables import ITERATION_VARIABLES
 from process.data_structure.numerics import FiguresOfMerit
@@ -379,6 +381,7 @@ def optimise_graph(
     icc,
     n_equality,
     i_figure_merit,
+    driver=None,
     switch_values=None,
     omit=(),
 ):
@@ -415,6 +418,16 @@ def optimise_graph(
         inequalities=tuple(In(c) for c in inequalities),
     )
     inserted = (Plan(graph) + Insert(path_map(nodes.items()))).graph
+    # **No driver is attached here by default, and that is the ordering the new API
+    # forces.** `Combine` refuses to join two problems that carry an algorithm -- *"one
+    # discards the algorithm answering each, `Undrive` first"* -- and this graph's whole
+    # purpose is to join every `FixedPoint` into one `Optimise`. So SAND builds on
+    # `mda.cut_graph` (structure, no drivers), joins, and assigns afterwards. A `driver`
+    # may still be passed for a caller that wants one attached immediately; it carries
+    # the caller's data (`bounds`, `condition_scale`, `callback`), none of which has a
+    # home on `Optimise` and never did.
+    if driver is not None:
+        inserted = Assign(problem_name, driver).apply(inserted)
     return (
         inserted,
         problem_name,
@@ -454,7 +467,14 @@ def degenerate_fixed_points(graph, env, problems=None):
     degenerate = []
     for problem in problems:
         definition = graph[problem]
-        owns, reads = definition.owns, definition.reads
+        # `conditions_of`, not `.reads`: a problem that has been through `Initialise`
+        # also reads its `Start` port(s), and those are driver data, not conditions.
+        # Including them put a `^guess.*` in `step`'s output stack, where `env` has no
+        # value for it -- a `KeyError` the bare `except` below then swallowed, so every
+        # fixed point silently reported "not degenerate" and the two identity ones
+        # (`eta_turbine_step`, `cplife_avail`) reached `reduce_jacobian` as exactly-zero
+        # rows of `J_RY`, i.e. a singular equality block.
+        owns, reads = definition.owns, conditions_of(definition)
         producers = {r: graph.owners[r] for r in reads if r in graph.owners}
         body = graph.subgraph(tuple(set(producers.values())))
 
@@ -591,7 +611,7 @@ def sand_schedule(
     """
     blocking = Blocking.scc(graph)
     drivers = default_drivers(
-        blocking, bounds=bounds, callback=callback, condition_scale=condition_scale
+        graph, bounds=bounds, callback=callback, condition_scale=condition_scale
     )
     if driver is not None:
         problem = next(
@@ -600,7 +620,8 @@ def sand_schedule(
             if t is not None and issubclass(t, Optimise)
         )
         drivers[problem] = driver
-    return schedule_for(blocking, drivers)
+    # Drivers go into the graph (`Assign`), and `schedule_for` reads them from there.
+    return schedule_for(Blocking.scc(assign_drivers(blocking.graph, drivers)))
 
 
 def sand_shape(schedule: Schedule) -> dict:
@@ -608,7 +629,11 @@ def sand_shape(schedule: Schedule) -> dict:
     the solved block and how much still runs as ordinary `Call` steps.
     """
     drive = next(step for step in schedule.steps if isinstance(step, Drive))
-    definition = drive.subgraph[drive.problem]
+    node = drive.subgraph[drive.problem]
+    # `Driven` forwards `inputs`/`outputs` and nothing else -- the problem-specific
+    # properties are reached through `.problem`, deliberately: *"a driven node **has** a
+    # problem, it is not one"*. Spelling it out says the true thing about the shape.
+    definition = node.problem if isinstance(node, Driven) else node
     return {
         "drive_nodes": len(drive.nodes),
         "unknowns": len(drive.unknowns),
@@ -647,7 +672,7 @@ def reference_problem(
     """
     from cottax.plan import Delete
 
-    driven = driven_graph(graph)
+    driven = cut_graph(graph)
     degenerate = degenerate_fixed_points(driven, env)
     if degenerate:
         driven = Delete(degenerate).apply(driven)

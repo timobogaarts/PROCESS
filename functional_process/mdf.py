@@ -43,6 +43,22 @@ driver interface moves -- `VmconDriver` is handed this object **unchanged** and 
 tell the difference, which is the evidence that the gap really is that narrow. See §
 "What this module does not do" for what stays out of scope.
 
+**Status against `cottax` (checked 2026-08-26, `~/jaxgraph` HEAD `ef093ba`).** Everything
+above is still accurate *at that commit*: `Drive`'s fields are `(subgraph, driver)`,
+`ConditionMap.body` is annotated `Graph` and run by `_run_acyclic`, and `Schedule.steps`
+builds `Drive(sub, driver)` without ever reading `blocking.inner`. So `MdfConditionMap`
+stays, and this module still cannot be replaced by `schedule_for(nested_blocking(...))`.
+
+The fix is, however, **in flight upstream and not yet committed**: `~/jaxgraph`'s working
+tree carries an unlanded change giving `Drive` a `problem` and a `body : Step`, making
+`ConditionMap.body` a `Step`, and having `Schedule.steps` descend into `blocking.inner`
+-- exactly the one type this section names. When that lands, the replacement to make is
+`nested_blocking()` -> `schedule_for` -> delete `MdfConditionMap`, and cottax's own
+`tests/test_evaluate.py::test_a_solve_nested_in_a_solve_runs` is the worked example.
+Do not port against that working tree before it is committed: it is another session's
+unfinished work, and this port pins `cottax` at a commit for exactly this reason
+(`_audit/next_steps.md` §13.1).
+
 Why bother, given SAND works
 ----------------------------
 Two reasons.
@@ -153,14 +169,19 @@ from cottax.blocking import Blocking
 from cottax.evaluate import ConditionMap, Drive, Schedule, schedule_for
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
-from cottax.problem import FixedPoint
+from cottax.problem import Equality, Inequality, Objective, FixedPoint, Start
 from cottax.spec import VarPath
 from cottax.tools.path import path_map
 
 from functional_process import sand
 from functional_process.core.solver.drivers import SeededNewtonDriver, VmconDriver
 from functional_process.indat import graph_for
-from functional_process.mda import default_drivers, driven_graph
+from functional_process.mda import (
+    assign_drivers,
+    cut_graph,
+    default_drivers,
+    guess_sources,
+)
 from functional_process.mda_harness import _without_excluded
 from functional_process.sand_harness import ground_truth
 
@@ -291,14 +312,19 @@ def assemble(
         Same policy and same reason as SAND's: an `Optimise` over 12 of PROCESS's 14
         active constraints is a different problem.
     """
-    driven = driven_graph(_without_excluded(graph if graph is not None else graph_for()))
+    driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
     graph, conditions, n_inequality, report = mdf_graph(
         driven, icc, n_equality, i_figure_merit, switch_values, omit
     )
-    blocking = Blocking.scc(graph)
-    drivers = default_drivers(blocking)
+    drivers = default_drivers(graph)
+    # Two algorithms over one structure means **two graphs** now, not two driver maps:
+    # `Assign` puts the algorithm in the graph, so the eager and traceable variants are
+    # separate objects. `reassign_drivers` is not needed -- neither graph carries a
+    # driver yet, since `cut_graph` is structure only.
+    eager_graph = assign_drivers(graph, drivers)
+    blocking = Blocking.scc(eager_graph)
     design = tuple(sand.iteration_variable_path(i) for i in ixc)
-    eager = schedule_for(blocking, drivers)
+    eager = schedule_for(blocking)
     missing = [d for d in design if d not in eager.inputs]
     if missing:
         raise ValueError(
@@ -311,13 +337,34 @@ def assemble(
     return Mdf(
         graph=graph,
         eager=eager,
-        traceable=schedule_for(blocking, traceable_drivers(drivers)),
+        traceable=schedule_for(
+            Blocking.scc(assign_drivers(graph, traceable_drivers(drivers)))
+        ),
         design=design,
         conditions=conditions,
         n_equality=n_equality,
         n_inequality=n_inequality,
         report=report,
     )
+
+
+def guess_ports(mdf: Mdf) -> dict:
+    """`{guess_port: unknown}` over every problem in `mdf.graph`.
+
+    A driven problem's starting value is read from its `Start` port (`^guess.<place>`),
+    not from the unknown's own name -- so both seeding (`seed`) and re-seeding (`prime`)
+    have to write *there*, and what they write is the value of the unknown that port
+    starts. Without this the ports fall to `ground_truth`'s `0.0` fallback, since no
+    `DataStructure` field is spelled `^guess.*`, and the inner solvers start from the
+    cold point `prime` exists to get them off.
+    """
+    # Asked of the **eager schedule's** graph, not `mdf.graph`. Since `Assign` mints the
+    # `^guess.*` ports from the driver's own `requires`, a graph with no drivers on it has
+    # no start ports at all -- and `mdf.graph` is the cut graph plus the `Optimise`,
+    # deliberately undriven so that `Combine` can still join its problems. Asking that one
+    # returns nothing, every port falls to `ground_truth`'s `0.0`, and the inner solves
+    # start from exactly the cold point `prime` exists to get them off.
+    return guess_sources(mdf.eager.blocking.graph)
 
 
 def seed(mdf: Mdf, data, design_values=None):
@@ -352,9 +399,13 @@ def seed(mdf: Mdf, data, design_values=None):
     found by a third method: a cold start rather than a gradient.
     """
     env = {}
+    starts = guess_ports(mdf)
     for var in list(mdf.eager.inputs) + list(mdf.eager.unknowns):
+        # A `^guess.*` port is grounded from the unknown it starts, not from its own
+        # name -- there is no `DataStructure` field spelled that way.
+        source = starts.get(var, var)
         try:
-            env[var] = jnp.asarray(ground_truth(data, var))
+            env[var] = jnp.asarray(ground_truth(data, source))
         except (AttributeError, KeyError):  # noqa: PERF203 -- per-variable by nature
             env[var] = jnp.asarray(0.0)
     if design_values is not None:
@@ -398,8 +449,10 @@ def prime(mdf: Mdf, env):
     """
     out = mdf.eager(dict(env))
     primed = dict(env)
-    for unknown in mdf.eager.unknowns:
-        primed[unknown] = out[unknown]
+    for guess, unknown in guess_ports(mdf).items():
+        # Written to the `Start` port, which is where the driver reads it. Writing the
+        # unknown's own name would set the *answer* and leave the guess cold.
+        primed[guess] = out[unknown]
     return primed, out
 
 
@@ -452,10 +505,23 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
     inner unknown, frozen for the whole solve (this module's docstring says why).
     """
     context = {var: value for var, value in env.items() if var not in set(mdf.design)}
+    # `roles` is cottax's own answer to what this module worked around with
+    # `VmconDriver.n_equality`/`n_inequality`: the condition map now carries what each
+    # condition *is*, parallel to `conditions`, so the split travels on the driver seam
+    # instead of beside it (`_audit/optimise_design.md` §8, closed upstream). MDF's
+    # order is the one `mdf_graph` assembles -- objective, equalities, inequalities --
+    # and it is spelled here rather than counted by anyone.
+    n_equality = len(mdf.conditions) - 1 - mdf.n_inequality
+    roles = (
+        (Objective,)
+        + (Equality,) * n_equality
+        + (Inequality,) * mdf.n_inequality
+    )
     return MdfConditionMap(
         body=mdf.traceable.subgraph,
         unknowns=mdf.design,
         conditions=mdf.conditions,
+        roles=roles,
         context=path_map(context.items()),
         schedule=mdf.traceable if traceable else mdf.eager,
     )
@@ -501,7 +567,10 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     start = tuple(jnp.asarray(env[var]) for var in mdf.design)
     optimiser = optimiser or driver(mdf, bounds=bounds, callback=callback, **kwargs)
     started = time.perf_counter()
-    x = optimiser(conditions, start)
+    # The driver is called directly here, not through a `Drive`, so the driver-data
+    # mapping `Drive.role_data` would have built has to be built by hand: `Start` is
+    # what `VmconDriver.requires` names, and the design values are what starts it.
+    x = optimiser(conditions, {Start: start})
     elapsed = time.perf_counter() - started
     at = dict(env)
     at.update(zip(mdf.design, x, strict=True))
@@ -669,7 +738,7 @@ def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, **kwargs):
         `(blocking, problem_name, report)` -- `blocking.inner[i]` at the `Optimise`'s
         block is the MDA, blocked in its own right.
     """
-    driven = driven_graph(_without_excluded(graph if graph is not None else graph_for()))
+    driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
     with_problem, problem_name, report = sand.optimise_graph(
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )

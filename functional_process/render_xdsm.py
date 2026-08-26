@@ -105,7 +105,7 @@ _MODELS = "functional_process.models."
 _SPLIT_FILE = re.compile(r"_[A-Z](?:_.*)?$")
 
 
-def grouped(depth: int = 1):
+def grouped(depth: int | None = None):
     """Write `dsm_provenance.html`/`dsm_scc.html`: § 11's comparison, drawn.
 
     Both pictures are of **the driven graph** (`mda.driven_graph(GRAPH)`), not of `GRAPH`
@@ -145,9 +145,20 @@ def grouped(depth: int = 1):
     # provenance claim is unchanged where it is actually about how the file was written.
     axis = dependency_group_sequence(graph, depth=depth)
     print("  group axis: " + " -> ".join(group_label(g) for g in axis))
+    # Both kinds are printed. `crossing` is now the strict question -- a block no
+    # namespace contains -- so on this machine it is empty, and printing only it would
+    # make the one genuinely multi-namespace loop invisible at exactly the moment the
+    # measurement got sharper. `nesting` is that loop: several namespaces, one subtree.
     for block in report.crossing:
         print(
             "  CROSSES: "
+            + ", ".join(sorted(".".join(g) for g in block.named_groups))
+            + " -- "
+            + ", ".join(sorted(SPELLING.node((m, graph[m])) for m in block.members))
+        )
+    for block in report.nesting:
+        print(
+            f"  within {group_label(block.container)}: "
             + ", ".join(sorted(".".join(g) for g in block.named_groups))
             + " -- "
             + ", ".join(sorted(SPELLING.node((m, graph[m])) for m in block.members))

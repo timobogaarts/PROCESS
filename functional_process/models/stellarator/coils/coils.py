@@ -25,7 +25,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
     resolve,
 )
-from cottax.problem import RootFind
+from cottax.problem import RootFind, Start
 from cottax.spec import VarPath
 
 from functional_process.models.physics.superconductors import (
@@ -602,14 +602,26 @@ class IntersectBisectionNewtonPolish(AbstractDriver):
     `AbstractDriver`'s interface: nothing stops a *different* concrete driver from being
     fully generic and calling `conditions(x)` instead.
 
-    `start`, if given, seeds `intersect`'s own `xin` (`start[0]`, since `Intersect` has
-    exactly one unknown); with no guess, `intersect`'s own domain-clamping behaviour
-    makes any point a safe starting `xin`, so the curves' median is used.
+    The `Start` port seeds `intersect`'s own `xin` (`start[0]`, since `Intersect` has
+    exactly one unknown). `requires` names it, so a graph driven by this must have been
+    through `Initialise` -- seeding the unknown's own name no longer reaches a driver,
+    and on these curves that is not cosmetic: several `_crossing_curve_case` samples
+    have more than one genuine in-domain crossing, so which root bisection lands on
+    depends on where it starts.
+
+    The median fallback below survives for a **direct** call with no `Start` data (the
+    driver is a plain callable and the tests use it that way): `intersect`'s own
+    domain-clamping makes any point a safe starting `xin`.
     """
 
     drives = RootFind
+    requires = (Start,)
 
-    def __call__(self, conditions: ConditionMap, start):
+    def __call__(self, conditions: ConditionMap, data):
+        # `requires` stays empty: this driver does not *need* a start -- `intersect`'s
+        # own domain clamping makes any point a safe `xin`, so it has a principled
+        # default. `data.get` rather than `data[Start]` for exactly that reason.
+        start = data.get(Start)
         wp_width_r = conditions.context[_WP_WIDTH_R_PATH]
         lhs = conditions.context[_LHS_PATH]
         rhs = conditions.context[_RHS_PATH]

@@ -38,11 +38,20 @@ from functional_process.models.buildings.buildings import (
 )
 from functional_process.models.buildings.namespace import Buildings
 from functional_process.models.costs.costs import (
+    PlantOperationModel,
+    ThermalStorageModel,
+    EnergyStorageCostPulsed,
+    EnergyStorageCostUnpulsed,
     CostOfElectricity,
 )
 from functional_process.models.costs.namespace import Costs
 from functional_process.models.physics.confinement_time import (
-    StellaratorConfinementTime,
+    ConfinementScalingInputs,
+    ConfinementTailCoreRadiation,
+    Iss04ConfinementTime,
+    IterIpb98y2ConfinementTime,
+    IterPhysicsBasisElongation,
+    PlasmaPowerLossIgnitedCoreRadiation,
 )
 from functional_process.models.physics.namespace import (
     Physics,
@@ -63,12 +72,13 @@ from functional_process.models.power.tf_coil_power import (
 from functional_process.models.power.thermal_cryo import (
     CryoLoads,
     CryoQLoadsStep,
-    CryoQNucStep,
+    CryoQNuc,
 )
 from functional_process.models.stellarator.build import (
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
 )
+from functional_process.models.stellarator.density_limits import EcrhDensityLimit
 from functional_process.models.stellarator.heating import (
     EcrhHeating,
     LowhybHeating,
@@ -102,7 +112,7 @@ from functional_process.models.switch_enums import (
     PowerFlowModel,
     SphericalTokamakModel,
 )
-from functional_process.total_process import StellaratorProcess
+from functional_process.total_process import StellaratorProcess, TokamakProcess
 from process.data_structure.pfcoil_variables import PFConductorModel
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
@@ -110,6 +120,7 @@ from process.data_structure.physics_variables import (
     PlasmaIgnitionModel,
 )
 from process.models.physics.current_drive import CurrentDriveModel
+from process.models.physics.profiles import PlasmaProfileShapeType
 from process.models.power import PumpingPowerModelTypes
 from process.models.tfcoil.base import TFConductorModel
 
@@ -154,6 +165,12 @@ REFERENCE_MACHINE_SWITCHES = {
     "i_plasma_pedestal": 0,  # `:118`
     "i_cost_model": 0,  # `:248`
     "ireactor": 1,  # `:245` -- equals PROCESS's own default, listed anyway
+    # The three confinement switches. They were `eqx.field(static=True)` kwargs
+    # transcribed into the tree until the confinement node was split into slots; the
+    # factory reads them now, so they belong here like any other switch the file sets.
+    "i_confinement_time": 38,  # `:121` -- ISS04
+    "i_rad_loss": 1,  # `:122` -- CORE_ONLY
+    "i_plasma_ignited": 1,  # `:126` -- IGNITED
 }
 """The switch values `REFERENCE_INPUT_FILE` actually sets, as a faithful transcription.
 
@@ -169,21 +186,35 @@ here so the check has something to compare against.
 """
 
 UNPORTED = {
-    ("istell", 0): (
-        "istell == 0 is a tokamak, and this tree has no tokamak: `Stellarator` has no "
-        "counterpart namespace, so assembling it would give stellarator geometry, "
-        "stellarator coils and stellarator FWBS driven by a tokamak confinement "
-        "scaling -- a device nobody has built and this port has never tested. Refused "
-        "rather than absent, because it is the kind where assembling anyway hands you a "
-        "graph that looks complete and is wrong. Consequence, stated rather than "
-        "papered over: `istell` has no usable default here, so an IN.DAT that does not "
-        "set `istell = 6` is refused"
-    ),
     ("istell", 1): _ISTELL_PRESET_REASON,
     ("istell", 2): _ISTELL_PRESET_REASON,
     ("istell", 3): _ISTELL_PRESET_REASON,
     ("istell", 4): _ISTELL_PRESET_REASON,
     ("istell", 5): _ISTELL_PRESET_REASON,
+    ("i_plasma_ignited_i_rad_loss", -1): (
+        "the head of `calculate_confinement_time` is written for an ignited plasma "
+        "losing core radiation only -- the arm both reference runs use. The other five "
+        "combinations are real PROCESS branches reading genuinely different variables "
+        "(injected heating when not ignited; total radiated power under FULL_RADIATION; "
+        "neither under NO_RADIATION) and none is written yet. Refused rather than "
+        "approximated: an unwritten arm assembled from the written one's reads is the "
+        "invented-edge defect this split exists to remove"
+    ),
+    ("i_rad_loss", 0): (
+        "the FULL_RADIATION tail reads `.physics.pden_plasma_rad_mw` where the "
+        "CORE_ONLY tail reads synchrotron and inner radiation -- a different reads-set, "
+        "so a different occupant, and it is not written yet"
+    ),
+    ("i_pulsed_plant_istore", -1): (
+        "Account 225.3's `istore == 3` arm (a stainless-steel thermal storage block) "
+        "reads `.heat_transport.p_plant_primary_heat_mw`, `.times.t_plant_pulse_no_burn` "
+        "and `.pulse.dtstor`, which options 1 and 2 do not -- a third reads-set, and no "
+        "occupant is written for it"
+    ),
+    ("i_rad_loss", 2): (
+        "the NO_RADIATION tail leaves `hstar` as `hfact` and reads no radiation term at "
+        "all; not written yet"
+    ),
     ("isthtr", 3): (
         "the NBI branch of `st_heat` calls `current_drive.culnbi()`, a model that is "
         "not audited yet (registry unit #5)"
@@ -247,14 +278,27 @@ declarations this replaced.
 
 **Refusal, and nothing else.** A value in here raises `NotImplementedError` naming the
 reason. Its quieter sibling -- a slot holding `None`, meaning *"this configuration's
-graph does not compute these values"* -- lives in `COST_OF_ELECTRICITY` and nowhere else.
-The four `| None`s that used to be here all left, two because they were unreachable
+graph does not compute these values"* -- lives in `COST_OF_ELECTRICITY`, in
+`CRYO_Q_NUC`, and in all twenty-five slots of `models/tokamak/namespace.py`.
+
+**`("istell", 0)` left this table**, and it is the only entry ever to have done so by
+being *built* rather than by being found unreachable. Its reason was that assembling a
+tokamak *"would give stellarator geometry, stellarator coils and stellarator FWBS driven
+by a tokamak confinement scaling -- a graph that looks complete and is wrong"*. That was
+true of `StellaratorProcess`, which is the only thing this factory could build at the
+time. It is not true of `TokamakProcess`: the device-specific slot is `Tokamak`, whose
+twenty-five slots are all empty, so a tokamak machine assembles the shared subsystems and
+**nothing** stellarator-specific. The two arms of that old reason are now both answered
+structurally rather than by refusal -- the wrong-geometry half by a different device
+class, the missing-physics half by empty slots that surface as boundary inputs and are
+enumerated by name in `_audit/tokamak_boundary.md`.
+
+The `| None`s that used to be in this table all left, two because they were unreachable
 (every joint key outside `BLANKET_MASSES`/`BLANKET_SHIELD_POWER` already raised) and two
-because the configurations they stood for, `i_cost_model == 1` and `istell == 0`, are
-ones this port cannot honestly assemble; the distinction between the two kinds survives
-in the reasons: `i_cost_model == 1` would hand you a graph that computes no cost of
-electricity, `== 2` and `istell == 0` would hand you one that looks complete and is
-wrong.
+because the configurations they stood for, `i_cost_model == 1` and `istell == 0`, were
+ones this port could not honestly assemble; the distinction between the two kinds
+survives in the reasons: `i_cost_model == 1` would hand you a graph that computes no cost
+of electricity, `== 2` would hand you one that looks complete and is wrong.
 
 **When a value belongs here and when it belongs in a registry as `None`.** Refuse where
 *this port* has not written the arm, or has written something that would be wrong on it.
@@ -308,15 +352,102 @@ def _slot_occupant(field, value, registry, *, build=None):
     )
 
 
-CONFINEMENT_TIME = {6: StellaratorConfinementTime}
-"""`.stellarator.istell` -> the confinement-time occupant.
+CONFINEMENT_SCALING = {
+    ConfinementTimeModel.ISS04_STELLARATOR: Iss04ConfinementTime,
+    ConfinementTimeModel.ITER_IPB98Y2: IterIpb98y2ConfinementTime,
+}
+"""`i_confinement_time` -> the scaling-law occupant.
 
-One entry, because this tree has one device. The tokamak arm (`istell == 0`, the bare
-`ConfinementTime`) is in `UNPORTED`: it was never a real configuration here, only a
-tokamak scaling law bolted onto stellarator geometry, coils and FWBS. `ConfinementTime`
-remains the annotation on `PhysicsConfinementTime.model`, since
-`StellaratorConfinementTime` subclasses it -- the family is real, and has one member.
+**Keyed on the law, not on the device**, which is the change: `CONFINEMENT_TIME` was
+`{6: StellaratorConfinementTime}` keyed on `istell`, and answered a question it was not
+really asking. `StellaratorConfinementTime` differed from its base in exactly one read
+binding -- PROCESS hands ISS04 the rotational transform through a parameter its own
+source calls `q95` -- so with an occupant per law the binding follows from the law
+(`iss04_stellarator_confinement_time`'s parameter *is* `iotabar`) and the device drops
+out of the question entirely.
+
+Two entries for ~40 reachable values, by `switch_kwarg_survey.md` band (d)'s rule: an
+occupant per value **this port supports**. 38 is the Helias run's, 34 the conventional
+tokamak's, and 34 is one of the four values `_audit/tokamak_scope.md` found the tree
+contradicting.
 """
+
+CONFINEMENT_TAIL = {ConfinementRadiationLossModel.CORE_ONLY: ConfinementTailCoreRadiation}
+"""`i_rad_loss` -> the occupant owning everything downstream of the law.
+
+One entry: the other two arms read different variables (`FULL_RADIATION` reads total
+radiated power where this reads synchrotron plus inner) and neither is written yet.
+"""
+
+
+def _plasma_power_loss_arm(i_plasma_ignited: int, i_rad_loss: int) -> int:
+    """`(i_plasma_ignited, i_rad_loss)` -> the head's arm.
+
+    A joint dispatch, in the same shape as `_blanket_shield_power_arm`: the head adds
+    injected heating when the plasma is not ignited and subtracts one of two radiation
+    terms, so neither switch decides it alone. Only the combination both reference runs
+    use is written; anything else falls to `UNPORTED` through `_slot_occupant`.
+    """
+    ignited = PlasmaIgnitionModel(int(i_plasma_ignited))
+    radiation = ConfinementRadiationLossModel(int(i_rad_loss))
+    if (ignited, radiation) == (
+        PlasmaIgnitionModel.IGNITED,
+        ConfinementRadiationLossModel.CORE_ONLY,
+    ):
+        return 0
+    return -1
+
+
+def _cryo_q_nuc_arm(inuclear: int, i_tf_sup: int) -> int:
+    """`(inuclear, i_tf_sup)` -> whether anything owns `.fwbs.qnuc`.
+
+    PROCESS computes it only when both hold; otherwise its own comment applies --
+    *"Issue #511: if inuclear = 1: qnuc is input"* -- and an input is what an **empty
+    slot** means here. Arm `1` is therefore `None`, not a refusal: an unowned read is a
+    correct answer for this field, and saying so structurally is what replaced a
+    `FixedPoint` whose residual `sand.degenerate_fixed_points` had to differentiate at
+    runtime to discover was the identity.
+    """
+    computed = (
+        CoilNuclearHeatingModel(int(inuclear)) is CoilNuclearHeatingModel.FRANCES_FOX
+        and TFConductorModel(int(i_tf_sup)) is TFConductorModel.SUPERCONDUCTING
+    )
+    return 0 if computed else 1
+
+
+CRYO_Q_NUC = {0: CryoQNuc, 1: None}
+"""The `.fwbs.qnuc` arm -> its occupant, or `None` for "nothing owns it"."""
+
+
+def _energy_storage_arm(i_pulsed_plant: int, istore: int) -> int:
+    """`(i_pulsed_plant, istore)` -> Account 225.3's arm.
+
+    A continuous plant never enters the `istore` dispatch at all, so `istore` is only a
+    question once the plant is pulsed -- which is why this is a joint arm and not two
+    slots: asking `istore` of a steady-state plant has no answer to be wrong about.
+    """
+    if PlantOperationModel(int(i_pulsed_plant)) is PlantOperationModel.CONTINUOUS:
+        return 0
+    return (
+        1
+        if ThermalStorageModel(int(istore))
+        in (
+            ThermalStorageModel.ELECTROWATT_OPTION_1,
+            ThermalStorageModel.ELECTROWATT_OPTION_2,
+        )
+        else -1
+    )
+
+
+ENERGY_STORAGE = {0: EnergyStorageCostUnpulsed, 1: EnergyStorageCostPulsed}
+"""Account 225.3's arm -> its occupant. Two arms, not three: `istore`'s two ported
+values read the same variables and differ only in a literal, so they are one occupant
+carrying a static kwarg -- band (c), the case where that is the right answer."""
+"""The `.fwbs.qnuc` arm -> its occupant, or `None` for "nothing owns it"."""
+
+
+PLASMA_POWER_LOSS = {0: PlasmaPowerLossIgnitedCoreRadiation}
+"""The head's arm index -> its occupant. See `_plasma_power_loss_arm`."""
 
 HEATING = {1: EcrhHeating, 2: LowhybHeating}
 """.stellarator.isthtr` -> the auxiliary-heating occupant."""
@@ -330,13 +461,49 @@ PROFILE_PARAMETERISATION = {
 }
 """`.physics.i_plasma_pedestal` -> the profile-shape occupant.
 
-Both arms are real occupants and both assemble; only one of them is reachable through
-`machine_from_indat`, and that is `ST_INIT_I_PLASMA_PEDESTAL`'s doing, not this
-registry's. The pedestal arm stays registered for the same reason
-`("blktmodel_blkttype", 0)` stays in `UNPORTED`: it is the correct record of a real
-PROCESS branch, and a structural what-if reaches it through `eqx.tree_at` the way every
-other unreachable arm is reached.
+Both arms are real occupants and both assemble. On a **stellarator** only the parabolic
+one is reachable through `machine_from_indat`, and that is `ST_INIT_I_PLASMA_PEDESTAL`'s
+doing, not this registry's; on a **tokamak** the file decides, and
+`large_tokamak_eval.IN.DAT:291` picks the pedestal arm. So both arms are now reached by a
+real input file rather than only by an `eqx.tree_at` what-if.
 """
+
+
+def _profile_parameterisation(i_plasma_pedestal, *, is_stellarator):
+    """The profile-shape occupant, with the parabolic arm's device-specific slot filled.
+
+    Two questions, one slot, and they are genuinely independent: `i_plasma_pedestal`
+    decides which *arm* runs, and the device decides whether that arm's
+    `ecrh_density_limit` exists. `st_d_limit_ecrh` lives in
+    `models/stellarator/density_limits.py` and is reached only from `st_phys`, so a
+    parabolic **tokamak** computes no ECRH density limit any more than a pedestal one
+    does -- `None`, and `.stellarator.dlimit_ecrh`/`bt_max_ecrh` surface as boundary
+    inputs, which is what PROCESS leaves them as.
+
+    The static `i_plasma_pedestal=PARABOLIC_PROFILE` is written here, once, immediately
+    beside the arm that selects it -- it used to be a slot default in
+    `models/physics/namespace.py`, which could not express the device half of the
+    question.
+    """
+    return _slot_occupant(
+        "i_plasma_pedestal",
+        i_plasma_pedestal,
+        PROFILE_PARAMETERISATION,
+        build=lambda cls: (
+            cls()
+            if cls is ProfileParameterisationPedestal
+            else cls(
+                ecrh_density_limit=(
+                    EcrhDensityLimit(
+                        i_plasma_pedestal=PlasmaProfileShapeType.PARABOLIC_PROFILE
+                    )
+                    if is_stellarator
+                    else None
+                )
+            )
+        ),
+    )
+
 
 ST_INIT_I_PLASMA_PEDESTAL = 0
 """What `.physics.i_plasma_pedestal` is on a stellarator run, whatever the IN.DAT says.
@@ -518,6 +685,20 @@ COST_MODEL = {0: Costs}
 default) and `2` are both refused, with their reasons in `UNPORTED`; the slot used to
 default to `None` for the first of them and no longer can."""
 
+DEVICE = {0: TokamakProcess, 6: StellaratorProcess}
+"""`.stellarator.istell` -> the **device class**, and the first thing the factory reads.
+
+The one registry whose values are classes rather than occupants, because what `istell`
+selects is not a slot's occupant but which tree has slots at all. `_slot_occupant` is
+still what looks it up -- with `build=lambda cls: cls`, since a device is constructed at
+the end of the factory and not here -- so `istell in 1..5` keeps raising with
+`_ISTELL_PRESET_REASON` and a value PROCESS has never had keeps failing loudly.
+
+`0` is here rather than in `UNPORTED` as of the pass that built `TokamakProcess`; see
+`UNPORTED`'s own docstring for why the recorded reason no longer describes what a tokamak
+machine assembles.
+"""
+
 _INDAT_INTEGER = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$")
 
 
@@ -591,43 +772,183 @@ def machine_from_indat(input_file, stella_conf=None):
     `i_plasma_pedestal`, which `st_init` overwrites on every stellarator run. See
     `ST_INIT_I_PLASMA_PEDESTAL`.
 
+    **The device is a branch here and nowhere else.** `istell` selects a *class* --
+    `TokamakProcess` or `StellaratorProcess`, siblings, see `total_process.py` -- so it
+    is read first and the function has two `return`s. Everything either device shares is
+    resolved above the branch and passed to whichever constructor runs; everything only a
+    stellarator asks (`stella_conf`, `isthtr`, both joint blanket dispatches,
+    `ipowerflow`) is resolved *below* it, so a tokamak is never refused for a reason that
+    belongs to a device it is not.
+
+    `i_plasma_pedestal` is the one shared switch the two arms answer differently, and the
+    asymmetry is PROCESS's: `st_init` overwrites it on every `istell != 0` run and does
+    not run on a tokamak. See `ST_INIT_I_PLASMA_PEDESTAL`.
+
     Raises
     ------
     NotImplementedError
         The file asks for a real PROCESS branch this port has no occupant for. **A file
-        that sets nothing at all raises here**, on `istell`: PROCESS's own default is
-        `0`, a tokamak, and this tree has none. `istell` has no usable default and that
-        is the intent.
+        that sets nothing at all no longer raises here**: PROCESS's own default is
+        `istell = 0`, a tokamak, and there is a tokamak now -- a `TokamakProcess` whose
+        device slot is twenty-five empty slots and whose shared subsystems are the same
+        ones a stellarator gets. `istell in 1..5` still raises, on the five hardcoded
+        machine presets.
     """
     switches = switches_from_indat(input_file)
 
     def pick(field, registry, default, **kw):
         return _slot_occupant(field, switches.get(field, default), registry, **kw)
 
-    # The device is resolved first, on its own, and both its consequences together:
-    # PROCESS's own default is `istell = 0`, a tokamak, which is in `UNPORTED`, so a
-    # file that never mentions `istell` is refused naming `istell` rather than whichever
-    # slot the constructor happened to evaluate first.
+    # The device is resolved first, on its own, because it decides which *class* is being
+    # built and therefore which of the resolutions below are even asked. PROCESS's own
+    # default is `istell = 0`, a tokamak, and that is now a device rather than a refusal:
+    # a file that never mentions `istell` builds a `TokamakProcess`. `istell in 1..5`
+    # still raises here, first, naming `istell` rather than whichever slot the
+    # constructor happened to evaluate first.
     istell = switches.get("istell", 0)
-    machine_config = _slot_occupant(
-        "istell",
-        istell,
-        {6: StellaratorMachineConfig},
+    device = _slot_occupant("istell", istell, DEVICE, build=lambda cls: cls)
+    # Confinement is three slots now, not one, and every switch it used to carry as a
+    # static kwarg is answered here instead -- see `PhysicsConfinementTime`. The values
+    # are read from the file with PROCESS's own defaults as fallbacks, where the tree
+    # previously hardcoded them; `i_plasma_ignited` in particular was a registration bug
+    # once (`0` against the input file's `1`, the residual 1.2 % on
+    # `t_energy_confinement`) and a value read from the file cannot drift that way.
+    i_confinement_time = switches.get("i_confinement_time", 34)
+    i_rad_loss = switches.get("i_rad_loss", 1)
+    i_plasma_ignited = switches.get("i_plasma_ignited", 0)
+    confinement_scaling = _slot_occupant(
+        "i_confinement_time", ConfinementTimeModel(int(i_confinement_time)),
+        CONFINEMENT_SCALING,
+    )
+    confinement_tail = _slot_occupant(
+        "i_rad_loss", ConfinementRadiationLossModel(int(i_rad_loss)), CONFINEMENT_TAIL,
+    )
+    plasma_power_loss = _slot_occupant(
+        "i_plasma_ignited_i_rad_loss",
+        _plasma_power_loss_arm(i_plasma_ignited, i_rad_loss),
+        PLASMA_POWER_LOSS,
+    )
+    # `i_tf_sup` and `ipowerflow` each decide a slot *and* were each transcribed onto
+    # nodes that branch on them internally -- five sites for the first, two for the
+    # second -- so a machine could be resistive at `power.tf_power` and superconducting
+    # at the five, or pre-2014 at `fw_area` and comprehensive-2014 at the two.
+    # Resolved into a local once, here, and threaded below; the nodes lost their
+    # constructor kwarg (`switch_kwarg_survey.md` §4.1/§4.3, band (a) items 1 and 3).
+    #
+    # The slot is resolved *before* the value is threaded, deliberately: `i_tf_sup == 2`
+    # is an `UNPORTED` refusal, so no unported value ever reaches an occupant's field.
+    i_tf_sup = switches.get("i_tf_sup", 1)
+    tf_power = _slot_occupant("i_tf_sup", i_tf_sup, TF_POWER)
+    i_tf_sup = TFConductorModel(i_tf_sup)
+    # `ireactor` decides two slots, not one: which electric-production occupant runs,
+    # and -- jointly with `ipnet` -- whether `costs.cost_of_electricity` exists at all.
+    # `cost_variables.py:521`/`:515` for both defaults.
+    ireactor = switches.get("ireactor", 1)
+    cost_of_electricity = _slot_occupant(
+        "ireactor_ipnet",
+        _cost_of_electricity_arm(ireactor, switches.get("ipnet", 0)),
+        COST_OF_ELECTRICITY,
+    )
+    # ---- the five subsystems both devices have, built once ------------------------
+    #
+    # Identical arguments on either arm, so they are resolved above the branch rather
+    # than transcribed into two constructor calls. That is not tidying: a second
+    # transcription of `cost_of_electricity`/`i_tf_sup`/`ireactor` is exactly the shape
+    # step 4d removed from the tree ("a switch is answered once"), and writing the
+    # tokamak's copy by hand would have re-created it five times over.
+    costs = pick(
+        "i_cost_model",
+        COST_MODEL,
+        1,
         build=lambda cls: cls(
-            machine_config=read_stellarator_config_file(
-                REFERENCE_STELLA_CONF if stella_conf is None else stella_conf
-            )
+            cost_of_electricity=cost_of_electricity,
+            energy_storage_cost=_slot_occupant(
+                "i_pulsed_plant_istore",
+                _energy_storage_arm(
+                    switches.get("i_pulsed_plant", 0), switches.get("istore", 1)
+                ),
+                ENERGY_STORAGE,
+                build=lambda cls: (
+                    cls()
+                    if cls is EnergyStorageCostUnpulsed
+                    else cls(istore=ThermalStorageModel(int(switches.get("istore", 1))))
+                ),
+            ),
         ),
     )
-    confinement_time = _slot_occupant(
-        "istell",
-        istell,
-        CONFINEMENT_TIME,
-        build=lambda cls: cls(
-            i_confinement_time=ConfinementTimeModel.ISS04_STELLARATOR,
-            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
-            i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
+    power = Power(
+        tf_power=tf_power,
+        cryo_q_nuc=_slot_occupant(
+            "inuclear_i_tf_sup",
+            _cryo_q_nuc_arm(switches.get("inuclear", 0), i_tf_sup),
+            CRYO_Q_NUC,
+            build=lambda cls: None if cls is None else cls(),
         ),
+        cryo_q_loads_step=CryoQLoadsStep(
+            i_tf_sup=i_tf_sup,
+            i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+        ),
+        cryo_loads=CryoLoads(
+            i_tf_sup=i_tf_sup,
+            i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+        ),
+    )
+    buildings = Buildings(sizing=pick("i_bldgs_size", BUILDING_SIZING, 0))
+    availability = Availability(
+        electric_production=_slot_occupant(
+            "ireactor",
+            ireactor,
+            ELECTRIC_PRODUCTION,
+            build=lambda make: make(i_tf_sup),
+        ),
+        cplife_avail=CplifeAvail(
+            i_tf_sup=i_tf_sup,
+            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        ),
+    )
+    confinement_time = PhysicsConfinementTime(
+        power_loss=plasma_power_loss,
+        scaling=confinement_scaling,
+        tail=confinement_tail,
+    )
+
+    if device is TokamakProcess:
+        return TokamakProcess(
+            costs=costs,
+            physics=Physics(
+                profiles=PhysicsProfiles(
+                    # **The file decides it here, and on a stellarator it does not.**
+                    # `ST_INIT_I_PLASMA_PEDESTAL` exists because `st_init` overwrites
+                    # this field on every `istell != 0` run; `st_init` does not run on a
+                    # tokamak, so on this arm the file's value is live and reading it is
+                    # what reproduces PROCESS. `physics_variables.py:889`'s default is
+                    # `1`, and `large_tokamak_eval.IN.DAT:291` sets `1` explicitly.
+                    #
+                    # The pedestal occupant has no `ecrh_density_limit` slot at all,
+                    # which is how the one stellarator-only physics node stays out of a
+                    # tokamak by construction rather than by an exception: PROCESS
+                    # computes no ECRH density limit outside `i_plasma_pedestal == 0`.
+                    parameterisation=_profile_parameterisation(
+                        switches.get("i_plasma_pedestal", 1), is_stellarator=False
+                    ),
+                ),
+                confinement_time=confinement_time,
+            ),
+            power=power,
+            buildings=buildings,
+            availability=availability,
+        )
+
+    # ---- `istell == 6`: everything only a stellarator asks ------------------------
+    #
+    # Below the branch because a tokamak has none of it: no machine-config file, no
+    # `isthtr`, and neither joint blanket dispatch. Reading them anyway would make a
+    # tokamak refusable for a stellarator's reason -- `blktmodel = 1` refuses at
+    # `blanket_neutronics()`, which a tokamak never reaches.
+    machine_config = StellaratorMachineConfig(
+        machine_config=read_stellarator_config_file(
+            REFERENCE_STELLA_CONF if stella_conf is None else stella_conf
+        )
     )
     # The two joint dispatches, resolved into named locals before the constructor call
     # for the same reason `istell` is: so the *first* thing a refused combination
@@ -657,39 +978,14 @@ def machine_from_indat(input_file, stella_conf=None):
         _blanket_mass_arm(blktmodel, switches.get("blkttype", 3)),
         BLANKET_MASSES,
     )
-    # `i_tf_sup` and `ipowerflow` each decide a slot *and* were each transcribed onto
-    # nodes that branch on them internally -- five sites for the first, two for the
-    # second -- so a machine could be resistive at `power.tf_power` and superconducting
-    # at the five, or pre-2014 at `fw_area` and comprehensive-2014 at the two.
-    # Resolved into a local once, here, and threaded below; the nodes lost their
-    # constructor kwarg (`switch_kwarg_survey.md` §4.1/§4.3, band (a) items 1 and 3).
-    #
-    # The slot is resolved *before* the value is threaded, deliberately: `i_tf_sup == 2`
-    # is an `UNPORTED` refusal, so no unported value ever reaches an occupant's field.
-    i_tf_sup = switches.get("i_tf_sup", 1)
-    tf_power = _slot_occupant("i_tf_sup", i_tf_sup, TF_POWER)
-    i_tf_sup = TFConductorModel(i_tf_sup)
+    fw_area = _slot_occupant("ipowerflow", ipowerflow, FW_AREA)
     ipowerflow = PowerFlowModel(ipowerflow)
-    # `ireactor` decides two slots, not one: which electric-production occupant runs,
-    # and -- jointly with `ipnet` -- whether `costs.cost_of_electricity` exists at all.
-    # `cost_variables.py:521`/`:515` for both defaults.
-    ireactor = switches.get("ireactor", 1)
-    cost_of_electricity = _slot_occupant(
-        "ireactor_ipnet",
-        _cost_of_electricity_arm(ireactor, switches.get("ipnet", 0)),
-        COST_OF_ELECTRICITY,
-    )
     return StellaratorProcess(
-        costs=pick(
-            "i_cost_model",
-            COST_MODEL,
-            1,
-            build=lambda cls: cls(cost_of_electricity=cost_of_electricity),
-        ),
+        costs=costs,
         stellarator=Stellarator(
             machine_config=machine_config,
             heating=pick("isthtr", HEATING, 1),
-            fw_area=_slot_occupant("ipowerflow", int(ipowerflow), FW_AREA),
+            fw_area=fw_area,
             fwbs=StellaratorFwbs(
                 blanket_shield_power=blanket_shield_power,
                 blanket_masses=blanket_masses,
@@ -709,42 +1005,15 @@ def machine_from_indat(input_file, stella_conf=None):
                 # file's value on every stellarator run, so the file cannot decide this
                 # slot and this port must not pretend it does. See
                 # `ST_INIT_I_PLASMA_PEDESTAL`.
-                parameterisation=_slot_occupant(
-                    "i_plasma_pedestal",
-                    ST_INIT_I_PLASMA_PEDESTAL,
-                    PROFILE_PARAMETERISATION,
+                parameterisation=_profile_parameterisation(
+                    ST_INIT_I_PLASMA_PEDESTAL, is_stellarator=True
                 ),
             ),
-            confinement_time=PhysicsConfinementTime(model=confinement_time),
+            confinement_time=confinement_time,
         ),
-        power=Power(
-            tf_power=tf_power,
-            cryo_q_nuc_step=CryoQNucStep(
-                i_tf_sup=i_tf_sup,
-                inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
-            ),
-            cryo_q_loads_step=CryoQLoadsStep(
-                i_tf_sup=i_tf_sup,
-                i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
-            ),
-            cryo_loads=CryoLoads(
-                i_tf_sup=i_tf_sup,
-                i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
-            ),
-        ),
-        buildings=Buildings(sizing=pick("i_bldgs_size", BUILDING_SIZING, 0)),
-        availability=Availability(
-            electric_production=_slot_occupant(
-                "ireactor",
-                ireactor,
-                ELECTRIC_PRODUCTION,
-                build=lambda make: make(i_tf_sup),
-            ),
-            cplife_avail=CplifeAvail(
-                i_tf_sup=i_tf_sup,
-                itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-            ),
-        ),
+        power=power,
+        buildings=buildings,
+        availability=availability,
     )
 
 

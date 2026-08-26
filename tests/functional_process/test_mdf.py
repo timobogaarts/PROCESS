@@ -137,10 +137,10 @@ def test_cottax_cannot_run_that_nesting(problem):
     nested, name, _report = mdf.nested_blocking(
         REFERENCE_IXC, REFERENCE_ICC, REFERENCE_N_EQUALITY, REFERENCE_FIGURE_OF_MERIT
     )
-    drivers = dict(default_drivers(problem.eager.blocking))
+    drivers = dict(default_drivers(problem.eager.blocking.graph))
     drivers[name] = mdf.driver(problem)
     with pytest.raises(ValueError, match=r"declares|problem"):
-        schedule_for(nested, drivers)
+        schedule_for(nested)
 
 
 def test_the_condition_map_is_a_condition_map(problem):
@@ -167,7 +167,7 @@ def test_traceable_drivers_only_clears_the_seed(problem):
     driver type would make every traced number incomparable with the eager ones it is
     supposed to reproduce.
     """
-    drivers = default_drivers(problem.eager.blocking)
+    drivers = default_drivers(problem.eager.blocking.graph)
     traceable = mdf.traceable_drivers(drivers)
     assert set(traceable) == set(drivers)
     for name, driver in drivers.items():

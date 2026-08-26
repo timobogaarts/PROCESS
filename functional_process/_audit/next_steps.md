@@ -1715,7 +1715,17 @@ this port today, both on a **clean** `PROCESS` tree (verified by stashing):
   nothing downstream can tell.
 - A condition-map arity changed: `run_mda_harness` raises `TypeError: condition map of
   ['.physics.profiles.ion_vol_avg_temperature'] takes 1 unknown(s) ..., got 0`, failing 9
-  tests and erroring 4. **Not resolved.** This one is not ours to fix by guessing.
+  tests and erroring 4. **RESOLVED 2026-08-26**, and it was not an arity change but a
+  *contract* change, which is why guessing would have gone wrong: `AbstractDriver.__call__`
+  now takes `(conditions, data: Mapping[type[DriverIn], tuple])` instead of
+  `(conditions, start)`, and `Drive.role_data` fills that mapping by walking the driver's
+  own `requires`. All four of this port's drivers still declared `requires = ()`, so they
+  were handed `{}`, `ravel_pytree` flattened it to nothing, and the condition map was
+  called with zero unknowns. The port's half is: `requires = (Start,)` on every driver,
+  `cottax.rewrites.Initialise` on every problem (`driven_graph`, and
+  `sand.optimise_graph` for the `Optimise` -- `_check_roles_agree` refuses to *join* two
+  problems that disagree about their driver-data kinds), and every seeding site writing
+  the unknown's `^guess.*` port instead of its own name. **No cottax change was needed.**
 
 **Until that settles, every measurement must pin `cottax` at its own `HEAD`**, on both
 sides of every comparison:
@@ -1728,6 +1738,60 @@ PYTHONPATH=$SP/src $PY -m pytest tests/functional_process -q     # 3770 passed, 
 Steps 4c and 4d were both measured this way. A run that reports 9 failures is a missing
 `PYTHONPATH`, not a regression. **Reconciling with the new `cottax` API is the first
 thing to do**, because until then no gate in this file means what it says.
+
+**Done, 2026-08-26, against `cottax` `ef093ba` (`~/jaxgraph` working tree dirty at the
+time, so measured through the pin above).** Whole suite green: **3783 passed, 3347
+skipped, 0 failed, 0 errors** — of the +26 against the recorded 3757, **13 are the nine
+failures and four errors above** and 13 are a concurrent session's new
+`visualization/test_grouping.py` cases, not this work. Every other gate re-measured and
+**unmoved**: `GRAPH` still 156 nodes with an identical per-node
+`(name, type, inputs, outputs)` sha, `driven_graph` still 158 nodes / 136 blocks / 14
+driven; MDA harness identical at 485 agreements / 34 disagreements / 3 unverifiable /
+**0 ungrounded** / 543 owned walked / 0 unaccounted; SAND C2 and C3 **byte-identical**
+(31 it / `objf 1.217757347`, 99 it / `1.217757378`) and MDF C2/C3 likewise (129 / 200).
+
+Two rows of the **Verified state** table are invalidated by this and want re-measuring
+with the rest of it (§13 head): the harness row's `499 agreements ... 557 owned ... 61
+switch kwargs` is stale — the *unmodified* tree on pre-refactor `cottax` (`05be0c5`) also
+measures **485 / 543 / 57**, so the drift predates this work and is not caused by it —
+and the `pytest` row's 3730. The `GRAPH` row's 159/348 was already known stale (156/320).
+
+**The boundary grew, by design: 320 → 338.** `Initialise` mints one `^guess.<place>` per
+driven unknown and those are ordinary unowned inputs — 18 of them, one per unknown across
+the 14 driven problems (`cryo_q_loads_step` owns 4, `proton_rate_density.cycle` 2, the
+rest 1 each). §13.7's `check_boundary` pin should therefore be generated against **338**,
+or against 320 with minted `^guess.*` excluded; that is a real choice, not bookkeeping.
+
+**Nesting/MDF was NOT adopted, and the reason is a fact about `cottax`, not a choice.**
+At `ef093ba` `Drive`'s fields are `(subgraph, driver)`, `ConditionMap.body` is a `Graph`
+run by `_run_acyclic`, and `Schedule.steps` builds `Drive(sub, driver)` without reading
+`blocking.inner` — so `mdf.py`'s account of the gap is still exactly true and
+`MdfConditionMap` stays. The fix *is* written, in `~/jaxgraph`'s **uncommitted** working
+tree (`Drive` gains `problem` and `body : Step`; `Schedule.steps` descends), and porting
+against another session's unlanded work is what the pin above exists to prevent.
+
+The handoff needs no memo, because the port already has a tripwire:
+`test_mdf.py::test_cottax_cannot_run_that_nesting`, whose own docstring says *"the day it
+stops being true is the day `mdf.MdfConditionMap` should be deleted in favour of a real
+nested `Drive`. A failure here is good news, not a regression."* Run against the live
+editable `cottax` today it **already fails** (`DID NOT RAISE ValueError`) while the whole
+suite is green against the pin — so the signal is live right now, and the sequence when
+that lands is: `nested_blocking()` → `schedule_for` → delete `MdfConditionMap`, with
+cottax's `tests/test_evaluate.py::test_a_solve_nested_in_a_solve_runs` as the worked
+example.
+
+**One latent defect this surfaced, worth more than the port.** `sand.degenerate_fixed_points`
+read a problem's `.reads` to build its probe. After `Initialise` that includes the `Start`
+port, so the probe raised `KeyError` on a `^guess.*` with no value — and the function's
+bare `except Exception: # undetectable is not degenerate` swallowed it and reported
+**nothing** degenerate. The two identity fixed points of §13.6 (`eta_turbine_step`,
+`cplife_avail`) then reached `reduce_jacobian` as exactly-zero rows of `J_RY`, i.e. a
+singular equality block, and SAND died in `np.linalg.solve`. Fixed by asking
+`cottax.problem.conditions_of` for the conditions rather than taking every read. The
+lesson is the bare `except`: it converted a structural change into a silent wrong answer,
+and the only reason it was caught is that the *next* stage happened to be a matrix
+inversion that could not fail quietly. §13.6's two identity fixed points are now
+load-bearing evidence, not a curiosity.
 
 ### 13.2 In flight — `total_process.py`'s three-way split
 
@@ -1774,7 +1838,28 @@ model is downstream of everything by nature. It is recorded because it says what
 namespace here *is*, and heads off reading one as a component and then being surprised
 that all its inputs are foreign.
 
-### 13.4 Grouping depth — the "0 crossing blocks" headline is an artefact of the grain
+### 13.4 Grouping depth — [DONE 2026-08-26] the grain is the tree's, and the headline was wrong twice
+
+**Closed, and not as this section proposed.** `depth=None` is now the default and means
+*the namespace the node lives in*; `depth` survives only as a zoom for a picture, and it
+saturates (3 and 99 are one grouping). More importantly the *measure* changed: `crosses`
+was "spans more than one group", which at the tree's grain reports a subsystem's internals
+as coupling between subsystems. It now asks containment — `BlockGrouping.container` is the
+longest common prefix, and a block crosses only when nothing contains it. `top_of` keys
+colour on the subsystem so a subtree reads as one thing, the ribbon nests one lane per
+level instead of truncating, and `cross_subsystem_edges` is reported beside
+`cross_group_edges` (at `depth=1` they are equal and both are 144, which is the recorded
+figure — the finer number does not replace the coarser one).
+
+**The fact, which needs no knob:** of 14 multi-node SCCs in the declared graph, 13 are
+inside a single namespace and **one** spans `physics`, `physics.profiles` and
+`physics.profiles.parameterisation`. **Nothing crosses a subsystem boundary anywhere.**
+Both previous headlines were wrong: "0 crossing blocks" at depth 1 hid the loop entirely,
+and "1 crossing block" at depth 2 called a subtree's internals a subsystem crossing.
+`render_xdsm.grouped` prints both kinds, since printing only crossings would have made the
+one interesting loop invisible at the moment the measure got sharper.
+
+*Superseded below; kept because the measurements are still the record of why.*
 
 `depth` is plumbed through `grouped()`, `group_of`, `grouping_report` and
 `dependency_group_sequence` and has never been called with anything but `1`.
@@ -1839,14 +1924,38 @@ subsuming it.
   machine-checked to be the *sole* back-edge closing the 4-node coils SCC. Remove it and
   the driven block collapses to 2. This is the port's central thesis showing up as a
   measurement, and it is the most valuable single item in §13.5's band (b).
+- **[One closed 2026-08-26.]** `cryo_q_nuc`'s fixed point is deleted, not fixed: splitting
+  `inuclear` into occupants showed the fixed point was an artefact of the switch, since one
+  arm never reads the incumbent and the other *is* "qnuc is input", i.e. an empty slot.
+  Driven blocks 14 → 13. `eta_turbine_step` — the one that reaches `.costs.coe` — is
+  untouched and still driven; it is the remaining instance below.
+
 - **Two `FixedPoint`s are the identity map** on the reference machine: `cplife_avail`
   (`itart = 0`, six of seven declared reads dead) and `eta_turbine_step`. The second owns
   `.heat_transport.eta_turbine`, which reaches `.costs.coe`, this run's objective. A fixed
   point that determines nothing is being driven anyway.
 
-### 13.7 `check_boundary` — generate the pin now, on the smaller boundary
+### 13.7 `check_boundary` — [DONE 2026-08-26] built, categorised, pinned at 338
 
-`model_tree_design.md` §8 step 5's `check_boundary` **does not exist yet**; step 4c found
+**Built** as `functional_process/boundary.py`, with a pin at
+`functional_process/reference_boundary.txt` (generated by
+`$PY -m functional_process.boundary --write`, never hand-edited) and
+`tests/functional_process/test_boundary.py` asserting equality, so a boundary that *grew*
+fails naming the orphans and their readers, and one that *shrank* fails asking for the pin
+to be regenerated.
+
+**The pin carries two categories, and that is load-bearing.** `input` is read from the
+`DataStructure` — growth there is the lost-producer defect. `guess` is a `^guess.<place>`
+`Start` port, one per driven unknown, minted mechanically by `Initialise` — growth there is
+a new problem, i.e. structure. Without the split the two move the same total in opposite
+directions and cancel, which would make the number useless for exactly the programme it is
+meant to serve: the end state is a purely functional graph whose boundary holds the real
+inputs and nothing else. **Today: 320 input + 18 guess = 338**, the declared graph being
+the 320.
+
+*Original text follows.*
+
+`model_tree_design.md` §8 step 5's `check_boundary` **did not exist**; step 4c found
 this when it expected a pin to trip and there was none. The boundary is now 320, not 348 —
 step 4c's cost-slot removal *shrank* it (3 added, 31 removed; category (d) is empty in the
 cost model). Generating the pin against 320 rather than 348 is strictly better, and it is
@@ -1872,7 +1981,23 @@ Note the split the format should keep, which `IN.DAT` conflates: the **machine**
 of choices) and the **study** (objective, unknowns, conditions — `icc`/`ixc`, where the
 integer-ID indirection is worst and where structural names already exist).
 
-### 13.9 The tokamak — sized, and cheaper than expected for the conventional case
+### 13.9 The tokamak — sized by hand here, then measured: `_audit/tokamak_scope.md`
+
+**Measured 2026-08-26, and this section's estimate held.** `machine_survey.py` classifies
+an input file's integers against the tree without building anything;
+`_audit/tokamak_scope.md` is the result and supersedes the table below. On
+`large_tokamak_eval`: 33 integers = 6 not topology, 3 the factory already dispatches on, 7
+pinned as static kwargs (**4 of which the file contradicts**), **17 new** — against the
+"~16" estimated here by hand. Two corrections to what follows. The device is the
+*top-level class* (`StellaratorProcess`), not a slot inside one, so a tokamak is a sibling
+class and no existing node name moves. And `i_confinement_time = 34` is **already ported**
+(`ITER_IPB98Y2`, `confinement_time.py:809`) — the tokamak arm is refused for a
+*combination* reason that a tokamak device class dissolves, not for missing physics. The
+four contradicted pins are the first deliverable; `_audit/tokamak_scope.md` §"The order
+this implies" carries the sequence, including the per-switch CoolProp flag §5's policy
+still wants.
+
+*Original sizing follows.*
 
 Structurally the tree already supports it: a `device: Stellarator | Tokamak` slot is the
 mechanism steps 4b–4d bought, and `istell` already picks. The blocker is models.
@@ -1937,3 +2062,204 @@ The same session's companion: **a number carried in a document is not a measurem
 `CLAUDE.md` recorded `pytest functional_process` at ~1390 passed + ~640 skipped against an
 actual 3752 + 3347, and `~/jaxgraph` at 307 against 740 — both stale by more than double,
 in a file whose own instruction is to suspect the env when a number moves.
+
+
+## 14. State, 2026-08-26 — the switch conversion, the driver refactor, and the tokamak
+
+**Read §13 first for the priority order; this section is what moved and what is now open.**
+Every number here was measured against `~/jaxgraph` pinned at **`b7c5572`** ("driver is now
+declarable and first-class graph citizen") via `git archive HEAD src/cottax`, not against a
+number written anywhere.
+
+### 14.1 Verified state
+
+| check | value |
+|---|---|
+| `pytest tests/functional_process` | **3810 passed**, 3349 skipped, 0 failed |
+| `GRAPH` | **159 nodes**, **316** declared boundary |
+| `driven_graph(GRAPH)` | 140 blocks, **13 driven** (was 14) |
+| boundary, categorised | 316 input + 17 guess = **333** (`boundary.py`, pinned) |
+| MDA harness | 484 agreements / 34 disagreements / 3 unverifiable / 0 ungrounded / 24 errors; **545 owned walked, 0 unaccounted** |
+| static switch kwargs | **20 switches over 28 slots, 49 pairs** (was 25 / 31 / 56) |
+| tokamak machine | **100 nodes, 314 boundary**; 239 shared with the stellarator, **75 tokamak-only** |
+
+The MDA harness's `errors` count includes the three port-owned intermediates that PROCESS
+has no field for (`.physics.t_electron_confinement`, `nd_plasma_electron_line_19`,
+`cur_plasma_ma`) — the stated, accepted cost of decomposing finer than PROCESS does.
+
+### 14.2 The policy, restated by the user and now binding
+
+**No switch is a static kwarg, whatever its reads.** The earlier position — that
+`switch_kwarg_survey.md` band (c) (branches with identical reads) was the legitimate case
+for keeping one — is **withdrawn**. A switch value selects an occupant, full stop.
+
+`test_occupants_of_one_slot_differ` enforced the old policy by asserting occupants differ
+**by ports**, which makes an identical-reads split impossible by construction. It now
+asserts each value selects a **distinct occupant class**. That is weaker, and the gap is
+named in its docstring: nothing now catches a family whose occupants are identical in
+behaviour too, and nothing cheaply can. `i_tf_sup == 2` (PROCESS runs the byte-identical
+branch to `== 0`) is still handled by refusing it rather than registering it twice, and
+that refusal is now the only thing standing there.
+
+### 14.3 Closed: the confinement family
+
+`.physics.confinement_time` was one node carrying three switches and declaring **32
+reads**; it is six slots and the scaling occupant declares **6**. Two of the 32 were dead
+at this machine's own values — `.current_drive.p_hcd_injected_total_mw` (not read when
+ignited) and `.physics.pden_plasma_rad_mw` (not read under core-only radiation) — the
+first inventing a `.current_drive -> .physics` subsystem edge no run makes.
+
+`head` / `law` / `tail` were extracted as pure functions first and proved **bit-exact**
+against the composite on all nine outputs, off the `1e-3` clamp, before anything touched
+the graph; the unit stays green under `--fp-gradients` (561 passed), which is what proves
+an extraction preserved derivatives and not just values.
+
+**`StellaratorConfinementTime` and the `ConfinementTime` composite node are deleted** (217
+lines), along with `_rebound_signature`, which existed only to build the subclass's rebound
+signature. The subclass existed to rebind one read — PROCESS hands ISS04 the rotational
+transform through a parameter its own source calls `q95` — and with one class per law that
+is not a rebinding: `iss04_stellarator_confinement_time`'s own parameter *is* `iotabar`. The
+read follows from the law, so `CONFINEMENT_TIME` keyed on `istell` had nothing left to
+decide. Its test is re-targeted onto the live occupants, not deleted.
+
+**`calculate_confinement_time` stays and is not dead**: it is the composite PROCESS itself
+has, and `TestConfinementTime` diffs it against `PlasmaConfinementTime.calculate_confinement_time`
+sample by sample. That is the boundary the port can compare at. Any split finer than
+PROCESS's own has no 1:1 reference, which is the trade this decomposition makes.
+
+### 14.4 Closed: `inuclear`, `i_pulsed_plant`
+
+- **`inuclear` removed a driven block.** Its arms read disjoint variables and the
+  "otherwise" arm is PROCESS's own *"if inuclear = 1: qnuc is input"* — so the computed arm
+  is an ordinary node reading `p_tf_nuclear_heat_mw` and the input arm is an **empty slot**
+  (`CryoQNuc | None`). The `FixedPointFunction` that existed only because one body both
+  read and owned `.fwbs.qnuc` is gone, with its minted `^cond` copy and its `^guess` port.
+  What `sand.degenerate_fixed_points` used to recover at runtime by differentiating a
+  residual, the tree now states.
+- **`i_pulsed_plant` was two dead reads.** At `== 0` Account 225.3 is identically zero, so
+  the node declared a `.heat_transport -> .costs` edge and a `.costs.fkind` edge no run
+  makes. The unpulsed occupant reads **nothing**. `istore` remains a kwarg on the pulsed
+  occupant **pending §14.2** — its two ported values differ only in a literal, and under the
+  binding policy it too must become occupants.
+
+Of `_audit/tokamak_scope.md`'s four contradicted switches, **three are closed**; only
+`i_p_coolant_pumping` (5 slots, two of them 28- and 31-read nodes) remains.
+
+### 14.5 `i_tf_sc_mat` — done, reverted, and now unblocked
+
+The conversion works and does what §13.6 predicted: only Bi-2212 reads `.tfcoil.j_tf_wp`,
+so the ITER Nb3Sn occupant does not declare it and **the four-node coils SCC collapses** to
+the inherent `Intersect`/`^problem` pair. It was **reverted**, because it broke four MDF
+tests for a reason worth more than the conversion:
+
+> **The root-find's starting guess was living on the invented edge.** `ROOT_FIND_SEEDS`
+> derives `wp_width_r_min`'s guess from `.stellarator.r_coil_minor` read out of *the
+> block's context* — and `r_coil_minor` was only in that context because `j_tf_wp` dragged
+> `WindingPackIntersectInputs` into the block. Remove the fake cycle and the seed loses its
+> source.
+
+At the time this was blocked: cottax's `Output` refuses a raw `VarPath`, so a node could not
+own the minted `^guess.*` name. **`b7c5572` dissolves it** — `rewrites.Supply` exists for
+exactly this, its docstring saying *"`Assign` opens `^guess.u` as a boundary input, and this
+is how a low-fi model's output becomes the start instead."* `winding_pack_pre_intersect`
+already computes the guess and discards it. Redo: own it, `Supply` it onto the `Start`,
+delete the `ROOT_FIND_SEEDS` entry (whose own docstring warned `switch_audit` could not
+check its material branch). **This is the highest-value item outstanding.**
+
+### 14.6 The driver refactor — `Initialise` is gone
+
+`cottax.rewrites.Initialise` no longer exists; `Assign(problem, driver)` retypes a problem
+into a `Driven` and *mints* the ports the algorithm's own `requires` names. The port
+follows, and cottax's refusals drove the shape:
+
+- **`cut_graph` split from `driven_graph`.** Cutting a cycle is structure; assigning a
+  driver is an algorithm choice. `Combine` refuses to join two problems carrying a driver
+  (*"combining two problems discards the algorithm answering each"*), and SAND joins every
+  `FixedPoint` into one `Optimise` — so it builds on the cut graph and assigns after. The
+  seam was always there; the refusal made it visible.
+- `assign_drivers` / `reassign_drivers` — attach vs. swap, kept apart because `Assign`
+  deliberately will not overwrite.
+- `default_drivers` takes a **`Graph`**, not a `Blocking`: the choice happens before there
+  is a blocking, and never needed one.
+- **MDF builds two graphs, not two driver maps.**
+- `starts_for` returns `()` for an undriven problem — legitimate now, where under
+  `Initialise` a missing port could only be a bug.
+- `Driven` forwards only the graph-facing surface, so `sand_shape` says
+  `node.problem.equalities`: *a driven node has a problem, it is not one.*
+
+Two bugs the refactor surfaced: `mdf.guess_ports` was asking the **undriven** graph for
+start ports, so every port fell to `0.0` and each inner solve began at exactly the cold
+point `prime()` exists to escape; and `MdfConditionMap` needed the new **`roles`** field.
+
+**`roles` closes `optimise_design.md` §8 upstream** — the condition map now carries what
+each condition *is*, parallel to `conditions`. `VmconDriver.n_equality`/`n_inequality` can
+therefore be retired in favour of reading roles off the map. **Open, not done.**
+
+### 14.7 New instruments
+
+- **`functional_process/boundary.py`** + `reference_boundary.txt` (generated;
+  `$PY -m functional_process.boundary --write`) + `tests/functional_process/test_boundary.py`.
+  `check_boundary` refuses a read with no producer, naming each orphan **and its readers**.
+  The pin carries **two categories** — `input` (read from the `DataStructure`; growth is the
+  lost-producer defect) and `guess` (a `Start` port; moves only when a driver does) —
+  because without the split, landing a producer and declaring a problem move one total in
+  opposite directions and cancel.
+- **The swap contract** (`test_machine.py`, pinned in `reference_swaps.txt`):
+  `boundary.orphaned_by(base, swapped)` asks the question of **consumers, not producers**,
+  which is §12.2's rule implemented at last. First run found **six slots, thirty-seven
+  reads** — every multi-arm slot in the tree has a partial overlap. Pinned rather than
+  asserted away, because a read served by a `DataStructure` default and a read served by
+  nothing look identical from inside the graph. They stop looking identical when the
+  boundary is declared rather than implied, which is where this port is going.
+- **`functional_process/machine_survey.py`** + `tests`: classifies any `IN.DAT`'s integers
+  against the tree — factory / pinned / new / not-topology — every column measured, with a
+  deliberately weak CoolProp *neighbourhood* flag.
+
+### 14.8 The tokamak — it assembles
+
+`_audit/tokamak_call_surface.md` (traced with `sys.setprofile`, intersected against the
+Helias run) and `_audit/units/models/physics/plasma_geometry.md` (unit #24) and
+`_audit/tokamak_boundary.md`. `TokamakProcess` is a **sibling class** of
+`StellaratorProcess`, `Tokamak` has 25 slots all `| None`, and `istell == 0` builds one.
+
+**The 75 tokamak-only boundary reads: 58 are an empty slot's work list** (11 of 25 slots),
+4 a shared subsystem's gap, 12 permanent boundary, 1 already declared empty. Biggest:
+`ccfe_hcpb` 16, `cicc_superconducting_tf_coil` 10, `physics` 8, `build` 6, `plasma_geom` 5.
+The stellarator machine is unmoved — per-node sha `6d61c802…` identical before and after.
+
+Three findings: **CoolProp is one reached module** (`tfcoil/quench.py`), not six —
+`engineering/pumping.py` does not import it and three others' CoolProp arms are dormant
+behind this run's switch values (2,077 lines that go live on another input); **three files
+are reached with no `.run()` in `caller.py`** (inheritance and plain imports), the tokamak
+analogue of the missed `coils/` subpackage; and `ecrh_density_limit` sat unconditionally in
+the shared parabolic arm, so a parabolic *tokamak* would have got a stellarator-only node —
+the `EcrhDensityLimit` bug class a third time, first time caused by a **device** rather than
+a switch value.
+
+`large_tokamak_eval.IN.DAT` **does not assemble as written**: it leaves `i_plasma_ignited`
+at PROCESS's default `0` and only the IGNITED arm is written. The refusal is correct and was
+left in place.
+
+### 14.9 What is open, in order
+
+1. **`i_tf_sc_mat` via `Supply`** (§14.5) — deletes a driven block; unblocked by `b7c5572`.
+2. **`i_p_coolant_pumping`** — the last contradicted switch, 5 slots.
+3. **The remaining 20 switch kwargs**, per §14.2's binding policy, `istore` included.
+4. **Retire `VmconDriver.n_equality`/`n_inequality`** in favour of `ConditionMap.roles`.
+5. **Port tokamak models** against `tokamak_boundary.md`'s 58, `pfcoil.py` +
+   `tfcoil/superconducting.py` first (6,264 lines, 40% of the unported surface).
+6. `indat_to_python` and the 109 numeric inputs (§13.8) — untouched.
+
+### 14.10 Two process lessons
+
+**A pin regenerated without reading its diff is not a pin.** Rewriting a namespace class
+silently dropped `DoubleAndTripleProduct`, orphaning `.physics.ntau`/`.nTtau` — and
+`check_boundary`, built the same morning, would have caught it except that the pin was
+regenerated over the evidence. What caught it was the MDA harness moving 485 → 483 and a
+refusal to accept a two-variable discrepancy, then diffing owned sets against a `git
+worktree` at `HEAD`. Every regeneration since prints its diff first.
+
+**The working tree is not the commit.** `Blocking.nest` and a runnable nested `Schedule`
+were read out of `~/jaxgraph`'s *working tree* and reported as landed; at the commit,
+`Drive` had no `body` and `Schedule.steps` never read `blocking.inner`. §13.1's pin
+discipline exists for exactly this, and skipping it produced a confident wrong answer.

@@ -17,9 +17,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.evaluate import Drive
+from cottax.evaluate import schedule_for
 from cottax.graph import Graph
-from cottax.problem import Optimise
+from cottax.problem import Optimise, Start, driver_vars
+from cottax.rewrites import Assign
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
 from jax.tree_util import GetAttrKey
@@ -241,10 +242,10 @@ def test_sand_assembles_and_orders_its_conditions():
     because it is the one thing standing between a correct solve and one that quietly
     treats an inequality as the objective.
     """
-    from functional_process.mda import driven_graph
+    from functional_process.mda import cut_graph
     from functional_process.mda_harness import _without_excluded
 
-    graph = driven_graph(_without_excluded(GRAPH))
+    graph = cut_graph(_without_excluded(GRAPH))
     with_problem, _name, report = optimise_graph(
         graph,
         REFERENCE_IXC,
@@ -259,7 +260,9 @@ def test_sand_assembles_and_orders_its_conditions():
 
     names = [c.path_str() for c in drive.conditions]
     assert names[0] == "^cond.numerics.objf"
-    definition = drive.subgraph[drive.problem]
+    # `.problem` because the node is `Driven` now: it *has* a problem rather than
+    # being one, and cottax forwards only the graph-facing surface.
+    definition = drive.subgraph[drive.problem].problem
     assert names[1 : 1 + len(definition.equalities)] == [
         c.var.path_str() for c in definition.equalities
     ]
@@ -280,10 +283,10 @@ def test_default_drivers_reads_the_split_off_the_problem_node():
     """`mda.default_drivers` never counts conditions -- it asks the `Optimise`."""
     from cottax.blocking import Blocking
 
-    from functional_process.mda import default_drivers, driven_graph
+    from functional_process.mda import cut_graph, default_drivers
     from functional_process.mda_harness import _without_excluded
 
-    graph = driven_graph(_without_excluded(GRAPH))
+    graph = cut_graph(_without_excluded(GRAPH))
     with_problem, _name, _report = optimise_graph(
         graph,
         REFERENCE_IXC,
@@ -293,7 +296,7 @@ def test_default_drivers_reads_the_split_off_the_problem_node():
     )
     combined, _residualised = sand_graph(with_problem)
     blocking = Blocking.scc(combined)
-    drivers = default_drivers(blocking)
+    drivers = default_drivers(blocking.graph)
     optimise = [d for d in drivers.values() if isinstance(d, VmconDriver)]
     assert len(optimise) == 1
     driver = optimise[0]
@@ -370,8 +373,13 @@ def test_a_residual_whose_unknown_has_no_scale_keeps_a_factor_of_one():
 # ---------------------------------------------------------------- the driver
 
 
-def _toy_problem():
+def _toy_problem(driver=None):
     """`min (x-3)^2 + (y-2)^2` subject to `x + y - 4 <= 0`, as a cottax graph.
+
+    **Takes the driver**, because `Assign` is what mints the `^guess.*` ports this
+    returns -- the algorithm's own `requires` names them, so there is nothing to hand
+    back until one is chosen. Each caller passes the `VmconDriver` whose behaviour it is
+    testing, where it used to pass one to `schedule_for` afterwards.
 
     Written out rather than reusing the real graph so the answer is known in closed
     form: the unconstrained minimum `(3, 2)` violates the constraint, so it is active and
@@ -411,7 +419,15 @@ def _toy_problem():
             ),
         ])
     )
-    return graph, x, y
+    # Every problem this port drives declares its `Start`s (`mda.driven_graph` and
+    # `sand.optimise_graph` both do it); `VmconDriver.requires` names `Start`, so the
+    # toy problem has to say so too or `Drive` refuses the pair.
+    problem = NodePath((GetAttrKey("Opt"),))
+    if driver is None:
+        driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
+    graph = Assign(problem, driver).apply(graph)
+    gx, gy = driver_vars(graph[problem], Start)
+    return graph, x, y, gx, gy
 
 
 class _Objective(jax.tree_util.register_static and object):
@@ -442,11 +458,10 @@ class _Constraint:
 
 
 def test_vmcon_driver_reaches_a_known_constrained_optimum():
-    graph, x, y = _toy_problem()
-    drive = Drive(
-        subgraph=graph, driver=VmconDriver(n_equality=0, n_inequality=1, scaled=False)
-    )
-    out = drive({x: jnp.asarray(0.0), y: jnp.asarray(0.0)})
+    graph, x, y, gx, gy = _toy_problem()
+    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=0, n_inequality=1, scaled=False ))
+    schedule = schedule_for(graph)
+    out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
 
@@ -454,26 +469,18 @@ def test_vmcon_driver_reaches_a_known_constrained_optimum():
 def test_vmcon_driver_honours_bounds_as_bounds():
     """A box bound is handed to VMCON as a bound, not re-expressed as two inequality
     constraints -- which would be a different QP subproblem and different iterates."""
-    graph, x, y = _toy_problem()
-    drive = Drive(
-        subgraph=graph,
-        driver=VmconDriver(
-            n_equality=0,
-            n_inequality=1,
-            scaled=False,
-            bounds=((x, -np.inf, 2.0),),
-        ),
-    )
-    out = drive({x: jnp.asarray(0.0), y: jnp.asarray(0.0)})
+    graph, x, y, gx, gy = _toy_problem()
+    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=0, n_inequality=1, scaled=False, bounds=((x, -np.inf, 2.0),), ))
+    schedule = schedule_for(graph)
+    out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
     assert float(out[x]) <= 2.0 + 1e-9
 
 
 def test_vmcon_driver_scaling_does_not_move_the_answer():
     """PROCESS's `x * (1/x_start)` conditioning changes the path, never the optimum."""
-    graph, x, y = _toy_problem()
-    out = Drive(
-        subgraph=graph, driver=VmconDriver(n_equality=0, n_inequality=1, scaled=True)
-    )({x: jnp.asarray(1.0), y: jnp.asarray(1.0)})
+    graph, x, y, gx, gy = _toy_problem()
+    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=0, n_inequality=1, scaled=True ))
+    out = schedule_for(graph)({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
 
@@ -482,20 +489,23 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
     """`ConditionMap` cannot say which condition is which, so the counts are a contract
     the driver is given -- and a stale pair must fail loudly, not mislabel a constraint.
     """
-    graph, x, y = _toy_problem()
-    drive = Drive(
-        subgraph=graph, driver=VmconDriver(n_equality=1, n_inequality=1, scaled=False)
-    )
+    graph, x, y, gx, gy = _toy_problem()
+    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=1, n_inequality=1, scaled=False ))
+    schedule = schedule_for(graph)
     with pytest.raises(ValueError, match="equalities"):
-        drive({x: jnp.asarray(0.0), y: jnp.asarray(0.0)})
+        schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
 
 
 def test_vmcon_driver_needs_a_start():
-    graph, x, y = _toy_problem()
+    """No start supplied is an error, not a silent default -- there is no shape to
+    guess a pytree of unknowns from.
+
+    Spelled as an empty driver-data mapping: `Drive.role_data` builds that mapping from
+    the driver's `requires`, so calling the driver directly with `{}` is what "no start"
+    now looks like (the old `start=None` positional is gone).
+    """
     driver = VmconDriver(n_equality=0, n_inequality=1)
-    subgraph = graph
+    graph, x, y, gx, gy = _toy_problem(driver)
+    (drive,) = schedule_for(graph).steps
     with pytest.raises(ValueError, match="starting value"):
-        driver(
-            Drive(subgraph=subgraph, driver=driver).condition_map({}),
-            None,
-        )
+        driver(drive.condition_map({}), {})

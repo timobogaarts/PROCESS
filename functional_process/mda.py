@@ -29,9 +29,17 @@ fails if either membership changes.
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule, schedule_for
 from cottax.interfaces.pytree_namespace_module import resolve
-from cottax.problem import FixedPoint, Optimise, RootFind
-from cottax.rewrites import Cut, FixedPointCut
-from cottax.spec import NodePath, VarPath
+from cottax.problem import (
+    Driven,
+    FixedPoint,
+    Optimise,
+    RootFind,
+    Start,
+    driver_vars,
+)
+from cottax.rewrites import Assign, Cut, FixedPointCut, Undrive
+from cottax.graph import Graph
+from cottax.spec import DeclaredNode, NodePath, VarPath
 from cottax.tools.path import written
 from jax.tree_util import GetAttrKey
 
@@ -91,7 +99,7 @@ so both cuts apply there.
 """
 
 
-def driven_graph(graph=GRAPH):
+def cut_graph(graph=GRAPH):
     """`graph` (default: `indat.GRAPH`, the default-configuration graph), with
     every raw cycle in `CUTS` that actually exists in `graph` cut into a declared
     `FixedPoint` problem. Every remaining multi-node SCC now declares exactly one
@@ -141,7 +149,72 @@ def driven_graph(graph=GRAPH):
             else NodePath((*cuts[0].var.keys, GetAttrKey("cycle")))
         )
         graph = FixedPointCut(tuple(cuts), place=place).apply(graph)
+
+    # Every problem gets `Start` ports, one per unknown, read from `^guess.<place>`.
+    #
+    # `cottax.evaluate.AbstractDriver` takes its starting values as *declared driver
+    # data* rather than reading them off the unknowns' own names: `Drive.role_data`
+    # walks the driver's `requires` and looks up the ports the problem declares, and
+    # `Drive.__check_init__` refuses both directions -- a driver requiring a kind the
+    # problem lacks, and a kind declared but not consumed. Every driver this port
+    # **The driver is part of the graph now.** `Assign` retypes each problem into a
+    # `Driven` -- problem plus algorithm -- and *mints* the ports that algorithm needs
+    # from its own `requires`: a Newton wants a `Start`, so `^guess.<place>` appears per
+    # unknown; a Picard wants nothing and nothing appears. That is one op where this used
+    # to need two (`Initialise` to declare the ports, then a separate `{problem: driver}`
+    # map handed to `schedule_for`), and it removes the failure mode between them --
+    # ports declared before the algorithm was known could be required-but-undeclared or
+    # declared-but-unconsumed, and both are now unrepresentable rather than refused.
+    #
+    # It stays here rather than in `schedule()` because the minted ports are real
+    # boundary inputs: a caller measuring this graph's boundary, or drawing it, must see
+    # them. Assigning is a modelling decision and is recorded in `Plan.ops` like any
+    # other, so it survives `subgraph`/`prune` without a side table.
     return graph
+
+
+def starts_for(graph, problem):
+    """`(unknown, guess_port)` pairs for `problem`, in `owns` order.
+
+    A driven problem's starting values are no longer read off the unknowns' own names:
+    `Initialise` (applied by `driven_graph`) gives every problem one `Start` port per
+    unknown, named `^guess.<place>`, and `Drive.role_data` reads the start from *there*.
+    So a caller seeding a run writes `^guess.physics.temp_plasma_ion_vol_avg_kev`, not
+    `.physics.temp_plasma_ion_vol_avg_kev` -- the latter is the answer, and writing it
+    would be seeding the output.
+
+    The pairing is read off the node rather than re-derived with `Initialise.start_of`:
+    `Start`s pair with `owns` by declaration order (`cottax.problem._check_starts`), so
+    the node itself is the authority on which guess belongs to which unknown, and
+    `strict=True` fails loudly if that ever stops being true.
+    """
+    node = graph[problem]
+    starts = driver_vars(node, Start)
+    if not starts:
+        # **No driver, or a driver that needs no start: no ports, and that is legitimate
+        # now.** `Assign` mints driver data from the algorithm's own `requires`, so a
+        # problem that has not been assigned one has no `Start` to pair with -- where the
+        # old `Initialise` gave every problem a port before any algorithm was chosen, and
+        # a missing port could only mean a bug. `strict=True` below still catches the
+        # real error, a partially-ported problem.
+        return ()
+    return tuple(zip(node.owns, starts, strict=True))
+
+
+def guess_sources(graph) -> dict:
+    """`{guess_port: unknown}` over every problem in `graph`.
+
+    The inverse lookup every seeding site needs: given a `^guess.*` input, which
+    unknown's value belongs in it. Nothing in a `DataStructure` is spelled `^guess.*`,
+    so a seeder that grounds these ports by their own name silently writes `0.0` into
+    every starting guess -- which is not a slow solve but an impossible one, and is
+    exactly the failure `run_sand_harness._seed`'s own docstring describes.
+    """
+    return {
+        guess: unknown
+        for problem in graph.declared
+        for unknown, guess in starts_for(graph, problem)
+    }
 
 
 ROOT_FIND_SEEDS = {
@@ -211,10 +284,65 @@ def _root_find_seed(problem):
     return seed
 
 
+def driven_graph(graph=GRAPH, **driver_options):
+    """`cut_graph` with an algorithm attached to every problem: the runnable graph.
+
+    **Split from `cut_graph` because the two are different decisions and one caller needs
+    only the first.** Cutting a cycle is structure -- it says these nodes are coupled and
+    this variable closes the loop. Assigning a driver is an algorithm choice. They used
+    to be one function because a driver lived in a side map and could be chosen last;
+    now it lives *in the graph*, and `Combine` refuses to join two problems that carry
+    one (*"combining two problems discards the algorithm answering each -- `Undrive`
+    first"*). `sand` joins its `FixedPoint`s into one `Optimise`, so it must build on the
+    cut graph and assign afterwards. That refusal is what made the seam visible; it was
+    always there.
+    """
+    graph = cut_graph(graph)
+    return assign_drivers(graph, default_drivers(graph, **driver_options))
+
+
+def assign_drivers(graph: Graph, drivers: dict) -> Graph:
+    """`Assign` each driver onto its problem, returning the graph that carries them.
+
+    The two-line idiom every call site needs now that `schedule_for` takes no drivers:
+    choose (`default_drivers`), then attach. Kept as a function rather than inlined
+    because *re*-assigning is a different operation -- see `reassign_drivers` -- and a
+    caller that conflates them silently replaces one algorithm with another.
+    """
+    for problem, driver in drivers.items():
+        graph = Assign(problem, driver).apply(graph)
+    return graph
+
+
+def reassign_drivers(graph: Graph, drivers: dict) -> Graph:
+    """Replace the algorithm on problems that already carry one: `Undrive`, then `Assign`.
+
+    `Assign` refuses a problem that is already `Driven`, deliberately -- *"replacing one
+    algorithm with another silently is not a rewrite"* -- so swapping a driver is two
+    recorded ops, not an overwrite. `mdf` needs exactly this: it runs one blocking under
+    two algorithms (a seeded eager solve and a traceable one), which used to be two
+    `{problem: driver}` maps over one graph and is now two graphs, because the algorithm
+    is part of the graph.
+    """
+    for problem, driver in drivers.items():
+        if isinstance(graph[problem], Driven):
+            graph = Undrive(problem).apply(graph)
+        graph = Assign(problem, driver).apply(graph)
+    return graph
+
+
 def default_drivers(
-    blocking: Blocking, bounds=(), callback=None, condition_scale=()
+    graph: Graph, bounds=(), callback=None, condition_scale=()
 ) -> dict:
-    """One driver per driven block, assigned mechanically by problem type -- a Newton
+    """One driver per **problem**, chosen mechanically by problem type
+
+    Takes a `Graph` rather than a `Blocking`: since `Assign` puts the driver *in* the
+    graph, the choice has to be made before there is a blocking to speak of -- and it
+    never needed one, because the problem's own type is what decides. A node that already
+    carries a driver (`Driven`) is skipped rather than re-assigned, which `Assign` would
+    refuse anyway: replacing one algorithm with another silently is not a rewrite.
+
+    Historic shape -- a Newton
     for every `RootFind` (`Intersect`, `DuctDiameterRootFind`), a Picard for every
     `FixedPoint` (the 8 structural self-loops plus the two cuts above), and a
     `VmconDriver` for an `Optimise` (only `functional_process.sand` registers one). No
@@ -242,17 +370,14 @@ def default_drivers(
         `Feasibility`, which this graph does not currently register any of.
     """
     drivers = {}
-    for block, problem, problem_type in zip(
-        blocking.blocks, blocking.problems, blocking.problem_types, strict=True
-    ):
-        if problem_type is None:
+    for problem, definition in graph.definitions.items():
+        if not isinstance(definition, DeclaredNode) or isinstance(definition, Driven):
             continue
-        if issubclass(problem_type, RootFind):
+        if isinstance(definition, RootFind):
             drivers[problem] = SeededNewtonDriver(seed=_root_find_seed(problem))
-        elif issubclass(problem_type, FixedPoint):
+        elif isinstance(definition, FixedPoint):
             drivers[problem] = PicardDriver()
-        elif issubclass(problem_type, Optimise):
-            definition = blocking.graph[problem]
+        elif isinstance(definition, Optimise):
             drivers[problem] = VmconDriver(
                 n_equality=len(definition.equalities),
                 n_inequality=len(definition.inequalities),
@@ -262,7 +387,7 @@ def default_drivers(
             )
         else:
             raise TypeError(
-                f"block {block!r} declares a {problem_type.__name__}, and "
+                f"{problem!r} declares a {type(definition).__name__}, and "
                 f"default_drivers has no default driver for that problem type -- "
                 f"assign one explicitly"
             )
@@ -278,4 +403,4 @@ def schedule(graph=GRAPH) -> Schedule:
     """
     driven = driven_graph(graph)
     blocking = Blocking.scc(driven)
-    return schedule_for(blocking, default_drivers(blocking))
+    return schedule_for(blocking)

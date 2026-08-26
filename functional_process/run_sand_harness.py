@@ -22,6 +22,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402
 
 from functional_process import sand  # noqa: E402
+from functional_process.mda import guess_sources  # noqa: E402
 from functional_process.sand_harness import (  # noqa: E402
     assemble,
     ground_truth,
@@ -77,20 +78,26 @@ def _seed(schedule, drive, base, fallback, design=()):
     """
     design = set(design)
     env, borrowed = {}, []
+    # A `^guess.*` input is a *starting value for* an unknown, so every question below
+    # -- is it coupling, is it in `fallback`, what does `base` say -- is asked about the
+    # unknown it starts, never about the port's own name. `fallback` is an MDA output
+    # env, keyed by real paths, and no `DataStructure` field is spelled `^guess.*`.
+    guesses = guess_sources(schedule.blocking.graph)
     for var in list(schedule.inputs) + list(drive.unknowns):
-        coupling = var in drive.unknowns and var not in design
-        if coupling and var in fallback:
-            env[var] = fallback[var]
-            borrowed.append(var)
+        source = guesses.get(var, var)
+        coupling = source in drive.unknowns and source not in design
+        if coupling and source in fallback:
+            env[var] = fallback[source]
+            borrowed.append(source)
             continue
         try:
-            env[var] = jnp.asarray(ground_truth(base, var))
+            env[var] = jnp.asarray(ground_truth(base, source))
             continue
         except (AttributeError, KeyError):
             pass
-        if var in fallback:
-            env[var] = fallback[var]
-            borrowed.append(var)
+        if source in fallback:
+            env[var] = fallback[source]
+            borrowed.append(source)
         else:
             env[var] = jnp.asarray(0.0)
     return env, tuple(borrowed)

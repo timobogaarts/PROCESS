@@ -18,7 +18,7 @@ from functional_process.models.power.thermal_cryo import (
     ComponentThermalPowers,
     CryoLoads,
     CryoQLoadsStep,
-    CryoQNucStep,
+    CryoQNuc,
     DeltaEtaStep,
     EtathLiqStep,
     EtaTurbineStep,
@@ -165,13 +165,22 @@ class Power(ModelNamespace):
     # `pfcoil_variables.py:230`'s defaults, neither set by `REFERENCE_INPUT_FILE`;
     # `i_tf_sup=1` is `tfcoil_variables.py:261`'s, likewise unset -- the same value the
     # rest of this file's TF-coil registrations already carry.
-    cryo_q_nuc_step: CryoQNucStep = dataclasses.field(kw_only=True)
-    """`.fwbs.qnuc`'s fixed point, carrying `.tfcoil.i_tf_sup` (default 1).
+    cryo_q_nuc: CryoQNuc | None = dataclasses.field(kw_only=True)
+    """`.fwbs.qnuc` -- **and the slot is empty when PROCESS takes it as an input.**
 
-    **Threaded from `machine_from_indat`, not hardcoded.** `i_tf_sup` already decides
-    the `tf_power` slot above; writing it again here let the two disagree, and they did
-    -- an `i_tf_sup = 0` machine assembled `TfPowerResistive` next to five nodes still
-    saying `SUPERCONDUCTING`. `inuclear` stays a kwarg: it decides nothing else.
+    `inuclear` was a static kwarg on a `FixedPointFunction` here. Its two arms read
+    disjoint variables (the computed arm reads `p_tf_nuclear_heat_mw` and not the
+    incumbent; the input arm reads only the incumbent), which is
+    `traceability_policy.md`'s split-by-default case, and splitting collapsed the fixed
+    point entirely -- see `CryoQNuc`. `None` is the `inuclear == 1` arm: no node owns
+    `.fwbs.qnuc`, so it is an ordinary boundary input, which is exactly what PROCESS
+    means by *"if inuclear = 1: qnuc is input"*. Stated by the tree instead of recovered
+    at runtime by differentiating a degenerate residual.
+
+    `i_tf_sup` gates it jointly, and is threaded from `machine_from_indat` rather than
+    written twice: it already decides the `tf_power` slot above, and writing it again
+    here let the two disagree -- an `i_tf_sup = 0` machine once assembled
+    `TfPowerResistive` next to five nodes still saying `SUPERCONDUCTING`.
     """
 
     cryo_q_loads_step: CryoQLoadsStep = dataclasses.field(kw_only=True)

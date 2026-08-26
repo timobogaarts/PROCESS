@@ -15,8 +15,12 @@ from functional_process.models.physics.composition import (
     PlasmaComposition,
 )
 from functional_process.models.physics.confinement_time import (
-    ConfinementTime,
+    ConfinementScalingInputs,
+    ConfinementTail,
+    ConfinementTimeScaling,
     DoubleAndTripleProduct,
+    IterPhysicsBasisElongation,
+    PlasmaPowerLoss,
 )
 from functional_process.models.physics.dimensionless_parameters import (
     DimensionlessPlasmaParameters,
@@ -71,26 +75,41 @@ from functional_process.models.switch_enums import (
 from process.data_structure.physics_variables import (
     PlasmaIgnitionModel,
 )
-from process.models.physics.profiles import PlasmaProfileShapeType
 
 
 class ProfileParameterisationParabolic(ModelNamespace):
-    """Parabolic profiles: the `.physics.i_plasma_pedestal == 0` occupant, 7 nodes."""
+    """Parabolic profiles: the `.physics.i_plasma_pedestal == 0` occupant, 6 or 7 nodes.
 
-    # Not just a formula switch: `density_limits.py:146-150` shows
-    # PROCESS itself has no formula for `st_d_limit_ecrh` outside
-    # `i_plasma_pedestal == 0` -- the `else` arm only logs an error and
-    # produces no defined `dlimit_ecrh`/`bt_max_ecrh`. So the value-0
-    # requirement `EcrhDensityLimit` already enforces internally
-    # (`density_limits.py`'s `calculate_ecrh_density_limit` raises
-    # otherwise) is not a stricter precondition than this arm's own --
-    # co-locating the static kwarg next to the switch value that selects
-    # it is what next_steps.md's "one source of truth" proposal reduces
-    # to for this single instance, with no extra machinery needed: there
-    # is only one place `i_plasma_pedestal=0` is written now.
-    ecrh_density_limit: EcrhDensityLimit = EcrhDensityLimit(
-        i_plasma_pedestal=PlasmaProfileShapeType.PARABOLIC_PROFILE
-    )
+    Six on a tokamak and seven on a stellarator -- the difference is `ecrh_density_limit`
+    below, the one node in this whole subsystem that is device-specific.
+    """
+
+    ecrh_density_limit: EcrhDensityLimit | None = dataclasses.field(kw_only=True)
+    """The ECRH density limit -- **present on a stellarator, absent on a tokamak.**
+
+    Not just a formula switch: `density_limits.py:146-150` shows PROCESS itself has no
+    formula for `st_d_limit_ecrh` outside `i_plasma_pedestal == 0` -- the `else` arm only
+    logs an error and produces no defined `dlimit_ecrh`/`bt_max_ecrh`. So the value-0
+    requirement `EcrhDensityLimit` already enforces internally
+    (`density_limits.py`'s `calculate_ecrh_density_limit` raises otherwise) is not a
+    stricter precondition than this arm's own.
+
+    **The device decides it as well, and that is why the slot lost its default.** The
+    function is `st_d_limit_ecrh`, reached only from `st_phys`
+    (`models/stellarator/density_limits.py`), so a *tokamak* at
+    `i_plasma_pedestal == 0` computes no ECRH density limit either -- and this arm used
+    to carry the node unconditionally, which would have put a stellarator-only node in
+    every parabolic tokamak the moment `TokamakProcess` existed. That is the
+    `EcrhDensityLimit` bug class by name: **the same node, the third time**, and the
+    first time a *device* rather than a switch value was what made it wrong. Caught by
+    building the tokamak, not by a check.
+
+    `machine_from_indat` fills it, so it has no default, by this tree's standing rule.
+    The static `i_plasma_pedestal=PARABOLIC_PROFILE` moved there with it and is still
+    written exactly once -- next to the switch value that selects this arm, which is
+    what `next_steps.md`'s "one source of truth" reduces to for this single instance.
+    """
+
     parabolic_temperature_profile: ParabolicTemperatureProfile = (
         ParabolicTemperatureProfile()
     )
@@ -157,6 +176,10 @@ class PhysicsProfiles(ModelNamespace):
     `i_plasma_pedestal == 1` PROCESS never computes a real ECRH density limit, so
     `.stellarator.dlimit_ecrh`/`bt_max_ecrh` are genuinely unproduced there. Ragged arms
     again, and the reason this could not be a static kwarg on one node.
+
+    On a tokamak the arms are ragged the other way too: the parabolic occupant's
+    `ecrh_density_limit` slot is empty, because `st_d_limit_ecrh` is reached only from
+    `st_phys`. See that slot.
     """
 
     # unit #12, physics/plasma_profiles.py
@@ -178,71 +201,72 @@ class PhysicsProfiles(ModelNamespace):
 
 
 class PhysicsConfinementTime(ModelNamespace):
-    """Energy confinement, and what is derived from it."""
+    """Energy confinement: the head, the scaling law, and the tail, as separate slots.
 
-    model: ConfinementTime = dataclasses.field(kw_only=True)
-    """Which confinement-time scaling runs (`.stellarator.istell == 6`, Helias).
+    **This was one node with three switches on it, and the switches are gone.** A single
+    `ConfinementTime` carried `i_confinement_time` (~40 scaling laws), `i_rad_loss` (3)
+    and `i_plasma_ignited` (2) as `eqx.field(static=True)` kwargs and branched on them
+    internally, so it declared the union of every arm's reads -- **32, where a law needs
+    6 to 8**. Two of those 32 were dead at this machine's own switch values:
+    `.current_drive.p_hcd_injected_total_mw` (not read when ignited) and
+    `.physics.pden_plasma_rad_mw` (not read under core-only radiation), the first of
+    which invented a `.current_drive -> .physics` subsystem edge that no run makes.
 
-    **The one slot whose family already existed**: `StellaratorConfinementTime`
-    subclasses
-    `ConfinementTime`, so the annotation is the base and the occupant satisfies it --
-    `model_tree_design.md` §4 case 1, the shared-body case. Every other switched slot in
-    this tree is annotated with a union of its occupants, because no base was ever
-    written for them; see this module's own note above `machine_from_indat`. The bare
-    `ConfinementTime` was this slot's `istell == 0` occupant until that arm was deleted;
-    a one-member family is what remains, not a spurious one.
+    Reads are class-level parameter defaults, so an instance's static field cannot vary
+    them -- **the declaring class is the unit of rebinding**, which is why a switch whose
+    branches read different variables must be occupants and cannot be a kwarg. All three
+    of these do. `traceability_policy.md`'s default (reads-set differs -> split) was
+    deviated from here for the usual reason, a large shared body, and this is that
+    deviation paid off: the shared body is the `tail` slot, written once and read by
+    every law.
 
-    **The three settings live in the factory, and this slot has no default, because of
-    them.** They are the reference run's, not `physics_variables.py`'s bare defaults, and
-    each was a registration bug once: `i_confinement_time` was `34` (IPB98(y,2), a
-    tokamak H-mode law) against ISS04's `38`, and `i_plasma_ignited` was `0` against the
-    input file's `1`, which alone was the residual ~1.2 % `t_energy_confinement`
-    disagreement. Both found by the MDA harness, never by a check -- and a slot default
-    is exactly where a check could not see them, since the defaults test compared
-    occupant *classes* only.
+    **`StellaratorConfinementTime` is gone with them.** It existed only to rebind one
+    read: PROCESS calls its 20th argument `q95` and hands ISS04 the rotational transform
+    instead. With one class per law that is not a rebinding --
+    `iss04_stellarator_confinement_time`'s own parameter *is* `iotabar`, so
+    `Iss04ConfinementTime` reads `.stellarator.iotabar` because that is what its law
+    takes. The read follows from the law, not from the device, so `CONFINEMENT_TIME`
+    keyed on `istell` had nothing left to decide and is deleted.
     """
 
-    # unit #10, physics/confinement_time.py. `IterPhysicsBasisElongation` (the standalone
-    # wrap of `calculate_iter_physics_basis_elongation`) is deliberately NOT registered:
-    # `ConfinementTime` already computes and owns `.physics.kappa_ipb` itself (it calls
-    # the same underlying function internally, then returns the value as its own 8th
-    # output) -- registering both would be a duplicate-ownership conflict on one VarPath,
-    # not two independent nodes. `i_confinement_time`/`i_rad_loss`/`i_plasma_ignited` are
-    # kept as static kwargs (`ConfinementTime.__call__`'s dispatch needs concrete Python
-    # ints, not traced values -- see confinement_time.py's own docstring, fixed during
-    # this consolidation pass, for why all three needed `eqx.field(static=True)`).
-    # `i_confinement_time=38` (ISS04, stellarator) -- **not** `physics_variables.py`'s own
-    # bare default (`34`, IPB98(y,2), a tokamak H-mode scaling law): that default is
-    # PROCESS's own tokamak-first choice, not one this project's stellarator scope should
-    # inherit uncritically. Found and corrected via the block-by-block MDA-vs-PROCESS
-    # comparison harness (`mda_harness.py`): registering `34` fed a tokamak confinement
-    # formula stellarator inputs, producing a degenerate `t_energy_confinement` that
-    # cascaded into `DoubleAndTripleProduct.ntau == 0.0` and several `inf` values
-    # downstream (reciprocals of ~0). The ISS04 branch was already fully ported
-    # (`confinement_time.py:1743`) -- this was a wrong static default at registration,
-    # not a missing-physics gap. `i_confinement_time` genuinely has ~40 possible values
-    # (tokamak and stellarator scaling laws both); a real `Switch`/`Alternative` covering
-    # more of them is a separate, larger follow-up, not done here -- `38` is the
-    # pragmatic, scope-appropriate single default for now, same discipline as
-    # `i_rad_loss=1` alongside it.
-    #
-    # `i_plasma_ignited=1` (IGNITED) -- **not** `physics_variables.py:881`'s bare
-    # default `0`, which is what this registration originally carried. Found by
-    # `mda_harness.py`'s `switch_audit`, the systemic check added for exactly this
-    # defect class; `stellarator_helias.IN.DAT:126` sets `i_plasma_ignited = 1`.
-    # This was the sole cause of the residual ~1.2% `t_energy_confinement`/`ntau`
-    # disagreement `next_steps.md` §8 previously listed as open and undiagnosed:
-    # `confinement_time.py:1333-1334` adds `p_hcd_injected_total_mw` into
-    # `p_plasma_loss_mw` only under NON_IGNITED, so registering `0` inflated the loss
-    # power PROCESS's real ignited run never adds, and `t_energy_confinement` (and
-    # everything scaled by it) came out correspondingly off.
-    # Checked before flipping, same discipline as `i_thermal_electric_conversion`:
-    # the IGNITED arm simply *omits* that one addition -- it reads a strict subset of
-    # the NON_IGNITED arm's inputs, so it needs nothing this port does not wire.
-    # **Not registered here**: `ConfinementTime`/`StellaratorConfinementTime` are
-    # arms of `TOPOLOGY_SWITCHES`'s `.stellarator.istell` switch -- see that switch
-    # for why the device mode decides which node produces this block's 20th read.
+    inputs: ConfinementScalingInputs = ConfinementScalingInputs()
+    """The unit conversions the laws take as arguments (`nd_plasma_electron_line_19`,
+    `cur_plasma_ma`). Defaulted, because nothing switches it: there is no choice to make
+    about a factor of 1e-19."""
+
+    elongation: IterPhysicsBasisElongation = IterPhysicsBasisElongation()
+    """`.physics.kappa_ipb`, and **now registered.** It was deliberately left out while
+    `ConfinementTime` computed and owned `kappa_ipb` itself -- registering both would
+    have been a duplicate-ownership conflict on one `VarPath`. The composite no longer
+    owns it, so the standalone node is free to, which is where it belonged: several
+    scaling laws read `kappa_ipb` and only one of them is ever chosen."""
+
+    power_loss: PlasmaPowerLoss = dataclasses.field(kw_only=True)
+    """The head: `.physics.p_plasma_loss_mw`, decided by `i_plasma_ignited` **and**
+    `i_rad_loss` together, since one adds injected heating and the other subtracts a
+    radiation term. Factory-filled and undefaulted, like every slot a switch answers."""
+
+    scaling: ConfinementTimeScaling = dataclasses.field(kw_only=True)
+    """Which law runs (`i_confinement_time`). One occupant per value **this port
+    supports** -- ISS04 (38) and IPB98(y,2) (34) -- not one per value PROCESS has;
+    `switch_kwarg_survey.md` band (d)'s rule, which is what makes a ~40-valued switch a
+    two-entry registry rather than forty classes."""
+
     double_and_triple_product: DoubleAndTripleProduct = DoubleAndTripleProduct()
+    """`.physics.ntau`/`.physics.nTtau`, downstream of `t_energy_confinement`.
+
+    Unswitched, so it keeps its default. It was in this namespace before the split and
+    **was dropped when this class was rewritten** -- caught by diffing the owned-variable
+    set against a `git worktree` at `HEAD`, not by any check, because the boundary pin
+    that would have caught it had already been regenerated over the evidence."""
+
+    tail: ConfinementTail = dataclasses.field(kw_only=True)
+    """Everything downstream of the law, identical for all of them, and the reason the
+    split does not duplicate anything. `i_rad_loss` decides it a second time: under
+    `CORE_ONLY` `hstar` reads synchrotron and inner radiation, under `FULL_RADIATION` it
+    reads total radiation, under `NO_RADIATION` neither. One input value fills two slots
+    here, which `model_tree_design.md` §8 step 4d's "a switch is answered once" will want
+    to look at -- it is answered once and *used* twice, which is not the same thing."""
 
 
 class Physics(ModelNamespace):

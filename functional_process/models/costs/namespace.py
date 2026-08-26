@@ -169,14 +169,18 @@ class Costs(ModelNamespace):
     # `i_pulsed_plant`, a switch, not because of a subsystem this device lacks. A pulsed
     # stellarator would want it, so it belongs to the switch-conversion work
     # (`model_tree_design.md` §8 step 6), not here.
-    # `i_pulsed_plant=0`/`istore=1` (`pulse_variables.py:30`/`:16`). `istore == 3` is
-    # unported (a third reads-set: `.heat_transport.p_plant_primary_heat_mw`,
-    # `.times.t_plant_pulse_no_burn`, `.pulse.dtstor`) and unreachable here, since a
-    # steady-state plant never enters the `istore` dispatch at all.
-    energy_storage_cost: EnergyStorageCost = EnergyStorageCost(
-        i_pulsed_plant=PlantOperationModel.CONTINUOUS,
-        istore=ThermalStorageModel.ELECTROWATT_OPTION_1,
-    )  # Account 225.3
+    # `i_pulsed_plant`/`istore` were static kwargs here (`pulse_variables.py:30`/`:16`)
+    # until the slot became a family. `istore == 3` stays unported (a third reads-set:
+    # `.heat_transport.p_plant_primary_heat_mw`, `.times.t_plant_pulse_no_burn`,
+    # `.pulse.dtstor`).
+    energy_storage_cost: EnergyStorageCost = dataclasses.field(kw_only=True)
+    """Account 225.3, and **the reads follow the arm.** At `i_pulsed_plant == 0` this
+    account is identically zero and reads nothing; at `== 1` it scales an itemised
+    literal by net electric power. One node carrying the switch declared both reads
+    unconditionally, so the graph claimed a `.heat_transport -> .costs` edge that the
+    reference run does not make. `large_tokamak_eval.IN.DAT` sets `i_pulsed_plant = 1`,
+    which is why this is one of the four values `_audit/tokamak_scope.md` found the tree
+    contradicting."""
     power_conditioning_cost: PowerConditioningCost = (
         PowerConditioningCost()
     )  # Account 225 total

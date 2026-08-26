@@ -26,8 +26,9 @@ import numpy as np
 import optimistix as optx
 import pytest
 from cottax.evaluate import AbstractDriver, schedule_for
+from cottax.rewrites import Assign
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
-from cottax.problem import RootFind
+from cottax.problem import RootFind, Start
 from cottax.spec import VarPath
 
 from functional_process._harness import Sample, Tier1Contract, Tier2Contract
@@ -947,7 +948,8 @@ class _GenericBisectionRootFind(AbstractDriver):
     lower: float
     upper: float
 
-    def __call__(self, conditions, start):
+    def __call__(self, conditions, data):
+        start = data.get(Start)
         x0 = start[0] if start is not None else 0.5 * (self.lower + self.upper)
         bracketed = optx.root_find(
             lambda x, _: conditions(x)[0],
@@ -1023,7 +1025,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     driver = _GenericBisectionRootFind(
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
-    schedule = schedule_for(graph, {Intersect().problem_name: driver})
+    schedule = schedule_for(Assign(Intersect().problem_name, driver).apply(graph))
     out = schedule(env)
 
     reference = winding_pack_total_size(
