@@ -1,5 +1,23 @@
 # The switches that are still constructor kwargs — a survey, not a conversion
 
+> **CLOSED, 2026-08-26, except two slots.** `_audit/next_steps.md` §14.11 is the
+> conversion record and supersedes every recommendation below. Twenty of the twenty-two
+> switch-carrying slots this survey found are families now; only
+> `power.component_thermal_powers` and `power.delta_eta_step` still carry a static
+> switch, and §14.11 says why and what the split would cost. Three of this survey's own
+> positions did not survive and are corrected there rather than here: **band (c) is
+> withdrawn** (a switch value selects an occupant whatever its reads — §14.2), **§4.7's
+> two identity fixed points turned out to be ten**, and **§4.5's "conversion is the wrong
+> answer here; relocation is the right one"** was right about `ife` and is recorded as
+> such. The numbers in §3's table remain the pre-conversion measurement, deliberately
+> not re-run.
+>
+> One thing this survey could not have found, because its method cannot see it:
+> `stellarator.coils.coils_mass` answered `i_tf_sc_mat` with a **module constant**, not
+> an `eqx.field(static=True)`, so it appears in no count here. §14.11 records it and what
+> would catch the next one.
+
+
 **Status: band (a) is closed (`model_tree_design.md` §8 step 4d, 2026-08-25); bands (b),
 (c) and (d) are survey only.** All five of §5 band (a)'s live incoherences are fixed —
 (a1) the joint blanket keys in step 4c, and (a2)/(a4)/(a5)/(a3-`ireactor`) in step 4d —

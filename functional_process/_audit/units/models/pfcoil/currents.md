@@ -36,7 +36,8 @@ UNPORTED:
 | `462-483` | the `i_pf_location = 1` (`ABOVE_CS`) arm of the equilibrium branch | not reachable on this run |
 | `681-685` | the `i_pf_current = 0` arm | currents read from `ccl0_ma`/`ccls_ma` as inputs instead of computed; a different occupant, and it inverts which of `ccl0`/`ccl0_ma` is owned |
 | `658-661` | the `iohcl = 0` arm of the flux swing | forces the ratio to 1 and logs an error |
-| `1615-1719`, `1721-2020` | `vsec`, `induct` | excluded by the wave brief; `induct` is the producer of `.pf_coil.ind_pf_cs_plasma_mutual`, which is therefore a boundary input here |
+| `1615-1719` | `vsec` | excluded by the wave brief; it produces the volt-second *capability* of the PF set, which nothing in this closure reads |
+| `1721-2020` | `induct` | **now ported** -- `inductance.py` / `inductance.md` |
 | `1085-1113` | `c_pf_coil_turn` (per-coil current per turn, six time points) | reads `n_pf_cs_plasma_circuits` and the plasma row; feeds `pf_power`, not this pass's boundary |
 
 ## The cycle
@@ -49,8 +50,15 @@ PFCoilTimePointCurrents  --.pf_coil.c_pf_cs_coil_*_ma-->  PFCoilCurrentWaveform
         |                                     .pf_coil.c_pf_cs_coils_peak_ma
 .pf_coil.f_j_cs_start_end_flat_top                                 v
         |                                                    PFCoilSizes
-   CSFluxSwing  <--------.pf_coil.n_pf_coil_turns---------------- '
+   CSFluxSwing                                                     |
+        ^                                          .pf_coil.n_pf_coil_turns
+        |                                                          v
+        +---.pf_coil.ind_pf_cs_plasma_mutual---  PFCoilInductance  <'
 ```
+
+(`CSFluxSwing` also reads `.pf_coil.n_pf_coil_turns` directly, so the three-node loop
+through `PFCoilSizes` is there too; the four-node one through `PFCoilInductance` is the
+edge this pass added.)
 
 PROCESS closes it by bootstrapping and brute force. `pfcoil.py:605-608`: on the first
 visit it sets `ind_pf_cs_plasma_mutual[:, :] = 1.0` and `n_pf_coil_turns[:] = 100.0` and
@@ -58,17 +66,24 @@ clears `first_call`; `Caller.call_models` then re-runs the *entire* pipeline up 
 times until the objective and constraints stop moving. That is Gauss-Seidel over an
 undeclared SCC.
 
+**Update: the cycle is four nodes, not three.** `inductance.py::PFCoilInductance`
+ports `PFCoil.induct` and owns `.pf_coil.ind_pf_cs_plasma_mutual`, which `CSFluxSwing`
+reads and which `PFCoilSizes` feeds. What was a boundary input is now an internal edge
+of the block, and PROCESS's `first_call` seeding of the matrix is revealed as the
+iteration's initial guess. See `inductance.md` § "The cycle, one node larger".
+
 **This is Shape A, not Shape B** — checked against the wave brief's rule before
 declaring it, and it does not dissolve. No node here reads a `VarPath` it owns:
 `CSFluxSwing` reads `.pf_coil.n_pf_coil_turns`, whose real producer is `masses.py`'s
 `PFCoilSizes`, a different node. So **no `FixedPointFunction` is used anywhere in this
-package**. What the assembler gets is a three-node cycle for `Blocking` to find, needing
+package**. What the assembler gets is a four-node cycle for `Blocking` to find, needing
 an explicit `Drive` (`FixedPoint` reproduces PROCESS's own iteration; `RootFind` on the
 `n_pf_coil_turns` residual would converge faster). **That decision is not made here** —
 see this unit's entry in the wave report.
 
-`.pf_coil.ind_pf_cs_plasma_mutual` is a **boundary input**: its producer, `induct()`, is
-outside this pass. On the reference run only `[0:6, 7]` is read, one column.
+`.pf_coil.ind_pf_cs_plasma_mutual` is **no longer** a boundary input. `CSFluxSwing`
+reads one column of it, `[0:6, 7]`; the producer owns the array whole, for the reasons
+`inductance.md` § "Whole-array ownership, with the evidence" sets out.
 
 ## data footprint
 
@@ -188,10 +203,19 @@ package.
   indexes only `umat[j, i]` for `i < n_pf_coil_groups <= 10`, which is inside the thin
   `U`. The pseudo-inverse is invariant to the per-column sign convention (`U` and `V`
   flip together), so the two decompositions need not agree columnwise for the answer to
-  agree. Reverse-mode AD through `svd` is ill-conditioned at repeated singular values;
-  the padded matrix has a six-dimensional null space but the sums stop at
-  `n_pf_coil_groups`, so no repeated *used* singular value arises here. Forward mode
-  (`jacfwd`, which is what the harness uses) is what the graph would use as well.
+  agree.
+- **The decomposition is taken of `gmat[:, :n_groups]`, not of the padded matrix, and
+  that is a gradient fix.** `mtrx` writes only the first `n_groups` of `gmat`'s ten
+  columns, so the rest are structurally zero and contribute
+  `N_PF_GROUPS_MAX - n_groups` *repeated zero* singular values. SVD's JVP divides by
+  `sigma_i^2 - sigma_j^2`, so a repeated singular value makes the entire tangent `nan`
+  the moment the perturbation direction reaches that block — which is exactly what
+  `test_gradient_finite_at_zero` found at `alfa = 0`, the one input whose value is zero
+  there while its tangent is not. Trimming the columns removes the degenerate block.
+  The **values are unchanged**: for `A = [A_n | 0]`, `A`'s nonzero singular values,
+  their left vectors and the leading block of their right vectors are exactly `A_n`'s,
+  which is precisely what `solv`'s two sums index. This is the `safe_math.py` bargain —
+  same number, finite derivative — applied to linear algebra rather than to `sqrt`.
 - **`solv`'s carried `zvec`** (`:1605-1611`) — the running value is *not* reset when a
   singular value falls below `1e-10`, so that term silently reuses the previous `j`'s
   ratio. Reproduced by forward-filling the last admissible index with `jax.lax.cummax`,

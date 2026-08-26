@@ -40,12 +40,12 @@ one live on `tests/regression/input_files/large_tokamak_eval.IN.DAT`:
 | switch | value | source |
 |---|---|---|
 | `.build.iohcl` | `1` (CS present) | PROCESS default, `build_variables.py` |
-| `.pf_coil.i_pf_conductor` | `0` = `SUPERCONDUCTING` | default, `pfcoil_variables.py:230` |
+| `.pf_coil.i_pf_conductor` | `0` = `SUPERCONDUCTING` | default, `pfcoil_vars:230` |
 | `.pf_coil.i_pf_current` | `1` (currents computed, not input) | default, `:279` |
 | `.pf_coil.i_pf_superconductor` | `3` | set in the IN.DAT |
 | `.pf_coil.i_cs_superconductor` | `1` | set in the IN.DAT |
 | `.pf_coil.i_pf_location` | `(2, 2, 3, 3)` | set in the IN.DAT |
-| `.pf_coil.i_r_pf_outside_tf_placement` | `0` (follow the TF curve) | default, `:287` |
+| `.pf_coil.i_r_pf_outside_tf_placement` | `0` (follow the TF curve) | default, `:287`|
 | `.tfcoil.i_tf_shape` | `1` = `D_SHAPE` | not `PICTURE_FRAME` |
 | `.physics.itart` / `.physics.itartpf` | `0` / `0` | conventional aspect ratio |
 
@@ -84,8 +84,8 @@ shape"). `n_pf_cs_plasma_circuits - 1` in PROCESS's spelling."""
 
 NGC2 = 22
 """`pfcoil_variables.NGC2` -- the storage width of every per-coil array. Re-declared
-here as a plain int so the padding helpers below do not have to import it at call
-time; asserted equal to PROCESS's own value in the test module."""
+here as a plain int so nothing in the package has to reach into `process` for a
+shape."""
 
 N_CS_FILAMENTS = 7
 """`.pf_coil.n_cs_current_filaments`, PROCESS default 7 (`pfcoil_variables.py:315`),
@@ -106,5 +106,6 @@ carried verbatim because it changes the SVD's shape and therefore its answer."""
 LROW1 = 2 * NPTS + N_PF_GROUPS_MAX
 """`lrow1 = 2 * NPTSMX + N_PF_GROUPS_MAX` = 74 (`pfcoil.py:105`), the row count of
 `gmat`/`bvec`. Kept at the full padded height rather than trimmed to the rows actually
-written, because the trailing all-zero rows and columns change the singular values the
-SVD reports and the port must reproduce PROCESS's answer, not a tidier one."""
+written, so that `mtrx`'s row indexing reads as PROCESS's does; the trailing all-zero
+rows contribute nothing to the solve, and the trailing all-zero *columns* are trimmed
+at the decomposition itself -- see `currents._solv` for why that one is not cosmetic."""

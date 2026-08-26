@@ -15,10 +15,10 @@ from cottax.rewrites import Assign
 from cottax.spec import VarPath
 
 from functional_process.core.solver.drivers import PicardDriver
-from functional_process.models.power.thermal_cryo import TempTurbineCoolantInStep
-from functional_process.paths import fwbs, heat_transport
-from process.data_structure.blanket_variables import BlktModelTypes
-from process.models.power import ElectricConversionModelTypes
+from functional_process.models.power.thermal_cryo import CryoQNucStep
+from functional_process.paths import fwbs
+from functional_process.models.switch_enums import CoilNuclearHeatingModel
+from process.models.tfcoil.base import TFConductorModel
 
 toy = area("toy")
 """A synthetic area for the contraction toy problem -- not a `DataStructure` area, so
@@ -77,27 +77,30 @@ def test_picard_driver_requires_a_start():
 
 
 def test_picard_driver_drives_a_real_fixed_point_function_node():
-    """`TempTurbineCoolantInStep` in the `STEAM_RANKINE_CYCLE`/`secondary_cycle_liq=2`
-    regime has `d(temp_turbine_coolant_in_next)/d(temp_turbine_coolant_in) == 0`
-    (`test_thermal_cryo.py`'s own gradient test already pins this): the first
-    stage overwrites the entering value from `temp_blkt_coolant_out` unconditionally,
-    so the fixed point does not depend on the starting guess at all and Picard
-    iteration reaches it in exactly one step. Ground truth is computed the same way
-    `test_thermal_cryo.py` does -- one direct call to `step` -- not a
-    hardcoded number, since the whole point of this regime is that any entering value
-    gives the same answer.
+    """`CryoQNucStep` at `inuclear = FRANCES_FOX` with a superconducting TF coil has
+    `d(qnuc_next)/d(qnuc) == 0` (`test_thermal_cryo.py`'s own gradient test pins this):
+    PROCESS recomputes `.fwbs.qnuc` from `.fwbs.p_tf_nuclear_heat_mw` alone, so the
+    fixed point does not depend on the starting guess and Picard reaches it in exactly
+    one step. Ground truth is one direct call to `step`, not a hardcoded number, since
+    the point of this regime is that any entering value gives the same answer.
+
+    **This test used to drive `TempTurbineCoolantInStep`, which no longer exists.**
+    That node was a `FixedPointFunction` only because
+    `calculate_plant_thermal_efficiency` passes the entering value through on some arms
+    of `i_thermal_electric_conversion` x `i_blanket_type` x `secondary_cycle_liq`;
+    splitting those switches into occupants showed the pass-through arms are "the field
+    is an input" and the computing arms read nothing they own, so the fixed point was an
+    artefact of the switch (`_audit/next_steps.md` §14.2). `CryoQNucStep` is the nearest
+    surviving instance of the same shape and the same zero self-gradient.
     """
-    node = TempTurbineCoolantInStep(
-        i_thermal_electric_conversion=ElectricConversionModelTypes.STEAM_RANKINE_CYCLE,
-        i_blanket_type=BlktModelTypes.CCFE_HCPB,
-        secondary_cycle_liq=ElectricConversionModelTypes.USER_INPUT,
+    node = CryoQNucStep(
+        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
+        inuclear=CoilNuclearHeatingModel.FRANCES_FOX,
     )
-    temp_blkt_coolant_out = 700.0
-    outlet_temp_liq = 700.0
+    p_tf_nuclear_heat_mw = 0.045
     expected = node.step(
-        temp_turbine_coolant_in=0.0,  # arbitrary -- ignored in this regime
-        temp_blkt_coolant_out=temp_blkt_coolant_out,
-        outlet_temp_liq=outlet_temp_liq,
+        qnuc=0.0,  # arbitrary -- ignored in this regime
+        p_tf_nuclear_heat_mw=p_tf_nuclear_heat_mw,
     )
 
     graph = to_graph(node)
@@ -117,13 +120,12 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     (guess,) = driver_vars(graph[problem], Start)
     env = {
         guess: jnp.asarray(300.0),
-        vpath(fwbs.temp_blkt_coolant_out): jnp.asarray(temp_blkt_coolant_out),
-        vpath(fwbs.outlet_temp_liq): jnp.asarray(outlet_temp_liq),
+        vpath(fwbs.p_tf_nuclear_heat_mw): jnp.asarray(p_tf_nuclear_heat_mw),
     }
 
     out = schedule(env)
 
-    got = out[vpath(heat_transport.temp_turbine_coolant_in)]
+    got = out[vpath(fwbs.qnuc)]
     assert float(got) == pytest.approx(float(expected), abs=1e-6)
 
 

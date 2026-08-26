@@ -30,7 +30,6 @@ becomes `jnp.where`/`jnp.minimum`/`jnp.maximum`.
   node -- see the audit record's switches section for the reads-set justification).
 """
 
-import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -39,7 +38,6 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.models.safe_math import safe_sqrt
-from functional_process.models.switch_enums import FastAlphaPressureModel
 from functional_process.paths import current_drive, physics
 from process.core import constants
 
@@ -310,6 +308,146 @@ def fast_alpha_beta(
     :
         Fast alpha beta component.
     """
+    arm = (
+        fast_alpha_beta_iter_physics_rules
+        if i_beta_fast_alpha == 0
+        else fast_alpha_beta_ward
+    )
+    return arm(
+        b_plasma_poloidal_average,
+        b_plasma_toroidal_on_axis,
+        nd_plasma_electrons_vol_avg,
+        nd_plasma_fuel_ions_vol_avg,
+        nd_plasma_ions_total_vol_avg,
+        temp_plasma_electron_density_weighted_kev,
+        temp_plasma_ion_density_weighted_kev,
+        pden_alpha_total_mw,
+        pden_plasma_alpha_mw,
+        f_plasma_fuel_deuterium,
+    )
+
+
+def _fast_alpha_fraction_iter_physics_rules(density_ratio_sq, temp_sum_20):
+    """`i_beta_fast_alpha == ITER_PHYSICS_RULES` (0): the fast-alpha pressure fraction
+    of the ITER Physics Design Guidelines, `physics.py:2043`.
+
+    Split out of `fast_alpha_beta` because a switch value selects an occupant, not a
+    coefficient (`_audit/next_steps.md` §14.2). The two arms read *identical* fields --
+    `switch_kwarg_survey.md` band (c) -- so nothing structural changes; what changes is
+    that the two published formulas are two named objects the tree selects between,
+    rather than two branches of an `if` on an integer a node carries.
+    """
+    return jnp.minimum(0.3, 0.29 * density_ratio_sq * (temp_sum_20 - 0.37))
+
+
+def _fast_alpha_fraction_ward(density_ratio_sq, temp_sum_20):
+    """`i_beta_fast_alpha == WARD` (1): Ward's fast-alpha pressure fraction,
+    `physics.py:2049` -- PROCESS's own default and the reference run's.
+
+    `jnp.sqrt(jnp.maximum(0.0, x))` is value-correct and returns `nan` from `jacfwd` on
+    the clamped branch, because `sqrt` has an infinite derivative at zero and `inf * 0`
+    is `nan`. The standard **double `jnp.where`** avoids it: the inner one keeps a
+    finite argument out of `sqrt`'s reverse/forward rule, the outer one selects the
+    value. Same defect and same fix as `costs.py:2874-2888`'s clamped net-electric-power
+    square root (`_audit/next_steps.md` §9, "a JAX trap worth carrying forward").
+
+    **Live on the reference run, not hypothetical**: the clamp is *active* there
+    (`temp_sum_20 = 0.6449` against the 0.65 threshold), and this row was the only
+    non-finite row of the SAND Jacobian once `.physics.beta_total_vol_avg` gained a
+    producer and constraint 24 started reading it. It was invisible before because
+    nothing downstream of `beta_fast_alpha` fed a condition, so `jacfwd` never traced it.
+    """
+    above = temp_sum_20 - 0.65
+    positive = above > 0.0
+    return jnp.minimum(
+        0.30,
+        0.26
+        * density_ratio_sq
+        * jnp.where(positive, safe_sqrt(jnp.where(positive, above, 1.0)), 0.0),
+    )
+
+
+def fast_alpha_beta_iter_physics_rules(
+    b_plasma_poloidal_average,
+    b_plasma_toroidal_on_axis,
+    nd_plasma_electrons_vol_avg,
+    nd_plasma_fuel_ions_vol_avg,
+    nd_plasma_ions_total_vol_avg,
+    temp_plasma_electron_density_weighted_kev,
+    temp_plasma_ion_density_weighted_kev,
+    pden_alpha_total_mw,
+    pden_plasma_alpha_mw,
+    f_plasma_fuel_deuterium,
+):
+    """`fast_alpha_beta` at `i_beta_fast_alpha == ITER_PHYSICS_RULES` (0).
+
+    Parameters and return are the composite's, less `i_beta_fast_alpha`.
+    """
+    return _fast_alpha_beta(
+        _fast_alpha_fraction_iter_physics_rules,
+        b_plasma_poloidal_average,
+        b_plasma_toroidal_on_axis,
+        nd_plasma_electrons_vol_avg,
+        nd_plasma_fuel_ions_vol_avg,
+        nd_plasma_ions_total_vol_avg,
+        temp_plasma_electron_density_weighted_kev,
+        temp_plasma_ion_density_weighted_kev,
+        pden_alpha_total_mw,
+        pden_plasma_alpha_mw,
+        f_plasma_fuel_deuterium,
+    )
+
+
+def fast_alpha_beta_ward(
+    b_plasma_poloidal_average,
+    b_plasma_toroidal_on_axis,
+    nd_plasma_electrons_vol_avg,
+    nd_plasma_fuel_ions_vol_avg,
+    nd_plasma_ions_total_vol_avg,
+    temp_plasma_electron_density_weighted_kev,
+    temp_plasma_ion_density_weighted_kev,
+    pden_alpha_total_mw,
+    pden_plasma_alpha_mw,
+    f_plasma_fuel_deuterium,
+):
+    """`fast_alpha_beta` at `i_beta_fast_alpha == WARD` (1) -- PROCESS's own default.
+
+    Parameters and return are the composite's, less `i_beta_fast_alpha`.
+    """
+    return _fast_alpha_beta(
+        _fast_alpha_fraction_ward,
+        b_plasma_poloidal_average,
+        b_plasma_toroidal_on_axis,
+        nd_plasma_electrons_vol_avg,
+        nd_plasma_fuel_ions_vol_avg,
+        nd_plasma_ions_total_vol_avg,
+        temp_plasma_electron_density_weighted_kev,
+        temp_plasma_ion_density_weighted_kev,
+        pden_alpha_total_mw,
+        pden_plasma_alpha_mw,
+        f_plasma_fuel_deuterium,
+    )
+
+
+def _fast_alpha_beta(
+    fast_alpha_fraction,
+    b_plasma_poloidal_average,
+    b_plasma_toroidal_on_axis,
+    nd_plasma_electrons_vol_avg,
+    nd_plasma_fuel_ions_vol_avg,
+    nd_plasma_ions_total_vol_avg,
+    temp_plasma_electron_density_weighted_kev,
+    temp_plasma_ion_density_weighted_kev,
+    pden_alpha_total_mw,
+    pden_plasma_alpha_mw,
+    f_plasma_fuel_deuterium,
+):
+    """Everything both `i_beta_fast_alpha` arms share, given the arm's own fast-alpha
+    pressure fraction.
+
+    `fast_alpha_fraction` is the arm's own function, not a switch: which of the two a
+    node gets follows from which arm function it called.
+    """
     is_dt_like = f_plasma_fuel_deuterium < 1.0
 
     beta_thermal = (
@@ -328,32 +466,7 @@ def fast_alpha_beta(
     ) / 20.0
     density_ratio_sq = (nd_plasma_fuel_ions_vol_avg / nd_plasma_electrons_vol_avg) ** 2
 
-    if i_beta_fast_alpha == 0:
-        fact = jnp.minimum(0.3, 0.29 * density_ratio_sq * (temp_sum_20 - 0.37))
-    else:
-        # `jnp.sqrt(jnp.maximum(0.0, x))` is value-correct and returns `nan` from
-        # `jacfwd` on the clamped branch, because `sqrt` has an infinite derivative at
-        # zero and `inf * 0` is `nan`. The standard **double `jnp.where`** avoids it:
-        # the inner one keeps a finite argument out of `sqrt`'s reverse/forward rule, the
-        # outer one selects the value. Same defect and same fix as
-        # `costs.py:2874-2888`'s clamped net-electric-power square root
-        # (`_audit/next_steps.md` §9, "a JAX trap worth carrying forward").
-        #
-        # **Live on the reference run, not hypothetical**: the clamp is *active* there
-        # (`temp_sum_20 = 0.6449` against the 0.65 threshold), and this row was the only
-        # non-finite row of the SAND Jacobian once `.physics.beta_total_vol_avg` gained a
-        # producer and constraint 24 started reading it. It was invisible before because
-        # nothing downstream of `beta_fast_alpha` fed a condition, so `jacfwd` never
-        # traced it.
-        above = temp_sum_20 - 0.65
-        positive = above > 0.0
-        fact = jnp.minimum(
-            0.30,
-            0.26
-            * density_ratio_sq
-            * jnp.where(positive, safe_sqrt(jnp.where(positive, above, 1.0)), 0.0),
-        )
-    fact = jnp.maximum(fact, 0.0)
+    fact = jnp.maximum(fast_alpha_fraction(density_ratio_sq, temp_sum_20), 0.0)
 
     safe_pden_plasma_alpha_mw = jnp.where(is_dt_like, pden_plasma_alpha_mw, 1.0)
     fact2 = pden_alpha_total_mw / safe_pden_plasma_alpha_mw
@@ -505,22 +618,27 @@ class IonThermalEnergy(ExplicitFunction):
 
 
 class FastAlphaBeta(ExplicitFunction):
-    """cottax node: `fast_alpha_beta`, ports declared.
+    """The `fast_alpha_beta` family -- one occupant per `.physics.i_beta_fast_alpha`
+    value.
 
-    `i_beta_fast_alpha` is a **static** field, not a read. Per
-    `_audit/traceability_policy.md`'s switch-split default, this is the "exception:
-    static kwarg" case, not the default "split": both branches read exactly the same
-    variables (`nd_plasma_fuel_ions_vol_avg`, `nd_plasma_electrons_vol_avg`,
-    `temp_plasma_electron_density_weighted_kev`, `temp_plasma_ion_density_weighted_kev`)
-    and differ only in two numeric coefficients and whether a `sqrt` guard is applied --
-    a genuine solver-method-choice shape, not alternate physics with a different input
-    set. Same precedent as `EcrhDensityLimit.i_plasma_pedestal`
-    (`models/stellarator/density_limits.py`).
+    **`i_beta_fast_alpha` was an `eqx.field(static=True)` here and is gone**
+    (`_audit/next_steps.md` §14.2). This is the case that policy was hardest on: the two
+    arms read *exactly* the same ten fields and differ only in two coefficients and a
+    `sqrt` guard, so `switch_kwarg_survey.md` band (c) recorded it as inventing no edge,
+    and `traceability_policy.md`'s "exception: static kwarg" was written with it in
+    mind. Split anyway, and the argument is `model_tree_design.md` §4's rather than the
+    survey's: an enum family has no cheap escape when a third published formula needs a
+    read the family cannot express, and the two occupants are two named models rather
+    than two arms of an integer.
     """
 
-    i_beta_fast_alpha: FastAlphaPressureModel = eqx.field(static=True)
-
     beta_fast_alpha = OutputInto(physics)
+
+
+class FastAlphaBetaIterPhysicsRules(FastAlphaBeta):
+    """`i_beta_fast_alpha == ITER_PHYSICS_RULES` (0) -- the ITER Physics Design
+    Guidelines fraction (`physics.py:2043`).
+    """
 
     def __call__(
         self,
@@ -535,7 +653,7 @@ class FastAlphaBeta(ExplicitFunction):
         pden_plasma_alpha_mw=From(physics),
         f_plasma_fuel_deuterium=From(physics),
     ):
-        return fast_alpha_beta(
+        return fast_alpha_beta_iter_physics_rules(
             b_plasma_surface_poloidal_average,
             b_plasma_toroidal_on_axis,
             nd_plasma_electrons_vol_avg,
@@ -545,6 +663,37 @@ class FastAlphaBeta(ExplicitFunction):
             temp_plasma_ion_density_weighted_kev,
             pden_alpha_total_mw,
             pden_plasma_alpha_mw,
-            self.i_beta_fast_alpha,
+            f_plasma_fuel_deuterium,
+        )
+
+
+class FastAlphaBetaWard(FastAlphaBeta):
+    """`i_beta_fast_alpha == WARD` (1) -- PROCESS's own default
+    (`physics_variables.py:238`) and the reference run's.
+    """
+
+    def __call__(
+        self,
+        b_plasma_surface_poloidal_average=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
+        nd_plasma_fuel_ions_vol_avg=From(physics),
+        nd_plasma_ions_total_vol_avg=From(physics),
+        temp_plasma_electron_density_weighted_kev=From(physics),
+        temp_plasma_ion_density_weighted_kev=From(physics),
+        pden_alpha_total_mw=From(physics),
+        pden_plasma_alpha_mw=From(physics),
+        f_plasma_fuel_deuterium=From(physics),
+    ):
+        return fast_alpha_beta_ward(
+            b_plasma_surface_poloidal_average,
+            b_plasma_toroidal_on_axis,
+            nd_plasma_electrons_vol_avg,
+            nd_plasma_fuel_ions_vol_avg,
+            nd_plasma_ions_total_vol_avg,
+            temp_plasma_electron_density_weighted_kev,
+            temp_plasma_ion_density_weighted_kev,
+            pden_alpha_total_mw,
+            pden_plasma_alpha_mw,
             f_plasma_fuel_deuterium,
         )

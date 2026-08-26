@@ -23,11 +23,13 @@ from cottax.spec import CallableNode
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.availability.availability import (
-    Avail,
     Avail2,
+    AvailDisplacementsPerAtom,
+    AvailNeutronFluence,
     AvailSt,
-    CplifeAvail,
+    CplifeAvailResistive,
     CplifeAvailSt,
+    CplifeAvailSuperconducting,
     calculate_avail,
     calculate_avail_2,
     calculate_avail_st,
@@ -1571,27 +1573,28 @@ CPLIFE_VAR = Output(costs.cplife).port().var
 """`.costs.cplife` as a `VarPath`, for the assembly assertions below."""
 
 
-def test_cplife_avail_to_graph_assembles():
-    """`CplifeAvail` is a genuine Shape B self-loop, cut by `FixedPointFunction` -- its
-    body reads the real `.costs.cplife` (the `itart != 1` pass-through branch), so the
-    body+problem pair is cyclic *by construction* (same as `plasma_composition`'s
-    `first_call`), unlike `CplifeAvailSt` below.
+@pytest.mark.parametrize(
+    "occupant",
+    [CplifeAvailSuperconducting, CplifeAvailResistive],
+    ids=["superconducting", "resistive"],
+)
+def test_cplife_avail_occupants_are_acyclic_and_own_cplife(occupant):
+    """**`CplifeAvail` is no longer a `FixedPointFunction`, and this test is the
+    evidence.** It was one because `calculate_cplife_next`'s `itart != 1` arm is
+    `return cplife` -- a self-read that exists only on the arm where the field is an
+    input. Neither spherical occupant reads `.costs.cplife`, so each is an ordinary
+    acyclic node owning it, and the conventional arm is an empty slot
+    (`indat.CPLIFE[0] is None`).
+
+    The old assertion was `not graph.is_acyclic`; it is the opposite now, deliberately.
     """
-    graph = to_graph(
-        CplifeAvail(
-            i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-        )
-    )
-    node = CplifeAvail(
-        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-    )
-    body, problem = graph[node.name], graph[node.problem_name]
+    node = occupant()
+    graph = to_graph(node)
+    body = graph[node.name]
     assert isinstance(body, CallableNode)
-    assert isinstance(problem, FixedPoint)
-    assert problem.owns == (CPLIFE_VAR,)
-    assert not graph.is_acyclic
+    assert {out.var for out in node.outputs} == {CPLIFE_VAR}
+    assert CPLIFE_VAR not in {inp.var for inp in node.inputs}
+    assert graph.is_acyclic
 
 
 def test_cplife_avail_st_to_graph_assembles():
@@ -1620,14 +1623,8 @@ def test_cplife_avail_st_to_graph_assembles():
 @pytest.mark.parametrize(
     "node",
     [
-        Avail(
-            ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-            itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-        ),
-        Avail(
-            ibkt_life=BlanketLifetimeModel.FUSION_POWER,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-        ),
+        AvailNeutronFluence(),
+        AvailDisplacementsPerAtom(),
         Avail2(
             ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
             itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
@@ -1642,7 +1639,7 @@ def test_cplife_avail_st_to_graph_assembles():
             i_tf_sup=TFConductorModel.SUPERCONDUCTING,
         ),
     ],
-    ids=["avail-itart1", "avail-itart0", "avail2", "avail-st"],
+    ids=["avail-neutron-fluence", "avail-dpa", "avail2", "avail-st"],
 )
 def test_branch_node_to_graph_assembles(node):
     """`Avail`/`Avail2`/`AvailSt` no longer own `.costs.cplife` -- `to_graph` on each,
@@ -1653,24 +1650,20 @@ def test_branch_node_to_graph_assembles(node):
 
 
 def test_avail_and_cplife_avail_compose_without_ownership_conflict():
-    """The intended full wiring: `CplifeAvail` owns `.costs.cplife`, `Avail` only reads
-    it -- registering both together assembles, and the coupling is a clean two-node
-    acyclic chain into `Avail` on top of `CplifeAvail`'s own internal self-loop (no
-    *new* cycle is introduced by adding `Avail`).
+    """The intended full wiring, and what the switch split changed about it.
+
+    `CplifeAvailSuperconducting` owns `.costs.cplife`; `Avail` **no longer reads it at
+    all** -- `calculate_avail`'s only consumer of that field is `cplife_mod`, which this
+    node discards, so under `_audit/next_steps.md` §14.2's no-dead-reads rule the read
+    is gone. The two therefore compose into an acyclic graph with no coupling between
+    them, where the pre-split pair was cyclic through the `FixedPoint`.
     """
-    cplife_node = CplifeAvail(
-        i_tf_sup=TFConductorModel.SUPERCONDUCTING,
-        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-    )
-    avail_node = Avail(
-        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-        itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
-    )
+    cplife_node = CplifeAvailSuperconducting()
+    avail_node = AvailNeutronFluence()
     graph = to_graph(cplife_node, avail_node)
     assert isinstance(graph[avail_node.name], CallableNode)
-    assert graph[cplife_node.problem_name].owns == (CPLIFE_VAR,)
-    # Same SCC structure as `CplifeAvail` alone: `Avail` hangs off it acyclically.
-    assert not graph.is_acyclic
+    assert CPLIFE_VAR not in {inp.var for inp in avail_node.inputs}
+    assert graph.is_acyclic
 
 
 def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():

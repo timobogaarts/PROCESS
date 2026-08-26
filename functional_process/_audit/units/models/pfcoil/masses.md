@@ -218,11 +218,15 @@ inside the UNPORTED stress chain.
   on trust.
 - **`max()` reductions** (`:840`, `:1016`) → `jnp.max`, one-hot gradient at the
   argmax. Standard.
-- **`math.sqrt(area)`** (`:814`) and `sqrt(drpdz**2 + 4*areaspf)` (`:997`) — both
-  arguments are strictly positive on any in-domain point (`area` is a magnitude,
-  `drpdz**2 + 4*areaspf` is a sum of a square and a positive area), so no `safe_sqrt`.
-  If `sigpfcf` or a peak field went negative, `areaspf` could push the second negative;
-  the fuzz bounds stay on the physical side rather than papering over it.
+- **`math.sqrt(area)`** (`:814`) → **`safe_sqrt`**, not `jnp.sqrt`. `area` is
+  `|c_peak * 1e6 / j_wp| * pf_current_safety_factor`, which is exactly zero whenever
+  the safety factor or a coil's peak current is; `sqrt`'s value there is right and its
+  derivative is `inf`, the `_audit/next_steps.md` §9 trap. Found by
+  `test_gradient_finite_at_zero` at `pf_current_safety_factor = 0`, not by inspection.
+- **`sqrt(drpdz**2 + 4*areaspf)`** (`:997`) stays `jnp.sqrt`: it is a sum of a square
+  and a positive area, and no single zeroed input makes both vanish. If `sigpfcf` or a
+  peak field went negative, `areaspf` could push it negative; the fuzz bounds stay on
+  the physical side rather than papering over it.
 - No CoolProp. **No `scipy.special`** — that is precisely what excluding the CS stress
   chain buys, and it is the reason this closure is portable at all today.
 

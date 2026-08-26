@@ -50,12 +50,14 @@ from functional_process.core.solver.drivers import (
     VmconDriver,
 )
 from functional_process.indat import GRAPH
-from functional_process.paths import fwbs, physics
+from functional_process.paths import fwbs, physics, tfcoil
 
 CUTS = (
     resolve(physics.proton_rate_density, VarPath),
     resolve(physics.fusden_alpha_total, VarPath),
+    resolve(physics.f_temp_plasma_electron_density_vol_avg, VarPath),
     resolve(fwbs.f_ster_div_single, VarPath),
+    resolve(tfcoil.dx_tf_wp_primary_toroidal, VarPath),
 )
 """The variables cut to turn each raw cross-node cycle into a declared `FixedPoint`.
 
@@ -75,6 +77,44 @@ when paired with `proton_rate_density`, and no single variable does it alone.
 *branch predicate*, not just a value. Seeded from a converged run (every harness here)
 the branch never flips; from a cold `DataStructure` it starts on the other side.
 
+**`f_temp_plasma_electron_density_vol_avg` is the density/fusion cycle's *third* cut, and
+only on a pedestal machine.** With `i_plasma_pedestal = 1` (`large_tokamak_eval.IN.DAT`)
+the profile slot is occupied by `pedestal_profile_values`/`pedestal_on_axis_densities`
+plus `ne_profile_integral`, and that arm closes a **second** ring inside the same cycle
+that the parabolic arm does not have:
+
+    pedestal_on_axis_densities --.physics.nd_plasma_electron_on_axis-->
+    density_profile            --.physics.nd_plasma_electron_profile--> (and via
+    ne_profile_integral        --.physics.nd_plasma_electron_profile_integral-->)
+    pedestal_profile_values    --.physics.f_temp_plasma_electron_density_vol_avg-->
+    plasma_composition         --.physics.nd_plasma_ions_total_vol_avg--> (back to the
+                                 first)
+
+so the two cuts above leave a 5-node cycle and `Blocking` raises the same *"still cyclic
+with its problem(s) removed"*. **Measured** the same way as the second cut: with
+`proton_rate_density` and `fusden_alpha_total` already cut, exactly four of the cycle's
+owned variables are single cuts that finish the job -- the four edges of that ring,
+`.physics.f_temp_plasma_electron_density_vol_avg`,
+`.physics.nd_plasma_electron_on_axis`, `.physics.nd_plasma_electron_profile` and
+`.physics.nd_plasma_ions_total_vol_avg` -- and none of the other 45 does.
+
+The tie-break, again, is PROCESS's own stale read, and here PROCESS says so **in a
+comment and in a bootstrap flag**. `Physics.run` calls `plasma_composition()`
+(`physics.py:254`) *before* `plasma_profile.run()` (`:370`), and `plasma_composition`
+reads `f_temp_plasma_electron_density_vol_avg` at `physics.py:1387` under
+`physics.py:1377-1386`: *"f_temp_plasma_electron_density_vol_avg now calculated in
+plasma_profiles, after the very first call of plasma_composition; use old parabolic
+profile estimate in this case"*, guarded by `physics.first_call`. That is precisely a
+fixed-point iterate with a hand-written first guess -- the same shape as
+`fusden_alpha_total`'s `< 1e-6` bootstrap, and the same caveat: seeded from a converged
+run the guard is long past, cold it is not.
+
+**Inert on the stellarator**, and for a structural reason rather than a gate:
+`.physics.f_temp_plasma_electron_density_vol_avg` is owned there by
+`parabolic_profile_values`, whose `closing_readers` set is *empty* --
+`plasma_composition` reads it, but the parabolic arm has no path back, so the variable
+is not on a cycle at all and `cut_graph` skips it.
+
 `proton_rate_density` and `f_ster_div_single` were each, when added, the *only*
 single-variable cut (out of every variable owned inside their own cycle) that made that
 cycle's subgraph fully acyclic on its own -- checked directly, not assumed, by cutting
@@ -88,6 +128,51 @@ enlarged it; `f_ster_div_single` (owned by `Divertor`, read by
 couplings, so `FixedPointCut` (not `RootFindCut`) is the right closure -- matching
 PROCESS's own `Caller.call_models`, which re-runs its whole pipeline up to 10 times
 and checks idempotence, the same shape as a Picard iteration over these two blocks.
+
+**`dx_tf_wp_primary_toroidal` is the tokamak build/winding-pack cycle's cut**, and it is
+the one entry here that exists on no stellarator graph at all. The cycle is four nodes:
+
+    tf_global_geometry            --.superconducting_tfcoil.tan_theta_coil-->
+    superconducting_tf_wp_geometry --.tfcoil.dx_tf_wp_primary_toroidal-->
+    build.wp_conductor_max_width  --.tfcoil.dx_tf_wp_conductor_max-->
+    build.tf_outboard_mid         --.build.r_tf_outboard_mid-->  (back to the first)
+
+**Measured, not chosen**, the same way the density loop's second cut was: of the 22
+variables owned inside this cycle, exactly four have closing readers -- the four edge
+variables above -- and **each of the four, cut alone, makes the cycle acyclic and
+`Blocking` accept**. So sufficiency does not pick between them and something else has to.
+`test_mda.py::test_the_tokamak_build_winding_pack_cycle_is_cut_where_process_reads_stale`
+records that table and the tie-break.
+
+The tie-break is **PROCESS's own stale-read**. `Caller._call_models_once` runs
+`build.run()` (`caller.py:288`) *before* `cicc_sctfcoil.run()` (`:306`), and
+`Caller.call_models` re-runs that whole order up to 10 times until it stops moving --
+a Gauss-Seidel sweep. Three of the four edges are read *fresh* inside one such sweep:
+`tan_theta_coil` is written at `tfcoil/base.py:145` and read at
+`superconducting.py:1613`, both inside one `cicc_sctfcoil.run()`;
+`dx_tf_wp_conductor_max` is a local inside one call of
+`plasma_outboard_edge_toroidal_ripple` (`build.py:1570` to `:1593`); and
+`.build.r_tf_outboard_mid` is written by `build` (`build.py:1901`/`:1939`) and read by
+the TF coil model (`tfcoil/base.py:137`/`:205`) *later in the same pass*.
+
+Exactly one edge crosses the pass boundary: `build.py:1570` reads
+`self.data.tfcoil.dx_tf_wp_primary_toroidal` (`build.py:1929`/`:1971`) -- the
+winding-pack toroidal width the TF coil model wrote on the **previous** pass
+(`superconducting.py:186`, `:1630`/`:1664`/`:1715`). Cutting there makes one Picard
+iterate of this block exactly one PROCESS pass, so the port's fixed point is reached by
+the same recurrence PROCESS uses rather than by a differently-rotated one that merely
+shares its fixed point. It also
+happens to be the friendliest of the four to seed: `.tfcoil.dx_tf_wp_primary_toroidal` is
+a real `DataStructure` field, so a harness reads the converged value straight off `data`,
+where `.tfcoil.dx_tf_wp_conductor_max` -- the next-best candidate on stale-read grounds,
+since it is what `build`'s stale read is immediately turned into -- is a mint and needs
+its `mda_harness.KNOWN_MINT_VALUES` entry to be seedable at all.
+
+**Applies only where the cycle exists.** `cut_graph` skips a cut whose variable has no
+closing readers in the graph it was given, so this entry is inert on the stellarator
+(whose TF winding pack is `models/stellarator/coils/`, a different set of nodes
+entirely): same digest, same blocks, same pins -- the same gating the `ipowerflow`
+paragraph below describes, for a different reason.
 
 **The second cycle is `ipowerflow != 0`-only** (`next_steps.md` §5:
 `AFwTotalWithPowerflow` is the `ipowerflow != 0` arm; `AFwTotalNoPowerflow` -- the

@@ -13,8 +13,8 @@ The argument is stronger for `VmconDriver` than for `PicardDriver`: an SQP is a 
 larger algorithm choice, and the backing solver (`pyvmcon`) is a **PROCESS** dependency,
 not a `cottax` one.
 
-Every `FixedPointFunction`/`FixedPointCut` block registered in `total_process.py`
-(`EtathLiqStep`, `DeltaEtaStep`, the two cut cross-node cycles once cut, ...) is a
+Every `FixedPointFunction`/`FixedPointCut` block the factory assembles
+(`DeltaEtaStep`, `CryoQNucStep`, the two cut cross-node cycles once cut, ...) is a
 candidate for `PicardDriver` -- it answers any `FixedPoint`, generically, the same way
 `NewtonDriver` answers any `RootFind`. `VmconDriver` answers the single `Optimise`
 `functional_process.sand` assembles.

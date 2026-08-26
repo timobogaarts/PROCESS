@@ -31,16 +31,16 @@ singular value has every right to use more of it.
 """
 
 import numpy as np
+
+from functional_process._harness import Tier1Contract, Tolerance, legacy_sample
+from functional_process.models.pfcoil import LROW1
+from functional_process.models.pfcoil.currents import calculate_efc_currents
 from process.data_structure.pfcoil_variables import (
     N_PF_GROUPS_MAX,
     NFIXMX,
     NPTSMX,
 )
 from process.models.pfcoil import PFCoil
-
-from functional_process._harness import Tier1Contract, Tolerance, legacy_sample
-from functional_process.models.pfcoil import LROW1
-from functional_process.models.pfcoil.currents import calculate_efc_currents
 
 _R_FIX = np.array([5.566666666666666, 5.566666666666666])
 _Z_FIX = np.array([9.644333333333332, -10.878217164127493])

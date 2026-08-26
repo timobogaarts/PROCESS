@@ -3,20 +3,13 @@
 # do not hand-edit. `input` is read from PROCESS's DataStructure and
 # growth in it is a lost producer; `guess` is a Start port for a driven
 # unknown and moves only when a Drive does. See functional_process/boundary.py.
-guess ^guess.costs.cplife
-guess ^guess.heat_transport.eta_turbine
-guess ^guess.heat_transport.etath_liq
-guess ^guess.heat_transport.p_fw_div_heat_deposited_mw
-guess ^guess.heat_transport.temp_turbine_coolant_in
+guess ^guess.physics.f_temp_plasma_electron_density_vol_avg
 guess ^guess.physics.fusden_alpha_total
 guess ^guess.physics.proton_rate_density
 guess ^guess.physics.temp_plasma_ion_vol_avg_kev
 guess ^guess.power.delta_eta
-guess ^guess.power.qac
-guess ^guess.power.qcl
-guess ^guess.power.qmisc
-guess ^guess.power.qss
 guess ^guess.tfcoil.dr_tf_plasma_case
+guess ^guess.tfcoil.dx_tf_wp_primary_toroidal
 guess ^guess.vacuum.d_duct
 input .blanket.deg_blkt_inboard_poloidal_plasma
 input .build.dr_blkt_inboard
@@ -77,7 +70,6 @@ input .buildings.wgt
 input .buildings.wgt2
 input .buildings.wsvfac
 input .ccfe_hcpb.fw_armour_u_nuc_heating
-input .constraints.flu_tf_neutron_fast_max
 input .costs.UCAD
 input .costs.UCAF
 input .costs.UCAHTS
@@ -122,8 +114,7 @@ input .costs.cconshtf
 input .costs.cfind
 input .costs.cland
 input .costs.cowner
-input .costs.cpstcst
-input .costs.cpstflnc
+input .costs.cplife
 input .costs.csi
 input .costs.cturbb
 input .costs.decomf
@@ -139,10 +130,8 @@ input .costs.fcr0
 input .costs.fkind
 input .costs.ifueltyp
 input .costs.ireactor
-input .costs.life_dpa
 input .costs.life_plant
 input .costs.lsa
-input .costs.sc_mat_cost_0
 input .costs.ucblbe
 input .costs.ucblli2o
 input .costs.ucblss
@@ -219,19 +208,19 @@ input .fwbs.p_div_rad_total_mw
 input .fwbs.p_fw_hcd_nuclear_heat_mw
 input .fwbs.qnuc
 input .fwbs.radius_fw_channel
-input .fwbs.temp_blkt_coolant_out
 input .fwbs.vfcblkt
 input .fwbs.vfpblkt
 input .fwbs.vfshld
 input .fwbs.vol_shld_total
+input .heat_transport.eta_turbine
 input .heat_transport.etatf
 input .heat_transport.f_p_div_coolant_pump_total_heat
 input .heat_transport.f_p_shld_coolant_pump_total_heat
-input .heat_transport.fmgdmw
 input .heat_transport.i_shld_primary_heat
 input .heat_transport.p_blkt_breeder_pump_mw
 input .heat_transport.p_blkt_coolant_pump_mw
 input .heat_transport.p_fw_coolant_pump_mw
+input .heat_transport.p_fw_div_heat_deposited_mw
 input .heat_transport.p_plant_electric_base
 input .heat_transport.p_tritium_plant_electric_mw
 input .heat_transport.peakmva
@@ -268,7 +257,6 @@ input .physics.alphaj
 input .physics.alphan
 input .physics.alphat
 input .physics.aspect
-input .physics.b_plasma_poloidal_average
 input .physics.b_plasma_toroidal_on_axis
 input .physics.beta_total_vol_avg
 input .physics.burnup_in
@@ -327,15 +315,9 @@ input .tfcoil.f_a_tf_turn_cable_copper
 input .tfcoil.f_a_tf_turn_cable_space_extra_void
 input .tfcoil.i_tf_sc_mat
 input .tfcoil.i_tf_sup
-input .tfcoil.j_crit_str_0
-input .tfcoil.j_crit_str_tf
 input .tfcoil.layer_ins
 input .tfcoil.m_tf_bus
 input .tfcoil.n_tf_coils
-input .tfcoil.p_cp_coolant_pump_elec
-input .tfcoil.p_cp_resistive
-input .tfcoil.p_tf_joints_resistive
-input .tfcoil.p_tf_leg_resistive
 input .tfcoil.res_tf_leg
 input .tfcoil.rho_tf_bus
 input .tfcoil.ripple_b_tf_plasma_edge_max

@@ -12,10 +12,6 @@ from functional_process.models.power.electric_production import (
     PlantElectricProductionReactor,
     PowerProfilesOverTime,
 )
-from functional_process.models.switch_enums import (
-    BlanketLifetimeModel,
-    SphericalTokamakModel,
-)
 
 
 class Availability(ModelNamespace):
@@ -56,20 +52,24 @@ class Availability(ModelNamespace):
     # `check_arms_are_exclusive` would reject a one-real-arm pairing, same as
     # `i_vacuum_pumping`/`i_cost_model`). `ibkt_life=0`/`itart=0` match
     # `cost_variables.py:416`/`physics_variables.py:994`'s defaults.
-    avail: Avail = Avail(
-        ibkt_life=BlanketLifetimeModel.NEUTRON_FLUENCE,
-        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-    )
-    cplife_avail: CplifeAvail = dataclasses.field(kw_only=True)
-    """`.costs.cplife`'s fixed point -- `i_tf_sup` threaded from `machine_from_indat`,
-    the fifth and last site that used to hardcode it against the `tf_power` slot.
+    avail: Avail = dataclasses.field(kw_only=True)
+    """Component lifetimes and the pulse-cycle factors -- one occupant per
+    `.costs.ibkt_life` value.
 
-    `itart` stays a kwarg. It is the switch that actually matters here --
-    `calculate_cplife_next` opens with `if itart != 1: return cplife`, so at
-    `itart = 0` this step is the identity and six of its seven declared reads are dead
-    (`switch_kwarg_survey.md` §4.7/§4.8) -- but nothing else in the tree answers `itart`,
-    so it cannot disagree with anything. Splitting this slot on `itart` is band (b)'s
-    job, and needs two new `FixedPointFunction`s: `CpLifetime{Superconducting,
-    Resistive}` return the *fresh* lifetime, not the availability-adjusted one this
-    node's `step` returns, so neither can simply be dropped in.
-    """
+    **`ibkt_life` was a static kwarg here and is a slot now; `itart` was one and is
+    gone entirely** (`_audit/next_steps.md` §14.2). The second is not a family: the only
+    `itart`-gated output of `calculate_avail` is `cplife_mod`, which this node discards,
+    so the switch decided nothing here and the honest conversion was to delete it -- and
+    with it the `.costs.cplife` read whose only consumer was that discarded output."""
+    cplife_avail: CplifeAvail | None = dataclasses.field(kw_only=True)
+    """The centrepost lifetime, or **nothing at all** -- `.physics.itart` and
+    `.tfcoil.i_tf_sup` jointly.
+
+    **This slot deleted a driven block.** It held a `FixedPointFunction` carrying both
+    switches; `calculate_cplife_next`'s `itart != 1` arm is `return cplife`, so on a
+    conventional machine the step was the identity map and the `FixedPoint` that owned
+    `^cond.costs.cplife` determined nothing (`switch_kwarg_survey.md` §4.7). Neither
+    spherical arm reads `.costs.cplife`, so the self-reference existed only where the
+    body was a pass-through -- i.e. only where the field is an **input**. Absence,
+    spelled as absence, exactly as `power.cryo_q_nuc` spells `inuclear`'s
+    (`_audit/next_steps.md` §14.4)."""

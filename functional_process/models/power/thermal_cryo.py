@@ -10,12 +10,20 @@ self-loop findings ("The `delta_eta` self-loop" and "The `eta_turbine`/`etath_li
 `temp_turbine_coolant_in`/`p_fw_div_heat_deposited_mw`/`p_fw_blkt_coolant_pump_mw`
 self-loops" sections), which is why `component_thermal_powers`'s node-level split
 below exists: `calculate_component_thermal_powers` (the pure function) is unchanged,
-but at the node level each of the six self-references is cut into its own tiny
-`FixedPointFunction` (`DeltaEtaStep`, `EtaTurbineStep`, `EtathLiqStep`,
-`TempTurbineCoolantInStep`, `PFwDivHeatDepositedMwStep`, `PFwBlktCoolantPumpMwStep`
--- per `cottax.interfaces.pytree_namespace_module`), separate from
-`ComponentThermalPowers` (an ordinary `ExplicitFunction` for every other output,
-reading all six current values as plain `FromExactly`s). See each class's own docstring.
+but at the node level each of the six self-references is owned by its own node, separate
+from `ComponentThermalPowers`.
+
+**Five of the six are not `FixedPointFunction`s any anymore** (`_audit/next_steps.md`
+§14.2/§14.11). Splitting the switches each carried showed the self-read existed only on
+the arm where PROCESS's own body is `return x` -- which is not a fixed point but the
+statement that the field is an **input**, spelled in the tree as an empty slot. So
+`EtaTurbineStep`/`EtathLiqStep`/`TempTurbineCoolantInStep`/`PFwDivHeatDepositedMwStep`/
+`PFwBlktCoolantPumpMwStep` are gone, replaced by the `EtaTurbine`/`EtathLiq`/
+`TempTurbineCoolantIn`/`PFwDivHeatDepositedMw`/`PFwBlktCoolantPumpMw` families below;
+only `DeltaEtaStep` is still one, and only because its own three switches are not split
+yet. `ComponentThermalPowers` no longer reads five of the six at all: it recomputed and
+**discarded** them, so it was wired into four fixed points it does not consume. See each
+class's own docstring.
 
 All five source methods are tier-1 once ported: no internal iteration anywhere in
 this chunk (the `cryo`/`calculate_cryo_loads` pair looks like it could be tier-2 from
@@ -115,7 +123,7 @@ def calculate_plant_thermal_efficiency(
     """
     if i_thermal_electric_conversion == ElectricConversionModelTypes.CCFE_HCPB_VALUE:
         if i_blanket_type == BlktModelTypes.CCFE_HCPB:
-            eta_turbine = 0.411e0
+            eta_turbine = eta_turbine_ccfe_hcpb_value()
         return eta_turbine, temp_turbine_coolant_in
 
     if (
@@ -123,7 +131,7 @@ def calculate_plant_thermal_efficiency(
         == ElectricConversionModelTypes.CCFE_HCPB_VALUE_WITH_DIVERTOR
     ):
         if i_blanket_type == BlktModelTypes.CCFE_HCPB:
-            eta_turbine = 0.411e0 - delta_eta
+            eta_turbine = eta_turbine_ccfe_hcpb_value_with_divertor(delta_eta)
         return eta_turbine, temp_turbine_coolant_in
 
     if i_thermal_electric_conversion == ElectricConversionModelTypes.USER_INPUT:
@@ -131,9 +139,11 @@ def calculate_plant_thermal_efficiency(
 
     if i_thermal_electric_conversion == ElectricConversionModelTypes.STEAM_RANKINE_CYCLE:
         if i_blanket_type == BlktModelTypes.CCFE_HCPB:
-            temp_turbine_coolant_in = temp_blkt_coolant_out - 20.0e0
-            eta_turbine = (
-                0.1802e0 * jnp.log(temp_turbine_coolant_in) - 0.7823e0 - delta_eta
+            temp_turbine_coolant_in = temp_turbine_coolant_in_from_blanket_coolant(
+                temp_blkt_coolant_out
+            )
+            eta_turbine = eta_turbine_steam_rankine_cycle(
+                temp_blkt_coolant_out, delta_eta
             )
         return eta_turbine, temp_turbine_coolant_in
 
@@ -141,8 +151,10 @@ def calculate_plant_thermal_efficiency(
         i_thermal_electric_conversion
         == ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
     ):
-        temp_turbine_coolant_in = temp_blkt_coolant_out - 20.0e0
-        eta_turbine = 0.4347e0 * jnp.log(temp_turbine_coolant_in) - 2.5043e0
+        temp_turbine_coolant_in = temp_turbine_coolant_in_from_blanket_coolant(
+            temp_blkt_coolant_out
+        )
+        eta_turbine = eta_turbine_supercritical_co2(temp_blkt_coolant_out)
         return eta_turbine, temp_turbine_coolant_in
 
     return eta_turbine, temp_turbine_coolant_in
@@ -195,12 +207,87 @@ def calculate_plant_thermal_efficiency_2(
         return etath_liq, temp_turbine_coolant_in
 
     if secondary_cycle_liq == 4:
-        temp_turbine_coolant_in = outlet_temp_liq - 20.0e0
-        etath_liq = 0.4347e0 * jnp.log(temp_turbine_coolant_in) - 2.5043e0
-        return etath_liq, temp_turbine_coolant_in
+        return (
+            etath_liq_supercritical_co2(outlet_temp_liq),
+            temp_turbine_coolant_in_from_liquid_breeder(outlet_temp_liq),
+        )
 
     raise ProcessValueError(
         f"secondary_cycle_liq ={secondary_cycle_liq} is an invalid option."
+    )
+
+
+def eta_turbine_ccfe_hcpb_value():
+    """`i_thermal_electric_conversion == CCFE_HCPB_VALUE` (0) with
+    `i_blanket_type == CCFE_HCPB`: the CCFE HCPB reference efficiency, a literal
+    (`power.py:1988`).
+
+    **Reads nothing at all.** That is the point of splitting
+    `calculate_plant_thermal_efficiency`'s five-way branch into occupants: this arm's
+    node has no ports on its input side, where one node carrying the switch declared
+    `.heat_transport.eta_turbine`, `.power.delta_eta` and `.fwbs.temp_blkt_coolant_out`
+    regardless of which arm was live (`_audit/next_steps.md` §14.2).
+    """
+    return 0.411e0
+
+
+def eta_turbine_ccfe_hcpb_value_with_divertor(delta_eta):
+    """`i_thermal_electric_conversion == CCFE_HCPB_VALUE_WITH_DIVERTOR` (1) with
+    `i_blanket_type == CCFE_HCPB`: the same literal, less the divertor-heat efficiency
+    penalty (`power.py:1994`). Reads `.power.delta_eta` and nothing else.
+    """
+    return 0.411e0 - delta_eta
+
+
+def eta_turbine_steam_rankine_cycle(temp_blkt_coolant_out, delta_eta):
+    """`i_thermal_electric_conversion == STEAM_RANKINE_CYCLE` (3) with
+    `i_blanket_type == CCFE_HCPB`: a log fit in the turbine inlet temperature
+    (`power.py:2030-2035`). Reads `.fwbs.temp_blkt_coolant_out` and `.power.delta_eta`.
+    """
+    return (
+        0.1802e0
+        * jnp.log(temp_turbine_coolant_in_from_blanket_coolant(temp_blkt_coolant_out))
+        - 0.7823e0
+        - delta_eta
+    )
+
+
+def eta_turbine_supercritical_co2(temp_blkt_coolant_out):
+    """`i_thermal_electric_conversion == SUPERCRITICAL_CO2_BRAYTON_CYCLE` (4): a
+    different log fit, and no `i_blanket_type` sub-branch (`power.py:2043-2046`).
+    Reads `.fwbs.temp_blkt_coolant_out` and nothing else.
+    """
+    return (
+        0.4347e0
+        * jnp.log(temp_turbine_coolant_in_from_blanket_coolant(temp_blkt_coolant_out))
+        - 2.5043e0
+    )
+
+
+def temp_turbine_coolant_in_from_blanket_coolant(temp_blkt_coolant_out):
+    """The turbine inlet temperature the two computing arms of
+    `calculate_plant_thermal_efficiency` set: twenty kelvin below the blanket coolant
+    outlet (`power.py:2031`/`:2044`).
+    """
+    return temp_blkt_coolant_out - 20.0e0
+
+
+def temp_turbine_coolant_in_from_liquid_breeder(outlet_temp_liq):
+    """The turbine inlet temperature `calculate_plant_thermal_efficiency_2`'s
+    `secondary_cycle_liq == 4` arm sets (`power.py:2107`), **overwriting** whatever
+    stage one wrote -- which is why this arm's occupant reads
+    `.fwbs.outlet_temp_liq` and not `.fwbs.temp_blkt_coolant_out`.
+    """
+    return outlet_temp_liq - 20.0e0
+
+
+def etath_liq_supercritical_co2(outlet_temp_liq):
+    """`secondary_cycle_liq == 4`: the liquid breeder's own supercritical-CO2
+    efficiency (`power.py:2108`). Reads `.fwbs.outlet_temp_liq` and nothing else.
+    """
+    return (
+        0.4347e0 * jnp.log(temp_turbine_coolant_in_from_liquid_breeder(outlet_temp_liq))
+        - 2.5043e0
     )
 
 
@@ -470,6 +557,174 @@ def calculate_component_thermal_powers(
         f_p_div_primary_heat, delta_eta, p_shld_secondary_heat_mw,
         p_hcd_secondary_heat_mw, n_primary_heat_exchangers)`.
     """
+
+    (
+        p_fw_blkt_coolant_pump_elec_mw,
+        p_shld_coolant_pump_elec_mw,
+        p_div_coolant_pump_elec_mw,
+        p_blkt_breeder_pump_elec_mw,
+        p_coolant_pump_total_mw,
+        p_coolant_pump_elec_total_mw,
+        p_coolant_pump_loss_total_mw,
+        p_hcd_electric_loss_mw,
+        p_blkt_liquid_breeder_heat_deposited_mw,
+        p_fw_blkt_heat_deposited_mw,
+        p_fw_heat_deposited_mw,
+        p_blkt_heat_deposited_mw,
+        p_shld_heat_deposited_mw,
+        p_div_heat_deposited_mw,
+        p_plant_primary_heat_mw,
+        p_div_secondary_heat_mw,
+        i_div_primary_heat,
+        f_p_div_primary_heat,
+        p_shld_secondary_heat_mw,
+        p_hcd_secondary_heat_mw,
+        n_primary_heat_exchangers,
+    ) = calculate_component_thermal_powers_owned(
+        i_p_coolant_pumping,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+        eta_coolant_pump_electric,
+        p_shld_coolant_pump_mw,
+        p_div_coolant_pump_mw,
+        p_blkt_breeder_pump_mw,
+        p_hcd_electric_total_mw,
+        p_hcd_injected_total_mw,
+        i_blkt_dual_coolant,
+        p_blkt_nuclear_heat_total_mw,
+        f_nuc_pow_bz_liq,
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_shld_nuclear_heat_mw,
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        i_shld_primary_heat,
+        i_thermal_electric_conversion,
+    )
+
+    # The six values this port's other occupant families own. Computed here and nowhere
+    # else in the node graph: `ComponentThermalPowers` recomputed and then discarded all
+    # six (see `calculate_component_thermal_powers_owned`), which is why they left it.
+    p_fw_blkt_coolant_pump_mw = calculate_p_fw_blkt_coolant_pump_mw(
+        i_p_coolant_pumping,
+        p_fw_coolant_pump_mw,
+        p_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_mw,
+    )
+    p_fw_div_heat_deposited_mw = calculate_p_fw_div_heat_deposited_mw(
+        i_p_coolant_pumping,
+        p_fw_heat_deposited_mw,
+        p_div_heat_deposited_mw,
+        p_fw_div_heat_deposited_mw,
+    )
+    eta_turbine, temp_turbine_coolant_in = calculate_plant_thermal_efficiency(
+        eta_turbine,
+        delta_eta,
+        temp_blkt_coolant_out,
+        temp_turbine_coolant_in,
+        i_thermal_electric_conversion,
+        i_blanket_type,
+    )
+    etath_liq, temp_turbine_coolant_in = calculate_plant_thermal_efficiency_2(
+        etath_liq,
+        outlet_temp_liq,
+        temp_turbine_coolant_in,
+        secondary_cycle_liq,
+    )
+    delta_eta = 0.339e0 * f_p_div_primary_heat
+
+    return (
+        p_fw_blkt_coolant_pump_mw,
+        p_fw_blkt_coolant_pump_elec_mw,
+        p_shld_coolant_pump_elec_mw,
+        p_div_coolant_pump_elec_mw,
+        p_blkt_breeder_pump_elec_mw,
+        p_coolant_pump_total_mw,
+        p_coolant_pump_elec_total_mw,
+        p_coolant_pump_loss_total_mw,
+        p_hcd_electric_loss_mw,
+        p_blkt_liquid_breeder_heat_deposited_mw,
+        p_fw_blkt_heat_deposited_mw,
+        p_fw_heat_deposited_mw,
+        p_blkt_heat_deposited_mw,
+        p_shld_heat_deposited_mw,
+        p_div_heat_deposited_mw,
+        p_fw_div_heat_deposited_mw,
+        eta_turbine,
+        etath_liq,
+        temp_turbine_coolant_in,
+        p_plant_primary_heat_mw,
+        p_div_secondary_heat_mw,
+        i_div_primary_heat,
+        f_p_div_primary_heat,
+        delta_eta,
+        p_shld_secondary_heat_mw,
+        p_hcd_secondary_heat_mw,
+        n_primary_heat_exchangers,
+    )
+
+
+def calculate_component_thermal_powers_owned(
+    i_p_coolant_pumping,
+    p_fw_coolant_pump_mw,
+    p_blkt_coolant_pump_mw,
+    p_fw_blkt_coolant_pump_mw,
+    eta_coolant_pump_electric,
+    p_shld_coolant_pump_mw,
+    p_div_coolant_pump_mw,
+    p_blkt_breeder_pump_mw,
+    p_hcd_electric_total_mw,
+    p_hcd_injected_total_mw,
+    i_blkt_dual_coolant,
+    p_blkt_nuclear_heat_total_mw,
+    f_nuc_pow_bz_liq,
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_cp_shield_nuclear_heat_mw,
+    p_shld_nuclear_heat_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_fw_hcd_nuclear_heat_mw,
+    p_fw_hcd_rad_total_mw,
+    i_shld_primary_heat,
+    i_thermal_electric_conversion,
+):
+    """The twenty-one outputs `ComponentThermalPowers` actually owns.
+
+    **Six of `calculate_component_thermal_powers`'s twenty-seven return values are not
+    computed here at all**, and that is the point. They are
+    `.primary_pumping.p_fw_blkt_coolant_pump_mw`,
+    `.heat_transport.p_fw_div_heat_deposited_mw`, `.eta_turbine`, `.etath_liq`,
+    `.temp_turbine_coolant_in` and `.power.delta_eta` -- each owned by its own occupant
+    family in this file, and each **discarded** by `ComponentThermalPowers` after being
+    recomputed. The node read all six, recomputed them, threw the results away, and so
+    declared itself a consumer of four fixed points it does not consume
+    (`_audit/switch_kwarg_survey.md` §6, the residue of reads dead at *every* value of
+    the node's own switches).
+
+    Dropping the recomputation drops **seven reads** -- `.heat_transport.eta_turbine`,
+    `.etath_liq`, `.temp_turbine_coolant_in`, `.p_fw_div_heat_deposited_mw`,
+    `.power.delta_eta`, `.fwbs.temp_blkt_coolant_out` and `.fwbs.outlet_temp_liq` -- and
+    **two static switches**, `i_blanket_type` and `secondary_cycle_liq`, which fed
+    nothing else (`_audit/next_steps.md` §14.2).
+    `.primary_pumping.p_fw_blkt_coolant_pump_mw` stays a read: the pump totals genuinely
+    use it. No computed number moves -- every one of the twenty-one is the same
+    expression it was, and the composite above still returns all twenty-seven.
+
+    Parameters and returns are `calculate_component_thermal_powers`'s, less those.
+    """
     p_fw_blkt_coolant_pump_mw = calculate_p_fw_blkt_coolant_pump_mw(
         i_p_coolant_pumping,
         p_fw_coolant_pump_mw,
@@ -540,28 +795,6 @@ def calculate_component_thermal_powers(
         p_div_coolant_pump_mw,
     )
 
-    p_fw_div_heat_deposited_mw = calculate_p_fw_div_heat_deposited_mw(
-        i_p_coolant_pumping,
-        p_fw_heat_deposited_mw,
-        p_div_heat_deposited_mw,
-        p_fw_div_heat_deposited_mw,
-    )
-
-    eta_turbine, temp_turbine_coolant_in = calculate_plant_thermal_efficiency(
-        eta_turbine,
-        delta_eta,
-        temp_blkt_coolant_out,
-        temp_turbine_coolant_in,
-        i_thermal_electric_conversion,
-        i_blanket_type,
-    )
-    etath_liq, temp_turbine_coolant_in = calculate_plant_thermal_efficiency_2(
-        etath_liq,
-        outlet_temp_liq,
-        temp_turbine_coolant_in,
-        secondary_cycle_liq,
-    )
-
     (
         p_plant_primary_heat_mw,
         p_div_secondary_heat_mw,
@@ -581,7 +814,6 @@ def calculate_component_thermal_powers(
     n_primary_heat_exchangers = jnp.ceil(p_plant_primary_heat_mw / 1000.0e0)
 
     return (
-        p_fw_blkt_coolant_pump_mw,
         p_fw_blkt_coolant_pump_elec_mw,
         p_shld_coolant_pump_elec_mw,
         p_div_coolant_pump_elec_mw,
@@ -596,15 +828,10 @@ def calculate_component_thermal_powers(
         p_blkt_heat_deposited_mw,
         p_shld_heat_deposited_mw,
         p_div_heat_deposited_mw,
-        p_fw_div_heat_deposited_mw,
-        eta_turbine,
-        etath_liq,
-        temp_turbine_coolant_in,
         p_plant_primary_heat_mw,
         p_div_secondary_heat_mw,
         i_div_primary_heat,
         f_p_div_primary_heat,
-        delta_eta,
         p_shld_secondary_heat_mw,
         p_hcd_secondary_heat_mw,
         n_primary_heat_exchangers,
@@ -766,20 +993,57 @@ def calculate_cryo_q_loads(
     :
         `(qss, qac, qcl, qmisc)`, all in W.
     """
-    qss = 4.3e-4 * coldmass
     if i_tf_sup == 1:
-        qss = qss + 2.0e0 * tfcryoarea
+        return calculate_cryo_q_loads_superconducting_tf(
+            tfcryoarea,
+            coldmass,
+            ensxpfm,
+            t_plant_pulse_plasma_present,
+            c_tf_turn,
+            n_tf_coils,
+            qnuc,
+        )
+    return calculate_cryo_q_loads_resistive_tf(
+        coldmass, ensxpfm, t_plant_pulse_plasma_present, qnuc
+    )
 
+
+def calculate_cryo_q_loads_superconducting_tf(
+    tfcryoarea,
+    coldmass,
+    ensxpfm,
+    t_plant_pulse_plasma_present,
+    c_tf_turn,
+    n_tf_coils,
+    qnuc,
+):
+    """`calculate_cryo_q_loads` at `i_tf_sup == SUPERCONDUCTING` (1) -- the reference
+    run's.
+
+    The conduction/radiation term carries the TF cryogenic surface and the current
+    leads carry the TF turn current, so this arm reads `.tfcoil.tfcryoarea`,
+    `.tfcoil.c_tf_turn` and `.tfcoil.n_tf_coils`; its sibling reads none of the three
+    (`_audit/next_steps.md` §14.2).
+    """
+    qss = 4.3e-4 * coldmass + 2.0e0 * tfcryoarea
     qac = 1.0e3 * ensxpfm / t_plant_pulse_plasma_present
+    qcl = 13.6e-3 * n_tf_coils * c_tf_turn
+    return qss, qac, qcl, 0.45e0 * (qss + qnuc + qac + qcl)
 
-    if i_tf_sup == 1:
-        qcl = 13.6e-3 * n_tf_coils * c_tf_turn
-    else:
-        qcl = 0.0e0
 
-    qmisc = 0.45e0 * (qss + qnuc + qac + qcl)
+def calculate_cryo_q_loads_resistive_tf(
+    coldmass, ensxpfm, t_plant_pulse_plasma_present, qnuc
+):
+    """`calculate_cryo_q_loads` at `i_tf_sup != SUPERCONDUCTING`, reached only when the
+    PF coils are superconducting (otherwise `Power.cryo` is not called at all).
 
-    return qss, qac, qcl, qmisc
+    `qss` is the cold mass alone and `qcl` is exactly zero, so **three reads leave with
+    this arm**: `.tfcoil.tfcryoarea`, `.tfcoil.c_tf_turn`, `.tfcoil.n_tf_coils`.
+    """
+    qss = 4.3e-4 * coldmass
+    qac = 1.0e3 * ensxpfm / t_plant_pulse_plasma_present
+    qcl = 0.0e0
+    return qss, qac, qcl, 0.45e0 * (qss + qnuc + qac + qcl)
 
 
 def calculate_helpow(qss, qnuc, qac, qcl, qmisc):
@@ -1004,41 +1268,120 @@ def calculate_cryo_plant_loads(
     :
         `(helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req)`.
     """
-    if cryo_is_active(i_tf_sup, i_pf_conductor):
-        helpow = calculate_helpow(qss, qnuc, qac, qcl, qmisc)
-        p_cryo_plant_electric_mw = (
-            1.0e-6
-            * (constants.TEMP_ROOM - temp_tf_cryo)
-            / (eff_tf_cryo * temp_tf_cryo)
-            * helpow
-        )
-    else:
-        helpow = 0.0e0
-        p_cryo_plant_electric_mw = 0.0e0
-
     if i_tf_sup == 2:
+        # The aluminium arm, kept whole here and **not** given an occupant:
+        # `('i_tf_sup', 2)` is `UNPORTED` at the `power.tf_power` slot, so no machine
+        # this port assembles reaches it. It stays in the composite because the
+        # composite is what the Tier-1 contract diffs against PROCESS.
+        helpow = (
+            calculate_helpow(qss, qnuc, qac, qcl, qmisc)
+            if cryo_is_active(i_tf_sup, i_pf_conductor)
+            else 0.0e0
+        )
+        p_cryo_plant_electric_mw = (
+            (
+                1.0e-6
+                * (constants.TEMP_ROOM - temp_tf_cryo)
+                / (eff_tf_cryo * temp_tf_cryo)
+                * helpow
+            )
+            if cryo_is_active(i_tf_sup, i_pf_conductor)
+            else 0.0e0
+        )
         helpow_cryal = (
             p_cp_resistive
             + p_tf_leg_resistive
             + p_tf_joints_resistive
             + pnuc_cp_tf * 1.0e6
         )
-        p_tf_cryoal_cryo = (
+        p_cryo_plant_electric_mw = p_cryo_plant_electric_mw + (
             1.0e-6
             * (constants.TEMP_ROOM - temp_cp_coolant_inlet)
             / (eff_tf_cryo * temp_cp_coolant_inlet)
             * helpow_cryal
         )
-        p_cryo_plant_electric_mw = p_cryo_plant_electric_mw + p_tf_cryoal_cryo
-    else:
-        helpow_cryal = 0.0e0
+        cryo_cool_req = (
+            helpow * ((293 / temp_tf_cryo) - 1) / ((293 / 4.5) - 1)
+            + helpow_cryal * ((293 / temp_cp_coolant_inlet) - 1) / ((293 / 4.5) - 1)
+        ) / 1.0e3
+        return helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req
+    if cryo_is_active(i_tf_sup, i_pf_conductor):
+        return calculate_cryo_plant_loads_active(
+            eff_tf_cryo,
+            temp_tf_cryo,
+            temp_cp_coolant_inlet,
+            qss,
+            qac,
+            qcl,
+            qmisc,
+            qnuc,
+        )
+    return calculate_cryo_plant_loads_inactive(temp_tf_cryo, temp_cp_coolant_inlet)
 
+
+def calculate_cryo_plant_loads_active(
+    eff_tf_cryo,
+    temp_tf_cryo,
+    temp_cp_coolant_inlet,
+    qss,
+    qac,
+    qcl,
+    qmisc,
+    qnuc,
+):
+    """`calculate_cryo_plant_loads` where PROCESS calls `Power.cryo` at all --
+    `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` (`power.py:1054-1057`) -- and
+    the TF coil is not aluminium.
+
+    **Four reads leave with the aluminium arm's removal**: `.tfcoil.p_cp_resistive`,
+    `.tfcoil.p_tf_leg_resistive`, `.tfcoil.p_tf_joints_resistive` and
+    `.fwbs.pnuc_cp_tf` are read only at `i_tf_sup == 2`, which this port refuses at the
+    `power.tf_power` slot. `helpow_cryal` is therefore identically zero here, and its
+    contribution to `cryo_cool_req` is written as such rather than as a live term.
+    """
+    helpow = calculate_helpow(qss, qnuc, qac, qcl, qmisc)
+    p_cryo_plant_electric_mw = (
+        1.0e-6
+        * (constants.TEMP_ROOM - temp_tf_cryo)
+        / (eff_tf_cryo * temp_tf_cryo)
+        * helpow
+    )
+    return (
+        helpow,
+        p_cryo_plant_electric_mw,
+        *_cryo_cool_req_no_aluminium(helpow, temp_tf_cryo, temp_cp_coolant_inlet),
+    )
+
+
+def calculate_cryo_plant_loads_inactive(temp_tf_cryo, temp_cp_coolant_inlet):
+    """`calculate_cryo_plant_loads` where PROCESS does **not** call `Power.cryo`:
+    `i_tf_sup != 1` with resistive PF coils.
+
+    `helpow` and `p_cryo_plant_electric_mw` are literal zeros (`power.py:1049-1050`
+    re-initialises them before the guard and nothing writes them again), so this arm
+    reads **none** of `.tfcoil.eff_tf_cryo` or the five `q*` fields -- five edges into
+    the cryogenics that no such machine makes.
+    """
+    return (
+        0.0e0,
+        0.0e0,
+        *_cryo_cool_req_no_aluminium(0.0e0, temp_tf_cryo, temp_cp_coolant_inlet),
+    )
+
+
+def _cryo_cool_req_no_aluminium(helpow, temp_tf_cryo, temp_cp_coolant_inlet):
+    """`(helpow_cryal, cryo_cool_req)` on every arm where the TF coil is not aluminium
+    -- i.e. every arm this port can assemble.
+
+    `helpow_cryal` is `0.0` there (`power.py:1108`), so `cryo_cool_req`'s second term
+    is written as the literal zero it is rather than as a product of four reads.
+    """
+    helpow_cryal = 0.0e0
     cryo_cool_req = (
         helpow * ((293 / temp_tf_cryo) - 1) / ((293 / 4.5) - 1)
         + helpow_cryal * ((293 / temp_cp_coolant_inlet) - 1) / ((293 / 4.5) - 1)
     ) / 1.0e3
-
-    return helpow, p_cryo_plant_electric_mw, helpow_cryal, cryo_cool_req
+    return helpow_cryal, cryo_cool_req
 
 
 class PlantThermalEfficiency(ExplicitFunction):
@@ -1104,25 +1447,26 @@ class ComponentThermalPowers(ExplicitFunction):
     `FixedPointFunction` below isolates one self-reference; this class keeps every
     *other* output of `calculate_component_thermal_powers` and takes all six fields as
     ordinary plain-`FromExactly`s (the current/entering values), same as every other
-    parameter here. Ownership of the six real `VarPath`s belongs to the six
-    `FixedPoint` problem nodes, not to this class -- see `thermal_cryo.md`.
+    parameter here. Ownership of the six real `VarPath`s belongs to their own nodes,
+    not to this class -- see `thermal_cryo.md`.
 
-    Registering `ComponentThermalPowers` together with the six `FixedPointFunction`s
-    in one graph is **not** attempted here (out of scope, deferred to
-    `total_process.py`'s later consolidation pass). `to_graph(ComponentThermalPowers(...))`
-    no longer raises on any field (confirmed directly, see the individual
-    `FixedPointFunction` docstrings below for each split's own `to_graph` check).
+    **And five of the six are not read here either, since `_audit/next_steps.md` §14.2.**
+    This node recomputed `p_fw_div_heat_deposited_mw`, `eta_turbine`, `etath_liq`,
+    `temp_turbine_coolant_in` and `delta_eta` internally and **discarded** every one of
+    them -- `switch_kwarg_survey.md` §6's "reads dead at every value of the node's own
+    switches" residue -- so it declared itself a consumer of four fixed points it does
+    not consume. Only `.primary_pumping.p_fw_blkt_coolant_pump_mw` is genuinely used (the
+    pump totals sum it) and only it is still read. Two static switches went with the
+    recomputation: `i_blanket_type` and `secondary_cycle_liq` fed nothing else.
     """
 
     i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
     i_blkt_dual_coolant: BlanketDualCoolantModel = eqx.field(static=True)
     i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
-    i_blanket_type: BlktModelTypes = eqx.field(static=True)
-    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
 
-    # .primary_pumping.p_fw_blkt_coolant_pump_mw is NOT declared here -- owned by
-    # PFwBlktCoolantPumpMwStep's FixedPoint problem node (see below). Still read
-    # below, as a plain FromExactly.
+    # .primary_pumping.p_fw_blkt_coolant_pump_mw is NOT declared here --
+    # `PFwBlktCoolantPumpMw` owns it. Still read below, as a plain FromExactly: the
+    # pump totals sum it.
     p_fw_blkt_coolant_pump_elec_mw = OutputInto(power)
     p_shld_coolant_pump_elec_mw = OutputInto(power)
     p_div_coolant_pump_elec_mw = OutputInto(power)
@@ -1137,23 +1481,17 @@ class ComponentThermalPowers(ExplicitFunction):
     p_blkt_heat_deposited_mw = OutputInto(power)
     p_shld_heat_deposited_mw = OutputInto(power)
     p_div_heat_deposited_mw = OutputInto(power)
-    # .heat_transport.p_fw_div_heat_deposited_mw is NOT declared here -- owned by
-    # PFwDivHeatDepositedMwStep's FixedPoint problem node (see below). Still read
-    # below, as a plain FromExactly.
-    # .heat_transport.eta_turbine is NOT declared here -- owned by EtaTurbineStep's
-    # FixedPoint problem node (see below). Still read below, as a plain FromExactly.
-    # .heat_transport.etath_liq is NOT declared here -- owned by EtathLiqStep's
-    # FixedPoint problem node (see below). Still read below, as a plain FromExactly.
-    # .heat_transport.temp_turbine_coolant_in is NOT declared here -- owned by
-    # TempTurbineCoolantInStep's FixedPoint problem node (see below). Still read
-    # below, as a plain FromExactly.
+    # .heat_transport.p_fw_div_heat_deposited_mw / .eta_turbine / .etath_liq /
+    # .temp_turbine_coolant_in are NOT declared here -- each is owned by its own family
+    # below -- and, since `_audit/next_steps.md` §14.2, **not read here either**: this
+    # node recomputed all four and discarded the results.
     p_plant_primary_heat_mw = OutputInto(heat_transport)
     p_div_secondary_heat_mw = OutputInto(heat_transport)
     i_div_primary_heat = OutputInto(power)
     f_p_div_primary_heat = OutputInto(power)
     # .power.delta_eta is NOT declared here -- DeltaEtaStep's FixedPoint problem node
-    # owns it (see the class docstring above and "The delta_eta self-loop" in
-    # thermal_cryo.md). delta_eta is still read below, as a plain FromExactly.
+    # owns it (see "The delta_eta self-loop" in thermal_cryo.md) -- and is no longer
+    # read here either, for the same reason as the four above.
     p_shld_secondary_heat_mw = OutputInto(heat_transport)
     p_hcd_secondary_heat_mw = OutputInto(heat_transport)
     n_primary_heat_exchangers = OutputInto(heat_transport)
@@ -1181,18 +1519,11 @@ class ComponentThermalPowers(ExplicitFunction):
         p_plasma_separatrix_mw=From(physics),
         p_div_nuclear_heat_total_mw=From(fwbs),
         p_div_rad_total_mw=From(fwbs),
-        p_fw_div_heat_deposited_mw=From(heat_transport),
         p_fw_hcd_nuclear_heat_mw=From(fwbs),
         p_fw_hcd_rad_total_mw=From(fwbs),
         i_shld_primary_heat=From(heat_transport),
-        eta_turbine=From(heat_transport),
-        etath_liq=From(heat_transport),
-        delta_eta=From(power),
-        temp_blkt_coolant_out=From(fwbs),
-        outlet_temp_liq=From(fwbs),
-        temp_turbine_coolant_in=From(heat_transport),
     ):
-        result = calculate_component_thermal_powers(
+        return calculate_component_thermal_powers_owned(
             self.i_p_coolant_pumping,
             p_fw_coolant_pump_mw,
             p_blkt_coolant_pump_mw,
@@ -1216,89 +1547,10 @@ class ComponentThermalPowers(ExplicitFunction):
             p_plasma_separatrix_mw,
             p_div_nuclear_heat_total_mw,
             p_div_rad_total_mw,
-            p_fw_div_heat_deposited_mw,
             p_fw_hcd_nuclear_heat_mw,
             p_fw_hcd_rad_total_mw,
             i_shld_primary_heat,
             self.i_thermal_electric_conversion,
-            self.i_blanket_type,
-            eta_turbine,
-            etath_liq,
-            delta_eta,
-            temp_blkt_coolant_out,
-            outlet_temp_liq,
-            temp_turbine_coolant_in,
-            self.secondary_cycle_liq,
-        )
-        # `calculate_component_thermal_powers` is unchanged -- it still returns all
-        # 27 elements (see its own docstring's Returns section). Six are dropped
-        # here, not reimplemented, since a FixedPointFunction's FixedPoint problem
-        # node owns each of the six real VarPaths, not this node:
-        # p_fw_blkt_coolant_pump_mw (index 0, PFwBlktCoolantPumpMwStep),
-        # p_fw_div_heat_deposited_mw (15, PFwDivHeatDepositedMwStep),
-        # eta_turbine (16, EtaTurbineStep), etath_liq (17, EtathLiqStep),
-        # temp_turbine_coolant_in (18, TempTurbineCoolantInStep) and
-        # delta_eta (23, DeltaEtaStep). Named unpacking, not index slicing, since the
-        # six dropped indices are not contiguous.
-        (
-            _p_fw_blkt_coolant_pump_mw,
-            p_fw_blkt_coolant_pump_elec_mw,
-            p_shld_coolant_pump_elec_mw,
-            p_div_coolant_pump_elec_mw,
-            p_blkt_breeder_pump_elec_mw,
-            p_coolant_pump_total_mw,
-            p_coolant_pump_elec_total_mw,
-            p_coolant_pump_loss_total_mw,
-            p_hcd_electric_loss_mw,
-            p_blkt_liquid_breeder_heat_deposited_mw,
-            p_fw_blkt_heat_deposited_mw,
-            p_fw_heat_deposited_mw,
-            p_blkt_heat_deposited_mw,
-            p_shld_heat_deposited_mw,
-            p_div_heat_deposited_mw,
-            _p_fw_div_heat_deposited_mw,
-            _eta_turbine,
-            _etath_liq,
-            _temp_turbine_coolant_in,
-            p_plant_primary_heat_mw,
-            p_div_secondary_heat_mw,
-            i_div_primary_heat,
-            f_p_div_primary_heat,
-            _delta_eta,
-            p_shld_secondary_heat_mw,
-            p_hcd_secondary_heat_mw,
-            n_primary_heat_exchangers,
-        ) = result
-        del (
-            _p_fw_blkt_coolant_pump_mw,
-            _p_fw_div_heat_deposited_mw,
-            _eta_turbine,
-            _etath_liq,
-            _temp_turbine_coolant_in,
-            _delta_eta,
-        )
-        return (
-            p_fw_blkt_coolant_pump_elec_mw,
-            p_shld_coolant_pump_elec_mw,
-            p_div_coolant_pump_elec_mw,
-            p_blkt_breeder_pump_elec_mw,
-            p_coolant_pump_total_mw,
-            p_coolant_pump_elec_total_mw,
-            p_coolant_pump_loss_total_mw,
-            p_hcd_electric_loss_mw,
-            p_blkt_liquid_breeder_heat_deposited_mw,
-            p_fw_blkt_heat_deposited_mw,
-            p_fw_heat_deposited_mw,
-            p_blkt_heat_deposited_mw,
-            p_shld_heat_deposited_mw,
-            p_div_heat_deposited_mw,
-            p_plant_primary_heat_mw,
-            p_div_secondary_heat_mw,
-            i_div_primary_heat,
-            f_p_div_primary_heat,
-            p_shld_secondary_heat_mw,
-            p_hcd_secondary_heat_mw,
-            n_primary_heat_exchangers,
         )
 
 
@@ -1419,201 +1671,179 @@ class DeltaEtaStep(FixedPointFunction):
         return delta_eta_next
 
 
-class EtaTurbineStep(FixedPointFunction):
-    """The `.heat_transport.eta_turbine` self-loop, cut.
+class EtaTurbine(ExplicitFunction):
+    """The `.heat_transport.eta_turbine` family -- one occupant per arm of
+    `.fwbs.i_thermal_electric_conversion` x `.fwbs.i_blanket_type`.
 
-    `calculate_component_thermal_powers` reads the entering `.heat_transport.eta_turbine`
-    (it is `calculate_plant_thermal_efficiency`'s first parameter) and produces a
-    freshly-computed `.heat_transport.eta_turbine` in the same call -- the same
-    read-before-(re)write shape `delta_eta` had, see `DeltaEtaStep` above and
-    `thermal_cryo.md`'s "The `eta_turbine`/`etath_liq`/`temp_turbine_coolant_in`
-    self-loops" section.
+    **This was `EtaTurbineStep`, a `FixedPointFunction`, and splitting the switches
+    deleted the fixed point.** The self-loop existed because
+    `calculate_plant_thermal_efficiency` takes the entering `eta_turbine` and returns
+    it unchanged on four of its eight arms -- `USER_INPUT`, and `CCFE_HCPB_VALUE` /
+    `CCFE_HCPB_VALUE_WITH_DIVERTOR` / `STEAM_RANKINE_CYCLE` with a non-HCPB blanket.
+    A body whose whole content is `return eta_turbine` is not a fixed point; it is the
+    statement that **the field is an input**, and the tree spells that as an **empty
+    slot** (`indat.ETA_TURBINE[4] is None`), exactly as it spells `inuclear`'s
+    (`_audit/next_steps.md` §14.4) and `cplife`'s.
 
-    **`step` needs no placeholder for `temp_turbine_coolant_in`.** Inspecting every
-    branch of `calculate_plant_thermal_efficiency` confirms `eta_turbine`'s value never
-    depends on the *entering* `temp_turbine_coolant_in`: the two branches that use a
-    turbine-inlet temperature at all (`STEAM_RANKINE_CYCLE`,
-    `SUPERCRITICAL_CO2_BRAYTON_CYCLE`) overwrite it locally from
-    `temp_blkt_coolant_out` before using it; every other branch never reads it at all
-    to compute `eta_turbine`. So `step` calls the shared, unmodified
-    `calculate_plant_thermal_efficiency` with an unused `0.0` placeholder for
-    `temp_turbine_coolant_in` and keeps only its first return element -- reuse, not
-    reimplementation of the branch logic (`TempTurbineCoolantInStep` below is the
-    node responsible for `temp_turbine_coolant_in` itself, with its own `eta_turbine`
-    placeholder for the same reason, symmetrically).
+    That matters beyond tidiness. `switch_kwarg_survey.md` §4.7 measured this node as
+    one of two `FixedPoint`s that are the **identity map on the reference machine**,
+    and singled it out: *"this one has a live downstream --
+    `availability.electric_production` reads `.heat_transport.eta_turbine` to form
+    `p_plant_electric_gross_mw`, which reaches `.costs.coe`, this run's objective. So a
+    quantity the objective depends on is nominally driven while being, on this
+    configuration, an unowned boundary input in disguise."* It is no longer in disguise.
 
-    **Not numerically degenerate in one uniform direction** -- unlike `delta_eta`
-    (identically zero gradient everywhere), `eta_turbine`'s dependence on its own
-    entering value is branch-dependent: identity (gradient exactly `1`) on the
-    pass-through sub-branches (`USER_INPUT`; `CCFE_HCPB_VALUE`/
-    `CCFE_HCPB_VALUE_WITH_DIVERTOR` with `i_blanket_type != CCFE_HCPB`; the
-    `i_thermal_electric_conversion` default arm), and exactly zero on the
-    sub-branches that overwrite `eta_turbine` from other inputs (`CCFE_HCPB_VALUE`/
-    `CCFE_HCPB_VALUE_WITH_DIVERTOR` with `i_blanket_type == CCFE_HCPB`,
-    `STEAM_RANKINE_CYCLE` with a matching blanket, `SUPERCRITICAL_CO2_BRAYTON_CYCLE`).
-    Confirmed by `jax.grad` per switch combination in
-    `test_eta_turbine_step_gradient_wrt_eta_turbine` -- see that test for which
-    combinations land on which value.
+    The four computing occupants read genuinely different fields -- nothing,
+    `.power.delta_eta`, `.fwbs.temp_blkt_coolant_out`, or both -- where the one node
+    declared all three unconditionally.
     """
-
-    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
-    i_blanket_type: BlktModelTypes = eqx.field(static=True)
 
     eta_turbine = OutputInto(heat_transport)
 
-    def step(
-        self,
-        eta_turbine=From(heat_transport),
-        delta_eta=From(power),
-        temp_blkt_coolant_out=From(fwbs),
-    ):
-        eta_turbine_next, _ = calculate_plant_thermal_efficiency(
-            eta_turbine,
-            delta_eta,
-            temp_blkt_coolant_out,
-            0.0,  # temp_turbine_coolant_in placeholder -- see class docstring
-            self.i_thermal_electric_conversion,
-            self.i_blanket_type,
-        )
-        return eta_turbine_next
 
+class EtaTurbineCcfeHcpbValue(EtaTurbine):
+    """`i_thermal_electric_conversion == CCFE_HCPB_VALUE` (0) with
+    `i_blanket_type == CCFE_HCPB`.
 
-class EtathLiqStep(FixedPointFunction):
-    """The `.heat_transport.etath_liq` self-loop, cut.
-
-    `calculate_component_thermal_powers` reads the entering `.heat_transport.etath_liq`
-    (it is `calculate_plant_thermal_efficiency_2`'s first parameter) and produces a
-    freshly-computed `.heat_transport.etath_liq` in the same call -- same shape as
-    `eta_turbine`/`delta_eta` above.
-
-    **`step` needs no placeholder for `temp_turbine_coolant_in`** for the same reason
-    `EtaTurbineStep` doesn't: `calculate_plant_thermal_efficiency_2`'s
-    `secondary_cycle_liq == 4` branch overwrites its local `temp_turbine_coolant_in`
-    from `outlet_temp_liq` before using it, and the `== 2` branch never reads it to
-    compute `etath_liq` at all. `step` reuses the shared, unmodified
-    `calculate_plant_thermal_efficiency_2` with an unused `0.0` placeholder and keeps
-    only its first return element.
-
-    **Not numerically degenerate in one uniform direction**, same shape as
-    `eta_turbine`: identity (gradient `1`) for `secondary_cycle_liq == 2` (plain
-    pass-through), exactly zero for `== 4` (`etath_liq` recomputed from
-    `outlet_temp_liq` alone). Confirmed by `jax.grad` in
-    `test_etath_liq_step_gradient_wrt_etath_liq`.
+    **A node with no inputs at all**: the efficiency is a literal.
     """
 
-    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
+    def __call__(self):
+        return eta_turbine_ccfe_hcpb_value()
+
+
+class EtaTurbineCcfeHcpbValueWithDivertor(EtaTurbine):
+    """`i_thermal_electric_conversion == CCFE_HCPB_VALUE_WITH_DIVERTOR` (1) with
+    `i_blanket_type == CCFE_HCPB`. Reads `.power.delta_eta` alone.
+    """
+
+    def __call__(self, delta_eta=From(power)):
+        return eta_turbine_ccfe_hcpb_value_with_divertor(delta_eta)
+
+
+class EtaTurbineSteamRankineCycle(EtaTurbine):
+    """`i_thermal_electric_conversion == STEAM_RANKINE_CYCLE` (3) with
+    `i_blanket_type == CCFE_HCPB`. Reads `.fwbs.temp_blkt_coolant_out` and
+    `.power.delta_eta`.
+    """
+
+    def __call__(
+        self,
+        temp_blkt_coolant_out=From(fwbs),
+        delta_eta=From(power),
+    ):
+        return eta_turbine_steam_rankine_cycle(temp_blkt_coolant_out, delta_eta)
+
+
+class EtaTurbineSupercriticalCo2(EtaTurbine):
+    """`i_thermal_electric_conversion == SUPERCRITICAL_CO2_BRAYTON_CYCLE` (4), at any
+    blanket type. Reads `.fwbs.temp_blkt_coolant_out` alone.
+    """
+
+    def __call__(self, temp_blkt_coolant_out=From(fwbs)):
+        return eta_turbine_supercritical_co2(temp_blkt_coolant_out)
+
+
+class EtathLiq(ExplicitFunction):
+    """The `.heat_transport.etath_liq` family -- one occupant per
+    `.fwbs.secondary_cycle_liq` value.
+
+    **This was `EtathLiqStep`, a `FixedPointFunction`, and splitting the switch deleted
+    the fixed point** -- the same shape as `EtaTurbine` above.
+    `calculate_plant_thermal_efficiency_2`'s `secondary_cycle_liq == 2` arm is
+    `return etath_liq`, i.e. "the liquid-breeder efficiency is an input", which is an
+    **empty slot** (`indat.ETATH_LIQ[1] is None`); its `== 4` arm computes from
+    `.fwbs.outlet_temp_liq` alone and never reads the entering value.
+    """
 
     etath_liq = OutputInto(heat_transport)
 
-    def step(
-        self,
-        etath_liq=From(heat_transport),
-        outlet_temp_liq=From(fwbs),
-    ):
-        etath_liq_next, _ = calculate_plant_thermal_efficiency_2(
-            etath_liq,
-            outlet_temp_liq,
-            0.0,  # temp_turbine_coolant_in placeholder -- see class docstring
-            self.secondary_cycle_liq,
-        )
-        return etath_liq_next
 
-
-class TempTurbineCoolantInStep(FixedPointFunction):
-    """The `.heat_transport.temp_turbine_coolant_in` self-loop, cut.
-
-    `calculate_component_thermal_powers` threads `temp_turbine_coolant_in` through
-    *both* `calculate_plant_thermal_efficiency` and `calculate_plant_thermal_efficiency_2`,
-    in that order (see `thermal_cryo.md`'s "Write-ordering on
-    `temp_turbine_coolant_in`") -- the entering value feeds the first call, whose
-    output value feeds the second call, whose output is the value actually written
-    back. A genuine read-before-(re)write self-loop on the same `VarPath`, same shape
-    as the other five in this file.
-
-    **`step` needs placeholders for `eta_turbine`/`etath_liq`/`delta_eta`.** Neither
-    `calculate_plant_thermal_efficiency`'s nor `calculate_plant_thermal_efficiency_2`'s
-    `temp_turbine_coolant_in` output depends on `eta_turbine`/`etath_liq` (those
-    parameters are only ever used to compute the *other* return element) or on
-    `delta_eta` (only used to compute `eta_turbine`) -- confirmed by inspection of
-    every branch of both functions. `step` therefore calls both shared, unmodified
-    functions in the same order `calculate_component_thermal_powers` does, with `0.0`
-    placeholders for the three unused parameters, and keeps only the
-    `temp_turbine_coolant_in` element of each.
-
-    **Not numerically degenerate in one uniform direction.** The total derivative
-    w.r.t. the entering `temp_turbine_coolant_in` is exactly `1` only when *both*
-    stages pass it through unchanged (`i_thermal_electric_conversion` selects a
-    branch that doesn't touch it, i.e. `CCFE_HCPB_VALUE`/`CCFE_HCPB_VALUE_WITH_DIVERTOR`/
-    `USER_INPUT`/the default arm, **and** `secondary_cycle_liq == 2`); it is exactly
-    `0` for every other combination (either stage overwrites it from
-    `temp_blkt_coolant_out`/`outlet_temp_liq`, severing the dependency on the entering
-    value regardless of what the other stage does). Confirmed by `jax.grad` in
-    `test_temp_turbine_coolant_in_step_gradient_wrt_temp_turbine_coolant_in`.
+class EtathLiqSupercriticalCo2(EtathLiq):
+    """`secondary_cycle_liq == 4` -- the reference run's. Reads `.fwbs.outlet_temp_liq`
+    alone.
     """
 
-    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
-    i_blanket_type: BlktModelTypes = eqx.field(static=True)
-    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
+    def __call__(self, outlet_temp_liq=From(fwbs)):
+        return etath_liq_supercritical_co2(outlet_temp_liq)
+
+
+class TempTurbineCoolantIn(ExplicitFunction):
+    """The `.heat_transport.temp_turbine_coolant_in` family -- one occupant per arm of
+    `.fwbs.i_thermal_electric_conversion` x `.fwbs.i_blanket_type` x
+    `.fwbs.secondary_cycle_liq`.
+
+    **This was `TempTurbineCoolantInStep`, a `FixedPointFunction`, and splitting the
+    three switches deleted the fixed point.** The field is written by two stages in
+    order (`calculate_plant_thermal_efficiency` then `_2`, see `thermal_cryo.md`'s
+    "Write-ordering on `temp_turbine_coolant_in`"), and the self-loop existed only
+    because *both* stages can pass the entering value through. Once the switches select
+    occupants there are exactly three cases, and none of them reads what it owns:
+
+    * stage two writes it (`secondary_cycle_liq == 4`) -- from `.fwbs.outlet_temp_liq`,
+      **overwriting** stage one, so stage one's inputs are not read at all;
+    * stage two passes through and stage one writes it -- from
+      `.fwbs.temp_blkt_coolant_out`;
+    * both pass through -- the field is an **input**, spelled as an empty slot
+      (`indat.TEMP_TURBINE_COOLANT_IN[2] is None`).
+
+    The one node carrying all three switches declared both source fields on every
+    configuration, and read the field it owned on top.
+    """
 
     temp_turbine_coolant_in = OutputInto(heat_transport)
 
-    def step(
-        self,
-        temp_turbine_coolant_in=From(heat_transport),
-        temp_blkt_coolant_out=From(fwbs),
-        outlet_temp_liq=From(fwbs),
-    ):
-        _, temp_turbine_coolant_in_mid = calculate_plant_thermal_efficiency(
-            0.0,  # eta_turbine placeholder -- see class docstring
-            0.0,  # delta_eta placeholder -- see class docstring
-            temp_blkt_coolant_out,
-            temp_turbine_coolant_in,
-            self.i_thermal_electric_conversion,
-            self.i_blanket_type,
-        )
-        _, temp_turbine_coolant_in_next = calculate_plant_thermal_efficiency_2(
-            0.0,  # etath_liq placeholder -- see class docstring
-            outlet_temp_liq,
-            temp_turbine_coolant_in_mid,
-            self.secondary_cycle_liq,
-        )
-        return temp_turbine_coolant_in_next
 
-
-class PFwDivHeatDepositedMwStep(FixedPointFunction):
-    """The `.heat_transport.p_fw_div_heat_deposited_mw` self-loop, cut.
-
-    `calculate_component_thermal_powers` takes `p_fw_div_heat_deposited_mw` as the
-    entering value of a **conditional-ownership pass-through** (see that function's
-    own docstring and `thermal_cryo.md`): owned here (recomputed from
-    `p_fw_heat_deposited_mw + p_div_heat_deposited_mw`) whenever `i_p_coolant_pumping
-    != MECHANICAL_WITH_PRESSURE_DROP`; passed through unchanged (its only other
-    producer anywhere in `process/` is `models/ife.py`, out of scope) when it *is*
-    `MECHANICAL_WITH_PRESSURE_DROP`. Same read-before-(re)write shape as the other
-    five self-loops in this file.
-
-    `step` rebuilds `p_fw_heat_deposited_mw`/`p_div_heat_deposited_mw` from the same
-    raw, externally-owned inputs `calculate_component_thermal_powers` itself reads
-    (via the shared `calculate_p_fw_heat_deposited_mw`/`calculate_p_div_heat_deposited_mw`
-    helpers), then calls the shared `calculate_p_fw_div_heat_deposited_mw` helper --
-    the same "read the same raw inputs twice, not another node's `Output`s" pattern
-    `DeltaEtaStep` established, to avoid recreating a two-node cycle with
-    `ComponentThermalPowers`.
-
-    **Piecewise degenerate, not uniform**: gradient w.r.t. the entering
-    `p_fw_div_heat_deposited_mw` is exactly `1` (identity) for
-    `i_p_coolant_pumping == MECHANICAL_WITH_PRESSURE_DROP`, exactly `0` otherwise
-    (recomputed from raw inputs alone). Confirmed by `jax.grad` in
-    `test_p_fw_div_heat_deposited_mw_step_gradient`.
+class TempTurbineCoolantInFromLiquidBreeder(TempTurbineCoolantIn):
+    """`secondary_cycle_liq == 4` -- the reference run's. Stage two overwrites whatever
+    stage one wrote, so this reads `.fwbs.outlet_temp_liq` and **not**
+    `.fwbs.temp_blkt_coolant_out`, whichever `i_thermal_electric_conversion` is set.
     """
 
-    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
+    def __call__(self, outlet_temp_liq=From(fwbs)):
+        return temp_turbine_coolant_in_from_liquid_breeder(outlet_temp_liq)
+
+
+class TempTurbineCoolantInFromBlanketCoolant(TempTurbineCoolantIn):
+    """`secondary_cycle_liq == 2` with an `i_thermal_electric_conversion` arm that
+    writes the turbine inlet temperature -- `STEAM_RANKINE_CYCLE` with a CCFE HCPB
+    blanket, or `SUPERCRITICAL_CO2_BRAYTON_CYCLE` at any blanket. Reads
+    `.fwbs.temp_blkt_coolant_out` alone.
+    """
+
+    def __call__(self, temp_blkt_coolant_out=From(fwbs)):
+        return temp_turbine_coolant_in_from_blanket_coolant(temp_blkt_coolant_out)
+
+
+class PFwDivHeatDepositedMw(ExplicitFunction):
+    """The `.heat_transport.p_fw_div_heat_deposited_mw` family -- one occupant per arm
+    of `.fwbs.i_p_coolant_pumping`.
+
+    **This was `PFwDivHeatDepositedMwStep`, a `FixedPointFunction`, and splitting the
+    switch deleted the fixed point.** `calculate_p_fw_div_heat_deposited_mw` is a
+    conditional-ownership pass-through (`power.py:955-961`): on
+    `MECHANICAL_WITH_PRESSURE_DROP` it returns the entering value unchanged -- the
+    field's only other producer anywhere in `process/` is `models/ife.py`, out of scope
+    -- and on every other value it recomputes from raw inputs and never reads it. So
+    the self-read existed only on the arm where the field is an **input**, which is an
+    empty slot (`indat.P_FW_DIV_HEAT_DEPOSITED[1] is None`).
+    """
 
     p_fw_div_heat_deposited_mw = OutputInto(heat_transport)
 
-    def step(
+
+class PFwDivHeatDepositedMwSummed(PFwDivHeatDepositedMw):
+    """`i_p_coolant_pumping != MECHANICAL_WITH_PRESSURE_DROP` -- the reference run's.
+
+    The first wall's and the divertor's deposited heat, summed. Rebuilds both from the
+    same raw, externally-owned inputs `calculate_component_thermal_powers` itself reads
+    rather than from that node's `Output`s -- the "read the same raw inputs twice, not
+    another node's outputs" pattern this file established, which keeps the two nodes
+    fanned out rather than mutually referencing.
+    """
+
+    def __call__(
         self,
-        p_fw_div_heat_deposited_mw=From(heat_transport),
         p_fw_nuclear_heat_total_mw=From(fwbs),
         p_fw_rad_total_mw=From(fwbs),
         p_fw_coolant_pump_mw=From(heat_transport),
@@ -1625,68 +1855,42 @@ class PFwDivHeatDepositedMwStep(FixedPointFunction):
         p_div_rad_total_mw=From(fwbs),
         p_div_coolant_pump_mw=From(heat_transport),
     ):
-        p_fw_heat_deposited_mw = calculate_p_fw_heat_deposited_mw(
+        return calculate_p_fw_heat_deposited_mw(
             p_fw_nuclear_heat_total_mw,
             p_fw_rad_total_mw,
             p_fw_coolant_pump_mw,
             p_beam_orbit_loss_mw,
             p_fw_alpha_mw,
             p_beam_shine_through_mw,
-        )
-        p_div_heat_deposited_mw = calculate_p_div_heat_deposited_mw(
+        ) + calculate_p_div_heat_deposited_mw(
             p_plasma_separatrix_mw,
             p_div_nuclear_heat_total_mw,
             p_div_rad_total_mw,
             p_div_coolant_pump_mw,
         )
-        p_fw_div_heat_deposited_mw_next = calculate_p_fw_div_heat_deposited_mw(
-            self.i_p_coolant_pumping,
-            p_fw_heat_deposited_mw,
-            p_div_heat_deposited_mw,
-            p_fw_div_heat_deposited_mw,
-        )
-        return p_fw_div_heat_deposited_mw_next
 
 
-class PFwBlktCoolantPumpMwStep(FixedPointFunction):
-    """The `.primary_pumping.p_fw_blkt_coolant_pump_mw` self-loop, cut.
+class PFwBlktCoolantPumpMw(ExplicitFunction):
+    """`.primary_pumping.p_fw_blkt_coolant_pump_mw` at the `.fwbs.i_p_coolant_pumping`
+    values where `power` owns it: `USER_INPUT` and `FRACTION_OF_HEAT`.
 
-    `calculate_component_thermal_powers` takes `p_fw_blkt_coolant_pump_mw` as the
-    entering value of a **conditional-ownership pass-through** (see that function's
-    own docstring and `thermal_cryo.md`): owned here (recomputed from
-    `p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw`) whenever `i_p_coolant_pumping`
-    is `USER_INPUT`/`FRACTION_OF_HEAT`; passed through unchanged (produced elsewhere,
-    `process/models/blankets/hcpb.py`/`blanket_library.py`, unit #13, not yet ported)
-    for `MECHANICAL`/`MECHANICAL_WITH_PRESSURE_DROP`. Same read-before-(re)write shape
-    as the other five self-loops in this file -- and the simplest of the six, since
-    the shared helper `calculate_p_fw_blkt_coolant_pump_mw` (already extracted for
-    `DeltaEtaStep`'s use) is a direct, self-contained function of exactly this node's
-    `step` inputs, needing no further decomposition.
-
-    **Piecewise degenerate, not uniform**: gradient w.r.t. the entering
-    `p_fw_blkt_coolant_pump_mw` is exactly `1` (identity) for `i_p_coolant_pumping in
-    {MECHANICAL, MECHANICAL_WITH_PRESSURE_DROP}`, exactly `0` otherwise (recomputed
-    from `p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw` alone). Confirmed by
-    `jax.grad` in `test_p_fw_blkt_coolant_pump_mw_step_gradient`.
+    **This was `PFwBlktCoolantPumpMwStep`, a `FixedPointFunction`, and it is not one
+    now.** The slot already spelled the other two values as `None` (arm `1` of
+    `indat.P_FW_BLKT_COOLANT_PUMP` -- `hcpb.py` owns the field on `MECHANICAL` /
+    `MECHANICAL_WITH_PRESSURE_DROP`), so the occupant's own `i_p_coolant_pumping` kwarg
+    could only ever hold a value on which the body's `if` takes the *computing* branch.
+    Carrying the switch made the node read the field it owns for a branch it can never
+    take; removing it makes the node an ordinary sum of two pump powers.
     """
-
-    i_p_coolant_pumping: PumpingPowerModelTypes = eqx.field(static=True)
 
     p_fw_blkt_coolant_pump_mw = OutputInto(primary_pumping)
 
-    def step(
+    def __call__(
         self,
-        p_fw_blkt_coolant_pump_mw=From(primary_pumping),
         p_fw_coolant_pump_mw=From(heat_transport),
         p_blkt_coolant_pump_mw=From(heat_transport),
     ):
-        p_fw_blkt_coolant_pump_mw_next = calculate_p_fw_blkt_coolant_pump_mw(
-            self.i_p_coolant_pumping,
-            p_fw_coolant_pump_mw,
-            p_blkt_coolant_pump_mw,
-            p_fw_blkt_coolant_pump_mw,
-        )
-        return p_fw_blkt_coolant_pump_mw_next
+        return p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw
 
 
 class Cryo(ExplicitFunction):
@@ -1825,51 +2029,39 @@ class CryoQNucStep(FixedPointFunction):
         )
 
 
-class CryoQLoadsStep(FixedPointFunction):
-    """The `.power.qss`/`qac`/`qcl`/`qmisc` self-loop, cut -- one node, four unknowns.
+class CryoQLoads(ExplicitFunction):
+    """The `.power.qss`/`qac`/`qcl`/`qmisc` family -- one occupant per arm of
+    `.tfcoil.i_tf_sup` x `.pf_coil.i_pf_conductor`.
 
-    `Power.calculate_cryo_loads` calls `Power.cryo` only when
-    `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` (`power.py:1054-1057`);
-    outside that guard these four fields are left exactly as they entered, so the
-    ported `calculate_cryo_loads` threads them through as pass-through parameters and
-    the corresponding node both reads and owns them. Shape B again, same treatment as
-    the six self-loops above and as `CryoQNucStep`.
+    **This was `CryoQLoadsStep`, a `FixedPointFunction`, and splitting the two switches
+    deleted the fixed point.** `Power.calculate_cryo_loads` calls `Power.cryo` only
+    when `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` (`power.py:1054-1057`);
+    outside that guard the four fields are left exactly as they entered, and the node
+    read what it owned purely to pass it through. That arm is an **empty slot**
+    (`indat.CRYO_Q_LOADS[2] is None`): the four fields are inputs there. Inside the
+    guard neither occupant reads any of the four, so neither is a fixed point.
 
-    All four share **one** guard and are written together by one PROCESS statement
-    block, so they are one `FixedPointFunction` with four `Output`s rather than four
-    nodes: `g` is either constant in all four unknowns (guard true) or the identity in
-    all four (guard false), never a mixture. That homogeneity is what
-    `sand.degenerate_fixed_points` needs -- see `CryoQNucStep`'s docstring for why
-    `.fwbs.qnuc` is *not* folded in here despite being written by the same PROCESS
-    function.
+    The two computing arms differ by three reads: `qss` carries the TF cryogenic
+    surface and `qcl` the TF turn current only when the TF coil is superconducting, so
+    the resistive-TF occupant declares neither `.tfcoil.tfcryoarea` nor
+    `.tfcoil.c_tf_turn` nor `.tfcoil.n_tf_coils`.
 
     **`qnuc` is read, not recomputed.** `qmisc = 0.45 * (qss + qnuc + qac + qcl)` uses
-    the value `Power.cryo` has just written, so this node reads `.fwbs.qnuc` -- the
-    real `VarPath` `CryoQNucStep`'s paired `FixedPoint` owns. That is an ordinary
-    edge, not a cycle: `CryoQNucStep` reads only `.fwbs.p_tf_nuclear_heat_mw` and its
-    own minted copy, neither of which this node owns. (The "rebuild from raw inputs
-    rather than read another node's `Output`" rule `DeltaEtaStep` follows exists to
-    avoid recreating a two-node cycle; there is no cycle to avoid here.)
-
-    **Under the reference configuration the fixed point is well-posed, not
-    degenerate**: `i_tf_sup = 1` makes the guard true, so `g` does not depend on any
-    of the four unknowns and the residual Jacobian is exactly `-I`.
+    the value `Power.cryo` has just written, so both occupants read `.fwbs.qnuc` -- the
+    real `VarPath` `CryoQNuc` owns. An ordinary edge, not a cycle.
     """
-
-    i_tf_sup: TFConductorModel = eqx.field(static=True)
-    i_pf_conductor: PFConductorModel = eqx.field(static=True)
 
     qss = OutputInto(power)
     qac = OutputInto(power)
     qcl = OutputInto(power)
     qmisc = OutputInto(power)
 
-    def step(
+
+class CryoQLoadsSuperconductingTf(CryoQLoads):
+    """`i_tf_sup == SUPERCONDUCTING` (1) -- the reference run's."""
+
+    def __call__(
         self,
-        qss=From(power),
-        qac=From(power),
-        qcl=From(power),
-        qmisc=From(power),
         qnuc=From(fwbs),
         tfcryoarea=From(tfcoil),
         coldmass=From(structure),
@@ -1878,10 +2070,7 @@ class CryoQLoadsStep(FixedPointFunction):
         c_tf_turn=From(tfcoil),
         n_tf_coils=From(tfcoil),
     ):
-        if not cryo_is_active(self.i_tf_sup, self.i_pf_conductor):
-            return qss, qac, qcl, qmisc
-        return calculate_cryo_q_loads(
-            self.i_tf_sup,
+        return calculate_cryo_q_loads_superconducting_tf(
             tfcryoarea,
             coldmass,
             ensxpfm,
@@ -1892,45 +2081,67 @@ class CryoQLoadsStep(FixedPointFunction):
         )
 
 
+class CryoQLoadsResistiveTf(CryoQLoads):
+    """`i_tf_sup != SUPERCONDUCTING` with `i_pf_conductor == SUPERCONDUCTING` -- the
+    PF coils are what needs cooling.
+
+    **Three reads leave with this occupant**: `.tfcoil.tfcryoarea`,
+    `.tfcoil.c_tf_turn`, `.tfcoil.n_tf_coils`.
+    """
+
+    def __call__(
+        self,
+        qnuc=From(fwbs),
+        coldmass=From(structure),
+        ensxpfm=From(pf_power),
+        t_plant_pulse_plasma_present=From(times),
+    ):
+        return calculate_cryo_q_loads_resistive_tf(
+            coldmass, ensxpfm, t_plant_pulse_plasma_present, qnuc
+        )
+
+
 class CryoLoads(ExplicitFunction):
-    """cottax node: `calculate_cryo_plant_loads` -- the unconditionally-owned part of
-    `Power.calculate_cryo_loads`.
+    """The unconditionally-owned part of `Power.calculate_cryo_loads` -- one occupant
+    per arm of `.tfcoil.i_tf_sup` x `.pf_coil.i_pf_conductor`.
 
     Owns the four fields that method writes on every path through it:
     `.heat_transport.helpow`, `.heat_transport.p_cryo_plant_electric_mw`,
     `.heat_transport.helpow_cryal` and `.tfcoil.cryo_cool_req`. The five conditionally
-    owned `q*` fields moved to `CryoQNucStep`/`CryoQLoadsStep` and are read here as
-    plain `FromExactly`s -- the same division `ComponentThermalPowers` has with the six
-    `*Step` nodes above it, and for the same reason: two nodes owning one `VarPath`
-    is an ownership collision `Graph` would reject, and would defeat the split.
+    owned `q*` fields belong to `CryoQNuc`/`CryoQLoads` and are read here as plain
+    `FromExactly`s.
 
-    `.fwbs.inuclear` is no longer a static field of this node: `qnuc` arrives already
-    resolved from `CryoQNucStep`, which is the only place that switch is read.
+    **Both switches were `eqx.field(static=True)`s here and neither is now**
+    (`_audit/next_steps.md` §14.2). They gate two things: whether the cryoplant runs at
+    all, and whether the TF coil is aluminium. The second has no occupant --
+    `('i_tf_sup', 2)` is `UNPORTED` at the `power.tf_power` slot -- so **four reads
+    leave the family entirely**: `.tfcoil.p_cp_resistive`,
+    `.tfcoil.p_tf_leg_resistive`, `.tfcoil.p_tf_joints_resistive` and
+    `.fwbs.pnuc_cp_tf` are the aluminium arm's alone. The first splits the remaining
+    two occupants, and the inactive one reads neither `.tfcoil.eff_tf_cryo` nor any of
+    the five `q*` fields.
 
     **What registering it closes.** `.heat_transport.helpow` (read by `Bldgs` and
     `CryogenicSystemCost`) and `.heat_transport.p_cryo_plant_electric_mw` (read by
-    `Acpow`, `PlantElectricProductionReactor` and `AuxiliaryComponentCoolingCost`)
-    were boundary inputs -- five registered readers consuming seeded values for a
-    quantity PROCESS computes on this run's path. See
-    `_audit/boundary_inputs_audit.md` §4c (b9)/(b10) and §7 item 7.
+    `Acpow`, the electric-production occupants and `AuxiliaryComponentCoolingCost`)
+    were boundary inputs -- see `_audit/boundary_inputs_audit.md` §4c (b9)/(b10).
     """
-
-    i_tf_sup: TFConductorModel = eqx.field(static=True)
-    i_pf_conductor: PFConductorModel = eqx.field(static=True)
 
     helpow = OutputInto(heat_transport)
     p_cryo_plant_electric_mw = OutputInto(heat_transport)
     helpow_cryal = OutputInto(heat_transport)
     cryo_cool_req = OutputInto(tfcoil)
 
+
+class CryoLoadsActive(CryoLoads):
+    """`i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING` -- the reference run's.
+    The cryoplant runs, so the five `q*` terms and `.tfcoil.eff_tf_cryo` are live.
+    """
+
     def __call__(
         self,
         eff_tf_cryo=From(tfcoil),
         temp_tf_cryo=From(tfcoil),
-        p_cp_resistive=From(tfcoil),
-        p_tf_leg_resistive=From(tfcoil),
-        p_tf_joints_resistive=From(tfcoil),
-        pnuc_cp_tf=From(fwbs),
         temp_cp_coolant_inlet=From(tfcoil),
         qss=From(power),
         qac=From(power),
@@ -1938,15 +2149,9 @@ class CryoLoads(ExplicitFunction):
         qmisc=From(power),
         qnuc=From(fwbs),
     ):
-        return calculate_cryo_plant_loads(
-            self.i_tf_sup,
-            self.i_pf_conductor,
+        return calculate_cryo_plant_loads_active(
             eff_tf_cryo,
             temp_tf_cryo,
-            p_cp_resistive,
-            p_tf_leg_resistive,
-            p_tf_joints_resistive,
-            pnuc_cp_tf,
             temp_cp_coolant_inlet,
             qss,
             qac,
@@ -1954,3 +2159,20 @@ class CryoLoads(ExplicitFunction):
             qmisc,
             qnuc,
         )
+
+
+class CryoLoadsInactive(CryoLoads):
+    """`i_tf_sup != 1` with resistive PF coils: PROCESS never calls `Power.cryo`, so
+    `helpow` and `p_cryo_plant_electric_mw` are literal zeros.
+
+    **Six reads leave with this occupant**: `.tfcoil.eff_tf_cryo` and the five `q*`
+    fields. `temp_tf_cryo`/`temp_cp_coolant_inlet` stay because `cryo_cool_req`'s
+    formula divides by both unconditionally, exactly as PROCESS's does.
+    """
+
+    def __call__(
+        self,
+        temp_tf_cryo=From(tfcoil),
+        temp_cp_coolant_inlet=From(tfcoil),
+    ):
+        return calculate_cryo_plant_loads_inactive(temp_tf_cryo, temp_cp_coolant_inlet)

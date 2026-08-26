@@ -132,13 +132,24 @@ def test_the_large_tokamak_is_ten_new_decisions():
         kind: sum(1 for r in rows if r.verdict == kind)
         for kind in ("factory", "pinned", "unknown", "not-topology")
     }
-    # 7 -> 15 `factory`, 3 -> 2 `pinned`, 17 -> 10 `unknown`, over one wave. The seven
-    # that moved out of `unknown` are `i_div_heat_load`, `i_hcd_primary`,
-    # `i_plasma_current`, `i_plasma_geometry`, `i_single_null`, `pulsetimings` and
-    # `n_tf_coils`; `i_p_coolant_pumping` and `i_plasma_pedestal` moved out of `pinned`.
-    # What is left is the unported half of the device: bootstrap current, the density
-    # limit, plasma inductance, beta components, the PF coil system and the shield.
-    assert kinds == {"factory": 15, "pinned": 2, "unknown": 10, "not-topology": 6}
+    # 7 -> 15 -> 17 `factory`, 3 -> 2 -> **0** `pinned`, 17 -> 10 `unknown`, over two
+    # waves. The seven that moved out of `unknown` are `i_div_heat_load`,
+    # `i_hcd_primary`, `i_plasma_current`, `i_plasma_geometry`, `i_single_null`,
+    # `pulsetimings` and `n_tf_coils`; `i_p_coolant_pumping` and `i_plasma_pedestal`
+    # moved out of `pinned` in the first wave.
+    #
+    # **`pinned` is empty**, and that is `_audit/next_steps.md` §14.2's whole point:
+    # a switch this file sets is now either read by the factory or genuinely not a
+    # topology decision. The last two, `i_blkt_dual_coolant` and
+    # `i_thermal_electric_conversion`, are still `eqx.field(static=True)` on
+    # `ComponentThermalPowers`/`DeltaEtaStep` -- but the factory reads them and threads
+    # them, so no slot can contradict the file. `machine_survey` classifies on what the
+    # factory reads, not on what a node carries, which is why they count as `factory`.
+    #
+    # What is left in `unknown` is the unported half of the device: bootstrap current,
+    # the density limit, plasma inductance, beta components, the PF coil system and the
+    # shield.
+    assert kinds == {"factory": 17, "pinned": 0, "unknown": 10, "not-topology": 6}
     assert sum(kinds.values()) == len(rows) == 33
 
 

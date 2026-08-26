@@ -48,6 +48,7 @@ from functional_process.models.pfcoil import (
     NGC2,
     PLASMA_INDEX,
 )
+from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import fwbs, pf_coil, physics, tfcoil
 
 I_PF_SUPERCONDUCTOR = 3
@@ -126,7 +127,11 @@ def calculate_pf_coil_sizes(
     )
     turns_pf = jnp.abs(peak * 1.0e6 / c_pf_coil_turn_peak_input[:N_PF_COILS])
 
-    dx = 0.5 * jnp.sqrt(area)  # square cross-section
+    # Square cross-section. `safe_sqrt`, not `jnp.sqrt`: `area` is zero whenever
+    # `pf_current_safety_factor` or a coil's peak current is, and `sqrt`'s derivative
+    # there is `inf` while its value is correct -- `_audit/next_steps.md` §9's trap, and
+    # `test_gradient_finite_at_zero` catches it at exactly that point.
+    dx = 0.5 * safe_sqrt(area)
     r_mid = r_pf_coil_middle[:N_PF_COILS]
     z_mid = z_pf_coil_middle[:N_PF_COILS]
 
@@ -194,7 +199,7 @@ def calculate_pf_coil_masses(
     f_a_cs_turn_steel,
     f_a_cs_void,
 ):
-    """Conductor and steel mass of every coil, and the totals the rest of the plant reads.
+    """Conductor and steel mass of every coil, and the totals the plant reads.
 
     Ports `pfcoil()`'s per-coil mass loop (`process/models/pfcoil.py:849-1026`) at
     `i_pf_conductor = SUPERCONDUCTING`, `ohcalc`'s CS steel and conductor

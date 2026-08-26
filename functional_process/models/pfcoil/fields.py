@@ -46,7 +46,6 @@ from cottax.interfaces.pytree_namespace_module import (
     Output,
     OutputInto,
 )
-from process.core import constants
 
 from functional_process.models.pfcoil import (
     CS_INDEX,
@@ -58,6 +57,7 @@ from functional_process.models.pfcoil import (
     NGC2,
 )
 from functional_process.paths import pf_coil, physics
+from process.core import constants
 
 RMU0 = constants.RMU0
 """Vacuum permeability (H/m), `process/core/constants.py:277`. Imported rather than
@@ -126,7 +126,7 @@ def calculate_b_field_at_point(
     dr = r_test_point - r_current_loop
     sd = jnp.sqrt(d)
 
-    dr = jnp.where(dr == 0.0, _DR_FLOOR, dr)
+    dr = jnp.where(dr == 0.0, _DR_FLOOR, dr)  # noqa: RUF069 -- `pfcoil.py:5012`'s own
 
     # Elliptic integrals K and E.
     xk = (
@@ -433,7 +433,13 @@ def calculate_pf_coil_peak_fields(
 
 
 def _group_of_coil(coil):
-    """Group index of a flattened coil index, on the reference topology."""
+    """Group index of a flattened coil index, on the reference topology.
+
+    Raises
+    ------
+    IndexError
+        If `coil` is not one of the six PF coils this topology has.
+    """
     seen = 0
     for group, n in enumerate(N_COILS_IN_GROUP):
         seen += n

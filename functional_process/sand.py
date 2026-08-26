@@ -448,9 +448,14 @@ def degenerate_fixed_points(graph, env, problems=None):
     perfectly well-posed Picard problem -- it converges in one step from anywhere -- and
     a **rank-deficient SAND equality**: `r = g(u) - u == 0` for every `u` determines
     nothing, so the equality block is singular and any SQP fails on it. Two of this
-    graph's fixed points are in that state under the reference configuration
-    (`EtaTurbineStep` at `i_thermal_electric_conversion == 2`, whose own docstring says
-    it is an identity on the pass-through sub-branches, and `CplifeAvail`).
+    graph's fixed points *were* in that state under the reference configuration
+    (`EtaTurbineStep` at `i_thermal_electric_conversion == 2` and `CplifeAvail` at
+    `itart == 0`) -- **and neither exists any more**. Splitting the switch each carried
+    showed the identity arm is PROCESS saying the field is an *input*, so the tree spells
+    it as an empty slot instead of a residual to differentiate
+    (`_audit/next_steps.md` §14.2/§14.11). This function stays, and its shape is the
+    reason: it recovers the property at runtime for *any* configuration, where the tree
+    states it only for the switches someone has split.
 
     Detected, not listed: each candidate's `d(g(u) - u)/du` is differentiated at `env`'s
     own values and reported degenerate when the whole row **and** column vanish. Listing
@@ -472,8 +477,9 @@ def degenerate_fixed_points(graph, env, problems=None):
         # Including them put a `^guess.*` in `step`'s output stack, where `env` has no
         # value for it -- a `KeyError` the bare `except` below then swallowed, so every
         # fixed point silently reported "not degenerate" and the two identity ones
-        # (`eta_turbine_step`, `cplife_avail`) reached `reduce_jacobian` as exactly-zero
-        # rows of `J_RY`, i.e. a singular equality block.
+        # (`eta_turbine_step`, `cplife_avail`, both since deleted by the switch
+        # conversion) reached `reduce_jacobian` as exactly-zero rows of `J_RY`, i.e. a
+        # singular equality block.
         owns, reads = definition.owns, conditions_of(definition)
         producers = {r: graph.owners[r] for r in reads if r in graph.owners}
         body = graph.subgraph(tuple(set(producers.values())))
@@ -551,7 +557,9 @@ def residual_condition_scales(drive, env, floor=1e-12):
     largest number in the whole problem by nine orders of magnitude.
 
     **Measured, and this is the bug it caused.** `.power.qac` (cryogenic AC-loss load,
-    one of `CryoQLoadsStep`'s four unknowns) is *identically* zero on the reference run
+    one of the four the cryo `q*` node owns -- `CryoQLoadsStep`'s unknowns then, an
+    ordinary `CryoQLoads` occupant's outputs now) is *identically* zero on the reference
+    run
     -- `ensxpfm = 0`, there being no PF energy swing to dissipate -- so its residual row
     is exactly `(0, ..., -1, ..., 0)`: the trivial, perfectly well-posed equality
     `u = 0`. Clamped, that row entered VMCON's QP at `-1e12`, nine orders of magnitude

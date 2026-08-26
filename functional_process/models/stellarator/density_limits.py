@@ -17,7 +17,6 @@ PROCESS storage: `st_d_limit_ecrh`'s return values are locals in its caller
 -- a static field on the node, per `naming_convention.md`'s "switches are not ports".
 """
 
-import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -27,7 +26,6 @@ from cottax.interfaces.pytree_namespace_module import (
 
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import physics, stellarator
-from process.models.physics.profiles import PlasmaProfileShapeType
 
 _SUDO_COEFFICIENT = 0.25e20
 """Sudo et al. (Nucl. Fusion 30, 11, 1990) line-averaged density limit prefactor."""
@@ -139,7 +137,25 @@ def calculate_ecrh_density_limit(
             "st_d_limit_ecrh has no formula for any other value (it raises "
             "UnboundLocalError). See density_limits.md open question 2"
         )
+    return calculate_ecrh_density_limit_parabolic(
+        gyro_frequency_max, b_plasma_toroidal_on_axis
+    )
 
+
+def calculate_ecrh_density_limit_parabolic(
+    gyro_frequency_max, b_plasma_toroidal_on_axis
+):
+    """`st_d_limit_ecrh`'s only arm: `i_plasma_pedestal == PARABOLIC_PROFILE` (0).
+
+    Split out of the composite above so `EcrhDensityLimit` can drop its
+    `i_plasma_pedestal` static kwarg (`_audit/next_steps.md` §14.2). The composite keeps
+    the precondition -- it is what the harness diffs against `st_d_limit_ecrh` -- and
+    the node no longer restates a value its own container already decides: this node
+    exists only inside `ProfileParameterisationParabolic`, which *is* the answer to
+    `i_plasma_pedestal`, and PROCESS computes no ECRH density limit outside it.
+
+    Parameters and returns are the composite's, less `i_plasma_pedestal`.
+    """
     gyro_frequency_max_rad = gyro_frequency_max * 2.0 * jnp.pi
 
     gyro_frequency = jnp.minimum(
@@ -182,14 +198,18 @@ class SudoDensityLimit(ExplicitFunction):
 
 
 class EcrhDensityLimit(ExplicitFunction):
-    """cottax node: `calculate_ecrh_density_limit`, unchanged, ports declared.
+    """cottax node: `calculate_ecrh_density_limit_parabolic`, ports declared.
 
-    `i_plasma_pedestal` is a precondition, not a port -- see module docstring. No
-    default: the graph-assembly step must say explicitly which precondition it is
-    relying on, rather than silently inheriting one.
+    **`i_plasma_pedestal` was an `eqx.field(static=True)` here and is gone**
+    (`_audit/next_steps.md` §14.2). It was the one static switch in the tree that could
+    not disagree with anything: this node is a slot of `ProfileParameterisationParabolic`
+    and nowhere else, so its container already *is* the answer, and `switch_kwarg_survey.md`
+    band (c) said so -- *"should simply be deleted: its container occupant already encodes
+    it and cannot disagree"*. There is no family here and no second occupant: PROCESS
+    computes no ECRH density limit at any other value (`st_d_limit_ecrh` raises
+    `UnboundLocalError`), which is why the pedestal occupant has no `ecrh_density_limit`
+    slot at all rather than an `UNPORTED` entry.
     """
-
-    i_plasma_pedestal: PlasmaProfileShapeType = eqx.field(static=True)
 
     dlimit_ecrh = OutputInto(stellarator)
     bt_max_ecrh = OutputInto(stellarator)
@@ -199,6 +219,6 @@ class EcrhDensityLimit(ExplicitFunction):
         max_gyrotron_frequency=From(stellarator),
         b_plasma_toroidal_on_axis=From(physics),
     ):
-        return calculate_ecrh_density_limit(
-            max_gyrotron_frequency, b_plasma_toroidal_on_axis, self.i_plasma_pedestal
+        return calculate_ecrh_density_limit_parabolic(
+            max_gyrotron_frequency, b_plasma_toroidal_on_axis
         )

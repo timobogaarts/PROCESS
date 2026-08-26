@@ -59,12 +59,10 @@ calc_neoclassics) stays out of this file -- either it already has a node elsewhe
 calc_neoclassics' incomplete orchestrator -- all audit-only, see the record).
 """
 
-import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_sqrt
-from functional_process.models.switch_enums import NeutronWallLoadModel, PowerFlowModel
 from functional_process.paths import (
     constraints,
     current_drive,
@@ -74,7 +72,6 @@ from functional_process.paths import (
     stellarator,
 )
 from process.core import constants
-from process.data_structure.physics_variables import PlasmaIgnitionModel
 
 
 def calculate_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_average):
@@ -337,13 +334,72 @@ def calculate_neutron_wall_load(
     `fast_alpha_beta` already use.
     """
     if i_pflux_fw_neutron == 1:
-        return ffwal * p_neutron_total_mw / a_plasma_surface
+        return calculate_neutron_wall_load_scaled_plasma_surface(
+            ffwal, p_neutron_total_mw, a_plasma_surface
+        )
     if ipowerflow == 0:
-        return (1.0e0 - fhole) * p_neutron_total_mw / a_fw_total
+        return calculate_neutron_wall_load_first_wall_area_pre_2014(
+            p_neutron_total_mw, fhole, a_fw_total
+        )
+    return calculate_neutron_wall_load_first_wall_area_comprehensive_2014(
+        p_neutron_total_mw, fhole, a_fw_total, f_a_fw_outboard_hcd, f_ster_div_single
+    )
+
+
+def _wall_load_scaled_plasma_surface(ffwal, power_mw, a_plasma_surface):
+    """`i_pflux_fw_neutron == SCALED_PLASMA_SURFACE_AREA` (1): the flux is the power
+    over the *plasma* surface, scaled by `ffwal` (`stellarator.py:2100`).
+
+    **Reads no first-wall field at all** -- not `.fwbs.fhole`, not
+    `.first_wall.a_fw_total`, not `f_a_fw_outboard_hcd`/`f_ster_div_single`. That is
+    the four-edge difference the `i_pflux_fw_neutron` static kwarg invented on each of
+    the two wall-load nodes, and `.first_wall.a_fw_total` is `stellarator.fw_area`'s own
+    output -- so the invented edge crossed a slot the factory already resolves
+    (`_audit/switch_kwarg_survey.md` band (b2)).
+    """
+    return ffwal * power_mw / a_plasma_surface
+
+
+def _wall_load_first_wall_area_pre_2014(power_mw, fhole, a_fw_total):
+    """`i_pflux_fw_neutron != 1` with `ipowerflow == PRE_2014` (0): the power over the
+    first-wall area, less the hole fraction (`stellarator.py:2107`).
+    """
+    return (1.0e0 - fhole) * power_mw / a_fw_total
+
+
+def _wall_load_first_wall_area_comprehensive_2014(
+    power_mw, fhole, a_fw_total, f_a_fw_outboard_hcd, f_ster_div_single
+):
+    """`i_pflux_fw_neutron != 1` with `ipowerflow == COMPREHENSIVE_2014` (1): as
+    `_wall_load_first_wall_area_pre_2014`, with the HCD-port and divertor solid angles
+    also removed (`stellarator.py:2112-2116`).
+    """
     return (
-        (1.0e0 - fhole - f_a_fw_outboard_hcd - f_ster_div_single)
-        * p_neutron_total_mw
-        / a_fw_total
+        (1.0e0 - fhole - f_a_fw_outboard_hcd - f_ster_div_single) * power_mw / a_fw_total
+    )
+
+
+def calculate_neutron_wall_load_scaled_plasma_surface(
+    ffwal, p_neutron_total_mw, a_plasma_surface
+):
+    """`calculate_neutron_wall_load`'s `SCALED_PLASMA_SURFACE_AREA` arm -- the
+    reference run's."""
+    return _wall_load_scaled_plasma_surface(ffwal, p_neutron_total_mw, a_plasma_surface)
+
+
+def calculate_neutron_wall_load_first_wall_area_pre_2014(
+    p_neutron_total_mw, fhole, a_fw_total
+):
+    """`calculate_neutron_wall_load`'s `(FIRST_WALL_AREA, PRE_2014)` arm."""
+    return _wall_load_first_wall_area_pre_2014(p_neutron_total_mw, fhole, a_fw_total)
+
+
+def calculate_neutron_wall_load_first_wall_area_comprehensive_2014(
+    p_neutron_total_mw, fhole, a_fw_total, f_a_fw_outboard_hcd, f_ster_div_single
+):
+    """`calculate_neutron_wall_load`'s `(FIRST_WALL_AREA, COMPREHENSIVE_2014)` arm."""
+    return _wall_load_first_wall_area_comprehensive_2014(
+        p_neutron_total_mw, fhole, a_fw_total, f_a_fw_outboard_hcd, f_ster_div_single
     )
 
 
@@ -377,6 +433,100 @@ def calculate_heating_and_radiation_power(
     :
         `(p_plasma_rad_mw, psolradmw, p_plasma_separatrix_mw, p_fw_alpha_mw)`.
     """
+    if i_plasma_ignited == 0:  # PlasmaIgnitionModel.NON_IGNITED
+        return calculate_heating_and_radiation_power_non_ignited(
+            f_p_alpha_plasma_deposited,
+            p_alpha_total_mw,
+            p_non_alpha_charged_mw,
+            p_plasma_ohmic_mw,
+            pden_plasma_rad_mw,
+            vol_plasma,
+            f_rad,
+            p_hcd_injected_total_mw,
+        )
+    return calculate_heating_and_radiation_power_ignited(
+        f_p_alpha_plasma_deposited,
+        p_alpha_total_mw,
+        p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw,
+        pden_plasma_rad_mw,
+        vol_plasma,
+        f_rad,
+    )
+
+
+def calculate_heating_and_radiation_power_ignited(
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    pden_plasma_rad_mw,
+    vol_plasma,
+    f_rad,
+):
+    """`i_plasma_ignited == IGNITED` (1) -- the reference run's.
+
+    **`.current_drive.p_hcd_injected_total_mw` is not read at all**: an ignited plasma
+    adds no injected heating to `powht` (`stellarator.py:2183`). That single read is a
+    `.current_drive -> .physics` edge no ignited run makes, and it is the one the
+    `i_plasma_ignited` static kwarg invented here.
+    """
+    return _heating_and_radiation_power(
+        0.0,
+        f_p_alpha_plasma_deposited,
+        p_alpha_total_mw,
+        p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw,
+        pden_plasma_rad_mw,
+        vol_plasma,
+        f_rad,
+    )
+
+
+def calculate_heating_and_radiation_power_non_ignited(
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    pden_plasma_rad_mw,
+    vol_plasma,
+    f_rad,
+    p_hcd_injected_total_mw,
+):
+    """`i_plasma_ignited == NON_IGNITED` (0) -- PROCESS's own default.
+
+    The injected heating joins `powht` after the `1e-5` clamp, which is why it is added
+    to the *clamped* value rather than folded into the sum.
+    """
+    return _heating_and_radiation_power(
+        p_hcd_injected_total_mw,
+        f_p_alpha_plasma_deposited,
+        p_alpha_total_mw,
+        p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw,
+        pden_plasma_rad_mw,
+        vol_plasma,
+        f_rad,
+    )
+
+
+def _heating_and_radiation_power(
+    p_hcd_added_mw,
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    pden_plasma_rad_mw,
+    vol_plasma,
+    f_rad,
+):
+    """The body both `i_plasma_ignited` arms share, given the injected-heating term the
+    arm contributes to `powht` -- a literal `0.0` when ignited.
+
+    Written as an added term rather than as a branch so the two arms differ by data and
+    not by an integer, and so `powht + 0.0` is the identical floating-point expression
+    the ignited branch had (the clamp is applied first either way).
+    """
     p_plasma_rad_mw_raw = pden_plasma_rad_mw * vol_plasma
 
     powht = (
@@ -387,8 +537,7 @@ def calculate_heating_and_radiation_power(
     )
     powht = jnp.maximum(0.00001e0, powht)
 
-    if i_plasma_ignited == 0:  # PlasmaIgnitionModel.NON_IGNITED
-        powht = powht + p_hcd_injected_total_mw
+    powht = powht + p_hcd_added_mw
 
     psolradmw = f_rad * powht
     p_plasma_separatrix_mw = powht - psolradmw
@@ -428,17 +577,121 @@ def calculate_radiated_wall_load_and_fraction(
     any sampled operating point, flagged as an open question rather than silently
     patched).
     """
+    shared = (
+        p_plasma_rad_mw,
+        f_fw_rad_max,
+        f_p_alpha_plasma_deposited,
+        p_alpha_total_mw,
+        p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw,
+        p_hcd_injected_total_mw,
+    )
     if i_pflux_fw_neutron == 1:
-        pflux_fw_rad_mw = ffwal * p_plasma_rad_mw / a_plasma_surface
-    elif ipowerflow == 0:
-        pflux_fw_rad_mw = (1.0e0 - fhole) * p_plasma_rad_mw / a_fw_total
-    else:
-        pflux_fw_rad_mw = (
-            (1.0e0 - fhole - f_a_fw_outboard_hcd - f_ster_div_single)
-            * p_plasma_rad_mw
-            / a_fw_total
+        return calculate_radiated_wall_load_scaled_plasma_surface(
+            ffwal, a_plasma_surface, *shared
         )
+    if ipowerflow == 0:
+        return calculate_radiated_wall_load_first_wall_area_pre_2014(
+            fhole, a_fw_total, *shared
+        )
+    return calculate_radiated_wall_load_first_wall_area_comprehensive_2014(
+        fhole, a_fw_total, f_a_fw_outboard_hcd, f_ster_div_single, *shared
+    )
 
+
+def calculate_radiated_wall_load_scaled_plasma_surface(
+    ffwal,
+    a_plasma_surface,
+    p_plasma_rad_mw,
+    f_fw_rad_max,
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+):
+    """`calculate_radiated_wall_load_and_fraction`'s `SCALED_PLASMA_SURFACE_AREA` arm --
+    the reference run's. Reads no first-wall field; see
+    `_wall_load_scaled_plasma_surface`."""
+    return _radiated_wall_load(
+        _wall_load_scaled_plasma_surface(ffwal, p_plasma_rad_mw, a_plasma_surface),
+        p_plasma_rad_mw,
+        f_fw_rad_max,
+        f_p_alpha_plasma_deposited,
+        p_alpha_total_mw,
+        p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw,
+        p_hcd_injected_total_mw,
+    )
+
+
+def calculate_radiated_wall_load_first_wall_area_pre_2014(
+    fhole,
+    a_fw_total,
+    p_plasma_rad_mw,
+    f_fw_rad_max,
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+):
+    """`calculate_radiated_wall_load_and_fraction`'s `(FIRST_WALL_AREA, PRE_2014)`
+    arm."""
+    return _radiated_wall_load(
+        _wall_load_first_wall_area_pre_2014(p_plasma_rad_mw, fhole, a_fw_total),
+        p_plasma_rad_mw,
+        f_fw_rad_max,
+        f_p_alpha_plasma_deposited,
+        p_alpha_total_mw,
+        p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw,
+        p_hcd_injected_total_mw,
+    )
+
+
+def calculate_radiated_wall_load_first_wall_area_comprehensive_2014(
+    fhole,
+    a_fw_total,
+    f_a_fw_outboard_hcd,
+    f_ster_div_single,
+    p_plasma_rad_mw,
+    f_fw_rad_max,
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+):
+    """`calculate_radiated_wall_load_and_fraction`'s
+    `(FIRST_WALL_AREA, COMPREHENSIVE_2014)` arm."""
+    return _radiated_wall_load(
+        _wall_load_first_wall_area_comprehensive_2014(
+            p_plasma_rad_mw, fhole, a_fw_total, f_a_fw_outboard_hcd, f_ster_div_single
+        ),
+        p_plasma_rad_mw,
+        f_fw_rad_max,
+        f_p_alpha_plasma_deposited,
+        p_alpha_total_mw,
+        p_non_alpha_charged_mw,
+        p_plasma_ohmic_mw,
+        p_hcd_injected_total_mw,
+    )
+
+
+def _radiated_wall_load(
+    pflux_fw_rad_mw,
+    p_plasma_rad_mw,
+    f_fw_rad_max,
+    f_p_alpha_plasma_deposited,
+    p_alpha_total_mw,
+    p_non_alpha_charged_mw,
+    p_plasma_ohmic_mw,
+    p_hcd_injected_total_mw,
+):
+    """The constraint bound and the total radiated fraction, which every arm shares
+    given its own photon flux.
+    """
     pflux_fw_rad_max_mw = pflux_fw_rad_mw * f_fw_rad_max
 
     rad_fraction_total = p_plasma_rad_mw / (
@@ -618,32 +871,73 @@ class ClippedRadiationPowers(ExplicitFunction):
 
 
 class NeutronWallLoad(ExplicitFunction):
-    """cottax node: `calculate_neutron_wall_load`, ports declared.
+    """The `calculate_neutron_wall_load` family -- one occupant per arm of the
+    `.physics.i_pflux_fw_neutron` x `.heat_transport.ipowerflow` dispatch.
 
-    `i_pflux_fw_neutron`/`ipowerflow` static, per this module's docstring.
+    **Both switches were `eqx.field(static=True)` here and both are gone**
+    (`_audit/next_steps.md` §14.2). The three arms read genuinely different fields, so
+    the single node declared **four dead reads** at this machine's own values --
+    `.fwbs.fhole`, `.first_wall.a_fw_total`, `.fwbs.f_a_fw_outboard_hcd` and
+    `.fwbs.f_ster_div_single`. `.first_wall.a_fw_total` is `stellarator.fw_area`'s own
+    output, so the invented edge crossed a slot the factory already resolves: this is
+    the only place in `switch_kwarg_survey.md` band (b) where that happens.
     """
 
-    i_pflux_fw_neutron: NeutronWallLoadModel = eqx.field(static=True)
-    ipowerflow: PowerFlowModel = eqx.field(static=True)
-
     pflux_fw_neutron_mw = OutputInto(physics)
+
+
+class NeutronWallLoadScaledPlasmaSurface(NeutronWallLoad):
+    """`i_pflux_fw_neutron == SCALED_PLASMA_SURFACE_AREA` (1) -- PROCESS's own default
+    (`physics_variables.py:1006`) and the reference run's. Reads no first-wall field.
+    """
 
     def __call__(
         self,
         ffwal=From(physics),
         p_neutron_total_mw=From(physics),
         a_plasma_surface=From(physics),
+    ):
+        return calculate_neutron_wall_load_scaled_plasma_surface(
+            ffwal, p_neutron_total_mw, a_plasma_surface
+        )
+
+
+class NeutronWallLoadFirstWallAreaPre2014(NeutronWallLoad):
+    """`i_pflux_fw_neutron == FIRST_WALL_AREA` (2) with `ipowerflow == PRE_2014` (0).
+
+    Reads `.fwbs.fhole` and `.first_wall.a_fw_total`, and neither `.physics.ffwal` nor
+    `.physics.a_plasma_surface`.
+    """
+
+    def __call__(
+        self,
+        p_neutron_total_mw=From(physics),
+        fhole=From(fwbs),
+        a_fw_total=From(first_wall),
+    ):
+        return calculate_neutron_wall_load_first_wall_area_pre_2014(
+            p_neutron_total_mw, fhole, a_fw_total
+        )
+
+
+class NeutronWallLoadFirstWallAreaComprehensive2014(NeutronWallLoad):
+    """`i_pflux_fw_neutron == FIRST_WALL_AREA` (2) with
+    `ipowerflow == COMPREHENSIVE_2014` (1) -- PROCESS's own `ipowerflow` default.
+
+    Its sibling's two reads plus `.fwbs.f_a_fw_outboard_hcd` and
+    `.fwbs.f_ster_div_single`.
+    """
+
+    def __call__(
+        self,
+        p_neutron_total_mw=From(physics),
         fhole=From(fwbs),
         a_fw_total=From(first_wall),
         f_a_fw_outboard_hcd=From(fwbs),
         f_ster_div_single=From(fwbs),
     ):
-        return calculate_neutron_wall_load(
-            self.i_pflux_fw_neutron,
-            self.ipowerflow,
-            ffwal,
+        return calculate_neutron_wall_load_first_wall_area_comprehensive_2014(
             p_neutron_total_mw,
-            a_plasma_surface,
             fhole,
             a_fw_total,
             f_a_fw_outboard_hcd,
@@ -652,17 +946,28 @@ class NeutronWallLoad(ExplicitFunction):
 
 
 class HeatingAndRadiationPower(ExplicitFunction):
-    """cottax node: `calculate_heating_and_radiation_power`, ports declared.
+    """The `calculate_heating_and_radiation_power` family -- one occupant per
+    `.physics.i_plasma_ignited` value.
 
-    `i_plasma_ignited` static, per this module's docstring.
+    **`i_plasma_ignited` was an `eqx.field(static=True)` here and is gone**
+    (`_audit/next_steps.md` §14.2). The ignited arm adds no injected heating, so the
+    single node declared `.current_drive.p_hcd_injected_total_mw` -- a
+    `.current_drive -> .physics` edge the reference run does not make. It is the same
+    read, for the same reason, that the confinement split removed from its own head
+    (§14.3).
     """
-
-    i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
 
     p_plasma_rad_mw = OutputInto(physics)
     psolradmw = OutputInto(physics)
     p_plasma_separatrix_mw = OutputInto(physics)
     p_fw_alpha_mw = OutputInto(physics)
+
+
+class HeatingAndRadiationPowerIgnited(HeatingAndRadiationPower):
+    """`i_plasma_ignited == IGNITED` (1) -- the reference run's.
+
+    **One read leaves with this occupant**: `.current_drive.p_hcd_injected_total_mw`.
+    """
 
     def __call__(
         self,
@@ -672,44 +977,72 @@ class HeatingAndRadiationPower(ExplicitFunction):
         p_plasma_ohmic_mw=From(physics),
         pden_plasma_rad_mw=From(physics),
         vol_plasma=From(physics),
-        p_hcd_injected_total_mw=From(current_drive),
         f_rad=From(stellarator),
     ):
-        return calculate_heating_and_radiation_power(
+        return calculate_heating_and_radiation_power_ignited(
             f_p_alpha_plasma_deposited,
             p_alpha_total_mw,
             p_non_alpha_charged_mw,
             p_plasma_ohmic_mw,
             pden_plasma_rad_mw,
             vol_plasma,
-            self.i_plasma_ignited,
-            p_hcd_injected_total_mw,
             f_rad,
         )
 
 
-class RadiatedWallLoadAndFraction(ExplicitFunction):
-    """cottax node: `calculate_radiated_wall_load_and_fraction`, ports declared.
-
-    `i_pflux_fw_neutron`/`ipowerflow` static, per this module's docstring.
+class HeatingAndRadiationPowerNonIgnited(HeatingAndRadiationPower):
+    """`i_plasma_ignited == NON_IGNITED` (0) -- PROCESS's own default
+    (`physics_variables.py:881`).
     """
 
-    i_pflux_fw_neutron: NeutronWallLoadModel = eqx.field(static=True)
-    ipowerflow: PowerFlowModel = eqx.field(static=True)
+    def __call__(
+        self,
+        f_p_alpha_plasma_deposited=From(physics),
+        p_alpha_total_mw=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        pden_plasma_rad_mw=From(physics),
+        vol_plasma=From(physics),
+        f_rad=From(stellarator),
+        p_hcd_injected_total_mw=From(current_drive),
+    ):
+        return calculate_heating_and_radiation_power_non_ignited(
+            f_p_alpha_plasma_deposited,
+            p_alpha_total_mw,
+            p_non_alpha_charged_mw,
+            p_plasma_ohmic_mw,
+            pden_plasma_rad_mw,
+            vol_plasma,
+            f_rad,
+            p_hcd_injected_total_mw,
+        )
+
+
+class RadiatedWallLoadAndFraction(ExplicitFunction):
+    """The `calculate_radiated_wall_load_and_fraction` family -- the same three arms as
+    `NeutronWallLoad`, applied to `.physics.p_plasma_rad_mw`.
+
+    **Both switches were `eqx.field(static=True)` here and both are gone**
+    (`_audit/next_steps.md` §14.2), and the same four reads are dead at this machine's
+    values; see `NeutronWallLoad`'s docstring. One dispatch serves both slots -- they
+    are one family read twice, not two -- which is `indat.py`'s `_wall_load_arm`.
+    """
 
     pflux_fw_rad_mw = OutputInto(physics)
     pflux_fw_rad_max_mw = OutputInto(constraints)
     rad_fraction_total = OutputInto(physics)
 
+
+class RadiatedWallLoadScaledPlasmaSurface(RadiatedWallLoadAndFraction):
+    """`i_pflux_fw_neutron == SCALED_PLASMA_SURFACE_AREA` (1) -- the reference run's.
+    Reads no first-wall field.
+    """
+
     def __call__(
         self,
         ffwal=From(physics),
-        p_plasma_rad_mw=From(physics),
         a_plasma_surface=From(physics),
-        fhole=From(fwbs),
-        a_fw_total=From(first_wall),
-        f_a_fw_outboard_hcd=From(fwbs),
-        f_ster_div_single=From(fwbs),
+        p_plasma_rad_mw=From(physics),
         f_fw_rad_max=From(constraints),
         f_p_alpha_plasma_deposited=From(physics),
         p_alpha_total_mw=From(physics),
@@ -717,16 +1050,72 @@ class RadiatedWallLoadAndFraction(ExplicitFunction):
         p_plasma_ohmic_mw=From(physics),
         p_hcd_injected_total_mw=From(current_drive),
     ):
-        return calculate_radiated_wall_load_and_fraction(
-            self.i_pflux_fw_neutron,
-            self.ipowerflow,
+        return calculate_radiated_wall_load_scaled_plasma_surface(
             ffwal,
-            p_plasma_rad_mw,
             a_plasma_surface,
+            p_plasma_rad_mw,
+            f_fw_rad_max,
+            f_p_alpha_plasma_deposited,
+            p_alpha_total_mw,
+            p_non_alpha_charged_mw,
+            p_plasma_ohmic_mw,
+            p_hcd_injected_total_mw,
+        )
+
+
+class RadiatedWallLoadFirstWallAreaPre2014(RadiatedWallLoadAndFraction):
+    """`i_pflux_fw_neutron == FIRST_WALL_AREA` (2) with `ipowerflow == PRE_2014` (0)."""
+
+    def __call__(
+        self,
+        fhole=From(fwbs),
+        a_fw_total=From(first_wall),
+        p_plasma_rad_mw=From(physics),
+        f_fw_rad_max=From(constraints),
+        f_p_alpha_plasma_deposited=From(physics),
+        p_alpha_total_mw=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
+    ):
+        return calculate_radiated_wall_load_first_wall_area_pre_2014(
+            fhole,
+            a_fw_total,
+            p_plasma_rad_mw,
+            f_fw_rad_max,
+            f_p_alpha_plasma_deposited,
+            p_alpha_total_mw,
+            p_non_alpha_charged_mw,
+            p_plasma_ohmic_mw,
+            p_hcd_injected_total_mw,
+        )
+
+
+class RadiatedWallLoadFirstWallAreaComprehensive2014(RadiatedWallLoadAndFraction):
+    """`i_pflux_fw_neutron == FIRST_WALL_AREA` (2) with
+    `ipowerflow == COMPREHENSIVE_2014` (1).
+    """
+
+    def __call__(
+        self,
+        fhole=From(fwbs),
+        a_fw_total=From(first_wall),
+        f_a_fw_outboard_hcd=From(fwbs),
+        f_ster_div_single=From(fwbs),
+        p_plasma_rad_mw=From(physics),
+        f_fw_rad_max=From(constraints),
+        f_p_alpha_plasma_deposited=From(physics),
+        p_alpha_total_mw=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
+    ):
+        return calculate_radiated_wall_load_first_wall_area_comprehensive_2014(
             fhole,
             a_fw_total,
             f_a_fw_outboard_hcd,
             f_ster_div_single,
+            p_plasma_rad_mw,
             f_fw_rad_max,
             f_p_alpha_plasma_deposited,
             p_alpha_total_mw,

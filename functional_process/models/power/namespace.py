@@ -17,21 +17,15 @@ from functional_process.models.power.tf_coil_power import (
 from functional_process.models.power.thermal_cryo import (
     ComponentThermalPowers,
     CryoLoads,
-    CryoQLoadsStep,
+    CryoQLoads,
     CryoQNuc,
     DeltaEtaStep,
-    EtathLiqStep,
-    EtaTurbineStep,
-    PFwBlktCoolantPumpMwStep,
-    PFwDivHeatDepositedMwStep,
-    TempTurbineCoolantInStep,
+    EtathLiq,
+    EtaTurbine,
+    PFwBlktCoolantPumpMw,
+    PFwDivHeatDepositedMw,
+    TempTurbineCoolantIn,
 )
-from functional_process.models.switch_enums import (
-    BlanketDualCoolantModel,
-    PFEnergyStorageSource,
-)
-from process.data_structure.blanket_variables import BlktModelTypes
-from process.models.power import ElectricConversionModelTypes, PumpingPowerModelTypes
 
 
 class Power(ModelNamespace):
@@ -103,26 +97,38 @@ class Power(ModelNamespace):
     # refusing to assemble -- see `p_fw_blkt_coolant_pump_mw_step` below.
     component_thermal_powers: ComponentThermalPowers = dataclasses.field(kw_only=True)
     delta_eta_step: DeltaEtaStep = dataclasses.field(kw_only=True)
-    eta_turbine_step: EtaTurbineStep = EtaTurbineStep(
-        i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
-        i_blanket_type=BlktModelTypes.CCFE_HCPB,
-    )
-    etath_liq_step: EtathLiqStep = EtathLiqStep(
-        secondary_cycle_liq=(
-            ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
-        )
-    )
-    temp_turbine_coolant_in_step: TempTurbineCoolantInStep = TempTurbineCoolantInStep(
-        i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
-        i_blanket_type=BlktModelTypes.CCFE_HCPB,
-        secondary_cycle_liq=(
-            ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
-        ),
-    )
-    p_fw_div_heat_deposited_mw_step: PFwDivHeatDepositedMwStep = dataclasses.field(
+    eta_turbine: EtaTurbine | None = dataclasses.field(kw_only=True)
+    """`.heat_transport.eta_turbine` -- **or nothing, which is what the reference run
+    gets.**
+
+    This was `eta_turbine_step`, a `FixedPointFunction` carrying
+    `i_thermal_electric_conversion` and `i_blanket_type`. Four of that dispatch's arms
+    are `return eta_turbine` -- the field is a user input -- so the self-loop existed
+    only where there was nothing to solve. `switch_kwarg_survey.md` §4.7 measured it as
+    the identity map on this machine and flagged that `.costs.coe`, this run's
+    objective, depends on it: *"a quantity the objective depends on is nominally driven
+    while being, on this configuration, an unowned boundary input in disguise."* It is
+    an unowned boundary input, said outright (`_audit/next_steps.md` §14.2)."""
+    etath_liq: EtathLiq | None = dataclasses.field(kw_only=True)
+    """`.heat_transport.etath_liq` -- the same shape as `eta_turbine`, on
+    `.fwbs.secondary_cycle_liq`. `== 2` is "the efficiency is an input" and is spelled
+    `None`; `== 4` computes it from `.fwbs.outlet_temp_liq` alone."""
+    temp_turbine_coolant_in: TempTurbineCoolantIn | None = dataclasses.field(
         kw_only=True
     )
-    p_fw_blkt_coolant_pump_mw_step: PFwBlktCoolantPumpMwStep | None = dataclasses.field(
+    """`.heat_transport.temp_turbine_coolant_in` -- three arms of
+    `i_thermal_electric_conversion` x `i_blanket_type` x `secondary_cycle_liq`, one of
+    them absent. Two stages write this field in order and the self-loop existed only
+    where both passed the entering value through; see `TempTurbineCoolantIn`."""
+    p_fw_div_heat_deposited_mw: PFwDivHeatDepositedMw | None = dataclasses.field(
+        kw_only=True
+    )
+    """`.heat_transport.p_fw_div_heat_deposited_mw` -- owned on every
+    `i_p_coolant_pumping` value except `MECHANICAL_WITH_PRESSURE_DROP`, where PROCESS
+    passes the entering value through and the field's only other producer is
+    `models/ife.py`, out of scope. Absent there, and no longer a `FixedPointFunction`
+    anywhere."""
+    p_fw_blkt_coolant_pump_mw: PFwBlktCoolantPumpMw | None = dataclasses.field(
         kw_only=True
     )
     """`.primary_pumping.p_fw_blkt_coolant_pump_mw` -- **owned here on two of
@@ -200,12 +206,29 @@ class Power(ModelNamespace):
     `TfPowerResistive` next to five nodes still saying `SUPERCONDUCTING`.
     """
 
-    cryo_q_loads_step: CryoQLoadsStep = dataclasses.field(kw_only=True)
-    """`.power.qss`/`qac`/`qcl`/`qmisc`'s fixed point -- `i_tf_sup` threaded, for the
-    reason `cryo_q_nuc_step` gives. `i_pf_conductor` stays a kwarg."""
+    cryo_q_loads: CryoQLoads | None = dataclasses.field(kw_only=True)
+    """`.power.qss`/`qac`/`qcl`/`qmisc` -- **or nothing**, when PROCESS never calls
+    `Power.cryo`.
+
+    This was `cryo_q_loads_step`, a `FixedPointFunction` carrying `i_tf_sup` and
+    `i_pf_conductor`. The self-read existed only outside the guard, where the body is a
+    four-way pass-through -- which is "these are inputs", i.e. an empty slot
+    (`_audit/next_steps.md` §14.2). Inside the guard the two occupants differ by three
+    reads, all TF-coil fields the resistive arm does not touch."""
 
     cryo_loads: CryoLoads = dataclasses.field(kw_only=True)
-    """The unconditionally-owned cryogenic loads -- `i_tf_sup` threaded, same reason."""
+    """The unconditionally-owned cryogenic loads -- one occupant per arm of the same
+    two switches. The aluminium arm has no occupant (`('i_tf_sup', 2)` is `UNPORTED`),
+    which is what lets both live occupants drop `.tfcoil.p_cp_resistive`,
+    `.tfcoil.p_tf_leg_resistive`, `.tfcoil.p_tf_joints_resistive` and
+    `.fwbs.pnuc_cp_tf`."""
     # `electric_production.py` (unit #14 chunk C). `i_pf_energy_storage_source=2`
     # matches `pf_power_variables.py:18`'s default.
-    acpow: Acpow = Acpow(i_pf_energy_storage_source=PFEnergyStorageSource.LINE)
+    acpow: Acpow = dataclasses.field(kw_only=True)
+    """Plant AC power requirement -- one occupant per
+    `.pf_power.i_pf_energy_storage_source` value.
+
+    **The switch was a static kwarg here and is a slot now** (`_audit/next_steps.md`
+    §14.2). The two arms read complementary fields -- `.heat_transport.peakmva` on the
+    line arm, `.heat_transport.fmgdmw` on the flywheel arm -- so one node declared
+    exactly one edge no run makes."""

@@ -16,8 +16,15 @@ from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import Driven, FixedPoint, RootFind, Start, driver_vars
 from cottax.rewrites import Cut
 
+from functional_process.boundary import TOKAMAK_INPUT_FILE
 from functional_process.core.solver.drivers import PicardDriver, SeededNewtonDriver
-from functional_process.indat import GRAPH, REFERENCE_MACHINE, WINDING_PACK_MATERIAL
+from functional_process.indat import (
+    GRAPH,
+    REFERENCE_MACHINE,
+    WINDING_PACK_MATERIAL,
+    graph_for,
+    machine_from_indat,
+)
 from functional_process.mda import (
     CUTS,
     ROOT_FIND_SEEDS,
@@ -29,9 +36,56 @@ from functional_process.mda import (
 from process.models.superconductors import SuperconductorModel
 
 
+def _cut_all(sub, vars_):
+    """`sub` with every variable in `vars_` cut, or `None` if one of them has no
+    closing reader left by the time its turn comes (i.e. an earlier cut already broke
+    every path it closed -- which is what makes it redundant).
+    """
+    out = sub
+    for v in vars_:
+        readers = out.closing_readers(v)
+        if not readers:
+            return None
+        out = Cut(var=v, readers=readers).apply(out)
+    return out
+
+
+def _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(graph, machine):
+    """`graph`'s `CUTS` entries break every one of its raw cycles completely, and
+    dropping any one of them leaves that cycle cyclic -- sufficient *and* minimal.
+
+    Takes the graph rather than reading `GRAPH`, because `CUTS` is now one table serving
+    two machines and the property has to hold on each separately: an entry can be
+    necessary on one and absent from the other's graph entirely (the tokamak's
+    `dx_tf_wp_primary_toroidal`, the stellarator's -- nothing, as it happens), and a
+    check that only ever ran on the stellarator would not have noticed that the pedestal
+    profile arm needs a third density cut.
+    """
+    for cycle in graph.cycles:
+        names = {n.path_str() for n in cycle}
+        if any(n.startswith("^problem") for n in names):
+            continue  # already a declared block, not a raw cycle to cut
+        sub = graph.subgraph(cycle)
+        cutting_vars = [v for v in CUTS if v in sub.owners]
+        assert cutting_vars, (
+            f"[{machine}] cycle {sorted(names)} has no CUTS entry among its owned "
+            f"variables"
+        )
+        assert _cut_all(sub, cutting_vars).is_acyclic, (
+            f"[{machine}] cycle {sorted(names)} is still cyclic after cutting "
+            f"{[v.path_str() for v in cutting_vars]}"
+        )
+        for dropped in cutting_vars:
+            rest = [v for v in cutting_vars if v != dropped]
+            without = _cut_all(sub, rest)
+            assert without is None or not without.is_acyclic, (
+                f"[{machine}] {dropped.path_str()} is redundant: cycle {sorted(names)} "
+                f"is already acyclic without it, so it should not be in CUTS"
+            )
+
+
 def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
-    """Every raw cycle's `CUTS` entries break it completely, and dropping any one of
-    them leaves it cyclic -- i.e. the cut set is sufficient *and* minimal.
+    """The property above, on the reference (stellarator) machine.
 
     Pinned so a future edit to a cycle's membership (a new node reading or owning
     something in it) is forced to re-check rather than silently keep a now-partial cut.
@@ -42,36 +96,143 @@ def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
     now states the property directly. It re-derives `mda.CUTS`'s own claim rather than
     trusting the docstring.
     """
-    for cycle in GRAPH.cycles:
-        names = {n.path_str() for n in cycle}
-        if any(n.startswith("^problem") for n in names):
-            continue  # already a declared block, not a raw cycle to cut
-        sub = GRAPH.subgraph(cycle)
-        cutting_vars = [v for v in CUTS if v in sub.owners]
-        assert cutting_vars, (
-            f"cycle {sorted(names)} has no CUTS entry among its owned variables"
-        )
+    _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(GRAPH, "stellarator")
 
-        def cut_all(vars_, sub=sub):
-            out = sub
-            for v in vars_:
-                readers = out.closing_readers(v)
-                if not readers:
-                    return None
-                out = Cut(var=v, readers=readers).apply(out)
-            return out
 
-        assert cut_all(cutting_vars).is_acyclic, (
-            f"cycle {sorted(names)} is still cyclic after cutting "
-            f"{[v.path_str() for v in cutting_vars]}"
-        )
-        for dropped in cutting_vars:
-            rest = [v for v in cutting_vars if v != dropped]
-            without = cut_all(rest)
-            assert without is None or not without.is_acyclic, (
-                f"{dropped.path_str()} is redundant: cycle {sorted(names)} is already "
-                f"acyclic without it, so it should not be in CUTS"
-            )
+def test_each_raw_cycle_is_fully_broken_on_the_tokamak_too():
+    """The same property on `large_tokamak_eval.IN.DAT` -- two raw cycles, five cuts
+    between them, none of them redundant.
+
+    Worth its own test rather than a second loop inside the first, because the two
+    machines fail differently and the message should say which. The tokamak's density
+    cycle is 8 nodes to the stellarator's 6 (`i_plasma_pedestal = 1` puts
+    `pedestal_profile_values`/`ne_profile_integral` in the profile slot) and needs the
+    third cut `mda.CUTS` documents; its build/winding-pack cycle has no stellarator
+    counterpart at all.
+    """
+    _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(
+        graph_for(machine_from_indat(TOKAMAK_INPUT_FILE)), "tokamak"
+    )
+
+
+def test_the_tokamak_build_winding_pack_cycle_is_cut_where_process_reads_stale():
+    """The 4-node build/winding-pack cycle on `large_tokamak_eval.IN.DAT`: every one of
+    its four edge variables is a *sufficient* single cut, `CUTS` names exactly one of
+    them, and the one it names is the edge PROCESS itself reads stale.
+
+    Same shape as the density loop's test above, plus the tie-break that loop did not
+    need. There, one candidate out of 42 worked and measurement settled it outright;
+    here **all four candidates work structurally**, so a test that only asserted
+    sufficiency would pass for any of the four and pin nothing. What it pins instead is
+    the semantic choice: of the four edges, three are read fresh within one
+    `Caller._call_models_once` pass and one crosses the pass boundary, and `CUTS` names
+    that one. See `mda.CUTS`'s own docstring for the `caller.py`/`build.py` line
+    references behind "reads stale".
+
+    Minimality is the empty set: a single cut is minimal iff dropping it leaves the
+    cycle cyclic, which is asserted directly.
+    """
+    graph = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
+    (cycle,) = [
+        c
+        for c in graph.cycles
+        if {n.path_str() for n in c}
+        == {
+            ".tokamak.build.tf_outboard_mid",
+            ".tokamak.build.wp_conductor_max_width",
+            ".tokamak.cicc_superconducting_tf_coil.superconducting_tf_wp_geometry",
+            ".tokamak.cicc_superconducting_tf_coil.tf_global_geometry",
+        }
+    ]
+    sub = graph.subgraph(cycle)
+
+    # Sufficiency, candidate by candidate -- the measurement, re-derived rather than
+    # quoted. `closing_readers` is empty for the 18 owned variables that leave the cycle
+    # without re-entering it, so the candidate set is exactly the four edges.
+    sufficient = set()
+    for var in sub.owners:
+        readers = sub.closing_readers(var)
+        if not readers:
+            continue
+        if Cut(var=var, readers=readers).apply(sub).is_acyclic:
+            sufficient.add(var.path_str())
+    assert sufficient == {
+        ".superconducting_tfcoil.tan_theta_coil",
+        ".tfcoil.dx_tf_wp_primary_toroidal",
+        ".tfcoil.dx_tf_wp_conductor_max",
+        ".build.r_tf_outboard_mid",
+    }
+
+    # ... and the one `CUTS` picks out of those four is the stale-read edge.
+    chosen = [v.path_str() for v in CUTS if v in sub.owners]
+    assert chosen == [".tfcoil.dx_tf_wp_primary_toroidal"]
+    # Minimal, i.e. not vacuous: without it the cycle is still a cycle.
+    assert not sub.is_acyclic
+
+    # And the whole tokamak graph is runnable with it -- the property `Blocking` refused
+    # ("coupled block declares no problem") before this cut existed.
+    blocking = Blocking.scc(driven_graph(graph))
+    for block, problem_type in zip(blocking.blocks, blocking.problem_types, strict=True):
+        assert len(block) == 1 or problem_type is not None, block
+
+
+def test_the_tokamak_density_cycle_is_cut_at_the_variable_process_bootstraps():
+    """The pedestal arm's extra ring: four candidates finish the cut, `CUTS` names the
+    one PROCESS itself carries across a pass.
+
+    Same shape as the build/winding-pack test above and the same reason for existing --
+    sufficiency does not pick. With `proton_rate_density` and `fusden_alpha_total`
+    already cut, exactly four single variables make the remaining 5-node ring acyclic,
+    and the one chosen is the one `physics.py:1377-1387` reads from the *previous* call
+    of `plasma_profile.run()` behind a `first_call` bootstrap.
+    """
+    graph = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
+    (cycle,) = [
+        c
+        for c in graph.cycles
+        if any(n.path_str() == ".physics.profiles.density_profile" for n in c)
+        and not any(n.path_str().startswith("^problem") for n in c)
+    ]
+    sub = graph.subgraph(cycle)
+    shared = {".physics.proton_rate_density", ".physics.fusden_alpha_total"}
+    first_two = [v for v in CUTS if v.path_str() in shared]
+    partial = _cut_all(sub, first_two)
+    assert not partial.is_acyclic, (
+        "the stellarator's two density cuts already break the tokamak's cycle -- the "
+        "third cut would be redundant and belongs out of CUTS"
+    )
+    finishes = {
+        v.path_str()
+        for v in sub.owners
+        if v not in first_two and (g := _cut_all(sub, [*first_two, v])) and g.is_acyclic
+    }
+    assert finishes == {
+        ".physics.f_temp_plasma_electron_density_vol_avg",
+        ".physics.nd_plasma_electron_on_axis",
+        ".physics.nd_plasma_electron_profile",
+        ".physics.nd_plasma_ions_total_vol_avg",
+    }
+    chosen = [v.path_str() for v in CUTS if v in sub.owners]
+    assert chosen[2:] == [".physics.f_temp_plasma_electron_density_vol_avg"]
+
+
+def test_the_tokamak_only_cuts_leave_the_stellarator_graph_untouched():
+    """`CUTS`'s two tokamak-only entries are inert on the reference (stellarator)
+    machine.
+
+    `cut_graph` only cuts a variable that actually has closing readers in the graph it
+    was handed, and on the stellarator neither has any: the winding-pack cycle's nodes do
+    not exist (its TF coils are `models/stellarator/coils/`), and
+    `.physics.f_temp_plasma_electron_density_vol_avg` is owned by the *parabolic* profile
+    occupant, which nothing in the cycle reads back into. Stated as a test rather than
+    trusted, because the failure mode is silent: a cut that *did* land would mint an
+    unknown, open a `^guess.*` boundary input and move every pinned boundary count, and
+    the first thing to notice would be an unrelated harness number.
+    """
+    graph = driven_graph()
+    for name in ("dx_tf_wp_primary_toroidal", "f_temp_plasma_electron_density_vol_avg"):
+        assert not any(name in v.path_str() for v in graph.unowned_inputs), name
+        assert not any(name in p.path_str() for p in graph.declared), name
 
 
 def test_driven_graph_has_no_raw_cycles_left():

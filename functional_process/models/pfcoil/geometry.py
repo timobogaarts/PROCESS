@@ -29,10 +29,10 @@ other value is UNPORTED with its reason in `geometry.md`:
 
 | switch | value here |
 |---|---|
-| `.pf_coil.i_pf_location` | `(2, 2, 3, 3)` -- above TF, above TF, outside TF, outside TF |
+| `.pf_coil.i_pf_location` | `(2, 2, 3, 3)` -- above TF x2, then outside TF x2 |
 | `.physics.itart` / `.physics.itartpf` | `0` / `0` (not a spherical tokamak) |
 | `.tfcoil.i_tf_shape` | `1` = `D_SHAPE` (not `PICTURE_FRAME`) |
-| `.pf_coil.i_r_pf_outside_tf_placement` | `0` -- coil radius follows the TF curve |
+| `.pf_coil.i_r_pf_outside_tf_placement` | `0` -- radius follows the TF curve |
 """
 
 import jax.numpy as jnp

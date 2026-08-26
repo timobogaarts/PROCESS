@@ -23,7 +23,12 @@ UNPORTED.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    FromExactly,
+    OutputInto,
+)
 
 from functional_process.models.safe_math import safe_pow
 from functional_process.paths import blanket, divertor, fwbs, physics
@@ -194,7 +199,18 @@ class DivertorHeatLoadWade(ExplicitFunction):
         rminor=From(physics),
         aspect=From(physics),
         b_plasma_toroidal_on_axis=From(physics),
-        b_plasma_poloidal_average=From(physics),
+        # **Not `From(physics)`.** `divwade`'s *parameter* is called
+        # `b_plasma_poloidal_average` and the *field* PROCESS passes into it is
+        # `.physics.b_plasma_surface_poloidal_average` (`process/models/
+        # divertor.py:90-95`, positional) -- the two names differ, so resolving the
+        # parameter name against the namespace named a field that does not exist on
+        # `DataStructure` at all. That is not a read of the wrong number, it is a read
+        # of *no* number: the port kept the parameter's spelling as a boundary input
+        # nothing produces, and the MDA harness's first tokamak run reported it as its
+        # only ungrounded input, with 16 outputs downstream of it unverifiable.
+        # `physics.py:707`/`:3827` pass the same field into the same parameter name
+        # elsewhere, and `pure_formulas.py:527` already binds it the right way round.
+        b_plasma_poloidal_average=FromExactly(physics.b_plasma_surface_poloidal_average),
         p_plasma_separatrix_mw=From(physics),
         f_div_flux_expansion=From(divertor),
         nd_plasma_separatrix_electron=From(physics),

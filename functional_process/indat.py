@@ -30,7 +30,12 @@ from pathlib import Path
 import equinox as eqx
 from cottax.interfaces.pytree_namespace_module import to_graph
 
-from functional_process.models.availability.availability import CplifeAvail
+from functional_process.models.availability.availability import (
+    AvailDisplacementsPerAtom,
+    AvailNeutronFluence,
+    CplifeAvailResistive,
+    CplifeAvailSuperconducting,
+)
 from functional_process.models.availability.namespace import Availability
 from functional_process.models.blankets.blanket_library import (
     BlanketCoverageFactorsSingleNull,
@@ -62,16 +67,22 @@ from functional_process.models.buildings.buildings import (
 )
 from functional_process.models.buildings.namespace import Buildings
 from functional_process.models.costs.costs import (
-    CostOfElectricity,
-    EnergyStorageCostPulsed,
+    CostOfElectricityConventionalAspectRatio,
+    CostOfElectricitySphericalTokamak,
+    EnergyStorageCostPulsedElectrowattOption1,
+    EnergyStorageCostPulsedElectrowattOption2,
     EnergyStorageCostUnpulsed,
-    PlantOperationModel,
-    ThermalStorageModel,
+    TfMagnetCostSuperconductingPerKam,
+    TfMagnetCostSuperconductingPerKg,
 )
 from functional_process.models.costs.namespace import Costs
 from functional_process.models.divertor import DivertorHeatLoadWade
 from functional_process.models.fw import FirstWall
 from functional_process.models.namespace import Build, Divertor
+from functional_process.models.physics.composition import (
+    PlasmaCompositionIgnited,
+    PlasmaCompositionNonIgnited,
+)
 from functional_process.models.physics.confinement_time import (
     ConfinementTailCoreRadiation,
     Iss04ConfinementTime,
@@ -103,6 +114,10 @@ from functional_process.models.physics.plasma_geometry import (
     DoubleArcPlasmaGeometry,
     Ipdg89XPointPlasmaShape,
 )
+from functional_process.models.physics.pure_formulas import (
+    FastAlphaBetaIterPhysicsRules,
+    FastAlphaBetaWard,
+)
 from functional_process.models.physics.tokamak_namespace import (
     TokamakCurrentDrive,
     TokamakPhysics,
@@ -110,7 +125,12 @@ from functional_process.models.physics.tokamak_namespace import (
     TokamakPulse,
 )
 from functional_process.models.power.electric_production import (
-    PlantElectricProductionReactor,
+    AcpowLine,
+    AcpowMotorGeneratorFlywheel,
+    PlantElectricProductionLiquidBreeder,
+    PlantElectricProductionResistiveCentrepostLiquidBreeder,
+    PlantElectricProductionResistiveCentrepostSingleCoolant,
+    PlantElectricProductionSingleCoolant,
     PowerProfilesOverTime,
 )
 from functional_process.models.power.namespace import Power
@@ -120,12 +140,21 @@ from functional_process.models.power.tf_coil_power import (
 )
 from functional_process.models.power.thermal_cryo import (
     ComponentThermalPowers,
-    CryoLoads,
-    CryoQLoadsStep,
+    CryoLoadsActive,
+    CryoLoadsInactive,
+    CryoQLoadsResistiveTf,
+    CryoQLoadsSuperconductingTf,
     CryoQNuc,
     DeltaEtaStep,
-    PFwBlktCoolantPumpMwStep,
-    PFwDivHeatDepositedMwStep,
+    EtathLiqSupercriticalCo2,
+    EtaTurbineCcfeHcpbValue,
+    EtaTurbineCcfeHcpbValueWithDivertor,
+    EtaTurbineSteamRankineCycle,
+    EtaTurbineSupercriticalCo2,
+    PFwBlktCoolantPumpMw,
+    PFwDivHeatDepositedMwSummed,
+    TempTurbineCoolantInFromBlanketCoolant,
+    TempTurbineCoolantInFromLiquidBreeder,
 )
 from functional_process.models.stellarator.build import (
     AFwTotalNoPowerflow,
@@ -141,6 +170,16 @@ from functional_process.models.stellarator.coils.calculate import (
     UserDefinedNb3snWindingPackIntersectInputs,
     WstNb3snWindingPackIntersectInputs,
 )
+from functional_process.models.stellarator.coils.mass import (
+    Bi2212CoilsMass,
+    CrocoRebcoCoilsMass,
+    DurhamNbtiCoilsMass,
+    DurhamRebcoCoilsMass,
+    IterNb3snCoilsMass,
+    OldLubellNbtiCoilsMass,
+    UserDefinedNb3snCoilsMass,
+    WstNb3snCoilsMass,
+)
 from functional_process.models.stellarator.density_limits import EcrhDensityLimit
 from functional_process.models.stellarator.heating import (
     EcrhHeating,
@@ -153,8 +192,14 @@ from functional_process.models.stellarator.namespace import (
     StellaratorFwbs,
 )
 from functional_process.models.stellarator.plasma_physics import (
-    NeutronWallLoad,
-    RadiatedWallLoadAndFraction,
+    HeatingAndRadiationPowerIgnited,
+    HeatingAndRadiationPowerNonIgnited,
+    NeutronWallLoadFirstWallAreaComprehensive2014,
+    NeutronWallLoadFirstWallAreaPre2014,
+    NeutronWallLoadScaledPlasmaSurface,
+    RadiatedWallLoadFirstWallAreaComprehensive2014,
+    RadiatedWallLoadFirstWallAreaPre2014,
+    RadiatedWallLoadScaledPlasmaSurface,
 )
 from functional_process.models.stellarator.preset_config import (
     StellaratorMachineConfig,
@@ -169,13 +214,17 @@ from functional_process.models.stellarator.stellarator_fwbs_s4 import (
 from functional_process.models.structure import Structure
 from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
+    BlanketLifetimeModel,
     CoilNuclearHeatingModel,
-    CostOfElectricityModel,
+    FastAlphaPressureModel,
     IFEModel,
-    NetElectricPowerModel,
     NeutronWallLoadModel,
+    PFEnergyStorageSource,
+    PlantOperationModel,
     PowerFlowModel,
     SphericalTokamakModel,
+    SuperconductorCostModel,
+    ThermalStorageModel,
 )
 from functional_process.models.tfcoil.base import (
     DrTfPlasmaCaseFromFraction,
@@ -228,7 +277,6 @@ from process.models.physics.plasma_geometry import (
     PlasmaGeometryModelType,
     PlasmaShapeModelType,
 )
-from process.models.physics.profiles import PlasmaProfileShapeType
 from process.models.power import (
     ElectricConversionModelTypes,
     PumpingPowerModelTypes,
@@ -405,6 +453,29 @@ UNPORTED = {
         "handles 1..8 and then raises `Illegal value for i_pf_superconductor`), so "
         "there is no PROCESS arm to port and no reads-set to declare. A ninth occupant "
         "would have to invent the model, not port it."
+    ),
+    ("ife", IFEModel.INERTIAL_CONFINEMENT): (
+        "inertial confinement is a different device, and PROCESS spells it as an `if` "
+        "inside seven Account-22x cost methods rather than as a device class. Each of "
+        "the seven arms reads a genuinely different set of `.ife.*` fields -- "
+        "`.ife.fwmatm`/`.blmatm`/`.shmatm` (2-D material-mass arrays) for Accounts "
+        "221.1/221.2/221.3, `.ife.ifedrv` and `.cdriv0..3` for 223, `.ife.tdspmw`/"
+        "`.tfacmw` for 2262, `.ife.gain`/`.edrive`/`.fburn` for 2272, and "
+        "`.ife.uctarg`/`.reprat` for `coelc` -- and **the whole `.ife.*` subsystem is "
+        "unported** (`unit_registry.md` has no `ife` unit). Refused here rather than "
+        "seven times inside seven node bodies: the reason strings moved verbatim from "
+        "those bodies' `NotImplementedError`s, which the composite functions still "
+        "raise for the harness's benefit"
+    ),
+    ("i_pf_energy_storage_source", PFEnergyStorageSource.MGF_PF_LINE_HEATING): (
+        "`i_pf_energy_storage_source == 3` (PF power from MGF, heating from line) runs "
+        "the identical `acpow` arithmetic as `== 1`: `power.py:1401`/`:1417` both test "
+        "`!= 2` only, and `pf_power_variables.py:18-24` says so outright -- *'options 1 "
+        "and 3 are not treated differently'*. Request `.pf_power."
+        "i_pf_energy_storage_source == 1` instead; it fills the slot with the same "
+        "occupant. Kept as a refused value rather than a second registry entry pointing "
+        "at `AcpowMotorGeneratorFlywheel` so the claim stays visible -- the same "
+        "discipline `('i_tf_sup', 2)` follows"
     ),
     ("i_cost_model", 1): (
         "KOVARI_2014 (i_cost_model == 1) is PROCESS's own default cost model and is "
@@ -830,6 +901,101 @@ def _slot_occupant(field, value, registry, *, build=None):
     )
 
 
+def _refuse_unported_switch(field, value):
+    """Refuse a switch value this port has no occupant for, where the switch decides no
+    slot of its own.
+
+    `ife` is the only one. `ife == 1` is a whole **device** -- inertial rather than
+    magnetic confinement -- and PROCESS spells it not as a device class but as an `if`
+    inside seven separate Account-22x cost methods, each reading a different set of
+    `.ife.*` fields, none of them ported. So there is nothing for a registry to hold:
+    the whole answer is "no", and the six nodes that carried `ife` as an
+    `eqx.field(static=True)` are unconditionally the magnetic-confinement occupants now.
+    Answering it here, once, at assembly, is `_audit/next_steps.md` §14.2's shape; the
+    alternative it withdrew was seven bodies each holding the integer and each raising
+    at trace time.
+
+    The value must already be an `IntEnum` member, so a value PROCESS has never had has
+    failed at the enum call before reaching here -- `_slot_occupant`'s `ValueError`
+    branch has no counterpart to write.
+    """
+    raise NotImplementedError(
+        f"{field} == {value} is a real PROCESS branch but is not ported: "
+        f"{UNPORTED[field, value]}"
+    )
+
+
+def _wall_load_arm(i_pflux_fw_neutron: int, ipowerflow: int) -> int:
+    """`(i_pflux_fw_neutron, ipowerflow)` -> the wall-load arm, for **both** wall-load
+    slots.
+
+    `stellarator.py:2095-2117` and `:2223-2257`, transcribed:
+
+    ```
+    if i_pflux_fw_neutron == 1:  -> arm 0   scaled by the plasma surface
+    elif ipowerflow == 0:        -> arm 1   first-wall area, pre-2014
+    else:                        -> arm 2   first-wall area, comprehensive 2014
+    ```
+
+    One dispatch, two registries: `NEUTRON_WALL_LOAD` and `RADIATED_WALL_LOAD` are the
+    same three arms applied to the neutron and the photon power, which is why
+    `switch_kwarg_survey.md` band (b2) says "the same switch, so one family serves
+    both". `ipowerflow` is not consulted at all on arm 0 -- which is why this is a joint
+    arm index and not two nested slots.
+    """
+    if NeutronWallLoadModel(int(i_pflux_fw_neutron)) is (
+        NeutronWallLoadModel.SCALED_PLASMA_SURFACE_AREA
+    ):
+        return 0
+    return 1 if PowerFlowModel(int(ipowerflow)) is PowerFlowModel.PRE_2014 else 2
+
+
+NEUTRON_WALL_LOAD = {
+    0: NeutronWallLoadScaledPlasmaSurface,
+    1: NeutronWallLoadFirstWallAreaPre2014,
+    2: NeutronWallLoadFirstWallAreaComprehensive2014,
+}
+"""`_wall_load_arm(...)` -> the neutron wall-load occupant. Keyed by arm index."""
+
+RADIATED_WALL_LOAD = {
+    0: RadiatedWallLoadScaledPlasmaSurface,
+    1: RadiatedWallLoadFirstWallAreaPre2014,
+    2: RadiatedWallLoadFirstWallAreaComprehensive2014,
+}
+"""`_wall_load_arm(...)` -> the radiated wall-load occupant, same arm index."""
+
+HEATING_AND_RADIATION_POWER = {
+    PlasmaIgnitionModel.IGNITED: HeatingAndRadiationPowerIgnited,
+    PlasmaIgnitionModel.NON_IGNITED: HeatingAndRadiationPowerNonIgnited,
+}
+"""`.physics.i_plasma_ignited` -> the stellarator heating/radiation occupant.
+
+The ignited occupant does not read `.current_drive.p_hcd_injected_total_mw`."""
+
+
+FAST_ALPHA_BETA = {
+    FastAlphaPressureModel.ITER_PHYSICS_RULES: FastAlphaBetaIterPhysicsRules,
+    FastAlphaPressureModel.WARD: FastAlphaBetaWard,
+}
+"""`.physics.i_beta_fast_alpha` -> the fast-alpha-pressure occupant.
+
+Both values are ported, so this registry is total. The two occupants read **identical**
+fields -- `switch_kwarg_survey.md` band (c), zero invented edges -- and are split anyway
+under `_audit/next_steps.md` §14.2. The argument is `model_tree_design.md` §4's: an enum
+family has no cheap escape when a third published formula needs a read the family cannot
+express."""
+
+PLASMA_COMPOSITION = {
+    PlasmaIgnitionModel.IGNITED: PlasmaCompositionIgnited,
+    PlasmaIgnitionModel.NON_IGNITED: PlasmaCompositionNonIgnited,
+}
+"""`.physics.i_plasma_ignited` -> the plasma-composition occupant.
+
+Both values are ported. The ignited occupant does **not** read
+`.physics.f_nd_beam_electron`: an ignited plasma has no beam ions, and that single read
+is the edge one node carrying the switch invented."""
+
+
 CONFINEMENT_SCALING = {
     ConfinementTimeModel.ISS04_STELLARATOR: Iss04ConfinementTime,
     ConfinementTimeModel.ITER_IPB98Y2: IterIpb98y2ConfinementTime,
@@ -849,6 +1015,25 @@ occupant per value **this port supports**. 38 is the Helias run's, 34 the conven
 tokamak's, and 34 is one of the four values `_audit/tokamak_scope.md` found the tree
 contradicting.
 """
+
+COILS_MASS_MATERIAL = {
+    SuperconductorModel.ITER_NB3SN: IterNb3snCoilsMass,
+    SuperconductorModel.BI2212: Bi2212CoilsMass,
+    SuperconductorModel.OLD_LUBELL_NBTI: OldLubellNbtiCoilsMass,
+    SuperconductorModel.USER_DEFINED_NB3SN: UserDefinedNb3snCoilsMass,
+    SuperconductorModel.WST_NB3SN: WstNb3snCoilsMass,
+    SuperconductorModel.CROCO_REBCO: CrocoRebcoCoilsMass,
+    SuperconductorModel.DURHAM_NBTI: DurhamNbtiCoilsMass,
+    SuperconductorModel.DURHAM_REBCO: DurhamRebcoCoilsMass,
+}
+"""`i_tf_sc_mat` -> the occupant of `stellarator.coils.coils_mass`.
+
+**The same key as `WINDING_PACK_MATERIAL`, deliberately**: the two nodes answer one
+switch and must not disagree. Until `_audit/next_steps.md` §14.2 this one did not
+answer it at all -- `mass.py` carried a module constant `I_TF_SC_MAT_ITER_NB3SN = 1`
+baked into a `FromExactly(tfcoil.dcond[0])` default, which `switch_audit` cannot see
+because it walks `eqx.field(static=True)` and a module constant is not one. The eight
+occupants differ in exactly one read, `.tfcoil.dcond[k]`."""
 
 WINDING_PACK_MATERIAL = {
     SuperconductorModel.ITER_NB3SN: IterNb3snWindingPackIntersectInputs,
@@ -919,6 +1104,127 @@ CRYO_Q_NUC = {0: CryoQNuc, 1: None}
 """The `.fwbs.qnuc` arm -> its occupant, or `None` for "nothing owns it"."""
 
 
+def _eta_turbine_arm(i_thermal_electric_conversion, i_blanket_type) -> int:
+    """`(i_thermal_electric_conversion, i_blanket_type)` -> who owns
+    `.heat_transport.eta_turbine`, if anyone.
+
+    `power.py:1985-2046`, transcribed. Five `i_thermal_electric_conversion` values,
+    three of which nest an `i_blanket_type` test, and **four of the eight resulting
+    arms are `return eta_turbine`** -- the efficiency is a user input there:
+
+    ```
+    (CCFE_HCPB_VALUE, CCFE_HCPB)               -> arm 0   the literal 0.411
+    (CCFE_HCPB_VALUE_WITH_DIVERTOR, CCFE_HCPB) -> arm 1   0.411 - delta_eta
+    (STEAM_RANKINE_CYCLE, CCFE_HCPB)           -> arm 2   the Rankine log fit
+    (SUPERCRITICAL_CO2_BRAYTON_CYCLE, any)     -> arm 3   the CO2 log fit
+    everything else                            -> arm 4   nothing owns it
+    ```
+
+    Arm `4` is `None`, not a refusal, for the same reason `_cryo_q_nuc_arm`'s arm 1 is:
+    PROCESS's own body there is `return eta_turbine`, and "the value it already had" is
+    what an empty slot means. It is the reference run's arm (`USER_INPUT`), which is why
+    splitting this switch is what `switch_kwarg_survey.md` §4.7 predicted would remove
+    a `FixedPoint` that determines nothing.
+    """
+    conversion = ElectricConversionModelTypes(int(i_thermal_electric_conversion))
+    blanket = BlktModelTypes(int(i_blanket_type))
+    if conversion is ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE:
+        return 3
+    if blanket is not BlktModelTypes.CCFE_HCPB:
+        return 4
+    return {
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE: 0,
+        ElectricConversionModelTypes.CCFE_HCPB_VALUE_WITH_DIVERTOR: 1,
+        ElectricConversionModelTypes.STEAM_RANKINE_CYCLE: 2,
+    }.get(conversion, 4)
+
+
+ETA_TURBINE = {
+    0: EtaTurbineCcfeHcpbValue,
+    1: EtaTurbineCcfeHcpbValueWithDivertor,
+    2: EtaTurbineSteamRankineCycle,
+    3: EtaTurbineSupercriticalCo2,
+    4: None,
+}
+"""`_eta_turbine_arm(...)` -> the `.heat_transport.eta_turbine` occupant, or `None`.
+
+Arm `0` is a node with **no inputs at all**; the other three read one or two fields
+each, where the single switch-carrying node declared all three."""
+
+ETATH_LIQ = {
+    ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE: (
+        EtathLiqSupercriticalCo2
+    ),
+    ElectricConversionModelTypes.USER_INPUT: None,
+}
+"""`.fwbs.secondary_cycle_liq` -> the `.heat_transport.etath_liq` occupant, or `None`.
+
+Keyed on the switch itself rather than an arm index, because PROCESS accepts only two
+values here (`power.py:2112-2115` raises otherwise) and both are named. `USER_INPUT`
+(2) is the "the efficiency is an input" arm and is `None`."""
+
+
+def _temp_turbine_coolant_in_arm(
+    i_thermal_electric_conversion, i_blanket_type, secondary_cycle_liq
+) -> int:
+    """`(i_thermal_electric_conversion, i_blanket_type, secondary_cycle_liq)` -> who
+    owns `.heat_transport.temp_turbine_coolant_in`, if anyone.
+
+    Two stages write it in order (`power.py:1985-2046` then `:2073-2116`), and the
+    second **overwrites** the first:
+
+    ```
+    secondary_cycle_liq == 4                  -> arm 0   outlet_temp_liq - 20
+    else, stage one writes it                 -> arm 1   temp_blkt_coolant_out - 20
+    else                                      -> arm 2   nothing owns it
+    ```
+
+    "Stage one writes it" is `(STEAM_RANKINE_CYCLE, CCFE_HCPB)` or
+    `SUPERCRITICAL_CO2_BRAYTON_CYCLE` -- i.e. arms 2 and 3 of `_eta_turbine_arm`, which
+    is why this reads that function rather than restating its condition.
+    """
+    if (
+        ElectricConversionModelTypes(int(secondary_cycle_liq))
+        is ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
+    ):
+        return 0
+    stage_one_writes = _eta_turbine_arm(
+        i_thermal_electric_conversion, i_blanket_type
+    ) in (2, 3)
+    return 1 if stage_one_writes else 2
+
+
+TEMP_TURBINE_COOLANT_IN = {
+    0: TempTurbineCoolantInFromLiquidBreeder,
+    1: TempTurbineCoolantInFromBlanketCoolant,
+    2: None,
+}
+"""`_temp_turbine_coolant_in_arm(...)` -> the occupant, or `None`."""
+
+
+def _p_fw_div_heat_deposited_arm(i_p_coolant_pumping) -> int:
+    """`.fwbs.i_p_coolant_pumping` -> who owns
+    `.heat_transport.p_fw_div_heat_deposited_mw`.
+
+    `power.py:955-961` recomputes it on every value except
+    `MECHANICAL_WITH_PRESSURE_DROP`, where it passes the entering value through -- and
+    the field's only other producer anywhere in `process/` is `models/ife.py`, which is
+    out of scope. So arm `1` is `None`: on that value the field is a boundary input, and
+    saying so is what stops this node being a `FixedPointFunction`.
+    """
+    return (
+        1
+        if PumpingPowerModelTypes(int(i_p_coolant_pumping))
+        is PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP
+        else 0
+    )
+
+
+P_FW_DIV_HEAT_DEPOSITED = {0: PFwDivHeatDepositedMwSummed, 1: None}
+"""The `.heat_transport.p_fw_div_heat_deposited_mw` ownership arm -> its occupant, or
+`None`."""
+
+
 def _p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping) -> int:
     """`.fwbs.i_p_coolant_pumping` -> who owns
     `.primary_pumping.p_fw_blkt_coolant_pump_mw`.
@@ -945,7 +1251,7 @@ def _p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping) -> int:
     )
 
 
-P_FW_BLKT_COOLANT_PUMP = {0: PFwBlktCoolantPumpMwStep, 1: None}
+P_FW_BLKT_COOLANT_PUMP = {0: PFwBlktCoolantPumpMw, 1: None}
 """The `.primary_pumping.p_fw_blkt_coolant_pump_mw` ownership arm -> its occupant, or
 `None` for "the blanket owns it". See `_p_fw_blkt_coolant_pump_arm`."""
 
@@ -959,21 +1265,26 @@ def _energy_storage_arm(i_pulsed_plant: int, istore: int) -> int:
     """
     if PlantOperationModel(int(i_pulsed_plant)) is PlantOperationModel.CONTINUOUS:
         return 0
-    return (
-        1
-        if ThermalStorageModel(int(istore))
-        in (
-            ThermalStorageModel.ELECTROWATT_OPTION_1,
-            ThermalStorageModel.ELECTROWATT_OPTION_2,
-        )
-        else -1
-    )
+    return {
+        ThermalStorageModel.ELECTROWATT_OPTION_1: 1,
+        ThermalStorageModel.ELECTROWATT_OPTION_2: 2,
+    }.get(ThermalStorageModel(int(istore)), -1)
 
 
-ENERGY_STORAGE = {0: EnergyStorageCostUnpulsed, 1: EnergyStorageCostPulsed}
-"""Account 225.3's arm -> its occupant. Two arms, not three: `istore`'s two ported
-values read the same variables and differ only in a literal, so they are one occupant
-carrying a static kwarg -- band (c), the case where that is the right answer."""
+ENERGY_STORAGE = {
+    0: EnergyStorageCostUnpulsed,
+    1: EnergyStorageCostPulsedElectrowattOption1,
+    2: EnergyStorageCostPulsedElectrowattOption2,
+}
+"""Account 225.3's arm -> its occupant.
+
+**Three arms now, not two.** `istore`'s two ported values read the same variables and
+differ only in a literal, which `switch_kwarg_survey.md` band (c) argued made this the
+one case where a static kwarg was right. `_audit/next_steps.md` §14.2 withdrew that: a
+switch value selects an occupant whatever its reads. The two occupants are
+indistinguishable by ports and `test_occupants_of_one_slot_differ` no longer asks them
+to be -- it asks for distinct classes, and says in its own docstring that nothing now
+catches a family whose members differ only in a literal."""
 """The `.fwbs.qnuc` arm -> its occupant, or `None` for "nothing owns it"."""
 
 
@@ -1039,15 +1350,7 @@ def _profile_parameterisation(i_plasma_pedestal, *, is_stellarator):
         build=lambda cls: (
             cls()
             if cls is ProfileParameterisationPedestal
-            else cls(
-                ecrh_density_limit=(
-                    EcrhDensityLimit(
-                        i_plasma_pedestal=PlasmaProfileShapeType.PARABOLIC_PROFILE
-                    )
-                    if is_stellarator
-                    else None
-                )
-            )
+            else cls(ecrh_density_limit=(EcrhDensityLimit() if is_stellarator else None))
         ),
     )
 
@@ -1082,43 +1385,160 @@ BUILDING_SIZING = {
 }
 """`.buildings.i_bldgs_size` -> the building-size occupant."""
 
+AVAIL = {
+    BlanketLifetimeModel.NEUTRON_FLUENCE: AvailNeutronFluence,
+    BlanketLifetimeModel.FUSION_POWER: AvailDisplacementsPerAtom,
+}
+"""`.costs.ibkt_life` -> the component-lifetime occupant.
+
+Both values ported. The neutron-fluence occupant reads neither `.costs.life_dpa` nor
+`.physics.p_fusion_total_mw`; the displacement-damage one reads neither
+`.costs.abktflnc` nor `.physics.pflux_fw_neutron_mw`."""
+
+
+def _cplife_arm(itart: int, i_tf_sup: int) -> int:
+    """`(itart, i_tf_sup)` -> who owns `.costs.cplife`, if anyone.
+
+    `availability.py`'s `calculate_cplife_next`, transcribed:
+
+    ```
+    itart != 1               -> arm 0   nothing owns it; the field is an input
+    itart == 1, i_tf_sup == 1 -> arm 1   the superconducting centrepost lifetime
+    itart == 1, i_tf_sup != 1 -> arm 2   the resistive one
+    ```
+
+    Arm `0` is `None`, not a refusal, for the same reason `_cryo_q_nuc_arm`'s is:
+    PROCESS's own body on that arm is `return cplife`, and "the value it already had" is
+    what an **empty slot** means. Splitting this slot is what removed the `FixedPoint`
+    -- the self-read existed only on the arm that is a pass-through.
+    """
+    if SphericalTokamakModel(int(itart)) is not SphericalTokamakModel.SPHERICAL_TOKAMAK:
+        return 0
+    return (
+        1 if TFConductorModel(int(i_tf_sup)) is TFConductorModel.SUPERCONDUCTING else 2
+    )
+
+
+CPLIFE = {0: None, 1: CplifeAvailSuperconducting, 2: CplifeAvailResistive}
+"""The `.costs.cplife` arm -> its occupant, or `None` for "nothing owns it"."""
+
+
+def _cryo_q_loads_arm(i_tf_sup, i_pf_conductor) -> int:
+    """`(i_tf_sup, i_pf_conductor)` -> who owns `.power.qss`/`qac`/`qcl`/`qmisc`.
+
+    `power.py:1054-1057` calls `Power.cryo` only when
+    `i_tf_sup == 1 or i_pf_conductor == SUPERCONDUCTING`; outside that guard the four
+    fields keep the values they entered with, which is an **empty slot**.
+
+    ```
+    i_tf_sup == 1                                 -> arm 0   TF terms present
+    i_pf_conductor == SUPERCONDUCTING (otherwise)  -> arm 1   PF coils only
+    neither                                        -> arm 2   nothing owns them
+    ```
+    """
+    if TFConductorModel(int(i_tf_sup)) is TFConductorModel.SUPERCONDUCTING:
+        return 0
+    return (
+        1
+        if PFConductorModel(int(i_pf_conductor)) is PFConductorModel.SUPERCONDUCTING
+        else 2
+    )
+
+
+CRYO_Q_LOADS = {
+    0: CryoQLoadsSuperconductingTf,
+    1: CryoQLoadsResistiveTf,
+    2: None,
+}
+"""`_cryo_q_loads_arm(...)` -> the occupant, or `None` for "nothing owns them"."""
+
+
+def _cryo_loads_arm(i_tf_sup, i_pf_conductor) -> int:
+    """`(i_tf_sup, i_pf_conductor)` -> the cryoplant-load occupant.
+
+    The same guard as `_cryo_q_loads_arm`, but with a different consequence: these four
+    fields are written on **every** path (`power.py:1049-1050` zeroes two of them before
+    the guard), so there is no absent arm -- arm `1` computes literal zeros rather than
+    nothing.
+
+    Aluminium TF (`i_tf_sup == 2`) is a third arm in PROCESS and has no occupant here;
+    it is refused earlier, at the `power.tf_power` slot, which is why this function is
+    written as a two-way question.
+    """
+    return 0 if _cryo_q_loads_arm(i_tf_sup, i_pf_conductor) != 2 else 1
+
+
+CRYO_LOADS = {0: CryoLoadsActive, 1: CryoLoadsInactive}
+"""`_cryo_loads_arm(...)` -> the cryoplant-load occupant."""
+
+
+ACPOW = {
+    PFEnergyStorageSource.LINE: AcpowLine,
+    PFEnergyStorageSource.MGF: AcpowMotorGeneratorFlywheel,
+}
+"""`.pf_power.i_pf_energy_storage_source` -> the plant AC power occupant.
+
+Two of three: `MGF_PF_LINE_HEATING` (3) is in `UNPORTED`, for the reason
+`('i_tf_sup', 2)` is -- PROCESS runs the byte-identical branch to `MGF`, and registering
+a second entry pointing at the same class would state a distinction the arithmetic does
+not have."""
+
+
 TF_POWER = {0: TfPowerResistive, 1: TfPowerSuperconducting}
 """`.tfcoil.i_tf_sup` -> the TF-power occupant."""
 
 
-def _power_profiles_over_time(i_tf_sup, i_p_coolant_pumping):
-    """The `.costs.ireactor == 0` occupant: the power *profiles* only.
+def _electric_production_arm(
+    ireactor: int, itart: int, i_tf_sup: int, i_blkt_dual_coolant, i_p_coolant_pumping
+) -> int:
+    """`(ireactor, itart, i_tf_sup, i_blkt_dual_coolant, i_p_coolant_pumping)` -> the
+    electric-production arm.
 
-    Takes `i_tf_sup` and uses it for nothing, because every occupant of one slot is
-    built the same way and this arm has no TF-conductor dependence to carry --
-    `PowerProfilesOverTime` declares no static field at all.
+    `power.py:1631-1772`, transcribed. Three questions, and the second and third are
+    nested inside the first:
+
+    ```
+    ireactor != 1                                    -> arm 0   profiles only
+    itart == 1 and i_tf_sup == 0                     -> +2      centrepost pump power
+    i_blkt_dual_coolant > 0 and pumping == MECHANICAL -> +1      liquid-breeder turbine
+    ```
+
+    so arms 1..4 are `1 + 2 * centrepost + liquid`. Five switches, **two** conditions:
+    neither is decided by one switch alone, which is why they are arm indices and not
+    nested slots -- `switch_kwarg_survey.md` §3 reports both as "(joint)" for the same
+    reason. `ireactor == 0` asks neither, because `PowerProfilesOverTime` computes
+    neither the centrepost pump power nor the gross electric power.
     """
-    return PowerProfilesOverTime()
-
-
-def _plant_electric_production_reactor(i_tf_sup, i_p_coolant_pumping):
-    """The `.costs.ireactor == 1` occupant: net electric power as well as the profiles.
-
-    `i_tf_sup` is a parameter and not a constant because it is `.tfcoil.i_tf_sup`, the
-    switch the `power.tf_power` slot is keyed on; `machine_from_indat` resolves it once
-    and threads it here. It used to be written `SUPERCONDUCTING` in a
-    `functools.partial`, where an `i_tf_sup = 0` machine kept it.
-    """
-    return PlantElectricProductionReactor(
-        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-        i_tf_sup=i_tf_sup,
-        i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-        i_p_coolant_pumping=i_p_coolant_pumping,
+    if ireactor != 1:
+        return 0
+    centrepost = (
+        SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK
+        and TFConductorModel(int(i_tf_sup)) is TFConductorModel.WATER_COOLED_COPPER
     )
+    liquid = (
+        BlanketDualCoolantModel(int(i_blkt_dual_coolant))
+        is not BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER
+        and PumpingPowerModelTypes(int(i_p_coolant_pumping))
+        is PumpingPowerModelTypes.MECHANICAL
+    )
+    return 1 + 2 * int(centrepost) + int(liquid)
 
 
 ELECTRIC_PRODUCTION = {
-    0: _power_profiles_over_time,
-    1: _plant_electric_production_reactor,
+    0: PowerProfilesOverTime,
+    1: PlantElectricProductionSingleCoolant,
+    2: PlantElectricProductionLiquidBreeder,
+    3: PlantElectricProductionResistiveCentrepostSingleCoolant,
+    4: PlantElectricProductionResistiveCentrepostLiquidBreeder,
 }
-"""`.costs.ireactor` -> the electric-production occupant, as a builder taking the
-`.tfcoil.i_tf_sup` this occupant needs. Built through `_slot_occupant(..., build=)`, so
-the threading is one expression in `machine_from_indat` and not a fifth transcription."""
+"""`_electric_production_arm(...)` -> the electric-production occupant. Keyed by the
+**arm index** that function documents, never by a switch value.
+
+**Five arms now, not two.** All four of `PlantElectricProductionReactor`'s static
+kwargs are gone (`_audit/next_steps.md` §14.2); the reference machine's arm is `1`,
+which declares neither `.tfcoil.p_cp_coolant_pump_elec` nor `.heat_transport.etath_liq`
+nor `.power.p_blkt_liquid_breeder_heat_deposited_mw` -- three edges no such machine
+makes."""
 
 
 def _no_cost_of_electricity():
@@ -1132,43 +1552,63 @@ def _no_cost_of_electricity():
     return None  # noqa: RET501 -- the returned `None` is the occupant, not a fall-off
 
 
-def _cost_of_electricity_calculated():
-    """The present occupant: `ireactor == 1 and ipnet == 0`, the only pair `coelc()`
-    runs on. The two statics restate the arm that selected this builder.
+TF_MAGNET_COST_SUPERCONDUCTING = {
+    SuperconductorCostModel.PER_KG: TfMagnetCostSuperconductingPerKg,
+    SuperconductorCostModel.PER_KAM: TfMagnetCostSuperconductingPerKam,
+}
+"""`.costs.supercond_cost_model` -> the Account 222.1 occupant.
+
+Both values are ported, so this registry is total and `UNPORTED` has no entry for the
+switch. It was an `eqx.field(static=True)` until `_audit/next_steps.md` §14.2: the two
+arms are two one-line strand-cost formulas over **disjoint** fields, so the single node
+declared `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0` and `.tfcoil.j_crit_str_tf` --
+three edges the reference run does not make."""
+
+
+COST_OF_ELECTRICITY = {
+    0: _no_cost_of_electricity,
+    1: CostOfElectricityConventionalAspectRatio,
+    2: CostOfElectricitySphericalTokamak,
+}
+"""`_cost_of_electricity_arm(ireactor, ipnet, itart)` -> the cost-of-electricity
+occupant, or `None`. Keyed by the **arm index** that function documents, never by a
+switch value -- the same discipline the two blanket dispatches follow.
+
+**Three arms now, not two.** `itart` was a static kwarg on the single occupant, along
+with `ireactor`, `ipnet` and `ife`; under `_audit/next_steps.md` §14.2 none of the four
+may be. Three of them were answering questions this slot had already answered, but
+`itart` was a real branch: `costs.py:2769-2783`'s centrepost replacement cost exists
+only on a spherical tokamak, so the one-occupant slot read `.costs.cplife_cal`,
+`.costs.cpstcst` and `.costs.cplife` on a machine that reads none of the three."""
+
+
+def _cost_of_electricity_arm(ireactor: int, ipnet: int, itart: int) -> int:
+    """Which arm of `Costs.run()`'s cost-of-electricity dispatch three switches select.
+
+    `process/models/costs/costs.py:82-83` and `:2769-2783`, transcribed:
+
+    ```
+    if ireactor != 1 or ipnet != 0:   -> arm 0   nothing is computed
+    elif itart == 1:                  -> arm 2   CostOfElectricitySphericalTokamak
+    else:                             -> arm 1   CostOfElectricityConventionalAspectRatio
+    ```
+
+    `ireactor`/`ipnet` are one condition, so one arm index rather than two keys:
+    `ireactor == 0` ("do not calculate MW(electric) or c-o-e",
+    `cost_variables.py:521-525`) and `ipnet == 1` ("let go < 0 (no c-o-e)", `:515-519`)
+    are two ways of saying the same thing to the same `if`, and neither PROCESS nor this
+    port distinguishes them downstream. `itart` is a second, *nested* question -- there
+    is no centrepost to replace on a run that computes no cost of electricity -- which is
+    why it joins this arm index rather than opening a sub-slot. Arm 1 is PROCESS's own
+    defaults (`ireactor = 1`, `ipnet = 0`, `itart = 0`) and the reference run.
     """
-    return CostOfElectricity(
-        ife=IFEModel.MAGNETIC_CONFINEMENT,
-        itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
-        ireactor=CostOfElectricityModel.CALCULATED,
-        ipnet=NetElectricPowerModel.SCALED_POSITIVE,
+    if ireactor != 1 or ipnet != 0:
+        return 0
+    return (
+        2
+        if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK
+        else 1
     )
-
-
-COST_OF_ELECTRICITY = {0: _no_cost_of_electricity, 1: _cost_of_electricity_calculated}
-"""`_cost_of_electricity_arm(ireactor, ipnet)` -> the cost-of-electricity occupant, or
-`None`. Keyed by the **arm index** that function documents, never by a switch value --
-the same discipline the two blanket dispatches follow."""
-
-
-def _cost_of_electricity_arm(ireactor: int, ipnet: int) -> int:
-    """Which arm of `Costs.run()`'s cost-of-electricity dispatch a pair of switches
-    selects.
-
-    `process/models/costs/costs.py:82-83`, transcribed:
-
-    ```
-    if ireactor == 1 and ipnet == 0:  -> arm 1   CostOfElectricity
-    else:                             -> arm 0   nothing is computed
-    ```
-
-    Two switches, one condition, so one arm index rather than two keys: `ireactor == 0`
-    ("do not calculate MW(electric) or c-o-e", `cost_variables.py:521-525`) and
-    `ipnet == 1` ("let go < 0 (no c-o-e)", `:515-519`) are two ways of saying the same
-    thing to the same `if`, and neither PROCESS nor this port distinguishes them
-    downstream. Arm 1 is PROCESS's own default (`ireactor = 1`, `ipnet = 0`) and the
-    reference run.
-    """
-    return 1 if (ireactor == 1 and ipnet == 0) else 0
 
 
 BLANKET_SHIELD_POWER = {
@@ -2033,16 +2473,18 @@ def iteration_variables_from_indat(input_file):
     return frozenset(found)
 
 
-def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited):
+def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited, itart):
     r"""The `Tokamak` an IN.DAT describes -- fourteen slots of the twenty-five filled.
 
     Split out of `machine_from_indat` rather than inlined, and the reason is length
     rather than principle: this is still the factory, and every `i_*` integer it reads is
     read here for the same reasons that function's docstring gives. It takes
     `switches`/`numbers`/`ixc` already parsed, plus the two values `machine_from_indat`
-    has already resolved and threaded -- `i_tf_sup` and `i_plasma_ignited` -- because **a
-    switch is answered once**: re-reading either here would be the second transcription
-    that `model_tree_design.md` §8 step 4d removed from the tree.
+    has already resolved and threaded -- `i_tf_sup`, `i_plasma_ignited` and `itart` --
+    because **a switch is answered once**: re-reading any of them here would be the
+    second transcription that `model_tree_design.md` §8 step 4d removed from the tree.
+    `itart` joined that list when the four shared slots that hardcoded it became
+    families (`_audit/next_steps.md` §14.2).
 
     **The eleven slots this does not fill are not mentioned.** They keep
     `models/tokamak/namespace.py`'s `None`, whatever the file says, because nothing under
@@ -2067,7 +2509,6 @@ def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited):
     All three are constants of a solve, which is the only property this factory ever
     asks of a key.
     """
-    itart = switches.get("itart", 0)  # `physics_variables.py:994`
     i_single_null = switches.get("i_single_null", 1)  # `physics_variables.py:1366`
     n_divertors = _n_divertors(i_single_null)
     # One predicate, four slots -- blanket areas, blanket volumes, first wall and vacuum
@@ -2435,13 +2876,25 @@ def machine_from_indat(input_file, stella_conf=None):
     i_tf_sup = switches.get("i_tf_sup", 1)
     tf_power = _slot_occupant("i_tf_sup", i_tf_sup, TF_POWER)
     i_tf_sup = TFConductorModel(i_tf_sup)
+    # `ife` decides no slot of its own: it is a *device*, and the seven Account-22x
+    # cost nodes that branch on it have no inertial-confinement arm at all. Answered
+    # once, here, before anything is built -- `_audit/next_steps.md` §14.2. Its default
+    # is `ife_variables.py:253`.
+    ife = IFEModel(int(switches.get("ife", 0)))
+    if ife is not IFEModel.MAGNETIC_CONFINEMENT:
+        _refuse_unported_switch("ife", ife)
+    # `itart` decides four slots that used to hardcode it and, on a tokamak, ten more
+    # inside `_tokamak_device`. Read here, above the device branch, and threaded --
+    # `physics_variables.py:994` is the default.
+    itart = SphericalTokamakModel(int(switches.get("itart", 0)))
     # `ireactor` decides two slots, not one: which electric-production occupant runs,
-    # and -- jointly with `ipnet` -- whether `costs.cost_of_electricity` exists at all.
-    # `cost_variables.py:521`/`:515` for both defaults.
+    # and -- jointly with `ipnet` and `itart` -- whether `costs.cost_of_electricity`
+    # exists at all and which centrepost treatment it uses. `cost_variables.py:521`/
+    # `:515` for the first two defaults.
     ireactor = switches.get("ireactor", 1)
     cost_of_electricity = _slot_occupant(
-        "ireactor_ipnet",
-        _cost_of_electricity_arm(ireactor, switches.get("ipnet", 0)),
+        "ireactor_ipnet_itart",
+        _cost_of_electricity_arm(ireactor, switches.get("ipnet", 0), itart),
         COST_OF_ELECTRICITY,
     )
     # ---- the five subsystems both devices have, built once ------------------------
@@ -2463,11 +2916,13 @@ def machine_from_indat(input_file, stella_conf=None):
                     switches.get("i_pulsed_plant", 0), switches.get("istore", 1)
                 ),
                 ENERGY_STORAGE,
-                build=lambda cls: (
-                    cls()
-                    if cls is EnergyStorageCostUnpulsed
-                    else cls(istore=ThermalStorageModel(int(switches.get("istore", 1))))
-                ),
+            ),
+            # `cost_variables.py:552` -- the two strand-cost formulas read disjoint
+            # fields, so this is a slot rather than the static kwarg it was.
+            tf_magnet_cost_superconducting=_slot_occupant(
+                "supercond_cost_model",
+                SuperconductorCostModel(int(switches.get("supercond_cost_model", 0))),
+                TF_MAGNET_COST_SUPERCONDUCTING,
             ),
         ),
     )
@@ -2477,33 +2932,80 @@ def machine_from_indat(input_file, stella_conf=None):
     # default. The slot resolution comes *before* the value is threaded, the same
     # discipline `i_tf_sup` follows, so no unported value ever reaches an occupant's
     # static field.
+    # `pfcoil_variables.py:230` -- the PF conductor decides, jointly with `i_tf_sup`,
+    # whether the cryoplant runs at all.
+    i_pf_conductor = PFConductorModel(int(switches.get("i_pf_conductor", 0)))
     i_p_coolant_pumping = PumpingPowerModelTypes(switches.get("i_p_coolant_pumping", 2))
+    # The thermal-efficiency family. Three switches, four slots, and every one of them
+    # used to carry the answer as a static kwarg -- `fwbs_variables.py:264` for
+    # `i_thermal_electric_conversion`, `:70` for `i_blanket_type`, `:273` for
+    # `secondary_cycle_liq`. Read once here and turned into arm indices below.
+    i_thermal_electric_conversion = ElectricConversionModelTypes(
+        int(switches.get("i_thermal_electric_conversion", 0))
+    )
+    i_blanket_type = BlktModelTypes(int(switches.get("i_blanket_type", 1)))
+    i_blkt_dual_coolant = BlanketDualCoolantModel(
+        int(switches.get("i_blkt_dual_coolant", 0))  # `fwbs_variables.py:526`
+    )
+    secondary_cycle_liq = ElectricConversionModelTypes(
+        int(switches.get("secondary_cycle_liq", 4))
+    )
     power = Power(
         tf_power=tf_power,
+        # `pf_power_variables.py:18` -- the two arms read complementary fields.
+        acpow=_slot_occupant(
+            "i_pf_energy_storage_source",
+            PFEnergyStorageSource(int(switches.get("i_pf_energy_storage_source", 2))),
+            ACPOW,
+        ),
+        # **The last two slots in the tree that still carry a switch as a static
+        # kwarg** (`_audit/next_steps.md` §14.2). `i_blanket_type` and
+        # `secondary_cycle_liq` left `ComponentThermalPowers` with the seven dead reads
+        # they fed; the three below are real branches on both nodes, and splitting them
+        # is a 2 x 3 x 2 product of occupants over a 26-read signature -- written up in
+        # §14.11 rather than improvised here. Every value is threaded from the file, so
+        # neither can contradict the slots the same switches decide.
         component_thermal_powers=ComponentThermalPowers(
             i_p_coolant_pumping=i_p_coolant_pumping,
-            i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
-            i_blanket_type=BlktModelTypes.CCFE_HCPB,
-            secondary_cycle_liq=(
-                ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
-            ),
+            i_blkt_dual_coolant=i_blkt_dual_coolant,
+            i_thermal_electric_conversion=i_thermal_electric_conversion,
         ),
         delta_eta_step=DeltaEtaStep(
             i_p_coolant_pumping=i_p_coolant_pumping,
-            i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
+            i_blkt_dual_coolant=i_blkt_dual_coolant,
+            i_thermal_electric_conversion=i_thermal_electric_conversion,
         ),
-        p_fw_div_heat_deposited_mw_step=PFwDivHeatDepositedMwStep(
-            i_p_coolant_pumping=i_p_coolant_pumping
+        eta_turbine=_slot_occupant(
+            "eta_turbine_arm",
+            _eta_turbine_arm(i_thermal_electric_conversion, i_blanket_type),
+            ETA_TURBINE,
+            build=lambda cls: None if cls is None else cls(),
         ),
-        p_fw_blkt_coolant_pump_mw_step=_slot_occupant(
+        etath_liq=_slot_occupant(
+            "secondary_cycle_liq",
+            secondary_cycle_liq,
+            ETATH_LIQ,
+            build=lambda cls: None if cls is None else cls(),
+        ),
+        temp_turbine_coolant_in=_slot_occupant(
+            "temp_turbine_coolant_in_arm",
+            _temp_turbine_coolant_in_arm(
+                i_thermal_electric_conversion, i_blanket_type, secondary_cycle_liq
+            ),
+            TEMP_TURBINE_COOLANT_IN,
+            build=lambda cls: None if cls is None else cls(),
+        ),
+        p_fw_div_heat_deposited_mw=_slot_occupant(
+            "p_fw_div_heat_deposited_arm",
+            _p_fw_div_heat_deposited_arm(i_p_coolant_pumping),
+            P_FW_DIV_HEAT_DEPOSITED,
+            build=lambda cls: None if cls is None else cls(),
+        ),
+        p_fw_blkt_coolant_pump_mw=_slot_occupant(
             "p_fw_blkt_coolant_pump_arm",
             _p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping),
             P_FW_BLKT_COOLANT_PUMP,
-            build=lambda cls: (
-                None if cls is None else cls(i_p_coolant_pumping=i_p_coolant_pumping)
-            ),
+            build=lambda cls: None if cls is None else cls(),
         ),
         cryo_q_nuc=_slot_occupant(
             "inuclear_i_tf_sup",
@@ -2511,27 +3013,57 @@ def machine_from_indat(input_file, stella_conf=None):
             CRYO_Q_NUC,
             build=lambda cls: None if cls is None else cls(),
         ),
-        cryo_q_loads_step=CryoQLoadsStep(
-            i_tf_sup=i_tf_sup,
-            i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+        cryo_q_loads=_slot_occupant(
+            "cryo_q_loads_arm",
+            _cryo_q_loads_arm(i_tf_sup, i_pf_conductor),
+            CRYO_Q_LOADS,
+            build=lambda cls: None if cls is None else cls(),
         ),
-        cryo_loads=CryoLoads(
-            i_tf_sup=i_tf_sup,
-            i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
+        cryo_loads=_slot_occupant(
+            "cryo_loads_arm",
+            _cryo_loads_arm(i_tf_sup, i_pf_conductor),
+            CRYO_LOADS,
         ),
     )
     buildings = Buildings(sizing=pick("i_bldgs_size", BUILDING_SIZING, 0))
     availability = Availability(
         electric_production=_slot_occupant(
-            "ireactor",
-            ireactor,
+            "electric_production_arm",
+            _electric_production_arm(
+                ireactor,
+                itart,
+                i_tf_sup,
+                i_blkt_dual_coolant,
+                i_p_coolant_pumping,
+            ),
             ELECTRIC_PRODUCTION,
-            build=lambda make: make(i_tf_sup, i_p_coolant_pumping),
         ),
-        cplife_avail=CplifeAvail(
-            i_tf_sup=i_tf_sup,
-            itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
+        avail=_slot_occupant(
+            # `cost_variables.py:416`
+            "ibkt_life",
+            BlanketLifetimeModel(int(switches.get("ibkt_life", 0))),
+            AVAIL,
         ),
+        cplife_avail=_slot_occupant(
+            "cplife_arm",
+            _cplife_arm(itart, i_tf_sup),
+            CPLIFE,
+            build=lambda cls: None if cls is None else cls(),
+        ),
+    )
+    # `physics_variables.py:875` -- both arms ported, identical reads. A slot rather
+    # than a static kwarg under `_audit/next_steps.md` §14.2.
+    fast_alpha_beta = _slot_occupant(
+        "i_beta_fast_alpha",
+        FastAlphaPressureModel(int(switches.get("i_beta_fast_alpha", 1))),
+        FAST_ALPHA_BETA,
+    )
+    # `i_plasma_ignited` is already resolved above for the confinement head; this is its
+    # fourth consumer and it is threaded, not re-read.
+    plasma_composition = _slot_occupant(
+        "i_plasma_ignited",
+        PlasmaIgnitionModel(int(i_plasma_ignited)),
+        PLASMA_COMPOSITION,
     )
     confinement_time = PhysicsConfinementTime(
         power_loss=plasma_power_loss,
@@ -2551,6 +3083,7 @@ def machine_from_indat(input_file, stella_conf=None):
                 iteration_variables_from_indat(input_file),
                 i_tf_sup,
                 i_plasma_ignited,
+                itart,
             ),
             costs=costs,
             physics=Physics(
@@ -2571,6 +3104,8 @@ def machine_from_indat(input_file, stella_conf=None):
                     ),
                 ),
                 confinement_time=confinement_time,
+                fast_alpha_beta=fast_alpha_beta,
+                plasma_composition=plasma_composition,
             ),
             power=power,
             buildings=buildings,
@@ -2617,22 +3152,29 @@ def machine_from_indat(input_file, stella_conf=None):
         BLANKET_MASSES,
     )
     fw_area = _slot_occupant("ipowerflow", ipowerflow, FW_AREA)
+    wall_load_arm = _wall_load_arm(
+        switches.get("i_pflux_fw_neutron", 1),  # `physics_variables.py:1006`
+        ipowerflow,
+    )
     ipowerflow = PowerFlowModel(ipowerflow)
     # The superconductor, and with it whether the coils block is a cycle: only the
     # Bi-2212 occupant reads `.tfcoil.j_tf_wp`, which `winding_pack_total_size_post`
     # owns. `tfcoil_variables.py:246` is the default. Below the device branch because
     # `StellaratorCoils` is a stellarator namespace -- a tokamak's TF coils are
     # `models/tfcoil/`, unported, and will need their own answer to this same switch.
+    i_tf_sc_mat = SuperconductorModel(int(switches.get("i_tf_sc_mat", 1)))
     winding_pack_intersect_inputs = _slot_occupant(
-        "i_tf_sc_mat",
-        SuperconductorModel(int(switches.get("i_tf_sc_mat", 1))),
-        WINDING_PACK_MATERIAL,
+        "i_tf_sc_mat", i_tf_sc_mat, WINDING_PACK_MATERIAL
     )
+    # The second consumer of the same switch, and until `_audit/next_steps.md` §14.2 it
+    # answered the question itself, with a module constant no instrument could see.
+    coils_mass = _slot_occupant("i_tf_sc_mat", i_tf_sc_mat, COILS_MASS_MATERIAL)
     return StellaratorProcess(
         costs=costs,
         stellarator=Stellarator(
             coils=StellaratorCoils(
-                winding_pack_intersect_inputs=winding_pack_intersect_inputs
+                winding_pack_intersect_inputs=winding_pack_intersect_inputs,
+                coils_mass=coils_mass,
             ),
             machine_config=machine_config,
             heating=pick("isthtr", HEATING, 1),
@@ -2641,13 +3183,19 @@ def machine_from_indat(input_file, stella_conf=None):
                 blanket_shield_power=blanket_shield_power,
                 blanket_masses=blanket_masses,
             ),
-            neutron_wall_load=NeutronWallLoad(
-                i_pflux_fw_neutron=NeutronWallLoadModel.SCALED_PLASMA_SURFACE_AREA,
-                ipowerflow=ipowerflow,
+            # One arm index, two slots: `_wall_load_arm` is the whole dispatch and
+            # both registries are keyed on it. `physics_variables.py:1006` is
+            # `i_pflux_fw_neutron`'s default.
+            neutron_wall_load=_slot_occupant(
+                "i_pflux_fw_neutron_ipowerflow", wall_load_arm, NEUTRON_WALL_LOAD
             ),
-            radiated_wall_load_and_fraction=RadiatedWallLoadAndFraction(
-                i_pflux_fw_neutron=NeutronWallLoadModel.SCALED_PLASMA_SURFACE_AREA,
-                ipowerflow=ipowerflow,
+            radiated_wall_load_and_fraction=_slot_occupant(
+                "i_pflux_fw_neutron_ipowerflow", wall_load_arm, RADIATED_WALL_LOAD
+            ),
+            heating_and_radiation_power=_slot_occupant(
+                "i_plasma_ignited",
+                PlasmaIgnitionModel(int(i_plasma_ignited)),
+                HEATING_AND_RADIATION_POWER,
             ),
         ),
         physics=Physics(
@@ -2661,6 +3209,8 @@ def machine_from_indat(input_file, stella_conf=None):
                 ),
             ),
             confinement_time=confinement_time,
+            fast_alpha_beta=fast_alpha_beta,
+            plasma_composition=plasma_composition,
         ),
         power=power,
         buildings=buildings,

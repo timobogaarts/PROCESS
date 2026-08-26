@@ -2292,3 +2292,116 @@ worktree` at `HEAD`. Every regeneration since prints its diff first.
 were read out of `~/jaxgraph`'s *working tree* and reported as landed; at the commit,
 `Drive` had no `body` and `Schedule.steps` never read `blocking.inner`. §13.1's pin
 discipline exists for exactly this, and skipping it produced a confident wrong answer.
+
+### 14.11 §14.2's policy, carried across the tree — twenty slots, and what it cost the graph
+
+**Re-measured first, not read off §14.2's table.** `mda_harness.switch_audit`'s walk over
+the *assembled* graph (`eqx.field(static=True)` per declaration instance) on both machines
+found **48 switch-kind kwargs over 19 switches on 30 slots** (stellarator) and **42 over 17**
+(tokamak) — not §14.1's "20 switches over 28 slots, 49 pairs", because the tokamak wave had
+landed since. **Six remain on each machine, over three switches and two slots.**
+
+#### Converted
+
+| slot | switch(es) | occupants | reads dropped on the reference machine |
+|---|---|---|---|
+| `costs.{first_wall,blanket,shield,power_injection,auxiliary_component_cooling,fuel_processing}_cost` | `ife` | the six classes, unchanged; `("ife", INERTIAL_CONFINEMENT)` in `UNPORTED` | 0 — the refusal moved from seven bodies to one assembly-time answer |
+| `costs.cost_of_electricity` | `ife`, `ipnet`, `ireactor`, `itart` | `CostOfElectricity{ConventionalAspectRatio,SphericalTokamak}` | `.costs.cplife_cal`, `.cpstcst`, `.cplife` |
+| `costs.tf_magnet_cost_superconducting` | `supercond_cost_model` | `...{PerKg,PerKam}` | `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0`, `.j_crit_str_tf` |
+| `costs.energy_storage_cost` | `istore` | `EnergyStorageCostPulsedElectrowattOption{1,2}` | 0 — literal-only, split under §14.2 as decided |
+| `physics.fast_alpha_beta` | `i_beta_fast_alpha` | `FastAlphaBeta{IterPhysicsRules,Ward}` | 0 — identical reads, split on §4's extensibility argument |
+| `physics.plasma_composition` | `i_plasma_ignited` | `PlasmaComposition{Ignited,NonIgnited}` | `.physics.f_nd_beam_electron` |
+| `physics.profiles.parameterisation.ecrh_density_limit` | `i_plasma_pedestal` | none — the kwarg is **deleted**, the container is the answer | 0 |
+| `stellarator.{neutron_wall_load,radiated_wall_load_and_fraction}` | `i_pflux_fw_neutron`, `ipowerflow` | three arms each, one `_wall_load_arm` dispatch for both slots | `.fwbs.fhole`, `.first_wall.a_fw_total`, `.f_a_fw_outboard_hcd`, `.f_ster_div_single` (x2 slots) |
+| `stellarator.heating_and_radiation_power` | `i_plasma_ignited` | `HeatingAndRadiationPower{Ignited,NonIgnited}` | `.current_drive.p_hcd_injected_total_mw` |
+| `stellarator.coils.coils_mass` | `i_tf_sc_mat` (**a module constant**) | eight, one per material, keyed by `WINDING_PACK_MATERIAL`'s own key | 0 — but see below |
+| `power.acpow` | `i_pf_energy_storage_source` | `Acpow{Line,MotorGeneratorFlywheel}`; value `3` in `UNPORTED` | `.heat_transport.fmgdmw` |
+| `power.eta_turbine` | `i_thermal_electric_conversion`, `i_blanket_type` | four + **an empty arm** | the whole node: `.heat_transport.eta_turbine` is an input here |
+| `power.etath_liq` | `secondary_cycle_liq` | one + an empty arm | — |
+| `power.temp_turbine_coolant_in` | the three above | two + an empty arm | `.fwbs.temp_blkt_coolant_out` |
+| `power.p_fw_div_heat_deposited_mw` | `i_p_coolant_pumping` | one + an empty arm | — |
+| `power.p_fw_blkt_coolant_pump_mw` | `i_p_coolant_pumping` | one (the slot was already `\| None`) | — |
+| `power.cryo_q_loads` | `i_tf_sup`, `i_pf_conductor` | two + an empty arm | — |
+| `power.cryo_loads` | `i_tf_sup`, `i_pf_conductor` | two; aluminium refused at `power.tf_power` | `.tfcoil.p_cp_resistive`, `.p_tf_leg_resistive`, `.p_tf_joints_resistive`, `.fwbs.pnuc_cp_tf` |
+| `availability.electric_production` | `itart`, `i_tf_sup`, `i_blkt_dual_coolant`, `i_p_coolant_pumping` | five arms (`ireactor` folded in) | `.tfcoil.p_cp_coolant_pump_elec`, `.heat_transport.etath_liq`, `.power.p_blkt_liquid_breeder_heat_deposited_mw` |
+| `availability.avail` | `ibkt_life`, `itart` | `Avail{NeutronFluence,DisplacementsPerAtom}`; **`itart` deleted, not split** | `.costs.life_dpa`, `.physics.p_fusion_total_mw`, `.costs.cplife` |
+| `availability.cplife_avail` | `i_tf_sup`, `itart` | `CplifeAvail{Superconducting,Resistive}` + **an empty arm** | the whole node |
+
+#### The structural result: ten `FixedPoint`s were the switch, not the model
+
+`switch_kwarg_survey.md` §4.7 predicted two of these and measured seven more as
+"self-read dead on the live arm". Splitting the switch settles all ten the same way, and
+the two shapes are worth separating:
+
+* **Five became empty slots.** `calculate_plant_thermal_efficiency`'s `USER_INPUT` arm is
+  `return eta_turbine`; `calculate_cplife_next`'s `itart != 1` arm is `return cplife`;
+  `calculate_p_fw_div_heat_deposited_mw`'s and `calculate_p_fw_blkt_coolant_pump_mw`'s
+  pass-throughs, and `CryoQLoads` outside PROCESS's guard, are the same sentence. A body
+  whose whole content is `return x` is not a fixed point; it is **"x is an input"**, and
+  the tree spells that as absence — `inuclear`'s shape (§14.4), now applied seven times.
+* **Five became ordinary `ExplicitFunction`s**, because on the computing arm nothing reads
+  what it owns.
+
+Measured: **`GRAPH` 159 → 150 nodes**, and the boundary **327 → 303 = 297 input + 6 guess**
+(from 311 + 16). The **ten guesses** are the ten unknowns that stopped being driven. The
+input half is **+2 −16**: the two additions are `.costs.cplife` and
+`.heat_transport.eta_turbine`, the two fields §4.7 named as *driven while determining
+nothing* — one of them the quantity `.costs.coe`, this run's objective, depends on. They
+are inputs now because PROCESS takes them as inputs on this configuration, said outright.
+
+#### `CoilsMass` — a switch no instrument could see
+
+`models/stellarator/coils/mass.py` answered `i_tf_sc_mat` with a **module constant**
+(`I_TF_SC_MAT_ITER_NB3SN = 1`) baked into a `FromExactly(tfcoil.dcond[0])` default.
+`switch_audit` walks `eqx.field(static=True)` and nothing else, so it was invisible to it,
+to `test_no_slot_contradicts_a_factory_switch`, and to `machine_survey`. The node next door
+has been an eight-occupant family since §14.5, so an `i_tf_sc_mat = 5` machine assembled
+`WstNb3snWindingPackIntersectInputs` beside a coil-mass node still reading `dcond[0]` — band
+(a)'s incoherence, one layer below where anything was looking. It is eight occupants now,
+keyed on `WINDING_PACK_MATERIAL`'s own key.
+
+**What would catch the next one.** `switch_audit`'s premise is that a switch reaches a node
+as a static field; a constant folded into a `FromExactly` default reaches it as a *port*
+instead. Two cheap checks, neither written here:
+
+1. **A cross-slot read check.** For every switch the factory resolves into an occupant,
+   assemble at each value and assert that no node's **declared reads** stay fixed while the
+   occupant changes — `CoilsMass` read `dcond[0]` at all eight values of a switch that
+   changed its sibling's class. This is `test_no_slot_contradicts_a_factory_switch`'s
+   question asked of ports rather than of fields, and it needs no new machinery:
+   `orphaned_by` already walks reads across a swap.
+2. **A source-level constant check.** Any module-level `int` whose name matches a
+   `DataStructure` switch field (case-insensitively, `I_TF_SC_MAT_ITER_NB3SN` ->
+   `i_tf_sc_mat`) is a switch answered outside `indat.py`. Crude, and it would have caught
+   this one; it is the only such constant in the tree today, so the check would start green.
+
+#### Not converted, and why
+
+`power.component_thermal_powers` and `power.delta_eta_step` still carry
+`i_p_coolant_pumping`, `i_blkt_dual_coolant` and `i_thermal_electric_conversion`. Both were
+**cut down** rather than left alone:
+
+* `ComponentThermalPowers` lost `i_blanket_type` and `secondary_cycle_liq` **and seven
+  reads** — it recomputed six of `calculate_component_thermal_powers`'s twenty-seven
+  outputs and discarded them, which is `switch_kwarg_survey.md` §6's "reads dead at every
+  value" residue. It is no longer wired into four fixed points it does not consume.
+* Every remaining value is **threaded from the file**, so no slot can contradict it and
+  `machine_survey`'s `pinned` column for `large_tokamak_eval.IN.DAT` is **empty**.
+
+What is left is a genuine 2 x 3 x 2 product of occupants over a 26-read signature — twelve
+classes for `ComponentThermalPowers` and eight for `DeltaEtaStep`, removing **two** further
+reads on the reference machine (`.primary_pumping.p_fw_blkt_coolant_pump_mw` on the
+`FRACTION_OF_HEAT` arm and `.fwbs.f_nuc_pow_bz_liq` on the single-coolant one). The
+arithmetic is worth stating because it is the first place in this wave where the policy's
+cost clearly exceeds what it buys, and because the shape it wants is **nesting** —
+`model_tree_design.md` §2's sub-slot — rather than a flat product. Left for a pass that
+decides that, with the arm analysis above so it is mechanical when it happens.
+
+#### `.ife.ife` as a port — still there, deliberately
+
+Four cost nodes read `.ife.ife` as an ordinary declared port and multiply by
+`jnp.where(ife == 1, 0.0, ...)` (`switch_kwarg_survey.md` §4.11's ten sites, six switches).
+With `ife == 1` now refused at assembly those `where`s are provably inert, so the reads
+could go. They are not static kwargs and the brief's rule — *a switch read arithmetically
+in a formula stays an ordinary declared read* — covers them; recorded here as the obvious
+next increment rather than taken.

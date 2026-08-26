@@ -56,6 +56,7 @@ from functional_process.indat import (
     machine_from_indat,
     switches_from_indat,
 )
+from functional_process.models.switch_enums import IFEModel
 
 
 @dataclasses.dataclass(frozen=True)
@@ -146,68 +147,18 @@ SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | ForcedByProcess | Bypass
     ),
     "i_cost_model": ReadByFactory(0),  # :248
     "ireactor": ReadByFactory(1),  # :260 -- equals the bare default, set anyway
-    # --- Hand-transcribed as a static kwarg, matching the file today, checked nowhere.
-    "i_p_coolant_pumping": Hardcoded(  # :198
-        value=1,
-        slots=(
-            Slot(
-                "power.component_thermal_powers.i_p_coolant_pumping",
-                lambda m: m.power.component_thermal_powers.i_p_coolant_pumping,
-            ),
-            Slot(
-                "power.delta_eta_step.i_p_coolant_pumping",
-                lambda m: m.power.delta_eta_step.i_p_coolant_pumping,
-            ),
-            Slot(
-                "power.p_fw_div_heat_deposited_mw_step.i_p_coolant_pumping",
-                lambda m: m.power.p_fw_div_heat_deposited_mw_step.i_p_coolant_pumping,
-            ),
-            Slot(
-                "power.p_fw_blkt_coolant_pump_mw_step.i_p_coolant_pumping",
-                lambda m: m.power.p_fw_blkt_coolant_pump_mw_step.i_p_coolant_pumping,
-            ),
-            Slot(
-                "availability.electric_production.i_p_coolant_pumping",
-                lambda m: m.availability.electric_production.i_p_coolant_pumping,
-            ),
-        ),
-    ),
-    "i_thermal_electric_conversion": Hardcoded(  # :203
-        value=2,
-        slots=(
-            Slot(
-                "power.component_thermal_powers.i_thermal_electric_conversion",
-                lambda m: m.power.component_thermal_powers.i_thermal_electric_conversion,
-            ),
-            Slot(
-                "power.delta_eta_step.i_thermal_electric_conversion",
-                lambda m: m.power.delta_eta_step.i_thermal_electric_conversion,
-            ),
-            Slot(
-                "power.eta_turbine_step.i_thermal_electric_conversion",
-                lambda m: m.power.eta_turbine_step.i_thermal_electric_conversion,
-            ),
-            Slot(
-                "power.temp_turbine_coolant_in_step.i_thermal_electric_conversion",
-                lambda m: (
-                    m.power.temp_turbine_coolant_in_step.i_thermal_electric_conversion
-                ),
-            ),
-        ),
-    ),
-    "i_plasma_ignited": Hardcoded(  # :126
-        value=1,
-        slots=(
-            Slot(
-                "stellarator.heating_and_radiation_power.i_plasma_ignited",
-                lambda m: m.stellarator.heating_and_radiation_power.i_plasma_ignited,
-            ),
-            Slot(
-                "physics.plasma_composition.i_plasma_ignited",
-                lambda m: m.physics.plasma_composition.i_plasma_ignited,
-            ),
-        ),
-    ),
+    # --- Read by the factory, having been hand-transcribed as static kwargs until
+    # `_audit/next_steps.md` §14.2's binding policy converted them.
+    #
+    # **`Hardcoded` has no entries left.** Every switch this file sets that decides a
+    # model now decides a *slot*, so `machine_from_indat` reads it from the file and
+    # there is no transcription for this inventory to police. That is the stronger
+    # check of the two: a value read from the file cannot drift from it, which is the
+    # whole defect class this module exists for (`i_confinement_time` was `34` against
+    # the file's `38` once, found by the MDA harness and by nothing here).
+    "i_p_coolant_pumping": ReadByFactory(1),  # :198
+    "i_thermal_electric_conversion": ReadByFactory(2),  # :203
+    "i_plasma_ignited": ReadByFactory(1),  # :126
     "i_tf_sc_mat": ReadByFactory(1),  # :235 -- ITER Nb3Sn
     # `Hardcoded` on `winding_pack_intersect_inputs` until `_audit/next_steps.md` §14.5
     # made that node a slot with eight occupants. The eight branches of
@@ -266,16 +217,50 @@ FACTORY_READ_SWITCHES = frozenset({
     "i_bldgs_size",
     "ireactor",
     "ipnet",
+    # --- read by the factory since `_audit/next_steps.md` §14.2's switch conversion.
+    # Every one of these was an `eqx.field(static=True)` on one or more nodes; each now
+    # decides a slot, so the factory reads it and no occupant transcribes it.
+    "ife",
+    "itart",
+    "supercond_cost_model",
+    "istore",
+    "i_beta_fast_alpha",
+    "i_plasma_ignited",
+    "i_pflux_fw_neutron",
+    "i_pf_energy_storage_source",
+    "i_pf_conductor",
+    "ibkt_life",
+    "i_blkt_dual_coolant",
+    "i_blanket_type",
+    "secondary_cycle_liq",
+    "i_thermal_electric_conversion",
+    "i_p_coolant_pumping",
 })
-"""Every switch name `machine_from_indat` itself reads via `switches.get(...)` --
-confirmed by grep (`switches.get("<name>"` / `pick("<name>"`, eleven hits, no more) and
-exercised dynamically, one by one, by
-`test_factory_switches_actually_change_the_assembled_machine` below -- so this list is
-checked against the factory's real behaviour, not merely its source text.
-Superset of `SWITCH_INVENTORY`'s five `ReadByFactory` entries: the other six names here
-(`ipowerflow`, `blktmodel`, `blkttype`, `i_tf_sup`, `i_bldgs_size`, `ipnet`) are read the
-same way but are not set by `REFERENCE_INPUT_FILE`, so `SWITCH_INVENTORY` -- "switches
-the file sets" -- has no entry for them.
+"""Every switch name `machine_from_indat` reads via `switches.get(...)` that decides a
+slot of the **shared** subsystems or of the stellarator device -- the ones this module's
+inventory is about. Read from `indat.py` itself (`switches.get("<name>"` /
+`pick("<name>"`), and exercised dynamically by
+`test_factory_switches_actually_change_the_assembled_machine` /
+`test_factory_switches_that_only_prove_themselves_by_a_refusal` below, so membership is
+checked against the factory's real behaviour rather than its source text.
+
+**One caveat, and it is about the machine rather than the factory**: `i_pf_conductor`
+is read (into `_cryo_q_loads_arm`/`_cryo_loads_arm`) but cannot change *this* machine's
+occupants on its own, because `i_tf_sup == 1` already makes PROCESS's cryoplant guard
+true (`power.py:1054-1057`) -- so it has no `_CHANGES_A_SLOT` row and its read is
+evidenced by `indat.py` alone.
+
+**Fifteen names joined in `_audit/next_steps.md` §14.2's switch conversion**, and every
+one of them was an `eqx.field(static=True)` on one or more nodes before it: `ife`,
+`itart`, `supercond_cost_model`, `istore`, `i_beta_fast_alpha`, `i_plasma_ignited`,
+`i_pflux_fw_neutron`, `i_pf_energy_storage_source`, `i_pf_conductor`, `ibkt_life`,
+`i_blkt_dual_coolant`, `i_blanket_type`, `secondary_cycle_liq`,
+`i_thermal_electric_conversion`, `i_p_coolant_pumping`. The tokamak device reads a
+further set of its own (`i_hcd_primary`, `i_plasma_geometry`, ...) which this inventory
+does not cover -- `machine_survey.py` is the instrument for those.
+
+Superset of `SWITCH_INVENTORY`'s `ReadByFactory` entries: the names not set by
+`REFERENCE_INPUT_FILE` have no value for that inventory to pin.
 
 `i_plasma_pedestal` **is not here**, although the file sets it and the tree has a slot
 for it: `machine_from_indat` reads `ST_INIT_I_PLASMA_PEDESTAL` for that slot instead,
@@ -503,6 +488,51 @@ _CHANGES_A_SLOT = (
         0,
         lambda m: type(m.stellarator.fwbs.blanket_shield_power).__name__,
     ),
+    # --- the switches `_audit/next_steps.md` §14.2 turned from static kwargs into
+    # slots. One row each, probing the occupant the switch now selects; `None` is a
+    # legitimate probe value, as `ipnet`'s row already established.
+    (
+        "i_beta_fast_alpha",
+        0,
+        lambda m: type(m.physics.fast_alpha_beta).__name__,
+    ),
+    (
+        "i_plasma_ignited",
+        0,
+        lambda m: type(m.physics.plasma_composition).__name__,
+    ),
+    (
+        "i_pflux_fw_neutron",
+        2,
+        lambda m: type(m.stellarator.neutron_wall_load).__name__,
+    ),
+    (
+        "i_tf_sc_mat",
+        5,
+        lambda m: type(m.stellarator.coils.coils_mass).__name__,
+    ),
+    (
+        "i_pf_energy_storage_source",
+        1,
+        lambda m: type(m.power.acpow).__name__,
+    ),
+    ("ibkt_life", 1, lambda m: type(m.availability.avail).__name__),
+    (
+        "supercond_cost_model",
+        1,
+        lambda m: type(m.costs.tf_magnet_cost_superconducting).__name__,
+    ),
+    (
+        "i_thermal_electric_conversion",
+        0,
+        lambda m: type(m.power.eta_turbine).__name__,
+    ),
+    (
+        "secondary_cycle_liq",
+        2,
+        lambda m: type(m.power.etath_liq).__name__,
+    ),
+    ("itart", 1, lambda m: type(m.availability.cplife_avail).__name__),
 )
 """Seven of the `FACTORY_READ_SWITCHES`: each has a second registered occupant that
 `_indat_with_override` can select on its own, so the "really reads it" proof is
@@ -558,6 +588,7 @@ not `fw_area`, which `ipowerflow` also selects on its own: `fw_area` would pass 
 or not the joint key were fixed."""
 
 _CAUSES_A_REFUSAL = (
+    ("ife", 1, ("ife", IFEModel.INERTIAL_CONFINEMENT)),
     ("istell", 0, ("i_plasma_ignited_separatrix", 1)),
     ("istell", 3, ("istell", 3)),
     ("i_cost_model", 1, ("i_cost_model", 1)),
@@ -684,16 +715,16 @@ def _static_fields_named(obj, name, path="", seen=None):
 
 COHERENCE_CASES = (
     # (switch, what the IN.DAT says, what the factory must resolve it to)
-    ("i_tf_sup", 0, 0),
-    ("i_tf_sup", 1, 1),
-    ("ipowerflow", 0, 0),
-    ("ipowerflow", 1, 1),
-    ("ireactor", 0, 0),
-    ("ireactor", 1, 1),
-    ("ipnet", 0, 0),
-    ("ipnet", 1, 1),
-    ("i_plasma_pedestal", 0, ST_INIT_I_PLASMA_PEDESTAL),
-    ("i_plasma_pedestal", 1, ST_INIT_I_PLASMA_PEDESTAL),
+    ("i_p_coolant_pumping", 0, 0),
+    ("i_p_coolant_pumping", 1, 1),
+    ("i_blkt_dual_coolant", 0, 0),
+    ("i_blkt_dual_coolant", 1, 1),
+    ("i_blkt_dual_coolant", 2, 2),
+    ("i_thermal_electric_conversion", 0, 0),
+    ("i_thermal_electric_conversion", 1, 1),
+    ("i_thermal_electric_conversion", 2, 2),
+    ("i_thermal_electric_conversion", 3, 3),
+    ("i_thermal_electric_conversion", 4, 4),
 )
 """Every (switch, file value) pair that assembles, for the switches that both drive a
 slot **and** appear as a static field on some occupant -- with the value the factory is

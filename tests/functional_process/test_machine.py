@@ -27,33 +27,48 @@ from cottax.interfaces.pytree_namespace_module import spell_flat, to_graph
 from functional_process import boundary as fp_boundary
 from functional_process.boundary import orphaned_by
 from functional_process.indat import (
+    ACPOW,
+    AVAIL,
     BLANKET_MASSES,
     BLANKET_SHIELD_POWER,
     BUILDING_SIZING,
+    COILS_MASS_MATERIAL,
     CONFINEMENT_SCALING,
-    CRYO_Q_NUC,
-    ENERGY_STORAGE,
-    EnergyStorageCostUnpulsed,
-    ThermalStorageModel,
     CONFINEMENT_TAIL,
-    PLASMA_POWER_LOSS,
     COST_MODEL,
     COST_OF_ELECTRICITY,
+    CPLIFE,
+    CRYO_LOADS,
+    CRYO_Q_LOADS,
+    CRYO_Q_NUC,
     ELECTRIC_PRODUCTION,
+    ENERGY_STORAGE,
+    ETA_TURBINE,
+    ETATH_LIQ,
+    FAST_ALPHA_BETA,
     FW_AREA,
     GRAPH,
     HEATING,
+    HEATING_AND_RADIATION_POWER,
+    NEUTRON_WALL_LOAD,
+    P_FW_BLKT_COOLANT_PUMP,
+    P_FW_DIV_HEAT_DEPOSITED,
+    PLASMA_COMPOSITION,
+    PLASMA_POWER_LOSS,
     PROFILE_PARAMETERISATION,
+    RADIATED_WALL_LOAD,
     REFERENCE_INPUT_FILE,
     REFERENCE_MACHINE,
     REFERENCE_MACHINE_SWITCHES,
     ST_INIT_I_PLASMA_PEDESTAL,
-    ProfileParameterisationPedestal,
+    TEMP_TURBINE_COOLANT_IN,
+    TF_MAGNET_COST_SUPERCONDUCTING,
     TF_POWER,
     UNPORTED,
     WINDING_PACK_MATERIAL,
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
+    ProfileParameterisationPedestal,
     machine_from_indat,
     switches_from_indat,
 )
@@ -61,10 +76,7 @@ from functional_process.total_process import TokamakProcess
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
-    PlasmaIgnitionModel,
 )
-from process.models.power import PumpingPowerModelTypes
-from process.models.tfcoil.base import TFConductorModel
 
 
 def occupant_class(entry):
@@ -76,29 +88,27 @@ def _plain(entry):
     return entry()
 
 
-def _electric_production(entry):
-    """`ELECTRIC_PRODUCTION`'s entries are builders taking `.tfcoil.i_tf_sup` and
-    `.fwbs.i_p_coolant_pumping`, both of which `machine_from_indat` resolves once and
-    threads in rather than letting the occupant hardcode. The reference machine's values
-    are what these swap tests hold them at.
-
-    `i_p_coolant_pumping` joined the signature when the first tokamak was assembled: it
-    was a hardcoded `FRACTION_OF_HEAT` on this occupant and on four `power` nodes,
-    correct for the Helias run and wrong for a tokamak, which sets `3`.
-    """
-    return entry(
-        TFConductorModel.SUPERCONDUCTING, PumpingPowerModelTypes.FRACTION_OF_HEAT
-    )
+def _maybe_absent(entry):
+    """A registry whose `None` entry means "nothing owns these fields" -- the shape
+    `_audit/next_steps.md` §14.4 established for `inuclear` and this wave extended to
+    seven more slots."""
+    return None if entry is None else entry()
 
 
 def _costs(entry):
-    """`Costs` has two slots of its own -- `cost_of_electricity`, whose occupant may be
-    `None`, and `energy_storage_cost` -- so it cannot be default-constructed. Built with
-    the reference machine's.
+    """`Costs` has three slots of its own -- `cost_of_electricity`, whose occupant may
+    be `None`, `energy_storage_cost` and `tf_magnet_cost_superconducting` -- so it
+    cannot be default-constructed. Built with the reference machine's.
+
+    The third joined when `.costs.supercond_cost_model` stopped being an
+    `eqx.field(static=True)` (`_audit/next_steps.md` §14.2).
     """
     return entry(
         cost_of_electricity=REFERENCE_MACHINE.costs.cost_of_electricity,
         energy_storage_cost=REFERENCE_MACHINE.costs.energy_storage_cost,
+        tf_magnet_cost_superconducting=(
+            REFERENCE_MACHINE.costs.tf_magnet_cost_superconducting
+        ),
     )
 
 
@@ -163,13 +173,16 @@ SLOTS = [
     ("i_bldgs_size", BUILDING_SIZING, lambda m: m.buildings.sizing, _plain),
     ("i_tf_sup", TF_POWER, lambda m: m.power.tf_power, _plain),
     (
-        "ireactor",
+        # Five arms now, not two: `_electric_production_arm` folds `ireactor` together
+        # with the two *joint* conditions that were four static kwargs on the reactor
+        # occupant (`_audit/next_steps.md` §14.2).
+        "electric_production_arm",
         ELECTRIC_PRODUCTION,
         lambda m: m.availability.electric_production,
-        _electric_production,
+        _plain,
     ),
     (
-        "ireactor_ipnet",
+        "ireactor_ipnet_itart",
         COST_OF_ELECTRICITY,
         lambda m: m.costs.cost_of_electricity,
         _plain,
@@ -197,24 +210,101 @@ SLOTS = [
         "i_pulsed_plant_istore",
         ENERGY_STORAGE,
         lambda m: m.costs.energy_storage_cost,
-        lambda entry: (
-            entry()
-            if entry is EnergyStorageCostUnpulsed
-            else entry(istore=ThermalStorageModel.ELECTROWATT_OPTION_1)
-        ),
+        _plain,
     ),
+    (
+        "supercond_cost_model",
+        TF_MAGNET_COST_SUPERCONDUCTING,
+        lambda m: m.costs.tf_magnet_cost_superconducting,
+        _plain,
+    ),
+    # --- the slots this wave's switch conversion created -------------------------
+    #
+    # Every one of them was a static kwarg on a node until `_audit/next_steps.md`
+    # §14.2. They are listed here rather than left out because this table is what
+    # `test_every_registered_occupant_assembles` and the swap contract iterate: a slot
+    # missing from it is a slot nothing checks.
+    ("i_beta_fast_alpha", FAST_ALPHA_BETA, lambda m: m.physics.fast_alpha_beta, _plain),
+    (
+        "i_plasma_ignited",
+        PLASMA_COMPOSITION,
+        lambda m: m.physics.plasma_composition,
+        _plain,
+    ),
+    (
+        "i_pflux_fw_neutron_ipowerflow",
+        NEUTRON_WALL_LOAD,
+        lambda m: m.stellarator.neutron_wall_load,
+        _plain,
+    ),
+    (
+        "i_pflux_fw_neutron_ipowerflow",
+        RADIATED_WALL_LOAD,
+        lambda m: m.stellarator.radiated_wall_load_and_fraction,
+        _plain,
+    ),
+    (
+        "i_plasma_ignited_stellarator",
+        HEATING_AND_RADIATION_POWER,
+        lambda m: m.stellarator.heating_and_radiation_power,
+        _plain,
+    ),
+    (
+        "i_tf_sc_mat_mass",
+        COILS_MASS_MATERIAL,
+        lambda m: m.stellarator.coils.coils_mass,
+        _plain,
+    ),
+    (
+        "i_pf_energy_storage_source",
+        ACPOW,
+        lambda m: m.power.acpow,
+        _plain,
+    ),
+    ("eta_turbine_arm", ETA_TURBINE, lambda m: m.power.eta_turbine, _maybe_absent),
+    ("secondary_cycle_liq", ETATH_LIQ, lambda m: m.power.etath_liq, _maybe_absent),
+    (
+        "temp_turbine_coolant_in_arm",
+        TEMP_TURBINE_COOLANT_IN,
+        lambda m: m.power.temp_turbine_coolant_in,
+        _maybe_absent,
+    ),
+    (
+        "p_fw_div_heat_deposited_arm",
+        P_FW_DIV_HEAT_DEPOSITED,
+        lambda m: m.power.p_fw_div_heat_deposited_mw,
+        _maybe_absent,
+    ),
+    (
+        "p_fw_blkt_coolant_pump_arm",
+        P_FW_BLKT_COOLANT_PUMP,
+        lambda m: m.power.p_fw_blkt_coolant_pump_mw,
+        _maybe_absent,
+    ),
+    ("cryo_q_loads_arm", CRYO_Q_LOADS, lambda m: m.power.cryo_q_loads, _maybe_absent),
+    ("cryo_loads_arm", CRYO_LOADS, lambda m: m.power.cryo_loads, _plain),
+    ("ibkt_life", AVAIL, lambda m: m.availability.avail, _plain),
+    ("cplife_arm", CPLIFE, lambda m: m.availability.cplife_avail, _maybe_absent),
 ]
 
 SINGLE_FIELDS = [
     f
     for f, _r, _w, _b in SLOTS
-    if not f.startswith("blktmodel_") and f != "ireactor_ipnet"
+    if not f.startswith("blktmodel_")
+    and not f.endswith("_arm")
+    and f
+    not in (
+        "ireactor_ipnet_itart",
+        "i_pflux_fw_neutron_ipowerflow",
+        "i_plasma_ignited_stellarator",
+        "i_tf_sc_mat_mass",
+    )
 ]
 """The slots addressed by one integer -- the joint keys are derived, not written.
 
-`ireactor_ipnet` joins the two `blktmodel_*` keys here: `_cost_of_electricity_arm`
-turns `.costs.ireactor` and `.costs.ipnet` into one arm index, so there is no single
-integer named `ireactor_ipnet` for an IN.DAT to set."""
+`ireactor_ipnet_itart` joins the two `blktmodel_*` keys here:
+`_cost_of_electricity_arm` turns `.costs.ireactor`, `.costs.ipnet` and `.physics.itart`
+into one arm index, so there is no single integer of that name for an IN.DAT to set."""
 
 TOKAMAK_BASELINE_INDAT = {
     "i_cost_model": 0,

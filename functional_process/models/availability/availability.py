@@ -489,24 +489,13 @@ def calculate_blanket_lifetime_fpy_avail(
     # `if`, picked first so only the formula it actually needs is ever built (avoids an
     # unguarded division in the unused branch poisoning value/gradient of the used one,
     # e.g. `life_dpa / dpa_fpy` when `dpa_fpy == 0` and `ibkt_life == 0` is selected).
-    unset = life_fw_fpy < 0.0001
-
     if ibkt_life == 0:
-        # Only the "unset" sub-branch guards `pflux_fw_neutron_mw == 0.0` in the
-        # source -- the "not unset" (`elif`) sub-branch does not. Kept unguarded here
-        # to match; see the audit record's PROCESS-bug note.
-        no_flux = pflux_fw_neutron_mw == 0.0
-        safe_flux = jnp.where(no_flux, 1.0, pflux_fw_neutron_mw)
-        life_if_unset = jnp.where(
-            no_flux, life_plant, jnp.minimum(abktflnc / safe_flux, life_plant)
+        return blanket_lifetime_fpy_neutron_fluence(
+            life_fw_fpy, abktflnc, pflux_fw_neutron_mw, life_plant
         )
-        life_if_set = jnp.minimum(
-            jnp.minimum(life_fw_fpy, abktflnc / pflux_fw_neutron_mw), life_plant
-        )
-        return jnp.where(unset, life_if_unset, life_if_set)
-
-    demo_life = jnp.minimum(life_dpa / dpa_fpy, life_plant)
-    return jnp.where(unset, demo_life, jnp.minimum(life_fw_fpy, demo_life))
+    return blanket_lifetime_fpy_displacements_per_atom(
+        life_fw_fpy, life_dpa, dpa_fpy, life_plant
+    )
 
 
 def calculate_ward_taylor_availability(
@@ -620,21 +609,118 @@ def calculate_avail(
     :
         `(life_blkt_fpy, life_div_fpy, cplife, bktcycles, cpfact, life_hcd_fpy)`.
     """
-    dpa_fpy = calculate_dpa_per_fpy(p_fusion_total_mw)
-    life_blkt_fpy = calculate_blanket_lifetime_fpy_avail(
-        life_fw_fpy,
-        ibkt_life,
-        abktflnc,
-        pflux_fw_neutron_mw,
-        life_dpa,
-        dpa_fpy,
+    if ibkt_life == 0:
+        life_blkt_fpy = blanket_lifetime_fpy_neutron_fluence(
+            life_fw_fpy, abktflnc, pflux_fw_neutron_mw, life_plant
+        )
+    else:
+        life_blkt_fpy = blanket_lifetime_fpy_displacements_per_atom(
+            life_fw_fpy, life_dpa, calculate_dpa_per_fpy(p_fusion_total_mw), life_plant
+        )
+    (
+        life_blkt_fpy_mod,
+        life_div_fpy_mod,
+        bktcycles,
+        cpfact,
+        life_hcd_fpy,
+    ) = _avail_from_blanket_lifetime(
+        life_blkt_fpy,
+        pflux_div_heat_load_mw,
+        adivflnc,
         life_plant,
+        t_plant_pulse_total,
+        t_plant_pulse_burn,
+        f_t_plant_available,
     )
+
+    cplife_selected = cplife if itart == 1 else cplife_in
+    if itart == 1:
+        cplife_mod = jnp.where(
+            cplife_selected < life_plant,
+            jnp.minimum(cplife_selected / f_t_plant_available, life_plant),
+            cplife_selected,
+        )
+    else:
+        cplife_mod = cplife_selected
+
+    return (
+        life_blkt_fpy_mod,
+        life_div_fpy_mod,
+        cplife_mod,
+        bktcycles,
+        cpfact,
+        life_hcd_fpy,
+    )
+
+
+def blanket_lifetime_fpy_neutron_fluence(
+    life_fw_fpy, abktflnc, pflux_fw_neutron_mw, life_plant
+):
+    """`ibkt_life == NEUTRON_FLUENCE` (0): the blanket lasts until its allowable
+    neutron fluence is spent (`availability.py:494-506`).
+
+    **Reads neither `.costs.life_dpa` nor `.physics.p_fusion_total_mw`** -- the second
+    only ever reached this function through `calculate_dpa_per_fpy`, which the other
+    arm needs and this one does not. That is a `.physics -> .costs` edge no
+    neutron-fluence machine makes, and it is why `ibkt_life` is a family and not a
+    static kwarg (`_audit/next_steps.md` §14.2).
+    """
+    unset = unset_life(life_fw_fpy)
+    # Only the "unset" sub-branch guards `pflux_fw_neutron_mw == 0.0` in the source --
+    # the "not unset" (`elif`) sub-branch does not. Kept unguarded here to match; see
+    # the audit record's PROCESS-bug note.
+    no_flux = pflux_fw_neutron_mw == 0.0
+    safe_flux = jnp.where(no_flux, 1.0, pflux_fw_neutron_mw)
+    life_if_unset = jnp.where(
+        no_flux, life_plant, jnp.minimum(abktflnc / safe_flux, life_plant)
+    )
+    life_if_set = jnp.minimum(
+        jnp.minimum(life_fw_fpy, abktflnc / pflux_fw_neutron_mw), life_plant
+    )
+    return jnp.where(unset, life_if_unset, life_if_set)
+
+
+def blanket_lifetime_fpy_displacements_per_atom(
+    life_fw_fpy, life_dpa, dpa_fpy, life_plant
+):
+    """`ibkt_life == FUSION_POWER` (1): the blanket lasts until its allowable
+    displacement damage is spent (`availability.py:508-509`).
+
+    Reads `.costs.life_dpa` and (through `calculate_dpa_per_fpy`)
+    `.physics.p_fusion_total_mw`, and neither `.costs.abktflnc` nor
+    `.physics.pflux_fw_neutron_mw`.
+    """
+    unset = unset_life(life_fw_fpy)
+    demo_life = jnp.minimum(life_dpa / dpa_fpy, life_plant)
+    return jnp.where(unset, demo_life, jnp.minimum(life_fw_fpy, demo_life))
+
+
+def unset_life(life_fw_fpy):
+    """PROCESS's own "first-wall lifetime not yet computed" test, `< 0.0001`."""
+    return life_fw_fpy < 0.0001
+
+
+def _avail_from_blanket_lifetime(
+    life_blkt_fpy,
+    pflux_div_heat_load_mw,
+    adivflnc,
+    life_plant,
+    t_plant_pulse_total,
+    t_plant_pulse_burn,
+    f_t_plant_available,
+):
+    """`calculate_avail`'s five non-`cplife` outputs, given the blanket lifetime the
+    `ibkt_life` arm produced.
+
+    `.costs.cplife` is deliberately absent: `cplife_mod` is the one output of
+    `calculate_avail` that reads it, and `Avail` discards that output. Under
+    `_audit/next_steps.md` §14.2's no-dead-reads rule the node stops declaring it, so
+    the arm functions below take neither `cplife` nor `itart`.
+    """
     pflux_div_heat_load_mw_clamped = jnp.maximum(pflux_div_heat_load_mw, 1.0e-10)
     life_div_fpy = calculate_divertor_lifetime(
         adivflnc, pflux_div_heat_load_mw_clamped, life_plant
     )
-    cplife_selected = cplife if itart == 1 else cplife_in
 
     pulse_fpy = t_plant_pulse_total / YEAR_SECONDS
     bktcycles = (life_blkt_fpy / pulse_fpy) + 1.0
@@ -651,24 +737,61 @@ def calculate_avail(
         jnp.minimum(life_div_fpy / f_t_plant_available, life_plant),
         life_div_fpy,
     )
-    if itart == 1:
-        cplife_mod = jnp.where(
-            cplife_selected < life_plant,
-            jnp.minimum(cplife_selected / f_t_plant_available, life_plant),
-            cplife_selected,
-        )
-    else:
-        cplife_mod = cplife_selected
-
     life_hcd_fpy = life_blkt_fpy_mod
+    return life_blkt_fpy_mod, life_div_fpy_mod, bktcycles, cpfact, life_hcd_fpy
 
-    return (
-        life_blkt_fpy_mod,
-        life_div_fpy_mod,
-        cplife_mod,
-        bktcycles,
-        cpfact,
-        life_hcd_fpy,
+
+def calculate_avail_neutron_fluence(
+    life_fw_fpy,
+    abktflnc,
+    pflux_fw_neutron_mw,
+    life_plant,
+    pflux_div_heat_load_mw,
+    adivflnc,
+    t_plant_pulse_total,
+    t_plant_pulse_burn,
+    f_t_plant_available,
+):
+    """`calculate_avail`'s five non-`cplife` outputs at `ibkt_life == NEUTRON_FLUENCE`
+    (0) -- PROCESS's own default (`cost_variables.py:416`) and the reference run's.
+    """
+    return _avail_from_blanket_lifetime(
+        blanket_lifetime_fpy_neutron_fluence(
+            life_fw_fpy, abktflnc, pflux_fw_neutron_mw, life_plant
+        ),
+        pflux_div_heat_load_mw,
+        adivflnc,
+        life_plant,
+        t_plant_pulse_total,
+        t_plant_pulse_burn,
+        f_t_plant_available,
+    )
+
+
+def calculate_avail_displacements_per_atom(
+    life_fw_fpy,
+    p_fusion_total_mw,
+    life_dpa,
+    life_plant,
+    pflux_div_heat_load_mw,
+    adivflnc,
+    t_plant_pulse_total,
+    t_plant_pulse_burn,
+    f_t_plant_available,
+):
+    """`calculate_avail`'s five non-`cplife` outputs at `ibkt_life == FUSION_POWER`
+    (1).
+    """
+    return _avail_from_blanket_lifetime(
+        blanket_lifetime_fpy_displacements_per_atom(
+            life_fw_fpy, life_dpa, calculate_dpa_per_fpy(p_fusion_total_mw), life_plant
+        ),
+        pflux_div_heat_load_mw,
+        adivflnc,
+        life_plant,
+        t_plant_pulse_total,
+        t_plant_pulse_burn,
+        f_t_plant_available,
     )
 
 
@@ -1309,14 +1432,45 @@ def calculate_cplife_next(
     if itart != 1:
         return cplife
     if i_tf_sup == 1:
-        fresh = calculate_cp_lifetime_superconducting(
+        return calculate_cplife_superconducting(
+            neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
+        )
+    return calculate_cplife_resistive(
+        cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
+    )
+
+
+def calculate_cplife_superconducting(
+    neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
+):
+    """`calculate_cplife_next`'s `(itart == 1, i_tf_sup == 1)` arm: the fresh
+    superconducting centrepost lifetime, availability-adjusted.
+
+    Takes no `cplife`: `calculate_cplife_next`'s `cplife` parameter is read **only** on
+    the `itart != 1` arm, where the whole body is `return cplife`. Splitting the switch
+    is therefore what removes this node's self-reference and with it a driven block
+    (`_audit/next_steps.md` §14.2).
+    """
+    return calculate_cplife_lifetime_adjustment(
+        calculate_cp_lifetime_superconducting(
             neut_flux_cp, flu_tf_neutron_fast_max, life_plant
-        )
-    else:
-        fresh = calculate_cp_lifetime_resistive(
-            cpstflnc, pflux_fw_neutron_mw, life_plant
-        )
-    return calculate_cplife_lifetime_adjustment(fresh, life_plant, f_t_plant_available)
+        ),
+        life_plant,
+        f_t_plant_available,
+    )
+
+
+def calculate_cplife_resistive(
+    cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
+):
+    """`calculate_cplife_next`'s `(itart == 1, i_tf_sup != 1)` arm: the fresh resistive
+    centrepost lifetime, availability-adjusted. Takes no `cplife`; see its sibling.
+    """
+    return calculate_cplife_lifetime_adjustment(
+        calculate_cp_lifetime_resistive(cpstflnc, pflux_fw_neutron_mw, life_plant),
+        life_plant,
+        f_t_plant_available,
+    )
 
 
 def calculate_cplife_avail_st_next(
@@ -1364,53 +1518,82 @@ def calculate_cplife_avail_st_next(
     return calculate_cplife_lifetime_adjustment(fresh, life_plant, f_t_plant_available)
 
 
-class CplifeAvail(FixedPointFunction):
-    """cottax node: `.costs.cplife`'s Shape B self-reference in `Avail`/`Avail2`
-    (`next_steps.md` §5), split out as a `FixedPointFunction`. `step` ->
-    `calculate_cplife_next`.
+class CplifeAvail(ExplicitFunction):
+    """The `.costs.cplife` family for `Avail`/`Avail2` -- one occupant per arm of
+    `.physics.itart` x `.tfcoil.i_tf_sup`.
 
-    Shared by `Avail` and `Avail2`: both branches' `itart == 1` cplife-adjustment formula
-    is identical once `cplife`/`life_plant`/`f_t_plant_available`/`itart` are given
+    **This was a `FixedPointFunction`, and splitting the switches deleted the fixed
+    point.** `calculate_cplife_next` opens `if itart != 1: return cplife` -- so on a
+    conventional machine the step is the *identity map*, six of its seven declared reads
+    are dead, and the `FixedPoint` problem that owned `^cond.costs.cplife` determined
+    nothing (`_audit/switch_kwarg_survey.md` §4.7). On a spherical machine neither
+    remaining arm reads `.costs.cplife` at all: the centrepost lifetime is computed
+    fresh and then availability-adjusted. So the self-reference existed **only** at the
+    value where the body is `return cplife`, which is not a fixed point but an input.
+
+    That makes this the second instance of `inuclear`'s shape (`_audit/next_steps.md`
+    §14.4): the conventional arm is an **empty slot** (`CplifeAvail | None`), and the
+    two spherical arms are ordinary `ExplicitFunction`s. What `sand.
+    degenerate_fixed_points` used to recover at runtime by differentiating a residual,
+    the tree now states.
+
+    Shared by `Avail` and `Avail2`: both branches' `itart == 1` cplife-adjustment
+    formula is identical once `cplife`/`life_plant`/`f_t_plant_available` are given
     (confirmed by direct comparison of `calculate_avail`'s and `calculate_avail_2`'s
-    `itart == 1` blocks -- see the audit record) -- one shared node, not a duplicate per
-    branch, per the task's own preference for this case.
+    `itart == 1` blocks -- see the audit record).
 
-    `i_tf_sup`/`itart` are static (switches are not ports). Note this duplicates
-    `i_tf_sup`'s SC/resistive branch *inline* as a Python `if`, rather than consuming
-    `CpLifetimeSuperconducting`/`CpLifetimeResistive`'s own node outputs -- unlike that
-    pair's top-level split (justified there because `.costs.cplife` had no other owner to
-    conflict with), this node's `FixedPoint` problem *also* wants to own `.costs.cplife`,
-    and only one producer of one `VarPath` may exist in any graph that registers both
-    together. Duplicating the two-line `calculate_cp_lifetime_*` dispatch here avoids
-    that conflict entirely rather than resolving it; `CpLifetimeSuperconducting`/
-    `CpLifetimeResistive` remain valid, independently useful standalone nodes.
+    **`total_process.py`'s recorded reason for not registering
+    `CpLifetime{Superconducting,Resistive}` here has expired, and a second reason
+    stands.** The expired one is ownership: occupants of one slot never coexist, so two
+    candidate owners of `.costs.cplife` in the same slot are not a conflict. The
+    standing one is that those two nodes return the *fresh* lifetime, where these arms
+    return the availability-adjusted one -- a different quantity, so they cannot simply
+    be dropped in. The two-line `calculate_cp_lifetime_*` dispatch is *consumed* by the
+    occupants below rather than duplicated, which is the half of the old note that could
+    be fixed.
     """
-
-    i_tf_sup: TFConductorModel = eqx.field(static=True)
-    itart: SphericalTokamakModel = eqx.field(static=True)
 
     cplife = OutputInto(costs)
 
-    def step(
+
+class CplifeAvailSuperconducting(CplifeAvail):
+    """`itart == 1` with `i_tf_sup == SUPERCONDUCTING` (1): the centrepost lasts until
+    its fast-neutron fluence limit, then adjusted for plant availability.
+
+    Reads `.fwbs.neut_flux_cp` and `.constraints.flu_tf_neutron_fast_max`, and neither
+    `.costs.cpstflnc` nor `.physics.pflux_fw_neutron_mw` -- **and not `.costs.cplife`**,
+    which is what stops this being a fixed point.
+    """
+
+    def __call__(
         self,
-        cplife=From(costs),
         neut_flux_cp=From(fwbs),
         flu_tf_neutron_fast_max=From(constraints),
+        life_plant=From(costs),
+        f_t_plant_available=From(costs),
+    ):
+        return calculate_cplife_superconducting(
+            neut_flux_cp, flu_tf_neutron_fast_max, life_plant, f_t_plant_available
+        )
+
+
+class CplifeAvailResistive(CplifeAvail):
+    """`itart == 1` with `i_tf_sup != SUPERCONDUCTING`: the centrepost lasts until its
+    allowable stress fluence is spent, then adjusted for plant availability.
+
+    Reads `.costs.cpstflnc` and `.physics.pflux_fw_neutron_mw`, and neither
+    `.fwbs.neut_flux_cp` nor `.constraints.flu_tf_neutron_fast_max`.
+    """
+
+    def __call__(
+        self,
         cpstflnc=From(costs),
         pflux_fw_neutron_mw=From(physics),
         life_plant=From(costs),
         f_t_plant_available=From(costs),
     ):
-        return calculate_cplife_next(
-            cplife,
-            neut_flux_cp,
-            flu_tf_neutron_fast_max,
-            cpstflnc,
-            pflux_fw_neutron_mw,
-            life_plant,
-            f_t_plant_available,
-            i_tf_sup=self.i_tf_sup,
-            itart=self.itart,
+        return calculate_cplife_resistive(
+            cpstflnc, pflux_fw_neutron_mw, life_plant, f_t_plant_available
         )
 
 
@@ -1462,27 +1645,37 @@ class CplifeAvailSt(FixedPointFunction):
 
 
 class Avail(ExplicitFunction):
-    """cottax node: `calculate_avail`'s outputs *other* than `.costs.cplife`, unchanged,
-    ports declared. `.costs.cplife` itself is `CplifeAvail`'s (see that class and the
-    module docstring's "cottax nodes" section for why this needed splitting at all --
-    Shape B, `next_steps.md` §5).
+    """The `calculate_avail` family -- `calculate_avail`'s outputs *other* than
+    `.costs.cplife`, one occupant per `.costs.ibkt_life` value.
 
-    `ibkt_life`/`itart` are static -- see module docstring. Mutually exclusive
-    alternative to `Avail2`/`AvailSt`: `.costs.i_plant_availability` selects at most one
-    of the three branch nodes at graph-assembly time.
+    `.costs.cplife` itself is `CplifeAvail`'s (see that class and the module docstring's
+    "cottax nodes" section for why this needed splitting at all -- Shape B,
+    `next_steps.md` §5). Mutually exclusive alternative to `Avail2`/`AvailSt`:
+    `.costs.i_plant_availability` selects at most one of the three branch nodes at
+    graph-assembly time.
 
-    `cplife` is read here as a plain current-value `FromExactly` (`.costs.cplife`, i.e.
-    `CplifeAvail`'s output once both are registered together) and passed to
-    `calculate_avail` unchanged -- but its value is **provably inert** for every output
-    this node declares: inspecting `calculate_avail`'s body shows `cplife`/`cplife_in`
-    feed *only* the `cplife_mod` return slot, which this node discards. Kept as a real
-    `FromExactly` anyway (matching what a full port of `avail()`'s real read/write order would
-    show, and the task's own recipe) rather than a magic constant, even though any value
-    would do here -- unlike `AvailSt` below, where the same-looking read is load-bearing.
+    **`ibkt_life` was an `eqx.field(static=True)` here and is a slot now; `itart` was
+    one and is simply gone** (`_audit/next_steps.md` §14.2). The two are different
+    cases, and the difference is worth stating:
+
+    * `ibkt_life` is a real family. Its arms read disjoint fields -- `.costs.abktflnc`
+      + `.physics.pflux_fw_neutron_mw` against `.costs.life_dpa` +
+      `.physics.p_fusion_total_mw` -- so the one node declared two edges no run makes.
+      `switch_kwarg_survey.md` §3 measured only one of the two (`live (1)`), because
+      `p_fusion_total_mw` reaches `calculate_dpa_per_fpy` unconditionally and its jaxpr
+      method counts a computed-then-discarded value as live. Splitting drops both.
+    * `itart` decided **nothing this node computes**. `calculate_avail`'s only
+      `itart`-gated output is `cplife_mod` (`availability.py:654-661`), which this node
+      discards, so both arms have identical ports *and identical behaviour*. A switch
+      that selects nothing is not a family, and the honest conversion is deletion --
+      of the field **and** of the `.costs.cplife` read it existed to gate.
+
+    That second read is the one that mattered. The previous docstring said it outright
+    -- *"its value is provably inert for every output this node declares ... kept as a
+    real `FromExactly` anyway ... even though any value would do here"* -- and keeping
+    it made `Avail` a consumer of `CplifeAvail`'s `FixedPoint`, which is the identity
+    map on this machine. It is not a consumer, and now does not say it is.
     """
-
-    ibkt_life: BlanketLifetimeModel = eqx.field(static=True)
-    itart: SphericalTokamakModel = eqx.field(static=True)
 
     life_blkt_fpy = OutputInto(fwbs)
     life_div_fpy = OutputInto(costs)
@@ -1490,12 +1683,52 @@ class Avail(ExplicitFunction):
     cpfact = OutputInto(costs)
     life_hcd_fpy = OutputInto(costs)
 
+
+class AvailNeutronFluence(Avail):
+    """`ibkt_life == NEUTRON_FLUENCE` (0) -- PROCESS's own default
+    (`cost_variables.py:416`) and the reference run's.
+
+    **Two reads leave with this occupant**: `.costs.life_dpa` and
+    `.physics.p_fusion_total_mw`.
+    """
+
     def __call__(
         self,
-        p_fusion_total_mw=From(physics),
         life_fw_fpy=From(fwbs),
         abktflnc=From(costs),
         pflux_fw_neutron_mw=From(physics),
+        life_plant=From(costs),
+        pflux_div_heat_load_mw=From(divertor),
+        adivflnc=From(costs),
+        t_plant_pulse_total=From(times),
+        t_plant_pulse_burn=From(times),
+        f_t_plant_available=From(costs),
+    ):
+        return calculate_avail_neutron_fluence(
+            life_fw_fpy,
+            abktflnc,
+            pflux_fw_neutron_mw,
+            life_plant,
+            pflux_div_heat_load_mw,
+            adivflnc,
+            t_plant_pulse_total,
+            t_plant_pulse_burn,
+            f_t_plant_available,
+        )
+
+
+class AvailDisplacementsPerAtom(Avail):
+    """`ibkt_life == FUSION_POWER` (1) -- the blanket lifetime set by displacement
+    damage per full-power year.
+
+    Reads `.costs.life_dpa` and `.physics.p_fusion_total_mw`, and neither
+    `.costs.abktflnc` nor `.physics.pflux_fw_neutron_mw`.
+    """
+
+    def __call__(
+        self,
+        life_fw_fpy=From(fwbs),
+        p_fusion_total_mw=From(physics),
         life_dpa=From(costs),
         life_plant=From(costs),
         pflux_div_heat_load_mw=From(divertor),
@@ -1503,20 +1736,10 @@ class Avail(ExplicitFunction):
         t_plant_pulse_total=From(times),
         t_plant_pulse_burn=From(times),
         f_t_plant_available=From(costs),
-        cplife=From(costs),
     ):
-        (
-            life_blkt_fpy,
-            life_div_fpy,
-            _cplife_mod,
-            bktcycles,
-            cpfact,
-            life_hcd_fpy,
-        ) = calculate_avail(
-            p_fusion_total_mw,
+        return calculate_avail_displacements_per_atom(
             life_fw_fpy,
-            abktflnc,
-            pflux_fw_neutron_mw,
+            p_fusion_total_mw,
             life_dpa,
             life_plant,
             pflux_div_heat_load_mw,
@@ -1524,12 +1747,7 @@ class Avail(ExplicitFunction):
             t_plant_pulse_total,
             t_plant_pulse_burn,
             f_t_plant_available,
-            cplife,
-            cplife,
-            ibkt_life=self.ibkt_life,
-            itart=self.itart,
         )
-        return life_blkt_fpy, life_div_fpy, bktcycles, cpfact, life_hcd_fpy
 
 
 class Avail2(ExplicitFunction):

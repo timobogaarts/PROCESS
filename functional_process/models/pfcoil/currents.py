@@ -4,8 +4,8 @@ Audit record: `functional_process/_audit/units/models/pfcoil/currents.md`.
 
 This is the half of `PFCoil.pfcoil()` between the coil placement and the coil sizing:
 
-- `calculate_efc_currents` -- `PFCoil.efc` (`process/models/pfcoil.py:1403-1506`) with its
-  three helpers `fixb` (`:5133-5183`), `mtrx` (`:5186-5285`) and `PFCoil.solv`
+- `calculate_efc_currents` -- `PFCoil.efc` (`process/models/pfcoil.py:1403-1506`) with
+  its three helpers `fixb` (`:5133-5183`), `mtrx` (`:5186-5285`) and `PFCoil.solv`
   (`:1567-1613`), plus the residual norm `rsid` (`:5063-5130`). A damped least-squares
   fit, by SVD, of the group currents that reproduce a wanted field at a set of points.
 - `calculate_plasma_initiation_currents` -- `pfcoil()`'s "Flux swing coils" block
@@ -33,9 +33,12 @@ a `VarPath` it owns, so this is a genuine multi-node SCC for `Blocking` to find 
 a `Drive` to solve, not a self-loop. See `currents.md` § "The cycle" and this wave's
 report -- the assembler has to decide which algorithm drives it.
 
-`.pf_coil.ind_pf_cs_plasma_mutual` is a **boundary input** here: it is produced by
-`PFCoil.induct` (`:1721-2020`), which this pass does not port (the brief excludes the
-inductance/volt-second/pulse-timing chain), so nothing in this graph writes it.
+`.pf_coil.ind_pf_cs_plasma_mutual` **was** a boundary input here and is not one any
+more: `inductance.py::PFCoilInductance` ports its producer, `PFCoil.induct`
+(`:1721-1984`). The cycle above therefore has four nodes, not three, and the matrix is
+an internal edge of the block rather than something supplied from outside -- which also
+means PROCESS's `first_call` seeding of it is the iteration's initial guess. See
+`inductance.md` § "The cycle, one node larger".
 """
 
 import jax
@@ -105,8 +108,8 @@ def _mtrx(rpts, zpts, brin, bzin, r_group, z_group, n_in_group, alfa, bfix):
 
     Ports `mtrx`, `process/models/pfcoil.py:5186-5285`. `n_in_group` is a Python tuple:
     it selects how many coils of each group's row are summed, which is a shape, not a
-    value. `gmat` keeps PROCESS's full `(LROW1, N_PF_GROUPS_MAX)` padding -- see
-    `__init__.LROW1` for why the zero rows and columns are not trimmed.
+    value. `gmat` keeps PROCESS's full `(LROW1, N_PF_GROUPS_MAX)` padding; `_solv` trims
+    the unused columns before decomposing, for a reason given there.
 
     Returns
     -------
@@ -151,8 +154,8 @@ def _solv(gmat, bvec, n_groups):
     - `zvec` is **carried** across the inner loop. It is reset to zero before each output
       component and only updated when `sigma[j] > 1e-10`, so a singular value below the
       floor makes that term reuse the *previous* `j`'s ratio instead of contributing
-      zero. Reproduced by forward-filling the ratio along `j` (`jnp.cummax` over the
-      index of the last admissible `j`), which is what that loop computes.
+      zero. Reproduced by forward-filling the ratio along `j` (`jax.lax.cummax` over
+      the index of the last admissible `j`), which is what that loop computes.
     - The sums run over `j < n_pf_coil_groups` only, so the null-space directions of the
       padded matrix never enter. Since the rank is `n_groups` and the singular values
       come back sorted, those are exactly the admissible directions.
@@ -161,20 +164,33 @@ def _solv(gmat, bvec, n_groups):
     `min(rows, cols)` columns are ever indexed, and those two agree column for column.
     A per-column sign flip of the decomposition changes neither, because `U` and `V`
     flip together and this is a pseudo-inverse.
+
+    **The decomposition is taken of `gmat[:, :n_groups]`, not of the padded matrix**, and
+    that is a gradient fix rather than an optimisation. `mtrx` writes only the first
+    `n_groups` of `gmat`'s `N_PF_GROUPS_MAX` columns, so the rest are structurally zero
+    and contribute `N_PF_GROUPS_MAX - n_groups` *repeated zero* singular values. The
+    values are unaffected -- for `A = [A_n | 0]`, `A`'s nonzero singular values, their
+    left vectors and the leading block of their right vectors are exactly `A_n`'s, which
+    is precisely what the sums below index -- but SVD's JVP divides by
+    `sigma_i^2 - sigma_j^2`, so a repeated singular value makes the *whole* tangent
+    `nan`. It does so only when the perturbation direction reaches that block, which is
+    why the defect shows up at `alfa == 0` and nowhere else: the smoothing rows are the
+    one thing whose tangent is nonzero while its value is not. Trimming the columns
+    removes the degenerate block, and with it the `0/0`. Same numbers, finite
+    derivative -- the `safe_math.py` bargain, in linear algebra rather than in `sqrt`.
     """
-    umat, sigma, vmat = jnp.linalg.svd(gmat, full_matrices=False)
+    umat, sigma, vmat = jnp.linalg.svd(gmat[:, :n_groups], full_matrices=False)
 
-    work2 = umat[:, :n_groups].T @ bvec
+    work2 = umat.T @ bvec
 
-    sigma_n = sigma[:n_groups]
-    admissible = sigma_n > _SIGMA_FLOOR
-    ratio = jnp.where(admissible, work2 / jnp.where(admissible, sigma_n, 1.0), 0.0)
+    admissible = sigma > _SIGMA_FLOOR
+    ratio = jnp.where(admissible, work2 / jnp.where(admissible, sigma, 1.0), 0.0)
 
     # Index of the last admissible `j` at or before each `j`; -1 where there is none.
     last = jax.lax.cummax(jnp.where(admissible, jnp.arange(n_groups), -1))
     zvec = jnp.where(last >= 0, ratio[jnp.maximum(last, 0)], 0.0)
 
-    ccls = vmat[:n_groups, :n_groups].T @ zvec
+    ccls = vmat.T @ zvec
     return jnp.zeros(N_PF_GROUPS_MAX).at[:n_groups].set(ccls)
 
 
@@ -254,8 +270,8 @@ def calculate_plasma_initiation_currents(
     Ports `pfcoil()`'s "Flux swing coils" block, `process/models/pfcoil.py:366-405`, plus
     the CS filament placement it feeds on (`:206-234`) and the CS total current at end of
     flat-top (`:209-211`). PROCESS guards the whole block with
-    `if j_cs_pulse_start != 0.0`; on this arm the CS is present and its current density is
-    an iteration variable, never zero, so the guard is not reproduced -- recorded in
+    `if j_cs_pulse_start != 0.0`; on this arm the CS is present and its current density
+    is an iteration variable, never zero, so the guard is not reproduced -- recorded in
     `currents.md` as a dropped branch, not an oversight.
 
     The 32 test points span the plasma midplane from `rmajor - rminor` outward

@@ -12,8 +12,26 @@ had named, is reported instead of folded into the headline count.
 import inspect
 
 import numpy as np
+from cottax.graph import Graph
+from cottax.tools.path import path_map
 
-from functional_process.mda_harness import _is_trivially_zero, compare
+from functional_process.boundary import TOKAMAK_INPUT_FILE
+from functional_process.indat import (
+    GRAPH,
+    REFERENCE_INPUT_FILE,
+    graph_for,
+    machine_from_indat,
+)
+from functional_process.mda import driven_graph
+from functional_process.mda_harness import (
+    KNOWN_UNVERIFIABLE_OUTPUTS,
+    STELLARATOR,
+    _is_trivially_zero,
+    _without_excluded,
+    compare,
+    device_root,
+)
+from functional_process.run_mda_harness import _resolve, _sidecars, input_file
 
 
 def test_compare_defaults_to_a_purely_relative_tolerance():
@@ -106,3 +124,66 @@ def test_a_nan_pair_is_not_trivially_zero():
     `_diff`) is a real fact about the port worth leaving in the headline count.
     """
     assert not _is_trivially_zero(np.nan, np.nan)
+
+
+# ======================================= the harness against a second device
+def test_device_root_reads_the_device_off_the_graph():
+    """`device_root` is the one thing in this module that knows which machine it is
+    looking at, and it asks the graph rather than the caller.
+
+    Both real machines and the "neither" case, because a `subgraph` or a test fixture
+    has no device node at all and must not be reported as a stellarator by default --
+    `None` is what makes the `STELLARATOR` gate mean "on a stellarator" rather than "not
+    obviously a tokamak".
+    """
+    assert device_root(GRAPH) == "stellarator"
+    assert device_root(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))) == "tokamak"
+    assert device_root(Graph(path_map({}))) is None
+
+
+def test_the_unverifiable_outputs_are_owned_on_both_machines_and_gated_on_one():
+    """The gate is load-bearing, not decoration.
+
+    Every one of `KNOWN_UNVERIFIABLE_OUTPUTS`' three entries is a variable **both**
+    machines' graphs own, so an ungated set would have skipped three real checks on the
+    tokamak -- where PROCESS stores all three (`hcpb.py:483,490` for the two
+    `f_a_fw_coolant_*`, `physics.py:961` for `fusrat`) and the port is on the hook for
+    them like any other output. Asserted against ownership rather than against a harness
+    run so it costs no PROCESS solve.
+    """
+    assert set(KNOWN_UNVERIFIABLE_OUTPUTS.values()) == {STELLARATOR}
+    for graph in (GRAPH, graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))):
+        owned = {v.path_str() for v in driven_graph(_without_excluded(graph)).owners}
+        assert set(KNOWN_UNVERIFIABLE_OUTPUTS) <= owned
+
+
+def test_the_entry_point_takes_the_machine_the_same_way_boundary_does():
+    """`--input <IN.DAT>` / `--machine` / nothing, resolved to absolute paths.
+
+    The flag shape mirrors `boundary.py`'s `_machine_graph` on purpose (that module's
+    own docstring on why a third machine would want a table rather than a third
+    branch). What is pinned here is only the argument handling -- the run itself needs a
+    converged PROCESS solve and stays a standing manual check.
+    """
+    assert input_file([]).name == "stellarator_helias.IN.DAT"
+    assert input_file([]).is_absolute()
+    assert input_file(["--machine"]).as_posix().endswith(TOKAMAK_INPUT_FILE)
+    assert input_file([]).as_posix().endswith(REFERENCE_INPUT_FILE)
+    # `--input` is the more specific of the two and wins.
+    assert (
+        input_file(["--machine", "--input", TOKAMAK_INPUT_FILE])
+        .as_posix()
+        .endswith(TOKAMAK_INPUT_FILE)
+    )
+
+
+def test_the_stellarator_only_sidecar_is_found_only_where_it_exists():
+    """`.stella_conf.json` beside the stellarator input, nothing beside the tokamak's.
+
+    Not a detail: `SingleRun` needs the companion copied into the scratch directory for
+    `istell == 6`, and `mda_harness._cache_key` hashes its *absence* as absence -- which
+    is half of what keeps two devices out of one cache entry.
+    """
+    (companion,) = _sidecars(_resolve(REFERENCE_INPUT_FILE))
+    assert companion.name == "stellarator_helias.stella_conf.json"
+    assert _sidecars(_resolve(TOKAMAK_INPUT_FILE)) == ()

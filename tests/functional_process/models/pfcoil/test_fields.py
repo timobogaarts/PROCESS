@@ -24,13 +24,6 @@ so the oracle sees exactly the state PROCESS's own routine sees. See `fields.md`
 """
 
 import numpy as np
-from process.core.model import DataStructure
-from process.models.pfcoil import (
-    CSCoil,
-    PFCoil,
-    calculate_b_field_at_point as process_calculate_b_field_at_point,
-    peak_b_field_at_pf_coil,
-)
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.pfcoil import (
@@ -46,6 +39,15 @@ from functional_process.models.pfcoil.fields import (
     calculate_b_field_at_point,
     calculate_coil_current_waveform,
     calculate_pf_coil_peak_fields,
+)
+from process.core.model import DataStructure
+from process.models.pfcoil import (
+    CSCoil,
+    PFCoil,
+    peak_b_field_at_pf_coil,
+)
+from process.models.pfcoil import (
+    calculate_b_field_at_point as process_calculate_b_field_at_point,
 )
 
 

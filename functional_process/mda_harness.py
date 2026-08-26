@@ -183,11 +183,19 @@ KNOWN_MINT_VALUES = {
     # radiation mints above, and the same resolution: each is reconstructible from stored
     # fields by an identity read straight off PROCESS's own source.
     #
-    # Unreachable from `run_mda_harness` today, which runs the *stellarator* reference
-    # machine and has no `.tokamak.*` node in it. Added with the nodes rather than with
-    # the eventual tokamak harness because the reconstruction is a property of the port,
-    # not of the harness run, and because an ungrounded mint is exactly the thing that
-    # silently scores against `0.0` when someone does point the harness at a tokamak.
+    # Both are live now: `run_mda_harness --input <tokamak IN.DAT>` reaches them, and
+    # `.tfcoil.dx_tf_wp_conductor_max` in particular is one edge of the
+    # build/winding-pack cycle `mda.CUTS` closes. They were added with the nodes, before
+    # that harness existed, because the reconstruction is a property of the port rather
+    # than of the run -- and because an ungrounded mint is exactly what silently scores
+    # against `0.0` the moment someone does point the harness at a tokamak.
+    #
+    # **Neither collides with the stellarator.** Every stellarator-only entry above is
+    # ungrounded-but-unowned on the tokamak and vice versa, checked rather than assumed;
+    # in particular the tokamak's winding-pack areas are
+    # `.superconducting_tfcoil.a_tf_wp_*` where the stellarator's are
+    # `.tfcoil.a_tf_wp_*`, so the two `a_tf_wp` identities above -- which encode the
+    # *stellarator's* winding-pack geometry -- are never applied to a tokamak variable.
     #
     # `.tfcoil.dx_tf_wp_conductor_max` -- `process/models/build.py:1570-1572`, inside
     # `plasma_outboard_edge_toroidal_ripple`'s superconducting arm. Every operand is
@@ -232,16 +240,89 @@ as an empty dict, not deleted outright, since a future ungrounded-and-wrong-shap
 case is exactly what this mechanism is for.
 """
 
-KNOWN_UNVERIFIABLE_OUTPUTS = frozenset({
-    ".fwbs.f_a_fw_coolant_inboard",
-    ".fwbs.f_a_fw_coolant_outboard",
-    ".physics.fusrat",
-})
-"""`VarPath`s where a real `DataStructure` field exists (so `_ground_truth` succeeds,
-unlike `errors`' "no field at all" case) but PROCESS itself never actually writes a
-meaningful value there for the arm this port's node represents -- comparing against
-whatever the field's uninitialised default happens to be is not a real check, it is a
-guaranteed false positive.
+DEVICE_ROOTS = ("stellarator", "tokamak")
+"""The two device trees a machine's nodes can hang off, as they are spelled in a
+`NodePath` (`.stellarator.coils.intersect`, `.tokamak.build.tf_outboard_mid`). Everything
+else -- `.physics.*`, `.costs.*`, `.power.*` -- is device-agnostic and shared."""
+
+
+def device_root(graph) -> str | None:
+    """Which of `DEVICE_ROOTS` this graph's device-specific nodes sit under, or `None`
+    for a graph (a `subgraph`, a test fixture) that has none.
+
+    Read off the assembled graph rather than passed in, for the same reason
+    `switch_audit` introspects instead of parsing: the caller that knows which `IN.DAT`
+    it ran is not the caller that needs the answer, and a harness argument saying
+    "stellarator" while the graph says otherwise is exactly the class of mistake this
+    module exists to catch.
+
+    Raises
+    ------
+    ValueError
+        If nodes from both device trees are present. `machine_from_indat` builds one
+        device, so this cannot happen today; it is the check that keeps the two
+        machine-specific tables below meaningful if that ever changes.
+    """
+    found = {
+        root
+        for root in DEVICE_ROOTS
+        for node in graph.nodes
+        if node.path_str().startswith(f".{root}.")
+    }
+    if len(found) > 1:
+        raise ValueError(
+            f"this graph has nodes under both {sorted(found)} -- the "
+            f"device-gated entries in KNOWN_UNVERIFIABLE_OUTPUTS cannot say which "
+            f"PROCESS caller ran"
+        )
+    return next(iter(found), None)
+
+
+STELLARATOR = "stellarator"
+"""Guard value in `KNOWN_UNVERIFIABLE_OUTPUTS`: this entry applies only where
+`device_root(graph)` says so. Spelled as the root's own name so the table reads as a
+table and cannot drift from `DEVICE_ROOTS`."""
+
+ANY_DEVICE = None
+"""Guard value in `KNOWN_UNVERIFIABLE_OUTPUTS`: applies on every machine. No entry uses
+it today -- all three known cases turned out to be one PROCESS caller discarding a value
+another one stores -- but an output that no caller stores would take it."""
+
+KNOWN_UNVERIFIABLE_OUTPUTS = {
+    ".fwbs.f_a_fw_coolant_inboard": STELLARATOR,
+    ".fwbs.f_a_fw_coolant_outboard": STELLARATOR,
+    ".physics.fusrat": STELLARATOR,
+}
+"""`{VarPath: which device the exclusion applies on}` -- see `STELLARATOR`/`ANY_DEVICE`.
+
+**Every entry is device-gated, and that is a finding, not a convenience.** All three were
+written against the stellarator reference run and all three read, in this module's own
+words, "PROCESS itself never actually writes a meaningful value there **for the arm this
+port's node represents**". The arm is the whole content of the exclusion, and the tokamak
+takes the other arm in all three cases -- checked against `process/` directly rather than
+assumed from the port:
+
+* `.fwbs.f_a_fw_coolant_*` are Python locals in `st_fwbs_s2`
+  (`stellarator.py:672-678`, `:828`), and on the tokamak they are owned by a different
+  node entirely (`.tokamak.ccfe_hcpb.first_wall_coolant_void_fractions` against
+  `.stellarator.fwbs.blanket_shield_power`) modelling `hcpb.py:483,490`, which assigns
+  **`self.data.fwbs.f_a_fw_coolant_inboard`/`_outboard`** -- real stored fields.
+* `.physics.fusrat` is the third of `phyaux`'s seven returns, unpacked into a bare local
+  `_fusrat` by the stellarator caller (`stellarator.py:2383`) and assigned to
+  `self.data.physics.fusrat` by the tokamak one (`physics.py:961`). The port's node
+  (`.physics.auxiliary_physics_quantities`) is the *same* node on both machines, which is
+  why this one cannot be gated by owner and needs the device.
+
+So an ungated set would have silently skipped three real checks on the tokamak. Left as
+`STELLARATOR` rather than deleted because the stellarator half of each is still true:
+against the Helias run these three still compare a correct formula to
+`DataStructure()`'s uninitialised default.
+
+The original evidence, unchanged: `VarPath`s where a real `DataStructure` field exists
+(so `_ground_truth` succeeds, unlike `errors`' "no field at all" case) but PROCESS itself
+never actually writes a meaningful value there for the arm this port's node represents --
+comparing against whatever the field's uninitialised default happens to be is not a real
+check, it is a guaranteed false positive.
 
 The first two entries are `DetailedPowerflowBlanketShieldPower`'s own two "best-effort"
 outputs -- its class docstring (`stellarator_fwbs_s2.py:378-382`) already says these
@@ -694,6 +775,18 @@ or another exclusion set, and either would mask a genuine future regression on t
 field -- if `dlscal` ever moves to 4%, that must still show up. This is documentation
 for the reader who finds `VacuumOld` in the "all disagreements" list and needs to know
 it has already been chased, not a filter.
+
+**Measured on the stellarator reference run, and only the two `VacuumOld` entries
+generalise.** Because nothing here filters anything, an entry that does not apply to the
+machine in hand costs nothing and is simply never looked at -- but a reader should know
+which is which. The `VacuumOld` pair is about a shared subsystem and a solver tolerance
+this port sets in its own source, so it says the same thing on any machine that registers
+`VacuumOld`. `.heat_transport.p_plant_electric_base_total_mw`'s explanation is
+**stellarator-specific in its entirety**: it rests on `Stellarator.run(output=True)`
+re-running `st_build`/`st_coil` in the opposite order to the solve pass, and on
+`stellarator.py:148-152` calling `output_plant_electric_powers()` where the tokamak calls
+`plant_electric_production()`. A tokamak disagreement on that same field would be a
+different finding wearing the same name and must be chased from scratch.
 """
 
 
@@ -1168,9 +1261,18 @@ def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
         report.errors.append(f"schedule() raised: {type(e).__name__}: {e}")
         return report
 
+    # `KNOWN_UNVERIFIABLE_OUTPUTS`' entries are gated on which PROCESS caller ran, so
+    # the device is resolved once, off the graph itself, rather than per variable or
+    # from an argument the caller could get wrong (`device_root`'s own docstring).
+    device = device_root(driven)
+    unverifiable_here = {
+        path
+        for path, only_on in KNOWN_UNVERIFIABLE_OUTPUTS.items()
+        if only_on is ANY_DEVICE or only_on == device
+    }
     for var, owner in driven.owners.items():
         report.owned_total += 1
-        if owner in unverifiable_owners or var.path_str() in KNOWN_UNVERIFIABLE_OUTPUTS:
+        if owner in unverifiable_owners or var.path_str() in unverifiable_here:
             report.unverifiable.append(var)
             continue
         try:

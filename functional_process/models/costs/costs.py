@@ -45,13 +45,7 @@ from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, Ou
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.models.switch_enums import (
     CentralSolenoidConfiguration,
-    CostOfElectricityModel,
-    IFEModel,
-    NetElectricPowerModel,
-    PlantOperationModel,
-    SphericalTokamakModel,
     SuperconductorCostModel,
-    ThermalStorageModel,
 )
 from functional_process.paths import (
     buildings,
@@ -1060,6 +1054,39 @@ def calculate_first_wall_cost(
             ".ucconc -- a different reads-set, and the .ife.* subsystem is entirely "
             "unported (unit_registry.md has no `ife` unit). Only ife != 1 is ported."
         )
+    return calculate_first_wall_cost_magnetic_confinement(
+        lsa,
+        UCFWA,
+        UCFWS,
+        a_fw_total,
+        UCFWPS,
+        fkind,
+        ifueltyp,
+    )
+
+
+def calculate_first_wall_cost_magnetic_confinement(
+    lsa,
+    UCFWA,
+    UCFWS,
+    a_fw_total,
+    UCFWPS,
+    fkind,
+    ifueltyp,
+):
+    """Account 221.1's magnetic-confinement arm -- `calculate_first_wall_cost`'s
+    body at `ife != 1`, and the only arm this port has an occupant for.
+
+    Split out of the composite above rather than left inside it because `ife` is a
+    model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
+    kwarg: the node calls this function and never sees the integer. The composite keeps
+    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    diffs against PROCESS's own method, sample by sample, `ife` included -- and
+    `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
+    Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
+
+    Parameters and returns are the composite's, less `ife`.
+    """
     cmlsa = jnp.asarray([0.5000e0, 0.7500e0, 0.8750e0, 1.0000e0])[lsa - 1]
     c2211_raw = fkind * (1.0e-6 * cmlsa * ((UCFWA + UCFWS) * a_fw_total + UCFWPS))
 
@@ -1136,6 +1163,47 @@ def calculate_blanket_cost(
             "different reads-set over an entirely unported subsystem. Only ife != 1 "
             "is ported."
         )
+    return calculate_blanket_cost_magnetic_confinement(
+        lsa,
+        m_blkt_beryllium,
+        ucblbe,
+        m_blkt_li2o,
+        ucblli2o,
+        m_blkt_steel_total,
+        ucblss,
+        m_blkt_vanadium,
+        ucblvd,
+        fkind,
+        ifueltyp,
+    )
+
+
+def calculate_blanket_cost_magnetic_confinement(
+    lsa,
+    m_blkt_beryllium,
+    ucblbe,
+    m_blkt_li2o,
+    ucblli2o,
+    m_blkt_steel_total,
+    ucblss,
+    m_blkt_vanadium,
+    ucblvd,
+    fkind,
+    ifueltyp,
+):
+    """Account 221.2's magnetic-confinement arm -- `calculate_blanket_cost`'s body
+    at `ife != 1`, and the only arm this port has an occupant for.
+
+    Split out of the composite above rather than left inside it because `ife` is a
+    model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
+    kwarg: the node calls this function and never sees the integer. The composite keeps
+    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    diffs against PROCESS's own method, sample by sample, `ife` included -- and
+    `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
+    Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
+
+    Parameters and returns are the composite's, less `ife`.
+    """
     cmlsa = jnp.asarray([0.5000e0, 0.7500e0, 0.8750e0, 1.0000e0])[lsa - 1]
     scale = fkind * cmlsa
 
@@ -1186,6 +1254,37 @@ def calculate_shield_cost(ife, lsa, whtshld, ucshld, wpenshld, ucpens, fkind):
             ".ucconc -- a different reads-set over an unported subsystem. Only "
             "ife != 1 is ported."
         )
+    return calculate_shield_cost_magnetic_confinement(
+        lsa,
+        whtshld,
+        ucshld,
+        wpenshld,
+        ucpens,
+        fkind,
+    )
+
+
+def calculate_shield_cost_magnetic_confinement(
+    lsa,
+    whtshld,
+    ucshld,
+    wpenshld,
+    ucpens,
+    fkind,
+):
+    """Account 221.3's magnetic-confinement arm -- `calculate_shield_cost`'s body at
+    `ife != 1`, and the only arm this port has an occupant for.
+
+    Split out of the composite above rather than left inside it because `ife` is a
+    model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
+    kwarg: the node calls this function and never sees the integer. The composite keeps
+    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    diffs against PROCESS's own method, sample by sample, `ife` included -- and
+    `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
+    Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
+
+    Parameters and returns are the composite's, less `ife`.
+    """
     cmlsa = jnp.asarray([0.5000e0, 0.7500e0, 0.8750e0, 1.0000e0])[lsa - 1]
     c22131 = fkind * (1.0e-6 * whtshld * ucshld * cmlsa)
     c22132 = fkind * (1.0e-6 * wpenshld * ucpens * cmlsa)
@@ -1312,20 +1411,192 @@ def calculate_tf_magnet_cost_superconducting(
     tuple
         `(c22211, c22212, c22213, c22214, c22215, c2221)`.
     """
-    cmlsa = jnp.asarray([0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0])[lsa - 1]
-
     if supercond_cost_model == 0:
-        costtfsc = (
-            jnp.asarray(ucsc)[i_tf_sc_mat - 1]
-            * m_tf_coil_superconductor
-            / (len_tf_coil * n_tf_coil_turns)
+        return calculate_tf_magnet_cost_superconducting_per_kg(
+            lsa,
+            ucsc,
+            i_tf_sc_mat,
+            m_tf_coil_superconductor,
+            len_tf_coil,
+            n_tf_coil_turns,
+            uccu,
+            m_tf_coil_copper,
+            cconshtf,
+            cconfix,
+            n_tf_coils,
+            ucwindtf,
+            m_tf_coil_case,
+            uccase,
+            aintmass,
+            UCINT,
+            clgsmass,
+            UCGSS,
+            fkind,
         )
-    else:
-        costtfsc = (
-            jnp.asarray(sc_mat_cost_0)[i_tf_sc_mat - 1]
-            * jnp.asarray(j_crit_str_0)[i_tf_sc_mat - 1]
-            / j_crit_str_tf
-        )
+    return calculate_tf_magnet_cost_superconducting_per_kam(
+        lsa,
+        sc_mat_cost_0,
+        i_tf_sc_mat,
+        j_crit_str_0,
+        j_crit_str_tf,
+        len_tf_coil,
+        n_tf_coil_turns,
+        uccu,
+        m_tf_coil_copper,
+        cconshtf,
+        cconfix,
+        n_tf_coils,
+        ucwindtf,
+        m_tf_coil_case,
+        uccase,
+        aintmass,
+        UCINT,
+        clgsmass,
+        UCGSS,
+        fkind,
+    )
+
+
+def calculate_tf_magnet_cost_superconducting_per_kg(
+    lsa,
+    ucsc,
+    i_tf_sc_mat,
+    m_tf_coil_superconductor,
+    len_tf_coil,
+    n_tf_coil_turns,
+    uccu,
+    m_tf_coil_copper,
+    cconshtf,
+    cconfix,
+    n_tf_coils,
+    ucwindtf,
+    m_tf_coil_case,
+    uccase,
+    aintmass,
+    UCINT,
+    clgsmass,
+    UCGSS,
+    fkind,
+):
+    """Account 222.1's `supercond_cost_model == PER_KG` arm -- the legacy `$/kg`
+    superconductor costing (`costs.py:1550-1554`).
+
+    The strand cost per metre is the superconductor mass per coil times its unit cost
+    per kilogram, divided by the winding length; **`.costs.sc_mat_cost_0`,
+    `.tfcoil.j_crit_str_0` and `.tfcoil.j_crit_str_tf` are not read at all**, which is
+    the three-edge difference that made this a family rather than a static kwarg
+    (`_audit/next_steps.md` §14.2).
+
+    `.tfcoil.i_tf_sc_mat` stays an ordinary declared read on **both** arms: it indexes
+    a cost table rather than selecting a model here, which is the case the policy
+    leaves as a read.
+
+    Parameters and returns are `calculate_tf_magnet_cost_superconducting`'s, less
+    `supercond_cost_model` and the other arm's three fields.
+    """
+    return _tf_magnet_cost_superconducting(
+        jnp.asarray(ucsc)[i_tf_sc_mat - 1]
+        * m_tf_coil_superconductor
+        / (len_tf_coil * n_tf_coil_turns),
+        lsa,
+        len_tf_coil,
+        n_tf_coil_turns,
+        uccu,
+        m_tf_coil_copper,
+        cconshtf,
+        cconfix,
+        n_tf_coils,
+        ucwindtf,
+        m_tf_coil_case,
+        uccase,
+        aintmass,
+        UCINT,
+        clgsmass,
+        UCGSS,
+        fkind,
+    )
+
+
+def calculate_tf_magnet_cost_superconducting_per_kam(
+    lsa,
+    sc_mat_cost_0,
+    i_tf_sc_mat,
+    j_crit_str_0,
+    j_crit_str_tf,
+    len_tf_coil,
+    n_tf_coil_turns,
+    uccu,
+    m_tf_coil_copper,
+    cconshtf,
+    cconfix,
+    n_tf_coils,
+    ucwindtf,
+    m_tf_coil_case,
+    uccase,
+    aintmass,
+    UCINT,
+    clgsmass,
+    UCGSS,
+    fkind,
+):
+    """Account 222.1's `supercond_cost_model == PER_KAM` arm -- strand cost scaled by
+    critical current density (`costs.py:1556-1560`).
+
+    **`.costs.ucsc` and `.tfcoil.m_tf_coil_superconductor` are not read at all** on this
+    arm; see its sibling above.
+
+    Parameters and returns are `calculate_tf_magnet_cost_superconducting`'s, less
+    `supercond_cost_model` and the other arm's two fields.
+    """
+    return _tf_magnet_cost_superconducting(
+        jnp.asarray(sc_mat_cost_0)[i_tf_sc_mat - 1]
+        * jnp.asarray(j_crit_str_0)[i_tf_sc_mat - 1]
+        / j_crit_str_tf,
+        lsa,
+        len_tf_coil,
+        n_tf_coil_turns,
+        uccu,
+        m_tf_coil_copper,
+        cconshtf,
+        cconfix,
+        n_tf_coils,
+        ucwindtf,
+        m_tf_coil_case,
+        uccase,
+        aintmass,
+        UCINT,
+        clgsmass,
+        UCGSS,
+        fkind,
+    )
+
+
+def _tf_magnet_cost_superconducting(
+    costtfsc,
+    lsa,
+    len_tf_coil,
+    n_tf_coil_turns,
+    uccu,
+    m_tf_coil_copper,
+    cconshtf,
+    cconfix,
+    n_tf_coils,
+    ucwindtf,
+    m_tf_coil_case,
+    uccase,
+    aintmass,
+    UCINT,
+    clgsmass,
+    UCGSS,
+    fkind,
+):
+    """The ~15 lines both `supercond_cost_model` arms share, given the superconductor
+    strand cost per metre the arm computed.
+
+    `costtfsc` is data, not a switch: which of the two expressions produced it follows
+    from which arm function called this one.
+    """
+    cmlsa = jnp.asarray([0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0])[lsa - 1]
 
     costtfcu = uccu * m_tf_coil_copper / (len_tf_coil * n_tf_coil_turns)
     ctfconpm = costtfsc + costtfcu + cconshtf + cconfix
@@ -1733,6 +2004,47 @@ def calculate_power_injection_cost(
             ".ife.ifedrv/.cdriv0..3/.dcdrv0..2/.edrive/.etadrv/.mcdriv -- a different "
             "reads-set over an unported subsystem. Only ife != 1 is ported."
         )
+    return calculate_power_injection_cost_magnetic_confinement(
+        ucech,
+        p_hcd_ecrh_injected_total_mw,
+        i_hcd_primary,
+        uclh,
+        ucich,
+        p_hcd_lowhyb_injected_total_mw,
+        ucnbi,
+        p_beam_injected_mw,
+        ifueltyp,
+        fcdfuel,
+        fkind,
+    )
+
+
+def calculate_power_injection_cost_magnetic_confinement(
+    ucech,
+    p_hcd_ecrh_injected_total_mw,
+    i_hcd_primary,
+    uclh,
+    ucich,
+    p_hcd_lowhyb_injected_total_mw,
+    ucnbi,
+    p_beam_injected_mw,
+    ifueltyp,
+    fcdfuel,
+    fkind,
+):
+    """Account 223's magnetic-confinement arm -- `calculate_power_injection_cost`'s
+    body at `ife != 1`, and the only arm this port has an occupant for.
+
+    Split out of the composite above rather than left inside it because `ife` is a
+    model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
+    kwarg: the node calls this function and never sees the integer. The composite keeps
+    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    diffs against PROCESS's own method, sample by sample, `ife` included -- and
+    `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
+    Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
+
+    Parameters and returns are the composite's, less `ife`.
+    """
     exprf = 1.0e0
     is_fuel = ifueltyp == 1
     fuel_scale = fkind * (1.0e0 - fcdfuel)
@@ -1788,36 +2100,68 @@ def calculate_energy_storage_cost(
     float
         `c2253`.
     """
-    if i_pulsed_plant == 1:
-        if istore == 1:
-            # 0.1 condensate tank + 0.8 feedpump + 4.0 turbine-generator duty
-            # + 0.5 auxiliary transformer + 2.8 drum + 29.0 externally fired
-            # superheater (`costs.py:2617-2643`).
-            c2253 = 0.1e0 + 0.8e0 + 4.0e0 + 0.5e0 + 2.8e0 + 29.0e0
-        elif istore == 2:
-            # 0.1 + 0.8 + 2.8 + 4.0 + 330.0 fired boiler + 1.0 steam bypass
-            # + 2.0 dump condenser + 18.0 cooling water (`costs.py:2645-2682`).
-            c2253 = 0.1e0 + 0.8e0 + 2.8e0 + 4.0e0 + 330.0e0 + 1.0e0 + 2.0e0 + 18.0e0
-        elif istore == 3:
-            raise NotImplementedError(
-                "acc2253's istore == 3 arm (a stainless-steel thermal storage block) "
-                "reads .heat_transport.p_plant_primary_heat_mw, "
-                ".times.t_plant_pulse_no_burn and .pulse.dtstor, which options 1/2 do "
-                "not -- a different reads-set. Not ported; the reference run has "
-                ".pulse.i_pulsed_plant == 0, so no istore arm is reached at all."
-            )
-        else:
-            raise ValueError(f"Illegal value for istore: {istore}")
-    else:
-        c2253 = 0.0e0
+    if i_pulsed_plant != 1:
+        # `c2253 = 0.0`, then PROCESS's own `if istore < 3` still scales it -- kept
+        # exactly, so the composite stays bit-identical to what it was before the split.
+        if istore < 3:
+            return _energy_storage_cost_scaled(0.0e0, p_plant_electric_net_mw, fkind)
+        return fkind * 0.0e0
+    if istore == 1:
+        return calculate_energy_storage_cost_electrowatt_option_1(
+            p_plant_electric_net_mw, fkind
+        )
+    if istore == 2:
+        return calculate_energy_storage_cost_electrowatt_option_2(
+            p_plant_electric_net_mw, fkind
+        )
+    if istore == 3:
+        raise NotImplementedError(
+            "acc2253's istore == 3 arm (a stainless-steel thermal storage block) "
+            "reads .heat_transport.p_plant_primary_heat_mw, "
+            ".times.t_plant_pulse_no_burn and .pulse.dtstor, which options 1/2 do "
+            "not -- a different reads-set. Not ported; the reference run has "
+            ".pulse.i_pulsed_plant == 0, so no istore arm is reached at all."
+        )
+    raise ValueError(f"Illegal value for istore: {istore}")
 
-    if istore < 3:
-        #  Scale with net electric power, then convert 1992 pounds to 1990 dollars
-        #  (inflation 5%/yr + 1.5 $/pound exchange rate).
-        c2253 = c2253 * p_plant_electric_net_mw / 1200.0e0
-        c2253 *= 1.36e0
 
-    return fkind * c2253
+def calculate_energy_storage_cost_electrowatt_option_1(p_plant_electric_net_mw, fkind):
+    """Account 225.3's `istore == ELECTROWATT_OPTION_1` arm (`costs.py:2617-2643`).
+
+    0.1 condensate tank + 0.8 feedpump + 4.0 turbine-generator duty + 0.5 auxiliary
+    transformer + 2.8 drum + 29.0 externally fired superheater, in 1992 pounds.
+    """
+    return _energy_storage_cost_scaled(
+        0.1e0 + 0.8e0 + 4.0e0 + 0.5e0 + 2.8e0 + 29.0e0,
+        p_plant_electric_net_mw,
+        fkind,
+    )
+
+
+def calculate_energy_storage_cost_electrowatt_option_2(p_plant_electric_net_mw, fkind):
+    """Account 225.3's `istore == ELECTROWATT_OPTION_2` arm (`costs.py:2645-2682`).
+
+    0.1 + 0.8 + 2.8 + 4.0 + 330.0 fired boiler + 1.0 steam bypass + 2.0 dump condenser
+    + 18.0 cooling water, in 1992 pounds.
+    """
+    return _energy_storage_cost_scaled(
+        0.1e0 + 0.8e0 + 2.8e0 + 4.0e0 + 330.0e0 + 1.0e0 + 2.0e0 + 18.0e0,
+        p_plant_electric_net_mw,
+        fkind,
+    )
+
+
+def _energy_storage_cost_scaled(c2253_1992_pounds, p_plant_electric_net_mw, fkind):
+    """Scale an ELECTROWATT itemised sum with net electric power and convert 1992
+    pounds to 1990 dollars (inflation 5%/yr + 1.5 $/pound exchange rate).
+
+    Shared by options 1 and 2, which differ **only** in the literal handed in -- which
+    is why `_audit/switch_kwarg_survey.md` band (c) argued they should stay one node
+    carrying an `istore` kwarg. `_audit/next_steps.md` §14.2 withdrew that: a switch
+    value selects an occupant whatever its reads, and the two literals live in the two
+    arm functions above rather than behind an integer.
+    """
+    return fkind * (c2253_1992_pounds * p_plant_electric_net_mw / 1200.0e0 * 1.36e0)
 
 
 def calculate_power_conditioning_cost(ife, c2251, c2252, c2253):
@@ -1892,6 +2236,42 @@ def calculate_auxiliary_component_cooling_cost(
             "acc2262's ife == 1 arm adds terms reading .ife.tdspmw/.ife.tfacmw -- a "
             "different reads-set over an unported subsystem. Only ife != 1 is ported."
         )
+    return calculate_auxiliary_component_cooling_cost_magnetic_confinement(
+        lsa,
+        UCAHTS,
+        p_hcd_electric_loss_mw,
+        p_cryo_plant_electric_mw,
+        vachtmw,
+        p_tritium_plant_electric_mw,
+        fachtmw,
+        fkind,
+    )
+
+
+def calculate_auxiliary_component_cooling_cost_magnetic_confinement(
+    lsa,
+    UCAHTS,
+    p_hcd_electric_loss_mw,
+    p_cryo_plant_electric_mw,
+    vachtmw,
+    p_tritium_plant_electric_mw,
+    fachtmw,
+    fkind,
+):
+    """Account 2262's magnetic-confinement arm --
+    `calculate_auxiliary_component_cooling_cost`'s body at `ife != 1`, and the
+    only arm this port has an occupant for.
+
+    Split out of the composite above rather than left inside it because `ife` is a
+    model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
+    kwarg: the node calls this function and never sees the integer. The composite keeps
+    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    diffs against PROCESS's own method, sample by sample, `ife` included -- and
+    `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
+    Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
+
+    Parameters and returns are the composite's, less `ife`.
+    """
     cmlsa = jnp.asarray([0.4000e0, 0.7000e0, 0.8500e0, 1.0000e0])[lsa - 1]
     exphts = 0.7e0
 
@@ -1992,6 +2372,34 @@ def calculate_fuel_processing_cost(ife, rndfuel, m_fuel_amu, UCFPR, fkind):
             ".reprat -- a different reads-set over an unported subsystem. Only "
             "ife != 1 is ported."
         )
+    return calculate_fuel_processing_cost_magnetic_confinement(
+        rndfuel,
+        m_fuel_amu,
+        UCFPR,
+        fkind,
+    )
+
+
+def calculate_fuel_processing_cost_magnetic_confinement(
+    rndfuel,
+    m_fuel_amu,
+    UCFPR,
+    fkind,
+):
+    """Account 2272's magnetic-confinement arm --
+    `calculate_fuel_processing_cost`'s body at `ife != 1`, and the only arm
+    this port has an occupant for.
+
+    Split out of the composite above rather than left inside it because `ife` is a
+    model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
+    kwarg: the node calls this function and never sees the integer. The composite keeps
+    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    diffs against PROCESS's own method, sample by sample, `ife` included -- and
+    `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
+    Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
+
+    Parameters and returns are the composite's, less `ife`.
+    """
     #  2 nuclei * reactions/sec * kg/nucleus * g/kg * sec/day.
     wtgpd = 2.0e0 * rndfuel * m_fuel_amu * _UMASS * 1000.0e0 * 86400.0e0
 
@@ -2266,6 +2674,292 @@ def calculate_cost_of_electricity(
             "and reads .ife.uctarg/.reprat for the fuel cost -- a different reads-set "
             "over an unported subsystem. Only ife != 1 is ported."
         )
+    if itart == 1:
+        return calculate_cost_of_electricity_spherical_tokamak(
+            p_plant_electric_net_mw,
+            f_t_plant_available,
+            t_plant_pulse_burn,
+            t_plant_pulse_total,
+            concost,
+            fcap0,
+            fcr0,
+            discount_rate,
+            life_blkt,
+            fwallcst,
+            blkcst,
+            cfind,
+            lsa,
+            fcap0cp,
+            ifueltyp,
+            life_blkt_fpy,
+            life_plant,
+            life_div,
+            divcst,
+            life_div_fpy,
+            cplife_cal,
+            cpstcst,
+            cplife,
+            cdrlife_cal,
+            cdcost,
+            fcdfuel,
+            ucoam,
+            ucfuel,
+            f_plasma_fuel_helium3,
+            wtgpd,
+            uche3,
+            ucwst,
+            decomf,
+            dintrt,
+            dtlife,
+        )
+    return calculate_cost_of_electricity_conventional_aspect_ratio(
+        p_plant_electric_net_mw,
+        f_t_plant_available,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        concost,
+        fcap0,
+        fcr0,
+        discount_rate,
+        life_blkt,
+        fwallcst,
+        blkcst,
+        cfind,
+        lsa,
+        fcap0cp,
+        ifueltyp,
+        life_blkt_fpy,
+        life_plant,
+        life_div,
+        divcst,
+        life_div_fpy,
+        cdrlife_cal,
+        cdcost,
+        fcdfuel,
+        ucoam,
+        ucfuel,
+        f_plasma_fuel_helium3,
+        wtgpd,
+        uche3,
+        ucwst,
+        decomf,
+        dintrt,
+        dtlife,
+    )
+
+
+def calculate_cost_of_electricity_conventional_aspect_ratio(
+    p_plant_electric_net_mw,
+    f_t_plant_available,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    concost,
+    fcap0,
+    fcr0,
+    discount_rate,
+    life_blkt,
+    fwallcst,
+    blkcst,
+    cfind,
+    lsa,
+    fcap0cp,
+    ifueltyp,
+    life_blkt_fpy,
+    life_plant,
+    life_div,
+    divcst,
+    life_div_fpy,
+    cdrlife_cal,
+    cdcost,
+    fcdfuel,
+    ucoam,
+    ucfuel,
+    f_plasma_fuel_helium3,
+    wtgpd,
+    uche3,
+    ucwst,
+    decomf,
+    dintrt,
+    dtlife,
+):
+    """`coelc`'s conventional-aspect-ratio arm (`.physics.itart == 0`) -- the whole
+    account, with **no centrepost replacement cost**.
+
+    `costs.py:2769-2783` computes `coecp` only on a spherical tokamak; on every other
+    machine it is a literal `0.0` and the three centrepost fields
+    `.costs.cplife_cal`/`.cpstcst`/`.costs.cplife` are never read. Declaring them anyway
+    -- which one node carrying an `itart` static kwarg had to -- invented three edges
+    the reference run does not make, one of them onto `.costs.cplife`, whose only other
+    reader is the `FixedPoint` that owns it (`_audit/switch_kwarg_survey.md` §4.7/§4.8).
+
+    Parameters and returns are `calculate_cost_of_electricity`'s, less `ife`, `itart`
+    and the three centrepost fields.
+    """
+    return _cost_of_electricity(
+        p_plant_electric_net_mw,
+        f_t_plant_available,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        concost,
+        fcap0,
+        fcr0,
+        discount_rate,
+        life_blkt,
+        fwallcst,
+        blkcst,
+        cfind,
+        lsa,
+        fcap0cp,
+        ifueltyp,
+        life_blkt_fpy,
+        life_plant,
+        life_div,
+        divcst,
+        life_div_fpy,
+        cdrlife_cal,
+        cdcost,
+        fcdfuel,
+        ucoam,
+        ucfuel,
+        f_plasma_fuel_helium3,
+        wtgpd,
+        uche3,
+        ucwst,
+        decomf,
+        dintrt,
+        dtlife,
+        centrepost=None,
+    )
+
+
+def calculate_cost_of_electricity_spherical_tokamak(
+    p_plant_electric_net_mw,
+    f_t_plant_available,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    concost,
+    fcap0,
+    fcr0,
+    discount_rate,
+    life_blkt,
+    fwallcst,
+    blkcst,
+    cfind,
+    lsa,
+    fcap0cp,
+    ifueltyp,
+    life_blkt_fpy,
+    life_plant,
+    life_div,
+    divcst,
+    life_div_fpy,
+    cplife_cal,
+    cpstcst,
+    cplife,
+    cdrlife_cal,
+    cdcost,
+    fcdfuel,
+    ucoam,
+    ucfuel,
+    f_plasma_fuel_helium3,
+    wtgpd,
+    uche3,
+    ucwst,
+    decomf,
+    dintrt,
+    dtlife,
+):
+    """`coelc`'s spherical-tokamak arm (`.physics.itart == 1`) -- the whole account
+    **plus** the centrepost replacement cost of `costs.py:2769-2783`.
+
+    The three reads its sibling does not make are `.costs.cplife_cal`, `.costs.cpstcst`
+    and `.costs.cplife`. Registered as an occupant rather than reachable, since no
+    tracked input assembles a spherical tokamak's cost model yet; it exists so the
+    conventional arm can drop those three reads without losing the branch PROCESS has.
+
+    Parameters and returns are `calculate_cost_of_electricity`'s, less `ife` and `itart`.
+    """
+    return _cost_of_electricity(
+        p_plant_electric_net_mw,
+        f_t_plant_available,
+        t_plant_pulse_burn,
+        t_plant_pulse_total,
+        concost,
+        fcap0,
+        fcr0,
+        discount_rate,
+        life_blkt,
+        fwallcst,
+        blkcst,
+        cfind,
+        lsa,
+        fcap0cp,
+        ifueltyp,
+        life_blkt_fpy,
+        life_plant,
+        life_div,
+        divcst,
+        life_div_fpy,
+        cdrlife_cal,
+        cdcost,
+        fcdfuel,
+        ucoam,
+        ucfuel,
+        f_plasma_fuel_helium3,
+        wtgpd,
+        uche3,
+        ucwst,
+        decomf,
+        dintrt,
+        dtlife,
+        centrepost=(cplife_cal, cpstcst, cplife),
+    )
+
+
+def _cost_of_electricity(
+    p_plant_electric_net_mw,
+    f_t_plant_available,
+    t_plant_pulse_burn,
+    t_plant_pulse_total,
+    concost,
+    fcap0,
+    fcr0,
+    discount_rate,
+    life_blkt,
+    fwallcst,
+    blkcst,
+    cfind,
+    lsa,
+    fcap0cp,
+    ifueltyp,
+    life_blkt_fpy,
+    life_plant,
+    life_div,
+    divcst,
+    life_div_fpy,
+    cdrlife_cal,
+    cdcost,
+    fcdfuel,
+    ucoam,
+    ucfuel,
+    f_plasma_fuel_helium3,
+    wtgpd,
+    uche3,
+    ucwst,
+    decomf,
+    dintrt,
+    dtlife,
+    centrepost,
+):
+    """The body both `itart` arms share -- everything except the centrepost
+    replacement term.
+
+    `centrepost` is **data, not a switch**: `None` on the conventional arm, where
+    PROCESS's `coecp` is a literal zero, and the `(cplife_cal, cpstcst, cplife)` triple
+    on the spherical one. Which of the two a node gets follows from which arm function
+    it calls, so the integer never reaches a port and the two arms' declared reads
+    differ by exactly those three fields.
+    """
 
     kwhpy = (
         1.0e3
@@ -2303,14 +2997,15 @@ def calculate_cost_of_electricity(
     coediv = 1.0e9 * anndiv / kwhpy
 
     #  Costs due to centrepost renewal.
-    if itart == 1:
+    if centrepost is None:
+        coecp = 0.0e0
+    else:
+        cplife_cal, cpstcst, cplife = centrepost
         fefcp = (1.0e0 + discount_rate) ** cplife_cal
         crfcp = (fefcp * discount_rate) / (fefcp - 1.0e0)
         anncp = cpstcst * (1.0e0 + cfind_lsa) * fcap0cp * crfcp
         anncp = jnp.where(prorate, anncp * (1.0e0 - cplife / life_plant), anncp)
         coecp = 1.0e9 * anncp / kwhpy
-    else:
-        coecp = 0.0e0
 
     #  Costs due to partial current drive system renewal.
     fefcdr = (1.0e0 + discount_rate) ** cdrlife_cal
@@ -2923,8 +3618,6 @@ class HeatRejectionCost(ExplicitFunction):
 class FirstWallCost(ExplicitFunction):
     """cottax node: `calculate_first_wall_cost` (Account 221.1)."""
 
-    ife: IFEModel = eqx.field(static=True)
-
     c2211 = OutputInto(costs)
     fwallcst = OutputInto(costs)
 
@@ -2938,15 +3631,13 @@ class FirstWallCost(ExplicitFunction):
         fkind=From(costs),
         ifueltyp=From(costs),
     ):
-        return calculate_first_wall_cost(
-            self.ife, lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind, ifueltyp
+        return calculate_first_wall_cost_magnetic_confinement(
+            lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind, ifueltyp
         )
 
 
 class BlanketCost(ExplicitFunction):
     """cottax node: `calculate_blanket_cost` (Account 221.2)."""
-
-    ife: IFEModel = eqx.field(static=True)
 
     c22121 = OutputInto(costs)
     c22122 = OutputInto(costs)
@@ -2972,8 +3663,7 @@ class BlanketCost(ExplicitFunction):
         fkind=From(costs),
         ifueltyp=From(costs),
     ):
-        return calculate_blanket_cost(
-            self.ife,
+        return calculate_blanket_cost_magnetic_confinement(
             lsa,
             m_blkt_beryllium,
             ucblbe,
@@ -2991,8 +3681,6 @@ class BlanketCost(ExplicitFunction):
 class ShieldCost(ExplicitFunction):
     """cottax node: `calculate_shield_cost` (Account 221.3)."""
 
-    ife: IFEModel = eqx.field(static=True)
-
     c22131 = OutputInto(costs)
     c22132 = OutputInto(costs)
     c2213 = OutputInto(costs)
@@ -3006,8 +3694,8 @@ class ShieldCost(ExplicitFunction):
         ucpens=From(costs),
         fkind=From(costs),
     ):
-        return calculate_shield_cost(
-            self.ife, lsa, whtshld, ucshld, wpenshld, ucpens, fkind
+        return calculate_shield_cost_magnetic_confinement(
+            lsa, whtshld, ucshld, wpenshld, ucpens, fkind
         )
 
 
@@ -3028,11 +3716,16 @@ class ReactorCost(ExplicitFunction):
 
 
 class TfMagnetCostSuperconducting(ExplicitFunction):
-    """cottax node: `calculate_tf_magnet_cost_superconducting` (Account 222.1,
-    `.tfcoil.i_tf_sup == 1`).
-    """
+    """The Account 222.1 superconducting-TF family (`.tfcoil.i_tf_sup == 1`). One
+    occupant per `.costs.supercond_cost_model` value.
 
-    supercond_cost_model: SuperconductorCostModel = eqx.field(static=True)
+    The switch was an `eqx.field(static=True)` here until `_audit/next_steps.md`
+    §14.2's binding policy. Its two arms are two one-line strand-cost formulas over
+    **disjoint** fields -- `.costs.ucsc` + `.tfcoil.m_tf_coil_superconductor` against
+    `.costs.sc_mat_cost_0` + `.tfcoil.j_crit_str_0` + `.tfcoil.j_crit_str_tf` -- so one
+    node carrying the switch declared three edges the reference run does not make
+    (`_audit/switch_kwarg_survey.md` §3, `live (3)`).
+    """
 
     c22211 = OutputInto(costs)
     c22212 = OutputInto(costs)
@@ -3040,6 +3733,15 @@ class TfMagnetCostSuperconducting(ExplicitFunction):
     c22214 = OutputInto(costs)
     c22215 = OutputInto(costs)
     c2221 = OutputInto(costs)
+
+
+class TfMagnetCostSuperconductingPerKg(TfMagnetCostSuperconducting):
+    """`.costs.supercond_cost_model == PER_KG` (0) -- PROCESS's own default
+    (`cost_variables.py:552`) and the reference run's.
+
+    **Three reads leave with this occupant**: `.costs.sc_mat_cost_0`,
+    `.tfcoil.j_crit_str_0`, `.tfcoil.j_crit_str_tf`.
+    """
 
     def __call__(
         self,
@@ -3049,9 +3751,6 @@ class TfMagnetCostSuperconducting(ExplicitFunction):
         m_tf_coil_superconductor=From(tfcoil),
         len_tf_coil=From(tfcoil),
         n_tf_coil_turns=From(tfcoil),
-        sc_mat_cost_0=From(costs),
-        j_crit_str_0=From(tfcoil),
-        j_crit_str_tf=From(tfcoil),
         uccu=From(costs),
         m_tf_coil_copper=From(tfcoil),
         cconshtf=From(costs),
@@ -3066,17 +3765,68 @@ class TfMagnetCostSuperconducting(ExplicitFunction):
         UCGSS=From(costs),
         fkind=From(costs),
     ):
-        return calculate_tf_magnet_cost_superconducting(
-            self.supercond_cost_model,
+        return calculate_tf_magnet_cost_superconducting_per_kg(
             lsa,
             ucsc,
             i_tf_sc_mat,
             m_tf_coil_superconductor,
             len_tf_coil,
             n_tf_coil_turns,
+            uccu,
+            m_tf_coil_copper,
+            cconshtf,
+            cconfix,
+            n_tf_coils,
+            ucwindtf,
+            m_tf_coil_case,
+            uccase,
+            aintmass,
+            UCINT,
+            clgsmass,
+            UCGSS,
+            fkind,
+        )
+
+
+class TfMagnetCostSuperconductingPerKam(TfMagnetCostSuperconducting):
+    """`.costs.supercond_cost_model == PER_KAM` (1) -- strand cost scaled by critical
+    current density.
+
+    **Two reads leave with this occupant**: `.costs.ucsc` and
+    `.tfcoil.m_tf_coil_superconductor`.
+    """
+
+    def __call__(
+        self,
+        lsa=From(costs),
+        sc_mat_cost_0=From(costs),
+        i_tf_sc_mat=From(tfcoil),
+        j_crit_str_0=From(tfcoil),
+        j_crit_str_tf=From(tfcoil),
+        len_tf_coil=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        uccu=From(costs),
+        m_tf_coil_copper=From(tfcoil),
+        cconshtf=From(costs),
+        cconfix=From(costs),
+        n_tf_coils=From(tfcoil),
+        ucwindtf=From(costs),
+        m_tf_coil_case=From(tfcoil),
+        uccase=From(costs),
+        aintmass=From(structure),
+        UCINT=From(costs),
+        clgsmass=From(structure),
+        UCGSS=From(costs),
+        fkind=From(costs),
+    ):
+        return calculate_tf_magnet_cost_superconducting_per_kam(
+            lsa,
             sc_mat_cost_0,
+            i_tf_sc_mat,
             j_crit_str_0,
             j_crit_str_tf,
+            len_tf_coil,
+            n_tf_coil_turns,
             uccu,
             m_tf_coil_copper,
             cconshtf,
@@ -3217,8 +3967,6 @@ class MagnetsCost(ExplicitFunction):
 class PowerInjectionCost(ExplicitFunction):
     """cottax node: `calculate_power_injection_cost` (Account 223)."""
 
-    ife: IFEModel = eqx.field(static=True)
-
     c2231 = OutputInto(costs)
     c2232 = OutputInto(costs)
     c2233 = OutputInto(costs)
@@ -3239,8 +3987,7 @@ class PowerInjectionCost(ExplicitFunction):
         fcdfuel=From(costs),
         fkind=From(costs),
     ):
-        return calculate_power_injection_cost(
-            self.ife,
+        return calculate_power_injection_cost_magnetic_confinement(
             ucech,
             p_hcd_ecrh_injected_total_mw,
             i_hcd_primary,
@@ -3286,33 +4033,52 @@ class EnergyStorageCostUnpulsed(EnergyStorageCost):
 
 class EnergyStorageCostPulsed(EnergyStorageCost):
     """`i_pulsed_plant == 1`: an ELECTROWATT thermal-storage design, scaled by net
-    electric power.
+    electric power. One occupant per `.pulse.istore` value.
 
-    **`istore` stays a static kwarg here, deliberately.** Options 1 and 2 are two
-    itemised literal sums (`costs.py:2617-2643` and `:2645-2682`) reading the *same* two
-    variables, so they are `switch_kwarg_survey.md` band (c): a kwarg invents no edge and
-    two occupants would be indistinguishable by ports -- which
-    `test_occupants_of_one_slot_differ` refuses, correctly, since a value that does not
-    change which nodes exist is not a topology choice. They were split for one commit and
-    that test caught it; the rule is "no static kwarg where the branches differ in I/O",
-    not "no static kwarg".
+    **`istore` was a static kwarg here and is not any more.** `switch_kwarg_survey.md`
+    band (c) argued it should stay one, because options 1 and 2 are two itemised literal
+    sums (`costs.py:2617-2643` and `:2645-2682`) over the *same* two variables, so
+    splitting invents no edge and the two occupants are indistinguishable by ports.
+    `_audit/next_steps.md` §14.2 withdrew that position: a switch value selects an
+    occupant whatever its reads, and `test_occupants_of_one_slot_differ` now asserts a
+    distinct occupant **class** rather than distinct ports. This slot is the case that
+    policy was restated for, and the gap it leaves is named in that test's docstring --
+    nothing catches a family whose occupants differ only in a literal, because from
+    outside they do not differ at all.
+
+    The literal moved out of the node with the switch: each occupant calls its own arm
+    function, so no integer and no module constant decides anything inside a body.
 
     Option 3 is the contrast case and is `UNPORTED`: it reads three variables the others
     do not, so it is a different occupant, not a different literal.
     """
 
-    istore: ThermalStorageModel = eqx.field(static=True)
+
+class EnergyStorageCostPulsedElectrowattOption1(EnergyStorageCostPulsed):
+    """`.pulse.istore == ELECTROWATT_OPTION_1` (1) -- PROCESS's own default
+    (`pulse_variables.py:16`).
+    """
 
     def __call__(
         self,
         p_plant_electric_net_mw=From(heat_transport),
         fkind=From(costs),
     ):
-        return calculate_energy_storage_cost(
-            PlantOperationModel.PULSED,
-            self.istore,
-            p_plant_electric_net_mw,
-            fkind,
+        return calculate_energy_storage_cost_electrowatt_option_1(
+            p_plant_electric_net_mw, fkind
+        )
+
+
+class EnergyStorageCostPulsedElectrowattOption2(EnergyStorageCostPulsed):
+    """`.pulse.istore == ELECTROWATT_OPTION_2` (2)."""
+
+    def __call__(
+        self,
+        p_plant_electric_net_mw=From(heat_transport),
+        fkind=From(costs),
+    ):
+        return calculate_energy_storage_cost_electrowatt_option_2(
+            p_plant_electric_net_mw, fkind
         )
 
 
@@ -3334,8 +4100,6 @@ class PowerConditioningCost(ExplicitFunction):
 class AuxiliaryComponentCoolingCost(ExplicitFunction):
     """cottax node: `calculate_auxiliary_component_cooling_cost` (Account 2262)."""
 
-    ife: IFEModel = eqx.field(static=True)
-
     cppa = OutputInto(costs)
     c2262 = OutputInto(costs)
 
@@ -3350,8 +4114,7 @@ class AuxiliaryComponentCoolingCost(ExplicitFunction):
         fachtmw=From(heat_transport),
         fkind=From(costs),
     ):
-        return calculate_auxiliary_component_cooling_cost(
-            self.ife,
+        return calculate_auxiliary_component_cooling_cost_magnetic_confinement(
             lsa,
             UCAHTS,
             p_hcd_electric_loss_mw,
@@ -3398,8 +4161,6 @@ class FuelProcessingCost(ExplicitFunction):
     `.physics.wtgpd`.
     """
 
-    ife: IFEModel = eqx.field(static=True)
-
     wtgpd = OutputInto(physics)
     c2272 = OutputInto(costs)
 
@@ -3410,8 +4171,8 @@ class FuelProcessingCost(ExplicitFunction):
         UCFPR=From(costs),
         fkind=From(costs),
     ):
-        return calculate_fuel_processing_cost(
-            self.ife, rndfuel, m_fuel_amu, UCFPR, fkind
+        return calculate_fuel_processing_cost_magnetic_confinement(
+            rndfuel, m_fuel_amu, UCFPR, fkind
         )
 
 
@@ -3503,20 +4264,24 @@ class ConstructedCost(ExplicitFunction):
 
 
 class CostOfElectricity(ExplicitFunction):
-    """cottax node: `calculate_cost_of_electricity` (`Costs.coelc`). Sole producer of
-    `.costs.coe`, the `i_figure_merit == 6` objective.
+    """The `Costs.coelc` family -- sole producer of `.costs.coe`, the
+    `i_figure_merit == 6` objective. One occupant per `.physics.itart` value.
 
-    `ireactor`/`ipnet` are static preconditions, not ports: PROCESS calls `coelc()` only
-    when `ireactor == 1 and ipnet == 0` (`process/models/costs/costs.py:82-83`), and
-    both are run-configuration constants. Declaring them makes the graph say which
-    precondition it is relying on, the same move `EcrhDensityLimit(i_plasma_pedestal=0)`
-    makes, and `mda_harness.switch_audit` then checks them against the real run.
+    **Four switches were static kwargs on this one class and none is now**
+    (`_audit/next_steps.md` §14.2). Three of them decided nothing this node computes and
+    are answered by the slot instead: `ireactor`/`ipnet` jointly decide whether the node
+    *exists* (`_cost_of_electricity_arm`, and `costs.py:82-83` is the reason), and `ife`
+    is refused once for all seven Account-22x nodes at assembly
+    (`indat.py`'s `_ife_cost_accounts_arm`). The fourth, `itart`, is a real branch: the
+    centrepost replacement cost of `costs.py:2769-2783` exists only on a spherical
+    tokamak, and one class carrying the switch had to declare
+    `.costs.cplife_cal`/`.cpstcst`/`.cplife` on a machine that reads none of them.
+
+    The `__check_init__` that used to assert `ireactor == 1 and ipnet == 0` is gone with
+    the fields: arm 1 of the slot exists only where they hold, so there is nothing left
+    to contradict. That containment is the same one `EcrhDensityLimit` has inside
+    `ProfileParameterisationParabolic`.
     """
-
-    ife: IFEModel = eqx.field(static=True)
-    itart: SphericalTokamakModel = eqx.field(static=True)
-    ireactor: CostOfElectricityModel = eqx.field(static=True)
-    ipnet: NetElectricPowerModel = eqx.field(static=True)
 
     moneyint = OutputInto(costs)
     capcost = OutputInto(costs)
@@ -3525,14 +4290,98 @@ class CostOfElectricity(ExplicitFunction):
     coefuelt = OutputInto(costs)
     coe = OutputInto(costs)
 
-    def __check_init__(self):  # noqa: PLW3201 -- equinox's own validation hook
-        if self.ireactor != 1 or self.ipnet != 0:
-            raise ValueError(
-                "Costs.coelc is only called when .costs.ireactor == 1 and "
-                f".costs.ipnet == 0 (costs.py:82-83); got ireactor={self.ireactor}, "
-                f"ipnet={self.ipnet}. On any other configuration PROCESS leaves "
-                ".costs.coe at whatever it already held, so this node must not exist."
-            )
+
+class CostOfElectricityConventionalAspectRatio(CostOfElectricity):
+    """`.physics.itart == 0` -- the reference run's, and PROCESS's own default
+    (`physics_variables.py:994`).
+
+    **Three reads leave with this occupant**: `.costs.cplife_cal`, `.costs.cpstcst` and
+    `.costs.cplife`. The last is the one that mattered structurally -- it is owned by
+    `availability.cplife_avail`'s `FixedPoint`, which is the identity map on this
+    machine (`_audit/switch_kwarg_survey.md` §4.7), so the cost of electricity was
+    declared to depend on a driven quantity that determines nothing.
+    """
+
+    def __call__(
+        self,
+        p_plant_electric_net_mw=From(heat_transport),
+        f_t_plant_available=From(costs),
+        t_plant_pulse_burn=From(times),
+        t_plant_pulse_total=From(times),
+        concost=From(costs),
+        fcap0=From(costs),
+        fcr0=From(costs),
+        discount_rate=From(costs),
+        life_blkt=From(fwbs),
+        fwallcst=From(costs),
+        blkcst=From(costs),
+        cfind=From(costs),
+        lsa=From(costs),
+        fcap0cp=From(costs),
+        ifueltyp=From(costs),
+        life_blkt_fpy=From(fwbs),
+        life_plant=From(costs),
+        life_div=From(costs),
+        divcst=From(costs),
+        life_div_fpy=From(costs),
+        cdrlife_cal=From(costs),
+        cdcost=From(costs),
+        fcdfuel=From(costs),
+        ucoam=From(costs),
+        ucfuel=From(costs),
+        f_plasma_fuel_helium3=From(physics),
+        wtgpd=From(physics),
+        uche3=From(costs),
+        ucwst=From(costs),
+        decomf=From(costs),
+        dintrt=From(costs),
+        dtlife=From(costs),
+    ):
+        return calculate_cost_of_electricity_conventional_aspect_ratio(
+            p_plant_electric_net_mw,
+            f_t_plant_available,
+            t_plant_pulse_burn,
+            t_plant_pulse_total,
+            concost,
+            fcap0,
+            fcr0,
+            discount_rate,
+            life_blkt,
+            fwallcst,
+            blkcst,
+            cfind,
+            lsa,
+            fcap0cp,
+            ifueltyp,
+            life_blkt_fpy,
+            life_plant,
+            life_div,
+            divcst,
+            life_div_fpy,
+            cdrlife_cal,
+            cdcost,
+            fcdfuel,
+            ucoam,
+            ucfuel,
+            f_plasma_fuel_helium3,
+            wtgpd,
+            uche3,
+            ucwst,
+            decomf,
+            dintrt,
+            dtlife,
+        )
+
+
+class CostOfElectricitySphericalTokamak(CostOfElectricity):
+    """`.physics.itart == 1` -- the spherical tokamak, which additionally pays to
+    replace its centrepost (`costs.py:2769-2783`).
+
+    **The three reads its sibling does not make** are `.costs.cplife_cal`,
+    `.costs.cpstcst` and `.costs.cplife`. Written and registered although no tracked
+    input assembles it yet: without it, dropping those three reads from the conventional
+    arm would have deleted a branch PROCESS has rather than filed it.
+    """
 
     def __call__(
         self,
@@ -3572,9 +4421,7 @@ class CostOfElectricity(ExplicitFunction):
         dintrt=From(costs),
         dtlife=From(costs),
     ):
-        return calculate_cost_of_electricity(
-            self.ife,
-            self.itart,
+        return calculate_cost_of_electricity_spherical_tokamak(
             p_plant_electric_net_mw,
             f_t_plant_available,
             t_plant_pulse_burn,

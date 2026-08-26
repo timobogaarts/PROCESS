@@ -115,7 +115,7 @@ def test_the_reference_machine_s_boundary_is_the_pin():
     assert [(kind, var.path_str()) for kind, var in boundary(driven)] == list(read_pin())
 
 
-def test_the_split_is_311_inputs_and_one_guess_per_unsupplied_driven_unknown():
+def test_the_split_is_297_inputs_and_one_guess_per_unsupplied_driven_unknown():
     """The guess half is mechanical -- `Assign` mints one `Start` per driven unknown --
     so it is derived, not audited, and pinning it separately is what keeps the audited
     half honest when a problem is added.
@@ -128,18 +128,36 @@ def test_the_split_is_311_inputs_and_one_guess_per_unsupplied_driven_unknown():
     `i_tf_sc_mat` became a slot (`_audit/next_steps.md` §14.5): five material fields that
     only unselected branches read, plus `^guess.stellarator.wp_width_r_min`, which
     `.stellarator.wp_width_r_min_guess` now supplies.
+
+    **311 -> 297 input and 16 -> 6 guess** with §14.2's switch conversion, and the two
+    halves moved for two different reasons:
+
+    * The **ten guesses** are ten driven unknowns that stopped being driven, because
+      splitting a switch showed the fixed point was the switch's artefact and not the
+      model's. `^guess.costs.cplife` and `^guess.heat_transport.eta_turbine` were the
+      two `FixedPoint`s `switch_kwarg_survey.md` §4.7 measured as **the identity map**;
+      the other eight (`etath_liq`, `temp_turbine_coolant_in`,
+      `p_fw_div_heat_deposited_mw`, `p_fw_blkt_coolant_pump_mw`, and the four `q*`)
+      became ordinary `ExplicitFunction`s once the pass-through arm was spelled as an
+      empty slot instead of a self-read.
+    * The **input half is +2 -16**. The two additions are the honest consequence of the
+      first bullet: `.costs.cplife` at `itart = 0` and `.heat_transport.eta_turbine` at
+      `i_thermal_electric_conversion = USER_INPUT` are fields PROCESS itself takes as
+      inputs, and the tree says so now instead of driving a residual that determines
+      nothing. The sixteen removals are dead reads that left with their arms -- see
+      `_audit/next_steps.md` §14.11 for the per-variable attribution.
     """
     driven = driven_graph(GRAPH)
     have = counts(boundary(driven))
-    assert have[INPUT] == len(GRAPH.unowned_inputs) == 311
-    assert have[INPUT] + have[GUESSED] == len(driven.unowned_inputs) == 327
+    assert have[INPUT] == len(GRAPH.unowned_inputs) == 297
+    assert have[INPUT] + have[GUESSED] == len(driven.unowned_inputs) == 303
 
     # Every guess pairs with an unknown, and an unknown is owned *inside* the driven
     # graph -- which is what makes the guess half derived rather than audited. Asked of
     # ownership rather than of a `Schedule`, so it does not depend on the driver layer.
     owned = set(driven.owners)
     guesses = [var for kind, var in boundary(driven) if kind == GUESSED]
-    assert len(guesses) == have[GUESSED] == 16
+    assert len(guesses) == have[GUESSED] == 6
     assert all(unminted(var) in owned for var in guesses)
 
 
@@ -160,21 +178,34 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
     )
 
 
-def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_less():
-    """339 inputs and 15 guesses, against the stellarator's 311 and 16.
+def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
+    """328 inputs and 8 guesses, against the stellarator's 297 and 6.
 
     Both halves are the expected shape and neither is obviously good news, which is why
     they are pinned as numbers rather than described:
 
-    * **More inputs, from more nodes.** The tokamak graph is 170 nodes to the
-      stellarator's 159, and it still reads 28 more variables it does not produce --
+    * **More inputs, from more nodes.** The tokamak graph is larger than the
+      stellarator's and still reads ~30 more variables it does not produce --
       because eleven of `Tokamak`'s twenty-five slots are still empty, and
       `_audit/tokamak_boundary.md` is the enumeration of what that costs. A device with
       *more* ported nodes and *more* boundary inputs is exactly what a half-ported device
       looks like.
-    * **One fewer guess**, and it is not a saving: a guess is a `Start` port minted per
-      driven unknown, so the count tracks how many problems the graph declares. The
-      tokamak has no counterpart to `.stellarator.coils.intersect`'s.
+    * **One more guess, and it is not a cost.** A guess is a `Start` port minted per
+      driven *unknown*, so the count tracks how much of the graph is genuinely coupled
+      rather than how much is missing. The tokamak has no counterpart to
+      `.stellarator.coils.intersect`'s `^guess.stellarator.wp_width_r_min`, and it has
+      two the stellarator does not: `^guess.tfcoil.dx_tf_wp_primary_toroidal`, closing
+      the build/winding-pack cycle, and a third unknown on the density cycle,
+      `^guess.physics.f_temp_plasma_electron_density_vol_avg`, which the pedestal profile
+      arm adds and the parabolic one does not (`mda.CUTS`). Measured, after §14.2's
+      switch conversion left six on the stellarator: the two share four
+      (`fusden_alpha_total`, `proton_rate_density`, `temp_plasma_ion_vol_avg_kev`,
+      `power.delta_eta`, `vacuum.d_duct` -- five), the stellarator has
+      `^guess.fwbs.f_ster_div_single` alone, and the tokamak has three of its own --
+      `^guess.tfcoil.dx_tf_wp_primary_toroidal` and `^guess.tfcoil.dr_tf_plasma_case`
+      closing the build/winding-pack cycles, and
+      `^guess.physics.f_temp_plasma_electron_density_vol_avg` on the density cycle. So
+      5 + 1 = 6 and 5 + 3 = 8.
 
     The numbers move whenever a producer lands, which is what makes them worth pinning:
     growth in the input half is a **lost** producer, and that is the failure this whole
@@ -184,5 +215,5 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_less():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (339, 15)
-    assert (stell[INPUT], stell[GUESSED]) == (311, 16)
+    assert (tok[INPUT], tok[GUESSED]) == (328, 8)
+    assert (stell[INPUT], stell[GUESSED]) == (297, 6)

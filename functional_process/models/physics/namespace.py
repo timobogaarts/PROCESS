@@ -70,12 +70,6 @@ from functional_process.models.stellarator.plasma_physics import (
     FusionPowerTotalsMw,
     FusionTotalsNoBeam,
 )
-from functional_process.models.switch_enums import (
-    FastAlphaPressureModel,
-)
-from process.data_structure.physics_variables import (
-    PlasmaIgnitionModel,
-)
 
 
 class ProfileParameterisationParabolic(ModelNamespace):
@@ -347,13 +341,13 @@ class Physics(ModelNamespace):
     total_plasma_heating_power: TotalPlasmaHeatingPower = TotalPlasmaHeatingPower()
     electron_thermal_energy: ElectronThermalEnergy = ElectronThermalEnergy()
     ion_thermal_energy: IonThermalEnergy = IonThermalEnergy()
-    # `i_beta_fast_alpha` kept as a static kwarg, not a Switch -- both branches read the
-    # same six variables (pure_formulas.md's "switches touched"), same
-    # shape as `EcrhDensityLimit`'s `i_plasma_pedestal`. Default `1` (WARD),
-    # `physics_variables.py:875`.
-    fast_alpha_beta: FastAlphaBeta = FastAlphaBeta(
-        i_beta_fast_alpha=FastAlphaPressureModel.WARD
-    )
+    # **`i_beta_fast_alpha` was a static kwarg here and is a slot now**
+    # (`_audit/next_steps.md` §14.2). The note it replaces -- "kept as a static kwarg,
+    # not a Switch, both branches read the same six variables" -- was correct about the
+    # reads and is no longer the rule: a switch value selects an occupant whatever its
+    # reads. Nothing structural moves; what moves is that the two published formulas are
+    # two named occupants. Default `1` (WARD), `physics_variables.py:875`.
+    fast_alpha_beta: FastAlphaBeta = dataclasses.field(kw_only=True)
     # unit #9 chunk B, physics/composition.py. `plasma_composition`'s
     # `.physics.first_call` turned out not to be a genuine cycle at all -- its real
     # referent (`f_temp_plasma_electron_density_vol_avg`, from `plasma_profiles.py`) has
@@ -383,9 +377,13 @@ class Physics(ModelNamespace):
     # `composition.py:219-222` is `nd_beam_ions = 0` under IGNITED
     # versus `nd_plasma_electrons_vol_avg * f_nd_beam_electron` otherwise, so the
     # ignited arm reads a strict *subset* of the non-ignited arm's inputs.
-    plasma_composition: PlasmaComposition = PlasmaComposition(
-        i_plasma_ignited=PlasmaIgnitionModel.IGNITED
-    )
+    plasma_composition: PlasmaComposition = dataclasses.field(kw_only=True)
+    """**`i_plasma_ignited` was a static kwarg here and is a slot now**
+    (`_audit/next_steps.md` §14.2). The comment above records why the kwarg was thought
+    right -- the ignited arm reads a strict *subset* of the non-ignited arm's inputs, so
+    nothing could be wrong about it numerically -- and that subset is exactly the
+    problem: the one node declared `.physics.f_nd_beam_electron` on a machine with no
+    beam ions. One read, and it is the invented-edge defect, not a value defect."""
     # Over the line length and left that way: slot name and occupant class are both
     # this long, and the annotation cannot be wrapped -- `ruff format` strips
     # parentheses from around an annotation. An import alias would hide the class name.

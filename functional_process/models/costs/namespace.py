@@ -53,12 +53,6 @@ from functional_process.models.costs.costs import (
     VacuumSystemCost,
     VacuumVesselAssemblyCost,
 )
-from functional_process.models.switch_enums import (
-    IFEModel,
-    PlantOperationModel,
-    SuperconductorCostModel,
-    ThermalStorageModel,
-)
 
 
 class Costs(ModelNamespace):
@@ -78,21 +72,17 @@ class Costs(ModelNamespace):
     # the reference run's, except `iohcl` -- flagged individually below.
     convert_fpy_to_calendar: ConvertFpyToCalendar = ConvertFpyToCalendar()
     structures_cost: StructuresCost = StructuresCost()  # Account 21
-    # `ife=0` (`ife_variables.py:253`). Each of these five nodes has a real PROCESS
-    # `ife == 1` arm that reads an entirely different set of `.ife.*` fields (2-D
-    # material-mass arrays for the three Account-221 nodes, driver-cost tables for
-    # Account 223, extra cooling loads for 2262, a target-mass model for 2272); none of
-    # `.ife.*` is ported, so the ported functions refuse that value rather than
-    # returning a magnetic-confinement number for an IFE device.
-    first_wall_cost: FirstWallCost = FirstWallCost(
-        ife=IFEModel.MAGNETIC_CONFINEMENT
-    )  # Account 221.1
-    blanket_cost: BlanketCost = BlanketCost(
-        ife=IFEModel.MAGNETIC_CONFINEMENT
-    )  # Account 221.2
-    shield_cost: ShieldCost = ShieldCost(
-        ife=IFEModel.MAGNETIC_CONFINEMENT
-    )  # Account 221.3
+    # **`ife` was an `eqx.field(static=True)` on each of these six nodes and is gone**
+    # (`_audit/next_steps.md` §14.2). Each has a real PROCESS `ife == 1` arm reading an
+    # entirely different set of `.ife.*` fields (2-D material-mass arrays for the three
+    # Account-221 nodes, driver-cost tables for Account 223, extra cooling loads for
+    # 2262, a target-mass model for 2272); none of `.ife.*` is ported. The refusal moved
+    # to `machine_from_indat`, which answers `ife` **once**, at assembly, for all six at
+    # once -- rather than seven times, at trace time, inside seven node bodies. The
+    # classes here are the magnetic-confinement occupants and no longer see the integer.
+    first_wall_cost: FirstWallCost = FirstWallCost()  # Account 221.1
+    blanket_cost: BlanketCost = BlanketCost()  # Account 221.2
+    shield_cost: ShieldCost = ShieldCost()  # Account 221.3
     # Account 221.4 (reactor structure) has **no slot here, deliberately**: a
     # stellarator has no reactor-structure account to compute. `st_strc`
     # (`stellarator.py:334-337`) sets `.structure.fncmass` and `.structure.gsmass` to a
@@ -104,7 +94,12 @@ class Costs(ModelNamespace):
     # tokamak has to restore.
     divertor_cost: DivertorCost = DivertorCost()  # Account 221.5
     reactor_cost: ReactorCost = ReactorCost()  # Account 221 total
-    # `supercond_cost_model=0` (`cost_variables.py:552`). **Only the superconducting arm
+    # **`supercond_cost_model` was an `eqx.field(static=True)` here and is a slot now**
+    # (`_audit/next_steps.md` §14.2). Its two arms read disjoint fields --
+    # `.costs.ucsc` + `.tfcoil.m_tf_coil_superconductor` against `.costs.sc_mat_cost_0`
+    # + `.tfcoil.j_crit_str_0` + `.tfcoil.j_crit_str_tf` -- so the single node declared
+    # three edges the reference run does not make. `cost_variables.py:552`'s default is
+    # `0`, `PER_KG`. **Only the superconducting arm
     # of `acc2221` is registered.** `TfMagnetCostResistive` is ported (same file) but
     # not registered: the two arms share no body and read disjoint fields, so they are
     # two nodes rather than one node with a static `i_tf_sup` kwarg, and pairing them as
@@ -116,8 +111,8 @@ class Costs(ModelNamespace):
     # before a resistive run could assemble, which is the honest statement of what is
     # missing.
     # Account 222.1
-    tf_magnet_cost_superconducting: TfMagnetCostSuperconducting = (
-        TfMagnetCostSuperconducting(supercond_cost_model=SuperconductorCostModel.PER_KG)
+    tf_magnet_cost_superconducting: TfMagnetCostSuperconducting = dataclasses.field(
+        kw_only=True
     )
     # **Accounts 222.2 (PF magnets) and 225.2 (PF coil power conditioning) have no slot
     # here, and 221.4 (reactor structure) above has none, deliberately. A stellarator
@@ -156,9 +151,7 @@ class Costs(ModelNamespace):
         VacuumVesselAssemblyCost()
     )  # Account 222.3
     magnets_cost: MagnetsCost = MagnetsCost()  # Account 222 total
-    power_injection_cost: PowerInjectionCost = PowerInjectionCost(
-        ife=IFEModel.MAGNETIC_CONFINEMENT
-    )  # Account 223
+    power_injection_cost: PowerInjectionCost = PowerInjectionCost()  # Account 223
     vacuum_system_cost: VacuumSystemCost = VacuumSystemCost()  # Account 224
     tf_coil_power_conditioning_cost: TfCoilPowerConditioningCost = (
         TfCoilPowerConditioningCost()
@@ -188,7 +181,7 @@ class Costs(ModelNamespace):
         ReactorCoolingSystemCost()
     )  # Account 2261
     auxiliary_component_cooling_cost: AuxiliaryComponentCoolingCost = (
-        AuxiliaryComponentCoolingCost(ife=IFEModel.MAGNETIC_CONFINEMENT)
+        AuxiliaryComponentCoolingCost()
     )  # Account 2262
     cryogenic_system_cost: CryogenicSystemCost = CryogenicSystemCost()  # Account 2263
     heat_transport_system_cost: HeatTransportSystemCost = (
@@ -196,10 +189,8 @@ class Costs(ModelNamespace):
     )  # Account 226 total
     fuelling_system_cost: FuellingSystemCost = FuellingSystemCost()  # Account 2271
     # Account 2272 -- also the sole producer of
-    fuel_processing_cost: FuelProcessingCost = FuelProcessingCost(
-        ife=IFEModel.MAGNETIC_CONFINEMENT
-    )
     # `.physics.wtgpd`, the one field `costs.py` writes outside `.costs.*`.
+    fuel_processing_cost: FuelProcessingCost = FuelProcessingCost()
     atmospheric_recovery_cost: AtmosphericRecoveryCost = (
         AtmosphericRecoveryCost()
     )  # Account 2273
@@ -241,8 +232,9 @@ class Costs(ModelNamespace):
         ConstructedCost()
     )  # `.costs.concost`, inline in `Costs.run()`
     cost_of_electricity: CostOfElectricity | None = dataclasses.field(kw_only=True)
-    """Whether this run has a cost of electricity at all -- `.costs.ireactor` and
-    `.costs.ipnet` jointly (`cost_variables.py:521`/`:515`, defaults `1` and `0`).
+    """Whether this run has a cost of electricity at all, and if so which centrepost
+    treatment -- `.costs.ireactor`, `.costs.ipnet` and `.physics.itart` jointly
+    (`cost_variables.py:521`/`:515`, `physics_variables.py:994`; defaults `1`, `0`, `0`).
     `.costs.coe`, `coecap`, `coeoam`, `coefuelt`, `moneyint`, `capcost`.
 
     **A node-existence condition, not a branch, and now spelled as one.**
@@ -266,13 +258,16 @@ class Costs(ModelNamespace):
     unreachable, which is the defect step 4c had just finished removing from
     `BlanketShieldPowerExponential`.
 
-    `ireactor`/`ipnet` remain static kwargs on the occupant and cannot disagree with the
-    slot: arm 1 exists only where they hold, the same containment
-    `EcrhDensityLimit(i_plasma_pedestal=0)` has inside
-    `ProfileParameterisationParabolic`. `itart=0` (`physics_variables.py:994`) selects
-    the no-centrepost arm; unlike the `ife`/`i_tf_sup` splits above, *both* `itart` arms
-    are implemented in one function, so this node reads
-    `.costs.cpstcst`/`cplife_cal`/`cplife` either way -- a deliberate size-aware
-    deviation from `traceability_policy.md`'s split default, argued in the function's
-    own docstring.
+    **`ireactor`, `ipnet`, `ife` and `itart` were all static kwargs on the occupant and
+    none is now** (`_audit/next_steps.md` §14.2). The first two are what select this
+    slot's arm, so restating them on the occupant was a second answer to a question the
+    slot had already answered; `ife` is refused once at assembly for all seven
+    Account-22x nodes. The fourth, `itart`, was the one that cost the graph something:
+    `costs.py:2769-2783`'s centrepost replacement cost exists only at `itart == 1`, so a
+    single node carrying the switch read `.costs.cplife_cal`, `.costs.cpstcst` and
+    `.costs.cplife` on a machine that reads none of them -- and `.costs.cplife` is owned
+    by a `FixedPoint` that is the identity map here. It is a third arm of this slot now,
+    not a kwarg, and the previous note's "both `itart` arms are implemented in one
+    function ... a deliberate size-aware deviation" is withdrawn with the policy that
+    allowed it.
     """

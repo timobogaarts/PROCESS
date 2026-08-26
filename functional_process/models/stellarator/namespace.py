@@ -154,9 +154,6 @@ from functional_process.models.stellarator.structure import (
 from functional_process.models.stellarator.tf_nuclear_heating import (
     ScTfCoilNuclearHeating,
 )
-from process.data_structure.physics_variables import (
-    PlasmaIgnitionModel,
-)
 
 
 class BlanketShieldPowerExponential(ModelNamespace):
@@ -233,7 +230,14 @@ class StellaratorCoils(ModelNamespace):
     # `nan` in `.costs.c22211`/`.c2221` (`costs.md`).
     len_tf_coil: LenTfCoil = LenTfCoil()
     # unit #12, coils/mass.py
-    coils_mass: CoilsMass = CoilsMass()
+    coils_mass: CoilsMass = dataclasses.field(kw_only=True)
+    """The TF coil masses -- one occupant per `.tfcoil.i_tf_sc_mat` value, keyed by
+    `indat.COILS_MASS_MATERIAL`.
+
+    **This slot's switch was answered by a module constant until
+    `_audit/next_steps.md` §14.2**, so no instrument in the port could see it: a
+    material other than ITER Nb3Sn assembled the right winding-pack occupant next door
+    and a coil-mass node still reading `.tfcoil.dcond[0]`."""
     # unit #11, coils/forces.py
     max_force_density: MaxForceDensity = MaxForceDensity()
     maximum_stress: MaximumStress = MaximumStress()
@@ -462,33 +466,36 @@ class Stellarator(ModelNamespace):
     # `.physics.p_plasma_inner_rad_mw` (read by `StellaratorConfinementTime`) its first
     # producer -- `_audit/boundary_inputs_audit.md` §7 item 6.
     clipped_radiation_powers: ClippedRadiationPowers = ClippedRadiationPowers()
-    # `i_pflux_fw_neutron` static, per `physics_variables.py:1006`'s default (`1`);
-    # with that value both functions take their first branch unconditionally.
     neutron_wall_load: NeutronWallLoad = dataclasses.field(kw_only=True)
-    """Neutron wall load, carrying `.heat_transport.ipowerflow` (default 1).
+    """Neutron wall load -- one occupant per arm of `.physics.i_pflux_fw_neutron` x
+    `.heat_transport.ipowerflow` (`indat.py`'s `_wall_load_arm`).
 
-    **The switch is threaded from `machine_from_indat`, not hardcoded here.**
-    `ipowerflow` already decides two slots -- `fw_area` and, jointly with `blktmodel`,
-    `fwbs.blanket_shield_power` -- so a third answer written into a constructor kwarg
-    could disagree with them, and did: until step 4d an `ipowerflow = 0` machine
-    assembled `AFwTotalNoPowerflow` and `BlanketShieldPowerExponential` alongside two
-    nodes still saying `COMPREHENSIVE_2014`. One switch, one place that reads it.
+    **Both switches were static kwargs here and neither is now**
+    (`_audit/next_steps.md` §14.2). Threading them (step 4d) fixed the coherence half of
+    the defect -- `ipowerflow` already decides `fw_area` and, jointly with `blktmodel`,
+    `fwbs.blanket_shield_power`, and an `ipowerflow = 0` machine used to assemble
+    `AFwTotalNoPowerflow` and `BlanketShieldPowerExponential` alongside two nodes still
+    saying `COMPREHENSIVE_2014` -- but left the reads half: the node declared all three
+    arms' fields, four of which are dead at this machine's values, and one of the four
+    (`.first_wall.a_fw_total`) is `fw_area`'s own output.
     """
-    # `i_plasma_ignited=1` (IGNITED, `stellarator_helias.IN.DAT:126`) -- **not**
-    # `physics_variables.py:881`'s bare default `0`, which this registration used to
-    # carry. Third site of the same mismatch (`PlasmaComposition`/`ConfinementTime` are
-    # the other two), all three found together by `mda_harness.py`'s `switch_audit`.
-    # Checked before flipping: `plasma_physics.py:273-274` adds
-    # `p_hcd_injected_total_mw` into `powht` only under NON_IGNITED, so the IGNITED arm
-    # reads a strict subset of the inputs -- nothing new to wire.
-    heating_and_radiation_power: HeatingAndRadiationPower = HeatingAndRadiationPower(
-        i_plasma_ignited=PlasmaIgnitionModel.IGNITED
+    heating_and_radiation_power: HeatingAndRadiationPower = dataclasses.field(
+        kw_only=True
     )
+    """Heating power, SOL radiation split and alpha power to the wall -- one occupant
+    per `.physics.i_plasma_ignited` value.
+
+    **The switch was a static kwarg here and is a slot now** (`_audit/next_steps.md`
+    §14.2). The note it replaces recorded the check made before flipping its *value*
+    from PROCESS's bare default to the file's -- "the IGNITED arm reads a strict subset
+    of the inputs, nothing new to wire" -- and that subset is the defect: the node
+    declared `.current_drive.p_hcd_injected_total_mw`, a cross-subsystem edge no ignited
+    run makes."""
     radiated_wall_load_and_fraction: RadiatedWallLoadAndFraction = dataclasses.field(
         kw_only=True
     )
-    """Radiated wall load and radiation fraction -- `ipowerflow`'s second static site,
-    threaded from `machine_from_indat` for the reason `neutron_wall_load` gives."""
+    """Radiated wall load and radiation fraction -- the same three arms as
+    `neutron_wall_load` above, from the same `_wall_load_arm` dispatch."""
     thermal_energy_totals: ThermalEnergyTotals = ThermalEnergyTotals()
     # `geometry.py` (chunk 1C of unit #1). `DefaultAspectRatio` is the
     # `1 not in data.numerics.ixc` conditional-ownership case (module docstring): the

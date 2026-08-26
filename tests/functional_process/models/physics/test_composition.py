@@ -11,14 +11,17 @@ adapter would leave a field at its `DataStructure` default and the two sides wou
 disagree.
 """
 
+import inspect
+
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process._harness import Tier1Contract, legacy_sample
+from functional_process.indat import PLASMA_COMPOSITION
 from functional_process.models.physics.composition import (
     CalculateEffectiveChargeIonisationProfiles,
-    PlasmaComposition,
+    PlasmaCompositionNonIgnited,
     calculate_effective_charge_ionisation_profiles,
     plasma_composition,
 )
@@ -463,7 +466,7 @@ def test_plasma_composition_owns_h_and_he_fractions():
     checking exactly which `VarPath`s are owned/read is the other half (a node could
     assemble while silently reading or owning the wrong indices).
     """
-    node = PlasmaComposition(i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED)
+    node = PlasmaCompositionNonIgnited()
     graph = to_graph(node)
     assert graph.definitions
 
@@ -503,9 +506,7 @@ def test_calculate_effective_charge_ionisation_profiles_depends_on_plasma_compos
     has alone (12 fewer than the naive count, since indices 0/1 move from "both
     boundary" to "one boundary, one produced").
     """
-    plasma_composition_node = PlasmaComposition(
-        i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED
-    )
+    plasma_composition_node = PlasmaCompositionNonIgnited()
     profiles_node = CalculateEffectiveChargeIonisationProfiles()
     graph = to_graph(plasma_composition_node, profiles_node)
     assert graph.definitions
@@ -536,9 +537,13 @@ def test_plasma_composition_node_matches_pure_function():
             i_plasma_ignited=i_plasma_ignited,
         )
 
-        node = PlasmaComposition(i_plasma_ignited=i_plasma_ignited)
+        node = PLASMA_COMPOSITION[PlasmaIgnitionModel(int(i_plasma_ignited))]()
         node_kwargs = _pure_function_kwargs_to_node_kwargs(kwargs)
-        got = node(**node_kwargs)
+        # The ignited occupant does not declare `.physics.f_nd_beam_electron` at all --
+        # that is the read the split removed -- so the shared kwarg dict is filtered by
+        # the occupant's own signature rather than by a hardcoded name list.
+        declared = inspect.signature(type(node).__call__).parameters
+        got = node(**{k: v for k, v in node_kwargs.items() if k in declared})
 
         # `want` is the pure function's 17-tuple in its own order: results[:4],
         # results[4] (the full post-update array -- index into it for H_/He_),

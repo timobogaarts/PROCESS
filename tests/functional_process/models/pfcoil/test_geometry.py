@@ -22,8 +22,6 @@ oracle. See `geometry.md` § tier signal.
 """
 
 import numpy as np
-from process.core.model import DataStructure
-from process.models.pfcoil import PFCoil
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.pfcoil import N_PF_GROUPS, NFXF
@@ -32,12 +30,12 @@ from functional_process.models.pfcoil.geometry import (
     calculate_pf_coil_group_positions,
     place_cs_filaments,
 )
+from process.core.model import DataStructure
+from process.models.pfcoil import CSCoil, PFCoil
 
 
 def _reference_cs_geometry(z_tf_inside_half, f_z_cs_tf_internal, dr_cs, dr_cs_bore):
     """`CSCoil.calculate_cs_geometry`, its dataclass unpacked in declaration order."""
-    from process.models.pfcoil import CSCoil
-
     g = CSCoil.calculate_cs_geometry(
         z_tf_inside_half=z_tf_inside_half,
         f_z_cs_tf_internal=f_z_cs_tf_internal,
@@ -68,8 +66,6 @@ def _reference_place_cs_filaments(
     (see `geometry.place_cs_filaments`); they are passed here as the same literals so
     the two sides describe the same coil.
     """
-    from process.models.pfcoil import CSCoil
-
     r, z, c = CSCoil.place_cs_filaments(
         n_cs_current_filaments=NFXF // 2,
         r_cs_middle=r_cs_middle,
@@ -198,7 +194,7 @@ class TestPlaceCsFilaments(Tier1Contract):
 
 
 class TestCalculatePFCoilGroupPositions(Tier1Contract):
-    """`calculate_pf_coil_group_positions` -> `place_pf_above_tf`/`place_pf_outside_tf`."""
+    """`calculate_pf_coil_group_positions` against PROCESS's two `place_pf_*`."""
 
     audit_record = "models/pfcoil/geometry.md"
     reference = _reference_pf_coil_group_positions

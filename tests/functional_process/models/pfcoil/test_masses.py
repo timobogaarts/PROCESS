@@ -42,10 +42,6 @@ moving every declared input.
 """
 
 import numpy as np
-from process.core.exceptions import ProcessValueError
-from process.core.model import DataStructure
-from process.models.cs_fatigue import CsFatigue
-from process.models.pfcoil import CSCoil, PFCoil
 
 from functional_process._harness import Tier1Contract, Tolerance, legacy_sample
 from functional_process.models.pfcoil import (
@@ -76,6 +72,10 @@ from functional_process.models.pfcoil.masses import (
     calculate_pf_coil_masses,
     calculate_pf_coil_sizes,
 )
+from process.core.exceptions import ProcessValueError
+from process.core.model import DataStructure
+from process.models.cs_fatigue import CsFatigue
+from process.models.pfcoil import CSCoil, PFCoil
 
 I_PF_LOCATION = np.array([2, 2, 3, 3, 0, 0, 0, 0, 0, 0])
 """`.pf_coil.i_pf_location` on the reference run -- two groups above the TF coil, two

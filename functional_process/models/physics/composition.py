@@ -33,7 +33,8 @@ assumed; see the audit record's data-footprint table for the full index table th
 hardcodes.
 """
 
-import equinox as eqx
+import functools
+
 import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
@@ -209,6 +210,163 @@ def plasma_composition(
         m_ions_total_amu, n_charge_plasma_effective_mass_weighted_vol_avg)`, matching
         the order PROCESS computes them in (`first_call_next` omitted -- see above).
     """
+    if PlasmaIgnitionModel(i_plasma_ignited) is PlasmaIgnitionModel.IGNITED:
+        return plasma_composition_ignited(
+            nd_plasma_electrons_vol_avg,
+            f_nd_alpha_thermal_electron,
+            fusden_alpha_total,
+            f_nd_protium_electrons,
+            proton_rate_density,
+            f_nd_impurity_electron_array,
+            temp_plasma_electron_vol_avg_kev,
+            temp_impurity_keV_array,
+            impurity_arr_zav,
+            f_plasma_fuel_deuterium,
+            f_plasma_fuel_tritium,
+            f_plasma_fuel_helium3,
+            f_temp_plasma_electron_density_vol_avg,
+            f_beam_tritium,
+            m_impurity_amu_array,
+        )
+    return plasma_composition_non_ignited(
+        nd_plasma_electrons_vol_avg,
+        f_nd_alpha_thermal_electron,
+        fusden_alpha_total,
+        f_nd_protium_electrons,
+        proton_rate_density,
+        f_nd_impurity_electron_array,
+        temp_plasma_electron_vol_avg_kev,
+        temp_impurity_keV_array,
+        impurity_arr_zav,
+        f_plasma_fuel_deuterium,
+        f_plasma_fuel_tritium,
+        f_plasma_fuel_helium3,
+        f_temp_plasma_electron_density_vol_avg,
+        f_beam_tritium,
+        m_impurity_amu_array,
+        f_nd_beam_electron=f_nd_beam_electron,
+    )
+
+
+def plasma_composition_ignited(
+    nd_plasma_electrons_vol_avg,
+    f_nd_alpha_thermal_electron,
+    fusden_alpha_total,
+    f_nd_protium_electrons,
+    proton_rate_density,
+    f_nd_impurity_electron_array,
+    temp_plasma_electron_vol_avg_kev,
+    temp_impurity_keV_array,
+    impurity_arr_zav,
+    f_plasma_fuel_deuterium,
+    f_plasma_fuel_tritium,
+    f_plasma_fuel_helium3,
+    f_temp_plasma_electron_density_vol_avg,
+    f_beam_tritium,
+    m_impurity_amu_array,
+):
+    """`plasma_composition` at `i_plasma_ignited == IGNITED` (1) -- the reference run's.
+
+    An ignited plasma has no beam ions, so `.physics.f_nd_beam_electron` is **not read
+    at all**: that is the single edge one node carrying the switch invented
+    (`switch_kwarg_survey.md` §3, `live (1)`). Parameters and returns are the
+    composite's, less `i_plasma_ignited` and `f_nd_beam_electron`.
+    """
+    return _plasma_composition(
+        lambda nd_plasma_electrons_vol_avg: jnp.zeros_like(nd_plasma_electrons_vol_avg),
+        nd_plasma_electrons_vol_avg,
+        f_nd_alpha_thermal_electron,
+        fusden_alpha_total,
+        f_nd_protium_electrons,
+        proton_rate_density,
+        f_nd_impurity_electron_array,
+        temp_plasma_electron_vol_avg_kev,
+        temp_impurity_keV_array,
+        impurity_arr_zav,
+        f_plasma_fuel_deuterium,
+        f_plasma_fuel_tritium,
+        f_plasma_fuel_helium3,
+        f_temp_plasma_electron_density_vol_avg,
+        f_beam_tritium,
+        m_impurity_amu_array,
+    )
+
+
+def plasma_composition_non_ignited(
+    nd_plasma_electrons_vol_avg,
+    f_nd_alpha_thermal_electron,
+    fusden_alpha_total,
+    f_nd_protium_electrons,
+    proton_rate_density,
+    f_nd_impurity_electron_array,
+    temp_plasma_electron_vol_avg_kev,
+    temp_impurity_keV_array,
+    impurity_arr_zav,
+    f_plasma_fuel_deuterium,
+    f_plasma_fuel_tritium,
+    f_plasma_fuel_helium3,
+    f_temp_plasma_electron_density_vol_avg,
+    f_beam_tritium,
+    m_impurity_amu_array,
+    *,
+    f_nd_beam_electron,
+):
+    """`plasma_composition` at `i_plasma_ignited == NON_IGNITED` (0) -- PROCESS's own
+    default (`physics_variables.py:881`) and the conventional tokamak's.
+
+    Parameters and returns are the composite's, less `i_plasma_ignited`.
+    """
+    return _plasma_composition(
+        lambda nd_plasma_electrons_vol_avg: (
+            nd_plasma_electrons_vol_avg * f_nd_beam_electron
+        ),
+        nd_plasma_electrons_vol_avg,
+        f_nd_alpha_thermal_electron,
+        fusden_alpha_total,
+        f_nd_protium_electrons,
+        proton_rate_density,
+        f_nd_impurity_electron_array,
+        temp_plasma_electron_vol_avg_kev,
+        temp_impurity_keV_array,
+        impurity_arr_zav,
+        f_plasma_fuel_deuterium,
+        f_plasma_fuel_tritium,
+        f_plasma_fuel_helium3,
+        f_temp_plasma_electron_density_vol_avg,
+        f_beam_tritium,
+        m_impurity_amu_array,
+    )
+
+
+def _plasma_composition(
+    beam_ion_density,
+    nd_plasma_electrons_vol_avg,
+    f_nd_alpha_thermal_electron,
+    fusden_alpha_total,
+    f_nd_protium_electrons,
+    proton_rate_density,
+    f_nd_impurity_electron_array,
+    temp_plasma_electron_vol_avg_kev,
+    temp_impurity_keV_array,
+    impurity_arr_zav,
+    f_plasma_fuel_deuterium,
+    f_plasma_fuel_tritium,
+    f_plasma_fuel_helium3,
+    f_temp_plasma_electron_density_vol_avg,
+    f_beam_tritium,
+    m_impurity_amu_array,
+):
+    """Everything both `i_plasma_ignited` arms share, given the arm's own beam-ion
+    density law.
+
+    `beam_ion_density` is a function of the electron density, not a switch: an ignited
+    plasma's is `zeros_like` and a beam-heated one's is `nd * f_nd_beam_electron`, and
+    which one a node gets follows from which arm function it called. Splitting here
+    rather than keeping the two lines behind a static kwarg is
+    `_audit/next_steps.md` §14.2; the note in this module's docstring calling the kwarg
+    a deliberate policy deviation -- "two lines deep inside an otherwise-shared
+    328-line function" -- is withdrawn with the policy that allowed it.
+    """
     nd_plasma_alphas_thermal_vol_avg = (
         nd_plasma_electrons_vol_avg * f_nd_alpha_thermal_electron
     )
@@ -229,10 +387,7 @@ def plasma_composition(
         protons_not_yet_calculated, protons_early, protons_later
     )
 
-    if PlasmaIgnitionModel(i_plasma_ignited) is PlasmaIgnitionModel.IGNITED:
-        nd_beam_ions = jnp.zeros_like(nd_plasma_electrons_vol_avg)
-    else:
-        nd_beam_ions = nd_plasma_electrons_vol_avg * f_nd_beam_electron
+    nd_beam_ions = beam_ion_density(nd_plasma_electrons_vol_avg)
 
     # <Z>(T_e) for every species at the single bulk electron temperature -- one vmap
     # over the species axis replaces 14 (or, in the source's other loop, up to 14)
@@ -420,16 +575,15 @@ class PlasmaComposition(ExplicitFunction):
     positions; the result is numerically exact, not an approximation -- the two
     placeholders are unconditionally overwritten before anything downstream reads them.
 
-    `i_plasma_ignited` is a graph-assembly-time switch, not a port --
-    `eqx.field(static=True)`, typed with PROCESS's own `PlasmaIgnitionModel`, the same
-    move `ConfinementTime`/`EcrhDensityLimit` already make for their own switches
-    (`composition.md`'s "switches touched" section: the two branches'
-    reads-sets genuinely differ, but the differing part is two lines inside an
-    otherwise-shared 328-line function, so it stays a static kwarg rather than an
-    `Alternative` split).
+    **`i_plasma_ignited` was an `eqx.field(static=True)` here and is gone**
+    (`_audit/next_steps.md` §14.2): this is the family base, and one occupant per value
+    sits below it. `composition.md`'s "switches touched" section recorded the kwarg as a
+    deliberate policy deviation -- the two branches' reads-sets genuinely differ, but
+    the differing part is two lines inside an otherwise-shared 328-line function -- and
+    that deviation is withdrawn with the policy that allowed it. The shared 328 lines
+    did not have to be duplicated: they are `_plasma_composition`, and the two lines are
+    the arm's own beam-ion-density law.
     """
-
-    i_plasma_ignited: PlasmaIgnitionModel = eqx.field(static=True)
 
     nd_plasma_alphas_thermal_vol_avg = OutputInto(physics)
     nd_plasma_protons_vol_avg = OutputInto(physics)
@@ -459,6 +613,197 @@ class PlasmaComposition(ExplicitFunction):
     m_beam_amu = OutputInto(physics)
     m_ions_total_amu = OutputInto(physics)
     n_charge_plasma_effective_mass_weighted_vol_avg = OutputInto(physics)
+
+    def _composition(
+        self,
+        arm,
+        nd_plasma_electrons_vol_avg,
+        f_nd_alpha_thermal_electron,
+        fusden_alpha_total,
+        f_nd_protium_electrons,
+        proton_rate_density,
+        f_nd_impurity_electron_array_2,
+        f_nd_impurity_electron_array_3,
+        f_nd_impurity_electron_array_4,
+        f_nd_impurity_electron_array_5,
+        f_nd_impurity_electron_array_6,
+        f_nd_impurity_electron_array_7,
+        f_nd_impurity_electron_array_8,
+        f_nd_impurity_electron_array_9,
+        f_nd_impurity_electron_array_10,
+        f_nd_impurity_electron_array_11,
+        f_nd_impurity_electron_array_12,
+        f_nd_impurity_electron_array_13,
+        temp_plasma_electron_vol_avg_kev,
+        temp_impurity_keV_array,
+        impurity_arr_zav,
+        f_plasma_fuel_deuterium,
+        f_plasma_fuel_tritium,
+        f_plasma_fuel_helium3,
+        f_temp_plasma_electron_density_vol_avg,
+        f_beam_tritium,
+        m_impurity_amu_array,
+    ):
+        """The array assembly and result reshaping both `i_plasma_ignited`
+        occupants share, given the arm function that occupant is for.
+
+        Not a port surface: `_params` reads `__call__`'s signature only
+        (`ExplicitFunction._signature_of`), so what each occupant declares is still
+        its own parameter list -- which is the point of the split, since the ignited
+        one does not declare `.physics.f_nd_beam_electron`.
+        """
+        # `plasma_composition` (the pure function) is unchanged -- still one 14-array
+        # parameter, physics untouched. Indices 0/1 are placeholders: the function
+        # never reads the *old* values there (see the class docstring), only
+        # overwrites them via `.at[H_INDEX].set(...)`/`.at[HE_INDEX].set(...)`, so
+        # zeros are numerically exact, not an approximation.
+        placeholder = jnp.zeros_like(f_nd_impurity_electron_array_2)
+        f_nd_impurity_electron_array = jnp.stack([
+            placeholder,  # index 0 (H_) -- owned by this node's own Output, not read
+            placeholder,  # index 1 (He) -- ditto
+            f_nd_impurity_electron_array_2,
+            f_nd_impurity_electron_array_3,
+            f_nd_impurity_electron_array_4,
+            f_nd_impurity_electron_array_5,
+            f_nd_impurity_electron_array_6,
+            f_nd_impurity_electron_array_7,
+            f_nd_impurity_electron_array_8,
+            f_nd_impurity_electron_array_9,
+            f_nd_impurity_electron_array_10,
+            f_nd_impurity_electron_array_11,
+            f_nd_impurity_electron_array_12,
+            f_nd_impurity_electron_array_13,
+        ])
+
+        results = arm(
+            nd_plasma_electrons_vol_avg,
+            f_nd_alpha_thermal_electron,
+            fusden_alpha_total,
+            f_nd_protium_electrons,
+            proton_rate_density,
+            f_nd_impurity_electron_array,
+            temp_plasma_electron_vol_avg_kev,
+            temp_impurity_keV_array,
+            impurity_arr_zav,
+            f_plasma_fuel_deuterium,
+            f_plasma_fuel_tritium,
+            f_plasma_fuel_helium3,
+            f_temp_plasma_electron_density_vol_avg,
+            f_beam_tritium,
+            m_impurity_amu_array,
+        )
+        # `results[4]` is the post-update 14-array (index 4 of `plasma_composition`'s
+        # return tuple, see its own docstring); this node owns its two updated entries
+        # individually (`f_nd_impurity_electron_array_h`/`_he`) rather than the whole
+        # array. Order must match the `Output` declarations above: results[:4] (4), the
+        # two extracted H_/He_ entries (2), results[5:] (12) -- 18 total.
+        return (
+            *results[:4],
+            results[4][H_INDEX],
+            results[4][HE_INDEX],
+            *results[5:],
+        )
+
+
+class PlasmaCompositionIgnited(PlasmaComposition):
+    """`i_plasma_ignited == IGNITED` (1) -- the reference run's.
+
+    **One read leaves with this occupant**: `.physics.f_nd_beam_electron`. An
+    ignited plasma has no beam ions, so `nd_beam_ions` is `zeros_like` and the
+    beam fraction is never consulted.
+    """
+
+    def __call__(
+        self,
+        nd_plasma_electrons_vol_avg=From(physics),
+        f_nd_alpha_thermal_electron=From(physics),
+        fusden_alpha_total=From(physics),
+        f_nd_protium_electrons=From(physics),
+        proton_rate_density=From(physics),
+        f_nd_impurity_electron_array_2=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[2]
+        ),
+        f_nd_impurity_electron_array_3=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[3]
+        ),
+        f_nd_impurity_electron_array_4=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[4]
+        ),
+        f_nd_impurity_electron_array_5=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[5]
+        ),
+        f_nd_impurity_electron_array_6=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[6]
+        ),
+        f_nd_impurity_electron_array_7=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[7]
+        ),
+        f_nd_impurity_electron_array_8=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[8]
+        ),
+        f_nd_impurity_electron_array_9=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[9]
+        ),
+        f_nd_impurity_electron_array_10=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[10]
+        ),
+        f_nd_impurity_electron_array_11=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[11]
+        ),
+        f_nd_impurity_electron_array_12=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[12]
+        ),
+        f_nd_impurity_electron_array_13=FromExactly(
+            impurity_radiation.f_nd_impurity_electron_array[13]
+        ),
+        temp_plasma_electron_vol_avg_kev=From(physics),
+        temp_impurity_keV_array=From(impurity_radiation),
+        impurity_arr_zav=From(impurity_radiation),
+        f_plasma_fuel_deuterium=From(physics),
+        f_plasma_fuel_tritium=From(physics),
+        f_plasma_fuel_helium3=From(physics),
+        f_temp_plasma_electron_density_vol_avg=From(physics),
+        f_beam_tritium=From(current_drive),
+        m_impurity_amu_array=From(impurity_radiation),
+    ):
+        return self._composition(
+            plasma_composition_ignited,
+            nd_plasma_electrons_vol_avg,
+            f_nd_alpha_thermal_electron,
+            fusden_alpha_total,
+            f_nd_protium_electrons,
+            proton_rate_density,
+            f_nd_impurity_electron_array_2,
+            f_nd_impurity_electron_array_3,
+            f_nd_impurity_electron_array_4,
+            f_nd_impurity_electron_array_5,
+            f_nd_impurity_electron_array_6,
+            f_nd_impurity_electron_array_7,
+            f_nd_impurity_electron_array_8,
+            f_nd_impurity_electron_array_9,
+            f_nd_impurity_electron_array_10,
+            f_nd_impurity_electron_array_11,
+            f_nd_impurity_electron_array_12,
+            f_nd_impurity_electron_array_13,
+            temp_plasma_electron_vol_avg_kev,
+            temp_impurity_keV_array,
+            impurity_arr_zav,
+            f_plasma_fuel_deuterium,
+            f_plasma_fuel_tritium,
+            f_plasma_fuel_helium3,
+            f_temp_plasma_electron_density_vol_avg,
+            f_beam_tritium,
+            m_impurity_amu_array,
+        )
+
+
+class PlasmaCompositionNonIgnited(PlasmaComposition):
+    """`i_plasma_ignited == NON_IGNITED` (0) -- PROCESS's own default
+    (`physics_variables.py:881`) and the conventional tokamak's.
+
+    Reads `.physics.f_nd_beam_electron`, which its sibling does not: beam ions
+    are that fraction of the electron density.
+    """
 
     def __call__(
         self,
@@ -514,15 +859,16 @@ class PlasmaComposition(ExplicitFunction):
         f_beam_tritium=From(current_drive),
         m_impurity_amu_array=From(impurity_radiation),
     ):
-        # `plasma_composition` (the pure function) is unchanged -- still one 14-array
-        # parameter, physics untouched. Indices 0/1 are placeholders: the function
-        # never reads the *old* values there (see the class docstring), only
-        # overwrites them via `.at[H_INDEX].set(...)`/`.at[HE_INDEX].set(...)`, so
-        # zeros are numerically exact, not an approximation.
-        placeholder = jnp.zeros_like(f_nd_impurity_electron_array_2)
-        f_nd_impurity_electron_array = jnp.stack([
-            placeholder,  # index 0 (H_) -- owned by this node's own Output, not read
-            placeholder,  # index 1 (He) -- ditto
+        return self._composition(
+            functools.partial(
+                plasma_composition_non_ignited,
+                f_nd_beam_electron=f_nd_beam_electron,
+            ),
+            nd_plasma_electrons_vol_avg,
+            f_nd_alpha_thermal_electron,
+            fusden_alpha_total,
+            f_nd_protium_electrons,
+            proton_rate_density,
             f_nd_impurity_electron_array_2,
             f_nd_impurity_electron_array_3,
             f_nd_impurity_electron_array_4,
@@ -535,16 +881,6 @@ class PlasmaComposition(ExplicitFunction):
             f_nd_impurity_electron_array_11,
             f_nd_impurity_electron_array_12,
             f_nd_impurity_electron_array_13,
-        ])
-
-        results = plasma_composition(
-            nd_plasma_electrons_vol_avg,
-            f_nd_alpha_thermal_electron,
-            fusden_alpha_total,
-            f_nd_protium_electrons,
-            proton_rate_density,
-            f_nd_beam_electron,
-            f_nd_impurity_electron_array,
             temp_plasma_electron_vol_avg_kev,
             temp_impurity_keV_array,
             impurity_arr_zav,
@@ -554,18 +890,6 @@ class PlasmaComposition(ExplicitFunction):
             f_temp_plasma_electron_density_vol_avg,
             f_beam_tritium,
             m_impurity_amu_array,
-            self.i_plasma_ignited,
-        )
-        # `results[4]` is the post-update 14-array (index 4 of `plasma_composition`'s
-        # return tuple, see its own docstring); this node owns its two updated entries
-        # individually (`f_nd_impurity_electron_array_h`/`_he`) rather than the whole
-        # array. Order must match the `Output` declarations above: results[:4] (4), the
-        # two extracted H_/He_ entries (2), results[5:] (12) -- 18 total.
-        return (
-            *results[:4],
-            results[4][H_INDEX],
-            results[4][HE_INDEX],
-            *results[5:],
         )
 
 
