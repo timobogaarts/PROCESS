@@ -27,12 +27,18 @@ unknown (`mda.driven_graph`), so the split is mechanical and exact:
 - `guess`  -- a `Start` port for a driven unknown. Growth here is a new problem, which
   is structure, not a regression; it should move only when a `Drive` does.
 
-The reference machine today: **320 inputs**, and 18 guesses on top of that once
-`driven_graph` has initialised its problems.
+The reference machine today: **311 inputs**, and 16 guesses on top of that once
+`driven_graph` has initialised its problems. The conventional tokamak
+(`TOKAMAK_INPUT_FILE`) is **339 inputs and 15 guesses**, pinned separately in
+`reference_boundary_tokamak.txt` -- and the comparison between the two files is the point
+of having a second one: a tokamak reads *more* than a stellarator, from a graph with more
+nodes in it, which is the honest shape of a device that is fourteen slots ported and
+eleven slots empty.
 
-Regenerate the pin (never hand-edit it) with::
+Regenerate a pin (never hand-edit one) with::
 
-    $PY -m functional_process.boundary --write
+    $PY -m functional_process.boundary --write             # the stellarator
+    $PY -m functional_process.boundary --machine --write   # the tokamak
 """
 
 from __future__ import annotations
@@ -56,6 +62,22 @@ INPUT, GUESSED = "input", "guess"
 PIN = os.path.join(os.path.dirname(__file__), "reference_boundary.txt")
 """The reference machine's audited boundary, one `category<space>path` per line."""
 
+TOKAMAK_PIN = os.path.join(os.path.dirname(__file__), "reference_boundary_tokamak.txt")
+"""The same, for the conventional tokamak `TOKAMAK_INPUT_FILE` describes.
+
+**A second file rather than a second column**, because it is a second *machine*. A
+boundary is a property of one assembled graph and the two graphs share only their
+device-agnostic subsystems; merging them would need a per-row "which machines is this
+on" column that nothing would ever read, and would hide the interesting comparison --
+which is between the two files, not inside one.
+"""
+
+TOKAMAK_INPUT_FILE = "tests/regression/input_files/large_tokamak_eval.IN.DAT"
+"""The conventional tokamak this port measures itself against, as `indat`'s
+`REFERENCE_INPUT_FILE` is the stellarator. Named here because `TOKAMAK_PIN` is a pin
+*of* it and the two must not drift; `--machine` on this module's command line defaults
+to it."""
+
 
 def category(var: VarPath) -> str:
     """Which kind of boundary entry `var` is -- see this module's docstring."""
@@ -69,8 +91,12 @@ def boundary(graph: Graph) -> tuple[tuple[str, VarPath], ...]:
     diffed against a file, and a diff that reordered when an unrelated node was added
     would report noise as change.
     """
-    return tuple(sorted(((category(v), v) for v in graph.unowned_inputs),
-                        key=lambda row: (row[0], row[1].path_str())))
+    return tuple(
+        sorted(
+            ((category(v), v) for v in graph.unowned_inputs),
+            key=lambda row: (row[0], row[1].path_str()),
+        )
+    )
 
 
 def readers_of(graph: Graph, var: VarPath) -> tuple[NodePath, ...]:
@@ -139,8 +165,12 @@ def orphaned_by(base: Graph, swapped: Graph) -> tuple[VarPath, ...]:
     occupant that legitimately needs a new input of its own is not either -- neither was
     ever owned by `base`.
     """
-    return tuple(sorted((var for var in swapped.unowned_inputs if var in base.owners),
-                        key=lambda v: v.path_str()))
+    return tuple(
+        sorted(
+            (var for var in swapped.unowned_inputs if var in base.owners),
+            key=lambda v: v.path_str(),
+        )
+    )
 
 
 def write_pin(graph: Graph, path: str = PIN) -> tuple[tuple[str, VarPath], ...]:
@@ -167,8 +197,9 @@ def read_pin(path: str = PIN) -> tuple[tuple[str, str], ...]:
         lines = [line.strip() for line in handle]
     return tuple(
         (kind, name)
-        for kind, _, name in (line.partition(" ") for line in lines
-                              if line and not line.startswith("#"))
+        for kind, _, name in (
+            line.partition(" ") for line in lines if line and not line.startswith("#")
+        )
     )
 
 
@@ -180,28 +211,54 @@ def counts(rows: Iterable[tuple[str, object]]) -> Mapping[str, int]:
     return out
 
 
+def _machine_graph(argv: list[str]):
+    """`(graph, pin path)` for the machine this invocation is about.
+
+    No argument means the stellarator reference machine and `PIN`, exactly as before.
+    `--machine [<IN.DAT>]` means the machine that file describes and `TOKAMAK_PIN`,
+    defaulting to `TOKAMAK_INPUT_FILE`.
+
+    **The smallest extension that gives a second device a pin**, and deliberately not a
+    general one: a pin is only useful for a machine something else also names, and this
+    port names exactly two. A third would want a table rather than a second branch.
+    """
+    from functional_process.indat import GRAPH, graph_for, machine_from_indat
+
+    if "--machine" not in argv:
+        return GRAPH, PIN
+    index = argv.index("--machine") + 1
+    name = argv[index] if index < len(argv) and not argv[index].startswith("-") else None
+    return graph_for(machine_from_indat(name or TOKAMAK_INPUT_FILE)), TOKAMAK_PIN
+
+
 def _main(argv: list[str]) -> int:
-    from functional_process.indat import GRAPH
     from functional_process.mda import driven_graph
 
-    driven = driven_graph(GRAPH)
+    graph, pin = _machine_graph(argv)
+    driven = driven_graph(graph)
     rows = boundary(driven)
     have = counts(rows)
-    print(f"declared graph: {len(GRAPH.unowned_inputs)} unowned input(s)")
+    print(f"declared graph: {len(graph.unowned_inputs)} unowned input(s)")
     print(f"driven graph:   {len(rows)} = {have[INPUT]} input + {have[GUESSED]} guess")
     if "--write" in argv:
-        write_pin(driven)
-        print(f"wrote {PIN}")
+        write_pin(driven, pin)
+        print(f"wrote {pin}")
         return 0
-    pinned = read_pin()
+    pinned = read_pin(pin)
     was = counts(pinned)
-    print(f"pin:            {len(pinned)} = {was[INPUT]} input + {was[GUESSED]} guess")
-    check_boundary(driven, {v for _, v in rows if v.path_str()
-                            in {name for _, name in pinned}})
+    print(
+        f"pin ({os.path.basename(pin)}): {len(pinned)} = {was[INPUT]} input + "
+        f"{was[GUESSED]} guess"
+    )
+    check_boundary(
+        driven, {v for _, v in rows if v.path_str() in {name for _, name in pinned}}
+    )
     gone = {name for _, name in pinned} - {v.path_str() for _, v in rows}
     if gone:
-        print(f"{len(gone)} pinned read(s) no longer on the boundary -- a producer "
-              f"landed. Regenerate:\n  " + "\n  ".join(sorted(gone)))
+        print(
+            f"{len(gone)} pinned read(s) no longer on the boundary -- a producer "
+            f"landed. Regenerate:\n  " + "\n  ".join(sorted(gone))
+        )
     return 0
 
 

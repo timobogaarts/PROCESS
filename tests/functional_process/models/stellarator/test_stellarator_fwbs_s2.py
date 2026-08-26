@@ -82,7 +82,9 @@ def _make_stellarator():
     data.first_wall.a_fw_total = 2000.0
 
     data.fwbs.blktmodel = 0  # both arms live in the `blktmodel != 1` else-branch
-    data.fwbs.i_p_coolant_pumping = 1  # FRACTION_OF_HEAT -- see the port's module docstring
+    data.fwbs.i_p_coolant_pumping = (
+        1  # FRACTION_OF_HEAT -- see the port's module docstring
+    )
     data.tfcoil.i_tf_sup = TFConductorModel.SUPERCONDUCTING
     # WATER + irefprop=False would also avoid the real CoolProp call, but HELIUM skips
     # the whole `temp_blkt_coolant_out` block (arm 3 only) at the source, cleaner.

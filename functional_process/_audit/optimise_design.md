@@ -853,8 +853,15 @@ The alternative is the one `problem.py` was built for and cottax's own docs name
 ```python
 p = Plan(graph_with_optimise)
 for n in [x for x in p.graph.declared if isinstance(p.graph[x], FixedPoint)]:
-    p = p + Residualise(n)                       # FixedPoint -> RootFind
-p = p + Combine(NodePath(...('sand',)), tuple(p.graph.declared))
+    p = p + Residualise(n)  # FixedPoint -> RootFind
+p = p + Combine(
+    NodePath(
+        ...(
+            "sand",
+        )
+    ),
+    tuple(p.graph.declared),
+)
 schedule = schedule_for(Blocking.scc(p.graph), {p.graph.declared[0]: VmconDriver(...)})
 ```
 

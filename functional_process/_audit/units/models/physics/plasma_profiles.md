@@ -298,10 +298,42 @@ residual is structurally zero, and `functional_process.sand.degenerate_fixed_poi
 detects that by differentiation and drops the problem — reverting the field to a boundary
 input, which *is* PROCESS's "use the input value" semantics, recovered from structure.
 
-**`calculate_pedestal_profile_values` still has no node.** Under `i_plasma_pedestal == 1`
-these five fields therefore have no producer at all, which is the honest state of the port
-(that arm needs `profiles.py`'s profile arrays) rather than a silent fallback to the
-parabolic formula.
+**`calculate_pedestal_profile_values` now has a node too: `PedestalProfileValues`**,
+registered under the same `.physics.i_plasma_pedestal == 1` arm as
+`PedestalTemperatureProfile`/`PedestalOnAxisDensities`/`PedestalOnAxisTemperatures`
+(`profiles.py`'s three `ProfileParameterisationPedestal` nodes). `profiles.py` (unit #21)
+landed since this section was last written, which is what unblocked it — the sequencing
+constraint recorded above ("that arm needs `profiles.py`'s profile arrays") is resolved,
+not worked around. Found overdue by `_audit/tokamak_boundary.md` § "The four that are a
+shared subsystem's gap": assembling a tokamak (`large_tokamak_eval.IN.DAT:291` sets
+`i_plasma_pedestal = 1`, the first machine this port builds that selects this arm)
+showed four fields —
+`f_temp_plasma_electron_density_vol_avg`/`nd_plasma_electron_line`/
+`temp_plasma_electron_density_weighted_kev`/`temp_plasma_ion_density_weighted_kev` —
+with no producer at all on that arm, even though `calculate_pedestal_profile_values`
+itself had been ported and had a passing `Tier1Contract`
+(`TestPedestalProfileValues`) the whole time. The gap was purely the missing node
+wrapper, not the function or its test.
+
+`PedestalProfileValues` owns all six of the function's outputs, not only the four
+`tokamak_boundary.md` lists as currently read: also `temp_plasma_electron_line_avg_kev`
+and `.divertor.prn1` (this file's only cross-area write, open question 5 below), both
+faithfully produced even though the graph as assembled so far has no reader for them.
+Every read it declares already has a producer elsewhere in the graph —
+`radius_plasma_profile_norm`/`nd_plasma_electron_profile` from the `COMMON` `ProfileGrid`/
+`DensityProfile`, `temp_plasma_electron_profile_kev` from this arm's own
+`PedestalTemperatureProfile`, `nd_plasma_electron_profile_integral`/
+`temp_plasma_electron_profile_integral_kev` from the `COMMON` `NeProfileIntegral`/
+`TeProfileIntegral`, `temp_plasma_ion_vol_avg_kev` from the `COMMON`
+`IonVolAvgTemperature`, and the rest are ordinary boundary inputs (iteration variable 4,
+and the pedestal arm's own seven input fields) — so registering it adds **zero** new
+boundary reads, exactly matching `tokamak_boundary.md`'s count of the gap as four
+variables rather than four variables plus new inputs. Structural coverage: two new tests,
+`test_pedestal_profile_values_assembles_alone` and
+`test_pedestal_profile_values_owns_cross_area_prn1`, the latter checking the exact
+`VarPath`s land in `.divertor`/`.physics` respectively (not merely that the graph
+assembles), the same discipline `test_composition.py`'s `PlasmaComposition` checks apply
+to its own array-index ownership.
 
 `calculate_profile_factors` and `calculate_parabolic_gradient_lengths` have no such
 problem — `calculate_profile_factors` runs in both branches, and
@@ -436,11 +468,15 @@ Both called **for effect**: the return value is unused, and the caller then read
    though it is only ever called from the parabolic branch (L77).** Dead guard as far as
    this file goes. Dropping it is proposed above; worth one grep for other callers before
    acting — `grep -rn "calculate_parabolic_profile_factors" process` was not run.
-5. **`.divertor.prn1` is this file's only cross-area write**, and it is written only in
-   the pedestal branch. The parabolic branch leaves it at its input value (the comment at
-   L240-241 says so explicitly). That is another `conditional-ownership` case, this time
-   split across switch arms rather than by a data value — the pedestal node owns
-   `.divertor.prn1`, the parabolic node does not. Representable, just worth stating.
+5. **[RESOLVED — see "cottax node" above.] `.divertor.prn1` is this file's only
+   cross-area write**, and it is written only in the pedestal branch. The parabolic
+   branch leaves it at its input value (the comment at L240-241 says so explicitly).
+   That is another `conditional-ownership` case, this time split across switch arms
+   rather than by a data value — the pedestal node owns `.divertor.prn1`, the parabolic
+   node does not. Representable, and now represented: `PedestalProfileValues` owns it,
+   `ParabolicProfileValues` does not declare it at all, and
+   `test_pedestal_profile_values_owns_cross_area_prn1` checks the asymmetry directly
+   rather than merely checking the graph assembles.
 6. **`n_plasma_profile_elements` is a shape, not a value.** It sets the length of every
    profile array (default 201). In a traced port it is a static shape parameter; it is
    read from `data.physics` in `profiles.py:62-64`. Needs the `Out.static`-like treatment

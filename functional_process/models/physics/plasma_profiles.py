@@ -14,14 +14,19 @@ five tier-1 functions covering all the arithmetic in the file. The profile array
 (`profile_x`/`profile_y`) arrive as explicit array arguments rather than being read off
 an injected object -- exactly the `data`-back-door closure the audit exists to force.
 
-Only two of the five get `cottax` nodes here. `calculate_parabolic_profile_values` and
-`calculate_pedestal_profile_values` are the two arms of the `i_plasma_pedestal` topology
-switch and own an overlapping set of `.physics` fields, so their nodes belong in
-`total_process.TOPOLOGY_SWITCHES` as `Alternative`s -- but that switch is *also* consumed
-as a static kwarg by `density_limits.EcrhDensityLimit`, and nothing currently reconciles
-the two roles (record § open questions 1). Wrapping them now would bake in a wiring that
-question may change. `calculate_ion_vol_avg_temperature` gets no node for a different
-reason: it reads and owns the *same* `VarPath`, which is a self-loop, not a node.
+**All five now have `cottax` nodes**, and both `i_plasma_pedestal` arms of the
+topology switch are covered: `ParabolicProfileValues` (`i_plasma_pedestal == 0`) and
+`PedestalProfileValues` (`i_plasma_pedestal == 1`) wrap `calculate_parabolic_profile_
+values` and `calculate_pedestal_profile_values` respectively; `IonVolAvgTemperature`
+(a `FixedPointFunction`, since the field it owns is conditionally read as well) and
+`ProfileFactors`/`ParabolicGradientLengths` cover the rest. The "static kwarg on
+`density_limits.EcrhDensityLimit`" reconciliation this docstring used to say was
+unresolved (record § open question 1) is settled in practice -- see
+`ParabolicProfileValues`'s own docstring -- and `PedestalProfileValues` closes the last
+gap `_audit/tokamak_boundary.md` § "The four that are a shared subsystem's gap" found:
+a tokamak is the first machine to select the pedestal arm, and until this node existed
+four of its fields had no producer at all even though the underlying function was
+already ported and tested.
 """
 
 import jax.numpy as jnp
@@ -34,7 +39,7 @@ from cottax.interfaces.pytree_namespace_module import (
 from jax.scipy.special import gamma, gammaln
 
 from functional_process.models.safe_math import safe_sqrt
-from functional_process.paths import physics
+from functional_process.paths import divertor, physics
 
 # `process/core/constants.py`'s KILOELECTRON_VOLT -- the J-per-keV conversion.
 KILOELECTRON_VOLT = 1.602176634e-16
@@ -683,12 +688,12 @@ class ParabolicProfileValues(ExplicitFunction):
     `EcrhDensityLimit(i_plasma_pedestal=0)` with the parabolic profile nodes, so there is
     exactly one place the value is written and nothing left to reconcile.
 
-    `calculate_pedestal_profile_values` still has no node, so under
-    `i_plasma_pedestal == 1` these five fields stay unproduced. That is the honest state
-    of the port (it needs `profiles.py`'s profile arrays, an unaudited unit), not a
-    silent fallback to the parabolic formula.
+    **`calculate_pedestal_profile_values` now has a node too, `PedestalProfileValues`
+    below** -- this class's counterpart under `i_plasma_pedestal == 1`. `profiles.py` (the
+    unit it needed) has since been ported and registered, closing the sequencing
+    constraint that used to block it.
 
-    **What registering it fixes**, together with `IonVolAvgTemperature` above: the two
+    **What registering this node fixes**, together with `IonVolAvgTemperature` above: the two
     density-weighted temperatures were boundary inputs, so `.physics.beta_total_vol_avg`
     (constraint 24) and every fusion-reactivity quantity had **zero** sensitivity to
     iteration variable 4. See `IonVolAvgTemperature`'s docstring.
@@ -756,3 +761,101 @@ class LModeProfileReset(ExplicitFunction):
 
     def __call__(self):
         return lmode_profile_reset()
+
+
+class PedestalProfileValues(ExplicitFunction):
+    """cottax node: `calculate_pedestal_profile_values`, the `i_plasma_pedestal == 1`
+    arm of `parameterise_plasma`'s line-average/density-weighted tail --
+    `ParabolicProfileValues`' pedestal-arm counterpart.
+
+    An `Alternative` under `.physics.i_plasma_pedestal`, alongside
+    `PedestalTemperatureProfile`/`PedestalOnAxisDensities`/`PedestalOnAxisTemperatures`
+    (`functional_process/models/physics/profiles.py`), the other three nodes of
+    `ProfileParameterisationPedestal`. `calculate_pedestal_profile_values` itself has
+    been ported and tested since this unit's earliest audit pass (`TestPedestalProfileValues`
+    in the test module); what was missing was only this wrapper. Found by
+    `_audit/tokamak_boundary.md` § "The four that are a shared subsystem's gap": a
+    conventional tokamak is the first machine this port assembles that selects
+    `i_plasma_pedestal == 1`
+    (`tests/regression/input_files/large_tokamak_eval.IN.DAT:291`), and a slot with a
+    registered occupant on both switch arms can still have one arm that produces less
+    than the other -- only the boundary saw it, because every *value* test for the
+    underlying function already passed.
+
+    **Six outputs, not four.** `tokamak_boundary.md`'s table lists only
+    `f_temp_plasma_electron_density_vol_avg`, `nd_plasma_electron_line`,
+    `temp_plasma_electron_density_weighted_kev` and
+    `temp_plasma_ion_density_weighted_kev` -- the four fields the graph, as assembled so
+    far, actually reads. `calculate_pedestal_profile_values`
+    (`process/models/physics/plasma_profiles.py:217-247`) also writes
+    `temp_plasma_electron_line_avg_kev` and `.divertor.prn1`, and this node owns both
+    faithfully even though nothing in the current graph reads them -- an unread output
+    is pruned by `Graph.prune`, not wrong, the same reasoning `NeProfileIntegral`'s
+    docstring (`functional_process/models/physics/profiles.py`) gives for its own
+    always-computed, sometimes-unread output.
+
+    **`nd_plasma_electron_line`/`temp_plasma_electron_line_avg_kev` are pass-throughs on
+    this arm, not recomputations.** PROCESS stores `neprofile.profile_integ` /
+    `teprofile.profile_integ` straight into these two fields
+    (`process/models/physics/plasma_profiles.py:234,236-238`), where the parabolic arm
+    computes closed-form gamma-function expressions instead
+    (`plasma_profiles.py:136-150`, `ParabolicProfileValues` above) -- exactly the
+    identity `next_steps.md` §8.1 rows 9/10 record. `calculate_pedestal_profile_values`
+    already takes `ne_profile_integ`/`te_profile_integ` as arguments and returns them
+    unmodified for this reason (see its own docstring); this node reads them off
+    `NeProfileIntegral`/`TeProfileIntegral`
+    (`functional_process/models/physics/profiles.py`), which are registered in `COMMON`
+    and run on both switch arms, so the pass-through is a real graph edge, not a
+    special-cased identity.
+
+    **`.divertor.prn1` is a cross-area write**, this file's only one (the audit record's
+    open question 5): the parabolic arm never writes this field -- PROCESS's own comment
+    at `plasma_profiles.py:240-241` says the input value is used instead when
+    `i_plasma_pedestal == 0` -- so `.divertor.prn1` is owned by this node alone, not by
+    both arms of the switch.
+
+    **Every read this node declares is already produced somewhere in the graph.**
+    `radius_plasma_profile_norm`/`nd_plasma_electron_profile` by the `COMMON`
+    `ProfileGrid`/`DensityProfile`; `temp_plasma_electron_profile_kev` by this arm's own
+    `PedestalTemperatureProfile`; `nd_plasma_electron_profile_integral`/
+    `temp_plasma_electron_profile_integral_kev` by the `COMMON` `NeProfileIntegral`/
+    `TeProfileIntegral`; `temp_plasma_ion_vol_avg_kev` by the `COMMON`
+    `IonVolAvgTemperature`; and the remaining three are ordinary boundary inputs
+    (`temp_plasma_electron_vol_avg_kev` is iteration variable 4;
+    `nd_plasma_separatrix_electron` is one of the pedestal arm's own seven input
+    fields, `_audit/tokamak_boundary.md` § "Seven pedestal-arm inputs";
+    `nd_plasma_electrons_vol_avg` is a boundary input on both arms). So registering
+    this node adds **zero** new boundary reads, matching `tokamak_boundary.md`'s own
+    count of the pedestal gap as four variables, not four variables plus new inputs.
+    """
+
+    temp_plasma_electron_density_weighted_kev = OutputInto(physics)
+    temp_plasma_ion_density_weighted_kev = OutputInto(physics)
+    f_temp_plasma_electron_density_vol_avg = OutputInto(physics)
+    nd_plasma_electron_line = OutputInto(physics)
+    temp_plasma_electron_line_avg_kev = OutputInto(physics)
+    prn1 = OutputInto(divertor)
+
+    def __call__(
+        self,
+        radius_plasma_profile_norm=From(physics),
+        nd_plasma_electron_profile=From(physics),
+        temp_plasma_electron_profile_kev=From(physics),
+        nd_plasma_electron_profile_integral=From(physics),
+        temp_plasma_electron_profile_integral_kev=From(physics),
+        temp_plasma_ion_vol_avg_kev=From(physics),
+        temp_plasma_electron_vol_avg_kev=From(physics),
+        nd_plasma_separatrix_electron=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
+    ):
+        return calculate_pedestal_profile_values(
+            radius_plasma_profile_norm,
+            nd_plasma_electron_profile,
+            temp_plasma_electron_profile_kev,
+            nd_plasma_electron_profile_integral,
+            temp_plasma_electron_profile_integral_kev,
+            temp_plasma_ion_vol_avg_kev,
+            temp_plasma_electron_vol_avg_kev,
+            nd_plasma_separatrix_electron,
+            nd_plasma_electrons_vol_avg,
+        )

@@ -9,19 +9,24 @@ stops being true -- see `Schedule`'s own docstring: "a `Schedule` that exists is
 runnable."
 """
 
+import equinox as eqx
 from cottax.blocking import Blocking
-from cottax.problem import Driven, FixedPoint, RootFind
+from cottax.evaluate import schedule_for
+from cottax.interfaces.pytree_namespace_module import to_graph
+from cottax.problem import Driven, FixedPoint, RootFind, Start, driver_vars
 from cottax.rewrites import Cut
 
 from functional_process.core.solver.drivers import PicardDriver, SeededNewtonDriver
-from functional_process.indat import GRAPH
+from functional_process.indat import GRAPH, REFERENCE_MACHINE, WINDING_PACK_MATERIAL
 from functional_process.mda import (
     CUTS,
     ROOT_FIND_SEEDS,
     default_drivers,
     driven_graph,
     schedule,
+    starts_for,
 )
+from process.models.superconductors import SuperconductorModel
 
 
 def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
@@ -114,14 +119,24 @@ def test_default_drivers_assigns_newton_to_root_find_and_picard_to_fixed_point()
             assert isinstance(driver, PicardDriver)
 
 
-def test_every_root_find_unknown_has_a_fallback_starting_guess():
-    """Every `RootFind` block in the graph can name a starting guess without `data`.
+def test_every_root_find_unknown_has_a_starting_guess_that_does_not_need_data():
+    """Every `RootFind` block in the graph can name a starting guess without `data` --
+    either supplied by a node (`SUPPLIED_STARTS`) or as a driver-side fallback
+    (`ROOT_FIND_SEEDS`).
 
     Pinned because the failure it prevents is not local: seeded from a cold
     `DataStructure`, `Intersect`'s unknown is `0.0`, the residual is exactly flat there,
     and `optimistix` aborts -- taking the **whole schedule** down, not just its own
-    block. A new `RootFind` with no `ROOT_FIND_SEEDS` entry would reintroduce that the
-    moment anyone ran the port cold.
+    block. A new `RootFind` with neither kind of guess would reintroduce that the moment
+    anyone ran the port cold.
+
+    **Two mechanisms, and the supplied one is the better half.** `Intersect`'s guess is
+    computed by PROCESS itself, so the occupant of `winding_pack_intersect_inputs` owns
+    it and `Supply` points the `Start` port at it (`_audit/next_steps.md` §14.5) -- no
+    `data`, no block context, no fallback. `d_duct`'s cannot be: PROCESS writes a
+    literal and nothing computes it. Accepting either is what makes this test the
+    question it means to ask ("can this block start cold?") rather than a check that one
+    particular table has a row.
     """
     graph = driven_graph()
     blocking = Blocking.scc(graph)
@@ -131,11 +146,71 @@ def test_every_root_find_unknown_has_a_fallback_starting_guess():
         if problem_type is None or not issubclass(problem_type, RootFind):
             continue
         unknowns = graph[problem].owns
-        assert any(u.path_str() in ROOT_FIND_SEEDS for u in unknowns), (
+        # A `Supply`-ed start is a `Start` port the graph owns -- `starts_for` filters
+        # exactly those out, since there is nothing left for a caller to seed.
+        supplied = {u for u, _ in starts_for(graph, problem)} != set(unknowns)
+        assert supplied or any(u.path_str() in ROOT_FIND_SEEDS for u in unknowns), (
             f"{problem.path_str()} solves for "
-            f"{[u.path_str() for u in unknowns]}, none of which has a "
-            f"`ROOT_FIND_SEEDS` entry -- it would fail from a cold start"
+            f"{[u.path_str() for u in unknowns]}: no `Start` is supplied by a node and "
+            f"none has a `ROOT_FIND_SEEDS` entry -- it would fail from a cold start"
         )
+
+
+def test_the_intersect_start_is_supplied_by_the_winding_pack_occupant():
+    """`Supply`, in place: `^guess.stellarator.wp_width_r_min` is not a boundary input of
+    the driven graph -- the `Start` port reads `.stellarator.wp_width_r_min_guess`, which
+    the `winding_pack_intersect_inputs` occupant owns.
+
+    The sharp end of §14.5. `ROOT_FIND_SEEDS` used to derive this guess from
+    `.stellarator.r_coil_minor` read out of the block's *context*, and `r_coil_minor` was
+    only in that context because a switch kwarg made the pre-`intersect` node declare
+    `.tfcoil.j_tf_wp` on every material -- the invented edge that closed the block. With
+    the occupant split there is no such edge and no such context; with `Supply` there
+    does not need to be one.
+    """
+    graph = driven_graph()
+    (problem,) = [
+        name
+        for name in graph.declared
+        if name.path_str() == "^problem.stellarator.coils.intersect"
+    ]
+    starts = driver_vars(graph[problem], Start)
+    assert [s.path_str() for s in starts] == [".stellarator.wp_width_r_min_guess"]
+    assert starts[0] in graph.owners
+    assert not any(
+        v.path_str().startswith("^guess.stellarator.wp_width_r_min")
+        for v in graph.unowned_inputs
+    )
+
+
+def test_every_superconductor_schedules_and_only_bi2212_keeps_its_guess():
+    """`supply_starts` is conditional, and this is the condition.
+
+    cottax refuses a `Start` produced inside the block it starts. `Bi2212...` is the one
+    occupant of `winding_pack_intersect_inputs` that reads `.tfcoil.j_tf_wp`, so with it
+    the guess's producer is *in* the coils SCC and the supply must be skipped -- leaving
+    `^guess.stellarator.wp_width_r_min` a boundary input, which is the honest answer for
+    a guess that is not available until the solve computing it has run. With the other
+    seven the supply lands and the port leaves the boundary.
+
+    Every one of the eight builds a `Schedule`, which is the check that the skip is a
+    skip and not a latent `schedule_for` refusal waiting for someone to select that
+    material (`_audit/next_steps.md` §14.5).
+    """
+    for material, occupant in WINDING_PACK_MATERIAL.items():
+        machine = eqx.tree_at(
+            lambda m: m.stellarator.coils.winding_pack_intersect_inputs,
+            REFERENCE_MACHINE,
+            occupant(),
+        )
+        graph = driven_graph(to_graph(machine))
+        schedule_for(Blocking.scc(graph))  # raises if the block cannot be driven
+        at_boundary = [
+            v
+            for v in graph.unowned_inputs
+            if v.path_str() == "^guess.stellarator.wp_width_r_min"
+        ]
+        assert bool(at_boundary) == (material is SuperconductorModel.BI2212), material
 
 
 def test_schedule_builds_for_the_whole_graph():

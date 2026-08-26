@@ -247,6 +247,11 @@ function directly:
   (`wp_width_r_min_guess`) is computed but not wired through as a declared `Output` —
   `xin` has no port in the `ImplicitFunction`/`RootFind` shape at all (see `Intersect`'s
   docstring).
+
+  **[SUPERSEDED 2026-08-26, both halves of that sentence.]** `i_tf_sc_mat` is a slot with
+  eight occupant classes, and `wp_width_r_min_guess` *is* a declared `Output`, `Supply`-ed
+  onto the `RootFind`'s `Start`. See "switches touched" below for the whole argument and
+  the measurements; the paragraph above is kept as the record of what was believed.
 - **`coils.py`'s `Intersect`**, reused directly, unmodified — its minted `VarPath`s
   happen to match this call site exactly (they were designed to, from `coils.md`'s own
   draft), so no call-site-specific wrapper class was needed here. `Intersect`'s own
@@ -336,12 +341,53 @@ an acknowledged, deliberate gap rather than an oversight.
 - `.tfcoil.i_tf_sc_mat` — read inside `winding_pack_total_size` (sampling-bounds choice,
   `== 6`) and inside `_critical_current_density_by_material` (the 8-way material
   dispatch, mirroring `jcrit_from_material`'s own branches — see `coils.md`/
-  `superconductors.md`'s switches tables for the full per-branch reads-set). Kept as a
-  **static field** on `WindingPackIntersectInputs` (the pre-`intersect` node, since the
-  material dispatch is entirely upstream of `intersect` — `WindingPackTotalSizePost`
-  needs no `i_tf_sc_mat` at all) and on `WindingPackJTfWp`, unchanged by the later split
-  (`naming_convention.md`'s "switches are not ports"), same treatment as
-  `EcrhDensityLimit.i_plasma_pedestal`. Not read anywhere in the 10 first-pass functions.
+  `superconductors.md`'s switches tables for the full per-branch reads-set).
+
+  **[UPDATED 2026-08-26 — it is a slot now, and the static field is gone.]** It was a
+  static field on `WindingPackIntersectInputs` (and, before that, on `WindingPackJTfWp`),
+  on `naming_convention.md`'s "switches are not ports". The binding policy
+  (`_audit/next_steps.md` §14.2) says a switch selects an occupant *class*, and here the
+  cost of not doing so was measured: one node branching internally declared the union of
+  all eight branches' reads, six of which are dead at `ITER_NB3SN`
+  (`.tfcoil.b_crit_upper_nbti`, `.bcritsc`, `.fhts`, `.t_crit_nbti`, `.tcritsc`,
+  `.j_tf_wp`) — and `.tfcoil.j_tf_wp`, live on Bi-2212 alone, was machine-checked to be
+  **the sole back-edge closing the four-node coils SCC**
+  (`_audit/switch_kwarg_survey.md` §4.6).
+
+  The family is `WindingPackIntersectInputs` (abstract) with one occupant per value:
+  `IterNb3snWindingPackIntersectInputs` (1), `Bi2212…` (2), `OldLubellNbti…` (3),
+  `UserDefinedNb3sn…` (4), `WstNb3sn…` (5), `CrocoRebco…` (6), `DurhamNbti…` (7),
+  `DurhamRebco…` (8); value 9 (`HAZELTON_ZHAI_REBCO`) is `UNPORTED` — PROCESS's own
+  dispatch has no branch for it either (`coils/coils.py:52-160` handles 1..8 and raises).
+  Registry: `indat.WINDING_PACK_MATERIAL`; slot:
+  `.stellarator.coils.winding_pack_intersect_inputs`.
+
+  Two things the switch decides besides the `jcrit` law, both `== 6` exactly and both
+  now a per-occupant constant (`_MATERIAL_SAMPLING`): the sample sweep's lower bound
+  (`r_coil_minor / 150` for CROCO REBCO, `/ 40` otherwise, `calculate.py:397-403`) and
+  `intersect`'s starting guess (`(r_coil_minor / 20) ** 2` vs `/ 10`, `:452-458`).
+  `DURHAM_REBCO` (8) is REBCO and gets the *ordinary* pair, because PROCESS tests the
+  value and not the material.
+
+  **`wp_width_r_min_guess` became an `Output`** in the same pass. It had been computed
+  and discarded ("a starting guess is a property of the algorithm, not an edge of the
+  model"), which forced `mda.ROOT_FIND_SEEDS` to re-derive it from
+  `.stellarator.r_coil_minor` out of the driven block's *context* — and `r_coil_minor`
+  was only in that context because the invented `j_tf_wp` edge dragged this node into the
+  block. `cottax.rewrites.Supply` is the mechanism that resolves it: `Assign` opens
+  `^guess.stellarator.wp_width_r_min`, `Supply` points that port at this output
+  (`mda.supply_starts`), and the boundary loses a `guess` entry instead of gaining a
+  fallback. Measured on the reference machine: boundary 316 + 17 → **311 input + 16
+  guess**, coils SCC 4 nodes → 2, MDA agreements unchanged at 484.
+
+  The composite `_critical_current_density_by_material`/`winding_pack_pre_intersect`/
+  `winding_pack_curves`/`winding_pack_total_size` chain is **kept**, unchanged in
+  signature and in value, because it is what PROCESS's own `winding_pack_total_size` is
+  diffed against at every material (`TestWindingPackTotalSize`, tier-2). The graph does
+  not call it. `test_each_occupant_reproduces_the_composite_at_its_own_material` checks
+  the two agree at all eight values.
+
+  Not read anywhere in the 10 first-pass functions.
 - `_critical_current_density_by_material` is this unit's own local dispatcher, not the
   audited port of `jcrit_from_material` (`coils/coils.py`, unit #10) — it exists
   because `winding_pack_total_size` genuinely needs *a* working dispatch and `coils.py`

@@ -1,8 +1,8 @@
 """Turning `indat.GRAPH` into something that can actually be run.
 
 Most of `indat.GRAPH`'s SCCs already declare a problem and need only a driver:
-the structural `FixedPointFunction`/`ImplicitFunction` self-loop pairs, plus the coil
-island (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`). Two are
+the structural `FixedPointFunction`/`ImplicitFunction` self-loop pairs, the coil
+island (`Intersect` and its own `^problem`) included. Two are
 **raw cross-node cycles with no declared problem at all** -- `Blocking` finds them;
 nobody has said what solves them. A `Drive` refuses such a block outright
 (`cottax.evaluate.Drive.__check_init__`: *"block ... declares no problem: it is run,
@@ -16,7 +16,8 @@ This module does two things: cut those raw cycles into declared `FixedPoint` pro
 (via `cottax.rewrites.FixedPointCut`, using `Graph.closing_readers` to find the cut and
 an empirical check that the cut set actually breaks the whole cycle -- neither is
 guesswork, both are computed), and assign a driver to every block automatically, by
-problem type.
+problem type -- and, with the driver, `Supply` the starting guesses the graph itself
+computes (`SUPPLIED_STARTS`, `supply_starts`).
 
 **Deliberately no node/SCC/cut counts here.** They moved on every porting wave, and a
 docstring stating last wave's number is worse than one stating none -- five different
@@ -37,10 +38,10 @@ from cottax.problem import (
     Start,
     driver_vars,
 )
-from cottax.rewrites import Assign, Cut, FixedPointCut, Undrive
+from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
 from cottax.spec import DeclaredNode, NodePath, VarPath
-from cottax.tools.path import written
+from cottax.tools.path import path_map, written
 from jax.tree_util import GetAttrKey
 
 from functional_process.core.solver.drivers import (
@@ -187,6 +188,14 @@ def starts_for(graph, problem):
     `Start`s pair with `owns` by declaration order (`cottax.problem._check_starts`), so
     the node itself is the authority on which guess belongs to which unknown, and
     `strict=True` fails loudly if that ever stops being true.
+
+    **A `Supply`-ed start is not returned**, because there is nothing for a caller to
+    seed: `supply_starts` points those ports at a node that computes the guess, so the
+    graph produces them and a seeder writing one would be overwriting a computed value
+    with a `DataStructure` field. Every caller of this function is a seeding site
+    (`mda_harness`, `sand_harness`, `mdf.seed`/`prime`, `run_sand_harness`), so the
+    filter belongs here rather than in each of them. `Drive.role_data` does not use this
+    function -- it asks the node -- so the driver still reads the supplied value.
     """
     node = graph[problem]
     starts = driver_vars(node, Start)
@@ -198,7 +207,11 @@ def starts_for(graph, problem):
         # a missing port could only mean a bug. `strict=True` below still catches the
         # real error, a partially-ported problem.
         return ()
-    return tuple(zip(node.owns, starts, strict=True))
+    return tuple(
+        (unknown, start)
+        for unknown, start in zip(node.owns, starts, strict=True)
+        if start not in graph.owners
+    )
 
 
 def guess_sources(graph) -> dict:
@@ -217,10 +230,28 @@ def guess_sources(graph) -> dict:
     }
 
 
+SUPPLIED_STARTS = {
+    ".stellarator.wp_width_r_min": ".stellarator.wp_width_r_min_guess",
+}
+"""`unknown -> the graph-owned variable that is its starting guess`, applied by
+`supply_starts` as a `cottax.rewrites.Supply` on the problem's `Start` port.
+
+**This entry used to be a `ROOT_FIND_SEEDS` row and the difference is the point**
+(`_audit/next_steps.md` §14.5). `intersect`'s `xin` is computed by PROCESS itself
+(`(r_coil_minor / 10) ** 2`, `coils/calculate.py:452-458`) and the port discarded it, so
+the seed had to re-derive it from `.stellarator.r_coil_minor` read out of *the block's
+context* -- which held `r_coil_minor` only because the invented `.tfcoil.j_tf_wp` edge
+dragged the pre-intersect node into the block. Splitting `i_tf_sc_mat` into occupants
+removes that edge and the seed loses its source. The occupant owns the guess now, and
+`Supply` points the `Start` at it: PROCESS's own number, reaching the driver as an
+ordinary graph edge, correct per material because the occupant is per material, and one
+fewer `guess` entry on the boundary.
+
+Keyed by `path_str()` on both sides so the table reads as a table; resolved against the
+graph's own owners at use, which is the check that the producer is really there.
+"""
+
 ROOT_FIND_SEEDS = {
-    ".stellarator.wp_width_r_min": lambda context: (
-        (context[_var(context, ".stellarator.r_coil_minor")] / 10.0) ** 2,
-    ),
     # PROCESS's own starting value, `d = np.full(4, 1e-6)`
     # (`process/models/vacuum.py:379`) -- a flat constant there, so a flat constant
     # here. Every `VarPath` of this node is minted, so cold or warm there is nothing in
@@ -230,14 +261,10 @@ ROOT_FIND_SEEDS = {
 """Fallback starting guesses for `RootFind` unknowns, as `f(context) -> tuple`, used
 only when the value seeded from `data` is unusable (see `SeededNewtonDriver`).
 
-`wp_width_r_min`'s entry is **PROCESS's own guess**, not a fitted constant:
-`winding_pack_pre_intersect` computes
-`(r_coil_minor / (20 if i_tf_sc_mat == 6 else 10)) ** 2` at `coils/calculate.py:737`
-and hands it to `intersect` as `xin`. The `20` arm is `i_tf_sc_mat == 6` (REBCO), which
-`WindingPackIntersectInputs` is not registered with in any configuration here; if that
-changes, this needs the same branch, and `switch_audit` will not catch it because a
-driver carries no static switch kwarg. Recorded rather than guarded, because a wrong
-starting guess is a slower solve, not a wrong answer -- unlike a wrong switch.
+One entry left. `.stellarator.wp_width_r_min`'s moved to `SUPPLIED_STARTS` above, which
+is a strictly better answer for a guess PROCESS computes: a `Supply`-ed start needs no
+`data`, no block context and no fallback at all. `d_duct`'s cannot follow it -- nothing
+computes that constant, PROCESS writes the literal -- so the mechanism stays.
 
 Keyed by `path_str()` rather than by `VarPath` so the table reads as a table; resolved
 against the block's own context at use, which is also the check that the block really
@@ -301,17 +328,73 @@ def driven_graph(graph=GRAPH, **driver_options):
     return assign_drivers(graph, default_drivers(graph, **driver_options))
 
 
+def supply_starts(graph: Graph) -> Graph:
+    """Point every `Start` port `SUPPLIED_STARTS` names at the node that computes it.
+
+    `Assign` opens `^guess.<place>` as a boundary input, one per unknown; `Supply` is
+    cottax's counterpart -- *"this is how a low-fi model's output becomes the start
+    instead"* -- and an ordinary `Rewire`, so the port stays a `Start` and cannot
+    silently become something else. A guess that PROCESS itself computes therefore
+    arrives as an ordinary graph edge rather than as a driver-side fallback that has to
+    re-derive it out of the block's context (`SUPPLIED_STARTS`' own docstring for why
+    that mattered here, and `_audit/next_steps.md` §14.5 for the whole story).
+
+    **A producer inside the block is skipped, not supplied.** cottax refuses a `Start`
+    produced by the block it starts (*"the driver reads its data before the block runs,
+    so a producer inside the block cannot have run yet"*), and that refusal would be
+    raised by `schedule_for`, far from here. On this graph the case is real and is
+    exactly the switch value the split is about: `Bi2212WindingPackIntersectInputs` reads
+    `.tfcoil.j_tf_wp`, so with that occupant the guess's producer is *in* the coils SCC.
+    Such a machine keeps its `^guess.*` boundary input, which is the honest answer -- the
+    guess is not available before the solve that computes it.
+
+    Applied by `assign_drivers`/`reassign_drivers` rather than by `driven_graph`, because
+    `mdf`, `sand` and `sand_harness` each cut and assign for themselves and every one of
+    them needs the port pointed somewhere.
+    """
+    for problem in tuple(graph.declared):
+        node = graph[problem]
+        if not isinstance(node, Driven):
+            continue
+        onto = {}
+        for unknown, start in starts_for(graph, problem):
+            target = SUPPLIED_STARTS.get(unknown.path_str())
+            if target is None:
+                continue
+            producer = next(
+                (
+                    (var, owner)
+                    for var, owner in graph.owners.items()
+                    if var.path_str() == target
+                ),
+                None,
+            )
+            if producer is None:
+                continue  # no occupant of that slot produces it in this machine
+            var, owner = producer
+            if owner in graph.descendants([problem]):
+                continue  # inside the block -- see this function's own docstring
+            onto[start] = var
+        if onto:
+            graph = Supply(problem, path_map(onto)).apply(graph)
+    return graph
+
+
 def assign_drivers(graph: Graph, drivers: dict) -> Graph:
-    """`Assign` each driver onto its problem, returning the graph that carries them.
+    """`Assign` each driver onto its problem, then `supply_starts`.
 
     The two-line idiom every call site needs now that `schedule_for` takes no drivers:
     choose (`default_drivers`), then attach. Kept as a function rather than inlined
     because *re*-assigning is a different operation -- see `reassign_drivers` -- and a
     caller that conflates them silently replaces one algorithm with another.
+
+    `supply_starts` runs here, and not one layer up, because the ports it re-points do
+    not exist until `Assign` has minted them: which data a solve needs supplied is a
+    property of its algorithm (`Assign`'s own docstring), so the two are one step.
     """
     for problem, driver in drivers.items():
         graph = Assign(problem, driver).apply(graph)
-    return graph
+    return supply_starts(graph)
 
 
 def reassign_drivers(graph: Graph, drivers: dict) -> Graph:
@@ -328,12 +411,10 @@ def reassign_drivers(graph: Graph, drivers: dict) -> Graph:
         if isinstance(graph[problem], Driven):
             graph = Undrive(problem).apply(graph)
         graph = Assign(problem, driver).apply(graph)
-    return graph
+    return supply_starts(graph)
 
 
-def default_drivers(
-    graph: Graph, bounds=(), callback=None, condition_scale=()
-) -> dict:
+def default_drivers(graph: Graph, bounds=(), callback=None, condition_scale=()) -> dict:
     """One driver per **problem**, chosen mechanically by problem type
 
     Takes a `Graph` rather than a `Blocking`: since `Assign` puts the driver *in* the

@@ -31,14 +31,17 @@ same sampling loop (confirmed: `grep`ing `process/models/stellarator/coils/calcu
 for `jcrit_from_material` finds only its own `jcrit_vector[k] = jcrit_from_material(...)`
 per-sample assignment) -- there is no single-point scalar call site for these 8 nodes to
 bind to as written, so registering them would assert a wiring that does not exist in
-PROCESS, not merely one this pass hasn't gotten to yet. `winding_pack_curves` keeps its
-own internal `_critical_current_density_by_material` dispatcher rather than calling
-these 8 nodes' underlying functions directly, for the same reason `calculate.md`
-documents: it deliberately diverges from `coils.py`'s own `jcrit_from_material` on the
-REBCO branch (`coils.py` reproduces a real PROCESS call-site bug there; `calculate.py`'s
-local copy sidesteps it so this port has *a* working REBCO branch) -- collapsing the two
-would either regress REBCO or stop reproducing the bug faithfully, so they stay two
-independent implementations, documented as such, not one deduplicated further.
+PROCESS, not merely one this pass hasn't gotten to yet. `calculate.py` keeps its own
+eight `jcrit_*` functions rather than calling these 8 nodes' underlying functions
+directly, for the same reason `calculate.md` documents: it deliberately diverges from
+`coils.py`'s own `jcrit_from_material` on the REBCO branch (`coils.py` reproduces a real
+PROCESS call-site bug there; `calculate.py`'s local copy sidesteps it so this port has
+*a* working REBCO branch) -- collapsing the two would either regress REBCO or stop
+reproducing the bug faithfully, so they stay two independent implementations, documented
+as such, not one deduplicated further. **What `i_tf_sc_mat` does reach is the
+`winding_pack_intersect_inputs` slot below**, whose eight occupants are `calculate.py`'s
+own (`_audit/next_steps.md` §14.5) -- the switch selects a class there, at the one call
+site the dispatch really has.
 
 `blankets/hcpb.py` (unit #13) is ported (3/3 in-scope functions, 3 `ExplicitFunction`
 nodes) but **deliberately still not registered here**: all three are only ever called
@@ -154,7 +157,6 @@ from functional_process.models.stellarator.tf_nuclear_heating import (
 from process.data_structure.physics_variables import (
     PlasmaIgnitionModel,
 )
-from process.models.superconductors import SuperconductorModel
 
 
 class BlanketShieldPowerExponential(ModelNamespace):
@@ -238,12 +240,12 @@ class StellaratorCoils(ModelNamespace):
     # unit #14, coils/quench.py
     quench_protection: QuenchProtection = QuenchProtection()
     # `coils/calculate.py`'s `winding_pack_total_size` (unit #9's remaining tier-2 gap),
-    # now the full three-piece split: `WindingPackIntersectInputs` (pre-`intersect`,
-    # mints `.stellarator.wp_width_r`/`.lhs`/`.rhs`), `coils.py`'s `Intersect`
+    # now the full three-piece split: `winding_pack_intersect_inputs` (pre-`intersect`,
+    # a **slot**, mints `.stellarator.wp_width_r`/`.lhs`/`.rhs` and
+    # `.wp_width_r_min_guess`), `coils.py`'s `Intersect`
     # (`ImplicitFunction`/`RootFind`, owns `.stellarator.wp_width_r_min`),
     # `WindingPackTotalSizePost` (post-`intersect`, owns `.tfcoil.j_tf_wp` along with
-    # everything else `winding_pack_post_intersect` computes). `i_tf_sc_mat=1` matches
-    # `tfcoil_variables.py:246`'s default (ITER Nb3Sn).
+    # everything else `winding_pack_post_intersect` computes).
     #
     # **An earlier pass registered `WindingPackJTfWp` here instead** -- a
     # `FixedPointFunction` that isolated just `.tfcoil.j_tf_wp` by re-running the whole
@@ -262,9 +264,22 @@ class StellaratorCoils(ModelNamespace):
     # `Intersect` (like every other undriven declared node in this graph) needs no
     # production driver to be registered here -- structural admission only, driving
     # deferred, per `_audit/next_steps.md` §5.
-    winding_pack_intersect_inputs: WindingPackIntersectInputs = (
-        WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel.ITER_NB3SN)
+    winding_pack_intersect_inputs: WindingPackIntersectInputs = dataclasses.field(
+        kw_only=True
     )
+    """The pre-`intersect` curves, on `.tfcoil.i_tf_sc_mat` -- one occupant per
+    superconductor, `WINDING_PACK_MATERIAL` in `indat.py`.
+
+    A slot since `_audit/next_steps.md` §14.5, where it was an
+    `i_tf_sc_mat=SuperconductorModel.ITER_NB3SN` constructor kwarg on a single node that
+    branched internally. The eight branches read different `.tfcoil.*` fields, so that
+    node declared six reads dead at this run's value -- and one of them,
+    `.tfcoil.j_tf_wp`, was the **sole back-edge closing the four-node coils SCC**
+    (`_audit/switch_kwarg_survey.md` §4.6). Only the Bi-2212 occupant reads it; with
+    every other material the driven block is `Intersect` and its own `^problem`, which
+    is the cycle the model genuinely has. This is the sub-namespace's reason for
+    existing (`model_tree_design.md` §4) getting smaller, and it is measured, not
+    claimed."""
     intersect: Intersect = Intersect()
     winding_pack_total_size_post: WindingPackTotalSizePost = WindingPackTotalSizePost()
 
@@ -374,7 +389,10 @@ class Stellarator(ModelNamespace):
     `test_machine.py` asserts both halves.
     """
 
-    coils: StellaratorCoils = StellaratorCoils()
+    coils: StellaratorCoils = dataclasses.field(kw_only=True)
+    """The coil sub-namespace. No default any more, because one of its members is a slot
+    (`winding_pack_intersect_inputs`, on `.tfcoil.i_tf_sc_mat`) and a namespace holding a
+    slot cannot be default-constructed -- the same reason `fwbs` below has none."""
 
     fwbs: StellaratorFwbs = dataclasses.field(kw_only=True)
 

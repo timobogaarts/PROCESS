@@ -9,8 +9,16 @@ Audit record: `functional_process/_audit/units/models/vacuum.md`. Three units:
 - `TestVacuumPumpingOld` -- `Vacuum.vacuum` (the full `"old"` duct-sizing model) plus
   `Vacuum.run()`'s rounding step, tier-2.
 
-`VacuumVessel` is out of scope (unreached on the stellarator pipeline) -- see
-`vacuum.md`.
+`VacuumVessel` is out of scope on the stellarator (unreached from `Stellarator.run()`)
+but reached on the tokamak (`caller.py:331`) -- wave-1 tokamak dispatch adds two more
+units here:
+
+- `TestCalculateVesselHalfHeight` -- `VacuumVessel.calculate_vessel_half_height`,
+  `n_divertors == 1` baked, tier-1.
+- `TestCalculateEllipticalVesselVolumes` -- `VacuumVessel.
+  calculate_elliptical_vessel_volumes`, tier-1.
+
+See `vacuum.md`'s tokamak-scope addendum.
 """
 
 from types import MappingProxyType
@@ -50,7 +58,10 @@ from functional_process.models.vacuum.vacuum import (
     DuctFeasibilityConditions,
     _solve_vacuum_pumping_old,
     _solve_vacuum_pumping_old_from_fields,
+    calculate_elliptical_vessel_volumes,
     calculate_vacuum_pumping_simple,
+    calculate_vacuum_vessel_outputs,
+    calculate_vessel_half_height,
     duct_diameter_residual,
     duct_fits_residual,
     pumping_speed_floor_residual,
@@ -58,7 +69,7 @@ from functional_process.models.vacuum.vacuum import (
 )
 from process.core import constants
 from process.core.model import DataStructure
-from process.models.vacuum import Vacuum
+from process.models.vacuum import Vacuum, VacuumVessel
 
 
 def _reference_vacuum_pumping_simple(
@@ -868,3 +879,174 @@ class TestVacuumPumpingOldFromFields(Tier2Contract):
     residual = staticmethod(_vacuum_pumping_old_residual)
 
     samples = _vacuum_pumping_old_from_fields_samples()
+
+
+# ---------------------------------------------------------------------------
+# `VacuumVessel` -- reached on the tokamak, not the stellarator (see module docstring
+# and `vacuum.md`'s tokamak-scope addendum). Both are already real PROCESS
+# `@staticmethod`s, so no `DataStructure` adapter is needed -- they are diffed against
+# `VacuumVessel`'s own methods directly.
+# ---------------------------------------------------------------------------
+
+
+class TestCalculateVesselHalfHeight(Tier1Contract):
+    """`calculate_vessel_half_height` -> `VacuumVessel.calculate_vessel_half_height`
+    at `n_divertors == 1` (single null).
+    """
+
+    audit_record = "models/vacuum.md"
+    reference = staticmethod(
+        lambda **kw: VacuumVessel.calculate_vessel_half_height(n_divertors=1, **kw)
+    )
+    ported = calculate_vessel_half_height
+
+    fuzz_bounds = {
+        "z_tf_inside_half": (2.0, 15.0),
+        "dz_shld_vv_gap": (0.05, 0.5),
+        "dz_vv_lower": (0.1, 1.0),
+        "dz_blkt_upper": (0.1, 1.5),
+        "dz_shld_upper": (0.1, 1.0),
+        "z_plasma_xpoint_upper": (1.0, 10.0),
+        "dr_fw_plasma_gap_inboard": (0.05, 0.5),
+        "dr_fw_plasma_gap_outboard": (0.05, 0.5),
+        "dr_fw_inboard": (0.01, 0.1),
+        "dr_fw_outboard": (0.01, 0.1),
+    }
+
+
+class TestCalculateEllipticalVesselVolumes(Tier1Contract):
+    """`calculate_elliptical_vessel_volumes` -> `VacuumVessel.
+    calculate_elliptical_vessel_volumes`, unchanged signature.
+    """
+
+    audit_record = "models/vacuum.md"
+    reference = staticmethod(VacuumVessel.calculate_elliptical_vessel_volumes)
+    ported = calculate_elliptical_vessel_volumes
+
+    # tests/unit/models/test_vacuum.py::test_elliptical_vessel_volumes, verbatim.
+    samples = [
+        legacy_sample(
+            "elliptical-vessel-legacy",
+            rmajor=8.0,
+            rminor=2.6666666666666665,
+            triang=0.5,
+            r_shld_inboard_inner=4.083333333333334,
+            r_shld_outboard_outer=12.716666666666667,
+            dz_vv_half=7.5032752487304135,
+            dr_vv_inboard=0.30000000000000004,
+            dr_vv_outboard=0.30000000000000004,
+            dz_vv_upper=0.30000000000000004,
+            dz_vv_lower=0.30000000000000004,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "rmajor": (2.0, 20.0),
+        "rminor": (0.5, 5.0),
+        "triang": (0.0, 0.8),
+        "r_shld_inboard_inner": (0.5, 8.0),
+        "r_shld_outboard_outer": (5.0, 20.0),
+        "dz_vv_half": (1.0, 15.0),
+        "dr_vv_inboard": (0.05, 1.0),
+        "dr_vv_outboard": (0.05, 1.0),
+        "dz_vv_upper": (0.05, 1.0),
+        "dz_vv_lower": (0.05, 1.0),
+    }
+
+
+def _reference_vacuum_vessel_outputs(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+    dz_blkt_upper,
+    dz_shld_upper,
+    z_plasma_xpoint_upper,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    rmajor,
+    rminor,
+    triang,
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    fvoldw,
+    den_steel,
+):
+    """Call PROCESS's real `VacuumVessel.run()` through the port's signature, at the
+    one switch combination the port bakes in (`itart=0`, `i_fw_blkt_vv_shape=2` --
+    both already PROCESS defaults; `n_divertors=1`).
+    """
+    data = DataStructure()
+    data.build.z_tf_inside_half = z_tf_inside_half
+    data.build.dz_shld_vv_gap = dz_shld_vv_gap
+    data.build.dz_vv_lower = dz_vv_lower
+    data.divertor.n_divertors = 1
+    data.build.dz_blkt_upper = dz_blkt_upper
+    data.build.dz_shld_upper = dz_shld_upper
+    data.build.z_plasma_xpoint_upper = z_plasma_xpoint_upper
+    data.build.dr_fw_plasma_gap_inboard = dr_fw_plasma_gap_inboard
+    data.build.dr_fw_plasma_gap_outboard = dr_fw_plasma_gap_outboard
+    data.build.dr_fw_inboard = dr_fw_inboard
+    data.build.dr_fw_outboard = dr_fw_outboard
+    data.physics.itart = 0
+    data.fwbs.i_fw_blkt_vv_shape = 2
+    data.physics.rmajor = rmajor
+    data.physics.rminor = rminor
+    data.physics.triang = triang
+    data.build.r_shld_inboard_inner = r_shld_inboard_inner
+    data.build.r_shld_outboard_outer = r_shld_outboard_outer
+    data.build.dr_vv_inboard = dr_vv_inboard
+    data.build.dr_vv_outboard = dr_vv_outboard
+    data.build.dz_vv_upper = dz_vv_upper
+    data.fwbs.fvoldw = fvoldw
+    data.fwbs.den_steel = den_steel
+
+    vv = VacuumVessel()
+    vv.data = data
+    vv.run()
+
+    return (
+        vv.data.blanket.dz_vv_half,
+        vv.data.blanket.vol_vv_inboard,
+        vv.data.blanket.vol_vv_outboard,
+        vv.data.fwbs.vol_vv,
+        vv.data.fwbs.m_vv,
+    )
+
+
+class TestCalculateVacuumVesselOutputs(Tier1Contract):
+    """`calculate_vacuum_vessel_outputs` -> real `VacuumVessel.run()`, the whole live
+    pipeline (own contract for `calculate_vacuum_vessel_mass` too -- it has no
+    isolated PROCESS function, see that function's docstring).
+    """
+
+    audit_record = "models/vacuum.md"
+    reference = _reference_vacuum_vessel_outputs
+    ported = calculate_vacuum_vessel_outputs
+
+    fuzz_bounds = {
+        "z_tf_inside_half": (2.0, 15.0),
+        "dz_shld_vv_gap": (0.05, 0.5),
+        "dz_vv_lower": (0.1, 1.0),
+        "dz_blkt_upper": (0.1, 1.5),
+        "dz_shld_upper": (0.1, 1.0),
+        "z_plasma_xpoint_upper": (1.0, 10.0),
+        "dr_fw_plasma_gap_inboard": (0.05, 0.5),
+        "dr_fw_plasma_gap_outboard": (0.05, 0.5),
+        "dr_fw_inboard": (0.01, 0.1),
+        "dr_fw_outboard": (0.01, 0.1),
+        "rmajor": (2.0, 20.0),
+        "rminor": (0.5, 5.0),
+        "triang": (0.0, 0.8),
+        "r_shld_inboard_inner": (0.5, 8.0),
+        "r_shld_outboard_outer": (5.0, 20.0),
+        "dr_vv_inboard": (0.05, 1.0),
+        "dr_vv_outboard": (0.05, 1.0),
+        "dz_vv_upper": (0.05, 1.0),
+        "fvoldw": (0.5, 1.5),
+        "den_steel": (6000.0, 9000.0),
+    }

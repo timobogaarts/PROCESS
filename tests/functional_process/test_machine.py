@@ -51,6 +51,7 @@ from functional_process.indat import (
     ProfileParameterisationPedestal,
     TF_POWER,
     UNPORTED,
+    WINDING_PACK_MATERIAL,
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
     machine_from_indat,
@@ -62,6 +63,7 @@ from process.data_structure.physics_variables import (
     ConfinementTimeModel,
     PlasmaIgnitionModel,
 )
+from process.models.power import PumpingPowerModelTypes
 from process.models.tfcoil.base import TFConductorModel
 
 
@@ -75,12 +77,18 @@ def _plain(entry):
 
 
 def _electric_production(entry):
-    """`ELECTRIC_PRODUCTION`'s entries are builders taking `.tfcoil.i_tf_sup`, which
-    `machine_from_indat` resolves from the `tf_power` slot and threads in rather than
-    letting the occupant hardcode. The reference machine's value is what these swap
-    tests hold it at.
+    """`ELECTRIC_PRODUCTION`'s entries are builders taking `.tfcoil.i_tf_sup` and
+    `.fwbs.i_p_coolant_pumping`, both of which `machine_from_indat` resolves once and
+    threads in rather than letting the occupant hardcode. The reference machine's values
+    are what these swap tests hold them at.
+
+    `i_p_coolant_pumping` joined the signature when the first tokamak was assembled: it
+    was a hardcoded `FRACTION_OF_HEAT` on this occupant and on four `power` nodes,
+    correct for the Helias run and wrong for a tokamak, which sets `3`.
     """
-    return entry(TFConductorModel.SUPERCONDUCTING)
+    return entry(
+        TFConductorModel.SUPERCONDUCTING, PumpingPowerModelTypes.FRACTION_OF_HEAT
+    )
 
 
 def _costs(entry):
@@ -137,6 +145,15 @@ SLOTS = [
     ),
     ("isthtr", HEATING, lambda m: m.stellarator.heating, _plain),
     ("ipowerflow", FW_AREA, lambda m: m.stellarator.fw_area, _plain),
+    (
+        # The eight-arm slot, and the one whose occupant decides whether the coils
+        # block is a cycle: only the Bi-2212 arm reads `.tfcoil.j_tf_wp`
+        # (`_audit/next_steps.md` §14.5).
+        "i_tf_sc_mat",
+        WINDING_PACK_MATERIAL,
+        lambda m: m.stellarator.coils.winding_pack_intersect_inputs,
+        _plain,
+    ),
     (
         "i_plasma_pedestal",
         PROFILE_PARAMETERISATION,
@@ -199,6 +216,78 @@ SINGLE_FIELDS = [
 turns `.costs.ireactor` and `.costs.ipnet` into one arm index, so there is no single
 integer named `ireactor_ipnet` for an IN.DAT to set."""
 
+TOKAMAK_BASELINE_INDAT = {
+    "i_cost_model": 0,
+    "i_hcd_primary": 10,
+    "i_p_coolant_pumping": 3,
+    "i_pulsed_plant": 1,
+    "pulsetimings": 0,
+}
+"""The least an IN.DAT must say for `machine_from_indat` to build a **tokamak**.
+
+Five switches, and every one of them is a PROCESS default this port refuses: the 2015
+cost model, ITER neutral beam heating, mechanical coolant pumping, a continuous plant,
+and -- once the plant is pulsed -- PROCESS's own `pulsetimings = 1`. Written as data
+rather than as a curated file, so that a case about one field fails on that field.
+
+`large_tokamak_eval.IN.DAT` sets four of the five explicitly and the fifth
+(`i_hcd_primary = 10`) too, which is the useful sanity check on this dict: it is the
+minimum, and a real conventional tokamak input file already exceeds it.
+"""
+
+DERIVED_UNPORTED_KEYS = {
+    # `n_divertors` is not a switch an IN.DAT sets: `init.py:606-617` derives it from
+    # `.physics.i_single_null`, and the factory reproduces that derivation.
+    "n_divertors",
+    # Arm indices, not switch values. Each is exercised through the integers its `_*_arm`
+    # function reads -- the same reason the three joint keys below are skipped.
+    "cicc_turn_geometry_arm",
+    "divertor_geometry_arm",
+    "divertor_heat_load_arm",
+    "first_wall_arm",
+    "fw_blkt_vv_shape_arm",
+    "hcd_primary_powers_arm",
+    "nuclear_heating_renormalisation_arm",
+    "plasma_geometry_arm",
+    "pulse_ramp_times_arm",
+    "structure_arm",
+    "surface_poloidal_field_arm",
+    "tf_coil_shape_arm",
+    "vacuum_vessel_arm",
+    # Per-slot names for a switch that is read at more than one slot with different
+    # dispositions, so the key is the slot and not the integer.
+    "i_tf_shape_build",
+    "i_tf_sup_build",
+    "itart_hcpb",
+    "itart_sc_tf_masses",
+    "i_plasma_ignited_separatrix",
+}
+"""`UNPORTED` keys that no IN.DAT integer can select directly.
+
+Three kinds, and the distinction is worth keeping visible: a value the factory
+**derives** (`n_divertors`), an **arm index** several switches jointly select, and a
+**per-slot name** for one integer that two slots answer differently (`.tfcoil.i_tf_sup`
+decides `power.tf_power` *and* two `.tokamak.build` nodes, and `.physics.i_plasma_ignited`
+decides three slots in three subsystems, with the refusals differing in each).
+None of the three is a thing a file can set, so the refusal is reached through the
+integers it derives from -- which the survey and switch-coverage tests do."""
+
+TOKAMAK_ONLY_UNPORTED_FIELDS = {
+    "i_blanket_type",
+    "i_hcd_calculations",
+    "i_hcd_primary",
+    "i_hcd_secondary",
+    "i_p_coolant_pumping",
+    "i_plasma_geometry",
+    "i_plasma_ignited_separatrix",
+}
+"""`UNPORTED` fields the **stellarator** branch never reads.
+
+`machine_from_indat` resolves everything only a stellarator asks *below* the device
+branch, and everything only a tokamak asks inside `_tokamak_device`, so a refusal in the
+second is unreachable from a `istell = 6` file. These cases are written over
+`TOKAMAK_BASELINE_INDAT` instead."""
+
 BASELINE_INDAT = {"istell": 6, "i_cost_model": 0, "i_plasma_ignited": 1}
 """The least an IN.DAT must say for `machine_from_indat` to get past the slots whose
 PROCESS default is refused. Written into every temp file below so a test about one field
@@ -259,8 +348,9 @@ def _swap_orphans():
     out = {}
     for field, registry, where, build in SLOTS:
         for value, occupant in registry.items():
-            machine = eqx.tree_at(where, REFERENCE_MACHINE, build(occupant),
-                                  is_leaf=lambda x: x is None)
+            machine = eqx.tree_at(
+                where, REFERENCE_MACHINE, build(occupant), is_leaf=lambda x: x is None
+            )
             for var in orphaned_by(GRAPH, to_graph(machine)):
                 out.setdefault(f"{field}={value}", []).append(var.path_str())
     return {k: sorted(v) for k, v in out.items()}
@@ -408,32 +498,34 @@ def test_a_silent_indat_is_still_refused_but_no_longer_on_istell(tmp_path):
     true. What the test was *for* survives untouched and is what it asserts now:
 
     1. **PROCESS's bare defaults still do not silently assemble.** The refusal a silent
-       file now gets is `i_plasma_ignited = 0` with `i_rad_loss = 1` -- PROCESS's own
-       defaults, and the confinement head arm that adds injected heating, which this
-       port has not written. That is the same refusal `large_tokamak_eval.IN.DAT`
-       itself gets (`_audit/tokamak_boundary.md` §"What blocked the real file"), so it
-       is not an artefact of an empty file: it is the first thing a real conventional
-       tokamak asks for that this port has not got. `i_cost_model = 1` (KOVARI_2014) is
-       refused behind it, which is why `BASELINE_INDAT` sets both.
+       file gets is `i_cost_model = 1` (KOVARI_2014, unported), and it is not the last
+       one in the way: `TOKAMAK_BASELINE_INDAT` is the full list of PROCESS defaults a
+       tokamak has to override before this port will build one, and it has five entries.
+
+       **The refusal this test used to assert moved, and the move is the result.** It
+       was `i_plasma_ignited = 0` with `i_rad_loss = 1` -- PROCESS's own defaults, and
+       the confinement head arm that adds injected heating. `tokamak_boundary.md`
+       §"What blocked the real file" recorded that as the first thing a real conventional
+       tokamak asks for that this port had not got. It has it now
+       (`PlasmaPowerLossNonIgnitedCoreRadiation`), so the refusal a silent file gets is a
+       different one, further down. That is what progress looks like from here: the
+       *first* refusal moves, and the list of overrides a tokamak needs gets shorter.
     2. **The device is still resolved first.** A file whose *only* content is a refused
        `istell` value reports `istell`, not `i_cost_model`, even though `i_cost_model`'s
        default is refused too and the constructor would reach it. That ordering is the
        property the old name was really guarding, and it is the half of the old test
        that had nothing to do with the tokamak.
-    3. **The default device is the one PROCESS names.** Given only the two switches whose
+    3. **The default device is the one PROCESS names.** Given only the switches whose
        PROCESS defaults this port refuses, a file that never mentions `istell` builds a
-       `TokamakProcess` -- not a `StellaratorProcess`, and not an error.
+       `TokamakProcess` -- not a `StellaratorProcess`, and not an error. It is a real
+       tokamak now rather than an empty one: fourteen of `Tokamak`'s twenty-five slots
+       are filled, so this assertion exercises the whole tokamak factory and not just
+       the device branch.
     """
     indat = tmp_path / "IN.DAT"
     indat.write_text("")
-    with pytest.raises(
-        NotImplementedError, match=re.escape("i_plasma_ignited_i_rad_loss == -1")
-    ):
-        machine_from_indat(indat)
-    ignited = tmp_path / "IGNITED.DAT"
-    ignited.write_text("i_plasma_ignited = 1\n")
     with pytest.raises(NotImplementedError, match=re.escape("i_cost_model == 1")):
-        machine_from_indat(ignited)
+        machine_from_indat(indat)
 
     preset = tmp_path / "PRESET.DAT"
     preset.write_text("istell = 3\n")
@@ -441,8 +533,13 @@ def test_a_silent_indat_is_still_refused_but_no_longer_on_istell(tmp_path):
         machine_from_indat(preset)
 
     silent_device = tmp_path / "TOK.DAT"
-    silent_device.write_text("i_cost_model = 0\ni_plasma_ignited = 1\n")
-    assert type(machine_from_indat(silent_device)) is TokamakProcess
+    silent_device.write_text(
+        "".join(f"{f} = {v}\n" for f, v in TOKAMAK_BASELINE_INDAT.items())
+    )
+    machine = machine_from_indat(silent_device)
+    assert type(machine) is TokamakProcess
+    assert machine.tokamak.build is not None
+    assert machine.tokamak.cicc_superconducting_tf_coil is not None
 
 
 def test_reference_machine_matches_the_input_file():
@@ -511,14 +608,29 @@ def test_a_refused_value_says_why(tmp_path, field, value):
     `Alternative(unported=...)` declarations this replaced. A refusal that did not name
     one would be indistinguishable from a value PROCESS never had.
 
-    Every file is written over `BASELINE_INDAT`, because two of PROCESS's own defaults
-    (`istell = 0`, `i_cost_model = 1`) are themselves refused: without it every case
-    here would fail on whichever of those the constructor reached first, rather than on
-    the value under test.
+    Every file is written over a baseline, because several of PROCESS's own defaults are
+    themselves refused: without it every case here would fail on whichever of those the
+    constructor reached first, rather than on the value under test. **Which baseline
+    depends on the device**, since `machine_from_indat` resolves a stellarator's
+    switches and a tokamak's in two disjoint branches -- see
+    `TOKAMAK_ONLY_UNPORTED_FIELDS`.
     """
-    if field.startswith(("blktmodel_", "i_plasma_ignited_", "i_pulsed_plant_")):
-        pytest.skip("joint key -- exercised through the two integers it derives from")
-    indat = write_indat(tmp_path, **{field: value})
+    if field in DERIVED_UNPORTED_KEYS or field.startswith((
+        "blktmodel_",
+        "i_plasma_ignited_i_",
+        "i_pulsed_plant_",
+    )):
+        pytest.skip("derived key -- exercised through the integers it derives from")
+    if field in TOKAMAK_ONLY_UNPORTED_FIELDS:
+        indat = tmp_path / "TOK.DAT"
+        indat.write_text(
+            "".join(
+                f"{f} = {int(v)}\n"
+                for f, v in {**TOKAMAK_BASELINE_INDAT, field: value}.items()
+            )
+        )
+    else:
+        indat = write_indat(tmp_path, **{field: value})
     with pytest.raises(NotImplementedError, match=re.escape(f"{field} == {value}")):
         machine_from_indat(indat)
 

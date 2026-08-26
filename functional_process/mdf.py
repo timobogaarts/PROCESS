@@ -512,11 +512,7 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
     # order is the one `mdf_graph` assembles -- objective, equalities, inequalities --
     # and it is spelled here rather than counted by anyone.
     n_equality = len(mdf.conditions) - 1 - mdf.n_inequality
-    roles = (
-        (Objective,)
-        + (Equality,) * n_equality
-        + (Inequality,) * mdf.n_inequality
-    )
+    roles = (Objective,) + (Equality,) * n_equality + (Inequality,) * mdf.n_inequality
     return MdfConditionMap(
         body=mdf.traceable.subgraph,
         unknowns=mdf.design,

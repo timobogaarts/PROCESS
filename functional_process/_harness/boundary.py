@@ -176,6 +176,87 @@ DIVISION_BY_ZERO_AT_BOUNDARY = {
     ("TestLangHighDensityConfinementTime", "nd_plasma_electron_line"): (
         "confinement_time.py:1013, nratio ** (-0.22 * log(nratio)) -- same"
     ),
+    # ---- and a third class: `arcsin` at exactly its endpoint. No division and no
+    # fractional power is involved; `arcsin` is simply not differentiable at +-1, and
+    # the argument lands there *exactly* when the elongation is zero. At `kappa == 0`
+    # the plasma arc radii collapse to `rco = 0.5 * rminor * (1 + triang)` and
+    # `rci = 0.5 * rminor * |triang - 1|` (the `kappa ** 2` terms vanish), so both
+    # `1 - rminor * (1 -+ triang) / rc*` reduce to exactly `-1`. The value is a perfectly
+    # good `-pi/2` -- PROCESS itself computes it without complaint -- and the tangent is
+    # `inf`. There is no guarded form to write: the derivative genuinely diverges, and
+    # any repair would be a modelling choice about a zero-elongation plasma.
+    ("TestDivertorGeometryConventional", "kappa"): (
+        "build.py:895-899, arcsin(1 - rminor * (1 -+ triang) / rc*) == arcsin(-1) "
+        "at kappa == 0"
+    ),
+    # ---- an ordinary unguarded division, same class as the availability.py entries
+    # above: `bp_omp / bt_omp` where `bt_omp = -b_plasma_toroidal_on_axis * rmajor /
+    # r_omp`. At `b_plasma_toroidal_on_axis == 0`, `bt_omp == 0` and the ratio is
+    # `inf`/`-inf`; `arctan` saturates it to a finite `+-pi/2`, so the value this
+    # test probes is finite (a real, if unphysical, angle) while the tangent through
+    # the division is not. No `safe_pow` site is involved -- the singularity is the
+    # division itself, and a guarded reciprocal would be a modelling choice about
+    # what "the flux-expansion angle at zero toroidal field" should mean, not a
+    # mechanical fix (per this module's own "what it is not").
+    ("TestCalculateDivertorHeatLoadWade", "b_plasma_toroidal_on_axis"): (
+        "divertor.py:331,333, bp_omp/bt_omp inside atan(...) -- "
+        "bt_omp = -b_plasma_toroidal_on_axis * rmajor / r_omp"
+    ),
+    # ---- division *by a quotient*, the same class once unfolded: PROCESS spells the
+    # cylindrical safety factor `rminor**2 / (rmajor * plasma_current / b)`. At
+    # `b_plasma_toroidal_on_axis == 0` the inner quotient is `inf`, the outer division
+    # pulls the value back to a finite `0.0` -- the correct limit, and what PROCESS's own
+    # numpy evaluation returns -- while the tangent through `a / b` stays `nan`.
+    # Reassociating to `rminor**2 * b / (rmajor * plasma_current)` removes it and is
+    # value-equal to ~2.6 ulp (32% of 20 000 fuzz-domain points differ, worst 5.8e-16
+    # relative), but that is a rewrite of PROCESS's expression rather than of its model,
+    # and this unit's port keeps PROCESS's spelling. Registered, not repaired.
+    ("TestCalculateCylindricalSafetyFactor", "b_plasma_toroidal_on_axis"): (
+        "physics.py:93-99, rminor**2 / (rmajor * plasma_current / "
+        "b_plasma_toroidal_on_axis)"
+    ),
+    # ---- the Sauter bootstrap scaling's three transport coefficients, all through one
+    # division: `_electron_collisionality_sauter` divides by
+    # `|inverse_q[j] * sqeps[j]**3 * sqrt(tempe[j]) * 1.875e7|`
+    # (`bootstrap_current.py:1728-1733`). Zeroing either `inverse_q[j]` or `sqeps[j]`
+    # makes that denominator zero and the collisionality `+inf`; every use of it is of
+    # the form `f_trapped / (a + b * nu)`, which saturates to a finite `0` while the
+    # tangent through `a / b` stays `nan`. `rmajor == 0` is the same site from the other
+    # side -- it zeroes the collisionality's *numerator*, and `_calculate_l31_
+    # coefficient`'s trailing `_beta_poloidal_total_sauter` keeps `(rmajor / ...) ** 2`
+    # finite there, so again a finite value with a non-finite tangent. (It does not
+    # survive into `_calculate_l31_32_coefficient`, where the extra
+    # `_beta_poloidal_sauter / _beta_poloidal_total_sauter` quotient cancels the factor
+    # that made it singular; hence no `rmajor` entry for that contract.)
+    #
+    # Registered rather than repaired, per this module's own "what it is not": there is
+    # no guarded reciprocal to write without first deciding what the electron
+    # collisionality *means* at infinite safety factor or zero inverse aspect ratio,
+    # which is a modelling question about an unphysical point. The three functions are
+    # additionally covered in value and gradient by `TestBootstrapFractionSauter`, whose
+    # own zero-boundary probe is clean -- the scalars that would zero `inverse_q` or
+    # `sqeps` there (`q0`, `q95`, `rminor`) make the whole value non-finite, which this
+    # check steps aside for.
+    ("TestCalculateL31Coefficient", "inverse_q"): (
+        "bootstrap_current.py:1728-1733, "
+        "670 * ... / |inverse_q * sqeps**3 * sqrt(tempe) * 1.875e7|"
+    ),
+    ("TestCalculateL31Coefficient", "sqeps"): (
+        "bootstrap_current.py:1728-1733, same denominator, sqeps**3 factor"
+    ),
+    ("TestCalculateL31Coefficient", "rmajor"): (
+        "bootstrap_current.py:1723-1727, rmajor zeroes the collisionality numerator "
+        "while _beta_poloidal_total_sauter's (rmajor / ...)**2 stays finite"
+    ),
+    ("TestCalculateL3132Coefficient", "inverse_q"): (
+        "bootstrap_current.py:1728-1733, same denominator, via f32ee/f32ei_teff"
+    ),
+    ("TestCalculateL3132Coefficient", "sqeps"): (
+        "bootstrap_current.py:1728-1733, same denominator, sqeps**3 factor"
+    ),
+    ("TestCalculateL34Alpha31Coefficient", "inverse_q"): (
+        "bootstrap_current.py:1728-1733, same denominator, via f34_teff"
+    ),
 }
 """`(contract class name, argument name)` -> where the `inf` primal is produced.
 

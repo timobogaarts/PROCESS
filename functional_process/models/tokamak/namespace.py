@@ -1,20 +1,21 @@
-"""The tokamak's own subsystems -- every one of them empty.
+"""The tokamak's own subsystems -- fourteen filled, eleven still empty.
 
-Beside the nodes it will name (`model_tree_design.md` §11), exactly as
-`models/stellarator/namespace.py` sits beside the stellarator's. The difference is that
-**not one slot here has an occupant**: nothing under `process/models/` that is reached
-only on the tokamak path has been ported. Every field is therefore `... | None = None`,
-which cottax reads as *"an unproduced slot: it assembles nothing, and whatever read its
-outputs surfaces as a boundary input. Absence, spelled as absence."*
+Beside the nodes it names (`model_tree_design.md` §11), exactly as
+`models/stellarator/namespace.py` sits beside the stellarator's. **It shipped with not
+one slot occupied**; the first tokamak porting wave filled fourteen of the twenty-five,
+and the eleven that are left keep the original spelling `... | None = None`, which cottax
+reads as *"an unproduced slot: it assembles nothing, and whatever read its outputs
+surfaces as a boundary input. Absence, spelled as absence."*
 
-**Why an empty namespace is worth writing at all.** It is the difference between an
-estimate and a measurement. `next_steps.md` §13.9 asked for the *variable-level* work
-list a second device costs; `tokamak_scope.md` and `tokamak_call_surface.md` could only
-count switches and functions, because a boundary is a property of an assembled graph and
-there was no tokamak graph to take it of. With `TokamakProcess` assembled out of the
-shared subsystems and these slots left honestly empty, `boundary.boundary()` enumerates
-the missing variables by name and `boundary.readers_of()` says who wants each one --
-`_audit/tokamak_boundary.md` is that enumeration.
+**Why an empty namespace was worth writing at all**, and why the same argument now
+applies to the eleven that remain. It is the difference between an estimate and a
+measurement. `next_steps.md` §13.9 asked for the *variable-level* work list a second
+device costs; `tokamak_scope.md` and `tokamak_call_surface.md` could only count switches
+and functions, because a boundary is a property of an assembled graph and there was no
+tokamak graph to take it of. With `TokamakProcess` assembled out of the shared subsystems
+and these slots left honestly empty, `boundary.boundary()` enumerates the missing
+variables by name and `boundary.readers_of()` says who wants each one --
+`_audit/tokamak_boundary.md` is that enumeration, and it is what the wave was aimed at.
 
 **The slots are the traced call surface, not a guess.** Every name below is the
 snake_case of a `Model` class that `tokamak_call_surface.md` §A recorded
@@ -47,33 +48,68 @@ constraint); `blankets/blanket_library.py` and `tfcoil/base.py` are *not* slots,
 slots below, not a model at all.
 """
 
+import dataclasses
+
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
+
+from functional_process.models.blankets.namespace import CcfeHcpb
+from functional_process.models.cryostat import Cryostat
+from functional_process.models.fw import FirstWall
+from functional_process.models.namespace import Build, Divertor
+from functional_process.models.physics.physics import PlasmaEnergyFromBeta
+from functional_process.models.physics.plasma_fields import PlasmaFields
+from functional_process.models.physics.tokamak_namespace import (
+    TokamakCurrentDrive,
+    TokamakPhysics,
+    TokamakPlasmaGeom,
+    TokamakPulse,
+)
+from functional_process.models.structure import Structure
+from functional_process.models.tfcoil.namespace import CiccSuperconductingTfCoil
+from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
 
 
 class Tokamak(ModelNamespace):
-    """Everything a conventional tokamak has and a stellarator does not -- all absent.
+    """Everything a conventional tokamak has and a stellarator does not.
 
-    Twenty-five slots, all `None`. A namespace whose fields are all `None` contributes no
-    node and is explicitly allowed by cottax (`ModelNamespace`'s own refusal is for a
-    namespace with no *slots*, which is a wrong argument rather than an empty one).
+    Twenty-five slots; **fourteen of them now have occupants and eleven are still
+    `None`.** A namespace with `None` slots contributes no node for them and is
+    explicitly allowed by cottax (`ModelNamespace`'s own refusal is for a namespace with
+    no *slots*, which is a wrong argument rather than an empty one), so the eleven that
+    are still empty behave exactly as all twenty-five did: whatever reads their outputs
+    surfaces as a boundary input, enumerated by name in `_audit/tokamak_boundary.md`.
 
-    The annotation is `ModelNamespace | None` and not a named occupant type, and that is
-    the honest spelling: there is no class to name yet. Each slot's docstring carries
-    what §A/§B recorded instead -- the PROCESS `Model` the slot is for, the file, and its
-    entered-function/entered-LOC weight -- so the type carries no claim the tree cannot
-    back up. A slot gains a real annotation the day it gains a real occupant, the same
-    way `physics.confinement_time.scaling` did.
+    **The annotation is the promise, and it is now kept slot by slot.** The class this
+    file shipped with typed every slot `ModelNamespace | None` on the ground that *"there
+    is no class to name yet"*, and said a slot would gain a real annotation the day it
+    gained a real occupant, the way `physics.confinement_time.scaling` did. Fourteen
+    have. Five of those fourteen are annotated with a **node** rather than a namespace
+    (`plasma_beta`, `first_wall`, `structure`, `cryostat`, `vacuum_vessel`), because a
+    slot may hold either -- `Physics.fusion_rates` always has -- and wrapping one node in
+    a namespace to make the types uniform would put a meaningless key in front of its
+    name.
+
+    **A slot the factory fills has no default**, here as everywhere else in this tree.
+    Twelve of the fourteen are `dataclasses.field(kw_only=True)`; the two that keep a
+    default are the ones with nothing to decide -- no switch anywhere beneath them, so no
+    configuration for a default to smuggle in. That distinction is not cosmetic: a
+    defaulted slot is a slot `machine_from_indat` never asks a switch about, and an
+    `UNPORTED` refusal that never fires is the `EcrhDensityLimit` bug class waiting to
+    happen. `first_wall` and `structure` look unswitched -- each has exactly one occupant
+    class -- and are factory-filled anyway, precisely so that a file asking for
+    `i_pflux_fw_neutron == 0` or a resistive TF is *refused* rather than quietly given
+    the arm that was written.
     """
 
     # ---- plasma geometry and the tokamak arm of the shared physics body -------------
 
-    plasma_geom: ModelNamespace | None = None
+    plasma_geom: TokamakPlasmaGeom = dataclasses.field(kw_only=True)
     """`physics/plasma_geometry.py::PlasmaGeom`, §A row 0 -- 7 entered functions, 549
     entered LOC, 1 of them shared with the stellarator
     (`calculate_iter_physics_basis_elongation`, already ported). Site of decision 2
     (`i_plasma_geometry`, 15 reads) and one read of decision 1."""
 
-    physics: ModelNamespace | None = None
+    physics: TokamakPhysics = dataclasses.field(kw_only=True)
     """`physics/physics.py::Physics`, §A row 2 -- the tokamak arm of the one 6931-line
     file, 11 entered functions of which 3 are shared and already in `.physics`.
 
@@ -90,7 +126,7 @@ class Tokamak(ModelNamespace):
     run at `physics.py:356`. Site of decision 5 (`i_ind_plasma_internal_norm`, 4 reads,
     `get_ind_internal_norm_value` confirmed entered)."""
 
-    plasma_beta: ModelNamespace | None = None
+    plasma_beta: PlasmaEnergyFromBeta = PlasmaEnergyFromBeta()
     """`physics/physics.py::PlasmaBeta`, §A row 2.3 (`physics.py:429`). Site of decision
     7 (`i_beta_component`, 8 reads, `get_beta_norm_max_value` confirmed entered). Its
     pure `calculate_plasma_beta` is already what constraint 1 calls -- `CLAUDE.md`'s
@@ -131,14 +167,14 @@ class Tokamak(ModelNamespace):
     note); the node is not registered anywhere, because the stellarator path never enters
     this file."""
 
-    current_drive: ModelNamespace | None = None
+    current_drive: TokamakCurrentDrive = dataclasses.field(kw_only=True)
     """`physics/current_drive.py::CurrentDrive` and its four injected sources
     (`NeutralBeam`, `ElectronCyclotron`, `LowerHybrid`, `ElectronBernstein`), run from
     `physics.py:593` when `i_hcd_calculations != 0` -- 5 entered functions, 737 entered
     LOC, unported. Site of decision 10 (`i_hcd_primary = 10`, 14 reads here and further
     reads inside three already-ported files)."""
 
-    plasma_fields: ModelNamespace | None = None
+    plasma_fields: PlasmaFields = dataclasses.field(kw_only=True)
     """`physics/plasma_fields.py::PlasmaFields`, injected into `Physics`
     (`physics.py:197`)
     -- 1 entered function, 67 entered LOC. The tokamak's counterpart to
@@ -146,7 +182,7 @@ class Tokamak(ModelNamespace):
 
     # ---- the machine ---------------------------------------------------------------
 
-    build: ModelNamespace | None = None
+    build: Build = dataclasses.field(kw_only=True)
     """`build.py::Build`, §A row 1 (`caller.py:288`) -- 6 entered functions but 2306 of
     the file's 2360 LOC entered, unported, nothing shared. Site of decision 3
     (`i_single_null`, 4 reads) and one read of decision 10.
@@ -155,7 +191,9 @@ class Tokamak(ModelNamespace):
     stellarator counterpart at all: `models/stellarator/build.py`'s `Build` is a
     different model in a different file."""
 
-    cicc_superconducting_tf_coil: ModelNamespace | None = None
+    cicc_superconducting_tf_coil: CiccSuperconductingTfCoil = dataclasses.field(
+        kw_only=True
+    )
     """`tfcoil/superconducting.py::CICCSuperconductingTFCoil`, §A row 3
     (`caller.py:306`) -- 19 entered functions, 2457 entered LOC, unported, nothing
     shared, and with `tfcoil/base.py::TFCoil` (8 functions, 753 LOC) reached through it
@@ -192,7 +230,7 @@ class Tokamak(ModelNamespace):
     """`cs_fatigue.py::CsFatigue`, injected at `main.py:652` and reached through
     `pfcoil.py:3492` -- 1 entered function (`ncycle`), 93 entered LOC."""
 
-    pulse: ModelNamespace | None = None
+    pulse: TokamakPulse = dataclasses.field(kw_only=True)
     """`pulse.py::Pulse`, §A row 5 (`caller.py:322`) -- 12 entered functions, 236 entered
     LOC, 3 shared. Decision 15 (`pulsetimings`) is read at `physics.py:476` and **nowhere
     else in all of `process/models/**`**, which is the sharpest single-site result in §E.
@@ -201,7 +239,7 @@ class Tokamak(ModelNamespace):
     of a pulsed plant (Account 225.3) is already a slot -- `costs.energy_storage_cost` --
     and was one of the four pins `tokamak_scope.md` found the tree contradicting."""
 
-    divertor: ModelNamespace | None = None
+    divertor: Divertor = dataclasses.field(kw_only=True)
     """`divertor.py::Divertor`, §A row 6 (`caller.py:324`) -- 5 entered functions, 262
     entered LOC, unported. Site of decision 9 (`i_div_heat_load = 2`, 5 reads) and one
     read of decision 3.
@@ -210,7 +248,7 @@ class Tokamak(ModelNamespace):
     `models/stellarator/divertor.py` and is ported -- a different model of a different
     device's divertor, and one half of the one cycle the stellarator graph has."""
 
-    first_wall: ModelNamespace | None = None
+    first_wall: FirstWall = dataclasses.field(kw_only=True)
     """`fw.py::FirstWall`, §A row 7 (`caller.py:327`) -- 6 entered functions, 299 entered
     LOC, unported. Imports `FluidProperties`, but reaches CoolProp **zero** times on this
     reference run: every one of its CoolProp sites is behind
@@ -222,14 +260,14 @@ class Tokamak(ModelNamespace):
     entered LOC, unported. Decision 14 (`i_shld_primary_heat`) is read in `power.py`, not
     here."""
 
-    vacuum_vessel: ModelNamespace | None = None
+    vacuum_vessel: VacuumVesselElliptical = dataclasses.field(kw_only=True)
     """`vacuum.py::VacuumVessel`, §A row 9 (`caller.py:331`) -- 3 entered functions.
 
     **A confirmed registry prediction.** Unit #16 recorded `VacuumVessel` as *"confirmed
     unreachable on the stellarator pipeline, no action needed"*; the tokamak trace
     reaches it. Its file-mate `Vacuum` is ported and is a slot of `.vacuum`, shared."""
 
-    ccfe_hcpb: ModelNamespace | None = None
+    ccfe_hcpb: CcfeHcpb = dataclasses.field(kw_only=True)
     """`blankets/hcpb.py::CCFE_HCPB`, §A row 10 (`caller.py:345`) -- 7 entered functions,
     956 entered LOC, 0 shared, and `blankets/blanket_library.py` (14 functions, 822 LOC)
     reached through it by inheritance (`hcpb.py:25`), never by a call in `caller.py`.
@@ -241,12 +279,12 @@ class Tokamak(ModelNamespace):
     Tokamak-only *on this run*: `.fwbs.i_blanket_type = 1` (CCFE_HCPB) is a default, not
     a file setting, and `= 5` routes to `blankets/dcll.py` instead."""
 
-    cryostat: ModelNamespace | None = None
+    cryostat: Cryostat = Cryostat()
     """`cryostat.py::Cryostat`, §A row 11 (`caller.py:351`) -- 2 entered functions, 69
     entered LOC). **Not** the stellarator's: that is `stellarator.py:1282-1330`, ported
     as part of unit #1 chunk S5 and already a slot of `.stellarator.fwbs`."""
 
-    structure: ModelNamespace | None = None
+    structure: Structure = dataclasses.field(kw_only=True)
     """`structure.py::Structure`, §A row 12 (`caller.py:354`) -- 2 entered functions, 200
     entered LOC. **Not** unit 1D, which is `models/stellarator/structure.py`.
 

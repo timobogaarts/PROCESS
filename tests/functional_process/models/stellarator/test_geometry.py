@@ -71,7 +71,9 @@ def _run_st_new_config(data):
     """
     stellarator = _stellarator()
     stellarator.data = data
-    with patch.object(stellarator_module, "load_stellarator_config", lambda *a, **k: None):
+    with patch.object(
+        stellarator_module, "load_stellarator_config", lambda *a, **k: None
+    ):
         stellarator.st_new_config()
     return data
 
@@ -138,7 +140,11 @@ def _reference_stellarator_scaling_factors(
 
 
 def _reference_stellarator_plasma_geometry(
-    f_st_rmajor, f_st_rminor, rminor, stella_config_vol_plasma, stella_config_plasma_surface
+    f_st_rmajor,
+    f_st_rminor,
+    rminor,
+    stella_config_vol_plasma,
+    stella_config_plasma_surface,
 ):
     """Call PROCESS's `st_geom` through the port's signature. No switches, no calls out."""
     stellarator = _stellarator()

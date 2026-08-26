@@ -34,8 +34,9 @@ There is no `functional_process` module for this yet. The measurement is a `sys.
 hook over one `_call_models_once`:
 
 ```python
-sr = SingleRun("large_tokamak_eval.IN.DAT"); sr.initialise()
-load_iteration_variables(sr.data)                 # else xcm is all-NaN and the call raises
+sr = SingleRun("large_tokamak_eval.IN.DAT")
+sr.initialise()
+load_iteration_variables(sr.data)  # else xcm is all-NaN and the call raises
 xc = sr.data.numerics.xcm[: int(sr.data.numerics.n_iteration_variables)]
 # profile hook: record (f_code.co_filename, f_code.co_qualname) for every "call" event
 # whose filename is under process/models/, and the models-frame caller of every call into

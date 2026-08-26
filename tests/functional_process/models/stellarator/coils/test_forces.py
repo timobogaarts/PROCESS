@@ -250,7 +250,9 @@ class TestMaxForceDensityMnm(Tier1Contract):
         "stella_config_max_force_density_mnm": (0.1, 50.0),
         "f_st_i_total": _FORCE_DENSITY_FUZZ["f_st_i_total"],
         "f_st_n_coils": _FORCE_DENSITY_FUZZ["f_st_n_coils"],
-        "b_tf_inboard_peak_symmetric": _FORCE_DENSITY_FUZZ["b_tf_inboard_peak_symmetric"],
+        "b_tf_inboard_peak_symmetric": _FORCE_DENSITY_FUZZ[
+            "b_tf_inboard_peak_symmetric"
+        ],
         "stella_config_wp_bmax": _WP_BMAX_AREA_FUZZ["stella_config_wp_bmax"],
     }
 

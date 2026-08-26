@@ -72,8 +72,8 @@ Matched with `in` against a node's `path_str()`, so the entry is the **slot name
 the occupant class: since `model_tree_design.md` §8 step 3 a node is named by where it
 sits in the machine tree, and the class name no longer appears in the name at all.
 
-**The coil island (`Intersect`/`WindingPackIntersectInputs`/`WindingPackTotalSizePost`)
-used to be here too, and is not any more** -- see
+**The coil island (`Intersect`, the `winding_pack_intersect_inputs` occupant and
+`WindingPackTotalSizePost`) used to be here too, and is not any more** -- see
 `_audit/closed/constraint_32_investigation.md` for the full evidence. The exclusion rested on
 one true fact (`.stellarator.wp_width_r_min`, `Intersect`'s own unknown, is minted, so
 `_ground_truth` fell back to the `0.0` placeholder, which is a bad enough starting
@@ -174,6 +174,46 @@ KNOWN_MINT_VALUES = {
         lambda d: (
             (d.tfcoil.dr_tf_wp_with_insulation + 2.0 * d.tfcoil.dx_tf_wp_insulation)
             * (d.tfcoil.dx_tf_wp_primary_toroidal + 2.0 * d.tfcoil.dx_tf_wp_insulation)
+        )
+    ),
+    # --- the two `.tokamak.build` mints (`_audit/units/models/build.md`) --------------
+    #
+    # Both are values PROCESS computes and then **overwrites in place**, so neither has a
+    # `DataStructure` field of its own -- the same shape as the two `_unclipped`
+    # radiation mints above, and the same resolution: each is reconstructible from stored
+    # fields by an identity read straight off PROCESS's own source.
+    #
+    # Unreachable from `run_mda_harness` today, which runs the *stellarator* reference
+    # machine and has no `.tokamak.*` node in it. Added with the nodes rather than with
+    # the eventual tokamak harness because the reconstruction is a property of the port,
+    # not of the harness run, and because an ungrounded mint is exactly the thing that
+    # silently scores against `0.0` when someone does point the harness at a tokamak.
+    #
+    # `.tfcoil.dx_tf_wp_conductor_max` -- `process/models/build.py:1570-1572`, inside
+    # `plasma_outboard_edge_toroidal_ripple`'s superconducting arm. Every operand is
+    # stored. `1.2173980800120443` on `large_tokamak_eval.IN.DAT`.
+    ".tfcoil.dx_tf_wp_conductor_max": (
+        lambda d: (
+            d.tfcoil.dx_tf_wp_primary_toroidal
+            - 2.0 * (d.tfcoil.dx_tf_wp_insulation + d.tfcoil.dx_tf_wp_insertion_gap)
+        )
+    ),
+    # `.build.r_tf_outboard_mid_unrippled` -- `process/models/build.py:1901-1909`, the
+    # outboard stack-up *before* `:1939` may raise it to satisfy the ripple constraint.
+    # Exact whenever the ripple constraint is inactive and a lower bound otherwise,
+    # which is the same caveat `.stellarator.wp_width_r_min` carries and the same way
+    # round: a run where the constraint bit would disagree on this mint and not on
+    # `.build.r_tf_outboard_mid` itself. `13.988666666666669` on
+    # `large_tokamak_eval.IN.DAT`.
+    ".build.r_tf_outboard_mid_unrippled": (
+        lambda d: (
+            d.build.r_shld_outboard_outer
+            + d.build.dr_shld_blkt_gap
+            + d.build.dr_vv_outboard
+            + d.build.gapomin
+            + d.build.dr_shld_thermal_outboard
+            + d.build.dr_tf_shld_gap
+            + 0.5 * d.build.dr_tf_outboard
         )
     ),
 }
@@ -657,17 +697,36 @@ it has already been chased, not a filter.
 """
 
 
-def _cache_key(input_file: str) -> str:
-    """A digest of everything a converged run depends on: the run's **input** files
-    (the `.IN.DAT` and its `.stella_conf.json` companion) and the state of the
-    `process/` source tree.
+_CACHE_VERSION = "v2"
+"""Bumped when `_cache_key`'s *definition* changes, so old entries can never be read
+back under a key whose meaning has moved.
 
-    Only inputs, deliberately -- not every file beside them. PROCESS writes
-    `OUT.DAT`/`MFILE.DAT` into that same directory, and `SingleRun.__init__` creates
-    some of them before this is ever called, so hashing the directory wholesale makes
-    the key depend on whether anything has run there yet. That produced a cache miss on
-    a run whose inputs were byte-identical, which is the failure mode a cache is
-    supposed to not have.
+`v1` hashed **every** `*IN.DAT` and `*.json` in the input file's directory rather than
+the named file's own. All nine input files under `tests/regression/input_files/`
+therefore shared one key, and `converged_data("large_tokamak_eval.IN.DAT")` returned
+whichever run had been cached first -- in practice the stellarator's converged state,
+with `rmajor = 26.69` and `n_tf_coils = 50` where the tokamak has ~8.9 and 16. A cache
+that returns another run's answer is worse than no cache at all, and no test could see
+it while only one device was being ported.
+"""
+
+
+def _cache_key(input_file: str) -> str:
+    """A digest of everything a converged run depends on: **this run's own** input files
+    (the named `.IN.DAT` and its `.stella_conf.json` companion, if it has one) and the
+    state of the `process/` source tree.
+
+    Only this run's inputs, deliberately -- not every file beside them, and not every
+    file in the directory. PROCESS writes `OUT.DAT`/`MFILE.DAT`/`SIG_TF.json` into that
+    same directory, and `SingleRun.__init__` creates some of them before this is ever
+    called, so hashing the directory wholesale makes the key depend on whether anything
+    has run there yet; hashing every *input* in it makes every run in the directory
+    share one key, which is the `v1` bug `_CACHE_VERSION` records.
+
+    The sidecar is found by PROCESS's own `output_prefix` convention -- the stem before
+    `.IN.DAT`, plus `.stella_conf.json` -- which is what `Stellarator.st_new_config()`
+    opens and what `indat.REFERENCE_STELLA_CONF` names. A run without one simply has
+    nothing to add; its absence is hashed as absence, so creating one later is a miss.
 
     The source fingerprint is `(relative path, size, mtime_ns)` per `.py` file, not
     their contents -- ~600 `stat` calls instead of ~10 MB of hashing, and it changes on
@@ -677,11 +736,21 @@ def _cache_key(input_file: str) -> str:
     import hashlib
 
     h = hashlib.sha256()
-    inputs = Path(input_file).parent
-    for path in sorted(inputs.iterdir()):
-        if path.is_file() and (path.name.endswith("IN.DAT") or path.suffix == ".json"):
-            h.update(path.name.encode())
-            h.update(path.read_bytes())
+    h.update(_CACHE_VERSION.encode())
+    named = Path(input_file).resolve()
+    h.update(named.name.encode())
+    h.update(named.read_bytes())
+    # PROCESS's `output_prefix` convention: `<stem>.IN.DAT` -> `<stem>.stella_conf.json`.
+    stem = (
+        named.name[: -len(".IN.DAT")] if named.name.endswith(".IN.DAT") else named.stem
+    )
+    sidecar = named.parent / f"{stem}.stella_conf.json"
+    h.update(b"stella_conf:")
+    if sidecar.is_file():
+        h.update(sidecar.name.encode())
+        h.update(sidecar.read_bytes())
+    else:
+        h.update(b"<absent>")
     import process as _process
 
     root = Path(_process.__file__).parent
@@ -1035,8 +1104,10 @@ def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
     report = ComparisonReport()
     # Audited on the graph *as passed in*, before `_without_excluded`: the excluded
     # nodes are minted islands with nothing to compare numerically, but their static
-    # switch kwargs (e.g. `WindingPackIntersectInputs`'s `i_tf_sc_mat`) are registered
-    # values like any other and are just as capable of being wrong.
+    # switch kwargs are registered values like any other and are just as capable of
+    # being wrong. (`i_tf_sc_mat` is no longer among them: it selects an occupant of
+    # `winding_pack_intersect_inputs` now, and a slot's answer is checked by
+    # `test_machine.py`, not by this audit.)
     report.switches = switch_audit(graph, data)
 
     graph = _without_excluded(graph)

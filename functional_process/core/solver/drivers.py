@@ -139,7 +139,14 @@ def scaled_problem(driver, conditions: ConditionMap, start: tuple):
     # A negative scale (a variable starting below zero) swaps which bound is which.
     scaled_lower = np.where(scale > 0, lower * scale, upper * scale)
     scaled_upper = np.where(scale > 0, upper * scale, lower * scale)
-    return evaluate, jacobian, unravel, scale, condition_scale, (scaled_lower, scaled_upper)
+    return (
+        evaluate,
+        jacobian,
+        unravel,
+        scale,
+        condition_scale,
+        (scaled_lower, scaled_upper),
+    )
 
 
 def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
@@ -162,9 +169,7 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     names = [c.path_str() for c in conditions.conditions]
     bad_values = [n for n, v in zip(names, values, strict=True) if not np.isfinite(v)]
     bad_rows = [
-        n
-        for n, row in zip(names, jacobian, strict=True)
-        if not np.all(np.isfinite(row))
+        n for n, row in zip(names, jacobian, strict=True) if not np.all(np.isfinite(row))
     ]
     if not bad_values and not bad_rows:
         return
@@ -351,17 +356,23 @@ class SeededNewtonDriver(AbstractDriver):
     `x ~ 0.1`, so at `0.0` the derivative is zero and Newton cannot move at all --
     `optimistix` aborts and takes the whole schedule with it.
 
-    The fallback is not an invention: `winding_pack_pre_intersect` already computes
-    PROCESS's own guess for this unknown,
-    `wp_width_r_min_guess = (r_coil_minor / (20 if i_tf_sc_mat == 6 else 10)) ** 2`
-    (`coils/calculate.py:737`), which `WindingPackIntersectInputs` deliberately does not
-    wire through as an `Output` -- a starting guess is a property of the algorithm, not
-    an edge of the model, and putting it in the graph would say the opposite. But the
-    quantity it is computed *from* is graph-owned, so it cannot be read off a cold
-    `DataStructure` either. The resolution is that `ConditionMap.context` carries every
-    value the block closed over, at the moment the block runs: the driver reads
-    `r_coil_minor` from there, live, with no new edge and no new node. Measured cold:
-    Newton from `0.0` fails, Newton from the guess (`0.1786`) converges.
+    **The coil island no longer uses this fallback, and the reason is the interesting
+    part.** `intersect`'s guess *is* PROCESS's own,
+    `(r_coil_minor / (20 if i_tf_sc_mat == 6 else 10)) ** 2` -- and the port used to
+    discard it, on the argument that a starting guess is a property of the algorithm and
+    not an edge of the model. `ROOT_FIND_SEEDS` therefore re-derived it from
+    `.stellarator.r_coil_minor` read out of `ConditionMap.context`, which carries what
+    the block closed over -- and `r_coil_minor` was only in that context because a
+    switch kwarg made the pre-`intersect` node declare `.tfcoil.j_tf_wp` on every
+    material, an edge only Bi-2212 has. With `i_tf_sc_mat` split into occupants
+    (`_audit/next_steps.md` §14.5) the fake edge is gone and so is the context; the
+    occupant owns the guess and `cottax.rewrites.Supply` points the `Start` port at it
+    (`mda.supply_starts`). A guess PROCESS computes is an edge of the model after all --
+    what is not is the *algorithm* that consumes it.
+
+    Measured cold, before the change: Newton from `0.0` fails, Newton from the guess
+    (`0.1786`) converges. The supplied port delivers that same number without a
+    fallback, so the measurement still describes why the port exists.
 
     `seed` is only consulted when the supplied `start` is missing or unusable, so a
     warm run -- every harness here -- keeps its existing starting values and its

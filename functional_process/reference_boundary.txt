@@ -18,7 +18,6 @@ guess ^guess.power.qcl
 guess ^guess.power.qmisc
 guess ^guess.power.qss
 guess ^guess.primary_pumping.p_fw_blkt_coolant_pump_mw
-guess ^guess.stellarator.wp_width_r_min
 guess ^guess.vacuum.d_duct
 input .build.dr_blkt_inboard
 input .build.dr_blkt_outboard
@@ -286,8 +285,6 @@ input .stellarator.max_gyrotron_frequency
 input .stellarator.n_res
 input .stellarator.shear
 input .tfcoil.a_tf_wp_coolant_channels
-input .tfcoil.b_crit_upper_nbti
-input .tfcoil.bcritsc
 input .tfcoil.dcond[0]
 input .tfcoil.den_tf_coil_case
 input .tfcoil.den_tf_wp_turn_insulation
@@ -299,7 +296,6 @@ input .tfcoil.dx_tf_wp_insulation
 input .tfcoil.eff_tf_cryo
 input .tfcoil.f_a_tf_turn_cable_copper
 input .tfcoil.f_a_tf_turn_cable_space_extra_void
-input .tfcoil.fhts
 input .tfcoil.i_tf_sc_mat
 input .tfcoil.i_tf_sup
 input .tfcoil.j_crit_str_0
@@ -311,10 +307,8 @@ input .tfcoil.p_tf_joints_resistive
 input .tfcoil.p_tf_leg_resistive
 input .tfcoil.res_tf_leg
 input .tfcoil.rho_tf_bus
-input .tfcoil.t_crit_nbti
 input .tfcoil.t_tf_quench_detection
 input .tfcoil.t_tf_superconductor_quench
-input .tfcoil.tcritsc
 input .tfcoil.temp_cp_coolant_inlet
 input .tfcoil.temp_tf_cryo
 input .tfcoil.tfcmw

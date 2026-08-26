@@ -23,9 +23,18 @@ def _make_costs2015():
 
 
 def _reference_building_costs(
-    cost_factor_buildings, light_build_cost_per_vol, tok_build_cost_per_vol,
-    r_cryostat_inboard, z_cryostat_half_inside, pwpnb, helpow, r_pf_coil_outer_max,
-    c_tf_total, n_tf_coils, e_tf_magnetic_stored_total_gj, p_plant_primary_heat_mw,
+    cost_factor_buildings,
+    light_build_cost_per_vol,
+    tok_build_cost_per_vol,
+    r_cryostat_inboard,
+    z_cryostat_half_inside,
+    pwpnb,
+    helpow,
+    r_pf_coil_outer_max,
+    c_tf_total,
+    n_tf_coils,
+    e_tf_magnetic_stored_total_gj,
+    p_plant_primary_heat_mw,
     p_plant_secondary_heat_mw,
 ):
     costs = _make_costs2015()
@@ -54,7 +63,11 @@ def _reference_building_costs(
 
 
 def _reference_land_costs(
-    cost_factor_land, r_cryostat_inboard, costexp, dh_tf_inner_bore, dr_tf_inner_bore,
+    cost_factor_land,
+    r_cryostat_inboard,
+    costexp,
+    dh_tf_inner_bore,
+    dr_tf_inner_bore,
     dr_tf_inboard,
 ):
     costs = _make_costs2015()

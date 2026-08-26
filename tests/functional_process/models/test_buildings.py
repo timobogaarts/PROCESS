@@ -173,9 +173,7 @@ def _reference_bldgs(
 
 
 def _is_neutral_beam(i_hcd_primary):
-    return (
-        CurrentDriveModel(i_hcd_primary).method == CurrentDriveMethodType.NEUTRAL_BEAM
-    )
+    return CurrentDriveModel(i_hcd_primary).method == CurrentDriveMethodType.NEUTRAL_BEAM
 
 
 def _reference_bldgs_sizes(

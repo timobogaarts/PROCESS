@@ -44,11 +44,11 @@ NOT_TOPOLOGY = {
     "icc": "an array line; the parser reads its first element, not a switch",
     "ixc": "an array line; the parser reads its first element, not a switch",
     "n_equality_constraints": "belongs to the *study* (which conditions are solved), "
-                              "not to the machine -- `next_steps.md` §13.8",
+    "not to the machine -- `next_steps.md` §13.8",
     "i_process_run_mode": "run control: solve, evaluate, or scan",
     "output_costs": "output control: whether the cost tables are printed",
     "p_fusion_total_max_mw": "a limit *value* that happens to be integral, not a choice "
-                             "between models",
+    "between models",
 }
 """Integers an `IN.DAT` carries that are not topology decisions, and why.
 
@@ -60,17 +60,30 @@ the one that shows why the parser cannot decide this on shape alone.
 
 SHAPE = {
     "n_tf_coils": "a count -- it sizes arrays rather than selecting a model "
-                  "(`switch_elimination_design.md` §3 kind (b))",
+    "(`switch_elimination_design.md` §3 kind (b))",
     "n_pf_coil_groups": "a count, same kind",
 }
 """Counts, which are real work and not *model* choices. Kept in the total and marked."""
 
-FACTORY = re.compile(r'(?:_slot_occupant|pick)\(\s*"(\w+)"|switches\.get\(\s*"(\w+)"')
+FACTORY = re.compile(
+    r'(?:_slot_occupant|pick)\(\s*"(\w+)"'
+    r'|switches\.get\(\s*"(\w+)"'
+    r'|numbers\.get\(\s*"(\w+)"'
+)
 """How the fields the factory dispatches on are read back out of `indat.py`.
 
 Source-derived rather than a second list to maintain: the alternative is a table that
 silently goes stale the first time a registry is added, which is the failure mode
 `model_tree_design.md` §6 exists to stop in the boundary and is no better here.
+
+**`numbers.get` joined the two dispatch forms** when the tokamak wave gave the factory
+two keys that are switch-shaped without being switches: `.tfcoil.n_tf_coils`, whose
+*rounded* value selects one of four ripple fits, and `.build.dz_xpoint_divertor`, whose
+being effectively zero decides whether a node owns it. Both are read through
+`numbers_from_indat` rather than `switches_from_indat` because neither is an integer
+switch, and without this alternation the survey would report `n_tf_coils` as *"the port
+has never read it"* -- a false statement in the one tool whose job is to say what the
+port has read.
 """
 
 
@@ -100,11 +113,13 @@ def factory_fields(path: str | None = None) -> frozenset[str]:
     path = path or os.path.join(os.path.dirname(__file__), "indat.py")
     with open(path, encoding="utf-8") as handle:
         found = FACTORY.findall(handle.read())
-    # Two alternations, so each match is a pair with one empty half. Both forms count:
+    # Three alternations, so each match is a triple with two empty parts. All three
+    # forms count:
     # `_slot_occupant("X", ...)` names the slot's switch directly, and
     # `switches.get("X", ...)` is how a switch that feeds a *joint* arm function is read
     # -- `inuclear` reaches `_slot_occupant` only as part of `"inuclear_i_tf_sup"`, so
     # matching the dispatch call alone reported it as a decision nobody had made.
+    # `numbers.get("X", ...)` is the third: a float or a count that selects an occupant.
     return frozenset(name for pair in found for name in pair if name)
 
 
@@ -115,8 +130,11 @@ def pinned_switches(graph) -> dict[str, set[int]]:
     without its `DataStructure` argument, because what is wanted here is *which
     questions the tree has already answered*, not whether it answered them correctly.
     """
-    from functional_process.mda_harness import (STATIC_KWARG_KINDS, SWITCH,
-                                                _declaration_modules)
+    from functional_process.mda_harness import (
+        STATIC_KWARG_KINDS,
+        SWITCH,
+        _declaration_modules,
+    )
 
     out: dict[str, set[int]] = {}
     for node in graph.definitions.values():
@@ -136,7 +154,9 @@ def readers_in_process(name: str, root: str = "process") -> tuple[str, ...]:
     """Which PROCESS modules read `name` -- where the work would have to be done."""
     found = subprocess.run(
         ["grep", "-rlw", "--include=*.py", name, root],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return tuple(sorted(line for line in found.stdout.split() if line))
 
@@ -155,29 +175,44 @@ def survey(input_file: str, graph=None) -> tuple[Row, ...]:
     for name, value in sorted(switches_from_indat(input_file).items()):
         if name in fields:
             reason = UNPORTED.get((name, value))
-            detail = ("no occupant: " + reason.split(":")[0] if reason
-                      else "the factory dispatches on it")
+            detail = (
+                "no occupant: " + reason.split(":")[0]
+                if reason
+                else "the factory dispatches on it"
+            )
             rows.append(Row(name, value, "factory", detail))
         elif name in pinned:
             held = sorted(pinned[name])
             agrees = "agrees" if value in held else f"DISAGREES, tree holds {held}"
-            rows.append(Row(name, value, "pinned", f"hardcoded as a static kwarg; {agrees}"))
+            rows.append(
+                Row(name, value, "pinned", f"hardcoded as a static kwarg; {agrees}")
+            )
         else:
             if name in NOT_TOPOLOGY:
                 rows.append(Row(name, value, "not-topology", NOT_TOPOLOGY[name]))
                 continue
             readers = readers_in_process(name)
             detail = SHAPE.get(name, "the port has never read it")
-            rows.append(Row(name, value, "unknown", detail, readers,
-                            any(r in COOLPROP_MODULES for r in readers)))
+            rows.append(
+                Row(
+                    name,
+                    value,
+                    "unknown",
+                    detail,
+                    readers,
+                    any(r in COOLPROP_MODULES for r in readers),
+                )
+            )
     return tuple(rows)
 
 
 def report(input_file: str) -> str:
     """`survey` as a table, with the counts that size the work."""
     rows = survey(input_file)
-    kinds = {kind: [r for r in rows if r.verdict == kind]
-             for kind in ("factory", "pinned", "unknown", "not-topology")}
+    kinds = {
+        kind: [r for r in rows if r.verdict == kind]
+        for kind in ("factory", "pinned", "unknown", "not-topology")
+    }
     lines = [f"{input_file}: {len(rows)} switch-shaped integer(s)", ""]
     for kind, group in kinds.items():
         lines.append(f"{kind.upper()} ({len(group)})")
@@ -185,8 +220,11 @@ def report(input_file: str) -> str:
             flag = "  [CoolProp]" if row.coolprop else ""
             lines.append(f"  {row.name:<32} = {row.value:<4} {row.detail}{flag}")
             if row.verdict == "unknown" and row.readers:
-                lines.append(f"{'':36}   read in " + ", ".join(row.readers[:4])
-                             + (f" (+{len(row.readers) - 4})" if len(row.readers) > 4 else ""))
+                lines.append(
+                    f"{'':36}   read in "
+                    + ", ".join(row.readers[:4])
+                    + (f" (+{len(row.readers) - 4})" if len(row.readers) > 4 else "")
+                )
         lines.append("")
     blocked = [r for r in kinds["unknown"] if r.coolprop]
     shapes = [r for r in kinds["unknown"] if r.name in SHAPE]
@@ -204,15 +242,22 @@ def report(input_file: str) -> str:
     )
     if disagree:
         lines.append("")
-        lines.append("The tree contradicts this file on: "
-                     + ", ".join(r.name for r in disagree)
-                     + " -- these are `switch_kwarg_survey.md` band (b) slots, and they "
-                       "are the first tokamak deliverable, not a prerequisite to it.")
+        lines.append(
+            "The tree contradicts this file on: "
+            + ", ".join(r.name for r in disagree)
+            + " -- these are `switch_kwarg_survey.md` band (b) slots, and they "
+            "are the first tokamak deliverable, not a prerequisite to it."
+        )
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
     import sys
 
-    print(report(sys.argv[1] if len(sys.argv) > 1
-                 else "tests/regression/input_files/large_tokamak_eval.IN.DAT"))
+    print(
+        report(
+            sys.argv[1]
+            if len(sys.argv) > 1
+            else "tests/regression/input_files/large_tokamak_eval.IN.DAT"
+        )
+    )

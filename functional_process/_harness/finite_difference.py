@@ -153,10 +153,7 @@ def fd_gradient_with_error(fn, x, epsfcn=PROCESS_EPSFCN):
 
     f_x = np.atleast_1d(np.asarray(fn(float(x)), dtype=float))
     roundoff = (
-        REFERENCE_EVALUATION_ULPS
-        * _MACHINE_EPS
-        * np.abs(f_x)
-        / (epsfcn * abs(float(x)))
+        REFERENCE_EVALUATION_ULPS * _MACHINE_EPS * np.abs(f_x) / (epsfcn * abs(float(x)))
     )
 
     return d_h, truncation + roundoff

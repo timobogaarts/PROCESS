@@ -28,7 +28,6 @@ thresholds), since `aspect` is a differentiable argument here, not a switch.
 `static_argnames` so `jacfwd` never differentiates through the dispatch itself.
 """
 
-
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -38,7 +37,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
-from functional_process.paths import physics, stellarator
+from functional_process.paths import current_drive, physics, stellarator
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
@@ -2154,6 +2153,59 @@ class PlasmaPowerLossIgnitedCoreRadiation(PlasmaPowerLoss):
             pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
             vol_plasma=vol_plasma,
             i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
+            i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
+        )
+
+
+class PlasmaPowerLossNonIgnitedCoreRadiation(PlasmaPowerLoss):
+    """`i_plasma_ignited == NON_IGNITED` and `i_rad_loss == CORE_ONLY`.
+
+    **The conventional tokamak's arm, and the one `large_tokamak_eval.IN.DAT` needs.**
+    Neither switch appears in that file, so both take PROCESS's own defaults --
+    `i_plasma_ignited = 0` (`physics_variables.py:881`) and `i_rad_loss = 1`
+    (`physics_variables.py:954`) -- and the sibling above, written for the arm both
+    stellarator runs use (`stellarator_helias.IN.DAT:126` sets `i_plasma_ignited = 1`),
+    does not fit. That refusal is what
+    `_audit/tokamak_boundary.md` § "What blocked the real file" records; this class is
+    the one occupant it says the file was blocked on.
+
+    The difference from `PlasmaPowerLossIgnitedCoreRadiation` is one term and one read:
+    a non-ignited plasma is heated by its injection system, so
+    `p_hcd_injected_total_mw` enters the loss power (`process/models/physics/
+    confinement_time.py:143-144`, guarded by `i_plasma_ignited` and nothing else) and
+    the node declares the `.current_drive -> .physics` edge that the ignited arm
+    correctly does not have. `.current_drive.p_hcd_injected_total_mw` was already on the
+    tokamak boundary before this class existed (`tokamak_boundary.md` §
+    `.tokamak.current_drive`); as of this pass it is produced, by
+    `models/physics/current_drive.py::HcdInjectedPowerTotal`.
+
+    `pden_plasma_rad_mw` is still passed as `0.0` for the same reason the ignited arm
+    passes it: `CORE_ONLY` subtracts `pden_plasma_core_rad_mw`, so the full-radiation
+    density never reaches a port.
+    """
+
+    p_plasma_loss_mw = OutputInto(physics)
+
+    def __call__(
+        self,
+        f_p_alpha_plasma_deposited=From(physics),
+        p_alpha_total_mw=From(physics),
+        p_non_alpha_charged_mw=From(physics),
+        p_plasma_ohmic_mw=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
+        pden_plasma_core_rad_mw=From(physics),
+        vol_plasma=From(physics),
+    ):
+        return plasma_power_loss_mw(
+            f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+            p_alpha_total_mw=p_alpha_total_mw,
+            p_non_alpha_charged_mw=p_non_alpha_charged_mw,
+            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
+            p_hcd_injected_total_mw=p_hcd_injected_total_mw,
+            pden_plasma_rad_mw=0.0,
+            pden_plasma_core_rad_mw=pden_plasma_core_rad_mw,
+            vol_plasma=vol_plasma,
+            i_plasma_ignited=PlasmaIgnitionModel.NON_IGNITED,
             i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY,
         )
 

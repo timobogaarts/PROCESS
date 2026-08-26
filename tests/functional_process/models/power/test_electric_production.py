@@ -219,13 +219,9 @@ def _reference_plant_electric_production(**kwargs):
     data.tfcoil.p_cp_coolant_pump_elec = kwargs["p_cp_coolant_pump_elec"]
     data.heat_transport.p_plant_electric_base = kwargs["p_plant_electric_base"]
     data.buildings.a_plant_floor_effective = kwargs["a_plant_floor_effective"]
-    data.heat_transport.pflux_plant_floor_electric = kwargs[
-        "pflux_plant_floor_electric"
-    ]
+    data.heat_transport.pflux_plant_floor_electric = kwargs["pflux_plant_floor_electric"]
     data.heat_transport.p_cryo_plant_electric_mw = kwargs["p_cryo_plant_electric_mw"]
-    data.heat_transport.p_tf_electric_supplies_mw = kwargs[
-        "p_tf_electric_supplies_mw"
-    ]
+    data.heat_transport.p_tf_electric_supplies_mw = kwargs["p_tf_electric_supplies_mw"]
     data.heat_transport.p_tritium_plant_electric_mw = kwargs[
         "p_tritium_plant_electric_mw"
     ]
@@ -252,17 +248,11 @@ def _reference_plant_electric_production(**kwargs):
     data.heat_transport.p_coolant_pump_elec_total_mw = kwargs[
         "p_coolant_pump_elec_total_mw"
     ]
-    data.heat_transport.p_plant_electric_gross_mw = kwargs[
-        "p_plant_electric_gross_mw"
-    ]
+    data.heat_transport.p_plant_electric_gross_mw = kwargs["p_plant_electric_gross_mw"]
     data.power.p_turbine_loss_mw = kwargs["p_turbine_loss_mw"]
-    data.heat_transport.p_plant_electric_recirc_mw = kwargs[
-        "p_plant_electric_recirc_mw"
-    ]
+    data.heat_transport.p_plant_electric_recirc_mw = kwargs["p_plant_electric_recirc_mw"]
     data.heat_transport.p_plant_electric_net_mw = kwargs["p_plant_electric_net_mw"]
-    data.heat_transport.f_p_plant_electric_recirc = kwargs[
-        "f_p_plant_electric_recirc"
-    ]
+    data.heat_transport.f_p_plant_electric_recirc = kwargs["f_p_plant_electric_recirc"]
     data.physics.p_fusion_total_mw = kwargs["p_fusion_total_mw"]
     data.times.t_plant_pulse_coil_precharge = kwargs["t_plant_pulse_coil_precharge"]
     data.times.t_plant_pulse_plasma_current_ramp_up = kwargs[
@@ -438,7 +428,13 @@ def _plant_electric_production_samples():
         (0, 0, 1, 0, 3),  # ireactor off: gross/net/recirc are pass-throughs
         (0, 1, 1, 0, 3),
         (0, 1, 1, 1, 2),  # dual-coolant + MECHANICAL: the alternate gross-power arm
-        (1, 0, 0, 0, 1),  # tight-aspect-ratio, resistive centrepost: owns p_cp_coolant_pump_elec_mw
+        (
+            1,
+            0,
+            0,
+            0,
+            1,
+        ),  # tight-aspect-ratio, resistive centrepost: owns p_cp_coolant_pump_elec_mw
     ]
     for itart, i_tf_sup, ireactor, i_blkt_dual_coolant, i_p_coolant_pumping in combos:
         fixed = {
@@ -449,7 +445,9 @@ def _plant_electric_production_samples():
             "i_p_coolant_pumping": i_p_coolant_pumping,
         }
         samples.extend(
-            fuzz_samples(bounds, count=15, seed=100260818 + ireactor + itart, fixed=fixed)
+            fuzz_samples(
+                bounds, count=15, seed=100260818 + ireactor + itart, fixed=fixed
+            )
         )
     return samples
 

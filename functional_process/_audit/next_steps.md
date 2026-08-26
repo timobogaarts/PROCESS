@@ -243,16 +243,31 @@ Judgement calls that no test will make for you. All still open:
 - **`preset_config.py`** (unit #8) — a **fourth** instance of "this node always/only
   produces literals", alongside unit #6's device-preset literals and chunk 1D's constants.
   One policy decision would settle all four; it has not been made.
-- **`build.py`** — `dz_shld_upper` under `blktmodel <= 0`.
+- ~~**`build.py`** — `dz_shld_upper` under `blktmodel <= 0`.~~ **Closed** by
+  `_audit/units/models/build.md` § "resolves `next_steps.md` §2". Under `blktmodel > 0`,
+  `process/models/build.py:1650-1662` produces `dr_blkt_inboard`/`dr_blkt_outboard`/
+  `dz_shld_upper`, and `models/stellarator/build.py::BlktmodelBlanketThickness` **already
+  ports that block verbatim** — the two source files are line-for-line identical there.
+  Under `blktmodel <= 0` all three are plain run inputs, so no occupant is needed and none
+  is missing: it is `conditional-ownership-by-run-config`, the same shape as
+  `.build.dz_xpoint_divertor` and `.tfcoil.dx_tf_side_case_min`, and not an unlocated
+  producer. Nothing to decide.
 - **`neoclassics.py`** — `.neoclassics.iota`/`.er` producer still unlocated.
 - **Ported code whose only caller is out of scope** — unit #21's
   `set_pedestal_and_separatrix_values` (reachable only from tokamak unit #22) and
   `ImpurityRadiation`'s whole-file treatment. Worth a registry-level policy on whether
   "port because splitting is more work than porting" is standing practice.
-- **`fusion_reactions.py`'s `calculate_profile_y` return-value bug** (`profiles.py`
-  returns `None` on both classes; 6 call sites in `current_drive.py` use the return value
-  arithmetically) — not reachable from the stellarator pipeline; flagged for
-  `current_drive.py`'s eventual audit.
+- ~~**`fusion_reactions.py`'s `calculate_profile_y` return-value bug**~~ **Closed** by
+  `_audit/units/models/physics/current_drive.md` § "A live PROCESS bug in two sibling
+  arms", which is that audit. The flag was right and the consequence is sharper than
+  "6 call sites use the return value arithmetically": exactly **two** of `i_hcd_primary`'s
+  thirteen values reach them, and both are therefore **unreachable in PROCESS itself** —
+  `6` (`CULHAM_LOWER_HYBRID`) raises `TypeError` at `current_drive.py:1498` via
+  `cullhy → lhrad → lheval`, and `7` (`CULHAM_ELECTRON_CYCLOTRON`) at `:815` via
+  `culecd`. Recorded, not fixed: repairing it is a physics decision for the PROCESS
+  maintainers, not a porting one. `indat.py`'s `UNPORTED` carries both values with that
+  reason, which makes this the first pair of refusals in the port that are **not** about
+  what this port has failed to write.
 - **Carried over, still unreviewed**: the constraint-91 unconditional-call discrepancy,
   the `.fwbs.fwclfr` possibly-dead-code flag, and `radiation_power.md`'s open question 4
   (the two `combine_radiation_powers` callers disagree on whether to clip at zero —
@@ -2242,8 +2257,22 @@ left in place.
 
 ### 14.9 What is open, in order
 
-1. **`i_tf_sc_mat` via `Supply`** (§14.5) — deletes a driven block; unblocked by `b7c5572`.
-2. **`i_p_coolant_pumping`** — the last contradicted switch, 5 slots.
+1. ~~**`i_tf_sc_mat` via `Supply`** (§14.5)~~ — **done**, and the claim it was sold on
+   was wrong. It does *not* delete a driven block: the four-node coils SCC collapses to
+   **two** nodes, `Intersect` and its own `^problem`, which is the **inherent** pair every
+   declared problem has. The driven-block count is unchanged at **13** before and after.
+   What the conversion actually bought is what §14.5's body says — a `j_tf_wp` edge that
+   no run makes stops being declared — and that is worth having on its own; the boundary
+   moved 316 → 311 inputs and 17 → 16 guesses with it. Corrected here rather than in
+   §14.5, whose body never made the claim.
+2. ~~**`i_p_coolant_pumping`** — the last contradicted switch, 5 slots.~~ **done**, and
+   it was cashed in rather than tidied away: assembling the first tokamak with the real
+   value (`3`, against the `1` hardcoded at all five sites) made `power`'s
+   `p_fw_blkt_coolant_pump_mw_step` and `.tokamak.ccfe_hcpb.pumping_power` both claim
+   `.primary_pumping.p_fw_blkt_coolant_pump_mw`, and cottax refused the graph by name.
+   **A pinned switch that disagrees with a real input file is a latent dual-ownership
+   bug**, and this is the first time one of the four was demonstrated to be one.
+   `machine_survey`'s contradiction list for `large_tokamak_eval.IN.DAT` is now empty.
 3. **The remaining 20 switch kwargs**, per §14.2's binding policy, `istore` included.
 4. **Retire `VmconDriver.n_equality`/`n_inequality`** in favour of `ConditionMap.roles`.
 5. **Port tokamak models** against `tokamak_boundary.md`'s 58, `pfcoil.py` +

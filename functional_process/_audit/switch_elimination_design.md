@@ -381,11 +381,17 @@ builds, `topological_order` and `Blocking.scc` work, ragged depth is fine. Only 
 
 ```python
 # functional_process/models/physics/profiles.py  -- provenance declared by the model's own module
-MODELS = {"grid": ProfileGrid(n_plasma_profile_elements=201), "density": DensityProfile()}
+MODELS = {
+    "grid": ProfileGrid(n_plasma_profile_elements=201),
+    "density": DensityProfile(),
+}
 
 # total_process.py -- composition only, no naming decisions
-MODELS = {"physics": {"profiles": profiles.MODELS, "fusion": fusion.MODELS}, "costs": ...}
-to_graph(MODELS)     # names are key paths: physics.profiles.density
+MODELS = {
+    "physics": {"profiles": profiles.MODELS, "fusion": fusion.MODELS},
+    "costs": ...,
+}
+to_graph(MODELS)  # names are key paths: physics.profiles.density
 ```
 
 - Symmetric with the variable side; nothing new conceptually.
@@ -463,11 +469,14 @@ introduce an asymmetry precisely where the design is arguing for symmetry.
 ```python
 class PhysicsProfiles:
     coarse = ProfileGrid(n_plasma_profile_elements=51)
-    fine   = ProfileGrid(n_plasma_profile_elements=201)   # impossible today: node name is the class name
+    fine = ProfileGrid(
+        n_plasma_profile_elements=201
+    )  # impossible today: node name is the class name
+
 
 class Physics:
     profiles = PhysicsProfiles
-    fusion   = PhysicsFusion
+    fusion = PhysicsFusion
 ```
 
 Secondary gains: attribute typos fail at import instead of producing a silently misnamed

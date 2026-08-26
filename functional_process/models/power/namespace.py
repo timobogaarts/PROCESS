@@ -37,9 +37,7 @@ from process.models.power import ElectricConversionModelTypes, PumpingPowerModel
 class Power(ModelNamespace):
     """Thermal and electric power flows, cryogenics, and the plant's own consumption."""
 
-    tf_power: TfPowerResistive | TfPowerSuperconducting = dataclasses.field(
-        kw_only=True
-    )
+    tf_power: TfPowerResistive | TfPowerSuperconducting = dataclasses.field(kw_only=True)
     """TF-coil power supplies (`.tfcoil.i_tf_sup`, default 1 = superconducting).
 
     The aluminium arm (`i_tf_sup == 2`) is refused rather than aliased onto the resistive
@@ -95,20 +93,16 @@ class Power(ModelNamespace):
     # flags for itself: a real `Switch`/`Alternative` covering
     # `ElectricConversionModelTypes`'s 5 values is a separate, larger follow-up, not
     # done here.
-    component_thermal_powers: ComponentThermalPowers = ComponentThermalPowers(
-        i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT,
-        i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-        i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
-        i_blanket_type=BlktModelTypes.CCFE_HCPB,
-        secondary_cycle_liq=(
-            ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
-        ),
-    )
-    delta_eta_step: DeltaEtaStep = DeltaEtaStep(
-        i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT,
-        i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-        i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
-    )
+    #
+    # **`i_p_coolant_pumping` is threaded by the factory now, not written here.** It was
+    # the same hardcoded `FRACTION_OF_HEAT` on all four nodes below, correct for the
+    # Helias run (`stellarator_helias.IN.DAT:198` sets `1`) and wrong for the first
+    # tokamak, which sets `3` (`large_tokamak_eval.IN.DAT:172`). Nothing caught it,
+    # because `switch_audit` compares a registration against *the reference run's*
+    # converged state and the reference run was a stellarator. The tokamak caught it by
+    # refusing to assemble -- see `p_fw_blkt_coolant_pump_mw_step` below.
+    component_thermal_powers: ComponentThermalPowers = dataclasses.field(kw_only=True)
+    delta_eta_step: DeltaEtaStep = dataclasses.field(kw_only=True)
     eta_turbine_step: EtaTurbineStep = EtaTurbineStep(
         i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
         i_blanket_type=BlktModelTypes.CCFE_HCPB,
@@ -125,14 +119,37 @@ class Power(ModelNamespace):
             ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
         ),
     )
-    p_fw_div_heat_deposited_mw_step: PFwDivHeatDepositedMwStep = (
-        PFwDivHeatDepositedMwStep(
-            i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT
-        )
+    p_fw_div_heat_deposited_mw_step: PFwDivHeatDepositedMwStep = dataclasses.field(
+        kw_only=True
     )
-    p_fw_blkt_coolant_pump_mw_step: PFwBlktCoolantPumpMwStep = PFwBlktCoolantPumpMwStep(
-        i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT
+    p_fw_blkt_coolant_pump_mw_step: PFwBlktCoolantPumpMwStep | None = dataclasses.field(
+        kw_only=True
     )
+    """`.primary_pumping.p_fw_blkt_coolant_pump_mw` -- **owned here on two of
+    `i_p_coolant_pumping`'s four values and by the blanket on the other two.**
+
+    This node's own docstring already called the field *"a conditional-ownership
+    pass-through"* and named the other producer -- `process/models/blankets/hcpb.py`,
+    *"not yet ported, registry unit #13"*. It is ported now, and the two producers met:
+    assembling a tokamak with `i_p_coolant_pumping = 3` raised cottax's duplicate-owner
+    error outright, naming this node and `.tokamak.ccfe_hcpb.pumping_power`.
+
+    The resolution is the one the tree already has a spelling for: on `MECHANICAL` and
+    `MECHANICAL_WITH_PRESSURE_DROP` **PROCESS does not compute this field here at all**
+    (`power.py:815-820` only overwrites it on the other two values), so the slot is
+    `None` and the blanket owns it. Absence, spelled as absence -- the same answer
+    `costs.cost_of_electricity`, `power.cryo_q_nuc` and
+    `cicc_superconducting_tf_coil.dx_tf_side_case_min` give.
+
+    `hcpb.md` open question 1 asked whether the fix was *"a change to `power.py`'s
+    existing nodes or four new occupants"*. It is neither: it is a registration, because
+    the node that already exists is correct on exactly the arms it is now given. What is
+    **not** resolved here is that open question's other half -- at
+    `i_p_coolant_pumping == 3` nothing produces
+    `.heat_transport.p_fw_coolant_pump_mw`/`p_blkt_coolant_pump_mw` either, and this
+    node still reads both. They surface as boundary inputs on a tokamak. That is
+    `next_steps.md` §14.9 item 2's call and is left to it.
+    """
     # `PlantThermalEfficiency`/`PlantThermalEfficiency2` (the raw, un-split
     # `ExplicitFunction`s `EtaTurbineStep`/`EtathLiqStep`/`TempTurbineCoolantInStep` are
     # extracted from) are NOT registered: each is *itself* a genuine, still-unresolved

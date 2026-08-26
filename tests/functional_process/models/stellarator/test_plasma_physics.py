@@ -32,9 +32,7 @@ from process.core import constants
 
 def _reference_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_average):
     """`stellarator.py:1916-1919`."""
-    return np.sqrt(
-        b_plasma_toroidal_on_axis**2 + b_plasma_surface_poloidal_average**2
-    )
+    return np.sqrt(b_plasma_toroidal_on_axis**2 + b_plasma_surface_poloidal_average**2)
 
 
 class TestTotalField(Tier1Contract):
@@ -219,9 +217,7 @@ class TestFusionPowerTotalsMw(Tier1Contract):
     ]
 
 
-def _reference_fusion_totals_no_beam(
-    fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
-):
+def _reference_fusion_totals_no_beam(fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw):
     """`stellarator.py:2045-2054`, the `else` (no-beam) arm."""
     return fusden_plasma, fusden_plasma_alpha, p_plasma_dt_mw
 
@@ -606,7 +602,9 @@ class TestRadiatedWallLoadAndFractionDirect(Tier1Contract):
     ]
 
 
-class TestRadiatedWallLoadAndFractionSimplePowerflow(TestRadiatedWallLoadAndFractionDirect):
+class TestRadiatedWallLoadAndFractionSimplePowerflow(
+    TestRadiatedWallLoadAndFractionDirect
+):
     """`i_pflux_fw_neutron == 0`, `ipowerflow == 0` branch."""
 
     samples = [

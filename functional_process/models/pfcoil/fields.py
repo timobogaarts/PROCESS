@@ -1,0 +1,562 @@
+"""Poloidal field from a set of circular current loops, and the peak field at each PF
+coil's inner/outer edge.
+
+Audit record: `functional_process/_audit/units/models/pfcoil/fields.md`.
+
+Two units:
+
+- `calculate_b_field_at_point` -- a direct port of PROCESS's `@numba.njit` kernel
+  (`process/models/pfcoil.py:4926-5060`), vectorised over the loops instead of looped.
+  It is the whole numerical content of `efc`'s matrix assembly *and* of the peak-field
+  calculation, so it is ported once and reused by `currents.py`.
+- `calculate_pf_coil_peak_fields` -- `peak_b_field_at_pf_coil`
+  (`pfcoil.py:4414-4638`) specialised to the reference run's coil topology, for the four
+  PF groups. It **folds in** `PFCoil.waveform` (`:2869-2940`); see below.
+
+**Why `waveform` is folded in.** `peak_b_field_at_pf_coil` reads
+`.pf_coil.c_pf_cs_coils_peak_ma` and `.pf_coil.f_c_pf_cs_peak_time_array` and then
+*re-derives* which of the three time points the peak came from, by asking which of
+`c_pf_cs_coil_pulse_start_ma`/`_flat_top_ma`/`_pulse_end_ma` equals it to within
+`1e-12` -- raising `ProcessValueError` if none does (`pfcoil.py:4484-4487`). Both of
+those fields are pure functions of the same three arrays (that is all `waveform` is), so
+taking the three arrays as this unit's inputs and deriving the peak internally
+**narrows** the declared read set rather than inventing an edge, and it makes the
+precondition structurally unreachable instead of a data-dependent raise: `c_peak` is a
+bitwise copy of one of the three, so exactly one of the three comparisons is an exact
+equality. A port that took `c_peak` as a free input would be outside PROCESS's domain at
+essentially every fuzz point, which is a validated *nothing*, not a validated port.
+
+**A PROCESS defect ported faithfully.** CS current filaments 0 and 1 do not hold CS
+positions on this arm. `pfcoil()`'s equilibrium branch overwrites
+`r/z_pf_cs_current_filaments[0:2]` with the group-0 and group-1 PF coil positions
+(`pfcoil.py:474-479`, `nocoil` starting from 0) *after* `place_cs_filaments` has filled
+all 14, and `peak_b_field_at_pf_coil` then rewrites only the 14 *currents*
+(`:4500-4509`), never the positions. Two of the fourteen CS filaments therefore sit at
+the PF coils' radii and heights while carrying a CS filament's current. Verified against
+a live traced run, not inferred: the filament arrays handed to
+`calculate_b_field_at_point` on `large_tokamak_eval.IN.DAT` begin
+`r = [5.5667, 5.5667, 2.2773, ...]`, `z = [9.6443, -10.8782, 2.8344, ...]`. Reproduced
+here exactly; see `fields.md` § "A PROCESS defect ported faithfully".
+"""
+
+import jax.numpy as jnp
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    Output,
+    OutputInto,
+)
+from process.core import constants
+
+from functional_process.models.pfcoil import (
+    CS_INDEX,
+    N_COILS_IN_GROUP,
+    N_CS_FILAMENTS,
+    N_PF_COILS,
+    N_PF_GROUPS,
+    NFXF,
+    NGC2,
+)
+from functional_process.paths import pf_coil, physics
+
+RMU0 = constants.RMU0
+"""Vacuum permeability (H/m), `process/core/constants.py:277`. Imported rather than
+re-declared so a change there cannot silently diverge from the reference."""
+
+# Elliptic-integral polynomial coefficients, `pfcoil.py:4969-4986`, verbatim. These are
+# Abramowitz & Stegun's rational approximations to K(m) and E(m); PROCESS uses them
+# rather than `scipy.special.ellipk`/`ellipe` inside this kernel, which is what makes
+# the kernel traceable at all.
+_A = (1.38629436112, 0.09666344259, 0.03590092383, 0.03742563713, 0.01451196212)
+_B = (0.5, 0.12498593597, 0.06880248576, 0.03328355346, 0.00441787012)
+_C = (0.44325141463, 0.06260601220, 0.04757383546, 0.01736506451)
+_D = (0.24998368310, 0.09200180037, 0.04069697526, 0.00526449639)
+
+_S_MAX = 0.999999
+"""`pfcoil.py:5002`'s kludge -- `s` is clamped below 1 so `a = log(1/(1-s))` stays
+finite when the test point sits on a current loop."""
+
+_DR_FLOOR = 1e-6
+"""`pfcoil.py:5012-5014`'s kludge -- a test point at exactly a loop's radius would
+divide by `dr**2 + zs = 0` when it is also at the loop's height."""
+
+
+def calculate_b_field_at_point(
+    r_current_loop,
+    z_current_loop,
+    c_current_loop,
+    r_test_point,
+    z_test_point,
+):
+    """Field and mutual inductance at one point from a set of circular current loops.
+
+    Ports `calculate_b_field_at_point`, `process/models/pfcoil.py:4926-5060`, arithmetic
+    unchanged. PROCESS's `for i in range(n_current_loops)` becomes one vectorised
+    expression over the leading axis; the two in-loop kludges become `jnp.minimum` and
+    `jnp.where` (see `_S_MAX`, `_DR_FLOOR`).
+
+    Parameters
+    ----------
+    r_current_loop :
+        R coordinate of each current loop (m).
+    z_current_loop :
+        Z coordinate of each current loop (m).
+    c_current_loop :
+        Current in each loop (A).
+    r_test_point :
+        R coordinate of the point the field is wanted at (m).
+    z_test_point :
+        Z coordinate of the point the field is wanted at (m).
+
+    Returns
+    -------
+    tuple
+        `(ind_mutual_array, b_test_point_radial, b_test_point_vertical,
+        web_test_point_poloidal)` -- per-loop mutual inductance (H), radial and vertical
+        field (T), poloidal flux (Wb). PROCESS's four-way return, unchanged.
+    """
+    d = (r_test_point + r_current_loop) ** 2 + (z_test_point - z_current_loop) ** 2
+    s = jnp.minimum(4.0 * r_test_point * r_current_loop / d, _S_MAX)
+
+    t = 1.0 - s
+    a = jnp.log(1.0 / t)
+
+    dz = z_test_point - z_current_loop
+    zs = dz**2
+    dr = r_test_point - r_current_loop
+    sd = jnp.sqrt(d)
+
+    dr = jnp.where(dr == 0.0, _DR_FLOOR, dr)
+
+    # Elliptic integrals K and E.
+    xk = (
+        _A[0]
+        + t * (_A[1] + t * (_A[2] + t * (_A[3] + _A[4] * t)))
+        + a * (_B[0] + t * (_B[1] + t * (_B[2] + t * (_B[3] + _B[4] * t))))
+    )
+    xe = (
+        1.0
+        + t * (_C[0] + t * (_C[1] + t * (_C[2] + _C[3] * t)))
+        + a * t * (_D[0] + t * (_D[1] + t * (_D[2] + _D[3] * t)))
+    )
+
+    ind_mutual_array = 0.5 * RMU0 * sd * ((2.0 - s) * xk - 2.0 * xe)
+
+    brx = (
+        RMU0
+        * c_current_loop
+        * dz
+        / (2.0 * jnp.pi * r_test_point * sd)
+        * (-xk + (r_current_loop**2 + r_test_point**2 + zs) / (dr**2 + zs) * xe)
+    )
+    bzx = (
+        RMU0
+        * c_current_loop
+        / (2.0 * jnp.pi * sd)
+        * (xk + (r_current_loop**2 - r_test_point**2 - zs) / (dr**2 + zs) * xe)
+    )
+
+    return (
+        ind_mutual_array,
+        jnp.sum(brx),
+        jnp.sum(bzx),
+        jnp.sum(ind_mutual_array * c_current_loop),
+    )
+
+
+def calculate_coil_current_waveform(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+):
+    """Peak current per coil and the current waveform normalised to it.
+
+    Ports `PFCoil.waveform`, `process/models/pfcoil.py:2869-2940`, for the seven real
+    coils (six PF plus the CS). The plasma row's all-ones waveform (`:2877-2879`) is not
+    produced here -- it is a constant, and nothing in this file's closure reads it.
+
+    PROCESS's peak selection is **three consecutive `if`s, not `if`/`elif`**, so a later
+    one overrides an earlier one, and the third's first clause compares the end-of-flat-
+    top current to itself (`:2911-2913`) and is therefore vacuously true. Resolving that
+    exactly: the end-of-flat-top current wins whenever its magnitude is at least the
+    beginning-of-flat-top one's; otherwise the larger of the beginning-of-flat-top and
+    beginning-of-pulse currents wins, ties going to the former. That is what the two
+    nested `jnp.where`s below say, and it leaves **no** unassigned case -- which matters,
+    because PROCESS's fall-through would silently keep the previous iteration's value.
+
+    Parameters
+    ----------
+    c_pf_cs_coil_pulse_start_ma :
+        Coil currents at the beginning of the pulse (MA), one per coil.
+    c_pf_cs_coil_flat_top_ma :
+        Coil currents at the beginning of flat-top (MA).
+    c_pf_cs_coil_pulse_end_ma :
+        Coil currents at the end of flat-top (MA).
+
+    Returns
+    -------
+    tuple
+        `(c_pf_cs_coils_peak_ma, f_c_pf_cs_peak_time_array)` -- the peak current in each
+        coil (MA, signed) and its six-point normalised waveform.
+    """
+    start = c_pf_cs_coil_pulse_start_ma
+    flat = c_pf_cs_coil_flat_top_ma
+    end = c_pf_cs_coil_pulse_end_ma
+
+    flat_or_start = jnp.where(jnp.abs(flat) >= jnp.abs(start), flat, start)
+    peak = jnp.where(jnp.abs(end) >= jnp.abs(flat), end, flat_or_start)
+
+    zero = jnp.zeros_like(peak)
+    waveform = jnp.stack(
+        [zero, start / peak, flat / peak, flat / peak, end / peak, zero], axis=1
+    )
+    return peak, waveform
+
+
+def _peak_time_column(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    c_pf_cs_coils_peak_ma,
+):
+    """Which waveform column each coil's peak current came from (0-based).
+
+    `peak_b_field_at_pf_coil` (`pfcoil.py:4459-4487`) recovers the time point by
+    comparing each of the three currents to the peak within `1e-12` and raises if none
+    matches. `calculate_coil_current_waveform` above makes the peak a bitwise copy of one
+    of the three, so exactly one comparison is an exact equality and the raise is
+    unreachable. PROCESS's `t_b_field_peak` of 2/4/5 is a 1-based column index into the
+    six-point waveform; this returns the 0-based 1/3/4.
+    """
+    return jnp.where(
+        jnp.abs(c_pf_cs_coil_pulse_start_ma - c_pf_cs_coils_peak_ma) < 1.0e-12,
+        1,
+        jnp.where(
+            jnp.abs(c_pf_cs_coil_flat_top_ma - c_pf_cs_coils_peak_ma) < 1.0e-12, 3, 4
+        ),
+    )
+
+
+def _cs_filament_positions(
+    r_cs_middle,
+    dz_cs_full,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+):
+    """The 14 "CS" filament positions as `peak_b_field_at_pf_coil` actually finds them.
+
+    `CSCoil.place_cs_filaments` (`pfcoil.py:3151-3226`) puts filament `k` of the upper
+    half at `z = (dz_cs_full/2) / n * (k + 0.5)` and mirrors it into the lower half, all
+    at `r = r_cs_middle`. `pfcoil()`'s equilibrium branch then overwrites entries 0 and 1
+    with the group-0 and group-1 PF coil positions (`:474-479`) and never restores them.
+    See this module's docstring; this helper reproduces the state that is actually read.
+    """
+    z_cs_inside_half = dz_cs_full / 2.0
+    upper = z_cs_inside_half / N_CS_FILAMENTS * (jnp.arange(N_CS_FILAMENTS) + 0.5)
+    z_filaments = jnp.concatenate([upper, -upper])
+    r_filaments = jnp.full(NFXF, r_cs_middle)
+
+    r_filaments = r_filaments.at[0].set(r_pf_coil_middle_group_array[0, 0])
+    r_filaments = r_filaments.at[1].set(r_pf_coil_middle_group_array[1, 0])
+    z_filaments = z_filaments.at[0].set(z_pf_coil_middle_group_array[0, 0])
+    z_filaments = z_filaments.at[1].set(z_pf_coil_middle_group_array[1, 0])
+    return r_filaments, z_filaments
+
+
+def calculate_pf_coil_peak_fields(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    r_cs_middle,
+    dz_cs_full,
+    a_cs_poloidal,
+    j_cs_pulse_start,
+    j_cs_flat_top_end,
+    rmajor,
+    plasma_current,
+):
+    """Peak field at the inner and outer edge of each of the six PF coils.
+
+    Ports `peak_b_field_at_pf_coil` (`process/models/pfcoil.py:4414-4638`) for the four
+    PF groups, plus `PFCoil.waveform` folded in (module docstring). Specialised to the
+    reference run: `iohcl = 1`, `n_pf_coils_in_group = (1, 1, 2, 2)`, so the target coil
+    is never the CS and the `kk = 0` arm at `:4452-4456` is not taken.
+
+    PROCESS calls the routine once per group, for the group's *first* coil, and copies
+    the answer to every coil in that group (`:4629-4631`); the four calls are independent
+    given the coil geometry, so the Python loop over groups below is a trace-time
+    unrolling, not a sequential dependence.
+
+    **The plasma filament is always present, with a zero current when PROCESS omits
+    it.** PROCESS appends a loop at `(rmajor, 0, plasma_current)` only when the peak time
+    point is after the current ramp (`:4591`, `t_b_field_peak > 2`). That would make the
+    traced filament *count* depend on data. A loop carrying zero current contributes
+    exactly zero to both field components (`brx`/`bzx` are linear in the current), so it
+    is included unconditionally with the current masked to zero instead -- identical
+    values, fixed shapes.
+
+    Parameters
+    ----------
+    c_pf_cs_coil_pulse_start_ma, c_pf_cs_coil_flat_top_ma, c_pf_cs_coil_pulse_end_ma :
+        Coil currents (MA) at the three time points, seven entries -- six PF coils then
+        the CS. `.pf_coil.c_pf_cs_coil_{pulse_start,flat_top,pulse_end}_ma[:7]`.
+    r_pf_coil_middle, z_pf_coil_middle :
+        Coil centre coordinates (m), seven entries.
+    r_pf_coil_inner, r_pf_coil_outer :
+        Coil inner/outer radii (m), seven entries -- the field is evaluated at these.
+    z_pf_coil_upper, z_pf_coil_lower :
+        Coil upper/lower edge heights (m), seven entries; their difference is the coil
+        height Lyle's four-filament self-field model needs.
+    r_pf_coil_middle_group_array, z_pf_coil_middle_group_array :
+        Coil centres by `(group, coil)`, shape `(4, 2)`. Read for the two clobbered CS
+        filament slots only.
+    r_cs_middle :
+        CS mean radius (m), where the remaining twelve CS filaments sit.
+    dz_cs_full :
+        Full CS height (m).
+    a_cs_poloidal :
+        CS poloidal cross-section (m^2).
+    j_cs_pulse_start, j_cs_flat_top_end :
+        CS overall current density at beginning of pulse / end of flat-top (A/m^2).
+        Only their *order* is used, to pick the CS filament current's sign (`:4493`).
+    rmajor :
+        Plasma major radius (m) -- the plasma filament's radius.
+    plasma_current :
+        Plasma current (A).
+
+    Returns
+    -------
+    tuple
+        `(b_pf_coil_peak, bpf2)`, each six entries -- the field magnitude at the inner
+        and at the outer edge of each PF coil (T).
+    """
+    c_peak, waveform = calculate_coil_current_waveform(
+        c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma,
+    )
+    time_column = _peak_time_column(
+        c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma,
+        c_peak,
+    )
+
+    r_cs_filaments, z_cs_filaments = _cs_filament_positions(
+        r_cs_middle,
+        dz_cs_full,
+        r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array,
+    )
+
+    # Sign of the CS filament current: positive when the CS runs harder at the beginning
+    # of the pulse than at the end of flat-top (`pfcoil.py:4493-4497`).
+    sgn = jnp.where(j_cs_pulse_start > j_cs_flat_top_end, 1.0, -1.0)
+
+    b_inner = []
+    b_outer = []
+    first_coil_of_group = 0
+    for group in range(N_PF_GROUPS):
+        n_in_group = N_COILS_IN_GROUP[group]
+        target = first_coil_of_group
+
+        column = time_column[target]
+        f_at_time = jnp.take(waveform, column, axis=1)
+
+        # The 14 CS filaments: positions above, one shared current.
+        c_cs_filament = (
+            f_at_time[CS_INDEX] * j_cs_flat_top_end * sgn * a_cs_poloidal / NFXF
+        )
+        r_parts = [r_cs_filaments]
+        z_parts = [z_cs_filaments]
+        c_parts = [jnp.full(NFXF, c_cs_filament)]
+
+        for coil in range(N_PF_COILS):
+            current = c_peak[coil] * f_at_time[coil]
+            if _group_of_coil(coil) == group:
+                # Self field, Lyle's method: four filaments at +-1/8 and +-3/8 of the
+                # coil height, each carrying a quarter of the current (`:4520-4573`).
+                dzpf = z_pf_coil_upper[coil] - z_pf_coil_lower[coil]
+                offsets = (0.125, 0.375, -0.125, -0.375)
+                r_parts.append(jnp.full(4, r_pf_coil_middle[coil]))
+                z_parts.append(
+                    jnp.stack([z_pf_coil_middle[coil] + dzpf * o for o in offsets])
+                )
+                c_parts.append(jnp.full(4, current * 0.25e6))
+            else:
+                # Field from a different coil: one filament at its centre (`:4575-4588`).
+                r_parts.append(r_pf_coil_middle[coil][None])
+                z_parts.append(z_pf_coil_middle[coil][None])
+                c_parts.append((current * 1.0e6)[None])
+
+        # Plasma filament -- see the docstring: present with a zero current when
+        # PROCESS's `t_b_field_peak > 2` does not hold.
+        r_parts.append(jnp.asarray(rmajor)[None])
+        z_parts.append(jnp.zeros(1))
+        c_parts.append(jnp.where(column >= 2, plasma_current, 0.0)[None])
+
+        r_loops = jnp.concatenate(r_parts)
+        z_loops = jnp.concatenate(z_parts)
+        c_loops = jnp.concatenate(c_parts)
+
+        _, br_in, bz_in, _ = calculate_b_field_at_point(
+            r_current_loop=r_loops,
+            z_current_loop=z_loops,
+            c_current_loop=c_loops,
+            r_test_point=r_pf_coil_inner[target],
+            z_test_point=z_pf_coil_middle[target],
+        )
+        _, br_out, bz_out, _ = calculate_b_field_at_point(
+            r_current_loop=r_loops,
+            z_current_loop=z_loops,
+            c_current_loop=c_loops,
+            r_test_point=r_pf_coil_outer[target],
+            z_test_point=z_pf_coil_middle[target],
+        )
+
+        bpfin = jnp.sqrt(br_in**2 + bz_in**2)
+        bpfout = jnp.sqrt(br_out**2 + bz_out**2)
+        b_inner.extend([bpfin] * n_in_group)
+        b_outer.extend([bpfout] * n_in_group)
+
+        first_coil_of_group += n_in_group
+
+    return jnp.stack(b_inner), jnp.stack(b_outer)
+
+
+def _group_of_coil(coil):
+    """Group index of a flattened coil index, on the reference topology."""
+    seen = 0
+    for group, n in enumerate(N_COILS_IN_GROUP):
+        seen += n
+        if coil < seen:
+            return group
+    raise IndexError(coil)
+
+
+class PFCoilPeakField(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.peak_field`.
+
+    Owns the peak field at the inner and outer edge of each of the six PF coils, as six
+    per-index `Output`s each -- **not** the whole `NGC2`-wide array. Index 6 (the CS) is
+    written by `CSCoil.ohcalc` from the CS's own self-field
+    (`calculate_cs_self_peak_magnetic_field`, `pfcoil.py:3331-3342`), which is UNPORTED
+    on this pass because nothing in the mass closure reads it; owning the whole array
+    would claim a value for index 6 that this node does not compute. Per-index
+    addressing is `_audit/naming_convention.md` § "Array elements", and follows
+    `models/physics/composition.py`'s precedent.
+
+    Occupant for `iohcl = 1`, `i_pf_current = 1`, `itart = 0` and
+    `i_pf_location = (2, 2, 3, 3)` -- the reference arm. Other arms are UNPORTED; see
+    `fields.md`.
+    """
+
+    b_pf_coil_peak_0 = Output(pf_coil.b_pf_coil_peak[0])
+    b_pf_coil_peak_1 = Output(pf_coil.b_pf_coil_peak[1])
+    b_pf_coil_peak_2 = Output(pf_coil.b_pf_coil_peak[2])
+    b_pf_coil_peak_3 = Output(pf_coil.b_pf_coil_peak[3])
+    b_pf_coil_peak_4 = Output(pf_coil.b_pf_coil_peak[4])
+    b_pf_coil_peak_5 = Output(pf_coil.b_pf_coil_peak[5])
+    bpf2_0 = Output(pf_coil.bpf2[0])
+    bpf2_1 = Output(pf_coil.bpf2[1])
+    bpf2_2 = Output(pf_coil.bpf2[2])
+    bpf2_3 = Output(pf_coil.bpf2[3])
+    bpf2_4 = Output(pf_coil.bpf2[4])
+    bpf2_5 = Output(pf_coil.bpf2[5])
+
+    def __call__(
+        self,
+        c_pf_cs_coil_pulse_start_ma=From(pf_coil),
+        c_pf_cs_coil_flat_top_ma=From(pf_coil),
+        c_pf_cs_coil_pulse_end_ma=From(pf_coil),
+        r_pf_coil_middle=From(pf_coil),
+        z_pf_coil_middle=From(pf_coil),
+        r_pf_coil_inner=From(pf_coil),
+        r_pf_coil_outer=From(pf_coil),
+        z_pf_coil_upper=From(pf_coil),
+        z_pf_coil_lower=From(pf_coil),
+        r_pf_coil_middle_group_array=From(pf_coil),
+        z_pf_coil_middle_group_array=From(pf_coil),
+        r_cs_middle=From(pf_coil),
+        dz_cs_full=From(pf_coil),
+        a_cs_poloidal=From(pf_coil),
+        j_cs_pulse_start=From(pf_coil),
+        j_cs_flat_top_end=From(pf_coil),
+        rmajor=From(physics),
+        plasma_current=From(physics),
+    ):
+        b_inner, b_outer = calculate_pf_coil_peak_fields(
+            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
+            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
+            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
+            r_pf_coil_middle=r_pf_coil_middle[: CS_INDEX + 1],
+            z_pf_coil_middle=z_pf_coil_middle[: CS_INDEX + 1],
+            r_pf_coil_inner=r_pf_coil_inner[: CS_INDEX + 1],
+            r_pf_coil_outer=r_pf_coil_outer[: CS_INDEX + 1],
+            z_pf_coil_upper=z_pf_coil_upper[: CS_INDEX + 1],
+            z_pf_coil_lower=z_pf_coil_lower[: CS_INDEX + 1],
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:N_PF_GROUPS, :],
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:N_PF_GROUPS, :],
+            r_cs_middle=r_cs_middle,
+            dz_cs_full=dz_cs_full,
+            a_cs_poloidal=a_cs_poloidal,
+            j_cs_pulse_start=j_cs_pulse_start,
+            j_cs_flat_top_end=j_cs_flat_top_end,
+            rmajor=rmajor,
+            plasma_current=plasma_current,
+        )
+        return (*b_inner, *b_outer)
+
+
+class PFCoilCurrentWaveform(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.waveform`. Ports `PFCoil.waveform`
+    (`process/models/pfcoil.py:2869-2940`) as a node in its own right.
+
+    `PFCoilPeakField` above derives the same two quantities internally rather than
+    reading them (module docstring), so this node exists for the *other* readers of
+    `.pf_coil.c_pf_cs_coils_peak_ma` -- `masses.py`'s sizing and mass chains, `outpf`,
+    `vsec`, `induct` -- not for that one. The duplicated arithmetic is three lines and
+    the alternative is a data-dependent precondition no fuzz point can satisfy.
+
+    Owns the two arrays at their full `NGC2` width. The CS entry (index 6) is written
+    twice by PROCESS -- here, and again by `ohcalc` (`:3264-3281`) -- with values that
+    are algebraically identical (`c_cs_flat_top_end = -a_cs_poloidal *
+    j_cs_flat_top_end` makes `waveform`'s end-of-flat-top pick equal `ohcalc`'s
+    `sgn * 1e-6 * j_cs_flat_top_end * a_cs_poloidal` whenever that is the largest of the
+    three, which it is on this arm), so there is no ownership question to resolve.
+    The plasma row (index 7) is set to all ones by `waveform` (`:2877-2879`); reproduced
+    here so the owned array matches PROCESS's state.
+    """
+
+    c_pf_cs_coils_peak_ma = OutputInto(pf_coil)
+    f_c_pf_cs_peak_time_array = OutputInto(pf_coil)
+
+    def __call__(
+        self,
+        c_pf_cs_coil_pulse_start_ma=From(pf_coil),
+        c_pf_cs_coil_flat_top_ma=From(pf_coil),
+        c_pf_cs_coil_pulse_end_ma=From(pf_coil),
+    ):
+        peak, waveform = calculate_coil_current_waveform(
+            c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
+            c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
+            c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
+        )
+        peak_full = jnp.zeros(NGC2).at[: CS_INDEX + 1].set(peak)
+        waveform_full = (
+            jnp
+            .zeros((NGC2, 6))
+            .at[: CS_INDEX + 1, :]
+            .set(waveform)
+            .at[CS_INDEX + 1, :]
+            .set(1.0)
+        )
+        return peak_full, waveform_full

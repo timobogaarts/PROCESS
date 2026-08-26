@@ -16,9 +16,12 @@ about the profile objects. If a ported function secretly needed something else o
 """
 
 import numpy as np
+from cottax.interfaces.pytree_namespace_module import resolve, to_graph
+from cottax.spec import VarPath
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.physics.plasma_profiles import (
+    PedestalProfileValues,
     calculate_ion_vol_avg_temperature,
     calculate_parabolic_gradient_lengths,
     calculate_parabolic_profile_values,
@@ -26,6 +29,7 @@ from functional_process.models.physics.plasma_profiles import (
     calculate_profile_factors,
     lmode_profile_reset,
 )
+from functional_process.paths import divertor, physics
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
 from process.models.physics.plasma_profiles import PlasmaProfile
@@ -462,6 +466,42 @@ class TestPedestalProfileValues(Tier1Contract):
             nd_plasma_electrons_vol_avg=8.0e19,
         ),
     ]
+
+
+def test_pedestal_profile_values_assembles_alone():
+    """`PedestalProfileValues` must assemble as its own one-node graph, the same
+    minimal structural check `test_composition.py` runs for `PlasmaComposition`.
+    """
+    graph = to_graph(PedestalProfileValues())
+    assert graph.definitions
+
+
+def test_pedestal_profile_values_owns_cross_area_prn1():
+    """`.divertor.prn1` is this unit's only cross-area write (audit record's open
+    question 5). Checking `to_graph` succeeds is only half the proof -- a node could
+    assemble while silently declaring `prn1` as a read, or omitting it, or landing it
+    under `.physics` by a naming slip. This checks the exact `VarPath` the node owns
+    lands in `.divertor`, alongside the four fields `_audit/tokamak_boundary.md` §
+    "The four that are a shared subsystem's gap" lists, which must land in `.physics`.
+    """
+    node = PedestalProfileValues()
+    owned = {out.var for out in node.outputs}
+    read = {inp.var for inp in node.inputs}
+
+    prn1_path = resolve(divertor.prn1, VarPath)
+    assert prn1_path in owned
+    assert prn1_path not in read
+
+    for name in (
+        "f_temp_plasma_electron_density_vol_avg",
+        "nd_plasma_electron_line",
+        "temp_plasma_electron_density_weighted_kev",
+        "temp_plasma_ion_density_weighted_kev",
+        "temp_plasma_electron_line_avg_kev",
+    ):
+        path = resolve(getattr(physics, name), VarPath)
+        assert path in owned, name
+        assert path not in read, name
 
 
 class TestProfileFactors(Tier1Contract):

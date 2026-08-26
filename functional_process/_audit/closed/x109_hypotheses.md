@@ -205,7 +205,8 @@ above = temp_sum_20 - 0.65
 positive = above > 0.0
 fact = jnp.minimum(
     0.30,
-    0.26 * density_ratio_sq
+    0.26
+    * density_ratio_sq
     * jnp.where(positive, safe_sqrt(jnp.where(positive, above, 1.0)), 0.0),
 )
 ```

@@ -17,12 +17,22 @@ gets no `cottax` node of its own).
 `winding_pack_total_size` calls `intersect`/`bmax_from_awp` (`coils/coils.py`, already
 ported) directly, and needs `jcrit_from_material`'s dispatch on `i_tf_sc_mat` -- which
 itself is **not** ported (`coils.py` remains out of this unit's boundary; see
-`coils.md`). `_critical_current_density_by_material` below is therefore a local
-restatement of that dispatch, scoped to this unit's own solve, calling the real ported
-material models in `functional_process/models/physics/superconductors.py` directly. It is
-not itself the audited port of `jcrit_from_material` -- that stays unit #10's to do,
-likely split one node per `i_tf_sc_mat` branch per `switches.md`'s guidance -- see the
-record's "switches touched" section.
+`coils.md`). The eight `jcrit_*` functions below are therefore a local restatement of
+that dispatch, scoped to this unit's own solve, calling the real ported material models
+in `functional_process/models/physics/superconductors.py` directly. They are not the
+audited port of `jcrit_from_material` -- that stays unit #10's to do; see the record's
+"switches touched" section.
+
+**One function per `i_tf_sc_mat` value, and one node class per value on top of them**
+(`_audit/next_steps.md` §14.2's binding policy, §14.5). `i_tf_sc_mat` used to be an
+`eqx.field(static=True)` on a single `WindingPackIntersectInputs`, which therefore
+declared the union of all eight branches' reads -- six of them dead at the value every
+run here holds, and one of the six (`.tfcoil.j_tf_wp`, live on Bi-2212 alone) the sole
+back-edge closing the four-node coils SCC (`_audit/switch_kwarg_survey.md` §4.6). The
+composite `_critical_current_density_by_material` / `winding_pack_pre_intersect` /
+`winding_pack_curves` / `winding_pack_total_size` chain is kept, unchanged in signature
+and in numbers, because it is what PROCESS's own `winding_pack_total_size` is diffed
+against at every material; the *graph* uses the per-material occupants instead.
 
 Every function below keeps its original name (already `calculate_*`-shaped in the
 source, so nothing to rename per `naming_convention.md`) and takes exactly the fields it
@@ -31,7 +41,6 @@ source (`_audit/traceability_policy.md`: closing the `data` back-door is the who
 point).
 """
 
-import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -502,6 +511,172 @@ class CoilCurrent(ExplicitFunction):
         return calculate_current(f_st_b, stella_config_i0, f_st_rmajor, f_st_n_coils)
 
 
+_STRAIN = -0.005
+"""The strain every critical-surface branch passes: a literal in the source too
+(`process/models/stellarator/coils/coils.py:50`), not a read of any `data` field."""
+
+
+def jcrit_iter_nb3sn(b_max, t_helium):
+    """`i_tf_sc_mat == 1`, ITER Nb3Sn critical surface (`coils.py:52-72`).
+
+    Reads nothing but its two arguments: `bc20m`/`tc0m` are literals there.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    bc20m, tc0m = 32.97, 16.06
+    j_crit_sc, _bcrit, _tcrit = itersc(t_helium, b_max, _STRAIN, bc20m, tc0m)
+    j_crit_sc = jnp.where(b_max > bc20m, 1.0e-9, j_crit_sc)
+    return jnp.maximum(1.0e-9, j_crit_sc) * 1.0e-6
+
+
+def jcrit_bi2212(
+    b_max,
+    t_helium,
+    f_a_tf_turn_cable_copper,
+    f_hts,
+    f_a_tf_turn_cable_space_extra_void,
+    j_wp,
+):
+    """`i_tf_sc_mat == 2`, Bi-2212 (`coils.py:73-90`).
+
+    **The one branch that reads `.tfcoil.j_tf_wp`**, and therefore the one material for
+    which the coils block is a genuine cycle -- `winding_pack_post_intersect` owns that
+    field. Every other material leaves the read out, which is what
+    `_audit/switch_kwarg_survey.md` §4.6 measured and what the occupant split acts on.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    jstrand = j_wp / (1.0 - f_a_tf_turn_cable_space_extra_void)
+    j_crit_cable, _tmarg = bi2212(b_max, jstrand, t_helium, f_hts)
+    return (j_crit_cable / (1.0 - f_a_tf_turn_cable_copper)) * 1.0e-6
+
+
+def jcrit_old_lubell_nbti(b_max, t_helium):
+    """`i_tf_sc_mat == 3`, NbTi (Lubell scaling, `coils.py:91-111`). Literals only.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    bc20m, tc0m, c0 = 15.0, 9.3, 1.0
+    j_crit_sc, _tcrit = jcrit_nbti(t_helium, b_max, c0, bc20m, tc0m)
+    j_crit_sc = jnp.where(b_max > bc20m, 1.0e-9, j_crit_sc)
+    return jnp.maximum(1.0e-9, j_crit_sc) * 1.0e-6
+
+
+def jcrit_user_defined_nb3sn(b_max, t_helium, b_crit_sc, t_crit_sc):
+    """`i_tf_sc_mat == 4` (`coils.py:112-118`): branch 1's model, with `bc20m`/`tc0m`
+    taken from `.tfcoil.bcritsc`/`.tfcoil.tcritsc` -- the only branch that reads them.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    j_crit_sc, _bcrit, _tcrit = itersc(t_helium, b_max, _STRAIN, b_crit_sc, t_crit_sc)
+    return j_crit_sc * 1.0e-6
+
+
+def jcrit_wst_nb3sn(b_max, t_helium):
+    """`i_tf_sc_mat == 5`, WST Nb3Sn (`coils.py:119-134`). Literals only.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    bc20m, tc0m = 32.97, 16.06
+    j_crit_sc, _bcrit, _tcrit = western_superconducting_nb3sn(
+        t_helium, b_max, _STRAIN, bc20m, tc0m
+    )
+    return j_crit_sc * 1.0e-6
+
+
+def jcrit_croco_rebco(b_max, t_helium):
+    """`i_tf_sc_mat == 6`, CROCO REBCO (`coils.py:135-139`).
+
+    Calls `jcrit_rebco(t_helium, b_max)` with the ported function's real 2-argument
+    signature. The source's own call site (`coils.py:136`,
+    `jcrit_rebco(t_helium, b_max, 0)`) passes an extra positional argument that
+    `jcrit_rebco` does not accept and would raise `TypeError` if ever executed (confirmed
+    by running PROCESS's `winding_pack_total_size` with `i_tf_sc_mat=6` at a realistic
+    operating point while building this port -- see the record's "real PROCESS bugs
+    found"). Not reproduced here: this is not `coils.py`'s `jcrit_from_material` and has
+    no call site to be faithful to; it exists so this unit has *a* working REBCO branch
+    rather than none.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    j_crit_sc, _validity, _, _ = jcrit_rebco(t_helium, b_max)
+    return jnp.maximum(1.0e-9, j_crit_sc) * 1.0e-6
+
+
+def jcrit_durham_nbti(b_max, t_helium, b_crit_upper_nbti, t_crit_nbti):
+    """`i_tf_sc_mat == 7`, Durham Ginzburg-Landau NbTi (`coils.py:140-147`) -- the only
+    branch that reads `.tfcoil.b_crit_upper_nbti`/`.tfcoil.t_crit_nbti`.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    j_crit_sc, _bcrit, _tcrit = gl_nbti(
+        t_helium, b_max, _STRAIN, b_crit_upper_nbti, t_crit_nbti
+    )
+    return j_crit_sc * 1.0e-6
+
+
+def jcrit_durham_rebco(b_max, t_helium):
+    """`i_tf_sc_mat == 8`, Durham Ginzburg-Landau REBCO (`coils.py:148-157`).
+
+    Literals only -- and note it is **not** the branch PROCESS's sampling-bound and
+    starting-guess tests single out: those read `i_tf_sc_mat == 6` exactly
+    (`calculate.py:400`/`:455`), so this REBCO uses the ordinary divisors. See
+    `_MATERIAL_SAMPLING`.
+
+    Returns
+    -------
+    :
+        Critical current density in the superconductor, MA/m2.
+    """
+    bc20m, tc0m = 429.0, 185.0
+    j_crit_sc, _bcrit, _tcrit = gl_rebco(t_helium, b_max, _STRAIN, bc20m, tc0m)
+    return j_crit_sc * 1.0e-6
+
+
+_MATERIAL_SAMPLING = {
+    SuperconductorModel.ITER_NB3SN: (40.0, 10.0),
+    SuperconductorModel.BI2212: (40.0, 10.0),
+    SuperconductorModel.OLD_LUBELL_NBTI: (40.0, 10.0),
+    SuperconductorModel.USER_DEFINED_NB3SN: (40.0, 10.0),
+    SuperconductorModel.WST_NB3SN: (40.0, 10.0),
+    SuperconductorModel.CROCO_REBCO: (150.0, 20.0),
+    SuperconductorModel.DURHAM_NBTI: (40.0, 10.0),
+    SuperconductorModel.DURHAM_REBCO: (40.0, 10.0),
+}
+"""`i_tf_sc_mat` -> `(sample_lower_divisor, guess_divisor)`, the two literals the
+material decides outside the `jcrit` dispatch itself.
+
+`r_coil_minor / sample_lower_divisor` is where the 200-point sweep starts
+(`process/models/stellarator/coils/calculate.py:397-403`) and
+`(r_coil_minor / guess_divisor) ** 2` is `intersect`'s own starting guess (`:452-458`).
+Both are written in the source as an `if data.tfcoil.i_tf_sc_mat == 6` overriding a
+default, and **`== 6` is exact**: `DURHAM_REBCO` (8) is REBCO too and does not get the
+CROCO pair. Stated as a table, once, so the occupant classes and the composite
+dispatcher below cannot disagree about it.
+"""
+
+
 def _critical_current_density_by_material(
     b_max,
     t_helium,
@@ -516,22 +691,19 @@ def _critical_current_density_by_material(
     j_wp,
 ):
     """Local restatement of `jcrit_from_material`'s dispatch (`coils/coils.py`, unit
-    #10, not itself ported -- see the module and record docstrings). `i_tf_sc_mat` is a
-    graph-build-time switch (`_audit/naming_convention.md` "switches are not ports"), so
-    branch selection is ordinary Python control flow, not `jnp.where` -- only the one
-    material formula actually selected gets traced. Mirrors the source's 8 branches
-    exactly, calling the already-ported material models in
-    `functional_process/models/physics/superconductors.py` directly.
+    #10, not itself ported -- see the module and record docstrings), over the eight
+    per-material functions above.
 
-    Branch 6 (REBCO) calls `jcrit_rebco(t_helium, b_max)` with the ported function's real
-    2-argument signature -- the source's own call site (`coils.py:136`,
-    `jcrit_rebco(t_helium, b_max, 0)`) passes an extra positional argument that
-    `jcrit_rebco` does not accept and would raise `TypeError` if ever executed (confirmed
-    by directly running PROCESS's `winding_pack_total_size` with `i_tf_sc_mat=6` at a
-    realistic operating point while building this port -- see the record's "real PROCESS
-    bugs found"). Not reproduced here: this dispatcher is not `coils.py`'s
-    `jcrit_from_material` and has no call site to be faithful to; it exists so
-    `winding_pack_total_size` below has *a* working REBCO branch rather than none.
+    **This composite exists for the composite `winding_pack_total_size` only.** The
+    graph does not use it: a machine holds one occupant of the
+    `winding_pack_intersect_inputs` slot and that occupant calls its own material's
+    function directly, declaring only that material's reads. Keeping the dispatcher is
+    what lets `winding_pack_total_size` stay the function PROCESS's own
+    `winding_pack_total_size` is diffed against, at every value, from one signature.
+
+    `i_tf_sc_mat` is a graph-build-time switch (`_audit/naming_convention.md` "switches
+    are not ports"), so branch selection is ordinary Python control flow, not
+    `jnp.where` -- only the one material formula actually selected gets traced.
 
     Returns
     -------
@@ -539,47 +711,101 @@ def _critical_current_density_by_material(
         Critical current density in the superconductor, MA/m2 (matches
         `jcrit_from_material`'s `j_crit_sc * 1e-6` scaling).
     """
-    strain = -0.005
-
-    if i_tf_sc_mat == 1:  # ITER Nb3Sn critical surface parameterization
-        bc20m, tc0m = 32.97, 16.06
-        j_crit_sc, _bcrit, _tcrit = itersc(t_helium, b_max, strain, bc20m, tc0m)
-        j_crit_sc = jnp.where(b_max > bc20m, 1.0e-9, j_crit_sc)
-        j_crit_sc = jnp.maximum(1.0e-9, j_crit_sc)
-    elif i_tf_sc_mat == 2:  # Bi-2212 high temperature superconductor
-        f_he = f_a_tf_turn_cable_space_extra_void
-        jstrand = j_wp / (1.0 - f_he)
-        j_crit_cable, _tmarg = bi2212(b_max, jstrand, t_helium, f_hts)
-        j_crit_sc = j_crit_cable / (1.0 - f_a_tf_turn_cable_copper)
-    elif i_tf_sc_mat == 3:  # NbTi data (Lubell scaling)
-        bc20m, tc0m, c0 = 15.0, 9.3, 1.0
-        j_crit_sc, _tcrit = jcrit_nbti(t_helium, b_max, c0, bc20m, tc0m)
-        j_crit_sc = jnp.where(b_max > bc20m, 1.0e-9, j_crit_sc)
-        j_crit_sc = jnp.maximum(1.0e-9, j_crit_sc)
-    elif i_tf_sc_mat == 4:  # As (1), but user-defined bc20m/tc0m
-        j_crit_sc, _bcrit, _tcrit = itersc(t_helium, b_max, strain, b_crit_sc, t_crit_sc)
-    elif i_tf_sc_mat == 5:  # WST Nb3Sn parameterisation
-        bc20m, tc0m = 32.97, 16.06
-        j_crit_sc, _bcrit, _tcrit = western_superconducting_nb3sn(
-            t_helium, b_max, strain, bc20m, tc0m
+    if i_tf_sc_mat == 1:
+        return jcrit_iter_nb3sn(b_max, t_helium)
+    if i_tf_sc_mat == 2:
+        return jcrit_bi2212(
+            b_max,
+            t_helium,
+            f_a_tf_turn_cable_copper,
+            f_hts,
+            f_a_tf_turn_cable_space_extra_void,
+            j_wp,
         )
-    elif i_tf_sc_mat == 6:  # REBCO 2nd generation HTS superconductor
-        j_crit_sc, _validity, _, _ = jcrit_rebco(t_helium, b_max)
-        j_crit_sc = jnp.maximum(1.0e-9, j_crit_sc)
-    elif i_tf_sc_mat == 7:  # Durham Ginzburg-Landau Nb-Ti parameterisation
-        j_crit_sc, _bcrit, _tcrit = gl_nbti(
-            t_helium, b_max, strain, b_crit_upper_nbti, t_crit_nbti
-        )
-    elif i_tf_sc_mat == 8:  # Durham Ginzburg-Landau REBCO parameterisation
-        bc20m, tc0m = 429.0, 185.0
-        j_crit_sc, _bcrit, _tcrit = gl_rebco(t_helium, b_max, strain, bc20m, tc0m)
-    else:
-        raise ValueError(f"i_tf_sc_mat={i_tf_sc_mat!r} is not in range [1, 8]")
-
-    return j_crit_sc * 1.0e-6
+    if i_tf_sc_mat == 3:
+        return jcrit_old_lubell_nbti(b_max, t_helium)
+    if i_tf_sc_mat == 4:
+        return jcrit_user_defined_nb3sn(b_max, t_helium, b_crit_sc, t_crit_sc)
+    if i_tf_sc_mat == 5:
+        return jcrit_wst_nb3sn(b_max, t_helium)
+    if i_tf_sc_mat == 6:
+        return jcrit_croco_rebco(b_max, t_helium)
+    if i_tf_sc_mat == 7:
+        return jcrit_durham_nbti(b_max, t_helium, b_crit_upper_nbti, t_crit_nbti)
+    if i_tf_sc_mat == 8:
+        return jcrit_durham_rebco(b_max, t_helium)
+    raise ValueError(f"i_tf_sc_mat={i_tf_sc_mat!r} is not in range [1, 8]")
 
 
 _N_WINDING_PACK_SAMPLES = 200
+
+
+def winding_pack_pre_intersect_for(
+    jcrit,
+    sample_lower_divisor,
+    guess_divisor,
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+):
+    """Everything `winding_pack_total_size` does before `intersect`, for **one**
+    material: its `jcrit` law and its two sampling literals, and nothing else about it.
+
+    `jcrit` is `f(b_max, t_helium) -> MA/m2` -- one of the eight `jcrit_*` functions
+    above, closed over whatever `.tfcoil.*` fields *that* law reads and no others. That
+    is the whole point of taking it as an argument rather than dispatching inside:
+    the caller (an occupant of the `winding_pack_intersect_inputs` slot) then declares
+    exactly the reads its own material has, where a single branching node had to declare
+    the union of all eight (`_audit/switch_kwarg_survey.md` §4.6: six dead reads at
+    `ITER_NB3SN`, one of them the sole back-edge closing the coils SCC).
+
+    Returns
+    -------
+    :
+        `(wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp,
+        wp_width_r_min_guess)`.
+    """
+    n_it = _N_WINDING_PACK_SAMPLES
+    k = jnp.arange(n_it, dtype=float)
+    lo = r_coil_minor / sample_lower_divisor
+    hi = r_coil_minor / 1.0
+    wp_width_r = lo + (k / (n_it - 1.0)) * (hi - lo)
+
+    b_max_k = bmax_from_awp(
+        wp_width_r,
+        coilcurrent,
+        n_tf_coils,
+        r_coil_major,
+        r_coil_minor,
+        stella_config_a1,
+        stella_config_a2,
+    )
+
+    lhs = f_j_tf_wp_critical_max * jcrit(b_max_k, tftmp + tmargmin)
+
+    fraction_area_superconductor_of_wp = (
+        (a_tf_turn_cable_space_no_void * (1.0 - f_a_tf_turn_cable_space_extra_void))
+        * (1.0 - f_a_tf_turn_cable_copper)
+        / (dx_tf_turn_general**2)
+    )
+
+    rhs = coilcurrent / (
+        wp_width_r**2 / stella_config_wp_ratio * fraction_area_superconductor_of_wp
+    )
+
+    wp_width_r_min_guess = (r_coil_minor / guess_divisor) ** 2
+    return wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp, wp_width_r_min_guess
 
 
 def winding_pack_curves(
@@ -614,54 +840,40 @@ def winding_pack_curves(
     `TestIntersect` re-check `intersect`'s own defining equation. Not independently
     audited/tested -- an internal seam, not a second port.
 
+    Takes `i_tf_sc_mat` and every material's fields because the *composite* does:
+    `winding_pack_pre_intersect_for` above is the per-material half, and this is the
+    dispatch in front of it.
+
     Returns
     -------
     :
         `(wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp)`.
     """
-    n_it = _N_WINDING_PACK_SAMPLES
-    k = jnp.arange(n_it, dtype=float)
-    lo = r_coil_minor / (150.0 if i_tf_sc_mat == 6 else 40.0)
-    hi = r_coil_minor / 1.0
-    wp_width_r = lo + (k / (n_it - 1.0)) * (hi - lo)
-
-    b_max_k = bmax_from_awp(
-        wp_width_r,
-        coilcurrent,
-        n_tf_coils,
-        r_coil_major,
-        r_coil_minor,
-        stella_config_a1,
-        stella_config_a2,
+    wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp, _guess = (
+        winding_pack_pre_intersect(
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            i_tf_sc_mat,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            b_crit_upper_nbti,
+            bcritsc,
+            f_a_tf_turn_cable_copper,
+            fhts,
+            t_crit_nbti,
+            tcritsc,
+            f_a_tf_turn_cable_space_extra_void,
+            j_tf_wp,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
     )
-
-    t_helium = tftmp + tmargmin
-    jcrit_vector = _critical_current_density_by_material(
-        b_max_k,
-        t_helium,
-        i_tf_sc_mat,
-        b_crit_upper_nbti,
-        bcritsc,
-        f_a_tf_turn_cable_copper,
-        fhts,
-        t_crit_nbti,
-        tcritsc,
-        f_a_tf_turn_cable_space_extra_void,
-        j_tf_wp,
-    )
-
-    lhs = f_j_tf_wp_critical_max * jcrit_vector
-
-    fraction_area_superconductor_of_wp = (
-        (a_tf_turn_cable_space_no_void * (1.0 - f_a_tf_turn_cable_space_extra_void))
-        * (1.0 - f_a_tf_turn_cable_copper)
-        / (dx_tf_turn_general**2)
-    )
-
-    rhs = coilcurrent / (
-        wp_width_r**2 / stella_config_wp_ratio * fraction_area_superconductor_of_wp
-    )
-
     return wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp
 
 
@@ -688,9 +900,9 @@ def winding_pack_pre_intersect(
     a_tf_turn_cable_space_no_void,
     dx_tf_turn_general,
 ):
-    """The half of `winding_pack_total_size` that runs *before* `intersect`: builds the
-    sampled `(wp_width_r, lhs, rhs)` curves (`winding_pack_curves`, unchanged) plus
-    `intersect`'s own starting guess (`wp_width_r_min_guess`).
+    """The half of `winding_pack_total_size` that runs *before* `intersect`, dispatching
+    on `i_tf_sc_mat`: the sampled `(wp_width_r, lhs, rhs)` curves plus `intersect`'s own
+    starting guess (`wp_width_r_min_guess`).
 
     Split out so `coils.py`'s `Intersect` (an `ImplicitFunction`/`RootFind` pair, see
     that class's own docstring) can sit structurally between this function and
@@ -699,37 +911,60 @@ def winding_pack_pre_intersect(
     docstring note on why this split exists. Not independently audited/tested on its
     own, same internal-seam status as `winding_pack_curves` itself.
 
+    **The graph does not call this**; the occupant of the
+    `winding_pack_intersect_inputs` slot calls `winding_pack_pre_intersect_for` with its
+    own material's law. This is the composite the composite `winding_pack_total_size`
+    needs, and the one place the material literals and the material laws are still
+    paired by an `i_tf_sc_mat` value.
+
     Returns
     -------
     :
         `(wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp,
         wp_width_r_min_guess)`.
     """
-    wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp = winding_pack_curves(
+    # `.get`, not `[]`: an `i_tf_sc_mat` outside 1..8 must fail in the `jcrit` dispatch
+    # with its own message ("not in range [1, 8]"), not here on a missing divisor --
+    # `SuperconductorModel` has a ninth member no branch of `jcrit_from_material`
+    # answers. An `IntEnum` key hashes as its own integer, so a plain `1` finds the row.
+    sample_lower_divisor, guess_divisor = _MATERIAL_SAMPLING.get(
+        i_tf_sc_mat, (40.0, 10.0)
+    )
+
+    def jcrit(b_max, t_helium):
+        return _critical_current_density_by_material(
+            b_max,
+            t_helium,
+            i_tf_sc_mat,
+            b_crit_upper_nbti,
+            bcritsc,
+            f_a_tf_turn_cable_copper,
+            fhts,
+            t_crit_nbti,
+            tcritsc,
+            f_a_tf_turn_cable_space_extra_void,
+            j_tf_wp,
+        )
+
+    return winding_pack_pre_intersect_for(
+        jcrit,
+        sample_lower_divisor,
+        guess_divisor,
         r_coil_major,
         r_coil_minor,
         coilcurrent,
         n_tf_coils,
-        i_tf_sc_mat,
         stella_config_a1,
         stella_config_a2,
         stella_config_wp_ratio,
         tftmp,
         tmargmin,
-        b_crit_upper_nbti,
-        bcritsc,
         f_a_tf_turn_cable_copper,
-        fhts,
-        t_crit_nbti,
-        tcritsc,
         f_a_tf_turn_cable_space_extra_void,
-        j_tf_wp,
         f_j_tf_wp_critical_max,
         a_tf_turn_cable_space_no_void,
         dx_tf_turn_general,
     )
-    wp_width_r_min_guess = (r_coil_minor / (20.0 if i_tf_sc_mat == 6 else 10.0)) ** 2
-    return wp_width_r, lhs, rhs, fraction_area_superconductor_of_wp, wp_width_r_min_guess
 
 
 def winding_pack_post_intersect(
@@ -983,9 +1218,10 @@ def winding_pack_total_size(
 
 
 class WindingPackIntersectInputs(ExplicitFunction):
-    """cottax node: the *pre*-`intersect` half of `winding_pack_total_size` -- the
-    sampled `(wp_width_r, lhs, rhs)` curves `coils.py`'s `Intersect`
-    (`ImplicitFunction`/`RootFind`) needs as its own `From`s.
+    """The family that owns the *pre*-`intersect` half of `winding_pack_total_size`:
+    the sampled `(wp_width_r, lhs, rhs)` curves `coils.py`'s `Intersect`
+    (`ImplicitFunction`/`RootFind`) needs as its own `From`s, and the starting guess it
+    is driven from. One occupant per `i_tf_sc_mat` value.
 
     This, together with `coils.py`'s `Intersect` and `WindingPackTotalSizePost` below,
     replaces the single `WindingPackTotalSize` node an earlier pass wrote (which called
@@ -998,25 +1234,103 @@ class WindingPackIntersectInputs(ExplicitFunction):
 
     Mints `.stellarator.wp_width_r`/`.lhs`/`.rhs` at exactly the `VarPath`s `Intersect`
     reads -- `coils.md`'s own sketch of this split already proposed these names for this
-    exact call site, not a fresh invention here. `i_tf_sc_mat` is a precondition, not a
-    port, same treatment as `WindingPackTotalSize`'s (now `WindingPackTotalSizePost`'s)
-    original.
+    exact call site, not a fresh invention here.
 
-    `fraction_area_superconductor_of_wp` (return-only, reporting) and
-    `wp_width_r_min_guess` (`intersect`'s own `xin`) are both computed by
-    `winding_pack_pre_intersect` but not wired through as declared `Output`s here --
-    `xin` has no port in the `ImplicitFunction`/`RootFind` shape at all (see
-    `Intersect`'s own docstring: a `RootFind`'s starting guess comes from whatever
-    `Drive`s the block, not from a graph edge), and `fraction_area_superconductor_of_wp`
-    was already discarded by the pre-split `WindingPackTotalSize` for the same
-    reporting-only reason.
+    **`i_tf_sc_mat` was an `eqx.field(static=True)` on this class and is gone**
+    (`_audit/next_steps.md` §14.2's binding policy, §14.5). The eight branches read
+    genuinely different `.tfcoil.*` fields, so one node carrying all eight declared six
+    reads that are dead at `ITER_NB3SN` -- and one of the six, `.tfcoil.j_tf_wp`, was
+    measured to be **the sole back-edge closing the four-node coils SCC**
+    (`_audit/switch_kwarg_survey.md` §4.6). Only `Bi2212...` reads it, so on every other
+    material the block collapses to `Intersect` and its own `^problem`, which is the
+    cycle the model genuinely has.
+
+    **`wp_width_r_min_guess` is an `Output` here**, which it was not before. It is
+    `intersect`'s `xin` (`calculate.py:452-458`), and the old arrangement discarded it
+    on the grounds that "a starting guess is a property of the algorithm, not an edge of
+    the model" -- so `mda.ROOT_FIND_SEEDS` re-derived it from `.stellarator.r_coil_minor`
+    read out of the *block's context*, which only held `r_coil_minor` because the
+    invented `j_tf_wp` edge dragged this node into the block. Remove the invented edge
+    and that seed loses its source. `cottax.rewrites.Supply` is the mechanism that was
+    missing: `Assign` opens `^guess.stellarator.wp_width_r_min` as a boundary input and
+    `Supply` points that port at this output instead (`mda.supply_starts`), so PROCESS's
+    own starting guess reaches the driver as an ordinary graph edge and the boundary
+    loses a `guess` entry rather than gaining a fallback.
+
+    `fraction_area_superconductor_of_wp` (return-only, reporting) is still discarded, as
+    the pre-split `WindingPackTotalSize` discarded it, for the same reporting-only
+    reason.
     """
-
-    i_tf_sc_mat: SuperconductorModel = eqx.field(static=True)
 
     wp_width_r = OutputInto(stellarator)
     lhs = OutputInto(stellarator)
     rhs = OutputInto(stellarator)
+    wp_width_r_min_guess = OutputInto(stellarator)
+
+    sample_lower_divisor = 40.0
+    guess_divisor = 10.0
+    """`_MATERIAL_SAMPLING`'s row for this occupant's material, as plain class
+    attributes -- the ordinary pair by default, overridden by the one occupant PROCESS
+    treats differently. Not `eqx.field`s: they are a property of the class, and there is
+    no constructor argument that could set them (which is exactly what "the switch
+    selects a class" means)."""
+
+    def _curves(
+        self,
+        jcrit,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    ):
+        """The occupant's four outputs, from its own `jcrit` law and its own divisors.
+
+        The fourteen reads every material shares, in one place, so an occupant's body is
+        its material's law and nothing else. Not a port surface: `_params` reads
+        `__call__`'s signature only (`ExplicitFunction._signature_of`), so what is
+        declared is still each occupant's own parameter list.
+        """
+        wp_width_r, lhs, rhs, _fraction, wp_width_r_min_guess = (
+            winding_pack_pre_intersect_for(
+                jcrit,
+                self.sample_lower_divisor,
+                self.guess_divisor,
+                r_coil_major,
+                r_coil_minor,
+                coilcurrent,
+                n_tf_coils,
+                stella_config_a1,
+                stella_config_a2,
+                stella_config_wp_ratio,
+                tftmp,
+                tmargmin,
+                f_a_tf_turn_cable_copper,
+                f_a_tf_turn_cable_space_extra_void,
+                f_j_tf_wp_critical_max,
+                a_tf_turn_cable_space_no_void,
+                dx_tf_turn_general,
+            )
+        )
+        return wp_width_r, lhs, rhs, wp_width_r_min_guess
+
+
+class IterNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == ITER_NB3SN` (1) -- PROCESS's own default and this run's value.
+
+    Reads no material field at all: `jcrit_iter_nb3sn`'s `bc20m`/`tc0m` are literals.
+    **Six reads leave with this occupant** -- `.tfcoil.b_crit_upper_nbti`, `.bcritsc`,
+    `.fhts`, `.t_crit_nbti`, `.tcritsc` and `.j_tf_wp`.
+    """
 
     def __call__(
         self,
@@ -1029,48 +1343,352 @@ class WindingPackIntersectInputs(ExplicitFunction):
         stella_config_wp_ratio=From(stellarator_config),
         tftmp=From(tfcoil),
         tmargmin=From(tfcoil),
-        b_crit_upper_nbti=From(tfcoil),
-        bcritsc=From(tfcoil),
         f_a_tf_turn_cable_copper=From(tfcoil),
-        fhts=From(tfcoil),
-        t_crit_nbti=From(tfcoil),
-        tcritsc=From(tfcoil),
         f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        j_tf_wp=From(tfcoil),
         f_j_tf_wp_critical_max=From(constraints),
         a_tf_turn_cable_space_no_void=From(tfcoil),
         dx_tf_turn_general=From(tfcoil),
     ):
-        (
-            wp_width_r,
-            lhs,
-            rhs,
-            _fraction_area_superconductor_of_wp,
-            _wp_width_r_min_guess,
-        ) = winding_pack_pre_intersect(
+        return self._curves(
+            jcrit_iter_nb3sn,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
             n_tf_coils,
-            self.i_tf_sc_mat,
             stella_config_a1,
             stella_config_a2,
             stella_config_wp_ratio,
             tftmp,
             tmargmin,
-            b_crit_upper_nbti,
-            bcritsc,
             f_a_tf_turn_cable_copper,
-            fhts,
-            t_crit_nbti,
-            tcritsc,
             f_a_tf_turn_cable_space_extra_void,
-            j_tf_wp,
             f_j_tf_wp_critical_max,
             a_tf_turn_cable_space_no_void,
             dx_tf_turn_general,
         )
-        return wp_width_r, lhs, rhs
+
+
+class Bi2212WindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == BI2212` (2).
+
+    **The one occupant that reads `.tfcoil.j_tf_wp`**, which `WindingPackTotalSizePost`
+    owns -- so this is the one material for which the coils block is genuinely a
+    four-node cycle rather than `Intersect` and its `^problem`. Also the one that reads
+    `.tfcoil.fhts`.
+
+    A consequence worth stating rather than working around: with this occupant the node
+    that produces `wp_width_r_min_guess` is *inside* the driven block, and cottax refuses
+    a `Start` produced inside its own block (*"the driver reads its data before the block
+    runs"*). `mda.supply_starts` therefore leaves this machine's start at the boundary --
+    see its own docstring.
+    """
+
+    def __call__(
+        self,
+        r_coil_major=From(stellarator),
+        r_coil_minor=From(stellarator),
+        coilcurrent=From(stellarator),
+        n_tf_coils=From(tfcoil),
+        stella_config_a1=From(stellarator_config),
+        stella_config_a2=From(stellarator_config),
+        stella_config_wp_ratio=From(stellarator_config),
+        tftmp=From(tfcoil),
+        tmargmin=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_j_tf_wp_critical_max=From(constraints),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+        fhts=From(tfcoil),
+        j_tf_wp=From(tfcoil),
+    ):
+        def jcrit(b_max, t_helium):
+            return jcrit_bi2212(
+                b_max,
+                t_helium,
+                f_a_tf_turn_cable_copper,
+                fhts,
+                f_a_tf_turn_cable_space_extra_void,
+                j_tf_wp,
+            )
+
+        return self._curves(
+            jcrit,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+
+
+class OldLubellNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == OLD_LUBELL_NBTI` (3). Literals only, no material read."""
+
+    def __call__(
+        self,
+        r_coil_major=From(stellarator),
+        r_coil_minor=From(stellarator),
+        coilcurrent=From(stellarator),
+        n_tf_coils=From(tfcoil),
+        stella_config_a1=From(stellarator_config),
+        stella_config_a2=From(stellarator_config),
+        stella_config_wp_ratio=From(stellarator_config),
+        tftmp=From(tfcoil),
+        tmargmin=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_j_tf_wp_critical_max=From(constraints),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+    ):
+        return self._curves(
+            jcrit_old_lubell_nbti,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+
+
+class UserDefinedNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == USER_DEFINED_NB3SN` (4) -- the only occupant reading
+    `.tfcoil.bcritsc`/`.tfcoil.tcritsc`, which are exactly what "user-defined" means
+    here.
+    """
+
+    def __call__(
+        self,
+        r_coil_major=From(stellarator),
+        r_coil_minor=From(stellarator),
+        coilcurrent=From(stellarator),
+        n_tf_coils=From(tfcoil),
+        stella_config_a1=From(stellarator_config),
+        stella_config_a2=From(stellarator_config),
+        stella_config_wp_ratio=From(stellarator_config),
+        tftmp=From(tfcoil),
+        tmargmin=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_j_tf_wp_critical_max=From(constraints),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+        bcritsc=From(tfcoil),
+        tcritsc=From(tfcoil),
+    ):
+        def jcrit(b_max, t_helium):
+            return jcrit_user_defined_nb3sn(b_max, t_helium, bcritsc, tcritsc)
+
+        return self._curves(
+            jcrit,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+
+
+class WstNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == WST_NB3SN` (5). Literals only, no material read."""
+
+    def __call__(
+        self,
+        r_coil_major=From(stellarator),
+        r_coil_minor=From(stellarator),
+        coilcurrent=From(stellarator),
+        n_tf_coils=From(tfcoil),
+        stella_config_a1=From(stellarator_config),
+        stella_config_a2=From(stellarator_config),
+        stella_config_wp_ratio=From(stellarator_config),
+        tftmp=From(tfcoil),
+        tmargmin=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_j_tf_wp_critical_max=From(constraints),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+    ):
+        return self._curves(
+            jcrit_wst_nb3sn,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+
+
+class CrocoRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == CROCO_REBCO` (6) -- the one occupant with different sampling.
+
+    `_MATERIAL_SAMPLING`'s only non-default row: the sweep starts at
+    `r_coil_minor / 150` and the guess at `(r_coil_minor / 20) ** 2`, PROCESS's own
+    "if REBCO, start at smaller winding pack ratios" (`calculate.py:455-458`). No
+    material read -- `jcrit_rebco` takes only field and temperature.
+    """
+
+    sample_lower_divisor = 150.0
+    guess_divisor = 20.0
+
+    def __call__(
+        self,
+        r_coil_major=From(stellarator),
+        r_coil_minor=From(stellarator),
+        coilcurrent=From(stellarator),
+        n_tf_coils=From(tfcoil),
+        stella_config_a1=From(stellarator_config),
+        stella_config_a2=From(stellarator_config),
+        stella_config_wp_ratio=From(stellarator_config),
+        tftmp=From(tfcoil),
+        tmargmin=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_j_tf_wp_critical_max=From(constraints),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+    ):
+        return self._curves(
+            jcrit_croco_rebco,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+
+
+class DurhamNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == DURHAM_NBTI` (7) -- the only occupant reading
+    `.tfcoil.b_crit_upper_nbti`/`.tfcoil.t_crit_nbti`.
+    """
+
+    def __call__(
+        self,
+        r_coil_major=From(stellarator),
+        r_coil_minor=From(stellarator),
+        coilcurrent=From(stellarator),
+        n_tf_coils=From(tfcoil),
+        stella_config_a1=From(stellarator_config),
+        stella_config_a2=From(stellarator_config),
+        stella_config_wp_ratio=From(stellarator_config),
+        tftmp=From(tfcoil),
+        tmargmin=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_j_tf_wp_critical_max=From(constraints),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+        b_crit_upper_nbti=From(tfcoil),
+        t_crit_nbti=From(tfcoil),
+    ):
+        def jcrit(b_max, t_helium):
+            return jcrit_durham_nbti(b_max, t_helium, b_crit_upper_nbti, t_crit_nbti)
+
+        return self._curves(
+            jcrit,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
+
+
+class DurhamRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
+    """`i_tf_sc_mat == DURHAM_REBCO` (8). Literals only, and the **ordinary** sampling
+    divisors: PROCESS's two REBCO special cases test `i_tf_sc_mat == 6` exactly.
+    """
+
+    def __call__(
+        self,
+        r_coil_major=From(stellarator),
+        r_coil_minor=From(stellarator),
+        coilcurrent=From(stellarator),
+        n_tf_coils=From(tfcoil),
+        stella_config_a1=From(stellarator_config),
+        stella_config_a2=From(stellarator_config),
+        stella_config_wp_ratio=From(stellarator_config),
+        tftmp=From(tfcoil),
+        tmargmin=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_j_tf_wp_critical_max=From(constraints),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        dx_tf_turn_general=From(tfcoil),
+    ):
+        return self._curves(
+            jcrit_durham_rebco,
+            r_coil_major,
+            r_coil_minor,
+            coilcurrent,
+            n_tf_coils,
+            stella_config_a1,
+            stella_config_a2,
+            stella_config_wp_ratio,
+            tftmp,
+            tmargmin,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_extra_void,
+            f_j_tf_wp_critical_max,
+            a_tf_turn_cable_space_no_void,
+            dx_tf_turn_general,
+        )
 
 
 class WindingPackTotalSizePost(ExplicitFunction):

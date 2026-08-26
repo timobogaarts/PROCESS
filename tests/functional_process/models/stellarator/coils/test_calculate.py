@@ -33,8 +33,16 @@ from cottax.spec import VarPath
 
 from functional_process._harness import Sample, Tier1Contract, Tier2Contract
 from functional_process.models.stellarator.coils.calculate import (
+    Bi2212WindingPackIntersectInputs,
+    CrocoRebcoWindingPackIntersectInputs,
+    DurhamNbtiWindingPackIntersectInputs,
+    DurhamRebcoWindingPackIntersectInputs,
+    IterNb3snWindingPackIntersectInputs,
+    OldLubellNbtiWindingPackIntersectInputs,
+    UserDefinedNb3snWindingPackIntersectInputs,
     WindingPackIntersectInputs,
     WindingPackTotalSizePost,
+    WstNb3snWindingPackIntersectInputs,
     calculate_casing,
     calculate_coil_coil_toroidal_gap,
     calculate_coil_cross_sectional_area,
@@ -54,6 +62,7 @@ from functional_process.models.stellarator.coils.calculate import (
     calculate_z_tf_inside_half,
     st_coil,
     winding_pack_curves,
+    winding_pack_pre_intersect,
     winding_pack_total_size,
 )
 from functional_process.models.stellarator.coils.coils import (
@@ -835,17 +844,110 @@ class TestWindingPackTotalSize(Tier2Contract):
 # ---------------------------------------------------------------------------
 
 
-def test_winding_pack_intersect_inputs_node_assembles_and_does_not_own_j_tf_wp():
-    """`WindingPackIntersectInputs` (the pre-`intersect` node) must assemble on its own,
-    and must not itself own `.tfcoil.j_tf_wp` -- that `VarPath` belongs to
-    `WindingPackTotalSizePost` alone, not this one (it only reads the real value).
+_WINDING_PACK_OCCUPANTS = {
+    SuperconductorModel.ITER_NB3SN: IterNb3snWindingPackIntersectInputs,
+    SuperconductorModel.BI2212: Bi2212WindingPackIntersectInputs,
+    SuperconductorModel.OLD_LUBELL_NBTI: OldLubellNbtiWindingPackIntersectInputs,
+    SuperconductorModel.USER_DEFINED_NB3SN: UserDefinedNb3snWindingPackIntersectInputs,
+    SuperconductorModel.WST_NB3SN: WstNb3snWindingPackIntersectInputs,
+    SuperconductorModel.CROCO_REBCO: CrocoRebcoWindingPackIntersectInputs,
+    SuperconductorModel.DURHAM_NBTI: DurhamNbtiWindingPackIntersectInputs,
+    SuperconductorModel.DURHAM_REBCO: DurhamRebcoWindingPackIntersectInputs,
+}
+"""The eight occupants, restated here rather than imported from `indat.py`: this file
+tests the classes, and a test that shares the registry with the thing it checks would
+pass on an empty one. `test_machine.py` is what checks the registry itself."""
+
+
+def test_the_family_head_cannot_be_instantiated():
+    """`WindingPackIntersectInputs` is a family, not a node: the switch selects a class,
+    so there is no "generic" occupant to build and no `i_tf_sc_mat=` kwarg to build it
+    with (`_audit/next_steps.md` §14.2).
     """
-    node = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel.ITER_NB3SN)
+    with pytest.raises(TypeError):
+        WindingPackIntersectInputs()
+
+
+@pytest.mark.parametrize(
+    ("material", "occupant"),
+    sorted(_WINDING_PACK_OCCUPANTS.items()),
+    ids=[m.name for m in sorted(_WINDING_PACK_OCCUPANTS)],
+)
+def test_each_occupant_assembles_and_owns_the_same_four_varpaths(material, occupant):
+    """Every occupant is a drop-in for the slot: same four outputs, `.tfcoil.j_tf_wp`
+    owned by none of them (that is `WindingPackTotalSizePost`'s).
+
+    `.stellarator.wp_width_r_min_guess` is one of the four, which it was not before
+    §14.5: `intersect`'s `xin` is a real thing this node computes, and owning it is what
+    lets `mda.supply_starts` point the `RootFind`'s `Start` at it instead of leaving a
+    `^guess.*` at the boundary for a driver-side fallback to re-derive.
+    """
+    node = occupant()
     graph = to_graph(node)
     assert graph.definitions
-    owned = {out.var for out in node.outputs}
-    j_tf_wp_path = resolve(tfcoil.j_tf_wp, VarPath)
-    assert j_tf_wp_path not in owned
+    owned = {out.var.path_str() for out in node.outputs}
+    assert owned == {
+        ".stellarator.wp_width_r",
+        ".stellarator.lhs",
+        ".stellarator.rhs",
+        ".stellarator.wp_width_r_min_guess",
+    }
+    assert resolve(tfcoil.j_tf_wp, VarPath) not in {out.var for out in node.outputs}
+
+
+def test_only_the_bi2212_occupant_reads_j_tf_wp():
+    """**The measured claim the whole split rests on** (`switch_kwarg_survey.md` §4.6):
+    `.tfcoil.j_tf_wp` is live on exactly one material, so declaring it on a node that
+    branches internally invented an edge -- and that edge was the sole back-edge closing
+    the coils SCC. Each occupant's extra reads over the shared fourteen are its own
+    material's, and no others.
+    """
+    shared = {i.var.path_str() for i in IterNb3snWindingPackIntersectInputs().inputs}
+    extra = {
+        material: {i.var.path_str() for i in occupant().inputs} - shared
+        for material, occupant in _WINDING_PACK_OCCUPANTS.items()
+    }
+    assert extra == {
+        SuperconductorModel.ITER_NB3SN: set(),
+        SuperconductorModel.BI2212: {".tfcoil.fhts", ".tfcoil.j_tf_wp"},
+        SuperconductorModel.OLD_LUBELL_NBTI: set(),
+        SuperconductorModel.USER_DEFINED_NB3SN: {".tfcoil.bcritsc", ".tfcoil.tcritsc"},
+        SuperconductorModel.WST_NB3SN: set(),
+        SuperconductorModel.CROCO_REBCO: set(),
+        SuperconductorModel.DURHAM_NBTI: {
+            ".tfcoil.b_crit_upper_nbti",
+            ".tfcoil.t_crit_nbti",
+        },
+        SuperconductorModel.DURHAM_REBCO: set(),
+    }
+
+
+@pytest.mark.parametrize(
+    ("material", "occupant"),
+    sorted(_WINDING_PACK_OCCUPANTS.items()),
+    ids=[m.name for m in sorted(_WINDING_PACK_OCCUPANTS)],
+)
+def test_each_occupant_reproduces_the_composite_at_its_own_material(material, occupant):
+    """An occupant computes what `winding_pack_pre_intersect` computes at its value.
+
+    The composite still dispatches on `i_tf_sc_mat` and is what PROCESS's own
+    `winding_pack_total_size` is diffed against (`TestWindingPackTotalSize`); this is
+    the check that splitting it into eight classes did not change any number -- sampling
+    bound, `jcrit` law and starting guess together, per material.
+    """
+    base = dict(_helias5b_winding_pack_base())
+    base["i_tf_sc_mat"] = int(material)
+    expected = winding_pack_pre_intersect(**{
+        name: base[name] for name in _WINDING_PACK_CURVE_PARAMS
+    })
+    got = occupant()(**{
+        name: base[name] for name in inspect.signature(occupant().__call__).parameters
+    })
+    for name, i in (("wp_width_r", 0), ("lhs", 1), ("rhs", 2)):
+        assert np.allclose(
+            np.asarray(got[i]), np.asarray(expected[i]), equal_nan=True
+        ), name
+    assert got[3] == pytest.approx(expected[4])
 
 
 def test_winding_pack_total_size_post_owns_j_tf_wp():
@@ -862,13 +964,13 @@ def test_winding_pack_total_size_post_owns_j_tf_wp():
 
 
 def test_winding_pack_intersect_pair_assembles_around_the_root_find():
-    """`WindingPackIntersectInputs` mints exactly the `VarPath`s `coils.py`'s `Intersect`
+    """An occupant mints exactly the `VarPath`s `coils.py`'s `Intersect`
     reads (`.stellarator.wp_width_r`/`.lhs`/`.rhs`), so the two assemble together into
     one coupled block with a single `RootFind` problem -- the actual point of the split
     around `intersect` this pass makes (`_audit/next_steps.md` §7, `Intersect`'s own
     docstring).
     """
-    pre = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel.ITER_NB3SN)
+    pre = IterNb3snWindingPackIntersectInputs()
     graph = to_graph(pre, Intersect())
     assert graph.definitions
     assert len(graph.definitions) == 3  # pre's 1 + Intersect's 2 (body + RootFind)
@@ -888,31 +990,43 @@ def test_winding_pack_total_size_post_reads_the_root_finds_own_output():
     assert wp_width_r_min_path not in {out.var for out in post.outputs}
 
 
-def test_winding_pack_intersect_split_forms_one_combined_cycle():
-    """The full three-piece split (`WindingPackIntersectInputs`, `coils.py`'s
-    `Intersect`, `WindingPackTotalSizePost`) assembles into one graph, and now that
-    `WindingPackTotalSizePost` owns `.tfcoil.j_tf_wp` (which `WindingPackIntersectInputs`
-    reads), the three nodes plus `Intersect`'s own `RootFind` problem form a **single**
-    SCC -- not `Intersect`'s 2-node self-loop sitting disjoint from two plain
-    acyclic nodes either side of it, the shape the pre-`WindingPackTotalSizePost`
-    ownership change had. `WindingPackJTfWp` (an earlier pass's separate
-    `FixedPointFunction` duplicating this whole computation just to isolate `j_tf_wp`)
-    is gone -- this one merged cycle replaces it, with no duplicated computation.
+def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
+    """**The switch decides whether the graph has a cycle**, measured on both arms.
+
+    With the Bi-2212 occupant the three nodes plus `Intersect`'s own `RootFind` problem
+    form a **single** four-node SCC, closed by `.tfcoil.j_tf_wp` (owned by
+    `WindingPackTotalSizePost`, read by that occupant alone). With every other material
+    the read is not declared at all and what is left is `Intersect`'s own
+    `ImplicitFunction`/`RootFind` pair -- the cycle the model genuinely has.
+
+    This test used to assert the four-node cycle unconditionally, because one node
+    carried `i_tf_sc_mat` as a static kwarg and declared all eight branches' reads. It
+    was pinning an invented edge (`_audit/switch_kwarg_survey.md` §4.6,
+    `_audit/next_steps.md` §14.5).
     """
-    pre = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel.ITER_NB3SN)
     post = WindingPackTotalSizePost()
-    graph = to_graph(pre, Intersect(), post)
-    assert graph.definitions
+
+    graph = to_graph(Bi2212WindingPackIntersectInputs(), Intersect(), post)
     assert len(graph.definitions) == 4  # pre's 1 + Intersect's 2 + post's 1
     assert not graph.is_acyclic
-
     (cycle,) = graph.cycles
     assert {n.path_str() for n in cycle} == {
-        "['WindingPackIntersectInputs']",
+        "['Bi2212WindingPackIntersectInputs']",
         "['Intersect']",
         "^problem['Intersect']",
         "['WindingPackTotalSizePost']",
     }
+
+    for material, occupant in _WINDING_PACK_OCCUPANTS.items():
+        if material is SuperconductorModel.BI2212:
+            continue
+        graph = to_graph(occupant(), Intersect(), post)
+        assert len(graph.definitions) == 4
+        (cycle,) = graph.cycles
+        assert {n.path_str() for n in cycle} == {
+            "['Intersect']",
+            "^problem['Intersect']",
+        }, material
 
 
 class _GenericBisectionRootFind(AbstractDriver):
@@ -1015,7 +1129,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
         for name, where in field_paths.items()
     }
 
-    pre = WindingPackIntersectInputs(i_tf_sc_mat=SuperconductorModel(int(i_tf_sc_mat)))
+    pre = _WINDING_PACK_OCCUPANTS[SuperconductorModel(int(i_tf_sc_mat))]()
     post = WindingPackTotalSizePost()
     graph = to_graph(pre, Intersect(), post)
     # Same domain `winding_pack_curves` itself samples `wp_width_r` over -- see that

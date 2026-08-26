@@ -191,9 +191,7 @@ def _reference_component_thermal_powers(**kwargs):
     data.fwbs.i_p_coolant_pumping = kwargs["i_p_coolant_pumping"]
     data.heat_transport.p_fw_coolant_pump_mw = kwargs["p_fw_coolant_pump_mw"]
     data.heat_transport.p_blkt_coolant_pump_mw = kwargs["p_blkt_coolant_pump_mw"]
-    data.primary_pumping.p_fw_blkt_coolant_pump_mw = kwargs[
-        "p_fw_blkt_coolant_pump_mw"
-    ]
+    data.primary_pumping.p_fw_blkt_coolant_pump_mw = kwargs["p_fw_blkt_coolant_pump_mw"]
     data.fwbs.eta_coolant_pump_electric = kwargs["eta_coolant_pump_electric"]
     data.heat_transport.p_shld_coolant_pump_mw = kwargs["p_shld_coolant_pump_mw"]
     data.heat_transport.p_div_coolant_pump_mw = kwargs["p_div_coolant_pump_mw"]
@@ -213,9 +211,7 @@ def _reference_component_thermal_powers(**kwargs):
     data.physics.p_plasma_separatrix_mw = kwargs["p_plasma_separatrix_mw"]
     data.fwbs.p_div_nuclear_heat_total_mw = kwargs["p_div_nuclear_heat_total_mw"]
     data.fwbs.p_div_rad_total_mw = kwargs["p_div_rad_total_mw"]
-    data.heat_transport.p_fw_div_heat_deposited_mw = kwargs[
-        "p_fw_div_heat_deposited_mw"
-    ]
+    data.heat_transport.p_fw_div_heat_deposited_mw = kwargs["p_fw_div_heat_deposited_mw"]
     data.fwbs.p_fw_hcd_nuclear_heat_mw = kwargs["p_fw_hcd_nuclear_heat_mw"]
     data.fwbs.p_fw_hcd_rad_total_mw = kwargs["p_fw_hcd_rad_total_mw"]
     data.heat_transport.i_shld_primary_heat = kwargs["i_shld_primary_heat"]
@@ -390,7 +386,14 @@ def _reference_cryo(
         tfcryoarea=tfcryoarea,
         t_plant_pulse_plasma_present=t_plant_pulse_plasma_present,
     )
-    return helpow, data.power.qss, data.power.qac, data.power.qcl, data.power.qmisc, data.fwbs.qnuc
+    return (
+        helpow,
+        data.power.qss,
+        data.power.qac,
+        data.power.qcl,
+        data.power.qmisc,
+        data.fwbs.qnuc,
+    )
 
 
 class TestCryo(Tier1Contract):
@@ -401,63 +404,63 @@ class TestCryo(Tier1Contract):
 
     # tests/unit/models/test_power.py::test_cryo, both parametrised legacy points.
     samples = [
-    legacy_sample(
-        "baseline-2018-point-1",
-        i_tf_sup=1,
-        inuclear=1,
-        coldmass=47352637.039762333,
-        c_tf_turn=74026.751437500003,
-        ensxpfm=37429.525515086898,
-        p_tf_nuclear_heat_mw=0.044178296011112193,
-        n_tf_coils=16,
-        tfcryoarea=0.0,
-        t_plant_pulse_plasma_present=10364.426139387357,
-        qnuc=12920.0,
-    ),
-    legacy_sample(
-        "baseline-2018-point-2",
-        i_tf_sup=1,
-        inuclear=1,
-        coldmass=47308985.527808741,
-        c_tf_turn=74026.751437500003,
-        ensxpfm=37427.228965055205,
-        p_tf_nuclear_heat_mw=0.045535131445547841,
-        n_tf_coils=16,
-        tfcryoarea=0.0,
-        t_plant_pulse_plasma_present=364.42613938735633,
-        qnuc=12920.0,
-    ),
-    *fuzz_samples(
-        {
-            "coldmass": (1.0e6, 6.0e7),
-            "c_tf_turn": (1.0e3, 1.0e5),
-            "ensxpfm": (1.0e3, 6.0e4),
-            "p_tf_nuclear_heat_mw": (0.0, 1.0),
-            "n_tf_coils": (10.0, 24.0),
-            "tfcryoarea": (0.0, 5000.0),
-            "t_plant_pulse_plasma_present": (300.0, 12000.0),
-            "qnuc": (0.0, 20000.0),
-        },
-        count=20,
-        seed=50260818,
-        fixed={"i_tf_sup": 1, "inuclear": 0},
-    ),
-    *fuzz_samples(
-        {
-            "coldmass": (1.0e6, 6.0e7),
-            "c_tf_turn": (1.0e3, 1.0e5),
-            "ensxpfm": (1.0e3, 6.0e4),
-            "p_tf_nuclear_heat_mw": (0.0, 1.0),
-            "n_tf_coils": (10.0, 24.0),
-            "tfcryoarea": (0.0, 5000.0),
-            "t_plant_pulse_plasma_present": (300.0, 12000.0),
-            "qnuc": (0.0, 20000.0),
-        },
-        count=15,
-        seed=60260818,
-        fixed={"i_tf_sup": 0, "inuclear": 1},
-    ),
-]
+        legacy_sample(
+            "baseline-2018-point-1",
+            i_tf_sup=1,
+            inuclear=1,
+            coldmass=47352637.039762333,
+            c_tf_turn=74026.751437500003,
+            ensxpfm=37429.525515086898,
+            p_tf_nuclear_heat_mw=0.044178296011112193,
+            n_tf_coils=16,
+            tfcryoarea=0.0,
+            t_plant_pulse_plasma_present=10364.426139387357,
+            qnuc=12920.0,
+        ),
+        legacy_sample(
+            "baseline-2018-point-2",
+            i_tf_sup=1,
+            inuclear=1,
+            coldmass=47308985.527808741,
+            c_tf_turn=74026.751437500003,
+            ensxpfm=37427.228965055205,
+            p_tf_nuclear_heat_mw=0.045535131445547841,
+            n_tf_coils=16,
+            tfcryoarea=0.0,
+            t_plant_pulse_plasma_present=364.42613938735633,
+            qnuc=12920.0,
+        ),
+        *fuzz_samples(
+            {
+                "coldmass": (1.0e6, 6.0e7),
+                "c_tf_turn": (1.0e3, 1.0e5),
+                "ensxpfm": (1.0e3, 6.0e4),
+                "p_tf_nuclear_heat_mw": (0.0, 1.0),
+                "n_tf_coils": (10.0, 24.0),
+                "tfcryoarea": (0.0, 5000.0),
+                "t_plant_pulse_plasma_present": (300.0, 12000.0),
+                "qnuc": (0.0, 20000.0),
+            },
+            count=20,
+            seed=50260818,
+            fixed={"i_tf_sup": 1, "inuclear": 0},
+        ),
+        *fuzz_samples(
+            {
+                "coldmass": (1.0e6, 6.0e7),
+                "c_tf_turn": (1.0e3, 1.0e5),
+                "ensxpfm": (1.0e3, 6.0e4),
+                "p_tf_nuclear_heat_mw": (0.0, 1.0),
+                "n_tf_coils": (10.0, 24.0),
+                "tfcryoarea": (0.0, 5000.0),
+                "t_plant_pulse_plasma_present": (300.0, 12000.0),
+                "qnuc": (0.0, 20000.0),
+            },
+            count=15,
+            seed=60260818,
+            fixed={"i_tf_sup": 0, "inuclear": 1},
+        ),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1068,13 +1071,17 @@ def test_eta_turbine_step_matches_calculate_component_thermal_powers(
             0.0,
         ),
         pytest.param(
-            ElectricConversionModelTypes.STEAM_RANKINE_CYCLE, BlktModelTypes.CCFE_HCPB, 0.0
+            ElectricConversionModelTypes.STEAM_RANKINE_CYCLE,
+            BlktModelTypes.CCFE_HCPB,
+            0.0,
         ),
         # Pass-through -- exact identity.
         pytest.param(
             ElectricConversionModelTypes.CCFE_HCPB_VALUE, BlktModelTypes.DCLL, 1.0
         ),
-        pytest.param(ElectricConversionModelTypes.USER_INPUT, BlktModelTypes.CCFE_HCPB, 1.0),
+        pytest.param(
+            ElectricConversionModelTypes.USER_INPUT, BlktModelTypes.CCFE_HCPB, 1.0
+        ),
     ],
 )
 def test_eta_turbine_step_gradient_wrt_eta_turbine(
@@ -1364,9 +1371,10 @@ def test_p_fw_div_heat_deposited_mw_step_gradient(i_p_coolant_pumping, expected_
     )
 
     def p_next(p_fw_div_heat_deposited_mw):
-        out = node.step(
-            **{**_PFW_DIV_STEP_KWARGS, "p_fw_div_heat_deposited_mw": p_fw_div_heat_deposited_mw}
-        )
+        out = node.step(**{
+            **_PFW_DIV_STEP_KWARGS,
+            "p_fw_div_heat_deposited_mw": p_fw_div_heat_deposited_mw,
+        })
         return out
 
     grad = jax.grad(p_next)(_PFW_DIV_STEP_KWARGS["p_fw_div_heat_deposited_mw"])
@@ -1524,9 +1532,7 @@ def test_cryo_cannot_be_a_plain_node():
         )
 
 
-@pytest.mark.parametrize(
-    ("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS
-)
+@pytest.mark.parametrize(("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS)
 def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
     """Each of the three replacement nodes builds a graph on every switch arm.
 
@@ -1581,9 +1587,7 @@ def test_cryo_split_ownership_is_a_partition():
         i_pf_conductor=PFConductorModel.SUPERCONDUCTING,
     )
 
-    owned = [
-        {o.var.path_str() for o in n.outputs} for n in (qnuc_node, q_node, loads)
-    ]
+    owned = [{o.var.path_str() for o in n.outputs} for n in (qnuc_node, q_node, loads)]
     assert owned[0] == {".fwbs.qnuc"}
     assert owned[1] == {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     assert owned[2] == {
@@ -1600,12 +1604,8 @@ def test_cryo_split_ownership_is_a_partition():
     assert owned[0] | owned[1] <= read
 
 
-@pytest.mark.parametrize(
-    ("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS
-)
-def test_cryo_split_reproduces_calculate_cryo_loads(
-    i_tf_sup, i_pf_conductor, inuclear
-):
+@pytest.mark.parametrize(("i_tf_sup", "i_pf_conductor", "inuclear"), _CRYO_SWITCH_COMBOS)
+def test_cryo_split_reproduces_calculate_cryo_loads(i_tf_sup, i_pf_conductor, inuclear):
     """Running the three nodes in schedule order reproduces `calculate_cryo_loads`
     exactly, on every switch arm.
 

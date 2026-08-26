@@ -459,7 +459,9 @@ class _Constraint:
 
 def test_vmcon_driver_reaches_a_known_constrained_optimum():
     graph, x, y, gx, gy = _toy_problem()
-    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=0, n_inequality=1, scaled=False ))
+    graph, x, y, gx, gy = _toy_problem(
+        VmconDriver(n_equality=0, n_inequality=1, scaled=False)
+    )
     schedule = schedule_for(graph)
     out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
@@ -470,7 +472,14 @@ def test_vmcon_driver_honours_bounds_as_bounds():
     """A box bound is handed to VMCON as a bound, not re-expressed as two inequality
     constraints -- which would be a different QP subproblem and different iterates."""
     graph, x, y, gx, gy = _toy_problem()
-    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=0, n_inequality=1, scaled=False, bounds=((x, -np.inf, 2.0),), ))
+    graph, x, y, gx, gy = _toy_problem(
+        VmconDriver(
+            n_equality=0,
+            n_inequality=1,
+            scaled=False,
+            bounds=((x, -np.inf, 2.0),),
+        )
+    )
     schedule = schedule_for(graph)
     out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
     assert float(out[x]) <= 2.0 + 1e-9
@@ -479,7 +488,9 @@ def test_vmcon_driver_honours_bounds_as_bounds():
 def test_vmcon_driver_scaling_does_not_move_the_answer():
     """PROCESS's `x * (1/x_start)` conditioning changes the path, never the optimum."""
     graph, x, y, gx, gy = _toy_problem()
-    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=0, n_inequality=1, scaled=True ))
+    graph, x, y, gx, gy = _toy_problem(
+        VmconDriver(n_equality=0, n_inequality=1, scaled=True)
+    )
     out = schedule_for(graph)({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
@@ -490,7 +501,9 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
     the driver is given -- and a stale pair must fail loudly, not mislabel a constraint.
     """
     graph, x, y, gx, gy = _toy_problem()
-    graph, x, y, gx, gy = _toy_problem(VmconDriver( n_equality=1, n_inequality=1, scaled=False ))
+    graph, x, y, gx, gy = _toy_problem(
+        VmconDriver(n_equality=1, n_inequality=1, scaled=False)
+    )
     schedule = schedule_for(graph)
     with pytest.raises(ValueError, match="equalities"):
         schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})

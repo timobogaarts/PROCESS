@@ -212,18 +212,20 @@ class TokamakProcess(ModelNamespace):
     `.costs.c2214`/`.c2222`/`.c2252` sitting on this machine's boundary as the evidence.
     """
 
-    tokamak: Tokamak = Tokamak()
-    """Everything device-specific -- and it is empty.
+    tokamak: Tokamak = dataclasses.field(kw_only=True)
+    """Everything device-specific -- fourteen of twenty-five slots filled.
 
-    Defaulted, uniquely among the device slots, because there is nothing to decide: not
-    one of its twenty-five slots has an occupant to choose between, so `Tokamak()` is the
-    only value it can take and a factory argument would be ceremony. The moment one slot
-    gains a second occupant this becomes `dataclasses.field(kw_only=True)` like every
-    other switched slot, by the rule `StellaratorProcess` states: **a slot the factory
-    fills has no default.**
+    **It was `= Tokamak()`, and the rule that predicted this line said so.** The
+    defaulted spelling was correct while not one of the twenty-five slots had an occupant
+    to choose between: `Tokamak()` was the only value it could take and a factory
+    argument would have been ceremony. That docstring said *"the moment one slot gains a
+    second occupant this becomes `dataclasses.field(kw_only=True)` like every other
+    switched slot"*, and the first tokamak porting wave gave twelve of them one. So this
+    is the standing rule applying, not a change of mind: **a slot the factory fills has
+    no default.**
 
-    `.stellarator` has no counterpart default for exactly that reason -- five of its
-    slots are switched today."""
+    `.stellarator` has no counterpart default for exactly the same reason -- five of its
+    slots are switched today, and now twelve of this one's are."""
 
     physics: Physics = dataclasses.field(kw_only=True)
     """The shared plasma-physics core -- 31 of its 33 nodes are device-agnostic.

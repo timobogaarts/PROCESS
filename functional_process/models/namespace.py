@@ -1,0 +1,186 @@
+"""The namespaces of the model modules that are files rather than packages.
+
+`models/build.py` and `models/divertor.py` each hold more than one node and therefore
+need a `ModelNamespace` to gather them, but neither is a package, so there is no
+`models/<subsystem>/namespace.py` for the class to live in. It lives here, in the same
+directory as the modules it names, which is as close to `model_tree_design.md` §11's
+"beside the nodes it names" as a flat module allows.
+
+**Only multi-node modules appear here.** `models/fw.py`, `models/structure.py`,
+`models/cryostat.py` and `models/vacuum/vacuum.py`'s `VacuumVesselElliptical` each
+contribute exactly one node to their `Tokamak` slot, and a slot may hold a node as
+readily as a namespace (`Physics.fusion_rates` has always been one), so those four are
+bound directly and have nothing here.
+"""
+
+import dataclasses
+
+from cottax.interfaces.pytree_namespace_module import ModelNamespace
+
+from functional_process.models.build import (
+    DivertorGeometryConventional,
+    DrTfInboardFromWindingPack,
+    DrTfOutboardSuperconducting,
+    DrTfWpWithInsulationFromInboardBuild,
+    PlasmaXpointHeights,
+    ShldInboardInnerRadius,
+    ShldOutboardOuterRadius,
+    ShldVvGapOutboard,
+    TfOutboardEdgeRipple,
+    TfOutboardMidDShape,
+    TfOutboardMidUnrippled,
+    WpConductorMaxWidthSuperconducting,
+    ZTfInsideHalf,
+)
+from functional_process.models.divertor import (
+    DivertorHeatFluxSplit,
+    DivertorHeatLoadWade,
+)
+
+
+class Build(ModelNamespace):
+    """The tokamak's radial and vertical build -- twelve slots, thirteen classes.
+
+    `process/models/build.py::Build`, `caller.py:288`. The structural spine of the
+    device, and with no stellarator counterpart at all: `models/stellarator/build.py`'s
+    `Build` is a different model of a different machine.
+
+    Twelve slots and thirteen occupant classes, because
+    `dr_tf_inboard_winding_pack`'s two arms are two classes in one slot.
+
+    **Five of the twelve slots are switched and none of the switches is an `i_*`
+    integer alone.** `.tfcoil.i_tf_sup` and `.tfcoil.i_tf_shape` are ordinary switches;
+    the other two are conditions on things that are not switches at all -- whether
+    iteration variable 140 is active, and whether the *input* value of
+    `.build.dz_xpoint_divertor` is effectively zero. Both are still resolved exactly
+    where every switch is, in `machine_from_indat`, and for the same reason: neither can
+    change between two evaluations of one assembled graph, because `ixc` is fixed for a
+    solve and an input is an input.
+
+    **This namespace produces five of the six variables `tokamak_boundary.md` attributes
+    to it, plus one it does not.** `.build.dr_tf_inboard` stays a boundary input on
+    `large_tokamak_eval.IN.DAT`, because `process/models/build.py:1685` is guarded by
+    `140 in ixc` and that file's `ixc` is `[4, 6]`; what runs instead is the inverse
+    assignment producing `.tfcoil.dr_tf_wp_with_insulation`, which is not in the boundary
+    file at all. `build.md` § "contradiction with `tokamak_boundary.md`" is that
+    measurement -- an `ast` walk over `Assign` targets cannot see an `ixc` guard, which
+    is a limit of that method rather than a mistake in it.
+    """
+
+    plasma_xpoint_heights: PlasmaXpointHeights = PlasmaXpointHeights()
+    """`.build.z_plasma_xpoint_upper`/`_lower`. Unswitched."""
+
+    divertor_geometry: DivertorGeometryConventional | None = dataclasses.field(
+        kw_only=True
+    )
+    """`.physics.itart`, **and** the input `.build.dz_xpoint_divertor < 1e-5`.
+
+    Two conditions, one slot. `process/models/build.py:800-801` assigns
+    `dz_xpoint_divertor = divht` only when the input is effectively zero and keeps the
+    user's value otherwise, so whether this node *owns* that field is a run-configuration
+    fact -- `conditional-ownership-by-run-config`, the same shape `build.md` uses to
+    close `next_steps.md` §2's `dz_shld_upper` flag. `large_tokamak_eval.IN.DAT` never
+    sets it, so it takes `build_variables.py:326`'s default `0.0` and this node owns it.
+    """
+
+    z_tf_inside_half: ZTfInsideHalf = ZTfInsideHalf()
+    """`.build.z_tf_inside_half`, from the vertical stack at `build.py:807`.
+
+    **The third source-level writer of one field, and the second in this port.**
+    `models/stellarator/coils/calculate.py::ZTfInsideHalf` owns the same `VarPath` from
+    `st_coil`'s coil-geometry formula, and `st_build` has a third formula that the
+    stellarator's own `Build` node deliberately does not own. Never two in one graph, so
+    there is nothing to settle -- but a field with that many producers is exactly the
+    "which writer wins" check `_audit/test_harness.md` says is owed."""
+
+    dr_tf_inboard_winding_pack: (
+        DrTfInboardFromWindingPack | DrTfWpWithInsulationFromInboardBuild
+    ) = dataclasses.field(kw_only=True)
+    """Whether iteration variable 140 is active -- and the two arms own **different
+    fields**, being exact inverses of one relation.
+
+    `140 in ixc` produces `.build.dr_tf_inboard` from the winding pack; `140 not in ixc`
+    produces `.tfcoil.dr_tf_wp_with_insulation` from the inboard build. Both are written
+    and tested; `large_tokamak_eval.IN.DAT`'s `ixc = [4, 6]` selects the second.
+
+    Named for the pair rather than for either occupant, the same way
+    `PhysicsProfiles.parameterisation` is: the rule that a slot name is the snake_case of
+    its occupant's class needs a shared stem to apply to, and here there is no family
+    base class because the two arms share no output to declare."""
+
+    shld_inboard_inner_radius: ShldInboardInnerRadius = ShldInboardInnerRadius()
+    shld_outboard_outer_radius: ShldOutboardOuterRadius = ShldOutboardOuterRadius()
+    """The two shield radii, built inwards and outwards from the plasma. Unswitched, and
+    the reason the whole central-solenoid radial chain is outside this closure:
+    `r_shld_inboard_inner` is not accumulated outwards from the bore."""
+
+    dr_tf_outboard: DrTfOutboardSuperconducting = dataclasses.field(kw_only=True)
+    """`.tfcoil.i_tf_sup`. The non-superconducting arm scales by
+    `.build.f_dr_tf_outboard_inboard`, which this arm never reads -- a disjoint
+    reads-set, so an occupant and not a kwarg."""
+
+    wp_conductor_max_width: WpConductorMaxWidthSuperconducting = dataclasses.field(
+        kw_only=True
+    )
+    """`.tfcoil.i_tf_sup`, and the owner of the mint `.tfcoil.dx_tf_wp_conductor_max`.
+
+    The resistive arm computes the same quantity from
+    `.superconducting_tfcoil.r_tf_wp_inboard_outer` and `.tfcoil.n_tf_coils` instead of
+    the three `dx_tf_wp_*` fields -- again disjoint, again UNPORTED."""
+
+    tf_outboard_mid_unrippled: TfOutboardMidUnrippled = TfOutboardMidUnrippled()
+    """The mint `.build.r_tf_outboard_mid_unrippled`: the value PROCESS assigns to
+    `.build.r_tf_outboard_mid` at `:1901` and then overwrites in place at `:1939`.
+    Minting it is what keeps `.build.r_tf_outboard_mid` from being read and owned by one
+    node -- the same resolution `physics.py`'s `p_plasma_separatrix_mw_raw` uses."""
+
+    tf_outboard_mid: TfOutboardMidDShape = dataclasses.field(kw_only=True)
+    """`.tfcoil.i_tf_shape`. The auto-select value `0` never reaches a model: PROCESS's
+    own `init.py:728`/`:775` resolves it to picture-frame or D-shape from
+    `.physics.itart` before any model runs, and `machine_from_indat` reproduces that
+    resolution rather than the raw default."""
+
+    tf_outboard_edge_ripple: TfOutboardEdgeRipple = dataclasses.field(kw_only=True)
+    """`.tfcoil.i_tf_shape`, and PROCESS's **second** call to the same ripple fit -- the
+    one whose answer survives into `.tfcoil.ripple_b_tf_plasma_edge`. Two nodes rather
+    than one, so that neither reads a field it owns; the cost is that this one recomputes
+    `r_tf_outboard_midmin` and discards it, a duplicated computation the graph cannot see
+    is duplicated (`build.md` OQ2)."""
+
+    shld_vv_gap_outboard: ShldVvGapOutboard = ShldVvGapOutboard()
+    """`.build.dr_shld_vv_gap_outboard`. Unswitched -- the source's two arms are one
+    expression."""
+
+
+class Divertor(ModelNamespace):
+    """The tokamak divertor -- two nodes, one of them switched.
+
+    `process/models/divertor.py::Divertor`, `caller.py:324`. **Not**
+    `.stellarator.divertor`, which is `models/stellarator/divertor.py` and is one half of
+    the one cycle the stellarator graph has.
+
+    A namespace of two rather than two slots of `Tokamak`, because they are one PROCESS
+    `Model` and one of them is switched while the other is not -- putting the unswitched
+    one beside `.tokamak.build` in the device namespace would say they are separate
+    subsystems, which they are not. `divertor.md`'s open question asked for this choice
+    to be made here; it is.
+    """
+
+    heat_flux_split: DivertorHeatFluxSplit = DivertorHeatFluxSplit()
+    """`.fwbs.f_ster_div_single`, `.fwbs.p_div_nuclear_heat_total_mw` and
+    `.divertor.deg_div_poloidal_plasma`. **Not** switch-gated: it runs whatever
+    `i_div_heat_load` is.
+
+    It reads `.divertor.n_divertors` as an ordinary multiplier, which is the cleanest
+    illustration in this wave of the policy `_audit/switch_kwarg_survey.md` needs: a
+    switch read *arithmetically* is an ordinary input port, and the same field read to
+    *branch* selects an occupant. One integer, both roles, in one file."""
+
+    heat_load: DivertorHeatLoadWade = dataclasses.field(kw_only=True)
+    """`.divertor.i_div_heat_load` -- `2` (Wade) on `large_tokamak_eval.IN.DAT:139`.
+
+    `0` (user input, which reads nothing and computes nothing) and `1` (Peng chamber,
+    `divtart`, a tight-aspect-ratio model reading six fields Wade never touches) are
+    both UNPORTED. So is Wade's own double-null arm, which reads `.physics.f_p_div_lower`
+    and takes a `max` the single-null arm does not: `calculate_divertor_heat_load_wade`
+    has no `n_divertors` argument at all, it **is** the single-null occupant."""

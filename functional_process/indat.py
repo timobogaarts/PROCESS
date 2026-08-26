@@ -32,26 +32,59 @@ from cottax.interfaces.pytree_namespace_module import to_graph
 
 from functional_process.models.availability.availability import CplifeAvail
 from functional_process.models.availability.namespace import Availability
+from functional_process.models.blankets.blanket_library import (
+    BlanketCoverageFactorsSingleNull,
+    BlanketHalfHeightSingleNull,
+    EllipticalBlanketAreas,
+    EllipticalBlanketVolumes,
+)
+from functional_process.models.blankets.hcpb import (
+    CentrepostNeutronicsAbsent,
+    DivertorSurfaceAndPlateMassSingleNull,
+    NuclearHeatingMagnetsConventional,
+    NuclearHeatingRenormalisationSingleNullConventional,
+    NuclearHeatingShieldConventional,
+    PumpingPowerMechanicalWithPressureDrop,
+)
+from functional_process.models.blankets.namespace import CcfeHcpb
+from functional_process.models.build import (
+    DivertorGeometryConventional,
+    DrTfInboardFromWindingPack,
+    DrTfOutboardSuperconducting,
+    DrTfWpWithInsulationFromInboardBuild,
+    TfOutboardEdgeRipple,
+    TfOutboardMidDShape,
+    WpConductorMaxWidthSuperconducting,
+)
 from functional_process.models.buildings.buildings import (
     Bldgs,
     BldgsSizes,
 )
 from functional_process.models.buildings.namespace import Buildings
 from functional_process.models.costs.costs import (
-    PlantOperationModel,
-    ThermalStorageModel,
+    CostOfElectricity,
     EnergyStorageCostPulsed,
     EnergyStorageCostUnpulsed,
-    CostOfElectricity,
+    PlantOperationModel,
+    ThermalStorageModel,
 )
 from functional_process.models.costs.namespace import Costs
+from functional_process.models.divertor import DivertorHeatLoadWade
+from functional_process.models.fw import FirstWall
+from functional_process.models.namespace import Build, Divertor
 from functional_process.models.physics.confinement_time import (
-    ConfinementScalingInputs,
     ConfinementTailCoreRadiation,
     Iss04ConfinementTime,
     IterIpb98y2ConfinementTime,
-    IterPhysicsBasisElongation,
     PlasmaPowerLossIgnitedCoreRadiation,
+    PlasmaPowerLossNonIgnitedCoreRadiation,
+)
+from functional_process.models.physics.current_drive import (
+    HcdElectricTotalIgnited,
+    HcdElectricTotalNonIgnited,
+    HcdPrimaryEfficiencyUserInputEcrh,
+    HcdPrimaryPowersElectronCyclotronNoSecondary,
+    HcdSecondaryHeatingNone,
 )
 from functional_process.models.physics.namespace import (
     Physics,
@@ -59,6 +92,22 @@ from functional_process.models.physics.namespace import (
     PhysicsProfiles,
     ProfileParameterisationParabolic,
     ProfileParameterisationPedestal,
+)
+from functional_process.models.physics.physics import (
+    PulseRampTimesPulsedDefault,
+    SeparatrixPowerNonIgnited,
+    SurfaceAveragedPoloidalFieldAmperes,
+)
+from functional_process.models.physics.plasma_fields import PlasmaFields
+from functional_process.models.physics.plasma_geometry import (
+    DoubleArcPlasmaGeometry,
+    Ipdg89XPointPlasmaShape,
+)
+from functional_process.models.physics.tokamak_namespace import (
+    TokamakCurrentDrive,
+    TokamakPhysics,
+    TokamakPlasmaGeom,
+    TokamakPulse,
 )
 from functional_process.models.power.electric_production import (
     PlantElectricProductionReactor,
@@ -70,13 +119,27 @@ from functional_process.models.power.tf_coil_power import (
     TfPowerSuperconducting,
 )
 from functional_process.models.power.thermal_cryo import (
+    ComponentThermalPowers,
     CryoLoads,
     CryoQLoadsStep,
     CryoQNuc,
+    DeltaEtaStep,
+    PFwBlktCoolantPumpMwStep,
+    PFwDivHeatDepositedMwStep,
 )
 from functional_process.models.stellarator.build import (
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
+)
+from functional_process.models.stellarator.coils.calculate import (
+    Bi2212WindingPackIntersectInputs,
+    CrocoRebcoWindingPackIntersectInputs,
+    DurhamNbtiWindingPackIntersectInputs,
+    DurhamRebcoWindingPackIntersectInputs,
+    IterNb3snWindingPackIntersectInputs,
+    OldLubellNbtiWindingPackIntersectInputs,
+    UserDefinedNb3snWindingPackIntersectInputs,
+    WstNb3snWindingPackIntersectInputs,
 )
 from functional_process.models.stellarator.density_limits import EcrhDensityLimit
 from functional_process.models.stellarator.heating import (
@@ -86,6 +149,7 @@ from functional_process.models.stellarator.heating import (
 from functional_process.models.stellarator.namespace import (
     BlanketShieldPowerExponential,
     Stellarator,
+    StellaratorCoils,
     StellaratorFwbs,
 )
 from functional_process.models.stellarator.plasma_physics import (
@@ -102,6 +166,7 @@ from functional_process.models.stellarator.stellarator_fwbs_s2 import (
 from functional_process.models.stellarator.stellarator_fwbs_s4 import (
     BlanketComponentMasses,
 )
+from functional_process.models.structure import Structure
 from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
     CoilNuclearHeatingModel,
@@ -112,17 +177,69 @@ from functional_process.models.switch_enums import (
     PowerFlowModel,
     SphericalTokamakModel,
 )
+from functional_process.models.tfcoil.base import (
+    DrTfPlasmaCaseFromFraction,
+    DrTfPlasmaCaseFromInput,
+    DxTfSideCaseMinFromFraction,
+    TfCoilSelfInductanceDShape,
+    TfCoilSelfInductancePictureFrame,
+    TfCoilShapeDShapeDoubleNull,
+    TfCoilShapeDShapeSingleNull,
+    TfGlobalGeometryCircularCase,
+    TfGlobalGeometryStraightCase,
+)
+from functional_process.models.tfcoil.namespace import CiccSuperconductingTfCoil
+from functional_process.models.tfcoil.superconducting import (
+    CiccAveragedTurnGeometryFromCurrentPerTurn,
+    DxTfSideCaseDoubleRectangular,
+    DxTfSideCaseRectangular,
+    DxTfSideCaseTrapezoidal,
+    PeakBTfInboardWithRipple16Coils,
+    PeakBTfInboardWithRipple18Coils,
+    PeakBTfInboardWithRipple20Coils,
+    PeakBTfInboardWithRippleFlatAllowance,
+    SuperconductingTfCoilAreasAndMassesConventional,
+    SuperconductingTfWpGeometryDoubleRectangular,
+    SuperconductingTfWpGeometryRectangular,
+    SuperconductingTfWpGeometryTrapezoidal,
+    TfCaseAreasCircularFront,
+    TfCaseAreasStraightFront,
+)
+from functional_process.models.tokamak.namespace import Tokamak
+from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
 from functional_process.total_process import StellaratorProcess, TokamakProcess
+from process.data_structure.blanket_variables import BlktModelTypes
+from process.data_structure.divertor_variables import DivertorHeatLoadModel
 from process.data_structure.pfcoil_variables import PFConductorModel
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
+    DivertorNumberModels,
     PlasmaIgnitionModel,
 )
-from process.models.physics.current_drive import CurrentDriveModel
+from process.data_structure.superconducting_tf_coil_variables import TFWPIntegerTurnType
+from process.models.build import FwBlktVVShape
+from process.models.physics.current_drive import (
+    CurrentDriveMethodType,
+    CurrentDriveModel,
+)
+from process.models.physics.plasma_current import PlasmaCurrentModel
+from process.models.physics.plasma_geometry import (
+    PlasmaGeometryModelType,
+    PlasmaShapeModelType,
+)
 from process.models.physics.profiles import PlasmaProfileShapeType
-from process.models.power import PumpingPowerModelTypes
-from process.models.tfcoil.base import TFConductorModel
+from process.models.power import (
+    ElectricConversionModelTypes,
+    PumpingPowerModelTypes,
+)
+from process.models.superconductors import SuperconductorModel
+from process.models.tfcoil.base import (
+    TFCoilShapeModel,
+    TFConductorModel,
+    TFPlasmaCaseType,
+)
+from process.models.tfcoil.superconducting import SuperconductingTFWPShapeType
 
 REFERENCE_STELLA_CONF = (
     Path(__file__).resolve().parent.parent
@@ -159,6 +276,28 @@ _ISTELL_PRESET_REASON = (
 )
 """Shared by all five refused `istell` presets -- one reason, five values."""
 
+_I_PLASMA_GEOMETRY_REASON = (
+    "twelve of `i_plasma_geometry`'s thirteen values are unwritten. Each reads a "
+    "genuinely different set of fields (the dispatch table is `plasma_geometry.md` "
+    "\u00a7 'the `i_plasma_geometry` dispatch'), and none is live on any tracked "
+    "regression input. Under this wave's binding policy each needs its own occupant "
+    "class rather than a family grouped by reads-identical sets, which is what "
+    "supersedes that record's open question 1"
+)
+"""Shared by the twelve refused `i_plasma_geometry` values -- one reason, twelve values.
+
+Enumerated rather than written as a single sentinel key, because `_slot_occupant` looks
+`UNPORTED` up by the value it was actually handed: a sentinel would turn every one of
+these into *"not a known value"*, which is the message reserved for a typo."""
+
+_I_HCD_SECONDARY_REASON = (
+    "every non-zero `i_hcd_secondary` needs its own efficiency model *and* its own "
+    "wall-plug block (`current_drive.py:1885-2063`), *and* changes which technology "
+    "accumulator the primary block's `+=` starts from -- see `current_drive.md` "
+    "\u00a7 'the accumulators'. Three consequences per value, none of them written"
+)
+"""Shared by every refused `i_hcd_secondary` value -- one reason, twelve values."""
+
 REFERENCE_MACHINE_SWITCHES = {
     "istell": 6,  # `stellarator_helias.IN.DAT:137`
     "isthtr": 1,  # `:139` -- equals PROCESS's own default, listed anyway
@@ -171,6 +310,10 @@ REFERENCE_MACHINE_SWITCHES = {
     "i_confinement_time": 38,  # `:121` -- ISS04
     "i_rad_loss": 1,  # `:122` -- CORE_ONLY
     "i_plasma_ignited": 1,  # `:126` -- IGNITED
+    # Read by the factory since `winding_pack_intersect_inputs` became a slot
+    # (`_audit/next_steps.md` §14.5); a static kwarg on that node until then. Equals
+    # PROCESS's own default (`tfcoil_variables.py:246`), listed anyway.
+    "i_tf_sc_mat": 1,  # `:235` -- ITER Nb3Sn
 }
 """The switch values `REFERENCE_INPUT_FILE` actually sets, as a faithful transcription.
 
@@ -192,13 +335,14 @@ UNPORTED = {
     ("istell", 4): _ISTELL_PRESET_REASON,
     ("istell", 5): _ISTELL_PRESET_REASON,
     ("i_plasma_ignited_i_rad_loss", -1): (
-        "the head of `calculate_confinement_time` is written for an ignited plasma "
-        "losing core radiation only -- the arm both reference runs use. The other five "
-        "combinations are real PROCESS branches reading genuinely different variables "
-        "(injected heating when not ignited; total radiated power under FULL_RADIATION; "
-        "neither under NO_RADIATION) and none is written yet. Refused rather than "
-        "approximated: an unwritten arm assembled from the written one's reads is the "
-        "invented-edge defect this split exists to remove"
+        "the head of `calculate_confinement_time` is written for the two **core-only** "
+        "radiation arms -- ignited (the Helias run's) and non-ignited (the conventional "
+        "tokamak's, added by the first tokamak wave). The remaining four combinations "
+        "are real PROCESS branches reading genuinely different variables (total radiated "
+        "power under FULL_RADIATION; no radiation term at all under NO_RADIATION) and "
+        "none is written yet. Refused rather than approximated: an unwritten arm "
+        "assembled from a written one's reads is the invented-edge defect this split "
+        "exists to remove"
     ),
     ("i_rad_loss", 0): (
         "the FULL_RADIATION tail reads `.physics.pden_plasma_rad_mw` where the "
@@ -255,6 +399,13 @@ UNPORTED = {
         "slot with the same occupant. Kept as a refused value rather than a second "
         "registry entry pointing at TfPowerResistive so the claim stays visible."
     ),
+    ("i_tf_sc_mat", 9): (
+        "HAZELTON_ZHAI_REBCO is a `SuperconductorModel` member with no branch in "
+        "`jcrit_from_material` at all (process/models/stellarator/coils/coils.py:52-160 "
+        "handles 1..8 and then raises `Illegal value for i_pf_superconductor`), so "
+        "there is no PROCESS arm to port and no reads-set to declare. A ninth occupant "
+        "would have to invent the model, not port it."
+    ),
     ("i_cost_model", 1): (
         "KOVARI_2014 (i_cost_model == 1) is PROCESS's own default cost model and is "
         "unported: costs_2015.py has no cottax nodes, so on that arm this port computes "
@@ -264,6 +415,333 @@ UNPORTED = {
         "EcrhDensityLimit bug class, which merely computed a value the configuration "
         "never asks for. This used to be spelled as a slot holding None; it is a "
         "refusal now, because a tree with no optional slots cannot say 'absent'"
+    ),
+    # ---- the tokamak's refusals -------------------------------------------------
+    #
+    # Every entry below was written by the porting agent that measured it, and the
+    # reason is that record's own words. Two of them are refusals *PROCESS shares* --
+    # `i_hcd_primary` 6 and 7 cannot execute in PROCESS at all -- which is a new
+    # category for this table: not "this port has not written the arm" but "there is no
+    # arm to write until someone fixes the reference implementation".
+    **dict.fromkeys(
+        (("i_plasma_geometry", PlasmaGeometryModelType(v)) for v in range(1, 13)),
+        _I_PLASMA_GEOMETRY_REASON,
+    ),
+    ("plasma_geometry_arm", 1): (
+        "the Sauter arm of `i_plasma_current == 8 or i_plasma_shape == SAUTER` "
+        "(`plasma_geometry.py:467-470`). `sauter_geometry`/`calculate_geometry_sauter` "
+        "are ported as pure functions -- they are cheap and touch no `self.data` -- but "
+        "deliberately not wired to an occupant: the arm is live on no tracked input, so "
+        "it has no regression oracle at all. Porting a formula and binding it are "
+        "different acts, and this is a case where only the first is justified"
+    ),
+    ("surface_poloidal_field_arm", 1): (
+        "`i_plasma_current == 2` (PENG_DIVERTOR_SCALING) computes the surface-averaged "
+        "poloidal field from `q95`, `aspect`, `b_plasma_toroidal_on_axis`, `kappa` and "
+        "`triang` via `PlasmaCurrent.plascar_bpol` -- a disjoint reads-set and a call "
+        "into `plasma_current.py`, which is unported (`.tokamak.plasma_current` is an "
+        "empty slot). Every other `i_plasma_current` value takes the Ampere arm, which "
+        "is written: PROCESS's own test at `plasma_fields.py:83` is `!= 2`"
+    ),
+    ("i_plasma_ignited_separatrix", PlasmaIgnitionModel.IGNITED): (
+        "`physics.py:793-798`: on an ignited plasma the power crossing the separatrix "
+        "omits the injected-heating term -- PROCESS passes the literal `0.0` where the "
+        "non-ignited arm passes `.current_drive.p_hcd_injected_total_mw`. One read of "
+        "difference, and it is a cross-area edge, so it is a separate occupant rather "
+        "than a kwarg; the occupant is not written. `large_tokamak_eval.IN.DAT` leaves "
+        "`i_plasma_ignited` at PROCESS's own default `0`, so the written arm is the one "
+        "a conventional tokamak takes. What reaches this refusal is a **stellarator** "
+        "input file re-read as a tokamak (`istell = 0` over `stellarator_helias.IN.DAT`, "
+        "which sets `i_plasma_ignited = 1`), and that is worth keeping as a refusal "
+        "rather than filling in: it is the sharpest demonstration in the port that two "
+        "devices' physics arms are genuinely different and not merely differently filed"
+    ),
+    ("pulse_ramp_times_arm", 0): (
+        "`i_pulsed_plant != 1` with `i_t_current_ramp_up == 0` (`physics.py:465-474`) "
+        "owns `.times.t_plant_pulse_coil_precharge` as a **third** output that the "
+        "pulsed arm does not write at all, on top of using `plasma_current / 5e5` where "
+        "the pulsed arm uses `/ 1e5`. So it is not the live arm with a different "
+        "literal, and even the literal-only reading of the static-kwarg exception does "
+        "not reach it. Not written"
+    ),
+    ("pulse_ramp_times_arm", 1): (
+        "`i_pulsed_plant != 1` with `i_t_current_ramp_up != 0` writes nothing at all -- "
+        "the three ramp times are inputs. That is absence rather than a refusal in "
+        "principle, and it is filed here rather than as a `None` occupant because the "
+        "slot's other three arms all produce something: a slot that is sometimes absent "
+        "and sometimes not needs its absence declared per arm, and no occupant in this "
+        "port does that yet. Flagged rather than improvised"
+    ),
+    ("pulse_ramp_times_arm", 3): (
+        "`i_pulsed_plant == 1` with `pulsetimings != 0` (`physics.py:485-498`) reads "
+        "`.times.t_plant_pulse_coil_precharge` and writes it back -- `max(precharge, "
+        "ramp-up)`, a ratchet -- so its occupant would read what it owns, which cottax "
+        "refuses. It needs either a `FixedPointFunction` or a producer split, and the "
+        "honest observation is that the 'real producer' here is the input file with "
+        "PROCESS's outer loop turning it into a ratchet. Left unwritten pending that "
+        "decision rather than approximated (`physics.md` open question 2)"
+    ),
+    ("i_hcd_primary", 0): (
+        "`NO_CURRENT_DRIVE` raises `ProcessValueError` at `current_drive.py:1800` -- a "
+        "primary heating system is mandatory. No arm to port"
+    ),
+    ("i_hcd_primary", 1): (
+        "needs `LowerHybrid.lower_hybrid_fenstermacher` and `.feffcd`; not written"
+    ),
+    ("i_hcd_primary", 2): ("needs `IonCyclotron.ion_cyclotron_ipdg89`; not written"),
+    ("i_hcd_primary", 3): (
+        "needs `ElectronCyclotron.electron_cyclotron_fenstermacher` and "
+        "`.physics.dlamee`; not written"
+    ),
+    ("i_hcd_primary", 4): ("needs `LowerHybrid.lower_hybrid_ehst`; not written"),
+    ("i_hcd_primary", 5): (
+        "needs `NeutralBeam.iternb` and the whole beam wall-plug block "
+        "(`current_drive.py:2191-2260`); not written. This is PROCESS's own default "
+        "(`current_drive_variables.py:190`), so a file that never sets `i_hcd_primary` "
+        "is refused here rather than assembled -- deliberately: the wall-plug block it "
+        "needs is a different reads-set, not a different constant"
+    ),
+    ("i_hcd_primary", 6): (
+        "**PROCESS cannot execute this arm.** `cullhy` -> `lhrad` -> `lheval` reaches "
+        "`calculate_profile_y`, which returns `None`, and raises `TypeError` at "
+        "`current_drive.py:1498`. A live defect in the reference implementation, found "
+        "by this port and recorded in `current_drive.md` § 'A live PROCESS bug in "
+        "two sibling arms'. There is no behaviour to port until it is fixed, and "
+        "guessing what it should have been would be inventing physics"
+    ),
+    ("i_hcd_primary", 7): (
+        "**PROCESS cannot execute this arm.** `culecd` reaches the same "
+        "`calculate_profile_y` and raises `TypeError` at `current_drive.py:815`. The "
+        "sibling of value 6 and the same defect; both are recorded in "
+        "`current_drive.md`, and closing `_audit/next_steps.md` §2's "
+        "`calculate_profile_y` flag is what finding them did"
+    ),
+    ("i_hcd_primary", 8): (
+        "needs `NeutralBeam.culnbi` and its `sigbeam`/`cfnbi`/`xlmbdabi` chain, plus the "
+        "beam wall-plug block; not written"
+    ),
+    ("i_hcd_primary", 12): (
+        "needs `ElectronBernstein.electron_bernstein_freethy` and the EBW block "
+        "(`current_drive.py:2162-2187`); not written"
+    ),
+    ("i_hcd_primary", 13): (
+        "needs `ElectronCyclotron.electron_cyclotron_freethy` and the "
+        "`i_ecrh_wave_mode` switch inside it; not written. **The next one worth "
+        "writing** -- `spherical_tokamak_eval.IN.DAT:133` and `st_regression.IN.DAT:2522` "
+        "both select it, and its wall-plug block is the one already ported"
+    ),
+    **dict.fromkeys(
+        (
+            ("i_hcd_secondary", v)
+            for v in CurrentDriveModel
+            if v is not CurrentDriveModel.NO_CURRENT_DRIVE
+        ),
+        _I_HCD_SECONDARY_REASON,
+    ),
+    ("i_hcd_calculations", 0): (
+        "the whole heating-and-current-drive body is skipped, so "
+        "`.heat_transport.p_hcd_primary_electric_mw` keeps its `None` default and any "
+        "consumer of it fails. This is topology rather than an occupant -- `1` means "
+        "these nodes exist and `0` means none of them does -- and the honest spelling "
+        "for `0` would be an empty `.tokamak.current_drive` slot, which is not written "
+        "because the `None`-defaulted field makes 'nothing is computed' and 'something "
+        "downstream will crash' the same configuration in PROCESS"
+    ),
+    ("hcd_primary_powers_arm", -1): (
+        "the primary/secondary technology pair is the one genuinely combinatorial "
+        "dispatch in this port: the primary block's `+=` (`current_drive.py:2147`) "
+        "starts from whatever the secondary block left in the same technology's field "
+        "(`:1955`), so five primary methods times six secondary methods are in "
+        "principle distinct arms and one cell is written -- electron cyclotron with no "
+        "secondary. `current_drive.md` names the fix and declines to make it: a "
+        "per-technology 'secondary contribution' field would turn the product back into "
+        "two slots, but it needs a name PROCESS does not have and "
+        "`naming_convention.md` forbids minting one quietly"
+    ),
+    ("divertor_geometry_arm", -1): (
+        "`.physics.itart == 1`: `divgeom` returns `1.75 * rminor` at "
+        "`process/models/build.py:863` and **never writes `.build.rspo`** -- a different "
+        "write-set, not just a different formula, so it is a different occupant. Not "
+        "written"
+    ),
+    ("divertor_geometry_arm", -2): (
+        "the input `.build.dz_xpoint_divertor` is not effectively zero, so "
+        "`process/models/build.py:800-801` keeps the user's value and `divgeom` runs for "
+        "`.build.rspo` alone. That `rspo`-only occupant owns one field where the live one "
+        "owns two -- conditional ownership by run configuration -- and is not written"
+    ),
+    ("i_tf_sup_build", 0): (
+        "copper TF (`i_tf_sup == 0`) changes both build nodes it touches: the outboard "
+        "leg scales by `.build.f_dr_tf_outboard_inboard`, and the ripple fit's conductor "
+        "width comes from `.superconducting_tfcoil.r_tf_wp_inboard_outer` and "
+        "`.tfcoil.n_tf_coils` instead of the three `dx_tf_wp_*` fields. Two disjoint "
+        "reads-sets, neither written. Keyed on a joint name rather than on `i_tf_sup` "
+        "itself because `.power.tf_power` already answers that switch for a different "
+        "slot, with a different disposition"
+    ),
+    ("i_tf_sup_build", 2): (
+        "aluminium TF takes the same non-superconducting build arms as `0`; see that "
+        "entry. Kept as a refused value rather than a second registry entry pointing at "
+        "the copper occupant, the same discipline `('i_tf_sup', 2)` follows for "
+        "`.power.tf_power`"
+    ),
+    ("i_tf_shape_build", 2): (
+        "picture frame (`i_tf_shape == 2`) uses a different closed-form ripple formula "
+        "(`process/models/build.py:1585-1590`) reading neither the winding pack nor the "
+        "`c1`/`c2` fit coefficients; not written. `i_tf_shape == 0` is **not** listed "
+        "here: it is an auto-select meta-value that `init.py:728`/`:775` replaces before "
+        "any model runs, so `_tf_shape` resolves it and it names no arm"
+    ),
+    ("tf_coil_shape_arm", -1): (
+        "`.physics.itart == 1`: the TART arms of `tf_coil_shape_inner` read "
+        "`.build.r_cp_top`, which the conventional arms never touch. Not written"
+    ),
+    ("tf_coil_shape_arm", -2): (
+        "`i_tf_shape == PICTURE_FRAME`: a different coil shape with a different arc "
+        "construction, reading `r_tf_outboard_mid`/`r_tf_inboard_mid`. Not written"
+    ),
+    ("cicc_turn_geometry_arm", -1): (
+        "`i_dx_tf_turn_general_input == True` **owns** `.tfcoil.c_tf_turn` where the "
+        "written arm reads it: the turn width is given and the current per turn follows, "
+        "rather than the other way round. A `VarPath` moving from a node's inputs to its "
+        "outputs is something no static kwarg can express, which is why this is an "
+        "occupant. Not written"
+    ),
+    ("cicc_turn_geometry_arm", -2): (
+        "`i_dx_tf_turn_cable_space_general_input == True`: same shape as the previous "
+        "entry with the cable space given instead of the turn width, and the same "
+        "ownership inversion. Not written"
+    ),
+    ("itart_sc_tf_masses", 1): (
+        "the spherical-tokamak TF mass arm additionally owns `.tfcoil.whtcp` and "
+        "`.tfcoil.whttflgs` (`superconducting.py:2086-2093`), which the conventional arm "
+        "never writes -- conditional ownership again. Not written"
+    ),
+    ("n_divertors", 2): (
+        "the double-null arm, refused at **five** slots at once and for one reason "
+        "worth stating once: on `n_divertors == 2` PROCESS reads a materially different "
+        "set of fields in every one of them. `blanket_library.py:169-232` "
+        "(five fewer reads in the half-height) and `:544` (`2.0 * f_ster_div_single`); "
+        "`hcpb.py:360-361` (doubles `a_div_surface_total`) and `:215` (a different "
+        "`f_geom_blanket`); `fw.py:194-197` and `:320-333`; `vacuum.py:845-851`; "
+        "`divertor.py:377-382` (reads `.physics.f_p_div_lower` and takes a `max`). "
+        "None is written. **Note that this is refused on `.physics.i_single_null`'s "
+        "behalf**: `n_divertors` is derived from it by `init.py:606-617`, so a file "
+        "setting `i_single_null = 0` is what reaches this entry"
+    ),
+    ("fw_blkt_vv_shape_arm", 0): (
+        "the D-shaped first-wall/blanket/vessel arm, selected by `itart == 1 or "
+        "i_fw_blkt_vv_shape == D_SHAPED` (`blanket_library.py:90-93`, `fw.py:58-86`, "
+        "`vacuum.py:758-791`). It reads no `triang` where the elliptical arm does, and "
+        "it needs `dshellarea`/`dshellvol` in "
+        "`functional_process/models/engineering/ivc_functions.py`, of which only the "
+        "elliptical pair is ported. Refused at four slots at once -- blanket areas, "
+        "blanket volumes, first wall and vacuum vessel -- which is why the predicate is "
+        "written once, in `_fw_blkt_vv_shape_arm`"
+    ),
+    ("itart_hcpb", 1): (
+        "the spherical-tokamak arms of `hcpb.py`'s nuclear heating. **Two of them are "
+        "written and tested and are still refused here**: "
+        "`NuclearHeatingMagnetsSphericalTokamak` and "
+        "`NuclearHeatingShieldSphericalTokamak` exist, but a machine at `itart == 1` "
+        "also needs the centrepost neutronics chain (`hcpb.py:1008-1287`, unported, "
+        "`st_cp_angle_fraction`/`st_tf_centrepost_fast_neut_flux`/"
+        "`st_centrepost_nuclear_heating`) and `blanket_library`'s D-shaped geometry. "
+        "Filling the two slots without the rest would assemble a graph that looks "
+        "complete and is wrong -- the `EcrhDensityLimit` bug class -- so the refusal is "
+        "about the *machine*, not about the two nodes. `hcpb.md` open question 3 asked "
+        "for the reason to live here, and this is it"
+    ),
+    ("nuclear_heating_renormalisation_arm", -1): (
+        "the double-null renormalisation: `hcpb.py:215` takes a different "
+        "`f_geom_blanket`. Not written; see `('n_divertors', 2)`"
+    ),
+    ("nuclear_heating_renormalisation_arm", -2): (
+        "the spherical-tokamak renormalisation: `:263`'s `+ pnuc_cp_tf` and `:268`'s "
+        "`f_geom_cp * p_neutron_total_mw` stop being provably inert, so the occupant "
+        "gains two reads the conventional one deliberately does not declare. Not "
+        "written; see `('itart_hcpb', 1)`"
+    ),
+    ("i_p_coolant_pumping", 0): (
+        "`USER_INPUT` has no arm at all in `powerflow_calc` -- the pumping powers are "
+        "inputs. Absence rather than a refusal in principle, and filed here because the "
+        "slot's other arms all produce something and no occupant in this port declares "
+        "per-arm absence yet"
+    ),
+    ("i_p_coolant_pumping", 1): (
+        "`FRACTION_OF_HEAT` (`hcpb.py:817-838`) owns a **different set**: "
+        "`.heat_transport.p_fw_coolant_pump_mw`, `p_blkt_coolant_pump_mw`, "
+        "`p_shld_coolant_pump_mw` and `p_div_coolant_pump_mw`, where the written arm "
+        "owns the last two plus `.primary_pumping.p_fw_blkt_coolant_pump_mw`. A partial "
+        "overlap by construction, which is `next_steps.md` §12.2's 'alternatives are "
+        "keyed on output -- nearly'. It also needs "
+        "`engineering/ivc_functions.py::pumping_powers_as_fractions`, which is not "
+        "ported. Not written"
+    ),
+    ("i_p_coolant_pumping", 2): (
+        "`MECHANICAL` (`hcpb.py:840-862`) reaches `primary_coolant_properties`/"
+        "`thermo_hydraulic_model` and hence **CoolProp**, and so does `fw.py`'s "
+        "`FirstWall.fw_temp` on the same value. That is `_audit/next_steps.md` §5's "
+        "unresolved wrapping policy, not an unwritten formula: the arm is dormant rather "
+        "than absent, and a second tokamak input file wakes it"
+    ),
+    ("i_blanket_type", 5): (
+        "DCLL routes to `process/models/blankets/dcll.py` at `caller.py:347-349` -- a "
+        "different occupant of `.tokamak.ccfe_hcpb` entirely, with its own liquid-metal "
+        "breeder model. Nothing of it is ported"
+    ),
+    ("first_wall_arm", -1): ("the double-null first wall; see `('n_divertors', 2)`"),
+    ("first_wall_arm", -2): (
+        "the D-shaped first wall; see `('fw_blkt_vv_shape_arm', 0)`"
+    ),
+    ("first_wall_arm", -3): (
+        "`.physics.i_pflux_fw_neutron != 1` normalises the neutron wall load by "
+        "`.first_wall.a_fw_total` instead of scaling `ffwal` by the plasma surface flux "
+        "(`fw.py:121-135`) -- and `.first_wall.a_fw_total` is a field **this same "
+        "occupant owns**, so that arm is a node reading its own output and would need "
+        "the `FixedPointFunction` treatment. Not written, and flagged for whoever writes "
+        "it that the shape is the obstacle rather than the formula. (`fw.md` writes this "
+        "value as `0`; `physics_variables.py:1006-1010` declares the domain as `1` or "
+        "`2` and PROCESS's own test is `== 1` versus everything else, so the refusal is "
+        "keyed on the arm rather than on either spelling of the other value.)"
+    ),
+    ("vacuum_vessel_arm", -1): (
+        "the double-null vacuum vessel; see `('n_divertors', 2)`"
+    ),
+    ("vacuum_vessel_arm", -2): (
+        "the D-shaped vacuum vessel; see `('fw_blkt_vv_shape_arm', 0)`. It would call "
+        "`calculate_dshaped_vessel_volumes`, which needs `dshellvol` added to "
+        "`functional_process/models/engineering/ivc_functions.py`"
+    ),
+    ("structure_arm", -1): (
+        "`(i_tf_sup != 1, i_pf_conductor superconducting)`: `.structure.coldmass` is "
+        "`pfmass` alone, because `structure.py:165-166`'s `+= tfmass + aintmass + "
+        "dewmass` is skipped. One fewer term, three fewer reads. Not written"
+    ),
+    ("structure_arm", -2): (
+        "`(i_tf_sup == 1, i_pf_conductor resistive)`: `.structure.coldmass` is "
+        "`tfmass + aintmass + dewmass`, because `structure.py:167-168`'s `+= pfmass` is "
+        "skipped. Not written"
+    ),
+    ("structure_arm", -3): (
+        "`(i_tf_sup != 1, i_pf_conductor resistive)`: `.structure.coldmass` is exactly "
+        "`0.0`, both additive terms skipped. Not written -- and worth not folding into "
+        "the live occupant with a `jnp.where`, because a node that owns a field whose "
+        "value is structurally zero is a different node from one that sums two masses"
+    ),
+    ("divertor_heat_load_arm", -1): (
+        "`i_div_heat_load == 0` (`USER_INPUT`) reads nothing and prints the existing "
+        "value -- absence, and the same per-arm-absence gap as `('i_p_coolant_pumping', "
+        "0)`. Not written"
+    ),
+    ("divertor_heat_load_arm", -2): (
+        "`i_div_heat_load == 1` (`PENG_CHAMBER`, `divtart`) reads `triang`, "
+        "`dz_xpoint_divertor`, `dr_fw_plasma_gap_inboard`, `i_single_null`, "
+        "`dz_divertor` and `.tfcoil.drtop` -- none of which `divwade` reads. A "
+        "tight-aspect-ratio model, disjoint from the written one. Not written"
+    ),
+    ("divertor_heat_load_arm", -3): (
+        "`divwade`'s double-null arm; see `('n_divertors', 2)`"
     ),
     ("i_cost_model", 2): (
         "i_cost_model == 2 injects a user-supplied Model instance at runtime "
@@ -372,7 +850,32 @@ tokamak's, and 34 is one of the four values `_audit/tokamak_scope.md` found the 
 contradicting.
 """
 
-CONFINEMENT_TAIL = {ConfinementRadiationLossModel.CORE_ONLY: ConfinementTailCoreRadiation}
+WINDING_PACK_MATERIAL = {
+    SuperconductorModel.ITER_NB3SN: IterNb3snWindingPackIntersectInputs,
+    SuperconductorModel.BI2212: Bi2212WindingPackIntersectInputs,
+    SuperconductorModel.OLD_LUBELL_NBTI: OldLubellNbtiWindingPackIntersectInputs,
+    SuperconductorModel.USER_DEFINED_NB3SN: UserDefinedNb3snWindingPackIntersectInputs,
+    SuperconductorModel.WST_NB3SN: WstNb3snWindingPackIntersectInputs,
+    SuperconductorModel.CROCO_REBCO: CrocoRebcoWindingPackIntersectInputs,
+    SuperconductorModel.DURHAM_NBTI: DurhamNbtiWindingPackIntersectInputs,
+    SuperconductorModel.DURHAM_REBCO: DurhamRebcoWindingPackIntersectInputs,
+}
+"""`i_tf_sc_mat` -> the occupant of `stellarator.coils.winding_pack_intersect_inputs`.
+
+Eight of nine, one per branch `jcrit_from_material` implements; `HAZELTON_ZHAI_REBCO`
+(9) is in `UNPORTED` because PROCESS's own dispatch has no branch for it either.
+
+**The registry that deletes an invented cycle.** This was an
+`i_tf_sc_mat=SuperconductorModel.ITER_NB3SN` static kwarg on one node that branched
+internally and therefore declared all eight branches' reads at once -- six of them dead
+at this run's value, and one of the six, `.tfcoil.j_tf_wp`, machine-checked to be the
+sole back-edge closing the four-node coils SCC (`_audit/switch_kwarg_survey.md` §4.6).
+Only `Bi2212WindingPackIntersectInputs` declares it. See `_audit/next_steps.md` §14.5.
+"""
+
+CONFINEMENT_TAIL = {
+    ConfinementRadiationLossModel.CORE_ONLY: ConfinementTailCoreRadiation
+}
 """`i_rad_loss` -> the occupant owning everything downstream of the law.
 
 One entry: the other two arms read different variables (`FULL_RADIATION` reads total
@@ -390,11 +893,8 @@ def _plasma_power_loss_arm(i_plasma_ignited: int, i_rad_loss: int) -> int:
     """
     ignited = PlasmaIgnitionModel(int(i_plasma_ignited))
     radiation = ConfinementRadiationLossModel(int(i_rad_loss))
-    if (ignited, radiation) == (
-        PlasmaIgnitionModel.IGNITED,
-        ConfinementRadiationLossModel.CORE_ONLY,
-    ):
-        return 0
+    if radiation is ConfinementRadiationLossModel.CORE_ONLY:
+        return 0 if ignited is PlasmaIgnitionModel.IGNITED else 1
     return -1
 
 
@@ -417,6 +917,37 @@ def _cryo_q_nuc_arm(inuclear: int, i_tf_sup: int) -> int:
 
 CRYO_Q_NUC = {0: CryoQNuc, 1: None}
 """The `.fwbs.qnuc` arm -> its occupant, or `None` for "nothing owns it"."""
+
+
+def _p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping) -> int:
+    """`.fwbs.i_p_coolant_pumping` -> who owns
+    `.primary_pumping.p_fw_blkt_coolant_pump_mw`.
+
+    `process/models/power.py:815-820` writes it only on `USER_INPUT` and
+    `FRACTION_OF_HEAT`; on `MECHANICAL` and `MECHANICAL_WITH_PRESSURE_DROP` the field
+    arrives from `process/models/blankets/hcpb.py` instead. So arm `1` is `None` -- not a
+    refusal, because *something* does own the field on those arms, just not this node.
+
+    **This is the first dual-ownership conflict in the port that two subsystems actually
+    collided over**, rather than one being noted as a correspondence: `power`'s node and
+    `.tokamak.ccfe_hcpb.pumping_power` both declared the `VarPath`, and cottax refused
+    the graph by name. The stellarator never saw it because `stellarator_helias.IN.DAT`
+    sets `i_p_coolant_pumping = 1`, the arm on which `power` genuinely owns it.
+    """
+    return (
+        1
+        if PumpingPowerModelTypes(int(i_p_coolant_pumping))
+        in (
+            PumpingPowerModelTypes.MECHANICAL,
+            PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP,
+        )
+        else 0
+    )
+
+
+P_FW_BLKT_COOLANT_PUMP = {0: PFwBlktCoolantPumpMwStep, 1: None}
+"""The `.primary_pumping.p_fw_blkt_coolant_pump_mw` ownership arm -> its occupant, or
+`None` for "the blanket owns it". See `_p_fw_blkt_coolant_pump_arm`."""
 
 
 def _energy_storage_arm(i_pulsed_plant: int, istore: int) -> int:
@@ -446,8 +977,24 @@ carrying a static kwarg -- band (c), the case where that is the right answer."""
 """The `.fwbs.qnuc` arm -> its occupant, or `None` for "nothing owns it"."""
 
 
-PLASMA_POWER_LOSS = {0: PlasmaPowerLossIgnitedCoreRadiation}
-"""The head's arm index -> its occupant. See `_plasma_power_loss_arm`."""
+PLASMA_POWER_LOSS = {
+    0: PlasmaPowerLossIgnitedCoreRadiation,
+    1: PlasmaPowerLossNonIgnitedCoreRadiation,
+}
+"""The head's arm index -> its occupant. See `_plasma_power_loss_arm`.
+
+**Two arms now, not one, and the second is what a tokamak needs.**
+`large_tokamak_eval.IN.DAT` sets neither `i_plasma_ignited` nor `i_rad_loss`, so both
+take PROCESS's own defaults -- `NON_IGNITED` (`physics_variables.py:881`) and
+`CORE_ONLY` (`i_rad_loss = 1`) -- and the ignited arm the Helias run uses is the wrong
+one for it by exactly one read, `.current_drive.p_hcd_injected_total_mw`. That single
+term is the `.current_drive -> .physics` edge the confinement split exists to keep out
+of the arm that does not make it, so assembling the ignited occupant for a
+non-ignited machine would have been the invented-edge defect *and* a wrong number.
+
+The four combinations involving `FULL_RADIATION` and `NO_RADIATION` are still refused;
+the reason in `UNPORTED` was written when all five non-ignited-core combinations were,
+and now covers four."""
 
 HEATING = {1: EcrhHeating, 2: LowhybHeating}
 """.stellarator.isthtr` -> the auxiliary-heating occupant."""
@@ -539,7 +1086,7 @@ TF_POWER = {0: TfPowerResistive, 1: TfPowerSuperconducting}
 """`.tfcoil.i_tf_sup` -> the TF-power occupant."""
 
 
-def _power_profiles_over_time(i_tf_sup):
+def _power_profiles_over_time(i_tf_sup, i_p_coolant_pumping):
     """The `.costs.ireactor == 0` occupant: the power *profiles* only.
 
     Takes `i_tf_sup` and uses it for nothing, because every occupant of one slot is
@@ -549,7 +1096,7 @@ def _power_profiles_over_time(i_tf_sup):
     return PowerProfilesOverTime()
 
 
-def _plant_electric_production_reactor(i_tf_sup):
+def _plant_electric_production_reactor(i_tf_sup, i_p_coolant_pumping):
     """The `.costs.ireactor == 1` occupant: net electric power as well as the profiles.
 
     `i_tf_sup` is a parameter and not a constant because it is `.tfcoil.i_tf_sup`, the
@@ -561,7 +1108,7 @@ def _plant_electric_production_reactor(i_tf_sup):
         itart=SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO,
         i_tf_sup=i_tf_sup,
         i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
-        i_p_coolant_pumping=PumpingPowerModelTypes.FRACTION_OF_HEAT,
+        i_p_coolant_pumping=i_p_coolant_pumping,
     )
 
 
@@ -699,6 +1246,719 @@ the end of the factory and not here -- so `istell in 1..5` keeps raising with
 machine assembles.
 """
 
+# ---------------------------------------------------------------------------
+# The tokamak's own slots.
+#
+# Everything from here to `_INDAT_INTEGER` answers a switch that only a
+# `TokamakProcess` asks. The shapes are the ones the stellarator registries above
+# already use -- a dict keyed on an enum where one switch decides a slot, an
+# `_*_arm` function turning a tuple of legal switch values into an **arm index**
+# where several do -- and the discipline is the same: no switch value is ever a
+# registry key for a joint dispatch, and no switch has a default outside its own
+# declared domain.
+#
+# Two things here are new, and both are switch-shaped without being `i_*` integers:
+# whether an **iteration variable** is active (`140 in ixc`, which decides which of
+# two inverse assignments `build.py` makes) and whether an **input** is effectively
+# zero (`.build.dz_xpoint_divertor < 1e-5`, which decides whether `divgeom` owns
+# that field or leaves it an input). Both belong here for exactly the reason
+# `machine_from_indat`'s docstring gives for every other switch: neither can change
+# between two evaluations of one assembled graph, because `ixc` is fixed for a solve
+# and an input is an input.
+# ---------------------------------------------------------------------------
+
+
+def _n_divertors(i_single_null: int) -> int:
+    """`.physics.i_single_null` -> `.divertor.n_divertors`, as `init.py:606-617` does.
+
+    **Derived, not read.** `.divertor.n_divertors` is a `DataStructure` field with a
+    default of `2` (`divertor_variables.py:94`), and that default is *never* what a run
+    sees: `process/core/init.py` overwrites it from `.physics.i_single_null` before any
+    model runs. A factory that read the field's own default would pick the double-null
+    arm for a single-null machine -- the `ST_INIT_I_PLASMA_PEDESTAL` shape again, a
+    field whose entering value is dead because PROCESS's own initialisation assigns it.
+
+    Six occupants in this port are keyed on the result, in `blanket_library.py`,
+    `hcpb.py`, `fw.py`, `vacuum.py` and `divertor.py`, and every one of their audit
+    records independently traced the derivation back to these same eleven lines.
+
+    **`n_divertors` is read two ways in one wave, and both are correct.**
+    `DivertorHeatFluxSplit` reads it as a plain multiplier and takes it as an ordinary
+    input port; `divwade`, `hcpb.py:360` and four others *branch* on it and it selects
+    their occupant. That is the policy `blanket_library.md` and `hcpb.md` both asked for
+    in one line: **a switch read arithmetically is an ordinary input; a switch read to
+    branch selects an occupant.** Nothing more is needed -- the two uses do not conflict,
+    because a port and a slot key are different things.
+    """
+    return (
+        2
+        if DivertorNumberModels(int(i_single_null)) is (DivertorNumberModels.DOUBLE_NULL)
+        else 1
+    )
+
+
+def _fw_blkt_vv_shape_arm(itart: int, i_fw_blkt_vv_shape: int) -> int:
+    """`(itart, i_fw_blkt_vv_shape)` -> the first-wall/blanket/vessel shape arm.
+
+    `process/models/blankets/blanket_library.py:90-93`, and the identical predicate at
+    `fw.py:58-86` and `vacuum.py:758-791`:
+
+    ```
+    if itart == 1 or i_fw_blkt_vv_shape == D_SHAPED:  -> arm 0   D-shaped; UNPORTED
+    else:                                             -> arm 1   elliptical
+    ```
+
+    A joint arm rather than two keys, for the reason `blanket_library.md` gives and
+    `switch_kwarg_survey.md` §4.3 prescribes: one arm is selected by two switches, so
+    the pair becomes an index and neither integer is ever used as a key. Three separate
+    audit records reached this predicate independently and agreed on it, which is why it
+    is written once here and read by three slots.
+    """
+    d_shaped = (
+        SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK
+        or FwBlktVVShape(int(i_fw_blkt_vv_shape)) is FwBlktVVShape.D_SHAPED
+    )
+    return 0 if d_shaped else 1
+
+
+def _plasma_geometry_arm(i_plasma_current: int, i_plasma_shape: int) -> int:
+    """`(i_plasma_current, i_plasma_shape)` -> the plasma-geometry arm.
+
+    `process/models/physics/plasma_geometry.py:467-470`:
+
+    ```
+    if i_plasma_current == 8 or i_plasma_shape == SAUTER:  -> arm 1   Sauter; UNPORTED
+    else:                                                  -> arm 0   double arc
+    ```
+
+    **This function is the single owner of that disjunction**, and that is a coordination
+    requirement rather than tidiness. `plasma_geometry.md` OQ2 says so explicitly: the
+    pass that ports `plasma_current.py`'s own `i_plasma_current` topology split shares
+    this predicate, and two independent derivations of one boolean is how the two halves
+    drift apart. Call this; do not re-derive it.
+
+    It is also the cleanest result in that record: *"a compound switch does not have to
+    become a compound node, it becomes one predicate evaluated once by the assembler."*
+    """
+    sauter = (
+        PlasmaCurrentModel(int(i_plasma_current)) is PlasmaCurrentModel.SAUTER_SCALING
+        or PlasmaShapeModelType(int(i_plasma_shape)) is PlasmaShapeModelType.SAUTER
+    )
+    return 1 if sauter else 0
+
+
+def _tf_shape(i_tf_shape: int, itart: int) -> TFCoilShapeModel:
+    """`.tfcoil.i_tf_shape`, with `0` resolved the way `init.py` resolves it.
+
+    `process/core/init.py:728-729` and `:775-776` replace the `DEFAULT` (`0`,
+    "auto-select") value **before any model runs**: picture frame on a spherical tokamak,
+    D-shape otherwise. So `0` is not a third arm, it is a request to be told which of the
+    two real arms this machine takes.
+
+    **Auto-select meta-values resolve in the factory, and get no occupant of their own.**
+    That is a policy decision this pass makes, and it is worth stating once because
+    `i_tf_wp_geom`'s `UNSET` below is the same shape: a switch value that PROCESS's own
+    initialisation *replaces* names no arm, so there is nothing for an occupant to be
+    written for. The alternative -- an occupant per meta-value -- would duplicate whichever
+    real arm it resolves to under a second name, which is exactly what `build.md`'s open
+    question 1 declined to do for `i_tf_shape == 0` and what this answers.
+    """
+    shape = TFCoilShapeModel(int(i_tf_shape))
+    if shape is not TFCoilShapeModel.DEFAULT:
+        return shape
+    return (
+        TFCoilShapeModel.PICTURE_FRAME
+        if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK
+        else TFCoilShapeModel.D_SHAPE
+    )
+
+
+def _tf_wp_geom(
+    i_tf_wp_geom: int, i_tf_turns_integer: int
+) -> SuperconductingTFWPShapeType:
+    """`.tfcoil.i_tf_wp_geom`, with `UNSET` resolved the way `init.py:977-989` does.
+
+    The same shape as `_tf_shape` above: `-1` is not an arm, it is PROCESS asking
+    `i_tf_turns_integer` instead -- rectangular for integer turns, double-rectangular
+    otherwise. `large_tokamak_eval.IN.DAT` sets neither, so `UNSET` plus `NON_INTEGER`
+    resolves to `DOUBLE_RECTANGULAR`, and a factory that took the raw `-1` would have no
+    occupant to offer at all.
+    """
+    geom = SuperconductingTFWPShapeType(int(i_tf_wp_geom))
+    if geom is not SuperconductingTFWPShapeType.UNSET:
+        return geom
+    return (
+        SuperconductingTFWPShapeType.RECTANGULAR
+        if TFWPIntegerTurnType(int(i_tf_turns_integer)) is TFWPIntegerTurnType.INTEGER
+        else SuperconductingTFWPShapeType.DOUBLE_RECTANGULAR
+    )
+
+
+# ---- `.tokamak.plasma_geom` -------------------------------------------------------
+
+PLASMA_SHAPE = {PlasmaGeometryModelType.IPDG89_X_POINT: Ipdg89XPointPlasmaShape}
+"""`.physics.i_plasma_geometry` -> the kappa95/triang95 occupant.
+
+One of thirteen. `plasma_geometry.md`'s open question "eight occupants or thirteen?" is
+**superseded rather than answered** by this wave's binding policy: one class per value
+ever supported, no grouping by reads-identical sets, so the other twelve are twelve
+future classes and not a family to be split later."""
+
+PLASMA_GEOMETRY = {0: DoubleArcPlasmaGeometry}
+"""`_plasma_geometry_arm(i_plasma_current, i_plasma_shape)` -> the geometry occupant."""
+
+# ---- `.tokamak.plasma_fields` and `.tokamak.physics` ------------------------------
+
+
+def _surface_poloidal_field_arm(i_plasma_current: int) -> int:
+    """`i_plasma_current` -> the poloidal-field arm. `plasma_fields.py:83` tests `!= 2`.
+
+    Two arms and not nine. PROCESS's own test is binary, so nine occupants would invent
+    eight distinctions the source does not make -- the mirror image of the usual
+    complaint, and worth naming: the binding policy says one occupant per *value the
+    port supports*, and what a value is depends on what the source branches on.
+    """
+    return (
+        1
+        if PlasmaCurrentModel(int(i_plasma_current))
+        is PlasmaCurrentModel.PENG_DIVERTOR_SCALING
+        else 0
+    )
+
+
+SURFACE_POLOIDAL_FIELD = {0: SurfaceAveragedPoloidalFieldAmperes}
+"""The poloidal-field arm -> its occupant. Ampere's law over the plasma perimeter."""
+
+SEPARATRIX_POWER = {PlasmaIgnitionModel.NON_IGNITED: SeparatrixPowerNonIgnited}
+"""`.physics.i_plasma_ignited` -> the separatrix-power occupant.
+
+The **`NON_IGNITED`** arm, which is the opposite of the arm `PLASMA_POWER_LOSS` answers
+for the same switch on the stellarator runs. Both are correct; "the live arm" is a
+property of a machine, not of a switch."""
+
+
+def _pulse_ramp_times_arm(
+    i_pulsed_plant: int, pulsetimings: int, i_t_current_ramp_up: int
+) -> int:
+    """`(i_pulsed_plant, pulsetimings, i_t_current_ramp_up)` -> the ramp-time arm.
+
+    `process/models/physics/physics.py:463-498`, transcribed:
+
+    ```
+    if i_pulsed_plant != 1:
+        if i_t_current_ramp_up == 0:  -> arm 0   ramp times from plasma_current / 5e5,
+                                                 plus t_plant_pulse_coil_precharge
+        else:                         -> arm 1   nothing is computed; all three are inputs
+    else:
+        if pulsetimings == 0:         -> arm 2   ramp-up = plasma_current / 1e5   (live)
+        else:                         -> arm 3   precharge ratchets; UNPORTED, D3
+    ```
+
+    `pulsetimings` has its **only read in all of `process/models/**`** at `:476`, so this
+    arm index is the whole of that topology decision. Arm 2 is the reference run's
+    (`i_pulsed_plant = 1` at `large_tokamak_eval.IN.DAT:330`, `pulsetimings = 0` at
+    `:392` -- and note the second is a *file* setting against PROCESS's own default of
+    `1`, so this arm exists only because the file asks for it).
+    """
+    if PlantOperationModel(int(i_pulsed_plant)) is PlantOperationModel.CONTINUOUS:
+        return 0 if int(i_t_current_ramp_up) == 0 else 1
+    return 2 if int(pulsetimings) == 0 else 3
+
+
+PULSE_RAMP_TIMES = {2: PulseRampTimesPulsedDefault}
+"""The ramp-time arm -> its occupant. See `_pulse_ramp_times_arm`."""
+
+# ---- `.tokamak.current_drive` -----------------------------------------------------
+
+HCD_PRIMARY_EFFICIENCY = {
+    CurrentDriveModel.USER_INPUT_ELECTRON_CYCLOTRON: HcdPrimaryEfficiencyUserInputEcrh
+}
+"""`.current_drive.i_hcd_primary` -> the primary current-drive efficiency occupant.
+
+One of thirteen values, and two of the twelve refusals are refusals PROCESS shares:
+`CULHAM_LOWER_HYBRID` (6) and `CULHAM_ELECTRON_CYCLOTRON` (7) **cannot execute in
+PROCESS at all** -- `calculate_profile_y` returns `None` and both arms raise
+`TypeError`. Two live defects found by porting, recorded in `current_drive.md` and in
+`UNPORTED` below."""
+
+HCD_SECONDARY_HEATING = {CurrentDriveModel.NO_CURRENT_DRIVE: HcdSecondaryHeatingNone}
+"""`.current_drive.i_hcd_secondary` -> the secondary-heating occupant. PROCESS's own
+default (`current_drive_variables.py:206`), and a node that reads nothing."""
+
+
+def _hcd_primary_powers_arm(i_hcd_primary: int, i_hcd_secondary: int) -> int:
+    """`(i_hcd_primary, i_hcd_secondary)` -> the primary-powers arm.
+
+    **The one genuinely combinatorial dispatch in this port**, and it is combinatorial
+    because of an accumulator rather than a nested `if`: the primary block's `+=`
+    (`current_drive.py:2147`) starts from whatever the *secondary* block left in the same
+    technology's field (`:1955`, over the zero at `:1663`). So the arm is decided by the
+    primary technology **and** the secondary technology together -- five methods by six,
+    in principle, of which one cell is written.
+
+    Keyed on `CurrentDriveModel.method` rather than on `i_hcd_primary` itself, because
+    that is what the accumulator is indexed by: values `3`, `7`, `10` and `13` are all
+    `ELECTRON_CYCLOTRON` and all land in the same field. That is the source's own
+    grouping, not one invented here.
+
+    `current_drive.md` names the fix and declines to make it: a per-technology
+    "secondary contribution" field would turn this product back into two slots, but it
+    needs a name PROCESS does not have.
+    """
+    primary = CurrentDriveModel(int(i_hcd_primary)).method
+    secondary = CurrentDriveModel(int(i_hcd_secondary))
+    if (primary, secondary) == (
+        CurrentDriveMethodType.ELECTRON_CYCLOTRON,
+        CurrentDriveModel.NO_CURRENT_DRIVE,
+    ):
+        return 0
+    return -1
+
+
+HCD_PRIMARY_POWERS = {0: HcdPrimaryPowersElectronCyclotronNoSecondary}
+"""The primary-powers arm -> its occupant. See `_hcd_primary_powers_arm`."""
+
+HCD_CALCULATIONS = {1: TokamakCurrentDrive}
+"""`.current_drive.i_hcd_calculations` -> the `.tokamak.current_drive` namespace itself.
+
+**Topology, not an occupant**, and the one registry in this file whose value is a
+*namespace* rather than a node -- the same shape `DEVICE` has for a whole machine.
+`1` means the heating-and-current-drive nodes exist; `0` means `physics.py:593` never
+calls `CurrentDrive.run` and none of them does. It is read here rather than ignored
+because a file setting `0` would otherwise assemble all seven nodes silently, which is
+the `EcrhDensityLimit` bug class: a subgraph the configuration never asks for."""
+
+HCD_ELECTRIC_TOTAL = {
+    PlasmaIgnitionModel.NON_IGNITED: HcdElectricTotalNonIgnited,
+    PlasmaIgnitionModel.IGNITED: HcdElectricTotalIgnited,
+}
+"""`.physics.i_plasma_ignited` -> the wall-plug-power occupant. **Both arms written** --
+an ignited plasma draws no heating power, so its occupant reads nothing and returns
+zero.
+
+It owns `.heat_transport.p_hcd_electric_total_mw`, and that was checked against the
+stellarator rather than assumed: the stellarator's heating slot owns
+`.heat_transport.p_hcd_electric_loss_mw` and `.current_drive.p_hcd_injected_total_mw`
+and leaves this field a boundary input, so the two devices do not collide. They could
+not in any case -- ownership is a property of one assembled graph, and no graph has both
+devices -- but a collision would have meant one of the two was wrong about its own
+device."""
+
+# ---- `.tokamak.build` -------------------------------------------------------------
+
+
+def _divertor_geometry_arm(itart: int, dz_xpoint_divertor: float) -> int:
+    """`(itart, input dz_xpoint_divertor)` -> `divgeom`'s arm.
+
+    ```
+    itart == 1                        -> arm -1  returns 1.75 * rminor, never writes
+                                                 .build.rspo; UNPORTED
+    dz_xpoint_divertor >= 1e-5        -> arm -2  divgeom runs for .build.rspo alone and
+                                                 dz_xpoint_divertor stays an input;
+                                                 UNPORTED
+    otherwise                         -> arm  0  DivertorGeometryConventional
+    ```
+
+    The second condition is the only place in this factory a **float input** decides a
+    slot, and it is a genuine one: `process/models/build.py:800-801` assigns
+    `dz_xpoint_divertor = divht` only when the entering value is effectively zero, so
+    whether a node owns that field is a run-configuration fact.
+    `build.md` calls this `conditional-ownership-by-run-config` and uses the same shape to
+    close `next_steps.md` §2's `dz_shld_upper` flag.
+    """
+    if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK:
+        return -1
+    return 0 if float(dz_xpoint_divertor) < 1e-5 else -2
+
+
+DIVERTOR_GEOMETRY = {0: DivertorGeometryConventional}
+"""`divgeom`'s arm -> its occupant. See `_divertor_geometry_arm`."""
+
+DR_TF_INBOARD_WINDING_PACK = {
+    0: DrTfInboardFromWindingPack,
+    1: DrTfWpWithInsulationFromInboardBuild,
+}
+"""`140 in ixc` -> which of two **inverse** assignments `build.py` makes.
+
+Arm 0 (`140 in ixc`) produces `.build.dr_tf_inboard` from the winding pack; arm 1
+produces `.tfcoil.dr_tf_wp_with_insulation` from the inboard build. Different owned
+fields, not different formulas for one field, which is why this cannot be a kwarg.
+
+**The first slot in this port keyed on an iteration variable rather than a switch**, and
+it belongs here for the same reason every switch does: `ixc` is fixed for a whole solve.
+Its consequence is measured rather than assumed -- `large_tokamak_eval.IN.DAT` sets
+`ixc = 4` and `ixc = 6` only, so `.build.dr_tf_inboard` stays a **boundary input** on
+that run even though `tokamak_boundary.md` attributes it to this slot. That file's
+attribution is an `ast` walk over `Assign` targets, which cannot see an `ixc` guard;
+`build.md` records the contradiction rather than smoothing it."""
+
+DR_TF_OUTBOARD = {TFConductorModel.SUPERCONDUCTING: DrTfOutboardSuperconducting}
+WP_CONDUCTOR_MAX_WIDTH = {
+    TFConductorModel.SUPERCONDUCTING: WpConductorMaxWidthSuperconducting
+}
+"""`.tfcoil.i_tf_sup` -> the two build nodes that differ by conductor.
+
+Both non-superconducting arms read fields the superconducting arm never touches (the
+outboard leg scales by `.build.f_dr_tf_outboard_inboard`; the ripple fit's conductor
+width comes from `.superconducting_tfcoil.r_tf_wp_inboard_outer` and `.tfcoil.n_tf_coils`
+instead of three `dx_tf_wp_*` fields), so declaring one arm's reads on the other would
+be four invented edges. `build.md` § "the four reads that are not edges" measures
+exactly that, and it is the third recorded instance in this port."""
+
+TF_OUTBOARD_MID = {TFCoilShapeModel.D_SHAPE: TfOutboardMidDShape}
+TF_OUTBOARD_EDGE_RIPPLE = {TFCoilShapeModel.D_SHAPE: TfOutboardEdgeRipple}
+"""`.tfcoil.i_tf_shape` (resolved by `_tf_shape`) -> the two ripple-fit calls.
+
+Two slots for PROCESS's two calls to one fit, and not one node owning both outputs: the
+second call's answer is what lands in `.tfcoil.ripple_b_tf_plasma_edge`, and a single
+node would have to read the radius it owns."""
+
+# ---- `.tokamak.cicc_superconducting_tf_coil` --------------------------------------
+
+TF_GLOBAL_GEOMETRY = {
+    TFPlasmaCaseType.CIRCULAR: TfGlobalGeometryCircularCase,
+    TFPlasmaCaseType.STRAIGHT: TfGlobalGeometryStraightCase,
+}
+TF_CASE_AREAS = {
+    TFPlasmaCaseType.CIRCULAR: TfCaseAreasCircularFront,
+    TFPlasmaCaseType.STRAIGHT: TfCaseAreasStraightFront,
+}
+"""`.tfcoil.i_tf_case_geom` -> two slots, both arms written for each.
+
+`TF_GLOBAL_GEOMETRY`'s two occupants have **identical reads-sets** and are two classes
+anyway, which is `next_steps.md` §14.2's rule applied where it costs something and buys
+nothing locally: the value is that no reader ever has to check whether a given slot's
+arms happen to agree."""
+
+DR_TF_PLASMA_CASE = {False: DrTfPlasmaCaseFromInput, True: DrTfPlasmaCaseFromFraction}
+"""`.tfcoil.i_f_dr_tf_plasma_case` -> the plasma-case thickness occupant, and the one
+slot in this port whose two arms are **different kinds of node**.
+
+`False` clamps the entering `.tfcoil.dr_tf_plasma_case` in place, which is a node reading
+what it owns, so its occupant is a `FixedPointFunction`; `True` computes the thickness
+from a fraction and never reads the entering value, so its occupant is an
+`ExplicitFunction`. The loop is a property of the arm, not of the quantity -- as clean a
+demonstration as this port has that a switch can decide graph *topology* and not merely
+a formula."""
+
+DX_TF_SIDE_CASE_MIN = {True: DxTfSideCaseMinFromFraction, False: None}
+"""`.tfcoil.tfc_sidewall_is_fraction` -> the sidewall-thickness occupant, **or `None`**.
+
+`False` is PROCESS's own default and the reference run's, and on it
+`.tfcoil.dx_tf_side_case_min` is simply an input -- there is no arm at all. So this is
+absence and not a refusal, by `UNPORTED`'s own rule: refuse where *this port* has not
+written the arm, assemble absence where **PROCESS itself computes nothing**. It is the
+third slot in the tree spelled that way, after `costs.cost_of_electricity` and
+`power.cryo_q_nuc`."""
+
+
+def _tf_coil_shape_arm(
+    i_tf_shape: TFCoilShapeModel, itart: int, i_single_null: int
+) -> int:
+    """`(i_tf_shape, itart, i_single_null)` -> the TF coil shape arm.
+
+    ```
+    itart == 1                       -> arm -1  the TART arms read r_cp_top; UNPORTED
+    i_tf_shape == PICTURE_FRAME      -> arm -2  a different closed form; UNPORTED
+    i_single_null == 1               -> arm  0  D-shape, single null   (live)
+    otherwise                        -> arm  1  D-shape, double null
+    ```
+
+    Three switches, and the arms read genuinely different variables -- `r_cp_top` on the
+    TART arms, `z_tf_top` on the single-null one, `r_tf_outboard_mid`/`r_tf_inboard_mid`
+    on the picture frame -- so nothing here could have been a kwarg.
+    """
+    if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK:
+        return -1
+    if i_tf_shape is not TFCoilShapeModel.D_SHAPE:
+        return -2
+    return (
+        0
+        if DivertorNumberModels(int(i_single_null)) is DivertorNumberModels.SINGLE_NULL
+        else 1
+    )
+
+
+TF_COIL_SHAPE = {
+    0: TfCoilShapeDShapeSingleNull,
+    1: TfCoilShapeDShapeDoubleNull,
+}
+"""The TF-coil-shape arm -> its occupant. Owns `.tfcoil.len_tf_coil`, one of the two
+`VarPath`s a tokamak and a stellarator both produce from entirely different formulas."""
+
+
+def _tf_self_inductance_arm(i_tf_shape: TFCoilShapeModel, itart: int) -> int:
+    """`(itart, i_tf_shape)` -> the self-inductance arm. `0` integrates the D-shape's
+    arcs; `1` is the picture-frame closed form, which is also what a spherical tokamak
+    takes. Both are written, so nothing here reaches `UNPORTED`.
+    """
+    if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK:
+        return 1
+    return 0 if i_tf_shape is TFCoilShapeModel.D_SHAPE else 1
+
+
+TF_COIL_SELF_INDUCTANCE = {
+    0: TfCoilSelfInductanceDShape,
+    1: TfCoilSelfInductancePictureFrame,
+}
+"""The self-inductance arm -> its occupant. The D-shape arm reads three fields where
+PROCESS's composite function takes nine; the other six belong to the sibling arm, and
+that gap is the measurement the split exists to make."""
+
+SC_TF_WP_GEOMETRY = {
+    SuperconductingTFWPShapeType.RECTANGULAR: SuperconductingTfWpGeometryRectangular,
+    SuperconductingTFWPShapeType.DOUBLE_RECTANGULAR: (
+        SuperconductingTfWpGeometryDoubleRectangular
+    ),
+    SuperconductingTFWPShapeType.TRAPEZOIDAL: SuperconductingTfWpGeometryTrapezoidal,
+}
+DX_TF_SIDE_CASE = {
+    SuperconductingTFWPShapeType.RECTANGULAR: DxTfSideCaseRectangular,
+    SuperconductingTFWPShapeType.DOUBLE_RECTANGULAR: DxTfSideCaseDoubleRectangular,
+    SuperconductingTFWPShapeType.TRAPEZOIDAL: DxTfSideCaseTrapezoidal,
+}
+"""`.tfcoil.i_tf_wp_geom` (resolved by `_tf_wp_geom`) -> two slots, all three arms
+written for each. `UNSET` never appears as a key, because it is not an arm."""
+
+
+def _peak_b_ripple_arm(n_tf_coils: float) -> int:
+    """`round(n_tf_coils)` -> the ripple-fit arm; `-1` is the flat-allowance fallback.
+
+    A **coil count** treated as a switch, which is legitimate here and would not be
+    everywhere: the arms select different MAGINT fit coefficients *and* own different
+    numbers of outputs -- the fallback returns before three of the four are assigned
+    (`superconducting.py:1519`). `n_tf_coils` is not an iteration variable, which is what
+    makes a build-time branch on it sound; `superconducting.md` OQ2 flags that this stops
+    being true the day it becomes one.
+
+    No value reaches `UNPORTED`: every coil count has an occupant, because PROCESS's own
+    fallback is an arm rather than an error.
+    """
+    count = round(float(n_tf_coils))
+    return count if count in {16, 18, 20} else -1
+
+
+PEAK_B_TF_RIPPLE = {
+    16: PeakBTfInboardWithRipple16Coils,
+    18: PeakBTfInboardWithRipple18Coils,
+    20: PeakBTfInboardWithRipple20Coils,
+    -1: PeakBTfInboardWithRippleFlatAllowance,
+}
+"""The ripple-fit arm -> its occupant. See `_peak_b_ripple_arm`."""
+
+
+def _cicc_turn_geometry_arm(
+    i_dx_tf_turn_general_input: int, i_dx_tf_turn_cable_space_general_input: int
+) -> int:
+    """`(i_dx_tf_turn_general_input, i_dx_tf_turn_cable_space_general_input)` -> the
+    averaged-turn-geometry arm.
+
+    Two booleans, three arms, and they differ in which of `.tfcoil.c_tf_turn` /
+    `dx_tf_turn_general` / `dx_tf_turn_cable_space_general` each **reads** and which it
+    **owns**. That ownership difference is why they cannot share one node even in
+    principle -- a kwarg cannot move a `VarPath` from a node's inputs to its outputs.
+
+    Arm 0 is `(False, False)`, PROCESS's default and the reference run's, and it is the
+    arm on which `.tfcoil.c_tf_turn` has **no producer anywhere under
+    `process/models/`**: it is iteration variable 60 and enters from the input file. That
+    is why this slot produces nine of the ten variables `tokamak_boundary.md` lists
+    against it, and why the tenth is an unknown rather than a gap.
+    """
+    if int(i_dx_tf_turn_general_input):
+        return -1
+    return -2 if int(i_dx_tf_turn_cable_space_general_input) else 0
+
+
+CICC_TURN_GEOMETRY = {0: CiccAveragedTurnGeometryFromCurrentPerTurn}
+"""The averaged-turn-geometry arm -> its occupant. See `_cicc_turn_geometry_arm`."""
+
+SC_TF_MASSES = {
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: (
+        SuperconductingTfCoilAreasAndMassesConventional
+    )
+}
+"""`.physics.itart` -> the superconducting TF mass occupant. The spherical arm owns two
+more fields (`whtcp`, `whttflgs`) -- conditional ownership, so occupants and not a
+kwarg."""
+
+# ---- `.tokamak.ccfe_hcpb` ---------------------------------------------------------
+
+BLANKET_HALF_HEIGHT = {1: BlanketHalfHeightSingleNull}
+BLANKET_COVERAGE_FACTORS = {1: BlanketCoverageFactorsSingleNull}
+DIVERTOR_SURFACE_MASS = {1: DivertorSurfaceAndPlateMassSingleNull}
+"""`.divertor.n_divertors` (derived by `_n_divertors`) -> three single-null occupants."""
+
+BLANKET_AREAS = {1: EllipticalBlanketAreas}
+BLANKET_VOLUMES = {1: EllipticalBlanketVolumes}
+"""`_fw_blkt_vv_shape_arm(itart, i_fw_blkt_vv_shape)` -> the two elliptical occupants."""
+
+NUCLEAR_HEATING_MAGNETS = {
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: NuclearHeatingMagnetsConventional
+}
+NUCLEAR_HEATING_SHIELD = {
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: NuclearHeatingShieldConventional
+}
+CENTREPOST_NEUTRONICS = {
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: CentrepostNeutronicsAbsent
+}
+"""`.physics.itart` -> three conventional-aspect-ratio occupants.
+
+**The spherical arms of the first two are written, tested and deliberately
+unregistered.** `hcpb.py`'s `NuclearHeatingMagnetsSphericalTokamak` and
+`NuclearHeatingShieldSphericalTokamak` exist; registering them without the centrepost
+neutronics chain (`hcpb.py:1008-1287`, unported) and `blanket_library`'s D-shaped
+geometry would assemble a graph that looks complete and is wrong. `hcpb.md`'s open
+question 3 asked for the refusal to live wherever `indat.py` records `UNPORTED` values,
+and it does."""
+
+
+def _nuclear_heating_renormalisation_arm(n_divertors: int, itart: int) -> int:
+    """`(n_divertors, itart)` -> the renormalisation arm.
+
+    A joint arm because both switches gate the same block: `hcpb.py:215` reads
+    `n_divertors` to pick `f_geom_blanket`, and `:103` reads `itart` to decide whether
+    the centrepost terms at `:263` and `:268` contribute at all. On the conventional arm
+    both of those terms are provably inert -- `f_geom_cp` and `.fwbs.pnuc_cp_tf` are the
+    literal zeros of `:144-145` -- so the occupant does **not** declare them as reads,
+    which is two invented edges avoided by knowing the arm.
+    """
+    conventional = (
+        SphericalTokamakModel(int(itart))
+        is SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO
+    )
+    if int(n_divertors) != 1:
+        return -1
+    return 0 if conventional else -2
+
+
+NUCLEAR_HEATING_RENORMALISATION = {
+    0: NuclearHeatingRenormalisationSingleNullConventional
+}
+"""The renormalisation arm -> its occupant. See `_nuclear_heating_renormalisation_arm`."""
+
+PUMPING_POWER = {
+    PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP: (
+        PumpingPowerMechanicalWithPressureDrop
+    )
+}
+"""`.fwbs.i_p_coolant_pumping` -> the pumping-power occupant, and the clearest case in
+this port of arms that **do not own the same set**.
+
+Arm 1 owns four `.heat_transport.p_*_coolant_pump_mw` fields; arm 3 owns two of them plus
+`.primary_pumping.p_fw_blkt_coolant_pump_mw`. Any `Switch` over this slot has a partial
+overlap by construction, which is `next_steps.md` §12.2's "alternatives are keyed on
+output -- nearly" with a name attached. Arm 2 additionally reaches CoolProp."""
+
+BLANKET_MODEL = {BlktModelTypes.CCFE_HCPB: CcfeHcpb}
+"""`.fwbs.i_blanket_type` -> the occupant of `.tokamak.ccfe_hcpb`.
+
+Two live values in PROCESS (`1` CCFE HCPB, `5` DCLL; `2`-`4` are marked removed in
+`fwbs_variables.py:70-78`), dispatched at `caller.py:343-349`. `1` is a default rather
+than a file setting on `large_tokamak_eval.IN.DAT`, which is worth knowing: the slot is
+switched even though this run never says so."""
+
+# ---- the four single-node tokamak slots -------------------------------------------
+
+
+def _first_wall_arm(n_divertors: int, shape_arm: int, i_pflux_fw_neutron: int) -> int:
+    """`(n_divertors, shape arm, i_pflux_fw_neutron)` -> `FirstWall`'s arm.
+
+    Three conditions, one occupant, and **three distinct refusals** -- which is why this
+    returns a different negative index for each rather than a single "not the live
+    configuration". A slot with one written occupant still has to say *which* of its
+    preconditions a rejected file broke.
+
+    ```
+    n_divertors != 1            -> arm -1
+    shape arm is D-shaped       -> arm -2
+    i_pflux_fw_neutron != 1     -> arm -3
+    otherwise                   -> arm  0
+    ```
+    """
+    if int(n_divertors) != 1:
+        return -1
+    if shape_arm != 1:
+        return -2
+    return 0 if int(i_pflux_fw_neutron) == 1 else -3
+
+
+FIRST_WALL = {0: FirstWall}
+"""`_first_wall_arm(...)` -> `.tokamak.first_wall`'s occupant."""
+
+
+def _vacuum_vessel_arm(n_divertors: int, shape_arm: int) -> int:
+    """`(n_divertors, shape arm)` -> `VacuumVesselElliptical`'s arm. Same two conditions
+    as `_first_wall_arm`'s first two, and `vacuum.md` confirmed them independently rather
+    than inheriting them from `fw.md` -- which is worth recording, because three records
+    reaching the same predicate separately is what makes it safe to write once.
+    """
+    if int(n_divertors) != 1:
+        return -1
+    return 0 if shape_arm == 1 else -2
+
+
+VACUUM_VESSEL = {0: VacuumVesselElliptical}
+"""`_vacuum_vessel_arm(...)` -> `.tokamak.vacuum_vessel`'s occupant.
+
+**A confirmed registry prediction.** Unit #16 recorded `VacuumVessel` as *"confirmed
+unreachable on the stellarator pipeline, no action needed"*; the tokamak trace reaches it
+at `caller.py:331`, and this is the slot that follows."""
+
+
+def _structure_arm(i_tf_sup: int, i_pf_conductor: int) -> int:
+    """`(i_tf_sup, i_pf_conductor)` -> `Structure`'s arm: one cell of a 2x2.
+
+    Both switches gate independent, **additive** terms of one output (`.structure.
+    coldmass`), and on the reference run both are true, so the occupant bakes in both
+    terms and takes neither switch as a parameter. The other three cells are `UNPORTED`.
+
+    `structure.md` flags this as a judgement call rather than a silent default, and it is
+    the same "shared remainder" shape `traceability_policy.md` records as one of six
+    deliberate deviations from strict per-value splitting -- two one-line terms inside a
+    thirty-line body. This wave's stricter instruction is what settles it: no switch is a
+    kwarg, so the live combination is one occupant with no switch parameter at all, and a
+    resistive-TF or resistive-PF run needs its own class rather than an argument.
+    """
+    sc_tf = TFConductorModel(int(i_tf_sup)) is TFConductorModel.SUPERCONDUCTING
+    sc_pf = PFConductorModel(int(i_pf_conductor)) is not PFConductorModel.RESISTIVE
+    if sc_tf and sc_pf:
+        return 0
+    if sc_pf:
+        return -1
+    return -2 if sc_tf else -3
+
+
+STRUCTURE = {0: Structure}
+"""`_structure_arm(i_tf_sup, i_pf_conductor)` -> `.tokamak.structure`'s occupant."""
+
+
+def _divertor_heat_load_arm(i_div_heat_load: int, n_divertors: int) -> int:
+    """`(i_div_heat_load, n_divertors)` -> the divertor heat-load arm.
+
+    ```
+    i_div_heat_load == 0 (USER_INPUT)     -> arm -1  reads nothing, prints; UNPORTED
+    i_div_heat_load == 1 (PENG_CHAMBER)   -> arm -2  divtart, six other fields; UNPORTED
+    n_divertors == 2                      -> arm -3  divwade's double-null half; UNPORTED
+    otherwise                             -> arm  0  DivertorHeatLoadWade
+    ```
+
+    Joint, because `divwade`'s own double-null branch (`:377-382`) reads
+    `.physics.f_p_div_lower` and takes a `max` the single-null arm does not -- so
+    `n_divertors` is a second question asked only once `i_div_heat_load` has answered
+    `WADE`, the same nesting `_energy_storage_arm` has for `istore`.
+    """
+    model = DivertorHeatLoadModel(int(i_div_heat_load))
+    if model is DivertorHeatLoadModel.USER_INPUT:
+        return -1
+    if model is DivertorHeatLoadModel.PENG_CHAMBER:
+        return -2
+    return 0 if int(n_divertors) == 1 else -3
+
+
+DIVERTOR_HEAT_LOAD = {0: DivertorHeatLoadWade}
+"""The divertor heat-load arm -> its occupant. See `_divertor_heat_load_arm`."""
+
+
 _INDAT_INTEGER = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$")
 
 
@@ -717,6 +1977,338 @@ def switches_from_indat(input_file):
         if match:
             found[match.group(1)] = int(match.group(2))
     return found
+
+
+_INDAT_NUMBER = re.compile(
+    r"\s*([A-Za-z_]\w*)\s*=\s*(-?[\d.]+(?:[eEdD][-+]?\d+)?)\s*(\*.*)?$"
+)
+
+
+def numbers_from_indat(input_file):
+    """Every `name = <number>` this input file sets, as a plain dict of floats.
+
+    `switches_from_indat`'s sibling, and needed for exactly one thing: the tokamak's
+    `.build.dz_xpoint_divertor`, whose *input value* decides whether a node owns that
+    field or it stays an input (`_divertor_geometry_arm`). A float is not a switch, but
+    a float that decides which nodes exist is one for this factory's purposes, and the
+    same argument applies -- an input cannot change between two evaluations of one
+    assembled graph.
+
+    Deliberately still not a full IN.DAT parser. A name the file never mentions is
+    absent, which is what "falls through to the default" means.
+    """
+    text = Path(input_file).read_text()
+    found = {}
+    for line in text.splitlines():
+        match = _INDAT_NUMBER.match(line)
+        if match:
+            found[match.group(1)] = float(
+                match.group(2).replace("d", "e").replace("D", "e")
+            )
+    return found
+
+
+def iteration_variables_from_indat(input_file):
+    """The `ixc` this input file declares, as a frozenset of iteration-variable IDs.
+
+    `ixc` is the one name in an IN.DAT that legitimately repeats -- one line per active
+    unknown -- so `switches_from_indat`'s last-wins dict cannot hold it. It is read here
+    because **an iteration variable can decide graph topology**: `140 in ixc` picks
+    which of two inverse assignments `process/models/build.py` makes, one producing
+    `.build.dr_tf_inboard` and the other `.tfcoil.dr_tf_wp_with_insulation`.
+
+    That is a genuinely new kind of key for this factory, and it satisfies the same test
+    every switch does (`machine_from_indat`'s docstring): the active set is fixed for a
+    whole solve -- `Scan` re-solves from scratch per point, and no PROCESS code adds to
+    `ixc` mid-solve -- so it cannot change between two evaluations of one assembled
+    graph. What an iteration variable's *value* does is a different question, and that
+    one is the optimiser's.
+    """
+    text = Path(input_file).read_text()
+    found = set()
+    for line in text.splitlines():
+        match = _INDAT_INTEGER.match(line)
+        if match and match.group(1) == "ixc":
+            found.add(int(match.group(2)))
+    return frozenset(found)
+
+
+def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited):
+    r"""The `Tokamak` an IN.DAT describes -- fourteen slots of the twenty-five filled.
+
+    Split out of `machine_from_indat` rather than inlined, and the reason is length
+    rather than principle: this is still the factory, and every `i_*` integer it reads is
+    read here for the same reasons that function's docstring gives. It takes
+    `switches`/`numbers`/`ixc` already parsed, plus the two values `machine_from_indat`
+    has already resolved and threaded -- `i_tf_sup` and `i_plasma_ignited` -- because **a
+    switch is answered once**: re-reading either here would be the second transcription
+    that `model_tree_design.md` §8 step 4d removed from the tree.
+
+    **The eleven slots this does not fill are not mentioned.** They keep
+    `models/tokamak/namespace.py`'s `None`, whatever the file says, because nothing under
+    `process/models/` that only they reach is ported: plasma current, bootstrap current,
+    the L-H transition, the scrape-off layer, the density limit, the PF coil system and
+    its central solenoid, the shield, the plasma inductance and the water use. A file
+    that asks for a particular `i_bootstrap_current` is *not* refused for it -- there is
+    no slot to refuse from -- and `_audit/tokamak_boundary.md` is where the cost of that
+    is counted, variable by variable.
+
+    Three switches are read here that no other part of this factory reads and that are
+    not `i_*` integers at all:
+
+    * `.physics.i_single_null`, which is not itself a slot key -- `_n_divertors` derives
+      `.divertor.n_divertors` from it exactly as `process/core/init.py:606-617` does,
+      because the `DataStructure` field's own default (`2`) is dead on every run.
+    * `140 in ixc`, an **iteration variable**, which picks which of two inverse
+      assignments `build.py` makes.
+    * the input `.build.dz_xpoint_divertor`, a **float**, which decides whether
+      `divgeom` owns that field or leaves it an input.
+
+    All three are constants of a solve, which is the only property this factory ever
+    asks of a key.
+    """
+    itart = switches.get("itart", 0)  # `physics_variables.py:994`
+    i_single_null = switches.get("i_single_null", 1)  # `physics_variables.py:1366`
+    n_divertors = _n_divertors(i_single_null)
+    # One predicate, four slots -- blanket areas, blanket volumes, first wall and vacuum
+    # vessel -- resolved once. Three audit records reached it independently
+    # (`blanket_library.md`, `fw.md`, `vacuum.md`) and agreed, which is what makes
+    # writing it once safe rather than merely tidy.
+    shape_arm = _fw_blkt_vv_shape_arm(itart, switches.get("i_fw_blkt_vv_shape", 2))
+    # `i_tf_shape` and `i_tf_wp_geom` are *resolved*, not read: PROCESS's own `init.py`
+    # replaces the auto-select value of each before any model runs, so the raw file
+    # value names no arm. See `_tf_shape` / `_tf_wp_geom`.
+    i_tf_shape = _tf_shape(switches.get("i_tf_shape", 0), itart)
+    i_tf_wp_geom = _tf_wp_geom(
+        switches.get("i_tf_wp_geom", -1), switches.get("i_tf_turns_integer", 0)
+    )
+    i_tf_case_geom = TFPlasmaCaseType(switches.get("i_tf_case_geom", 0))
+    i_plasma_current = switches.get("i_plasma_current", 4)  # `physics_variables.py:843`
+    i_hcd_primary = switches.get("i_hcd_primary", 5)  # `current_drive_variables.py:190`
+    i_hcd_secondary = switches.get("i_hcd_secondary", 0)  # `:206`
+
+    def pick(field, registry, default, **kw):
+        return _slot_occupant(field, switches.get(field, default), registry, **kw)
+
+    plasma_geom = TokamakPlasmaGeom(
+        shape=_slot_occupant(
+            "i_plasma_geometry",
+            PlasmaGeometryModelType(switches.get("i_plasma_geometry", 0)),
+            PLASMA_SHAPE,
+        ),
+        geometry=_slot_occupant(
+            "plasma_geometry_arm",
+            _plasma_geometry_arm(i_plasma_current, switches.get("i_plasma_shape", 0)),
+            PLASMA_GEOMETRY,
+        ),
+    )
+    plasma_fields = PlasmaFields(
+        surface_averaged_poloidal_field=_slot_occupant(
+            "surface_poloidal_field_arm",
+            _surface_poloidal_field_arm(i_plasma_current),
+            SURFACE_POLOIDAL_FIELD,
+        )
+    )
+    physics = TokamakPhysics(
+        separatrix_power=_slot_occupant(
+            "i_plasma_ignited_separatrix",
+            PlasmaIgnitionModel(int(i_plasma_ignited)),
+            SEPARATRIX_POWER,
+        )
+    )
+    pulse = TokamakPulse(
+        ramp_times=_slot_occupant(
+            "pulse_ramp_times_arm",
+            _pulse_ramp_times_arm(
+                switches.get("i_pulsed_plant", 0),  # `pulse_variables.py:30`
+                switches.get("pulsetimings", 1),  # `times_variables.py:12`
+                switches.get("i_t_current_ramp_up", 0),  # `:44`
+            ),
+            PULSE_RAMP_TIMES,
+        )
+    )
+    current_drive = _slot_occupant(
+        "i_hcd_calculations",
+        switches.get("i_hcd_calculations", 1),  # `current_drive_variables.py:223`
+        HCD_CALCULATIONS,
+        build=lambda cls: cls(
+            primary_efficiency=_slot_occupant(
+                "i_hcd_primary", CurrentDriveModel(i_hcd_primary), HCD_PRIMARY_EFFICIENCY
+            ),
+            secondary_heating=_slot_occupant(
+                "i_hcd_secondary",
+                CurrentDriveModel(i_hcd_secondary),
+                HCD_SECONDARY_HEATING,
+            ),
+            primary_powers=_slot_occupant(
+                "hcd_primary_powers_arm",
+                _hcd_primary_powers_arm(i_hcd_primary, i_hcd_secondary),
+                HCD_PRIMARY_POWERS,
+            ),
+            electric_total=_slot_occupant(
+                "i_plasma_ignited",
+                PlasmaIgnitionModel(int(i_plasma_ignited)),
+                HCD_ELECTRIC_TOTAL,
+            ),
+        ),
+    )
+    build = Build(
+        divertor_geometry=_slot_occupant(
+            "divertor_geometry_arm",
+            _divertor_geometry_arm(
+                itart,
+                # `build_variables.py:326` -- and read as a *number*, because what this
+                # arm turns on is the entering value and not a switch.
+                numbers.get("dz_xpoint_divertor", 0.0),
+            ),
+            DIVERTOR_GEOMETRY,
+        ),
+        dr_tf_inboard_winding_pack=_slot_occupant(
+            "dr_tf_inboard_winding_pack",
+            0 if 140 in ixc else 1,
+            DR_TF_INBOARD_WINDING_PACK,
+        ),
+        dr_tf_outboard=_slot_occupant("i_tf_sup_build", i_tf_sup, DR_TF_OUTBOARD),
+        wp_conductor_max_width=_slot_occupant(
+            "i_tf_sup_build", i_tf_sup, WP_CONDUCTOR_MAX_WIDTH
+        ),
+        tf_outboard_mid=_slot_occupant("i_tf_shape_build", i_tf_shape, TF_OUTBOARD_MID),
+        tf_outboard_edge_ripple=_slot_occupant(
+            "i_tf_shape_build", i_tf_shape, TF_OUTBOARD_EDGE_RIPPLE
+        ),
+    )
+    tf_coil = CiccSuperconductingTfCoil(
+        tf_global_geometry=_slot_occupant(
+            "i_tf_case_geom", i_tf_case_geom, TF_GLOBAL_GEOMETRY
+        ),
+        dr_tf_plasma_case=_slot_occupant(
+            "i_f_dr_tf_plasma_case",
+            bool(switches.get("i_f_dr_tf_plasma_case", 0)),  # `tfcoil_variables.py:83`
+            DR_TF_PLASMA_CASE,
+        ),
+        # `None` is an occupant here, not a refusal: at the default `False` PROCESS
+        # computes no `.tfcoil.dx_tf_side_case_min` at all and the field is an input.
+        dx_tf_side_case_min=_slot_occupant(
+            "tfc_sidewall_is_fraction",
+            bool(switches.get("tfc_sidewall_is_fraction", 0)),  # `:95`
+            DX_TF_SIDE_CASE_MIN,
+            build=lambda cls: None if cls is None else cls(),
+        ),
+        tf_coil_shape=_slot_occupant(
+            "tf_coil_shape_arm",
+            _tf_coil_shape_arm(i_tf_shape, itart, i_single_null),
+            TF_COIL_SHAPE,
+        ),
+        tf_coil_self_inductance=_slot_occupant(
+            "tf_self_inductance_arm",
+            _tf_self_inductance_arm(i_tf_shape, itart),
+            TF_COIL_SELF_INDUCTANCE,
+        ),
+        superconducting_tf_wp_geometry=_slot_occupant(
+            "i_tf_wp_geom", i_tf_wp_geom, SC_TF_WP_GEOMETRY
+        ),
+        tf_case_areas=_slot_occupant("i_tf_case_geom", i_tf_case_geom, TF_CASE_AREAS),
+        dx_tf_side_case=_slot_occupant("i_tf_wp_geom", i_tf_wp_geom, DX_TF_SIDE_CASE),
+        peak_b_tf_inboard_with_ripple=_slot_occupant(
+            "peak_b_ripple_arm",
+            # `tfcoil_variables.py:625` -- a float field, and the fit is selected by its
+            # rounded value, which is why this is `numbers` and not `switches`.
+            _peak_b_ripple_arm(numbers.get("n_tf_coils", 16.0)),
+            PEAK_B_TF_RIPPLE,
+        ),
+        cicc_averaged_turn_geometry=_slot_occupant(
+            "cicc_turn_geometry_arm",
+            _cicc_turn_geometry_arm(
+                switches.get("i_dx_tf_turn_general_input", 0),  # `:108`
+                switches.get("i_dx_tf_turn_cable_space_general_input", 0),  # `:127`
+            ),
+            CICC_TURN_GEOMETRY,
+        ),
+        superconducting_tf_coil_areas_and_masses=_slot_occupant(
+            "itart_sc_tf_masses", SphericalTokamakModel(int(itart)), SC_TF_MASSES
+        ),
+    )
+    ccfe_hcpb = _slot_occupant(
+        "i_blanket_type",
+        BlktModelTypes(switches.get("i_blanket_type", 1)),  # `fwbs_variables.py:70`
+        BLANKET_MODEL,
+        build=lambda cls: cls(
+            blanket_half_height=_slot_occupant(
+                "n_divertors", n_divertors, BLANKET_HALF_HEIGHT
+            ),
+            blanket_areas=_slot_occupant(
+                "fw_blkt_vv_shape_arm", shape_arm, BLANKET_AREAS
+            ),
+            blanket_volumes=_slot_occupant(
+                "fw_blkt_vv_shape_arm", shape_arm, BLANKET_VOLUMES
+            ),
+            blanket_coverage_factors=_slot_occupant(
+                "n_divertors", n_divertors, BLANKET_COVERAGE_FACTORS
+            ),
+            divertor_surface_and_plate_mass=_slot_occupant(
+                "n_divertors", n_divertors, DIVERTOR_SURFACE_MASS
+            ),
+            nuclear_heating_magnets=_slot_occupant(
+                "itart_hcpb", SphericalTokamakModel(int(itart)), NUCLEAR_HEATING_MAGNETS
+            ),
+            nuclear_heating_shield=_slot_occupant(
+                "itart_hcpb", SphericalTokamakModel(int(itart)), NUCLEAR_HEATING_SHIELD
+            ),
+            centrepost_neutronics=_slot_occupant(
+                "itart_hcpb", SphericalTokamakModel(int(itart)), CENTREPOST_NEUTRONICS
+            ),
+            nuclear_heating_renormalisation=_slot_occupant(
+                "nuclear_heating_renormalisation_arm",
+                _nuclear_heating_renormalisation_arm(n_divertors, itart),
+                NUCLEAR_HEATING_RENORMALISATION,
+            ),
+            pumping_power=pick(
+                "i_p_coolant_pumping",
+                PUMPING_POWER,
+                2,  # `fwbs_variables.py:249`
+                build=lambda occupant: occupant(),
+            ),
+        ),
+    )
+    return Tokamak(
+        plasma_geom=plasma_geom,
+        physics=physics,
+        plasma_fields=plasma_fields,
+        current_drive=current_drive,
+        pulse=pulse,
+        build=build,
+        cicc_superconducting_tf_coil=tf_coil,
+        divertor=Divertor(
+            heat_load=_slot_occupant(
+                "divertor_heat_load_arm",
+                _divertor_heat_load_arm(
+                    switches.get("i_div_heat_load", 2),  # `divertor_variables.py:63`
+                    n_divertors,
+                ),
+                DIVERTOR_HEAT_LOAD,
+            )
+        ),
+        first_wall=_slot_occupant(
+            "first_wall_arm",
+            _first_wall_arm(
+                n_divertors,
+                shape_arm,
+                switches.get("i_pflux_fw_neutron", 1),  # `physics_variables.py:1006`
+            ),
+            FIRST_WALL,
+        ),
+        vacuum_vessel=_slot_occupant(
+            "vacuum_vessel_arm",
+            _vacuum_vessel_arm(n_divertors, shape_arm),
+            VACUUM_VESSEL,
+        ),
+        ccfe_hcpb=ccfe_hcpb,
+        structure=_slot_occupant(
+            "structure_arm",
+            _structure_arm(i_tf_sup, switches.get("i_pf_conductor", 0)),  # `:230`
+            STRUCTURE,
+        ),
+    )
 
 
 def machine_from_indat(input_file, stella_conf=None):
@@ -817,11 +2409,14 @@ def machine_from_indat(input_file, stella_conf=None):
     i_rad_loss = switches.get("i_rad_loss", 1)
     i_plasma_ignited = switches.get("i_plasma_ignited", 0)
     confinement_scaling = _slot_occupant(
-        "i_confinement_time", ConfinementTimeModel(int(i_confinement_time)),
+        "i_confinement_time",
+        ConfinementTimeModel(int(i_confinement_time)),
         CONFINEMENT_SCALING,
     )
     confinement_tail = _slot_occupant(
-        "i_rad_loss", ConfinementRadiationLossModel(int(i_rad_loss)), CONFINEMENT_TAIL,
+        "i_rad_loss",
+        ConfinementRadiationLossModel(int(i_rad_loss)),
+        CONFINEMENT_TAIL,
     )
     plasma_power_loss = _slot_occupant(
         "i_plasma_ignited_i_rad_loss",
@@ -876,8 +2471,40 @@ def machine_from_indat(input_file, stella_conf=None):
             ),
         ),
     )
+    # `i_p_coolant_pumping` decides five things in `power` and one in `.tokamak.
+    # ccfe_hcpb`, and until this pass all six carried a hardcoded copy of the Helias
+    # run's answer. Resolved once, here, and threaded -- `fwbs_variables.py:249` is the
+    # default. The slot resolution comes *before* the value is threaded, the same
+    # discipline `i_tf_sup` follows, so no unported value ever reaches an occupant's
+    # static field.
+    i_p_coolant_pumping = PumpingPowerModelTypes(switches.get("i_p_coolant_pumping", 2))
     power = Power(
         tf_power=tf_power,
+        component_thermal_powers=ComponentThermalPowers(
+            i_p_coolant_pumping=i_p_coolant_pumping,
+            i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
+            i_blanket_type=BlktModelTypes.CCFE_HCPB,
+            secondary_cycle_liq=(
+                ElectricConversionModelTypes.SUPERCRITICAL_CO2_BRAYTON_CYCLE
+            ),
+        ),
+        delta_eta_step=DeltaEtaStep(
+            i_p_coolant_pumping=i_p_coolant_pumping,
+            i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
+            i_thermal_electric_conversion=ElectricConversionModelTypes.USER_INPUT,
+        ),
+        p_fw_div_heat_deposited_mw_step=PFwDivHeatDepositedMwStep(
+            i_p_coolant_pumping=i_p_coolant_pumping
+        ),
+        p_fw_blkt_coolant_pump_mw_step=_slot_occupant(
+            "p_fw_blkt_coolant_pump_arm",
+            _p_fw_blkt_coolant_pump_arm(i_p_coolant_pumping),
+            P_FW_BLKT_COOLANT_PUMP,
+            build=lambda cls: (
+                None if cls is None else cls(i_p_coolant_pumping=i_p_coolant_pumping)
+            ),
+        ),
         cryo_q_nuc=_slot_occupant(
             "inuclear_i_tf_sup",
             _cryo_q_nuc_arm(switches.get("inuclear", 0), i_tf_sup),
@@ -899,7 +2526,7 @@ def machine_from_indat(input_file, stella_conf=None):
             "ireactor",
             ireactor,
             ELECTRIC_PRODUCTION,
-            build=lambda make: make(i_tf_sup),
+            build=lambda make: make(i_tf_sup, i_p_coolant_pumping),
         ),
         cplife_avail=CplifeAvail(
             i_tf_sup=i_tf_sup,
@@ -914,6 +2541,17 @@ def machine_from_indat(input_file, stella_conf=None):
 
     if device is TokamakProcess:
         return TokamakProcess(
+            # Everything device-specific, and no longer `Tokamak()`: fourteen of its
+            # twenty-five slots have occupants now, twelve of them switched. `i_tf_sup`
+            # and `i_plasma_ignited` are *threaded* rather than re-read, because a
+            # switch is answered once.
+            tokamak=_tokamak_device(
+                switches,
+                numbers_from_indat(input_file),
+                iteration_variables_from_indat(input_file),
+                i_tf_sup,
+                i_plasma_ignited,
+            ),
             costs=costs,
             physics=Physics(
                 profiles=PhysicsProfiles(
@@ -980,9 +2618,22 @@ def machine_from_indat(input_file, stella_conf=None):
     )
     fw_area = _slot_occupant("ipowerflow", ipowerflow, FW_AREA)
     ipowerflow = PowerFlowModel(ipowerflow)
+    # The superconductor, and with it whether the coils block is a cycle: only the
+    # Bi-2212 occupant reads `.tfcoil.j_tf_wp`, which `winding_pack_total_size_post`
+    # owns. `tfcoil_variables.py:246` is the default. Below the device branch because
+    # `StellaratorCoils` is a stellarator namespace -- a tokamak's TF coils are
+    # `models/tfcoil/`, unported, and will need their own answer to this same switch.
+    winding_pack_intersect_inputs = _slot_occupant(
+        "i_tf_sc_mat",
+        SuperconductorModel(int(switches.get("i_tf_sc_mat", 1))),
+        WINDING_PACK_MATERIAL,
+    )
     return StellaratorProcess(
         costs=costs,
         stellarator=Stellarator(
+            coils=StellaratorCoils(
+                winding_pack_intersect_inputs=winding_pack_intersect_inputs
+            ),
             machine_config=machine_config,
             heating=pick("isthtr", HEATING, 1),
             fw_area=fw_area,

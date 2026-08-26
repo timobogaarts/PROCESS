@@ -609,9 +609,7 @@ def _on_axis_densities_reference(i_plasma_pedestal, pedestal_arguments):
 
         return reference
 
-    def reference(
-        nd_plasma_electrons_vol_avg, nd_plasma_ions_total_vol_avg, alphan
-    ):
+    def reference(nd_plasma_electrons_vol_avg, nd_plasma_ions_total_vol_avg, alphan):
         obj = _profile(
             NeProfile,
             i_plasma_pedestal=i_plasma_pedestal,
@@ -721,9 +719,7 @@ def _on_axis_temperatures_reference(i_plasma_pedestal, pedestal_arguments):
 
         return reference
 
-    def reference(
-        temp_plasma_electron_vol_avg_kev, temp_plasma_ion_vol_avg_kev, alphat
-    ):
+    def reference(temp_plasma_electron_vol_avg_kev, temp_plasma_ion_vol_avg_kev, alphat):
         obj = _profile(
             TeProfile,
             i_plasma_pedestal=i_plasma_pedestal,

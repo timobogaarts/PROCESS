@@ -13,8 +13,8 @@ computations:
   until the duct physically fits between TF coils) to size the pumping ducts. Tier-2.
   `calculate_vacuum_pumping_old` below.
 
-`VacuumVessel` (the second class in the source file) is **out of scope**: it is not
-reached from `Stellarator.run()` at all. `Stellarator.__init__`
+`VacuumVessel` (the second class in the source file) is **out of scope on the
+stellarator**: it is not reached from `Stellarator.run()` at all. `Stellarator.__init__`
 (`process/models/stellarator/stellarator.py`) is injected a `vacuum: Vacuum` but no
 `vacuum_vessel` -- confirmed by `process/main.py:668-669,729,783-784`
 (`Models.__init__` constructs both `self.vacuum`/`self.vacuum_vessel` and calls
@@ -22,8 +22,14 @@ reached from `Stellarator.run()` at all. `Stellarator.__init__`
 never from `stellarator.py`). The
 stellarator pipeline computes its own vacuum-vessel geometry inline
 (`Stellarator.st_fwbs`'s "S5 cryostat_and_vv_geometry" chunk, see
-`stellarator_E_fwbs_synthesis.md`) instead of calling `VacuumVessel`. See `vacuum.md` for
-the full trace.
+`stellarator_E_fwbs_synthesis.md`) instead of calling `VacuumVessel`.
+
+**`VacuumVessel` IS reached on the tokamak path** -- `caller.py:331`, confirming unit
+#16's own prediction ("confirmed unreachable on the stellarator pipeline, no action
+needed"). Ported below (wave-1 tokamak dispatch, `.tokamak.vacuum_vessel`): the minimal
+closure for `.fwbs.m_vv`, the one variable `tokamak_boundary.md` lists on this slot.
+See `vacuum.md`'s tokamak-scope addendum for the full trace, and this module's own
+`VacuumVesselElliptical` docstring below for the switches baked in.
 """
 
 import jax
@@ -38,7 +44,17 @@ from cottax.interfaces.pytree_namespace_module import (
 from cottax.problem import Feasibility
 from cottax.spec import In, Out, VarPath
 
-from functional_process.paths import build, divertor, physics, tfcoil, times, vacuum
+from functional_process.models.engineering.ivc_functions import eshellvol
+from functional_process.paths import (
+    blanket,
+    build,
+    divertor,
+    fwbs,
+    physics,
+    tfcoil,
+    times,
+    vacuum,
+)
 
 # Gas-species ordering used throughout `vacuum()`: (N2, D-T, He, D-T again).
 # `process/models/vacuum.py`'s module-level `xmult` list -- conductance-to-nitrogen
@@ -1052,4 +1068,307 @@ class VacuumOld(ExplicitFunction):
             pres_div_chamber_burn,
             outgrat_fw,
             t_plant_pulse_coil_precharge,
+        )
+
+
+# ---------------------------------------------------------------------------
+# `VacuumVessel` -- unreachable on the stellarator (see module docstring), reached on
+# the tokamak (`caller.py:331`). Wave-1 tokamak dispatch, `.tokamak.vacuum_vessel`,
+# minimal closure for `.fwbs.m_vv` (`tokamak_boundary.md`'s one read of this slot).
+#
+# Two switches are baked into the one occupant below, at the value live on
+# `tests/regression/input_files/large_tokamak_eval.IN.DAT` (neither is set in that
+# file, so both take their PROCESS default):
+#
+# - `.physics.itart` (default `0`) and `.fwbs.i_fw_blkt_vv_shape` (default `2`,
+#   `ELLIPTICAL_SHAPED`, `process/models/build.py:26-30`) jointly select the
+#   elliptical volume formula over the D-shaped one -- the same compound switch
+#   `models/fw.py`'s `FirstWall` bakes to the same value, independently, for the
+#   analogous first-wall-area dispatch.
+# - `.divertor.n_divertors` -- **not** the `DataStructure` field's own default of `2`
+#   (`divertor_variables.py:94`), but `1`, derived by `process/core/init.py:606-616`
+#   from `.physics.i_single_null = 1` (`large_tokamak_eval.IN.DAT:307`); see
+#   `structure.md`/`divertor.md`/`fw.md` for the same correction on this pass's other
+#   units. Selects the single-null branch of `calculate_vessel_half_height`.
+#
+# Both are read-to-branch switches under the wave-1 policy ("no switch is a static
+# kwarg"), so neither function below takes them as a parameter -- each function *is*
+# the occupant for its live value; the alternative arms are UNPORTED (see
+# `vacuum.md`'s tokamak-scope addendum for the per-switch reads-set evidence).
+# ---------------------------------------------------------------------------
+
+
+def calculate_vessel_half_height(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+    dz_blkt_upper,
+    dz_shld_upper,
+    z_plasma_xpoint_upper,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_inboard,
+    dr_fw_outboard,
+):
+    """Vacuum vessel internal half-height (m), `n_divertors == 1` (single null) -- the
+    value live on `large_tokamak_eval.IN.DAT` (see module comment above). Ports
+    `VacuumVessel.calculate_vessel_half_height`, `process/models/vacuum.py:802-855`,
+    `n_divertors == 2` branch dropped (UNPORTED).
+
+    Parameters
+    ----------
+    z_tf_inside_half :
+        TF coil internal half-height (m). `.build.z_tf_inside_half`.
+    dz_shld_vv_gap :
+        Gap between shield and vacuum vessel (m). `.build.dz_shld_vv_gap`.
+    dz_vv_lower :
+        Lower vacuum vessel thickness (m). `.build.dz_vv_lower`.
+    dz_blkt_upper :
+        Upper blanket thickness (m). `.build.dz_blkt_upper`.
+    dz_shld_upper :
+        Upper shield thickness (m). `.build.dz_shld_upper`.
+    z_plasma_xpoint_upper :
+        Height of the upper plasma X-point (m). `.build.z_plasma_xpoint_upper`.
+    dr_fw_plasma_gap_inboard :
+        Inboard scrape-off gap (m). `.build.dr_fw_plasma_gap_inboard`.
+    dr_fw_plasma_gap_outboard :
+        Outboard scrape-off gap (m). `.build.dr_fw_plasma_gap_outboard`.
+    dr_fw_inboard :
+        Inboard first wall thickness (m). `.build.dr_fw_inboard`.
+    dr_fw_outboard :
+        Outboard first wall thickness (m). `.build.dr_fw_outboard`.
+
+    Returns
+    -------
+    :
+        Vacuum vessel internal half-height (m). `.blanket.dz_vv_half`.
+    """
+    z_bottom = z_tf_inside_half - dz_shld_vv_gap - dz_vv_lower
+
+    z_top = z_plasma_xpoint_upper + 0.5 * (
+        dr_fw_plasma_gap_inboard
+        + dr_fw_plasma_gap_outboard
+        + dr_fw_inboard
+        + dr_fw_outboard
+    )
+    z_top = z_top + dz_blkt_upper + dz_shld_upper
+
+    return 0.5 * (z_top + z_bottom)
+
+
+def calculate_elliptical_vessel_volumes(
+    rmajor,
+    rminor,
+    triang,
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dz_vv_half,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    dz_vv_lower,
+):
+    """Volumes of the elliptical-cross-section vacuum vessel -- `itart == 0` and
+    `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED`, the combination live on
+    `large_tokamak_eval.IN.DAT` (see module comment above). Ports `VacuumVessel.
+    calculate_elliptical_vessel_volumes`, `process/models/vacuum.py:899-933`,
+    unchanged (`eshellvol` -> `functional_process.models.engineering.ivc_functions.
+    eshellvol`, the shared elliptical shell-volume helper).
+
+    Parameters
+    ----------
+    rmajor :
+        Plasma major radius (m). `.physics.rmajor`.
+    rminor :
+        Plasma minor radius (m). `.physics.rminor`.
+    triang :
+        Plasma triangularity. `.physics.triang`.
+    r_shld_inboard_inner :
+        Inner radius of the inboard shield (m). `.build.r_shld_inboard_inner`.
+    r_shld_outboard_outer :
+        Outer radius of the outboard shield (m). `.build.r_shld_outboard_outer`.
+    dz_vv_half :
+        Vacuum vessel internal half-height (m). `.blanket.dz_vv_half`.
+    dr_vv_inboard :
+        Inboard vacuum vessel thickness (m). `.build.dr_vv_inboard`.
+    dr_vv_outboard :
+        Outboard vacuum vessel thickness (m). `.build.dr_vv_outboard`.
+    dz_vv_upper :
+        Upper vacuum vessel thickness (m). `.build.dz_vv_upper`.
+    dz_vv_lower :
+        Lower vacuum vessel thickness (m). `.build.dz_vv_lower`.
+
+    Returns
+    -------
+    tuple
+        `(vol_vv_inboard, vol_vv_outboard, vol_vv)`, m^3 -- before the `fvoldw`
+        coverage factor (see `calculate_vacuum_vessel_mass` below).
+    """
+    r_1 = rmajor - rminor * triang
+    r_2 = r_1 - r_shld_inboard_inner
+    r_3 = r_shld_outboard_outer - r_1
+
+    return eshellvol(
+        rshell=r_1,
+        rmini=r_2,
+        rmino=r_3,
+        zminor=dz_vv_half,
+        drin=dr_vv_inboard,
+        drout=dr_vv_outboard,
+        dz=(dz_vv_upper + dz_vv_lower) / 2,
+    )
+
+
+def calculate_vacuum_vessel_mass(vol_vv_raw, fvoldw, den_steel):
+    """Vacuum vessel mass (kg), after the `fvoldw` coverage factor. Ports the tail of
+    `VacuumVessel.run`, `process/models/vacuum.py:793-799`, unchanged.
+
+    Parameters
+    ----------
+    vol_vv_raw :
+        Vacuum vessel volume before the coverage factor (m^3) -- `vol_vv`, the third
+        element of `calculate_elliptical_vessel_volumes`'s return.
+    fvoldw :
+        Vacuum vessel volume coverage factor. `.fwbs.fvoldw`.
+    den_steel :
+        Steel density (kg/m^3). `.fwbs.den_steel`.
+
+    Returns
+    -------
+    tuple
+        `(vol_vv, m_vv)` -- the coverage-adjusted volume (m^3) and mass (kg).
+    """
+    vol_vv = fvoldw * vol_vv_raw
+    m_vv = vol_vv * den_steel
+    return vol_vv, m_vv
+
+
+def calculate_vacuum_vessel_outputs(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+    dz_blkt_upper,
+    dz_shld_upper,
+    z_plasma_xpoint_upper,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    rmajor,
+    rminor,
+    triang,
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    fvoldw,
+    den_steel,
+):
+    """`.tokamak.vacuum_vessel`'s whole live-configuration pipeline: `VacuumVessel.
+    run()` end to end, at the one switch combination live on `large_tokamak_eval.
+    IN.DAT` (see module comment above). No PROCESS function has this exact shape
+    (`run()` itself is the stateful shell this mirrors, and `calculate_vacuum_vessel_
+    mass`'s two-line body has no isolated PROCESS function either -- same shape as
+    `confinement_time.md`'s `plasma_power_loss_mw`), so this composite is what
+    `test_vacuum.py` diffs against a real `VacuumVessel.run()` call.
+
+    Returns
+    -------
+    tuple
+        `(dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv)`.
+    """
+    dz_vv_half = calculate_vessel_half_height(
+        z_tf_inside_half=z_tf_inside_half,
+        dz_shld_vv_gap=dz_shld_vv_gap,
+        dz_vv_lower=dz_vv_lower,
+        dz_blkt_upper=dz_blkt_upper,
+        dz_shld_upper=dz_shld_upper,
+        z_plasma_xpoint_upper=z_plasma_xpoint_upper,
+        dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
+        dr_fw_inboard=dr_fw_inboard,
+        dr_fw_outboard=dr_fw_outboard,
+    )
+
+    vol_vv_inboard, vol_vv_outboard, vol_vv_raw = calculate_elliptical_vessel_volumes(
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        r_shld_inboard_inner=r_shld_inboard_inner,
+        r_shld_outboard_outer=r_shld_outboard_outer,
+        dz_vv_half=dz_vv_half,
+        dr_vv_inboard=dr_vv_inboard,
+        dr_vv_outboard=dr_vv_outboard,
+        dz_vv_upper=dz_vv_upper,
+        dz_vv_lower=dz_vv_lower,
+    )
+
+    vol_vv, m_vv = calculate_vacuum_vessel_mass(vol_vv_raw, fvoldw, den_steel)
+
+    return dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv
+
+
+class VacuumVesselElliptical(ExplicitFunction):
+    """cottax node: `.tokamak.vacuum_vessel`.
+
+    Bakes in `itart == 0`, `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED` and
+    `.divertor.n_divertors == 1` -- the combination live on
+    `large_tokamak_eval.IN.DAT` (see module comment above). Owns `.fwbs.m_vv`
+    (`tokamak_boundary.md`'s one declared read of this slot) plus `dz_vv_half`,
+    `vol_vv_inboard`, `vol_vv_outboard` and `vol_vv`, all produced by the same
+    straight-line chain in `VacuumVessel.run()`. Thin wrap of `calculate_vacuum_
+    vessel_outputs` -- no arithmetic of its own.
+    """
+
+    dz_vv_half = OutputInto(blanket)
+    vol_vv_inboard = OutputInto(blanket)
+    vol_vv_outboard = OutputInto(blanket)
+    vol_vv = OutputInto(fwbs)
+    m_vv = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        z_tf_inside_half=From(build),
+        dz_shld_vv_gap=From(build),
+        dz_vv_lower=From(build),
+        dz_blkt_upper=From(build),
+        dz_shld_upper=From(build),
+        z_plasma_xpoint_upper=From(build),
+        dr_fw_plasma_gap_inboard=From(build),
+        dr_fw_plasma_gap_outboard=From(build),
+        dr_fw_inboard=From(build),
+        dr_fw_outboard=From(build),
+        rmajor=From(physics),
+        rminor=From(physics),
+        triang=From(physics),
+        r_shld_inboard_inner=From(build),
+        r_shld_outboard_outer=From(build),
+        dr_vv_inboard=From(build),
+        dr_vv_outboard=From(build),
+        dz_vv_upper=From(build),
+        fvoldw=From(fwbs),
+        den_steel=From(fwbs),
+    ):
+        return calculate_vacuum_vessel_outputs(
+            z_tf_inside_half=z_tf_inside_half,
+            dz_shld_vv_gap=dz_shld_vv_gap,
+            dz_vv_lower=dz_vv_lower,
+            dz_blkt_upper=dz_blkt_upper,
+            dz_shld_upper=dz_shld_upper,
+            z_plasma_xpoint_upper=z_plasma_xpoint_upper,
+            dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
+            dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
+            dr_fw_inboard=dr_fw_inboard,
+            dr_fw_outboard=dr_fw_outboard,
+            rmajor=rmajor,
+            rminor=rminor,
+            triang=triang,
+            r_shld_inboard_inner=r_shld_inboard_inner,
+            r_shld_outboard_outer=r_shld_outboard_outer,
+            dr_vv_inboard=dr_vv_inboard,
+            dr_vv_outboard=dr_vv_outboard,
+            dz_vv_upper=dz_vv_upper,
+            fvoldw=fvoldw,
+            den_steel=den_steel,
         )

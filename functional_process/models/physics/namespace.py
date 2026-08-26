@@ -35,6 +35,7 @@ from functional_process.models.physics.plasma_profiles import (
     LModeProfileReset,
     ParabolicGradientLengths,
     ParabolicProfileValues,
+    PedestalProfileValues,
     ProfileFactors,
 )
 from functional_process.models.physics.profiles import (
@@ -143,7 +144,12 @@ class ProfileParameterisationParabolic(ModelNamespace):
 
 
 class ProfileParameterisationPedestal(ModelNamespace):
-    """Pedestal profiles: the `.physics.i_plasma_pedestal == 1` occupant, 3 nodes."""
+    """Pedestal profiles: the `.physics.i_plasma_pedestal == 1` occupant, 4 nodes.
+
+    Three until a tokamak was assembled. The fourth, `pedestal_profile_values`, is the
+    mirror of the parabolic arm's `parabolic_profile_values`; see its comment below for
+    why four fields were silently boundary inputs on this arm and on no other.
+    """
 
     pedestal_temperature_profile: PedestalTemperatureProfile = (
         PedestalTemperatureProfile()
@@ -152,6 +158,26 @@ class ProfileParameterisationPedestal(ModelNamespace):
     pedestal_on_axis_temperatures: PedestalOnAxisTemperatures = (
         PedestalOnAxisTemperatures()
     )
+    # `PedestalProfileValues` -- the line-average/density-weighted tail
+    # of `pedestal_parameterisation`, and the mirror of the parabolic
+    # arm's `parabolic_profile_values` below. **Found by assembling a
+    # tokamak, not by a test**: this is the first machine in the port to
+    # select `i_plasma_pedestal == 1`
+    # (`large_tokamak_eval.IN.DAT:291`), and until it existed the
+    # pedestal arm produced four fewer variables than the parabolic one
+    # -- `.physics.f_temp_plasma_electron_density_vol_avg`,
+    # `nd_plasma_electron_line`,
+    # `temp_plasma_electron_density_weighted_kev` and
+    # `temp_plasma_ion_density_weighted_kev` all surfaced as boundary
+    # inputs on a tokamak and on no stellarator. Every *value* test for
+    # `calculate_pedestal_profile_values` already passed; what was
+    # missing was the binding, which is exactly the class of defect
+    # `_audit/tokamak_boundary.md` § "The four that are a shared
+    # subsystem's gap" exists to catch. **Ragged arms are legitimate;
+    # ragged arms nobody declared are not** -- a slot with an occupant
+    # on both arms can still have one arm produce less than the other,
+    # and only the boundary sees it.
+    pedestal_profile_values: PedestalProfileValues = PedestalProfileValues()
     # No pedestal-arm counterpart to `EcrhDensityLimit`: PROCESS's own
     # default configuration (`i_plasma_pedestal == 1`) never computes a
     # real ECRH density limit at all -- see the note on the value-0 arm.

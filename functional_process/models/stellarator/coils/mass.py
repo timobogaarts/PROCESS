@@ -51,11 +51,16 @@ I_TF_SC_MAT_ITER_NB3SN = 1
 stellarator_helias.IN.DAT:235` sets it explicitly to the same 1, so the MDA harness's run
 selects `dcond[0] == 6080.0` (`tfcoil_variables.py:158`).
 
-The same value is already hardcoded one node over, at graph assembly, for the same switch
-(`WindingPackIntersectInputs(i_tf_sc_mat=1)` in `functional_process/total_process.py`).
-A different material needs a sibling node class overriding only `den_tf_sc_material`'s
-`FromExactly`, in the style `coils.py` already uses to give `jcrit_from_material` one node
-class per `i_tf_sc_mat` value (`coils.py:123,178,232,267,309,347,384,421`).
+**This is now the only place `i_tf_sc_mat` is answered outside `indat.py`, and it is a
+known gap.** The node one over is a slot -- `stellarator.coils.
+winding_pack_intersect_inputs`, eight occupants, `indat.WINDING_PACK_MATERIAL` -- since
+`_audit/next_steps.md` §14.5, so the switch is read from the file there. `CoilsMass` has
+not followed: it reads `.tfcoil.dcond[0]`, an array-element `VarPath` chosen by this
+constant, so a different material silently reads the wrong density. The fix is the same
+shape as the one next door -- a sibling occupant per material differing only in which
+`dcond[i]` it reads -- and it needs a `CoilsMass` slot to sit in. Reported rather than
+done here: `test_switch_coverage.py` does not catch it, because this is a module constant
+and not an `eqx.field(static=True)`, which is itself worth fixing.
 """
 
 

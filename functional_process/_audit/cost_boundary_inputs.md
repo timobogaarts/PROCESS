@@ -50,6 +50,7 @@ deliberately not edited (concurrently owned).
 
 ```python
 from functional_process.total_process import GRAPH
+
 owned = set(GRAPH.owners)
 srcs = [n for n in GRAPH.nodes if not (set(GRAPH[n].reads) & owned)]
 ```
@@ -161,7 +162,7 @@ reactor structure mass". **PROCESS's tokamak does; PROCESS's stellarator does no
 ```python
 self.data.structure.fncmass = 0.0e0
 # Reactor core gravity support mass
-self.data.structure.gsmass = 0.0e0   # ? Not sure about this.
+self.data.structure.gsmass = 0.0e0  # ? Not sure about this.
 ```
 
 with the method docstring's own explanation — "In practice, many of the masses are simply

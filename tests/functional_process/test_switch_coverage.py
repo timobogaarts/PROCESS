@@ -2,19 +2,23 @@
 
 `machine_from_indat`'s own docstring calls itself **"the only place in this port an
 `i_*` integer is ever read"**. It is not: `REFERENCE_INPUT_FILE`
-(`tests/regression/input_files/stellarator_helias.IN.DAT`) explicitly sets seven
-switches the factory never looks at --
+(`tests/regression/input_files/stellarator_helias.IN.DAT`) explicitly sets switches the
+factory never looks at --
 
     i_p_coolant_pumping = 1     i_thermal_electric_conversion = 2   i_plasma_ignited = 1
-    i_tf_sc_mat = 1             i_confinement_time = 38             i_rad_loss = 1
     i_plant_availability = 0
 
-Six of the seven are instead hand-transcribed as a static constructor kwarg on one or
+The first three are instead hand-transcribed as a static constructor kwarg on one or
 more slots of `REFERENCE_MACHINE`, matching the file's value *by coincidence of careful
 authorship*, not by anything that would notice if a value drifted or a slot were missed.
-The seventh, `i_plant_availability`, is not transcribed anywhere at all: PROCESS's own
+The fourth, `i_plant_availability`, is not transcribed anywhere at all: PROCESS's own
 dispatch on it never runs, because `Stellarator.run()` calls `self.availability.avail()`
 directly (`stellarator.py:175`), bypassing `.costs.i_plant_availability` entirely.
+
+**The list shrinks as the binding policy is applied.** `i_confinement_time`/`i_rad_loss`
+(the confinement split) and `i_tf_sc_mat` (`_audit/next_steps.md` §14.5) each left it by
+becoming a slot the factory fills, which is the intended direction of travel: a switch
+read from the file cannot drift from it.
 
 This module is the inventory of that gap, `SWITCH_INVENTORY`, plus tests that keep the
 inventory honest against the live tree and the live file, plus -- since step 4d --
@@ -24,8 +28,8 @@ run"* but *"can two places in one machine give different answers to one switch"*
 could, in four ways, and `switch_kwarg_survey.md` band (a) is the record of it.
 **None of the inventory tests fix the gap** --
 `test_hardcoded_values_agree_with_the_reference_file` passes today because the
-six transcriptions are, in fact, all correct today. What changes is that a future drift
-(a transcription going stale, a new switch joining the six-transcribed/one-bypassed set
+remaining transcriptions are, in fact, all correct today. What changes is that a future
+drift (a transcription going stale, a new switch joining the transcribed/bypassed set
 without a decision, a slot silently losing its static kwarg) now fails a test instead of
 waiting to be found by the MDA harness the way `i_confinement_time`/
 `i_thermal_electric_conversion`/`i_p_coolant_pumping` originally were
@@ -204,15 +208,13 @@ SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | ForcedByProcess | Bypass
             ),
         ),
     ),
-    "i_tf_sc_mat": Hardcoded(  # :235
-        value=1,
-        slots=(
-            Slot(
-                "stellarator.coils.winding_pack_intersect_inputs.i_tf_sc_mat",
-                lambda m: m.stellarator.coils.winding_pack_intersect_inputs.i_tf_sc_mat,
-            ),
-        ),
-    ),
+    "i_tf_sc_mat": ReadByFactory(1),  # :235 -- ITER Nb3Sn
+    # `Hardcoded` on `winding_pack_intersect_inputs` until `_audit/next_steps.md` §14.5
+    # made that node a slot with eight occupants. The eight branches of
+    # `jcrit_from_material` read genuinely different `.tfcoil.*` fields, so the single
+    # branching node declared six reads that are dead at this value -- one of them
+    # `.tfcoil.j_tf_wp`, the sole back-edge closing the coils SCC. Read from the file
+    # now, like every other switch that selects a class.
     "i_confinement_time": ReadByFactory(38),  # :129 -- ISS04
     "i_rad_loss": ReadByFactory(1),  # :128 -- CORE_ONLY
     # Both were `Hardcoded` here until
@@ -237,8 +239,8 @@ SWITCH_INVENTORY: dict[str, ReadByFactory | Hardcoded | ForcedByProcess | Bypass
 }
 """Every switch `REFERENCE_INPUT_FILE` sets that bears on which node occupies a slot in
 `REFERENCE_MACHINE` -- a record of a known gap, deliberately pinned so it cannot grow
-silently. Twelve entries: four the factory reads (and which happen to be set explicitly
-rather than left at their default), six hand-transcribed as static kwargs (matching the
+silently. Twelve entries: five the factory reads (and which happen to be set explicitly
+rather than left at their default), five hand-transcribed as static kwargs (matching the
 file today, checked nowhere before this module), one -- `i_plasma_pedestal` -- the
 factory deliberately *stopped* reading because PROCESS overwrites it, and one --
 `i_plant_availability` -- set by the file and consulted by no code path in this port at
@@ -260,16 +262,17 @@ FACTORY_READ_SWITCHES = frozenset({
     "blkttype",
     "i_cost_model",
     "i_tf_sup",
+    "i_tf_sc_mat",
     "i_bldgs_size",
     "ireactor",
     "ipnet",
 })
 """Every switch name `machine_from_indat` itself reads via `switches.get(...)` --
-confirmed by grep (`switches.get("<name>"` / `pick("<name>"`, ten hits, no more) and
+confirmed by grep (`switches.get("<name>"` / `pick("<name>"`, eleven hits, no more) and
 exercised dynamically, one by one, by
 `test_factory_switches_actually_change_the_assembled_machine` below -- so this list is
 checked against the factory's real behaviour, not merely its source text.
-Superset of `SWITCH_INVENTORY`'s four `ReadByFactory` entries: the other six names here
+Superset of `SWITCH_INVENTORY`'s five `ReadByFactory` entries: the other six names here
 (`ipowerflow`, `blktmodel`, `blkttype`, `i_tf_sup`, `i_bldgs_size`, `ipnet`) are read the
 same way but are not set by `REFERENCE_INPUT_FILE`, so `SWITCH_INVENTORY` -- "switches
 the file sets" -- has no entry for them.
@@ -485,9 +488,13 @@ def _indat_with_override(tmp_path, name, value):
 # of the same class with different fields, so "the type changed" is unambiguous proof
 # the switch's value reached the slot.
 _CHANGES_A_SLOT = (
-    ("istell", 0, lambda m: type(m).__name__),
     ("isthtr", 2, lambda m: type(m.stellarator.heating).__name__),
     ("i_tf_sup", 0, lambda m: type(m.power.tf_power).__name__),
+    (
+        "i_tf_sc_mat",
+        5,
+        lambda m: type(m.stellarator.coils.winding_pack_intersect_inputs).__name__,
+    ),
     ("i_bldgs_size", 1, lambda m: type(m.buildings.sizing).__name__),
     ("ireactor", 0, lambda m: type(m.availability.electric_production).__name__),
     ("ipnet", 1, lambda m: type(m.costs.cost_of_electricity).__name__),
@@ -497,28 +504,31 @@ _CHANGES_A_SLOT = (
         lambda m: type(m.stellarator.fwbs.blanket_shield_power).__name__,
     ),
 )
-"""Seven of the ten `FACTORY_READ_SWITCHES`: each has a second registered occupant that
+"""Seven of the `FACTORY_READ_SWITCHES`: each has a second registered occupant that
 `_indat_with_override` can select on its own, so the "really reads it" proof is
 "the assembled tree's occupant type changes".
 
-**`istell` moved here from `_CAUSES_A_REFUSAL`**, and it is the one row whose probe is
-the machine's *own* type rather than a slot's. That is not a weaker probe, it is the
-right one: `istell` does not choose an occupant, it chooses which **device class** is
-built -- `TokamakProcess` or `StellaratorProcess`, siblings in `total_process.py`. It was
-in `_CAUSES_A_REFUSAL` because `istell == 0` had no tokamak to be; it has one now, whose
-device slot is twenty-five empty slots, so the value assembles and the stronger
-"different thing was built" evidence is available where only "assembly failed" was
-before.
+**`istell` left this table and went back to `_CAUSES_A_REFUSAL`**, and the round trip is
+worth reading as a measurement rather than as churn. It was a refusal when `istell == 0`
+had no tokamak to be; it moved here when `TokamakProcess` landed with twenty-five empty
+slots, because an empty device asks nothing and therefore refuses nothing; and it is a
+refusal again now that fourteen of those slots have occupants -- because the perturbed
+machine is a real what-if and deliberately not a curated one. Taking
+`stellarator_helias.IN.DAT` and changing only `istell` yields a *tokamak* carrying that
+file's `i_plasma_ignited = 1`, and the tokamak separatrix-power family has no ignited
+arm written. So the row still proves the value is consulted, from the other table.
 
-The perturbed machine is a real what-if and deliberately not a curated one: taking
-`stellarator_helias.IN.DAT` and changing only `istell` yields a tokamak carrying that
-file's `i_confinement_time = 38` (ISS04) and `i_plasma_pedestal = 0` (parabolic). Both
-assemble, because `CONFINEMENT_SCALING` is keyed on the *law* and not on the device --
-which is the point that registry's docstring makes -- and because the parabolic arm's
-one device-specific node, `ecrh_density_limit`, is `None` on a tokamak. That last part
-was a bug this row found: the slot used to carry `EcrhDensityLimit` unconditionally, so
-this override would have put `st_d_limit_ecrh` (reached only from `st_phys`) into a
-tokamak.
+**That is the interesting half.** An empty device slot cannot disagree with an input
+file about anything; a filled one can, and immediately did. The refusal names
+`i_plasma_ignited_separatrix`, a slot in `.tokamak.physics` that did not exist when this
+row was written, which is exactly the evidence that filling the device slot made the
+factory answerable for more of the file than it was before.
+
+What that row used to demonstrate is not lost: `test_machine.
+test_a_silent_indat_is_still_refused_but_no_longer_on_istell` asserts that a file
+carrying only PROCESS's refused defaults builds a `TokamakProcess` with a populated
+`.tokamak.build` and TF coil, which is a stronger "a different thing was built" than a
+type name.
 
 `i_plasma_pedestal` **left this list** and is not a `FACTORY_READ_SWITCHES` member any
 more: `st_init` forces it to `0` on every stellarator run, so the factory reads
@@ -531,6 +541,12 @@ pinned instead, by `test_a_process_forced_switch_cannot_move_the_machine`.
 `Costs.run()` calls `coelc()` only when `ireactor == 1 and ipnet == 0`. `NoneType` is
 the probed type name, and that is the point: absence is an occupant.
 
+`i_tf_sc_mat` **joined this list** when `winding_pack_intersect_inputs` became a slot
+(`_audit/next_steps.md` §14.5); it was a `Hardcoded` static kwarg before, checked only
+for agreeing with the file. `5` (WST Nb3Sn) is one of the seven arms that are not the
+reference run's, chosen for having no material read of its own -- the probe is the
+occupant's class name, so any of the seven would do.
+
 `ipowerflow` **moved here from `_CAUSES_A_REFUSAL`**, and the old row was pinning a bug.
 `BlanketShieldPowerExponential` is a ported occupant of the joint blanket/shield-power
 slot -- arm 1 of `_blanket_shield_power_arm`, `blktmodel == 0 & ipowerflow == 0` -- and
@@ -542,12 +558,14 @@ not `fw_area`, which `ipowerflow` also selects on its own: `fw_area` would pass 
 or not the joint key were fixed."""
 
 _CAUSES_A_REFUSAL = (
+    ("istell", 0, ("i_plasma_ignited_separatrix", 1)),
     ("istell", 3, ("istell", 3)),
     ("i_cost_model", 1, ("i_cost_model", 1)),
     ("blktmodel", 1, ("blktmodel_ipowerflow", 0)),
     ("blkttype", 1, ("blktmodel_blkttype", 1)),
 )
-"""Four refusals, for two different reasons -- and `istell` appears in **both** tables.
+"""Five refusals, for three different reasons -- and `istell` appears twice, at two
+values, for two unrelated reasons.
 
 `i_cost_model`: the switch has exactly one registered occupant, so its *other* value
 cannot select a second one -- there is none to select. `i_cost_model == 1` is
@@ -555,13 +573,14 @@ KOVARI_2014, unported. It was spelled as a slot holding `None` until the tree st
 carrying optional slots; it is a refusal now, which is why it moved here from
 `_CHANGES_A_SLOT`.
 
-`istell`: **the value under test changed from `0` to `3`, and it is the one switch this
-module exercises from both tables.** `0` moved to `_CHANGES_A_SLOT` because it now
-assembles a `TokamakProcess`. `3` is one of the five hardcoded machine presets
-(`_ISTELL_PRESET_REASON`), which are still unported, so the refusal evidence this row
-carries is still available -- it just comes from a value that is genuinely refused rather
-than from one that used to be. Keeping the row rather than dropping it is deliberate: the
-refusal path through `istell` is real and is what an unrecognised device must hit.
+`istell`: **two rows, and they refuse for reasons that have nothing to do with each
+other.** `3` is one of the five hardcoded machine presets (`_ISTELL_PRESET_REASON`),
+still unported -- a refusal *about the device*, and what an unrecognised device must
+hit. `0` is a device this port has, and it refuses about the *physics* the file asks for:
+re-reading `stellarator_helias.IN.DAT` as a tokamak carries its `i_plasma_ignited = 1`
+into `.tokamak.physics.separatrix_power`, whose ignited arm is not written. The second
+row is only possible because the tokamak device slot has occupants now; see
+`_CHANGES_A_SLOT`'s note for why that is the result rather than a regression.
 
 `blktmodel`/`blkttype`: each feeds a *joint* dispatch (`.fwbs.blktmodel` x
 `.heat_transport.ipowerflow`, and x `.fwbs.blkttype`) alongside a second switch, and the

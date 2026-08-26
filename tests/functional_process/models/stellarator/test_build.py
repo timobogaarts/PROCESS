@@ -74,7 +74,14 @@ def _baseline_data():
 
 
 def _reference_blktmodel_blanket_thickness(
-    blbuith, blbmith, blbpith, blbuoth, blbmoth, blbpoth, dr_shld_inboard, dr_shld_outboard
+    blbuith,
+    blbmith,
+    blbpith,
+    blbuoth,
+    blbmoth,
+    blbpoth,
+    dr_shld_inboard,
+    dr_shld_outboard,
 ):
     """Call PROCESS's `st_build` (`blktmodel = 1` branch) through the port's signature."""
     data = _baseline_data()
@@ -89,7 +96,11 @@ def _reference_blktmodel_blanket_thickness(
     data.build.dr_shld_outboard = dr_shld_outboard
 
     st_build(None, False, data)
-    return data.build.dr_blkt_inboard, data.build.dr_blkt_outboard, data.build.dz_shld_upper
+    return (
+        data.build.dr_blkt_inboard,
+        data.build.dr_blkt_outboard,
+        data.build.dz_shld_upper,
+    )
 
 
 def _reference_build(

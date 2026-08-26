@@ -51,7 +51,9 @@ def _reference_ecrh_heating(p_hcd_primary_extra_heat_mw, eta_ecrh_injector_wall_
     )
 
 
-def _reference_lowhyb_heating(p_hcd_primary_extra_heat_mw, eta_lowhyb_injector_wall_plug):
+def _reference_lowhyb_heating(
+    p_hcd_primary_extra_heat_mw, eta_lowhyb_injector_wall_plug
+):
     """Call PROCESS's `st_heat` (`isthtr == 2`) through the port's signature."""
     stellarator = _stellarator()
     data = stellarator.data

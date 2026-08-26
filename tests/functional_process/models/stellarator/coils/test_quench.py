@@ -21,7 +21,9 @@ from process.models.stellarator.coils.quench import (
 from process.models.stellarator.coils.quench import (
     calculate_quench_protection_current_density as _process_current_density,
 )
-from process.models.stellarator.coils.quench import max_dump_voltage as _process_max_dump_voltage
+from process.models.stellarator.coils.quench import (
+    max_dump_voltage as _process_max_dump_voltage,
+)
 
 
 def _reference_quench_protection(

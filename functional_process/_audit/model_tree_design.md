@@ -83,26 +83,32 @@ class Profiles(ModelNamespace):
     grid: ProfileGrid = ProfileGrid(n_plasma_profile_elements=201)
     parameterisation: ProfileParameterisation = ProfileParameterisationParabolic()
 
+
 class Physics(ModelNamespace):
     profiles: Profiles = Profiles()
     confinement_time: ConfinementTime = ConfinementTimeISS04(rad_loss=RadLoss.CORE_ONLY)
     fusion_rates: FusionRates = FusionRates()
 
+
 class Machine(ModelNamespace):
     physics: Physics = Physics()
-    costs: CostModel | None = None          # PROCESS's default cost model is unported: honestly absent
+    costs: CostModel | None = (
+        None  # PROCESS's default cost model is unported: honestly absent
+    )
     heating: HeatingModel = HeatingECRH()
 
-HELIAS = machine_from_indat(REFERENCE_INPUT_FILE)   # Machine() + IN.DAT deltas
-GRAPH  = to_graph(HELIAS)
+
+HELIAS = machine_from_indat(REFERENCE_INPUT_FILE)  # Machine() + IN.DAT deltas
+GRAPH = to_graph(HELIAS)
 ```
 
 Swapping a model is a functional update at a named, typed address — the same idiom as
 the variable side and as all of JAX:
 
 ```python
-variant = eqx.tree_at(lambda m: m.physics.confinement_time, HELIAS,
-                      ConfinementTimePetty08())
+variant = eqx.tree_at(
+    lambda m: m.physics.confinement_time, HELIAS, ConfinementTimePetty08()
+)
 ```
 
 ## 2. Why the previous designs are superseded, in one table
@@ -132,7 +138,7 @@ A marker base class, exported by `cottax.interfaces.pytree_namespace_module`:
 
 ```python
 class ModelNamespace(eqx.Module):
-    '''A namespace of models, as an instance: public fields are slots.'''
+    """A namespace of models, as an instance: public fields are slots."""
 ```
 
 `node_and_names` gains one branch, tested **after** `isinstance(x, NodalDeclaration)`
@@ -343,7 +349,8 @@ After assembly: **every read has an owner or is on the declared boundary.**
 ```python
 def check_boundary(graph, allowed: frozenset[VarPath]) -> None:
     orphans = unowned_inputs(graph) - allowed
-    if orphans: raise ...   # naming each orphan and, where known, the slot whose occupant lost it
+    if orphans:
+        raise ...  # naming each orphan and, where known, the slot whose occupant lost it
 ```
 
 `allowed` for the reference machine is pinned from `boundary_inputs_audit.md`'s audited

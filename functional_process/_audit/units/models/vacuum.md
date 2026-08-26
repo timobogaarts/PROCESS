@@ -562,3 +562,126 @@ None. Every read in this file is either an explicit argument, a `.vacuum.*`/
    whoever picks this up should treat the objective question especially carefully,
    since getting it wrong would silently misrepresent what PROCESS's duct-sizing model
    claims to optimise.
+
+## tokamak-scope addendum (wave-1 dispatch)
+
+Added by a later pass porting `.tokamak.vacuum_vessel`, confirming this record's own
+earlier prediction (§ source, above: "`VacuumVessel` ... is out of scope" — true only
+for the stellarator, as flagged there at the time). `Vacuum` (everything above this
+section) is untouched.
+
+### source
+
+`process/models/vacuum.py:736-994`, `VacuumVessel` class. Reached on the tokamak path
+at `caller.py:331` (`unit #16`'s own note: "confirmed unreachable on the stellarator
+pipeline, no action needed" — the tokamak trace is the confirmation the other half of
+that sentence anticipated). In scope: `VacuumVessel.run()` (742-799),
+`calculate_vessel_half_height` (801-855, `@staticmethod`),
+`calculate_elliptical_vessel_volumes` (899-933, `@staticmethod`). Out of scope:
+`calculate_dshaped_vessel_volumes` (857-897, `@staticmethod`, D-shaped arm, UNPORTED —
+see § switches), `output()` (975-994, pure reporting).
+
+### data footprint
+
+| VarPath | read/write | classification | note |
+|---|---|---|---|
+| `.build.z_tf_inside_half` | read | explicit-arg | `:745` |
+| `.build.dz_shld_vv_gap` | read | explicit-arg | `:746` |
+| `.build.dz_vv_lower` | read | explicit-arg | `:747` |
+| `.divertor.n_divertors` | read | switch (branch) | `:748` — see § switches; not a port parameter |
+| `.build.dz_blkt_upper` | read | explicit-arg | `:749` — single-null arm only |
+| `.build.dz_shld_upper` | read | explicit-arg | `:750` — same arm |
+| `.build.z_plasma_xpoint_upper` | read | explicit-arg | `:751` — same arm |
+| `.build.dr_fw_plasma_gap_inboard` | read | explicit-arg | `:752` — same arm |
+| `.build.dr_fw_plasma_gap_outboard` | read | explicit-arg | `:753` — same arm |
+| `.build.dr_fw_inboard` | read | explicit-arg | `:754` — same arm |
+| `.build.dr_fw_outboard` | read | explicit-arg | `:755` — same arm |
+| `.blanket.dz_vv_half` | write | local-intermediate | `:744`, read back at `:769,786` (same straight-line call) — kept a local in the port; `structure.md`'s `dewmkg` cross-reference note applies in reverse here (nothing outside this chain reads `dz_vv_half` in `process/`, confirmed by grep) |
+| `.physics.itart` | read | switch | `:759` — see § switches |
+| `.fwbs.i_fw_blkt_vv_shape` | read | switch | `:760` — see § switches |
+| `.physics.rmajor` | read | explicit-arg | `:781` |
+| `.physics.rminor` | read | explicit-arg | `:781` |
+| `.physics.triang` | read | explicit-arg | `:783` — elliptical arm only |
+| `.build.r_shld_inboard_inner` | read | explicit-arg | `:767,785` |
+| `.build.r_shld_outboard_outer` | read | explicit-arg | `:768,785` |
+| `.build.dr_vv_inboard` | read | explicit-arg | `:770,787` |
+| `.build.dr_vv_outboard` | read | explicit-arg | `:771,788` |
+| `.build.dz_vv_upper` | read | explicit-arg | `:772,789` |
+| `.blanket.vol_vv_inboard` | write | explicit-arg | `:762-779` |
+| `.blanket.vol_vv_outboard` | write | explicit-arg | same |
+| `.fwbs.fvoldw` | read | explicit-arg | `:796` |
+| `.fwbs.vol_vv` | write (twice) | redundant-duplicate-write-adjacent | `:765/779` write the raw shell volume, `:796` overwrites with the coverage-scaled one — the port keeps only the final value (`calculate_vacuum_vessel_mass`'s first return), matching PROCESS's own net effect |
+| `.fwbs.den_steel` | read | explicit-arg | `:799` |
+| `.fwbs.m_vv` | write | explicit-arg | `:799` — `tokamak_boundary.md`'s one declared read of this slot |
+
+### proposed signature(s)
+
+```python
+def calculate_vessel_half_height(
+    z_tf_inside_half, dz_shld_vv_gap, dz_vv_lower, dz_blkt_upper, dz_shld_upper,
+    z_plasma_xpoint_upper, dr_fw_plasma_gap_inboard, dr_fw_plasma_gap_outboard,
+    dr_fw_inboard, dr_fw_outboard,
+) -> float:  # dz_vv_half, n_divertors == 1 baked in
+
+def calculate_elliptical_vessel_volumes(
+    rmajor, rminor, triang, r_shld_inboard_inner, r_shld_outboard_outer, dz_vv_half,
+    dr_vv_inboard, dr_vv_outboard, dz_vv_upper, dz_vv_lower,
+) -> tuple[float, float, float]:  # vol_vv_inboard, vol_vv_outboard, vol_vv (pre-coverage)
+
+def calculate_vacuum_vessel_mass(vol_vv_raw, fvoldw, den_steel) -> tuple[float, float]:  # vol_vv, m_vv
+
+def calculate_vacuum_vessel_outputs(...) -> tuple[float, float, float, float, float]:
+    # composes the three above, mirrors VacuumVessel.run() end to end
+```
+
+### cottax node
+
+`VacuumVesselElliptical(ExplicitFunction)`, in `functional_process/models/vacuum/
+vacuum.py`, appended after `VacuumOld`. Owns `dz_vv_half`, `vol_vv_inboard`,
+`vol_vv_outboard`, `vol_vv`, `m_vv`. Proposed as the sole occupant of
+`.tokamak.vacuum_vessel` (registration is the consolidation pass's job).
+
+### tier signal
+
+**Tier 1**, all three functions (plus the composite). No iteration, no calls into
+another model's method, no CoolProp.
+
+**Sample provenance.** `tests/unit/models/test_vacuum.py::test_elliptical_vessel_
+volumes` provides one legacy point for `calculate_elliptical_vessel_volumes`, used
+verbatim. No legacy oracle exists for `calculate_vessel_half_height` or the composite
+`VacuumVessel.run()` pipeline; both are fuzz-only.
+
+### switches touched
+
+| switch | reachable values | live on `large_tokamak_eval` | decision | evidence |
+|---|---|---|---|---|
+| `.divertor.n_divertors` | `1`, `2` | `1` — derived by `process/core/init.py:606-616` from `.physics.i_single_null = 1` (`large_tokamak_eval.IN.DAT:307`), not the field's own default of `2` | **split** (baked, no parameter) | `calculate_vessel_half_height`'s `if n_divertors == 2: z_top = z_bottom else: ...` (`vacuum.py:845-851`) reads a materially different set of fields per arm. Same switch, same live value, as `structure.md`/`divertor.md`/`fw.md` |
+| `.physics.itart` / `.fwbs.i_fw_blkt_vv_shape` (compound) | `itart ∈ {0,1}`, `i_fw_blkt_vv_shape ∈ {D_SHAPED=1, ELLIPTICAL_SHAPED=2}` | `itart = 0`, `i_fw_blkt_vv_shape = 2` (both PROCESS defaults) → elliptical arm | **split** (baked, no parameter) | `vacuum.py:758-791`: D-shaped arm reads no `triang`; elliptical arm does. Same compound switch, resolved the same way, as `fw.md`'s analogous first-wall-area dispatch — independently confirmed rather than assumed shared |
+
+### calls into other models
+
+None.
+
+### JAX-difficulty flags
+
+None beyond `ivc_functions.md`'s own (division by strictly-positive shell half-widths
+inside `eshellvol`). No fractional powers, no CoolProp, no in-place mutation.
+
+### deviations from PROCESS
+
+- **`.fwbs.vol_vv`'s intermediate write is dropped** — PROCESS writes it once with the
+  raw shell volume (`:765` or `:779`, depending on branch) and again with the
+  `fvoldw`-scaled value (`:796`); only the final value is a real output (the first
+  write is immediately superseded within the same call, `redundant-duplicate-write` in
+  spirit though not literally the same value twice). The port's
+  `calculate_vacuum_vessel_mass` produces only the final value.
+
+### open questions (addendum)
+
+- **Registration** — same open question as `fw.md`/`divertor.md`: `VacuumVesselElliptical`
+  is proposed as `.tokamak.vacuum_vessel`'s sole occupant, left to the consolidation pass.
+- **D-shaped arm** — UNPORTED. A future occupant for `itart == 1 or i_fw_blkt_vv_shape ==
+  D_SHAPED` would call the already-source-side `calculate_dshaped_vessel_volumes`
+  (`dshellvol`-based); `functional_process/models/engineering/ivc_functions.py` would
+  need `dshellvol` added at that point (currently only the elliptical pair is ported —
+  see that module's own docstring).

@@ -22,6 +22,8 @@ from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.physics.confinement_time import (
     Iss04ConfinementTime,
     IterIpb98y2ConfinementTime,
+    PlasmaPowerLossIgnitedCoreRadiation,
+    PlasmaPowerLossNonIgnitedCoreRadiation,
     calculate_confinement_time,
     calculate_double_and_triple_product,
     calculate_iter_physics_basis_elongation,
@@ -2159,3 +2161,92 @@ def test_the_law_decides_which_variable_feeds_it_not_the_device():
     # Same output either way -- one field, whichever law owns it -- which is what makes
     # them genuine alternatives for one slot.
     assert Iss04ConfinementTime().outputs == IterIpb98y2ConfinementTime().outputs
+
+
+def test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head():
+    """The two `PlasmaPowerLoss` occupants differ by one read, and it is the right one.
+
+    `_audit/tokamak_boundary.md` § "What blocked the real file" predicted this exactly:
+    *"the NON_IGNITED core-only head is the same formula with one extra term, so the arm
+    needs exactly one new class reading exactly one extra variable,
+    `.current_drive.p_hcd_injected_total_mw`"*. This pins that the prediction is what was
+    built -- one read more, nothing else, and the same owned field either way, which is
+    what makes them alternatives for one slot rather than two different nodes.
+    """
+    ignited = [i.var.path_str() for i in PlasmaPowerLossIgnitedCoreRadiation().inputs]
+    non_ignited = [
+        i.var.path_str() for i in PlasmaPowerLossNonIgnitedCoreRadiation().inputs
+    ]
+
+    assert set(non_ignited) - set(ignited) == {".current_drive.p_hcd_injected_total_mw"}
+    assert set(ignited) - set(non_ignited) == set()
+
+    # Neither arm reads the full-radiation density: `CORE_ONLY` subtracts
+    # `pden_plasma_core_rad_mw`, and a dead argument passed as zero never reaches a port.
+    assert ".physics.pden_plasma_rad_mw" not in ignited + non_ignited
+
+    assert (
+        PlasmaPowerLossIgnitedCoreRadiation().outputs
+        == PlasmaPowerLossNonIgnitedCoreRadiation().outputs
+    )
+
+
+@pytest.mark.parametrize("i_plasma_ignited", [0, 1])
+def test_power_loss_occupants_match_process(i_plasma_ignited):
+    """Each `PlasmaPowerLoss` occupant reproduces PROCESS's own `p_plasma_loss_mw`.
+
+    `plasma_power_loss_mw` is an extraction from the head of
+    `calculate_confinement_time` and PROCESS has no function of that shape, so the
+    occupants cannot be `Tier1Contract`-diffed on their own (their own docstrings say
+    so). What *can* be checked directly is that the node, called with the reads it
+    declares, returns the number PROCESS's composite computes at the same point -- which
+    is `_reference_calculate_confinement_time`'s 6th output. That closes the gap the
+    extraction opened at the one boundary PROCESS does expose.
+    """
+    kwargs = _point(34, i_rad_loss=1, i_plasma_ignited=i_plasma_ignited)
+    expected = _reference_calculate_confinement_time(**kwargs)[5]
+
+    shared = {
+        "f_p_alpha_plasma_deposited": kwargs["f_p_alpha_plasma_deposited"],
+        "p_alpha_total_mw": kwargs["p_alpha_total_mw"],
+        "p_non_alpha_charged_mw": kwargs["p_non_alpha_charged_mw"],
+        "p_plasma_ohmic_mw": kwargs["p_plasma_ohmic_mw"],
+        "pden_plasma_core_rad_mw": kwargs["pden_plasma_core_rad_mw"],
+        "vol_plasma": kwargs["vol_plasma"],
+    }
+    if i_plasma_ignited == 0:
+        actual = PlasmaPowerLossNonIgnitedCoreRadiation()(
+            p_hcd_injected_total_mw=kwargs["p_hcd_injected_total_mw"], **shared
+        )
+    else:
+        actual = PlasmaPowerLossIgnitedCoreRadiation()(**shared)
+
+    assert float(actual) == pytest.approx(expected, rel=1e-14, abs=0.0)
+
+
+def test_the_non_ignited_arm_is_not_the_ignited_one():
+    """The extra term is worth a number, not just a read -- otherwise the split is free.
+
+    A structural test that two classes declare different ports says nothing about
+    whether the distinction matters. At `_BASE`'s operating point the injected heating
+    is 50 MW of a few hundred, so the two arms differ by exactly that, and reading the
+    ignited arm's answer on a non-ignited run would be wrong by it.
+    """
+    kwargs = _point(34, i_rad_loss=1)
+    shared = {
+        "f_p_alpha_plasma_deposited": kwargs["f_p_alpha_plasma_deposited"],
+        "p_alpha_total_mw": kwargs["p_alpha_total_mw"],
+        "p_non_alpha_charged_mw": kwargs["p_non_alpha_charged_mw"],
+        "p_plasma_ohmic_mw": kwargs["p_plasma_ohmic_mw"],
+        "pden_plasma_core_rad_mw": kwargs["pden_plasma_core_rad_mw"],
+        "vol_plasma": kwargs["vol_plasma"],
+    }
+    ignited = float(PlasmaPowerLossIgnitedCoreRadiation()(**shared))
+    non_ignited = float(
+        PlasmaPowerLossNonIgnitedCoreRadiation()(
+            p_hcd_injected_total_mw=kwargs["p_hcd_injected_total_mw"], **shared
+        )
+    )
+    assert non_ignited - ignited == pytest.approx(
+        kwargs["p_hcd_injected_total_mw"], rel=1e-14
+    )

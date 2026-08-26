@@ -172,8 +172,9 @@ def grouped(depth: int | None = None):
     }
     render_grouped_dsm_html(
         blocking,
-        order=provenance_order(graph.nodes, depth=depth, owners=graph.owners,
-                               groups=axis),
+        order=provenance_order(
+            graph.nodes, depth=depth, owners=graph.owners, groups=axis
+        ),
         title="PROCESS port -- ordered by provenance",
         subtitle=(
             "The driven model graph with every subsystem's nodes adjacent. "
@@ -295,9 +296,7 @@ def sand():
     # ordered chain with **zero** coupling (`Blocking.scc` on either gives 20 and 21
     # singletons). `cottax.visualization` sequences a problem-free block's interior
     # now, so both are truthful and the choice is about what you want to see.
-    for name, blocking in (
-        ("xdsm_sand", Blocking.scc(combined)),        
-    ):
+    for name, blocking in (("xdsm_sand", Blocking.scc(combined)),):
         render_xdsm_html(
             blocking,
             file_name=name,

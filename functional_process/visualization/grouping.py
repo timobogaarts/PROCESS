@@ -1,4 +1,4 @@
-'''
+"""
 Grouping this port's graph by the *prefix* of its node names, and drawing the two orderings.
 
 **This is the port's, not cottax's.** An earlier draft put it in
@@ -89,7 +89,7 @@ rule holds for every namespace at once and no caller carries the list.
 minted over it is a two-node block that couples nothing -- counting it as coupling would
 report every declared `FixedPoint` in the graph as a feedback loop. `BlockGrouping.real`
 is that count, and the headline figures filter on it.
-'''
+"""
 
 from __future__ import annotations
 
@@ -112,21 +112,21 @@ from cottax.visualization.xdsm_html import HtmlDoc
 type Group = tuple[str, ...]
 
 UNGROUPED: Group = ()
-'''
+"""
 The group of a node whose name carries no prefix at all.
 
 Not an error and not a bucket named `'other'`: an empty prefix is exactly what a flat name
 *says*, and a picture that spelt it as a group would invent a containment the name does
 not claim. Every flat graph is entirely `UNGROUPED`, which is the honest reading of a
 graph whose names have no tree in them yet.
-'''
+"""
 
-UNGROUPED_LABEL = '(ungrouped)'
+UNGROUPED_LABEL = "(ungrouped)"
 
 
 # ================================================================== reading the prefix
 def _tree_keys(path: NodePath) -> tuple[str, ...]:
-    '''
+    """
     The leading run of namespace keys of `path`, once any minted root is dropped.
 
     **Both key kinds count, because in a `NodePath` both are namespace positions.** A
@@ -147,7 +147,7 @@ def _tree_keys(path: NodePath) -> tuple[str, ...]:
 
     What the kind stood in for -- model-tree position against a node minted over a
     *variable* place -- is now asked directly, by `group_of`'s `among`.
-    '''
+    """
     out: list[str] = []
     for key in unminted(path).keys:
         if isinstance(key, DictKey) and isinstance(key.key, str):
@@ -159,8 +159,10 @@ def _tree_keys(path: NodePath) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _cut_owner(path: NodePath, owners: 'Mapping[VarPath, NodePath]') -> 'NodePath | None':
-    '''
+def _cut_owner(
+    path: NodePath, owners: "Mapping[VarPath, NodePath]"
+) -> "NodePath | None":
+    """
     The node that owns the variable a problem-over-a-variable was minted over, or `None`.
 
     `FixedPointCut.at` (`~jaxgraph/src/cottax/rewrites.py`) names such a problem after
@@ -174,7 +176,7 @@ def _cut_owner(path: NodePath, owners: 'Mapping[VarPath, NodePath]') -> 'NodePat
     `FixedPoint` problem's inputs are), but that needs the node itself, not just the
     owners map every call site already has to hand; verified to agree with `reads` on
     both cases the reference graph has.
-    '''
+    """
     keys = unminted(path).keys
     for end in range(len(keys), 0, -1):
         var = VarPath(keys[:end])
@@ -183,10 +185,14 @@ def _cut_owner(path: NodePath, owners: 'Mapping[VarPath, NodePath]') -> 'NodePat
     return None
 
 
-def group_of(path: NodePath, *, depth: int | None = None,
-             among: 'Iterable[NodePath] | None' = None,
-             owners: 'Mapping[VarPath, NodePath] | None' = None) -> Group:
-    '''
+def group_of(
+    path: NodePath,
+    *,
+    depth: int | None = None,
+    among: "Iterable[NodePath] | None" = None,
+    owners: "Mapping[VarPath, NodePath] | None" = None,
+) -> Group:
+    """
     The group `path` declares it belongs to: its leading keys, without its own name.
 
     **`depth=None`, the default, is the tree's own answer: the namespace the node
@@ -225,9 +231,9 @@ def group_of(path: NodePath, *, depth: int | None = None,
     `UNGROUPED`. Measured on the reference driven graph: two nodes of 161 are minted over
     a variable place, and both now resolve -- `^problem.fwbs.f_ster_div_single` to
     `stellarator` and `^problem.physics.proton_rate_density.cycle` to `physics`.
-    '''
+    """
     if depth is not None and depth < 1:
-        raise ValueError(f'depth must be at least 1, not {depth}')
+        raise ValueError(f"depth must be at least 1, not {depth}")
     if among is not None and is_minted(path) and unminted(path) not in among:
         if owners is not None:
             owner = _cut_owner(path, owners)
@@ -240,23 +246,23 @@ def group_of(path: NodePath, *, depth: int | None = None,
 
 
 def group_label(group: Group) -> str:
-    '''How a group is written: dotted, like the names it is a prefix of.'''
-    return '.'.join(group) if group else UNGROUPED_LABEL
+    """How a group is written: dotted, like the names it is a prefix of."""
+    return ".".join(group) if group else UNGROUPED_LABEL
 
 
 def top_of(group: Group) -> Group:
-    '''The subsystem a group is in: its first key. `stellarator.coils -> stellarator`.
+    """The subsystem a group is in: its first key. `stellarator.coils -> stellarator`.
 
     What a *colour* is keyed on, where `group_of` is what a *group* is. A stellarator is
     its coils and its fwbs, and giving those three unrelated hues would draw the tree as
     a flat list of twelve things. The substructure is shown by nesting the ribbon
     instead, which is what containment actually looks like.
-    '''
+    """
     return group[:1]
 
 
-def containing(groups: 'Iterable[Group]') -> Group:
-    '''
+def containing(groups: "Iterable[Group]") -> Group:
+    """
     The smallest namespace holding every one of `groups`: their longest common prefix.
 
     `UNGROUPED` members are skipped rather than dragging the answer to the root -- a
@@ -264,7 +270,7 @@ def containing(groups: 'Iterable[Group]') -> Group:
     `BlockGrouping.named_groups` already takes. All-ungrouped gives `UNGROUPED`, and so
     does a genuinely cross-subsystem set: what separates the two is whether there was
     anything named to contain, not this function.
-    '''
+    """
     named = [g for g in groups if g != UNGROUPED]
     if not named:
         return UNGROUPED
@@ -277,19 +283,24 @@ def containing(groups: 'Iterable[Group]') -> Group:
     return common
 
 
-def hierarchical(groups: 'Iterable[Group]') -> tuple[Group, ...]:
-    '''
+def hierarchical(groups: "Iterable[Group]") -> tuple[Group, ...]:
+    """
     `groups` re-ordered so a namespace is followed by the namespaces inside it.
 
     First-appearance order decides the subsystems and, within one, the order among
     siblings; nesting decides the rest. For a legend only -- the matrix axes are
     `dependency_group_sequence`'s or `group_sequence`'s, and neither is this.
-    '''
+    """
     groups = tuple(dict.fromkeys(groups))
     rank = {g: i for i, g in enumerate(groups)}
-    return tuple(sorted(groups, key=lambda g: tuple(
-        rank.get(g[:i + 1], len(groups)) for i in range(len(g))
-    )))
+    return tuple(
+        sorted(
+            groups,
+            key=lambda g: tuple(
+                rank.get(g[: i + 1], len(groups)) for i in range(len(g))
+            ),
+        )
+    )
 
 
 # ================================================================== the two orderings
@@ -297,9 +308,9 @@ def group_sequence(
     names: Iterable[NodePath],
     *,
     depth: int | None = None,
-    owners: 'Mapping[VarPath, NodePath] | None' = None,
+    owners: "Mapping[VarPath, NodePath] | None" = None,
 ) -> tuple[Group, ...]:
-    '''
+    """
     Every group present, in **first-appearance order** over `names`.
 
     Stable and declared: a graph's node order is its binding order, so this is the order
@@ -310,7 +321,7 @@ def group_sequence(
     `owners`, when given (`graph.owners`), is threaded straight to `group_of` so a
     problem minted over a variable place still lands in its cut variable's owner's
     group instead of falling to `UNGROUPED` -- see `group_of`.
-    '''
+    """
     names = tuple(names)
     among = frozenset(names)
     seen: dict[Group, None] = {}
@@ -319,8 +330,10 @@ def group_sequence(
     return tuple(seen)
 
 
-def dependency_group_sequence(graph: Graph, *, depth: int | None = None) -> tuple[Group, ...]:
-    '''
+def dependency_group_sequence(
+    graph: Graph, *, depth: int | None = None
+) -> tuple[Group, ...]:
+    """
     Every group present, in **dependency order**: contract each group, then sort that.
 
     `group_sequence` reads the order off the *declaration* and never looks at an edge,
@@ -365,11 +378,13 @@ def dependency_group_sequence(graph: Graph, *, depth: int | None = None) -> tupl
     unrelated flat-named nodes rather than a subsystem, so it will tend to absorb into
     whatever SCC its members touch; on a graph where it is large, read its position as
     meaningless rather than as a claim.
-    '''
+    """
     owners = graph.owners
     among = frozenset(graph.nodes)
-    at = {name: group_of(name, depth=depth, among=among, owners=owners)
-          for name in graph.nodes}
+    at = {
+        name: group_of(name, depth=depth, among=among, owners=owners)
+        for name in graph.nodes
+    }
     declared = group_sequence(graph.nodes, depth=depth, owners=owners)
     rank = {g: i for i, g in enumerate(declared)}
 
@@ -385,12 +400,12 @@ def dependency_group_sequence(graph: Graph, *, depth: int | None = None) -> tupl
 
     condensed = nx.condensation(contracted)
     order = nx.lexicographical_topological_sort(
-        condensed, key=lambda c: min(rank[g] for g in condensed.nodes[c]['members'])
+        condensed, key=lambda c: min(rank[g] for g in condensed.nodes[c]["members"])
     )
     return tuple(
         g
         for c in order
-        for g in sorted(condensed.nodes[c]['members'], key=rank.__getitem__)
+        for g in sorted(condensed.nodes[c]["members"], key=rank.__getitem__)
     )
 
 
@@ -399,9 +414,9 @@ def provenance_order(
     *,
     depth: int | None = None,
     groups: Sequence[Group] | None = None,
-    owners: 'Mapping[VarPath, NodePath] | None' = None,
+    owners: "Mapping[VarPath, NodePath] | None" = None,
 ) -> tuple[NodePath, ...]:
-    '''
+    """
     `names` regrouped so every member of a group is adjacent, groups in `groups`' order.
 
     Within a group the input order is kept, so the only thing this changes is which nodes
@@ -431,46 +446,54 @@ def provenance_order(
     below, for the same reason `group_of` wants it: without it, the two problems minted
     over a variable place (rather than a node) would be `UNGROUPED` here too, and
     `missing` would then demand `UNGROUPED` be in `groups` whenever it is passed.
-    '''
+    """
     names = tuple(names)
     among = frozenset(names)
-    order = (tuple(groups) if groups is not None
-             else group_sequence(names, depth=depth, owners=owners))
+    order = (
+        tuple(groups)
+        if groups is not None
+        else group_sequence(names, depth=depth, owners=owners)
+    )
     index = {g: i for i, g in enumerate(order)}
-    missing = {group_of(n, depth=depth, among=among, owners=owners) for n in names} - set(index)
+    missing = {
+        group_of(n, depth=depth, among=among, owners=owners) for n in names
+    } - set(index)
     if missing:
         raise KeyError(
-            f'group(s) {sorted(group_label(g) for g in missing)} are in the graph but not '
-            f'in the `groups` order given'
+            f"group(s) {sorted(group_label(g) for g in missing)} are in the graph but not "
+            f"in the `groups` order given"
         )
-    return tuple(sorted(
-        names, key=lambda n: index[group_of(n, depth=depth, among=among, owners=owners)]
-    ))
+    return tuple(
+        sorted(
+            names,
+            key=lambda n: index[group_of(n, depth=depth, among=among, owners=owners)],
+        )
+    )
 
 
 def structure_order(blocking: Blocking) -> tuple[NodePath, ...]:
-    '''
+    """
     `blocking`'s own order, flattened: the order the graph actually runs in.
 
     The top level only. A block's interior is its own blocking and draws its own picture;
     at this level a block is contiguous by construction, which is what lets it be one
     square on the diagonal.
-    '''
+    """
     return tuple(name for block in blocking.blocks for name in block)
 
 
 # ================================================================== the measurement
 @dataclasses.dataclass(frozen=True)
 class BlockGrouping:
-    '''One block of a `Blocking`, and which groups it is made of.'''
+    """One block of a `Blocking`, and which groups it is made of."""
 
     members: tuple[NodePath, ...]
     groups: tuple[Group, ...]
-    '''The distinct groups its members declare, `UNGROUPED` included, in member order.'''
+    """The distinct groups its members declare, `UNGROUPED` included, in member order."""
 
     @property
     def real(self) -> int:
-        '''Members that are not minted names -- the block's coupling, in §11's sense.'''
+        """Members that are not minted names -- the block's coupling, in §11's sense."""
         return sum(1 for m in self.members if not is_minted(m))
 
     @property
@@ -479,17 +502,17 @@ class BlockGrouping:
 
     @property
     def container(self) -> Group:
-        '''The smallest namespace holding every named group its members declare.'''
+        """The smallest namespace holding every named group its members declare."""
         return containing(self.groups)
 
     @property
     def spans(self) -> bool:
-        '''Whether its members declare more than one named group at all.'''
+        """Whether its members declare more than one named group at all."""
         return len(self.named_groups) > 1
 
     @property
     def crosses(self) -> bool:
-        '''
+        """
         Whether it couples namespaces that **nothing smaller than the machine contains**.
 
         *This is not "spans more than one group", which is what it used to mean, and the
@@ -508,24 +531,24 @@ class BlockGrouping:
         read it as nothing at all, because the whole subtree collapsed to `physics`.
         Neither was the fact, which is: *no coupling in this graph leaves a subsystem,
         and one loop spans three levels inside `physics`.*
-        '''
+        """
         return self.spans and self.container == UNGROUPED
 
     @property
     def nests(self) -> bool:
-        '''Spans namespaces, but all inside one -- `physics` with `physics.profiles`.'''
+        """Spans namespaces, but all inside one -- `physics` with `physics.profiles`."""
         return self.spans and self.container != UNGROUPED
 
 
 @dataclasses.dataclass(frozen=True)
 class GroupingReport:
-    '''What provenance and structure agree and disagree about, on one graph.'''
+    """What provenance and structure agree and disagree about, on one graph."""
 
     depth: int | None
     groups: tuple[Group, ...]
     sizes: Mapping[Group, int]
     runs: Mapping[Group, int]
-    '''
+    """
     How many maximal contiguous stretches each group occupies in the **run** order.
 
     One means the group is also a schedulable unit -- provenance and structure agree about
@@ -533,71 +556,74 @@ class GroupingReport:
     the group is a *label*, not a module. This is the second of § 11.2's two signals, and
     the only one a count of blocks cannot give (almost every block is a single node, so
     "how many blocks does this group touch" just re-counts its members).
-    '''
+    """
 
     blocks: tuple[BlockGrouping, ...]
     cross_group_edges: int
-    '''Node-to-node edges whose endpoints are in different named groups.'''
+    """Node-to-node edges whose endpoints are in different named groups."""
 
     cross_subsystem_edges: int
-    '''
+    """
     Of those, the ones whose endpoints are in different *subsystems* (`top_of`).
 
     Both are reported because at the tree's own grain the first alone misleads: an edge
     from `.physics.fusion_rates` into `.physics.profiles.density_profile` is a
     cross-group edge and is not a subsystem talking to another subsystem. The pair is
     what says how much of the crossing is a subsystem's internal structure.
-    '''
+    """
 
     @property
     def coupled(self) -> tuple[BlockGrouping, ...]:
-        '''The blocks that genuinely couple: more than one non-minted node.'''
+        """The blocks that genuinely couple: more than one non-minted node."""
         return tuple(b for b in self.blocks if b.real > 1)
 
     @property
     def crossing(self) -> tuple[BlockGrouping, ...]:
-        '''Of those, the ones no single namespace contains -- see
-        `BlockGrouping.crosses`.'''
+        """Of those, the ones no single namespace contains -- see
+        `BlockGrouping.crosses`."""
         return tuple(b for b in self.coupled if b.crosses)
 
     @property
     def nesting(self) -> tuple[BlockGrouping, ...]:
-        '''Of those, the ones spanning namespaces that one namespace still contains.'''
+        """Of those, the ones spanning namespaces that one namespace still contains."""
         return tuple(b for b in self.coupled if b.nests)
 
     @property
     def levels(self) -> int:
-        '''How deep the grouping actually goes: the longest group present.'''
+        """How deep the grouping actually goes: the longest group present."""
         return max((len(g) for g in self.groups), default=0)
 
     def summary(self) -> str:
-        grain = 'the tree' if self.depth is None else f'depth {self.depth}'
+        grain = "the tree" if self.depth is None else f"depth {self.depth}"
         return (
-            f'{len(self.groups)} group(s) over {self.levels} level(s), by {grain}; '
-            f'{len(self.blocks)} block(s), {len(self.coupled)} with more than one real '
-            f'node, {len(self.crossing)} of those crossing a subsystem boundary and '
-            f'{len(self.nesting)} spanning namespaces inside one; '
-            f'{self.cross_group_edges} cross-group edge(s), '
-            f'{self.cross_subsystem_edges} between subsystems; '
-            f'{sum(1 for g in self.groups if self.runs.get(g, 0) == 1)}/'
-            f'{len(self.groups)} group(s) contiguous in the run order'
+            f"{len(self.groups)} group(s) over {self.levels} level(s), by {grain}; "
+            f"{len(self.blocks)} block(s), {len(self.coupled)} with more than one real "
+            f"node, {len(self.crossing)} of those crossing a subsystem boundary and "
+            f"{len(self.nesting)} spanning namespaces inside one; "
+            f"{self.cross_group_edges} cross-group edge(s), "
+            f"{self.cross_subsystem_edges} between subsystems; "
+            f"{sum(1 for g in self.groups if self.runs.get(g, 0) == 1)}/"
+            f"{len(self.groups)} group(s) contiguous in the run order"
         )
 
 
 def grouping_report(blocking: Blocking, *, depth: int | None = None) -> GroupingReport:
-    '''
+    """
     Measure provenance against structure on `blocking`: § 11's table, for any graph.
 
     Takes a `Blocking` rather than a `Graph` because "structure" is a partition somebody
     chose -- `Blocking.scc` is the finest honest one, `Blocking.fused` a coarser one, and
     which was meant is not this function's decision to make.
-    '''
+    """
     graph = blocking.graph
     order = structure_order(blocking)
     owners = graph.owners
     groups = group_sequence(graph.nodes, depth=depth, owners=owners)
     among = frozenset(graph.nodes)
-    at = {name: group_of(name, depth=depth, among=among, owners=owners) for name in graph.nodes}
+    at = {
+        name: group_of(name, depth=depth, among=among, owners=owners)
+        for name in graph.nodes
+    }
 
     sizes = {g: 0 for g in groups}
     for name in graph.nodes:
@@ -619,32 +645,48 @@ def grouping_report(blocking: Blocking, *, depth: int | None = None) -> Grouping
         (owners[var], name)
         for name in graph.nodes
         for var in graph[name].reads
-        if var in owners and at[owners[var]] != at[name]
-        and at[owners[var]] != UNGROUPED and at[name] != UNGROUPED
+        if var in owners
+        and at[owners[var]] != at[name]
+        and at[owners[var]] != UNGROUPED
+        and at[name] != UNGROUPED
     }
-    between = {(source, target) for source, target in crossing
-               if top_of(at[source]) != top_of(at[target])}
-    return GroupingReport(depth, groups, sizes, runs, blocks,
-                          len(crossing), len(between))
+    between = {
+        (source, target)
+        for source, target in crossing
+        if top_of(at[source]) != top_of(at[target])
+    }
+    return GroupingReport(
+        depth, groups, sizes, runs, blocks, len(crossing), len(between)
+    )
 
 
 # ================================================================== the drawing
 PALETTE = (
-    '#4c78a8', '#f58518', '#54a24b', '#e45756', '#b279a2', '#72b7b2',
-    '#eeca3b', '#9d7660', '#ff9da6', '#8dd3c7', '#bab0ac', '#5c9ecf',
+    "#4c78a8",
+    "#f58518",
+    "#54a24b",
+    "#e45756",
+    "#b279a2",
+    "#72b7b2",
+    "#eeca3b",
+    "#9d7660",
+    "#ff9da6",
+    "#8dd3c7",
+    "#bab0ac",
+    "#5c9ecf",
 )
-'''
+"""
 One colour per group, mid-luminance so every one of them reads on white and on black.
 
 Chosen for that constraint rather than for prettiness: a palette tuned for a light page
 goes to mud on a dark one, and this picture is drawn in whichever the reader's system
 asks for. A greyscale reader still has the group ribbon's written label beside every row.
-'''
+"""
 
-UNGROUPED_COLOUR = '#8c8c8c'
+UNGROUPED_COLOUR = "#8c8c8c"
 
-TIER_OVERLAY = (None, 'hatch-stripe', 'hatch-dot')
-'''
+TIER_OVERLAY = (None, "hatch-stripe", "hatch-dot")
+"""
 What a group beyond the palette's length is drawn with, on top of its recycled colour.
 
 More groups than colours is a real case and silently recycling would make two groups
@@ -653,18 +695,18 @@ colour recycles and a texture is laid over it: the 13th group is the 1st's blue 
 stripes, the 25th the same blue under dots. Past that the texture recycles too and the
 picture says so in its legend, because three tiers of texture is already more than a
 reader can keep apart and pretending otherwise would be worse than admitting it.
-'''
+"""
 
 
 def group_style(index: int) -> tuple[str, str | None]:
-    '''The colour and overlay texture the `index`-th group is drawn with.'''
+    """The colour and overlay texture the `index`-th group is drawn with."""
     return PALETTE[index % len(PALETTE)], TIER_OVERLAY[
         (index // len(PALETTE)) % len(TIER_OVERLAY)
     ]
 
 
 def _edges(graph: Graph) -> dict[tuple[NodePath, NodePath], list[VarPath]]:
-    '''Node -> node, with the variables that flow along each. The boundary is dropped.'''
+    """Node -> node, with the variables that flow along each. The boundary is dropped."""
     owners = graph.owners
     out: dict[tuple[NodePath, NodePath], list[VarPath]] = {}
     for name in graph.nodes:
@@ -683,23 +725,26 @@ def _matrix_struct(
     depth: int | None,
     formatter: Formatter,
 ) -> dict:
-    '''
+    """
     Everything the page draws, as plain data: rows, cells, group bands, block boxes.
 
     Built here and shipped as JSON, exactly as `render_xdsm_html` ships `xdsm_struct` --
     the browser lays out and paints, and no structural decision is taken there.
-    '''
+    """
     graph = blocking.graph
     order = tuple(order)
     if set(order) != set(graph.nodes):
         raise ValueError(
-            f'the order given holds {len(set(order))} of the graph\'s {len(graph.nodes)} '
-            f'node(s) -- a DSM is a permutation of the whole graph, not a selection'
+            f"the order given holds {len(set(order))} of the graph's {len(graph.nodes)} "
+            f"node(s) -- a DSM is a permutation of the whole graph, not a selection"
         )
 
     owners = graph.owners
     among = frozenset(graph.nodes)
-    at = {name: group_of(name, depth=depth, among=among, owners=owners) for name in graph.nodes}
+    at = {
+        name: group_of(name, depth=depth, among=among, owners=owners)
+        for name in graph.nodes
+    }
     groups = group_sequence(graph.nodes, depth=depth, owners=owners)
     # Colour is keyed on the *subsystem*, not on the group: see `top_of`. The ribbon
     # nests instead, so `stellarator.coils` is stellarator's blue in a second lane
@@ -712,23 +757,23 @@ def _matrix_struct(
 
     rows = [
         {
-            'name': formatter.node((name, graph[name])),
-            'group': group_label(at[name]),
-            'colour': hue[name][0],
-            'overlay': hue[name][1],
-            'problem': isinstance(graph[name], DeclaredNode),
-            'minted': is_minted(name),
+            "name": formatter.node((name, graph[name])),
+            "group": group_label(at[name]),
+            "colour": hue[name][0],
+            "overlay": hue[name][1],
+            "problem": isinstance(graph[name], DeclaredNode),
+            "minted": is_minted(name),
         }
         for name in order
     ]
 
     cells = [
         {
-            'r': index[target],          # inputs in rows: this row reads ...
-            'c': index[source],          # ... from this column
-            'n': len(shared),
-            'v': [formatter.var(v) for v in shared[:12]],
-            'colour': hue[source][0],
+            "r": index[target],  # inputs in rows: this row reads ...
+            "c": index[source],  # ... from this column
+            "n": len(shared),
+            "v": [formatter.var(v) for v in shared[:12]],
+            "colour": hue[source][0],
         }
         for (source, target), shared in _edges(graph).items()
     ]
@@ -746,65 +791,76 @@ def _matrix_struct(
         start = 0
         for i, name in enumerate((*order, None)):
             group = at[name] if name is not None else None
-            key = (group[:level + 1] if group is not None and len(group) > level
-                   else None)
+            key = (
+                group[: level + 1] if group is not None and len(group) > level else None
+            )
             if key != run:
                 if run is not None:
                     bands.append({
-                        'level': level, 'from': start, 'to': i - 1,
-                        'label': group_label(run) if level == 0 else run[-1],
-                        'full': group_label(run),
-                        'colour': palette[top_of(run)][0],
-                        'overlay': palette[top_of(run)][1],
+                        "level": level,
+                        "from": start,
+                        "to": i - 1,
+                        "label": group_label(run) if level == 0 else run[-1],
+                        "full": group_label(run),
+                        "colour": palette[top_of(run)][0],
+                        "overlay": palette[top_of(run)][1],
                     })
                 run, start = key, i
 
     report = grouping_report(blocking, depth=depth)
     boxes = [
         {
-            'from': min(index[m] for m in b.members),
-            'to': max(index[m] for m in b.members),
-            'size': len(b.members),
-            'real': b.real,
-            'crosses': b.crosses,
-            'nests': b.nests,
-            'container': group_label(b.container),
-            'contiguous': (max(index[m] for m in b.members)
-                           - min(index[m] for m in b.members) + 1) == len(b.members),
-            'groups': [group_label(g) for g in b.groups],
-            'members': [formatter.node((m, graph[m])) for m in b.members],
-            'at': sorted(index[m] for m in b.members),
+            "from": min(index[m] for m in b.members),
+            "to": max(index[m] for m in b.members),
+            "size": len(b.members),
+            "real": b.real,
+            "crosses": b.crosses,
+            "nests": b.nests,
+            "container": group_label(b.container),
+            "contiguous": (
+                max(index[m] for m in b.members) - min(index[m] for m in b.members) + 1
+            )
+            == len(b.members),
+            "groups": [group_label(g) for g in b.groups],
+            "members": [formatter.node((m, graph[m])) for m in b.members],
+            "at": sorted(index[m] for m in b.members),
         }
         for b in report.coupled
     ]
 
     legend = [
         {
-            'label': group_label(g) if len(g) <= 1 else g[-1],
-            'full': group_label(g),
-            'level': max(len(g) - 1, 0),
-            'colour': palette[top_of(g)][0],
-            'overlay': palette[top_of(g)][1],
-            'size': report.sizes[g],
-            'runs': report.runs[g],
+            "label": group_label(g) if len(g) <= 1 else g[-1],
+            "full": group_label(g),
+            "level": max(len(g) - 1, 0),
+            "colour": palette[top_of(g)][0],
+            "overlay": palette[top_of(g)][1],
+            "size": report.sizes[g],
+            "runs": report.runs[g],
         }
         for g in hierarchical(groups)
     ]
     return {
-        'rows': rows, 'cells': cells, 'bands': bands, 'boxes': boxes,
-        'legend': legend, 'summary': report.summary(),
-        'backward': sum(c['n'] for c in cells if c['r'] < c['c']),
-        'reads': sum(c['n'] for c in cells),
-        'coupled': len(report.coupled), 'crossing': len(report.crossing),
-        'nesting': len(report.nesting), 'levels': levels,
-        'crossEdges': report.cross_group_edges,
-        'subsystemEdges': report.cross_subsystem_edges,
-        'tiers': len(TIER_OVERLAY),
-        'recycled': len(subsystems) > len(PALETTE) * len(TIER_OVERLAY),
+        "rows": rows,
+        "cells": cells,
+        "bands": bands,
+        "boxes": boxes,
+        "legend": legend,
+        "summary": report.summary(),
+        "backward": sum(c["n"] for c in cells if c["r"] < c["c"]),
+        "reads": sum(c["n"] for c in cells),
+        "coupled": len(report.coupled),
+        "crossing": len(report.crossing),
+        "nesting": len(report.nesting),
+        "levels": levels,
+        "crossEdges": report.cross_group_edges,
+        "subsystemEdges": report.cross_subsystem_edges,
+        "tiers": len(TIER_OVERLAY),
+        "recycled": len(subsystems) > len(PALETTE) * len(TIER_OVERLAY),
     }
 
 
-_PAGE = r'''<meta charset="utf-8"><title>__TITLE__</title>
+_PAGE = r"""<meta charset="utf-8"><title>__TITLE__</title>
 <style>
 :root {
   --bg:#ffffff; --fg:#1a1a1a; --dim:#6b6b6b; --rule:#d9d9d9; --panel:#f6f6f6;
@@ -1134,7 +1190,7 @@ document.getElementById('fit').onclick = fit;
 document.getElementById('reset').onclick = () => { k = 1; tx = 12; ty = 12; apply(); };
 addEventListener('resize', fit);
 fit();
-</script>'''
+</script>"""
 
 
 def render_grouped_dsm_html(
@@ -1142,14 +1198,14 @@ def render_grouped_dsm_html(
     *,
     order: Sequence[NodePath] | None = None,
     depth: int | None = None,
-    title: str = 'Grouped DSM',
-    subtitle: str = '',
-    file_name: str = 'dsm_grouped',
-    outdir: str = '.',
+    title: str = "Grouped DSM",
+    subtitle: str = "",
+    file_name: str = "dsm_grouped",
+    outdir: str = ".",
     write: bool = False,
     formatter: Formatter = NoFormat(),
 ) -> HtmlDoc:
-    '''
+    """
     `blocking`'s graph as a DSM in `order`, every row coloured by the group its name declares.
 
     `order` defaults to `structure_order(blocking)` -- the order the graph runs in. Pass
@@ -1169,22 +1225,24 @@ def render_grouped_dsm_html(
     `IR_FAD`), which is the mirror of the `IC_FBD` `render_dsm` draws. Stated in the
     page's own legend rather than left to be inferred, because a silently mirrored DSM is
     read backwards without anything looking wrong.
-    '''
+    """
     order = structure_order(blocking) if order is None else order
     struct = _matrix_struct(blocking, order, depth=depth, formatter=formatter)
     # The placeholders are spent **before** the data goes in, not after: a node whose name
     # happened to spell `__TITLE__` would otherwise have the title substituted into the
     # middle of the graph. `</` is broken up for the same reason one level down -- a name
     # holding `</script>` would end the script tag early.
-    page = (_PAGE
-            .replace('__TITLE__', _xesc(title))
-            .replace('__SUB__', subtitle or _xesc(struct['summary']))
-            .replace('__DATA__', json.dumps(struct).replace('</', '<\\/')))
-    doc = HtmlDoc('<!doctype html>\n' + page)
+    page = (
+        _PAGE
+        .replace("__TITLE__", _xesc(title))
+        .replace("__SUB__", subtitle or _xesc(struct["summary"]))
+        .replace("__DATA__", json.dumps(struct).replace("</", "<\\/"))
+    )
+    doc = HtmlDoc("<!doctype html>\n" + page)
     if write:
         os.makedirs(outdir, exist_ok=True)
-        path = os.path.join(outdir, f'{file_name}.html')
-        with open(path, 'w', encoding='utf-8') as handle:
+        path = os.path.join(outdir, f"{file_name}.html")
+        with open(path, "w", encoding="utf-8") as handle:
             handle.write(str(doc))
         doc.path = path
     return doc

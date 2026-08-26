@@ -580,10 +580,10 @@ class Tier2Contract(PortContract):
         )
 
     def test_ported_residual_no_worse_than_process(self, sample):
-        """The port is at least as converged as PROCESS is at its own stopping point."""        
+        """The port is at least as converged as PROCESS is at its own stopping point."""
         ported_res = _as_array(
             self.residual(self.ported(**sample.kwargs), **sample.kwargs)
-        )        
+        )
         process_res = _as_array(
             self.residual(self.reference(**sample.kwargs), **sample.kwargs)
         )

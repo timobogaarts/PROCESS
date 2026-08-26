@@ -4,8 +4,13 @@ status: draft
 confidence: medium
 ---
 
-**Audit record only — nothing ported.** No `.py` written, no registry row, no
-`next_steps.md` edit; registration is the consolidation pass's job (`next_steps.md` §4b).
+**Partially ported (2026-08-26), see "## ported" below.** The subset live on
+`tests/regression/input_files/large_tokamak_eval.IN.DAT` -- `calculate_minor_radius`,
+`calculate_shape_ipdg89_x_point` (`i_plasma_geometry == 0` only), `calculate_geometry_
+double_arc`, plus functions 3-9 verbatim (including `sauter_geometry`, ported but not
+yet wired to an occupant class). No `unit_registry.md` row, no `next_steps.md` edit;
+registration is the consolidation pass's job (`next_steps.md` §4b) -- see "## ported"'s
+registration instructions.
 
 **Record path note, for the consolidation pass to settle.** `schema.md` says a record
 lives "at the path mirroring its source file within `functional_process/`". The source is
@@ -588,3 +593,93 @@ deleting them from `process/` is a separate, out-of-scope decision.
    should consume.
 7. **Where does this record live?** See the note at the top — `schema.md`'s mirroring
    rule puts it under `units/models/physics/`, the task named `units/models/`.
+
+## ported (2026-08-26)
+
+Port: `functional_process/models/physics/plasma_geometry.py`. Tests:
+`tests/functional_process/models/physics/test_plasma_geometry.py`. `50 passed, 50
+skipped` on a plain run (gradient checks skip by default); `100 passed` with
+`--fp-gradients`; `260 passed` with `--fp-gradients --fp-fuzz 5`.
+
+**Scope: the minimal closure for the live configuration, plus the sibling
+kappa95/triang95 computation.** `_audit/tokamak_boundary.md`'s `.tokamak.plasma_geom`
+slot names five outputs (`a_plasma_poloidal`, `a_plasma_surface`, `eps`, `rminor`,
+`vol_plasma`); this pass adds `kappa95`/`triang95` because they are produced by the same
+`i_plasma_geometry` branch this pass already has to reason about (the "extraction seam"
+and "proposed signature(s)" sections above already treat them as one unit).
+
+Functions ported, matching the "proposed signature(s)" section above almost verbatim
+(only `calculate_geometry_sauter`'s return order was chosen here, since that section
+left it unstated):
+
+| function | shape | matches proposed signature |
+|---|---|---|
+| `calculate_minor_radius(rmajor, aspect) -> (rminor, eps)` | new, unconditional | yes, exact |
+| `plasma_angles_arcs(a, kappa, triang)` | verbatim port (function 3) | yes |
+| `plasma_poloidal_perimeter(xi, thetai, xo, thetao)` | verbatim port (function 4) | yes |
+| `plasma_surface_area(rmajor, rminor, xi, thetai, xo, thetao)` | verbatim port (function 5) | yes |
+| `plasma_volume(rmajor, rminor, xi, thetai, xo, thetao)` | verbatim port (function 6) | yes |
+| `plasma_cross_section(xi, thetai, xo, thetao)` | verbatim port (function 7) | yes |
+| `sauter_geometry(a, r0, kappa, triang, square)` | verbatim port (function 8) | yes |
+| `calculate_shape_ipdg89_x_point(kappa, triang) -> (kappa95, triang95)` | new, `i_plasma_geometry == 0` only | yes, exact |
+| `calculate_geometry_double_arc(rmajor, rminor, kappa, triang, f_vol_plasma) -> (len_plasma_poloidal, vol_plasma, a_plasma_poloidal, a_plasma_surface)` | new, double-arc arm | yes, exact |
+| `calculate_geometry_sauter(rmajor, rminor, kappa, triang, plasma_square) -> (len_plasma_poloidal, vol_plasma, a_plasma_poloidal, a_plasma_surface)` | new, Sauter arm, ported but unwired | reorders `sauter_geometry`'s own tuple for symmetry with the double-arc function; not specified by the proposed signature |
+
+**Not ported in this pass** (each already discussed above, cross-referenced rather than
+re-derived):
+
+- `calculate_iter_physics_basis_elongation` (function 9) — **already ported**, by unit
+  #10, `functional_process/models/physics/confinement_time.py` (its own module
+  docstring records the cross-file dependency). Not duplicated here.
+- The other 12 `i_plasma_geometry` values (1–12) — see "switches touched" above for each
+  one's reads; none is live on any tracked regression input this pass checked.
+- `i_plasma_wall_gap == 0` (writes `.build.dr_fw_plasma_gap_{inboard,outboard}`) — not
+  live (`large_tokamak_eval` leaves it at the default `1`, which touches nothing in this
+  file). The `==0` arm would need `.build` write access this unit hasn't claimed.
+- The Sauter arm's occupant (compound switch `i_plasma_current == 8 or i_plasma_shape ==
+  SAUTER`) — `calculate_geometry_sauter`/`sauter_geometry` are ported as functions (cheap,
+  zero `self.data` access, per "the extraction seam" above) but not wired to a
+  `PlasmaGeometryArm` occupant, since the arm is not live on any tracked input and (per
+  "sample provenance is the weak point" above) has no regression oracle at all.
+- `.physics.a_plasma_surface_outboard` (D10) — not a target output, consumed by
+  `models/blankets/dcll.py`, outside this unit's scope.
+- `PlasmaGeom.output()` and the four dead legacy functions (`surfa`, `perim`, `fvol`,
+  `xsect0`) — reporting-only / dead-in-`process/` respectively (**D11**'s
+  recommendation followed: not carried).
+
+**Deviations from PROCESS: none beyond D1's faithful reproduction.**
+`plasma_angles_arcs` is ported bit-for-bit, including the domain failure at
+`kappa < 1 + triang` (D1) — not fixed, not guarded, matching every other faithfully-ported
+defect in this project. Every sample and fuzz bound in the test file is chosen to avoid
+that domain (documented in the test file's module docstring) rather than to test through
+it, since D1 is a genuine PROCESS defect, not a porting question — testing "does the port
+reproduce the wrong-signed geometry" is a separate, not-yet-written check, not part of
+value/gradient agreement.
+
+**Cottax nodes, resolving part of the open-questions list above:**
+
+| class | family | owns | reads |
+|---|---|---|---|
+| `PlasmaMinorRadius` | (none — unconditional) | `.physics.rminor`, `.physics.eps` | `.physics.rmajor`, `.physics.aspect` |
+| `Ipdg89XPointPlasmaShape` | `PlasmaShapeKappa95Triang95` | `.physics.kappa95`, `.physics.triang95` | `.physics.kappa`, `.physics.triang` |
+| `DoubleArcPlasmaGeometry` | `PlasmaGeometryArm` | `.physics.len_plasma_poloidal`, `.physics.vol_plasma`, `.physics.a_plasma_poloidal`, `.physics.a_plasma_surface` | `.physics.rmajor`, `.physics.rminor`, `.physics.kappa`, `.physics.triang`, `.physics.f_vol_plasma` |
+
+**Open question 1 (eight or thirteen?) is superseded, not answered.** The wave-1 binding
+policy (`next_steps.md` §14.2, "no switch is a static kwarg") settles it in the
+"thirteen" direction for any future pass that ports the other twelve values — no family
+grouping by reads-identical sets, one occupant class per value ever supported. This pass
+only adds the first of those thirteen (`Ipdg89XPointPlasmaShape`); the other twelve
+remain to be ported the same way, individually, when a unit needs them.
+
+**Open question 2 (Sauter predicate ownership) is now concrete, not resolved.**
+`DoubleArcPlasmaGeometry` is the `False` arm of `i_plasma_current == 8 or i_plasma_shape
+== SAUTER`; nothing currently instantiates the `True` arm. Whichever pass ports
+`plasma_current.py`'s own `i_plasma_current` topology split needs to know this file's
+`PlasmaGeometryArm` family exists and shares the same disjunction, so the two are wired
+consistently rather than independently re-deriving it (per the audit record's own
+phrasing above).
+
+**Open questions 3, 4, 5, 6 are unchanged** — none was touched by this pass. Question 3
+(the `kappa > 1 + triang` precondition) was worked around in the test file's sampling,
+not resolved as a declared precondition anywhere a real run would enforce it; still
+blocking for a fuzz sampler that does not already know to avoid it.

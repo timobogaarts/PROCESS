@@ -8,8 +8,10 @@ confidence: high
 `calculate_double_and_triple_product` (registry unit #10's exact scope) plus the 48
 individual scaling-law statics they call transitively, all within this same source file,
 and `calculate_iter_physics_basis_elongation` (out-of-file, see "calls into other
-models"). Two cottax nodes: `ConfinementTime`, `DoubleAndTripleProduct`, plus
-`IterPhysicsBasisElongation` for the extra helper.
+models"). **Six cottax slots, not two nodes**: the composite `ConfinementTime` this
+line originally described was split into `power_loss`/`scaling`/`tail` when its three
+static switches became occupants, and `inputs`, `elongation` and
+`double_and_triple_product` sit beside them. See "## cottax node".
 
 ## source
 
@@ -116,6 +118,87 @@ to reproduce): the port's `iter_pb98py_confinement_time` keeps the source's `kap
 parameter name unchanged, and the composite dispatcher feeds it `kappa_ipb`, exactly as
 source does.
 
+## The NON_IGNITED power-loss arm, and what refusing it had already found
+
+*(Added by the tokamak dispatch pass. The `## cottax node` section below has since been
+rewritten to describe the head/law/tail split rather than the deleted composite
+`ConfinementTime`; the authoritative node list is
+`models/physics/confinement_time.py` itself.)*
+
+`PlasmaPowerLoss` — the head of `calculate_confinement_time`, extracted so that
+`i_plasma_ignited` and `i_rad_loss` can be occupants rather than static kwargs — had
+exactly one occupant, `PlasmaPowerLossIgnitedCoreRadiation`, written for the arm both
+stellarator reference runs use (`stellarator_helias.IN.DAT:126` sets
+`i_plasma_ignited = 1`). `_audit/tokamak_boundary.md` § "What blocked the real file"
+records what happened when a conventional tokamak was first assembled:
+`large_tokamak_eval.IN.DAT` **did not assemble**, and was refused at
+`.physics.confinement_time.power_loss`, because the file never sets `i_plasma_ignited`
+and therefore takes PROCESS's own default `0` (`physics_variables.py:881`, `NON_IGNITED`).
+It assembles now — this arm is written and registered, and `_slot_occupant`'s
+`PLASMA_POWER_LOSS` registry has two entries where it had one.
+
+That refusal is worth keeping in the record because of what it *was*. It is not a
+missing model: `i_plasma_ignited` is not one of the seventeen new decisions
+`tokamak_scope.md` counted, precisely because it is not a new switch — it is one this
+port already read, pinned to the single value two stellarator runs happen to share. The
+occupant split is what turned "a value we never varied" into "a slot with one arm
+filled", and the boundary measurement is what made the empty arm fail loudly instead of
+being silently answered by the wrong formula.
+
+**`PlasmaPowerLossNonIgnitedCoreRadiation` is that arm**, and it is as small as the
+prediction said: the same formula with one extra term, reading exactly one extra
+variable.
+
+| | reads |
+|---|---|
+| `PlasmaPowerLossIgnitedCoreRadiation` | `.physics.f_p_alpha_plasma_deposited`, `.p_alpha_total_mw`, `.p_non_alpha_charged_mw`, `.p_plasma_ohmic_mw`, `.pden_plasma_core_rad_mw`, `.vol_plasma` |
+| `PlasmaPowerLossNonIgnitedCoreRadiation` | the same six, **plus `.current_drive.p_hcd_injected_total_mw`** |
+
+The extra term is `process/models/physics/confinement_time.py:143-144` — `if
+PlasmaIgnitionModel(i_plasma_ignited) == NON_IGNITED: p_plasma_loss_mw +=
+p_hcd_injected_total_mw`, guarded by that switch and nothing else. Both occupants own
+`.physics.p_plasma_loss_mw` and neither reads `.physics.pden_plasma_rad_mw`, which is the
+`FULL_RADIATION` arm's read.
+
+`i_rad_loss` is **not** a second unwritten arm here: `large_tokamak_eval.IN.DAT` does not
+set it either, so it takes its own default `1` (`physics_variables.py:954`, `CORE_ONLY`)
+— the same value both stellarator runs use, and the value
+`PlasmaPowerLossIgnitedCoreRadiation` and `ConfinementTailCoreRadiation` were already
+written for. So the tokamak needed one new class, not two, and the `.physics.
+confinement_time.tail` slot needed none.
+
+**The one read is no longer a boundary entry.** `tokamak_boundary.md` priced this arm as
+"adds a second reader on `.current_drive.p_hcd_injected_total_mw` and no new variable at
+all, since nothing in this port produces it either way". As of the same pass, something
+does: `models/physics/current_drive.py::HcdInjectedPowerTotal`
+(`_audit/units/models/physics/current_drive.md`). The two halves of that section's
+prediction landed together.
+
+**Still UNPORTED**, and each is a real PROCESS branch reading genuinely different
+variables:
+
+| `i_plasma_ignited` | `i_rad_loss` | status |
+|---|---|---|
+| `1` IGNITED | `1` CORE_ONLY | ported (`PlasmaPowerLossIgnitedCoreRadiation`) |
+| `0` NON_IGNITED | `1` CORE_ONLY | ported (`PlasmaPowerLossNonIgnitedCoreRadiation`) |
+| `1` IGNITED | `0` FULL_RADIATION | UNPORTED — subtracts `.physics.pden_plasma_rad_mw` instead of `.pden_plasma_core_rad_mw`; a read neither written arm makes |
+| `0` NON_IGNITED | `0` FULL_RADIATION | UNPORTED — same read, plus the injected-heating term |
+| `1` IGNITED | `2` NO_RADIATION | UNPORTED — subtracts nothing, so it reads neither radiation density *and* not `.physics.vol_plasma` for that term |
+| `0` NON_IGNITED | `2` NO_RADIATION | UNPORTED — same, plus the injected-heating term |
+
+The three `ConfinementTail` arms are counted separately (`ConfinementTailCoreRadiation`
+is written; `FULL_RADIATION` and `NO_RADIATION` are not), since `i_rad_loss` decides that
+node a second time and there its arms read genuinely different variables — see
+`confinement_from_scaling`'s docstring.
+
+Validated by `tests/functional_process/models/physics/test_confinement_time.py`:
+`test_power_loss_occupants_match_process` calls each occupant with the reads it declares
+and diffs the result against `PlasmaConfinementTime.calculate_confinement_time`'s own
+`p_plasma_loss_mw` at the same point, for both arms — the one boundary PROCESS exposes
+for a function it does not itself have.
+`test_ignition_switch_decides_exactly_one_read_of_the_power_loss_head` pins that the arm
+added one read and nothing else.
+
 ## data footprint
 
 `calculate_confinement_time`'s own explicit signature (25 arguments, source-order
@@ -206,40 +289,52 @@ def calculate_double_and_triple_product(
 
 ## cottax node
 
-```python
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
-from functional_process.paths import physics
+**Head, law, tail — five slots of `.physics.confinement_time`, and no composite.** This
+section described a single `ConfinementTime` node carrying `i_confinement_time`,
+`i_rad_loss` and `i_plasma_ignited` as static fields and branching on all three
+internally. **That node no longer exists.** It declared the union of every arm's reads —
+**32, where a law needs 6 to 8** — and two of the 32 were dead at the reference machine's
+own switch values, one of them inventing a `.current_drive → .physics` subsystem edge
+that no run makes. The authoritative node list is
+`functional_process/models/physics/confinement_time.py`; what follows is what replaced
+the composite and why.
 
-class IterPhysicsBasisElongation(ExplicitFunction):
-    kappa_ipb = OutputInto(physics)
-    def __call__(self, vol_plasma=From(physics), rmajor=From(physics),
-                 rminor=From(physics)):
-        return calculate_iter_physics_basis_elongation(vol_plasma, rmajor, rminor)
+| slot | occupant(s) | switch | owns |
+|---|---|---|---|
+| `inputs` | `ConfinementScalingInputs` | — | the unit conversions every law takes (`nd_plasma_electron_line_19`, `cur_plasma_ma`) |
+| `elongation` | `IterPhysicsBasisElongation` | — | `.physics.kappa_ipb` |
+| `power_loss` | `PlasmaPowerLossIgnitedCoreRadiation`, `PlasmaPowerLossNonIgnitedCoreRadiation` | `i_plasma_ignited` × `i_rad_loss` | `.physics.p_plasma_loss_mw` |
+| `scaling` | `Iss04ConfinementTime`, `IterIpb98y2ConfinementTime` | `i_confinement_time` | `.physics.t_energy_confinement` and the law's own outputs |
+| `tail` | `ConfinementTailCoreRadiation` | `i_rad_loss` | everything downstream of the law |
+| `double_and_triple_product` | `DoubleAndTripleProduct` | — | `.physics.ntau`, `.physics.nTtau` |
 
-class ConfinementTime(ExplicitFunction):
-    i_confinement_time: int   # static field, not a read — resolved at graph-assembly time
-    i_rad_loss: int           # ″
-    pden_electron_transport_loss_mw = OutputInto(physics)
-    # ... 6 more writes, one per calculate_confinement_time return value ...
-    def __call__(self, m_fuel_amu=From(physics), ...):
-        return calculate_confinement_time(..., self.i_confinement_time, ...,
-                                           self.i_rad_loss, ...)
+**The 48 scaling laws still get no individual node, and that is now a rule rather than a
+deferral.** `switch_kwarg_survey.md` band (d): one occupant per value **this port
+supports**, not one per value PROCESS has. Two exist — ISS04 (38, the Helias run) and
+IPB98(y,2) (34, the conventional tokamak) — and the other ~46 are neither written nor
+refused-in-advance; they are values with no entry, which `_slot_occupant` reports as
+such. So the question this section left open ("48 alternatives or one dispatcher?") is
+answered in neither of the ways it framed: **the unit of rebinding is the declaring
+class**, so a law whose reads differ cannot be a kwarg, and a law nobody runs need not
+exist.
 
-class DoubleAndTripleProduct(ExplicitFunction):
-    ntau = OutputInto(physics)
-    nTtau = OutputInto(physics)
-    def __call__(self, nd_plasma_electrons_vol_avg=From(physics), ...): ...
-```
+**`IterPhysicsBasisElongation` is registered now**, and was deliberately not while the
+composite owned `kappa_ipb` itself — registering both would have been a duplicate-owner
+conflict on one `VarPath`. Several laws read it and only one law ever runs, which is
+where it belonged.
 
-Full bodies in `confinement_time.py`. `i_confinement_time`/`i_rad_loss` are `ConfinementTime`'s
-own required (no-default) fields, resolved once per instantiation — same move
-`EcrhDensityLimit(i_plasma_pedestal=0)` already established. **Which concrete value(s)
-belong in `total_process.py`'s default graph is left to the consolidation pass** — not
-decided here, per the boundary this wave's agents were given. The 48 scaling laws
-themselves get no individual node: `calculate_confinement_time` is ported and tested as
-one composite function, matching the granularity PROCESS itself chose (one dispatcher,
-not 48 independently-selected alternatives) — see "switches touched" below for why this
-is a genuine open design question rather than a settled one.
+**`StellaratorConfinementTime` is gone.** It existed to rebind exactly one read: PROCESS
+calls ISS04's twentieth argument `q95` and hands it the rotational transform instead.
+With one class per law that is not a rebinding at all —
+`iss04_stellarator_confinement_time`'s own parameter *is* `iotabar`, so
+`Iss04ConfinementTime` reads `.stellarator.iotabar` because that is what its law takes.
+The read follows from the law, not from the device, and the registry keyed on `istell`
+had nothing left to decide.
+
+**`i_rad_loss` is answered once and *used* twice** — it decides `power_loss` (which
+radiation term is subtracted from the loss power) and `tail` (which term `hstar` reads).
+`model_tree_design.md` §8 step 4d's "a switch is answered once" holds; two slots reading
+one resolved value is not a second transcription.
 
 ## tier signal
 
@@ -284,7 +379,11 @@ stellarator scalings and all three `i_rad_loss` arms.
   Not previously in `core/solver/switches.md`; worth a row there.
 - **`i_plasma_ignited`** (`.physics.i_plasma_ignited`, `PlasmaIgnitionModel`, values 0-1).
   Reads-set differs by exactly one term (`p_hcd_injected_total_mw`, added only when
-  `NON_IGNITED`) — same treatment, third static `int`.
+  `NON_IGNITED`) — same treatment, third static `int`. **Superseded**: both values now
+  have an occupant of `PlasmaPowerLoss` and neither is a static kwarg — see "The
+  NON_IGNITED power-loss arm" above. The same switch is split the same way in
+  `current_drive.md` (`HcdElectricTotalNonIgnited`/`HcdElectricTotalIgnited`), and the
+  two units agree.
 
 ## calls into other models
 
