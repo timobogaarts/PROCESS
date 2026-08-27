@@ -30,11 +30,13 @@ from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.blankets.hcpb import (
     calculate_centrepost_neutronics_absent,
     calculate_component_masses,
+    calculate_divertor_surface_and_plate_mass_double_null,
     calculate_divertor_surface_and_plate_mass_single_null,
     calculate_first_wall_radiation_powers,
     calculate_fw_coolant_void_fractions,
     calculate_nuclear_heating_magnets_conventional,
     calculate_nuclear_heating_magnets_spherical_tokamak,
+    calculate_nuclear_heating_renormalisation_double_null_conventional,
     calculate_nuclear_heating_renormalisation_single_null_conventional,
     calculate_pumping_power_mechanical_with_pressure_drop,
     nuclear_heating_blanket,
@@ -223,9 +225,12 @@ def _reference_nuclear_heating_shield_spherical_tokamak(
 
 
 def _seed_component_masses(model, **kwargs):
-    """Seed `component_masses`' reads onto a bound `DataStructure`."""
+    """Seed `component_masses`' reads onto a bound `DataStructure`.
+
+    `n_divertors` defaults to `1`; the double-null divertor-mass adapter passes `2`.
+    """
     data = model.data
-    data.divertor.n_divertors = 1
+    data.divertor.n_divertors = kwargs.get("n_divertors", 1)
     data.divertor.a_div_surface_total = kwargs["a_div_surface_total"]
     data.divertor.f_vol_div_coolant = kwargs["f_vol_div_coolant"]
     data.divertor.dx_div_plate = kwargs["dx_div_plate"]
@@ -263,6 +268,49 @@ def _reference_divertor_surface_and_plate_mass_single_null(
     model = _hcpb()
     _seed_component_masses(
         model,
+        fdiva=fdiva,
+        rmajor=rmajor,
+        rminor=rminor,
+        den_div_structure=den_div_structure,
+        a_div_surface_total=0.0,
+        f_vol_div_coolant=f_vol_div_coolant,
+        dx_div_plate=dx_div_plate,
+        vol_blkt_total=1200.0,
+        f_a_blkt_cooling_channels=0.25,
+        vol_shld_total=780.0,
+        vfshld=0.6,
+        a_fw_inboard=600.0,
+        a_fw_outboard=1000.0,
+        a_fw_total=1600.0,
+        dr_fw_inboard=0.018,
+        dr_fw_outboard=0.018,
+        f_a_fw_coolant_inboard=0.3,
+        f_a_fw_coolant_outboard=0.3,
+        den_steel=7800.0,
+        a_plasma_surface=1170.0,
+        fw_armour_thickness=0.005,
+        breeder_f=0.5,
+        breeder_multiplier=0.75,
+        vfcblkt=0.05295,
+        vfpblkt=0.1,
+    )
+    model.component_masses()
+    return model.data.divertor.a_div_surface_total, model.data.divertor.m_div_plate
+
+
+def _reference_divertor_surface_and_plate_mass_double_null(
+    fdiva, rmajor, rminor, den_div_structure, f_vol_div_coolant, dx_div_plate
+):
+    """The divertor pair `component_masses` writes at `hcpb.py:353-367`.
+
+    At `n_divertors == 2` -- the same seed as the single-null adapter with the divertor
+    count changed, since the arms read the same six fields and differ only in
+    `:360-361`'s factor of two.
+    """
+    model = _hcpb()
+    _seed_component_masses(
+        model,
+        n_divertors=2,
         fdiva=fdiva,
         rmajor=rmajor,
         rminor=rminor,
@@ -400,8 +448,12 @@ def _run_renormalisation(
     f_ster_div_single=0.0725040362777958,
     f_p_blkt_multiplication=1.269,
     p_neutron_total_mw=1301.2682862201025,
+    n_divertors=1,
 ):
-    """Drive `_RenormalisationOnly.run(False)`, returning its bound `DataStructure`."""
+    """Drive `_RenormalisationOnly.run(False)`, returning its bound `DataStructure`.
+
+    `n_divertors` defaults to `1`; the double-null contract passes `2`.
+    """
     model = _RenormalisationOnly(fw=FirstWall())
     model.data = DataStructure()
     model.unnormalised = (
@@ -413,7 +465,7 @@ def _run_renormalisation(
 
     data = model.data
     data.physics.itart = 0
-    data.divertor.n_divertors = 1
+    data.divertor.n_divertors = n_divertors
     data.fwbs.f_ster_div_single = f_ster_div_single
     data.fwbs.f_p_blkt_multiplication = f_p_blkt_multiplication
     data.physics.p_neutron_total_mw = p_neutron_total_mw
@@ -425,6 +477,19 @@ def _run_renormalisation(
 def _reference_nuclear_heating_renormalisation(**kwargs):
     """`run()`'s `hcpb.py:195-276`, at `itart == 0` and `n_divertors == 1`."""
     data = _run_renormalisation(**kwargs)
+    return (
+        data.ccfe_hcpb.pnuc_tot_blk_sector,
+        data.fwbs.p_fw_nuclear_heat_total_mw,
+        data.fwbs.p_blkt_nuclear_heat_total_mw,
+        data.fwbs.p_shld_nuclear_heat_mw,
+        data.fwbs.p_tf_nuclear_heat_mw,
+        data.fwbs.p_blkt_multiplication_mw,
+    )
+
+
+def _reference_nuclear_heating_renormalisation_double_null(**kwargs):
+    """`run()`'s `hcpb.py:195-276`, at `itart == 0` and `n_divertors == 2`."""
+    data = _run_renormalisation(n_divertors=2, **kwargs)
     return (
         data.ccfe_hcpb.pnuc_tot_blk_sector,
         data.fwbs.p_fw_nuclear_heat_total_mw,
@@ -686,6 +751,41 @@ class TestDivertorSurfaceAndPlateMassSingleNull(Tier1Contract):
     samples = [
         legacy_sample(
             "divertor-large-tokamak-eval",
+            fdiva=1.1100000000000001,
+            rmajor=8,
+            rminor=2.6666666666666665,
+            den_div_structure=10000,
+            f_vol_div_coolant=0.29999999999999999,
+            dx_div_plate=0.035000000000000003,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "fdiva": (0.8, 1.5),
+        "rmajor": (5.0, 12.0),
+        "rminor": (1.0, 4.0),
+        "den_div_structure": (5000.0, 15000.0),
+        "f_vol_div_coolant": (0.1, 0.5),
+        "dx_div_plate": (0.01, 0.1),
+    }
+
+
+class TestDivertorSurfaceAndPlateMassDoubleNull(Tier1Contract):
+    """`calculate_divertor_surface_and_plate_mass_double_null` -> the divertor pair at
+    `n_divertors == 2`.
+
+    Same legacy point and same fuzz box as the single-null contract, so the pair reads
+    as one comparison: everything but the divertor count is held fixed and the answer
+    doubles.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_divertor_surface_and_plate_mass_double_null
+    ported = calculate_divertor_surface_and_plate_mass_double_null
+
+    samples = [
+        legacy_sample(
+            "divertor-double-null-large-tokamak-eval",
             fdiva=1.1100000000000001,
             rmajor=8,
             rminor=2.6666666666666665,
@@ -1096,6 +1196,49 @@ class TestNuclearHeatingRenormalisation(Tier1Contract):
     samples = [
         legacy_sample(
             "renormalisation-reference-run",
+            p_fw_nuclear_heat_total_mw_unnormalised=164.98107822556855,
+            p_blkt_nuclear_heat_total_mw_unnormalised=1245.0032300478786,
+            p_shld_nuclear_heat_mw_unnormalised=1.3640954387315272,
+            p_tf_nuclear_heat_mw_unnormalised=0.03041968903979381,
+            f_ster_div_single=0.0725040362777958,
+            f_p_blkt_multiplication=1.269,
+            p_neutron_total_mw=1301.2682862201025,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "p_fw_nuclear_heat_total_mw_unnormalised": (50.0, 500.0),
+        "p_blkt_nuclear_heat_total_mw_unnormalised": (500.0, 2500.0),
+        "p_shld_nuclear_heat_mw_unnormalised": (0.1, 10.0),
+        "p_tf_nuclear_heat_mw_unnormalised": (0.001, 1.0),
+        "f_ster_div_single": (0.02, 0.2),
+        "f_p_blkt_multiplication": (1.0, 1.5),
+        "p_neutron_total_mw": (100.0, 4000.0),
+    }
+
+
+class TestNuclearHeatingRenormalisationDoubleNull(Tier1Contract):
+    """`calculate_nuclear_heating_renormalisation_double_null_conventional` ->
+    `run()`'s `hcpb.py:195-276` at `n_divertors == 2`, `itart == 0`.
+
+    The same reference-run point as the single-null contract. `f_ster_div_single` stays
+    below `0.5` in the fuzz box for the same reason as
+    `test_blanket_library.py`'s coverage contracts: above it `1 - 2 * f_ster_div_single`
+    changes sign and the renormalisation stops meaning anything.
+
+    Not reachable from either spherical-tokamak input file -- both set `itart = 1`, and
+    this slot refuses on `('itart_hcpb', 1)` first. Written because `hcpb.py:213-217` is
+    one of the double-null wave's named sites, and tested here so the arm is not merely
+    asserted to exist.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_nuclear_heating_renormalisation_double_null
+    ported = calculate_nuclear_heating_renormalisation_double_null_conventional
+
+    samples = [
+        legacy_sample(
+            "renormalisation-double-null-reference-run",
             p_fw_nuclear_heat_total_mw_unnormalised=164.98107822556855,
             p_blkt_nuclear_heat_total_mw_unnormalised=1245.0032300478786,
             p_shld_nuclear_heat_mw_unnormalised=1.3640954387315272,

@@ -1093,8 +1093,14 @@ class VacuumOld(ExplicitFunction):
 #
 # Both are read-to-branch switches under the wave-1 policy ("no switch is a static
 # kwarg"), so neither function below takes them as a parameter -- each function *is*
-# the occupant for its live value; the alternative arms are UNPORTED (see
-# `vacuum.md`'s tokamak-scope addendum for the per-switch reads-set evidence).
+# the occupant for its live value (see `vacuum.md`'s tokamak-scope addendum for the
+# per-switch reads-set evidence).
+#
+# 2026-08-27 (the double-null wave): `n_divertors` is no longer one of the unported
+# arms. `VacuumVesselElliptical` became a family of two -- `VacuumVesselEllipticalSingle
+# Null` (unchanged) and `VacuumVesselEllipticalDoubleNull` -- because a double-null
+# vessel's half-height is `z_bottom` alone and reads **seven** fields fewer. The shape
+# switch is untouched and still refused at `('fw_blkt_vv_shape_arm', 0)`.
 # ---------------------------------------------------------------------------
 
 
@@ -1113,7 +1119,8 @@ def calculate_vessel_half_height(
     """Vacuum vessel internal half-height (m), `n_divertors == 1` (single null) -- the
     value live on `large_tokamak_eval.IN.DAT` (see module comment above). Ports
     `VacuumVessel.calculate_vessel_half_height`, `process/models/vacuum.py:802-855`,
-    `n_divertors == 2` branch dropped (UNPORTED).
+    `n_divertors == 2` branch split off into
+    `calculate_vessel_half_height_double_null`.
 
     Parameters
     ----------
@@ -1154,6 +1161,42 @@ def calculate_vessel_half_height(
     z_top = z_top + dz_blkt_upper + dz_shld_upper
 
     return 0.5 * (z_top + z_bottom)
+
+
+def calculate_vessel_half_height_double_null(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+):
+    """Vacuum vessel internal half-height (m), `n_divertors == 2` (double null). Ports
+    the `if n_divertors == 2` arm of `VacuumVessel.calculate_vessel_half_height`,
+    `process/models/vacuum.py:843-851`.
+
+    `z_top = z_bottom` for a vertically symmetric machine, so `0.5 * (z_top + z_bottom)`
+    is `z_bottom` -- exactly, in floating point too. Written reduced, as the analogous
+    branches in `shield.py`, `blankets/blanket_library.py` and `models/fw.py` are.
+
+    **Seven fewer reads than the single-null sibling.** The `else` arm's `z_top` is
+    built from `z_plasma_xpoint_upper`, the two `dr_fw_plasma_gap_*`, the two `dr_fw_*`,
+    `dz_blkt_upper` and `dz_shld_upper`; a double-null vessel reads none of them, and
+    that is the largest reads-set difference any arm in this wave has. Declaring them
+    would invent seven edges.
+
+    Parameters
+    ----------
+    z_tf_inside_half :
+        TF coil internal half-height (m). `.build.z_tf_inside_half`.
+    dz_shld_vv_gap :
+        Gap between shield and vacuum vessel (m). `.build.dz_shld_vv_gap`.
+    dz_vv_lower :
+        Lower vacuum vessel thickness (m). `.build.dz_vv_lower`.
+
+    Returns
+    -------
+    :
+        Vacuum vessel internal half-height (m). `.blanket.dz_vv_half`.
+    """
+    return z_tf_inside_half - dz_shld_vv_gap - dz_vv_lower
 
 
 def calculate_elliptical_vessel_volumes(
@@ -1265,8 +1308,8 @@ def calculate_vacuum_vessel_outputs(
     fvoldw,
     den_steel,
 ):
-    """`.tokamak.vacuum_vessel`'s whole live-configuration pipeline: `VacuumVessel.
-    run()` end to end, at the one switch combination live on `large_tokamak_eval.
+    """`.tokamak.vacuum_vessel`'s single-null pipeline: `VacuumVessel.
+    run()` end to end, at the switch combination live on `large_tokamak_eval.
     IN.DAT` (see module comment above). No PROCESS function has this exact shape
     (`run()` itself is the stateful shell this mirrors, and `calculate_vacuum_vessel_
     mass`'s two-line body has no isolated PROCESS function either -- same shape as
@@ -1309,16 +1352,76 @@ def calculate_vacuum_vessel_outputs(
     return dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv
 
 
-class VacuumVesselElliptical(ExplicitFunction):
-    """cottax node: `.tokamak.vacuum_vessel`.
+def calculate_vacuum_vessel_outputs_double_null(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+    rmajor,
+    rminor,
+    triang,
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    fvoldw,
+    den_steel,
+):
+    """`.tokamak.vacuum_vessel`'s double-null pipeline: `VacuumVessel.run()` end to end
+    at `n_divertors == 2`, otherwise the elliptical configuration of
+    `calculate_vacuum_vessel_outputs`.
 
-    Bakes in `itart == 0`, `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED` and
-    `.divertor.n_divertors == 1` -- the combination live on
-    `large_tokamak_eval.IN.DAT` (see module comment above). Owns `.fwbs.m_vv`
-    (`tokamak_boundary.md`'s one declared read of this slot) plus `dz_vv_half`,
-    `vol_vv_inboard`, `vol_vv_outboard` and `vol_vv`, all produced by the same
-    straight-line chain in `VacuumVessel.run()`. Thin wrap of `calculate_vacuum_
-    vessel_outputs` -- no arithmetic of its own.
+    Seven parameters fewer than the single-null composite, all of them half-height
+    inputs the double-null arm does not read -- see
+    `calculate_vessel_half_height_double_null`. `dz_vv_lower` survives because the
+    volume call reads it as well.
+
+    Returns
+    -------
+    tuple
+        `(dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv)`.
+    """
+    dz_vv_half = calculate_vessel_half_height_double_null(
+        z_tf_inside_half=z_tf_inside_half,
+        dz_shld_vv_gap=dz_shld_vv_gap,
+        dz_vv_lower=dz_vv_lower,
+    )
+
+    vol_vv_inboard, vol_vv_outboard, vol_vv_raw = calculate_elliptical_vessel_volumes(
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        r_shld_inboard_inner=r_shld_inboard_inner,
+        r_shld_outboard_outer=r_shld_outboard_outer,
+        dz_vv_half=dz_vv_half,
+        dr_vv_inboard=dr_vv_inboard,
+        dr_vv_outboard=dr_vv_outboard,
+        dz_vv_upper=dz_vv_upper,
+        dz_vv_lower=dz_vv_lower,
+    )
+
+    vol_vv, m_vv = calculate_vacuum_vessel_mass(vol_vv_raw, fvoldw, den_steel)
+
+    return dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv
+
+
+class VacuumVesselElliptical(ExplicitFunction):
+    """The family that occupies `.tokamak.vacuum_vessel`: one occupant per
+    `n_divertors` arm, both at `itart == 0` and
+    `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED` (which is what "Elliptical" in the
+    family name records -- the D-shaped vessel is a different volume formula this port
+    does not have, refused at `('fw_blkt_vv_shape_arm', 0)`).
+
+    Each occupant owns `.fwbs.m_vv` (`tokamak_boundary.md`'s one declared read of this
+    slot) plus `dz_vv_half`, `vol_vv_inboard`, `vol_vv_outboard` and `vol_vv`, all
+    produced by the same straight-line chain in `VacuumVessel.run()`.
+    """
+
+
+class VacuumVesselEllipticalSingleNull(VacuumVesselElliptical):
+    """cottax node: `.tokamak.vacuum_vessel` at `.divertor.n_divertors == 1` -- the
+    combination live on `large_tokamak_eval.IN.DAT` (see module comment above). Thin
+    wrap of `calculate_vacuum_vessel_outputs`, no arithmetic of its own.
     """
 
     dz_vv_half = OutputInto(blanket)
@@ -1361,6 +1464,56 @@ class VacuumVesselElliptical(ExplicitFunction):
             dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
             dr_fw_inboard=dr_fw_inboard,
             dr_fw_outboard=dr_fw_outboard,
+            rmajor=rmajor,
+            rminor=rminor,
+            triang=triang,
+            r_shld_inboard_inner=r_shld_inboard_inner,
+            r_shld_outboard_outer=r_shld_outboard_outer,
+            dr_vv_inboard=dr_vv_inboard,
+            dr_vv_outboard=dr_vv_outboard,
+            dz_vv_upper=dz_vv_upper,
+            fvoldw=fvoldw,
+            den_steel=den_steel,
+        )
+
+
+class VacuumVesselEllipticalDoubleNull(VacuumVesselElliptical):
+    """cottax node: `.tokamak.vacuum_vessel` at `.divertor.n_divertors == 2` -- the
+    value `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` derive from
+    `i_single_null = 0`. Thin wrap of
+    `calculate_vacuum_vessel_outputs_double_null`.
+
+    Owns the same five fields as its single-null sibling and reads seven fewer: the
+    signature below has no `dz_blkt_upper`, `dz_shld_upper`, `z_plasma_xpoint_upper`,
+    `dr_fw_plasma_gap_inboard`/`_outboard` or `dr_fw_inboard`/`_outboard`.
+    """
+
+    dz_vv_half = OutputInto(blanket)
+    vol_vv_inboard = OutputInto(blanket)
+    vol_vv_outboard = OutputInto(blanket)
+    vol_vv = OutputInto(fwbs)
+    m_vv = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        z_tf_inside_half=From(build),
+        dz_shld_vv_gap=From(build),
+        dz_vv_lower=From(build),
+        rmajor=From(physics),
+        rminor=From(physics),
+        triang=From(physics),
+        r_shld_inboard_inner=From(build),
+        r_shld_outboard_outer=From(build),
+        dr_vv_inboard=From(build),
+        dr_vv_outboard=From(build),
+        dz_vv_upper=From(build),
+        fvoldw=From(fwbs),
+        den_steel=From(fwbs),
+    ):
+        return calculate_vacuum_vessel_outputs_double_null(
+            z_tf_inside_half=z_tf_inside_half,
+            dz_shld_vv_gap=dz_shld_vv_gap,
+            dz_vv_lower=dz_vv_lower,
             rmajor=rmajor,
             rminor=rminor,
             triang=triang,

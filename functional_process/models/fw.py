@@ -36,8 +36,17 @@ take their PROCESS default):
 
 All four are read-to-branch switches under the wave-1 policy ("no switch is a static
 kwarg"), so none of the port functions below takes them as a parameter at all -- each
-function *is* the occupant for its live value, and the alternative arms are UNPORTED
-(see `fw.md` § switches touched for the per-switch reads-set evidence).
+function *is* the occupant for its live value (see `fw.md` § switches touched for the
+per-switch reads-set evidence).
+
+2026-08-27 (the double-null wave): `n_divertors` is no longer one of the unported arms.
+`FirstWall` became a family of two -- `FirstWallSingleNull` (unchanged, still the
+`large_tokamak_eval.IN.DAT` occupant) and `FirstWallDoubleNull` -- because the two
+`n_divertors` branches this file takes differ in *reads*: a double-null first wall never
+looks at `.build.z_plasma_xpoint_upper` or `.build.dz_fw_plasma_gap`, so folding the arms
+into one node would declare two edges a double-null machine does not have. The other two
+switches are untouched and still refused; a double-null machine that is also spherical or
+D-shaped stops at `('fw_blkt_vv_shape_arm', 0)` instead.
 """
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
@@ -59,7 +68,8 @@ def calculate_first_wall_half_height(
     """First wall internal half-height (m), `n_divertors == 1` (single null) -- the
     value live on `large_tokamak_eval.IN.DAT` (see module docstring). Ports
     `FirstWall.calculate_first_wall_half_height`,
-    `process/models/fw.py:151-199`, `n_divertors == 2` branch dropped (UNPORTED).
+    `process/models/fw.py:151-199`, `n_divertors == 2` branch split off into
+    `calculate_first_wall_half_height_double_null`.
 
     Parameters
     ----------
@@ -95,6 +105,57 @@ def calculate_first_wall_half_height(
     )
     z_top = z_plasma_xpoint_upper + dz_fw_plasma_gap
     return 0.5e0 * (z_top + z_bottom)
+
+
+def calculate_first_wall_half_height_double_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+    dr_fw_inboard,
+    dr_fw_outboard,
+):
+    """First wall internal half-height (m), `n_divertors == 2` (double null). Ports the
+    `if n_divertors == 2` arm of `FirstWall.calculate_first_wall_half_height`,
+    `process/models/fw.py:186-197`.
+
+    A double-null machine is vertically symmetric, so PROCESS sets `z_top = z_bottom`
+    and `0.5 * (z_top + z_bottom)` collapses to `z_bottom` -- exactly, in floating point
+    as well as algebraically. Written reduced, as `shield.py` and
+    `blankets/blanket_library.py` do for the same branch.
+
+    **Two fewer reads than the single-null sibling**: `z_plasma_xpoint_upper` and
+    `dz_fw_plasma_gap` are the whole of the `else` arm's `z_top`, and a double-null
+    machine reads neither.
+
+    Parameters
+    ----------
+    z_plasma_xpoint_lower :
+        Height of the lower plasma X-point (m). `.build.z_plasma_xpoint_lower`.
+    dz_xpoint_divertor :
+        Vertical distance from the X-point to the divertor (m).
+        `.build.dz_xpoint_divertor`.
+    dz_divertor :
+        Vertical height of the divertor (m). `.divertor.dz_divertor`.
+    dz_blkt_upper :
+        Upper blanket vertical thickness (m). `.build.dz_blkt_upper`.
+    dr_fw_inboard :
+        Inboard first wall radial thickness (m). `.build.dr_fw_inboard`.
+    dr_fw_outboard :
+        Outboard first wall radial thickness (m). `.build.dr_fw_outboard`.
+
+    Returns
+    -------
+    :
+        First wall internal half-height (m). `.fwbs.dz_fw_half`.
+    """
+    return (
+        z_plasma_xpoint_lower
+        + dz_xpoint_divertor
+        + dz_divertor
+        - dz_blkt_upper
+        - 0.5e0 * (dr_fw_inboard + dr_fw_outboard)
+    )
 
 
 def calculate_elliptical_first_wall_areas(
@@ -150,7 +211,8 @@ def apply_first_wall_coverage_factors(
     """First wall areas after divertor/HCD coverage factors, `n_divertors == 1` (single
     null) -- the value live on `large_tokamak_eval.IN.DAT` (see module docstring).
     Ports `FirstWall.apply_first_wall_coverage_factors`,
-    `process/models/fw.py:287-345`, `n_divertors == 2` branch dropped (UNPORTED). The
+    `process/models/fw.py:287-345`, `n_divertors == 2` branch split off into
+    `apply_first_wall_coverage_factors_double_null`. The
     source's `ProcessValueError` guard against a non-credible outboard area
     (`:337-343`) is also dropped -- a traced function cannot raise on a data-dependent
     condition (`fw.md` § deviations); the port simply returns the (possibly
@@ -179,6 +241,55 @@ def apply_first_wall_coverage_factors(
         1.0e0 - f_ster_div_single - f_a_fw_outboard_hcd
     )
     a_fw_inboard = a_fw_inboard_full_coverage * (1.0e0 - f_ster_div_single)
+    a_fw_total = a_fw_inboard + a_fw_outboard
+    return a_fw_inboard, a_fw_outboard, a_fw_total
+
+
+def apply_first_wall_coverage_factors_double_null(
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    a_fw_inboard_full_coverage,
+    a_fw_outboard_full_coverage,
+):
+    """First wall areas after divertor/HCD coverage factors, `n_divertors == 2` (double
+    null). Ports the `if n_divertors == 2` arm of
+    `FirstWall.apply_first_wall_coverage_factors`, `process/models/fw.py:320-327`.
+
+    Two divertors block twice the solid angle, so both the inboard and the outboard area
+    lose `2 * f_ster_div_single` where the single-null arm loses `f_ster_div_single`.
+    **Unlike `blanket_library.py`'s coverage factors, this arm is symmetric** -- both
+    assignments sit inside the `if`, so there is no doubled-here-not-there defect to
+    transcribe. Worth stating, because the two functions look like the same edit and
+    only one of them was made completely.
+
+    The source's `ProcessValueError` guard against a non-credible outboard area
+    (`fw.py:337-343`) is dropped here for the same reason as in the single-null
+    sibling: a traced function cannot raise on a data-dependent condition (`fw.md`
+    § deviations).
+
+    Parameters
+    ----------
+    f_ster_div_single :
+        Fractional area of first wall sterically blocked by a **single** divertor.
+        `.fwbs.f_ster_div_single` -- produced by `.tokamak.divertor`'s
+        `DivertorHeatFluxSplit`.
+    f_a_fw_outboard_hcd :
+        Fractional area of outboard first wall covered by HCD components.
+        `.fwbs.f_a_fw_outboard_hcd`.
+    a_fw_inboard_full_coverage :
+        Inboard first wall area at full coverage (m^2).
+    a_fw_outboard_full_coverage :
+        Outboard first wall area at full coverage (m^2).
+
+    Returns
+    -------
+    tuple
+        `(a_fw_inboard, a_fw_outboard, a_fw_total)`, m^2.
+    """
+    a_fw_outboard = a_fw_outboard_full_coverage * (
+        1.0e0 - 2.0e0 * f_ster_div_single - f_a_fw_outboard_hcd
+    )
+    a_fw_inboard = a_fw_inboard_full_coverage * (1.0e0 - 2.0e0 * f_ster_div_single)
     a_fw_total = a_fw_inboard + a_fw_outboard
     return a_fw_inboard, a_fw_outboard, a_fw_total
 
@@ -247,9 +358,9 @@ def calculate_first_wall_outputs(
     ffwal,
     pflux_plasma_surface_neutron_avg_mw,
 ):
-    """`.tokamak.first_wall`'s whole live-configuration pipeline: `FirstWall.run()`
-    end to end, at the one switch combination live on `large_tokamak_eval.IN.DAT` (see
-    module docstring). Composes the five functions above in `run()`'s own order
+    """`.tokamak.first_wall`'s single-null pipeline: `FirstWall.run()` end to end, at
+    the switch combination live on `large_tokamak_eval.IN.DAT` (see module docstring).
+    Composes the five functions above in `run()`'s own order
     (`process/models/fw.py:44-149`); no PROCESS function has this exact shape (`run()`
     itself is the stateful shell this mirrors), so this composite -- not any one of its
     five parts alone -- is what `test_fw.py` diffs against a real
@@ -310,6 +421,91 @@ def calculate_first_wall_outputs(
     )
 
 
+def calculate_first_wall_outputs_double_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    rmajor,
+    rminor,
+    triang,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    p_alpha_total_mw,
+    f_p_alpha_plasma_deposited,
+    ffwal,
+    pflux_plasma_surface_neutron_avg_mw,
+):
+    """`.tokamak.first_wall`'s double-null pipeline: `FirstWall.run()` end to end at
+    `n_divertors == 2`, otherwise the same configuration as
+    `calculate_first_wall_outputs` (elliptical, `i_pflux_fw_neutron == 1`).
+
+    Two parameters fewer than the single-null composite -- `z_plasma_xpoint_upper` and
+    `dz_fw_plasma_gap` -- because the half-height arm this one calls does not read them.
+    That difference is the whole reason this is a second composite rather than one with
+    a traced `n_divertors`.
+
+    Returns
+    -------
+    tuple
+        `(a_fw_inboard, a_fw_outboard, a_fw_total, p_fw_alpha_mw, pflux_fw_neutron_mw)`.
+    """
+    dz_fw_half = calculate_first_wall_half_height_double_null(
+        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
+        dz_xpoint_divertor=dz_xpoint_divertor,
+        dz_divertor=dz_divertor,
+        dz_blkt_upper=dz_blkt_upper,
+        dr_fw_inboard=dr_fw_inboard,
+        dr_fw_outboard=dr_fw_outboard,
+    )
+
+    (
+        a_fw_inboard_full_coverage,
+        a_fw_outboard_full_coverage,
+        _a_fw_total_full_coverage,
+    ) = calculate_elliptical_first_wall_areas(
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        dz_fw_half=dz_fw_half,
+        dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
+    )
+
+    (
+        a_fw_inboard,
+        a_fw_outboard,
+        a_fw_total,
+    ) = apply_first_wall_coverage_factors_double_null(
+        f_ster_div_single=f_ster_div_single,
+        f_a_fw_outboard_hcd=f_a_fw_outboard_hcd,
+        a_fw_inboard_full_coverage=a_fw_inboard_full_coverage,
+        a_fw_outboard_full_coverage=a_fw_outboard_full_coverage,
+    )
+
+    p_fw_alpha_mw = calculate_p_fw_alpha_mw(
+        p_alpha_total_mw=p_alpha_total_mw,
+        f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+    )
+
+    pflux_fw_neutron_mw = calculate_pflux_fw_neutron_mw_ffwal(
+        ffwal=ffwal,
+        pflux_plasma_surface_neutron_avg_mw=pflux_plasma_surface_neutron_avg_mw,
+    )
+
+    return (
+        a_fw_inboard,
+        a_fw_outboard,
+        a_fw_total,
+        p_fw_alpha_mw,
+        pflux_fw_neutron_mw,
+    )
+
+
 def set_fw_geometry(radius_fw_channel, dr_fw_wall):
     """First wall radial thickness, inboard and outboard (m). Ports
     `FirstWall.set_fw_geometry`, `process/models/fw.py:347-352`, unchanged: both sides
@@ -340,17 +536,26 @@ def set_fw_geometry(radius_fw_channel, dr_fw_wall):
 
 
 class FirstWall(ExplicitFunction):
-    """cottax node: `.tokamak.first_wall`.
+    """The family that occupies `.tokamak.first_wall`: one occupant per `n_divertors`
+    arm, both at `itart == 0`, `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED` and
+    `.physics.i_pflux_fw_neutron == 1`.
 
-    Bakes in `itart == 0`, `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED`,
-    `.divertor.n_divertors == 1` and `.physics.i_pflux_fw_neutron == 1` -- the
-    combination live on `large_tokamak_eval.IN.DAT` (see module docstring). Owns all
-    three of `.tokamak.first_wall`'s declared boundary outputs
+    Each occupant owns all three of `.tokamak.first_wall`'s declared boundary outputs
     (`.first_wall.a_fw_total`, `.physics.p_fw_alpha_mw`, `.physics.pflux_fw_neutron_mw`)
     plus `a_fw_inboard`/`a_fw_outboard`, siblings of `a_fw_total` from the same source
     function and read elsewhere in `process/` (`blankets/dcll.py`, `blankets/hcpb.py`,
-    `stellarator.py`). Thin wrap of `calculate_first_wall_outputs` -- no arithmetic of
-    its own.
+    `stellarator.py`).
+
+    The other two switches are **not** family axes: a spherical or D-shaped first wall
+    is a different area formula this port does not have, and refuses at
+    `('fw_blkt_vv_shape_arm', 0)`.
+    """
+
+
+class FirstWallSingleNull(FirstWall):
+    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 1` -- the
+    combination live on `large_tokamak_eval.IN.DAT` (see module docstring). Thin wrap of
+    `calculate_first_wall_outputs`, no arithmetic of its own.
     """
 
     a_fw_inboard = OutputInto(first_wall)
@@ -388,6 +593,63 @@ class FirstWall(ExplicitFunction):
             dz_blkt_upper=dz_blkt_upper,
             z_plasma_xpoint_upper=z_plasma_xpoint_upper,
             dz_fw_plasma_gap=dz_fw_plasma_gap,
+            dr_fw_inboard=dr_fw_inboard,
+            dr_fw_outboard=dr_fw_outboard,
+            rmajor=rmajor,
+            rminor=rminor,
+            triang=triang,
+            dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
+            dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
+            f_ster_div_single=f_ster_div_single,
+            f_a_fw_outboard_hcd=f_a_fw_outboard_hcd,
+            p_alpha_total_mw=p_alpha_total_mw,
+            f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+            ffwal=ffwal,
+            pflux_plasma_surface_neutron_avg_mw=pflux_plasma_surface_neutron_avg_mw,
+        )
+
+
+class FirstWallDoubleNull(FirstWall):
+    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 2` -- the value
+    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` derive from
+    `i_single_null = 0`. Thin wrap of `calculate_first_wall_outputs_double_null`.
+
+    Owns the same five fields as its single-null sibling and reads two fewer:
+    `.build.z_plasma_xpoint_upper` and `.build.dz_fw_plasma_gap` are absent from the
+    signature below, which is the structural difference the split exists to record.
+    """
+
+    a_fw_inboard = OutputInto(first_wall)
+    a_fw_outboard = OutputInto(first_wall)
+    a_fw_total = OutputInto(first_wall)
+    p_fw_alpha_mw = OutputInto(physics)
+    pflux_fw_neutron_mw = OutputInto(physics)
+
+    def __call__(
+        self,
+        z_plasma_xpoint_lower=From(build),
+        dz_xpoint_divertor=From(build),
+        dz_divertor=From(divertor),
+        dz_blkt_upper=From(build),
+        dr_fw_inboard=From(build),
+        dr_fw_outboard=From(build),
+        rmajor=From(physics),
+        rminor=From(physics),
+        triang=From(physics),
+        dr_fw_plasma_gap_inboard=From(build),
+        dr_fw_plasma_gap_outboard=From(build),
+        f_ster_div_single=From(fwbs),
+        f_a_fw_outboard_hcd=From(fwbs),
+        p_alpha_total_mw=From(physics),
+        f_p_alpha_plasma_deposited=From(physics),
+        ffwal=From(physics),
+        pflux_plasma_surface_neutron_avg_mw=From(physics),
+    ):
+        return calculate_first_wall_outputs_double_null(
+            z_plasma_xpoint_lower=z_plasma_xpoint_lower,
+            dz_xpoint_divertor=dz_xpoint_divertor,
+            dz_divertor=dz_divertor,
+            dz_blkt_upper=dz_blkt_upper,
             dr_fw_inboard=dr_fw_inboard,
             dr_fw_outboard=dr_fw_outboard,
             rmajor=rmajor,

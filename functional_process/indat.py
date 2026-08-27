@@ -38,15 +38,19 @@ from functional_process.models.availability.availability import (
 )
 from functional_process.models.availability.namespace import Availability
 from functional_process.models.blankets.blanket_library import (
+    BlanketCoverageFactorsDoubleNull,
     BlanketCoverageFactorsSingleNull,
+    BlanketHalfHeightDoubleNull,
     BlanketHalfHeightSingleNull,
     EllipticalBlanketAreas,
     EllipticalBlanketVolumes,
 )
 from functional_process.models.blankets.hcpb import (
     CentrepostNeutronicsAbsent,
+    DivertorSurfaceAndPlateMassDoubleNull,
     DivertorSurfaceAndPlateMassSingleNull,
     NuclearHeatingMagnetsConventional,
+    NuclearHeatingRenormalisationDoubleNullConventional,
     NuclearHeatingRenormalisationSingleNullConventional,
     NuclearHeatingShieldConventional,
     PumpingPowerMechanicalWithPressureDrop,
@@ -81,8 +85,11 @@ from functional_process.models.costs.costs import (
     TfMagnetCostSuperconductingPerKg,
 )
 from functional_process.models.costs.namespace import Costs
-from functional_process.models.divertor import DivertorHeatLoadWade
-from functional_process.models.fw import FirstWall
+from functional_process.models.divertor import (
+    DivertorHeatLoadWadeDoubleNull,
+    DivertorHeatLoadWadeSingleNull,
+)
+from functional_process.models.fw import FirstWallDoubleNull, FirstWallSingleNull
 from functional_process.models.namespace import Build, Divertor
 from functional_process.models.pfcoil.namespace import (
     CSCoil,
@@ -323,7 +330,10 @@ from functional_process.models.tfcoil.superconducting import (
     WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
 )
 from functional_process.models.tokamak.namespace import Tokamak
-from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
+from functional_process.models.vacuum.vacuum import (
+    VacuumVesselEllipticalDoubleNull,
+    VacuumVesselEllipticalSingleNull,
+)
 from functional_process.total_process import StellaratorProcess, TokamakProcess
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.data_structure.build_variables import TFCSRadialConfiguration
@@ -775,18 +785,6 @@ UNPORTED = {
         "entry with the cable space given instead of the turn width, and the same "
         "ownership inversion. Not written"
     ),
-    ("n_divertors", 2): (
-        "the double-null arm, refused at **five** slots at once and for one reason "
-        "worth stating once: on `n_divertors == 2` PROCESS reads a materially different "
-        "set of fields in every one of them. `blanket_library.py:169-232` "
-        "(five fewer reads in the half-height) and `:544` (`2.0 * f_ster_div_single`); "
-        "`hcpb.py:360-361` (doubles `a_div_surface_total`) and `:215` (a different "
-        "`f_geom_blanket`); `fw.py:194-197` and `:320-333`; `vacuum.py:845-851`; "
-        "`divertor.py:377-382` (reads `.physics.f_p_div_lower` and takes a `max`). "
-        "None is written. **Note that this is refused on `.physics.i_single_null`'s "
-        "behalf**: `n_divertors` is derived from it by `init.py:606-617`, so a file "
-        "setting `i_single_null = 0` is what reaches this entry"
-    ),
     ("fw_blkt_vv_shape_arm", 0): (
         "the D-shaped first-wall/blanket/vessel arm, selected by `itart == 1 or "
         "i_fw_blkt_vv_shape == D_SHAPED` (`blanket_library.py:90-93`, `fw.py:58-86`, "
@@ -811,10 +809,6 @@ UNPORTED = {
         "complete and is wrong -- the `EcrhDensityLimit` bug class -- so the refusal is "
         "about the *machine*, not about the two nodes. `hcpb.md` open question 3 asked "
         "for the reason to live here, and this is it"
-    ),
-    ("nuclear_heating_renormalisation_arm", -1): (
-        "the double-null renormalisation: `hcpb.py:215` takes a different "
-        "`f_geom_blanket`. Not written; see `('n_divertors', 2)`"
     ),
     ("nuclear_heating_renormalisation_arm", -2): (
         "the spherical-tokamak renormalisation: `:263`'s `+ pnuc_cp_tf` and `:268`'s "
@@ -850,7 +844,6 @@ UNPORTED = {
         "different occupant of `.tokamak.ccfe_hcpb` entirely, with its own liquid-metal "
         "breeder model. Nothing of it is ported"
     ),
-    ("first_wall_arm", -1): ("the double-null first wall; see `('n_divertors', 2)`"),
     ("first_wall_arm", -2): (
         "the D-shaped first wall; see `('fw_blkt_vv_shape_arm', 0)`"
     ),
@@ -864,9 +857,6 @@ UNPORTED = {
         "value as `0`; `physics_variables.py:1006-1010` declares the domain as `1` or "
         "`2` and PROCESS's own test is `== 1` versus everything else, so the refusal is "
         "keyed on the arm rather than on either spelling of the other value.)"
-    ),
-    ("vacuum_vessel_arm", -1): (
-        "the double-null vacuum vessel; see `('n_divertors', 2)`"
     ),
     ("vacuum_vessel_arm", -2): (
         "the D-shaped vacuum vessel; see `('fw_blkt_vv_shape_arm', 0)`. It would call "
@@ -899,9 +889,6 @@ UNPORTED = {
         "`dz_xpoint_divertor`, `dr_fw_plasma_gap_inboard`, `i_single_null`, "
         "`dz_divertor` and `.tfcoil.drtop` -- none of which `divwade` reads. A "
         "tight-aspect-ratio model, disjoint from the written one. Not written"
-    ),
-    ("divertor_heat_load_arm", -3): (
-        "`divwade`'s double-null arm; see `('n_divertors', 2)`"
     ),
     ("i_cost_model", 2): (
         "i_cost_model == 2 injects a user-supplied Model instance at runtime "
@@ -1967,9 +1954,11 @@ def _n_divertors(i_single_null: int) -> int:
     arm for a single-null machine -- the `ST_INIT_I_PLASMA_PEDESTAL` shape again, a
     field whose entering value is dead because PROCESS's own initialisation assigns it.
 
-    Six occupants in this port are keyed on the result, in `blanket_library.py`,
-    `hcpb.py`, `fw.py`, `vacuum.py` and `divertor.py`, and every one of their audit
-    records independently traced the derivation back to these same eleven lines.
+    Eight slots in this port are keyed on the result -- two in `blanket_library.py`, two
+    in `hcpb.py`, one each in `fw.py`, `vacuum.py`, `divertor.py` and `shield.py` -- and
+    every one of their audit records independently traced the derivation back to these
+    same eleven lines. Since 2026-08-27 **all eight are total**: both values have an
+    occupant everywhere, so no refusal keys on `n_divertors` any more.
 
     **`n_divertors` is read two ways in one wave, and both are correct.**
     `DivertorHeatFluxSplit` reads it as a plain multiplier and takes it as an ordinary
@@ -2680,10 +2669,25 @@ found a second time. `low_aspect_ratio_DEMO` (`i_tf_sc_mat = 5`) was assembling 
 
 # ---- `.tokamak.ccfe_hcpb` ---------------------------------------------------------
 
-BLANKET_HALF_HEIGHT = {1: BlanketHalfHeightSingleNull}
-BLANKET_COVERAGE_FACTORS = {1: BlanketCoverageFactorsSingleNull}
-DIVERTOR_SURFACE_MASS = {1: DivertorSurfaceAndPlateMassSingleNull}
-"""`.divertor.n_divertors` (derived by `_n_divertors`) -> three single-null occupants."""
+BLANKET_HALF_HEIGHT = {
+    1: BlanketHalfHeightSingleNull,
+    2: BlanketHalfHeightDoubleNull,
+}
+BLANKET_COVERAGE_FACTORS = {
+    1: BlanketCoverageFactorsSingleNull,
+    2: BlanketCoverageFactorsDoubleNull,
+}
+DIVERTOR_SURFACE_MASS = {
+    1: DivertorSurfaceAndPlateMassSingleNull,
+    2: DivertorSurfaceAndPlateMassDoubleNull,
+}
+"""`.divertor.n_divertors` (derived by `_n_divertors`) -> three slots, each total.
+
+All three gained their `2` occupant on 2026-08-27, with `SHIELD_HALF_HEIGHT` below and
+the four arm-keyed slots further down: the double-null wave, run for
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`, which set `i_single_null = 0`
+(`:292`, `:638`). `n_divertors` is now a switch this port answers everywhere it is read
+to branch, so it no longer appears in `UNPORTED` at all."""
 
 BLANKET_AREAS = {1: EllipticalBlanketAreas}
 BLANKET_VOLUMES = {1: EllipticalBlanketVolumes}
@@ -2723,15 +2727,21 @@ def _nuclear_heating_renormalisation_arm(n_divertors: int, itart: int) -> int:
         SphericalTokamakModel(int(itart))
         is SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO
     )
-    if int(n_divertors) != 1:
-        return -1
-    return 0 if conventional else -2
+    if not conventional:
+        return -2
+    return 0 if int(n_divertors) == 1 else 1
 
 
 NUCLEAR_HEATING_RENORMALISATION = {
-    0: NuclearHeatingRenormalisationSingleNullConventional
+    0: NuclearHeatingRenormalisationSingleNullConventional,
+    1: NuclearHeatingRenormalisationDoubleNullConventional,
 }
-"""The renormalisation arm -> its occupant. See `_nuclear_heating_renormalisation_arm`."""
+"""The renormalisation arm -> its occupant. See `_nuclear_heating_renormalisation_arm`.
+
+Arm `1` (double-null, conventional) joined on 2026-08-27. The `itart` question is now
+asked **first**, because it is the one still without an answer: a spherical machine
+refuses on `('itart_hcpb', 1)` whichever way its divertors are counted, and reporting the
+divertor count instead would name a precondition this port now meets."""
 
 PUMPING_POWER = {
     PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP: (
@@ -2760,41 +2770,55 @@ switched even though this run never says so."""
 def _first_wall_arm(n_divertors: int, shape_arm: int, i_pflux_fw_neutron: int) -> int:
     """`(n_divertors, shape arm, i_pflux_fw_neutron)` -> `FirstWall`'s arm.
 
-    Three conditions, one occupant, and **three distinct refusals** -- which is why this
+    Three conditions, two occupants, and **two distinct refusals** -- which is why this
     returns a different negative index for each rather than a single "not the live
-    configuration". A slot with one written occupant still has to say *which* of its
-    preconditions a rejected file broke.
+    configuration". A slot still has to say *which* of its preconditions a rejected file
+    broke. (It was three refusals until 2026-08-27, when `n_divertors` gained its second
+    occupant and stopped being one.)
 
     ```
-    n_divertors != 1            -> arm -1
     shape arm is D-shaped       -> arm -2
     i_pflux_fw_neutron != 1     -> arm -3
-    otherwise                   -> arm  0
+    n_divertors == 1            -> arm  0
+    n_divertors == 2            -> arm  1
     ```
+
+    The divertor count is asked **last** since 2026-08-27, because it is the only one of
+    the three this port can now answer either way; the two refusals are what a rejected
+    file needs told.
     """
-    if int(n_divertors) != 1:
-        return -1
     if shape_arm != 1:
         return -2
-    return 0 if int(i_pflux_fw_neutron) == 1 else -3
+    if int(i_pflux_fw_neutron) != 1:
+        return -3
+    return 0 if int(n_divertors) == 1 else 1
 
 
-FIRST_WALL = {0: FirstWall}
-"""`_first_wall_arm(...)` -> `.tokamak.first_wall`'s occupant."""
+FIRST_WALL = {0: FirstWallSingleNull, 1: FirstWallDoubleNull}
+"""`_first_wall_arm(...)` -> `.tokamak.first_wall`'s occupant. The two arms differ by
+two reads (`.build.z_plasma_xpoint_upper`, `.build.dz_fw_plasma_gap`), which is why they
+are occupants and not a `n_divertors` parameter."""
 
 
 def _vacuum_vessel_arm(n_divertors: int, shape_arm: int) -> int:
-    """`(n_divertors, shape arm)` -> `VacuumVesselElliptical`'s arm. Same two conditions
-    as `_first_wall_arm`'s first two, and `vacuum.md` confirmed them independently rather
-    than inheriting them from `fw.md` -- which is worth recording, because three records
-    reaching the same predicate separately is what makes it safe to write once.
+    """`(n_divertors, shape arm)` -> the vacuum vessel's arm. Same two conditions as
+    `_first_wall_arm`'s outer two, asked in the same order, and `vacuum.md` confirmed
+    them independently rather than inheriting them from `fw.md` -- which is worth
+    recording, because three records reaching the same predicate separately is what
+    makes it safe to write once.
+
+    Since 2026-08-27 the divertor count is an occupant key rather than a refusal, so the
+    shape is asked first and is the only thing left that can refuse here.
     """
-    if int(n_divertors) != 1:
-        return -1
-    return 0 if shape_arm == 1 else -2
+    if shape_arm != 1:
+        return -2
+    return 0 if int(n_divertors) == 1 else 1
 
 
-VACUUM_VESSEL = {0: VacuumVesselElliptical}
+VACUUM_VESSEL = {
+    0: VacuumVesselEllipticalSingleNull,
+    1: VacuumVesselEllipticalDoubleNull,
+}
 """`_vacuum_vessel_arm(...)` -> `.tokamak.vacuum_vessel`'s occupant.
 
 **A confirmed registry prediction.** Unit #16 recorded `VacuumVessel` as *"confirmed
@@ -2835,24 +2859,28 @@ def _divertor_heat_load_arm(i_div_heat_load: int, n_divertors: int) -> int:
     ```
     i_div_heat_load == 0 (USER_INPUT)     -> arm -1  reads nothing, prints; UNPORTED
     i_div_heat_load == 1 (PENG_CHAMBER)   -> arm -2  divtart, six other fields; UNPORTED
-    n_divertors == 2                      -> arm -3  divwade's double-null half; UNPORTED
-    otherwise                             -> arm  0  DivertorHeatLoadWade
+    n_divertors == 1                      -> arm  0  DivertorHeatLoadWadeSingleNull
+    n_divertors == 2                      -> arm  1  DivertorHeatLoadWadeDoubleNull
     ```
 
     Joint, because `divwade`'s own double-null branch (`:377-382`) reads
     `.physics.f_p_div_lower` and takes a `max` the single-null arm does not -- so
     `n_divertors` is a second question asked only once `i_div_heat_load` has answered
-    `WADE`, the same nesting `_energy_storage_arm` has for `istore`.
+    `WADE`, the same nesting `_energy_storage_arm` has for `istore`. Both of its answers
+    are occupants since 2026-08-27; the two `i_div_heat_load` refusals are unchanged.
     """
     model = DivertorHeatLoadModel(int(i_div_heat_load))
     if model is DivertorHeatLoadModel.USER_INPUT:
         return -1
     if model is DivertorHeatLoadModel.PENG_CHAMBER:
         return -2
-    return 0 if int(n_divertors) == 1 else -3
+    return 0 if int(n_divertors) == 1 else 1
 
 
-DIVERTOR_HEAT_LOAD = {0: DivertorHeatLoadWade}
+DIVERTOR_HEAT_LOAD = {
+    0: DivertorHeatLoadWadeSingleNull,
+    1: DivertorHeatLoadWadeDoubleNull,
+}
 """The divertor heat-load arm -> its occupant. See `_divertor_heat_load_arm`."""
 
 

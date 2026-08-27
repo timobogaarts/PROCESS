@@ -202,6 +202,13 @@ DIVISION_BY_ZERO_AT_BOUNDARY = {
         "divertor.py:331,333, bp_omp/bt_omp inside atan(...) -- "
         "bt_omp = -b_plasma_toroidal_on_axis * rmajor / r_omp"
     ),
+    # The same site reached through the other `n_divertors` arm (2026-08-27): both
+    # occupants call one `_divwade_hldiv_base`, so the singularity is one singularity
+    # with two entry points, not two.
+    ("TestCalculateDivertorHeatLoadWadeDoubleNull", "b_plasma_toroidal_on_axis"): (
+        "divertor.py:331,333, bp_omp/bt_omp inside atan(...) -- "
+        "bt_omp = -b_plasma_toroidal_on_axis * rmajor / r_omp"
+    ),
     # ---- division *by a quotient*, the same class once unfolded: PROCESS spells the
     # cylindrical safety factor `rminor**2 / (rmajor * plasma_current / b)`. At
     # `b_plasma_toroidal_on_axis == 0` the inner quotient is `inf`, the outer division

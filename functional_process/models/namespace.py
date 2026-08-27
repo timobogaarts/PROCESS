@@ -202,6 +202,7 @@ class Divertor(ModelNamespace):
 
     `0` (user input, which reads nothing and computes nothing) and `1` (Peng chamber,
     `divtart`, a tight-aspect-ratio model reading six fields Wade never touches) are
-    both UNPORTED. So is Wade's own double-null arm, which reads `.physics.f_p_div_lower`
-    and takes a `max` the single-null arm does not: `calculate_divertor_heat_load_wade`
-    has no `n_divertors` argument at all, it **is** the single-null occupant."""
+    both UNPORTED. Wade's own double-null arm **is** written (2026-08-27), as a second
+    occupant: it reads `.physics.f_p_div_lower` and takes a `max` the single-null arm
+    does not, so neither function has an `n_divertors` argument -- each *is* the
+    occupant for its value."""

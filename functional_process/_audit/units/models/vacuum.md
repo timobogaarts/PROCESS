@@ -685,3 +685,39 @@ inside `eshellvol`). No fractional powers, no CoolProp, no in-place mutation.
   (`dshellvol`-based); `functional_process/models/engineering/ivc_functions.py` would
   need `dshellvol` added at that point (currently only the elliptical pair is ported —
   see that module's own docstring).
+
+
+## 2026-08-27 — the `n_divertors == 2` arm ported (double-null wave)
+
+`.tokamak.vacuum_vessel` is a family of two now: `VacuumVesselElliptical` is the abstract
+base — "Elliptical" naming the shape switch both members still bake in —
+`VacuumVesselEllipticalSingleNull` the occupant this slot already had (unchanged in
+body), and `VacuumVesselEllipticalDoubleNull` the new one. `indat.py`'s `VACUUM_VESSEL`
+registry gains arm `1` and the `('vacuum_vessel_arm', -1)` refusal is gone.
+
+**Half-height (`vacuum.py:843-851`).** `z_top = z_bottom`, so the answer is
+`z_tf_inside_half - dz_shld_vv_gap - dz_vv_lower` — written reduced, as in `shield.py`,
+`blankets/blanket_library.py` and `models/fw.py`.
+
+**Seven fewer reads, the largest arm difference in this wave.** The `else` arm builds
+`z_top` from `z_plasma_xpoint_upper`, `dr_fw_plasma_gap_inboard`/`_outboard`,
+`dr_fw_inboard`/`_outboard`, `dz_blkt_upper` and `dz_shld_upper`; a double-null vessel
+reads none of them. `dz_vv_lower` survives into the double-null composite only because
+the *volume* call reads it too. Seven invented edges is what a `jnp.where` over one node
+would have cost here — the clearest single illustration in this wave of why an arm that
+differs in reads is an occupant rather than a parameter.
+
+**Tests.** `TestCalculateVesselHalfHeightDoubleNull` and
+`TestCalculateVacuumVesselOutputsDoubleNull`, both Tier 1, over the single-null
+contracts' own boxes minus the seven dropped inputs. Both adapters **poison** all seven
+with `nan` rather than zeroing them; the composite can do it because
+`process/models/vacuum.py` reads every one of them in exactly one place (`:744-756`, the
+arguments of the half-height call), so on this arm nothing may touch them and a `nan`
+proves it rather than a zero hiding it. Green at `--fp-gradients --fp-fuzz 40`.
+
+`_vacuum_vessel_arm` was reordered to ask the shape first, for the same reason
+`_first_wall_arm` was — see `fw.md`. The two spherical-tokamak files now stop at
+`('fw_blkt_vv_shape_arm', 0)`.
+
+No new boundary input. The § Registration open question is unchanged in substance; it now
+concerns a family of two rather than a lone class.

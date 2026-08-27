@@ -194,3 +194,61 @@ inboard's value assigned, not recomputed, reproduced by returning the same
 intermediate twice). Tier 1, no switch; `test_fw.py::TestSetFwGeometry` diffs the real
 instance method through the `data` back-door (legacy point = the two defaults, fuzz
 over plausible channel geometry).
+
+
+## 2026-08-27 — the `n_divertors == 2` arm ported (double-null wave)
+
+`.tokamak.first_wall` is a family of two now: `FirstWall` is the abstract base,
+`FirstWallSingleNull` the occupant this slot already had (unchanged in body), and
+`FirstWallDoubleNull` the new one. `indat.py`'s `FIRST_WALL` registry gains arm `1` and
+the `('first_wall_arm', -1)` refusal is gone.
+
+Two of this file's functions branch on `n_divertors`, and both arms are now written:
+
+- **Half-height (`fw.py:186-197`).** `z_top = z_bottom`, so the result is `z_bottom`
+  itself — written reduced, exactly as in `shield.py` and `blankets/blanket_library.py`,
+  and exact in floating point rather than only algebraically. **Two fewer reads**:
+  `z_plasma_xpoint_upper` and `dz_fw_plasma_gap` are the whole of the `else` arm's
+  `z_top`.
+- **Coverage factors (`fw.py:320-327`).** Both the inboard and the outboard area lose
+  `2 * f_ster_div_single`. **This arm is symmetric** — both assignments sit inside the
+  `if` — unlike `blanket_library.py`'s coverage factors, where only the area assignment
+  was doubled and the volume was left on the single-divertor factor. Recorded here as
+  well as there, because the two look like the same edit and only one of them was made
+  completely. PROCESS's `ProcessValueError` guard is dropped on this arm for the same
+  reason as on the single-null one (§ deviations).
+
+The composite `calculate_first_wall_outputs_double_null` mirrors
+`calculate_first_wall_outputs` with those two parameters absent — the whole reason it is a
+second composite rather than one with a traced `n_divertors`.
+
+**`_first_wall_arm` was reordered.** It now asks the shape and `i_pflux_fw_neutron`
+first and the divertor count last, because the divertor count is the only one of the
+three this port can answer either way; the two refusals are what a rejected file needs
+told. Practical effect on the two spherical-tokamak files: they now stop at
+`('fw_blkt_vv_shape_arm', 0)` (D-shaped) rather than at the double-null refusal.
+
+**Tests.** `TestCalculateFirstWallHalfHeightDoubleNull`,
+`TestApplyFirstWallCoverageFactorsDoubleNull` and
+`TestCalculateFirstWallOutputsDoubleNull`, all Tier 1. Both double-null adapters
+**poison** `z_plasma_xpoint_upper` and `dz_fw_plasma_gap` with `nan` rather than zeroing
+them — the composite can do it too, because `process/models/fw.py` reads both fields in
+exactly one place (`:51-52`, the arguments of the half-height call), so a `nan` in
+`.build` reaches nothing else in `run()`. Green at `--fp-gradients --fp-fuzz 40`.
+
+**A sample-domain note worth carrying forward.** The single-null contracts' fuzz box has
+`z_plasma_xpoint_lower` in `(-10, -1)`, which is not the field's sign:
+`process/models/build.py:170-172` assigns it `rminor * kappa`, a magnitude. The
+single-null arm survives the wrong sign because it averages `z_bottom` against a positive
+`z_top`; the double-null arm *is* `z_bottom`, so a negative draw drives `eshellarea` to
+negative areas and PROCESS into its `ProcessValueError`. The new contracts therefore use
+`(3.0, 7.0)` and a positive legacy point.
+
+**Pre-existing, unrelated, not touched by this wave.**
+`TestCalculateFirstWallOutputs` (single null) fails 36 assertions at `--fp-fuzz 40` —
+the negative-half-height draws above, reaching PROCESS's `ProcessValueError` and the
+port's `nan`. Verified identical on a clean tree with this wave's changes stashed, so it
+is this record's finding rather than this wave's regression. The fix is the fuzz box's
+sign, and it belongs to whoever next owns this contract.
+
+No new boundary input.

@@ -216,3 +216,59 @@ other callees are all in-file and out of scope (see the source table).
    same shape as `switch_kwarg_survey.md` §4.3's `blktmodel`/`ipowerflow` pair, which that
    survey found the factory feeding *arm indices* where switch *values* were expected.
    Whoever wires this slot should key it the way §4.3 recommends rather than re-deriving.
+
+
+## 2026-08-27 — the `n_divertors == 2` arms ported (double-null wave)
+
+Both of this unit's `n_divertors` slots are total now. Driven by
+`tests/regression/input_files/spherical_tokamak_eval.IN.DAT:292` and
+`st_regression.IN.DAT:638`, which set `i_single_null = 0`; `process/core/init.py:606-617`
+derives `n_divertors = 2` from that, and `indat.py`'s `('n_divertors', 2)` refusal — which
+named this file's two sites first — is gone.
+
+| slot | single-null occupant | double-null occupant |
+|---|---|---|
+| `.tokamak.ccfe_hcpb.blanket_half_height` | `BlanketHalfHeightSingleNull` | `BlanketHalfHeightDoubleNull` |
+| `.tokamak.ccfe_hcpb.blanket_coverage_factors` | `BlanketCoverageFactorsSingleNull` | `BlanketCoverageFactorsDoubleNull` |
+
+Both are children of a new family base (`BlanketHalfHeight`, `BlanketCoverageFactors`),
+which is what `models/blankets/namespace.py` now annotates the slots with — the
+`ShieldHalfHeight` shape from `shield.md`, reused rather than reinvented.
+
+**Half-height (`blanket_library.py:220-229`).** `z_top = z_bottom` on the double-null
+arm, so PROCESS's `0.5 * (z_top + z_bottom)` collapses to `z_bottom` itself, and the
+port writes it reduced. The reduction is exact in floating point as well as
+algebraically (`x + x` is representable; `0.5 * (x + x)` is `x` to the bit), so this is
+not a tolerance question. **Five fewer reads**: `z_plasma_xpoint_upper` and the four
+gap/first-wall thicknesses are the whole of the `else` arm's `z_top` and a double-null
+machine never looks at them. That reads-set difference is what makes this an occupant
+rather than a `jnp.where` — folding the arms would declare five edges the machine does
+not have.
+
+**Coverage factors (`blanket_library.py:538-584`) — and a defect, transcribed.** The
+`if n_divertors == 2` branch covers **only** the `a_blkt_outboard_surface` assignment
+(`:541-547`), which subtracts `2.0 * f_ster_div_single`. The volume assignment
+`vol_blkt_outboard` (`:565-572`) sits *below* the branch and subtracts the
+single-divertor `f_ster_div_single` on both arms. So on a double-null machine PROCESS
+removes two divertors' solid angle from the blanket **surface** and one divertor's from
+the blanket **volume**. Nothing in the file justifies the asymmetry and no comment
+mentions it; it reads as an arm that was edited where the branch was and not where it was
+not. **Reproduced exactly, not repaired** (`traceability_policy.md`: the port's job is to
+agree with PROCESS, including where PROCESS is wrong), and executed rather than argued
+about by `test_blanket_library.py::TestApplyCoverageFactorsDoubleNull`, whose reference is
+PROCESS's own bound `apply_coverage_factors()` at `n_divertors = 2` — had the port
+"fixed" the volume line, that contract would fail. `models/fw.py`'s analogous coverage arm
+is *symmetric* (both its assignments are inside the `if`), which is worth naming here,
+because the two functions look like the same edit and only one of them was made
+completely.
+
+**Tests.** `TestBlktHalfHeightDoubleNull` and `TestApplyCoverageFactorsDoubleNull`, both
+Tier 1, both at the same operating points as their single-null siblings so a difference
+between the pair is the branch and not the domain. The half-height adapter **poisons**
+the five parameters the arm does not read with `nan` rather than zeroing them, so "PROCESS
+does not look at these" is executed: were the branch not taken, the reference would return
+`nan` and the value comparison would fail instead of quietly agreeing on a zero. Green at
+`--fp-gradients --fp-fuzz 40`.
+
+No new boundary input: both double-null arms read strictly a subset of what the
+single-null arms already read.

@@ -61,7 +61,9 @@ from functional_process.models.vacuum.vacuum import (
     calculate_elliptical_vessel_volumes,
     calculate_vacuum_pumping_simple,
     calculate_vacuum_vessel_outputs,
+    calculate_vacuum_vessel_outputs_double_null,
     calculate_vessel_half_height,
+    calculate_vessel_half_height_double_null,
     duct_diameter_residual,
     duct_fits_residual,
     pumping_speed_floor_residual,
@@ -914,6 +916,39 @@ class TestCalculateVesselHalfHeight(Tier1Contract):
     }
 
 
+class TestCalculateVesselHalfHeightDoubleNull(Tier1Contract):
+    """`calculate_vessel_half_height_double_null` ->
+    `VacuumVessel.calculate_vessel_half_height` at `n_divertors == 2` (double null).
+
+    The seven parameters this arm does not read are passed as `nan`, not `0.0`, so
+    "PROCESS does not look at these" is executed rather than asserted: were the branch
+    not taken, the reference would return `nan` and the comparison would fail instead of
+    agreeing on a zero.
+    """
+
+    audit_record = "models/vacuum.md"
+    reference = staticmethod(
+        lambda **kw: VacuumVessel.calculate_vessel_half_height(
+            n_divertors=2,
+            dz_blkt_upper=np.nan,
+            dz_shld_upper=np.nan,
+            z_plasma_xpoint_upper=np.nan,
+            dr_fw_plasma_gap_inboard=np.nan,
+            dr_fw_plasma_gap_outboard=np.nan,
+            dr_fw_inboard=np.nan,
+            dr_fw_outboard=np.nan,
+            **kw,
+        )
+    )
+    ported = calculate_vessel_half_height_double_null
+
+    fuzz_bounds = {
+        "z_tf_inside_half": (2.0, 15.0),
+        "dz_shld_vv_gap": (0.05, 0.5),
+        "dz_vv_lower": (0.1, 1.0),
+    }
+
+
 class TestCalculateEllipticalVesselVolumes(Tier1Contract):
     """`calculate_elliptical_vessel_volumes` -> `VacuumVessel.
     calculate_elliptical_vessel_volumes`, unchanged signature.
@@ -1039,6 +1074,97 @@ class TestCalculateVacuumVesselOutputs(Tier1Contract):
         "dr_fw_plasma_gap_outboard": (0.05, 0.5),
         "dr_fw_inboard": (0.01, 0.1),
         "dr_fw_outboard": (0.01, 0.1),
+        "rmajor": (2.0, 20.0),
+        "rminor": (0.5, 5.0),
+        "triang": (0.0, 0.8),
+        "r_shld_inboard_inner": (0.5, 8.0),
+        "r_shld_outboard_outer": (5.0, 20.0),
+        "dr_vv_inboard": (0.05, 1.0),
+        "dr_vv_outboard": (0.05, 1.0),
+        "dz_vv_upper": (0.05, 1.0),
+        "fvoldw": (0.5, 1.5),
+        "den_steel": (6000.0, 9000.0),
+    }
+
+
+def _reference_vacuum_vessel_outputs_double_null(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+    rmajor,
+    rminor,
+    triang,
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    fvoldw,
+    den_steel,
+):
+    """Real `VacuumVessel.run()` at `n_divertors = 2`, otherwise the same configuration
+    as `_reference_vacuum_vessel_outputs`.
+
+    The seven `.build` fields this arm does not read are seeded with `nan`.
+    `process/models/vacuum.py` reads every one of them in exactly one place --
+    `:744-756`, the arguments of the half-height call -- so on this arm nothing may touch
+    them, and a `nan` proves it rather than a zero hiding it.
+    """
+    data = DataStructure()
+    data.build.z_tf_inside_half = z_tf_inside_half
+    data.build.dz_shld_vv_gap = dz_shld_vv_gap
+    data.build.dz_vv_lower = dz_vv_lower
+    data.divertor.n_divertors = 2
+    data.build.dz_blkt_upper = np.nan
+    data.build.dz_shld_upper = np.nan
+    data.build.z_plasma_xpoint_upper = np.nan
+    data.build.dr_fw_plasma_gap_inboard = np.nan
+    data.build.dr_fw_plasma_gap_outboard = np.nan
+    data.build.dr_fw_inboard = np.nan
+    data.build.dr_fw_outboard = np.nan
+    data.physics.itart = 0
+    data.fwbs.i_fw_blkt_vv_shape = 2
+    data.physics.rmajor = rmajor
+    data.physics.rminor = rminor
+    data.physics.triang = triang
+    data.build.r_shld_inboard_inner = r_shld_inboard_inner
+    data.build.r_shld_outboard_outer = r_shld_outboard_outer
+    data.build.dr_vv_inboard = dr_vv_inboard
+    data.build.dr_vv_outboard = dr_vv_outboard
+    data.build.dz_vv_upper = dz_vv_upper
+    data.fwbs.fvoldw = fvoldw
+    data.fwbs.den_steel = den_steel
+
+    vv = VacuumVessel()
+    vv.data = data
+    vv.run()
+
+    return (
+        vv.data.blanket.dz_vv_half,
+        vv.data.blanket.vol_vv_inboard,
+        vv.data.blanket.vol_vv_outboard,
+        vv.data.fwbs.vol_vv,
+        vv.data.fwbs.m_vv,
+    )
+
+
+class TestCalculateVacuumVesselOutputsDoubleNull(Tier1Contract):
+    """`calculate_vacuum_vessel_outputs_double_null` -> real `VacuumVessel.run()` at
+    `n_divertors == 2`.
+
+    The single-null contract's box minus the seven inputs this arm does not read, so the
+    two composites are exercised over the same geometry and the difference between them
+    is the branch.
+    """
+
+    audit_record = "models/vacuum.md"
+    reference = _reference_vacuum_vessel_outputs_double_null
+    ported = calculate_vacuum_vessel_outputs_double_null
+
+    fuzz_bounds = {
+        "z_tf_inside_half": (2.0, 15.0),
+        "dz_shld_vv_gap": (0.05, 0.5),
+        "dz_vv_lower": (0.1, 1.0),
         "rmajor": (2.0, 20.0),
         "rminor": (0.5, 5.0),
         "triang": (0.0, 0.8),
