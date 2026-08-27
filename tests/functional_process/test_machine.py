@@ -771,11 +771,13 @@ def test_the_tf_inboard_radii_arms_are_refused_through_their_real_integers(tmp_p
 
     The arm index itself is a `DERIVED_UNPORTED_KEYS` entry no file can set, so this is
     the per-integer coverage that skip defers to: `i_tf_inside_cs = 1` selects arm -1
-    (TF inside the CS) and `i_cs_precomp = 0` arm -2 (no pre-compression structure),
-    both over the tokamak baseline. Added with the cold-boundary wave's
-    `TfInboardRadiiTfOutsideCs` (2026-08-27).
+    (TF inside the CS), still refused, over the tokamak baseline. Added with the
+    cold-boundary wave's `TfInboardRadiiTfOutsideCs` (2026-08-27); the `-2`
+    (`i_cs_precomp = 0`) case it originally asserted refused was ported the same day
+    (`TfInboardRadiiNoCsPrecomp`, the ST frontier wave), so that integer is asserted to
+    assemble instead -- the same file, one flip of one switch, both dispositions pinned.
     """
-    for extra, arm in ((("i_tf_inside_cs", 1), -1), (("i_cs_precomp", 0), -2)):
+    for extra, arm in ((("i_tf_inside_cs", 1), -1),):
         indat = tmp_path / f"TOK_{extra[0]}.DAT"
         indat.write_text(
             "".join(
@@ -787,6 +789,14 @@ def test_the_tf_inboard_radii_arms_are_refused_through_their_real_integers(tmp_p
             NotImplementedError, match=re.escape(f"tf_inboard_radii_arm == {arm}")
         ):
             machine_from_indat(indat)
+    indat = tmp_path / "TOK_i_cs_precomp.DAT"
+    indat.write_text(
+        "".join(
+            f"{f} = {v}\n"
+            for f, v in {**TOKAMAK_BASELINE_INDAT, "i_cs_precomp": 0}.items()
+        )
+    )
+    machine_from_indat(indat)  # ported arm -2: assembles, no refusal
 
 
 def test_an_unknown_value_is_rejected_naming_what_exists(tmp_path):
