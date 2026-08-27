@@ -45,8 +45,12 @@ Switches, one occupant class per value, no static kwargs
 | input `dz_xpoint_divertor < 1e-5` | true (`0.0`) | `DivertorGeometryConventional` |
 | `.fwbs.blktmodel` | `0` | no occupant -- `dr_blkt_*`/`dz_shld_upper` are run inputs |
 
-`i_tf_sup` values `0`/`2`, `i_tf_shape` values `0`/`2`, and `itart == 1` are UNPORTED --
-see the record. `.tfcoil.i_tf_wp_geom` is **not** a switch of this unit at all: the
+`itart == 1` with `dz_xpoint_divertor` left at `0.0` is `DivertorGeometrySpherical-`
+`Tokamak` (not live on the reference run); `itart == 1` with it set is the slot's `None`
+arm, because `divgeom`'s early return is computed and discarded at `build.py:800` and
+nothing is owned. `i_tf_sup` values `0`/`2`, `i_tf_shape` values `0`/`2`, and the
+`itart == 0` + `dz_xpoint_divertor` set (`rspo`-only) arm are UNPORTED -- see the
+record. `.tfcoil.i_tf_wp_geom` is **not** a switch of this unit at all: the
 `i_tf_sup == 1` arm of `plasma_outboard_edge_toroidal_ripple` computes `r_wp_min`/
 `r_wp_max` from it and then never uses either (`process/models/build.py:1551-1572`), so
 declaring it, or the three `.superconducting_tfcoil.r_tf_wp_inboard_*` radii it selects
@@ -171,6 +175,29 @@ def calculate_divertor_geometry_conventional(
 
     dz_xpoint_divertor = jnp.maximum(zplti, zplto) - jnp.minimum(zplbo, zplbi)
     return dz_xpoint_divertor, rspo
+
+
+def calculate_divertor_geometry_spherical_tokamak(rminor):
+    """Divertor height, spherical-tokamak arm.
+
+    Ports `process/models/build.py:862-863`, the whole of it: `divgeom` opens with
+    `if itart == 1: return 1.75e0 * rminor` -- "TART option: Peng SOFT paper", per the
+    method's own docstring -- and that early return is the entire arm. None of the
+    conventional arc geometry runs, and in particular control never reaches the
+    `.build.rspo` write at `:912`, which is why this arm's occupant owns one field
+    where the conventional arm's owns two.
+
+    Parameters
+    ----------
+    rminor :
+        Plasma minor radius (m). `.physics.rminor`.
+
+    Returns
+    -------
+    :
+        `dz_xpoint_divertor` -- divertor height (m).
+    """
+    return 1.75 * rminor
 
 
 def calculate_z_tf_inside_half(
@@ -758,6 +785,36 @@ class DivertorGeometryConventional(ExplicitFunction):
             betai,
             betao,
         )
+
+
+class DivertorGeometrySphericalTokamak(ExplicitFunction):
+    """cottax node: `calculate_divertor_geometry_spherical_tokamak`. Answers
+    `.physics.itart == 1` **and** the input `.build.dz_xpoint_divertor < 1e-5`.
+
+    The write-set is why this is a separate occupant and not a kwarg on the
+    conventional node: `divgeom`'s early return at `process/models/build.py:863` never
+    reaches the `.build.rspo` write at `:912`, so on a spherical tokamak nothing
+    produces `rspo` -- the field keeps its `DataStructure` default (or the input file's
+    value) and no ported tokamak node reads it. One owned field against the
+    conventional arm's two: a different write-set, not a different formula for the
+    same one.
+
+    The `:800-801` latch gates this arm exactly as it gates the conventional one --
+    `dz_xpoint_divertor = divht` only when the entering value is effectively zero. Both
+    tracked spherical-tokamak inputs (`spherical_tokamak_eval.IN.DAT:91`,
+    `st_regression.IN.DAT:1989`) set `dz_xpoint_divertor = 0.75`, so on both of them
+    the `1.75 * rminor` is computed and *discarded* at `:800` and `divgeom` owns
+    nothing at all. That configuration is the slot's `None` arm
+    (`indat.py::_divertor_geometry_arm`, arm `-3`) -- absence rather than refusal, by
+    `UNPORTED`'s own rule, because PROCESS itself computes nothing that survives. This
+    node is therefore live only on a spherical-tokamak run that *leaves*
+    `dz_xpoint_divertor` at its `0.0` default.
+    """
+
+    dz_xpoint_divertor = OutputInto(build)
+
+    def __call__(self, rminor=From(physics)):
+        return calculate_divertor_geometry_spherical_tokamak(rminor)
 
 
 class ZTfInsideHalf(ExplicitFunction):

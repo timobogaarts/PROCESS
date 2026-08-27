@@ -33,6 +33,7 @@ import copy
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.build import (
     calculate_divertor_geometry_conventional,
+    calculate_divertor_geometry_spherical_tokamak,
     calculate_dr_shld_vv_gap_outboard,
     calculate_dr_tf_inboard,
     calculate_dr_tf_outboard_superconducting,
@@ -267,6 +268,42 @@ class TestDivertorGeometryConventional(Tier1Contract):
         "betai": (0.8, 1.3),
         "betao": (0.8, 1.3),
     }
+
+
+def _reference_divertor_geometry_spherical_tokamak(rminor):
+    """`Build.divgeom` with `itart == 1` -- the early return at `build.py:862-863`.
+
+    The `assert` is the write-set claim the occupant split rests on: the early return
+    never reaches the `.build.rspo` write at `:912`, so the reference checks on every
+    sample that the real `divgeom` left `rspo` exactly as it found it.
+    """
+    model = _build(physics__itart=1, physics__rminor=rminor)
+    rspo_before = model.data.build.rspo
+    divht = model.divgeom(output=False)
+    assert model.data.build.rspo == rspo_before
+    return divht
+
+
+class TestDivertorGeometrySphericalTokamak(Tier1Contract):
+    """`calculate_divertor_geometry_spherical_tokamak` vs `Build.divgeom`, `itart == 1`.
+
+    One read, one output, and the whole arm is `1.75 * rminor` -- the case exists less
+    for the arithmetic than for the gradient check and for pinning the write-set (see
+    the reference's `assert`). The legacy sample's `rminor = 2.5` is
+    `spherical_tokamak_eval.IN.DAT`'s *input* geometry (`rmajor = 4.5`, `aspect = 1.8`);
+    `rmajor` is an iteration variable on that file, so no converged value is written
+    down here.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_divertor_geometry_spherical_tokamak
+    ported = calculate_divertor_geometry_spherical_tokamak
+
+    samples = [
+        legacy_sample("spherical_tokamak_eval-input", rminor=2.5),
+    ]
+
+    fuzz_bounds = {"rminor": (0.8, 3.0)}
 
 
 def _reference_z_tf_inside_half(

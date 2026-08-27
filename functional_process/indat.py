@@ -54,6 +54,7 @@ from functional_process.models.blankets.hcpb import (
 from functional_process.models.blankets.namespace import CcfeHcpb
 from functional_process.models.build import (
     DivertorGeometryConventional,
+    DivertorGeometrySphericalTokamak,
     DrTfInboardFromWindingPack,
     DrTfOutboardSuperconducting,
     DrTfWpWithInsulationFromInboardBuild,
@@ -687,17 +688,14 @@ UNPORTED = {
         "two slots, but it needs a name PROCESS does not have and "
         "`naming_convention.md` forbids minting one quietly"
     ),
-    ("divertor_geometry_arm", -1): (
-        "`.physics.itart == 1`: `divgeom` returns `1.75 * rminor` at "
-        "`process/models/build.py:863` and **never writes `.build.rspo`** -- a different "
-        "write-set, not just a different formula, so it is a different occupant. Not "
-        "written"
-    ),
     ("divertor_geometry_arm", -2): (
-        "the input `.build.dz_xpoint_divertor` is not effectively zero, so "
-        "`process/models/build.py:800-801` keeps the user's value and `divgeom` runs for "
-        "`.build.rspo` alone. That `rspo`-only occupant owns one field where the live one "
-        "owns two -- conditional ownership by run configuration -- and is not written"
+        "`.physics.itart == 0` with the input `.build.dz_xpoint_divertor` not "
+        "effectively zero: `process/models/build.py:800-801` keeps the user's value and "
+        "`divgeom` runs for `.build.rspo` alone. That `rspo`-only occupant owns one "
+        "field where the conventional arm's owns two -- conditional ownership by run "
+        "configuration -- and is not written. (`itart == 1` with the input set is arm "
+        "`-3`, `None`, not this: the early return at `:863` writes nothing, so there "
+        "is no `rspo`-only remainder to refuse)"
     ),
     ("i_tf_sup_build", 0): (
         "copper TF (`i_tf_sup == 0`) changes both build nodes it touches: the outboard "
@@ -2280,28 +2278,49 @@ def _divertor_geometry_arm(itart: int, dz_xpoint_divertor: float) -> int:
     """`(itart, input dz_xpoint_divertor)` -> `divgeom`'s arm.
 
     ```
-    itart == 1                        -> arm -1  returns 1.75 * rminor, never writes
-                                                 .build.rspo; UNPORTED
-    dz_xpoint_divertor >= 1e-5        -> arm -2  divgeom runs for .build.rspo alone and
-                                                 dz_xpoint_divertor stays an input;
-                                                 UNPORTED
-    otherwise                         -> arm  0  DivertorGeometryConventional
+    itart == 1, dz_xpoint_divertor <  1e-5  -> arm -1  DivertorGeometrySphericalTokamak
+                                                       (1.75 * rminor; never writes
+                                                       .build.rspo)
+    itart == 1, dz_xpoint_divertor >= 1e-5  -> arm -3  None: the 1.75 * rminor is
+                                                       computed and discarded at
+                                                       build.py:800, nothing is owned
+    itart == 0, dz_xpoint_divertor >= 1e-5  -> arm -2  divgeom runs for .build.rspo
+                                                       alone and dz_xpoint_divertor
+                                                       stays an input; UNPORTED
+    otherwise                               -> arm  0  DivertorGeometryConventional
     ```
 
-    The second condition is the only place in this factory a **float input** decides a
+    The float condition is the only place in this factory a **float input** decides a
     slot, and it is a genuine one: `process/models/build.py:800-801` assigns
     `dz_xpoint_divertor = divht` only when the entering value is effectively zero, so
     whether a node owns that field is a run-configuration fact.
     `build.md` calls this `conditional-ownership-by-run-config` and uses the same shape to
     close `next_steps.md` §2's `dz_shld_upper` flag.
+
+    The same latch is what splits `itart == 1` in two: `divgeom`'s early return at
+    `:863` writes nothing itself, so when the run sets `dz_xpoint_divertor` -- both
+    tracked spherical-tokamak inputs do, at `0.75` -- the arm owns *nothing* and the
+    slot's occupant is `None`, absence rather than refusal, `DX_TF_SIDE_CASE_MIN`'s
+    shape. Arm `-1` keeps the number `UNPORTED` refused it under now that it is
+    written.
     """
     if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK:
-        return -1
+        return -1 if float(dz_xpoint_divertor) < 1e-5 else -3
     return 0 if float(dz_xpoint_divertor) < 1e-5 else -2
 
 
-DIVERTOR_GEOMETRY = {0: DivertorGeometryConventional}
-"""`divgeom`'s arm -> its occupant. See `_divertor_geometry_arm`."""
+DIVERTOR_GEOMETRY = {
+    0: DivertorGeometryConventional,
+    -1: DivertorGeometrySphericalTokamak,
+    -3: None,
+}
+"""`divgeom`'s arm -> its occupant, **or `None`**. See `_divertor_geometry_arm`.
+
+`-3` is the fourth slot in the tree spelled as absence, after
+`costs.cost_of_electricity`, `power.cryo_q_nuc` and `DX_TF_SIDE_CASE_MIN`: on a
+spherical tokamak whose input file sets `dz_xpoint_divertor`, PROCESS computes nothing
+in `divgeom` that survives the `:800` latch, so there is no arm to refuse. Both tracked
+spherical-tokamak regression inputs land here."""
 
 DR_TF_INBOARD_WINDING_PACK = {
     0: DrTfInboardFromWindingPack,
@@ -3116,6 +3135,10 @@ def _tokamak_device(
                 numbers.get("dz_xpoint_divertor", 0.0),
             ),
             DIVERTOR_GEOMETRY,
+            # `None` is an occupant on arm -3, not a refusal: a spherical tokamak whose
+            # input sets `dz_xpoint_divertor` discards `divgeom`'s early return at
+            # `build.py:800` and owns nothing.
+            build=lambda cls: None if cls is None else cls(),
         ),
         dr_tf_inboard_winding_pack=_slot_occupant(
             "dr_tf_inboard_winding_pack",
