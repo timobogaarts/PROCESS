@@ -111,6 +111,7 @@ from functional_process.models.physics.physics import (
 )
 from functional_process.models.physics.plasma_fields import PlasmaFields
 from functional_process.models.physics.plasma_geometry import (
+    CreateDataEuDemoXPointPlasmaShape,
     DoubleArcPlasmaGeometry,
     Ipdg89XPointPlasmaShape,
 )
@@ -325,14 +326,14 @@ _ISTELL_PRESET_REASON = (
 """Shared by all five refused `istell` presets -- one reason, five values."""
 
 _I_PLASMA_GEOMETRY_REASON = (
-    "twelve of `i_plasma_geometry`'s thirteen values are unwritten. Each reads a "
-    "genuinely different set of fields (the dispatch table is `plasma_geometry.md` "
-    "\u00a7 'the `i_plasma_geometry` dispatch'), and none is live on any tracked "
-    "regression input. Under this wave's binding policy each needs its own occupant "
-    "class rather than a family grouped by reads-identical sets, which is what "
-    "supersedes that record's open question 1"
+    "eleven of `i_plasma_geometry`'s thirteen values are unwritten (0 and 10 are "
+    "written). Each reads a genuinely different set of fields (the dispatch table is "
+    "`plasma_geometry.md` \u00a7 'the `i_plasma_geometry` dispatch'), and none is live "
+    "on any tracked regression input. Under this wave's binding policy each needs its "
+    "own occupant class rather than a family grouped by reads-identical sets, which is "
+    "what supersedes that record's open question 1"
 )
-"""Shared by the twelve refused `i_plasma_geometry` values -- one reason, twelve values.
+"""Shared by the eleven refused `i_plasma_geometry` values -- one reason, eleven values.
 
 Enumerated rather than written as a single sentinel key, because `_slot_occupant` looks
 `UNPORTED` up by the value it was actually handed: a sentinel would turn every one of
@@ -494,8 +495,13 @@ UNPORTED = {
     # `i_hcd_primary` 6 and 7 cannot execute in PROCESS at all -- which is a new
     # category for this table: not "this port has not written the arm" but "there is no
     # arm to write until someone fixes the reference implementation".
+    # Value 10 (`CREATE_DATA_EU_DEMO_X_POINT`) is written -- it is live on
+    # `low_aspect_ratio_DEMO.IN.DAT` -- so it is lifted out of the refused range.
     **dict.fromkeys(
-        (("i_plasma_geometry", PlasmaGeometryModelType(v)) for v in range(1, 13)),
+        (
+            ("i_plasma_geometry", PlasmaGeometryModelType(v))
+            for v in (*range(1, 10), 11, 12)
+        ),
         _I_PLASMA_GEOMETRY_REASON,
     ),
     ("plasma_geometry_arm", 1): (
@@ -1836,13 +1842,21 @@ def _tf_wp_geom(
 
 # ---- `.tokamak.plasma_geom` -------------------------------------------------------
 
-PLASMA_SHAPE = {PlasmaGeometryModelType.IPDG89_X_POINT: Ipdg89XPointPlasmaShape}
+PLASMA_SHAPE = {
+    PlasmaGeometryModelType.IPDG89_X_POINT: Ipdg89XPointPlasmaShape,
+    PlasmaGeometryModelType.CREATE_DATA_EU_DEMO_X_POINT: (
+        CreateDataEuDemoXPointPlasmaShape
+    ),
+}
 """`.physics.i_plasma_geometry` -> the kappa95/triang95 occupant.
 
-One of thirteen. `plasma_geometry.md`'s open question "eight occupants or thirteen?" is
+Two of thirteen. `plasma_geometry.md`'s open question "eight occupants or thirteen?" is
 **superseded rather than answered** by this wave's binding policy: one class per value
-ever supported, no grouping by reads-identical sets, so the other twelve are twelve
-future classes and not a family to be split later."""
+ever supported, no grouping by reads-identical sets, so the other eleven are eleven
+future classes and not a family to be split later. The second entry
+(`CREATE_DATA_EU_DEMO_X_POINT`, 10, `low_aspect_ratio_DEMO.IN.DAT:372`) is the first
+occupant to exercise the record's "conditional-ownership-by-run-config" finding through
+this registry: it owns `.physics.kappa` where the IPDG89 occupant reads it."""
 
 PLASMA_GEOMETRY = {0: DoubleArcPlasmaGeometry}
 """`_plasma_geometry_arm(i_plasma_current, i_plasma_shape)` -> the geometry occupant."""

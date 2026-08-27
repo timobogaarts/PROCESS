@@ -683,3 +683,69 @@ phrasing above).
 (the `kappa > 1 + triang` precondition) was worked around in the test file's sampling,
 not resolved as a declared precondition anywhere a real run would enforce it; still
 blocking for a fuzz sampler that does not already know to avoid it.
+
+## ported, second pass (2026-08-27): `i_plasma_geometry == 10`
+
+Port of the `CREATE_DATA_EU_DEMO_X_POINT` (10) branch
+(`process/models/physics/plasma_geometry.py:362-397`), the arm that was refusing
+`tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT` at assembly. Added to the
+same three files as the first pass: `calculate_shape_create_data_eu_demo_x_point`
+(pure function) and `CreateDataEuDemoXPointPlasmaShape` (occupant, a
+`PlasmaShapeKappa95Triang95` sibling of `Ipdg89XPointPlasmaShape`) in
+`functional_process/models/physics/plasma_geometry.py`;
+`TestCalculateShapeCreateDataEuDemoXPoint` in
+`tests/functional_process/models/physics/test_plasma_geometry.py`. Test counts for the
+file: `57 passed, 57 skipped` plain; `114 passed` with `--fp-gradients`; `290 passed`
+with `--fp-gradients --fp-fuzz 5`.
+
+**Evidence for the branch.** `low_aspect_ratio_DEMO.IN.DAT` sets
+`i_plasma_geometry = 10` (`:372`), `m_s_limit = 0.2` (`:376`), `aspect = 2.8` (`:324`),
+`triang = 0.5` (`:384`) — and `kappa = 1.848` (`:380`), which the branch *overwrites*,
+exactly the conditional ownership the dispatch table above records for value 10 (reads
+`{aspect, m_s_limit, triang}`, writes `{kappa95, kappa, triang95}`; enum row:
+`kappa95_model = CREATE_DATA_EU_DEMO`, `kappa_model = IPDG89`,
+`triang_model = USER_INPUT`, `triang95_model = IPDG89`, consistent with the code).
+Signature matches the "proposed signature(s)" section, with the return widened to the
+branch's three writes in source order: `(kappa95, kappa, triang95)`.
+
+**The switch feeds exactly one dispatch.** Measured (grep over `process/`, 2026-08-27):
+outside this file, `_variables.py`/`input.py`/`init.py`/IO, the only model-side read of
+`i_plasma_geometry` is `plasma_current.py:179` — `output()` reporting, gated on
+`== STAR_FIESTA` (1), untouched by value 10. No kappa/triangularity sub-branch
+elsewhere keys on this switch, so one occupant class is the whole port of value 10.
+
+**JAX flags landed as predicted.** F1/D6: the `if kappa95 > 1.77:` corner fudge became
+a `jnp.where` over both arms (untaken arm finite for any `kappa95 > 0`, so no tangent
+poisoning); the C⁰-not-C¹ kink at 1.77 is faithfully reproduced, not smoothed. F3: the
+fit's square root goes through `safe_sqrt` (identical values, `nan` off-domain exactly
+as `np.sqrt`). F4: `kappa95 ** ratio` — the file's one *traced* exponent — goes through
+`safe_pow`. A measurement worth recording: at the live operating point
+(`aspect = 2.8`, `m_s_limit = 0.2`) the raw `kappa95 ≈ 1.7397 < 1.77`, so **the
+regression input itself never takes the corner-fudge arm**; the test class therefore
+carries a second sample (`aspect = 2.6`, `m_s_limit = 0.0`, raw `kappa95 ≈ 1.812`) so
+both `jnp.where` arms are value- and gradient-checked, and its fuzz box
+(`aspect ∈ (2.6, 3.6)` — the fit's documented validity range, outside which the
+radicand can go negative — `m_s_limit ∈ (0, 0.5)`, `triang ∈ (0, 0.5)`) deliberately
+straddles the kink. `triang ≤ 0.5` keeps the reference `run()`'s downstream
+`plasma_angles_arcs` call inside D1's domain (the fit gives `kappa ≥ 1.72` over the
+whole box, margin ≥ 0.22).
+
+**Registration (deliberate deviation: this pass edited `indat.py`).** Three edits:
+the import block gained `CreateDataEuDemoXPointPlasmaShape`; `PLASMA_SHAPE` gained the
+value-10 entry; `UNPORTED`'s `dict.fromkeys` range narrowed from `range(1, 13)` to
+`(*range(1, 10), 11, 12)`, and `_I_PLASMA_GEOMETRY_REASON` was reworded from "twelve …
+unwritten" to "eleven … unwritten (0 and 10 are written)". The old reason's claim that
+"none is live on any tracked regression input" was **false for value 10** (this record's
+own §tier signal already said `i_plasma_geometry ∈ {0, 10}` across the tracked set);
+scoped to the remaining eleven values, the claim is true again, and the reworded reason
+keeps it in that scope. Not edited (other units' files):
+`tokamak_namespace.py`'s `shape`-slot docstring still says "the other twelve read
+genuinely different fields" — now off by one, flagged here for the next pass that
+touches that file.
+
+**Frontier probe (2026-08-27).** With this arm wired, `machine_from_indat` +
+`graph_for` on `low_aspect_ratio_DEMO.IN.DAT` **assembles: 165 nodes**, no further
+refusal — value 10 was the only arm blocking that input. (Baseline re-measured the same
+day: before this pass the same call raised `NotImplementedError: i_plasma_geometry ==
+10 …`.) Whether the assembled graph *evaluates* correctly on that input is the MDA
+harness's question, not this record's; nothing beyond assembly was measured.

@@ -19,10 +19,12 @@ of the five listed outputs.
 
 **Not ported, and why (all per the audit record's own tables):**
 
-- 12 of 13 `i_plasma_geometry` values (1-12) -- none is live on any input this pass
-  covers, and each needs different reads (`fkzohm`, `ind_plasma_internal_norm`,
-  `m_s_limit`, ...). See the record's "switches touched" table for each value's reads
-  and writes.
+- 11 of 13 `i_plasma_geometry` values (1-9, 11, 12) -- none is live on any tracked
+  input, and each needs different reads (`fkzohm`, `ind_plasma_internal_norm`, ...).
+  See the record's "switches touched" table for each value's reads and writes. Value
+  10 (`CREATE_DATA_EU_DEMO_X_POINT`) was added 2026-08-27 because it *is* live -- on
+  `tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT` (`:372`) -- see
+  `calculate_shape_create_data_eu_demo_x_point` below.
 - The Sauter arm of the compound
   `i_plasma_current == 8 or i_plasma_shape == SAUTER` switch (`plasma_geometry.py:
   467-469`) -- not live here, and the record notes it "has no regression oracle at all."
@@ -55,6 +57,7 @@ ports". None of the functions below takes an `i_*` argument.
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.paths import physics
 
 # ---------------------------------------------------------------------------
@@ -261,6 +264,75 @@ def calculate_shape_ipdg89_x_point(kappa, triang):
 
 
 # ---------------------------------------------------------------------------
+# New: the `i_plasma_geometry == CREATE_DATA_EU_DEMO_X_POINT` (10) branch,
+# `process/models/physics/plasma_geometry.py:362-397`. The value
+# `low_aspect_ratio_DEMO.IN.DAT` (`:372`) and `st_regression.IN.DAT` use.
+# ---------------------------------------------------------------------------
+
+
+def calculate_shape_create_data_eu_demo_x_point(aspect, m_s_limit, triang):
+    """Elongations and 95%-surface triangularity from the CREATE-data EU-DEMO fit.
+
+    Ports the `i_plasma_geometry == CREATE_DATA_EU_DEMO_X_POINT` (10) branch of
+    `PlasmaGeom.run`, `process/models/physics/plasma_geometry.py:362-397`, unchanged:
+    `kappa95` from a fit to CREATE data over `aspect` and the stability margin
+    `m_s_limit` (PROCESS issues #1399/#1648, documented valid for aspect ratio
+    2.6-3.6), a corner-fudge correction above `kappa95 == 1.77`, then
+    `kappa = 1.12 * kappa95` and `triang95 = triang / 1.50`.
+
+    Two of the audit record's JAX flags land here, both `workaround-known`:
+
+    - **F1/D6**: the source's `if kappa95 > 1.77:` is a Python `if` on a freshly
+      computed value -- here a `jnp.where`, which faithfully reproduces the value
+      (both arms give `1.77` at the point, C0) *and* the derivative kink (measured
+      one-sided derivatives 1.0000 from below, 0.7290 from above -- the branch is not
+      C1 in PROCESS and is not made C1 here).
+    - **F3**: the radicand of the fit's square root is sign-unconstrained -- nothing
+      enforces the documented `2.6 < aspect < 3.6` validity range, and outside it the
+      radicand can go negative. PROCESS's `np.sqrt` returns `nan` silently; this port
+      does the same through `safe_sqrt` (identical values, finite derivative at an
+      exactly-zero radicand). Likewise `kappa95 ** ratio` has a *traced* exponent, so
+      it goes through `safe_pow` (F4).
+
+    Returns
+    -------
+    tuple
+        `(kappa95, kappa, triang95)` -- the branch's writes, in source order.
+    """
+    a = 3.68436807e0
+    b = -0.27706527e0
+    c = 0.87040251e0
+    d = -18.83740952e0
+    e = -0.27267618e0
+    f = 20.5141261e0
+
+    kappa95 = (
+        -d
+        - c * aspect
+        - safe_sqrt(
+            (c**2.0e0 - 4.0e0 * a * b) * aspect**2.0e0
+            + (2.0e0 * d * c - 4.0e0 * a * e) * aspect
+            + d**2.0e0
+            - 4.0e0 * a * f
+            + 4.0e0 * a * m_s_limit
+        )
+    ) / (2.0e0 * a)
+
+    # `if kappa95 > 1.77:` in the source -- a traced-value branch (F1), so `jnp.where`
+    # over both arms. The untaken arm is finite whenever `kappa95 > 0`, which holds
+    # everywhere the fit itself is finite, so no tangent poisoning leaks through.
+    ratio = 1.77e0 / kappa95
+    corner_fudge = 0.3e0 * (kappa95 - 1.77e0) / ratio
+    kappa95 = jnp.where(
+        kappa95 > 1.77e0, safe_pow(kappa95, ratio) + corner_fudge, kappa95
+    )
+
+    kappa = 1.12e0 * kappa95
+    triang95 = triang / 1.50e0
+    return kappa95, kappa, triang95
+
+
+# ---------------------------------------------------------------------------
 # New: the geometry-model arm, `process/models/physics/plasma_geometry.py:445-509`.
 # The compound switch `i_plasma_current == 8 or i_plasma_shape == SAUTER` collapses to
 # one boolean at graph-assembly time (audit record's open question 2) -- this pass
@@ -362,6 +434,32 @@ class Ipdg89XPointPlasmaShape(PlasmaShapeKappa95Triang95):
 
     def __call__(self, kappa=From(physics), triang=From(physics)):
         return calculate_shape_ipdg89_x_point(kappa, triang)
+
+
+class CreateDataEuDemoXPointPlasmaShape(PlasmaShapeKappa95Triang95):
+    """`i_plasma_geometry == CREATE_DATA_EU_DEMO_X_POINT` (10). Live on
+    `tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT` (`:372`).
+
+    Unlike the IPDG89 sibling this occupant **owns `kappa` too** -- under value 10 the
+    enum's ownership row is `kappa_model == IPDG89` (computed from `kappa95`),
+    `triang_model == USER_INPUT` (read), and the audit record's dispatch table for
+    value 10 lists reads `{aspect, m_s_limit, triang}` and writes
+    `{kappa95, kappa, triang95}`. The family's name records the two fields *every*
+    occupant owns; this one adds a third, which the record's
+    "conditional-ownership-by-run-config" finding says is the expected shape here.
+    """
+
+    kappa95 = OutputInto(physics)
+    kappa = OutputInto(physics)
+    triang95 = OutputInto(physics)
+
+    def __call__(
+        self,
+        aspect=From(physics),
+        m_s_limit=From(physics),
+        triang=From(physics),
+    ):
+        return calculate_shape_create_data_eu_demo_x_point(aspect, m_s_limit, triang)
 
 
 class PlasmaGeometryArm(ExplicitFunction):
