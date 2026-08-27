@@ -36,6 +36,7 @@ from functional_process.models.physics.plasma_geometry import (
     calculate_geometry_double_arc,
     calculate_geometry_sauter,
     calculate_minor_radius,
+    calculate_shape_create_data_eu_demo_x_point,
     calculate_shape_ipdg89_x_point,
     plasma_angles_arcs,
     plasma_cross_section,
@@ -75,6 +76,41 @@ def _run_plasma_geom(rmajor, aspect, kappa, triang, f_vol_plasma=1.0):
     pg.data = data
     pg.run()
     return data
+
+
+def _run_plasma_geom_create_data_eu_demo(aspect, m_s_limit, triang):
+    """Build a `DataStructure`, run the real `PlasmaGeom.run()` under
+    `i_plasma_geometry = 10`, and return `data`.
+
+    Switch values match `low_aspect_ratio_DEMO.IN.DAT` (the value-10 regression input):
+    `i_plasma_geometry = 10` (`CREATE_DATA_EU_DEMO_X_POINT`, `:372`),
+    `i_plasma_current = 4` (`:352`), `i_plasma_wall_gap` and `i_plasma_shape` unset
+    (defaults `1` and `0`). `rmajor` is held at the file's own `8.6` (`:164`) -- it
+    feeds only `rminor`/`eps`, not this branch's three outputs. The input file's
+    `kappa = 1.848` initial value is deliberately *not* set: value 10 overwrites
+    `kappa`, which is exactly the ownership this occupant claims.
+    """
+    data = DataStructure()
+    data.physics.rmajor = 8.6
+    data.physics.aspect = aspect
+    data.physics.m_s_limit = m_s_limit
+    data.physics.triang = triang
+    data.physics.i_plasma_geometry = PlasmaGeometryModelType.CREATE_DATA_EU_DEMO_X_POINT
+    data.physics.i_plasma_wall_gap = 1
+    data.physics.i_plasma_current = 4
+    data.physics.i_plasma_shape = PlasmaShapeModelType.PROCESS_ORIGINAL
+
+    pg = PlasmaGeom()
+    pg.data = data
+    pg.run()
+    return data
+
+
+def _reference_calculate_shape_create_data_eu_demo_x_point(aspect, m_s_limit, triang):
+    data = _run_plasma_geom_create_data_eu_demo(
+        aspect=aspect, m_s_limit=m_s_limit, triang=triang
+    )
+    return data.physics.kappa95, data.physics.kappa, data.physics.triang95
 
 
 def _reference_calculate_minor_radius(rmajor, aspect):
@@ -380,6 +416,57 @@ class TestCalculateShapeIpdg89XPoint(Tier1Contract):
     fuzz_bounds = {
         "kappa": (1.6, 2.5),
         "triang": (0.0, 0.3),
+    }
+
+
+class TestCalculateShapeCreateDataEuDemoXPoint(Tier1Contract):
+    """`calculate_shape_create_data_eu_demo_x_point` -> `i_plasma_geometry == 10`.
+
+    No standalone PROCESS function of this shape (the branch is inline in `run()`'s
+    dispatch, `plasma_geometry.py:362-397`); diffed against
+    `_run_plasma_geom_create_data_eu_demo`, which calls the real, bound `run()` under
+    `i_plasma_geometry = 10` and reads `.physics.kappa95`/`.kappa`/`.triang95` back.
+
+    Two legacy points, one per arm of the branch's own `if kappa95 > 1.77:` (the C0-
+    but-not-C1 corner fudge, audit record **D6**): the first is
+    `low_aspect_ratio_DEMO.IN.DAT`'s own operating point (`aspect = 2.8`,
+    `m_s_limit = 0.2`, `triang = 0.5` -> raw `kappa95 ~= 1.740`, fudge NOT taken --
+    the live regression input never exercises the fudge), the second pushes
+    `kappa95` above 1.77 (`aspect = 2.6`, `m_s_limit = 0.0` -> raw `kappa95 ~= 1.812`)
+    so the `jnp.where`/`safe_pow` arm is value- and gradient-checked too.
+
+    Fuzz bounds: `aspect` spans the fit's documented validity range (2.6-3.6, PROCESS
+    issue #1648); outside it the radicand of the fit's square root can go negative
+    (**F3**). `triang <= 0.5` keeps the reference `run()`'s downstream
+    `plasma_angles_arcs` call inside D1's domain (`kappa > 1 + triang`: the fit gives
+    `kappa >= 1.72` over this whole box, margin >= 0.22). The box straddles the 1.77
+    kink deliberately -- the kink is a measure-zero set, and both arms should be
+    sampled.
+    """
+
+    audit_record = "models/physics/plasma_geometry.md"
+    reference = staticmethod(_reference_calculate_shape_create_data_eu_demo_x_point)
+    ported = calculate_shape_create_data_eu_demo_x_point
+
+    samples = [
+        legacy_sample(
+            "calculate_shape_create_data_eu_demo_x_point-low_aspect_ratio_DEMO",
+            aspect=2.8,
+            m_s_limit=0.2,
+            triang=0.5,
+        ),
+        legacy_sample(
+            "calculate_shape_create_data_eu_demo_x_point-corner-fudge-arm",
+            aspect=2.6,
+            m_s_limit=0.0,
+            triang=0.4,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "aspect": (2.6, 3.6),
+        "m_s_limit": (0.0, 0.5),
+        "triang": (0.0, 0.5),
     }
 
 
