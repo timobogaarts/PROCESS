@@ -71,7 +71,6 @@ from functional_process.models.physics.bootstrap_current import (
 )
 from functional_process.models.physics.density_limit import TokamakDensityLimit
 from functional_process.models.physics.l_h_transition import LHThresholdPower
-from functional_process.models.physics.physics import PlasmaEnergyFromBeta
 from functional_process.models.physics.plasma_current import TokamakPlasmaCurrent
 from functional_process.models.physics.plasma_fields import PlasmaFields
 from functional_process.models.physics.plasma_inductance import TokamakPlasmaInductance
@@ -79,6 +78,7 @@ from functional_process.models.physics.scrape_off_layer import TokamakScrapeOffL
 from functional_process.models.physics.tokamak_namespace import (
     TokamakCurrentDrive,
     TokamakPhysics,
+    TokamakPlasmaBeta,
     TokamakPlasmaGeom,
     TokamakPulse,
 )
@@ -152,11 +152,20 @@ class Tokamak(ModelNamespace):
     supersedes `plasma_current.py`'s `WessonInternalInductance` -- see
     `TokamakPlasmaCurrent`'s docstring for the ownership argument."""
 
-    plasma_beta: PlasmaEnergyFromBeta = PlasmaEnergyFromBeta()
+    plasma_beta: TokamakPlasmaBeta = dataclasses.field(kw_only=True)
     """`physics/physics.py::PlasmaBeta`, §A row 2.3 (`physics.py:429`). Site of decision
     7 (`i_beta_component`, 8 reads, `get_beta_norm_max_value` confirmed entered). Its
     pure `calculate_plasma_beta` is already what constraint 1 calls -- `CLAUDE.md`'s
-    "`Compare`, already present in embryonic form"."""
+    "`Compare`, already present in embryonic form".
+
+    **A node until 2026-08-27, a namespace and a factory-filled slot since.** It gained
+    the beta-limit block that closes constraint 24's three §11.5 missing producers, and
+    with it a real switch (`i_beta_norm_max`) -- so it moves out of the four
+    "nothing to decide, keep the default" slots the docstring above enumerates and into
+    the twenty-three the factory fills. The list above is left as it was written
+    because it is an argument about a distinction, not a census; this slot is the
+    worked example of a slot crossing it, and of *why* the distinction is not cosmetic:
+    defaulted, a file asking for the Menard scaling would have been handed Wesson."""
 
     plasma_current: TokamakPlasmaCurrent = dataclasses.field(kw_only=True)
     """`physics/plasma_current.py::PlasmaCurrent`, §A row 2.4

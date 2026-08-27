@@ -215,3 +215,144 @@ None.
   counterpart in the port, because the folded-in waveform makes it unreachable. If a
   future occupant takes `c_peak` as a free input, that branch needs a NaN path and a
   `reference_domain_errors` declaration.
+
+## 2026-08-27 — the CS chain (missing-producer wave, CS/physics half)
+
+`optimise_design.md` §11.5 found four constraints (26, 27, 60, 72) reading fields whose
+only producer is `ohcalc`, all of them boundary zeros that PROCESS's own solve moves.
+**Three of the four rows are closed**; constraint 60's is not, and the reason is
+recorded below rather than deferred silently.
+
+**Three new modules, three new `.tokamak.cs_coil` slots.** Two of them are new *files*
+in this package and **neither has a registry row**, which is the one loose end this
+section exists to name: `models/pfcoil/stresses.py` and
+`models/pfcoil/superconductor.py` are owed rows in `_audit/unit_registry.md`, and the
+wave that wrote them was asked to leave that file alone because two sibling agents had
+it open. Their content is recorded here, under this unit, and both modules say so in
+their own docstrings. `tests/functional_process/models/pfcoil/test_stresses.py` and
+`test_superconductor.py` declare `audit_record = "models/pfcoil/fields.md"` for the same
+reason. **A follow-up owes three lines to the registry and a record split; nothing else.**
+
+### `fields.py` — `peak_field` (`ohcalc:3327-3396`)
+
+`calculate_cs_bore_magnetic_field`, `calculate_cs_self_peak_magnetic_field` (Wilson's
+five-branch fit, an `if`/`elif` chain on traced data reproduced as nested `jnp.where`)
+and `calculate_cs_peak_fields`, which composes them with two calls to
+`peak_b_field_at_pf_coil`'s **other** path.
+
+That path is a genuinely different routine from the one this unit already ported, and
+the differences are all simplifications: `kk = 0` (the fourteen CS filaments are omitted
+outright, so the filament-clobbering defect this record documents does not apply to it
+at all), `n_coil_group = 99` (no coil is ever "in the group", so Lyle's four-filament
+expansion is never taken and every PF coil contributes one filament at its centre), and
+`t_b_field_peak` passed in as `5`/`2` rather than re-derived.
+
+Two combinations with opposite signs, transcribed as PROCESS writes them and as its own
+comments explain: `|b_ext - b_self|` at end of flat-top (opposite sign at the inner
+edge), `|b_self + b_ext|` at beginning of pulse (same sign). `dz_cs_half` is
+`z_pf_coil_upper[6]` for the self-field and `dz_cs_full / 2` for the stresses — the same
+number on a midplane-centred CS, transcribed from the source rather than from the
+equality.
+
+Owns `.pf_coil.b_cs_peak_flat_top_end`, `.b_cs_peak_pulse_start`,
+`.b_cs_self_outer_midplane` (PROCESS's unconditional literal `0.0`, owned so the port
+says it rather than inheriting a `DataStructure` default) and `b_pf_coil_peak[6]` /
+`bpf2[6]` — the two slots `PFCoilPeakField` deliberately left alone. **+5 MDA-harness
+agreements**, all five exact.
+
+### `stresses.py` — `stresses` (`ohcalc:3398-3521`)
+
+Wilson's hoop and radial stresses, the elliptic-integral axial self-stress, and the
+Tresca/von Mises combinations. Every stress is evaluated at the **beginning of pulse**,
+at three different radii, each PROCESS's own choice.
+
+**This module closes the blocker `models/pfcoil/namespace.py::CSCoil` named in so many
+words** — "`ohcalc`'s `scipy.special` ellipk/ellipe calls". `_ellipk`/`_ellipe` are the
+arithmetic-geometric mean: traceable, differentiable, twelve unrolled iterations (the
+AGM converges quadratically), agreeing with `scipy.special` to `2.2e-16` / `1.1e-15`
+over `m = 1e-8 … 0.9999`.
+
+**Two ports of "the elliptic integrals" now live in this package, and that is
+deliberate.** `fields.py`'s Green's-function kernel transcribes PROCESS's own Abramowitz
+& Stegun rational fits, because PROCESS evaluates *those* inline and reproducing PROCESS
+means reproducing its approximation error. `stresses.py` uses the AGM, because PROCESS
+calls the exact library there. Substituting either for the other would be a divergence
+dressed as a port.
+
+**A finding worth keeping: PROCESS's `np.isclose(x, 0.0)` snap makes the CS's inner
+radial stress exactly derivative-free in the two radii.** The guard zeroes a window of
+half-width `1e-8` in two shape terms, so inside it the function is constant and the
+port's autodiff says zero; PROCESS's own finite difference at `epsfcn = 1e-3` says
+`-9.9e7`, because a `1e-3` step cannot see a `1e-8`-wide feature. The FD is not a valid
+oracle for that point, so `TestCalculateCSRadialStress.diff_argnames` drops those two
+arguments at that one sample and every other check stands. Any optimiser reaching for
+that sensitivity gets zero from the port and a step-size-dependent number from an FD.
+
+**+7 MDA-harness agreements**, all seven exact, including the axial stress and force
+that go through the AGM.
+
+### `superconductor.py` — `critical_current` (`ohcalc:3577-3684`)
+
+`superconpf`'s `ITER_NB3SN` and `WST_NB3SN` arms plus `ohcalc`'s cable-space-to-
+cross-section scaling. Two occupants, the second a one-`staticmethod` subclass of the
+first — identical reads, identical outputs.
+
+**`indat.CS_SUPERCONDUCTOR` is total and has no `UNPORTED` entries**, the second such
+registry after `SHIELD_HALF_HEIGHT`. `superconpf` dispatches on eight values but
+`_pf_coil_system_arm` refuses six of them before this slot is built; only `1` and `5`
+survive its `(i_pf_superconductor, i_cs_superconductor)` pair, and both are written. The
+first draft of this wave wrote only the ITER arm and listed the other seven as
+`UNPORTED` — which **turned `low_aspect_ratio_DEMO.IN.DAT` from a machine that assembles
+into a `NotImplementedError`**, caught by
+`test_machine.test_a_switch_that_decides_two_slots_decides_both`. A new slot may not
+narrow the set of files the port accepts; the WST arm is written because of that, not
+because a constraint asked for it.
+
+**The switch is asked twice on purpose.** `_pf_coil_system_arm` reads it as half of the
+pair that selects the *masses* occupant, and that pair's arm `1` covers both surviving
+values — because "which `.tfcoil.dcond` element a mass reads" is a different question
+from "which critical surface a current density comes from". Reusing the first answer
+would have given a WST Nb3Sn CS the ITER Nb3Sn critical surface.
+
+`j_pf_wp` is **not** declared: `ohcalc` computes it at both call sites and neither ported
+arm reads it (only `BI2212` does), so declaring it would invent an edge from
+`.pf_coil.c_pf_cs_coils_peak_ma`. `.pf_coil.j_pf_wp_critical` is left unowned; the CS
+slot is `j_cs_critical_pulse_start` under a second name and the six PF slots have no
+producer. **+5 MDA-harness agreements**, all five exact.
+
+### In progress — constraint 60, `.pf_coil.temp_cs_superconductor_margin`
+
+**Not ported, and this is the §11.5 row this half of the wave leaves open.**
+`superconpf` finishes with `scipy.optimize.newton`'s secant iteration on
+`j_crit_sc(T) - j_sc = 0` (`pfcoil.py:4894-4921`; `fprime=None`, `x1 = 2*T_op`,
+`tol = rtol = 1e-6`, `maxiter = 50`, `disp=False`). In cottax's terms that is an
+`ImplicitFunction`/`RootFind` pair, of exactly the shape
+`models/stellarator/coils/coils.py::Intersect` already has, with a concrete
+`AbstractDriver` beside it.
+
+**Next steps**, in order: (1) write the residual as an `ImplicitFunction` over `T` with
+the arm's critical-surface function, reusing the `_critical_surface` `staticmethod` hook
+the two occupants already carry; (2) declare a `RootFind` problem and a secant driver
+matching PROCESS's tolerances, so the *algorithm* is the thing being compared, not just
+the root; (3) own `.pf_coil.temp_cs_superconductor_margin = T_zero - T_op`; (4) tier 2,
+not tier 1 — there is an internal iteration on both sides.
+
+**It is deliberately left for one commit rather than two**: `.tfcoil.temp_tf_superconductor_
+margin` (constraint 36) is the *same solve on the same function* from
+`superconducting.py`, and the two halves were being ported by concurrent agents. One
+shared driver written once is worth more than two that have to be merged. Whoever takes
+it should take both.
+
+### Measured
+
+Tokamak MDA harness **618 → 635 agreements** across the three modules (+17), **16
+disagreements unchanged** throughout. Boundary pin +4 inputs and nothing removed
+(`.pf_coil.fcuohsu`, `.temp_cs_superconductor_operating`, `.tfcoil.poisson_steel`,
+`.str_cs_con_res` — genuine run inputs the new nodes declare; the fields the CS chain
+*produces* were never on that list, because only constraints read them and constraints
+are outside the graph). **No new cycle**: the three nodes sit downstream of the nine-node
+PF/volt-second SCC and nothing reads back into it; all three raw cycles are unchanged in
+membership. Stellarator untouched — `.tokamak.cs_coil` is not on its graph.
+
+Tier 1 throughout: 3 new contracts in `test_fields.py`, 7 in `test_stresses.py`, 3 in
+`test_superconductor.py`, green plain and under `--fp-gradients`.

@@ -40,12 +40,14 @@ from functional_process.models.physics.plasma_profiles import (
 )
 from functional_process.models.physics.profiles import (
     DensityProfile,
+    GreenwaldDensityFractions,
     NeProfileIntegral,
     ParabolicOnAxisDensities,
     ParabolicOnAxisTemperatures,
     ParabolicTemperatureProfile,
     PedestalOnAxisDensities,
     PedestalOnAxisTemperatures,
+    PedestalSeparatrixDensities,
     PedestalTemperatureProfile,
     ProfileGrid,
     TeProfileIntegral,
@@ -138,12 +140,52 @@ class ProfileParameterisationParabolic(ModelNamespace):
 
 
 class ProfileParameterisationPedestal(ModelNamespace):
-    """Pedestal profiles: the `.physics.i_plasma_pedestal == 1` occupant, 4 nodes.
+    """Pedestal profiles: the `.physics.i_plasma_pedestal == 1` occupant, 5 nodes.
 
-    Three until a tokamak was assembled. The fourth, `pedestal_profile_values`, is the
+    Three until a tokamak was assembled, four with `pedestal_profile_values` (the
     mirror of the parabolic arm's `parabolic_profile_values`; see its comment below for
-    why four fields were silently boundary inputs on this arm and on no other.
+    why four fields were silently boundary inputs on this arm and on no other), five
+    since 2026-08-27 with `pedestal_separatrix` below.
+
+    **A nested switch lives here, and it lives here rather than in
+    `TOPOLOGY_SWITCHES` because that is what "nested" means.**
+    `.physics.i_nd_plasma_pedestal_separatrix` is read only inside
+    `if i_plasma_pedestal == PEDESTAL_PROFILE` (`physics.py:363-368`), so on the
+    parabolic arm it decides nothing at all. `profiles.md`'s open question 2 recorded
+    the blocker as "`configuration.TOPOLOGY_SWITCHES` is a flat list of independent
+    choices with no way to express 'this switch only exists when that one has this
+    value'" -- and the round-2 slot mechanism answers it without needing that
+    expressiveness: a switch nested under an arm is a *slot of that arm's occupant*.
+    The parabolic occupant has no such slot, which is the structural statement that the
+    question does not arise there.
     """
+
+    pedestal_separatrix: PedestalSeparatrixDensities | GreenwaldDensityFractions = (
+        dataclasses.field(kw_only=True)
+    )
+    """`.physics.i_nd_plasma_pedestal_separatrix` -- **the two arms are inverses of one
+    another, and that is why neither could be defaulted.**
+
+    `GREENWALD_FRACTION` (`1`, PROCESS's default and `large_tokamak_eval`'s) reads the
+    two Greenwald *fractions* and owns the two *densities*; `USER_INPUT` (`0`) reads the
+    two densities and owns the two fractions. Same four names, ownership exactly
+    reversed. A default would therefore not merely pick an arm, it would pick a
+    direction of causality -- and getting it backwards is invisible at the value level,
+    because at the reference point both arms reproduce the same four numbers by
+    construction.
+
+    Added 2026-08-27 for `optimise_design.md` §11.5's constraint-81 row.
+    `.physics.nd_plasma_pedestal_electron` was a boundary input frozen at the file's
+    `0.5e20` while PROCESS's own solve moves it to `6.12e19` -- so c81 (pedestal density
+    upper limit) was comparing an input against a bound, and `.physics.
+    nd_plasma_separatrix_electron` was frozen at `0.2e20` against PROCESS's `3.60e19`
+    for its readers downstream (`DensityProfile`, `PedestalOnAxisDensities`).
+
+    **This is not the L-mode reset**, which `plasma_profiles.LModeProfileReset` already
+    is, on the *other* arm of `i_plasma_pedestal`. The two are the pedestal and
+    parabolic halves of the same "profile inputs a node must coerce" family and both
+    halves are now filled; the reset is the stellarator's instance and this is the
+    tokamak's, so this registration moves no stellarator number."""
 
     pedestal_temperature_profile: PedestalTemperatureProfile = (
         PedestalTemperatureProfile()

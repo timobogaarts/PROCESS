@@ -929,18 +929,24 @@ def calculate_greenwald_density_fractions(
 class GreenwaldDensityFractions(ExplicitFunction):
     """cottax node: `calculate_greenwald_density_fractions`.
 
-    **Blocked, do not register yet**, for two reasons that compound:
+    The `.physics.i_nd_plasma_pedestal_separatrix == USER_INPUT` (`0`) occupant of
+    `ProfileParameterisationPedestal.pedestal_separatrix`. **Written, registered in the
+    registry, and not reached by either reference machine** -- both select the default
+    `GREENWALD_FRACTION` arm below.
 
-    1. It is one arm of `.physics.i_nd_plasma_pedestal_separatrix`, whose other arm
-       (`PedestalSeparatrixDensities`) owns the *inputs* this one reads and reads the
-       *outputs* this one owns. The two arms are inverses, not competing producers.
-    2. `set_pedestal_and_separatrix_values` is itself called only from
-       `physics.py:365-368`, **inside** `if i_plasma_pedestal == PEDESTAL_PROFILE`. So the
-       arm is nested under a second switch. `configuration.TOPOLOGY_SWITCHES` is a flat
-       list of independent choices with no way to express "this switch only exists when
-       that one has this value".
+    Two things about this node were recorded as blockers until 2026-08-27 and both are
+    resolved rather than worked around:
 
-    The signature is settled; only the wiring is not.
+    1. Its sibling `PedestalSeparatrixDensities` owns the *inputs* this one reads and
+       reads the *outputs* this one owns. That is not a conflict: the two arms are
+       inverses of one another, and only one is ever in a graph. The slot's docstring
+       in `models/physics/namespace.py` records why that makes a default *wrong*
+       rather than merely unnecessary.
+    2. `set_pedestal_and_separatrix_values` is called only from `physics.py:363-368`,
+       inside `if i_plasma_pedestal == PEDESTAL_PROFILE` -- a switch nested under
+       another switch, which `configuration.TOPOLOGY_SWITCHES`' flat list cannot
+       express. The slot mechanism does not need it to: the nested switch is a slot of
+       the outer arm's occupant, so the parabolic occupant simply has no such slot.
     """
 
     f_nd_plasma_pedestal_greenwald = OutputInto(physics)
@@ -1000,15 +1006,16 @@ def calculate_pedestal_separatrix_densities(
 class PedestalSeparatrixDensities(ExplicitFunction):
     """cottax node: `calculate_pedestal_separatrix_densities`.
 
-    **Blocked, do not register yet** -- the other arm of
-    `.physics.i_nd_plasma_pedestal_separatrix`; see `GreenwaldDensityFractions` for both
-    reasons.
+    The `.physics.i_nd_plasma_pedestal_separatrix == GREENWALD_FRACTION` (`1`, PROCESS's
+    default) occupant of `ProfileParameterisationPedestal.pedestal_separatrix`, and the
+    live arm on `large_tokamak_eval.IN.DAT`. See `GreenwaldDensityFractions` above for
+    the two blockers this pair carried until 2026-08-27 and how the slot resolves both.
 
-    Worth noting for whoever unblocks it: this arm *writes*
+    **A genuine upstream producer, not a leaf.** It owns
     `.physics.nd_plasma_pedestal_electron` and `.physics.nd_plasma_separatrix_electron`,
     which `DensityProfile`, `PedestalOnAxisDensities` and unit #12's pedestal arm all
-    read. Under the default switch value it is therefore a genuine upstream producer, not
-    a leaf.
+    read -- and which `optimise_design.md` §11.5 found frozen at their input values,
+    `0.5e20`/`0.2e20` against PROCESS's converged `6.12e19`/`3.60e19`.
     """
 
     nd_plasma_pedestal_electron = OutputInto(physics)

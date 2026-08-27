@@ -12,7 +12,7 @@ decision.
 each a slot of its own on the same evidence, and a stellarator has neither
 (`st_init` sets `.build.iohcl = 0` unconditionally).
 
-**Every slot is an instance default, and that is not an exception to "a slot the
+**Every slot but one is an instance default, and that is not an exception to "a slot the
 factory fills has no default".** The whole package is one occupant set per joint
 configuration -- `iohcl = 1`, `i_pf_location = (2, 2, 3, 3)`, `itart = itartpf = 0`,
 `i_pf_current = 1`, superconducting conductors, D-shaped TF -- and
@@ -20,14 +20,22 @@ configuration -- `iohcl = 1`, `i_pf_location = (2, 2, 3, 3)`, `itart = itartpf =
 before either namespace is constructed. Two superconductor pairs are ported, and the
 second (`PFCoilCsWstNb3Sn` below) differs from the first in exactly one slot occupant;
 everything else in both namespaces is the single supported arm's answer. One
-predicate, fifteen slots, the `_fw_blkt_vv_shape_arm` shape ("one predicate, four
+predicate, eighteen slots, the `_fw_blkt_vv_shape_arm` shape ("one predicate, four
 slots") scaled up: inside a namespace the factory only ever builds for one resolved
 arm, there is nothing left for a slot to decide, and a per-slot `kw_only` factory
-would be fifteen transcriptions of one answer. `noh = 30` (`inductance.NOH`) is the
-one occupant-fixing integer the factory cannot see -- a step function of the
-*converged* CS geometry,
-not of any input (`inductance.md` § "noh is a step function of the CS geometry") -- and
-it stays a module constant on the occupant.
+would be eighteen transcriptions of one answer.
+
+The one exception is `CSCoil.critical_current`, added 2026-08-27, and it is worth its
+own sentence because it looks like a contradiction and is not: that slot's switch
+(`.pf_coil.i_cs_superconductor`) *is* part of the joint predicate, but the predicate's
+arm `1` accepts two of its values (`1` and `5`) and those two need different
+critical-surface fits. One predicate answers "which `.tfcoil.dcond` element"; it does
+not answer "which critical surface". See that slot and `indat.CS_SUPERCONDUCTOR`.
+
+`noh = 30` (`inductance.NOH`) is the one occupant-fixing integer the factory cannot
+see -- a step function of the *converged* CS geometry, not of any input
+(`inductance.md` § "noh is a step function of the CS geometry") -- and it stays a
+module constant on the occupant.
 
 **The cycle is expected, and it grew on 2026-08-27.** `PFCoilTimePointCurrents ->
 PFCoilCurrentWaveform -> PFCoilSizes -> PFCoilInductance -> CSFluxSwing ->
@@ -39,6 +47,8 @@ docstring carries the walk); the existing cuts still break it, measured in
 `test_mda.py`.
 """
 
+import dataclasses
+
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.pfcoil.currents import (
@@ -49,6 +59,7 @@ from functional_process.models.pfcoil.currents import (
     PFCoilTimePointCurrents,
 )
 from functional_process.models.pfcoil.fields import (
+    CSCoilPeakField,
     PFCoilCurrentWaveform,
     PFCoilPeakField,
 )
@@ -63,6 +74,10 @@ from functional_process.models.pfcoil.masses import (
     PFCoilMassesCsWstNb3Sn,
     PFCoilSizes,
 )
+from functional_process.models.pfcoil.stresses import CSCoilStresses
+from functional_process.models.pfcoil.superconductor import (
+    CSCriticalCurrentDensitiesIterNb3Sn,
+)
 from functional_process.models.pfcoil.volt_seconds import (
     PFCoilTurnCurrents,
     PFCoilVoltSeconds,
@@ -70,12 +85,25 @@ from functional_process.models.pfcoil.volt_seconds import (
 
 
 class CSCoil(ModelNamespace):
-    """`.tokamak.cs_coil` -- the central solenoid, three slots.
+    """`.tokamak.cs_coil` -- the central solenoid, six slots.
 
-    What is *not* here: the CS stress/fatigue chain (`ohcalc`'s `scipy.special`
-    ellipk/ellipe calls and `cs_fatigue.ncycle`) is UNPORTED and `.tokamak.cs_fatigue`
-    stays an empty slot; the CS's own self-field (`b_pf_coil_peak[6]`) is part of that
-    chain, which is why `PFCoilPeakField` owns its arrays per index `[0..5]` only.
+    Three until 2026-08-27. `optimise_design.md` §11.5 found four constraints (26, 27,
+    60, 72) reading fields whose only producer is `ohcalc`, and the three new slots
+    below -- `peak_field`, `critical_current`, `stresses` -- are that closure.
+
+    **This paragraph used to say the CS chain was UNPORTED, and named two reasons.** One
+    is gone: `stresses.py` replaces `ohcalc`'s `scipy.special` ellipk/ellipe with the
+    AGM, which is traceable, differentiable and agrees with scipy to 1-2 ulp. The other
+    two stand. `cs_fatigue.ncycle` is still unported and `.tokamak.cs_fatigue` is still
+    an empty slot -- no active constraint reads it. And
+    `.pf_coil.temp_cs_superconductor_margin` (constraint 60) is still a boundary zero:
+    it is `superconpf`'s `scipy.optimize.newton` secant solve, an
+    `ImplicitFunction`/`RootFind` pair shared with the TF coil's own margin, and
+    `superconductor.py::CSCriticalCurrentDensitiesIterNb3Sn` records why it is left for
+    one commit rather than two.
+
+    The CS's own self-field is no longer part of any of that: `peak_field` owns
+    `b_pf_coil_peak[6]`/`bpf2[6]`, the two slots `PFCoilPeakField` leaves alone.
     """
 
     geometry: CSCoilGeometry = CSCoilGeometry()
@@ -93,6 +121,50 @@ class CSCoil(ModelNamespace):
     `.pf_coil.f_j_cs_start_end_flat_top`, and one of the two nodes whose reads make the
     package's four-node cycle (`.pf_coil.n_pf_coil_turns`,
     `.pf_coil.ind_pf_cs_plasma_mutual`)."""
+
+    peak_field: CSCoilPeakField = CSCoilPeakField()
+    """The CS's own peak field at end-of-flat-top and beginning-of-pulse
+    (`ohcalc`'s field block, `pfcoil.py:3327-3396`), plus index `[6]` of the two
+    whole-array peak fields.
+
+    Added 2026-08-27 (`optimise_design.md` §11.5). This is the head of the CS chain
+    this namespace's docstring recorded as UNPORTED: every one of constraints 26, 27,
+    60 and 72 reads something downstream of these two fields, and both were boundary
+    zeros against PROCESS's converged 14.041 / 13.978 T."""
+
+    critical_current: CSCriticalCurrentDensitiesIterNb3Sn = dataclasses.field(
+        kw_only=True
+    )
+    """`.pf_coil.i_cs_superconductor` -- two reachable values, both written.
+
+    **The one factory-filled slot in this package, and the exception proves this
+    namespace's own rule.** Everything else here is an instance default because
+    `indat._pf_coil_system_arm` resolves the whole joint configuration once, before
+    either namespace is built -- and `i_cs_superconductor` is *part of* that predicate,
+    which is how `PFCoilCsWstNb3Sn` exists at all. But that predicate answers a
+    different question (which `.tfcoil.dcond` element the masses read) and its arm `1`
+    covers `i_cs_superconductor = 5` as well as `1`. Those two values need different
+    critical-surface fits, so this slot has to ask the switch again, on its own.
+
+    `indat.CS_SUPERCONDUCTOR` holds the registry and is **total** -- the six other values
+    `superconpf` dispatches on are refused by `_pf_coil_system_arm` before this slot
+    exists, so it carries no `UNPORTED` entries at all.
+
+    Added 2026-08-27 (`optimise_design.md` §11.5), constraints 26 and 27."""
+
+    stresses: CSCoilStresses = CSCoilStresses()
+    """The CS's hoop/axial/radial stress state and its Tresca and von Mises
+    combinations (`ohcalc`'s superconducting arm, `pfcoil.py:3398-3521`).
+
+    Unswitched here, so a default: `i_pf_conductor` is already part of
+    `_pf_coil_system_arm`'s conjunction (arm `-5` refuses anything but
+    `SUPERCONDUCTING`), and PROCESS's resistive `else` computes no stresses at all, so
+    there is no second occupant for a factory to choose between.
+
+    Added 2026-08-27, constraint 72's `.pf_coil.stress_shear_cs_peak` -- and this is the
+    node that closes the `scipy.special` ellipk/ellipe blocker this namespace's own
+    docstring named. See `stresses.py` for why its elliptic integrals are the AGM while
+    `fields.py`'s are Abramowitz & Stegun fits."""
 
 
 class PFCoil(ModelNamespace):

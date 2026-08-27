@@ -566,3 +566,377 @@ class PFCoilCurrentWaveform(ExplicitFunction):
             .set(1.0)
         )
         return peak_full, waveform_full
+
+
+# ---------------------------------------------------------------------------
+# The Central Solenoid's own peak field -- `ohcalc`'s field block
+# (`process/models/pfcoil.py:3327-3396`).
+#
+# Added 2026-08-27 for `optimise_design.md` §11.5: `.pf_coil.b_cs_peak_flat_top_end`
+# and `.b_cs_peak_pulse_start` are what the CS critical-current and stress chains read,
+# and both were boundary zeros against PROCESS's converged 14.041 / 13.978 T. This is
+# the "CS's own self-field" `namespace.CSCoil` recorded as UNPORTED and the reason
+# `PFCoilPeakField` owns its arrays per index `[0..5]` only.
+# ---------------------------------------------------------------------------
+
+_T_B_FIELD_PEAK_FLAT_TOP_END = 5
+"""`ohcalc`'s `timepoint = 5` for the end-of-flat-top field (`pfcoil.py:3345`), a
+1-based column index into the six-point waveform."""
+
+_T_B_FIELD_PEAK_PULSE_START = 2
+"""`ohcalc`'s `timepoint = 2` for the beginning-of-pulse field (`pfcoil.py:3383`)."""
+
+
+def calculate_cs_bore_magnetic_field(j_cs, r_cs_inner, r_cs_outer, dz_cs_half):
+    """Field at the centre of a rectangular-section solenoid's bore (T).
+
+    Ports `CSCoil.calculate_cs_bore_magnetic_field`,
+    `process/models/pfcoil.py:3707-3748`, unchanged (M. N. Wilson,
+    *Superconducting Magnets*).
+
+    Parameters
+    ----------
+    j_cs :
+        Overall current density (A/m^2).
+    r_cs_inner, r_cs_outer :
+        Solenoid inner and outer radii (m).
+    dz_cs_half :
+        Solenoid half-height (m).
+
+    Returns
+    -------
+    :
+        Field at the bore centre (T).
+    """
+    beta = dz_cs_half / r_cs_inner
+    alpha = r_cs_outer / r_cs_inner
+    return (
+        j_cs
+        * RMU0
+        * dz_cs_half
+        * jnp.log(
+            (alpha + jnp.sqrt(alpha**2 + beta**2)) / (1.0 + jnp.sqrt(1.0 + beta**2))
+        )
+    )
+
+
+def calculate_cs_self_peak_magnetic_field(j_cs, r_cs_inner, r_cs_outer, dz_cs_half):
+    """Peak self-field of a rectangular-section solenoid (T).
+
+    Ports `CSCoil.calculate_cs_self_peak_magnetic_field`, `pfcoil.py:3750-3822` --
+    Wilson's five-branch fit to the ratio of peak field to bore-centre field, keyed on
+    `beta = dz_cs_half / r_cs_inner`.
+
+    **A five-way `if`/`elif` chain on traced data, so a nested `jnp.where`.** The five
+    arms are genuinely different expressions of the same two shape ratios and PROCESS
+    selects among them by value, not by a switch: this is a formula branch, not an
+    occupant question. The chain is transcribed in PROCESS's own order and the `else`
+    arm is the innermost default, so a `beta` exactly on a boundary lands where PROCESS
+    puts it (the comparisons are strict `>` throughout).
+
+    Every arm's expression is finite for every `beta > 0`, so no untaken branch can leak
+    a NaN into the gradient -- the `where`-guard `exhaust.calculate_radiation_fraction`
+    needs is not needed here, and that is a property of the fit rather than an oversight.
+
+    Parameters
+    ----------
+    j_cs :
+        Overall current density (A/m^2).
+    r_cs_inner, r_cs_outer :
+        Solenoid inner and outer radii (m).
+    dz_cs_half :
+        Solenoid half-height (m).
+
+    Returns
+    -------
+    :
+        Peak field of the solenoid (T).
+    """
+    beta = dz_cs_half / r_cs_inner
+    alpha = r_cs_outer / r_cs_inner
+
+    b_cs_bore_centre = calculate_cs_bore_magnetic_field(
+        j_cs, r_cs_inner, r_cs_outer, dz_cs_half
+    )
+
+    # `beta > 3`: a blend between the fit and the infinite-solenoid field `b1`.
+    b1 = RMU0 * j_cs * (r_cs_outer - r_cs_inner)
+    f = (3.0 / beta) ** 2
+    tall = f * b_cs_bore_centre * (1.007 + (alpha - 1.0) * 0.0055) + (1.0 - f) * b1
+
+    rat_2_3 = (1.025 - (beta - 2.0) * 0.018) + (alpha - 1.0) * (
+        0.01 - (beta - 2.0) * 0.0045
+    )
+    rat_1_2 = (1.117 - (beta - 1.0) * 0.092) + (alpha - 1.0) * (beta - 1.0) * 0.01
+    rat_075_1 = (1.30 - 0.732 * (beta - 0.75)) + (alpha - 1.0) * (
+        0.2 * (beta - 0.75) - 0.05
+    )
+    rat_short = (1.65 - 1.4 * (beta - 0.5)) + (alpha - 1.0) * (0.6 * (beta - 0.5) - 0.20)
+
+    return jnp.where(
+        beta > 3.0,
+        tall,
+        b_cs_bore_centre
+        * jnp.where(
+            beta > 2.0,
+            rat_2_3,
+            jnp.where(
+                beta > 1.0,
+                rat_1_2,
+                jnp.where(beta > 0.75, rat_075_1, rat_short),
+            ),
+        ),
+    )
+
+
+def _cs_external_field(
+    c_peak,
+    waveform,
+    column,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_cs_inner,
+    r_cs_outer,
+    z_cs_middle,
+    rmajor,
+    plasma_current,
+):
+    """Vertical field at the CS's inner and outer edge from everything *except* the CS.
+
+    `peak_b_field_at_pf_coil`'s `n_coil == n_cs_pf_coils` path
+    (`process/models/pfcoil.py:4451-4456`, `:4513-4600`), which is a genuinely different
+    routine from the per-group path `calculate_pf_coil_peak_fields` above ports:
+
+    - **`kk = 0`**: the fourteen CS filaments are omitted outright, because the CS's own
+      contribution is `calculate_cs_self_peak_magnetic_field`'s job (`:4451-4456`). So
+      none of the filament-clobbering defect this module's docstring records applies to
+      this call at all.
+    - **`n_coil_group = 99`** (`:3346`, `:3384`): no group index can equal `98`, so the
+      `iii == n_coil_group - 1` test is false for every coil and Lyle's four-filament
+      self-field expansion is never taken. Every one of the six PF coils contributes a
+      *single* filament at its centre.
+    - **`t_b_field_peak` is passed in rather than derived.** The re-derivation at
+      `:4459-4487` sits inside the `else` of the `kk = 0` branch, so the caller's `5`
+      and `2` are used as given -- which is why this helper takes `column` and
+      `_peak_time_column` is not consulted.
+
+    The plasma filament is present only when `t_b_field_peak > 2` (`:4591`), i.e. for
+    the end-of-flat-top call and not the beginning-of-pulse one. As in
+    `calculate_pf_coil_peak_fields` it is included unconditionally with the current
+    masked to zero, for the same reason: a loop carrying zero current contributes
+    exactly zero and the traced filament count stays fixed.
+
+    Returns
+    -------
+    tuple
+        `(b_pf_inner_vertical, b_pf_outer_vertical)` (T) -- PROCESS's third and fourth
+        return values, the only two `ohcalc` reads.
+    """
+    f_at_time = jnp.take(waveform, column, axis=1)
+    currents = c_peak[:N_PF_COILS] * f_at_time[:N_PF_COILS] * 1.0e6
+
+    r_loops = jnp.concatenate([
+        r_pf_coil_middle[:N_PF_COILS],
+        jnp.asarray(rmajor)[None],
+    ])
+    z_loops = jnp.concatenate([z_pf_coil_middle[:N_PF_COILS], jnp.zeros(1)])
+    c_loops = jnp.concatenate([
+        currents,
+        jnp.where(column >= 2, plasma_current, 0.0)[None],
+    ])
+
+    _, _, bz_in, _ = calculate_b_field_at_point(
+        r_current_loop=r_loops,
+        z_current_loop=z_loops,
+        c_current_loop=c_loops,
+        r_test_point=r_cs_inner,
+        z_test_point=z_cs_middle,
+    )
+    _, _, bz_out, _ = calculate_b_field_at_point(
+        r_current_loop=r_loops,
+        z_current_loop=z_loops,
+        c_current_loop=c_loops,
+        r_test_point=r_cs_outer,
+        z_test_point=z_cs_middle,
+    )
+    return bz_in, bz_out
+
+
+def calculate_cs_peak_fields(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_cs_inner,
+    r_cs_outer,
+    z_cs_middle,
+    z_cs_upper,
+    j_cs_flat_top_end,
+    j_cs_pulse_start,
+    rmajor,
+    plasma_current,
+):
+    """The CS's peak field at the end of flat-top and at the beginning of pulse (T).
+
+    Ports `ohcalc`'s field block, `process/models/pfcoil.py:3327-3396`: two self-field
+    evaluations, two `peak_b_field_at_pf_coil` calls at time points 5 and 2, and the
+    four combinations PROCESS forms from them.
+
+    **The two combinations differ in sign, and PROCESS says why in a comment**
+    (`:3324-3326`, `:3379-3381`): at the end of flat-top the CS self-field and the
+    external vertical field are of *opposite* sign at the coil's inner edge, so the
+    magnitude is `|b_pf_inner_vertical - b_self|`; at the beginning of pulse they are of
+    the *same* sign and it is `|b_self + b_pf_inner_vertical|`. Transcribed as written --
+    the asymmetry is a physical claim about the pulse, not an algebraic slip.
+
+    **`dz_cs_half` is `z_cs_upper`, not `dz_cs_full / 2`.** PROCESS passes
+    `z_pf_coil_upper[n_cs_pf_coils - 1]` to both self-field calls (`:3336`, `:3372`) and
+    `dz_cs_full / 2.0` to the *stress* calls a few lines later (`:3428`). The two are the
+    same number on a CS centred on the midplane, which this one is
+    (`calculate_cs_geometry` puts `z_cs_upper = -z_cs_lower`), so nothing here can
+    distinguish them -- transcribed from the source rather than from the equality, the
+    same call `exhaust.EuDemoReAttachmentMetric` records for its mint.
+
+    Parameters
+    ----------
+    c_pf_cs_coil_pulse_start_ma, c_pf_cs_coil_flat_top_ma, c_pf_cs_coil_pulse_end_ma :
+        Coil currents (MA) at the three time points, seven entries -- six PF coils then
+        the CS. Taken as the three arrays rather than the derived peak/waveform pair,
+        for the reason this module's docstring gives.
+    r_pf_coil_middle, z_pf_coil_middle :
+        Coil centre coordinates (m), six entries or more; only the six PF coils are read.
+    r_cs_inner, r_cs_outer :
+        CS inner and outer radii (m) -- the field is evaluated at these.
+    z_cs_middle :
+        CS mid-height (m), the test points' height.
+    z_cs_upper :
+        CS upper edge height (m), used as the solenoid half-height.
+    j_cs_flat_top_end, j_cs_pulse_start :
+        CS overall current density at the two time points (A/m^2).
+    rmajor :
+        Plasma major radius (m).
+    plasma_current :
+        Plasma current (A).
+
+    Returns
+    -------
+    tuple
+        `(b_cs_peak_flat_top_end, b_cs_peak_pulse_start, b_cs_self_outer_midplane,
+        b_pf_coil_peak_cs, bpf2_cs)` -- the two peak fields (T), the outboard self-field
+        (identically `0.0`, PROCESS's long-solenoid approximation, `:3360`), and the CS
+        entries of the two whole-array peak fields (T).
+    """
+    c_peak, waveform = calculate_coil_current_waveform(
+        c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma,
+    )
+
+    b_self_flat_top_end = calculate_cs_self_peak_magnetic_field(
+        j_cs=j_cs_flat_top_end,
+        r_cs_inner=r_cs_inner,
+        r_cs_outer=r_cs_outer,
+        dz_cs_half=z_cs_upper,
+    )
+    bz_in_eof, bz_out_eof = _cs_external_field(
+        c_peak,
+        waveform,
+        _T_B_FIELD_PEAK_FLAT_TOP_END - 1,
+        r_pf_coil_middle,
+        z_pf_coil_middle,
+        r_cs_inner,
+        r_cs_outer,
+        z_cs_middle,
+        rmajor,
+        plasma_current,
+    )
+    b_cs_peak_flat_top_end = jnp.abs(bz_in_eof - b_self_flat_top_end)
+    bohco = jnp.abs(bz_out_eof)
+
+    b_self_pulse_start = calculate_cs_self_peak_magnetic_field(
+        j_cs=j_cs_pulse_start,
+        r_cs_inner=r_cs_inner,
+        r_cs_outer=r_cs_outer,
+        dz_cs_half=z_cs_upper,
+    )
+    bz_in_bop, bz_out_bop = _cs_external_field(
+        c_peak,
+        waveform,
+        _T_B_FIELD_PEAK_PULSE_START - 1,
+        r_pf_coil_middle,
+        z_pf_coil_middle,
+        r_cs_inner,
+        r_cs_outer,
+        z_cs_middle,
+        rmajor,
+        plasma_current,
+    )
+    b_cs_peak_pulse_start = jnp.abs(b_self_pulse_start + bz_in_bop)
+
+    return (
+        b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start,
+        0.0 * b_cs_peak_flat_top_end,
+        jnp.maximum(b_cs_peak_flat_top_end, jnp.abs(b_cs_peak_pulse_start)),
+        jnp.maximum(bohco, jnp.abs(bz_out_bop)),
+    )
+
+
+class CSCoilPeakField(ExplicitFunction):
+    """cottax node: `.tokamak.cs_coil.peak_field`.
+
+    Owns `.pf_coil.b_cs_peak_flat_top_end`, `.b_cs_peak_pulse_start`,
+    `.b_cs_self_outer_midplane` and index `[6]` of the two whole-array peak fields --
+    the two slots `PFCoilPeakField` deliberately leaves alone (see its docstring).
+    Per-index `Output`s for the same reason it uses them.
+
+    **`.pf_coil.b_cs_self_outer_midplane` is owned even though it is a literal zero.**
+    `ohcalc:3360` assigns `0.0` unconditionally ("self-field is assumed to be zero --
+    long solenoid approximation"), and owning it says that the port computes PROCESS's
+    answer rather than leaving a field to a `DataStructure` default that happens to
+    match. Same call `CentrepostNeutronicsAbsent` and `HcdSecondaryHeating` make; the
+    `0.0 * b_cs_peak_flat_top_end` in the pure function is what keeps the output a
+    traced array of the right shape rather than a Python float.
+
+    Occupant for `iohcl = 1` with the package's single supported topology, exactly as
+    every other node here.
+    """
+
+    b_cs_peak_flat_top_end = OutputInto(pf_coil)
+    b_cs_peak_pulse_start = OutputInto(pf_coil)
+    b_cs_self_outer_midplane = OutputInto(pf_coil)
+    b_pf_coil_peak_cs = Output(pf_coil.b_pf_coil_peak[CS_INDEX])
+    bpf2_cs = Output(pf_coil.bpf2[CS_INDEX])
+
+    def __call__(
+        self,
+        c_pf_cs_coil_pulse_start_ma=From(pf_coil),
+        c_pf_cs_coil_flat_top_ma=From(pf_coil),
+        c_pf_cs_coil_pulse_end_ma=From(pf_coil),
+        r_pf_coil_middle=From(pf_coil),
+        z_pf_coil_middle=From(pf_coil),
+        r_cs_inner=From(pf_coil),
+        r_cs_outer=From(pf_coil),
+        z_cs_middle=From(pf_coil),
+        z_cs_upper=From(pf_coil),
+        j_cs_flat_top_end=From(pf_coil),
+        j_cs_pulse_start=From(pf_coil),
+        rmajor=From(physics),
+        plasma_current=From(physics),
+    ):
+        return calculate_cs_peak_fields(
+            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
+            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
+            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
+            r_pf_coil_middle=r_pf_coil_middle[:N_PF_COILS],
+            z_pf_coil_middle=z_pf_coil_middle[:N_PF_COILS],
+            r_cs_inner=r_cs_inner,
+            r_cs_outer=r_cs_outer,
+            z_cs_middle=z_cs_middle,
+            z_cs_upper=z_cs_upper,
+            j_cs_flat_top_end=j_cs_flat_top_end,
+            j_cs_pulse_start=j_cs_pulse_start,
+            rmajor=rmajor,
+            plasma_current=plasma_current,
+        )

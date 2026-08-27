@@ -179,11 +179,14 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """356 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """361 inputs and 11 guesses, against the stellarator's 297 and 6.
 
-    The TF missing-producer wave (2026-08-27) moved the input half from 347 to **356**,
-    and it is the clean version of this measure's own good case: **nine additions, zero
-    removals, and the guess half unmoved.** Four producers landed --
+    The two halves of the missing-producer wave (2026-08-27) moved the input half from
+    347 to **361** together: the TF half +9, the CS/physics half −2 +7. Each half's own
+    account follows; the merged pin is their union, regenerated on the merged tree.
+
+    The TF half is the clean version of this measure's own good case: **nine additions,
+    zero removals, and the guess half unmoved.** Four producers landed --
     `cicc_superconductor_properties` (`.tfcoil.j_tf_wp_critical`, constraint 33),
     `tf_superconductor_temperature_margin` (constraint 36),
     `tf_coil_quench_heat_current_density` (constraint 35) and `vv_stress_on_quench`
@@ -204,6 +207,27 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
 
     The guess count is unchanged at 11, which is the same claim the SCC check makes from
     the other side: none of the four closed a loop.
+
+    The CS half of the same wave added the last four: `.pf_coil.fcuohsu`,
+    `.pf_coil.temp_cs_superconductor_operating`, `.tfcoil.poisson_steel` and
+    `.tfcoil.str_cs_con_res` -- run inputs that no ported node had declared until the
+    CS's critical-current and stress chains landed, closing constraints 26, 27 and half
+    of 72. Nothing left the list there at all, for the same reason as below: those
+    fields had only constraint readers, and constraints are outside the graph.
+
+    The physics half of the missing-producer wave (2026-08-27) moved the input half
+    from 347 to 348, and the direction is the interesting part: **six §11.5 rows closed
+    and the count went up**. Four of the six (`beta_thermal_vol_avg`,
+    `beta_toroidal_vol_avg`, `beta_vol_avg_max`, `p_div_bt_q_aspect_rmajor_mw`) were
+    never in this list at all, because only a *constraint* read them and constraints are
+    outside the graph -- so their producers landed as pure additions of declared reads
+    (`.physics.beta_beam`) with nothing to cancel against. The other two
+    (`nd_plasma_pedestal_electron`, `nd_plasma_separatrix_electron`) did leave, and
+    their producer declared the two Greenwald fractions in their place: -2, +3.
+
+    That is the pin earning its keep in the *opposite* direction from the paragraph
+    below: the input count alone would have read as a regression here, and only the
+    row-by-row equality test above says which rows moved and why.
 
     The cold-boundary wave (2026-08-27) moved the input half from 349 to 347 by
     landing `cold_boundary.md`'s four missing producers: nine rows closed
@@ -250,5 +274,5 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (356, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (361, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)

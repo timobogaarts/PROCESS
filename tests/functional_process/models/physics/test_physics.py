@@ -23,11 +23,15 @@ import numpy as np
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
 from functional_process.models.physics.physics import (
+    calculate_beta_limit_from_norm,
+    calculate_beta_norm_max_wesson,
     calculate_continuous_plant_ramp_times,
     calculate_plasma_energy_from_beta,
     calculate_pulsed_plant_ramp_times,
     calculate_separatrix_power,
     calculate_surface_averaged_poloidal_field_amperes,
+    calculate_thermal_beta,
+    calculate_toroidal_beta,
     calculate_total_radiation_power,
     calculate_unclipped_radiation_powers,
     force_positive_separatrix_power,
@@ -456,4 +460,163 @@ class TestPlasmaOhmicHeating(Tier1Contract):
         "vol_plasma": (100.0, 5000.0),
         "n_charge_plasma_effective_vol_avg": (1.0, 5.0),
         "plasma_res_factor": (0.5, 1.0),
+    }
+
+
+# =========================================================== `PlasmaBeta.run`'s limits
+#
+# The constraint-24 trio and the normalised limit that feeds it, added 2026-08-27 for
+# `optimise_design.md` §11.5. Two of the four have a PROCESS `@staticmethod` to diff
+# against; the other two are inline assignments in `PlasmaBeta.run` and are transcribed
+# here in `numpy` with their source lines named, the same convention
+# `_reference_unclipped_radiation_powers` above uses.
+
+
+def _reference_toroidal_beta(
+    beta_total_vol_avg, b_plasma_total, b_plasma_toroidal_on_axis
+):
+    """`physics.py:3818-3822`, transcribed."""
+    return beta_total_vol_avg * b_plasma_total**2 / b_plasma_toroidal_on_axis**2
+
+
+def _reference_thermal_beta(beta_total_vol_avg, beta_fast_alpha, beta_beam):
+    """`physics.py:3831-3835`, transcribed."""
+    return beta_total_vol_avg - beta_fast_alpha - beta_beam
+
+
+class TestBetaNormMaxWesson(Tier1Contract):
+    """`beta_N_max = 4 * l_i`, `physics.py:3941-3974`.
+
+    The legacy point is `large_tokamak_eval` at convergence
+    (`ind_plasma_internal_norm = 1.2568...`, giving PROCESS's own
+    `beta_norm_max = 5.0273`). The function is linear, so the value and gradient
+    checks are exact by construction and what they actually pin is the *binding* --
+    that the port reads `.physics.ind_plasma_internal_norm` and not one of the four
+    sibling scalings `get_beta_norm_max_value` selects among.
+    """
+
+    audit_record = "models/physics/physics.md"
+    reference = staticmethod(PlasmaBeta.calculate_beta_norm_max_wesson)
+    ported = calculate_beta_norm_max_wesson
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged", ind_plasma_internal_norm=1.256826884499288
+        ),
+        *fuzz_samples(
+            {"ind_plasma_internal_norm": (0.5, 2.0)},
+            count=5,
+            seed=24,
+        ),
+    ]
+
+    fuzz_bounds = {"ind_plasma_internal_norm": (0.5, 2.0)}
+
+
+class TestBetaLimitFromNorm(Tier1Contract):
+    """Constraint 24's bound, `physics.py:4180-4235`.
+
+    Legacy point: `large_tokamak_eval` at convergence, where the four inputs give
+    PROCESS's own `beta_vol_avg_max = 0.05703975985`.
+    """
+
+    audit_record = "models/physics/physics.md"
+    reference = staticmethod(PlasmaBeta.calculate_beta_limit_from_norm)
+    ported = calculate_beta_limit_from_norm
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            b_plasma_toroidal_on_axis=5.318322174646137,
+            beta_norm_max=5.027307537997152,
+            plasma_current=16091095.408042267,
+            rminor=2.6666666666666665,
+        ),
+        *fuzz_samples(
+            {
+                "b_plasma_toroidal_on_axis": (1.0, 15.0),
+                "beta_norm_max": (1.0, 8.0),
+                "plasma_current": (1.0e6, 3.0e7),
+                "rminor": (0.5, 5.0),
+            },
+            count=5,
+            seed=25,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "b_plasma_toroidal_on_axis": (1.0, 15.0),
+        "beta_norm_max": (1.0, 8.0),
+        "plasma_current": (1.0e6, 3.0e7),
+        "rminor": (0.5, 5.0),
+    }
+
+
+class TestToroidalBeta(Tier1Contract):
+    """`beta_tor = beta * B_tot^2 / B_tor^2`, `physics.py:3818-3822`."""
+
+    audit_record = "models/physics/physics.md"
+    reference = _reference_toroidal_beta
+    ported = calculate_toroidal_beta
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            beta_total_vol_avg=0.03230408815,
+            b_plasma_total=5.384200494234166,
+            b_plasma_toroidal_on_axis=5.318322174646137,
+        ),
+        *fuzz_samples(
+            {
+                "beta_total_vol_avg": (0.005, 0.15),
+                "b_plasma_total": (1.0, 15.0),
+                "b_plasma_toroidal_on_axis": (1.0, 15.0),
+            },
+            count=5,
+            seed=26,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "beta_total_vol_avg": (0.005, 0.15),
+        "b_plasma_total": (1.0, 15.0),
+        "b_plasma_toroidal_on_axis": (1.0, 15.0),
+    }
+
+
+class TestThermalBeta(Tier1Contract):
+    """`beta_th = beta - beta_alpha - beta_beam`, `physics.py:3831-3835`.
+
+    The legacy point has `beta_beam = 0`, which is `large_tokamak_eval`'s value and not
+    an accident: there is no neutral beam, so `beam_fusion` never writes it. The fuzz
+    draws give it a nonzero range anyway, because the port declares the read and a
+    beam-heated file would exercise it.
+    """
+
+    audit_record = "models/physics/physics.md"
+    reference = _reference_thermal_beta
+    ported = calculate_thermal_beta
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            beta_total_vol_avg=0.03230408815,
+            beta_fast_alpha=0.004435226148847,
+            beta_beam=0.0,
+        ),
+        *fuzz_samples(
+            {
+                "beta_total_vol_avg": (0.005, 0.15),
+                "beta_fast_alpha": (0.0, 0.02),
+                "beta_beam": (0.0, 0.02),
+            },
+            count=5,
+            seed=27,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "beta_total_vol_avg": (0.005, 0.15),
+        "beta_fast_alpha": (0.0, 0.02),
+        "beta_beam": (0.0, 0.02),
     }

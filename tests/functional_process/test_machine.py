@@ -69,6 +69,7 @@ from functional_process.indat import (
     WINDING_PACK_MATERIAL,
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
+    PedestalSeparatrixDensities,
     ProfileParameterisationPedestal,
     machine_from_indat,
     switches_from_indat,
@@ -126,11 +127,15 @@ def _profile_parameterisation(entry):
     default-constructed either; built with the reference (stellarator) machine's, which
     is the arm these swap tests are about.
 
-    The pedestal arm has no such slot and takes no argument, so the `getattr` fallback
-    rather than a second table: it is the same registry.
+    The pedestal arm has a slot of its own too since 2026-08-27 --
+    `pedestal_separatrix`, `.physics.i_nd_plasma_pedestal_separatrix`'s two inverse
+    occupants, a switch nested under this one. Built with PROCESS's own default
+    (`GREENWALD_FRACTION`), which is what both reference files select; the swap tests
+    here are about the *outer* switch, and `test_a_refused_value_says_why` covers the
+    inner one on its own.
     """
     if entry is ProfileParameterisationPedestal:
-        return entry()
+        return entry(pedestal_separatrix=PedestalSeparatrixDensities())
     return entry(
         ecrh_density_limit=REFERENCE_MACHINE.physics.profiles.parameterisation.ecrh_density_limit
     )
@@ -391,6 +396,7 @@ None of the three is a thing a file can set, so the refusal is reached through t
 integers it derives from -- which the survey and switch-coverage tests do."""
 
 TOKAMAK_ONLY_UNPORTED_FIELDS = {
+    "i_beta_norm_max",
     "i_blanket_type",
     "i_bootstrap_current",
     "i_density_limit",

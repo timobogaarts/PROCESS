@@ -429,7 +429,13 @@ inlined rather than iterated, so it stays tier 1 too (see "calls into other mode
    the "a switch also supplies its value to any node declaring it as a static kwarg"
    mechanism `next_steps.md` § 1 proposes.
 
-2. **`i_nd_plasma_pedestal_separatrix` is a newly-found nested switch with no
+2. **[RESOLVED 2026-08-27 — the nesting needed no new mechanism. A switch nested under
+   an arm is a *slot of that arm's occupant*: `pedestal_separatrix` is a `kw_only` slot
+   of `ProfileParameterisationPedestal` and the parabolic occupant simply does not have
+   one, which is the structural statement that the question does not arise there.
+   `indat.PEDESTAL_SEPARATRIX` holds both occupants; `_profile_parameterisation` reaches
+   it only on the pedestal arm. See the dated section below.]**
+   **`i_nd_plasma_pedestal_separatrix` is a newly-found nested switch with no
    `switches.md` entry and no `configuration.py` mechanism for "this switch only exists
    under that other switch's value."** Same shape as the already-known `irefprop` /
    `i_blkt_coolant_type` nesting; this is the second occurrence, not a new kind of gap. Its
@@ -496,3 +502,49 @@ inlined rather than iterated, so it stays tier 1 too (see "calls into other mode
    `jnp.where` guards, which bounds it whenever `n0 >= nped >= 0`, but no argument bound is
    enforced by this file). If PROCESS never checks density the way it checks temperature,
    that is presumably deliberate, but it was not independently confirmed.
+
+## 2026-08-27 — the nested switch registered (missing-producer wave, CS/physics half)
+
+`optimise_design.md` §11.5's constraint-81 row.
+`.physics.nd_plasma_pedestal_electron` was a boundary input frozen at the file's
+`0.5e20` while PROCESS's own solve moves it to `6.12e19`, so constraint 81 (pedestal
+density upper limit) compared an *input* against a bound; its sibling
+`.physics.nd_plasma_separatrix_electron` was frozen at `0.2e20` against `3.60e19` for
+`DensityProfile` and `PedestalOnAxisDensities` downstream.
+
+**Nothing was ported.** Both arms' pure functions and both node classes have existed in
+this file since this record was first written; what was missing was the *binding*, and
+open question 2 above was the recorded blocker. This is the second instance of the
+class `plasma_profiles.md` names for `IonVolAvgTemperature`/`ParabolicProfileValues` —
+"every value test already passed; what was missing was the registration" — and, like
+those, it was found by the SAND missing-producer audit rather than by any test.
+
+The blocker dissolved rather than being solved: a switch nested under an arm is a slot
+of that arm's occupant. `ProfileParameterisationPedestal` gained a `kw_only`
+`pedestal_separatrix` slot, `indat.PEDESTAL_SEPARATRIX` holds both occupants, and
+`_profile_parameterisation` consults it only on the pedestal arm. No addition to
+`configuration.TOPOLOGY_SWITCHES` was needed, and none is proposed.
+
+**Neither arm may be defaulted, for a reason worth keeping.** The two are inverses:
+`GREENWALD_FRACTION` reads the fractions and owns the densities, `USER_INPUT` reads the
+densities and owns the fractions — same four names, ownership reversed. A default would
+not merely pick an arm, it would pick a direction of causality, and getting it backwards
+is invisible at the value level because at the reference point both arms reproduce the
+same four numbers by construction.
+
+**This is not the L-mode reset, and it does not touch the stellarator.**
+`plasma_profiles.LModeProfileReset` is the parabolic-arm half of the same "profile
+inputs a node must coerce" family and was registered in an earlier session; this is the
+pedestal half. `ST_INIT_I_PLASMA_PEDESTAL` pins a stellarator to the parabolic arm, so
+a stellarator cannot reach this slot at all — measured: the stellarator MDA harness is
+identical line for line (472 agreements, 34 disagreements) before and after.
+
+Measured effects on the tokamak: MDA harness 611 → 618 agreements, 16 disagreements
+unchanged; boundary pin −2 inputs (the two densities) +2 (the two Greenwald fractions
+the producer declares); `reference_swaps.txt` loses two `i_plasma_pedestal=1` orphan
+rows, which are exactly those two densities. No new cycle — the eight-node density SCC
+is unchanged in membership, because the node's other two reads
+(`.physics.plasma_current`, `.physics.rminor`) are upstream of it.
+
+Tier 1; `test_profiles.py::TestGreenwaldDensityFractions` /
+`::TestPedestalSeparatrixDensities` already existed and are unchanged.

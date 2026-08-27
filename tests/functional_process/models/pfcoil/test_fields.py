@@ -38,6 +38,9 @@ from functional_process.models.pfcoil import (
 from functional_process.models.pfcoil.fields import (
     calculate_b_field_at_point,
     calculate_coil_current_waveform,
+    calculate_cs_bore_magnetic_field,
+    calculate_cs_peak_fields,
+    calculate_cs_self_peak_magnetic_field,
     calculate_pf_coil_peak_fields,
 )
 from process.core.model import DataStructure
@@ -429,6 +432,254 @@ class TestCalculatePFCoilPeakFields(Tier1Contract):
         "a_cs_poloidal": _around(_A_CS_POLOIDAL, 0.15),
         "j_cs_pulse_start": _around(_J_CS_PULSE_START, 0.15),
         "j_cs_flat_top_end": _around(_J_CS_FLAT_TOP_END, 0.15),
+        "rmajor": _around(_RMAJOR, 0.10),
+        "plasma_current": _around(_PLASMA_CURRENT, 0.15),
+    }
+
+
+# ======================================================== the CS's own peak field
+#
+# `ohcalc`'s field block, added 2026-08-27 (`optimise_design.md` §11.5). Three
+# contracts: the two Wilson self-field fits against their PROCESS staticmethods, and the
+# whole block against `waveform` + PROCESS's own two `peak_b_field_at_pf_coil` calls.
+
+_R_CS_INNER = 2.003843190236783
+_R_CS_OUTER = 2.550659784225536
+_Z_CS_UPPER = 7.936395447714745
+_Z_CS_MIDDLE = 0.0
+
+_CS_COIL = CSCoil(cs_fatigue=None)
+
+
+def _reference_cs_bore_magnetic_field(j_cs, r_cs_inner, r_cs_outer, dz_cs_half):
+    """`CSCoil.calculate_cs_bore_magnetic_field` -- a `@staticmethod` with no `data`."""
+    return CSCoil.calculate_cs_bore_magnetic_field(
+        j_cs=float(j_cs),
+        r_cs_inner=float(r_cs_inner),
+        r_cs_outer=float(r_cs_outer),
+        dz_cs_half=float(dz_cs_half),
+    )
+
+
+def _reference_cs_self_peak_magnetic_field(j_cs, r_cs_inner, r_cs_outer, dz_cs_half):
+    """`CSCoil.calculate_cs_self_peak_magnetic_field`.
+
+    An instance method rather than a `@staticmethod`, but it touches no `self.data` --
+    only `self.calculate_cs_bore_magnetic_field`. A module-level `CSCoil` with a `None`
+    fatigue sub-model is therefore a complete adapter.
+    """
+    return _CS_COIL.calculate_cs_self_peak_magnetic_field(
+        j_cs=float(j_cs),
+        r_cs_inner=float(r_cs_inner),
+        r_cs_outer=float(r_cs_outer),
+        dz_cs_half=float(dz_cs_half),
+    )
+
+
+def _reference_cs_peak_fields(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_cs_inner,
+    r_cs_outer,
+    z_cs_middle,
+    z_cs_upper,
+    j_cs_flat_top_end,
+    j_cs_pulse_start,
+    rmajor,
+    plasma_current,
+):
+    """`ohcalc`'s field block, driven through PROCESS's own routines.
+
+    `PFCoil.waveform`, then `peak_b_field_at_pf_coil` at `n_coil = n_cs_pf_coils`,
+    `n_coil_group = 99` and time points 5 and 2 -- exactly the two calls `ohcalc` makes
+    (`pfcoil.py:3344-3350`, `:3382-3388`) -- then the four combinations it forms
+    (`:3352-3357`, `:3362`, `:3377-3378`, `:3390-3396`).
+
+    **No CS filament state is seeded**, unlike `_reference_pf_coil_peak_fields` above:
+    the `n_coil == n_cs_pf_coils` path takes `kk = 0` and never reads
+    `.pf_coil.r/z_pf_cs_current_filaments` at all. The arrays are still allocated,
+    because `xind[:kk]` indexes them, and `nfxf` is set for the same reason.
+    """
+    data = DataStructure()
+    p = data.pf_coil
+    data.build.iohcl = 1
+    p.n_cs_pf_coils = N_CS_PF_COILS
+    p.n_pf_coil_groups = N_PF_GROUPS
+    p.n_pf_coils_in_group = np.array([*N_COILS_IN_GROUP, 1, 0, 0, 0, 0, 0, 0, 0])
+    p.n_cs_current_filaments = N_CS_FILAMENTS
+    p.nfxf = NFXF
+    p.r_pf_cs_current_filaments = np.zeros(NGC2)
+    p.z_pf_cs_current_filaments = np.zeros(NGC2)
+    p.c_pf_cs_current_filaments = np.zeros(NGC2)
+    p.xind = np.zeros(NGC2)
+
+    for name, value in (
+        ("c_pf_cs_coil_pulse_start_ma", c_pf_cs_coil_pulse_start_ma),
+        ("c_pf_cs_coil_flat_top_ma", c_pf_cs_coil_flat_top_ma),
+        ("c_pf_cs_coil_pulse_end_ma", c_pf_cs_coil_pulse_end_ma),
+    ):
+        full = np.zeros(NGC2)
+        full[:N_CS_PF_COILS] = np.asarray(value, dtype=float)
+        setattr(p, name, full)
+
+    p.r_pf_coil_middle = np.zeros(NGC2)
+    p.r_pf_coil_middle[:N_PF_COILS] = np.asarray(r_pf_coil_middle, dtype=float)
+    p.z_pf_coil_middle = np.zeros(NGC2)
+    p.z_pf_coil_middle[:N_PF_COILS] = np.asarray(z_pf_coil_middle, dtype=float)
+    p.z_pf_coil_middle[N_PF_COILS] = float(z_cs_middle)
+    p.r_pf_coil_inner = np.zeros(NGC2)
+    p.r_pf_coil_inner[N_PF_COILS] = float(r_cs_inner)
+    p.r_pf_coil_outer = np.zeros(NGC2)
+    p.r_pf_coil_outer[N_PF_COILS] = float(r_cs_outer)
+
+    p.j_cs_pulse_start = float(j_cs_pulse_start)
+    p.j_cs_flat_top_end = float(j_cs_flat_top_end)
+    p.a_cs_poloidal = _A_CS_POLOIDAL
+    data.physics.rmajor = float(rmajor)
+    data.physics.plasma_current = float(plasma_current)
+
+    model = PFCoil(cs_fatigue=None, cs_coil=None)
+    model.data = data
+    model.waveform()
+
+    b_self_eof = _reference_cs_self_peak_magnetic_field(
+        j_cs_flat_top_end, r_cs_inner, r_cs_outer, z_cs_upper
+    )
+    _, _, bz_in_eof, bz_out_eof = peak_b_field_at_pf_coil(
+        n_coil=N_CS_PF_COILS, n_coil_group=99, t_b_field_peak=5, data=data
+    )
+    b_flat_top_end = abs(bz_in_eof - b_self_eof)
+    bohco = abs(bz_out_eof)
+
+    b_self_bop = _reference_cs_self_peak_magnetic_field(
+        j_cs_pulse_start, r_cs_inner, r_cs_outer, z_cs_upper
+    )
+    _, _, bz_in_bop, bz_out_bop = peak_b_field_at_pf_coil(
+        n_coil=N_CS_PF_COILS, n_coil_group=99, t_b_field_peak=2, data=data
+    )
+    b_pulse_start = abs(b_self_bop + bz_in_bop)
+
+    return (
+        b_flat_top_end,
+        b_pulse_start,
+        0.0,
+        max(b_flat_top_end, abs(b_pulse_start)),
+        max(bohco, abs(bz_out_bop)),
+    )
+
+
+class TestCalculateCSBoreMagneticField(Tier1Contract):
+    """`calculate_cs_bore_magnetic_field` -> the `@staticmethod` it ports."""
+
+    audit_record = "models/pfcoil/fields.md"
+    reference = _reference_cs_bore_magnetic_field
+    ported = calculate_cs_bore_magnetic_field
+
+    samples = [
+        legacy_sample(
+            "large-tokamak-converged-flat-top-end",
+            j_cs=_J_CS_FLAT_TOP_END,
+            r_cs_inner=_R_CS_INNER,
+            r_cs_outer=_R_CS_OUTER,
+            dz_cs_half=_Z_CS_UPPER,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "j_cs": _around(_J_CS_FLAT_TOP_END, 0.30),
+        "r_cs_inner": _around(_R_CS_INNER, 0.20),
+        "r_cs_outer": _around(_R_CS_OUTER, 0.20),
+        "dz_cs_half": _around(_Z_CS_UPPER, 0.30),
+    }
+
+
+class TestCalculateCSSelfPeakMagneticField(Tier1Contract):
+    """`calculate_cs_self_peak_magnetic_field` -> Wilson's five-branch fit.
+
+    **The legacy points walk all five branches.** `beta = dz_cs_half / r_cs_inner` is
+    `3.96` at the converged machine, i.e. the `beta > 3` arm, and the fuzz bounds above
+    cannot reach the other four (they would need the CS to be four times squatter than
+    it is). Four hand-built points put `beta` at `2.5`, `1.5`, `0.9` and `0.6` by
+    shortening the coil, so every arm of the reproduced `jnp.where` chain is diffed
+    against the `if`/`elif` it ports -- including the two the reference machine never
+    visits.
+    """
+
+    audit_record = "models/pfcoil/fields.md"
+    reference = _reference_cs_self_peak_magnetic_field
+    ported = calculate_cs_self_peak_magnetic_field
+
+    samples = [
+        legacy_sample(
+            "large-tokamak-converged-beta-3.96",
+            j_cs=_J_CS_FLAT_TOP_END,
+            r_cs_inner=_R_CS_INNER,
+            r_cs_outer=_R_CS_OUTER,
+            dz_cs_half=_Z_CS_UPPER,
+        ),
+        *[
+            legacy_sample(
+                f"squat-cs-beta-{beta}",
+                j_cs=_J_CS_FLAT_TOP_END,
+                r_cs_inner=_R_CS_INNER,
+                r_cs_outer=_R_CS_OUTER,
+                dz_cs_half=beta * _R_CS_INNER,
+            )
+            for beta in (2.5, 1.5, 0.9, 0.6)
+        ],
+    ]
+
+    fuzz_bounds = {
+        "j_cs": _around(_J_CS_FLAT_TOP_END, 0.30),
+        "r_cs_inner": _around(_R_CS_INNER, 0.20),
+        "r_cs_outer": _around(_R_CS_OUTER, 0.20),
+        "dz_cs_half": (0.4 * _R_CS_INNER, 5.0 * _R_CS_INNER),
+    }
+
+
+class TestCalculateCSPeakFields(Tier1Contract):
+    """`calculate_cs_peak_fields` -> `waveform` + PROCESS's two CS-path calls."""
+
+    audit_record = "models/pfcoil/fields.md"
+    reference = _reference_cs_peak_fields
+    ported = calculate_cs_peak_fields
+
+    samples = [
+        legacy_sample(
+            "large-tokamak-converged",
+            c_pf_cs_coil_pulse_start_ma=_C_START,
+            c_pf_cs_coil_flat_top_ma=_C_FLAT,
+            c_pf_cs_coil_pulse_end_ma=_C_END,
+            r_pf_coil_middle=_R_MID[:N_PF_COILS],
+            z_pf_coil_middle=_Z_MID[:N_PF_COILS],
+            r_cs_inner=_R_CS_INNER,
+            r_cs_outer=_R_CS_OUTER,
+            z_cs_middle=_Z_CS_MIDDLE,
+            z_cs_upper=_Z_CS_UPPER,
+            j_cs_flat_top_end=_J_CS_FLAT_TOP_END,
+            j_cs_pulse_start=_J_CS_PULSE_START,
+            rmajor=_RMAJOR,
+            plasma_current=_PLASMA_CURRENT,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "c_pf_cs_coil_pulse_start_ma": _around(_C_START, 0.15),
+        "c_pf_cs_coil_flat_top_ma": _around(_C_FLAT, 0.15),
+        "c_pf_cs_coil_pulse_end_ma": _around(_C_END, 0.15),
+        "r_pf_coil_middle": _around(_R_MID[:N_PF_COILS], 0.10),
+        "z_pf_coil_middle": _around(_Z_MID[:N_PF_COILS], 0.10),
+        "r_cs_inner": _around(_R_CS_INNER, 0.10),
+        "r_cs_outer": _around(_R_CS_OUTER, 0.10),
+        # Not fuzzed off zero: `z_cs_middle` is the CS's mid-height and the geometry
+        # puts it at the midplane by construction (`z_cs_upper = -z_cs_lower`).
+        "z_cs_middle": (-0.05, 0.05),
+        "z_cs_upper": _around(_Z_CS_UPPER, 0.15),
+        "j_cs_flat_top_end": _around(_J_CS_FLAT_TOP_END, 0.15),
+        "j_cs_pulse_start": _around(_J_CS_PULSE_START, 0.15),
         "rmajor": _around(_RMAJOR, 0.10),
         "plasma_current": _around(_PLASMA_CURRENT, 0.15),
     }
