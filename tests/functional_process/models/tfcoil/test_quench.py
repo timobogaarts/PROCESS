@@ -32,12 +32,15 @@ Every other argument is differentiated normally. Recorded in `quench.md` as the 
 item this unit hands back.
 """
 
+import jax.numpy as jnp
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,
     calculate_quench_protection_current_density,
+    helium_properties_at_quench_nodes,
+    j_tf_wp_quench_heat_max,
     copper_electrical_resistivity,
     copper_irradiation_resistivity,
     copper_magneto_resistivity,
@@ -498,3 +501,124 @@ class TestVTfCoilDumpQuenchKv(Tier1Contract):
         "t_tf_superconductor_quench": (0.1, 100.0),
         "c_tf_turn": (1e4, 1e5),
     }
+
+
+# ---------------------------------------------------------------------------
+# `j_tf_wp_quench_heat_max` -- constraint 35's producer, and the resolved seam
+# ---------------------------------------------------------------------------
+
+
+def _reference_j_tf_wp_quench_heat_max(
+    *,
+    a_tf_turn_cable_space,
+    a_tf_turn,
+    tau_discharge,
+    b_peak,
+    f_a_cable_copper,
+    f_a_cable_space_helium,
+    temp_he_peak,
+    temp_quench_max,
+    cu_rrr,
+    t_quench_detection,
+    fluence,
+):
+    """PROCESS's `quench_heat_protection_current_density`, **first** return only.
+
+    Its sibling `_reference_dump_voltage` takes the second. Between them the two cases
+    cover the whole PROCESS function, which is the point: the two returns are
+    independent computations sharing a signature, and each port takes exactly the
+    arguments its own half reads.
+
+    `e_tf_coil_magnetic_stored` and `c_tf_turn` are held at `test_protect`'s second case
+    -- they feed only the voltage half, and holding them fixed while the eleven below
+    move is what says so.
+    """
+    return CICCSuperconductingTFCoil.quench_heat_protection_current_density(
+        c_tf_turn=74026.751437500003,
+        e_tf_coil_magnetic_stored=9561415368.8360519,
+        a_tf_turn_cable_space=a_tf_turn_cable_space,
+        a_tf_turn=a_tf_turn,
+        t_tf_quench_dump=tau_discharge,
+        f_a_tf_turn_cable_space_cooling=f_a_cable_space_helium,
+        f_a_tf_turn_cable_copper=f_a_cable_copper,
+        temp_tf_coolant_peak_field=temp_he_peak,
+        temp_tf_conductor_quench_max=temp_quench_max,
+        b_tf_inboard_peak=b_peak,
+        cu_rrr=cu_rrr,
+        t_tf_quench_detection=t_quench_detection,
+        flu_tf_neutron_fast_max=fluence,
+    )[0]
+
+
+def _ported_j_tf_wp_quench_heat_max(**inputs):
+    """The port with the helium table supplied the way `indat.py` supplies it.
+
+    `helium_properties_at_quench_nodes` is the *shipped* function the factory calls, not
+    a test-local re-derivation -- so this case checks the resolved seam end to end:
+    PROCESS calls CoolProp inside its own body, the port is handed the table the factory
+    would have built from the same two temperatures, and the two answers are compared.
+    """
+    den, cp = helium_properties_at_quench_nodes(
+        temp_he_peak=inputs["temp_he_peak"], temp_quench_max=inputs["temp_quench_max"]
+    )
+    return j_tf_wp_quench_heat_max(
+        den_helium_at_nodes=jnp.asarray(den),
+        cp_helium_at_nodes=jnp.asarray(cp),
+        **inputs,
+    )
+
+
+class TestJTfWpQuenchHeatMax(Tier1Contract):
+    """`.tfcoil.j_tf_wp_quench_heat_max` -- constraint 35's read, seam resolved.
+
+    **The two temperatures are `static_argnames` here for the same reason they are
+    static fields on the occupant**, and the two facts are now one fact rather than two:
+    moving either moves the quadrature grid the helium table was built at, and the port
+    -- like the node -- treats the table as a constant of the run. `indat.py` refuses to
+    assemble a machine that makes either an iteration variable, which is what keeps that
+    treatment sound; see `TfCoilQuenchHeatCurrentDensity`.
+
+    Every one of the other nine arguments is differentiated normally and agrees with
+    PROCESS's own finite difference.
+    """
+
+    audit_record = "models/tfcoil/quench.md"
+    reference = _reference_j_tf_wp_quench_heat_max
+    ported = _ported_j_tf_wp_quench_heat_max
+    static_argnames = ("temp_he_peak", "temp_quench_max")
+
+    samples = [
+        legacy_sample(
+            "j-tf-wp-quench-heat-max-baseline2018",
+            a_tf_turn_cable_space=0.001293323051622732,
+            a_tf_turn=0.0032012300777680192,
+            tau_discharge=25.829000000000001,
+            b_peak=11.0,
+            f_a_cable_copper=0.80884,
+            f_a_cable_space_helium=1 - 0.63927285511442711,
+            temp_he_peak=4.75,
+            temp_quench_max=150.0,
+            cu_rrr=200.0,
+            t_quench_detection=3.0,
+            fluence=3.2e21,
+        ),
+    ]
+
+    fuzz_bounds = {
+        # `temp_he_peak`/`temp_quench_max` are deliberately **not** fuzzed: a moving
+        # grid is a moving property table, and `fuzz_fixed` is how the harness says a
+        # value is held rather than sampled.
+        "a_tf_turn_cable_space": (5.0e-4, 2.0e-3),
+        "a_tf_turn": (1.5e-3, 4.0e-3),
+        "tau_discharge": (10.0, 40.0),
+        "b_peak": (5.0, 14.0),
+        "f_a_cable_copper": (0.6, 0.9),
+        "f_a_cable_space_helium": (0.2, 0.45),
+        "cu_rrr": (50.0, 300.0),
+        "t_quench_detection": (0.5, 5.0),
+        # Inside `FLUENCE_MODEL_RANGE`, so `jnp.clip` is inert and the sampled
+        # derivative is the model's own rather than the clip's.
+        "fluence": (1.0e21, 5.0e21),
+    }
+
+    fuzz_fixed = {"temp_he_peak": 4.75, "temp_quench_max": 150.0}

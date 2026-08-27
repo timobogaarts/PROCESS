@@ -295,6 +295,10 @@ from functional_process.models.tfcoil.base import (
     TfGlobalGeometryStraightCase,
 )
 from functional_process.models.tfcoil.namespace import CiccSuperconductingTfCoil
+from functional_process.models.tfcoil.quench import (
+    TfCoilQuenchHeatCurrentDensity,
+    helium_properties_at_quench_nodes,
+)
 from functional_process.models.tfcoil.superconducting import (
     Bi2212SuperconductingTfCoilAreasAndMassesConventional,
     Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak,
@@ -302,6 +306,7 @@ from functional_process.models.tfcoil.superconducting import (
     CiccIntegerTurnGeometry,
     CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional,
     CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    DurhamNbtiCiccSuperconductorProperties,
     DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional,
     DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     DurhamRebcoSuperconductingTfCoilAreasAndMassesConventional,
@@ -311,10 +316,14 @@ from functional_process.models.tfcoil.superconducting import (
     DxTfSideCaseTrapezoidal,
     HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesConventional,
     HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    IterNb3snCiccSuperconductorProperties,
     IterNb3snSuperconductingTfCoilAreasAndMassesConventional,
     IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    IterNb3snTfSuperconductorTemperatureMargin,
+    OldLubellNbtiCiccSuperconductorProperties,
     OldLubellNbtiSuperconductingTfCoilAreasAndMassesConventional,
     OldLubellNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    OldLubellNbtiTfSuperconductorTemperatureMargin,
     PeakBTfInboardWithRipple16Coils,
     PeakBTfInboardWithRipple18Coils,
     PeakBTfInboardWithRipple20Coils,
@@ -324,10 +333,14 @@ from functional_process.models.tfcoil.superconducting import (
     SuperconductingTfWpGeometryTrapezoidal,
     TfCaseAreasCircularFront,
     TfCaseAreasStraightFront,
+    UserDefinedNb3snCiccSuperconductorProperties,
     UserDefinedNb3snSuperconductingTfCoilAreasAndMassesConventional,
     UserDefinedNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    UserDefinedNb3snTfSuperconductorTemperatureMargin,
+    WstNb3snCiccSuperconductorProperties,
     WstNb3snSuperconductingTfCoilAreasAndMassesConventional,
     WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    WstNb3snTfSuperconductorTemperatureMargin,
 )
 from functional_process.models.tokamak.namespace import Tokamak
 from functional_process.models.vacuum.vacuum import (
@@ -335,6 +348,7 @@ from functional_process.models.vacuum.vacuum import (
     VacuumVesselEllipticalSingleNull,
 )
 from functional_process.total_process import StellaratorProcess, TokamakProcess
+from process.core.solver.iteration_variables import ITERATION_VARIABLES
 from process.data_structure.blanket_variables import BlktModelTypes
 from process.data_structure.build_variables import TFCSRadialConfiguration
 from process.data_structure.divertor_variables import DivertorHeatLoadModel
@@ -464,6 +478,62 @@ This exists as data, not as behaviour: `machine_from_indat` reads the file itsel
 here so the check has something to compare against.
 """
 
+_I_STR_WP_ZERO_REASON = (
+    "`i_str_wp == 0` feeds the critical-surface fits `.tfcoil.str_tf_con_res` where "
+    "`== 1` feeds `.tfcoil.str_wp` (process/models/tfcoil/superconducting.py:2897-2900 "
+    "and :2744-2747). That is a **read**, and a `From` default is fixed when the class "
+    "body executes, so the arm is a class axis and not a kwarg -- five more `__call__` "
+    "bodies differing in one parameter name. `1` is PROCESS's own default "
+    "(tfcoil_variables.py:508) and no tracked input file sets the switch at all, so the "
+    "arm is unreachable; it is refused here rather than baked so that a file which does "
+    "set it stops loudly instead of silently reading the other strain"
+)
+
+_BI2212_UNBOUND_REASON = (
+    "PROCESS's own Bi-2212 branch cannot return. "
+    "`tf_cable_in_conduit_superconductor_properties` assigns `bc20m`/`tc0m` on every "
+    "arm except this one (process/models/tfcoil/superconducting.py:2941-2984) and then "
+    "returns `TFSuperconductorLimits(..., bc20m=bc20m, tc0m=tc0m)` at :3160, so "
+    "`i_tf_sc_mat == 2` raises `UnboundLocalError` before any value exists to agree "
+    "with. There is nothing to port -- this is a PROCESS defect, recorded in "
+    "`_audit/units/models/tfcoil/superconducting.md` as D5"
+)
+
+_BI2212_MARGIN_REASON = (
+    "`calculate_superconductor_temperature_margin` short-circuits Bi-2212 to "
+    "`temp_tf_superconductor_margin = 0.0` and, unlike every other arm, never writes "
+    "`.tfcoil.temp_margin` (process/models/tfcoil/superconducting.py:1231-1233) -- "
+    "conditional ownership, so a genuinely different occupant. Not written, because the "
+    "arm is unreachable anyway: its sibling `tf_cable_in_conduit_superconductor_"
+    "properties` raises `UnboundLocalError` at the same switch value, so no machine can "
+    "reach this node with a real `j_superconductor`"
+)
+
+_SC_TAPE_REASON = (
+    "`i_tf_sc_mat` 6, 8 and 9 are `SuperconductorShape.TAPE` "
+    "(process/models/superconductors.py:101-124), and "
+    "`tf_cable_in_conduit_superconductor_properties` refuses a non-CABLE shape in its "
+    "first four lines (process/models/tfcoil/superconducting.py:2882-2889) before any "
+    "arithmetic. A tape machine takes `CROCOSuperconductingTFCoil` instead -- which is "
+    "what both tracked ST files do, `i_tf_turn_type = 2` "
+    "(spherical_tokamak_eval.IN.DAT:72, st_regression.IN.DAT:800) -- so this slot is "
+    "never reached at those values and there is no PROCESS behaviour to port"
+)
+
+_DURHAM_NBTI_COMPLEX_REASON = (
+    "PROCESS's own residual leaves the real numbers on this arm. "
+    "`superconductor_current_density_margin` branch 7 calls `gl_nbti`, which raises a "
+    "negative base to a fractional power while `scipy.optimize.newton`'s secant search "
+    "probes above `t_c0`; Python returns a `complex`. Measured at "
+    "`b_tf_inboard_peak = 8.0`: `optimize.newton` converges and PROCESS returns "
+    "`0.4561454861673191+1.2475645615451133e-12j`, a complex temperature margin. "
+    "Measured at `b_tf_inboard_peak = 12.5`: the same call dies with `TypeError: '<=' "
+    "not supported between instances of 'complex' and 'float'`. There is no real-valued "
+    "PROCESS answer to agree with. **Scoped to this slot** -- the same material's "
+    "`CICC_SUPERCONDUCTOR_PROPERTIES` occupant is written and agrees exactly, because "
+    "that function evaluates the fit once at `tftmp` instead of searching upward"
+)
+
 UNPORTED = {
     ("istell", 1): _ISTELL_PRESET_REASON,
     ("istell", 2): _ISTELL_PRESET_REASON,
@@ -545,8 +615,37 @@ UNPORTED = {
         "which key on the bare field name. `SC_TF_MASSES` keys on "
         "`itart_i_tf_sc_mat_sc_tf_masses` and has all nine materials, because the "
         "tokamak TF mass path uses `i_tf_sc_mat` only to index `.tfcoil.dcond`, never "
-        "to dispatch: `dcond[8] == 8500.0` exists, so value 9 is portable there"
+        "to dispatch: `dcond[8] == 8500.0` exists, so value 9 is portable there. The "
+        "two `i_str_wp_i_tf_sc_mat_*` slots key on their own composite names for the "
+        "same reason and carry their own, differently-scoped refusals below"
     ),
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 1)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 3)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 4)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 5)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 7)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (1, 2)): _BI2212_UNBOUND_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 2)): _BI2212_UNBOUND_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (1, 6)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 6)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (1, 8)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 8)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (1, 9)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", (0, 9)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 1)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 3)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 4)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 5)): _I_STR_WP_ZERO_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (1, 2)): _BI2212_MARGIN_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 2)): _BI2212_MARGIN_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (1, 6)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 6)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (1, 7)): _DURHAM_NBTI_COMPLEX_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 7)): _DURHAM_NBTI_COMPLEX_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (1, 8)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 8)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (1, 9)): _SC_TAPE_REASON,
+    ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 9)): _SC_TAPE_REASON,
     ("ife", IFEModel.INERTIAL_CONFINEMENT): (
         "inertial confinement is a different device, and PROCESS spells it as an `if` "
         "inside seven Account-22x cost methods rather than as a device class. Each of "
@@ -2667,6 +2766,55 @@ Before 2026-08-27 this registry was keyed on `itart` alone and **both** occupant
 found a second time. `low_aspect_ratio_DEMO` (`i_tf_sc_mat = 5`) was assembling the
 `dcond[0]` occupant and only escaped a wrong number because `dcond[4] == dcond[0]`."""
 
+CICC_SUPERCONDUCTOR_PROPERTIES = {
+    (1, SuperconductorModel.ITER_NB3SN): IterNb3snCiccSuperconductorProperties,
+    (1, SuperconductorModel.OLD_LUBELL_NBTI): OldLubellNbtiCiccSuperconductorProperties,
+    (
+        1,
+        SuperconductorModel.USER_DEFINED_NB3SN,
+    ): UserDefinedNb3snCiccSuperconductorProperties,
+    (1, SuperconductorModel.WST_NB3SN): WstNb3snCiccSuperconductorProperties,
+    (1, SuperconductorModel.DURHAM_NBTI): DurhamNbtiCiccSuperconductorProperties,
+}
+"""`(.tfcoil.i_str_wp, .tfcoil.i_tf_sc_mat)` -> the critical-current occupant.
+
+The second two-switch key in this file, for the same reason `SC_TF_MASSES` has one and
+with the same "neither axis reduces to the other" test: `i_tf_sc_mat` selects the fit
+*and* changes the reads-set (arm 3 reads no strain, arms 4 and 7 read two constants each
+that no other arm does), and `i_str_wp` selects **which field the strain is read from**
+-- `.tfcoil.str_tf_con_res` at `0`, `.tfcoil.str_wp` at `1`
+(`process/models/tfcoil/superconducting.py:2897-2900`). A `From` default is fixed when
+the class body executes, so neither can be a kwarg.
+
+Only the `i_str_wp == 1` row is written. `1` is PROCESS's default
+(`tfcoil_variables.py:508`) and no tracked input file sets the switch at all, so arm `0`
+is unreachable; it is in `UNPORTED` so a file that does set it is refused rather than
+silently getting the other strain."""
+
+TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN = {
+    (1, SuperconductorModel.ITER_NB3SN): IterNb3snTfSuperconductorTemperatureMargin,
+    (
+        1,
+        SuperconductorModel.OLD_LUBELL_NBTI,
+    ): OldLubellNbtiTfSuperconductorTemperatureMargin,
+    (
+        1,
+        SuperconductorModel.USER_DEFINED_NB3SN,
+    ): UserDefinedNb3snTfSuperconductorTemperatureMargin,
+    (1, SuperconductorModel.WST_NB3SN): WstNb3snTfSuperconductorTemperatureMargin,
+}
+"""`(.tfcoil.i_str_wp, .tfcoil.i_tf_sc_mat)` -> the temperature-margin occupant.
+
+**One row shorter than `CICC_SUPERCONDUCTOR_PROPERTIES`, on purpose.**
+`DURHAM_NBTI` (7) has a properties occupant and no margin occupant, because the two are
+different PROCESS functions and only the second one is broken: `gl_nbti` returns a
+`complex` while `scipy.optimize.newton`'s secant search probes above `t_c0`, so PROCESS
+either converges on a complex margin or raises a `TypeError` comparing one to a float.
+Measured both ways -- see `TfSuperconductorTemperatureMargin`'s docstring for the two
+numbers. The refusal is keyed separately from the properties slot's so the two cannot be
+confused, exactly as `WINDING_PACK_MATERIAL` and `SC_TF_MASSES` are kept apart on value
+9."""
+
 # ---- `.tokamak.ccfe_hcpb` ---------------------------------------------------------
 
 BLANKET_HALF_HEIGHT = {
@@ -3171,6 +3319,59 @@ def iteration_variables_from_indat(input_file):
     return frozenset(found)
 
 
+_QUENCH_GRID_FIELDS = ("tftmp", "temp_tf_conductor_quench_max")
+"""The two `.tfcoil` inputs the quench quadrature grid -- and therefore the helium
+property table -- is a function of. Both must be run *inputs* for
+`TfCoilQuenchHeatCurrentDensity`'s static table to be sound; `_quench_helium_table`
+checks that and refuses otherwise."""
+
+
+def _quench_helium_table(numbers, ixc):
+    """`(temp_he_peak, temp_quench_max, den_helium, cp_helium)` for this machine.
+
+    **The one place CoolProp is called in the whole port**, and it is called here --
+    at machine-assembly time, once, outside every traced region -- rather than from a
+    node body. `TfCoilQuenchHeatCurrentDensity`'s docstring carries the decision and the
+    measurement behind it; this function carries the *guard* that makes the decision
+    sound, and the guard is the load-bearing half.
+
+    A static property table is correct exactly while the temperatures it was built at
+    cannot move. Neither `.tfcoil.tftmp` nor `.tfcoil.temp_tf_conductor_quench_max` is
+    written by any model, so the only way either could move during a solve is by being
+    an iteration variable -- and that is checked, not assumed. A machine whose `ixc`
+    names one is **refused**, because the alternative is a table silently evaluated at
+    the wrong states while the optimiser walks away from them. Without this check the
+    static field would be the same defect shape as the `dcond[0]` bake `SC_TF_MASSES`
+    exists to have closed.
+
+    The defaults are `tfcoil_variables.py`'s own (`tftmp = 4.75`,
+    `temp_tf_conductor_quench_max = 150.0`).
+    """
+    frozen = {
+        name
+        for identifier in ixc
+        if (variable := ITERATION_VARIABLES.get(int(identifier))) is not None
+        for name in ((variable.target_name or variable.name),)
+        if name in _QUENCH_GRID_FIELDS
+    }
+    if frozen:
+        raise NotImplementedError(
+            f"{sorted(frozen)} is an iteration variable on this run, and "
+            f"`TfCoilQuenchHeatCurrentDensity` carries the helium property table as a "
+            f"static field evaluated at the quadrature grid those two temperatures "
+            f"define. An unknown there moves the states CoolProp was asked about while "
+            f"the table stays put -- so this machine is refused rather than assembled "
+            f"with a stale table. Resolving it means giving the helium properties a "
+            f"producer (`quench.md` OQ1's option (b) or (c)), not relaxing this check"
+        )
+    temp_he_peak = float(numbers.get("tftmp", 4.75))
+    temp_quench_max = float(numbers.get("temp_tf_conductor_quench_max", 150.0))
+    den_helium, cp_helium = helium_properties_at_quench_nodes(
+        temp_he_peak=temp_he_peak, temp_quench_max=temp_quench_max
+    )
+    return temp_he_peak, temp_quench_max, den_helium, cp_helium
+
+
 def _tokamak_device(
     switches, numbers, ixc, int_lists, i_tf_sup, i_plasma_ignited, itart, i_tf_sc_mat
 ):
@@ -3233,6 +3434,16 @@ def _tokamak_device(
     i_tf_turns_integer = switches.get("i_tf_turns_integer", 0)  # `tfcoil_variables.py`
     i_tf_wp_geom = _tf_wp_geom(switches.get("i_tf_wp_geom", -1), i_tf_turns_integer)
     i_tf_case_geom = TFPlasmaCaseType(switches.get("i_tf_case_geom", 0))
+    # `i_str_wp` decides two slots -- the critical-current surface and the temperature
+    # margin -- and both read the strain from the field it names, so it is answered once
+    # here for the same reason `i_tf_turns_integer` is.
+    i_str_wp = switches.get("i_str_wp", 1)  # `tfcoil_variables.py:508`
+    (
+        quench_temp_he_peak,
+        quench_temp_max,
+        quench_den_helium,
+        quench_cp_helium,
+    ) = _quench_helium_table(numbers, ixc)
     i_plasma_current = switches.get("i_plasma_current", 4)  # `physics_variables.py:843`
     i_hcd_primary = switches.get("i_hcd_primary", 5)  # `current_drive_variables.py:190`
     i_hcd_secondary = switches.get("i_hcd_secondary", 0)  # `:206`
@@ -3397,6 +3608,26 @@ def _tokamak_device(
             "itart_i_tf_sc_mat_sc_tf_masses",
             (SphericalTokamakModel(int(itart)), i_tf_sc_mat),
             SC_TF_MASSES,
+        ),
+        # Both of these key on `(i_str_wp, i_tf_sc_mat)`. `i_str_wp` is
+        # `tfcoil_variables.py:508`'s default; the pair is built once so the two slots
+        # cannot disagree about either switch, which is the same cross-slot coherence
+        # `i_tf_sc_mat` already gets from being resolved above the device branch.
+        cicc_superconductor_properties=_slot_occupant(
+            "i_str_wp_i_tf_sc_mat_cicc_sc_properties",
+            (i_str_wp, i_tf_sc_mat),
+            CICC_SUPERCONDUCTOR_PROPERTIES,
+        ),
+        tf_superconductor_temperature_margin=_slot_occupant(
+            "i_str_wp_i_tf_sc_mat_temp_margin",
+            (i_str_wp, i_tf_sc_mat),
+            TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN,
+        ),
+        tf_coil_quench_heat_current_density=TfCoilQuenchHeatCurrentDensity(
+            tftmp=quench_temp_he_peak,
+            temp_tf_conductor_quench_max=quench_temp_max,
+            den_helium_at_nodes=quench_den_helium,
+            cp_helium_at_nodes=quench_cp_helium,
         ),
     )
     ccfe_hcpb = _slot_occupant(

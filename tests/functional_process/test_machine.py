@@ -371,6 +371,13 @@ DERIVED_UNPORTED_KEYS = {
     "i_tf_sup_build",
     "itart_hcpb",
     "i_plasma_ignited_separatrix",
+    # Two-switch keys whose *value* is a `(i_str_wp, i_tf_sc_mat)` pair, so no single
+    # IN.DAT line selects one. Exercised through the two integers by
+    # `test_superconducting.py`'s `test_the_two_superconductor_slots_are_total` and
+    # `test_i_str_wp_zero_is_refused_end_to_end`, which is what this skip is trading
+    # against.
+    "i_str_wp_i_tf_sc_mat_cicc_sc_properties",
+    "i_str_wp_i_tf_sc_mat_temp_margin",
 }
 """`UNPORTED` keys that no IN.DAT integer can select directly.
 

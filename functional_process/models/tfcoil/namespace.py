@@ -1,4 +1,4 @@
-"""The tokamak TF coil's namespace -- the nineteen slots of
+"""The tokamak TF coil's namespace -- the twenty-four slots of
 `.tokamak.cicc_superconducting_tf_coil`.
 
 Beside the nodes it names (`model_tree_design.md` §11), and spanning three modules
@@ -8,7 +8,7 @@ by *inheritance* rather than by any call in `caller.py`
 why this is a `namespace.py` in the package rather than a class at the foot of one
 module -- there is no single module the slots are all beside.
 
-**Nine of the nineteen slots are switched, and every switch is answered by
+**Eleven of the twenty-four slots are switched, and every switch is answered by
 `indat.py`**, never here. The families and the switch each answers are in the class
 docstrings below; the reference-run arm of every one is
 `tests/regression/input_files/large_tokamak_eval.IN.DAT`'s, and `tfcoil/base.md`,
@@ -48,17 +48,23 @@ from functional_process.models.tfcoil.base import (
     TfGlobalGeometry,
     TfStoredMagneticEnergy,
 )
-from functional_process.models.tfcoil.quench import TfCoilDumpQuenchVoltage
+from functional_process.models.tfcoil.quench import (
+    TfCoilDumpQuenchVoltage,
+    TfCoilQuenchHeatCurrentDensity,
+)
 from functional_process.models.tfcoil.superconducting import (
     CiccInboardAreasAndFractions,
+    CiccSuperconductorProperties,
     CiccTurnGeometry,
     DxTfSideCase,
     PeakBTfInboardWithRipple,
     SuperconductingTfCoilAreasAndMasses,
     SuperconductingTfWpGeometry,
     TfCaseAreas,
+    TfSuperconductorTemperatureMargin,
     TfTurnArea,
     TfWpCurrents,
+    VvStressOnQuench,
 )
 
 
@@ -73,7 +79,7 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     `.tokamak.cicc_superconducting_tf_coil` (`CROCOSuperconductingTFCoil`, unported),
     not a different slot inside this one.
 
-    Nineteen slots, eighteen of them occupied on the reference run. Written in
+    Twenty-four slots, twenty-three of them occupied on the reference run. Written in
     dependency order rather than in file order, because the
     chain is long and legible: global geometry and case thickness, then the current, then
     the winding pack, then the turns, then the areas and masses, then the two quantities
@@ -205,14 +211,46 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     """`.physics.itart` -- the conventional arm owns ten fields, the spherical arm two
     more (`whtcp`, `whttflgs`). Conditional ownership, so occupants and not a kwarg."""
 
+    # ---- the critical-current chain and the two quench limits -----------------------
+
+    cicc_superconductor_properties: CiccSuperconductorProperties = dataclasses.field(
+        kw_only=True
+    )
+    """`.tfcoil.i_tf_sc_mat` x `.tfcoil.i_str_wp` -- the critical-current surface, and
+    constraint 33's `.tfcoil.j_tf_wp_critical`. Five of the nine materials are written
+    and four are refused with a measured reason each; the strain switch has only its
+    default arm. See the class docstring."""
+
+    tf_superconductor_temperature_margin: TfSuperconductorTemperatureMargin = (
+        dataclasses.field(kw_only=True)
+    )
+    """`.tfcoil.i_tf_sc_mat` again -- constraint 36's
+    `.tfcoil.temp_tf_superconductor_margin`, and the port's second internal solve
+    (`scipy.optimize.newton`'s secant branch, replicated). Two of the five materials the
+    slot above ports are refused here and the reasons are specific to *this* function,
+    not inherited: see the class docstring."""
+
+    vv_stress_on_quench: VvStressOnQuench = VvStressOnQuench()
+    """`.superconducting_tfcoil.vv_stress_quench`, constraint 65's read. Unswitched, and
+    by some distance the widest-reading node in this slot -- seventeen `.build` fields,
+    because the Itoh surrogate needs the vacuum vessel's own current centre line as well
+    as the coil's."""
+
     # ---- quench.py -----------------------------------------------------------------
 
     tf_coil_dump_quench_voltage: TfCoilDumpQuenchVoltage = TfCoilDumpQuenchVoltage()
-    """`.tfcoil.v_tf_coil_dump_quench_kv`, three reads and no switch.
+    """`.tfcoil.v_tf_coil_dump_quench_kv`, three reads and no switch."""
 
-    Its companion output `.tfcoil.j_tf_wp_quench_heat_max` has **no node**: computing it
-    needs helium density and specific heat at 75 quadrature temperatures, neither of
-    which has a `VarPath`, and minting two is an open policy call
-    (`quench.md` OQ1, `next_steps.md` §5). So the CoolProp dependency in the tokamak
-    scope stays outside the assembled graph entirely -- it is not wrapped, it is not
-    approximated, it is not there."""
+    tf_coil_quench_heat_current_density: TfCoilQuenchHeatCurrentDensity = (
+        dataclasses.field(kw_only=True)
+    )
+    """`.tfcoil.j_tf_wp_quench_heat_max`, constraint 35's read -- **the one CoolProp
+    dependency in the whole tokamak scope, and now inside the graph rather than outside
+    it.**
+
+    Not switched: the field is `dataclasses.field(kw_only=True)` because the occupant
+    carries four static values, not because a switch selects it. `indat.py` fills them
+    from the machine's own `tftmp`/`temp_tf_conductor_quench_max` with one CoolProp
+    round-trip at assembly time, and refuses the machine outright if either is an
+    iteration variable. The reasoning is in `TfCoilQuenchHeatCurrentDensity`'s
+    docstring; it resolves `quench.md` OQ1 in favour of its option (a)."""

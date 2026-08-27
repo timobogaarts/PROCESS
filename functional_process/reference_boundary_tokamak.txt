@@ -32,6 +32,7 @@ input .build.dr_tf_inner_bore
 input .build.dr_tf_shld_gap
 input .build.dr_vv_inboard
 input .build.dr_vv_outboard
+input .build.dr_vv_shells
 input .build.dz_blkt_upper
 input .build.dz_fw_plasma_gap
 input .build.dz_shld_lower
@@ -48,6 +49,7 @@ input .build.plleni
 input .build.plleno
 input .build.plsepi
 input .build.plsepo
+input .build.r_vv_inboard_out
 input .build.sigallpc
 input .build.z_tf_top
 input .buildings.admv
@@ -75,6 +77,7 @@ input .buildings.wgt
 input .buildings.wgt2
 input .buildings.wsvfac
 input .ccfe_hcpb.fw_armour_u_nuc_heating
+input .constraints.flu_tf_neutron_fast_max
 input .costs.UCAD
 input .costs.UCAF
 input .costs.UCAHTS
@@ -344,10 +347,16 @@ input .tfcoil.n_tf_coils
 input .tfcoil.res_tf_leg
 input .tfcoil.rho_tf_bus
 input .tfcoil.ripple_b_tf_plasma_edge_max
+input .tfcoil.rrr_tf_cu
+input .tfcoil.str_wp
+input .tfcoil.t_tf_quench_detection
 input .tfcoil.t_tf_superconductor_quench
 input .tfcoil.temp_cp_coolant_inlet
 input .tfcoil.temp_tf_cryo
 input .tfcoil.tfcmw
+input .tfcoil.tftmp
+input .tfcoil.theta1_coil
+input .tfcoil.theta1_vv
 input .times.t_plant_pulse_coil_precharge
 input .times.t_plant_pulse_dwell
 input .times.t_plant_pulse_fusion_ramp

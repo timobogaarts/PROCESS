@@ -88,12 +88,14 @@ pure functions are here, tested against PROCESS, ready for whichever binding is 
   but it is a real kink in the derivative and is ported as `jnp.clip`, not dropped.
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_sqrt
-from functional_process.paths import tfcoil
+from functional_process.paths import constraints, superconducting_tfcoil, tfcoil
+from process.core.coolprop_interface import FluidProperties
 
 QUENCH_HELIUM_PRESSURE_PA = 6.0e5
 """ITER TF coolant pressure, hardcoded in three places in `process/models/tfcoil/
@@ -400,6 +402,178 @@ def calculate_quench_protection_current_density(
     )
 
     return safe_sqrt(factor * f_cu_cable * total_integral)
+
+
+def j_tf_wp_quench_heat_max(
+    *,
+    a_tf_turn_cable_space,
+    a_tf_turn,
+    tau_discharge,
+    b_peak,
+    f_a_cable_copper,
+    f_a_cable_space_helium,
+    temp_he_peak,
+    temp_quench_max,
+    cu_rrr,
+    t_quench_detection,
+    fluence,
+    den_helium_at_nodes,
+    cp_helium_at_nodes,
+):
+    """Winding-pack current density limited by the hotspot criterion, A/m2.
+
+    Ports `quench_heat_protection_current_density`'s second half,
+    `process/models/tfcoil/superconducting.py:1362-1377` -- one cable-to-turn area ratio
+    over `calculate_quench_protection_current_density` above.
+    """
+    return (
+        a_tf_turn_cable_space
+        / a_tf_turn
+        * calculate_quench_protection_current_density(
+            tau_discharge=tau_discharge,
+            b_peak=b_peak,
+            f_a_cable_copper=f_a_cable_copper,
+            f_a_cable_space_helium=f_a_cable_space_helium,
+            temp_he_peak=temp_he_peak,
+            temp_quench_max=temp_quench_max,
+            cu_rrr=cu_rrr,
+            t_quench_detection=t_quench_detection,
+            fluence=fluence,
+            den_helium_at_nodes=den_helium_at_nodes,
+            cp_helium_at_nodes=cp_helium_at_nodes,
+        )
+    )
+
+
+def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
+    """`(density, specific heat)` of helium at the 75 quadrature nodes -- **the whole
+    CoolProp surface of the tokamak scope, called once, outside every traced region.**
+
+    This is the function `quench.md` OQ1 was asking for and deliberately did not write.
+    It is `numpy`, not `jnp`, and it is called by `indat.py` while the machine is being
+    assembled, never by a node body: `TfCoilQuenchHeatCurrentDensity` receives its two
+    return values as a **static** field. See that class for the decision and its guard.
+
+    150 `PropsSI` calls the first time a `(temp_he_peak, temp_quench_max)` pair is seen
+    and none afterwards -- `process/core/coolprop_interface.py` memoises on
+    `(T, P, fluid)` with `functools.cache`, and the grid is a pure function of those two
+    numbers.
+    """
+    temperatures = np.asarray(
+        quench_quadrature_temperatures(
+            temp_he_peak=temp_he_peak, temp_quench_max=temp_quench_max
+        )
+    )
+    states = [
+        FluidProperties.of(
+            "He", temperature=float(t), pressure=QUENCH_HELIUM_PRESSURE_PA
+        )
+        for t in temperatures
+    ]
+    return (
+        tuple(float(s.density) for s in states),
+        tuple(float(s.specific_heat_const_p) for s in states),
+    )
+
+
+class TfCoilQuenchHeatCurrentDensity(ExplicitFunction):
+    """cottax node: `.tfcoil.j_tf_wp_quench_heat_max`, constraint 35's read.
+
+    ## The CoolProp policy call, made (2026-08-27)
+
+    `quench.md` OQ1 listed three resolutions for the helium property boundary and
+    declined to pick one. This class picks **(a) -- the property table is a constant of
+    the run, resolved at graph-assembly time and carried as a static field** -- and the
+    reason is the measurement that record already contains rather than a preference:
+
+    - The quadrature grid is a function of `.tfcoil.tftmp` and
+      `.tfcoil.temp_tf_conductor_quench_max` and nothing else.
+    - **Neither is written by any model** (`grep` over `process/models/**` finds no
+      assignment to either; the only site is the read at `superconducting.py:2785`) and
+      **neither is an iteration variable**. So the states CoolProp is asked about do not
+      move during a solve, a scan point, or a gradient sweep.
+    - Therefore the 150 numbers are constants of the machine in the same sense that
+      `models/stellarator/preset_config.py`'s `machine_config` is -- and they are
+      carried the same way, as an `eqx.field(static=True)` filled by `indat.py` from
+      the file's own values.
+
+    What that buys, against the two options not taken: a `pure_callback` would put a
+    host round-trip inside a `jit` region to fetch numbers that cannot change, and a fit
+    or interpolation would introduce an approximation where an exact table is already
+    available at zero marginal cost. Nothing is approximated here, and no CoolProp call
+    happens inside any traced or differentiated region.
+
+    ## What the decision costs, stated rather than hidden
+
+    `tftmp` and `temp_tf_conductor_quench_max` are **not reads of this node**, so the
+    graph carries no edge from them and `jax` sees no derivative with respect to either.
+    That is exactly right while they are inputs and exactly wrong the moment one is not,
+    which is why `indat.py` **refuses to assemble** a machine whose `ixc` contains either
+    (`_quench_helium_table`). The refusal is the thing that makes the static field safe;
+    without it this would be the same shape of defect as the `dcond[0]` bake
+    `superconducting.md` records for the mass slot.
+
+    The harness contracts already excluded both from differentiation for this same
+    reason (`tests/functional_process/models/tfcoil/test_quench.py`'s `_SEAM_STATICS`),
+    so the node's declared reads and the case's differentiated arguments now say the
+    same thing.
+    """
+
+    tftmp: float = eqx.field(static=True)
+    """The helium peak-field temperature, as a static value rather than a read.
+
+    **It is not only the property grid that depends on it** -- the quadrature interval
+    `[tftmp, temp_tf_conductor_quench_max]` sets the nodes and the weights too, so
+    freezing the table without freezing the interval would evaluate the integrand at
+    temperatures the properties do not belong to. Both endpoints are static together, or
+    neither.
+
+    Named for the `DataStructure` field rather than for the pure function's parameter
+    (`temp_he_peak`) **on purpose**: `mda_harness.switch_audit` resolves a static
+    kwarg's backing field by name, so spelling it `tftmp` makes the frozen value
+    value-checked against the converged run automatically, on every harness run. A
+    static field with no resolvable name is a value nothing can check."""
+
+    temp_tf_conductor_quench_max: float = eqx.field(static=True)
+    """The hotspot temperature limit. See `tftmp`, including on the naming."""
+
+    den_helium_at_nodes: tuple = eqx.field(static=True)
+    """Helium density at `quench_quadrature_temperatures(...)`, from
+    `helium_properties_at_quench_nodes`. A `tuple` and not an array because a static
+    field has to be hashable -- it is a jit cache key."""
+
+    cp_helium_at_nodes: tuple = eqx.field(static=True)
+    """Helium isobaric specific heat at the same nodes."""
+
+    j_tf_wp_quench_heat_max = OutputInto(tfcoil)
+
+    def __call__(
+        self,
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        a_tf_turn=From(tfcoil),
+        t_tf_superconductor_quench=From(tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        f_a_tf_turn_cable_space_cooling=From(superconducting_tfcoil),
+        rrr_tf_cu=From(tfcoil),
+        t_tf_quench_detection=From(tfcoil),
+        flu_tf_neutron_fast_max=From(constraints),
+    ):
+        return j_tf_wp_quench_heat_max(
+            a_tf_turn_cable_space=a_tf_turn_cable_space_no_void,
+            a_tf_turn=a_tf_turn,
+            tau_discharge=t_tf_superconductor_quench,
+            b_peak=b_tf_inboard_peak_with_ripple,
+            f_a_cable_copper=f_a_tf_turn_cable_copper,
+            f_a_cable_space_helium=f_a_tf_turn_cable_space_cooling,
+            temp_he_peak=self.tftmp,
+            temp_quench_max=self.temp_tf_conductor_quench_max,
+            cu_rrr=rrr_tf_cu,
+            t_quench_detection=t_tf_quench_detection,
+            fluence=flu_tf_neutron_fast_max,
+            den_helium_at_nodes=jnp.asarray(self.den_helium_at_nodes),
+            cp_helium_at_nodes=jnp.asarray(self.cp_helium_at_nodes),
+        )
 
 
 # ---------------------------------------------------------------------------
