@@ -101,3 +101,42 @@ treatment) — flagged for whoever wires this node's read up against unit #9's e
 ## open questions
 
 None outstanding for this unit.
+
+## 2026-08-27 — `calculate_eu_demo_re_attachment_metric` ported (missing-producer wave)
+
+`optimise_design.md` §11.5's constraint-68 row, and the sharpest single instance of
+that whole defect class. `.physics.p_div_bt_q_aspect_rmajor_mw` was a boundary constant
+at `0` against PROCESS's converged `10.4949`, so:
+
+- §11.3's Stage A value nevertheless agreed **bit for bit** with PROCESS
+  (`+4.949055142e-02` normalised residual, identical), because the warm seed handed the
+  port PROCESS's own converged `DataStructure`;
+- §11.4's Stage B gradient row read `1.00e+00` relative — the port's total derivative
+  was **identically zero** where PROCESS's was not;
+- §11.6's Stage C2 then failed outright: pyvmcon's first QP raised
+  `QSPSolverException`, because c68 is *violated* by +4.9% at PROCESS's own answer and a
+  violated constraint with an identically zero linearised row admits no feasible step.
+
+A value test could not have found it and a gradient test could. That is the case for
+the harness, made by a live measurement rather than by an injected `stop_gradient`.
+
+The function is `exhaust.py:150-192` unchanged. The node reads the **mint**
+`.physics.p_plasma_separatrix_mw_raw`, not the field: `physics.py:818-826` runs before
+the KLUDGE at `:843-845`, and `physics.md`'s `force_positive_separatrix_power` entry
+already names this as one of the three call sites that see the pre-transform number. At
+this machine `P_sep = 176.8 MW` makes the two readings differ by ~1e-77 and no test
+could tell them apart — which is exactly why the wiring was done from the source rather
+than from the agreement.
+
+This narrows, and does not withdraw, the module's original "out of the registry's
+stated scope" note. `calculate_separatrix_power` was already ported (in `physics.py`,
+beside the mint it feeds). `calculate_psep_over_r_metric` stays unported on purpose: no
+active constraint and no ported node reads `.physics.p_plasma_separatrix_rmajor_mw`, so
+an occupant would be a producer with no consumer — a two-line follow-up the day one
+appears, the same disposition `PlasmaEnergyFromBeta` records for
+`.physics.e_plasma_beta_thermal`.
+
+Registered as a sixth slot of `.tokamak.physics` (`re_attachment_metric`), unswitched,
+so an instance default. Tier 1; `test_exhaust.py::TestEuDemoReAttachmentMetric` diffs
+the real staticmethod at the violating operating point, green plain and under
+`--fp-gradients`. No cycle created.

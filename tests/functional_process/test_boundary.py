@@ -179,7 +179,21 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """347 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """348 inputs and 11 guesses, against the stellarator's 297 and 6.
+
+    The CS/physics half of the missing-producer wave (2026-08-27) moved the input half
+    from 347 to 348, and the direction is the interesting part: **six §11.5 rows closed
+    and the count went up**. Four of the six (`beta_thermal_vol_avg`,
+    `beta_toroidal_vol_avg`, `beta_vol_avg_max`, `p_div_bt_q_aspect_rmajor_mw`) were
+    never in this list at all, because only a *constraint* read them and constraints are
+    outside the graph -- so their producers landed as pure additions of declared reads
+    (`.physics.beta_beam`) with nothing to cancel against. The other two
+    (`nd_plasma_pedestal_electron`, `nd_plasma_separatrix_electron`) did leave, and
+    their producer declared the two Greenwald fractions in their place: -2, +3.
+
+    That is the pin earning its keep in the *opposite* direction from the paragraph
+    below: the input count alone would have read as a regression here, and only the
+    row-by-row equality test above says which rows moved and why.
 
     The cold-boundary wave (2026-08-27) moved the input half from 349 to 347 by
     landing `cold_boundary.md`'s four missing producers: nine rows closed
@@ -226,5 +240,5 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (347, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (348, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)

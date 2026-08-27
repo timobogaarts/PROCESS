@@ -756,3 +756,212 @@ class PlasmaOhmicHeating(ExplicitFunction):
             zeff=n_charge_plasma_effective_vol_avg,
             plasma_res_factor=plasma_res_factor,
         )
+
+
+# ---------------------------------------------------------------------------
+# `PlasmaBeta.run`'s beta-limit block (`physics.py:3789-3835`).
+#
+# Added 2026-08-27 for `optimise_design.md` §11.5's constraint-24 rows: all three
+# of `.physics.beta_thermal_vol_avg`, `.beta_toroidal_vol_avg` and
+# `.beta_vol_avg_max` were boundary zeros that PROCESS's own solve moves, so
+# `constraint_24` compared a frozen 0 against a frozen 0 and its whole gradient
+# row was structurally dead.
+# ---------------------------------------------------------------------------
+
+
+def calculate_beta_norm_max_wesson(ind_plasma_internal_norm):
+    """Wesson's normalised beta upper limit, beta_N_max.
+
+    Ports `PlasmaBeta.calculate_beta_norm_max_wesson`, `physics.py:3941-3974`,
+    unchanged -- the whole body is `4 * l_i`.
+
+    Parameters
+    ----------
+    ind_plasma_internal_norm :
+        Plasma normalised internal inductance. `.physics.ind_plasma_internal_norm`.
+
+    Returns
+    -------
+    :
+        Wesson normalised beta upper limit.
+    """
+    return 4 * ind_plasma_internal_norm
+
+
+def calculate_beta_limit_from_norm(
+    b_plasma_toroidal_on_axis,
+    beta_norm_max,
+    plasma_current,
+    rminor,
+):
+    """Maximum allowed volume-averaged beta, from the normalised limit.
+
+    Ports `PlasmaBeta.calculate_beta_limit_from_norm`, `physics.py:4180-4235`,
+    unchanged (AEA FUS 172). The `0.01` converts the Troyon coefficient from per-cent
+    to a fraction.
+
+    **This node owns `.physics.beta_vol_avg_max` and nothing selects among components
+    here.** `.physics.i_beta_component` chooses which beta the *constraint* compares
+    against the limit (`constraint_24`), not which limit is computed -- PROCESS
+    computes exactly this one limit whatever the switch says, and the switch is already
+    a static kwarg of the ported `constraint_24`.
+
+    Parameters
+    ----------
+    b_plasma_toroidal_on_axis :
+        Toroidal field on the plasma axis (T).
+    beta_norm_max :
+        Troyon-like g coefficient. `.physics.beta_norm_max`.
+    plasma_current :
+        Plasma current (A).
+    rminor :
+        Plasma minor radius (m).
+
+    Returns
+    -------
+    :
+        Volume-averaged beta limit (dimensionless).
+    """
+    return (
+        0.01
+        * beta_norm_max
+        * (plasma_current / 1.0e6)
+        / (rminor * b_plasma_toroidal_on_axis)
+    )
+
+
+def calculate_toroidal_beta(
+    beta_total_vol_avg,
+    b_plasma_total,
+    b_plasma_toroidal_on_axis,
+):
+    """Volume-averaged beta referred to the toroidal field alone.
+
+    Ports `physics.py:3818-3822` -- an inline assignment in `PlasmaBeta.run` with no
+    `@staticmethod` of its own, transcribed term for term.
+
+    Parameters
+    ----------
+    beta_total_vol_avg :
+        Volume-averaged total beta, referred to the total field.
+    b_plasma_total :
+        Total field on axis (T).
+    b_plasma_toroidal_on_axis :
+        Toroidal field on axis (T).
+
+    Returns
+    -------
+    :
+        Toroidal beta (dimensionless).
+    """
+    return beta_total_vol_avg * b_plasma_total**2 / b_plasma_toroidal_on_axis**2
+
+
+def calculate_thermal_beta(beta_total_vol_avg, beta_fast_alpha, beta_beam):
+    """Volume-averaged thermal beta: the total less both fast-ion contributions.
+
+    Ports `physics.py:3831-3835`, an inline assignment in `PlasmaBeta.run`.
+
+    Parameters
+    ----------
+    beta_total_vol_avg :
+        Volume-averaged total beta.
+    beta_fast_alpha :
+        Fast-alpha beta contribution. `.physics.beta_fast_alpha`.
+    beta_beam :
+        Neutral-beam fast-ion beta contribution. `.physics.beta_beam`.
+
+    Returns
+    -------
+    :
+        Thermal beta (dimensionless).
+    """
+    return beta_total_vol_avg - beta_fast_alpha - beta_beam
+
+
+class BetaNormMaxWesson(ExplicitFunction):
+    """cottax node: `calculate_beta_norm_max_wesson`.
+
+    Occupant of the `.physics.i_beta_norm_max` slot for value `1` (`WESSON`,
+    `large_tokamak_eval.IN.DAT:287`'s default -- the file sets `i_beta_component` but
+    not this one, and `physics_variables.py`'s default is `1`).
+
+    **The slot exists because `get_beta_norm_max_value` is a five-way select over five
+    separately computed fields** (`physics.py:3723-3743`), and the wave's binding policy
+    is one occupant class per switch value, each declaring only its own arm's reads.
+    PROCESS itself computes all five scalings unconditionally and then picks
+    (`physics.py:3766-3800`); the four unselected ones are dead work and are not
+    computed here. `.physics.beta_norm_max_wesson` and its four siblings are therefore
+    still boundary inputs -- only the *selected* value is owned, under the name every
+    consumer actually reads.
+
+    The `USER_INPUT` arm (`0`) has **no occupant and cannot have one**: PROCESS's
+    `model_map` returns `physics_data.beta_norm_max` itself, so the node would own what
+    it reads. `indat.py`'s `BETA_NORM_MAX` registry leaves that value out on purpose and
+    `.physics.beta_norm_max` stays a boundary input there, which is exactly what PROCESS
+    leaves it as.
+    """
+
+    beta_norm_max = OutputInto(physics)
+
+    def __call__(self, ind_plasma_internal_norm=From(physics)):
+        return calculate_beta_norm_max_wesson(ind_plasma_internal_norm)
+
+
+class BetaLimitFromNorm(ExplicitFunction):
+    """cottax node: `calculate_beta_limit_from_norm`. Unswitched."""
+
+    beta_vol_avg_max = OutputInto(physics)
+
+    def __call__(
+        self,
+        b_plasma_toroidal_on_axis=From(physics),
+        beta_norm_max=From(physics),
+        plasma_current=From(physics),
+        rminor=From(physics),
+    ):
+        return calculate_beta_limit_from_norm(
+            b_plasma_toroidal_on_axis,
+            beta_norm_max,
+            plasma_current,
+            rminor,
+        )
+
+
+class ToroidalBeta(ExplicitFunction):
+    """cottax node: `calculate_toroidal_beta`. Unswitched."""
+
+    beta_toroidal_vol_avg = OutputInto(physics)
+
+    def __call__(
+        self,
+        beta_total_vol_avg=From(physics),
+        b_plasma_total=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+    ):
+        return calculate_toroidal_beta(
+            beta_total_vol_avg,
+            b_plasma_total,
+            b_plasma_toroidal_on_axis,
+        )
+
+
+class ThermalBeta(ExplicitFunction):
+    """cottax node: `calculate_thermal_beta`. Unswitched.
+
+    `.physics.beta_beam` is a boundary input on this machine and stays one: its producer
+    is `beam_fusion`, which `unit_registry.md`'s constraint-7 row already records as an
+    unported conditional producer. It is zero here (no neutral beam), so the thermal
+    beta is exact anyway -- but the read is declared, not folded away, because the
+    edge is real the moment a beam-heated file is assembled.
+    """
+
+    beta_thermal_vol_avg = OutputInto(physics)
+
+    def __call__(
+        self,
+        beta_total_vol_avg=From(physics),
+        beta_fast_alpha=From(physics),
+        beta_beam=From(physics),
+    ):
+        return calculate_thermal_beta(beta_total_vol_avg, beta_fast_alpha, beta_beam)

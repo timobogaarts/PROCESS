@@ -276,6 +276,7 @@ input .physics.alphan
 input .physics.alphat
 input .physics.aspect
 input .physics.b_plasma_toroidal_on_axis
+input .physics.beta_beam
 input .physics.beta_poloidal_vol_avg
 input .physics.beta_total_vol_avg
 input .physics.burnup_in
@@ -285,6 +286,8 @@ input .physics.ejima_coeff
 input .physics.f_c_plasma_non_inductive
 input .physics.f_nd_alpha_thermal_electron
 input .physics.f_nd_beam_electron
+input .physics.f_nd_plasma_pedestal_greenwald
+input .physics.f_nd_plasma_separatrix_greenwald
 input .physics.f_nd_protium_electrons
 input .physics.f_p_alpha_plasma_deposited
 input .physics.f_plasma_fuel_deuterium
@@ -298,8 +301,6 @@ input .physics.hfact
 input .physics.itart
 input .physics.kappa
 input .physics.nd_plasma_electrons_vol_avg
-input .physics.nd_plasma_pedestal_electron
-input .physics.nd_plasma_separatrix_electron
 input .physics.p_beam_alpha_mw
 input .physics.pflux_plasma_surface_neutron_avg_mw
 input .physics.plasma_res_factor

@@ -31,11 +31,17 @@ from functional_process.models.physics.current_drive import (
     HcdSecondaryDrivenCurrent,
     HcdSecondaryHeating,
 )
+from functional_process.models.physics.exhaust import EuDemoReAttachmentMetric
 from functional_process.models.physics.physics import (
+    BetaLimitFromNorm,
+    BetaNormMaxWesson,
+    PlasmaEnergyFromBeta,
     PlasmaOhmicHeating,
     PositiveSeparatrixPower,
     PulseRampTimes,
     SeparatrixPower,
+    ThermalBeta,
+    ToroidalBeta,
     TotalRadiationPower,
     UnclippedRadiationPowers,
 )
@@ -52,12 +58,12 @@ class TokamakPhysics(ModelNamespace):
     """`.tokamak.physics` -- the radiation, separatrix and ohmic blocks of
     `physics.py`.
 
-    Five slots, one of them switched. What is *not* here and might be expected:
+    Six slots, one of them switched. What is *not* here and might be expected:
 
     * `SurfaceAveragedPoloidalField` is `.tokamak.plasma_fields`', because PROCESS puts
       it in `plasma_fields.py` and injects that model into `Physics`.
-    * `PlasmaEnergyFromBeta` is `.tokamak.plasma_beta`', for the same reason -- it is
-      `PlasmaBeta.run`'s, `physics.py:3912-3916`.
+    * the whole beta block is `.tokamak.plasma_beta`', for the same reason -- it is
+      `PlasmaBeta.run`'s, `physics.py:3789-3916`.
     * the pulse ramp times are `.tokamak.pulse`'s. `physics.md` OQ4 left that a slot
       choice rather than a re-port; `pulse.py::Pulse` is where every other pulse-timing
       concern lives and the `Tokamak.pulse` slot's own docstring already claims decision
@@ -101,6 +107,65 @@ class TokamakPhysics(ModelNamespace):
     and same resolution as `radiation_power.py`'s `_unclipped` mints and
     `build.py`'s `r_tf_outboard_mid_unrippled`; `physics.md` OQ5 asked for this call and
     the mint is what is kept."""
+
+    re_attachment_metric: EuDemoReAttachmentMetric = EuDemoReAttachmentMetric()
+    """`.physics.p_div_bt_q_aspect_rmajor_mw` (`physics.py:818-826`). Unswitched, so a
+    default.
+
+    Added 2026-08-27 for `optimise_design.md` §11.5. This field was one of the three
+    `1.00e+00`-relative rows §11.4 measured -- constraint 68's port gradient was
+    *identically zero* where PROCESS's was not, because the constraint read a frozen
+    boundary constant. c68 is also one of the two inequalities `large_tokamak_eval`
+    violates at PROCESS's own answer (+4.95e-02), and §11.6 traced Stage C2's
+    `QSPSolverException` to exactly that combination: a violated constraint whose
+    linearised row is zero admits no feasible QP step.
+
+    The node's class docstring records why it reads the mint
+    `.physics.p_plasma_separatrix_mw_raw` rather than the field."""
+
+
+class TokamakPlasmaBeta(ModelNamespace):
+    """`.tokamak.plasma_beta` -- `physics/physics.py::PlasmaBeta.run`, five slots.
+
+    **This slot held a single node until 2026-08-27 and is a namespace now.** The
+    rename is real and visible in every pin: `.tokamak.plasma_beta` became
+    `.tokamak.plasma_beta.energy_from_beta`. It is done rather than avoided because the
+    alternative -- a second, sibling `Tokamak` slot for the beta *limits* -- would split
+    one PROCESS `Model` across two slots, which is the one thing
+    `models/tokamak/namespace.py`'s slot rule asks not to do. That file's own docstring
+    already anticipated this ("a slot may hold either" a node or a namespace).
+
+    Four of the five slots are unswitched: PROCESS computes them outside every `if` in
+    `PlasmaBeta.run`. The fifth is `.physics.i_beta_norm_max`, whose `USER_INPUT` value
+    has no occupant and cannot have one -- see `BetaNormMaxWesson`.
+
+    **`.physics.i_beta_component` is not a slot here**, which is the useful negative
+    result: it looks like a beta switch and it is not one. It selects which *already
+    computed* beta the constraint compares against the limit (`constraint_24`), and
+    PROCESS computes the same single `beta_vol_avg_max` whatever its value. It is
+    already a static kwarg of the ported constraint and stays there.
+    """
+
+    energy_from_beta: PlasmaEnergyFromBeta = PlasmaEnergyFromBeta()
+    """`.physics.e_plasma_beta` (`physics.py:3912-3916`) -- the original occupant of
+    this slot, unchanged but for its name."""
+
+    norm_max: BetaNormMaxWesson = dataclasses.field(kw_only=True)
+    """`.physics.i_beta_norm_max` -- six values, one occupant (`1`, Wesson).
+
+    Factory-filled rather than defaulted even though only one occupant exists, for
+    `models/tokamak/namespace.py`'s stated reason: a defaulted slot is a slot
+    `machine_from_indat` never asks a switch about, so a file selecting Menard or
+    Tholerus would be quietly given Wesson instead of refused."""
+
+    limit: BetaLimitFromNorm = BetaLimitFromNorm()
+    """`.physics.beta_vol_avg_max` (`physics.py:3810-3816`), constraint 24's bound."""
+
+    toroidal: ToroidalBeta = ToroidalBeta()
+    """`.physics.beta_toroidal_vol_avg` (`physics.py:3818-3822`)."""
+
+    thermal: ThermalBeta = ThermalBeta()
+    """`.physics.beta_thermal_vol_avg` (`physics.py:3831-3835`)."""
 
 
 class TokamakPulse(ModelNamespace):

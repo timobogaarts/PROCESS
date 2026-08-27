@@ -557,3 +557,61 @@ PF/volt-second SCC, on neither).
 Tier 1; `test_physics.py::TestPlasmaOhmicHeating` diffs the real staticmethod (legacy
 point = the converged operating point read off a live `SingleRun`; fuzz bounds
 straddle the defect's kink at `A = 2.5` from both sides).
+
+## 2026-08-27 — `PlasmaBeta.run`'s limit block ported (missing-producer wave, CS/physics half)
+
+`optimise_design.md` §11.5's constraint-24 rows. All three of the fields
+`constraint_24` compares — `.physics.beta_thermal_vol_avg`,
+`.physics.beta_toroidal_vol_avg` and the bound `.physics.beta_vol_avg_max` — were
+boundary constants at `0`, while PROCESS's own solve moves them to
+`0.027869 / 0.033109 / 0.057040`. The constraint therefore compared a frozen zero
+against a frozen zero, and no design variable could move either side of it.
+
+**Four pure functions and four nodes, in a new namespace.**
+`calculate_beta_norm_max_wesson` (`physics.py:3941-3974`),
+`calculate_beta_limit_from_norm` (`:4180-4235`) — both PROCESS `@staticmethod`s taken
+unchanged — plus `calculate_toroidal_beta` (`:3818-3822`) and
+`calculate_thermal_beta` (`:3831-3835`), which are inline assignments in
+`PlasmaBeta.run` with no separable PROCESS callable and are transcribed term for term.
+
+**`.tokamak.plasma_beta` was a node slot and is a namespace now.** The rename
+`.tokamak.plasma_beta` → `.tokamak.plasma_beta.energy_from_beta` is visible in every
+pin. The alternative was a second, sibling `Tokamak` slot for the limits, which would
+have split one PROCESS `Model` across two slots; `models/tokamak/namespace.py`'s own
+docstring already allowed for a slot holding either kind, so this is the anticipated
+case rather than a new licence.
+
+**A chain, not a leaf, and the chain is what the gap actually was.**
+`beta_vol_avg_max` reads `.physics.beta_norm_max`, which was *itself* a moving boundary
+constant (`3.0` cold against PROCESS's converged `5.0273`) — so porting only
+`calculate_beta_limit_from_norm` would have closed the §11.5 row and left the value
+43% wrong and the derivative still dead. `get_beta_norm_max_value` (`:3723-3743`) is
+therefore ported as well, as a switch slot on `.physics.i_beta_norm_max` with the
+Wesson occupant written (`indat.BETA_NORM_MAX`). PROCESS computes all five scalings
+unconditionally and then selects; the four unselected ones are dead work and are not
+computed, per the wave's computes-then-selects policy. The `USER_INPUT` arm has **no
+occupant and cannot have one** — `model_map` returns `physics_data.beta_norm_max`
+itself, so its honest occupant is no node at all; `BETA_NORM_MAX`'s docstring records
+that this makes `_slot_occupant` give a `ValueError` where a `NotImplementedError`
+would read better, and why that is not fixed here.
+
+**`.physics.i_beta_component` is not a switch of this block**, which is the useful
+negative result: it looks like one (it is even named as decision 7 in §A) and it
+selects only which *already computed* beta `constraint_24` compares against the one
+limit PROCESS computes regardless. It stays a static kwarg of the ported constraint.
+
+No cycle created (`Blocking.scc`, tokamak: the three raw cycles are unchanged in
+membership — 4-node build/winding-pack, 8-node density, 9-node PF/volt-second). The
+stellarator graph is untouched: `.tokamak.*` is not on it, and its harness numbers are
+identical line for line.
+
+Data footprint: reads `.physics.ind_plasma_internal_norm` (plasma_inductance),
+`.physics.b_plasma_toroidal_on_axis`, `.plasma_current`, `.rminor`,
+`.beta_total_vol_avg`, `.b_plasma_total`, `.beta_fast_alpha` (`fast_alpha_beta`) and
+`.beta_beam` — the last a boundary input whose producer (`beam_fusion`) is unported and
+is zero on this machine, declared rather than folded away. Writes
+`.physics.beta_norm_max`, `.beta_vol_avg_max`, `.beta_toroidal_vol_avg`,
+`.beta_thermal_vol_avg`.
+
+Tier 1 throughout; four `Tier1Contract`s in `test_physics.py`, legacy points read off
+the converged `large_tokamak_eval` run, green plain and under `--fp-gradients`.

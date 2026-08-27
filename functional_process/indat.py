@@ -140,6 +140,7 @@ from functional_process.models.physics.namespace import (
     ProfileParameterisationPedestal,
 )
 from functional_process.models.physics.physics import (
+    BetaNormMaxWesson,
     PulseRampTimesContinuousDefault,
     PulseRampTimesPulsedDefault,
     SeparatrixPowerNonIgnited,
@@ -160,6 +161,10 @@ from functional_process.models.physics.plasma_inductance import (
     PlasmaInternalInductanceNormWesson,
     TokamakPlasmaInductance,
 )
+from functional_process.models.physics.profiles import (
+    GreenwaldDensityFractions,
+    PedestalSeparatrixDensities,
+)
 from functional_process.models.physics.pure_formulas import (
     FastAlphaBetaIterPhysicsRules,
     FastAlphaBetaWard,
@@ -171,6 +176,7 @@ from functional_process.models.physics.scrape_off_layer import (
 from functional_process.models.physics.tokamak_namespace import (
     TokamakCurrentDrive,
     TokamakPhysics,
+    TokamakPlasmaBeta,
     TokamakPlasmaGeom,
     TokamakPulse,
 )
@@ -499,6 +505,23 @@ UNPORTED = {
         "the NBI branch of `st_heat` calls `current_drive.culnbi()`, a model that is "
         "not audited yet (registry unit #5)"
     ),
+    **{
+        ("i_beta_norm_max", value): (
+            f"`get_beta_norm_max_value` selects `.physics.beta_norm_max_{name}` "
+            f"(`physics.py:3723-3743`), computed at `physics.py:3766-3800`. Only the "
+            "Wesson arm is transcribed; each of the others is its own formula with its "
+            "own reads (the original and Menard scalings read `.physics.eps`, Tholerus "
+            "reads `.physics.c_beta` and the two thermal pressures, Stambaugh reads "
+            "`.current_drive.f_c_plasma_bootstrap`, `.physics.kappa` and `.aspect`), so "
+            "each needs its own occupant rather than a shared node declaring the union"
+        )
+        for value, name in (
+            (2, "original_scaling"),
+            (3, "menard"),
+            (4, "tholerus"),
+            (5, "stambaugh"),
+        )
+    },
     ("blktmodel_ipowerflow", 0): (
         "S2's blktmodel == 1 arm is `blanket_neutronics()`, which calls "
         "`self.hcpb.nuclear_heating_blanket()`/`nuclear_heating_shield()` with zero "
@@ -1549,6 +1572,25 @@ HEATING = {1: EcrhHeating, 2: LowhybHeating}
 FW_AREA = {0: AFwTotalNoPowerflow, 1: AFwTotalWithPowerflow}
 """`.heat_transport.ipowerflow` -> the first-wall-area occupant."""
 
+BETA_NORM_MAX = {1: BetaNormMaxWesson}
+"""`.physics.i_beta_norm_max` -> `.tokamak.plasma_beta.norm_max`'s occupant.
+
+`1` (`WESSON`, `physics_variables.py`'s own default -- `large_tokamak_eval.IN.DAT` sets
+`i_beta_component` and never mentions this switch) is written. `0` (`USER_INPUT`) is
+absent **and is not in `UNPORTED` either**, which is the one place in this file that
+distinction carries meaning: the other four values are formulas nobody has transcribed,
+while `USER_INPUT` is not a formula at all -- `get_beta_norm_max_value`'s `model_map`
+returns `physics_data.beta_norm_max` itself, so the arm's honest occupant is *no node*
+and `.physics.beta_norm_max` staying a boundary input, exactly as PROCESS leaves it.
+
+A file selecting `0` therefore gets `_slot_occupant`'s `ValueError` ("not a known
+value") rather than its `NotImplementedError`, and that is wrong for the wrong reason.
+Recorded rather than fixed: making the empty arm expressible needs
+`_slot_occupant` to distinguish "no occupant because nothing to compute" from "no
+occupant because unwritten", which is the same `None`-arm mechanism
+`Tokamak.bootstrap_current` already has at the slot level and this registry has no way
+to reach. Nothing in the tokamak or stellarator scope selects `0`."""
+
 PROFILE_PARAMETERISATION = {
     0: ProfileParameterisationParabolic,
     1: ProfileParameterisationPedestal,
@@ -1563,16 +1605,46 @@ real input file rather than only by an `eqx.tree_at` what-if.
 """
 
 
-def _profile_parameterisation(i_plasma_pedestal, *, is_stellarator):
-    """The profile-shape occupant, with the parabolic arm's device-specific slot filled.
+PEDESTAL_SEPARATRIX = {
+    0: GreenwaldDensityFractions,
+    1: PedestalSeparatrixDensities,
+}
+"""`.physics.i_nd_plasma_pedestal_separatrix` -> the pedestal/separatrix-density
+occupant, **nested under `i_plasma_pedestal == 1`**.
 
-    Two questions, one slot, and they are genuinely independent: `i_plasma_pedestal`
-    decides which *arm* runs, and the device decides whether that arm's
-    `ecrh_density_limit` exists. `st_d_limit_ecrh` lives in
+Both values of the binary switch are written, and both arms are real occupants that
+assemble -- but they are *inverses*, not competitors: `1` (`GREENWALD_FRACTION`,
+PROCESS's default and both reference files') reads the two Greenwald fractions and owns
+the two densities, `0` (`USER_INPUT`) reads the densities and owns the fractions. See
+`ProfileParameterisationPedestal.pedestal_separatrix` for why that makes a slot default
+wrong rather than merely unnecessary.
+
+`_profile_parameterisation` below reaches this registry only on the pedestal arm, which
+is how the port spells "this switch only exists when that one has this value" --
+`profiles.md`'s open question 2, answered by the slot mechanism rather than by an
+addition to `configuration.TOPOLOGY_SWITCHES`."""
+
+
+def _profile_parameterisation(
+    i_plasma_pedestal, i_nd_plasma_pedestal_separatrix, *, is_stellarator
+):
+    """The profile-shape occupant, with each arm's own nested slot filled.
+
+    Three questions, one slot, and the first two are genuinely independent:
+    `i_plasma_pedestal` decides which *arm* runs, and the device decides whether that
+    arm's `ecrh_density_limit` exists. `st_d_limit_ecrh` lives in
     `models/stellarator/density_limits.py` and is reached only from `st_phys`, so a
     parabolic **tokamak** computes no ECRH density limit any more than a pedestal one
     does -- `None`, and `.stellarator.dlimit_ecrh`/`bt_max_ecrh` surface as boundary
     inputs, which is what PROCESS leaves them as.
+
+    The third is *not* independent, and that is the point of answering it here:
+    `i_nd_plasma_pedestal_separatrix` decides a slot that only the **pedestal** arm has
+    (`physics.py:363-368` reads it inside `if i_plasma_pedestal == PEDESTAL_PROFILE`).
+    Asking it on the parabolic arm would be asking a question PROCESS never asks, so
+    the parabolic branch below never touches `PEDESTAL_SEPARATRIX` -- and a stellarator,
+    pinned to the parabolic arm by `ST_INIT_I_PLASMA_PEDESTAL`, therefore cannot reach
+    it at all.
 
     The static `i_plasma_pedestal=PARABOLIC_PROFILE` is written here, once, immediately
     beside the arm that selects it -- it used to be a slot default in
@@ -1584,7 +1656,13 @@ def _profile_parameterisation(i_plasma_pedestal, *, is_stellarator):
         i_plasma_pedestal,
         PROFILE_PARAMETERISATION,
         build=lambda cls: (
-            cls()
+            cls(
+                pedestal_separatrix=_slot_occupant(
+                    "i_nd_plasma_pedestal_separatrix",
+                    i_nd_plasma_pedestal_separatrix,
+                    PEDESTAL_SEPARATRIX,
+                )
+            )
             if cls is ProfileParameterisationPedestal
             else cls(ecrh_density_limit=(EcrhDensityLimit() if is_stellarator else None))
         ),
@@ -3519,6 +3597,13 @@ def _tokamak_device(
     return Tokamak(
         plasma_geom=plasma_geom,
         physics=physics,
+        plasma_beta=TokamakPlasmaBeta(
+            norm_max=_slot_occupant(
+                "i_beta_norm_max",
+                switches.get("i_beta_norm_max", 1),  # `physics_variables.py`
+                BETA_NORM_MAX,
+            )
+        ),
         plasma_inductance=plasma_inductance,
         plasma_current=plasma_current,
         bootstrap_current=bootstrap_current,
@@ -3948,7 +4033,12 @@ def machine_from_indat(input_file, stella_conf=None):
                     # tokamak by construction rather than by an exception: PROCESS
                     # computes no ECRH density limit outside `i_plasma_pedestal == 0`.
                     parameterisation=_profile_parameterisation(
-                        switches.get("i_plasma_pedestal", 1), is_stellarator=False
+                        switches.get("i_plasma_pedestal", 1),
+                        # `physics_variables.py`'s default is `1`
+                        # (`GREENWALD_FRACTION`); `large_tokamak_eval.IN.DAT` never
+                        # mentions the switch, so the default is what runs.
+                        switches.get("i_nd_plasma_pedestal_separatrix", 1),
+                        is_stellarator=False,
                     ),
                 ),
                 confinement_time=confinement_time,
@@ -4052,7 +4142,14 @@ def machine_from_indat(input_file, stella_conf=None):
                 # slot and this port must not pretend it does. See
                 # `ST_INIT_I_PLASMA_PEDESTAL`.
                 parameterisation=_profile_parameterisation(
-                    ST_INIT_I_PLASMA_PEDESTAL, is_stellarator=True
+                    ST_INIT_I_PLASMA_PEDESTAL,
+                    # Never read: `ST_INIT_I_PLASMA_PEDESTAL` is the parabolic arm and
+                    # `_profile_parameterisation` asks `PEDESTAL_SEPARATRIX` only on the
+                    # pedestal one. Passed rather than made optional so that the two
+                    # call sites answer the same three questions and a reader can see
+                    # that this device declines the third.
+                    switches.get("i_nd_plasma_pedestal_separatrix", 1),
+                    is_stellarator=True,
                 ),
             ),
             confinement_time=confinement_time,
