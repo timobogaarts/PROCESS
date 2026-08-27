@@ -640,3 +640,183 @@ gained an `n_divertors` parameter defaulting to `1`, so no existing case moved. 
 `--fp-gradients --fp-fuzz 40`.
 
 No new boundary input.
+
+
+## 2026-08-27 — the centrepost chain ported, `itart == 1` registered (centrepost wave)
+
+**Open question 3 is answered.** The two written-and-unregistered spherical occupants are
+registered, because both of their preconditions now exist: `blanket_library`'s D-shaped
+geometry (the D-shaped wave, same day) and this section's subject, the centrepost
+neutronics chain. `indat.py`'s `('itart_hcpb', 1)` and
+`('nuclear_heating_renormalisation_arm', -2)` are **deleted**, not moved.
+
+### the cluster's measured decomposition
+
+`hcpb.py:1008-1287` is three functions. Their *callers and readers* were measured before
+deciding how many nodes they make, and the answer is **one node, three pure functions**:
+
+| PROCESS | reads beyond its arguments | its output goes to |
+|---|---|---|
+| `st_cp_angle_fraction` (`:1008-1080`) | none — a `@staticmethod` | `f_geom_cp`, a **local of `run()`**, read at `:216` and `:268` |
+| `st_tf_centrepost_fast_neut_flux` (`:1082-1134`) | `.tfcoil.i_tf_sup` | `.fwbs.neut_flux_cp` |
+| `st_centrepost_nuclear_heating` (`:1136-1287`) | `.tfcoil.i_tf_sup`, `.physics.rmajor` | `.fwbs.pnuc_cp_tf`, `.fwbs.p_cp_shield_nuclear_heat_mw`, `.fwbs.pnuc_cp` |
+
+Three measurements decided the shape.
+
+1. **`f_geom_cp` is a local that crosses a node boundary**, so it is minted:
+   `.ccfe_hcpb.f_geom_cp`. Nothing else in `process/models/` reads it (grep over
+   `hcpb.py` returns `:120`, `:144`, `:216`, `:268` and a commented-out `:1039`).
+2. **`.fwbs.p_cp_shield_nuclear_heat_mw` is written twice on this arm, with two different
+   values.** `:137` stores `st_centrepost_nuclear_heating`'s MCNP fit; `:267` overwrites
+   it with `f_geom_cp * p_neutron_total_mw - pnuc_cp_tf`. Every reader is downstream of
+   `run():279` — `powerflow_calc:834`/`:852`/`:908`, `power.py:940`, `dcll.py:366` — so
+   **the second value is the one the machine uses** and the first is dead except as a
+   term of `.fwbs.pnuc_cp`. The renormalisation occupant owns the field; the centrepost
+   occupant mints the earlier value as `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit`. Same
+   shape as the four `_unnormalised` mints (deviation 2 above), found the same way.
+   **On the conventional arm both writes are `0.0`**, which is why
+   `CentrepostNeutronicsAbsent` keeps the field and its spherical sibling does not: two
+   arms of one slot owning different sets, `next_steps.md` §12.2's shape.
+3. **`.tfcoil.i_tf_sup` is read by two of the three routines, and they cut it in different
+   places.** `:1114` fires only for `SUPERCONDUCTING` (`{1}` against `{0, 2}`); `:1192`
+   fires only for `HELIUM_COOLED_ALUMINIUM` (`{2}` against `{0, 1}`), and the comment at
+   `:1202-1204` says why — the MCNP model's winding pack is large enough to be mostly
+   copper, so one fit serves superconducting and copper alike. **No single integer names
+   the occupant of the block**, so the slot is keyed on a joint `(itart, i_tf_sup)` arm
+   (`indat._centrepost_neutronics_arm`).
+
+Given (1)–(3), splitting the three routines into three slots would buy finer SCC
+granularity and cost a conventional arm that is one four-zero node becoming three. The
+SCC measurement below says there is no cycle to dissolve, so it would buy nothing; the
+three routines stay three *functions*, each with its own 1:1 harness reference, inside one
+node.
+
+### switches touched, extended
+
+| switch | value on both ST files | occupant written | UNPORTED values, with reason |
+|---|---|---|---|
+| `.physics.itart` | 1 | all three `itart` slots, and both `itart` rows of the renormalisation | none — **total** |
+| `.tfcoil.i_tf_sup` | 1 | `CentrepostNeutronicsSphericalTokamakSuperconducting` | `0` (arm `-1`): copper shares the *heating* fit but its flux is the literal `0` of `:1112`, so it is a different occupant. `2` (arm `-2`): different on both halves, and `:1195-1196`'s own comment disowns its shield number (`DO NOT TRUST THIS VALUE !!`) |
+
+The renormalisation's `(n_divertors, itart)` square is **total**: arms `2` and `3` join
+`0` and `1`. Both ST files are `i_single_null = 0`, so both select arm `3`.
+
+### a new boundary input, with no producer, stated
+
+**`.build.r_sh_inboard_out`.** `build.py:1858` writes it, accumulating outwards from the
+central-solenoid bore (`r_vv_inboard_out` → `r_sh_inboard_in` → `+ dr_shld_inboard`), and
+that chain is deliberately outside this port's closure — `models/namespace.py`'s
+`shld_inboard_inner_radius` docstring records that `.build.r_shld_inboard_inner` is built
+*inwards from the plasma* precisely so the CS chain need not be. The two are equal on a
+self-consistent build and are not the same expression, so the port declares a boundary
+input rather than substituting one for the other. Not stubbed, not guessed.
+
+Every other read of the new node has a producer: `.physics.rmajor`/`rminor`/`triang`/
+`p_neutron_total_mw`, `.build.dr_fw_plasma_gap_inboard`, `.build.dr_shld_inboard` and
+`.build.z_plasma_xpoint_upper` (`build.py:838`).
+
+### the cycle question: no new SCC
+
+Neither ST input file assembles yet (see the frontier below), and a synthetic
+all-spherical machine stops in `models/pfcoil/`, so the measurement was made where it
+could be: the conventional tokamak test baseline — 208 nodes, which *does* assemble —
+with **only** the four `.tokamak.ccfe_hcpb` slots this wave touches swapped to their
+spherical occupants by `eqx.tree_at`. Every consumer of the three centrepost fields
+(`power.py`, `tfcoil/base.py`, `availability.py`, `powerflow_calc`) is present and
+unchanged, so a loop the new producers closed would show.
+
+```
+conventional baseline             208 nodes, blocks {1: 179, 2: 4, 4: 1, 8: 1, 9: 1}
+spherical centrepost, 1 divertor  208 nodes, blocks {1: 179, 2: 4, 4: 1, 8: 1, 9: 1}
+spherical centrepost, 2 divertors 208 nodes, blocks {1: 179, 2: 4, 4: 1, 8: 1, 9: 1}
+```
+
+Byte-identical histograms, and no SCC of size > 1 contains any node of this wave. **The
+centrepost chain is acyclic in place**; no `FixedPointFunction`, no cut to measure.
+
+### a finding: `st_cp_angle_fraction` amplifies one ulp of `arcsin` into 1e-8
+
+The trapezoid's last panel sits at `phy_cp = arcsin(1 / rho_maj)`, where
+`1 - rho_maj**2 * sin(phy_cp)**2` is **analytically zero** and numerically either sign.
+PROCESS clamps it with `max(., 0)` (its own comment: *"Little tricks to avoild NaNs due to
+rounding"*) and takes its square root. On the FNSF legacy point `np.arcsin` and
+`jnp.arcsin` differ by one ulp, which puts that radicand at `+1.11e-16` for numpy and
+`-2.22e-16` for jax — so numpy's square root is `1.05e-8`, jax's is `0`, and one of the
+twenty trapezoid terms differs in the eighth digit.
+
+Measured over the contract's fuzz box (4000 points): **686 disagree at all, worst
+`4.8e-10` relative**; the FNSF point `8.7e-11`; the `spherical_tokamak_eval.IN.DAT` point
+exactly `0`, because there the two `arcsin`s agree. `value_tolerance` is set at `5e-9`,
+~10x the measured worst, with the reason attached to the `Tolerance` object.
+
+**Which side is right matters and is recorded**: the analytic radicand at that panel is
+exactly zero, so PROCESS's `1.05e-8` is the spurious value and the port's `0` is correct.
+The tolerance covers PROCESS's noise, not the port's.
+
+The same defect reaches the **gradient**, and there the harness cannot see it at all:
+`gradient_safety` multiplies a Richardson extrapolation of the *smooth truncation error*,
+which is blind to a discontinuity, and `max(., 0)` puts a step of ~1e-8 in PROCESS's own
+function as an input crosses the clamp. Three fuzz points at `--fp-fuzz 40` needed 7.3x,
+1.4x and 1.1x the default safety of 25; the three affected contracts carry
+`gradient_safety = 250`, ~1.4x the measured worst requirement, with the argument written
+out in `_CP_ANGLE_GRADIENT_SAFETY`. The worst disagreement is `1.9e-7` relative, nowhere
+near the `O(1)` a wrong derivative would be.
+
+`safe_sqrt` guards the clamped radicand for the ordinary `next_steps.md` §9 reason, and
+**this is the first site in the port where that zero is reached on the reference operating
+point** rather than only at a fuzzed edge.
+
+### tests
+
+Five new Tier-1 contracts in `test_hcpb.py`, three of which buy a 1:1 reference:
+
+- `TestCentrepostAngleFraction` — `CCFE_HCPB.st_cp_angle_fraction` called directly (a bare
+  `@staticmethod`, so the adapter is a forward).
+- `TestCentrepostFastNeutronFluxSuperconducting` and
+  `TestCentrepostNuclearHeatingSuperconducting` — bound-`DataStructure` adapters pinning
+  `.tfcoil.i_tf_sup = 1` (and, for the second, `.physics.rmajor`). The second is the only
+  place the discarded MCNP shield-heat fit is checked at all.
+- `TestCentrepostAndRenormalisationSingleNullSphericalTokamak` /
+  `…DoubleNullSphericalTokamak` — **one contract for two nodes**, the technique
+  `TestPowerflowCalcMechanicalWithPressureDrop` uses and for the same reason: the seam
+  between them is a field PROCESS writes twice, so seeding the renormalisation's
+  centrepost reads and calling it alone would diff the port against a value PROCESS
+  discards. `_RenormalisationOnly` needed no new stub — it never stubbed the three `st_*`
+  routines, because on the conventional arm there was nothing there to stub — only an
+  `itart`/`i_tf_sup` seed and the eight centrepost reads.
+
+**The samples are a spherical tokamak's, and that is new.** `_ST_REFERENCE_RUN` is
+`spherical_tokamak_eval.IN.DAT`'s own converged operating point, read off the
+`DataStructure` PROCESS leaves behind: `rmajor = 4.5`, `rminor = 2.5`, `triang = 0.5`,
+`z_plasma_xpoint_upper = 7.0`, `r_sh_inboard_out = 1.8720000000000003`,
+`dr_shld_inboard = 0.39314459807893426`, `p_neutron_total_mw = 1990.7428899980614`. Its
+four unnormalised powers were recomputed from that run's inputs through PROCESS's four
+`nuclear_heating_*` routines and sum to `2014.833437720112`, the
+`.ccfe_hcpb.pnuc_tot_blk_sector` measured on the same run to the last digit — the same
+on-the-operating-point check the conventional sample carries. PROCESS's own answers there
+are `pnuc_cp_tf = 0.5523229613563773`, `p_cp_shield_nuclear_heat_mw = 354.03174669334163`
+and `neut_flux_cp = 1.2771358544430766e+16`, and the composite contract reproduces all
+three.
+
+Legacy points come from `tests/unit/models/blankets/test_ccfe_hcpb.py`'s three `st_*`
+cases (FNSF for the angle, Menard_HTS-PP x2 for the flux and the heating).
+
+### frontier
+
+Both ST files clear this slot and **stop further on, in another subsystem**:
+
+```
+before: itart_hcpb == 1 ... (this record's open question 3)
+after:  i_plasma_current == 9 is a real PROCESS branch but is not ported: FIESTA ST;
+        not live. `triang**0.060` is NaN for negative triangularity and has an
+        infinite derivative at zero
+```
+
+Identical for `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`. Neither
+assembles, so **there is still no MDA harness number for a spherical tokamak**. What
+`machine_survey` says is left for `spherical_tokamak_eval.IN.DAT`, out of 38
+factory-dispatched integers: `i_plasma_current = 9`, `i_diamagnetic_current = 2` and
+`i_pfirsch_schluter_current = 1` (all `models/physics/`), `i_tf_sc_mat = 9`
+(`models/tfcoil/`), and — not an integer the survey lists — `pf_coil_system_arm == -3`
+(`models/pfcoil/`). `itart` and `i_tf_sup` are both reported as *"the factory dispatches
+on it"* with no refusal, which is what this wave bought.

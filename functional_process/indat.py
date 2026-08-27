@@ -49,12 +49,17 @@ from functional_process.models.blankets.blanket_library import (
 )
 from functional_process.models.blankets.hcpb import (
     CentrepostNeutronicsAbsent,
+    CentrepostNeutronicsSphericalTokamakSuperconducting,
     DivertorSurfaceAndPlateMassDoubleNull,
     DivertorSurfaceAndPlateMassSingleNull,
     NuclearHeatingMagnetsConventional,
+    NuclearHeatingMagnetsSphericalTokamak,
     NuclearHeatingRenormalisationDoubleNullConventional,
+    NuclearHeatingRenormalisationDoubleNullSphericalTokamak,
     NuclearHeatingRenormalisationSingleNullConventional,
+    NuclearHeatingRenormalisationSingleNullSphericalTokamak,
     NuclearHeatingShieldConventional,
+    NuclearHeatingShieldSphericalTokamak,
     PumpingPowerMechanicalWithPressureDrop,
 )
 from functional_process.models.blankets.namespace import CcfeHcpb
@@ -793,26 +798,24 @@ UNPORTED = {
         "entry with the cable space given instead of the turn width, and the same "
         "ownership inversion. Not written"
     ),
-    ("itart_hcpb", 1): (
-        "the spherical-tokamak arms of `hcpb.py`'s nuclear heating. **Two of them are "
-        "written and tested and are still refused here**: "
-        "`NuclearHeatingMagnetsSphericalTokamak` and "
-        "`NuclearHeatingShieldSphericalTokamak` exist, but a machine at `itart == 1` "
-        "also needs the centrepost neutronics chain (`hcpb.py:1008-1287`, unported, "
-        "`st_cp_angle_fraction`/`st_tf_centrepost_fast_neut_flux`/"
-        "`st_centrepost_nuclear_heating`). It used to need `blanket_library`'s D-shaped "
-        "geometry as well; that half was supplied on 2026-08-27 (the D-shaped wave) and "
-        "the centrepost chain is now the whole of what is missing. "
-        "Filling the two slots without the rest would assemble a graph that looks "
-        "complete and is wrong -- the `EcrhDensityLimit` bug class -- so the refusal is "
-        "about the *machine*, not about the two nodes. `hcpb.md` open question 3 asked "
-        "for the reason to live here, and this is it"
+    ("centrepost_neutronics_arm", -1): (
+        "a **water-cooled copper** centrepost (`itart == 1`, `i_tf_sup == 0`). Its "
+        "nuclear heating is the written arm's -- `hcpb.py:1192` branches on aluminium "
+        "alone, so copper and superconducting share one MCNP fit -- but its fast "
+        "neutron flux is not: `:1114` fires only for `SUPERCONDUCTING`, so a copper "
+        "centrepost's `.fwbs.neut_flux_cp` is the literal `0` of `:1112`. That is a "
+        "different occupant, not the written one with a zeroed input, and writing it "
+        "means writing a node whose fourth output is a constant. No input file in this "
+        "repository asks for it. Not written"
     ),
-    ("nuclear_heating_renormalisation_arm", -2): (
-        "the spherical-tokamak renormalisation: `:263`'s `+ pnuc_cp_tf` and `:268`'s "
-        "`f_geom_cp * p_neutron_total_mw` stop being provably inert, so the occupant "
-        "gains two reads the conventional one deliberately does not declare. Not "
-        "written; see `('itart_hcpb', 1)`"
+    ("centrepost_neutronics_arm", -2): (
+        "a **helium-cooled aluminium** centrepost (`itart == 1`, `i_tf_sup == 2`). Both "
+        "halves differ from the written arm: the flux is zero as for copper, and the "
+        "nuclear heating takes `hcpb.py:1192-1197`'s two-line aluminium fit, whose own "
+        "source comment says of its shield term `WARINING, this is an extraoilation "
+        "from TF heat ... DO NOT TRUST THIS VALUE !!`. Porting a number PROCESS itself "
+        "disowns is work to schedule deliberately, not to pick up in passing. Not "
+        "written"
     ),
     ("i_p_coolant_pumping", 0): (
         "`USER_INPUT` has no arm at all in `powerflow_calc` -- the pumping powers are "
@@ -2723,54 +2726,117 @@ elliptical arm reads both, and reads four `.build` first-wall thicknesses the el
 arm does not -- unequal sets, so occupants rather than a parameter."""
 
 NUCLEAR_HEATING_MAGNETS = {
-    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: NuclearHeatingMagnetsConventional
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: NuclearHeatingMagnetsConventional,
+    SphericalTokamakModel.SPHERICAL_TOKAMAK: NuclearHeatingMagnetsSphericalTokamak,
 }
 NUCLEAR_HEATING_SHIELD = {
-    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: NuclearHeatingShieldConventional
+    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: NuclearHeatingShieldConventional,
+    SphericalTokamakModel.SPHERICAL_TOKAMAK: NuclearHeatingShieldSphericalTokamak,
 }
-CENTREPOST_NEUTRONICS = {
-    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: CentrepostNeutronicsAbsent
-}
-"""`.physics.itart` -> three conventional-aspect-ratio occupants.
+"""`.physics.itart` -> two **total** slots, since 2026-08-27 (the centrepost wave).
 
-**The spherical arms of the first two are written, tested and deliberately
-unregistered.** `hcpb.py`'s `NuclearHeatingMagnetsSphericalTokamak` and
-`NuclearHeatingShieldSphericalTokamak` exist; registering them without the centrepost
-neutronics chain (`hcpb.py:1008-1287`, unported) and `blanket_library`'s D-shaped
-geometry would assemble a graph that looks complete and is wrong. `hcpb.md`'s open
-question 3 asked for the refusal to live wherever `indat.py` records `UNPORTED` values,
-and it does."""
+Both spherical occupants were written and harness-tested long before they could be
+registered: a machine at `itart == 1` also needs `blanket_library`'s D-shaped geometry
+and the centrepost neutronics chain, and filling these two slots without the rest would
+have assembled a graph that looks complete and is wrong -- the `EcrhDensityLimit` bug
+class. The D-shaped half arrived with `BLANKET_AREAS`/`BLANKET_VOLUMES` above and the
+centrepost half with `CENTREPOST_NEUTRONICS` below, so `('itart_hcpb', 1)` is answered
+rather than moved, and `hcpb.md`'s open question 3 is closed."""
 
 
-def _nuclear_heating_renormalisation_arm(n_divertors: int, itart: int) -> int:
-    """`(n_divertors, itart)` -> the renormalisation arm.
+def _centrepost_neutronics_arm(itart: int, i_tf_sup: int) -> int:
+    """`(itart, i_tf_sup)` -> the centrepost-neutronics arm.
 
-    A joint arm because both switches gate the same block: `hcpb.py:215` reads
-    `n_divertors` to pick `f_geom_blanket`, and `:103` reads `itart` to decide whether
-    the centrepost terms at `:263` and `:268` contribute at all. On the conventional arm
-    both of those terms are provably inert -- `f_geom_cp` and `.fwbs.pnuc_cp_tf` are the
-    literal zeros of `:144-145` -- so the occupant does **not** declare them as reads,
-    which is two invented edges avoided by knowing the arm.
+    ```
+    itart == 0                 -> arm  0   CentrepostNeutronicsAbsent (four zeros)
+    itart == 1, i_tf_sup == 1  -> arm  1   the superconducting centrepost   (both ST
+                                           input files)
+    itart == 1, i_tf_sup == 0  -> arm -1   water-cooled copper;   UNPORTED
+    itart == 1, i_tf_sup == 2  -> arm -2   helium-cooled aluminium; UNPORTED
+    ```
+
+    **`itart` is asked first, and that is the answerable-condition-last ordering rather
+    than a preference.** `itart == 0` is answered outright -- `hcpb.py:143-148` is four
+    literal assignments and `i_tf_sup` is not read on that arm at all -- so a
+    conventional machine must never be told anything about its conductor here. Only once
+    `itart == 1` does `i_tf_sup` become a question, and then it is the one without a
+    general answer.
+
+    **Why a joint arm rather than two slots keyed on one switch each.** `run():103-141`
+    is one straight-line block calling three routines, and the two that read `i_tf_sup`
+    *partition it differently*: `st_tf_centrepost_fast_neut_flux` splits `{1}` from
+    `{0, 2}` (`hcpb.py:1114`), while `st_centrepost_nuclear_heating` splits `{2}` from
+    `{0, 1}` (`:1192`, and the comment above it says why -- the MCNP winding pack is
+    large enough to be mostly copper, so one fit serves superconducting and copper
+    alike). No single integer names the occupant of the block; the pair does.
     """
     conventional = (
         SphericalTokamakModel(int(itart))
         is SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO
     )
-    if not conventional:
-        return -2
-    return 0 if int(n_divertors) == 1 else 1
+    if conventional:
+        return 0
+    conductor = TFConductorModel(int(i_tf_sup))
+    if conductor is TFConductorModel.SUPERCONDUCTING:
+        return 1
+    return -1 if conductor is TFConductorModel.WATER_COOLED_COPPER else -2
+
+
+CENTREPOST_NEUTRONICS = {
+    0: CentrepostNeutronicsAbsent,
+    1: CentrepostNeutronicsSphericalTokamakSuperconducting,
+}
+"""The centrepost-neutronics arm -> its occupant. See `_centrepost_neutronics_arm`.
+
+Arm `1` joined on 2026-08-27 and is what makes `.physics.itart == 1` assemblable. It is
+the **only** slot in this port whose two occupants own a different number of fields *and*
+one of whose fields moves to a different node on the other arm:
+`.fwbs.p_cp_shield_nuclear_heat_mw` belongs to arm `0` here and to the renormalisation
+on arm `1`, because `hcpb.py` writes it twice and only on the spherical arm do the two
+writes differ."""
+
+
+def _nuclear_heating_renormalisation_arm(n_divertors: int, itart: int) -> int:
+    """`(n_divertors, itart)` -> the renormalisation arm.
+
+    ```
+    itart == 0, n_divertors == 1 -> arm 0   single null, conventional
+    itart == 0, n_divertors == 2 -> arm 1   double null, conventional
+    itart == 1, n_divertors == 1 -> arm 2   single null, spherical
+    itart == 1, n_divertors == 2 -> arm 3   double null, spherical  (both ST files)
+    ```
+
+    A joint arm because both switches gate the same block: `hcpb.py:215` reads
+    `n_divertors` to pick `f_geom_blanket`, and `:103` reads `itart` to decide whether
+    the centrepost terms at `:263` and `:268` contribute at all. On the conventional arms
+    both of those terms are provably inert -- `f_geom_cp` and `.fwbs.pnuc_cp_tf` are the
+    literal zeros of `:144-145` -- so those occupants do **not** declare them as reads,
+    which is two invented edges avoided by knowing the arm. On the spherical arms both
+    are live, and a third field, `.fwbs.p_cp_shield_nuclear_heat_mw`, becomes theirs.
+    """
+    conventional = (
+        SphericalTokamakModel(int(itart))
+        is SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO
+    )
+    single_null = int(n_divertors) == 1
+    if conventional:
+        return 0 if single_null else 1
+    return 2 if single_null else 3
 
 
 NUCLEAR_HEATING_RENORMALISATION = {
     0: NuclearHeatingRenormalisationSingleNullConventional,
     1: NuclearHeatingRenormalisationDoubleNullConventional,
+    2: NuclearHeatingRenormalisationSingleNullSphericalTokamak,
+    3: NuclearHeatingRenormalisationDoubleNullSphericalTokamak,
 }
 """The renormalisation arm -> its occupant. See `_nuclear_heating_renormalisation_arm`.
 
-Arm `1` (double-null, conventional) joined on 2026-08-27. The `itart` question is now
-asked **first**, because it is the one still without an answer: a spherical machine
-refuses on `('itart_hcpb', 1)` whichever way its divertors are counted, and reporting the
-divertor count instead would name a precondition this port now meets."""
+Arm `1` (double-null, conventional) joined on 2026-08-27; arms `2` and `3` (the two
+spherical cells) joined the same day with the centrepost chain, and the 2x2 is **total**.
+The `itart` question is asked first out of habit rather than necessity now -- every cell
+has an occupant, so no ordering of the two questions can name a precondition this port
+does not meet."""
 
 PUMPING_POWER = {
     PumpingPowerModelTypes.MECHANICAL_WITH_PRESSURE_DROP: (
@@ -3487,7 +3553,9 @@ def _tokamak_device(
                 "itart_hcpb", SphericalTokamakModel(int(itart)), NUCLEAR_HEATING_SHIELD
             ),
             centrepost_neutronics=_slot_occupant(
-                "itart_hcpb", SphericalTokamakModel(int(itart)), CENTREPOST_NEUTRONICS
+                "centrepost_neutronics_arm",
+                _centrepost_neutronics_arm(itart, i_tf_sup),
+                CENTREPOST_NEUTRONICS,
             ),
             nuclear_heating_renormalisation=_slot_occupant(
                 "nuclear_heating_renormalisation_arm",

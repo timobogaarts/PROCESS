@@ -6,23 +6,26 @@ purely as a **base class** of `CCFE_HCPB` (`hcpb.py:25`), never by any call in
 `caller.py` (`tokamak_call_surface.md` §A row 10). It is this occupant's body, not its
 sibling, which is why its four nodes are slots here rather than a namespace of their own.
 
-**Fifteen slots, not seventeen.** `hcpb.py` and `blanket_library.py` carry seventeen
-ported node classes; the two `*SphericalTokamak` occupants
-(`NuclearHeatingMagnetsSphericalTokamak`, `NuclearHeatingShieldSphericalTokamak`) are
-written, harness-tested and **deliberately unregistered**. A machine at
-`.physics.itart == 1` needs the centrepost neutronics chain
-(`hcpb.py:1008-1287`, unported) and `blanket_library`'s D-shaped geometry as well, so
-filling the two `itart` slots without the rest would assemble a graph that looks
-complete and is wrong -- the `EcrhDensityLimit` bug class. `indat.py`'s `UNPORTED`
-carries the refusal; `hcpb.md` open question 3 asked for exactly this.
+**Fifteen slots, and every one of them is now total.** The two `*SphericalTokamak`
+occupants (`NuclearHeatingMagnetsSphericalTokamak`,
+`NuclearHeatingShieldSphericalTokamak`) were written, harness-tested and deliberately
+*unregistered* until 2026-08-27, because a machine at `.physics.itart == 1` also needs
+the centrepost neutronics chain (`hcpb.py:1008-1287`) and `blanket_library`'s D-shaped
+geometry, and filling the two `itart` slots without the rest would assemble a graph that
+looks complete and is wrong -- the `EcrhDensityLimit` bug class. Both preconditions were
+supplied that day, the D-shaped geometry by its own wave and the centrepost chain by
+this one, and the refusal is gone rather than moved. `hcpb.md` open question 3 asked for
+the reason to live in `indat.py`'s `UNPORTED`; it lived there, and then it was answered.
 
-**Three switches decide five of the slots**, and all three are answered in `indat.py`:
+**Four switches decide six of the slots**, and all four are answered in `indat.py`:
 `.physics.itart`, `.divertor.n_divertors` (which the factory *derives* from
-`.physics.i_single_null`, as `init.py:606-616` does) and
-`.fwbs.i_p_coolant_pumping`. A fourth, the joint
+`.physics.i_single_null`, as `init.py:606-616` does), `.tfcoil.i_tf_sup` -- new to this
+namespace on 2026-08-27, read by the centrepost chain -- and `.fwbs.i_p_coolant_pumping`.
+Three of the six slots are keyed on a **joint** arm rather than on one integer: the
 `.physics.itart` x `.fwbs.i_fw_blkt_vv_shape` shape decision at
-`blanket_library.py:90-93`, is a joint arm index in the same shape as
-`_blanket_shield_power_arm`.
+`blanket_library.py:90-93`, the `(n_divertors, itart)` renormalisation square, and
+the `(itart, i_tf_sup)` centrepost cell -- the last because `hcpb.py`'s two
+`i_tf_sup`-reading routines cut that switch in two *different* places.
 """
 
 import dataclasses
@@ -36,16 +39,16 @@ from functional_process.models.blankets.blanket_library import (
     BlanketVolumes,
 )
 from functional_process.models.blankets.hcpb import (
-    CentrepostNeutronicsAbsent,
+    CentrepostNeutronics,
     ComponentMasses,
     DivertorSurfaceAndPlateMass,
     FirstWallCoolantVoidFractions,
     FirstWallRadiationPowers,
     NuclearHeatingBlanket,
     NuclearHeatingFw,
-    NuclearHeatingMagnetsConventional,
+    NuclearHeatingMagnets,
     NuclearHeatingRenormalisation,
-    NuclearHeatingShieldConventional,
+    NuclearHeatingShield,
     PumpingPowerMechanicalWithPressureDrop,
 )
 
@@ -110,11 +113,9 @@ class CcfeHcpb(ModelNamespace):
 
     # ---- hcpb.py: the four nuclear-heating routines, in `run()`'s order -------------
 
-    nuclear_heating_magnets: NuclearHeatingMagnetsConventional = dataclasses.field(
-        kw_only=True
-    )
-    """`.physics.itart`. The spherical-tokamak occupant exists and is not registered --
-    see this module's docstring."""
+    nuclear_heating_magnets: NuclearHeatingMagnets = dataclasses.field(kw_only=True)
+    """`.physics.itart` -- **both** arms registered (2026-08-27). They own the same nine
+    fields and read unequal sets; see the family base's docstring."""
 
     nuclear_heating_fw: NuclearHeatingFw = NuclearHeatingFw()
     nuclear_heating_blanket: NuclearHeatingBlanket = NuclearHeatingBlanket()
@@ -124,27 +125,31 @@ class CcfeHcpb(ModelNamespace):
     from `run()`, so the port's three original hcpb nodes are registered here for the
     first time."""
 
-    nuclear_heating_shield: NuclearHeatingShieldConventional = dataclasses.field(
-        kw_only=True
-    )
-    """`.physics.itart`; reads two of `nuclear_heating_magnets`' own outputs, which is
-    an ordinary graph edge in the same order `run()` calls them."""
+    nuclear_heating_shield: NuclearHeatingShield = dataclasses.field(kw_only=True)
+    """`.physics.itart` -- both arms registered (2026-08-27). Reads two of
+    `nuclear_heating_magnets`' own outputs, which is an ordinary graph edge in the same
+    order `run()` calls them."""
 
-    centrepost_neutronics: CentrepostNeutronicsAbsent = dataclasses.field(kw_only=True)
-    """`.physics.itart` -- the `else` arm, four literal zeros and no reads. A node that
-    reads nothing is legitimate for the reason `next_steps.md` §14.4 gives for
-    `i_pulsed_plant`'s unpulsed occupant: PROCESS's own source on this arm *is* four
-    literal assignments, and the fields have readers in `power.py`, `tfcoil/base.py` and
-    `availability.py`."""
+    centrepost_neutronics: CentrepostNeutronics = dataclasses.field(kw_only=True)
+    """The joint `(.physics.itart, .tfcoil.i_tf_sup)` arm -- `hcpb.py:103-148`.
+
+    The conventional occupant reads nothing and writes four literal zeros, which is
+    legitimate for the reason `next_steps.md` §14.4 gives for `i_pulsed_plant`'s unpulsed
+    occupant: PROCESS's own source on that arm *is* four literal assignments, and the
+    fields have readers in `power.py`, `tfcoil/base.py` and `availability.py`. The
+    spherical occupant (2026-08-27) runs the three `st_*` routines of
+    `hcpb.py:1008-1287`, owns two mints, and is the reason `itart == 1` assembles at
+    all. Only the `i_tf_sup == 1` cell of the spherical row is written; see the family
+    base for why `i_tf_sup` cannot be dropped from the key."""
 
     nuclear_heating_renormalisation: NuclearHeatingRenormalisation = dataclasses.field(
         kw_only=True
     )
-    """`.divertor.n_divertors` **and** `.physics.itart` together -- a 2x2 of which the
-    two `itart == 0` cells are written (2026-08-27). Owns four more boundary variables,
-    one of which -- `.fwbs.p_tf_nuclear_heat_mw` -- has a second producer on the
-    *stellarator* tree; see the class's own docstring for why that is a record and not a
-    conflict."""
+    """`.divertor.n_divertors` **and** `.physics.itart` together -- a 2x2, **total**
+    since 2026-08-27. Owns four boundary variables on every arm and a fifth
+    (`.fwbs.p_cp_shield_nuclear_heat_mw`) on the two spherical ones. One of the four --
+    `.fwbs.p_tf_nuclear_heat_mw` -- has a second producer on the *stellarator* tree; see
+    the class's own docstring for why that is a record and not a conflict."""
 
     # ---- hcpb.py: powerflow_calc ----------------------------------------------------
 

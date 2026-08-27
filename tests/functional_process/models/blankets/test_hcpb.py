@@ -26,9 +26,13 @@ second point per contract read out of the assembled `DataStructure` after four
 check that the sample is on the operating point and not near it.
 """
 
-from functional_process._harness import Tier1Contract, legacy_sample
+from functional_process._harness import Tier1Contract, Tolerance, legacy_sample
 from functional_process.models.blankets.hcpb import (
+    calculate_centrepost_angle_fraction,
+    calculate_centrepost_fast_neutron_flux_superconducting,
     calculate_centrepost_neutronics_absent,
+    calculate_centrepost_neutronics_spherical_tokamak_superconducting,
+    calculate_centrepost_nuclear_heating_superconducting,
     calculate_component_masses,
     calculate_divertor_surface_and_plate_mass_double_null,
     calculate_divertor_surface_and_plate_mass_single_null,
@@ -37,7 +41,9 @@ from functional_process.models.blankets.hcpb import (
     calculate_nuclear_heating_magnets_conventional,
     calculate_nuclear_heating_magnets_spherical_tokamak,
     calculate_nuclear_heating_renormalisation_double_null_conventional,
+    calculate_nuclear_heating_renormalisation_double_null_spherical_tokamak,
     calculate_nuclear_heating_renormalisation_single_null_conventional,
+    calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak,
     calculate_pumping_power_mechanical_with_pressure_drop,
     nuclear_heating_blanket,
     nuclear_heating_fw,
@@ -449,10 +455,16 @@ def _run_renormalisation(
     f_p_blkt_multiplication=1.269,
     p_neutron_total_mw=1301.2682862201025,
     n_divertors=1,
+    itart=0,
+    **centrepost,
 ):
     """Drive `_RenormalisationOnly.run(False)`, returning its bound `DataStructure`.
 
-    `n_divertors` defaults to `1`; the double-null contract passes `2`.
+    `n_divertors` defaults to `1` and `itart` to `0`; the double-null and the
+    spherical-tokamak contracts pass the others. At `itart == 1` the eight `centrepost`
+    keywords seed `run():103-141`'s reads and the three `st_*` routines run for real --
+    `_RenormalisationOnly` never stubbed them, because on the conventional arm there was
+    nothing there to stub.
     """
     model = _RenormalisationOnly(fw=FirstWall())
     model.data = DataStructure()
@@ -464,14 +476,181 @@ def _run_renormalisation(
     )
 
     data = model.data
-    data.physics.itart = 0
+    data.physics.itart = itart
     data.divertor.n_divertors = n_divertors
     data.fwbs.f_ster_div_single = f_ster_div_single
     data.fwbs.f_p_blkt_multiplication = f_p_blkt_multiplication
     data.physics.p_neutron_total_mw = p_neutron_total_mw
 
+    if itart == 1:
+        data.tfcoil.i_tf_sup = 1  # superconducting: the one spherical cell written
+        data.physics.rmajor = centrepost["rmajor"]
+        data.physics.rminor = centrepost["rminor"]
+        data.physics.triang = centrepost["triang"]
+        data.build.dr_fw_plasma_gap_inboard = centrepost["dr_fw_plasma_gap_inboard"]
+        data.build.z_plasma_xpoint_upper = centrepost["z_plasma_xpoint_upper"]
+        data.build.r_sh_inboard_out = centrepost["r_sh_inboard_out"]
+        data.build.dr_shld_inboard = centrepost["dr_shld_inboard"]
+
     model.run(output=False)
     return data
+
+
+def _reference_centrepost_angle_fraction(z_cp_top, r_cp_mid, r_cp_top, rmajor):
+    """`CCFE_HCPB.st_cp_angle_fraction` (`hcpb.py:1008-1080`), called directly.
+
+    A `@staticmethod` with no `self.data` access at all, so the adapter is a bare
+    forward -- the cheapest kind of reference there is, and the one that leaves no room
+    for the test to differ from the source.
+    """
+    return CCFE_HCPB.st_cp_angle_fraction(
+        z_cp_top=z_cp_top, r_cp_mid=r_cp_mid, r_cp_top=r_cp_top, rmajor=rmajor
+    )
+
+
+def _reference_centrepost_fast_neutron_flux_superconducting(
+    p_neutron_total_mw, sh_width, rmajor
+):
+    """`st_tf_centrepost_fast_neut_flux` at `i_tf_sup == 1` (`hcpb.py:1082-1134`).
+
+    `self`-bound on one field, `.tfcoil.i_tf_sup`, which the arm under test pins to
+    `SUPERCONDUCTING`. Pinning it here rather than passing it is the point of the
+    occupant: the other two conductor models return the literal `0` of `:1112` and are a
+    different node.
+    """
+    model = _hcpb()
+    model.data.tfcoil.i_tf_sup = 1
+    return model.st_tf_centrepost_fast_neut_flux(
+        p_neutron_total_mw=p_neutron_total_mw, sh_width=sh_width, rmajor=rmajor
+    )
+
+
+def _reference_centrepost_nuclear_heating_superconducting(pneut, sh_width, rmajor):
+    """`st_centrepost_nuclear_heating`'s `else` arm (`hcpb.py:1200-1285`).
+
+    Two `self.data` reads to close: `.tfcoil.i_tf_sup`, pinned away from
+    `HELIUM_COOLED_ALUMINIUM` so the `else` arm runs, and `.physics.rmajor`, which the
+    source reads off `self` in four places instead of taking it as a parameter and which
+    the port makes an ordinary argument.
+    """
+    model = _hcpb()
+    model.data.tfcoil.i_tf_sup = 1
+    model.data.physics.rmajor = rmajor
+    return model.st_centrepost_nuclear_heating(pneut=pneut, sh_width=sh_width)
+
+
+def _reference_centrepost_and_renormalisation_spherical(n_divertors, **kwargs):
+    """`run()`'s `hcpb.py:103-148` **and** `:195-276` at `itart == 1`, `i_tf_sup == 1`.
+
+    One reference for two nodes, for the same reason `_reference_powerflow_calc` is one
+    for two: the seam between them is a field PROCESS writes twice.
+    `st_centrepost_nuclear_heating` puts its MCNP shield-heat fit in
+    `.fwbs.p_cp_shield_nuclear_heat_mw` at `:137` and `:267` overwrites it, so seeding
+    the renormalisation's centrepost reads and calling it alone would diff the port
+    against a value PROCESS discards.
+
+    The ten values read back are the ones that survive `run()`. The two that do not --
+    `f_geom_cp`, a local, and the overwritten fit -- are covered by
+    `TestCentrepostAngleFraction` and `TestCentrepostNuclearHeatingSuperconducting`,
+    which reach PROCESS's own routines directly.
+    """
+    data = _run_renormalisation(itart=1, n_divertors=n_divertors, **kwargs)
+    return (
+        data.fwbs.pnuc_cp_tf,
+        data.fwbs.pnuc_cp,
+        data.fwbs.neut_flux_cp,
+        data.ccfe_hcpb.pnuc_tot_blk_sector,
+        data.fwbs.p_fw_nuclear_heat_total_mw,
+        data.fwbs.p_blkt_nuclear_heat_total_mw,
+        data.fwbs.p_shld_nuclear_heat_mw,
+        data.fwbs.p_tf_nuclear_heat_mw,
+        data.fwbs.p_cp_shield_nuclear_heat_mw,
+        data.fwbs.p_blkt_multiplication_mw,
+    )
+
+
+def _reference_centrepost_and_renormalisation_single_null(**kwargs):
+    """The pair at `n_divertors == 1`."""
+    return _reference_centrepost_and_renormalisation_spherical(1, **kwargs)
+
+
+def _reference_centrepost_and_renormalisation_double_null(**kwargs):
+    """The pair at `n_divertors == 2` -- the cell both ST input files select."""
+    return _reference_centrepost_and_renormalisation_spherical(2, **kwargs)
+
+
+def _ported_centrepost_and_renormalisation_spherical(renormalise, **kwargs):
+    """`CentrepostNeutronicsSphericalTokamakSuperconducting` then the renormalisation.
+
+    The graph edge between the two nodes written out as a composition -- the two mints
+    `.ccfe_hcpb.f_geom_cp` and `.fwbs.pnuc_cp_tf` crossing from the first to the second,
+    in the order `Blocking.scc` puts them in.
+    """
+    (
+        f_geom_cp,
+        neut_flux_cp,
+        pnuc_cp_tf,
+        _p_cp_shield_nuclear_heat_mw_fit,
+        pnuc_cp,
+    ) = calculate_centrepost_neutronics_spherical_tokamak_superconducting(
+        kwargs["rmajor"],
+        kwargs["rminor"],
+        kwargs["triang"],
+        kwargs["dr_fw_plasma_gap_inboard"],
+        kwargs["z_plasma_xpoint_upper"],
+        kwargs["r_sh_inboard_out"],
+        kwargs["p_neutron_total_mw"],
+        kwargs["dr_shld_inboard"],
+    )
+
+    (
+        pnuc_tot_blk_sector,
+        p_fw_nuclear_heat_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_shld_nuclear_heat_mw,
+        p_tf_nuclear_heat_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_blkt_multiplication_mw,
+    ) = renormalise(
+        kwargs["p_fw_nuclear_heat_total_mw_unnormalised"],
+        kwargs["p_blkt_nuclear_heat_total_mw_unnormalised"],
+        kwargs["p_shld_nuclear_heat_mw_unnormalised"],
+        kwargs["p_tf_nuclear_heat_mw_unnormalised"],
+        kwargs["f_ster_div_single"],
+        kwargs["f_p_blkt_multiplication"],
+        kwargs["p_neutron_total_mw"],
+        f_geom_cp,
+        pnuc_cp_tf,
+    )
+
+    return (
+        pnuc_cp_tf,
+        pnuc_cp,
+        neut_flux_cp,
+        pnuc_tot_blk_sector,
+        p_fw_nuclear_heat_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_shld_nuclear_heat_mw,
+        p_tf_nuclear_heat_mw,
+        p_cp_shield_nuclear_heat_mw,
+        p_blkt_multiplication_mw,
+    )
+
+
+def _ported_centrepost_and_renormalisation_single_null(**kwargs):
+    """The composition at `n_divertors == 1`."""
+    return _ported_centrepost_and_renormalisation_spherical(
+        calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak,
+        **kwargs,
+    )
+
+
+def _ported_centrepost_and_renormalisation_double_null(**kwargs):
+    """The composition at `n_divertors == 2`."""
+    return _ported_centrepost_and_renormalisation_spherical(
+        calculate_nuclear_heating_renormalisation_double_null_spherical_tokamak,
+        **kwargs,
+    )
 
 
 def _reference_nuclear_heating_renormalisation(**kwargs):
@@ -1258,6 +1437,292 @@ class TestNuclearHeatingRenormalisationDoubleNull(Tier1Contract):
         "f_p_blkt_multiplication": (1.0, 1.5),
         "p_neutron_total_mw": (100.0, 4000.0),
     }
+
+
+_CP_ANGLE_TOLERANCE = Tolerance(
+    rtol=5e-9,
+    atol=0.0,
+    reason=(
+        "`st_cp_angle_fraction` amplifies one ulp of `arcsin` into ~1e-8 in an "
+        "intermediate, and it does so *by design*. The trapezoid's last panel sits at "
+        "`phy_cp = arcsin(1 / rho_maj)`, where `1 - rho_maj**2 * sin(phy_cp)**2` is "
+        "analytically zero and numerically either sign; PROCESS clamps it with "
+        "`max(., 0)` and takes its square root. On the FNSF legacy point `np.arcsin` "
+        "and `jnp.arcsin` differ by one ulp, which puts that radicand at `+1.11e-16` "
+        "for numpy and `-2.22e-16` for jax -- so numpy's square root is `1.05e-8` and "
+        "jax's is `0`, and a 1e-8 difference in one of twenty trapezoid terms follows. "
+        "Measured over the contract's own fuzz box (4000 points): 686 disagree at all, "
+        "worst 4.8e-10 relative, the FNSF point 8.7e-11, and the "
+        "`spherical_tokamak_eval.IN.DAT` point exactly 0 because there the two "
+        "`arcsin`s agree. The bar is set a factor of ~10 above the measured worst. "
+        "Worth being explicit about which side is right: the analytic radicand at that "
+        "panel is exactly zero, so it is PROCESS's `1.05e-8` that is spurious and the "
+        "port's `0` that is correct -- this tolerance covers PROCESS's noise, not the "
+        "port's"
+    ),
+)
+"""Shared by the angle-fraction contract and the two composites that consume it."""
+
+_CP_ANGLE_GRADIENT_SAFETY = 250.0
+"""The same clamp instability, seen from the gradient side.
+
+`gradient_safety` multiplies PROCESS's *own* finite-difference error bar, which is a
+Richardson extrapolation of the smooth truncation error. It cannot see a
+**discontinuity**, and that is exactly what `max(., 0)` puts in PROCESS's function: as an
+input is perturbed, the last panel's radicand crosses zero and PROCESS's square root
+jumps between `0` and ~`1e-8`. The finite difference then measures a real step in
+PROCESS's answer that the analytic derivative has no reason to reproduce, and reports a
+tiny error bar while doing it.
+
+Measured, at `--fp-fuzz 40` over the three contracts that share this: the worst case
+needs 7.3x the default 25 (`d(f_geom_cp)/d(r_cp_top)`, `|diff| = 2.10e-8` against an
+error bar of `1.16e-10`), and the two composites need 1.1x and 1.4x. Set at 250, which
+is ~1.4x the measured worst requirement.
+
+The detection power this costs is small for the reason `Tier1Contract.gradient_safety`
+already gives: a wrong derivative is wrong by an `O(1)` relative amount, and the worst
+of these is `1.9e-7` relative.
+"""
+
+_ST_REFERENCE_RUN = {
+    "p_fw_nuclear_heat_total_mw_unnormalised": 141.3749135766222,
+    "p_blkt_nuclear_heat_total_mw_unnormalised": 1872.8676544479313,
+    "p_shld_nuclear_heat_mw_unnormalised": 0.586506103734957,
+    "p_tf_nuclear_heat_mw_unnormalised": 0.00436359182345013,
+    "f_ster_div_single": 0.048589790347528944,
+    "f_p_blkt_multiplication": 1.269,
+    "p_neutron_total_mw": 1990.7428899980614,
+    "rmajor": 4.5,
+    "rminor": 2.5,
+    "triang": 0.5,
+    "dr_fw_plasma_gap_inboard": 0.1,
+    "z_plasma_xpoint_upper": 7.0,
+    "r_sh_inboard_out": 1.8720000000000003,
+    "dr_shld_inboard": 0.39314459807893426,
+}
+"""`spherical_tokamak_eval.IN.DAT`'s own converged operating point.
+
+Read off the `DataStructure` PROCESS leaves behind after solving that file --
+`aspect = 1.8`, `itart = 1`, `i_tf_sup = 1`, `i_single_null = 0` -- which makes this the
+first sample in the port taken from a *spherical tokamak* rather than from a
+conventional one. The four unnormalised powers are that run's own, recomputed from its
+inputs through PROCESS's four `nuclear_heating_*` routines, and they sum to
+2014.833437720112, the `.ccfe_hcpb.pnuc_tot_blk_sector` measured on the same run to the
+last digit -- the same independent check the conventional renormalisation sample
+carries, and the reason to believe the point sits *on* the operating point rather than
+near it.
+"""
+
+_ST_FUZZ = {
+    "p_fw_nuclear_heat_total_mw_unnormalised": (50.0, 500.0),
+    "p_blkt_nuclear_heat_total_mw_unnormalised": (500.0, 2500.0),
+    "p_shld_nuclear_heat_mw_unnormalised": (0.1, 10.0),
+    "p_tf_nuclear_heat_mw_unnormalised": (0.001, 1.0),
+    # Capped well below the point where `1 - 2 * f_ster_div_single - f_geom_cp` changes
+    # sign, for the reason the conventional double-null contract caps it: past that the
+    # renormalisation stops meaning anything.
+    "f_ster_div_single": (0.02, 0.2),
+    "f_p_blkt_multiplication": (1.0, 1.5),
+    "p_neutron_total_mw": (100.0, 4000.0),
+    # The geometry box is deliberately narrow: `rho_maj = 2 * rmajor / (r_cp_mid +
+    # r_cp_top)` must stay above 1 for `arcsin(1 / rho_maj)` to be real at all, and a
+    # centrepost machine's radii are not free of each other.
+    "rmajor": (3.0, 6.0),
+    "rminor": (1.5, 3.0),
+    "triang": (0.2, 0.8),
+    "dr_fw_plasma_gap_inboard": (0.05, 0.3),
+    "z_plasma_xpoint_upper": (3.0, 10.0),
+    "r_sh_inboard_out": (1.0, 2.5),
+    "dr_shld_inboard": (0.15, 0.8),
+}
+
+
+class TestCentrepostAngleFraction(Tier1Contract):
+    """`calculate_centrepost_angle_fraction` -> `st_cp_angle_fraction`
+    (`hcpb.py:1008-1080`).
+
+    The legacy point is `test_ccfe_hcpb.py::test_st_cp_angle_fraction`'s single
+    parametrised case, whose own docstring names the FNSF IN.DAT (no longer in this
+    repository); the second is `spherical_tokamak_eval.IN.DAT`'s own geometry, with
+    `r_cp_top` formed the way `run():106-110` forms it.
+
+    **This is the port's first `safe_sqrt` whose zero is reached on the operating
+    point rather than at a fuzzed edge.** The integral's last panel sits exactly at
+    `phy_cp = arcsin(1 / rho_maj)`, where `1 - rho_maj**2 * sin(phy_cp)**2` is
+    analytically zero, so the gradient test would see `inf` from `jnp.sqrt` on every
+    sample rather than on none.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_centrepost_angle_fraction
+    ported = calculate_centrepost_angle_fraction
+
+    value_tolerance = _CP_ANGLE_TOLERANCE
+    gradient_safety = _CP_ANGLE_GRADIENT_SAFETY
+
+    samples = [
+        legacy_sample(
+            "cp-angle-fnsf",
+            z_cp_top=2.6714285714285717,
+            r_cp_mid=0.20483000000000001,
+            r_cp_top=0.92643571428571436,
+            rmajor=1.7000000000000002,
+        ),
+        legacy_sample(
+            "cp-angle-spherical-tokamak-eval",
+            z_cp_top=7.0,
+            r_cp_mid=1.8720000000000003,
+            # `rmajor - rminor * triang - 3 * dr_fw_plasma_gap_inboard`.
+            r_cp_top=4.5 - 2.5 * 0.5 - 3 * 0.1,
+            rmajor=4.5,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "z_cp_top": (0.5, 8.0),
+        # `2 * rmajor` stays above `r_cp_mid + r_cp_top` over the whole box, which is
+        # what keeps `rho_maj > 1`.
+        "r_cp_mid": (0.1, 1.0),
+        "r_cp_top": (0.5, 2.0),
+        "rmajor": (2.0, 6.0),
+    }
+
+
+class TestCentrepostFastNeutronFluxSuperconducting(Tier1Contract):
+    """`calculate_centrepost_fast_neutron_flux_superconducting` ->
+    `st_tf_centrepost_fast_neut_flux` at `i_tf_sup == 1` (`hcpb.py:1114-1132`).
+
+    Legacy points are `test_ccfe_hcpb.py::test_st_tf_centrepost_fast_neut_flux`'s two
+    parametrised cases (both `i_tf_sup = 1`; the docstring names the Menard_HTS-PP
+    IN.DAT), plus `spherical_tokamak_eval.IN.DAT`'s own.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_centrepost_fast_neutron_flux_superconducting
+    ported = calculate_centrepost_fast_neutron_flux_superconducting
+
+    samples = [
+        legacy_sample(
+            "cp-flux-menard-a",
+            p_neutron_total_mw=400.65875490746737,
+            sh_width=0.60000000000000009,
+            rmajor=3,
+        ),
+        legacy_sample(
+            "cp-flux-menard-b",
+            p_neutron_total_mw=409.82485143909827,
+            sh_width=0.60000000000000009,
+            rmajor=3,
+        ),
+        legacy_sample(
+            "cp-flux-spherical-tokamak-eval",
+            p_neutron_total_mw=1990.7428899980614,
+            sh_width=0.39314459807893426,
+            rmajor=4.5,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "p_neutron_total_mw": (100.0, 4000.0),
+        "sh_width": (0.1, 1.5),
+        "rmajor": (1.5, 6.0),
+    }
+
+
+class TestCentrepostNuclearHeatingSuperconducting(Tier1Contract):
+    """`calculate_centrepost_nuclear_heating_superconducting` ->
+    `st_centrepost_nuclear_heating`'s `else` arm (`hcpb.py:1200-1285`).
+
+    **The arm is `i_tf_sup in {0, 1}`**, not `{1}`: `hcpb.py:1192` branches on aluminium
+    alone. The contract pins `i_tf_sup = 1` because that is the cell registered, and the
+    water-cooled-copper cell shares this arithmetic exactly -- it differs only in the
+    fast-neutron flux, which is why the two are separate slots' worth of question
+    answered by one joint arm.
+
+    Legacy points are `test_ccfe_hcpb.py::test_st_centrepost_nuclear_heating`'s two
+    Menard_HTS-PP cases plus the spherical-tokamak reference run's own. The middle of
+    the three returned values is the MCNP fit that `run():267` discards on this arm;
+    this contract is where it is checked at all.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_centrepost_nuclear_heating_superconducting
+    ported = calculate_centrepost_nuclear_heating_superconducting
+
+    samples = [
+        legacy_sample(
+            "cp-heating-menard-a",
+            pneut=400.65875490746737,
+            sh_width=0.60000000000000009,
+            rmajor=3,
+        ),
+        legacy_sample(
+            "cp-heating-menard-b",
+            pneut=409.82485143909827,
+            sh_width=0.60000000000000009,
+            rmajor=3,
+        ),
+        legacy_sample(
+            "cp-heating-spherical-tokamak-eval",
+            pneut=1990.7428899980614,
+            sh_width=0.39314459807893426,
+            rmajor=4.5,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "pneut": (100.0, 4000.0),
+        "sh_width": (0.1, 1.5),
+        "rmajor": (1.5, 6.0),
+    }
+
+
+class TestCentrepostAndRenormalisationSingleNullSphericalTokamak(Tier1Contract):
+    """`CentrepostNeutronicsSphericalTokamakSuperconducting` then
+    `NuclearHeatingRenormalisationSingleNullSphericalTokamak` ->
+    `run()`'s `hcpb.py:103-148` and `:195-276` at `itart == 1`, `n_divertors == 1`.
+
+    One contract for two nodes; `_reference_centrepost_and_renormalisation_spherical`
+    says why. The sample is `spherical_tokamak_eval.IN.DAT`'s converged point with its
+    divertor count flipped -- that file is double-null, so this cell is exercised on its
+    own machine's numbers rather than on invented ones, which is the closest a
+    single-null spherical contract can get without a single-null spherical input file.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_centrepost_and_renormalisation_single_null
+    ported = _ported_centrepost_and_renormalisation_single_null
+
+    value_tolerance = _CP_ANGLE_TOLERANCE
+    gradient_safety = _CP_ANGLE_GRADIENT_SAFETY
+
+    samples = [legacy_sample("st-centrepost-single-null", **_ST_REFERENCE_RUN)]
+
+    fuzz_bounds = _ST_FUZZ
+
+
+class TestCentrepostAndRenormalisationDoubleNullSphericalTokamak(Tier1Contract):
+    """The same pair at `n_divertors == 2` -- **the cell both spherical-tokamak input
+    files select**, on the operating point one of them converges to.
+
+    Every number in `_ST_REFERENCE_RUN` is `spherical_tokamak_eval.IN.DAT`'s own, so
+    this contract is the port's first end-to-end agreement with PROCESS on a spherical
+    machine: PROCESS's `.fwbs.pnuc_cp_tf` there is 0.5523229613563773, its
+    `.fwbs.p_cp_shield_nuclear_heat_mw` 354.03174669334163, and its
+    `.fwbs.neut_flux_cp` 1.2771358544430766e+16, all of which this composition has to
+    reproduce.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_centrepost_and_renormalisation_double_null
+    ported = _ported_centrepost_and_renormalisation_double_null
+
+    value_tolerance = _CP_ANGLE_TOLERANCE
+    gradient_safety = _CP_ANGLE_GRADIENT_SAFETY
+
+    samples = [legacy_sample("st-centrepost-double-null", **_ST_REFERENCE_RUN)]
+
+    fuzz_bounds = _ST_FUZZ
 
 
 class TestPowerflowCalcMechanicalWithPressureDrop(Tier1Contract):

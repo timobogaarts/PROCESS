@@ -33,8 +33,9 @@ record's open question #1). A tokamak reaches them directly from
 
 | switch | value here | ported | note |
 |---|---|---|---|
-| `.physics.itart` | 0 | conventional arm | `itart == 1` needs the centrepost
-chain (`hcpb.py:1008-1287`), unported |
+| `.physics.itart` | 0 | **both arms** | `itart == 1` written 2026-08-27, see below |
+| `.tfcoil.i_tf_sup` | 1 | the superconducting cell | new on this path 2026-08-27: the
+centrepost chain reads it, and cuts it two different ways |
 | `.divertor.n_divertors` | 1 | **both arms** | `== 2` written 2026-08-27, see below |
 | `.fwbs.i_p_coolant_pumping` | 3 | `MECHANICAL_WITH_PRESSURE_DROP` | `0`/`1`
 unported; `2` is CoolProp-bound |
@@ -52,16 +53,32 @@ records the same three modules as "dormant"; for this one it is stronger than do
 `== 2` occupants -- `DivertorSurfaceAndPlateMassDoubleNull` (`hcpb.py:360-361`, the
 factor of two on `a_div_surface_total`) and
 `NuclearHeatingRenormalisationDoubleNullConventional` (`hcpb.py:213-217`, the different
-`f_geom_blanket`). `itart == 1` is untouched and still refused: a spherical machine
-needs the centrepost neutronics chain, so the renormalisation's double-null arm exists
-only in its **conventional** flavour, and the two spherical-tokamak input files that
-motivated this wave still stop at `('itart_hcpb', 1)`.
+`f_geom_blanket`).
+
+2026-08-27 (the centrepost wave): `itart == 1` is ported and registered. The chain
+`hcpb.py:1008-1287` -- `st_cp_angle_fraction`, `st_tf_centrepost_fast_neut_flux`,
+`st_centrepost_nuclear_heating` -- becomes one occupant,
+`CentrepostNeutronicsSphericalTokamakSuperconducting`, and the renormalisation's
+`(n_divertors, itart)` square gains its two `itart == 1` cells. Three consequences worth
+carrying:
+
+1. **`.tfcoil.i_tf_sup` is a switch of this file now.** Two of the three centrepost
+   routines read it and *partition it differently* -- `{1}` vs `{0, 2}` for the neutron
+   flux, `{2}` vs `{0, 1}` for the nuclear heating -- so the slot is keyed on a joint
+   `(itart, i_tf_sup)` arm. Only the `(1, 1)` cell is written; both input files select
+   it.
+2. **Two mints.** `.ccfe_hcpb.f_geom_cp` is a `run()` local that crosses a node
+   boundary; `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit` is the MCNP fit value PROCESS
+   stores in `.fwbs.p_cp_shield_nuclear_heat_mw` at `:137` and overwrites at `:267`.
+3. **`.build.r_sh_inboard_out` is a new boundary input with no producer**, and stays
+   one: `build.py:1858` accumulates it outwards from the bore, a chain this port does
+   not own.
 """
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.models.safe_math import safe_pow
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.paths import (
     build,
     ccfe_hcpb,
@@ -843,6 +860,349 @@ def calculate_centrepost_neutronics_absent():
     return 0.0, 0.0, 0.0, 0.0
 
 
+def calculate_centrepost_angle_fraction(z_cp_top, r_cp_mid, r_cp_top, rmajor):
+    """Solid-angle fraction of the plasma's neutrons intercepted by the centrepost.
+
+    Ports `CCFE_HCPB.st_cp_angle_fraction` (`hcpb.py:1008-1080`) verbatim, including its
+    parameter order -- which does **not** match its own docstring's order, and does not
+    have to: `rho_maj` reads `r_cp_mid + r_cp_top` symmetrically, so the two radii are
+    interchangeable in the arithmetic and only the names would mislead.
+
+    Equations (1-3) of P. Guest, *Rev. Sci. Instrum.* **32** (2), 1960, integrated over
+    the toroidal half-angle the centrepost subtends by a ten-panel trapezoid rule. The
+    trip count is a literal `10` in the source, so the loop is unrolled at trace time and
+    nothing here is data-dependent.
+
+    Two transcription notes:
+
+    - PROCESS's `max(int_calc_3, 0.0)` (`:1059`, `:1069`) is `jnp.maximum`. It is not a
+      guard against bad input but against *rounding*: the integral's last panel sits at
+      `phy_cp = arcsin(1 / rho_maj)`, where `1 - rho_maj**2 * sin(phy_cp)**2` is
+      analytically zero and numerically either sign.
+    - Because that radicand really is zero at the last panel, its square root is taken
+      through `safe_sqrt`. `jnp.sqrt` is value-correct there and has an infinite
+      derivative, which is `next_steps.md` §9's defect exactly -- and this is the first
+      site in the port where the zero is reached on the *reference operating point*
+      rather than only at a fuzzed edge.
+
+    Parameters
+    ----------
+    z_cp_top :
+        Centrepost shield half height (m). `run():113` passes
+        `.build.z_plasma_xpoint_upper`.
+    r_cp_mid :
+        Centrepost mid-plane radius (m). `run():122` passes `.build.r_sh_inboard_out`.
+    r_cp_top :
+        Centrepost top radius (m). `run():106-110` forms it as
+        `rmajor - rminor * triang - 3 * dr_fw_plasma_gap_inboard`.
+    rmajor :
+        Plasma major radius (m). `.physics.rmajor`.
+
+    Returns
+    -------
+    :
+        Solid-angle fraction covered by the centrepost (-). A local in PROCESS's
+        `run()`; the port mints it as `.ccfe_hcpb.f_geom_cp` because it crosses a node
+        boundary into the renormalisation.
+    """
+    n_integral = 10
+
+    # Major radius normalised to the CP average radius [-]
+    rho_maj = 2.0 * rmajor / (r_cp_mid + r_cp_top)
+
+    # Average CP extent in the toroidal plane [rad]
+    phy_cp = jnp.arcsin(1.0 / rho_maj)
+
+    # toroidal plane infinitesimal angle used in the integral [rad]
+    d_phy_cp = phy_cp / n_integral
+
+    # CP solid angle integral using trapezoidal method
+    phy_cp_calc = 0.0
+    cp_sol_angle = 0.0
+
+    for _ in range(n_integral):
+        # Little tricks to avoild NaNs due to rounding
+        int_calc_3 = 1.0 - rho_maj**2 * jnp.sin(phy_cp_calc) ** 2
+        int_calc_3 = jnp.maximum(int_calc_3, 0.0)
+
+        int_calc_1 = 1.0 / jnp.sqrt(
+            z_cp_top**2 + (rho_maj * jnp.cos(phy_cp_calc) - safe_sqrt(int_calc_3)) ** 2
+        )
+
+        phy_cp_calc += d_phy_cp
+
+        # Little tricks to avoild NaNs due to rounding
+        int_calc_3 = 1.0 - rho_maj**2 * jnp.sin(phy_cp_calc) ** 2
+        int_calc_3 = jnp.maximum(int_calc_3, 0.0)
+
+        int_calc_2 = 1.0 / jnp.sqrt(
+            z_cp_top**2 + (rho_maj * jnp.cos(phy_cp_calc) - safe_sqrt(int_calc_3)) ** 2
+        )
+
+        cp_sol_angle += d_phy_cp * 0.5 * (int_calc_1 + int_calc_2)
+
+    cp_sol_angle = cp_sol_angle * 4.0 * z_cp_top
+
+    # Solid angle fraction covered by the CP (OUTPUT) [-]
+    return 0.25 * cp_sol_angle / jnp.pi
+
+
+def calculate_centrepost_fast_neutron_flux_superconducting(
+    p_neutron_total_mw, sh_width, rmajor
+):
+    """Fast neutron flux (E > 0.1 MeV) reaching the TF at the centrepost.
+
+    Ports the `i_tf_sup == SUPERCONDUCTING` arm of
+    `CCFE_HCPB.st_tf_centrepost_fast_neut_flux` (`hcpb.py:1082-1134`). The other two
+    conductor models take no branch at all: `neut_flux_cp` is initialised to `0`
+    (`:1112`) and the `if` at `:1114` never fires, so a water-cooled-copper or
+    aluminium centrepost returns the literal zero. That is a *different* occupant, not
+    this one with a zeroed input, which is why the slot is keyed on the joint
+    `(itart, i_tf_sup)` arm rather than on `itart` alone.
+
+    The fit is a CP-only MCNP scan with a variable tungsten-carbide shield at 13% water
+    cooling; the shielding length per decade is 16.6 cm (e-folding 7.22 cm), close to the
+    "15 - 16 cm" of Menard et al. 2016.
+
+    Parameters
+    ----------
+    p_neutron_total_mw :
+        Neutron fusion power (MW). `.physics.p_neutron_total_mw`.
+    sh_width :
+        Neutron shield width (m). `run():130` passes `.build.dr_shld_inboard`.
+    rmajor :
+        Plasma major radius (m). `.physics.rmajor`.
+
+    Returns
+    -------
+    :
+        Centrepost fast neutron flux (m^-2 s^-1). `.fwbs.neut_flux_cp`.
+    """
+    # Fraction of fast neutrons originating from the outer wall reflection [-]
+    f_neut_flux_out_wall = 1
+
+    # Tungsten density may vary with different manufacturing processes.
+    f_wc_density = 2
+
+    # Fraction of steel structures
+    f_steel_struct = 0.1
+
+    # Effecting shield width, removing steel structures
+    sh_width_eff = sh_width * (1.0 - f_steel_struct)
+
+    # Fit [10^{-13}.cm^{-2}]
+    neut_flux_cp = 5.835 * jnp.exp(-15.392 * sh_width_eff) + 39.70 * (
+        sh_width_eff / rmajor
+    ) * jnp.exp(-24.722 * sh_width_eff)
+
+    # Units conversion [10^{-13}.cm^{-2}] -> [m^{-2}]
+    neut_flux_cp *= 1.0e17
+
+    # Scaling to the actual plasma neutron power
+    return (
+        f_wc_density * f_neut_flux_out_wall * neut_flux_cp * (p_neutron_total_mw / 800)
+    )
+
+
+def calculate_centrepost_nuclear_heating_superconducting(pneut, sh_width, rmajor):
+    """Nuclear heat deposited in a superconducting or copper spherical centrepost.
+
+    Ports the `else` arm of `CCFE_HCPB.st_centrepost_nuclear_heating`
+    (`hcpb.py:1200-1285`). **That arm is `i_tf_sup in {0, 1}`**, not `i_tf_sup == 1`:
+    PROCESS branches on `HELIUM_COOLED_ALUMINIUM` alone (`:1192`) and the comment at
+    `:1202-1204` says why -- the MCNP model's winding pack is large enough to be mostly
+    copper, so the same fit serves the superconducting and the water-cooled-copper
+    centrepost. This partition is **not** the fast-neutron-flux routine's, which splits
+    `{1}` from `{0, 2}`; the two functions read the same switch and cut it in different
+    places, which is the whole reason the port keys their shared slot on a joint arm.
+
+    The shielding length per decade is 15.5 cm (e-folding 6.72 cm), again within Menard
+    et al. 2016's "15 - 16 cm". Six fits -- winding pack and steel case, each by gammas
+    and by neutrons, plus the two shield terms -- are evaluated for an 800 MW plasma
+    neutron source and rescaled.
+
+    Parameters
+    ----------
+    pneut :
+        14 MeV plasma neutron power (MW). `.physics.p_neutron_total_mw`.
+    sh_width :
+        Centrepost neutron shield thickness (m). `.build.dr_shld_inboard`.
+    rmajor :
+        Plasma major radius (m). `.physics.rmajor` -- read off `self.data` in the source
+        (`:1216`, `:1223`, `:1230`, `:1237`) rather than passed, which is the one
+        `self`-bound read this extraction closes.
+
+    Returns
+    -------
+    tuple
+        `(pnuc_cp_tf, p_cp_shield_nuclear_heat_mw, pnuc_cp)`. The middle value is
+        **overwritten** by `run():267` on this arm, so the port mints it as
+        `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit`; see
+        `calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak`.
+    """
+    # Outer wall reflection TF nuclear heating enhancement factor [-]
+    f_pnuc_cp_tf = 1
+
+    # Outer wall reflection shield nuclear heating enhancement factor [-]
+    f_pnuc_cp_sh = 1.7
+
+    # Tungsten density may vary with different manufacturing processes.
+    f_wc_density = 2
+
+    # Fraction of steel structures
+    f_steel_struct = 0.1
+
+    # Steel support structure effective WC shield thickness reduction
+    sh_width_eff = sh_width * (1 - f_steel_struct)
+
+    # Nuclear power deposited in the CP winding pack by gammas [MW]
+    pnuc_cp_wp_gam = 16.3 * jnp.exp(-14.63 * sh_width_eff) + 143.08 * sh_width_eff * (
+        sh_width / rmajor
+    ) * jnp.exp(-21.747 * sh_width_eff)
+
+    # Nuclear power deposited in the CP winding pack by neutrons [MW]
+    pnuc_cp_wp_n = 1.403 * jnp.exp(-16.535 * sh_width_eff) + 3.812 * sh_width_eff * (
+        sh_width / rmajor
+    ) * jnp.exp(-23.631 * sh_width_eff)
+
+    # Nuclear power deposited in the CP steel case by gammas [MW]
+    pnuc_cp_case_gam = 1.802 * jnp.exp(-13.993 * sh_width_eff) + 38.592 * sh_width * (
+        sh_width_eff / rmajor
+    ) * jnp.exp(-27.051 * sh_width_eff)
+
+    # Nuclear power deposited in the CP steel case by neutrons [MW]
+    pnuc_cp_case_n = 0.158 * jnp.exp(-55.046 * sh_width_eff) + 2.0742 * sh_width_eff * (
+        sh_width / rmajor
+    ) * jnp.exp(-24.401 * sh_width_eff)
+
+    # Nuclear power density deposited in the tungsten carbide shield by photons [MW]
+    pnuc_cp_sh_gam = sh_width_eff * (
+        596 * jnp.exp(-4.130 * sh_width_eff) + 90.586 * jnp.exp(0.6837 * sh_width_eff)
+    )
+
+    # Nuclear power density deposited in the tungsten carbide shield by neutrons [MW]
+    pnuc_cp_sh_n = sh_width_eff * (
+        202.10 * jnp.exp(-10.533 * sh_width_eff)
+        + 80.510 * jnp.exp(-0.9801 * sh_width_eff)
+    )
+
+    # Correction for the actual 14 MeV plasma neutron power
+    pnuc_cp_wp_gam = (pneut / 800) * pnuc_cp_wp_gam
+    pnuc_cp_wp_n = (pneut / 800) * pnuc_cp_wp_n
+    pnuc_cp_case_gam = (pneut / 800) * pnuc_cp_case_gam
+    pnuc_cp_case_n = (pneut / 800) * pnuc_cp_case_n
+    pnuc_cp_sh_gam = (pneut / 800) * pnuc_cp_sh_gam
+    pnuc_cp_sh_n = (pneut / 800) * pnuc_cp_sh_n
+
+    # Correction for neutron reflected by the outer wall hitting the CP
+    pnuc_cp_wp_gam = f_pnuc_cp_tf * pnuc_cp_wp_gam
+    pnuc_cp_wp_n = f_pnuc_cp_tf * pnuc_cp_wp_n
+    pnuc_cp_case_gam = f_pnuc_cp_tf * pnuc_cp_case_gam
+    pnuc_cp_case_n = f_pnuc_cp_tf * pnuc_cp_case_n
+    pnuc_cp_sh_gam = f_pnuc_cp_sh * pnuc_cp_sh_gam
+    pnuc_cp_sh_n = f_pnuc_cp_sh * pnuc_cp_sh_n
+
+    # TF nuclear heat [MW]
+    pnuc_cp_tf = pnuc_cp_wp_gam + pnuc_cp_wp_n + pnuc_cp_case_gam + pnuc_cp_case_n
+
+    # Tungsten density correction
+    pnuc_cp_tf *= f_wc_density
+
+    # Shield nuclear heat [MW]
+    p_cp_shield_nuclear_heat_mw = pnuc_cp_sh_gam + pnuc_cp_sh_n
+
+    # Total CP nuclear heat [MW]
+    pnuc_cp = pnuc_cp_tf + p_cp_shield_nuclear_heat_mw
+
+    return pnuc_cp_tf, p_cp_shield_nuclear_heat_mw, pnuc_cp
+
+
+def calculate_centrepost_neutronics_spherical_tokamak_superconducting(
+    rmajor,
+    rminor,
+    triang,
+    dr_fw_plasma_gap_inboard,
+    z_plasma_xpoint_upper,
+    r_sh_inboard_out,
+    p_neutron_total_mw,
+    dr_shld_inboard,
+):
+    """`run()`'s `itart == 1` centrepost block (`hcpb.py:103-141`), at `i_tf_sup == 1`.
+
+    The spherical counterpart of `calculate_centrepost_neutronics_absent`, and the
+    occupant that makes `.physics.itart == 1` assemblable at all. One node rather than
+    three, because PROCESS's `:103-141` is one straight-line block with no branch inside
+    it once the conductor model is known, and because the three routines' outputs have
+    a single consumer between them (the renormalisation). Splitting it would buy finer
+    SCC granularity and nothing else -- measured acyclic here, so nothing else is what it
+    would buy.
+
+    The two locals `run()` forms before calling out are kept as locals:
+    `r_sh_inboard_out_top` (`:106-110`, the CP radius at the X-point, where the shield is
+    widest) and `h_sh_max_r` (`:113`, a pure alias of `.build.z_plasma_xpoint_upper`).
+
+    **`.build.r_sh_inboard_out` has no producer in this port.** `build.py:1858` writes
+    it, accumulating *outwards* from the central-solenoid bore, and that chain is
+    deliberately outside the ported closure -- `models/namespace.py` records why
+    `.build.r_shld_inboard_inner`, built inwards from the plasma, is the radius the port
+    produces. The two are equal on a self-consistent build and are **not** the same
+    expression, so this port declares a boundary input rather than substituting one for
+    the other.
+
+    Parameters
+    ----------
+    rmajor, rminor, triang :
+        Plasma major radius (m), minor radius (m) and triangularity (-). `.physics.*`.
+    dr_fw_plasma_gap_inboard :
+        Inboard first-wall-to-plasma gap (m). `.build.dr_fw_plasma_gap_inboard`.
+    z_plasma_xpoint_upper :
+        Height of the upper plasma X-point (m). `.build.z_plasma_xpoint_upper`.
+    r_sh_inboard_out :
+        Plasma-facing radius of the inboard neutronic shield (m).
+        `.build.r_sh_inboard_out` -- the boundary input above.
+    p_neutron_total_mw :
+        Total neutron power (MW). `.physics.p_neutron_total_mw`.
+    dr_shld_inboard :
+        Inboard neutronic shield thickness (m). `.build.dr_shld_inboard`.
+
+    Returns
+    -------
+    tuple
+        `(f_geom_cp, neut_flux_cp, pnuc_cp_tf, p_cp_shield_nuclear_heat_mw_fit,
+        pnuc_cp)`.
+    """
+    # CP radius at the point of maximum shield radius [m]. The maximum shield radius is
+    # assumed to be at the X-point.
+    r_sh_inboard_out_top = rmajor - rminor * triang - 3 * dr_fw_plasma_gap_inboard
+
+    # Half height of the CP at the largest shield radius [m]
+    h_sh_max_r = z_plasma_xpoint_upper
+
+    f_geom_cp = calculate_centrepost_angle_fraction(
+        h_sh_max_r, r_sh_inboard_out, r_sh_inboard_out_top, rmajor
+    )
+
+    neut_flux_cp = calculate_centrepost_fast_neutron_flux_superconducting(
+        p_neutron_total_mw, dr_shld_inboard, rmajor
+    )
+
+    (
+        pnuc_cp_tf,
+        p_cp_shield_nuclear_heat_mw_fit,
+        pnuc_cp,
+    ) = calculate_centrepost_nuclear_heating_superconducting(
+        p_neutron_total_mw, dr_shld_inboard, rmajor
+    )
+
+    return (
+        f_geom_cp,
+        neut_flux_cp,
+        pnuc_cp_tf,
+        p_cp_shield_nuclear_heat_mw_fit,
+        pnuc_cp,
+    )
+
+
 def calculate_nuclear_heating_renormalisation_single_null_conventional(
     p_fw_nuclear_heat_total_mw_unnormalised,
     p_blkt_nuclear_heat_total_mw_unnormalised,
@@ -1032,6 +1392,244 @@ def calculate_nuclear_heating_renormalisation_double_null_conventional(
         p_blkt_nuclear_heat_total_mw,
         p_shld_nuclear_heat_mw,
         p_tf_nuclear_heat_mw,
+        p_blkt_multiplication_mw,
+    )
+
+
+def calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak(
+    p_fw_nuclear_heat_total_mw_unnormalised,
+    p_blkt_nuclear_heat_total_mw_unnormalised,
+    p_shld_nuclear_heat_mw_unnormalised,
+    p_tf_nuclear_heat_mw_unnormalised,
+    f_ster_div_single,
+    f_p_blkt_multiplication,
+    p_neutron_total_mw,
+    f_geom_cp,
+    pnuc_cp_tf,
+):
+    """The renormalisation of `hcpb.py:195-276` at `n_divertors == 1`, `itart == 1`.
+
+    **This arm owns one field more and reads two more than its conventional sibling**,
+    and both differences are the same fact: on a spherical tokamak the centrepost is
+    real, so the two terms the conventional occupants drop as provably inert come back.
+
+    - `f_geom_cp` (`:216`) is `CentrepostNeutronicsSphericalTokamakSuperconducting`'s
+      minted `.ccfe_hcpb.f_geom_cp`, not the literal `0` of `:144`, so the blanket's
+      solid-angle share is `1 - f_ster_div_single - f_geom_cp`.
+    - `.fwbs.pnuc_cp_tf` (`:263`) is that node's real output, so the TF coils' share
+      gains the heat deposited in the centrepost conductor.
+    - `.fwbs.p_cp_shield_nuclear_heat_mw` (`:267-269`) becomes a live quantity --
+      `f_geom_cp * p_neutron_total_mw - pnuc_cp_tf`, the centrepost's whole neutron
+      budget less what the conductor took. It is **owned here**, and this is the write
+      that makes the centrepost node's own third return value dead: PROCESS stores that
+      value in the same field at `:137` and then overwrites it here, before the only
+      readers (`powerflow_calc:834`/`:852`/`:908` and `power.py:940`, all downstream of
+      `run():279`) ever see it. The port therefore mints the earlier value as
+      `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit`, the same treatment the four
+      `_unnormalised` powers get and for the same reason: two quantities, one PROCESS
+      slot.
+
+    On the conventional arm the second write is `0 * x - 0` and `CentrepostNeutronics-
+    Absent` keeps ownership; here the two writes differ and the later one wins. That is
+    why this occupant and its conventional sibling do not own the same set -- the shape
+    `next_steps.md` §12.2 names, already live in this file at `i_p_coolant_pumping`.
+
+    Parameters
+    ----------
+    p_fw_nuclear_heat_total_mw_unnormalised :
+        First-wall nuclear heating before renormalisation (MW).
+        `.ccfe_hcpb.p_fw_nuclear_heat_total_mw_unnormalised`, from `NuclearHeatingFw`.
+    p_blkt_nuclear_heat_total_mw_unnormalised :
+        Blanket, same. From `NuclearHeatingBlanket`.
+    p_shld_nuclear_heat_mw_unnormalised :
+        Shield, same. From `NuclearHeatingShieldSphericalTokamak`.
+    p_tf_nuclear_heat_mw_unnormalised :
+        TF coils, same. From `NuclearHeatingMagnetsSphericalTokamak`.
+    f_ster_div_single :
+        Divertor solid-angle fraction per divertor. `.fwbs.f_ster_div_single`.
+    f_p_blkt_multiplication :
+        Blanket neutron energy multiplication factor. `.fwbs.f_p_blkt_multiplication`.
+    p_neutron_total_mw :
+        Total neutron power (MW). `.physics.p_neutron_total_mw`.
+    f_geom_cp :
+        Centrepost solid-angle fraction (-). `.ccfe_hcpb.f_geom_cp`.
+    pnuc_cp_tf :
+        Nuclear heat in the centrepost TF conductor (MW). `.fwbs.pnuc_cp_tf`.
+
+    Returns
+    -------
+    tuple
+        `(pnuc_tot_blk_sector, p_fw_nuclear_heat_total_mw,
+        p_blkt_nuclear_heat_total_mw, p_shld_nuclear_heat_mw, p_tf_nuclear_heat_mw,
+        p_cp_shield_nuclear_heat_mw, p_blkt_multiplication_mw)`.
+    """
+    return _nuclear_heating_renormalisation_spherical_tokamak(
+        p_fw_nuclear_heat_total_mw_unnormalised,
+        p_blkt_nuclear_heat_total_mw_unnormalised,
+        p_shld_nuclear_heat_mw_unnormalised,
+        p_tf_nuclear_heat_mw_unnormalised,
+        # `1 - n_divertors * f_ster_div_single - f_geom_cp` at `n_divertors == 1`.
+        f_geom_blanket=1 - f_ster_div_single - f_geom_cp,
+        f_p_blkt_multiplication=f_p_blkt_multiplication,
+        p_neutron_total_mw=p_neutron_total_mw,
+        f_geom_cp=f_geom_cp,
+        pnuc_cp_tf=pnuc_cp_tf,
+    )
+
+
+def calculate_nuclear_heating_renormalisation_double_null_spherical_tokamak(
+    p_fw_nuclear_heat_total_mw_unnormalised,
+    p_blkt_nuclear_heat_total_mw_unnormalised,
+    p_shld_nuclear_heat_mw_unnormalised,
+    p_tf_nuclear_heat_mw_unnormalised,
+    f_ster_div_single,
+    f_p_blkt_multiplication,
+    p_neutron_total_mw,
+    f_geom_cp,
+    pnuc_cp_tf,
+):
+    """The renormalisation of `hcpb.py:195-276` at `n_divertors == 2`, `itart == 1`.
+
+    **The cell both spherical-tokamak input files actually select.**
+    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` set `itart = 1` and
+    `i_single_null = 0`, so `_n_divertors` derives `2` and this is the occupant the
+    factory builds -- the fourth and last cell of the `(n_divertors, itart)` square, and
+    the one that closes it.
+
+    Identical to its single-null sibling except in `f_geom_blanket`: PROCESS spells it as
+    `1 - n_divertors * f_ster_div_single - f_geom_cp` (`hcpb.py:213-217`), a
+    multiplication rather than an `if`, so the two arms are the same shape with a
+    different divertor count. See the single-null docstring for why `f_geom_cp`,
+    `.fwbs.pnuc_cp_tf` and `.fwbs.p_cp_shield_nuclear_heat_mw` appear on the spherical
+    arms and not on the conventional ones.
+
+    Parameters
+    ----------
+    p_fw_nuclear_heat_total_mw_unnormalised :
+        First-wall nuclear heating before renormalisation (MW).
+    p_blkt_nuclear_heat_total_mw_unnormalised :
+        Blanket, same.
+    p_shld_nuclear_heat_mw_unnormalised :
+        Shield, same.
+    p_tf_nuclear_heat_mw_unnormalised :
+        TF coils, same.
+    f_ster_div_single :
+        Divertor solid-angle fraction **per divertor**. `.fwbs.f_ster_div_single`.
+    f_p_blkt_multiplication :
+        Blanket neutron energy multiplication factor.
+    p_neutron_total_mw :
+        Total neutron power (MW).
+    f_geom_cp :
+        Centrepost solid-angle fraction (-). `.ccfe_hcpb.f_geom_cp`.
+    pnuc_cp_tf :
+        Nuclear heat in the centrepost TF conductor (MW). `.fwbs.pnuc_cp_tf`.
+
+    Returns
+    -------
+    tuple
+        The same seven values as the single-null spherical arm.
+    """
+    return _nuclear_heating_renormalisation_spherical_tokamak(
+        p_fw_nuclear_heat_total_mw_unnormalised,
+        p_blkt_nuclear_heat_total_mw_unnormalised,
+        p_shld_nuclear_heat_mw_unnormalised,
+        p_tf_nuclear_heat_mw_unnormalised,
+        # `1 - n_divertors * f_ster_div_single - f_geom_cp` at `n_divertors == 2`.
+        f_geom_blanket=1 - 2 * f_ster_div_single - f_geom_cp,
+        f_p_blkt_multiplication=f_p_blkt_multiplication,
+        p_neutron_total_mw=p_neutron_total_mw,
+        f_geom_cp=f_geom_cp,
+        pnuc_cp_tf=pnuc_cp_tf,
+    )
+
+
+def _nuclear_heating_renormalisation_spherical_tokamak(
+    p_fw_nuclear_heat_total_mw_unnormalised,
+    p_blkt_nuclear_heat_total_mw_unnormalised,
+    p_shld_nuclear_heat_mw_unnormalised,
+    p_tf_nuclear_heat_mw_unnormalised,
+    *,
+    f_geom_blanket,
+    f_p_blkt_multiplication,
+    p_neutron_total_mw,
+    f_geom_cp,
+    pnuc_cp_tf,
+):
+    """The part of `hcpb.py:195-276` both spherical arms share.
+
+    A private helper rather than two transcriptions, on the same argument
+    `_nuclear_heating_shield` makes: the arms differ in exactly one expression, and this
+    block has enough coefficients in it that a second copy is a second place for them to
+    drift. The two *conventional* arms predate this and are written out in full; they are
+    left as they are rather than refactored in a wave about `itart`.
+
+    Parameters
+    ----------
+    p_fw_nuclear_heat_total_mw_unnormalised :
+        First-wall nuclear heating before renormalisation (MW).
+    p_blkt_nuclear_heat_total_mw_unnormalised :
+        Blanket, same.
+    p_shld_nuclear_heat_mw_unnormalised :
+        Shield, same.
+    p_tf_nuclear_heat_mw_unnormalised :
+        TF coils, same.
+    f_geom_blanket :
+        Solid-angle fraction taken by the breeding blankets and shields (-), formed by
+        the calling arm from its own divertor count.
+    f_p_blkt_multiplication :
+        Blanket neutron energy multiplication factor (-).
+    p_neutron_total_mw :
+        Total neutron power (MW).
+    f_geom_cp :
+        Centrepost solid-angle fraction (-).
+    pnuc_cp_tf :
+        Nuclear heat in the centrepost TF conductor (MW).
+
+    Returns
+    -------
+    tuple
+        The seven values both spherical arms return.
+    """
+    # Total nuclear power deposited in the blanket sector (MW)
+    pnuc_tot_blk_sector = (
+        p_fw_nuclear_heat_total_mw_unnormalised
+        + p_blkt_nuclear_heat_total_mw_unnormalised
+        + p_shld_nuclear_heat_mw_unnormalised
+        + p_tf_nuclear_heat_mw_unnormalised
+    )
+
+    normalisation = f_p_blkt_multiplication * f_geom_blanket * p_neutron_total_mw
+
+    p_fw_nuclear_heat_total_mw = (
+        p_fw_nuclear_heat_total_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation
+    p_blkt_nuclear_heat_total_mw = (
+        p_blkt_nuclear_heat_total_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation
+    # The power deposited in the CP shield is added back in `powerflow_calc`.
+    p_shld_nuclear_heat_mw = (
+        p_shld_nuclear_heat_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation
+    # The power deposited in the CP conductor is added back here (`hcpb.py:263`).
+    p_tf_nuclear_heat_mw = (
+        p_tf_nuclear_heat_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation + pnuc_cp_tf
+
+    # Power deposited in the CP shield (`hcpb.py:267-269`), overwriting the MCNP fit
+    # value `st_centrepost_nuclear_heating` wrote at `:137`.
+    p_cp_shield_nuclear_heat_mw = f_geom_cp * p_neutron_total_mw - pnuc_cp_tf
+
+    p_blkt_multiplication_mw = (
+        (f_p_blkt_multiplication - 1) * f_geom_blanket * p_neutron_total_mw
+    )
+
+    return (
+        pnuc_tot_blk_sector,
+        p_fw_nuclear_heat_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_shld_nuclear_heat_mw,
+        p_tf_nuclear_heat_mw,
+        p_cp_shield_nuclear_heat_mw,
         p_blkt_multiplication_mw,
     )
 
@@ -1369,7 +1967,20 @@ class ComponentMasses(ExplicitFunction):
         )
 
 
-class NuclearHeatingMagnetsConventional(ExplicitFunction):
+class NuclearHeatingMagnets(ExplicitFunction):
+    """The family that owns the nine `nuclear_heating_magnets` outputs: one occupant per
+    value of `.physics.itart` (`hcpb.py:495-575`).
+
+    Both arms are written and, since 2026-08-27, both are registered. They own the same
+    nine fields and read unequal sets -- the conventional arm reads
+    `.build.dr_blkt_inboard`, `.build.dr_shld_inboard` and `.tfcoil.m_tf_coils_total`;
+    the spherical one reads `.tfcoil.whttflgs` instead of the last of those and
+    neither of the first two, because a spherical machine's inboard blanket and shield
+    are the centrepost's business.
+    """
+
+
+class NuclearHeatingMagnetsConventional(NuclearHeatingMagnets):
     """cottax node: `calculate_nuclear_heating_magnets_conventional`. `itart == 0`."""
 
     armour_density = OutputInto(ccfe_hcpb)
@@ -1432,10 +2043,10 @@ class NuclearHeatingMagnetsConventional(ExplicitFunction):
         )
 
 
-class NuclearHeatingMagnetsSphericalTokamak(ExplicitFunction):
+class NuclearHeatingMagnetsSphericalTokamak(NuclearHeatingMagnets):
     """cottax node: `calculate_nuclear_heating_magnets_spherical_tokamak`. `itart == 1`.
 
-    Written, not registerable yet -- see the pure function's docstring.
+    Registered 2026-08-27, once the centrepost chain this machine also needs existed.
     """
 
     armour_density = OutputInto(ccfe_hcpb)
@@ -1521,7 +2132,18 @@ class NuclearHeatingBlanket(ExplicitFunction):
         return nuclear_heating_blanket(m_blkt_total, p_fusion_total_mw)
 
 
-class NuclearHeatingShieldConventional(ExplicitFunction):
+class NuclearHeatingShield(ExplicitFunction):
+    """The family that owns the four `nuclear_heating_shield` outputs: one occupant per
+    value of `.physics.itart` (`hcpb.py:748-769`).
+
+    The arms own the same four fields and differ by one read:
+    `.build.dr_shld_inboard` enters the average shield thickness on a conventional
+    machine and does not on a spherical one, where the inboard shield is the centrepost's
+    and is accounted separately. Both registered since 2026-08-27.
+    """
+
+
+class NuclearHeatingShieldConventional(NuclearHeatingShield):
     """cottax node: `nuclear_heating_shield_conventional`. `itart == 0`.
 
     `shield_density`/`x_blanket` are `NuclearHeatingMagnetsConventional`'s own outputs --
@@ -1554,10 +2176,10 @@ class NuclearHeatingShieldConventional(ExplicitFunction):
         )
 
 
-class NuclearHeatingShieldSphericalTokamak(ExplicitFunction):
+class NuclearHeatingShieldSphericalTokamak(NuclearHeatingShield):
     """cottax node: `nuclear_heating_shield_spherical_tokamak`. `itart == 1`.
 
-    Written, not registerable yet -- see the pure function's docstring.
+    Registered 2026-08-27, with the centrepost chain.
     """
 
     p_shld_nuclear_heat_mw_unnormalised = OutputInto(ccfe_hcpb)
@@ -1582,7 +2204,29 @@ class NuclearHeatingShieldSphericalTokamak(ExplicitFunction):
         )
 
 
-class CentrepostNeutronicsAbsent(ExplicitFunction):
+class CentrepostNeutronics(ExplicitFunction):
+    """The family that owns `run()`'s centrepost block (`hcpb.py:103-148`): one occupant
+    per cell of the joint `(itart, i_tf_sup)` arm PROCESS's three `st_*` routines cut
+    between them.
+
+    **The arms do not own the same set, and the difference is one field.**
+    `CentrepostNeutronicsAbsent` owns `.fwbs.p_cp_shield_nuclear_heat_mw`, because on the
+    conventional arm the two writes PROCESS makes to it (`:146` and `:267`) are both
+    `0.0` -- a `redundant-duplicate-write` resolved by picking one owner. On a spherical
+    machine they differ, `:267` wins, and the field belongs to the renormalisation
+    occupant instead; this family's spherical member mints the earlier value as
+    `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit`. Partial overlap by construction, the
+    same shape `.fwbs.i_p_coolant_pumping`'s arms have in this file.
+
+    **Why the arm is joint.** `st_tf_centrepost_fast_neut_flux` splits `i_tf_sup` as
+    `{1}` against `{0, 2}` (`hcpb.py:1114`); `st_centrepost_nuclear_heating` splits it as
+    `{2}` against `{0, 1}` (`:1192`). Two different partitions of one switch inside one
+    straight-line block, so no single integer names the occupant and
+    `indat._centrepost_neutronics_arm` derives one from the pair.
+    """
+
+
+class CentrepostNeutronicsAbsent(CentrepostNeutronics):
     """cottax node: `calculate_centrepost_neutronics_absent`. `itart == 0`.
 
     Reads nothing -- the same shape as `i_pulsed_plant`'s unpulsed occupant
@@ -1597,6 +2241,51 @@ class CentrepostNeutronicsAbsent(ExplicitFunction):
 
     def __call__(self):
         return calculate_centrepost_neutronics_absent()
+
+
+class CentrepostNeutronicsSphericalTokamakSuperconducting(CentrepostNeutronics):
+    """cottax node: `calculate_centrepost_neutronics_spherical_tokamak_superconducting`.
+    `itart == 1` and `i_tf_sup == 1`.
+
+    Owns the mint `.ccfe_hcpb.f_geom_cp` -- a *local* in PROCESS's `run()` (`:120`) that
+    two later statements read (`:216`, `:268`). Once those statements are a different
+    node, the local crosses a node boundary and has to be named.
+
+    `.build.r_sh_inboard_out` is a **boundary input with no producer in this port**; see
+    the pure function's docstring for why `.build.r_shld_inboard_inner` is not a
+    substitute for it.
+    """
+
+    f_geom_cp = OutputInto(ccfe_hcpb)
+    """Minted. A local of `run()` in PROCESS, read by the renormalisation."""
+    neut_flux_cp = OutputInto(fwbs)
+    pnuc_cp_tf = OutputInto(fwbs)
+    p_cp_shield_nuclear_heat_mw_fit = OutputInto(ccfe_hcpb)
+    """Minted. `.fwbs.p_cp_shield_nuclear_heat_mw` is `run():267`'s *later* value and is
+    owned by the spherical renormalisation; this is the MCNP fit PROCESS overwrites."""
+    pnuc_cp = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        rmajor=From(physics),
+        rminor=From(physics),
+        triang=From(physics),
+        dr_fw_plasma_gap_inboard=From(build),
+        z_plasma_xpoint_upper=From(build),
+        r_sh_inboard_out=From(build),
+        p_neutron_total_mw=From(physics),
+        dr_shld_inboard=From(build),
+    ):
+        return calculate_centrepost_neutronics_spherical_tokamak_superconducting(
+            rmajor,
+            rminor,
+            triang,
+            dr_fw_plasma_gap_inboard,
+            z_plasma_xpoint_upper,
+            r_sh_inboard_out,
+            p_neutron_total_mw,
+            dr_shld_inboard,
+        )
 
 
 class NuclearHeatingRenormalisation(ExplicitFunction):
@@ -1615,9 +2304,12 @@ class NuclearHeatingRenormalisation(ExplicitFunction):
     namespace at all -- but the two are alternative producers of one field on two
     different devices, and any future machine that assembled both would have to choose.
 
-    Two of the four cells are written: both `n_divertors` arms at `itart == 0`. Neither
-    `itart == 1` cell is, and that is a refusal about the *machine* rather than about
-    this arithmetic -- see `indat.py`'s `('itart_hcpb', 1)`.
+    **All four cells are written** since 2026-08-27 (the centrepost wave). The two
+    `itart == 1` cells own a fifth field the conventional two do not,
+    `.fwbs.p_cp_shield_nuclear_heat_mw`, and read two more,
+    `.ccfe_hcpb.f_geom_cp` and `.fwbs.pnuc_cp_tf`; see
+    `calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak` for why
+    that is the same fact three times over.
     """
 
 
@@ -1689,6 +2381,101 @@ class NuclearHeatingRenormalisationDoubleNullConventional(NuclearHeatingRenormal
             f_ster_div_single,
             f_p_blkt_multiplication,
             p_neutron_total_mw,
+        )
+
+
+class NuclearHeatingRenormalisationSingleNullSphericalTokamak(
+    NuclearHeatingRenormalisation
+):
+    """cottax node:
+    `calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak`.
+    `n_divertors == 1` and `itart == 1`.
+
+    Owns `.fwbs.p_cp_shield_nuclear_heat_mw`, which the conventional arms leave to
+    `CentrepostNeutronicsAbsent`, and reads `.ccfe_hcpb.f_geom_cp` and
+    `.fwbs.pnuc_cp_tf` from `CentrepostNeutronicsSphericalTokamakSuperconducting`.
+
+    Written with its double-null sibling; neither spherical-tokamak input file selects
+    *this* cell (both are `i_single_null = 0`), but `hcpb.py:215`'s
+    `n_divertors * f_ster_div_single` is a multiplication rather than a branch, so
+    writing one cell of the row and not the other would leave a hole with no argument
+    behind it.
+    """
+
+    pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
+    p_fw_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_blkt_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_shld_nuclear_heat_mw = OutputInto(fwbs)
+    p_tf_nuclear_heat_mw = OutputInto(fwbs)
+    p_cp_shield_nuclear_heat_mw = OutputInto(fwbs)
+    p_blkt_multiplication_mw = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        p_fw_nuclear_heat_total_mw_unnormalised=From(ccfe_hcpb),
+        p_blkt_nuclear_heat_total_mw_unnormalised=From(ccfe_hcpb),
+        p_shld_nuclear_heat_mw_unnormalised=From(ccfe_hcpb),
+        p_tf_nuclear_heat_mw_unnormalised=From(ccfe_hcpb),
+        f_ster_div_single=From(fwbs),
+        f_p_blkt_multiplication=From(fwbs),
+        p_neutron_total_mw=From(physics),
+        f_geom_cp=From(ccfe_hcpb),
+        pnuc_cp_tf=From(fwbs),
+    ):
+        return calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak(
+            p_fw_nuclear_heat_total_mw_unnormalised,
+            p_blkt_nuclear_heat_total_mw_unnormalised,
+            p_shld_nuclear_heat_mw_unnormalised,
+            p_tf_nuclear_heat_mw_unnormalised,
+            f_ster_div_single,
+            f_p_blkt_multiplication,
+            p_neutron_total_mw,
+            f_geom_cp,
+            pnuc_cp_tf,
+        )
+
+
+class NuclearHeatingRenormalisationDoubleNullSphericalTokamak(
+    NuclearHeatingRenormalisation
+):
+    """cottax node:
+    `calculate_nuclear_heating_renormalisation_double_null_spherical_tokamak`.
+    `n_divertors == 2` and `itart == 1`.
+
+    **The cell `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` select.**
+    Both set `itart = 1` and `i_single_null = 0`.
+    """
+
+    pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
+    p_fw_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_blkt_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_shld_nuclear_heat_mw = OutputInto(fwbs)
+    p_tf_nuclear_heat_mw = OutputInto(fwbs)
+    p_cp_shield_nuclear_heat_mw = OutputInto(fwbs)
+    p_blkt_multiplication_mw = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        p_fw_nuclear_heat_total_mw_unnormalised=From(ccfe_hcpb),
+        p_blkt_nuclear_heat_total_mw_unnormalised=From(ccfe_hcpb),
+        p_shld_nuclear_heat_mw_unnormalised=From(ccfe_hcpb),
+        p_tf_nuclear_heat_mw_unnormalised=From(ccfe_hcpb),
+        f_ster_div_single=From(fwbs),
+        f_p_blkt_multiplication=From(fwbs),
+        p_neutron_total_mw=From(physics),
+        f_geom_cp=From(ccfe_hcpb),
+        pnuc_cp_tf=From(fwbs),
+    ):
+        return calculate_nuclear_heating_renormalisation_double_null_spherical_tokamak(
+            p_fw_nuclear_heat_total_mw_unnormalised,
+            p_blkt_nuclear_heat_total_mw_unnormalised,
+            p_shld_nuclear_heat_mw_unnormalised,
+            p_tf_nuclear_heat_mw_unnormalised,
+            f_ster_div_single,
+            f_p_blkt_multiplication,
+            p_neutron_total_mw,
+            f_geom_cp,
+            pnuc_cp_tf,
         )
 
 

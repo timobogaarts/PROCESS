@@ -350,6 +350,7 @@ DERIVED_UNPORTED_KEYS = {
     "n_divertors",
     # Arm indices, not switch values. Each is exercised through the integers its `_*_arm`
     # function reads -- the same reason the three joint keys below are skipped.
+    "centrepost_neutronics_arm",
     "cicc_turn_geometry_arm",
     "divertor_geometry_arm",
     "divertor_heat_load_arm",
