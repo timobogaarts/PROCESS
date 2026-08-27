@@ -262,6 +262,7 @@ input .pf_coil.f_a_cs_void
 input .pf_coil.f_a_pf_coil_void
 input .pf_coil.f_j_cs_start_pulse_end_flat_top
 input .pf_coil.f_z_cs_tf_internal
+input .pf_coil.fcuohsu
 input .pf_coil.j_cs_flat_top_end
 input .pf_coil.j_pf_coil_wp_peak
 input .pf_coil.p_pf_electric_supplies_mw
@@ -269,6 +270,7 @@ input .pf_coil.pf_current_safety_factor
 input .pf_coil.rpf2
 input .pf_coil.sigpfcalw
 input .pf_coil.sigpfcf
+input .pf_coil.temp_cs_superconductor_operating
 input .pf_coil.zref
 input .pf_power.ensxpfm
 input .pf_power.srcktpm
@@ -342,9 +344,11 @@ input .tfcoil.i_tf_sup
 input .tfcoil.layer_ins
 input .tfcoil.m_tf_bus
 input .tfcoil.n_tf_coils
+input .tfcoil.poisson_steel
 input .tfcoil.res_tf_leg
 input .tfcoil.rho_tf_bus
 input .tfcoil.ripple_b_tf_plasma_edge_max
+input .tfcoil.str_cs_con_res
 input .tfcoil.t_tf_superconductor_quench
 input .tfcoil.temp_cp_coolant_inlet
 input .tfcoil.temp_tf_cryo

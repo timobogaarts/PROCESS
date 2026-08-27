@@ -96,6 +96,10 @@ from functional_process.models.pfcoil.namespace import (
     PFCoil,
     PFCoilCsWstNb3Sn,
 )
+from functional_process.models.pfcoil.superconductor import (
+    CSCriticalCurrentDensitiesIterNb3Sn,
+    CSCriticalCurrentDensitiesWstNb3Sn,
+)
 from functional_process.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
     NoPfirschSchluterCurrent,
@@ -3138,7 +3142,36 @@ CS_COIL = {0: CSCoil, 1: CSCoil}
 
 The same namespace on both positive arms: nothing in `CSCoil` reads `.tfcoil.dcond` --
 the CS conductor density is read by the masses node in `.tokamak.pf_coil`, which is
-where the two arms differ."""
+where the two arms differ.
+
+Since 2026-08-27 the namespace has one factory-filled slot of its own
+(`critical_current`), so the two arms are the same *class* and no longer the same
+*instance* -- `_cs_coil` below builds it."""
+
+CS_SUPERCONDUCTOR = {
+    SuperconductorModel.ITER_NB3SN: CSCriticalCurrentDensitiesIterNb3Sn,
+    SuperconductorModel.WST_NB3SN: CSCriticalCurrentDensitiesWstNb3Sn,
+}
+"""`.pf_coil.i_cs_superconductor` -> `.tokamak.cs_coil.critical_current`'s occupant.
+
+**Total over the values that reach it, and therefore with no `UNPORTED` entries at
+all** -- the second such registry, after `SHIELD_HALF_HEIGHT`. `superconpf` dispatches
+on eight values, but `_pf_coil_system_arm` above has already refused six of them (arm
+`-6`) before this slot is built: only `1` (ITER Nb3Sn) and `5` (WST Nb3Sn) survive its
+`(i_pf_superconductor, i_cs_superconductor)` pair, and both are written.
+
+**This switch is asked twice, on purpose.** `_pf_coil_system_arm` reads it as half of
+that pair, which selects the *masses* occupant -- and its arm `1` covers both surviving
+values, because which `.tfcoil.dcond` element a mass reads is a different question from
+which critical-surface fit a current density comes from. Answering the second by reusing
+the first's arm would silently give a WST Nb3Sn CS the ITER Nb3Sn critical surface, the
+`EcrhDensityLimit` bug class `models/tokamak/namespace.py` names.
+
+Widening `_pf_coil_system_arm`'s pair later would make this registry partial again, and
+the six occupants it would then owe are enumerated in
+`models/pfcoil/superconductor.py`'s module docstring -- the reasons live there rather
+than in `UNPORTED`, because an `UNPORTED` entry nothing can reach is a refusal that
+never fires."""
 
 PF_COIL = {0: PFCoil, 1: PFCoilCsWstNb3Sn}
 """`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace. Arm 1 differs in
@@ -3634,7 +3667,20 @@ def _tokamak_device(
         build=build,
         cicc_superconducting_tf_coil=tf_coil,
         pf_coil=_slot_occupant("pf_coil_system_arm", pf_coil_arm, PF_COIL),
-        cs_coil=_slot_occupant("pf_coil_system_arm", pf_coil_arm, CS_COIL),
+        cs_coil=_slot_occupant(
+            "pf_coil_system_arm",
+            pf_coil_arm,
+            CS_COIL,
+            build=lambda cls: cls(
+                critical_current=_slot_occupant(
+                    "i_cs_superconductor",
+                    SuperconductorModel(
+                        int(switches.get("i_cs_superconductor", 1))  # `pfcoil_vars:225`
+                    ),
+                    CS_SUPERCONDUCTOR,
+                )
+            ),
+        ),
         shield=shield,
         divertor=Divertor(
             heat_load=_slot_occupant(

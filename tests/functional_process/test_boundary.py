@@ -179,9 +179,16 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """348 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """352 inputs and 11 guesses, against the stellarator's 297 and 6.
 
-    The CS/physics half of the missing-producer wave (2026-08-27) moved the input half
+    The CS half of the same wave added the last four: `.pf_coil.fcuohsu`,
+    `.pf_coil.temp_cs_superconductor_operating`, `.tfcoil.poisson_steel` and
+    `.tfcoil.str_cs_con_res` -- run inputs that no ported node had declared until the
+    CS's critical-current and stress chains landed, closing constraints 26, 27 and half
+    of 72. Nothing left the list there at all, for the same reason as below: those
+    fields had only constraint readers, and constraints are outside the graph.
+
+    The physics half of the missing-producer wave (2026-08-27) moved the input half
     from 347 to 348, and the direction is the interesting part: **six §11.5 rows closed
     and the count went up**. Four of the six (`beta_thermal_vol_avg`,
     `beta_toroidal_vol_avg`, `beta_vol_avg_max`, `p_div_bt_q_aspect_rmajor_mw`) were
@@ -240,5 +247,5 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (348, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (352, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
