@@ -61,7 +61,9 @@ from functional_process.models.build import (
     TfInboardRadiiNoCsPrecomp,
     TfInboardRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
+    TfOutboardEdgeRipplePictureFrame,
     TfOutboardMidDShape,
+    TfOutboardMidPictureFrame,
     WpConductorMaxWidthSuperconducting,
 )
 from functional_process.models.buildings.buildings import (
@@ -722,13 +724,6 @@ UNPORTED = {
         "alone (`process/models/build.py:1692`) and `dr_cs_bore` gains a "
         "`dr_tf_inboard` term (`:1694-1698`) -- a different reads-set for the inner "
         "radius, so a different occupant. Not written"
-    ),
-    ("i_tf_shape_build", 2): (
-        "picture frame (`i_tf_shape == 2`) uses a different closed-form ripple formula "
-        "(`process/models/build.py:1585-1590`) reading neither the winding pack nor the "
-        "`c1`/`c2` fit coefficients; not written. `i_tf_shape == 0` is **not** listed "
-        "here: it is an auto-select meta-value that `init.py:728`/`:775` replaces before "
-        "any model runs, so `_tf_shape` resolves it and it names no arm"
     ),
     ("tf_coil_shape_arm", -1): (
         "`.physics.itart == 1`: the TART arms of `tf_coil_shape_inner` read "
@@ -2387,13 +2382,21 @@ instead of three `dx_tf_wp_*` fields), so declaring one arm's reads on the other
 be four invented edges. `build.md` § "the four reads that are not edges" measures
 exactly that, and it is the third recorded instance in this port."""
 
-TF_OUTBOARD_MID = {TFCoilShapeModel.D_SHAPE: TfOutboardMidDShape}
-TF_OUTBOARD_EDGE_RIPPLE = {TFCoilShapeModel.D_SHAPE: TfOutboardEdgeRipple}
-"""`.tfcoil.i_tf_shape` (resolved by `_tf_shape`) -> the two ripple-fit calls.
+TF_OUTBOARD_MID = {
+    TFCoilShapeModel.D_SHAPE: TfOutboardMidDShape,
+    TFCoilShapeModel.PICTURE_FRAME: TfOutboardMidPictureFrame,
+}
+TF_OUTBOARD_EDGE_RIPPLE = {
+    TFCoilShapeModel.D_SHAPE: TfOutboardEdgeRipple,
+    TFCoilShapeModel.PICTURE_FRAME: TfOutboardEdgeRipplePictureFrame,
+}
+"""`.tfcoil.i_tf_shape` (resolved by `_tf_shape`) -> the two ripple calls, per shape.
 
-Two slots for PROCESS's two calls to one fit, and not one node owning both outputs: the
-second call's answer is what lands in `.tfcoil.ripple_b_tf_plasma_edge`, and a single
-node would have to read the radius it owns."""
+Two slots for PROCESS's two calls to one formula, and not one node owning both outputs:
+the second call's answer is what lands in `.tfcoil.ripple_b_tf_plasma_edge`, and a
+single node would have to read the radius it owns. `i_tf_shape == 0` has no entry in
+either registry: it is an auto-select meta-value that `init.py:728`/`:775` replaces
+before any model runs, so `_tf_shape` resolves it and it names no arm."""
 
 # ---- `.tokamak.cicc_superconducting_tf_coil` --------------------------------------
 

@@ -48,9 +48,11 @@ Switches, one occupant class per value, no static kwargs
 `itart == 1` with `dz_xpoint_divertor` left at `0.0` is `DivertorGeometrySpherical-`
 `Tokamak` (not live on the reference run); `itart == 1` with it set is the slot's `None`
 arm, because `divgeom`'s early return is computed and discarded at `build.py:800` and
-nothing is owned. `i_tf_sup` values `0`/`2`, `i_tf_shape` values `0`/`2`, and the
-`itart == 0` + `dz_xpoint_divertor` set (`rspo`-only) arm are UNPORTED -- see the
-record. `.tfcoil.i_tf_wp_geom` is **not** a switch of this unit at all: the
+nothing is owned. `i_tf_shape == 2` (picture frame) is `TfOutboardMidPictureFrame` /
+`TfOutboardEdgeRipplePictureFrame` (not live on the reference run; live on both tracked
+spherical-tokamak inputs), and `0` is a meta-value `indat._tf_shape` resolves.
+`i_tf_sup` values `0`/`2` and the `itart == 0` + `dz_xpoint_divertor` set (`rspo`-only)
+arm are UNPORTED -- see the record. `.tfcoil.i_tf_wp_geom` is **not** a switch of this unit at all: the
 `i_tf_sup == 1` arm of `plasma_outboard_edge_toroidal_ripple` computes `r_wp_min`/
 `r_wp_max` from it and then never uses either (`process/models/build.py:1551-1572`), so
 declaring it, or the three `.superconducting_tfcoil.r_tf_wp_inboard_*` radii it selects
@@ -638,6 +640,64 @@ def plasma_outboard_edge_toroidal_ripple_fitted(
     return ripple_b_tf_plasma_edge, r_tf_outboard_midmin
 
 
+def plasma_outboard_edge_toroidal_ripple_picture_frame(
+    ripple_b_tf_plasma_edge_max,
+    r_tf_outboard_mid,
+    n_tf_coils,
+    rmajor,
+    rminor,
+):
+    """TF ripple at the outboard plasma edge for the picture-frame coil, and the leg
+    radius that would produce the allowed maximum.
+
+    Ports the `i_tf_shape == PICTURE_FRAME` arm of
+    `Build.plasma_outboard_edge_toroidal_ripple` (`process/models/build.py:1582-1590`) --
+    "Ken McClements ST picture frame coil analytical ripple calc" (2022, approximate to
+    ~10% of numerical per the source docstring). The exponent is the bare `n_tf_coils`,
+    not the fitted arm's `n_tf_coils - c2`, and neither `c1`/`c2` nor the winding pack
+    appears: `dx_tf_wp_conductor_max` is computed upstream (`:1551-1580`) and then dead
+    on this arm, which is why this function does not take it and the picture-frame
+    occupants below do not read it.
+
+    **The source's kludges do not exist on this arm, and none are added.** The fitted
+    arm clamps `base` at `1e-6` and replaces a non-finite `r_tf_outboard_midmin`; here
+    `(0.01 * ripple_b_tf_plasma_edge_max) ** (1 / n_tf_coils)` is used unguarded
+    (`:1588-1590`), so a zero `ripple_b_tf_plasma_edge_max` divides by zero exactly as
+    PROCESS would. `flag` is not returned, as for the sibling -- and on this arm it is
+    not even a dropped diagnostic: the source sets `flag = 0` at `:1581` and never
+    reassigns it inside the picture-frame branch, so the value is identically zero.
+
+    Parameters
+    ----------
+    ripple_b_tf_plasma_edge_max :
+        Maximum allowed ripple at the plasma edge (per cent).
+        `.tfcoil.ripple_b_tf_plasma_edge_max`.
+    r_tf_outboard_mid :
+        Radius to the centre of the outboard TF leg (m), the point the ripple is
+        evaluated at. `.build.r_tf_outboard_mid`.
+    n_tf_coils :
+        Number of TF coils (outer legs, for an ST). `.tfcoil.n_tf_coils`.
+    rmajor, rminor :
+        Plasma major/minor radius (m). `.physics.rmajor`, `.physics.rminor`.
+
+    Returns
+    -------
+    :
+        `(ripple_b_tf_plasma_edge, r_tf_outboard_midmin)` -- ripple at
+        `r_tf_outboard_mid` (per cent) and the minimum leg radius meeting
+        `ripple_b_tf_plasma_edge_max` (m).
+    """
+    ripple_b_tf_plasma_edge = (
+        100.0 * ((rmajor + rminor) / r_tf_outboard_mid) ** n_tf_coils
+    )
+
+    r_tf_outboard_midmin = (rmajor + rminor) / (
+        (0.01 * ripple_b_tf_plasma_edge_max) ** (1.0 / n_tf_coils)
+    )
+
+    return ripple_b_tf_plasma_edge, r_tf_outboard_midmin
+
+
 def calculate_r_tf_outboard_mid_unrippled(
     r_shld_outboard_outer,
     dr_shld_blkt_gap,
@@ -1145,9 +1205,10 @@ class TfOutboardMidDShape(ExplicitFunction):
     from its *second* call to the fit, at the final radius -- see
     `TfOutboardEdgeRipple` below, which is that second call.
 
-    `i_tf_shape` values `0` (auto-select) and `2` (picture frame) are UNPORTED; the
-    picture-frame arm (`:1582-1590`) is a different formula that reads neither the
-    winding pack nor `c1`/`c2`.
+    `i_tf_shape == 2` (picture frame) is `TfOutboardMidPictureFrame` below -- a
+    different formula reading neither the winding pack nor `c1`/`c2`. `0` (auto-select)
+    is a meta-value `init.py` resolves before any model runs; `indat._tf_shape` answers
+    it and it names no occupant.
     """
 
     r_tf_outboard_mid = OutputInto(build)
@@ -1208,6 +1269,79 @@ class TfOutboardEdgeRipple(ExplicitFunction):
             rmajor,
             rminor,
             dx_tf_wp_conductor_max,
+        )
+        return ripple_b_tf_plasma_edge
+
+
+class TfOutboardMidPictureFrame(ExplicitFunction):
+    """cottax node: the ripple constraint on the outboard TF leg. Answers
+    `.tfcoil.i_tf_shape == 2` (picture frame), the shape both tracked spherical-tokamak
+    inputs select explicitly (`spherical_tokamak_eval.IN.DAT:357`,
+    `st_regression.IN.DAT:803`) and the one `init.py:728-729` would resolve `0` to on
+    `itart == 1` anyway.
+
+    Same composition as `TfOutboardMidDShape` -- the shell around the ripple call
+    (`process/models/build.py:1916-1956`) is shape-agnostic, only the fit inside
+    branches -- with `plasma_outboard_edge_toroidal_ripple_picture_frame` in place of
+    the fitted correlation. The reads-set drops `dx_tf_wp_conductor_max`: the
+    picture-frame formula never touches the winding pack, which is exactly why this is
+    a different occupant and not a kwarg of the D-shape one.
+    """
+
+    r_tf_outboard_mid = OutputInto(build)
+
+    def __call__(
+        self,
+        r_tf_outboard_mid_unrippled=From(build),
+        ripple_b_tf_plasma_edge_max=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        rmajor=From(physics),
+        rminor=From(physics),
+    ):
+        _, r_tf_outboard_midmin = plasma_outboard_edge_toroidal_ripple_picture_frame(
+            ripple_b_tf_plasma_edge_max,
+            r_tf_outboard_mid_unrippled,
+            n_tf_coils,
+            rmajor,
+            rminor,
+        )
+        return calculate_r_tf_outboard_mid(
+            r_tf_outboard_mid_unrippled, r_tf_outboard_midmin
+        )
+
+
+class TfOutboardEdgeRipplePictureFrame(ExplicitFunction):
+    """cottax node: `plasma_outboard_edge_toroidal_ripple_picture_frame`, evaluated at
+    the final leg radius. Answers `.tfcoil.i_tf_shape == 2` (picture frame).
+
+    The picture-frame occupant of the second-ripple-call slot -- `process/models/
+    build.py:1958-1977` is unconditional, so the picture frame fills it too, and the
+    same `redundant-duplicate-write` reasoning as `TfOutboardEdgeRipple` applies: only
+    the second call's `ripple` survives into `.tfcoil.ripple_b_tf_plasma_edge`, and
+    `r_tf_outboard_midmin` is not re-owned because it is the same value
+    `TfOutboardMidPictureFrame` already used.
+
+    `ripple_b_tf_plasma_edge_max` is read for the same reason the D-shape sibling reads
+    it: the shared pure function computes both outputs at once. The ripple itself
+    depends only on the radius ratio and `n_tf_coils` (`:1585`).
+    """
+
+    ripple_b_tf_plasma_edge = OutputInto(tfcoil)
+
+    def __call__(
+        self,
+        r_tf_outboard_mid=From(build),
+        ripple_b_tf_plasma_edge_max=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        rmajor=From(physics),
+        rminor=From(physics),
+    ):
+        ripple_b_tf_plasma_edge, _ = plasma_outboard_edge_toroidal_ripple_picture_frame(
+            ripple_b_tf_plasma_edge_max,
+            r_tf_outboard_mid,
+            n_tf_coils,
+            rmajor,
+            rminor,
         )
         return ripple_b_tf_plasma_edge
 
