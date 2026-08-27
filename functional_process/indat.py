@@ -80,7 +80,11 @@ from functional_process.models.costs.namespace import Costs
 from functional_process.models.divertor import DivertorHeatLoadWade
 from functional_process.models.fw import FirstWall
 from functional_process.models.namespace import Build, Divertor
-from functional_process.models.pfcoil.namespace import CSCoil, PFCoil
+from functional_process.models.pfcoil.namespace import (
+    CSCoil,
+    PFCoil,
+    PFCoilCsWstNb3Sn,
+)
 from functional_process.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
     NoPfirschSchluterCurrent,
@@ -1036,11 +1040,13 @@ UNPORTED = {
         "with different read sets (`pfcoil.py:917-1002`). Not written"
     ),
     ("pf_coil_system_arm", -6): (
-        "a PF/CS superconductor other than the reference pair (`i_pf_superconductor "
-        "== 3` NbTi, `i_cs_superconductor == 1` ITER Nb3Sn): the switch's only effect "
-        "in the ported closure is which element of `.tfcoil.dcond` is read, and per "
-        "the binding policy that is still a different occupant, not a parameter "
-        "(`masses.md` § switches touched). Not written"
+        "a PF/CS superconductor pair with no occupant: the ported pairs are "
+        "(`i_pf_superconductor == 3` NbTi, `i_cs_superconductor == 1` ITER Nb3Sn), "
+        "arm 0, and (3 NbTi, 5 WST Nb3Sn), arm 1 (`low_aspect_ratio_DEMO.IN.DAT`). "
+        "The switch's only effect in the ported closure is which element of "
+        "`.tfcoil.dcond` is read, and per the binding policy that is still a "
+        "different occupant per pair, not a parameter (`masses.md` § switches "
+        "touched). Any other pair: not written"
     ),
     ("pf_coil_system_arm", -7): (
         "`i_tf_shape == PICTURE_FRAME` or `i_r_pf_outside_tf_placement == 1`: the "
@@ -2830,6 +2836,11 @@ def _pf_coil_system_arm(  # noqa: PLR0911 -- one return per refused dimension, b
     (`models/pfcoil/namespace.py`) are keyed on the result. Arm `0` is the supported
     configuration; each negative arm names which dimension deviated, in the order the
     records argue they differ most structurally (`UNPORTED` carries each reason).
+    Positive arms are the ported superconductor pairs: arm `0` is the reference pair
+    (`i_pf_superconductor = 3` NbTi, `i_cs_superconductor = 1` ITER Nb3Sn), arm `1` is
+    `(3, 5)` -- NbTi PF, WST Nb3Sn CS, `low_aspect_ratio_DEMO.IN.DAT`'s pair. Every
+    other switch is answered identically on both arms; the pair selects which
+    `.tfcoil.dcond` element the masses occupant reads, and nothing else.
 
     `n_pf_coil_groups`/`i_pf_location`/`n_pf_coils_in_group` are the **coil-count
     topology** -- not switches in `naming_convention.md`'s sense, but they fix every
@@ -2857,26 +2868,41 @@ def _pf_coil_system_arm(  # noqa: PLR0911 -- one return per refused dimension, b
         return -4
     if PFConductorModel(int(i_pf_conductor)) is not PFConductorModel.SUPERCONDUCTING:
         return -5
-    if (
-        SuperconductorModel(int(i_pf_superconductor))
-        is not SuperconductorModel.OLD_LUBELL_NBTI
-        or SuperconductorModel(int(i_cs_superconductor))
-        is not SuperconductorModel.ITER_NB3SN
+    sc_pair = (
+        SuperconductorModel(int(i_pf_superconductor)),
+        SuperconductorModel(int(i_cs_superconductor)),
+    )
+    if sc_pair == (
+        SuperconductorModel.OLD_LUBELL_NBTI,
+        SuperconductorModel.ITER_NB3SN,
     ):
+        sc_arm = 0
+    elif sc_pair == (
+        SuperconductorModel.OLD_LUBELL_NBTI,
+        SuperconductorModel.WST_NB3SN,
+    ):
+        sc_arm = 1
+    else:
         return -6
     if (
         i_tf_shape is not TFCoilShapeModel.D_SHAPE
         or int(i_r_pf_outside_tf_placement) != 0
     ):
         return -7
-    return 0
+    return sc_arm
 
 
-CS_COIL = {0: CSCoil}
-"""`_pf_coil_system_arm` -> `.tokamak.cs_coil`'s occupant namespace."""
+CS_COIL = {0: CSCoil, 1: CSCoil}
+"""`_pf_coil_system_arm` -> `.tokamak.cs_coil`'s occupant namespace.
 
-PF_COIL = {0: PFCoil}
-"""`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace."""
+The same namespace on both positive arms: nothing in `CSCoil` reads `.tfcoil.dcond` --
+the CS conductor density is read by the masses node in `.tokamak.pf_coil`, which is
+where the two arms differ."""
+
+PF_COIL = {0: PFCoil, 1: PFCoilCsWstNb3Sn}
+"""`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace. Arm 1 differs in
+exactly one slot occupant, `masses` (`.tfcoil.dcond[4]` as the CS conductor
+density)."""
 
 
 _INDAT_INTEGER = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$")

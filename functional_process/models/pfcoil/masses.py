@@ -60,6 +60,13 @@ I_CS_SUPERCONDUCTOR = 1
 """`.pf_coil.i_cs_superconductor` on the reference run (`:245`) -- ITER Nb3Sn,
 `pfcoil_variables.py:256`. Selects `.tfcoil.dcond[0] = 6080` kg/m^3."""
 
+I_CS_SUPERCONDUCTOR_WST_NB3SN = 5
+"""`.pf_coil.i_cs_superconductor` on `low_aspect_ratio_DEMO.IN.DAT:845` -- WST Nb3Sn.
+Selects `.tfcoil.dcond[4] = 6080` kg/m^3: numerically the same density as the ITER
+Nb3Sn element, and still a different occupant, not a parameter -- an `i_*` integer may
+not be a static kwarg even when two arms' arithmetic coincides (`masses.md`
+§ switches touched, the `istore` precedent)."""
+
 _A_CS_CABLE_SPACE_FLOOR = 1.0e-4
 """`da`, 1 cm^2 (`pfcoil.py:3555`). Issue #97's fudge keeps the CS cable space positive
 with a continuous, smooth, monotonically decreasing replacement below the floor."""
@@ -418,6 +425,13 @@ class PFCoilMasses(ExplicitFunction):
     reads of `.pf_coil.b_pf_coil_peak`/`.pf_coil.bpf2` match `fields.PFCoilPeakField`'s
     per-index `Output`s: index 6 of both arrays belongs to the CS's own self-field, which
     is UNPORTED and which no mass here depends on.
+
+    `PFCoilMassesCsWstNb3Sn` below is the occupant family's second member -- the
+    `CoilsMass` shape (`models/stellarator/coils/mass.py`): the whole calculation lives
+    in `_masses`, each occupant's `__call__` declares its own ports
+    (`ExplicitFunction._signature_of` reads `__call__`'s signature only), and the only
+    entry that differs between them is which `.tfcoil.dcond` element is the CS
+    conductor density.
     """
 
     m_pf_coil_conductor = OutputInto(pf_coil)
@@ -430,39 +444,46 @@ class PFCoilMasses(ExplicitFunction):
     a_cs_steel_poloidal = OutputInto(pf_coil)
     a_cs_cable_space = OutputInto(pf_coil)
 
-    def __call__(
+    def _masses(
         self,
-        c_pf_cs_coils_peak_ma=From(pf_coil),
-        j_pf_coil_wp_peak=From(pf_coil),
-        n_pf_coil_turns=From(pf_coil),
-        r_pf_coil_middle=From(pf_coil),
-        r_pf_coil_inner=From(pf_coil),
-        r_pf_coil_outer=From(pf_coil),
-        z_pf_coil_upper=From(pf_coil),
-        z_pf_coil_lower=From(pf_coil),
-        b_pf_coil_peak_0=FromExactly(pf_coil.b_pf_coil_peak[0]),
-        b_pf_coil_peak_1=FromExactly(pf_coil.b_pf_coil_peak[1]),
-        b_pf_coil_peak_2=FromExactly(pf_coil.b_pf_coil_peak[2]),
-        b_pf_coil_peak_3=FromExactly(pf_coil.b_pf_coil_peak[3]),
-        b_pf_coil_peak_4=FromExactly(pf_coil.b_pf_coil_peak[4]),
-        b_pf_coil_peak_5=FromExactly(pf_coil.b_pf_coil_peak[5]),
-        bpf2_0=FromExactly(pf_coil.bpf2[0]),
-        bpf2_1=FromExactly(pf_coil.bpf2[1]),
-        bpf2_2=FromExactly(pf_coil.bpf2[2]),
-        bpf2_3=FromExactly(pf_coil.bpf2[3]),
-        bpf2_4=FromExactly(pf_coil.bpf2[4]),
-        bpf2_5=FromExactly(pf_coil.bpf2[5]),
-        f_a_pf_coil_void=From(pf_coil),
-        pf_current_safety_factor=From(pf_coil),
-        sigpfcf=From(pf_coil),
-        sigpfcalw=From(pf_coil),
-        den_steel=From(fwbs),
-        den_pf_conductor=FromExactly(tfcoil.dcond[I_PF_SUPERCONDUCTOR - 1]),
-        den_cs_conductor=FromExactly(tfcoil.dcond[I_CS_SUPERCONDUCTOR - 1]),
-        a_cs_poloidal=From(pf_coil),
-        f_a_cs_turn_steel=From(pf_coil),
-        f_a_cs_void=From(pf_coil),
+        c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak,
+        n_pf_coil_turns,
+        r_pf_coil_middle,
+        r_pf_coil_inner,
+        r_pf_coil_outer,
+        z_pf_coil_upper,
+        z_pf_coil_lower,
+        b_pf_coil_peak_0,
+        b_pf_coil_peak_1,
+        b_pf_coil_peak_2,
+        b_pf_coil_peak_3,
+        b_pf_coil_peak_4,
+        b_pf_coil_peak_5,
+        bpf2_0,
+        bpf2_1,
+        bpf2_2,
+        bpf2_3,
+        bpf2_4,
+        bpf2_5,
+        f_a_pf_coil_void,
+        pf_current_safety_factor,
+        sigpfcf,
+        sigpfcalw,
+        den_steel,
+        den_pf_conductor,
+        den_cs_conductor,
+        a_cs_poloidal,
+        f_a_cs_turn_steel,
+        f_a_cs_void,
     ):
+        """The whole calculation, given this occupant's two conductor densities.
+
+        Not a port surface: `_params` reads `__call__`'s signature only, so what each
+        occupant declares is still its own parameter list -- and the only entry that
+        differs between them is the `.tfcoil.dcond[k]` element bound to
+        `den_cs_conductor`.
+        """
         b_peak = jnp.stack([
             b_pf_coil_peak_0,
             b_pf_coil_peak_1,
@@ -516,4 +537,150 @@ class PFCoilMasses(ExplicitFunction):
             ricpf,
             a_cs_steel_poloidal,
             a_cs_cable_space,
+        )
+
+    def __call__(
+        self,
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        r_pf_coil_middle=From(pf_coil),
+        r_pf_coil_inner=From(pf_coil),
+        r_pf_coil_outer=From(pf_coil),
+        z_pf_coil_upper=From(pf_coil),
+        z_pf_coil_lower=From(pf_coil),
+        b_pf_coil_peak_0=FromExactly(pf_coil.b_pf_coil_peak[0]),
+        b_pf_coil_peak_1=FromExactly(pf_coil.b_pf_coil_peak[1]),
+        b_pf_coil_peak_2=FromExactly(pf_coil.b_pf_coil_peak[2]),
+        b_pf_coil_peak_3=FromExactly(pf_coil.b_pf_coil_peak[3]),
+        b_pf_coil_peak_4=FromExactly(pf_coil.b_pf_coil_peak[4]),
+        b_pf_coil_peak_5=FromExactly(pf_coil.b_pf_coil_peak[5]),
+        bpf2_0=FromExactly(pf_coil.bpf2[0]),
+        bpf2_1=FromExactly(pf_coil.bpf2[1]),
+        bpf2_2=FromExactly(pf_coil.bpf2[2]),
+        bpf2_3=FromExactly(pf_coil.bpf2[3]),
+        bpf2_4=FromExactly(pf_coil.bpf2[4]),
+        bpf2_5=FromExactly(pf_coil.bpf2[5]),
+        f_a_pf_coil_void=From(pf_coil),
+        pf_current_safety_factor=From(pf_coil),
+        sigpfcf=From(pf_coil),
+        sigpfcalw=From(pf_coil),
+        den_steel=From(fwbs),
+        den_pf_conductor=FromExactly(tfcoil.dcond[I_PF_SUPERCONDUCTOR - 1]),
+        den_cs_conductor=FromExactly(tfcoil.dcond[I_CS_SUPERCONDUCTOR - 1]),
+        a_cs_poloidal=From(pf_coil),
+        f_a_cs_turn_steel=From(pf_coil),
+        f_a_cs_void=From(pf_coil),
+    ):
+        return self._masses(
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            n_pf_coil_turns,
+            r_pf_coil_middle,
+            r_pf_coil_inner,
+            r_pf_coil_outer,
+            z_pf_coil_upper,
+            z_pf_coil_lower,
+            b_pf_coil_peak_0,
+            b_pf_coil_peak_1,
+            b_pf_coil_peak_2,
+            b_pf_coil_peak_3,
+            b_pf_coil_peak_4,
+            b_pf_coil_peak_5,
+            bpf2_0,
+            bpf2_1,
+            bpf2_2,
+            bpf2_3,
+            bpf2_4,
+            bpf2_5,
+            f_a_pf_coil_void,
+            pf_current_safety_factor,
+            sigpfcf,
+            sigpfcalw,
+            den_steel,
+            den_pf_conductor,
+            den_cs_conductor,
+            a_cs_poloidal,
+            f_a_cs_turn_steel,
+            f_a_cs_void,
+        )
+
+
+class PFCoilMassesCsWstNb3Sn(PFCoilMasses):
+    """cottax node: `.tokamak.pf_coil.masses`, the `i_cs_superconductor = 5` occupant.
+
+    Occupant for `i_pf_conductor = SUPERCONDUCTING`, `i_pf_superconductor = 3` (NbTi)
+    and `i_cs_superconductor = 5` (WST Nb3Sn) with `iohcl = 1` --
+    `low_aspect_ratio_DEMO.IN.DAT`'s pair (`:806`, `:845`). Differs from `PFCoilMasses`
+    in exactly one binding: the CS conductor density is `.tfcoil.dcond[4]` instead of
+    `.tfcoil.dcond[0]`. The two elements hold the same 6080 kg/m^3 today, and the split
+    is still the point: the read moves *with* the switch, where a baked `dcond[0]`
+    would silently keep reading ITER Nb3Sn's slot on a WST machine -- the `CoilsMass`
+    lesson, `_audit/next_steps.md` §14.11.
+    """
+
+    def __call__(
+        self,
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        r_pf_coil_middle=From(pf_coil),
+        r_pf_coil_inner=From(pf_coil),
+        r_pf_coil_outer=From(pf_coil),
+        z_pf_coil_upper=From(pf_coil),
+        z_pf_coil_lower=From(pf_coil),
+        b_pf_coil_peak_0=FromExactly(pf_coil.b_pf_coil_peak[0]),
+        b_pf_coil_peak_1=FromExactly(pf_coil.b_pf_coil_peak[1]),
+        b_pf_coil_peak_2=FromExactly(pf_coil.b_pf_coil_peak[2]),
+        b_pf_coil_peak_3=FromExactly(pf_coil.b_pf_coil_peak[3]),
+        b_pf_coil_peak_4=FromExactly(pf_coil.b_pf_coil_peak[4]),
+        b_pf_coil_peak_5=FromExactly(pf_coil.b_pf_coil_peak[5]),
+        bpf2_0=FromExactly(pf_coil.bpf2[0]),
+        bpf2_1=FromExactly(pf_coil.bpf2[1]),
+        bpf2_2=FromExactly(pf_coil.bpf2[2]),
+        bpf2_3=FromExactly(pf_coil.bpf2[3]),
+        bpf2_4=FromExactly(pf_coil.bpf2[4]),
+        bpf2_5=FromExactly(pf_coil.bpf2[5]),
+        f_a_pf_coil_void=From(pf_coil),
+        pf_current_safety_factor=From(pf_coil),
+        sigpfcf=From(pf_coil),
+        sigpfcalw=From(pf_coil),
+        den_steel=From(fwbs),
+        den_pf_conductor=FromExactly(tfcoil.dcond[I_PF_SUPERCONDUCTOR - 1]),
+        den_cs_conductor=FromExactly(tfcoil.dcond[I_CS_SUPERCONDUCTOR_WST_NB3SN - 1]),
+        a_cs_poloidal=From(pf_coil),
+        f_a_cs_turn_steel=From(pf_coil),
+        f_a_cs_void=From(pf_coil),
+    ):
+        return self._masses(
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            n_pf_coil_turns,
+            r_pf_coil_middle,
+            r_pf_coil_inner,
+            r_pf_coil_outer,
+            z_pf_coil_upper,
+            z_pf_coil_lower,
+            b_pf_coil_peak_0,
+            b_pf_coil_peak_1,
+            b_pf_coil_peak_2,
+            b_pf_coil_peak_3,
+            b_pf_coil_peak_4,
+            b_pf_coil_peak_5,
+            bpf2_0,
+            bpf2_1,
+            bpf2_2,
+            bpf2_3,
+            bpf2_4,
+            bpf2_5,
+            f_a_pf_coil_void,
+            pf_current_safety_factor,
+            sigpfcf,
+            sigpfcalw,
+            den_steel,
+            den_pf_conductor,
+            den_cs_conductor,
+            a_cs_poloidal,
+            f_a_cs_turn_steel,
+            f_a_cs_void,
         )
