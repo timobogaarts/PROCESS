@@ -299,6 +299,7 @@ from functional_process.models.tfcoil.superconducting import (
     PeakBTfInboardWithRipple20Coils,
     PeakBTfInboardWithRippleFlatAllowance,
     SuperconductingTfCoilAreasAndMassesConventional,
+    SuperconductingTfCoilAreasAndMassesSphericalTokamak,
     SuperconductingTfWpGeometryDoubleRectangular,
     SuperconductingTfWpGeometryRectangular,
     SuperconductingTfWpGeometryTrapezoidal,
@@ -752,11 +753,6 @@ UNPORTED = {
         "`i_dx_tf_turn_cable_space_general_input == True`: same shape as the previous "
         "entry with the cable space given instead of the turn width, and the same "
         "ownership inversion. Not written"
-    ),
-    ("itart_sc_tf_masses", 1): (
-        "the spherical-tokamak TF mass arm additionally owns `.tfcoil.whtcp` and "
-        "`.tfcoil.whttflgs` (`superconducting.py:2086-2093`), which the conventional arm "
-        "never writes -- conditional ownership again. Not written"
     ),
     ("n_divertors", 2): (
         "the double-null arm, refused at **five** slots at once and for one reason "
@@ -2592,11 +2588,15 @@ CICC_TURN_GEOMETRY = {
 SC_TF_MASSES = {
     SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: (
         SuperconductingTfCoilAreasAndMassesConventional
-    )
+    ),
+    SphericalTokamakModel.SPHERICAL_TOKAMAK: (
+        SuperconductingTfCoilAreasAndMassesSphericalTokamak
+    ),
 }
 """`.physics.itart` -> the superconducting TF mass occupant. The spherical arm owns two
 more fields (`whtcp`, `whttflgs`) -- conditional ownership, so occupants and not a
-kwarg."""
+kwarg. Both arms read the same twenty fields; only the outboard case length and those
+two extra outputs differ (`superconducting.py:1995-2006`, `:2085-2093`)."""
 
 # ---- `.tokamak.ccfe_hcpb` ---------------------------------------------------------
 
