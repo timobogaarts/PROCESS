@@ -41,9 +41,11 @@ a static kwarg; an occupant answers the values this port supports and the rest a
   `b_plasma_toroidal_on_axis`, `kappa`, `triang` and calls `plascar_bpol`; every other
   value reads `plasma_current` and `len_plasma_poloidal` and nothing else. Two genuinely
   disjoint reads-sets, so two occupants; only the Ampere one is written.
-- `(i_pulsed_plant, pulsetimings)` decides the ramp times (`physics.py:464-498`).
-  `pulsetimings` has its **only read in all of `process/models/**`** here. Three arms,
-  one written -- the `(1, 0)` arm `large_tokamak_eval.IN.DAT` uses.
+- `(i_pulsed_plant, pulsetimings, i_t_current_ramp_up)` decides the ramp times
+  (`physics.py:464-498`). `pulsetimings` has its **only read in all of
+  `process/models/**`** here. Four arms, two written -- the `(1, 0, --)` arm
+  `large_tokamak_eval.IN.DAT` uses and the `(0, --, 0)` arm the two spherical-tokamak
+  files select.
 
 `i_plasma_ignited` decides `p_plasma_separatrix_mw`'s injected-heating term
 (`physics.py:793-798`) -- the `NON_IGNITED` occupant is the live one here and is written;
@@ -314,6 +316,41 @@ def calculate_pulsed_plant_ramp_times(plasma_current):
     )
 
 
+def calculate_continuous_plant_ramp_times(plasma_current):
+    """Plasma-current ramp times for a continuous (non-pulsed) plant (s).
+
+    Ports `physics.py:465-474`, the `i_pulsed_plant != 1 and i_t_current_ramp_up == 0`
+    arm, unchanged:
+
+        t_plant_pulse_plasma_current_ramp_up   = plasma_current / 5.0e5
+        t_plant_pulse_coil_precharge           = t_plant_pulse_plasma_current_ramp_up
+        t_plant_pulse_plasma_current_ramp_down = t_plant_pulse_plasma_current_ramp_up
+
+    Unlike the pulsed-default arm (`calculate_pulsed_plant_ramp_times`, `:476-483`),
+    this arm *does* write `.times.t_plant_pulse_coil_precharge` -- the third output --
+    which is exactly why the two are separate occupants rather than one function with a
+    literal swapped (`5e5` vs `1e5`): the write-sets differ, not just a constant.
+
+    Parameters
+    ----------
+    plasma_current :
+        Plasma current (A). `.physics.plasma_current`.
+
+    Returns
+    -------
+    :
+        `(t_plant_pulse_plasma_current_ramp_up, t_plant_pulse_coil_precharge,
+        t_plant_pulse_plasma_current_ramp_down)`, all in seconds, all equal --
+        PROCESS's write order at `physics.py:466-474`.
+    """
+    t_plant_pulse_plasma_current_ramp_up = plasma_current / 5.0e5
+    return (
+        t_plant_pulse_plasma_current_ramp_up,
+        t_plant_pulse_plasma_current_ramp_up,
+        t_plant_pulse_plasma_current_ramp_up,
+    )
+
+
 # ---------------------------------------------------------------------------
 # `PlasmaBeta.calculate_plasma_energy_from_beta` (`physics.py:4153-4176`).
 # ---------------------------------------------------------------------------
@@ -533,6 +570,31 @@ class PulseRampTimesPulsedDefault(PulseRampTimes):
         plasma_current=From(physics),
     ):
         return calculate_pulsed_plant_ramp_times(plasma_current)
+
+
+class PulseRampTimesContinuousDefault(PulseRampTimes):
+    """`i_pulsed_plant != 1` and `i_t_current_ramp_up == 0` -- the spherical tokamaks'.
+
+    The arm both `spherical_tokamak_eval.IN.DAT` (`:312`) and `st_regression.IN.DAT`
+    (`:2979`) select: `i_pulsed_plant = 0` in the file, `i_t_current_ramp_up` left at
+    PROCESS's own default `0` (`times_variables.py:44`).
+
+    Reads one variable and writes **three**: on this arm
+    `.times.t_plant_pulse_coil_precharge` is owned (`physics.py:469-471`), where on the
+    pulsed-default arm it is an input (the source's own comment at `:477`). That
+    write-set difference -- not the `5e5`-vs-`1e5` literal -- is why the two arms are
+    separate occupants; see the family docstring.
+    """
+
+    t_plant_pulse_plasma_current_ramp_up = OutputInto(times)
+    t_plant_pulse_coil_precharge = OutputInto(times)
+    t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
+
+    def __call__(
+        self,
+        plasma_current=From(physics),
+    ):
+        return calculate_continuous_plant_ramp_times(plasma_current)
 
 
 class PlasmaEnergyFromBeta(ExplicitFunction):
