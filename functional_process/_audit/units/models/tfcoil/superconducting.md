@@ -190,13 +190,16 @@ functions; see that module.
 
 ## cottax node
 
-Twenty classes in seven families:
+Twenty-one classes in seven families:
 `SuperconductingTfWpGeometry{Rectangular,DoubleRectangular,Trapezoidal}`,
 `TfCaseAreas{CircularFront,StraightFront}`,
 `DxTfSideCase{Rectangular,DoubleRectangular,Trapezoidal}`, `TfWpCurrents`,
 `PeakBTfInboardWithRipple{16Coils,18Coils,20Coils,FlatAllowance}`,
-`CiccAveragedTurnGeometryFromCurrentPerTurn`, `CiccInboardAreasAndFractions`,
-`TfTurnArea`, `SuperconductingTfCoilAreasAndMassesConventional`.
+`CiccAveragedTurnGeometryFromCurrentPerTurn`, `CiccIntegerTurnGeometry`
+(2026-08-27), `CiccInboardAreasAndFractions`, `TfTurnArea`,
+`SuperconductingTfCoilAreasAndMassesConventional`. The turn-geometry family base is
+`CiccTurnGeometry` (`i_tf_turns_integer` first), with `CiccAveragedTurnGeometry` as
+the averaged sub-family under it.
 
 ## tier signal
 
@@ -212,7 +215,7 @@ Twenty classes in seven families:
 | `i_dx_tf_turn_general_input` × `i_dx_tf_turn_cable_space_general_input` | **(F, F)** *(live)*, (T, ·), (F, T) | (F, F) only | the other two own `.tfcoil.c_tf_turn`; see finding 1 |
 | `itart` | **0** *(live)*, 1 | `0` only | `1` additionally owns `whtcp`/`whttflgs` |
 | `i_tf_sc_mat` | **1** *(live)*, 2–9 | `1` only | one occupant per material, differing in one `FromExactly` |
-| `i_tf_turns_integer` | **0** *(live)*, 1 | `0` only | `1` selects `tf_cable_in_conduit_integer_turn_geometry` (`:3422-3598`), a different function |
+| `i_tf_turns_integer` | **0** *(live)*, 1 | both (`1` since 2026-08-27) | `1` selects `tf_cable_in_conduit_integer_turn_geometry` (`:3422-3598`), a different function; `low_aspect_ratio_DEMO`'s arm — see the dated section below |
 | `.superconducting_tfcoil.i_tf_turn_type` | **1** *(live)*, 2 | `1` (CICC) | `2` is the whole CROCO class; resolved in `caller.py`, above every model |
 | `i_tf_sup` | **1** *(live)*, 0, 2 | `1` | resolved in `caller.py:295-316`, above every model — `schema.md`'s "resolved above this file" |
 
@@ -267,3 +270,63 @@ the superconductor property functions, and reads `.pf_coil.*` for the former onl
    `n_tf_coils` ever becomes an optimiser unknown.** It is not one today
    (`iteration_variables.py` does not list it), which is what makes a build-time branch
    legitimate. Worth a note in `core/solver/switches.md` when that file next gets a pass.
+
+## 2026-08-27: the integer-turn arm, after `low_aspect_ratio_DEMO`'s silent mis-assembly
+
+**The defect.** `low_aspect_ratio_DEMO.IN.DAT:954` sets `i_tf_turns_integer = 1`
+(`:958` `n_tf_wp_pancakes = 20`, `:962` `n_tf_wp_layers = 10`). PROCESS's `run`
+dispatches on it (`process/models/tfcoil/superconducting.py:2343-2439`: `NON_INTEGER`
+-> `tf_cable_in_conduit_averaged_turn_geometry`, else ->
+`tf_cable_in_conduit_integer_turn_geometry`, `:3423`). The factory read the switch
+**only** for the `i_tf_wp_geom` `UNSET` resolution (`_tf_wp_geom`), so `machine_survey`
+reported *"the factory dispatches on it"* while `_cicc_turn_geometry_arm` consulted only
+the two `i_dx_*_input` booleans and silently kept
+`CiccAveragedTurnGeometryFromCurrentPerTurn` -- `next_steps.md` §14.11's failure mode in
+a survey-blind variant: a switch deciding two slots was wired to one. The warm MDA
+harness caught it as a 25-variable cluster: the port computed a **square** turn
+(`dr = dx = 0.05685`) where PROCESS's converged turn is **rectangular**
+(`dr = 0.05467 x dx = 0.05910`, rel 4e-2), cascading at 1e-3..1e-5 into the WP areas,
+the coil masses, `.costs.c222x`, `.power.qss`, the TF nuclear heating renormalisation
+and the structure masses.
+
+**`m_tf_coil_superconductor`'s 42 % is the same root cause through a near-cancellation,
+not a second defect.** The mass formula (`:2026-2033`) is
+`(len*n_turns*a_cable_no_void*(1-f_void)*(1-f_cu) - len*a_wp_coolant_channels)*dcond`.
+With this file's `f_a_tf_turn_cable_copper = 0.90481` (`IN.DAT:265`) and
+`dcond[4] = 6080` (`i_tf_sc_mat = 5`), the converged terms are 0.95362 m3 against
+0.95106 m3 -- a 99.7 % cancellation leaving 2.56e-3 m3 (15.57 kg beside 72.2 t of
+copper). The port's 1.3e-3 relative error on `a_tf_turn_cable_space_no_void` shifted
+the first term by ~1.2e-3 m3, which against that residual is the observed 42 %. After
+the fix the variable agrees; nothing was tuned.
+
+**The port.** `cicc_integer_turn_geometry` (pure) + `CiccIntegerTurnGeometry`
+(occupant), beside the averaged sibling; family base renamed `CiccTurnGeometry`
+(`i_tf_turns_integer` answered first), slot renamed
+`.tokamak.cicc_superconducting_tf_coil.cicc_turn_geometry` to stop saying "averaged"
+about a slot that no longer is. Reads: `.tfcoil.{dr_tf_wp_with_insulation,
+dx_tf_wp_insulation, dx_tf_wp_insertion_gap, n_tf_wp_layers, n_tf_wp_pancakes,
+dx_tf_turn_steel, dx_tf_turn_insulation, dia_tf_turn_coolant_channel,
+f_a_tf_turn_cable_space_extra_void}` and
+`.superconducting_tfcoil.{dx_tf_wp_toroidal_min, c_tf_coil}` -- all `explicit-arg`
+except the last two `data`-mediated pairs (`:3536-3546`). Owns seventeen outputs in
+`run`'s write order, four of which the averaged arm never writes
+(`dr_tf_turn_conduit_full`, `dx_tf_turn_conduit_full_toroidal`,
+`dr_tf_turn_cable_space`, `dx_tf_turn_cable_space`) and one of which flips finding 1:
+**`.tfcoil.c_tf_turn` is owned here** (`c_tf_coil` over the fixed turn count, `:3505`),
+so it is not a boundary input of this machine. `n_tf_wp_layers`/`n_tf_wp_pancakes` are
+plain continuous reads, not switches. The degenerate-cable fallback (`:3550-3567`) has
+the same compute-then-correct ordering as the averaged arm's D2 and is ported the same
+way (`jnp.where`, uncorrected `a_tf_turn_cable_space_effective`/
+`f_a_tf_turn_cable_space_cooling`, corrected `a_tf_turn_steel`); the two negative-
+dimension `logger.error`s are logging only, dropped.
+
+**Validation.** `TestCiccIntegerTurnGeometry` (sample: PROCESS's own
+`test_tf_cable_in_conduit_integer_turn_geometry`, the retired baseline-2018 point);
+tfcoil case file 74 passed plain, 148 with `--fp-gradients`, 356 with `--fp-fuzz 5
+--fp-gradients`. `test_machine.py::test_a_switch_that_decides_two_slots_decides_both`
+is the regression for the dispatch gap itself, asserting both consequences per arm plus
+the DEMO file. Warm MDA harness on the DEMO: 561 agreed / 65 off / 20 errors before ->
+**601 / 30 / 20** after; the diff of disagreement sets is exactly the cicc cluster and
+its downstream (35 variables), nothing added. The remaining 30 are the documented PF
+dead-tail class and its 1e-6..6e-4 cascade; the 20 errors are the pre-existing
+no-`DataStructure`-field bookkeeping, untouched.

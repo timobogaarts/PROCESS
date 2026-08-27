@@ -21,12 +21,15 @@ input and no code computes it. `None` is the honest occupant, the same spelling
 `costs.cost_of_electricity` and `power.cryo_q_nuc` already use -- an unowned read is a
 correct answer for that field.
 
-**`.tfcoil.c_tf_turn` is a boundary input on this configuration, by measurement.**
-`superconducting.md` finding 1: at `i_dx_tf_turn_general_input == False` and
-`i_dx_tf_turn_cable_space_general_input == False` nothing under `process/models/`
+**`.tfcoil.c_tf_turn` is a boundary input on the reference configuration, by
+measurement.** `superconducting.md` finding 1: at `i_dx_tf_turn_general_input == False`
+and `i_dx_tf_turn_cable_space_general_input == False` nothing under `process/models/`
 produces it -- it is iteration variable 60 and enters from the input file. So this slot
 produces **nine** of the ten variables `_audit/tokamak_boundary.md` lists against it,
-and the tenth is an unknown rather than a missing node.
+and the tenth is an unknown rather than a missing node. On `i_tf_turns_integer == 1`
+(`low_aspect_ratio_DEMO`) the ownership flips: `CiccIntegerTurnGeometry` *produces*
+`c_tf_turn` from the coil current and the fixed turn count, and the field is not a
+boundary input of that machine.
 """
 
 import dataclasses
@@ -47,8 +50,8 @@ from functional_process.models.tfcoil.base import (
 )
 from functional_process.models.tfcoil.quench import TfCoilDumpQuenchVoltage
 from functional_process.models.tfcoil.superconducting import (
-    CiccAveragedTurnGeometry,
     CiccInboardAreasAndFractions,
+    CiccTurnGeometry,
     DxTfSideCase,
     PeakBTfInboardWithRipple,
     SuperconductingTfCoilAreasAndMasses,
@@ -176,15 +179,16 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     branch is legitimate here only because `n_tf_coils` is not an iteration variable
     (`superconducting.md` OQ2)."""
 
-    cicc_averaged_turn_geometry: CiccAveragedTurnGeometry = dataclasses.field(
-        kw_only=True
-    )
-    """`.tfcoil.i_dx_tf_turn_general_input` together with
-    `.tfcoil.i_dx_tf_turn_cable_space_general_input` -- two booleans, three arms,
-    differing in which of `c_tf_turn` /
-    `dx_tf_turn_general` / `dx_tf_turn_cable_space_general` each reads and which it
-    owns. The written arm reads `.tfcoil.c_tf_turn` and does not own it, which is why
-    that field is this slot's one boundary input."""
+    cicc_turn_geometry: CiccTurnGeometry = dataclasses.field(kw_only=True)
+    """`.tfcoil.i_tf_turns_integer` first, then (on the averaged arm)
+    `.tfcoil.i_dx_tf_turn_general_input` together with
+    `.tfcoil.i_dx_tf_turn_cable_space_general_input`. Four arms, two written: the
+    reference averaged arm (both booleans `False`), which reads `.tfcoil.c_tf_turn`
+    and does not own it -- that field is this slot's one boundary input on that
+    configuration -- and the integer arm (`i_tf_turns_integer == 1`,
+    `low_aspect_ratio_DEMO`'s), which **owns** `c_tf_turn` because the turn count is
+    fixed by `n_tf_wp_layers * n_tf_wp_pancakes`. Conditional ownership across arms of
+    one slot, the same shape `models/power/thermal_cryo.py` records."""
 
     cicc_inboard_areas_and_fractions: CiccInboardAreasAndFractions = (
         CiccInboardAreasAndFractions()

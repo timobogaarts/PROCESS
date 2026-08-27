@@ -19,6 +19,7 @@ not this file's.
 import functools
 import os
 import re
+from pathlib import Path
 
 import equinox as eqx
 import pytest
@@ -71,6 +72,12 @@ from functional_process.indat import (
     ProfileParameterisationPedestal,
     machine_from_indat,
     switches_from_indat,
+)
+from functional_process.models.tfcoil.superconducting import (
+    CiccAveragedTurnGeometryFromCurrentPerTurn,
+    CiccIntegerTurnGeometry,
+    SuperconductingTfWpGeometryDoubleRectangular,
+    SuperconductingTfWpGeometryRectangular,
 )
 from functional_process.total_process import TokamakProcess
 from process.data_structure.physics_variables import (
@@ -722,6 +729,46 @@ def test_reference_machine_is_what_the_factory_builds():
         COST_MODEL[REFERENCE_MACHINE_SWITCHES["i_cost_model"]]
     )
     assert REFERENCE_MACHINE.stellarator.machine_config is not None
+
+
+def test_a_switch_that_decides_two_slots_decides_both(tmp_path):
+    """`i_tf_turns_integer` reaches *both* of its consequences, not just one.
+
+    The bug class this closes (2026-08-27, `low_aspect_ratio_DEMO.IN.DAT`): the factory
+    read `i_tf_turns_integer` for the `i_tf_wp_geom` `UNSET` resolution, so
+    `machine_survey` truthfully reported *"the factory dispatches on it"* -- while the
+    turn-geometry slot never consulted it and silently kept the averaged occupant. The
+    port then computed a square 0.0568 m turn where PROCESS's converged answer is a
+    0.0547 x 0.0591 m rectangle, 4e-2 on the turn dimensions and 42 % on
+    `m_tf_coil_superconductor` through a near-cancellation. `next_steps.md` §14.11's
+    failure mode, in its survey-blind variant: a switch is "dispatched on" only when
+    **every** slot it decides is dispatched.
+
+    Two assertions per arm, one per consequence, plus the real file that found it.
+    """
+    base = "".join(f"{f} = {v}\n" for f, v in TOKAMAK_BASELINE_INDAT.items())
+
+    integer = tmp_path / "INTEGER.DAT"
+    integer.write_text(base + "i_tf_turns_integer = 1\n")
+    coil = machine_from_indat(integer).tokamak.cicc_superconducting_tf_coil
+    assert type(coil.cicc_turn_geometry) is CiccIntegerTurnGeometry
+    assert (
+        type(coil.superconducting_tf_wp_geometry)
+        is SuperconductingTfWpGeometryRectangular
+    )
+
+    averaged = tmp_path / "AVERAGED.DAT"
+    averaged.write_text(base)  # `i_tf_turns_integer` unset: PROCESS's default `0`
+    coil = machine_from_indat(averaged).tokamak.cicc_superconducting_tf_coil
+    assert type(coil.cicc_turn_geometry) is CiccAveragedTurnGeometryFromCurrentPerTurn
+    assert (
+        type(coil.superconducting_tf_wp_geometry)
+        is SuperconductingTfWpGeometryDoubleRectangular
+    )
+
+    demo = Path(REFERENCE_INPUT_FILE).parent / "low_aspect_ratio_DEMO.IN.DAT"
+    coil = machine_from_indat(demo).tokamak.cicc_superconducting_tf_coil
+    assert type(coil.cicc_turn_geometry) is CiccIntegerTurnGeometry
 
 
 @pytest.mark.parametrize(("field", "value"), sorted(UNPORTED), ids=str)
