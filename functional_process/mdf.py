@@ -447,13 +447,39 @@ def prime(mdf: Mdf, env):
     Checked, not asserted, by `test_mdf.py::test_one_pass_of_the_schedule_is_idempotent`,
     which applies `check_agreement`'s own `rtol = 1e-6` to one pass against two.
     """
-    out = mdf.eager(dict(env))
+    out = mdf.eager(_inputs_only(mdf, env))
     primed = dict(env)
     for guess, unknown in guess_ports(mdf).items():
         # Written to the `Start` port, which is where the driver reads it. Writing the
         # unknown's own name would set the *answer* and leave the guess cold.
         primed[guess] = out[unknown]
     return primed, out
+
+
+def _inputs_only(mdf: Mdf, env):
+    """`env` restricted to what the schedule may be handed: its own inputs.
+
+    A `seed` env is also a value store -- it grounds the inner unknowns at their own
+    names so callers can read a design point off it -- but a `Schedule` refuses a value
+    at a name it owns (cottax's owned-name guard: an owned value could only be clobbered
+    unread or, under an ordering bug, read stale in silence). So every schedule call
+    filters at the door, and the store keeps its extra names for its other readers.
+    """
+    inputs = set(mdf.eager.inputs)
+    return {var: value for var, value in env.items() if var in inputs}
+
+
+def restart(mdf: Mdf, out):
+    """The env a next pass starts from: the run's own inputs, every `Start` port
+    re-seeded from the unknown its driver converged.
+
+    What `prime` does to a seed env, applied to a full output env -- and the only way to
+    hand a schedule its own output, since a `Schedule` refuses values at owned names.
+    """
+    env = {var: out[var] for var in mdf.eager.inputs if var in out}
+    for guess, unknown in guess_ports(mdf).items():
+        env[guess] = out[unknown]
+    return env
 
 
 class MdfConditionMap(ConditionMap):
@@ -504,7 +530,15 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
     `env` must be a **primed** env (`prime`): it supplies the starting guess for every
     inner unknown, frozen for the whole solve (this module's docstring says why).
     """
-    context = {var: value for var, value in env.items() if var not in set(mdf.design)}
+    # Restricted to the schedule's own inputs (minus the design, supplied per call):
+    # the primed env is also a value store carrying the inner unknowns at their own
+    # names, and a `Schedule` refuses a value at an owned name (`_inputs_only`).
+    design = set(mdf.design)
+    context = {
+        var: value
+        for var, value in _inputs_only(mdf, env).items()
+        if var not in design
+    }
     # `roles` is cottax's own answer to what this module worked around with
     # `VmconDriver.n_equality`/`n_inequality`: the condition map now carries what each
     # condition *is*, parallel to `conditions`, so the split travels on the driver seam
@@ -570,7 +604,7 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     elapsed = time.perf_counter() - started
     at = dict(env)
     at.update(zip(mdf.design, x, strict=True))
-    return tuple(x), mdf.eager(at), elapsed
+    return tuple(x), mdf.eager(_inputs_only(mdf, at)), elapsed
 
 
 def evaluation(conditions: MdfConditionMap, start, repeats=5):

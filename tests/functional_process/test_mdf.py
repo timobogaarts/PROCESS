@@ -308,7 +308,10 @@ def test_one_pass_of_the_schedule_is_idempotent(problem, cold_run):
     env = dict(conditions.context)
     env.update(zip(problem.design, start, strict=True))
     once = problem.eager(dict(env))
-    twice = problem.eager(dict(once))
+    # A schedule refuses values at owned names now, so its own output cannot be fed
+    # back wholesale: `restart` keeps the inputs and re-seeds every `Start` port from
+    # the unknown its driver converged -- the second pass starts where the first ended.
+    twice = problem.eager(mdf.restart(problem, once))
     for condition in problem.conditions:
         first = np.asarray(once[condition], dtype=float)
         second = np.asarray(twice[condition], dtype=float)
