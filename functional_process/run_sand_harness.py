@@ -1,17 +1,33 @@
-"""Run the `Optimise` layer's whole validation ladder against
-`tests/regression/input_files/stellarator_helias.IN.DAT` and print the report.
+"""Run the `Optimise` layer's whole validation ladder and print the report.
 
-    $PY functional_process/run_sand_harness.py
+    $PY functional_process/run_sand_harness.py                   # the stellarator
+    $PY functional_process/run_sand_harness.py --input <IN.DAT>  # any other machine
+    $PY functional_process/run_sand_harness.py --machine         # the tokamak
+
+With no argument this is exactly what it always was: the Helias stellarator,
+`tests/regression/input_files/stellarator_helias.IN.DAT`, whose numbers other records
+quote. `--input`/`--machine` are spelled exactly as `run_mda_harness.py`'s (whose
+`input_file` this imports rather than restates): `--machine` is shorthand for
+`boundary.TOKAMAK_INPUT_FILE`, the conventional large tokamak.
+
+A non-reference machine differs from the stellarator path in exactly three threaded
+values, all derived from its own file: the graph (`graph_for(machine_from_indat(...))`),
+the static switch values (`sand.switch_values_for`, read off the cold initialised
+`DataStructure` instead of the hand-audited `REFERENCE_SWITCH_VALUES`), and the study
+itself, which `reference_run` already reads off the run. Everything else -- the ladder,
+the seeding rules, the solve -- is one code path, deliberately: two per-device
+harnesses would drift apart exactly the way five switch registrations once did.
 
 Sibling of `run_mda_harness.py`; see `sand_harness.py`'s module docstring for what each
 of the three stages proves and, just as importantly, what it does not.
 
-One PROCESS run (~95 s) serves all three stages: Stage A needs its converged
-`DataStructure`, Stage B needs its live model objects to re-run the pipeline for the
-finite-difference reference, and Stage C needs both its converged answer (to start C2 at)
-and the input file's own cold start (to start C3 at).
+One PROCESS run (~95 s for the stellarator) serves all three stages: Stage A needs its
+converged `DataStructure`, Stage B needs its live model objects to re-run the pipeline
+for the finite-difference reference, and Stage C needs both its converged answer (to
+start C2 at) and the input file's own cold start (to start C3 at).
 """
 
+import sys
 import time
 
 import jax
@@ -22,7 +38,13 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402
 
 from functional_process import sand  # noqa: E402
+from functional_process.indat import (  # noqa: E402
+    REFERENCE_INPUT_FILE,
+    graph_for,
+    machine_from_indat,
+)
 from functional_process.mda import guess_sources  # noqa: E402
+from functional_process.run_mda_harness import _resolve, input_file  # noqa: E402
 from functional_process.sand_harness import (  # noqa: E402
     assemble,
     ground_truth,
@@ -77,7 +99,7 @@ def _seed(schedule, drive, base, fallback, design=()):
     variables. Anything else is coupling.
     """
     design = set(design)
-    env, borrowed = {}, []
+    env, borrowed = {}, []  # the env doubles as a value store; see `_inputs_only`
     # A `^guess.*` input is a *starting value for* an unknown, so every question below
     # -- is it coupling, is it in `fallback`, what does `base` say -- is asked about the
     # unknown it starts, never about the port's own name. `fallback` is an MDA output
@@ -103,9 +125,32 @@ def _seed(schedule, drive, base, fallback, design=()):
     return env, tuple(borrowed)
 
 
-def main():
-    """Run the three stages and print each one's report."""
-    reference = reference_run()
+def _inputs_only(schedule, env):
+    """`env` restricted to what the schedule may be handed: its own inputs.
+
+    A `_seed` env is also a value store -- it grounds the drive's unknowns at their own
+    names, which is what `borrowed` reporting and a reader inspecting the seeded design
+    point rely on -- but a `Schedule` refuses a value at a name it owns (cottax's
+    owned-name guard: an owned value could only be clobbered unread or, under an
+    ordering bug, read stale in silence). So the solve call filters at the door and the
+    store keeps its extra names for its other readers -- the same seam, in the same
+    style, as `mdf._inputs_only`.
+    """
+    inputs = set(schedule.inputs)
+    return {var: value for var, value in env.items() if var in inputs}
+
+
+def main(argv=None):
+    """Run the three stages and print each one's report. `argv` defaults to this
+    process's own, so importing and calling `main([...])` is the same thing as the
+    command line.
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    path = input_file(argv)
+    is_reference = path == _resolve(REFERENCE_INPUT_FILE)
+    print(f"input file:     {path}")
+
+    reference = reference_run(str(path))
     print(
         f"PROCESS: {reference.solver_iterations} VMCON iterations in "
         f"{reference.solve_seconds:.1f} s, convergence parameter "
@@ -117,12 +162,33 @@ def main():
         f"  i_figure_merit {reference.i_figure_merit}, epsfcn {reference.epsfcn}"
     )
 
-    driven, env = mda_env(reference)
-    combined, report = assemble(reference, driven, env)
+    # The three per-machine values -- see the module docstring. `None` for the
+    # reference keeps that path exactly as it always was (`mda_env`'s own default
+    # graph, `sand.REFERENCE_SWITCH_VALUES`): its numbers are pinned regression
+    # evidence and must not move because a second device exists.
+    machine_graph = None if is_reference else graph_for(machine_from_indat(str(path)))
+    switch_values = (
+        None
+        if is_reference
+        else sand.switch_values_for(
+            reference.cold, reference.icc, reference.i_figure_merit
+        )
+    )
+    if switch_values is not None:
+        print(f"  switch values (from the file's own cold init): {switch_values}")
+
+    driven, env = mda_env(reference, graph=machine_graph)
+    combined, report = assemble(reference, driven, env, switch_values=switch_values)
     print(
         f"\ndegenerate fixed points dropped: "
         f"{[d.path_str() for d in report['degenerate']]}"
     )
+    if report["array_valued"]:
+        print(
+            f"ARRAY-UNKNOWN PROBLEMS DROPPED (loop-carried values frozen at the "
+            f"seed -- the SAND problem is reduced, see `sand_harness.assemble`): "
+            f"{[p.path_str() for p in report['array_valued']]}"
+        )
     print(f"residualised: {[r.path_str() for r in report['residualised']]}")
     if report["omitted"]:
         print(f"CONSTRAINTS OMITTED: {report['omitted']}")
@@ -199,8 +265,21 @@ def main():
         print(f"{label:8s}{cells}")
 
     row("objf", port_objective, process[0], process_error[0])
-    for j, cid in enumerate(reference.icc):
-        row(f"c{cid}", port_constraints[j], process[1:][j], process_error[1:][j])
+    # Keyed by the assembled conditions, not by position in `reference.icc`: an omitted
+    # constraint (`report["omitted"]`) has no port row, while PROCESS's own Jacobian
+    # still carries every active constraint in `icc` order. Identical to the old
+    # positional loop whenever nothing is omitted -- i.e. on the stellarator.
+    assembled = [
+        int(names[i].rsplit(".c", 1)[1]) for i in condition_rows[1:]
+    ]  # `condition_rows[0]` is the objective
+    for j, cid in enumerate(assembled):
+        at_icc = reference.icc.index(cid)
+        row(
+            f"c{cid}",
+            port_constraints[j],
+            process[1:][at_icc],
+            process_error[1:][at_icc],
+        )
 
     # ---------------------------------------------------------------- C
     # The design variables -- everything else the block solves for is coupling, and is
@@ -216,7 +295,16 @@ def main():
         # MDA for C3. Seeding a cold solve's coupling from a converged run would make
         # "cold" a half-truth; seeding it from the cold `DataStructure`'s zeros made the
         # solve impossible. See `_seed`.
-        stage_env = env if base is reference.data else mda_env(reference, data=base)[1]
+        try:
+            stage_env = (
+                env
+                if base is reference.data
+                else mda_env(reference, graph=machine_graph, data=base)[1]
+            )
+        except Exception as failure:  # noqa: BLE001 -- report the stage, run the next
+            print(f"\nSTAGE C {label}: the MDA at this stage's design failed before")
+            print(f"  any solve could be seeded: {type(failure).__name__}: {failure}")
+            continue
         trace: list = []
 
         def record(i, result, _x, convergence, _trace=trace):
@@ -251,11 +339,60 @@ def main():
             stage_env,
             design=set(solve_drive.unknowns) if from_process else design_paths,
         )
+        # One probe of the conditions at the seeded start, before any solve. A SAND
+        # condition map holds the coupling unknowns fixed at their seed, so a seed the
+        # models cannot evaluate shows up here as non-finite conditions -- and handing
+        # those to an SQP produces a wander, not an answer. Documenting exactly which
+        # conditions are non-finite and stopping is the honest report; a seeding rule
+        # that gets a cold start past a genuine model singularity is a separate,
+        # recorded decision (`_seed`'s own docstring is the stellarator's precedent).
+        # At a healthy start (every C2, and the stellarator's C3) nothing is printed
+        # and nothing changes.
+        probe_context = {}
+        for var in solve_drive.context:
+            if var in stage_env:
+                probe_context[var] = stage_env[var]
+            else:
+                try:
+                    probe_context[var] = jnp.asarray(ground_truth(base, var))
+                except (AttributeError, KeyError):
+                    probe_context[var] = jnp.asarray(0.0)
+        at_start = solve_drive.condition_map(probe_context)(*[
+            jnp.asarray(seeded[u]) for u in solve_drive.unknowns
+        ])
+        non_finite = [
+            (condition.path_str(), float(np.asarray(value)))
+            for condition, value in zip(solve_drive.conditions, at_start, strict=True)
+            if not np.all(np.isfinite(np.asarray(value)))
+        ]
+        if non_finite:
+            print(
+                f"\nSTAGE C {label}: NOT SOLVED -- {len(non_finite)} of "
+                f"{len(solve_drive.conditions)} conditions are non-finite at the "
+                f"seeded start:"
+            )
+            for name, value in non_finite:
+                print(f"  {name:<56s} {value}")
+            continue
         started = time.perf_counter()
-        out = solve_schedule(dict(seeded))
+        out = solve_schedule(_inputs_only(solve_schedule, seeded))
         elapsed = time.perf_counter() - started
         print(f"\nSTAGE C {label}: {len(trace)} SQP iterations in {elapsed:.1f} s")
         print(f"  ({len(borrowed)} unknown(s)/input(s) seeded from the MDA env)")
+        if not trace:
+            # `VmconDriver` returns the best point on a `VMCONConvergenceException`
+            # rather than propagating it, so zero recorded iterations is ambiguous
+            # between "converged where it stood" and "the first QP was infeasible and
+            # the start came back untouched". Measured on the tokamak: pyvmcon's
+            # `QSPSolverException` ("no feasible solution") from constraint 68's
+            # constantly-violated, zero-gradient row produced exactly this shape. Say
+            # so instead of letting a swallowed failure read as a perfect solve.
+            print(
+                "  NO SQP ITERATION RECORDED -- either VMCON converged at the start "
+                "or its first QP failed (a constantly-violated, zero-gradient "
+                "condition makes the QP infeasible) and the driver returned the "
+                "start unchanged. The condition values above (Stage A) say which."
+            )
         print(
             f"  {'it':>3s} {'conv':>12s} {'objf':>14s} {'max|eq|':>11s} {'min ie':>12s}"
         )

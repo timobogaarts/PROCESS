@@ -1423,3 +1423,155 @@ written up in `mda_harness.EXPLAINED_DISAGREEMENTS`.
    `ConditionMap`-carries-the-problem fix turned out to be *less* urgent than argued
    (§10.2), and a fourth item joins them: **`Optimise` has nowhere to put per-condition
    scaling either**, and for SAND that is not optional (§10.2's measurement).
+
+## 11. The tokamak (2026-08-27) — SAND stood up for `large_tokamak_eval.IN.DAT`
+
+Measured in `process_port` against `cottax` pinned at `db4f025` (`git archive HEAD`),
+on the tree at "The cold boundary, measured" (`06ba9d8d`) plus this session's changes:
+tokamak graph **203 nodes**. Reproduce with
+
+```bash
+$PY functional_process/run_sand_harness.py --machine
+```
+
+### 11.1 The study, resolved from the file alone
+
+`ixc = [4, 6]` (`temp_plasma_electron_vol_avg_kev`, `nd_plasma_electrons_vol_avg`),
+25 `icc` with `n_equality_constraints = 2` (c1 beta consistency, c2 power balance),
+`i_figure_merit = 7` (capital cost — `NumericsData`'s **default**; the file never sets
+it), `epsfcn = 0.001`, and — the fact that frames every number below —
+`i_process_run_mode = -2`: an **evaluation** file. PROCESS answers it with `fsolve`
+(HYBRD) over the two equalities and merely *reports* the 23 inequalities
+(`process/main.py:449-457`, `solver.py:365-409`). At its solution two of them are
+violated: `c16` (net electric below the 400 MW requirement, normalised `+3.67e-02`)
+and `c68` (`p_div_bt_q_aspect_rmajor` 10.495 > 10, `+4.95e-02`). PROCESS's own run:
+1.9 s; `n_solver_iterations` stays 0 (fsolve does not count into it).
+
+### 11.2 What the assembly had to say no to, and how it says it
+
+Three reductions, all detected mechanically, all in the report rather than a log line:
+
+- **The PF-coil ring is an array-unknown fixed point** —
+  `^problem.pf_coil.ind_pf_cs_plasma_mutual.cycle` owns a circuit-by-circuit mutual-
+  inductance *matrix* and the per-coil `n_pf_coil_turns` *vector* — and every
+  per-condition seam of the SAND layer is scalar (`sand.array_valued_problems` names
+  them: `scaled_problem`'s `jnp.stack`, the count-based eq/ineq split, per-unknown
+  bounds, `residual_condition_scales`' `1/|u|`). `sand_harness.assemble` now drops such
+  a problem exactly as it drops a degenerate one and reports it
+  (`report["array_valued"]`); its loop-carried unknowns freeze at the stage seed
+  (converged-MDA values for C2). Making the driver element-wise is a recorded later
+  decision, same standing as §1.3's array-element `ixc` refusal.
+- **Nine constraints read nothing the SAND block produces** — c24, c26, c27, c31, c32,
+  c36, c60, c65, c72 — because their producers (TF stress/superconductor blocks in
+  `process/models/tfcoil/superconducting.py`, the CS criticals in
+  `process/models/pfcoil.py`) are unported, so every value read is a boundary constant
+  (§11.5). Structurally that puts the constraint node *outside* the combined problem's
+  SCC, where its `^cond.*` reaches neither the drive's body nor its context and
+  `ConditionMap.__call__` dies on a `KeyError` (`sand.constraints_outside_block`'s
+  docstring walks the seam). The assembly's second pass omits them **loudly** via the
+  existing `omit=`/`report["omitted"]` machinery; an *equality* in that state is
+  refused outright, never reduced away.
+- Degenerate fixed points: **none** on this graph.
+
+Final shape: 144-node drive, **10 unknowns** (2 design + 8 coupling), **25 conditions**
+(objective + 2 equalities + 14 inequalities + 8 residuals), 367 context, 79 schedule
+steps; 6 problems residualised.
+
+### 11.3 Stage A — 14 of 17 exact, and the three that are not are known
+
+Both real equalities sit at their absolute floor (`c1` −2.38e-14 vs −2.60e-14, `c2`
++1.25e-12 vs +1.25e-12 — residuals of a converged fsolve, relative comparison
+meaningless). Every one of the 14 assembled inequalities is bit-exact or ~1e-13,
+**including** the two PROCESS leaves violated (`c16` +3.674513054e-02, `c68`
++4.949055142e-02 — identical to PROCESS's own). The objective agrees to `1.33e-06`
+relative. One residual is not zero at the seed: `^cond.physics.proton_rate_density`
+= −0.125 — the MDA's Picard iterate of the density/fusion cycle parked within its own
+`rtol`, not a wiring defect (the other seven residuals are 0 or −2e-16).
+
+### 11.4 Stage B — the Schur-reduced Jacobian, and what the 1.00-rows are
+
+Port `(25, 10)` full Jacobian, reduced onto the two design columns and compared with
+PROCESS's own FD (per-cell Richardson bars, 10 sweeps): **9 of 17 rows agree to
+machine/noise level** (c1, c5, c9, c30, c25, c33, c34, c35, c81); the objective and
+c2, c15, c16, c62 agree to 1e-3–1e-1 (the missing-`pden_plasma_ohmic_mw` class); and
+**three rows read `1.00e+00` relative — the port's total derivative is exactly zero
+where PROCESS's is not**: `c8` (`pflux_fw_neutron_mw`), `c13` (`t_plant_pulse_burn`)
+and `c68`. Each is a §11.5 missing producer *seen as a sensitivity*: the port's value
+chain passes through a frozen boundary constant (`dr_fw_*` for c8's wall area,
+`vs_cs_pf_total_burn`/`res_plasma` for c13, `p_div_bt_q_aspect_rmajor_mw` itself for
+c68), so the design cannot move them. The same defect class Stage B was built to find
+(§10.5), found on a second machine by the same method.
+
+### 11.5 The missing-producer audit (the §10 lesson, run first)
+
+For every read of every active constraint and the objective: resolved `VarPath`,
+producer in the 203-node graph or boundary, and — for boundary reads — whether
+PROCESS's own solve moves them (cold vs converged `DataStructure`). **17 variables
+across 14 constraints have a producer PROCESS runs and the graph lacks** (the two
+`nd_plasma_electrons_vol_avg` rows are `ixc` 6 itself, owned by the `Optimise`, not
+gaps):
+
+| read | PROCESS producer |
+|---|---|
+| `.physics.pden_plasma_ohmic_mw` (c2) | `plasma_ohmic_heating`, `physics/physics.py:1690` |
+| `.physics.beta_thermal_vol_avg`, `.beta_toroidal_vol_avg`, `.beta_vol_avg_max` (c24) | `physics/physics.py:3811-3831` |
+| `.pf_coil.j_cs_critical_flat_top_end` (c26), `.j_cs_critical_pulse_start` (c27), `.temp_cs_superconductor_margin` (c60), `.stress_shear_cs_peak` (c72) | `pfcoil.py:3631/3675/3679/3508` |
+| `.tfcoil.j_tf_wp_critical`, `.temp_tf_superconductor_margin` (c33/c36) | `tfcoil/superconducting.py:2725/2749` |
+| `.tfcoil.j_tf_wp_quench_heat_max` (c35), `.superconducting_tfcoil.vv_stress_quench` (c65) | `superconducting.py` quench block (`:1424`) |
+| `.tfcoil.sig_tf_case`, `.sig_tf_wp`, `.sig_tf_cs_bucked` (c31/c32/c72) | `superconducting.py` stress block (`:2208-2271` etc.; `sig_tf_cs_bucked` is `None` even converged — never written at `i_tf_bucking = 1`) |
+| `.physics.nd_plasma_pedestal_electron` (c81) | pedestal Greenwald scaling, `physics/profiles.py:318` — the tokamak instance of the pair `_audit/cold_boundary.md` records |
+| `.physics.p_div_bt_q_aspect_rmajor_mw` (c68) | `physics/physics.py:818` |
+
+Everything else resolves to a graph producer or a genuine input (bound values,
+`f_p_alpha_plasma_deposited`, `beta_total_vol_avg` — fixed here because `ixc` 5 is not
+active). Consistent with, and extending from the constraint surface's side,
+`_audit/cold_boundary.md`'s 29-name overwrite list.
+
+### 11.6 Stage C
+
+- **C2, the declared study**: pyvmcon's first QP raises `QSPSolverException` ("no
+  feasible solution") — `c68` is violated by +4.9% at PROCESS's own answer and its port
+  gradient row is identically zero (§11.4), so no linearised step can satisfy it: **the
+  full 25-constraint problem is locally infeasible at the reference machine, and
+  PROCESS never noticed because evaluation mode does not enforce inequalities.**
+  `VmconDriver` swallows the exception and returns the start (the harness now says so
+  in so many words), which lands — vacuously — on PROCESS's `x` exactly.
+- **C2, the fsolve analogue** (all 23 inequalities omitted — the problem PROCESS
+  actually solved): **1 SQP iteration**, conv `2.163e-13`, `objf 0.928607253`
+  (PROCESS's `objective_function` at the same point: `0.928606022`), `max|eq|
+  1.25e-12`, and distance to PROCESS's converged design **1.4e-16 / 0.0** on
+  `temp_plasma_electron_vol_avg_kev` / `nd_plasma_electrons_vol_avg`. With 2 dof
+  consumed by 2 equalities the objective is inert and the comparison is exact — the
+  port's SAND stays where PROCESS's fsolve landed, to machine precision.
+- **C3 (cold)**: **not solved, by design of the harness** — the pre-solve probe finds
+  **7 of 25 conditions non-finite at the cold seed** (`objf`, the `delta_eta` and
+  `t_plant_pulse_burn` residuals, `c13`, `c16` = `nan`; `c33`, `c35` = `inf`) and
+  stops. All seven trace to `_audit/cold_boundary.md`'s six boundary zeros / four
+  unported producers: `r_tf_inboard_in/out = 0` → `a_tf_inboard_total = 0` →
+  `j_tf_wp = inf` (c33/c35); `res_plasma = vs_cs_pf_total_burn = 0` →
+  `t_plant_pulse_burn = nan` (its residual and c13); `dr_fw_* = 0` → the ccfe_hcpb
+  chain → power/costs → c16 and the objective. A cold-start seeding rule is a
+  separate, recorded decision — the same position `run_sand_harness._seed` took for
+  the stellarator — and the four producers `cold_boundary.md` names are the actual
+  fix.
+
+### 11.7 What changed in the code
+
+`sand.py`: `switch_values_for` (+ `SWITCH_PARAMETER_NAMES`) — per-run static switch
+values read off the initialised `DataStructure`; `array_valued_problems`;
+`constraints_outside_block`. `sand_harness.py`: `mda_env` seeds `^guess.*` off the
+*driven* graph (`Assign` mints the ports; the old `starts_for`-on-the-undriven-graph
+shape seeded none and every `Drive.role_data` raised); `assemble` gains
+`switch_values`, the array-unknown drop, the external-constraint second pass.
+`run_sand_harness.py`: `--machine`/`--input` (spelled as `run_mda_harness`'s, whose
+`input_file` it imports); `_inputs_only` at the solve call (cottax's owned-name guard;
+`mdf._inputs_only`'s pattern); a pre-solve finiteness probe that stops a stage whose
+seed the models cannot evaluate; Stage B keyed by assembled conditions rather than
+`icc` position. `test_sand.py`: six tokamak analogues (file transcription, switch/
+contract drift both ways, design-vars-are-boundary, full assembly order, PF-ring
+detection). The stellarator ladder re-run after all of it is **numerically identical
+line for line** (tmp paths aside) to the run before these changes; note its C2/C3 on
+the *current* tree at `db4f025` run to `max_iter = 100` oscillating around
+`objf ≈ 1.218` — the recorded 31/99-iteration numbers are from `ef093ba` and the
+156-node graph, and nobody had been able to run SAND at `db4f025` before the
+`mda_env` fix.

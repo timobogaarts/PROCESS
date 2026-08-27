@@ -73,10 +73,11 @@ from functional_process.mda import (
     assign_drivers,
     default_drivers,
     cut_graph,
-    starts_for,
 )
 from functional_process.mda_harness import KNOWN_MINT_VALUES, _without_excluded
 from functional_process.sand import (
+    array_valued_problems,
+    constraints_outside_block,
     degenerate_fixed_points,
     iteration_variable_path,
     optimise_graph,
@@ -226,45 +227,34 @@ def mda_env(reference, graph=None, data=None):
     grounded by the graph.
     """
     from functional_process.indat import graph_for
+    from functional_process.mda import guess_sources
 
     data = reference.data if data is None else data
     driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
     blocking = Blocking.scc(driven)
-    schedule = schedule_for(
-        Blocking.scc(assign_drivers(blocking.graph, default_drivers(blocking.graph)))
-    )
+    runnable = assign_drivers(blocking.graph, default_drivers(blocking.graph))
+    schedule = schedule_for(Blocking.scc(runnable))
+    # Seeded over the **schedule's own inputs**, which is the driven graph's boundary:
+    # `Assign` mints each driver's `^guess.*` `Start` ports into it and `Supply` takes
+    # the supplied ones back out, so asking the schedule is what keeps this in step with
+    # the algorithm assignment. The old shape here asked `starts_for` of the *undriven*
+    # `driven`, which has no `Start` ports at all since the ports moved from
+    # `Initialise` to `Assign` -- so no `^guess.*` was ever seeded and the first
+    # `Drive.role_data` raised `KeyError` on its own start. A `^guess.*` port is
+    # grounded from the unknown it starts (`guess_sources`); there is nothing in `data`
+    # spelled `^guess.*`.
+    guesses = guess_sources(runnable)
     env = {}
-    # `^guess.*` ports are seeded below from the unknown each one starts; there is
-    # nothing in `data` spelled that way.
-    starts = {
-        guess
-        for problem, problem_type in zip(
-            blocking.problems, blocking.problem_types, strict=True
-        )
-        if problem_type is not None
-        for _, guess in starts_for(driven, problem)
-    }
-    for var in driven.unowned_inputs:
-        if var in starts:
-            continue
+    for var in schedule.inputs:
+        source = guesses.get(var, var)
         try:
-            env[var] = jnp.asarray(ground_truth(data, var))
+            env[var] = jnp.asarray(ground_truth(data, source))
         except (AttributeError, KeyError):
             env[var] = jnp.asarray(0.0)
-    for problem, problem_type in zip(
-        blocking.problems, blocking.problem_types, strict=True
-    ):
-        if problem_type is None:
-            continue
-        for var, guess in starts_for(driven, problem):
-            try:
-                env[guess] = jnp.asarray(ground_truth(data, var))
-            except (AttributeError, KeyError):
-                env[guess] = jnp.asarray(0.0)
     return driven, schedule(dict(env))
 
 
-def assemble(reference, driven, env, omit=()):
+def assemble(reference, driven, env, omit=(), switch_values=None):
     """The SAND graph for `reference`'s own `ixc`/`icc`/`i_figure_merit`.
 
     `env` is used only to detect the structurally degenerate fixed points, whose problem
@@ -272,19 +262,70 @@ def assemble(reference, driven, env, omit=()):
     Picard problem and a rank-deficient SAND equality, and any SQP fails on it. Dropping
     the problem reverts its unknown to an ordinary boundary input, which is the
     structurally honest statement of "nothing here determines this".
+
+    `switch_values` is passed through to `optimise_graph` untouched: `None` keeps
+    `sand.REFERENCE_SWITCH_VALUES` (the stellarator reference run, exactly as before);
+    any other machine passes `sand.switch_values_for(...)`'s answer for its own file.
+
+    **A `FixedPoint` owning a non-scalar unknown is dropped the same way a degenerate
+    one is**, and reported as `report["array_valued"]`: the SAND layer's per-condition
+    machinery is scalar (`sand.array_valued_problems` names every seam), so such a
+    problem cannot be residualised into the combined `Optimise` today. Deleting it
+    freezes its loop-carried unknowns at the env's own (converged-MDA) values -- a
+    *reduction of the problem* a reader of any C2/C3 number for that machine must
+    know about, which is why it travels in the report rather than in a log line. The
+    stellarator has none, so its path is untouched.
     """
     degenerate = degenerate_fixed_points(driven, env)
-    graph = Delete(degenerate).apply(driven) if degenerate else driven
-    with_problem, _name, report = optimise_graph(
-        graph,
-        reference.ixc,
-        reference.icc,
-        reference.n_equality,
-        reference.i_figure_merit,
-        omit=omit,
+    array_valued = array_valued_problems(
+        driven, env, tuple(p for p in driven.declared if p not in set(degenerate))
     )
-    combined, residualised = sand_graph(with_problem)
+    dropped = tuple(degenerate) + tuple(array_valued)
+    graph = Delete(dropped).apply(driven) if dropped else driven
+
+    def build(omit_now):
+        with_problem, _name, report = optimise_graph(
+            graph,
+            reference.ixc,
+            reference.icc,
+            reference.n_equality,
+            reference.i_figure_merit,
+            switch_values=switch_values,
+            omit=omit_now,
+        )
+        combined, residualised = sand_graph(with_problem)
+        return combined, residualised, report
+
+    combined, residualised, report = build(omit)
+    # Second pass, only when the first left a constraint outside the problem's own
+    # block (`sand.constraints_outside_block` -- a constraint that reads nothing the
+    # block produces). Such a `^cond.*` never reaches the condition map, so those
+    # constraints are re-assembled as explicit omissions and reported under
+    # `report["external"]`; an equality among them would change the problem's very
+    # feasibility and is refused instead of omitted. Empty on the stellarator, so its
+    # single-pass path is bit-for-bit what it always was.
+    external = constraints_outside_block(combined)
+    if external:
+        equalities = [
+            cid for cid in reference.icc[: reference.n_equality] if cid in external
+        ]
+        if equalities:
+            raise ValueError(
+                f"equality constraint(s) {equalities} read nothing the SAND block "
+                f"produces -- omitting an equality changes what 'feasible' means, so "
+                f"this assembly is refused rather than reduced. The missing-producer "
+                f"audit names what each read needs."
+            )
+        combined, residualised, report = build(tuple(omit) + tuple(external))
+        for cid in external:
+            report["omitted"][cid] = (
+                "reads nothing the SAND block produces (every input is a boundary "
+                "value or upstream of every unknown) -- constant over the design, "
+                "outside the drive, unreachable by its condition map"
+            )
+    report["external"] = external
     report["degenerate"] = degenerate
+    report["array_valued"] = array_valued
     report["residualised"] = residualised
     return combined, report
 
