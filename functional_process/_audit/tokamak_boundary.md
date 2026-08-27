@@ -1,5 +1,31 @@
 # Tokamak boundary — what a second device is missing, by name
 
+**[UPDATED 2026-08-27, consolidation round 2 — the following rows are stale; the
+original text below is kept as the measurement it was.]** Waves 2/3 registered eleven
+of the slots this file measured empty, so:
+
+- **The `pf_coil`/`cs_coil` zero-reads attribution (§"The 58 that are the work list")
+  is stale**: `.tokamak.pf_coil` (ten nodes) and `.tokamak.cs_coil` (three) are
+  registered, and the three reads that landed after this file was written —
+  `.pf_coil.m_pf_coil_conductor_total`/`.m_pf_coil_structure_total` (`Structure`) and
+  `.pf_coil.r_pf_coil_outer` (`Cryostat`) — now have producers and have left the pin.
+- **The `plasma_fields` zero-reads attribution is likewise stale**:
+  `.tokamak.plasma_fields` gained four nodes (unit #49) and
+  `.physics.b_plasma_outboard_total` now feeds `.tokamak.scrape_off_layer`'s two
+  parallel-area nodes.
+- **Two rows of the `.tokamak.ccfe_hcpb` — 16 table are refuted by the registered
+  occupant**: `.heat_transport.p_div_coolant_pump_mw` and
+  `.heat_transport.p_shld_coolant_pump_mw` are owned by hcpb's pumping-power node
+  (the written `i_p_coolant_pumping` arm owns those two plus
+  `.primary_pumping.p_fw_blkt_coolant_pump_mw`), and neither is on the regenerated
+  tokamak pin. `p_blkt_coolant_pump_mw`/`p_fw_coolant_pump_mw` remain genuine
+  boundary inputs.
+- **§"The four that are a *shared* subsystem's gap" is stale in full**:
+  `PedestalProfileValues` (commit 62bc7048) ports and registers all four reads —
+  `f_temp_plasma_electron_density_vol_avg`, `nd_plasma_electron_line`,
+  `temp_plasma_electron_density_weighted_kev`, `temp_plasma_ion_density_weighted_kev`
+  — so the pedestal arm's "one missing node" exists and the four are off the boundary.
+
 **What this file is.** `tokamak_scope.md` counted the *switch* decisions a conventional
 tokamak adds (17 new). `tokamak_call_surface.md` counted the *code* it reaches (38 files,
 338 functions, 28 591 entered lines). Neither could count **variables**, because a

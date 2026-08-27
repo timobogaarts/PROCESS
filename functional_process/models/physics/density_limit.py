@@ -54,11 +54,14 @@ into it) exactly rather than collapsing the two into one node. See the audit rec
 `i_density_limit` (`process/models/physics/density_limit.py:106-109`).
 """
 
+import dataclasses
+
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
     FromExactly,
+    ModelNamespace,
     Output,
     OutputInto,
 )
@@ -280,3 +283,27 @@ class GreenwaldFraction(ExplicitFunction):
         return calculate_greenwald_fraction(
             nd_plasma_electron_line, nd_plasma_electron_max_array_7
         )
+
+
+class TokamakDensityLimit(ModelNamespace):
+    """`.tokamak.density_limit` -- three slots, one switched.
+
+    `GreenwaldDensityLimit` and `GreenwaldFraction` are unconditional (the module
+    docstring's "not actually switch-gated": PROCESS fills the whole
+    `nd_plasma_electron_max_array` family regardless of `i_density_limit`); only the
+    *enforced* limit -- the element constraint 5 reads -- answers the switch.
+    """
+
+    greenwald_density_limit: GreenwaldDensityLimit = GreenwaldDensityLimit()
+    """Unconditional producer of `.physics.nd_plasma_electron_max_array[6]`."""
+
+    enforced_density_limit: EnforcedDensityLimitGreenwald = dataclasses.field(
+        kw_only=True
+    )
+    """`.physics.i_density_limit` -- eight values, one occupant. `7` (GREENWALD,
+    `large_tokamak_eval.IN.DAT:289`) is written; `1`-`6` and `8` are UNPORTED (each
+    formula is ported and Tier-1-tested, no occupant node -- `density_limit.md`
+    "## UNPORTED")."""
+
+    greenwald_fraction: GreenwaldFraction = GreenwaldFraction()
+    """Unconditional producer of `.physics.f_nd_plasma_greenwald`."""

@@ -79,6 +79,12 @@ from functional_process.models.costs.namespace import Costs
 from functional_process.models.divertor import DivertorHeatLoadWade
 from functional_process.models.fw import FirstWall
 from functional_process.models.namespace import Build, Divertor
+from functional_process.models.pfcoil.namespace import CSCoil, PFCoil
+from functional_process.models.physics.bootstrap_current import (
+    NoDiamagneticCurrent,
+    NoPfirschSchluterCurrent,
+    SauterBootstrapCurrentFraction,
+)
 from functional_process.models.physics.composition import (
     PlasmaCompositionIgnited,
     PlasmaCompositionNonIgnited,
@@ -97,6 +103,18 @@ from functional_process.models.physics.current_drive import (
     HcdPrimaryPowersElectronCyclotronNoSecondary,
     HcdSecondaryHeatingNone,
 )
+from functional_process.models.physics.density_limit import (
+    EnforcedDensityLimitGreenwald,
+    TokamakDensityLimit,
+)
+from functional_process.models.physics.l_h_transition import (
+    Martin08AspectLowerLHThresholdPower,
+    Martin08AspectNominalLHThresholdPower,
+    Martin08AspectUpperLHThresholdPower,
+    Martin08LowerLHThresholdPower,
+    Martin08NominalLHThresholdPower,
+    Martin08UpperLHThresholdPower,
+)
 from functional_process.models.physics.namespace import (
     Physics,
     PhysicsConfinementTime,
@@ -109,14 +127,27 @@ from functional_process.models.physics.physics import (
     SeparatrixPowerNonIgnited,
     SurfaceAveragedPoloidalFieldAmperes,
 )
+from functional_process.models.physics.plasma_current import (
+    Ipdg89PlasmaCurrent,
+    TokamakPlasmaCurrent,
+    WessonCurrentProfileIndex,
+)
 from functional_process.models.physics.plasma_fields import PlasmaFields
 from functional_process.models.physics.plasma_geometry import (
     DoubleArcPlasmaGeometry,
     Ipdg89XPointPlasmaShape,
 )
+from functional_process.models.physics.plasma_inductance import (
+    PlasmaInternalInductanceNormWesson,
+    TokamakPlasmaInductance,
+)
 from functional_process.models.physics.pure_formulas import (
     FastAlphaBetaIterPhysicsRules,
     FastAlphaBetaWard,
+)
+from functional_process.models.physics.scrape_off_layer import (
+    OutboardSOLPowerDecayLengthEich2013,
+    TokamakScrapeOffLayer,
 )
 from functional_process.models.physics.tokamak_namespace import (
     TokamakCurrentDrive,
@@ -155,6 +186,12 @@ from functional_process.models.power.thermal_cryo import (
     PFwDivHeatDepositedMwSummed,
     TempTurbineCoolantInFromBlanketCoolant,
     TempTurbineCoolantInFromLiquidBreeder,
+)
+from functional_process.models.shield import (
+    DoubleNullShieldHalfHeight,
+    EllipticalShieldVolumes,
+    SingleNullShieldHalfHeight,
+    TokamakShield,
 )
 from functional_process.models.stellarator.build import (
     AFwTotalNoPowerflow,
@@ -263,16 +300,25 @@ from process.data_structure.pfcoil_variables import PFConductorModel
 from process.data_structure.physics_variables import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
+    CurrentProfileIndexModel,
     DivertorNumberModels,
+    OutbordSOLPowerDecayLengthModel,
     PlasmaIgnitionModel,
 )
 from process.data_structure.superconducting_tf_coil_variables import TFWPIntegerTurnType
 from process.models.build import FwBlktVVShape
+from process.models.physics.bootstrap_current import BootstrapCurrentFractionModel
 from process.models.physics.current_drive import (
     CurrentDriveMethodType,
     CurrentDriveModel,
 )
-from process.models.physics.plasma_current import PlasmaCurrentModel
+from process.models.physics.density_limit import DensityLimitModel
+from process.models.physics.l_h_transition import PlasmaConfinementTransitionModel
+from process.models.physics.physics import IndInternalNormModel
+from process.models.physics.plasma_current import (
+    PlasmaCurrentModel,
+    PlasmaDiamagneticCurrentModel,
+)
 from process.models.physics.plasma_geometry import (
     PlasmaGeometryModelType,
     PlasmaShapeModelType,
@@ -706,9 +752,11 @@ UNPORTED = {
         "`vacuum.py:758-791`). It reads no `triang` where the elliptical arm does, and "
         "it needs `dshellarea`/`dshellvol` in "
         "`functional_process/models/engineering/ivc_functions.py`, of which only the "
-        "elliptical pair is ported. Refused at four slots at once -- blanket areas, "
-        "blanket volumes, first wall and vacuum vessel -- which is why the predicate is "
-        "written once, in `_fw_blkt_vv_shape_arm`"
+        "elliptical pair is ported. Refused at five slots at once -- blanket areas, "
+        "blanket volumes, first wall, vacuum vessel and (since wave 2/3's "
+        "consolidation) the shield volumes, whose `calculate_dshaped_shield_volumes` "
+        "is ported as a pure function with no occupant (`shield.md`) -- which is why "
+        "the predicate is written once, in `_fw_blkt_vv_shape_arm`"
     ),
     ("itart_hcpb", 1): (
         "the spherical-tokamak arms of `hcpb.py`'s nuclear heating. **Two of them are "
@@ -821,6 +869,160 @@ UNPORTED = {
         "left absent: unlike KOVARI_2014, a caller asking for this has a model in mind "
         "that this graph has never seen."
     ),
+    # ---- waves 2/3's refusals (consolidation round 2) ---------------------------
+    #
+    # Each reason is its unit's audit record's own words, distilled: `plasma_current.md`,
+    # `bootstrap_current.md`, `l_h_transition.md`, `density_limit.md`,
+    # `scrape_off_layer.md`, `plasma_inductance.md`, `shield.md` and the five
+    # `pfcoil/*.md` records.
+    ("i_plasma_current", PlasmaCurrentModel.PENG_ANALYTIC_FIT): (
+        "Peng analytic fit; not live on any tracked input. "
+        "`calculate_current_coefficient_peng` is a 5-line pure staticmethod when needed"
+    ),
+    ("i_plasma_current", PlasmaCurrentModel.PENG_DIVERTOR_SCALING): (
+        "Peng divertor (TART/STAR); not live, and structurally unlike every other arm "
+        "-- bypasses the cylindrical current and needs `plascar_bpol`'s two-branch "
+        "`arctan`/`log`. Also the arm that changes "
+        "`.physics.b_plasma_surface_poloidal_average` (`plasma_fields.py:83`; see "
+        "`('surface_poloidal_field_arm', 1)`)"
+    ),
+    ("i_plasma_current", PlasmaCurrentModel.ITER_SCALING): (
+        "simple ITER cylindrical (`fq = 1`); not live"
+    ),
+    ("i_plasma_current", PlasmaCurrentModel.TODD_EMPIRICAL_SCALING_I): (
+        "Todd I; not live. Identical reads to Todd II, differing by one literal -- "
+        "**two** occupant classes when ported, per §14.2 and `plasma_current.md` open "
+        "question 4's ruling, not one with a static kwarg"
+    ),
+    ("i_plasma_current", PlasmaCurrentModel.TODD_EMPIRICAL_SCALING_II): (
+        "Todd II; see Todd I"
+    ),
+    ("i_plasma_current", PlasmaCurrentModel.CONNOR_HASTIE_MODEL): (
+        "Connor-Hastie; not live, and the only arm that makes the current chain a "
+        "genuine SCC (it reads `.physics.alphaj`, which the chain's own "
+        "`current_profile_index` occupant owns) -- needs a declared driven block, not "
+        "just a transcription (`plasma_current.md` § 'the cycle that is not live here')"
+    ),
+    ("i_plasma_current", PlasmaCurrentModel.SAUTER_SCALING): (
+        "Sauter; not live. Must be wired together with `plasma_geometry.py`'s "
+        "`PlasmaGeometryArm` Sauter occupant -- `_plasma_geometry_arm` owns the "
+        "disjunction, one input value, two slots"
+    ),
+    ("i_plasma_current", PlasmaCurrentModel.FIESTA_ST_SCALING): (
+        "FIESTA ST; not live. `triang**0.060` is NaN for negative triangularity and "
+        "has an infinite derivative at zero"
+    ),
+    ("i_ind_plasma_internal_norm", IndInternalNormModel.MENARD): (
+        "Menard ST scaling -- an ordinary sibling occupant, one line to add: owns "
+        "`.physics.ind_plasma_internal_norm`, reads "
+        "`.physics.ind_plasma_internal_norm_menard`. Not written because it is not "
+        "this run's value (`plasma_inductance.md`)"
+    ),
+    **dict.fromkeys(
+        (
+            ("i_bootstrap_current", v)
+            for v in BootstrapCurrentFractionModel
+            if v
+            not in {
+                BootstrapCurrentFractionModel.USER_INPUT,
+                BootstrapCurrentFractionModel.SAUTER,
+            }
+        ),
+        "a closed-form scaling in volume-averaged scalars, sharing none of the Sauter "
+        "arm's profile reads; each needs its own occupant and its own harness contract "
+        "to be worth anything (`bootstrap_current.md` § 'not ported in this pass'). "
+        "The family PROCESS computes and discards is deliberately not computed",
+    ),
+    ("i_diamagnetic_current", PlasmaDiamagneticCurrentModel.HENDER_ST_FIT): (
+        "`diamagnetic_fraction_hender` (`plasma_current.py:1138-1153`); not live "
+        "(PROCESS's own default is 0 and the reference file leaves it)"
+    ),
+    ("i_diamagnetic_current", PlasmaDiamagneticCurrentModel.SCENE_FIT): (
+        "`diamagnetic_fraction_scene` reads `q95`/`q0`; not live"
+    ),
+    ("i_pfirsch_schluter_current", 1): (
+        "`ps_fraction_scene` (`physics.py:534`); not live. No PROCESS enum exists for "
+        "this switch, so the key is the bare domain value"
+    ),
+    **dict.fromkeys(
+        (
+            ("i_l_h_threshold", v)
+            for v in PlasmaConfinementTransitionModel
+            if v
+            not in {
+                PlasmaConfinementTransitionModel.MARTIN08_NOMINAL,
+                PlasmaConfinementTransitionModel.MARTIN08_UPPER,
+                PlasmaConfinementTransitionModel.MARTIN08_LOWER,
+                PlasmaConfinementTransitionModel.MARTIN08_ASPECT_NOMINAL,
+                PlasmaConfinementTransitionModel.MARTIN08_ASPECT_UPPER,
+                PlasmaConfinementTransitionModel.MARTIN08_ASPECT_LOWER,
+            }
+        ),
+        "the formula is ported and Tier-1-tested (`l_h_transition.md`'s full-closure "
+        "table) but no occupant node is wired: not live on any tracked input, so "
+        "wiring one later is a small, mechanical addition (declare the reads, write "
+        "the `OutputInto`), not a re-derivation",
+    ),
+    **dict.fromkeys(
+        (
+            ("i_density_limit", v)
+            for v in DensityLimitModel
+            if v is not DensityLimitModel.GREENWALD
+        ),
+        "the formula is ported and Tier-1-tested against PROCESS's own staticmethod "
+        "(`density_limit.md` '## UNPORTED') but no occupant node is wired -- dead work "
+        "at this switch value on the reference arm; only a node class and a "
+        "registration are needed the day an input file selects it",
+    ),
+    ("i_len_sol_outboard_power_decay", OutbordSOLPowerDecayLengthModel.MAST_2014_1): (
+        "a one-line passthrough occupant selecting the MAST-1 length the graph already "
+        "computes unconditionally; not live (`scrape_off_layer.md` § switches touched)"
+    ),
+    ("i_len_sol_outboard_power_decay", OutbordSOLPowerDecayLengthModel.MAST_2014_2): (
+        "same shape as MAST-1, selecting the MAST-2 length; not live"
+    ),
+    ("pf_coil_system_arm", -1): (
+        "`.build.iohcl == 0`: no central solenoid at all -- no CS filaments, "
+        "`c_cs_flat_top_end = 0`, the flux swing's `:626-661` arm, `ohcalc` skipped "
+        "entirely and index 6 of every coil array left at zero. A different occupant "
+        "set for every node in the package. Not written (`pfcoil/geometry.md`, "
+        "`currents.md`, `fields.md`, `masses.md`, `inductance.md`)"
+    ),
+    ("pf_coil_system_arm", -2): (
+        "an `i_pf_location`/group topology other than `n_pf_coil_groups = 4`, "
+        "`i_pf_location = (2, 2, 3, 3)`, `n_pf_coils_in_group = (1, 1, 2, 2)`: the "
+        "pattern fixes every array index in the package (`pfcoil/__init__.py`'s module "
+        "constants), so a different pattern is a different occupant per node. Not "
+        "written"
+    ),
+    ("pf_coil_system_arm", -3): (
+        "`.physics.itart == 1` (or `itartpf != 0`): the ST arm places coils from "
+        "`z_tf_inside_half - zref[g]`, computes `ccls` from `aspect**1.6` and never "
+        "calls `efc` -- genuinely different read sets in placement and currents. Not "
+        "written"
+    ),
+    ("pf_coil_system_arm", -4): (
+        "`.pf_coil.i_pf_current == 0`: inverts which of `ccl0`/`ccl0_ma` is input and "
+        "which is output (`pfcoil.py:678-685`) -- a dual-role `VarPath` across "
+        "occupants that no second class can simply bind the other way "
+        "(`currents.md` open questions). Not written"
+    ),
+    ("pf_coil_system_arm", -5): (
+        "`.pf_coil.i_pf_conductor == 1` (RESISTIVE): four separate mass/power bodies "
+        "with different read sets (`pfcoil.py:917-1002`). Not written"
+    ),
+    ("pf_coil_system_arm", -6): (
+        "a PF/CS superconductor other than the reference pair (`i_pf_superconductor "
+        "== 3` NbTi, `i_cs_superconductor == 1` ITER Nb3Sn): the switch's only effect "
+        "in the ported closure is which element of `.tfcoil.dcond` is read, and per "
+        "the binding policy that is still a different occupant, not a parameter "
+        "(`masses.md` § switches touched). Not written"
+    ),
+    ("pf_coil_system_arm", -7): (
+        "`i_tf_shape == PICTURE_FRAME` or `i_r_pf_outside_tf_placement == 1`: the "
+        "outside-TF coil is placed flat at `r_pf_outside_tf_midplane`, dropping the "
+        "`sqrt(r^2 - z^2)` and its `isinf` kludge (`pfcoil.py:1323-1339`). Not written"
+    ),
 }
 """Why a known PROCESS value has no occupant, verbatim from the `Alternative(unported=)`
 declarations this replaced.
@@ -828,7 +1030,10 @@ declarations this replaced.
 **Refusal, and nothing else.** A value in here raises `NotImplementedError` naming the
 reason. Its quieter sibling -- a slot holding `None`, meaning *"this configuration's
 graph does not compute these values"* -- lives in `COST_OF_ELECTRICITY`, in
-`CRYO_Q_NUC`, and in all twenty-five slots of `models/tokamak/namespace.py`.
+`CRYO_Q_NUC`, in `models/tokamak/namespace.py`'s two still-empty slots, and in the
+empty-at-this-value slots of the wave-2/3 registries (`CURRENT_PROFILE_INDEX`,
+`IND_PLASMA_INTERNAL_NORM`, `BOOTSTRAP_CURRENT`, `SOL_OUTBOARD_POWER_DECAY` -- each
+`USER_INPUT` arm is PROCESS computing nothing, the field a run input).
 
 **`("istell", 0)` left this table**, and it is the only entry ever to have done so by
 being *built* rather than by being found unreachable. Its reason was that assembling a
@@ -836,7 +1041,8 @@ tokamak *"would give stellarator geometry, stellarator coils and stellarator FWB
 by a tokamak confinement scaling -- a graph that looks complete and is wrong"*. That was
 true of `StellaratorProcess`, which is the only thing this factory could build at the
 time. It is not true of `TokamakProcess`: the device-specific slot is `Tokamak`, whose
-twenty-five slots are all empty, so a tokamak machine assembles the shared subsystems and
+slots were all empty when the entry left (twenty-six of twenty-eight are occupied now),
+so a tokamak machine assembles the shared subsystems and
 **nothing** stellarator-specific. The two arms of that old reason are now both answered
 structurally rather than by refusal -- the wrong-geometry half by a different device
 class, the missing-physics half by empty slots that surface as boundary inputs and are
@@ -2399,6 +2605,170 @@ DIVERTOR_HEAT_LOAD = {0: DivertorHeatLoadWade}
 """The divertor heat-load arm -> its occupant. See `_divertor_heat_load_arm`."""
 
 
+# ---------------------------------------------------------------------------
+# Waves 2/3 (consolidation round 2): the plasma-current chain, the current
+# fractions, the L-H threshold, the density limit, the scrape-off layer, the
+# plasma inductance, the shield and the PF coil system.
+# ---------------------------------------------------------------------------
+
+PLASMA_CURRENT_SCALING = {PlasmaCurrentModel.IPDG89_SCALING: Ipdg89PlasmaCurrent}
+"""`.physics.i_plasma_current` -> `.tokamak.plasma_current.plasma_current`'s occupant.
+
+The same integer also feeds `_plasma_geometry_arm` (the Sauter disjunction, which that
+function owns -- `plasma_geometry.md` OQ2) and `_surface_poloidal_field_arm`; all three
+consumers read the one threaded local, so the switch is answered once."""
+
+CURRENT_PROFILE_INDEX = {
+    CurrentProfileIndexModel.USER_INPUT: None,
+    CurrentProfileIndexModel.WESSON: WessonCurrentProfileIndex,
+}
+"""`.physics.i_alphaj` -> the current-profile-index occupant. `None` is an occupant
+here, not a refusal: PROCESS's `USER_INPUT` arm is `alphaj = alphaj`
+(`physics.py:338`), so the field is a run input and the slot is empty."""
+
+IND_PLASMA_INTERNAL_NORM = {
+    IndInternalNormModel.USER_INPUT: None,
+    IndInternalNormModel.WESSON: PlasmaInternalInductanceNormWesson,
+}
+"""`.physics.i_ind_plasma_internal_norm` -> the normalised-internal-inductance
+occupant, in `.tokamak.plasma_inductance`. `USER_INPUT` selects the field from itself
+(`physics.py:4760`) -- no node; `MENARD` is UNPORTED."""
+
+BOOTSTRAP_CURRENT = {
+    BootstrapCurrentFractionModel.USER_INPUT: None,
+    BootstrapCurrentFractionModel.SAUTER: SauterBootstrapCurrentFraction,
+}
+"""`.physics.i_bootstrap_current` -> `.tokamak.bootstrap_current`'s occupant. At
+`USER_INPUT` the fraction is an `IN.DAT` variable and the slot is empty; the Sauter
+occupant carries the profile grid's shape (`n_plasma_profile_elements`) as its one
+static kwarg -- a resolution, not a switch (`switch_elimination_design.md` §3(b))."""
+
+DIAMAGNETIC_CURRENT = {PlasmaDiamagneticCurrentModel.NONE: NoDiamagneticCurrent}
+"""`.physics.i_diamagnetic_current` -> `.tokamak.diamagnetic_current`'s occupant. The
+`NONE` arm is a real occupant (PROCESS assigns the literal zero), not an empty slot:
+`PlasmaCurrentFractions` reads the fraction unconditionally."""
+
+PFIRSCH_SCHLUTER_CURRENT = {0: NoPfirschSchluterCurrent}
+"""`.physics.i_pfirsch_schluter_current` -> `.tokamak.pfirsch_schluter_current`'s
+occupant. Bare-integer keys: PROCESS declares no enum for this switch."""
+
+L_H_THRESHOLD = {
+    PlasmaConfinementTransitionModel.MARTIN08_NOMINAL: Martin08NominalLHThresholdPower,
+    PlasmaConfinementTransitionModel.MARTIN08_UPPER: Martin08UpperLHThresholdPower,
+    PlasmaConfinementTransitionModel.MARTIN08_LOWER: Martin08LowerLHThresholdPower,
+    PlasmaConfinementTransitionModel.MARTIN08_ASPECT_NOMINAL: (
+        Martin08AspectNominalLHThresholdPower
+    ),
+    PlasmaConfinementTransitionModel.MARTIN08_ASPECT_UPPER: (
+        Martin08AspectUpperLHThresholdPower
+    ),
+    PlasmaConfinementTransitionModel.MARTIN08_ASPECT_LOWER: (
+        Martin08AspectLowerLHThresholdPower
+    ),
+}
+"""`.physics.i_l_h_threshold` -> `.tokamak.l_h_transition`'s occupant. Six of the
+twenty-one values -- the Martin-2008 family, whose reads-sets `l_h_transition.md`
+validated against the live arm (19) rather than assumed; the other fifteen formulas
+are ported, tested and unwired."""
+
+DENSITY_LIMIT_ENFORCED = {DensityLimitModel.GREENWALD: EnforcedDensityLimitGreenwald}
+"""`.physics.i_density_limit` -> `.tokamak.density_limit.enforced_density_limit`'s
+occupant. Only the *enforced* limit answers the switch; the Greenwald element and
+fraction are computed unconditionally (`density_limit.md` § 'not actually
+switch-gated')."""
+
+SOL_OUTBOARD_POWER_DECAY = {
+    OutbordSOLPowerDecayLengthModel.USER_INPUT: None,
+    OutbordSOLPowerDecayLengthModel.EICH_2013: OutboardSOLPowerDecayLengthEich2013,
+}
+"""`.physics.i_len_sol_outboard_power_decay` -> the selector occupant in
+`.tokamak.scrape_off_layer`. `USER_INPUT` has no `else` arm in PROCESS at all -- the
+field keeps its entering value, so the slot is empty; the two MAST selectors are
+UNPORTED one-liners."""
+
+SHIELD_HALF_HEIGHT = {1: SingleNullShieldHalfHeight, 2: DoubleNullShieldHalfHeight}
+"""`_n_divertors(i_single_null)` -> `.tokamak.shield.half_height`'s occupant. Both
+values of the binary switch are written (`shield.md` 'ported' table) -- the one
+registry in this wave that is total."""
+
+SHIELD_VOLUMES = {1: EllipticalShieldVolumes}
+"""`_fw_blkt_vv_shape_arm(itart, i_fw_blkt_vv_shape)` -> `.tokamak.shield.volumes`'s
+occupant -- the fifth slot keyed on that existing joint predicate, per `shield.md`'s
+'join that key at consolidation, not mint an independent one'."""
+
+
+def _pf_coil_system_arm(  # noqa: PLR0911 -- one return per refused dimension, by design
+    iohcl,
+    n_pf_coil_groups,
+    i_pf_location,
+    n_pf_coils_in_group,
+    itart,
+    itartpf,
+    i_pf_current,
+    i_pf_conductor,
+    i_pf_superconductor,
+    i_cs_superconductor,
+    i_tf_shape,
+    i_r_pf_outside_tf_placement,
+) -> int:
+    """Every switch the PF coil system's thirteen nodes branch on, resolved to one arm.
+
+    One predicate, thirteen slots -- the `_fw_blkt_vv_shape_arm` shape at package
+    scale: the five `pfcoil/*.md` records name overlapping subsets of these switches
+    and every ported occupant is the one for the single joint configuration below, so
+    the factory resolves the conjunction once and both namespaces
+    (`models/pfcoil/namespace.py`) are keyed on the result. Arm `0` is the supported
+    configuration; each negative arm names which dimension deviated, in the order the
+    records argue they differ most structurally (`UNPORTED` carries each reason).
+
+    `n_pf_coil_groups`/`i_pf_location`/`n_pf_coils_in_group` are the **coil-count
+    topology** -- not switches in `naming_convention.md`'s sense, but they fix every
+    array index in the package (`pfcoil/__init__.py`'s module constants), so a
+    deviation refuses the same way a switch value without an occupant does.
+
+    What this function deliberately cannot see: `noh = 30`, the CS pancake-segment
+    count, a step function of the *converged* CS geometry rather than of any input
+    (`inductance.md` § 'noh is a step function of the CS geometry'). It stays a module
+    constant on `PFCoilInductance`.
+    """
+    if int(iohcl) == 0:
+        return -1
+    if (
+        int(n_pf_coil_groups) != 4
+        or tuple(int(v) for v in i_pf_location[:4]) != (2, 2, 3, 3)
+        or tuple(int(v) for v in n_pf_coils_in_group[:4]) != (1, 1, 2, 2)
+    ):
+        return -2
+    if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK or (
+        int(itartpf) != 0
+    ):
+        return -3
+    if int(i_pf_current) == 0:
+        return -4
+    if PFConductorModel(int(i_pf_conductor)) is not PFConductorModel.SUPERCONDUCTING:
+        return -5
+    if (
+        SuperconductorModel(int(i_pf_superconductor))
+        is not SuperconductorModel.OLD_LUBELL_NBTI
+        or SuperconductorModel(int(i_cs_superconductor))
+        is not SuperconductorModel.ITER_NB3SN
+    ):
+        return -6
+    if (
+        i_tf_shape is not TFCoilShapeModel.D_SHAPE
+        or int(i_r_pf_outside_tf_placement) != 0
+    ):
+        return -7
+    return 0
+
+
+CS_COIL = {0: CSCoil}
+"""`_pf_coil_system_arm` -> `.tokamak.cs_coil`'s occupant namespace."""
+
+PF_COIL = {0: PFCoil}
+"""`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace."""
+
+
 _INDAT_INTEGER = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$")
 
 
@@ -2448,6 +2818,35 @@ def numbers_from_indat(input_file):
     return found
 
 
+_INDAT_INT_LIST = re.compile(
+    r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+(?:\s*,\s*-?\d+)+)\s*,?\s*(\*.*)?$"
+)
+
+
+def int_lists_from_indat(input_file):
+    """Every `name = <int>, <int>, ...` this input file sets, as a dict of tuples.
+
+    The third sibling, and needed for exactly one consumer: the PF coil system's
+    coil-count topology (`i_pf_location = 2,2,3,3`, `n_pf_coils_in_group = 1,1,2,2`),
+    which `_pf_coil_system_arm` checks against the one supported pattern. A
+    comma-separated list is not an integer switch, but a list that fixes every array
+    index in a package decides which occupants exist, and the factory's standing test
+    holds -- an input cannot change between two evaluations of one assembled graph.
+
+    Deliberately still not a full IN.DAT parser; a name the file never mentions is
+    absent, and the caller supplies PROCESS's own `DataStructure` default.
+    """
+    text = Path(input_file).read_text()
+    found = {}
+    for line in text.splitlines():
+        match = _INDAT_INT_LIST.match(line)
+        if match:
+            found[match.group(1)] = tuple(
+                int(v) for v in match.group(2).split(",") if v.strip()
+            )
+    return found
+
+
 def iteration_variables_from_indat(input_file):
     """The `ixc` this input file declares, as a frozenset of iteration-variable IDs.
 
@@ -2473,8 +2872,10 @@ def iteration_variables_from_indat(input_file):
     return frozenset(found)
 
 
-def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited, itart):
-    r"""The `Tokamak` an IN.DAT describes -- fourteen slots of the twenty-five filled.
+def _tokamak_device(
+    switches, numbers, ixc, int_lists, i_tf_sup, i_plasma_ignited, itart
+):
+    r"""The `Tokamak` an IN.DAT describes -- twenty-six slots of the twenty-eight filled.
 
     Split out of `machine_from_indat` rather than inlined, and the reason is length
     rather than principle: this is still the factory, and every `i_*` integer it reads is
@@ -2486,14 +2887,14 @@ def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited, itart):
     `itart` joined that list when the four shared slots that hardcoded it became
     families (`_audit/next_steps.md` §14.2).
 
-    **The eleven slots this does not fill are not mentioned.** They keep
-    `models/tokamak/namespace.py`'s `None`, whatever the file says, because nothing under
-    `process/models/` that only they reach is ported: plasma current, bootstrap current,
-    the L-H transition, the scrape-off layer, the density limit, the PF coil system and
-    its central solenoid, the shield, the plasma inductance and the water use. A file
-    that asks for a particular `i_bootstrap_current` is *not* refused for it -- there is
-    no slot to refuse from -- and `_audit/tokamak_boundary.md` is where the cost of that
-    is counted, variable by variable.
+    **The two slots this does not fill are not mentioned.** `cs_fatigue` and
+    `water_use` keep `models/tokamak/namespace.py`'s `None`, whatever the file says:
+    the first is DECIDED-DEFERRED (`cs_fatigue.md`'s `ncycle` decision), the second is
+    a measured dead end (nothing in `process/` reads any `.water_use.*` output). A file
+    that asks for a particular `i_bootstrap_current` *is* refused now -- waves 2/3
+    filled the eleven slots the first wave left empty -- and
+    `_audit/tokamak_boundary.md` is where the cost of the remaining absences is
+    counted, variable by variable.
 
     Three switches are read here that no other part of this factory reads and that are
     not `i_*` integers at all:
@@ -2527,6 +2928,7 @@ def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited, itart):
     i_plasma_current = switches.get("i_plasma_current", 4)  # `physics_variables.py:843`
     i_hcd_primary = switches.get("i_hcd_primary", 5)  # `current_drive_variables.py:190`
     i_hcd_secondary = switches.get("i_hcd_secondary", 0)  # `:206`
+    i_pf_conductor = switches.get("i_pf_conductor", 0)  # `pfcoil_variables.py:230`
 
     def pick(field, registry, default, **kw):
         return _slot_occupant(field, switches.get(field, default), registry, **kw)
@@ -2711,14 +3113,116 @@ def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited, itart):
             ),
         ),
     )
+
+    def none_or_call(cls):
+        # `None` is an occupant, not a refusal, in the four registries that carry it
+        # (`CURRENT_PROFILE_INDEX` and friends): PROCESS's arm computes nothing and the
+        # field is a run input. Same shape as `DX_TF_SIDE_CASE_MIN` above.
+        return None if cls is None else cls()
+
+    plasma_current = TokamakPlasmaCurrent(
+        plasma_current=_slot_occupant(
+            "i_plasma_current",
+            PlasmaCurrentModel(int(i_plasma_current)),
+            PLASMA_CURRENT_SCALING,
+        ),
+        current_profile_index=_slot_occupant(
+            "i_alphaj",
+            CurrentProfileIndexModel(switches.get("i_alphaj", 0)),  # `:951`
+            CURRENT_PROFILE_INDEX,
+            build=none_or_call,
+        ),
+    )
+    plasma_inductance = TokamakPlasmaInductance(
+        internal_inductance_norm=_slot_occupant(
+            "i_ind_plasma_internal_norm",
+            # `physics_variables.py:948`
+            IndInternalNormModel(switches.get("i_ind_plasma_internal_norm", 0)),
+            IND_PLASMA_INTERNAL_NORM,
+            build=none_or_call,
+        )
+    )
+    bootstrap_current = _slot_occupant(
+        "i_bootstrap_current",
+        BootstrapCurrentFractionModel(switches.get("i_bootstrap_current", 3)),  # `:818`
+        BOOTSTRAP_CURRENT,
+        # The profile grid's shape, the same `201` the `ProfileGrid` registration in
+        # `models/physics/namespace.py` carries -- a resolution, not a switch, and
+        # `switch_audit` value-checks it against `.physics.n_plasma_profile_elements`.
+        build=lambda cls: None if cls is None else cls(n_plasma_profile_elements=201),
+    )
+    scrape_off_layer = TokamakScrapeOffLayer(
+        outboard_power_decay_length=_slot_occupant(
+            "i_len_sol_outboard_power_decay",
+            OutbordSOLPowerDecayLengthModel(
+                switches.get("i_len_sol_outboard_power_decay", 1)  # `:1718`
+            ),
+            SOL_OUTBOARD_POWER_DECAY,
+            build=none_or_call,
+        )
+    )
+    density_limit = TokamakDensityLimit(
+        enforced_density_limit=_slot_occupant(
+            "i_density_limit",
+            DensityLimitModel(switches.get("i_density_limit", 8)),  # `:863`
+            DENSITY_LIMIT_ENFORCED,
+        )
+    )
+    # One predicate, thirteen slots, resolved once -- see `_pf_coil_system_arm`.
+    pf_coil_arm = _pf_coil_system_arm(
+        switches.get("iohcl", 1),  # `build_variables.py:177`
+        switches.get("n_pf_coil_groups", 3),  # `pfcoil_variables.py:320`
+        int_lists.get("i_pf_location", (2, 2, 3, 0)),  # `:220`
+        int_lists.get("n_pf_coils_in_group", (1, 1, 2, 0)),  # `:310`
+        itart,
+        switches.get("itartpf", 0),  # `physics_variables.py:1000`
+        switches.get("i_pf_current", 1),  # `pfcoil_variables.py:279`
+        i_pf_conductor,
+        switches.get("i_pf_superconductor", 1),  # `:254`
+        switches.get("i_cs_superconductor", 1),  # `:239`
+        i_tf_shape,
+        switches.get("i_r_pf_outside_tf_placement", 0),  # `:287`
+    )
+    shield = TokamakShield(
+        half_height=_slot_occupant("n_divertors", n_divertors, SHIELD_HALF_HEIGHT),
+        volumes=_slot_occupant("fw_blkt_vv_shape_arm", shape_arm, SHIELD_VOLUMES),
+    )
+
     return Tokamak(
         plasma_geom=plasma_geom,
         physics=physics,
+        plasma_inductance=plasma_inductance,
+        plasma_current=plasma_current,
+        bootstrap_current=bootstrap_current,
+        diamagnetic_current=_slot_occupant(
+            "i_diamagnetic_current",
+            PlasmaDiamagneticCurrentModel(
+                switches.get("i_diamagnetic_current", 0)  # `physics_variables.py:856`
+            ),
+            DIAMAGNETIC_CURRENT,
+        ),
+        pfirsch_schluter_current=_slot_occupant(
+            "i_pfirsch_schluter_current",
+            switches.get("i_pfirsch_schluter_current", 0),  # `:895`; no PROCESS enum
+            PFIRSCH_SCHLUTER_CURRENT,
+        ),
+        l_h_transition=_slot_occupant(
+            "i_l_h_threshold",
+            PlasmaConfinementTransitionModel(
+                switches.get("i_l_h_threshold", 19)  # `physics_variables.py:1234`
+            ),
+            L_H_THRESHOLD,
+        ),
+        scrape_off_layer=scrape_off_layer,
+        density_limit=density_limit,
         plasma_fields=plasma_fields,
         current_drive=current_drive,
         pulse=pulse,
         build=build,
         cicc_superconducting_tf_coil=tf_coil,
+        pf_coil=_slot_occupant("pf_coil_system_arm", pf_coil_arm, PF_COIL),
+        cs_coil=_slot_occupant("pf_coil_system_arm", pf_coil_arm, CS_COIL),
+        shield=shield,
         divertor=Divertor(
             heat_load=_slot_occupant(
                 "divertor_heat_load_arm",
@@ -2746,7 +3250,7 @@ def _tokamak_device(switches, numbers, ixc, i_tf_sup, i_plasma_ignited, itart):
         ccfe_hcpb=ccfe_hcpb,
         structure=_slot_occupant(
             "structure_arm",
-            _structure_arm(i_tf_sup, switches.get("i_pf_conductor", 0)),  # `:230`
+            _structure_arm(i_tf_sup, i_pf_conductor),  # threaded, answered once
             STRUCTURE,
         ),
     )
@@ -2823,9 +3327,11 @@ def machine_from_indat(input_file, stella_conf=None):
         The file asks for a real PROCESS branch this port has no occupant for. **A file
         that sets nothing at all no longer raises here**: PROCESS's own default is
         `istell = 0`, a tokamak, and there is a tokamak now -- a `TokamakProcess` whose
-        device slot is twenty-five empty slots and whose shared subsystems are the same
-        ones a stellarator gets. `istell in 1..5` still raises, on the five hardcoded
-        machine presets.
+        device slot holds twenty-six occupied slots of twenty-eight and whose shared
+        subsystems are the same ones a stellarator gets (it *does* still refuse
+        further in, on `i_cost_model = 1` and its kin -- see
+        `test_machine.TOKAMAK_BASELINE_INDAT`). `istell in 1..5` still raises, on the
+        five hardcoded machine presets.
     """
     switches = switches_from_indat(input_file)
 
@@ -3073,14 +3579,15 @@ def machine_from_indat(input_file, stella_conf=None):
 
     if device is TokamakProcess:
         return TokamakProcess(
-            # Everything device-specific, and no longer `Tokamak()`: fourteen of its
-            # twenty-five slots have occupants now, twelve of them switched. `i_tf_sup`
+            # Everything device-specific, and no longer `Tokamak()`: twenty-six of
+            # its twenty-eight slots have occupants, most of them switched. `i_tf_sup`
             # and `i_plasma_ignited` are *threaded* rather than re-read, because a
             # switch is answered once.
             tokamak=_tokamak_device(
                 switches,
                 numbers_from_indat(input_file),
                 iteration_variables_from_indat(input_file),
+                int_lists_from_indat(input_file),
                 i_tf_sup,
                 i_plasma_ignited,
                 itart,

@@ -27,8 +27,15 @@ but it is written by `Physics.physics()`, not by `PlasmaInductance`, so it belon
 `.tokamak.physics`. UNPORTED here.
 """
 
+import dataclasses
+
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    ModelNamespace,
+    OutputInto,
+)
 
 from functional_process.paths import physics, times
 from process.core import constants
@@ -322,3 +329,30 @@ class PlasmaVoltSecondRequirements(ExplicitFunction):
             t_plant_pulse_burn=t_plant_pulse_burn,
             ind_plasma_internal_norm=ind_plasma_internal_norm,
         )
+
+
+class TokamakPlasmaInductance(ModelNamespace):
+    """`.tokamak.plasma_inductance` -- three slots, one of them switched.
+
+    The slot names are the ones each node's own docstring already claims. The Wesson
+    internal-inductance occupant here supersedes `plasma_current.py`'s
+    `WessonInternalInductance` (see `TokamakPlasmaCurrent`'s docstring): both own
+    `.physics.ind_plasma_internal_norm`, one graph admits one producer, and
+    `plasma_current.md` open question 1 rules for this module the moment the
+    volt-second work exists -- which `volt_seconds` below is.
+    """
+
+    scalings: PlasmaInternalInductanceScalings = PlasmaInternalInductanceScalings()
+    """Unconditional -- PROCESS evaluates all three scalings before any switch is read
+    (`physics.py:4721-4736`)."""
+
+    internal_inductance_norm: PlasmaInternalInductanceNormWesson | None = (
+        dataclasses.field(kw_only=True)
+    )
+    """`.physics.i_ind_plasma_internal_norm` -- `1` (Wesson) is written; `0`
+    (USER_INPUT) is **no node at all** (`physics.py:4760` selects the field from
+    itself, so the field is a run input and the slot is empty); `2` (Menard) is
+    UNPORTED."""
+
+    volt_seconds: PlasmaVoltSecondRequirements = PlasmaVoltSecondRequirements()
+    """Unconditional -- `calculate_volt_second_requirements` has no branch at all."""

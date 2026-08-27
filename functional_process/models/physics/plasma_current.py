@@ -83,8 +83,15 @@ keyed on `i_plasma_current` alone; the day `Sauter` (8) gets an occupant here, t
 factory is what has to make both answers agree.
 """
 
+import dataclasses
+
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    ModelNamespace,
+    OutputInto,
+)
 
 from functional_process.paths import physics
 from process.core import constants
@@ -362,3 +369,38 @@ class WessonInternalInductance(NormalisedInternalInductanceScaling):
 
     def __call__(self, alphaj=From(physics)):
         return calculate_internal_inductance_wesson(alphaj)
+
+
+class TokamakPlasmaCurrent(ModelNamespace):
+    """`.tokamak.plasma_current` -- the plasma-current chain, three slots.
+
+    The audit record's registration instructions name a fourth slot
+    (`internal_inductance: NormalisedInternalInductanceScaling`), written before
+    `plasma_inductance.py` existed. Its own open question 1 already gave the rule that
+    resolves the collision: *"if the slot is built for real ... then
+    `WessonInternalInductance` and `calculate_internal_inductance_wesson` should move
+    there and this record should lose its step 4."* The `.tokamak.plasma_inductance`
+    slot **is** built for real (`PlasmaVoltSecondRequirements`, which the PF coil
+    package reads), and its `PlasmaInternalInductanceNormWesson` owns
+    `.physics.ind_plasma_internal_norm` -- two producers of one `VarPath` cannot share a
+    graph, so this namespace has three slots and `WessonInternalInductance` above stays
+    an unregistered sibling of the occupant that superseded it.
+    """
+
+    plasma_current: PlasmaCurrentScaling = dataclasses.field(kw_only=True)
+    """`.physics.i_plasma_current` -- nine values, one occupant.
+    `4` (IPDG89, `large_tokamak_eval.IN.DAT:288`) is written; the other eight are
+    UNPORTED with per-value reasons in `indat.py`."""
+
+    cylindrical_safety_factor: PlasmaCylindricalSafetyFactor = (
+        PlasmaCylindricalSafetyFactor()
+    )
+    """Unconditional -- PROCESS computes `qstar` outside every switch
+    (`physics.py:303`)."""
+
+    current_profile_index: CurrentProfileIndexScaling | None = dataclasses.field(
+        kw_only=True
+    )
+    """`.physics.i_alphaj` -- `1` (Wesson) is written; `0` (USER_INPUT) is an **empty
+    slot** (`physics.py:338` assigns the field to itself), under which
+    `.physics.alphaj` is a boundary input with no producer."""

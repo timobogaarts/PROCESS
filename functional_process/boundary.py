@@ -27,13 +27,19 @@ unknown (`mda.driven_graph`), so the split is mechanical and exact:
 - `guess`  -- a `Start` port for a driven unknown. Growth here is a new problem, which
   is structure, not a regression; it should move only when a `Drive` does.
 
-The reference machine today: **311 inputs**, and 16 guesses on top of that once
-`driven_graph` has initialised its problems. The conventional tokamak
-(`TOKAMAK_INPUT_FILE`) is **339 inputs and 15 guesses**, pinned separately in
+The reference machine today: **297 inputs**, and 6 guesses on top of that once
+`driven_graph` has assigned its problems' drivers. The conventional tokamak
+(`TOKAMAK_INPUT_FILE`) is **349 inputs and 11 guesses**, pinned separately in
 `reference_boundary_tokamak.txt` -- and the comparison between the two files is the point
 of having a second one: a tokamak reads *more* than a stellarator, from a graph with more
-nodes in it, which is the honest shape of a device that is fourteen slots ported and
-eleven slots empty.
+nodes in it, which is the honest shape of a device whose device-specific namespace is
+twenty-six slots filled and two still empty. (Waves 2/3's consolidation *grew* the
+tokamak's input count, 328 -> 349, while closing ten rows: the eleven newly registered
+slots' nodes declare thirty-one genuine inputs of their own -- `cboot`, `q95`, the PF
+coil current-density settings and their kin -- each named in advance by its unit's
+"boundary inputs this slot then needs" list. Growth from a *landed producer's own
+declared reads* is the boundary doing its job; growth from a lost producer is the
+defect.)
 
 Regenerate a pin (never hand-edit one) with::
 
@@ -110,13 +116,18 @@ def readers_of(graph: Graph, var: VarPath) -> tuple[NodePath, ...]:
     return tuple(name for name in graph.nodes if var in graph[name].reads)
 
 
-def check_boundary(graph: Graph, allowed: Iterable[VarPath]) -> None:
+def check_boundary(graph: Graph, allowed: Iterable[VarPath], pin: str = PIN) -> None:
     """Raise unless every unowned input of `graph` is in `allowed`.
 
     One-directional on purpose: a boundary that *shrank* is a producer landing, which is
     the point of the exercise and must not fail a build. The test alongside this asserts
     equality, so a shrink still shows up -- as a pin to regenerate, at the moment it is
     cheap, rather than as a build that breaks under someone else.
+
+    `pin` is the pin file the error message tells the reader to regenerate --
+    `TOKAMAK_PIN` for a `--machine` invocation. It defaults to the stellarator's
+    because that is the machine every no-argument caller means; a message that always
+    named `reference_boundary.txt` sent a tokamak orphan's reader to the wrong file.
 
     Raises
     ------
@@ -140,7 +151,7 @@ def check_boundary(graph: Graph, allowed: Iterable[VarPath]) -> None:
         + "\n\nAn `input` orphan is the defect this check exists for: its consumers "
         "would otherwise fall back to whatever the `DataStructure` holds, silently. "
         "A `guess` orphan is a newly driven problem -- expected, and fixed by "
-        f"regenerating the pin ({PIN})."
+        f"regenerating the pin ({pin})."
     )
 
 
@@ -251,7 +262,9 @@ def _main(argv: list[str]) -> int:
         f"{was[GUESSED]} guess"
     )
     check_boundary(
-        driven, {v for _, v in rows if v.path_str() in {name for _, name in pinned}}
+        driven,
+        {v for _, v in rows if v.path_str() in {name for _, name in pinned}},
+        pin=pin,
     )
     gone = {name for _, name in pinned} - {v.path_str() for _, v in rows}
     if gone:

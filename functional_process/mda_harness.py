@@ -756,6 +756,20 @@ EXPLAINED_DISAGREEMENTS = {
         "`-17.604`, and the rest is that delta through the linear cost accumulation to "
         "`.costs.coe` (`rel_diff = 1.73e-2`)."
     ),
+    ".pf_coil.n_pf_coil_turns": (
+        "**Not a value defect: the disagreement lives entirely in the array's dead "
+        "tail.** `PFCoilSizes` owns the 22-slot array whole and writes a structural "
+        "`0.0` at every index past the plasma circuit (8-21), where PROCESS's "
+        "converged `DataStructure` still holds `100.0` -- the residue of "
+        "`pfcoil.py:605-608`'s `first_call` bootstrap (`n_pf_coil_turns[:] = 100.0`), "
+        "which nothing ever overwrites at indices no coil occupies. The eight live "
+        "entries (coils 0-6 and the plasma circuit) agree to tier-1 precision; "
+        "`14/22 off, worst [8]` in the report is exactly the dead tail. The same "
+        "residue appears once more as the `^hat.pf_coil.n_pf_coil_turns` minted "
+        "unknown of the PF coil cycle's FixedPoint -- one cause, two rows. Not "
+        "filtered, per this table's own rule: a *live*-index disagreement on this "
+        "array must still surface."
+    ),
     ".vacuum.dlscal": (
         "Not independent of `.vacuum.dia_vv_vacuum_ducts` above -- the *same* error, "
         "propagated. `dlscal = l1*d**1.4 + (ltot - l1)*(1.2*d)**1.4` "
@@ -1084,9 +1098,16 @@ class ComparisonReport:
                         f"{d.where}"
                     )
         if self.errors:
+            # Every error, not the first 20. The cap silently hid errors 21+ from a
+            # reader who had only the summary -- both machines currently sit at 20-25,
+            # and the count line above already says how many there are, so a listing
+            # that stopped short contradicted its own header. A very long list still
+            # says what it dropped rather than dropping it silently.
             lines.append("\nerrors:")
-            for e in self.errors[:20]:
+            for e in self.errors[:100]:
                 lines.append(f"  {e}")
+            if len(self.errors) > 100:
+                lines.append(f"  ... and {len(self.errors) - 100} more")
         return "\n".join(lines)
 
 

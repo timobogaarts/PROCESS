@@ -43,6 +43,7 @@ from functional_process.models.physics.plasma_geometry import (
     PlasmaMinorRadius,
     PlasmaShapeKappa95Triang95,
 )
+from functional_process.models.pulse import PulseBurnTime
 from functional_process.models.stellarator.initialization import PulseDurations
 
 
@@ -94,8 +95,8 @@ class TokamakPhysics(ModelNamespace):
 class TokamakPulse(ModelNamespace):
     """`.tokamak.pulse` -- the plasma-current ramp times and the pulse-duration sums.
 
-    `process/models/pulse.py::Pulse`, `caller.py:322`. Two slots, and the second of them
-    is **a registration rather than a port**.
+    `process/models/pulse.py::Pulse`, `caller.py:322`. Three slots, and the second of
+    them is **a registration rather than a port**.
     """
 
     ramp_times: PulseRampTimes = dataclasses.field(kw_only=True)
@@ -125,6 +126,13 @@ class TokamakPulse(ModelNamespace):
     churn on a wave that is already large; `physics.md`'s "already-ported sub-calls"
     section says the same. Recorded so that a reader who finds a stellarator import in
     the tokamak's pulse namespace sees a decision rather than an accident."""
+
+    burn_time: PulseBurnTime = PulseBurnTime()
+    """`Pulse.calculate_burn_time` (`pulse.py:275-316`). No switch of its own --
+    `i_pulsed_plant` decides whether this node's *machine* is pulsed, not which formula
+    it uses -- so no `kw_only` factory, per `pulse.md`'s registration instructions.
+    Reads `.pf_coil.vs_cs_pf_total_burn`, which stays a boundary input until the CS
+    volt-second accounting (`pfcoil.py::vsec`) is ported."""
 
 
 class TokamakCurrentDrive(ModelNamespace):

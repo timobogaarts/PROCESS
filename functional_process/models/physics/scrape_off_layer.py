@@ -69,8 +69,15 @@ future consumer (or `output()` reporting parity) may need them, not because some
 today is blocked on them.
 """
 
+import dataclasses
+
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    ModelNamespace,
+    OutputInto,
+)
 
 from functional_process.models.safe_math import safe_pow
 from functional_process.paths import physics
@@ -438,3 +445,50 @@ class OutboardSOLEich13ParallelPowerFlux(ExplicitFunction):
         a_plasma_outboard_sol_eich13_parallel=From(physics),
     ):
         return p_plasma_separatrix_mw_raw / a_plasma_outboard_sol_eich13_parallel
+
+
+class TokamakScrapeOffLayer(ModelNamespace):
+    """`.tokamak.scrape_off_layer` -- nine node classes, eight slots, one switched.
+
+    **Flat, not grouped** -- `scrape_off_layer.md` open question 2 left the shape to
+    the consolidation pass, and flat is what the tree's existing sub-namespace
+    precedents do (`TokamakCurrentDrive`, seven flat slots): the family structure here
+    is one abstract base over three one-line passthroughs, which is not the "real
+    thing" (`total_process.py`'s grain rule) an intermediate namespace has to be.
+
+    PROCESS computes all three candidate decay lengths unconditionally and the switch
+    only selects which one feeds `len_sol_outboard_power_decay` (`run()`'s three length
+    calls precede the `if`/`elif`/`elif`), so the three producers are unswitched
+    defaults and only the selector slot answers `i_len_sol_outboard_power_decay`.
+    """
+
+    eich2013_sol_power_decay_length: Eich2013SOLPowerDecayLength = (
+        Eich2013SOLPowerDecayLength()
+    )
+    mast2014_sol_power_decay_length_1: Mast2014SOLPowerDecayLength1 = (
+        Mast2014SOLPowerDecayLength1()
+    )
+    mast2014_sol_power_decay_length_2: Mast2014SOLPowerDecayLength2 = (
+        Mast2014SOLPowerDecayLength2()
+    )
+
+    outboard_power_decay_length: OutboardSOLPowerDecayLength | None = dataclasses.field(
+        kw_only=True
+    )
+    """`.physics.i_len_sol_outboard_power_decay` -- `1` (EICH_2013, PROCESS's default,
+    `physics_variables.py:1718`) is written; `0` (USER_INPUT) is an **empty slot**
+    (PROCESS has no `else` arm: the field keeps whatever it already was, so it is a run
+    input with no producer); `2`/`3` (MAST) are UNPORTED one-line siblings."""
+
+    upstream_sol_outboard_parallel_area: UpstreamSOLOutboardParallelArea = (
+        UpstreamSOLOutboardParallelArea()
+    )
+    upstream_sol_outboard_eich13_parallel_area: UpstreamSOLOutboardEich13ParallelArea = (
+        UpstreamSOLOutboardEich13ParallelArea()
+    )
+    outboard_sol_parallel_power_flux: OutboardSOLParallelPowerFlux = (
+        OutboardSOLParallelPowerFlux()
+    )
+    outboard_sol_eich13_parallel_power_flux: OutboardSOLEich13ParallelPowerFlux = (
+        OutboardSOLEich13ParallelPowerFlux()
+    )

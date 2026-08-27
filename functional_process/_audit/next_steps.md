@@ -2405,3 +2405,82 @@ With `ife == 1` now refused at assembly those `where`s are provably inert, so th
 could go. They are not static kwargs and the brief's rule — *a switch read arithmetically
 in a formula stays an ordinary declared read* — covers them; recorded here as the obvious
 next increment rather than taken.
+
+## 15. State, 2026-08-27 — waves 2/3 registered, the PF coil block driven
+
+Consolidation round 2 (`_audit/consolidation_round_2.md`), single agent, serial.
+Section numbers above are frozen; this appends.
+
+### 15.1 What landed
+
+The eleven items the round-2 brief listed are registered, each per its record's
+registration instructions: `.tokamak.plasma_current` (3 slots — the record's fourth,
+`internal_inductance`, was superseded by `plasma_inductance`'s occupant under that
+record's own open question 1; both owned `.physics.ind_plasma_internal_norm` and one
+graph admits one producer), `.tokamak.bootstrap_current` plus the three new `Tokamak`
+slots (`diamagnetic_current`, `pfirsch_schluter_current`, `current_fractions`),
+`.tokamak.l_h_transition` (single node, live arm 19), `.tokamak.density_limit` (3),
+`.tokamak.scrape_off_layer` (8, flat), `.tokamak.cs_coil` (3) + `.tokamak.pf_coil`
+(10, incl. `inductance`) behind one joint predicate (`indat._pf_coil_system_arm` — one
+predicate, thirteen slots, resolved once), `.tokamak.plasma_inductance` (3),
+`TokamakPulse.burn_time`, `.tokamak.shield` (2, D-arm on the existing
+`_fw_blkt_vv_shape_arm` key), and nothing for `water_use`/`cs_fatigue` (scoping
+records; registry rows already existed). `Tokamak` is twenty-eight slots, twenty-six
+filled, two empty.
+
+Registration created **two new raw cycles**, both cut in `mda.CUTS` by measurement:
+
+* volt-seconds/burn-time (2 nodes): both edges are sufficient single cuts; the one
+  chosen, `.times.t_plant_pulse_burn`, is the value PROCESS carries across a pass
+  (`physics.py:4882-4884`'s own comment).
+* the PF coil ring (5 nodes): eleven candidates, exactly two sufficient single cuts
+  (`c_pf_cs_coils_peak_ma`, `f_j_cs_start_end_flat_top`), **neither chosen** — the cut
+  is the pair PROCESS itself seeds on `first_call` (`pfcoil.py:605-608`),
+  `ind_pf_cs_plasma_mutual` + `n_pf_coil_turns`, each necessary given the other. One
+  `FixedPoint` over two unknowns, driven Picard; the RootFind on the
+  `n_pf_coil_turns` residual is a recorded later upgrade, deliberately not done.
+  `test_mda.py` pins both measurements and both tie-breaks.
+
+### 15.2 Headline numbers (cottax pinned at f0bf9bb)
+
+* Tokamak MDA harness (`--machine`): **597 agreements (48 array, 40 both-zero) / 16
+  disagreements / 0 unverifiable / 0 ungrounded / 20 errors; 633 owned walked, 0
+  unaccounted; switch kwargs 8 checked, 0 mismatched** — against 500/14/0/0/20 (534
+  walked) at round start. The 14 pre-existing disagreements are unchanged (the
+  explained `VacuumOld` pair and the 1.3e-6 cost chain); the two new ones are one
+  cause, `.pf_coil.n_pf_coil_turns`'s dead array tail (port writes structural zeros at
+  indices 8-21 where PROCESS's converged state still holds the `100.0` `first_call`
+  seed; live indices agree) — documented in `mda_harness.EXPLAINED_DISAGREEMENTS`,
+  not filtered.
+* Stellarator MDA harness: byte-identical to the round-start baseline
+  (472/34/3/0, errors 25, switches 7/0). The stellarator pin regenerates identically.
+* Tokamak boundary: 328 inputs + 8 guesses → **349 inputs + 11 guesses**. Ten rows
+  closed (`plasma_current`, `alphaj`, `f_c_plasma_auxiliary`, `vol_shld_total`,
+  `t_plant_pulse_burn`, five `.pf_coil.*` extents/masses — including the three
+  cross-wave reads `Structure`/`Cryostat` were waiting on); thirty-one opened, every
+  one a newly registered node's own declared input named in advance by its record.
+* `machine_survey` on `large_tokamak_eval`: `unknown` 10 → **3** (`i_beta_component`,
+  `i_plant_availability`, `i_shld_primary_heat`); `factory` 17 → 24; `pinned` stays 0.
+
+### 15.3 Two policy items, now standing
+
+* **Structural integers moved by the solve.** `noh` (`pfcoil/inductance.py`, a `ceil`
+  of converged CS geometry, pinned 30) and `n_cycle` (`cs_fatigue.py`, a trip count)
+  are integers no input decides and no gradient check can treat as smooth: the policy
+  is *pin as a module constant / static argument, excuse the gradient check for the
+  discrete output with the reason recorded, never tune a tolerance around a staircase*.
+  `cs_fatigue.md` open question 1 carries the DECIDED-DEFERRED application (eager
+  `lax.while_loop`, Tier-1 values, gradients structurally excused).
+* **`KNOWN_UNVERIFIABLE_OUTPUTS` is device-gated.** Entries carry the device root they
+  apply on (`mda_harness.device_root`), resolved off the graph itself rather than from
+  a caller argument — a stellarator-specific unverifiable output must not silently
+  excuse the same-named tokamak value.
+
+### 15.4 PlasmaComposition
+
+The `i_plasma_ignited` occupant split (`PlasmaCompositionIgnited` /
+`PlasmaCompositionNonIgnited`, factory-threaded) landed with the switch-kwarg
+conversion (commit 1db889f6) before this round started; round 2 verified it rather
+than re-fixing it. The tokamak's remaining `not data-backed: 1` in `switch_audit` is
+`imp_indices`, a declared kind-(c) non-switch — the old hardcoded-IGNITED defect no
+longer surfaces in any audit column.

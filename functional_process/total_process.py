@@ -189,11 +189,13 @@ class TokamakProcess(ModelNamespace):
     occupant, so the refusal is gone and the same file's §"The order this implies" step 3
     is what this class is.
 
-    Nothing in it is a claim that a tokamak *runs*: `tokamak` below holds twenty-five
-    empty slots and the graph this assembles computes no tokamak build, no plasma current
-    and no PF coils. `_audit/tokamak_boundary.md` is the honest statement of what that
-    costs, variable by variable, and it is a measurement taken *of this class* rather
-    than an estimate written beside it.
+    What this class assembles has since grown into a claim that most of a tokamak
+    *computes*: `tokamak` below held twenty-five empty slots when this was written and
+    holds twenty-six occupied of twenty-eight now -- build, plasma current, PF coils
+    and the rest. `_audit/tokamak_boundary.md` (with its dated update note) is the
+    honest statement of what the remaining absences cost, variable by variable, and it
+    is a measurement taken *of this class* rather than an estimate written beside
+    it.
     """
 
     costs: Costs = dataclasses.field(kw_only=True)
@@ -213,10 +215,10 @@ class TokamakProcess(ModelNamespace):
     """
 
     tokamak: Tokamak = dataclasses.field(kw_only=True)
-    """Everything device-specific -- fourteen of twenty-five slots filled.
+    """Everything device-specific -- twenty-six of twenty-eight slots filled.
 
     **It was `= Tokamak()`, and the rule that predicted this line said so.** The
-    defaulted spelling was correct while not one of the twenty-five slots had an occupant
+    defaulted spelling was correct while not one of the original slots had an occupant
     to choose between: `Tokamak()` was the only value it could take and a factory
     argument would have been ceremony. That docstring said *"the moment one slot gains a
     second occupant this becomes `dataclasses.field(kw_only=True)` like every other

@@ -179,33 +179,34 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """328 inputs and 8 guesses, against the stellarator's 297 and 6.
+    """349 inputs and 11 guesses, against the stellarator's 297 and 6.
 
     Both halves are the expected shape and neither is obviously good news, which is why
     they are pinned as numbers rather than described:
 
     * **More inputs, from more nodes.** The tokamak graph is larger than the
-      stellarator's and still reads ~30 more variables it does not produce --
-      because eleven of `Tokamak`'s twenty-five slots are still empty, and
-      `_audit/tokamak_boundary.md` is the enumeration of what that costs. A device with
-      *more* ported nodes and *more* boundary inputs is exactly what a half-ported device
-      looks like.
-    * **One more guess, and it is not a cost.** A guess is a `Start` port minted per
+      stellarator's and still reads ~50 more variables it does not produce. Waves 2/3's
+      consolidation moved this from 328 to 349 while *closing* ten rows
+      (`.physics.plasma_current`, `.physics.alphaj`, `.physics.f_c_plasma_auxiliary`,
+      `.fwbs.vol_shld_total`, `.times.t_plant_pulse_burn` and five `.pf_coil.*`
+      extents/masses): the eleven newly registered slots' nodes declare thirty-one
+      genuine inputs of their own, each named in advance by its record's "boundary
+      inputs this slot then needs" list. Growth from a landed producer's own declared
+      reads is the boundary doing its job; growth from a *lost* producer is the defect,
+      and the pin-equality test above is what tells the two apart, row by row.
+    * **More guesses, and they are not a cost.** A guess is a `Start` port minted per
       driven *unknown*, so the count tracks how much of the graph is genuinely coupled
-      rather than how much is missing. The tokamak has no counterpart to
-      `.stellarator.coils.intersect`'s `^guess.stellarator.wp_width_r_min`, and it has
-      two the stellarator does not: `^guess.tfcoil.dx_tf_wp_primary_toroidal`, closing
-      the build/winding-pack cycle, and a third unknown on the density cycle,
-      `^guess.physics.f_temp_plasma_electron_density_vol_avg`, which the pedestal profile
-      arm adds and the parabolic one does not (`mda.CUTS`). Measured, after §14.2's
-      switch conversion left six on the stellarator: the two share four
+      rather than how much is missing. Measured: the two machines share five
       (`fusden_alpha_total`, `proton_rate_density`, `temp_plasma_ion_vol_avg_kev`,
-      `power.delta_eta`, `vacuum.d_duct` -- five), the stellarator has
-      `^guess.fwbs.f_ster_div_single` alone, and the tokamak has three of its own --
+      `power.delta_eta`, `vacuum.d_duct`); the stellarator has
+      `^guess.fwbs.f_ster_div_single` alone; and the tokamak has six of its own --
       `^guess.tfcoil.dx_tf_wp_primary_toroidal` and `^guess.tfcoil.dr_tf_plasma_case`
-      closing the build/winding-pack cycles, and
-      `^guess.physics.f_temp_plasma_electron_density_vol_avg` on the density cycle. So
-      5 + 1 = 6 and 5 + 3 = 8.
+      closing the build/winding-pack cycles,
+      `^guess.physics.f_temp_plasma_electron_density_vol_avg` on the pedestal density
+      cycle, `^guess.times.t_plant_pulse_burn` on the volt-second/burn-time cycle, and
+      `^guess.pf_coil.ind_pf_cs_plasma_mutual` + `^guess.pf_coil.n_pf_coil_turns` --
+      PROCESS's own `first_call` seeds -- on the PF coil cycle (`mda.CUTS`). So
+      5 + 1 = 6 and 5 + 6 = 11.
 
     The numbers move whenever a producer lands, which is what makes them worth pinning:
     growth in the input half is a **lost** producer, and that is the failure this whole
@@ -215,5 +216,5 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (328, 8)
+    assert (tok[INPUT], tok[GUESSED]) == (349, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)

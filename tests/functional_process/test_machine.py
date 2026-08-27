@@ -312,17 +312,29 @@ TOKAMAK_BASELINE_INDAT = {
     "i_p_coolant_pumping": 3,
     "i_pulsed_plant": 1,
     "pulsetimings": 0,
+    "i_bootstrap_current": 4,
+    "i_density_limit": 7,
+    "n_pf_coil_groups": 4,
+    "i_pf_location": "2,2,3,3",
+    "n_pf_coils_in_group": "1,1,2,2",
+    "i_pf_superconductor": 3,
 }
 """The least an IN.DAT must say for `machine_from_indat` to build a **tokamak**.
 
-Five switches, and every one of them is a PROCESS default this port refuses: the 2015
+Eleven entries now, every one of them a PROCESS default this port refuses: the 2015
 cost model, ITER neutral beam heating, mechanical coolant pumping, a continuous plant,
-and -- once the plant is pulsed -- PROCESS's own `pulsetimings = 1`. Written as data
-rather than as a curated file, so that a case about one field fails on that field.
+`pulsetimings = 1` once the plant is pulsed -- and, since waves 2/3's consolidation
+filled the last eleven `Tokamak` slots, the Wilson bootstrap scaling
+(`i_bootstrap_current = 3`), the ASDEX-New density limit (`i_density_limit = 8`), the
+three-group PF coil topology (`n_pf_coil_groups = 3` with the default location
+pattern) and the ITER-Nb3Sn PF conductor (`i_pf_superconductor = 1`), each replaced by
+the reference run's own value. Written as data rather than
+as a curated file, so that a case about one field fails on that field. The two list
+entries are strings because that is how an IN.DAT spells them.
 
-`large_tokamak_eval.IN.DAT` sets four of the five explicitly and the fifth
-(`i_hcd_primary = 10`) too, which is the useful sanity check on this dict: it is the
-minimum, and a real conventional tokamak input file already exceeds it.
+`large_tokamak_eval.IN.DAT` sets every one of these explicitly, which is the useful
+sanity check on this dict: it is the minimum, and a real conventional tokamak input
+file already exceeds it.
 """
 
 DERIVED_UNPORTED_KEYS = {
@@ -338,6 +350,7 @@ DERIVED_UNPORTED_KEYS = {
     "fw_blkt_vv_shape_arm",
     "hcd_primary_powers_arm",
     "nuclear_heating_renormalisation_arm",
+    "pf_coil_system_arm",
     "plasma_geometry_arm",
     "pulse_ramp_times_arm",
     "structure_arm",
@@ -364,10 +377,18 @@ integers it derives from -- which the survey and switch-coverage tests do."""
 
 TOKAMAK_ONLY_UNPORTED_FIELDS = {
     "i_blanket_type",
+    "i_bootstrap_current",
+    "i_density_limit",
+    "i_diamagnetic_current",
     "i_hcd_calculations",
     "i_hcd_primary",
     "i_hcd_secondary",
+    "i_ind_plasma_internal_norm",
+    "i_l_h_threshold",
+    "i_len_sol_outboard_power_decay",
     "i_p_coolant_pumping",
+    "i_pfirsch_schluter_current",
+    "i_plasma_current",
     "i_plasma_geometry",
     "i_plasma_ignited_separatrix",
 }
@@ -715,7 +736,10 @@ def test_a_refused_value_says_why(tmp_path, field, value):
         indat = tmp_path / "TOK.DAT"
         indat.write_text(
             "".join(
-                f"{f} = {int(v)}\n"
+                # A baseline entry may be a comma-list spelled as a string
+                # (`i_pf_location`); everything else -- including the enum member
+                # under test -- normalises through `int`.
+                f"{f} = {v if isinstance(v, str) else int(v)}\n"
                 for f, v in {**TOKAMAK_BASELINE_INDAT, field: value}.items()
             )
         )

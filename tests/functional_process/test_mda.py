@@ -100,15 +100,15 @@ def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
 
 
 def test_each_raw_cycle_is_fully_broken_on_the_tokamak_too():
-    """The same property on `large_tokamak_eval.IN.DAT` -- two raw cycles, five cuts
+    """The same property on `large_tokamak_eval.IN.DAT` -- four raw cycles, eight cuts
     between them, none of them redundant.
 
     Worth its own test rather than a second loop inside the first, because the two
     machines fail differently and the message should say which. The tokamak's density
     cycle is 8 nodes to the stellarator's 6 (`i_plasma_pedestal = 1` puts
     `pedestal_profile_values`/`ne_profile_integral` in the profile slot) and needs the
-    third cut `mda.CUTS` documents; its build/winding-pack cycle has no stellarator
-    counterpart at all.
+    third cut `mda.CUTS` documents; its build/winding-pack, volt-second/burn-time and
+    PF coil cycles have no stellarator counterpart at all.
     """
     _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(
         graph_for(machine_from_indat(TOKAMAK_INPUT_FILE)), "tokamak"
@@ -216,6 +216,101 @@ def test_the_tokamak_density_cycle_is_cut_at_the_variable_process_bootstraps():
     assert chosen[2:] == [".physics.f_temp_plasma_electron_density_vol_avg"]
 
 
+def test_the_volt_second_burn_time_cycle_is_cut_where_process_reads_stale():
+    """The two-node volt-second/burn-time ring on `large_tokamak_eval.IN.DAT`: both
+    edge variables are sufficient single cuts, `CUTS` names exactly one, and the one it
+    names is the value PROCESS itself carries across a pass.
+
+    Same shape as the build/winding-pack test. `physics.run()` (volt-seconds inside)
+    runs before `pulse.run()` in one `Caller._call_models_once` pass, so
+    `.physics.v_plasma_loop_burn` is read fresh and `.times.t_plant_pulse_burn` is the
+    previous pass's -- PROCESS's own comment at `physics.py:4882-4884` says so
+    outright. See `mda.CUTS`'s docstring.
+    """
+    graph = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
+    (cycle,) = [
+        c
+        for c in graph.cycles
+        if {n.path_str() for n in c}
+        == {".tokamak.plasma_inductance.volt_seconds", ".tokamak.pulse.burn_time"}
+    ]
+    sub = graph.subgraph(cycle)
+    sufficient = {
+        v.path_str()
+        for v in sub.owners
+        if (readers := sub.closing_readers(v))
+        and Cut(var=v, readers=readers).apply(sub).is_acyclic
+    }
+    assert sufficient == {".physics.v_plasma_loop_burn", ".times.t_plant_pulse_burn"}
+    chosen = [v.path_str() for v in CUTS if v in sub.owners]
+    assert chosen == [".times.t_plant_pulse_burn"]
+    assert not sub.is_acyclic
+
+
+def test_the_pf_coil_cycle_is_cut_at_the_variables_process_seeds():
+    """The five-node PF coil ring on `large_tokamak_eval.IN.DAT`: sufficiency alone
+    allows exactly two single cuts, neither of which is what PROCESS carries, and
+    `CUTS` names instead the **pair PROCESS itself seeds** -- `pfcoil.py:605-608`'s
+    `first_call` bootstrap writes `ind_pf_cs_plasma_mutual[:, :] = 1.0` and
+    `n_pf_coil_turns[:] = 100.0`, so those two are the iteration's loop-carried
+    unknowns by PROCESS's own declaration. Each is necessary given the other
+    (dropping either leaves the ring cyclic), which is the minimality the shared
+    checker above also re-asserts for every cycle.
+
+    The measurement, re-derived rather than quoted: eleven of the ring's fifteen owned
+    variables have closing readers; `.pf_coil.c_pf_cs_coils_peak_ma` and
+    `.pf_coil.f_j_cs_start_end_flat_top` are the only sufficient single cuts, and
+    each is one stale edge of the three PROCESS actually carries across a pass, so
+    neither reproduces PROCESS's recurrence -- see `mda.CUTS`'s docstring for the
+    tie-break, and the round-2 brief for the FixedPointCut -> Picard decision
+    (`RootFind` on the `n_pf_coil_turns` residual is the recorded later upgrade).
+    """
+    graph = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
+    (cycle,) = [
+        c
+        for c in graph.cycles
+        if {n.path_str() for n in c}
+        == {
+            ".tokamak.cs_coil.flux_swing",
+            ".tokamak.pf_coil.inductance",
+            ".tokamak.pf_coil.sizes",
+            ".tokamak.pf_coil.time_point_currents",
+            ".tokamak.pf_coil.waveform",
+        }
+    ]
+    sub = graph.subgraph(cycle)
+
+    candidates = [v for v in sub.owners if sub.closing_readers(v)]
+    assert len(candidates) == 11
+    sufficient = {
+        v.path_str()
+        for v in candidates
+        if Cut(var=v, readers=sub.closing_readers(v)).apply(sub).is_acyclic
+    }
+    assert sufficient == {
+        ".pf_coil.c_pf_cs_coils_peak_ma",
+        ".pf_coil.f_j_cs_start_end_flat_top",
+    }
+
+    chosen = [v for v in CUTS if v in sub.owners]
+    assert [v.path_str() for v in chosen] == [
+        ".pf_coil.ind_pf_cs_plasma_mutual",
+        ".pf_coil.n_pf_coil_turns",
+    ]
+    # Sufficient together, and neither redundant -- the pair is PROCESS's seed set.
+    assert _cut_all(sub, chosen).is_acyclic
+    for dropped in chosen:
+        rest = [v for v in chosen if v != dropped]
+        without = _cut_all(sub, rest)
+        assert without is None or not without.is_acyclic, dropped.path_str()
+
+    # And the whole tokamak graph is runnable with the cuts -- every cyclic block
+    # declares a problem and carries a driver.
+    blocking = Blocking.scc(driven_graph(graph))
+    for block, problem_type in zip(blocking.blocks, blocking.problem_types, strict=True):
+        assert len(block) == 1 or problem_type is not None, block
+
+
 def test_the_tokamak_only_cuts_leave_the_stellarator_graph_untouched():
     """`CUTS`'s two tokamak-only entries are inert on the reference (stellarator)
     machine.
@@ -230,8 +325,21 @@ def test_the_tokamak_only_cuts_leave_the_stellarator_graph_untouched():
     the first thing to notice would be an unrelated harness number.
     """
     graph = driven_graph()
-    for name in ("dx_tf_wp_primary_toroidal", "f_temp_plasma_electron_density_vol_avg"):
-        assert not any(name in v.path_str() for v in graph.unowned_inputs), name
+    for name in (
+        "dx_tf_wp_primary_toroidal",
+        "f_temp_plasma_electron_density_vol_avg",
+        "t_plant_pulse_burn",
+        "ind_pf_cs_plasma_mutual",
+        "n_pf_coil_turns",
+    ):
+        # A landed cut mints a `^guess.*` port and declares a `^problem.*`; a *plain*
+        # boundary input spelled with the same name is fine -- `.times.
+        # t_plant_pulse_burn` legitimately IS one on the stellarator (`PulseDurations`
+        # reads it, nothing produces it, and the pin records it as `input`).
+        assert not any(
+            name in v.path_str() and v.path_str().startswith("^guess")
+            for v in graph.unowned_inputs
+        ), name
         assert not any(name in p.path_str() for p in graph.declared), name
 
 

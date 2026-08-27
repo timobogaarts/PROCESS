@@ -42,8 +42,15 @@ compound) is consumed only by *which occupant class exists*, never inside a func
 body -- `_audit/naming_convention.md` § "switches are not ports".
 """
 
+import dataclasses
+
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    ModelNamespace,
+    OutputInto,
+)
 
 from functional_process.paths import blanket, build, divertor, fwbs, physics
 
@@ -425,3 +432,25 @@ class EllipticalShieldVolumes(ShieldVolumes):
             fvolsi,
             fvolso,
         )
+
+
+class TokamakShield(ModelNamespace):
+    """`.tokamak.shield` -- two slots, both switched.
+
+    The volumes slot's D-shaped arm is keyed on the **existing**
+    `indat.py::_fw_blkt_vv_shape_arm` joint predicate (`itart == 1 or
+    i_fw_blkt_vv_shape == D_SHAPED`), the same key `blanket_library.md`/`fw.md`/
+    `vacuum.md` already share -- `shield.md`'s "switches touched" table says this
+    file's split *"should join that key at consolidation, not mint an independent
+    one"*, and it does.
+    """
+
+    half_height: ShieldHalfHeight = dataclasses.field(kw_only=True)
+    """`.divertor.n_divertors` (derived from `i_single_null` by `indat._n_divertors`)
+    -- both values of this binary switch have written occupants, `1` (single null,
+    live) and `2` (double null)."""
+
+    volumes: ShieldVolumes = dataclasses.field(kw_only=True)
+    """`_fw_blkt_vv_shape_arm` -- the elliptical arm (`1`) is written; the D-shaped
+    arm (`0`) is UNPORTED (`calculate_dshaped_shield_volumes` is ported as a pure
+    function, no occupant -- `shield.md` "ported" table)."""

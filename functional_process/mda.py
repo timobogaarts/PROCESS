@@ -2,15 +2,16 @@
 
 Most of `indat.GRAPH`'s SCCs already declare a problem and need only a driver:
 the structural `FixedPointFunction`/`ImplicitFunction` self-loop pairs, the coil
-island (`Intersect` and its own `^problem`) included. Two are
+island (`Intersect` and its own `^problem`) included. The rest are
 **raw cross-node cycles with no declared problem at all** -- `Blocking` finds them;
 nobody has said what solves them. A `Drive` refuses such a block outright
 (`cottax.evaluate.Drive.__check_init__`: *"block ... declares no problem: it is run,
 not driven"*), so the graph is not runnable until something says what closes them.
 
-The two are `Divertor`/`AFwTotalWithPowerflow` (`ipowerflow != 0` only) and the
-density/fusion/composition cycle around `DensityProfile`/`FusionRates`/
-`PlasmaComposition`/`ParabolicOnAxisDensities`.
+The stellarator has two -- `Divertor`/`AFwTotalWithPowerflow` (`ipowerflow != 0`
+only) and the density/fusion/composition cycle around `DensityProfile`/`FusionRates`/
+`PlasmaComposition`/`ParabolicOnAxisDensities` -- and the tokamak adds its own;
+`CUTS`'s docstring names each with its measurement.
 
 This module does two things: cut those raw cycles into declared `FixedPoint` problems
 (via `cottax.rewrites.FixedPointCut`, using `Graph.closing_readers` to find the cut and
@@ -50,7 +51,7 @@ from functional_process.core.solver.drivers import (
     VmconDriver,
 )
 from functional_process.indat import GRAPH
-from functional_process.paths import fwbs, physics, tfcoil
+from functional_process.paths import fwbs, pf_coil, physics, tfcoil, times
 
 CUTS = (
     resolve(physics.proton_rate_density, VarPath),
@@ -58,6 +59,9 @@ CUTS = (
     resolve(physics.f_temp_plasma_electron_density_vol_avg, VarPath),
     resolve(fwbs.f_ster_div_single, VarPath),
     resolve(tfcoil.dx_tf_wp_primary_toroidal, VarPath),
+    resolve(times.t_plant_pulse_burn, VarPath),
+    resolve(pf_coil.ind_pf_cs_plasma_mutual, VarPath),
+    resolve(pf_coil.n_pf_coil_turns, VarPath),
 )
 """The variables cut to turn each raw cross-node cycle into a declared `FixedPoint`.
 
@@ -174,6 +178,56 @@ closing readers in the graph it was given, so this entry is inert on the stellar
 entirely): same digest, same blocks, same pins -- the same gating the `ipowerflow`
 paragraph below describes, for a different reason.
 
+**`t_plant_pulse_burn` cuts the volt-second/burn-time cycle**, a two-node ring waves
+2/3's consolidation created by registering both of its nodes:
+`.tokamak.plasma_inductance.volt_seconds` reads `.times.t_plant_pulse_burn` (for the
+flat-top volt-second requirement) and owns `.physics.v_plasma_loop_burn`, which
+`.tokamak.pulse.burn_time` reads to produce the burn time. **Measured**: the ring's
+nine owned variables contain exactly two with closing readers -- the two edges -- and
+*each* is a sufficient single cut, so sufficiency does not pick and the tie-break is,
+again, PROCESS's own stale read. `Caller._call_models_once` runs `physics.run()`
+(`caller.py:290`, volt-seconds inside it) *before* `pulse.run()` (`caller.py:322`), so
+within one pass the burn time the volt-second requirement reads is the **previous**
+pass's -- and PROCESS says so in its own comment (`physics.py:4882-4884`: *"tburn ...
+on first iteration will not be correct if the pulsed reactor option is used, but the
+value will be correct on subsequent calls"*), while `v_plasma_loop_burn` is read fresh
+in the same pass. Cutting where PROCESS carries the stale value makes one Picard
+iterate one PROCESS pass; `test_mda.py::
+test_the_volt_second_burn_time_cycle_is_cut_where_process_reads_stale` records the
+table. `.times.t_plant_pulse_burn` is a real `DataStructure` field, so the harness
+seeds the guess straight off converged `data`.
+
+**`ind_pf_cs_plasma_mutual` + `n_pf_coil_turns` cut the PF coil cycle, and they are
+PROCESS's own seeds.** The five-node ring the pfcoil registration created --
+
+    time_point_currents --.pf_coil.c_pf_cs_coil_*_ma--> waveform
+    waveform            --.pf_coil.c_pf_cs_coils_peak_ma--> sizes
+    sizes               --geometry + .pf_coil.n_pf_coil_turns--> inductance
+    inductance          --.pf_coil.ind_pf_cs_plasma_mutual--> flux_swing
+    flux_swing          --.pf_coil.f_j_cs_start_end_flat_top--> time_point_currents
+    (plus the parallel edges sizes -> flux_swing via `n_pf_coil_turns` and the coil
+    geometry arrays sizes -> inductance)
+
+-- is `currents.md` § "The cycle" made real. **Measured**: of the ring's fifteen owned
+variables, eleven have closing readers; exactly two are sufficient *single* cuts
+(`.pf_coil.c_pf_cs_coils_peak_ma`, `.pf_coil.f_j_cs_start_end_flat_top`), and neither
+is what PROCESS carries across a pass. The pair chosen instead is **exactly the
+loop-carried state PROCESS bootstraps**: `pfcoil.py:605-608` seeds
+`ind_pf_cs_plasma_mutual[:, :] = 1.0` and `n_pf_coil_turns[:] = 100.0` on `first_call`
+and leans on `Caller.call_models` re-running the pipeline -- so those two are the
+iteration's unknowns by PROCESS's own declaration, each is necessary given the other
+(measured: dropping either leaves the ring cyclic), and both are real `DataStructure`
+fields the harness can seed from converged `data` (or from PROCESS's own literals on a
+cold start). The two single cuts that sufficiency alone would allow are each *one*
+stale edge of the three PROCESS actually carries (`sizes` reads the previous pass's
+peak currents too), so neither reproduces PROCESS's recurrence either -- preferring
+the declared seeds keeps the port's fixed-point unknowns the ones PROCESS names.
+`test_mda.py::test_the_pf_coil_cycle_is_cut_at_the_variables_process_seeds` records
+the table and the tie-break. `cut_graph` groups the pair into **one** `FixedPoint`
+problem over two unknowns, driven Picard -- `FixedPointCut` -> `PicardDriver`, per the
+round-2 brief's decision (validation against PROCESS first; a `RootFind` on the
+`n_pf_coil_turns` residual is the recorded later upgrade, deliberately not done now).
+
 **The second cycle is `ipowerflow != 0`-only** (`next_steps.md` §5:
 `AFwTotalWithPowerflow` is the `ipowerflow != 0` arm; `AFwTotalNoPowerflow` -- the
 `ipowerflow == 0` arm -- does not read `.fwbs.f_ster_div_single` at all, so there is
@@ -217,6 +271,14 @@ def cut_graph(graph=GRAPH):
     by_cycle: dict = {}
     cycles = [frozenset(c) for c in graph.cycles]
     for var in CUTS:
+        if var not in graph.owners:
+            # Not produced in this configuration at all -- `closing_readers` refuses
+            # an unowned variable outright, and unowned is the strongest form of "no
+            # cycle to cut here": `.times.t_plant_pulse_burn` is a *plain boundary
+            # input* of the stellarator graph (its producer, `.tokamak.pulse.
+            # burn_time`, is a tokamak node), where `dx_tf_wp_primary_toroidal` is
+            # merely acyclic there.
+            continue
         readers = graph.closing_readers(var)
         if not readers:
             continue  # this cycle does not exist in this configuration

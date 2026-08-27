@@ -3,6 +3,8 @@
 # do not hand-edit. `input` is read from PROCESS's DataStructure and
 # growth in it is a lost producer; `guess` is a Start port for a driven
 # unknown and moves only when a Drive does. See functional_process/boundary.py.
+guess ^guess.pf_coil.ind_pf_cs_plasma_mutual
+guess ^guess.pf_coil.n_pf_coil_turns
 guess ^guess.physics.f_temp_plasma_electron_density_vol_avg
 guess ^guess.physics.fusden_alpha_total
 guess ^guess.physics.proton_rate_density
@@ -10,10 +12,13 @@ guess ^guess.physics.temp_plasma_ion_vol_avg_kev
 guess ^guess.power.delta_eta
 guess ^guess.tfcoil.dr_tf_plasma_case
 guess ^guess.tfcoil.dx_tf_wp_primary_toroidal
+guess ^guess.times.t_plant_pulse_burn
 guess ^guess.vacuum.d_duct
 input .blanket.deg_blkt_inboard_poloidal_plasma
 input .build.dr_blkt_inboard
 input .build.dr_blkt_outboard
+input .build.dr_cs
+input .build.dr_cs_bore
 input .build.dr_fw_inboard
 input .build.dr_fw_outboard
 input .build.dr_fw_plasma_gap_inboard
@@ -34,6 +39,7 @@ input .build.dz_shld_lower
 input .build.dz_shld_thermal
 input .build.dz_shld_upper
 input .build.dz_shld_vv_gap
+input .build.dz_tf_upper_lower_midplane
 input .build.dz_vv_lower
 input .build.dz_vv_upper
 input .build.gapomin
@@ -166,9 +172,11 @@ input .costs.uctfsw
 input .costs.ucturb
 input .costs.ucwindtf
 input .costs.ucwst
+input .current_drive.cboot
 input .current_drive.eta_cd_norm_ecrh
 input .current_drive.eta_ecrh_injector_wall_plug
 input .current_drive.f_beam_tritium
+input .current_drive.f_c_plasma_bootstrap_max
 input .current_drive.i_hcd_primary
 input .current_drive.p_beam_injected_mw
 input .current_drive.p_beam_orbit_loss_mw
@@ -199,6 +207,8 @@ input .fwbs.f_a_fw_outboard_hcd
 input .fwbs.f_nuc_pow_bz_liq
 input .fwbs.f_p_blkt_multiplication
 input .fwbs.fvoldw
+input .fwbs.fvolsi
+input .fwbs.fvolso
 input .fwbs.fw_armour_thickness
 input .fwbs.i_blkt_coolant_type
 input .fwbs.life_fw_fpy
@@ -211,7 +221,6 @@ input .fwbs.radius_fw_channel
 input .fwbs.vfcblkt
 input .fwbs.vfpblkt
 input .fwbs.vfshld
-input .fwbs.vol_shld_total
 input .heat_transport.eta_turbine
 input .heat_transport.etatf
 input .heat_transport.f_p_div_coolant_pump_total_heat
@@ -245,23 +254,36 @@ input .impurity_radiation.m_impurity_amu_array
 input .impurity_radiation.pden_impurity_lz_nd_temp_array
 input .impurity_radiation.radius_plasma_core_norm
 input .impurity_radiation.temp_impurity_keV_array
-input .pf_coil.m_pf_coil_conductor_total
-input .pf_coil.m_pf_coil_max
-input .pf_coil.m_pf_coil_structure_total
+input .pf_coil.alfapf
+input .pf_coil.c_pf_coil_turn_peak_input
+input .pf_coil.dr_pf_tf_outboard_out_offset
+input .pf_coil.f_a_cs_turn_steel
+input .pf_coil.f_a_cs_void
+input .pf_coil.f_a_pf_coil_void
+input .pf_coil.f_j_cs_start_pulse_end_flat_top
+input .pf_coil.f_z_cs_tf_internal
+input .pf_coil.j_cs_flat_top_end
+input .pf_coil.j_pf_coil_wp_peak
 input .pf_coil.p_pf_electric_supplies_mw
-input .pf_coil.r_pf_coil_outer
-input .pf_coil.r_pf_coil_outer_max
+input .pf_coil.pf_current_safety_factor
+input .pf_coil.rpf2
+input .pf_coil.sigpfcalw
+input .pf_coil.sigpfcf
+input .pf_coil.vs_cs_pf_total_burn
+input .pf_coil.zref
 input .pf_power.ensxpfm
 input .pf_power.srcktpm
-input .physics.alphaj
 input .physics.alphan
 input .physics.alphat
 input .physics.aspect
 input .physics.b_plasma_toroidal_on_axis
+input .physics.beta_poloidal_vol_avg
 input .physics.beta_total_vol_avg
 input .physics.burnup_in
+input .physics.csawth
 input .physics.dlamie
-input .physics.f_c_plasma_auxiliary
+input .physics.ejima_coeff
+input .physics.f_c_plasma_non_inductive
 input .physics.f_nd_alpha_thermal_electron
 input .physics.f_nd_beam_electron
 input .physics.f_nd_protium_electrons
@@ -282,10 +304,12 @@ input .physics.nd_plasma_separatrix_electron
 input .physics.p_beam_alpha_mw
 input .physics.p_plasma_ohmic_mw
 input .physics.pflux_plasma_surface_neutron_avg_mw
-input .physics.plasma_current
+input .physics.q0
+input .physics.q95
 input .physics.rad_fraction_sol
 input .physics.radius_plasma_pedestal_density_norm
 input .physics.radius_plasma_pedestal_temp_norm
+input .physics.res_plasma
 input .physics.rmajor
 input .physics.tauratio
 input .physics.tbeta
@@ -301,6 +325,7 @@ input .primary_pumping.t_in_bb
 input .primary_pumping.t_out_bb
 input .tfcoil.c_tf_turn
 input .tfcoil.dcond[0]
+input .tfcoil.dcond[2]
 input .tfcoil.den_tf_coil_case
 input .tfcoil.den_tf_wp_turn_insulation
 input .tfcoil.dia_tf_turn_coolant_channel
@@ -325,7 +350,6 @@ input .tfcoil.t_tf_superconductor_quench
 input .tfcoil.temp_cp_coolant_inlet
 input .tfcoil.temp_tf_cryo
 input .tfcoil.tfcmw
-input .times.t_plant_pulse_burn
 input .times.t_plant_pulse_coil_precharge
 input .times.t_plant_pulse_dwell
 input .times.t_plant_pulse_fusion_ramp

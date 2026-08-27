@@ -1,11 +1,16 @@
-"""The tokamak's own subsystems -- fourteen filled, eleven still empty.
+"""The tokamak's own subsystems -- twenty-six filled, two still empty.
 
 Beside the nodes it names (`model_tree_design.md` §11), exactly as
 `models/stellarator/namespace.py` sits beside the stellarator's. **It shipped with not
 one slot occupied**; the first tokamak porting wave filled fourteen of the twenty-five,
-and the eleven that are left keep the original spelling `... | None = None`, which cottax
-reads as *"an unproduced slot: it assembles nothing, and whatever read its outputs
-surfaces as a boundary input. Absence, spelled as absence."*
+the second and third waves' consolidation filled eleven more (and added three --
+`diamagnetic_current`, `pfirsch_schluter_current`, `current_fractions` -- that
+`bootstrap_current.md` found no home for), and the two that are left keep the original
+spelling `... | None = None`, which cottax reads as *"an unproduced slot: it assembles
+nothing, and whatever read its outputs surfaces as a boundary input. Absence, spelled
+as absence."* The two are `cs_fatigue` and `water_use`, both scoping records rather
+than pending ports: `cs_fatigue.md`'s `ncycle` decision is DECIDED-DEFERRED, and
+`water_use.md` measured that nothing in `process/` reads any `.water_use.*` output.
 
 **Why an empty namespace was worth writing at all**, and why the same argument now
 applies to the eleven that remain. It is the difference between an estimate and a
@@ -56,14 +61,27 @@ from functional_process.models.blankets.namespace import CcfeHcpb
 from functional_process.models.cryostat import Cryostat
 from functional_process.models.fw import FirstWall
 from functional_process.models.namespace import Build, Divertor
+from functional_process.models.pfcoil.namespace import CSCoil, PFCoil
+from functional_process.models.physics.bootstrap_current import (
+    BootstrapCurrentFractionScaling,
+    PlasmaCurrentFractions,
+    PlasmaDiamagneticCurrentFraction,
+    PlasmaPfirschSchluterCurrentFraction,
+)
+from functional_process.models.physics.density_limit import TokamakDensityLimit
+from functional_process.models.physics.l_h_transition import LHThresholdPower
 from functional_process.models.physics.physics import PlasmaEnergyFromBeta
+from functional_process.models.physics.plasma_current import TokamakPlasmaCurrent
 from functional_process.models.physics.plasma_fields import PlasmaFields
+from functional_process.models.physics.plasma_inductance import TokamakPlasmaInductance
+from functional_process.models.physics.scrape_off_layer import TokamakScrapeOffLayer
 from functional_process.models.physics.tokamak_namespace import (
     TokamakCurrentDrive,
     TokamakPhysics,
     TokamakPlasmaGeom,
     TokamakPulse,
 )
+from functional_process.models.shield import TokamakShield
 from functional_process.models.structure import Structure
 from functional_process.models.tfcoil.namespace import CiccSuperconductingTfCoil
 from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
@@ -72,27 +90,31 @@ from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
 class Tokamak(ModelNamespace):
     """Everything a conventional tokamak has and a stellarator does not.
 
-    Twenty-five slots; **fourteen of them now have occupants and eleven are still
+    Twenty-eight slots; **twenty-six of them now have occupants and two are still
     `None`.** A namespace with `None` slots contributes no node for them and is
     explicitly allowed by cottax (`ModelNamespace`'s own refusal is for a namespace with
-    no *slots*, which is a wrong argument rather than an empty one), so the eleven that
-    are still empty behave exactly as all twenty-five did: whatever reads their outputs
-    surfaces as a boundary input, enumerated by name in `_audit/tokamak_boundary.md`.
+    no *slots*, which is a wrong argument rather than an empty one), so the two that
+    are still empty behave exactly as all twenty-five originals did: whatever reads
+    their outputs surfaces as a boundary input, enumerated by name in
+    `_audit/tokamak_boundary.md`.
 
     **The annotation is the promise, and it is now kept slot by slot.** The class this
     file shipped with typed every slot `ModelNamespace | None` on the ground that *"there
     is no class to name yet"*, and said a slot would gain a real annotation the day it
-    gained a real occupant, the way `physics.confinement_time.scaling` did. Fourteen
-    have. Five of those fourteen are annotated with a **node** rather than a namespace
-    (`plasma_beta`, `first_wall`, `structure`, `cryostat`, `vacuum_vessel`), because a
+    gained a real occupant, the way `physics.confinement_time.scaling` did. Twenty-six
+    have. Ten of those are annotated with a **node** rather than a namespace
+    (`plasma_beta`, `first_wall`, `structure`, `cryostat`, `vacuum_vessel`,
+    `bootstrap_current`, `diamagnetic_current`, `pfirsch_schluter_current`,
+    `current_fractions`, `l_h_transition`), because a
     slot may hold either -- `Physics.fusion_rates` always has -- and wrapping one node in
     a namespace to make the types uniform would put a meaningless key in front of its
     name.
 
     **A slot the factory fills has no default**, here as everywhere else in this tree.
-    Twelve of the fourteen are `dataclasses.field(kw_only=True)`; the two that keep a
-    default are the ones with nothing to decide -- no switch anywhere beneath them, so no
-    configuration for a default to smuggle in. That distinction is not cosmetic: a
+    Twenty-three of the twenty-six are `dataclasses.field(kw_only=True)`; the three
+    that keep a default (`plasma_beta`, `cryostat`, `current_fractions`) are the ones
+    with nothing to decide -- no switch anywhere beneath them, so no configuration for
+    a default to smuggle in. That distinction is not cosmetic: a
     defaulted slot is a slot `machine_from_indat` never asks a switch about, and an
     `UNPORTED` refusal that never fires is the `EcrhDensityLimit` bug class waiting to
     happen. `first_wall` and `structure` look unswitched -- each has exactly one occupant
@@ -121,10 +143,12 @@ class Tokamak(ModelNamespace):
     15 -- which makes it the single largest blocker in the tokamak scope by decision
     count."""
 
-    plasma_inductance: ModelNamespace | None = None
+    plasma_inductance: TokamakPlasmaInductance = dataclasses.field(kw_only=True)
     """`physics/physics.py::PlasmaInductance`, §A row 2.1 -- injected into `Physics` and
     run at `physics.py:356`. Site of decision 5 (`i_ind_plasma_internal_norm`, 4 reads,
-    `get_ind_internal_norm_value` confirmed entered)."""
+    `get_ind_internal_norm_value` confirmed entered). Three slots; its Wesson occupant
+    supersedes `plasma_current.py`'s `WessonInternalInductance` -- see
+    `TokamakPlasmaCurrent`'s docstring for the ownership argument."""
 
     plasma_beta: PlasmaEnergyFromBeta = PlasmaEnergyFromBeta()
     """`physics/physics.py::PlasmaBeta`, §A row 2.3 (`physics.py:429`). Site of decision
@@ -132,40 +156,73 @@ class Tokamak(ModelNamespace):
     pure `calculate_plasma_beta` is already what constraint 1 calls -- `CLAUDE.md`'s
     "`Compare`, already present in embryonic form"."""
 
-    plasma_current: ModelNamespace | None = None
-    """`physics/plasma_current.py::PlasmaDiamagneticCurrent`, §A row 2.4
+    plasma_current: TokamakPlasmaCurrent = dataclasses.field(kw_only=True)
+    """`physics/plasma_current.py::PlasmaCurrent`, §A row 2.4
     (`physics.py:527`) -- 4 entered functions, 296 entered LOC, none shared. Site of
     decision 1 (`i_plasma_current`) and one read each of 2 and 4, plus the file's one
-    read of `.stellarator.iotabar` (`:196`), which the tokamak arm does not take."""
+    read of `.stellarator.iotabar` (`:196`), which the tokamak arm does not take.
+    Three slots (the record's fourth moved to `plasma_inductance` -- its own open
+    question 1's rule, applied)."""
 
-    bootstrap_current: ModelNamespace | None = None
+    bootstrap_current: BootstrapCurrentFractionScaling | None = dataclasses.field(
+        kw_only=True
+    )
     """`physics/bootstrap_current.py::PlasmaBootstrapCurrent`, §A row 2.5
-    (`physics.py:543`) -- 14 entered functions, 1228 entered LOC, unported, no registry
-    row. Site of decision 6 (`i_bootstrap_current`).
+    (`physics.py:543`) -- 14 entered functions, 1228 entered LOC. Site of decision 6
+    (`i_bootstrap_current`): `4` (Sauter) is written, `0` (USER_INPUT) is an **empty
+    slot** (`.current_drive.f_c_plasma_bootstrap` becomes a boundary input, and it is
+    an `IN.DAT` variable), the other twelve are UNPORTED.
 
-    §F's finding applies here and changes its shape: the trace enters all 14 functions at
-    `i_bootstrap_current = 4`, because `get_bootstrap_current_fraction_value` evaluates
-    the whole family and indexes it. So this switch selects a *value from a computed
-    vector*, not a subgraph -- one node producing the family plus an index, not an
-    occupant per arm."""
+    §F's "one node producing the family plus an index" reading is **overridden** by the
+    settled computes-then-selects policy (`bootstrap_current.md` open question 2, wave
+    coordinator 2026-08-26): one occupant class per switch value, each declaring only
+    its own arm's reads. The unselected thirteen family members are dead work and are
+    not computed."""
 
-    l_h_transition: ModelNamespace | None = None
+    diamagnetic_current: PlasmaDiamagneticCurrentFraction = dataclasses.field(
+        kw_only=True
+    )
+    """`physics/plasma_current.py::PlasmaDiamagneticCurrent` (`physics.py:527`) --
+    **a new slot, not one of the traced twenty-five**: `tokamak_boundary.md` folded it
+    into `plasma_current`, whose record then declared it out of scope, so
+    `bootstrap_current.md`'s registration instructions gave it a home beside its only
+    consumer (`current_fractions` below). `i_diamagnetic_current == 0` (none) is
+    written; `1`/`2` (Hender/SCENE fits) are UNPORTED."""
+
+    pfirsch_schluter_current: PlasmaPfirschSchluterCurrentFraction = dataclasses.field(
+        kw_only=True
+    )
+    """`physics.py:534-541`'s Pfirsch-Schluter fraction -- a new slot on the same
+    grounds as `diamagnetic_current`. `i_pfirsch_schluter_current == 0` (none) is
+    written; `1` (SCENE fit) is UNPORTED."""
+
+    current_fractions: PlasmaCurrentFractions = PlasmaCurrentFractions()
+    """`Physics.calculate_plasma_current_fractions` (`physics.py:558-591`) -- sums the
+    bootstrap, diamagnetic and Pfirsch-Schluter fractions into the inductive and
+    auxiliary ones. Unswitched; the slot that closes `HcdPrimaryInjectedPower`'s
+    `.physics.f_c_plasma_auxiliary` boundary read."""
+
+    l_h_transition: LHThresholdPower = dataclasses.field(kw_only=True)
     """`physics/l_h_transition.py::PlasmaConfinementTransition`, §A row 2.6
-    (`physics.py:788`) -- 23 entered functions, 1124 entered LOC, unported. Computes
-    every L-H threshold and selects, the same shape as `bootstrap_current` above."""
+    (`physics.py:788`) -- 23 entered functions, 1124 entered LOC. A single node, not a
+    namespace: one switch (`i_l_h_threshold`, 21 values), one owned `VarPath`
+    (`.physics.p_l_h_threshold_mw`). The Martin-2008 family (`6`-`8`, `19`-`21`) has
+    written occupants, `19` (aspect-corrected nominal) live; the other fifteen values'
+    formulas are ported and Tier-1-tested but have no occupant yet
+    (`l_h_transition.md` "## ported"). The computes-then-selects reading is overridden
+    the same way `bootstrap_current`'s is."""
 
-    scrape_off_layer: ModelNamespace | None = None
+    scrape_off_layer: TokamakScrapeOffLayer = dataclasses.field(kw_only=True)
     """`physics/scrape_off_layer.py::ScrapeOffLayer`, §A row 2.7 (`physics.py:832`) -- 5
-    entered functions, 226 entered LOC, unported."""
+    entered functions, 226 entered LOC. Eight flat slots, one switched
+    (`i_len_sol_outboard_power_decay`)."""
 
-    density_limit: ModelNamespace | None = None
+    density_limit: TokamakDensityLimit = dataclasses.field(kw_only=True)
     """`physics/density_limit.py::PlasmaDensityLimit`, §A row 2.8 (`physics.py:870`) --
     11 entered functions, 531 entered LOC, 0 shared. Site of decision 8
-    (`i_density_limit = 7`), and the third computes-then-selects family.
-
-    One of its eleven, `calculate_greenwald_density_limit`, is already ported (unit #21's
-    note); the node is not registered anywhere, because the stellarator path never enters
-    this file."""
+    (`i_density_limit = 7`). Three slots: the Greenwald limit and fraction are
+    unconditional (PROCESS fills the whole family regardless of the switch), and only
+    the *enforced* limit answers `i_density_limit`."""
 
     current_drive: TokamakCurrentDrive = dataclasses.field(kw_only=True)
     """`physics/current_drive.py::CurrentDrive` and its four injected sources
@@ -207,20 +264,22 @@ class Tokamak(ModelNamespace):
     unresolved wrapping policy, and it is on the chain constraints 34/35/36/74/75 read.
     """
 
-    pf_coil: ModelNamespace | None = None
-    """`pfcoil.py::PFCoil`, §A row 4 (`caller.py:319`) -- with `cs_coil` and `cs_fatigue`
-    below, 24 entered functions and 3525 entered LOC, **zero ported, zero shared**. With
-    `cicc_superconducting_tf_coil` this is 40 % of the unported tokamak surface.
+    pf_coil: PFCoil = dataclasses.field(kw_only=True)
+    """`pfcoil.py::PFCoil`, §A row 4 (`caller.py:319`) -- ten slots including the
+    inductance matrix. Site of decisions 11 and 13 (`i_pf_superconductor`,
+    `n_pf_coil_groups`), resolved with the rest of the package's joint predicate by
+    `indat._pf_coil_system_arm` -- one predicate, thirteen slots, resolved once
+    (`models/pfcoil/namespace.py`'s own docstring).
 
-    Site of decisions 11 and 13 (`i_pf_superconductor`, `n_pf_coil_groups`), and the
-    reason `costs` grows back: `model_tree_design.md` §8 step 4c deleted Accounts 222.2
-    and 225.2 because a stellarator has no PF coil system, and
-    `cost_boundary_inputs.md` category (d) carries the producer `file:line` for each."""
+    The registration closes `Structure`'s and `Cryostat`'s three PF-coil boundary
+    reads, and it is why `costs` grows back: `model_tree_design.md` §8 step 4c deleted
+    Accounts 222.2 and 225.2 because a stellarator has no PF coil system, and
+    `cost_boundary_inputs.md` category (d) carries the producer `file:line` for each.
+    The package's four-node cycle is cut and driven in `mda.py`, not here."""
 
-    cs_coil: ModelNamespace | None = None
-    """`pfcoil.py::CSCoil`, injected at `main.py:652` -- 11 of `pfcoil.py`'s 24 entered
-    functions. The central solenoid, and the site of decision 12
-    (`i_cs_superconductor = 1`).
+    cs_coil: CSCoil = dataclasses.field(kw_only=True)
+    """`pfcoil.py::CSCoil`, injected at `main.py:652` -- three slots. The central
+    solenoid, and the site of decision 12 (`i_cs_superconductor = 1`).
 
     A slot of its own rather than part of `pf_coil` because PROCESS injects it as a
     separate `Model` with its own switch; a stellarator has none at all
@@ -255,10 +314,11 @@ class Tokamak(ModelNamespace):
     `.fwbs.i_p_coolant_pumping == MECHANICAL` (2) and the file sets 3. Dormant, not
     absent -- a second tokamak IN.DAT can wake it (§D)."""
 
-    shield: ModelNamespace | None = None
+    shield: TokamakShield = dataclasses.field(kw_only=True)
     """`shield.py::Shield`, §A row 8 (`caller.py:329`) -- 4 entered functions, 270
-    entered LOC, unported. Decision 14 (`i_shld_primary_heat`) is read in `power.py`, not
-    here."""
+    entered LOC. Decision 14 (`i_shld_primary_heat`) is read in `power.py`, not here.
+    Two slots; the volumes slot's D-shaped arm joins the existing
+    `_fw_blkt_vv_shape_arm` joint key rather than minting a second."""
 
     vacuum_vessel: VacuumVesselElliptical = dataclasses.field(kw_only=True)
     """`vacuum.py::VacuumVessel`, §A row 9 (`caller.py:331`) -- 3 entered functions.

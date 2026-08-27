@@ -237,8 +237,24 @@ one point, but not traced through an actual `ncycle` trajectory.
 ## open questions
 
 1. **The stop item itself: which of the three candidates above (or another) should
-   `ncycle`'s port follow?** This is the one decision this record asks the orchestrator
-   to make; everything else in this file is ready to proceed once it is.
+   `ncycle`'s port follow?** **DECIDED-DEFERRED** (orchestrator, consolidation round 2,
+   2026-08-27) — decided so the eventual port does not re-derive it, deferred because
+   no reader needs `n_cycle` yet (constraint 90 is not active on any tracked input and
+   the CS stress chain feeding it is UNPORTED). The decision, when the port happens:
+   - **Eager `lax.while_loop` is the correct shape**, by §7-style reasoning: the loop
+     has no external reader of any intermediate — only `n_cycle` (and the pre-loop
+     constant `t_crack_radial`) leaves it — so the iteration is an implementation
+     detail of one node's body, not an undeclared block.
+   - **Tier-1 value agreement is legitimate**: for a fixed `delta` the termination is
+     deterministic and PROCESS's answer *is* ground truth for that discretisation —
+     candidate 1's value story, adopted.
+   - **The gradient check is structurally excused, not tuned around**: `n_cycle` is a
+     discrete count, piecewise-constant in every continuous input — the same class as
+     `inductance.md`'s `noh`, and the same policy applies (`next_steps.md` §15's
+     "structural integers moved by the solve"). No per-unit tolerance tuning, no
+     bespoke `residual`, no new tier: the gradient tests are excused for the discrete
+     output with the reason recorded, exactly as `noh`'s `static_argnames` are.
+   Everything else in this file is ready to proceed on that basis.
 2. **Does PROCESS's own finite-difference gradient of `n_cycle` see the same staircase
    discontinuity a `lax.while_loop` port would?** Not measured. If yes, the existing
    Richardson-extrapolation error bar (`_harness/finite_difference.py`) may already
