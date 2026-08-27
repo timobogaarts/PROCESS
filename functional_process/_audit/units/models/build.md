@@ -642,3 +642,79 @@ picture-frame TF coil (`i_tf_shape == 2`), whose closed-form ripple formula
 (`process/models/build.py:1585-1590`) reads neither the winding pack nor the `c1`/`c2`
 fit coefficients; recorded UNPORTED since first writing. That is the next blocker for
 both files.
+
+
+## 2026-08-27 — the picture-frame TF ripple ported (ST frontier wave 3)
+
+`i_tf_shape_build == 2` was the standing refusal on **both**
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` after the no-precompression
+wave above. Written this wave: `plasma_outboard_edge_toroidal_ripple_picture_frame` +
+`TfOutboardMidPictureFrame` + `TfOutboardEdgeRipplePictureFrame`, porting the
+`i_tf_shape == PICTURE_FRAME` arm of `Build.plasma_outboard_edge_toroidal_ripple`
+(`process/models/build.py:1582-1590`) — "Ken McClements ST picture frame coil
+analytical ripple calc". Both files select it explicitly
+(`spherical_tokamak_eval.IN.DAT:357`, `st_regression.IN.DAT:803` set `i_tf_shape = 2`),
+and both would land there anyway: `itart = 1` (`:283` / `:66`) makes `init.py:728-729`
+resolve the `0` meta-value to picture frame. Verified against the files, not assumed
+from the refusal text.
+
+The arm is `ripple = 100 * ((rmajor + rminor) / r_tf_outboard_mid) ** n_tf_coils` and
+`midmin = (rmajor + rminor) / (0.01 * ripple_max) ** (1 / n_tf_coils)` — the exponent
+is the bare `n_tf_coils`, no `c1`/`c2`, and `dx_tf_wp_conductor_max` (computed upstream
+at `:1551-1580`) is dead on this arm, which is the reads-set difference the refusal
+named: the picture-frame occupants read neither the winding pack nor `.tfcoil.i_tf_sup`
+downstream of it. **Ported defects included, which here means ported *without* the
+sibling's kludges**: the fitted arm clamps `base` at `1e-6` and replaces a non-finite
+`midmin`; the picture-frame arm has neither guard in the source, so none was added — a
+zero `ripple_b_tf_plasma_edge_max` divides by zero exactly as PROCESS does. `flag` is
+dropped as for the sibling, and on this arm that drops nothing at all: `flag = 0` at
+`:1581` is never reassigned inside the branch, so the source's value is identically
+zero (the fitted-range checks at `:1626-1634` are `else`-branch only).
+
+Two occupants for the slot pair, mirroring the D-shape split exactly: the shell around
+the two ripple calls (`:1916-1956`, `:1958-1977`) is shape-agnostic — only the fit
+inside branches — so `TfOutboardMidPictureFrame` composes the new pure function with
+the existing `calculate_r_tf_outboard_mid` (first call: only `midmin` load-bearing),
+and `TfOutboardEdgeRipplePictureFrame` is the second call at the final radius, owning
+`.tfcoil.ripple_b_tf_plasma_edge`. `r_tf_outboard_midmin` is not re-owned, same
+one-name-per-value reasoning as the D-shape pair.
+
+**Everything else `i_tf_shape` gates, checked by grep over `process/`:**
+
+- `tfcoil/base.py:498-551` (`tf_coil_shape_inner` arc construction): a real graph
+  branch, already the `("tf_coil_shape_arm", -2)` refusal — and on these ST runs
+  unreachable anyway, because `_tf_coil_shape_arm` returns `-1` on `itart == 1` first.
+- `tfcoil/base.py:2120` (self-inductance): both arms already ported;
+  `_tf_self_inductance_arm` sends picture frame (and any ST) to
+  `TfCoilSelfInductancePictureFrame`. Nothing to do.
+- `pfcoil.py:1323-1339` (`place_pf_outside_tf`): already the
+  `("pf_coil_system_arm", -7)` refusal, jointly keyed with
+  `i_r_pf_outside_tf_placement`. Left to the PF wave; not this unit.
+- `pfcoil.py:1514` (`tf_pf_collision_detector`): reads the switch but writes nothing —
+  a `logger.error` diagnostic only, no `data` write, so no slot exists to fill.
+- `tfcoil/base.py:665-693`, `:1115-1140`, `core/io/plot/summary.py`: `output()` /
+  plotting only.
+
+So the ripple pair was the only `i_tf_shape` site the blocked assembly needed.
+
+Registration: `indat.TF_OUTBOARD_MID[PICTURE_FRAME] = TfOutboardMidPictureFrame`,
+`indat.TF_OUTBOARD_EDGE_RIPPLE[PICTURE_FRAME] = TfOutboardEdgeRipplePictureFrame`; the
+`("i_tf_shape_build", 2)` `UNPORTED` entry removed, its `i_tf_shape == 0`-is-a-
+meta-value note moved into the registry pair's docstring (the policy itself still lives
+on `indat._tf_shape`).
+
+Harness: `TestRipplePictureFrame`, tier 1 — the reference is the real
+`Build.plasma_outboard_edge_toroidal_ripple` at `i_tf_shape = 2` with the winding-pack
+kwargs pinned at the D-shape `BASELINE` values *deliberately*, so a port that secretly
+read the winding pack would fail by value. Legacy point = the two ST files' shared
+inputs (`rmajor = 4.5`, `rminor = 4.5 / 1.8 = 2.5`, `n_tf_coils = 12`,
+`ripple_b_tf_plasma_edge_max = 1.0`; no converged reference solved yet), evaluated at
+`r_tf_outboard_mid = midmin = 10.274594873354488` m — the radius the 1% limit itself
+forces. Test file: 62 passed plain, 124 with `--fp-gradients` (was 57/114), fuzz +
+gradients green.
+
+Frontier probe after this wave (`machine_from_indat` + `graph_for`): **both** ST files
+advance past `i_tf_shape_build` and now refuse at `tf_coil_shape_arm == -1` —
+`.physics.itart == 1`, the TART arms of `tf_coil_shape_inner`, which read
+`.build.r_cp_top` (`tfcoil/base.py:498-551`); recorded UNPORTED since first writing.
+That is the next blocker for both files.

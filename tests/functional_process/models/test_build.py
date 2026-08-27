@@ -48,6 +48,7 @@ from functional_process.models.build import (
     calculate_z_plasma_xpoint,
     calculate_z_tf_inside_half,
     plasma_outboard_edge_toroidal_ripple_fitted,
+    plasma_outboard_edge_toroidal_ripple_picture_frame,
 )
 from process.core.model import DataStructure
 from process.models.build import Build
@@ -959,4 +960,83 @@ class TestRippleSuperconducting(Tier1Contract):
         "dx_tf_wp_primary_toroidal": (1.0, 1.5),
         "dx_tf_wp_insulation": (0.005, 0.012),
         "dx_tf_wp_insertion_gap": (0.005, 0.015),
+    }
+
+
+def _reference_ripple_picture_frame(
+    ripple_b_tf_plasma_edge_max,
+    r_tf_outboard_mid,
+    n_tf_coils,
+    rmajor,
+    rminor,
+):
+    """`Build.plasma_outboard_edge_toroidal_ripple` with `i_tf_shape = 2`, minus `flag`.
+
+    The winding-pack kwargs are the D-shape `BASELINE` values on purpose: the
+    picture-frame arm computes `dx_tf_wp_conductor_max` and never uses it
+    (`build.py:1551-1580` then `:1582-1590`), so if the port were secretly reading the
+    winding pack the fixed values here would make that a value failure, not a
+    coincidence. `flag` is dropped as everywhere else -- and on this arm it is the
+    literal `0` from `:1581`, never reassigned, so nothing diagnostic is lost either.
+    """
+    ripple, r_tf_outboard_midmin, _flag = Build.plasma_outboard_edge_toroidal_ripple(
+        ripple_b_tf_plasma_edge_max=ripple_b_tf_plasma_edge_max,
+        r_tf_outboard_mid=r_tf_outboard_mid,
+        n_tf_coils=n_tf_coils,
+        rmajor=rmajor,
+        rminor=rminor,
+        r_tf_wp_inboard_inner=BASELINE["superconducting_tfcoil"][
+            "r_tf_wp_inboard_inner"
+        ],
+        r_tf_wp_inboard_centre=BASELINE["superconducting_tfcoil"][
+            "r_tf_wp_inboard_centre"
+        ],
+        r_tf_wp_inboard_outer=BASELINE["superconducting_tfcoil"][
+            "r_tf_wp_inboard_outer"
+        ],
+        dx_tf_wp_primary_toroidal=BASELINE["tfcoil"]["dx_tf_wp_primary_toroidal"],
+        i_tf_shape=2,
+        i_tf_sup=BASELINE["tfcoil"]["i_tf_sup"],
+        dx_tf_wp_insulation=BASELINE["tfcoil"]["dx_tf_wp_insulation"],
+        dx_tf_wp_insertion_gap=BASELINE["tfcoil"]["dx_tf_wp_insertion_gap"],
+        i_tf_wp_geom=BASELINE["tfcoil"]["i_tf_wp_geom"],
+    )
+    return ripple, r_tf_outboard_midmin
+
+
+class TestRipplePictureFrame(Tier1Contract):
+    """`plasma_outboard_edge_toroidal_ripple_picture_frame` vs
+    `Build.plasma_outboard_edge_toroidal_ripple`, `i_tf_shape == 2`.
+
+    The legacy point is `spherical_tokamak_eval.IN.DAT` / `st_regression.IN.DAT` input
+    values, which agree on every field this arm reads: `rmajor = 4.5`,
+    `rminor = 4.5 / 1.8 = 2.5`, `n_tf_coils = 12`,
+    `ripple_b_tf_plasma_edge_max = 1.0`. No converged reference for either file has
+    been solved, so `r_tf_outboard_mid` is set at the radius the 1% limit itself
+    forces, `midmin = 7.0 / 0.01 ** (1/12) = 10.274594873354488 m` -- the value
+    `calculate_r_tf_outboard_mid` would adopt whenever the stacked build is tighter.
+    Fuzz covers the neighbourhood on every input.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_ripple_picture_frame
+    ported = plasma_outboard_edge_toroidal_ripple_picture_frame
+
+    samples = [
+        legacy_sample(
+            "spherical_tokamak_eval-inputs",
+            ripple_b_tf_plasma_edge_max=1.0,
+            r_tf_outboard_mid=10.274594873354488,
+            n_tf_coils=12.0,
+            rmajor=4.5,
+            rminor=2.5,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "ripple_b_tf_plasma_edge_max": (0.5, 1.5),
+        "r_tf_outboard_mid": (8.0, 12.0),
+        "n_tf_coils": (10.0, 14.0),
+        "rmajor": (4.0, 5.0),
+        "rminor": (2.2, 2.8),
     }
