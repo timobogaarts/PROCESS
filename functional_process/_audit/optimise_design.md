@@ -1670,6 +1670,13 @@ graph, cottax `ef093ba`, and an `mda_env` that seeded `^guess` off the *undriven
   short of the optimum at 60 iterations (`x109` 0.03175 against 0.0299518) and reaches it
   given more. Two independently written SQPs, two QP solvers, two line searches, same
   answer about how hard this is — §11.10's own experiment, re-run.
+  **[The conclusion holds, the evidence does not: §13.5 measures SLSQP stopping short at
+  **87**, not 60, and shows it is SLSQP's own `ftol` — a single *absolute* threshold
+  checked against the step size and the objective change, not a KKT test — firing at a
+  feasible but non-optimal point. `x109 = 0.03175` does not reproduce in any of six
+  configurations. §13.6 also finds the two solvers do *not* agree about the difficulty
+  once the residual scaling is varied: unscaled, SLSQP converges in 142 and pyvmcon
+  declares victory in 7 at the wrong point.]**
 
 ### 12.5 What changed in the code
 
@@ -1682,3 +1689,280 @@ eight-variable problem, which is the right default for anything reproducing PROC
 the wrong one for a block PROCESS never solves.
 `test_sand.py::test_max_iter_reaches_the_driver_and_defaults_to_the_drivers_own` pins
 both halves.
+
+## 13. Two SQPs and PROCESS, timed (2026-08-27)
+
+§12 left two numbers standing on one leg each: *"`SlsqpDriver` is also short of the
+optimum at 60 iterations"*, and the implicit comparison between the port's **326**
+SQP iterations and PROCESS's **46**. This section measures both properly -- the two
+drivers on the *identical* assembled problem with the jit discipline stated, and
+PROCESS's own solve of the same machine with the tolerance and the formulation
+difference put side by side rather than left to the reader.
+
+Measured on the tree at `f1e2ccfb`, cottax pinned at `db4f025` by `git archive` onto
+`PYTHONPATH` (the live `~/jaxgraph` working tree is dirty; the archive is not), in
+`process_port` with `jax_enable_x64` on and `JAX_PLATFORMS=cpu`. Note `jax 0.11.0`
+here, where `CLAUDE.md` records 0.11.1 -- drift in the env, not in the tree, and §12.1
+already showed this axis inert.
+
+### 13.1 Method, so every number below can be read
+
+- **One PROCESS run seeds everything.** `sand_harness.reference_run` has no cache of
+  its own, so the run timed in §13.2 is a genuine uncached solve; it is pickled to the
+  session scratchpad afterwards and every solver run below starts from that same
+  `ReferenceRun`. The C2 path is `run_sand_harness.main`'s, function for function
+  (`mda_env` -> `assemble` -> `sand_schedule` -> `_seed(design=every unknown)` ->
+  `_inputs_only`), so the assembled problem is the one §12 measured: **124-node drive,
+  14 unknowns, 21 conditions (objective + 8 equalities + 12 inequalities), 319 context,
+  42 schedule steps**, nothing degenerate, nothing array-valued, nothing omitted.
+- **Both drivers receive that same problem**, through `sand.sand_schedule(..., driver=)`:
+  same graph, same C2 seed, same `bounds`, same `condition_scale`. `scaled_problem`
+  exists for exactly this (`drivers.py`'s own docstring), so only the solver differs.
+- **Jit discipline.** The two callables timed are the two each driver builds per solve --
+  `jax.jit(flat_conditions)` and `jax.jit(jax.jacfwd(flat_conditions))` over a flat
+  unknown vector. The **first** call (trace + compile + one execution) is reported
+  separately and excluded from the steady state; every timed call afterwards is wrapped
+  in `jax.block_until_ready`. Medians of 50 repeats (value) and 20 (Jacobian), with
+  min/max shown because the max is a scheduler artefact, not a distribution.
+- **Compile inside a solve is not excludable by warming.** Each driver builds its jits
+  as fresh closures inside `__call__`, so JAX's cache misses and the whole 7.6 s is paid
+  inside SQP iteration 1. Two numbers therefore travel together everywhere below: the
+  **total** wall clock (compile included -- what a user waits) and the **steady state**,
+  derived from the callback timestamps between iteration 2 and the last, which excludes
+  compile by construction.
+- **Evaluation counting is non-invasive**: a `pyvmcon.solve` wrapper for `VmconDriver`,
+  a `drivers.scaled_problem` wrapper for `SlsqpDriver`. "eval" means the same thing for
+  both -- **one condition value *and* one `jacfwd`, at one distinct point** (SLSQP's
+  driver caches the pair per point, so its `nfev` and its distinct-point count coincide).
+- **`max|eq|` is always reported in `VmconDriver.condition_scale`'s units**, including
+  for the unscaled runs, so the column compares across the table. Unscaled it is
+  meaningless: `^cond.physics.fusden_alpha_total`'s factor is `2.3e-18`.
+- Wall clocks are `time.perf_counter`; the two headline configurations were run **three
+  times** and are reported min/median/max, the tolerance sweep once each (iteration
+  counts are deterministic and were identical across repeats; only timings moved).
+
+### 13.2 PROCESS, re-measured
+
+| | |
+|---|---|
+| VMCON iterations | **46** |
+| wall clock (`SingleRun.run`) | **109.05 s** (`2.37 s` per iteration) |
+| convergence parameter | `2.396e-07` |
+| `epsvmc` (its stopping rule) | `1.0e-06` -- the `NumericsData` default; the file never sets it |
+| `maxcal` | 100 |
+| `epsfcn` | 0.01 (the file's own; the default is 1e-3) |
+| `objf` | `1.166072708` (`i_figure_merit = 6`, cost of electricity) |
+| problem | **8** `ixc`, **2** equalities + **12** inequalities |
+
+The recorded 94 s is the same run on a quieter machine; 109 s is what it costs here, and
+the ratios below use the number measured in the same session as the port's.
+
+Two details of PROCESS's stopping rule that matter for §13.4. Its convergence parameter
+first drops below `epsvmc` at **iteration 44** (`1.402e-07`) and it keeps going to 46,
+because `force_vmcon_inequality_satisfication = 1` adds
+`all(ie >= -1e-8)` to pyvmcon's test (`solver.py:207-243`) -- a second criterion
+`VmconDriver` does not pass. PROCESS also pins the QP solver
+(`qsp_options={"solver": cvxpy.CLARABEL}`) where `VmconDriver` takes pyvmcon's default.
+Neither is a defect; both are reasons the two iteration counts are not the same
+experiment even before the formulation differs.
+
+Where the 2.37 s per iteration goes is the entire point of the rewrite: one VMCON
+iteration costs `1 + 2n = 17` full pipeline evaluations (`fcnvmc1` plus `fcnvmc2`'s
+forward/backward differences at `epsfcn`), and each of those re-runs the whole
+Gauss-Seidel loop up to 10 times.
+
+### 13.3 The jit probe -- what one evaluation of the port's block costs
+
+| callable | first call (trace + compile + exec) | jitted min / **median** / max |
+|---|---|---|
+| condition map (21 conditions from 14 unknowns) | `1.757 s` | 0.211 / **0.259** / 2.479 ms (n=50) |
+| `jax.jacfwd` of it (the `(21, 14)` Jacobian) | `5.834 s` | 0.442 / **0.484** / 1.623 ms (n=20) |
+
+**Compile 7.59 s once; 0.74 ms per value-and-Jacobian pair thereafter**, 0 non-finite
+cells. `jacfwd` costs 1.87x the value map for 14 columns -- forward-mode over a block
+whose width is its unknown count, which is the shape cottax's `Blocking` was supposed to
+buy. Against PROCESS's 2371 ms per iteration for the same job, that is **~3200x** on the
+evaluation alone, and it is why the rest of this section is about the QP.
+
+### 13.4 The two drivers, C2, `max_iter = 500`
+
+`objf* = 1.217757336` is §11.11's free optimum. "dist" is the largest relative
+difference from pyvmcon's own answer over the 14 unknowns.
+
+| driver | its | outcome | `objf - objf*` | `max\|eq\|` | dist | wall (s) | steady ms/it | evals |
+|---|---|---|---|---|---|---|---|---|
+| **pyvmcon**, scaled | **326** | conv `8.80e-11` | `+2.46e-09` | `1.55e-08` | -- | 11.34 / **11.93** / 12.17 | 12.9 / **13.1** / 14.3 | 651 |
+| SLSQP `ftol=1e-8` (default) | 87 | status 0 "success" | `+8.09e-05` | `1.19e-13` | `7.33e-02` | 8.26 | 5.9 | 558 |
+| SLSQP `ftol=1e-10` | 87 | status 0 | `+8.09e-05` | `1.19e-13` | `7.33e-02` | 8.66 | 7.2 | 558 |
+| SLSQP `ftol=1e-11` | 88 | status 0 | `+8.09e-05` | `1.19e-13` | `7.33e-02` | 7.73 | 5.5 | 558 |
+| SLSQP `ftol=1e-12` | 106 | status 0 | `+1.15e-05` | `9.51e-13` | `2.65e-03` | 8.80 | 5.6 | 578 |
+| **SLSQP `ftol=1e-13`** | **150** | **status 0** | **`-6.54e-10`** | **`7.93e-14`** | **`5.61e-06`** | 8.19 | 5.4 | 811 |
+| SLSQP `ftol=1e-14` | 500 | status 9, **iteration limit** | `-6.55e-10` | `5.55e-13` | `9.88e-06` | 11.80 | 8.3 | 4431 |
+| SLSQP `ftol=1e-16` | 500 | identical to `1e-14`, line for line | | | | 11.95 | 8.6 | 4431 |
+
+Both solvers reach the same point. At the tolerance where SLSQP actually converges to it
+(`ftol=1e-13`), the two answers agree to **`5.6e-06` in the worst coordinate and `1.0e-07`
+in the median** -- two independently written SQPs, two QP solvers, two line searches, one
+optimum, and §12.2's `objf 1.2177573` confirmed a third time.
+
+**Is the port solver-bound or evaluation-bound? pyvmcon: solver-bound, decisively.**
+Excluding compile, its 651 evaluations cost **0.69 s** and everything else costs
+**3.83 s** -- per iteration, **~2.1 ms evaluating and ~11.8 ms in the QP subproblem,
+line search and host bookkeeping (90 %)**. `pyvmcon` builds and solves its QP through
+`cvxpy` in Python at every iteration; at 0.74 ms per exact Jacobian the model has stopped
+being the cost.
+
+**SLSQP is the mirror image.** Its QP is compiled Fortran LSQ, so "everything else" is
+0.55 s over 142 iterations (3.9 ms), while its line search asks for **5.5 distinct
+points per iteration** against pyvmcon's 2.0 -- 4.9 ms of evaluation per iteration.
+Roughly balanced, tilting evaluation-bound. It converges in **less than half** the
+iterations for **more total derivative work** (785 Jacobians against 651).
+
+### 13.5 "SLSQP short at 60" -- its own test, firing early, on a loose absolute tolerance
+
+Not an iteration cap and not a different optimum. At its default `ftol=1e-8` SLSQP stops
+at **87** iterations (its own cap is 100) reporting `status 0, "Optimization terminated
+successfully"`, at a point that is **feasible and not optimal**: `max|eq| 1.19e-13`,
+inequality margin `-6.2e-14`, and `objf` **`8.09e-05` above the optimum** with the design
+`7.3e-02` off in `t_tf_superconductor_quench`. Its trace tail says exactly what its test
+saw -- the objective change per iteration crawling `-1.6e-08`, `-1.6e-09`, `-1.8e-09` for
+seven iterations before a last step fixed the residual and the run stopped.
+
+That is `ftol`'s documented semantics, and scipy's own docstring is the citation: *"This
+value controls the final accuracy for checking various optimality conditions; gradient of
+the lagrangian and absolute sum of the constraint violations should be lower than `ftol`.
+Similarly, computed step size and the objective function changes are checked against this
+value."* One **absolute** number against four different quantities -- so on an objective
+of order 1 with a `1e-4`-scale optimality gap still open, a step-size/objective-change
+test at `1e-8` fires long before the KKT conditions do. `pyvmcon`'s parameter is not
+comparable: it is `|df . delta| + sum |lambda_j c_j|`, a genuine multiplier-weighted
+optimality measure.
+
+**And `ftol` is not only a stopping threshold.** `scipy/optimize/_slsqp_py.py:464` sets
+the LSQ subproblem's `tol = 10 * acc`, so tightening it changes the *trajectory*, not
+just when the trajectory stops. Measured: `1e-8`/`1e-10`/`1e-11` all halt at the same
+wrong point; `1e-12` runs to 106 and a nearer one; `1e-13` runs to 150 and the optimum;
+`1e-14` never satisfies the test at all. There is a cliff between `1e-12` and `1e-13`,
+not a knob.
+
+**The recorded pair "60 iterations, `x109 = 0.03175`" does not reproduce.** Six
+configurations were tried (scaled and unscaled residuals x `ftol` from `1e-8` to `1e-16`
+x caps 100 and 500) and every one lands with `x109` in `0.0299518 +/- 3e-8`; none takes 60
+iterations. The observation's *shape* -- SLSQP stopping short of the optimum and calling
+it success -- is real and is measured above at 87 iterations; the two specific numbers
+are from a configuration this tree no longer has, the same standing as §12.3's
+irreproducible 31.
+
+**Two things not to misread from a capped SLSQP run.** Its trace row *N* is not its
+answer at `maxiter=N`: capped at 142 the driver returns `objf 1.217723993`, while the
+callback at iteration 142 held `1.217757299` -- scipy's iteration-limit exit returns an
+internal iterate one line-search step out of step with the last callback. And running
+past its stopping test is not free: at `ftol=1e-14` SLSQP reaches the optimum around
+iteration 147 (`max|eq| 6.7e-13`) and then, with nothing left to fire, **degrades
+monotonically** -- `max|eq|` creeping `1.2e-13 -> 1.8e-04` between iterations 160 and 480
+-- before snapping back at 498.
+
+### 13.6 The condition scaling is `VmconDriver`'s, and it is wrong for SLSQP
+
+Dropping `sand.residual_condition_scales` entirely (not §12.4's one-row sweep -- **every**
+residual factor set to 1) and rerunning both drivers from the same seed:
+
+| driver, residuals unscaled | its | outcome | `objf - objf*` | `max\|eq\|` | dist to pyvmcon-scaled | wall (s) |
+|---|---|---|---|---|---|---|
+| **SLSQP `ftol=1e-8`** (default!) | **142** | status 0 | `-6.55e-10` | `7.06e-12` | `5.26e-06` | 8.57 / **8.83** / 9.38 |
+| pyvmcon | **7** | conv `6.68e-09` | `+1.76e-03` | `2.38e-09` | -- (a different point) | 8.09 |
+
+Two findings, opposite directions:
+
+- **SLSQP does better without the scaling**: at its own default tolerance it converges in
+  142 iterations onto pyvmcon's answer, where the scaled problem at the same tolerance
+  stops short at 87. The factors were derived for VMCON's merit function and its QP
+  weighting (`VmconDriver.condition_scale`'s docstring records why), and SLSQP's
+  BFGS-with-safeguard plus its own row handling do not want them.
+- **pyvmcon without the scaling declares convergence in 7 iterations at the wrong
+  point** (`objf` `1.76e-03` high). That is not a slow solve, it is a **false positive**:
+  its convergence parameter is `sum |lambda_j c_j|`, the unscaled residual rows are
+  enormous, the QP drives their multipliers to nothing, and the sum reads converged.
+  §12.4's sweep of the single `wp_width_r_min` factor found only "not converged at 296
+  iterations"; dropping all six is worse than that, and the scaling is load-bearing in a
+  way that section did not see.
+
+The consequence for the harness is recorded, not acted on: `residual_condition_scales`
+is currently threaded to *whatever* driver `sand_schedule` builds. It is a
+`VmconDriver` tuning parameter and the fact that `SlsqpDriver` takes the same field is a
+seam, not an equivalence.
+
+### 13.7 The comparison, stated with the formulation difference in it
+
+**The two problems are not the same problem**, and no iteration count is honest without
+that on the same page:
+
+| | PROCESS | the port's SAND block |
+|---|---|---|
+| unknowns | **8** (`ixc 2, 3, 4, 6, 10, 56, 59, 109`) | **14** -- the same 8, plus 6 coupling unknowns PROCESS never exposes (`temp_plasma_ion_vol_avg_kev`, `wp_width_r_min`, `delta_eta` and three residualised `^hat.*` fixed points) |
+| equalities | 2 -- `c2` and `c16`, by **position**: the file sets `n_equality_constraints = 2` and `icc` opens `2, 16, ...`, so `c16` is solved as an equality although `ConstraintManager` registers it `">="` (`constraints.py:639`). §1's positional-split warning, live on the reference run; the port reproduces it faithfully | **8** -- the same 2, plus 6 residual rows for the coupling |
+| inequalities | 12 | 12, identical |
+| architecture | **MDF** -- every evaluation re-converges the Gauss-Seidel MDA (up to 10 passes) | **SAND** -- the MDA is opened up and its coupling handed to the SQP |
+| derivatives | finite differences, `2n` pipeline sweeps per iteration at `epsfcn = 0.01` | one exact `jax.jacfwd`, 0.484 ms |
+| stopping | `epsvmc = 1e-6`, **plus** `all(ie >= -1e-8)` | pyvmcon `epsilon = 1e-8`, no second criterion |
+| `objf` at its answer | `1.166072708` | `1.217757336` -- **not comparable**, this is §5.1's 17.6 MW self-consistency offset, not a worse optimum |
+
+**Iterations to equal tolerance.** Running the port's pyvmcon to PROCESS's own stopping
+rule instead of its own (identical across all three repeats):
+
+| convergence parameter | port, SQP iterations | at t (s), one run |
+|---|---|---|
+| `<= 1e-4` | 165 | 9.6 |
+| `<= 1e-5` | 196 | 10.0 |
+| **`<= 1e-6` (PROCESS's `epsvmc`)** | **299** | 11.3 (10.7 -- 11.5 over four runs) |
+| `<= 1e-7` | 307 | 11.6 |
+| `<= 1e-8` (`VmconDriver`'s own) | 326 | 11.9 |
+
+So the answer to *"is PROCESS also ~300?"* is **no, and matching the tolerance barely
+moves it**: 299 against 46. Tolerance explains 27 of the port's 326 iterations; the other
+253 are the formulation -- 14 unknowns and 8 equalities against 8 and 2, with the MDA's
+coupling promoted into the SQP where MDF hid it inside every evaluation. §11.10 already
+recorded that VMCON finds MDF easier, and §12.3 measured the same effect from the other
+side (dissolving 5 `FixedPoint`s took C2 from 131 to 326). This is that, quantified
+against PROCESS.
+
+**The wall clock, which is the headline.**
+
+| | wall clock | iterations | ms per iteration |
+|---|---|---|---|
+| PROCESS (MDF, FD, `epsvmc = 1e-6`) | **109.05 s** | 46 | 2371 |
+| port, pyvmcon to `conv 8.8e-11` | **11.93 s** (7.1 s of it one-off compile) | 326 | 37 total, **13.1 steady** |
+| port, pyvmcon to PROCESS's `1e-6` | **11.3 s** | 299 | -- |
+| port, SLSQP unscaled to the same point | **8.83 s** (7.6 s of it compile) | 142 | 62 total, **5.7 steady** |
+
+**9.1x end to end against PROCESS, and 12.4x with the better driver -- while taking 7.1x
+more SQP iterations.** Per iteration the gap is **181x** (2371 ms -> 13.1 ms), and the
+port throws most of that away again inside `cvxpy`: at PROCESS's own iteration count of
+46 the port's evaluation cost would be 0.1 s.
+
+Two caveats a reader of that table must carry. The port's number is the SAND solve only;
+from a cold interpreter it is preceded by ~4.6 s of imports and ~8.0 s for the MDA seed
+and assembly (both dominated by their own one-off jit compiles), so a cold end-to-end
+port run is ~24.5 s against PROCESS's 109 s -- **4.5x**, still. And C2 *starts at
+PROCESS's answer*: this is a comparison of solver cost on one machine, not of a cold
+design study, which is C3's question and is measured at 258 iterations in §12.2.
+
+### 13.8 What this changes, and what it does not
+
+- The rewrite's efficiency case is **not** "fewer iterations" -- it is 7x more of them.
+  It is that an iteration costs 13 ms instead of 2.4 s, and that the 13 ms is now **90 %
+  QP solver**, i.e. the model has been optimised out of the critical path entirely. The
+  next order of magnitude is in `pyvmcon`'s `cvxpy` QP, not in the port.
+- **`VmconDriver` is not obviously the right default any more.** SLSQP, unscaled, at its
+  own default tolerance, reaches the same optimum in 142 iterations and 8.8 s. What keeps
+  `VmconDriver` the reference is unchanged and is not about speed: it is *the same
+  solver PROCESS calls*, which is what makes any disagreement attributable to the model
+  and the derivatives (its own docstring's argument). A recorded decision, not a defect.
+- §12.4's *"it is the problem, not the solver"* survives in the form that matters -- both
+  SQPs need >>46 iterations on the SAND formulation and land on the same optimum -- but
+  its evidence, "SLSQP is also short at 60", was a **stopping-rule artefact**, and its
+  conclusion that the two solvers agree about the difficulty is only half right: 142
+  against 326 is a factor of 2.3 between them, and the condition scaling flips which one
+  wins.
+- Nothing here was changed in the port. The measurement scripts stayed in the session
+  scratchpad.
