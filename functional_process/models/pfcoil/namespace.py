@@ -13,16 +13,19 @@ each a slot of its own on the same evidence, and a stellarator has neither
 (`st_init` sets `.build.iohcl = 0` unconditionally).
 
 **Every slot is an instance default, and that is not an exception to "a slot the
-factory fills has no default".** The whole package is one occupant set for one joint
+factory fills has no default".** The whole package is one occupant set per joint
 configuration -- `iohcl = 1`, `i_pf_location = (2, 2, 3, 3)`, `itart = itartpf = 0`,
-`i_pf_current = 1`, superconducting conductors with the file's two materials, D-shaped
-TF -- and `indat._pf_coil_system_arm` resolves that predicate **once**, refusing any
-deviation before either namespace is constructed. One predicate, fifteen slots, the
-`_fw_blkt_vv_shape_arm` shape ("one predicate, four slots") scaled up: inside a
-namespace the factory only ever builds for the single supported arm, there is nothing
-left for a slot to decide, and a per-slot `kw_only` factory would be fifteen
-transcriptions of one answer. `noh = 30` (`inductance.NOH`) is the one occupant-fixing
-integer the factory cannot see -- it is a step function of the *converged* CS geometry,
+`i_pf_current = 1`, superconducting conductors, D-shaped TF -- and
+`indat._pf_coil_system_arm` resolves that predicate **once**, refusing any deviation
+before either namespace is constructed. Two superconductor pairs are ported, and the
+second (`PFCoilCsWstNb3Sn` below) differs from the first in exactly one slot occupant;
+everything else in both namespaces is the single supported arm's answer. One
+predicate, fifteen slots, the `_fw_blkt_vv_shape_arm` shape ("one predicate, four
+slots") scaled up: inside a namespace the factory only ever builds for one resolved
+arm, there is nothing left for a slot to decide, and a per-slot `kw_only` factory
+would be fifteen transcriptions of one answer. `noh = 30` (`inductance.NOH`) is the
+one occupant-fixing integer the factory cannot see -- a step function of the
+*converged* CS geometry,
 not of any input (`inductance.md` § "noh is a step function of the CS geometry") -- and
 it stays a module constant on the occupant.
 
@@ -55,7 +58,11 @@ from functional_process.models.pfcoil.geometry import (
     PFCoilPositions,
 )
 from functional_process.models.pfcoil.inductance import PFCoilInductance
-from functional_process.models.pfcoil.masses import PFCoilMasses, PFCoilSizes
+from functional_process.models.pfcoil.masses import (
+    PFCoilMasses,
+    PFCoilMassesCsWstNb3Sn,
+    PFCoilSizes,
+)
 from functional_process.models.pfcoil.volt_seconds import (
     PFCoilTurnCurrents,
     PFCoilVoltSeconds,
@@ -151,3 +158,20 @@ class PFCoil(ModelNamespace):
     merges the PF coil ring with the volt-second/burn-time ring into one nine-node
     SCC; `mda.CUTS`'s existing three entries still cut it (measured,
     `test_mda.py`)."""
+
+
+class PFCoilCsWstNb3Sn(PFCoil):
+    """`.tokamak.pf_coil` for the `(i_pf_superconductor, i_cs_superconductor) = (3, 5)`
+    pair -- NbTi PF coils, WST Nb3Sn CS, `low_aspect_ratio_DEMO.IN.DAT`'s pair
+    (`:806`, `:845`), `indat._pf_coil_system_arm` arm `1`.
+
+    One slot re-occupied, eleven inherited: the superconductor switches' only effect in
+    the ported closure is which `.tfcoil.dcond` element `masses` reads (`masses.md`
+    § switches touched), so the masses occupant is the entire difference. The slot is a
+    **place** -- the node bound at `.tokamak.pf_coil.masses` keeps its name whichever
+    occupant fills it (`ModelNamespace`'s own contract).
+    """
+
+    masses: PFCoilMassesCsWstNb3Sn = PFCoilMassesCsWstNb3Sn()
+    """Conductor and structure masses (`pfcoil.py:851-1023`), CS conductor density
+    from `.tfcoil.dcond[4]` (WST Nb3Sn) instead of `.tfcoil.dcond[0]`."""

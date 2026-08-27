@@ -334,7 +334,23 @@ def _ported_pf_coil_chain(
     )
 
 
-def _reference_pf_coil_chain(
+_DCOND_POISON = -1.0e9
+"""Seeded into every `.tfcoil.dcond` element the occupant under test does not bind.
+
+The two superconductor switches' only effect in this closure is which `dcond` element
+each conductor density is read from (`masses.md` § switches touched), and four of the
+nine elements share the value 6080 kg/m^3 -- so a reference that left the array at its
+defaults could not tell `dcond[0]` (ITER Nb3Sn) from `dcond[4]` (WST Nb3Sn) at the
+legacy point. Poisoning every unbound element makes any wrong-element read a conductor
+mass that is wrong in sign and magnitude at *every* sample: the occupant's read has to
+move with the switch, which is the `CoilsMass` lesson (`_audit/next_steps.md` §14.11)
+turned into an assertion. Safe because `pfcoil()` reads `dcond` in exactly two places
+(`pfcoil.py:947`, `:3571`), both switch-indexed."""
+
+
+def _run_reference_pf_coil_chain(
+    i_cs_superconductor,
+    cs_dcond_index,
     z_tf_inside_half,
     f_z_cs_tf_internal,
     dr_cs,
@@ -373,6 +389,12 @@ def _reference_pf_coil_chain(
 ):
     """`PFCoil.pfcoil()` on a cold `DataStructure` seeded with exactly these inputs.
 
+    The two leading arguments are not inputs of the chain but the identity of the
+    occupant under test: which `i_cs_superconductor` value the reference is driven at,
+    and which `dcond` element `den_cs_conductor` is therefore planted in (every other
+    element is `_DCOND_POISON`). The two `_reference_pf_coil_chain*` wrappers below
+    bind them; the harness never sees them.
+
     Everything set below is either one of the port's declared inputs, one of the
     topology constants the port bakes in (`__init__`'s table), or a switch this occupant
     answers. Every other field keeps its `DataStructure` default -- which is the point:
@@ -402,7 +424,7 @@ def _reference_pf_coil_chain(
     p.i_pf_current = 1
     p.i_r_pf_outside_tf_placement = 0
     p.i_pf_superconductor = 3
-    p.i_cs_superconductor = 1
+    p.i_cs_superconductor = i_cs_superconductor
     p.n_cs_current_filaments = N_CS_FILAMENTS
     p.first_call = False
 
@@ -433,9 +455,11 @@ def _reference_pf_coil_chain(
 
     data.superconducting_tfcoil.r_tf_outboard_out = r_tf_outboard_out
     data.fwbs.den_steel = den_steel
-    data.tfcoil.dcond = np.asarray(data.tfcoil.dcond, dtype=float).copy()
+    data.tfcoil.dcond = np.full(
+        np.asarray(data.tfcoil.dcond).shape, _DCOND_POISON, dtype=float
+    )
     data.tfcoil.dcond[2] = den_pf_conductor
-    data.tfcoil.dcond[0] = den_cs_conductor
+    data.tfcoil.dcond[cs_dcond_index] = den_cs_conductor
 
     physics.rmajor = rmajor
     physics.rminor = rminor
@@ -491,6 +515,21 @@ def _reference_pf_coil_chain(
         p.dz_cs_full,
         p.c_pf_coil_turn[: PLASMA_INDEX + 1],
     )
+
+
+def _reference_pf_coil_chain(**inputs):
+    """The reference pair: `i_cs_superconductor = 1` (ITER Nb3Sn), CS density from
+    `dcond[0]` -- `large_tokamak_eval.IN.DAT`'s configuration, arm 0.
+    """
+    return _run_reference_pf_coil_chain(1, 0, **inputs)
+
+
+def _reference_pf_coil_chain_cs_wst_nb3sn(**inputs):
+    """`low_aspect_ratio_DEMO.IN.DAT`'s pair (`:806`, `:845`): `i_cs_superconductor
+    = 5` (WST Nb3Sn), CS density from `dcond[4]` -- arm 1,
+    `masses.PFCoilMassesCsWstNb3Sn`'s binding.
+    """
+    return _run_reference_pf_coil_chain(5, 4, **inputs)
 
 
 _LEGACY = {
@@ -603,6 +642,48 @@ class TestPFCoilChain(Tier1Contract):
     )
 
     samples = [legacy_sample("large-tokamak-converged", **_LEGACY)]
+
+    fuzz_fixed = {
+        "zref": _LEGACY["zref"],
+        "f_z_cs_tf_internal": _LEGACY["f_z_cs_tf_internal"],
+    }
+    fuzz_bounds = _fuzz_bounds()
+
+
+class TestPFCoilChainCsWstNb3Sn(Tier1Contract):
+    """The same chain against `pfcoil()` at `i_cs_superconductor = 5` (WST Nb3Sn CS).
+
+    The occupant under test is `masses.PFCoilMassesCsWstNb3Sn`, whose entire difference
+    from `PFCoilMasses` is reading `.tfcoil.dcond[4]` instead of `.tfcoil.dcond[0]` as
+    the CS conductor density -- so the ported side is unchanged and the discrimination
+    is all in the reference: PROCESS runs with the switch at 5, `den_cs_conductor` is
+    planted in `dcond[4]` only, and every other element is `_DCOND_POISON`. If PROCESS
+    at this switch value read any element but `[4]` -- or if the occupant's binding
+    were the baked `dcond[0]` a `FromExactly` default would silently keep
+    (`_audit/next_steps.md` §14.11, the `CoilsMass` lesson) -- every sample would
+    disagree, in sign as well as magnitude.
+
+    The inputs are the same converged `large_tokamak_eval` point: the chain is a pure
+    function and the (3, 5) pair does not change its domain, only which array slot one
+    scalar comes from. `den_cs_conductor = 6080` is also `dcond[4]`'s true value.
+    """
+
+    audit_record = "models/pfcoil/masses.md"
+    reference = _reference_pf_coil_chain_cs_wst_nb3sn
+    ported = _ported_pf_coil_chain
+    reference_domain_errors = (ProcessValueError,)
+
+    value_tolerance = Tolerance(
+        rtol=5e-11,
+        atol=0.0,
+        reason=(
+            "identical chain to TestPFCoilChain -- the switch changes which dcond "
+            "element is read, not any arithmetic -- so the same LAPACK-driver "
+            "round-off argument and the same measured headroom apply"
+        ),
+    )
+
+    samples = [legacy_sample("large-tokamak-point-cs-wst-nb3sn", **_LEGACY)]
 
     fuzz_fixed = {
         "zref": _LEGACY["zref"],

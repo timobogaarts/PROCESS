@@ -191,7 +191,8 @@ either side, so this is round-off, not convergence noise.
 | `.build.iohcl` | `0`, `1` | `1` | **split** | `:1049-1050` gates `ohcalc()` entirely — with no CS there is no CS mass and index 6 stays zero |
 
 **UNPORTED switch values** for `indat.py`'s `UNPORTED` table:
-`i_pf_conductor = RESISTIVE`; `i_pf_superconductor != 3`; `i_cs_superconductor != 1`;
+`i_pf_conductor = RESISTIVE`; `i_pf_superconductor != 3`; `i_cs_superconductor` not in
+`{1, 5}` (the `5` occupant landed 2026-08-27, see the dated section below);
 `i_pf_location` patterns containing `1` or `4`; `iohcl = 0`.
 
 The two superconductor switches are worth a note: their *only* effect inside this closure
@@ -244,3 +245,51 @@ inside the UNPORTED stress chain.
   `PFCoilMasses` reads five arrays `PFCoilSizes` owns, and merging them would hide the
   SCC edge (`c_pf_cs_coils_peak_ma` in, `n_pf_coil_turns` out) inside one node rather
   than exposing it to `Blocking`. Flagged so the choice reads as deliberate.
+
+## 2026-08-27 — the `(3, 5)` superconductor pair's occupant (`low_aspect_ratio_DEMO`)
+
+`tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT` sets
+`i_pf_superconductor = 3` (`:806`, NbTi — the reference value) and
+`i_cs_superconductor = 5` (`:845`, WST Nb3Sn), and was refused at
+`pf_coil_system_arm == -6`. Per this record's own § switches touched, the pair's only
+effect in the ported closure is which `.tfcoil.dcond` element each conductor density is
+read from — `dcond[2]` for the PF coils (unchanged) and `dcond[4]` instead of
+`dcond[0]` for the CS — and per the binding policy that is a different **occupant**,
+not a parameter, even though `dcond[4] == dcond[0] == 6080` kg/m^3 today.
+
+What landed:
+
+- **`masses.PFCoilMassesCsWstNb3Sn`** — the second member of the masses occupant
+  family, restructured to the `CoilsMass` shape
+  (`models/stellarator/coils/mass.py`): the whole calculation moved to
+  `PFCoilMasses._masses`, each occupant's `__call__` declares its own ports, and the
+  single differing entry is `den_cs_conductor = FromExactly(tfcoil.dcond[4])`. The
+  refactor is port-surface-neutral for the existing occupant
+  (`ExplicitFunction._signature_of` reads `__call__` only).
+- **`namespace.PFCoilCsWstNb3Sn`** — a `PFCoil` subclass re-occupying exactly the
+  `masses` slot; the slot is a place, so the node keeps its name
+  (`.tokamak.pf_coil.masses`) whichever occupant fills it. `CSCoil` is unchanged on
+  both arms: nothing in it reads `dcond`.
+- **`indat._pf_coil_system_arm`** now resolves the superconductor dimension to a
+  *positive* arm — `0` for `(3, 1)`, `1` for `(3, 5)` — instead of folding both into
+  "not the reference pair"; any other pair still refuses at `-6`, whose `UNPORTED`
+  entry names both ported pairs. `PF_COIL = {0: PFCoil, 1: PFCoilCsWstNb3Sn}`,
+  `CS_COIL = {0: CSCoil, 1: CSCoil}`.
+- **`test_masses.TestPFCoilChainCsWstNb3Sn`** — the chain contract re-run with the
+  reference (`PFCoil.pfcoil()`) driven at `i_cs_superconductor = 5`. The ported side is
+  unchanged by construction, so the reference carries the discrimination: the sample's
+  `den_cs_conductor` is planted in `dcond[4]` only and **every unbound `dcond` element
+  is poisoned** (`_DCOND_POISON = -1e9`). Without the poison the contract could not
+  tell `dcond[0]` from `dcond[4]` at all — four of the nine elements share 6080 — which
+  is exactly the invisible-baked-index failure `next_steps.md` §14.11 records for
+  `CoilsMass`. The poison turns "the read moves with the switch" into an assertion that
+  fails at every sample, legacy included. Safe because `pfcoil()` reads `dcond` in
+  exactly two places (`pfcoil.py:947`, `:3571`), both switch-indexed. Green: 10 passed
+  plain, 20 passed with `--fp-gradients` (the existing chain contract re-verified
+  alongside, now also under the poisoned reference).
+
+Frontier: with this occupant registered, `machine_from_indat` +
+`graph_for` on `low_aspect_ratio_DEMO.IN.DAT` **assembles — 206 nodes** (verified
+against cottax `db4f025`), and the assembled masses node's read set carries
+`.tfcoil.dcond[2]` and `.tfcoil.dcond[4]`, measured on the graph rather than read off
+the source.
