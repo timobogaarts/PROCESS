@@ -499,3 +499,41 @@ differently in each case. A field with that many producers is a good candidate f
    not on the boundary list, because nothing in the current graph reads it. Owned here on
    the grounds that `build.py:912` is its sole tokamak writer; if the `.tokamak.divertor`
    slot's port claims it too, this one should yield.
+
+
+## 2026-08-27 — the CS-to-TF radial slice ported (cold-boundary wave)
+
+`cold_boundary.md` producer 2. `.build.r_tf_inboard_in` and `.build.r_tf_inboard_out`
+were two of the six cold boundary zeros: `tf_global_geometry`'s
+`a_tf_inboard_total = pi*(out^2 - in^2)` came out `0` and fed three of the 11
+non-finite roots (`j_tf_coil_full_area = c/0`, both CICC inboard fractions). The
+"whole central-solenoid radial chain is outside this closure" scoping above is hereby
+narrowed: `calculate_r_tf_inboard_radii_tf_outside_cs` + `TfInboardRadiiTfOutsideCs`
+port `process/models/build.py:1691-1735` as one contiguous slice — `dr_cs_bore =
+dr_bore` (else-arm, `:1698-1699`), `dr_cs_precomp` (`:1702-1713`), and the three
+inboard TF radii (`:1717-1735`).
+
+The slice is taken at `:1691` rather than at the cold-boundary record's `:1720`
+because stopping at `:1720` leaves `dr_cs_precomp` a fresh boundary input with a
+degenerate cold `0.0` (in = 2.6306 for a converged 2.6986 — the silent-stale class
+the record's other 23 names) and leaves `dr_cs_bore` the standing stale input it
+already was (cold `1.42` for a converged `2.00384`, read by
+`pfcoil/currents.py::CSFluxSwing`). Nothing in the wider port produces either field,
+so no producer is duplicated.
+
+Switches: a joint key `(.build.i_tf_inside_cs, .build.i_cs_precomp)`, resolved by
+`indat._tf_inboard_radii_arm` — `(0, 1)` (both defaults, both live) is written;
+`TF_INSIDE_CS` (different reads-set for the inner radius, `:1692-1698`) and the
+no-precompression arm (`dr_cs_precomp = 0.0` literal, `fseppc`/`fcspc`/`sigallpc`
+unread, `:1714`) are UNPORTED with recorded reasons. Data footprint: reads
+`.build.dr_bore`, `.build.dr_cs`, `.build.fseppc`, `.build.fcspc`,
+`.build.sigallpc`, `.build.dr_cs_tf_gap`, `.build.dr_tf_inboard` (all explicit-arg;
+all file literals or defaults on the reference run — first-pass non-degeneracy per
+`cold_boundary.md` Task A); writes `.build.dr_cs_bore`, `.build.dr_cs_precomp`,
+`.build.r_tf_inboard_in`, `.build.r_tf_inboard_mid`, `.build.r_tf_inboard_out`.
+
+Tier 1, no iteration; `test_build.py::TestTfInboardRadii` diffs the slice against the
+real `calculate_radial_build` through the existing `_radial` adapter (legacy point =
+the converged file literals; fuzz over plausible machine scales). No cycle created
+(`Blocking.scc` on both reference machines, measured this wave — the slice reads only
+run inputs).

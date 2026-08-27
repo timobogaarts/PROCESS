@@ -100,15 +100,16 @@ def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
 
 
 def test_each_raw_cycle_is_fully_broken_on_the_tokamak_too():
-    """The same property on `large_tokamak_eval.IN.DAT` -- four raw cycles, eight cuts
+    """The same property on `large_tokamak_eval.IN.DAT` -- three raw cycles, eight cuts
     between them, none of them redundant.
 
     Worth its own test rather than a second loop inside the first, because the two
     machines fail differently and the message should say which. The tokamak's density
     cycle is 8 nodes to the stellarator's 6 (`i_plasma_pedestal = 1` puts
     `pedestal_profile_values`/`ne_profile_integral` in the profile slot) and needs the
-    third cut `mda.CUTS` documents; its build/winding-pack, volt-second/burn-time and
-    PF coil cycles have no stellarator counterpart at all.
+    third cut `mda.CUTS` documents; its build/winding-pack cycle and the merged
+    PF-coil/volt-second/burn-time cycle (nine nodes since 2026-08-27, see
+    `mda.CUTS`) have no stellarator counterpart at all.
     """
     _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(
         graph_for(machine_from_indat(TOKAMAK_INPUT_FILE)), "tokamak"
@@ -216,54 +217,25 @@ def test_the_tokamak_density_cycle_is_cut_at_the_variable_process_bootstraps():
     assert chosen[2:] == [".physics.f_temp_plasma_electron_density_vol_avg"]
 
 
-def test_the_volt_second_burn_time_cycle_is_cut_where_process_reads_stale():
-    """The two-node volt-second/burn-time ring on `large_tokamak_eval.IN.DAT`: both
-    edge variables are sufficient single cuts, `CUTS` names exactly one, and the one it
-    names is the value PROCESS itself carries across a pass.
+def test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts():
+    """The nine-node SCC that registering `pfcoil.vsec` created (2026-08-27,
+    `cold_boundary.md` producer 4): the PF coil ring and the volt-second/burn-time
+    ring, merged through `volt_seconds`/`turn_currents` -- `burn_time` reads
+    `.pf_coil.vs_cs_pf_total_burn`, `flux_swing` reads
+    `.physics.vs_plasma_ramp_required`, and `plasma_inductance.volt_seconds` reads
+    `.times.t_plant_pulse_burn` back.
 
-    Same shape as the build/winding-pack test. `physics.run()` (volt-seconds inside)
-    runs before `pulse.run()` in one `Caller._call_models_once` pass, so
-    `.physics.v_plasma_loop_burn` is read fresh and `.times.t_plant_pulse_burn` is the
-    previous pass's -- PROCESS's own comment at `physics.py:4882-4884` says so
-    outright. See `mda.CUTS`'s docstring.
-    """
-    graph = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
-    (cycle,) = [
-        c
-        for c in graph.cycles
-        if {n.path_str() for n in c}
-        == {".tokamak.plasma_inductance.volt_seconds", ".tokamak.pulse.burn_time"}
-    ]
-    sub = graph.subgraph(cycle)
-    sufficient = {
-        v.path_str()
-        for v in sub.owners
-        if (readers := sub.closing_readers(v))
-        and Cut(var=v, readers=readers).apply(sub).is_acyclic
-    }
-    assert sufficient == {".physics.v_plasma_loop_burn", ".times.t_plant_pulse_burn"}
-    chosen = [v.path_str() for v in CUTS if v in sub.owners]
-    assert chosen == [".times.t_plant_pulse_burn"]
-    assert not sub.is_acyclic
-
-
-def test_the_pf_coil_cycle_is_cut_at_the_variables_process_seeds():
-    """The five-node PF coil ring on `large_tokamak_eval.IN.DAT`: sufficiency alone
-    allows exactly two single cuts, neither of which is what PROCESS carries, and
-    `CUTS` names instead the **pair PROCESS itself seeds** -- `pfcoil.py:605-608`'s
-    `first_call` bootstrap writes `ind_pf_cs_plasma_mutual[:, :] = 1.0` and
-    `n_pf_coil_turns[:] = 100.0`, so those two are the iteration's loop-carried
-    unknowns by PROCESS's own declaration. Each is necessary given the other
-    (dropping either leaves the ring cyclic), which is the minimality the shared
-    checker above also re-asserts for every cycle.
-
-    The measurement, re-derived rather than quoted: eleven of the ring's fifteen owned
-    variables have closing readers; `.pf_coil.c_pf_cs_coils_peak_ma` and
-    `.pf_coil.f_j_cs_start_end_flat_top` are the only sufficient single cuts, and
-    each is one stale edge of the three PROCESS actually carries across a pass, so
-    neither reproduces PROCESS's recurrence -- see `mda.CUTS`'s docstring for the
-    tie-break, and the round-2 brief for the FixedPointCut -> Picard decision
-    (`RootFind` on the `n_pf_coil_turns` residual is the recorded later upgrade).
+    The measurement, re-derived rather than quoted: 18 of the merged cycle's 27 owned
+    variables have closing readers; **no single cut suffices any more** (each half's
+    former single cuts leave the other half's ring closed), and exactly two *pairs*
+    do -- `t_plant_pulse_burn` with either `.pf_coil.c_pf_cs_coils_peak_ma` or
+    `.pf_coil.f_j_cs_start_end_flat_top` -- both of whose PF members the pre-merge
+    measurement already rejected as stale edges PROCESS does not carry across a pass.
+    `CUTS` keeps exactly what the two halves had: the cross-pass stale read
+    (`t_plant_pulse_burn`, PROCESS's own comment at `physics.py:4882-4884`) plus
+    PROCESS's own `first_call` seed pair (`pfcoil.py:605-608`). The trio is sufficient
+    and each member is necessary given the other two; `cut_graph` groups the three
+    into one `FixedPoint` over three unknowns, driven Picard.
     """
     graph = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
     (cycle,) = [
@@ -275,29 +247,32 @@ def test_the_pf_coil_cycle_is_cut_at_the_variables_process_seeds():
             ".tokamak.pf_coil.inductance",
             ".tokamak.pf_coil.sizes",
             ".tokamak.pf_coil.time_point_currents",
+            ".tokamak.pf_coil.turn_currents",
+            ".tokamak.pf_coil.volt_seconds",
             ".tokamak.pf_coil.waveform",
+            ".tokamak.plasma_inductance.volt_seconds",
+            ".tokamak.pulse.burn_time",
         }
     ]
     sub = graph.subgraph(cycle)
 
     candidates = [v for v in sub.owners if sub.closing_readers(v)]
-    assert len(candidates) == 11
-    sufficient = {
+    assert len(candidates) == 18
+    sufficient_single = {
         v.path_str()
         for v in candidates
         if Cut(var=v, readers=sub.closing_readers(v)).apply(sub).is_acyclic
     }
-    assert sufficient == {
-        ".pf_coil.c_pf_cs_coils_peak_ma",
-        ".pf_coil.f_j_cs_start_end_flat_top",
-    }
+    assert sufficient_single == set()
 
     chosen = [v for v in CUTS if v in sub.owners]
     assert [v.path_str() for v in chosen] == [
+        ".times.t_plant_pulse_burn",
         ".pf_coil.ind_pf_cs_plasma_mutual",
         ".pf_coil.n_pf_coil_turns",
     ]
-    # Sufficient together, and neither redundant -- the pair is PROCESS's seed set.
+    # Sufficient together, and none redundant -- the stale-read edge plus PROCESS's
+    # own seed pair, exactly what the two pre-merge halves carried.
     assert _cut_all(sub, chosen).is_acyclic
     for dropped in chosen:
         rest = [v for v in chosen if v != dropped]

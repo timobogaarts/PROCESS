@@ -26,6 +26,7 @@ from functional_process.models.build import (
     ShldInboardInnerRadius,
     ShldOutboardOuterRadius,
     ShldVvGapOutboard,
+    TfInboardRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardMidDShape,
     TfOutboardMidUnrippled,
@@ -39,17 +40,18 @@ from functional_process.models.divertor import (
 
 
 class Build(ModelNamespace):
-    """The tokamak's radial and vertical build -- twelve slots, thirteen classes.
+    """The tokamak's radial and vertical build -- thirteen slots, fourteen classes.
 
     `process/models/build.py::Build`, `caller.py:288`. The structural spine of the
     device, and with no stellarator counterpart at all: `models/stellarator/build.py`'s
     `Build` is a different model of a different machine.
 
-    Twelve slots and thirteen occupant classes, because
+    Thirteen slots and fourteen occupant classes, because
     `dr_tf_inboard_winding_pack`'s two arms are two classes in one slot.
 
-    **Five of the twelve slots are switched and none of the switches is an `i_*`
-    integer alone.** `.tfcoil.i_tf_sup` and `.tfcoil.i_tf_shape` are ordinary switches;
+    **Six of the thirteen slots are switched, and only one of the switches is an `i_*`
+    integer alone** (`tf_inboard_radii`'s `.build.i_tf_inside_cs`, added 2026-08-27).
+    `.tfcoil.i_tf_sup` and `.tfcoil.i_tf_shape` are ordinary switches;
     the other two are conditions on things that are not switches at all -- whether
     iteration variable 140 is active, and whether the *input* value of
     `.build.dz_xpoint_divertor` is effectively zero. Both are still resolved exactly
@@ -107,6 +109,16 @@ class Build(ModelNamespace):
     `PhysicsProfiles.parameterisation` is: the rule that a slot name is the snake_case of
     its occupant's class needs a shared stem to apply to, and here there is no family
     base class because the two arms share no output to declare."""
+
+    tf_inboard_radii: TfInboardRadiiTfOutsideCs = dataclasses.field(kw_only=True)
+    """`(.build.i_tf_inside_cs, .build.i_cs_precomp)` -- `(0, 1)` (both defaults, both
+    live) is written; `TF_INSIDE_CS` and the no-precompression arm are UNPORTED
+    (`indat._tf_inboard_radii_arm`). Added 2026-08-27, `cold_boundary.md` producer 2:
+    `.build.r_tf_inboard_in` and `.build.r_tf_inboard_out` were two of the six cold
+    boundary zeros (3 of the 11 roots), and the slice is taken whole
+    (`build.py:1691-1735`) so `dr_cs_bore` -- a standing boundary input with a wrong
+    cold value, read by `CSFluxSwing` -- and `dr_cs_precomp` are produced rather than
+    read stale; the node's own docstring carries the argument."""
 
     shld_inboard_inner_radius: ShldInboardInnerRadius = ShldInboardInnerRadius()
     shld_outboard_outer_radius: ShldOutboardOuterRadius = ShldOutboardOuterRadius()

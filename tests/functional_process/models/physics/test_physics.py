@@ -31,9 +31,10 @@ from functional_process.models.physics.physics import (
     calculate_total_radiation_power,
     calculate_unclipped_radiation_powers,
     force_positive_separatrix_power,
+    plasma_ohmic_heating,
 )
 from process.models.physics.exhaust import PlasmaExhaust
-from process.models.physics.physics import PlasmaBeta
+from process.models.physics.physics import Physics, PlasmaBeta
 from process.models.physics.plasma_fields import PlasmaFields
 
 _FIELDS = PlasmaFields()
@@ -353,3 +354,106 @@ class TestPlasmaEnergyFromBeta(Tier1Contract):
             seed=0,
         ),
     ]
+
+
+def _reference_plasma_ohmic_heating(
+    f_c_plasma_inductive,
+    kappa95,
+    plasma_current,
+    rmajor,
+    rminor,
+    temp_plasma_electron_density_weighted_kev,
+    vol_plasma,
+    n_charge_plasma_effective_vol_avg,
+    plasma_res_factor,
+):
+    """`Physics.plasma_ohmic_heating` through the port's signature. `zeff` is the
+    staticmethod's spelling of `.physics.n_charge_plasma_effective_vol_avg`
+    (`Physics.run:782`); `aspect` is read only by the negative-resistance
+    `logger.error` and is passed as PROCESS's own definition, `rmajor / rminor`.
+    """
+    return Physics.plasma_ohmic_heating(
+        f_c_plasma_inductive=f_c_plasma_inductive,
+        kappa95=kappa95,
+        plasma_current=plasma_current,
+        rmajor=rmajor,
+        rminor=rminor,
+        temp_plasma_electron_density_weighted_kev=(
+            temp_plasma_electron_density_weighted_kev
+        ),
+        vol_plasma=vol_plasma,
+        zeff=n_charge_plasma_effective_vol_avg,
+        plasma_res_factor=plasma_res_factor,
+        aspect=rmajor / rminor,
+    )
+
+
+def _ported_plasma_ohmic_heating(
+    f_c_plasma_inductive,
+    kappa95,
+    plasma_current,
+    rmajor,
+    rminor,
+    temp_plasma_electron_density_weighted_kev,
+    vol_plasma,
+    n_charge_plasma_effective_vol_avg,
+    plasma_res_factor,
+):
+    return plasma_ohmic_heating(
+        f_c_plasma_inductive=f_c_plasma_inductive,
+        kappa95=kappa95,
+        plasma_current=plasma_current,
+        rmajor=rmajor,
+        rminor=rminor,
+        temp_plasma_electron_density_weighted_kev=(
+            temp_plasma_electron_density_weighted_kev
+        ),
+        vol_plasma=vol_plasma,
+        zeff=n_charge_plasma_effective_vol_avg,
+        plasma_res_factor=plasma_res_factor,
+    )
+
+
+class TestPlasmaOhmicHeating(Tier1Contract):
+    """`plasma_ohmic_heating` -> `Physics.plasma_ohmic_heating`
+    (`physics.py:1605-1697`), added 2026-08-27 (`cold_boundary.md` producer 3).
+
+    The legacy point is `large_tokamak_eval` at convergence, read off a live
+    `SingleRun` -- where PROCESS's chained-comparison defect (`2.5 >= A <= 4.0`, i.e.
+    `A <= 2.5`) takes the *enhancement* arm at `A = 3.0` and lands on
+    `f_res_plasma_neo = 2.5`, `res_plasma = 4.0496e-9` (the converged value
+    `cold_boundary.md` records). The fuzz draws straddle the defect's real kink at
+    `A = 2.5` from both sides (`rmajor/rminor` spans ~1.1 to 40 over the bounds), so
+    both arms of the reproduced `jnp.where` are exercised against PROCESS.
+    """
+
+    audit_record = "models/physics/physics.md"
+    reference = _reference_plasma_ohmic_heating
+    ported = _ported_plasma_ohmic_heating
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            f_c_plasma_inductive=0.5757815563319303,
+            kappa95=1.6517857142857142,
+            plasma_current=16091095.408042267,
+            rmajor=8.0,
+            rminor=2.6666666666666665,
+            temp_plasma_electron_density_weighted_kev=13.679755913174434,
+            vol_plasma=1888.171153995669,
+            n_charge_plasma_effective_vol_avg=2.528427557461356,
+            plasma_res_factor=0.7,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "f_c_plasma_inductive": (0.1, 1.0),
+        "kappa95": (1.0, 2.5),
+        "plasma_current": (1.0e6, 3.0e7),
+        "rmajor": (2.0, 20.0),
+        "rminor": (0.5, 5.0),
+        "temp_plasma_electron_density_weighted_kev": (1.0, 40.0),
+        "vol_plasma": (100.0, 5000.0),
+        "n_charge_plasma_effective_vol_avg": (1.0, 5.0),
+        "plasma_res_factor": (0.5, 1.0),
+    }

@@ -1,9 +1,10 @@
 """The PF coil system's two namespaces: `.tokamak.cs_coil` and `.tokamak.pf_coil`.
 
-Beside the nodes they name (`model_tree_design.md` §11): the thirteen node classes live
-in this package's five modules (`geometry`, `currents`, `fields`, `masses`,
-`inductance`), and each class's own docstring already names the slot it occupies here --
-the split below is a transcription of those claims, not a new decision.
+Beside the nodes they name (`model_tree_design.md` §11): the fifteen node classes live
+in this package's six modules (`geometry`, `currents`, `fields`, `masses`,
+`inductance`, `volt_seconds`), and each class's own docstring already names the slot
+it occupies here -- the split below is a transcription of those claims, not a new
+decision.
 
 **Two namespaces because PROCESS injects two models.** `Models.__init__`
 (`process/main.py:652`) constructs `CSCoil` as its own `Model` with its own switch
@@ -16,19 +17,23 @@ factory fills has no default".** The whole package is one occupant set for one j
 configuration -- `iohcl = 1`, `i_pf_location = (2, 2, 3, 3)`, `itart = itartpf = 0`,
 `i_pf_current = 1`, superconducting conductors with the file's two materials, D-shaped
 TF -- and `indat._pf_coil_system_arm` resolves that predicate **once**, refusing any
-deviation before either namespace is constructed. One predicate, thirteen slots, the
+deviation before either namespace is constructed. One predicate, fifteen slots, the
 `_fw_blkt_vv_shape_arm` shape ("one predicate, four slots") scaled up: inside a
 namespace the factory only ever builds for the single supported arm, there is nothing
-left for a slot to decide, and a per-slot `kw_only` factory would be thirteen
+left for a slot to decide, and a per-slot `kw_only` factory would be fifteen
 transcriptions of one answer. `noh = 30` (`inductance.NOH`) is the one occupant-fixing
 integer the factory cannot see -- it is a step function of the *converged* CS geometry,
 not of any input (`inductance.md` § "noh is a step function of the CS geometry") -- and
 it stays a module constant on the occupant.
 
-**The four-node cycle is expected.** `PFCoilTimePointCurrents -> PFCoilCurrentWaveform
--> PFCoilSizes -> PFCoilInductance -> CSFluxSwing -> PFCoilTimePointCurrents` is Shape A
-(no node reads a `VarPath` it owns), left for `Blocking` to find and `mda.CUTS` to cut
--- see `currents.md` § "The cycle" and `mda.py`.
+**The cycle is expected, and it grew on 2026-08-27.** `PFCoilTimePointCurrents ->
+PFCoilCurrentWaveform -> PFCoilSizes -> PFCoilInductance -> CSFluxSwing ->
+PFCoilTimePointCurrents` is Shape A (no node reads a `VarPath` it owns), left for
+`Blocking` to find and `mda.CUTS` to cut -- see `currents.md` § "The cycle" and
+`mda.py`. Registering `volt_seconds`/`turn_currents` merged that ring with the
+volt-second/burn-time ring into one nine-node SCC (`volt_seconds.py`'s module
+docstring carries the walk); the existing cuts still break it, measured in
+`test_mda.py`.
 """
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
@@ -51,6 +56,10 @@ from functional_process.models.pfcoil.geometry import (
 )
 from functional_process.models.pfcoil.inductance import PFCoilInductance
 from functional_process.models.pfcoil.masses import PFCoilMasses, PFCoilSizes
+from functional_process.models.pfcoil.volt_seconds import (
+    PFCoilTurnCurrents,
+    PFCoilVoltSeconds,
+)
 
 
 class CSCoil(ModelNamespace):
@@ -80,7 +89,8 @@ class CSCoil(ModelNamespace):
 
 
 class PFCoil(ModelNamespace):
-    """`.tokamak.pf_coil` -- the PF coil set, ten slots including the inductance.
+    """`.tokamak.pf_coil` -- the PF coil set, twelve slots including the inductance
+    and the volt-second accounting.
 
     Closes the three boundary reads the first tokamak wave left on `Structure`
     (`.pf_coil.m_pf_coil_conductor_total`, `.m_pf_coil_structure_total`) and `Cryostat`
@@ -126,3 +136,18 @@ class PFCoil(ModelNamespace):
     """The 22x22 mutual-inductance matrix (`pfcoil.py:1750-2010`, `induct`), owned
     whole -- the node that enlarged the cycle from three to four
     (`inductance.md` § "The cycle, one node larger")."""
+
+    turn_currents: PFCoilTurnCurrents = PFCoilTurnCurrents()
+    """Per-turn circuit currents at the six waveform time points
+    (`pfcoil.py:1082-1111`) -- `.pf_coil.c_pf_coil_turn`, owned whole. Added
+    2026-08-27, half of `cold_boundary.md` producer 4 (`volt_seconds.py`'s module
+    docstring carries the scope and cycle argument)."""
+
+    volt_seconds: PFCoilVoltSeconds = PFCoilVoltSeconds()
+    """`PFCoil.vsec` (`pfcoil.py:1615-1720`), `iohcl = 1` arm -- the volt-second
+    capability, `.pf_coil.vs_cs_pf_total_burn`/`.vs_cs_pf_total_pulse`. Added
+    2026-08-27 (`cold_boundary.md` producer 4): the burn value was the boundary zero
+    that, with `.physics.res_plasma`, made the cold burn time nan. Registering it
+    merges the PF coil ring with the volt-second/burn-time ring into one nine-node
+    SCC; `mda.CUTS`'s existing three entries still cut it (measured,
+    `test_mda.py`)."""

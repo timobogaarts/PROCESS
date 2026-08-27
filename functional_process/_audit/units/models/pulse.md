@@ -244,3 +244,15 @@ report it") this is reported, not improvised — see "open questions" below.
   or any other consumer — they already declare `t_plant_pulse_burn` as a plain
   `From(times)`/keyword read; they simply had nothing bound to it on the tokamak path
   until this node exists.
+
+
+## 2026-08-27 — `vs_cs_pf_total_burn`'s producer landed (cold-boundary wave)
+
+The data-footprint row above calling `.pf_coil.vs_cs_pf_total_burn` "an ordinary
+boundary input here" is no longer the graph's state: `pfcoil/volt_seconds.py::
+PFCoilVoltSeconds` (unit #52, `cold_boundary.md` producer 4) now produces it. The read
+was the cold half of root 4 — `abs(0)/0 - 10 = nan` on a cold start, jointly with
+`.physics.res_plasma` (unit #37's `PlasmaOhmicHeating`). Consequence for this node's
+cycle: the two-node volt-second/burn-time ring is now the burn-time side of a
+nine-node SCC with the PF coil ring; `mda.CUTS` unchanged (measured), see
+`volt_seconds.md` § the cycle merge.

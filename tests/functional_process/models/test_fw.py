@@ -20,6 +20,7 @@ from functional_process.models.fw import (
     calculate_elliptical_first_wall_areas,
     calculate_first_wall_half_height,
     calculate_first_wall_outputs,
+    set_fw_geometry,
 )
 from process.core.model import DataStructure
 from process.models.fw import FirstWall
@@ -253,4 +254,43 @@ class TestCalculateFirstWallOutputs(Tier1Contract):
         "f_p_alpha_plasma_deposited": (0.7, 1.0),
         "ffwal": (0.8, 1.2),
         "pflux_plasma_surface_neutron_avg_mw": (0.1, 5.0),
+    }
+
+
+def _reference_set_fw_geometry(radius_fw_channel, dr_fw_wall):
+    """PROCESS's real `FirstWall.set_fw_geometry`, through the `data` back-door -- it
+    is an instance method with no arguments, so the inputs go in as fields and the
+    answers come back off `.build`.
+    """
+    data = DataStructure()
+    data.fwbs.radius_fw_channel = radius_fw_channel
+    data.fwbs.dr_fw_wall = dr_fw_wall
+    fw = FirstWall()
+    fw.data = data
+    fw.set_fw_geometry()
+    return fw.data.build.dr_fw_inboard, fw.data.build.dr_fw_outboard
+
+
+class TestSetFwGeometry(Tier1Contract):
+    """`set_fw_geometry` -> `FirstWall.set_fw_geometry` (`fw.py:347-352`), added
+    2026-08-27 (`cold_boundary.md` producer 1). The legacy point is the reference
+    run's two dataclass defaults, whose sum `0.018` is the value `sr.run()`
+    reproduces exactly (`cold_boundary.md` Task A).
+    """
+
+    audit_record = "models/fw.md"
+    reference = _reference_set_fw_geometry
+    ported = set_fw_geometry
+
+    samples = [
+        legacy_sample(
+            "fwbs-defaults",
+            radius_fw_channel=0.006,
+            dr_fw_wall=0.003,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "radius_fw_channel": (0.002, 0.02),
+        "dr_fw_wall": (0.001, 0.01),
     }

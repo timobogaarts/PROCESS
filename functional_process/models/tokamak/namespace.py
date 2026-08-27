@@ -1,11 +1,12 @@
-"""The tokamak's own subsystems -- twenty-six filled, two still empty.
+"""The tokamak's own subsystems -- twenty-seven filled, two still empty.
 
 Beside the nodes it names (`model_tree_design.md` §11), exactly as
 `models/stellarator/namespace.py` sits beside the stellarator's. **It shipped with not
 one slot occupied**; the first tokamak porting wave filled fourteen of the twenty-five,
 the second and third waves' consolidation filled eleven more (and added three --
 `diamagnetic_current`, `pfirsch_schluter_current`, `current_fractions` -- that
-`bootstrap_current.md` found no home for), and the two that are left keep the original
+`bootstrap_current.md` found no home for), the cold-boundary wave (2026-08-27) added
+`first_wall_geometry`, and the two that are left keep the original
 spelling `... | None = None`, which cottax reads as *"an unproduced slot: it assembles
 nothing, and whatever read its outputs surfaces as a boundary input. Absence, spelled
 as absence."* The two are `cs_fatigue` and `water_use`, both scoping records rather
@@ -59,7 +60,7 @@ from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.blankets.namespace import CcfeHcpb
 from functional_process.models.cryostat import Cryostat
-from functional_process.models.fw import FirstWall
+from functional_process.models.fw import FirstWall, FirstWallGeometry
 from functional_process.models.namespace import Build, Divertor
 from functional_process.models.pfcoil.namespace import CSCoil, PFCoil
 from functional_process.models.physics.bootstrap_current import (
@@ -90,7 +91,7 @@ from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
 class Tokamak(ModelNamespace):
     """Everything a conventional tokamak has and a stellarator does not.
 
-    Twenty-eight slots; **twenty-six of them now have occupants and two are still
+    Twenty-nine slots; **twenty-seven of them now have occupants and two are still
     `None`.** A namespace with `None` slots contributes no node for them and is
     explicitly allowed by cottax (`ModelNamespace`'s own refusal is for a namespace with
     no *slots*, which is a wrong argument rather than an empty one), so the two that
@@ -101,18 +102,19 @@ class Tokamak(ModelNamespace):
     **The annotation is the promise, and it is now kept slot by slot.** The class this
     file shipped with typed every slot `ModelNamespace | None` on the ground that *"there
     is no class to name yet"*, and said a slot would gain a real annotation the day it
-    gained a real occupant, the way `physics.confinement_time.scaling` did. Twenty-six
-    have. Ten of those are annotated with a **node** rather than a namespace
-    (`plasma_beta`, `first_wall`, `structure`, `cryostat`, `vacuum_vessel`,
-    `bootstrap_current`, `diamagnetic_current`, `pfirsch_schluter_current`,
-    `current_fractions`, `l_h_transition`), because a
+    gained a real occupant, the way `physics.confinement_time.scaling` did. Twenty-seven
+    have. Eleven of those are annotated with a **node** rather than a namespace
+    (`plasma_beta`, `first_wall`, `first_wall_geometry`, `structure`, `cryostat`,
+    `vacuum_vessel`, `bootstrap_current`, `diamagnetic_current`,
+    `pfirsch_schluter_current`, `current_fractions`, `l_h_transition`), because a
     slot may hold either -- `Physics.fusion_rates` always has -- and wrapping one node in
     a namespace to make the types uniform would put a meaningless key in front of its
     name.
 
     **A slot the factory fills has no default**, here as everywhere else in this tree.
-    Twenty-three of the twenty-six are `dataclasses.field(kw_only=True)`; the three
-    that keep a default (`plasma_beta`, `cryostat`, `current_fractions`) are the ones
+    Twenty-three of the twenty-seven are `dataclasses.field(kw_only=True)`; the four
+    that keep a default (`plasma_beta`, `cryostat`, `current_fractions`,
+    `first_wall_geometry`) are the ones
     with nothing to decide -- no switch anywhere beneath them, so no configuration for
     a default to smuggle in. That distinction is not cosmetic: a
     defaulted slot is a slot `machine_from_indat` never asks a switch about, and an
@@ -265,10 +267,10 @@ class Tokamak(ModelNamespace):
     """
 
     pf_coil: PFCoil = dataclasses.field(kw_only=True)
-    """`pfcoil.py::PFCoil`, §A row 4 (`caller.py:319`) -- ten slots including the
+    """`pfcoil.py::PFCoil`, §A row 4 (`caller.py:319`) -- twelve slots including the
     inductance matrix. Site of decisions 11 and 13 (`i_pf_superconductor`,
     `n_pf_coil_groups`), resolved with the rest of the package's joint predicate by
-    `indat._pf_coil_system_arm` -- one predicate, thirteen slots, resolved once
+    `indat._pf_coil_system_arm` -- one predicate, fifteen slots, resolved once
     (`models/pfcoil/namespace.py`'s own docstring).
 
     The registration closes `Structure`'s and `Cryostat`'s three PF-coil boundary
@@ -313,6 +315,16 @@ class Tokamak(ModelNamespace):
     reference run: every one of its CoolProp sites is behind
     `.fwbs.i_p_coolant_pumping == MECHANICAL` (2) and the file sets 3. Dormant, not
     absent -- a second tokamak IN.DAT can wake it (§D)."""
+
+    first_wall_geometry: FirstWallGeometry = FirstWallGeometry()
+    """`fw.py::FirstWall.set_fw_geometry` (`fw.py:347-352`) -- **a new slot, not one of
+    the traced twenty-five**, on the same grounds as `diamagnetic_current`:
+    `tokamak_boundary.md` folded it into `first_wall`, whose record then declared it out
+    of that slot's boundary, and `cold_boundary.md` (2026-08-27) measured it as producer
+    1 of the cold MDA's missing four -- `.build.dr_fw_inboard`/`.build.dr_fw_outboard`,
+    the boundary zeros behind 7 of the 11 non-finite roots. A slot of its own because
+    `first_wall` reads both fields it would otherwise own; a default because there is no
+    switch anywhere beneath it (the `plasma_beta`/`cryostat` rule)."""
 
     shield: TokamakShield = dataclasses.field(kw_only=True)
     """`shield.py::Shield`, §A row 8 (`caller.py:329`) -- 4 entered functions, 270

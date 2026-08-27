@@ -57,6 +57,7 @@ from functional_process.models.build import (
     DrTfInboardFromWindingPack,
     DrTfOutboardSuperconducting,
     DrTfWpWithInsulationFromInboardBuild,
+    TfInboardRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardMidDShape,
     WpConductorMaxWidthSuperconducting,
@@ -298,6 +299,7 @@ from functional_process.models.tokamak.namespace import Tokamak
 from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
 from functional_process.total_process import StellaratorProcess, TokamakProcess
 from process.data_structure.blanket_variables import BlktModelTypes
+from process.data_structure.build_variables import TFCSRadialConfiguration
 from process.data_structure.divertor_variables import DivertorHeatLoadModel
 from process.data_structure.pfcoil_variables import PFConductorModel
 from process.data_structure.physics_variables import (
@@ -711,6 +713,18 @@ UNPORTED = {
         "entry. Kept as a refused value rather than a second registry entry pointing at "
         "the copper occupant, the same discipline `('i_tf_sup', 2)` follows for "
         "`.power.tf_power`"
+    ),
+    ("tf_inboard_radii_arm", -1): (
+        "TF coil inside the CS (`i_tf_inside_cs == 1`): `r_tf_inboard_in = dr_bore` "
+        "alone (`process/models/build.py:1692`) and `dr_cs_bore` gains a "
+        "`dr_tf_inboard` term (`:1694-1698`) -- a different reads-set for the inner "
+        "radius, so a different occupant. Not written"
+    ),
+    ("tf_inboard_radii_arm", -2): (
+        "no CS pre-compression structure (`i_cs_precomp == 0`): `dr_cs_precomp` is "
+        "the literal `0.0` (`process/models/build.py:1714`) and none of "
+        "`fseppc`/`fcspc`/`sigallpc` is read -- a strict-subset reads-set, so a "
+        "different occupant. Not written"
     ),
     ("i_tf_shape_build", 2): (
         "picture frame (`i_tf_shape == 2`) uses a different closed-form ripple formula "
@@ -2307,6 +2321,33 @@ that run even though `tokamak_boundary.md` attributes it to this slot. That file
 attribution is an `ast` walk over `Assign` targets, which cannot see an `ixc` guard;
 `build.md` records the contradiction rather than smoothing it."""
 
+
+def _tf_inboard_radii_arm(i_tf_inside_cs: int, i_cs_precomp: int) -> int:
+    """`(i_tf_inside_cs, i_cs_precomp)` -> the CS-to-TF radial slice's arm.
+
+    ```
+    i_tf_inside_cs == 1 (TF_INSIDE_CS)   -> arm -1  r_tf_inboard_in = dr_bore alone,
+                                                    dr_cs_bore gains a TF term; UNPORTED
+    i_cs_precomp == 0 (no structure)     -> arm -2  dr_cs_precomp = 0.0 literal,
+                                                    fseppc/fcspc/sigallpc unread; UNPORTED
+    otherwise                            -> arm  0  TfInboardRadiiTfOutsideCs
+    ```
+
+    `cold_boundary.md` producer 2, added 2026-08-27.
+    """
+    if (
+        TFCSRadialConfiguration(int(i_tf_inside_cs))
+        is TFCSRadialConfiguration.TF_INSIDE_CS
+    ):
+        return -1
+    return 0 if int(i_cs_precomp) != 0 else -2
+
+
+TF_INBOARD_RADII = {0: TfInboardRadiiTfOutsideCs}
+"""`_tf_inboard_radii_arm(...)` -> the CS-to-TF radial-slice occupant
+(`cold_boundary.md` producer 2, added 2026-08-27). Both refused arms are real PROCESS
+branches with different reads-sets; see their `UNPORTED` entries."""
+
 DR_TF_OUTBOARD = {TFConductorModel.SUPERCONDUCTING: DrTfOutboardSuperconducting}
 WP_CONDUCTOR_MAX_WIDTH = {
     TFConductorModel.SUPERCONDUCTING: WpConductorMaxWidthSuperconducting
@@ -3080,6 +3121,14 @@ def _tokamak_device(
             "dr_tf_inboard_winding_pack",
             0 if 140 in ixc else 1,
             DR_TF_INBOARD_WINDING_PACK,
+        ),
+        tf_inboard_radii=_slot_occupant(
+            "tf_inboard_radii_arm",
+            _tf_inboard_radii_arm(
+                switches.get("i_tf_inside_cs", 0),  # `build_variables.py:189`
+                switches.get("i_cs_precomp", 1),  # `build_variables.py:183`
+            ),
+            TF_INBOARD_RADII,
         ),
         dr_tf_outboard=_slot_occupant("i_tf_sup_build", i_tf_sup, DR_TF_OUTBOARD),
         wp_conductor_max_width=_slot_occupant(
