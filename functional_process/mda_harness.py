@@ -371,9 +371,28 @@ SET_MEMBERSHIP = "set membership (kind c)"
 ASSEMBLY_PAYLOAD = "assembly-time payload"
 """Neither a switch nor a shape: a value the graph carries that PROCESS never stores."""
 
+FROZEN_INPUT = "frozen run input"
+"""A real `DataStructure` **input** the graph carries statically, because something
+derived from it was evaluated once at assembly time.
+
+Distinct from `ASSEMBLY_PAYLOAD`, which PROCESS never stores: this one has a backing
+field and is therefore value-checked against the converged run like any other kwarg. The
+only thing it is not, is a *choice* -- it names no model.
+
+The one instance is `TfCoilQuenchHeatCurrentDensity`'s `tftmp` /
+`temp_tf_conductor_quench_max`, which fix the Gauss-Legendre grid the helium property
+table was built at (`models/tfcoil/quench.py`). Freezing an input is only sound while it
+cannot move, so `indat._quench_helium_table` refuses to assemble a machine whose `ixc`
+names either -- the classification and that refusal are two halves of one claim.
+"""
+
 STATIC_KWARG_KINDS = {
     "n_plasma_profile_elements": SHAPE,
     "n_cs_pf_coils": SHAPE,
+    "tftmp": FROZEN_INPUT,
+    "temp_tf_conductor_quench_max": FROZEN_INPUT,
+    "den_helium_at_nodes": ASSEMBLY_PAYLOAD,
+    "cp_helium_at_nodes": ASSEMBLY_PAYLOAD,
     # `Avail2`/`AvailSt`'s pump counts. Not on the reference graph today (neither node
     # is registered on this configuration), classified anyway so that registering one
     # later does not have to remember to: the classification belongs with the kwarg,
@@ -402,6 +421,19 @@ carried by `STATIC_KWARGS_WITHOUT_BACKING_FIELD` below, which holds the evidence
 *why* -- this table holds only which of the four kinds each one is.
 """
 
+_QUENCH_HELIUM_TABLE_REASON = (
+    "helium density / isobaric specific heat at the 75 Gauss-Legendre nodes of "
+    "`[tftmp, temp_tf_conductor_quench_max]` -- the whole CoolProp surface of the "
+    "tokamak scope, evaluated once by `indat._quench_helium_table` at graph-assembly "
+    "time. PROCESS asks `PropsSI` for the same numbers inside its own body and stores "
+    "them nowhere, so there is no `DataStructure` field to check against; what *is* "
+    "checked is the pair of temperatures that generate them, which are ordinary "
+    "`FROZEN_INPUT` kwargs resolving to `.tfcoil.tftmp` and "
+    "`.tfcoil.temp_tf_conductor_quench_max`. See "
+    "`models/tfcoil/quench.py::TfCoilQuenchHeatCurrentDensity` for why the table is "
+    "static at all and what refuses a machine on which it would go stale"
+)
+
 STATIC_KWARGS_WITHOUT_BACKING_FIELD = {
     "machine_config": (
         "the parsed contents of this machine's `stella_conf.json` -- a "
@@ -423,6 +455,8 @@ STATIC_KWARGS_WITHOUT_BACKING_FIELD = {
         "`DataStructure` field of its own, see `ImpurityRadiationTotals`'s docstring "
         "and `total_process.py`'s own comment on its registration"
     ),
+    "den_helium_at_nodes": _QUENCH_HELIUM_TABLE_REASON,
+    "cp_helium_at_nodes": _QUENCH_HELIUM_TABLE_REASON,
 }
 """Static kwargs confirmed *not* to be switches backed by a real `DataStructure` field,
 with the reason. Anything static that is neither here nor resolvable by name is

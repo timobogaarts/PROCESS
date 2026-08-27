@@ -84,6 +84,7 @@ different *fit coefficients* **and** different reads -- the `else` arm reads not
 
 from abc import abstractmethod
 
+import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -92,8 +93,20 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.models.physics.superconductors import (
+    gl_nbti,
+    itersc,
+    jcrit_nbti,
+    western_superconducting_nb3sn,
+)
 from functional_process.models.safe_math import safe_sqrt
-from functional_process.paths import build, fwbs, superconducting_tfcoil, tfcoil
+from functional_process.paths import (
+    build,
+    divertor,
+    fwbs,
+    superconducting_tfcoil,
+    tfcoil,
+)
 from process.core import constants
 
 _RIPPLE_FIT_COEFFICIENTS = {
@@ -955,7 +968,8 @@ def tf_cicc_inboard_areas_and_fractions(
 
 def calculate_a_tf_turn(*, c_tf_total, j_tf_wp, n_tf_coils, n_tf_coil_turns):
     """Cross-sectional area per turn (m2). `superconducting.py:2700-2704`, inline in
-    `run`."""
+    `run`.
+    """
     return c_tf_total / (j_tf_wp * n_tf_coils * n_tf_coil_turns)
 
 
@@ -1258,6 +1272,859 @@ def _superconducting_tf_coil_masses(
         m_tf_coil_conductor,
         m_tf_coil,
         m_tf_coils_total,
+    )
+
+
+# ---------------------------------------------------------------------------
+# `vv_stress_on_quench` -- `superconducting.py:1381-1452` (the method's own geometry
+# prologue) and `:4869-5153` (`lambda_term`, `_theta_factor_integral`,
+# `_inductance_factor`, `vv_stress_on_quench` itself)
+# ---------------------------------------------------------------------------
+
+
+def _safe_arcsin(x):
+    """`jnp.arcsin(x)` with a finite derivative at `x == +-1`.
+
+    `models/safe_math.py`'s idiom, applied to the other function in this port whose
+    derivative is infinite at an argument the code reaches *exactly*: `arcsin'(x) =
+    1 / sqrt(1 - x**2)`. The double `jnp.where` is load-bearing for the same reason it is
+    there -- a single one still evaluates `arcsin` at the edge and still leaks the `inf`
+    into the tangent.
+
+    Value-identical: `arcsin(+-1)` is `+-pi/2` exactly, which is what the edge branch
+    returns.
+
+    **Why this is reached and not merely defensive.** `itoh_theta_factor_integral`
+    evaluates `itoh_lambda_term` at a `tau` matrix two of whose six entries are the
+    literals `1.0` and `-1.0` (`superconducting.py:4944-4947`). At `tau == 1` the
+    argument `(1 + omega * tau) / (tau + omega)` is identically `1` for **every**
+    `omega`, so the true derivative with respect to `omega` is zero and only the
+    chain-rule formula is singular. Lives here rather than in `safe_math.py` only
+    because this is the single site; it belongs there the next time a second one
+    appears.
+    """
+    at_edge = jnp.abs(x) == 1.0
+    return jnp.where(
+        at_edge,
+        jnp.sign(x) * (jnp.pi / 2.0),
+        jnp.arcsin(jnp.where(at_edge, 0.0, x)),
+    )
+
+
+def itoh_lambda_term(*, tau, omega):
+    """The Itoh appendix-A `lambda` integral. `superconducting.py:4869-4896`.
+
+    PROCESS branches on `p = 1 - omega**2 < 0` and picks `arcsin` or `log`; both arms
+    divide by `sqrt(|p|)`, which is why the branch is only about the numerator.
+
+    Ported with `jnp.where` **and every argument substituted**, not merely selected: an
+    unguarded `arcsin` of an out-of-range argument, or a `sqrt` of `p * (1 - tau**2)`
+    when that product is negative, returns NaN on the *untaken* arm -- the same trap
+    `quench.py`'s `copper_magneto_resistivity` documents for its `log10`.
+
+    **Two further guards, and both are reached rather than defensive.**
+    `itoh_theta_factor_integral` calls this at a `tau` matrix two of whose six entries
+    are the literals `1.0` and `-1.0` (`superconducting.py:4944-4947`), and at
+    `|tau| == 1` both arms sit exactly on a singularity of their own derivative formula
+    while the value is perfectly ordinary:
+
+    - `p * (1 - tau**2)` is **identically zero**, and `sqrt'(0)` is infinite -- so
+      `safe_sqrt`, whose zero branch has derivative `0`, the convention
+      `models/safe_math.py` documents.
+    - `(1 + omega * tau) / (tau + omega)` is **identically `+-1`**, and `arcsin'(+-1)`
+      is infinite -- so `_safe_arcsin` above.
+
+    Measured before either: every one of the eighteen `d(vv_stress)/d(...)` came out
+    `nan` against a finite PROCESS finite difference, while every value test passed.
+    That is exactly the defect class `_audit/next_steps.md` §9 exists for, found in a
+    fifth place.
+    """
+    p = 1.0 - omega**2.0
+    negative = p < 0.0
+    scale = 1.0 / jnp.sqrt(jnp.abs(p))
+
+    arcsin_argument = jnp.where(negative, (1.0 + omega * tau) / (tau + omega), 0.0)
+    radicand = jnp.where(negative, 0.0, p * (1.0 - tau**2.0))
+    log_argument = jnp.where(
+        negative,
+        1.0,
+        (2.0 * (1.0 + tau * omega - safe_sqrt(radicand))) / (tau + omega),
+    )
+    return scale * jnp.where(
+        negative, _safe_arcsin(arcsin_argument), jnp.log(log_argument)
+    )
+
+
+def itoh_theta_factor_integral(*, ro_vv, ri_vv, rm_vv, h_vv, theta1_vv):
+    """The theta factor of Itoh et al. Eq 4. `superconducting.py:4899-4960`.
+
+    `theta1_vv` is in **radians** here -- `vv_stress_on_quench` converts before calling
+    this and does *not* convert before calling `itoh_inductance_factor`, which divides
+    by 90. Both are transcribed as written; the asymmetry is PROCESS's.
+
+    PROCESS's `for k in range(len(omega))` over a `(2, 3)` `tau` and a `(3,)` `omega`
+    becomes one vectorised `jnp.sum`.
+    """
+    theta2 = jnp.pi / 2.0 + theta1_vv
+    a = (ro_vv - ri_vv) / 2.0
+    rbar = (ro_vv + ri_vv) / 2.0
+    delta = (rbar - rm_vv) / a
+    kappa = h_vv / a
+    iota = (1.0 + delta) / kappa
+
+    denom = jnp.cos(theta1_vv) + jnp.sin(theta1_vv) - 1.0
+
+    r1 = h_vv * ((jnp.cos(theta1_vv) + iota * (jnp.sin(theta1_vv) - 1.0)) / denom)
+    r2 = h_vv * ((jnp.cos(theta1_vv) - 1.0 + iota * jnp.sin(theta1_vv)) / denom)
+    r3 = h_vv * (1 - delta) / kappa
+
+    rc1 = (h_vv / kappa) * ((rbar / a) + 1.0) - r1
+    rc2 = rc1 + (r1 - r2) * jnp.cos(theta1_vv)
+    rc3 = rc2
+    zc2 = (r1 - r2) * jnp.sin(theta1_vv)
+    zc3 = zc2 + r2 - r3
+
+    tau_upper = jnp.stack([
+        jnp.cos(theta1_vv),
+        jnp.cos(theta1_vv + theta2),
+        jnp.asarray(-1.0),
+    ])
+    tau_lower = jnp.stack([
+        jnp.asarray(1.0),
+        jnp.cos(theta1_vv),
+        jnp.cos(theta1_vv + theta2),
+    ])
+    omega = jnp.stack([rc1 / r1, rc2 / r2, rc3 / r3])
+
+    # PROCESS assumes up-down symmetry and sets `Zc6 = -Zc3` (`:5016`).
+    chi1 = (zc3 + jnp.abs(-zc3)) / ri_vv
+    chi2 = jnp.sum(
+        jnp.abs(
+            itoh_lambda_term(tau=tau_lower, omega=omega)
+            - itoh_lambda_term(tau=tau_upper, omega=omega)
+        )
+    )
+    return (chi1 + 2.0 * chi2) / (2.0 * jnp.pi)
+
+
+def itoh_inductance_factor(*, h, ri, ro, rm, theta1):
+    """Surrogate-2 inductance factor. `superconducting.py:5115-5153`.
+
+    `theta1` is in **degrees** -- the body divides it by 90. See
+    `itoh_theta_factor_integral` on the asymmetry.
+    """
+    major_radius = (ro + ri) / 2.0
+    minor_radius = (ro - ri) / 2.0
+
+    aspect_ratio = major_radius / minor_radius
+    triangularity = (major_radius - rm) / minor_radius
+    elongation = h / minor_radius
+
+    return (
+        4.933
+        + 0.03728 * elongation
+        + 0.06980 * triangularity
+        - 3.551 * aspect_ratio
+        + 0.7629 * aspect_ratio**2
+        - 0.06298 * (theta1 / 90)
+    )
+
+
+def vv_stress_on_quench(
+    *,
+    h_coil,
+    ri_coil,
+    ro_coil,
+    rm_coil,
+    ccl_length_coil,
+    theta1_coil,
+    h_vv,
+    ri_vv,
+    ro_vv,
+    rm_vv,
+    theta1_vv,
+    n_tf_coils,
+    n_tf_coil_turns,
+    s_rp,
+    s_cc,
+    taud,
+    i_op,
+    d_vv,
+):
+    """Tresca stress on the vacuum vessel during a TF quench, Pa.
+
+    Ports `vv_stress_on_quench`, `process/models/tfcoil/superconducting.py:4963-5112`,
+    line for line. The parameter names are PROCESS's own, lower-cased where it used
+    `H_coil`/`H_vv` (`standards.md` has no capitals).
+    """
+    theta1_vv_rad = jnp.pi * (theta1_vv / 180.0)
+
+    # Poloidal loop resistance (PLR) in ohms
+    theta_vv = itoh_theta_factor_integral(
+        ro_vv=ro_vv, ri_vv=ri_vv, rm_vv=rm_vv, h_vv=h_vv, theta1_vv=theta1_vv_rad
+    )
+    plr_coil = ((0.5 * ccl_length_coil) / (n_tf_coils * (s_cc + s_rp))) * 1e-6
+    plr_vv = ((0.84 / d_vv) * theta_vv) * 1e-6
+
+    # relevant self-inductances in henry (H)
+    coil_structure_self_inductance = (
+        (constants.RMU0 / jnp.pi)
+        * h_coil
+        * itoh_inductance_factor(
+            h=h_coil, ri=ri_coil, ro=ro_coil, rm=rm_coil, theta1=theta1_coil
+        )
+    )
+    vv_self_inductance = (
+        (constants.RMU0 / jnp.pi)
+        * h_vv
+        * itoh_inductance_factor(h=h_vv, ri=ri_vv, ro=ro_vv, rm=rm_vv, theta1=theta1_vv)
+    )
+
+    lambda0 = 1 / taud
+    lambda1 = plr_coil / coil_structure_self_inductance
+    lambda2 = plr_vv / vv_self_inductance
+
+    # approximate time at which the maximum force (and stress) occurs on the VV
+    tmaxforce = jnp.log((lambda0 + lambda1) / (2 * lambda0)) / (lambda1 - lambda0)
+
+    i0 = i_op * jnp.exp(-lambda0 * tmaxforce)
+    i1 = (
+        lambda0
+        * n_tf_coils
+        * n_tf_coil_turns
+        * i_op
+        * (
+            (jnp.exp(-lambda1 * tmaxforce) - jnp.exp(-lambda0 * tmaxforce))
+            / (lambda0 - lambda1)
+        )
+    )
+    i2 = (lambda1 / lambda2) * i1
+
+    a_vv = (ro_vv + ri_vv) / (ro_vv - ri_vv)
+    b_vvi = (constants.RMU0 * (n_tf_coils * n_tf_coil_turns * i0 + i1 + (i2 / 2))) / (
+        2 * jnp.pi * ri_vv
+    )
+    j_vvi = i2 / (2 * jnp.pi * d_vv * ri_vv)
+
+    zeta = 1 + ((a_vv - 1) * jnp.log((a_vv + 1) / (a_vv - 1)) / (2 * a_vv))
+
+    return zeta * b_vvi * j_vvi * ri_vv
+
+
+def vv_stress_quench_from_build(
+    *,
+    z_tf_inside_half,
+    dr_tf_inboard,
+    r_tf_inboard_mid,
+    r_tf_outboard_mid,
+    r_tf_inboard_out,
+    tfa_first_arc,
+    z_plasma_xpoint_upper,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_shld_upper,
+    dz_vv_upper,
+    r_vv_inboard_out,
+    dr_vv_outboard,
+    dr_tf_outboard,
+    dr_tf_shld_gap,
+    dr_shld_thermal_outboard,
+    dr_shld_vv_gap_outboard,
+    len_tf_coil,
+    theta1_coil,
+    theta1_vv,
+    n_tf_coils,
+    n_tf_coil_turns,
+    a_tf_coil_inboard_steel,
+    a_tf_plasma_case,
+    a_tf_coil_nose_case,
+    dx_tf_side_case_average,
+    t_tf_superconductor_quench,
+    c_tf_coil,
+    dr_vv_shells,
+):
+    """`.superconducting_tfcoil.vv_stress_quench` from the fields `run` reads.
+
+    Ports `CICCSuperconductingTFCoil.vv_stress_on_quench`
+    (`process/models/tfcoil/superconducting.py:1381-1452`) -- the *method*, i.e. the
+    geometry prologue that turns twenty-odd build fields into the eighteen arguments of
+    the module-level `vv_stress_on_quench` above, and the call itself.
+
+    Two things in the prologue are carried across as written rather than tidied:
+
+    - **`s_rp` is clipped at zero** (`:1445`, PROCESS's own `# TODO: value clipped due
+      to #1883`). `jnp.clip` here, a real derivative kink, kept.
+    - **`i_op` is `c_tf_coil / n_tf_coil_turns`** under PROCESS's own `# TODO: is this
+      the correct current?` (`:1449`). Not second-guessed.
+
+    `tfa_first_arc` is `.tfcoil.tfa[0]`, an array-element read (`naming_convention.md`
+    § "Array elements") -- the first arc radius of the D-shaped coil, used both for the
+    coil's `rm` and, scaled by the TF/VV plasma-facing radius ratio, for the vessel's.
+    """
+    h_coil = z_tf_inside_half + (dr_tf_inboard / 2)
+    ri_coil = r_tf_inboard_mid
+    ro_coil = r_tf_outboard_mid
+    # `rm` is measured from the outside edge of the coil, because that is where the
+    # radius of the first ellipse is measured from (`:1394-1395`).
+    rm_coil = r_tf_inboard_out + tfa_first_arc
+
+    h_vv = (
+        z_plasma_xpoint_upper
+        + dz_xpoint_divertor
+        + dz_divertor
+        + dz_shld_upper
+        + (dz_vv_upper / 2)
+    )
+    # `ri`/`ro` for the VV do not consider the shield widths: the shield is assumed to
+    # be on the plasma side of the VV (`:1405-1407`).
+    ri_vv = r_vv_inboard_out - (dr_vv_outboard / 2)
+    ro_vv = (
+        r_tf_outboard_mid
+        - (dr_tf_outboard / 2)
+        - dr_tf_shld_gap
+        - dr_shld_thermal_outboard
+        - dr_shld_vv_gap_outboard
+        - (dr_vv_outboard / 2)
+    )
+
+    # The first ellipse of the VV is assumed to be in the same proportion to that of
+    # the coil as their plasma-facing radii (`:1417-1419`).
+    tf_vv_frac = r_tf_inboard_out / r_vv_inboard_out
+    rm_vv = r_vv_inboard_out + (tfa_first_arc * tf_vv_frac)
+
+    return vv_stress_on_quench(
+        h_coil=h_coil,
+        ri_coil=ri_coil,
+        ro_coil=ro_coil,
+        rm_coil=rm_coil,
+        ccl_length_coil=len_tf_coil,
+        theta1_coil=theta1_coil,
+        h_vv=h_vv,
+        ri_vv=ri_vv,
+        ro_vv=ro_vv,
+        rm_vv=rm_vv,
+        theta1_vv=theta1_vv,
+        n_tf_coils=n_tf_coils,
+        n_tf_coil_turns=n_tf_coil_turns,
+        s_rp=jnp.clip(a_tf_coil_inboard_steel, 0.0, None),
+        s_cc=a_tf_plasma_case + a_tf_coil_nose_case + 2.0 * dx_tf_side_case_average,
+        taud=t_tf_superconductor_quench,
+        i_op=c_tf_coil / n_tf_coil_turns,
+        d_vv=dr_vv_shells,
+    )
+
+
+# ---------------------------------------------------------------------------
+# `tf_cable_in_conduit_superconductor_properties` -- `superconducting.py:2806-3160`
+# ---------------------------------------------------------------------------
+
+_STRAIN_LIMIT = 0.5e-2
+"""The Nb3Sn critical-surface fits' region of applicability,
+`process/models/tfcoil/superconducting.py:2911,3018,3053`. PROCESS logs an error and
+substitutes `sign(strain) * 0.5e-2`; the substitution is a real value effect and is
+ported, the log is not."""
+
+
+def clip_nb3sn_strain(strain):
+    """`sign(strain) * 0.5e-2` outside the fit's range, `strain` inside.
+
+    `superconducting.py:2910-2916` (and the identical blocks at `:3017` and `:3052`).
+    PROCESS's `np.sign(strain) * 0.5e-2` is reproduced exactly, including
+    `sign(0.0) == 0.0` -- which cannot be reached, because `abs(0.0) > 0.5e-2` is false.
+    """
+    return jnp.where(
+        jnp.abs(strain) > _STRAIN_LIMIT, jnp.sign(strain) * _STRAIN_LIMIT, strain
+    )
+
+
+def cicc_superconductor_properties(
+    *,
+    j_superconductor_critical,
+    a_tf_turn_cable_space_effective,
+    a_tf_turn,
+    f_a_tf_turn_cable_copper,
+    c_tf_turn,
+):
+    """The shared tail of `tf_cable_in_conduit_superconductor_properties`.
+
+    `superconducting.py:3119-3136`, plus the `j_cables_critical`/
+    `c_turn_cables_critical`/`j_crit_str_tf` triple every cable arm except Bi-2212
+    repeats verbatim (`:2926-2939` and its four copies).
+
+    Returns
+    -------
+    :
+        `(j_tf_wp_critical, j_crit_str_tf, f_c_tf_turn_operating_critical,
+        j_tf_coil_turn, j_superconductor, c_turn_cables_critical)` -- `run`'s own
+        write order (`superconducting.py:2725-2742`), with the two that `run` reads off
+        `TFSuperconductorLimits` unchanged in between.
+
+    Notes
+    -----
+    PROCESS's `logger.error` on a non-positive `f_c_tf_turn_operating_critical`
+    (`:3138-3153`) has no value effect and is dropped.
+    """
+    #  Scale for the copper area fraction of the cable
+    j_cables_critical = j_superconductor_critical * (1.0 - f_a_tf_turn_cable_copper)
+
+    #  Critical current in all the turn's cables
+    c_turn_cables_critical = j_cables_critical * a_tf_turn_cable_space_effective
+
+    # Strand critical current, for costing in $/kAm: superconducting filaments' jc
+    # times one minus the strand copper fraction.
+    j_crit_str_tf = j_superconductor_critical * (1.0 - f_a_tf_turn_cable_copper)
+
+    # Critical current density in the winding pack. `a_tf_turn` is the area of the
+    # entire jacketed conductor with insulation.
+    j_tf_wp_critical = c_turn_cables_critical / a_tf_turn
+
+    #  Ratio of operating to critical current
+    f_c_tf_turn_operating_critical = c_tf_turn / c_turn_cables_critical
+
+    #  Operating current density
+    j_tf_coil_turn = c_tf_turn / a_tf_turn
+
+    #  Actual current density in the superconductor, copper excluded
+    j_superconductor = f_c_tf_turn_operating_critical * j_superconductor_critical
+
+    return (
+        j_tf_wp_critical,
+        j_crit_str_tf,
+        f_c_tf_turn_operating_critical,
+        j_tf_coil_turn,
+        j_superconductor,
+        c_turn_cables_critical,
+    )
+
+
+def cicc_superconductor_properties_itersc(
+    *,
+    a_tf_turn_cable_space_effective,
+    a_tf_turn,
+    b_tf_inboard_peak,
+    f_a_tf_turn_cable_copper,
+    c_tf_turn,
+    strain,
+    temp_tf_coolant_peak_field,
+    b_c20max,
+    temp_c0max,
+):
+    """The ITER-Nb3Sn arm (`i_tf_sc_mat == 1`), and `== 4` with its own `(bc20m, tc0m)`.
+
+    `superconducting.py:2905-2939`. Value 4 is the *same* body with `bcritsc`/`tcritsc`
+    substituted for the two literals (`:3013-3042`), which is why one function serves
+    both and the literals live on the occupant rather than here.
+
+    Returns `(*cicc_superconductor_properties(...), b_c20max, temp_c0max)` -- the two
+    critical-surface constants are outputs of this node too
+    (`.superconducting_tfcoil.b_tf_superconductor_critical_zero_temp_strain` and
+    `.temp_tf_superconductor_critical_zero_field_strain`, `run` `:2733-2739`), because
+    the temperature-margin node downstream reads them.
+    """
+    j_superconductor_critical, _, _ = itersc(
+        temp_conductor=temp_tf_coolant_peak_field,
+        b_conductor=b_tf_inboard_peak,
+        strain=clip_nb3sn_strain(strain),
+        b_c20max=b_c20max,
+        temp_c0max=temp_c0max,
+    )
+    return (
+        *cicc_superconductor_properties(
+            j_superconductor_critical=j_superconductor_critical,
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+        ),
+        j_superconductor_critical,
+        b_c20max,
+        temp_c0max,
+    )
+
+
+def cicc_superconductor_properties_wst_nb3sn(
+    *,
+    a_tf_turn_cable_space_effective,
+    a_tf_turn,
+    b_tf_inboard_peak,
+    f_a_tf_turn_cable_copper,
+    c_tf_turn,
+    strain,
+    temp_tf_coolant_peak_field,
+):
+    """The WST-Nb3Sn arm (`i_tf_sc_mat == 5`). `superconducting.py:3046-3082`.
+
+    Identical in shape to the ITER arm, down to the same `(32.97, 16.06)` literals and
+    the same strain clip; only the fit differs.
+    """
+    b_c20max = 32.97
+    temp_c0max = 16.06
+    j_superconductor_critical, _, _ = western_superconducting_nb3sn(
+        temp_conductor=temp_tf_coolant_peak_field,
+        b_conductor=b_tf_inboard_peak,
+        strain=clip_nb3sn_strain(strain),
+        b_c20max=b_c20max,
+        temp_c0max=temp_c0max,
+    )
+    return (
+        *cicc_superconductor_properties(
+            j_superconductor_critical=j_superconductor_critical,
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+        ),
+        j_superconductor_critical,
+        b_c20max,
+        temp_c0max,
+    )
+
+
+def cicc_superconductor_properties_lubell_nbti(
+    *,
+    a_tf_turn_cable_space_effective,
+    a_tf_turn,
+    b_tf_inboard_peak,
+    f_a_tf_turn_cable_copper,
+    c_tf_turn,
+    temp_tf_coolant_peak_field,
+):
+    """The old-Lubell-NbTi arm (`i_tf_sc_mat == 3`). `superconducting.py:2949-3007`.
+
+    **No strain read at all** -- `jcrit_nbti` has no strain argument, so this occupant
+    genuinely reads one field fewer than its Nb3Sn siblings and is the reason
+    `i_str_wp` is not a read of *every* member of this family.
+    """
+    b_c20max = 15.0
+    temp_c0max = 9.3
+    c0 = 1.0e10
+    j_superconductor_critical, _ = jcrit_nbti(
+        temp_conductor=temp_tf_coolant_peak_field,
+        b_conductor=b_tf_inboard_peak,
+        c0=c0,
+        b_c20max=b_c20max,
+        temp_c0max=temp_c0max,
+    )
+    return (
+        *cicc_superconductor_properties(
+            j_superconductor_critical=j_superconductor_critical,
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+        ),
+        j_superconductor_critical,
+        b_c20max,
+        temp_c0max,
+    )
+
+
+def cicc_superconductor_properties_durham_nbti(
+    *,
+    a_tf_turn_cable_space_effective,
+    a_tf_turn,
+    b_tf_inboard_peak,
+    f_a_tf_turn_cable_copper,
+    c_tf_turn,
+    strain,
+    temp_tf_coolant_peak_field,
+    b_crit_upper_nbti,
+    t_crit_nbti,
+):
+    """The Durham Ginzburg-Landau NbTi arm (`i_tf_sc_mat == 7`).
+    `superconducting.py:3086-3110`.
+
+    **No strain clip on this arm** -- PROCESS applies the `0.5e-2` substitution only on
+    the three Nb3Sn arms (`:2910`, `:3017`, `:3052`) and hands `gl_nbti` the raw strain.
+    Transcribed as written.
+    """
+    j_superconductor_critical, _, _ = gl_nbti(
+        temp_conductor=temp_tf_coolant_peak_field,
+        b_conductor=b_tf_inboard_peak,
+        strain=strain,
+        b_c20max=b_crit_upper_nbti,
+        t_c0=t_crit_nbti,
+    )
+    return (
+        *cicc_superconductor_properties(
+            j_superconductor_critical=j_superconductor_critical,
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+        ),
+        j_superconductor_critical,
+        b_crit_upper_nbti,
+        t_crit_nbti,
+    )
+
+
+# ---------------------------------------------------------------------------
+# `calculate_superconductor_temperature_margin` -- `superconducting.py:1174-1291`
+# ---------------------------------------------------------------------------
+
+_MARGIN_SOLVE_TOL = 1.0e-6
+"""`tol`/`rtol` PROCESS passes `scipy.optimize.newton`
+(`superconducting.py:1273-1279`)."""
+
+_MARGIN_SOLVE_MAX_ITER = 50
+"""`maxiter`, same call."""
+
+
+def _secant_step(*, p0, q0, p1, q1):
+    """One scipy secant step, `scipy/optimize/_zeros_py.py`'s `newton` branch verbatim.
+
+    scipy picks the algebraically-rearranged form whose denominator is the larger of the
+    two, which is a genuine value difference in floating point and not a tidy-up -- so
+    the branch is reproduced rather than collapsed to one formula. `q1 == q0` (a flat
+    secant) makes scipy bisect; that case is reproduced too, guarded so neither arm's
+    division poisons the other's tangent.
+    """
+    flat = q1 == q0
+    ratio_01 = jnp.where(flat, 0.0, jnp.where(jnp.abs(q1) > jnp.abs(q0), q0 / q1, 0.0))
+    ratio_10 = jnp.where(flat, 0.0, jnp.where(jnp.abs(q1) > jnp.abs(q0), 0.0, q1 / q0))
+    secant = jnp.where(
+        jnp.abs(q1) > jnp.abs(q0),
+        (-ratio_01 * p1 + p0) / (1 - ratio_01),
+        (-ratio_10 * p0 + p1) / (1 - ratio_10),
+    )
+    return jnp.where(flat, (p1 + p0) / 2.0, secant)
+
+
+def solve_current_sharing_temperature(
+    *,
+    margin_fn,
+    temp_start,
+    max_iter=_MARGIN_SOLVE_MAX_ITER,
+    tol=_MARGIN_SOLVE_TOL,
+    rtol=_MARGIN_SOLVE_TOL,
+):
+    """The temperature at which `margin_fn(temperature)` vanishes.
+
+    Ports `scipy.optimize.newton`'s **secant** branch as PROCESS calls it
+    (`superconducting.py:1265-1281`): `fprime=None` with an explicit
+    `x1 = 2 * temp_tf_coolant_peak_field`, so scipy never touches a derivative and the
+    iteration is entirely determined by the two starting points, the step rule
+    reproduced in `_secant_step`, and `np.isclose(p, p1, rtol, atol=tol)`.
+
+    **Why the iteration is replicated rather than replaced by a better root finder.**
+    `solve_duct_diameter` (`models/vacuum/vacuum.py`) took the opposite decision and
+    tightened PROCESS's own tolerance, because there PROCESS's `0.01` is a coarse
+    heuristic cutoff and the unit is Tier 2 anyway. Here the answer is read by
+    constraint 36 and compared against PROCESS's, so the endpoint *is* the quantity
+    under test: matching scipy's stopping rule is what makes the comparison a value
+    test rather than a tolerance negotiation. The two decisions are the same rule
+    applied to different situations -- reproduce what the answer depends on.
+
+    Implemented as a fixed-trip `jax.lax.fori_loop` with a converged flag rather than a
+    `while_loop`, because unlike `solve_duct_diameter` this **is** differentiated: the
+    harness checks `temp_tf_superconductor_margin`'s gradient against PROCESS's own
+    finite difference, and `while_loop` has no reverse rule. Once converged the carry
+    freezes, so the extra trips cost accuracy nothing and the tangent is the tangent of
+    the last real step.
+
+    PROCESS passes `disp=True`, i.e. scipy *raises* if the 50 iterations run out. A
+    traced loop cannot raise; it returns whatever it reached, the same position
+    `solve_duct_diameter` records for its own non-convergence log.
+
+    Parameters
+    ----------
+    margin_fn :
+        `temperature -> j_critical(temperature) - j_operating`, i.e. PROCESS's
+        `superconductor_current_density_margin` with everything but the temperature
+        already bound.
+    temp_start :
+        `p0`. PROCESS passes `temp_tf_coolant_peak_field`; `p1` is `2 * p0`, scipy's
+        `x1`.
+    """
+    p0 = jnp.asarray(temp_start)
+    p1 = 2.0 * p0
+    q0 = margin_fn(p0)
+    q1 = margin_fn(p1)
+    # scipy orders the pair so `p1` carries the smaller residual (`_zeros_py.py`'s
+    # "If provided, sort the interval").
+    swap = jnp.abs(q1) < jnp.abs(q0)
+    p0, p1 = jnp.where(swap, p1, p0), jnp.where(swap, p0, p1)
+    q0, q1 = jnp.where(swap, q1, q0), jnp.where(swap, q0, q1)
+
+    def body(_i, carry):
+        p0, q0, p1, q1, answer, done = carry
+        p = _secant_step(p0=p0, q0=q0, p1=p1, q1=q1)
+        # `q1 == q0` is scipy's bisection escape, and it returns immediately -- so it
+        # counts as convergence here for exactly the same reason.
+        converged = (q1 == q0) | jnp.isclose(p, p1, rtol=rtol, atol=tol)
+        answer = jnp.where(done, answer, p)
+        done |= converged
+        # **Once done, the carry collapses to the flat state `(answer, q, answer, q)`,
+        # rather than being frozen by masking the update.** Both keep the value; only
+        # this one keeps the *tangent*. A frozen-by-mask carry still evaluates
+        # `_secant_step` on the last real pair every remaining trip, and a secant step
+        # whose denominator has gone to zero is `inf` -- which `jnp.where` discards in
+        # value and multiplies by zero in the JVP, giving `nan`. The flat state has
+        # `q0 == q1` by construction, so `_secant_step` takes its bisection arm and
+        # returns `(answer + answer) / 2` exactly: finite, and with `answer`'s own
+        # derivative. Measured: `i_tf_sc_mat = 4` produced a `nan` gradient under the
+        # masked form and the correct one under this.
+        next_p0 = jnp.where(done, answer, p1)
+        next_p1 = jnp.where(done, answer, p)
+        return (
+            next_p0,
+            q1,
+            next_p1,
+            jnp.where(done, q1, margin_fn(next_p1)),
+            answer,
+            done,
+        )
+
+    _, _, _, _, answer, _ = jax.lax.fori_loop(
+        0, max_iter, body, (p0, q0, p1, q1, p1, jnp.asarray(False))
+    )
+    return answer
+
+
+def _temperature_margin(*, margin_fn, temp_tf_coolant_peak_field):
+    """`t_zero_margin - temp_tf_coolant_peak_field`. `superconducting.py:1281`."""
+    return (
+        solve_current_sharing_temperature(
+            margin_fn=margin_fn, temp_start=temp_tf_coolant_peak_field
+        )
+        - temp_tf_coolant_peak_field
+    )
+
+
+def temperature_margin_itersc(
+    *,
+    j_superconductor,
+    b_tf_inboard_peak,
+    strain,
+    b_c20max,
+    temp_c0max,
+    temp_tf_coolant_peak_field,
+):
+    """TF superconductor temperature margin, ITER-Nb3Sn fit (`i_tf_sc_mat` 1 and 4).
+
+    `calculate_superconductor_temperature_margin` (`superconducting.py:1174-1291`) with
+    `superconductor_current_density_margin`'s branch 1
+    (`process/models/superconductors.py:1259`) as the residual.
+
+    **The strain is *not* clipped here**, unlike in
+    `cicc_superconductor_properties_itersc`. PROCESS's `run` reads `str_wp` /
+    `str_tf_con_res` afresh at `:2744-2747` and hands the raw value to this function;
+    the `0.5e-2` substitution happens inside the *properties* function, on its own local
+    copy, and never reaches back. Transcribed as written -- the two functions genuinely
+    evaluate the same fit at two different strains when `|strain| > 0.5e-2`, which is a
+    defect worth recording rather than smoothing (D4, `superconducting.md`).
+    """
+
+    def margin_fn(temperature):
+        return (
+            itersc(
+                temp_conductor=temperature,
+                b_conductor=b_tf_inboard_peak,
+                strain=strain,
+                b_c20max=b_c20max,
+                temp_c0max=temp_c0max,
+            )[0]
+            - j_superconductor
+        )
+
+    return _temperature_margin(
+        margin_fn=margin_fn, temp_tf_coolant_peak_field=temp_tf_coolant_peak_field
+    )
+
+
+def temperature_margin_wst_nb3sn(
+    *,
+    j_superconductor,
+    b_tf_inboard_peak,
+    strain,
+    b_c20max,
+    temp_c0max,
+    temp_tf_coolant_peak_field,
+):
+    """Temperature margin, WST-Nb3Sn fit (`i_tf_sc_mat == 5`).
+    `process/models/superconductors.py:1263-1265`. Same shape as the ITER arm.
+    """
+
+    def margin_fn(temperature):
+        return (
+            western_superconducting_nb3sn(
+                temp_conductor=temperature,
+                b_conductor=b_tf_inboard_peak,
+                strain=strain,
+                b_c20max=b_c20max,
+                temp_c0max=temp_c0max,
+            )[0]
+            - j_superconductor
+        )
+
+    return _temperature_margin(
+        margin_fn=margin_fn, temp_tf_coolant_peak_field=temp_tf_coolant_peak_field
+    )
+
+
+def temperature_margin_lubell_nbti(
+    *,
+    j_superconductor,
+    b_tf_inboard_peak,
+    b_c20max,
+    temp_c0max,
+    temp_tf_coolant_peak_field,
+):
+    """Temperature margin, old-Lubell-NbTi fit (`i_tf_sc_mat == 3`).
+
+    `process/models/superconductors.py:1260`. **`c0 = 1.0e10` is a literal `run` passes
+    (`superconducting.py:1258`), not a read**, and this is the one branch of
+    `superconductor_current_density_margin` that consumes it -- which is why `run`
+    builds a ten-element `arguments` tuple for material 3 and a nine-element one for
+    every other (`:1236-1256`). No strain, for the same reason the properties arm has
+    none.
+    """
+
+    def margin_fn(temperature):
+        return (
+            jcrit_nbti(
+                temp_conductor=temperature,
+                b_conductor=b_tf_inboard_peak,
+                c0=1.0e10,
+                b_c20max=b_c20max,
+                temp_c0max=temp_c0max,
+            )[0]
+            - j_superconductor
+        )
+
+    return _temperature_margin(
+        margin_fn=margin_fn, temp_tf_coolant_peak_field=temp_tf_coolant_peak_field
+    )
+
+
+def temperature_margin_durham_nbti(
+    *,
+    j_superconductor,
+    b_tf_inboard_peak,
+    strain,
+    b_c20max,
+    temp_c0max,
+    temp_tf_coolant_peak_field,
+):
+    """Temperature margin, Durham Ginzburg-Landau NbTi fit (`i_tf_sc_mat == 7`).
+    `process/models/superconductors.py:1266-1268`.
+    """
+
+    def margin_fn(temperature):
+        return (
+            gl_nbti(
+                temp_conductor=temperature,
+                b_conductor=b_tf_inboard_peak,
+                strain=strain,
+                b_c20max=b_c20max,
+                t_c0=temp_c0max,
+            )[0]
+            - j_superconductor
+        )
+
+    return _temperature_margin(
+        margin_fn=margin_fn, temp_tf_coolant_peak_field=temp_tf_coolant_peak_field
     )
 
 
@@ -2753,3 +3620,418 @@ class HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak(
     """`(itart, i_tf_sc_mat) == (1, 9)`:
     `SC_TF_MASSES[SPHERICAL_TOKAMAK, HAZELTON_ZHAI_REBCO]`.
     """
+
+
+class VvStressOnQuench(ExplicitFunction):
+    """cottax node: `.superconducting_tfcoil.vv_stress_quench`, constraint 65's read.
+
+    Ports `CICCSuperconductingTFCoil.vv_stress_on_quench`
+    (`process/models/tfcoil/superconducting.py:1381-1452`) -- the geometry prologue and
+    the Itoh surrogate it calls. Unswitched: there is no `i_*` anywhere on this path.
+
+    Twenty-nine reads, of which seventeen come from `.build` -- this is the node that
+    ties the TF coil's own quantities to the vessel and shield radial build, which is
+    why it reads more of `.build` than every other occupant of this slot put together.
+
+    **`.tfcoil.tfa` is read whole and indexed in the body, where every other
+    array-element read in this port is a `FromExactly(area.field[k])`.** PROCESS reads
+    `self.data.tfcoil.tfa[0]` (`:1396`), so `FromExactly(tfcoil.tfa[0])` is the literal
+    transcription -- and cottax refuses it: `tf_coil_shape` owns the *whole* `tfa`
+    vector, and `_check_reads_match_owns` rejects a read that "lies inside" an owned
+    variable because reads are matched by equality, so the element would silently become
+    a boundary input while the array beside it was produced. The rule that distinguishes
+    this from `.tfcoil.dcond[k]`, which stays a `FromExactly`, is **whether the array has
+    a producer in the same graph**: `dcond` is a nine-entry constant table nothing owns,
+    `tfa` is `tf_coil_shape`'s output. Indexing in the body keeps the real edge.
+
+    **`.divertor.dz_divertor` is this slot's only read outside `.build`, `.tfcoil` and
+    `.superconducting_tfcoil`,** and it is the one that makes the vessel height depend
+    on the divertor -- an edge the TF chain did not previously carry anywhere.
+    """
+
+    vv_stress_quench = OutputInto(superconducting_tfcoil)
+
+    def __call__(
+        self,
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        r_tf_inboard_mid=From(build),
+        r_tf_outboard_mid=From(build),
+        r_tf_inboard_out=From(build),
+        tfa=From(tfcoil),
+        z_plasma_xpoint_upper=From(build),
+        dz_xpoint_divertor=From(build),
+        dz_divertor=From(divertor),
+        dz_shld_upper=From(build),
+        dz_vv_upper=From(build),
+        r_vv_inboard_out=From(build),
+        dr_vv_outboard=From(build),
+        dr_tf_outboard=From(build),
+        dr_tf_shld_gap=From(build),
+        dr_shld_thermal_outboard=From(build),
+        dr_shld_vv_gap_outboard=From(build),
+        len_tf_coil=From(tfcoil),
+        theta1_coil=From(tfcoil),
+        theta1_vv=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_coil_inboard_steel=From(superconducting_tfcoil),
+        a_tf_plasma_case=From(superconducting_tfcoil),
+        a_tf_coil_nose_case=From(superconducting_tfcoil),
+        dx_tf_side_case_average=From(superconducting_tfcoil),
+        t_tf_superconductor_quench=From(tfcoil),
+        c_tf_coil=From(superconducting_tfcoil),
+        dr_vv_shells=From(build),
+    ):
+        return vv_stress_quench_from_build(
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            r_tf_inboard_mid=r_tf_inboard_mid,
+            r_tf_outboard_mid=r_tf_outboard_mid,
+            r_tf_inboard_out=r_tf_inboard_out,
+            tfa_first_arc=tfa[0],
+            z_plasma_xpoint_upper=z_plasma_xpoint_upper,
+            dz_xpoint_divertor=dz_xpoint_divertor,
+            dz_divertor=dz_divertor,
+            dz_shld_upper=dz_shld_upper,
+            dz_vv_upper=dz_vv_upper,
+            r_vv_inboard_out=r_vv_inboard_out,
+            dr_vv_outboard=dr_vv_outboard,
+            dr_tf_outboard=dr_tf_outboard,
+            dr_tf_shld_gap=dr_tf_shld_gap,
+            dr_shld_thermal_outboard=dr_shld_thermal_outboard,
+            dr_shld_vv_gap_outboard=dr_shld_vv_gap_outboard,
+            len_tf_coil=len_tf_coil,
+            theta1_coil=theta1_coil,
+            theta1_vv=theta1_vv,
+            n_tf_coils=n_tf_coils,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
+            a_tf_plasma_case=a_tf_plasma_case,
+            a_tf_coil_nose_case=a_tf_coil_nose_case,
+            dx_tf_side_case_average=dx_tf_side_case_average,
+            t_tf_superconductor_quench=t_tf_superconductor_quench,
+            c_tf_coil=c_tf_coil,
+            dr_vv_shells=dr_vv_shells,
+        )
+
+
+class CiccSuperconductorProperties(ExplicitFunction):
+    """The family that owns the CICC critical-current chain -- constraint 33's read.
+
+    `i_tf_sc_mat` decides it. Every occupant owns the same nine variables, in `run`'s
+    own write order (`superconducting.py:2725-2742`); they differ in which
+    critical-surface fit they call, which `(bc20m, tc0m)` pair they hand it, and --
+    genuinely -- in **which fields they read**:
+
+    | `i_tf_sc_mat` | fit and its `(bc20m, tc0m)` | strain and extra reads |
+    |---|---|---|
+    | 1 ITER Nb3Sn *(live)* | `itersc`, `(32.97, 16.06)` | `str_wp` |
+    | 3 old Lubell NbTi | `jcrit_nbti`, `(15.0, 9.3)` | **none** -- no strain |
+    | 4 user-defined Nb3Sn | `itersc`, read | `str_wp`, `bcritsc`, `tcritsc` |
+    | 5 WST Nb3Sn | `western_superconducting_nb3sn`, `(32.97, 16.06)` | `str_wp` |
+    | 7 Durham GL NbTi | `gl_nbti`, read | `str_wp`, `b_crit_upper_nbti`, `t_crit_nbti` |
+
+    Four of the nine values are refused, each for its own measured reason -- see
+    `indat.UNPORTED` and `superconducting.md`'s dated section. In one sentence each:
+    **2** (Bi-2212) reaches `TFSuperconductorLimits(bc20m=bc20m, ...)` with `bc20m` and
+    `tc0m` never assigned on its branch, so PROCESS itself raises `UnboundLocalError`;
+    **6**, **8** and **9** are `SuperconductorShape.TAPE`, which the function's own
+    first guard (`:2882-2889`) refuses before any arithmetic.
+
+    **`i_str_wp` is the second axis, and only its default arm is written.** The strain
+    fed to the fit is `.tfcoil.str_tf_con_res` at `i_str_wp == 0` and `.tfcoil.str_wp`
+    at `1` (`superconducting.py:2897-2900`). That is a *read*, so it is a class axis for
+    the same reason `i_tf_sc_mat` is one for the mass slot -- a `From` default is fixed
+    when the class body runs. `1` is PROCESS's default (`tfcoil_variables.py:508`) and
+    **no tracked input file sets the switch at all**, so arm `0` is unreachable; it is
+    registered in `UNPORTED` rather than baked, so a file that does set it is refused
+    loudly instead of silently getting the other strain.
+
+    **`.tfcoil.str_wp` is a new boundary input of the assembled machine**, and an
+    honest one: PROCESS writes it in `run_and_output_stress` (`superconducting.py:2221`)
+    from `stresscl`, which is unported. Landing this node makes a dependency visible
+    that the graph previously did not express at all.
+    """
+
+    j_tf_wp_critical = OutputInto(tfcoil)
+    j_crit_str_tf = OutputInto(tfcoil)
+    f_c_tf_turn_operating_critical = OutputInto(superconducting_tfcoil)
+    j_tf_coil_turn = OutputInto(superconducting_tfcoil)
+    j_tf_superconductor = OutputInto(superconducting_tfcoil)
+    c_tf_turn_cables_critical = OutputInto(superconducting_tfcoil)
+    j_tf_superconductor_critical = OutputInto(superconducting_tfcoil)
+    b_tf_superconductor_critical_zero_temp_strain = OutputInto(superconducting_tfcoil)
+    temp_tf_superconductor_critical_zero_field_strain = OutputInto(
+        superconducting_tfcoil
+    )
+
+
+class IterNb3snCiccSuperconductorProperties(CiccSuperconductorProperties):
+    """`i_tf_sc_mat == 1` -- `large_tokamak_eval.IN.DAT:374`'s own arm.
+
+    `superconducting.py:2905-2939`. The `(32.97, 16.06)` pair is a literal on this
+    branch, so it is a literal here and not a read.
+    """
+
+    def __call__(
+        self,
+        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
+        a_tf_turn=From(tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        c_tf_turn=From(tfcoil),
+        str_wp=From(tfcoil),
+        tftmp=From(tfcoil),
+    ):
+        return cicc_superconductor_properties_itersc(
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+            strain=str_wp,
+            temp_tf_coolant_peak_field=tftmp,
+            b_c20max=32.97,
+            temp_c0max=16.06,
+        )
+
+
+class UserDefinedNb3snCiccSuperconductorProperties(CiccSuperconductorProperties):
+    """`i_tf_sc_mat == 4` -- the ITER fit with `(bcritsc, tcritsc)` read from input.
+
+    `superconducting.py:3011-3042`. Two reads its sibling arm 1 does not declare.
+    """
+
+    def __call__(
+        self,
+        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
+        a_tf_turn=From(tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        c_tf_turn=From(tfcoil),
+        str_wp=From(tfcoil),
+        tftmp=From(tfcoil),
+        bcritsc=From(tfcoil),
+        tcritsc=From(tfcoil),
+    ):
+        return cicc_superconductor_properties_itersc(
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+            strain=str_wp,
+            temp_tf_coolant_peak_field=tftmp,
+            b_c20max=bcritsc,
+            temp_c0max=tcritsc,
+        )
+
+
+class WstNb3snCiccSuperconductorProperties(CiccSuperconductorProperties):
+    """`i_tf_sc_mat == 5` -- `low_aspect_ratio_DEMO.IN.DAT:910`'s arm.
+
+    `superconducting.py:3046-3082`. Same reads and same literals as arm 1; only the fit
+    differs.
+    """
+
+    def __call__(
+        self,
+        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
+        a_tf_turn=From(tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        c_tf_turn=From(tfcoil),
+        str_wp=From(tfcoil),
+        tftmp=From(tfcoil),
+    ):
+        return cicc_superconductor_properties_wst_nb3sn(
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+            strain=str_wp,
+            temp_tf_coolant_peak_field=tftmp,
+        )
+
+
+class OldLubellNbtiCiccSuperconductorProperties(CiccSuperconductorProperties):
+    """`i_tf_sc_mat == 3` -- and the arm that reads **no strain**.
+
+    `superconducting.py:2949-3007`. `jcrit_nbti` has no strain argument, so this
+    occupant declares one read fewer than its four siblings. That is the concrete reason
+    `i_str_wp` cannot be answered once for the whole family: on this arm it is not a
+    question at all.
+    """
+
+    def __call__(
+        self,
+        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
+        a_tf_turn=From(tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        c_tf_turn=From(tfcoil),
+        tftmp=From(tfcoil),
+    ):
+        return cicc_superconductor_properties_lubell_nbti(
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+            temp_tf_coolant_peak_field=tftmp,
+        )
+
+
+class DurhamNbtiCiccSuperconductorProperties(CiccSuperconductorProperties):
+    """`i_tf_sc_mat == 7` -- Durham Ginzburg-Landau NbTi.
+
+    `superconducting.py:3086-3110`. Reads `(b_crit_upper_nbti, t_crit_nbti)` off
+    `.tfcoil` and, unlike the three Nb3Sn arms, does **not** clip the strain.
+
+    Ported here even though the *temperature-margin* slot refuses this same value: the
+    two are different functions and the refusal is specific to the other one (PROCESS's
+    own residual leaves the reals there -- see `TfSuperconductorTemperatureMargin`).
+    """
+
+    def __call__(
+        self,
+        a_tf_turn_cable_space_effective=From(superconducting_tfcoil),
+        a_tf_turn=From(tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        c_tf_turn=From(tfcoil),
+        str_wp=From(tfcoil),
+        tftmp=From(tfcoil),
+        b_crit_upper_nbti=From(tfcoil),
+        t_crit_nbti=From(tfcoil),
+    ):
+        return cicc_superconductor_properties_durham_nbti(
+            a_tf_turn_cable_space_effective=a_tf_turn_cable_space_effective,
+            a_tf_turn=a_tf_turn,
+            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            c_tf_turn=c_tf_turn,
+            strain=str_wp,
+            temp_tf_coolant_peak_field=tftmp,
+            b_crit_upper_nbti=b_crit_upper_nbti,
+            t_crit_nbti=t_crit_nbti,
+        )
+
+
+class TfSuperconductorTemperatureMargin(ExplicitFunction):
+    """The family that owns the TF temperature margin -- constraint 36's read.
+
+    Ports `calculate_superconductor_temperature_margin`
+    (`superconducting.py:1174-1291`) as `run` calls it (`:2749-2761`). `i_tf_sc_mat`
+    decides it, and every occupant owns the **same two** variables --
+    `.tfcoil.temp_tf_superconductor_margin` (`run`'s own assignment) and
+    `.tfcoil.temp_margin` (written inside the function, `:1279`) -- which hold the same
+    number.
+
+    This is the port's second genuine internal solve after
+    `models/vacuum/vacuum.py`'s duct diameter, and the first one whose answer a
+    constraint reads: `scipy.optimize.newton`'s secant branch, replicated step for step
+    in `solve_current_sharing_temperature`. Read that function's docstring for why the
+    iteration is replicated rather than improved on.
+
+    **Two `i_tf_sc_mat` values that `CiccSuperconductorProperties` ports are refused
+    here**, and the asymmetry is measured, not conservative:
+
+    - **2** (Bi-2212) is refused in both, but for a *different* reason in this one:
+      `calculate_superconductor_temperature_margin` short-circuits it to
+      `temp_tf_superconductor_margin = 0.0` and never writes `.tfcoil.temp_margin`
+      (`:1231-1233`) -- conditional ownership, i.e. a genuinely different node, on an
+      arm whose sibling function cannot run at all.
+    - **7** (Durham GL NbTi) is refused because **PROCESS's own residual leaves the real
+      numbers.** `gl_nbti` raises a negative base to a fractional power while the secant
+      search probes above `t_c0`, and Python returns a `complex`; measured on a
+      `b_tf_inboard_peak = 8.0` point, `optimize.newton` converges and PROCESS returns
+      `0.4561454861673191+1.2475645615451133e-12j` -- a complex temperature margin. At
+      `b_tf_inboard_peak = 12.5` the same call instead dies with `TypeError: '<=' not
+      supported between instances of 'complex' and 'float'`. There is no real-valued
+      PROCESS answer to agree with, so there is nothing to port: a JAX float64 body
+      returns `nan`, which would be *more* correct than the reference, and this harness
+      exists to measure agreement rather than to improve on PROCESS quietly.
+    """
+
+    temp_tf_superconductor_margin = OutputInto(tfcoil)
+    temp_margin = OutputInto(tfcoil)
+
+
+class _TemperatureMarginWithStrain(TfSuperconductorTemperatureMargin):
+    """The strained arms' shared declaration; the `fit` attribute picks the fit.
+
+    `run` re-reads the strain at `:2744-2747` and hands the **unclipped** value here,
+    where `CiccSuperconductorProperties` clips it inside its own body -- see
+    `temperature_margin_itersc`'s docstring, and defect D4.
+    """
+
+    fit = staticmethod(temperature_margin_itersc)
+
+    def __call__(
+        self,
+        j_tf_superconductor=From(superconducting_tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        str_wp=From(tfcoil),
+        b_tf_superconductor_critical_zero_temp_strain=From(superconducting_tfcoil),
+        temp_tf_superconductor_critical_zero_field_strain=From(superconducting_tfcoil),
+        tftmp=From(tfcoil),
+    ):
+        margin = type(self).fit(
+            j_superconductor=j_tf_superconductor,
+            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+            strain=str_wp,
+            b_c20max=b_tf_superconductor_critical_zero_temp_strain,
+            temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
+            temp_tf_coolant_peak_field=tftmp,
+        )
+        return margin, margin
+
+
+class IterNb3snTfSuperconductorTemperatureMargin(_TemperatureMarginWithStrain):
+    """`i_tf_sc_mat == 1` *(live)*. `process/models/superconductors.py:1259`."""
+
+    fit = staticmethod(temperature_margin_itersc)
+
+
+class UserDefinedNb3snTfSuperconductorTemperatureMargin(_TemperatureMarginWithStrain):
+    """`i_tf_sc_mat == 4`. The same `itersc` residual as arm 1
+    (`process/models/superconductors.py:1261`); the `(bc20m, tc0m)` it uses are the
+    properties node's outputs, so the user-defined pair costs no extra read here.
+    """
+
+    fit = staticmethod(temperature_margin_itersc)
+
+
+class WstNb3snTfSuperconductorTemperatureMargin(_TemperatureMarginWithStrain):
+    """`i_tf_sc_mat == 5`. `process/models/superconductors.py:1263-1265`."""
+
+    fit = staticmethod(temperature_margin_wst_nb3sn)
+
+
+class OldLubellNbtiTfSuperconductorTemperatureMargin(TfSuperconductorTemperatureMargin):
+    """`i_tf_sc_mat == 3` -- one read fewer, and one literal more.
+
+    `superconductor_current_density_margin`'s branch 3 is the only one that consumes
+    `c0`, which `run` passes as the literal `1.0e10` (`superconducting.py:1258`); and
+    `jcrit_nbti` takes no strain, so this occupant does not read one.
+    """
+
+    def __call__(
+        self,
+        j_tf_superconductor=From(superconducting_tfcoil),
+        b_tf_inboard_peak_with_ripple=From(tfcoil),
+        b_tf_superconductor_critical_zero_temp_strain=From(superconducting_tfcoil),
+        temp_tf_superconductor_critical_zero_field_strain=From(superconducting_tfcoil),
+        tftmp=From(tfcoil),
+    ):
+        margin = temperature_margin_lubell_nbti(
+            j_superconductor=j_tf_superconductor,
+            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+            b_c20max=b_tf_superconductor_critical_zero_temp_strain,
+            temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
+            temp_tf_coolant_peak_field=tftmp,
+        )
+        return margin, margin

@@ -615,3 +615,299 @@ now, before the double-null arm lands, which is what the earlier section asked f
    stellarator's two refuse value 9 and this one does not.
 3. `UNPORTED["i_tf_sc_mat", 9]`'s reason extended to scope the refusal to the
    critical-surface slots (above).
+
+## 2026-08-27 — the TF half of the missing-producer wave (§11.5)
+
+`_audit/optimise_design.md` §11.5 measured **17 boundary variables across 14
+constraints** whose producer PROCESS runs and the graph lacked. Re-measured on the
+current tree before this wave — the same check, run from the SAND assembly's own
+`constraint_nodes`/`objective_node` machinery on `large_tokamak_eval.IN.DAT` — the list
+stands at **15**, the cold-producers wave having closed `.physics.pden_plasma_ohmic_mw`
+(c2) and `sig_tf_cs_bucked` never having been a row (below). The TF side of it was seven
+variables across six constraints:
+
+| read | constraint | disposition after this wave |
+|---|---|---|
+| `.tfcoil.j_tf_wp_critical` | c33 | **produced** — `CiccSuperconductorProperties` |
+| `.tfcoil.temp_tf_superconductor_margin` | c36 | **produced** — `TfSuperconductorTemperatureMargin` |
+| `.tfcoil.j_tf_wp_quench_heat_max` | c35 | **produced** — `TfCoilQuenchHeatCurrentDensity` (`quench.md`) |
+| `.superconducting_tfcoil.vv_stress_quench` | c65 | **produced** — `VvStressOnQuench` |
+| `.tfcoil.sig_tf_case` | c31 | still a boundary input — `stresscl`, below |
+| `.tfcoil.sig_tf_wp` | c32 | still a boundary input — `stresscl`, below |
+| `.tfcoil.sig_tf_cs_bucked` | c72 | **not a missing producer at all** — below |
+
+Four closed; the list is **15 -> 11**. The other nine rows belong to the concurrent
+pfcoil/physics half.
+
+### `sig_tf_cs_bucked` is a dead read, not a gap
+
+§11.5 recorded that it is `None` "even converged — never written at `i_tf_bucking = 1`",
+and that reading is right as far as it goes. What it does not say is that **the value is
+never used on this machine either**. `constraint_72`'s body takes
+`max(stress_shear_cs_peak, sig_tf_cs_bucked)` only when
+`i_tf_bucking >= 2 and i_tf_inside_cs == TF_OUTSIDE_CS`; `large_tokamak_eval` has
+`i_tf_bucking = 1`, so the other arm runs and reads `stress_shear_cs_peak` alone. It
+appears in the missing-producer table only because `sand._bind` makes every non-switch
+parameter of a constraint an `In` regardless of which static arm consumes it.
+
+So c72's real gap on this machine is `.pf_coil.stress_shear_cs_peak` (`pfcoil.py:3508`),
+which is the pfcoil half's row. Nothing is owed here. Worth stating because "a variable
+that is `None` in PROCESS's own converged state" reads like a defect and is not one.
+
+### `sig_tf_case` / `sig_tf_wp` — measured, and out of a wave's reach
+
+Both come from one place: `stresscl`, called once by `run_and_output_stress`
+(`superconducting.py:2095-2271`). The size of that is the answer:
+
+| | |
+|---|---|
+| `TFCoil.stresscl` | `process/models/tfcoil/base.py:2222-3658`, **1439 lines**, `@numba.njit(cache=True)` |
+| `extended_plane_strain` | `:3719-4234`, 517 lines, `njit` |
+| `plane_stress` | `:4236-4458`, 224 lines, `njit` |
+| `eyoung_parallel` / `eyoung_parallel_array` / `eyoung_t_nested_squares` / `eyoung_series` | `:3659-4653`, four more `njit` helpers |
+| its return | **34 values**, of which nine are `(n_radial_array,)`-shaped arrays at `n_rad_per_layer = 500` |
+
+There is no smaller seam: `sig_tf_case` and `sig_tf_wp` are two of the 34, produced by
+the same layered elastic solve as the rest, and the four `data`-clamp lines at
+`:2208-2231` (`x = x if x is None else computed`) are the only structure between it and
+`data`. This is a unit of its own — a wave's worth on its own terms, with an `njit`
+translation and array-valued outputs — and it is recorded here as such rather than
+attempted. It is also the producer of `.tfcoil.str_wp`, which this wave has now made a
+*declared* boundary input (below), so the dependency is at least visible.
+
+### What was ported
+
+Fifteen new pure functions and three node families in this module, plus one node in
+`quench.py`. In dependency order:
+
+**`vv_stress_on_quench` (c65).** `itoh_lambda_term`, `itoh_theta_factor_integral`,
+`itoh_inductance_factor`, `vv_stress_on_quench` (the module-level Itoh surrogate,
+`:4869-5153`) and `vv_stress_quench_from_build` (the method's own geometry prologue,
+`:1381-1452`). One occupant, `VvStressOnQuench`, unswitched, **twenty-nine reads** —
+seventeen from `.build`, and `.divertor.dz_divertor`, which is this slot's first read
+outside the three TF areas. PROCESS's `np.clip(a_tf_coil_inboard_steel, 0, None)` and its
+`# TODO: is this the correct current?` on `i_op` are carried across as written.
+
+**`tf_cable_in_conduit_superconductor_properties` (c33).**
+`cicc_superconductor_properties` (the shared tail), `clip_nb3sn_strain`, and four per-fit
+entry points. Five occupants, `i_tf_sc_mat` in {1, 3, 4, 5, 7}; nine outputs each, in
+`run`'s own write order.
+
+**`calculate_superconductor_temperature_margin` (c36).**
+`solve_current_sharing_temperature`, `_secant_step` and four per-fit margin functions.
+Four occupants, `i_tf_sc_mat` in {1, 3, 4, 5}; two outputs each
+(`.tfcoil.temp_tf_superconductor_margin` and `.tfcoil.temp_margin`, the same number, one
+from `run` and one a side effect at `:1279`).
+
+### The internal solve, and why scipy's iteration is replicated rather than improved on
+
+`calculate_superconductor_temperature_margin` is a **root find**: PROCESS calls
+`scipy.optimize.newton` with `fprime=None` and an explicit `x1 = 2 * tftmp`, i.e. the
+**secant** method, `tol = rtol = 1e-6`, `maxiter = 50`, `disp=True`. This is the port's
+second genuine internal solve after `models/vacuum/vacuum.py`'s duct diameter, and the
+first whose answer a constraint reads.
+
+`solve_duct_diameter` took the opposite decision — it *tightened* PROCESS's own tolerance
+from `0.01` to `1e-10` — and that is the same rule applied to a different situation, not
+an inconsistency. There, PROCESS's cutoff is a coarse heuristic and the unit is Tier 2,
+so the endpoint is not the quantity under test. Here constraint 36 reads the endpoint and
+the harness compares it against PROCESS's, so matching scipy's stopping rule is what
+makes the comparison a value test rather than a tolerance negotiation. Measured agreement
+at four materials: `5.6e-16`, `2.2e-16`, `0.0`, `0.0` relative.
+
+**It is a `fori_loop`, not a `while_loop`, and the difference is the tangent.**
+`solve_duct_diameter` can use `jax.lax.while_loop` because `Tier2Contract` never
+differentiates `ported`. This one is Tier 1 and *is* differentiated, and `while_loop` has
+no reverse rule — so the loop runs a fixed fifty trips with a converged flag. **Once
+converged the carry collapses to the flat state `(answer, q, answer, q)` rather than
+being frozen by masking**, and that is not a style choice: a masked carry still evaluates
+`_secant_step` on the last real pair every remaining trip, a secant step whose
+denominator has gone to zero is `inf`, and `jnp.where` discards it in value while
+multiplying it by zero in the JVP — `nan`. Measured: `i_tf_sc_mat = 4` produced a `nan`
+gradient under the masked form and the correct one under the flat collapse, with the
+value test passing either way. The flat state has `q0 == q1` by construction, so
+`_secant_step` takes its own bisection arm and returns `answer` exactly.
+
+### D4 — one strain, clipped in one function and not the other
+
+`tf_cable_in_conduit_superconductor_properties` clips the strain to `sign(s) * 0.5e-2`
+outside the Nb3Sn fits' range (`:2910`, `:3017`, `:3052`) on a **local copy**. `run` then
+re-reads `.tfcoil.str_wp` at `:2744-2747` and hands the **unclipped** value to
+`calculate_superconductor_temperature_margin`. So when `|strain| > 0.5e-2` the two
+functions evaluate the same critical surface at two different strains, and the
+temperature margin is the one outside the fit's stated range. Ported exactly as written,
+in both places; recorded here because it is not visible from either function alone.
+
+### D5 — `i_tf_sc_mat = 2` cannot return
+
+The Bi-2212 branch (`:2941-2984`) is the only arm that does not assign `bc20m`/`tc0m`,
+and the function returns `TFSuperconductorLimits(..., bc20m=bc20m, tc0m=tc0m)` at
+`:3160`. So `i_tf_sc_mat = 2` raises `UnboundLocalError` before any value exists. Not
+ported, and refused with that as its reason — there is nothing to agree with.
+
+### The switch axes, and what is refused
+
+Two axes, and the second one is worth stating: **`i_str_wp` is a class axis of these two
+slots.** It selects which field the strain is read from — `.tfcoil.str_tf_con_res` at
+`0`, `.tfcoil.str_wp` at `1` (`:2897-2900` and `:2744-2747`) — and a `From` default is
+fixed when the class body executes, exactly as a `FromExactly` default is. That is the
+same argument that made `i_tf_sc_mat` a class axis for the mass slot, applied to a read
+rather than to an index.
+
+| `i_tf_sc_mat` | properties (c33) | margin (c36) |
+|---|---|---|
+| 1 ITER Nb3Sn *(live)* | ported | ported |
+| 2 Bi-2212 | refused — D5 above | refused — **its own reason**: the margin function short-circuits it to `0.0` and never writes `.tfcoil.temp_margin` (`:1231-1233`), i.e. conditional ownership |
+| 3 old Lubell NbTi | ported (**no strain read at all**) | ported (`c0 = 1.0e10` as a literal `run` passes) |
+| 4 user-defined Nb3Sn | ported (reads `bcritsc`/`tcritsc`) | ported |
+| 5 WST Nb3Sn | ported — `low_aspect_ratio_DEMO`'s | ported |
+| 6, 8, 9 (TAPE) | refused — the function's own `SuperconductorShape.CABLE` guard (`:2882-2889`) refuses them before any arithmetic | refused, same |
+| 7 Durham GL NbTi | **ported** | **refused** — D6 below |
+
+`i_str_wp == 0` is refused across the board: PROCESS's default is `1`
+(`tfcoil_variables.py:508`) and **no tracked input file sets the switch at all**, so the
+arm is unreachable, and writing it is five more `__call__` bodies differing in one
+parameter name. Registered rather than baked, so a file that does set it is refused
+loudly instead of silently reading the other strain.
+
+Both slots are total over the full 2 x 9 product — every pair has either an occupant or a
+recorded reason, checked by `test_the_two_superconductor_slots_are_total`, and
+`i_str_wp = 0` is refused end to end by `test_i_str_wp_zero_is_refused_end_to_end`. The
+two keys are in `test_machine.py`'s `DERIVED_UNPORTED_KEYS` because their *value* is a
+pair and no IN.DAT line selects one; those two cases are what that skip trades against.
+
+### D6 — `i_tf_sc_mat = 7`'s temperature margin is complex, in PROCESS
+
+The one asymmetry in the table above, and it is PROCESS's rather than the port's.
+`superconductor_current_density_margin` branch 7 calls `gl_nbti`, which raises a negative
+base to a fractional power while the secant search probes above `t_c0`; Python returns a
+`complex`. Measured, on a point whose properties arm agrees exactly:
+
+- at `b_tf_inboard_peak = 8.0`: `optimize.newton` **converges**, and PROCESS returns
+  `temp_tf_superconductor_margin = 0.4561454861673191+1.2475645615451133e-12j` — a
+  complex temperature margin, on its way into a float field.
+- at `b_tf_inboard_peak = 12.5`: the same call dies with `TypeError: '<=' not supported
+  between instances of 'complex' and 'float'` inside `gl_nbti` itself.
+
+There is no real-valued PROCESS answer to agree with, so there is nothing to port: a JAX
+float64 body returns `nan`, which would be *more* correct than the reference, and this
+harness measures agreement rather than improving on PROCESS quietly. **The refusal is
+scoped to the margin slot**: the same material's `CiccSuperconductorProperties` occupant
+is written and agrees to `0.0e+00` on all nine outputs, because that function evaluates
+the fit once at `tftmp` instead of searching upward.
+
+### Two JAX-difficulty findings, both of the `next_steps.md` §9 class
+
+**The Itoh `lambda` term is the fifth instance of the infinite-derivative-at-an-exact-
+argument defect, and it was found by a gradient test.** `itoh_theta_factor_integral`
+evaluates `itoh_lambda_term` at a `tau` matrix two of whose six entries are the literals
+`1.0` and `-1.0` (`:4944-4947`). At `|tau| == 1` both arms sit exactly on a singularity of
+their own derivative formula while the value is perfectly ordinary: `p * (1 - tau**2)` is
+identically zero (`sqrt'(0) = inf`), and `(1 + omega*tau)/(tau + omega)` is identically
+`+-1` (`arcsin'(+-1) = inf`). Before the guards, **every one of the eighteen
+`d(vv_stress)/d(...)` was `nan` against a finite PROCESS finite difference while every
+value test passed** — the exact signature this harness was built to catch. Fixed with
+`safe_math.safe_sqrt` and a local `_safe_arcsin` written to the same double-`jnp.where`
+idiom. `_safe_arcsin` lives in `superconducting.py` because it is the only site; it
+belongs in `safe_math.py` the next time a second one appears.
+
+**`.tfcoil.tfa` is read whole and indexed in the node body**, where every other
+array-element read in this port is a `FromExactly(area.field[k])`. PROCESS reads
+`self.data.tfcoil.tfa[0]` (`:1396`), so the literal transcription is
+`FromExactly(tfcoil.tfa[0])` — and cottax refuses it, because `tf_coil_shape` owns the
+whole vector and `_check_reads_match_owns` rejects a read lying *inside* an owned
+variable (it would silently become a boundary input beside a produced array). The rule
+that separates this from `.tfcoil.dcond[k]`, which stays a `FromExactly`, is **whether
+the array has a producer in the same graph**: `dcond` is a constant table nothing owns,
+`tfa` is an output. Worth adding to `naming_convention.md` § "Array elements" when that
+file next gets a pass.
+
+### Registration — `indat.py`, five hunks
+
+1. `i_str_wp` resolved once in `_tokamak_device`, beside `i_tf_turns_integer`, because it
+   decides two slots.
+2. `CICC_SUPERCONDUCTOR_PROPERTIES` and `TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN`, both
+   keyed on `(i_str_wp, i_tf_sc_mat)` — the file's second and third two-switch keys after
+   `SC_TF_MASSES`.
+3. Five new `UNPORTED` reason constants (`_I_STR_WP_ZERO_REASON`,
+   `_BI2212_UNBOUND_REASON`, `_BI2212_MARGIN_REASON`, `_SC_TAPE_REASON`,
+   `_DURHAM_NBTI_COMPLEX_REASON`) and the 27 rows that use them; `UNPORTED["i_tf_sc_mat",
+   9]`'s existing reason extended to say that the two new composite keys carry their own,
+   differently-scoped refusals.
+4. `_quench_helium_table` and `_QUENCH_GRID_FIELDS` — the CoolProp call and its guard; see
+   `quench.md`.
+5. The three new slots wired into the `CiccSuperconductingTfCoil` constructor.
+
+`models/tfcoil/namespace.py` gains five slots (nineteen -> twenty-four).
+`mda_harness.py` gains one static-kwarg kind (`FROZEN_INPUT`) and four table entries —
+see `quench.md` for why.
+
+### Acceptance, measured
+
+**No new SCC.** `Blocking.scc` on both machines, before and after: the tokamak's seven
+multi-node blocks are the same seven (three declared problems, the 4-node build/WP cycle,
+the 8-node physics cycle, the 9-node PF ring, the `delta_eta` problem) and the
+stellarator's six are unchanged. The guess half of the boundary is unmoved at 11, which
+is the same claim from the other side — a landed producer that closed a loop would mint a
+`Start`.
+
+**Boundary pin: 347 -> 356 inputs, nine additions and zero removals.** Nothing left the
+boundary, because all thirteen new outputs were read only by the constraint surface. The
+nine are the four nodes' own declared reads: `.build.r_vv_inboard_out`,
+`.build.dr_vv_shells`, `.tfcoil.theta1_coil`, `.tfcoil.theta1_vv` (the Itoh surrogate);
+`.tfcoil.tftmp`, `.tfcoil.str_wp` (the critical surface and the margin, both);
+`.tfcoil.rrr_tf_cu`, `.tfcoil.t_tf_quench_detection`,
+`.constraints.flu_tf_neutron_fast_max` (the hotspot criterion). Eight are genuine PROCESS
+inputs; **`.tfcoil.str_wp` is the ninth, and its producer is `stresscl`** — so the
+boundary now states out loud that constraints 33 and 36 depend on the unported stress
+chain, which the graph could not express while their producers were absent.
+
+**§11.5 re-check: 15 rows -> 11.** The four TF rows above are gone; the eleven left are
+`sig_tf_case`, `sig_tf_wp` and the nine pfcoil/physics rows.
+
+**SAND, `large_tokamak_eval`:**
+
+| | before | after |
+|---|---|---|
+| shape | 146 drive nodes, 9 unknowns, 24 conditions, 366 context, 14 inequalities | **155, 9, 26, 379, 16** |
+| constraints omitted | **nine**: 24, 26, 27, **36**, 60, **65**, 72, 31, 32 | **seven** — c36 and c65 are inside the block now |
+| Stage A | 14 of 17 exact | **16 of 19** exact |
+| Stage B | 17 rows | 19; `c36` and `c65` both `0.00e+00` at both safety factors |
+| C2 | 0 SQP iterations (first QP infeasible — `c68`, §11.6), lands on PROCESS's `x` at `1.4e-16 / 0.0` | unchanged |
+| C3 (cold) | **not solved: 2 of 24 non-finite, `c33` `inf` and `c35` `inf`** | **not solved: 1 of 26, `c65` `nan`** |
+
+**c33 and c35 were `inf` at the cold seed and are finite now**, which is exactly the rows'
+point: each divided by a boundary constant PROCESS's own solve moves off zero and the port
+had frozen at the `DataStructure` default.
+
+**The one new cold non-finite is `c65`, and it is a boundary zero, not a defect.** Traced:
+`.build.r_vv_inboard_out` is `0.0` in the cold `DataStructure`, and
+`vv_stress_quench_from_build`'s `tf_vv_frac = r_tf_inboard_out / r_vv_inboard_out` is
+`0/0`. That is `_audit/cold_boundary.md`'s bucket-2 class exactly — a field PROCESS's own
+`Build.calculate_radial_build` writes before first use (`process/models/build.py:1836`
+and `:1847`) and the port has no node for, so the bare default flows into a division. It
+is a **seventh** entry for that record's six-boundary-zero table, reached because landing
+c65's producer put the field on the boundary at all. The fix is that producer, and a
+cold-start seeding rule remains the separate recorded decision it already was.
+
+**Warm MDA harness, `large_tokamak_eval`** (before / after): declared graph 208 -> **212**
+nodes, agreements 611 -> **624**, disagreements **16 -> 16**, errors **20 -> 20**,
+ungrounded 0 -> 0, owned variables walked 647 -> **660**. The disagreement list is
+**byte-identical** — all sixteen are the documented PF dead-tail
+(`.pf_coil.n_pf_coil_turns`) and its `1e-6 .. 7.5e-4` cascade through costs and vacuum —
+so the thirteen new owned variables all agree and nothing that was agreeing moved. The
+static-kwarg line moves from *"checked: 8, not data-backed: 1, unresolved: 4"* with four
+**MUST BE EMPTY** entries to *"checked: 10, not data-backed: 3, unresolved: 0"* with none.
+
+**The stellarator is unmoved**: `run_mda_harness.py` with no argument, before and after,
+is byte-identical from `declared graph:` to the end — 150 nodes, 472 agreements, 34
+disagreements, 25 errors.
+
+**Tests.** `tests/functional_process/models/tfcoil/` **275 passed** plain and **550** with
+`--fp-gradients` (81 / 182 for `test_superconducting.py` alone before this wave).
+`test_machine.py`, `test_boundary.py`, `test_switch_coverage.py`,
+`test_registry_coverage.py`, `test_mda.py`, `test_mda_harness.py` -> 579 passed / 340
+skipped. Ruff on the four edited modules is at parity with their pre-change baselines
+(`E501` 24 -> 24 exactly; `D209` 1 -> 0) apart from the new occupants' own `B008` (+87)
+and `D102` (+8) — the same two rules every `ExplicitFunction` family in this file already
+reports.

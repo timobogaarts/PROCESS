@@ -179,7 +179,31 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """347 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """356 inputs and 11 guesses, against the stellarator's 297 and 6.
+
+    The TF missing-producer wave (2026-08-27) moved the input half from 347 to **356**,
+    and it is the clean version of this measure's own good case: **nine additions, zero
+    removals, and the guess half unmoved.** Four producers landed --
+    `cicc_superconductor_properties` (`.tfcoil.j_tf_wp_critical`, constraint 33),
+    `tf_superconductor_temperature_margin` (constraint 36),
+    `tf_coil_quench_heat_current_density` (constraint 35) and `vv_stress_on_quench`
+    (constraint 65) -- and *nothing left the boundary*, because all four outputs were
+    read only by the constraint surface and never by another node. So the whole move is
+    the four nodes' own declared reads:
+
+    | new input | declared by |
+    |---|---|
+    | `.build.r_vv_inboard_out`, `.build.dr_vv_shells`, `.tfcoil.theta1_coil`, `.tfcoil.theta1_vv` | the Itoh VV-quench surrogate |
+    | `.tfcoil.tftmp`, `.tfcoil.str_wp` | the critical surface and the temperature margin, both |
+    | `.tfcoil.rrr_tf_cu`, `.tfcoil.t_tf_quench_detection`, `.constraints.flu_tf_neutron_fast_max` | the hotspot criterion |
+
+    Eight of the nine are genuine PROCESS inputs. The ninth, **`.tfcoil.str_wp`, is a
+    read whose producer is `stresscl` and therefore unported** -- so this row is the
+    boundary saying out loud that constraints 33 and 36 depend on the TF stress chain,
+    which the graph could not express while their producers were absent.
+
+    The guess count is unchanged at 11, which is the same claim the SCC check makes from
+    the other side: none of the four closed a loop.
 
     The cold-boundary wave (2026-08-27) moved the input half from 349 to 347 by
     landing `cold_boundary.md`'s four missing producers: nine rows closed
@@ -226,5 +250,5 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (347, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (356, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)

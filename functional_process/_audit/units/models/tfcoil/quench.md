@@ -236,3 +236,116 @@ the seam.
    reason (`tests/functional_process/models/tfcoil/test_quench.py`). Every other argument
    of the hotspot criterion **is** differentiated and does agree with PROCESS's own
    finite difference.
+
+## 2026-08-27 — the CoolProp policy call, made; `j_tf_wp_quench_heat_max` bound
+
+Open question 1 above is **closed in favour of its own option (a)**, and open question 2
+is closed with it. `.tfcoil.j_tf_wp_quench_heat_max` — constraint 35's read, and one of
+the seven rows `_audit/optimise_design.md` §11.5 measured on the TF side — now has a
+node, `TfCoilQuenchHeatCurrentDensity`, and the CoolProp dependency is **inside** the
+assembled tokamak graph for the first time.
+
+### What was decided, and on what evidence
+
+The decision is the one this record already ranked first, taken for the reason it already
+gave rather than a new one:
+
+> **The helium property table is a constant of the run.** The quadrature grid is a pure
+> function of `.tfcoil.tftmp` and `.tfcoil.temp_tf_conductor_quench_max`; neither is
+> written by any model (only site: the read at `superconducting.py:2785`) and neither is
+> an iteration variable. So the 150 numbers cannot move during a solve, a scan point or
+> a gradient sweep, and evaluating them once at graph-assembly time is exact rather than
+> approximate.
+
+Concretely: `helium_properties_at_quench_nodes` (in the port module) is called by
+`indat._quench_helium_table` while the machine is being assembled, and the resulting two
+75-tuples are carried on the occupant as `eqx.field(static=True)`, alongside the two
+temperatures themselves. **Nothing is wrapped, fitted, interpolated or called back.** No
+CoolProp call happens inside any traced or differentiated region, and the numbers the
+port integrates are bit-for-bit the ones PROCESS's own body asks `PropsSI` for.
+
+The precedent is `models/stellarator/preset_config.py`'s `StellaratorMachineConfig`,
+whose `machine_config: tuple = eqx.field(static=True)` carries a parsed `stella_conf.json`
+by exactly this argument — *"which machine is being designed is fixed for a whole solve,
+so it is graph-assembly-time information"*. The two facts a table needs to be static are
+the same two: it is per-machine, and nothing in the solve can move it.
+
+The two options not taken, and why, in one line each:
+
+- **`jax.pure_callback`** would reintroduce a host round-trip inside a `jit` region to
+  fetch numbers that are constant. Strictly worse than a constant, at every call.
+- **A fit or a 1-D interpolation in `T`** would introduce an approximation where an
+  exact table is already available at zero marginal cost. It becomes the right answer
+  only if a future configuration makes either temperature an unknown or a model output —
+  which is precisely the condition the guard below tests for.
+
+### The guard is the load-bearing half, and it is executable
+
+A static table is correct exactly while the temperatures it was built at cannot move.
+That is a claim about the run, so it is **checked at assembly time and not assumed**:
+`indat._quench_helium_table` scans the run's `ixc` against `ITERATION_VARIABLES` and
+raises `NotImplementedError` if either `tftmp` or `temp_tf_conductor_quench_max` is an
+unknown, naming the resolution (give the properties a producer — options (b) or (c)) and
+saying in so many words that relaxing the check is not it.
+
+Without that, this would be the same defect shape as the `dcond[0]` bake
+`superconducting.md` records for the mass slot: a value folded into a class where
+`switch_audit` cannot see it. With it, the failure mode is a refused machine rather than
+a stale table.
+
+It is visible in the harness as well as refused in the factory. The two temperatures are
+named for their `DataStructure` fields (`tftmp`, `temp_tf_conductor_quench_max`) rather
+than for the pure function's parameters (`temp_he_peak`, `temp_quench_max`) **so that
+`mda_harness.switch_audit` resolves them by name and value-checks the frozen numbers
+against the converged run on every harness pass**. `mda_harness.STATIC_KWARG_KINDS` gains
+a fifth kind for them, `FROZEN_INPUT` — a real `DataStructure` input the graph carries
+statically — and the two arrays are `ASSEMBLY_PAYLOAD` with the reason recorded in
+`STATIC_KWARGS_WITHOUT_BACKING_FIELD`. The report line moves from *"static switch kwargs
+checked: 8 … not data-backed: 1, unresolved: 4"* with four entries under
+**MUST BE EMPTY** to *"checked: 10 … not data-backed: 3, unresolved: 0"* with none.
+
+### Open question 2, answered
+
+The port's derivative with respect to the two temperatures is **structurally zero, and
+that is now a stated property rather than an undefined one**: they are not reads of the
+node, so the graph carries no edge from either and `jax` differentiates neither. The
+harness case's `static_argnames` and the occupant's static fields now say the same thing
+for the same reason, which is what the earlier note asked for. Every other argument of
+the hotspot criterion is differentiated and agrees with PROCESS's own finite difference.
+
+### The node
+
+`TfCoilQuenchHeatCurrentDensity`, nine reads, one output:
+
+| read | from |
+|---|---|
+| `a_tf_turn_cable_space_no_void`, `a_tf_turn`, `t_tf_superconductor_quench`, `b_tf_inboard_peak_with_ripple`, `f_a_tf_turn_cable_copper`, `rrr_tf_cu`, `t_tf_quench_detection` | `.tfcoil` |
+| `f_a_tf_turn_cable_space_cooling` | `.superconducting_tfcoil` |
+| `flu_tf_neutron_fast_max` | `.constraints` |
+
+`j_tf_wp_quench_heat_max` (the pure function) is `superconducting.py:1362-1377` — one
+cable-to-turn area ratio over `calculate_quench_protection_current_density`, which this
+record's § "proposed signature(s)" already listed and which was already diffed against
+PROCESS.
+
+### Validation and acceptance
+
+`TestJTfWpQuenchHeatMax` (`tests/functional_process/models/tfcoil/test_quench.py`) takes
+PROCESS's `quench_heat_protection_current_density`'s **first** return, where its sibling
+`TestTfDumpVoltagePeak` takes the second — between them the two cases now cover the whole
+PROCESS function. The ported side calls the *shipped* `helium_properties_at_quench_nodes`,
+not a test-local re-derivation, so the resolved seam is what is under test.
+tfcoil case files: **275 passed** plain, **550** with `--fp-gradients`.
+
+Measured on `large_tokamak_eval.IN.DAT`:
+
+| | before | after |
+|---|---|---|
+| §11.5 missing-producer rows | 15 | **11** (`j_tf_wp_quench_heat_max` among the four closed) |
+| SAND cold probe (C3) | 2 of 24 conditions non-finite: `c33` `inf`, `c35` `inf` | 1 of 26: `c65` `nan` (see `superconducting.md`) |
+| Stage B row for `c35` | `0.00e+00` | `0.00e+00` (unchanged, and now on a produced value) |
+| warm MDA harness | 611 agree / 16 disagree / 20 errors | 624 / 16 / 20 — the disagreement list is byte-identical |
+
+**`c35` was `inf` at the cold seed and is finite now**, which is the whole point of the
+row: the constraint divided by a boundary constant that PROCESS's own solve moves off
+zero and the port had frozen at the `DataStructure` default.

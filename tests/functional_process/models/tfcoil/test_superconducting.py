@@ -15,14 +15,27 @@ are held at the sample's own baseline values, so the slice is a projection and n
 different point.
 """
 
+import dataclasses
+
 import numpy as np
+import pytest
 
 from functional_process._harness import Tier1Contract, legacy_sample
+from functional_process.indat import (
+    CICC_SUPERCONDUCTOR_PROPERTIES,
+    TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN,
+    UNPORTED,
+    machine_from_indat,
+)
 from functional_process.models.tfcoil.superconducting import (
     _RIPPLE_FIT_COEFFICIENTS,
     calculate_a_tf_turn,
     cicc_averaged_turn_geometry_from_current_per_turn,
     cicc_integer_turn_geometry,
+    cicc_superconductor_properties_durham_nbti,
+    cicc_superconductor_properties_itersc,
+    cicc_superconductor_properties_lubell_nbti,
+    cicc_superconductor_properties_wst_nb3sn,
     dx_tf_side_case_double_rectangular,
     dx_tf_side_case_rectangular,
     dx_tf_side_case_trapezoidal,
@@ -33,13 +46,24 @@ from functional_process.models.tfcoil.superconducting import (
     superconducting_tf_wp_geometry_double_rectangular,
     superconducting_tf_wp_geometry_rectangular,
     superconducting_tf_wp_geometry_trapezoidal,
+    temperature_margin_itersc,
+    temperature_margin_lubell_nbti,
+    temperature_margin_wst_nb3sn,
     tf_case_areas_circular_front,
     tf_case_areas_straight_front,
     tf_cicc_inboard_areas_and_fractions,
     tf_wp_currents,
+    vv_stress_on_quench,
+    vv_stress_quench_from_build,
 )
 from process.core.model import DataStructure
-from process.models.tfcoil.superconducting import CICCSuperconductingTFCoil
+from process.models.tfcoil.superconducting import (
+    CICCSuperconductingTFCoil,
+)
+from process.models.tfcoil.superconducting import (
+    vv_stress_on_quench as process_vv_stress_on_quench,
+)
+from tests.functional_process.test_machine import TOKAMAK_BASELINE_INDAT
 
 _RECTANGULAR = 0
 _DOUBLE_RECTANGULAR = 1
@@ -1243,3 +1267,711 @@ class TestSuperconductingTfCoilAreasAndMassesStHazeltonZhaiRebco(Tier1Contract):
     ]
 
     fuzz_bounds = TestSuperconductingTfCoilAreasAndMassesSphericalTokamak.fuzz_bounds
+
+
+# ---------------------------------------------------------------------------
+# `vv_stress_on_quench` -- constraint 65's producer
+# ---------------------------------------------------------------------------
+
+_VV_POISON = np.nan
+"""Written into every `.build`/`.tfcoil`/`.superconducting_tfcoil` field the *method*
+under test is not being given, before PROCESS is called.
+
+`vv_stress_on_quench` is an instance method reading twenty-nine fields off `data` with
+no arguments at all, so "the port declares the right reads" cannot be checked by
+argument count -- it has to be checked by making an undeclared read visibly poison the
+answer. NaN is the right poison here rather than `_DCOND_POISON`'s large negative,
+because every one of these fields enters a length or an area and a wrong-but-finite one
+would be indistinguishable from a rounding difference."""
+
+
+def _reference_vv_stress_from_build(**inputs):
+    """`CICCSuperconductingTFCoil.vv_stress_on_quench`, through a NaN-poisoned `data`.
+
+    Every `.build` field is set to NaN first, then the twenty-nine the port declares are
+    written; `.tfcoil.tfa` is a four-element array of which only element 0 is given a
+    value, the other three staying NaN. So a port that read a field it does not declare,
+    or the wrong `tfa` element, returns NaN and the value test fails rather than
+    quietly agreeing.
+    """
+    model = _sctfcoil()
+    for field in dataclasses.fields(model.data.build):
+        if isinstance(getattr(model.data.build, field.name), float):
+            setattr(model.data.build, field.name, _VV_POISON)
+
+    b, t = model.data.build, model.data.tfcoil
+    d = model.data.superconducting_tfcoil
+    b.z_tf_inside_half = inputs["z_tf_inside_half"]
+    b.dr_tf_inboard = inputs["dr_tf_inboard"]
+    b.r_tf_inboard_mid = inputs["r_tf_inboard_mid"]
+    b.r_tf_outboard_mid = inputs["r_tf_outboard_mid"]
+    b.r_tf_inboard_out = inputs["r_tf_inboard_out"]
+    b.z_plasma_xpoint_upper = inputs["z_plasma_xpoint_upper"]
+    b.dz_xpoint_divertor = inputs["dz_xpoint_divertor"]
+    b.dz_shld_upper = inputs["dz_shld_upper"]
+    b.dz_vv_upper = inputs["dz_vv_upper"]
+    b.r_vv_inboard_out = inputs["r_vv_inboard_out"]
+    b.dr_vv_outboard = inputs["dr_vv_outboard"]
+    b.dr_tf_outboard = inputs["dr_tf_outboard"]
+    b.dr_tf_shld_gap = inputs["dr_tf_shld_gap"]
+    b.dr_shld_thermal_outboard = inputs["dr_shld_thermal_outboard"]
+    b.dr_shld_vv_gap_outboard = inputs["dr_shld_vv_gap_outboard"]
+    b.dr_vv_shells = inputs["dr_vv_shells"]
+
+    model.data.divertor.dz_divertor = inputs["dz_divertor"]
+
+    t.tfa = np.full(4, _VV_POISON, dtype=float)
+    t.tfa[0] = inputs["tfa_first_arc"]
+    t.len_tf_coil = inputs["len_tf_coil"]
+    t.theta1_coil = inputs["theta1_coil"]
+    t.theta1_vv = inputs["theta1_vv"]
+    t.n_tf_coils = inputs["n_tf_coils"]
+    t.n_tf_coil_turns = inputs["n_tf_coil_turns"]
+    t.t_tf_superconductor_quench = inputs["t_tf_superconductor_quench"]
+
+    d.a_tf_coil_inboard_steel = inputs["a_tf_coil_inboard_steel"]
+    d.a_tf_plasma_case = inputs["a_tf_plasma_case"]
+    d.a_tf_coil_nose_case = inputs["a_tf_coil_nose_case"]
+    d.dx_tf_side_case_average = inputs["dx_tf_side_case_average"]
+    d.c_tf_coil = inputs["c_tf_coil"]
+
+    model.vv_stress_on_quench()
+    return d.vv_stress_quench
+
+
+def _reference_vv_stress_core(**inputs):
+    """The module-level `vv_stress_on_quench`, with PROCESS's own capitalised names.
+
+    A pure function, so no `data` and no poison: this case exists to pin the Itoh
+    surrogate itself (the theta-factor integral, the `lambda` branch, the two
+    inductances) independently of the prologue that feeds it. Both halves are tested,
+    because only one of them is a transcription of arithmetic and the other is a
+    transcription of *reads*.
+    """
+    renamed = {"h_coil": "H_coil", "h_vv": "H_vv"}
+    return process_vv_stress_on_quench(**{
+        renamed.get(name, name): value for name, value in inputs.items()
+    })
+
+
+_VV_CORE_POINT = {
+    "h_coil": 9.5,
+    "ri_coil": 3.0,
+    "ro_coil": 13.0,
+    "rm_coil": 4.0,
+    "ccl_length_coil": 50.0,
+    "theta1_coil": 45.0,
+    "h_vv": 8.0,
+    "ri_vv": 4.0,
+    "ro_vv": 11.0,
+    "rm_vv": 5.0,
+    "theta1_vv": 1.0,
+    "n_tf_coils": 16.0,
+    "n_tf_coil_turns": 200.0,
+    "s_rp": 0.5,
+    "s_cc": 0.6,
+    "taud": 20.0,
+    "i_op": 7.0e4,
+    "d_vv": 0.12,
+}
+"""A large-tokamak-scale coil and vessel. `theta1_coil = 45.0` and `theta1_vv = 1.0`
+are `tfcoil_variables.py`'s own defaults and `large_tokamak_eval.IN.DAT`'s live values;
+the geometry is that file's build to one significant figure."""
+
+
+class TestVvStressOnQuenchCore(Tier1Contract):
+    """The Itoh surrogate. Eighteen arguments, one output, no `data`."""
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_vv_stress_core
+    ported = vv_stress_on_quench
+
+    samples = [legacy_sample("vv-stress-large-tokamak", **_VV_CORE_POINT)]
+
+    fuzz_bounds = {
+        # The box keeps `ro > rm > ri` and `H` positive for both structures, which is
+        # what `_inductance_factor`'s aspect ratio and `_theta_factor_integral`'s
+        # `kappa` need to stay finite. `theta1_vv` stays well away from the
+        # `cos + sin - 1 == 0` pole at 0 and 90 degrees.
+        "h_coil": (7.0, 12.0),
+        "ri_coil": (2.5, 3.5),
+        "ro_coil": (11.0, 15.0),
+        "rm_coil": (3.6, 5.0),
+        "ccl_length_coil": (40.0, 60.0),
+        "theta1_coil": (35.0, 55.0),
+        "h_vv": (6.0, 10.0),
+        "ri_vv": (3.5, 4.5),
+        "ro_vv": (9.5, 12.5),
+        "rm_vv": (4.6, 6.0),
+        "theta1_vv": (0.5, 3.0),
+        "n_tf_coils": (12.0, 20.0),
+        "n_tf_coil_turns": (100.0, 300.0),
+        "s_rp": (0.2, 0.9),
+        "s_cc": (0.3, 1.0),
+        "taud": (10.0, 30.0),
+        "i_op": (4.0e4, 1.0e5),
+        "d_vv": (0.06, 0.2),
+    }
+
+
+class TestVvStressQuenchFromBuild(Tier1Contract):
+    """The whole method: the geometry prologue plus the surrogate, off a poisoned `data`.
+
+    This is the case that checks the **reads**, and it is why `_VV_POISON` exists. The
+    port turns twenty-nine `DataStructure` fields into the eighteen arguments above; an
+    undeclared read, or `tfa[1]` in place of `tfa[0]`, produces NaN here rather than a
+    plausible number.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_vv_stress_from_build
+    ported = vv_stress_quench_from_build
+
+    samples = [
+        legacy_sample(
+            "vv-stress-build-large-tokamak",
+            z_tf_inside_half=8.5,
+            dr_tf_inboard=1.2,
+            r_tf_inboard_mid=3.0,
+            r_tf_outboard_mid=13.0,
+            r_tf_inboard_out=3.6,
+            tfa_first_arc=1.5,
+            z_plasma_xpoint_upper=5.6,
+            dz_xpoint_divertor=0.6,
+            dz_divertor=0.62,
+            dz_shld_upper=0.6,
+            dz_vv_upper=0.3,
+            r_vv_inboard_out=4.2,
+            dr_vv_outboard=0.3,
+            dr_tf_outboard=1.2,
+            dr_tf_shld_gap=0.05,
+            dr_shld_thermal_outboard=0.05,
+            dr_shld_vv_gap_outboard=0.163,
+            len_tf_coil=50.0,
+            theta1_coil=45.0,
+            theta1_vv=1.0,
+            n_tf_coils=16.0,
+            n_tf_coil_turns=200.0,
+            a_tf_coil_inboard_steel=0.5,
+            a_tf_plasma_case=0.2,
+            a_tf_coil_nose_case=0.35,
+            dx_tf_side_case_average=0.03,
+            t_tf_superconductor_quench=17.9728,
+            c_tf_coil=1.4e7,
+            dr_vv_shells=0.12,
+        )
+    ]
+
+    fuzz_bounds = {
+        # Same shape constraints as the core case, expressed in build fields: the
+        # vessel's `ro_vv` is `r_tf_outboard_mid` minus five subtractions, so the
+        # outboard radius is kept large and the five gaps small enough that it stays
+        # above `rm_vv`.
+        "z_tf_inside_half": (7.0, 10.0),
+        "dr_tf_inboard": (0.9, 1.5),
+        "r_tf_inboard_mid": (2.6, 3.4),
+        "r_tf_outboard_mid": (12.0, 15.0),
+        "r_tf_inboard_out": (3.3, 4.0),
+        "tfa_first_arc": (1.0, 2.0),
+        "z_plasma_xpoint_upper": (4.5, 6.5),
+        "dz_xpoint_divertor": (0.4, 0.9),
+        "dz_divertor": (0.4, 0.9),
+        "dz_shld_upper": (0.4, 0.9),
+        "dz_vv_upper": (0.2, 0.5),
+        "r_vv_inboard_out": (4.0, 4.6),
+        "dr_vv_outboard": (0.2, 0.4),
+        "dr_tf_outboard": (0.9, 1.5),
+        "dr_tf_shld_gap": (0.02, 0.1),
+        "dr_shld_thermal_outboard": (0.02, 0.1),
+        "dr_shld_vv_gap_outboard": (0.1, 0.25),
+        "len_tf_coil": (40.0, 60.0),
+        "theta1_coil": (35.0, 55.0),
+        "theta1_vv": (0.5, 3.0),
+        "n_tf_coils": (12.0, 20.0),
+        "n_tf_coil_turns": (100.0, 300.0),
+        "a_tf_coil_inboard_steel": (0.2, 0.9),
+        "a_tf_plasma_case": (0.1, 0.4),
+        "a_tf_coil_nose_case": (0.2, 0.6),
+        "dx_tf_side_case_average": (0.01, 0.06),
+        "t_tf_superconductor_quench": (10.0, 30.0),
+        "c_tf_coil": (8.0e6, 2.0e7),
+        "dr_vv_shells": (0.06, 0.2),
+    }
+
+
+# ---------------------------------------------------------------------------
+# `tf_cable_in_conduit_superconductor_properties` -- constraint 33's producer
+# ---------------------------------------------------------------------------
+
+_SC_PROPERTIES_UNREAD = (
+    "a_tf_turn_cable_space",
+    "f_a_tf_turn_cable_space_cooling",
+    "j_tf_wp",
+    "f_strain_scale",
+    "bcritsc",
+    "tcritsc",
+)
+"""PROCESS arguments the arm under test does not consult, defaulted to NaN.
+
+`tf_cable_in_conduit_superconductor_properties` takes fourteen arguments and no arm uses
+all of them. The first four here are read **only** by the Bi-2212 branch
+(`superconducting.py:2957-2968`), which is refused; `bcritsc`/`tcritsc` are read only by
+arm 4, which supplies its own and so overrides the NaN. Defaulting the rest to NaN turns
+"the port declares fewer reads than PROCESS's signature" into an executed claim: a port
+that used any of them would return NaN.
+"""
+
+
+def _run_reference_sc_properties(i_tf_sc_mat, strain, **inputs):
+    """The critical-current chain as a tuple in the port's return order.
+
+    `i_tf_sc_mat` is the identity of the occupant under test, not an input; `strain` is
+    planted in `.tfcoil.str_wp` with `i_str_wp = 1`, which is the only arm registered.
+    `.tfcoil.str_tf_con_res` is left at NaN, so an occupant that read the *other* strain
+    field would return NaN -- the `i_str_wp` axis is checked, not assumed.
+
+    `.tfcoil.j_crit_str_tf` is a side-effect write rather than a return
+    (`superconducting.py:2937`), so it is read back off `data` and spliced into the
+    tuple at the position the port returns it.
+    """
+    model = _sctfcoil()
+    t = model.data.tfcoil
+    t.i_str_wp = 1
+    t.str_wp = strain
+    t.str_tf_con_res = np.nan
+    t.j_crit_str_tf = np.nan
+    t.b_crit_upper_nbti = inputs.pop("b_crit_upper_nbti", np.nan)
+    t.t_crit_nbti = inputs.pop("t_crit_nbti", np.nan)
+
+    result = CICCSuperconductingTFCoil.tf_cable_in_conduit_superconductor_properties(
+        i_tf_superconductor=i_tf_sc_mat,
+        data=model.data,
+        **{**dict.fromkeys(_SC_PROPERTIES_UNREAD, np.nan), **inputs},
+    )
+    return (
+        result.j_tf_wp_critical,
+        t.j_crit_str_tf,
+        result.f_c_tf_turn_operating_critical,
+        result.j_tf_coil_turn,
+        result.j_superconductor,
+        result.c_turn_cables_critical,
+        result.j_superconductor_critical,
+        result.bc20m,
+        result.tc0m,
+    )
+
+
+def _reference_sc_properties_iter_nb3sn(**inputs):
+    """`i_tf_sc_mat = 1` -- `large_tokamak_eval.IN.DAT:374`'s arm."""
+    return _run_reference_sc_properties(1, inputs.pop("strain"), **inputs)
+
+
+def _ported_sc_properties_iter_nb3sn(**inputs):
+    """Arm 1's occupant binding: `(32.97, 16.06)` as literals, not arguments.
+
+    The pure function takes the pair because arm 4 reads it; arm 1 does not, and the
+    literals are bound here rather than sampled so that the case checks the occupant's
+    own binding and not merely the shared body.
+    """
+    return cicc_superconductor_properties_itersc(
+        b_c20max=32.97, temp_c0max=16.06, **inputs
+    )
+
+
+def _reference_sc_properties_user_defined_nb3sn(*, bcritsc, tcritsc, **inputs):
+    """`i_tf_sc_mat = 4` -- the ITER fit with the two constants read from input.
+
+    The port's `b_c20max`/`temp_c0max` arguments are PROCESS's `bcritsc`/`tcritsc`
+    reads, so the adapter takes the PROCESS spelling and hands the port its own.
+    """
+    return _run_reference_sc_properties(
+        4, inputs.pop("strain"), bcritsc=bcritsc, tcritsc=tcritsc, **inputs
+    )
+
+
+def _ported_sc_properties_user_defined_nb3sn(*, bcritsc, tcritsc, **inputs):
+    """`cicc_superconductor_properties_itersc` under arm 4's parameter names."""
+    return cicc_superconductor_properties_itersc(
+        b_c20max=bcritsc, temp_c0max=tcritsc, **inputs
+    )
+
+
+def _reference_sc_properties_wst_nb3sn(**inputs):
+    """`i_tf_sc_mat = 5` -- `low_aspect_ratio_DEMO.IN.DAT:910`'s arm."""
+    return _run_reference_sc_properties(5, inputs.pop("strain"), **inputs)
+
+
+def _reference_sc_properties_lubell_nbti(**inputs):
+    """`i_tf_sc_mat = 3` -- the arm with no strain read at all.
+
+    `.tfcoil.str_wp` is NaN here as well as `.str_tf_con_res`: this arm reads neither,
+    and poisoning both is what says so.
+    """
+    return _run_reference_sc_properties(3, np.nan, **inputs)
+
+
+def _reference_sc_properties_durham_nbti(**inputs):
+    """`i_tf_sc_mat = 7` -- the Durham GL NbTi arm.
+
+    Ported here and refused for the temperature margin; see
+    `TfSuperconductorTemperatureMargin`.
+    """
+    return _run_reference_sc_properties(7, inputs.pop("strain"), **inputs)
+
+
+_SC_PROPERTIES_POINT = {
+    "a_tf_turn_cable_space_effective": 1.1e-3,
+    "a_tf_turn": 2.4e-3,
+    "b_tf_inboard_peak": 8.0,
+    "f_a_tf_turn_cable_copper": 0.69,
+    "c_tf_turn": 85462.675,
+    "temp_tf_coolant_peak_field": 4.75,
+}
+"""`large_tokamak_eval.IN.DAT`'s `c_tf_turn` (`:371`), `f_a_tf_turn_cable_copper`
+(`tfcoil_variables.py:196`) and `tftmp` (`IN.DAT:378`), with a turn geometry of that
+machine's order. The field is `8.0` T rather than the machine's ~12.5 T so the same
+point can be shared with the two NbTi arms, whose fits are only defined well below
+their upper critical field."""
+
+_SC_PROPERTIES_BOUNDS = {
+    # `1 - f_a_tf_turn_cable_copper` scales the critical current, so the copper fraction
+    # is kept away from 1; the field stays below the NbTi arms' `b_c20max` so every
+    # sample is inside every fit's own range.
+    "a_tf_turn_cable_space_effective": (5.0e-4, 2.0e-3),
+    "a_tf_turn": (1.5e-3, 4.0e-3),
+    "b_tf_inboard_peak": (4.0, 10.0),
+    "f_a_tf_turn_cable_copper": (0.5, 0.85),
+    "c_tf_turn": (4.0e4, 1.2e5),
+    "temp_tf_coolant_peak_field": (4.2, 5.5),
+    "strain": (-0.004, -0.001),
+}
+
+
+class TestCiccSuperconductorPropertiesIterNb3sn(Tier1Contract):
+    """`i_tf_sc_mat == 1` -- the reference machine's arm, and constraint 33's read."""
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_properties_iter_nb3sn
+    ported = _ported_sc_properties_iter_nb3sn
+
+    samples = [
+        legacy_sample(
+            "cicc-sc-properties-iter-nb3sn", strain=-0.003, **_SC_PROPERTIES_POINT
+        )
+    ]
+
+    fuzz_bounds = _SC_PROPERTIES_BOUNDS
+
+
+class TestCiccSuperconductorPropertiesWstNb3sn(Tier1Contract):
+    """`i_tf_sc_mat == 5` -- `low_aspect_ratio_DEMO`'s arm. Literal `(32.97, 16.06)`."""
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_properties_wst_nb3sn
+    ported = cicc_superconductor_properties_wst_nb3sn
+
+    samples = [
+        legacy_sample(
+            "cicc-sc-properties-wst-nb3sn", strain=-0.003, **_SC_PROPERTIES_POINT
+        )
+    ]
+
+    fuzz_bounds = _SC_PROPERTIES_BOUNDS
+
+
+class TestCiccSuperconductorPropertiesUserDefinedNb3sn(Tier1Contract):
+    """`i_tf_sc_mat == 4` -- two reads its sibling arm 1 turns into literals.
+
+    Driven at a `(bcritsc, tcritsc)` that is **not** arm 1's `(32.97, 16.06)`, so an
+    occupant that used the literals instead of the reads disagrees.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_properties_user_defined_nb3sn
+    ported = _ported_sc_properties_user_defined_nb3sn
+
+    samples = [
+        legacy_sample(
+            "cicc-sc-properties-user-defined-nb3sn",
+            strain=-0.003,
+            bcritsc=24.0,
+            tcritsc=16.0,
+            **_SC_PROPERTIES_POINT,
+        )
+    ]
+
+    fuzz_bounds = {
+        **_SC_PROPERTIES_BOUNDS,
+        "bcritsc": (20.0, 28.0),
+        "tcritsc": (14.0, 17.0),
+    }
+
+
+class TestCiccSuperconductorPropertiesOldLubellNbti(Tier1Contract):
+    """`i_tf_sc_mat == 3` -- and the executed check that this arm reads no strain.
+
+    Both strain fields are NaN in the adapter, so agreement is only possible for a port
+    that does not read either.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_properties_lubell_nbti
+    ported = cicc_superconductor_properties_lubell_nbti
+
+    samples = [legacy_sample("cicc-sc-properties-lubell-nbti", **_SC_PROPERTIES_POINT)]
+
+    fuzz_bounds = {
+        name: bounds
+        for name, bounds in _SC_PROPERTIES_BOUNDS.items()
+        if name != "strain"
+    }
+
+
+class TestCiccSuperconductorPropertiesDurhamNbti(Tier1Contract):
+    """`i_tf_sc_mat == 7` -- ported here, refused for the temperature margin.
+
+    The asymmetry is the point of having this case: the critical-surface evaluation at a
+    fixed temperature is exact, and only the *upward search* in
+    `calculate_superconductor_temperature_margin` leaves the reals. A passing case here
+    is what makes that a scoped refusal rather than a blanket one.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_properties_durham_nbti
+    ported = cicc_superconductor_properties_durham_nbti
+
+    samples = [
+        legacy_sample(
+            "cicc-sc-properties-durham-nbti",
+            strain=-0.003,
+            b_crit_upper_nbti=14.86,
+            t_crit_nbti=9.04,
+            **_SC_PROPERTIES_POINT,
+        )
+    ]
+
+    fuzz_bounds = {
+        **_SC_PROPERTIES_BOUNDS,
+        # Below `b_crit_upper_nbti`'s own value throughout, so `gl_nbti` stays on the
+        # real branch at every corner.
+        "b_tf_inboard_peak": (3.0, 7.0),
+        "b_crit_upper_nbti": (13.0, 16.0),
+        "t_crit_nbti": (8.5, 9.5),
+    }
+
+
+# ---------------------------------------------------------------------------
+# `calculate_superconductor_temperature_margin` -- constraint 36's producer
+# ---------------------------------------------------------------------------
+
+_MARGIN_UNREAD = ("dr_tf_hts_tape", "dx_tf_hts_tape_rebco", "dx_tf_hts_tape_total")
+"""The three `.superconducting_tfcoil` tape dimensions
+`calculate_superconductor_temperature_margin` packs into `arguments` on **every** arm
+(`superconducting.py:1236-1256`) and that only branch 9 of
+`superconductor_current_density_margin` consumes. NaN-poisoned, because the four ported
+arms declare none of them and that claim is worth executing: PROCESS passing a value is
+not the same as PROCESS reading it."""
+
+
+def _run_reference_temperature_margin(i_tf_sc_mat, **inputs):
+    """`calculate_superconductor_temperature_margin`, returned as `(margin, margin)`.
+
+    The port owns two variables holding the same number --
+    `.tfcoil.temp_tf_superconductor_margin` (`run`'s assignment) and
+    `.tfcoil.temp_margin` (the function's own side-effect write, `:1279`) -- so the
+    reference returns the pair
+    the same way, with the second read back off `data`. A port that returned only one, or
+    that wrote the side effect from a different quantity, disagrees.
+    """
+    model = _sctfcoil()
+    d = model.data.superconducting_tfcoil
+    for name in _MARGIN_UNREAD:
+        setattr(d, name, np.nan)
+    model.data.tfcoil.temp_margin = np.nan
+
+    margin = CICCSuperconductingTFCoil.calculate_superconductor_temperature_margin(
+        i_tf_superconductor=i_tf_sc_mat,
+        c0=1.0e10,
+        data=model.data,
+        **inputs,
+    )
+    return (margin, model.data.tfcoil.temp_margin)
+
+
+def _reference_margin_iter_nb3sn(*, b_c20max, temp_c0max, **inputs):
+    """`i_tf_sc_mat = 1` *(live)*."""
+    return _run_reference_temperature_margin(
+        1, bc20m=b_c20max, tc0m=temp_c0max, **inputs
+    )
+
+
+def _reference_margin_wst_nb3sn(*, b_c20max, temp_c0max, **inputs):
+    """`i_tf_sc_mat = 5`."""
+    return _run_reference_temperature_margin(
+        5, bc20m=b_c20max, tc0m=temp_c0max, **inputs
+    )
+
+
+def _reference_margin_lubell_nbti(*, b_c20max, temp_c0max, **inputs):
+    """`i_tf_sc_mat = 3` -- no strain, and `c0` is the literal `run` passes.
+
+    `strain` is still a *parameter* of PROCESS's function, so the adapter has to supply
+    one; NaN says the branch does not consume it, which is the same claim the port makes
+    by not taking the argument.
+    """
+    return _run_reference_temperature_margin(
+        3, bc20m=b_c20max, tc0m=temp_c0max, strain=np.nan, **inputs
+    )
+
+
+def _ported_margin_pair(fit):
+    """`fit(...) -> (margin, margin)`, the pair the occupant owns."""
+
+    def ported(**inputs):
+        margin = fit(**inputs)
+        return (margin, margin)
+
+    return ported
+
+
+_MARGIN_POINT = {
+    "j_superconductor": 6.0e8,
+    "b_tf_inboard_peak": 8.0,
+    "temp_tf_coolant_peak_field": 4.75,
+}
+"""A superconductor current density and field of `large_tokamak_eval`'s order, at that
+file's own `tftmp`. `j_superconductor` is the properties node's own output on the arm
+above, so the two cases are consecutive links of one chain rather than two unrelated
+points."""
+
+
+class TestTemperatureMarginIterNb3sn(Tier1Contract):
+    """`i_tf_sc_mat == 1` -- the live arm, and the port's first *differentiated* solve.
+
+    The gradient half of this case is the one that matters. `solve_current_sharing_
+    temperature` is a fifty-trip `fori_loop` whose carry collapses to a flat state once
+    converged; if that collapse were done by masking instead, the tangent would be `nan`
+    and the value test would still pass. Measured on `i_tf_sc_mat = 4` before the fix,
+    and the reason the loop is written the way it is.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_margin_iter_nb3sn
+    ported = _ported_margin_pair(temperature_margin_itersc)
+
+    samples = [
+        legacy_sample(
+            "temp-margin-iter-nb3sn",
+            strain=-0.003,
+            b_c20max=32.97,
+            temp_c0max=16.06,
+            **_MARGIN_POINT,
+        )
+    ]
+
+    fuzz_bounds = {
+        # The box keeps the current-sharing temperature strictly between `tftmp` and
+        # `temp_c0max`, i.e. a real root the secant can reach: too high a
+        # `j_superconductor` and the margin goes negative, which PROCESS logs and this
+        # harness has no reference for.
+        "j_superconductor": (2.0e8, 9.0e8),
+        "b_tf_inboard_peak": (5.0, 11.0),
+        "strain": (-0.004, -0.001),
+        "b_c20max": (30.0, 35.0),
+        "temp_c0max": (15.0, 17.0),
+        "temp_tf_coolant_peak_field": (4.2, 5.5),
+    }
+
+
+class TestTemperatureMarginWstNb3sn(Tier1Contract):
+    """`i_tf_sc_mat == 5` -- `low_aspect_ratio_DEMO`'s arm."""
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_margin_wst_nb3sn
+    ported = _ported_margin_pair(temperature_margin_wst_nb3sn)
+
+    samples = [
+        legacy_sample(
+            "temp-margin-wst-nb3sn",
+            strain=-0.003,
+            b_c20max=32.97,
+            temp_c0max=16.06,
+            **_MARGIN_POINT,
+        )
+    ]
+
+    fuzz_bounds = TestTemperatureMarginIterNb3sn.fuzz_bounds
+
+
+class TestTemperatureMarginOldLubellNbti(Tier1Contract):
+    """`i_tf_sc_mat == 3` -- no strain read, and `c0 = 1.0e10` as a literal."""
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_margin_lubell_nbti
+    ported = _ported_margin_pair(temperature_margin_lubell_nbti)
+
+    samples = [
+        legacy_sample(
+            "temp-margin-lubell-nbti",
+            b_c20max=15.0,
+            temp_c0max=9.3,
+            **{**_MARGIN_POINT, "j_superconductor": 1.2e9},
+        )
+    ]
+
+    fuzz_bounds = {
+        "j_superconductor": (6.0e8, 2.0e9),
+        "b_tf_inboard_peak": (3.0, 7.0),
+        "b_c20max": (14.0, 16.0),
+        "temp_c0max": (9.0, 9.6),
+        "temp_tf_coolant_peak_field": (4.2, 5.5),
+    }
+
+
+# ---------------------------------------------------------------------------
+# The two composite-key slots: total, and refused end to end
+# ---------------------------------------------------------------------------
+
+
+def test_the_two_superconductor_slots_are_total():
+    """Every `(i_str_wp, i_tf_sc_mat)` pair either has an occupant or a recorded reason.
+
+    `test_machine.py::test_a_refused_value_says_why` cannot reach these two keys -- their
+    *value* is a pair, so no IN.DAT line selects one, and they are in
+    `DERIVED_UNPORTED_KEYS`. This is what that skip trades against: totality over the
+    full 2 x 9 product for both slots, checked against the same `UNPORTED` dict, so a
+    value can neither be silently absent nor silently carry two answers.
+    """
+    for field, registry in (
+        ("i_str_wp_i_tf_sc_mat_cicc_sc_properties", CICC_SUPERCONDUCTOR_PROPERTIES),
+        ("i_str_wp_i_tf_sc_mat_temp_margin", TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN),
+    ):
+        for i_str_wp in (0, 1):
+            for material in range(1, 10):
+                key = (i_str_wp, material)
+                ported = key in registry
+                refused = (field, key) in UNPORTED
+                assert ported != refused, f"{field} {key}: " + (
+                    "has both an occupant and an UNPORTED reason"
+                    if ported
+                    else "has neither an occupant nor an UNPORTED reason"
+                )
+
+
+def test_i_str_wp_zero_is_refused_end_to_end(tmp_path):
+    """A machine that sets `i_str_wp = 0` stops, and the message says which strain.
+
+    The point of registering the unwritten arm rather than baking `.tfcoil.str_wp` into
+    every occupant: `0` is a real PROCESS branch that reads the *other* field, and a port
+    that silently kept reading `str_wp` would produce a wrong critical current with no
+    signal at all. This is that signal, executed.
+    """
+    indat = tmp_path / "TOK.DAT"
+    indat.write_text(
+        "".join(
+            f"{f} = {v if isinstance(v, str) else int(v)}\n"
+            for f, v in {**TOKAMAK_BASELINE_INDAT, "i_str_wp": 0}.items()
+        )
+    )
+    with pytest.raises(NotImplementedError, match="i_str_wp_i_tf_sc_mat"):
+        machine_from_indat(str(indat))
