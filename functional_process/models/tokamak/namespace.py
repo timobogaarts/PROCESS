@@ -314,7 +314,10 @@ class Tokamak(ModelNamespace):
     LOC, unported. Imports `FluidProperties`, but reaches CoolProp **zero** times on this
     reference run: every one of its CoolProp sites is behind
     `.fwbs.i_p_coolant_pumping == MECHANICAL` (2) and the file sets 3. Dormant, not
-    absent -- a second tokamak IN.DAT can wake it (§D)."""
+    absent -- a second tokamak IN.DAT can wake it (§D).
+
+    A family of two since 2026-08-27: `.divertor.n_divertors` picks the single-null or
+    the double-null occupant, and they differ in reads."""
 
     first_wall_geometry: FirstWallGeometry = FirstWallGeometry()
     """`fw.py::FirstWall.set_fw_geometry` (`fw.py:347-352`) -- **a new slot, not one of
@@ -337,7 +340,10 @@ class Tokamak(ModelNamespace):
 
     **A confirmed registry prediction.** Unit #16 recorded `VacuumVessel` as *"confirmed
     unreachable on the stellarator pipeline, no action needed"*; the tokamak trace
-    reaches it. Its file-mate `Vacuum` is ported and is a slot of `.vacuum`, shared."""
+    reaches it. Its file-mate `Vacuum` is ported and is a slot of `.vacuum`, shared.
+
+    A family of two since 2026-08-27: `.divertor.n_divertors` picks the single-null or
+    the double-null occupant, the latter reading seven fields fewer."""
 
     ccfe_hcpb: CcfeHcpb = dataclasses.field(kw_only=True)
     """`blankets/hcpb.py::CCFE_HCPB`, §A row 10 (`caller.py:345`) -- 7 entered functions,

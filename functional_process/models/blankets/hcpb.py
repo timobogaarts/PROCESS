@@ -35,7 +35,7 @@ record's open question #1). A tokamak reaches them directly from
 |---|---|---|---|
 | `.physics.itart` | 0 | conventional arm | `itart == 1` needs the centrepost
 chain (`hcpb.py:1008-1287`), unported |
-| `.divertor.n_divertors` | 1 | single-null arm | `== 2` unported |
+| `.divertor.n_divertors` | 1 | **both arms** | `== 2` written 2026-08-27, see below |
 | `.fwbs.i_p_coolant_pumping` | 3 | `MECHANICAL_WITH_PRESSURE_DROP` | `0`/`1`
 unported; `2` is CoolProp-bound |
 | `.fwbs.i_blkt_coolant_type` | 1 (`HELIUM`) | only arm reachable | `run()` assigns
@@ -47,6 +47,15 @@ CoolProp) is **dead code** for `CCFE_HCPB`, not merely dormant |
 Nothing here reaches CoolProp: the only CoolProp site inside `CCFE_HCPB` is
 `powerflow_calc:794`, behind the dead `WATER` arm above (`tokamak_call_surface.md` §D
 records the same three modules as "dormant"; for this one it is stronger than dormant).
+
+2026-08-27 (the double-null wave): this file's two `n_divertors` slots gained their
+`== 2` occupants -- `DivertorSurfaceAndPlateMassDoubleNull` (`hcpb.py:360-361`, the
+factor of two on `a_div_surface_total`) and
+`NuclearHeatingRenormalisationDoubleNullConventional` (`hcpb.py:213-217`, the different
+`f_geom_blanket`). `itart == 1` is untouched and still refused: a spherical machine
+needs the centrepost neutronics chain, so the renormalisation's double-null arm exists
+only in its **conventional** flavour, and the two spherical-tokamak input files that
+motivated this wave still stop at `('itart_hcpb', 1)`.
 """
 
 import jax.numpy as jnp
@@ -143,7 +152,8 @@ def calculate_divertor_surface_and_plate_mass_single_null(
     are all upstream), so ordering this node *before* `ComponentMasses` is both legal and
     exactly PROCESS's converged answer.
 
-    The `n_divertors == 2` arm (`hcpb.py:360-361`, a factor of two) is **UNPORTED**.
+    The `n_divertors == 2` arm (`hcpb.py:360-361`, a factor of two) is
+    `calculate_divertor_surface_and_plate_mass_double_null` below.
 
     Parameters
     ----------
@@ -164,6 +174,59 @@ def calculate_divertor_surface_and_plate_mass_single_null(
         `(a_div_surface_total, m_div_plate)` -- m2 and kg.
     """
     a_div_surface_total = fdiva * 2.0 * jnp.pi * rmajor * rminor
+
+    m_div_plate = (
+        a_div_surface_total
+        * den_div_structure
+        * (1.0 - f_vol_div_coolant)
+        * dx_div_plate
+    )
+
+    return a_div_surface_total, m_div_plate
+
+
+def calculate_divertor_surface_and_plate_mass_double_null(
+    fdiva,
+    rmajor,
+    rminor,
+    den_div_structure,
+    f_vol_div_coolant,
+    dx_div_plate,
+):
+    """Divertor surface area and plate mass, double-null arm (`n_divertors == 2`).
+
+    Ports `component_masses`' `hcpb.py:353-367` with the `if n_divertors == 2:
+    a_div_surface_total *= 2.0` at `:360-361` taken: two divertors, twice the plate
+    area, and twice the plate mass that follows from it.
+
+    Reads exactly what the single-null sibling reads -- the arms differ by one literal
+    factor, not by a field -- but under `next_steps.md` §14.2 (the `istore` precedent) a
+    literal is enough to make this an occupant rather than a `n_divertors` parameter
+    multiplied in. See `calculate_divertor_surface_and_plate_mass_single_null` for the
+    read/own conflict that puts this node before `ComponentMasses` in the first place;
+    it applies unchanged here.
+
+    Parameters
+    ----------
+    fdiva :
+        Divertor area scaling factor. `.divertor.fdiva`.
+    rmajor, rminor :
+        Plasma major/minor radius (m). `.physics.rmajor`, `.physics.rminor`.
+    den_div_structure :
+        Divertor structure density (kg/m3). `.divertor.den_div_structure`.
+    f_vol_div_coolant :
+        Divertor coolant volume fraction. `.divertor.f_vol_div_coolant`.
+    dx_div_plate :
+        Divertor plate thickness (m). `.divertor.dx_div_plate`.
+
+    Returns
+    -------
+    tuple
+        `(a_div_surface_total, m_div_plate)` -- m2 and kg.
+    """
+    a_div_surface_total = fdiva * 2.0 * jnp.pi * rmajor * rminor
+    # `hcpb.py:360-361`, spelled as PROCESS spells it.
+    a_div_surface_total *= 2.0
 
     m_div_plate = (
         a_div_surface_total
@@ -878,6 +941,101 @@ def calculate_nuclear_heating_renormalisation_single_null_conventional(
     )
 
 
+def calculate_nuclear_heating_renormalisation_double_null_conventional(
+    p_fw_nuclear_heat_total_mw_unnormalised,
+    p_blkt_nuclear_heat_total_mw_unnormalised,
+    p_shld_nuclear_heat_mw_unnormalised,
+    p_tf_nuclear_heat_mw_unnormalised,
+    f_ster_div_single,
+    f_p_blkt_multiplication,
+    p_neutron_total_mw,
+):
+    """The renormalisation of `hcpb.py:195-276` at `n_divertors == 2`, `itart == 0`.
+
+    Identical to
+    `calculate_nuclear_heating_renormalisation_single_null_conventional` except in one
+    place: `f_geom_blanket`. PROCESS writes it as
+    `1 - n_divertors * f_ster_div_single - f_geom_cp` (`hcpb.py:213-217`) -- **not** as
+    an `if`, but as a multiplication by the divertor count, which is exactly why the
+    two arms are the same shape with a different constant. With `n_divertors == 2` and
+    `f_geom_cp` the literal `0` of the conventional arm (`:144`), it is
+    `1 - 2 * f_ster_div_single`.
+
+    The `itart == 0` half of the bake is unchanged and carries the same two
+    non-declarations: `+ pnuc_cp_tf` at `:263` is provably `+ 0` here, and
+    `f_geom_cp * p_neutron_total_mw` at `:268` provably `0`, so neither is a read. The
+    `itart == 1` flavour of this arm is UNPORTED for the same reason its single-null
+    counterpart is -- see `indat.py`'s `('itart_hcpb', 1)`.
+
+    Parameters
+    ----------
+    p_fw_nuclear_heat_total_mw_unnormalised :
+        First-wall nuclear heating before renormalisation (MW).
+        `.ccfe_hcpb.p_fw_nuclear_heat_total_mw_unnormalised`, from `NuclearHeatingFw`.
+    p_blkt_nuclear_heat_total_mw_unnormalised :
+        Blanket, same. From `NuclearHeatingBlanket`.
+    p_shld_nuclear_heat_mw_unnormalised :
+        Shield, same. From `NuclearHeatingShieldConventional`.
+    p_tf_nuclear_heat_mw_unnormalised :
+        TF coils, same. From `NuclearHeatingMagnetsConventional`.
+    f_ster_div_single :
+        Divertor solid-angle fraction **per divertor**. `.fwbs.f_ster_div_single`
+        (`divertor.py:42`).
+    f_p_blkt_multiplication :
+        Blanket neutron energy multiplication factor. `.fwbs.f_p_blkt_multiplication`.
+    p_neutron_total_mw :
+        Total neutron power (MW). `.physics.p_neutron_total_mw`.
+
+    Returns
+    -------
+    tuple
+        `(pnuc_tot_blk_sector, p_fw_nuclear_heat_total_mw,
+        p_blkt_nuclear_heat_total_mw, p_shld_nuclear_heat_mw, p_tf_nuclear_heat_mw,
+        p_blkt_multiplication_mw)`.
+    """
+    # Total nuclear power deposited in the blanket sector (MW)
+    pnuc_tot_blk_sector = (
+        p_fw_nuclear_heat_total_mw_unnormalised
+        + p_blkt_nuclear_heat_total_mw_unnormalised
+        + p_shld_nuclear_heat_mw_unnormalised
+        + p_tf_nuclear_heat_mw_unnormalised
+    )
+
+    # `1 - n_divertors * f_ster_div_single - f_geom_cp` at `n_divertors == 2` and
+    # `f_geom_cp == 0` (the conventional arm's literal, `hcpb.py:144`).
+    f_geom_blanket = 1 - 2 * f_ster_div_single
+
+    normalisation = f_p_blkt_multiplication * f_geom_blanket * p_neutron_total_mw
+
+    p_fw_nuclear_heat_total_mw = (
+        p_fw_nuclear_heat_total_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation
+    p_blkt_nuclear_heat_total_mw = (
+        p_blkt_nuclear_heat_total_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation
+    # The power deposited in the CP shield is added back in `powerflow_calc`.
+    p_shld_nuclear_heat_mw = (
+        p_shld_nuclear_heat_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation
+    # `+ pnuc_cp_tf` in the source; it is 0 on this arm.
+    p_tf_nuclear_heat_mw = (
+        p_tf_nuclear_heat_mw_unnormalised / pnuc_tot_blk_sector
+    ) * normalisation
+
+    p_blkt_multiplication_mw = (
+        (f_p_blkt_multiplication - 1) * f_geom_blanket * p_neutron_total_mw
+    )
+
+    return (
+        pnuc_tot_blk_sector,
+        p_fw_nuclear_heat_total_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_shld_nuclear_heat_mw,
+        p_tf_nuclear_heat_mw,
+        p_blkt_multiplication_mw,
+    )
+
+
 def calculate_first_wall_radiation_powers(
     p_plasma_rad_mw,
     f_a_fw_outboard_hcd,
@@ -1068,11 +1226,19 @@ class FirstWallCoolantVoidFractions(ExplicitFunction):
         )
 
 
-class DivertorSurfaceAndPlateMassSingleNull(ExplicitFunction):
-    """cottax node: `calculate_divertor_surface_and_plate_mass_single_null`.
+class DivertorSurfaceAndPlateMass(ExplicitFunction):
+    """The family that owns `.divertor.a_div_surface_total` and `.divertor.m_div_plate`:
+    one occupant per `n_divertors` arm of `component_masses`' `hcpb.py:353-367`.
 
-    `n_divertors == 1`. Owns `.divertor.a_div_surface_total`, which
-    `.costs.divertor_cost` reads -- one of the sixteen boundary variables this slot owes.
+    `.divertor.a_div_surface_total` is read by `.costs.divertor_cost` -- one of the
+    sixteen boundary variables this slot owes. Both arms are written (2026-08-27); the
+    slot is total.
+    """
+
+
+class DivertorSurfaceAndPlateMassSingleNull(DivertorSurfaceAndPlateMass):
+    """cottax node: `calculate_divertor_surface_and_plate_mass_single_null`.
+    `n_divertors == 1`.
     """
 
     a_div_surface_total = OutputInto(divertor)
@@ -1088,6 +1254,34 @@ class DivertorSurfaceAndPlateMassSingleNull(ExplicitFunction):
         dx_div_plate=From(divertor),
     ):
         return calculate_divertor_surface_and_plate_mass_single_null(
+            fdiva,
+            rmajor,
+            rminor,
+            den_div_structure,
+            f_vol_div_coolant,
+            dx_div_plate,
+        )
+
+
+class DivertorSurfaceAndPlateMassDoubleNull(DivertorSurfaceAndPlateMass):
+    """cottax node: `calculate_divertor_surface_and_plate_mass_double_null`.
+    `n_divertors == 2` -- live on `spherical_tokamak_eval.IN.DAT` and
+    `st_regression.IN.DAT`.
+    """
+
+    a_div_surface_total = OutputInto(divertor)
+    m_div_plate = OutputInto(divertor)
+
+    def __call__(
+        self,
+        fdiva=From(divertor),
+        rmajor=From(physics),
+        rminor=From(physics),
+        den_div_structure=From(divertor),
+        f_vol_div_coolant=From(divertor),
+        dx_div_plate=From(divertor),
+    ):
+        return calculate_divertor_surface_and_plate_mass_double_null(
             fdiva,
             rmajor,
             rminor,
@@ -1405,11 +1599,12 @@ class CentrepostNeutronicsAbsent(ExplicitFunction):
         return calculate_centrepost_neutronics_absent()
 
 
-class NuclearHeatingRenormalisationSingleNullConventional(ExplicitFunction):
-    """cottax node: `calculate_nuclear_heating_renormalisation_single_null_conventional`.
+class NuclearHeatingRenormalisation(ExplicitFunction):
+    """The family that owns the four renormalised nuclear-heating powers: one occupant
+    per cell of the `(n_divertors, itart)` pair `hcpb.py:195-276` branches on.
 
-    `n_divertors == 1` and `itart == 0`. Owns four of the slot's sixteen boundary
-    variables: `.fwbs.p_fw_nuclear_heat_total_mw`, `.fwbs.p_blkt_nuclear_heat_total_mw`,
+    Owns four of the slot's sixteen boundary variables:
+    `.fwbs.p_fw_nuclear_heat_total_mw`, `.fwbs.p_blkt_nuclear_heat_total_mw`,
     `.fwbs.p_shld_nuclear_heat_mw` and `.fwbs.p_tf_nuclear_heat_mw`.
 
     **`.fwbs.p_tf_nuclear_heat_mw` has a second producer in the tree**, and it is worth
@@ -1419,6 +1614,16 @@ class NuclearHeatingRenormalisationSingleNullConventional(ExplicitFunction):
     (`models/stellarator/namespace.py:186`) and a `TokamakProcess` has no `Stellarator`
     namespace at all -- but the two are alternative producers of one field on two
     different devices, and any future machine that assembled both would have to choose.
+
+    Two of the four cells are written: both `n_divertors` arms at `itart == 0`. Neither
+    `itart == 1` cell is, and that is a refusal about the *machine* rather than about
+    this arithmetic -- see `indat.py`'s `('itart_hcpb', 1)`.
+    """
+
+
+class NuclearHeatingRenormalisationSingleNullConventional(NuclearHeatingRenormalisation):
+    """cottax node: `calculate_nuclear_heating_renormalisation_single_null_conventional`.
+    `n_divertors == 1` and `itart == 0`.
     """
 
     pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
@@ -1439,6 +1644,44 @@ class NuclearHeatingRenormalisationSingleNullConventional(ExplicitFunction):
         p_neutron_total_mw=From(physics),
     ):
         return calculate_nuclear_heating_renormalisation_single_null_conventional(
+            p_fw_nuclear_heat_total_mw_unnormalised,
+            p_blkt_nuclear_heat_total_mw_unnormalised,
+            p_shld_nuclear_heat_mw_unnormalised,
+            p_tf_nuclear_heat_mw_unnormalised,
+            f_ster_div_single,
+            f_p_blkt_multiplication,
+            p_neutron_total_mw,
+        )
+
+
+class NuclearHeatingRenormalisationDoubleNullConventional(NuclearHeatingRenormalisation):
+    """cottax node: `calculate_nuclear_heating_renormalisation_double_null_conventional`.
+    `n_divertors == 2` and `itart == 0`.
+
+    Written 2026-08-27 with the rest of the double-null wave. Note that the two
+    spherical-tokamak input files that motivated that wave do **not** select it: they
+    set `itart = 1`, so this slot refuses on `('itart_hcpb', 1)` before `n_divertors` is
+    consulted. A conventional-aspect-ratio double-null machine is what reaches it.
+    """
+
+    pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
+    p_fw_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_blkt_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_shld_nuclear_heat_mw = OutputInto(fwbs)
+    p_tf_nuclear_heat_mw = OutputInto(fwbs)
+    p_blkt_multiplication_mw = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        p_fw_nuclear_heat_total_mw_unnormalised=From(ccfe_hcpb),
+        p_blkt_nuclear_heat_total_mw_unnormalised=From(ccfe_hcpb),
+        p_shld_nuclear_heat_mw_unnormalised=From(ccfe_hcpb),
+        p_tf_nuclear_heat_mw_unnormalised=From(ccfe_hcpb),
+        f_ster_div_single=From(fwbs),
+        f_p_blkt_multiplication=From(fwbs),
+        p_neutron_total_mw=From(physics),
+    ):
+        return calculate_nuclear_heating_renormalisation_double_null_conventional(
             p_fw_nuclear_heat_total_mw_unnormalised,
             p_blkt_nuclear_heat_total_mw_unnormalised,
             p_shld_nuclear_heat_mw_unnormalised,

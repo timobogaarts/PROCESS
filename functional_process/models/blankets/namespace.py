@@ -30,21 +30,21 @@ import dataclasses
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.blankets.blanket_library import (
-    BlanketCoverageFactorsSingleNull,
-    BlanketHalfHeightSingleNull,
+    BlanketCoverageFactors,
+    BlanketHalfHeight,
     EllipticalBlanketAreas,
     EllipticalBlanketVolumes,
 )
 from functional_process.models.blankets.hcpb import (
     CentrepostNeutronicsAbsent,
     ComponentMasses,
-    DivertorSurfaceAndPlateMassSingleNull,
+    DivertorSurfaceAndPlateMass,
     FirstWallCoolantVoidFractions,
     FirstWallRadiationPowers,
     NuclearHeatingBlanket,
     NuclearHeatingFw,
     NuclearHeatingMagnetsConventional,
-    NuclearHeatingRenormalisationSingleNullConventional,
+    NuclearHeatingRenormalisation,
     NuclearHeatingShieldConventional,
     PumpingPowerMechanicalWithPressureDrop,
 )
@@ -66,9 +66,9 @@ class CcfeHcpb(ModelNamespace):
 
     # ---- blanket_library.py: the geometry `component_masses` runs on ----------------
 
-    blanket_half_height: BlanketHalfHeightSingleNull = dataclasses.field(kw_only=True)
-    """`.divertor.n_divertors` -- the single-null arm is written; the double-null arm
-    (`blanket_library.py:169-232`'s other half) is not."""
+    blanket_half_height: BlanketHalfHeight = dataclasses.field(kw_only=True)
+    """`.divertor.n_divertors` -- **both** arms are written (2026-08-27). They differ by
+    five reads (`blanket_library.py:169-232`), which is why they are two occupants."""
 
     blanket_areas: EllipticalBlanketAreas = dataclasses.field(kw_only=True)
     """The elliptical arm of `component_volumes`' shape decision.
@@ -82,11 +82,10 @@ class CcfeHcpb(ModelNamespace):
     blanket_volumes: EllipticalBlanketVolumes = dataclasses.field(kw_only=True)
     """The same joint arm as `blanket_areas`; one input value filling two slots."""
 
-    blanket_coverage_factors: BlanketCoverageFactorsSingleNull = dataclasses.field(
-        kw_only=True
-    )
-    """`.divertor.n_divertors`. Owns `.fwbs.vol_blkt_total`, which is what the whole of
-    `blanket_library.py` exists to reach."""
+    blanket_coverage_factors: BlanketCoverageFactors = dataclasses.field(kw_only=True)
+    """`.divertor.n_divertors` -- both arms written (2026-08-27). Owns
+    `.fwbs.vol_blkt_total`, which is what the whole of `blanket_library.py` exists to
+    reach."""
 
     # ---- hcpb.py: masses ------------------------------------------------------------
 
@@ -96,12 +95,12 @@ class CcfeHcpb(ModelNamespace):
     """The node that makes the rest of this file acyclic (`hcpb.md` §"the two cycles").
     Unswitched."""
 
-    divertor_surface_and_plate_mass: DivertorSurfaceAndPlateMassSingleNull = (
-        dataclasses.field(kw_only=True)
+    divertor_surface_and_plate_mass: DivertorSurfaceAndPlateMass = dataclasses.field(
+        kw_only=True
     )
     """`.divertor.n_divertors` -- `hcpb.py:360-361` doubles `a_div_surface_total` on the
-    double-null arm. Owns `.divertor.a_div_surface_total`, which `.costs.divertor_cost`
-    reads."""
+    double-null arm; both arms written (2026-08-27). Owns
+    `.divertor.a_div_surface_total`, which `.costs.divertor_cost` reads."""
 
     component_masses: ComponentMasses = ComponentMasses()
     """Unswitched, once the divertor pair above is a slot of its own. Owns four of this
@@ -136,13 +135,14 @@ class CcfeHcpb(ModelNamespace):
     literal assignments, and the fields have readers in `power.py`, `tfcoil/base.py` and
     `availability.py`."""
 
-    nuclear_heating_renormalisation: NuclearHeatingRenormalisationSingleNullConventional = dataclasses.field(
+    nuclear_heating_renormalisation: NuclearHeatingRenormalisation = dataclasses.field(
         kw_only=True
-    )  # noqa: E501
-    """`.divertor.n_divertors` **and** `.physics.itart` together. Owns four more boundary
-    variables, one of which -- `.fwbs.p_tf_nuclear_heat_mw` -- has a second producer on
-    the *stellarator* tree; see the class's own docstring for why that is a record and
-    not a conflict."""
+    )
+    """`.divertor.n_divertors` **and** `.physics.itart` together -- a 2x2 of which the
+    two `itart == 0` cells are written (2026-08-27). Owns four more boundary variables,
+    one of which -- `.fwbs.p_tf_nuclear_heat_mw` -- has a second producer on the
+    *stellarator* tree; see the class's own docstring for why that is a record and not a
+    conflict."""
 
     # ---- hcpb.py: powerflow_calc ----------------------------------------------------
 

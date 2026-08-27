@@ -14,11 +14,22 @@ Legacy sample points are lifted verbatim from
 they were generated from `large_tokamak.IN.DAT`/`large_tokamak_eval.IN.DAT` -- the same
 reference run `_audit/tokamak_call_surface.md` traced, so they are on the operating point
 this port targets rather than near it.
+
+2026-08-27: the two `n_divertors == 2` occupants joined
+(`TestBlktHalfHeightDoubleNull`, `TestApplyCoverageFactorsDoubleNull`). The half-height
+adapter **poisons** the five parameters the double-null arm does not read with `nan`
+rather than zeroing them, so "PROCESS does not look at these" is executed rather than
+asserted: were the branch not taken, the reference would return `nan` and the value
+comparison would fail instead of quietly agreeing on a zero.
 """
+
+import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.blankets.blanket_library import (
+    apply_coverage_factors_double_null,
     apply_coverage_factors_single_null,
+    calculate_blkt_half_height_double_null,
     calculate_blkt_half_height_single_null,
     calculate_elliptical_blkt_areas,
     calculate_elliptical_blkt_volumes,
@@ -64,6 +75,18 @@ _GEOMETRY_FUZZ = {
     "dz_blkt_half": (5.5, 6.5),
 }
 
+_COVERAGE_FUZZ = {
+    # `f_ster_div_single` stops well short of `0.5`, which is where the double-null
+    # arm's `1 - 2 * f_ster_div_single` changes sign; both arms are exercised over the
+    # same box so a difference between them is the branch and not the domain.
+    "a_blkt_total_surface_full_coverage": (800.0, 3000.0),
+    "a_blkt_inboard_surface_full_coverage": (300.0, 900.0),
+    "f_ster_div_single": (0.02, 0.2),
+    "f_a_fw_outboard_hcd": (0.0, 0.1),
+    "vol_blkt_total_full_coverage": (600.0, 2500.0),
+    "vol_blkt_inboard_full_coverage": (150.0, 600.0),
+}
+
 
 def _blanket_library():
     """A `CCFE_HCPB` with a fresh `DataStructure`, used as a `BlanketLibrary`.
@@ -107,6 +130,31 @@ def _reference_blkt_half_height_single_null(
     )
 
 
+def _reference_blkt_half_height_double_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+):
+    """`calculate_blkt_half_height` at `n_divertors == 2`.
+
+    The five parameters this arm does not read are passed as `nan`, not `0.0` -- see the
+    module docstring. PROCESS's signature still demands values for them.
+    """
+    return CCFE_HCPB.calculate_blkt_half_height(
+        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
+        dz_xpoint_divertor=dz_xpoint_divertor,
+        dz_divertor=dz_divertor,
+        z_plasma_xpoint_upper=np.nan,
+        dr_fw_plasma_gap_inboard=np.nan,
+        dr_fw_plasma_gap_outboard=np.nan,
+        dr_fw_inboard=np.nan,
+        dr_fw_outboard=np.nan,
+        dz_blkt_upper=dz_blkt_upper,
+        n_divertors=2,
+    )
+
+
 def _reference_elliptical_blkt_areas(**kwargs):
     """`calculate_elliptical_blkt_areas`, already a bare `@staticmethod`."""
     return CCFE_HCPB.calculate_elliptical_blkt_areas(**kwargs)
@@ -135,6 +183,46 @@ def _reference_apply_coverage_factors_single_null(
     data = model.data
 
     data.divertor.n_divertors = 1
+    data.build.a_blkt_total_surface_full_coverage = a_blkt_total_surface_full_coverage
+    data.build.a_blkt_inboard_surface_full_coverage = (
+        a_blkt_inboard_surface_full_coverage
+    )
+    data.fwbs.f_ster_div_single = f_ster_div_single
+    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
+    data.fwbs.vol_blkt_total_full_coverage = vol_blkt_total_full_coverage
+    data.fwbs.vol_blkt_inboard_full_coverage = vol_blkt_inboard_full_coverage
+
+    model.apply_coverage_factors()
+
+    return (
+        data.build.a_blkt_outboard_surface,
+        data.build.a_blkt_total_surface,
+        data.fwbs.vol_blkt_outboard,
+        data.fwbs.vol_blkt_inboard,
+        data.build.a_blkt_inboard_surface,
+        data.fwbs.vol_blkt_total,
+    )
+
+
+def _reference_apply_coverage_factors_double_null(
+    a_blkt_total_surface_full_coverage,
+    a_blkt_inboard_surface_full_coverage,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    vol_blkt_total_full_coverage,
+    vol_blkt_inboard_full_coverage,
+):
+    """Bind a `DataStructure` and call `apply_coverage_factors()` at `n_divertors == 2`.
+
+    Same six fields as the single-null adapter -- the arms differ by a literal, not by a
+    read -- so this is where PROCESS's areas-doubled/volumes-not asymmetry gets executed
+    rather than argued about: if the port had "fixed" the volume line, the two would
+    disagree here.
+    """
+    model = _blanket_library()
+    data = model.data
+
+    data.divertor.n_divertors = 2
     data.build.a_blkt_total_surface_full_coverage = a_blkt_total_surface_full_coverage
     data.build.a_blkt_inboard_surface_full_coverage = (
         a_blkt_inboard_surface_full_coverage
@@ -192,6 +280,36 @@ class TestBlktHalfHeightSingleNull(Tier1Contract):
         "dr_fw_plasma_gap_outboard": (0.1, 0.5),
         "dr_fw_inboard": (0.005, 0.05),
         "dr_fw_outboard": (0.005, 0.05),
+    }
+
+
+class TestBlktHalfHeightDoubleNull(Tier1Contract):
+    """`calculate_blkt_half_height_double_null` -> the `n_divertors == 2` arm.
+
+    Same geometry point as the single-null case above, minus the five parameters this
+    arm does not read -- so the two contracts share an operating point and differ only
+    in the branch, which is the comparison worth being able to make.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_blkt_half_height_double_null
+    ported = calculate_blkt_half_height_double_null
+
+    samples = [
+        legacy_sample(
+            "half-height-double-null-large-tokamak",
+            z_plasma_xpoint_lower=4.93333333333333333,
+            dz_xpoint_divertor=2.0018838307941582,
+            dz_divertor=0.62000000000000011,
+            dz_blkt_upper=0.85000000000000009,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "z_plasma_xpoint_lower": (3.0, 7.0),
+        "dz_xpoint_divertor": (1.0, 3.0),
+        "dz_divertor": (0.3, 1.0),
+        "dz_blkt_upper": (0.5, 1.2),
     }
 
 
@@ -290,11 +408,42 @@ class TestApplyCoverageFactorsSingleNull(Tier1Contract):
         ),
     ]
 
-    fuzz_bounds = {
-        "a_blkt_total_surface_full_coverage": (800.0, 3000.0),
-        "a_blkt_inboard_surface_full_coverage": (300.0, 900.0),
-        "f_ster_div_single": (0.02, 0.2),
-        "f_a_fw_outboard_hcd": (0.0, 0.1),
-        "vol_blkt_total_full_coverage": (600.0, 2500.0),
-        "vol_blkt_inboard_full_coverage": (150.0, 600.0),
-    }
+    fuzz_bounds = _COVERAGE_FUZZ
+
+
+class TestApplyCoverageFactorsDoubleNull(Tier1Contract):
+    """`apply_coverage_factors_double_null` -> `apply_coverage_factors()` at
+    `n_divertors == 2`.
+
+    The same two legacy points as the single-null case, since the arms take the same six
+    inputs. `f_ster_div_single` stays below `0.5` throughout so `1 - 2 * f_ster_div_
+    single` remains positive -- above it the doubled coverage would exceed the whole
+    sphere, which is not a regime PROCESS's formula means anything in.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_apply_coverage_factors_double_null
+    ported = apply_coverage_factors_double_null
+
+    samples = [
+        legacy_sample(
+            "coverage-double-null-large-tokamak-eval",
+            a_blkt_total_surface_full_coverage=1766.3354109399943,
+            a_blkt_inboard_surface_full_coverage=664.9687712975541,
+            f_ster_div_single=0.115,
+            f_a_fw_outboard_hcd=0,
+            vol_blkt_total_full_coverage=1336.207205897842,
+            vol_blkt_inboard_full_coverage=315.83946385183026,
+        ),
+        legacy_sample(
+            "coverage-double-null-reference-run",
+            a_blkt_total_surface_full_coverage=1766.3354109399945,
+            a_blkt_inboard_surface_full_coverage=663.622172160947,
+            f_ster_div_single=0.0725040362777958,
+            f_a_fw_outboard_hcd=0.0,
+            vol_blkt_total_full_coverage=1338.8701833977761,
+            vol_blkt_inboard_full_coverage=315.9239262058935,
+        ),
+    ]
+
+    fuzz_bounds = _COVERAGE_FUZZ

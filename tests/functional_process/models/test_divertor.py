@@ -7,12 +7,18 @@ Audit record: `functional_process/_audit/units/models/divertor.md`. Two units:
 - `TestCalculateDivertorHeatFluxSplit` -- `Divertor.run()`'s unconditional preamble.
 - `TestCalculateDivertorHeatLoadWade` -- `Divertor.divwade`, `n_divertors == 1`
   (single null) baked in.
+- `TestCalculateDivertorHeatLoadWadeDoubleNull` -- the same at `n_divertors == 2`,
+  added 2026-08-27. This one **cannot** poison its extra input: `f_p_div_lower` is the
+  arm's whole point, so the contract instead keeps every sample away from
+  `f_p_div_lower == 0.5`, where PROCESS's own `max` has a kink and no finite difference
+  and no autodiff rule can agree by construction. See the port function's docstring.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.divertor import (
     calculate_divertor_heat_flux_split,
     calculate_divertor_heat_load_wade,
+    calculate_divertor_heat_load_wade_double_null,
 )
 from process.core.model import DataStructure
 from process.models.divertor import Divertor
@@ -144,4 +150,95 @@ class TestCalculateDivertorHeatLoadWade(Tier1Contract):
         "nd_plasma_separatrix_electron": (1.0e18, 1.0e20),
         "deg_div_field_plate": (1.0, 15.0),
         "rad_fraction_sol": (0.1, 0.9),
+    }
+
+
+def _reference_divertor_heat_load_wade_double_null(
+    rmajor,
+    rminor,
+    aspect,
+    b_plasma_toroidal_on_axis,
+    b_plasma_poloidal_average,
+    p_plasma_separatrix_mw,
+    f_div_flux_expansion,
+    nd_plasma_separatrix_electron,
+    deg_div_field_plate,
+    rad_fraction_sol,
+    f_p_div_lower,
+):
+    """`Divertor.divwade` at `n_divertors == 2` -- the `DataStructure` default, though
+    it is set here explicitly rather than relied on.
+    """
+    data = DataStructure()
+    data.divertor.n_divertors = 2
+    data.tfcoil.drtop = 0.0
+    d = Divertor()
+    d.data = data
+    return d.divwade(
+        rmajor,
+        rminor,
+        aspect,
+        b_plasma_toroidal_on_axis,
+        b_plasma_poloidal_average,
+        p_plasma_separatrix_mw,
+        f_div_flux_expansion,
+        nd_plasma_separatrix_electron,
+        deg_div_field_plate,
+        rad_fraction_sol,
+        f_p_div_lower=f_p_div_lower,
+        output=False,
+    )
+
+
+class TestCalculateDivertorHeatLoadWadeDoubleNull(Tier1Contract):
+    """`calculate_divertor_heat_load_wade_double_null` -> `Divertor.divwade` at
+    `n_divertors == 2`.
+
+    Same `arcsin`-domain caveat as the single-null contract (`reference_domain_errors`).
+
+    **`f_p_div_lower` is held off `0.5`, on both sides of it.** The legacy point uses
+    `0.7` (`max` picks the lower divertor) and the fuzz box is `(0.0, 0.45)` (`max`
+    picks the upper), so each branch of the comparison is exercised and neither sample
+    sits on the tie. `0.5` -- which is what both spherical-tokamak files actually set --
+    is deliberately excluded: there the two arms of PROCESS's `max` are equal, the
+    *value* is unambiguous and the derivative is not, and `jnp.maximum` splits the
+    tangent between the arms where a one-sided finite difference commits to one.
+    Testing there would assert a convention, not agreement. The kink is PROCESS's model,
+    recorded in the port function's docstring rather than smoothed.
+    """
+
+    audit_record = "models/divertor.md"
+    reference = _reference_divertor_heat_load_wade_double_null
+    ported = calculate_divertor_heat_load_wade_double_null
+    reference_domain_errors = (ValueError,)
+
+    samples = [
+        legacy_sample(
+            "divwade-legacy-double-null",
+            rmajor=2.0,
+            rminor=1.0,
+            aspect=2.0,
+            b_plasma_toroidal_on_axis=0.5,
+            b_plasma_poloidal_average=0.09595,
+            p_plasma_separatrix_mw=1.0e2,
+            f_div_flux_expansion=2.0,
+            nd_plasma_separatrix_electron=1.0e19,
+            deg_div_field_plate=5.0,
+            rad_fraction_sol=8.0e-1,
+            f_p_div_lower=0.7,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "rmajor": (2.0, 20.0),
+        "rminor": (0.5, 5.0),
+        "aspect": (1.5, 4.0),
+        "b_plasma_toroidal_on_axis": (1.0, 12.0),
+        "b_plasma_poloidal_average": (0.05, 1.5),
+        "p_plasma_separatrix_mw": (10.0, 500.0),
+        "f_div_flux_expansion": (1.0, 5.0),
+        "nd_plasma_separatrix_electron": (1.0e18, 1.0e20),
+        "deg_div_field_plate": (1.0, 15.0),
+        "rad_fraction_sol": (0.1, 0.9),
+        "f_p_div_lower": (0.0, 0.45),
     }

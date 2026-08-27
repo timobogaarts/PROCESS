@@ -176,3 +176,73 @@ None.
 - **Registration shape.** Whether `DivertorHeatFluxSplit`/`DivertorHeatLoadWade` should
   be two sibling sub-nodes of one `.tokamak.divertor` namespace, or two independently
   addressable slots, is left to the consolidation pass — see final report.
+
+
+## 2026-08-27 — the `n_divertors == 2` arm ported (double-null wave)
+
+`divwade`'s own internal `n_divertors` branch (`process/models/divertor.py:377-382`) has
+an occupant. `.tokamak.divertor.heat_load` is a family of two: `DivertorHeatLoadWade` is
+the abstract base, `DivertorHeatLoadWadeSingleNull` the occupant this slot already had,
+and `DivertorHeatLoadWadeDoubleNull` the new one. `_divertor_heat_load_arm` gains arm `1`
+and the `('divertor_heat_load_arm', -3)` refusal is gone; the two `i_div_heat_load`
+refusals (`USER_INPUT`, `PENG_CHAMBER`) are untouched — those are different *models* of
+this quantity, not members of this family, which is why the joint arm function still
+answers both switches in one place.
+
+**The shared body was factored out, not duplicated.** Everything above the branch
+(`:322-374`, the Wade scaling) is now `_divwade_hldiv_base`, module-private and not a
+node — it owns no `VarPath`. Both occupants call it.
+`calculate_divertor_heat_load_wade` is `_divwade_hldiv_base` returned unchanged (the
+`else` arm at `:382`), so its values and its `safe_pow` treatment are bit-identical to
+before. The `b_plasma_toroidal_on_axis` singularity registered in `_harness/boundary.py`
+is one singularity with two entry points now, and is registered under both contract
+names.
+
+### The new read has no producer, and that is the answer
+
+**`.physics.f_p_div_lower` is a declared boundary input.** Measured, not assumed —
+`grep -rn f_p_div_lower process/`:
+
+| site | role |
+|---|---|
+| `process/data_structure/physics_variables.py:740` | declaration, default `1.0` |
+| `process/core/input.py:189` | `InputVariable("physics", float, range=(0.0, 1.0))` — user-settable |
+| `process/core/scan.py:194` | scan variable 51 |
+| `process/core/init.py:721` | read, a consistency check |
+| `process/models/divertor.py:101`, `:378-379` | read |
+| `process/models/physics/physics.py:852`, `:1008-1052` | read |
+
+**Written nowhere outside the input parser.** It is an input in PROCESS and it is an
+input here: the occupant declares the read, the boundary census counts it, and a machine
+assembled from this arm says out loud that it needs a number the graph cannot compute.
+Not stubbed — a default of `1.0` would silently pick the lower divertor and make the
+`max` inert, which is precisely the invented-answer failure this port exists to make
+impossible. Both spherical-tokamak files set it explicitly
+(`spherical_tokamak_eval.IN.DAT:266`, `st_regression.IN.DAT:634`, both `0.5`).
+
+### `max` at the tie is a kink of PROCESS's model, not of the port
+
+`max(f * base, (1 - f) * base)` has its two arms equal at `f_p_div_lower == 0.5` — which
+is what both spherical-tokamak files set. The *value* there is unambiguous
+(`0.5 * base` either way). The *derivative* is not: `jnp.maximum`'s JVP splits the tangent
+evenly between the arms, while PROCESS's own one-sided finite difference commits to one of
+them. Neither is wrong; there is no derivative to agree about. Recorded rather than
+smoothed — a double-null machine balanced exactly between its divertors sits at a kink of
+its own heat-load definition, and any repair would be a modelling choice about which
+divertor to prefer, not a mechanical fix (the same discipline `_harness/boundary.py`
+applies to its registered singularities).
+
+Practical consequence for whoever assembles a spherical tokamak later: an `Optimise`
+block containing this node with `f_p_div_lower` pinned at `0.5` has a non-smooth
+objective there. Worth knowing before it is diagnosed as a solver problem.
+
+**Tests.** `TestCalculateDivertorHeatLoadWadeDoubleNull`, Tier 1, with the same
+`arcsin`-domain declaration as its sibling. `f_p_div_lower` is held off `0.5` **on both
+sides**: the legacy point uses `0.7` (`max` picks the lower divertor) and the fuzz box is
+`(0.0, 0.45)` (`max` picks the upper), so each branch of the comparison is exercised and
+no sample sits on the tie. Green at `--fp-gradients --fp-fuzz 40`.
+
+The § data footprint row for `.physics.f_p_div_lower` ("**not read** — only reached inside
+the `n_divertors == 2` branch, UNPORTED here") is superseded for the double-null occupant:
+it is read there, as a boundary input. The single-null occupant still does not read it,
+and the row stands for that one.

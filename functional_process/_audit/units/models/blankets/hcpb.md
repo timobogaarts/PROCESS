@@ -589,3 +589,54 @@ None among the three. All are dead-ends — confirmed by direct read and by grep
    `write_output` (`hcpb.py:584`). It is a reporting output. `NuclearHeatingMagnets*`
    still owns it, because PROCESS writes it and an unowned written field is a boundary
    input in disguise.
+
+
+## 2026-08-27 — the `n_divertors == 2` arms ported (double-null wave)
+
+This file's two `n_divertors` sites, named by `indat.py`'s now-deleted
+`('n_divertors', 2)` refusal, both have occupants.
+
+| slot | single-null occupant | double-null occupant |
+|---|---|---|
+| `.tokamak.ccfe_hcpb.divertor_surface_and_plate_mass` | `DivertorSurfaceAndPlateMassSingleNull` | `DivertorSurfaceAndPlateMassDoubleNull` |
+| `.tokamak.ccfe_hcpb.nuclear_heating_renormalisation` | `NuclearHeatingRenormalisationSingleNullConventional` | `NuclearHeatingRenormalisationDoubleNullConventional` |
+
+New family bases `DivertorSurfaceAndPlateMass` and `NuclearHeatingRenormalisation` carry
+the slot annotations in `models/blankets/namespace.py`.
+
+**Divertor surface and plate mass (`hcpb.py:353-367`).** `if n_divertors == 2:
+a_div_surface_total *= 2.0` — two divertors, twice the plate area, and twice the mass that
+follows. The arms read the same six fields and differ by one literal factor; that is still
+an occupant and not an `n_divertors` multiplier, under `next_steps.md` §14.2's `istore`
+precedent. The read/own conflict recorded above — this node writes
+`.divertor.a_div_surface_total` while `ComponentMasses` reads it, so it is ordered before
+`ComponentMasses` — is unchanged and applies to both arms.
+
+**Nuclear-heating renormalisation (`hcpb.py:213-217`).** PROCESS spells `f_geom_blanket`
+as `1 - n_divertors * f_ster_div_single - f_geom_cp` — a *multiplication*, not an `if`,
+which is exactly why the two arms are the same shape with a different constant. At
+`n_divertors == 2` and `f_geom_cp` the conventional arm's literal `0` (`:144`), it is
+`1 - 2 * f_ster_div_single`. Everything else, including the two deliberate
+non-declarations `itart == 0` buys (`+ pnuc_cp_tf` provably `+ 0` at `:263`;
+`f_geom_cp * p_neutron_total_mw` provably `0` at `:268`), is unchanged.
+
+**This slot is a 2x2 and only its `itart == 0` row is written**, which is why
+`_nuclear_heating_renormalisation_arm` now asks `itart` *first*: a spherical machine
+refuses on `('itart_hcpb', 1)` however its divertors are counted, and reporting the
+divertor count instead would name a precondition the port now meets. Consequence worth
+stating plainly: **neither spherical-tokamak input file reaches the new renormalisation
+arm**, because both set `itart = 1`. It was written because `hcpb.py:215` is one of the
+double-null wave's named sites and because a conventional double-null machine needs it;
+it does not by itself move those two files' frontier. Open question 3's answer stands
+unchanged.
+
+**Tests.** `TestDivertorSurfaceAndPlateMassDoubleNull` and
+`TestNuclearHeatingRenormalisationDoubleNull`, both Tier 1, both reusing their
+single-null sibling's legacy point and fuzz box — with `f_ster_div_single` capped below
+`0.5`, where `1 - 2 * f_ster_div_single` changes sign and the renormalisation stops
+meaning anything. The renormalisation reference is the existing `_RenormalisationOnly`
+subclass driven at `n_divertors = 2`; `_seed_component_masses` and `_run_renormalisation`
+gained an `n_divertors` parameter defaulting to `1`, so no existing case moved. Green at
+`--fp-gradients --fp-fuzz 40`.
+
+No new boundary input.

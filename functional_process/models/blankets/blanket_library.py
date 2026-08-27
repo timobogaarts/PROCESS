@@ -23,10 +23,18 @@ their writes lands in `.blanket.*` or in `.fwbs.b_bz_liq`/`a_bz_liq`/
 elliptical blanket geometry on `itart == 1 or i_fw_blkt_vv_shape == D_SHAPED`; the
 reference run has `itart = 0` and `i_fw_blkt_vv_shape = 2` (`ELLIPTICAL_SHAPED`), so only
 the elliptical arm is ported. `calculate_blkt_half_height` and `apply_coverage_factors`
-branch on `n_divertors == 2`; the reference run has `n_divertors = 1`, so only the
-single-null arm is ported. Every unported arm is named as UNPORTED in the audit record
-rather than folded into a `jnp.where` -- the union-of-arms reads is the invented-edge
-defect this port exists to remove (`next_steps.md` §14.2).
+branch on `n_divertors == 2`; the reference run has `n_divertors = 1`. Every unported arm
+is named as UNPORTED in the audit record rather than folded into a `jnp.where` -- the
+union-of-arms reads is the invented-edge defect this port exists to remove
+(`next_steps.md` §14.2).
+
+2026-08-27 (the double-null wave, for the two spherical-tokamak input files that set
+`i_single_null = 0`): **both** `n_divertors` slots are now total -- the double-null arms
+of the half-height and of the coverage factors are written beside their single-null
+siblings, each a separate occupant with its own reads-set. The half-height's two arms
+differ by five reads and the coverage factors' by a literal, and per `next_steps.md`
+§14.2 (the `istore` precedent) a literal is enough: a switch value selects an occupant.
+`n_divertors` is still a parameter of nothing.
 """
 
 import jax.numpy as jnp
@@ -142,8 +150,8 @@ def calculate_blkt_half_height_single_null(
     """Blanket half-height, single-null arm (`n_divertors == 1`).
 
     Ports the `else` arm of `blanket_library.py:220-229`'s `if n_divertors == 2`. The
-    double-null arm (`z_top = z_bottom`) is **UNPORTED** -- see the audit record. Note
-    the arms genuinely differ in *reads*: the double-null arm needs neither
+    double-null arm (`z_top = z_bottom`) is `calculate_blkt_half_height_double_null`
+    below. Note the arms genuinely differ in *reads*: the double-null arm needs neither
     `z_plasma_xpoint_upper` nor any of the four gap/first-wall thicknesses, so folding
     them into one `jnp.where` would declare five edges a double-null machine does not
     have.
@@ -185,6 +193,46 @@ def calculate_blkt_half_height_single_null(
     )
 
     return 0.5 * (z_top + z_bottom)
+
+
+def calculate_blkt_half_height_double_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+):
+    """Blanket half-height, double-null arm (`n_divertors == 2`).
+
+    Ports the `if n_divertors == 2` arm of `blanket_library.py:220-229`. A double-null
+    machine is vertically symmetric, so PROCESS sets `z_top = z_bottom` and the
+    `0.5 * (z_top + z_bottom)` that follows collapses to `z_bottom` itself -- written
+    out reduced, as `shield.py`'s `calculate_shield_half_height_double_null` does for
+    the identical branch. (The reduction is exact in floating point, not merely
+    algebraic: `x + x` is representable and `0.5 * (x + x)` is `x` to the bit.)
+
+    **Five fewer reads than the single-null sibling**, which is why this is a second
+    occupant rather than a `jnp.where` over one: `z_plasma_xpoint_upper` and the four
+    gap/first-wall thicknesses are not read by a double-null machine at all, and
+    declaring them would invent five edges.
+
+    Parameters
+    ----------
+    z_plasma_xpoint_lower :
+        Lower vertical position of the plasma X-point (m).
+        `.build.z_plasma_xpoint_lower`.
+    dz_xpoint_divertor :
+        Vertical distance from X-point to divertor (m). `.build.dz_xpoint_divertor`.
+    dz_divertor :
+        Vertical thickness of the divertor (m). `.divertor.dz_divertor`.
+    dz_blkt_upper :
+        Vertical thickness of the upper blanket (m). `.build.dz_blkt_upper`.
+
+    Returns
+    -------
+    :
+        Blanket half-height `dz_blkt_half` (m). `.blanket.dz_blkt_half`.
+    """
+    return z_plasma_xpoint_lower + dz_xpoint_divertor + dz_divertor - dz_blkt_upper
 
 
 def calculate_elliptical_blkt_areas(
@@ -300,10 +348,10 @@ def apply_coverage_factors_single_null(
     Ports the `n_divertors != 2` arm of `apply_coverage_factors`
     (`blanket_library.py:532-584`), closing its `self.data` back-door. The double-null
     arm differs only in a literal (`2.0 * f_ster_div_single` in place of
-    `f_ster_div_single`, `blanket_library.py:544`) and is **UNPORTED**: under
-    `next_steps.md` §14.2 a switch value selects an occupant even when the arms differ
-    only in a literal -- the `istore` precedent -- so it is a second class to write, not
-    a `jnp.where`.
+    `f_ster_div_single`, `blanket_library.py:544`) and is
+    `apply_coverage_factors_double_null` below: under `next_steps.md` §14.2 a switch
+    value selects an occupant even when the arms differ only in a literal -- the
+    `istore` precedent -- so it is a second class, not a `jnp.where`.
 
     Parameters
     ----------
@@ -355,7 +403,98 @@ def apply_coverage_factors_single_null(
     )
 
 
-class BlanketHalfHeightSingleNull(ExplicitFunction):
+def apply_coverage_factors_double_null(
+    a_blkt_total_surface_full_coverage,
+    a_blkt_inboard_surface_full_coverage,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    vol_blkt_total_full_coverage,
+    vol_blkt_inboard_full_coverage,
+):
+    """Blanket areas and volumes after divertor/HCD coverage, double-null arm
+    (`n_divertors == 2`).
+
+    Ports the `if n_divertors == 2` arm of `apply_coverage_factors`
+    (`blanket_library.py:538-548`) plus the unbranched tail (`:561-584`) it shares with
+    its single-null sibling.
+
+    **The two divertors are counted in the areas and not in the volumes, and that is
+    PROCESS's own asymmetry, transcribed rather than repaired.** Only the
+    `a_blkt_outboard_surface` assignment sits inside the `if`; `vol_blkt_outboard`
+    (`blanket_library.py:565-573`) is written *below* the branch and uses the
+    single-divertor `1 - f_ster_div_single - f_a_fw_outboard_hcd` on both arms. So a
+    double-null machine subtracts two divertors' solid angle from its blanket *surface*
+    and one divertor's from its blanket *volume*. Nothing in `blanket_library.py`
+    justifies the difference and no comment mentions it; it reads as an arm that was
+    edited where the branch was and not where it was not. Recorded as a defect in
+    `_audit/units/models/blankets/blanket_library.md` (§ 2026-08-27) and reproduced
+    exactly here, per `traceability_policy.md`: the port's job is to agree with PROCESS,
+    including where PROCESS is wrong.
+
+    Parameters
+    ----------
+    a_blkt_total_surface_full_coverage, a_blkt_inboard_surface_full_coverage :
+        Blanket surface areas at 100 % coverage (m2).
+        `.build.a_blkt_total_surface_full_coverage`,
+        `.build.a_blkt_inboard_surface_full_coverage` -- `EllipticalBlanketAreas`'s
+        outputs.
+    f_ster_div_single :
+        Divertor solid-angle fraction **per divertor**. `.fwbs.f_ster_div_single`
+        (`divertor.py:42`) -- the `2.0 *` below is where the second divertor enters.
+    f_a_fw_outboard_hcd :
+        Fraction of the outboard first-wall area taken by HCD apparatus.
+        `.fwbs.f_a_fw_outboard_hcd`.
+    vol_blkt_total_full_coverage, vol_blkt_inboard_full_coverage :
+        Blanket volumes at 100 % coverage (m3). `EllipticalBlanketVolumes`'s outputs.
+
+    Returns
+    -------
+    tuple
+        `(a_blkt_outboard_surface, a_blkt_total_surface, vol_blkt_outboard,
+        vol_blkt_inboard, a_blkt_inboard_surface, vol_blkt_total)` -- PROCESS's own
+        write order.
+    """
+    # `blanket_library.py:541-547` -- inside the `n_divertors == 2` branch.
+    covered_area = 1.0 - 2.0 * f_ster_div_single - f_a_fw_outboard_hcd
+    # `blanket_library.py:565-572` -- below the branch, one divertor on both arms.
+    covered_volume = 1.0 - f_ster_div_single - f_a_fw_outboard_hcd
+
+    a_blkt_outboard_surface = (
+        a_blkt_total_surface_full_coverage * covered_area
+        - a_blkt_inboard_surface_full_coverage
+    )
+    a_blkt_total_surface = a_blkt_inboard_surface_full_coverage + a_blkt_outboard_surface
+
+    vol_blkt_outboard = (
+        vol_blkt_total_full_coverage * covered_volume - vol_blkt_inboard_full_coverage
+    )
+    vol_blkt_inboard = vol_blkt_inboard_full_coverage
+
+    a_blkt_inboard_surface = a_blkt_inboard_surface_full_coverage
+
+    vol_blkt_total = vol_blkt_inboard_full_coverage + vol_blkt_outboard
+
+    return (
+        a_blkt_outboard_surface,
+        a_blkt_total_surface,
+        vol_blkt_outboard,
+        vol_blkt_inboard,
+        a_blkt_inboard_surface,
+        vol_blkt_total,
+    )
+
+
+class BlanketHalfHeight(ExplicitFunction):
+    """The family that owns `.blanket.dz_blkt_half`: one occupant per `n_divertors` arm
+    of `BlanketLibrary.calculate_blkt_half_height`.
+
+    Both arms are written (2026-08-27), so this slot is total. They are separate
+    occupants and not one node with a `jnp.where` because the double-null arm reads five
+    fields fewer -- see `calculate_blkt_half_height_double_null`.
+    """
+
+
+class BlanketHalfHeightSingleNull(BlanketHalfHeight):
     """cottax node: `calculate_blkt_half_height_single_null`. `n_divertors == 1`."""
 
     dz_blkt_half = OutputInto(blanket)
@@ -382,6 +521,31 @@ class BlanketHalfHeightSingleNull(ExplicitFunction):
             dr_fw_plasma_gap_outboard,
             dr_fw_inboard,
             dr_fw_outboard,
+        )
+
+
+class BlanketHalfHeightDoubleNull(BlanketHalfHeight):
+    """cottax node: `calculate_blkt_half_height_double_null`. `n_divertors == 2`.
+
+    Live on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`, both of which
+    set `i_single_null = 0` (`:292`, `:638`), from which `init.py:606-617` derives
+    `n_divertors = 2`.
+    """
+
+    dz_blkt_half = OutputInto(blanket)
+
+    def __call__(
+        self,
+        z_plasma_xpoint_lower=From(build),
+        dz_xpoint_divertor=From(build),
+        dz_divertor=From(divertor),
+        dz_blkt_upper=From(build),
+    ):
+        return calculate_blkt_half_height_double_null(
+            z_plasma_xpoint_lower,
+            dz_xpoint_divertor,
+            dz_divertor,
+            dz_blkt_upper,
         )
 
 
@@ -459,13 +623,22 @@ class EllipticalBlanketVolumes(ExplicitFunction):
         )
 
 
-class BlanketCoverageFactorsSingleNull(ExplicitFunction):
-    """cottax node: `apply_coverage_factors_single_null`. `n_divertors == 1`.
+class BlanketCoverageFactors(ExplicitFunction):
+    """The family that owns `.fwbs.vol_blkt_total` and the five fields written beside
+    it: one occupant per `n_divertors` arm of `BlanketLibrary.apply_coverage_factors`.
 
-    Owns `.fwbs.vol_blkt_total`, which is what the whole of this file exists to reach:
+    `.fwbs.vol_blkt_total` is what the whole of this file exists to reach:
     `CCFE_HCPB.component_masses` (`hcpb.py:306`, `:419`, `:425`, `:444`) reads it and
     nothing else in the tokamak call surface writes it.
+
+    Both arms are written (2026-08-27); the slot is total. The arms read the same six
+    fields and differ by one literal, which is enough to make them occupants rather than
+    a parameter (`next_steps.md` §14.2, the `istore` precedent).
     """
+
+
+class BlanketCoverageFactorsSingleNull(BlanketCoverageFactors):
+    """cottax node: `apply_coverage_factors_single_null`. `n_divertors == 1`."""
 
     a_blkt_outboard_surface = OutputInto(build)
     a_blkt_total_surface = OutputInto(build)
@@ -484,6 +657,40 @@ class BlanketCoverageFactorsSingleNull(ExplicitFunction):
         vol_blkt_inboard_full_coverage=From(fwbs),
     ):
         return apply_coverage_factors_single_null(
+            a_blkt_total_surface_full_coverage,
+            a_blkt_inboard_surface_full_coverage,
+            f_ster_div_single,
+            f_a_fw_outboard_hcd,
+            vol_blkt_total_full_coverage,
+            vol_blkt_inboard_full_coverage,
+        )
+
+
+class BlanketCoverageFactorsDoubleNull(BlanketCoverageFactors):
+    """cottax node: `apply_coverage_factors_double_null`. `n_divertors == 2`.
+
+    Live on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`. Carries
+    PROCESS's areas-doubled/volumes-not asymmetry unrepaired -- see the function's
+    docstring.
+    """
+
+    a_blkt_outboard_surface = OutputInto(build)
+    a_blkt_total_surface = OutputInto(build)
+    vol_blkt_outboard = OutputInto(fwbs)
+    vol_blkt_inboard = OutputInto(fwbs)
+    a_blkt_inboard_surface = OutputInto(build)
+    vol_blkt_total = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        a_blkt_total_surface_full_coverage=From(build),
+        a_blkt_inboard_surface_full_coverage=From(build),
+        f_ster_div_single=From(fwbs),
+        f_a_fw_outboard_hcd=From(fwbs),
+        vol_blkt_total_full_coverage=From(fwbs),
+        vol_blkt_inboard_full_coverage=From(fwbs),
+    ):
+        return apply_coverage_factors_double_null(
             a_blkt_total_surface_full_coverage,
             a_blkt_inboard_surface_full_coverage,
             f_ster_div_single,
