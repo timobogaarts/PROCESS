@@ -30,9 +30,10 @@ what they say.
 | … accounting | **557 owned variables walked, 0 unaccounted**; 61 switch kwargs checked / 0 mismatched / 3 not data-backed / **0 unresolved** |
 | `GRAPH` (`REFERENCE_CONFIGURATION`) | **159 nodes**; **139 blocks, 14 driven**; **348 unowned inputs** (re-measured 2026-08-25 against `Blocking.scc(driven_graph(GRAPH))`; the 138/349 carried here since `LModeProfileReset` were stale by one, and the model-tree conversion did not move them — before == after) |
 | **MDA from a cold `IN.DAT`** | **137 blocks, 0 failures**, 1 non-finite (`.physics.nu_star`, `nan` in PROCESS too, read by nothing) |
-| SAND | 30 conditions × 23 design, **0 non-finite cells**; graph 171 nodes |
-| SAND C2 (seeded from PROCESS's answer) | **42 SQP iterations**, conv `9.9e-10`, `objf 1.2177574` |
-| **SAND C3 (cold start)** | **100 iterations**, stalls at conv `1.7e-06` (`max\|eq\| 5.5e-10`, feasible) at `objf 1.2177575` — **the same point as C2 to six digits**; §11.11 |
+| SAND | **21 conditions × 14 design**, **0 non-finite cells**; drive 124 nodes (re-measured 2026-08-27; the 30 × 23 carried here is from before ten `FixedPoint`s dissolved into ordinary nodes) |
+| SAND C2 (seeded from PROCESS's answer) | **326 SQP iterations**, conv `8.8e-11`, `objf 1.217757338` |
+| **SAND C3 (cold start)** | **258 iterations**, conv `8.0e-09`, `objf 1.217757452` — **the same point as C2 to six digits**; §11.11 |
+| … and why those are not 42/100 | `max_iter` is 500 for Stage C now, not `VmconDriver`'s PROCESS-inherited 100. The count grew with round 2's switch-to-slot conversion (22 unknowns / 16 equalities → 14 / 8), measured against a `git archive` of the pre-round-2 tree at 131; the cottax version and every condition scale are ruled out. `optimise_design.md` §12. |
 | MDF C2 / C3 | **129 iterations, converged** / **200 iterations, not converged** (was 127/converged before §11.11's node; the cold problem it now solves is a different, correct one) |
 | MDF | 15 conditions × 8 design (`icc` × `ixc`), Jacobian compared to PROCESS's **unreduced** |
 | PROCESS itself, same problem | 46 VMCON iterations, **94 s**, conv `2.40e-07` |

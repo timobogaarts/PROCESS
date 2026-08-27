@@ -774,7 +774,13 @@ def residual_condition_scales(drive, env, floor=1e-12):
 
 
 def sand_schedule(
-    graph, problem_name, driver=None, bounds=(), callback=None, condition_scale=()
+    graph,
+    problem_name,
+    driver=None,
+    bounds=(),
+    callback=None,
+    condition_scale=(),
+    max_iter=None,
 ):
     """A `Schedule` for `graph`'s single `^problem.sand`, answered by `driver`.
 
@@ -782,10 +788,17 @@ def sand_schedule(
     the combined `Optimise` **node definition**, not counted by the caller -- the
     positional contract `_audit/optimise_design.md` §4.1 warns about only exists if
     somebody chooses to count.
+
+    `max_iter` is forwarded the same way, and `None` keeps the driver's own default --
+    see `mda.default_drivers` for what that default is and why a SAND block outgrows it.
     """
     blocking = Blocking.scc(graph)
     drivers = default_drivers(
-        graph, bounds=bounds, callback=callback, condition_scale=condition_scale
+        graph,
+        bounds=bounds,
+        callback=callback,
+        condition_scale=condition_scale,
+        max_iter=max_iter,
     )
     if driver is not None:
         problem = next(

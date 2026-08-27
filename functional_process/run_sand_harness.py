@@ -58,6 +58,40 @@ from functional_process.sand_harness import (  # noqa: E402
 )
 from process.core.solver.iteration_variables import ITERATION_VARIABLES  # noqa: E402
 
+SAND_MAX_ITER = 500
+"""SQP iterations Stage C allows itself, against `VmconDriver`'s own default of 100.
+
+**100 is PROCESS's `n_iteration_max`, for PROCESS's own eight-variable problem**, and it
+was inherited here rather than chosen. The stellarator's SAND block is a different and
+larger problem -- 14 unknowns, 21 conditions -- and it needs more, measured off one
+cached PROCESS run with everything else held fixed:
+
+| | SQP iterations | conv | `objf` |
+|---|---|---|---|
+| C2 (start at PROCESS's `x`) | **326** | `8.8e-11` | 1.217757338 |
+| C3 (cold) | **258** | `8.0e-09` | 1.217757452 |
+
+Both land on the known optimum (`_audit/next_steps.md` §11.11's `objf 1.217757336`,
+`x109 = 0.0299518`), so what `max_iter = 100` produced was not a wander around a wrong
+point but a solve stopped two-thirds of the way through -- reported as "100 iterations,
+oscillating around `objf ~ 1.218`", which is what the trace of an unconverged run looks
+like from the outside.
+
+**Why the count grew, and why it is not a defect.** Ten `FixedPoint`s dissolved into
+ordinary nodes when the topology switches became slots ("A switch selects an occupant"),
+which is a correctness improvement -- PROCESS's own body for those was *"x is an input"*
+-- and it took the SAND block from 22 unknowns / 16 equalities to 14 / 8. The eight
+equalities it removed were nearly-linear `u = g(u)` rows; what is left is the same
+problem with its nonlinearity concentrated into fewer conditions. Measured on the same
+cached run, same seeds, same cottax: the pre-round-2 graph converges in **131**
+iterations, this one in **326**, both on the same point to six digits. Neither the
+cottax version nor any condition scale accounts for it -- `_audit/optimise_design.md`
+§12 carries the bisect that rules both out, and the sweep showing the largest residual
+row's factor moves the count only within this problem's own noise (219-326).
+
+500 rather than 400 leaves headroom over the largest count measured; a solve that needs
+more than this is not slow, it is stuck, and the trace the harness prints says so."""
+
 
 def _seed(schedule, drive, base, fallback, design=()):
     """Every schedule input and every block unknown: **design** variables from `base`,
@@ -322,6 +356,7 @@ def main(argv=None):
             bounds=reference.bounds,
             condition_scale=condition_scale,
             callback=record,
+            max_iter=SAND_MAX_ITER,
         )
         solve_drive = sand.sand_shape(solve_schedule)["drive"]
         # Which unknowns count as "design" differs by stage, because the stages mean

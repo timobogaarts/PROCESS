@@ -561,7 +561,9 @@ def reassign_drivers(graph: Graph, drivers: dict) -> Graph:
     return supply_starts(graph)
 
 
-def default_drivers(graph: Graph, bounds=(), callback=None, condition_scale=()) -> dict:
+def default_drivers(
+    graph: Graph, bounds=(), callback=None, condition_scale=(), max_iter=None
+) -> dict:
     """One driver per **problem**, chosen mechanically by problem type
 
     Takes a `Graph` rather than a `Blocking`: since `Assign` puts the driver *in* the
@@ -585,11 +587,21 @@ def default_drivers(graph: Graph, bounds=(), callback=None, condition_scale=()) 
     `_audit/optimise_design.md` §4.1's "positional contract" worry, removed by asking the
     node instead of the reader.
 
-    `bounds`/`callback`/`condition_scale` are forwarded to the `VmconDriver` and ignored
-    by the others -- all three are algorithm choices with no home on `Optimise` (see
-    `VmconDriver`'s docstring on why bounds are not extra inequality constraints, and on
-    why the residual equalities need scaling that PROCESS's own constraints must not
-    get).
+    `bounds`/`callback`/`condition_scale`/`max_iter` are forwarded to the `VmconDriver`
+    and ignored by the others -- all four are algorithm choices with no home on
+    `Optimise` (see `VmconDriver`'s docstring on why bounds are not extra inequality
+    constraints, and on why the residual equalities need scaling that PROCESS's own
+    constraints must not get).
+
+    **`max_iter=None` keeps `VmconDriver`'s own default of 100**, which is PROCESS's
+    `n_iteration_max` for PROCESS's own 8-variable problem. A SAND block is a *different*
+    and larger problem -- the stellarator's is 14 unknowns against 21 conditions -- and
+    PROCESS's cap has no standing over it, which is why the caller may say. Measured, on
+    the cached reference run: SAND C2 needs **326** SQP iterations and C3 **258**, both
+    landing on the same optimum (`objf 1.2177573`), where the pre-round-2 graph's larger
+    SAND block (22 unknowns / 16 equalities, before ten `FixedPoint`s dissolved into
+    ordinary nodes) needed 131. `_audit/optimise_design.md` §12 records the measurement
+    and why the count moved.
 
     Raises
     ------
@@ -606,12 +618,17 @@ def default_drivers(graph: Graph, bounds=(), callback=None, condition_scale=()) 
         elif isinstance(definition, FixedPoint):
             drivers[problem] = PicardDriver()
         elif isinstance(definition, Optimise):
+            # Not passed as `max_iter=max_iter`: `None` here means *say nothing*, and
+            # `VmconDriver.max_iter` is an `int` field with a default it would then be
+            # handed instead of keeping.
+            said = {} if max_iter is None else {"max_iter": max_iter}
             drivers[problem] = VmconDriver(
                 n_equality=len(definition.equalities),
                 n_inequality=len(definition.inequalities),
                 bounds=bounds,
                 callback=callback,
                 condition_scale=condition_scale,
+                **said,
             )
         else:
             raise TypeError(
