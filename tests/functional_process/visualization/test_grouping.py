@@ -31,11 +31,13 @@ from functional_process.visualization.grouping import (
     group_label,
     group_of,
     group_sequence,
+    group_palette,
     group_style,
     grouping_report,
     hierarchical,
     provenance_order,
     render_grouped_dsm_html,
+    shade,
     structure_order,
     top_of,
 )
@@ -426,8 +428,10 @@ def test_colours_recycle_under_a_texture_rather_than_silently(coupled):
     assert first[0] == later[0] and first[1] is None and later[1] == TIER_OVERLAY[1]
 
 
-def test_the_struct_puts_a_read_in_its_reader_s_row(coupled):
-    """Inputs in rows: `c.s` reads `p` from `a.p`, so the mark is (row c.s, col a.p)."""
+def test_the_struct_puts_a_read_in_its_producer_s_row(coupled):
+    """Outputs in rows (`IC_FBD`): `c.s` reads `p` from `a.p`, so the mark is
+    (row a.p, col c.s) -- and feedback therefore falls *below* the diagonal, the same way
+    round as the plotly `dsm.html` and as everyone else's DSM."""
     blocking = Blocking.scc(coupled)
     order = structure_order(blocking)
     struct = _matrix_struct(blocking, order, depth=1, formatter=xDSMFormatterFlat())
@@ -435,9 +439,20 @@ def test_the_struct_puts_a_read_in_its_reader_s_row(coupled):
     (cell,) = [
         c
         for c in struct["cells"]
-        if c["r"] == at[N("c", "s")] and c["c"] == at[N("a", "p")]
+        if c["r"] == at[N("a", "p")] and c["c"] == at[N("c", "s")]
     ]
     assert cell["v"] == [".p"]
+
+
+def test_backward_is_the_lower_triangle(coupled):
+    """The flip is only real if the count agrees with it: what runs backwards in this
+    ordering is what sits below the diagonal, not above."""
+    blocking = Blocking.scc(coupled)
+    struct = _matrix_struct(
+        blocking, structure_order(blocking), depth=1, formatter=xDSMFormatterFlat()
+    )
+    assert struct["backward"] == sum(c["n"] for c in struct["cells"] if c["r"] > c["c"])
+    assert struct["backward"] >= 1  # the cycle has to run backwards somewhere
 
 
 def test_the_struct_is_a_permutation_of_the_whole_graph(coupled):
@@ -583,14 +598,41 @@ def test_a_shallow_name_simply_has_no_inner_lane(nested):
     assert covered == {0}
 
 
-def test_colour_is_the_subsystem_s_so_a_subtree_reads_as_one_thing(nested):
+def test_hue_is_the_subsystem_s_so_a_subtree_reads_as_one_thing(nested):
+    """One hue per subsystem, and depth spent as a *tint* of it: the three namespaces of
+    `p` are three shades of one colour, and `t` is a different colour entirely."""
     blocking = Blocking.scc(nested)
     struct = _matrix_struct(
         blocking, structure_order(blocking), depth=None, formatter=xDSMFormatterFlat()
     )
-    by_group = {r["name"]: r["colour"] for r in struct["rows"]}
-    assert by_group["p.x"] == by_group["p.q.y"] == by_group["p.q.r.z"]
-    assert by_group["t.w"] != by_group["p.x"]
+    rows = {r["name"]: r for r in struct["rows"]}
+    assert rows["p.x"]["base"] == rows["p.q.y"]["base"] == rows["p.q.r.z"]["base"]
+    assert rows["t.w"]["base"] != rows["p.x"]["base"]
+    tints = {rows[n]["colour"] for n in ("p.x", "p.q.y", "p.q.r.z")}
+    assert len(tints) == 3  # ... and the three are told apart
+
+
+def test_a_subsystem_keeps_the_undiluted_hue_and_its_children_are_shaded(nested):
+    """The namespace itself is the palette colour; what is inside it is shaded away from
+    it. A child that came out the same colour as its parent would make the ribbon's inner
+    lane invisible."""
+    palette = group_palette([("p",), ("p", "q"), ("p", "q", "r"), ("t",)])
+    assert palette[("p",)].colour == palette[("p",)].base
+    assert palette[("p", "q")].colour != palette[("p",)].colour
+    assert palette[("p", "q")].base == palette[("p",)].base
+
+
+def test_shade_goes_to_white_and_to_black():
+    assert shade("#808080", 0.0) == "#808080"
+    assert shade("#808080", 1.0) == "#ffffff"
+    assert shade("#808080", -1.0) == "#000000"
+
+
+def test_an_intermediate_namespace_is_coloured_even_with_no_node_of_its_own():
+    """The ribbon draws a lane per level, so a namespace nothing lives directly in still
+    needs a colour -- otherwise a subsystem has a hole in the middle of it."""
+    palette = group_palette([("p", "q", "r")])
+    assert set(palette) >= {("p",), ("p", "q"), ("p", "q", "r")}
 
 
 def test_the_legend_is_hierarchical_and_indented(nested):

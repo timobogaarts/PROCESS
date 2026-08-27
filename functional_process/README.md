@@ -48,8 +48,10 @@ that are actually in scope.
   selects, `UNPORTED`'s recorded refusals, and `machine_from_indat`, which assembles the
   `StellaratorProcess` an IN.DAT describes. `graph_for(machine)` and `GRAPH` (the
   reference IN.DAT's graph) live here for the same reason; `render_xdsm.py` draws `GRAPH`
-  to `xdsm.html` for inspection (`python -m functional_process.render_xdsm`). Both grow
-  as units are ported; neither is a claim that the graph is complete.
+  to `xdsm.html` for inspection (`python -m functional_process.render_xdsm`), and
+  `--machine` draws the tokamak `boundary.TOKAMAK_INPUT_FILE` describes to
+  `*_tokamak.html` instead. Both grow as units are ported; neither is a claim that the
+  graph is complete.
 
 ## Adding a unit
 

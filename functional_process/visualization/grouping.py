@@ -35,8 +35,9 @@ each group to a vertex and orders *that* by SCC, so the axis says only what it c
 support: A before B when A's output reaches B and B's does not reach A, mutually coupled
 groups adjacent, ties by declaration order. Within a group nothing moves, so the
 provenance reading survives exactly where it is about how the file was written. What that
-buys is that a cross-group mark above the diagonal now means something -- real
-feedback -- where before it meant nothing.
+buys is that a cross-group mark below the diagonal now means something -- real
+feedback -- where before it meant nothing. (Below, not above: the picture is drawn
+outputs-in-rows, `IC_FBD`. See `render_grouped_dsm_html`.)
 
 Three rules are load-bearing and are stated once.
 
@@ -253,10 +254,11 @@ def group_label(group: Group) -> str:
 def top_of(group: Group) -> Group:
     """The subsystem a group is in: its first key. `stellarator.coils -> stellarator`.
 
-    What a *colour* is keyed on, where `group_of` is what a *group* is. A stellarator is
+    What a *hue* is keyed on, where `group_of` is what a *group* is. A stellarator is
     its coils and its fwbs, and giving those three unrelated hues would draw the tree as
-    a flat list of twelve things. The substructure is shown by nesting the ribbon
-    instead, which is what containment actually looks like.
+    a flat list of twelve things. The substructure is shown as a tint of the subsystem's
+    hue (`group_palette`) and by nesting the ribbon, which is what containment actually
+    looks like.
     """
     return group[:1]
 
@@ -422,15 +424,15 @@ def provenance_order(
     Within a group the input order is kept, so the only thing this changes is which nodes
     sit next to which. **It is not a run order** and makes no claim to be one: nothing
     *inside a group* consults an edge, and no node is ever moved past another node of its
-    own group. A mark above the diagonal within one group's band is therefore not
+    own group. A mark below the diagonal within one group's band is therefore not
     feedback -- it is a place where provenance and dependency disagree, which is the
     comparison the picture exists to make.
 
     **Between groups that claim depends on `groups`, and the two callers differ.** With
     `group_sequence`'s declared order (the default) nothing anywhere consulted an edge,
-    so a cross-group mark above the diagonal says nothing at all: the group axis was
+    so a cross-group mark below the diagonal says nothing at all: the group axis was
     arbitrary. With `dependency_group_sequence`'s order the group axis *is* a dependency
-    order, so a cross-group mark above the diagonal means one of exactly two things --
+    order, so a cross-group mark below the diagonal means one of exactly two things --
     real feedback between subsystems, or a pair of subsystems that are mutually coupled
     and were therefore emitted adjacent with no order between them. `render_xdsm.grouped`
     passes the latter, because a group axis that has to be arbitrary somewhere should at
@@ -699,10 +701,84 @@ reader can keep apart and pretending otherwise would be worse than admitting it.
 
 
 def group_style(index: int) -> tuple[str, str | None]:
-    """The colour and overlay texture the `index`-th group is drawn with."""
+    """The colour and overlay texture the `index`-th subsystem is drawn with."""
     return PALETTE[index % len(PALETTE)], TIER_OVERLAY[
         (index // len(PALETTE)) % len(TIER_OVERLAY)
     ]
+
+
+TINT_LADDER = (0.0, 0.34, -0.26, 0.52, -0.44, 0.18, -0.13, 0.62, -0.55, 0.44, -0.35)
+"""
+How far each namespace *inside* a subsystem is shaded away from the subsystem's own hue.
+
+Positive is toward white, negative toward black; the subsystem itself takes `0.0` and
+keeps the palette colour, so `tokamak` is orange and `tokamak.build`,
+`tokamak.divertor`, `tokamak.ccfe_hcpb` are tints of that orange rather than three
+unrelated hues. That is the whole point: depth already reads as containment in the
+ribbon's lanes, and giving a child a colour of its own would say the opposite -- that it
+is a peer of `physics`.
+
+**It alternates light/dark with growing magnitude** rather than ramping one way. A
+one-directional ramp of nine children ends either invisible on white or invisible on
+black, and adjacent siblings differ by a step too small to see; alternating spends the
+whole legible range and puts the *largest* contrasts between the first siblings, which
+are the ones with the most nodes. The magnitudes stop at 0.62/0.55 for the same reason
+`PALETTE` is mid-luminance -- the page is drawn in whichever theme the reader's system
+asks for, and a tint past that goes to paper on one of them.
+
+Beyond its length it recycles, as `TIER_OVERLAY` does, and for the same reason: eleven
+tints of one hue is already more than a reader can tell apart, and the ribbon's written
+label is what actually names a group.
+"""
+
+
+def shade(colour: str, amount: float) -> str:
+    """`colour` blended `amount` of the way to white (positive) or to black (negative)."""
+    r, g, b = (int(colour[i : i + 2], 16) for i in (1, 3, 5))
+    if amount >= 0:
+        mixed = (round(c + (255 - c) * amount) for c in (r, g, b))
+    else:
+        mixed = (round(c * (1 + amount)) for c in (r, g, b))
+    return "#" + "".join(f"{c:02x}" for c in mixed)
+
+
+@dataclasses.dataclass(frozen=True)
+class Shade:
+    """How one group is painted: its own tint, its texture, and the hue it is a tint of."""
+
+    colour: str
+    overlay: str | None
+    base: str
+    """The subsystem's undiluted hue -- what a *label* is written in.
+
+    A tint is chosen to be distinguishable as a filled cell, which is not the same
+    constraint as being readable as 8px text on the page's background. The band labels
+    take this instead, so the pale end of a family stays legible without pulling the
+    ladder in to where its members stop being distinguishable.
+    """
+
+
+def group_palette(groups: Iterable[Group]) -> dict[Group, Shade]:
+    """One `Shade` per group **and per namespace above one**, keyed by group.
+
+    Hue is the subsystem's (`top_of`), tint is the group's position within it in
+    `hierarchical` order -- the namespace first, then what is inside it. Intermediate
+    namespaces are included whether or not any node lives directly in them, because the
+    ribbon draws a lane for every level of the tree and a lane with no colour of its own
+    would be a hole in the middle of a subsystem.
+    """
+    named = tuple(dict.fromkeys(g for g in groups if g != UNGROUPED))
+    closure = tuple(dict.fromkeys(g[: i + 1] for g in named for i in range(len(g))))
+    subsystems = tuple(dict.fromkeys(top_of(g) for g in closure))
+    base = {top: group_style(i) for i, top in enumerate(subsystems)}
+    out = {UNGROUPED: Shade(UNGROUPED_COLOUR, None, UNGROUPED_COLOUR)}
+    for top in subsystems:
+        colour, overlay = base[top]
+        family = [g for g in hierarchical(closure) if top_of(g) == top]
+        for rank, group in enumerate(family):
+            tint = TINT_LADDER[rank % len(TINT_LADDER)]
+            out[group] = Shade(shade(colour, tint), overlay, colour)
+    return out
 
 
 def _edges(graph: Graph) -> dict[tuple[NodePath, NodePath], list[VarPath]]:
@@ -746,21 +822,22 @@ def _matrix_struct(
         for name in graph.nodes
     }
     groups = group_sequence(graph.nodes, depth=depth, owners=owners)
-    # Colour is keyed on the *subsystem*, not on the group: see `top_of`. The ribbon
-    # nests instead, so `stellarator.coils` is stellarator's blue in a second lane
-    # rather than a colour of its own that says nothing about where it lives.
+    # Hue is keyed on the *subsystem*, not on the group: see `top_of`. Depth is a tint of
+    # that hue (`group_palette`), so `stellarator.coils` is a lighter stellarator blue in
+    # a second ribbon lane rather than a colour of its own that says nothing about where
+    # it lives.
     subsystems = tuple(dict.fromkeys(top_of(g) for g in groups))
-    palette = {top: group_style(i) for i, top in enumerate(subsystems)}
-    palette[UNGROUPED] = (UNGROUPED_COLOUR, None)
-    hue = {name: palette[top_of(at[name])] for name in graph.nodes}
+    palette = group_palette(groups)
+    hue = {name: palette[at[name]] for name in graph.nodes}
     index = {name: i for i, name in enumerate(order)}
 
     rows = [
         {
             "name": formatter.node((name, graph[name])),
             "group": group_label(at[name]),
-            "colour": hue[name][0],
-            "overlay": hue[name][1],
+            "colour": hue[name].colour,
+            "base": hue[name].base,
+            "overlay": hue[name].overlay,
             "problem": isinstance(graph[name], DeclaredNode),
             "minted": is_minted(name),
         }
@@ -769,11 +846,11 @@ def _matrix_struct(
 
     cells = [
         {
-            "r": index[target],  # inputs in rows: this row reads ...
-            "c": index[source],  # ... from this column
+            "r": index[source],  # outputs in rows: this row produces ...
+            "c": index[target],  # ... what this column reads
             "n": len(shared),
             "v": [formatter.var(v) for v in shared[:12]],
-            "colour": hue[source][0],
+            "colour": hue[source].colour,
         }
         for (source, target), shared in _edges(graph).items()
     ]
@@ -802,8 +879,9 @@ def _matrix_struct(
                         "to": i - 1,
                         "label": group_label(run) if level == 0 else run[-1],
                         "full": group_label(run),
-                        "colour": palette[top_of(run)][0],
-                        "overlay": palette[top_of(run)][1],
+                        "colour": palette[run].colour,
+                        "base": palette[run].base,
+                        "overlay": palette[run].overlay,
                     })
                 run, start = key, i
 
@@ -833,8 +911,8 @@ def _matrix_struct(
             "label": group_label(g) if len(g) <= 1 else g[-1],
             "full": group_label(g),
             "level": max(len(g) - 1, 0),
-            "colour": palette[top_of(g)][0],
-            "overlay": palette[top_of(g)][1],
+            "colour": palette[g].colour,
+            "overlay": palette[g].overlay,
             "size": report.sizes[g],
             "runs": report.runs[g],
         }
@@ -847,7 +925,7 @@ def _matrix_struct(
         "boxes": boxes,
         "legend": legend,
         "summary": report.summary(),
-        "backward": sum(c["n"] for c in cells if c["r"] < c["c"]),
+        "backward": sum(c["n"] for c in cells if c["r"] > c["c"]),
         "reads": sum(c["n"] for c in cells),
         "coupled": len(report.coupled),
         "crossing": len(report.crossing),
@@ -875,11 +953,8 @@ html { height:100%; }
 body { margin:0; height:100%; display:flex; flex-direction:column;
   background:var(--bg); color:var(--fg);
   font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
-header { flex:0 0 auto; padding:14px 18px 10px; border-bottom:1px solid var(--rule); }
-h1 { margin:0 0 3px; font-size:16px; font-weight:600; letter-spacing:.01em; }
-.sub { color:var(--dim); font-size:12px; max-width:120ch; }
-.sub b { color:var(--fg); font-weight:600; }
-.sub code { font-family:ui-monospace,Menlo,monospace; }
+header { flex:0 0 auto; padding:12px 18px 10px; border-bottom:1px solid var(--rule); }
+h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:.01em; }
 #wrap { flex:1 1 auto; min-height:0; display:flex; align-items:stretch; }
 #side { width:280px; min-width:280px; overflow:auto; padding:12px 14px;
   border-right:1px solid var(--rule); background:var(--panel); }
@@ -891,8 +966,6 @@ h1 { margin:0 0 3px; font-size:16px; font-weight:600; letter-spacing:.01em; }
 .lg .nm { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px;
   overflow:hidden; text-overflow:ellipsis; }
 .lg .ct { color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
-.note { color:var(--dim); font-size:11px; margin:6px 0 0; }
-.note code { font-family:ui-monospace,Menlo,monospace; }
 .scatter { color:var(--accent); font-weight:600; }
 #stage { flex:1; position:relative; overflow:hidden; cursor:grab; }
 #stage.drag { cursor:grabbing; }
@@ -915,10 +988,7 @@ text { fill:var(--fg); }
 #cross { pointer-events:none; }
 #cross rect { fill:var(--fg); opacity:.07; }
 </style>
-<header>
-  <h1>__TITLE__</h1>
-  <div class="sub">__SUB__</div>
-</header>
+<header><h1>__TITLE__</h1></header>
 <div id="wrap">
   <div id="side"></div>
   <div id="stage"><div id="bar"><button id="fit">Fit</button><button id="reset">1:1</button></div>
@@ -967,18 +1037,16 @@ const band = el('g', {class: 'band'});
 for (const b of D.bands) {
   const len = (b.to - b.from + 1) * CELL;
   const off = lblW + b.level * BAND;
-  /* Depth is drawn as tint, not as hue: every lane of one subsystem is that
-     subsystem's colour, and the inner ones sit lighter so containment reads without
-     inventing a second palette. */
-  const tint = 1 - .3 * b.level;
+  /* Depth is drawn as tint, not as hue -- `group_palette` picked it, so a lane's colour
+     is the group's own and not this level's opacity: every namespace of one subsystem
+     is a shade of that subsystem's colour, and none of them is a second palette. */
   for (const axis of [0, 1]) {
     const x = axis ? X0 + b.from * CELL : off, y = axis ? off : Y0 + b.from * CELL;
     const w = axis ? len : BAND, h = axis ? BAND : len;
-    band.appendChild(el('rect', {x, y, width: w, height: h, fill: b.colour, rx: 2,
-      'fill-opacity': tint}));
+    band.appendChild(el('rect', {x, y, width: w, height: h, fill: b.colour, rx: 2}));
     if (b.overlay)
       band.appendChild(el('rect', {x, y, width: w, height: h, fill: `url(#${b.overlay})`,
-        rx: 2, 'fill-opacity': tint}));
+        rx: 2}));
   }
   /* Separators mark subsystems only. A rule across the whole matrix for every level of
      every namespace would be a grid, not a separator. */
@@ -998,9 +1066,10 @@ for (const b of D.bands) {
      and the row's own dotted name all still say which group it is; what would be lost is
      only a third copy of it, and what would be gained is a gutter of mush. */
   if (b.to > b.from) {
+    /* `b.base`, not `b.colour`: the pale end of a tint family is chosen to be a
+       distinguishable *fill*, which is not the same as being readable as 10px text. */
     const name = el('text', {class: 'gname', x: X0 + n * CELL + lvlX[b.level],
-      y: Y0 + (b.from + (b.to - b.from + 1) / 2) * CELL + 3.5, fill: b.colour,
-      'fill-opacity': 1 - .25 * b.level});
+      y: Y0 + (b.from + (b.to - b.from + 1) / 2) * CELL + 3.5, fill: b.base});
     name.textContent = b.label;
     band.appendChild(name);
   }
@@ -1044,7 +1113,7 @@ root.appendChild(diag);
 
 const marks = el('g');
 for (const c of D.cells) {
-  const fb = c.r < c.c;                       /* inputs in rows -> feedback above */
+  const fb = c.r > c.c;                       /* outputs in rows -> feedback below */
   const m = el('rect', {x: X0 + c.c * CELL + 2.5, y: Y0 + c.r * CELL + 2.5,
     width: CELL - 5, height: CELL - 5, rx: 1.5, fill: c.colour,
     'fill-opacity': fb ? 1 : .7, class: fb ? 'fb' : ''});
@@ -1084,9 +1153,9 @@ cross.appendChild(cx); cross.appendChild(cy); root.appendChild(cross);
 
 /* ---- legend ---- */
 const side = document.getElementById('side');
-const scat = D.legend.filter(g => g.runs > 1).length;
 side.innerHTML =
-  '<h2>Groups</h2><div class="lg">' + D.legend.map(g =>
+  '<h2>Groups' + (D.recycled ? ' <span class="scatter">(colours recycled)</span>' : '') +
+  '</h2><div class="lg">' + D.legend.map(g =>
     `<div class="sw" style="background:${g.colour}${
       g.overlay === 'hatch-stripe'
         ? ';background-image:repeating-linear-gradient(45deg,#fff9 0 1.5px,#0000 1.5px 4px)'
@@ -1097,33 +1166,7 @@ side.innerHTML =
     `title="${esc(g.full)}">${esc(g.label)}</div>` +
     `<div class="ct" title="nodes / contiguous stretches in the run order">${g.size}` +
     (g.runs > 1 ? ` <span class="scatter">&times;${g.runs}</span>` : '') + '</div>'
-  ).join('') + '</div>' +
-  `<p class="note">Right-hand figure is the group's node count; a red <span class="scatter">&times;k</span> ` +
-  `is how many separate stretches its members occupy in the <b>run</b> order. ` +
-  `<b>1 stretch</b> means provenance and structure agree about that group; many means the ` +
-  `group is a label, not a schedulable unit. Here ${scat} of ${D.legend.length} group(s) are scattered.</p>` +
-  '<h2>Reading it</h2><p class="note">Inputs in <b>rows</b>: a mark at (row <i>r</i>, column ' +
-  '<i>c</i>) means <i>r</i> reads something <i>c</i> owns, coloured by <i>c</i>\'s group. ' +
-  'So marks <b>below</b> the diagonal are feed-forward and marks <b>above</b> it, outlined in ' +
-  'red, run backwards in this ordering (ragraph\'s <code>IR_FAD</code>; the plotly ' +
-  '<code>dsm.html</code> uses the mirrored <code>IC_FBD</code>).</p>' +
-  '<p class="note">A <b>ring</b> on a diagonal cell marks a node in a block that genuinely ' +
-  'couples (more than one non-minted node), and the outline around them is that block. ' +
-  '<b>Red</b> means <b>no namespace contains it</b> -- a loop coupling one ' +
-  'subsystem to ' +
-  'another, the most interesting thing this comparison can find. Grey means some ' +
-  'namespace does: either one group, or several inside one subtree (`physics` with ' +
-  '`physics.profiles`), which the tooltip names as the block\'s container. A ' +
-  '<b>faint dashed</b> outline is a block whose members are not adjacent ' +
-  'in this ordering: it is a bounding box, not the block, and the rings inside it are ' +
-  'where the block actually is.</p>' +
-  '<h2>Totals</h2><p class="note"><b>' + D.backward + ' of ' + D.reads +
-  '</b> variable reads run <b>backwards</b> in this ordering (the marks above the ' +
-  'diagonal). In the run order that figure is exactly the coupling inside the blocks; ' +
-  'in any other ordering the excess is how far that ordering disagrees with what the ' +
-  'graph depends on.</p><p class="note">' + D.summary + '</p>' +
-  (D.recycled ? '<p class="note scatter">More groups than colours &times; textures: ' +
-    'colours are recycled and two groups may look alike. Read the ribbon label.</p>' : '');
+  ).join('') + '</div>';
 
 /* ---- hover ---- */
 function show(e, html) {
@@ -1143,8 +1186,8 @@ stage.addEventListener('mousemove', e => {
         esc(d.box.members.join('\n')));
     } else {
       const r = D.rows[d.r], c = D.rows[d.c];
-      show(e, `<b>${esc(r.name)}</b>\n  ${d.r < d.c ? '&#8593; reads backwards' : 'reads'} ` +
-        `${d.n} var(s) from\n<b>${esc(c.name)}</b>\n` + esc(d.v.join('\n')) +
+      show(e, `<b>${esc(r.name)}</b>\n  ${d.r > d.c ? '&#8595; feeds backwards' : 'feeds'} ` +
+        `${d.n} var(s) to\n<b>${esc(c.name)}</b>\n` + esc(d.v.join('\n')) +
         (d.n > d.v.length ? `\n... ${d.n - d.v.length} more` : ''));
     }
     return;
@@ -1199,7 +1242,6 @@ def render_grouped_dsm_html(
     order: Sequence[NodePath] | None = None,
     depth: int | None = None,
     title: str = "Grouped DSM",
-    subtitle: str = "",
     file_name: str = "dsm_grouped",
     outdir: str = ".",
     write: bool = False,
@@ -1221,10 +1263,18 @@ def render_grouped_dsm_html(
     replacement -- `render_dsm_html` keeps the hierarchy folding and the variable-level
     modes this one has no answer for.
 
-    The convention is **inputs in rows, feedback above the diagonal** (ragraph's
-    `IR_FAD`), which is the mirror of the `IC_FBD` `render_dsm` draws. Stated in the
-    page's own legend rather than left to be inferred, because a silently mirrored DSM is
-    read backwards without anything looking wrong.
+    The convention is **outputs in rows, feedback below the diagonal** -- a mark at
+    (row *r*, column *c*) means *r* produces something *c* reads. That is ragraph's
+    `IC_FBD`, the same convention `render_dsm`'s plotly figure uses, so the two DSMs this
+    port writes are now read the same way round; it used to be the mirrored `IR_FAD`,
+    which is a real hazard, because a mirrored DSM is read backwards without anything
+    looking wrong.
+
+    **The page carries no prose.** It is a title, the matrix, and a legend of groups with
+    their node counts -- nothing that explains what a reader is looking at. The
+    explanation belongs here, in the source, where it can be kept true; a paragraph baked
+    into every rendered file is a copy that silently rots when the convention changes,
+    which is exactly what the flip above just did to the one that used to be there.
     """
     order = structure_order(blocking) if order is None else order
     struct = _matrix_struct(blocking, order, depth=depth, formatter=formatter)
@@ -1232,11 +1282,8 @@ def render_grouped_dsm_html(
     # happened to spell `__TITLE__` would otherwise have the title substituted into the
     # middle of the graph. `</` is broken up for the same reason one level down -- a name
     # holding `</script>` would end the script tag early.
-    page = (
-        _PAGE
-        .replace("__TITLE__", _xesc(title))
-        .replace("__SUB__", subtitle or _xesc(struct["summary"]))
-        .replace("__DATA__", json.dumps(struct).replace("</", "<\\/"))
+    page = _PAGE.replace("__TITLE__", _xesc(title)).replace(
+        "__DATA__", json.dumps(struct).replace("</", "<\\/")
     )
     doc = HtmlDoc("<!doctype html>\n" + page)
     if write:
