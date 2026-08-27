@@ -784,8 +784,28 @@ class TestTfTurnArea(Tier1Contract):
 # `superconducting_tf_coil_areas_and_masses`
 # ---------------------------------------------------------------------------
 
+_DCOND_POISON = -1.0e9
+"""Seeded into every `.tfcoil.dcond` element the occupant under test does not bind.
 
-def _reference_sc_areas_and_masses(
+`i_tf_sc_mat`'s only effect in this function is which element of the nine-long density
+table `m_tf_coil_superconductor` is scaled by (`process/models/tfcoil/
+superconducting.py:2024-2036`, the sole `dcond` read) -- and **four of the nine elements
+hold 6080.0** (`tfcoil_variables.py:157-170`). So an adapter that filled `dcond`
+uniformly, as this one did until 2026-08-27, could not tell `dcond[0]` from `dcond[4]`,
+and neither could one that left the table at its defaults. That is exactly the hole the
+two occupants fell into: both baked `dcond[0]` for every value of the switch and no
+value test noticed.
+
+Poisoning every element the occupant does not name turns a wrong-element read into a
+mass that is wrong in sign as well as magnitude, at every sample. Same technique and
+same reason as `models/pfcoil/test_masses.py`'s `_DCOND_POISON`
+(`_audit/next_steps.md` §14.11, the `CoilsMass` lesson turned into an assertion), and it
+is safe here for a stronger reason than there: this function reads `dcond` exactly once.
+"""
+
+
+def _run_reference_sc_areas_and_masses(
+    i_tf_sc_mat,
     len_tf_coil,
     a_tf_wp_with_insulation,
     a_tf_wp_no_insulation,
@@ -808,10 +828,14 @@ def _reference_sc_areas_and_masses(
 ):
     """`superconducting_tf_coil_areas_and_masses` at `itart == 0`, through `data`.
 
-    `den_tf_sc_material` is written into every slot of `dcond` rather than into one, so
-    the adapter does not have to also carry `i_tf_sc_mat`: the port takes the density
-    already indexed (the `models/stellarator/coils/mass.py` convention), and this is the
-    way to hand PROCESS the same number without a second, redundant argument.
+    The leading argument is not an input of the chain but the **identity of the occupant
+    under test**: which `i_tf_sc_mat` PROCESS is driven at, and therefore which single
+    `dcond` element `den_tf_sc_material` is planted in. Every other element is
+    `_DCOND_POISON`. The port takes the density already indexed (the
+    `models/stellarator/coils/mass.py` convention), so the ported side is the same pure
+    function for all nine materials and the whole discrimination is on the reference
+    side -- `models/pfcoil/test_masses.py`'s shape exactly. The wrappers below bind it;
+    the harness never sees it.
     """
     model = _sctfcoil()
     model.data.physics.itart = 0
@@ -833,8 +857,9 @@ def _reference_sc_areas_and_masses(
     t.a_tf_turn_steel = a_tf_turn_steel
     t.a_tf_coil_wp_turn_insulation = a_tf_coil_wp_turn_insulation
     t.n_tf_coils = n_tf_coils
-    t.i_tf_sc_mat = 1
-    t.dcond = np.full(9, den_tf_sc_material, dtype=float)
+    t.i_tf_sc_mat = i_tf_sc_mat
+    t.dcond = np.full(9, _DCOND_POISON, dtype=float)
+    t.dcond[i_tf_sc_mat - 1] = den_tf_sc_material
 
     d = model.data.superconducting_tfcoil
     d.a_tf_wp_with_insulation = a_tf_wp_with_insulation
@@ -855,8 +880,26 @@ def _reference_sc_areas_and_masses(
     )
 
 
+def _reference_sc_areas_and_masses(**inputs):
+    """`i_tf_sc_mat = 1` (ITER Nb3Sn), density from `dcond[0]`.
+
+    `large_tokamak_eval.IN.DAT:374` and `large_tokamak_nof.IN.DAT:583`'s configuration,
+    and `IterNb3snSuperconductingTfCoilAreasAndMassesConventional`'s binding.
+    """
+    return _run_reference_sc_areas_and_masses(1, **inputs)
+
+
+def _reference_sc_areas_and_masses_wst_nb3sn(**inputs):
+    """`i_tf_sc_mat = 5` (WST Nb3Sn), density from `dcond[4]`.
+
+    `low_aspect_ratio_DEMO.IN.DAT:910`'s configuration, and
+    `WstNb3snSuperconductingTfCoilAreasAndMassesConventional`'s binding.
+    """
+    return _run_reference_sc_areas_and_masses(5, **inputs)
+
+
 class TestSuperconductingTfCoilAreasAndMassesConventional(Tier1Contract):
-    """Owns four of the slot's ten boundary reads.
+    """Owns four of the slot's ten boundary reads. `(itart, i_tf_sc_mat) == (0, 1)`.
 
     Sample: `test_superconducting_tf_coil_area_and_masses`'s first case
     (`tests/unit/models/tfcoil/test_sctfcoil.py:1740-1830`), from
@@ -864,6 +907,10 @@ class TestSuperconductingTfCoilAreasAndMassesConventional(Tier1Contract):
     `6080.0` -- the same density `i_tf_sc_mat = 1` selects, which is why one number
     stands in for both here (`process/data_structure/tfcoil_variables.py:157-170`: the
     nine densities are `6080` for entries 1, 2, 4, 5 and `6070`/`8500` elsewhere).
+
+    That coincidence is also why `TestSuperconductingTfCoilAreasAndMassesConventional
+    WstNb3sn` exists rather than being redundant with this: the two arms of the material
+    axis are told apart by *which element is poisoned*, not by the density's value.
     """
 
     audit_record = "models/tfcoil/superconducting.md"
@@ -918,7 +965,8 @@ class TestSuperconductingTfCoilAreasAndMassesConventional(Tier1Contract):
     }
 
 
-def _reference_sc_areas_and_masses_spherical_tokamak(
+def _run_reference_sc_areas_and_masses_spherical_tokamak(
+    i_tf_sc_mat,
     len_tf_coil,
     a_tf_wp_with_insulation,
     a_tf_wp_no_insulation,
@@ -947,9 +995,9 @@ def _reference_sc_areas_and_masses_spherical_tokamak(
     branch not taken, the comparison would see NaN and fail, instead of silently agreeing
     on a leftover default of zero.
 
-    `den_tf_sc_material` is written into every slot of `dcond` for the same reason as the
-    conventional adapter: the port takes the density already indexed, so the adapter does
-    not have to carry `i_tf_sc_mat` as a second, redundant argument.
+    `i_tf_sc_mat` leads for the same reason as in the conventional adapter: it names the
+    occupant under test, `den_tf_sc_material` is planted in that element of `dcond` alone
+    and every other element is `_DCOND_POISON`.
     """
     model = _sctfcoil()
     model.data.physics.itart = 1
@@ -971,8 +1019,9 @@ def _reference_sc_areas_and_masses_spherical_tokamak(
     t.a_tf_turn_steel = a_tf_turn_steel
     t.a_tf_coil_wp_turn_insulation = a_tf_coil_wp_turn_insulation
     t.n_tf_coils = n_tf_coils
-    t.i_tf_sc_mat = 1
-    t.dcond = np.full(9, den_tf_sc_material, dtype=float)
+    t.i_tf_sc_mat = i_tf_sc_mat
+    t.dcond = np.full(9, _DCOND_POISON, dtype=float)
+    t.dcond[i_tf_sc_mat - 1] = den_tf_sc_material
     t.whtcp = np.nan
     t.whttflgs = np.nan
 
@@ -995,6 +1044,25 @@ def _reference_sc_areas_and_masses_spherical_tokamak(
         t.whtcp,
         t.whttflgs,
     )
+
+
+def _reference_sc_areas_and_masses_spherical_tokamak(**inputs):
+    """`(itart, i_tf_sc_mat) == (1, 1)`, density from `dcond[0]`.
+
+    The conventional reference's own material with `itart` flipped:
+    `IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak`'s binding.
+    """
+    return _run_reference_sc_areas_and_masses_spherical_tokamak(1, **inputs)
+
+
+def _reference_sc_areas_and_masses_st_hazelton_zhai_rebco(**inputs):
+    """`(itart, i_tf_sc_mat) == (1, 9)`, density from `dcond[8]`.
+
+    `spherical_tokamak_eval.IN.DAT:355` and `st_regression.IN.DAT:827`'s configuration
+    -- the value both tracked ST files actually set, and the one this whole family
+    exists to stop being answered as `dcond[0]`.
+    """
+    return _run_reference_sc_areas_and_masses_spherical_tokamak(9, **inputs)
 
 
 class TestSuperconductingTfCoilAreasAndMassesSphericalTokamak(Tier1Contract):
@@ -1094,3 +1162,84 @@ class TestSuperconductingTfCoilAreasAndMassesSphericalTokamak(Tier1Contract):
         "a_tf_coil_wp_turn_insulation": (0.02, 0.2),
         "n_tf_coils": (8.0, 24.0),
     }
+
+
+class TestSuperconductingTfCoilAreasAndMassesConventionalWstNb3sn(Tier1Contract):
+    """`(itart, i_tf_sc_mat) == (0, 5)` -- `low_aspect_ratio_DEMO`'s occupant.
+
+    **The material axis, discriminated.** The ported side is the same pure function as
+    `TestSuperconductingTfCoilAreasAndMassesConventional`'s -- the occupants differ in
+    one `FromExactly`, `.tfcoil.dcond[4]` against `.tfcoil.dcond[0]`, and nothing else --
+    so the whole difference is on the reference side: PROCESS runs at `i_tf_sc_mat = 5`,
+    `den_tf_sc_material` is planted in `dcond[4]` alone, and every other element is
+    `_DCOND_POISON`.
+
+    Why it is not redundant with the case above, given that `dcond[4] == dcond[0] ==
+    6080.0`: **that equality is the reason it is needed.** Until 2026-08-27 both
+    `itart` occupants read `dcond[0]` at every value of the switch, and
+    `low_aspect_ratio_DEMO` (`IN.DAT:910`, `i_tf_sc_mat = 5`) assembled the wrong element
+    and got the right number anyway. No value test on this machine could have seen that.
+    This one fails unless PROCESS's read *moves with the switch*, which is the claim the
+    two occupants make and the claim the old baked constant broke.
+
+    Same converged `baseline_2018` point as the reference case: the material does not
+    change the function's domain, only which array slot one scalar comes from.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_areas_and_masses_wst_nb3sn
+    ported = superconducting_tf_coil_areas_and_masses_conventional
+
+    samples = [
+        legacy_sample(
+            "sc-masses-baseline2018-wst-nb3sn",
+            **TestSuperconductingTfCoilAreasAndMassesConventional.samples[0].kwargs,
+        ),
+    ]
+
+    fuzz_bounds = TestSuperconductingTfCoilAreasAndMassesConventional.fuzz_bounds
+
+
+_ST_SHORTLEG = TestSuperconductingTfCoilAreasAndMassesSphericalTokamak.samples[1].kwargs
+"""`sc-masses-st-shortleg`'s point, reused verbatim by the material-axis case below.
+
+Named rather than re-typed so the two cases cannot drift apart in anything but the
+`dcond` element they are driven at, which is the only thing they are meant to differ in.
+"""
+
+
+class TestSuperconductingTfCoilAreasAndMassesStHazeltonZhaiRebco(Tier1Contract):
+    """`(itart, i_tf_sc_mat) == (1, 9)` -- both tracked ST files' occupant.
+
+    **The value the family was built for.** `spherical_tokamak_eval.IN.DAT:355` and
+    `st_regression.IN.DAT:827` both set `i_tf_sc_mat = 9`, whose density is
+    `dcond[8] == 8500.0`; both arms used to bake `dcond[0] == 6080.0`, a 40 %
+    superconductor-mass error waiting for either file to assemble. This case is that
+    claim executed: PROCESS is driven at `i_tf_sc_mat = 9`, `8500.0` sits in `dcond[8]`
+    alone, and the other eight elements are `_DCOND_POISON`.
+
+    It is also the executable half of the **portability** argument. `indat.UNPORTED`
+    refuses `i_tf_sc_mat = 9` for the stellarator's `winding_pack_intersect_inputs`,
+    because `jcrit_from_material` has no branch 9. This function never calls it: the
+    material selects one element of a density table, and `dcond[8]` is populated. If that
+    reading were wrong, PROCESS would raise here rather than agree -- so a passing case
+    is evidence for it, not an assumption about it.
+
+    Sample: `sc-masses-st-shortleg`, whose `den_tf_sc_material = 8500.0` is already
+    `dcond[8]`'s true value, so the point is the ST geometry *and* the ST material
+    together rather than one grafted onto the other. `whtcp`/`whttflgs` stay NaN-poisoned
+    before the call, so the `itart == 1` branch is still an executed check.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_areas_and_masses_st_hazelton_zhai_rebco
+    ported = superconducting_tf_coil_areas_and_masses_spherical_tokamak
+
+    samples = [
+        legacy_sample(
+            "sc-masses-st-shortleg-hazelton-zhai",
+            **_ST_SHORTLEG,
+        ),
+    ]
+
+    fuzz_bounds = TestSuperconductingTfCoilAreasAndMassesSphericalTokamak.fuzz_bounds

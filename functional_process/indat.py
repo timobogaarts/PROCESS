@@ -289,22 +289,38 @@ from functional_process.models.tfcoil.base import (
 )
 from functional_process.models.tfcoil.namespace import CiccSuperconductingTfCoil
 from functional_process.models.tfcoil.superconducting import (
+    Bi2212SuperconductingTfCoilAreasAndMassesConventional,
+    Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak,
     CiccAveragedTurnGeometryFromCurrentPerTurn,
     CiccIntegerTurnGeometry,
+    CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional,
+    CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional,
+    DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    DurhamRebcoSuperconductingTfCoilAreasAndMassesConventional,
+    DurhamRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     DxTfSideCaseDoubleRectangular,
     DxTfSideCaseRectangular,
     DxTfSideCaseTrapezoidal,
+    HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesConventional,
+    HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    IterNb3snSuperconductingTfCoilAreasAndMassesConventional,
+    IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    OldLubellNbtiSuperconductingTfCoilAreasAndMassesConventional,
+    OldLubellNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     PeakBTfInboardWithRipple16Coils,
     PeakBTfInboardWithRipple18Coils,
     PeakBTfInboardWithRipple20Coils,
     PeakBTfInboardWithRippleFlatAllowance,
-    SuperconductingTfCoilAreasAndMassesConventional,
-    SuperconductingTfCoilAreasAndMassesSphericalTokamak,
     SuperconductingTfWpGeometryDoubleRectangular,
     SuperconductingTfWpGeometryRectangular,
     SuperconductingTfWpGeometryTrapezoidal,
     TfCaseAreasCircularFront,
     TfCaseAreasStraightFront,
+    UserDefinedNb3snSuperconductingTfCoilAreasAndMassesConventional,
+    UserDefinedNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+    WstNb3snSuperconductingTfCoilAreasAndMassesConventional,
+    WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
 )
 from functional_process.models.tokamak.namespace import Tokamak
 from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
@@ -514,7 +530,12 @@ UNPORTED = {
         "`jcrit_from_material` at all (process/models/stellarator/coils/coils.py:52-160 "
         "handles 1..8 and then raises `Illegal value for i_pf_superconductor`), so "
         "there is no PROCESS arm to port and no reads-set to declare. A ninth occupant "
-        "would have to invent the model, not port it."
+        "would have to invent the model, not port it. **This refusal is scoped to the "
+        "critical-surface slots** -- `WINDING_PACK_MATERIAL` and `COILS_MASS_MATERIAL`, "
+        "which key on the bare field name. `SC_TF_MASSES` keys on "
+        "`itart_i_tf_sc_mat_sc_tf_masses` and has all nine materials, because the "
+        "tokamak TF mass path uses `i_tf_sc_mat` only to index `.tfcoil.dcond`, never "
+        "to dispatch: `dcond[8] == 8500.0` exists, so value 9 is portable there"
     ),
     ("ife", IFEModel.INERTIAL_CONFINEMENT): (
         "inertial confinement is a different device, and PROCESS spells it as an `if` "
@@ -2586,17 +2607,76 @@ CICC_TURN_GEOMETRY = {
 """The turn-geometry arm -> its occupant. See `_cicc_turn_geometry_arm`."""
 
 SC_TF_MASSES = {
-    SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: (
-        SuperconductingTfCoilAreasAndMassesConventional
-    ),
-    SphericalTokamakModel.SPHERICAL_TOKAMAK: (
-        SuperconductingTfCoilAreasAndMassesSphericalTokamak
-    ),
+    (_itart, _mat): _occupant
+    for _mat, (_conventional, _spherical) in {
+        SuperconductorModel.ITER_NB3SN: (
+            IterNb3snSuperconductingTfCoilAreasAndMassesConventional,
+            IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.BI2212: (
+            Bi2212SuperconductingTfCoilAreasAndMassesConventional,
+            Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.OLD_LUBELL_NBTI: (
+            OldLubellNbtiSuperconductingTfCoilAreasAndMassesConventional,
+            OldLubellNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.USER_DEFINED_NB3SN: (
+            UserDefinedNb3snSuperconductingTfCoilAreasAndMassesConventional,
+            UserDefinedNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.WST_NB3SN: (
+            WstNb3snSuperconductingTfCoilAreasAndMassesConventional,
+            WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.CROCO_REBCO: (
+            CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional,
+            CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.DURHAM_NBTI: (
+            DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional,
+            DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.DURHAM_REBCO: (
+            DurhamRebcoSuperconductingTfCoilAreasAndMassesConventional,
+            DurhamRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+        SuperconductorModel.HAZELTON_ZHAI_REBCO: (
+            HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesConventional,
+            HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak,
+        ),
+    }.items()
+    for _itart, _occupant in (
+        (SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO, _conventional),
+        (SphericalTokamakModel.SPHERICAL_TOKAMAK, _spherical),
+    )
 }
-"""`.physics.itart` -> the superconducting TF mass occupant. The spherical arm owns two
-more fields (`whtcp`, `whttflgs`) -- conditional ownership, so occupants and not a
-kwarg. Both arms read the same twenty fields; only the outboard case length and those
-two extra outputs differ (`superconducting.py:1995-2006`, `:2085-2093`)."""
+"""`(.physics.itart, .tfcoil.i_tf_sc_mat)` -> the superconducting TF mass occupant.
+
+**Two switches, one slot, and the eighteen entries are their full product** -- the only
+registry in this file with a two-switch key rather than a computed `_*_arm` integer,
+because neither axis reduces to the other:
+
+* `itart` decides *ownership*: the spherical arm owns `whtcp` and `whttflgs` and the
+  conventional arm does not (`superconducting.py:2085-2093`), so it cannot be a kwarg.
+* `i_tf_sc_mat` decides *one read*, `.tfcoil.dcond[i_tf_sc_mat - 1]`, and a `FromExactly`
+  default is fixed at class-definition time, so it cannot be a kwarg either.
+
+Written as a comprehension over a material -> `(conventional, spherical)` table rather
+than as eighteen flat lines, for the reason the family's own docstring gives: the defect
+this registry closes was one switch answered twice, so the material is named once here
+and paired with both arms mechanically.
+
+**All nine materials, including `HAZELTON_ZHAI_REBCO` (9), which
+`WINDING_PACK_MATERIAL` refuses.** That refusal (`UNPORTED["i_tf_sc_mat", 9]`) is about
+`jcrit_from_material` having no branch 9. This slot never calls it: the material selects
+a density from a nine-long table and nothing else, and `dcond[8] == 8500.0` is real. The
+two ST files set exactly this value.
+
+Before 2026-08-27 this registry was keyed on `itart` alone and **both** occupants baked
+`dcond[0]` in a module constant -- `_audit/next_steps.md` §14.5's `CoilsMass` failure,
+found a second time. `low_aspect_ratio_DEMO` (`i_tf_sc_mat = 5`) was assembling the
+`dcond[0]` occupant and only escaped a wrong number because `dcond[4] == dcond[0]`."""
 
 # ---- `.tokamak.ccfe_hcpb` ---------------------------------------------------------
 
@@ -3064,19 +3144,24 @@ def iteration_variables_from_indat(input_file):
 
 
 def _tokamak_device(
-    switches, numbers, ixc, int_lists, i_tf_sup, i_plasma_ignited, itart
+    switches, numbers, ixc, int_lists, i_tf_sup, i_plasma_ignited, itart, i_tf_sc_mat
 ):
     r"""The `Tokamak` an IN.DAT describes -- twenty-six slots of the twenty-eight filled.
 
     Split out of `machine_from_indat` rather than inlined, and the reason is length
     rather than principle: this is still the factory, and every `i_*` integer it reads is
     read here for the same reasons that function's docstring gives. It takes
-    `switches`/`numbers`/`ixc` already parsed, plus the two values `machine_from_indat`
-    has already resolved and threaded -- `i_tf_sup`, `i_plasma_ignited` and `itart` --
-    because **a switch is answered once**: re-reading any of them here would be the
-    second transcription that `model_tree_design.md` §8 step 4d removed from the tree.
-    `itart` joined that list when the four shared slots that hardcoded it became
-    families (`_audit/next_steps.md` §14.2).
+    `switches`/`numbers`/`ixc` already parsed, plus the values `machine_from_indat`
+    has already resolved and threaded -- `i_tf_sup`, `i_plasma_ignited`, `itart` and
+    `i_tf_sc_mat` -- because **a switch is answered once**: re-reading any of them here
+    would be the second transcription that `model_tree_design.md` §8 step 4d removed
+    from the tree. `itart` joined that list when the four shared slots that hardcoded it
+    became families (`_audit/next_steps.md` §14.2); `i_tf_sc_mat` joined it when
+    `superconducting_tf_coil_areas_and_masses` stopped baking `.tfcoil.dcond[0]`, and it
+    is threaded rather than read here for a stronger reason than tidiness -- it is the
+    *same local* the stellarator branch hands `WINDING_PACK_MATERIAL` and
+    `COILS_MASS_MATERIAL`, so the three consumers of that one switch cannot name three
+    different materials.
 
     **The two slots this does not fill are not mentioned.** `cs_fatigue` and
     `water_use` keep `models/tokamak/namespace.py`'s `None`, whatever the file says:
@@ -3276,8 +3361,14 @@ def _tokamak_device(
             ),
             CICC_TURN_GEOMETRY,
         ),
+        # Two switches, one slot -- see `SC_TF_MASSES`. `itart` and `i_tf_sc_mat` are
+        # both *threaded*, resolved once in `machine_from_indat`; `i_tf_sc_mat` is the
+        # same local the stellarator branch gives `WINDING_PACK_MATERIAL` and
+        # `COILS_MASS_MATERIAL`, so no two consumers of that switch can disagree.
         superconducting_tf_coil_areas_and_masses=_slot_occupant(
-            "itart_sc_tf_masses", SphericalTokamakModel(int(itart)), SC_TF_MASSES
+            "itart_i_tf_sc_mat_sc_tf_masses",
+            (SphericalTokamakModel(int(itart)), i_tf_sc_mat),
+            SC_TF_MASSES,
         ),
     )
     ccfe_hcpb = _slot_occupant(
@@ -3602,6 +3693,18 @@ def machine_from_indat(input_file, stella_conf=None):
     # inside `_tokamak_device`. Read here, above the device branch, and threaded --
     # `physics_variables.py:994` is the default.
     itart = SphericalTokamakModel(int(switches.get("itart", 0)))
+    # The superconductor. Read **above** the device branch since 2026-08-27, because it
+    # now decides slots on both arms: `winding_pack_intersect_inputs` and `coils_mass` on
+    # a stellarator, `superconducting_tf_coil_areas_and_masses` on a tokamak. One local,
+    # threaded to all three, is the only thing that makes them agree by construction --
+    # and the tokamak slot got here by *not* agreeing: it answered this switch with a
+    # module constant `dcond[0]` for every value (`_audit/units/models/tfcoil/
+    # superconducting.md`, 2026-08-27, and `_audit/next_steps.md` §14.11 for the same
+    # failure one file over). `tfcoil_variables.py:246` is the default.
+    #
+    # No slot is resolved here: the two stellarator slots refuse value 9 and the tokamak
+    # slot accepts it, so each resolves against its own registry below.
+    i_tf_sc_mat = SuperconductorModel(int(switches.get("i_tf_sc_mat", 1)))
     # `ireactor` decides two slots, not one: which electric-production occupant runs,
     # and -- jointly with `ipnet` and `itart` -- whether `costs.cost_of_electricity`
     # exists at all and which centrepost treatment it uses. `cost_variables.py:521`/
@@ -3789,9 +3892,9 @@ def machine_from_indat(input_file, stella_conf=None):
     if device is TokamakProcess:
         return TokamakProcess(
             # Everything device-specific, and no longer `Tokamak()`: twenty-six of
-            # its twenty-eight slots have occupants, most of them switched. `i_tf_sup`
-            # and `i_plasma_ignited` are *threaded* rather than re-read, because a
-            # switch is answered once.
+            # its twenty-eight slots have occupants, most of them switched. `i_tf_sup`,
+            # `i_plasma_ignited`, `itart` and `i_tf_sc_mat` are *threaded* rather than
+            # re-read, because a switch is answered once.
             tokamak=_tokamak_device(
                 switches,
                 numbers_from_indat(input_file),
@@ -3800,6 +3903,7 @@ def machine_from_indat(input_file, stella_conf=None):
                 i_tf_sup,
                 i_plasma_ignited,
                 itart,
+                i_tf_sc_mat,
             ),
             costs=costs,
             physics=Physics(
@@ -3875,10 +3979,9 @@ def machine_from_indat(input_file, stella_conf=None):
     ipowerflow = PowerFlowModel(ipowerflow)
     # The superconductor, and with it whether the coils block is a cycle: only the
     # Bi-2212 occupant reads `.tfcoil.j_tf_wp`, which `winding_pack_total_size_post`
-    # owns. `tfcoil_variables.py:246` is the default. Below the device branch because
-    # `StellaratorCoils` is a stellarator namespace -- a tokamak's TF coils are
-    # `models/tfcoil/`, unported, and will need their own answer to this same switch.
-    i_tf_sc_mat = SuperconductorModel(int(switches.get("i_tf_sc_mat", 1)))
+    # owns. `i_tf_sc_mat` itself is resolved above the device branch now -- the tokamak's
+    # TF mass slot asks the same switch, and threading one local is what stops the two
+    # devices' answers from drifting apart.
     winding_pack_intersect_inputs = _slot_occupant(
         "i_tf_sc_mat", i_tf_sc_mat, WINDING_PACK_MATERIAL
     )

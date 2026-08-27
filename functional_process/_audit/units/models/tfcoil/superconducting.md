@@ -190,17 +190,24 @@ functions; see that module.
 
 ## cottax node
 
-Twenty-two classes in seven families:
+Seven families. Six of them are twenty occupants:
 `SuperconductingTfWpGeometry{Rectangular,DoubleRectangular,Trapezoidal}`,
 `TfCaseAreas{CircularFront,StraightFront}`,
 `DxTfSideCase{Rectangular,DoubleRectangular,Trapezoidal}`, `TfWpCurrents`,
 `PeakBTfInboardWithRipple{16Coils,18Coils,20Coils,FlatAllowance}`,
 `CiccAveragedTurnGeometryFromCurrentPerTurn`, `CiccIntegerTurnGeometry`
-(2026-08-27), `CiccInboardAreasAndFractions`, `TfTurnArea`,
-`SuperconductingTfCoilAreasAndMasses{Conventional,SphericalTokamak}` (the
-spherical arm also 2026-08-27). The turn-geometry family base is
-`CiccTurnGeometry` (`i_tf_turns_integer` first), with `CiccAveragedTurnGeometry` as
-the averaged sub-family under it.
+(2026-08-27), `CiccInboardAreasAndFractions`, `TfTurnArea`. The turn-geometry family
+base is `CiccTurnGeometry` (`i_tf_turns_integer` first), with
+`CiccAveragedTurnGeometry` as the averaged sub-family under it.
+
+The seventh is the mass family, and it is **eighteen** occupants since 2026-08-27:
+`<Material>SuperconductingTfCoilAreasAndMasses{Conventional,SphericalTokamak}` for all
+nine `i_tf_sc_mat` materials, each leaf pairing one of two abstract `itart` arms
+(`SuperconductingTfCoilAreasAndMasses{Conventional,SphericalTokamak}`, which declare the
+outputs and the arm body) with one of nine abstract material classes
+(`IterNb3snTfCoilMass` … `HazeltonZhaiRebcoTfCoilMass`, which declare `__call__` and its
+one `FromExactly`). See the dated section below for why it is two axes rather than
+eighteen flat classes.
 
 ## tier signal
 
@@ -215,7 +222,7 @@ the averaged sub-family under it.
 | `round(n_tf_coils)` | **16** *(live)*, 18, 20, other | all four | treated as a switch: the arms select different fit coefficients **and** different reads |
 | `i_dx_tf_turn_general_input` × `i_dx_tf_turn_cable_space_general_input` | **(F, F)** *(live)*, (T, ·), (F, T) | (F, F) only | the other two own `.tfcoil.c_tf_turn`; see finding 1 |
 | `itart` | **0** *(live)*, 1 | **both** (2026-08-27) | `1` additionally owns `whtcp`/`whttflgs` — conditional ownership, hence two occupants |
-| `i_tf_sc_mat` | **1** *(live)*, 2–9 | `1` only | one occupant per material, differing in one `FromExactly`. **Now reached at a value it does not answer** — see the dated section |
+| `i_tf_sc_mat` | **1** *(live)*, 2–9 | **all nine** (2026-08-27) | nine occupants differing in one `FromExactly`, `.tfcoil.dcond[k]`; crossed with `itart` they are the mass slot's eighteen. Value 9 is portable here though `WINDING_PACK_MATERIAL` refuses it — see the dated section |
 | `i_tf_turns_integer` | **0** *(live)*, 1 | both (`1` since 2026-08-27) | `1` selects `tf_cable_in_conduit_integer_turn_geometry` (`:3422-3598`), a different function; `low_aspect_ratio_DEMO`'s arm — see the dated section below |
 | `.superconducting_tfcoil.i_tf_turn_type` | **1** *(live)*, 2 | `1` (CICC) | `2` is the whole CROCO class; resolved in `caller.py`, above every model |
 | `i_tf_sup` | **1** *(live)*, 0, 2 | `1` | resolved in `caller.py:295-316`, above every model — `schema.md`'s "resolved above this file" |
@@ -417,6 +424,10 @@ the meantime: after this wave both ST files refuse at `n_divertors == 2` (below)
 assembled machine reads `dcond[0]` on a `i_tf_sc_mat = 9` run. It must be closed before
 one can.
 
+> **Closed the same day** — see "the `i_tf_sc_mat` family" below. Both descriptions the
+> paragraph offers turned out to be the same one: nine occupants differing in one
+> `FromExactly`, crossed with the `itart` arm, keyed on the pair.
+
 ### Frontier probe
 
 Both files move to the same next refusal, and it is not in this unit:
@@ -441,3 +452,166 @@ Switch values these two files set that this unit's slots read, with line numbers
 | `i_tf_sc_mat = 9` | `:355` | `:827` |
 | `i_tf_shape = 2` | `:357` | `:803` |
 | `i_single_null = 0` | `:292` | `:638` |
+
+## 2026-08-27 — the `i_tf_sc_mat` family, and the defect above closed
+
+The section before this one flagged its own defect and declined to fix it: both
+`SuperconductingTfCoilAreasAndMasses{Conventional,SphericalTokamak}` bound
+`den_tf_sc_material = FromExactly(tfcoil.dcond[0])` through a module constant
+`I_TF_SC_MAT_ITER_NB3SN = 1`, which is `_audit/next_steps.md` §14.11's `CoilsMass` shape
+exactly — *a switch answered outside `indat.py`, by a constant folded into a `FromExactly`
+default, where `switch_audit` (which walks `eqx.field(static=True)` and nothing else)
+cannot see it.* The constant is deleted. The slot is a family keyed on both switches, and
+`indat.SC_TF_MASSES` has eighteen entries.
+
+### Why the product is real, and why it is written as two axes
+
+The brief asked whether this should be a 2 × 9 product of classes or the `dcond` element
+threaded per material with `itart` kept as the class axis. **The threaded option does not
+exist**, and saying why is the load-bearing part:
+
+* `itart` **must** be a class axis. It changes the *owned* set — the spherical arm writes
+  `.tfcoil.whtcp` and `.tfcoil.whttflgs` (`:2085-2093`) and the conventional arm writes
+  neither. `OutputInto` is a class attribute; no kwarg makes one appear and vanish.
+* `i_tf_sc_mat` **must** be a class axis too. It changes one read, and that read is a
+  `FromExactly` **default**, evaluated when the class body executes. Nothing about an
+  instance can move it: not an `eqx.field(static=True)`, not a constructor argument. This
+  is precisely the fact §14.11 recorded when `CoilsMass` became a family — "a
+  `FromExactly` default is fixed at class-definition time, so the index it selects is
+  fixed with it."
+
+Two forced class axes over independent switches is a product, so the occupant count is
+2 × 9 = 18 and there is no arithmetic to argue about. What *was* a choice is how the
+eighteen are written, and §14.11's own note on `ComponentThermalPowers` — *"the shape it
+wants is **nesting** … rather than a flat product"*, a flat product refused there because
+its cost exceeded what it bought — decides it. Here the nesting is free, so it is taken:
+
+| | declares | count |
+|---|---|---|
+| `itart` arm (abstract) | the ten/twelve `OutputInto`s and `_masses`, the arm body | 2 |
+| `i_tf_sc_mat` material (abstract) | `__call__`, whose only per-material entry is one `FromExactly(tfcoil.dcond[k])` | 9 |
+| leaf (concrete, registered) | nothing — `class <Mat>...<Arm>(<Mat>TfCoilMass, ...<Arm>): pass` | 18 |
+
+The nesting is **in the class hierarchy, not in the model tree**: the slot still holds one
+node, `SC_TF_MASSES` still maps one configuration to one class, and no lookup node is
+minted — `models/stellarator/coils/mass.py`'s reasoning ("the lookup's *input* is already
+a real place and its index is static") is unchanged, and `.tfcoil.dcond[k]` is an
+array-element `VarPath` per `_audit/naming_convention.md` § "Array elements".
+
+**The reason to prefer it is the defect itself, not the line count.** What went wrong here
+was one switch spelled twice, in two sibling classes, identically wrong. Eighteen flat
+classes would put eighteen copies of that spelling in the file. With the material axis
+factored out, each material's `dcond` element is written **once** and both `itart` arms
+inherit it, so the two arms are now structurally incapable of naming different materials —
+the same argument `_superconducting_tf_coil_masses` and `calculate_cplen` already make for
+the shared *algebra*, applied to the shared *switch*. Both axes are abstract on their own
+(an arm has no `__call__`, and cottax's `ExplicitFunction.__call__` is an `abstractmethod`;
+a material has no `_masses`, which is one here too), so **the two classes that used to bake
+the switch can no longer be instantiated at all.**
+
+### `i_tf_sc_mat = 9` is portable here, and refused one file over — both are right
+
+`indat.UNPORTED["i_tf_sc_mat", 9]` refuses `HAZELTON_ZHAI_REBCO` for the stellarator's
+`winding_pack_intersect_inputs` and `coils_mass`, because `jcrit_from_material`
+(`process/models/stellarator/coils/coils.py:52-160`) implements branches 1–8 and then
+raises: there is no PROCESS arm to port, and a ninth occupant would have to invent the
+model. **This slot does not call it.** `superconducting_tf_coil_areas_and_masses` uses the
+material for exactly one thing — the density `dcond[i_tf_sc_mat - 1]` at
+`process/models/tfcoil/superconducting.py:2024-2036`, which is the function's **only**
+`dcond` read and is a bare table lookup with no dispatch of any kind. `dcond[8] == 8500.0`
+is a real, populated element of a nine-long table (`tfcoil_variables.py:157-170`).
+
+So: **the mass path needs the density and nothing else, and value 9 is fully portable
+here.** The two facts do not contradict, because they are about different models. The
+registries record the split rather than leaving it implicit — `WINDING_PACK_MATERIAL` and
+`COILS_MASS_MATERIAL` key on the bare `"i_tf_sc_mat"`, so `_slot_occupant`'s `UNPORTED`
+lookup finds the refusal; `SC_TF_MASSES` keys on `"itart_i_tf_sc_mat_sc_tf_masses"`, so it
+does not. `UNPORTED`'s reason string was extended to say this outright, because an
+unqualified "value 9 is not ported" three files away is exactly the kind of claim that
+gets over-applied later.
+
+It is checked rather than asserted:
+`TestSuperconductingTfCoilAreasAndMassesStHazeltonZhaiRebco` drives PROCESS itself at
+`i_tf_sc_mat = 9`. If the reading were wrong PROCESS would raise there instead of agreeing.
+
+### The material axis is discriminated now, and it was not before
+
+Both reference adapters used to write `den_tf_sc_material` into **every** slot of `dcond`
+and pin `i_tf_sc_mat = 1`. That is why nothing caught the bake, and it is worse than it
+sounds: four of the nine densities are `6080.0`, so even an adapter that left `dcond` at
+its defaults could not tell `dcond[0]` from `dcond[4]`. `low_aspect_ratio_DEMO` is the live
+instance — it sets `i_tf_sc_mat = 5` (`IN.DAT:910`), it was assembling the `dcond[0]`
+occupant, and it got the right number anyway because `dcond[4] == dcond[0]`. **No value
+test on any tracked tokamak could have failed on this defect.**
+
+The adapters now take the occupant's `i_tf_sc_mat` as a leading argument, plant the
+density in that element alone, and fill the other eight with `_DCOND_POISON = -1.0e9` —
+`models/pfcoil/test_masses.py`'s technique, and safe here for a stronger reason than
+there, since this function reads `dcond` exactly once. Measured: driving PROCESS at
+`i_tf_sc_mat = 5` with the density planted in `dcond[0]` instead gives
+`m_tf_coil_superconductor = -9.54e8` kg against the correct `5.80e3` kg — wrong in sign as
+well as magnitude, at every sample. The ported side is unchanged throughout: the pure
+functions still take the density already indexed, so the whole discrimination is on the
+reference side, exactly as `TestPFCoilChainCsWstNb3Sn` does it.
+
+Four of the product's eighteen corners are covered, which is enough because PROCESS's read
+is a single unconditional `dcond[i_tf_sc_mat - 1]`: `(0, 1)` and `(1, 1)` (the existing
+pair, now poisoned), plus `(0, 5)` — `low_aspect_ratio_DEMO`'s occupant, the case that
+would have caught the original defect — and `(1, 9)` — both ST files' occupant, on the
+`sc-masses-st-shortleg` point whose `den_tf_sc_material = 8500.0` is already `dcond[8]`'s
+true value, so geometry and material are the ST's together rather than one grafted onto
+the other. The NaN poisoning of `whtcp`/`whttflgs` is untouched, so the `itart == 1` branch
+stays an executed check in both spherical cases.
+
+**Validation.** tfcoil case file **91 passed** plain (81 before) and **182** with
+`--fp-gradients` — the gradient half is exactly the half a plain run skips (91 + 91).
+`test_machine.py`, `test_switch_coverage.py`, `test_boundary.py`,
+`test_registry_coverage.py` → 280 passed / 43 skipped; `test_machine_survey.py`,
+`test_mda.py`, `test_mdf.py`, `test_paths.py` → 38 passed. Ruff statistics on both edited
+modules are at parity with their pre-change baselines, allowing for the new classes' own
+`B008`/`D102`/`PLR6301` — the same three rules `models/stellarator/coils/mass.py` already
+reports for the identical construct. (`indat.py` is at exact parity: 14 `E501`, 2
+`PLR6201`, unchanged.)
+
+### The three tokamak reference machines are unmoved, bit for bit
+
+None of them sets `dcond`, so the table is PROCESS's default everywhere.
+
+| file | `itart` | `i_tf_sc_mat` | occupant now | element | before |
+|---|---|---|---|---|---|
+| `large_tokamak_eval.IN.DAT` | 0 (default) | 1 (`:374`) | `IterNb3sn…Conventional` | `dcond[0]` = 6080.0 | `dcond[0]` — identical |
+| `large_tokamak_nof.IN.DAT` | 0 (default) | 1 (`:583`) | `IterNb3sn…Conventional` | `dcond[0]` = 6080.0 | `dcond[0]` — identical |
+| `low_aspect_ratio_DEMO.IN.DAT` | 0 (default) | 5 (`:910`) | `WstNb3sn…Conventional` | `dcond[4]` = 6080.0 | `dcond[0]` = 6080.0 — **the read moved, the number did not** |
+
+`large_tokamak_eval`'s occupant class, its declared `dcond` read and every harness number
+above are unchanged. `low_aspect_ratio_DEMO` is the one machine whose *declared read*
+moves, and it moves onto the element its own switch names while landing on the same float
+— which is the whole reason the poison exists rather than a value test.
+
+Both ST files still refuse at `n_divertors == 2`, unchanged by this wave, so the wrong
+density was never reachable in the interval between the two sections — but it is answered
+now, before the double-null arm lands, which is what the earlier section asked for.
+
+### Registration
+
+`indat.py`, three hunks:
+
+1. `SC_TF_MASSES` re-keyed from `SphericalTokamakModel` to
+   `(SphericalTokamakModel, SuperconductorModel)`, built as a comprehension over a
+   material → `(conventional, spherical)` table so the pairing cannot be mistyped, and the
+   slot call is now
+   `_slot_occupant("itart_i_tf_sc_mat_sc_tf_masses", (itart, i_tf_sc_mat), SC_TF_MASSES)`.
+   It is this file's only two-switch key; every other composite arm reduces to a computed
+   `_*_arm` integer, and this one cannot, because the two switches are independent rather
+   than jointly selecting one behaviour.
+2. **`i_tf_sc_mat` is resolved once, above the device branch**, beside `itart` — not
+   re-read in `_tokamak_device`, which takes it as a threaded argument. It was resolved
+   *below* the branch before, in the stellarator arm, under a comment noting that a
+   tokamak's TF coils "will need their own answer to this same switch". They do; this is
+   it, and it is the *same local*. That is the cross-slot coherence the brief asked about:
+   `WINDING_PACK_MATERIAL`, `COILS_MASS_MATERIAL` and `SC_TF_MASSES` cannot name three
+   different materials, because there is one `SuperconductorModel` value in the factory
+   and all three are handed it. No slot is resolved at the read site, since the
+   stellarator's two refuse value 9 and this one does not.
+3. `UNPORTED["i_tf_sc_mat", 9]`'s reason extended to scope the refusal to the
+   critical-surface slots (above).

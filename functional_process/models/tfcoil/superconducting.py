@@ -67,7 +67,7 @@ Deliberately **out** of scope, with reasons:
 | `superconducting_tf_case_geometry`, sidewall | `i_tf_wp_geom` | all three (0/1/2) | -- |
 | `peak_b_tf_inboard_with_ripple` | `round(n_tf_coils)` | 16, 18, 20, other | -- |
 | `tf_cable_in_conduit_averaged_turn_geometry` | `i_dx_tf_turn_general_input`, `i_dx_tf_turn_cable_space_general_input` | the both-`False` arm | the other two |
-| `superconducting_tf_coil_areas_and_masses` | `itart` | both (0/1) | -- |
+| `..._areas_and_masses` | `itart`, `i_tf_sc_mat` | 2 x 9 = 18 | -- |
 | `run`'s turn-geometry choice | `i_tf_turns_integer` | both (0 non-integer / 1 integer) | -- |
 
 `i_tf_wp_geom` is `-1` (`UNSET`) by default and `process/core/init.py:977-989` resolves
@@ -82,6 +82,8 @@ different *fit coefficients* **and** different reads -- the `else` arm reads not
 `b_tf_inboard_peak_symmetric` -- so the split default applies on its face.
 """
 
+from abc import abstractmethod
+
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -93,19 +95,6 @@ from cottax.interfaces.pytree_namespace_module import (
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import build, fwbs, superconducting_tfcoil, tfcoil
 from process.core import constants
-
-I_TF_SC_MAT_ITER_NB3SN = 1
-"""`i_tf_sc_mat`'s ITER-Nb3Sn value and PROCESS's own default
-(`process/data_structure/tfcoil_variables.py:246`);
-`tests/regression/input_files/large_tokamak_eval.IN.DAT:374` sets the same `1`, so the
-material density this port reads is `dcond[0] == 6080.0` (`tfcoil_variables.py:158`).
-
-Same treatment as `models/stellarator/coils/mass.py`'s `CoilsMass`: `dcond` is a real
-nine-element `DataStructure` field, so the material lookup is an array-element `VarPath`
-(`_audit/naming_convention.md` § "Array elements") rather than an invented mint, and the
-index is fixed at class-definition time by the occupant. A different `i_tf_sc_mat` needs
-a sibling class overriding only that one `FromExactly`.
-"""
 
 _RIPPLE_FIT_COEFFICIENTS = {
     16: (0.28101, 1.8481, -0.88159, 0.93834),
@@ -1019,7 +1008,8 @@ def superconducting_tf_coil_areas_and_masses_conventional(
     den_tf_sc_material :
         Superconductor density (kg/m3) -- `.tfcoil.dcond[i_tf_sc_mat - 1]`, already
         indexed by the material switch. Same treatment as
-        `models/stellarator/coils/mass.py`; see `I_TF_SC_MAT_ITER_NB3SN`.
+        `models/stellarator/coils/mass.py`: the index is chosen at assembly, by which
+        material occupant fills the slot, so this pure function never sees the switch.
 
     Returns
     -------
@@ -1833,21 +1823,109 @@ class TfTurnArea(ExplicitFunction):
 
 
 class SuperconductingTfCoilAreasAndMasses(ExplicitFunction):
-    """The family that owns the superconducting TF coil masses. `itart` decides it."""
+    """The family that owns the superconducting TF coil masses. **Two** switches decide
+    it -- `itart` and `i_tf_sc_mat` -- and the family is their full 2 x 9 product.
+
+    Both axes are forced, for different reasons, and neither can be an
+    `eqx.field(static=True)` kwarg:
+
+    * **`itart`** changes the *owned* set: the spherical arm writes `.tfcoil.whtcp` and
+      `.tfcoil.whttflgs` (`superconducting.py:2085-2093`) and the conventional arm
+      writes neither. A kwarg cannot make an `OutputInto` appear at one value of a
+      switch and vanish at the other -- conditional ownership.
+    * **`i_tf_sc_mat`** changes one *read*: `den_tf_sc_material` is
+      `.tfcoil.dcond[i_tf_sc_mat - 1]`, an array-element `VarPath`
+      (`_audit/naming_convention.md` § "Array elements"). A `FromExactly` default is
+      fixed when the class body executes, so the element it names is fixed with the
+      class -- the same fact that made `stellarator.coils.coils_mass` a family
+      (`_audit/next_steps.md` §14.11).
+
+    Eighteen concrete occupants, then. **They are written as two axes rather than as
+    eighteen flat classes, and that is the argument rather than an economy.** The defect
+    this family closes (`_audit/units/models/tfcoil/superconducting.md`, 2026-08-27) was
+    that *both* arms independently spelled the material, as a module constant baked into
+    `FromExactly(tfcoil.dcond[0])` -- one switch answered twice, in two places, invisibly
+    to `switch_audit`, which walks static fields and never sees a constant folded into a
+    default. Eighteen flat classes would restore eighteen places to spell it. Here each
+    material's element is spelled **once**, in one `...TfCoilMass` class, and both
+    `itart` arms inherit it, so the two arms are structurally incapable of naming
+    different materials -- the argument `_superconducting_tf_coil_masses` and
+    `calculate_cplen` already make for the shared algebra, applied to the shared switch.
+
+    That is `_audit/next_steps.md` §14.11's own preference ("the shape it wants is
+    **nesting** ... rather than a flat product") taken where it is cheap: the nesting is
+    in the class hierarchy, not in the model tree, so the slot still holds one node and
+    `indat.SC_TF_MASSES` still holds one class per configuration. No lookup node is
+    minted, exactly as `models/stellarator/coils/mass.py` decided -- the lookup's input
+    is already a real place and its index is static.
+
+    * The **`itart` axis** (`...Conventional`, `...SphericalTokamak`) declares the
+      `OutputInto`s and `_masses`, the arm body.
+    * The **`i_tf_sc_mat` axis** (`IterNb3snTfCoilMass` ...
+      `HazeltonZhaiRebcoTfCoilMass`) declares `__call__`, whose only per-material entry
+      is one `FromExactly`.
+    * The **eighteen leaves** pair one of each and add nothing. Both axes are abstract
+      on their own -- an arm has no `__call__`, a material has no `_masses` -- so the
+      two classes that used to bake the switch cannot be instantiated any more, which is
+      the strongest form of "the old answer is gone" available.
+    """
+
+    @abstractmethod
+    def _masses(
+        self,
+        *,
+        len_tf_coil,
+        a_tf_wp_with_insulation,
+        a_tf_wp_no_insulation,
+        den_tf_wp_turn_insulation,
+        z_tf_inside_half,
+        dr_tf_inboard,
+        den_tf_coil_case,
+        a_tf_coil_inboard_case,
+        a_tf_coil_outboard_case,
+        n_tf_coil_turns,
+        a_tf_turn_cable_space_no_void,
+        f_a_tf_turn_cable_space_extra_void,
+        f_a_tf_turn_cable_copper,
+        a_tf_wp_coolant_channels,
+        den_tf_sc_material,
+        a_tf_turn_steel,
+        den_steel,
+        a_tf_coil_wp_turn_insulation,
+        n_tf_coils,
+    ):
+        """Run this `itart` arm, given the density its material occupant read.
+
+        The `itart` axis defines it; a material class on its own does not, which is what
+        makes a material class abstract in practice. The arms are abstract by
+        construction instead -- they define no `__call__`, and cottax's
+        `ExplicitFunction.__call__` is an `abstractmethod`, so instantiating one raises
+        `TypeError`. Between the two, only the eighteen leaves are usable, which is the
+        property this family wants: the two classes that used to bake `i_tf_sc_mat` no
+        longer answer it, and cannot.
+
+        Not a port surface: `_params` reads `__call__`'s signature only
+        (`ExplicitFunction._signature_of`), so what the graph sees is the material
+        class's parameter list.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} names an `i_tf_sc_mat` material but no `itart` arm; "
+            "a usable occupant pairs one of each -- see `indat.SC_TF_MASSES`."
+        )
 
 
 class SuperconductingTfCoilAreasAndMassesConventional(
     SuperconductingTfCoilAreasAndMasses
 ):
-    """`itart == 0` (conventional aspect ratio) -- `large_tokamak_eval`'s arm.
+    """The `itart == 0` (conventional aspect ratio) **arm** -- one of the two axes.
+
+    Abstract. It declares the ten outputs and the arm body, and takes its `__call__` --
+    and with it the `.tfcoil.dcond` element it reads -- from whichever `...TfCoilMass`
+    material class it is paired with.
 
     Owns four of the slot's ten boundary reads (`m_tf_coil_case`, `m_tf_coil_copper`,
     `m_tf_coil_superconductor`, `m_tf_coils_total`) and does **not** own `whtcp` or
-    `whttflgs`, which only the `itart == 1` arm writes
-    (`superconducting.py:2086-2093`).
-
-    `den_tf_sc_material` is `.tfcoil.dcond[0]`, i.e. `i_tf_sc_mat == 1` -- see
-    `I_TF_SC_MAT_ITER_NB3SN`.
+    `whttflgs`, which only the `itart == 1` arm writes (`superconducting.py:2085-2093`).
     """
 
     m_tf_coil_wp_insulation = OutputInto(tfcoil)
@@ -1861,28 +1939,32 @@ class SuperconductingTfCoilAreasAndMassesConventional(
     m_tf_coil = OutputInto(tfcoil)
     m_tf_coils_total = OutputInto(tfcoil)
 
-    def __call__(
+    def _masses(
         self,
-        len_tf_coil=From(tfcoil),
-        a_tf_wp_with_insulation=From(superconducting_tfcoil),
-        a_tf_wp_no_insulation=From(superconducting_tfcoil),
-        den_tf_wp_turn_insulation=From(tfcoil),
-        z_tf_inside_half=From(build),
-        dr_tf_inboard=From(build),
-        den_tf_coil_case=From(tfcoil),
-        a_tf_coil_inboard_case=From(tfcoil),
-        a_tf_coil_outboard_case=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        a_tf_wp_coolant_channels=From(tfcoil),
-        den_tf_sc_material=FromExactly(tfcoil.dcond[I_TF_SC_MAT_ITER_NB3SN - 1]),
-        a_tf_turn_steel=From(tfcoil),
-        den_steel=From(fwbs),
-        a_tf_coil_wp_turn_insulation=From(tfcoil),
-        n_tf_coils=From(tfcoil),
+        *,
+        len_tf_coil,
+        a_tf_wp_with_insulation,
+        a_tf_wp_no_insulation,
+        den_tf_wp_turn_insulation,
+        z_tf_inside_half,
+        dr_tf_inboard,
+        den_tf_coil_case,
+        a_tf_coil_inboard_case,
+        a_tf_coil_outboard_case,
+        n_tf_coil_turns,
+        a_tf_turn_cable_space_no_void,
+        f_a_tf_turn_cable_space_extra_void,
+        f_a_tf_turn_cable_copper,
+        a_tf_wp_coolant_channels,
+        den_tf_sc_material,
+        a_tf_turn_steel,
+        den_steel,
+        a_tf_coil_wp_turn_insulation,
+        n_tf_coils,
     ):
+        """`superconducting_tf_coil_areas_and_masses_conventional`,
+        the arm this class is.
+        """
         return superconducting_tf_coil_areas_and_masses_conventional(
             len_tf_coil=len_tf_coil,
             a_tf_wp_with_insulation=a_tf_wp_with_insulation,
@@ -1909,33 +1991,23 @@ class SuperconductingTfCoilAreasAndMassesConventional(
 class SuperconductingTfCoilAreasAndMassesSphericalTokamak(
     SuperconductingTfCoilAreasAndMasses
 ):
-    """`itart == 1` (spherical tokamak) -- the arm both ST regression files take.
+    """The `itart == 1` (spherical tokamak) **arm** -- one of the two axes.
 
-    Same twenty reads as the conventional sibling, no more and no fewer, and the same ten
-    outputs **plus two**: `.tfcoil.whtcp` and `.tfcoil.whttflgs`
-    (`superconducting.py:2086-2093`). That extra pair is the whole reason `itart` is an
-    occupant slot here rather than a static kwarg -- **conditional ownership**: a kwarg
-    cannot make two `OutputInto`s appear at one value of a switch and vanish at the
-    other.
+    Abstract. It declares the twelve outputs and the arm body, and takes its `__call__`
+    -- and with it the `.tfcoil.dcond` element it reads -- from whichever
+    `...TfCoilMass` material class it is paired with.
+
+    Same twenty reads as the conventional sibling, no more and no fewer, and the same
+    ten outputs **plus two**: `.tfcoil.whtcp` and `.tfcoil.whttflgs`
+    (`superconducting.py:2085-2093`). That extra pair is why `itart` is an occupant axis
+    here rather than a static kwarg -- **conditional ownership**: a kwarg cannot make
+    two `OutputInto`s appear at one value of a switch and vanish at the other.
 
     On a superconducting TART this node is the **sole producer** of `whtcp`/`whttflgs`,
     which `costs.py`'s `c22211`/`c22212` (`models/costs/costs.py:1616-1653`) and
     `hcpb.py`'s TF nuclear heating (`models/blankets/hcpb.py:491-554`) read. PROCESS's
     resistive-centrepost chain writes the same two fields at `i_tf_sup = 0`; that is a
     different occupant of a different slot, not this one.
-
-    **`den_tf_sc_material` is bound to `dcond[0]` here, exactly as the conventional
-    sibling binds it, and that is a known gap on the two live ST files.** Both
-    `spherical_tokamak_eval.IN.DAT:355` and `st_regression.IN.DAT:827` set
-    `i_tf_sc_mat = 9`, whose density is `dcond[8] == 8500.0` and not
-    `dcond[0] == 6080.0` (`tfcoil_variables.py:157-170`). The gap is the pre-existing
-    `I_TF_SC_MAT_ITER_NB3SN` bake recorded in `_audit/units/models/tfcoil/
-    superconducting.md` § "switches touched" (`i_tf_sc_mat`: "`1` only"), not something
-    this arm introduces, and closing it means making the slot an `i_tf_sc_mat` family the
-    way `COILS_MASS_MATERIAL`/`WINDING_PACK_MATERIAL` already are -- a change to *both*
-    arms, deliberately not made here. Neither ST file assembles yet (they refuse
-    downstream at `itart_hcpb`), so the wrong density is not reachable by any machine;
-    it must be fixed before it is.
     """
 
     m_tf_coil_wp_insulation = OutputInto(tfcoil)
@@ -1951,28 +2023,32 @@ class SuperconductingTfCoilAreasAndMassesSphericalTokamak(
     whtcp = OutputInto(tfcoil)
     whttflgs = OutputInto(tfcoil)
 
-    def __call__(
+    def _masses(
         self,
-        len_tf_coil=From(tfcoil),
-        a_tf_wp_with_insulation=From(superconducting_tfcoil),
-        a_tf_wp_no_insulation=From(superconducting_tfcoil),
-        den_tf_wp_turn_insulation=From(tfcoil),
-        z_tf_inside_half=From(build),
-        dr_tf_inboard=From(build),
-        den_tf_coil_case=From(tfcoil),
-        a_tf_coil_inboard_case=From(tfcoil),
-        a_tf_coil_outboard_case=From(tfcoil),
-        n_tf_coil_turns=From(tfcoil),
-        a_tf_turn_cable_space_no_void=From(tfcoil),
-        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
-        f_a_tf_turn_cable_copper=From(tfcoil),
-        a_tf_wp_coolant_channels=From(tfcoil),
-        den_tf_sc_material=FromExactly(tfcoil.dcond[I_TF_SC_MAT_ITER_NB3SN - 1]),
-        a_tf_turn_steel=From(tfcoil),
-        den_steel=From(fwbs),
-        a_tf_coil_wp_turn_insulation=From(tfcoil),
-        n_tf_coils=From(tfcoil),
+        *,
+        len_tf_coil,
+        a_tf_wp_with_insulation,
+        a_tf_wp_no_insulation,
+        den_tf_wp_turn_insulation,
+        z_tf_inside_half,
+        dr_tf_inboard,
+        den_tf_coil_case,
+        a_tf_coil_inboard_case,
+        a_tf_coil_outboard_case,
+        n_tf_coil_turns,
+        a_tf_turn_cable_space_no_void,
+        f_a_tf_turn_cable_space_extra_void,
+        f_a_tf_turn_cable_copper,
+        a_tf_wp_coolant_channels,
+        den_tf_sc_material,
+        a_tf_turn_steel,
+        den_steel,
+        a_tf_coil_wp_turn_insulation,
+        n_tf_coils,
     ):
+        """`superconducting_tf_coil_areas_and_masses_spherical_tokamak`,
+        the arm this class is.
+        """
         return superconducting_tf_coil_areas_and_masses_spherical_tokamak(
             len_tf_coil=len_tf_coil,
             a_tf_wp_with_insulation=a_tf_wp_with_insulation,
@@ -1994,3 +2070,686 @@ class SuperconductingTfCoilAreasAndMassesSphericalTokamak(
             a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
             n_tf_coils=n_tf_coils,
         )
+
+
+class IterNb3snTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == ITER_NB3SN` (1) -- ITER Nb3Sn.
+
+    Reads `.tfcoil.dcond[0]` as the superconductor density, 6080.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    PROCESS's own default (`tfcoil_variables.py:246`) and the value both
+    `large_tokamak_eval.IN.DAT:374` and `large_tokamak_nof.IN.DAT:583` set, so this is
+    the material occupant those two reference machines assemble.
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[0]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class Bi2212TfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == BI2212` (2) -- Bi-2212.
+
+    Reads `.tfcoil.dcond[1]` as the superconductor density, 6080.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[1]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class OldLubellNbtiTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == OLD_LUBELL_NBTI` (3) -- old Lubell NbTi.
+
+    Reads `.tfcoil.dcond[2]` as the superconductor density, 6070.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[2]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class UserDefinedNb3snTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == USER_DEFINED_NB3SN` (4) -- user-defined Nb3Sn.
+
+    Reads `.tfcoil.dcond[3]` as the superconductor density, 6080.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[3]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class WstNb3snTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == WST_NB3SN` (5) -- WST Nb3Sn.
+
+    Reads `.tfcoil.dcond[4]` as the superconductor density, 6080.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    `low_aspect_ratio_DEMO.IN.DAT:910`'s value, and a warning about value tests:
+    `dcond[4] == dcond[0] == 6080.0`, so this occupant reads the same *number* the baked
+    `dcond[0]` used to, from the element the switch actually names. That machine's
+    answers therefore do not move -- and the coincidence is exactly why no value test
+    could have caught the bake. `_DCOND_POISON` in the case file is the answer to it.
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[4]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class CrocoRebcoTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == CROCO_REBCO` (6) -- CroCo REBCO.
+
+    Reads `.tfcoil.dcond[5]` as the superconductor density, 8500.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[5]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class DurhamNbtiTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == DURHAM_NBTI` (7) -- Durham Ginzburg-Landau NbTi.
+
+    Reads `.tfcoil.dcond[6]` as the superconductor density, 6070.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[6]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class DurhamRebcoTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == DURHAM_REBCO` (8) -- Durham Ginzburg-Landau REBCO.
+
+    Reads `.tfcoil.dcond[7]` as the superconductor density, 8500.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[7]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class HazeltonZhaiRebcoTfCoilMass(SuperconductingTfCoilAreasAndMasses):
+    """`i_tf_sc_mat == HAZELTON_ZHAI_REBCO` (9) -- Hazelton-Zhai REBCO.
+
+    Reads `.tfcoil.dcond[8]` as the superconductor density, 8500.0 kg/m3
+    (`tfcoil_variables.py:157-170`).
+
+    `spherical_tokamak_eval.IN.DAT:355` and `st_regression.IN.DAT:827`'s value, and the
+    one this family exists to get right: `dcond[8] == 8500.0` against the
+    `dcond[0] == 6080.0` both arms used to bake -- a 40 % superconductor-mass error.
+
+    **Ported here even though the stellarator refuses the same value.**
+    `indat.UNPORTED["i_tf_sc_mat", 9]` refuses `HAZELTON_ZHAI_REBCO` for
+    `stellarator.coils.winding_pack_intersect_inputs`, because `jcrit_from_material`
+    (`process/models/stellarator/coils/coils.py:52-160`) handles 1..8 and then raises:
+    there is no critical-surface arm to port. **This slot asks a different question.**
+    `superconducting_tf_coil_areas_and_masses` (`process/models/tfcoil/
+    superconducting.py:2024-2036`) uses the material for exactly one thing, the density
+    `dcond[i_tf_sc_mat - 1]`. No dispatch, no critical surface, and `dcond[8]` is a real
+    populated element of a nine-long table (`tfcoil_variables.py:157-170`). So value 9 is
+    portable *here* and refused *there*, and the two facts do not contradict: the
+    refusal is about a model this node does not use.
+
+    The `i_tf_sc_mat` **axis**, one of the family's two: abstract on its own,
+    since `_masses` is the `itart` arm's. Paired with either arm it gives a
+    concrete occupant, and this one `FromExactly` is the entire difference from
+    its eight siblings.
+    """
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[8]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return self._masses(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class IterNb3snSuperconductingTfCoilAreasAndMassesConventional(
+    IterNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 1)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, ITER_NB3SN]`.
+    """
+
+
+class IterNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    IterNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 1)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, ITER_NB3SN]`.
+    """
+
+
+class Bi2212SuperconductingTfCoilAreasAndMassesConventional(
+    Bi2212TfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 2)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, BI2212]`.
+    """
+
+
+class Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    Bi2212TfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 2)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, BI2212]`.
+    """
+
+
+class OldLubellNbtiSuperconductingTfCoilAreasAndMassesConventional(
+    OldLubellNbtiTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 3)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, OLD_LUBELL_NBTI]`.
+    """
+
+
+class OldLubellNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    OldLubellNbtiTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 3)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, OLD_LUBELL_NBTI]`.
+    """
+
+
+class UserDefinedNb3snSuperconductingTfCoilAreasAndMassesConventional(
+    UserDefinedNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 4)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, USER_DEFINED_NB3SN]`.
+    """
+
+
+class UserDefinedNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    UserDefinedNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 4)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, USER_DEFINED_NB3SN]`.
+    """
+
+
+class WstNb3snSuperconductingTfCoilAreasAndMassesConventional(
+    WstNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 5)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, WST_NB3SN]`.
+    """
+
+
+class WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    WstNb3snTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 5)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, WST_NB3SN]`.
+    """
+
+
+class CrocoRebcoSuperconductingTfCoilAreasAndMassesConventional(
+    CrocoRebcoTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 6)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, CROCO_REBCO]`.
+    """
+
+
+class CrocoRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    CrocoRebcoTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 6)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, CROCO_REBCO]`.
+    """
+
+
+class DurhamNbtiSuperconductingTfCoilAreasAndMassesConventional(
+    DurhamNbtiTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 7)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, DURHAM_NBTI]`.
+    """
+
+
+class DurhamNbtiSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    DurhamNbtiTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 7)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, DURHAM_NBTI]`.
+    """
+
+
+class DurhamRebcoSuperconductingTfCoilAreasAndMassesConventional(
+    DurhamRebcoTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 8)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, DURHAM_REBCO]`.
+    """
+
+
+class DurhamRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    DurhamRebcoTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 8)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, DURHAM_REBCO]`.
+    """
+
+
+class HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesConventional(
+    HazeltonZhaiRebcoTfCoilMass, SuperconductingTfCoilAreasAndMassesConventional
+):
+    """`(itart, i_tf_sc_mat) == (0, 9)`:
+    `SC_TF_MASSES[CONVENTIONAL_ASPECT_RATIO, HAZELTON_ZHAI_REBCO]`.
+    """
+
+
+class HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    HazeltonZhaiRebcoTfCoilMass, SuperconductingTfCoilAreasAndMassesSphericalTokamak
+):
+    """`(itart, i_tf_sc_mat) == (1, 9)`:
+    `SC_TF_MASSES[SPHERICAL_TOKAMAK, HAZELTON_ZHAI_REBCO]`.
+    """
