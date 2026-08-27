@@ -22,6 +22,7 @@ from functional_process.models.tfcoil.superconducting import (
     _RIPPLE_FIT_COEFFICIENTS,
     calculate_a_tf_turn,
     cicc_averaged_turn_geometry_from_current_per_turn,
+    cicc_integer_turn_geometry,
     dx_tf_side_case_double_rectangular,
     dx_tf_side_case_rectangular,
     dx_tf_side_case_trapezoidal,
@@ -547,6 +548,125 @@ class TestCiccAveragedTurnGeometryFromCurrentPerTurn(Tier1Contract):
         "layer_ins": (0.0, 1e-3),
         "a_tf_wp_no_insulation": (0.3, 1.2),
         "dia_tf_turn_coolant_channel": (0.002, 0.008),
+        "f_a_tf_turn_cable_space_extra_void": (0.2, 0.45),
+    }
+
+
+# ---------------------------------------------------------------------------
+# `tf_cable_in_conduit_integer_turn_geometry`
+# ---------------------------------------------------------------------------
+
+
+def _reference_cicc_integer_turn_geometry(
+    dr_tf_wp_with_insulation,
+    dx_tf_wp_insulation,
+    dx_tf_wp_insertion_gap,
+    n_tf_wp_layers,
+    dx_tf_wp_toroidal_min,
+    n_tf_wp_pancakes,
+    c_tf_coil,
+    dx_tf_turn_steel,
+    dx_tf_turn_insulation,
+    dia_tf_turn_coolant_channel,
+    f_a_tf_turn_cable_space_extra_void,
+):
+    """The `i_tf_turns_integer == 1` arm, as a tuple in the port's return order.
+
+    PROCESS's staticmethod takes `data` for its two `.tfcoil` reads
+    (`superconducting.py:3536-3546`), so the adapter sets exactly those two fields on a
+    fresh `DataStructure` -- the port's claim that they are reads of this node is
+    thereby executed, not asserted. `n_tf_wp_layers`/`n_tf_wp_pancakes` are passed as
+    floats deliberately: PROCESS's own body divides and multiplies by them
+    continuously, and the fuzz/gradient samples exercise exactly that continuity.
+    """
+    model = _sctfcoil()
+    model.data.tfcoil.dia_tf_turn_coolant_channel = dia_tf_turn_coolant_channel
+    model.data.tfcoil.f_a_tf_turn_cable_space_extra_void = (
+        f_a_tf_turn_cable_space_extra_void
+    )
+    result = model.tf_cable_in_conduit_integer_turn_geometry(
+        dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
+        dx_tf_wp_insulation=dx_tf_wp_insulation,
+        dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
+        n_tf_wp_layers=n_tf_wp_layers,
+        dx_tf_wp_toroidal_min=dx_tf_wp_toroidal_min,
+        n_tf_wp_pancakes=n_tf_wp_pancakes,
+        c_tf_coil=c_tf_coil,
+        dx_tf_turn_steel=dx_tf_turn_steel,
+        dx_tf_turn_insulation=dx_tf_turn_insulation,
+        data=model.data,
+    )
+    return (
+        result.radius_tf_turn_cable_space_corners,
+        result.dr_tf_turn,
+        result.dx_tf_turn,
+        result.a_tf_turn_cable_space_no_void,
+        result.a_tf_turn_steel,
+        result.a_tf_turn_insulation,
+        result.c_tf_turn,
+        result.n_tf_coil_turns,
+        result.dr_tf_turn_conduit_full,
+        result.dx_tf_turn_conduit_full_toroidal,
+        result.dx_tf_turn_conduit_full_average,
+        result.dr_tf_turn_cable_space,
+        result.dx_tf_turn_cable_space,
+        result.dx_tf_turn_cable_space_average,
+        result.a_tf_turn_cable_space_effective,
+        result.f_a_tf_turn_cable_space_cooling,
+        result.dx_tf_turn_general,
+    )
+
+
+class TestCiccIntegerTurnGeometry(Tier1Contract):
+    """The integer arm. Owns `.tfcoil.c_tf_turn` -- the averaged arm reads it.
+
+    Sample: `test_tf_cable_in_conduit_integer_turn_geometry`'s first case
+    (`tests/unit/models/tfcoil/test_sctfcoil.py:1052-1085`, from the retired
+    baseline-2018 file, `n_tf_wp_layers = 10` x `n_tf_wp_pancakes = 20`), with the two
+    `data`-mediated reads at their `DataStructure` defaults
+    (`tfcoil_variables.py:175,717`), which is what that test's fixture holds. The fuzz
+    bounds put `dia_tf_turn_coolant_channel` up to `low_aspect_ratio_DEMO`'s `0.010`
+    and the void fraction down to its `0.300`, so the file that motivated this occupant
+    is inside the sampled box.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_cicc_integer_turn_geometry
+    ported = cicc_integer_turn_geometry
+
+    samples = [
+        legacy_sample(
+            "cicc-integer-turn-baseline2018",
+            dr_tf_wp_with_insulation=0.54261087836601019,
+            dx_tf_wp_insulation=0.0080000000000000019,
+            dx_tf_wp_insertion_gap=0.01,
+            n_tf_wp_layers=10.0,
+            dx_tf_wp_toroidal_min=1.299782604942499,
+            n_tf_wp_pancakes=20.0,
+            c_tf_coil=14805350.287500001,
+            dx_tf_turn_steel=0.0080000000000000002,
+            dx_tf_turn_insulation=0.002,
+            dia_tf_turn_coolant_channel=0.005,
+            f_a_tf_turn_cable_space_extra_void=0.4,
+        ),
+    ]
+
+    fuzz_bounds = {
+        # The box is chosen so the cable space stays positive at every corner
+        # (worst case: dr_tf_wp 0.45, insulation+gap maximal, 12 layers, 8 mm steel
+        # -> dr_tf_turn_cable_space ~ 0.011 m): PROCESS's `np.sqrt` returns NaN on a
+        # negative cable space where the port's `safe_sqrt` clamps, and that error
+        # path is PROCESS-logging territory, not a point to fuzz across.
+        "dr_tf_wp_with_insulation": (0.45, 1.2),
+        "dx_tf_wp_insulation": (0.004, 0.010),
+        "dx_tf_wp_insertion_gap": (0.005, 0.015),
+        "n_tf_wp_layers": (4.0, 12.0),
+        "dx_tf_wp_toroidal_min": (0.9, 2.0),
+        "n_tf_wp_pancakes": (8.0, 24.0),
+        "c_tf_coil": (5e6, 3e7),
+        "dx_tf_turn_steel": (0.004, 0.008),
+        "dx_tf_turn_insulation": (5e-4, 2e-3),
+        "dia_tf_turn_coolant_channel": (0.002, 0.012),
         "f_a_tf_turn_cable_space_extra_void": (0.2, 0.45),
     }
 

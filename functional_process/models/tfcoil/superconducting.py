@@ -9,7 +9,10 @@ The base-class half is `functional_process/models/tfcoil/base.py`; the quench ha
 reads** (`_audit/tokamak_boundary.md`). In scope and ported here:
 `superconducting_tf_wp_geometry`, `superconducting_tf_case_geometry` (split in two, see
 below), `tf_wp_currents`, `peak_b_tf_inboard_with_ripple`,
-`tf_cable_in_conduit_averaged_turn_geometry`, `tf_cicc_inboard_areas_and_fractions`,
+`tf_cable_in_conduit_averaged_turn_geometry`,
+`tf_cable_in_conduit_integer_turn_geometry` (2026-08-27, after
+`low_aspect_ratio_DEMO`'s silent mis-assembly -- see `CiccIntegerTurnGeometry`),
+`tf_cicc_inboard_areas_and_fractions`,
 `superconducting_tf_coil_areas_and_masses`, and `run`'s inline `.tfcoil.a_tf_turn`
 (`process/models/tfcoil/superconducting.py:2700-2704`).
 
@@ -27,8 +30,6 @@ Deliberately **out** of scope, with reasons:
   `.superconducting_tfcoil.n_tf_turn_superconducting_cables` /
   `len_tf_coil_superconductor` / `len_tf_superconductor_total`, which nothing on the
   boundary reads.
-- `tf_cable_in_conduit_integer_turn_geometry` -- the `i_tf_turns_integer == 1` arm; see
-  UNPORTED below.
 - every `output_*` method -- reporting.
 - the whole `CROCOSuperconductingTFCoil` branch -- selected by
   `.superconducting_tfcoil.i_tf_turn_type == 2` (`process/core/caller.py:307-313`),
@@ -67,7 +68,7 @@ Deliberately **out** of scope, with reasons:
 | `peak_b_tf_inboard_with_ripple` | `round(n_tf_coils)` | 16, 18, 20, other | -- |
 | `tf_cable_in_conduit_averaged_turn_geometry` | `i_dx_tf_turn_general_input`, `i_dx_tf_turn_cable_space_general_input` | the both-`False` arm | the other two |
 | `superconducting_tf_coil_areas_and_masses` | `itart` | `itart == 0` | `itart == 1` |
-| `run`'s turn-geometry choice | `i_tf_turns_integer` | `0` (non-integer) | `1` (integer) |
+| `run`'s turn-geometry choice | `i_tf_turns_integer` | both (0 non-integer / 1 integer) | -- |
 
 `i_tf_wp_geom` is `-1` (`UNSET`) by default and `process/core/init.py:977-989` resolves
 it before any model runs: `DOUBLE_RECTANGULAR (1)` when `i_tf_turns_integer == 0`,
@@ -749,6 +750,141 @@ def cicc_averaged_turn_geometry_from_current_per_turn(
     )
 
 
+def cicc_integer_turn_geometry(
+    *,
+    dr_tf_wp_with_insulation,
+    dx_tf_wp_insulation,
+    dx_tf_wp_insertion_gap,
+    n_tf_wp_layers,
+    dx_tf_wp_toroidal_min,
+    n_tf_wp_pancakes,
+    c_tf_coil,
+    dx_tf_turn_steel,
+    dx_tf_turn_insulation,
+    dia_tf_turn_coolant_channel,
+    f_a_tf_turn_cable_space_extra_void,
+):
+    """`tf_cable_in_conduit_integer_turn_geometry` -- the `i_tf_turns_integer == 1` arm.
+
+    `process/models/tfcoil/superconducting.py:3423-3600`. The turn is **rectangular**,
+    not square: the radial pitch is the winding pack's radial extent over
+    `n_tf_wp_layers`, the toroidal pitch its minimum toroidal extent over
+    `n_tf_wp_pancakes`, and nothing forces the two equal. That is the observable
+    difference from the averaged arm, whose `dr_tf_turn == dx_tf_turn` by construction
+    -- and the shape of the silent mis-assembly that motivated this occupant
+    (`low_aspect_ratio_DEMO` computed a 0.0568 m square where PROCESS's converged turn
+    is 0.0547 x 0.0591 m).
+
+    Two `logger.error` guards on negative cable-space dimensions
+    (`superconducting.py:3477-3495`) are logging only and dropped, same policy as
+    `CiccInboardAreasAndFractions`. **The degenerate-cable fallback is reproduced
+    exactly, ordering included** (`:3550-3567`): when the cable-space area comes out
+    non-positive *and* neither cable-space dimension is itself negative, the
+    rounded-corner radius is zeroed and the area recomputed as the plain rectangle --
+    *after* `a_tf_turn_cable_space_effective` and `f_a_tf_turn_cable_space_cooling`
+    were computed from the pre-fallback value, so those two keep the uncorrected
+    number while `a_tf_turn_steel` uses the corrected one. Same defect shape as the
+    averaged arm's **D2** (`superconducting.md`), ported as written via `jnp.where`.
+
+    Unlike the averaged arm, `c_tf_turn` is **owned** here: `c_tf_coil` divided by the
+    (fixed) turn count, `superconducting.py:3505`. The turn count itself is
+    `n_tf_wp_layers * n_tf_wp_pancakes`, a product of two inputs -- constant in every
+    derivative sense, but still a node output because downstream nodes read it.
+
+    Returns
+    -------
+    :
+        `(radius_tf_turn_cable_space_corners, dr_tf_turn, dx_tf_turn,
+        a_tf_turn_cable_space_no_void, a_tf_turn_steel, a_tf_turn_insulation,
+        c_tf_turn, n_tf_coil_turns, dr_tf_turn_conduit_full,
+        dx_tf_turn_conduit_full_toroidal, dx_tf_turn_conduit_full_average,
+        dr_tf_turn_cable_space, dx_tf_turn_cable_space,
+        dx_tf_turn_cable_space_average, a_tf_turn_cable_space_effective,
+        f_a_tf_turn_cable_space_cooling, dx_tf_turn_general)` -- `run`'s write order
+        (`superconducting.py:2404-2439`).
+    """
+    radius_tf_turn_cable_space_corners = dx_tf_turn_steel * 0.75
+
+    dr_tf_turn = (
+        dr_tf_wp_with_insulation - 2.0 * (dx_tf_wp_insulation + dx_tf_wp_insertion_gap)
+    ) / n_tf_wp_layers
+    dx_tf_turn = (
+        dx_tf_wp_toroidal_min - 2.0 * (dx_tf_wp_insulation + dx_tf_wp_insertion_gap)
+    ) / n_tf_wp_pancakes
+
+    dx_tf_turn_general = safe_sqrt(dr_tf_turn * dx_tf_turn)
+
+    n_tf_coil_turns = n_tf_wp_layers * n_tf_wp_pancakes
+    c_tf_turn = c_tf_coil / n_tf_coil_turns
+
+    dr_tf_turn_conduit_full = dr_tf_turn - 2.0 * dx_tf_turn_insulation
+    dx_tf_turn_conduit_full_toroidal = dx_tf_turn - 2.0 * dx_tf_turn_insulation
+    dx_tf_turn_conduit_full_average = safe_sqrt(
+        dr_tf_turn_conduit_full * dx_tf_turn_conduit_full_toroidal
+    )
+
+    dr_tf_turn_cable_space = dr_tf_turn_conduit_full - 2.0 * dx_tf_turn_steel
+    dx_tf_turn_cable_space = dx_tf_turn_conduit_full_toroidal - 2.0 * dx_tf_turn_steel
+    dx_tf_turn_cable_space_average = safe_sqrt(
+        dr_tf_turn_cable_space * dx_tf_turn_cable_space
+    )
+
+    a_tf_turn_cable_space_no_void = (dr_tf_turn_cable_space * dx_tf_turn_cable_space) - (
+        4.0 - jnp.pi
+    ) * radius_tf_turn_cable_space_corners**2
+
+    a_tf_turn_cable_space_effective = (
+        a_tf_turn_cable_space_no_void
+        - ((jnp.pi / 4.0) * dia_tf_turn_coolant_channel * dia_tf_turn_coolant_channel)
+        - (a_tf_turn_cable_space_no_void * f_a_tf_turn_cable_space_extra_void)
+    )
+    f_a_tf_turn_cable_space_cooling = 1 - (
+        a_tf_turn_cable_space_effective / a_tf_turn_cable_space_no_void
+    )
+
+    degenerate = (
+        (a_tf_turn_cable_space_no_void <= 0.0)
+        & (dr_tf_turn_cable_space >= 0.0)
+        & (dx_tf_turn_cable_space >= 0.0)
+    )
+    radius_tf_turn_cable_space_corners = jnp.where(
+        degenerate, 0.0, radius_tf_turn_cable_space_corners
+    )
+    a_tf_turn_cable_space_no_void = jnp.where(
+        degenerate,
+        dr_tf_turn_cable_space * dx_tf_turn_cable_space,
+        a_tf_turn_cable_space_no_void,
+    )
+
+    a_tf_turn_steel = (
+        dr_tf_turn_conduit_full * dx_tf_turn_conduit_full_toroidal
+        - a_tf_turn_cable_space_no_void
+    )
+    a_tf_turn_insulation = (
+        dr_tf_turn * dx_tf_turn - a_tf_turn_steel - a_tf_turn_cable_space_no_void
+    )
+
+    return (
+        radius_tf_turn_cable_space_corners,
+        dr_tf_turn,
+        dx_tf_turn,
+        a_tf_turn_cable_space_no_void,
+        a_tf_turn_steel,
+        a_tf_turn_insulation,
+        c_tf_turn,
+        n_tf_coil_turns,
+        dr_tf_turn_conduit_full,
+        dx_tf_turn_conduit_full_toroidal,
+        dx_tf_turn_conduit_full_average,
+        dr_tf_turn_cable_space,
+        dx_tf_turn_cable_space,
+        dx_tf_turn_cable_space_average,
+        a_tf_turn_cable_space_effective,
+        f_a_tf_turn_cable_space_cooling,
+        dx_tf_turn_general,
+    )
+
+
 # ---------------------------------------------------------------------------
 # `tf_cicc_inboard_areas_and_fractions` -- `superconducting.py:3599-3670`
 # ---------------------------------------------------------------------------
@@ -1324,10 +1460,23 @@ class PeakBTfInboardWithRippleFlatAllowance(PeakBTfInboardWithRipple):
         )
 
 
-class CiccAveragedTurnGeometry(ExplicitFunction):
-    """The family that owns the averaged CICC turn geometry.
+class CiccTurnGeometry(ExplicitFunction):
+    """The family that owns the CICC winding-pack turn geometry.
 
-    Two booleans decide it (`i_dx_tf_turn_general_input`,
+    `.tfcoil.i_tf_turns_integer` decides it first (`run`'s own branch,
+    `superconducting.py:2343-2439`): `0` is the averaged sub-family below, `1` is
+    `CiccIntegerTurnGeometry`. The arms cannot share a node even in principle, because
+    they disagree about **ownership**, not just formulae: the integer arm owns
+    `.tfcoil.c_tf_turn` (current over a fixed turn count) where the reference averaged
+    arm reads it as an optimiser unknown, and it owns four per-direction conductor and
+    cable-space dimensions the averaged arm never writes.
+    """
+
+
+class CiccAveragedTurnGeometry(CiccTurnGeometry):
+    """The averaged (`i_tf_turns_integer == 0`) sub-family.
+
+    Two further booleans decide it (`i_dx_tf_turn_general_input`,
     `i_dx_tf_turn_cable_space_general_input`), and the three arms differ in which of
     `.tfcoil.c_tf_turn` / `.tfcoil.dx_tf_turn_general` /
     `.tfcoil.dx_tf_turn_cable_space_general` they read and which they own. That
@@ -1372,6 +1521,71 @@ class CiccAveragedTurnGeometryFromCurrentPerTurn(CiccAveragedTurnGeometry):
             dx_tf_turn_insulation=dx_tf_turn_insulation,
             layer_ins=layer_ins,
             a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+        )
+
+
+class CiccIntegerTurnGeometry(CiccTurnGeometry):
+    """`i_tf_turns_integer == 1` -- rectangular turns on a fixed layers x pancakes grid.
+
+    **Owns `.tfcoil.c_tf_turn`** where the averaged reference arm reads it: with the
+    turn count fixed by `n_tf_wp_layers * n_tf_wp_pancakes`, the current per turn is
+    determined, so iteration variable 60 has a producer on this configuration and is
+    not a boundary input. It also owns the four per-direction conductor/cable-space
+    dimensions (`dr_tf_turn_conduit_full`, `dx_tf_turn_conduit_full_toroidal`,
+    `dr_tf_turn_cable_space`, `dx_tf_turn_cable_space`) that only exist when the turn
+    is allowed to be rectangular -- conditional ownership, the same reason
+    `SuperconductingTfCoilAreasAndMasses` is a family.
+
+    `n_tf_wp_layers` and `n_tf_wp_pancakes` are **reads, not switches**: they enter the
+    formulae continuously (as divisors of the winding-pack extents), so they are plain
+    boundary inputs of this node, exactly as `n_tf_coils` is elsewhere. What *is* a
+    switch is `i_tf_turns_integer` itself, answered by `indat.py`.
+    """
+
+    radius_tf_turn_cable_space_corners = OutputInto(superconducting_tfcoil)
+    dr_tf_turn = OutputInto(superconducting_tfcoil)
+    dx_tf_turn = OutputInto(superconducting_tfcoil)
+    a_tf_turn_cable_space_no_void = OutputInto(tfcoil)
+    a_tf_turn_steel = OutputInto(tfcoil)
+    a_tf_turn_insulation = OutputInto(tfcoil)
+    c_tf_turn = OutputInto(tfcoil)
+    n_tf_coil_turns = OutputInto(tfcoil)
+    dr_tf_turn_conduit_full = OutputInto(superconducting_tfcoil)
+    dx_tf_turn_conduit_full_toroidal = OutputInto(superconducting_tfcoil)
+    dx_tf_turn_conduit_full_average = OutputInto(tfcoil)
+    dr_tf_turn_cable_space = OutputInto(superconducting_tfcoil)
+    dx_tf_turn_cable_space = OutputInto(superconducting_tfcoil)
+    dx_tf_turn_cable_space_average = OutputInto(superconducting_tfcoil)
+    a_tf_turn_cable_space_effective = OutputInto(superconducting_tfcoil)
+    f_a_tf_turn_cable_space_cooling = OutputInto(superconducting_tfcoil)
+    dx_tf_turn_general = OutputInto(tfcoil)
+
+    def __call__(
+        self,
+        dr_tf_wp_with_insulation=From(tfcoil),
+        dx_tf_wp_insulation=From(tfcoil),
+        dx_tf_wp_insertion_gap=From(tfcoil),
+        n_tf_wp_layers=From(tfcoil),
+        dx_tf_wp_toroidal_min=From(superconducting_tfcoil),
+        n_tf_wp_pancakes=From(tfcoil),
+        c_tf_coil=From(superconducting_tfcoil),
+        dx_tf_turn_steel=From(tfcoil),
+        dx_tf_turn_insulation=From(tfcoil),
+        dia_tf_turn_coolant_channel=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+    ):
+        return cicc_integer_turn_geometry(
+            dr_tf_wp_with_insulation=dr_tf_wp_with_insulation,
+            dx_tf_wp_insulation=dx_tf_wp_insulation,
+            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
+            n_tf_wp_layers=n_tf_wp_layers,
+            dx_tf_wp_toroidal_min=dx_tf_wp_toroidal_min,
+            n_tf_wp_pancakes=n_tf_wp_pancakes,
+            c_tf_coil=c_tf_coil,
+            dx_tf_turn_steel=dx_tf_turn_steel,
+            dx_tf_turn_insulation=dx_tf_turn_insulation,
             dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
             f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
         )

@@ -290,6 +290,7 @@ from functional_process.models.tfcoil.base import (
 from functional_process.models.tfcoil.namespace import CiccSuperconductingTfCoil
 from functional_process.models.tfcoil.superconducting import (
     CiccAveragedTurnGeometryFromCurrentPerTurn,
+    CiccIntegerTurnGeometry,
     DxTfSideCaseDoubleRectangular,
     DxTfSideCaseRectangular,
     DxTfSideCaseTrapezoidal,
@@ -2552,29 +2553,41 @@ PEAK_B_TF_RIPPLE = {
 
 
 def _cicc_turn_geometry_arm(
-    i_dx_tf_turn_general_input: int, i_dx_tf_turn_cable_space_general_input: int
+    i_tf_turns_integer: int,
+    i_dx_tf_turn_general_input: int,
+    i_dx_tf_turn_cable_space_general_input: int,
 ) -> int:
-    """`(i_dx_tf_turn_general_input, i_dx_tf_turn_cable_space_general_input)` -> the
-    averaged-turn-geometry arm.
+    """`(i_tf_turns_integer, i_dx_tf_turn_general_input,
+    i_dx_tf_turn_cable_space_general_input)` -> the turn-geometry arm.
 
-    Two booleans, three arms, and they differ in which of `.tfcoil.c_tf_turn` /
+    `i_tf_turns_integer` is answered first because PROCESS's `run` does
+    (`superconducting.py:2343-2439`): on the integer arm the two booleans are never
+    consulted, so arm `1` wins regardless of them. The averaged sub-family's two
+    booleans then name three arms differing in which of `.tfcoil.c_tf_turn` /
     `dx_tf_turn_general` / `dx_tf_turn_cable_space_general` each **reads** and which it
     **owns**. That ownership difference is why they cannot share one node even in
     principle -- a kwarg cannot move a `VarPath` from a node's inputs to its outputs.
 
-    Arm 0 is `(False, False)`, PROCESS's default and the reference run's, and it is the
-    arm on which `.tfcoil.c_tf_turn` has **no producer anywhere under
+    Arm 0 is `(0, False, False)`, PROCESS's default and the reference run's, and it is
+    the arm on which `.tfcoil.c_tf_turn` has **no producer anywhere under
     `process/models/`**: it is iteration variable 60 and enters from the input file. That
     is why this slot produces nine of the ten variables `tokamak_boundary.md` lists
-    against it, and why the tenth is an unknown rather than a gap.
+    against it, and why the tenth is an unknown rather than a gap. Arm 1 is the integer
+    arm (`low_aspect_ratio_DEMO`'s), on which the same field **is** produced -- see
+    `CiccIntegerTurnGeometry`.
     """
+    if int(i_tf_turns_integer):
+        return 1
     if int(i_dx_tf_turn_general_input):
         return -1
     return -2 if int(i_dx_tf_turn_cable_space_general_input) else 0
 
 
-CICC_TURN_GEOMETRY = {0: CiccAveragedTurnGeometryFromCurrentPerTurn}
-"""The averaged-turn-geometry arm -> its occupant. See `_cicc_turn_geometry_arm`."""
+CICC_TURN_GEOMETRY = {
+    0: CiccAveragedTurnGeometryFromCurrentPerTurn,
+    1: CiccIntegerTurnGeometry,
+}
+"""The turn-geometry arm -> its occupant. See `_cicc_turn_geometry_arm`."""
 
 SC_TF_MASSES = {
     SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: (
@@ -3099,9 +3112,13 @@ def _tokamak_device(
     # replaces the auto-select value of each before any model runs, so the raw file
     # value names no arm. See `_tf_shape` / `_tf_wp_geom`.
     i_tf_shape = _tf_shape(switches.get("i_tf_shape", 0), itart)
-    i_tf_wp_geom = _tf_wp_geom(
-        switches.get("i_tf_wp_geom", -1), switches.get("i_tf_turns_integer", 0)
-    )
+    # `i_tf_turns_integer` is answered once, here, because it decides **two** slots:
+    # the WP geometry resolution below and the turn-geometry occupant. The
+    # `low_aspect_ratio_DEMO` mis-assembly (2026-08-27) happened precisely because it
+    # reached only the first -- the survey reported "the factory dispatches on it"
+    # while `cicc_turn_geometry` silently kept the averaged occupant.
+    i_tf_turns_integer = switches.get("i_tf_turns_integer", 0)  # `tfcoil_variables.py`
+    i_tf_wp_geom = _tf_wp_geom(switches.get("i_tf_wp_geom", -1), i_tf_turns_integer)
     i_tf_case_geom = TFPlasmaCaseType(switches.get("i_tf_case_geom", 0))
     i_plasma_current = switches.get("i_plasma_current", 4)  # `physics_variables.py:843`
     i_hcd_primary = switches.get("i_hcd_primary", 5)  # `current_drive_variables.py:190`
@@ -3250,9 +3267,10 @@ def _tokamak_device(
             _peak_b_ripple_arm(numbers.get("n_tf_coils", 16.0)),
             PEAK_B_TF_RIPPLE,
         ),
-        cicc_averaged_turn_geometry=_slot_occupant(
+        cicc_turn_geometry=_slot_occupant(
             "cicc_turn_geometry_arm",
             _cicc_turn_geometry_arm(
+                i_tf_turns_integer,  # resolved above, beside `i_tf_wp_geom`
                 switches.get("i_dx_tf_turn_general_input", 0),  # `:108`
                 switches.get("i_dx_tf_turn_cable_space_general_input", 0),  # `:127`
             ),
