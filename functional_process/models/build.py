@@ -373,6 +373,55 @@ def calculate_r_tf_inboard_radii_tf_outside_cs(
     return dr_cs_bore, dr_cs_precomp, r_tf_inboard_in, r_tf_inboard_mid, r_tf_inboard_out
 
 
+def calculate_r_tf_inboard_radii_no_cs_precomp(
+    dr_bore, dr_cs, dr_cs_tf_gap, dr_tf_inboard
+):
+    """The CS-to-TF slice of the inboard radial build (m) with **no CS pre-compression
+    structure**: the `(i_tf_inside_cs == TF_OUTSIDE_CS, i_cs_precomp == 0)` arm -- the
+    live cell on both tracked spherical-tokamak files
+    (`spherical_tokamak_eval.IN.DAT:70-71` sets `i_cs_precomp = 0`,
+    `i_tf_inside_cs = 0`; `st_regression.IN.DAT:1811`/`:1845` the same).
+
+    Ports `process/models/build.py:1691-1735` with the `i_cs_precomp` else-arm taken:
+    `dr_cs_bore = dr_bore` (else-arm, `:1698-1699`), `dr_cs_precomp = 0.0e0` (the
+    literal at `:1714` -- `fseppc`/`fcspc`/`sigallpc` are never read, which is why this
+    is a different occupant and not a kwarg on the sibling), the else-arm
+    `r_tf_inboard_in` (`:1717-1725`, its `+ dr_cs_precomp` term absorbed as the exact
+    zero it is on this arm) and the unconditional `r_tf_inboard_mid`/`r_tf_inboard_out`
+    (`:1727-1735`). Same write-set as `calculate_r_tf_inboard_radii_tf_outside_cs`, so
+    the two occupants are interchangeable in the slot; `dr_cs_precomp` stays an output
+    because PROCESS writes the field on this arm too and downstream readers
+    (`pfcoil/currents.py::CSFluxSwing`'s chain via `.build.dr_cs_bore`, the vertical
+    CS stack) must see the produced zero, not a stale boundary value.
+
+    Parameters
+    ----------
+    dr_bore :
+        Machine bore radius (m). `.build.dr_bore`.
+    dr_cs :
+        Central solenoid radial thickness (m). `.build.dr_cs`.
+    dr_cs_tf_gap :
+        Gap between the CS and the inboard TF leg (m). `.build.dr_cs_tf_gap`.
+    dr_tf_inboard :
+        Inboard TF coil radial thickness (m). `.build.dr_tf_inboard`.
+
+    Returns
+    -------
+    tuple
+        `(dr_cs_bore, dr_cs_precomp, r_tf_inboard_in, r_tf_inboard_mid,
+        r_tf_inboard_out)`, all m -- `.build.` each. `dr_cs_precomp` is identically
+        zero on this arm.
+    """
+    dr_cs_bore = dr_bore
+
+    dr_cs_precomp = jnp.zeros_like(jnp.asarray(dr_bore))
+
+    r_tf_inboard_in = dr_bore + dr_cs + dr_cs_tf_gap
+    r_tf_inboard_mid = r_tf_inboard_in + 0.5e0 * dr_tf_inboard
+    r_tf_inboard_out = r_tf_inboard_in + dr_tf_inboard
+    return dr_cs_bore, dr_cs_precomp, r_tf_inboard_in, r_tf_inboard_mid, r_tf_inboard_out
+
+
 def calculate_r_shld_inboard_inner(
     rmajor,
     rminor,
@@ -904,9 +953,9 @@ class TfInboardRadiiTfOutsideCs(ExplicitFunction):
     key `(.build.i_tf_inside_cs, .build.i_cs_precomp) == (TF_OUTSIDE_CS,
     CS_PRECOMPRESSION_STRUCTURE_PRESENT)` -- both defaults, both live. `TF_INSIDE_CS`
     is UNPORTED (its arm computes `r_tf_inboard_in` from `dr_bore` alone and
-    `dr_cs_bore` from the TF thickness -- a genuinely different reads-set); so is the
+    `dr_cs_bore` from the TF thickness -- a genuinely different reads-set); the
     no-precompression arm (`dr_cs_precomp = 0.0`, reading none of
-    `fseppc`/`fcspc`/`sigallpc`).
+    `fseppc`/`fcspc`/`sigallpc`) is `TfInboardRadiiNoCsPrecomp` (2026-08-27).
     """
 
     dr_cs_bore = OutputInto(build)
@@ -931,6 +980,36 @@ class TfInboardRadiiTfOutsideCs(ExplicitFunction):
             fseppc,
             fcspc,
             sigallpc,
+            dr_cs_tf_gap,
+            dr_tf_inboard,
+        )
+
+
+class TfInboardRadiiNoCsPrecomp(ExplicitFunction):
+    """cottax node: `calculate_r_tf_inboard_radii_no_cs_precomp`. Answers the joint
+    key `(.build.i_tf_inside_cs, .build.i_cs_precomp) == (TF_OUTSIDE_CS, 0)` -- the
+    live cell on both tracked spherical-tokamak files (2026-08-27, ST frontier wave).
+    Same write-set as `TfInboardRadiiTfOutsideCs`; a strict-subset reads-set
+    (`fseppc`/`fcspc`/`sigallpc` never read, `dr_cs_precomp` produced as the exact
+    zero PROCESS writes at `build.py:1714`).
+    """
+
+    dr_cs_bore = OutputInto(build)
+    dr_cs_precomp = OutputInto(build)
+    r_tf_inboard_in = OutputInto(build)
+    r_tf_inboard_mid = OutputInto(build)
+    r_tf_inboard_out = OutputInto(build)
+
+    def __call__(
+        self,
+        dr_bore=From(build),
+        dr_cs=From(build),
+        dr_cs_tf_gap=From(build),
+        dr_tf_inboard=From(build),
+    ):
+        return calculate_r_tf_inboard_radii_no_cs_precomp(
+            dr_bore,
+            dr_cs,
             dr_cs_tf_gap,
             dr_tf_inboard,
         )

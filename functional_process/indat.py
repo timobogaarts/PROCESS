@@ -58,6 +58,7 @@ from functional_process.models.build import (
     DrTfInboardFromWindingPack,
     DrTfOutboardSuperconducting,
     DrTfWpWithInsulationFromInboardBuild,
+    TfInboardRadiiNoCsPrecomp,
     TfInboardRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardMidDShape,
@@ -717,12 +718,6 @@ UNPORTED = {
         "alone (`process/models/build.py:1692`) and `dr_cs_bore` gains a "
         "`dr_tf_inboard` term (`:1694-1698`) -- a different reads-set for the inner "
         "radius, so a different occupant. Not written"
-    ),
-    ("tf_inboard_radii_arm", -2): (
-        "no CS pre-compression structure (`i_cs_precomp == 0`): `dr_cs_precomp` is "
-        "the literal `0.0` (`process/models/build.py:1714`) and none of "
-        "`fseppc`/`fcspc`/`sigallpc` is read -- a strict-subset reads-set, so a "
-        "different occupant. Not written"
     ),
     ("i_tf_shape_build", 2): (
         "picture frame (`i_tf_shape == 2`) uses a different closed-form ripple formula "
@@ -2348,11 +2343,13 @@ def _tf_inboard_radii_arm(i_tf_inside_cs: int, i_cs_precomp: int) -> int:
     i_tf_inside_cs == 1 (TF_INSIDE_CS)   -> arm -1  r_tf_inboard_in = dr_bore alone,
                                                     dr_cs_bore gains a TF term; UNPORTED
     i_cs_precomp == 0 (no structure)     -> arm -2  dr_cs_precomp = 0.0 literal,
-                                                    fseppc/fcspc/sigallpc unread; UNPORTED
+                                                    fseppc/fcspc/sigallpc unread;
+                                                    TfInboardRadiiNoCsPrecomp
     otherwise                            -> arm  0  TfInboardRadiiTfOutsideCs
     ```
 
-    `cold_boundary.md` producer 2, added 2026-08-27.
+    `cold_boundary.md` producer 2, added 2026-08-27; arm -2 ported the same day (ST
+    frontier wave -- the live cell on both tracked spherical-tokamak files).
     """
     if (
         TFCSRadialConfiguration(int(i_tf_inside_cs))
@@ -2362,10 +2359,14 @@ def _tf_inboard_radii_arm(i_tf_inside_cs: int, i_cs_precomp: int) -> int:
     return 0 if int(i_cs_precomp) != 0 else -2
 
 
-TF_INBOARD_RADII = {0: TfInboardRadiiTfOutsideCs}
+TF_INBOARD_RADII = {
+    0: TfInboardRadiiTfOutsideCs,
+    -2: TfInboardRadiiNoCsPrecomp,
+}
 """`_tf_inboard_radii_arm(...)` -> the CS-to-TF radial-slice occupant
-(`cold_boundary.md` producer 2, added 2026-08-27). Both refused arms are real PROCESS
-branches with different reads-sets; see their `UNPORTED` entries."""
+(`cold_boundary.md` producer 2, added 2026-08-27; arm -2 by the same day's ST frontier
+wave). The remaining refused arm (`TF_INSIDE_CS`, -1) is a real PROCESS branch with a
+different reads-set; see its `UNPORTED` entry."""
 
 DR_TF_OUTBOARD = {TFConductorModel.SUPERCONDUCTING: DrTfOutboardSuperconducting}
 WP_CONDUCTOR_MAX_WIDTH = {

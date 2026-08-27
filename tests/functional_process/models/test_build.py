@@ -41,6 +41,7 @@ from functional_process.models.build import (
     calculate_dx_tf_wp_conductor_max_superconducting,
     calculate_r_shld_inboard_inner,
     calculate_r_shld_outboard_outer,
+    calculate_r_tf_inboard_radii_no_cs_precomp,
     calculate_r_tf_inboard_radii_tf_outside_cs,
     calculate_r_tf_outboard_mid,
     calculate_r_tf_outboard_mid_unrippled,
@@ -528,6 +529,70 @@ class TestTfInboardRadii(Tier1Contract):
         "sigallpc": (1.0e8, 6.0e8),
         "dr_cs_tf_gap": (0.02, 0.3),
         "dr_tf_inboard": (0.5, 2.0),
+    }
+
+
+def _reference_tf_inboard_radii_no_precomp(
+    dr_bore,
+    dr_cs,
+    dr_cs_tf_gap,
+    dr_tf_inboard,
+):
+    """`calculate_radial_build` at `i_cs_precomp = 0` (the `BASELINE` value flipped).
+
+    `fseppc`/`fcspc`/`sigallpc` stay at their `BASELINE` values deliberately: PROCESS
+    must not read them on this arm, and leaving them nonzero means a wrong arm would
+    show up as a value disagreement, not a division error.
+    """
+    data = _radial(
+        build__i_cs_precomp=0,
+        build__dr_bore=dr_bore,
+        build__dr_cs=dr_cs,
+        build__dr_cs_tf_gap=dr_cs_tf_gap,
+        build__dr_tf_inboard=dr_tf_inboard,
+    )
+    return (
+        data.build.dr_cs_bore,
+        data.build.dr_cs_precomp,
+        data.build.r_tf_inboard_in,
+        data.build.r_tf_inboard_mid,
+        data.build.r_tf_inboard_out,
+    )
+
+
+class TestTfInboardRadiiNoCsPrecomp(Tier1Contract):
+    """`calculate_r_tf_inboard_radii_no_cs_precomp` vs
+    `calculate_radial_build:1691-1735` at `(i_tf_inside_cs, i_cs_precomp) = (0, 0)` --
+    the live cell on both tracked spherical-tokamak files
+    (`spherical_tokamak_eval.IN.DAT:70-71`, `st_regression.IN.DAT:1811`/`:1845`).
+    Added 2026-08-27, ST frontier wave.
+
+    The legacy point is `spherical_tokamak_eval.IN.DAT`'s input radial build
+    (`dr_bore`, `:61`; `dr_cs_tf_gap = 0.0`, `:67`; `dr_cs`, `:77`;
+    `dr_tf_inboard = 0.9`, `:345` -- the file's literals) -- input values, not
+    converged ones, since no converged reference for this cell has been solved yet.
+    `dr_cs_tf_gap = 0.0` is the file's actual value and exercises the zero-gap edge.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_tf_inboard_radii_no_precomp
+    ported = calculate_r_tf_inboard_radii_no_cs_precomp
+
+    samples = [
+        legacy_sample(
+            "spherical_tokamak_eval-input",
+            dr_bore=0.23375250334739459,
+            dr_cs=0.20016400484967947,
+            dr_cs_tf_gap=0.0,
+            dr_tf_inboard=0.9,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "dr_bore": (0.1, 4.0),
+        "dr_cs": (0.1, 1.5),
+        "dr_cs_tf_gap": (0.0, 0.3),
+        "dr_tf_inboard": (0.2, 2.0),
     }
 
 

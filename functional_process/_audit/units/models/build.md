@@ -337,9 +337,10 @@ numerically: the fit called at the converged radius returns
 
 ## validation
 
-`tests/functional_process/models/test_build.py`, ten `Tier1Contract`s (eight at first
-writing; `TestTfInboardRadii` added by the 2026-08-27 CS-slice wave and
-`TestDivertorGeometrySphericalTokamak` by the 2026-08-27 spherical-tokamak wave), all
+`tests/functional_process/models/test_build.py`, eleven `Tier1Contract`s (eight at first
+writing; `TestTfInboardRadii` added by the 2026-08-27 CS-slice wave,
+`TestDivertorGeometrySphericalTokamak` by the 2026-08-27 spherical-tokamak wave, and
+`TestTfInboardRadiiNoCsPrecomp` by the 2026-08-27 no-precompression wave), all
 references real PROCESS calls:
 
 | contract | reference | covers |
@@ -351,6 +352,7 @@ references real PROCESS calls:
 | `TestDrTfWpWithInsulation` | `Build.calculate_radial_build` | `calculate_dr_tf_wp_with_insulation` |
 | `TestDrTfInboardFromWindingPack` | `Build.calculate_radial_build`, `ixc[0] = 140` | `calculate_dr_tf_inboard` |
 | `TestTfInboardRadii` | `Build.calculate_radial_build` | `calculate_r_tf_inboard_radii_tf_outside_cs` |
+| `TestTfInboardRadiiNoCsPrecomp` | `Build.calculate_radial_build`, `i_cs_precomp = 0` | `calculate_r_tf_inboard_radii_no_cs_precomp` |
 | `TestRShldInboardInner` | `Build.calculate_radial_build` | `calculate_r_shld_inboard_inner` |
 | `TestOutboardBuildChain` | `Build.calculate_radial_build` | the other six functions, composed |
 | `TestRippleSuperconducting` | `Build.plasma_outboard_edge_toroidal_ripple` | the ripple fit and the conductor-width mint |
@@ -594,3 +596,49 @@ past `divertor_geometry_arm` and now refuse at `tf_inboard_radii_arm == -2` —
 (`dr_cs_precomp` is the literal `0.0` at `build.py:1714`; a strict-subset reads-set,
 recorded UNPORTED by the CS-slice wave above). That is the next blocker for both
 files.
+
+
+## 2026-08-27 — the no-precompression CS slice ported (ST frontier wave 2)
+
+`tf_inboard_radii_arm == -2` was the standing refusal on **both**
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` after the divertor-geometry
+wave above. Written this wave: `calculate_r_tf_inboard_radii_no_cs_precomp` +
+`TfInboardRadiiNoCsPrecomp`, the `(i_tf_inside_cs, i_cs_precomp) == (0, 0)` cell of
+`process/models/build.py:1691-1735` — the exact cell both files select
+(`spherical_tokamak_eval.IN.DAT:70-71` sets `i_cs_precomp = 0`, `i_tf_inside_cs = 0`;
+`st_regression.IN.DAT:1845`/`:1811` the same), verified against the files rather than
+assumed from the refusal text.
+
+The arm is the sibling slice with the `i_cs_precomp` else-branch taken:
+`dr_cs_bore = dr_bore` unchanged, `dr_cs_precomp` the literal `0.0e0` (`:1714`) instead
+of the `fseppc`-formula, `r_tf_inboard_in`'s `+ dr_cs_precomp` term absorbed as the
+exact zero it is, `r_tf_inboard_mid`/`r_tf_inboard_out` unchanged. Reads-set is a
+strict subset of the sibling's (`fseppc`/`fcspc`/`sigallpc` never read — the reason it
+is a different occupant and not a kwarg); write-set is **identical**, `dr_cs_precomp`
+kept as a produced output so downstream readers see the arm's zero rather than a stale
+boundary value. The port emits it as `jnp.zeros_like(dr_bore)` so the tuple stays
+array-valued under `jacfwd`; its gradient row is identically zero on both sides of the
+harness.
+
+Registration: `indat.TF_INBOARD_RADII[-2] = TfInboardRadiiNoCsPrecomp`; the
+`("tf_inboard_radii_arm", -2)` `UNPORTED` entry removed; `_tf_inboard_radii_arm`
+unchanged (its `-2` return already existed — only the registry gained the occupant).
+Arm `-1` (`TF_INSIDE_CS`) remains the slot's one refused value.
+
+Harness: `TestTfInboardRadiiNoCsPrecomp`, tier 1, through the existing `_radial`
+adapter with `build__i_cs_precomp=0` — the reference is the real
+`calculate_radial_build` on the flipped switch, and `fseppc`/`fcspc`/`sigallpc` stay at
+their nonzero `BASELINE` values deliberately, so a wrong-arm reference would fail by
+value, not by division error. Legacy point = `spherical_tokamak_eval.IN.DAT`'s input
+radial build (`dr_bore = 0.23375250334739459`, `:61`; `dr_cs = 0.20016400484967947`,
+`:77`; `dr_cs_tf_gap = 0.0`, `:67` — the file's true zero-gap edge; `dr_tf_inboard =
+0.9`, `:345`); input values, not converged ones — no converged reference for this cell
+has been solved yet. Green plain and under `--fp-gradients` (test file: 57 passed
+plain, 114 with gradients).
+
+Frontier probe after this wave (`machine_from_indat` + `graph_for`): **both** ST files
+advance past `tf_inboard_radii_arm` and now refuse at `i_tf_shape_build == 2` —
+picture-frame TF coil (`i_tf_shape == 2`), whose closed-form ripple formula
+(`process/models/build.py:1585-1590`) reads neither the winding pack nor the `c1`/`c2`
+fit coefficients; recorded UNPORTED since first writing. That is the next blocker for
+both files.
