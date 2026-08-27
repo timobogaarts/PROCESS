@@ -4,15 +4,18 @@ status: draft
 confidence: high
 ---
 
-**Partially ported — one arm of four switches.** `models/physics/current_drive.py`
+**Partially ported — two arms of four switches.** `models/physics/current_drive.py`
 declares the minimal closure of `CurrentDrive.current_drive` that produces
 `_audit/tokamak_boundary.md` § `.tokamak.current_drive`'s three boundary reads, for the
-combination `tests/regression/input_files/large_tokamak_eval.IN.DAT` actually holds:
-`i_hcd_primary = 10`, `i_hcd_secondary = 0`, `i_hcd_calculations = 1`,
-`i_plasma_ignited = 0`. Six pure functions, one composite, eight cottax nodes across
-four occupant families. Every other heating-and-current-drive scheme is UNPORTED, with a
-per-value reason below — and for two of them the reason is that **PROCESS itself cannot
-execute them** (see "A live PROCESS bug in two sibling arms").
+combinations the tracked tokamak input files actually hold:
+`tests/regression/input_files/large_tokamak_eval.IN.DAT`'s `i_hcd_primary = 10`, and —
+since the 2026-08-27 pass, § "2026-08-27" below — the two spherical tokamak files'
+`i_hcd_primary = 13` (O-mode); both with `i_hcd_secondary = 0`,
+`i_hcd_calculations = 1`, `i_plasma_ignited = 0`. Seven pure functions, two composites,
+nine cottax nodes across four occupant families. Every other heating-and-current-drive
+scheme is UNPORTED, with a per-value reason below — and for two of them the reason is
+that **PROCESS itself cannot execute them** (see "A live PROCESS bug in two sibling
+arms").
 
 ## source
 
@@ -229,6 +232,7 @@ Four occupant families and three switch-independent nodes:
 | family | slot switch | occupant | answers |
 |---|---|---|---|
 | `HcdPrimaryEfficiency` | `i_hcd_primary` | `HcdPrimaryEfficiencyUserInputEcrh` | `10` |
+| ″ | `i_hcd_primary` × `i_ecrh_wave_mode` | `HcdPrimaryEfficiencyFreethyEcrhOMode` | `13` × `0` (see § "2026-08-27") |
 | `HcdSecondaryHeating` | `i_hcd_secondary` | `HcdSecondaryHeatingNone` | `0` |
 | `HcdPrimaryPowers` | `i_hcd_primary` × `i_hcd_secondary` | `HcdPrimaryPowersElectronCyclotronNoSecondary` | primary method ECRH (`3, 7, 10, 13`) × secondary `0` |
 | `HcdElectricTotal` | `i_plasma_ignited` | `HcdElectricTotalNonIgnited`, `HcdElectricTotalIgnited` | `0`, `1` |
@@ -275,7 +279,7 @@ listed so the omission is a decision rather than a gap:
 | | `7` `CULHAM_ELECTRON_CYCLOTRON` | **PROCESS cannot execute it** — `culecd` raises `TypeError` at `current_drive.py:815`; same section |
 | | `8` `CULHAM_NEUTRAL_BEAM` | needs `NeutralBeam.culnbi` (and its `sigbeam`/`cfnbi`/`xlmbdabi` chain) plus the beam block; not written |
 | | `12` `USER_INPUT_ELECTRON_BERNSTEIN` | needs `ElectronBernstein.electron_bernstein_freethy` and the EBW block (L2162-2187); not written |
-| | `13` `FREETHY_ELECTRON_CYCLOTRON` | needs `ElectronCyclotron.electron_cyclotron_freethy` and the `i_ecrh_wave_mode` switch inside it; not written. **The next one worth writing** — `spherical_tokamak_eval.IN.DAT:133` and `st_regression.IN.DAT:2522` both select it, and its wall-plug block is the one already ported |
+| | `13` `FREETHY_ELECTRON_CYCLOTRON` | **ported 2026-08-27** for `i_ecrh_wave_mode = 0` (O-mode), the value both selecting files set; X-mode (`1`) remains UNPORTED — see § "2026-08-27" |
 | | `0` `NO_CURRENT_DRIVE` | raises `ProcessValueError` at L1800 — a primary system is mandatory |
 | `i_hcd_secondary` | `1`-`8`, `10`, `12`, `13` | each needs its efficiency model *and* its wall-plug block (L1885-2063), *and* changes which technology accumulator the primary block's `+=` starts from — see "the accumulators" |
 | `i_hcd_calculations` | `0` | the whole body is skipped, so `.heat_transport.p_hcd_primary_electric_mw` keeps its `None` default and any consumer of it fails. Not "trivially all zeros"; not written |
@@ -361,3 +365,147 @@ gradients.
   (`heat_transport_variables.py:130`) is the only `None` default this port has met. It is
   benign on the ported arm and a latent crash on `i_hcd_calculations = 0`; noted, not
   acted on.
+
+## 2026-08-27 — `i_hcd_primary = 13` (`FREETHY_ELECTRON_CYCLOTRON`), O-mode
+
+The arm that was blocking **both** spherical tokamak files:
+`spherical_tokamak_eval.IN.DAT:133` and `st_regression.IN.DAT:2522` set
+`i_hcd_primary = 13`, and before this pass `machine_from_indat` refused each at exactly
+that key (verified live before writing anything). With the arm wired, the refusal moves
+on — see "frontier probe" below.
+
+### What the files select, checked not assumed
+
+| switch | spherical_tokamak_eval | st_regression | PROCESS default |
+|---|---|---|---|
+| `i_hcd_primary` | `13` (`:133`) | `13` (`:2522`) | `5` (`current_drive_variables.py:190`) |
+| `i_ecrh_wave_mode` | `0` (`:130`) | `0` (`:2665`) | `0` (`:116`) |
+| `i_hcd_secondary` | unset → `0` | commented out (`:2565`) → `0` | `0` (`:206`) |
+| `i_hcd_calculations` | `1` (`:134`) | `1` (`:2492`) | `1` (`:223`) |
+| `n_ecrh_harmonic` | `2` (`:129`) | `2` (`:2661`) | `2.0` (`:113`) |
+| `feffcd` | `1.0` (`:132`) | `1.0` (`:2558`) | `1.0` (`:158`) |
+| `eta_ecrh_injector_wall_plug` | `0.45` (`:131`) | `0.45` (`:2681`) | — |
+
+**`i_hcd_secondary` is `0` in both files**, so the already-written
+`HcdSecondaryHeatingNone` occupant serves them and the secondary system is *not* the
+next frontier for these two files (the probe below says what is).
+
+### The port
+
+- `freethy_electron_cyclotron_efficiency` — ports
+  `ElectronCyclotron.electron_cyclotron_freethy`
+  (`process/models/physics/current_drive.py:992-1088`) **plus** the `* feffcd` factor
+  its `hcd_models[13]` lambda applies (`:1759-1770`). Model 10's lambda has no `feffcd`
+  factor; model 13's does — the same asymmetry the first pass's reads-tests pinned from
+  the other side, now asserted in both directions.
+- `HcdPrimaryEfficiencyFreethyEcrhOMode` — the second occupant of
+  `HcdPrimaryEfficiency`. Seven reads (`.physics.temp_plasma_electron_vol_avg_kev`,
+  `.physics.n_charge_plasma_effective_vol_avg`, `.physics.rmajor`,
+  `.physics.nd_plasma_electrons_vol_avg`, `.physics.b_plasma_toroidal_on_axis`,
+  `.current_drive.n_ecrh_harmonic`, `.current_drive.feffcd`) where model 10 has three,
+  overlapping in two. The staticmethod's `te`/`zeff` abbreviations are spelled as the
+  `VarPath` leaves the lambda actually reads (`:1760-1767`); no name was minted.
+- `calculate_current_drive_freethy_ecrh_primary_no_secondary` — the composite for this
+  arm. `CurrentDriveModel(13).method` is `ELECTRON_CYCLOTRON`, so stages 2-6 are the
+  *same functions* as arm 10's (`_hcd_primary_powers_arm` already answered `13` before
+  this pass); only stage 1 differs.
+- Defect preserved: the X-mode cut-off puts `n_ecrh_harmonic` on `fc**2` **inside** the
+  square root (`:1077`, `sqrt(n*fc**2 + 4*fp**2)`, not `sqrt((n*fc)**2 + ...)`).
+  Transcribed as written, flagged in the function's docstring, not fixed.
+- First JAX-visible nonlinearity in this unit: `jnp.sqrt` (plasma frequency) and
+  `jnp.tanh` (the coupling factor, `:1082-1085`). Both smooth on the sampled domain; the
+  `"near-cutoff-coupling"` legacy sample sits deliberately on the tanh *slope* (density
+  `1.5e20` against `2.2` T) so the gradient check exercises the one place this model's
+  derivative has structure model 10's does not.
+
+### The nested switch: representation choice
+
+`i_ecrh_wave_mode` is read at `:1767` by model 13's lambda and nowhere else in any model
+body (`:2541-2542` is the reporting shell). Two decisions, separately grounded:
+
+1. **Within the pure function it is a static kwarg, not a split** — the one switch in
+   this unit taking `traceability_policy.md`'s static-kwarg exception, because the two
+   branches' reads-sets are **provably identical**: both cut-offs are formed from `fc`
+   and `fp`, which both modes compute from the same two reads. The evidence is asserted
+   in `test_the_wave_mode_switch_is_static_with_identical_reads`, and the differing body
+   is one line inside a shared ~20, the exact shape the policy's deviation clause
+   (`coelc`/`itart`) exists for. The occupant pins `0`; the reference's `ValueError` on
+   an invalid mode is transcribed, defects included.
+2. **In `indat.py` it dispatches as a nested registry, not a joint arm.**
+   `_hcd_primary_efficiency(i_hcd_primary, i_ecrh_wave_mode)` keeps the outer registry
+   keyed on `i_hcd_primary` (eleven refusals untouched, still keyed on the switch a
+   user must change) and consults `HCD_PRIMARY_EFFICIENCY_FREETHY = {0: ...}` only for
+   value 13. The `i_plasma_ignited_i_rad_loss` / `hcd_primary_powers_arm` joint-arm
+   shape was considered and rejected: joint arms are for products where both switches
+   shape every cell, and a joint key here would have had to refuse `(1, O-mode)` and
+   `(1, X-mode)` as distinct cells when PROCESS never reads the wave mode on model 1's
+   arm — two refusals for one branch, the invented-edge defect at the registry level.
+   The nesting also mirrors the source, where the wave-mode `if` sits *inside*
+   `electron_cyclotron_freethy`, not beside `hcd_models`.
+
+X-mode (`1`) is `UNPORTED[("i_ecrh_wave_mode", 1)]`: live on no tracked input (both
+selecting files set `0`, also the default), so no occupant pins it — the
+`plasma_geometry_arm` 1 precedent, porting a formula and binding it being different
+acts. The branch *is* transcribed inside the shared pure function and value- and
+gradient-checked against the reference by the `"x-mode-transcription-check"` sample, so
+a future X-mode occupant starts from verified ground: it is these same seven reads over
+the other branch, one class and one registry line away.
+
+### Registration diff (`indat.py`), exact
+
+1. Import: `HcdPrimaryEfficiencyFreethyEcrhOMode` added to the
+   `functional_process.models.physics.current_drive` import list.
+2. `UNPORTED`: the `("i_hcd_primary", 13)` refusal **removed** (the value dispatches
+   now), **replaced** by `("i_ecrh_wave_mode", 1)` with the reason above.
+3. New registry `HCD_PRIMARY_EFFICIENCY_FREETHY = {0: HcdPrimaryEfficiencyFreethyEcrhOMode}`
+   (plain-int keys: PROCESS has no enum for this switch, `process/core/input.py:1096`
+   declares `int, choices=[0, 1]`) and new dispatcher `_hcd_primary_efficiency`.
+4. `machine_from_indat`: `primary_efficiency=_hcd_primary_efficiency(i_hcd_primary,
+   switches.get("i_ecrh_wave_mode", 0))` replaces the direct `_slot_occupant` call.
+
+Consequential (same pass): `tests/functional_process/test_machine.py` gained
+`NESTED_UNPORTED_COMPANIONS = {"i_ecrh_wave_mode": {"i_hcd_primary": 13}}` and
+`i_ecrh_wave_mode` in `TOKAMAK_ONLY_UNPORTED_FIELDS`, because
+`test_a_refused_value_says_why` writes each `UNPORTED` key over a baseline whose
+`i_hcd_primary` is `10` — under which PROCESS itself ignores the wave mode, so the case
+must also select the value that nests it.
+
+### Harness evidence
+
+`tests/functional_process/models/physics/test_current_drive.py`:
+`TestCurrentDriveFreethyEcrhPrimaryNoSecondary` (Tier 1, all ten outputs, reference =
+a real `CurrentDrive` bound to a `DataStructure` with `i_hcd_primary = 13` and a real
+`ElectronCyclotron(None)` — the constructor needs the instance because the lambda
+reaches the `@staticmethod` *through the attribute*, and `plasma_profile=None` is still
+the proof no profile machinery is touched). Five legacy samples (the
+`spherical_tokamak_eval` operating point with the file's own values where stated; the
+ignited reset; non-zero secondary power; near-cutoff; the X-mode transcription check)
+plus fuzz over twelve bounded arguments, `i_plasma_ignited`/`i_ecrh_wave_mode` static.
+Fuzz bounds keep `n_ecrh_harmonic * fc` above the O-mode cut-off at every corner so no
+point lands in the decoupled regime where the efficiency underflows and the downstream
+division explodes (PROCESS would produce the same explosion; the tracked files run
+coupled). Structural tests: the seven reads (and `eta_cd_norm_ecrh` *not* among them,
+nor `.current_drive.i_ecrh_wave_mode` — switches are not ports), the reads-identity
+evidence for the static kwarg, the no-self-loop sweep extended to the new occupant, and
+a composition test tying the occupant chain to the composite.
+
+Runs (this file only): plain — 35 passed, 24 skipped; `--fp-gradients` — 59 passed;
+`--fp-gradients --fp-fuzz 10` — 131 passed. Values agree exactly (0.0 diff at the
+smoke points, machine-precision contract in the harness), gradients within PROCESS's
+own finite-difference error bars.
+
+### Frontier probe (after wiring, merged base incl. consolidation round 2)
+
+`machine_from_indat` + `graph_for`, both files, this arm no longer refuses; the next
+refusal is **identical for both** and is not this unit's:
+
+```
+spherical_tokamak_eval.IN.DAT / st_regression.IN.DAT →
+NotImplementedError: divertor_geometry_arm == -1 is a real PROCESS branch but is not
+ported: `.physics.itart == 1`: `divgeom` returns `1.75 * rminor` at
+`process/models/build.py:863` and **never writes `.build.rspo`** -- a different
+write-set, not just a different formula, so it is a different occupant. Not written
+```
+
+So the spherical tokamaks' next frontier is the TART divertor geometry arm
+(`build.py`'s unit), not heating and current drive.

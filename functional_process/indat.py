@@ -99,6 +99,7 @@ from functional_process.models.physics.confinement_time import (
 from functional_process.models.physics.current_drive import (
     HcdElectricTotalIgnited,
     HcdElectricTotalNonIgnited,
+    HcdPrimaryEfficiencyFreethyEcrhOMode,
     HcdPrimaryEfficiencyUserInputEcrh,
     HcdPrimaryPowersElectronCyclotronNoSecondary,
     HcdSecondaryHeatingNone,
@@ -640,11 +641,21 @@ UNPORTED = {
         "needs `ElectronBernstein.electron_bernstein_freethy` and the EBW block "
         "(`current_drive.py:2162-2187`); not written"
     ),
-    ("i_hcd_primary", 13): (
-        "needs `ElectronCyclotron.electron_cyclotron_freethy` and the "
-        "`i_ecrh_wave_mode` switch inside it; not written. **The next one worth "
-        "writing** -- `spherical_tokamak_eval.IN.DAT:133` and `st_regression.IN.DAT:2522` "
-        "both select it, and its wall-plug block is the one already ported"
+    # `("i_hcd_primary", 13)` was a refusal until 2026-08-27; the value dispatches to
+    # the nested `i_ecrh_wave_mode` registry now (`_hcd_primary_efficiency`), so its
+    # refusals are keyed on the inner switch:
+    ("i_ecrh_wave_mode", 1): (
+        "the X-mode arm of `ElectronCyclotron.electron_cyclotron_freethy` "
+        "(`current_drive.py:1076-1077`, the right-hand cut-off). Live on no tracked "
+        "input: both files that select `i_hcd_primary = 13` set `i_ecrh_wave_mode = 0` "
+        "(`spherical_tokamak_eval.IN.DAT:130`, `st_regression.IN.DAT:2665`), which is "
+        "also PROCESS's default (`current_drive_variables.py:116`). The branch itself "
+        "is one line inside the shared pure function "
+        "(`freethy_electron_cyclotron_efficiency`), transcribed and value-checked "
+        "against the reference -- the two wave modes read identical variable sets, "
+        "`traceability_policy.md`'s static-kwarg exception -- but binding it is a "
+        "separate act from porting it (the `plasma_geometry_arm` 1 precedent above): "
+        "no configuration asks for it, so no occupant pins it"
     ),
     **dict.fromkeys(
         (
@@ -2135,11 +2146,55 @@ HCD_PRIMARY_EFFICIENCY = {
 }
 """`.current_drive.i_hcd_primary` -> the primary current-drive efficiency occupant.
 
-One of thirteen values, and two of the twelve refusals are refusals PROCESS shares:
+One of thirteen values, and two of the eleven refusals are refusals PROCESS shares:
 `CULHAM_LOWER_HYBRID` (6) and `CULHAM_ELECTRON_CYCLOTRON` (7) **cannot execute in
 PROCESS at all** -- `calculate_profile_y` returns `None` and both arms raise
 `TypeError`. Two live defects found by porting, recorded in `current_drive.md` and in
-`UNPORTED` below."""
+`UNPORTED` below.
+
+`FREETHY_ELECTRON_CYCLOTRON` (13) is not in this registry although it is (partly)
+ported: it is the one value with a switch nested *inside* it, so
+`_hcd_primary_efficiency` routes it to `HCD_PRIMARY_EFFICIENCY_FREETHY` instead."""
+
+HCD_PRIMARY_EFFICIENCY_FREETHY = {0: HcdPrimaryEfficiencyFreethyEcrhOMode}
+"""`.current_drive.i_ecrh_wave_mode` -> the Freethy ECCD occupant, given
+`i_hcd_primary == 13`. `0` is O-mode, the value both spherical tokamak files set
+explicitly and PROCESS's default (`current_drive_variables.py:116`); X-mode (`1`) is an
+`UNPORTED` refusal. Keys are plain ints because PROCESS has no enum for this switch --
+`process/core/input.py:1096` declares it `int, choices=[0, 1]`."""
+
+
+def _hcd_primary_efficiency(i_hcd_primary: int, i_ecrh_wave_mode: int):
+    """The primary-efficiency occupant, resolving the one *nested* switch this slot has.
+
+    `i_ecrh_wave_mode` exists only inside `i_hcd_primary == 13`: it is read at
+    `current_drive.py:1767` by model 13's lambda and nowhere else in any model body
+    (the only other appearance, `:2541-2542`, is the out-of-scope reporting shell), so
+    the honest dispatch is a tree, not a product -- the outer registry stays keyed on
+    `i_hcd_primary` (and its eleven refusals stay keyed on the switch a user would have
+    to change), and only value 13 consults the inner registry. The alternative, a joint
+    arm in the `_hcd_primary_powers_arm` / `i_plasma_ignited_i_rad_loss` style, is for
+    dispatches where **both** switches shape every arm; here a joint key would have had
+    to refuse `(1, O-mode)` and `(1, X-mode)` as distinct cells when PROCESS itself
+    never reads the wave mode on model 1's arm -- two refusals for one branch, the
+    invented-edge defect at the registry level. The nesting mirrors the source: the
+    wave-mode `if` sits *inside* `electron_cyclotron_freethy`
+    (`current_drive.py:1074-1079`), not beside `hcd_models`.
+
+    Note what the inner switch selects is an *occupant that pins a static kwarg*, not a
+    different reads-set: both wave modes read identical variables
+    (`freethy_electron_cyclotron_efficiency`'s docstring carries the evidence, the unit's
+    tests assert it). It still dispatches here rather than being threaded as a value
+    because only O-mode has a written occupant -- the registry is where "X-mode is not
+    written" can be said per `UNPORTED`'s contract.
+    """
+    model = CurrentDriveModel(int(i_hcd_primary))
+    if model is CurrentDriveModel.FREETHY_ELECTRON_CYCLOTRON:
+        return _slot_occupant(
+            "i_ecrh_wave_mode", int(i_ecrh_wave_mode), HCD_PRIMARY_EFFICIENCY_FREETHY
+        )
+    return _slot_occupant("i_hcd_primary", model, HCD_PRIMARY_EFFICIENCY)
+
 
 HCD_SECONDARY_HEATING = {CurrentDriveModel.NO_CURRENT_DRIVE: HcdSecondaryHeatingNone}
 """`.current_drive.i_hcd_secondary` -> the secondary-heating occupant. PROCESS's own
@@ -2989,8 +3044,9 @@ def _tokamak_device(
         switches.get("i_hcd_calculations", 1),  # `current_drive_variables.py:223`
         HCD_CALCULATIONS,
         build=lambda cls: cls(
-            primary_efficiency=_slot_occupant(
-                "i_hcd_primary", CurrentDriveModel(i_hcd_primary), HCD_PRIMARY_EFFICIENCY
+            primary_efficiency=_hcd_primary_efficiency(
+                i_hcd_primary,
+                switches.get("i_ecrh_wave_mode", 0),  # `current_drive_variables.py:116`
             ),
             secondary_heating=_slot_occupant(
                 "i_hcd_secondary",

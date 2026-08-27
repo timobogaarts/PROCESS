@@ -8,13 +8,20 @@ exactly which of the eleven `i_hcd_primary` values this file can answer.
 **Scope: the minimal closure that produces `_audit/tokamak_boundary.md`'s three
 `.tokamak.current_drive` boundary reads** --
 `.current_drive.p_hcd_ecrh_injected_total_mw`, `.current_drive.p_hcd_injected_total_mw`
-and `.heat_transport.p_hcd_electric_total_mw` -- for the combination
-`large_tokamak_eval.IN.DAT` actually holds: `i_hcd_primary = 10`
+and `.heat_transport.p_hcd_electric_total_mw` -- for the combinations the tracked
+tokamak input files actually hold. `large_tokamak_eval.IN.DAT`'s: `i_hcd_primary = 10`
 (`USER_INPUT_ELECTRON_CYCLOTRON`, the file's line 124), `i_hcd_secondary = 0`
 (`NO_CURRENT_DRIVE`, PROCESS's default at `current_drive_variables.py:206` -- the file
 never sets it), `i_hcd_calculations = 1` (default, `:223`) and `i_plasma_ignited = 0`
-(`NON_IGNITED`, `physics_variables.py:881`). Every other heating-and-current-drive
-scheme is UNPORTED; see the audit record for the per-value reason.
+(`NON_IGNITED`, `physics_variables.py:881`). And, since 2026-08-27, the two spherical
+tokamak files' (`spherical_tokamak_eval.IN.DAT:133`, `st_regression.IN.DAT:2522`):
+`i_hcd_primary = 13` (`FREETHY_ELECTRON_CYCLOTRON`) with its nested `i_ecrh_wave_mode =
+0` (O-mode -- both files set it explicitly, and it is also PROCESS's default at
+`current_drive_variables.py:116`), same secondary/calculations/ignition values. The two
+arms share every stage but the first: `CurrentDriveModel(13).method` is
+`ELECTRON_CYCLOTRON`, so the wall-plug block is the one already ported. Every other
+heating-and-current-drive scheme is UNPORTED; see the audit record for the per-value
+reason.
 
 `CurrentDrive.current_drive` (`process/models/physics/current_drive.py:1651-2309`) is one
 660-line method in which **four** switches interleave -- `i_hcd_calculations` gates the
@@ -32,6 +39,7 @@ ports"): a plain Python int used for ordinary branching in the composite
 marks it `static_argnames`.
 """
 
+import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
@@ -39,6 +47,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.paths import current_drive, heat_transport, physics
+from process.core import constants
 from process.data_structure.physics_variables import PlasmaIgnitionModel
 
 # ---------------------------------------------------------------------------
@@ -68,6 +77,106 @@ def user_input_electron_cyclotron_efficiency(
     """
     dene20 = nd_plasma_electrons_vol_avg * 1.0e-20
     return eta_cd_norm_ecrh / (dene20 * rmajor)
+
+
+def freethy_electron_cyclotron_efficiency(
+    *,
+    temp_plasma_electron_vol_avg_kev,
+    n_charge_plasma_effective_vol_avg,
+    rmajor,
+    nd_plasma_electrons_vol_avg,
+    b_plasma_toroidal_on_axis,
+    n_ecrh_harmonic,
+    feffcd,
+    i_ecrh_wave_mode,
+):
+    """ECCD efficiency from the Freethy model (PROCESS issue #2994, GRAY-tuned).
+
+    Ports `ElectronCyclotron.electron_cyclotron_freethy`
+    (`process/models/physics/current_drive.py:992-1088`) plus the `* feffcd` factor its
+    enclosing lambda applies (`hcd_models[13]`, `:1759-1770`).
+    `CurrentDriveModel.FREETHY_ELECTRON_CYCLOTRON` (13),
+    `spherical_tokamak_eval.IN.DAT:133` and `st_regression.IN.DAT:2522`'s value.
+
+    The parameter names are the `VarPath` leaves the lambda reads, not the
+    staticmethod's abbreviations: its `te` is `.physics.temp_plasma_electron_vol_avg_kev`
+    and its `zeff` is `.physics.n_charge_plasma_effective_vol_avg` (`:1760-1767`).
+
+    `i_ecrh_wave_mode` is the **nested switch** (`:1074-1079`): it selects the cut-off
+    frequency formula -- O-mode (`0`) takes the plasma frequency, X-mode (`1`) the
+    right-hand cut-off -- and an invalid value raises `ValueError`, exactly as the
+    reference does. It is a static Python int, never traced, on the same terms as
+    `i_plasma_ignited` in `hcd_electric_total_mw` below: the occupant pins it, and the
+    two branches read **provably identical** variable sets (both cut-offs are formed
+    from `fc` and `fp`, which are already computed from the same two reads), which is
+    `traceability_policy.md`'s static-kwarg exception -- the one switch in this unit
+    that does *not* split into per-value functions, and the reads-set identity is the
+    required evidence, asserted in `test_current_drive.py`. Only the O-mode branch has
+    an occupant; X-mode is live on no tracked input (both files that select model 13
+    set `0`, which is also the default, `current_drive_variables.py:116`) and its
+    binding is refused in `indat.py`'s `UNPORTED` -- the branch is transcribed here
+    because splitting one line out of a shared twenty would be the duplication the
+    policy's deviation clause exists for, and it is value-checked against the
+    reference, not assumed.
+
+    Note the X-mode cut-off is transcribed defect-preservingly: the reference puts
+    `n_ecrh_harmonic` on `fc**2` *inside* the square root (`:1077`), i.e.
+    `sqrt(n * fc**2 + 4 * fp**2)` and not `sqrt((n * fc)**2 + 4 * fp**2)`, which for
+    the right-hand cut-off one would expect. Ported as written.
+
+    Raises
+    ------
+    ValueError
+        If the wave mode is invalid (not 0 for O-mode or 1 for X-mode) -- the
+        reference's own error, transcribed.
+    """
+    # Cyclotron frequency (`:1046-1052`).
+    fc = (
+        1
+        / (2 * jnp.pi)
+        * constants.ELECTRON_CHARGE
+        * b_plasma_toroidal_on_axis
+        / constants.ELECTRON_MASS
+    )
+
+    # Plasma frequency (`:1055-1064`).
+    fp = (
+        1
+        / (2 * jnp.pi)
+        * jnp.sqrt(
+            nd_plasma_electrons_vol_avg
+            * constants.ELECTRON_CHARGE**2
+            / (constants.ELECTRON_MASS * constants.EPSILON0)
+        )
+    )
+
+    # Scaling factor for ECCD efficiency: 0.18 tuned to a GRAY study, then the Zeff
+    # correction (`:1067-1068`).
+    xi_cd = 0.18e0 * (4.8e0 / (2 + n_charge_plasma_effective_vol_avg))
+
+    # ECCD efficiency before the coupling factor (`:1071`).
+    eta_cd = (
+        xi_cd
+        * temp_plasma_electron_vol_avg_kev
+        / (3.27e0 * rmajor * (nd_plasma_electrons_vol_avg / 1.0e19))
+    )
+
+    # The nested switch: cut-off frequency by wave mode (`:1074-1079`).
+    if i_ecrh_wave_mode == 0:  # O-mode case
+        f_cutoff = fp
+    elif i_ecrh_wave_mode == 1:  # X-mode case
+        f_cutoff = 0.5 * (fc + jnp.sqrt(n_ecrh_harmonic * fc**2 + 4 * fp**2))
+    else:
+        raise ValueError("Invalid wave mode. Use 0 for O-mode or 1 for X-mode.")
+
+    # Plasma coupling factor: no coupling unless the cut-off is below the cyclotron
+    # harmonic, smoothed by a tanh of sharpness `a` (`:1081-1085`).
+    a = 0.1
+    cutoff_factor = 0.5 * (
+        1 + jnp.tanh((2 / a) * ((n_ecrh_harmonic * fc - f_cutoff) / fp - a))
+    )
+
+    return eta_cd * cutoff_factor * feffcd
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +430,105 @@ def calculate_current_drive_ecrh_primary_no_secondary(
     )
 
 
+def calculate_current_drive_freethy_ecrh_primary_no_secondary(
+    *,
+    temp_plasma_electron_vol_avg_kev,
+    n_charge_plasma_effective_vol_avg,
+    nd_plasma_electrons_vol_avg,
+    rmajor,
+    b_plasma_toroidal_on_axis,
+    n_ecrh_harmonic,
+    feffcd,
+    plasma_current,
+    f_c_plasma_auxiliary,
+    p_hcd_primary_extra_heat_mw,
+    p_hcd_secondary_injected_mw,
+    eta_ecrh_injector_wall_plug,
+    i_plasma_ignited,
+    i_ecrh_wave_mode,
+):
+    """`CurrentDrive.current_drive` for `i_hcd_primary = 13`, `i_hcd_secondary = 0`.
+
+    The spherical tokamak files' arm (`spherical_tokamak_eval.IN.DAT:133`,
+    `st_regression.IN.DAT:2522`), with `i_hcd_calculations = 1`. Identical to
+    `calculate_current_drive_ecrh_primary_no_secondary` in every stage but the first --
+    `CurrentDriveModel(13).method` is `ELECTRON_CYCLOTRON` like model 10's, so the
+    wall-plug block, the totals and the ignition fudge are the *same* functions, called
+    here so the diff against PROCESS crosses them on this arm's numbers too. Only the
+    efficiency differs: Freethy's model reads seven variables (six data reads plus
+    `feffcd`, which model 10 conspicuously does not read) where model 10 reads three.
+
+    `i_plasma_ignited` and `i_ecrh_wave_mode` are static switches, never traced; the
+    harness marks both `static_argnames`.
+
+    Returns
+    -------
+    tuple
+        The same 10-tuple as `calculate_current_drive_ecrh_primary_no_secondary`.
+    """
+    eta_cd_hcd_primary = freethy_electron_cyclotron_efficiency(
+        temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
+        n_charge_plasma_effective_vol_avg=n_charge_plasma_effective_vol_avg,
+        rmajor=rmajor,
+        nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
+        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+        n_ecrh_harmonic=n_ecrh_harmonic,
+        feffcd=feffcd,
+        i_ecrh_wave_mode=i_ecrh_wave_mode,
+    )
+
+    c_hcd_secondary_driven, f_c_plasma_hcd_secondary = hcd_secondary_driven_current(
+        eta_cd_hcd_secondary=0.0,
+        p_hcd_secondary_injected_mw=p_hcd_secondary_injected_mw,
+        plasma_current=plasma_current,
+    )
+
+    p_hcd_primary_injected_mw = hcd_primary_injected_power_mw(
+        f_c_plasma_auxiliary=f_c_plasma_auxiliary,
+        f_c_plasma_hcd_secondary=f_c_plasma_hcd_secondary,
+        plasma_current=plasma_current,
+        eta_cd_hcd_primary=eta_cd_hcd_primary,
+    )
+
+    (
+        p_hcd_ecrh_injected_total_mw,
+        p_hcd_ecrh_electric_mw,
+        eta_hcd_primary_injector_wall_plug,
+        p_hcd_primary_electric_mw,
+    ) = electron_cyclotron_primary_powers(
+        p_hcd_ecrh_injected_secondary_mw=0.0,
+        p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
+        p_hcd_primary_extra_heat_mw=p_hcd_primary_extra_heat_mw,
+        eta_ecrh_injector_wall_plug=eta_ecrh_injector_wall_plug,
+    )
+
+    p_hcd_injected_total_mw = hcd_injected_power_total_mw(
+        p_hcd_primary_injected_mw=p_hcd_primary_injected_mw,
+        p_hcd_primary_extra_heat_mw=p_hcd_primary_extra_heat_mw,
+        p_hcd_secondary_injected_mw=p_hcd_secondary_injected_mw,
+        p_hcd_secondary_extra_heat_mw=0.0,
+    )
+
+    p_hcd_electric_total_mw = hcd_electric_total_mw(
+        p_hcd_primary_electric_mw=p_hcd_primary_electric_mw,
+        p_hcd_secondary_electric_mw=0.0,
+        i_plasma_ignited=i_plasma_ignited,
+    )
+
+    return (
+        eta_cd_hcd_primary,
+        c_hcd_secondary_driven,
+        f_c_plasma_hcd_secondary,
+        p_hcd_primary_injected_mw,
+        p_hcd_ecrh_injected_total_mw,
+        p_hcd_ecrh_electric_mw,
+        eta_hcd_primary_injector_wall_plug,
+        p_hcd_primary_electric_mw,
+        p_hcd_injected_total_mw,
+        p_hcd_electric_total_mw,
+    )
+
+
 # ---------------------------------------------------------------------------
 # cottax nodes
 # ---------------------------------------------------------------------------
@@ -355,6 +563,49 @@ class HcdPrimaryEfficiencyUserInputEcrh(HcdPrimaryEfficiency):
             eta_cd_norm_ecrh=eta_cd_norm_ecrh,
             nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
             rmajor=rmajor,
+        )
+
+
+class HcdPrimaryEfficiencyFreethyEcrhOMode(HcdPrimaryEfficiency):
+    """`i_hcd_primary == 13` (`FREETHY_ELECTRON_CYCLOTRON`), O-mode.
+
+    `spherical_tokamak_eval.IN.DAT:133` and `st_regression.IN.DAT:2522`'s value, the
+    second occupant of this family. The nested `i_ecrh_wave_mode` is pinned to `0`
+    (O-mode) -- both files set it explicitly (`:130` / `:2665`) and it is PROCESS's
+    default (`current_drive_variables.py:116`). It is pinned rather than read because it
+    is a switch, not a port (`_audit/naming_convention.md` § "switches are not ports"),
+    and it stays a static kwarg of the shared pure function rather than splitting it
+    because the two wave modes read identical variable sets -- see
+    `freethy_electron_cyclotron_efficiency`'s docstring for the evidence. An X-mode
+    occupant would be these same seven reads over the other branch; it is not written
+    (`indat.py`'s `UNPORTED[("i_ecrh_wave_mode", 1)]`).
+
+    Seven reads where model 10 has three -- including `feffcd`, the fudge factor model
+    10's lambda conspicuously omits (`current_drive.py:1744-1747` has no `feffcd`;
+    `:1759-1770` does).
+    """
+
+    eta_cd_hcd_primary = OutputInto(current_drive)
+
+    def __call__(
+        self,
+        temp_plasma_electron_vol_avg_kev=From(physics),
+        n_charge_plasma_effective_vol_avg=From(physics),
+        rmajor=From(physics),
+        nd_plasma_electrons_vol_avg=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+        n_ecrh_harmonic=From(current_drive),
+        feffcd=From(current_drive),
+    ):
+        return freethy_electron_cyclotron_efficiency(
+            temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
+            n_charge_plasma_effective_vol_avg=n_charge_plasma_effective_vol_avg,
+            rmajor=rmajor,
+            nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
+            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+            n_ecrh_harmonic=n_ecrh_harmonic,
+            feffcd=feffcd,
+            i_ecrh_wave_mode=0,
         )
 
 

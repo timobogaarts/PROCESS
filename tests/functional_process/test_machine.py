@@ -391,6 +391,7 @@ TOKAMAK_ONLY_UNPORTED_FIELDS = {
     "i_plasma_current",
     "i_plasma_geometry",
     "i_plasma_ignited_separatrix",
+    "i_ecrh_wave_mode",
 }
 """`UNPORTED` fields the **stellarator** branch never reads.
 
@@ -398,6 +399,17 @@ TOKAMAK_ONLY_UNPORTED_FIELDS = {
 branch, and everything only a tokamak asks inside `_tokamak_device`, so a refusal in the
 second is unreachable from a `istell = 6` file. These cases are written over
 `TOKAMAK_BASELINE_INDAT` instead."""
+
+NESTED_UNPORTED_COMPANIONS = {"i_ecrh_wave_mode": {"i_hcd_primary": 13}}
+"""Switches whose `UNPORTED` refusal only exists inside another switch's value.
+
+`i_ecrh_wave_mode` is the first: `_hcd_primary_efficiency` consults it only when
+`i_hcd_primary == 13` (the wave-mode `if` sits *inside*
+`electron_cyclotron_freethy`, `current_drive.py:1074-1079`), and the baseline sets
+`10`, so a case about the wave mode must also select the value that nests it or the
+integer is silently ignored -- which is PROCESS's own behaviour, not a test artefact.
+The companion values are overlaid on `TOKAMAK_BASELINE_INDAT` below, under the field
+being tested so the field under test still wins a clash."""
 
 BASELINE_INDAT = {"istell": 6, "i_cost_model": 0, "i_plasma_ignited": 1}
 """The least an IN.DAT must say for `machine_from_indat` to get past the slots whose
@@ -740,7 +752,11 @@ def test_a_refused_value_says_why(tmp_path, field, value):
                 # (`i_pf_location`); everything else -- including the enum member
                 # under test -- normalises through `int`.
                 f"{f} = {v if isinstance(v, str) else int(v)}\n"
-                for f, v in {**TOKAMAK_BASELINE_INDAT, field: value}.items()
+                for f, v in {
+                    **TOKAMAK_BASELINE_INDAT,
+                    **NESTED_UNPORTED_COMPANIONS.get(field, {}),
+                    field: value,
+                }.items()
             )
         )
     else:
