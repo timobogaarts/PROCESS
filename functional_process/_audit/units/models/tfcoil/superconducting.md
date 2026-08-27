@@ -168,7 +168,7 @@ a_tf_coil_inboard_insulation, f_a_tf_coil_inboard_insulation}`.
 | `.fwbs.den_steel` | read | explicit-arg | *(live)* |
 | `.tfcoil.cplen` | write, then **read** | local-intermediate | written `:1989`, read back `:2002,2012-2013` in the same straight-line body |
 | `.tfcoil.m_tf_coil_wp_insulation`, `.m_tf_coil_case`, `.m_tf_coil_superconductor`, `.m_tf_coil_copper`, `.m_tf_wp_steel_conduit`, `.m_tf_coil_wp_turn_insulation`, `.m_tf_coil_conductor`, `.m_tf_coil`, `.m_tf_coils_total` | write | explicit-arg | four of these are boundary reads #4, #5, #6, #7 |
-| `.tfcoil.whtcp`, `.whttflgs` | write | conditional-ownership-by-run-config | `itart == 1` only (`:2086-2093`) |
+| `.tfcoil.whtcp`, `.whttflgs` | write | conditional-ownership-by-run-config | `itart == 1` only (`:2086-2093`); owned by `SuperconductingTfCoilAreasAndMassesSphericalTokamak` since 2026-08-27 |
 
 `.tfcoil.dcond[i_tf_sc_mat - 1]` is an **array-element `VarPath`** per
 `naming_convention.md` § "Array elements", the same treatment
@@ -190,13 +190,13 @@ functions; see that module.
 
 ## cottax node
 
-Twenty classes in seven families:
+Twenty-one classes in seven families:
 `SuperconductingTfWpGeometry{Rectangular,DoubleRectangular,Trapezoidal}`,
 `TfCaseAreas{CircularFront,StraightFront}`,
 `DxTfSideCase{Rectangular,DoubleRectangular,Trapezoidal}`, `TfWpCurrents`,
 `PeakBTfInboardWithRipple{16Coils,18Coils,20Coils,FlatAllowance}`,
 `CiccAveragedTurnGeometryFromCurrentPerTurn`, `CiccInboardAreasAndFractions`,
-`TfTurnArea`, `SuperconductingTfCoilAreasAndMassesConventional`.
+`TfTurnArea`, `SuperconductingTfCoilAreasAndMasses{Conventional,SphericalTokamak}`.
 
 ## tier signal
 
@@ -210,8 +210,8 @@ Twenty classes in seven families:
 | `i_tf_case_geom` | **0** *(live)*, 1 | both | |
 | `round(n_tf_coils)` | **16** *(live)*, 18, 20, other | all four | treated as a switch: the arms select different fit coefficients **and** different reads |
 | `i_dx_tf_turn_general_input` × `i_dx_tf_turn_cable_space_general_input` | **(F, F)** *(live)*, (T, ·), (F, T) | (F, F) only | the other two own `.tfcoil.c_tf_turn`; see finding 1 |
-| `itart` | **0** *(live)*, 1 | `0` only | `1` additionally owns `whtcp`/`whttflgs` |
-| `i_tf_sc_mat` | **1** *(live)*, 2–9 | `1` only | one occupant per material, differing in one `FromExactly` |
+| `itart` | **0** *(live)*, 1 | **both** (2026-08-27) | `1` additionally owns `whtcp`/`whttflgs` — conditional ownership, hence two occupants |
+| `i_tf_sc_mat` | **1** *(live)*, 2–9 | `1` only | one occupant per material, differing in one `FromExactly`. **Now reached at a value it does not answer** — see the dated section |
 | `i_tf_turns_integer` | **0** *(live)*, 1 | `0` only | `1` selects `tf_cable_in_conduit_integer_turn_geometry` (`:3422-3598`), a different function |
 | `.superconducting_tfcoil.i_tf_turn_type` | **1** *(live)*, 2 | `1` (CICC) | `2` is the whole CROCO class; resolved in `caller.py`, above every model |
 | `i_tf_sup` | **1** *(live)*, 0, 2 | `1` | resolved in `caller.py:295-316`, above every model — `schema.md`'s "resolved above this file" |
@@ -267,3 +267,114 @@ the superconductor property functions, and reads `.pf_coil.*` for the former onl
    `n_tf_coils` ever becomes an optimiser unknown.** It is not one today
    (`iteration_variables.py` does not list it), which is what makes a build-time branch
    legitimate. Worth a note in `core/solver/switches.md` when that file next gets a pass.
+
+## 2026-08-27 — the `itart == 1` TF mass arm ported (ST frontier wave 5)
+
+Both tracked spherical-tokamak files were refused at `itart_sc_tf_masses == 1`, whose
+`UNPORTED` reason read *"the spherical-tokamak TF mass arm additionally owns
+`.tfcoil.whtcp` and `.tfcoil.whttflgs` (`superconducting.py:2086-2093`), which the
+conventional arm never writes — conditional ownership again."* The reason was accurate
+and the fix is the established occupant-pair shape. `SuperconductingTfCoilAreasAndMasses
+SphericalTokamak` now sits beside its conventional sibling and
+`SC_TF_MASSES[SPHERICAL_TOKAMAK]` names it.
+
+**The two arms read exactly the same twenty fields — no more, no fewer.** That is worth
+stating because it is unusual: every other `itart` pair in this port (`base.md`'s picture
+frame, `hcpb.py`'s shield heating) differs in its *reads* as well as its writes. Here the
+whole difference is:
+
+| | conventional (`itart == 0`) | spherical (`itart == 1`) |
+|---|---|---|
+| outboard length in the 2.2-factor case mass (`:1995-2006`) | `len_tf_coil - cplen` | `len_tf_coil` |
+| outputs | ten | the same ten, **plus** `whtcp`, `whttflgs` (`:2085-2093`) |
+
+The length difference is not two formulas but one fact stated twice: PROCESS's own
+comment at `:1996-1997` says `.tfcoil.len_tf_coil` *excludes* the inboard leg at
+`itart == 1`. `cplen` itself is formed identically above the branch (`:1988-1991`) and is
+now `calculate_cplen`, called by both arms. The apportioning at `:2086-2093` divides by
+`tfleng_sph = cplen + len_tf_coil` and not by `len_tf_coil`, which is consistent with the
+same fact: at `itart == 1` the two lengths are disjoint, so their sum is the whole coil.
+Ported as written.
+
+Because the delta is that small, the shared sixty lines of mass algebra are a private
+`_superconducting_tf_coil_masses` helper taking `cplen` and `len_tf_coil_case_outboard`
+formed by the calling arm — the same treatment `hcpb.py::_nuclear_heating_shield` gives
+its `itart` pair, and for the same reason: two copies of the algebra would be two places
+for the coefficients to drift. The conventional arm's public signature, outputs and
+Tier-1 case are unchanged by that refactor.
+
+### `whtcp` is not a resistive centrepost mass on these runs
+
+The field name suggests PROCESS's resistive-TART centrepost chain, and that chain does
+write the same two fields — but at `i_tf_sup = 0`. Both ST files set `i_tf_sup = 1`
+(`spherical_tokamak_eval.IN.DAT:356`, `st_regression.IN.DAT:820`), so on these runs
+`:2086-2093` is the **sole producer** of `.tfcoil.whtcp` and `.tfcoil.whttflgs`, and it is
+a pure re-apportioning of `m_tf_coils_total` by length. It reads nothing a conventional
+run does not already produce, so **this arm introduces no new boundary input** — the
+question the dispatch brief asked is answered in the negative, and there is nothing here
+of the shape `base.md`'s `.build.r_cp_top` had.
+
+Downstream, the two fields have real readers already ported: `costs.py`'s `c22211`/
+`c22212` (`models/costs/costs.py:1616-1653`, the `itart == 1` cost arm) and `hcpb.py`'s TF
+nuclear heating (`models/blankets/hcpb.py:491-554`, which uses the **outboard leg mass**
+rather than the whole coil set). Both were reading a field with no producer until now.
+
+### The samples, and what the second one is for
+
+`sc-masses-st-baseline2018` is the conventional case's own point with `itart` flipped and
+nothing else moved, so any disagreement between the two arms is the branch and nothing
+else. `sc-masses-st-shortleg` puts the geometry where the arm lives — `len_tf_coil = 18.5`
+against `cplen = 11.0`, twelve coils, REBCO density — so agreement is not an artefact of
+conventional proportions. The reference adapter poisons `.tfcoil.whtcp`/`.whttflgs` with
+NaN before the call, which makes *"PROCESS actually took the `itart == 1` branch"* an
+executed check rather than an assumption: an untaken branch would leave NaN, not the
+zero default that would silently agree with a port that also computed nothing.
+
+### `i_tf_sc_mat = 9` — the slot is now reached at a value it does not answer
+
+Recorded as the immediate follow-up, because it is a live wrong number waiting to happen.
+`den_tf_sc_material` is bound on **both** arms to `FromExactly(tfcoil.dcond[0])` via the
+module constant `I_TF_SC_MAT_ITER_NB3SN`. Both ST files set `i_tf_sc_mat = 9`
+(`spherical_tokamak_eval.IN.DAT:355`, `st_regression.IN.DAT:827`), whose density is
+`dcond[8] == 8500.0` and not `dcond[0] == 6080.0` (`tfcoil_variables.py:157-170`) — a
+40 % error in the superconductor mass.
+
+This is the pre-existing bake this record's § "switches touched" already carried as
+"`i_tf_sc_mat`: `1` only", and it is the identical failure mode `next_steps.md` §14.5
+diagnosed on `stellarator.coils.coils_mass`: *a module constant is not an
+`eqx.field(static=True)`, so `switch_audit` cannot see it.* The conventional arm was safe
+only because the one file that reaches it (`large_tokamak_eval`) sets `i_tf_sc_mat = 1`.
+The spherical arm has no such luck.
+
+**Not fixed here, deliberately.** The fix is to make the slot an `i_tf_sc_mat` family the
+way `COILS_MASS_MATERIAL`/`WINDING_PACK_MATERIAL` already are — nine occupants differing
+in one `FromExactly`, or an `itart × i_tf_sc_mat` arm index — and that is a change to
+*both* arms and to the slot's key, not a change to the mass arm. Nothing is reachable in
+the meantime: after this wave both ST files refuse at `n_divertors == 2` (below), so no
+assembled machine reads `dcond[0]` on a `i_tf_sc_mat = 9` run. It must be closed before
+one can.
+
+### Frontier probe
+
+Both files move to the same next refusal, and it is not in this unit:
+
+- `spherical_tokamak_eval.IN.DAT` — **refused**, `n_divertors == 2`
+- `st_regression.IN.DAT` — **refused**, `n_divertors == 2`
+
+*"the double-null arm, refused at **five** slots at once … `blanket_library.py:169-232`
+… `hcpb.py:360-361` … `fw.py:194-197` … `vacuum.py:845-851` … `divertor.py:377-382` …
+**Note that this is refused on `.physics.i_single_null`'s behalf**: `n_divertors` is
+derived from it by `init.py:606-617`."* Both files do set `i_single_null = 0`
+(`spherical_tokamak_eval.IN.DAT:292`, `st_regression.IN.DAT:638`), so the refusal is
+theirs and not a mis-derivation. Neither file assembles, so no `machine_survey` run
+applies to this wave.
+
+Switch values these two files set that this unit's slots read, with line numbers:
+
+| switch | `spherical_tokamak_eval.IN.DAT` | `st_regression.IN.DAT` |
+|---|---|---|
+| `itart = 1` | `:283` | `:66` |
+| `i_tf_sup = 1` | `:356` | `:820` |
+| `i_tf_sc_mat = 9` | `:355` | `:827` |
+| `i_tf_shape = 2` | `:357` | `:803` |
+| `i_single_null = 0` | `:292` | `:638` |

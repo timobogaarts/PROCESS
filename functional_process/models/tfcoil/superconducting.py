@@ -66,7 +66,7 @@ Deliberately **out** of scope, with reasons:
 | `superconducting_tf_case_geometry`, sidewall | `i_tf_wp_geom` | all three (0/1/2) | -- |
 | `peak_b_tf_inboard_with_ripple` | `round(n_tf_coils)` | 16, 18, 20, other | -- |
 | `tf_cable_in_conduit_averaged_turn_geometry` | `i_dx_tf_turn_general_input`, `i_dx_tf_turn_cable_space_general_input` | the both-`False` arm | the other two |
-| `superconducting_tf_coil_areas_and_masses` | `itart` | `itart == 0` | `itart == 1` |
+| `superconducting_tf_coil_areas_and_masses` | `itart` | both (0/1) | -- |
 | `run`'s turn-geometry choice | `i_tf_turns_integer` | `0` (non-integer) | `1` (integer) |
 
 `i_tf_wp_geom` is `-1` (`UNSET`) by default and `process/core/init.py:977-989` resolves
@@ -865,9 +865,13 @@ def superconducting_tf_coil_areas_and_masses_conventional(
 
     Ports `superconducting_tf_coil_areas_and_masses`,
     `process/models/tfcoil/superconducting.py:1972-2081`, taking the `else` at line
-    2007. The `itart == 1` arm differs in two places -- the case-mass formula
-    (line 1998-2006) and the extra `whtcp`/`whttflgs` split (2086-2093) -- and is a
-    separate occupant, unwritten here.
+    2007. The `itart == 1` arm is
+    `superconducting_tf_coil_areas_and_masses_spherical_tokamak` below; it reads
+    **exactly the same fields** and differs in only two places -- the outboard length in
+    the case-mass formula (`:1998-2006`) and the extra `whtcp`/`whttflgs` split
+    (`:2086-2093`). The shared physics therefore lives in the private
+    `_superconducting_tf_coil_masses` helper, the same treatment
+    `hcpb.py::_nuclear_heating_shield` gives that `itart` pair.
 
     `.tfcoil.cplen` is written by the source (`line 1989`) and read back inside the same
     call (`2002`, `2012-2013`); it is `local-intermediate` in the sense
@@ -888,13 +892,186 @@ def superconducting_tf_coil_areas_and_masses_conventional(
         m_tf_coil_copper, m_tf_wp_steel_conduit, m_tf_coil_wp_turn_insulation,
         m_tf_coil_conductor, m_tf_coil, m_tf_coils_total)` -- all kg except `cplen` (m).
     """
+    cplen = calculate_cplen(
+        z_tf_inside_half=z_tf_inside_half, dr_tf_inboard=dr_tf_inboard
+    )
+    return _superconducting_tf_coil_masses(
+        len_tf_coil=len_tf_coil,
+        cplen=cplen,
+        # `:2013` -- the conventional arm's `len_tf_coil` *includes* the inboard leg, so
+        # the outboard case length is the coil length less the centrepost.
+        len_tf_coil_case_outboard=len_tf_coil - cplen,
+        a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+        a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+        den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+        den_tf_coil_case=den_tf_coil_case,
+        a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+        a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+        n_tf_coil_turns=n_tf_coil_turns,
+        a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+        f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+        f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+        a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+        den_tf_sc_material=den_tf_sc_material,
+        a_tf_turn_steel=a_tf_turn_steel,
+        den_steel=den_steel,
+        a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+        n_tf_coils=n_tf_coils,
+    )
+
+
+def superconducting_tf_coil_areas_and_masses_spherical_tokamak(
+    *,
+    len_tf_coil,
+    a_tf_wp_with_insulation,
+    a_tf_wp_no_insulation,
+    den_tf_wp_turn_insulation,
+    z_tf_inside_half,
+    dr_tf_inboard,
+    den_tf_coil_case,
+    a_tf_coil_inboard_case,
+    a_tf_coil_outboard_case,
+    n_tf_coil_turns,
+    a_tf_turn_cable_space_no_void,
+    f_a_tf_turn_cable_space_extra_void,
+    f_a_tf_turn_cable_copper,
+    a_tf_wp_coolant_channels,
+    den_tf_sc_material,
+    a_tf_turn_steel,
+    den_steel,
+    a_tf_coil_wp_turn_insulation,
+    n_tf_coils,
+):
+    """`itart == 1`: superconducting TF coil masses, split centrepost/outboard legs.
+
+    Ports `superconducting_tf_coil_areas_and_masses`,
+    `process/models/tfcoil/superconducting.py:1972-2093`, taking the `if` at line 1995
+    and the `if` at line 2085. Same reads as the conventional arm, exactly -- the two
+    differences are:
+
+    1. **`:1996-1997`, stated in PROCESS's own comment**: at `itart == 1`,
+       `.tfcoil.len_tf_coil` does *not* include the inboard leg (the centrepost), so the
+       outboard case length in the 2.2-factor case mass is `len_tf_coil` rather than
+       `len_tf_coil - cplen`. `cplen` itself is formed identically in both arms
+       (`:1988-1991`, above the branch).
+    2. **`:2085-2093`**: the total coil-set mass is apportioned between centrepost and
+       outboard legs in the ratio of their lengths, writing `.tfcoil.whtcp` and
+       `.tfcoil.whttflgs`. The conventional arm writes neither, which is why this is an
+       occupant and not a kwarg -- **conditional ownership**.
+
+    The apportioning denominator is `tfleng_sph = cplen + len_tf_coil` (`:2087`) and not
+    `len_tf_coil`, which is consistent with (1): the two lengths are disjoint at
+    `itart == 1`, so their sum is the whole coil. Ported as written.
+
+    **`whtcp` is not a resistive-centrepost mass here.** PROCESS has a separate
+    resistive-TART centrepost chain (`i_tf_sup = 0`), but on a superconducting TART
+    (`i_tf_sup = 1`, which is what both ST regression files set) *this* line is the sole
+    producer of `.tfcoil.whtcp` and `.tfcoil.whttflgs`, and it is a pure re-apportioning
+    of `m_tf_coils_total`. It reads nothing a conventional run does not already produce.
+
+    Parameters
+    ----------
+    den_tf_sc_material :
+        Superconductor density (kg/m3) -- `.tfcoil.dcond[i_tf_sc_mat - 1]`, already
+        indexed by the material switch, exactly as the conventional arm takes it.
+
+    Returns
+    -------
+    :
+        The conventional arm's ten values, then `(whtcp, whttflgs)` -- centrepost mass
+        and outboard-leg mass (kg), both for the whole coil set.
+    """
+    cplen = calculate_cplen(
+        z_tf_inside_half=z_tf_inside_half, dr_tf_inboard=dr_tf_inboard
+    )
+    masses = _superconducting_tf_coil_masses(
+        len_tf_coil=len_tf_coil,
+        cplen=cplen,
+        # `:1996-2005` -- `len_tf_coil` excludes the centrepost at `itart == 1`.
+        len_tf_coil_case_outboard=len_tf_coil,
+        a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+        a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+        den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+        den_tf_coil_case=den_tf_coil_case,
+        a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+        a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+        n_tf_coil_turns=n_tf_coil_turns,
+        a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+        f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+        f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+        a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+        den_tf_sc_material=den_tf_sc_material,
+        a_tf_turn_steel=a_tf_turn_steel,
+        den_steel=den_steel,
+        a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+        n_tf_coils=n_tf_coils,
+    )
+
+    m_tf_coils_total = masses[-1]
+
+    # `:2086-2093` -- total TF mass apportioned by length between centrepost (`cplen`)
+    # and outboard legs (`len_tf_coil`), which are disjoint at `itart == 1`.
+    tfleng_sph = cplen + len_tf_coil
+    whtcp = m_tf_coils_total * (cplen / tfleng_sph)
+    whttflgs = m_tf_coils_total * (len_tf_coil / tfleng_sph)
+
+    return (*masses, whtcp, whttflgs)
+
+
+def calculate_cplen(*, z_tf_inside_half, dr_tf_inboard):
+    """Length of the vertical (inboard) TF segment, m. `superconducting.py:1988-1991`.
+
+    Formed above the `itart` branch, so both arms share it verbatim; a named function
+    rather than a line copied into each, so the two cannot drift.
+    """
+    return (2.0 * z_tf_inside_half) + (2.0 * dr_tf_inboard)
+
+
+def _superconducting_tf_coil_masses(
+    *,
+    len_tf_coil,
+    cplen,
+    len_tf_coil_case_outboard,
+    a_tf_wp_with_insulation,
+    a_tf_wp_no_insulation,
+    den_tf_wp_turn_insulation,
+    den_tf_coil_case,
+    a_tf_coil_inboard_case,
+    a_tf_coil_outboard_case,
+    n_tf_coil_turns,
+    a_tf_turn_cable_space_no_void,
+    f_a_tf_turn_cable_space_extra_void,
+    f_a_tf_turn_cable_copper,
+    a_tf_wp_coolant_channels,
+    den_tf_sc_material,
+    a_tf_turn_steel,
+    den_steel,
+    a_tf_coil_wp_turn_insulation,
+    n_tf_coils,
+):
+    """The part of `superconducting_tf_coil_areas_and_masses` both `itart` arms share.
+
+    A private helper rather than a node: the two occupants differ only in
+    `len_tf_coil_case_outboard`, and duplicating sixty lines of mass algebra to make that
+    point would add a second place for it to drift. Same shape as
+    `hcpb.py::_nuclear_heating_shield`.
+
+    Parameters
+    ----------
+    cplen, len_tf_coil_case_outboard :
+        Centrepost length (m) and the outboard length the 2.2-factor case mass uses,
+        both formed by the calling arm.
+
+    Returns
+    -------
+    :
+        The public conventional arm's ten values.
+    """
     m_tf_coil_wp_insulation = (
         len_tf_coil
         * (a_tf_wp_with_insulation - a_tf_wp_no_insulation)
         * den_tf_wp_turn_insulation
     )
-
-    cplen = (2.0 * z_tf_inside_half) + (2.0 * dr_tf_inboard)
 
     # The 2.2 factor fits the ITER-FDR 450 t value; CCFE note T&M/PKNIGHT/PROCESS/026.
     m_tf_coil_case = (
@@ -902,7 +1079,7 @@ def superconducting_tf_coil_areas_and_masses_conventional(
         * den_tf_coil_case
         * (
             cplen * a_tf_coil_inboard_case
-            + (len_tf_coil - cplen) * a_tf_coil_outboard_case
+            + len_tf_coil_case_outboard * a_tf_coil_outboard_case
         )
     )
 
@@ -1493,6 +1670,96 @@ class SuperconductingTfCoilAreasAndMassesConventional(
         n_tf_coils=From(tfcoil),
     ):
         return superconducting_tf_coil_areas_and_masses_conventional(
+            len_tf_coil=len_tf_coil,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            a_tf_wp_no_insulation=a_tf_wp_no_insulation,
+            den_tf_wp_turn_insulation=den_tf_wp_turn_insulation,
+            z_tf_inside_half=z_tf_inside_half,
+            dr_tf_inboard=dr_tf_inboard,
+            den_tf_coil_case=den_tf_coil_case,
+            a_tf_coil_inboard_case=a_tf_coil_inboard_case,
+            a_tf_coil_outboard_case=a_tf_coil_outboard_case,
+            n_tf_coil_turns=n_tf_coil_turns,
+            a_tf_turn_cable_space_no_void=a_tf_turn_cable_space_no_void,
+            f_a_tf_turn_cable_space_extra_void=f_a_tf_turn_cable_space_extra_void,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            a_tf_wp_coolant_channels=a_tf_wp_coolant_channels,
+            den_tf_sc_material=den_tf_sc_material,
+            a_tf_turn_steel=a_tf_turn_steel,
+            den_steel=den_steel,
+            a_tf_coil_wp_turn_insulation=a_tf_coil_wp_turn_insulation,
+            n_tf_coils=n_tf_coils,
+        )
+
+
+class SuperconductingTfCoilAreasAndMassesSphericalTokamak(
+    SuperconductingTfCoilAreasAndMasses
+):
+    """`itart == 1` (spherical tokamak) -- the arm both ST regression files take.
+
+    Same twenty reads as the conventional sibling, no more and no fewer, and the same ten
+    outputs **plus two**: `.tfcoil.whtcp` and `.tfcoil.whttflgs`
+    (`superconducting.py:2086-2093`). That extra pair is the whole reason `itart` is an
+    occupant slot here rather than a static kwarg -- **conditional ownership**: a kwarg
+    cannot make two `OutputInto`s appear at one value of a switch and vanish at the
+    other.
+
+    On a superconducting TART this node is the **sole producer** of `whtcp`/`whttflgs`,
+    which `costs.py`'s `c22211`/`c22212` (`models/costs/costs.py:1616-1653`) and
+    `hcpb.py`'s TF nuclear heating (`models/blankets/hcpb.py:491-554`) read. PROCESS's
+    resistive-centrepost chain writes the same two fields at `i_tf_sup = 0`; that is a
+    different occupant of a different slot, not this one.
+
+    **`den_tf_sc_material` is bound to `dcond[0]` here, exactly as the conventional
+    sibling binds it, and that is a known gap on the two live ST files.** Both
+    `spherical_tokamak_eval.IN.DAT:355` and `st_regression.IN.DAT:827` set
+    `i_tf_sc_mat = 9`, whose density is `dcond[8] == 8500.0` and not
+    `dcond[0] == 6080.0` (`tfcoil_variables.py:157-170`). The gap is the pre-existing
+    `I_TF_SC_MAT_ITER_NB3SN` bake recorded in `_audit/units/models/tfcoil/
+    superconducting.md` § "switches touched" (`i_tf_sc_mat`: "`1` only"), not something
+    this arm introduces, and closing it means making the slot an `i_tf_sc_mat` family the
+    way `COILS_MASS_MATERIAL`/`WINDING_PACK_MATERIAL` already are -- a change to *both*
+    arms, deliberately not made here. Neither ST file assembles yet (they refuse
+    downstream at `itart_hcpb`), so the wrong density is not reachable by any machine;
+    it must be fixed before it is.
+    """
+
+    m_tf_coil_wp_insulation = OutputInto(tfcoil)
+    cplen = OutputInto(tfcoil)
+    m_tf_coil_case = OutputInto(tfcoil)
+    m_tf_coil_superconductor = OutputInto(tfcoil)
+    m_tf_coil_copper = OutputInto(tfcoil)
+    m_tf_wp_steel_conduit = OutputInto(tfcoil)
+    m_tf_coil_wp_turn_insulation = OutputInto(tfcoil)
+    m_tf_coil_conductor = OutputInto(tfcoil)
+    m_tf_coil = OutputInto(tfcoil)
+    m_tf_coils_total = OutputInto(tfcoil)
+    whtcp = OutputInto(tfcoil)
+    whttflgs = OutputInto(tfcoil)
+
+    def __call__(
+        self,
+        len_tf_coil=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        a_tf_wp_no_insulation=From(superconducting_tfcoil),
+        den_tf_wp_turn_insulation=From(tfcoil),
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        den_tf_coil_case=From(tfcoil),
+        a_tf_coil_inboard_case=From(tfcoil),
+        a_tf_coil_outboard_case=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        a_tf_turn_cable_space_no_void=From(tfcoil),
+        f_a_tf_turn_cable_space_extra_void=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        a_tf_wp_coolant_channels=From(tfcoil),
+        den_tf_sc_material=FromExactly(tfcoil.dcond[I_TF_SC_MAT_ITER_NB3SN - 1]),
+        a_tf_turn_steel=From(tfcoil),
+        den_steel=From(fwbs),
+        a_tf_coil_wp_turn_insulation=From(tfcoil),
+        n_tf_coils=From(tfcoil),
+    ):
+        return superconducting_tf_coil_areas_and_masses_spherical_tokamak(
             len_tf_coil=len_tf_coil,
             a_tf_wp_with_insulation=a_tf_wp_with_insulation,
             a_tf_wp_no_insulation=a_tf_wp_no_insulation,

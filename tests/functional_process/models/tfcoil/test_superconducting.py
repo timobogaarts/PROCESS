@@ -28,6 +28,7 @@ from functional_process.models.tfcoil.superconducting import (
     peak_b_tf_inboard_with_ripple_flat,
     peak_b_tf_inboard_with_ripple_kovari,
     superconducting_tf_coil_areas_and_masses_conventional,
+    superconducting_tf_coil_areas_and_masses_spherical_tokamak,
     superconducting_tf_wp_geometry_double_rectangular,
     superconducting_tf_wp_geometry_rectangular,
     superconducting_tf_wp_geometry_trapezoidal,
@@ -780,6 +781,184 @@ class TestSuperconductingTfCoilAreasAndMassesConventional(Tier1Contract):
         "a_tf_wp_no_insulation": (0.2, 1.2),
         "den_tf_wp_turn_insulation": (1500.0, 2200.0),
         "z_tf_inside_half": (4.0, 14.0),
+        "dr_tf_inboard": (0.5, 2.0),
+        "den_tf_coil_case": (7000.0, 9000.0),
+        "a_tf_coil_inboard_case": (0.3, 3.0),
+        "a_tf_coil_outboard_case": (0.3, 3.0),
+        "n_tf_coil_turns": (50.0, 400.0),
+        "a_tf_turn_cable_space_no_void": (5e-4, 3e-3),
+        "f_a_tf_turn_cable_space_extra_void": (0.2, 0.45),
+        "f_a_tf_turn_cable_copper": (0.5, 0.9),
+        "a_tf_wp_coolant_channels": (0.005, 0.05),
+        "den_tf_sc_material": (6000.0, 8600.0),
+        "a_tf_turn_steel": (5e-4, 3e-3),
+        "den_steel": (7000.0, 8200.0),
+        "a_tf_coil_wp_turn_insulation": (0.02, 0.2),
+        "n_tf_coils": (8.0, 24.0),
+    }
+
+
+def _reference_sc_areas_and_masses_spherical_tokamak(
+    len_tf_coil,
+    a_tf_wp_with_insulation,
+    a_tf_wp_no_insulation,
+    den_tf_wp_turn_insulation,
+    z_tf_inside_half,
+    dr_tf_inboard,
+    den_tf_coil_case,
+    a_tf_coil_inboard_case,
+    a_tf_coil_outboard_case,
+    n_tf_coil_turns,
+    a_tf_turn_cable_space_no_void,
+    f_a_tf_turn_cable_space_extra_void,
+    f_a_tf_turn_cable_copper,
+    a_tf_wp_coolant_channels,
+    den_tf_sc_material,
+    a_tf_turn_steel,
+    den_steel,
+    a_tf_coil_wp_turn_insulation,
+    n_tf_coils,
+):
+    """`superconducting_tf_coil_areas_and_masses` at `itart == 1`, through `data`.
+
+    The conventional arm's adapter with `itart = 1`, plus `whtcp`/`whttflgs` sliced out
+    of `data` -- the two fields only this arm writes. Both are **poisoned with NaN before
+    the call**, so "PROCESS wrote them here" is executed rather than assumed: were the
+    branch not taken, the comparison would see NaN and fail, instead of silently agreeing
+    on a leftover default of zero.
+
+    `den_tf_sc_material` is written into every slot of `dcond` for the same reason as the
+    conventional adapter: the port takes the density already indexed, so the adapter does
+    not have to carry `i_tf_sc_mat` as a second, redundant argument.
+    """
+    model = _sctfcoil()
+    model.data.physics.itart = 1
+    model.data.fwbs.den_steel = den_steel
+    model.data.build.z_tf_inside_half = z_tf_inside_half
+    model.data.build.dr_tf_inboard = dr_tf_inboard
+
+    t = model.data.tfcoil
+    t.len_tf_coil = len_tf_coil
+    t.den_tf_wp_turn_insulation = den_tf_wp_turn_insulation
+    t.den_tf_coil_case = den_tf_coil_case
+    t.a_tf_coil_inboard_case = a_tf_coil_inboard_case
+    t.a_tf_coil_outboard_case = a_tf_coil_outboard_case
+    t.n_tf_coil_turns = n_tf_coil_turns
+    t.a_tf_turn_cable_space_no_void = a_tf_turn_cable_space_no_void
+    t.f_a_tf_turn_cable_space_extra_void = f_a_tf_turn_cable_space_extra_void
+    t.f_a_tf_turn_cable_copper = f_a_tf_turn_cable_copper
+    t.a_tf_wp_coolant_channels = a_tf_wp_coolant_channels
+    t.a_tf_turn_steel = a_tf_turn_steel
+    t.a_tf_coil_wp_turn_insulation = a_tf_coil_wp_turn_insulation
+    t.n_tf_coils = n_tf_coils
+    t.i_tf_sc_mat = 1
+    t.dcond = np.full(9, den_tf_sc_material, dtype=float)
+    t.whtcp = np.nan
+    t.whttflgs = np.nan
+
+    d = model.data.superconducting_tfcoil
+    d.a_tf_wp_with_insulation = a_tf_wp_with_insulation
+    d.a_tf_wp_no_insulation = a_tf_wp_no_insulation
+
+    model.superconducting_tf_coil_areas_and_masses()
+    return (
+        t.m_tf_coil_wp_insulation,
+        t.cplen,
+        t.m_tf_coil_case,
+        t.m_tf_coil_superconductor,
+        t.m_tf_coil_copper,
+        t.m_tf_wp_steel_conduit,
+        t.m_tf_coil_wp_turn_insulation,
+        t.m_tf_coil_conductor,
+        t.m_tf_coil,
+        t.m_tf_coils_total,
+        t.whtcp,
+        t.whttflgs,
+    )
+
+
+class TestSuperconductingTfCoilAreasAndMassesSphericalTokamak(Tier1Contract):
+    """The `itart == 1` sibling: the same ten outputs, plus `whtcp` and `whttflgs`.
+
+    Two samples, and the pair is the point.
+
+    `sc-masses-st-baseline2018` is the conventional case's own point
+    (`tests/unit/models/tfcoil/test_sctfcoil.py:1740-1830`, `baseline_2018_IN.DAT`) with
+    `itart` flipped and nothing else touched. Holding every number fixed and moving only
+    the switch is what makes the two arms comparable: any disagreement between them is
+    the branch and nothing else.
+
+    `sc-masses-st-shortleg` moves the geometry to where this arm actually lives -- an ST
+    whose `len_tf_coil` is the *outboard* length alone and so is comparable to `cplen`
+    rather than more than twice it (`18.5` against `11.0`, where the baseline point is
+    `50.5` against `20.6`), with the twelve coils and the REBCO density (`dcond[8] ==
+    8500.0`) a spherical tokamak actually runs. `dr_tf_inboard = 0.9` and
+    `n_tf_coils = 12` are
+    `tests/regression/input_files/spherical_tokamak_eval.IN.DAT:345,362`; the areas are
+    the baseline case's, since PROCESS publishes no unit-test point for this arm, so the
+    provenance is "PROCESS's own numbers, one algebraic step removed" in the sense
+    `test_base.py` already uses. Both samples separate this arm's `tfleng_sph = cplen +
+    len_tf_coil` denominator (`superconducting.py:2087`) from any other candidate; the
+    second one says the agreement is not an artefact of conventional proportions.
+    """
+
+    audit_record = "models/tfcoil/superconducting.md"
+    reference = _reference_sc_areas_and_masses_spherical_tokamak
+    ported = superconducting_tf_coil_areas_and_masses_spherical_tokamak
+
+    samples = [
+        legacy_sample(
+            "sc-masses-st-baseline2018",
+            len_tf_coil=50.483843027201402,
+            a_tf_wp_with_insulation=0.70527618095271016,
+            a_tf_wp_no_insulation=0.64024601555360383,
+            den_tf_wp_turn_insulation=1800.0,
+            z_tf_inside_half=9.0730900215620327,
+            dr_tf_inboard=1.208,
+            den_tf_coil_case=8000.0,
+            a_tf_coil_inboard_case=1.0015169239205168,
+            a_tf_coil_outboard_case=1.2752592893394648,
+            n_tf_coil_turns=200.0,
+            a_tf_turn_cable_space_no_void=0.001293323051622732,
+            f_a_tf_turn_cable_space_extra_void=0.30000000000000004,
+            f_a_tf_turn_cable_copper=0.80884,
+            a_tf_wp_coolant_channels=0.015707963267948974,
+            den_tf_sc_material=6080.0,
+            a_tf_turn_steel=0.0014685061538103825,
+            den_steel=7800.0,
+            a_tf_coil_wp_turn_insulation=0.087880174466980876,
+            n_tf_coils=16.0,
+        ),
+        legacy_sample(
+            "sc-masses-st-shortleg",
+            len_tf_coil=18.5,
+            a_tf_wp_with_insulation=0.70527618095271016,
+            a_tf_wp_no_insulation=0.64024601555360383,
+            den_tf_wp_turn_insulation=1800.0,
+            z_tf_inside_half=4.6,
+            dr_tf_inboard=0.9,
+            den_tf_coil_case=8000.0,
+            a_tf_coil_inboard_case=1.0015169239205168,
+            a_tf_coil_outboard_case=1.2752592893394648,
+            n_tf_coil_turns=200.0,
+            a_tf_turn_cable_space_no_void=0.001293323051622732,
+            f_a_tf_turn_cable_space_extra_void=0.30000000000000004,
+            f_a_tf_turn_cable_copper=0.80884,
+            a_tf_wp_coolant_channels=0.015707963267948974,
+            den_tf_sc_material=8500.0,
+            a_tf_turn_steel=0.0014685061538103825,
+            den_steel=7800.0,
+            a_tf_coil_wp_turn_insulation=0.087880174466980876,
+            n_tf_coils=12.0,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "len_tf_coil": (10.0, 80.0),
+        "a_tf_wp_with_insulation": (0.3, 1.5),
+        "a_tf_wp_no_insulation": (0.2, 1.2),
+        "den_tf_wp_turn_insulation": (1500.0, 2200.0),
+        "z_tf_inside_half": (3.0, 14.0),
         "dr_tf_inboard": (0.5, 2.0),
         "den_tf_coil_case": (7000.0, 9000.0),
         "a_tf_coil_inboard_case": (0.3, 3.0),

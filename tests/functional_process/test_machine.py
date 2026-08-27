@@ -363,7 +363,6 @@ DERIVED_UNPORTED_KEYS = {
     "i_tf_shape_build",
     "i_tf_sup_build",
     "itart_hcpb",
-    "itart_sc_tf_masses",
     "i_plasma_ignited_separatrix",
 }
 """`UNPORTED` keys that no IN.DAT integer can select directly.
