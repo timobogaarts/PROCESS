@@ -132,10 +132,13 @@ Reads, per arm — this is the table the split exists to produce:
 | `.build.dr_tf_outboard` | – | – | yes | – |
 | `.build.r_tf_outboard_mid`, `.build.r_tf_inboard_mid` | – | – | – | yes |
 
-Two occupants are written (both `itart == 0`, `i_tf_shape == D_SHAPE`, one per
-`i_single_null`); the other two arms are UNPORTED. `.build.z_tf_top` is the measured
-invented edge: a single node carrying `i_single_null` as a static kwarg would declare it
-on the double-null arm, where PROCESS never reads it.
+Two occupants were written first (both `itart == 0`, `i_tf_shape == D_SHAPE`, one per
+`i_single_null`); a third, the picture frame at `itart == 1`, joined on 2026-08-27 — see
+the dated section at the foot of this record, which also splits the last column of the
+table above in two, because the picture frame's two `itart` sub-branches have different
+reads-sets. `.build.z_tf_top` is the measured invented edge: a single node carrying
+`i_single_null` as a static kwarg would declare it on the double-null arm, where PROCESS
+never reads it.
 
 ### `tf_coil_self_inductance` (`base.py:2065-2191`)
 
@@ -264,6 +267,12 @@ in scope.
   16-coil machine. The harness adapter sets the field, which is the "close the `data`
   back-door" check working exactly as intended. Same shape, less consequential, for
   `data.tfcoil.dr_tf_plasma_case` (`:328`) and `data.tfcoil.dx_tf_side_case_min` (`:358`).
+- **D5.** `tf_coil_shape_inner`'s picture-frame branch (`:551-578`) never assigns `tfa` or
+  `tfb`, so both leave the function as the `np.zeros(4)` they were allocated at
+  `:495-496` — and are written to `.tfcoil.tfa`/`.tfcoil.tfb` anyway (`:186-190`). On
+  that arm the two fields silently mean "unset" rather than being absent, and no reader
+  can tell which. Ported faithfully (the occupant owns them and produces the zeros);
+  found 2026-08-27, see the dated section.
 
 ## Shared with the stellarator
 
@@ -290,3 +299,113 @@ assembled machine must bind exactly one of each; `TokamakProcess` binds these tw
    here.** It is out of the boundary closure, but it is the last gap between this port
    and a complete `run_base_superconducting_tf`. It carries `i_tf_sup`, `itart` and
    `i_cp_joints`, so it is three more switch families rather than one function.
+
+## 2026-08-27 — the picture-frame TF coil shape at `itart == 1` ported (ST frontier wave 4)
+
+Both tracked spherical-tokamak files were refused at `tf_coil_shape_arm == -1`, whose
+`UNPORTED` reason read *"`.physics.itart == 1`: the TART arms of `tf_coil_shape_inner`
+read `.build.r_cp_top`, which the conventional arms never touch."* **The refusal named an
+arm neither file reaches.** `_tf_coil_shape_arm` tested `itart` first and returned `-1`
+for every spherical tokamak; `tf_coil_shape_inner`'s own dispatch
+(`process/models/tfcoil/base.py:498`, `:528`, `:551`) tests `i_tf_shape` first, and its
+`itart == 1` clause at `:528` is guarded by `i_tf_shape == D_SHAPE`. Both files set
+`i_tf_shape = 2` (`spherical_tokamak_eval.IN.DAT:357`, `st_regression.IN.DAT:803`)
+together with `itart = 1` (`:283`, `:66`), so PROCESS takes the **picture-frame** branch
+at `:551` and its `itart == 1` sub-branches at `:555-556` and `:575-578`. The
+"centrepost D-shape" arm at `:528-549` is unreachable on both files.
+
+So arms `-1` and `-2` were **not** two blockers in sequence: they were one dispatch
+written down wrongly. Reordering `_tf_coil_shape_arm` to test `i_tf_shape` before `itart`
+gives four cells where there were three, and only one of them needed writing:
+
+| cell | arm | status |
+|---|:-:|---|
+| `PICTURE_FRAME`, `itart == 1` | `2` | **written this wave** — both ST files |
+| `PICTURE_FRAME`, `itart == 0` | `-2` | UNPORTED, reason rewritten |
+| `D_SHAPE`, `itart == 1` | `-1` | UNPORTED, reason rewritten |
+| `D_SHAPE`, `itart == 0` | `0` / `1` | written, unchanged (`i_single_null`) |
+
+The reads column of the table in §`tf_coil_shape_inner` splits accordingly: the written
+picture-frame arm reads `.build.r_cp_top`, `.superconducting_tfcoil.r_tf_outboard_in`,
+`.build.z_tf_inside_half`, `.build.z_tf_top`, `.build.dr_tf_inboard` and
+`.build.r_tf_outboard_mid` — **six**, and it reads neither `.physics.rmajor` nor
+`.physics.rminor`, which both D-shape siblings do, nor `.build.r_tf_inboard_out` /
+`.build.r_tf_inboard_mid`, which its own `itart == 0` sibling does. A single fused node
+carrying `i_tf_shape`/`itart` as static kwargs would have declared ten edges on every
+arm; four of the ten would have been invented on this one. The reference adapter pins
+all five unread arguments at `0.0`, so a port that secretly read any of them fails by
+value.
+
+**`.tfcoil.tfa` and `.tfcoil.tfb` are exact zeros on this arm, and that is PROCESS's
+answer.** `:495-496` allocates them `np.zeros(4)`; the picture-frame branch never assigns
+an element, because a picture frame has no elliptical arcs to take semi-axes of. The two
+fields are still written to `data` at `:186-190`, so the occupant owns them and produces
+the zeros rather than declining to own them. Recorded below as defect **D5**: on this arm
+the two fields silently mean "unset" rather than being absent, and any downstream reader
+that does not know which shape it is looking at cannot tell the difference.
+`tf_coil_self_inductance` is the only in-scope reader and it takes the picture-frame arm
+here (`_tf_self_inductance_arm` already sends any `itart == 1` to
+`TfCoilSelfInductancePictureFrame`), which reads neither — so nothing in this port
+consumes the zeros.
+
+### `.build.r_cp_top` has no producer: a lost producer, declared, not stubbed
+
+The new occupant's `.build.r_cp_top` read has nothing on the other end of it in this
+port. PROCESS writes the field in `Build.calculate_radial_build`
+(`process/models/build.py:1750-1813`), a slice that is not ported and belongs to
+`models/build.md`, not here, so **the read enters both ST graphs as a boundary input**
+— the same disposition `.build.z_tf_top` already has on the tokamak reference
+(`reference_boundary_tokamak.txt:52`). No stub, no invented default: the boundary file's
+own header calls growth in the `input` list "a lost producer", and this is one.
+
+Worth recording what that producer *would* be, because it is a one-liner on these runs
+and it is not the one the input files appear to ask for. Both files set `i_r_cp_top = 2`
+(`spherical_tokamak_eval.IN.DAT:78`, `st_regression.IN.DAT:2029`), i.e. *"`r_cp_top` from
+the top/midplane radius ratio"*, and `f_r_cp` is `1.4`. But the whole `i_r_cp_top` ladder
+sits under `if itart == 1 and i_tf_sup != 1` (`:1750`), and both files set
+`i_tf_sup = 1` (`:356`, `:820`) — superconducting. So the live line is the `else` at
+`:1813`, `r_cp_top = r_tf_inboard_out`, and `f_r_cp = 1.4` is dead on both runs.
+Confirmed by running PROCESS itself: `init_process` + `PlasmaGeometry.run()` +
+`Build.run()` on `spherical_tokamak_eval.IN.DAT` gives
+`r_cp_top = r_tf_inboard_out = 1.333916508197074` m. Whoever ports that slice should
+expect a slot keyed on `(itart, i_tf_sup)` with three `i_r_cp_top` arms inside the
+`itart == 1, i_tf_sup != 1` cell, not a bare `i_r_cp_top` registry.
+
+### validation
+
+`TestTfCoilShapePictureFrameTart`, tier 1, in the siblings' file. The legacy point is
+the same PROCESS one-pass run: `r_cp_top = 1.333916508197074`,
+`r_tf_outboard_in = 9.824594873354488` (= `r_tf_outboard_mid - 0.5 * dr_tf_outboard`
+with `dr_tf_outboard = 0.9`, `f_dr_tf_outboard_inboard = 1.0` at `:85`),
+`z_tf_inside_half = 11.735`, `z_tf_top = 12.635`, `dr_tf_inboard = 0.9` (the file's
+literal, `:345`), `r_tf_outboard_mid = 10.274594873354488`. That last number is the
+ripple-limited radius the picture-frame ripple wave (`models/build.md`, wave 3) derived
+algebraically from the 1 % limit; arriving at it independently from a PROCESS run is a
+free cross-check that both waves are describing the same machine. One pass, not a
+converged solve — no converged reference for either ST file exists yet.
+
+`tests/functional_process/models/tfcoil/test_base.py`: **83 passed / 83 skipped** plain
+(was 79/79), **166 passed** with `--fp-gradients` (was 158), **502 passed** with
+`--fp-fuzz 8 --fp-gradients`. `test_machine.py`, `test_switch_coverage.py`,
+`test_registry_coverage.py`, `test_boundary.py`, `test_machine_survey.py`: 289 passed,
+44 skipped, unchanged.
+
+Registration: `indat.TF_COIL_SHAPE[2] = TfCoilShapePictureFrameTart`;
+`_tf_coil_shape_arm` reordered as above; the `("tf_coil_shape_arm", -1)` and
+`(..., -2)` `UNPORTED` reasons rewritten to name the arms they now actually key.
+
+### frontier probe
+
+`machine_from_indat` + `graph_for` on both ST files, after this wave: **neither
+assembles yet**, and both advance past the TF coil shape to the same next refusal,
+verbatim —
+
+> `itart_sc_tf_masses == 1` is a real PROCESS branch but is not ported: the
+> spherical-tokamak TF mass arm additionally owns `.tfcoil.whtcp` and
+> `.tfcoil.whttflgs` (`superconducting.py:2086-2093`), which the conventional arm never
+> writes -- conditional ownership again. Not written
+
+Arm `-2` (`PICTURE_FRAME`, `itart == 0`) is therefore **not** the next blocker, which is
+the direct answer to the question this wave was asked to check: the two `UNPORTED`
+entries were one dispatch, not two waves of work. `machine_survey` was not run, since
+neither file assembles and `survey` needs an assembled graph.

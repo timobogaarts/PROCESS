@@ -472,6 +472,65 @@ def tf_coil_shape_inner_d_shape_double_null(
     return len_tf_coil, tfa, tfb, r_tf_arc, z_tf_arc
 
 
+def tf_coil_shape_inner_picture_frame_tart(
+    *,
+    r_cp_top,
+    r_tf_outboard_in,
+    z_tf_inside_half,
+    z_tf_top,
+    dr_tf_inboard,
+    r_tf_outboard_mid,
+):
+    """`i_tf_shape == PICTURE_FRAME (2)`, `itart == 1` -- both ST regression files' arm.
+
+    Ports `process/models/tfcoil/base.py:551-578` taking the `itart == 1` sub-branches
+    at `:555-556` and `:575-578`. `spherical_tokamak_eval.IN.DAT` (`itart = 1` line 283,
+    `i_tf_shape = 2` line 357) and `st_regression.IN.DAT` (`itart = 1` line 66,
+    `i_tf_shape = 2` line 803) both reach it: the D-shape/`itart == 1` branch at
+    `:528-549` is guarded by `i_tf_shape == D_SHAPE` and is *not* what a spherical
+    tokamak with a picture-frame coil takes, whatever the name "the TART arm" suggests.
+
+    **`tfa` and `tfb` are returned as exact zeros, and that is PROCESS's answer, not a
+    stub.** `:495-496` allocates them `np.zeros(4)` and the picture-frame branch never
+    assigns an element -- there are no elliptical arcs to take semi-axes of. The two
+    fields are written to `data` anyway (`base.py:186-190`), so the occupant owns them
+    and must produce the zeros. Defect D5 in `base.md`: `.tfcoil.tfa`/`.tfcoil.tfb`
+    silently mean "unset" on this arm rather than being absent.
+
+    Note also that `z_tf_arc[2] = 0` while `r_tf_arc[2] = r_tf_outboard_in`, so points
+    1, 2 and 3 share a radius: the "arcs" of the picture frame are a straight outboard
+    leg, and only `r_tf_arc[0]`/`r_tf_arc[4]` (`r_cp_top`) differ.
+
+    Returns
+    -------
+    :
+        `(len_tf_coil, tfa, tfb, r_tf_arc, z_tf_arc)` -- total inner-edge length (m),
+        the four arc semi-axes in R and Z (m, identically zero here), and the five arc
+        points (m).
+    """
+    r_tf_arc = jnp.stack([
+        r_cp_top,
+        r_tf_outboard_in,
+        r_tf_outboard_in,
+        r_tf_outboard_in,
+        r_cp_top,
+    ])
+    z_tf_arc = jnp.stack([
+        z_tf_top - dr_tf_inboard,
+        z_tf_top - dr_tf_inboard,
+        jnp.zeros_like(z_tf_top),
+        -z_tf_inside_half,
+        -z_tf_inside_half,
+    ])
+
+    len_tf_coil = z_tf_inside_half + z_tf_top + 2.0 * (r_tf_outboard_mid - r_cp_top)
+
+    tfa = jnp.zeros_like(r_tf_arc[:4])
+    tfb = jnp.zeros_like(z_tf_arc[:4])
+
+    return len_tf_coil, tfa, tfb, r_tf_arc, z_tf_arc
+
+
 # ---------------------------------------------------------------------------
 # `tf_coil_self_inductance` -- `process/models/tfcoil/base.py:2066-2191`
 # ---------------------------------------------------------------------------
@@ -878,10 +937,11 @@ class TfCoilShape(ExplicitFunction):
     """The family that owns `.tfcoil.len_tf_coil` and the arc arrays.
 
     Three switches decide it -- `i_tf_shape`, `itart`, `i_single_null` -- and the arms
-    read genuinely different variables (`r_cp_top` on the TART arms, `z_tf_top` on the
-    single-null one, `r_tf_outboard_mid`/`r_tf_inboard_mid` on the picture frame). Two
-    occupants are written, both `i_tf_shape == D_SHAPE` with `itart == 0`; see
-    `base.md` for the UNPORTED list.
+    read genuinely different variables (`r_cp_top` on the two `itart == 1` arms,
+    `z_tf_top` on all but the D-shape double-null one, `r_tf_outboard_mid` on the
+    picture frame). Three occupants are written: the two `i_tf_shape == D_SHAPE`,
+    `itart == 0` arms and the `i_tf_shape == PICTURE_FRAME`, `itart == 1` one the two
+    ST regression files take. See `base.md` for the UNPORTED list.
     """
 
 
@@ -943,6 +1003,46 @@ class TfCoilShapeDShapeDoubleNull(TfCoilShape):
             r_tf_outboard_in=r_tf_outboard_in,
             z_tf_inside_half=z_tf_inside_half,
             dr_tf_inboard=dr_tf_inboard,
+        )
+
+
+class TfCoilShapePictureFrameTart(TfCoilShape):
+    """`i_tf_shape == 2`, `itart == 1` -- both ST regression files' arm.
+
+    The reads-set is the measurement: it reads `.build.r_cp_top` and
+    `.build.r_tf_outboard_mid`, which neither D-shape sibling touches, and reads
+    **neither** `.physics.rmajor` nor `.physics.rminor`, which both siblings do. A
+    single node carrying `i_tf_shape`/`itart` as static kwargs would have declared all
+    four edges on every arm; three of the four would have been invented.
+
+    `.build.r_cp_top` has **no producer in this port** -- `process/models/build.py`'s
+    `calculate_radial_build` writes it at `:1750-1813` and that slice is not ported --
+    so it enters the ST graphs as a declared boundary input. See `base.md`'s dated
+    section; it is a lost producer, recorded as one, not stubbed.
+    """
+
+    len_tf_coil = OutputInto(tfcoil)
+    tfa = OutputInto(tfcoil)
+    tfb = OutputInto(tfcoil)
+    r_tf_arc = OutputInto(tfcoil)
+    z_tf_arc = OutputInto(tfcoil)
+
+    def __call__(
+        self,
+        r_cp_top=From(build),
+        r_tf_outboard_in=From(superconducting_tfcoil),
+        z_tf_inside_half=From(build),
+        z_tf_top=From(build),
+        dr_tf_inboard=From(build),
+        r_tf_outboard_mid=From(build),
+    ):
+        return tf_coil_shape_inner_picture_frame_tart(
+            r_cp_top=r_cp_top,
+            r_tf_outboard_in=r_tf_outboard_in,
+            z_tf_inside_half=z_tf_inside_half,
+            z_tf_top=z_tf_top,
+            dr_tf_inboard=dr_tf_inboard,
+            r_tf_outboard_mid=r_tf_outboard_mid,
         )
 
 

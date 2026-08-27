@@ -283,6 +283,7 @@ from functional_process.models.tfcoil.base import (
     TfCoilSelfInductancePictureFrame,
     TfCoilShapeDShapeDoubleNull,
     TfCoilShapeDShapeSingleNull,
+    TfCoilShapePictureFrameTart,
     TfGlobalGeometryCircularCase,
     TfGlobalGeometryStraightCase,
 )
@@ -726,12 +727,18 @@ UNPORTED = {
         "radius, so a different occupant. Not written"
     ),
     ("tf_coil_shape_arm", -1): (
-        "`.physics.itart == 1`: the TART arms of `tf_coil_shape_inner` read "
-        "`.build.r_cp_top`, which the conventional arms never touch. Not written"
+        "`i_tf_shape == D_SHAPE` with `.physics.itart == 1`: the centrepost D-shape "
+        "(`tfcoil/base.py:528-549`) reads `.build.r_cp_top` and "
+        "`.build.dr_tf_outboard`, sums only arcs 1-2 of the four, and starts "
+        "`len_tf_coil` from "
+        "`2 * (r_tf_arc[1] - r_tf_arc[0])` rather than a z-span. Not written -- and not "
+        "the arm a spherical tokamak with `i_tf_shape = 2` takes; that is arm `2`"
     ),
     ("tf_coil_shape_arm", -2): (
-        "`i_tf_shape == PICTURE_FRAME`: a different coil shape with a different arc "
-        "construction, reading `r_tf_outboard_mid`/`r_tf_inboard_mid`. Not written"
+        "`i_tf_shape == PICTURE_FRAME` with `.physics.itart == 0`: the picture frame "
+        "closed on a full inboard leg, reading `.build.r_tf_inboard_out` and "
+        "`.build.r_tf_inboard_mid` where its `itart == 1` sibling (arm `2`, written) "
+        "reads `.build.r_cp_top` alone (`tfcoil/base.py:553-573`). Not written"
     ),
     ("cicc_turn_geometry_arm", -1): (
         "`i_dx_tf_turn_general_input == True` **owns** `.tfcoil.c_tf_turn` where the "
@@ -2443,20 +2450,31 @@ def _tf_coil_shape_arm(
     """`(i_tf_shape, itart, i_single_null)` -> the TF coil shape arm.
 
     ```
-    itart == 1                       -> arm -1  the TART arms read r_cp_top; UNPORTED
-    i_tf_shape == PICTURE_FRAME      -> arm -2  a different closed form; UNPORTED
-    i_single_null == 1               -> arm  0  D-shape, single null   (live)
-    otherwise                        -> arm  1  D-shape, double null
+    PICTURE_FRAME and itart == 1 -> arm  2  picture frame, TART       (both ST files)
+    PICTURE_FRAME and itart == 0 -> arm -2  picture frame, conventional; UNPORTED
+    D_SHAPE      and itart == 1  -> arm -1  centrepost D-shape;        UNPORTED
+    D_SHAPE, itart == 0, i_single_null == 1 -> arm  0  D-shape, single null   (live)
+    D_SHAPE, itart == 0, otherwise          -> arm  1  D-shape, double null
     ```
 
+    **`itart` is not tested before `i_tf_shape`**, and the ordering is the whole content
+    of this function. `tf_coil_shape_inner`'s dispatch (`process/models/tfcoil/base.py`
+    `:498`, `:528`, `:551`) is `i_tf_shape` first: the `itart == 1` clause at `:528` is
+    guarded by `i_tf_shape == D_SHAPE`, so a spherical tokamak with a picture-frame coil
+    lands in the picture-frame branch and not in "the TART branch". An earlier version of
+    this function returned `-1` for every `itart == 1`, which is why the two ST files
+    were refused with a reason naming an arm they never reach.
+
     Three switches, and the arms read genuinely different variables -- `r_cp_top` on the
-    TART arms, `z_tf_top` on the single-null one, `r_tf_outboard_mid`/`r_tf_inboard_mid`
-    on the picture frame -- so nothing here could have been a kwarg.
+    two `itart == 1` arms, `z_tf_top` on all but the D-shape double-null one,
+    `r_tf_outboard_mid`/`r_tf_inboard_mid` on the picture frame -- so nothing here could
+    have been a kwarg.
     """
-    if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK:
-        return -1
+    tart = SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK
     if i_tf_shape is not TFCoilShapeModel.D_SHAPE:
-        return -2
+        return 2 if tart else -2
+    if tart:
+        return -1
     return (
         0
         if DivertorNumberModels(int(i_single_null)) is DivertorNumberModels.SINGLE_NULL
@@ -2467,6 +2485,7 @@ def _tf_coil_shape_arm(
 TF_COIL_SHAPE = {
     0: TfCoilShapeDShapeSingleNull,
     1: TfCoilShapeDShapeDoubleNull,
+    2: TfCoilShapePictureFrameTart,
 }
 """The TF-coil-shape arm -> its occupant. Owns `.tfcoil.len_tf_coil`, one of the two
 `VarPath`s a tokamak and a stellarator both produce from entirely different formulas."""

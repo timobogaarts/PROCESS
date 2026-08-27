@@ -36,6 +36,7 @@ from functional_process.models.tfcoil.base import (
     tf_coil_self_inductance_picture_frame,
     tf_coil_shape_inner_d_shape_double_null,
     tf_coil_shape_inner_d_shape_single_null,
+    tf_coil_shape_inner_picture_frame_tart,
     tf_current,
     tf_stored_magnetic_energy,
 )
@@ -571,6 +572,90 @@ class TestTfCoilShapeDShapeDoubleNull(Tier1Contract):
     ported = tf_coil_shape_inner_d_shape_double_null
 
     samples = [legacy_sample("tf_coil_shape-d-double-null", **_SHAPE_SAMPLE)]
+
+
+def _reference_shape_inner_picture_frame_tart(
+    r_cp_top,
+    r_tf_outboard_in,
+    z_tf_inside_half,
+    z_tf_top,
+    dr_tf_inboard,
+    r_tf_outboard_mid,
+):
+    """`tf_coil_shape_inner` at `i_tf_shape = 2`, `itart = 1`.
+
+    Five arguments are pinned at `0.0` and each pin is a claim the reference checks:
+    `r_tf_inboard_out` and `r_tf_inboard_mid` are read only on the `itart == 0`
+    sub-branches (`process/models/tfcoil/base.py:554`, `:572`), `rmajor`/`rminor` only
+    on the D-shape branches, and `dr_tf_outboard` only on the D-shape/`itart == 1` one.
+    `i_single_null` is passed as `0` -- the picture frame does not consult it at all, so
+    either value would do, and `0` is what both ST files set. A port that secretly read
+    any of the five would disagree by value here.
+    """
+    return _tfcoil().tf_coil_shape_inner(
+        i_tf_shape=2,
+        itart=1,
+        i_single_null=0,
+        r_tf_inboard_out=0.0,
+        r_cp_top=r_cp_top,
+        rmajor=0.0,
+        rminor=0.0,
+        r_tf_outboard_in=r_tf_outboard_in,
+        z_tf_inside_half=z_tf_inside_half,
+        z_tf_top=z_tf_top,
+        dr_tf_inboard=dr_tf_inboard,
+        dr_tf_outboard=0.0,
+        r_tf_outboard_mid=r_tf_outboard_mid,
+        r_tf_inboard_mid=0.0,
+    )
+
+
+class TestTfCoilShapePictureFrameTart(Tier1Contract):
+    """`i_tf_shape == 2`, `itart == 1` -- both ST regression files' arm.
+    Added 2026-08-27, ST frontier wave 4.
+
+    The legacy point is `spherical_tokamak_eval.IN.DAT` run through PROCESS's own
+    `init_process` + `PlasmaGeometry.run()` + `Build.run()` -- one pass, not a converged
+    solve, since no converged reference for this file exists yet. That is enough to make
+    every number here PROCESS's own rather than reconstructed:
+    `r_cp_top = r_tf_inboard_out = 1.333916508197074` m (the `i_tf_sup == 1` fall-through
+    at `process/models/build.py:1813`, **not** the `i_r_cp_top = 2` fraction the file
+    sets at `:78` -- that branch is `i_tf_sup != 1` only, so `f_r_cp = 1.4` is dead on
+    this run), `z_tf_inside_half = 11.735` m, `z_tf_top = 12.635` m,
+    `r_tf_outboard_mid = 10.274594873354488` m (the same ripple-limited radius the
+    picture-frame ripple wave landed on, arrived at independently here),
+    `dr_tf_inboard = 0.9` m (the file's literal, `:345`), and
+    `r_tf_outboard_in = r_tf_outboard_mid - 0.5 * dr_tf_outboard = 9.824594873354488` m
+    with `dr_tf_outboard = 0.9` (`f_dr_tf_outboard_inboard = 1.0`, `:85`).
+
+    `tfa`/`tfb` come back as exact zeros from both sides -- see the ported function's
+    docstring; that is the branch never assigning them, faithfully reproduced.
+    """
+
+    audit_record = "models/tfcoil/base.md"
+    reference = _reference_shape_inner_picture_frame_tart
+    ported = tf_coil_shape_inner_picture_frame_tart
+
+    samples = [
+        legacy_sample(
+            "spherical_tokamak_eval-first-pass",
+            r_cp_top=1.333916508197074,
+            r_tf_outboard_in=9.824594873354488,
+            z_tf_inside_half=11.735,
+            z_tf_top=12.635,
+            dr_tf_inboard=0.9,
+            r_tf_outboard_mid=10.274594873354488,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "r_cp_top": (0.5, 3.0),
+        "r_tf_outboard_in": (5.0, 15.0),
+        "z_tf_inside_half": (3.0, 15.0),
+        "z_tf_top": (3.0, 16.0),
+        "dr_tf_inboard": (0.2, 2.0),
+        "r_tf_outboard_mid": (5.0, 16.0),
+    }
 
 
 # ---------------------------------------------------------------------------
