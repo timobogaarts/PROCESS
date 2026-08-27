@@ -19,6 +19,7 @@ from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.build import (
     DivertorGeometryConventional,
+    DivertorGeometrySphericalTokamak,
     DrTfInboardFromWindingPack,
     DrTfOutboardSuperconducting,
     DrTfWpWithInsulationFromInboardBuild,
@@ -40,14 +41,16 @@ from functional_process.models.divertor import (
 
 
 class Build(ModelNamespace):
-    """The tokamak's radial and vertical build -- thirteen slots, fourteen classes.
+    """The tokamak's radial and vertical build -- thirteen slots, fifteen classes.
 
     `process/models/build.py::Build`, `caller.py:288`. The structural spine of the
     device, and with no stellarator counterpart at all: `models/stellarator/build.py`'s
     `Build` is a different model of a different machine.
 
-    Thirteen slots and fourteen occupant classes, because
-    `dr_tf_inboard_winding_pack`'s two arms are two classes in one slot.
+    Thirteen slots and fifteen occupant classes, because
+    `dr_tf_inboard_winding_pack`'s two arms are two classes in one slot and
+    `divertor_geometry`'s conventional and spherical-tokamak arms are two more (its
+    third disposition, `None`, is absence rather than a class).
 
     **Six of the thirteen slots are switched, and only one of the switches is an `i_*`
     integer alone** (`tf_inboard_radii`'s `.build.i_tf_inside_cs`, added 2026-08-27).
@@ -72,17 +75,23 @@ class Build(ModelNamespace):
     plasma_xpoint_heights: PlasmaXpointHeights = PlasmaXpointHeights()
     """`.build.z_plasma_xpoint_upper`/`_lower`. Unswitched."""
 
-    divertor_geometry: DivertorGeometryConventional | None = dataclasses.field(
-        kw_only=True
-    )
+    divertor_geometry: (
+        DivertorGeometryConventional | DivertorGeometrySphericalTokamak | None
+    ) = dataclasses.field(kw_only=True)
     """`.physics.itart`, **and** the input `.build.dz_xpoint_divertor < 1e-5`.
 
-    Two conditions, one slot. `process/models/build.py:800-801` assigns
-    `dz_xpoint_divertor = divht` only when the input is effectively zero and keeps the
-    user's value otherwise, so whether this node *owns* that field is a run-configuration
-    fact -- `conditional-ownership-by-run-config`, the same shape `build.md` uses to
-    close `next_steps.md` §2's `dz_shld_upper` flag. `large_tokamak_eval.IN.DAT` never
-    sets it, so it takes `build_variables.py:326`'s default `0.0` and this node owns it.
+    Two conditions, one slot, three dispositions. `process/models/build.py:800-801`
+    assigns `dz_xpoint_divertor = divht` only when the input is effectively zero and
+    keeps the user's value otherwise, so whether a node *owns* that field is a
+    run-configuration fact -- `conditional-ownership-by-run-config`, the same shape
+    `build.md` uses to close `next_steps.md` §2's `dz_shld_upper` flag.
+    `large_tokamak_eval.IN.DAT` never sets it, so it takes `build_variables.py:326`'s
+    default `0.0` and `DivertorGeometryConventional` owns it (plus `.build.rspo`).
+    `itart == 1` selects `DivertorGeometrySphericalTokamak` (`build.py:863`'s
+    `1.75 * rminor`, which never reaches the `rspo` write) when the input is effectively
+    zero -- and `None` when the run sets it, as both tracked spherical-tokamak inputs
+    do: the early return is computed and discarded at `:800` and PROCESS computes
+    nothing that survives, so absence, not refusal.
     """
 
     z_tf_inside_half: ZTfInsideHalf = ZTfInsideHalf()

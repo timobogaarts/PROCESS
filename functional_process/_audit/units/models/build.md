@@ -177,8 +177,8 @@ ports"): read once at graph-build time to choose an occupant, never a `VarPath` 
 | `140 in .numerics.ixc` | present / absent | **absent** | split. `DrTfInboardFromWindingPack` / `DrTfWpWithInsulationFromInboardBuild`. Disjoint write-sets, exact inverses. |
 | `.tfcoil.i_tf_sup` | `0` copper / `1` SC / `2` aluminium | **1** | split. `DrTfOutboardSuperconducting` and `WpConductorMaxWidthSuperconducting` answer `1`. `0`/`2` UNPORTED. Reads-sets are disjoint on both: the non-SC leg arm reads `.build.f_dr_tf_outboard_inboard`, and the non-SC ripple arm reads `.superconducting_tfcoil.r_tf_wp_inboard_outer` and `.tfcoil.n_tf_coils` where the SC arm reads three `.tfcoil.dx_tf_wp_*` fields. |
 | `.tfcoil.i_tf_shape` | `0` auto / `1` D-shape / `2` picture frame | **1** | split. `TfOutboardMidDShape` / `TfOutboardEdgeRipple` answer `1`. `0` and `2` UNPORTED. `2` is a different closed-form formula (`:1585-1590`) reading neither `c1`/`c2` nor the winding pack. `0` takes the same PROCESS branch as `1` but is a distinct switch value and gets its own occupant when someone needs it — not folded in, per the binding policy. |
-| `.physics.itart` | `0` / `1` | **0** | split. `DivertorGeometryConventional` answers `0`. `1` UNPORTED: `divgeom` returns `1.75 * rminor` and **never writes `.build.rspo`**, so it is a different write-set, not just a different formula. |
-| input `.build.dz_xpoint_divertor < 1e-5` | true / false | **true** (`0.0`) | conditional ownership. When true, `DivertorGeometryConventional` owns the field; when false it is a plain run input and `divgeom` still runs for `.build.rspo` alone — that second arm is UNPORTED. |
+| `.physics.itart` | `0` / `1` | **0** | split. `DivertorGeometryConventional` answers `0`. `1` is `DivertorGeometrySphericalTokamak` (2026-08-27): `divgeom` returns `1.75 * rminor` and **never writes `.build.rspo`**, so it is a different write-set, not just a different formula. |
+| input `.build.dz_xpoint_divertor < 1e-5` | true / false | **true** (`0.0`) | conditional ownership, on *both* `itart` arms. When true, the arm's occupant owns the field; when false it is a plain run input — under `itart == 0` `divgeom` still runs for `.build.rspo` alone (that `rspo`-only arm is UNPORTED), and under `itart == 1` `divgeom` owns nothing at all and the slot's occupant is `None` (2026-08-27). |
 | `.fwbs.blktmodel` | `0` / `> 0` | **0** | conditional ownership. Under `> 0`, `:1650-1662` produces `dr_blkt_inboard`/`dr_blkt_outboard`/`dz_shld_upper`; `models/stellarator/build.py::BlktmodelBlanketThickness` already ports that block verbatim (the two source files are line-for-line identical here — `process/models/build.py:1649-1662` vs `process/models/stellarator/build.py:25-33`). Under `0`, all three are run inputs. No new occupant needed. |
 | `.physics.i_single_null` | `1` / `2` | **1** | **not a switch of this unit.** It gates `dz_fw_plasma_gap` (`:1670-1679`), `z_tf_top` (`:819-842`) and the reporting tables — none in the closure. `z_tf_inside_half` is explicitly outside it by the source's own comment. |
 | `.build.i_tf_inside_cs`, `.i_cs_precomp`, `.i_r_cp_top` | | `0`, `1`, `0` | **not switches of this unit.** They gate the central-solenoid chain, which nothing in the closure reads. |
@@ -337,16 +337,20 @@ numerically: the fit called at the converged radius returns
 
 ## validation
 
-`tests/functional_process/models/test_build.py`, eight `Tier1Contract`s, all references
-real PROCESS calls:
+`tests/functional_process/models/test_build.py`, ten `Tier1Contract`s (eight at first
+writing; `TestTfInboardRadii` added by the 2026-08-27 CS-slice wave and
+`TestDivertorGeometrySphericalTokamak` by the 2026-08-27 spherical-tokamak wave), all
+references real PROCESS calls:
 
 | contract | reference | covers |
 |---|---|---|
 | `TestZPlasmaXpoint` | `Build.calculate_vertical_build` | `calculate_z_plasma_xpoint` |
 | `TestDivertorGeometryConventional` | `Build.divgeom` | `calculate_divertor_geometry_conventional` |
+| `TestDivertorGeometrySphericalTokamak` | `Build.divgeom`, `itart = 1` | `calculate_divertor_geometry_spherical_tokamak` |
 | `TestZTfInsideHalf` | `Build.calculate_vertical_build` | `calculate_z_tf_inside_half` |
 | `TestDrTfWpWithInsulation` | `Build.calculate_radial_build` | `calculate_dr_tf_wp_with_insulation` |
 | `TestDrTfInboardFromWindingPack` | `Build.calculate_radial_build`, `ixc[0] = 140` | `calculate_dr_tf_inboard` |
+| `TestTfInboardRadii` | `Build.calculate_radial_build` | `calculate_r_tf_inboard_radii_tf_outside_cs` |
 | `TestRShldInboardInner` | `Build.calculate_radial_build` | `calculate_r_shld_inboard_inner` |
 | `TestOutboardBuildChain` | `Build.calculate_radial_build` | the other six functions, composed |
 | `TestRippleSuperconducting` | `Build.plasma_outboard_edge_toroidal_ripple` | the ripple fit and the conductor-width mint |
@@ -423,6 +427,7 @@ Thirteen nodes, all in the `.tokamak.build` slot unless noted:
 |---|---|---|
 | `PlasmaXpointHeights` | — | `.build.z_plasma_xpoint_upper`, `.build.z_plasma_xpoint_lower` |
 | `DivertorGeometryConventional` | `itart == 0` **and** input `dz_xpoint_divertor < 1e-5` | `.build.dz_xpoint_divertor`, `.build.rspo` |
+| `DivertorGeometrySphericalTokamak` | `itart == 1` **and** input `dz_xpoint_divertor < 1e-5` (2026-08-27) | `.build.dz_xpoint_divertor` only — the early return never reaches the `rspo` write |
 | `ZTfInsideHalf` | — | `.build.z_tf_inside_half` |
 | `DrTfWpWithInsulationFromInboardBuild` | `140 not in ixc` (**live**) | `.tfcoil.dr_tf_wp_with_insulation` |
 | `DrTfInboardFromWindingPack` | `140 in ixc` (not live) | `.build.dr_tf_inboard` |
@@ -445,10 +450,12 @@ Thirteen nodes, all in the `.tokamak.build` slot unless noted:
   (`:1585-1590`) reading neither the winding pack nor `c1`/`c2`; not written.
 - `.tfcoil.i_tf_shape` `0` (auto-select) — takes the same PROCESS branch as `1` but is a
   distinct switch value with no occupant of its own; not folded into `TfOutboardMidDShape`.
-- `.physics.itart` `1` (spherical tokamak) — `divgeom` returns `1.75 * rminor` at `:863`
-  and never writes `.build.rspo`, a different write-set; not written.
-- input `.build.dz_xpoint_divertor >= 1e-5` — `divgeom` still runs for `.build.rspo` alone
-  while `dz_xpoint_divertor` stays an input; that `rspo`-only occupant is not written.
+- `.physics.itart` `1` (spherical tokamak) — *written 2026-08-27* as
+  `DivertorGeometrySphericalTokamak` (`dz_xpoint_divertor` unset) and the slot's `None`
+  arm (`dz_xpoint_divertor` set — `divgeom` owns nothing); no longer UNPORTED.
+- `.physics.itart` `0` with input `.build.dz_xpoint_divertor >= 1e-5` — `divgeom` still
+  runs for `.build.rspo` alone while `dz_xpoint_divertor` stays an input; that
+  `rspo`-only occupant is not written.
 
 **Two mints for `KNOWN_MINT_VALUES`**, both reconstructible from stored PROCESS fields by
 an identity read off its own source:
@@ -537,3 +544,53 @@ real `calculate_radial_build` through the existing `_radial` adapter (legacy poi
 the converged file literals; fuzz over plausible machine scales). No cycle created
 (`Blocking.scc` on both reference machines, measured this wave — the slice reads only
 run inputs).
+
+
+## 2026-08-27 — the spherical-tokamak divertor geometry ported (ST frontier wave)
+
+`divertor_geometry_arm == -1` was the standing refusal on **both**
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`. Written this wave:
+`calculate_divertor_geometry_spherical_tokamak` + `DivertorGeometrySphericalTokamak`,
+porting `process/models/build.py:862-863` — `divgeom`'s opening
+`if itart == 1: return 1.75e0 * rminor` ("TART option: Peng SOFT paper"). The early
+return is the entire arm: none of the arc geometry runs and control never reaches the
+`.build.rspo` write at `:912`, so the occupant owns `.build.dz_xpoint_divertor` alone —
+the different write-set the refusal named, now structural. The test's reference asserts
+on every sample that the real `divgeom` left `rspo` untouched, so the write-set claim is
+pinned, not narrated.
+
+**The split turned out to be three-way, and the live disposition on both ST files is
+`None`.** The `:800-801` latch (`dz_xpoint_divertor = divht` only when the entering
+value is `< 1e-5`) gates the spherical arm exactly as it gates the conventional one, and
+*both* tracked spherical-tokamak inputs set `dz_xpoint_divertor = 0.75`
+(`spherical_tokamak_eval.IN.DAT:91`, `st_regression.IN.DAT:1989`). On them the
+`1.75 * rminor` is computed and discarded and `divgeom` writes nothing at all — under
+`itart == 0` that configuration leaves the `rspo`-only remainder (arm `-2`, still
+UNPORTED), but under `itart == 1` there is no remainder, so the slot's occupant is
+`None`: absence, not refusal, the `DX_TF_SIDE_CASE_MIN` shape, arm `-3` in
+`indat._divertor_geometry_arm`. `DivertorGeometrySphericalTokamak` itself is therefore
+live only on a spherical-tokamak run that leaves the field at its `0.0` default — no
+tracked input does, which is also why no converged reference value exists to write down
+(the legacy sample uses the input geometry, `rminor = 4.5 / 1.8 = 2.5`).
+
+Nothing else `itart == 1` gates inside `divgeom`'s chain: the method's only `itart`
+test is the `:862` early return, and `calculate_vertical_build`'s remainder
+(`:797-842`) branches on `i_single_null` only. The other `itart` gates in `build.py`
+(the centrepost/CS radial sub-tree, `r_cp_top`) belong to slots already keyed on it or
+already scoped out (§ "the central-solenoid radial chain"). `UNPORTED`'s arm `-2` entry
+was sharpened to say it is now the `itart == 0` configuration specifically.
+
+Faithfulness note, inherited: the `:800` latch means a spherical-tokamak run that
+*leaves* the field unset would see PROCESS keep the first pass's `1.75 * rminor`
+forever while the node recomputes it — the same latch-vs-recompute deviation already
+recorded for `DivertorGeometryConventional` (§ deviations, item 2), identical here
+because `rminor` alone decides the value.
+
+Harness: `TestDivertorGeometrySphericalTokamak`, tier 1 (one legacy + fuzz over
+`rminor ∈ [0.8, 3.0]`); 10 cases green plain and under `--fp-gradients`. Frontier
+probe after this wave (`machine_from_indat` + `graph_for`): **both** ST files advance
+past `divertor_geometry_arm` and now refuse at `tf_inboard_radii_arm == -2` —
+`i_cs_precomp == 0`, the no-CS-pre-compression arm of the CS-to-TF radial slice
+(`dr_cs_precomp` is the literal `0.0` at `build.py:1714`; a strict-subset reads-set,
+recorded UNPORTED by the CS-slice wave above). That is the next blocker for both
+files.
