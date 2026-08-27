@@ -120,7 +120,93 @@ judgement made per constraint:
   run itself, the same discipline `mda_harness.switch_audit` applies to node kwargs after
   five registration bugs of exactly this shape.
 
-Values are per *run*, so a caller modelling a different `IN.DAT` passes its own dict."""
+Values are per *run*, so a caller modelling a different `IN.DAT` passes its own dict --
+`switch_values_for` builds one from the run's own initialised `DataStructure`."""
+
+
+SWITCH_PARAMETER_NAMES = (
+    "bkt_life_csf",
+    "i_beta_component",
+    "i_cp_lifetime",
+    "i_density_limit",
+    "i_plant_availability",
+    "i_plasma_ignited",
+    "i_q95_fixed",
+    "i_rad_loss",
+    "i_tf_bucking",
+    "i_tf_inside_cs",
+    "i_tf_sup",
+    "ibkt_life",
+    "ireactor",
+    "istell",
+    "itart",
+)
+"""Every parameter name that is a **switch** anywhere in the ported constraint/objective
+surface -- the union of the `static_argnames` the `Tier1Contract`s in
+`tests/functional_process/core/solver/test_constraints.py` and `test_objectives.py`
+declare. A name's *presence here* is what makes `_bind` freeze it
+(`REFERENCE_SWITCH_VALUES`' own docstring states the rule); the per-run *value* comes
+from the run (`switch_values_for`). Curated rather than parsed out of the test files at
+runtime, because the port modules must not import their own tests; the tokamak analogue
+of `test_sand.py::test_switch_values_match_the_contracts_static_argnames` is what keeps
+the two from drifting."""
+
+
+def switch_values_for(data, icc, i_figure_merit):
+    """Static switch arguments for one run, read off its **initialised**
+    `DataStructure` -- `init_process`'s answer to the file plus PROCESS's own defaults,
+    so no default is transcribed here.
+
+    The names are the active constraints' and the objective's parameters intersected
+    with `SWITCH_PARAMETER_NAMES`; each is resolved to the single `DataStructure` area
+    holding a field of that name (the same uniqueness rule `_Resolver` applies, for the
+    same reason) and read as an `int`, because a switch selects a formula and is never
+    a trace-time array.
+
+    `data` should be a *cold* (initialised, un-run) structure -- `render_xdsm.
+    cold_reference(...).data` is the canonical source -- though nothing here could tell
+    the difference: no PROCESS switch is an iteration or scan variable
+    (`machine_from_indat`'s docstring carries the grep), so a converged structure holds
+    the same values.
+
+    `REFERENCE_SWITCH_VALUES` stays as the stellarator reference run's hand-audited
+    dict (and the default everywhere, unchanged); this is the mechanical route for any
+    other `IN.DAT`.
+
+    Raises
+    ------
+    ValueError
+        On a switch name that resolves to no `DataStructure` area, or to more than
+        one -- resolution is by unique field name, the same rule (and the same
+        failure mode) as `_Resolver`'s second stage.
+    """
+    needed = set()
+    for cid in icc:
+        fn = getattr(ported_constraints, f"constraint_{cid}", None)
+        if fn is None:
+            # `constraint_nodes` raises on this, with the message that names the id;
+            # a second, earlier copy of the refusal here would just shadow it.
+            continue
+        needed |= set(inspect.signature(fn).parameters) & set(SWITCH_PARAMETER_NAMES)
+    merit = FiguresOfMerit(abs(int(i_figure_merit)))
+    metric = ported_objectives.OBJECTIVE_METRICS[merit]
+    needed |= set(inspect.signature(metric).parameters) & set(SWITCH_PARAMETER_NAMES)
+    areas = _data_structure_areas()
+    values = {}
+    for name in sorted(needed):
+        hits = [a for a in areas if hasattr(getattr(data, a), name)]
+        if len(hits) != 1:
+            raise ValueError(
+                f"switch {name!r} is "
+                + (
+                    "in no `DataStructure` area"
+                    if not hits
+                    else f"ambiguous across `DataStructure` areas {hits}"
+                )
+                + " -- it cannot be read mechanically, pass `switch_values` by hand"
+            )
+        values[name] = int(getattr(getattr(data, hits[0]), name))
+    return values
 
 
 def iteration_variable_path(ixc_id: int) -> VarPath:
@@ -506,6 +592,44 @@ def degenerate_fixed_points(graph, env, problems=None):
     return tuple(degenerate)
 
 
+def array_valued_problems(graph, env, problems=None):
+    """Declared problems owning a **non-scalar** unknown at `env`'s own values -- the
+    ones today's SAND layer cannot absorb, detected rather than listed.
+
+    The design side of `VmconDriver` flattens pytrees (`ravel_pytree`), but everything
+    per-*condition* is scalar arithmetic: `scaled_problem` stacks conditions with
+    `jnp.stack` (one scalar each), keys `condition_scale` by condition, sizes the
+    bound arrays by `len(unknowns)`, and splits equalities from inequalities by
+    *condition count*. `residual_condition_scales`' `1/|u|` is a scalar per unknown for
+    the same reason. An array-unknown `FixedPoint` residualised into the combined
+    `Optimise` therefore fails at the first of those seams (`float()` of a matrix), and
+    making the layer element-wise is a driver extension with its own validation -- a
+    separate, recorded decision, the same standing as `_audit/optimise_design.md` §1.3
+    refusing array-element iteration variables.
+
+    The standing instance is the tokamak PF-coil ring, cut at
+    `.pf_coil.ind_pf_cs_plasma_mutual` (a circuit-by-circuit mutual-inductance matrix)
+    and `.pf_coil.n_pf_coil_turns` (a per-coil vector) -- `mda.CUTS`' own docstring for
+    the cycle. A caller that deletes such a problem freezes its loop-carried unknowns
+    at whatever the env seeds them to (self-consistent when the seed is a converged
+    MDA), exactly as deleting a degenerate fixed point does -- and must say so, which
+    is why this returns the problems rather than deleting anything itself.
+
+    An unknown with no value in `env` is treated as scalar: nothing could be measured,
+    and refusing to guess is `degenerate_fixed_points`' discipline too.
+    """
+    if problems is None:
+        problems = tuple(n for n in graph.declared if isinstance(graph[n], FixedPoint))
+    return tuple(
+        problem
+        for problem in problems
+        if any(
+            unknown in env and jnp.ndim(jnp.asarray(env[unknown])) > 0
+            for unknown in graph[problem].owns
+        )
+    )
+
+
 def sand_graph(graph, skip=()):
     """`graph` with every `FixedPoint` (bar `skip`) residualised and every problem
     combined into one `^problem.sand`.
@@ -529,6 +653,48 @@ def sand_graph(graph, skip=()):
         residualised.append(problem)
     plan = plan + Combine(NodePath((GetAttrKey("sand"),)), tuple(plan.graph.declared))
     return plan.graph, tuple(residualised)
+
+
+def constraints_outside_block(graph):
+    """Active constraints whose node falls **outside** the combined problem's own SCC
+    block -- `{constraint id: NodePath}` -- which today's evaluation seam cannot carry.
+
+    A constraint node joins the problem's block exactly when it reads something the
+    block produces (the problem reads its `^cond.*` back, closing the cycle). One
+    whose every input is a boundary value -- or produced only by nodes upstream of
+    every problem unknown -- is a plain `Call` step instead, and its `^cond.*` then
+    reaches **nobody**: `Drive.context` is the *body's* inputs, the body is
+    `subgraph.runnable` (the problem taken out), and only the problem reads a
+    condition, so a condition produced outside the block is in neither the body's
+    outputs nor the map's context and `ConditionMap.__call__` dies on a `KeyError`.
+    That is arguably an upstream seam (a condition constant over the block's unknowns),
+    but it is also a true statement about the *problem*: such a constraint is not a
+    function of anything the SQP moves, in this graph, and pretending otherwise would
+    hand VMCON a permanently-fixed row with an all-zero gradient.
+
+    The standing instances are `large_tokamak_eval.IN.DAT`'s TF/CS stress and
+    superconductor-margin constraints, every one of whose value reads is a boundary
+    input because the producing PROCESS models (`superconducting.py`'s conductor
+    performance and stress blocks, `pfcoil.py`'s CS criticals) are unported -- the
+    missing-producer audit in the harness report names each. The honest assembly
+    *omits* them (`optimise_graph(omit=...)`, so they are reported, never dropped
+    silently) and states their values at the seed separately.
+
+    Empty on the stellarator reference run -- every one of its 14 active constraints
+    reads at least one block-produced variable -- so nothing changes there.
+    """
+    blocking = Blocking.scc(graph)
+    problem_block = next(
+        frozenset(nodes)
+        for nodes, problem in zip(blocking.blocks, blocking.problems, strict=True)
+        if problem is not None
+    )
+    outside = {}
+    for name in graph.nodes:
+        leaf = name.keys[-1].name
+        if leaf.startswith("Constraint") and name not in problem_block:
+            outside[int(leaf.removeprefix("Constraint"))] = name
+    return outside
 
 
 def residual_condition_scales(drive, env, floor=1e-12):

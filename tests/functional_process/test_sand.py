@@ -509,6 +509,196 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
         schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
 
 
+# ---------------------------------------------------------------- the tokamak study
+
+TOKAMAK_IXC = [4, 6]
+TOKAMAK_ICC = [
+    1, 2, 5, 8, 9, 13, 15, 30, 16, 24, 25, 26, 27, 33, 34, 35, 36, 60, 62, 65,
+    72, 81, 68, 31, 32,
+]  # fmt: skip
+TOKAMAK_N_EQUALITY = 2
+TOKAMAK_FIGURE_OF_MERIT = 7
+"""`large_tokamak_eval.IN.DAT`'s own problem: an evaluation-style file -- two design
+variables against two equalities (`i_process_run_mode = -2`, so PROCESS itself answers
+it with `fsolve` over the equalities and merely reports the 23 inequalities).
+`i_figure_merit` is not in the file at all: 7 (capital cost) is `NumericsData`'s own
+default, and both facts are checked below rather than trusted."""
+
+
+import functools  # noqa: E402
+
+
+@functools.lru_cache(maxsize=1)
+def _tokamak_graph():
+    from functional_process.boundary import TOKAMAK_INPUT_FILE
+    from functional_process.indat import graph_for, machine_from_indat
+
+    return graph_for(machine_from_indat(str(REPO_ROOT / TOKAMAK_INPUT_FILE)))
+
+
+def test_tokamak_problem_matches_the_input_file():
+    """The constants above really are what the tokamak `IN.DAT` asks for.
+
+    Same discipline as `test_reference_problem_matches_the_input_file`, plus the parts
+    that file makes parseable: its `icc`/`ixc` are one id per line, so both lists are
+    read outright rather than only the shape scalars.
+    """
+    from functional_process.boundary import TOKAMAK_INPUT_FILE
+
+    text = (REPO_ROOT / TOKAMAK_INPUT_FILE).read_text()
+    settings = {}
+    icc, ixc = [], []
+    for line in text.splitlines():
+        if m := re.match(r"\s*icc\s*=\s*(\d+)", line):
+            icc.append(int(m.group(1)))
+        elif m := re.match(r"\s*ixc\s*=\s*(\d+)", line):
+            ixc.append(int(m.group(1)))
+        elif m := re.match(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$", line):
+            settings[m.group(1)] = int(m.group(2))
+    assert icc == TOKAMAK_ICC
+    assert ixc == TOKAMAK_IXC
+    assert settings["n_equality_constraints"] == TOKAMAK_N_EQUALITY
+    assert settings["i_process_run_mode"] == -2
+    # The figure of merit is PROCESS's default, not the file's -- so the check is that
+    # the file is silent and the default is what the constant says.
+    assert "i_figure_merit" not in settings
+    from process.data_structure.numerics import NumericsData
+
+    assert NumericsData().i_figure_merit == TOKAMAK_FIGURE_OF_MERIT
+
+
+def test_tokamak_switch_parameters_match_the_contracts_static_argnames():
+    """`SWITCH_PARAMETER_NAMES` decides, mechanically, which parameters
+    `switch_values_for` freezes for the tokamak's active constraints -- and the same
+    two-directional drift check as the stellarator's applies: a switch not in the tuple
+    would be traced onto a port, a real variable in the tuple would be frozen where a
+    derivative belongs.
+    """
+    from functional_process.sand import SWITCH_PARAMETER_NAMES
+
+    contracts = _contract_static_argnames()
+    for cid in TOKAMAK_ICC:
+        fn = getattr(ported_constraints, f"constraint_{cid}")
+        parameters = set(inspect.signature(fn).parameters)
+        assert parameters & set(SWITCH_PARAMETER_NAMES) == set(contracts[cid]), (
+            f"constraint {cid}: `switch_values_for` would bind "
+            f"{sorted(parameters & set(SWITCH_PARAMETER_NAMES))} statically, but its "
+            f"Tier1Contract declares static_argnames={contracts[cid]}"
+        )
+
+
+def test_switch_values_for_reads_the_active_surface_only():
+    """One value per switch actually in an active signature, every value an `int` --
+    read off a `DataStructure` with no PROCESS run behind it, which is exactly the
+    point: no default is transcribed into the port.
+    """
+    from functional_process.sand import switch_values_for
+    from process.core.model import DataStructure
+
+    values = switch_values_for(DataStructure(), TOKAMAK_ICC, TOKAMAK_FIGURE_OF_MERIT)
+    assert set(values) == {
+        "i_rad_loss",
+        "i_plasma_ignited",
+        "i_beta_component",
+        "istell",
+        "i_density_limit",
+        "i_tf_bucking",
+        "i_tf_inside_cs",
+        "i_q95_fixed",
+        "ireactor",  # the objective's (capital cost branches on it)
+    }
+    assert all(isinstance(v, int) for v in values.values())
+
+
+def test_tokamak_design_variables_are_boundary_inputs():
+    """The `Optimise` owning `temp_plasma_electron_vol_avg_kev` and
+    `nd_plasma_electrons_vol_avg` collides with nothing in the tokamak graph -- the same
+    cheapness argument as the stellarator's eight.
+    """
+    owned = set(_tokamak_graph().owners)
+    for i in TOKAMAK_IXC:
+        assert iteration_variable_path(i) not in owned
+
+
+def test_the_pf_ring_is_detected_as_an_array_unknown_problem():
+    """`sand.array_valued_problems` finds the tokamak's PF-coil cycle -- the one
+    `FixedPoint` whose unknowns are arrays (`ind_pf_cs_plasma_mutual`,
+    `n_pf_coil_turns`) -- **at the env's own values**, not from a name list. The
+    scalar SAND layer cannot absorb it (`array_valued_problems`' docstring names each
+    seam), so `sand_harness.assemble` drops and reports it; this pins the detection
+    the report rests on. With every unknown seeded scalar the same problem is *not*
+    flagged, which is the "detected, not listed" half.
+    """
+    from cottax.problem import FixedPoint as CottaxFixedPoint
+
+    from functional_process.mda import cut_graph
+    from functional_process.mda_harness import _without_excluded
+    from functional_process.sand import array_valued_problems
+
+    graph = cut_graph(_without_excluded(_tokamak_graph()))
+    pf = [
+        p
+        for p in graph.declared
+        if isinstance(graph[p], CottaxFixedPoint)
+        and any("pf_coil" in u.path_str() for u in graph[p].owns)
+    ]
+    assert len(pf) == 1
+    unknowns = graph[pf[0]].owns
+    arrays = {u: jnp.ones((22,)) for u in unknowns}
+    assert array_valued_problems(graph, arrays) == (pf[0],)
+    scalars = {u: jnp.asarray(1.0) for u in unknowns}
+    assert array_valued_problems(graph, scalars) == ()
+    # An unknown the env has no value for cannot be measured, so nothing is flagged.
+    assert array_valued_problems(graph, {}) == ()
+
+
+def test_tokamak_sand_assembles_and_orders_its_conditions():
+    """The whole tokamak assembly: all 25 constraints resolve, c1/c2 are the
+    equalities, the objective leads the conditions, and the two design variables lead
+    the unknowns. The stellarator analogue is
+    `test_sand_assembles_and_orders_its_conditions`; the assertions are the same ones
+    because the contract is.
+    """
+    from functional_process.mda import cut_graph
+    from functional_process.mda_harness import _without_excluded
+    from functional_process.sand import switch_values_for
+    from process.core.model import DataStructure
+
+    switch_values = switch_values_for(
+        DataStructure(), TOKAMAK_ICC, TOKAMAK_FIGURE_OF_MERIT
+    )
+    graph = cut_graph(_without_excluded(_tokamak_graph()))
+    with_problem, _name, report = optimise_graph(
+        graph,
+        TOKAMAK_IXC,
+        TOKAMAK_ICC,
+        TOKAMAK_N_EQUALITY,
+        TOKAMAK_FIGURE_OF_MERIT,
+        switch_values=switch_values,
+    )
+    assert report["omitted"] == {}
+    assert [v.path_str() for v in report["equalities"]] == [
+        "^cond.constraints.c1",
+        "^cond.constraints.c2",
+    ]
+    assert len(report["inequalities"]) == len(TOKAMAK_ICC) - TOKAMAK_N_EQUALITY
+    combined, _residualised = sand_graph(with_problem)
+    schedule = sand_schedule(combined, None)
+    shape = sand_shape(schedule)
+    drive = shape["drive"]
+    names = [c.path_str() for c in drive.conditions]
+    assert names[0] == "^cond.numerics.objf"
+    definition = drive.subgraph[drive.problem].problem
+    assert names[1 : 1 + len(definition.equalities)] == [
+        c.var.path_str() for c in definition.equalities
+    ]
+    assert [v.path_str() for v in drive.unknowns[: len(TOKAMAK_IXC)]] == [
+        iteration_variable_path(i).path_str() for i in TOKAMAK_IXC
+    ]
+    assert shape["drive_nodes"] < len(combined.nodes)
+    assert shape["schedule_steps"] > 1
+
+
 def test_vmcon_driver_needs_a_start():
     """No start supplied is an error, not a silent default -- there is no shape to
     guess a pytree of unknowns from.
