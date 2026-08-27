@@ -310,6 +310,46 @@ def test_default_drivers_reads_the_split_off_the_problem_node():
     assert driver.n_inequality == len(definition.inequalities)
 
 
+def test_max_iter_reaches_the_driver_and_defaults_to_the_drivers_own():
+    """A SAND block outgrew PROCESS's cap, so the caller may raise it -- and `None`
+    still means *the driver's own default*, not "some number this layer picked".
+
+    `VmconDriver.max_iter = 100` is PROCESS's `n_iteration_max` for PROCESS's own
+    eight-variable problem; the stellarator's SAND block is 14 unknowns against 21
+    conditions and needs 326 (`run_sand_harness.SAND_MAX_ITER`). Left un-threaded, the
+    only way to say so was to edit the driver's default, which every other `Optimise`
+    in the tree -- MDF's included -- would have silently inherited.
+    """
+    from cottax.blocking import Blocking
+
+    from functional_process.mda import cut_graph, default_drivers
+    from functional_process.mda_harness import _without_excluded
+
+    graph = cut_graph(_without_excluded(GRAPH))
+    with_problem, _name, _report = optimise_graph(
+        graph,
+        REFERENCE_IXC,
+        REFERENCE_ICC,
+        REFERENCE_N_EQUALITY,
+        REFERENCE_FIGURE_OF_MERIT,
+    )
+    combined, _residualised = sand_graph(with_problem)
+    blocking = Blocking.scc(combined)
+
+    def only_optimise(**kwargs):
+        drivers = default_drivers(blocking.graph, **kwargs)
+        return next(d for d in drivers.values() if isinstance(d, VmconDriver))
+
+    own_default = VmconDriver.__dataclass_fields__["max_iter"].default
+    assert only_optimise().max_iter == own_default
+    assert only_optimise(max_iter=None).max_iter == own_default
+    assert only_optimise(max_iter=500).max_iter == 500
+
+    schedule = sand_schedule(combined, None, max_iter=500)
+    drive = sand_shape(schedule)["drive"]
+    assert drive.driver.max_iter == 500
+
+
 def test_design_bounds_are_processs_own_table():
     for var, lower, upper in design_bounds(REFERENCE_IXC):
         assert lower < upper

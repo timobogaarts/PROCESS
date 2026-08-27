@@ -1574,4 +1574,111 @@ line for line** (tmp paths aside) to the run before these changes; note its C2/C
 the *current* tree at `db4f025` run to `max_iter = 100` oscillating around
 `objf ≈ 1.218` — the recorded 31/99-iteration numbers are from `ef093ba` and the
 156-node graph, and nobody had been able to run SAND at `db4f025` before the
-`mda_env` fix.
+`mda_env` fix. **[That last sentence is right and its reading of "oscillating" is not
+— §12 bisects both axes: the solve converges on the known optimum at 326/258
+iterations, and `max_iter = 100` is all that stopped it.]**
+
+## 12. The stellarator "oscillation" (2026-08-27) — a solve stopped two-thirds through
+
+§11.7's closing note reported the stellarator C2/C3 running to `max_iter = 100`
+"oscillating around `objf ≈ 1.218`", against a recorded **31 / 99** iterations. Both
+axes that had moved since — the cottax version and the PROCESS tree — were bisected
+independently, off one cached PROCESS run so every comparison shares a seed.
+
+### 12.1 The cottax axis is inert
+
+`run_sand_harness` (stellarator, current tree), cottax pinned by `git archive`:
+
+| pin | shape | Stage A | C2 | C3 |
+|---|---|---|---|---|
+| `ef093ba` | — | — | — | — (does not import: `cottax.problem.Driven` does not exist yet, and `sand.py` imports it) |
+| `b7c5572` | 14 unknowns × 21 conditions | 11 of 15 exact | 100, unconverged | 100, unconverged |
+| `f0bf9bb` | identical | identical | identical | identical |
+| `db4f025` | identical | identical | identical | identical |
+
+The three reports that run are **byte-identical apart from wall-clock timings** — Stage
+A to the last digit, Stage B's whole table, and every one of the 200 traced iterates. So
+"slsqp + theory" and the owned-name guard moved nothing here, and the driver stack is not
+the cause. **`ef093ba` cannot be measured at all**, which matters: the recorded 31/99 was
+taken against it, and the port can no longer be built against it.
+
+### 12.2 It is not oscillation — it is a cap
+
+Raise the cap and the same solve finishes, on the same point:
+
+| | SQP iterations | conv | `objf` | `x109` |
+|---|---|---|---|---|
+| C2, `max_iter = 100` | 100 | 4.5e-02 (last) | wandering | — |
+| C2, `max_iter = 400` | **326** | **8.8e-11** | **1.217757338** | 0.0299518325 |
+| C3, `max_iter = 400` | **258** | **8.0e-09** | **1.217757452** | 0.0299518175 |
+
+§11.11's free optimum is `objf 1.217757336` at `x109 = 0.0299518`, and both stages land
+there — C2 and C3 agree with each other to six digits on all eight `ixc`. What
+`max_iter = 100` produced was a solve stopped two-thirds of the way through, and the
+tail of an unconverged VMCON trace is indistinguishable from oscillation when read as
+one.
+
+### 12.3 Why the count grew, measured
+
+The pre-round-2 tree (`62bc7048`, the commit before "A switch selects an occupant"),
+with the one `mda_env` seeding fix backported so it can run at `b7c5572` at all, on the
+**same cached PROCESS run and the same seeds**:
+
+| tree | SAND block | C2 iterations | `objf` | `x2` |
+|---|---|---|---|---|
+| `62bc7048` (pre-round-2) | 22 unknowns, 16 equalities, 12 inequalities | **131** | 1.217757351 | 4.70928485 |
+| current | 14 unknowns, 8 equalities, 12 inequalities | **326** | 1.217757338 | 4.70928438 |
+
+Same point to seven digits; 2.5× the iterations. The cause is round 2 itself, and it is
+**a correctness improvement, not a defect**: ten `FixedPoint`s dissolved when the
+topology switches became slots, five of them to empty slots where PROCESS's own body is
+*"x is an input"*. **Five of the ten were inside the SAND block**, and between them they
+carried eight coupling unknowns: `etath_liq_step`, `temp_turbine_coolant_in_step`,
+`p_fw_div_heat_deposited_mw_step`, `p_fw_blkt_coolant_pump_mw_step` (one each) and
+`cryo_q_loads_step` (four — the cryo `q*` node's, `.power.qac` among them). Their
+equalities were nearly-linear `u = g(u)` rows through the power system: cheap for the
+SQP, and an easy subspace for its BFGS. Removing them leaves the same problem with its
+nonlinearity concentrated into fewer conditions, and those quantities computed inside
+the block's acyclic body instead — which is a step from SAND towards MDF for exactly
+that part of the graph, and §11.10 already records that VMCON finds MDF harder.
+The recorded 31 is from a third configuration again (a 156/159-node
+graph, cottax `ef093ba`, and an `mda_env` that seeded `^guess` off the *undriven* graph
+— a path that no longer mints those ports), so it is not reproducible even in principle.
+
+### 12.4 Two things ruled out, so the next reader does not re-run them
+
+- **Condition scaling is not the lever.** `^cond.stellarator.wp_width_r_min` — the
+  `Intersect` residual `VmconDriver.condition_scale` already names as "the largest row
+  left and the only one whose units are genuinely *not* its unknown's" — is the argmax
+  of `|eq|` in **290 of 326** iterates (and 127 of 131 on the pre-round-2 tree, so it is
+  not new). Sweeping its factor, everything else held:
+
+  | factor | C2 iterations | outcome |
+  |---|---|---|
+  | 1.0 | 296 | **not converged** (best conv 2.9e-04) |
+  | 1.3948 (`1/\|u\|`, the current rule) | 326 | converged, 8.8e-11 |
+  | 0.1 | 219 | converged, 3.7e-09 |
+  | 0.01 | 235 | converged, 5.4e-09 |
+  | 0.001 | 246 | converged, 6.4e-09 |
+
+  A 219–326 spread is inside this problem's own noise (§10.2 and
+  `residual_condition_scales` record 33–73 across an earlier sweep). The rule is wrong
+  in *kind* for a `RootFind` residual — `1/|u|` is derived for `g(u) − u` and this row's
+  units are the interpolated curve's, not the abscissa's — and it is still not what
+  costs the iterations. Left alone deliberately.
+- **It is the problem, not the solver.** `SlsqpDriver` on the identical problem is also
+  short of the optimum at 60 iterations (`x109` 0.03175 against 0.0299518) and reaches it
+  given more. Two independently written SQPs, two QP solvers, two line searches, same
+  answer about how hard this is — §11.10's own experiment, re-run.
+
+### 12.5 What changed in the code
+
+`run_sand_harness.SAND_MAX_ITER = 500`, threaded to the driver through
+`sand.sand_schedule(max_iter=)` and `mda.default_drivers(max_iter=)` — the same shape
+`bounds`/`callback`/`condition_scale` already travel, and `None` keeps `VmconDriver`'s
+own default so MDF and every other `Optimise` are untouched. **The driver's default of
+100 is left as it is**: it is PROCESS's `n_iteration_max` for PROCESS's own
+eight-variable problem, which is the right default for anything reproducing PROCESS and
+the wrong one for a block PROCESS never solves.
+`test_sand.py::test_max_iter_reaches_the_driver_and_defaults_to_the_drivers_own` pins
+both halves.
