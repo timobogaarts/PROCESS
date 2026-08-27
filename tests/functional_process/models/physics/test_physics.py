@@ -2,10 +2,10 @@
 
 Audit record: `functional_process/_audit/units/models/physics/physics.md`.
 
-Three of the seven ported functions have a PROCESS `@staticmethod`/method to diff
+Three of the eight ported functions have a PROCESS `@staticmethod`/method to diff
 against directly (`PlasmaFields.calculate_surface_averaged_poloidal_field`,
 `PlasmaExhaust.calculate_separatrix_power`,
-`PlasmaBeta.calculate_plasma_energy_from_beta`). The other four are arithmetic PROCESS
+`PlasmaBeta.calculate_plasma_energy_from_beta`). The other five are arithmetic PROCESS
 writes inline inside `Physics.run`, so their reference is transcribed from the source
 here in `numpy`, with the source lines named -- the same convention
 `test_plasma_physics.py`'s `_reference_clipped_radiation_powers` established for
@@ -23,6 +23,7 @@ import numpy as np
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
 from functional_process.models.physics.physics import (
+    calculate_continuous_plant_ramp_times,
     calculate_plasma_energy_from_beta,
     calculate_pulsed_plant_ramp_times,
     calculate_separatrix_power,
@@ -283,6 +284,41 @@ class TestPulsedPlantRampTimes(Tier1Contract):
 
     samples = [
         legacy_sample("large-tokamak", plasma_current=18398455.678867526),
+        *fuzz_samples(
+            {"plasma_current": (1.0e6, 3.0e7)},
+            count=5,
+            seed=0,
+        ),
+    ]
+
+
+def _reference_continuous_plant_ramp_times(plasma_current):
+    """`physics.py:465-474`, the `i_pulsed_plant != 1, i_t_current_ramp_up == 0` arm."""
+    t_plant_pulse_plasma_current_ramp_up = plasma_current / 5.0e5
+    return (
+        t_plant_pulse_plasma_current_ramp_up,
+        t_plant_pulse_plasma_current_ramp_up,
+        t_plant_pulse_plasma_current_ramp_up,
+    )
+
+
+class TestContinuousPlantRampTimes(Tier1Contract):
+    """The continuous-plant arm of the ramp-time family, `physics.py:465-474`.
+
+    Like `TestPulsedPlantRampTimes` the writes are inline in `Physics.run` with no
+    PROCESS `@staticmethod` to call, so the reference is transcribed from the source.
+    Three outputs where the pulsed arm has two: this arm also owns
+    `.times.t_plant_pulse_coil_precharge`. The legacy point is the Sauter bootstrap
+    fixture's plasma current (`tests/unit/models/physics/test_physics.py:392`), a
+    validated PROCESS unit-test input.
+    """
+
+    audit_record = "models/physics/physics.md"
+    reference = _reference_continuous_plant_ramp_times
+    ported = calculate_continuous_plant_ramp_times
+
+    samples = [
+        legacy_sample("sauter-unit-test", plasma_current=16528278.760008096),
         *fuzz_samples(
             {"plasma_current": (1.0e6, 3.0e7)},
             count=5,

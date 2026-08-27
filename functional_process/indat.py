@@ -105,6 +105,7 @@ from functional_process.models.physics.namespace import (
     ProfileParameterisationPedestal,
 )
 from functional_process.models.physics.physics import (
+    PulseRampTimesContinuousDefault,
     PulseRampTimesPulsedDefault,
     SeparatrixPowerNonIgnited,
     SurfaceAveragedPoloidalFieldAmperes,
@@ -526,14 +527,6 @@ UNPORTED = {
         "which sets `i_plasma_ignited = 1`), and that is worth keeping as a refusal "
         "rather than filling in: it is the sharpest demonstration in the port that two "
         "devices' physics arms are genuinely different and not merely differently filed"
-    ),
-    ("pulse_ramp_times_arm", 0): (
-        "`i_pulsed_plant != 1` with `i_t_current_ramp_up == 0` (`physics.py:465-474`) "
-        "owns `.times.t_plant_pulse_coil_precharge` as a **third** output that the "
-        "pulsed arm does not write at all, on top of using `plasma_current / 5e5` where "
-        "the pulsed arm uses `/ 1e5`. So it is not the live arm with a different "
-        "literal, and even the literal-only reading of the static-kwarg exception does "
-        "not reach it. Not written"
     ),
     ("pulse_ramp_times_arm", 1): (
         "`i_pulsed_plant != 1` with `i_t_current_ramp_up != 0` writes nothing at all -- "
@@ -1905,8 +1898,15 @@ def _pulse_ramp_times_arm(
     return 2 if int(pulsetimings) == 0 else 3
 
 
-PULSE_RAMP_TIMES = {2: PulseRampTimesPulsedDefault}
-"""The ramp-time arm -> its occupant. See `_pulse_ramp_times_arm`."""
+PULSE_RAMP_TIMES = {
+    0: PulseRampTimesContinuousDefault,
+    2: PulseRampTimesPulsedDefault,
+}
+"""The ramp-time arm -> its occupant. See `_pulse_ramp_times_arm`.
+
+Arm 0 is the spherical tokamaks' (`i_pulsed_plant = 0` at
+`spherical_tokamak_eval.IN.DAT:312` and `st_regression.IN.DAT:2979`,
+`i_t_current_ramp_up` left at its default `0`); arm 2 is `large_tokamak_eval`'s."""
 
 # ---- `.tokamak.current_drive` -----------------------------------------------------
 

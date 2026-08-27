@@ -5,8 +5,9 @@ confidence: medium-high
 ---
 
 **Ported: the tokamak arm's minimal closure, not the file.**
-`functional_process/models/physics/physics.py` declares seven pure functions and eight
-cottax nodes (two of them family heads with one occupant each). Case:
+`functional_process/models/physics/physics.py` declares eight pure functions and nine
+cottax nodes (two of them family heads; the ramp-time family has two occupants since
+2026-08-27, see §"2026-08-27 — pulse ramp-time arm 0"). Case:
 `tests/functional_process/models/physics/test_physics.py`.
 
 **No registry row yet.** `unit_registry.md` is the consolidation pass's file, and
@@ -202,6 +203,8 @@ def calculate_separatrix_power(
 )
 def force_positive_separatrix_power(p_plasma_separatrix_mw_raw)
 def calculate_pulsed_plant_ramp_times(plasma_current)   # -> (ramp_up, ramp_down)
+def calculate_continuous_plant_ramp_times(plasma_current)
+                                        # -> (ramp_up, precharge, ramp_down)
 def calculate_plasma_energy_from_beta(beta, b_field, vol_plasma)
 ```
 
@@ -221,6 +224,7 @@ Every one takes plain floats and returns plain floats/tuples; no `DataStructure`
 | `PositiveSeparatrixPower` | `.tokamak.physics` | `.physics.p_plasma_separatrix_mw` | `.physics.p_plasma_separatrix_mw_raw` |
 | `PulseRampTimes` (head) | `.tokamak.physics` (or `.tokamak.pulse`, see OQ4) | — | — |
 | ` └ PulseRampTimesPulsedDefault` | ″ | `.times.t_plant_pulse_plasma_current_ramp_up`, `.times.t_plant_pulse_plasma_current_ramp_down` | `.physics.plasma_current` |
+| ` └ PulseRampTimesContinuousDefault` | ″ | `.times.t_plant_pulse_plasma_current_ramp_up`, `.times.t_plant_pulse_coil_precharge`, `.times.t_plant_pulse_plasma_current_ramp_down` | `.physics.plasma_current` |
 | `PlasmaEnergyFromBeta` | `.tokamak.plasma_beta` | `.physics.e_plasma_beta` | `.physics.beta_total_vol_avg`, `.physics.b_plasma_total`, `.physics.vol_plasma` |
 
 ### the one minted name, and why
@@ -310,7 +314,8 @@ entry.
 | 2 *(live)* | `i_pulsed_plant == 1` and `pulsetimings == 0` | ramp-up `= plasma_current / 1e5`, ramp-down `= ramp-up` (`physics.py:476-483`) |
 | 3 | `i_pulsed_plant == 1` and `pulsetimings != 0` | precharge `= max(precharge, ramp-up)`, ramp-down `= ramp-up` (`physics.py:485-498`) |
 
-Arm 2 is written. Arms 0, 1 and 3 are `UNPORTED`, and arm 3 for a reason stronger than
+Arms 0 (since 2026-08-27) and 2 are written. Arms 1 and 3 are `UNPORTED`, and arm 3
+for a reason stronger than
 "not written yet": `physics.py:489-492` reads `.times.t_plant_pulse_coil_precharge` and
 writes it back, so its occupant would read what it owns — cottax's hard error. It needs
 either a `FixedPointFunction` or a producer split, and per the brief that is not a call
@@ -319,7 +324,9 @@ to improvise. See **OQ2**.
 Arm 0 is also *not* arm 2 with a different literal, which is worth recording because it
 is exactly the `istore` shape the policy debate turns on: arm 0 owns
 `.times.t_plant_pulse_coil_precharge` as a **third output** that arm 2 does not write at
-all. Even the literal-only reading of the exception does not reach it.
+all. Even the literal-only reading of the exception does not reach it. That is why it
+was ported (2026-08-27) as a second occupant, `PulseRampTimesContinuousDefault`, rather
+than a kwarg on the first.
 
 ## calls into other models
 
@@ -456,3 +463,52 @@ The consolidation pass owns all of this; nothing below was edited by this unit.
 5. **`.physics.p_plasma_separatrix_mw_raw` — mint or fold?** See §"the one minted name".
    The mint is what is written; folding is a two-line change. Needs the orchestrator's
    call because it is a dual-ownership resolution.
+
+## 2026-08-27 — pulse ramp-time arm 0 (`PulseRampTimesContinuousDefault`)
+
+Ported the `i_pulsed_plant != 1 and i_t_current_ramp_up == 0` arm of the ramp-time
+family, the single occupant that blocked **both**
+`tests/regression/input_files/spherical_tokamak_eval.IN.DAT` and
+`st_regression.IN.DAT` from assembling.
+
+**Evidence for the combination ported.**
+
+- `process/models/physics/physics.py:464` — `if self.data.pulse.i_pulsed_plant != 1:`;
+  `:465` — `if self.data.times.i_t_current_ramp_up == 0:`; `:466-474` — the three
+  writes, all `= plasma_current / 5.0e5` (ramp-up at `:466-468`, precharge at
+  `:469-471`, ramp-down at `:472-474`), in that order.
+- `spherical_tokamak_eval.IN.DAT:312` — `i_pulsed_plant = 0`; `st_regression.IN.DAT:2979`
+  — `i_pulsed_plant = 0`. Neither file sets `i_t_current_ramp_up`, whose PROCESS default
+  is `0` (`process/data_structure/times_variables.py:44`), and neither sets
+  `t_plant_pulse_coil_precharge` (`st_regression.IN.DAT:3035` has it commented out), so
+  the arm's ownership of precharge collides with no input leaf. Both files therefore
+  select arm 0 exactly.
+- No defect found in the arm: it is three straight-line assignments with no branch, no
+  aliasing surprise, and no read of what it writes (unlike arm 3).
+
+**What was written.** `calculate_continuous_plant_ramp_times` (pure, 1-in/3-out, next
+to its sibling in `functional_process/models/physics/physics.py`) and
+`PulseRampTimesContinuousDefault(PulseRampTimes)` with three `OutputInto(times)` ports
+declared in PROCESS's write order. Case: `TestContinuousPlantRampTimes`
+(`Tier1Contract`, reference transcribed from `physics.py:465-474` — no PROCESS
+staticmethod exists; legacy point `plasma_current = 16528278.760008096` from
+`tests/unit/models/physics/test_physics.py:392`, plus 5 fuzz draws over
+`(1e6, 3e7)` A, seed 0). Test file green plain (116 passed, 116 skipped) and with
+`--fp-gradients` (232 passed), cottax pinned at jaxgraph `db4f025`.
+
+**Registration** (a deliberate, sanctioned deviation from the porting-agent convention —
+the orchestrator merges this worktree): `indat.py` gained the import, the
+`PULSE_RAMP_TIMES` entry `0: PulseRampTimesContinuousDefault` (with a docstring note on
+which files select each arm), and lost the `("pulse_ramp_times_arm", 0)` `UNPORTED`
+row. Arms 1 and 3 stay `UNPORTED` unchanged.
+
+**Frontier probe** (`machine_from_indat` + `graph_for`, both files, with arm 0 wired):
+neither assembles yet; both moved past this refusal to the same next one, verbatim:
+
+    NotImplementedError: i_hcd_primary == 13 is a real PROCESS branch but is not
+    ported: needs `ElectronCyclotron.electron_cyclotron_freethy` and the
+    `i_ecrh_wave_mode` switch inside it; not written. **The next one worth writing**
+    -- `spherical_tokamak_eval.IN.DAT:133` and `st_regression.IN.DAT:2522` both
+    select it, and its wall-plug block is the one already ported
+
+(identical for both files). Nothing beyond arm 0 was ported; the probe is measurement.
