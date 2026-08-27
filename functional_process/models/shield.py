@@ -23,15 +23,6 @@ discipline.
   `calculate_shield_half_height` already unifies both branches under one signature so
   porting it cost nothing extra) and wired as a full occupant, since both values of this
   binary switch are cheap to support. Not live on `large_tokamak_eval` (`n_divertors=1`).
-- The D-shaped shield-volume arm (`itart == 1 or i_fw_blkt_vv_shape == D_SHAPED`) --
-  `calculate_dshaped_shield_volumes` is ported as a function, verbatim, for
-  completeness (same reasoning `plasma_geometry.md` used for `sauter_geometry`), but
-  **not wired to an occupant class**: not live here (`itart=0`,
-  `i_fw_blkt_vv_shape=ELLIPTICAL_SHAPED`), and the audit record notes this switch is the
-  same `itart` x `i_fw_blkt_vv_shape` joint key `unit_registry.md` says
-  `indat.py::_fw_blkt_vv_shape_arm` already owns for four other slots
-  (`blanket_library.md`, `fw.md`, `vacuum.md`) -- wiring it here independently would
-  risk drifting from that joint key rather than reusing it.
 - Shield areas (`a_shld_inboard_surface`, `a_shld_outboard_surface`,
   `a_shld_total_surface`) -- no reader on the tokamak path (see module docstring above);
   out of scope per this wave's scope discipline.
@@ -40,11 +31,24 @@ discipline.
 Every switch touched by this file (`n_divertors`, the `itart`/`i_fw_blkt_vv_shape`
 compound) is consumed only by *which occupant class exists*, never inside a function
 body -- `_audit/naming_convention.md` § "switches are not ports".
+
+**2026-08-27 (the D-shaped wave): both slots of this file are now total.**
+`calculate_dshaped_shield_volumes` had been ported as a bare function since wave 1, with
+its occupant deliberately withheld pending a decision on which key to hang it on. That
+decision was already recorded -- the *existing* `indat.py::_fw_blkt_vv_shape_arm`, not a
+new key -- so this wave supplies `DShapedShieldVolumes` on that key and nothing else
+changes. `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` (both
+`i_fw_blkt_vv_shape = 1` **and** `itart = 1`) are what needed it.
+
+The same wave lifted this file's two **private** shell helpers into the shared
+`models/engineering/ivc_functions.py`. They were filed here in wave 1 with an explicit
+note that they belonged there; `eshellvol` was moved to that file by a later pass and
+`dshellvol` by this one, so keeping local copies beside a public pair of the same
+formulas would have been the worse of the two debts. This file now imports both.
 """
 
 import dataclasses
 
-import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
@@ -52,6 +56,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.models.engineering.ivc_functions import dshellvol, eshellvol
 from functional_process.paths import blanket, build, divertor, fwbs, physics
 
 # ---------------------------------------------------------------------------
@@ -106,62 +111,6 @@ def calculate_shield_half_height_single_null(
 
 
 # ---------------------------------------------------------------------------
-# `eshellvol`/`dshellvol` -- ported inline from
-# `process/models/engineering/ivc_functions.py:170-306`, needed for closure (that file
-# is otherwise out of this unit's scope -- no registry row, reached by `fw.py`/
-# `vacuum.py` too). Private: not nodes, not claiming the rest of that file.
-# ---------------------------------------------------------------------------
-
-
-def _eshellvol(rshell, rmini, rmino, zminor, drin, drout, dz):
-    """Ports `engineering/ivc_functions.py::eshellvol`, unchanged."""
-    a = rmini
-    b = zminor
-    elong = b / a
-    v1 = 2.0 * jnp.pi * elong * (0.5 * jnp.pi * rshell * a**2 - (2.0 / 3.0) * a**3)
-
-    a = rmini + drin
-    b = zminor + dz
-    elong = b / a
-    v2 = 2.0 * jnp.pi * elong * (0.5 * jnp.pi * rshell * a**2 - (2.0 / 3.0) * a**3)
-
-    vin = v2 - v1
-
-    a = rmino
-    b = zminor
-    elong = b / a
-    v1 = 2.0 * jnp.pi * elong * (0.5 * jnp.pi * rshell * a**2 + (2.0 / 3.0) * a**3)
-
-    a = rmino + drout
-    b = zminor + dz
-    elong = b / a
-    v2 = 2.0 * jnp.pi * elong * (0.5 * jnp.pi * rshell * a**2 + (2.0 / 3.0) * a**3)
-
-    vout = v2 - v1
-
-    return vin, vout, vin + vout
-
-
-def _dshellvol(rmajor, rminor, zminor, drin, drout, dz):
-    """Ports `engineering/ivc_functions.py::dshellvol`, unchanged."""
-    vin = 2.0 * (zminor + dz) * jnp.pi * (rmajor**2 - (rmajor - drin) ** 2)
-
-    a = rminor
-    b = zminor
-    elong = b / a
-    v1 = 2.0 * jnp.pi * elong * (0.5 * jnp.pi * rmajor * a**2 + (2.0 / 3.0) * a**3)
-
-    a = rminor + drout
-    b = zminor + dz
-    elong = b / a
-    v2 = 2.0 * jnp.pi * elong * (0.5 * jnp.pi * rmajor * a**2 + (2.0 / 3.0) * a**3)
-
-    vout = v2 - v1
-
-    return vin, vout, vin + vout
-
-
-# ---------------------------------------------------------------------------
 # `calculate_elliptical_shield_volumes`/`calculate_dshaped_shield_volumes` -- already
 # `@staticmethod`s in `process/`, ported verbatim (`np.` -> `jnp.`). Zero `self.data`
 # access in the source.
@@ -194,7 +143,7 @@ def calculate_elliptical_shield_volumes(
     r_2 = r_1 - r_shld_inboard_inner - dr_shld_inboard
     r_3 = r_shld_outboard_outer - r_1 - dr_shld_outboard
 
-    return _eshellvol(
+    return eshellvol(
         rshell=r_1,
         rmini=r_2,
         rmino=r_3,
@@ -222,9 +171,17 @@ def calculate_dshaped_shield_volumes(
     """Raw (pre-coverage-factor) D-shaped shield volumes. Ports `Shield.
     calculate_dshaped_shield_volumes`, `process/models/shield.py:199-267`, unchanged.
 
-    Ported for completeness (`plasma_geometry.md`'s reasoning for `sauter_geometry`);
-    **not wired to an occupant class in this pass** -- not live on
-    `large_tokamak_eval.IN.DAT`.
+    Ported for completeness in wave 1 (`plasma_geometry.md`'s reasoning for
+    `sauter_geometry`) and wired to `DShapedShieldVolumes` on 2026-08-27, on the existing
+    `_fw_blkt_vv_shape_arm` key. Live on `spherical_tokamak_eval.IN.DAT` and
+    `st_regression.IN.DAT`; not on `large_tokamak_eval.IN.DAT`.
+
+    **Reads-set differences from `calculate_elliptical_shield_volumes`**: gone are
+    `.physics.rmajor`, `.physics.triang` and `.build.r_shld_outboard_outer`; new are
+    `.build.dr_fw_inboard`/`_outboard`, `.build.dr_fw_plasma_gap_inboard`/`_outboard` and
+    `.build.dr_blkt_inboard`/`_outboard`. Nine reads against the elliptical arm's seven,
+    with four in common -- the same anchored-on-the-inboard-build shape
+    `blanket_library.py`'s D-shaped pair has.
 
     Returns
     -------
@@ -241,7 +198,7 @@ def calculate_dshaped_shield_volumes(
     )
     r_2 = dr_blkt_inboard + r_2 + dr_blkt_outboard
 
-    return _dshellvol(
+    return dshellvol(
         rmajor=r_1,
         rminor=r_2,
         zminor=dz_shld_half,
@@ -319,6 +276,56 @@ def calculate_shield_volumes_elliptical(
     return apply_shield_volume_coverage_factors(vin_raw, vout_raw, fvolsi, fvolso)
 
 
+def calculate_shield_volumes_dshaped(
+    r_shld_inboard_inner,
+    dr_shld_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_inboard,
+    rminor,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_outboard,
+    dr_blkt_inboard,
+    dr_blkt_outboard,
+    dz_shld_half,
+    dr_shld_outboard,
+    dz_shld_upper,
+    fvolsi,
+    fvolso,
+):
+    """D-shaped shield volumes, coverage-factor-adjusted -- `Shield.run()`'s own
+    `.blanket.vol_shld_inboard`/`.blanket.vol_shld_outboard`/`.fwbs.vol_shld_total` on
+    the D-shaped arm.
+
+    Composes `calculate_dshaped_shield_volumes` and
+    `apply_shield_volume_coverage_factors`; introduces no new arithmetic of its own, and
+    reuses the *same* coverage-factor function as the elliptical composite because
+    `Shield.run()`'s coverage block (`process/models/shield.py:132-139`) sits below the
+    shape branch and is shared by both arms.
+
+    Live on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`.
+
+    Returns
+    -------
+    tuple
+        `(vol_shld_inboard, vol_shld_outboard, vol_shld_total)`, coverage-adjusted.
+    """
+    vin_raw, vout_raw, _ = calculate_dshaped_shield_volumes(
+        r_shld_inboard_inner=r_shld_inboard_inner,
+        dr_shld_inboard=dr_shld_inboard,
+        dr_fw_inboard=dr_fw_inboard,
+        dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
+        rminor=rminor,
+        dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
+        dr_fw_outboard=dr_fw_outboard,
+        dr_blkt_inboard=dr_blkt_inboard,
+        dr_blkt_outboard=dr_blkt_outboard,
+        dz_shld_half=dz_shld_half,
+        dr_shld_outboard=dr_shld_outboard,
+        dz_shld_upper=dz_shld_upper,
+    )
+    return apply_shield_volume_coverage_factors(vin_raw, vout_raw, fvolsi, fvolso)
+
+
 # ---------------------------------------------------------------------------
 # cottax nodes
 # ---------------------------------------------------------------------------
@@ -385,14 +392,16 @@ class ShieldVolumes(ExplicitFunction):
     `.fwbs.vol_shld_total`: one occupant per arm of the compound switch
     `itart == 1 or i_fw_blkt_vv_shape == D_SHAPED` (`process/models/shield.py:48-51`).
 
-    **This pass ports only the elliptical (`False`) arm** -- `large_tokamak_eval.IN.DAT`
-    has `itart=0` and leaves `i_fw_blkt_vv_shape` at its default (`2`,
-    `ELLIPTICAL_SHAPED`), so neither half of the disjunction is true. The D-shaped arm
-    (`True`) is UNPORTED as an occupant (the function itself is ported, see
-    `calculate_dshaped_shield_volumes`): not live here, and per the audit record this is
-    the same `itart` x `i_fw_blkt_vv_shape` joint key `indat.py::_fw_blkt_vv_shape_arm`
-    already owns for four other slots -- wiring it independently here risks drifting from
-    that key rather than reusing it. Flagged in the wave-1 report, not decided here.
+    **Both arms are written (2026-08-27); the slot is total.** Wave 1 wrote the
+    elliptical arm (`large_tokamak_eval.IN.DAT`: `itart=0`, `i_fw_blkt_vv_shape=2`, so
+    neither half of the disjunction is true) and left `calculate_dshaped_shield_volumes`
+    as a bare function, because the key its occupant should hang on was
+    `indat.py::_fw_blkt_vv_shape_arm` -- already shared by four other slots -- and
+    minting a second one here would have risked drift. The D-shaped wave hangs
+    `DShapedShieldVolumes` on exactly that key, as `shield.md` said it should.
+
+    The arms read nine and seven fields with four in common, so they are occupants and
+    not one node with a shape parameter.
     """
 
 
@@ -434,6 +443,55 @@ class EllipticalShieldVolumes(ShieldVolumes):
         )
 
 
+class DShapedShieldVolumes(ShieldVolumes):
+    """`itart == 1 or i_fw_blkt_vv_shape == D_SHAPED` -- the arm
+    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` take, both of them twice
+    over (`itart = 1` **and** `i_fw_blkt_vv_shape = 1`).
+
+    Owns the same three fields as its elliptical sibling. Reads no `.physics.rmajor`,
+    no `.physics.triang` and no `.build.r_shld_outboard_outer`; reads six `.build`
+    thicknesses the elliptical arm does not.
+    """
+
+    vol_shld_inboard = OutputInto(blanket)
+    vol_shld_outboard = OutputInto(blanket)
+    vol_shld_total = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        r_shld_inboard_inner=From(build),
+        dr_shld_inboard=From(build),
+        dr_fw_inboard=From(build),
+        dr_fw_plasma_gap_inboard=From(build),
+        rminor=From(physics),
+        dr_fw_plasma_gap_outboard=From(build),
+        dr_fw_outboard=From(build),
+        dr_blkt_inboard=From(build),
+        dr_blkt_outboard=From(build),
+        dz_shld_half=From(blanket),
+        dr_shld_outboard=From(build),
+        dz_shld_upper=From(build),
+        fvolsi=From(fwbs),
+        fvolso=From(fwbs),
+    ):
+        return calculate_shield_volumes_dshaped(
+            r_shld_inboard_inner,
+            dr_shld_inboard,
+            dr_fw_inboard,
+            dr_fw_plasma_gap_inboard,
+            rminor,
+            dr_fw_plasma_gap_outboard,
+            dr_fw_outboard,
+            dr_blkt_inboard,
+            dr_blkt_outboard,
+            dz_shld_half,
+            dr_shld_outboard,
+            dz_shld_upper,
+            fvolsi,
+            fvolso,
+        )
+
+
 class TokamakShield(ModelNamespace):
     """`.tokamak.shield` -- two slots, both switched.
 
@@ -451,6 +509,5 @@ class TokamakShield(ModelNamespace):
     live) and `2` (double null)."""
 
     volumes: ShieldVolumes = dataclasses.field(kw_only=True)
-    """`_fw_blkt_vv_shape_arm` -- the elliptical arm (`1`) is written; the D-shaped
-    arm (`0`) is UNPORTED (`calculate_dshaped_shield_volumes` is ported as a pure
-    function, no occupant -- `shield.md` "ported" table)."""
+    """`_fw_blkt_vv_shape_arm` -- **both** arms written (2026-08-27): the elliptical
+    arm (`1`) since wave 1, the D-shaped arm (`0`) since the D-shaped wave. Total."""

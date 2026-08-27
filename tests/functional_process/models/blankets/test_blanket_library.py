@@ -21,6 +21,14 @@ adapter **poisons** the five parameters the double-null arm does not read with `
 rather than zeroing them, so "PROCESS does not look at these" is executed rather than
 asserted: were the branch not taken, the reference would return `nan` and the value
 comparison would fail instead of quietly agreeing on a zero.
+
+2026-08-27 (the D-shaped wave): `TestDshapedBlktAreas` and `TestDshapedBlktVolumes`
+joined, making both shape slots total. Their references are `@staticmethod`s like the
+elliptical pair's, so they need no adapter -- and they need no `nan` poisoning either,
+because the D-shaped arm takes a *different signature* rather than a subset of the same
+one: `triang`, `rmajor` and the two outboard shield radii are absent from the PROCESS
+staticmethod's own parameter list, so there is nothing to poison. That is a stronger
+guarantee than a poisoned argument, not a weaker one.
 """
 
 import numpy as np
@@ -31,6 +39,8 @@ from functional_process.models.blankets.blanket_library import (
     apply_coverage_factors_single_null,
     calculate_blkt_half_height_double_null,
     calculate_blkt_half_height_single_null,
+    calculate_dshaped_blkt_areas,
+    calculate_dshaped_blkt_volumes,
     calculate_elliptical_blkt_areas,
     calculate_elliptical_blkt_volumes,
 )
@@ -72,6 +82,23 @@ _GEOMETRY_FUZZ = {
     "r_shld_outboard_outer": (12.2, 13.2),
     "dr_shld_outboard": (0.6, 1.0),
     "dr_blkt_outboard": (0.8, 1.2),
+    "dz_blkt_half": (5.5, 6.5),
+}
+
+_DSHAPED_GEOMETRY_FUZZ = {
+    # The D-shaped arm reads a different set: no `rmajor`, no `triang`, no outboard
+    # shield radius, and four first-wall thicknesses/gaps the elliptical arm never sees.
+    # `dshellarea`/`dshellvol` divide by `r2`, the width across the plasma, which stays
+    # comfortably positive over this box -- so unlike `_GEOMETRY_FUZZ` the bounds here
+    # are not defending a near-singularity, only keeping the draws physical.
+    "r_shld_inboard_inner": (3.8, 4.3),
+    "dr_shld_inboard": (0.2, 0.4),
+    "dr_blkt_inboard": (0.6, 0.8),
+    "dr_fw_inboard": (0.01, 0.1),
+    "dr_fw_plasma_gap_inboard": (0.05, 0.5),
+    "rminor": (2.4, 2.9),
+    "dr_fw_plasma_gap_outboard": (0.05, 0.5),
+    "dr_fw_outboard": (0.01, 0.1),
     "dz_blkt_half": (5.5, 6.5),
 }
 
@@ -447,3 +474,52 @@ class TestApplyCoverageFactorsDoubleNull(Tier1Contract):
     ]
 
     fuzz_bounds = _COVERAGE_FUZZ
+
+
+def _reference_dshaped_blkt_areas(**kwargs):
+    """`calculate_dshaped_blkt_areas`, already a bare `@staticmethod`."""
+    return CCFE_HCPB.calculate_dshaped_blkt_areas(**kwargs)
+
+
+def _reference_dshaped_blkt_volumes(**kwargs):
+    """`calculate_dshaped_blkt_volumes`, already a bare `@staticmethod`."""
+    return CCFE_HCPB.calculate_dshaped_blkt_volumes(**kwargs)
+
+
+class TestDshapedBlktAreas(Tier1Contract):
+    """`calculate_dshaped_blkt_areas` -> the same, unchanged.
+
+    No legacy sample: `tests/unit/models/blankets/test_blanket_library.py` parametrises
+    only the elliptical pair, and the reference run this file's `_RUN_GEOMETRY` came from
+    (`large_tokamak_eval.IN.DAT`) is elliptical, so its converged geometry does not carry
+    the `dr_fw_*`/`dr_fw_plasma_gap_*` values this arm needs at a self-consistent point.
+    The fuzz box below is anchored on the same radial build all the same -- `r1` walks
+    outwards from `r_shld_inboard_inner` exactly as in the elliptical case -- so the two
+    contracts exercise comparable geometry even though only one of them has a legacy
+    point.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_dshaped_blkt_areas
+    ported = calculate_dshaped_blkt_areas
+
+    fuzz_bounds = _DSHAPED_GEOMETRY_FUZZ
+
+
+class TestDshapedBlktVolumes(Tier1Contract):
+    """`calculate_dshaped_blkt_volumes` -> the same, unchanged.
+
+    `dr_blkt_inboard` doubles as `dshellvol`'s `drin`, whose inboard term
+    `rmajor**2 - (rmajor - drin)**2` needs `drin < rmajor`; the box keeps it two orders
+    of magnitude below `r1`, so the constraint is never near.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = _reference_dshaped_blkt_volumes
+    ported = calculate_dshaped_blkt_volumes
+
+    fuzz_bounds = {
+        **_DSHAPED_GEOMETRY_FUZZ,
+        "dr_blkt_outboard": (0.8, 1.2),
+        "dz_blkt_upper": (0.5, 1.2),
+    }

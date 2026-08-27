@@ -58,10 +58,12 @@ from functional_process.models.vacuum.vacuum import (
     DuctFeasibilityConditions,
     _solve_vacuum_pumping_old,
     _solve_vacuum_pumping_old_from_fields,
+    calculate_dshaped_vessel_volumes,
     calculate_elliptical_vessel_volumes,
     calculate_vacuum_pumping_simple,
     calculate_vacuum_vessel_outputs,
     calculate_vacuum_vessel_outputs_double_null,
+    calculate_vacuum_vessel_outputs_dshaped_double_null,
     calculate_vessel_half_height,
     calculate_vessel_half_height_double_null,
     duct_diameter_residual,
@@ -1176,3 +1178,130 @@ class TestCalculateVacuumVesselOutputsDoubleNull(Tier1Contract):
         "fvoldw": (0.5, 1.5),
         "den_steel": (6000.0, 9000.0),
     }
+
+
+def _reference_dshaped_vessel_volumes(**kwargs):
+    """`VacuumVessel.calculate_dshaped_vessel_volumes`, already a bare
+    `@staticmethod` -- no adapter, and no `nan` poisoning possible or needed: PROCESS's
+    own D-shaped signature simply has no `rmajor`/`rminor`/`triang` parameters.
+    """
+    return VacuumVessel.calculate_dshaped_vessel_volumes(**kwargs)
+
+
+class TestCalculateDshapedVesselVolumes(Tier1Contract):
+    """`calculate_dshaped_vessel_volumes` -> the same, unchanged."""
+
+    audit_record = "models/vacuum.md"
+    reference = _reference_dshaped_vessel_volumes
+    ported = calculate_dshaped_vessel_volumes
+
+    fuzz_bounds = {
+        "r_shld_inboard_inner": (0.5, 8.0),
+        "r_shld_outboard_outer": (9.0, 20.0),
+        "dz_vv_half": (1.0, 15.0),
+        "dr_vv_inboard": (0.05, 0.4),
+        "dr_vv_outboard": (0.05, 1.0),
+        "dz_vv_upper": (0.05, 1.0),
+        "dz_vv_lower": (0.05, 1.0),
+    }
+    """`dr_vv_inboard` is capped below the smallest `r_shld_inboard_inner`: it is
+    `dshellvol`'s `drin`, whose inboard term `rmajor**2 - (rmajor - drin)**2` needs
+    `drin < rmajor` to stay a volume. PROCESS has no guard and both sides would agree on
+    the nonsense, so this keeps the draws physical rather than hiding a disagreement."""
+
+
+def _reference_vacuum_vessel_outputs_dshaped_double_null(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    fvoldw,
+    den_steel,
+):
+    """Real `VacuumVessel.run()` at `n_divertors = 2` **and** the D-shaped shape arm --
+    `spherical_tokamak_eval.IN.DAT`/`st_regression.IN.DAT`'s own configuration.
+
+    **Ten fields are poisoned with `nan`** -- the seven the double-null half-height does
+    not read, plus `.physics.rmajor`, `.physics.rminor` and `.physics.triang`, which
+    `vacuum.py` reads at `:781-783` only, as arguments of the *elliptical* volume call.
+    This adapter therefore executes the claim that the occupant it backs has no
+    `.physics` edge at all.
+
+    `itart = 1` **and** `i_fw_blkt_vv_shape = D_SHAPED` are both set, as both ST files
+    set both.
+    """
+    data = DataStructure()
+    data.build.z_tf_inside_half = z_tf_inside_half
+    data.build.dz_shld_vv_gap = dz_shld_vv_gap
+    data.build.dz_vv_lower = dz_vv_lower
+    data.divertor.n_divertors = 2
+    data.build.dz_blkt_upper = np.nan
+    data.build.dz_shld_upper = np.nan
+    data.build.z_plasma_xpoint_upper = np.nan
+    data.build.dr_fw_plasma_gap_inboard = np.nan
+    data.build.dr_fw_plasma_gap_outboard = np.nan
+    data.build.dr_fw_inboard = np.nan
+    data.build.dr_fw_outboard = np.nan
+    data.physics.itart = 1
+    data.fwbs.i_fw_blkt_vv_shape = 1
+    data.physics.rmajor = np.nan
+    data.physics.rminor = np.nan
+    data.physics.triang = np.nan
+    data.build.r_shld_inboard_inner = r_shld_inboard_inner
+    data.build.r_shld_outboard_outer = r_shld_outboard_outer
+    data.build.dr_vv_inboard = dr_vv_inboard
+    data.build.dr_vv_outboard = dr_vv_outboard
+    data.build.dz_vv_upper = dz_vv_upper
+    data.fwbs.fvoldw = fvoldw
+    data.fwbs.den_steel = den_steel
+
+    vv = VacuumVessel()
+    vv.data = data
+    vv.run()
+
+    return (
+        vv.data.blanket.dz_vv_half,
+        vv.data.blanket.vol_vv_inboard,
+        vv.data.blanket.vol_vv_outboard,
+        vv.data.fwbs.vol_vv,
+        vv.data.fwbs.m_vv,
+    )
+
+
+class TestCalculateVacuumVesselOutputsDshapedDoubleNull(Tier1Contract):
+    """`calculate_vacuum_vessel_outputs_dshaped_double_null` -> real
+    `VacuumVessel.run()` at the D-shaped double-null cell -- what
+    `VacuumVesselDShapedDoubleNull` wraps, and the configuration both spherical-tokamak
+    input files select.
+
+    Ten inputs against the elliptical single-null contract's twenty, and the box is the
+    elliptical double-null one with the three `.physics` entries removed -- so the two
+    composites are exercised over the same build geometry and the difference between them
+    is the shape branch.
+    """
+
+    audit_record = "models/vacuum.md"
+    reference = _reference_vacuum_vessel_outputs_dshaped_double_null
+    ported = calculate_vacuum_vessel_outputs_dshaped_double_null
+
+    fuzz_bounds = {
+        "z_tf_inside_half": (2.0, 15.0),
+        "dz_shld_vv_gap": (0.05, 0.5),
+        "dz_vv_lower": (0.1, 1.0),
+        "r_shld_inboard_inner": (1.5, 8.0),
+        "r_shld_outboard_outer": (9.0, 20.0),
+        "dr_vv_inboard": (0.05, 1.0),
+        "dr_vv_outboard": (0.05, 1.0),
+        "dz_vv_upper": (0.05, 1.0),
+        "fvoldw": (0.5, 1.5),
+        "den_steel": (6000.0, 9000.0),
+    }
+    """`r_shld_inboard_inner` starts at `1.5` rather than the sibling's `0.5`: on this
+    arm it *is* `dshellvol`'s `rmajor`, and `dr_vv_inboard` runs up to `1.0`, so the
+    lower bound keeps `drin < rmajor` over the whole box (see
+    `TestCalculateDshapedVesselVolumes`). On the elliptical arm the same field is only
+    one term of a difference and no such constraint applies."""

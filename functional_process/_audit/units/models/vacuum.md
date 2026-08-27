@@ -721,3 +721,44 @@ proves it rather than a zero hiding it. Green at `--fp-gradients --fp-fuzz 40`.
 
 No new boundary input. The § Registration open question is unchanged in substance; it now
 concerns a family of two rather than a lone class.
+
+## 2026-08-27 — the D-shaped double-null cell ported (D-shaped wave)
+
+`.tokamak.vacuum_vessel` is the second of the two slots whose occupant grid is a shape ×
+divertor-count **product** — see `fw.md`'s dated section for the general point, which
+this unit confirms independently for the third time (wave 1 for the predicate itself, the
+double-null wave for the divertor axis, this wave for the product).
+
+**What was added.** `calculate_dshaped_vessel_volumes` (ports
+`process/models/vacuum.py:860-906`, verbatim, calling the new shared
+`ivc_functions.dshellvol`), the composite
+`calculate_vacuum_vessel_outputs_dshaped_double_null`, and the occupant
+`VacuumVesselDShapedDoubleNull`. The D-shaped single-null cell is refused at
+`('vacuum_vessel_arm', -2)` for the same reachability reason as its first-wall twin.
+
+**The sharpest reads-set difference in this wave.** The D-shaped volume formula anchors on
+the shield build alone (`r_1 = r_shld_inboard_inner`, `r_2 = r_shld_outboard_outer - r_1`)
+where the elliptical one centres its ellipses on the plasma
+(`r_1 = rmajor - rminor * triang`). So it drops `.physics.rmajor`, `.physics.rminor` **and**
+`.physics.triang` — and since the double-null half-height had already dropped its seven,
+`VacuumVesselDShapedDoubleNull` reads **ten** fields against the elliptical single-null
+occupant's twenty, with **no `From(physics)` port at all**. An entire namespace edge that
+the elliptical arms declare and this one does not: the clearest single demonstration in
+the port so far of what the union-of-arms reads-set costs.
+
+**Tests.** `TestCalculateDshapedVesselVolumes` (bare PROCESS staticmethod, no adapter and
+no poisoning possible — the signature has no `.physics` parameters) and
+`TestCalculateVacuumVesselOutputsDshapedDoubleNull` (real `VacuumVessel.run()`, adapter
+poisons **ten** fields with `nan`: the double-null arm's seven plus the three `.physics`
+ones, read at `vacuum.py:781-783` only, inside the elliptical volume call). Both green at
+`--fp-gradients`.
+
+One fuzz-box note. `r_shld_inboard_inner` starts at `1.5` on the D-shaped contracts where
+the elliptical ones use `0.5`: on this arm it *is* `dshellvol`'s `rmajor`, whose inboard
+term `rmajor**2 - (rmajor - drin)**2` needs `drin < rmajor`, and `dr_vv_inboard` runs to
+`1.0`. On the elliptical arm the same field is one term of a difference and no such
+constraint applies. PROCESS has no guard either way, so both sides would agree on the
+nonsense — the bound keeps draws physical rather than hiding a disagreement.
+
+`_vacuum_vessel_arm` gained a third written arm and its refusal narrowed from "the
+D-shaped vessel" to "the D-shaped vessel at a single divertor". No new boundary input.

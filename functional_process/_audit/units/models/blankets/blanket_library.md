@@ -272,3 +272,47 @@ does not look at these" is executed: were the branch not taken, the reference wo
 
 No new boundary input: both double-null arms read strictly a subset of what the
 single-null arms already read.
+
+## 2026-08-27 — the D-shaped arm ported (D-shaped wave)
+
+**All four of this file's slots are now total.** The `n_divertors` pair went total in the
+double-null wave; the shape pair goes total here, for
+`spherical_tokamak_eval.IN.DAT`/`st_regression.IN.DAT` (`i_fw_blkt_vv_shape = 1` **and**
+`itart = 1`).
+
+**What was added.** `calculate_dshaped_blkt_areas` (ports `blanket_library.py:235-300`)
+and `calculate_dshaped_blkt_volumes` (`:303-378`), both verbatim from PROCESS's own
+`@staticmethod`s, plus the occupants `DShapedBlanketAreas`/`DShapedBlanketVolumes`. Two
+new family base classes, `BlanketAreas` and `BlanketVolumes`, so that the two slots have
+a family type to be declared as — `blankets/namespace.py`'s annotations moved from the
+concrete elliptical classes to these.
+
+**The reads-set difference, measured.** Against the elliptical arm the D-shaped one
+*loses* `.physics.rmajor`, `.physics.triang`, `.build.r_shld_outboard_outer` and
+`.build.dr_shld_outboard` and *gains* `.build.dr_fw_inboard`, `.build.dr_fw_outboard`,
+`.build.dr_fw_plasma_gap_inboard` and `.build.dr_fw_plasma_gap_outboard`. Nine reads and
+ten, with five in common — not a subset in either direction. The D-shaped shell is
+anchored on the inboard build (`r1 = r_shld_inboard_inner + dr_shld_inboard +
+dr_blkt_inboard`) and its width is measured across the plasma, where the elliptical shell
+is centred on the plasma and closed against the outboard shield.
+
+**The shape and the divertor count do not interact here, and this is a property of the
+decomposition rather than of PROCESS.** `component_volumes` (`blanket_library.py:71-165`)
+runs three consecutive independent blocks — half-height on `n_divertors`, areas *and*
+volumes on the shape, coverage factors on `n_divertors` again — and wave 1 had already
+split them into four separate cottax slots. Each slot is therefore keyed on exactly one
+predicate and no slot needs a 2×2. `models/fw.py` and `models/vacuum/vacuum.py` keep one
+composite node spanning both branches and so *do* pay the product; see `fw.md`.
+
+**Tests.** `TestDshapedBlktAreas` and `TestDshapedBlktVolumes`, both Tier 1, both against
+PROCESS's own `@staticmethod` with no adapter. **No `nan` poisoning, and none possible or
+needed**: the D-shaped staticmethods take a *different signature* rather than a subset of
+the elliptical one, so `triang`/`rmajor`/`r_shld_outboard_outer` are absent from the
+parameter list itself. That is a stronger guarantee than a poisoned argument, not a
+weaker one. Neither contract has a legacy sample —
+`tests/unit/models/blankets/test_blanket_library.py` parametrises only the elliptical
+pair, and `large_tokamak_eval.IN.DAT`, this file's other sample source, is elliptical so
+its converged geometry carries no self-consistent D-shaped point. The fuzz box
+(`_DSHAPED_GEOMETRY_FUZZ`) is anchored on the same radial build as the elliptical one.
+
+Green at `--fp-gradients`. No new boundary input.

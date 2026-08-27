@@ -252,3 +252,62 @@ is this record's finding rather than this wave's regression. The fix is the fuzz
 sign, and it belongs to whoever next owns this contract.
 
 No new boundary input.
+
+## 2026-08-27 — the D-shaped double-null cell ported (D-shaped wave)
+
+**This slot's occupant grid is a shape × divertor-count product**, and `.tokamak.first_wall`
+is one of only two slots in the port where that is true. `FirstWall.run()`
+(`process/models/fw.py:44-149`) branches on `n_divertors` twice — the half-height at
+`:46-56` and the coverage factors at `:103-109` — with the shape branch at `:58-86`
+sitting between them. The two predicates are independent of each other. But this port
+keeps the whole of `run()` as **one** composite node rather than three, so the grid does
+not factor:
+
+| | single null | double null |
+|---|---|---|
+| **elliptical** | `FirstWallSingleNull` | `FirstWallDoubleNull` |
+| **D-shaped** | UNPORTED, `('first_wall_arm', -2)` | `FirstWallDShapedDoubleNull` |
+
+`models/vacuum/vacuum.py` pays the same product for the same reason.
+`blankets/blanket_library.py` and `models/shield.py` do **not**, because wave 1 had already
+split their `run()`s into one slot per branch — so the difference is in the decomposition,
+not in PROCESS. Worth carrying forward: *whether a switch pair is a product is decided by
+how finely the `run()` was cut, not by the source's branch nesting.*
+
+**What was added.** `calculate_dshaped_first_wall_areas` (ports `fw.py:201-230`, verbatim,
+calling the new shared `ivc_functions.dshellarea`), the composite
+`calculate_first_wall_outputs_dshaped_double_null`, and the occupant
+`FirstWallDShapedDoubleNull`. `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`
+select it: `i_single_null = 0`, `itart = 1`, `i_fw_blkt_vv_shape = 1`.
+
+**Reads-set difference.** The D-shaped area formula reads **no `triang`** — its inboard
+section is a cylinder at `rmajor - rminor - dr_fw_plasma_gap_inboard`, a radius
+triangularity does not enter, where the elliptical arm centres both ellipses at
+`rmajor - rminor * triang`. So the new composite has sixteen parameters against the
+elliptical single-null composite's nineteen: `triang` on top of the double-null arm's
+`z_plasma_xpoint_upper` and `dz_fw_plasma_gap`.
+
+**Why the fourth cell is refused rather than written.** Every ingredient of D-shaped
+single null exists and is harness-tested — the D-shaped area function, the single-null
+half-height and the single-null coverage factors — so writing it would be one composite
+and one class with no new arithmetic. It is refused because no input file in this
+repository selects it, which is this wave's reachability-first discipline, and
+`('first_wall_arm', -2)` now says exactly that instead of "the D-shaped first wall". A
+later wave with a D-shaped single-null file should expect a very short port.
+
+**Refusal ordering.** `_first_wall_arm` asks `i_pflux_fw_neutron` first (it can only ever
+be answered one way here), then the one unwritten grid cell, then maps the three written
+cells — the "ask the answerable condition last" convention the double-null wave
+established, extended to a second unanswerable condition.
+
+**Tests.** `TestCalculateDshapedFirstWallAreas` (bare PROCESS staticmethod, no adapter —
+and no `nan` poisoning possible, because PROCESS's own D-shaped signature simply has no
+`triang` parameter, which is the stronger form of the claim) and
+`TestCalculateFirstWallOutputsDshapedDoubleNull` (real `FirstWall.run()`, adapter poisons
+a *third* field, `.physics.triang`, read at `fw.py:82` only). The composite's box is the
+spherical-tokamak operating point — `rmajor` near `1.8 × rminor`, both files' `aspect` —
+rather than the large-tokamak one the other two composites use, because the D-shaped
+inboard radius `rmajor - rminor - gap` goes small in the ST regime and a
+conventional-aspect box would never visit it. Green at `--fp-gradients`.
+
+No new boundary input.

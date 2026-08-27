@@ -30,10 +30,10 @@ import dataclasses
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.blankets.blanket_library import (
+    BlanketAreas,
     BlanketCoverageFactors,
     BlanketHalfHeight,
-    EllipticalBlanketAreas,
-    EllipticalBlanketVolumes,
+    BlanketVolumes,
 )
 from functional_process.models.blankets.hcpb import (
     CentrepostNeutronicsAbsent,
@@ -70,17 +70,19 @@ class CcfeHcpb(ModelNamespace):
     """`.divertor.n_divertors` -- **both** arms are written (2026-08-27). They differ by
     five reads (`blanket_library.py:169-232`), which is why they are two occupants."""
 
-    blanket_areas: EllipticalBlanketAreas = dataclasses.field(kw_only=True)
-    """The elliptical arm of `component_volumes`' shape decision.
+    blanket_areas: BlanketAreas = dataclasses.field(kw_only=True)
+    """`component_volumes`' shape decision -- **both** arms written (2026-08-27).
 
     A **joint** switch: `blanket_library.py:90-93` tests
     `itart == 1 or i_fw_blkt_vv_shape == D_SHAPED`, so neither integer decides it alone
     and the factory turns the pair into an arm index -- the shape
-    `_blanket_shield_power_arm` and `_energy_storage_arm` already use. Only the
-    elliptical arm (`itart == 0` **and** `ELLIPTICAL_SHAPED`) is written."""
+    `_blanket_shield_power_arm` and `_energy_storage_arm` already use. The two arms read
+    overlapping but unequal sets (the D-shaped one reads no `triang` and no outboard
+    build radius), so they are occupants and not a parameter."""
 
-    blanket_volumes: EllipticalBlanketVolumes = dataclasses.field(kw_only=True)
-    """The same joint arm as `blanket_areas`; one input value filling two slots."""
+    blanket_volumes: BlanketVolumes = dataclasses.field(kw_only=True)
+    """The same joint arm as `blanket_areas`; one input value filling two slots. Also
+    total since 2026-08-27."""
 
     blanket_coverage_factors: BlanketCoverageFactors = dataclasses.field(kw_only=True)
     """`.divertor.n_divertors` -- both arms written (2026-08-27). Owns

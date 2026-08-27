@@ -21,6 +21,13 @@ the branch not taken, the reference would return `nan` and the value comparison 
 fail instead of quietly agreeing on a zero. The composite can do it too because
 `process/models/fw.py` reads both fields in exactly one place -- `:51-52`, the arguments
 of the half-height call -- so a `nan` in `.build` reaches nothing else in `run()`.
+
+2026-08-27 (the D-shaped wave): two more contracts --
+`TestCalculateDshapedFirstWallAreas` (a bare PROCESS staticmethod, no adapter) and
+`TestCalculateFirstWallOutputsDshapedDoubleNull` (the D-shaped double-null composite,
+what `FirstWallDShapedDoubleNull` wraps and what both spherical-tokamak input files
+select). The composite's adapter poisons a *third* field, `.physics.triang`, which
+`fw.py` reads at `:82` only, inside the elliptical area call.
 """
 
 import numpy as np
@@ -29,11 +36,13 @@ from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.fw import (
     apply_first_wall_coverage_factors,
     apply_first_wall_coverage_factors_double_null,
+    calculate_dshaped_first_wall_areas,
     calculate_elliptical_first_wall_areas,
     calculate_first_wall_half_height,
     calculate_first_wall_half_height_double_null,
     calculate_first_wall_outputs,
     calculate_first_wall_outputs_double_null,
+    calculate_first_wall_outputs_dshaped_double_null,
     set_fw_geometry,
 )
 from process.core.model import DataStructure
@@ -527,4 +536,157 @@ class TestSetFwGeometry(Tier1Contract):
     fuzz_bounds = {
         "radius_fw_channel": (0.002, 0.02),
         "dr_fw_wall": (0.001, 0.01),
+    }
+
+
+class TestCalculateDshapedFirstWallAreas(Tier1Contract):
+    """`calculate_dshaped_first_wall_areas` -> `FirstWall.
+    calculate_dshaped_first_wall_areas`, unchanged signature.
+
+    No `nan` poisoning and none possible: PROCESS's own D-shaped staticmethod simply has
+    no `triang` parameter, so the "this arm does not read triangularity" claim is carried
+    by the signature rather than by a poisoned value. That is the stronger form.
+    """
+
+    audit_record = "models/fw.md"
+    reference = staticmethod(FirstWall.calculate_dshaped_first_wall_areas)
+    ported = calculate_dshaped_first_wall_areas
+
+    fuzz_bounds = {
+        "rmajor": (2.0, 20.0),
+        "rminor": (0.5, 5.0),
+        "dz_fw_half": (1.0, 15.0),
+        "dr_fw_plasma_gap_inboard": (0.05, 0.5),
+        "dr_fw_plasma_gap_outboard": (0.05, 0.5),
+    }
+
+
+def _reference_first_wall_outputs_dshaped_double_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    p_alpha_total_mw,
+    f_p_alpha_plasma_deposited,
+    ffwal,
+    pflux_plasma_surface_neutron_avg_mw,
+):
+    """Real `FirstWall.run()` at `n_divertors = 2` **and** the D-shaped shape arm --
+    `spherical_tokamak_eval.IN.DAT`/`st_regression.IN.DAT`'s own configuration.
+
+    **Three fields are poisoned with `nan`**, one more than the elliptical double-null
+    adapter: `.build.z_plasma_xpoint_upper` and `.build.dz_fw_plasma_gap` (read at
+    `process/models/fw.py:51-52` only, as arguments of the half-height call, which this
+    arm's branch does not use) and now `.physics.triang` as well, which `fw.py` reads at
+    `:82` only, as an argument of the *elliptical* area call. On this arm nothing may
+    touch any of the three, and a `nan` proves it.
+
+    `itart = 1` **and** `i_fw_blkt_vv_shape = D_SHAPED` are both set, as both ST files
+    set both; either alone selects the same arm.
+    """
+    data = DataStructure()
+    data.build.z_plasma_xpoint_lower = z_plasma_xpoint_lower
+    data.build.dz_xpoint_divertor = dz_xpoint_divertor
+    data.divertor.dz_divertor = dz_divertor
+    data.build.dz_blkt_upper = dz_blkt_upper
+    data.build.z_plasma_xpoint_upper = np.nan
+    data.build.dz_fw_plasma_gap = np.nan
+    data.divertor.n_divertors = 2
+    data.build.dr_fw_inboard = dr_fw_inboard
+    data.build.dr_fw_outboard = dr_fw_outboard
+    data.physics.itart = 1
+    data.fwbs.i_fw_blkt_vv_shape = 1
+    data.physics.rmajor = rmajor
+    data.physics.rminor = rminor
+    data.physics.triang = np.nan
+    data.build.dr_fw_plasma_gap_inboard = dr_fw_plasma_gap_inboard
+    data.build.dr_fw_plasma_gap_outboard = dr_fw_plasma_gap_outboard
+    data.fwbs.f_ster_div_single = f_ster_div_single
+    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
+    data.physics.p_alpha_total_mw = p_alpha_total_mw
+    data.physics.f_p_alpha_plasma_deposited = f_p_alpha_plasma_deposited
+    data.physics.i_pflux_fw_neutron = 1
+    data.physics.ffwal = ffwal
+    data.physics.pflux_plasma_surface_neutron_avg_mw = (
+        pflux_plasma_surface_neutron_avg_mw
+    )
+    # Same out-of-scope `pflux_fw_rad_mw` division as the other two adapters.
+    data.physics.a_plasma_surface = 1000.0
+
+    fw = FirstWall()
+    fw.data = data
+    fw.run()
+
+    return (
+        fw.data.first_wall.a_fw_inboard,
+        fw.data.first_wall.a_fw_outboard,
+        fw.data.first_wall.a_fw_total,
+        fw.data.physics.p_fw_alpha_mw,
+        fw.data.physics.pflux_fw_neutron_mw,
+    )
+
+
+class TestCalculateFirstWallOutputsDshapedDoubleNull(Tier1Contract):
+    """`calculate_first_wall_outputs_dshaped_double_null` -> real `FirstWall.run()` at
+    the D-shaped double-null cell -- what `FirstWallDShapedDoubleNull` wraps, and the
+    configuration both spherical-tokamak input files select.
+
+    Bounds are the spherical-tokamak operating point rather than the large-tokamak one
+    the other two composites use: `rmajor` around `1.8 * rminor` (both files set
+    `aspect = 1.8`) instead of around `3 * rminor`. The D-shaped inboard radius is
+    `rmajor - rminor - dr_fw_plasma_gap_inboard`, which a conventional-aspect box would
+    keep far from the ST regime where it goes small.
+    """
+
+    audit_record = "models/fw.md"
+    reference = _reference_first_wall_outputs_dshaped_double_null
+    ported = calculate_first_wall_outputs_dshaped_double_null
+
+    samples = [
+        legacy_sample(
+            "spherical-tokamak-plausible",
+            z_plasma_xpoint_lower=4.0,
+            dz_xpoint_divertor=0.5,
+            dz_divertor=0.4,
+            dz_blkt_upper=0.5,
+            dr_fw_inboard=0.03,
+            dr_fw_outboard=0.03,
+            rmajor=3.6,
+            rminor=2.0,
+            dr_fw_plasma_gap_inboard=0.1,
+            dr_fw_plasma_gap_outboard=0.2,
+            f_ster_div_single=0.1,
+            f_a_fw_outboard_hcd=0.1,
+            p_alpha_total_mw=100.0,
+            f_p_alpha_plasma_deposited=0.95,
+            ffwal=1.0,
+            pflux_plasma_surface_neutron_avg_mw=1.0,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "z_plasma_xpoint_lower": (3.0, 7.0),
+        "dz_xpoint_divertor": (0.1, 2.0),
+        "dz_divertor": (0.2, 2.0),
+        "dz_blkt_upper": (0.1, 1.5),
+        "dr_fw_inboard": (0.01, 0.1),
+        "dr_fw_outboard": (0.01, 0.1),
+        "rmajor": (3.0, 5.0),
+        "rminor": (1.5, 2.4),
+        "dr_fw_plasma_gap_inboard": (0.05, 0.4),
+        "dr_fw_plasma_gap_outboard": (0.05, 0.5),
+        "f_ster_div_single": (0.05, 0.2),
+        "f_a_fw_outboard_hcd": (0.05, 0.3),
+        "p_alpha_total_mw": (10.0, 1000.0),
+        "f_p_alpha_plasma_deposited": (0.7, 1.0),
+        "ffwal": (0.8, 1.2),
+        "pflux_plasma_surface_neutron_avg_mw": (0.1, 5.0),
     }

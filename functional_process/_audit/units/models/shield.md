@@ -266,3 +266,51 @@ directly against the real `Shield.calculate_elliptical_shield_volumes` staticmet
 `dz_shld_half` as an ordinary differentiable argument. See the test file's own docstring
 for detail; flagged here since it is a real deviation from every other contract in this
 unit, not because it hides a gap.
+
+## 2026-08-27 — the D-shaped volumes occupant wired (D-shaped wave)
+
+**Both slots of this unit are now total**, and this section closes the open question this
+record left in wave 1.
+
+Wave 1 ported `calculate_dshaped_shield_volumes` as a bare function and deliberately
+withheld its occupant, recording the reason: the switch is the `itart` × `i_fw_blkt_vv_shape`
+joint key that `indat.py::_fw_blkt_vv_shape_arm` already owned for four other slots, and
+minting a second key here would have risked drift. This wave supplies
+`DShapedShieldVolumes` on exactly that key. Nothing about the prediction needed revising —
+which is the useful part of the record: the wave-1 refusal named the right key a wave
+early.
+
+**What was added.** `calculate_shield_volumes_dshaped` (the coverage-factor-adjusted
+composite, mirroring `calculate_shield_volumes_elliptical`) and the occupant class. The
+composite *reuses* `apply_shield_volume_coverage_factors` unchanged, because
+`Shield.run()`'s coverage block (`process/models/shield.py:120-140`) sits below the shape
+branch and is shared by both arms.
+
+**Filing consolidation.** This file's private `_eshellvol`/`_dshellvol` — filed here in
+wave 1 with a note that they belonged in `models/engineering/ivc_functions.py` — are gone;
+the file imports both from there now. See `engineering/ivc_functions.md`'s dated section.
+
+**Reads-set difference, measured.** The D-shaped arm loses `.physics.rmajor`,
+`.physics.triang` and `.build.r_shld_outboard_outer`, and gains `.build.dr_fw_inboard`,
+`.build.dr_fw_outboard`, `.build.dr_fw_plasma_gap_inboard`,
+`.build.dr_fw_plasma_gap_outboard`, `.build.dr_blkt_inboard` and
+`.build.dr_blkt_outboard`. Nine against seven, four in common.
+
+**Tests.** `TestCalculateShieldVolumesDshaped`, Tier 1, against a real `Shield.run()`
+through the new `_run_shield_dshaped` adapter, which poisons `.physics.rmajor`,
+`.physics.triang` and `.build.r_shld_outboard_outer` with `nan` — nothing on this arm
+reads them, in the volume block or in the area block beside it.
+
+**One adapter detail worth recording, because it was forced rather than chosen.**
+`_run_shield_dshaped` sets `n_divertors = 2` where the elliptical adapter sets `1`. The
+half-height is a different slot, so the adapter has to pin `dz_shld_half` while the volume
+arguments vary — and the *single*-null half-height reads `dr_fw_inboard`,
+`dr_fw_outboard` and both `dr_fw_plasma_gap_*`, which are exactly four of the arguments
+the D-shaped volume formula fuzzes. Pinning it would have meant pinning four inputs under
+test. The double-null half-height reads only `z_plasma_xpoint_lower + dz_xpoint_divertor +
+dz_divertor`, none of them arguments here, so it pins cleanly at `4.0 + 0.4 + 0.3 = 4.7`.
+It is also the arm both spherical-tokamak files take, so the adapter happens to run the
+configuration this occupant is assembled for. `.build.z_plasma_xpoint_upper` and
+`.build.dz_blkt_upper` are poisoned too, for the same reason as the other three.
+
+Green at `--fp-gradients`. No new boundary input.

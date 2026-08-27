@@ -44,7 +44,7 @@ from cottax.interfaces.pytree_namespace_module import (
 from cottax.problem import Feasibility
 from cottax.spec import In, Out, VarPath
 
-from functional_process.models.engineering.ivc_functions import eshellvol
+from functional_process.models.engineering.ivc_functions import dshellvol, eshellvol
 from functional_process.paths import (
     blanket,
     build,
@@ -1101,6 +1101,29 @@ class VacuumOld(ExplicitFunction):
 # Null` (unchanged) and `VacuumVesselEllipticalDoubleNull` -- because a double-null
 # vessel's half-height is `z_bottom` alone and reads **seven** fields fewer. The shape
 # switch is untouched and still refused at `('fw_blkt_vv_shape_arm', 0)`.
+#
+# 2026-08-27 (the D-shaped wave): the shape switch is answered too, for the double-null
+# cell. `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` set
+# `i_fw_blkt_vv_shape = 1` **and** `itart = 1`, so `VacuumVesselDShapedDoubleNull` is
+# what they select.
+#
+# **The shape and the divertor count are a product at this slot**, as at
+# `.tokamak.first_wall` and nowhere else in this wave. `VacuumVessel.run()`
+# (`process/models/vacuum.py:742-799`) branches on `n_divertors` for the half-height and
+# on the shape for the volumes, independently and in that order, and this port keeps the
+# whole of `run()` as **one** node -- so the grid is 2 x 2:
+#
+#                     | single null                       | double null
+#   ------------------|-----------------------------------|---------------------------
+#   elliptical        | VacuumVesselEllipticalSingleNull   | VacuumVesselElliptical
+#                     |                                    | DoubleNull
+#   D-shaped          | UNPORTED, ('vacuum_vessel_arm', -2) | VacuumVesselDShaped
+#                     |                                    | DoubleNull
+#
+# `models/blankets/blanket_library.py` and `models/shield.py` escape the product because
+# wave 1 had already split their `run()`s into one slot per branch. The unwritten cell is
+# refused, not written, for the wave's reachability-first reason: no input file in this
+# repository selects it.
 # ---------------------------------------------------------------------------
 
 
@@ -1262,6 +1285,65 @@ def calculate_elliptical_vessel_volumes(
     )
 
 
+def calculate_dshaped_vessel_volumes(
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dz_vv_half,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    dz_vv_lower,
+):
+    """Volumes of the D-shaped-cross-section vacuum vessel -- `itart == 1 or
+    .fwbs.i_fw_blkt_vv_shape == D_SHAPED`, the combination live on
+    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`. Ports `VacuumVessel.
+    calculate_dshaped_vessel_volumes`, `process/models/vacuum.py:860-906`, unchanged
+    (`dshellvol` -> `functional_process.models.engineering.ivc_functions.dshellvol`, the
+    shared D-shaped shell-volume helper added in the same wave).
+
+    **Three reads fewer than the elliptical sibling**: `.physics.rmajor`,
+    `.physics.rminor` and `.physics.triang` are all gone. The elliptical arm centres its
+    two ellipses on the plasma (`r_1 = rmajor - rminor * triang`); the D-shaped arm
+    anchors on the shield build alone (`r_1 = r_shld_inboard_inner`), so it reads nothing
+    from `.physics` at all. This is the largest reads-set difference the shape switch
+    makes at any of its five slots.
+
+    Parameters
+    ----------
+    r_shld_inboard_inner :
+        Inner radius of the inboard shield (m). `.build.r_shld_inboard_inner`.
+    r_shld_outboard_outer :
+        Outer radius of the outboard shield (m). `.build.r_shld_outboard_outer`.
+    dz_vv_half :
+        Vacuum vessel internal half-height (m). `.blanket.dz_vv_half`.
+    dr_vv_inboard :
+        Inboard vacuum vessel thickness (m). `.build.dr_vv_inboard`.
+    dr_vv_outboard :
+        Outboard vacuum vessel thickness (m). `.build.dr_vv_outboard`.
+    dz_vv_upper :
+        Upper vacuum vessel thickness (m). `.build.dz_vv_upper`.
+    dz_vv_lower :
+        Lower vacuum vessel thickness (m). `.build.dz_vv_lower`.
+
+    Returns
+    -------
+    tuple
+        `(vol_vv_inboard, vol_vv_outboard, vol_vv)`, m^3 -- before the `fvoldw`
+        coverage factor (see `calculate_vacuum_vessel_mass` below).
+    """
+    r_1 = r_shld_inboard_inner
+    r_2 = r_shld_outboard_outer - r_1
+
+    return dshellvol(
+        rmajor=r_1,
+        rminor=r_2,
+        zminor=dz_vv_half,
+        drin=dr_vv_inboard,
+        drout=dr_vv_outboard,
+        dz=(dz_vv_upper + dz_vv_lower) / 2,
+    )
+
+
 def calculate_vacuum_vessel_mass(vol_vv_raw, fvoldw, den_steel):
     """Vacuum vessel mass (kg), after the `fvoldw` coverage factor. Ports the tail of
     `VacuumVessel.run`, `process/models/vacuum.py:793-799`, unchanged.
@@ -1405,16 +1487,67 @@ def calculate_vacuum_vessel_outputs_double_null(
     return dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv
 
 
+def calculate_vacuum_vessel_outputs_dshaped_double_null(
+    z_tf_inside_half,
+    dz_shld_vv_gap,
+    dz_vv_lower,
+    r_shld_inboard_inner,
+    r_shld_outboard_outer,
+    dr_vv_inboard,
+    dr_vv_outboard,
+    dz_vv_upper,
+    fvoldw,
+    den_steel,
+):
+    """`.tokamak.vacuum_vessel`'s D-shaped double-null pipeline: `VacuumVessel.run()`
+    end to end at `n_divertors == 2` **and** the D-shaped shape arm -- the configuration
+    live on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`.
+
+    **Ten reads, against the elliptical single-null composite's twenty.** The double-null
+    half-height drops seven; the D-shaped volume formula drops `.physics.rmajor`,
+    `.physics.rminor` and `.physics.triang` on top of that. This occupant reads nothing
+    from `.physics` -- an entire namespace edge the elliptical arms declare and this one
+    does not, which is the sharpest illustration in this wave of why the union-of-arms
+    reads-set is the defect being removed.
+
+    Returns
+    -------
+    tuple
+        `(dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv)`.
+    """
+    dz_vv_half = calculate_vessel_half_height_double_null(
+        z_tf_inside_half=z_tf_inside_half,
+        dz_shld_vv_gap=dz_shld_vv_gap,
+        dz_vv_lower=dz_vv_lower,
+    )
+
+    vol_vv_inboard, vol_vv_outboard, vol_vv_raw = calculate_dshaped_vessel_volumes(
+        r_shld_inboard_inner=r_shld_inboard_inner,
+        r_shld_outboard_outer=r_shld_outboard_outer,
+        dz_vv_half=dz_vv_half,
+        dr_vv_inboard=dr_vv_inboard,
+        dr_vv_outboard=dr_vv_outboard,
+        dz_vv_upper=dz_vv_upper,
+        dz_vv_lower=dz_vv_lower,
+    )
+
+    vol_vv, m_vv = calculate_vacuum_vessel_mass(vol_vv_raw, fvoldw, den_steel)
+
+    return dz_vv_half, vol_vv_inboard, vol_vv_outboard, vol_vv, m_vv
+
+
 class VacuumVesselElliptical(ExplicitFunction):
-    """The family that occupies `.tokamak.vacuum_vessel`: one occupant per
-    `n_divertors` arm, both at `itart == 0` and
-    `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED` (which is what "Elliptical" in the
-    family name records -- the D-shaped vessel is a different volume formula this port
-    does not have, refused at `('fw_blkt_vv_shape_arm', 0)`).
+    """The family that occupies `.tokamak.vacuum_vessel`: one occupant per cell of the
+    shape x divertor-count grid (see the module comment above for the grid).
 
     Each occupant owns `.fwbs.m_vv` (`tokamak_boundary.md`'s one declared read of this
     slot) plus `dz_vv_half`, `vol_vv_inboard`, `vol_vv_outboard` and `vol_vv`, all
     produced by the same straight-line chain in `VacuumVessel.run()`.
+
+    The name records the family's *original* single arm; since 2026-08-27 the shape is a
+    family axis too and `VacuumVesselDShapedDoubleNull` is a member. Left as it is
+    because `indat.py` and `vacuum.md` name it, and a rename would touch neither
+    behaviour nor structure.
     """
 
 
@@ -1517,6 +1650,51 @@ class VacuumVesselEllipticalDoubleNull(VacuumVesselElliptical):
             rmajor=rmajor,
             rminor=rminor,
             triang=triang,
+            r_shld_inboard_inner=r_shld_inboard_inner,
+            r_shld_outboard_outer=r_shld_outboard_outer,
+            dr_vv_inboard=dr_vv_inboard,
+            dr_vv_outboard=dr_vv_outboard,
+            dz_vv_upper=dz_vv_upper,
+            fvoldw=fvoldw,
+            den_steel=den_steel,
+        )
+
+
+class VacuumVesselDShapedDoubleNull(VacuumVesselElliptical):
+    """cottax node: `.tokamak.vacuum_vessel` at `.divertor.n_divertors == 2` **and** the
+    D-shaped shape arm -- the configuration live on `spherical_tokamak_eval.IN.DAT` and
+    `st_regression.IN.DAT` (`i_single_null = 0`; `itart = 1` and
+    `i_fw_blkt_vv_shape = 1`, either of which alone selects the D-shaped arm). Thin wrap
+    of `calculate_vacuum_vessel_outputs_dshaped_double_null`.
+
+    Owns the same five fields as the other two occupants. Its signature has **no
+    `From(physics)` port at all**: `rmajor`, `rminor` and `triang` are absent on top of
+    the seven the double-null half-height already drops.
+    """
+
+    dz_vv_half = OutputInto(blanket)
+    vol_vv_inboard = OutputInto(blanket)
+    vol_vv_outboard = OutputInto(blanket)
+    vol_vv = OutputInto(fwbs)
+    m_vv = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        z_tf_inside_half=From(build),
+        dz_shld_vv_gap=From(build),
+        dz_vv_lower=From(build),
+        r_shld_inboard_inner=From(build),
+        r_shld_outboard_outer=From(build),
+        dr_vv_inboard=From(build),
+        dr_vv_outboard=From(build),
+        dz_vv_upper=From(build),
+        fvoldw=From(fwbs),
+        den_steel=From(fwbs),
+    ):
+        return calculate_vacuum_vessel_outputs_dshaped_double_null(
+            z_tf_inside_half=z_tf_inside_half,
+            dz_shld_vv_gap=dz_shld_vv_gap,
+            dz_vv_lower=dz_vv_lower,
             r_shld_inboard_inner=r_shld_inboard_inner,
             r_shld_outboard_outer=r_shld_outboard_outer,
             dr_vv_inboard=dr_vv_inboard,

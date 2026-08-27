@@ -47,11 +47,42 @@ looks at `.build.z_plasma_xpoint_upper` or `.build.dz_fw_plasma_gap`, so folding
 into one node would declare two edges a double-null machine does not have. The other two
 switches are untouched and still refused; a double-null machine that is also spherical or
 D-shaped stops at `('fw_blkt_vv_shape_arm', 0)` instead.
+
+2026-08-27 (the D-shaped wave): that last sentence no longer holds for the *double-null*
+D-shaped machine. `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` are both
+D-shaped (`i_fw_blkt_vv_shape = 1`) **and** spherical (`itart = 1`) **and** double-null
+(`i_single_null = 0`), so `FirstWallDShapedDoubleNull` joins the family and the shape
+refusal moves off that cell.
+
+**The shape and the divertor count are a genuine product here, and this is one of only
+two slots where they are.** `FirstWall.run()` (`process/models/fw.py:44-149`) branches on
+`n_divertors` twice -- once for the half-height (`:46-56`) and once for the coverage
+factors (`:103-109`) -- with the shape branch (`:58-86`) sitting *between* them. The two
+predicates are independent, but because this port keeps `run()` as **one** composite node
+rather than three, the occupant grid is 2 (shape) x 2 (divertor count) = four cells, of
+which three are written:
+
+| | single null | double null |
+|---|---|---|
+| **elliptical** | `FirstWallSingleNull` | `FirstWallDoubleNull` |
+| **D-shaped** | UNPORTED, `('first_wall_arm', -2)` | `FirstWallDShapedDoubleNull` |
+
+`models/vacuum/vacuum.py` pays the same product for the same reason;
+`blankets/blanket_library.py` and `models/shield.py` do **not**, because wave 1 had
+already split their `run()`s into one slot per branch, so each of their slots is keyed on
+exactly one predicate. The difference is in the decomposition, not in PROCESS.
+
+The unwritten cell is refused rather than written because no input file in this
+repository selects it -- the wave's reachability-first discipline. Its every
+ingredient exists (`calculate_dshaped_first_wall_areas` below, and the single-null
+half-height and coverage
+arms), so it is one composite function and one class away, with no new arithmetic;
+that is what `('first_wall_arm', -2)` now says.
 """
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.models.engineering.ivc_functions import eshellarea
+from functional_process.models.engineering.ivc_functions import dshellarea, eshellarea
 from functional_process.paths import build, divertor, first_wall, fwbs, physics
 
 
@@ -200,6 +231,55 @@ def calculate_elliptical_first_wall_areas(
     r3 = (rmajor + rminor + dr_fw_plasma_gap_outboard) - r1
 
     return eshellarea(rshell=r1, rmini=r2, rmino=r3, zminor=dz_fw_half)
+
+
+def calculate_dshaped_first_wall_areas(
+    rmajor,
+    rminor,
+    dz_fw_half,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+):
+    """First wall areas at full (100%) coverage, D-shaped cross-section --
+    `itart == 1 or .fwbs.i_fw_blkt_vv_shape == D_SHAPED`, the combination live on
+    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` (which satisfy both
+    disjuncts). Ports `FirstWall.calculate_dshaped_first_wall_areas`,
+    `process/models/fw.py:201-230`, unchanged (`dshellarea` ->
+    `functional_process.models.engineering.ivc_functions.dshellarea`, the shared
+    D-shaped shell-area helper added in the same wave).
+
+    **One read fewer than the elliptical sibling: no `triang`.** A D-shaped first wall's
+    inboard section is a cylinder at `rmajor - rminor - dr_fw_plasma_gap_inboard`, a
+    radius the plasma's triangularity does not enter; the elliptical arm instead centres
+    both its ellipses at `rmajor - rminor * triang`. Declaring `.physics.triang` on this
+    arm would invent an edge, which is the whole reason the two arms are occupants.
+
+    Parameters
+    ----------
+    rmajor :
+        Plasma major radius (m). `.physics.rmajor`.
+    rminor :
+        Plasma minor radius (m). `.physics.rminor`.
+    dz_fw_half :
+        First wall internal half-height (m). `.fwbs.dz_fw_half`.
+    dr_fw_plasma_gap_inboard :
+        Inboard scrape-off gap (m). `.build.dr_fw_plasma_gap_inboard`.
+    dr_fw_plasma_gap_outboard :
+        Outboard scrape-off gap (m). `.build.dr_fw_plasma_gap_outboard`.
+
+    Returns
+    -------
+    tuple
+        `(a_fw_inboard_full_coverage, a_fw_outboard_full_coverage,
+        a_fw_total_full_coverage)`, m^2 -- local intermediates, not written to `data`.
+    """
+    # Major radius to the outer edge of the inboard (cylindrical) section.
+    r1 = rmajor - rminor - dr_fw_plasma_gap_inboard
+
+    # Horizontal distance between inside edges.
+    r2 = (rmajor + rminor + dr_fw_plasma_gap_outboard) - r1
+
+    return dshellarea(rmajor=r1, rminor=r2, zminor=dz_fw_half)
 
 
 def apply_first_wall_coverage_factors(
@@ -506,6 +586,91 @@ def calculate_first_wall_outputs_double_null(
     )
 
 
+def calculate_first_wall_outputs_dshaped_double_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    rmajor,
+    rminor,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    p_alpha_total_mw,
+    f_p_alpha_plasma_deposited,
+    ffwal,
+    pflux_plasma_surface_neutron_avg_mw,
+):
+    """`.tokamak.first_wall`'s D-shaped double-null pipeline: `FirstWall.run()` end to
+    end at `n_divertors == 2` **and** the D-shaped arm of the shape branch, still at
+    `i_pflux_fw_neutron == 1`. The configuration live on
+    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`.
+
+    Three parameters fewer than the elliptical double-null composite it otherwise
+    mirrors: `triang` (the D-shaped area formula does not read it) is dropped on top of
+    the two `z_plasma_xpoint_upper`/`dz_fw_plasma_gap` the double-null half-height
+    already dropped. Sixteen reads against the elliptical single-null composite's
+    nineteen.
+
+    Returns
+    -------
+    tuple
+        `(a_fw_inboard, a_fw_outboard, a_fw_total, p_fw_alpha_mw, pflux_fw_neutron_mw)`.
+    """
+    dz_fw_half = calculate_first_wall_half_height_double_null(
+        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
+        dz_xpoint_divertor=dz_xpoint_divertor,
+        dz_divertor=dz_divertor,
+        dz_blkt_upper=dz_blkt_upper,
+        dr_fw_inboard=dr_fw_inboard,
+        dr_fw_outboard=dr_fw_outboard,
+    )
+
+    (
+        a_fw_inboard_full_coverage,
+        a_fw_outboard_full_coverage,
+        _a_fw_total_full_coverage,
+    ) = calculate_dshaped_first_wall_areas(
+        rmajor=rmajor,
+        rminor=rminor,
+        dz_fw_half=dz_fw_half,
+        dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
+        dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
+    )
+
+    (
+        a_fw_inboard,
+        a_fw_outboard,
+        a_fw_total,
+    ) = apply_first_wall_coverage_factors_double_null(
+        f_ster_div_single=f_ster_div_single,
+        f_a_fw_outboard_hcd=f_a_fw_outboard_hcd,
+        a_fw_inboard_full_coverage=a_fw_inboard_full_coverage,
+        a_fw_outboard_full_coverage=a_fw_outboard_full_coverage,
+    )
+
+    p_fw_alpha_mw = calculate_p_fw_alpha_mw(
+        p_alpha_total_mw=p_alpha_total_mw,
+        f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+    )
+
+    pflux_fw_neutron_mw = calculate_pflux_fw_neutron_mw_ffwal(
+        ffwal=ffwal,
+        pflux_plasma_surface_neutron_avg_mw=pflux_plasma_surface_neutron_avg_mw,
+    )
+
+    return (
+        a_fw_inboard,
+        a_fw_outboard,
+        a_fw_total,
+        p_fw_alpha_mw,
+        pflux_fw_neutron_mw,
+    )
+
+
 def set_fw_geometry(radius_fw_channel, dr_fw_wall):
     """First wall radial thickness, inboard and outboard (m). Ports
     `FirstWall.set_fw_geometry`, `process/models/fw.py:347-352`, unchanged: both sides
@@ -536,9 +701,8 @@ def set_fw_geometry(radius_fw_channel, dr_fw_wall):
 
 
 class FirstWall(ExplicitFunction):
-    """The family that occupies `.tokamak.first_wall`: one occupant per `n_divertors`
-    arm, both at `itart == 0`, `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED` and
-    `.physics.i_pflux_fw_neutron == 1`.
+    """The family that occupies `.tokamak.first_wall`: one occupant per cell of the
+    shape x divertor-count grid, all at `.physics.i_pflux_fw_neutron == 1`.
 
     Each occupant owns all three of `.tokamak.first_wall`'s declared boundary outputs
     (`.first_wall.a_fw_total`, `.physics.p_fw_alpha_mw`, `.physics.pflux_fw_neutron_mw`)
@@ -546,16 +710,22 @@ class FirstWall(ExplicitFunction):
     function and read elsewhere in `process/` (`blankets/dcll.py`, `blankets/hcpb.py`,
     `stellarator.py`).
 
-    The other two switches are **not** family axes: a spherical or D-shaped first wall
-    is a different area formula this port does not have, and refuses at
-    `('fw_blkt_vv_shape_arm', 0)`.
+    Three of the grid's four cells are written -- see the module docstring's table.
+    `FirstWallSingleNull` and `FirstWallDoubleNull` are the **elliptical** pair (their
+    names predate the shape becoming a family axis and are left as they are, since
+    `indat.py` and two audit records name them); `FirstWallDShapedDoubleNull` is the
+    D-shaped one. D-shaped single null refuses at `('first_wall_arm', -2)`.
+
+    `.physics.i_pflux_fw_neutron` is still **not** a family axis: its other arm divides
+    by a field this same occupant owns and would need a fixed point, not another class
+    (`('first_wall_arm', -3)`).
     """
 
 
 class FirstWallSingleNull(FirstWall):
-    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 1` -- the
-    combination live on `large_tokamak_eval.IN.DAT` (see module docstring). Thin wrap of
-    `calculate_first_wall_outputs`, no arithmetic of its own.
+    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 1`, elliptical --
+    the combination live on `large_tokamak_eval.IN.DAT` (see module docstring). Thin wrap
+    of `calculate_first_wall_outputs`, no arithmetic of its own.
     """
 
     a_fw_inboard = OutputInto(first_wall)
@@ -610,13 +780,18 @@ class FirstWallSingleNull(FirstWall):
 
 
 class FirstWallDoubleNull(FirstWall):
-    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 2` -- the value
-    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` derive from
-    `i_single_null = 0`. Thin wrap of `calculate_first_wall_outputs_double_null`.
+    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 2`, elliptical.
+    Thin wrap of `calculate_first_wall_outputs_double_null`.
 
     Owns the same five fields as its single-null sibling and reads two fewer:
     `.build.z_plasma_xpoint_upper` and `.build.dz_fw_plasma_gap` are absent from the
     signature below, which is the structural difference the split exists to record.
+
+    Written for the two ST files, which turned out to be D-shaped as well and so select
+    `FirstWallDShapedDoubleNull` instead; no input file in this repository currently
+    reaches this cell. It stays registered: `n_divertors == 2` with an elliptical
+    cross-section is an ordinary PROCESS configuration and the occupant is
+    harness-tested against a real `FirstWall.run()`.
     """
 
     a_fw_inboard = OutputInto(first_wall)
@@ -655,6 +830,63 @@ class FirstWallDoubleNull(FirstWall):
             rmajor=rmajor,
             rminor=rminor,
             triang=triang,
+            dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
+            dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
+            f_ster_div_single=f_ster_div_single,
+            f_a_fw_outboard_hcd=f_a_fw_outboard_hcd,
+            p_alpha_total_mw=p_alpha_total_mw,
+            f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
+            ffwal=ffwal,
+            pflux_plasma_surface_neutron_avg_mw=pflux_plasma_surface_neutron_avg_mw,
+        )
+
+
+class FirstWallDShapedDoubleNull(FirstWall):
+    """cottax node: `.tokamak.first_wall` at `.divertor.n_divertors == 2` **and** the
+    D-shaped shape arm -- the configuration live on `spherical_tokamak_eval.IN.DAT` and
+    `st_regression.IN.DAT` (`i_single_null = 0`; `itart = 1` and
+    `i_fw_blkt_vv_shape = 1`, either of which alone selects the D-shaped arm). Thin wrap
+    of `calculate_first_wall_outputs_dshaped_double_null`.
+
+    Owns the same five fields as the other two occupants and reads **three** fewer than
+    the elliptical single-null one: no `.physics.triang` (the D-shaped area formula does
+    not use it) on top of the double-null arm's two.
+    """
+
+    a_fw_inboard = OutputInto(first_wall)
+    a_fw_outboard = OutputInto(first_wall)
+    a_fw_total = OutputInto(first_wall)
+    p_fw_alpha_mw = OutputInto(physics)
+    pflux_fw_neutron_mw = OutputInto(physics)
+
+    def __call__(
+        self,
+        z_plasma_xpoint_lower=From(build),
+        dz_xpoint_divertor=From(build),
+        dz_divertor=From(divertor),
+        dz_blkt_upper=From(build),
+        dr_fw_inboard=From(build),
+        dr_fw_outboard=From(build),
+        rmajor=From(physics),
+        rminor=From(physics),
+        dr_fw_plasma_gap_inboard=From(build),
+        dr_fw_plasma_gap_outboard=From(build),
+        f_ster_div_single=From(fwbs),
+        f_a_fw_outboard_hcd=From(fwbs),
+        p_alpha_total_mw=From(physics),
+        f_p_alpha_plasma_deposited=From(physics),
+        ffwal=From(physics),
+        pflux_plasma_surface_neutron_avg_mw=From(physics),
+    ):
+        return calculate_first_wall_outputs_dshaped_double_null(
+            z_plasma_xpoint_lower=z_plasma_xpoint_lower,
+            dz_xpoint_divertor=dz_xpoint_divertor,
+            dz_divertor=dz_divertor,
+            dz_blkt_upper=dz_blkt_upper,
+            dr_fw_inboard=dr_fw_inboard,
+            dr_fw_outboard=dr_fw_outboard,
+            rmajor=rmajor,
+            rminor=rminor,
             dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
             dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
             f_ster_div_single=f_ster_div_single,

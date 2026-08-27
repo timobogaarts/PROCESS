@@ -85,3 +85,45 @@ None — leaf pure math.
   naturally alongside whichever of `.tokamak.first_wall`/`.tokamak.vacuum_vessel` is
   registered first) or to give it its own row — not decided here, per the wave-1 brief's
   "report, don't improvise a registry policy."
+
+## 2026-08-27 — `dshellarea`/`dshellvol` ported (D-shaped wave)
+
+The open question this record's own module docstring left open — *"add them here, not
+privately, the day a D-shaped occupant is written"* — was answered by
+`tests/regression/input_files/spherical_tokamak_eval.IN.DAT` and
+`st_regression.IN.DAT`, which both set `i_fw_blkt_vv_shape = 1` (`D_SHAPED`) **and**
+`itart = 1`. The predicate `itart == 1 or i_fw_blkt_vv_shape == D_SHAPED` is therefore
+doubly true on both files, and five slots needed the D-shaped shell formulas at once.
+
+**What was added.** `dshellarea` (ports `process/models/engineering/ivc_functions.py:
+133-167`) and `dshellvol` (`:249-306`), both verbatim `np.` → `jnp.`, both beside their
+elliptical siblings. The file now holds all four of PROCESS's shell helpers.
+
+**The two pairs are not one pair with a parameter.** A D-shaped shell's inboard section
+is a *cylinder*: `ain = 4 * zminor * pi * rmajor` and `vin = 2 * (zminor + dz) * pi *
+(rmajor**2 - (rmajor - drin)**2)`, both closed-form, where the elliptical arm's inboard
+half is the difference of two ellipse revolutions about a shared `rshell`. Only the
+outboard halves correspond, and even those differ in what the ellipse is centred on
+(`rmajor`, the outer edge of the cylinder, versus `rshell`). No substitution turns either
+pair into the other, which is why this is four functions rather than two.
+
+**Filing consolidation.** `models/shield.py` had carried private `_eshellvol`/`_dshellvol`
+copies since wave 1, with an explicit note in their docstrings that the consolidation pass
+should lift them here. It did: `shield.py` now imports both from this file and the private
+copies are gone. `models/blankets/blanket_library.py`'s `_eshellarea`/`_eshellvol` were
+**left alone** — the same note applies to them, but moving two files' filing in one wave
+would have mixed the D-shaped work with an unrelated cleanup. That remains open.
+
+**Tests.** `TestDshellarea` and `TestDshellvol` in
+`tests/functional_process/models/engineering/test_ivc_functions.py`, both Tier 1, both
+diffed directly against `process`'s own callables (already pure, no adapter). Neither has
+a legacy sample: `grep -rl 'dshellarea|dshellvol' tests/unit` is empty and no unit test of
+a caller carries a reducible intermediate the way `test_vacuum.py` does for `eshellvol`.
+The fuzz boxes are the whole oracle, which suffices for a closed-form expression checked
+for gradients as well as values. `dshellvol`'s `drin` is capped below the smallest
+`rmajor` in its box: the inboard term goes negative past `drin > rmajor` and PROCESS has
+no guard, so both sides would agree on the nonsense — the bound keeps draws physical, it
+does not hide a disagreement.
+
+Green at `--fp-gradients`. No new boundary input. The § open questions entry about where
+this record should ultimately live is unchanged.

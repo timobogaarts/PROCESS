@@ -42,6 +42,8 @@ from functional_process.models.blankets.blanket_library import (
     BlanketCoverageFactorsSingleNull,
     BlanketHalfHeightDoubleNull,
     BlanketHalfHeightSingleNull,
+    DShapedBlanketAreas,
+    DShapedBlanketVolumes,
     EllipticalBlanketAreas,
     EllipticalBlanketVolumes,
 )
@@ -89,7 +91,11 @@ from functional_process.models.divertor import (
     DivertorHeatLoadWadeDoubleNull,
     DivertorHeatLoadWadeSingleNull,
 )
-from functional_process.models.fw import FirstWallDoubleNull, FirstWallSingleNull
+from functional_process.models.fw import (
+    FirstWallDoubleNull,
+    FirstWallDShapedDoubleNull,
+    FirstWallSingleNull,
+)
 from functional_process.models.namespace import Build, Divertor
 from functional_process.models.pfcoil.namespace import (
     CSCoil,
@@ -208,6 +214,7 @@ from functional_process.models.power.thermal_cryo import (
 )
 from functional_process.models.shield import (
     DoubleNullShieldHalfHeight,
+    DShapedShieldVolumes,
     EllipticalShieldVolumes,
     SingleNullShieldHalfHeight,
     TokamakShield,
@@ -331,6 +338,7 @@ from functional_process.models.tfcoil.superconducting import (
 )
 from functional_process.models.tokamak.namespace import Tokamak
 from functional_process.models.vacuum.vacuum import (
+    VacuumVesselDShapedDoubleNull,
     VacuumVesselEllipticalDoubleNull,
     VacuumVesselEllipticalSingleNull,
 )
@@ -785,18 +793,6 @@ UNPORTED = {
         "entry with the cable space given instead of the turn width, and the same "
         "ownership inversion. Not written"
     ),
-    ("fw_blkt_vv_shape_arm", 0): (
-        "the D-shaped first-wall/blanket/vessel arm, selected by `itart == 1 or "
-        "i_fw_blkt_vv_shape == D_SHAPED` (`blanket_library.py:90-93`, `fw.py:58-86`, "
-        "`vacuum.py:758-791`). It reads no `triang` where the elliptical arm does, and "
-        "it needs `dshellarea`/`dshellvol` in "
-        "`functional_process/models/engineering/ivc_functions.py`, of which only the "
-        "elliptical pair is ported. Refused at five slots at once -- blanket areas, "
-        "blanket volumes, first wall, vacuum vessel and (since wave 2/3's "
-        "consolidation) the shield volumes, whose `calculate_dshaped_shield_volumes` "
-        "is ported as a pure function with no occupant (`shield.md`) -- which is why "
-        "the predicate is written once, in `_fw_blkt_vv_shape_arm`"
-    ),
     ("itart_hcpb", 1): (
         "the spherical-tokamak arms of `hcpb.py`'s nuclear heating. **Two of them are "
         "written and tested and are still refused here**: "
@@ -804,7 +800,9 @@ UNPORTED = {
         "`NuclearHeatingShieldSphericalTokamak` exist, but a machine at `itart == 1` "
         "also needs the centrepost neutronics chain (`hcpb.py:1008-1287`, unported, "
         "`st_cp_angle_fraction`/`st_tf_centrepost_fast_neut_flux`/"
-        "`st_centrepost_nuclear_heating`) and `blanket_library`'s D-shaped geometry. "
+        "`st_centrepost_nuclear_heating`). It used to need `blanket_library`'s D-shaped "
+        "geometry as well; that half was supplied on 2026-08-27 (the D-shaped wave) and "
+        "the centrepost chain is now the whole of what is missing. "
         "Filling the two slots without the rest would assemble a graph that looks "
         "complete and is wrong -- the `EcrhDensityLimit` bug class -- so the refusal is "
         "about the *machine*, not about the two nodes. `hcpb.md` open question 3 asked "
@@ -845,7 +843,17 @@ UNPORTED = {
         "breeder model. Nothing of it is ported"
     ),
     ("first_wall_arm", -2): (
-        "the D-shaped first wall; see `('fw_blkt_vv_shape_arm', 0)`"
+        "the D-shaped first wall **at a single divertor** -- one cell of "
+        "`_first_wall_arm`'s 2x2 shape x divertor-count grid, the only one unwritten. "
+        "Every ingredient exists: `calculate_dshaped_first_wall_areas`, "
+        "`calculate_first_wall_half_height` and `apply_first_wall_coverage_factors` are "
+        "all ported and harness-tested; what is missing is the composite that chains "
+        "them and its occupant class, and neither would introduce any arithmetic. It is "
+        "unwritten because no input file in this repository selects it -- this wave's "
+        "reachability-first discipline -- not because the formula is unknown. The two "
+        "spherical-tokamak files that motivated the D-shaped arm are double-null "
+        "(`i_single_null = 0`), so they take arm `2`. Until 2026-08-27 this entry meant "
+        "the D-shaped first wall at *any* divertor count"
     ),
     ("first_wall_arm", -3): (
         "`.physics.i_pflux_fw_neutron != 1` normalises the neutron wall load by "
@@ -859,9 +867,14 @@ UNPORTED = {
         "keyed on the arm rather than on either spelling of the other value.)"
     ),
     ("vacuum_vessel_arm", -2): (
-        "the D-shaped vacuum vessel; see `('fw_blkt_vv_shape_arm', 0)`. It would call "
-        "`calculate_dshaped_vessel_volumes`, which needs `dshellvol` added to "
-        "`functional_process/models/engineering/ivc_functions.py`"
+        "the D-shaped vacuum vessel **at a single divertor** -- the same unwritten cell "
+        "of the same 2x2 grid as `('first_wall_arm', -2)`, and unwritten for the same "
+        "reason: no input file selects it. `calculate_dshaped_vessel_volumes` and "
+        "`calculate_vessel_half_height` are both ported and harness-tested; only the "
+        "composite chaining them and its occupant are missing. Until 2026-08-27 this "
+        "entry meant the D-shaped vessel at any divertor count, and said `dshellvol` "
+        "still had to be added to "
+        "`functional_process/models/engineering/ivc_functions.py`; it has been"
     ),
     ("structure_arm", -1): (
         "`(i_tf_sup != 1, i_pf_conductor superconducting)`: `.structure.coldmass` is "
@@ -1982,7 +1995,7 @@ def _fw_blkt_vv_shape_arm(itart: int, i_fw_blkt_vv_shape: int) -> int:
     `fw.py:58-86` and `vacuum.py:758-791`:
 
     ```
-    if itart == 1 or i_fw_blkt_vv_shape == D_SHAPED:  -> arm 0   D-shaped; UNPORTED
+    if itart == 1 or i_fw_blkt_vv_shape == D_SHAPED:  -> arm 0   D-shaped
     else:                                             -> arm 1   elliptical
     ```
 
@@ -1990,7 +2003,17 @@ def _fw_blkt_vv_shape_arm(itart: int, i_fw_blkt_vv_shape: int) -> int:
     `switch_kwarg_survey.md` §4.3 prescribes: one arm is selected by two switches, so
     the pair becomes an index and neither integer is ever used as a key. Three separate
     audit records reached this predicate independently and agreed on it, which is why it
-    is written once here and read by three slots.
+    is written once here and read by **five** slots -- `BLANKET_AREAS`,
+    `BLANKET_VOLUMES` and `SHIELD_VOLUMES` directly, `FIRST_WALL` and `VACUUM_VESSEL`
+    through `_first_wall_arm`/`_vacuum_vessel_arm`, which cross it with the divertor
+    count.
+
+    **Both arms are written since 2026-08-27** (the D-shaped wave, for
+    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`, which set
+    `i_fw_blkt_vv_shape = 1` *and* `itart = 1` and so earn arm `0` twice over). Arm `0`
+    used to refuse at all five slots at once and no longer refuses at any of them; the
+    two slots that still have an unwritten cell refuse on the *product* with the divertor
+    count, not on the shape (`('first_wall_arm', -2)`, `('vacuum_vessel_arm', -2)`).
     """
     d_shaped = (
         SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK
@@ -2689,9 +2712,15 @@ the four arm-keyed slots further down: the double-null wave, run for
 (`:292`, `:638`). `n_divertors` is now a switch this port answers everywhere it is read
 to branch, so it no longer appears in `UNPORTED` at all."""
 
-BLANKET_AREAS = {1: EllipticalBlanketAreas}
-BLANKET_VOLUMES = {1: EllipticalBlanketVolumes}
-"""`_fw_blkt_vv_shape_arm(itart, i_fw_blkt_vv_shape)` -> the two elliptical occupants."""
+BLANKET_AREAS = {0: DShapedBlanketAreas, 1: EllipticalBlanketAreas}
+BLANKET_VOLUMES = {0: DShapedBlanketVolumes, 1: EllipticalBlanketVolumes}
+"""`_fw_blkt_vv_shape_arm(itart, i_fw_blkt_vv_shape)` -> two slots, both **total** since
+2026-08-27 (the D-shaped wave, for `spherical_tokamak_eval.IN.DAT` and
+`st_regression.IN.DAT`, which set `i_fw_blkt_vv_shape = 1` *and* `itart = 1`).
+
+The D-shaped arm reads no `.physics.triang` and no outboard build radius where the
+elliptical arm reads both, and reads four `.build` first-wall thicknesses the elliptical
+arm does not -- unequal sets, so occupants rather than a parameter."""
 
 NUCLEAR_HEATING_MAGNETS = {
     SphericalTokamakModel.CONVENTIONAL_ASPECT_RATIO: NuclearHeatingMagnetsConventional
@@ -2770,60 +2799,89 @@ switched even though this run never says so."""
 def _first_wall_arm(n_divertors: int, shape_arm: int, i_pflux_fw_neutron: int) -> int:
     """`(n_divertors, shape arm, i_pflux_fw_neutron)` -> `FirstWall`'s arm.
 
-    Three conditions, two occupants, and **two distinct refusals** -- which is why this
-    returns a different negative index for each rather than a single "not the live
-    configuration". A slot still has to say *which* of its preconditions a rejected file
-    broke. (It was three refusals until 2026-08-27, when `n_divertors` gained its second
-    occupant and stopped being one.)
+    **The shape x divertor-count product.** `FirstWall.run()` branches on `n_divertors`
+    twice with the shape branch between them (`process/models/fw.py:46-109`), and this
+    port keeps the whole of `run()` as one node, so the occupant grid is 2 x 2 rather
+    than two independent slots. Only `.tokamak.vacuum_vessel` shares that shape; the
+    blanket and shield slots escape it because wave 1 split their `run()`s per branch.
 
     ```
-    shape arm is D-shaped       -> arm -2
-    i_pflux_fw_neutron != 1     -> arm -3
-    n_divertors == 1            -> arm  0
-    n_divertors == 2            -> arm  1
+    i_pflux_fw_neutron != 1                  -> arm -3   refused
+    D-shaped and n_divertors == 1            -> arm -2   refused
+    elliptical, n_divertors == 1             -> arm  0
+    elliptical, n_divertors == 2             -> arm  1
+    D-shaped,   n_divertors == 2             -> arm  2
     ```
 
-    The divertor count is asked **last** since 2026-08-27, because it is the only one of
-    the three this port can now answer either way; the two refusals are what a rejected
-    file needs told.
+    **The answerable conditions are asked last**, as they have been since 2026-08-27:
+    `i_pflux_fw_neutron` can only ever be answered one way here, so it refuses first; the
+    one unwritten cell of the grid refuses second; the three written cells fall out of
+    the mapping at the end. A rejected file is told which of its preconditions broke, and
+    is told it before anything this port *can* answer gets in the way.
+
+    Arm `-2` was "the D-shaped first wall" until 2026-08-27; it now means the D-shaped
+    first wall **at a single divertor** specifically, since the double-null cell is
+    written.
     """
-    if shape_arm != 1:
-        return -2
     if int(i_pflux_fw_neutron) != 1:
         return -3
-    return 0 if int(n_divertors) == 1 else 1
+    if shape_arm == 0 and int(n_divertors) == 1:
+        return -2
+    return {(1, 1): 0, (1, 2): 1, (0, 2): 2}[shape_arm, int(n_divertors)]
 
 
-FIRST_WALL = {0: FirstWallSingleNull, 1: FirstWallDoubleNull}
-"""`_first_wall_arm(...)` -> `.tokamak.first_wall`'s occupant. The two arms differ by
-two reads (`.build.z_plasma_xpoint_upper`, `.build.dz_fw_plasma_gap`), which is why they
-are occupants and not a `n_divertors` parameter."""
+FIRST_WALL = {
+    0: FirstWallSingleNull,
+    1: FirstWallDoubleNull,
+    2: FirstWallDShapedDoubleNull,
+}
+"""`_first_wall_arm(...)` -> `.tokamak.first_wall`'s occupant, three cells of a 2 x 2.
+
+Arms `0` and `1` are the elliptical pair, differing by two reads
+(`.build.z_plasma_xpoint_upper`, `.build.dz_fw_plasma_gap`); arm `2` drops
+`.physics.triang` as well, because the D-shaped area formula does not use it. Sixteen
+reads against arm `0`'s nineteen -- which is why these are occupants and not one node
+with two switch parameters."""
 
 
 def _vacuum_vessel_arm(n_divertors: int, shape_arm: int) -> int:
-    """`(n_divertors, shape arm)` -> the vacuum vessel's arm. Same two conditions as
-    `_first_wall_arm`'s outer two, asked in the same order, and `vacuum.md` confirmed
-    them independently rather than inheriting them from `fw.md` -- which is worth
-    recording, because three records reaching the same predicate separately is what
-    makes it safe to write once.
+    """`(n_divertors, shape arm)` -> the vacuum vessel's arm. The same two conditions as
+    `_first_wall_arm`'s, in the same shape (a 2 x 2 grid with one cell unwritten), and
+    `vacuum.md` confirmed them independently rather than inheriting them from `fw.md` --
+    which is worth recording, because three records reaching the same predicate
+    separately is what makes it safe to write once.
 
-    Since 2026-08-27 the divertor count is an occupant key rather than a refusal, so the
-    shape is asked first and is the only thing left that can refuse here.
+    ```
+    D-shaped and n_divertors == 1  -> arm -2   refused
+    elliptical, n_divertors == 1   -> arm  0
+    elliptical, n_divertors == 2   -> arm  1
+    D-shaped,   n_divertors == 2   -> arm  2
+    ```
+
+    The one refusal is asked first and the three written cells fall out of the mapping
+    last, the same ordering `_first_wall_arm` uses.
     """
-    if shape_arm != 1:
+    if shape_arm == 0 and int(n_divertors) == 1:
         return -2
-    return 0 if int(n_divertors) == 1 else 1
+    return {(1, 1): 0, (1, 2): 1, (0, 2): 2}[shape_arm, int(n_divertors)]
 
 
 VACUUM_VESSEL = {
     0: VacuumVesselEllipticalSingleNull,
     1: VacuumVesselEllipticalDoubleNull,
+    2: VacuumVesselDShapedDoubleNull,
 }
-"""`_vacuum_vessel_arm(...)` -> `.tokamak.vacuum_vessel`'s occupant.
+"""`_vacuum_vessel_arm(...)` -> `.tokamak.vacuum_vessel`'s occupant, three cells of a
+2 x 2.
 
 **A confirmed registry prediction.** Unit #16 recorded `VacuumVessel` as *"confirmed
 unreachable on the stellarator pipeline, no action needed"*; the tokamak trace reaches it
-at `caller.py:331`, and this is the slot that follows."""
+at `caller.py:331`, and this is the slot that follows.
+
+Arm `2` is the sparsest reads-set in this wave: ten fields against arm `0`'s twenty, and
+**no `.physics` port at all** (the D-shaped vessel anchors on the shield build, so
+`rmajor`/`rminor`/`triang` are all gone on top of the double-null half-height's
+seven)."""
 
 
 def _structure_arm(i_tf_sup: int, i_pf_conductor: int) -> int:
@@ -2970,10 +3028,13 @@ SHIELD_HALF_HEIGHT = {1: SingleNullShieldHalfHeight, 2: DoubleNullShieldHalfHeig
 values of the binary switch are written (`shield.md` 'ported' table) -- the one
 registry in this wave that is total."""
 
-SHIELD_VOLUMES = {1: EllipticalShieldVolumes}
+SHIELD_VOLUMES = {0: DShapedShieldVolumes, 1: EllipticalShieldVolumes}
 """`_fw_blkt_vv_shape_arm(itart, i_fw_blkt_vv_shape)` -> `.tokamak.shield.volumes`'s
 occupant -- the fifth slot keyed on that existing joint predicate, per `shield.md`'s
-'join that key at consolidation, not mint an independent one'."""
+'join that key at consolidation, not mint an independent one'. **Total** since
+2026-08-27: `calculate_dshaped_shield_volumes` had been a ported function without an
+occupant since wave 1, precisely so that its occupant could hang on *this* key rather
+than a freshly minted one, and the D-shaped wave supplied it."""
 
 
 def _pf_coil_system_arm(  # noqa: PLR0911 -- one return per refused dimension, by design
