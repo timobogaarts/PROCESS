@@ -72,6 +72,9 @@ from functional_process.models.pfcoil.masses import (
     calculate_pf_coil_masses,
     calculate_pf_coil_sizes,
 )
+from functional_process.models.pfcoil.volt_seconds import (
+    calculate_pf_coil_turn_currents,
+)
 from process.core.exceptions import ProcessValueError
 from process.core.model import DataStructure
 from process.models.cs_fatigue import CsFatigue
@@ -207,7 +210,16 @@ def _ported_pf_coil_chain(
         f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
         f_j_cs_start_end_flat_top=f_j_cs_start_end_flat_top,
     )
-    c_peak, _waveform = calculate_coil_current_waveform(c_start, c_flat, c_end)
+    c_peak, f_c_peak_time = calculate_coil_current_waveform(c_start, c_flat, c_end)
+
+    # `pfcoil()`'s own tail (`pfcoil.py:1082-1111`) -- added to the chain 2026-08-27
+    # with `volt_seconds.py::PFCoilTurnCurrents`, whose only PROCESS oracle this is.
+    c_pf_coil_turn = calculate_pf_coil_turn_currents(
+        f_c_pf_cs_peak_time_array=f_c_peak_time,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        c_pf_cs_coils_peak_ma=c_peak,
+        plasma_current=plasma_current,
+    )
 
     (
         n_pf_coil_turns,
@@ -318,6 +330,7 @@ def _ported_pf_coil_chain(
         r_pf_outside_tf_midplane,
         a_cs_poloidal,
         dz_cs_full,
+        c_pf_coil_turn[: PLASMA_INDEX + 1],
     )
 
 
@@ -476,6 +489,7 @@ def _reference_pf_coil_chain(
         p.r_pf_outside_tf_midplane,
         p.a_cs_poloidal,
         p.dz_cs_full,
+        p.c_pf_coil_turn[: PLASMA_INDEX + 1],
     )
 
 

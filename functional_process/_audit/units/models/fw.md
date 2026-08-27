@@ -165,3 +165,32 @@ No fractional powers, no CoolProp on this path, no in-place mutation.
 - **Registration.** `FirstWall` is proposed as the sole occupant of `.tokamak.first_wall`
   — no alternative PROCESS `Model` competes for this slot, unlike `.tokamak.divertor`'s
   three-way `i_div_heat_load` dispatch.
+
+## 2026-08-27 — `set_fw_geometry` ported (cold-boundary wave)
+
+`cold_boundary.md` producer 1. The § scope discipline entry above dropping
+`set_fw_geometry` ("not on this slot's boundary") was correct for the slot and wrong
+for the graph: `.build.dr_fw_inboard`/`.build.dr_fw_outboard` were two of the six cold
+boundary zeros, behind 7 of the cold tokamak MDA's 11 non-finite roots (both hcpb
+coolant void fractions divide by `dr_fw_inboard`, and `nuclear_heating_magnets`'
+`vffwm` does too). Ported as `set_fw_geometry` + `FirstWallGeometry`, a **second node**
+occupying a new `Tokamak` slot `first_wall_geometry` — not two more outputs of
+`FirstWall`, because `FirstWall` *reads* both fields for the half-height and a node
+must not read what it owns.
+
+That read is also a measured PROCESS quirk this split preserves without reproducing:
+`run()` computes the half-height from the **entering** `dr_fw_*` (`fw.py:46-56`) and
+only then calls `set_fw_geometry` (`:110`), so PROCESS's very first cold pass sees
+`0.0` where every later pass — and this graph, which reads the produced value — sees
+`2*radius_fw_channel + 2*dr_fw_wall = 0.018`. Both fields are constants of two run
+inputs, so the fixed point lands after one PROCESS pass and the port's fresh read *is*
+the converged value; no cycle exists or is created (`Blocking.scc` on both reference
+machines, measured this wave).
+
+Data footprint delta: reads `.fwbs.radius_fw_channel`, `.fwbs.dr_fw_wall` (both
+explicit-arg, both run inputs / dataclass defaults on the reference file); writes
+`.build.dr_fw_inboard`, `.build.dr_fw_outboard` (whole writeback — the outboard is the
+inboard's value assigned, not recomputed, reproduced by returning the same
+intermediate twice). Tier 1, no switch; `test_fw.py::TestSetFwGeometry` diffs the real
+instance method through the `data` back-door (legacy point = the two defaults, fuzz
+over plausible channel geometry).

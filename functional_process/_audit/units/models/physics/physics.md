@@ -512,3 +512,48 @@ neither assembles yet; both moved past this refusal to the same next one, verbat
     select it, and its wall-plug block is the one already ported
 
 (identical for both files). Nothing beyond arm 0 was ported; the probe is measurement.
+
+
+## 2026-08-27 — `plasma_ohmic_heating` ported (cold-boundary wave)
+
+`cold_boundary.md` producer 3. `.physics.res_plasma` was one of the six cold boundary
+zeros: `plasma_inductance.volt_seconds` computes `v_plasma_loop_burn = plasma_current
+* res_plasma * f_c_plasma_inductive`, so the cold burn time was `abs(0)/0 - 10 = nan`
+(jointly with producer 4's `vs_cs_pf_total_burn`). Ported as `plasma_ohmic_heating` +
+`PlasmaOhmicHeating`, a new **fifth slot** `ohmic_heating` of `.tokamak.physics` —
+unswitched (`Physics.run` computes it unconditionally, `:768-778`), so an instance
+default per the `plasma_beta` rule.
+
+The port reproduces a **live PROCESS defect**: the neo-classical enhancement guard is
+the chained comparison `1.0 if 2.5 >= rmajor / rminor <= 4.0 else 4.3 - 0.6 * rmajor /
+rminor` (`physics.py:1675`), which Python evaluates as `(2.5 >= A) and (A <= 4.0)`,
+i.e. `A <= 2.5` — not the IPDG89 comment's "aspect ratios in the range 2.5 to 4.0".
+Reproduced as `jnp.where(A <= 2.5, 1.0, 4.3 - 0.6*A)`; on the reference machine
+(`A = 3.0` exactly) the enhancement arm is taken either way and lands on
+`f_res_plasma_neo = 2.5`, `res_plasma = 4.0496e-9` — the converged values
+`cold_boundary.md` records. Belongs beside this record's other suspected-defect
+entries; ported faithfully, not fixed.
+
+Two shells dropped, neither arithmetic: the `aspect` parameter (read only by the
+negative-resistance `logger.error`, whose condition a traced function cannot raise on)
+and that logger. The staticmethod's `zeff` parameter keeps its spelling in the pure
+function; the node port is `.physics.n_charge_plasma_effective_vol_avg`, the actual
+storage field `Physics.run` passes (`:782`) — the first draft of this wave declared
+`zeff=From(physics)` and the cold probe caught it as an ungrounded boundary input
+(`PhysicsData` has no `zeff`), which is the declaration-surface rule enforcing itself.
+
+Data footprint: reads `.physics.f_c_plasma_inductive` (from `current_fractions`),
+`.physics.kappa95` (plasma_geom), `.physics.plasma_current`, `.physics.rmajor`,
+`.physics.rminor`, `.physics.temp_plasma_electron_density_weighted_kev` (profiles),
+`.physics.vol_plasma`, `.physics.n_charge_plasma_effective_vol_avg` (composition),
+`.physics.plasma_res_factor` (run input, `large_tokamak_eval.IN.DAT` sets `0.7`);
+writes all four of the writeback's fields — `.physics.pden_plasma_ohmic_mw`,
+`.physics.p_plasma_ohmic_mw` (closes the standing boundary read of
+`separatrix_power` and `PlasmaPowerLoss`), `.physics.f_res_plasma_neo`,
+`.physics.res_plasma`. No cycle created (`Blocking.scc`, both machines, measured this
+wave: the node sits downstream of the density/fusion SCC and upstream of the merged
+PF/volt-second SCC, on neither).
+
+Tier 1; `test_physics.py::TestPlasmaOhmicHeating` diffs the real staticmethod (legacy
+point = the converged operating point read off a live `SingleRun`; fuzz bounds
+straddle the defect's kink at `A = 2.5` from both sides).

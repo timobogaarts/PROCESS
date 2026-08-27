@@ -287,6 +287,65 @@ def calculate_dr_tf_wp_with_insulation(
     return dr_tf_inboard - dr_tf_plasma_case - dr_tf_nose_case
 
 
+def calculate_r_tf_inboard_radii_tf_outside_cs(
+    dr_bore, dr_cs, fseppc, fcspc, sigallpc, dr_cs_tf_gap, dr_tf_inboard
+):
+    """The CS-to-TF slice of the inboard radial build (m): CS bore radius, CS
+    pre-compression structure thickness, and the inboard TF leg's inner, middle and
+    plasma-facing radii. The `(i_tf_inside_cs == TF_OUTSIDE_CS, i_cs_precomp ==
+    CS_PRECOMPRESSION_STRUCTURE_PRESENT)` arm -- both the live values on
+    `large_tokamak_eval.IN.DAT` (`i_tf_inside_cs` defaults to `0`,
+    `build_variables.py:189`, never set in the file; `i_cs_precomp` defaults to `1`,
+    `:183`, same).
+
+    Ports `process/models/build.py:1691-1735` as one contiguous slice: `dr_cs_bore =
+    dr_bore` (else-arm, `:1698-1699`), the pre-compression thickness (`:1702-1713`),
+    the else-arm `r_tf_inboard_in` (`:1717-1725`) and the unconditional
+    `r_tf_inboard_mid`/`r_tf_inboard_out` (`:1727-1735`). Added 2026-08-27
+    (`cold_boundary.md` producer 2): `r_tf_inboard_in`/`r_tf_inboard_out` were the two
+    boundary zeros behind 3 of the cold tokamak MDA's 11 non-finite roots
+    (`a_tf_inboard_total = pi*(out^2 - in^2) = 0` fed the TF current density and both
+    CICC inboard fractions). The slice is taken whole rather than at the record's
+    `:1720` line so `dr_cs_precomp` and `dr_cs_bore` are produced instead of read
+    stale -- `dr_cs_bore` was a standing boundary input with a wrong cold value
+    (`1.42` for a converged `2.00384`, the record's 29-name overwrite list) read by
+    `pfcoil/currents.py::CSFluxSwing`, and nothing else produces either field.
+
+    Parameters
+    ----------
+    dr_bore :
+        Machine bore radius (m). `.build.dr_bore`.
+    dr_cs :
+        Central solenoid radial thickness (m). `.build.dr_cs`.
+    fseppc :
+        CS separation force (N). `.build.fseppc`.
+    fcspc :
+        Fraction of space occupied by pre-compression structure. `.build.fcspc`.
+    sigallpc :
+        Allowable stress in the pre-compression structure (Pa). `.build.sigallpc`.
+    dr_cs_tf_gap :
+        Gap between the CS and the inboard TF leg (m). `.build.dr_cs_tf_gap`.
+    dr_tf_inboard :
+        Inboard TF coil radial thickness (m). `.build.dr_tf_inboard`.
+
+    Returns
+    -------
+    tuple
+        `(dr_cs_bore, dr_cs_precomp, r_tf_inboard_in, r_tf_inboard_mid,
+        r_tf_inboard_out)`, all m -- `.build.` each.
+    """
+    dr_cs_bore = dr_bore
+
+    dr_cs_precomp = fseppc / (
+        2.0e0 * jnp.pi * fcspc * sigallpc * (2.0 * dr_cs_bore + dr_cs)
+    )
+
+    r_tf_inboard_in = dr_bore + dr_cs + dr_cs_precomp + dr_cs_tf_gap
+    r_tf_inboard_mid = r_tf_inboard_in + 0.5e0 * dr_tf_inboard
+    r_tf_inboard_out = r_tf_inboard_in + dr_tf_inboard
+    return dr_cs_bore, dr_cs_precomp, r_tf_inboard_in, r_tf_inboard_mid, r_tf_inboard_out
+
+
 def calculate_r_shld_inboard_inner(
     rmajor,
     rminor,
@@ -780,6 +839,43 @@ class DrTfWpWithInsulationFromInboardBuild(ExplicitFunction):
     ):
         return calculate_dr_tf_wp_with_insulation(
             dr_tf_inboard, dr_tf_plasma_case, dr_tf_nose_case
+        )
+
+
+class TfInboardRadiiTfOutsideCs(ExplicitFunction):
+    """cottax node: `calculate_r_tf_inboard_radii_tf_outside_cs`. Answers the joint
+    key `(.build.i_tf_inside_cs, .build.i_cs_precomp) == (TF_OUTSIDE_CS,
+    CS_PRECOMPRESSION_STRUCTURE_PRESENT)` -- both defaults, both live. `TF_INSIDE_CS`
+    is UNPORTED (its arm computes `r_tf_inboard_in` from `dr_bore` alone and
+    `dr_cs_bore` from the TF thickness -- a genuinely different reads-set); so is the
+    no-precompression arm (`dr_cs_precomp = 0.0`, reading none of
+    `fseppc`/`fcspc`/`sigallpc`).
+    """
+
+    dr_cs_bore = OutputInto(build)
+    dr_cs_precomp = OutputInto(build)
+    r_tf_inboard_in = OutputInto(build)
+    r_tf_inboard_mid = OutputInto(build)
+    r_tf_inboard_out = OutputInto(build)
+
+    def __call__(
+        self,
+        dr_bore=From(build),
+        dr_cs=From(build),
+        fseppc=From(build),
+        fcspc=From(build),
+        sigallpc=From(build),
+        dr_cs_tf_gap=From(build),
+        dr_tf_inboard=From(build),
+    ):
+        return calculate_r_tf_inboard_radii_tf_outside_cs(
+            dr_bore,
+            dr_cs,
+            fseppc,
+            fcspc,
+            sigallpc,
+            dr_cs_tf_gap,
+            dr_tf_inboard,
         )
 
 

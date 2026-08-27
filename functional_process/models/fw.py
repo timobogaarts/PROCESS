@@ -4,6 +4,11 @@
 
 Audit record: `functional_process/_audit/units/models/fw.md`.
 
+2026-08-27: `set_fw_geometry` (`fw.py:347-352`) joined the closure as its own node,
+`FirstWallGeometry` -- `cold_boundary.md`'s producer 1, the two boundary zeros behind
+7 of the cold MDA's 11 non-finite roots. See that class's docstring for why it is a
+second node beside `FirstWall` rather than two more outputs of it.
+
 `fw.py` imports `FluidProperties` (CoolProp) but reaches it **zero** times on the live
 run: every CoolProp site is inside `FirstWall.fw_temp` (thermal-hydraulics), reached
 only via `.fwbs.i_p_coolant_pumping == 2` (`MECHANICAL`), and
@@ -305,6 +310,35 @@ def calculate_first_wall_outputs(
     )
 
 
+def set_fw_geometry(radius_fw_channel, dr_fw_wall):
+    """First wall radial thickness, inboard and outboard (m). Ports
+    `FirstWall.set_fw_geometry`, `process/models/fw.py:347-352`, unchanged: both sides
+    are `2 * radius_fw_channel + 2 * dr_fw_wall`, and the outboard is assigned the
+    inboard's value rather than recomputed, reproduced here by returning the same
+    intermediate twice.
+
+    Added 2026-08-27 (`cold_boundary.md` producer 1): `.build.dr_fw_inboard`/
+    `.build.dr_fw_outboard` were the boundary zeros behind 7 of the cold tokamak MDA's
+    11 non-finite roots (both hcpb coolant void fractions and the five
+    `nuclear_heating_magnets` outputs).
+
+    Parameters
+    ----------
+    radius_fw_channel :
+        First wall coolant channel radius (m). `.fwbs.radius_fw_channel`.
+    dr_fw_wall :
+        Wall thickness of the first wall coolant channels (m). `.fwbs.dr_fw_wall`.
+
+    Returns
+    -------
+    tuple
+        `(dr_fw_inboard, dr_fw_outboard)`, m -- `.build.dr_fw_inboard`,
+        `.build.dr_fw_outboard`.
+    """
+    dr_fw_inboard = 2 * radius_fw_channel + 2 * dr_fw_wall
+    return dr_fw_inboard, dr_fw_inboard
+
+
 class FirstWall(ExplicitFunction):
     """cottax node: `.tokamak.first_wall`.
 
@@ -367,4 +401,35 @@ class FirstWall(ExplicitFunction):
             f_p_alpha_plasma_deposited=f_p_alpha_plasma_deposited,
             ffwal=ffwal,
             pflux_plasma_surface_neutron_avg_mw=pflux_plasma_surface_neutron_avg_mw,
+        )
+
+
+class FirstWallGeometry(ExplicitFunction):
+    """cottax node: `.tokamak.first_wall_geometry`. Ports `FirstWall.set_fw_geometry`
+    (`process/models/fw.py:347-352`); no switch.
+
+    A separate node rather than two more outputs of `FirstWall`, because `FirstWall`
+    *reads* `dr_fw_inboard`/`dr_fw_outboard` (for the half-height) and a node must not
+    read what it owns. The split also preserves a measured PROCESS quirk without
+    reproducing it: `FirstWall.run()` computes the half-height from the *entering*
+    `dr_fw_*` values and only then calls `set_fw_geometry` (`fw.py:46-56` before
+    `:110`), so PROCESS's first cold pass sees `0.0` where every later pass -- and this
+    graph, which reads the produced value -- sees `2*0.006 + 2*0.003 = 0.018`. The two
+    fields are constants of two run inputs, so the fixed point is reached after one
+    PROCESS pass and the port's fresh read *is* the converged value; no cycle exists
+    (this node reads only `.fwbs` inputs) and none is created (measured,
+    `Blocking.scc` on both reference machines, 2026-08-27).
+    """
+
+    dr_fw_inboard = OutputInto(build)
+    dr_fw_outboard = OutputInto(build)
+
+    def __call__(
+        self,
+        radius_fw_channel=From(fwbs),
+        dr_fw_wall=From(fwbs),
+    ):
+        return set_fw_geometry(
+            radius_fw_channel=radius_fw_channel,
+            dr_fw_wall=dr_fw_wall,
         )

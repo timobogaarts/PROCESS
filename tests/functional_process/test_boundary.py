@@ -179,7 +179,17 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """349 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """347 inputs and 11 guesses, against the stellarator's 297 and 6.
+
+    The cold-boundary wave (2026-08-27) moved the input half from 349 to 347 by
+    landing `cold_boundary.md`'s four missing producers: nine rows closed
+    (`dr_fw_inboard`/`dr_fw_outboard`, `r_tf_inboard_in`/`_mid`/`_out`, `dr_cs_bore`,
+    `res_plasma`, `p_plasma_ohmic_mw`, `vs_cs_pf_total_burn`) against seven genuine
+    new reads the four nodes declare (`dr_bore`, `dr_cs_tf_gap`, `fseppc`, `fcspc`,
+    `sigallpc`, `dr_fw_wall`, `plasma_res_factor`). The guess count is unchanged at
+    11: registering `pfcoil.vsec` merged the volt-second/burn-time and PF coil cycles
+    into one nine-node SCC, but its `FixedPoint` owns the same three unknowns the two
+    halves owned (`mda.CUTS`, measured in `test_mda.py`).
 
     Both halves are the expected shape and neither is obviously good news, which is why
     they are pinned as numbers rather than described:
@@ -216,5 +226,5 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (349, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (347, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)

@@ -32,6 +32,7 @@ from functional_process.models.physics.current_drive import (
     HcdSecondaryHeating,
 )
 from functional_process.models.physics.physics import (
+    PlasmaOhmicHeating,
     PositiveSeparatrixPower,
     PulseRampTimes,
     SeparatrixPower,
@@ -48,9 +49,10 @@ from functional_process.models.stellarator.initialization import PulseDurations
 
 
 class TokamakPhysics(ModelNamespace):
-    """`.tokamak.physics` -- the radiation and separatrix blocks of `physics.py`.
+    """`.tokamak.physics` -- the radiation, separatrix and ohmic blocks of
+    `physics.py`.
 
-    Four slots, one of them switched. What is *not* here and might be expected:
+    Five slots, one of them switched. What is *not* here and might be expected:
 
     * `SurfaceAveragedPoloidalField` is `.tokamak.plasma_fields`', because PROCESS puts
       it in `plasma_fields.py` and injects that model into `Physics`.
@@ -78,6 +80,15 @@ class TokamakPhysics(ModelNamespace):
     `PhysicsConfinementTime.power_loss`'s live arm on the stellarator runs. Two nodes,
     two configurations, one switch, no conflict -- and a good reminder that "the live
     arm" is a property of a machine and not of a switch."""
+
+    ohmic_heating: PlasmaOhmicHeating = PlasmaOhmicHeating()
+    """`Physics.plasma_ohmic_heating` (`physics.py:1605-1697`, written back
+    `:768-778`). Unswitched -- `run` computes it unconditionally -- so a default, per
+    the `plasma_beta` rule. Added 2026-08-27, `cold_boundary.md` producer 3: its
+    `.physics.res_plasma` was the boundary zero that (jointly with
+    `.pf_coil.vs_cs_pf_total_burn`) made the cold burn time nan. Ports PROCESS's
+    chained-comparison defect in the neo-classical factor as-is; see
+    `plasma_ohmic_heating`'s docstring."""
 
     positive_separatrix_power: PositiveSeparatrixPower = PositiveSeparatrixPower()
     """Owns the real `.physics.p_plasma_separatrix_mw`, downstream of the mint
@@ -131,8 +142,10 @@ class TokamakPulse(ModelNamespace):
     """`Pulse.calculate_burn_time` (`pulse.py:275-316`). No switch of its own --
     `i_pulsed_plant` decides whether this node's *machine* is pulsed, not which formula
     it uses -- so no `kw_only` factory, per `pulse.md`'s registration instructions.
-    Reads `.pf_coil.vs_cs_pf_total_burn`, which stays a boundary input until the CS
-    volt-second accounting (`pfcoil.py::vsec`) is ported."""
+    Reads `.pf_coil.vs_cs_pf_total_burn`, produced since 2026-08-27 by
+    `.tokamak.pf_coil.volt_seconds` (`pfcoil.py::vsec`, `cold_boundary.md` producer 4)
+    -- the registration that merged this node's two-node ring with the PF coil ring
+    into one nine-node SCC; see `models/pfcoil/volt_seconds.py`."""
 
 
 class TokamakCurrentDrive(ModelNamespace):

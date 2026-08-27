@@ -178,13 +178,37 @@ closing readers in the graph it was given, so this entry is inert on the stellar
 entirely): same digest, same blocks, same pins -- the same gating the `ipowerflow`
 paragraph below describes, for a different reason.
 
-**`t_plant_pulse_burn` cuts the volt-second/burn-time cycle**, a two-node ring waves
+**`t_plant_pulse_burn`, `ind_pf_cs_plasma_mutual` and `n_pf_coil_turns` together cut
+one nine-node SCC since 2026-08-27** -- registering `pfcoil.vsec` and its turn-current
+feed (`cold_boundary.md` producer 4; `models/pfcoil/volt_seconds.py`) merged the
+volt-second/burn-time ring and the PF coil ring the two paragraphs below describe:
+`burn_time` now reads `.pf_coil.vs_cs_pf_total_burn` from `pf_coil.volt_seconds`,
+which reads the inductance matrix and `turn_currents`' waveform products, while
+`flux_swing` still reads `.physics.vs_plasma_ramp_required` from
+`plasma_inductance.volt_seconds`, which reads `.times.t_plant_pulse_burn` back from
+`burn_time`. **Measured on the merged cycle** (27 owned variables, 18 with closing
+readers): *no* single cut suffices any more; exactly two *pairs* do
+(`c_pf_cs_coils_peak_ma` or `f_j_cs_start_end_flat_top`, each with
+`t_plant_pulse_burn`), and both pair-members on the PF side are the stale edges the PF
+paragraph below already rejected as not being what PROCESS carries; the standing trio
+is sufficient and each of its three is necessary given the other two.
+So the merged cycle keeps exactly the cuts its two halves had, `cut_graph` groups them
+into **one** `FixedPoint` over three unknowns
+(`^problem.times.t_plant_pulse_burn.cycle`), and the per-half tie-breaks below --
+PROCESS's own cross-pass stale read for `t_plant_pulse_burn`, PROCESS's own
+`first_call` seed pair for the PF unknowns -- carry over unchanged.
+`test_mda.py::test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts` records
+the table.
+
+**`t_plant_pulse_burn` cuts the volt-second/burn-time half**, a two-node ring waves
 2/3's consolidation created by registering both of its nodes:
 `.tokamak.plasma_inductance.volt_seconds` reads `.times.t_plant_pulse_burn` (for the
 flat-top volt-second requirement) and owns `.physics.v_plasma_loop_burn`, which
-`.tokamak.pulse.burn_time` reads to produce the burn time. **Measured**: the ring's
-nine owned variables contain exactly two with closing readers -- the two edges -- and
-*each* is a sufficient single cut, so sufficiency does not pick and the tie-break is,
+`.tokamak.pulse.burn_time` reads to produce the burn time. **Measured, pre-merge**
+(the merged-cycle table above supersedes the sufficiency census, not the tie-break):
+the ring's nine owned variables contained exactly two with closing readers -- the two
+edges -- and *each* was a sufficient single cut, so sufficiency did not pick and the
+tie-break is,
 again, PROCESS's own stale read. `Caller._call_models_once` runs `physics.run()`
 (`caller.py:290`, volt-seconds inside it) *before* `pulse.run()` (`caller.py:322`), so
 within one pass the burn time the volt-second requirement reads is the **previous**
@@ -197,8 +221,9 @@ test_the_volt_second_burn_time_cycle_is_cut_where_process_reads_stale` records t
 table. `.times.t_plant_pulse_burn` is a real `DataStructure` field, so the harness
 seeds the guess straight off converged `data`.
 
-**`ind_pf_cs_plasma_mutual` + `n_pf_coil_turns` cut the PF coil cycle, and they are
-PROCESS's own seeds.** The five-node ring the pfcoil registration created --
+**`ind_pf_cs_plasma_mutual` + `n_pf_coil_turns` cut the PF coil half, and they are
+PROCESS's own seeds.** The five-node ring the pfcoil registration created (now the PF
+side of the merged SCC above) --
 
     time_point_currents --.pf_coil.c_pf_cs_coil_*_ma--> waveform
     waveform            --.pf_coil.c_pf_cs_coils_peak_ma--> sizes
@@ -208,8 +233,9 @@ PROCESS's own seeds.** The five-node ring the pfcoil registration created --
     (plus the parallel edges sizes -> flux_swing via `n_pf_coil_turns` and the coil
     geometry arrays sizes -> inductance)
 
--- is `currents.md` § "The cycle" made real. **Measured**: of the ring's fifteen owned
-variables, eleven have closing readers; exactly two are sufficient *single* cuts
+-- is `currents.md` § "The cycle" made real. **Measured, pre-merge**: of the ring's
+fifteen owned variables, eleven had closing readers; exactly two were sufficient
+*single* cuts
 (`.pf_coil.c_pf_cs_coils_peak_ma`, `.pf_coil.f_j_cs_start_end_flat_top`), and neither
 is what PROCESS carries across a pass. The pair chosen instead is **exactly the
 loop-carried state PROCESS bootstraps**: `pfcoil.py:605-608` seeds

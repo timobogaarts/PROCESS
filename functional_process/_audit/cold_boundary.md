@@ -274,3 +274,33 @@ remove the last. The 23 finite-but-stale entries are the same defect without the
 proof, on the tokamak this time, that no input-file-based check can see this class.
 The boundary pin counts growth; the overwrite diff is the instrument that says which
 of the standing 349 are real inputs and which are producers the port still owes.
+
+
+## Addendum, 2026-08-27 (same day, cold-boundary wave): the four producers landed
+
+The fix order above was executed in full, in payoff order, on this working tree:
+
+1. `Fw.set_fw_geometry` -> `models/fw.py::FirstWallGeometry`, new `Tokamak` slot
+   `first_wall_geometry` (11 -> 4 roots, 104 -> 56 non-finite).
+2. The CS-to-TF radial slice -> `models/build.py::TfInboardRadiiTfOutsideCs`, new
+   `Build` slot `tf_inboard_radii` -- taken at `build.py:1691` rather than `:1720`, so
+   `dr_cs_bore` (a standing stale input, `1.42` cold for `2.00384` converged, read by
+   `CSFluxSwing`) and `dr_cs_precomp` are produced too (4 -> 1 root).
+3. `Physics.plasma_ohmic_heating` -> `models/physics/physics.py::PlasmaOhmicHeating`,
+   fifth `TokamakPhysics` slot `ohmic_heating` -- chained-comparison defect reproduced.
+4. `PFCoil.vsec` + the `c_pf_coil_turn` tail of `pfcoil()` ->
+   `models/pfcoil/volt_seconds.py` (unit #52), two new `PFCoil` slots. Registering it
+   merged the PF ring and the volt-second/burn-time ring into one nine-node SCC whose
+   cut is the standing `mda.CUTS` trio, measured sufficient and minimal
+   (`test_mda.py::test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts`).
+
+Post state, same probe, same input: **185/185 steps, 0 failures, 0 ungrounded,
+0 non-finite, 0 roots.** Boundary pin moved 349+11 -> 347+11: nine rows closed
+(the six zeros of Task A plus `dr_cs_bore`, `p_plasma_ohmic_mw`, and `r_tf_inboard_mid`)
+against seven genuine new reads (`dr_bore`, `dr_cs_tf_gap`, `fseppc`, `fcspc`,
+`sigallpc`, `dr_fw_wall`, `plasma_res_factor` -- all file literals or bucket-2
+defaults, none degenerate in a division or exponent). Warm harness: tokamak 597 -> 611
+agreements (+14 = exactly the new owned outputs, all agreeing), disagreements 16 -> 16
+(same members), errors 20 -> 20; stellarator bit-identical (472/34/3/25). The 29-name
+overwrite list above now stands at 20 (nine closed); the census's bucket counts are
+for the pre-wave tree and should be regenerated, not patched.

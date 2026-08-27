@@ -356,6 +356,7 @@ DERIVED_UNPORTED_KEYS = {
     "structure_arm",
     "surface_poloidal_field_arm",
     "tf_coil_shape_arm",
+    "tf_inboard_radii_arm",
     "vacuum_vessel_arm",
     # Per-slot names for a switch that is read at more than one slot with different
     # dispositions, so the key is the slot and not the integer.
@@ -747,6 +748,29 @@ def test_a_refused_value_says_why(tmp_path, field, value):
         indat = write_indat(tmp_path, **{field: value})
     with pytest.raises(NotImplementedError, match=re.escape(f"{field} == {value}")):
         machine_from_indat(indat)
+
+
+def test_the_tf_inboard_radii_arms_are_refused_through_their_real_integers(tmp_path):
+    """`tf_inboard_radii_arm`'s two refused arms, reached the way a file reaches them.
+
+    The arm index itself is a `DERIVED_UNPORTED_KEYS` entry no file can set, so this is
+    the per-integer coverage that skip defers to: `i_tf_inside_cs = 1` selects arm -1
+    (TF inside the CS) and `i_cs_precomp = 0` arm -2 (no pre-compression structure),
+    both over the tokamak baseline. Added with the cold-boundary wave's
+    `TfInboardRadiiTfOutsideCs` (2026-08-27).
+    """
+    for extra, arm in ((("i_tf_inside_cs", 1), -1), (("i_cs_precomp", 0), -2)):
+        indat = tmp_path / f"TOK_{extra[0]}.DAT"
+        indat.write_text(
+            "".join(
+                f"{f} = {v}\n"
+                for f, v in {**TOKAMAK_BASELINE_INDAT, extra[0]: extra[1]}.items()
+            )
+        )
+        with pytest.raises(
+            NotImplementedError, match=re.escape(f"tf_inboard_radii_arm == {arm}")
+        ):
+            machine_from_indat(indat)
 
 
 def test_an_unknown_value_is_rejected_naming_what_exists(tmp_path):

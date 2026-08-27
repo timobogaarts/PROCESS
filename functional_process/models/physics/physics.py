@@ -382,6 +382,92 @@ def calculate_plasma_energy_from_beta(beta, b_field, vol_plasma):
 
 
 # ---------------------------------------------------------------------------
+# `Physics.plasma_ohmic_heating` (`physics.py:1605-1697`), written back at
+# `Physics.run` `:768-778`. Added 2026-08-27: `cold_boundary.md` producer 3 --
+# `.physics.res_plasma` was the boundary zero that (with `vs_cs_pf_total_burn`)
+# made the cold `pulse.burn_time` nan, via `v_plasma_loop_burn = plasma_current *
+# res_plasma * f_c_plasma_inductive` (`plasma_inductance.volt_seconds`).
+# ---------------------------------------------------------------------------
+
+
+def plasma_ohmic_heating(
+    f_c_plasma_inductive,
+    kappa95,
+    plasma_current,
+    rmajor,
+    rminor,
+    temp_plasma_electron_density_weighted_kev,
+    vol_plasma,
+    zeff,
+    plasma_res_factor,
+):
+    """Ohmic heating power and plasma resistance (IPDG89).
+
+    Ports `Physics.plasma_ohmic_heating`, `physics.py:1605-1697`, term for term --
+    **including its live defect**. PROCESS's neo-classical enhancement guard is the
+    chained comparison `1.0 if 2.5 >= rmajor / rminor <= 4.0 else 4.3 - 0.6 * rmajor /
+    rminor` (`physics.py:1675`), which Python reads as `(2.5 >= A) and (A <= 4.0)`,
+    i.e. `A <= 2.5` -- **not** the documented "aspect ratios in the range 2.5 to 4.0".
+    Reproduced exactly as `jnp.where(A <= 2.5, ...)`; on `large_tokamak_eval`
+    (`A = 3.1`) the enhancement arm is taken either way.
+
+    Two shells are dropped, neither of them arithmetic: the `aspect` parameter (read
+    only by the negative-resistance `logger.error`, `physics.py:1682-1685` -- a traced
+    function cannot log on a data-dependent condition, and the message's own value is
+    unused), and that logger itself.
+
+    Parameters
+    ----------
+    f_c_plasma_inductive :
+        Fraction of plasma current driven inductively.
+        `.physics.f_c_plasma_inductive`.
+    kappa95 :
+        Plasma elongation at the 95% surface. `.physics.kappa95`.
+    plasma_current :
+        Plasma current (A). `.physics.plasma_current`.
+    rmajor, rminor :
+        Plasma major/minor radius (m). `.physics.rmajor`, `.physics.rminor`.
+    temp_plasma_electron_density_weighted_kev :
+        Density-weighted average electron temperature (keV).
+        `.physics.temp_plasma_electron_density_weighted_kev`.
+    vol_plasma :
+        Plasma volume (m^3). `.physics.vol_plasma`.
+    zeff :
+        Plasma effective charge (the staticmethod's own spelling; the storage field is
+        `.physics.n_charge_plasma_effective_vol_avg`, `Physics.run` `:782`, and the
+        node port uses that name per the declaration-surface rule).
+    plasma_res_factor :
+        Plasma resistivity pre-factor. `.physics.plasma_res_factor`.
+
+    Returns
+    -------
+    tuple
+        `(pden_plasma_ohmic_mw, p_plasma_ohmic_mw, f_res_plasma_neo, res_plasma)` --
+        MW/m^3, MW, dimensionless, ohm; `.physics.` all four (`physics.py:768-773`).
+    """
+    t10 = temp_plasma_electron_density_weighted_kev / 10.0
+
+    res_plasma = (
+        plasma_res_factor * 2.15e-9 * zeff * rmajor / (kappa95 * rminor**2 * t10**1.5)
+    )
+
+    # PROCESS's chained comparison, reproduced -- see the docstring.
+    f_res_plasma_neo = jnp.where(
+        rmajor / rminor <= 2.5, 1.0, 4.3 - 0.6 * rmajor / rminor
+    )
+
+    res_plasma = res_plasma * f_res_plasma_neo
+
+    pden_plasma_ohmic_mw = (
+        f_c_plasma_inductive * plasma_current**2 * res_plasma * 1.0e-6 / vol_plasma
+    )
+
+    p_plasma_ohmic_mw = pden_plasma_ohmic_mw * vol_plasma
+
+    return pden_plasma_ohmic_mw, p_plasma_ohmic_mw, f_res_plasma_neo, res_plasma
+
+
+# ---------------------------------------------------------------------------
 # cottax nodes
 # ---------------------------------------------------------------------------
 
@@ -625,4 +711,48 @@ class PlasmaEnergyFromBeta(ExplicitFunction):
             beta_total_vol_avg,
             b_plasma_total,
             vol_plasma,
+        )
+
+
+class PlasmaOhmicHeating(ExplicitFunction):
+    """cottax node: `plasma_ohmic_heating`. No switch -- `Physics.run` computes it
+    unconditionally (`physics.py:768-778`), whatever the machine's arms.
+
+    Owns all four of the writeback's fields. `.physics.res_plasma` is the one
+    `cold_boundary.md` names (read by `plasma_inductance.volt_seconds`, whose zero
+    made `v_plasma_loop_burn` zero and the cold burn time nan);
+    `.physics.p_plasma_ohmic_mw` closes the boundary read of `separatrix_power` and
+    `PlasmaPowerLoss`; the other two are the same source function's remaining stores,
+    owned so the writeback is whole rather than sliced.
+    """
+
+    pden_plasma_ohmic_mw = OutputInto(physics)
+    p_plasma_ohmic_mw = OutputInto(physics)
+    f_res_plasma_neo = OutputInto(physics)
+    res_plasma = OutputInto(physics)
+
+    def __call__(
+        self,
+        f_c_plasma_inductive=From(physics),
+        kappa95=From(physics),
+        plasma_current=From(physics),
+        rmajor=From(physics),
+        rminor=From(physics),
+        temp_plasma_electron_density_weighted_kev=From(physics),
+        vol_plasma=From(physics),
+        n_charge_plasma_effective_vol_avg=From(physics),
+        plasma_res_factor=From(physics),
+    ):
+        return plasma_ohmic_heating(
+            f_c_plasma_inductive=f_c_plasma_inductive,
+            kappa95=kappa95,
+            plasma_current=plasma_current,
+            rmajor=rmajor,
+            rminor=rminor,
+            temp_plasma_electron_density_weighted_kev=(
+                temp_plasma_electron_density_weighted_kev
+            ),
+            vol_plasma=vol_plasma,
+            zeff=n_charge_plasma_effective_vol_avg,
+            plasma_res_factor=plasma_res_factor,
         )

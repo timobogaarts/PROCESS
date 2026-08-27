@@ -40,6 +40,7 @@ from functional_process.models.build import (
     calculate_dx_tf_wp_conductor_max_superconducting,
     calculate_r_shld_inboard_inner,
     calculate_r_shld_outboard_outer,
+    calculate_r_tf_inboard_radii_tf_outside_cs,
     calculate_r_tf_outboard_mid,
     calculate_r_tf_outboard_mid_unrippled,
     calculate_z_plasma_xpoint,
@@ -429,6 +430,67 @@ class TestDrTfInboardFromWindingPack(Tier1Contract):
         "dr_tf_wp_with_insulation": (0.4, 1.4),
         "dr_tf_plasma_case": (0.03, 0.2),
         "dr_tf_nose_case": (0.1, 0.5),
+    }
+
+
+def _reference_tf_inboard_radii(
+    dr_bore,
+    dr_cs,
+    fseppc,
+    fcspc,
+    sigallpc,
+    dr_cs_tf_gap,
+    dr_tf_inboard,
+):
+    data = _radial(
+        build__dr_bore=dr_bore,
+        build__dr_cs=dr_cs,
+        build__fseppc=fseppc,
+        build__fcspc=fcspc,
+        build__sigallpc=sigallpc,
+        build__dr_cs_tf_gap=dr_cs_tf_gap,
+        build__dr_tf_inboard=dr_tf_inboard,
+    )
+    return (
+        data.build.dr_cs_bore,
+        data.build.dr_cs_precomp,
+        data.build.r_tf_inboard_in,
+        data.build.r_tf_inboard_mid,
+        data.build.r_tf_inboard_out,
+    )
+
+
+class TestTfInboardRadii(Tier1Contract):
+    """`calculate_r_tf_inboard_radii_tf_outside_cs` vs
+    `calculate_radial_build:1691-1735` at `(i_tf_inside_cs, i_cs_precomp) = (0, 1)`
+    (both baked into `BASELINE`). Added 2026-08-27, `cold_boundary.md` producer 2.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_tf_inboard_radii
+    ported = calculate_r_tf_inboard_radii_tf_outside_cs
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            dr_bore=2.003843190236783,
+            dr_cs=0.546816593988753,
+            fseppc=350000000.0,
+            fcspc=0.6,
+            sigallpc=300000000.0,
+            dr_cs_tf_gap=0.08,
+            dr_tf_inboard=1.2,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "dr_bore": (0.5, 4.0),
+        "dr_cs": (0.2, 1.5),
+        "fseppc": (1.0e8, 6.0e8),
+        "fcspc": (0.3, 0.9),
+        "sigallpc": (1.0e8, 6.0e8),
+        "dr_cs_tf_gap": (0.02, 0.3),
+        "dr_tf_inboard": (0.5, 2.0),
     }
 
 
