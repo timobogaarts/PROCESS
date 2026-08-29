@@ -58,7 +58,13 @@ indistinguishable from oscillation (`_audit/optimise_design.md` §14, and §12.2
 identical diagnosis on SAND). 800 is 523 with the same ~1.5x margin SAND's 500 gives its
 326. **C3 is not capped and never was**: it stops at 60 because `pyvmcon` raises
 `QSPSolverException` there -- raising the cap does not move it, and `_measure` below says
-which of the two happened."""
+which of the two happened.
+
+**523 and 60 are OSQP numbers.** The driver now passes PROCESS's own CLARABEL
+(`_audit/optimise_design.md` §15): C3 cold converges in 67 at `1e-8` and 58 at
+PROCESS's `epsvmc`, and the `QSPSolverException` at 60 is gone. C2 warm inverts --
+CLARABEL stops at 45 on an `infeasible` QP where OSQP ground through to 523 -- so the
+cap is still needed and still means what this says."""
 
 TOLERANCE = 1.0e-8
 """`VmconDriver.tolerance`. **Tighter than PROCESS's own** `epsvmc = 1e-6` on this run,

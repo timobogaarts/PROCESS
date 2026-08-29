@@ -92,7 +92,13 @@ cottax version nor any condition scale accounts for it -- `_audit/optimise_desig
 row's factor moves the count only within this problem's own noise (219-326).
 
 500 rather than 400 leaves headroom over the largest count measured; a solve that needs
-more than this is not slow, it is stuck, and the trace the harness prints says so."""
+more than this is not slow, it is stuck, and the trace the harness prints says so.
+
+**Every count in this docstring is an OSQP count** and is superseded as a measure of
+how hard the problem is: the driver now passes PROCESS's own CLARABEL, under which
+this solve is 83 iterations at `1e-8` and 58 at PROCESS's `epsvmc`. The cap stays where
+it is because C2 -- which CLARABEL does not currently finish -- still needs the room
+(`_audit/optimise_design.md` §15, `next_steps.md` §17)."""
 
 
 def _why_no_step(drive, context, seeded):
