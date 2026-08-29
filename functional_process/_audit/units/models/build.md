@@ -718,3 +718,84 @@ advance past `i_tf_shape_build` and now refuse at `tf_coil_shape_arm == -1` —
 `.physics.itart == 1`, the TART arms of `tf_coil_shape_inner`, which read
 `.build.r_cp_top` (`tfcoil/base.py:498-551`); recorded UNPORTED since first writing.
 That is the next blocker for both files.
+
+
+## 2026-08-29 — the inboard vacuum-vessel and shield radii ported (cold SAND wave)
+
+Two nodes, four outputs, and they close **two separately-tracked open items with the
+same three lines of PROCESS**:
+
+- **`.build.r_vv_inboard_out`** was the last non-finite condition in the cold tokamak
+  SAND probe (`next_steps.md` §16.3). It is a boundary input, zero cold, and it divides
+  in `vv_stress_on_quench`'s `tf_vv_frac = r_tf_inboard_out / r_vv_inboard_out`
+  (`tfcoil/superconducting.py:1420`), which made `^cond.constraints.c65` `nan` at the
+  cold seed and nowhere else. Single-caused: after a cold MDA pass exactly one of that
+  node's 29 inputs was still zero, and substituting PROCESS's `4.3186` for that one
+  input alone took `vv_stress_quench` from `nan` to a finite `4.33e7`.
+- **`.build.r_sh_inboard_out`** was `blankets/hcpb.py`'s one declared-but-unproduced
+  read (its module docstring note 3, and `consolidation_round_3.md` §4's last item),
+  where the centrepost cluster reads it as the shield's plasma-facing radius.
+
+### the split, and why it is not one node
+
+`process/models/build.py:1833-1870` is one straight line of source that writes four
+fields. It is **two** nodes here:
+
+| node | owns | reads |
+|---|---|---|
+| `VacuumVesselAndShieldRadiiTfOutsideCs` | `r_vv_inboard_out`, `r_sh_inboard_in`, `r_sh_inboard_out` | `r_tf_inboard_out` + five `.build` thicknesses |
+| `RadialBuildToPlasmaCentre` | `rbld` | `r_sh_inboard_out` + four `.build` thicknesses + **`.physics.rminor`** |
+
+`rbld` is the one line of the block that reads the plasma. Folded into the first node it
+would hand `.build.r_vv_inboard_out` -- which feeds the TF quench chain -- a dependency
+on `.physics.rminor` that PROCESS does not give it: an invented edge, and the mechanism
+by which a false cycle appears. This file already splits the same source method on the
+same principle (`calculate_r_shld_inboard_inner` is the block's tail, built *inwards*
+from the plasma and so independent of the whole solenoid chain).
+
+**`rbld` is produced rather than left unread**, even though nothing in the graph reads
+it, because PROCESS's own comment on it is "should be equal to `rmajor`" and
+**constraint 11 is the equation that says so** -- active on three of the four tracked
+tokamak-family files (`low_aspect_ratio_DEMO`, `spherical_tokamak_eval`,
+`st_regression`; `large_tokamak_eval` is the one that omits it). Measured from the
+files, not assumed.
+
+### the switch
+
+`VACUUM_SHIELD_RADII` is keyed on `.build.i_tf_inside_cs` **alone**, not on
+`_tf_inboard_radii_arm`'s joint `(i_tf_inside_cs, i_cs_precomp)` key. The two slots ask
+the same switch for different reasons: this block's arm does not depend on whether the
+CS carries precompression structure, and sharing the joint answer would assert that it
+does. `pfcoil/superconductor.py`'s record makes the same argument for the same reason
+("the switch is asked twice on purpose").
+
+`TF_INSIDE_CS` is UNPORTED: it accumulates `dr_cs`, `dr_cs_tf_gap` and `dr_cs_precomp`
+on top of the TF leg (`:1836-1845`), three reads the written arm never takes. That is
+the same value, and the same reason, that `tf_inboard_radii_arm` refuses one block
+earlier.
+
+### a testing finding worth keeping: which lever places the TF leg
+
+`r_tf_inboard_out` is the one argument of these functions that PROCESS **computes**
+rather than reads -- 140 lines above the block -- so a reference cannot simply override
+it onto the `DataStructure`; `calculate_radial_build` overwrites it before reaching the
+lines under test. The reference therefore moves an upstream thickness to place the leg
+where the sample asks, which keeps PROCESS's own code (and all its branches) as the
+oracle.
+
+**The obvious lever is the wrong one.** `dr_bore` looks natural and is not affine:
+`dr_cs_precomp = fseppc / (2*pi*fcspc*sigallpc*(2*dr_bore + dr_cs))` is a hyperbola in
+it, so a two-point secant on the bore lands ~`9.3e-05` out. `dr_tf_inboard` enters as
+`r_tf_inboard_out = r_tf_inboard_in + dr_tf_inboard` with nothing upstream reading it,
+so one probe places it with slope exactly 1. The reference **asserts the landing** to
+1e-9 either way, which is why the bore's error surfaced as a failing test rather than as
+a quietly wrong oracle -- an oracle that misses by 1e-4 would have passed a `rtol=1e-3`
+value check and silently weakened every gradient bar.
+
+### measured
+
+Tokamak MDA harness **648 -> 652 agreements**, all four new outputs exact against
+PROCESS's converged values, **16 disagreements unchanged**, 684 -> 688 owned walked, 0
+unaccounted. Two Tier-1 contracts (`TestVacuumVesselAndShieldRadii`, `TestRbld`), green
+plain and at `--fp-gradients --fp-fuzz 40`. Stellarator untouched: `.tokamak.build` is
+not on its graph.

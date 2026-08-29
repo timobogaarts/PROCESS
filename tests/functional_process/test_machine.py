@@ -371,6 +371,7 @@ DERIVED_UNPORTED_KEYS = {
     # Per-slot names for a switch that is read at more than one slot with different
     # dispositions, so the key is the slot and not the integer.
     "i_tf_sup_build",
+    "i_tf_inside_cs_vacuum_shield",
     "i_plasma_ignited_separatrix",
     # Two-switch keys whose *value* is a `(i_str_wp, i_tf_sc_mat)` pair, so no single
     # IN.DAT line selects one. Exercised through the two integers by
@@ -385,8 +386,12 @@ DERIVED_UNPORTED_KEYS = {
 Three kinds, and the distinction is worth keeping visible: a value the factory
 **derives** (`n_divertors`), an **arm index** several switches jointly select, and a
 **per-slot name** for one integer that two slots answer differently (`.tfcoil.i_tf_sup`
-decides `power.tf_power` *and* two `.tokamak.build` nodes, and `.physics.i_plasma_ignited`
-decides three slots in three subsystems, with the refusals differing in each).
+decides `power.tf_power` *and* two `.tokamak.build` nodes; `.physics.i_plasma_ignited`
+decides three slots in three subsystems; `.build.i_tf_inside_cs` decides both the CS-to-TF
+radial slice and the vacuum-vessel one, and a file that sets it is refused at the earlier
+of the two, with that slot's message -- so the later slot's refusal is unreachable
+through the integer and is covered where the integer is,
+`test_the_tf_inboard_radii_arms_are_refused_through_their_real_integers`).
 None of the three is a thing a file can set, so the refusal is reached through the
 integers it derives from -- which the survey and switch-coverage tests do.
 

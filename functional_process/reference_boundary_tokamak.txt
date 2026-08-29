@@ -25,6 +25,7 @@ input .build.dr_fw_plasma_gap_outboard
 input .build.dr_shld_blkt_gap
 input .build.dr_shld_inboard
 input .build.dr_shld_outboard
+input .build.dr_shld_thermal_inboard
 input .build.dr_shld_thermal_outboard
 input .build.dr_shld_vv_gap_inboard
 input .build.dr_tf_inboard
@@ -49,7 +50,6 @@ input .build.plleni
 input .build.plleno
 input .build.plsepi
 input .build.plsepo
-input .build.r_vv_inboard_out
 input .build.sigallpc
 input .build.z_tf_top
 input .buildings.admv

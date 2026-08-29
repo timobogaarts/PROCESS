@@ -681,15 +681,12 @@ class VmconDriver(AbstractDriver):
         flat_start, unravel = ravel_pytree(start)
         flat_start = np.asarray(flat_start, dtype=float)
         # PROCESS's own conditioning, from the starting point, exactly as
-        # `load_iteration_variables` derives it.
-        # `np.divide(..., where=)` rather than `np.where(cond, 1/x, 1)`: the latter
-        # evaluates `1/x` for every entry first, so a zero start warns (and, at -0.0,
-        # produces -inf) before the select discards it.
-        # Exact comparison is deliberate -- it is exactly zero, not a neighbourhood of
-        # zero, that has no scale.
-        scale = np.ones_like(flat_start)
-        if self.scaled:
-            np.divide(1.0, flat_start, out=scale, where=flat_start != 0.0)  # noqa: RUF069
+        # `load_iteration_variables` derives it -- and through `design_scale`, so this
+        # path and `scaled_problem`'s (SLSQP) share one rule rather than two spellings
+        # of it. The floor matters: this used to test `flat_start != 0.0`, which a
+        # coordinate that is *numerically* zero passes, and `design_scale`'s docstring
+        # carries the case that found it.
+        scale = design_scale(flat_start) if self.scaled else np.ones_like(flat_start)
 
         def flat_conditions(flat_x):
             values = conditions(*unravel(flat_x))

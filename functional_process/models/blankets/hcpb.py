@@ -70,9 +70,11 @@ carrying:
 2. **Two mints.** `.ccfe_hcpb.f_geom_cp` is a `run()` local that crosses a node
    boundary; `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit` is the MCNP fit value PROCESS
    stores in `.fwbs.p_cp_shield_nuclear_heat_mw` at `:137` and overwrites at `:267`.
-3. **`.build.r_sh_inboard_out` is a new boundary input with no producer**, and stays
-   one: `build.py:1858` accumulates it outwards from the bore, a chain this port does
-   not own.
+3. **`.build.r_sh_inboard_out` was a boundary input with no producer** when this
+   cluster landed -- `build.py:1858` accumulates it outwards from the bore, a chain the
+   port did not own. It does now: `models/build.py`'s
+   `VacuumVesselAndShieldRadiiTfOutsideCs` (2026-08-29) owns those three lines, so this
+   read has a real edge and the note stands only as history.
 """
 
 import jax.numpy as jnp

@@ -71,6 +71,7 @@ from functional_process.models.build import (
     DrTfWpWithInsulationFromInboardBuild,
     TfInboardRadiiNoCsPrecomp,
     TfInboardRadiiTfOutsideCs,
+    VacuumVesselAndShieldRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardEdgeRipplePictureFrame,
     TfOutboardMidDShape,
@@ -922,6 +923,16 @@ UNPORTED = {
         "alone (`process/models/build.py:1692`) and `dr_cs_bore` gains a "
         "`dr_tf_inboard` term (`:1694-1698`) -- a different reads-set for the inner "
         "radius, so a different occupant. Not written"
+    ),
+    ("i_tf_inside_cs_vacuum_shield", TFCSRadialConfiguration.TF_INSIDE_CS): (
+        "TF coil inside the CS (`i_tf_inside_cs == 1`): the inboard vacuum-vessel "
+        "radius accumulates `dr_cs`, `dr_cs_tf_gap` and `dr_cs_precomp` on top of the "
+        "TF leg (`process/models/build.py:1836-1845`) -- three reads the written arm "
+        "never takes, so a different occupant and not a kwarg. The same value refuses "
+        "`tf_inboard_radii_arm` (-1) for the same reason, one block earlier -- which "
+        "is why the key is a per-slot name (`i_tf_sup_build`'s convention): one integer "
+        "decides two slots, and a file setting it is refused at the earlier one, with "
+        "that slot's message. Not written"
     ),
     ("tf_coil_shape_arm", -1): (
         "`i_tf_shape == D_SHAPE` with `.physics.itart == 1`: the centrepost D-shape "
@@ -2620,6 +2631,19 @@ TF_INBOARD_RADII = {
 wave). The remaining refused arm (`TF_INSIDE_CS`, -1) is a real PROCESS branch with a
 different reads-set; see its `UNPORTED` entry."""
 
+VACUUM_SHIELD_RADII = {
+    TFCSRadialConfiguration.TF_OUTSIDE_CS: VacuumVesselAndShieldRadiiTfOutsideCs,
+}
+"""`.build.i_tf_inside_cs` -> the inboard vacuum-vessel/shield radial slice
+(`build.py:1833-1860`), added 2026-08-29. `TF_INSIDE_CS` accumulates three further
+central-solenoid thicknesses into the same radius and is UNPORTED.
+
+**Keyed on `i_tf_inside_cs` alone, not on `_tf_inboard_radii_arm`'s joint
+`(i_tf_inside_cs, i_cs_precomp)`.** The two slots ask the same switch for different
+reasons and this block's arm does not depend on the precompression structure; sharing
+the joint answer would say that it does.
+"""
+
 DR_TF_OUTBOARD = {TFConductorModel.SUPERCONDUCTING: DrTfOutboardSuperconducting}
 WP_CONDUCTOR_MAX_WIDTH = {
     TFConductorModel.SUPERCONDUCTING: WpConductorMaxWidthSuperconducting
@@ -3822,6 +3846,13 @@ def _tokamak_device(
                 switches.get("i_cs_precomp", 1),  # `build_variables.py:183`
             ),
             TF_INBOARD_RADII,
+        ),
+        vacuum_vessel_and_shield_radii=_slot_occupant(
+            "i_tf_inside_cs_vacuum_shield",
+            TFCSRadialConfiguration(
+                int(switches.get("i_tf_inside_cs", 0))  # `build_variables.py:189`
+            ),
+            VACUUM_SHIELD_RADII,
         ),
         dr_tf_outboard=_slot_occupant("i_tf_sup_build", i_tf_sup, DR_TF_OUTBOARD),
         wp_conductor_max_width=_slot_occupant(
