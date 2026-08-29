@@ -10,15 +10,16 @@ per-unit `.md` records, and from live `.py` docstrings (`total_process.py` cites
 `mda_harness.py` §8, `sand.py` §6, among others). A section whose material is closed is
 emptied to a stub that says where the live material went; nothing is ever renumbered.
 
-**Where to start:** §13 (the current priority order, 2026-08-25), then §5 (the structural
-vocabulary — Shape A / Shape B — that the code itself cites). §11 is the previous
-session's wrap and its priority order is superseded by §13; its measurements stay live.
+**Where to start:** §16 (the current state and priority order, 2026-08-29), then §5 (the
+structural vocabulary — Shape A / Shape B — that the code itself cites). §13's priority
+order is superseded by §16.6, and §11's by §13; the measurements in both stay live.
 
-**The `Verified state` table below is stale** where it says 159 nodes / 348 unowned
-inputs — the live graph is 156 / 320 (`model_tree_design.md` step 4c removed three cost
-nodes for a subsystem a stellarator does not have). Re-measure it; and see §13.1 first,
-because `cottax` is mid-refactor and gates measured against its working tree do not mean
-what they say.
+**The `Verified state` table below is stale in more than one place** — it says 159 nodes
+/ 348 unowned inputs where the live graph is 156 / 320 (`model_tree_design.md` step 4c
+removed three cost nodes for a subsystem a stellarator does not have), and its suite
+count is behind by the whole 2026-08-27 wave day. **§16.1 carries the current
+measurements**, taken against `HEAD`; re-measure rather than cite this table, and see
+§13.1 before trusting any gate measured against `cottax`'s working tree.
 
 ## Verified state
 
@@ -2485,3 +2486,189 @@ conversion (commit 1db889f6) before this round started; round 2 verified it rath
 than re-fixing it. The tokamak's remaining `not data-backed: 1` in `switch_audit` is
 `imp_indices`, a declared kind-(c) non-switch — the old hardcoded-IGNITED defect no
 longer surfaces in any audit column.
+
+## 16. State, 2026-08-29 — the wave day banked, and the tokamak SAND ladder runs
+
+Consolidation round 3 (`_audit/consolidation_round_3.md`) §§1-2, single agent, serial.
+Section numbers above are frozen; this appends.
+
+### 16.1 What the wave day bought, measured on the merged tree
+
+Round 3 §1's two producer branches were merged before the session ended
+(`aea56b7b`, `87ee1285`) and the acceptance battery it prescribed was not run. It is
+run here, against `HEAD` rather than against any recorded number:
+
+| gate | value |
+|---|---|
+| `pytest tests/functional_process` | **5614 passed**, 4857 skipped, 0 failed (~2 min). The 3730 in the Verified-state table is stale by the whole wave day; 5474 of these were already green at `87ee1285`, and this session added 140 |
+| Tokamak warm MDA (`--machine`) | **221 nodes; 648 agreements** (49 array, 42 both-zero) / **16 disagreements** / 0 unverifiable / **0 ungrounded** / 20 errors; **684 owned walked, 0 unaccounted**; switch kwargs 10 checked, 0 mismatched, 3 not data-backed |
+| Stellarator warm MDA | **150 nodes; 472/34/3/0**, 25 errors, 534 walked, switches 7/0/3/0 — byte-identical to round 2's baseline |
+| Stellarator SAND | C2 **326 it**, C3 **258 it** — byte-identical to §11.11's pins |
+| Tokamak SAND | **runs end to end for the first time**; §16.3 |
+
+The 16 tokamak disagreements are unchanged in membership (the explained `VacuumOld`
+pair, the 1.3e-6 cost chain, `n_pf_coil_turns`' dead array tail). The CS/physics
+commit reported 635 agreements; 648 is the same measurement after the TF half is
+merged alongside it, which is the ordinary reason a branch's number and the trunk's
+differ.
+
+### 16.2 `.tfcoil.sig_tf_cs_bucked`: the seed for a value PROCESS never writes
+
+The tokamak SAND harness died at `run_sand_harness.py:239` with
+`ValueError: None is not a valid value for jnp.array`, the moment the TF stress
+producers landed and constraint 72 acquired a reader. **One** context variable had no
+ground truth: `stresscl` assigns `sig_tf_cs_bucked` only at `i_tf_bucking >= 2`
+(`process/models/tfcoil/base.py:3235`), so on `large_tokamak_eval` it is `None` in
+PROCESS's own **converged** `DataStructure` — §11.5 recorded the `None`, and
+`_audit/units/models/tfcoil/superconducting.md` § "a dead read, not a gap" recorded
+why it is not a missing producer: `sand._bind` declares an `In` for every non-switch
+parameter of a constraint whether or not the statically selected arm consumes it.
+
+**The policy: `ground_truth` seeds `nan` for a field PROCESS never writes**, in the one
+place every seeding path already goes through, and `nan` rather than `0.0` *because the
+deadness is the claim being made*. A plausible number lets a read that is not actually
+dead be believed; `nan` propagates into the condition and the pre-solve probe already
+stops on a non-finite one and names it — so the claim is re-checked on every run rather
+than asserted once in a table. Same shape as §15.3's device-gated
+`KNOWN_UNVERIFIABLE_OUTPUTS`, one layer down.
+
+**And the measurement corrected the claim.** Python's builtin `max(x, nan)` returns `x`
+(`nan > x` is False), so the alarm is loud through arithmetic and **mute through
+`max`/`min`** — which is exactly c72's *other* arm. Nothing depends on it (a machine
+taking that arm has `i_tf_bucking >= 2`, PROCESS writes the field, the sentinel is never
+reached) but "seed `nan` and it will show" is the obvious thing to believe and it is not
+unconditionally true. `test_sand.py` pins both halves.
+
+**The structural repair is measured and deliberately not done.** Having `_bind` drop the
+reads the bound arm cannot reach is the honest fix; the cost of it is that it moves
+edges. Measured by `make_jaxpr` invar-liveness (`switch_kwarg_survey.md` §1 method 3):
+**12 dead declared reads on the tokamak** (c2, c5, c24 ×3, c72, c68 ×6) and **6 on the
+stellarator** (c2 ×3, c24 ×3), of which four are produced *inside* the drive. Dropping
+those can change `constraints_outside_block`, hence which constraints an `Optimise`
+omits, hence the pinned Stage C numbers. That is a wave with its own before/after, not
+a seeding rule.
+
+### 16.3 The tokamak ladder, end to end
+
+`python -m functional_process.run_sand_harness --machine`, 164 drive nodes, 9 unknowns,
+30 conditions, 390 context, 9 equalities / 20 inequalities, 82 schedule steps:
+
+- **Stage A**: 20 of 23 comparable conditions exact (rel < 1e-9), c72 itself at
+  `1.2e-15`. Every constraint the wave day produced — 26, 27, 33, 35, 36, 65, 81, 68 —
+  agrees.
+- **Stage B**: **0 non-finite cells**, 61.9 s compile, **2.2 ms** per jitted Jacobian
+  against PROCESS's 0.30 s for the same one by finite differences. Four rows sit outside
+  the FD's own error bar at `x4` (`objf`, c8, c16, c62) and three at `x6`.
+- **Stage C2**: **0 SQP iterations**, landing on PROCESS's `x` to `1.4e-16` / `0.0`.
+  That is the §11.6 shape, not convergence: **c68 (+4.9%) and c72 (+55%) are violated at
+  PROCESS's own converged answer**, so the first QP is infeasible and `VmconDriver`
+  returns the start. Both values are PROCESS's, reproduced to 1e-15 — an evaluation run
+  does not enforce inequalities, and now that c72 has a producer the port can say so.
+- **Stage C3 (cold)**: **1 of 30 conditions non-finite**, down from 7 of 25 in §11.6.
+  Six of the seven were closed by the cold producers and this wave.
+
+**The survivor is single-caused.** c65 is `nan` because
+`.superconducting_tfcoil.vv_stress_quench` is, and after a *cold MDA pass* exactly one
+of `vv_stress_on_quench`'s 29 inputs is still zero: **`.build.r_vv_inboard_out`, a
+boundary input with no producer** (`vv_stress_quench_from_build`'s
+`tf_vv_frac = r_tf_inboard_out / r_vv_inboard_out`). Substituting PROCESS's `4.3186`
+for that one input alone makes the node return a finite `4.33e7`. It is
+`cold_boundary.md`'s pattern exactly, a fifth cold root, visible only now that c65 has
+a producer — and it is the same shape as §4's outstanding `.build.r_sh_inboard_out`.
+**Cold tokamak SAND C3 is one producer away.**
+
+### 16.4 Three consolidation items, each turned into a check
+
+Round 3 §2's list, done — and in each case the list itself was the defect, so what
+landed is a guard rather than a corrected list.
+
+- **`DERIVED_UNPORTED_KEYS` had five stale entries, not two.** The brief named
+  `itart_hcpb` and `nuclear_heating_renormalisation_arm`; measuring found
+  `n_divertors`, `fw_blkt_vv_shape_arm` and `i_tf_shape_build` too. A skip whose
+  `UNPORTED` refusal has since been ported defers a case that no longer exists, and
+  **nothing can notice**: the parametrisation is over `UNPORTED`, so a stale entry never
+  runs and never fails. Now `test_the_skip_list_holds_no_entry_that_is_now_ported`.
+- **`machine_survey` said "the port has never read it" for all three `unknown` rows on
+  `large_tokamak_eval`, and it is false for every one.** Two (`i_beta_component`,
+  `i_plant_availability`) are bound by the constraint/objective layer as static kwargs —
+  read, in a layer the machine tree does not contain. The third,
+  `.heat_transport.i_shld_primary_heat`, is declared as an ordinary `In`: a **declared
+  port carrying a switch integer**, which is `switch_kwarg_survey.md` §0's second defect
+  arriving from a second direction, i.e. work rather than absence. The verdict stays
+  `unknown` (§15.2's counts are cited elsewhere); only the sentence changed, and it is
+  derived from the two live sources rather than listed.
+- **`SLOTS` could not reach the tokamak at all.** It swaps into `REFERENCE_MACHINE`,
+  which is a *stellarator*, so no tokamak slot had anywhere to go and the occupant
+  meta-tests skipped the group in silence. The brief asked for "the tokamak TF
+  registries"; the measurement made the ask bigger — **58 registries, 135 arms**, most
+  of the tokamak. All now assemble against a tokamak base with the slot **derived** from
+  the machine (by occupant type, then by slot name) rather than written as a lambda per
+  slot, so a future wave's registry is covered the day it lands, and
+  `test_no_slot_registry_is_covered_by_nothing` fails until a new one is placed. Two
+  arms exist only jointly — `CentrepostNeutronicsAbsent` owns the same
+  `.fwbs.p_cp_shield_nuclear_heat_mw` the ST renormalisation arms do, so swapping either
+  alone is a duplicate producer — which cottax's refusal named and the case now states.
+  **The swap-orphan pin (`reference_swaps.txt`) stays on the stellarator base**; a
+  tokamak half is a separate regeneration, deferred out loud rather than half-done.
+
+### 16.5 Registry debt, closed
+
+`pfcoil/stresses.py` and `pfcoil/superconductor.py` had neither a record nor a row —
+the CS/physics wave was asked to leave `unit_registry.md` alone while sibling agents
+held it, so both modules' docstrings said a row was owed and the material went into
+`pfcoil/fields.md`. Both records now exist at their mirrored paths (rows #53, #54), the
+material moved unchanged, and the modules and their test cases point at their own
+records. Eighteen more rows gained a wave-day line naming the dated sections in their
+records, and **row 13 (`blankets/hcpb.py`) was corrected**: it still read "3
+`ExplicitFunction` nodes written and **deliberately not registered**", which the
+centrepost wave had made false.
+
+### 16.6 Four wave-day findings the round-3 brief asked this section to carry
+
+Each has a full account in its unit's record; these are the one-paragraph forms, here
+because a finding that only exists inside one unit's record is not findable from the
+outside.
+
+- **The driver benchmark** (`optimise_design.md` §13): the port is **9-12x PROCESS
+  end-to-end and 181x per iteration**, and the residual scaling is load-bearing for
+  pyvmcon while being actively harmful to SLSQP. §16.3's 2.2 ms jitted Jacobian against
+  PROCESS's 0.30 s finite-difference one is the same result seen on the tokamak.
+- **The cold path closed** (`cold_boundary.md`): four cold producers took the cold
+  tokamak MDA from **11 unproduced roots to 0**. What is left is one root *below* the
+  MDA, found only once c65 had a producer — §16.3's `.build.r_vv_inboard_out`.
+- **`.physics.f_p_div_lower` has no producer, and that is the right answer**
+  (`divertor.md`, `models/divertor.py`). The double-null Wade arm is the one arm in that
+  wave that adds a *read* rather than changing a constant, and the field it reads is
+  written nowhere in `process/` outside the input parser (declared at
+  `physics_variables.py:740`, scan variable 51, read in four places). It is an input in
+  PROCESS and an input here. **Stubbing it to `1.0` would silently pick the lower
+  divertor and hide the `max`** — both ST files set it to `0.5` explicitly.
+- **A PROCESS half-edit, reproduced** (`blanket_library.md`): at `n_divertors == 2`
+  the `if` covers only the blanket *surface* assignment, so PROCESS removes **two**
+  divertors' solid angle from the surface and **one** from the volume, with no comment
+  anywhere justifying the asymmetry. `models/fw.py`'s analogous arm is symmetric — the
+  two functions look like the same edit and only one was made completely. Reproduced
+  exactly per `traceability_policy.md`, and executed by a contract whose reference is
+  PROCESS's own bound function, so a "fix" would fail the test.
+- **One ulp of `arcsin`, amplified to 1e-8** (`hcpb.md`): at the trapezoid's last panel
+  `1 - rho_maj**2 sin(phy_cp)**2` is analytically zero and numerically either sign;
+  PROCESS clamps with `max(., 0)` and takes a square root. `np.arcsin` and `jnp.arcsin`
+  differ by one ulp on the FNSF point, which lands the radicand at `+1.1e-16` for numpy
+  and `-2.2e-16` for jax, so one of twenty terms differs in the eighth digit. Measured
+  over 4000 fuzz points: 686 disagree at all, worst `4.8e-10` relative. **The port's `0`
+  is the correct value and PROCESS's `1.05e-8` is the spurious one**, which is why the
+  tolerance is set with the reason attached rather than tuned until green.
+
+### 16.7 What is next, in order
+
+1. **A producer for `.build.r_vv_inboard_out`** — one boundary zero, and cold tokamak
+   SAND C3 runs (§16.3). `.build.r_sh_inboard_out` (§4) is the same shape and probably
+   the same wave.
+2. **The ST closing wave** (round 3 §3). Re-surveyed 2026-08-29 and unchanged: both
+   `spherical_tokamak_eval` and `st_regression` need exactly four unported switch
+   values — `i_plasma_current = 9` (FIESTA), `i_diamagnetic_current = 2`,
+   `i_pfirsch_schluter_current = 1`, `i_tf_sc_mat = 9` (REBCO). The first spherical
+   tokamak the port runs is still one wave away.
+3. **The MDF benchmark, closure hoisting and the MDF-C3 cap re-test** (round 3 §4),
+   which carries the SAND-vs-MDF architecture decision.
+4. **`_bind`'s dead reads** (§16.2), whose blast radius is now measured.

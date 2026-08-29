@@ -40,7 +40,14 @@ then the acceptance battery they may have skipped: §11.5 re-check, cold SAND pr
 (`run_sand_harness --machine` — c33/c35 should go finite; if C3 solves, record it),
 warm harness both machines, pin diffs read before regenerating, full suite.
 
-## 2. Registry/docs debt (the consolidation half)
+## 2. Registry/docs debt (the consolidation half) — **DONE 2026-08-29, `next_steps.md` §16**
+
+Every item below is closed; three of them turned out to be bigger than written (five
+stale skip entries, not two; 58 registries uncovered, not the TF group) and each landed
+as a check rather than a corrected list. §1's merges were already on `main` when this
+was picked up; its acceptance battery is in §16.1, the one thing it found — the
+`sig_tf_cs_bucked` `None` — is §16.2, and the four findings this section asked §16 to
+carry are §16.6. Kept below as written, for the diff.
 
 - `unit_registry.md`: rows/status updates for every 2026-08-27 wave above (each unit's
   dated section carries the facts; row 13's `itart == 1` note is explicitly stale).

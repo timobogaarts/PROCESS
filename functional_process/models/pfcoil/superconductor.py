@@ -1,10 +1,10 @@
 """The Central Solenoid's superconductor properties -- `superconpf`'s ITER Nb3Sn arm.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/fields.md`, § "2026-08-27
--- the CS chain". **This module is owed a registry row of its own**
-(`_audit/unit_registry.md`, a `pfcoil/superconductor.py` unit) and does not have one:
-the wave that wrote it was asked to leave `unit_registry.md` alone because two sibling
-agents had it open. Recorded here rather than left to be noticed.
+Audit record: `functional_process/_audit/units/models/pfcoil/superconductor.md`, which
+the wave that wrote this module could not create -- `unit_registry.md` was held open by
+two sibling agents, so the material went into `pfcoil/fields.md` § "the CS chain" and
+this docstring said a row was owed. Both were done on 2026-08-29 and the material moved
+unchanged.
 
 Ports the `ohcalc` block at `process/models/pfcoil.py:3577-3684` -- two `superconpf`
 calls, at the end of flat-top and at the beginning of pulse, and the four

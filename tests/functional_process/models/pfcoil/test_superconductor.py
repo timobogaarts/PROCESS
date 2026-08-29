@@ -110,7 +110,7 @@ class TestCSCriticalCurrentDensityIterNb3Sn(Tier1Contract):
     beginning of pulse (constraint 27's, `3.841e7`).
     """
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/superconductor.md"
     reference = _reference_superconpf(SuperconductorModel.ITER_NB3SN)
     ported = calculate_cs_critical_current_density_iter_nb3sn
 
@@ -157,7 +157,7 @@ class TestCSCriticalCurrentDensityWstNb3Sn(Tier1Contract):
     legitimate point for a pure function and is what the fuzz draws extend.
     """
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/superconductor.md"
     reference = _reference_superconpf(SuperconductorModel.WST_NB3SN)
     ported = calculate_cs_critical_current_density_wst_nb3sn
 
@@ -188,7 +188,7 @@ class TestCSCriticalCurrentDensityWstNb3Sn(Tier1Contract):
 class TestCSStrandCriticalCurrentDensity(Tier1Contract):
     """`calculate_cs_strand_critical_current_density` -> `ohcalc:3626-3628`'s `else`."""
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/superconductor.md"
     reference = _reference_strand_critical_current_density
     ported = calculate_cs_strand_critical_current_density
 

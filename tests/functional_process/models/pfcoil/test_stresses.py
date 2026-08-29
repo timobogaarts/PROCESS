@@ -168,7 +168,7 @@ class TestEllipk(Tier1Contract):
     is vacuous is worse than one that is not drawn.
     """
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = _reference_ellipk
     ported = _ellipk
 
@@ -186,7 +186,7 @@ class TestEllipk(Tier1Contract):
 class TestEllipe(Tier1Contract):
     """`_ellipe` (AGM) -> `scipy.special.ellipe`. See `TestEllipk`."""
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = _reference_ellipe
     ported = _ellipe
 
@@ -204,7 +204,7 @@ class TestEllipe(Tier1Contract):
 class TestCalculateCSHoopStress(Tier1Contract):
     """`calculate_cs_hoop_stress` -> the `@staticmethod` it ports."""
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = staticmethod(CSCoil.calculate_cs_hoop_stress)
     ported = calculate_cs_hoop_stress
 
@@ -270,7 +270,7 @@ class TestCalculateCSRadialStress(Tier1Contract):
     from a finite difference.
     """
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = staticmethod(CSCoil.calculate_cs_radial_stress)
     ported = calculate_cs_radial_stress
 
@@ -329,7 +329,7 @@ class TestCalculateCSSelfPeakMidplaneAxialStress(Tier1Contract):
     gradient level over the whole fuzz range.
     """
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = staticmethod(CSCoil.calculate_cs_self_peak_midplane_axial_stress)
     ported = calculate_cs_self_peak_midplane_axial_stress
 
@@ -362,7 +362,7 @@ class TestCalculateCSSelfPeakMidplaneAxialStress(Tier1Contract):
 class TestCalculateTrescaStress(Tier1Contract):
     """`calculate_tresca_stress` -> `materials.calculate_tresca_stress`."""
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = staticmethod(process_tresca)
     ported = calculate_tresca_stress
 
@@ -394,7 +394,7 @@ class TestCalculateTrescaStress(Tier1Contract):
 class TestCalculateVonMisesStress(Tier1Contract):
     """`calculate_von_mises_stress` -> `materials.calculate_von_mises_stress`."""
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = staticmethod(process_von_mises)
     ported = calculate_von_mises_stress
 
@@ -435,7 +435,7 @@ class TestCalculateVonMisesStress(Tier1Contract):
 class TestCalculateCSStresses(Tier1Contract):
     """The whole `ohcalc` stress block -> the same five PROCESS callables, composed."""
 
-    audit_record = "models/pfcoil/fields.md"
+    audit_record = "models/pfcoil/stresses.md"
     reference = _reference_cs_stresses
     ported = calculate_cs_stresses
 
