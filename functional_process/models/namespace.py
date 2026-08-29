@@ -24,10 +24,12 @@ from functional_process.models.build import (
     DrTfOutboardSuperconducting,
     DrTfWpWithInsulationFromInboardBuild,
     PlasmaXpointHeights,
+    RadialBuildToPlasmaCentre,
     ShldInboardInnerRadius,
     ShldOutboardOuterRadius,
     ShldVvGapOutboard,
     TfInboardRadiiTfOutsideCs,
+    VacuumVesselAndShieldRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardMidDShape,
     TfOutboardMidUnrippled,
@@ -128,6 +130,27 @@ class Build(ModelNamespace):
     (`build.py:1691-1735`) so `dr_cs_bore` -- a standing boundary input with a wrong
     cold value, read by `CSFluxSwing` -- and `dr_cs_precomp` are produced rather than
     read stale; the node's own docstring carries the argument."""
+
+    vacuum_vessel_and_shield_radii: VacuumVesselAndShieldRadiiTfOutsideCs = (
+        dataclasses.field(kw_only=True)
+    )
+    """`.build.i_tf_inside_cs` -- `TF_OUTSIDE_CS` is written, `TF_INSIDE_CS` UNPORTED
+    (`indat.VACUUM_VESSEL_AND_SHIELD_RADII`). Added 2026-08-29: this is
+    `_audit/next_steps.md` §16.3's last cold blocker and
+    `consolidation_round_3.md` §4's last producer, in three lines of the same block --
+    `.build.r_vv_inboard_out` was the one non-finite condition left in the cold tokamak
+    SAND probe (it divides in `vv_stress_on_quench`), and `.build.r_sh_inboard_out` was
+    the read `blankets/hcpb.py`'s centrepost cluster declared with nothing producing
+    it."""
+
+    radial_build_to_plasma_centre: RadialBuildToPlasmaCentre = (
+        RadialBuildToPlasmaCentre()
+    )
+    """`.build.rbld`, PROCESS's own "should be equal to `rmajor`" accumulation, which
+    is what constraint 11 says -- active on three of the four tracked tokamak files.
+    Split from the slot above rather than folded into it: it is the one line of that
+    block that reads `.physics.rminor`, and one node would hand the vacuum-vessel radius
+    a dependency PROCESS does not give it."""
 
     shld_inboard_inner_radius: ShldInboardInnerRadius = ShldInboardInnerRadius()
     shld_outboard_outer_radius: ShldOutboardOuterRadius = ShldOutboardOuterRadius()

@@ -832,6 +832,123 @@ def calculate_dr_shld_vv_gap_outboard(
 # ---------------------------------------------------------------------------
 
 
+def calculate_vacuum_vessel_and_shield_radii(
+    r_tf_inboard_out,
+    dr_tf_shld_gap,
+    dr_shld_thermal_inboard,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    dr_shld_inboard,
+):
+    """The inboard vacuum-vessel and neutronic-shield radii (m), accumulated outwards
+    from the TF coil's outer edge.
+
+    Ports `process/models/build.py:1833-1860`, the
+    `i_tf_inside_cs == TF_OUTSIDE_CS` arm and the two assignments that follow it
+    unconditionally. `r_sh_inboard_in` is `r_vv_inboard_out` -- PROCESS assigns one to
+    the other at `:1855` and this port keeps both, because both names are read
+    downstream and a node that owned only one would leave the other a boundary input
+    with a silent duplicate for a producer.
+
+    **`.build.r_vv_inboard_out` was the last non-finite condition in the cold tokamak
+    SAND probe** (`_audit/next_steps.md` §16.3): a boundary input, zero cold, dividing
+    in `vv_stress_on_quench`'s `tf_vv_frac = r_tf_inboard_out / r_vv_inboard_out`, which
+    made c65 `nan` at the cold seed and nowhere else. **`.build.r_sh_inboard_out` is the
+    read `blankets/hcpb.py`'s centrepost cluster declared and nothing produced**
+    (that module's open note 3, and `consolidation_round_3.md` §4's last item): the same
+    three lines close both.
+
+    `rbld` is *not* computed here even though PROCESS writes it four lines later --
+    see `calculate_rbld`, which reads the plasma minor radius and would otherwise give
+    every output above a dependency on `.physics.rminor` that PROCESS does not give
+    them. The source method is one straight line; its read sets are not, and this file
+    already splits it that way (`calculate_r_shld_inboard_inner` is the same block,
+    built inwards from the plasma).
+
+    Parameters
+    ----------
+    r_tf_inboard_out :
+        Outer radius of the inboard TF leg (m). `.build.r_tf_inboard_out`.
+    dr_tf_shld_gap :
+        TF-thermal shield gap (m). `.build.dr_tf_shld_gap`.
+    dr_shld_thermal_inboard :
+        Inboard thermal shield thickness (m). `.build.dr_shld_thermal_inboard`.
+    dr_shld_vv_gap_inboard :
+        Inboard thermal shield-vacuum vessel gap (m). `.build.dr_shld_vv_gap_inboard`.
+    dr_vv_inboard :
+        Inboard vacuum vessel thickness (m). `.build.dr_vv_inboard`.
+    dr_shld_inboard :
+        Inboard neutronic shield thickness (m). `.build.dr_shld_inboard`.
+
+    Returns
+    -------
+    :
+        `(.build.r_vv_inboard_out, .build.r_sh_inboard_in, .build.r_sh_inboard_out)`
+        (m).
+    """
+    r_vv_inboard_out = (
+        r_tf_inboard_out
+        + dr_tf_shld_gap
+        + dr_shld_thermal_inboard
+        + dr_shld_vv_gap_inboard
+        + dr_vv_inboard
+    )
+    r_sh_inboard_in = r_vv_inboard_out
+    return r_vv_inboard_out, r_sh_inboard_in, r_sh_inboard_in + dr_shld_inboard
+
+
+def calculate_rbld(
+    r_sh_inboard_out,
+    dr_shld_blkt_gap,
+    dr_blkt_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_inboard,
+    rminor,
+):
+    """Radial build to the centre of the plasma (m). Ports
+    `process/models/build.py:1862-1870`, unchanged.
+
+    PROCESS's own comment is "should be equal to `rmajor`", and constraint 11 is the
+    equation that says so. **That constraint is active on three of the four tracked
+    tokamak files** (`low_aspect_ratio_DEMO`, `spherical_tokamak_eval`,
+    `st_regression`; `large_tokamak_eval` is the one that omits it), which is why this
+    is produced rather than left at the boundary as an unread accumulation.
+
+    Its own node, not folded into `calculate_vacuum_vessel_and_shield_radii`, because
+    it is the one line of that block that reads the plasma: a single node would hand
+    `.build.r_vv_inboard_out` a dependency on `.physics.rminor` that PROCESS does not
+    give it, and an invented edge is how a false cycle gets created.
+
+    Parameters
+    ----------
+    r_sh_inboard_out :
+        Plasma-facing radius of the inboard shield (m). `.build.r_sh_inboard_out`.
+    dr_shld_blkt_gap :
+        Shield-blanket gap (m). `.build.dr_shld_blkt_gap`.
+    dr_blkt_inboard :
+        Inboard blanket thickness (m). `.build.dr_blkt_inboard`.
+    dr_fw_inboard :
+        Inboard first wall thickness (m). `.build.dr_fw_inboard`.
+    dr_fw_plasma_gap_inboard :
+        Inboard plasma-first wall gap (m). `.build.dr_fw_plasma_gap_inboard`.
+    rminor :
+        Plasma minor radius (m). `.physics.rminor`.
+
+    Returns
+    -------
+    :
+        `.build.rbld` (m).
+    """
+    return (
+        r_sh_inboard_out
+        + dr_shld_blkt_gap
+        + dr_blkt_inboard
+        + dr_fw_inboard
+        + dr_fw_plasma_gap_inboard
+        + rminor
+    )
+
+
 class PlasmaXpointHeights(ExplicitFunction):
     """cottax node: `calculate_z_plasma_xpoint`. No switch."""
 
@@ -1371,4 +1488,69 @@ class ShldVvGapOutboard(ExplicitFunction):
             dr_shld_thermal_outboard,
             dr_tf_shld_gap,
             dr_shld_blkt_gap,
+        )
+
+
+class VacuumVesselAndShieldRadiiTfOutsideCs(ExplicitFunction):
+    """cottax node: `calculate_vacuum_vessel_and_shield_radii`. Answers
+    `.build.i_tf_inside_cs == TF_OUTSIDE_CS`, the live arm on every tracked file.
+
+    `TF_INSIDE_CS` is UNPORTED and the refusal is the same one
+    `TfInboardRadiiTfOutsideCs` already carries for the neighbouring slot: that arm
+    accumulates three further central-solenoid thicknesses (`dr_cs`, `dr_cs_tf_gap`,
+    `dr_cs_precomp`) into the same radius, a genuinely different reads-set.
+
+    **Keyed on `i_tf_inside_cs` alone**, not on the joint
+    `(i_tf_inside_cs, i_cs_precomp)` key `tf_inboard_radii_arm` uses. The switch is
+    asked twice on purpose: this block's arm does not depend on whether the CS carries
+    precompression structure, and reusing the joint answer would make it look as though
+    it did. Same reasoning as `pfcoil/superconductor.py`'s two-slot split.
+    """
+
+    r_vv_inboard_out = OutputInto(build)
+    r_sh_inboard_in = OutputInto(build)
+    r_sh_inboard_out = OutputInto(build)
+
+    def __call__(
+        self,
+        r_tf_inboard_out=From(build),
+        dr_tf_shld_gap=From(build),
+        dr_shld_thermal_inboard=From(build),
+        dr_shld_vv_gap_inboard=From(build),
+        dr_vv_inboard=From(build),
+        dr_shld_inboard=From(build),
+    ):
+        return calculate_vacuum_vessel_and_shield_radii(
+            r_tf_inboard_out,
+            dr_tf_shld_gap,
+            dr_shld_thermal_inboard,
+            dr_shld_vv_gap_inboard,
+            dr_vv_inboard,
+            dr_shld_inboard,
+        )
+
+
+class RadialBuildToPlasmaCentre(ExplicitFunction):
+    """cottax node: `calculate_rbld`. No switch -- PROCESS writes it below the
+    `i_tf_inside_cs` branch, on both arms.
+    """
+
+    rbld = OutputInto(build)
+
+    def __call__(
+        self,
+        r_sh_inboard_out=From(build),
+        dr_shld_blkt_gap=From(build),
+        dr_blkt_inboard=From(build),
+        dr_fw_inboard=From(build),
+        dr_fw_plasma_gap_inboard=From(build),
+        rminor=From(physics),
+    ):
+        return calculate_rbld(
+            r_sh_inboard_out,
+            dr_shld_blkt_gap,
+            dr_blkt_inboard,
+            dr_fw_inboard,
+            dr_fw_plasma_gap_inboard,
+            rminor,
         )

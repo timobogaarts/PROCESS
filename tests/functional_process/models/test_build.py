@@ -40,9 +40,11 @@ from functional_process.models.build import (
     calculate_dr_tf_wp_with_insulation,
     calculate_dx_tf_wp_conductor_max_superconducting,
     calculate_r_shld_inboard_inner,
+    calculate_rbld,
     calculate_r_shld_outboard_outer,
     calculate_r_tf_inboard_radii_no_cs_precomp,
     calculate_r_tf_inboard_radii_tf_outside_cs,
+    calculate_vacuum_vessel_and_shield_radii,
     calculate_r_tf_outboard_mid,
     calculate_r_tf_outboard_mid_unrippled,
     calculate_z_plasma_xpoint,
@@ -1039,4 +1041,172 @@ class TestRipplePictureFrame(Tier1Contract):
         "n_tf_coils": (10.0, 14.0),
         "rmajor": (4.0, 5.0),
         "rminor": (2.2, 2.8),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Inboard vacuum vessel and neutronic shield (2026-08-29)
+# ---------------------------------------------------------------------------
+
+
+def _place_tf_leg(r_tf_inboard_out, **overrides):
+    """The `dr_tf_inboard` that makes PROCESS's own radial build land on
+    `r_tf_inboard_out`.
+
+    `r_tf_inboard_out` is the one argument of the two functions below that PROCESS
+    **computes** rather than reads -- `calculate_radial_build` writes it 140 lines
+    above the block under test -- so it cannot simply be overridden onto the
+    `DataStructure` the way every other argument here can: the method would overwrite
+    it before reaching the lines being tested. Moving an *upstream* thickness instead
+    drives PROCESS's real chain to the requested radius, so the reference stays
+    PROCESS's own code with every branch intact.
+
+    **`dr_tf_inboard` is the lever, not `dr_bore`, and the difference is exactness.**
+    `r_tf_inboard_out = r_tf_inboard_in + dr_tf_inboard` and nothing upstream of it
+    reads `dr_tf_inboard`, so one probe gives the answer with slope exactly 1. The bore
+    looks like the more natural lever and is not: `dr_cs_precomp` is
+    `fseppc / (2*pi*fcspc*sigallpc*(2*dr_bore + dr_cs))`, a hyperbola in `dr_bore`, so a
+    two-point secant on the bore lands ~1e-4 out -- measured, by trying it. The
+    reference asserts the landing either way, which is how that showed up as a failing
+    test rather than as a quietly wrong oracle.
+    """
+    probe = _radial(**overrides).build
+    return probe.dr_tf_inboard + (r_tf_inboard_out - probe.r_tf_inboard_out)
+
+
+def _reference_vacuum_vessel_and_shield_radii(
+    r_tf_inboard_out,
+    dr_tf_shld_gap,
+    dr_shld_thermal_inboard,
+    dr_shld_vv_gap_inboard,
+    dr_vv_inboard,
+    dr_shld_inboard,
+):
+    """`calculate_radial_build:1833-1860`, the `TF_OUTSIDE_CS` arm."""
+    overrides = {
+        "build__dr_tf_shld_gap": dr_tf_shld_gap,
+        "build__dr_shld_thermal_inboard": dr_shld_thermal_inboard,
+        "build__dr_shld_vv_gap_inboard": dr_shld_vv_gap_inboard,
+        "build__dr_vv_inboard": dr_vv_inboard,
+        "build__dr_shld_inboard": dr_shld_inboard,
+    }
+    data = _radial(
+        build__dr_tf_inboard=_place_tf_leg(r_tf_inboard_out, **overrides), **overrides
+    )
+    assert abs(data.build.r_tf_inboard_out - r_tf_inboard_out) < 1e-9, (
+        "the placement did not land where it was asked -- `_place_tf_leg`'s unit-slope "
+        "argument no longer holds"
+    )
+    return (
+        data.build.r_vv_inboard_out,
+        data.build.r_sh_inboard_in,
+        data.build.r_sh_inboard_out,
+    )
+
+
+class TestVacuumVesselAndShieldRadii(Tier1Contract):
+    """`calculate_vacuum_vessel_and_shield_radii` vs
+    `calculate_radial_build:1833-1860`, `i_tf_inside_cs == TF_OUTSIDE_CS`.
+
+    The producer that closed the cold tokamak SAND probe's last non-finite condition
+    (`.build.r_vv_inboard_out`, which divides in `vv_stress_on_quench`) and the
+    centrepost cluster's one declared-but-unproduced read (`.build.r_sh_inboard_out`).
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_vacuum_vessel_and_shield_radii
+    ported = calculate_vacuum_vessel_and_shield_radii
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            r_tf_inboard_out=3.8986074717418546,
+            dr_tf_shld_gap=0.05,
+            dr_shld_thermal_inboard=0.05,
+            dr_shld_vv_gap_inboard=0.02,
+            dr_vv_inboard=0.3,
+            dr_shld_inboard=0.3,
+        ),
+    ]
+
+    fuzz_bounds = {
+        # Placed by moving `dr_tf_inboard` off its 1.2 m baseline, so the range is
+        # bounded below by the radius at which that thickness would go negative.
+        "r_tf_inboard_out": (3.0, 6.0),
+        "dr_tf_shld_gap": (0.01, 0.2),
+        "dr_shld_thermal_inboard": (0.01, 0.2),
+        "dr_shld_vv_gap_inboard": (0.005, 0.2),
+        "dr_vv_inboard": (0.1, 0.8),
+        "dr_shld_inboard": (0.1, 1.0),
+    }
+
+
+def _reference_rbld(
+    r_sh_inboard_out,
+    dr_shld_blkt_gap,
+    dr_blkt_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_inboard,
+    rminor,
+):
+    """`calculate_radial_build:1862-1870`.
+
+    `r_sh_inboard_out` is placed through `dr_tf_inboard` for the reason
+    `_place_tf_leg` gives, offset by the five thicknesses that separate it from the TF
+    leg on this arm -- all at their baseline here, so the offset is a constant of the
+    run measured once from a probe, not a second fit.
+    """
+    overrides = {
+        "build__dr_shld_blkt_gap": dr_shld_blkt_gap,
+        "build__dr_blkt_inboard": dr_blkt_inboard,
+        "build__dr_fw_inboard": dr_fw_inboard,
+        "build__dr_fw_plasma_gap_inboard": dr_fw_plasma_gap_inboard,
+        "physics__rminor": rminor,
+    }
+    probe = _radial(**overrides)
+    offset = probe.build.r_sh_inboard_out - probe.build.r_tf_inboard_out
+    data = _radial(
+        build__dr_tf_inboard=_place_tf_leg(r_sh_inboard_out - offset, **overrides),
+        **overrides,
+    )
+    assert abs(data.build.r_sh_inboard_out - r_sh_inboard_out) < 1e-9, (
+        "the placement did not land where it was asked"
+    )
+    return data.build.rbld
+
+
+class TestRbld(Tier1Contract):
+    """`calculate_rbld` vs `calculate_radial_build:1862-1870`.
+
+    PROCESS's own comment on this accumulation is "should be equal to `rmajor`" and
+    constraint 11 is the equation that asserts it -- active on `low_aspect_ratio_DEMO`,
+    `spherical_tokamak_eval` and `st_regression`, which is why the value is produced
+    rather than left at the boundary.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_rbld
+    ported = calculate_rbld
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            r_sh_inboard_out=4.6186074717418535,
+            dr_shld_blkt_gap=0.02,
+            dr_blkt_inboard=0.7,
+            dr_fw_inboard=0.018000000000000002,
+            dr_fw_plasma_gap_inboard=0.25,
+            rminor=2.6666666666666665,
+        ),
+    ]
+
+    fuzz_bounds = {
+        # Same bound as `TestVacuumVesselAndShieldRadii`, shifted by the constant
+        # offset between the two radii on this arm.
+        "r_sh_inboard_out": (4.0, 7.0),
+        "dr_shld_blkt_gap": (0.005, 0.1),
+        "dr_blkt_inboard": (0.3, 1.2),
+        "dr_fw_inboard": (0.005, 0.08),
+        "dr_fw_plasma_gap_inboard": (0.05, 0.6),
+        "rminor": (1.5, 4.0),
     }
