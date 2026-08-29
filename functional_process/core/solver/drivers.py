@@ -643,6 +643,24 @@ class VmconDriver(AbstractDriver):
     at all."""
     scaled: bool = True
     """Whether to solve in PROCESS's `x * (1/x_start)` scaled coordinates."""
+    qsp_solver: str = "CLARABEL"
+    """Which `cvxpy` solver `pyvmcon` hands each QP subproblem to, by name.
+
+    **This is PROCESS's choice, and it has to be stated here because `pyvmcon`'s is
+    different.** `pyvmcon.solve_qsp` calls `qsp.solve(**{"solver": cp.OSQP, **options})`
+    -- OSQP unless the caller says otherwise -- and PROCESS says otherwise, every run:
+    `qsp_options={"solver": cvxpy.CLARABEL}` (`process/core/solver/solver.py:253`). This
+    driver used to pass no `qsp_options` at all, so it solved PROCESS's own QP
+    subproblems with a *different solver from PROCESS*, which is exactly the confound
+    the class docstring says the choice of `pyvmcon` exists to avoid.
+
+    The difference is not cosmetic. OSQP is first-order ADMM with `eps_abs = eps_rel =
+    1e-5` by default; CLARABEL is an interior-point method that returns the QP solution
+    to ~1e-9. VMCON's search direction *is* the QP solution, and its Hessian update
+    `calculate_new_B` is driven by the multipliers the QP returns, so a QP answered to
+    1e-5 gives both an inaccurate step and a corrupted quasi-Newton update -- which
+    shows up not as a wrong answer but as many more iterations to reach the same one.
+    Measured on the MDF stellarator: see `_audit/optimise_design.md` §15."""
     max_iter: int = 100
     tolerance: float = 1.0e-8
     """`pyvmcon`'s `epsilon`. PROCESS's own is `data.numerics.epsvmc`."""
@@ -771,6 +789,7 @@ class VmconDriver(AbstractDriver):
                 scaled_upper,
                 max_iter=self.max_iter,
                 epsilon=self.tolerance,
+                qsp_options={"solver": self.qsp_solver},
                 callback=wrapped,
             )
         except VMCONConvergenceException as e:
