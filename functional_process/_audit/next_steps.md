@@ -2890,3 +2890,88 @@ The brief's `i_tf_sc_mat = 9` hypothesis does not survive either half: "no branc
 `HAZELTON_ZHAI_REBCO` arm. PROCESS can do value 9 on a tokamak, and the tokamak's
 blocker was never the superconductor.
 
+
+## 17. State, 2026-08-30 — the iteration-count gap closed to 1.26x, and what it left open
+
+§16.10 item 2 was "why the port needs 326 (SAND) / 523 (MDF) SQP iterations where
+PROCESS needs 46", with three candidates. The answer is in
+`_audit/optimise_design.md` §15; this section is the punch list that came out of it.
+
+**The finding, in one line.** `pyvmcon.solve_qsp` defaults to `cvxpy`'s OSQP; PROCESS
+overrides it with CLARABEL on every run and `VmconDriver` passed no `qsp_options` at
+all, so every SQP subproblem the port ever solved went to a *different solver from
+PROCESS's* — first-order ADMM at `1e-5` against interior-point at `1e-9`. Cold, at
+PROCESS's own `epsvmc = 1e-6`, fixing that takes SAND from 258 to **58** and MDF from a
+failure at 60 to **58**. PROCESS is 46. The gap is 1.26x, both formulations agree on the
+count, and neither the tolerance (worth 10–27 iterations) nor the derivative explains
+any of it.
+
+### 17.1 The warm regression, which is the price of the fix — pick a policy
+
+C2 (start at PROCESS's converged x) **stops short under CLARABEL in both harnesses**
+where it used to converge under OSQP: MDF at 45 on an `infeasible` QP, SAND at 207 on an
+`unbounded` one. Both are correct reports of a degenerate subproblem that OSQP was
+concealing by returning an unverified direction, so this is information appearing, not
+capability lost — but the C2 rows of both harness reports now read "not converged", and
+somebody has to decide what the port should do about it. The options, none measured:
+
+- **Bound SAND's coupling unknowns.** `VmconDriver.bounds` leaves an unknown with no
+  entry unbounded on both sides, and SAND's `^hat.*`/residual unknowns have no entries.
+  An `unbounded` QP status needs a feasible ray to exist; PROCESS's own variables all
+  carry `boundl`/`boundu`. This is the most likely single fix for the SAND half and it
+  is cheap to test.
+- **A better `initial_B`.** §15.4's reading of the warm blow-up (`objf 2.81` by
+  iteration 5 of MDF C2) is that `B = I` in scaled coordinates makes the first step
+  essentially the negative gradient from a nearly-stationary point. PROCESS carries a
+  `set_b(2.0)` retry but guards it with `n_solver_iterations < 2`, so PROCESS's own
+  ladder would not fire on these failures — copying it faithfully would not help, and
+  inventing a different one is a design decision.
+- **Accept it and keep CLARABEL.** Defensible: cold is the only start PROCESS ever
+  takes, and C2 exists to test the port against PROCESS's answer, not to be a
+  production start.
+
+Do **not** resolve this by reverting to OSQP. The 10x was that.
+
+### 17.2 The one thing today's fix did not move: 11 % on two variables
+
+`worst relative deviation from PROCESS's x` is **1.08e-01 in every converged cell** of
+the whole matrix — two formulations x two QP solvers x two starts x two tolerances —
+while every cell agrees on `objf` to six digits (1.21775...). It sits on
+`f_nd_alpha_thermal_electron` (ID 109, 10.8 %) and `t_tf_superconductor_quench` (ID 56,
+9.9 %); `rmajor` agrees to 2.0e-03. A flat objective in two directions is the obvious
+reading and it is testable: evaluate PROCESS's objective at the port's x and the port's
+at PROCESS's, and see whether the difference is inside either side's convergence
+tolerance. If it is, the 11 % is not a defect and the harness should stop reporting it
+as one. If it is not, it is a model discrepancy in two named variables, which is a much
+smaller search than the port at large. **This is the highest-value single measurement
+left in the ladder** and it is maybe an hour.
+
+### 17.3 The residual 58 vs 46
+
+Not explained, and worth much less than it was before: 12 iterations between two SQP
+runs on functions that are not bit-identical (§10.4's self-consistency defect is still
+open) is ordinary. What has NOT been ruled out, cheapest first:
+
+- **`force_vmcon_inequality_satisfication`.** PROCESS defaults it to `1` and passes
+  `additional_convergence=_ineq_cons_satisfied` (`solver.py:255-258`); the port passes
+  nothing. It can only make PROCESS *slower*, so it does not explain the gap — but it
+  means PROCESS's 46 is a stricter 46 than the port's 58, and the comparison should say
+  so. Add it to `VmconDriver` and re-measure; it is a one-field change.
+- PROCESS's trajectory is not smooth either: its own `conv` wanders between 1e-2 and
+  1e-1 from iteration 5 to 33 before dropping. Nobody has compared the two trajectories
+  point by point, and the port's cold trace is recorded in the scratchpad run behind
+  §15. That comparison would say whether the 12 iterations are a *different path* or the
+  *same path taken more carefully*.
+
+### 17.4 Still owed from §16.10, unchanged
+
+Cold start across the full matrix (all reference configurations, both formulations),
+c72's infeasibility, the two ST blockers, `_bind`'s dead reads. §16.10 item 1 is now
+cheaper than it was: the harnesses gained two knobs and the cold path works.
+
+### 17.5 Verified state
+
+`functional_process/core/solver/drivers.py` gained `qsp_solver` (default `"CLARABEL"`,
+PROCESS's) and `epsfcn` (default `None`, exact Jacobian). Commits `60eb752c`,
+`92aa3688`, `56167578`. Numbers in `_audit/optimise_design.md` §15; every cell in that
+table was measured today, none carried forward.

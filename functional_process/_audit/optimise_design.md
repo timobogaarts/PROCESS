@@ -2247,3 +2247,143 @@ Before and after, `run_mdf_harness` (stellarator), same machine, same session:
 |---|---|---|
 | C2 | 200 iterations, **not converged**, `conv 1.132e-02`, `objf 1.227934766` | **523 iterations, converged**, `conv 7.400e-09`, `objf 1.217758052` |
 | C3 | 60 iterations, not converged | 60 iterations, not converged — **and the report now says `pyvmcon` raised, not that it ran out** |
+
+## 15. Why the port took ten times PROCESS's iterations (2026-08-30) — it was the QP solver
+
+The open question `next_steps.md` §16.10 ranked second, taken deliberately: PROCESS
+converges the Helias stellarator in **46** VMCON iterations; SAND took **326** and MDF
+**523**. The recorded suspicion listed three candidates — `epsfcn = 0.01` smoothing,
+the QP solver, and §10.4's self-consistency defect. It was the second, and it was not
+a subtle version of it.
+
+### 15.1 The four arguments that differ
+
+Both sides call the **same** `pyvmcon.solve`. That was the whole point of choosing
+`pyvmcon` (this file's §4, and `VmconDriver`'s class docstring): a different SQP would
+confound "the port's model differs" with "the port's optimiser differs". So the search
+space is exactly the arguments, and there are only four:
+
+| `pyvmcon.solve` argument | PROCESS | the port, before today |
+|---|---|---|
+| `qsp_options` | `{"solver": cvxpy.CLARABEL}` (`solver.py:253`) | **not passed** |
+| `epsilon` | `data.numerics.epsvmc` = `1e-6` | `1e-8` |
+| the Jacobian | `Evaluators.fcnvmc2`, forward/backward FD at `epsfcn` | `jax.jacfwd` |
+| `initial_B` | `I`, and `2I` on a retry that only fires if VMCON never iterated | `I` |
+
+`pyvmcon.solve_qsp` ends `qsp.solve(**{"solver": cp.OSQP, **options})`. **Not passing
+`qsp_options` is not "taking PROCESS's default" — it is taking `pyvmcon`'s, which is a
+different solver.** Every SQP subproblem in every port solve ever recorded was answered
+by OSQP, a first-order ADMM method whose `cvxpy` defaults are `eps_abs = eps_rel = 1e-5`,
+where PROCESS used CLARABEL, an interior-point method returning ~1e-9. VMCON's search
+direction *is* the QP solution and `calculate_new_B`'s quasi-Newton update is driven by
+the multipliers the QP returns, so this does not show up as a wrong answer. It shows up
+as many more iterations to the same one — which is exactly the symptom that was recorded.
+
+### 15.2 The measurement
+
+Stellarator, `stellarator_helias.IN.DAT`, one `reference_run()` per matrix, both
+formulations, both starts. PROCESS: 46 iterations, `conv 2.396e-07`, `epsvmc 1e-6`,
+`epsfcn 0.01`.
+
+| formulation | start | QP solver | `epsilon` | iterations | conv | outcome |
+|---|---|---|---|---|---|---|
+| MDF | C2 warm | OSQP | 1e-8 | 523 | 7.40e-09 | converged |
+| MDF | C2 warm | OSQP | 1e-6 | 513 | 3.22e-07 | converged |
+| MDF | C2 warm | CLARABEL | 1e-8 | 45 | 7.23e-02 | **QP `infeasible`** |
+| MDF | C3 cold | OSQP | 1e-8 | 60 | 7.92e-02 | QP raised |
+| MDF | C3 cold | CLARABEL | 1e-8 | 67 | 2.54e-09 | converged |
+| MDF | C3 cold | CLARABEL | 1e-6 | **58** | 8.91e-07 | converged |
+| SAND | C2 warm | OSQP | 1e-8 | 326 | 8.80e-11 | converged |
+| SAND | C2 warm | OSQP | 1e-6 | 299 | 8.45e-07 | converged |
+| SAND | C2 warm | CLARABEL | either | 207 | 5.95e-02 | **QP `unbounded`** |
+| SAND | C3 cold | OSQP | 1e-8 | 258 | 8.03e-09 | converged |
+| SAND | C3 cold | CLARABEL | 1e-8 | 83 | 8.08e-10 | converged |
+| SAND | C3 cold | CLARABEL | 1e-6 | **58** | 7.43e-08 | converged |
+
+`C2/OSQP/1e-8 = 326` and `C3/OSQP/1e-8 = 258` reproduce the previously recorded SAND
+baselines exactly, so the harness is measuring what it always measured. Nothing hit a
+cap in any cell.
+
+**Cold, at PROCESS's own tolerance, both formulations take 58 iterations against
+PROCESS's 46.** Two independent formulations of the same machine — SAND with 14
+unknowns and 21 conditions, MDF with 8 and 15 — landing on the identical count is worth
+more than either number: what remains is 1.26x, and it is no longer a solver artefact.
+
+**`epsilon` is not the lever.** `1e-8 -> 1e-6` buys 27 of SAND's 326 and 10 of MDF's
+523. The tolerance explanation recorded in §16.10 accounted for the part of the gap it
+was measured on and no more; it was never going to reach 10x.
+
+### 15.3 The gradient hypothesis, killed
+
+`VmconDriver.epsfcn` was added to settle the remaining candidate — that PROCESS's 1 %
+perturbation smooths a non-smooth function and that its "bad" gradients are therefore
+an advantage. It reproduces `Evaluators.fcnvmc2`'s quotient exactly, in the driver's
+own scaled coordinates. MDF, cold, CLARABEL, `epsilon = 1e-6`:
+
+| Jacobian | iterations | objf |
+|---|---|---|
+| `jax.jacfwd`, exact | **58** | 1.217757951 |
+| PROCESS's FD, `epsfcn = 0.01` | 193 | 1.218210202 |
+| PROCESS's FD, `epsfcn = 0.001` | 314 | 1.217712816 |
+
+The exact Jacobian is **3.3x better than PROCESS's own**, and the trend is monotone in
+the wrong direction for the smoothing story. Whatever PROCESS's 46 buys, it is not
+bought by its finite differences. This is the second time the harness has been asked
+whether PROCESS's derivative is secretly load-bearing and answered no.
+
+**The warm start inverts it, and that is the interesting half.** Same configuration,
+starting from PROCESS's converged x: exact `jacfwd` fails at 45 on an `infeasible` QP,
+while `epsfcn = 0.01` converges in **39** and `epsfcn = 0.001` in 66. So the smoothing
+is not helping PROCESS solve faster; it is helping it survive a start where the exact
+linearisation is inconsistent. That is a robustness property, not a speed one, and it
+is the only thing found today that argues *for* PROCESS's derivative.
+
+### 15.4 CLARABEL is not uniformly better, and the failures are informative
+
+From PROCESS's own converged point, CLARABEL stops in both formulations and OSQP does
+not. The statuses are different, and should not be merged:
+
+- **MDF C2: `infeasible`** — the linearised constraints have no common point inside
+  the bounds.
+- **SAND C2: `unbounded`** — the QP objective descends without limit along a feasible
+  ray, which requires `B` to have lost positive definiteness. VMCON's equation 9 exists
+  precisely to prevent that, and `pyvmcon.calculate_new_B` logs `"The B matrix has at
+  least one negative eigenvalue ... This will cause a crash next iteration!"` when it
+  happens. SAND's coupling unknowns carry no bounds (`VmconDriver.bounds`: an unknown
+  with no entry is unbounded on both sides), so there is a ray for it to find.
+
+OSQP reports neither, in any cell. Its three `user_limit`s across the warm SAND cells
+are ADMM hitting its own iteration cap and returning the iterate regardless — the
+mechanism, made visible: **at the subproblems where CLARABEL refuses, OSQP quietly
+returns a direction it has not verified, and the solve survives on it.** That the
+port's numbers were ever obtained is partly an accident of that leniency.
+
+Why the warm start is hard at all is not mysterious once looked at: `initial_B = I` in
+scaled coordinates makes the first step essentially the negative gradient, and PROCESS's
+converged x is *near* but not *at* the port's optimum, so the first steps are large. The
+MDF C2 trace blows up to `objf 2.81, conv 5.96` by iteration 5 before recovering. Cold,
+where nothing is nearly stationary, the identity Hessian costs less.
+
+### 15.5 What did not change, and one thing to look at next
+
+`worst relative deviation of the port's x from PROCESS's` is **1.08e-01 in every
+converged cell** — both formulations, both QP solvers, both starts, both tolerances —
+while every one of them agrees on `objf` to six digits (1.21775...). The 11 % sits on
+`f_nd_alpha_thermal_electron` (ID 109) and 9.9 % on `t_tf_superconductor_quench` (56);
+`rmajor` agrees to 2.0e-03 and `b_plasma_toroidal_on_axis` to 1.1e-03. That is a flat
+objective in two variables, not a disagreement the solver introduced, and it is
+untouched by everything in this section. It wants its own look.
+
+### 15.6 Landed
+
+- `VmconDriver.qsp_solver`, defaulting to `"CLARABEL"` — PROCESS's choice, and the one
+  under which the cold solve (the only start PROCESS ever takes) works in both
+  formulations. **The warm regression is real and is not fixed**: C2 in both harnesses
+  now stops short where it used to converge. That is a correct report of a degenerate
+  QP replacing a concealed one, but it is a visible behaviour change, and choosing what
+  to do about it — a fallback ladder, bounds on SAND's coupling unknowns, a better
+  `initial_B` — is a design decision, not a measurement. See `next_steps.md` §17.
+- `VmconDriver.epsfcn`, defaulting to `None`.
+- `condition_scale`'s "a fifth to a third of QP subproblems solving inaccurately"
+  withdrawn: `optimal_inaccurate` appears **zero times in 1854 subproblems** across the
+  whole SAND matrix. It was an OSQP artefact — ADMM reports `user_limit`.
