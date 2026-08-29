@@ -661,6 +661,24 @@ class VmconDriver(AbstractDriver):
     1e-5 gives both an inaccurate step and a corrupted quasi-Newton update -- which
     shows up not as a wrong answer but as many more iterations to reach the same one.
     Measured on the MDF stellarator: see `_audit/optimise_design.md` §15."""
+    epsfcn: float | None = None
+    """When set, replace `jax.jacfwd` with **PROCESS's own finite difference** at this
+    relative perturbation, so that the derivative stops being a difference between the
+    port and PROCESS.
+
+    `Evaluators.fcnvmc2` perturbs each *scaled* coordinate by `x_i * (1 +/- epsfcn)` and
+    divides by the realised `xfor - xbac` (`evaluators.py:118-141`); because
+    `load_iteration_variables` puts every scaled coordinate at exactly `1.0`, that is a
+    relative perturbation of `epsfcn` about the start. This field reproduces that
+    formula in the driver's own scaled coordinates, condition scaling and all, at a cost
+    of `2n` condition evaluations per SQP iteration instead of one `jacfwd`.
+
+    `None` -- the default -- keeps the exact Jacobian, which is the whole point of the
+    rewrite. This exists to *measure* what PROCESS's smoothing buys: `epsfcn = 0.01` on
+    the reference run is a 1 % perturbation, far outside the regime where a difference
+    quotient approximates a derivative, so PROCESS's SQP is being handed the gradient of
+    a **smoothed** function. Whether that smoothing helps or hurts the iteration count
+    is a measurement, not a matter of opinion, and this is the switch that takes it."""
     max_iter: int = 100
     tolerance: float = 1.0e-8
     """`pyvmcon`'s `epsilon`. PROCESS's own is `data.numerics.epsvmc`."""
@@ -727,6 +745,24 @@ class VmconDriver(AbstractDriver):
             [by_name.get(c, 1.0) for c in conditions.conditions], dtype=float
         )
 
+        epsfcn = self.epsfcn
+
+        def scaled_values(x_scaled):
+            flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
+            return np.asarray(evaluate(flat_x), dtype=float) * condition_scale
+
+        def finite_difference(x_scaled):
+            """`Evaluators.fcnvmc2`'s own quotient, in this driver's coordinates."""
+            columns = []
+            for i in range(len(x_scaled)):
+                forward = np.array(x_scaled, dtype=float)
+                backward = np.array(x_scaled, dtype=float)
+                forward[i] = x_scaled[i] * (1.0 + epsfcn)
+                backward[i] = x_scaled[i] * (1.0 - epsfcn)
+                step = forward[i] - backward[i]
+                columns.append((scaled_values(forward) - scaled_values(backward)) / step)
+            return np.stack(columns, axis=1)
+
         class _Problem(AbstractProblem):
             def __call__(_self, x_scaled):  # noqa: N805 -- pyvmcon's own signature
                 flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
@@ -734,7 +770,9 @@ class VmconDriver(AbstractDriver):
                 # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column; and
                 # one `condition_scale` factor per row, see that field.
                 full = (
-                    np.asarray(jacobian(flat_x), dtype=float)
+                    finite_difference(x_scaled)
+                    if epsfcn is not None
+                    else np.asarray(jacobian(flat_x), dtype=float)
                     * condition_scale[:, None]
                     / scale[None, :]
                 )
