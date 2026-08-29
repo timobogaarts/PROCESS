@@ -1966,3 +1966,284 @@ design study, which is C3's question and is measured at 258 iterations in §12.2
   wins.
 - Nothing here was changed in the port. The measurement scripts stayed in the session
   scratchpad.
+
+## 14. MDF's stellarator C2 (2026-08-29) — a second cap, and an `objf` row arbitrated
+
+§16.1b of `next_steps.md` reported `run_mdf_harness` at **C2 200 iterations, not
+converged** and **C3 60, not converged**, against the Verified-state table's *129,
+converged* / *200, not converged*, and attributed the move to the 2026-08-27 wave day.
+Both halves of that are wrong, and the first one is wrong in the way §12 was already
+wrong once: **C2 was not failing, it was stopped at its cap two-thirds of the way
+through a 523-iteration solve.** C3 was never capped at all.
+
+### 14.1 Method — so a bisect step costs 40 s and not 3 minutes
+
+`run_mdf_harness.main` spends most of its wall clock on things Stage C does not need:
+one uncached PROCESS solve (99 s), PROCESS's 40-sweep finite-difference Jacobian, a
+15 s central difference and the `call_models` cost probe. The bisect therefore ran a
+probe that is `_measure`'s path function for function — `mdf.assemble` -> `mdf.seed` ->
+`mdf.prime` -> `mdf.solve(bounds=, callback=, tolerance=1e-8, max_iter=MAX_ITER)` — with
+the PROCESS side pickled once.
+
+- **Pickled: `data`, `cold`, `ixc`, `icc`, `n_equality`, `i_figure_merit`, `converged`.**
+  Not the `ReferenceRun` dataclass, whose fields move across the range and whose
+  `bounds` carry `VarPath`s; `bounds` is rebuilt per commit from `cold.numerics.boundl/u`
+  through that commit's own `sand.iteration_variable_path`. The cache is sound because
+  the diff of `process/` between `3cb0843b` and `a95ee891` is **empty** — PROCESS itself
+  did not change anywhere in the probed range.
+- **Two axes, pinned independently.** The repo axis by a detached checkout in this
+  worktree with `PYTHONPATH=<worktree>`; the cottax axis by `git archive` from
+  `~/jaxgraph` into the scratchpad, ahead of the editable install on `PYTHONPATH`. Both
+  were verified per run by printing `mdf.__file__` and `cottax.__file__` — the first
+  attempt silently resolved `functional_process` off the *main* checkout through the
+  editable install and produced four meaningless "byte-identical" results before the
+  print caught it.
+- The probe reproduces the harness **to the digit** at HEAD (C2 200/`conv 1.132e-02`/
+  `objf 1.227934766`, C3 60/`conv 7.916e-02`/`objf 1.222852961`), which is what licenses
+  using it in place of the harness.
+
+### 14.2 The repo axis is inert from `1db889f6` to HEAD, and so is cottax
+
+Every cell is C2/C3 at `MAX_ITER = 200`, `tolerance = 1e-8`, from the one cached PROCESS
+run:
+
+| tree | cottax | shape: nodes / inner driven / inner unknowns | C2 | C3 |
+|---|---|---|---|---|
+| `a95ee891` (HEAD) | live (`~/jaxgraph` working tree) | 165 / 5 / 6 | **200**, not conv, `conv 1.132e-02`, `objf 1.227934766` | **60**, not conv |
+| `a95ee891` | `f0bf9bb` | 165 / 5 / 6 | identical, every digit | identical |
+| `1db889f6` (round 2) | `f0bf9bb` | 165 / 5 / 6 | identical, every digit | identical |
+| `62bc7048` (its parent) | `f0bf9bb` | **174 / 12 / 16** | **144**, not conv, `conv 4.133e-02`, `objf 1.225749709` | **200**, not conv |
+| `62bc7048` | `b7c5572` | 174 / 12 / 16 | identical to `f0bf9bb` | identical |
+| `682f9266` | `b7c5572` | 174 / 12 / 16 (340 inputs) | **113**, not conv | **58**, not conv |
+| `62bc7048` | live | — | **does not run**: `db4f025`'s owned-name guard, the thing `ce5725c8` fixed | — |
+| `3cb0843b` | `ef093ba` | 171 / 13 / 17 | **does not run**: `TypeError` inside `PicardDriver`, `ConditionMap` got 0 unknowns | — |
+
+So: **the wave day is not the cause and neither is anything after it.** The whole day,
+`ce5725c8`, `2e50246c`, `fa9804ad`, `8baec007` and every cottax version from `b7c5572`
+through today are *byte-identical* on these numbers. The one commit that moves them is
+**`1db889f6`, "A switch selects an occupant, and ten fixed points were the switch"**
+(2026-08-26 22:09) — the same commit §12.3 already identified as the cause of SAND's
+131 -> 326.
+
+Two of the three commits the brief flagged as suspects are in that inert set
+(`ce5725c8`, `2e50246c`); `728af014` is not in this repo's history at all.
+
+### 14.3 What `1db889f6` did to MDF's problem
+
+The shape column above is the whole mechanism. Round 2 turned ten topology switches into
+slots, and seven of the driven blocks that dissolved were inside the MDA that MDF
+re-converges at every trial point:
+
+| | `62bc7048` | `1db889f6` and after |
+|---|---|---|
+| graph nodes | 174 | 165 |
+| inner blocks | 156 | 154 |
+| **inner driven blocks** | **12** | **5** |
+| **inner unknowns** | **16** | **6** |
+| schedule inputs | 334 | 310 |
+
+MDF's *outer* problem is untouched — 8 design, 15 conditions, 2 equalities, 12
+inequalities, before and after. What changed is the function those conditions are:
+quantities that used to be converged by a `PicardDriver` inside the MDA are now computed
+in the acyclic body, and PROCESS's own body for several of them is *"x is an input"*.
+This is §12.3's finding seen from MDF's side, and it lands harder here because MDF's
+whole formulation is the MDA.
+
+### 14.4 It is a cap. C2 converges at 523, on SAND's own answer
+
+`MAX_ITER` raised to 3000, everything else held (HEAD, live cottax; run twice, identical
+to every digit, 16.5 s and 26.7 s — the second overlapped the SAND harness):
+
+| | SQP iterations | outcome | `objf` | `max\|eq\|` |
+|---|---|---|---|---|
+| C2, `max_iter = 200` | 200 | **not converged**, `conv 1.132e-02` | 1.227934766 | 3.714e-03 |
+| C2, `max_iter = 3000` | **523** | **converged**, `conv 7.400e-09` | **1.217758052** | 3.813e-13 |
+
+`objf* = 1.217757336` is §11.11's free optimum and §12.2's SAND answer. The convergence
+parameter is **not monotone** — it first touches `1e-4` at iteration 8 and then wanders
+for four hundred more — so a "first below tolerance" reading of the trace is
+meaningless; the endgame is abrupt (`1e-6` at 512, `1e-8` at 522). That non-monotonicity
+is exactly why the capped tail read as oscillation, the same misreading §12.2 corrected
+for SAND.
+
+**And the two architectures agree.** MDF's 523-iteration C2 answer against the SAND
+harness's own C2 (326 iterations, re-run this session and byte-identical to its pin):
+
+| ixc | SAND | MDF | rel |
+|---|---|---|---|
+| 2 | 4.709284379 | 4.709291744 | 1.56e-06 |
+| 3 | 26.63924217 | 26.63924531 | 1.18e-07 |
+| 4 | 5.723905428 | 5.723838522 | 1.17e-05 |
+| 6 | 1.73146923e+20 | 1.731494805e+20 | 1.48e-05 |
+| 10 | 1.049850069 | 1.049847113 | 2.82e-06 |
+| 56 | 31.76081658 | 31.76071645 | 3.15e-06 |
+| 59 | 0.7177501169 | 0.7177490444 | 1.49e-06 |
+| 109 | 0.0299518325 | 0.0299517401 | 3.08e-06 |
+| `objf` | 1.217757338 | 1.217758052 | 5.86e-07 |
+
+Two formulations of the same graph — one exposing the coupling to the SQP, one hiding it
+inside every evaluation — reaching the same point to `1.2e-07 .. 1.5e-05`. That is a
+stronger statement about the port than either number alone.
+
+**Round 2 made MDF's C2 better, not worse.** Uncapped on the parent commit
+(`62bc7048` x `f0bf9bb`, `max_iter = 3000`): C2 still stops at **144** — the cap was
+never what held it — at `objf 1.225749709`, with `x4` **pinned at its lower bound of 3**
+and `x109 = 0.0249` against the optimum's `0.0299518`. So the pre-round-2 configuration
+does not reach the optimum at all, and the post-round-2 one does. The correct summary is
+not "C2 stopped converging"; it is *"C2 started converging, and took 523 iterations to do
+it, and the harness's cap was 200."*
+
+### 14.5 C3 is not a cap, and never was: `pyvmcon`'s QP goes infeasible at 60
+
+C3 at `max_iter = 3000` stops at **60**, at the same point, with the same trace.
+Wrapping `pyvmcon.solve` says why:
+
+```
+STAGE C3: 60 callbacks, max_iter 3000
+pyvmcon raised: QSPSolverException -- QSP failed to solve, indicating no feasible
+solution could be found.
+```
+
+`VmconDriver.__call__` catches `VMCONConvergenceException` (of which this is one) by
+design, keeps `e.x`, and reports the failure "out of band through `callback`" — but the
+callback only carries a per-iteration convergence number, which cannot distinguish
+*gave up* from *ran out*. So "converged: False" was two entirely different events
+printed identically, and the natural response to the C2 one (raise the cap) is inert for
+the C3 one. This is a real seam in `VmconDriver`'s reporting and it is **not** fixed here
+— `drivers.py` is shared with SAND and changing its callback protocol moves SAND's
+harness too. What is fixed is that the MDF report now says which happened
+(`run_mdf_harness._why_it_stopped`).
+
+The cold solve has never converged in any configuration measured: `62bc7048` x `f0bf9bb`
+uncapped runs to **274** and also stops on the QP, at a badly wrong point
+(`x56 = 1.043` against 35.32, `x109 = 0.0900` against 0.02995). Post-round-2's 60 is a
+worse *count* and a much better *point*. Open, and now stated precisely enough to work
+on: the cold MDF problem defeats `pyvmcon`'s QP subproblem, and the next experiment is
+`SlsqpDriver` on the identical problem (§13.6's shape) plus a look at whether a bound is
+active where the QP dies.
+
+### 14.6 The recorded "129, converged" cannot be rebuilt, and is not a target
+
+`129 / 200` entered the Verified-state table at `a33b4afa` (2026-08-19) and was
+re-asserted "byte-identical" at `682f9266` (2026-08-26) against cottax `ef093ba`. Neither
+configuration runs today: `ef093ba` predates the `Equality`/`Inequality`/`Objective`
+roles `mdf.py` has imported since `682f9266`, and the closest tree that *does* import
+them (`3cb0843b`) dies inside `PicardDriver` when run against it. The nearest
+reconstructible ancestors give **113** (`682f9266` x `b7c5572`) and **144**
+(`62bc7048` x `b7c5572`/`f0bf9bb`), both **not converged**, both stopping on the QP
+rather than on a cap.
+
+That is the same standing §12.3 gave SAND's recorded 31 and §13.5 gave its "SLSQP short
+at 60": **a number from a configuration this tree no longer has.** The honest record is
+not "129 regressed to 200" but "129 was never re-measured after round 2, and the quantity
+it named stopped existing".
+
+### 14.7 Stage B's `objf` row — the port's AD is right, and the gap is §10.4 in derivative form
+
+Stage B stars the `objf` row in 7 of 8 columns at 1.26e-02 .. 1.51e-01 relative, while
+Stage B0 reports the port's Jacobian self-consistent to 3.31e-06. Those are compatible,
+and the first thing to notice is that **Stage B0's `alive` mask barely covers this row**:
+it keeps cells above `1e-8 x |finite|.max()`, and the maximum over the whole `(15, 8)`
+matrix is 34.03, so the objf row contributes 6 of the 60 live cells and its `x6` column
+(`1.58e-20`, because `x6 ~ 1.7e+20`) is excluded by construction. The row therefore
+needed §11.11's own method run on it directly.
+
+The port's AD against **the port's own central difference** of the same condition, with
+Richardson bars, at four step sizes (unscaled, i.e. `d(objf)/dx` in the port's own
+coordinates):
+
+| ixc | AD | CD `eps=1e-2` | `1e-3` | `1e-4` | `1e-5` | rel at `1e-5` |
+|---|---|---|---|---|---|---|
+| x2 | 4.363959e-02 | 4.359522e-02 | 4.363953e-02 | 4.363959e-02 | 4.363959e-02 +- 4.0e-10 | **2e-10** |
+| x3 | -8.624002e-02 | -8.514369e-02 | -8.497998e-02 | -8.623974e-02 | -8.623973e-02 +- 9.7e-11 | **3e-06** |
+| x4 | -6.306003e-01 | -6.262961e-01 | -6.246770e-01 | -6.306004e-01 | -6.306003e-01 +- 7.0e-10 | **7e-10** |
+| x6 | -1.576264e-20 | -1.565315e-20 | -1.576270e-20 | -1.576264e-20 | -1.576264e-20 +- 1.7e-29 | **4e-10** |
+| x10 | 0 | 0 | 0 | 0 | 0 | — |
+| x56 | -1.269556e-04 | -1.269653e-04 | -1.269557e-04 | -1.269556e-04 | -1.269556e-04 +- 5.0e-11 | **2e-09** |
+| x59 | -2.323351e-01 | -2.323217e-01 | -2.323350e-01 | -2.323351e-01 | -2.323351e-01 +- 2.4e-09 | **2e-11** |
+| x109 | 5.819851e+00 | 5.520309e+00 | 5.819851e+00 | 5.819851e+00 | 5.819851e+00 +- 5.8e-08 | **2e-10** |
+
+**`jacfwd` is the `h -> 0` limit of the port's own map**, to 2e-10 in seven columns and
+3e-06 in `x3`. The port's derivative is not in question.
+
+The same row against PROCESS, in PROCESS's spelling (columns divided by
+`reference.scale`), with PROCESS's own Richardson error bar from
+`process_jacobian_with_error`:
+
+| ixc | port AD | port CD `1e-5` | PROCESS FD | PROCESS err | rel | **in units of PROCESS's own error bar** |
+|---|---|---|---|---|---|---|
+| x2 | 2.400177e-01 | 2.400177e-01 | 2.370392e-01 | 2.63e-04 | 1.26e-02 | **11x** |
+| x3 | -1.724800e+00 | -1.724795e+00 | -1.652839e+00 | 2.66e-03 | 4.35e-02 | **27x** |
+| x4 | -4.414202e+00 | -4.414202e+00 | -4.032380e+00 | 2.59e-03 | 9.47e-02 | **147x** |
+| x6 | -3.152528e+00 | -3.152528e+00 | -2.879600e+00 | 1.12e-03 | 9.48e-02 | **243x** |
+| x10 | 0 | 0 | 0 | 1.57e-12 | 0 | 0 |
+| x56 | -4.443446e-03 | -4.443446e-03 | -4.357456e-03 | 3.33e-07 | 1.97e-02 | **259x** |
+| x59 | -1.626346e-01 | -1.626346e-01 | -1.551626e-01 | 9.26e-06 | 4.82e-02 | **807x** |
+| x109 | 5.819851e-01 | 5.819851e-01 | 5.055766e-01 | 1.30e-02 | 1.51e-01 | **5.9x** |
+
+**So this is not resolution, on either side.** It is 11 to 807 times PROCESS's *own* FD
+error bar, and the port's side is exact to 1e-9. The two are differentiating **different
+functions**, and which function differs is already recorded: §10.4's `+17.604 MW`
+self-consistency offset. `Buildings.run` recomputes `a_plant_floor_effective` from
+`z_tf_inside_half`, `Stellarator.run(output=True)` leaves the report-pass value of one
+and the solve-pass value of the other in the same `DataStructure`, and the port — reading
+that structure and being internally consistent about it — computes a net electric power
+982.4 MW where PROCESS's stored one is 1000.0. That is why `objf` itself differs by
+1.73e-02 at the reference point (Stage A) and why `c16`, an *equality* here by PROCESS's
+positional split, sits at `1.760e-02` where PROCESS has `3.8e-09`. A function that
+differs has a derivative that differs; the per-column ratios (1.013, 1.044, 1.095, 1.095,
+1.020, 1.048, 1.151) are not one constant, so the offset is not a pure rescaling of the
+objective — which is what one would expect of an offset entering through a denominator
+alongside a cost numerator that also moves.
+
+**Is this what made C2 wander? No.** C2 converges, in 523 iterations, on the same point
+SAND reaches from a completely different formulation. A wrong objective gradient would
+not do that. The `objf` row is a *separate, already-explained* finding and it belongs to
+§10.4's ledger, not to the solve.
+
+### 14.8 Should MDF's C2 reproduce PROCESS's `x`? No — and it reproduces SAND's
+
+C2's converged design is 1.2e-03 to 1.08e-01 from PROCESS's per iteration variable,
+worst at `x109` (1.08e-01) and `x56` (1.01e-01). Every part of that is accounted for and
+none of it is a solver defect:
+
+- **PROCESS's answer is a converged point of PROCESS's own problem**, which is not the
+  stated one: its objective is 17.604 MW inconsistent with its own stored state (§10.4),
+  and c16 is off by `1.76e-02` there. A point where an equality is violated by 1.8 % is
+  not a feasible point of the port's problem, so no correct optimiser could stay at it.
+  `sand_harness.py`'s module docstring and §11.6 already say this; §14.7 measures it in
+  the gradient.
+- **`x56` and `x109` are flat directions** (§11.11), so even the residual difference is
+  concentrated exactly where the objective barely cares.
+- **The cross-check that does apply is SAND**, and it passes to 1.2e-07 .. 1.5e-05
+  (§14.4). Two architectures, two condition sets, two blockings, one answer.
+
+The right expectation for MDF C2 is therefore "converges, agrees with SAND, and differs
+from PROCESS by §10.4 plus the flat directions" — which is what it now does. It is not
+"reproduces PROCESS's `x`", and the Verified-state table should never have implied it.
+
+### 14.9 What changed in the code
+
+- **`run_mdf_harness.MAX_ITER` 200 -> 800.** Measured, not rounded: C2 needs 523, and 800
+  gives it the same ~1.5x margin `SAND_MAX_ITER = 500` gives SAND's 326 (§12.5). The
+  driver's own default of 100 is still left alone, for §12.5's reason.
+- **`run_mdf_harness._why_it_stopped`**, printed on the `converged:` line: the convergence
+  test passed / it reached the cap / the driver stopped short at N of MAX_ITER because
+  `pyvmcon` raised. Three days of reading one boolean as one event is what this exists to
+  prevent. Pinned by
+  `test_mdf.py::test_the_harness_distinguishes_a_cap_from_a_driver_that_gave_up`, which
+  also pins `MAX_ITER > 523`.
+- **`mdf.py`'s module docstring**, whose structural counts (174 nodes, 131-node SCC,
+  twelve problems, 111 inner blocks, 11 driven) were `62bc7048`'s and had been stale
+  since round 2. Now 165 / 123 / five / 112 / 4, with the old numbers and their cause
+  named so the change is not silently lost.
+- **Nothing in `drivers.py`, `sand.py` or `sand_harness.py`.** The stellarator SAND
+  harness was re-run this session as the control: **C2 326, C3 258**, byte-identical to
+  §11.11's pins.
+
+Before and after, `run_mdf_harness` (stellarator), same machine, same session:
+
+| | before | after |
+|---|---|---|
+| C2 | 200 iterations, **not converged**, `conv 1.132e-02`, `objf 1.227934766` | **523 iterations, converged**, `conv 7.400e-09`, `objf 1.217758052` |
+| C3 | 60 iterations, not converged | 60 iterations, not converged — **and the report now says `pyvmcon` raised, not that it ran out** |
