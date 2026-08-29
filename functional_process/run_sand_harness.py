@@ -115,8 +115,9 @@ def _why_no_step(drive, context, seeded):
     that test reported twelve happily-satisfied constraints as the reason the QP had no
     feasible point. The sign convention is the whole content of the check -- an equality
     is stuck when `|value|` is away from zero, an inequality only when `value > 0` --
-    which is why the split is read off the problem node rather than inferred from the
-    values.
+    which is why the split is taken from the problem node -- **by position**, since the
+    condition names on the two sides compare equal to nothing (see the comment below,
+    and `VmconDriver.n_equality`'s docstring, which relies on the same ordering).
 
     Costs one `jacfwd` compile of the condition map (~1 min), and only on the path where
     the solve already failed.
@@ -131,20 +132,29 @@ def _why_no_step(drive, context, seeded):
     rows = np.asarray(jax.jacfwd(stacked)(*unknowns), dtype=float).reshape(
         len(values), -1
     )
-    # `Driven` forwards `inputs`/`outputs` and nothing else; the equality/inequality
-    # split lives on the problem it *has*. Same unwrap `sand.sand_shape` does.
+    # `Driven` forwards `inputs`/`outputs` and nothing else; the split lives on the
+    # problem it *has*. Same unwrap `sand.sand_shape` does.
     node = drive.subgraph[drive.problem]
     definition = node.problem if isinstance(node, Driven) else node
-    equality = set(definition.equalities)
-    inequality = set(definition.inequalities)
+    n_equality = len(definition.equalities)
+    # **By position, not by membership.** `definition.equalities` and `drive.conditions`
+    # name the same nine equalities and compare equal to none of them -- measured, 0 of
+    # 30 -- so a `condition in equality` test silently classified every condition as the
+    # objective and reported that nothing was stuck. `VmconDriver.n_equality`'s own
+    # docstring is the authority for doing it this way instead: `Drive.conditions` is the
+    # problem node's `reads` and `Optimise.inputs` is `(objective, *equalities,
+    # *inequalities)`, so counts recover the split, which is exactly how the driver
+    # itself slices `values` at `[0]`, `[1 : 1 + meq]`, `[1 + meq :]`.
     stuck = []
-    for condition, value, row in zip(drive.conditions, values, rows, strict=True):
-        if condition in equality:
-            away = abs(value) > 1e-8
-        elif condition in inequality:
-            away = value > 1e-8
-        else:
+    for index, (condition, value, row) in enumerate(
+        zip(drive.conditions, values, rows, strict=True)
+    ):
+        if index == 0:
             continue  # the objective: never a feasibility question
+        # An equality is away from satisfaction on either side of zero; an inequality
+        # only above it -- cottax's sign convention is `g <= 0`, so a positive residual
+        # is the violated one.
+        away = abs(value) > 1e-8 if index <= n_equality else value > 1e-8
         # Exact comparison is the point: a row that is *identically* zero is a
         # condition no step can move, which is a structural fact and not a
         # tolerance question. A merely small row is a badly conditioned

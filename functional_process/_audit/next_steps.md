@@ -2789,6 +2789,20 @@ now read off the problem node rather than guessed from the values. It was caught
 reading the output rather than by any test, which is §11's standing lesson about
 renderers arriving again in the solver.
 
+*And the fix's own first draft was wrong the same way a third time*, which is why this
+is recorded at length rather than tidied. Reading the split off the problem node and
+testing `condition in definition.equalities` classifies **every** condition as the
+objective: the two sides name the same nine equalities and compare equal to none of
+them -- measured, **0 of 30**. The check then reported, confidently, that nothing was
+stuck. `VmconDriver.n_equality`'s docstring already says how to do it and why (a driver
+"cannot ask" which condition is which; `Drive.conditions` is the problem node's `reads`
+and `Optimise.inputs` is `(objective, *equalities, *inequalities)`, so **counts recover
+the split**) -- which is how the driver itself slices `values` at `[0]`, `[1 : 1 + meq]`
+and `[1 + meq :]`. By position it reports one stuck condition, `c72` at `+2.73e+02`,
+matching the standalone measurement exactly. Three drafts, three silent-agreement
+failures, one line of real output: the whole §16.8-§16.9 sequence is the same lesson
+about checks that agree with themselves.
+
 ### 16.10 What is next, in order
 
 1. **Cold start, everywhere.** The cold tokamak result above is one file, one
