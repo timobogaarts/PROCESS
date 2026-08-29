@@ -72,11 +72,15 @@ from functional_process.models.physics.bootstrap_current import (
     _trapped_particle_fraction_sauter,
     bootstrap_fraction_sauter,
     calculate_plasma_current_fractions,
+    diamagnetic_fraction_scene,
     enforce_bootstrap_current_fraction_max,
+    ps_fraction_scene,
 )
 from functional_process.paths import physics
 from process.core.model import DataStructure
 from process.models.physics.bootstrap_current import SauterBootstrapCurrent
+from process.models.physics.physics import ps_fraction_scene as process_ps_fraction_scene
+from process.models.physics.plasma_current import PlasmaDiamagneticCurrent
 from process.models.physics.plasma_profiles import PlasmaProfile
 from process.models.physics.profiles import NeProfile, TeProfile
 
@@ -919,6 +923,67 @@ class TestEnforceBootstrapCurrentFractionMax(Tier1Contract):
         "f_c_plasma_bootstrap": (0.1, 0.6),
         "f_c_plasma_bootstrap_max": (0.8, 0.99),
     }
+
+
+class TestDiamagneticFractionScene(Tier1Contract):
+    """`diamagnetic_fraction_scene` -> `PlasmaDiamagneticCurrent.
+    diamagnetic_fraction_scene`, unchanged (`@nb.njit` dropped).
+
+    A real PROCESS `@staticmethod` with the port's exact signature, so the oracle is the
+    strongest kind in this file -- no adapter, no pinned arguments, no second reading of
+    the source. That is worth stating next to `TestCalculatePlasmaCurrentFractions`
+    below, whose reference is the weakest kind, because the two contracts sit in the same
+    chain and are not equally well evidenced.
+
+    Sample is `tests/unit/models/physics/test_physics.py::
+    test_diamagnetic_fraction_scene`'s only point, verbatim (`beta = 0.15`, `q95 = 3.0`,
+    `q0 = 1.0`, recorded expectation `0.0460`).
+
+    Fuzz bounds keep `q0` away from zero: the `q95 / q0` quotient is PROCESS's own and is
+    unguarded, so `q0 == 0` is outside the domain in value as well as in derivative.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = staticmethod(PlasmaDiamagneticCurrent.diamagnetic_fraction_scene)
+    ported = diamagnetic_fraction_scene
+
+    samples = [
+        legacy_sample(
+            "diamagnetic_fraction_scene-unit_test",
+            beta=0.15,
+            q95=3.0,
+            q0=1.0,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "beta": (0.02, 0.35),
+        "q95": (2.5, 8.0),
+        "q0": (0.8, 3.0),
+    }
+
+
+class TestPsFractionScene(Tier1Contract):
+    """`ps_fraction_scene` -> the module-level `ps_fraction_scene` in
+    `process/models/physics/physics.py`, unchanged (`@nb.jit` dropped).
+
+    Sample is `tests/unit/models/physics/test_physics.py::test_ps_fraction_scene`'s only
+    point, verbatim (`beta = 0.15`, recorded expectation `-0.0135`).
+
+    One argument, one multiplication -- the contract is here for completeness of the
+    unit's coverage rather than because the expression is hard, and the zero-boundary
+    probe passes trivially (a linear function is finite everywhere).
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = staticmethod(process_ps_fraction_scene)
+    ported = ps_fraction_scene
+
+    samples = [
+        legacy_sample("ps_fraction_scene-unit_test", beta=0.15),
+    ]
+
+    fuzz_bounds = {"beta": (0.02, 0.35)}
 
 
 class TestCalculatePlasmaCurrentFractions(Tier1Contract):

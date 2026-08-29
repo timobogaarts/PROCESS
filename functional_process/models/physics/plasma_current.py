@@ -24,19 +24,25 @@ attribution into `physics.py` on every function that came from there. **If a lat
 gives `physics.py`'s `PlasmaInductance` its own unit, `WessonInternalInductance` and
 `calculate_internal_inductance_wesson` move there wholesale** — flagged, not decided.
 
-**Scope of this pass: the `large_tokamak_eval.IN.DAT` reference arm.** That file sets
-`i_plasma_current = 4` (IPDG89, line 288), `i_alphaj = 1` (Wesson, line 275) and
+**Scope of the first pass: the `large_tokamak_eval.IN.DAT` reference arm.** That file
+sets `i_plasma_current = 4` (IPDG89, line 288), `i_alphaj = 1` (Wesson, line 275) and
 `i_ind_plasma_internal_norm = 1` (Wesson, line 311). One occupant class per value, per
 `next_steps.md` §14.2 — no `i_*` integer appears as a kwarg or inside any body here.
 
+**The ST closing wave (2026-08-29) added `i_plasma_current = 9`** (FIESTA ST), the value
+both `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` set. It is the second
+occupant of `PlasmaCurrentScaling` and the first evidence that the family's arms differ
+in *read set* rather than in constants: FIESTA reads the separatrix `kappa`/`triang`
+where IPDG89 reads the 95%-surface pair.
+
 **Not ported, and why:**
 
-- Eight of the nine `i_plasma_current` values. `1` (Peng analytic fit), `2` (Peng
+- Seven of the nine `i_plasma_current` values. `1` (Peng analytic fit), `2` (Peng
   divertor / TART), `3` (simple ITER cylindrical), `5`/`6` (Todd I/II), `7`
-  (Connor-Hastie), `8` (Sauter), `9` (FIESTA ST) — none live on `large_tokamak_eval`,
+  (Connor-Hastie), `8` (Sauter) — none live on any tracked input,
   and each reads a different set (`len_plasma_poloidal` for 1; `aspect`/`kappa`/`triang`
   for 2; `alphaj`/`alphap`/`pres_plasma_thermal_on_axis` for 7; `kappa`/`triang` for
-  8/9). Their `fq` coefficient functions are two-to-ten-line pure `@staticmethod`s
+  8). Their `fq` coefficient functions are two-to-ten-line pure `@staticmethod`s
   (`plasma_current.py:690-1016`) and each becomes an occupant the day a machine selects
   it; the audit record's "switches touched" table carries each one's reads.
   **Value 2 is structurally different from the rest** — it does not go through
@@ -93,6 +99,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.models.safe_math import safe_pow
 from functional_process.paths import physics
 from process.core import constants
 
@@ -165,6 +172,70 @@ def calculate_plasma_current_ipdg89(
         q95=q95,
         b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
     ) * calculate_current_coefficient_ipdg89(eps=eps, kappa95=kappa95, triang95=triang95)
+
+
+def calculate_current_coefficient_fiesta(eps, kappa, triang):
+    """The `fq` shaping coefficient of the FIESTA ST plasma current scaling.
+
+    Ports `PlasmaCurrent.calculate_current_coefficient_fiesta`,
+    `process/models/physics/plasma_current.py:990-1016`, value-identical. Selected by
+    `i_plasma_current == 9` at `plasma_current.py:380-383`.
+
+    **Reads the separatrix shaping pair, not the 95% one.** `kappa`/`triang`, where the
+    IPDG89 arm above reads `kappa95`/`triang95` — the two arms have genuinely different
+    read sets, which is why they are two occupants and not one node with a switch.
+
+    **`triang ** 0.060` is the one deviation, and it is `safe_pow`, not a repair.**
+    PROCESS's expression is `triang**0.060`; at `triang == 0` its value is `0.0` and its
+    derivative is `0.06 * 0.0**-0.94 == +inf`, the exact `x ** p, 0 < p < 1` shape
+    `models/safe_math.py` exists for (`_audit/next_steps.md` §9). `safe_pow` is
+    bit-identical for every `triang != 0` — including the `nan` PROCESS returns for a
+    negative base — and differs only in giving the derivative *at* zero the value `0`
+    instead of `inf`. The value defect is therefore reproduced, not repaired; only the
+    Jacobian poisoning is removed, on the same terms as every other `safe_pow` site in
+    this port.
+
+    **The negative-triangularity `nan` is real and is left alone.** `triang < 0` makes
+    `triang ** 0.060` `nan` in value, and PROCESS never reaches it: the caller raises
+    first (`plasma_current.py:305-309` — `triang < 0` is refused for every
+    `i_plasma_current` except `8`). Same treatment as the IPDG89 arm's identical guard:
+    a precondition of this arm, the caller's to hold as in PROCESS, and this unit's test
+    module keeps every sample and fuzz bound at `triang > 0`. See the audit record's
+    **D7**.
+
+    References
+    ----------
+    [1] S. Muldrew et al., '"PROCESS": Systems studies of spherical tokamaks',
+    Fusion Engineering and Design 154 (2020) 111530.
+    https://doi.org/10.1016/j.fusengdes.2020.111530
+    """
+    return 0.538 * (1.0 + 2.440 * eps**2.736) * kappa**2.154 * safe_pow(triang, 0.060)
+
+
+def calculate_plasma_current_fiesta(
+    eps, kappa, triang, rminor, rmajor, q95, b_plasma_toroidal_on_axis
+):
+    """Plasma current (A) under `i_plasma_current == FIESTA_ST_SCALING` (9).
+
+    The `i_plasma_current == 9` path through `PlasmaCurrent.calculate_plasma_current`
+    (`process/models/physics/plasma_current.py:380-383` for the coefficient,
+    `:392-401` for the product), with the eight other arms and the enum dispatch removed.
+    Structurally the IPDG89 arm's shape — `fq * calculate_cyclindrical_plasma_current`
+    — over a different coefficient and a different shaping pair.
+
+    The two guards in the PROCESS body are not carried, for the reason
+    `calculate_plasma_current_ipdg89` gives: both are switch-domain checks answered by
+    *which occupant exists*. The negative-triangularity one is a genuine precondition
+    here, and this arm is the one PROCESS's own guard singles out — `i_plasma_current`
+    `8` (Sauter) is the only value it exempts, so FIESTA is refused for `triang < 0` by
+    PROCESS just as every other non-Sauter arm is.
+    """
+    return calculate_cyclindrical_plasma_current(
+        rminor=rminor,
+        rmajor=rmajor,
+        q95=q95,
+        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+    ) * calculate_current_coefficient_fiesta(eps=eps, kappa=kappa, triang=triang)
 
 
 def calculate_cylindrical_safety_factor(
@@ -278,6 +349,43 @@ class Ipdg89PlasmaCurrent(PlasmaCurrentScaling):
             eps=eps,
             kappa95=kappa95,
             triang95=triang95,
+            rminor=rminor,
+            rmajor=rmajor,
+            q95=q95,
+            b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+        )
+
+
+class FiestaStPlasmaCurrent(PlasmaCurrentScaling):
+    """`i_plasma_current == FIESTA_ST_SCALING` (9) -- the arm both tracked spherical
+    tokamaks take (`spherical_tokamak_eval.IN.DAT:288`, `st_regression.IN.DAT`).
+
+    **A different read set from `Ipdg89PlasmaCurrent`, not a different constant.** This
+    arm reads the *separatrix* shaping pair `.physics.kappa`/`.physics.triang`; the
+    IPDG89 arm reads the 95%-flux-surface pair and nothing from the separatrix. The
+    remaining five reads are shared. That is the whole reason the family exists, and it
+    is the second occupant to demonstrate it.
+
+    `.physics.q95` is iteration variable 18 and `.physics.rmajor` iteration variable 3;
+    both are boundary inputs to this node, as in the IPDG89 arm.
+    """
+
+    plasma_current = OutputInto(physics)
+
+    def __call__(
+        self,
+        eps=From(physics),
+        kappa=From(physics),
+        triang=From(physics),
+        rminor=From(physics),
+        rmajor=From(physics),
+        q95=From(physics),
+        b_plasma_toroidal_on_axis=From(physics),
+    ):
+        return calculate_plasma_current_fiesta(
+            eps=eps,
+            kappa=kappa,
+            triang=triang,
             rminor=rminor,
             rmajor=rmajor,
             q95=q95,

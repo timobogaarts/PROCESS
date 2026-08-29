@@ -911,3 +911,64 @@ skipped. Ruff on the four edited modules is at parity with their pre-change base
 (`E501` 24 -> 24 exactly; `D209` 1 -> 0) apart from the new occupants' own `B008` (+87)
 and `D102` (+8) — the same two rules every `ExplicitFunction` family in this file already
 reports.
+
+## `i_tf_turn_type == 2` refused, and a silent mis-assembly closed (2026-08-29)
+
+**The finding first: before this wave, a CroCo machine assembled silently as
+cable-in-conduit.** `models/tfcoil/namespace.py`'s docstring already said the right thing
+— "a machine whose `i_tf_turn_type` is `2` has a different occupant of
+`.tokamak.cicc_superconducting_tf_coil` (`CROCOSuperconductingTFCoil`, unported), not a
+different slot inside this one" — and **nothing checked it**: `i_tf_turn_type` appeared
+nowhere in `indat.py`, so `machine_from_indat` built a `CiccSuperconductingTfCoil`
+whatever the file said.
+
+Measured rather than argued. A copy of `large_tokamak_eval.IN.DAT` with the single line
+`i_tf_turn_type = 2` appended parses (`switches_from_indat` returns `2`;
+`process/core/input.py:1071` declares the switch with `choices=[1, 2]`) and **assembles**,
+producing `CiccSuperconductingTfCoil`. That is `low_aspect_ratio_DEMO`'s integer-turn
+mis-assembly (`next_steps.md` §15) a second time, in a different slot, found the same way
+— by asking what the factory does with a value nobody had put in front of it.
+
+### the refusal, and why it is a refusal rather than an arm
+
+`process/core/caller.py:298-313` resolves `i_tf_sup` and then `i_tf_turn_type` **above
+every model** and runs `models.croco_sctfcoil` — a different `Model` class,
+`CROCOSuperconductingTFCoil` (`superconducting.py:3773`) — instead of
+`models.cicc_sctfcoil`. Its `run` computes a REBCO tape stack through
+`tf_croco_averaged_turn_geometry`, `tf_turn_croco_cable_space_properties`,
+`calculate_croco_cable_geometry` and `tf_croco_inboard_areas_and_fractions`, owning a
+`.superconducting_tfcoil.*croco*`/`*hts_tape*` field set that does not exist in this port
+at all, and it refuses integer turn geometry outright (`:3838`). **That is a whole unit,
+not an occupant of any slot here.**
+
+So the shape is `ife`'s, one level down: a switch that decides *which model runs* rather
+than which arm of a model runs, answered once at assembly by
+`_refuse_unported_switch("i_tf_turn_type", ...)`, and asked only on the superconducting
+arm because that is the only branch of `caller.py` that reads it.
+
+### this corrects the reason the ST files were being refused
+
+Both `spherical_tokamak_eval.IN.DAT:72` and `st_regression.IN.DAT:800` set
+`i_tf_turn_type = 2`. Until this wave they were caught instead by `_SC_TAPE_REASON` inside
+`CICC_SUPERCONDUCTOR_PROPERTIES` — the `(i_str_wp, i_tf_sc_mat) == (1, 9)` cell — whose
+text was *correct* ("a tape machine takes `CROCOSuperconductingTFCoil` instead ... so this
+slot is never reached at those values") and whose position was wrong: it is a refusal
+inside a slot that a CroCo machine never reaches, standing in for the absence of the model
+that machine actually runs. Two consequences, both now fixed:
+
+1. The ST closing wave's brief listed `i_tf_sc_mat = 9` as one of four remaining switch
+   values and asked whether "the port refuses what PROCESS cannot do either" was the right
+   answer for this site. It is not, and neither half of the hypothesis survives: PROCESS
+   *can* do value 9 — the survey's quoted "no branch in `jcrit_from_material` at all" is
+   `process/models/stellarator/coils/coils.py`'s dispatch, a **stellarator** function, and
+   `models/pfcoil.py:4851` has a real `HAZELTON_ZHAI_REBCO` arm through `hijc_rebco` — and
+   the tokamak's blocker was never the superconductor at all. It is the turn type.
+2. The `(1, 9)`/`(0, 9)` tape cells stay exactly as they are. They are still true, still
+   scoped to those two slots, and are now what they always should have read as: a
+   statement about an unreachable cell, not the port's answer to a CroCo machine.
+
+**No test bookkeeping was needed.** `_refuse_unported_switch` carries no registry, so
+`test_machine.py::test_no_slot_registry_is_covered_by_nothing` has nothing new to place;
+the four tracked files that assembled before still assemble
+(`large_tokamak_eval`, `large_tokamak_nof`, `low_aspect_ratio_DEMO`,
+`stellarator_helias`), which is the check a new refusal has to pass.

@@ -615,3 +615,44 @@ is zero on this machine, declared rather than folded away. Writes
 
 Tier 1 throughout; four `Tier1Contract`s in `test_physics.py`, legacy points read off
 the converged `large_tokamak_eval` run, green plain and under `--fp-gradients`.
+
+## `i_beta_norm_max == 0` is an empty slot, and the survey was hiding it (2026-08-29)
+
+`BETA_NORM_MAX` now reads `{0: None, 1: BetaNormMaxWesson}` and
+`TokamakPlasmaBeta.norm_max` is annotated `BetaNormMaxWesson | None`.
+
+**No node, on purpose.** `get_beta_norm_max_value`'s `model_map` returns
+`physics_data.beta_norm_max` itself at `USER_INPUT` (`physics.py:3723-3743`), so a node
+here would own exactly what it reads. `.physics.beta_norm_max` is a run input, as it is in
+PROCESS — `spherical_tokamak_eval.IN.DAT:264` and `st_regression.IN.DAT:317` both set
+`beta_norm_max = 5.0`. Absence spelled as absence: the `DX_TF_SIDE_CASE_MIN` /
+`CURRENT_PROFILE_INDEX` / `IND_PLASMA_INTERNAL_NORM` shape, built through
+`machine_from_indat`'s existing `none_or_call`, not a new mechanism.
+
+The one downstream consumer, `BetaLimitFromNorm`, is unaffected in structure: it reads
+`.physics.beta_norm_max` either way, and under this arm the read is served by the boundary
+rather than by a sibling node. That is the fifth registry to carry a `None` arm, and the
+first that a tracked input file actually selects.
+
+### the interesting part is why nobody had noticed
+
+`indat.py`'s `BETA_NORM_MAX` docstring had recorded the gap in full, correctly, ending
+with "Nothing in the tokamak or stellarator scope selects `0`." That sentence was false
+for both tracked spherical tokamaks, and **`machine_survey.report` did not contradict
+it**: the survey classified a factory field's value by looking it up in `UNPORTED` only,
+so a value present in *neither* the registry nor `UNPORTED` — `_slot_occupant`'s
+`ValueError` path, not its `NotImplementedError` path — printed as *"the factory
+dispatches on it"*. True of the field, false of the value.
+
+The consequence is measurable: the ST closing wave was briefed as "exactly four unported
+switch values, identical on both files", from a re-survey run that same day. The real
+count was six, and this was one of the two the survey could not show. `machine_survey`
+now derives `field -> registry` from `indat.py`'s AST (`slot_registries`) and reports the
+second failure mode as its own kind, with `ROUTED_AWAY` for the one field a routing
+function answers from a different registry, and `tests/functional_process/
+test_machine_survey.py` pins both halves.
+
+The **other** invisible blocker was `pf_coil_system_arm`, a derived arm index that appears
+in no `IN.DAT` and that no column of a switch table can ever reach. That one is answered
+differently: `report()` now ends with one real `machine_from_indat` attempt
+(`assembly_verdict`), which is exact and costs a second.

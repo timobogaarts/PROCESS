@@ -45,13 +45,17 @@ verbatim: finite in value and `nan` in derivative at zero field. See the audit r
 **D6** for the repair that exists and why the port does not apply it.
 """
 
-from functional_process._harness import Tier1Contract, legacy_sample
+from types import MappingProxyType
+
+from functional_process._harness import Sample, Tier1Contract, legacy_sample
 from functional_process.models.physics.plasma_current import (
+    calculate_current_coefficient_fiesta,
     calculate_current_coefficient_ipdg89,
     calculate_current_profile_index_wesson,
     calculate_cyclindrical_plasma_current,
     calculate_cylindrical_safety_factor,
     calculate_internal_inductance_wesson,
+    calculate_plasma_current_fiesta,
     calculate_plasma_current_ipdg89,
 )
 from process.core.model import DataStructure
@@ -70,6 +74,9 @@ _AUDIT_RECORD = "models/physics/plasma_current.md"
 _I_PLASMA_CURRENT_IPDG89 = 4
 # `i_ind_plasma_internal_norm = 1` (Wesson), `large_tokamak_eval.IN.DAT:311`.
 _I_IND_PLASMA_INTERNAL_NORM_WESSON = 1
+# `i_plasma_current = 9` (FIESTA ST), `spherical_tokamak_eval.IN.DAT:288` and
+# `st_regression.IN.DAT`.
+_I_PLASMA_CURRENT_FIESTA = 9
 
 
 def _reference_plasma_current_ipdg89(
@@ -97,6 +104,44 @@ def _reference_plasma_current_ipdg89(
         rminor=rminor,
         triang=0.5,
         triang95=triang95,
+    )
+
+
+def _reference_plasma_current_fiesta(
+    eps, kappa, triang, rminor, rmajor, q95, b_plasma_toroidal_on_axis
+):
+    """`PlasmaCurrent.calculate_plasma_current` at `i_plasma_current = 9`.
+
+    The same "close the `data` back-door" adapter as the IPDG89 one above, with the
+    complementary pin set: this arm reads the **separatrix** `kappa`/`triang`, so it is
+    `kappa95`/`triang95` that are pinned to constants here, and if the FIESTA arm in fact
+    read either of them the value test would fail the moment fuzzing moved the seven
+    arguments it does declare. The two adapters together are the evidence that the
+    family's two occupants have genuinely different read sets and not merely different
+    constants.
+
+    `triang` is a *live* argument here rather than a pinned `+0.5`, and every sample and
+    fuzz bound keeps it strictly positive: `plasma_current.py:305-309` raises for
+    `triang < 0` at every `i_plasma_current` except `8`, so a negative point has no
+    PROCESS answer to agree with, and `triang == 0` is where `triang ** 0.060` has an
+    infinite derivative (the port's `safe_pow` makes it `0` there; PROCESS's own finite
+    difference cannot be asked what it should be).
+    """
+    return PlasmaCurrent().calculate_plasma_current(
+        alphaj=1.0,
+        alphap=0.0,
+        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+        eps=eps,
+        i_plasma_current=_I_PLASMA_CURRENT_FIESTA,
+        kappa=kappa,
+        kappa95=1.6517857142857142,
+        pres_plasma_on_axis=0.0,
+        len_plasma_poloidal=24.081367139525412,
+        q95=q95,
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        triang95=0.3333333333333333,
     )
 
 
@@ -230,6 +275,91 @@ class TestCalculatePlasmaCurrentIpdg89(Tier1Contract):
         "rmajor": (6.0, 10.0),
         "q95": (2.5, 5.0),
         "b_plasma_toroidal_on_axis": (4.0, 7.0),
+    }
+
+
+class TestCalculateCurrentCoefficientFiesta(Tier1Contract):
+    """`calculate_current_coefficient_fiesta` -> the same `@staticmethod`, unchanged
+    except that `triang ** 0.060` is `safe_pow(triang, 0.060)`.
+
+    **The `safe_pow` substitution is invisible to the value test by construction** --
+    `models/safe_math.py` evaluates the identical expression for every `x != 0` -- and
+    the domain guard below keeps every point off `triang == 0`, which is the only place
+    the two differ at all (in derivative, never in value).
+
+    No legacy point exists: `tests/unit/models/physics/test_physics.py` has no FIESTA
+    case, so the sample is the operating point of `spherical_tokamak_eval.IN.DAT`
+    itself -- `aspect = 1.8` (line 260) giving `eps = 1/1.8`, `kappa = 2.8` (285),
+    `triang = 0.5` (296). Provenance `input-file`, not `legacy`, because it is derived
+    from a tracked input and not lifted from a recorded expectation.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = staticmethod(PlasmaCurrent.calculate_current_coefficient_fiesta)
+    ported = calculate_current_coefficient_fiesta
+
+    samples = [
+        Sample(
+            MappingProxyType(
+                {"eps": 1.0 / 1.8, "kappa": 2.8, "triang": 0.5},
+            ),
+            "input-file",
+            "calculate_current_coefficient_fiesta-spherical_tokamak_eval",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "eps": (0.35, 0.75),
+        "kappa": (1.8, 3.2),
+        "triang": (0.05, 0.6),
+    }
+
+
+class TestCalculatePlasmaCurrentFiesta(Tier1Contract):
+    """`calculate_plasma_current_fiesta` -> `PlasmaCurrent.calculate_plasma_current`
+    with `i_plasma_current = 9`, called on a real instance.
+
+    Sample is `spherical_tokamak_eval.IN.DAT`'s own operating point: `aspect = 1.8`
+    (line 260), `kappa = 2.8` (285), `triang = 0.5` (296), `rmajor = 4.5` (291) with
+    `rminor = rmajor / aspect`, `q95 = 5.835830999686161` (286) and
+    `b_plasma_toroidal_on_axis = 3.0` (262).
+
+    **Spherical-tokamak fuzz bounds, not the tokamak's.** `eps` runs to `0.75` and
+    `kappa` to `3.2` here where the IPDG89 contracts stop at `0.45`/`2.0`; a low-aspect
+    machine lives in a different part of the domain, and reusing the conventional bounds
+    would have tested this arm nowhere near where it is used.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = staticmethod(_reference_plasma_current_fiesta)
+    ported = calculate_plasma_current_fiesta
+
+    samples = [
+        Sample(
+            MappingProxyType(
+                {
+                    "eps": 1.0 / 1.8,
+                    "kappa": 2.8,
+                    "triang": 0.5,
+                    "rminor": 4.5 / 1.8,
+                    "rmajor": 4.5,
+                    "q95": 5.835830999686161,
+                    "b_plasma_toroidal_on_axis": 3.0,
+                },
+            ),
+            "input-file",
+            "calculate_plasma_current_fiesta-spherical_tokamak_eval",
+        ),
+    ]
+
+    fuzz_bounds = {
+        "eps": (0.35, 0.75),
+        "kappa": (1.8, 3.2),
+        "triang": (0.05, 0.6),
+        "rminor": (1.5, 3.0),
+        "rmajor": (3.0, 6.0),
+        "q95": (3.0, 8.0),
+        "b_plasma_toroidal_on_axis": (1.5, 4.5),
     }
 
 

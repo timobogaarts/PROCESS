@@ -150,13 +150,19 @@ class TokamakPlasmaBeta(ModelNamespace):
     """`.physics.e_plasma_beta` (`physics.py:3912-3916`) -- the original occupant of
     this slot, unchanged but for its name."""
 
-    norm_max: BetaNormMaxWesson = dataclasses.field(kw_only=True)
-    """`.physics.i_beta_norm_max` -- six values, one occupant (`1`, Wesson).
+    norm_max: BetaNormMaxWesson | None = dataclasses.field(kw_only=True)
+    """`.physics.i_beta_norm_max` -- six values, one node and one empty arm.
 
-    Factory-filled rather than defaulted even though only one occupant exists, for
+    Factory-filled rather than defaulted even though only one *node* exists, for
     `models/tokamak/namespace.py`'s stated reason: a defaulted slot is a slot
     `machine_from_indat` never asks a switch about, so a file selecting Menard or
-    Tholerus would be quietly given Wesson instead of refused."""
+    Tholerus would be quietly given Wesson instead of refused.
+
+    **`None` at `USER_INPUT` (0)**, the value both tracked spherical tokamaks set: there
+    is nothing for PROCESS to compute (`get_beta_norm_max_value` returns
+    `.physics.beta_norm_max` itself) and the field is a boundary input, as it is in
+    PROCESS. Absence spelled as absence -- the `DX_TF_SIDE_CASE_MIN` /
+    `CURRENT_PROFILE_INDEX` shape, not a refusal."""
 
     limit: BetaLimitFromNorm = BetaLimitFromNorm()
     """`.physics.beta_vol_avg_max` (`physics.py:3810-3816`), constraint 24's bound."""

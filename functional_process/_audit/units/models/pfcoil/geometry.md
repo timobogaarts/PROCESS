@@ -185,3 +185,39 @@ None. `place_pf_outside_tf` imports `TFCoilShapeModel` from
   decomposition would be more faithful to the switch-per-occupant rule but would need
   the flattening to become a runtime concatenation of variable-length pieces. Not
   decided here.
+
+## the spherical tokamaks miss on four of seven dimensions at once (measured 2026-08-29)
+
+The ST closing wave probed `_pf_coil_system_arm` past its first refusal, because that
+function returns at the **first** deviating dimension and a single refusal message
+therefore sizes nothing. Both `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`
+deviate on four of the seven:
+
+| arm | dimension | ST value |
+|---|---|---|
+| `-1` | `iohcl` | `0` — **no central solenoid at all** |
+| `-3` | `itart` / `itartpf` | `1` / `1` — spherical tokamak PF placement |
+| `-6` | `(i_pf_superconductor, i_cs_superconductor)` | `(9, 1)` — `HAZELTON_ZHAI_REBCO` PF conductor |
+| `-7` | `i_tf_shape` / `i_r_pf_outside_tf_placement` | `2` (picture frame) / `1` |
+
+`-2` (coil-group topology), `-4` (`i_pf_current`) and `-5` (`i_pf_conductor`) agree with
+the reference configuration.
+
+**This is a package, not an arm.** `-1` alone is what `UNPORTED` already says it is —
+"a different occupant set for every node in the package", across `geometry.md`,
+`currents.md`, `fields.md`, `masses.md` and `inductance.md` — and three more dimensions
+sit behind it. The earlier brief's expectation that `pf_coil_system_arm == -3` was the
+remaining item is off by three dimensions in one direction and by a whole subsystem in the
+other.
+
+Two things worth carrying forward:
+
+- **`-6` is portable, contrary to the shape of the `i_tf_sc_mat = 9` refusals elsewhere.**
+  `models/pfcoil.py:4851` has a real `HAZELTON_ZHAI_REBCO` branch calling
+  `superconductors.hijc_rebco`. The "PROCESS has no arm at value 9" statement in
+  `UNPORTED[("i_tf_sc_mat", 9)]` is about `models/stellarator/coils/coils.py`'s
+  `jcrit_from_material`, which handles 1..8; it does not transfer to the tokamak PF path.
+- **The refusal is invisible to `machine_survey`'s switch table**, because
+  `pf_coil_system_arm` is a derived arm index and appears in no `IN.DAT`. That is why
+  `report()` now ends with one real `machine_from_indat` attempt (`assembly_verdict`);
+  see `physics.md`'s 2026-08-29 section for the other half of the same blind spot.

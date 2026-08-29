@@ -548,3 +548,79 @@ defect above is fixed.
    `triang95` and `alphaj` are not, and mixing the two sources in one `fuzz_bounds` dict
    would have been more misleading than choosing all seven by hand. Same gap
    `plasma_geometry.md`'s question 3 records from the domain-guard side.
+
+## the FIESTA arm (2026-08-29, the ST closing wave)
+
+`i_plasma_current == 9` (`PlasmaCurrentModel.FIESTA_ST_SCALING`) now has an occupant,
+`FiestaStPlasmaCurrent`, and is the second arm of `PlasmaCurrentScaling`. Both tracked
+spherical tokamaks select it (`spherical_tokamak_eval.IN.DAT:288`, `st_regression.IN.DAT`).
+
+| function | ports | reference used by the contract |
+|---|---|---|
+| `calculate_current_coefficient_fiesta` | `PlasmaCurrent.calculate_current_coefficient_fiesta`, `plasma_current.py:990-1016` | the PROCESS `@staticmethod` itself |
+| `calculate_plasma_current_fiesta` | the `i_plasma_current == 9` path through `calculate_plasma_current` (`:380-383` and `:392-401`) | `PlasmaCurrent().calculate_plasma_current` bound at `i_plasma_current = 9` |
+
+| class | family | owns | reads |
+|---|---|---|---|
+| `FiestaStPlasmaCurrent` | `PlasmaCurrentScaling` | `.physics.plasma_current` | `.physics.eps`, `.kappa`, `.triang`, `.rminor`, `.rmajor`, `.q95`, `.b_plasma_toroidal_on_axis` |
+
+### the read set is the finding, not the formula
+
+`Ipdg89PlasmaCurrent` reads `.physics.kappa95`/`.triang95`; this arm reads
+`.physics.kappa`/`.triang`. Five of the seven reads are shared and two are not, which is
+the first hard evidence in this unit that `PlasmaCurrentScaling`'s arms differ in *ports*
+rather than in constants — the thing a one-node-with-a-switch port would have hidden by
+declaring the union. Both adapters in the test module pin the *other* arm's pair to a
+constant and both value tests agree at machine precision across fuzz, which is what that
+claim means operationally.
+
+### D7 — `triang ** 0.060`, and what the port does about it
+
+Two distinct defects live in one expression, and they are treated differently because
+they are different kinds:
+
+- **`nan` for `triang < 0`** — reproduced, not repaired. It is unreachable through
+  PROCESS's own dispatcher: `plasma_current.py:305-309` raises `ProcessValueError` for a
+  negative triangularity at every `i_plasma_current` except `8` (Sauter), so PROCESS
+  never evaluates this coefficient there. Same status as the IPDG89 arm's identical
+  guard: a precondition of the arm, the caller's to hold, and every sample and fuzz bound
+  in the contract keeps `triang > 0`.
+- **An infinite derivative at `triang == 0`** — the canonical `x ** p, 0 < p < 1` shape
+  `models/safe_math.py` exists for (`next_steps.md` §9). The port writes
+  `safe_pow(triang, 0.060)`, which is **bit-identical for every `triang != 0`** —
+  including the `nan` above — and gives the derivative at zero the value `0` rather than
+  `+inf`. No value is changed anywhere, so this is not a repair of PROCESS's answer; it
+  is the same Jacobian-poisoning fix already applied at every other fractional-power site
+  in this port, and it is why `TestCalculateCurrentCoefficientFiesta` needs **no entry in
+  `_harness/boundary.py`**: the zero-boundary probe passes.
+
+The alternative — spell `triang**0.060` and register `("TestCalculateCurrentCoefficient
+Fiesta", "triang")` as a boundary excuse — was rejected because `boundary.py`'s own
+docstring scopes that register to the *unguarded-division* class, where the repair is a
+per-site modelling decision. Here the repair exists, is value-identical, and is already
+project policy.
+
+### fuzz bounds are the spherical tokamak's, not the tokamak's
+
+`eps` runs to `0.75` and `kappa` to `3.2` in this arm's two contracts, against `0.45` and
+`2.0` in the IPDG89 ones. Reusing the conventional-aspect bounds would have exercised an
+ST scaling nowhere near where any ST runs; the numbers are `spherical_tokamak_eval`'s own
+operating point widened, and the sample point is that file's `aspect = 1.8`,
+`kappa = 2.8`, `triang = 0.5`, `rmajor = 4.5`, `q95 = 5.8358`,
+`b_plasma_toroidal_on_axis = 3.0` (lines 260, 285, 296, 291, 286, 262). Provenance is
+`input-file` rather than `legacy`: PROCESS has no unit test for this scaling.
+
+**Tests**: `tests/functional_process/models/physics/test_plasma_current.py`,
+`TestCalculateCurrentCoefficientFiesta` and `TestCalculatePlasmaCurrentFiesta`.
+**`80 passed`** with `--fp-gradients` (was 60), **`208 passed`** with
+`--fp-gradients --fp-fuzz 5` (was 156).
+
+### this arm does not make either ST file assemble
+
+Stated here because the record is where a reader will look for it: porting FIESTA closed
+one of six blockers on `spherical_tokamak_eval`/`st_regression`. The others are
+`i_diamagnetic_current == 2` and `i_pfirsch_schluter_current == 1`
+(`bootstrap_current.md`, same wave), `i_beta_norm_max == 0` (`physics.md`, same wave),
+`i_tf_turn_type == 2` (the whole CROCO TF model, `tfcoil/superconducting.md`) and
+`pf_coil_system_arm` (four of its seven refused dimensions at once,
+`pfcoil/geometry.md`). The last two are unported model packages, not arms.

@@ -632,3 +632,69 @@ defect above is fixed.
    not. The array arguments are fuzzed as a ±15% multiplicative band around PROCESS's own
    pedestal profile, which keeps positivity (every `log` here needs it) without pinning
    the port to one profile family. Same gap `plasma_current.md`'s question 5 records.
+
+## the two SCENE fits (2026-08-29, the ST closing wave)
+
+`i_diamagnetic_current == 2` and `i_pfirsch_schluter_current == 1` now have occupants.
+Both tracked spherical tokamaks select both.
+
+| function | ports | reference used by the contract |
+|---|---|---|
+| `diamagnetic_fraction_scene` | `PlasmaDiamagneticCurrent.diamagnetic_fraction_scene`, `plasma_current.py:1158-1179` | the PROCESS `@staticmethod` itself |
+| `ps_fraction_scene` | the module-level `ps_fraction_scene`, `physics.py:161-179` | the PROCESS function itself |
+
+| class | family | owns | reads |
+|---|---|---|---|
+| `SceneDiamagneticCurrent` | `PlasmaDiamagneticCurrentFraction` | `.current_drive.f_c_plasma_diamagnetic` | `.physics.beta_total_vol_avg`, `.q95`, `.q0` |
+| `ScenePfirschSchluterCurrent` | `PlasmaPfirschSchluterCurrentFraction` | `.current_drive.f_c_plasma_pfirsch_schluter` | `.physics.beta_total_vol_avg` |
+
+### two strong oracles in a file that mostly has weak ones
+
+Both PROCESS functions are pure, take exactly the port's arguments, and have recorded
+unit-test points (`tests/unit/models/physics/test_physics.py::
+test_diamagnetic_fraction_scene`, `::test_ps_fraction_scene`). No adapter, no pinned
+arguments, no second reading of the source — which is worth naming next to
+`TestCalculatePlasmaCurrentFractions`, whose reference is this file's weakest kind and
+which sits one link downstream of both. The two contracts are the strongest evidence in
+the unit and they are three lines of arithmetic; the weakest is the six-statement block
+that consumes them. That asymmetry is a property of what PROCESS made callable, not of
+what matters.
+
+### the sibling `_scene`/`_hender` fields stay uncarried, and the wave confirms it
+
+PROCESS computes `f_c_plasma_diamagnetic_hender`, `f_c_plasma_diamagnetic_scene` and
+`f_c_plasma_pfirsch_schluter_scene` unconditionally and *then* selects. The measurement in
+"## data footprint" said all three are reporting-only, and the two new occupants act on
+it: each owns the **selected** field directly, with no intermediate and no copy — the same
+call `WessonCurrentProfileIndex` made for `.physics.alphaj_wesson`. A family with one
+owned `VarPath` per arm is what makes `Graph.prune` able to drop the arm that is not
+chosen; owning the sibling too would have put a dead node in every ST graph.
+
+### the first non-zero current fractions this port has ever produced
+
+Until this wave every assembled machine took `NoDiamagneticCurrent` and
+`NoPfirschSchluterCurrent`, both of which return the literal `0.0`. So
+`calculate_plasma_current_fractions`' three-term sum
+(`f_c_plasma_internal = bootstrap + diamagnetic + pfirsch_schluter`) had never been
+exercised with anything but the bootstrap term, and the `min(., non_inductive)` clamp had
+never been approached from a genuinely different value. The Pfirsch-Schlüter term is
+**negative** (`-0.09 * beta`), so on an ST the sum is not even monotone in the three
+inputs. Nothing is known to be wrong; it is stated because the first machine that
+exercises it will be the first evidence either way, and that machine does not assemble
+yet (see below).
+
+`i_diamagnetic_current == 1` (Hender) stays UNPORTED: not live on any tracked input, and
+a strictly smaller read set (`beta` alone), so it is its own occupant rather than a
+constant inside the SCENE one.
+
+**Tests**: `tests/functional_process/models/physics/test_bootstrap_current.py`,
+`TestDiamagneticFractionScene` and `TestPsFractionScene`. **`139 passed`** with
+`--fp-gradients` (was 133).
+
+### these arms do not make either ST file assemble
+
+Four of the six blockers on `spherical_tokamak_eval`/`st_regression` were closed by this
+wave (these two, FIESTA in `plasma_current.md`, `i_beta_norm_max == 0` in `physics.md`).
+The two that remain are unported model *packages*: `i_tf_turn_type == 2`, the whole CROCO
+TF coil class (`tfcoil/superconducting.md`), and `pf_coil_system_arm`, which both files
+miss on four of its seven refused dimensions at once (`pfcoil/geometry.md`).

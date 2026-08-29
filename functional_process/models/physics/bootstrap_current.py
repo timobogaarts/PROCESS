@@ -11,8 +11,17 @@ read it first, especially "## the chain is not one file" and "## the invented
 occupant class per switch value, per `next_steps.md` §14.2 -- no `i_*` integer appears as
 a kwarg or inside any body here. The other thirteen `i_bootstrap_current` values, the two
 non-zero `i_diamagnetic_current` values and the one non-zero `i_pfirsch_schluter_current`
-value are UNPORTED; the audit record's "switches touched" tables carry each one's reads
+value were UNPORTED; the audit record's "switches touched" tables carry each one's reads
 and reason.
+
+**The ST closing wave (2026-08-29) added the two SCENE fits.**
+`i_diamagnetic_current = 2` (`SceneDiamagneticCurrent`) and
+`i_pfirsch_schluter_current = 1` (`ScenePfirschSchluterCurrent`) are what both
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` set, and they are the first
+two occupants that make `.current_drive.f_c_plasma_diamagnetic` and
+`.current_drive.f_c_plasma_pfirsch_schluter` non-zero anywhere in this port -- so they
+are also the first live test of `PlasmaCurrentFractions`' three-term sum. Only
+`i_diamagnetic_current == 1` (Hender) remains UNPORTED in the two families.
 
 **Source spans two PROCESS files, and that is deliberate.** The unit's nominal source is
 `process/models/physics/bootstrap_current.py` (`PlasmaBootstrapCurrent`,
@@ -860,6 +869,37 @@ def enforce_bootstrap_current_fraction_max(
     return jnp.minimum(f_c_plasma_bootstrap, f_c_plasma_bootstrap_max)
 
 
+def diamagnetic_fraction_scene(beta, q95, q0):
+    """The diamagnetic current fraction, SCENE fit (Tim Hender).
+
+    Ports `PlasmaDiamagneticCurrent.diamagnetic_fraction_scene`,
+    **`process/models/physics/plasma_current.py:1158-1179`**, unchanged (`@nb.njit`
+    dropped, as everywhere in this port). Selected by `i_diamagnetic_current == 2`
+    at `plasma_current.py:1088-1094`.
+
+    Pure arithmetic -- no `jnp` call at all, so it traces on whatever the caller hands
+    it. The `q95 / q0` quotient is PROCESS's and is left unguarded: `q0` is an input,
+    PROCESS neither clamps nor checks it, and at `q0 == 0` both the value and the tangent
+    are non-finite, which is the domain edge rather than the value-finite/tangent-`nan`
+    class `safe_math.py` exists for.
+    """
+    return beta * (0.1 * q95 / q0 + 0.44) * 0.414
+
+
+def ps_fraction_scene(beta):
+    """The Pfirsch-Schlüter current fraction, SCENE fit (Tim Hender, 2019).
+
+    Ports the module-level `ps_fraction_scene`,
+    **`process/models/physics/physics.py:161-179`**, unchanged (`@nb.jit` dropped).
+    Selected by `i_pfirsch_schluter_current == 1` at `physics.py:538-541`.
+
+    Negative by construction: the Pfirsch-Schlüter current opposes the plasma current,
+    and `calculate_plasma_current_fractions` above adds it to the bootstrap and
+    diamagnetic fractions with that sign, exactly as `physics.py:558-562` does.
+    """
+    return -9e-2 * beta
+
+
 def calculate_plasma_current_fractions(
     f_c_plasma_bootstrap,
     f_c_plasma_diamagnetic,
@@ -1011,10 +1051,11 @@ class PlasmaDiamagneticCurrentFraction(ExplicitFunction):
     """The family that owns `.current_drive.f_c_plasma_diamagnetic` under
     `i_diamagnetic_current` (`plasma_current.py:1081-1094`).
 
-    Three values: `NONE` (0, below), `HENDER_ST_FIT` (1) and `SCENE_FIT` (2). The two
-    non-zero arms read `.physics.beta_total_vol_avg` (and `q95`/`q0` for SCENE) and are
-    UNPORTED -- neither is live on `large_tokamak_eval`, whose `OUT.DAT:970` records
-    `i_diamagnetic_current = 0`.
+    Three values: `NONE` (0, below), `HENDER_ST_FIT` (1) and `SCENE_FIT` (2, below --
+    added by the ST closing wave, 2026-08-29, for the two tracked spherical tokamaks).
+    `HENDER_ST_FIT` reads only `.physics.beta_total_vol_avg` and stays UNPORTED: it is
+    not live on any tracked input, and it is a genuinely smaller read set than SCENE's,
+    so it is its own occupant rather than a constant in this one.
     """
 
 
@@ -1038,13 +1079,46 @@ class NoDiamagneticCurrent(PlasmaDiamagneticCurrentFraction):
         return 0.0
 
 
+class SceneDiamagneticCurrent(PlasmaDiamagneticCurrentFraction):
+    """`i_diamagnetic_current == SCENE_FIT` (2) -- both tracked spherical tokamaks.
+
+    Ports `PlasmaDiamagneticCurrent.diamagnetic_fraction_scene`
+    (`process/models/physics/plasma_current.py:1158-1179`, `@nb.njit` dropped) and the
+    `SCENE_FIT` limb of the selection at `:1088-1094`.
+
+    **Owns `.current_drive.f_c_plasma_diamagnetic` directly, not
+    `f_c_plasma_diamagnetic_scene` and then a copy.** PROCESS computes *both* fits
+    unconditionally (`:1068-1079`) and then selects; the Hender and SCENE sibling fields
+    are reporting-only, measured (this module's docstring, and
+    `bootstrap_current.md` "## data footprint"). One owned `VarPath`, no intermediate --
+    the same call `WessonCurrentProfileIndex` made for `.physics.alphaj_wesson`.
+
+    The `q95 / q0` quotient is unguarded, exactly as PROCESS writes it: at `q0 == 0` the
+    value is `inf` and the tangent is not finite. `q0` is a plasma input (`2.0` on
+    `spherical_tokamak_eval.IN.DAT:287`) and PROCESS neither guards nor clamps it; the
+    zero-boundary probe therefore steps aside on its own, because zeroing `q0` makes the
+    *value* non-finite too.
+    """
+
+    f_c_plasma_diamagnetic = OutputInto(current_drive)
+
+    def __call__(
+        self,
+        beta_total_vol_avg=From(physics),
+        q95=From(physics),
+        q0=From(physics),
+    ):
+        return diamagnetic_fraction_scene(beta=beta_total_vol_avg, q95=q95, q0=q0)
+
+
 class PlasmaPfirschSchluterCurrentFraction(ExplicitFunction):
     """The family that owns `.current_drive.f_c_plasma_pfirsch_schluter` under
     `i_pfirsch_schluter_current` (`physics.py:538-541`).
 
     Two values: `0` (below) and `1`, which copies
     `.current_drive.f_c_plasma_pfirsch_schluter_scene` -- `ps_fraction_scene(
-    beta_total_vol_avg)`, `physics.py:534-536`. Value `1` is UNPORTED; it is not live on
+    beta_total_vol_avg)`, `physics.py:534-536`. Value `1` is `ScenePfirschSchluterCurrent`
+    below, added by the ST closing wave (2026-08-29); it is not live on
     `large_tokamak_eval`, whose MFILE records the enforced fraction as `0.0`
     (line 14427) while the SCENE value it would have copied is `-2.9e-3` (line 6900).
     """
@@ -1062,6 +1136,29 @@ class NoPfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction):
 
     def __call__(self):
         return 0.0
+
+
+class ScenePfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction):
+    """`i_pfirsch_schluter_current == 1` -- both tracked spherical tokamaks.
+
+    Ports the module-level `ps_fraction_scene`
+    (`process/models/physics/physics.py:161-179`, `@nb.jit` dropped) and the `== 1` limb
+    of `physics.py:538-541`.
+
+    Owns `.current_drive.f_c_plasma_pfirsch_schluter` directly rather than
+    `.f_c_plasma_pfirsch_schluter_scene` and a copy, for the reason
+    `SceneDiamagneticCurrent` gives: the `_scene` sibling is reporting-only, measured.
+
+    **The fraction is negative** (`-0.09 * beta`), and that is PROCESS's, not a sign
+    slip: the Pfirsch-Schlüter current opposes the plasma current, and
+    `PlasmaCurrentFractions` sums it into `.current_drive.f_c_plasma_internal` with the
+    bootstrap and diamagnetic fractions as written.
+    """
+
+    f_c_plasma_pfirsch_schluter = OutputInto(current_drive)
+
+    def __call__(self, beta_total_vol_avg=From(physics)):
+        return ps_fraction_scene(beta=beta_total_vol_avg)
 
 
 class PlasmaCurrentFractions(ExplicitFunction):

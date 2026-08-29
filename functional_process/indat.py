@@ -115,6 +115,8 @@ from functional_process.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
     NoPfirschSchluterCurrent,
     SauterBootstrapCurrentFraction,
+    SceneDiamagneticCurrent,
+    ScenePfirschSchluterCurrent,
 )
 from functional_process.models.physics.composition import (
     PlasmaCompositionIgnited,
@@ -162,6 +164,7 @@ from functional_process.models.physics.physics import (
     SurfaceAveragedPoloidalFieldAmperes,
 )
 from functional_process.models.physics.plasma_current import (
+    FiestaStPlasmaCurrent,
     Ipdg89PlasmaCurrent,
     TokamakPlasmaCurrent,
     WessonCurrentProfileIndex,
@@ -412,7 +415,10 @@ from process.models.tfcoil.base import (
     TFConductorModel,
     TFPlasmaCaseType,
 )
-from process.models.tfcoil.superconducting import SuperconductingTFWPShapeType
+from process.models.tfcoil.superconducting import (
+    SuperconductingTFTurnType,
+    SuperconductingTFWPShapeType,
+)
 
 REFERENCE_STELLA_CONF = (
     Path(__file__).resolve().parent.parent
@@ -686,6 +692,25 @@ UNPORTED = {
     ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 8)): _SC_TAPE_REASON,
     ("i_str_wp_i_tf_sc_mat_temp_margin", (1, 9)): _SC_TAPE_REASON,
     ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 9)): _SC_TAPE_REASON,
+    ("i_tf_turn_type", SuperconductingTFTurnType.CROSS_CONDUCTOR): (
+        "the CroCo (cross-conductor) turn selects a **different PROCESS `Model` class**, "
+        "`CROCOSuperconductingTFCoil` (`process/models/tfcoil/superconducting.py:3773`), "
+        "not a different arm inside the cable-in-conduit one: `core/caller.py:298-313` "
+        "dispatches on `i_tf_turn_type` above every model and runs "
+        "`models.croco_sctfcoil` instead of `models.cicc_sctfcoil`. Its `run` computes a "
+        "REBCO tape stack -- `tf_croco_averaged_turn_geometry`, "
+        "`tf_turn_croco_cable_space_properties`, `calculate_croco_cable_geometry`, "
+        "`tf_croco_inboard_areas_and_fractions` and the `.superconducting_tfcoil."
+        "*croco*`/`*hts_tape*` fields they own -- none of which exists in this port, and "
+        "it refuses integer turn geometry outright (`:3838`). That is a whole unit, not "
+        "an occupant. **Both tracked spherical tokamaks need it** "
+        "(`spherical_tokamak_eval.IN.DAT:72`, `st_regression.IN.DAT:800`), which is the "
+        "measured reason neither assembles yet. Refused here, above the device branch, "
+        "because until 2026-08-29 nothing asked: a machine with this value assembled "
+        "**silently as cable-in-conduit**, and only the tape-superconductor refusal "
+        "inside `CICC_SUPERCONDUCTOR_PROPERTIES` was accidentally catching the two ST "
+        "files"
+    ),
     ("ife", IFEModel.INERTIAL_CONFINEMENT): (
         "inertial confinement is a different device, and PROCESS spells it as an `if` "
         "inside seven Account-22x cost methods rather than as a device class. Each of "
@@ -1078,10 +1103,6 @@ UNPORTED = {
         "`PlasmaGeometryArm` Sauter occupant -- `_plasma_geometry_arm` owns the "
         "disjunction, one input value, two slots"
     ),
-    ("i_plasma_current", PlasmaCurrentModel.FIESTA_ST_SCALING): (
-        "FIESTA ST; not live. `triang**0.060` is NaN for negative triangularity and "
-        "has an infinite derivative at zero"
-    ),
     ("i_ind_plasma_internal_norm", IndInternalNormModel.MENARD): (
         "Menard ST scaling -- an ordinary sibling occupant, one line to add: owns "
         "`.physics.ind_plasma_internal_norm`, reads "
@@ -1106,13 +1127,6 @@ UNPORTED = {
     ("i_diamagnetic_current", PlasmaDiamagneticCurrentModel.HENDER_ST_FIT): (
         "`diamagnetic_fraction_hender` (`plasma_current.py:1138-1153`); not live "
         "(PROCESS's own default is 0 and the reference file leaves it)"
-    ),
-    ("i_diamagnetic_current", PlasmaDiamagneticCurrentModel.SCENE_FIT): (
-        "`diamagnetic_fraction_scene` reads `q95`/`q0`; not live"
-    ),
-    ("i_pfirsch_schluter_current", 1): (
-        "`ps_fraction_scene` (`physics.py:534`); not live. No PROCESS enum exists for "
-        "this switch, so the key is the bare domain value"
     ),
     **dict.fromkeys(
         (
@@ -1283,7 +1297,7 @@ def _refuse_unported_switch(field, value):
     """Refuse a switch value this port has no occupant for, where the switch decides no
     slot of its own.
 
-    `ife` is the only one. `ife == 1` is a whole **device** -- inertial rather than
+    Two of them. `ife == 1` is a whole **device** -- inertial rather than
     magnetic confinement -- and PROCESS spells it not as a device class but as an `if`
     inside seven separate Account-22x cost methods, each reading a different set of
     `.ife.*` fields, none of them ported. So there is nothing for a registry to hold:
@@ -1292,6 +1306,22 @@ def _refuse_unported_switch(field, value):
     Answering it here, once, at assembly, is `_audit/next_steps.md` §14.2's shape; the
     alternative it withdrew was seven bodies each holding the integer and each raising
     at trace time.
+
+    `i_tf_turn_type == 2` is the second, added by the ST closing wave (2026-08-29), and
+    it is the same shape one level down: PROCESS resolves it **above every model**, in
+    `core/caller.py:298-313`, and runs `CROCOSuperconductingTFCoil` instead of
+    `CICCSuperconductingTFCoil` -- a different `Model` class, not a different slot inside
+    one. `models/tfcoil/namespace.py`'s own docstring said exactly this and nothing
+    checked it: before this refusal existed, an input setting `i_tf_turn_type = 2`
+    **assembled silently as a cable-in-conduit machine**, measured on a copy of
+    `large_tokamak_eval.IN.DAT` with the one line added. That is
+    `low_aspect_ratio_DEMO`'s integer-turn mis-assembly (`next_steps.md` §15) a second
+    time, and it is why the refusal is here rather than left to the tape-superconductor
+    refusal that was catching the two spherical tokamaks by accident.
+
+    Asked only on the superconducting arm, because that is the only branch of
+    `caller.py` that reads it; a copper or aluminium machine's `i_tf_turn_type` decides
+    nothing, in PROCESS or here.
 
     The value must already be an `IntEnum` member, so a value PROCESS has never had has
     failed at the enum call before reaching here -- `_slot_occupant`'s `ValueError`
@@ -1691,24 +1721,24 @@ HEATING = {1: EcrhHeating, 2: LowhybHeating}
 FW_AREA = {0: AFwTotalNoPowerflow, 1: AFwTotalWithPowerflow}
 """`.heat_transport.ipowerflow` -> the first-wall-area occupant."""
 
-BETA_NORM_MAX = {1: BetaNormMaxWesson}
+BETA_NORM_MAX = {0: None, 1: BetaNormMaxWesson}
 """`.physics.i_beta_norm_max` -> `.tokamak.plasma_beta.norm_max`'s occupant.
 
 `1` (`WESSON`, `physics_variables.py`'s own default -- `large_tokamak_eval.IN.DAT` sets
-`i_beta_component` and never mentions this switch) is written. `0` (`USER_INPUT`) is
-absent **and is not in `UNPORTED` either**, which is the one place in this file that
-distinction carries meaning: the other four values are formulas nobody has transcribed,
-while `USER_INPUT` is not a formula at all -- `get_beta_norm_max_value`'s `model_map`
+`i_beta_component` and never mentions this switch) is a node. `0` (`USER_INPUT`) is
+**`None`, an occupant and not a refusal**: `get_beta_norm_max_value`'s `model_map`
 returns `physics_data.beta_norm_max` itself, so the arm's honest occupant is *no node*
-and `.physics.beta_norm_max` staying a boundary input, exactly as PROCESS leaves it.
+and `.physics.beta_norm_max` staying a boundary input, exactly as PROCESS leaves it. The
+other four values are formulas nobody has transcribed and live in `UNPORTED`.
 
-A file selecting `0` therefore gets `_slot_occupant`'s `ValueError` ("not a known
-value") rather than its `NotImplementedError`, and that is wrong for the wrong reason.
-Recorded rather than fixed: making the empty arm expressible needs
-`_slot_occupant` to distinguish "no occupant because nothing to compute" from "no
-occupant because unwritten", which is the same `None`-arm mechanism
-`Tokamak.bootstrap_current` already has at the slot level and this registry has no way
-to reach. Nothing in the tokamak or stellarator scope selects `0`."""
+**The `None` arm landed in the ST closing wave (2026-08-29), and the frontier probe is
+why.** Until then this docstring recorded the gap and asserted "nothing in the tokamak or
+stellarator scope selects `0`" -- which was false for both tracked spherical tokamaks
+(`spherical_tokamak_eval.IN.DAT:265`, `st_regression.IN.DAT:323`), and
+`machine_survey.report` did not say so: the survey checked `UNPORTED` only, so a value
+that is in neither the registry nor `UNPORTED` reported as "the factory dispatches on
+it". That blind spot is fixed in `machine_survey.slot_registries`; this entry is the
+value it was hiding."""
 
 PROFILE_PARAMETERISATION = {
     0: ProfileParameterisationParabolic,
@@ -3244,12 +3274,19 @@ DIVERTOR_HEAT_LOAD = {
 # plasma inductance, the shield and the PF coil system.
 # ---------------------------------------------------------------------------
 
-PLASMA_CURRENT_SCALING = {PlasmaCurrentModel.IPDG89_SCALING: Ipdg89PlasmaCurrent}
+PLASMA_CURRENT_SCALING = {
+    PlasmaCurrentModel.IPDG89_SCALING: Ipdg89PlasmaCurrent,
+    PlasmaCurrentModel.FIESTA_ST_SCALING: FiestaStPlasmaCurrent,
+}
 """`.physics.i_plasma_current` -> `.tokamak.plasma_current.plasma_current`'s occupant.
 
 The same integer also feeds `_plasma_geometry_arm` (the Sauter disjunction, which that
 function owns -- `plasma_geometry.md` OQ2) and `_surface_poloidal_field_arm`; all three
-consumers read the one threaded local, so the switch is answered once."""
+consumers read the one threaded local, so the switch is answered once.
+
+Two arms, and they differ in **read set**, not in constants: `IPDG89_SCALING` (4) reads
+the 95%-flux-surface shaping pair, `FIESTA_ST_SCALING` (9) the separatrix pair. The
+FIESTA arm is what both tracked spherical tokamaks select."""
 
 CURRENT_PROFILE_INDEX = {
     CurrentProfileIndexModel.USER_INPUT: None,
@@ -3276,14 +3313,19 @@ BOOTSTRAP_CURRENT = {
 occupant carries the profile grid's shape (`n_plasma_profile_elements`) as its one
 static kwarg -- a resolution, not a switch (`switch_elimination_design.md` §3(b))."""
 
-DIAMAGNETIC_CURRENT = {PlasmaDiamagneticCurrentModel.NONE: NoDiamagneticCurrent}
+DIAMAGNETIC_CURRENT = {
+    PlasmaDiamagneticCurrentModel.NONE: NoDiamagneticCurrent,
+    PlasmaDiamagneticCurrentModel.SCENE_FIT: SceneDiamagneticCurrent,
+}
 """`.physics.i_diamagnetic_current` -> `.tokamak.diamagnetic_current`'s occupant. The
 `NONE` arm is a real occupant (PROCESS assigns the literal zero), not an empty slot:
-`PlasmaCurrentFractions` reads the fraction unconditionally."""
+`PlasmaCurrentFractions` reads the fraction unconditionally. `SCENE_FIT` (2) is what
+both tracked spherical tokamaks select; `HENDER_ST_FIT` (1) is UNPORTED."""
 
-PFIRSCH_SCHLUTER_CURRENT = {0: NoPfirschSchluterCurrent}
+PFIRSCH_SCHLUTER_CURRENT = {0: NoPfirschSchluterCurrent, 1: ScenePfirschSchluterCurrent}
 """`.physics.i_pfirsch_schluter_current` -> `.tokamak.pfirsch_schluter_current`'s
-occupant. Bare-integer keys: PROCESS declares no enum for this switch."""
+occupant. Bare-integer keys: PROCESS declares no enum for this switch. Both values have
+an occupant -- `1` (the SCENE fit) is what both tracked spherical tokamaks select."""
 
 L_H_THRESHOLD = {
     PlasmaConfinementTransitionModel.MARTIN08_NOMINAL: Martin08NominalLHThresholdPower,
@@ -3995,6 +4037,7 @@ def _tokamak_device(
                 "i_beta_norm_max",
                 switches.get("i_beta_norm_max", 1),  # `physics_variables.py`
                 BETA_NORM_MAX,
+                build=none_or_call,
             )
         ),
         plasma_inductance=plasma_inductance,
@@ -4208,6 +4251,19 @@ def machine_from_indat(input_file, stella_conf=None):
     ife = IFEModel(int(switches.get("ife", 0)))
     if ife is not IFEModel.MAGNETIC_CONFINEMENT:
         _refuse_unported_switch("ife", ife)
+    # `i_tf_turn_type` decides no slot either -- it selects the whole TF `Model` class
+    # (`CICCSuperconductingTFCoil` vs `CROCOSuperconductingTFCoil`) at
+    # `core/caller.py:298-313`, above every model, exactly as `ife` does one level up.
+    # Asked only on the superconducting arm, because that is the only branch of
+    # `caller.py` that reads it. `superconducting_tf_coil_variables.py:194` is the
+    # default. Until this line existed, a CroCo machine assembled silently as
+    # cable-in-conduit -- see `_refuse_unported_switch`'s docstring for the measurement.
+    if i_tf_sup is TFConductorModel.SUPERCONDUCTING:
+        i_tf_turn_type = SuperconductingTFTurnType(
+            int(switches.get("i_tf_turn_type", 1))
+        )
+        if i_tf_turn_type is not SuperconductingTFTurnType.CABLE_IN_CONDUIT:
+            _refuse_unported_switch("i_tf_turn_type", i_tf_turn_type)
     # `itart` decides four slots that used to hardcode it and, on a tokamak, ten more
     # inside `_tokamak_device`. Read here, above the device branch, and threaded --
     # `physics_variables.py:994` is the default.

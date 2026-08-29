@@ -10,18 +10,24 @@ against a stale number is the failure mode `next_steps.md` §13.11 records twice
 
 import pytest
 
+from functional_process import indat
 from functional_process.machine_survey import (
     NOT_TOPOLOGY,
+    ROUTED_AWAY,
     SHAPE,
     Row,
+    assembly_verdict,
     factory_fields,
     pinned_switches,
     report,
+    slot_registries,
     survey,
+    unoccupied_registries,
 )
 
 TOKAMAK = "tests/regression/input_files/large_tokamak_eval.IN.DAT"
 HELIAS = "tests/regression/input_files/stellarator_helias.IN.DAT"
+SPHERICAL = "tests/regression/input_files/spherical_tokamak_eval.IN.DAT"
 
 
 def test_the_factory_s_own_fields_are_read_from_its_source():
@@ -211,3 +217,59 @@ def test_the_report_no_longer_names_a_first_deliverable():
     assert "band (b)" not in text
     assert "0 of which this file contradicts" in text
     assert "i_confinement_time" in text
+
+
+def test_a_value_with_no_occupant_and_no_recorded_reason_is_not_reported_as_dispatched():
+    """The blind spot the ST closing wave found, pinned.
+
+    `_slot_occupant` has **two** failure modes and this module used to check one. A value
+    in `UNPORTED` is a refusal with a reason; a value in neither the registry nor
+    `UNPORTED` is a `ValueError`, and until 2026-08-29 it reported as *"the factory
+    dispatches on it"* -- true of the field, false of the value. That is how
+    `i_beta_norm_max = 0` survived a re-survey whose entire purpose was to enumerate what
+    both spherical tokamaks still needed.
+
+    Asserted on a value that is deliberately absent from a registry today rather than on
+    `i_beta_norm_max` itself, which the same wave gave an occupant: pinning the fixed case
+    would test nothing.
+    """
+    assert unoccupied_registries("i_beta_norm_max", 1) == ()
+    assert unoccupied_registries("i_beta_norm_max", 0) == ()
+    # `2` (Menard) is in `UNPORTED` and out of the registry -- both signals fire, and the
+    # recorded reason is the one that should be shown.
+    assert unoccupied_registries("i_beta_norm_max", 2) == ("BETA_NORM_MAX",)
+    row = next(r for r in survey(SPHERICAL) if r.name == "i_beta_norm_max")
+    assert row.verdict == "factory"
+    assert row.detail == "the factory dispatches on it"
+
+
+def test_every_routed_away_entry_is_earned():
+    """A `ROUTED_AWAY` exemption must be true in both directions.
+
+    Same discipline as `_harness/boundary.py`'s register: the value must genuinely be
+    absent from the registry it is exempted from **and** present in the one it is routed
+    to, so an exemption cannot outlive the routing it describes.
+    """
+    for (field, value), (absent_from, routed_to) in ROUTED_AWAY.items():
+        assert absent_from in slot_registries()[field], (
+            f"{absent_from} is not a registry `_slot_occupant` reads for {field}"
+        )
+        assert value not in getattr(indat, absent_from), (
+            f"{field} == {value} now has an entry in {absent_from}; the exemption is "
+            "stale"
+        )
+        assert getattr(indat, routed_to), f"{routed_to} is empty"
+
+
+def test_the_report_ends_with_what_the_factory_actually_does():
+    """The switch table cannot see a slot dispatched on a *derived* arm index, so the
+    report ends with one real assembly attempt.
+
+    Both tracked spherical tokamaks were surveyed as "exactly four switch values away"
+    while also being refused by `pf_coil_system_arm`, whose name appears in no `IN.DAT`.
+    A column can never show that; an assembly attempt always can.
+    """
+    assert assembly_verdict(TOKAMAK) == "ASSEMBLES."
+    assert report(TOKAMAK).rstrip().endswith("ASSEMBLES.")
+    refusal = assembly_verdict(SPHERICAL)
+    assert refusal.startswith("ASSEMBLY REFUSED")

@@ -9,10 +9,30 @@ kwarg, or whether the port has never heard of it -- and, for the last kind, whic
 PROCESS modules read it and whether any of those is bound to a library JAX cannot trace.
 
 **Every column is measured.** The factory's own fields are read out of `indat.py`'s
-source (the literals `_slot_occupant`/`pick` are called with); the pinned switches are
+source (the literals `_slot_occupant`/`pick` are called with, and -- since 2026-08-29 --
+the registry each one is looked up in, off the AST); the pinned switches are
 introspected off the assembled graph's declaration instances, the same walk
 `mda_harness.switch_audit` does; the readers come from `process/` itself. Nothing here
 is a list somebody typed and nothing has to be kept in step by hand.
+
+**Two blind spots, both found by the ST closing wave and both closed.** A planning tool
+that under-reports is worse than none, and this one under-reported twice on the same two
+files:
+
+1. A value with **no occupant and no `UNPORTED` reason** -- `_slot_occupant`'s
+   `ValueError` path rather than its `NotImplementedError` path -- printed as "the
+   factory dispatches on it", which is true of the field and false of the value. That is
+   how `i_beta_norm_max = 0` survived a re-survey whose whole purpose was to enumerate
+   what both spherical tokamaks still needed. `slot_registries` now derives
+   `field -> registry` from `indat.py`'s AST and the second failure mode is its own kind.
+2. A slot dispatched on a **derived arm index** (`pf_coil_system_arm` and a dozen
+   siblings) has no name in any `IN.DAT`, so no column of a switch table can ever reach
+   it. No amount of care fixes that; `report` therefore ends with one real
+   `machine_from_indat` attempt (`assembly_verdict`), which is exact and costs a second.
+
+The pair is the reason both tracked spherical tokamaks were briefed as "exactly four
+switch values away" when they were six -- and two of the six are unported model packages
+rather than arms.
 
 **Why the traceability column exists.** `next_steps.md` §5 records the CoolProp policy as
 flagged and unresolved: `process/core/coolprop_interface.py` is an opaque external C call,
@@ -24,7 +44,9 @@ will be re-derived by whoever picks it up.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
+import functools
 import os
 import re
 import subprocess
@@ -121,6 +143,87 @@ def factory_fields(path: str | None = None) -> frozenset[str]:
     # matching the dispatch call alone reported it as a decision nobody had made.
     # `numbers.get("X", ...)` is the third: a float or a count that selects an occupant.
     return frozenset(name for pair in found for name in pair if name)
+
+
+@functools.cache
+def slot_registries(path: str | None = None) -> dict[str, tuple[str, ...]]:
+    """`switch field -> the registry names `_slot_occupant` looks it up in`.
+
+    Parsed out of `indat.py`'s AST rather than matched with a regex, because the call is
+    routinely spread over five lines with a comment between the value and the registry
+    and the value expression itself contains parentheses.
+
+    **This exists because `UNPORTED` is only half of "no occupant".** `_slot_occupant`
+    has two failure modes: a value that is in `UNPORTED` (a real PROCESS branch nobody
+    has written, `NotImplementedError`) and a value that is in **neither** the registry
+    nor `UNPORTED` (`ValueError`, "not a known value"). Until 2026-08-29 this module
+    checked only the first, so a value of the second kind reported as *"the factory
+    dispatches on it"* -- which is true of the field and false of the value, and is
+    exactly how `i_beta_norm_max = 0` stayed invisible on both tracked spherical
+    tokamaks through a re-survey that was explicitly counting the remaining blockers.
+    A refusal the planning tool cannot see is worse than no tool, so the second failure
+    mode is derived here from the same two sources `_slot_occupant` itself reads.
+
+    A field may fill more than one slot (`i_tf_case_geom` fills two, `n_divertors`
+    four), so the value is a tuple and a miss in *any* of them is a miss.
+    """
+    path = path or os.path.join(os.path.dirname(__file__), "indat.py")
+    with open(path, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    found: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_slot_occupant"
+            and len(node.args) >= 3
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            and isinstance(node.args[2], ast.Name)
+        ):
+            registries = found.setdefault(node.args[0].value, [])
+            if node.args[2].id not in registries:
+                registries.append(node.args[2].id)
+    return {field: tuple(names) for field, names in found.items()}
+
+
+ROUTED_AWAY = {
+    ("i_hcd_primary", 13): ("HCD_PRIMARY_EFFICIENCY", "HCD_PRIMARY_EFFICIENCY_FREETHY"),
+}
+"""`(field, value) -> (the registry it is absent from, the registry it is routed to)`.
+
+The one thing `slot_registries`' static read cannot see: a *routing function* that
+answers a switch value from a different registry before `_slot_occupant` is reached.
+`_hcd_primary_efficiency` is the only one -- `i_hcd_primary == 13` is the single value
+with a switch nested inside it (`i_ecrh_wave_mode`), so it consults
+`HCD_PRIMARY_EFFICIENCY_FREETHY` and never the outer registry, which is why the outer
+registry deliberately has no entry for it (`indat.py`'s own docstring says so).
+
+**Each entry is earned, not asserted**: `test_machine_survey.py` fails an entry whose
+value is not in fact absent from the first registry and present in the second, so a
+routing that goes away cannot leave a stale exemption behind. Same discipline as
+`_harness/boundary.py`'s register.
+"""
+
+
+def unoccupied_registries(name, value) -> tuple[str, ...]:
+    """The registries dispatching on `name` that hold no occupant for `value`.
+
+    Empty when every slot this field fills has an arm for the value -- including when
+    the field fills no slot by this route at all (a joint arm function reads it, and the
+    composite name is what `_slot_occupant` sees).
+    """
+    from functional_process import indat
+
+    routed = ROUTED_AWAY.get((name, value))
+    missing = []
+    for registry_name in slot_registries().get(name, ()):
+        if routed is not None and registry_name == routed[0]:
+            continue
+        registry = getattr(indat, registry_name, None)
+        if isinstance(registry, dict) and value not in registry:
+            missing.append(registry_name)
+    return tuple(missing)
 
 
 def pinned_switches(graph) -> dict[str, set[int]]:
@@ -223,11 +326,21 @@ def survey(input_file: str, graph=None) -> tuple[Row, ...]:
     for name, value in sorted(switches_from_indat(input_file).items()):
         if name in fields:
             reason = UNPORTED.get((name, value))
-            detail = (
-                "no occupant: " + reason.split(":")[0]
-                if reason
-                else "the factory dispatches on it"
-            )
+            if reason:
+                detail = "no occupant: " + reason.split(":")[0]
+            elif unoccupied := unoccupied_registries(name, value):
+                # Neither an occupant nor a recorded refusal: `_slot_occupant` raises
+                # `ValueError` here, not `NotImplementedError`. Named as its own kind
+                # because the fix is different -- either write the arm, or record why
+                # PROCESS's arm cannot be one (an empty `None` occupant is the usual
+                # answer for a value at which PROCESS computes nothing).
+                detail = (
+                    "no occupant AND no recorded reason: "
+                    f"{', '.join(unoccupied)} has no entry for this value, so "
+                    "`_slot_occupant` refuses it as a typo"
+                )
+            else:
+                detail = "the factory dispatches on it"
             rows.append(Row(name, value, "factory", detail))
         elif name in pinned:
             held = sorted(pinned[name])
@@ -252,6 +365,30 @@ def survey(input_file: str, graph=None) -> tuple[Row, ...]:
                 )
             )
     return tuple(rows)
+
+
+def assembly_verdict(input_file: str) -> str:
+    """What `machine_from_indat` actually does with this file, in one line.
+
+    **The switch table cannot answer this and it took the ST wave to notice.** Every row
+    above is keyed on a name that appears in the `IN.DAT`; a slot dispatched on a
+    *derived* arm index -- `pf_coil_system_arm`, `fw_blkt_vv_shape_arm`,
+    `centrepost_neutronics_arm`, a dozen more -- has no such name, so its refusal is
+    invisible to the table however carefully the table is read. Both tracked spherical
+    tokamaks were re-surveyed on 2026-08-29 as "exactly four switch values away" and
+    were in fact also refused by `pf_coil_system_arm`, which no column could show.
+
+    One assembly attempt costs a second and is exact, so the report ends with it.
+    """
+    from functional_process.indat import machine_from_indat
+
+    try:
+        machine_from_indat(input_file)
+    except NotImplementedError as refusal:
+        return f"ASSEMBLY REFUSED (first blocker only): {refusal}"
+    except ValueError as refusal:
+        return f"ASSEMBLY REFUSED (unknown value): {refusal}"
+    return "ASSEMBLES."
 
 
 def report(input_file: str) -> str:
@@ -296,6 +433,8 @@ def report(input_file: str) -> str:
             + " -- these are `switch_kwarg_survey.md` band (b) slots, and they "
             "are the first tokamak deliverable, not a prerequisite to it."
         )
+    lines.append("")
+    lines.append(assembly_verdict(input_file))
     return "\n".join(lines)
 
 
