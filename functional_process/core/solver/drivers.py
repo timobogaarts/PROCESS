@@ -638,9 +638,17 @@ class VmconDriver(AbstractDriver):
     whose units are genuinely *not* its unknown's: equilibrating it by its own row norm
     takes the condition number `2.1e4` -> `85`, and C2 from converging in 62 iterations
     to `max_iter` without converging. Condition number is a diagnostic here, not an
-    objective to minimise, and the residue -- a fifth to a third of QP subproblems
-    solving inaccurately by `cvxpy`'s own warning -- is not obviously a scaling problem
-    at all."""
+    objective to minimise.
+
+    This used to end by citing "a fifth to a third of QP subproblems solving
+    inaccurately by `cvxpy`'s own warning" as the unexplained residue. **That does not
+    reproduce, and the sentence is withdrawn.** Counting `cvxpy`'s own `Problem.status`
+    over the whole SAND stellarator matrix -- both starts, both QP solvers, both
+    tolerances, 1854 subproblems -- gives `optimal_inaccurate` **zero times**
+    (`_audit/optimise_design.md` §15). The original observation was made while this
+    driver was silently running OSQP, whose ADMM reports `user_limit` rather than
+    `optimal_inaccurate` when it gives up on a subproblem; `qsp_solver` above is the
+    finding that replaced it."""
     scaled: bool = True
     """Whether to solve in PROCESS's `x * (1/x_start)` scaled coordinates."""
     qsp_solver: str = "CLARABEL"
