@@ -35,7 +35,7 @@ measurements**, taken against `HEAD`; re-measure rather than cite this table, an
 | SAND C2 (seeded from PROCESS's answer) | **326 SQP iterations**, conv `8.8e-11`, `objf 1.217757338` |
 | **SAND C3 (cold start)** | **258 iterations**, conv `8.0e-09`, `objf 1.217757452` — **the same point as C2 to six digits**; §11.11 |
 | … and why those are not 42/100 | `max_iter` is 500 for Stage C now, not `VmconDriver`'s PROCESS-inherited 100. The count grew with round 2's switch-to-slot conversion (22 unknowns / 16 equalities → 14 / 8), measured against a `git archive` of the pre-round-2 tree at 131; the cottax version and every condition scale are ruled out. `optimise_design.md` §12. |
-| MDF C2 / C3 | **129 iterations, converged** / **200 iterations, not converged** (was 127/converged before §11.11's node; the cold problem it now solves is a different, correct one) |
+| MDF C2 / C3 | **stale — see §16.1b.** Recorded here as 129 it/converged and 200 it/not converged; measured 2026-08-29 at **200/not converged** and **60/not converged**, and identically so at `87ee1285`, so the move is the wave day's |
 | MDF | 15 conditions × 8 design (`icc` × `ixc`), Jacobian compared to PROCESS's **unreduced** |
 | PROCESS itself, same problem | 46 VMCON iterations, **94 s**, conv `2.40e-07` |
 
@@ -2512,6 +2512,27 @@ commit reported 635 agreements; 648 is the same measurement after the TF half is
 merged alongside it, which is the ordinary reason a branch's number and the trunk's
 differ.
 
+### 16.1b MDF's stellarator solve has regressed, and not in this session
+
+`run_mdf_harness` (stellarator) now reports **C2 200 SQP iterations, not converged**
+and **C3 60 iterations, not converged**, against the Verified-state table's *129,
+converged* / *200, not converged*. C2 stopping at exactly its cap while no longer
+converging is the shape of a real regression, not a re-tuning.
+
+**It is not this session's**, and that was measured rather than argued: a `git worktree`
+at `87ee1285` — the session-start commit, before anything here — produces the same two
+numbers, and an instrumented run shows the MDF path **never reaches the `None` seed at
+all** (`NONE-SEEDED VARIABLES SEEN: none`), so §16.2's change is inert for it. The move
+therefore belongs somewhere in the 2026-08-27 wave day, whose own brief flagged the
+L-mode profile reset for c81 as something that "may legitimately move stellarator
+numbers; analyse, don't suppress". SAND's stellarator numbers did **not** move
+(326/258, byte-identical), which narrows it: the graph the two harnesses share is
+unchanged, so the difference is in what MDF does with it.
+
+Folded into round 3 §4's MDF item rather than opened as a separate thread — that item
+already owns the cap question ("is MDF C3's 200-and-not-converged the same cap artefact
+SAND's was?"), and the answer now has to cover C2 as well.
+
 ### 16.2 `.tfcoil.sig_tf_cs_bucked`: the seed for a value PROCESS never writes
 
 The tokamak SAND harness died at `run_sand_harness.py:239` with
@@ -2669,6 +2690,7 @@ outside.
    values — `i_plasma_current = 9` (FIESTA), `i_diamagnetic_current = 2`,
    `i_pfirsch_schluter_current = 1`, `i_tf_sc_mat = 9` (REBCO). The first spherical
    tokamak the port runs is still one wave away.
-3. **The MDF benchmark, closure hoisting and the MDF-C3 cap re-test** (round 3 §4),
-   which carries the SAND-vs-MDF architecture decision.
+3. **The MDF benchmark, closure hoisting and the cap re-test** (round 3 §4), which
+   carries the SAND-vs-MDF architecture decision — and now also owes an explanation for
+   §16.1b's C2 regression, which is on `main` and predates this session.
 4. **`_bind`'s dead reads** (§16.2), whose blast radius is now measured.
