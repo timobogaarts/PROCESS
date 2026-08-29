@@ -2707,3 +2707,172 @@ outside.
    carries the SAND-vs-MDF architecture decision — and now also owes an explanation for
    §16.1b's C2 regression, which is on `main` and predates this session.
 4. **`_bind`'s dead reads** (§16.2), whose blast radius is now measured.
+
+**Superseded by §16.10**, which is this session's final ordering.
+
+### 16.8 The cold tokamak SAND solve, and what stood in front of it
+
+**The cold tokamak solves.** From `large_tokamak_eval.IN.DAT`'s own values, the
+fsolve-analogue -- the problem PROCESS actually solves in evaluation mode, its two
+equalities with all 23 inequalities omitted -- converges in **7 SQP iterations**,
+`conv 2.68e-17`, landing on PROCESS's converged answer to **3.4e-12** and **3.1e-12**
+on `temp_plasma_electron_vol_avg_kev` and `nd_plasma_electrons_vol_avg`. §11.6 ran that
+analogue warm (1 iteration, `conv 2.2e-13`); this is the same analogue from the cold
+start, which is what every cold producer since `cold_boundary.md` was being bought for.
+Shape: 130 drive nodes, 9 unknowns, 10 conditions, 17 inputs seeded from the cold MDA.
+
+Two things had to be fixed to get there, and the second is the more interesting.
+
+**1. `.build.r_vv_inboard_out` had no producer** -- §16.3's single-caused blocker,
+closed by `models/build.py`'s `VacuumVesselAndShieldRadiiTfOutsideCs`
+(`_audit/units/models/build.md`, 2026-08-29). It also closed
+`.build.r_sh_inboard_out`, `consolidation_round_3.md` §4's last item, from the same
+three lines of PROCESS.
+
+**2. `_seed` was handing the solve cold `DataStructure` defaults for the SCC cuts.**
+`run_sand_harness._seed` treats "coupling" as *drive unknowns not in the design set*,
+and the `^hat.*` **cuts are not unknowns**: `mda.CUTS` mints them to open each SCC and
+they enter as schedule *inputs*. They therefore fell through to `ground_truth(base,
+...)`, which unmints them to the real field and reads the cold structure's dataclass
+default. The cold tokamak solve was being started at
+`.pf_coil.n_pf_coil_turns = 0`, `.pf_coil.ind_pf_cs_plasma_mutual = 0` and
+`.times.t_plant_pulse_burn = 1000` (`times_variables.py`'s default) while a completed
+cold MDA env sat beside it holding `3814.9`, `132.7` and `144099`. That is exactly the
+disease `_seed`'s own docstring diagnoses for unknowns, one mint further out; the fix is
+one clause and it took the run from `0` to **17 inputs seeded from the MDA env**.
+
+**The symptom is the part worth remembering: the harness's pre-solve probe passed.**
+It reported all 30 conditions finite while the solve went non-finite on `objf`, `c13`
+and `c16` at *evaluation zero*. The two build their context differently -- the probe
+reads `fallback` first (so it used the MDA values), the solve runs the schedule on
+`_inputs_only` of the seeded env (so it used the defaults). **A probe that seeds
+differently from the solve it is probing can only report on itself**, and it will report
+health. Diffing the two contexts is what found this: 3 entries of 390 differed, and all
+three were cuts.
+
+### 16.9 The full 25-constraint tokamak problem is infeasible, and now says so
+
+With the inequalities in, C2 and C3 both return their start after **0 SQP iterations**.
+That is not convergence: `pyvmcon`'s first QP has no feasible point. Measured at the
+cold start, by evaluating the condition map and its `jacfwd` there:
+
+| condition | value | gradient row |
+|---|---|---|
+| `c72` (CS Tresca yield) | **+2.73e+02** | **identically zero** |
+| `c68` (Pdiv/R metric) | +3.84e-02 | 2.6e-02 |
+| `c16` (net electric) | +1.95e-01 | 5.8e-02 |
+| `c2` (global power balance) | +6.10e-03 | 4.1e-02 |
+
+**A condition that is violated *and* constant cannot be fixed by any step**, so every QP
+containing it is infeasible however good the rest of the problem is. c72 is that
+condition, at both points: `+0.553` at PROCESS's own converged answer and `+273` cold.
+The values are PROCESS's own, reproduced to `1.2e-15` (§16.3's Stage A), and PROCESS
+never notices because evaluation mode does not enforce inequalities.
+
+Eleven more rows are identically zero at the cold point (`c5`, `c8`, `c25`-`c27`,
+`c33`-`c36`, `c65`, `c81`). That is structural rather than wrong: `large_tokamak_eval`
+has `ixc = [4, 6]`, so the design is two plasma quantities, and the engineering
+constraints on coil stress, current density and quench simply do not depend on them.
+
+`run_sand_harness._why_no_step` now **measures** this instead of printing the old
+"either VMCON converged or its QP failed -- the condition values above say which". It
+costs one `jacfwd` compile on a path where the solve has already failed, and it is the
+SAND-side counterpart to `run_mdf_harness._why_it_stopped` (§14).
+
+*And the check's first draft was wrong in a way worth recording*, because it is the
+same class of mistake as the probe above. "Away from satisfaction" is **not**
+`abs(value) > tol`: an inequality's normalised residual is *negative when satisfied*, so
+the first version reported twelve happily-satisfied constraints as the reason the QP had
+no feasible point -- a confident, precise, wrong answer, printed by a run that otherwise
+looked healthy. The sign convention *is* the check, so the equality/inequality split is
+now read off the problem node rather than guessed from the values. It was caught by
+reading the output rather than by any test, which is §11's standing lesson about
+renderers arriving again in the solver.
+
+### 16.10 What is next, in order
+
+1. **Cold start, everywhere.** The cold tokamak result above is one file, one
+   architecture, one problem shape. What is owed is the matrix: **SAND and MDF x cold
+   and warm x every reference configuration** (`stellarator_helias`,
+   `large_tokamak_eval`, `large_tokamak_nof`, `low_aspect_ratio_DEMO`, and the two
+   spherical tokamaks once §16.11 lands). The pieces all exist -- `_seed`'s cut fix,
+   `run_mdf_harness`'s `MAX_ITER` 800 and `_why_it_stopped`, `_why_no_step` -- so this
+   is a harness loop and a table, not new modelling. Two things it will settle that
+   nothing else can: whether the cut-seeding bug was also costing MDF, and whether c72's
+   infeasibility is peculiar to `large_tokamak_eval`'s two-variable design or general.
+2. **Why the port needs so many more iterations than PROCESS.** PROCESS solves this
+   problem in **46** VMCON iterations; the port's SAND C2 takes 326 and its MDF C2 takes
+   523. For SAND that gap is explained and measured (§13.7): 27 iterations are the
+   tolerance (`1e-8` against PROCESS's `epsvmc = 1e-6` -- 299 at PROCESS's own), and the
+   remaining ~250 are the formulation, since SAND hands the SQP 14 unknowns and 8
+   equalities where PROCESS has 8 and 2. **For MDF it is not explained**, and that is a
+   real hole: MDF's outer problem *is* PROCESS's (8 design, 2 equalities, 12
+   inequalities), `VmconDriver.scaled` reproduces PROCESS's own `1/x0` conditioning,
+   every row is one of PROCESS's normalised residuals, and both call the same `pyvmcon`
+   -- yet it is 512 against 46 at equal tolerance, *starting from PROCESS's own answer*.
+   Three candidates, each one controlled run: PROCESS differentiates at
+   `epsfcn = 0.01`, a 1 % perturbation that smooths the problem the port sees exactly
+   (the same low-pass argument that resolved x109); PROCESS pins its QP to
+   `cvxpy.CLARABEL` where `VmconDriver` takes pyvmcon's default; and §10.4's 17.604 MW
+   self-consistency defect means PROCESS converges a *different*, self-inconsistent
+   function that may simply be easier. The port's convergence parameter is also
+   non-monotone -- it touches `1e-4` at iteration 8 and then wanders four hundred more
+   before an abrupt endgame, which is a QP-conditioning signature more than a model one.
+   **Note the framing §13.8 already fixed**: the efficiency case was never fewer
+   iterations, it is 13 ms against 2.4 s each (181x), 9.1x end-to-end *despite* 7x the
+   count -- and 90 % of the port's 13 ms is now `cvxpy`, not the model.
+3. **c72's infeasibility.** Decide whether the port should report a violated-and-constant
+   condition as an infeasible problem (it does now), drop it as PROCESS effectively does
+   in evaluation mode, or treat it as a finding about the reference design. The third
+   reading is the interesting one: **PROCESS's own converged answer violates its own CS
+   Tresca limit by 55 %**, and nothing in PROCESS's evaluation-mode run would ever say
+   so.
+4. **The two remaining ST blockers** (§16.11): the CroCo TF coil `Model` class and the
+   PF coil system package. Both are unported model *packages*, not arms.
+5. **`_bind`'s dead reads** (§16.2), whose blast radius is measured and which is the one
+   structural repair this session deliberately deferred.
+
+### 16.11 The ST closing wave: four arms landed, and the last two blockers are packages
+
+`consolidation_round_3.md` §3 sized this wave as "exactly four unported switch values".
+The measured frontier was **six**, for two reasons that are both now closed, and
+**neither ST file assembles yet** -- that is this wave's honest headline.
+
+| blocker (identical on `spherical_tokamak_eval` and `st_regression`) | outcome |
+|---|---|
+| `i_plasma_current == 9` (FIESTA ST) | **arm landed** |
+| `i_diamagnetic_current == 2` (SCENE) | **arm landed** |
+| `i_pfirsch_schluter_current == 1` (SCENE) | **arm landed** |
+| `i_beta_norm_max == 0` (`USER_INPUT`) | **empty `None` slot landed** -- not in the brief |
+| `i_tf_turn_type == 2` (CroCo) | **correctly refused** -- a whole unported `Model` class |
+| `pf_coil_system_arm` | **still refused** -- four dimensions at once (`-1`, `-3`, `-6`, `-7`) |
+
+**The FIESTA defect was handled two ways, and neither was a tolerance.** `triang < 0`
+gives `nan` and is reproduced, because PROCESS's own caller raises before reaching it
+for every scaling but Sauter. The infinite derivative at `triang == 0` is the canonical
+`x**p, 0<p<1` shape `models/safe_math.py` exists for, so the port writes
+`safe_pow(triang, 0.060)`: bit-identical for every non-zero base *including* the `nan`,
+finite tangent only at zero. No gradient excused, no `boundary.py` entry earned.
+
+**Two survey blind spots, both closed and both worth knowing.**
+
+- `machine_survey` checked `UNPORTED` and **not the registry**, so `_slot_occupant`'s
+  `ValueError` path -- no occupant *and* no recorded reason -- printed as "the factory
+  dispatches on it". That is how `i_beta_norm_max = 0` survived a re-survey whose whole
+  purpose was to count blockers, including the one in §16.1's own priority list.
+  `slot_registries()` now derives field -> registry from `indat.py`'s AST.
+- **A slot on a *derived* arm index has no name in any `IN.DAT`**, so no column of a
+  switch survey can ever reach it -- which is why `pf_coil_system_arm` was invisible to
+  the count. `report()` now ends with one real `machine_from_indat` attempt.
+
+**And a silent mis-assembly, the second of its kind.** Before the CroCo refusal existed,
+a machine with `i_tf_turn_type = 2` **assembled as cable-in-conduit** -- measured by
+appending that line to `large_tokamak_eval.IN.DAT`. The two ST files were only being
+caught by a refusal inside `CICC_SUPERCONDUCTOR_PROPERTIES`, a slot a CroCo machine
+never reaches. Same shape as `low_aspect_ratio_DEMO`'s integer-turn defect.
+
+The brief's `i_tf_sc_mat = 9` hypothesis does not survive either half: "no branch in
+`jcrit_from_material`" is a *stellarator* function, and `pfcoil.py:4851` has a real
+`HAZELTON_ZHAI_REBCO` arm. PROCESS can do value 9 on a tokamak, and the tokamak's
+blocker was never the superconductor.
+

@@ -36,6 +36,8 @@ import numpy as np
 jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
+from cottax.problem import Driven  # noqa: E402
+from cottax.tools.minting import unminted  # noqa: E402
 
 from functional_process import sand  # noqa: E402
 from functional_process.indat import (  # noqa: E402
@@ -93,6 +95,65 @@ row's factor moves the count only within this problem's own noise (219-326).
 more than this is not slow, it is stuck, and the trace the harness prints says so."""
 
 
+def _why_no_step(drive, context, seeded):
+    """The conditions that make a first QP infeasible: **violated and constant**.
+
+    `VmconDriver` catches `pyvmcon`'s `QSPSolverException` and returns the start, so a
+    solve that never moved is ambiguous between "converged where it stood" and "no
+    linearised step existed". The discriminator is measurable and cheap to state: a
+    condition whose value is away from satisfaction *and* whose gradient row is
+    identically zero cannot be improved by any step, so the QP that contains it has no
+    feasible point -- no matter how good the rest of the problem is.
+
+    This is `_audit/optimise_design.md` §11.6's diagnosis, made into a measurement
+    instead of a sentence telling the reader to go and look at Stage A. `run_mdf_harness`
+    has the same distinction as `_why_it_stopped`, one layer up: there the three outcomes
+    are convergence, the cap, and the driver giving up; here it is *why* it gave up.
+
+    **"Away from satisfaction" is not `abs(value) > tol`**, and the first draft of this
+    said it was: an inequality's normalised residual is *negative when satisfied*, so
+    that test reported twelve happily-satisfied constraints as the reason the QP had no
+    feasible point. The sign convention is the whole content of the check -- an equality
+    is stuck when `|value|` is away from zero, an inequality only when `value > 0` --
+    which is why the split is read off the problem node rather than inferred from the
+    values.
+
+    Costs one `jacfwd` compile of the condition map (~1 min), and only on the path where
+    the solve already failed.
+    """
+    unknowns = [jnp.asarray(seeded[u]) for u in drive.unknowns]
+    condition_map = drive.condition_map(context)
+
+    def stacked(*x):
+        return jnp.stack([jnp.asarray(v) for v in condition_map(*x)])
+
+    values = np.asarray(stacked(*unknowns), dtype=float)
+    rows = np.asarray(jax.jacfwd(stacked)(*unknowns), dtype=float).reshape(
+        len(values), -1
+    )
+    # `Driven` forwards `inputs`/`outputs` and nothing else; the equality/inequality
+    # split lives on the problem it *has*. Same unwrap `sand.sand_shape` does.
+    node = drive.subgraph[drive.problem]
+    definition = node.problem if isinstance(node, Driven) else node
+    equality = set(definition.equalities)
+    inequality = set(definition.inequalities)
+    stuck = []
+    for condition, value, row in zip(drive.conditions, values, rows, strict=True):
+        if condition in equality:
+            away = abs(value) > 1e-8
+        elif condition in inequality:
+            away = value > 1e-8
+        else:
+            continue  # the objective: never a feasibility question
+        # Exact comparison is the point: a row that is *identically* zero is a
+        # condition no step can move, which is a structural fact and not a
+        # tolerance question. A merely small row is a badly conditioned
+        # constraint and the QP can still use it.
+        if away and not np.any(row != 0.0):  # noqa: RUF069
+            stuck.append((condition.path_str(), float(value)))
+    return stuck
+
+
 def _seed(schedule, drive, base, fallback, design=()):
     """Every schedule input and every block unknown: **design** variables from `base`,
     every other unknown from `fallback` (a completed MDA env at the same design).
@@ -130,7 +191,17 @@ def _seed(schedule, drive, base, fallback, design=()):
     is the disease.
 
     `design` names the unknowns that genuinely come from `base` -- the run's iteration
-    variables. Anything else is coupling.
+    variables. Anything else is coupling, **including the `^hat.*` cuts**, which are not
+    unknowns and were falling through to `base` until 2026-08-29. They are loop-carried
+    values by construction (`mda.CUTS` mints them to open an SCC), so the same sentence
+    applies to them word for word; the clause below says so.
+
+    That omission is what stood between the cold tokamak and a solve. Its symptom was
+    unusually misleading: the harness's own pre-solve probe **passed** -- it builds its
+    context from `fallback` first and so used the MDA values -- while the solve, whose
+    context comes from running the schedule on `_inputs_only(...)` of *this* env, went
+    non-finite at evaluation zero on `objf`, `c13` and `c16`. A probe that seeds
+    differently from the solve it is probing can only report on itself.
     """
     design = set(design)
     env, borrowed = {}, []  # the env doubles as a value store; see `_inputs_only`
@@ -141,7 +212,17 @@ def _seed(schedule, drive, base, fallback, design=()):
     guesses = guess_sources(schedule.blocking.graph)
     for var in list(schedule.inputs) + list(drive.unknowns):
         source = guesses.get(var, var)
-        coupling = source in drive.unknowns and source not in design
+        # A **cut** (`^hat.*`) is coupling by the same argument as an unknown, and it is
+        # not an unknown: `mda.CUTS` opens each SCC by minting a copy of one loop-carried
+        # variable, and that copy becomes a schedule *input*. Without this clause it fell
+        # to `ground_truth(base, ...)`, which `unminted`s it to the real field and reads
+        # the cold `DataStructure`'s dataclass default -- so the cold tokamak solve was
+        # handed `n_pf_coil_turns = 0`, `ind_pf_cs_plasma_mutual = 0` and
+        # `t_plant_pulse_burn = 1000` (`times_variables.py`'s default) while a completed
+        # cold MDA env beside it held 3814.9, 132.7 and 144099. It is the same disease
+        # this docstring already diagnoses for unknowns, one mint further out.
+        cut = unminted(source) != source and source in fallback
+        coupling = cut or (source in drive.unknowns and source not in design)
         if coupling and source in fallback:
             env[var] = fallback[source]
             borrowed.append(source)
@@ -422,12 +503,22 @@ def main(argv=None):
             # `QSPSolverException` ("no feasible solution") from constraint 68's
             # constantly-violated, zero-gradient row produced exactly this shape. Say
             # so instead of letting a swallowed failure read as a perfect solve.
-            print(
-                "  NO SQP ITERATION RECORDED -- either VMCON converged at the start "
-                "or its first QP failed (a constantly-violated, zero-gradient "
-                "condition makes the QP infeasible) and the driver returned the "
-                "start unchanged. The condition values above (Stage A) say which."
-            )
+            stuck = _why_no_step(solve_drive, probe_context, seeded)
+            if stuck:
+                print(
+                    f"  NO SQP ITERATION RECORDED, and the reason is measured: "
+                    f"{len(stuck)} condition(s) are away from satisfaction with an "
+                    f"identically zero gradient row, so no linearised step can reach "
+                    f"a feasible point and `pyvmcon`'s first QP has none:"
+                )
+                for name, value in stuck:
+                    print(f"    {name:<52s} {value:+.6e}  (constant in every unknown)")
+            else:
+                print(
+                    "  NO SQP ITERATION RECORDED, and no condition is both violated "
+                    "and constant -- so this is VMCON converging where it stood, not "
+                    "a QP that had nowhere to go."
+                )
         print(
             f"  {'it':>3s} {'conv':>12s} {'objf':>14s} {'max|eq|':>11s} {'min ie':>12s}"
         )
