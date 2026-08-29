@@ -2352,11 +2352,26 @@ not. The statuses are different, and should not be merged:
   happens. SAND's coupling unknowns carry no bounds (`VmconDriver.bounds`: an unknown
   with no entry is unbounded on both sides), so there is a ray for it to find.
 
-OSQP reports neither, in any cell. Its three `user_limit`s across the warm SAND cells
-are ADMM hitting its own iteration cap and returning the iterate regardless — the
-mechanism, made visible: **at the subproblems where CLARABEL refuses, OSQP quietly
-returns a direction it has not verified, and the solve survives on it.** That the
-port's numbers were ever obtained is partly an accident of that leniency.
+OSQP reports neither in any *stellarator* cell. Its three `user_limit`s across the warm
+SAND cells are ADMM hitting its own iteration cap and returning the iterate regardless
+— the mechanism, made visible: **at the subproblems where CLARABEL refuses, OSQP
+quietly returns a direction it has not verified, and the solve survives on it.** That
+the port's numbers were ever obtained is partly an accident of that leniency.
+
+**OSQP is not blind to infeasibility in general, and the tokamak proves it.** Three
+`large_tokamak_eval` C2 cells — OSQP at both tolerances and CLARABEL at `1e-8` — all
+stop at **0 iterations** on a first QP that *both* solvers call `infeasible`. So the
+tokamak's warm blockage is structural, and it is the constraint-68 constantly-violated
+zero-gradient row `_why_no_step` already diagnoses (§16.9 in `next_steps.md`), not a
+solver artefact. What OSQP is lenient about is narrower than the paragraph above on its
+own suggests: **ill-conditioned but feasible subproblems**, where it returns an
+uncertified iterate instead of a status. Where the linearisation is genuinely
+inconsistent it says so, cleanly, the same as CLARABEL.
+
+The tokamak's C3 (cold) cells — the only ones that would carry new information, cold
+being where CLARABEL helped — did not finish inside the session's budget. Tokamak cells
+cost ~90–100 s each against the stellarator's ~10 s, compile-dominated at 164 nodes and
+84 schedule steps. They are the first item of `next_steps.md` §17.4.
 
 Why the warm start is hard at all is not mysterious once looked at: `initial_B = I` in
 scaled coordinates makes the first step essentially the negative gradient, and PROCESS's
