@@ -48,10 +48,17 @@ from functional_process.sand_harness import (  # noqa: E402
 from process.core.solver.evaluators import Evaluators  # noqa: E402
 from process.core.solver.iteration_variables import ITERATION_VARIABLES  # noqa: E402
 
-MAX_ITER = 200
-"""`VmconDriver.max_iter`. Higher than `run_sand_harness.py`'s default 100 because the
-cold MDF solve genuinely needs more than 100 SQP iterations and stopping at the round
-number would report "did not converge" for a solve that does."""
+MAX_ITER = 800
+"""`VmconDriver.max_iter`. Higher than `run_sand_harness.py`'s `SAND_MAX_ITER = 500` for
+the same reason that one is higher than the driver's own default of 100: **measured**,
+not rounded. C2 -- the warm solve, from PROCESS's own converged x -- converges at
+**523** SQP iterations (`conv 7.400e-09`, `objf 1.217758052`), and the previous 200
+stopped it two-thirds of the way through, where an unconverged VMCON tail is
+indistinguishable from oscillation (`_audit/optimise_design.md` §14, and §12.2 for the
+identical diagnosis on SAND). 800 is 523 with the same ~1.5x margin SAND's 500 gives its
+326. **C3 is not capped and never was**: it stops at 60 because `pyvmcon` raises
+`QSPSolverException` there -- raising the cap does not move it, and `_measure` below says
+which of the two happened."""
 
 TOLERANCE = 1.0e-8
 """`VmconDriver.tolerance`. **Tighter than PROCESS's own** `epsvmc = 1e-6` on this run,
@@ -79,6 +86,28 @@ def process_evaluation_cost(reference, repeats=3):
         evaluators.caller.call_models(x, m)
         timings.append(time.perf_counter() - began)
     return float(np.median(timings))
+
+
+def _why_it_stopped(converged, iterations):
+    """Which of the three ways a `VmconDriver` solve can end actually happened.
+
+    "Not converged" is two entirely different events and the boolean cannot tell them
+    apart: **the cap** (`iterations == MAX_ITER`, a solve stopped part-way, which is what
+    C2's 200 was) and **the driver giving up** (`pyvmcon` raising -- for C3 here, a
+    `QSPSolverException`: the QP subproblem itself became infeasible -- which
+    `VmconDriver.__call__` catches by design, keeping `e.x` and reporting the failure out
+    of band). Raising `MAX_ITER` fixes the first and cannot touch the second, so the
+    report has to say which one it is or the next reader re-runs this investigation
+    (`_audit/optimise_design.md` §14).
+    """
+    if converged:
+        return "the convergence test passed"
+    if iterations >= MAX_ITER:
+        return f"it reached the cap of {MAX_ITER} -- raise MAX_ITER and re-measure"
+    return (
+        f"the driver stopped short at {iterations} of {MAX_ITER}, i.e. `pyvmcon` raised "
+        f"and `VmconDriver` kept the point -- a cap raise will NOT help"
+    )
 
 
 def _measure(mdf_problem, data, label, bounds, tolerance):
@@ -120,9 +149,10 @@ def _measure(mdf_problem, data, label, bounds, tolerance):
             f"  {entry[0]:3d} {entry[1]:12.3e} {entry[2]:14.9f} "
             f"{entry[3]:11.3e} {entry[4]:12.3e}"
         )
-    converged = trace and trace[-1][1] <= tolerance
+    converged = bool(trace and trace[-1][1] <= tolerance)
     print(
-        f"  converged: {bool(converged)} (tolerance {tolerance:.0e}); "
+        f"  converged: {converged} (tolerance {tolerance:.0e}); "
+        f"stopped because {_why_it_stopped(converged, len(trace))}; "
         f"{seconds / max(len(trace), 1) * 1e3:.0f} ms per SQP iteration"
     )
     worst = sorted(mdf.inner_residuals(mdf_problem.eager, out), key=lambda r: -r[3])[:3]

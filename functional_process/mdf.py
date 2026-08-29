@@ -20,16 +20,20 @@ that exactly and cannot yet run it, and the boundary between those two is sharp:
 
 - **Structure: expressible today.** Insert the `Optimise` (`sand.optimise_graph` does it)
   and the design variables reach every node while the conditions come back from them, so
-  the optimiser and the whole MDA collapse into **one** SCC -- 131 of this graph's 174
-  nodes, holding twelve declared problems. `Graph.problem_type` refuses that ("one driver
-  answers one problem"), and `Blocking.nest(problem)` is cottax's own answer to that
-  refusal: `Blocking.scc(graph).nest(opt)` records the `Optimise` as answered at the
-  outer level with the remaining 130 nodes blocked into 111 inner blocks, 11 of them
-  driven. That is MDF, stated. `nested_blocking()` below builds it, and
-  `test_mdf.py::test_cottax_states_mdf_structurally` pins that it builds.
+  the optimiser and the whole MDA collapse into **one** SCC -- 123 of this graph's 165
+  nodes on the stellarator reference configuration, holding five declared problems.
+  `Graph.problem_type` refuses that ("one driver answers one problem"), and
+  `Blocking.nest(problem)` is cottax's own answer to that refusal:
+  `Blocking.scc(graph).nest(opt)` records the `Optimise` as answered at the outer level
+  with the remaining 122 nodes blocked into 112 inner blocks, 4 of them driven. That is
+  MDF, stated. `nested_blocking()` below builds it, and
+  `test_mdf.py::test_cottax_states_mdf_structurally` pins that it builds. (These counts
+  were 174/131/twelve/111/11 before `1db889f6` dissolved ten `FixedPoint`s into switch
+  slots; `run_mdf_harness.py` prints the live ones, and `_audit/optimise_design.md` §14
+  measures what the change cost the outer solve.)
 - **Evaluation: not expressible today.** `Schedule.steps` derives one `Call`/`Drive` per
   block from `blocking.subgraphs` and **never reads `blocking.inner`**, so `schedule_for`
-  on the nested blocking builds a `Drive` over the entire 131-node block and dies on the
+  on the nested blocking builds a `Drive` over the entire 123-node block and dies on the
   same `problem_type` refusal. `~/jaxgraph`'s own `CLAUDE.md` says so without hedging:
   *"nothing builds a nested one yet: the steps are derived from the blocking, so a
   sub-schedule has no slot to sit in. Nesting lands on `Drive.body`, which becomes a

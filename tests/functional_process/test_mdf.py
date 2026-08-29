@@ -30,6 +30,7 @@ from cottax.problem import Optimise
 from functional_process import mdf, sand
 from functional_process.core.solver.drivers import SeededNewtonDriver
 from functional_process.mda import default_drivers
+from functional_process.run_mdf_harness import MAX_ITER, _why_it_stopped
 from functional_process.sand_harness import REFERENCE_INPUT_FILE, _scratch_copy
 from process.main import SingleRun
 from tests.functional_process.test_sand import (
@@ -319,6 +320,26 @@ def test_one_pass_of_the_schedule_is_idempotent(problem, cold_run):
             f"{condition.path_str()} moved from {first} to {second} on a second pass, "
             f"so one pass of the schedule is not the converged MDA"
         )
+
+
+def test_the_harness_distinguishes_a_cap_from_a_driver_that_gave_up():
+    """`run_mdf_harness._why_it_stopped` separates the two ways "not converged" happens.
+
+    Both were live at once and were read as one thing for three days
+    (`_audit/optimise_design.md` §14): C2 was a solve stopped two-thirds of the way
+    through by `MAX_ITER`, C3 is `pyvmcon` raising `QSPSolverException` at 60 and
+    `VmconDriver` keeping the point. Raising the cap fixes exactly one of them, so the
+    report has to name which.
+    """
+    # 523 measured for C2; the cap must clear it with margin, as `SAND_MAX_ITER`'s does.
+    assert MAX_ITER > 523
+
+    assert "convergence test" in _why_it_stopped(True, 523)
+    assert "cap" in _why_it_stopped(False, MAX_ITER)
+    assert "cap" in _why_it_stopped(False, MAX_ITER + 1)
+    short = _why_it_stopped(False, 60)
+    assert "stopped short" in short
+    assert "NOT help" in short
 
 
 def test_x64_is_on():

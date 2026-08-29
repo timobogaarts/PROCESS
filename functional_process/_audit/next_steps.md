@@ -2533,6 +2533,19 @@ Folded into round 3 §4's MDF item rather than opened as a separate thread — t
 already owns the cap question ("is MDF C3's 200-and-not-converged the same cap artefact
 SAND's was?"), and the answer now has to cover C2 as well.
 
+**[RESOLVED 2026-08-29 — `_audit/optimise_design.md` §14.** It was a cap, exactly as
+§12.2's SAND "oscillation" was: C2 converges at **523** iterations (`conv 7.400e-09`,
+`objf 1.217758052`), on the same point SAND's C2 reaches to `1.2e-07 .. 1.5e-05` per
+`ixc`, and `MAX_ITER = 200` stopped it two-thirds of the way through. The mover is
+`1db889f6` (round 2), not the wave day — every tree from it to `HEAD` and every cottax
+from `b7c5572` to today is byte-identical on these numbers — and it *improved* C2, whose
+pre-round-2 ancestor stops at 144 without reaching the optimum. C3's 60 is **not** a cap:
+`pyvmcon` raises `QSPSolverException`, and raising `MAX_ITER` does not move it. The
+recorded 129 is from a configuration that cannot be rebuilt on either axis and is not a
+target. `MAX_ITER` is now 800 and the report says which of the three ways a solve ended.
+The Verified-state row above should read **C2 523, converged / C3 60, the QP went
+infeasible**.]**
+
 ### 16.2 `.tfcoil.sig_tf_cs_bucked`: the seed for a value PROCESS never writes
 
 The tokamak SAND harness died at `run_sand_harness.py:239` with
