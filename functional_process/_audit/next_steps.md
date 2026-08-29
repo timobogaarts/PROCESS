@@ -2969,6 +2969,12 @@ Cold start across the full matrix (all reference configurations, both formulatio
 c72's infeasibility, the two ST blockers, `_bind`'s dead reads. §16.10 item 1 is now
 cheaper than it was: the harnesses gained two knobs and the cold path works.
 
+**c72's infeasibility (§16.9) is promoted by today's measurement**, because the whole
+tokamak SAND ablation — eight cells, both starts, both QP solvers, both tolerances —
+returns 0 iterations on an `infeasible` first QP in every one. The tokamak cannot
+contribute to any solver or formulation question until that row is resolved, so it is
+now blocking rather than merely open.
+
 ### 17.5 Verified state
 
 `functional_process/core/solver/drivers.py` gained `qsp_solver` (default `"CLARABEL"`,

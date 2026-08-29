@@ -2358,20 +2358,30 @@ SAND cells are ADMM hitting its own iteration cap and returning the iterate rega
 quietly returns a direction it has not verified, and the solve survives on it.** That
 the port's numbers were ever obtained is partly an accident of that leniency.
 
-**OSQP is not blind to infeasibility in general, and the tokamak proves it.** Three
-`large_tokamak_eval` C2 cells — OSQP at both tolerances and CLARABEL at `1e-8` — all
-stop at **0 iterations** on a first QP that *both* solvers call `infeasible`. So the
-tokamak's warm blockage is structural, and it is the constraint-68 constantly-violated
-zero-gradient row `_why_no_step` already diagnoses (§16.9 in `next_steps.md`), not a
-solver artefact. What OSQP is lenient about is narrower than the paragraph above on its
-own suggests: **ill-conditioned but feasible subproblems**, where it returns an
-uncertified iterate instead of a status. Where the linearisation is genuinely
-inconsistent it says so, cleanly, the same as CLARABEL.
+**OSQP is not blind to infeasibility in general, and the tokamak proves it.** The full
+`large_tokamak_eval` matrix — all eight cells, both starts, both solvers, both
+tolerances, ~90–102 s each — is *identical*: **0 iterations**, first QP `infeasible`,
+`QSPSolverException`, in every one. So what OSQP is lenient about is narrower than the
+paragraph above on its own suggests: **ill-conditioned but feasible subproblems**, where
+it returns an uncertified iterate instead of a status. Where the linearisation is
+genuinely inconsistent it says so, cleanly, the same as CLARABEL.
 
-The tokamak's C3 (cold) cells — the only ones that would carry new information, cold
-being where CLARABEL helped — did not finish inside the session's budget. Tokamak cells
-cost ~90–100 s each against the stellarator's ~10 s, compile-dominated at 164 nodes and
-84 schedule steps. They are the first item of `next_steps.md` §17.4.
+**The tokamak therefore carries no evidence either way on the QP-solver question, and
+now demonstrably so rather than by omission.** Its SAND block never takes a first step
+from *either* start. That is the full-constraint infeasibility §16.9 in `next_steps.md`
+already recorded and `_why_no_step` already localises — structural, upstream of any
+solver choice — and it is consistent with the previous session's result that only the
+reduced fsolve-analogue (2 equalities, the inequalities omitted) solves cold. PROCESS
+gives 0 VMCON iterations here regardless, because the tokamak run is `fsolve`, so there
+was never a baseline to compare against.
+
+One incidental finding worth keeping: the returned x is `1.43e-16` from PROCESS's
+converged answer in the C2 cells and `1.68e-02` in the C3 cells — i.e. **each start
+handed straight back, unmoved**. That is the signature of `VmconDriver` swallowing
+`QSPSolverException` and returning `e.x`, and at the C2 start (which *is* PROCESS's x)
+it reads as a perfect agreement with PROCESS unless something checks the iteration
+count. `_why_no_step` exists for exactly this ambiguity; a harness reporting `worst_rel`
+without it would have reported a triumph.
 
 Why the warm start is hard at all is not mysterious once looked at: `initial_B = I` in
 scaled coordinates makes the first step essentially the negative gradient, and PROCESS's
