@@ -16,6 +16,7 @@ proxy for -- *after* choosing an occupant, does every remaining read still have 
 not this file's.
 """
 
+import dataclasses
 import functools
 import os
 import re
@@ -99,7 +100,8 @@ def _plain(entry):
 def _maybe_absent(entry):
     """A registry whose `None` entry means "nothing owns these fields" -- the shape
     `_audit/next_steps.md` §14.4 established for `inuclear` and this wave extended to
-    seven more slots."""
+    seven more slots.
+    """
     return None if entry is None else entry()
 
 
@@ -350,9 +352,6 @@ file already exceeds it.
 """
 
 DERIVED_UNPORTED_KEYS = {
-    # `n_divertors` is not a switch an IN.DAT sets: `init.py:606-617` derives it from
-    # `.physics.i_single_null`, and the factory reproduces that derivation.
-    "n_divertors",
     # Arm indices, not switch values. Each is exercised through the integers its `_*_arm`
     # function reads -- the same reason the three joint keys below are skipped.
     "centrepost_neutronics_arm",
@@ -360,9 +359,7 @@ DERIVED_UNPORTED_KEYS = {
     "divertor_geometry_arm",
     "divertor_heat_load_arm",
     "first_wall_arm",
-    "fw_blkt_vv_shape_arm",
     "hcd_primary_powers_arm",
-    "nuclear_heating_renormalisation_arm",
     "pf_coil_system_arm",
     "plasma_geometry_arm",
     "pulse_ramp_times_arm",
@@ -373,9 +370,7 @@ DERIVED_UNPORTED_KEYS = {
     "vacuum_vessel_arm",
     # Per-slot names for a switch that is read at more than one slot with different
     # dispositions, so the key is the slot and not the integer.
-    "i_tf_shape_build",
     "i_tf_sup_build",
-    "itart_hcpb",
     "i_plasma_ignited_separatrix",
     # Two-switch keys whose *value* is a `(i_str_wp, i_tf_sc_mat)` pair, so no single
     # IN.DAT line selects one. Exercised through the two integers by
@@ -393,7 +388,16 @@ Three kinds, and the distinction is worth keeping visible: a value the factory
 decides `power.tf_power` *and* two `.tokamak.build` nodes, and `.physics.i_plasma_ignited`
 decides three slots in three subsystems, with the refusals differing in each).
 None of the three is a thing a file can set, so the refusal is reached through the
-integers it derives from -- which the survey and switch-coverage tests do."""
+integers it derives from -- which the survey and switch-coverage tests do.
+
+**Every entry must still name a live `UNPORTED` refusal**, which
+`test_the_skip_list_holds_no_entry_that_is_now_ported` checks. A skip whose refusal has
+since been ported is dead weight that reads like coverage: it silently defers a case
+that no longer exists, and the wave that ported the arm has no reason to look here.
+Five entries had rotted that way by 2026-08-27 (`n_divertors`, `fw_blkt_vv_shape_arm`,
+`nuclear_heating_renormalisation_arm`, `i_tf_shape_build`, `itart_hcpb`) and were
+removed with that check; the consolidation brief had spotted two of the five by hand,
+which is the argument for measuring it instead."""
 
 TOKAMAK_ONLY_UNPORTED_FIELDS = {
     "i_beta_norm_max",
@@ -479,6 +483,245 @@ def test_every_registered_occupant_assembles(field, registry, where, value, buil
     assert graph.definitions, f"{field} == {value} assembled an empty graph"
 
 
+TOKAMAK_MACHINE = machine_from_indat(
+    str(
+        Path(fp_boundary.__file__).resolve().parent.parent
+        / fp_boundary.TOKAMAK_INPUT_FILE
+    )
+)
+"""`large_tokamak_eval.IN.DAT`'s machine -- the second base `SLOTS` never had.
+
+`SLOTS` swaps occupants into `REFERENCE_MACHINE`, which is a **stellarator**, so no
+tokamak-only slot can appear in it: `eqx.tree_at` has nowhere to put one. That is why
+the tokamak's registries were not merely missing from the list, they were unreachable
+from it, and the meta-tests skipped the whole group in silence rather than failing.
+"""
+
+
+def _slots_source():
+    """The text of the `SLOTS` literal itself -- *only* the literal.
+
+    Read from this file rather than introspected because `SLOTS` holds its registries as
+    objects, and the question is which ones are *named* there. Bounded at the closing
+    bracket deliberately: an unbounded split takes the whole rest of the file with it,
+    and then every registry named in a comment below would count as covered.
+    """
+    return Path(__file__).read_text().split("SLOTS = [")[1].split("\n]")[0]
+
+
+def _slot_registries():
+    """`{name: registry}` for every `indat.py` dict that maps a switch value to an
+    occupant **class** -- measured off the module rather than listed, so a registry
+    added by a porting wave is covered the day it lands.
+
+    The filter is exactly "every value is a class or `None`", which is what makes an
+    entry swappable into a slot. It excludes `UNPORTED` (values are reason strings),
+    `ITERATION_VARIABLES` and `REFERENCE_MACHINE_SWITCHES` (values are data) without
+    naming any of them.
+    """
+    from functional_process import indat
+
+    return {
+        name: value
+        for name, value in vars(indat).items()
+        if name.isupper()
+        and isinstance(value, dict)
+        and value
+        and all(v is None or isinstance(v, type) for v in value.values())
+    }
+
+
+def _filled_slots(machine, prefix=()):
+    """`{attribute path: occupant}` for every non-namespace slot of a machine tree."""
+    from cottax.interfaces.pytree_namespace_module import ModelNamespace
+
+    out = {}
+    for field in dataclasses.fields(machine):
+        if field.metadata.get("static"):
+            continue
+        value = getattr(machine, field.name)
+        path = (*prefix, field.name)
+        if isinstance(value, ModelNamespace):
+            out.update(_filled_slots(value, path))
+        else:
+            out[path] = value
+    return out
+
+
+REGISTRY_SLOT_OVERRIDES = {
+    # A *second* registry feeding a slot another registry already reaches: the ECRH
+    # O-mode efficiency is chosen by `i_ecrh_wave_mode` **inside** `i_hcd_primary = 13`,
+    # so its occupant is a `primary_efficiency` occupant and no separate slot exists for
+    # the derivation to find.
+    "HCD_PRIMARY_EFFICIENCY_FREETHY": ("tokamak", "current_drive", "primary_efficiency"),
+}
+"""Registry -> slot, for the cases `_slot_for` cannot derive. Kept to one."""
+
+NAMESPACE_VALUED_REGISTRIES = {
+    "BLANKET_MODEL": "the entry is the whole `CcfeHcpb` subsystem namespace",
+    "CS_COIL": "the entry is the whole `CSCoil` subsystem namespace",
+    "DEVICE": "the entry is the device itself (`TokamakProcess`/`StellaratorProcess`)",
+    "HCD_CALCULATIONS": "the entry is the whole `TokamakCurrentDrive` namespace",
+    "PF_COIL": "the entry is the whole `PFCoil` subsystem namespace",
+}
+"""Registries whose values are namespaces rather than node occupants.
+
+Swapping one replaces a *subsystem*, not a slot's occupant, so the occupant cases below
+cannot express it and say so instead of skipping quietly. Their arms are covered where
+they are chosen -- `machine_from_indat`'s own refusal tests -- and a joint swap harness
+for subsystems would be a different check, not a longer version of this one."""
+
+REGISTRY_COMPANIONS = {
+    # The spherical-tokamak renormalisation arms and the centrepost neutronics slot are
+    # one choice in two places: `CentrepostNeutronicsAbsent` (the conventional
+    # tokamak's occupant) **owns** `.fwbs.p_cp_shield_nuclear_heat_mw`, and so do arms
+    # 2 and 3, so swapping either alone is a duplicate producer and cottax refuses it.
+    # Measured, not assumed -- the refusal names both nodes. Same shape as
+    # `NESTED_UNPORTED_COMPANIONS`: a case that only exists jointly is stated jointly.
+    ("NUCLEAR_HEATING_RENORMALISATION", 2): (
+        ("tokamak", "ccfe_hcpb", "centrepost_neutronics"),
+        1,
+        "CENTREPOST_NEUTRONICS",
+    ),
+    ("NUCLEAR_HEATING_RENORMALISATION", 3): (
+        ("tokamak", "ccfe_hcpb", "centrepost_neutronics"),
+        1,
+        "CENTREPOST_NEUTRONICS",
+    ),
+}
+"""`(registry, value) -> (companion slot, companion value, companion registry)`."""
+
+
+def _build_occupant(name, entry, machine):
+    """One occupant instance, or `None` for an absent one.
+
+    `SauterBootstrapCurrentFraction` is the only registry entry needing a constructor
+    argument, and the argument is a *shape* the machine already carries -- read off the
+    tree rather than written here, so it cannot drift from the graph it is swapped into.
+    """
+    if entry is None:
+        return None
+    if name == "BOOTSTRAP_CURRENT" and entry.__name__.startswith("Sauter"):
+        grid = machine.physics.profiles.profile_grid
+        return entry(n_plasma_profile_elements=grid.n_plasma_profile_elements)
+    return entry()
+
+
+def _slot_for(name, registry, machine):
+    """The attribute path of the slot `registry`'s occupants fill, or `None`.
+
+    Derived twice over rather than typed: by **occupant type** (which slot currently
+    holds an instance of one of the registry's classes), then, for a slot standing empty
+    on this machine, by **name** (`DX_TF_SIDE_CASE_MIN` -> `dx_tf_side_case_min`, whose
+    `False` arm is `None` and whose `True` arm is what the reference file does not take).
+    A list of lambdas would have to be maintained by every future wave; this cannot go
+    stale.
+    """
+    if name in REGISTRY_SLOT_OVERRIDES:
+        return REGISTRY_SLOT_OVERRIDES[name]
+    slots = _filled_slots(machine)
+    classes = tuple(v for v in registry.values() if v is not None)
+    for path, occupant in slots.items():
+        if isinstance(occupant, classes):
+            return path
+    for path in slots:
+        if path[-1] == name.lower():
+            return path
+    return None
+
+
+def _derived_occupants():
+    """Every registry arm not already in `SLOTS`, with the slot it fills."""
+    from functional_process import indat
+
+    in_slots = {
+        name for name in _slot_registries() if re.search(rf"\b{name}\b", _slots_source())
+    }
+    cases = []
+    for name, registry in sorted(_slot_registries().items()):
+        if name in in_slots or name in NAMESPACE_VALUED_REGISTRIES:
+            continue
+        for base in (TOKAMAK_MACHINE, REFERENCE_MACHINE):
+            path = _slot_for(name, registry, base)
+            if path is not None:
+                break
+        if path is None:
+            continue
+        for value, entry in registry.items():
+            companion = REGISTRY_COMPANIONS.get((name, value))
+            if companion is not None:
+                companion = (
+                    companion[0],
+                    getattr(indat, companion[2])[companion[1]],
+                )
+            cases.append((name, path, value, entry, base, companion))
+    return cases
+
+
+DERIVED_OCCUPANTS = _derived_occupants()
+"""The 135 registry arms `SLOTS` cannot reach, and where each one goes."""
+
+
+@pytest.mark.parametrize(
+    ("registry", "path", "value", "entry", "base", "companion"),
+    DERIVED_OCCUPANTS,
+    ids=[f"{n}={v}" for n, _p, v, _e, _b, _c in DERIVED_OCCUPANTS],
+)
+def test_every_derived_occupant_assembles(registry, path, value, entry, base, companion):
+    """`test_every_registered_occupant_assembles`, for the slots `SLOTS` cannot hold.
+
+    Same question -- swap one occupant, rebuild, get a non-empty graph -- against the
+    tokamak base and with the slot derived rather than written down. This is the check
+    the consolidation brief asked for as "`SLOTS` does not cover the tokamak TF
+    registries", and the measurement made the ask bigger: it is **58 registries and 135
+    arms**, most of the tokamak, not the eight TF ones.
+
+    What it does *not* do is extend the swap-orphan pin (`reference_swaps.txt`) to a
+    second device. That pin is generated evidence about which reads a swap orphans, and
+    a tokamak half is a separate decision with its own regeneration -- deferred out
+    loud rather than half-done.
+    """
+    occupant = _build_occupant(registry, entry, base)
+    machine = eqx.tree_at(
+        lambda m: functools.reduce(getattr, path, m),
+        base,
+        occupant,
+        is_leaf=lambda x: x is None,
+    )
+    if companion is not None:
+        companion_path, companion_entry = companion
+        machine = eqx.tree_at(
+            lambda m: functools.reduce(getattr, companion_path, m),
+            machine,
+            _build_occupant(registry, companion_entry, base),
+            is_leaf=lambda x: x is None,
+        )
+    graph = to_graph(machine)
+    assert graph.definitions, f"{registry} == {value} assembled an empty graph"
+
+
+def test_no_slot_registry_is_covered_by_nothing():
+    """Every switch-value-to-occupant registry in `indat.py` is exercised by one of the
+    three cases above, or is named as a namespace with a reason.
+
+    The failure this closes is the one the consolidation brief describes: a registry
+    absent from `SLOTS` is not a failing test, it is **no test**, and the group stays
+    silently uncovered for as long as nobody re-reads the list. Deriving the coverage
+    from `indat.py`'s own contents turns "somebody must remember" into "a new registry
+    fails until it is placed".
+    """
+    covered = {name for name, *_ in DERIVED_OCCUPANTS} | set(NAMESPACE_VALUED_REGISTRIES)
+    covered |= {
+        name for name in _slot_registries() if re.search(rf"\b{name}\b", _slots_source())
+    }
+    missing = sorted(set(_slot_registries()) - covered)
+    assert not missing, (
+        f"{missing} map switch values to occupants but no occupant case reaches them -- "
+        f"add them to `SLOTS` (stellarator base), let `_slot_for` derive them, or name "
+        f"them in `NAMESPACE_VALUED_REGISTRIES` with the reason"
+    )
+
+
 SWAP_PIN = os.path.join(os.path.dirname(fp_boundary.__file__), "reference_swaps.txt")
 """Which reads each alternative occupant leaves without a producer.
 
@@ -536,8 +779,7 @@ def test_swapping_an_occupant_orphans_only_what_is_recorded():
                 "# test_machine.test_swapping_an_occupant_orphans_only_what_is_recorded.\n"
             )
             for arm, paths in sorted(orphans.items()):
-                for path in paths:
-                    handle.write(f"{arm} {path}\n")
+                handle.writelines(f"{arm} {path}\n" for path in paths)
 
     with open(SWAP_PIN, encoding="utf-8") as handle:
         pinned = {}
@@ -824,6 +1066,27 @@ def test_a_refused_value_says_why(tmp_path, field, value):
         indat = write_indat(tmp_path, **{field: value})
     with pytest.raises(NotImplementedError, match=re.escape(f"{field} == {value}")):
         machine_from_indat(indat)
+
+
+def test_the_skip_list_holds_no_entry_that_is_now_ported():
+    """`DERIVED_UNPORTED_KEYS` may only name fields `UNPORTED` still refuses.
+
+    The skip exists because no IN.DAT line selects a derived key directly. Once the arm
+    behind such a key is *ported*, its `UNPORTED` rows go away and the entry stops
+    skipping anything -- but it stays in the file, reading like a deliberate exemption
+    for a case that no longer exists. Nothing else notices: the parametrisation is over
+    `UNPORTED`, so a stale entry never runs and never fails.
+
+    This is the guard for the rot rather than a periodic re-read of the list. It is
+    deliberately one-directional -- a *new* derived key that needs skipping shows up as
+    a failing refusal test, which is loud on its own.
+    """
+    refused = {field for field, _ in UNPORTED}
+    stale = sorted(DERIVED_UNPORTED_KEYS - refused)
+    assert not stale, (
+        f"{stale} no longer name any `UNPORTED` refusal -- the arms behind them are "
+        f"ported, so the skip defers nothing and should be deleted"
+    )
 
 
 def test_the_tf_inboard_radii_arms_are_refused_through_their_real_integers(tmp_path):

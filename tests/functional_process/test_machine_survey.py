@@ -160,6 +160,31 @@ def test_the_large_tokamak_is_three_new_decisions():
     assert sum(kinds.values()) == len(rows) == 33
 
 
+def test_an_unknown_row_says_which_of_three_reasons_it_is():
+    """ "`unknown`" means "no slot dispatches on it", and that is three different
+    situations. The report used to call all three "the port has never read it", which
+    is false for **every** `unknown` row this file produces.
+
+    Two of the three are read, just not by the machine tree: the constraint/objective
+    layer binds `i_beta_component` and `i_plant_availability` as static kwargs, and a
+    node declares `.heat_transport.i_shld_primary_heat` as an ordinary `In` -- the
+    latter being `switch_kwarg_survey.md` §0's "declared port carrying a switch integer"
+    seen from a second direction, i.e. work rather than absence. The verdict is
+    deliberately left as `unknown` for all three (the counts above are cited from
+    `next_steps.md`); only the sentence changes.
+    """
+    detail = {r.name: r.detail for r in survey(TOKAMAK) if r.verdict == "unknown"}
+    assert set(detail) == {
+        "i_beta_component",
+        "i_plant_availability",
+        "i_shld_primary_heat",
+    }
+    assert "static kwarg" in detail["i_beta_component"]
+    assert "static kwarg" in detail["i_plant_availability"]
+    assert ".heat_transport.i_shld_primary_heat" in detail["i_shld_primary_heat"]
+    assert not any("never read" in d for d in detail.values())
+
+
 def test_the_coolprop_flag_marks_a_neighbourhood_not_a_branch():
     """It says "some module reading this switch also reaches CoolProp", which is a
     scheduling hint and not a verdict on the switch's own branch. Asserted as the

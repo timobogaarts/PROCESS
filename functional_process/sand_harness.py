@@ -195,19 +195,60 @@ def reference_run(input_file=None) -> ReferenceRun:
     )
 
 
+UNWRITTEN_BY_PROCESS = float("nan")
+"""What `ground_truth` seeds for a field PROCESS itself leaves `None` -- see its
+docstring. `nan` rather than `0.0` deliberately: it is the value that cannot be read
+without saying so."""
+
+
 def ground_truth(data, var):
     """`data`'s own value at `var` -- `mda_harness._ground_truth`'s rule, restated here
-    with the one caveat that matters for this module and not for that one.
+    with two caveats that matter for this module and not for that one.
 
     The `unminted` fallback maps `^cond.X -> X`. That is correct for a
     `FixedPointFunction`'s condition (at the fixed point `^cond.X == X`) and **wrong for
     a `RootFind`'s**, whose `^cond.X` is a residual that should be ~0. Nothing seeded
     here is a `RootFind` residual today; a future one would silently get the wrong seed.
+
+    **A field PROCESS never writes reads back as `None`, and seeds as `nan`.** The
+    standing case is `.tfcoil.sig_tf_cs_bucked`: `stresscl` assigns it only at
+    `i_tf_bucking >= 2` (`process/models/tfcoil/base.py:3235`), so on
+    `large_tokamak_eval` (`i_tf_bucking = 1`) it is `None` in PROCESS's own *converged*
+    `DataStructure`, and `jnp.asarray(None)` is what stopped the tokamak SAND harness
+    at the point where it builds a `Drive`'s context. It reaches the context at all
+    because `sand._bind` declares an `In` for every non-switch parameter of a
+    constraint, whether or not the statically selected arm consumes it -- c72 takes
+    `max(stress_shear_cs_peak, sig_tf_cs_bucked)` only on the bucked-and-wedged arm --
+    so this is a **dead read**, not a missing producer
+    (`_audit/units/models/tfcoil/superconducting.md` § "`sig_tf_cs_bucked` is a dead
+    read, not a gap"; `_audit/optimise_design.md` §11.5 records the `None` itself).
+
+    `nan` is the seed *because* the deadness is the claim being made. A `0.0` would let
+    a read that is not actually dead produce a plausible number and be believed; `nan`
+    propagates through arithmetic into the condition, and the pre-solve probe already
+    stops on a non-finite condition and names it. The claim is therefore re-checked on
+    every run rather than asserted once here.
+
+    **The alarm is loud through arithmetic and mute through `max`/`min`**, which
+    `test_sand.py` pins as a measurement rather than leaving as an assumption: `nan > x`
+    is False, so Python's builtin `max(x, nan)` returns `x` and discards the sentinel
+    (`jnp.maximum` would propagate it). c72's *bucked* arm is exactly a builtin `max`,
+    so on a machine that took it the seed would be silent -- but such a machine has
+    `i_tf_bucking >= 2`, PROCESS writes the field, and `ground_truth` never reaches the
+    sentinel at all. Stated because "seed `nan` and it will show" is otherwise the
+    obvious thing to believe, and it is not unconditionally true.
+
+    Fixing the declaration instead -- having `_bind` drop the reads the bound arm
+    cannot reach -- is the structural repair, and it is deliberately *not* done here:
+    it is measurable (12 dead declared reads on the tokamak, 6 on the stellarator, of
+    which four are produced inside the drive) and so it can move the omit set and the
+    pinned Stage C numbers. `_audit/next_steps.md` §16 carries the measurement.
     """
     known = KNOWN_MINT_VALUES.get(var.path_str())
     if known is not None:
         return known(data)
-    return get_at(data, unminted(var).keys)
+    value = get_at(data, unminted(var).keys)
+    return UNWRITTEN_BY_PROCESS if value is None else value
 
 
 def mda_env(reference, graph=None, data=None):

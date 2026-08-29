@@ -40,6 +40,7 @@ from functional_process.sand import (
     sand_schedule,
     sand_shape,
 )
+from functional_process.sand_harness import ground_truth
 from process.core.solver.iteration_variables import ITERATION_VARIABLES
 
 REPO_ROOT = Path(functional_process.__file__).resolve().parent.parent
@@ -84,7 +85,8 @@ def test_reference_problem_matches_the_input_file():
 def _contract_static_argnames():
     """`{constraint id: static_argnames}` read out of `test_constraints.py`'s own
     `Tier1Contract` classes -- the maintained source of truth for which parameter of a
-    ported constraint is a switch."""
+    ported constraint is a switch.
+    """
     source = (
         Path(__file__).resolve().parent / "core/solver/test_constraints.py"
     ).read_text()
@@ -164,6 +166,73 @@ def test_all_eight_design_variables_are_boundary_inputs():
         assert iteration_variable_path(i) not in owned
 
 
+def test_a_field_process_never_writes_seeds_as_nan_not_as_zero():
+    """`.tfcoil.sig_tf_cs_bucked` is `None` in PROCESS's own converged `DataStructure`
+    on `large_tokamak_eval` -- `stresscl` assigns it only at `i_tf_bucking >= 2`
+    (`process/models/tfcoil/base.py:3235`) -- and `jnp.asarray(None)` is what stopped
+    the tokamak SAND harness while building a `Drive`'s context.
+
+    The seed is `nan` **because the read is claimed to be dead**, and a claim that
+    cheap should be checked on every run rather than trusted: a `0.0` placeholder would
+    let a read that is not actually dead produce a plausible number, where `nan`
+    propagates into the condition and the pre-solve probe already stops on a non-finite
+    one. `KNOWN_MINT_VALUES` still wins, so this cannot shadow a mint's analytic value.
+    """
+
+    class _Area:
+        sig_tf_cs_bucked = None
+        stress_shear_cs_peak = 1.1647e9
+
+    class _Data:
+        tfcoil = _Area()
+        pf_coil = _Area()
+
+    unwritten = VarPath((GetAttrKey("tfcoil"), GetAttrKey("sig_tf_cs_bucked")))
+    written = VarPath((GetAttrKey("pf_coil"), GetAttrKey("stress_shear_cs_peak")))
+    assert np.isnan(ground_truth(_Data(), unwritten))
+    assert ground_truth(_Data(), written) == 1.1647e9
+
+
+def test_constraint_72s_free_standing_arm_is_unmoved_by_the_nan_seed():
+    """The other half of the seed's claim: on `i_tf_bucking = 1` the value `nan` seeds
+    reaches no arithmetic, so the condition is identical to what any other placeholder
+    would give.
+
+    This is the *deadness* itself, pinned. `sand._bind` declares an `In` for every
+    non-switch parameter of a constraint whether or not the statically selected arm
+    consumes it, so c72 carries a read of `sig_tf_cs_bucked` that only the
+    bucked-and-wedged arm (`i_tf_bucking >= 2` **and** `i_tf_inside_cs ==
+    TF_OUTSIDE_CS`) can reach -- a dead read, not a missing producer
+    (`_audit/units/models/tfcoil/superconducting.md`). The bucked arm is checked too,
+    so a future machine that takes it cannot inherit the `nan` silently.
+    """
+    free_standing = dict(
+        i_tf_bucking=1,
+        i_tf_inside_cs=0,
+        stress_shear_cs_peak=1.1647e9,
+        stress_cs_steel_max=6.6e8,
+    )
+    with_nan = ported_constraints.constraint_72(
+        sig_tf_cs_bucked=float("nan"), **free_standing
+    )
+    with_number = ported_constraints.constraint_72(sig_tf_cs_bucked=0.0, **free_standing)
+    assert with_nan == with_number
+    assert np.isfinite(with_nan[1])
+
+    # And the limit of the guard, measured rather than assumed: the bucked-and-wedged
+    # arm *does* read it, and still does not go non-finite, because the read is through
+    # Python's builtin `max` -- `nan > x` is False, so `max(x, nan)` returns `x` and the
+    # sentinel is silently discarded. (`jnp.maximum` propagates it; the builtin does
+    # not.) The `nan` seed is therefore loud through arithmetic and mute through
+    # `max`/`min`, and nobody should read the seeding rule as an unconditional alarm.
+    # Nothing depends on this today -- on an `i_tf_bucking >= 2` machine PROCESS writes
+    # the field, so `ground_truth` returns a real number and never reaches the sentinel.
+    bucked = ported_constraints.constraint_72(
+        **{**free_standing, "i_tf_bucking": 2}, sig_tf_cs_bucked=float("nan")
+    )
+    assert bucked[1] == with_number[1]
+
+
 def test_constraint_16_is_an_equality_despite_its_geq_body():
     """The equality/inequality split is **positional and user-chosen**, not a property
     of the constraint function.
@@ -224,7 +293,8 @@ def _cannot_resolve(cid):
 def test_objective_node_folds_in_the_sign_and_owns_one_minted_variable():
     """`Optimise` minimises, so a negative `i_figure_merit` (PROCESS's "maximise") has
     to become a negated body -- not a flag on the driver, which would make its `drives`
-    claim a lie, and not a field on `Optimise`, which has none."""
+    claim a lie, and not a field on `Optimise`, which has none.
+    """
     _name, node, var = objective_node(GRAPH, REFERENCE_FIGURE_OF_MERIT)
     assert var.path_str() == "^cond.numerics.objf"
     assert len(node.outputs) == 1
@@ -472,7 +542,8 @@ def _toy_problem(driver=None):
 
 class _Objective(jax.tree_util.register_static and object):
     """`(x-3)^2 + (y-2)^2`. A class, not a lambda, so the node definition stays a stable
-    jit cache key -- the same reason `cottax.rewrites.Compare` uses `Pairwise`."""
+    jit cache key -- the same reason `cottax.rewrites.Compare` uses `Pairwise`.
+    """
 
     def __call__(self, x, y):
         return (x - 3.0) ** 2 + (y - 2.0) ** 2
@@ -510,7 +581,8 @@ def test_vmcon_driver_reaches_a_known_constrained_optimum():
 
 def test_vmcon_driver_honours_bounds_as_bounds():
     """A box bound is handed to VMCON as a bound, not re-expressed as two inequality
-    constraints -- which would be a different QP subproblem and different iterates."""
+    constraints -- which would be a different QP subproblem and different iterates.
+    """
     graph, x, y, gx, gy = _toy_problem()
     graph, x, y, gx, gy = _toy_problem(
         VmconDriver(

@@ -161,6 +161,54 @@ def readers_in_process(name: str, root: str = "process") -> tuple[str, ...]:
     return tuple(sorted(line for line in found.stdout.split() if line))
 
 
+def _how_the_port_reads(name: str, graph) -> str:
+    """Why a switch reached the `unknown` bucket -- three different reasons, and only
+    one of them is "nothing in the port has ever looked at it".
+
+    A row lands here when no slot of the machine tree dispatches on the switch and no
+    node pins it as a static kwarg. That is the question `survey` is asking, and the
+    verdict stays `unknown` for all three. What is *not* the same for all three is the
+    sentence, and the old one ("the port has never read it") was false for every
+    `unknown` row `large_tokamak_eval` produces:
+
+    * **The constraint layer binds it.** `sand._bind` partials a constraint's or the
+      objective's switch parameters at assembly time, so `i_beta_component` and
+      `i_plant_availability` genuinely select a formula -- in a layer the machine tree
+      does not contain. Nothing is owed for these; the tree simply is not where they
+      live.
+    * **A node declares it as an ordinary read.** `.heat_transport.i_shld_primary_heat`
+      is an `In` on a real edge, which means a switch integer is travelling through a
+      declared port. That is not coverage, it is
+      `_audit/switch_kwarg_survey.md` §0's second defect ("10 declared ports carrying a
+      switch integer") showing up in a second measurement, and the row should read as
+      work rather than as absence.
+    * **Genuinely unread**, which is what the sentence used to claim for all of them.
+
+    Measured off the two live sources rather than listed here, so it cannot drift: the
+    constraint layer's own `SWITCH_PARAMETER_NAMES`, and the assembled graph's
+    variables.
+    """
+    from functional_process.sand import SWITCH_PARAMETER_NAMES
+
+    if name in SWITCH_PARAMETER_NAMES:
+        return (
+            "no slot dispatches on it, but the constraint/objective layer binds it as "
+            "a static kwarg (`sand.SWITCH_PARAMETER_NAMES`) -- read, outside the tree"
+        )
+    declared = {
+        var.path_str()
+        for var in graph.variables
+        if var.keys and getattr(var.keys[-1], "name", None) == name
+    }
+    if declared:
+        return (
+            f"no slot dispatches on it; a node declares {min(declared)} as an "
+            f"ordinary read -- a declared port carrying a switch integer, "
+            f"`switch_kwarg_survey.md` §0"
+        )
+    return "the port has never read it"
+
+
 def survey(input_file: str, graph=None) -> tuple[Row, ...]:
     """Every switch-shaped integer in `input_file`, classified against the tree."""
     from functional_process.indat import UNPORTED, switches_from_indat
@@ -192,7 +240,7 @@ def survey(input_file: str, graph=None) -> tuple[Row, ...]:
                 rows.append(Row(name, value, "not-topology", NOT_TOPOLOGY[name]))
                 continue
             readers = readers_in_process(name)
-            detail = SHAPE.get(name, "the port has never read it")
+            detail = SHAPE.get(name) or _how_the_port_reads(name, graph)
             rows.append(
                 Row(
                     name,
