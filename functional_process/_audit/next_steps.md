@@ -3436,9 +3436,27 @@ surfaces, and three tokamaks that took zero SQP steps this morning solve cold.
    `FixedPoint`-capable Newton driver or the block residualised. Keep the linear solve on
    device (`jnp.linalg.solve` inside the jitted step) -- in the throwaway probe the dense
    `np.linalg.solve` plus host transfer cost ~10x the Jacobian.
-2. **The two spherical tokamaks.** §18's eight blockers, in two clusters (CroCo TF,
-   PF coil system). Two agents were mid-flight at session close; read their handover
-   before restarting, they will have moved the frontier.
+2. **The two spherical tokamaks.** The CroCo cluster (§18 blockers 1-3) **is closed**
+   -- `models/tfcoil/croco.py`, 7 pure functions, 8 nodes, and blockers 2/3 fell by
+   construction exactly as §18.2 predicted: a CroCo machine resolves its own
+   superconductor-properties and temperature-margin registries and never consults the
+   cable-in-conduit ones. The five PF dimensions were still in flight at session close.
+
+   **There is a ninth blocker, and §18 is not wrong for omitting it.**
+   `tf_stress_arm == (0, 1, 0)`: both ST files set `i_tf_stress_model = 0`, which
+   selects `extended_plane_strain` (`process/models/tfcoil/base.py:3719-4234`, **517
+   lines**) instead of `plane_stress`. It could not appear in §18 because the slot that
+   refuses it did not exist then -- registry row 55 (`tfcoil/stress.py`) landed hours
+   later. **This is the third instance today of a record that was accurate when written
+   and invalidated by later work with nothing to notice** (the others: the `istell` dead
+   arm, written all along and costing a whole reference machine; and
+   `switch_kwarg_survey.md`'s three stale rows, measured on a stellarator for a node the
+   stellarator does not have). It is now the cheapest single item by
+   blocked-files-per-line: one occupant for `TF_STRESS` keyed `(0, 1, 0)`, with
+   `plane_stress`-shaped plumbing already in `models/tfcoil/stress.py`.
+
+   `st_regression` additionally needs iteration variable 135 (`optimise_design.md` §1.3),
+   which is a formulation question, not a model.
 3. **`NOH`, the structural integer the solve moves** (`cold_start.py`'s finding).
    `PFCoil.induct` segments the CS by `ceil(...)` of a ratio that changes with the
    design: 30 on `large_tokamak_eval`, 32 on `nof` cold and 27 converged. Substituting
@@ -3524,3 +3542,92 @@ Two corollaries with evidence:
   tokamak) and `degenerate_fixed_points` (reported a 507-dimensional, `1e13`-conditioned
   block as `J = -I` exactly, a flawless fixed point). Both are fixed; both found real
   defects within minutes of working.
+
+## 20. The CroCo cluster is closed, and there was a ninth blocker behind it
+
+§18.2's eight model-level blockers on `spherical_tokamak_eval.IN.DAT` and
+`st_regression.IN.DAT` are **five**. The CroCo package landed
+(`_audit/units/models/tfcoil/croco.md`, `functional_process/models/tfcoil/croco.py`,
+registry row 56) and took blockers 1, 2 and 3 with it, exactly as §18.2 predicted and for
+the reason it gave. The two files still do not assemble.
+
+### 20.1 What the refusal says now
+
+Before:
+
+```
+i_tf_turn_type == 2 is a real PROCESS branch but is not ported: the CroCo
+(cross-conductor) turn selects a **different PROCESS `Model` class**, ...
+```
+
+After, on both files, identically:
+
+```
+tf_stress_arm == (0, 1, 0) is a real PROCESS branch but is not ported:
+`i_tf_stress_model != 1` selects `extended_plane_strain`
+(process/models/tfcoil/base.py:3719-4234, **517 lines**) instead of `plane_stress` ...
+```
+
+The three CroCo names are gone from the refused-switch header: not `i_tf_turn_type`, not
+`i_str_wp_i_tf_sc_mat_cicc_sc_properties`, not `i_str_wp_i_tf_sc_mat_temp_margin`.
+`test_croco.py::test_the_two_tracked_spherical_tokamaks_no_longer_refuse_the_croco_cluster`
+checks that, against the *header* rather than the whole message — the recorded reasons
+quote other switches freely, and `_TF_STRESS_MODEL_REASON` now mentions `i_tf_turn_type`
+precisely because this wave uncovered it.
+
+### 20.2 The ninth blocker, and why §18 could not have counted it
+
+**`i_tf_stress_model == 0` on both files** (`spherical_tokamak_eval.IN.DAT:350`,
+`st_regression.IN.DAT:1223`), which selects `extended_plane_strain` — a second stress
+solver, 517 lines, refused by `indat._TF_STRESS_MODEL_REASON` with its reasons measured.
+§18 was measured on 2026-08-30 *before* registry row 55 (`tfcoil/base.py`'s stress chain)
+landed, so at the time there was no `tf_stress` slot for the ST files to be refused by:
+the blocker did not exist to be counted, and it appeared the moment a slot was filled.
+That is worth stating in the general form — **a frontier list is only complete relative
+to the slots that exist when it is taken**, and the two blocker counts on this file's
+history that were wrong (§16.11's "four PF dimensions, it is five"; §18.2's own "six, not
+four") were wrong for the opposite reason, short-circuiting evaluation. This one is
+neither an error nor a surprise; it is the list ageing.
+
+### 20.3 The list as it stands
+
+| # | blocker | cluster | state |
+|---|---|---|---|
+| ~~1~~ | ~~`i_tf_turn_type == 2`~~ | CroCo | **closed**, row 56 |
+| ~~2~~ | ~~`i_str_wp_i_tf_sc_mat_cicc_sc_properties == (1, 9)`~~ | CroCo | **closed** — never reached; a CroCo machine resolves its own registry |
+| ~~3~~ | ~~`i_str_wp_i_tf_sc_mat_temp_margin == (1, 9)`~~ | CroCo | **closed** — same |
+| 4–8 | `pf_coil_system_arm` −1/−2/−3/−6/−7 | PF | open, five dimensions |
+| **9** | `tf_stress_arm == (0, 1, 0)` — `extended_plane_strain` | stress | **new**, see §20.2 |
+| 10 | iteration variable 135 (`st_regression` only) | formulation | open, §18.3 |
+
+`extended_plane_strain` is now the *cheapest remaining single item* by blocked-files-per-
+line: one function, one occupant, both ST files. It is not cheap in absolute terms — 517
+lines, a generalised plane-strain formulation returning three strain arrays the
+plane-stress solver never computes, and `.tfcoil.str_wp` comes off `str_tf_z` there
+rather than off the uniform vertical stress. `stress.md` records the shape of it; the
+refusal in `indat.py` records the reasons.
+
+### 20.4 What the CroCo wave found that was not about the CroCo turn
+
+Three things, in descending order of how much they generalise:
+
+1. **Five of `CROCOSuperconductingTFCoil.run`'s writes are dead** — overwritten in the
+   same `run` before any reader. Two of them are what removes the unit's only stale
+   `self.data` read (`tf_croco_averaged_turn_geometry` reads the *previous pass's*
+   `a_tf_turn_cable_space_no_void` at `:4375`), so a hazard that would have needed a
+   fixed point simply has no live value behind it. **The reusable move: before porting a
+   `run`, check every write against its next use.** Two functions §18.5 budgeted for
+   (`croco_voltage`, and `current_sharing_rebco` behind the properties function's
+   temperature-margin tail) turned out not to need porting at all, and one of them was a
+   second replicated `scipy.optimize.newton` secant search.
+2. **The two superconductor-properties registries partition the material switch.** The
+   cable-in-conduit and CroCo functions guard on `SuperconductorShape` in their first four
+   lines and take opposite answers, so between them every `i_tf_sc_mat` is an occupant in
+   exactly one and a refusal in the other. That was true before this wave and unstated;
+   it is now a test rather than two mirror-image prose reasons, which is where drift
+   between `_SC_TAPE_REASON` and `_SC_CABLE_REASON` would show.
+3. **`.tfcoil.f_a_tf_turn_cable_space_extra_void` is computed on one device and input on
+   the other.** PROCESS writes it as a literal `0.0` on the CroCo path only. Both ST
+   files leave the input unset at a default of `0.0`, so a port that read it would agree
+   numerically and be reading a coincidence — §16's defect class, caught here by
+   reading `run` rather than by a check.

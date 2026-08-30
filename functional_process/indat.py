@@ -331,7 +331,15 @@ from functional_process.models.tfcoil.base import (
     TfGlobalGeometryCircularCase,
     TfGlobalGeometryStraightCase,
 )
-from functional_process.models.tfcoil.namespace import CiccSuperconductingTfCoil
+from functional_process.models.tfcoil.croco import (
+    CrocoAveragedTurnGeometryFromCurrentPerTurn,
+    HazeltonZhaiRebcoCrocoSuperconductorProperties,
+    HazeltonZhaiRebcoCrocoTemperatureMargin,
+)
+from functional_process.models.tfcoil.namespace import (
+    CiccSuperconductingTfCoil,
+    CrocoSuperconductingTfCoil,
+)
 from functional_process.models.tfcoil.quench import (
     TfCoilQuenchHeatCurrentDensity,
     helium_properties_at_quench_nodes,
@@ -426,7 +434,7 @@ from process.models.power import (
     ElectricConversionModelTypes,
     PumpingPowerModelTypes,
 )
-from process.models.superconductors import SuperconductorModel
+from process.models.superconductors import SuperconductorModel, SuperconductorShape
 from process.models.tfcoil.base import (
     TFCoilShapeModel,
     TFConductorModel,
@@ -552,7 +560,67 @@ _SC_TAPE_REASON = (
     "arithmetic. A tape machine takes `CROCOSuperconductingTFCoil` instead -- which is "
     "what both tracked ST files do, `i_tf_turn_type = 2` "
     "(spherical_tokamak_eval.IN.DAT:72, st_regression.IN.DAT:800) -- so this slot is "
-    "never reached at those values and there is no PROCESS behaviour to port"
+    "never reached at those values and there is no PROCESS behaviour to port. Its "
+    "mirror image is `_SC_CABLE_REASON`, which refuses the six cable values on the two "
+    "CroCo slots"
+)
+
+_SC_CABLE_REASON = (
+    "`i_tf_sc_mat` 1, 2, 3, 4, 5 and 7 are `SuperconductorShape.CABLE` "
+    "(process/models/superconductors.py:71-124), and "
+    "`tf_croco_superconductor_properties` refuses a non-TAPE shape in its first four "
+    "lines (process/models/tfcoil/superconducting.py:4435-4441) before any arithmetic. "
+    "A cable machine takes `CICCSuperconductingTFCoil` instead, i.e. "
+    "`i_tf_turn_type = 1`, so this slot is never reached at those values and there is "
+    "no PROCESS behaviour to port. The exact mirror of `_SC_TAPE_REASON`: between them "
+    "the two slots' registries partition the nine materials, which is what makes the "
+    "pair of slots a partition of one switch rather than two overlapping guesses"
+)
+
+_CROCO_REBCO_MARGIN_REASON = (
+    "`i_tf_sc_mat == 6` (CROCO_REBCO) has a CroCo properties arm that runs -- "
+    "`jcrit_rebco` at (process/models/tfcoil/superconducting.py:4450-4455) -- and then "
+    "dies one call later. `calculate_superconductor_temperature_margin` dispatches on "
+    "`{1, 3, 4, 5, 7, 8, 9}` (:1235) and 6 is not in it, so it falls through to "
+    "`raise ProcessValueError('Unknown superconductor type...')` (:1290-1292); `run` "
+    "calls the margin unconditionally (:4006-4017), so no CroCo machine can complete a "
+    "pass at this value. Refused in **both** CroCo slots, so the properties one cannot "
+    "assemble alone into a machine PROCESS itself cannot run -- the same reason "
+    "`_BI2212_UNBOUND_REASON` is keyed on both cable-in-conduit slots"
+)
+
+_DURHAM_REBCO_CROCO_REASON = (
+    "`i_tf_sc_mat == 8` (DURHAM_REBCO) is a real and complete CroCo arm -- `gl_rebco` "
+    "for the properties (process/models/tfcoil/superconducting.py:4459-4480) and "
+    "branch 8 of `superconductor_current_density_margin` "
+    "(process/models/superconductors.py:1268-1270) for the margin -- and the only arm "
+    "of either that actually *uses* a strain, which is why `i_str_wp` stays a key of "
+    "both registries. `gl_rebco` is already ported "
+    "(functional_process/models/physics/superconductors.py), so this is a small "
+    "addition rather than a missing model. **No tracked input file selects it**: both "
+    "CroCo machines set `i_tf_sc_mat = 9` (spherical_tokamak_eval.IN.DAT:355, "
+    "st_regression.IN.DAT:827). Refused until something reaches it, rather than written "
+    "against no measurement"
+)
+
+_CROCO_INTEGER_TURN_REASON = (
+    "**PROCESS refuses it, not this port.** `CROCOSuperconductingTFCoil.run` raises "
+    "`ProcessValueError('Integer turn geometry not implemented for CroCo conductor.')` "
+    "at `i_tf_turns_integer == 1` (process/models/tfcoil/superconducting.py:3834-3840). "
+    "There is no arm to port. Both tracked CroCo files set `i_tf_turns_integer = 0` "
+    "(spherical_tokamak_eval.IN.DAT:354, st_regression.IN.DAT:1042)"
+)
+
+_CROCO_TURN_DIMENSION_INPUT_REASON = (
+    "`tf_croco_averaged_turn_geometry`'s first two branches -- the turn side given "
+    "directly (`i_dx_tf_turn_general_input`) or via the cable space "
+    "(`i_dx_tf_turn_cable_space_general_input`), "
+    "process/models/tfcoil/superconducting.py:4321-4339 -- **own** "
+    "`.tfcoil.c_tf_turn` and `.tfcoil.dx_tf_turn_general` where the written third arm "
+    "reads them, so they are different nodes and not a kwarg, exactly as on the "
+    "cable-in-conduit side (`_cicc_turn_geometry_arm`). Neither is written; both "
+    "PROCESS defaults are `False` (tfcoil_variables.py:108,127) and both tracked CroCo "
+    "files leave them there"
 )
 
 _TF_STRESS_MODEL_REASON = (
@@ -564,8 +632,11 @@ _TF_STRESS_MODEL_REASON = (
     "the uniform vertical stress (`:2988`), so it is a different function of different "
     "inputs, not a different constant. A second solver and a second occupant, and "
     "neither is written. Live on both tracked spherical tokamaks "
-    "(spherical_tokamak_eval.IN.DAT:350, st_regression.IN.DAT:1223), which are already "
-    "refused above this point for `i_tf_turn_type == 2`"
+    "(spherical_tokamak_eval.IN.DAT:350, st_regression.IN.DAT:1223). **Until "
+    "2026-08-30 that was hidden**: those two files were refused earlier, for "
+    "`i_tf_turn_type == 2`, and this is the blocker the CroCo wave uncovered behind it. "
+    "It is not one `_audit/next_steps.md` §18 counted, because the stress slot itself "
+    "landed after §18 was measured"
 )
 
 _TF_BUCKING_REASON = (
@@ -730,25 +801,14 @@ UNPORTED = {
     ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 8)): _SC_TAPE_REASON,
     ("i_str_wp_i_tf_sc_mat_temp_margin", (1, 9)): _SC_TAPE_REASON,
     ("i_str_wp_i_tf_sc_mat_temp_margin", (0, 9)): _SC_TAPE_REASON,
-    ("i_tf_turn_type", SuperconductingTFTurnType.CROSS_CONDUCTOR): (
-        "the CroCo (cross-conductor) turn selects a **different PROCESS `Model` class**, "
-        "`CROCOSuperconductingTFCoil` (`process/models/tfcoil/superconducting.py:3773`), "
-        "not a different arm inside the cable-in-conduit one: `core/caller.py:298-313` "
-        "dispatches on `i_tf_turn_type` above every model and runs "
-        "`models.croco_sctfcoil` instead of `models.cicc_sctfcoil`. Its `run` computes a "
-        "REBCO tape stack -- `tf_croco_averaged_turn_geometry`, "
-        "`tf_turn_croco_cable_space_properties`, `calculate_croco_cable_geometry`, "
-        "`tf_croco_inboard_areas_and_fractions` and the `.superconducting_tfcoil."
-        "*croco*`/`*hts_tape*` fields they own -- none of which exists in this port, and "
-        "it refuses integer turn geometry outright (`:3838`). That is a whole unit, not "
-        "an occupant. **Both tracked spherical tokamaks need it** "
-        "(`spherical_tokamak_eval.IN.DAT:72`, `st_regression.IN.DAT:800`), which is the "
-        "measured reason neither assembles yet. Refused here, above the device branch, "
-        "because until 2026-08-29 nothing asked: a machine with this value assembled "
-        "**silently as cable-in-conduit**, and only the tape-superconductor refusal "
-        "inside `CICC_SUPERCONDUCTOR_PROPERTIES` was accidentally catching the two ST "
-        "files"
-    ),
+    # `("i_tf_turn_type", CROSS_CONDUCTOR)` was here from 2026-08-29 to 2026-08-30 and
+    # is **gone rather than reworded**: the CroCo turn is ported
+    # (`models/tfcoil/croco.py`), so `machine_from_indat` threads the switch to
+    # `_tokamak_device` and it selects a namespace instead of raising. It is the second
+    # entry ever to leave this table, after `("istell", 0)`, and for the same reason --
+    # the arm was written. What is left of the refusal is finer-grained and lives in the
+    # comprehension at the foot of this dict: the three CroCo arms `croco.py` does not
+    # write, and the six cable materials its properties function refuses outright.
     ("ife", IFEModel.INERTIAL_CONFINEMENT): (
         "inertial confinement is a different device, and PROCESS spells it as an `if` "
         "inside seven Account-22x cost methods rather than as a device class. Each of "
@@ -1278,6 +1338,33 @@ UNPORTED = {
         for _integer in (0, 1)
         if (_model, _bucking, _integer) not in {(1, 1, 0), (1, 1, 1)}
     },
+    # ---- the CroCo namespace's three registries, 2026-08-30 -----------------------
+    #
+    # Written as comprehensions for the same reason `SC_TF_MASSES` is: the refusal is a
+    # *rule* over the switch's values (cable shapes are refused by PROCESS's own guard,
+    # `i_str_wp == 0` by this port), and thirty-eight hand-written rows would be
+    # thirty-eight chances to key one of them wrong.
+    ("croco_turn_geometry_arm", 1): _CROCO_INTEGER_TURN_REASON,
+    ("croco_turn_geometry_arm", -1): _CROCO_TURN_DIMENSION_INPUT_REASON,
+    ("croco_turn_geometry_arm", -2): _CROCO_TURN_DIMENSION_INPUT_REASON,
+    **{
+        (_slot, (_str_wp, _mat)): (
+            _SC_CABLE_REASON
+            if _mat.sc_shape is not SuperconductorShape.TAPE
+            else _CROCO_REBCO_MARGIN_REASON
+            if _mat is SuperconductorModel.CROCO_REBCO
+            else _DURHAM_REBCO_CROCO_REASON
+            if _mat is SuperconductorModel.DURHAM_REBCO
+            else _I_STR_WP_ZERO_REASON
+        )
+        for _slot in (
+            "i_str_wp_i_tf_sc_mat_croco_sc_properties",
+            "i_str_wp_i_tf_sc_mat_croco_temp_margin",
+        )
+        for _str_wp in (0, 1)
+        for _mat in SuperconductorModel
+        if (_str_wp, _mat) != (1, SuperconductorModel.HAZELTON_ZHAI_REBCO)
+    },
 }
 """Why a known PROCESS value has no occupant, verbatim from the `Alternative(unported=)`
 declarations this replaced.
@@ -1366,7 +1453,7 @@ def _refuse_unported_switch(field, value):
     """Refuse a switch value this port has no occupant for, where the switch decides no
     slot of its own.
 
-    Two of them. `ife == 1` is a whole **device** -- inertial rather than
+    One of them now. `ife == 1` is a whole **device** -- inertial rather than
     magnetic confinement -- and PROCESS spells it not as a device class but as an `if`
     inside seven separate Account-22x cost methods, each reading a different set of
     `.ife.*` fields, none of them ported. So there is nothing for a registry to hold:
@@ -1376,21 +1463,19 @@ def _refuse_unported_switch(field, value):
     alternative it withdrew was seven bodies each holding the integer and each raising
     at trace time.
 
-    `i_tf_turn_type == 2` is the second, added by the ST closing wave (2026-08-29), and
-    it is the same shape one level down: PROCESS resolves it **above every model**, in
-    `core/caller.py:298-313`, and runs `CROCOSuperconductingTFCoil` instead of
-    `CICCSuperconductingTFCoil` -- a different `Model` class, not a different slot inside
-    one. `models/tfcoil/namespace.py`'s own docstring said exactly this and nothing
-    checked it: before this refusal existed, an input setting `i_tf_turn_type = 2`
-    **assembled silently as a cable-in-conduit machine**, measured on a copy of
-    `large_tokamak_eval.IN.DAT` with the one line added. That is
+    **`i_tf_turn_type == 2` was the second caller for one day, and is worth recording as
+    such.** Added by the ST closing wave (2026-08-29) because
+    `models/tfcoil/namespace.py`'s own docstring claimed a CroCo machine took a different
+    occupant and nothing checked it: before that refusal existed, an input setting
+    `i_tf_turn_type = 2` **assembled silently as a cable-in-conduit machine**, measured on
+    a copy of `large_tokamak_eval.IN.DAT` with the one line added -- which is
     `low_aspect_ratio_DEMO`'s integer-turn mis-assembly (`next_steps.md` §15) a second
-    time, and it is why the refusal is here rather than left to the tape-superconductor
-    refusal that was catching the two spherical tokamaks by accident.
-
-    Asked only on the superconducting arm, because that is the only branch of
-    `caller.py` that reads it; a copper or aluminium machine's `i_tf_turn_type` decides
-    nothing, in PROCESS or here.
+    time. On 2026-08-30 the CroCo turn was ported and the refusal became a *dispatch*:
+    `machine_from_indat` still resolves the switch in exactly the same place and for
+    exactly the same reason, and hands the value to `_tokamak_device`, which builds
+    `CrocoSuperconductingTfCoil` instead of raising. The check that made the silent
+    mis-assembly impossible is the same check that now makes the right namespace get
+    built; that is the shape a refusal is supposed to retire into.
 
     The value must already be an `IntEnum` member, so a value PROCESS has never had has
     failed at the enum call before reaching here -- `_slot_occupant`'s `ValueError`
@@ -3155,6 +3240,69 @@ numbers. The refusal is keyed separately from the properties slot's so the two c
 confused, exactly as `WINDING_PACK_MATERIAL` and `SC_TF_MASSES` are kept apart on value
 9."""
 
+
+def _croco_turn_geometry_arm(
+    i_tf_turns_integer: int,
+    i_dx_tf_turn_general_input: int,
+    i_dx_tf_turn_cable_space_general_input: int,
+) -> int:
+    """`(i_tf_turns_integer, i_dx_tf_turn_general_input,
+    i_dx_tf_turn_cable_space_general_input)` -> the CroCo turn-geometry arm.
+
+    **The same four arms as the cable-in-conduit turn, and it delegates rather than
+    restating them**: `CROCOSuperconductingTFCoil.run:3805-3840` and
+    `CICCSuperconductingTFCoil.run:2342-2439` branch on the same three flags in the same
+    order, and `tf_croco_averaged_turn_geometry:4321-4351` mirrors
+    `tf_cable_in_conduit_averaged_turn_geometry`'s three-way split line for line. Two
+    transcriptions of one branch structure would be two things that can drift.
+
+    What differs is which arms *exist*: arm `1` (integer turns) is a `ProcessValueError`
+    here rather than a second geometry, so `CROCO_TURN_GEOMETRY` has one occupant where
+    `CICC_TURN_GEOMETRY` has two. Keyed under its own field name so the two slots'
+    refusals cannot be confused for one another.
+    """
+    return _cicc_turn_geometry_arm(
+        i_tf_turns_integer,
+        i_dx_tf_turn_general_input,
+        i_dx_tf_turn_cable_space_general_input,
+    )
+
+
+CROCO_TURN_GEOMETRY = {0: CrocoAveragedTurnGeometryFromCurrentPerTurn}
+"""The CroCo turn-geometry arm -> its occupant. See `_croco_turn_geometry_arm`.
+
+One row, and the missing three are refused for two different reasons: arm `1` because
+**PROCESS raises** on it, arms `-1`/`-2` because this port has not written them."""
+
+CROCO_SUPERCONDUCTOR_PROPERTIES = {
+    (
+        1,
+        SuperconductorModel.HAZELTON_ZHAI_REBCO,
+    ): HazeltonZhaiRebcoCrocoSuperconductorProperties,
+}
+"""`(.tfcoil.i_str_wp, .tfcoil.i_tf_sc_mat)` -> the CroCo critical-current occupant.
+
+**The complement of `CICC_SUPERCONDUCTOR_PROPERTIES`, not an overlap.** The two PROCESS
+functions guard on `SuperconductorShape` in their first four lines and take opposite
+answers -- CABLE at `:2882-2889`, TAPE at `:4435-4441` -- so between the two registries
+every one of the nine materials is either an occupant or a refusal naming the guard that
+excluded it, and no material has an occupant in both. One row is written, `9`, which is
+what both tracked CroCo machines set."""
+
+CROCO_TEMPERATURE_MARGIN = {
+    (
+        1,
+        SuperconductorModel.HAZELTON_ZHAI_REBCO,
+    ): HazeltonZhaiRebcoCrocoTemperatureMargin,
+}
+"""`(.tfcoil.i_str_wp, .tfcoil.i_tf_sc_mat)` -> the CroCo temperature-margin occupant.
+
+Keyed apart from `TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN` even though both fill the same
+`tf_superconductor_temperature_margin` slot, because they answer the same switch over
+disjoint values and with different reads: this one's residual takes three tape
+dimensions and no strain. Same discipline as the properties pair above, and the same one
+`WINDING_PACK_MATERIAL`/`SC_TF_MASSES` follow on value 9."""
+
 # ---- `.tokamak.ccfe_hcpb` ---------------------------------------------------------
 
 BLANKET_HALF_HEIGHT = {
@@ -3959,7 +4107,15 @@ def _quench_helium_table(numbers, ixc):
 
 
 def _tokamak_device(
-    switches, numbers, ixc, int_lists, i_tf_sup, i_plasma_ignited, itart, i_tf_sc_mat
+    switches,
+    numbers,
+    ixc,
+    int_lists,
+    i_tf_sup,
+    i_plasma_ignited,
+    itart,
+    i_tf_sc_mat,
+    i_tf_turn_type,
 ):
     r"""The `Tokamak` an IN.DAT describes -- twenty-six slots of the twenty-eight filled.
 
@@ -3976,7 +4132,11 @@ def _tokamak_device(
     is threaded rather than read here for a stronger reason than tidiness -- it is the
     *same local* the stellarator branch hands `WINDING_PACK_MATERIAL` and
     `COILS_MASS_MATERIAL`, so the three consumers of that one switch cannot name three
-    different materials.
+    different materials. `i_tf_turn_type` joined it on 2026-08-30, when the CroCo turn
+    stopped being a refusal and became a namespace: it is resolved on the superconducting
+    arm of `machine_from_indat`, because that is the only branch of `caller.py:298-313`
+    that reads it, and threaded here to choose between the two `SuperconductingTfCoil`
+    subclasses.
 
     **The two slots this does not fill are not mentioned.** `cs_fatigue` and
     `water_use` keep `models/tokamak/namespace.py`'s `None`, whatever the file says:
@@ -4150,7 +4310,16 @@ def _tokamak_device(
             "i_tf_shape_build", i_tf_shape, TF_OUTBOARD_EDGE_RIPPLE
         ),
     )
-    tf_coil = CiccSuperconductingTfCoil(
+    # ---- the TF coil, one namespace or the other ----------------------------------
+    #
+    # `i_tf_turn_type` selects a whole PROCESS `Model` class at `caller.py:298-313`, and
+    # the two classes share `run_base_superconducting_tf` and everything after the turn.
+    # So the twenty-two slots they share are built **once**, here, and handed to whichever
+    # subclass the switch names -- which is what `models/tfcoil/namespace.py`'s
+    # `SuperconductingTfCoil` base exists to make possible. Building them twice, once in
+    # each branch, would be exactly the transcription `model_tree_design.md` §8 step 4d
+    # removed from the tree, thirteen slots at a time.
+    shared_tf_coil_slots = dict(
         tf_global_geometry=_slot_occupant(
             "i_tf_case_geom", i_tf_case_geom, TF_GLOBAL_GEOMETRY
         ),
@@ -4189,15 +4358,6 @@ def _tokamak_device(
             _peak_b_ripple_arm(numbers.get("n_tf_coils", 16.0)),
             PEAK_B_TF_RIPPLE,
         ),
-        cicc_turn_geometry=_slot_occupant(
-            "cicc_turn_geometry_arm",
-            _cicc_turn_geometry_arm(
-                i_tf_turns_integer,  # resolved above, beside `i_tf_wp_geom`
-                switches.get("i_dx_tf_turn_general_input", 0),  # `:108`
-                switches.get("i_dx_tf_turn_cable_space_general_input", 0),  # `:127`
-            ),
-            CICC_TURN_GEOMETRY,
-        ),
         # Two switches, one slot -- see `SC_TF_MASSES`. `itart` and `i_tf_sc_mat` are
         # both *threaded*, resolved once in `machine_from_indat`; `i_tf_sc_mat` is the
         # same local the stellarator branch gives `WINDING_PACK_MATERIAL` and
@@ -4224,20 +4384,6 @@ def _tokamak_device(
             ),
             TF_STRESS,
         ),
-        # Both of these key on `(i_str_wp, i_tf_sc_mat)`. `i_str_wp` is
-        # `tfcoil_variables.py:508`'s default; the pair is built once so the two slots
-        # cannot disagree about either switch, which is the same cross-slot coherence
-        # `i_tf_sc_mat` already gets from being resolved above the device branch.
-        cicc_superconductor_properties=_slot_occupant(
-            "i_str_wp_i_tf_sc_mat_cicc_sc_properties",
-            (i_str_wp, i_tf_sc_mat),
-            CICC_SUPERCONDUCTOR_PROPERTIES,
-        ),
-        tf_superconductor_temperature_margin=_slot_occupant(
-            "i_str_wp_i_tf_sc_mat_temp_margin",
-            (i_str_wp, i_tf_sc_mat),
-            TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN,
-        ),
         tf_coil_quench_heat_current_density=TfCoilQuenchHeatCurrentDensity(
             tftmp=quench_temp_he_peak,
             temp_tf_conductor_quench_max=quench_temp_max,
@@ -4245,6 +4391,58 @@ def _tokamak_device(
             cp_helium_at_nodes=quench_cp_helium,
         ),
     )
+    # The turn-dimension flags decide the turn geometry on **both** turn types, from the
+    # same three-way branch (`_croco_turn_geometry_arm` delegates), so they are read once
+    # here rather than inside either branch below.
+    turn_geometry_arm_inputs = (
+        i_tf_turns_integer,  # resolved above, beside `i_tf_wp_geom`
+        switches.get("i_dx_tf_turn_general_input", 0),  # `tfcoil_variables.py:108`
+        switches.get("i_dx_tf_turn_cable_space_general_input", 0),  # `:127`
+    )
+    # The critical-current and temperature-margin slots both key on
+    # `(i_str_wp, i_tf_sc_mat)`. `i_str_wp` is `tfcoil_variables.py:508`'s default; the
+    # pair is built once so no two of the four registries below can disagree about
+    # either switch, which is the same cross-slot coherence `i_tf_sc_mat` already gets
+    # from being resolved above the device branch.
+    superconductor_arm = (i_str_wp, i_tf_sc_mat)
+    if i_tf_turn_type is SuperconductingTFTurnType.CROSS_CONDUCTOR:
+        tf_coil = CrocoSuperconductingTfCoil(
+            **shared_tf_coil_slots,
+            croco_turn_geometry=_slot_occupant(
+                "croco_turn_geometry_arm",
+                _croco_turn_geometry_arm(*turn_geometry_arm_inputs),
+                CROCO_TURN_GEOMETRY,
+            ),
+            croco_superconductor_properties=_slot_occupant(
+                "i_str_wp_i_tf_sc_mat_croco_sc_properties",
+                superconductor_arm,
+                CROCO_SUPERCONDUCTOR_PROPERTIES,
+            ),
+            tf_superconductor_temperature_margin=_slot_occupant(
+                "i_str_wp_i_tf_sc_mat_croco_temp_margin",
+                superconductor_arm,
+                CROCO_TEMPERATURE_MARGIN,
+            ),
+        )
+    else:
+        tf_coil = CiccSuperconductingTfCoil(
+            **shared_tf_coil_slots,
+            cicc_turn_geometry=_slot_occupant(
+                "cicc_turn_geometry_arm",
+                _cicc_turn_geometry_arm(*turn_geometry_arm_inputs),
+                CICC_TURN_GEOMETRY,
+            ),
+            cicc_superconductor_properties=_slot_occupant(
+                "i_str_wp_i_tf_sc_mat_cicc_sc_properties",
+                superconductor_arm,
+                CICC_SUPERCONDUCTOR_PROPERTIES,
+            ),
+            tf_superconductor_temperature_margin=_slot_occupant(
+                "i_str_wp_i_tf_sc_mat_temp_margin",
+                superconductor_arm,
+                TF_SUPERCONDUCTOR_TEMPERATURE_MARGIN,
+            ),
+        )
     ccfe_hcpb = _slot_occupant(
         "i_blanket_type",
         BlktModelTypes(switches.get("i_blanket_type", 1)),  # `fwbs_variables.py:70`
@@ -4615,16 +4813,18 @@ def machine_from_indat(input_file, stella_conf=None):
     # `i_tf_turn_type` decides no slot either -- it selects the whole TF `Model` class
     # (`CICCSuperconductingTFCoil` vs `CROCOSuperconductingTFCoil`) at
     # `core/caller.py:298-313`, above every model, exactly as `ife` does one level up.
-    # Asked only on the superconducting arm, because that is the only branch of
-    # `caller.py` that reads it. `superconducting_tf_coil_variables.py:194` is the
-    # default. Until this line existed, a CroCo machine assembled silently as
-    # cable-in-conduit -- see `_refuse_unported_switch`'s docstring for the measurement.
+    # **Both are ported since 2026-08-30**, so it is resolved and *threaded* rather than
+    # refused: `_tokamak_device` hands the shared slots to whichever
+    # `SuperconductingTfCoil` subclass it names. Read only on the superconducting arm,
+    # because that is the only branch of `caller.py` that reads it -- a copper or
+    # aluminium machine's `i_tf_turn_type` decides nothing, in PROCESS or here, and the
+    # cable-in-conduit default keeps that arm exactly where it was.
+    # `superconducting_tf_coil_variables.py:194` is the default.
+    i_tf_turn_type = SuperconductingTFTurnType.CABLE_IN_CONDUIT
     if i_tf_sup is TFConductorModel.SUPERCONDUCTING:
         i_tf_turn_type = SuperconductingTFTurnType(
             int(switches.get("i_tf_turn_type", 1))
         )
-        if i_tf_turn_type is not SuperconductingTFTurnType.CABLE_IN_CONDUIT:
-            _refuse_unported_switch("i_tf_turn_type", i_tf_turn_type)
     # `itart` decides four slots that used to hardcode it and, on a tokamak, ten more
     # inside `_tokamak_device`. Read here, above the device branch, and threaded --
     # `physics_variables.py:994` is the default.
@@ -4893,6 +5093,7 @@ def machine_from_indat(input_file, stella_conf=None):
                 i_plasma_ignited,
                 itart,
                 i_tf_sc_mat,
+                i_tf_turn_type,
             ),
             costs=costs,
             physics=Physics(

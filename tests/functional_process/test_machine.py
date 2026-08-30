@@ -367,6 +367,7 @@ DERIVED_UNPORTED_KEYS = {
     # function reads -- the same reason the three joint keys below are skipped.
     "centrepost_neutronics_arm",
     "cicc_turn_geometry_arm",
+    "croco_turn_geometry_arm",
     "divertor_geometry_arm",
     "divertor_heat_load_arm",
     "first_wall_arm",
@@ -393,6 +394,12 @@ DERIVED_UNPORTED_KEYS = {
     # against.
     "i_str_wp_i_tf_sc_mat_cicc_sc_properties",
     "i_str_wp_i_tf_sc_mat_temp_margin",
+    # The CroCo namespace's two, same shape and the same trade: totality over both
+    # 2 x 9 products is `test_croco.py::test_every_unwritten_croco_material_is_refused_
+    # with_a_reason`, and the end-to-end refusal is
+    # `test_a_croco_machine_refuses_an_unwritten_tape_material`.
+    "i_str_wp_i_tf_sc_mat_croco_sc_properties",
+    "i_str_wp_i_tf_sc_mat_croco_temp_margin",
 }
 """`UNPORTED` keys that no IN.DAT integer can select directly.
 
@@ -514,6 +521,38 @@ tokamak-only slot can appear in it: `eqx.tree_at` has nowhere to put one. That i
 the tokamak's registries were not merely missing from the list, they were unreachable
 from it, and the meta-tests skipped the whole group in silence rather than failing.
 """
+
+
+def _croco_machine():
+    """`large_tokamak_eval.IN.DAT` rewound onto the CroCo turn -- the **third** base.
+
+    `TOKAMAK_MACHINE` and `REFERENCE_MACHINE` are cable-in-conduit and stellarator
+    machines respectively, so no slot in either can hold a `CrocoSuperconductingTfCoil`
+    occupant and `_slot_for` cannot derive the CroCo registries from them -- the same
+    unreachability `TOKAMAK_MACHINE` was added to fix one device up. Built here rather
+    than from an ST input file because neither tracked spherical tokamak assembles yet
+    (the PF coil system and `i_tf_stress_model`), and a base has to be a machine.
+
+    Two lines of difference: `i_tf_turn_type = 2` selects the namespace and
+    `i_tf_sc_mat = 9` is the one tape material with an occupant.
+    """
+    import tempfile
+
+    source = (
+        Path(fp_boundary.__file__).resolve().parent.parent
+        / fp_boundary.TOKAMAK_INPUT_FILE
+    )
+    text = "\n".join(
+        "i_tf_sc_mat = 9" if line.startswith("i_tf_sc_mat") else line
+        for line in source.read_text().splitlines()
+    )
+    path = Path(tempfile.mkdtemp()) / "croco.IN.DAT"
+    path.write_text(text + "\ni_tf_turn_type = 2\n")
+    return machine_from_indat(str(path))
+
+
+CROCO_MACHINE = _croco_machine()
+"""The CroCo tokamak, so `_slot_for` can reach the three `CROCO_*` registries."""
 
 
 def _slots_source():
@@ -669,7 +708,7 @@ def _derived_occupants():
     for name, registry in sorted(_slot_registries().items()):
         if name in in_slots or name in NAMESPACE_VALUED_REGISTRIES:
             continue
-        for base in (TOKAMAK_MACHINE, REFERENCE_MACHINE):
+        for base in (TOKAMAK_MACHINE, REFERENCE_MACHINE, CROCO_MACHINE):
             path = _slot_for(name, registry, base)
             if path is not None:
                 break

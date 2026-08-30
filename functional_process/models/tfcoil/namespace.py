@@ -1,18 +1,34 @@
-"""The tokamak TF coil's namespace -- the twenty-six slots of
-`.tokamak.cicc_superconducting_tf_coil`.
+"""The tokamak TF coil's namespaces -- what fills
+`.tokamak.cicc_superconducting_tf_coil`, whichever turn the machine is wound with.
 
-Beside the nodes it names (`model_tree_design.md` §11), and spanning three modules
-because PROCESS's own `CICCSuperconductingTFCoil` does: `base.py` is reached through it
-by *inheritance* rather than by any call in `caller.py`
-(`tokamak_call_surface.md` §A row 3), `quench.py` through one call inside it. That is
-why this is a `namespace.py` in the package rather than a class at the foot of one
-module -- there is no single module the slots are all beside.
+**Three classes, and the middle one is the point.** `SuperconductingTfCoil` holds the
+twenty-two slots every superconducting TF coil has; `CiccSuperconductingTfCoil` and
+`CrocoSuperconductingTfCoil` add the three and six that their turn actually differs in.
+That mirrors PROCESS, where `CROCOSuperconductingTFCoil` *subclasses*
+`CICCSuperconductingTFCoil`'s own parent and both `run`s open with the same
+`run_base_superconducting_tf` call; and it is what `caller.py:298-313` decides, above
+every model, from `.superconducting_tfcoil.i_tf_turn_type`.
 
-**Thirteen of the twenty-six slots are switched, and every switch is answered by
-`indat.py`**, never here. The families and the switch each answers are in the class
-docstrings below; the reference-run arm of every one is
-`tests/regression/input_files/large_tokamak_eval.IN.DAT`'s, and `tfcoil/base.md`,
-`tfcoil/superconducting.md` and `tfcoil/quench.md` carry the per-arm evidence.
+Beside the nodes they name (`model_tree_design.md` §11), and spanning four modules
+because PROCESS's own classes do: `base.py` is reached through them by *inheritance*
+rather than by any call in `caller.py` (`tokamak_call_surface.md` §A row 3), `quench.py`
+through one call inside them, `croco.py` only from the second. That is why this is a
+`namespace.py` in the package rather than a class at the foot of one module -- there is
+no single module the slots are all beside.
+
+**Every switch is answered by `indat.py`**, never here. The families and the switch each
+answers are in the class docstrings below; the reference-run arm of every cable-in-
+conduit one is `tests/regression/input_files/large_tokamak_eval.IN.DAT`'s and of every
+CroCo one is `spherical_tokamak_eval.IN.DAT`'s, and `tfcoil/base.md`,
+`tfcoil/superconducting.md`, `tfcoil/croco.md` and `tfcoil/quench.md` carry the per-arm
+evidence.
+
+**The slot's name still says `cicc`, and that is now one turn type's name on a place
+both fill.** Renaming it would move every node under it -- `.tokamak.cicc_
+superconducting_tf_coil.tf_stress` and its twenty-odd siblings -- across the boundary
+pins, the DSM exports and four test modules, for no change in structure. Left as it is
+deliberately, recorded here so the mismatch is a known one; `croco.md` §open questions
+carries it.
 
 **One slot is legitimately empty on the reference run.** `dx_tf_side_case_min` has a
 node only when `.tfcoil.tfc_sidewall_is_fraction` is `True`; PROCESS's default is
@@ -48,6 +64,15 @@ from functional_process.models.tfcoil.base import (
     TfGlobalGeometry,
     TfStoredMagneticEnergy,
 )
+from functional_process.models.tfcoil.croco import (
+    CrocoCableGeometry,
+    CrocoCableSpaceProperties,
+    CrocoInboardAreasAndFractions,
+    CrocoSuperconductorProperties,
+    CrocoTurnCableSpaceCoolingFraction,
+    CrocoTurnCableSpaceExtraVoid,
+    CrocoTurnGeometry,
+)
 from functional_process.models.tfcoil.quench import (
     TfCoilDumpQuenchVoltage,
     TfCoilQuenchHeatCurrentDensity,
@@ -72,22 +97,26 @@ from functional_process.models.tfcoil.superconducting import (
 )
 
 
-class CiccSuperconductingTfCoil(ModelNamespace):
-    """A cable-in-conduit superconducting TF coil: the tokamak's magnet system.
+class SuperconductingTfCoil(ModelNamespace):
+    """What every superconducting TF coil has, whichever turn it is wound with.
 
-    Named for `process/models/tfcoil/superconducting.py::CICCSuperconductingTFCoil`,
-    which is what `caller.py:306` runs at `i_tf_sup == 1` and
-    `.superconducting_tfcoil.i_tf_turn_type == 1`. Both of those switches are resolved
-    **above every model**, in `caller.py:295-316`, which is why neither appears as a slot
-    here: a machine whose `i_tf_turn_type` is `2` has a different occupant of
-    `.tokamak.cicc_superconducting_tf_coil` (`CROCOSuperconductingTFCoil`, unported),
-    not a different slot inside this one.
+    The twenty-two slots `CICCSuperconductingTFCoil` and `CROCOSuperconductingTFCoil`
+    share -- which is to say `run_base_superconducting_tf` and everything it reaches
+    (`process/models/tfcoil/superconducting.py:161-285`), plus the areas, masses,
+    stresses and quench limits both `run`s call unchanged afterwards. The two subclasses
+    below add only what their turn actually differs in.
 
-    Twenty-six slots, twenty-five of them occupied on the reference run. Written in
-    dependency order rather than in file order, because the
-    chain is long and legible: global geometry and case thickness, then the current, then
-    the winding pack, then the turns, then the areas and masses, then the two quantities
-    the quench and energy limits read.
+    **A base class, and not a fourteenth copy of the same fourteen docstrings.** The two
+    `Model` classes in PROCESS are related by inheritance and the port says so the same
+    way; before this class existed the CroCo namespace would have had to restate every
+    shared slot's argument, and two statements of one argument are two things that can
+    drift.
+
+    Written in dependency order rather than in file order, because the chain is long and
+    legible: global geometry and case thickness, then the current, then the winding
+    pack, then the turns, then the areas and masses, then the two quantities the quench
+    and energy limits read. Each subclass's own slots keep their place in that order by
+    being written where they belong in its body.
     """
 
     # ---- base.py: the geometry every TF coil model shares --------------------------
@@ -189,22 +218,6 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     branch is legitimate here only because `n_tf_coils` is not an iteration variable
     (`superconducting.md` OQ2)."""
 
-    cicc_turn_geometry: CiccTurnGeometry = dataclasses.field(kw_only=True)
-    """`.tfcoil.i_tf_turns_integer` first, then (on the averaged arm)
-    `.tfcoil.i_dx_tf_turn_general_input` together with
-    `.tfcoil.i_dx_tf_turn_cable_space_general_input`. Four arms, two written: the
-    reference averaged arm (both booleans `False`), which reads `.tfcoil.c_tf_turn`
-    and does not own it -- that field is this slot's one boundary input on that
-    configuration -- and the integer arm (`i_tf_turns_integer == 1`,
-    `low_aspect_ratio_DEMO`'s), which **owns** `c_tf_turn` because the turn count is
-    fixed by `n_tf_wp_layers * n_tf_wp_pancakes`. Conditional ownership across arms of
-    one slot, the same shape `models/power/thermal_cryo.py` records."""
-
-    cicc_inboard_areas_and_fractions: CiccInboardAreasAndFractions = (
-        CiccInboardAreasAndFractions()
-    )
-    """The nine inboard areas and steel/insulation fractions. Unswitched."""
-
     tf_turn_area: TfTurnArea = TfTurnArea()
     """`.tfcoil.a_tf_turn` -- one division written inline in `run` rather than in any
     function (`superconducting.py:2700-2704`), which is why it is a node of its own."""
@@ -236,24 +249,24 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     `i_tf_turns_integer`, has both, because it decides which cable-space field the
     transverse smearing reads."""
 
-    # ---- the critical-current chain and the two quench limits -----------------------
-
-    cicc_superconductor_properties: CiccSuperconductorProperties = dataclasses.field(
-        kw_only=True
-    )
-    """`.tfcoil.i_tf_sc_mat` x `.tfcoil.i_str_wp` -- the critical-current surface, and
-    constraint 33's `.tfcoil.j_tf_wp_critical`. Five of the nine materials are written
-    and four are refused with a measured reason each; the strain switch has only its
-    default arm. See the class docstring."""
+    # ---- the temperature margin and the two quench limits ---------------------------
+    #
+    # The critical-current slot itself is turn-type-specific and lives in each subclass;
+    # the margin below is not, because both turn types call the *same* PROCESS function
+    # (`calculate_superconductor_temperature_margin`) and it owns the same two fields
+    # whichever material selects the residual.
 
     tf_superconductor_temperature_margin: TfSuperconductorTemperatureMargin = (
         dataclasses.field(kw_only=True)
     )
-    """`.tfcoil.i_tf_sc_mat` again -- constraint 36's
+    """`.tfcoil.i_tf_sc_mat` x `.tfcoil.i_str_wp` -- constraint 36's
     `.tfcoil.temp_tf_superconductor_margin`, and the port's second internal solve
-    (`scipy.optimize.newton`'s secant branch, replicated). Two of the five materials the
-    slot above ports are refused here and the reasons are specific to *this* function,
-    not inherited: see the class docstring."""
+    (`scipy.optimize.newton`'s secant branch, replicated). Its registry is **not** the
+    critical-current slot's with the names changed: on the cable-in-conduit side two of
+    the five ported materials are refused here for reasons specific to *this* function,
+    and on the CroCo side the same value `9` selects a residual with three tape
+    dimensions and no strain. See `CiccSuperconductorProperties` and
+    `HazeltonZhaiRebcoCrocoTemperatureMargin`."""
 
     vv_stress_on_quench: VvStressOnQuench = VvStressOnQuench()
     """`.superconducting_tfcoil.vv_stress_quench`, constraint 65's read. Unswitched, and
@@ -279,3 +292,126 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     round-trip at assembly time, and refuses the machine outright if either is an
     iteration variable. The reasoning is in `TfCoilQuenchHeatCurrentDensity`'s
     docstring; it resolves `quench.md` OQ1 in favour of its option (a)."""
+
+
+class CiccSuperconductingTfCoil(SuperconductingTfCoil):
+    """A cable-in-conduit superconducting TF coil: the tokamak's magnet system.
+
+    Named for `process/models/tfcoil/superconducting.py::CICCSuperconductingTFCoil`,
+    which is what `caller.py:306` runs at `i_tf_sup == 1` and
+    `.superconducting_tfcoil.i_tf_turn_type == 1`. Both of those switches are resolved
+    **above every model**, in `caller.py:295-316`, which is why neither appears as a slot
+    here: a machine whose `i_tf_turn_type` is `2` fills the same
+    `.tokamak.cicc_superconducting_tf_coil` slot with `CrocoSuperconductingTfCoil`
+    below, and there is no slot inside this one that decides it.
+
+    Three slots of its own on top of the twenty-two above -- the turn, the inboard areas
+    and the critical-current chain, which is exactly what PROCESS's two `run`s differ in
+    on the cable side.
+    """
+
+    cicc_turn_geometry: CiccTurnGeometry = dataclasses.field(kw_only=True)
+    """`.tfcoil.i_tf_turns_integer` first, then (on the averaged arm)
+    `.tfcoil.i_dx_tf_turn_general_input` together with
+    `.tfcoil.i_dx_tf_turn_cable_space_general_input`. Four arms, two written: the
+    reference averaged arm (both booleans `False`), which reads `.tfcoil.c_tf_turn`
+    and does not own it -- that field is this slot's one boundary input on that
+    configuration -- and the integer arm (`i_tf_turns_integer == 1`,
+    `low_aspect_ratio_DEMO`'s), which **owns** `c_tf_turn` because the turn count is
+    fixed by `n_tf_wp_layers * n_tf_wp_pancakes`. Conditional ownership across arms of
+    one slot, the same shape `models/power/thermal_cryo.py` records."""
+
+    cicc_inboard_areas_and_fractions: CiccInboardAreasAndFractions = (
+        CiccInboardAreasAndFractions()
+    )
+    """The nine inboard areas and steel/insulation fractions. Unswitched."""
+
+    cicc_superconductor_properties: CiccSuperconductorProperties = dataclasses.field(
+        kw_only=True
+    )
+    """`.tfcoil.i_tf_sc_mat` x `.tfcoil.i_str_wp` -- the critical-current surface, and
+    constraint 33's `.tfcoil.j_tf_wp_critical`. Five of the nine materials are written
+    and four are refused with a measured reason each; the strain switch has only its
+    default arm. See the class docstring."""
+
+
+class CrocoSuperconductingTfCoil(SuperconductingTfCoil):
+    """A CroCo (cross-conductor) REBCO-tape superconducting TF coil.
+
+    Named for `process/models/tfcoil/superconducting.py::CROCOSuperconductingTFCoil`,
+    which `caller.py:307-313` runs at `i_tf_sup == 1` and
+    `.superconducting_tfcoil.i_tf_turn_type == 2` -- **both tracked spherical tokamaks**
+    (`spherical_tokamak_eval.IN.DAT:72`, `st_regression.IN.DAT:800`). It fills the same
+    `.tokamak.cicc_superconducting_tf_coil` slot as its sibling, because PROCESS
+    resolves the switch above every model and the *place* in the machine is the same
+    magnet system either way.
+
+    Six slots of its own on top of the twenty-two shared, three more than the
+    cable-in-conduit sibling -- and the three extra are the reason the two are different
+    `Model` classes rather than one with a branch: a CroCo turn's conductor is a cable
+    of six soldered REBCO-tape strands, so there is a strand geometry
+    (`croco_cable_geometry`), a cable space wrapped around it
+    (`croco_cable_space_properties`) and a void fraction that is identically zero
+    (`croco_turn_cable_space_extra_void`), none of which a cable-in-conduit turn has any
+    counterpart for.
+
+    Written in the same dependency order the base class is; `models/tfcoil/croco.py`'s
+    module docstring carries the per-node evidence and, in particular, the five writes
+    of `run` this namespace deliberately has no slot for.
+    """
+
+    croco_turn_geometry: CrocoTurnGeometry = dataclasses.field(kw_only=True)
+    """`.tfcoil.i_tf_turns_integer`, then the two turn-dimension input flags. **One arm
+    exists in PROCESS at all**: `run` raises `ProcessValueError` on integer turns
+    (`superconducting.py:3834-3840`), so the refusal in `indat.UNPORTED` quotes PROCESS
+    rather than the port.
+
+    Reads `.tfcoil.c_tf_turn` and does not own it, exactly as the cable-in-conduit
+    averaged arm does -- and owns **neither** `.tfcoil.a_tf_turn_cable_space_no_void`
+    nor `.tfcoil.a_tf_turn_steel`, which `croco_cable_space_properties` overwrites three
+    statements later before anything reads them."""
+
+    croco_cable_space_properties: CrocoCableSpaceProperties = CrocoCableSpaceProperties()
+    """The cable space of one turn: seven circles of diameter `d` in a `3d x 3d` square,
+    six of them CroCo strands and the seventh the central copper bar. Unswitched, and
+    the owner of the two fields the slot above hands it."""
+
+    croco_cable_geometry: CrocoCableGeometry = CrocoCableGeometry()
+    """One CroCo strand -- a copper tube around a soldered stack of REBCO tapes. Ten
+    outputs, all in `.superconducting_tfcoil`, and the only node in the tokamak whose
+    every read is a tape or tube thickness the input file sets directly. Unswitched."""
+
+    croco_turn_cable_space_extra_void: CrocoTurnCableSpaceExtraVoid = (
+        CrocoTurnCableSpaceExtraVoid()
+    )
+    """`.tfcoil.f_a_tf_turn_cable_space_extra_void = 0.0`, one literal assignment in
+    `run` (`superconducting.py:3894`). A node with no reads, and the slot that keeps a
+    field PROCESS *computes* on this device from re-entering the graph as a boundary
+    input -- the missing-producer class of `_audit/optimise_design.md` §16. It has no
+    counterpart in the cable-in-conduit namespace because there the field really is an
+    input."""
+
+    croco_inboard_areas_and_fractions: CrocoInboardAreasAndFractions = (
+        CrocoInboardAreasAndFractions()
+    )
+    """The same nine inboard areas and fractions the CICC slot owns, two of them from a
+    different formula: no coolant channel, and a conductor area counted as strands
+    rather than as cable space less voids. Unswitched."""
+
+    croco_turn_cable_space_cooling_fraction: CrocoTurnCableSpaceCoolingFraction = (
+        CrocoTurnCableSpaceCoolingFraction()
+    )
+    """`.superconducting_tfcoil.f_a_tf_turn_cable_space_cooling`, the one line of `run`'s
+    inline copper block that any computation reads (`quench_heat_protection_current_
+    density` takes it). Unswitched, and a slot of its own for the same reason
+    `tf_turn_area` is one: it is a statement in `run`, not a function."""
+
+    croco_superconductor_properties: CrocoSuperconductorProperties = dataclasses.field(
+        kw_only=True
+    )
+    """`.tfcoil.i_tf_sc_mat` x `.tfcoil.i_str_wp` -- the critical-current surface, and
+    constraint 33's `.tfcoil.j_tf_wp_critical`. The switch has **three** reachable values
+    here rather than nine: the function refuses any non-`TAPE` shape in its first four
+    lines (`superconducting.py:4435-4441`), leaving `6`, `8` and `9` -- the exact
+    complement of the cable-in-conduit slot's five. One is written, `9`, which is what
+    both tracked ST files set."""
