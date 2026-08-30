@@ -246,13 +246,23 @@ class TokamakProcess(ModelNamespace):
     """
 
     power: Power = dataclasses.field(kw_only=True)
-    """Thermal and electric power flows -- 20 nodes, no `.stellarator*` read among them.
+    """Thermal and electric power flows -- 21 nodes, no `.stellarator*` read among them.
 
     §C sharpens the sharing claim in one place: `power.py` gains exactly one subsystem on
     a tokamak, not twenty. Shared, 11 functions / 1522 lines; tokamak-new, `Power.pfpwr`
     and its four `_pf_loss_*` helpers -- the PF-coil power supply, which a stellarator
-    has no PF coils to need. It hangs off `.tokamak.pf_coil`, and nothing else in
-    `power.py` is device-tied."""
+    has no PF coils to need. It reads off `.tokamak.pf_coil`, and nothing else in
+    `power.py` is device-tied.
+
+    **That one subsystem is ported as of 2026-08-30**, and it is the twenty-first node:
+    `Power.pf_coil_power` (`models/power/pf_coil_power.py::PfCoilPowerSupplies`), owning
+    all eleven fields `pfpwr` writes. So this slot is no longer entirely device-agnostic
+    -- the namespace is shared and one of its slots is `None` on a stellarator, which is
+    the shape §C predicted rather than a new exception to it. It landed to close four
+    missing producers (`.pf_power.srcktpm`, `.pf_power.ensxpfm`,
+    `.heat_transport.peakmva`, `.pf_coil.p_pf_electric_supplies_mw`), each of which
+    `acpow`, `plant_electric_production` and Accounts 2252/2254 were already reading as
+    a frozen `0.0`."""
 
     buildings: Buildings = dataclasses.field(kw_only=True)
 

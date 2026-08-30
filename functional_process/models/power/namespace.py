@@ -10,6 +10,7 @@ from cottax.interfaces.pytree_namespace_module import ModelNamespace
 from functional_process.models.power.electric_production import (
     Acpow,
 )
+from functional_process.models.power.pf_coil_power import PfCoilPowerSupplies
 from functional_process.models.power.tf_coil_power import (
     TfPowerResistive,
     TfPowerSuperconducting,
@@ -30,6 +31,22 @@ from functional_process.models.power.thermal_cryo import (
 
 class Power(ModelNamespace):
     """Thermal and electric power flows, cryogenics, and the plant's own consumption."""
+
+    pf_coil_power: PfCoilPowerSupplies | None = dataclasses.field(kw_only=True)
+    """`Power.pfpwr` -- **the one subsystem of `power.py` a tokamak has and a
+    stellarator does not**, so the one slot in this namespace that can be honestly
+    absent.
+
+    `total_process.TokamakProcess.power` measured the asymmetry before there was
+    anything to put here: "Shared, 11 functions / 1522 lines; tokamak-new, `Power.pfpwr`
+    and its four `_pf_loss_*` helpers -- the PF-coil power supply, which a stellarator
+    has no PF coils to need." `stellarator.py:114-186` never calls `Power.run`, so it
+    never reaches `pfpwr`; `indat` fills this slot on a tokamak and leaves it `None` on a
+    stellarator, which cottax reads as absence rather than as a zero.
+
+    Not switched -- `pfpwr` has no dispatch of its own, and every topology switch inside
+    it is already part of `indat._pf_coil_system_arm`'s joint predicate. Added
+    2026-08-30 to close four missing producers; see `pf_coil_power.py`."""
 
     tf_power: TfPowerResistive | TfPowerSuperconducting = dataclasses.field(kw_only=True)
     """TF-coil power supplies (`.tfcoil.i_tf_sup`, default 1 = superconducting).

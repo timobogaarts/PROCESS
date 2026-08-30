@@ -25,6 +25,8 @@ from functional_process.models.pfcoil.superconductor import (
     calculate_cs_critical_current_density_iter_nb3sn,
     calculate_cs_critical_current_density_wst_nb3sn,
     calculate_cs_strand_critical_current_density,
+    calculate_cs_temperature_margin_iter_nb3sn,
+    calculate_cs_temperature_margin_wst_nb3sn,
 )
 from process.models.pfcoil import superconpf
 from process.models.superconductors import SuperconductorModel
@@ -40,6 +42,18 @@ _TEMP_CS_OPERATING = 4.75
 _A_CS_CABLE_SPACE = 4.463921187651396
 _A_CS_POLOIDAL = 8.679505454534445
 _J_CS_CONDUCTOR_CRITICAL_FLAT_TOP_END = 350002855.2
+
+# The two the temperature margin needs on top of those, off the same run --
+# `large_tokamak_nof`, where the margin was the missing producer. `superconpf`'s
+# `j_pf_wp` is `|c_pf_cs_coils_peak_ma[6]| / a_cs_cable_space * 1e6`
+# (`ohcalc:3597-3606`),
+# and `abs()` is why the CS's negative peak current is carried as written.
+_C_PF_CS_COILS_PEAK_MA_CS = -191.60361
+_TEMP_CS_SUPERCONDUCTOR_MARGIN = 3.4208032
+"""PROCESS's own `.pf_coil.temp_cs_superconductor_margin` on that run, against the
+port's frozen `0.0` before `.tokamak.cs_coil.temperature_margin` landed. Recorded here
+as the number this contract exists to keep, not asserted directly -- the contract
+compares against `superconpf` itself."""
 
 
 def _around(base, fraction):
@@ -91,6 +105,56 @@ def _reference_superconpf(isumat):
             jcritwp * float(a_cs_cable_space) / float(a_cs_poloidal),
             j_crit_sc,
         )
+
+    return reference
+
+
+def _reference_cs_temperature_margin(isumat):
+    """An adapter over `superconpf`'s **fourth** return, `min`ed over the two fields.
+
+    The sibling adapter above runs this same root find and throws the answer away
+    (`superconpf` always finishes with it, whatever the caller wants). Here it is the
+    only return kept, and the two calls are `ohcalc`'s own two -- end of flat-top and
+    beginning of pulse (`pfcoil.py:3586-3618`, `:3636-3665`) -- combined by
+    `min(tmarg1, tmarg2)` (`:3679`).
+
+    Unlike the critical-current adapter, `j_pf_wp` is **not** a held constant here: the
+    margin is the one consumer that reads it, so it is rebuilt from
+    `c_pf_cs_coils_peak_ma` and `a_cs_cable_space` exactly as `ohcalc` does.
+    """
+
+    def reference(
+        b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start,
+        c_pf_cs_coils_peak_ma,
+        a_cs_cable_space,
+        f_a_cs_void,
+        fcuohsu,
+        strain,
+        temp_cs_superconductor_operating,
+    ):
+        j_pf_wp = abs(float(c_pf_cs_coils_peak_ma)) / float(a_cs_cable_space) * 1.0e6
+        margins = []
+        for b_cs_peak in (b_cs_peak_flat_top_end, b_cs_peak_pulse_start):
+            *_, tmarg = superconpf(
+                b_pf_peak=float(b_cs_peak),
+                fhe=float(f_a_cs_void),
+                fcu=float(fcuohsu),
+                j_pf_wp=j_pf_wp,
+                isumat=isumat,
+                fhts=0.5,
+                strain=float(strain),
+                temp_pf_peak_field=float(temp_cs_superconductor_operating),
+                bcritsc=24.0,
+                tcritsc=16.0,
+                b_crit_upper_nbti=14.86,
+                t_crit_nbti=9.04,
+                dr_hts_tape=4.0e-3,
+                dx_hts_tape_rebco=1.0e-6,
+                dx_hts_tape_total=6.5e-5,
+            )
+            margins.append(tmarg)
+        return min(margins)
 
     return reference
 
@@ -206,3 +270,71 @@ class TestCSStrandCriticalCurrentDensity(Tier1Contract):
         ),
         "fcuohsu": (0.4, 0.85),
     }
+
+
+class TestCSTemperatureMarginIterNb3Sn(Tier1Contract):
+    """`..._iter_nb3sn` -> `min` over `superconpf(isumat=1)`'s two `tmarg` returns.
+
+    **Tier 1 despite a root find on both sides**, which is the decision worth naming:
+    the port replicates `scipy.optimize.newton`'s secant branch step for step
+    (`models/tfcoil/superconducting.py::solve_current_sharing_temperature`, imported
+    rather than re-derived), so the two iterations take the same steps from the same
+    two starting points and stop on the same rule. What is being compared is therefore
+    the same quantity on both sides, not two answers to the same question -- which is
+    what tier 2 exists for. Measured agreement on the legacy point: 2 ulp.
+
+    The one legacy point is `large_tokamak_nof`'s converged state, where this producer
+    was missing: PROCESS computes `3.4208032` K and the port had `0.0`, so constraint 60
+    was comparing a frozen zero against `.tfcoil.temp_cs_superconductor_margin_min`.
+    """
+
+    audit_record = "models/pfcoil/superconductor.md"
+    reference = _reference_cs_temperature_margin(SuperconductorModel.ITER_NB3SN)
+    ported = calculate_cs_temperature_margin_iter_nb3sn
+
+    samples = [
+        legacy_sample(
+            "large-tokamak-converged",
+            b_cs_peak_flat_top_end=_B_CS_PEAK_FLAT_TOP_END,
+            b_cs_peak_pulse_start=_B_CS_PEAK_PULSE_START,
+            c_pf_cs_coils_peak_ma=_C_PF_CS_COILS_PEAK_MA_CS,
+            a_cs_cable_space=_A_CS_CABLE_SPACE,
+            f_a_cs_void=_F_A_CS_VOID,
+            fcuohsu=_FCUOHSU,
+            strain=_STR_CS_CON_RES,
+            temp_cs_superconductor_operating=_TEMP_CS_OPERATING,
+        ),
+    ]
+
+    fuzz_bounds = {
+        # Narrower than the critical-current contracts' `(6, 18)` T on purpose: the
+        # solve is for the temperature at which the critical current density falls to
+        # the operating one, and far outside the machine's own operating box the two
+        # curves need not cross at all -- `disp=False` then returns a non-root and the
+        # comparison would be between two arbitrary iterates rather than two roots.
+        "b_cs_peak_flat_top_end": (10.0, 16.0),
+        "b_cs_peak_pulse_start": (10.0, 16.0),
+        "c_pf_cs_coils_peak_ma": (-260.0, -130.0),
+        "a_cs_cable_space": _around(_A_CS_CABLE_SPACE, 0.15),
+        "f_a_cs_void": (0.25, 0.35),
+        "fcuohsu": (0.6, 0.8),
+        "strain": (-0.008, -0.002),
+        "temp_cs_superconductor_operating": (4.2, 5.2),
+    }
+
+
+class TestCSTemperatureMarginWstNb3Sn(Tier1Contract):
+    """`..._wst_nb3sn` -> the same, with `superconpf(isumat=5)`.
+
+    `low_aspect_ratio_DEMO.IN.DAT`'s conductor, evaluated at the reference machine's
+    fields for the same reason `TestCSCriticalCurrentDensityWstNb3Sn` is: the port does
+    not assemble that machine end to end yet, and a legitimate point for a pure function
+    is a legitimate point whichever file its numbers came from.
+    """
+
+    audit_record = "models/pfcoil/superconductor.md"
+    reference = _reference_cs_temperature_margin(SuperconductorModel.WST_NB3SN)
+    ported = calculate_cs_temperature_margin_wst_nb3sn
+
+    samples = TestCSTemperatureMarginIterNb3Sn.samples
+    fuzz_bounds = TestCSTemperatureMarginIterNb3Sn.fuzz_bounds

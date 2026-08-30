@@ -235,7 +235,6 @@ input .heat_transport.p_fw_coolant_pump_mw
 input .heat_transport.p_fw_div_heat_deposited_mw
 input .heat_transport.p_plant_electric_base
 input .heat_transport.p_tritium_plant_electric_mw
-input .heat_transport.peakmva
 input .heat_transport.pflux_plant_floor_electric
 input .heat_transport.vachtmw
 input .ife.ife
@@ -260,6 +259,7 @@ input .impurity_radiation.temp_impurity_keV_array
 input .pf_coil.alfapf
 input .pf_coil.c_pf_coil_turn_peak_input
 input .pf_coil.dr_pf_tf_outboard_out_offset
+input .pf_coil.etapsu
 input .pf_coil.f_a_cs_turn_steel
 input .pf_coil.f_a_cs_void
 input .pf_coil.f_a_pf_coil_void
@@ -268,15 +268,16 @@ input .pf_coil.f_z_cs_tf_internal
 input .pf_coil.fcuohsu
 input .pf_coil.j_cs_flat_top_end
 input .pf_coil.j_pf_coil_wp_peak
-input .pf_coil.p_pf_electric_supplies_mw
 input .pf_coil.pf_current_safety_factor
+input .pf_coil.rho_pf_coil
+input .pf_coil.rhopfbus
 input .pf_coil.rpf2
 input .pf_coil.sigpfcalw
 input .pf_coil.sigpfcf
 input .pf_coil.temp_cs_superconductor_operating
 input .pf_coil.zref
-input .pf_power.ensxpfm
-input .pf_power.srcktpm
+input .pf_power.f_p_pf_energy_store_loss
+input .pf_power.f_p_pf_psu_loss
 input .physics.alphan
 input .physics.alphat
 input .physics.aspect
