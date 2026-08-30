@@ -46,6 +46,8 @@ and a caller differentiating one of these functions must exclude them
 (`static_argnames` in the harness contracts below).
 """
 
+import jax.numpy as jnp
+
 from process.core import constants
 from process.data_structure.build_variables import TFCSRadialConfiguration
 from process.data_structure.physics_variables import PlasmaIgnitionModel
@@ -1875,7 +1877,14 @@ def constraint_72(
         `(residual, normalised_residual, constraint_value, constraint_bound)`.
     """
     if i_tf_bucking >= 2 and i_tf_inside_cs == TFCSRadialConfiguration.TF_OUTSIDE_CS:
-        value = max(stress_shear_cs_peak, sig_tf_cs_bucked)
+        # `jnp.maximum`, not the builtin: `max(a, b)` evaluates `b > a` and calls
+        # `bool()` on the result, which raises `TracerBoolConversionError` the moment
+        # either operand is traced -- so this line made the whole tokamak MDF problem
+        # untraceable while SAND's eager path walked straight past it
+        # (`_audit/optimise_design.md` §16). It also *silently* discarded a `nan`:
+        # `nan > a` is `False`, so the builtin returns `a` and the missing-value alarm
+        # `sand_harness.UNWRITTEN_BY_PROCESS` exists to raise never fired here.
+        value = jnp.maximum(stress_shear_cs_peak, sig_tf_cs_bucked)
     else:
         value = stress_shear_cs_peak
 
@@ -2081,7 +2090,7 @@ def constraint_79(b_cs_peak_flat_top_end, b_cs_peak_pulse_start, b_cs_limit_max)
     :
         `(residual, normalised_residual, constraint_value, constraint_bound)`.
     """
-    peak = max(b_cs_peak_flat_top_end, b_cs_peak_pulse_start)
+    peak = jnp.maximum(b_cs_peak_flat_top_end, b_cs_peak_pulse_start)
     return leq(peak, b_cs_limit_max)
 
 

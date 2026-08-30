@@ -219,18 +219,30 @@ def test_constraint_72s_free_standing_arm_is_unmoved_by_the_nan_seed():
     assert with_nan == with_number
     assert np.isfinite(with_nan[1])
 
-    # And the limit of the guard, measured rather than assumed: the bucked-and-wedged
-    # arm *does* read it, and still does not go non-finite, because the read is through
-    # Python's builtin `max` -- `nan > x` is False, so `max(x, nan)` returns `x` and the
-    # sentinel is silently discarded. (`jnp.maximum` propagates it; the builtin does
-    # not.) The `nan` seed is therefore loud through arithmetic and mute through
-    # `max`/`min`, and nobody should read the seeding rule as an unconditional alarm.
-    # Nothing depends on this today -- on an `i_tf_bucking >= 2` machine PROCESS writes
-    # the field, so `ground_truth` returns a real number and never reaches the sentinel.
+    # And the other arm, which is the one that reads it. This assertion is the reverse
+    # of what it said until 2026-08-30: the bucked-and-wedged arm used Python's builtin
+    # `max`, and because `nan > x` is `False` the builtin returns `x` -- so the sentinel
+    # was silently discarded and this test pinned that as a measured limitation of the
+    # guard. It was not only a limitation. The builtin also calls `bool()` on `b > a`,
+    # which raises `TracerBoolConversionError` under `jit`, and that single line made
+    # the whole tokamak MDF problem untraceable (`_audit/optimise_design.md` §16). The
+    # fix -- `jnp.maximum` -- is required for tracing and propagates the `nan` as a
+    # side effect, so the guard now works on both arms and this pins the alarm instead
+    # of the hole in it.
     bucked = ported_constraints.constraint_72(
         **{**free_standing, "i_tf_bucking": 2}, sig_tf_cs_bucked=float("nan")
     )
-    assert bucked[1] == with_number[1]
+    assert not np.isfinite(bucked[1]), (
+        "the bucked arm reads `sig_tf_cs_bucked`, so an unwritten value must reach the "
+        "residual rather than being swallowed by a comparison against `nan`"
+    )
+    # The same arm with a real number is unaffected -- the alarm is on the sentinel,
+    # not on the branch.
+    assert np.isfinite(
+        ported_constraints.constraint_72(
+            **{**free_standing, "i_tf_bucking": 2}, sig_tf_cs_bucked=0.0
+        )[1]
+    )
 
 
 def test_constraint_16_is_an_equality_despite_its_geq_body():
