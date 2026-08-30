@@ -2859,7 +2859,7 @@ The measured frontier was **six**, for two reasons that are both now closed, and
 | `i_pfirsch_schluter_current == 1` (SCENE) | **arm landed** |
 | `i_beta_norm_max == 0` (`USER_INPUT`) | **empty `None` slot landed** -- not in the brief |
 | `i_tf_turn_type == 2` (CroCo) | **correctly refused** -- a whole unported `Model` class |
-| `pf_coil_system_arm` | **still refused** -- four dimensions at once (`-1`, `-3`, `-6`, `-7`) |
+| `pf_coil_system_arm` | **still refused** -- ~~four~~ **five** dimensions at once (`-1`, `-2`, `-3`, `-6`, `-7`); the `-2` was hidden by the short-circuit, see §18 |
 
 **The FIESTA defect was handled two ways, and neither was a tolerance.** `triang < 0`
 gives `nan` and is reproduced, because PROCESS's own caller raises before reaching it
@@ -2981,3 +2981,130 @@ now blocking rather than merely open.
 PROCESS's) and `epsfcn` (default `None`, exact Jacobian). Commits `60eb752c`,
 `92aa3688`, `56167578`. Numbers in `_audit/optimise_design.md` §15; every cell in that
 table was measured today, none carried forward.
+
+
+## 18. The spherical tokamaks' complete blocker list, 2026-08-30
+
+§16.11 left the two ST files "refused, two blockers, both packages" and §16.10 item 4
+carried them forward. This section is the **complete** list, obtained by patching past
+every refusal at once rather than one at a time -- the discipline
+`consolidation_round_3.md` §5 asks for, applied to a whole file instead of to one
+switch. **Neither ST file assembles, and no work landed here changes that**; what
+landed is a correct count and a refusal message that carries it.
+
+### 18.1 How it was measured
+
+`_slot_occupant`, `_refuse_unported_switch` and `_pf_coil_system_arm` were monkeypatched
+in a scratch script to **record** a refusal and continue with an arbitrary stand-in
+occupant. Assembly then runs to completion in one pass and every refusal is in the log,
+not just the first. The resulting machine is numerically meaningless -- the point is the
+frontier, and the stand-in graph is only evidence about *structure*.
+
+Then, on that stand-in machine, `graph_for` / `sand.reference_problem` /
+`mdf.assemble` were run with the file's own `ixc`/`icc`/`i_figure_merit` and
+`sand.switch_values_for(cold, ...)`, to find what lies **behind** the model blockers.
+That half found one more blocker (§18.3) and otherwise came back clean.
+
+### 18.2 The eight model-level blockers, identical on both files
+
+| # | blocker | cluster |
+|---|---|---|
+| 1 | `i_tf_turn_type == 2` -- the CroCo TF `Model` class | CroCo |
+| 2 | `i_str_wp_i_tf_sc_mat_cicc_sc_properties == (1, 9)` -- `HAZELTON_ZHAI_REBCO` tape in the CICC properties slot | CroCo |
+| 3 | `i_str_wp_i_tf_sc_mat_temp_margin == (1, 9)` -- the same tape in the temperature-margin slot | CroCo |
+| 4 | `pf_coil_system_arm == -1` -- `iohcl = 0`, no central solenoid at all | PF |
+| 5 | `pf_coil_system_arm == -2` -- `i_pf_location = (2,3,3,4)`, `n_pf_coils_in_group = (2,2,2,2)` | PF |
+| 6 | `pf_coil_system_arm == -3` -- `itart`/`itartpf` ST placement and currents | PF |
+| 7 | `pf_coil_system_arm == -6` -- `(i_pf_superconductor, i_cs_superconductor) = (9, 1)` | PF |
+| 8 | `pf_coil_system_arm == -7` -- `i_tf_shape = 2` picture frame, `i_r_pf_outside_tf_placement = 1` | PF |
+
+**Two clusters, not eight items.** 1-3 are one package: `i_tf_sc_mat = 9` is a *tape*
+superconductor and the CICC properties function refuses a non-`CABLE` shape in its first
+four lines, so the two slot refusals are what the CroCo path exists to answer. Porting
+CroCo removes all three from the list -- precisely because a CroCo machine never reaches
+either CICC slot -- but note it does not *port* those two slots: the CroCo namespace
+needs its own superconductor-properties and temperature-margin occupants, keyed on the
+same `i_tf_sc_mat`.
+
+**§16.11 recorded four PF dimensions; it is five.** `_pf_coil_system_arm` short-circuits
+at `-1` and `-2` was never evaluated. `_pf_coil_system_deviations` (2026-08-30) now
+evaluates all seven predicates and `machine_from_indat` raises one error naming every
+refused dimension with its recorded reason and the count. This is the third instance of
+the same class of error in this file's history (§16.11's own "six, not four"; §16.9's
+three self-agreeing drafts), and it is now checked by a test rather than by care.
+
+### 18.3 The ninth blocker, `st_regression` only, and it is not a model
+
+`st_regression.IN.DAT` activates **iteration variable 135**,
+`f_nd_impurity_electrons(13)` -- an `ITERATION_VARIABLES` entry with an `array_index`.
+`sand.iteration_variable_path` refuses it (`optimise_design.md` §1.3: an `Optimise`
+cannot own an array element while a node reads the enclosing array), and **both** SAND
+and MDF hit it, at `optimise_graph` and `mdf.assemble` respectively. It is a formulation
+blocker, entirely independent of the two model packages, and it would still be there the
+day CroCo and the PF system land. `spherical_tokamak_eval` does not have it: its `ixc`
+is `[4, 6, 29]`.
+
+Dropping 135 and re-measuring, both formulations assemble -- so it is the *only* thing
+of its kind in that file's 14 iteration variables.
+
+### 18.4 What is behind the blockers: nothing else, measured
+
+With stand-ins for all eight (and 135 dropped for `st_regression`):
+
+| | `spherical_tokamak_eval` | `st_regression` |
+|---|---|---|
+| `graph_for` | 221 nodes | 221 nodes |
+| `sand.switch_values_for` | 7 entries | 6 entries |
+| `mdf.assemble` | OK -- 240 nodes, 3 design, 19 conditions (3 eq / 15 ineq), 220 inner blocks, 5 driven | OK -- 240 nodes, 13 design, 19 conditions, 218 inner blocks, 5 driven |
+| `sand.reference_problem` | OK -- 3 design, 3 equalities | OK -- 13 design, 3 equalities |
+| constraints omitted | none | none |
+
+**Every active constraint of both files assembles** (`icc` is 18 long for both) and
+**no iteration variable collides with a producer**. The `ValueError: design variable(s)
+['.build.dr_bore'] are not boundary input` seen before this session was an artefact of
+calling `mdf.assemble` without `graph=`/`switch_values=`; with the machine's own graph it
+does not occur. Caveat the stand-ins deserve: the real ST occupants would own different
+`VarPath`s from the conventional ones standing in for them, so this is strong evidence
+that the solver layer holds no *further* blocker, not proof.
+
+### 18.5 What each package needs, precisely
+
+**CroCo** (`process/models/tfcoil/superconducting.py:3773-4030`, ~260 lines):
+`CROCOSuperconductingTFCoil.run` calls `run_base_superconducting_tf` (already ported, the
+CICC path shares it) and then four pure functions --
+`tf_croco_averaged_turn_geometry`, `tf_turn_croco_cable_space_properties`,
+module-level `calculate_croco_cable_geometry`, `tf_croco_inboard_areas_and_fractions` --
+plus `tf_croco_superconductor_properties`, which is the one that needs
+`superconductors.hijc_rebco` (`i_tf_sc_mat = 9`) and a REBCO **tape stack** geometry the
+port has nowhere: `.superconducting_tfcoil.*croco*` and `*hts_tape*`. It refuses integer
+turn geometry outright (`:3838`) -- both ST files set `i_tf_turns_integer = 0`, so that
+arm need not be written. Estimated shape: one new namespace under `.tokamak.tf_coil`
+with 5-6 nodes, one new `UNPORTED`-clearing registry entry per superconductor slot, and
+`safe_*` review of the tape-stack divisions.
+
+**PF coil system**: five dimensions, thirteen nodes, five audit records
+(`pfcoil/geometry.md`, `currents.md`, `fields.md`, `masses.md`, `inductance.md`). `-1`
+alone deletes the CS from the package (no filaments, `c_cs_flat_top_end = 0`, the
+`:626-661` flux-swing arm, index 6 of every coil array unwritten) and `-3` replaces coil
+*placement* and *currents* wholesale (`z_tf_inside_half - zref[g]`, `ccls` from
+`aspect**1.6`, no `efc` call). `-2` changes every array index. `-6` is the cheapest of
+the five and is genuinely small -- `models/pfcoil.py:4851` has a real
+`HAZELTON_ZHAI_REBCO` branch calling `superconductors.hijc_rebco`, and the switch's only
+effect in the ported closure is which `.tfcoil.dcond` element the masses node reads.
+`-7` is one placement formula. **The order that unblocks the most per unit of work is
+`-6`, `-7`, `-2`, then the `-1`/`-3` pair, which is the actual package.**
+
+**Iteration variable 135** is `optimise_design.md` §1.3's open design question, not a
+model: either the enclosing `f_nd_impurity_electron_array` stops being read as a whole
+(so an element can be owned), or `Optimise` learns to own an element of an array it also
+reads. Neither is written.
+
+### 18.6 One bug fixed on the way
+
+`sand.reference_problem` called `optimise_graph` **positionally** past
+`i_figure_merit`, which put `switch_values` into the `driver` slot and `omit` into
+`switch_values`. Any caller passing `switch_values` got
+`TypeError: {...} is not an AbstractDriver`. It was invisible because
+`sand_harness.mda_env`'s own call has always used keywords and nothing else in the repo
+called `reference_problem` at all -- the ST probe was its first caller. Fixed to
+keywords.

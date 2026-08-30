@@ -863,8 +863,20 @@ def reference_problem(
     degenerate = degenerate_fixed_points(driven, env)
     if degenerate:
         driven = Delete(degenerate).apply(driven)
+    # By keyword, not by position: `optimise_graph` takes `driver` between
+    # `i_figure_merit` and `switch_values`, so the positional call this used to make
+    # handed the switch dict to `Assign` as a driver and `omit` as the switch values.
+    # The failure was invisible until the first caller outside the harness (the
+    # spherical-tokamak assembly probe, 2026-08-30) -- `sand_harness.mda_env`'s own
+    # call has always used keywords, which is why nothing caught it.
     with_problem, problem_name, report = optimise_graph(
-        driven, ixc, icc, n_equality, i_figure_merit, switch_values, omit
+        driven,
+        ixc,
+        icc,
+        n_equality,
+        i_figure_merit,
+        switch_values=switch_values,
+        omit=omit,
     )
     combined, residualised = sand_graph(with_problem)
     report["degenerate"] = degenerate

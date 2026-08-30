@@ -1170,3 +1170,95 @@ def test_the_1990_cost_model_is_the_only_producer_of_coe():
     )
     assert ".costs.coe" in {v.path_str() for v in with_costs.owners}
     assert ".costs.coe" not in {v.path_str() for v in without.owners}
+
+
+def test_the_pf_coil_refusal_names_every_deviating_dimension():
+    """A file that misses on several PF dimensions at once is told about all of them.
+
+    `_pf_coil_system_arm` short-circuits -- it returns the first refused dimension and
+    never evaluates the rest -- which is correct for *choosing* an occupant and wrong
+    for *sizing* the work. `next_steps.md` §16.11 recorded the two spherical tokamaks
+    as refused on "four dimensions at once (`-1`, `-3`, `-6`, `-7`)"; both files
+    actually deviate on **five**. `-2` was invisible because `-1` fires first, and the
+    fifth is not a detail: `i_pf_location = (2, 3, 3, 4)` with
+    `n_pf_coils_in_group = (2, 2, 2, 2)` changes every array index in the package.
+
+    This is `consolidation_round_3.md` §5's frontier rule made structural rather than
+    remembered -- the pinned tuple is the ST configuration read straight out of both
+    `IN.DAT`s, so the day one of the five is ported the tuple shrinks here.
+    """
+    from functional_process.indat import (
+        TFCoilShapeModel,
+        _pf_coil_system_deviations,
+    )
+
+    spherical_tokamak = {
+        "iohcl": 0,
+        "n_pf_coil_groups": 4,
+        "i_pf_location": (2, 3, 3, 4),
+        "n_pf_coils_in_group": (2, 2, 2, 2),
+        "itart": 1,
+        "itartpf": 1,
+        "i_pf_current": 1,
+        "i_pf_conductor": 0,
+        "i_pf_superconductor": 9,
+        "i_cs_superconductor": 1,
+        "i_tf_shape": TFCoilShapeModel.PICTURE_FRAME,
+        "i_r_pf_outside_tf_placement": 1,
+    }
+    assert _pf_coil_system_deviations(**spherical_tokamak) == (-1, -2, -3, -6, -7)
+
+    # And the reference tokamak, which assembles, deviates on none -- the same call
+    # that reports five here has to report zero there or it is measuring nothing.
+    assert (
+        _pf_coil_system_deviations(
+            iohcl=1,
+            n_pf_coil_groups=4,
+            i_pf_location=(2, 2, 3, 3),
+            n_pf_coils_in_group=(1, 1, 2, 2),
+            itart=0,
+            itartpf=0,
+            i_pf_current=1,
+            i_pf_conductor=0,
+            i_pf_superconductor=3,
+            i_cs_superconductor=1,
+            i_tf_shape=TFCoilShapeModel.D_SHAPE,
+            i_r_pf_outside_tf_placement=0,
+        )
+        == ()
+    )
+
+
+def test_the_pf_coil_refusal_message_carries_all_five_reasons(tmp_path):
+    """The message a spherical-tokamak-shaped file gets names each refused dimension.
+
+    Reached through `machine_from_indat` rather than through the helper, because the
+    point is what a *user* sees: one `NotImplementedError` whose first paragraph is
+    byte-for-byte the one `_slot_occupant` used to raise, followed by the others and
+    the count. Written over `TOKAMAK_BASELINE_INDAT` for the same reason
+    `test_a_refused_value_says_why` is -- several PROCESS defaults are themselves
+    refused, and this case is about the PF package, not about whichever of those the
+    constructor would reach first.
+    """
+    indat = tmp_path / "STLIKE.DAT"
+    indat.write_text(
+        "".join(
+            f"{f} = {v if isinstance(v, str) else int(v)}\n"
+            for f, v in {
+                **TOKAMAK_BASELINE_INDAT,
+                "iohcl": 0,
+                "i_pf_location": "2,3,3,4",
+                "n_pf_coils_in_group": "2,2,2,2",
+                "itartpf": 1,
+                "i_pf_superconductor": 9,
+                "i_r_pf_outside_tf_placement": 1,
+            }.items()
+        )
+    )
+    with pytest.raises(NotImplementedError) as refusal:
+        machine_from_indat(indat)
+    message = str(refusal.value)
+    assert "pf_coil_system_arm == -1 is a real PROCESS branch" in message
+    for arm in (-2, -6, -7):
+        assert f"AND pf_coil_system_arm == {arm}:" in message
+    assert "5 of the seven dimensions" in message
