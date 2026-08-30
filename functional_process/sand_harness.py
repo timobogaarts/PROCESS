@@ -162,11 +162,24 @@ def reference_run(input_file=None) -> ReferenceRun:
     )
 
     def value(structure, i):
+        """One iteration variable's value, honouring `array_index`.
+
+        An `IterationVariable` may address a single *element* of an array field --
+        `target_name` names the array, `array_index` the slot (ID 125/126 are the
+        standing case, `f_nd_impurity_electron_array[2]`/`[3]` under the display name
+        `f_nd_impurity_electrons(03)`/`(04)`). This used to `float()` whatever `getattr`
+        returned, which is the whole array for such a variable, and every
+        configuration that declares one -- `large_tokamak_nof` and
+        `low_aspect_ratio_DEMO` among the reference files -- failed here with
+        `TypeError: only 0-dimensional arrays can be converted to Python scalars`
+        before any harness stage could run.
+        """
         iteration_variable = ITERATION_VARIABLES[i]
         area = getattr(structure, iteration_variable.module)
-        return float(
-            getattr(area, iteration_variable.target_name or iteration_variable.name)
-        )
+        field = getattr(area, iteration_variable.target_name or iteration_variable.name)
+        if iteration_variable.array_index is None:
+            return float(field)
+        return float(field[iteration_variable.array_index])
 
     return ReferenceRun(
         data=data,
@@ -229,14 +242,14 @@ def ground_truth(data, var):
     stops on a non-finite condition and names it. The claim is therefore re-checked on
     every run rather than asserted once here.
 
-    **The alarm is loud through arithmetic and mute through `max`/`min`**, which
-    `test_sand.py` pins as a measurement rather than leaving as an assumption: `nan > x`
-    is False, so Python's builtin `max(x, nan)` returns `x` and discards the sentinel
-    (`jnp.maximum` would propagate it). c72's *bucked* arm is exactly a builtin `max`,
-    so on a machine that took it the seed would be silent -- but such a machine has
-    `i_tf_bucking >= 2`, PROCESS writes the field, and `ground_truth` never reaches the
-    sentinel at all. Stated because "seed `nan` and it will show" is otherwise the
-    obvious thing to believe, and it is not unconditionally true.
+    **The alarm used to be mute through `max`/`min`, and is not any more.** `nan > x`
+    is False, so Python's builtin `max(x, nan)` returns `x` and discards the sentinel;
+    c72's bucked arm was exactly such a builtin `max`, and `test_sand.py` pinned that
+    hole as a measurement rather than an assumption. It was fixed on 2026-08-30 for an
+    unrelated and more urgent reason -- the builtin calls `bool()` on `b > a`, so it
+    raises `TracerBoolConversionError` under `jit` and made the tokamak MDF problem
+    untraceable. `jnp.maximum` fixes the tracing and propagates the sentinel in the
+    same stroke, so the seed is now loud on both of c72's arms.
 
     Fixing the declaration instead -- having `_bind` drop the reads the bound arm
     cannot reach -- is the structural repair, and it is deliberately *not* done here:
