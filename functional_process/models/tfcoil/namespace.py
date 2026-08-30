@@ -1,4 +1,4 @@
-"""The tokamak TF coil's namespace -- the twenty-four slots of
+"""The tokamak TF coil's namespace -- the twenty-six slots of
 `.tokamak.cicc_superconducting_tf_coil`.
 
 Beside the nodes it names (`model_tree_design.md` §11), and spanning three modules
@@ -8,7 +8,7 @@ by *inheritance* rather than by any call in `caller.py`
 why this is a `namespace.py` in the package rather than a class at the foot of one
 module -- there is no single module the slots are all beside.
 
-**Eleven of the twenty-four slots are switched, and every switch is answered by
+**Thirteen of the twenty-six slots are switched, and every switch is answered by
 `indat.py`**, never here. The families and the switch each answers are in the class
 docstrings below; the reference-run arm of every one is
 `tests/regression/input_files/large_tokamak_eval.IN.DAT`'s, and `tfcoil/base.md`,
@@ -52,6 +52,10 @@ from functional_process.models.tfcoil.quench import (
     TfCoilDumpQuenchVoltage,
     TfCoilQuenchHeatCurrentDensity,
 )
+from functional_process.models.tfcoil.stress import (
+    TfFieldAndForce,
+    TfStress,
+)
 from functional_process.models.tfcoil.superconducting import (
     CiccInboardAreasAndFractions,
     CiccSuperconductorProperties,
@@ -79,7 +83,7 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     `.tokamak.cicc_superconducting_tf_coil` (`CROCOSuperconductingTFCoil`, unported),
     not a different slot inside this one.
 
-    Twenty-four slots, twenty-three of them occupied on the reference run. Written in
+    Twenty-six slots, twenty-five of them occupied on the reference run. Written in
     dependency order rather than in file order, because the
     chain is long and legible: global geometry and case thickness, then the current, then
     the winding pack, then the turns, then the areas and masses, then the two quantities
@@ -210,6 +214,27 @@ class CiccSuperconductingTfCoil(ModelNamespace):
     )
     """`.physics.itart` -- the conventional arm owns ten fields, the spherical arm two
     more (`whtcp`, `whttflgs`). Conditional ownership, so occupants and not a kwarg."""
+
+    # ---- stress.py: the vertical tension and the peak stresses ----------------------
+
+    tf_field_and_force: TfFieldAndForce = dataclasses.field(kw_only=True)
+    """`(.physics.itart, .tfcoil.i_cp_joints)` -- `.tfcoil.vforce` and its three
+    siblings. Only the clamped-joint arm is written; the sliding-joint one additionally
+    **owns** `.tfcoil.f_vforce_inboard`, which this arm reads and returns unchanged, so
+    the two arms are separate classes rather than one node with a kwarg."""
+
+    tf_stress: TfStress = dataclasses.field(kw_only=True)
+    """`(.tfcoil.i_tf_stress_model, .tfcoil.i_tf_bucking, .tfcoil.i_tf_turns_integer)`
+    -- constraint 31's `.tfcoil.sig_tf_case`, constraint 32's `.tfcoil.sig_tf_wp`, and
+    the `.tfcoil.str_wp` the two slots below read.
+
+    **The slot whose absence dropped two active constraints.** Before it existed the
+    port had no producer for either stress and constraint 31/32 evaluated `0 <= max` on
+    `large_tokamak_nof`, which activates both -- not a wrong number but a silently
+    satisfied condition (`stress.md`, 2026-08-30). Two of the three switches have one
+    written arm each and the reasons are in `stress.py`'s module docstring; the third,
+    `i_tf_turns_integer`, has both, because it decides which cable-space field the
+    transverse smearing reads."""
 
     # ---- the critical-current chain and the two quench limits -----------------------
 

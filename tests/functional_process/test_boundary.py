@@ -193,7 +193,20 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """369 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """378 inputs and 11 guesses, against the stellarator's 297 and 6.
+
+    **369 -> 378 with the TF stress chain** (`models/tfcoil/stress.py`, registry row
+    55), and this is the clearest instance in the file of growth being the good kind.
+    Ten arrived and one left. The ten are `.tfcoil.eyoung_steel`, `.eyoung_ins`,
+    `.eyoung_copper`, `.eyoung_cond_axial`, `.eyoung_cond_trans`, their four matching
+    `poisson_*`, and `.tfcoil.f_vforce_inboard` -- every one a material constant or a
+    load-split fraction PROCESS itself reads from the input file and computes nowhere,
+    which `--missing` confirms rather than this test asserting it. The one that left is
+    `.tfcoil.str_wp`, which now has a producer. So the input count went **up** while the
+    port got strictly closer to being a function of its inputs, which is exactly why the
+    two halves of `test_no_new_boundary_input_is_something_process_computes` and this
+    one are separate measurements: a total alone cannot tell a declared read from a lost
+    producer.
 
     **Also 2026-08-30**, in the same day's third wave, five producers landing against one new declared read,
     and the guess half unmoved. The five are the second half of the same wave as the row
@@ -336,15 +349,15 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (369, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (378, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The two missing producers on the MDA graph, pinned so it can only go down.
+    """The one missing producer left on the MDA graph, pinned so it can only go down.
 
-    **Twenty-two -> two across five waves on 2026-08-30.** One of those waves landed
+    **Twenty-two -> one across six waves on 2026-08-30.** One of those waves landed
     five rows at once, and they are
     worth naming because they are five different shapes of the same hole:
 
@@ -380,8 +393,8 @@ def test_no_new_boundary_input_is_something_process_computes():
     port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
     Only a cold start exposes it, and only if something asks this question.
 
-    **Measured on `driven_graph`, like every other pin in this file** -- two rows,
-    down from twenty-two across five waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
+    **Measured on `driven_graph`, like every other pin in this file** -- one row,
+    down from twenty-two across six waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
     `.build.dz_blkt_upper` and `.build.dr_tf_inner_bore` left when
     `models/namespace.py::Build` gained `tf_top_height`, `blkt_upper_thickness` and
     `tf_inner_bore`, and `.pf_power.srcktpm`, `.pf_power.ensxpfm`,
@@ -389,25 +402,26 @@ def test_no_new_boundary_input_is_something_process_computes():
     `.power.pf_coil_power` landed `Power.pfpwr`; and `.physics.dlamie`,
     `.physics.pflux_plasma_surface_neutron_avg_mw`, `.fwbs.p_div_rad_total_mw`,
     `.blanket.deg_blkt_inboard_poloidal_plasma` and `.buildings.dz_tf_cryostat` left
-    with the physics/divertor/cryostat wave.
+    with the physics/divertor/cryostat wave; and `.tfcoil.str_wp` left with the TF
+    stress chain (`models/tfcoil/stress.py`, registry row 55), the sixth wave.
 
-    The MDF-assembled graph shows **more than this one does** -- `.tfcoil.sig_tf_case`,
-    `.tfcoil.sig_tf_wp` and, until 2026-08-30, `.pf_coil.temp_cs_superconductor_margin`
-    -- because the constraint surface declares reads the MDA graph never makes. They are
-    equally missing and equally worth porting; they are simply not on *this* graph's
-    boundary, and pinning two different graphs in one list would make the number mean
-    nothing.
+    The MDF-assembled graph used to show **more than this one does** --
+    `.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp`, and
+    `.pf_coil.temp_cs_superconductor_margin` before that -- because the constraint
+    surface declares reads the MDA graph never makes. That is still the reason two
+    graphs are not pinned in one list, but as of the stress wave all three of those rows
+    are owned and the difference between the two graphs is no longer a difference in
+    what is missing.
 
     `.pf_coil.temp_cs_superconductor_margin` is the demonstration that this is a real
     gap and not a bookkeeping one: constraint 60 was comparing a frozen `0.0` against a
     real bound for as long as it sat there, and nothing in *this* list could have said
-    so. The same is true of `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp`, which
-    constraints 31 and 32 read on `large_tokamak_nof` -- and of `.tfcoil.str_wp`, still
-    on this list, which feeds the Nb3Sn critical surface (33) and temperature margin
-    (36). All three are outputs of one unported unit,
-    `process/models/tfcoil/base.py::stresscl`, 1053 lines calling a 517-line
-    `extended_plane_strain` layer solver. See `_audit/units/models/build.md` § "the TF
-    stress chain is not a wiring problem".
+    so. `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` were the same and worse: `leq`'s
+    normalised residual at a frozen `0.0` operand is exactly `-1.0`, *constant in every
+    design variable*, so constraints 31 and 32 -- both active on `large_tokamak_nof` --
+    were not merely wrong but contributing zero Jacobian rows. They now read
+    `-2.236e-05` (nearly binding) and `-1.347e-01`, agreeing with PROCESS to 6e-16 and
+    2e-15. See `_audit/units/models/tfcoil/stress.md`.
 
     Equality against the pin, not `<=`: a row leaving is a producer landing and should
     update the pin deliberately (`--missing --write`, implemented 2026-08-30 -- the flag
@@ -441,6 +455,47 @@ def test_the_landed_poloidal_beta_producer_is_not_on_the_boundary():
     assert graph.owners[beta_poloidal].path_str() == ".tokamak.plasma_beta.poloidal"
     assert (
         ".physics.beta_poloidal_vol_avg" not in Path(MISSING_PRODUCERS_PIN).read_text()
+    )
+
+
+def test_the_tf_stresses_constraints_31_and_32_read_have_a_producer():
+    """`.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` are owned, and so is `.tfcoil.str_wp`.
+
+    The narrow guard for the TF stress chain (`models/tfcoil/stress.py`, registry row
+    55), and the one in this file whose absence was worst. These three were **not** on
+    the pin above, because no MDA node reads them -- only the constraint surface does,
+    and that surface is added later, on a different graph. So the check that would have
+    caught them is not "is this on the missing-producers list" but "does the thing
+    constraint 31 compares against come from anywhere", which is what this asserts.
+
+    With no producer, `leq`'s normalised residual at a frozen `0.0` operand is exactly
+    `-1.0` -- constant in every design variable, so constraints 31 and 32 were
+    contributing zero Jacobian rows on `large_tokamak_nof`, which activates both
+    (`IN.DAT:146-147`). At PROCESS's converged point they now read `-2.236e-05` (nearly
+    binding against `sig_tf_case_max`) and `-1.347e-01`.
+
+    `.tfcoil.str_wp` is here too because it is the same wave and the same node, and
+    because it is the one of the three that *was* on the pin -- it reaches the MDA graph
+    through the Nb3Sn critical surface (constraint 33) and the temperature margin (36),
+    both of which read it at `i_str_wp == 1`.
+    """
+    graph = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
+    pinned = Path(MISSING_PRODUCERS_PIN).read_text()
+    owner = ".tokamak.cicc_superconducting_tf_coil.tf_stress"
+    for field in ("sig_tf_case", "sig_tf_wp", "str_wp"):
+        var = V("tfcoil", field)
+        assert var in graph.owners, var.path_str()
+        assert graph.owners[var].path_str() == owner
+        assert var.path_str() not in pinned
+
+    # `.tfcoil.vforce` is the dependency that made the stresses portable at all: it is
+    # `stresscl`'s only load input and nothing in the port produced it either, so
+    # landing the stresses without it would have swapped one frozen `0.0` for another.
+    vforce = V("tfcoil", "vforce")
+    assert vforce in graph.owners
+    assert (
+        graph.owners[vforce].path_str()
+        == ".tokamak.cicc_superconducting_tf_coil.tf_field_and_force"
     )
 
 

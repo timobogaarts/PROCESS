@@ -199,6 +199,31 @@ class Tier1Contract(PortContract):
     separating "wrong" from "right", not grading a correct port's last digit.
     """
 
+    gradient_floor = 0.0
+    """Extra allowance, as a fraction of the largest derivative in the same column.
+
+    **Zero by default, and nothing that does not set it changes behaviour.** It exists
+    for the one case `gradient_safety` structurally cannot cover: PROCESS's error bar is
+    a Richardson extrapolation of its *own* truncation error, so when PROCESS's answer
+    is bit-for-bit flat in an input the bar is exactly `0.0` and no multiplier of it is
+    anything but `0.0`. That is not "PROCESS is certain"; it is "PROCESS happened to
+    round to the same float four times".
+
+    The case that needed it (`models/tfcoil/stress.py`'s `plane_stress`,
+    `test_stress.py`): `sigr` at the innermost radius is a boundary condition, so both
+    implementations return exactly `0.0` and PROCESS's difference is exactly `0.0` --
+    while the port's `jacfwd`, propagating a tangent through the same cancelling
+    expression, returns `-3.8e-10` against derivatives of order `1e6` elsewhere in that
+    column. Nothing is wrong; two linear solves on a matrix PROCESS's own comment calls
+    "often very ill-conditioned" (`process/models/tfcoil/base.py:4404-4412`) simply do
+    not cancel to the same bit.
+
+    Scaled to the column rather than absolute so that one number means the same thing
+    for a stress in Pa and a deflection in m. A wrong derivative is wrong by an `O(1)`
+    relative amount, so a floor of `1e-8` still separates wrong from right by eight
+    orders of magnitude -- the same argument `gradient_safety` above makes.
+    """
+
     reference_domain_errors = ()
     """Exceptions the PROCESS reference raises to signal an out-of-domain input.
 
@@ -318,7 +343,13 @@ class Tier1Contract(PortContract):
                     continue
 
                 label = _component_label(name, argument.shape, component)
-                allowed = self.gradient_safety * error_bar
+                # The floor is relative to the largest derivative in *this column*, so
+                # it says "round-off at the scale of what this input actually moves"
+                # rather than fixing an absolute number that would mean different things
+                # for a stress in Pa and a deflection in m. Zero by default; see
+                # `gradient_floor`.
+                floor = self.gradient_floor * float(np.max(np.abs(reference)))
+                allowed = self.gradient_safety * error_bar + floor
                 for i, (got, want, tol) in enumerate(
                     zip(jac[:, component], reference, allowed, strict=True)
                 ):
@@ -327,7 +358,7 @@ class Tier1Contract(PortContract):
                             f"  d(output[{i}])/d({label}): jacfwd={got!r} "
                             f"process_fd={want!r} |diff|={abs(got - want):g} "
                             f"allowed={tol:g} (fd error bar {error_bar[i]:g} "
-                            f"x safety {self.gradient_safety:g})"
+                            f"x safety {self.gradient_safety:g}, floor {floor:g})"
                         )
 
         header = (

@@ -332,6 +332,11 @@ from functional_process.models.tfcoil.quench import (
     TfCoilQuenchHeatCurrentDensity,
     helium_properties_at_quench_nodes,
 )
+from functional_process.models.tfcoil.stress import (
+    TfFieldAndForceClampedJoints,
+    TfStressPlaneStressBuckedCaseAveragedTurn,
+    TfStressPlaneStressBuckedCaseIntegerTurn,
+)
 from functional_process.models.tfcoil.superconducting import (
     Bi2212SuperconductingTfCoilAreasAndMassesConventional,
     Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak,
@@ -555,6 +560,34 @@ _SC_TAPE_REASON = (
     "what both tracked ST files do, `i_tf_turn_type = 2` "
     "(spherical_tokamak_eval.IN.DAT:72, st_regression.IN.DAT:800) -- so this slot is "
     "never reached at those values and there is no PROCESS behaviour to port"
+)
+
+_TF_STRESS_MODEL_REASON = (
+    "`i_tf_stress_model != 1` selects `extended_plane_strain` "
+    "(process/models/tfcoil/base.py:3719-4234, **517 lines**) instead of "
+    "`plane_stress`: a generalised plane *strain* formulation that permits a zero bore, "
+    "is O(n) in layers, and returns three strain arrays the plane-stress solver never "
+    "computes -- `.tfcoil.str_wp` comes off `str_tf_z` there (`:3034`) rather than off "
+    "the uniform vertical stress (`:2988`), so it is a different function of different "
+    "inputs, not a different constant. A second solver and a second occupant, and "
+    "neither is written. Live on both tracked spherical tokamaks "
+    "(spherical_tokamak_eval.IN.DAT:350, st_regression.IN.DAT:1223), which are already "
+    "refused above this point for `i_tf_turn_type == 2`"
+)
+
+_TF_BUCKING_REASON = (
+    "`i_tf_bucking != 1` rebuilds the layer stack. At `>= 2` (bucked and wedged) the "
+    "central solenoid becomes the innermost stress layer and its smeared properties are "
+    "reconstructed from scratch inside `stresscl` out of nine `.pf_coil` fields it "
+    "otherwise never reads -- `j_cs_flat_top_end`, `j_cs_pulse_start`, "
+    "`c_pf_coil_turn_peak_input`, `n_pf_coils_in_group`, `f_dr_dz_cs_turn`, "
+    "`radius_cs_turn_corners`, `f_a_cs_turn_steel`, `a_cs_poloidal`, `i_pf_conductor` "
+    "(process/models/tfcoil/base.py:2531-2650) -- plus two stress-distribution "
+    "corrections that only run there (`:3048-3066`) and a fourth output, "
+    "`.tfcoil.sig_tf_cs_bucked`. At `3` a Kapton interlayer is added on top of that. At "
+    "`0` there is no bucking cylinder at all, which PROCESS only defaults to for water-"
+    "cooled copper (`init.py:891-895`) -- not a conductor this namespace holds. A "
+    "different reads-set and a different owns-set in every case; none is written"
 )
 
 _DURHAM_NBTI_COMPLEX_REASON = (
@@ -1227,6 +1260,27 @@ UNPORTED = {
         "outside-TF coil is placed flat at `r_pf_outside_tf_midplane`, dropping the "
         "`sqrt(r^2 - z^2)` and its `isinf` kludge (`pfcoil.py:1323-1339`). Not written"
     ),
+    ("tf_field_and_force_arm", True): (
+        "`itart == 1` **and** `i_cp_joints == 1`: a spherical tokamak whose centrepost "
+        "is joined to the outboard legs by sliding joints, so the two carry separate "
+        "vertical tensions. `tf_field_and_force` then computes the centrepost's from a "
+        "different closed form (`base.py:1774-1800`), takes the outboard leg's as the "
+        "remainder, and **owns** `.tfcoil.f_vforce_inboard`, which the clamped arm "
+        "reads and returns unchanged -- so it is a different node, not a kwarg. It is "
+        "also unreachable on any superconducting machine that does not ask for it "
+        "explicitly: `init.py:752-756` resolves the `i_cp_joints == -1` default to `0` "
+        "whenever `i_tf_sup == 1`, and this slot exists only on a superconducting coil. "
+        "Not written"
+    ),
+    **{
+        ("tf_stress_arm", (_model, _bucking, _integer)): (
+            _TF_STRESS_MODEL_REASON if _model != 1 else _TF_BUCKING_REASON
+        )
+        for _model in (0, 1, 2)
+        for _bucking in (0, 1, 2, 3)
+        for _integer in (0, 1)
+        if (_model, _bucking, _integer) not in {(1, 1, 0), (1, 1, 1)}
+    },
 }
 """Why a known PROCESS value has no occupant, verbatim from the `Alternative(unported=)`
 declarations this replaced.
@@ -2958,6 +3012,61 @@ Before 2026-08-27 this registry was keyed on `itart` alone and **both** occupant
 found a second time. `low_aspect_ratio_DEMO` (`i_tf_sc_mat = 5`) was assembling the
 `dcond[0]` occupant and only escaped a wrong number because `dcond[4] == dcond[0]`."""
 
+
+def _tf_field_and_force_arm(itart: int, i_cp_joints: int) -> bool:
+    """`(itart, i_cp_joints)` -> whether the centrepost joints slide.
+
+    `i_cp_joints` defaults to `-1` (`tfcoil_variables.py:589`) and `init.py:752-756`
+    resolves that to `0` for a superconducting coil and `1` for a resistive one. This
+    slot is only ever on a superconducting machine, so the resolution here is the
+    superconducting one -- reproduced rather than assumed, the same way
+    `machine_from_indat` reproduces `init.py`'s `i_tf_wp_geom` resolution.
+    """
+    if int(i_cp_joints) == -1:
+        i_cp_joints = 0
+    return bool(int(itart) == 1 and int(i_cp_joints) == 1)
+
+
+TF_FIELD_AND_FORCE = {False: TfFieldAndForceClampedJoints}
+"""`itart == 1 and i_cp_joints == 1` -> the vertical-tension occupant.
+
+**One arm, and the other is not merely unwritten -- it is unreachable here.**
+`init.py:752-756` resolves the `i_cp_joints == -1` default (`tfcoil_variables.py:589`)
+to `0` for every superconducting coil, and this slot only exists on a superconducting
+one, so `True` needs an input file that sets `i_cp_joints = 1` *and* `itart = 1` on a
+machine `caller.py:306` sends to `CICCSuperconductingTFCoil`. No tracked file does;
+`spherical_tokamak_eval` and `st_regression`, the two that set `i_cp_joints` at all, set
+it to `0`. Refused rather than left inferred, because the sliding-joint arm **owns**
+`.tfcoil.f_vforce_inboard` where this one reads it -- a different node, not a kwarg."""
+
+
+def _tf_stress_arm(
+    i_tf_stress_model: int, i_tf_bucking: int, i_tf_turns_integer: int
+) -> tuple[int, int, int]:
+    """`(i_tf_stress_model, i_tf_bucking, i_tf_turns_integer)` -> the stress arm.
+
+    Three switches and one written cell, `(1, 1, 0)` and `(1, 1, 1)`. The first two are
+    answered together because neither reduces to the other -- `i_tf_stress_model` picks
+    the *solver* (`plane_stress` at `1`, `extended_plane_strain` at `0`/`2`) and
+    `i_tf_bucking` picks the *layer stack* (whether a central-solenoid layer and a
+    Kapton interlayer sit inboard of the casing) -- and the third is carried in the key
+    rather than resolved away because it decides one read, not one formula.
+
+    `i_tf_bucking` is `-1` in every input file that does not set it and
+    `init.py:891-895` turns that into `1` for a superconducting coil; the resolution is
+    done here rather than by the caller, as `init.py` does it too.
+    """
+    if int(i_tf_bucking) == -1:
+        i_tf_bucking = 1
+    return (int(i_tf_stress_model), int(i_tf_bucking), 1 if i_tf_turns_integer else 0)
+
+
+TF_STRESS = {
+    (1, 1, 0): TfStressPlaneStressBuckedCaseAveragedTurn,
+    (1, 1, 1): TfStressPlaneStressBuckedCaseIntegerTurn,
+}
+"""The stress arm -> its occupant. See `_tf_stress_arm` and `stress.py`'s docstring."""
+
 CICC_SUPERCONDUCTOR_PROPERTIES = {
     (1, SuperconductorModel.ITER_NB3SN): IterNb3snCiccSuperconductorProperties,
     (1, SuperconductorModel.OLD_LUBELL_NBTI): OldLubellNbtiCiccSuperconductorProperties,
@@ -4058,6 +4167,23 @@ def _tokamak_device(
             "itart_i_tf_sc_mat_sc_tf_masses",
             (SphericalTokamakModel(int(itart)), i_tf_sc_mat),
             SC_TF_MASSES,
+        ),
+        tf_field_and_force=_slot_occupant(
+            "tf_field_and_force_arm",
+            _tf_field_and_force_arm(
+                itart,
+                switches.get("i_cp_joints", -1),  # `tfcoil_variables.py:589`
+            ),
+            TF_FIELD_AND_FORCE,
+        ),
+        tf_stress=_slot_occupant(
+            "tf_stress_arm",
+            _tf_stress_arm(
+                switches.get("i_tf_stress_model", 1),  # `tfcoil_variables.py:211`
+                switches.get("i_tf_bucking", -1),  # `tfcoil_variables.py:341`
+                i_tf_turns_integer,  # resolved above, beside `i_tf_wp_geom`
+            ),
+            TF_STRESS,
         ),
         # Both of these key on `(i_str_wp, i_tf_sc_mat)`. `i_str_wp` is
         # `tfcoil_variables.py:508`'s default; the pair is built once so the two slots
