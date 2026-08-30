@@ -33,7 +33,7 @@ The reference machine today: **297 inputs**, and 6 guesses on top of that once
 `reference_boundary_tokamak.txt` -- and the comparison between the two files is the point
 of having a second one: a tokamak reads *more* than a stellarator, from a graph with more
 nodes in it, which is the honest shape of a device whose device-specific namespace is
-twenty-six slots filled and two still empty. (Waves 2/3's consolidation *grew* the
+twenty-eight slots filled and one still empty. (Waves 2/3's consolidation *grew* the
 tokamak's input count, 328 -> 349, while closing ten rows: the eleven newly registered
 slots' nodes declare thirty-one genuine inputs of their own -- `cboot`, `q95`, the PF
 coil current-density settings and their kin -- each named in advance by its unit's
@@ -374,9 +374,45 @@ def _machine_graph(argv: list[str]):
     return graph_for(machine_from_indat(name or TOKAMAK_INPUT_FILE)), TOKAMAK_PIN
 
 
+def _missing_producers(write: bool) -> int:
+    """`--missing`: the boundary inputs PROCESS computes, printed or written to the pin.
+
+    Its own branch rather than a flag on the ordinary path, because it measures a
+    different thing on a different machine: `unproduced_but_computed` needs PROCESS's
+    own write set (`computed_by_process`, one `SingleRun` plus one pipeline pass) and
+    the run's iteration variables, and it is always taken of
+    `MISSING_PRODUCERS_INPUT_FILE` -- the *optimising* tokamak, not `TOKAMAK_INPUT_FILE`
+    -- for the reason that constant's docstring gives.
+    """
+    from functional_process.indat import graph_for, machine_from_indat  # noqa: PLC0415
+    from functional_process.mda import driven_graph  # noqa: PLC0415
+    from functional_process.sand import iteration_variable_path  # noqa: PLC0415
+    from functional_process.sand_harness import reference_run  # noqa: PLC0415
+
+    graph = driven_graph(graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE)))
+    design = {
+        iteration_variable_path(i)
+        for i in reference_run(MISSING_PRODUCERS_INPUT_FILE).ixc
+    }
+    found = unproduced_but_computed(
+        graph, computed_by_process(MISSING_PRODUCERS_INPUT_FILE), design
+    )
+    print(f"{len(found)} boundary input(s) PROCESS computes:")
+    for var in found:
+        print(f"  {var.path_str()}")
+    if write:
+        with open(MISSING_PRODUCERS_PIN, "w", encoding="utf-8") as handle:
+            for var in found:
+                handle.write(f"{var.path_str()}\n")
+        print(f"wrote {MISSING_PRODUCERS_PIN}")
+    return 0
+
+
 def _main(argv: list[str]) -> int:
     from functional_process.mda import driven_graph
 
+    if "--missing" in argv:
+        return _missing_producers("--write" in argv)
     graph, pin = _machine_graph(argv)
     driven = driven_graph(graph)
     rows = boundary(driven)

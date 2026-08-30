@@ -42,6 +42,7 @@ from functional_process.models.costs.costs import (
     PowerInjectionCost,
     ReactorCoolingSystemCost,
     ReactorCost,
+    ReactorStructureCost,
     ShieldCost,
     StructuresCost,
     SwitchyardCost,
@@ -83,15 +84,31 @@ class Costs(ModelNamespace):
     first_wall_cost: FirstWallCost = FirstWallCost()  # Account 221.1
     blanket_cost: BlanketCost = BlanketCost()  # Account 221.2
     shield_cost: ShieldCost = ShieldCost()  # Account 221.3
-    # Account 221.4 (reactor structure) has **no slot here, deliberately**: a
-    # stellarator has no reactor-structure account to compute. `st_strc`
-    # (`stellarator.py:334-337`) sets `.structure.fncmass` and `.structure.gsmass` to a
-    # literal `0.0` with its own reason -- "many of the masses are simply set to zero to
-    # avoid double-counting of structural components that are specified differently for
-    # tokamaks" -- so `ReactorStructureCost` computed an exact zero, and landed on the
-    # right number by luck rather than by modelling anything this device has. See the
-    # note next to `pf_magnet_cost`'s former slot below for the full argument and what a
-    # tokamak has to restore.
+    # Account 221.4 (reactor structure): **a slot on a tokamak and `None` on a
+    # stellarator**, and the first slot in this tree whose occupant is decided by the
+    # *device* rather than by a switch.
+    #
+    # It had no slot at all until 2026-08-30, for a reason that was right about the
+    # stellarator: `st_strc` (`stellarator.py:334-337`) sets `.structure.fncmass` and
+    # `.structure.gsmass` to a literal `0.0` with its own comment -- "many of the masses
+    # are simply set to zero to avoid double-counting of structural components that are
+    # specified differently for tokamaks" -- so `ReactorStructureCost` computed an exact
+    # zero there, and landed on the right number by luck rather than by modelling
+    # anything that device has. `model_tree_design.md` §8 step 4c deleted it on that
+    # ground and said "when the tokamak arrives, `Costs` splits then". This is that
+    # split, and it is the narrowest form of it: one slot, `None` on the arm that has
+    # no reactor structure.
+    #
+    # What made it worth doing now is that the deletion had stopped being free. The
+    # tokamak's `.tokamak.structure` slot landed in the first tokamak wave and owns
+    # both masses, so `.costs.c2214` was a boundary input on a machine that computes a
+    # real `46.22` for it -- `boundary.unproduced_but_computed` on
+    # `large_tokamak_nof`. The stellarator graph is untouched: a `None` slot contributes
+    # no node, `c2214` stays the `0.0` boundary input it always was there, and
+    # `ReactorCost`'s read of it is unmoved.
+    reactor_structure_cost: ReactorStructureCost | None = dataclasses.field(
+        kw_only=True
+    )  # Account 221.4
     divertor_cost: DivertorCost = DivertorCost()  # Account 221.5
     reactor_cost: ReactorCost = ReactorCost()  # Account 221 total
     # **`supercond_cost_model` was an `eqx.field(static=True)` here and is a slot now**

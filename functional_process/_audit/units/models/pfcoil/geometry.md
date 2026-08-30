@@ -5,10 +5,11 @@ confidence: medium
 ---
 
 **Ported (partial by switch, full by function).** `pfcoil/geometry.py` /
-`test_geometry.py`: `calculate_cs_geometry`, `place_cs_filaments`,
-`calculate_pf_coil_group_positions`, `calculate_pf_coil_positions` — tier-1, the
-geometric half of `PFCoil.pfcoil()` and of `CSCoil`. Three cottax nodes:
-`CSCoilGeometry` (`.tokamak.cs_coil.geometry`), `PFCoilPlacement`
+`test_geometry.py`: `calculate_cs_geometry`, `calculate_cs_turn_geometry_eu_demo`,
+`place_cs_filaments`, `calculate_pf_coil_group_positions`,
+`calculate_pf_coil_positions` — tier-1, the geometric half of `PFCoil.pfcoil()` and of
+`CSCoil`. Four cottax nodes: `CSCoilGeometry` (`.tokamak.cs_coil.geometry`),
+`CSCoilTurnGeometry` (`.tokamak.cs_coil.turn_geometry`), `PFCoilPlacement`
 (`.tokamak.pf_coil.placement`), `PFCoilPositions` (`.tokamak.pf_coil.positions`).
 
 ## source
@@ -18,6 +19,8 @@ geometric half of `PFCoil.pfcoil()` and of `CSCoil`. Three cottax nodes:
 | lines | what |
 |---|---|
 | `3005-3072` | `CSCoil.calculate_cs_geometry` — a `@staticmethod`, pure |
+| `3074-3149` | `CSCoil.calculate_cs_turn_geometry_eu_demo` — a `@staticmethod`, pure (added 2026-08-30) |
+| `3296-3319` | `ohcalc`'s `a_cs_turn` division and the five writes it feeds (added 2026-08-30) |
 | `3151-3226` | `CSCoil.place_cs_filaments` — a `@staticmethod`, pure |
 | `127`, `237-238`, `247-354` | `pfcoil()`'s `i_pf_location` dispatch loop and its `top_bottom`/`signn` state |
 | `239-242` | `r_pf_outside_tf_midplane` |
@@ -237,3 +240,57 @@ Two things worth carrying forward:
   `pf_coil_system_arm` is a derived arm index and appears in no `IN.DAT`. That is why
   `report()` now ends with one real `machine_from_indat` attempt (`assembly_verdict`);
   see `physics.md`'s 2026-08-29 section for the other half of the same blind spot.
+
+
+## the EU DEMO CS turn geometry (added 2026-08-30)
+
+**Ported because `ncycle` needs it, not because this unit's own boundary asked for it.**
+`CSCoil.calculate_cs_turn_geometry_eu_demo` writes six fields, and until 2026-08-30 not
+one of them had a reader in this graph. `.tokamak.cs_fatigue` gave two of them one --
+`.cs_fatigue.dr_cs_turn_conduit` and `.cs_fatigue.dz_cs_turn_conduit` are `ncycle`'s two
+crack-size limits, i.e. the thresholds its integration stops at -- and
+`boundary.unproduced_but_computed` reported both as missing producers the moment that
+node landed.
+
+**The numbers say why it could not be left.** `pfcoil_variables.py` gives the two
+conduit thicknesses input defaults of `0.07` and `0.022`; `ohcalc` overwrites both with
+`0.00990` on `low_aspect_ratio_DEMO`. A `CsFatigue` node reading the defaults would
+therefore have produced a wrong `n_cycle` that looked entirely plausible, in place of a
+wrong `n_cycle` of zero that did not -- the strictly worse failure, and the one the
+missing-producer measure exists to prevent.
+
+**One node, not two.** `a_cs_turn = a_cs_poloidal / n_pf_coil_turns[CS]`
+(`pfcoil.py:3297-3300`) is folded into the same function: `.pf_coil.a_cs_turn` has no
+other reader, so a node of its own would exist to hold one division.
+
+### data footprint
+
+| VarPath | read/write | classification | note |
+|---|---|---|---|
+| `.pf_coil.a_cs_poloidal` | read | explicit-arg | owned by `CSCoilGeometry`, this namespace's own first slot |
+| `.pf_coil.n_pf_coil_turns` | read | explicit-arg | element `CS_INDEX` only; owned by `.tokamak.pf_coil.sizes`, and inside the PF package's four-node cycle |
+| `.pf_coil.f_dr_dz_cs_turn`, `.radius_cs_turn_corners`, `.f_a_cs_turn_steel` | read | explicit-arg | run inputs; `f_a_cs_turn_steel` is iteration variable 123 on `low_aspect_ratio_DEMO` |
+| `.pf_coil.a_cs_turn`, `.dz_cs_turn`, `.dr_cs_turn`, `.radius_cs_turn_cable_space` | **write** | explicit-arg | `pfcoil.py:3297`, `:3309-3313`; no reader in this graph |
+| `.cs_fatigue.dr_cs_turn_conduit`, `.dz_cs_turn_conduit` | **write** | explicit-arg | `:3314-3319` — written by `ohcalc`, read only by `CsFatigue.ncycle`. PROCESS's own cross-area placement, reproduced |
+
+### JAX-difficulty flags
+
+- **`(a_cs_turn / f_dr_dz_cs_turn) ** 0.5`** — `needs-safe-pow`, resolved with
+  `safe_sqrt`. Reachable at zero rather than theoretical: `a_cs_turn` is proportional to
+  the CS cross-section, and `f_a_cs_turn_steel` -- an iteration variable -- sits under
+  the cable-space square root beside it.
+- **The `< 1 mm` clamp on `dr_cs_turn_conduit`** (`pfcoil.py:3138-3141`) —
+  `needs-lax-cond-or-where`, resolved with `jnp.maximum`. It is a kink in the value, not
+  only in the derivative, and the fuzz bounds keep clear of it; both tracked operating
+  points sit an order of magnitude above it.
+
+### suspected defects in PROCESS
+
+**D2 — the 1 mm floor is applied to the radial conduit thickness and not the vertical
+one**, though `pfcoil.py:3136-3141` sets them to the same number one line apart and
+PROCESS's own `logger.error` beside the clamp calls it a kludge. Both are then read by
+`ncycle` as two independent crack-size limits, so a run that reaches the clamp gets a
+radial limit floored at 1 mm and a vertical limit left at whatever negative or
+sub-millimetre value produced the clamp -- an asymmetry with no stated physical
+justification. Reproduced as written; not reachable on any tracked input (both compute
+~9.9 mm).

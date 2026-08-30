@@ -18,6 +18,7 @@ input .blanket.deg_blkt_inboard_poloidal_plasma
 input .build.dr_blkt_inboard
 input .build.dr_blkt_outboard
 input .build.dr_bore
+input .build.dr_cryostat
 input .build.dr_cs
 input .build.dr_cs_tf_gap
 input .build.dr_fw_plasma_gap_inboard
@@ -34,7 +35,6 @@ input .build.dr_tf_shld_gap
 input .build.dr_vv_inboard
 input .build.dr_vv_outboard
 input .build.dr_vv_shells
-input .build.dz_blkt_upper
 input .build.dz_fw_plasma_gap
 input .build.dz_shld_lower
 input .build.dz_shld_thermal
@@ -43,6 +43,7 @@ input .build.dz_shld_vv_gap
 input .build.dz_tf_upper_lower_midplane
 input .build.dz_vv_lower
 input .build.dz_vv_upper
+input .build.f_z_cryostat
 input .build.fcspc
 input .build.fseppc
 input .build.gapomin
@@ -55,7 +56,6 @@ input .build.z_tf_top
 input .buildings.admv
 input .buildings.clh2
 input .buildings.conv
-input .buildings.dz_tf_cryostat
 input .buildings.esbldgm3
 input .buildings.fndt
 input .buildings.hccl
@@ -114,7 +114,6 @@ input .costs.UCVIAC
 input .costs.UCWS
 input .costs.abktflnc
 input .costs.adivflnc
-input .costs.c2214
 input .costs.c2222
 input .costs.c2252
 input .costs.cconfix
@@ -174,6 +173,15 @@ input .costs.uctfsw
 input .costs.ucturb
 input .costs.ucwindtf
 input .costs.ucwst
+input .cs_fatigue.fracture_toughness
+input .cs_fatigue.paris_coefficient
+input .cs_fatigue.paris_power_law
+input .cs_fatigue.residual_sig_hoop
+input .cs_fatigue.sf_fast_fracture
+input .cs_fatigue.sf_radial_crack
+input .cs_fatigue.sf_vertical_crack
+input .cs_fatigue.t_crack_vertical
+input .cs_fatigue.walker_coefficient
 input .current_drive.cboot
 input .current_drive.eta_cd_norm_ecrh
 input .current_drive.eta_ecrh_injector_wall_plug
@@ -199,7 +207,6 @@ input .divertor.n_divertors
 input .fwbs.breeder_f
 input .fwbs.breeder_multiplier
 input .fwbs.den_steel
-input .fwbs.dewmkg
 input .fwbs.dr_fw_wall
 input .fwbs.dr_pf_cryostat
 input .fwbs.dx_fw_module
@@ -263,6 +270,7 @@ input .pf_coil.dr_pf_tf_outboard_out_offset
 input .pf_coil.f_a_cs_turn_steel
 input .pf_coil.f_a_cs_void
 input .pf_coil.f_a_pf_coil_void
+input .pf_coil.f_dr_dz_cs_turn
 input .pf_coil.f_j_cs_start_pulse_end_flat_top
 input .pf_coil.f_z_cs_tf_internal
 input .pf_coil.fcuohsu
@@ -270,6 +278,7 @@ input .pf_coil.j_cs_flat_top_end
 input .pf_coil.j_pf_coil_wp_peak
 input .pf_coil.p_pf_electric_supplies_mw
 input .pf_coil.pf_current_safety_factor
+input .pf_coil.radius_cs_turn_corners
 input .pf_coil.rpf2
 input .pf_coil.sigpfcalw
 input .pf_coil.sigpfcf

@@ -23,16 +23,17 @@ from functional_process.models.build import (
     DrTfInboardFromWindingPack,
     DrTfOutboardSuperconducting,
     DrTfWpWithInsulationFromInboardBuild,
+    DzBlktUpper,
     PlasmaXpointHeights,
     RadialBuildToPlasmaCentre,
     ShldInboardInnerRadius,
     ShldOutboardOuterRadius,
     ShldVvGapOutboard,
     TfInboardRadiiTfOutsideCs,
-    VacuumVesselAndShieldRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardMidDShape,
     TfOutboardMidUnrippled,
+    VacuumVesselAndShieldRadiiTfOutsideCs,
     WpConductorMaxWidthSuperconducting,
     ZTfInsideHalf,
 )
@@ -43,18 +44,18 @@ from functional_process.models.divertor import (
 
 
 class Build(ModelNamespace):
-    """The tokamak's radial and vertical build -- thirteen slots, fifteen classes.
+    """The tokamak's radial and vertical build -- fourteen slots, sixteen classes.
 
     `process/models/build.py::Build`, `caller.py:288`. The structural spine of the
     device, and with no stellarator counterpart at all: `models/stellarator/build.py`'s
     `Build` is a different model of a different machine.
 
-    Thirteen slots and fifteen occupant classes, because
+    Fourteen slots and sixteen occupant classes, because
     `dr_tf_inboard_winding_pack`'s two arms are two classes in one slot and
     `divertor_geometry`'s conventional and spherical-tokamak arms are two more (its
     third disposition, `None`, is absence rather than a class).
 
-    **Six of the thirteen slots are switched, and only one of the switches is an `i_*`
+    **Six of the fourteen slots are switched, and only one of the switches is an `i_*`
     integer alone** (`tf_inboard_radii`'s `.build.i_tf_inside_cs`, added 2026-08-27).
     `.tfcoil.i_tf_sup` and `.tfcoil.i_tf_shape` are ordinary switches;
     the other two are conditions on things that are not switches at all -- whether
@@ -76,6 +77,16 @@ class Build(ModelNamespace):
 
     plasma_xpoint_heights: PlasmaXpointHeights = PlasmaXpointHeights()
     """`.build.z_plasma_xpoint_upper`/`_lower`. Unswitched."""
+
+    dz_blkt_upper: DzBlktUpper = DzBlktUpper()
+    """`.build.dz_blkt_upper` (`build.py:1665-1667`). Unswitched.
+
+    Added 2026-08-30. Not one of the six variables this namespace's docstring says it
+    produces, and not in `tokamak_boundary.md` either: nothing in *this* subsystem's
+    ported closure reads it, so neither the boundary walk nor the `ast` walk that
+    seeded the six had a reason to look. `boundary.unproduced_but_computed` did --
+    `fw.py` and `shield.py` read it, PROCESS computes `0.85` for it on
+    `large_tokamak_nof` and the port was reading the `0.0` default."""
 
     divertor_geometry: (
         DivertorGeometryConventional | DivertorGeometrySphericalTokamak | None

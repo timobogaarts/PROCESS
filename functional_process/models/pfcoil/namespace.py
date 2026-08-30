@@ -65,6 +65,7 @@ from functional_process.models.pfcoil.fields import (
 )
 from functional_process.models.pfcoil.geometry import (
     CSCoilGeometry,
+    CSCoilTurnGeometry,
     PFCoilPlacement,
     PFCoilPositions,
 )
@@ -85,7 +86,7 @@ from functional_process.models.pfcoil.volt_seconds import (
 
 
 class CSCoil(ModelNamespace):
-    """`.tokamak.cs_coil` -- the central solenoid, six slots.
+    """`.tokamak.cs_coil` -- the central solenoid, seven slots.
 
     Three until 2026-08-27. `optimise_design.md` §11.5 found four constraints (26, 27,
     60, 72) reading fields whose only producer is `ohcalc`, and the three new slots
@@ -109,6 +110,19 @@ class CSCoil(ModelNamespace):
     geometry: CSCoilGeometry = CSCoilGeometry()
     """The CS cross-section and its fourteen scaling filaments (`pfcoil.py:120-158`,
     `:202-234`)."""
+
+    turn_geometry: CSCoilTurnGeometry = CSCoilTurnGeometry()
+    """The EU DEMO stadium-shaped CS turn and its steel conduit
+    (`ohcalc`, `pfcoil.py:3296-3319`, via `calculate_cs_turn_geometry_eu_demo`).
+
+    Added 2026-08-30, with `.tokamak.cs_fatigue`. It owns
+    `.cs_fatigue.dr_cs_turn_conduit`/`.dz_cs_turn_conduit`, which are `ncycle`'s two
+    crack-size limits -- `pfcoil_variables.py` gives them input defaults of `0.07`/
+    `0.022` and PROCESS computes `0.0099` for both on `low_aspect_ratio_DEMO`, so
+    landing `CsFatigue` without this slot would have swapped a wrong `n_cycle` of zero
+    for a wrong `n_cycle` that looked plausible. Unswitched: `calculate_cs_turn_
+    geometry_eu_demo` has no branch but its own 1 mm floor, and PROCESS has no second
+    turn model to choose between."""
 
     current_density_pulse_start: CSCurrentDensityPulseStart = (
         CSCurrentDensityPulseStart()

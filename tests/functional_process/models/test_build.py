@@ -39,14 +39,15 @@ from functional_process.models.build import (
     calculate_dr_tf_outboard_superconducting,
     calculate_dr_tf_wp_with_insulation,
     calculate_dx_tf_wp_conductor_max_superconducting,
+    calculate_dz_blkt_upper,
     calculate_r_shld_inboard_inner,
-    calculate_rbld,
     calculate_r_shld_outboard_outer,
     calculate_r_tf_inboard_radii_no_cs_precomp,
     calculate_r_tf_inboard_radii_tf_outside_cs,
-    calculate_vacuum_vessel_and_shield_radii,
     calculate_r_tf_outboard_mid,
     calculate_r_tf_outboard_mid_unrippled,
+    calculate_rbld,
+    calculate_vacuum_vessel_and_shield_radii,
     calculate_z_plasma_xpoint,
     calculate_z_tf_inside_half,
     plasma_outboard_edge_toroidal_ripple_fitted,
@@ -214,6 +215,39 @@ class TestZPlasmaXpoint(Tier1Contract):
     ]
 
     fuzz_bounds = {"rminor": (1.5, 4.0), "kappa": (1.2, 2.2)}
+
+
+def _reference_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
+    """`Build.calculate_radial_build:1665-1667`, read back off `data`.
+
+    A radial-build line reached through `_radial`, not `_vertical`, despite writing a
+    vertical thickness -- PROCESS puts it there and the adapter follows the source
+    rather than the field's name.
+    """
+    return _radial(
+        build__dr_blkt_inboard=dr_blkt_inboard,
+        build__dr_blkt_outboard=dr_blkt_outboard,
+    ).build.dz_blkt_upper
+
+
+class TestDzBlktUpper(Tier1Contract):
+    """`calculate_dz_blkt_upper` vs `Build.calculate_radial_build:1665-1667`."""
+
+    audit_record = "models/build.md"
+    reference = _reference_dz_blkt_upper
+    ported = calculate_dz_blkt_upper
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            dr_blkt_inboard=0.7,
+            dr_blkt_outboard=1.0,
+        ),
+    ]
+    """`BASELINE`'s own two blanket thicknesses -- both are run inputs at
+    `blktmodel == 0`, which is the arm every tracked tokamak takes."""
+
+    fuzz_bounds = {"dr_blkt_inboard": (0.2, 1.5), "dr_blkt_outboard": (0.3, 2.0)}
 
 
 def _reference_divertor_geometry_conventional(

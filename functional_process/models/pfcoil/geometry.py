@@ -2,11 +2,15 @@
 
 Audit record: `functional_process/_audit/units/models/pfcoil/geometry.md`.
 
-Four units, all straight-line algebra with no iteration and no call into another model:
+Five units, all straight-line algebra with no iteration and no call into another model:
 
 - `calculate_cs_geometry` -- `CSCoil.calculate_cs_geometry`
   (`process/models/pfcoil.py:3005-3072`), already a `@staticmethod` with explicit
   arguments; the port is a signature promotion plus `np.` -> `jnp.`.
+- `calculate_cs_turn_geometry_eu_demo` -- `CSCoil.calculate_cs_turn_geometry_eu_demo`
+  (`:3074-3149`), likewise, with `ohcalc`'s own `a_cs_turn` division (`:3297-3300`)
+  folded into it. Added 2026-08-30 for `.tokamak.cs_fatigue`, which reads two of its
+  outputs.
 - `place_cs_filaments` -- `CSCoil.place_cs_filaments` (`:3151-3226`), likewise.
 - `calculate_pf_coil_group_positions` -- the `i_pf_location` dispatch loop of
   `pfcoil()` (`:247-354`) collapsed to this run's four groups, calling
@@ -47,7 +51,14 @@ from functional_process.models.pfcoil import (
     NFXF,
     NGC2,
 )
-from functional_process.paths import build, pf_coil, physics, superconducting_tfcoil
+from functional_process.models.safe_math import safe_sqrt
+from functional_process.paths import (
+    build,
+    cs_fatigue,
+    pf_coil,
+    physics,
+    superconducting_tfcoil,
+)
 
 N_PF_COILS_IN_GROUP_MAX = 2
 """`pfcoil_variables.N_PF_COILS_IN_GROUP_MAX` -- the second axis of every
@@ -119,6 +130,99 @@ def calculate_cs_geometry(z_tf_inside_half, f_z_cs_tf_internal, dr_cs, dr_cs_bor
         a_cs_toroidal,
         dz_cs_full,
         dr_cs_full,
+    )
+
+
+DR_CS_TURN_CONDUIT_MIN = 1.0e-3
+"""The 1 mm floor `calculate_cs_turn_geometry_eu_demo` clamps the radial conduit
+thickness to (`process/models/pfcoil.py:3138-3141`).
+
+PROCESS calls this a "kludge" in its own `logger.error` and applies it to `dr` only,
+leaving `dz` -- which is the same number one line earlier -- unclamped. Reproduced as
+written, asymmetry included: the two fields feed `ncycle`'s two crack-size limits and
+which one is floored changes the answer.
+"""
+
+
+def calculate_cs_turn_geometry_eu_demo(
+    a_cs_poloidal,
+    n_pf_coil_turns_cs,
+    f_dr_dz_cs_turn,
+    radius_cs_turn_corners,
+    f_a_cs_turn_steel,
+):
+    """The EU DEMO stadium-shaped CS turn: its dimensions and its steel conduit.
+
+    Ports `CSCoil.calculate_cs_turn_geometry_eu_demo`
+    (`process/models/pfcoil.py:3074-3149`) together with the one line of `ohcalc` that
+    feeds it, `a_cs_turn = a_cs_poloidal / n_pf_coil_turns[cs]` (`:3297-3300`). Those
+    two are one node because `.pf_coil.a_cs_turn` has no other reader: keeping them
+    apart would mint a node for a single division.
+
+    Arithmetic unchanged (`np.`/`math.` -> `jnp.`); the `< 1 mm` clamp becomes
+    `jnp.maximum`, the `logger.error` beside it is dropped, and `** 0.5` on the turn
+    height becomes `safe_sqrt` -- the fractional-power-at-zero trap
+    (`_audit/next_steps.md` §9), reachable here because `a_cs_turn` is proportional to
+    the CS cross-section, which the solver is free to drive towards zero.
+
+    **Why this is ported at all**, given that none of its six outputs had a reader in
+    this graph until 2026-08-30: `ncycle` reads two of them, and reads them as the two
+    crack-size limits that decide when its integration stops. On
+    `low_aspect_ratio_DEMO` PROCESS computes `0.00990` for both conduit thicknesses
+    against `pfcoil_variables.py`'s input defaults of `0.07` and `0.022` -- a factor of
+    two on the vertical limit and seven on the radial -- so a `CsFatigue` node reading
+    the defaults would have produced a confidently wrong `n_cycle` for constraint 90
+    rather than an obviously wrong zero. `boundary.unproduced_but_computed` named both
+    fields the moment that node landed, which is the whole point of that measure.
+
+    Parameters
+    ----------
+    a_cs_poloidal :
+        CS poloidal cross-sectional area (m^2). `.pf_coil.a_cs_poloidal`.
+    n_pf_coil_turns_cs :
+        Turns in the CS -- element `CS_INDEX` of `.pf_coil.n_pf_coil_turns`.
+    f_dr_dz_cs_turn :
+        Ratio of a CS turn's radial width to its vertical height.
+        `.pf_coil.f_dr_dz_cs_turn`.
+    radius_cs_turn_corners :
+        Radius of a turn's curved outer corner (m). `.pf_coil.radius_cs_turn_corners`.
+    f_a_cs_turn_steel :
+        Steel area fraction of a CS turn. `.pf_coil.f_a_cs_turn_steel`.
+
+    Returns
+    -------
+    :
+        `(a_cs_turn, dz_cs_turn, dr_cs_turn, radius_cs_turn_cable_space,
+        dr_cs_turn_conduit, dz_cs_turn_conduit)`.
+    """
+    a_cs_turn = a_cs_poloidal / n_pf_coil_turns_cs
+
+    dz_cs_turn = safe_sqrt(a_cs_turn / f_dr_dz_cs_turn)
+    dr_cs_turn = f_dr_dz_cs_turn * dz_cs_turn
+
+    offset = (dr_cs_turn - dz_cs_turn) / jnp.pi
+    radius_cs_turn_cable_space = -offset + jnp.sqrt(
+        offset**2
+        + (
+            (dr_cs_turn * dz_cs_turn)
+            - (4 - jnp.pi) * radius_cs_turn_corners**2
+            - (a_cs_turn * f_a_cs_turn_steel)
+        )
+        / jnp.pi
+    )
+
+    dz_cs_turn_conduit = (dz_cs_turn / 2) - radius_cs_turn_cable_space
+    # In this model the vertical and radial thicknesses are the same -- except that
+    # PROCESS floors only the radial one. See `DR_CS_TURN_CONDUIT_MIN`.
+    dr_cs_turn_conduit = jnp.maximum(dz_cs_turn_conduit, DR_CS_TURN_CONDUIT_MIN)
+
+    return (
+        a_cs_turn,
+        dz_cs_turn,
+        dr_cs_turn,
+        radius_cs_turn_cable_space,
+        dr_cs_turn_conduit,
+        dz_cs_turn_conduit,
     )
 
 
@@ -341,6 +445,42 @@ class CSCoilGeometry(ExplicitFunction):
             a_cs_toroidal,
             dz_cs_full,
             dr_cs_full,
+        )
+
+
+class CSCoilTurnGeometry(ExplicitFunction):
+    """cottax node: `.tokamak.cs_coil.turn_geometry`. Owns the CS turn's dimensions and
+    the two conduit thicknesses `ncycle` reads. No switch.
+
+    **The two conduit thicknesses land in `.cs_fatigue`, not `.pf_coil`**, which is
+    PROCESS's own placement (`pfcoil.py:3314-3319`) and not a choice made here: they are
+    written by `ohcalc` and read only by `CsFatigue.ncycle`, and the area they live in
+    follows the reader rather than the writer. That is the one cross-area edge this node
+    makes, and it is why `.tokamak.cs_coil` gains a slot for a calculation whose other
+    four outputs nothing in this graph reads.
+    """
+
+    a_cs_turn = OutputInto(pf_coil)
+    dz_cs_turn = OutputInto(pf_coil)
+    dr_cs_turn = OutputInto(pf_coil)
+    radius_cs_turn_cable_space = OutputInto(pf_coil)
+    dr_cs_turn_conduit = OutputInto(cs_fatigue)
+    dz_cs_turn_conduit = OutputInto(cs_fatigue)
+
+    def __call__(
+        self,
+        a_cs_poloidal=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        f_dr_dz_cs_turn=From(pf_coil),
+        radius_cs_turn_corners=From(pf_coil),
+        f_a_cs_turn_steel=From(pf_coil),
+    ):
+        return calculate_cs_turn_geometry_eu_demo(
+            a_cs_poloidal,
+            n_pf_coil_turns[CS_INDEX],
+            f_dr_dz_cs_turn,
+            radius_cs_turn_corners,
+            f_a_cs_turn_steel,
         )
 
 

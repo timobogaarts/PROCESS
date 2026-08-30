@@ -799,3 +799,40 @@ PROCESS's converged values, **16 disagreements unchanged**, 684 -> 688 owned wal
 unaccounted. Two Tier-1 contracts (`TestVacuumVesselAndShieldRadii`, `TestRbld`), green
 plain and at `--fp-gradients --fp-fuzz 40`. Stellarator untouched: `.tokamak.build` is
 not on its graph.
+
+
+## 2026-08-30 — `.build.dz_blkt_upper` (missing-producer wave)
+
+**One line, one node, and it was found by a different measure than the six this record
+was cut around.** `process/models/build.py:1665-1667` writes
+`dz_blkt_upper = 0.5 * (dr_blkt_inboard + dr_blkt_outboard)` unconditionally, every
+pipeline pass. No node in this port owned it on a tokamak, so `.build.dz_blkt_upper` sat
+at its `0.0` input default while `fw.py` and `shield.py` read it -- the upper blanket
+and shield stack -- and PROCESS computed `0.85` for it on `large_tokamak_nof`.
+
+**Why the scope rule missed it, and why that is fair.** This unit's scope is "the
+minimal closure that produces the six `.tokamak.build` boundary variables", and
+`dz_blkt_upper` is not one of them: nothing in *this* subsystem's closure reads it. Its
+readers are in `fw.py` and `shield.py`, which is exactly the shape
+`boundary.unproduced_but_computed` was built to see and `tokamak_boundary.md`'s `ast`
+walk and this record's own boundary walk both cannot -- the same blind spot
+`cryostat.md` records one file over, and on the same day.
+
+**The stellarator already had a producer for it**, which is why the row appeared on the
+tokamak boundary and not the stellarator's:
+`models/stellarator/build.py::Build` owns the field as one of `st_build`'s
+fourteen outputs, and `process/models/stellarator/build.py:38` is the *same
+expression*. Two devices, two nodes, one formula, never both in one graph -- the
+correspondence this record already describes for `.build.z_tf_inside_half`, and a second
+instance of it.
+
+**Unswitched, though PROCESS's write sits downstream of one.** `build.py:1650-1663`
+recomputes `dr_blkt_inboard`/`dr_blkt_outboard` from the sub-layer thicknesses when
+`.fwbs.blktmodel > 0`; this line then runs regardless. So `blktmodel` decides where the
+two reads come from, not whether the node owns its output or which formula it uses --
+and this record's own switch table already carries `blktmodel > 0` as an arm with no
+occupant, `dr_blkt_*` being run inputs at `blktmodel == 0`. That gap is one level up, in
+that arm's absence, not a second occupant for this slot.
+
+Port: `calculate_dz_blkt_upper` + `DzBlktUpper`, registered at
+`.tokamak.build.dz_blkt_upper` -- the namespace's fourteenth slot.

@@ -1,12 +1,15 @@
 """Harness cases for `functional_process/models/pfcoil/geometry.py`.
 
-Audit record: `functional_process/_audit/units/models/pfcoil/geometry.md`. Three tier-1
+Audit record: `functional_process/_audit/units/models/pfcoil/geometry.md`. Four tier-1
 contracts, one per unit that PROCESS exposes as a callable of its own:
 
 - `calculate_cs_geometry` -> `CSCoil.calculate_cs_geometry` (a `@staticmethod`, called
   directly; the adapter only unpacks its `CSGeometry` dataclass into the port's tuple).
 - `place_cs_filaments` -> `CSCoil.place_cs_filaments` (likewise, plus the `[:NFXF]` trim
   the port documents).
+- `calculate_cs_turn_geometry_eu_demo` -> `CSCoil.calculate_cs_turn_geometry_eu_demo`
+  (a `@staticmethod` again; the adapter does `ohcalc`'s `a_cs_turn` division, which the
+  port folds in, and unpacks the `CSEUDEMOTurnGeometry` dataclass).
 - `calculate_pf_coil_group_positions` -> `PFCoil.place_pf_above_tf` and
   `PFCoil.place_pf_outside_tf`, driven in `pfcoil()`'s own group order with `pfcoil()`'s
   own `top_bottom` carry. Those two are *instance* methods and allocate their return
@@ -27,6 +30,7 @@ from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.pfcoil import N_PF_GROUPS, NFXF
 from functional_process.models.pfcoil.geometry import (
     calculate_cs_geometry,
+    calculate_cs_turn_geometry_eu_demo,
     calculate_pf_coil_group_positions,
     place_cs_filaments,
 )
@@ -54,6 +58,38 @@ def _reference_cs_geometry(z_tf_inside_half, f_z_cs_tf_internal, dr_cs, dr_cs_bo
         g.a_cs_toroidal,
         g.dz_cs_full,
         g.dr_cs_full,
+    )
+
+
+def _reference_cs_turn_geometry_eu_demo(
+    a_cs_poloidal,
+    n_pf_coil_turns_cs,
+    f_dr_dz_cs_turn,
+    radius_cs_turn_corners,
+    f_a_cs_turn_steel,
+):
+    """`CSCoil.calculate_cs_turn_geometry_eu_demo`, plus `ohcalc`'s own division.
+
+    Two shape differences from the `@staticmethod`, both of them the port's, both
+    deliberate. It takes `a_cs_turn` where the port takes the two fields `ohcalc`
+    divides to get it (`pfcoil.py:3297-3300`), so the adapter does that division here;
+    and it returns a `CSEUDEMOTurnGeometry` where the port returns a tuple that leads
+    with `a_cs_turn`, because the port owns that field too.
+    """
+    a_cs_turn = a_cs_poloidal / n_pf_coil_turns_cs
+    g = CSCoil.calculate_cs_turn_geometry_eu_demo(
+        a_cs_turn=a_cs_turn,
+        f_dr_dz_cs_turn=f_dr_dz_cs_turn,
+        radius_cs_turn_corners=radius_cs_turn_corners,
+        f_a_cs_turn_steel=f_a_cs_turn_steel,
+    )
+    return (
+        a_cs_turn,
+        g.dz_cs_turn,
+        g.dr_cs_turn,
+        g.radius_cs_turn_cable_space,
+        g.dr_cs_turn_conduit,
+        g.dz_cs_turn_conduit,
     )
 
 
@@ -226,4 +262,51 @@ class TestCalculatePFCoilGroupPositions(Tier1Contract):
         # `4.0 * 3.0 = 12.0 < 18.0`.
         "zref": (np.full(4, 0.5), np.full(4, 3.0)),
         "r_pf_outside_tf_midplane": (18.0, 26.0),
+    }
+
+
+class TestCalculateCsTurnGeometryEuDemo(Tier1Contract):
+    """`calculate_cs_turn_geometry_eu_demo` against the `CSCoil` `@staticmethod` of the
+    same name.
+
+    **`f_a_cs_turn_steel` is the argument to watch**, and it is why the fuzz bounds
+    below are narrow at the top: it is iteration variable 123 on
+    `low_aspect_ratio_DEMO`, so the solver moves it, and it enters the cable-space
+    radius under a square root whose radicand it can drive negative. PROCESS returns
+    `nan` there rather than raising (`numpy` warns), so this is the same class of domain
+    gap as `cs_fatigue.md`'s D1 -- avoided by sampling, not fixed, and not something
+    `reference_domain_errors` can flag.
+
+    The 1 mm floor on `dr_cs_turn_conduit` is a genuine kink in the value, not only in
+    the derivative, and the bounds keep clear of it for the same reason: both tracked
+    operating points sit an order of magnitude above it (0.0099 m), and a fuzz point
+    that landed exactly on the clamp would compare a clamped constant against a clamped
+    constant and check nothing.
+    """
+
+    audit_record = "models/pfcoil/geometry.md"
+    reference = _reference_cs_turn_geometry_eu_demo
+    ported = calculate_cs_turn_geometry_eu_demo
+
+    samples = [
+        legacy_sample(
+            "low-aspect-ratio-demo-converged",
+            a_cs_poloidal=11.351304958597812,
+            n_pf_coil_turns_cs=11.351304958597812 / 0.0026301343838275423,
+            f_dr_dz_cs_turn=3.1818181818181817,
+            radius_cs_turn_corners=0.003,
+            f_a_cs_turn_steel=0.7597743217586591,
+        ),
+    ]
+    """PROCESS's own converged values on `low_aspect_ratio_DEMO.IN.DAT`, read off one
+    `SingleRun` -- the machine whose constraint 90 this unit exists to feed. The turn
+    count is spelled as the quotient that produces it because that is what the
+    `DataStructure` carries at that point (`a_cs_turn = 0.00263 m^2`)."""
+
+    fuzz_bounds = {
+        "a_cs_poloidal": (5.0, 20.0),
+        "n_pf_coil_turns_cs": (2000.0, 6000.0),
+        "f_dr_dz_cs_turn": (2.0, 4.0),
+        "radius_cs_turn_corners": (0.002, 0.004),
+        "f_a_cs_turn_steel": (0.4, 0.8),
     }

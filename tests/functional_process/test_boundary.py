@@ -32,7 +32,12 @@ from functional_process.boundary import (
     readers_of,
     unproduced_but_computed,
 )
-from functional_process.indat import GRAPH, graph_for, machine_from_indat
+from functional_process.indat import (
+    GRAPH,
+    REFERENCE_MACHINE,
+    graph_for,
+    machine_from_indat,
+)
 from functional_process.mda import driven_graph
 from functional_process.sand import iteration_variable_path
 from functional_process.sand_harness import reference_run
@@ -187,10 +192,29 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """360 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """369 inputs and 11 guesses, against the stellarator's 297 and 6.
 
-    **361 -> 360 on 2026-08-30**, and the one row that left is the point of the whole
-    measure: `.physics.beta_poloidal_vol_avg` stopped being an input because
+    **360 -> 369 later on 2026-08-30, and the input half going *up* is the good case
+    again.** Five producers landed -- `.tokamak.cs_fatigue`,
+    `.tokamak.cs_coil.turn_geometry`, `.tokamak.build.dz_blkt_upper`,
+    `.costs.reactor_structure_cost` and the completed `.tokamak.cryostat` -- and between
+    them took four rows off this list (`.build.dz_blkt_upper`,
+    `.buildings.dz_tf_cryostat`, `.costs.c2214`, `.fwbs.dewmkg`, every one of them a
+    field PROCESS computes and the port was reading as `0.0`). The thirteen additions
+    are those nodes' own declared reads and every one is a genuine `IN.DAT` input: nine
+    `.cs_fatigue.*` material and safety-factor coefficients, `.pf_coil.f_dr_dz_cs_turn`
+    and `.pf_coil.radius_cs_turn_corners` for the CS turn, and `.build.dr_cryostat` +
+    `.build.f_z_cryostat` for the cryostat shell. Growth from a landed producer's own
+    reads is the boundary doing its job; the check that tells that apart from a *lost*
+    producer is the row-by-row pin above, and
+    `test_no_new_boundary_input_is_something_process_computes` below is what says none
+    of the thirteen is itself an unproduced read.
+
+    The guess count is unmoved at 11, which is the same claim from the other side: none
+    of the five closed a loop.
+
+    **361 -> 360 earlier on 2026-08-30**, and the one row that left is the point of the
+    whole measure: `.physics.beta_poloidal_vol_avg` stopped being an input because
     `.tokamak.plasma_beta.poloidal` landed. A producer arriving takes a row off the
     boundary, which is exactly the direction this number is supposed to move -- and this
     particular row had been sitting there as an unproduced read since `batch5.md`
@@ -291,13 +315,13 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (360, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (369, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The eighteen missing producers on the MDA graph, pinned so it can only go down.
+    """The fourteen missing producers on the MDA graph, pinned so it can only go down.
 
     **This is the check that was missing, and it is the reason it was missing.** A
     boundary `input` entry is either one of the ~109 genuine `IN.DAT` inputs or a read
@@ -319,7 +343,18 @@ def test_no_new_boundary_input_is_something_process_computes():
     port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
     Only a cold start exposes it, and only if something asks this question.
 
-    **Measured on `driven_graph`, like every other pin in this file** -- eighteen rows.
+    **Eighteen rows became fourteen later the same day**, and the four that closed are
+    the five producers `test_the_tokamak_reads_more_than_the_stellarator_and_guesses_
+    more` enumerates: `.build.dz_blkt_upper`, `.buildings.dz_tf_cryostat`,
+    `.costs.c2214` and `.fwbs.dewmkg`. **Nothing was added**, which is the part worth
+    checking rather than the subtraction: `.tokamak.cs_fatigue`'s two conduit-thickness
+    reads *did* appear here as an intermediate state -- `ncycle`'s crack-size limits,
+    which PROCESS computes in `ohcalc` and no ported node owned -- and closing them is
+    why `.tokamak.cs_coil.turn_geometry` is part of the same commit. A landed producer
+    that leaves a new unproduced read behind has moved the hole, not filled it, and this
+    list is what says which of the two happened.
+
+    **Measured on `driven_graph`, like every other pin in this file.**
     The MDF-assembled graph shows **three more** (`.tfcoil.sig_tf_case`,
     `.tfcoil.sig_tf_wp`, `.pf_coil.temp_cs_superconductor_margin`), because the
     constraint surface declares reads the MDA graph never makes. They are equally
@@ -358,3 +393,55 @@ def test_the_landed_poloidal_beta_producer_is_not_on_the_boundary():
     assert (
         ".physics.beta_poloidal_vol_avg" not in Path(MISSING_PRODUCERS_PIN).read_text()
     )
+
+
+def test_the_five_landed_producers_own_what_process_computes():
+    """The four rows that left the missing-producer pin on 2026-08-30, by owner.
+
+    The same narrow guard the poloidal-beta test above is, for the same reason and one
+    wave later: every one of these was a field PROCESS recomputes every pipeline pass
+    while the port read `0.0`, and an unwiring that put any of them back -- a slot
+    reverted to `None`, a `Costs` occupant dropped on the wrong device, an import
+    removed -- would change no value test, because Stage A and C2 seed boundary inputs
+    from PROCESS's converged answer and hand a missing producer exactly the right
+    number.
+
+    `.cs_fatigue.n_cycle` is on this list without ever having been on the pin, and that
+    is the sharpest case here: nothing in the *graph* read it, so `boundary` never saw
+    it. Constraint 90 did, from outside, and read `0.0` -- `1 - 0 / n_cycle_min` is
+    exactly `+1.000000` with a zero gradient row, which is what stopped every
+    `low_aspect_ratio_DEMO` solve at zero iterations.
+    """
+    graph = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
+    owners = {var.path_str(): node.path_str() for var, node in graph.owners.items()}
+    assert owners[".build.dz_blkt_upper"] == ".tokamak.build.dz_blkt_upper"
+    assert owners[".fwbs.dewmkg"] == ".tokamak.cryostat"
+    assert owners[".buildings.dz_tf_cryostat"] == ".tokamak.cryostat"
+    assert owners[".costs.c2214"] == ".costs.reactor_structure_cost"
+    assert owners[".cs_fatigue.n_cycle"] == ".tokamak.cs_fatigue"
+    assert owners[".cs_fatigue.dz_cs_turn_conduit"] == ".tokamak.cs_coil.turn_geometry"
+
+    pinned = Path(MISSING_PRODUCERS_PIN).read_text()
+    for landed in (
+        ".build.dz_blkt_upper",
+        ".fwbs.dewmkg",
+        ".buildings.dz_tf_cryostat",
+        ".costs.c2214",
+    ):
+        assert landed not in pinned
+
+
+def test_the_stellarator_has_no_reactor_structure_cost():
+    """`.costs.reactor_structure_cost` is a tokamak slot and `None` on a stellarator.
+
+    The one slot in this tree whose occupant is decided by the *device*, so it is worth
+    a test that says so from both sides rather than only from the tokamak's. `st_strc`
+    sets `.structure.fncmass`/`.gsmass` to a literal `0.0`, so an occupant here would
+    compute an exact zero out of a subsystem the device does not have -- the
+    `EcrhDensityLimit` bug class, which this port has now named in three places and
+    should not re-create in a fourth. `.costs.c2214` stays the `0.0` boundary input it
+    always was on that machine.
+    """
+    assert machine_from_indat(MISSING_PRODUCERS_INPUT_FILE).costs.reactor_structure_cost
+    assert REFERENCE_MACHINE.costs.reactor_structure_cost is None
+    assert V("costs", "c2214") not in GRAPH.owners
