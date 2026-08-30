@@ -687,6 +687,23 @@ class VmconDriver(AbstractDriver):
     quotient approximates a derivative, so PROCESS's SQP is being handed the gradient of
     a **smoothed** function. Whether that smoothing helps or hurts the iteration count
     is a measurement, not a matter of opinion, and this is the switch that takes it."""
+    initial_b: float | None = None
+    """`pyvmcon`'s `initial_B`, as a multiple of the identity. `None` means `I`.
+
+    PROCESS's own knob (`_Solver.set_b`, `solver_handler.py:101`), where it is part of a
+    recovery ladder: on `SolverOutputCondition.NO_SOLUTION`, *and only if VMCON never
+    iterated*, PROCESS retries the whole solve with `2I`. That guard means PROCESS's
+    ladder cannot fire on a failure at iteration 45 or 207, so this field is here to be
+    *measured* rather than to copy the ladder.
+
+    What it is for: VMCON starts every solve with `B = I` in scaled coordinates, i.e.
+    with no curvature information at all. Far from the optimum that costs little,
+    because the gradient dominates and almost any descent direction makes progress. At a
+    nearly-stationary start it is the whole problem -- the gradient is small, so the step
+    is decided by the constraint linearisation, and the line search then rejects, shrinks
+    `alpha`, and hands `calculate_new_B` a tiny `ksi` that makes a poor update. That is
+    the mechanism proposed for why the *warm* start is harder than the cold one
+    (`_audit/optimise_design.md` §15.4), and this field is how to test it."""
     max_iter: int = 100
     tolerance: float = 1.0e-8
     """`pyvmcon`'s `epsilon`. PROCESS's own is `data.numerics.epsvmc`."""
@@ -836,6 +853,11 @@ class VmconDriver(AbstractDriver):
                 max_iter=self.max_iter,
                 epsilon=self.tolerance,
                 qsp_options={"solver": self.qsp_solver},
+                initial_B=(
+                    None
+                    if self.initial_b is None
+                    else np.identity(len(flat_start)) * self.initial_b
+                ),
                 callback=wrapped,
             )
         except VMCONConvergenceException as e:

@@ -516,9 +516,14 @@ def main(argv=None):
             # rather than propagating it, so zero recorded iterations is ambiguous
             # between "converged where it stood" and "the first QP was infeasible and
             # the start came back untouched". Measured on the tokamak: pyvmcon's
-            # `QSPSolverException` ("no feasible solution") from constraint 68's
+            # `QSPSolverException` ("no feasible solution") from constraint **72**'s
             # constantly-violated, zero-gradient row produced exactly this shape. Say
             # so instead of letting a swallowed failure read as a perfect solve.
+            # (This said 68 until 2026-08-30, when the rows were actually measured:
+            # c72 is `+5.53e-01` with an identically zero row, while c68 is violated
+            # by `+4.95e-02` and *can* move, `|row| 2.95e-02`. 68 was named from a
+            # violated-constraint list, which does not look at gradients -- being
+            # violated is half the test and the cheaper half.)
             stuck = _why_no_step(solve_drive, probe_context, seeded)
             if stuck:
                 print(
