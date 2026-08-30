@@ -187,10 +187,22 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """360 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """356 inputs and 11 guesses, against the stellarator's 297 and 6.
 
-    **361 -> 360 on 2026-08-30**, and the one row that left is the point of the whole
-    measure: `.physics.beta_poloidal_vol_avg` stopped being an input because
+    **360 -> 356 later on 2026-08-30**, and the four rows that left are the cleanest run
+    this measure has had: four producers landed and **not one new read came with them**,
+    because every field the four nodes declare was already on the boundary or already
+    owned. `.tokamak.build.tf_top_height` took `.build.z_tf_top` and
+    `.build.dz_tf_upper_lower_midplane`, `.tokamak.build.blkt_upper_thickness` took
+    `.build.dz_blkt_upper` (the first one's own missing dependency) and
+    `.tokamak.build.tf_inner_bore` took `.build.dr_tf_inner_bore`. `z_tf_top` is the one
+    that was doing damage: `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull` places
+    the coil's arcs from it and `models/pfcoil/geometry.py` places the divertor PF coils
+    from it, so at the cold `0.0` the graph drew a TF coil whose top sat on the
+    midplane.
+
+    **361 -> 360 earlier on 2026-08-30**, and the one row that left is the point of the
+    whole measure: `.physics.beta_poloidal_vol_avg` stopped being an input because
     `.tokamak.plasma_beta.poloidal` landed. A producer arriving takes a row off the
     boundary, which is exactly the direction this number is supposed to move -- and this
     particular row had been sitting there as an unproduced read since `batch5.md`
@@ -291,13 +303,13 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (360, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (356, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The eighteen missing producers on the MDA graph, pinned so it can only go down.
+    """The fourteen missing producers on the MDA graph, pinned so it can only go down.
 
     **This is the check that was missing, and it is the reason it was missing.** A
     boundary `input` entry is either one of the ~109 genuine `IN.DAT` inputs or a read
@@ -319,15 +331,25 @@ def test_no_new_boundary_input_is_something_process_computes():
     port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
     Only a cold start exposes it, and only if something asks this question.
 
-    **Measured on `driven_graph`, like every other pin in this file** -- eighteen rows.
+    **Measured on `driven_graph`, like every other pin in this file** -- fourteen rows,
+    down from eighteen: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
+    `.build.dz_blkt_upper` and `.build.dr_tf_inner_bore` left when
+    `models/namespace.py::Build` gained `tf_top_height`, `blkt_upper_thickness` and
+    `tf_inner_bore` (2026-08-30).
+
     The MDF-assembled graph shows **three more** (`.tfcoil.sig_tf_case`,
     `.tfcoil.sig_tf_wp`, `.pf_coil.temp_cs_superconductor_margin`), because the
     constraint surface declares reads the MDA graph never makes. They are equally
     missing and equally worth porting; they are simply not on *this* graph's boundary,
     and pinning two different graphs in one list would make the number mean nothing.
+    Two of those three, plus `.tfcoil.str_wp` which is still on this list, are all
+    outputs of one unported unit -- `process/models/tfcoil/base.py::stresscl`, 1053 lines
+    calling a 517-line `extended_plane_strain` layer solver. See
+    `_audit/units/models/build.md` § "the TF stress chain is not a wiring problem".
 
     Equality against the pin, not `<=`: a row leaving is a producer landing and should
-    update the pin deliberately (`--missing --write`), and a row arriving is the defect.
+    update the pin deliberately (`--missing --write`, implemented 2026-08-30 -- the flag
+    this line named before anything answered it), and a row arriving is the defect.
     """
     computed = computed_by_process(MISSING_PRODUCERS_INPUT_FILE)
     reference = reference_run(MISSING_PRODUCERS_INPUT_FILE)
@@ -358,3 +380,29 @@ def test_the_landed_poloidal_beta_producer_is_not_on_the_boundary():
     assert (
         ".physics.beta_poloidal_vol_avg" not in Path(MISSING_PRODUCERS_PIN).read_text()
     )
+
+
+def test_the_landed_vertical_and_bore_producers_are_not_on_the_boundary():
+    """The four producers landed later on 2026-08-30, each named with its owner.
+
+    Same reasoning as the test above: these are exactly the wirings a refactor could
+    quietly undo without failing a single value test, because the harness's Stage A and
+    C2 seed every boundary input from PROCESS's *converged* `DataStructure`. Named
+    rather than left to the pin because two of the four are read by nodes that draw the
+    machine -- `.build.z_tf_top` places the TF coil's arcs
+    (`TfCoilShapeDShapeSingleNull`) and the divertor PF coils (`pfcoil/geometry.py`) --
+    and `.build.dz_blkt_upper` is the first one's own dependency, so an unwiring there
+    would silently un-land the other.
+    """
+    graph = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
+    pinned = Path(MISSING_PRODUCERS_PIN).read_text()
+    for area, field, owner in (
+        ("build", "z_tf_top", ".tokamak.build.tf_top_height"),
+        ("build", "dz_tf_upper_lower_midplane", ".tokamak.build.tf_top_height"),
+        ("build", "dz_blkt_upper", ".tokamak.build.blkt_upper_thickness"),
+        ("build", "dr_tf_inner_bore", ".tokamak.build.tf_inner_bore"),
+    ):
+        var = V(area, field)
+        assert var in graph.owners, var.path_str()
+        assert graph.owners[var].path_str() == owner
+        assert var.path_str() not in pinned

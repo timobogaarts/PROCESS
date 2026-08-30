@@ -29,18 +29,15 @@ input .build.dr_shld_thermal_inboard
 input .build.dr_shld_thermal_outboard
 input .build.dr_shld_vv_gap_inboard
 input .build.dr_tf_inboard
-input .build.dr_tf_inner_bore
 input .build.dr_tf_shld_gap
 input .build.dr_vv_inboard
 input .build.dr_vv_outboard
 input .build.dr_vv_shells
-input .build.dz_blkt_upper
 input .build.dz_fw_plasma_gap
 input .build.dz_shld_lower
 input .build.dz_shld_thermal
 input .build.dz_shld_upper
 input .build.dz_shld_vv_gap
-input .build.dz_tf_upper_lower_midplane
 input .build.dz_vv_lower
 input .build.dz_vv_upper
 input .build.fcspc
@@ -51,7 +48,6 @@ input .build.plleno
 input .build.plsepi
 input .build.plsepo
 input .build.sigallpc
-input .build.z_tf_top
 input .buildings.admv
 input .buildings.clh2
 input .buildings.conv

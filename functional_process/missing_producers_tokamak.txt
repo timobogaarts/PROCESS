@@ -1,8 +1,4 @@
 .blanket.deg_blkt_inboard_poloidal_plasma
-.build.dr_tf_inner_bore
-.build.dz_blkt_upper
-.build.dz_tf_upper_lower_midplane
-.build.z_tf_top
 .buildings.dz_tf_cryostat
 .costs.c2214
 .costs.c2222

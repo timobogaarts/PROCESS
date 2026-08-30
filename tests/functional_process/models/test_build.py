@@ -36,9 +36,11 @@ from functional_process.models.build import (
     calculate_divertor_geometry_spherical_tokamak,
     calculate_dr_shld_vv_gap_outboard,
     calculate_dr_tf_inboard,
+    calculate_dr_tf_inner_bore,
     calculate_dr_tf_outboard_superconducting,
     calculate_dr_tf_wp_with_insulation,
     calculate_dx_tf_wp_conductor_max_superconducting,
+    calculate_dz_blkt_upper,
     calculate_r_shld_inboard_inner,
     calculate_rbld,
     calculate_r_shld_outboard_outer,
@@ -47,6 +49,8 @@ from functional_process.models.build import (
     calculate_vacuum_vessel_and_shield_radii,
     calculate_r_tf_outboard_mid,
     calculate_r_tf_outboard_mid_unrippled,
+    calculate_tf_top_height_double_null,
+    calculate_tf_top_height_single_null,
     calculate_z_plasma_xpoint,
     calculate_z_tf_inside_half,
     plasma_outboard_edge_toroidal_ripple_fitted,
@@ -384,9 +388,258 @@ class TestZTfInsideHalf(Tier1Contract):
     }
 
 
+# `z_tf_inside_half` is not settable on `data`: `calculate_vertical_build` computes it
+# at `:807` from eight fields and then uses it at `:820`/`:840`. Four of those eight --
+# `dz_xpoint_divertor`, `dz_divertor`, `dz_shld_lower`, `dz_vv_lower` -- appear nowhere
+# in the `z_tf_top` block, so the *lower* build can be solved backwards for a requested
+# half-height while every field the two expressions share keeps its sample value. These
+# three constants are the fixed part of that solve; `dz_shld_lower` is the free one.
+# All three are above the `1e-5` latch or plainly positive, so the reference runs the
+# same branch a real single-null tokamak does.
+_LOWER_BUILD = {"dz_xpoint_divertor": 2.0, "dz_divertor": 0.62, "dz_vv_lower": 0.3}
+
+_Z_XPOINT = 4.933333333333334
+"""`large_tokamak_eval`'s converged `.build.z_plasma_xpoint_upper`.
+
+Used by the double-null adapter only, where `z_plasma_xpoint_upper` is in `:807`'s stack
+but *not* in that arm's `z_tf_top` expression, so it is free to be pinned rather than
+sampled."""
+
+
+def _dz_shld_lower_for(
+    z_tf_inside_half,
+    z_plasma_xpoint_upper,
+    dz_shld_vv_gap,
+    dz_shld_thermal,
+    dr_tf_shld_gap,
+):
+    """The lower-shield thickness that makes `:807`'s stack equal `z_tf_inside_half`."""
+    return z_tf_inside_half - (
+        z_plasma_xpoint_upper
+        + _LOWER_BUILD["dz_xpoint_divertor"]
+        + _LOWER_BUILD["dz_divertor"]
+        + _LOWER_BUILD["dz_vv_lower"]
+        + dz_shld_vv_gap
+        + dz_shld_thermal
+        + dr_tf_shld_gap
+    )
+
+
+def _reference_tf_top_height_single_null(
+    z_tf_inside_half,
+    dr_tf_inboard,
+    dr_tf_shld_gap,
+    dz_shld_thermal,
+    dz_shld_vv_gap,
+    dz_vv_upper,
+    dz_shld_upper,
+    dr_shld_blkt_gap,
+    dz_blkt_upper,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    dz_fw_plasma_gap,
+    z_plasma_xpoint_upper,
+):
+    """`Build.calculate_vertical_build:826-841`, reached through the real method.
+
+    Two of the thirteen arguments are not `data` fields the method leaves alone:
+
+    - `z_plasma_xpoint_upper` is overwritten at `:167` with `rminor * kappa`, so it is
+      fed as `rminor = z_plasma_xpoint_upper` with `kappa = 1.0`, exactly as
+      `_reference_z_tf_inside_half` does;
+    - `z_tf_inside_half` is computed at `:807`, so it is set indirectly through
+      `dz_shld_lower` -- see `_dz_shld_lower_for`.
+
+    Everything else is passed straight through. `dz_fw_plasma_gap` is only rewritten in
+    `calculate_radial_build` (`:1669-1680`), never here, so the sample value survives.
+    """
+    data = _vertical(
+        physics__i_single_null=1,
+        physics__rminor=z_plasma_xpoint_upper,
+        physics__kappa=1.0,
+        build__dz_xpoint_divertor=_LOWER_BUILD["dz_xpoint_divertor"],
+        divertor__dz_divertor=_LOWER_BUILD["dz_divertor"],
+        build__dz_vv_lower=_LOWER_BUILD["dz_vv_lower"],
+        build__dz_shld_lower=_dz_shld_lower_for(
+            z_tf_inside_half,
+            z_plasma_xpoint_upper,
+            dz_shld_vv_gap,
+            dz_shld_thermal,
+            dr_tf_shld_gap,
+        ),
+        build__dr_tf_inboard=dr_tf_inboard,
+        build__dr_tf_shld_gap=dr_tf_shld_gap,
+        build__dz_shld_thermal=dz_shld_thermal,
+        build__dz_shld_vv_gap=dz_shld_vv_gap,
+        build__dz_vv_upper=dz_vv_upper,
+        build__dz_shld_upper=dz_shld_upper,
+        build__dr_shld_blkt_gap=dr_shld_blkt_gap,
+        build__dz_blkt_upper=dz_blkt_upper,
+        build__dr_fw_inboard=dr_fw_inboard,
+        build__dr_fw_outboard=dr_fw_outboard,
+        build__dz_fw_plasma_gap=dz_fw_plasma_gap,
+    )
+    return data.build.z_tf_top, data.build.dz_tf_upper_lower_midplane
+
+
+class TestTfTopHeightSingleNull(Tier1Contract):
+    """`calculate_tf_top_height_single_null` vs
+    `Build.calculate_vertical_build:826-841`.
+
+    `.build.z_tf_top` and `.build.dz_tf_upper_lower_midplane` had **no producer at all**
+    in this port until 2026-08-30 -- both sat frozen at the cold `0.0` while PROCESS
+    computed `8.656` m and `-1.234` m on `large_tokamak_nof`
+    (`missing_producers_tokamak.txt`). `z_tf_top` is read by
+    `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull`, which places the coil's arcs
+    from it, so the cold graph drew a TF coil whose top was on the midplane.
+
+    The offset is checked alongside the height rather than separately because it is a
+    *difference* of the two vertical stacks and the interesting failure is a sign or a
+    dropped term, which a test of the height alone cannot see.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_tf_top_height_single_null
+    ported = calculate_tf_top_height_single_null
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            z_tf_inside_half=8.818217164127492,
+            dr_tf_inboard=1.2,
+            dr_tf_shld_gap=0.05,
+            dz_shld_thermal=0.05,
+            dz_shld_vv_gap=0.163,
+            dz_vv_upper=0.3,
+            dz_shld_upper=0.6,
+            dr_shld_blkt_gap=0.02,
+            dz_blkt_upper=0.85,
+            dr_fw_inboard=0.018000000000000002,
+            dr_fw_outboard=0.018000000000000002,
+            dz_fw_plasma_gap=0.6,
+            z_plasma_xpoint_upper=4.933333333333334,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "z_tf_inside_half": (7.0, 10.0),
+        "dr_tf_inboard": (1.0, 1.4),
+        "dr_tf_shld_gap": (0.03, 0.08),
+        "dz_shld_thermal": (0.02, 0.1),
+        "dz_shld_vv_gap": (0.1, 0.3),
+        "dz_vv_upper": (0.2, 0.4),
+        "dz_shld_upper": (0.4, 0.8),
+        "dr_shld_blkt_gap": (0.01, 0.04),
+        "dz_blkt_upper": (0.6, 1.1),
+        "dr_fw_inboard": (0.01, 0.03),
+        "dr_fw_outboard": (0.01, 0.03),
+        "dz_fw_plasma_gap": (0.4, 0.8),
+        "z_plasma_xpoint_upper": (4.0, 6.0),
+    }
+
+
+def _reference_tf_top_height_double_null(z_tf_inside_half, dr_tf_inboard):
+    """`Build.calculate_vertical_build:820-824`, the `i_single_null == 0` arm.
+
+    `z_tf_inside_half` is reached the same indirect way as in the single-null adapter;
+    the three fields it shares with the `z_tf_top` expression on that arm are none at
+    all, so `_LOWER_BUILD`'s constants and the `BASELINE` upper build are all that the
+    solve needs.
+    """
+    data = _vertical(
+        physics__i_single_null=0,
+        physics__rminor=_Z_XPOINT,
+        physics__kappa=1.0,
+        build__dz_xpoint_divertor=_LOWER_BUILD["dz_xpoint_divertor"],
+        divertor__dz_divertor=_LOWER_BUILD["dz_divertor"],
+        build__dz_vv_lower=_LOWER_BUILD["dz_vv_lower"],
+        build__dz_shld_lower=_dz_shld_lower_for(
+            z_tf_inside_half,
+            _Z_XPOINT,
+            BASELINE["build"]["dz_shld_vv_gap"],
+            BASELINE["build"]["dz_shld_thermal"],
+            BASELINE["build"]["dr_tf_shld_gap"],
+        ),
+        build__dr_tf_inboard=dr_tf_inboard,
+    )
+    return data.build.z_tf_top, data.build.dz_tf_upper_lower_midplane
+
+
+class TestTfTopHeightDoubleNull(Tier1Contract):
+    """`calculate_tf_top_height_double_null` vs
+    `Build.calculate_vertical_build:820-824`.
+
+    Not the arm any *assembling* machine takes today, and the honest form of that is
+    worth stating: the two tracked inputs with `i_single_null = 0`
+    (`spherical_tokamak_eval.IN.DAT:292`, `st_regression.IN.DAT:638`) are both refused by
+    `machine_from_indat` for an unrelated reason -- `i_tf_turn_type == 2`, the CroCo
+    turn, `indat._refuse_unported_switch`. So this arm is written and tested against
+    PROCESS, and it becomes reachable the moment that refusal lifts; it is not a
+    speculative arm, because `build.py:820-824` is the code a double-null run runs.
+
+    The second returned value is PROCESS's literal `0.0e0`; it is compared anyway,
+    because an arm that silently stopped owning it would orphan every consumer of
+    `.build.dz_tf_upper_lower_midplane` on those machines.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_tf_top_height_double_null
+    ported = calculate_tf_top_height_double_null
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged-geometry",
+            z_tf_inside_half=8.818217164127492,
+            dr_tf_inboard=1.2,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "z_tf_inside_half": (7.0, 10.0),
+        "dr_tf_inboard": (1.0, 1.4),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Radial build
 # ---------------------------------------------------------------------------
+
+
+def _reference_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
+    """`calculate_radial_build:1664-1667`. Unconditional -- `blktmodel = 0` in
+    `BASELINE`, so neither operand is rewritten above it.
+    """
+    data = _radial(
+        build__dr_blkt_inboard=dr_blkt_inboard,
+        build__dr_blkt_outboard=dr_blkt_outboard,
+    )
+    return data.build.dz_blkt_upper
+
+
+class TestDzBlktUpper(Tier1Contract):
+    """`calculate_dz_blkt_upper` vs `calculate_radial_build:1664-1667`.
+
+    Landed 2026-08-30 as `calculate_tf_top_height_single_null`'s missing dependency, and
+    a `missing_producers_tokamak.txt` row in its own right (`models/fw.py` and
+    `models/vacuum/vacuum.py` read it too).
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_dz_blkt_upper
+    ported = calculate_dz_blkt_upper
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            dr_blkt_inboard=0.7,
+            dr_blkt_outboard=1.0,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "dr_blkt_inboard": (0.3, 1.0),
+        "dr_blkt_outboard": (0.8, 1.2),
+    }
 
 
 def _reference_dr_tf_wp_with_insulation(
@@ -726,12 +979,27 @@ def _ported_outboard_build(
         rminor,
         dx_tf_wp_conductor_max,
     )
+    # The inboard half of the bore, from the same `BASELINE` fields PROCESS reads at
+    # `:1691-1735`. Only `dr_tf_inboard` varies with the sample; the CS build above it
+    # is fixed, exactly as `_reference_ripple_superconducting` fixes the winding pack.
+    *_, r_tf_inboard_mid, _ = calculate_r_tf_inboard_radii_tf_outside_cs(
+        BASELINE["build"]["dr_bore"],
+        BASELINE["build"]["dr_cs"],
+        BASELINE["build"]["fseppc"],
+        BASELINE["build"]["fcspc"],
+        BASELINE["build"]["sigallpc"],
+        BASELINE["build"]["dr_cs_tf_gap"],
+        dr_tf_inboard,
+    )
     return (
         r_shld_outboard_outer,
         dr_tf_outboard,
         r_tf_outboard_mid,
         dr_shld_vv_gap_outboard,
         ripple_b_tf_plasma_edge,
+        calculate_dr_tf_inner_bore(
+            r_tf_outboard_mid, dr_tf_outboard, r_tf_inboard_mid, dr_tf_inboard
+        ),
     )
 
 
@@ -779,6 +1047,7 @@ def _reference_outboard_build(
         data.build.r_tf_outboard_mid,
         data.build.dr_shld_vv_gap_outboard,
         data.tfcoil.ripple_b_tf_plasma_edge,
+        data.build.dr_tf_inner_bore,
     )
 
 
@@ -789,9 +1058,18 @@ class TestOutboardBuildChain(Tier1Contract):
     `calculate_dr_tf_outboard_superconducting`,
     `calculate_dx_tf_wp_conductor_max_superconducting`,
     `calculate_r_tf_outboard_mid_unrippled`,
-    `plasma_outboard_edge_toroidal_ripple_fitted`, `calculate_r_tf_outboard_mid` and
-    `calculate_dr_shld_vv_gap_outboard` in one diff, because PROCESS has no boundary
-    inside that stretch to compare against.
+    `plasma_outboard_edge_toroidal_ripple_fitted`, `calculate_r_tf_outboard_mid`,
+    `calculate_dr_shld_vv_gap_outboard` and `calculate_dr_tf_inner_bore` in one diff,
+    because PROCESS has no boundary inside that stretch to compare against.
+
+    **`calculate_dr_tf_inner_bore` joined this contract on 2026-08-30 rather than
+    getting one of its own**, and the reason is the same one that created the contract:
+    two of its four arguments (`.build.r_tf_outboard_mid`, `.build.dr_tf_outboard`) are
+    produced *inside* this stretch and cannot be set on `data` independently -- at
+    `i_tf_sup == 1` the source makes `dr_tf_outboard` equal to `dr_tf_inboard`, so a
+    sample naming them separately is unreachable through PROCESS. Adding it here tests
+    it at the post-ripple radius, which is where PROCESS's own surviving write
+    (`:1949-1955`) is taken.
 
     Switches pinned by the baseline: `i_tf_sup = 1`, `i_tf_shape = 1`,
     `blktmodel = 0`, `140 not in ixc`.

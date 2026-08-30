@@ -76,6 +76,8 @@ from functional_process.models.build import (
     TfOutboardEdgeRipplePictureFrame,
     TfOutboardMidDShape,
     TfOutboardMidPictureFrame,
+    TfTopHeightDoubleNull,
+    TfTopHeightSingleNull,
     WpConductorMaxWidthSuperconducting,
 )
 from functional_process.models.buildings.buildings import (
@@ -2580,6 +2582,29 @@ spherical tokamak whose input file sets `dz_xpoint_divertor`, PROCESS computes n
 in `divgeom` that survives the `:800` latch, so there is no arm to refuse. Both tracked
 spherical-tokamak regression inputs land here."""
 
+TF_TOP_HEIGHT = {
+    DivertorNumberModels.SINGLE_NULL: TfTopHeightSingleNull,
+    DivertorNumberModels.DOUBLE_NULL: TfTopHeightDoubleNull,
+}
+"""`.physics.i_single_null` -> the occupant of `.tokamak.build.tf_top_height`.
+
+Both arms are written, so nothing here reaches `UNPORTED`, and both own the same two
+fields (`.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`) -- the double-null arm's
+`dz_tf_upper_lower_midplane` is PROCESS's own literal `0.0e0` and is owned rather than
+left unproduced, because a constant is still a producer and an arm that dropped it would
+orphan every consumer on that machine (`boundary.orphaned_by`'s partial-overlap hazard).
+
+Neither tracked `i_single_null = 0` input assembles today -- both are refused for
+`i_tf_turn_type == 2` -- so the double-null arm is written and harness-tested but not
+yet reachable through this factory. Recorded rather than left implicit, because "both
+arms written" and "both arms exercised end to end" are different claims.
+
+`i_single_null` is read here as a **slot key**, and one line above in
+`machine_from_indat` as the argument to `_n_divertors`, which derives an ordinary field
+from it. Both readings at once, exactly as `_n_divertors`' own docstring sets out for
+`n_divertors`: a switch read to branch selects an occupant, a switch read arithmetically
+is an input."""
+
 DR_TF_INBOARD_WINDING_PACK = {
     0: DrTfInboardFromWindingPack,
     1: DrTfWpWithInsulationFromInboardBuild,
@@ -3925,6 +3950,11 @@ def _tokamak_device(
             # input sets `dz_xpoint_divertor` discards `divgeom`'s early return at
             # `build.py:800` and owns nothing.
             build=lambda cls: None if cls is None else cls(),
+        ),
+        tf_top_height=_slot_occupant(
+            "i_single_null",
+            DivertorNumberModels(int(i_single_null)),
+            TF_TOP_HEIGHT,
         ),
         dr_tf_inboard_winding_pack=_slot_occupant(
             "dr_tf_inboard_winding_pack",

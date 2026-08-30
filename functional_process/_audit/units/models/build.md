@@ -799,3 +799,108 @@ PROCESS's converged values, **16 disagreements unchanged**, 684 -> 688 owned wal
 unaccounted. Two Tier-1 contracts (`TestVacuumVesselAndShieldRadii`, `TestRbld`), green
 plain and at `--fp-gradients --fp-fuzz 40`. Stellarator untouched: `.tokamak.build` is
 not on its graph.
+
+## 2026-08-30 — the vertical build's two missing producers, and the midplane bore
+
+Four producers, three slots, and every one of them was a **`missing_producers_tokamak.
+txt` row**: a boundary `input` on `large_tokamak_nof` that PROCESS writes on every
+pipeline pass, so the port held `0.0` while PROCESS held a number
+(`boundary.unproduced_but_computed`, `optimise_design.md` §16).
+
+| field | PROCESS on `large_tokamak_nof` | port, before | new owner |
+|---|---|---|---|
+| `.build.z_tf_top` | `8.655817` | `0.0` | `.tokamak.build.tf_top_height` |
+| `.build.dz_tf_upper_lower_midplane` | `-1.2338838` | `0.0` | `.tokamak.build.tf_top_height` |
+| `.build.dz_blkt_upper` | `0.85` | `0.0` | `.tokamak.build.blkt_upper_thickness` |
+| `.build.dr_tf_inner_bore` | `11.794021` | `0.0` | `.tokamak.build.tf_inner_bore` |
+
+**`.build.z_tf_top` is the one that was doing damage.** It is not an unread
+accumulation: `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull` and
+`TfCoilShapePictureFrameTart` place the coil's arcs from it (`base.py:513-577`), and
+`models/pfcoil/geometry.py` places the divertor PF coils from it *and* from
+`dz_tf_upper_lower_midplane` (`pfcoil.py:1255-1259`). At the cold `0.0` the graph was
+drawing a TF coil whose top sat on the midplane and hanging the divertor coils off it.
+
+### the switch, and why the double-null arm owns a literal zero
+
+`.physics.i_single_null` (`build.py:819`), keyed as `TF_TOP_HEIGHT` in `indat.py`. Both
+arms are written, so nothing reaches `UNPORTED`: `large_tokamak_*` and
+`low_aspect_ratio_DEMO` are single null (verified assembling, all four fields owned),
+and the two inputs that set `i_single_null = 0` — `spherical_tokamak_eval.IN.DAT:292`,
+`st_regression.IN.DAT:638` — are the two `machine_from_indat` refuses for
+`i_tf_turn_type == 2`. **So the double-null arm is written and harness-tested but not
+yet reachable through the factory**, and that is stated rather than left to be inferred:
+"both arms written" and "both arms exercised end to end" are different claims, and only
+the first is true here.
+
+The arms read very different things — two fields against thirteen, because a symmetric
+machine reflects the lower build while a single-null one stacks the upper one from
+scratch — but they own **the same two fields**, which is what makes this one slot rather
+than two nodes. The double-null arm's `dz_tf_upper_lower_midplane` is PROCESS's own
+literal `0.0e0` (`build.py:824`) and is *owned*, not left unproduced: a constant is
+still a producer, and an arm that dropped it would leave every consumer on the
+double-null machines reading the `DataStructure` instead — `boundary.orphaned_by`'s
+partial-overlap hazard, arrived at from the producer side for once.
+
+`i_single_null` is now read twice in `machine_from_indat`: as this slot's key, and as
+`_n_divertors`' argument, which derives an ordinary field. That is exactly the policy
+`_n_divertors`' own docstring states — a switch read to branch selects an occupant, a
+switch read arithmetically is an input — and the two uses do not conflict.
+
+### `.build.dz_blkt_upper` is landed as a dependency, not as scope creep
+
+`calculate_tf_top_height_single_null` reads it. It was itself an unproduced boundary
+input, so landing `z_tf_top` on top of it would have produced a number that only *looked*
+produced — the same defect one level down, and exactly the failure mode this wave
+exists to close. Its own producer is one line (`build.py:1664-1667`, the mean of the two
+radial blanket thicknesses), unconditional, and on every tracked tokamak
+(`.fwbs.blktmodel == 0`) both operands are run inputs, so it introduces no further
+unproduced dependency. `models/fw.py:191` and `models/vacuum/vacuum.py:856` read it too.
+
+### `.build.dr_tf_inner_bore` is written twice and evaluated once
+
+`build.py:1911-1913` computes it from the stacked-up outboard radius; `:1949-1955`
+recomputes it *verbatim* inside the "if the ripple is too large, move the leg" branch.
+The first is a `redundant-duplicate-write`: when the branch is taken the second
+overwrites it, and when it is not the two are equal. The port evaluates it once, at the
+final `.build.r_tf_outboard_mid` — the same resolution `tf_outboard_edge_ripple` uses
+one slot up, for the same source's other duplicated call.
+
+Read by `models/structure.py:61` and `models/costs/costs_2015.py:601`.
+
+### validation
+
+`TestTfTopHeightSingleNull`, `TestTfTopHeightDoubleNull` and `TestDzBlktUpper` are new
+Tier-1 contracts; `calculate_dr_tf_inner_bore` joins **`TestOutboardBuildChain`** rather
+than getting one of its own, because two of its four arguments
+(`.build.r_tf_outboard_mid`, `.build.dr_tf_outboard`) are produced inside that stretch
+and cannot be set on `data` independently — at `i_tf_sup == 1` the source makes
+`dr_tf_outboard` equal to `dr_tf_inboard`, so a sample naming them separately is
+unreachable through PROCESS at all.
+
+**The vertical contracts need one new adapter technique, and it is worth recording.**
+`z_tf_inside_half` is an argument of both `tf_top_height` functions and is *computed* by
+`calculate_vertical_build` at `:807` before it is used at `:820`/`:840`, so it cannot be
+set on the `DataStructure`. Four of the eight fields `:807` sums —
+`dz_xpoint_divertor`, `dz_divertor`, `dz_shld_lower`, `dz_vv_lower` — appear nowhere in
+the `z_tf_top` block, so the *lower* build can be solved backwards for the requested
+half-height while every field the two expressions share keeps its sample value
+(`_LOWER_BUILD` / `_dz_shld_lower_for` in `tests/functional_process/models/
+test_build.py`). That is the same "move an upstream lever, keep PROCESS as the oracle"
+shape as the 2026-08-29 wave's `r_tf_inboard_out`, but exact rather than affine-by-luck:
+the stack at `:807` is a plain sum, so the solve is one subtraction with slope exactly 1.
+
+### measured
+
+- Tokamak MDA harness (`large_tokamak_eval`): **653 → 657 agreements, 16 disagreements
+  unchanged, 689 → 693 owned variables walked, 0 unaccounted.** Four new outputs, four
+  new agreements, nothing regressed.
+- Tokamak boundary: **360 → 356 inputs, 11 guesses unchanged**, and *zero* new reads —
+  every field the three new nodes declare was already on the boundary or already owned.
+  That is the cleanest run this measure has had; contrast the 2026-08-27 TF wave, where
+  four landed producers cost nine new declared reads.
+- `missing_producers_tokamak.txt`: **18 → 14 rows.**
+- `tests/functional_process/models/test_build.py`: 87 → green plain and at
+  `--fp-fuzz 12` (461 passed), gradients included.
+
+Stellarator untouched: `.tokamak.build` is not on its graph.
