@@ -4,7 +4,9 @@ status: draft
 confidence: high
 ---
 
-**Ported (4 of the 14 entered functions; the other 10 are out of scope with evidence).**
+**Ported (5 of the 14 entered functions; the other 9 are out of scope with evidence).**
+The fifth, `calculate_blkt_inboard_poloidal_plasma_angle`, joined 2026-08-30 — see
+§ the exclusion that did not hold.
 This is the tokamak wave's companion to `hcpb.md`: `blankets/blanket_library.py` has no
 registry row of its own and is reached **only as a base class** --
 `CCFE_HCPB(OutboardBlanket, InboardBlanket)` (`process/models/blankets/hcpb.py:25`)
@@ -30,7 +32,7 @@ and reproduced §B's fourteen exactly:
 | 5 | `BlanketLibrary.apply_coverage_factors` (`:532-584`) | **ported** (single-null arm) |
 | 6 | `OutboardBlanket.blkt_outboard_poloidal_plasma_angle` (`:3639-3670`) | no -- writes `.blanket.deg_blkt_outboard_poloidal_plasma` only |
 | 7 | `OutboardBlanket.f_deg_blkt_outboard_poloidal_plasma` (`:3672-3677`) | no -- writes `.blanket.f_deg_blkt_outboard_poloidal_plasma` only |
-| 8 | `InboardBlanket.calculate_blkt_inboard_poloidal_plasma_angle` (`:3772-3799`) | no -- `.blanket.deg_blkt_inboard_poloidal_plasma` only |
+| 8 | `InboardBlanket.calculate_blkt_inboard_poloidal_plasma_angle` (`:3772-3799`) | **ported 2026-08-30** -- writes `.blanket.deg_blkt_inboard_poloidal_plasma` only, and that field is read by a *different slot*, `.tokamak.divertor` |
 | 9 | `BlanketLibrary.pipe_hydraulic_diameter` (`:3337-3368`) | no -- `.fwbs.radius_blkt_channel` only |
 | 10 | `BlanketLibrary.set_blanket_module_geometry` (`:906-1081`) | no -- `.blanket.*`, `.fwbs.b_bz_liq`/`a_bz_liq`/`n_blkt_*_modules_poloidal` only |
 | 11 | `BlanketLibrary.calculate_elliptical_inboard_blkt_segment_poloidal` (`:1661-1730`) | no -- callee of 10 |
@@ -38,8 +40,24 @@ and reproduced §B's fourteen exactly:
 | 13 | `InboardBlanket.calculate_blanket_inboard_module_geometry` (`:3801-3828`) | no -- `.blanket.len_blkt_inboard_segment_toroidal` only |
 | 14 | `OutboardBlanket.calculate_blanket_outboard_module_geometry` (`:3721-3749`) | no -- `.blanket.len_blkt_outboard_segment_toroidal` only |
 
+### the exclusion that did not hold
+
+**Function 8 was excluded by a correct measurement of the wrong set, and it cost a
+producer.** The rule below intersects each excluded function's writes with
+*`.tokamak.ccfe_hcpb`'s* sixteen boundary variables and with what this slot's own
+routines read. `.blanket.deg_blkt_inboard_poloidal_plasma` is in neither, so the
+intersection really was empty — and `.tokamak.divertor.heat_flux_split` was reading the
+field all along, from another slot, getting the `DataStructure`'s `0.0` and subtending
+`(180 - 0)/2 = 90` degrees where PROCESS subtends `26.1`. The per-slot scope test cannot
+see a consumer outside the slot; `boundary.unproduced_but_computed` asks the same
+question of the assembled machine and does. See `_audit/optimise_design.md` §16.3.
+
+The other nine exclusions stand on the evidence below, unchanged. What has changed is
+that the evidence is no longer the only check: a tenth would now be reported the day
+something reads it.
+
 **The scope rule applied here is `next_steps.md`'s "minimal closure of functions that
-produces the slot's listed output variables", and the ten exclusions are a measurement,
+produces the slot's listed output variables", and the exclusions are a measurement,
 not a judgement.** Every write of functions 6-14 was collected and intersected with the
 sixteen variables `_audit/tokamak_boundary.md` §`.tokamak.ccfe_hcpb` lists and with the
 transitive reads of `CCFE_HCPB.component_masses`/`nuclear_heating_*`/`powerflow_calc`:
@@ -123,9 +141,26 @@ this same block produced, so both are `local-intermediate`, not a read of an own
 Verified line by line: the only fields read are the seven above, none of which this
 function writes.
 
+### `calculate_blkt_inboard_poloidal_plasma_angle` (`:3772-3799`)
+
+A `@staticmethod` with three parameters and no `self.data` at all -- the whole reason
+this one is a two-line port and the reason the omission was an omission and not a debt.
+
+| VarPath | read/write | classification | note |
+|---|---|---|---|
+| `.physics.rminor` | read | explicit-arg | `hcpb.py:66` |
+| `.blanket.dz_blkt_half` | read | explicit-arg | `hcpb.py:67` -- owned by `blanket_half_height` above, so this node sits after it in the same namespace |
+| `.build.dr_fw_plasma_gap_inboard` | read | explicit-arg | `hcpb.py:68` |
+| `.blanket.deg_blkt_inboard_poloidal_plasma` | write | explicit-arg | `hcpb.py:64`; read by `.tokamak.divertor.heat_flux_split` and by nothing else in the graph |
+
+`.blanket.f_deg_blkt_inboard_poloidal_plasma` (`hcpb.py:71-73`, the same angle over 360)
+is **not** ported: PROCESS writes it, but its only reader anywhere is
+`blanket_library.py:687-688`'s reporting, so owning it would add an output with no
+consumer instead of closing a hole.
+
 ## proposed signature(s)
 
-As written in `functional_process/models/blankets/blanket_library.py`. Four public pure
+As written in `functional_process/models/blankets/blanket_library.py`. Five public pure
 functions plus two module-private shell helpers:
 
 ```python
@@ -133,17 +168,32 @@ def calculate_blkt_half_height_single_null(...) -> float
 def calculate_elliptical_blkt_areas(...) -> tuple[float, float, float]
 def calculate_elliptical_blkt_volumes(...) -> tuple[float, float, float]
 def apply_coverage_factors_single_null(...) -> tuple[float, ...]   # six, PROCESS's order
+def calculate_blkt_inboard_poloidal_plasma_angle(
+    rminor, dz_blkt_half, dr_fw_plasma_gap_inboard,
+) -> float
 def _eshellarea(rshell, rmini, rmino, zminor)
 def _eshellvol(rshell, rmini, rmino, zminor, drin, drout, dz)
 ```
 
 ## cottax node
 
-Four `ExplicitFunction`s: `BlanketHalfHeightSingleNull`, `EllipticalBlanketAreas`,
-`EllipticalBlanketVolumes`, `BlanketCoverageFactorsSingleNull`. Edges within the unit:
-half-height -> areas and volumes (`.blanket.dz_blkt_half`); areas and volumes ->
-coverage factors. `component_volumes` itself becomes **no node at all** -- it is
+Five `ExplicitFunction`s: `BlanketHalfHeightSingleNull`, `EllipticalBlanketAreas`,
+`EllipticalBlanketVolumes`, `BlanketCoverageFactorsSingleNull` and (2026-08-30)
+`BlanketInboardPoloidalAngle`. Edges within the unit: half-height -> areas and volumes
+(`.blanket.dz_blkt_half`); areas and volumes -> coverage factors; half-height -> inboard
+poloidal angle. `component_volumes` itself becomes **no node at all** -- it is
 orchestration, and the tree's slot order carries what its call order carried.
+
+`BlanketInboardPoloidalAngle` is a slot of `.tokamak.ccfe_hcpb` in `hcpb.py`'s call
+position (after the four `component_volumes` slots, before the masses) even though the
+function is defined on the base class, because `CCFE_HCPB.run` is what calls it --
+`component_volumes` does not. Its outboard sibling stays unported and **must be a
+separate node if it is ever ported**: it reads `.divertor.deg_div_poloidal_plasma`,
+which `.tokamak.divertor.heat_flux_split` computes from *this* node's output, so one
+node owning both angles would be an SCC with the divertor. PROCESS has that cycle for
+real (it runs the divertor before the blanket, so `Divertor.run` reads the previous
+pass's inboard angle and `Caller.call_models`' ten-pass loop closes it); it is out of
+this graph only because nothing here reads the outboard angle.
 
 Assembled together with `hcpb.py`'s eleven nodes, `Blocking.scc` returns **15 blocks of
 size 1** in exactly PROCESS's own call order. There is no SCC in this subsystem once
@@ -151,8 +201,13 @@ size 1** in exactly PROCESS's own call order. There is no SCC in this subsystem 
 
 ## tier signal
 
-All four: **tier 1**. No internal iteration, no calls into other models, no CoolProp, no
+All five: **tier 1**. No internal iteration, no calls into other models, no CoolProp, no
 `scipy`, no data-dependent loop or early exit.
+
+`calculate_blkt_inboard_poloidal_plasma_angle`'s contract needs **no adapter at all** --
+PROCESS's `@staticmethod` takes the port's three parameters under the port's three
+names -- and its legacy point is `large_tokamak_eval` at convergence, reproducing
+PROCESS's own `deg_blkt_inboard_poloidal_plasma = 127.79709387998703`.
 
 ## switches touched
 

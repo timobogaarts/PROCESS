@@ -2412,3 +2412,110 @@ untouched by everything in this section. It wants its own look.
 - `condition_scale`'s "a fifth to a third of QP subproblems solving inaccurately"
   withdrawn: `optimal_inaccurate` appears **zero times in 1854 subproblems** across the
   whole SAND matrix. It was an OSQP artefact — ADMM reports `user_limit`.
+
+## 16. Missing producers (2026-08-30) — the graph did not compute everything PROCESS does
+
+`large_tokamak_nof` and `low_aspect_ratio_DEMO` failed every cold solve on constraint 72,
+violated by 386 and 548 against a bound they sit *on* at PROCESS's own optimum. Three
+theories were tried and discarded (degeneracy, seeding, an infeasible cold start) before
+the question that mattered got asked: **does the port's graph produce everything PROCESS
+computes?**
+
+It did not. Twenty-two boundary `input` entries on that file were fields PROCESS writes
+on every pipeline pass — twenty of them frozen at exactly `0.0` while PROCESS recomputed
+them.
+
+### 16.1 Why nothing caught it
+
+Stage A and C2 seed boundary inputs from PROCESS's **converged** `DataStructure`
+(`sand_harness.ground_truth`). That hands every missing producer exactly the right
+number, at the one place the harness looks hardest — 983 of 1039 variables agreed to
+1e-9 there. A missing producer is invisible to a warm harness by construction; only a
+cold start exposes it, and only if something asks.
+
+The check that asks is `boundary.unproduced_but_computed`, and its input is
+`boundary.computed_by_process`, which **measures** PROCESS's write set (snapshot the
+`DataStructure`, run one `Evaluators.fcnvmc1` at the cold `x`, snapshot again, diff)
+rather than grepping for a writer and reasoning about whether it is dormant. The
+measurement matters: `tokamak_boundary.md` classified its rows by grep and got them
+right, but a grep cannot see a writer that fires for a reason the reader did not
+anticipate, and it has to be redone by hand per configuration.
+
+### 16.2 The one that broke constraint 72
+
+`.physics.beta_poloidal_vol_avg`. `pfcoil/currents.py::calculate_equilibrium_currents`
+puts it inside `log(8*aspect) + beta_p + l_i/2 - 1.5` — an O(1) term in an O(1) bracket,
+`0.0` against PROCESS's `1.0874`. It propagates through the coil flux to the
+volt-second balance, the burn time (55x), the CS field and finally
+`stress_shear_cs_peak` (708x), which *is* constraint 72.
+
+`constraint_48` had recorded the hole since `batch5.md` — "not yet ported anywhere in
+`functional_process`" — and ported over it, because its own read was harmless. The read
+that was not harmless was in another file entirely. Landed as
+`calculate_poloidal_beta`/`PoloidalBeta`, `.tokamak.plasma_beta.poloidal`: the slot list
+ran `physics.py:3818-3822` then `3831-3835` and skipped `3825` between them.
+
+### 16.3 The five that followed, and the five shapes of the same hole
+
+Pinned at eighteen after the first landing (thirteen now). The next five were taken
+together, and each is a different reason a producer goes missing:
+
+| variable | PROCESS writes it at | producer landed | what the port used instead |
+|---|---|---|---|
+| `.physics.dlamie` | `physics.py:279-283`, inline in `Physics.run` | `.tokamak.physics.coulomb_logarithm` | `0.0` |
+| `.physics.pflux_plasma_surface_neutron_avg_mw` | `physics.py:835-837`, inline | `.tokamak.physics.plasma_surface_neutron_flux` | `0.0` |
+| `.fwbs.p_div_rad_total_mw` | `divertor.py:52-56` | `.tokamak.divertor.heat_flux_split` (extended) | `0.0` |
+| `.blanket.deg_blkt_inboard_poloidal_plasma` | `hcpb.py:64-69` | `.tokamak.ccfe_hcpb.inboard_poloidal_angle` | `0.0` |
+| `.buildings.dz_tf_cryostat` | `cryostat.py:58-60` | `.tokamak.cryostat` (extended) | **`2.5`** |
+
+- **Inline arithmetic with no staticmethod around it** (the two `physics.py` rows). The
+  wave that ported `physics.py` walked its `calculate_*` staticmethods; these two are
+  three lines each written straight into `run()`, and nothing pointed at them.
+- **A slot's boundary row is not the machine's** (`p_div_rad_total_mw`). `divertor.md`
+  dropped `incident_radiation_power` *deliberately and with the reason recorded* —
+  `tokamak_boundary.md`'s `.tokamak.divertor` row listed two reads and this was not one.
+  Four nodes in the assembled machine read it. Same story, same wording, for the blanket
+  angle: `blanket_library.py`'s module docstring called the two poloidal-angle helpers
+  out of scope because none of their writes reaches `.tokamak.ccfe_hcpb`'s own boundary
+  variables — while `.tokamak.divertor` was reading one of them. **The scope test wave 1
+  applied was per-slot, and this defect class is per-machine.**
+- **A device-conditional writer** (`dlamie`). Every grep hit outside `physics.py` is a
+  *read*, two of them in `stellarator.py`, and the only write is in `Physics.run`, which
+  `caller.py:272-275` returns before ever reaching on the stellarator arm. So the same
+  `VarPath` is a genuine boundary input on one machine and a missing producer on the
+  other, and it is correct for it to appear in `reference_boundary.txt` and not in
+  `reference_boundary_tokamak.txt`.
+- **An input PROCESS overwrites** (`dz_tf_cryostat`). The hard one. It is a real
+  `InputVariable` (`core/input.py:377`, default `2.5`), so the port was not reading a
+  suspicious `0.0` — it was reading a plausible number, `2.5` against PROCESS's
+  `5.5730055`. Twenty of the original twenty-two rows could have been found by grepping
+  the cold state for zeros; this one could not, which is the argument for measuring
+  PROCESS's write set instead. It is nonetheless a producer and not an input: the
+  overwrite is unconditional, `caller.py` runs the cryostat (`:351`) before the
+  buildings (`:370`), and every other read of the field in `process/` is inside an
+  `if output:` reporting block in `build.py`. No live read ever sees the input value.
+
+### 16.4 What it cost the boundary
+
+Tokamak `input` half **360 -> 356**, guesses unchanged at 11. Five rows left; one
+arrived — `.build.f_z_cryostat`, a genuine PROCESS input the cryostat's new vertical
+chain declares. Growth from a landed producer's own reads is the boundary working; the
+guess count not moving says none of the five closed a loop.
+
+One nearly did. `.blanket.deg_blkt_outboard_poloidal_plasma` is computed from
+`.divertor.deg_div_poloidal_plasma`, which is computed from the *inboard* angle, so a
+node owning both angles would read what the divertor writes and write what the divertor
+reads. PROCESS has that cycle for real — it runs the divertor before the blanket, so
+`Divertor.run` reads the previous pass's inboard angle and `Caller.call_models`'
+ten-pass loop closes it — and it stays out of this graph only because nothing here reads
+the outboard angle. Recorded rather than relied on.
+
+### 16.5 What is left
+
+Thirteen rows, `functional_process/missing_producers_tokamak.txt`, regenerated with
+`$PY -m functional_process.boundary --missing --write`. Four `.build.*` vertical-build
+fields, three `.costs.c22*`, `.fwbs.dewmkg` (which wants `vol_cryostat`, i.e. the rest of
+`external_cryo_geometry`), `.heat_transport.peakmva`, `.pf_coil.p_pf_electric_supplies_mw`,
+two `.pf_power.*` and `.tfcoil.str_wp` (whose producer is `stresscl`). The MDF-assembled
+graph shows three more that the MDA graph's boundary does not carry, because the
+constraint surface declares reads the MDA graph never makes.

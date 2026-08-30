@@ -9,7 +9,9 @@ confidence: medium
 `calculate_divertor_heat_load_wade` (`i_div_heat_load == WADE`, `n_divertors == 1`),
 both tier-1. Together they produce both variables `tokamak_boundary.md` lists for
 `.tokamak.divertor`: `.divertor.pflux_div_heat_load_mw` and
-`.fwbs.p_div_nuclear_heat_total_mw`.
+`.fwbs.p_div_nuclear_heat_total_mw` — plus, since 2026-08-30,
+`.fwbs.p_div_rad_total_mw`, which that list did not name and four other slots read
+(§ scope discipline).
 
 **Not** `process/models/stellarator/divertor.py` — that is a different model of a
 different device's divertor, already ported (registry unit #4) and half of the
@@ -19,11 +21,12 @@ brief.
 ## source
 
 `process/models/divertor.py`, 495 lines. In scope: `Divertor.run()` (29-104),
-`Divertor.single_divertor_angle` (106-113), `Divertor.divwade` (272-406). Out of scope:
+`Divertor.single_divertor_angle` (106-113), `Divertor.incident_neutron_power` (432-455),
+`Divertor.incident_radiation_power` (408-430, in scope since 2026-08-30),
+`Divertor.divwade` (272-406). Out of scope:
 `Divertor.divtart` (115-270, `PENG_CHAMBER` arm, UNPORTED — different device class, tight
-aspect ratio ST), `Divertor.incident_radiation_power`/`output()` (pure reporting plus a
-sibling of `incident_neutron_power` whose output is not on this pass's boundary — see
-§ scope discipline), `LowerDivertor`/`UpperDivertor` (457-495, double-null upper/lower
+aspect ratio ST), `output()` (pure reporting),
+`LowerDivertor`/`UpperDivertor` (457-495, double-null upper/lower
 split subclasses — not reached; `n_divertors == 1` on the reference run, see §
 switches touched).
 
@@ -40,12 +43,13 @@ switches touched).
 | `.divertor.n_divertors` | read | explicit-arg (arithmetic) | `:49` — a plain multiplier here (`incident_neutron_power`'s third argument), not a branch; contrast its role in `divwade` below |
 | `.fwbs.p_div_nuclear_heat_total_mw` | write | explicit-arg | `:46-50` |
 
-Not ported (same preamble, sibling call, not on `.tokamak.divertor`'s boundary):
+Ported 2026-08-30 (the same preamble's `incident_radiation_power` sibling call, dropped
+in wave 1 — see § scope discipline):
 
-| VarPath | read/write | note |
-|---|---|---|
-| `.physics.p_plasma_rad_mw` | read | `:53` |
-| `.fwbs.p_div_rad_total_mw` | write | `:52-56`, via `incident_radiation_power` (already a pure `@staticmethod`, trivially portable if ever needed — dropped only because nothing on this pass's boundary reads it) |
+| VarPath | read/write | classification | note |
+|---|---|---|---|
+| `.physics.p_plasma_rad_mw` | read | explicit-arg | `:54` — the *clipped* field, owned by `.tokamak.physics.total_radiation_power`, not one of `radiation_power.py`'s `_unclipped` mints |
+| `.fwbs.p_div_rad_total_mw` | write | explicit-arg | `:52-56`, via `incident_radiation_power` |
 
 `Divertor.divwade` (`:272-406`), single-null (`n_divertors == 1`) arm only:
 
@@ -67,19 +71,29 @@ Not ported (same preamble, sibling call, not on `.tokamak.divertor`'s boundary):
 
 ## scope discipline
 
-`.fwbs.p_div_rad_total_mw` is dropped even though `incident_radiation_power` (its
-producer) is already a trivial, already-pure `@staticmethod` sitting right next to
-`incident_neutron_power` — the one this record does port. Not ported because
-`tokamak_boundary.md`'s `.tokamak.divertor` row lists only two reads and this is not one
-of them; recorded explicitly so a future pass doesn't have to re-derive that it was a
-choice, not an oversight.
+**Wave 1 dropped `.fwbs.p_div_rad_total_mw`; 2026-08-30 put it back, and the reason the
+first decision was wrong is worth keeping.** The original entry read: dropped even
+though `incident_radiation_power` (its producer) is already a trivial, already-pure
+`@staticmethod` sitting right next to `incident_neutron_power` — the one this record
+does port — because `tokamak_boundary.md`'s `.tokamak.divertor` row lists only two reads
+and this is not one of them.
+
+That test was the wrong one. `tokamak_boundary.md` enumerated what *the slots then
+filled* read, so a slot could pass it while the assembled machine still had a hole: four
+nodes read `.fwbs.p_div_rad_total_mw` (`.tokamak.ccfe_hcpb.first_wall_radiation_powers`,
+`.tokamak.ccfe_hcpb.pumping_power`, `.power.component_thermal_powers`,
+`.power.delta_eta_step`) and none produced it, so all four saw the cold `0.0` against
+PROCESS's 10.98 MW on `large_tokamak_nof`. `boundary.unproduced_but_computed` is the
+check that names this class of hole from the machine's side rather than the slot's
+(`_audit/optimise_design.md` §16). The record is kept rather than rewritten because
+"dropped deliberately" was true and still insufficient.
 
 ## proposed signature(s)
 
 ```python
 def calculate_divertor_heat_flux_split(
-    deg_blkt_inboard_poloidal_plasma, p_plasma_neutron_mw, n_divertors,
-) -> tuple[float, float, float]:  # deg_div_poloidal_plasma, f_ster_div_single, p_div_nuclear_heat_total_mw
+    deg_blkt_inboard_poloidal_plasma, p_plasma_neutron_mw, p_plasma_rad_mw, n_divertors,
+) -> tuple[float, float, float, float]:  # deg_div_poloidal_plasma, f_ster_div_single, p_div_nuclear_heat_total_mw, p_div_rad_total_mw
 
 def calculate_divertor_heat_load_wade(
     rmajor, rminor, aspect, b_plasma_toroidal_on_axis, b_plasma_poloidal_average,

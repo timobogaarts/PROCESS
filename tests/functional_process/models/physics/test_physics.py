@@ -26,6 +26,8 @@ from functional_process.models.physics.physics import (
     calculate_beta_limit_from_norm,
     calculate_beta_norm_max_wesson,
     calculate_continuous_plant_ramp_times,
+    calculate_coulomb_logarithm_ion_electron,
+    calculate_pflux_plasma_surface_neutron_avg_mw,
     calculate_plasma_energy_from_beta,
     calculate_pulsed_plant_ramp_times,
     calculate_separatrix_power,
@@ -484,6 +486,22 @@ def _reference_thermal_beta(beta_total_vol_avg, beta_fast_alpha, beta_beam):
     return beta_total_vol_avg - beta_fast_alpha - beta_beam
 
 
+def _reference_coulomb_logarithm_ion_electron(
+    nd_plasma_electrons_vol_avg, temp_plasma_electron_vol_avg_kev
+):
+    """`physics.py:279-283`, transcribed."""
+    return (
+        31.3
+        - (np.log(nd_plasma_electrons_vol_avg) / 2.0)
+        + np.log(temp_plasma_electron_vol_avg_kev * 1000.0)
+    )
+
+
+def _reference_pflux_plasma_surface_neutron_avg_mw(p_neutron_total_mw, a_plasma_surface):
+    """`physics.py:835-837`, transcribed."""
+    return p_neutron_total_mw / a_plasma_surface
+
+
 class TestBetaNormMaxWesson(Tier1Contract):
     """`beta_N_max = 4 * l_i`, `physics.py:3941-3974`.
 
@@ -619,4 +637,79 @@ class TestThermalBeta(Tier1Contract):
         "beta_total_vol_avg": (0.005, 0.15),
         "beta_fast_alpha": (0.0, 0.02),
         "beta_beam": (0.0, 0.02),
+    }
+
+
+class TestCoulombLogarithmIonElectron(Tier1Contract):
+    """`ln(Lambda)_ie = 31.3 - ln(n_e)/2 + ln(T_e[eV])`, `physics.py:279-283`.
+
+    Added 2026-08-30 with the `.physics.dlamie` producer. The reference is transcribed
+    rather than called because PROCESS writes these two lines inline in `Physics.run`
+    with no staticmethod around them -- which is precisely why the field had no producer
+    here (see the port function's docstring).
+
+    The legacy point is `large_tokamak_eval` at convergence, and it reproduces PROCESS's
+    own `dlamie = 17.834316405099152` on that run.
+    """
+
+    audit_record = "models/physics/physics.md"
+    reference = _reference_coulomb_logarithm_ion_electron
+    ported = calculate_coulomb_logarithm_ion_electron
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            nd_plasma_electrons_vol_avg=7.675162157425027e19,
+            temp_plasma_electron_vol_avg_kev=12.430016341290427,
+        ),
+        *fuzz_samples(
+            {
+                "nd_plasma_electrons_vol_avg": (1.0e19, 5.0e20),
+                "temp_plasma_electron_vol_avg_kev": (1.0, 40.0),
+            },
+            count=5,
+            seed=30,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "nd_plasma_electrons_vol_avg": (1.0e19, 5.0e20),
+        "temp_plasma_electron_vol_avg_kev": (1.0, 40.0),
+    }
+
+
+class TestPfluxPlasmaSurfaceNeutronAvgMw(Tier1Contract):
+    """`pflux = p_neutron_total_mw / a_plasma_surface`, `physics.py:835-837`.
+
+    Added 2026-08-30 with the producer. The legacy point is `large_tokamak_eval` at
+    convergence and reproduces PROCESS's `1.0911547345980364` there; the value the pin
+    quotes (`0.71479842`) is `large_tokamak_nof`'s, a different run of a different file.
+
+    The fuzz bounds keep `a_plasma_surface` well away from zero: the division has no
+    guard in PROCESS and none here, and a surface area of zero is not a plasma.
+    """
+
+    audit_record = "models/physics/physics.md"
+    reference = _reference_pflux_plasma_surface_neutron_avg_mw
+    ported = calculate_pflux_plasma_surface_neutron_avg_mw
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            p_neutron_total_mw=1280.8441039331703,
+            a_plasma_surface=1173.8427771245592,
+        ),
+        *fuzz_samples(
+            {
+                "p_neutron_total_mw": (100.0, 3000.0),
+                "a_plasma_surface": (100.0, 3000.0),
+            },
+            count=5,
+            seed=31,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "p_neutron_total_mw": (100.0, 3000.0),
+        "a_plasma_surface": (100.0, 3000.0),
     }

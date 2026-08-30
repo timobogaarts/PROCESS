@@ -1,4 +1,4 @@
-"""The CCFE HCPB blanket's namespace -- the fifteen slots of `.tokamak.ccfe_hcpb`.
+"""The CCFE HCPB blanket's namespace -- the sixteen slots of `.tokamak.ccfe_hcpb`.
 
 Beside the nodes it names (`model_tree_design.md` §11), and spanning two modules for the
 same reason `tfcoil/namespace.py` spans three: `blankets/blanket_library.py` is reached
@@ -6,7 +6,9 @@ purely as a **base class** of `CCFE_HCPB` (`hcpb.py:25`), never by any call in
 `caller.py` (`tokamak_call_surface.md` §A row 10). It is this occupant's body, not its
 sibling, which is why its four nodes are slots here rather than a namespace of their own.
 
-**Fifteen slots, and every one of them is now total.** The two `*SphericalTokamak`
+**Sixteen slots, and every one of them is now total.** (The sixteenth,
+`inboard_poloidal_angle`, arrived 2026-08-30 as a missing producer -- see its own
+docstring.) The two `*SphericalTokamak`
 occupants (`NuclearHeatingMagnetsSphericalTokamak`,
 `NuclearHeatingShieldSphericalTokamak`) were written, harness-tested and deliberately
 *unregistered* until 2026-08-27, because a machine at `.physics.itart == 1` also needs
@@ -36,6 +38,7 @@ from functional_process.models.blankets.blanket_library import (
     BlanketAreas,
     BlanketCoverageFactors,
     BlanketHalfHeight,
+    BlanketInboardPoloidalAngle,
     BlanketVolumes,
 )
 from functional_process.models.blankets.hcpb import (
@@ -91,6 +94,22 @@ class CcfeHcpb(ModelNamespace):
     """`.divertor.n_divertors` -- both arms written (2026-08-27). Owns
     `.fwbs.vol_blkt_total`, which is what the whole of `blanket_library.py` exists to
     reach."""
+
+    # ---- hcpb.py: the poloidal angles run() computes next ---------------------------
+
+    inboard_poloidal_angle: BlanketInboardPoloidalAngle = BlanketInboardPoloidalAngle()
+    """`.blanket.deg_blkt_inboard_poloidal_plasma` (`hcpb.py:64-69`, calling the base
+    class's `blanket_library.py:3771-3797`). Unswitched, so a default.
+
+    Added 2026-08-30 as a missing producer: `.tokamak.divertor.heat_flux_split` reads
+    this angle and is the only reader of it, so with nothing owning it the divertor sized
+    itself on `(180 - 0)/2 = 90` degrees against PROCESS's `26.1`. It sits between
+    `component_volumes`' four slots and the masses because that is where `run()` computes
+    it, and it needs `.blanket.dz_blkt_half` from `blanket_half_height` above.
+
+    The outboard sibling is deliberately absent and would have to be a separate slot --
+    see the class's own docstring for the cycle that folding them together would close.
+    """
 
     # ---- hcpb.py: masses ------------------------------------------------------------
 

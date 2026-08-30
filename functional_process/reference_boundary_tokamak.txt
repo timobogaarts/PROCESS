@@ -14,7 +14,6 @@ guess ^guess.tfcoil.dr_tf_plasma_case
 guess ^guess.tfcoil.dx_tf_wp_primary_toroidal
 guess ^guess.times.t_plant_pulse_burn
 guess ^guess.vacuum.d_duct
-input .blanket.deg_blkt_inboard_poloidal_plasma
 input .build.dr_blkt_inboard
 input .build.dr_blkt_outboard
 input .build.dr_bore
@@ -43,6 +42,7 @@ input .build.dz_shld_vv_gap
 input .build.dz_tf_upper_lower_midplane
 input .build.dz_vv_lower
 input .build.dz_vv_upper
+input .build.f_z_cryostat
 input .build.fcspc
 input .build.fseppc
 input .build.gapomin
@@ -55,7 +55,6 @@ input .build.z_tf_top
 input .buildings.admv
 input .buildings.clh2
 input .buildings.conv
-input .buildings.dz_tf_cryostat
 input .buildings.esbldgm3
 input .buildings.fndt
 input .buildings.hccl
@@ -217,7 +216,6 @@ input .fwbs.i_blkt_coolant_type
 input .fwbs.life_fw_fpy
 input .fwbs.m_blkt_vanadium
 input .fwbs.outlet_temp_liq
-input .fwbs.p_div_rad_total_mw
 input .fwbs.p_fw_hcd_nuclear_heat_mw
 input .fwbs.qnuc
 input .fwbs.radius_fw_channel
@@ -285,7 +283,6 @@ input .physics.beta_beam
 input .physics.beta_total_vol_avg
 input .physics.burnup_in
 input .physics.csawth
-input .physics.dlamie
 input .physics.ejima_coeff
 input .physics.f_c_plasma_non_inductive
 input .physics.f_nd_alpha_thermal_electron
@@ -306,7 +303,6 @@ input .physics.itart
 input .physics.kappa
 input .physics.nd_plasma_electrons_vol_avg
 input .physics.p_beam_alpha_mw
-input .physics.pflux_plasma_surface_neutron_avg_mw
 input .physics.plasma_res_factor
 input .physics.q0
 input .physics.q95

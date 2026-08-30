@@ -3120,3 +3120,63 @@ reads. Neither is written.
 `sand_harness.mda_env`'s own call has always used keywords and nothing else in the repo
 called `reference_problem` at all -- the ST probe was its first caller. Fixed to
 keywords.
+
+## 19. Missing producers, 2026-08-30 — six landed, thirteen left, and a rule that has to change
+
+The full account is `optimise_design.md` §16; this is the punch list.
+
+**What the measure is.** `boundary.unproduced_but_computed` intersects the assembled
+graph's unowned `input` reads with PROCESS's *measured* write set
+(`boundary.computed_by_process`: snapshot, one `Evaluators.fcnvmc1`, snapshot, diff).
+Anything in that intersection is a read the graph serves from the `DataStructure` while
+PROCESS recomputes it. Twenty-two on `large_tokamak_nof` when first asked; **thirteen
+now**, pinned in `functional_process/missing_producers_tokamak.txt` and regenerated with
+`$PY -m functional_process.boundary --missing --write`. The number may only go down.
+
+**Landed.** `.physics.beta_poloidal_vol_avg` (the one that broke every cold tokamak
+solve on constraint 72), then `.physics.dlamie`,
+`.physics.pflux_plasma_surface_neutron_avg_mw`, `.fwbs.p_div_rad_total_mw`,
+`.blanket.deg_blkt_inboard_poloidal_plasma` and `.buildings.dz_tf_cryostat`. Tokamak
+boundary `input` half 361 -> 356; the guess half never moved, so none of the six closed
+a loop.
+
+**The rule that has to change, and it is not a one-off.** Four of the six were dropped
+by wave 1 *deliberately, with the reason written down* — `divertor.md` § scope
+discipline, `blanket_library.md`'s ten-exclusion table, `cryostat.md` § scope
+discipline, and `constraint_48`'s docstring for the beta. Every one of those reasons
+was the same test: **does this write appear in `tokamak_boundary.md`'s row for the slot
+I am porting?** That test is per-slot and every one of these defects is per-machine —
+the consumer was in a different slot each time. The audit records now say so where the
+old reasoning stands, rather than being rewritten; what changed is that
+`test_no_new_boundary_input_is_something_process_computes` asks the machine's question,
+so the next one is reported instead of reasoned past.
+
+### 19.1 The thirteen left, grouped by the closure each needs
+
+| rows | what it needs |
+|---|---|
+| `.build.dr_tf_inner_bore`, `.build.dz_blkt_upper`, `.build.dz_tf_upper_lower_midplane`, `.build.z_tf_top` | the vertical-build block of `models/build.py` |
+| `.costs.c2214`, `.costs.c2222`, `.costs.c2252` | three unported cost accounts |
+| `.fwbs.dewmkg` | the *rest* of `Cryostat.external_cryo_geometry` — `vol_cryostat_internal`, `vol_cryostat`, then `dewmkg`; `.build.dr_cryostat` is the only new read. The smallest of the five packages here, and `structure.md` records `.tokamak.structure` reading the field |
+| `.heat_transport.peakmva`, `.pf_coil.p_pf_electric_supplies_mw`, `.pf_power.ensxpfm`, `.pf_power.srcktpm` | `models/power.py`'s `acpow` and the PF power supplies, unported as a block |
+| `.tfcoil.str_wp` | `stresscl`, the TF stress chain — already named in `test_boundary.py` as the one non-input among the TF wave's nine new reads |
+
+Three more appear on the **MDF-assembled** graph and not on this one
+(`.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp`, `.pf_coil.temp_cs_superconductor_margin`),
+because the constraint surface declares reads the MDA graph never makes. Equally
+missing, equally worth porting, deliberately not merged into one list.
+
+### 19.2 Two things the wave found that are not rows
+
+- **A field can be a genuine input on one machine and a missing producer on another.**
+  `.physics.dlamie`'s only writer is `Physics.run`, which `caller.py:272-275` returns
+  before reaching on the stellarator arm — so PROCESS's own stellarator computes with a
+  `dlamie` nothing wrote. It stays an `input` row of `reference_boundary.txt` and is
+  gone from `reference_boundary_tokamak.txt`, correctly.
+- **An `InputVariable` PROCESS overwrites is a producer, not an input**, and deciding
+  which takes three measurements, not one grep: is the write unconditional, does it
+  precede every *live* read in `caller.py`'s order, and is every other read inside an
+  `if output:` block. `.buildings.dz_tf_cryostat` passes all three;
+  `cryostat.md` § scope discipline carries the worked form, and
+  `tokamak_boundary.md` § "Five with no producer anywhere on the traced surface" is
+  where the opposite call is made for other fields.

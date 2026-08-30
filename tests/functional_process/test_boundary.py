@@ -187,7 +187,25 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """360 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """356 inputs and 11 guesses, against the stellarator's 297 and 6.
+
+    **360 -> 356 on 2026-08-30**, five producers landing against one new declared read,
+    and the guess half unmoved. The five are the second half of the same wave as the row
+    below: `.blanket.deg_blkt_inboard_poloidal_plasma`
+    (`.tokamak.ccfe_hcpb.inboard_poloidal_angle`), `.buildings.dz_tf_cryostat`
+    (`.tokamak.cryostat`, extended), `.fwbs.p_div_rad_total_mw`
+    (`.tokamak.divertor.heat_flux_split`, extended), `.physics.dlamie`
+    (`.tokamak.physics.coulomb_logarithm`) and
+    `.physics.pflux_plasma_surface_neutron_avg_mw`
+    (`.tokamak.physics.plasma_surface_neutron_flux`). The one addition,
+    `.build.f_z_cryostat`, is a genuine PROCESS input (`core/input.py:443`) that the
+    cryostat's new vertical chain declares -- growth from a landed producer's own reads,
+    the good kind.
+
+    That the guess count did **not** move is the second half of the claim: none of the
+    five closed a loop, in particular not the blanket angle, whose outboard sibling
+    would have (see `BlanketInboardPoloidalAngle`'s docstring for why that one stays
+    out).
 
     **361 -> 360 on 2026-08-30**, and the one row that left is the point of the whole
     measure: `.physics.beta_poloidal_vol_avg` stopped being an input because
@@ -291,13 +309,28 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (360, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (356, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The eighteen missing producers on the MDA graph, pinned so it can only go down.
+    """The thirteen missing producers on the MDA graph, pinned so it can only go down.
+
+    **Eighteen -> thirteen on 2026-08-30.** Five landed in one pass, and the five are
+    worth naming because they are five different shapes of the same hole:
+
+    | row | producer | what the port was using instead |
+    |---|---|---|
+    | `.physics.dlamie` | `.tokamak.physics.coulomb_logarithm` | `0.0` -- and the only writer in `process/` is `Physics.run`, which a stellarator never reaches, so the same field is a genuine input on one machine and a missing producer on the other |
+    | `.physics.pflux_plasma_surface_neutron_avg_mw` | `.tokamak.physics.plasma_surface_neutron_flux` | `0.0`, and the whole first-wall neutron flux is `ffwal` times it |
+    | `.fwbs.p_div_rad_total_mw` | `.tokamak.divertor.heat_flux_split` | `0.0`, read by four nodes; the producer was one already-pure `@staticmethod` wave 1 chose not to port |
+    | `.blanket.deg_blkt_inboard_poloidal_plasma` | `.tokamak.ccfe_hcpb.inboard_poloidal_angle` | `0.0`, which made the divertor subtend 90 degrees instead of 26 |
+    | `.buildings.dz_tf_cryostat` | `.tokamak.cryostat` | **`2.5`, not `0.0`** -- a PROCESS `InputVariable` that `external_cryo_geometry` overwrites with `5.573` before the one live reader runs |
+
+    The last of those is the reason this check is asked of PROCESS's *write set* rather
+    than of the seeds: twenty of the original twenty-two rows sat at exactly `0.0` and
+    could have been found by looking for zeros. That one could not.
 
     **This is the check that was missing, and it is the reason it was missing.** A
     boundary `input` entry is either one of the ~109 genuine `IN.DAT` inputs or a read
@@ -319,7 +352,7 @@ def test_no_new_boundary_input_is_something_process_computes():
     port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
     Only a cold start exposes it, and only if something asks this question.
 
-    **Measured on `driven_graph`, like every other pin in this file** -- eighteen rows.
+    **Measured on `driven_graph`, like every other pin in this file** -- thirteen rows.
     The MDF-assembled graph shows **three more** (`.tfcoil.sig_tf_case`,
     `.tfcoil.sig_tf_wp`, `.pf_coil.temp_cs_superconductor_margin`), because the
     constraint surface declares reads the MDA graph never makes. They are equally

@@ -29,7 +29,7 @@ unknown (`mda.driven_graph`), so the split is mechanical and exact:
 
 The reference machine today: **297 inputs**, and 6 guesses on top of that once
 `driven_graph` has assigned its problems' drivers. The conventional tokamak
-(`TOKAMAK_INPUT_FILE`) is **349 inputs and 11 guesses**, pinned separately in
+(`TOKAMAK_INPUT_FILE`) is **356 inputs and 11 guesses**, pinned separately in
 `reference_boundary_tokamak.txt` -- and the comparison between the two files is the point
 of having a second one: a tokamak reads *more* than a stellarator, from a graph with more
 nodes in it, which is the honest shape of a device whose device-specific namespace is
@@ -86,14 +86,16 @@ MISSING_PRODUCERS_PIN = os.path.join(
 """Boundary `input` entries that PROCESS **computes** -- one written path per line.
 
 The list `unproduced_but_computed` returns for `MISSING_PRODUCERS_INPUT_FILE`. Pinned
-rather than asserted empty because it is not empty: twenty-one producers are still
-missing on `large_tokamak_nof` (twenty-two before `.physics.beta_poloidal_vol_avg`
-landed, `optimise_design.md` §16). **This number may only go down.** A new entry means a
-node stopped writing something PROCESS writes -- the silent-stale-read defect this
-module exists to catch, and the one that has eight recorded instances none of which a
-check found.
+rather than asserted empty because it is not empty: thirteen producers are still missing
+on `large_tokamak_nof` -- twenty-two when the measurement was first taken, eighteen once
+`.physics.beta_poloidal_vol_avg` and the three constraint-surface-only rows were
+accounted for, and thirteen since the five of 2026-08-30 (`optimise_design.md` §16).
+**This number may only go down.** A new entry means a node stopped writing something
+PROCESS writes -- the silent-stale-read defect this module exists to catch, and the one
+that has eight recorded instances none of which a check found.
 
-Regenerate with `$PY -m functional_process.boundary --missing --write`.
+Regenerate with `$PY -m functional_process.boundary --missing --write` (`missing_
+producers` recomputes it; `write_missing_producers_pin` writes it).
 """
 
 MISSING_PRODUCERS_INPUT_FILE = "tests/regression/input_files/large_tokamak_nof.IN.DAT"
@@ -334,6 +336,41 @@ def write_pin(graph: Graph, path: str = PIN) -> tuple[tuple[str, VarPath], ...]:
     return rows
 
 
+def missing_producers(input_file: str = MISSING_PRODUCERS_INPUT_FILE) -> tuple[str, ...]:
+    """The written paths `MISSING_PRODUCERS_PIN` holds, recomputed from `input_file`.
+
+    Exactly what `test_no_new_boundary_input_is_something_process_computes` asserts,
+    lifted out of the test so `--missing --write` can regenerate the pin the same way
+    the test reads it. Expensive (one `SingleRun`, one reference solve and one graph
+    assembly, tens of seconds) and deliberately not cached: it is run twice a year, when
+    a producer lands.
+    """
+    from functional_process.indat import graph_for, machine_from_indat
+    from functional_process.mda import driven_graph
+    from functional_process.sand import iteration_variable_path
+    from functional_process.sand_harness import reference_run
+
+    graph = driven_graph(graph_for(machine_from_indat(input_file)))
+    design = {iteration_variable_path(i) for i in reference_run(input_file).ixc}
+    computed = computed_by_process(input_file)
+    return tuple(
+        var.path_str() for var in unproduced_but_computed(graph, computed, design)
+    )
+
+
+def write_missing_producers_pin(
+    rows: Iterable[str], path: str = MISSING_PRODUCERS_PIN
+) -> None:
+    """Regenerate `MISSING_PRODUCERS_PIN`. Generated, never typed, like every pin here.
+
+    No comment header, unlike `write_pin`: the test that reads this file takes every
+    non-blank line as a path, and the explanation belongs where the number is defended
+    (`MISSING_PRODUCERS_PIN`'s own docstring and the test's).
+    """
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.writelines(f"{name}\n" for name in rows)
+
+
 def read_pin(path: str = PIN) -> tuple[tuple[str, str], ...]:
     """The pin as `(category, written path)` pairs, comments and blanks dropped."""
     with open(path, encoding="utf-8") as handle:
@@ -376,6 +413,20 @@ def _machine_graph(argv: list[str]):
 
 def _main(argv: list[str]) -> int:
     from functional_process.mda import driven_graph
+
+    if "--missing" in argv:
+        # A different measurement of a different file, so it takes the whole
+        # invocation rather than adding a column to the boundary print-out: this is
+        # `MISSING_PRODUCERS_INPUT_FILE`'s missing producers, not
+        # `_machine_graph`'s boundary.
+        rows = missing_producers()
+        print(f"{len(rows)} missing producer(s) on {MISSING_PRODUCERS_INPUT_FILE}")
+        for name in rows:
+            print(f"  {name}")
+        if "--write" in argv:
+            write_missing_producers_pin(rows)
+            print(f"wrote {MISSING_PRODUCERS_PIN}")
+        return 0
 
     graph, pin = _machine_graph(argv)
     driven = driven_graph(graph)

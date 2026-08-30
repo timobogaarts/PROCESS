@@ -39,6 +39,7 @@ from functional_process.models.blankets.blanket_library import (
     apply_coverage_factors_single_null,
     calculate_blkt_half_height_double_null,
     calculate_blkt_half_height_single_null,
+    calculate_blkt_inboard_poloidal_plasma_angle,
     calculate_dshaped_blkt_areas,
     calculate_dshaped_blkt_volumes,
     calculate_elliptical_blkt_areas,
@@ -522,4 +523,44 @@ class TestDshapedBlktVolumes(Tier1Contract):
         **_DSHAPED_GEOMETRY_FUZZ,
         "dr_blkt_outboard": (0.8, 1.2),
         "dz_blkt_upper": (0.5, 1.2),
+    }
+
+
+class TestBlktInboardPoloidalPlasmaAngle(Tier1Contract):
+    """`calculate_blkt_inboard_poloidal_plasma_angle` ->
+    `BlanketLibrary.calculate_blkt_inboard_poloidal_plasma_angle`, unchanged.
+
+    Added 2026-08-30 with the producer. A `@staticmethod` with the same three
+    parameters, so the reference is PROCESS's own callable with no adapter at all --
+    which makes the point about why this one was missing: the *function* was always
+    trivially portable, and what was absent was anyone asking whether the field it
+    writes had an owner (see the port function's docstring).
+
+    The legacy point is `large_tokamak_eval` at convergence and reproduces PROCESS's own
+    `deg_blkt_inboard_poloidal_plasma = 127.79709387998703`.
+
+    `rminor + dr_fw_plasma_gap_inboard` is the divisor and is bounded away from zero by
+    both fuzz ranges; PROCESS has no guard there either, and a machine with no minor
+    radius is not a case worth agreeing on.
+    """
+
+    audit_record = _AUDIT_RECORD
+    reference = staticmethod(
+        CCFE_HCPB.calculate_blkt_inboard_poloidal_plasma_angle,
+    )
+    ported = calculate_blkt_inboard_poloidal_plasma_angle
+
+    samples = [
+        legacy_sample(
+            "large_tokamak_eval-converged",
+            rminor=2.6666666666666665,
+            dz_blkt_half=5.953275248730413,
+            dr_fw_plasma_gap_inboard=0.25,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "rminor": (1.0, 4.0),
+        "dz_blkt_half": (1.0, 10.0),
+        "dr_fw_plasma_gap_inboard": (0.05, 1.0),
     }
