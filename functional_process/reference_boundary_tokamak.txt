@@ -282,7 +282,6 @@ input .physics.alphat
 input .physics.aspect
 input .physics.b_plasma_toroidal_on_axis
 input .physics.beta_beam
-input .physics.beta_poloidal_vol_avg
 input .physics.beta_total_vol_avg
 input .physics.burnup_in
 input .physics.csawth

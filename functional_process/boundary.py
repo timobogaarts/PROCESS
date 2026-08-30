@@ -79,6 +79,31 @@ which is between the two files, not inside one.
 """
 
 TOKAMAK_INPUT_FILE = "tests/regression/input_files/large_tokamak_eval.IN.DAT"
+
+MISSING_PRODUCERS_PIN = os.path.join(
+    os.path.dirname(__file__), "missing_producers_tokamak.txt"
+)
+"""Boundary `input` entries that PROCESS **computes** -- one written path per line.
+
+The list `unproduced_but_computed` returns for `MISSING_PRODUCERS_INPUT_FILE`. Pinned
+rather than asserted empty because it is not empty: twenty-one producers are still
+missing on `large_tokamak_nof` (twenty-two before `.physics.beta_poloidal_vol_avg`
+landed, `optimise_design.md` §16). **This number may only go down.** A new entry means a
+node stopped writing something PROCESS writes -- the silent-stale-read defect this
+module exists to catch, and the one that has eight recorded instances none of which a
+check found.
+
+Regenerate with `$PY -m functional_process.boundary --missing --write`.
+"""
+
+MISSING_PRODUCERS_INPUT_FILE = "tests/regression/input_files/large_tokamak_nof.IN.DAT"
+"""Measured on the optimising tokamak, not `TOKAMAK_INPUT_FILE`.
+
+`large_tokamak_eval` is an evaluation-mode run (`fsolve` over the equalities alone), so
+its pipeline exercises less; the optimising file is the one whose cold start these holes
+actually broke.
+"""
+
 """The conventional tokamak this port measures itself against, as `indat`'s
 `REFERENCE_INPUT_FILE` is the stellarator. Named here because `TOKAMAK_PIN` is a pin
 *of* it and the two must not drift; `--machine` on this module's command line defaults
@@ -153,6 +178,113 @@ def check_boundary(graph: Graph, allowed: Iterable[VarPath], pin: str = PIN) -> 
         "A `guess` orphan is a newly driven problem -- expected, and fixed by "
         f"regenerating the pin ({pin})."
     )
+
+
+def computed_by_process(input_file: str) -> frozenset[tuple[str, str]]:
+    """`{(area, field)}` that PROCESS's own pipeline **writes** in one pass from cold.
+
+    Measured, not grepped. `tokamak_boundary.md` classified its boundary rows by
+    searching `process/` for a writer and reasoning about whether that writer was
+    dormant on the run -- correct there, but it cannot see a writer that fires for a
+    reason the reader did not anticipate, and it has to be redone by hand per
+    configuration. This runs the pipeline instead: snapshot every numeric field of every
+    area of a `SingleRun`'s `DataStructure` before any model has run, evaluate once at
+    the cold `x`, snapshot again, and return what moved.
+
+    Expensive -- one `SingleRun` plus one `Evaluators.fcnvmc1`, several seconds -- so
+    callers pin the result rather than recomputing it per test.
+    """
+    # Imported here, not at module scope: this module is imported by graph assembly,
+    # and `process.main` pulls in the whole of PROCESS. Same reason `_machine_graph`
+    # below defers its own imports.
+    import numpy as np  # noqa: PLC0415
+
+    from process.core.solver.evaluators import Evaluators  # noqa: PLC0415
+    from process.core.solver.iteration_variables import (  # noqa: PLC0415
+        load_iteration_variables,
+    )
+    from process.main import SingleRun  # noqa: PLC0415
+
+    def snapshot(data):
+        out = {}
+        for area_name in dir(data):
+            if area_name.startswith("_"):
+                continue
+            area = getattr(data, area_name)
+            if not hasattr(area, "__dataclass_fields__"):
+                continue
+            for field in area.__dataclass_fields__:
+                try:
+                    out[area_name, field] = np.array(
+                        getattr(area, field), dtype=float, copy=True
+                    )
+                except (TypeError, ValueError, AttributeError):  # noqa: PERF203
+                    continue
+        return out
+
+    run = SingleRun(input_file, "vmcon")
+    data = run.data
+    before = snapshot(data)
+    n = int(data.numerics.n_iteration_variables)
+    m = int(data.numerics.n_equality_constraints) + int(
+        data.numerics.n_inequality_constraints
+    )
+    load_iteration_variables(data)
+    x = np.array(data.numerics.xcm[:n], dtype=float)
+    Evaluators(run.models, data, x).fcnvmc1(n, m, x, 1)
+    after = snapshot(data)
+
+    moved = set()
+    for key, was in before.items():
+        now = after.get(key)
+        if now is None or now.shape != was.shape:
+            moved.add(key)
+            continue
+        clean = {"nan": 0.0, "posinf": 0.0, "neginf": 0.0}
+        if not np.allclose(
+            np.nan_to_num(was, **clean),
+            np.nan_to_num(now, **clean),
+            rtol=1e-12,
+            atol=0.0,
+        ):
+            moved.add(key)
+    return frozenset(moved)
+
+
+def unproduced_but_computed(
+    graph: Graph, computed: Iterable[tuple[str, str]], design: Iterable[VarPath] = ()
+) -> tuple[VarPath, ...]:
+    """Boundary `input` entries that PROCESS **computes** -- i.e. missing producers.
+
+    This is the discrimination this module's docstring asks for and could not make.
+    `boundary` counts 297 inputs on the stellarator and 349 on the tokamak without
+    saying which of them are the "109 genuine inputs" and which are "a read whose
+    producer is not ported yet". A field PROCESS writes every pipeline pass is, by
+    construction, the second kind: nothing in the graph owns it, so it stays frozen at
+    whatever the seed supplied while PROCESS recomputes it.
+
+    **Why this is the check that was missing.** The eight recorded instances of the
+    silent-stale-read defect were all found downstream, by a consumer disagreeing. So
+    were the twenty-two found on `large_tokamak_nof` (`optimise_design.md` §16) -- and
+    those were *invisible* at the one place the harness looks hardest, because Stage A
+    and C2 seed boundary inputs from PROCESS's **converged** `DataStructure`, which
+    hands every missing producer the right answer. Only a cold start exposes them, and
+    only if somebody asks this question.
+
+    `design` names the run's iteration variables, which are boundary inputs on purpose:
+    the optimiser owns them, and PROCESS writes them for exactly that reason
+    (`set_scaled_iteration_variable`). Excluded rather than reported.
+    """
+    computed = frozenset(computed)
+    design = frozenset(design)
+    found = []
+    for kind, var in boundary(graph):
+        if kind != INPUT or var in design:
+            continue
+        keys = var.path_str().lstrip(".").split(".")
+        if len(keys) == 2 and (keys[0], keys[1]) in computed:
+            found.append(var)
+    return tuple(found)
 
 
 def orphaned_by(base: Graph, swapped: Graph) -> tuple[VarPath, ...]:

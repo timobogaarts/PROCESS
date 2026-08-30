@@ -8,26 +8,34 @@ exactly what the audit says it is. The list itself lives in
 `functional_process/reference_boundary.txt` and is generated, never typed.
 """
 
-import pytest
+from pathlib import Path
 
+import pytest
 from cottax.graph import Graph
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, unminted
 from cottax.tools.path import path_map
+
 from functional_process.boundary import (
     GUESSED,
     INPUT,
+    MISSING_PRODUCERS_INPUT_FILE,
+    MISSING_PRODUCERS_PIN,
     TOKAMAK_INPUT_FILE,
     TOKAMAK_PIN,
     boundary,
     category,
     check_boundary,
+    computed_by_process,
     counts,
     read_pin,
     readers_of,
+    unproduced_but_computed,
 )
 from functional_process.indat import GRAPH, graph_for, machine_from_indat
 from functional_process.mda import driven_graph
+from functional_process.sand import iteration_variable_path
+from functional_process.sand_harness import reference_run
 
 
 def V(*keys) -> VarPath:
@@ -179,7 +187,16 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """361 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """360 inputs and 11 guesses, against the stellarator's 297 and 6.
+
+    **361 -> 360 on 2026-08-30**, and the one row that left is the point of the whole
+    measure: `.physics.beta_poloidal_vol_avg` stopped being an input because
+    `.tokamak.plasma_beta.poloidal` landed. A producer arriving takes a row off the
+    boundary, which is exactly the direction this number is supposed to move -- and this
+    particular row had been sitting there as an unproduced read since `batch5.md`
+    recorded it, feeding `0.0` into `calculate_equilibrium_currents` and breaking every
+    cold tokamak solve (`optimise_design.md` §16, and
+    `test_no_new_boundary_input_is_something_process_computes` below).
 
     The two halves of the missing-producer wave (2026-08-27) moved the input half from
     347 to **361** together: the TF half +9, the CS/physics half −2 +7. Each half's own
@@ -274,5 +291,70 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (361, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (360, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
+
+
+# ================================================ boundary entries PROCESS computes
+def test_no_new_boundary_input_is_something_process_computes():
+    """The eighteen missing producers on the MDA graph, pinned so it can only go down.
+
+    **This is the check that was missing, and it is the reason it was missing.** A
+    boundary `input` entry is either one of the ~109 genuine `IN.DAT` inputs or a read
+    whose producer is not ported -- this module's docstring says exactly that and counts
+    them together, because nothing could tell them apart. A field PROCESS *writes* every
+    pipeline pass is definitionally the second kind: nothing in the graph owns it, so it
+    stays frozen at whatever the seed supplied while PROCESS recomputes it.
+
+    Twenty-two such rows were found on `large_tokamak_nof` on 2026-08-30, and the
+    damage was not subtle: `.physics.beta_poloidal_vol_avg` sat at `0.0` against
+    PROCESS's `1.0874` inside `calculate_equilibrium_currents`' O(1) bracket, and the
+    error propagated to the burn time (55x) and `stress_shear_cs_peak` (708x), which is
+    constraint 72, which is *active* at PROCESS's optimum. Every cold tokamak solve in
+    the matrix failed on it.
+
+    **None of the harness's existing stages could see this.** Stage A and C2 seed
+    boundary inputs from PROCESS's *converged* `DataStructure` (`sand_harness.
+    ground_truth`), which hands every missing producer exactly the right value -- so the
+    port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
+    Only a cold start exposes it, and only if something asks this question.
+
+    **Measured on `driven_graph`, like every other pin in this file** -- eighteen rows.
+    The MDF-assembled graph shows **three more** (`.tfcoil.sig_tf_case`,
+    `.tfcoil.sig_tf_wp`, `.pf_coil.temp_cs_superconductor_margin`), because the
+    constraint surface declares reads the MDA graph never makes. They are equally
+    missing and equally worth porting; they are simply not on *this* graph's boundary,
+    and pinning two different graphs in one list would make the number mean nothing.
+
+    Equality against the pin, not `<=`: a row leaving is a producer landing and should
+    update the pin deliberately (`--missing --write`), and a row arriving is the defect.
+    """
+    computed = computed_by_process(MISSING_PRODUCERS_INPUT_FILE)
+    reference = reference_run(MISSING_PRODUCERS_INPUT_FILE)
+    graph = driven_graph(graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE)))
+    design = {iteration_variable_path(i) for i in reference.ixc}
+    found = [v.path_str() for v in unproduced_but_computed(graph, computed, design)]
+    pinned = [
+        line.strip()
+        for line in Path(MISSING_PRODUCERS_PIN).read_text().splitlines()
+        if line.strip()
+    ]
+    assert found == pinned
+
+
+def test_the_landed_poloidal_beta_producer_is_not_on_the_boundary():
+    """`.physics.beta_poloidal_vol_avg` is owned, and the pin does not list it.
+
+    The narrow regression guard for the one producer landed on 2026-08-30. Worth its own
+    test rather than trusting the list above: this is the row that broke every cold
+    tokamak solve, and a refactor that quietly unwired `.tokamak.plasma_beta.poloidal`
+    would put it straight back without changing any value test -- for the same reason
+    nothing caught it the first time.
+    """
+    graph = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
+    beta_poloidal = V("physics", "beta_poloidal_vol_avg")
+    assert beta_poloidal in graph.owners
+    assert graph.owners[beta_poloidal].path_str() == ".tokamak.plasma_beta.poloidal"
+    assert (
+        ".physics.beta_poloidal_vol_avg" not in Path(MISSING_PRODUCERS_PIN).read_text()
+    )

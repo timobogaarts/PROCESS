@@ -37,6 +37,7 @@ from functional_process.models.physics.physics import (
     BetaNormMaxWesson,
     PlasmaEnergyFromBeta,
     PlasmaOhmicHeating,
+    PoloidalBeta,
     PositiveSeparatrixPower,
     PulseRampTimes,
     SeparatrixPower,
@@ -125,7 +126,7 @@ class TokamakPhysics(ModelNamespace):
 
 
 class TokamakPlasmaBeta(ModelNamespace):
-    """`.tokamak.plasma_beta` -- `physics/physics.py::PlasmaBeta.run`, five slots.
+    """`.tokamak.plasma_beta` -- `physics/physics.py::PlasmaBeta.run`, six slots.
 
     **This slot held a single node until 2026-08-27 and is a namespace now.** The
     rename is real and visible in every pin: `.tokamak.plasma_beta` became
@@ -169,6 +170,16 @@ class TokamakPlasmaBeta(ModelNamespace):
 
     toroidal: ToroidalBeta = ToroidalBeta()
     """`.physics.beta_toroidal_vol_avg` (`physics.py:3818-3822`)."""
+
+    poloidal: PoloidalBeta = PoloidalBeta()
+    """`.physics.beta_poloidal_vol_avg` (`physics.py:3825`).
+
+    Added 2026-08-30. The slot list ran 3818-3822 (`toroidal`) then 3831-3835
+    (`thermal`) and skipped the line between them, leaving `.physics.beta_poloidal_vol_
+    avg` a boundary input with no producer -- read by `constraint_48` (which recorded the
+    hole and ported over it) and, far more consequentially, by
+    `pfcoil/currents.py::calculate_equilibrium_currents`. See `calculate_poloidal_beta`
+    and `_audit/optimise_design.md` §16."""
 
     thermal: ThermalBeta = ThermalBeta()
     """`.physics.beta_thermal_vol_avg` (`physics.py:3831-3835`)."""

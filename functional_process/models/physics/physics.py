@@ -857,6 +857,48 @@ def calculate_toroidal_beta(
     return beta_total_vol_avg * b_plasma_total**2 / b_plasma_toroidal_on_axis**2
 
 
+def calculate_poloidal_beta(b_plasma_total, b_plasma_poloidal_average, beta):
+    """Volume-averaged beta referred to the poloidal field alone.
+
+    Ports `Physics.calculate_poloidal_beta` (`physics.py:4239-4263`), called from
+    `physics.py:3825` -- the one line of `PlasmaBeta.run`'s 3818-3835 block this slot
+    skipped, sitting between `ToroidalBeta` (3818-3822) and `ThermalBeta` (3831-3835).
+
+    **This was a known hole and it was load-bearing.** `constraint_48`'s docstring has
+    recorded since `batch5.md` that "`beta_poloidal_vol_avg`'s real producer
+    (`Physics.calculate_poloidal_beta`, `physics.py:3825`) is not yet ported anywhere in
+    `functional_process`", and ported the constraint over the unproduced read anyway.
+    The read is not only constraint 48's: `models/pfcoil/currents.py::
+    calculate_equilibrium_currents` puts it inside `log(8*aspect) + beta_poloidal_vol_avg
+    + l_i/2 - 1.5`, the bracket that sets the **equilibrium PF coil currents**. With no
+    producer the term was `0.0` against PROCESS's `1.0874` on `large_tokamak_nof` -- an
+    O(1) error in an O(1) bracket, propagating through the coil flux to the volt-second
+    balance, the burn time (55x), the CS field and finally `stress_shear_cs_peak` (708x),
+    which is constraint 72 and which is *active* at PROCESS's optimum. See
+    `_audit/optimise_design.md` §16.
+
+    References
+    ----------
+    - J.P. Freidberg, "Plasma physics and fusion energy", Cambridge University Press
+      (2007) Page 270 ISBN 0521851076
+
+    Parameters
+    ----------
+    b_plasma_total :
+        Total field on axis (T).
+    b_plasma_poloidal_average :
+        Surface-averaged poloidal field (T).
+    beta :
+        Volume-averaged total beta, referred to the total field.
+
+    Returns
+    -------
+    :
+        Poloidal beta (dimensionless).
+    """
+    return beta * (b_plasma_total / b_plasma_poloidal_average) ** 2
+
+
 def calculate_thermal_beta(beta_total_vol_avg, beta_fast_alpha, beta_beam):
     """Volume-averaged thermal beta: the total less both fast-ion contributions.
 
@@ -943,6 +985,30 @@ class ToroidalBeta(ExplicitFunction):
             beta_total_vol_avg,
             b_plasma_total,
             b_plasma_toroidal_on_axis,
+        )
+
+
+class PoloidalBeta(ExplicitFunction):
+    """cottax node: `calculate_poloidal_beta`. Unswitched.
+
+    Both reads are produced on the tokamak path -- `b_plasma_total` by
+    `.tokamak.plasma_fields`' `TotalMagneticField`, `b_plasma_surface_poloidal_average`
+    by this file's own `SurfaceAveragedPoloidalField` family -- and `beta_total_vol_avg`
+    is iteration variable 5 on both tracked tokamaks, i.e. a design input by intent.
+    """
+
+    beta_poloidal_vol_avg = OutputInto(physics)
+
+    def __call__(
+        self,
+        b_plasma_total=From(physics),
+        b_plasma_surface_poloidal_average=From(physics),
+        beta_total_vol_avg=From(physics),
+    ):
+        return calculate_poloidal_beta(
+            b_plasma_total,
+            b_plasma_surface_poloidal_average,
+            beta_total_vol_avg,
         )
 
 
