@@ -533,24 +533,40 @@ _CHANGES_A_SLOT = (
         lambda m: type(m.power.etath_liq).__name__,
     ),
     ("itart", 1, lambda m: type(m.availability.cplife_avail).__name__),
+    (
+        "istell",
+        1,
+        # The only probe here that is not a type name, and it has to be: `istell`'s
+        # second role selects a machine config's **data**, not an occupant class, so
+        # `type(...)` is `StellaratorMachineConfig` at every stellarator value and a
+        # type-name probe would report "unchanged" for a switch that is read. The
+        # payload is the thing that moves -- the reference file's `stella_conf.json`
+        # against `preset_config.HELIAS5B` -- and it is a plain hashable tuple, so
+        # comparing it is both possible and stronger than a class name.
+        lambda m: m.stellarator.machine_config.machine_config,
+    ),
 )
-"""Seven of the `FACTORY_READ_SWITCHES`: each has a second registered occupant that
+"""Eighteen of the `FACTORY_READ_SWITCHES`: each has a second registered occupant that
 `_indat_with_override` can select on its own, so the "really reads it" proof is
 "the assembled tree's occupant type changes".
 
-**`istell` left this table and went back to `_CAUSES_A_REFUSAL`**, and the round trip is
-worth reading as a measurement rather than as churn. It was a refusal when `istell == 0`
-had no tokamak to be; it moved here when `TokamakProcess` landed with twenty-five empty
-slots, because an empty device asks nothing and therefore refuses nothing; and it is a
-refusal again now that fourteen of those slots have occupants -- because the perturbed
-machine is a real what-if and deliberately not a curated one. Taking
-`stellarator_helias.IN.DAT` and changing only `istell` yields a *tokamak* carrying that
-file's `i_plasma_ignited = 1`, and the tokamak separatrix-power family has no ignited
-arm written. So the row still proves the value is consulted, from the other table.
+**`istell` is in both tables, at different values, and the split is the switch's two
+roles.** `0` is in `_CAUSES_A_REFUSAL`: re-reading `stellarator_helias.IN.DAT` as a
+tokamak carries that file's `i_plasma_ignited = 1` into a separatrix-power family with no
+ignited arm. `1` is here, and it went through `_CAUSES_A_REFUSAL` on the way: it was a
+refusal for as long as the five machine presets were unwired, and it moved here on
+2026-08-30 when `machine_config_for_istell` gave arms 1-5 the payload arm 6 already had.
+
+The `0` row has its own history worth reading as a measurement rather than as churn. It
+was a refusal when `istell == 0` had no tokamak to be; it moved here when
+`TokamakProcess` landed with twenty-five empty slots, because an empty device asks
+nothing and therefore refuses nothing; and it is a refusal again now that fourteen of
+those slots have occupants -- because the perturbed machine is a real what-if and
+deliberately not a curated one.
 
 **That is the interesting half.** An empty device slot cannot disagree with an input
 file about anything; a filled one can, and immediately did. The refusal names
-`i_plasma_ignited_separatrix`, a slot in `.tokamak.physics` that did not exist when this
+`i_plasma_ignited_separatrix`, a slot in `.tokamak.physics` that did not exist when that
 row was written, which is exactly the evidence that filling the device slot made the
 factory answerable for more of the file than it was before.
 
@@ -590,13 +606,11 @@ or not the joint key were fixed."""
 _CAUSES_A_REFUSAL = (
     ("ife", 1, ("ife", IFEModel.INERTIAL_CONFINEMENT)),
     ("istell", 0, ("i_plasma_ignited_separatrix", 1)),
-    ("istell", 3, ("istell", 3)),
     ("i_cost_model", 1, ("i_cost_model", 1)),
     ("blktmodel", 1, ("blktmodel_ipowerflow", 0)),
     ("blkttype", 1, ("blktmodel_blkttype", 1)),
 )
-"""Five refusals, for three different reasons -- and `istell` appears twice, at two
-values, for two unrelated reasons.
+"""Five refusals, for four different reasons.
 
 `i_cost_model`: the switch has exactly one registered occupant, so its *other* value
 cannot select a second one -- there is none to select. `i_cost_model == 1` is
@@ -604,14 +618,20 @@ KOVARI_2014, unported. It was spelled as a slot holding `None` until the tree st
 carrying optional slots; it is a refusal now, which is why it moved here from
 `_CHANGES_A_SLOT`.
 
-`istell`: **two rows, and they refuse for reasons that have nothing to do with each
-other.** `3` is one of the five hardcoded machine presets (`_ISTELL_PRESET_REASON`),
-still unported -- a refusal *about the device*, and what an unrecognised device must
-hit. `0` is a device this port has, and it refuses about the *physics* the file asks for:
-re-reading `stellarator_helias.IN.DAT` as a tokamak carries its `i_plasma_ignited = 1`
-into `.tokamak.physics.separatrix_power`, whose ignited arm is not written. The second
-row is only possible because the tokamak device slot has occupants now; see
+`istell`: **one row now, not two.** `3` -- one of the five hardcoded machine presets --
+**left this table on 2026-08-30** and `istell = 1` is in `_CHANGES_A_SLOT` instead:
+`machine_config_for_istell` wires arms 1-5 to the same `StellaratorMachineConfig` node
+arm 6 had, so a preset is a machine this port builds rather than a branch it declines.
+`0` stays, and it refuses about the *physics* the file asks for rather than about the
+device: re-reading `stellarator_helias.IN.DAT` as a tokamak carries its
+`i_plasma_ignited = 1` into `.tokamak.physics.separatrix_power`, whose ignited arm is not
+written. That row is only possible because the tokamak device slot has occupants now; see
 `_CHANGES_A_SLOT`'s note for why that is the result rather than a regression.
+
+**No `istell` value is a refusal any more**, which is why `test_machine.
+test_a_silent_indat_is_still_refused_but_no_longer_on_istell` now probes the
+device-resolved-first ordering with `istell = 7` -- a `ValueError`, not a
+`NotImplementedError`.
 
 `blktmodel`/`blkttype`: each feeds a *joint* dispatch (`.fwbs.blktmodel` x
 `.heat_transport.ipowerflow`, and x `.fwbs.blkttype`) alongside a second switch, and the

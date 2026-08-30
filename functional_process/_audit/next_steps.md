@@ -242,9 +242,16 @@ test method, where a fresh wrapper would defeat its own cache).
 
 Judgement calls that no test will make for you. All still open:
 
-- **`preset_config.py`** (unit #8) — a **fourth** instance of "this node always/only
-  produces literals", alongside unit #6's device-preset literals and chunk 1D's constants.
-  One policy decision would settle all four; it has not been made.
+- ~~**`preset_config.py`** (unit #8) — a **fourth** instance of "this node always/only
+  produces literals".~~ **Closed** for this unit by `preset_config.md`: the 34
+  `stella_config_*` scalars get one zero-input producer node, because nothing else in
+  PROCESS ever writes them and leaving them unowned is what made the graph unrunnable
+  cold. Arms 1-5 wired 2026-08-30, closing `helias_5b.IN.DAT`.
+  **The policy question itself is not closed**, and the record says why the answer does
+  not simply transfer: unit #6's 16 device-preset literals are stellarator-mode
+  *overrides of ordinary input fields* (`.physics.q95 = 1.03`, `.build.dr_cs = 0.0`), so a
+  producer node for them would claim ownership of fields an `IN.DAT` also sets — which is
+  not the situation here. Unit #6 and chunk 1D's constants still need the decision.
 - ~~**`build.py`** — `dz_shld_upper` under `blktmodel <= 0`.~~ **Closed** by
   `_audit/units/models/build.md` § "resolves `next_steps.md` §2". Under `blktmodel > 0`,
   `process/models/build.py:1650-1662` produces `dr_blkt_inboard`/`dr_blkt_outboard`/
@@ -3207,3 +3214,88 @@ arm was checked. Recorded as another instance of §16.3's pattern.
 
 The stellarator is unaffected and still solves cold in both formulations at 58 iterations
 under CLARABEL against PROCESS's 46.
+
+## 20. `helias_5b` closed — the reference stellarator's sibling, 2026-08-30
+
+Four of the eight `tests/regression/input_files/*.IN.DAT` reference machines did not
+assemble. **`helias_5b.IN.DAT` does now, and it had exactly one blocker with nothing
+behind it.**
+
+### 20.1 The blocker, and why it was smaller than its refusal said
+
+`istell = 1`, refused by `indat.UNPORTED[("istell", 1)]` with `_ISTELL_PRESET_REASON`:
+*"`istell` in 1..5 selects one of five hardcoded machine presets ... only `istell == 6`
+(config read from file) is in scope"*. The reason was accurate about scope and misleading
+about cost. Unit #8 (`preset_config.md`) had already ported the **copy mechanism** —
+`select_stellarator_config_scalars`, generic over any mapping — and
+`test_preset_config.py` had already driven all five preset dicts through PROCESS's own
+`load_stellarator_config` as reference samples. The five arms were **unreachable, not
+unwritten**: nothing in the graph, no node body, no `Out`, no test reference had to
+change.
+
+What landed is selection, in two places:
+
+- `preset_config.machine_config_for_istell(istell, config_file)` — PROCESS's
+  `match istell` (`process/models/stellarator/preset_config.py:238-257`) and nothing
+  else, returning the same `(key, value)` tuple on all six arms, so
+  `StellaratorMachineConfig` cannot tell a preset from a file. `STELLARATOR_MACHINE_PRESETS`
+  imports the five dicts from `process/` rather than re-typing them (argued in the
+  record: transcription buys a non-importing test and pays with a drift mode).
+- `indat.DEVICE` gains `1`-`5` as `StellaratorProcess`, and the five `("istell", 1..5)`
+  rows leave `UNPORTED`. **`istell` now has no `UNPORTED` rows at any value.** A device
+  outside 0..6 is a `ValueError` ("not a known value"), which is what
+  `test_machine.test_a_silent_indat_is_still_refused_but_no_longer_on_istell` probes now
+  that no `istell` refusal is left to probe with.
+
+### 20.2 What is behind it: nothing, measured
+
+Same method as §18.4, minus the monkeypatching — no stand-in was needed, because assembly
+runs clean. On the file's own `ixc`/`icc`/`i_figure_merit`, with
+`sand.switch_values_for` over its cold `SingleRun(...).data`:
+
+| | `helias_5b` (`istell = 1`) | `stellarator_helias` (`istell = 6`) |
+|---|---|---|
+| `machine_from_indat` | `StellaratorProcess` | `StellaratorProcess` |
+| `graph_for` | 150 nodes | 150 nodes |
+| `ixc` | `[4, 6, 10]` (3) | 8 |
+| `icc` | `[2, 11, 16, 84, 24]` (5 = 3 eq / 2 ineq) | 14 (2 eq / 12 ineq) |
+| `switch_values` | 5, incl. `istell: 1` | 4, incl. `istell: 6` |
+| `mdf.assemble` | OK — 156 nodes, 3 design, 6 conditions, 145 inner blocks, 5 driven | OK — 165 nodes, 8 design, 15 conditions, 154 inner blocks, 5 driven |
+| `sand.reference_problem` | OK — 3 design, 3 eq, 2 ineq, 0 degenerate | OK — 8 design, 2 eq, 12 ineq |
+| constraints omitted | none | none |
+
+**Every one of `helias_5b`'s five active constraints assembles and none of its three
+iteration variables collides with a producer.** `icc = [2, 11, 16, 84, 24]` is a strict
+subset-in-kind of the reference stellarator's fourteen, so this was expected; it is
+recorded because expecting is not measuring.
+
+**The two graphs have the same node count**, which is the structural claim unit #8's shape
+decision makes: a machine config decides values, not topology, so a Helias-5b graph and a
+Helias-5 graph are one graph with a different constant folded into one zero-input node.
+
+### 20.3 Not attempted, deliberately
+
+**Solving it.** `helias_5b` assembles and both formulations build; whether it *converges*
+cold is a separate measurement and was not run — the reference stellarator's 58-iteration
+cold solve took a full PROCESS run to calibrate against, and nothing here claims a number
+for this file. `run_mdf_harness.py`/`run_sand_harness.py` accept it now, which is what
+makes that measurement possible.
+
+**Value agreement against PROCESS at `istell = 1`.** The unit's tier-1 case already
+compares the port to PROCESS's reflective loop on the HELIAS5B dict itself
+(`test_preset_config.py::preset-helias5b`), which is the same comparison a run-level check
+would make with more machinery around it.
+
+### 20.4 The three that remain
+
+`spherical_tokamak_eval` and `st_regression` are §18's two clusters (CroCo, the PF
+system) plus iteration variable 135 for the latter — unchanged, nothing here touches
+them. `IFE.IN.DAT` is `ife == 1`, refused by `_refuse_unported_switch` with the
+seven-Account-22x reason: inertial confinement is a whole device and the `.ife.*`
+subsystem has no unit in `unit_registry.md` at all.
+
+So the reference machines now split **five that assemble** (`stellarator_helias`,
+`helias_5b`, `large_tokamak_nof`, `large_tokamak_eval`, `low_aspect_ratio_DEMO`) against
+**three that do not** (`spherical_tokamak_eval`, `st_regression`, `IFE`), and the three
+remaining are three genuinely unported packages — CroCo, the PF coil system, and IFE —
+rather than any further wiring.

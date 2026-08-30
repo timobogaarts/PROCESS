@@ -924,11 +924,21 @@ def test_a_silent_indat_is_still_refused_but_no_longer_on_istell(tmp_path):
        (`PlasmaPowerLossNonIgnitedCoreRadiation`), so the refusal a silent file gets is a
        different one, further down. That is what progress looks like from here: the
        *first* refusal moves, and the list of overrides a tokamak needs gets shorter.
-    2. **The device is still resolved first.** A file whose *only* content is a refused
-       `istell` value reports `istell`, not `i_cost_model`, even though `i_cost_model`'s
-       default is refused too and the constructor would reach it. That ordering is the
-       property the old name was really guarding, and it is the half of the old test
-       that had nothing to do with the tokamak.
+    2. **The device is still resolved first.** A file whose *only* content is an
+       `istell` the factory cannot answer reports `istell`, not `i_cost_model`, even
+       though `i_cost_model`'s default is refused too and the constructor would reach it.
+       That ordering is the property the old name was really guarding, and it is the half
+       of the old test that had nothing to do with the tokamak.
+
+       **The probe changed from a refusal to a typo, because there are no refused
+       `istell` values left** (2026-08-30): `1`-`5`, the five machine presets, build
+       `StellaratorProcess` now, so the only `istell` that can fail is one PROCESS has
+       never had. `7` therefore raises `ValueError` from `_slot_occupant`'s "not a known
+       value" branch rather than `NotImplementedError` from its `UNPORTED` branch. The
+       error *class* is weaker evidence about the port's frontier and exactly as strong
+       about the ordering, which is all this assertion was ever for -- a bare file whose
+       `istell` were read second would report `i_cost_model == 1` instead, as the first
+       assertion above shows it does when `istell` is absent.
     3. **The default device is the one PROCESS names.** Given only the switches whose
        PROCESS defaults this port refuses, a file that never mentions `istell` builds a
        `TokamakProcess` -- not a `StellaratorProcess`, and not an error. It is a real
@@ -941,10 +951,10 @@ def test_a_silent_indat_is_still_refused_but_no_longer_on_istell(tmp_path):
     with pytest.raises(NotImplementedError, match=re.escape("i_cost_model == 1")):
         machine_from_indat(indat)
 
-    preset = tmp_path / "PRESET.DAT"
-    preset.write_text("istell = 3\n")
-    with pytest.raises(NotImplementedError, match=re.escape("istell == 3")):
-        machine_from_indat(preset)
+    no_such_device = tmp_path / "PRESET.DAT"
+    no_such_device.write_text("istell = 7\n")
+    with pytest.raises(ValueError, match=re.escape("istell == 7")):
+        machine_from_indat(no_such_device)
 
     silent_device = tmp_path / "TOK.DAT"
     silent_device.write_text(

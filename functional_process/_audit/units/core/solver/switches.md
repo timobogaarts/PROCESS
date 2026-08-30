@@ -320,9 +320,18 @@ which pipeline runs). The second is **data-table-shaped** — every value produc
 computation over a different set of constants, so there is no reads-set difference to
 diff and nothing for a split decision to decide. It is not a switch in this page's sense
 at all; it is a lookup key that happens to share a variable with one.
-**disposition**: neither split nor keep-static. `preset_config.md` recommends replacing
-the reflective copy with static, fully-enumerated per-machine config records selected at
-graph-assembly time — the same policy question as `initialization.py`'s device-preset
-literals and chunk 1D's `fncmass`/`gsmass` constants. Three instances, one decision,
-still open (`_audit/next_steps.md` § 2).
+**disposition**: **settled, and all six arms are live.** The reflective copy is replaced
+by a statically-enumerated field list (`STELLA_CONFIG_SCALAR_FIELDS`) owned by one
+zero-input node, `StellaratorMachineConfig`, whose payload — a preset table for `istell`
+1-5, the JSON file for `6` — is selected at graph-assembly time by
+`indat.machine_config_for_istell`. So the second role decides no slot's occupant and no
+node's reads; it decides a constant, which is why `indat.DEVICE` (the *first* role) is the
+only registry `istell` keys, and why `1`-`5` all map to `StellaratorProcess` there. Arms
+1-5 landed 2026-08-30 with `helias_5b.IN.DAT`, and `istell` has **no `UNPORTED` rows**
+left at any value.
+
+The sibling instances the older text grouped this with are **not** settled by it and are
+still open (`_audit/next_steps.md` § 2): `initialization.py`'s 16 device-preset literals
+overwrite fields an `IN.DAT` also sets, which is a different situation from these 34 that
+nothing else ever writes — see `preset_config.md`'s open question 2.
 **confidence**: high (two independent audits agree on the mechanism).

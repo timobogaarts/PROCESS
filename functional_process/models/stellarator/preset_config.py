@@ -50,6 +50,13 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, OutputInto
 
 from functional_process.paths import stellarator_config
+from process.models.stellarator.preset_config import (
+    HELIAS3,
+    HELIAS4,
+    HELIAS5B,
+    W7X30,
+    W7X50,
+)
 
 STELLA_CONFIG_SCALAR_FIELDS = (
     "stella_config_symmetry",
@@ -209,6 +216,78 @@ def read_stellarator_config_file(config_file):
     """
     with open(config_file) as stream:
         return tuple(json.load(stream).items())
+
+
+STELLARATOR_MACHINE_PRESETS = {
+    1: HELIAS5B,
+    2: HELIAS4,
+    3: HELIAS3,
+    4: W7X30,
+    5: W7X50,
+}
+"""`istell` in 1..5 -> the machine-preset table `load_stellarator_config` selects.
+
+`preset_config.py:238-248`'s `match istell` arms 1-5, transcribed as a mapping instead of
+a `match` because the value is only ever looked up, never branched on.
+
+**Imported from `process/`, not re-typed here**, and that is the resolution of this
+unit's open question 1. The alternative -- transcribing five ~35-entry dict literals into
+the port -- buys a value test that no longer imports its reference, at the cost of a new
+failure mode (a digit drifting between two copies) that nothing but a comparison against
+the original could catch. There is no such thing as an independent second opinion about
+what the number 22.2 is; the numbers are `process/`'s data in the same sense
+`process.core.constants` is, which a dozen ported modules already import rather than
+copy. What this unit's test actually validates is the **copy mechanism** -- a static
+field list against PROCESS's reflective `hasattr`/`setattr` loop -- and that stays a real
+comparison on all five presets, because the reference side still runs
+`load_stellarator_config` over the very same dict.
+
+`istell == 6` is deliberately absent: it is a file, not a table, and reading it is
+`read_stellarator_config_file`'s job. The two are joined by `machine_config_for_istell`.
+"""
+
+
+def machine_config_for_istell(istell, config_file=None):
+    """The machine config `istell` selects, as `StellaratorMachineConfig`'s payload.
+
+    `load_stellarator_config`'s `match istell` (`preset_config.py:238-257`), minus the
+    copy loop that follows it -- selection only. Both arms return the same shape, a
+    tuple of `(key, value)` pairs, so the node upstream of them cannot tell a preset from
+    a file and does not have to.
+
+    **Not a node, and not traced.** Which machine is being designed is fixed for a whole
+    solve (see `StellaratorMachineConfig`'s docstring for the greps), so this runs once,
+    at graph-assembly time, where `indat.machine_from_indat` answers every other switch.
+
+    Parameters
+    ----------
+    istell :
+        The `.stellarator.istell` value, in 1..6. Its **domain is checked by
+        `indat.DEVICE`**, which is looked up before this is called and refuses anything
+        that is not a device; a bad value therefore fails there, naming `istell`, rather
+        than as a `KeyError` here.
+    config_file :
+        The `stella_conf.json` to read, for `istell == 6` only. Ignored by the preset
+        arms, which read no file at all -- PROCESS builds the path unconditionally in
+        `st_new_config` but only opens it on arm 6, and the port does not open it either.
+
+    Returns
+    -------
+    :
+        `(key, value)` pairs, suitable as `StellaratorMachineConfig(machine_config=...)`.
+
+    Raises
+    ------
+    ValueError
+        `istell == 6` with no `config_file` -- PROCESS's own `ProcessValueError`
+        ("Stellarator config file is None but istell=6", `preset_config.py:251`), which
+        is a missing input rather than an unported branch.
+    """
+    if istell == 6:
+        if config_file is None:
+            raise ValueError("stellarator config file is None but istell == 6")
+        return read_stellarator_config_file(config_file)
+    return tuple(STELLARATOR_MACHINE_PRESETS[istell].items())
 
 
 class StellaratorMachineConfig(ExplicitFunction):

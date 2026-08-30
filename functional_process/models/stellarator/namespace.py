@@ -356,14 +356,19 @@ class Stellarator(ModelNamespace):
     """
 
     machine_config: StellaratorMachineConfig = dataclasses.field(kw_only=True)
-    """The 34 `.stellarator_config.stella_config_*` fields, from a `stella_conf.json`.
+    """The 34 `.stellarator_config.stella_config_*` fields, for whichever machine.
 
-    Filled at `.stellarator.istell == 6` (machine config read from file) and at no other
-    value, because there is no other value: `istell == 0` is a **tokamak**, which this
-    tree has no counterpart namespace for, and `istell in 1..5` selects one of five
-    hardcoded presets whose tables are not transcribed. All six are in `UNPORTED` and
-    raise, which is why this slot needs no `| None` -- it used to hold one for the
-    tokamak, and the tokamak is gone.
+    Filled at every `.stellarator.istell` a stellarator has -- `1`-`5` from
+    `preset_config.py`'s hardcoded tables (Helias 5b/4/3, W7-X 30/50), `6` from a
+    `stella_conf.json` -- and never at `istell == 0`, which is a **tokamak** and has no
+    counterpart namespace in this tree. That is why this slot needs no `| None`: it used
+    to hold one for the tokamak, and the tokamak is gone.
+
+    **The occupant is the same node in all six cases**, and only its static payload
+    differs, because which table or file was read changes no field's identity and no
+    node's reads (`preset_config.md` § "switches touched"). So this slot is not keyed on
+    `istell` at all; `indat.machine_config_for_istell` resolves the payload before the
+    constructor runs.
 
     A node with **no inputs**: the machine config is strictly upstream of every design
     variable, so it adds a source to the DAG and no cycle. **This is what makes the graph

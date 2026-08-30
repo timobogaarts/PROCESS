@@ -180,13 +180,92 @@ produce stellarator device data, which is the `EcrhDensityLimit` registration-bu
 `configuration.py` exists to prevent. `Switch.check_arms_are_exclusive` is satisfied by
 the arm's existing `StellaratorConfinementTime`/`ConfinementTime` collision.
 
-Arms 1–5 stay `unported`. That is now a **transcription** gap rather than a design one:
-`select_stellarator_config_scalars` is generic over any mapping and
-`test_preset_config.py` already drives all five presets through the reference, so wiring
-them means adding five payloads to `total_process.py` (and deciding whether to transcribe
-the tables into the port or import PROCESS's dicts). Deliberately left out of this pass —
-`unit_registry.md`'s scope rule is `istell == 6`, and an `unported` arm refuses loudly
-rather than assembling a wrong graph.
+**Arms 1-5 landed on 2026-08-30 and this unit is closed.** The previous revision
+called them a *transcription* gap rather than a design one and it was right, but it
+understated how small the gap was: `select_stellarator_config_scalars` is generic over
+any mapping and `test_preset_config.py` already drove all five presets through the
+reference, so the five arms were **unreachable, not unwritten**. Wiring them is two
+things and nothing else:
+
+- `machine_config_for_istell(istell, config_file)` in `preset_config.py` — PROCESS's
+  `match istell` (`preset_config.py:238-257`) and only that, returning the same
+  `(key, value)` tuple on all six arms so the node upstream cannot tell a preset from a
+  file;
+- `indat.DEVICE` gains `1`-`5` as `StellaratorProcess`, and the five
+  `("istell", 1..5)` rows leave `UNPORTED`. **`istell` now has no `UNPORTED` rows at
+  all** — the second registry entry ever to leave that table by its configuration
+  becoming buildable rather than by being reclassified.
+
+No node changed, no `Out` moved, no test's reference changed. That is evidence for the
+shape decision above rather than a coincidence: because the six arms differ only in
+*values*, wiring five of them touched nothing that computes. What did change is one
+test's *probe* — `test_switch_coverage._CHANGES_A_SLOT`'s new `istell` row compares the
+assembled machine's `machine_config` payload rather than an occupant's class name,
+because at this switch's second role the class is the same at every stellarator value and
+a type-name probe would report "unchanged" for a switch that is read.
+
+### where the preset tables live: **imported, not transcribed** (answers open question 1)
+
+`STELLARATOR_MACHINE_PRESETS` maps `istell` 1..5 onto the five dicts imported from
+`process.models.stellarator.preset_config`. The rejected alternative — re-typing five
+~35-entry literals into the port so its data has no `process/` dependency — buys a value
+test that no longer imports its reference, and pays for it with a *new* failure mode: a
+digit drifting between two copies, catchable only by a comparison against the original,
+which is the import it was meant to avoid. There is no independent second opinion to be
+had about what the number `22.2` is.
+
+The tautology worry that motivated the question does not survive stating what the test
+actually checks. `test_preset_config.py` validates the **copy mechanism** —
+`STELLA_CONFIG_SCALAR_FIELDS` plus the inverted loop, against PROCESS's reflective
+`hasattr`/`setattr` loop — and that stays a real comparison on all five presets, because
+the reference side runs `load_stellarator_config` over the same dict and the two sides
+reach the answer by different code. A shared *input* is not a shared *answer*. The
+precedent is `process.core.constants`, which a dozen ported modules import rather than
+copy for the same reason.
+
+### what is deliberately NOT ported
+
+- **`ProcessValueError` for `istell` outside 1..6** (`preset_config.py:255-256`). The
+  port's domain check is `indat.DEVICE`, looked up before any config is selected, so a
+  bad `istell` fails there naming `istell` — earlier than PROCESS does, and with the
+  registry's list of values that do exist. `machine_config_for_istell` would raise
+  `KeyError` if reached with a bad value, and it cannot be.
+- **`stella_config_name`**, still: a `str`, unchanged from the `istell == 6` pass.
+- **The three silently-dropped JSON keys**, still reproduced rather than fixed; the five
+  presets have none (measured, "data footprint" above).
+- **`st_new_config`'s `config_file` construction**
+  (`f"{data.globals.output_prefix}stella_conf.json"`, `stellarator.py:196-199`). PROCESS
+  builds that path unconditionally and opens it only on arm 6; the port passes it as a
+  keyword the preset arms ignore, so a preset machine reads no file at all. `helias_5b`
+  ships no `stella_conf.json` companion, and this is why it needs none.
+
+### measured: `helias_5b.IN.DAT` assembles, and nothing else moved
+
+`tests/regression/input_files/helias_5b.IN.DAT` (`istell = 1`) was one of the four
+reference machines that did not assemble, and this was its **only** blocker — there is
+nothing behind it. Measured on the file's own `ixc`/`icc`/`i_figure_merit` with
+`sand.switch_values_for` over its cold `SingleRun(...).data`:
+
+| | `helias_5b` (`istell = 1`) | `stellarator_helias` (`istell = 6`) |
+|---|---|---|
+| `machine_from_indat` | `StellaratorProcess` | `StellaratorProcess` |
+| `graph_for` | 150 nodes | 150 nodes |
+| `ixc` | `[4, 6, 10]` (3) | `[2, 3, 4, 6, 10, 56, 59, 109]` (8) |
+| `icc` | `[2, 11, 16, 84, 24]` (5 = 3 eq / 2 ineq) | 14 (2 eq / 12 ineq) |
+| `switch_values` | 5 entries, `istell: 1` | 4 entries, `istell: 6` |
+| `mdf.assemble` | 156 nodes, 3 design, 6 conditions, 145 inner blocks, 5 driven | 165 nodes, 8 design, 15 conditions, 154 inner blocks, 5 driven |
+| constraints omitted | none | none |
+| `sand.reference_problem` | OK — 3 design, 3 eq, 2 ineq, 0 degenerate | OK — 8 design, 2 eq, 12 ineq |
+
+**The two graphs have the same node count**, which is the structural statement this
+unit's shape decision predicts: the machine config decides values, not topology, so a
+Helias-5b graph and a Helias-5 graph are the same graph with a different constant folded
+into one zero-input node. The `mdf` node counts differ only by the conditions each file's
+`icc` adds (150 + 6 = 156; 150 + 15 = 165).
+
+`functional_process/reference_boundary.txt` is **byte-identical** (297 unowned inputs + 6
+guesses, checked by regenerating), and `missing_producers_tokamak.txt` stays empty — a
+new producer for fields that already had one adds neither.
 
 **Verified consequences** (`run_mda_harness.py`, same reference run): agreements
 **+34** (453 → 487 on the tree this unit landed on; the 34 new outputs, all agreeing,
@@ -240,13 +319,10 @@ JAX-difficulty flags.
   index or a loop bound.
 
 ## open questions
-1. **Should arms 1–5 be wired, and if so where do the five preset tables live** — in the
-   port (transcribed, so the port has no dependency on `process/`'s data) or imported
-   from `process.models.stellarator.preset_config` (no duplication, but the port's data
-   and the reference's data become the same object, which weakens the value test to a
-   tautology for those five samples)? The test module currently imports them, which is
-   fine *for a test*; a registration would be a different call. Not needed for the
-   `istell == 6` scope.
+1. ~~**Should arms 1–5 be wired, and if so where do the five preset tables live**~~
+**Closed 2026-08-30**, both halves: wired, and imported rather than transcribed. See
+"where the preset tables live" above for why the tautology worry does not survive
+stating what the test actually checks.
 2. **`initialization.md`'s open question 2 is now answered by precedent, but not yet
    applied there.** Unit #6's 16 device-preset literals are the same shape as this unit's
    34 config scalars — "constants nothing produces" — and the answer this record reaches

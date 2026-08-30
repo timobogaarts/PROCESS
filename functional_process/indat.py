@@ -295,7 +295,7 @@ from functional_process.models.stellarator.plasma_physics import (
 )
 from functional_process.models.stellarator.preset_config import (
     StellaratorMachineConfig,
-    read_stellarator_config_file,
+    machine_config_for_istell,
 )
 from functional_process.models.stellarator.stellarator_fwbs_s2 import (
     DetailedPowerflowBlanketShieldPower,
@@ -461,17 +461,6 @@ REFERENCE_INPUT_FILE = "tests/regression/input_files/stellarator_helias.IN.DAT"
 harness.py` and every number in `_audit/next_steps.md` \u00a7 8 use it. Named here so
 `REFERENCE_CONFIGURATION` can be checked against it mechanically instead of by eye."""
 
-_ISTELL_PRESET_REASON = (
-    "`istell` in 1..5 selects one of five hardcoded machine presets (Helias 5/4/3, "
-    "W7-X 30/50) copied onto `StellaratorConfigData` by `preset_config.py`'s reflective "
-    "`hasattr`/`setattr` loop; only `istell == 6` (config read from file) is in scope. "
-    "See `core/solver/switches.md` § `data.stellarator.istell` -- second role, whose "
-    "disposition is still open in `_audit/next_steps.md` § 2. The confinement-time "
-    "binding itself would be identical to the `istell == 6` occupant; it is the "
-    "surrounding preset data that is unported"
-)
-"""Shared by all five refused `istell` presets -- one reason, five values."""
-
 _I_PLASMA_GEOMETRY_REASON = (
     "eleven of `i_plasma_geometry`'s thirteen values are unwritten (0 and 10 are "
     "written). Each reads a genuinely different set of fields (the dispatch table is "
@@ -609,11 +598,15 @@ _DURHAM_NBTI_COMPLEX_REASON = (
 )
 
 UNPORTED = {
-    ("istell", 1): _ISTELL_PRESET_REASON,
-    ("istell", 2): _ISTELL_PRESET_REASON,
-    ("istell", 3): _ISTELL_PRESET_REASON,
-    ("istell", 4): _ISTELL_PRESET_REASON,
-    ("istell", 5): _ISTELL_PRESET_REASON,
+    # **`istell` has no rows here at all any more.** The five machine presets
+    # (`("istell", 1..5)`, `_ISTELL_PRESET_REASON`) were the last, and they left on
+    # 2026-08-30 when `machine_config_for_istell` wired arms 1-5 to the same
+    # `StellaratorMachineConfig` node arm 6 already had. Nothing about the refusal's
+    # recorded reason was wrong -- the reason said the preset *data* was unwired, and it
+    # was -- but the reason had also stopped being about anything unported: the copy
+    # mechanism it named was written, tested on all five presets, and only unreachable.
+    # That is the second entry (after `("istell", 0)`) to leave this table by the
+    # configuration it stood for becoming buildable rather than by being reclassified.
     ("i_plasma_ignited_i_rad_loss", -1): (
         "the head of `calculate_confinement_time` is written for the two **core-only** "
         "radiation arms -- ignited (the Helias run's) and non-ignited (the conventional "
@@ -2229,14 +2222,38 @@ COST_MODEL = {0: Costs}
 default) and `2` are both refused, with their reasons in `UNPORTED`; the slot used to
 default to `None` for the first of them and no longer can."""
 
-DEVICE = {0: TokamakProcess, 6: StellaratorProcess}
+DEVICE = {
+    0: TokamakProcess,
+    1: StellaratorProcess,
+    2: StellaratorProcess,
+    3: StellaratorProcess,
+    4: StellaratorProcess,
+    5: StellaratorProcess,
+    6: StellaratorProcess,
+}
 """`.stellarator.istell` -> the **device class**, and the first thing the factory reads.
 
 The one registry whose values are classes rather than occupants, because what `istell`
 selects is not a slot's occupant but which tree has slots at all. `_slot_occupant` is
 still what looks it up -- with `build=lambda cls: cls`, since a device is constructed at
-the end of the factory and not here -- so `istell in 1..5` keeps raising with
-`_ISTELL_PRESET_REASON` and a value PROCESS has never had keeps failing loudly.
+the end of the factory and not here -- so a value PROCESS has never had keeps failing
+loudly.
+
+**`1`-`5` are the same class as `6`, and that repetition is the finding.** `istell`'s
+two roles (`switches.md`) are genuinely independent: the first picks the device, and on
+that question 1..6 all say *stellarator*; the second picks a machine config, and there
+the six differ -- five hardcoded tables against one JSON file. The device registry only
+answers the first, so it has one entry per value and one distinct value. Collapsing the
+five into a range test would hide that `0` is the sole odd one out, which is the whole
+content of this table.
+
+The *second* role is answered by `machine_config_for_istell`, at the one place in the
+factory that builds a `StellaratorMachineConfig` -- selection of data, which changes no
+slot's occupant and therefore belongs nowhere near a registry. That split is what made
+arms 1-5 a wiring job rather than a port: `select_stellarator_config_scalars` was already
+generic over any mapping and already validated against PROCESS's reflective loop on all
+five presets (`preset_config.md` § tier signal), so nothing about *what* is computed
+moved when they landed.
 
 `0` is here rather than in `UNPORTED` as of the pass that built `TokamakProcess`; see
 `UNPORTED`'s own docstring for why the recorded reason no longer describes what a tokamak
@@ -4529,8 +4546,15 @@ def machine_from_indat(input_file, stella_conf=None):
         device slot holds twenty-six occupied slots of twenty-eight and whose shared
         subsystems are the same ones a stellarator gets (it *does* still refuse
         further in, on `i_cost_model = 1` and its kin -- see
-        `test_machine.TOKAMAK_BASELINE_INDAT`). `istell in 1..5` still raises, on the
-        five hardcoded machine presets.
+        `test_machine.TOKAMAK_BASELINE_INDAT`). **`istell` no longer raises at any value
+        PROCESS has**: arms 1-5 build the same `StellaratorProcess` arm 6 does, with a
+        preset table for a payload instead of a file (`DEVICE`). A value outside 0..6 is
+        a `ValueError`, not this, because it is a typo rather than a branch.
+
+    ValueError
+        `istell` is not a value PROCESS has. Raised by `_slot_occupant` against `DEVICE`,
+        which is looked up first, so a typo'd device is reported as `istell` rather than
+        as whichever slot the constructor happened to reach.
     """
     switches = switches_from_indat(input_file)
 
@@ -4540,9 +4564,9 @@ def machine_from_indat(input_file, stella_conf=None):
     # The device is resolved first, on its own, because it decides which *class* is being
     # built and therefore which of the resolutions below are even asked. PROCESS's own
     # default is `istell = 0`, a tokamak, and that is now a device rather than a refusal:
-    # a file that never mentions `istell` builds a `TokamakProcess`. `istell in 1..5`
-    # still raises here, first, naming `istell` rather than whichever slot the
-    # constructor happened to evaluate first.
+    # a file that never mentions `istell` builds a `TokamakProcess`. A value PROCESS
+    # has never had still fails here, first, naming `istell` rather than whichever slot
+    # the constructor happened to evaluate first.
     istell = switches.get("istell", 0)
     device = _slot_occupant("istell", istell, DEVICE, build=lambda cls: cls)
     # Confinement is three slots now, not one, and every switch it used to carry as a
@@ -4902,15 +4926,22 @@ def machine_from_indat(input_file, stella_conf=None):
             availability=availability,
         )
 
-    # ---- `istell == 6`: everything only a stellarator asks ------------------------
+    # ---- `istell` in 1..6: everything only a stellarator asks ---------------------
     #
-    # Below the branch because a tokamak has none of it: no machine-config file, no
+    # Below the branch because a tokamak has none of it: no machine config, no
     # `isthtr`, and neither joint blanket dispatch. Reading them anyway would make a
     # tokamak refusable for a stellarator's reason -- `blktmodel = 1` refuses at
     # `blanket_neutronics()`, which a tokamak never reaches.
+    #
+    # `machine_config_for_istell` is `load_stellarator_config`'s `match istell` and
+    # nothing else: arms 1-5 return a preset table, arm 6 opens the companion JSON. The
+    # default only matters on arm 6 -- a preset machine reads no file, so a `helias_5b`
+    # run needs no `stella_conf` companion and is not given a stellarator's one by
+    # accident.
     machine_config = StellaratorMachineConfig(
-        machine_config=read_stellarator_config_file(
-            REFERENCE_STELLA_CONF if stella_conf is None else stella_conf
+        machine_config=machine_config_for_istell(
+            istell,
+            config_file=(REFERENCE_STELLA_CONF if stella_conf is None else stella_conf),
         )
     )
     # The two joint dispatches, resolved into named locals before the constructor call
