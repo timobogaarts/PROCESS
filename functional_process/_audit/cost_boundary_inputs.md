@@ -554,3 +554,78 @@ a central solenoid out of `r_pf_coil_middle[-1]`. A tokamak has both values for 
 neither is a free choice. And **the three cost nodes must come back as occupants of a
 switched slot, not unconditionally**, or the restoration reintroduces the defect in the
 other direction.
+
+
+## 13. The tokamak restored one of the three (2026-08-30)
+
+§12.2 is the work list this section reports against. `boundary.unproduced_but_computed`
+put all three accounts on `large_tokamak_nof`'s missing-producer list -- PROCESS computes
+`c2214 = 46.22`, `c2222 = 591.85`, `c2252 = 39.89` on that machine and the port read
+`0.0` for each -- so the question §12.2 left open ("what a tokamak has to restore") was
+asked of a real graph for the first time. **One of the three came back; the other two
+are refused, with reasons that are about their producers and not about the device.**
+
+### 13.1 `ReactorStructureCost` — restored
+
+Registered at `.costs.reactor_structure_cost`. Its one interesting read,
+`.structure.gsmass`, is owned by `.tokamak.structure` (registry #33), so §12.2's
+producer column for this row is satisfied. `.costs.c2214` is off the missing-producer
+list.
+
+**A device-decided slot, which is a shape this tree did not have.** §12.2's closing
+warning -- "the three cost nodes must come back as occupants of a switched slot, not
+unconditionally" -- is honoured, but the thing being answered is not a switch:
+`ReactorStructureCost` on a stellarator would compute an exact zero out of
+`.structure.fncmass`/`.gsmass`, which `st_strc` sets to a literal `0.0` because that
+device has no separately-accounted reactor structure. So the slot is
+`ReactorStructureCost | None` and `machine_from_indat` fills it from the *device class*
+it has already resolved (`istell`), which is the only slot in the tree decided that way.
+`None` is absence rather than refusal by `UNPORTED`'s own rule -- PROCESS does compute
+`c2214` on a stellarator, it just computes zero from nothing.
+
+Measured: the stellarator graph is unchanged (`reference_boundary.txt` byte-identical,
+`.costs.c2214` still a `0.0` boundary input there, `c221` and everything above it
+unmoved), and `tests/functional_process/test_boundary.py::test_the_stellarator_has_no_
+reactor_structure_cost` asserts both halves.
+
+### 13.2 `PfMagnetCost` — refused, and the reason is a dead read
+
+Every read this node makes that the **live** arm uses is owned on a tokamak now
+(`.pf_coil.r_pf_coil_middle`, `.n_pf_coil_turns`, `.c_pf_cs_coils_peak_ma`,
+`.a_cs_cable_space`, `.m_pf_coil_structure_total`, `.j_crit_str_cs`,
+`.structure.fncmass`), so §12.2's producer column is *also* satisfied here. It is
+refused anyway, for a reason §12.2 could not have known because the problem it names was
+found one slot over afterwards.
+
+`calculate_pf_magnet_cost` carries `supercond_cost_model` as a static kwarg and its two
+arms read **disjoint** strand-cost fields: arm `0` (`PER_KG`, PROCESS's own default and
+every tracked file's value) reads `.costs.ucsc` and `.tfcoil.dcond`; arm `1` (`PER_KAM`)
+reads `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0`, `.pf_coil.j_crit_str_pf` and
+`.pf_coil.j_crit_str_cs`. One node declaring all of them asserts four edges the
+reference run does not make -- **exactly** the defect `TfMagnetCostSuperconducting` was
+split into a `supercond_cost_model` slot to remove (`next_steps.md` §14.2,
+`switch_kwarg_survey.md` §3, `live (3)`), one account earlier in the same file.
+
+And here it is not only a matter of tidiness: `.pf_coil.j_crit_str_pf` is a field
+PROCESS **computes** (`superconpf`) and no ported node owns, so registering
+`PfMagnetCost` as one node would take `.costs.c2222` off the missing-producer pin and
+put `.pf_coil.j_crit_str_pf` on it -- a hole moved, not filled, for a read the live arm
+never makes.
+
+**What restoring it needs**, therefore, is not a slot declaration but the same split:
+`calculate_pf_magnet_cost` divided into a `PER_KG` and a `PER_KAM` function (the two
+`if supercond_cost_model == 0 / elif` sites are interleaved inside one ~90-line body
+with the CS block, so this is a real port and not a rename), a `PfMagnetCost` base
+class holding the five `OutputInto`s, two subclasses, a `PF_MAGNET_COST` registry in
+`indat.py`, and two Tier-1 contracts. `TfMagnetCostSuperconductingPerKg`/`PerKam`
+(`models/costs/costs.py:3738`, `:3791`) is the worked example to copy.
+
+### 13.3 `PfCoilPowerConditioningCost` — refused, producer still unported
+
+Unchanged from §12.2, and this is the row that was already right there: `Power.pfpwr` is
+not ported, so **all six** `.pf_power.*` reads and `.heat_transport.peakmva` are unowned.
+Two of them (`.pf_power.srcktpm`, `.pf_power.ensxpfm`) and `peakmva` are already on the
+missing-producer pin; the other four (`pfckts`, `spfbusl`, `acptmax`, `vpfskv`) are
+fields PROCESS computes that nothing in the graph reads yet, so registering this node
+would trade one pinned row for four new ones and compute `c2252` from seven frozen
+zeros. The producer is the work; the slot is five lines after it.

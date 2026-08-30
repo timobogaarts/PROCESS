@@ -54,10 +54,17 @@ that go through the AGM.
    active constraint reads it, and it carries an `np.isnan` sweep — a data-dependent
    mask over a fixed grid, portable but not free. Left out with this line rather than
    silently.
-2. **The CS fatigue call** (`:3486-3499`, `cs_fatigue.ncycle`) is not ported: it is a
-   whole `Model` of its own and `.tokamak.cs_fatigue` is still an empty slot. See the
-   `cs_fatigue.md` record, whose open question 1 carries the `n_cycle` staircase policy
-   (`next_steps.md` §15.3).
+2. ~~**The CS fatigue call** (`:3486-3499`, `cs_fatigue.ncycle`) is not ported: it is a
+   whole `Model` of its own and `.tokamak.cs_fatigue` is still an empty slot.~~
+   **CLOSED 2026-08-30** — ported as the `Model` it is (`models/cs_fatigue.py::
+   CsFatigue`, `.tokamak.cs_fatigue`), on `cs_fatigue.md`'s own staircase policy. The
+   clause worth retracting is not this one but the sentence beside it in the module
+   docstring: *"neither is read by any active constraint"*. Constraint 90 reads
+   `.cs_fatigue.n_cycle` and **is** active on `low_aspect_ratio_DEMO`, where it was
+   violated by exactly `+1.000000` with a zero gradient row for want of a producer.
+   `.pf_coil.stress_hoop_cs_inner`, which this unit owns, is that node's one physics
+   read — so this module is upstream of a live constraint by one hop, and did not know
+   it.
 
 ## record provenance
 

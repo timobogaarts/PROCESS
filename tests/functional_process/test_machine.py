@@ -106,12 +106,15 @@ def _maybe_absent(entry):
 
 
 def _costs(entry):
-    """`Costs` has three slots of its own -- `cost_of_electricity`, whose occupant may
-    be `None`, `energy_storage_cost` and `tf_magnet_cost_superconducting` -- so it
-    cannot be default-constructed. Built with the reference machine's.
+    """`Costs` has four slots of its own -- `cost_of_electricity`, whose occupant may
+    be `None`, `energy_storage_cost`, `tf_magnet_cost_superconducting` and
+    `reactor_structure_cost`, which is `None` here -- so it cannot be
+    default-constructed. Built with the reference machine's.
 
     The third joined when `.costs.supercond_cost_model` stopped being an
-    `eqx.field(static=True)` (`_audit/next_steps.md` §14.2).
+    `eqx.field(static=True)` (`_audit/next_steps.md` §14.2); the fourth when Account
+    221.4 came back as a *device*-decided slot (2026-08-30), which is why it is `None`
+    on the reference machine -- a stellarator has no reactor structure to cost.
     """
     return entry(
         cost_of_electricity=REFERENCE_MACHINE.costs.cost_of_electricity,
@@ -119,6 +122,7 @@ def _costs(entry):
         tf_magnet_cost_superconducting=(
             REFERENCE_MACHINE.costs.tf_magnet_cost_superconducting
         ),
+        reactor_structure_cost=REFERENCE_MACHINE.costs.reactor_structure_cost,
     )
 
 

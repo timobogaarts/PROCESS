@@ -91,6 +91,7 @@ from functional_process.models.costs.costs import (
     EnergyStorageCostPulsedElectrowattOption1,
     EnergyStorageCostPulsedElectrowattOption2,
     EnergyStorageCostUnpulsed,
+    ReactorStructureCost,
     TfMagnetCostSuperconductingPerKam,
     TfMagnetCostSuperconductingPerKg,
 )
@@ -4490,6 +4491,17 @@ def machine_from_indat(input_file, stella_conf=None):
         1,
         build=lambda cls: cls(
             cost_of_electricity=cost_of_electricity,
+            # **The one slot in this tree decided by the device rather than by a
+            # switch**, and the exception is the point of it: Account 221.4 costs a
+            # reactor structure, and a stellarator has none to cost. `st_strc` sets
+            # both of its masses to a literal `0.0`, so the node would compute an exact
+            # zero from a subsystem the device does not have -- the `EcrhDensityLimit`
+            # bug class -- while a tokamak's `.tokamak.structure` slot owns both and
+            # PROCESS computes a real number. `None` is absence, not refusal, by
+            # `UNPORTED`'s own rule; `models/costs/namespace.py` carries the argument.
+            reactor_structure_cost=(
+                ReactorStructureCost() if device is TokamakProcess else None
+            ),
             energy_storage_cost=_slot_occupant(
                 "i_pulsed_plant_istore",
                 _energy_storage_arm(

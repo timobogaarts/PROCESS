@@ -96,6 +96,38 @@ def calculate_z_plasma_xpoint(rminor, kappa):
     return z_plasma_xpoint_upper, z_plasma_xpoint_lower
 
 
+def calculate_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
+    """Top/bottom blanket thickness (m). Ports `process/models/build.py:1665-1667`,
+    unchanged -- the mean of the two radial blanket thicknesses.
+
+    **`models/stellarator/build.py` computes the same expression**
+    (`st_build`, `:168` there, `process/models/stellarator/build.py:38`), which is why
+    `.build.dz_blkt_upper` was not on the boundary of the stellarator graph and *was*
+    on the tokamak's: the stellarator's producer is one of `st_build`'s fourteen
+    outputs, and there was no tokamak node for the same line. Same field,
+    two devices, two nodes, never both in one graph -- the correspondence
+    `ZTfInsideHalf` already records for `.build.z_tf_inside_half`, and the reason each
+    of them is carved out as a node of its own rather than folded into a neighbour.
+
+    Its own node rather than part of any existing one because nothing in this file's
+    ported closure reads it: `fw.py` and `shield.py` do (the upper blanket and shield
+    stack), and both were reading `0.0`.
+
+    Parameters
+    ----------
+    dr_blkt_inboard :
+        Inboard blanket thickness (m). `.build.dr_blkt_inboard`.
+    dr_blkt_outboard :
+        Outboard blanket thickness (m). `.build.dr_blkt_outboard`.
+
+    Returns
+    -------
+    :
+        `.build.dz_blkt_upper` (m).
+    """
+    return 0.5 * (dr_blkt_inboard + dr_blkt_outboard)
+
+
 def calculate_divertor_geometry_conventional(
     rmajor,
     rminor,
@@ -1131,6 +1163,25 @@ class PlasmaXpointHeights(ExplicitFunction):
 
     def __call__(self, rminor=From(physics), kappa=From(physics)):
         return calculate_z_plasma_xpoint(rminor, kappa)
+
+
+class DzBlktUpper(ExplicitFunction):
+    """cottax node: `calculate_dz_blkt_upper`, owning `.build.dz_blkt_upper`. No switch.
+
+    **Unswitched even though PROCESS's write sits under one.** `build.py:1650-1663`
+    recomputes `dr_blkt_inboard`/`dr_blkt_outboard` from the sub-layer thicknesses when
+    `.fwbs.blktmodel > 0`, and this line then runs regardless -- so `blktmodel` decides
+    where the two *reads* come from, not whether this node owns its output or what
+    formula it uses. `blktmodel > 0` has no producer for either read anywhere in this
+    port (this module's own switch table: "no occupant -- `dr_blkt_*`/`dz_shld_upper`
+    are run inputs"), which is a gap one level up, in that arm's absence, not a second
+    occupant for this slot.
+    """
+
+    dz_blkt_upper = OutputInto(build)
+
+    def __call__(self, dr_blkt_inboard=From(build), dr_blkt_outboard=From(build)):
+        return calculate_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard)
 
 
 class DivertorGeometryConventional(ExplicitFunction):

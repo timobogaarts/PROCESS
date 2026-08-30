@@ -1,4 +1,4 @@
-"""The tokamak's own subsystems -- twenty-seven filled, two still empty.
+"""The tokamak's own subsystems -- twenty-eight filled, one still empty.
 
 Beside the nodes it names (`model_tree_design.md` §11), exactly as
 `models/stellarator/namespace.py` sits beside the stellarator's. **It shipped with not
@@ -6,12 +6,16 @@ one slot occupied**; the first tokamak porting wave filled fourteen of the twent
 the second and third waves' consolidation filled eleven more (and added three --
 `diamagnetic_current`, `pfirsch_schluter_current`, `current_fractions` -- that
 `bootstrap_current.md` found no home for), the cold-boundary wave (2026-08-27) added
-`first_wall_geometry`, and the two that are left keep the original
+`first_wall_geometry`, the missing-producer wave (2026-08-30) added `cs_fatigue`, and
+the one that is left keeps the original
 spelling `... | None = None`, which cottax reads as *"an unproduced slot: it assembles
 nothing, and whatever read its outputs surfaces as a boundary input. Absence, spelled
-as absence."* The two are `cs_fatigue` and `water_use`, both scoping records rather
-than pending ports: `cs_fatigue.md`'s `ncycle` decision is DECIDED-DEFERRED, and
-`water_use.md` measured that nothing in `process/` reads any `.water_use.*` output.
+as absence."* That one is `water_use`, and it is a scoping record rather than a pending
+port: `water_use.md` measured that nothing in `process/` reads any `.water_use.*`
+output. `cs_fatigue` was the other, on the same footing -- until its reader turned out
+to be live (`cs_fatigue.py`'s module docstring, and constraint 90 on
+`low_aspect_ratio_DEMO`), which is the difference between the two cases and why only
+one of them moved.
 
 **Why an empty namespace was worth writing at all**, and why the same argument now
 applies to the eleven that remain. It is the difference between an estimate and a
@@ -67,6 +71,7 @@ from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.blankets.namespace import CcfeHcpb
 from functional_process.models.cryostat import Cryostat
+from functional_process.models.cs_fatigue import CsFatigue
 from functional_process.models.fw import FirstWall, FirstWallGeometry
 from functional_process.models.namespace import Build, Divertor
 from functional_process.models.pfcoil.namespace import CSCoil, PFCoil
@@ -98,29 +103,30 @@ from functional_process.models.vacuum.vacuum import VacuumVesselElliptical
 class Tokamak(ModelNamespace):
     """Everything a conventional tokamak has and a stellarator does not.
 
-    Twenty-nine slots; **twenty-seven of them now have occupants and two are still
+    Twenty-nine slots; **twenty-eight of them now have occupants and one is still
     `None`.** A namespace with `None` slots contributes no node for them and is
     explicitly allowed by cottax (`ModelNamespace`'s own refusal is for a namespace with
-    no *slots*, which is a wrong argument rather than an empty one), so the two that
-    are still empty behave exactly as all twenty-five originals did: whatever reads
-    their outputs surfaces as a boundary input, enumerated by name in
+    no *slots*, which is a wrong argument rather than an empty one), so the one that
+    is still empty behaves exactly as all twenty-five originals did: whatever reads
+    its outputs surfaces as a boundary input, enumerated by name in
     `_audit/tokamak_boundary.md`.
 
     **The annotation is the promise, and it is now kept slot by slot.** The class this
     file shipped with typed every slot `ModelNamespace | None` on the ground that *"there
     is no class to name yet"*, and said a slot would gain a real annotation the day it
-    gained a real occupant, the way `physics.confinement_time.scaling` did. Twenty-seven
-    have. Eleven of those are annotated with a **node** rather than a namespace
-    (`plasma_beta`, `first_wall`, `first_wall_geometry`, `structure`, `cryostat`,
-    `vacuum_vessel`, `bootstrap_current`, `diamagnetic_current`,
-    `pfirsch_schluter_current`, `current_fractions`, `l_h_transition`), because a
+    gained a real occupant, the way `physics.confinement_time.scaling` did.
+    Twenty-eight have. Twelve of those are annotated with a **node** rather than a
+    namespace (`plasma_beta`, `first_wall`, `first_wall_geometry`, `structure`,
+    `cryostat`, `cs_fatigue`, `vacuum_vessel`, `bootstrap_current`,
+    `diamagnetic_current`, `pfirsch_schluter_current`, `current_fractions`,
+    `l_h_transition`), because a
     slot may hold either -- `Physics.fusion_rates` always has -- and wrapping one node in
     a namespace to make the types uniform would put a meaningless key in front of its
     name.
 
     **A slot the factory fills has no default**, here as everywhere else in this tree.
-    Twenty-three of the twenty-seven are `dataclasses.field(kw_only=True)`; the four
-    that keep a default (`plasma_beta`, `cryostat`, `current_fractions`,
+    Twenty-three of the twenty-eight are `dataclasses.field(kw_only=True)`; the five
+    that keep a default (`plasma_beta`, `cryostat`, `cs_fatigue`, `current_fractions`,
     `first_wall_geometry`) are the ones
     with nothing to decide -- no switch anywhere beneath them, so no configuration for
     a default to smuggle in. That distinction is not cosmetic: a
@@ -303,9 +309,24 @@ class Tokamak(ModelNamespace):
     separate `Model` with its own switch; a stellarator has none at all
     (`st_init` sets `data.build.iohcl = 0` unconditionally)."""
 
-    cs_fatigue: ModelNamespace | None = None
+    cs_fatigue: CsFatigue = CsFatigue()
     """`cs_fatigue.py::CsFatigue`, injected at `main.py:652` and reached through
-    `pfcoil.py:3492` -- 1 entered function (`ncycle`), 93 entered LOC."""
+    `pfcoil.py:3492` -- 1 entered function (`ncycle`), 93 entered LOC.
+
+    **Filled 2026-08-30, and the empty slot was not free.** `.cs_fatigue.n_cycle` is
+    constraint 90's operand, and `low_aspect_ratio_DEMO.IN.DAT` activates that
+    constraint: with no owner the field sat at its `0.0` default, so `1 - 0 /
+    n_cycle_min` evaluated to exactly `+1.000000` with an identically zero gradient row
+    and both of that machine's SAND cells stopped at zero iterations. A node, not a
+    namespace, for the same reason `l_h_transition` is one: one function, one owned
+    `VarPath`. A default rather than a factory-filled slot because there is no switch
+    anywhere beneath it -- the `plasma_beta`/`cryostat` rule, and `ncycle` has no
+    branch of any kind.
+
+    The `f_c_plasma_inductive` guard PROCESS applies at the *call* site
+    (`pfcoil.py:3488`) lives on the occupant, as a `jnp.where`; `cs_fatigue.py`'s node
+    docstring says why it cannot be resolved at assembly time the way an `i_*` switch
+    is."""
 
     pulse: TokamakPulse = dataclasses.field(kw_only=True)
     """`pulse.py::Pulse`, §A row 5 (`caller.py:322`) -- 12 entered functions, 236 entered

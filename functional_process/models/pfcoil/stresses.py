@@ -31,12 +31,18 @@ substituted in this block would be a ~1e-7 divergence dressed as a port. Two por
 evaluates.
 
 **Not ported from this block**: the 21-point vertical profile of the axial self-stress
-(`:3436-3465`, `.pf_coil.stress_z_cs_self_profile`) and the CS fatigue call
-(`:3486-3499`, `cs_fatigue.ncycle`). Neither is read by any active constraint or by any
-node in this graph, and the fatigue call is a whole `Model` of its own
-(`.tokamak.cs_fatigue` is still an empty slot). The profile also carries a `np.isnan`
-sweep that is a data-dependent mask over a fixed grid -- portable, but not for free, and
-not for nothing.
+(`:3436-3465`, `.pf_coil.stress_z_cs_self_profile`). Nothing in the graph and no active
+constraint reads it, and it carries a `np.isnan` sweep that is a data-dependent mask
+over a fixed grid -- portable, but not for free, and not for nothing.
+
+**The CS fatigue call (`:3486-3499`) left this list on 2026-08-30.** It is a whole
+`Model` of its own, so it is ported as one -- `models/cs_fatigue.py::CsFatigue`, filling
+`.tokamak.cs_fatigue`, which was an empty slot when this docstring was written. The
+sentence above it used to say "neither is read by any active constraint", and *that* was
+the error: constraint 90 reads `.cs_fatigue.n_cycle` and is active on
+`low_aspect_ratio_DEMO`, where it was violated by exactly `+1.000000` with a zero
+gradient row because nothing owned the field. `stress_hoop_cs_inner`, which this module
+owns, is that node's one physics read.
 """
 
 import jax.numpy as jnp

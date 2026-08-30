@@ -35,6 +35,7 @@ from functional_process.boundary import (
 from functional_process.indat import (
     GRAPH,
     REFERENCE_INPUT_FILE,
+    REFERENCE_MACHINE,
     graph_for,
     machine_from_indat,
 )
@@ -192,7 +193,7 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """353 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """363 inputs and 11 guesses, against the stellarator's 297 and 6.
 
     **Also 2026-08-30**, in the same day's third wave, five producers landing against one new declared read,
     and the guess half unmoved. The five are the second half of the same wave as the row
@@ -212,7 +213,7 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     would have (see `BlanketInboardPoloidalAngle`'s docstring for why that one stays
     out).
 
-    **361 -> 353 on 2026-08-30**, in four steps, and the set of them is
+    **361 -> 363 on 2026-08-30**, in four waves, and the set of them is
     the whole argument for why this number is pinned rather than bounded.
 
     **361 -> 360.** `.physics.beta_poloidal_vol_avg` left, because
@@ -335,15 +336,15 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (353, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (363, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The five missing producers on the MDA graph, pinned so it can only go down.
+    """The three missing producers on the MDA graph, pinned so it can only go down.
 
-    **Twenty-two -> five across three waves on 2026-08-30.** One of those waves landed
+    **Twenty-two -> three across four waves on 2026-08-30.** One of those waves landed
     five rows at once, and they are
     worth naming because they are five different shapes of the same hole:
 
@@ -379,8 +380,8 @@ def test_no_new_boundary_input_is_something_process_computes():
     port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
     Only a cold start exposes it, and only if something asks this question.
 
-    **Measured on `driven_graph`, like every other pin in this file** -- five rows,
-    down from twenty-two across three waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
+    **Measured on `driven_graph`, like every other pin in this file** -- three rows,
+    down from twenty-two across four waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
     `.build.dz_blkt_upper` and `.build.dr_tf_inner_bore` left when
     `models/namespace.py::Build` gained `tf_top_height`, `blkt_upper_thickness` and
     `tf_inner_bore`, and `.pf_power.srcktpm`, `.pf_power.ensxpfm`,
@@ -509,3 +510,59 @@ def test_the_pf_power_producers_landed_and_the_stellarator_still_has_none():
         "a stellarator has no PF coils and never calls `Power.run`; nothing on it may "
         "own a PF-coil power-supply or central-solenoid field"
     )
+
+
+def test_the_five_landed_producers_own_what_process_computes():
+    """The four rows that left the missing-producer pin on 2026-08-30, by owner.
+
+    The same narrow guard the poloidal-beta test above is, for the same reason and one
+    wave later: every one of these was a field PROCESS recomputes every pipeline pass
+    while the port read `0.0`, and an unwiring that put any of them back -- a slot
+    reverted to `None`, a `Costs` occupant dropped on the wrong device, an import
+    removed -- would change no value test, because Stage A and C2 seed boundary inputs
+    from PROCESS's converged answer and hand a missing producer exactly the right
+    number.
+
+    `.cs_fatigue.n_cycle` is on this list without ever having been on the pin, and that
+    is the sharpest case here: nothing in the *graph* read it, so `boundary` never saw
+    it. Constraint 90 did, from outside, and read `0.0` -- `1 - 0 / n_cycle_min` is
+    exactly `+1.000000` with a zero gradient row, which is what stopped every
+    `low_aspect_ratio_DEMO` solve at zero iterations.
+    """
+    graph = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
+    owners = {var.path_str(): node.path_str() for var, node in graph.owners.items()}
+    # Two agents ported `.build.dz_blkt_upper` independently on 2026-08-30 and named
+    # the slot differently; the build wave's `blkt_upper_thickness` is the one that
+    # landed. The duplication is recorded rather than hidden: it is what parallel
+    # work on one boundary list costs, and the pin is what made it visible.
+    assert owners[".build.dz_blkt_upper"] == ".tokamak.build.blkt_upper_thickness"
+    assert owners[".fwbs.dewmkg"] == ".tokamak.cryostat"
+    assert owners[".buildings.dz_tf_cryostat"] == ".tokamak.cryostat"
+    assert owners[".costs.c2214"] == ".costs.reactor_structure_cost"
+    assert owners[".cs_fatigue.n_cycle"] == ".tokamak.cs_fatigue"
+    assert owners[".cs_fatigue.dz_cs_turn_conduit"] == ".tokamak.cs_coil.turn_geometry"
+
+    pinned = Path(MISSING_PRODUCERS_PIN).read_text()
+    for landed in (
+        ".build.dz_blkt_upper",
+        ".fwbs.dewmkg",
+        ".buildings.dz_tf_cryostat",
+        ".costs.c2214",
+    ):
+        assert landed not in pinned
+
+
+def test_the_stellarator_has_no_reactor_structure_cost():
+    """`.costs.reactor_structure_cost` is a tokamak slot and `None` on a stellarator.
+
+    The one slot in this tree whose occupant is decided by the *device*, so it is worth
+    a test that says so from both sides rather than only from the tokamak's. `st_strc`
+    sets `.structure.fncmass`/`.gsmass` to a literal `0.0`, so an occupant here would
+    compute an exact zero out of a subsystem the device does not have -- the
+    `EcrhDensityLimit` bug class, which this port has now named in three places and
+    should not re-create in a fourth. `.costs.c2214` stays the `0.0` boundary input it
+    always was on that machine.
+    """
+    assert machine_from_indat(MISSING_PRODUCERS_INPUT_FILE).costs.reactor_structure_cost
+    assert REFERENCE_MACHINE.costs.reactor_structure_cost is None
+    assert V("costs", "c2214") not in GRAPH.owners

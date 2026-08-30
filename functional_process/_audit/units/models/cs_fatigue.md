@@ -4,10 +4,13 @@ status: draft
 confidence: medium
 ---
 
-**Partially ported (2026-08-26), one function; the file's main computation (`ncycle`) is
-a stop item, reported below rather than ported.** Written as part of wave-1's
-reachability-first dispatch (`next_steps.md`'s tokamak wave). No `unit_registry.md` row,
-no `next_steps.md` edit; registration is the consolidation pass's job.
+**Fully ported as of 2026-08-30**, in two passes. 2026-08-26 ported
+`surface_stress_intensity_factor` and stopped at `ncycle`, reporting it rather than
+improvising a policy; 2026-08-27 decided how `ncycle` should be ported and deferred
+doing it; 2026-08-30 did it, because both halves of the deferral's own reason had
+expired. `embedded_stress_intensity_factor` stays unported and dead. The record below is
+the 2026-08-26 audit unchanged, with the stop item's disposition and the ported outcome
+appended -- the reasoning that produced the decision is worth more intact than tidied.
 
 ## reachability
 
@@ -33,6 +36,14 @@ reporting. **Not active on `large_tokamak_eval.IN.DAT`**: `grep -n "^icc = " tes
 regression/input_files/large_tokamak_eval.IN.DAT` lists 25 active constraints and `90` is
 not among them. `.cs_fatigue.n_cycle` is also printed at `pfcoil.py:3486-3492`'s output
 block (reporting), gated by the same `f_c_plasma_inductive` condition.
+
+**And the reader is live, not merely real.** The paragraph above says constraint 90 is
+"not active on `large_tokamak_eval.IN.DAT`" and reads that as sufficient. It was not:
+`low_aspect_ratio_DEMO.IN.DAT` **does** activate it (`icc` contains 90, confirmed by
+running `SingleRun` on it), and on that machine PROCESS's converged `n_cycle` is
+`29382.2` against an `n_cycle_min` of `22764.1` -- an *active* constraint sitting
+essentially on its bound. Checking one tracked input and generalising is what turned a
+correct "reached, with a real reader" into a wrong "and nothing needs it yet".
 
 **Verdict: outcome (a), reached with a real reader**, per the wave brief's own framing
 ("cs_fatigue likely feeds a CS stress-cycle constraint" — confirmed). The reader
@@ -255,6 +266,17 @@ one point, but not traced through an actual `ncycle` trajectory.
      bespoke `residual`, no new tier: the gradient tests are excused for the discrete
      output with the reason recorded, exactly as `noh`'s `static_argnames` are.
    Everything else in this file is ready to proceed on that basis.
+
+   **RESOLVED 2026-08-30 -- ported exactly as decided, and the deferral's reason had
+   expired on both counts.** The decision said "deferred because no reader needs
+   `n_cycle` yet (constraint 90 is not active on any tracked input and the CS stress
+   chain feeding it is UNPORTED)". `stresses.py` landed the CS stress chain on
+   2026-08-27 (registry #53, `.tokamak.cs_coil.stresses`), and constraint 90 *is*
+   active on `low_aspect_ratio_DEMO` -- so the port's `.cs_fatigue.n_cycle` sat at its
+   `0.0` default while a live constraint read it, making `1 - 0 / n_cycle_min` exactly
+   `+1.000000` with an identically zero gradient row. Both of that machine's SAND cells
+   stopped at zero iterations on it: a constraint violated by a *constant* cannot be
+   steered, so nothing else about that configuration could be measured either.
 2. **Does PROCESS's own finite-difference gradient of `n_cycle` see the same staircase
    discontinuity a `lax.while_loop` port would?** Not measured. If yes, the existing
    Richardson-extrapolation error bar (`_harness/finite_difference.py`) may already
@@ -287,3 +309,86 @@ question 3).
 
 **Deviations from PROCESS**: the `a <= c` Python `if` becomes `jnp.where`; no arithmetic
 change.
+
+
+## ported (2026-08-30): `ncycle`
+
+Port: `calculate_n_cycle` and the `CsFatigue` node, both in
+`functional_process/models/cs_fatigue.py`. Test:
+`tests/functional_process/models/test_cs_fatigue.py::TestNCycle`. Registered at
+`.tokamak.cs_fatigue`, which was an empty slot until this pass.
+
+**Shape: exactly candidate 1**, per open question 1's resolution above -- an eager
+`lax.while_loop` over the source's own four loop-carried values `(a, c, n_pulse,
+k_max)`, Tier-1 value agreement, gradient checks structurally excused. Two structural
+changes and no arithmetic ones: the seven `self.data.cs_fatigue.*` coefficient reads
+become arguments (all seven are `explicit-arg` in the data-footprint table above), and
+`delta = 1e-4` stays a module constant because PROCESS hardcodes it and no input file
+can ask for another. Value agreement at the legacy point is `2.1e-16` relative.
+
+**`t_crack_radial` is not produced, and that is a correction to this record's own
+data-footprint table**, which lists it as a `write`. It is `3 * t_crack_vertical`
+computed before the loop and never touched by it -- and, decisively,
+`.cs_fatigue.t_crack_radial` is a genuine `IN.DAT` variable
+(`process/core/input.py:782`, range `1e-5..1.0`) that PROCESS overwrites with a derived
+value read only by `pfcoil.py:2255`, inside `output()`. A node owning it would clobber
+an input to produce a reporting number, and it could not even be gated the way `n_cycle`
+is: `n_cycle`'s ungated value is its `0.0` dataclass default, which is exactly what
+PROCESS leaves there, while `t_crack_radial`'s would be whatever the file set. So the
+port returns one value where PROCESS returns two.
+
+**The `f_c_plasma_inductive` guard is on the node, not in the function.** PROCESS calls
+`ncycle` only when `.physics.f_c_plasma_inductive > 0.0e-4` (`pfcoil.py:3488`, "only
+valid for pulsed reactor design"). That test lives at the *call site*, in `pfcoil.py`,
+so it belongs to the binding rather than to the ported function; and it is a computed
+condition, not a switch, so `machine_from_indat` cannot resolve it the way it resolves
+`conditional-ownership-by-run-config` -- whether this node owns its output is not
+knowable until the physics has run. It is a `jnp.where` on the node, with `0.0` as the
+ungated value.
+
+**Termination is argued, not assumed**, because `lax.while_loop` has no iteration cap
+and a loop that could stall would stall the whole graph evaluation. `k_max` is
+`max(k_a, k_c)`, so one of the two ratios is exactly `1` every pass and the
+corresponding crack dimension advances by the full `delta`; `a` or `c` therefore
+strictly increases towards a fixed bound each iteration, bounding the trip count at
+`(bound - start) / delta` -- a few hundred passes on the tracked inputs. A non-finite
+input exits immediately, since `nan <= x` is `False`.
+
+**Open question 2 is answered in passing, and the answer is better than expected.**
+Measured at `low_aspect_ratio_DEMO`'s own operating point (`max_hoop_stress = 2.94e8`,
+`dz_cs_turn_conduit = 0.010042`), `jacfwd` through the `while_loop` agrees with a
+central finite difference to **2.4e-8 relative** in `max_hoop_stress` and `1.2e-8` in
+`dz_cs_turn_conduit`. So `lax.while_loop`'s forward-mode rule gives the *right*
+derivative, not merely a finite one, and the staircase is invisible at a realistic
+point. The gradient excuse is kept anyway and is now documented as a precaution rather
+than a necessity: `n_pulse` is a sum over a data-dependent number of steps, so a fuzz
+point where PROCESS's `epsfcn` perturbation crosses a trip-count boundary differs by one
+whole `delta_n` for a reason belonging to PROCESS's discretisation. Quantifying how
+often that happens over the fuzz distribution is a piece of work, not a tolerance to
+tune, and is left open.
+
+**Open question 3 (`embedded_stress_intensity_factor`) is unchanged**: still dead in
+`process/`, still not needed by `ncycle`'s closure, still not ported.
+
+## the two reads whose producer was also missing
+
+`ncycle`'s `dz_cs_turn_conduit` and `dr_cs_turn_conduit` are **not** the input defaults
+this record's data-footprint table implies. `CSCoil.ohcalc` overwrites both from
+`calculate_cs_turn_geometry_eu_demo` (`pfcoil.py:3302-3319`), and on
+`low_aspect_ratio_DEMO` it computes `0.00990` for both against
+`pfcoil_variables.py`'s `0.07` and `0.022` -- a factor of seven on the radial crack
+limit and two on the vertical, both of which are `ncycle`'s stopping thresholds.
+
+Registering `CsFatigue` alone would therefore have swapped one wrong answer for another:
+`n_cycle = 0` for an `n_cycle` computed off the wrong conduit. `boundary.
+unproduced_but_computed` named both fields the moment the node landed -- they were
+invisible before, because nothing in the graph read them -- and
+`pfcoil/geometry.py::CSCoilTurnGeometry` (`.tokamak.cs_coil.turn_geometry`, registry
+#41) is the producer that closes them, in the same commit and for that reason.
+
+**Measured end to end.** At PROCESS's converged point on `low_aspect_ratio_DEMO` the
+port's MDA env now gives `.cs_fatigue.n_cycle = 29382.2` against PROCESS's `29382.2`,
+and constraint 90's normalised residual is `-2.0e-10` -- an active constraint on its
+bound, where it read `+1.000000` before. Cold, it gives `799.8` and `+0.200`: still
+violated at the cold design, but *violated as a function of the design* rather than by a
+constant with no gradient.

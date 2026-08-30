@@ -1,5 +1,3 @@
-.costs.c2214
 .costs.c2222
 .costs.c2252
-.fwbs.dewmkg
 .tfcoil.str_wp
