@@ -3069,18 +3069,30 @@ that the solver layer holds no *further* blocker, not proof.
 
 ### 18.5 What each package needs, precisely
 
-**CroCo** (`process/models/tfcoil/superconducting.py:3773-4030`, ~260 lines):
-`CROCOSuperconductingTFCoil.run` calls `run_base_superconducting_tf` (already ported, the
-CICC path shares it) and then four pure functions --
-`tf_croco_averaged_turn_geometry`, `tf_turn_croco_cable_space_properties`,
-module-level `calculate_croco_cable_geometry`, `tf_croco_inboard_areas_and_fractions` --
-plus `tf_croco_superconductor_properties`, which is the one that needs
-`superconductors.hijc_rebco` (`i_tf_sc_mat = 9`) and a REBCO **tape stack** geometry the
-port has nowhere: `.superconducting_tfcoil.*croco*` and `*hts_tape*`. It refuses integer
-turn geometry outright (`:3838`) -- both ST files set `i_tf_turns_integer = 0`, so that
-arm need not be written. Estimated shape: one new namespace under `.tokamak.tf_coil`
-with 5-6 nodes, one new `UNPORTED`-clearing registry entry per superconductor slot, and
-`safe_*` review of the tape-stack divisions.
+**CroCo** -- `CROCOSuperconductingTFCoil`, `process/models/tfcoil/superconducting.py:
+3773-4865`, **1093 lines**, of which `run` is 489 and `output`/`output_croco_info` are
+170 that the port does not write. It calls `run_base_superconducting_tf` (already
+ported; the CICC path shares it) and then five pure methods, all with the clean
+keyword-in/dataclass-out seam:
+
+| function | lines | note |
+|---|---|---|
+| `tf_croco_averaged_turn_geometry` | 114 | non-integer turns only |
+| `tf_turn_croco_cable_space_properties` | 47 | |
+| `tf_croco_inboard_areas_and_fractions` | 63 | |
+| `tf_croco_superconductor_properties` | 168 | the `i_tf_sc_mat` dispatch, tape shapes only |
+| `croco_voltage` | 30 | quench voltage |
+| `superconductors.calculate_croco_cable_geometry` | 80 | module-level, the tape stack |
+
+Plus `superconductors.hijc_rebco` (122 lines), which the port has never called --
+`jcrit_rebco` and `gl_rebco` it already uses on the stellarator side, `hijc_rebco` is
+what `i_tf_sc_mat = 9` needs and it is the only genuinely new material model in the
+package. State: **19** `*croco*`/`*hts_tape*` fields in
+`superconducting_tf_coil_variables.py`, none of which any ported node owns or reads.
+It refuses integer turn geometry outright (`:3838`) -- both ST files set
+`i_tf_turns_integer = 0`, so that arm need not be written. Estimated shape: one new
+namespace under `.tokamak.tf_coil` with 5-6 nodes and its own superconductor-properties
+slot, and a `safe_*` review of the tape-stack divisions.
 
 **PF coil system**: five dimensions, thirteen nodes, five audit records
 (`pfcoil/geometry.md`, `currents.md`, `fields.md`, `masses.md`, `inductance.md`). `-1`
