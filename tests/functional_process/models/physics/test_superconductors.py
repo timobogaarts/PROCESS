@@ -13,6 +13,7 @@ from functional_process.models.physics.superconductors import (
     bottura_scaling,
     gl_nbti,
     gl_rebco,
+    hijc_rebco,
     itersc,
     jcrit_nbti,
     jcrit_rebco,
@@ -314,4 +315,59 @@ class TestWesternSuperconductingNb3Sn(Tier1Contract):
         "strain": (-0.005, 0.005),
         "b_c20max": (25.0, 35.0),
         "temp_c0max": (14.0, 18.0),
+    }
+
+
+class TestHijcRebco(Tier1Contract):
+    """`hijc_rebco` -> the same, unchanged.
+
+    Legacy sample is `test_hijc_rebco`'s case verbatim. The ninth material, ported
+    2026-08-30 as `models/tfcoil/croco.py`'s critical surface -- `i_tf_sc_mat == 9` is
+    what both tracked spherical tokamaks set, and nothing on the cable-in-conduit side
+    ever reaches this fit.
+
+    **PROCESS's two-arm `cur_critical` is one expression in the port** and the fuzz range
+    exercises both sides of the seam it replaces: `b_conductor` spans below and above
+    `b_critical`, which is the branch PROCESS writes as two formulas differing only in
+    the sign that keeps `|1 - B/B_c|`'s base non-negative. Bounds stay under `t_c0` for
+    the same reason `TestGlRebco`'s do: above it PROCESS returns a *complex* number from
+    `(1 - T/T_c0) ** 1.4` and the port returns `nan`, a type-level disagreement neither
+    side is trying to reproduce.
+    """
+
+    audit_record = "models/physics/superconductors.md"
+    reference = staticmethod(ref.hijc_rebco)
+    ported = hijc_rebco
+
+    samples = [
+        legacy_sample(
+            "hijc-rebco-reference",
+            temp_conductor=4.75,
+            b_conductor=7.0,
+            b_c20max=30.0,
+            t_c0=25.0,
+            dr_hts_tape=4.0e-3,
+            dx_hts_tape_rebco=1.0e-6,
+            dx_hts_tape_total=6.5e-5,
+        ),
+        legacy_sample(
+            "hijc-rebco-croco-tape",
+            temp_conductor=4.75,
+            b_conductor=11.7,
+            b_c20max=138.0,
+            t_c0=92.0,
+            dr_hts_tape=6.28e-3,
+            dx_hts_tape_rebco=1.0e-6,
+            dx_hts_tape_total=2.11e-4,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "temp_conductor": (4.0, 60.0),
+        "b_conductor": (2.0, 30.0),
+        "b_c20max": (120.0, 150.0),
+        "t_c0": (85.0, 95.0),
+        "dr_hts_tape": (2.0e-3, 8.0e-3),
+        "dx_hts_tape_rebco": (5.0e-7, 2.0e-6),
+        "dx_hts_tape_total": (5.0e-5, 3.0e-4),
     }

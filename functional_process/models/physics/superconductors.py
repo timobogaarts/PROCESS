@@ -469,6 +469,108 @@ def gl_rebco(temp_conductor, b_conductor, strain, b_c20max, t_c0):
     return j_critical, b_critical, temp_critical
 
 
+def hijc_rebco(
+    temp_conductor,
+    b_conductor,
+    b_c20max,
+    t_c0,
+    dr_hts_tape,
+    dx_hts_tape_rebco,
+    dx_hts_tape_total,
+):
+    """High-current-density REBCO tape (Wolf/Hazelton/Zhai), `i_tf_sc_mat == 9`.
+
+    Direct port of `process/models/superconductors.py:728-849`. The ninth material and
+    the last critical-surface fit this module was missing: it is what a CroCo
+    (cross-conductor) TF coil needs, and nothing on the cable-in-conduit side calls it,
+    which is why it arrives with `models/tfcoil/croco.py` rather than with the other
+    eight (`_audit/units/models/physics/superconductors.md`, 2026-08-30).
+
+    **PROCESS's two-branch `cur_critical` is one expression here, and that is value
+    identity rather than a tidy-up.** `:816-836` writes `(1 - b/b_crit) ** q` when
+    `b_critical > b_conductor` and `(b/b_crit - 1) ** q` otherwise -- i.e. `|1 - ratio|`
+    with the sign chosen so the base is never negative, and the two arms *agree* at
+    `ratio == 1` (both give exactly `0`, PROCESS taking the second). Every other factor
+    is shared. So the single `safe_pow(jnp.where(above, 1 - ratio, ratio - 1), q)`
+    reproduces both arms bit for bit, and the `jnp.where` still keeps the untaken base
+    off the negative axis, which is the whole reason the branch exists.
+
+    `safe_pow` guards the three fractional powers at exactly zero -- `b_critical == 0`
+    (reached when `temp_conductor == t_c0`), `ratio == 0` (`b_conductor == 0`) and
+    `ratio == 1` -- where the unguarded derivative is `+inf` and poisons the whole
+    Jacobian row (`models/safe_math.py`).
+
+    **Outside the real domain PROCESS has no real answer either.** At
+    `temp_conductor > t_c0` the base of `(1 - T/T_c0) ** 1.4` goes negative and Python's
+    `float.__pow__` returns a **complex**, exactly the shape recorded for `gl_nbti` in
+    `models/tfcoil/superconducting.py::TfSuperconductorTemperatureMargin`; this port
+    returns `nan` there. Neither is a value the other can be tested against, and the
+    harness's samples stay well inside the domain (`t_c0 = 92 K` against a coolant
+    temperature of a few K).
+
+    Parameters
+    ----------
+    temp_conductor :
+        Superconductor temperature (K).
+    b_conductor :
+        Magnetic field at the conductor (T).
+    b_c20max :
+        Upper critical field (T) at zero temperature and strain.
+    t_c0 :
+        Critical temperature (K) at zero field and strain.
+    dr_hts_tape :
+        Width of the tape (m).
+    dx_hts_tape_rebco :
+        Thickness of the REBCO layer in the tape (m).
+    dx_hts_tape_total :
+        Total thickness of the tape, all layers included (m).
+
+    Returns
+    -------
+    tuple
+        `(j_critical, b_critical, temp_critical)` -- engineering critical current
+        density per tape (A/m^2), critical field (T), critical temperature (K).
+    """
+    a = 1.4
+    b = 2.005
+    # Critical current density prefactor, A(4.2 K).
+    a_0 = 2.2e8
+    # Flux-pinning field scaling parameters.
+    p = 0.39
+    q = 0.9
+    # A(T)'s Newton-polynomial coefficients, fitted to A(4.2) / A(20) / A(65).
+    u = 33450.0
+    v = -176577.0
+
+    b_critical = b_c20max * safe_pow(1.0 - temp_conductor / t_c0, a)
+
+    # Scaled to match `gl_rebco`'s behaviour; PROCESS's own comment says so.
+    temp_critical = 0.999965 * t_c0
+
+    a_t = a_0 + (u * temp_conductor**2) + (v * temp_conductor)
+
+    ratio = b_conductor / b_critical
+    # PROCESS's branch, reduced to the choice of sign that keeps the base non-negative.
+    q_base = jnp.where(b_critical > b_conductor, 1.0 - ratio, ratio - 1.0)
+
+    cur_critical = (
+        (a_t / b_conductor)
+        * safe_pow(b_critical, b)
+        * safe_pow(ratio, p)
+        * safe_pow(q_base, q)
+    )
+
+    # Per-tape engineering current density: the critical current spread over the whole
+    # tape cross-section rather than over the REBCO layer alone.
+    j_critical = (
+        cur_critical
+        * (dr_hts_tape * dx_hts_tape_rebco)
+        / (dr_hts_tape * dx_hts_tape_total)
+    )
+
+    return j_critical, b_critical, temp_critical
+
+
 def western_superconducting_nb3sn(
     temp_conductor, b_conductor, strain, b_c20max, temp_c0max
 ):
