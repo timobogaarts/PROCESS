@@ -412,6 +412,21 @@ neither file assembles and `survey` needs an assembled graph.
 
 ## 2026-08-30 — `stresscl` REFUSED, measured: `sig_tf_case`, `sig_tf_wp`, `str_wp`
 
+> **Superseded the same day.** Everything below stands as measurement; only the verdict
+> moved. `stresscl`, `tf_field_and_force`, `plane_stress` and the four smearing helpers
+> are ported in `functional_process/models/tfcoil/stress.py` under registry row **55**,
+> with `_audit/units/models/tfcoil/stress.md` as their record — scoped exactly as the
+> "recommended next step" at the foot of this section asked, to the
+> `(i_tf_stress_model, i_tf_bucking) == (1, 1)` cell, with `extended_plane_strain` and
+> the bucked-and-wedged stack refused in `indat.py`. Two things this section got wrong
+> in the small: `i_tf_tresca` turns out **not to be read at all** on that cell (both its
+> branches are gated on `ii >= i_tf_bucking + 1` and the two reported layers are
+> `n_tf_bucking` and `n_tf_bucking - 1`), and `.tfcoil.vforce` had to be ported with it,
+> because `stresscl`'s only load input had no producer either. The cost estimate was
+> right about the line count and wrong about what it buys: constraints 31 and 32 were
+> not merely reading zero, they were evaluating to a **constant** `-1.0` with a zero
+> Jacobian row, which `stress.md` records.
+
 A missing-producer wave (`_audit/units/models/build.md`, same date) asked for
 `.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp` and `.tfcoil.str_wp` as producers. **All
 three are outputs of `stresscl` and none of them is portable as a wiring change.** This

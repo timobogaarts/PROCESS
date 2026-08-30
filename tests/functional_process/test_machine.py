@@ -377,7 +377,9 @@ DERIVED_UNPORTED_KEYS = {
     "structure_arm",
     "surface_poloidal_field_arm",
     "tf_coil_shape_arm",
+    "tf_field_and_force_arm",
     "tf_inboard_radii_arm",
+    "tf_stress_arm",
     "vacuum_vessel_arm",
     # Per-slot names for a switch that is read at more than one slot with different
     # dispositions, so the key is the slot and not the integer.
