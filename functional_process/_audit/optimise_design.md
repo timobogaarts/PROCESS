@@ -2662,12 +2662,26 @@ wants `graph.ancestors` with the declared problem nodes excluded; including them
 re-creates the cycles, which is its own `ValueError`. Not fixed here: it is a change on
 SAND's assembly path, it wants its own test, and nothing above depends on it.
 
+> **Fixed, and this paragraph's two numbers are wrong; §17 is the measurement.** The
+> count is **one of six**, not five, and the exception is a `ValueError` from `jnp.stack`
+> on an array unknown, not a `KeyError` from a short body. The conclusion above
+> nevertheless *understates* the damage: the one-level body does not usually raise, it
+> quietly freezes the missing inputs at `env`'s values and returns a number for a
+> different function. On `large_tokamak_nof` that number is `J = -I` **exactly** for the
+> burn-time cycle -- a perfectly conditioned, unambiguously healthy fixed point, where
+> the real residual has `cond 9.1e+12`. Both defects had to be repaired before that block
+> could be seen at all.
+
 **`mdf.inner_residuals` crashes on the tokamak.** `float(np.asarray(env[unknown]))` at
 `mdf.py:750` raises on any array-valued inner unknown, and the burn-time cycle owns
 `n_pf_coil_turns`, an array. The one instrument for *"did the MDA converge"* -- whose
 docstring says *"`PicardDriver` stops at `max_iter` silently"* -- has never been able to
 run on the configurations that need it most. Same defect class as the `reference_run`
 array bug (`d2890d90`).
+
+> **Fixed. §17 is the measurement.** It reduces over the array now, keeping the
+> element with the worst *relative* gap, and it has been run on all four assembling
+> configurations at both the cold design and PROCESS's converged one.
 
 ### 16.8 What this changes
 
@@ -2767,3 +2781,162 @@ constraints 31 and 32 are active on `large_tokamak_nof` and the port evaluates b
 so the absence is optimistic. `tfcoil/base.md`'s standing note that `stresscl` "feeds
 only stresses, which no boundary read depends on" was true of the ten boundary reads and
 is false of the constraint surface.
+
+---
+
+## 17. Both instruments repaired, and what they measure (2026-08-30)
+
+§16.7's last two defects are fixed (`functional_process/sand.py::fixed_point_residuals`,
+`functional_process/mdf.py::inner_residuals`) and run on all four assembling
+configurations at **both** the cold design and PROCESS's converged one. This section is
+what they say. Nothing here is inferred; every number is a print from one run per
+configuration, cross-checked between two independently-built instruments (the graph-side
+`fixed_point_residuals` and a `Drive.condition_map`-side Jacobian taken off the MDF
+schedule) that agree on every block they both see.
+
+### 17.1 What was actually broken, corrected
+
+Both §16.7 paragraphs got the mechanism right and the count wrong.
+
+| claim in §16.7 | measured |
+|---|---|
+| "five of six driven blocks on `large_tokamak_nof` fail this way" | **one of six** -- `^problem.times.t_plant_pulse_burn.cycle`, on all three tokamaks |
+| the failure is `_run_acyclic` raising `KeyError` | `ValueError: Cannot stack arrays with different numbers of dimensions: got (), (22, 22), (22,)` -- the **array** defect, in `jnp.stack(...).reshape(len(reads))` |
+| "cannot inspect any multi-node cycle" | it inspects them and gets the **wrong answer**, which is worse |
+
+The last row is the finding. A one-level body usually *runs*: the inputs its missing
+nodes would have produced are already in `env`, so `_run_acyclic` reads them as frozen
+constants and returns a Jacobian for a function that is not the block's residual.
+Measured directly, old body against the transitive closure, same `env`, at PROCESS's
+converged design on `large_tokamak_nof`:
+
+| block | old body | this body | max cell difference |
+|---|---|---|---|
+| `^problem.times.t_plant_pulse_burn.cycle` | 3 nodes, `J = -I` exactly | 56 nodes | **1.31e+06** |
+| `^problem.physics.proton_rate_density.cycle` | 3 nodes | 18 nodes | **2.15e-01** |
+| `^problem.tokamak.cicc_...dr_tf_plasma_case` | 1 node | 3 nodes | 0 warm; **1.9e-02** cold |
+| `^problem.power.delta_eta_step` | 1 node | 83 nodes | 0, exactly |
+| `^problem.physics.profiles.ion_vol_avg_temperature` | 1 node | 1 node | 0, exactly |
+| `^problem.tfcoil.dx_tf_wp_primary_toroidal` | 1 node | 12 nodes | 0, exactly |
+
+`J = -I` for the burn-time cycle is the whole argument for the closure: the one-level
+body reports `g` as **not depending on its own unknowns at all**, i.e. a perfectly
+conditioned, full-rank, unambiguously healthy fixed point, where the real residual has
+`cond 9.1e+12`. And it reports it as a *number*, so nothing distinguishes it from a
+measurement. `delta_eta_step`'s 1-vs-83 row is the control: a genuine self-loop whose
+83-node closure is all upstream of the unknown contributes exactly zero, so the closure
+costs accuracy nowhere.
+
+**The `except` is narrowed rather than removed.** `fixed_point_residuals` returns a
+`FixedPointResidual` per block carrying either a Jacobian or the exception that stopped
+it, and `degenerate_fixed_points` -- which `reference_problem` acts on -- now **raises**
+if any block could not be measured, naming each. "Checked, healthy" and "could not check"
+are different answers and a caller that cannot tell them apart will act on the wrong one.
+After the fix no block on any of the four configurations is undetectable, so nothing
+raises today; the guard is for the next one.
+
+### 17.2 Every driven block, all four configurations
+
+Rank of the residual Jacobian `d(g(u) - u)/du`, flattened over array unknowns, at both
+seeds. `n` is the flattened unknown count.
+
+| configuration | block | n | rank warm | rank cold | note |
+|---|---|---|---|---|---|
+| `stellarator_helias` | `physics.profiles.ion_vol_avg_temperature` | 1 | 1 | 1 | |
+| | `power.delta_eta_step` | 1 | 1 | 1 | |
+| | `physics.proton_rate_density.cycle` | 2 | 2 | 2 | cond 1.08 / 1.28 |
+| | `fwbs.f_ster_div_single` | 1 | 1 | 1 | |
+| | `stellarator.coils.intersect` (`RootFind`) | 1 | 1 | -- | |
+| `large_tokamak_nof` | `tokamak.cicc_...dr_tf_plasma_case` | 1 | **0** | 1 | **degenerate warm** |
+| | `physics.profiles.ion_vol_avg_temperature` | 1 | 1 | 1 | |
+| | `power.delta_eta_step` | 1 | 1 | 1 | |
+| | `physics.proton_rate_density.cycle` | 3 | 3 | 3 | cond 1.24 / 1.29 |
+| | `tfcoil.dx_tf_wp_primary_toroidal` | 1 | 1 | 1 | |
+| | `times.t_plant_pulse_burn.cycle` | 507 | 506 | 507 | cond **9.1e+12** / 7.6e+12 |
+| `low_aspect_ratio_DEMO` | `tokamak.cicc_...dr_tf_plasma_case` | 1 | **0** | 1 | **degenerate warm** |
+| | the three scalar self-loops | 1 each | 1 | 1 | |
+| | `physics.proton_rate_density.cycle` | 3 | 3 | 3 | cond 1.15 both |
+| | `times.t_plant_pulse_burn.cycle` | 507 | 506 | 506 | cond **1.6e+13** / 3.1e+13 |
+| `large_tokamak_eval` | `tokamak.cicc_...dr_tf_plasma_case` | 1 | 1 | 1 | |
+| | the three scalar self-loops | 1 each | 1 | 1 | |
+| | `physics.proton_rate_density.cycle` | 3 | 3 | 3 | cond 1.15 both |
+| | `times.t_plant_pulse_burn.cycle` | 507 | 506 | 506 | cond **9.8e+12** / 9.4e+12 |
+
+**The burn-time cycle's `506` is not a finding and must not be read as one.** Its
+smallest singular value is `2.3e-07` to `3.4e-07` in every cell above while the largest
+is `2.6e+06` to `5.2e+06`, so `numpy.linalg.matrix_rank`'s default threshold
+(`max(M, N) * eps * s_max`, i.e. `2.9e-07` to `5.8e-07` here) lands *on top of* `s_min`
+and the verdict flips on rounding. The honest statement is the conditioning, and it is
+the same at every seed on every tokamak: **a 507x507 residual block with
+`cond ~1e13`**, four to five orders worse than any other block in the port. §16.3(a)
+killed "the burn-time loop is degenerate" with a derivative measurement and was right to;
+this is the weaker and better-supported successor claim, and it is the first time the
+block has been looked at at all.
+
+**`^problem.tokamak.cicc_superconducting_tf_coil.dr_tf_plasma_case` is genuinely
+degenerate at PROCESS's converged design on two of the three tokamaks**, and this is not
+a defect -- it is the port correctly detecting that PROCESS is treating the field as an
+input there. `dr_tf_plasma_case_from_input` is `max(u, m)` with `m` independent of `u`
+(`models/tfcoil/base.py:256-271`), so `dg/du` is `0` where the clamp binds and `1` where
+it does not; where it does not, `r = g(u) - u` is constant and the SAND equality
+determines nothing. `reference_problem` therefore deletes the problem warm and keeps it
+cold on `large_tokamak_nof` and `low_aspect_ratio_DEMO`. **The consequence is worth
+stating plainly: the SAND problem assembled at PROCESS's answer and the SAND problem
+assembled cold are not the same problem on those two files** -- one unknown and one
+equality apart -- which is a fact §16.3(c)'s "seeded at the converged answer, SAND walks
+away" was measured across without anyone knowing. It is unchanged by this repair (the
+old one-node body found this one too); it is recorded because nothing had recorded it.
+
+### 17.3 Did the inner solves converge?
+
+`mdf.inner_residuals` at `PicardDriver.max_iter = 20` (the default) and again at `200`,
+seeded from PROCESS's converged `DataStructure` and from the cold one. Relative gap
+`|g(u) - u| / |u|`, worst element of each unknown.
+
+| configuration | seed | worst inner residual | converged? | any value move at cap 200? |
+|---|---|---|---|---|
+| `stellarator_helias` | warm | `0.00e+00` | yes | no value moved |
+| | cold | `1.27e-08` (`^hat.fwbs.f_ster_div_single`) | yes | no value moved |
+| `large_tokamak_nof` | warm | `2.79e-14` | yes | no value moved |
+| | cold | **`3.10e-05`** (`^hat.pf_coil.n_pf_coil_turns`) | **no** | **yes, up to `4.9e-05` relative** |
+| `low_aspect_ratio_DEMO` | warm | `1.06e-14` | yes | no value moved |
+| | cold | **`2.64e-06`** (`^hat.pf_coil.ind_pf_cs_plasma_mutual`) | **no** | **yes, up to `5.6e-06` relative** |
+| `large_tokamak_eval` | warm | `1.06e-14` | yes | no value moved |
+| | cold | `9.88e-07` (`^hat.pf_coil.ind_pf_cs_plasma_mutual`) | borderline | **yes, up to `9.9e-07` relative** |
+
+Every unconverged row is the burn-time cycle and nothing else, and it is unconverged
+**only cold**. The cap raise is the confirmation rather than the detection: a block whose
+answer moves when `max_iter` goes from 20 to 200 was not at its fixed point at 20, and
+all three tokamaks move cold while nothing anywhere moves warm.
+
+**What this costs.** MDF's whole correctness claim is that its conditions are PROCESS's
+constraints *evaluated at a converged MDA*; a cold `large_tokamak_nof` evaluation is
+therefore evaluating them `3e-05` relative off the fixed point of the largest and
+worst-conditioned block in the graph, and `jacfwd` through a `lax.while_loop`
+differentiates the iteration that ran rather than the fixed point it did not reach. That
+is a plausible contributor to §16.1's `large_tokamak_nof` MDF rows and it is **not
+established as the cause of anything** -- saying more would be §16.3's pattern again. The
+cheap next measurement is §16.1's matrix re-run with `PicardDriver(max_iter=200)`; it was
+not run here, and this section does not claim a result for it.
+
+### 17.4 `mdf.assemble` does not call `degenerate_fixed_points`, and should not
+
+Recorded because the question was asked. `mdf.py`'s module docstring already argues it:
+an identity `FixedPoint` is a perfectly well-posed Picard problem (it converges in one
+step from anywhere) and only becomes a rank-deficient *equality* because SAND residualises
+it, so there is nothing for MDF to drop. Two things reinforce that and one qualifies it.
+
+- Dropping the problem would **change the graph MDF optimises**, and the two formulations
+  have to optimise the same one or §16.1's table compares nothing. `mdf.assemble` already
+  keeps `DuctDiameterRootFind` for exactly this reason, "for comparability, not because
+  MDF needs it".
+- The degeneracy is **seed-dependent** (§17.2), so calling it in `assemble` would make
+  MDF's graph depend on where it was seeded, which is the property `prime()`'s frozen
+  guess exists to avoid.
+- **The qualification.** A degenerate block's unknown keeps whatever `prime()` seeded it
+  with, and `inner_residuals` reports it at relative gap `0.00e+00` -- indistinguishable
+  from a well-determined block that converged. So the honest reading of every
+  `0.00e+00` row above requires the rank column beside it, which is why both instruments
+  were repaired together and why this section prints them side by side. Making
+  `inner_residuals` say so itself would mean handing it the ranks, i.e. an MDA-sized
+  Jacobian per call; **not done**, and the reason is cost, not principle.

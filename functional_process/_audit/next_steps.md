@@ -3174,11 +3174,31 @@ by a cheap measurement) is the reusable lesson.
 2. **Port `cs_fatigue.ncycle`.** `low_aspect_ratio_DEMO`'s SAND cells stop at **zero**
    iterations on c90, violated with an identically zero row at exactly `+1.000000`.
    Blocks that configuration from any start.
-3. **Fix `degenerate_fixed_points`' one-level body** (§16.7). `graph.ancestors` with the
-   declared problem nodes excluded. Five of six driven blocks on the tokamak are
-   currently reported healthy without being inspected at all.
-4. **Fix `mdf.inner_residuals`' array crash** (`mdf.py:750`). The one instrument for "did
-   the MDA converge" cannot run on any configuration with an array-valued inner unknown.
+3. ~~**Fix `degenerate_fixed_points`' one-level body** (§16.7).~~ **Done**
+   (`optimise_design.md` §17). `graph.ancestors` with the declared problem nodes
+   excluded, `owns`/conditions flattened so an array unknown is measurable, and the bare
+   `except` narrowed: `sand.fixed_point_residuals` records each block's Jacobian *or* the
+   exception that stopped it, and `degenerate_fixed_points` raises rather than reporting
+   an unmeasured block healthy. This item's own "five of six" is wrong -- it was one of
+   six, and the other five ran and returned numbers for the **wrong function** (the
+   burn-time cycle came back as `J = -I` exactly, i.e. flawless). §17.1 has the table.
+4. ~~**Fix `mdf.inner_residuals`' array crash** (`mdf.py:750`).~~ **Done**
+   (`optimise_design.md` §17). Reduced over the array to the worst element by relative
+   gap. Run on all four assembling configurations at both seeds: **the burn-time cycle is
+   not converged at the cold start on all three tokamaks** (`3.1e-05` relative on
+   `large_tokamak_nof`) and its answer moves when `PicardDriver.max_iter` goes 20 -> 200,
+   while nothing anywhere moves warm.
+4a. **Re-run §16.1's cold matrix with `PicardDriver(max_iter=200)`** -- the measurement
+   item 4 makes possible and did not itself take. MDF's conditions are PROCESS's
+   constraints *at a converged MDA*, and on the tokamaks cold they are not; whether that
+   is worth anything to the cold rows is unmeasured, and asserting it would be §16.3's
+   pattern for the fourth time.
+4b. **`^problem.times.t_plant_pulse_burn.cycle` has `cond ~1e13`** on every tokamak at
+   every seed -- four to five orders worse than any other block in the port, and the
+   first time it has been looked at (§17.2). Its `numpy` rank verdict flips between 506
+   and 507 on the threshold and means nothing; the conditioning does. Where an SQP is
+   handed this as 507 residual equalities (SAND) that is a candidate explanation for a
+   great deal, and it is a candidate, not a finding.
 5. **Bound SAND's coupling unknowns.** §17.1's cheapest hypothesis, still unmeasured, and
    now more important than when filed: seeded at PROCESS's *converged answer*, SAND takes
    two steps and walks off a feasible point to c72 `+5.4e-01`. `VmconDriver.bounds`
@@ -3197,6 +3217,11 @@ by a cheap measurement) is the reusable lesson.
   relaxation and refusing was the more honest report.
 - **§17.4's framing of c72 as a solver question.** Correct about severity, wrong about
   cause.
+- **§19.1 item 3's "five of six driven blocks are reported healthy without being
+  inspected at all"** (from `optimise_design.md` §16.7). One of six, and the mechanism is
+  the array `jnp.stack`, not a short body's `KeyError`. The correction makes the defect
+  *worse*, not smaller: the other five were inspected with the wrong body and answered
+  with a number. See `optimise_design.md` §17.1.
 
 ### 19.3 Verified state
 
@@ -3299,3 +3324,11 @@ So the reference machines now split **five that assemble** (`stellarator_helias`
 **three that do not** (`spherical_tokamak_eval`, `st_regression`, `IFE`), and the three
 remaining are three genuinely unported packages — CroCo, the PF coil system, and IFE —
 rather than any further wiring.
+**Both §16.7 instruments are repaired and measured** (`optimise_design.md` §17).
+`functional_process/sand.py` gained `FixedPointResidual`/`fixed_point_residuals` and
+`degenerate_fixed_points` became a filter over them that raises on an unmeasurable block;
+`functional_process/mdf.py::inner_residuals` reduces over array unknowns. Six regression
+tests (`test_sand.py` four, `test_mdf.py` two), all of which fail against the old code:
+the sand ones assert the *value* of a two-node cycle's residual Jacobian, which the
+one-level body gets wrong (`-1` for every slope) rather than merely failing to produce.
+`tests/functional_process` 5790 → 5796 passed, 5011 skipped; `tests/unit` 846.

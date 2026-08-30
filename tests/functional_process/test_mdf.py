@@ -25,7 +25,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.evaluate import ConditionMap, schedule_for
-from cottax.problem import Optimise
+from cottax.graph import Graph
+from cottax.problem import FixedPoint, Optimise, Start, driver_vars
 
 from functional_process import mdf, sand
 from functional_process.core.solver.drivers import SeededNewtonDriver
@@ -340,6 +341,109 @@ def test_the_harness_distinguishes_a_cap_from_a_driver_that_gave_up():
     short = _why_it_stopped(False, 60)
     assert "stopped short" in short
     assert "NOT help" in short
+
+
+class _Affine:
+    """`g(x) = rate * x + offset`, element-wise on an array. A class, not a lambda, so
+    the node definition stays a stable jit cache key -- `test_sand._Objective`'s reason.
+    """
+
+    def __init__(self, rate, offset):
+        self.rate = tuple(rate)
+        self.offset = tuple(offset)
+
+    def __call__(self, x):
+        return jnp.asarray(self.rate) * x + jnp.asarray(self.offset)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, _Affine)
+            and other.rate == self.rate
+            and other.offset == self.offset
+        )
+
+    def __hash__(self):
+        return hash((type(self), self.rate, self.offset))
+
+
+def _array_fixed_point(max_iter):
+    """A `FixedPoint` owning a length-three **array**, driven by Picard.
+
+    The shape `inner_residuals` could not report on: the tokamak PF-coil ring is cut at
+    `.pf_coil.n_pf_coil_turns` (a per-coil vector) and `.pf_coil.ind_pf_cs_plasma_mutual`
+    (a matrix), so `^problem.times.t_plant_pulse_burn.cycle` owns arrays on every tokamak
+    configuration. The three elements converge at three different rates, so which element
+    is the worst is a fact and not a coincidence.
+    """
+    from cottax.rewrites import Assign
+    from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+    from cottax.tools.path import path_map
+    from jax.tree_util import GetAttrKey
+
+    from functional_process.core.solver.drivers import PicardDriver
+
+    u = VarPath((GetAttrKey("toy"), GetAttrKey("w")))
+    hat = VarPath((GetAttrKey("^hat"), GetAttrKey("toy"), GetAttrKey("w")))
+    problem = NodePath((GetAttrKey("P"),))
+    rate, offset = (0.1, 0.5, 0.95), (1.0, 1.0, 1.0)
+    graph = Graph(
+        path_map([
+            (
+                NodePath((GetAttrKey("A"),)),
+                CallableNode(
+                    inputs=(In(u),), outputs=(Out(hat),), fn=_Affine(rate, offset)
+                ),
+            ),
+            (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
+        ])
+    )
+    graph = Assign(problem, PicardDriver(max_iter=max_iter)).apply(graph)
+    (start,) = driver_vars(graph[problem], Start)
+    schedule = schedule_for(graph)
+    out = schedule({start: jnp.zeros(3)})
+    return schedule, out, u, np.asarray(rate), np.asarray(offset)
+
+
+def test_inner_residuals_reports_an_array_valued_inner_unknown():
+    """One row, reduced to the worst element by relative gap -- not a `TypeError`.
+
+    The regression guard for `_audit/optimise_design.md` §16.7's third defect:
+    `float(np.asarray(env[unknown]))` raises `TypeError: only 0-dimensional arrays can be
+    converted to Python scalars` on any array unknown, so the one instrument for "did the
+    MDA converge" had **never run on a tokamak**. Measured against the closed-form
+    residual of a deliberately unconverged Picard, so a reduction that merely returned
+    *some* element -- or the mean, or the norm -- fails this too.
+    """
+    schedule, out, u, rate, offset = _array_fixed_point(max_iter=4)
+    current = np.asarray(out[u], dtype=float)
+    gap = rate * current + offset - current
+    relative = np.abs(gap) / np.maximum(np.abs(current), 1e-30)
+
+    (row,) = mdf.inner_residuals(schedule, out)
+    _problem, unknown, residual, reported = row
+    assert unknown == u
+    assert isinstance(residual, float)
+    assert reported == pytest.approx(relative.max())
+    assert residual == pytest.approx(gap[int(np.argmax(relative))])
+    # The slowest element (rate 0.95) is the one still moving after four iterations, and
+    # the check has to be able to say so: an unconverged block reported as converged is
+    # exactly the silence `PicardDriver`'s `lax.while_loop` cannot break.
+    assert int(np.argmax(relative)) == 2
+    assert reported > 1e-6
+
+
+def test_inner_residuals_reports_a_converged_array_block_as_converged():
+    """The same block, given iterations enough -- the other half of the guard, so a
+    reduction that always reports the worst *possible* number cannot pass.
+    """
+    schedule, out, u, rate, offset = _array_fixed_point(max_iter=500)
+    (row,) = mdf.inner_residuals(schedule, out)
+    assert row[3] < 1e-6
+    # `PicardDriver` stops on `rtol = 1e-6` between successive *iterates*, which for a
+    # contraction of rate `0.95` leaves ~`rtol / (1 - rate)` of distance to the true
+    # fixed point still on the table -- the reason a converged block is checked against
+    # its own residual and not against the closed form.
+    assert np.asarray(out[u]) == pytest.approx(offset / (1.0 - rate), rel=1e-4)
 
 
 def test_x64_is_on():
