@@ -82,7 +82,7 @@ from functional_process.core.solver.drivers import VmconDriver
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, prefix_path
 from cottax.tools.path import path_map
-from jax.tree_util import GetAttrKey
+from jax.tree_util import GetAttrKey, SequenceKey
 
 from functional_process.core.solver import constraints as ported_constraints
 from functional_process.core.solver import objectives as ported_objectives
@@ -219,30 +219,37 @@ def iteration_variable_path(ixc_id: int) -> VarPath:
     accessor spelled structurally. `target_name` is the storage location and `name` the
     human label -- cottax already separates those, so only the former is a path.
 
-    Raises
-    ------
-    NotImplementedError
-        If the variable addresses one element of an array field (`array_index`, IDs
-        125-136). A `SequenceKey` component resolves for a *read*, but `Graph`
-        refuses an output that lies inside a variable another node reads whole, and
-        every consumer of impurity fractions reads the whole array. See
-        `_audit/optimise_design.md` §1.3 -- this needs per-element `VarPath`s at the
-        port level, not a key.
+    **`array_index` gets a `SequenceKey` component, and that is now legal.** IDs 125-136
+    address one element of `.impurity_radiation.f_nd_impurity_electron_array`, and this
+    function used to refuse them outright: `Graph.__check_init__` rejects an output lying
+    inside a variable another node reads whole, and `_audit/optimise_design.md` §1.3
+    recorded that "every consumer of impurity fractions reads the whole array".
+
+    That premise expired. `radiation_power.py` was rewritten to read the array as
+    **fourteen individual index-addressed ports**
+    (`FromExactly(impurity_radiation.f_nd_impurity_electron_array[i])`, its § on the
+    fourteen reads), for an unrelated reason -- it made a Shape-B self-loop into two
+    disjoint `VarPath` ranges and removed a `FixedPoint` (`models/physics/namespace.py`).
+    Nothing reads the enclosing array any more, so the containment rule has nothing to
+    object to, and the refusal was outliving its cause. Measured after removing it:
+    `large_tokamak_nof` (PROCESS 8 iterations, 20 `ixc`) and `low_aspect_ratio_DEMO`
+    (16 iterations, 19 `ixc`) both assemble in both formulations, where before neither
+    reached a harness stage at all.
+
+    One caveat from §1.3 survives and is *not* fixed here: `check_pytree_writeable`
+    still refuses such a path, because a numpy array is a jax pytree leaf and `[12]` is
+    inside it. That blocks `cottax.tools.pytree.collapse` -- handing a solved answer back
+    into a `DataStructure` -- and nothing else; an `Env` is a plain dict and needs no
+    pytree. Reading, owning and solving all work.
     """
     iteration_variable = ITERATION_VARIABLES[ixc_id]
-    if iteration_variable.array_index is not None:
-        raise NotImplementedError(
-            f"iteration variable {ixc_id} ({iteration_variable.name}) addresses element "
-            f"{iteration_variable.array_index} of "
-            f"{iteration_variable.target_name or iteration_variable.name} -- an "
-            f"`Optimise` cannot own an array element while any node reads the enclosing "
-            f"array, which `Graph.__check_init__` refuses outright. See "
-            f"`_audit/optimise_design.md` §1.3"
-        )
-    return VarPath((
+    keys = (
         GetAttrKey(iteration_variable.module),
         GetAttrKey(iteration_variable.target_name or iteration_variable.name),
-    ))
+    )
+    if iteration_variable.array_index is not None:
+        keys = (*keys, SequenceKey(iteration_variable.array_index))
+    return VarPath(keys)
 
 
 def design_bounds(ixc):

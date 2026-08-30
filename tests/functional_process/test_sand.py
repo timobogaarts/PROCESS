@@ -23,7 +23,7 @@ from cottax.problem import Optimise, Start, driver_vars
 from cottax.rewrites import Assign
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
-from jax.tree_util import GetAttrKey
+from jax.tree_util import GetAttrKey, SequenceKey
 
 import functional_process
 from functional_process.core.solver import constraints as ported_constraints
@@ -140,17 +140,61 @@ def test_iteration_variable_path_is_processs_own_accessor():
         ))
 
 
-def test_array_indexed_iteration_variables_are_refused_not_approximated():
+def test_array_indexed_iteration_variables_get_a_sequence_key():
     """IDs 125-136 address one element of `f_nd_impurity_electron_array`.
 
-    A `SequenceKey` resolves for a *read*, so this could easily be made to look like it
-    works. It does not: `Graph.__check_init__` refuses an output lying inside a variable
-    another node reads whole, and every consumer of impurity fractions reads the whole
-    array. Refusing here keeps that fact visible instead of deferring it to a confusing
-    graph-construction error. See `_audit/optimise_design.md` §1.3.
+    This test asserted the opposite until 2026-08-30 -- that such a variable is
+    *refused* -- because `Graph.__check_init__` rejects an output lying inside a
+    variable another node reads whole, and `_audit/optimise_design.md` §1.3 recorded
+    that every consumer of impurity fractions read the whole array.
+
+    The premise expired without the refusal noticing. `radiation_power.py` now reads the
+    array as fourteen individual index-addressed ports, so nothing reads the enclosing
+    array and the containment rule has nothing to object to. The cost of the stale
+    refusal was three reference configurations -- `large_tokamak_nof`,
+    `low_aspect_ratio_DEMO` and `st_regression` -- that could not reach a harness stage,
+    two of which assemble in both formulations the moment it is lifted.
+
+    The lesson is the reason this docstring is long: a refusal is a claim about the code
+    at the time it was written, and nothing re-checks it. This one is now a positive
+    assertion, which fails if the path stops being addressable rather than silently
+    passing forever.
     """
-    with pytest.raises(NotImplementedError, match="array"):
-        iteration_variable_path(125)
+    for identifier in (125, 126, 135):
+        iteration_variable = ITERATION_VARIABLES[identifier]
+        assert iteration_variable.array_index is not None
+        assert iteration_variable_path(identifier) == VarPath((
+            GetAttrKey(iteration_variable.module),
+            GetAttrKey(iteration_variable.target_name or iteration_variable.name),
+            SequenceKey(iteration_variable.array_index),
+        ))
+
+
+def test_the_whole_impurity_array_is_read_by_nobody():
+    """The premise the test above depends on, pinned separately so it cannot expire in
+    silence the way the refusal did.
+
+    An `Optimise` may own `f_nd_impurity_electron_array[12]` only while no node reads
+    the enclosing array. If a future model reads it whole, `Graph.__check_init__` will
+    refuse the *graph*, which is a confusing place to learn this; failing here says why.
+    """
+    from functional_process.indat import graph_for
+
+    graph = graph_for()
+    array = VarPath((
+        GetAttrKey("impurity_radiation"),
+        GetAttrKey("f_nd_impurity_electron_array"),
+    ))
+    readers = [
+        node.path_str()
+        for node in graph.nodes
+        if any(read == array for read in graph[node].reads)
+    ]
+    assert not readers, (
+        f"{readers} read `.impurity_radiation.f_nd_impurity_electron_array` whole, so "
+        f"an `Optimise` can no longer own one of its elements -- see "
+        f"`sand.iteration_variable_path`"
+    )
 
 
 def test_all_eight_design_variables_are_boundary_inputs():
