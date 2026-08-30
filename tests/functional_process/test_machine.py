@@ -106,17 +106,18 @@ def _maybe_absent(entry):
 
 
 def _costs(entry):
-    """`Costs` has five slots of its own -- `cost_of_electricity`, whose occupant may
+    """`Costs` has six slots of its own -- `cost_of_electricity`, whose occupant may
     be `None`, `energy_storage_cost`, `tf_magnet_cost_superconducting`, and
-    `reactor_structure_cost` and `pf_coil_power_conditioning_cost`, both `None` here --
-    so it cannot be default-constructed. Built with the reference machine's.
+    `reactor_structure_cost`, `pf_coil_power_conditioning_cost` and `pf_magnet_cost`,
+    all three `None` here -- so it cannot be default-constructed. Built with the
+    reference machine's.
 
     The third joined when `.costs.supercond_cost_model` stopped being an
-    `eqx.field(static=True)` (`_audit/next_steps.md` §14.2); the fourth and fifth when
-    Accounts 221.4 and 225.2 came back as *device*-decided slots (2026-08-30), which is
-    why both are `None` on the reference machine -- a stellarator has no reactor
-    structure to cost and never calls `Power.run`, so it has no PF coil power supply to
-    condition either.
+    `eqx.field(static=True)` (`_audit/next_steps.md` §14.2); the last three when
+    Accounts 221.4, 225.2 and 222.2 came back as *device*-decided slots (2026-08-30),
+    which is why all three are `None` on the reference machine -- a stellarator has no
+    reactor structure to cost, no PF coil system to cost, and never calls `Power.run`,
+    so it has no PF coil power supply to condition either.
     """
     return entry(
         cost_of_electricity=REFERENCE_MACHINE.costs.cost_of_electricity,
@@ -128,6 +129,7 @@ def _costs(entry):
         pf_coil_power_conditioning_cost=(
             REFERENCE_MACHINE.costs.pf_coil_power_conditioning_cost
         ),
+        pf_magnet_cost=REFERENCE_MACHINE.costs.pf_magnet_cost,
     )
 
 
@@ -609,15 +611,25 @@ REGISTRY_COMPANIONS = {
 def _build_occupant(name, entry, machine):
     """One occupant instance, or `None` for an absent one.
 
-    `SauterBootstrapCurrentFraction` is the only registry entry needing a constructor
-    argument, and the argument is a *shape* the machine already carries -- read off the
-    tree rather than written here, so it cannot drift from the graph it is swapped into.
+    Two registry entries need constructor arguments, and in both cases the arguments are
+    *shapes* the machine already carries -- read off the tree rather than written here,
+    so they cannot drift from the graph the occupant is swapped into.
+    `SauterBootstrapCurrentFraction` needs the profile grid's length; `PF_MAGNET_COST`'s
+    two arms need the PF loop's bounds and its conductor branch, which the occupant
+    already standing in that slot has.
     """
     if entry is None:
         return None
     if name == "BOOTSTRAP_CURRENT" and entry.__name__.startswith("Sauter"):
         grid = machine.physics.profiles.profile_grid
         return entry(n_plasma_profile_elements=grid.n_plasma_profile_elements)
+    if name == "PF_MAGNET_COST":
+        standing = machine.costs.pf_magnet_cost
+        return entry(
+            n_cs_pf_coils=standing.n_cs_pf_coils,
+            iohcl=standing.iohcl,
+            i_pf_conductor=standing.i_pf_conductor,
+        )
     return entry()
 
 

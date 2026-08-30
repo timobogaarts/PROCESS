@@ -27,6 +27,7 @@ from functional_process.models.pfcoil.superconductor import (
     calculate_cs_strand_critical_current_density,
     calculate_cs_temperature_margin_iter_nb3sn,
     calculate_cs_temperature_margin_wst_nb3sn,
+    calculate_pf_strand_critical_current_density,
 )
 from process.models.pfcoil import superconpf
 from process.models.superconductors import SuperconductorModel
@@ -54,6 +55,21 @@ _TEMP_CS_SUPERCONDUCTOR_MARGIN = 3.4208032
 port's frozen `0.0` before `.tokamak.cs_coil.temperature_margin` landed. Recorded here
 as the number this contract exists to keep, not asserted directly -- the contract
 compares against `superconpf` itself."""
+
+# The PF coils' own `superconpf` call, at the **last** of the six coils -- the one whose
+# value survives `pfcoil()`'s loop (`pfcoil.py:900-904`, no index on the assignment).
+# Off the same `large_tokamak_nof` run.
+_B_PF_COIL_PEAK_LAST = 2.5773536152742245
+_BPF2_LAST = 1.5851124381765633
+_TEMP_PF_PEAK_FIELD = 4.75
+_FCUPFSU = 0.69
+_F_A_PF_COIL_VOID_LAST = 0.3
+_J_PF_COIL_WP_PEAK_LAST = 8.0e6
+_J_CRIT_STR_PF = 1101789868.9092896
+"""PROCESS's own `.pf_coil.j_crit_str_pf` on that run, against the port's frozen `0.0`
+before `.tokamak.pf_coil.strand_critical_current` landed -- the missing producer that
+kept `.costs.c2222` off the graph (`_audit/cost_boundary_inputs.md` §13.2). Recorded,
+not asserted: the contract compares against `superconpf` itself."""
 
 
 def _around(base, fraction):
@@ -164,6 +180,44 @@ def _reference_strand_critical_current_density(
 ):
     """`ohcalc:3626-3628`'s `else` arm, transcribed -- three lines with no callable."""
     return float(j_cs_conductor_critical_flat_top_end) * (1.0 - float(fcuohsu))
+
+
+def _reference_pf_strand_critical_current_density(
+    b_pf_coil_peak, bpf2, temp_pf_peak_field, fcupfsu
+):
+    """`pfcoil()`'s `:871-904` for one coil: `bmax`, `superconpf(isumat=3)`, the `else`
+    strand branch.
+
+    The **whole** real function again, not a subset: the NbTi arm's `j_crit_sc` is the
+    third of `superconpf`'s four returns and the temperature margin is still solved and
+    discarded, exactly as `pfcoil()` discards it here (`_tmarg`, `:877`).
+
+    `fhe`, `j_pf_wp` and the eight arguments this arm never reads are held at
+    `large_tokamak_nof`'s own values rather than at zeros, for `_reference_superconpf`'s
+    reason: a regression in the branch selection must show up as a value mismatch and not
+    as a division by zero. On this arm they reach only `j_crit_cable` (the second return,
+    discarded) and the root find (the fourth, also discarded), so they cannot move the
+    number under test -- which is the point the fuzz draws below check by varying
+    `fcupfsu` against them.
+    """
+    _jcritwp, _j_crit_cable, j_crit_sc, _tmarg = superconpf(
+        b_pf_peak=max(abs(float(b_pf_coil_peak)), abs(float(bpf2))),
+        fhe=_F_A_PF_COIL_VOID_LAST,
+        fcu=float(fcupfsu),
+        j_pf_wp=_J_PF_COIL_WP_PEAK_LAST,
+        isumat=SuperconductorModel.OLD_LUBELL_NBTI,
+        fhts=0.5,
+        strain=-0.005,
+        temp_pf_peak_field=float(temp_pf_peak_field),
+        bcritsc=24.0,
+        tcritsc=16.0,
+        b_crit_upper_nbti=14.86,
+        t_crit_nbti=9.04,
+        dr_hts_tape=4.0e-3,
+        dx_hts_tape_rebco=1.0e-6,
+        dx_hts_tape_total=6.5e-5,
+    )
+    return j_crit_sc * (1.0 - float(fcupfsu))
 
 
 class TestCSCriticalCurrentDensityIterNb3Sn(Tier1Contract):
@@ -338,3 +392,37 @@ class TestCSTemperatureMarginWstNb3Sn(Tier1Contract):
 
     samples = TestCSTemperatureMarginIterNb3Sn.samples
     fuzz_bounds = TestCSTemperatureMarginIterNb3Sn.fuzz_bounds
+
+
+class TestPFStrandCriticalCurrentDensity(Tier1Contract):
+    """`calculate_pf_strand_critical_current_density` -> `pfcoil.py:871-904`.
+
+    One legacy point, the one that survives `pfcoil()`'s loop: the last of the six PF
+    coils on `large_tokamak_nof`, where PROCESS's `.pf_coil.j_crit_str_pf` is
+    `1.1017899e9` A/m^2 and the port read a frozen `0.0` until this unit landed.
+
+    **`b_pf_coil_peak` and `bpf2` are fuzzed independently**, which is what exercises the
+    `max(|.|, |.|)` PROCESS takes of them: the legacy point has the inner edge above the
+    outer, and the draws below cross over.
+    """
+
+    audit_record = "models/pfcoil/superconductor.md"
+    reference = _reference_pf_strand_critical_current_density
+    ported = calculate_pf_strand_critical_current_density
+
+    samples = [
+        legacy_sample(
+            "large-tokamak-nof-last-pf-coil",
+            b_pf_coil_peak=_B_PF_COIL_PEAK_LAST,
+            bpf2=_BPF2_LAST,
+            temp_pf_peak_field=_TEMP_PF_PEAK_FIELD,
+            fcupfsu=_FCUPFSU,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "b_pf_coil_peak": (0.5, 6.0),
+        "bpf2": (0.5, 6.0),
+        "temp_pf_peak_field": (4.0, 6.0),
+        "fcupfsu": (0.4, 0.85),
+    }

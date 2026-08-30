@@ -1,4 +1,4 @@
-"""The Central Solenoid's superconductor properties -- `superconpf`'s ITER Nb3Sn arm.
+"""The coils' superconductor properties -- `superconpf`'s ITER Nb3Sn and NbTi arms.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/superconductor.md`, which
 the wave that wrote this module could not create -- `unit_registry.md` was held open by
@@ -48,18 +48,30 @@ same decision `models/vacuum/vacuum.py::solve_duct_diameter` and the TF margin b
 already made, for the reason `solve_current_sharing_temperature`'s own docstring gives:
 the endpoint *is* the quantity constraint 60 compares against PROCESS's, so reproducing
 scipy's stopping rule is what makes that a value test.
+
+**The PF coils' strand critical current density joined the module on 2026-08-30**, and
+it is the one thing here that is not `ohcalc`'s. `pfcoil()`'s own loop calls `superconpf`
+once per PF coil (`process/models/pfcoil.py:871-904`) and keeps two of its four returns;
+`masses.md` records both as computed-and-discarded because no mass depends on a critical
+current. One of them is not discarded any more: `.pf_coil.j_crit_str_pf`
+(`:900-904`) is Account 222.2's `PER_KAM` strand cost, and it was a field PROCESS
+computes (`1.1018e9` A/m^2 on `large_tokamak_nof`) that nothing in the graph owned.
+`PFStrandCriticalCurrentDensity` below owns it. `.pf_coil.j_pf_wp_critical`, the other
+return, is still unowned -- see the note at the foot of this file.
 """
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
+    FromExactly,
     OutputInto,
 )
 
-from functional_process.models.pfcoil import CS_INDEX
+from functional_process.models.pfcoil import CS_INDEX, N_PF_COILS
 from functional_process.models.physics.superconductors import (
     itersc,
+    jcrit_nbti,
     western_superconducting_nb3sn,
 )
 from functional_process.models.tfcoil.superconducting import (
@@ -87,6 +99,26 @@ other."""
 
 WST_NB3SN_TEMP_C0MAX = 16.06
 """`tc0m` for the WST Nb3Sn arm (K), `pfcoil.py:4796`. See `WST_NB3SN_B_C20MAX`."""
+
+OLD_LUBELL_NBTI_B_C20MAX = 15.0
+"""`bc20m` for the NbTi arm (T) -- upper critical field at 0 K and 0 strain,
+`process/models/pfcoil.py:4775`. The PF coils' conductor on **both** ported arms
+(`.pf_coil.i_pf_superconductor == 3`, `large_tokamak_eval.IN.DAT:246` and
+`low_aspect_ratio_DEMO.IN.DAT:806`) -- `indat._pf_coil_system_deviations` refuses every
+other value of that switch, which is why `PFStrandCriticalCurrentDensity` is one class
+and not a family the way its two CS neighbours are."""
+
+OLD_LUBELL_NBTI_TEMP_C0MAX = 9.3
+"""`tc0m` for the NbTi arm (K) -- critical temperature at 0 T and 0 strain,
+`pfcoil.py:4776`."""
+
+OLD_LUBELL_NBTI_C0 = 1.0e10
+"""`c0` for the NbTi arm (A/m^2) -- the Lubell scaling constant, `pfcoil.py:4777`. A
+literal inside the arm like its two siblings, and the same three literals
+`models/tfcoil/superconducting.py:1798-1800` names for `supercon`'s NbTi arm; kept as a
+third named constant here rather than imported from there, for the reason
+`WST_NB3SN_B_C20MAX` gives -- a change to one of PROCESS's arms must not silently move
+another."""
 
 
 def calculate_cs_critical_current_density(
@@ -280,6 +312,65 @@ def calculate_cs_strand_critical_current_density(
         Strand critical current density (A/m^2).
     """
     return j_cs_conductor_critical_flat_top_end * (1.0 - fcuohsu)
+
+
+def calculate_pf_strand_critical_current_density(
+    b_pf_coil_peak, bpf2, temp_pf_peak_field, fcupfsu
+):
+    """PF strand critical current density for costing, `$/kA m` (A/m^2).
+
+    Ports `pfcoil()`'s `:871-904`: the peak field at one PF coil, `superconpf`'s
+    `OLD_LUBELL_NBTI` arm (`:4773-4784`), and the `else` half of the strand branch at
+    `:898-904`.
+
+    **PROCESS keeps one scalar for six coils, and the last coil wins.** The block sits
+    inside `pfcoil()`'s group-then-coil loop and assigns `.pf_coil.j_crit_str_pf`
+    unconditionally on every pass (`:900`, `:902`), with no index -- so the value that
+    survives the loop is the last PF coil's, index `N_PF_COILS - 1`. That is reproduced
+    rather than averaged or re-indexed: Account 222.2's `PER_KAM` arm reads the scalar,
+    and the scalar is the last coil's. The five overwritten values are not computed here
+    at all, which is the same "dropped rather than computed and discarded" rule
+    `masses.calculate_pf_coil_masses` applies to the rest of this block.
+
+    **The critical-surface arm reads neither `fhe` nor `fcu`.** `superconpf` scales
+    filaments to cable with both (`j_crit_cable_frac`, `:4724-4729`) but that product is
+    `jcritwp`, its *first* return; the third, `j_crit_sc`, comes straight off the fit.
+    So `.pf_coil.f_a_pf_coil_void` is not a read of this unit even though it is a read of
+    `superconpf`, and `fcupfsu` enters only through the strand branch below.
+
+    **The strand branch is written as its `else` arm only.** `:898` tests
+    `i_cs_superconductor in {2, 6, 8}` -- the **CS** switch, deciding the **PF** value,
+    which is PROCESS as written and is reproduced as written. Both values that reach this
+    package (`1` and `5`, `indat.CS_SUPERCONDUCTOR`) are outside that set, so the `if`
+    arm belongs to occupants that do not exist and that `_pf_coil_system_arm` refuses
+    first -- the same argument `calculate_cs_strand_critical_current_density` makes for
+    its own `else`.
+
+    Parameters
+    ----------
+    b_pf_coil_peak, bpf2 :
+        Field at the inner and outer edge of the last PF coil (T) --
+        `.pf_coil.b_pf_coil_peak[5]` and `.pf_coil.bpf2[5]`. `superconpf`'s `b_pf_peak`
+        is `max(|b_pf_coil_peak|, |bpf2|)` (`:871-874`).
+    temp_pf_peak_field :
+        Helium temperature at the peak-field point (K). `.tfcoil.tftmp`.
+    fcupfsu :
+        Copper fraction of the PF superconducting strand. `.pf_coil.fcupfsu`.
+
+    Returns
+    -------
+    :
+        Strand critical current density (A/m^2).
+    """
+    b_pf_peak = jnp.maximum(jnp.abs(b_pf_coil_peak), jnp.abs(bpf2))
+    j_crit_sc, _temp_critical = jcrit_nbti(
+        temp_conductor=temp_pf_peak_field,
+        b_conductor=b_pf_peak,
+        c0=OLD_LUBELL_NBTI_C0,
+        b_c20max=OLD_LUBELL_NBTI_B_C20MAX,
+        temp_c0max=OLD_LUBELL_NBTI_TEMP_C0MAX,
+    )
+    return j_crit_sc * (1.0 - fcupfsu)
 
 
 def calculate_cs_superconductor_current_density(
@@ -646,12 +737,63 @@ class CSTemperatureMarginWstNb3Sn(CSTemperatureMarginIterNb3Sn):
     _critical_surface = staticmethod(calculate_cs_temperature_margin_wst_nb3sn)
 
 
+class PFStrandCriticalCurrentDensity(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.strand_critical_current`.
+
+    Owns `.pf_coil.j_crit_str_pf`, Account 222.2's `PER_KAM` strand cost. Landed
+    2026-08-30 as a missing producer measured on `large_tokamak_nof`: PROCESS computes
+    `1.1017899e9` A/m^2 there and the port had `0.0`, so `.costs.c2222` could not be
+    registered without moving the hole from the account onto the field
+    (`_audit/cost_boundary_inputs.md` §13.2).
+
+    **The one node in this package that is `pfcoil()`'s rather than `ohcalc`'s**, which
+    is why it sits in `.tokamak.pf_coil` and its four neighbours here sit in
+    `.tokamak.cs_coil`. It is in this module rather than in `masses.py` because what it
+    computes is a critical current, and `masses.md`'s scope argument is precisely that no
+    mass depends on one -- so `superconpf`'s PF call belongs beside `superconpf`'s CS
+    calls, not beside the mass loop it happens to share a `for` statement with.
+
+    **Not a family, unlike its two CS neighbours.** They ask
+    `.pf_coil.i_cs_superconductor` again because `_pf_coil_system_arm`'s arm `1` spans
+    two of its values; `.pf_coil.i_pf_superconductor` is pinned to `3` by that same
+    predicate on **both** arms (`_pf_coil_system_deviations`' `-6`), so there is one
+    critical surface and nothing for a slot to decide. An instance default, like every
+    other slot in `PFCoil`.
+
+    **Two per-index reads, not two whole arrays.** `.pf_coil.b_pf_coil_peak[5]` and
+    `.pf_coil.bpf2[5]` are the last PF coil's, the only ones the surviving scalar depends
+    on (see `calculate_pf_strand_critical_current_density`); they match
+    `fields.PFCoilPeakField`'s per-index `Output`s exactly, the same shape
+    `masses.PFCoilMasses` uses for the six it needs.
+    """
+
+    j_crit_str_pf = OutputInto(pf_coil)
+
+    def __call__(
+        self,
+        b_pf_coil_peak_last=FromExactly(pf_coil.b_pf_coil_peak[N_PF_COILS - 1]),
+        bpf2_last=FromExactly(pf_coil.bpf2[N_PF_COILS - 1]),
+        tftmp=From(tfcoil),
+        fcupfsu=From(pf_coil),
+    ):
+        return calculate_pf_strand_critical_current_density(
+            b_pf_coil_peak=b_pf_coil_peak_last,
+            bpf2=bpf2_last,
+            temp_pf_peak_field=tftmp,
+            fcupfsu=fcupfsu,
+        )
+
+
 # `.pf_coil.j_pf_wp_critical` -- left unowned, and named here so a reader who greps for
 # it finds the reason rather than an omission. `ohcalc:3670-3675` writes the
 # beginning-of-pulse winding-pack critical density into the CS slot and then copies it
 # straight back out into `.pf_coil.j_cs_critical_pulse_start` (`:3677-3679`), so the CS
 # slot is the same number under two names and the second name is the one every consumer
-# reads. The six PF slots are `pfcoil()`'s (`:877`), whose own `superconpf` calls
-# `masses.md` records as computed-and-discarded and which this pass does not port; owning
-# one slot of a seven-slot array whose other six have no producer would claim more than
-# is here.
+# reads. The six PF slots are `pfcoil()`'s (`:877`), and those `superconpf` calls **are**
+# reached now -- `PFStrandCriticalCurrentDensity` above takes their third return for the
+# last coil. Their first return is still not taken, and the reason has changed from
+# "unported" to "no reader": `j_pf_wp_critical` is an array whose six entries nothing in
+# this graph consumes (PROCESS itself only prints them, `outpf:2570-2603`), and owning it
+# would mean six critical-surface evaluations for an output no edge leaves. It stays on
+# `boundary.computed_by_process`'s list of fields PROCESS writes and the port does not,
+# where it is invisible to `unproduced_but_computed` precisely because nothing reads it.

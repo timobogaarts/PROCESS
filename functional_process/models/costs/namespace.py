@@ -39,6 +39,7 @@ from functional_process.models.costs.costs import (
     MiscPlantEquipmentCost,
     NuclearBuildingVentilationCost,
     PfCoilPowerConditioningCost,
+    PfMagnetCost,
     PowerConditioningCost,
     PowerInjectionCost,
     ReactorCoolingSystemCost,
@@ -132,10 +133,36 @@ class Costs(ModelNamespace):
     tf_magnet_cost_superconducting: TfMagnetCostSuperconducting = dataclasses.field(
         kw_only=True
     )
-    # **Accounts 222.2 (PF magnets) and 225.2 (PF coil power conditioning) have no slot
-    # here, and 221.4 (reactor structure) above has none, deliberately. A stellarator
+    pf_magnet_cost: PfMagnetCost | None = dataclasses.field(
+        kw_only=True
+    )  # Account 222.2
+    """Account 222.2, **restored 2026-08-30**, and the third device-decided slot -- and
+    the only one that is device-decided *and* switched, so both mechanisms meet on it.
+
+    `machine_from_indat` fills it with `None` on a stellarator for
+    `reactor_structure_cost`'s reason (`caller.py:272-275` returns before
+    `pfcoil.run()`, so every `.pf_coil.*` read keeps its dataclass default and the node
+    would compute an exact zero out of a subsystem the device does not have), and on a
+    tokamak with the `.costs.supercond_cost_model` occupant `PF_MAGNET_COST` names.
+
+    **Two things had to land before it could, and only one of them was a producer.** The
+    refusal recorded in `_audit/cost_boundary_inputs.md` §13.2 was not the stale kind
+    Account 225.2's slot documents below: every read the *live* arm makes was already
+    owned when it was written. What was wrong was the node -- one class carrying
+    `supercond_cost_model` as a static kwarg over two arms with disjoint strand-cost
+    reads, so registering it would have declared four edges the reference run does not
+    make. Splitting it into `PfMagnetCostPerKg`/`PerKam` removes three of those four
+    from the live arm; the fourth, `.pf_coil.j_crit_str_pf`, is a field PROCESS computes
+    (`superconpf`, `pfcoil.py:900-904`) that nothing owned, so
+    `.tokamak.pf_coil.strand_critical_current` was written for it in the same commit.
+    Registering without that would have taken `.costs.c2222` off the missing-producer pin
+    and put `.pf_coil.j_crit_str_pf` on it -- a hole moved, not filled."""
+    # **Account 225.2 (PF coil power conditioning) had no slot here, and 221.4 (reactor
+    # structure) and 222.2 (PF magnets) above had none, deliberately. A stellarator
     # has no PF coil system and no separately-accounted reactor structure, so this tree
-    # has no node for their costs.**
+    # has no node for their costs.** All three are back, as `| None` slots the device
+    # decides; the argument below is why they left, and is kept because it is also the
+    # argument for why they are `None` rather than unconditional.
     #
     # The evidence is `_audit/cost_boundary_inputs.md` §§4-6, which measured all three:
     # every output of all three is exactly `0.0` in PROCESS's own converged reference

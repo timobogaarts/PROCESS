@@ -589,6 +589,8 @@ unmoved), and `tests/functional_process/test_boundary.py::test_the_stellarator_h
 reactor_structure_cost` asserts both halves.
 
 ### 13.2 `PfMagnetCost` — refused, and the reason is a dead read
+### *(Acted on the same day — see §13.4. The refusal below stands as written; it was
+### correct, and what it asked for is what was built.)*
 
 Every read this node makes that the **live** arm uses is owned on a tokamak now
 (`.pf_coil.r_pf_coil_middle`, `.n_pf_coil_turns`, `.c_pf_cs_coils_peak_ma`,
@@ -629,3 +631,73 @@ missing-producer pin; the other four (`pfckts`, `spfbusl`, `acptmax`, `vpfskv`) 
 fields PROCESS computes that nothing in the graph reads yet, so registering this node
 would trade one pinned row for four new ones and compute `c2252` from seven frozen
 zeros. The producer is the work; the slot is five lines after it.
+
+*(§13.3 is stale as of the same afternoon: `Power.pfpwr` landed as
+`.power.pf_coil_power` and the slot was registered — see §6's own update. The section is
+kept because the reasoning was sound when written and the staleness is the finding.)*
+
+### 13.4 `PfMagnetCost` — restored (2026-08-30), and §13.2's work list is what was built
+
+`.costs.pf_magnet_cost`, an occupant of `PF_MAGNET_COST` on a tokamak and `None` on a
+stellarator. `.costs.c2222` is off the missing-producer pin, which drops **2 → 1**
+(`.tfcoil.str_wp` alone), and **nothing arrived** — the discrimination §13.2 said the
+one-node registration would fail.
+
+**Both halves were needed, and only one of them was a producer.** §13.2's list, item by
+item:
+
+- `calculate_pf_magnet_cost` divided into `calculate_pf_magnet_cost_per_kg` and
+  `_per_kam`. Done, and §13.2 was right that it is a real port: the two
+  `if supercond_cost_model == 0 / elif` sites really are interleaved, one inside the PF
+  loop (`costs.py:1639-1666`) and one inside the CS block (`:1770-1801`), with the
+  copper, conduit and winding-length arithmetic between them. So the shared body
+  `_pf_magnet_cost` takes **two** strand costs — a per-coil sequence and the CS scalar —
+  where `_tf_magnet_cost_superconducting` takes one. `calculate_pf_magnet_cost` survives
+  as a dispatcher forwarding to the two, which is what keeps the existing tier-1 contract
+  (whose samples already cover both arms) exercising them.
+- A `PfMagnetCost` base holding the five `OutputInto`s and the three remaining static
+  fields, with `PfMagnetCostPerKg`/`PerKam` subclasses declaring their own ports. Done.
+- `PF_MAGNET_COST` in `indat.py`, total over both `SuperconductorCostModel` values for
+  the reason `TF_MAGNET_COST_SUPERCONDUCTING` is total: a registry refusing `PER_KAM`
+  here while the TF registry accepts it would let a file assemble its TF coils and then
+  fail on its PF coils.
+- "Two Tier-1 contracts" is the one item **not** built, deliberately, because the worked
+  example §13.2 names does not have them either: `TestTfMagnetCostSuperconducting` is a
+  single contract over the dispatcher with `supercond_cost_model` in
+  `static_argnames` and one sample per arm. `TestPfMagnetCost` already had that shape and
+  three of its four samples cover both arms and both conductors, so a second and third
+  class would be a transcription. Recorded here rather than silently skipped.
+
+**And the read that had no producer.** `.pf_coil.j_crit_str_pf` is now owned by
+`.tokamak.pf_coil.strand_critical_current`
+(`models/pfcoil/superconductor.py::PFStrandCriticalCurrentDensity`), which ports
+`pfcoil()`'s own `superconpf` call at `:871-904` — the `OLD_LUBELL_NBTI` arm plus the
+`else` half of the strand branch, four reads, bit-exact against PROCESS's
+`1101789868.9092896`. Strictly the split alone would have closed `c2222` without moving
+anything, because the live `PER_KG` occupant never declares the field; the producer was
+written anyway, because "the arm we do not run reads a field nothing computes" is a hole
+the boundary check cannot see and the next machine would have fallen into.
+
+**Measured after landing.**
+
+| | before | after |
+|---|---|---|
+| `missing_producers_tokamak.txt` | `.costs.c2222`, `.tfcoil.str_wp` | `.tfcoil.str_wp` |
+| tokamak boundary | 369 input + 11 guess | 375 input + 11 guess |
+| stellarator boundary | 297 input + 6 guess | unchanged, `reference_boundary.txt` byte-identical |
+| `.costs.c2222` owner | *(none)* | `.costs.pf_magnet_cost` |
+| `.pf_coil.j_crit_str_pf` owner | *(none)* | `.tokamak.pf_coil.strand_critical_current` |
+
+The seven new boundary inputs are `.costs.cconshpf`/`.ucfnc`/`.ucwindpf` (unit costs),
+`.pf_coil.fcupfsu` (a copper fraction), `.tfcoil.dcond` (the density table) and
+`.pf_coil.i_pf_superconductor`/`.i_cs_superconductor` — the last two index cost tables
+rather than select a model, so they are declared reads on **both** arms, exactly as
+`.tfcoil.i_tf_sc_mat` is one account earlier. None is a field `computed_by_process`
+reports, which is why +6 on the input half is the boundary doing its job and not a
+regression; `test_boundary.py`'s row-by-row pin equality is what says so.
+
+All five outputs agree with PROCESS bit-for-bit on `large_tokamak_nof`
+(`c22221 = 397.0773254712042`, `c22222 = 62.45915278221678`,
+`c22223 = 122.49315791896318`, `c22224 = 9.819299986205834`,
+`c2222 = 591.8489361585899`), and `.costs.c222` and `.costs.coe` above them are
+unchanged in the MDA harness's disagreement list.

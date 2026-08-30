@@ -583,6 +583,21 @@ The honest reading is that a stellarator has no PF magnet cost to compute and th
 have. That is a slot-shaped problem (an absent occupant), not a kwarg-shaped one, and it
 is not step 6's — recorded here so it is not mistaken for one.
 
+**Both readings were acted on, 2026-08-30, and the three `costs.pf_magnet_cost` rows in
+§3's table are stale in consequence.** The slot-shaped half: `costs.pf_magnet_cost` is
+`| None` and empty on a stellarator, so §3's rows are no longer measurable on the
+reference machine at all — this device has no occupant to survey. The kwarg-shaped half
+was real after all: on a *tokamak*, `supercond_cost_model`'s row is not `off` but **live
+(4)** — `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0`, `.pf_coil.j_crit_str_pf` and
+`.pf_coil.j_crit_str_cs`, none of which the reference `PER_KG` arm reads — and the switch
+is now a slot (`indat.PF_MAGNET_COST`, occupants `PfMagnetCostPerKg`/`PerKam`) exactly as
+`costs.tf_magnet_cost_superconducting` above it. `iohcl` and `i_pf_conductor` stay static
+kwargs, and their rows are stale for the opposite reason: at the tokamak's `iohcl = 1`
+and `i_pf_conductor = 0` neither's dead-read count is `11`, because the loops are not
+empty there. **The measurement's device-dependence is the finding**: this survey was run
+on a stellarator, and a survey of a node the surveyed device does not have cannot say
+which of its ports are dead.
+
 ### 4.11 Switches spelled as ports — 10 sites, 6 switches
 
 Directly against `machine_from_indat`'s "would put a non-differentiable integer on a

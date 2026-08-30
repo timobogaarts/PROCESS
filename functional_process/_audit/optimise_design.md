@@ -2737,9 +2737,27 @@ and the tokamak boundary from 361 to **353**:
   which is why the boundary total alone is not the measure and
   `computed_by_process` is.
 
-**What is still missing: five rows.** `.costs.c2214`, `.costs.c2222`, `.costs.c2252`,
-`.fwbs.dewmkg`, `.tfcoil.str_wp`, plus `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` on
-the constraint surface only. The last three are all outputs of
+**What is still missing: one row.** ~~`.costs.c2214`, `.costs.c2222`, `.costs.c2252`,
+`.fwbs.dewmkg`,~~ `.tfcoil.str_wp`, plus `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` on
+the constraint surface only.
+
+**`.costs.c2222` was the last of the four and the only one whose blocker was not a
+missing model.** Its account had been ported and tested for two waves; what kept it off
+the graph was the *node's shape*. `PfMagnetCost` carried `.costs.supercond_cost_model`
+as a static kwarg across two arms whose strand-cost reads are disjoint, so registering it
+would have declared four edges the reference run does not make -- and the fourth,
+`.pf_coil.j_crit_str_pf`, was itself a field PROCESS computes and nothing owned, so the
+registration would have *moved* this row rather than closed it. Splitting the node into
+`PfMagnetCostPerKg`/`PerKam` and porting `superconpf`'s PF call
+(`.tokamak.pf_coil.strand_critical_current`) closed both
+(`cost_boundary_inputs.md` §13.4). The generalisation is worth carrying into the
+remaining rows: **a node whose ports over-declare is as effective at holding a row on
+this list as a node that does not exist**, and harder to see, because the row names the
+account while the defect is in the edges. The pin went 2 -> 1, and the tokamak's input
+half went 369 -> 375 on seven genuine `IN.DAT` reads -- the same "the total alone is not
+the measure" point the PF-power bullet above makes.
+
+The last three are all outputs of
 `process/models/tfcoil/base.py::stresscl` -- 1053 lines, 65 parameters, a 224-line
 `plane_stress` solver and an `argmax` reduction -- which is a unit with its own registry
 row, not a slot to fill. **The cost of that absence is measured and it is not small:

@@ -114,7 +114,7 @@ structural JAX blocker anywhere in this file.
 | `acc2215` | 221.5 | 1 | yes | divertor, trivial `ife.ife` zero-branch (no 2-D arrays), kept traced |
 | `acc221` | 221 (total) | **2** | yes | sum of the five above; ported as its own node with PROCESS's five sub-calls neutralised in the test wrapper |
 | `acc2221` | 222.1 | **2** | **SC arm only** | **split into two functions/nodes**, per the split default: `TfMagnetCostSuperconducting` (`i_tf_sup == 1`) and `TfMagnetCostResistive` (`!= 1`) share no body and read disjoint fields. Only the SC one is registered -- see the coverage map |
-| `acc2222` | 222.2 | **2** | yes | PF magnets; the "dynamic-length loop" turned out to be static (see § source). `n_cs_pf_coils`/`iohcl`/`i_pf_conductor`/`supercond_cost_model` are static kwargs |
+| `acc2222` | 222.2 | **2** | yes | PF magnets; the "dynamic-length loop" turned out to be static (see § source). **Split on `supercond_cost_model` 2026-08-30** into `PfMagnetCostPerKg`/`PerKam` over `_pf_magnet_cost`; `n_cs_pf_coils`/`iohcl`/`i_pf_conductor` remain static kwargs. Registered on a tokamak only (`None` on a stellarator) |
 | `acc2223` | 222.3 | 1 | yes | vacuum vessel assembly, branch-free |
 | `acc222` | 222 (total) | **2** | yes | sum; its `ife == 1` arm is a bare `c222 = 0`, so `ife` stays *traced* here (unlike 2211-2213) |
 | `acc223` | 223 | **2** | yes | power injection; **two real PROCESS defects reproduced**, see open questions #1. Static `ife` (four-way IFE driver dispatch unported); `i_hcd_primary` traced |
@@ -309,19 +309,39 @@ means split, and three of these deviate from it deliberately:
   `acc2215`/`acc222`/`acc225`, where the IFE arm is a bare zero with no new reads and
   `ife` is a plain traced `jnp.where` — the criterion is the reads-set, not the field.
 - **`supercond_cost_model`** (`.costs.supercond_cost_model`, default `0`,
-  `cost_variables.py:552`) on `TfMagnetCostSuperconducting`/`PfMagnetCost` — **deviates
+  `cost_variables.py:552`) on `TfMagnetCostSuperconducting`/`PfMagnetCost` — ~~**deviates
   from the split default**: the two arms differ by three scalar reads inside an otherwise
   shared body (~100 and ~200 lines respectively). Fourth and fifth instance of the
-  size-aware exception `next_steps.md` §1 tracks.
+  size-aware exception `next_steps.md` §1 tracks.~~ **Both split, and the exception is
+  withdrawn on both.** Account 222.1 split first (`next_steps.md` §14.2,
+  `switch_kwarg_survey.md` §3); Account 222.2 followed on 2026-08-30 into
+  `PfMagnetCostPerKg`/`PerKam` over a shared `_pf_magnet_cost`, with
+  `indat.PF_MAGNET_COST` as the registry. The size-aware argument was wrong here for a
+  reason it is not usually wrong: the four reads it kept were not merely dead, one of
+  them (`.pf_coil.j_crit_str_pf`) had **no producer at all**, so the static kwarg was
+  the only thing keeping a whole account off the graph. §13.2 of
+  `cost_boundary_inputs.md` is the refusal it caused. The split is bigger than 222.1's
+  because `acc2222` branches on the switch **twice** — once per PF coil and once for the
+  central solenoid — with the copper/conduit/winding arithmetic interleaved, so the arms
+  hand `_pf_magnet_cost` two strand costs where `_tf_magnet_cost_superconducting` takes
+  one.
 - **`n_cs_pf_coils`/`iohcl`** (`.pf_coil.n_cs_pf_coils`, `.build.iohcl`) on
   `PfMagnetCost` — loop bounds. Static because they must be: `range()` needs a Python
   int. Legitimate because neither is an iteration or scan variable, so both are
   graph-assembly-time facts, exactly `ImpurityRadiationTotals.imp_indices`'s case.
   `iohcl = 0` at registration is the one deliberate departure from a PROCESS default in
   this unit (`build_variables.py:177` says `1`); the reference stellarator has no central
-  solenoid and `switch_audit` confirms it.
+  solenoid and `switch_audit` confirms it. (Since 2026-08-30 the stellarator has no
+  occupant at all here — the slot is `None` on that device — and the tokamak's occupant
+  takes `iohcl = PRESENT` and `n_cs_pf_coils = 7`, both pinned by
+  `_pf_coil_system_deviations` before a tokamak finishes assembling.)
 - **`i_pf_conductor`** (`.pf_coil.i_pf_conductor`, default `0`) on `PfMagnetCost` —
-  same size-aware exception as `supercond_cost_model`.
+  ~~same size-aware exception as `supercond_cost_model`.~~ **Still static, and now for a
+  stronger reason than size**: unlike `supercond_cost_model` it does not choose between
+  the two arms, it branches *inside* both of them, selecting the conduit cost and the
+  copper fraction and zeroing the superconductor strand cost. Splitting it would be a
+  2x2 product of occupants over one 25-read signature, and `_pf_coil_system_deviations`'
+  `-5` refuses the resistive value before a tokamak assembles anyway.
 - **`i_pulsed_plant`/`istore`** (`.pulse.i_pulsed_plant`, `.pulse.istore`) on
   `EnergyStorageCost` — split: `istore == 3` reads three fields options 1/2 do not, and
   is refused. Options 1/2 add no reads at all (literal sums), so they stay in one body.

@@ -4,7 +4,8 @@ status: draft
 confidence: medium
 ---
 
-**Ported (both reachable arms, and since 2026-08-30 the temperature margin too).**
+**Ported (both reachable arms; since 2026-08-30 the temperature margin and the PF
+coils' strand critical current density too).**
 `models/pfcoil/superconductor.py` / `tests/functional_process/models/pfcoil/
 test_superconductor.py`: `calculate_cs_critical_current_density`,
 `calculate_cs_critical_current_density_iter_nb3sn`,
@@ -16,13 +17,18 @@ test_superconductor.py`: `calculate_cs_critical_current_density`,
 `calculate_cs_temperature_margin_iter_nb3sn` and
 `calculate_cs_temperature_margin_wst_nb3sn`, with two occupants of a **second** slot,
 `.tokamak.cs_coil.temperature_margin` (`CSTemperatureMarginIterNb3Sn`,
-`CSTemperatureMarginWstNb3Sn`) — see § "2026-08-30 — the temperature margin" below.
+`CSTemperatureMarginWstNb3Sn`) — see § "2026-08-30 — the temperature margin" below. And
+`calculate_pf_strand_critical_current_density` + `PFStrandCriticalCurrentDensity`, one
+occupant of `.tokamak.pf_coil.strand_critical_current` — the module's only unit that is
+`pfcoil()`'s rather than `ohcalc`'s; see § "2026-08-30 — the PF coils' strand critical
+current density" below.
 
 ## source
 
 `process/models/pfcoil.py:3577-3684` — two `superconpf` calls (end of flat top,
 beginning of pulse) and the four `.pf_coil.*` fields a constraint reads;
-`superconpf` itself is `:4641-4924`.
+`superconpf` itself is `:4641-4924`. Since 2026-08-30 also `:871-904`, `pfcoil()`'s own
+`superconpf` call for the PF coils.
 
 ## what it ports
 
@@ -94,6 +100,71 @@ coil's `cicc_superconductor_properties` / `tf_superconductor_temperature_margin`
 `CS_SUPERCONDUCTOR` is, and both arms are written — the WST one because
 `low_aspect_ratio_DEMO.IN.DAT` would otherwise stop assembling, exactly as it did the
 first time this file was written with one arm.
+
+## 2026-08-30 — the PF coils' strand critical current density, Account 222.2
+
+**Ported**, and it is the first thing in this module that is not `ohcalc`'s.
+`calculate_pf_strand_critical_current_density` +
+`PFStrandCriticalCurrentDensity` (`.tokamak.pf_coil.strand_critical_current`), one
+tier-1 contract against PROCESS's own `superconpf` at `isumat = 3`.
+
+**source**: `process/models/pfcoil.py:871-904` — the `bmax = max(|b_pf_coil_peak[i]|,
+|bpf2[i]|)` at `:871-874`, the `superconpf` call at `:877-892`, and the strand branch at
+`:898-904`. The arm reached is `OLD_LUBELL_NBTI` (`:4773-4784`), whose critical surface
+is `superconductors.jcrit_nbti` at `bc20m = 15.0`, `tc0m = 9.3`, `c0 = 1e10` — three
+literals inside the arm, named as module constants here.
+
+**data footprint**
+
+| VarPath | read/write | classification | note |
+|---|---|---|---|
+| `.pf_coil.b_pf_coil_peak[5]` | read | explicit-arg | inner-edge field of the **last** PF coil |
+| `.pf_coil.bpf2[5]` | read | explicit-arg | outer-edge field of the same coil |
+| `.tfcoil.tftmp` | read | explicit-arg | `superconpf`'s `temp_pf_peak_field` |
+| `.pf_coil.fcupfsu` | read | explicit-arg | strand copper fraction, the branch's only factor |
+| `.pf_coil.j_crit_str_pf` | write | — | scalar, last-write-wins over the loop |
+
+**Why index 5 and not an array.** The assignment at `:900`/`:902` carries no index: it
+is inside `pfcoil()`'s group-then-coil loop and overwrites a **scalar** on every one of
+the six passes, so the value PROCESS leaves in `.pf_coil.j_crit_str_pf` is the last
+coil's. Owning the six-entry array PROCESS never stores would be inventing a variable;
+computing the five overwritten values would be work no edge leaves. This is `masses.md`'s
+"dropped rather than computed and discarded" rule applied to the one part of that block
+whose output does now have a reader.
+
+**Four reads, not `superconpf`'s fifteen.** The NbTi arm's `j_crit_sc` is the third
+return and comes straight off the fit; `fhe` and `fcu` scale it into `j_crit_cable`,
+which is the *first* return and unread here. So `.pf_coil.f_a_pf_coil_void` is a read of
+`superconpf` and not a read of this unit, and `fcupfsu` enters only through
+`j_crit_sc * (1 - fcu)` at `:903`. The harness adapter still runs the whole real
+function, temperature-margin root find included, so a regression in arm selection shows
+as a value mismatch rather than a division by zero.
+
+**Not a family.** `.pf_coil.i_pf_superconductor` is `3` on both ported arms of
+`_pf_coil_system_arm` (`_pf_coil_system_deviations`' `-6` refuses everything else), so
+there is one critical surface and the slot takes an instance default — unlike its two CS
+neighbours, whose switch has two reachable values. Written as the `else` half of the
+`:898` strand branch for the same reason
+`calculate_cs_strand_critical_current_density` is: that branch tests
+`i_cs_superconductor in {2, 6, 8}` — the **CS** switch deciding the **PF** value, which
+is PROCESS as written and reproduced as written — and both values that reach this package
+are outside the set.
+
+**Why now.** `.pf_coil.j_crit_str_pf` is a field PROCESS computes (`1.1017899e9` A/m^2
+on `large_tokamak_nof`) that nothing owned, and Account 222.2's `PER_KAM` arm reads it.
+`_audit/cost_boundary_inputs.md` §13.2 refused to register `PfMagnetCost` partly for
+that: as one node it would have taken `.costs.c2222` off the missing-producer pin and
+put this field on. Landed together with the account's split into
+`PfMagnetCostPerKg`/`PerKam`, so the pin went 2 → 1 with nothing arriving.
+
+**Value**: exact against PROCESS on the reference point
+(`1101789868.9092896` both sides, bit-for-bit).
+
+**Still unowned**: `.pf_coil.j_pf_wp_critical`, `superconpf`'s *first* return for the six
+PF slots. The reason has changed from "unported" to "no reader" — nothing in the graph
+consumes it and PROCESS only prints it (`outpf`, `pfcoil.py:2570-2603`) — so it is
+invisible to `unproduced_but_computed` and owning it would mean six critical-surface
+evaluations no edge leaves.
 
 ## open questions — constraint 60, `.pf_coil.temp_cs_superconductor_margin`
 

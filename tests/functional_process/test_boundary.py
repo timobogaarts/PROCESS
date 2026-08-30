@@ -193,7 +193,20 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """369 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """375 inputs and 11 guesses, against the stellarator's 297 and 6.
+
+    **369 -> 375**, the same day's fourth wave and the plainest instance yet of "growth
+    from a landed producer's own declared reads is the boundary doing its job". Account
+    222.2 came back (`.costs.pf_magnet_cost`, split into a `supercond_cost_model` family)
+    and `.tokamak.pf_coil.strand_critical_current` landed with it: one row leaves,
+    `.costs.c2222`, and it leaves the *missing-producer* pin as well, which is the half
+    that matters. Seven arrive and **every one is a genuine PROCESS input** --
+    `.costs.cconshpf`/`.ucfnc`/`.ucwindpf` are unit costs, `.pf_coil.fcupfsu` a copper
+    fraction, `.tfcoil.dcond` the density table, and `.pf_coil.i_pf_superconductor`/
+    `.i_cs_superconductor` index cost tables rather than select a model, so they are
+    declared reads on both arms exactly as `.tfcoil.i_tf_sc_mat` is one account earlier.
+    None is a field `computed_by_process` reports, which is the test below and the reason
+    +6 here is not a regression.
 
     **Also 2026-08-30**, in the same day's third wave, five producers landing against one new declared read,
     and the guess half unmoved. The five are the second half of the same wave as the row
@@ -336,15 +349,15 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (369, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (375, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The two missing producers on the MDA graph, pinned so it can only go down.
+    """The one missing producer left on the MDA graph, pinned so it can only go down.
 
-    **Twenty-two -> two across five waves on 2026-08-30.** One of those waves landed
+    **Twenty-two -> one across six waves on 2026-08-30.** One of those waves landed
     five rows at once, and they are
     worth naming because they are five different shapes of the same hole:
 
@@ -380,8 +393,8 @@ def test_no_new_boundary_input_is_something_process_computes():
     port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
     Only a cold start exposes it, and only if something asks this question.
 
-    **Measured on `driven_graph`, like every other pin in this file** -- two rows,
-    down from twenty-two across five waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
+    **Measured on `driven_graph`, like every other pin in this file** -- one row,
+    down from twenty-two across six waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
     `.build.dz_blkt_upper` and `.build.dr_tf_inner_bore` left when
     `models/namespace.py::Build` gained `tf_top_height`, `blkt_upper_thickness` and
     `tf_inner_bore`, and `.pf_power.srcktpm`, `.pf_power.ensxpfm`,
@@ -390,6 +403,18 @@ def test_no_new_boundary_input_is_something_process_computes():
     `.physics.pflux_plasma_surface_neutron_avg_mw`, `.fwbs.p_div_rad_total_mw`,
     `.blanket.deg_blkt_inboard_poloidal_plasma` and `.buildings.dz_tf_cryostat` left
     with the physics/divertor/cryostat wave.
+
+    **`.costs.c2222` left last, and it is the one row that needed two pieces of work
+    rather than a producer.** Its account, `PfMagnetCost`, was written and tested and
+    deliberately *not* registered (`_audit/cost_boundary_inputs.md` §13.2): it carried
+    `.costs.supercond_cost_model` as a static kwarg over two arms with disjoint
+    strand-cost reads, so registering it would have declared four edges the reference run
+    does not make -- and one of those four, `.pf_coil.j_crit_str_pf`, had no producer, so
+    the row would have *moved* from the account onto the field rather than closing.
+    Splitting the node into a `PfMagnetCostPerKg`/`PerKam` family removes three of the
+    four from the live arm and `.tokamak.pf_coil.strand_critical_current` owns the
+    fourth. The measurement that this is a closure and not a move is the one line below:
+    `found == pinned`, with `.pf_coil.j_crit_str_pf` on neither side.
 
     The MDF-assembled graph shows **more than this one does** -- `.tfcoil.sig_tf_case`,
     `.tfcoil.sig_tf_wp` and, until 2026-08-30, `.pf_coil.temp_cs_superconductor_margin`
@@ -566,3 +591,61 @@ def test_the_stellarator_has_no_reactor_structure_cost():
     assert machine_from_indat(MISSING_PRODUCERS_INPUT_FILE).costs.reactor_structure_cost
     assert REFERENCE_MACHINE.costs.reactor_structure_cost is None
     assert V("costs", "c2214") not in GRAPH.owners
+
+
+def test_the_pf_magnet_cost_landed_without_moving_its_hole():
+    """`.costs.c2222` has a producer, `.pf_coil.j_crit_str_pf` has one too, and neither
+    is on the pin -- which is the whole claim, because closing the first *without* the
+    second would have been a hole moved rather than filled.
+
+    Account 222.2 was ported and tested long before it was registered, and the refusal
+    (`_audit/cost_boundary_inputs.md` §13.2) was about the node's shape and not about a
+    missing producer: one class carrying `.costs.supercond_cost_model` as a static kwarg,
+    over two arms whose strand-cost reads are disjoint. Registering it as one node would
+    have declared `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0`,
+    `.pf_coil.j_crit_str_cs` and `.pf_coil.j_crit_str_pf` on a run whose `PER_KG` arm
+    reads none of them -- and the last of those four is a field `superconpf` computes
+    (`1.1017899e9` A/m^2 on this machine) that nothing owned, so `.costs.c2222` would
+    have come off the pin and `.pf_coil.j_crit_str_pf` gone on. The split makes the live
+    arm honest; `PFStrandCriticalCurrentDensity` makes the other arm's read producible.
+
+    The stellarator half is `reactor_structure_cost`'s argument exactly:
+    `caller.py:272-275` returns before `pfcoil.run()`, so every `.pf_coil.*` field the
+    account reads keeps its dataclass default and the node would compute an exact zero
+    out of a subsystem the device does not have. `.costs.c2222` stays the `0.0` boundary
+    input it always was there.
+    """
+    tokamak = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
+    owners = {var.path_str(): node.path_str() for var, node in tokamak.owners.items()}
+    assert owners[".costs.c2222"] == ".costs.pf_magnet_cost"
+    assert owners[".pf_coil.j_crit_str_pf"] == ".tokamak.pf_coil.strand_critical_current"
+
+    pin = Path(MISSING_PRODUCERS_PIN).read_text()
+    assert ".costs.c2222" not in pin
+    assert ".pf_coil.j_crit_str_pf" not in pin
+
+    # The live arm is `PER_KG`, and the point of the split is that it declares neither
+    # of the two critical-current strand fields. `.pf_coil.j_crit_str_cs` has an owner
+    # of its own, so only the PF one would show as a boundary read here; both are
+    # asserted absent from the account's own inputs, which is the edge count the
+    # refusal was about.
+    account = next(
+        node
+        for name, node in tokamak.definitions.items()
+        if name.path_str() == ".costs.pf_magnet_cost"
+    )
+    reads = {port.var.path_str() for port in account.inputs}
+    assert not (
+        reads
+        & {
+            ".costs.sc_mat_cost_0",
+            ".tfcoil.j_crit_str_0",
+            ".pf_coil.j_crit_str_pf",
+            ".pf_coil.j_crit_str_cs",
+        }
+    )
+
+    assert machine_from_indat(MISSING_PRODUCERS_INPUT_FILE).costs.pf_magnet_cost
+    assert REFERENCE_MACHINE.costs.pf_magnet_cost is None
+    assert V("costs", "c2222") not in GRAPH.owners
+    assert V("pf_coil", "j_crit_str_pf") not in GRAPH.owners

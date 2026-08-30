@@ -92,6 +92,8 @@ from functional_process.models.costs.costs import (
     EnergyStorageCostPulsedElectrowattOption2,
     EnergyStorageCostUnpulsed,
     PfCoilPowerConditioningCost,
+    PfMagnetCostPerKam,
+    PfMagnetCostPerKg,
     ReactorStructureCost,
     TfMagnetCostSuperconductingPerKam,
     TfMagnetCostSuperconductingPerKg,
@@ -107,6 +109,7 @@ from functional_process.models.fw import (
     FirstWallSingleNull,
 )
 from functional_process.models.namespace import Build, Divertor
+from functional_process.models.pfcoil import N_CS_PF_COILS
 from functional_process.models.pfcoil.namespace import (
     CSCoil,
     PFCoil,
@@ -304,6 +307,7 @@ from functional_process.models.structure import Structure
 from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
     BlanketLifetimeModel,
+    CentralSolenoidConfiguration,
     CoilNuclearHeatingModel,
     FastAlphaPressureModel,
     IFEModel,
@@ -2044,6 +2048,24 @@ switch. It was an `eqx.field(static=True)` until `_audit/next_steps.md` §14.2: 
 arms are two one-line strand-cost formulas over **disjoint** fields, so the single node
 declared `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0` and `.tfcoil.j_crit_str_tf` --
 three edges the reference run does not make."""
+
+PF_MAGNET_COST = {
+    SuperconductorCostModel.PER_KG: PfMagnetCostPerKg,
+    SuperconductorCostModel.PER_KAM: PfMagnetCostPerKam,
+}
+"""`.costs.supercond_cost_model` -> the Account 222.2 occupant.
+
+The same switch and the same two arms as `TF_MAGNET_COST_SUPERCONDUCTING`, one account
+later and read a second time -- the shape `CS_SUPERCONDUCTOR` and `CS_TEMPERATURE_MARGIN`
+already have. Also total, for the reason that pair is: a registry that refused `PER_KAM`
+here while the TF registry accepted it would let a file assemble its TF coils and then
+fail on its PF coils.
+
+Added 2026-08-30 with the split of `PfMagnetCost` into a family
+(`_audit/cost_boundary_inputs.md` §13.2). The four fields that leave with the `PER_KG`
+occupant are `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0`, `.pf_coil.j_crit_str_pf`
+and `.pf_coil.j_crit_str_cs`; the last two are the reason this account waited for a
+producer while Account 222.1's split did not."""
 
 
 COST_OF_ELECTRICITY = {
@@ -4474,6 +4496,16 @@ def machine_from_indat(input_file, stella_conf=None):
     # exists at all and which centrepost treatment it uses. `cost_variables.py:521`/
     # `:515` for the first two defaults.
     ireactor = switches.get("ireactor", 1)
+    # `supercond_cost_model` decides two slots since 2026-08-30 -- Account 222.1's and
+    # Account 222.2's -- so it is read once here and threaded, rather than read twice
+    # inside the constructor. `cost_variables.py:552` is the default.
+    supercond_cost_model = SuperconductorCostModel(
+        int(switches.get("supercond_cost_model", 0))
+    )
+    # `pfcoil_variables.py:230` -- the PF conductor decides, jointly with `i_tf_sup`,
+    # whether the cryoplant runs at all, and it is `PfMagnetCost`'s one remaining static
+    # branch. Read above `costs` rather than below it since Account 222.2 came back.
+    i_pf_conductor = PFConductorModel(int(switches.get("i_pf_conductor", 0)))
     cost_of_electricity = _slot_occupant(
         "ireactor_ipnet_itart",
         _cost_of_electricity_arm(ireactor, switches.get("ipnet", 0), itart),
@@ -4520,8 +4552,31 @@ def machine_from_indat(input_file, stella_conf=None):
             # fields, so this is a slot rather than the static kwarg it was.
             tf_magnet_cost_superconducting=_slot_occupant(
                 "supercond_cost_model",
-                SuperconductorCostModel(int(switches.get("supercond_cost_model", 0))),
+                supercond_cost_model,
                 TF_MAGNET_COST_SUPERCONDUCTING,
+            ),
+            # The third device-decided slot, and the only one that is *also* switched:
+            # `None` on a stellarator (no PF coil system to cost, §12.2's argument),
+            # and on a tokamak the same `supercond_cost_model` occupant one account
+            # later. The three static kwargs are the PF loop's bounds and its conductor
+            # branch, all three fixed by `_pf_coil_system_deviations` before any tokamak
+            # finishes assembling -- `-1` refuses `iohcl != 1`, `-2` refuses any coil
+            # count but `(1, 1, 2, 2)` over four groups, `-5` refuses a resistive PF
+            # conductor -- so `N_CS_PF_COILS` is the count and not a guess. `switch_
+            # audit` value-checks all three against the run.
+            pf_magnet_cost=(
+                _slot_occupant(
+                    "supercond_cost_model",
+                    supercond_cost_model,
+                    PF_MAGNET_COST,
+                    build=lambda cls: cls(
+                        n_cs_pf_coils=N_CS_PF_COILS,
+                        iohcl=CentralSolenoidConfiguration.PRESENT,
+                        i_pf_conductor=i_pf_conductor,
+                    ),
+                )
+                if device is TokamakProcess
+                else None
             ),
         ),
     )
@@ -4531,9 +4586,7 @@ def machine_from_indat(input_file, stella_conf=None):
     # default. The slot resolution comes *before* the value is threaded, the same
     # discipline `i_tf_sup` follows, so no unported value ever reaches an occupant's
     # static field.
-    # `pfcoil_variables.py:230` -- the PF conductor decides, jointly with `i_tf_sup`,
-    # whether the cryoplant runs at all.
-    i_pf_conductor = PFConductorModel(int(switches.get("i_pf_conductor", 0)))
+    # (`i_pf_conductor` is read above `costs`, which needs it too.)
     i_p_coolant_pumping = PumpingPowerModelTypes(switches.get("i_p_coolant_pumping", 2))
     # The thermal-efficiency family. Three switches, four slots, and every one of them
     # used to carry the answer as a static kwarg -- `fwbs_variables.py:264` for

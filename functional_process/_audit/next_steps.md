@@ -3136,9 +3136,20 @@ by a cheap measurement) is the reusable lesson.
 
 ### 19.1 The work, priority-ordered
 
-1. **Five producers remain** — seventeen of the twenty-two landed on 2026-08-30 in
-   three parallel waves (`optimise_design.md` §16.9). The pin holds `.costs.c2214`,
-   `.costs.c2222`, `.costs.c2252`, `.fwbs.dewmkg` and `.tfcoil.str_wp`;
+1. **One producer remains** — twenty-one of the twenty-two landed on 2026-08-30, in
+   waves (`optimise_design.md` §16.9). The pin holds **`.tfcoil.str_wp` alone**;
+   ~~`.costs.c2214`, `.costs.c2222`, `.costs.c2252`, `.fwbs.dewmkg`~~ are closed —
+   `c2214` and `c2252` by device-decided `Costs` slots once `.tokamak.structure` and
+   `Power.pfpwr` were there to read, and **`c2222` last**, which needed something other
+   than a producer: `PfMagnetCost` had been written and tested for two waves and was
+   refused because it carried `.costs.supercond_cost_model` as a static kwarg over two
+   arms with disjoint strand-cost reads, one of which (`.pf_coil.j_crit_str_pf`) had no
+   producer either. Splitting the node into a `PfMagnetCostPerKg`/`PerKam` family and
+   porting `superconpf`'s PF call closed both at once
+   (`_audit/cost_boundary_inputs.md` §13.4). **The lesson worth carrying:** a node whose
+   ports are wrong is as effective at holding a row on this list as a node that does not
+   exist, and it is harder to see, because the row names the *account* and the defect is
+   in the *edges*.
    `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` are missing on the constraint surface
    only. **The three `tfcoil` rows are one job**: all are outputs of
    `tfcoil/base.py::stresscl`, 1053 lines with 65 parameters, which wants its own

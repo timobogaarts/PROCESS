@@ -110,8 +110,8 @@ input .costs.UCVIAC
 input .costs.UCWS
 input .costs.abktflnc
 input .costs.adivflnc
-input .costs.c2222
 input .costs.cconfix
+input .costs.cconshpf
 input .costs.cconshtf
 input .costs.cfind
 input .costs.cland
@@ -146,6 +146,7 @@ input .costs.uccu
 input .costs.ucdiv
 input .costs.ucech
 input .costs.ucf1
+input .costs.ucfnc
 input .costs.ucfuel
 input .costs.uche3
 input .costs.uchrs
@@ -173,6 +174,7 @@ input .costs.uctfbus
 input .costs.uctfps
 input .costs.uctfsw
 input .costs.ucturb
+input .costs.ucwindpf
 input .costs.ucwindtf
 input .costs.ucwst
 input .cs_fatigue.fracture_toughness
@@ -275,6 +277,9 @@ input .pf_coil.f_dr_dz_cs_turn
 input .pf_coil.f_j_cs_start_pulse_end_flat_top
 input .pf_coil.f_z_cs_tf_internal
 input .pf_coil.fcuohsu
+input .pf_coil.fcupfsu
+input .pf_coil.i_cs_superconductor
+input .pf_coil.i_pf_superconductor
 input .pf_coil.j_cs_flat_top_end
 input .pf_coil.j_pf_coil_wp_peak
 input .pf_coil.pf_current_safety_factor
@@ -336,6 +341,7 @@ input .primary_pumping.p_he
 input .primary_pumping.t_in_bb
 input .primary_pumping.t_out_bb
 input .tfcoil.c_tf_turn
+input .tfcoil.dcond
 input .tfcoil.dcond[0]
 input .tfcoil.dcond[2]
 input .tfcoil.den_tf_coil_case

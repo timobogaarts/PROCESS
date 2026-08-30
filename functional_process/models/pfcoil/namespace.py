@@ -79,6 +79,7 @@ from functional_process.models.pfcoil.stresses import CSCoilStresses
 from functional_process.models.pfcoil.superconductor import (
     CSCriticalCurrentDensitiesIterNb3Sn,
     CSTemperatureMarginIterNb3Sn,
+    PFStrandCriticalCurrentDensity,
 )
 from functional_process.models.pfcoil.volt_seconds import (
     PFCoilTurnCurrents,
@@ -200,7 +201,7 @@ class CSCoil(ModelNamespace):
 
 
 class PFCoil(ModelNamespace):
-    """`.tokamak.pf_coil` -- the PF coil set, twelve slots including the inductance
+    """`.tokamak.pf_coil` -- the PF coil set, thirteen slots including the inductance
     and the volt-second accounting.
 
     Closes the three boundary reads the first tokamak wave left on `Structure`
@@ -243,6 +244,24 @@ class PFCoil(ModelNamespace):
     masses: PFCoilMasses = PFCoilMasses()
     """Conductor and structure masses (`pfcoil.py:851-1023`)."""
 
+    strand_critical_current: PFStrandCriticalCurrentDensity = (
+        PFStrandCriticalCurrentDensity()
+    )
+    """`.pf_coil.j_crit_str_pf` -- the last PF coil's strand critical current density
+    (`pfcoil.py:871-904`, `superconpf`'s NbTi arm).
+
+    Added 2026-08-30, and the prerequisite for `.costs.pf_magnet_cost`: Account 222.2's
+    `PER_KAM` arm reads this field, PROCESS computes `1.1018e9` A/m^2 for it on
+    `large_tokamak_nof`, and nothing owned it -- so registering the account without this
+    slot would have moved a missing-producer row rather than closed one
+    (`_audit/cost_boundary_inputs.md` §13.2).
+
+    An instance default rather than a factory-filled slot, unlike its two `CSCoil`
+    namesakes: `.pf_coil.i_pf_superconductor` is pinned to `3` by
+    `_pf_coil_system_deviations`' `-6` on **both** positive arms, so there is one
+    critical surface and nothing to choose. `PFCoilCsWstNb3Sn` inherits it unchanged for
+    the same reason."""
+
     inductance: PFCoilInductance = PFCoilInductance()
     """The 22x22 mutual-inductance matrix (`pfcoil.py:1750-2010`, `induct`), owned
     whole -- the node that enlarged the cycle from three to four
@@ -269,7 +288,7 @@ class PFCoilCsWstNb3Sn(PFCoil):
     pair -- NbTi PF coils, WST Nb3Sn CS, `low_aspect_ratio_DEMO.IN.DAT`'s pair
     (`:806`, `:845`), `indat._pf_coil_system_arm` arm `1`.
 
-    One slot re-occupied, eleven inherited: the superconductor switches' only effect in
+    One slot re-occupied, twelve inherited: the superconductor switches' only effect in
     the ported closure is which `.tfcoil.dcond` element `masses` reads (`masses.md`
     § switches touched), so the masses occupant is the entire difference. The slot is a
     **place** -- the node bound at `.tokamak.pf_coil.masses` keeps its name whichever
