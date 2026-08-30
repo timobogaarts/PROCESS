@@ -38,6 +38,7 @@ from functional_process.models.costs.costs import (
     MaintenanceEquipmentCost,
     MiscPlantEquipmentCost,
     NuclearBuildingVentilationCost,
+    PfCoilPowerConditioningCost,
     PowerConditioningCost,
     PowerInjectionCost,
     ReactorCoolingSystemCost,
@@ -173,8 +174,30 @@ class Costs(ModelNamespace):
     tf_coil_power_conditioning_cost: TfCoilPowerConditioningCost = (
         TfCoilPowerConditioningCost()
     )  # Account 225.1
-    # Account 225.2 (PF coil power conditioning) has no slot -- see the note above
-    # `vacuum_vessel_assembly_cost`. **`energy_storage_cost` below is deliberately
+    pf_coil_power_conditioning_cost: PfCoilPowerConditioningCost | None = (
+        dataclasses.field(kw_only=True)
+    )  # Account 225.2
+    """Account 225.2, **restored 2026-08-30**, and the second device-decided slot.
+
+    Deleted by `model_tree_design.md` §8 step 4c with the note above
+    `vacuum_vessel_assembly_cost`, which said the split would come back "when the
+    tokamak arrives" and named the prerequisite exactly: `power.py`'s `Power.pfpwr`.
+    That landed the same day as `.power.pf_coil_power`, and all seven of this node's
+    reads -- `.pf_power.pfckts`/`spfbusl`/`acptmax`/`vpfskv`/`ensxpfm`/`srcktpm` and
+    `.heat_transport.peakmva` -- are owned by it.
+
+    **The refusal that preceded this was correct when it was made and stale by the time
+    it was read.** It was written in a worktree that could not see `Power.pfpwr`
+    landing in a sibling worktree the same afternoon, and reasoned that registering the
+    node would trade one pinned missing-producer row for four. With `pfpwr` in place it
+    trades one row for none. Recorded because it is the cost of parallel work on one
+    shared boundary list, and because `boundary.unproduced_but_computed` is what made
+    the staleness visible rather than anyone re-reading the note.
+
+    `None` on a stellarator for `reactor_structure_cost`'s reason: `stellarator.py`
+    never calls `Power.run`, so there is no PF coil power supply to condition and the
+    node would compute an exact zero from a subsystem the device does not have."""
+    # (the deleted-slot note above `vacuum_vessel_assembly_cost` is now historical) **`energy_storage_cost` below is deliberately
     # *kept*** even though its outputs are zero too: it is zero because of
     # `i_pulsed_plant`, a switch, not because of a subsystem this device lacks. A pulsed
     # stellarator would want it, so it belongs to the switch-conversion work

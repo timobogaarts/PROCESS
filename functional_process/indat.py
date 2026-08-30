@@ -71,13 +71,13 @@ from functional_process.models.build import (
     DrTfWpWithInsulationFromInboardBuild,
     TfInboardRadiiNoCsPrecomp,
     TfInboardRadiiTfOutsideCs,
-    VacuumVesselAndShieldRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardEdgeRipplePictureFrame,
     TfOutboardMidDShape,
     TfOutboardMidPictureFrame,
     TfTopHeightDoubleNull,
     TfTopHeightSingleNull,
+    VacuumVesselAndShieldRadiiTfOutsideCs,
     WpConductorMaxWidthSuperconducting,
 )
 from functional_process.models.buildings.buildings import (
@@ -91,6 +91,7 @@ from functional_process.models.costs.costs import (
     EnergyStorageCostPulsedElectrowattOption1,
     EnergyStorageCostPulsedElectrowattOption2,
     EnergyStorageCostUnpulsed,
+    PfCoilPowerConditioningCost,
     ReactorStructureCost,
     TfMagnetCostSuperconductingPerKam,
     TfMagnetCostSuperconductingPerKg,
@@ -4501,6 +4502,12 @@ def machine_from_indat(input_file, stella_conf=None):
             # `UNPORTED`'s own rule; `models/costs/namespace.py` carries the argument.
             reactor_structure_cost=(
                 ReactorStructureCost() if device is TokamakProcess else None
+            ),
+            # The second, landed 2026-08-30 once `Power.pfpwr` gave it its seven reads.
+            # Same argument as 221.4: `stellarator.py` never calls `Power.run`, so there
+            # is no PF coil power supply to condition.
+            pf_coil_power_conditioning_cost=(
+                PfCoilPowerConditioningCost() if device is TokamakProcess else None
             ),
             energy_storage_cost=_slot_occupant(
                 "i_pulsed_plant_istore",

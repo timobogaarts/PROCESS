@@ -1,3 +1,2 @@
 .costs.c2222
-.costs.c2252
 .tfcoil.str_wp

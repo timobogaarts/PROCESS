@@ -193,7 +193,7 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """363 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """369 inputs and 11 guesses, against the stellarator's 297 and 6.
 
     **Also 2026-08-30**, in the same day's third wave, five producers landing against one new declared read,
     and the guess half unmoved. The five are the second half of the same wave as the row
@@ -213,7 +213,7 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     would have (see `BlanketInboardPoloidalAngle`'s docstring for why that one stays
     out).
 
-    **361 -> 363 on 2026-08-30**, in four waves, and the set of them is
+    **361 -> 369 on 2026-08-30**, in five waves, and the set of them is
     the whole argument for why this number is pinned rather than bounded.
 
     **361 -> 360.** `.physics.beta_poloidal_vol_avg` left, because
@@ -336,15 +336,15 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (363, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (369, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The three missing producers on the MDA graph, pinned so it can only go down.
+    """The two missing producers on the MDA graph, pinned so it can only go down.
 
-    **Twenty-two -> three across four waves on 2026-08-30.** One of those waves landed
+    **Twenty-two -> two across five waves on 2026-08-30.** One of those waves landed
     five rows at once, and they are
     worth naming because they are five different shapes of the same hole:
 
@@ -380,8 +380,8 @@ def test_no_new_boundary_input_is_something_process_computes():
     port reproduced PROCESS to 1e-9 at the one point the bug is structurally invisible.
     Only a cold start exposes it, and only if something asks this question.
 
-    **Measured on `driven_graph`, like every other pin in this file** -- three rows,
-    down from twenty-two across four waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
+    **Measured on `driven_graph`, like every other pin in this file** -- two rows,
+    down from twenty-two across five waves on 2026-08-30: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
     `.build.dz_blkt_upper` and `.build.dr_tf_inner_bore` left when
     `models/namespace.py::Build` gained `tf_top_height`, `blkt_upper_thickness` and
     `tf_inner_bore`, and `.pf_power.srcktpm`, `.pf_power.ensxpfm`,

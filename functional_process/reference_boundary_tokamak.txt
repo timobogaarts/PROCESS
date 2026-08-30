@@ -111,7 +111,6 @@ input .costs.UCWS
 input .costs.abktflnc
 input .costs.adivflnc
 input .costs.c2222
-input .costs.c2252
 input .costs.cconfix
 input .costs.cconshtf
 input .costs.cfind
@@ -159,6 +158,13 @@ input .costs.ucmisc
 input .costs.ucnbi
 input .costs.ucoam
 input .costs.ucpens
+input .costs.ucpfb
+input .costs.ucpfbk
+input .costs.ucpfbs
+input .costs.ucpfcb
+input .costs.ucpfdr1
+input .costs.ucpfic
+input .costs.ucpfps
 input .costs.ucrb
 input .costs.ucsc
 input .costs.ucshld
