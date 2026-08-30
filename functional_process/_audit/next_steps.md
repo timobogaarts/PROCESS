@@ -3399,3 +3399,128 @@ missing-producer question come from one evaluation. No port model changed, and n
 existing pin moved.
 
 `tests/functional_process` 5790 → 5804 passed, 5011 skipped. `tests/unit` 846 passed.
+
+## 21. Session close, 2026-08-30 — what landed, what is open, and what not to re-derive
+
+A long day. `optimise_design.md` §16 and §17 carry the detail; this is the handover.
+
+### 21.1 The headline
+
+**The port's graph did not produce everything PROCESS computes.** Twenty-two boundary
+`input` entries on `large_tokamak_nof` were fields PROCESS writes every pipeline pass,
+twenty of them frozen at exactly `0.0`. Every cold tokamak solve failed on the
+consequence. **The count is now zero**, across every configuration and both graph
+surfaces, and three tokamaks that took zero SQP steps this morning solve cold.
+
+| | start of day | end of day |
+|---|---|---|
+| missing producers | 22 (unknown; nothing measured it) | **0** |
+| reference machines that assemble | 4 of 8 | **5 of 8**, two more in flight |
+| tokamaks solving cold | 0 | **3** |
+| `tests/functional_process` | 5654 | **~5832** |
+
+### 21.2 Priority order for tomorrow
+
+1. **Give the burn-time cycle a Newton driver.** Measured today and unambiguous:
+   `^problem.times.t_plant_pulse_burn.cycle` is a **507-dimensional** fixed point
+   (1 + 22x22 + 22) with condition number `7.6e12`, driven by `PicardDriver` at
+   `max_iter = 20` -- the default -- and **it does not converge cold on any tokamak**
+   (worst relative gap `3.1e-05` on nof; the answer moves when the cap is raised). MDF's
+   correctness claim is that its conditions are PROCESS's constraints at a *converged*
+   MDA, so this is a correctness defect, not a performance one.
+   Newton on `r(u) = g(u) - u` from the same cold start reaches `||r||inf 5.1e-11` in
+   **one step** and machine zero in five. Jitted cost: residual `0.18 ms`, 507x507
+   `jacfwd` `5.24 ms` -- **29x a residual, not 507x**, XLA batches the tangent basis. One
+   Newton step is ~1.4x Picard's entire unconverged 20-iteration budget.
+   The work is plumbing: `SeededNewtonDriver.drives = RootFind`, so this needs either a
+   `FixedPoint`-capable Newton driver or the block residualised. Keep the linear solve on
+   device (`jnp.linalg.solve` inside the jitted step) -- in the throwaway probe the dense
+   `np.linalg.solve` plus host transfer cost ~10x the Jacobian.
+2. **The two spherical tokamaks.** §18's eight blockers, in two clusters (CroCo TF,
+   PF coil system). Two agents were mid-flight at session close; read their handover
+   before restarting, they will have moved the frontier.
+3. **`NOH`, the structural integer the solve moves** (`cold_start.py`'s finding).
+   `PFCoil.induct` segments the CS by `ceil(...)` of a ratio that changes with the
+   design: 30 on `large_tokamak_eval`, 32 on `nof` cold and 27 converged. Substituting
+   32 takes nof cold from 631/82 agreements to 662/51. **No constant is right at both
+   designs of either file**, so this is a convention question with a measured price, not
+   a bug with a fix.
+4. **`.tfcoil.str_wp`'s temperature-margin cost is now priced** and the producer landed
+   late in the day (`stresscl`, row 55) -- re-run `cold_start` and see whether the seven
+   rows it predicted would vanish actually do.
+5. **SAND's coupling unknowns are unbounded.** §17.1's cheapest hypothesis, still
+   unmeasured, and now more interesting: seeded at PROCESS's *converged answer*, SAND
+   takes two steps and walks off a feasible point to c72 `+5.4e-01`.
+6. **The harness's feasibility column is wrong for SAND** -- it applies an absolute
+   `1e-6` to residual equalities carried in physical units. On a `1e20` variable a
+   relative `1e-6` *is* `1e14`. `condition_scale` exists for this.
+
+### 21.3 Measurements taken today that tomorrow should not redo
+
+- **`large_tokamak_eval`'s c72 is immovable, and no producer changes that.** PROCESS's
+  own finite differences at its converged point: `largest |d(c72)/dx| = 0.000000e+00`
+  over its two design variables, against `1.72` on `large_tokamak_nof`'s twenty. The
+  file is inequality-infeasible by construction -- PROCESS solves it with `fsolve` over
+  the equalities alone and never examines the inequalities. `stresscl` gives its c72 a
+  *correct* value and leaves it just as unreachable.
+- **PROCESS's converged stellarator answer is not the global optimum.** PROCESS+SLSQP
+  (a new adapter, PROCESS's own models/Jacobian/scaling through SciPy) reaches a
+  **feasible** point at `objf 1.16603189` against PROCESS+VMCON's `1.2178` -- ~4 %
+  better cost of electricity. Checked: bounds identical to VMCON's, answer inside the
+  box, `objf` self-consistent to `1.15e-11`, equality/inequality split correct, worst
+  inequality `-3.4e-08`. It hit the 500 cap so it is not converged either, but where it
+  stands is feasible and better.
+- **PROCESS+SLSQP iteration counts**, same adapter: `large_tokamak_nof` **7** (VMCON 8),
+  `low_aspect_ratio_DEMO` **126** (VMCON 16), `large_tokamak_eval` 500 (cap, infeasible
+  on the immovable c72), stellarator 500 (cap, feasible).
+- **PROCESS's cold state is settled, not unconverged.** `ColdState.drift` runs three
+  further Gauss-Seidel passes past `check_agreement`: worst motion exactly `0` on two
+  configurations, `7.0e-07` on the stellarator, against smallest reported disagreements
+  of `1.2e-04`. Thirty further passes move nothing. Cold disagreements are two fixed
+  points of two maps, not one side failing to settle.
+- **The stellarator's 44-row cold chain is not a port defect.** `Stellarator.run` orders
+  `st_coil`/`st_build` one way for the solve pass and the reverse for output; the port
+  matches PROCESS's own *output-pass* answer to sixteen digits. PROCESS is the
+  inconsistent side.
+
+### 21.4 Four wrong answers, recorded so they are not re-derived
+
+All four were argued from real measurements and stated before the measurement that would
+settle them. §16.3 has the detail; the pattern is the lesson.
+
+1. **"The burn-time loop is degenerate."** Killed by one derivative row: `d(t_burn)/dx`
+   is nonzero on 13 of 20 design variables, largest `2.0e+04`. The sixteen-digit
+   `vs_required = -vs_available` agreement is a *bookkeeping tautology*, not evidence
+   about the rank of the system that produced it.
+2. **"The tokamak cold start is genuinely infeasible and the port is the honest one."**
+   The port's cold state was consistent with a *smaller model set*. The 983/1039
+   agreement that looked like vindication was measured at PROCESS's converged design,
+   where `mdf.seed` hands every missing producer the right answer.
+3. **"The blocker is model ports"** (on the PF/volt-second chain). That chain agrees to
+   6-8 digits at PROCESS's answer. The blocker was elsewhere.
+4. **"`beta_poloidal_vol_avg` is the root of the c72 chain."** Landing it did not move
+   the matrix at all. The claim was made before checking which `i_pf_current` arm was
+   even live.
+
+Also retracted: **"SLSQP converges `large_tokamak_nof` in 36 iterations"** (it stopped
+infeasible at c72 `+9.0e+01`; the old harness had no feasibility check, so a run that
+*returned* was recorded as a run that *solved*), and **§16.7's own claim** that five
+driven blocks raised `KeyError` and were swallowed -- one was undetectable, the other
+five *ran on a wrong function* and returned confident numbers.
+
+### 21.5 The ordering rule, which is the transferable part
+
+Verify the two systems are the same problem before comparing how they behave:
+**structure -> identity -> values -> derivatives -> behaviour.** Today entered at
+behaviour and worked backwards through four wrong answers.
+
+Two corollaries with evidence:
+
+- **A check performed where the seed supplies the answer is not a check.** Stage A and C2
+  seed boundary inputs from PROCESS's converged `DataStructure`. `cold_start.py` exists
+  because of this.
+- **Repair broken instruments before investigating anything.** Three of the four wrong
+  answers were behavioural theories built on top of `inner_residuals` (crashed on every
+  tokamak) and `degenerate_fixed_points` (reported a 507-dimensional, `1e13`-conditioned
+  block as `J = -I` exactly, a flawless fixed point). Both are fixed; both found real
+  defects within minutes of working.
