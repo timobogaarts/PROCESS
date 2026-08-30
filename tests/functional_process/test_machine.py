@@ -72,9 +72,11 @@ from functional_process.indat import (
     AFwTotalWithPowerflow,
     PedestalSeparatrixDensities,
     ProfileParameterisationPedestal,
+    graph_for,
     machine_from_indat,
     switches_from_indat,
 )
+from functional_process.models.pfcoil.namespace import PFCoilSphericalTokamak
 from functional_process.models.tfcoil.superconducting import (
     CiccAveragedTurnGeometryFromCurrentPerTurn,
     CiccIntegerTurnGeometry,
@@ -1195,65 +1197,89 @@ def test_the_1990_cost_model_is_the_only_producer_of_coe():
     assert ".costs.coe" not in {v.path_str() for v in without.owners}
 
 
-def test_the_pf_coil_refusal_names_every_deviating_dimension():
+SPHERICAL_TOKAMAK_PF_SWITCHES = {
+    "iohcl": 0,
+    "n_pf_coil_groups": 4,
+    "i_pf_location": (2, 3, 3, 4),
+    "n_pf_coils_in_group": (2, 2, 2, 2),
+    "itart": 1,
+    "itartpf": 1,
+    "i_pf_current": 1,
+    "i_pf_conductor": 0,
+    "i_pf_superconductor": 9,
+    "i_cs_superconductor": 1,
+    "i_r_pf_outside_tf_placement": 1,
+}
+"""The PF coil system as both `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`
+set it, byte for byte. `i_tf_shape` is added per-test because it is an enum member."""
+
+CONVENTIONAL_PF_SWITCHES = {
+    "iohcl": 1,
+    "n_pf_coil_groups": 4,
+    "i_pf_location": (2, 2, 3, 3),
+    "n_pf_coils_in_group": (1, 1, 2, 2),
+    "itart": 0,
+    "itartpf": 0,
+    "i_pf_current": 1,
+    "i_pf_conductor": 0,
+    "i_pf_superconductor": 3,
+    "i_cs_superconductor": 1,
+    "i_r_pf_outside_tf_placement": 0,
+}
+"""`large_tokamak_eval.IN.DAT`'s, likewise."""
+
+
+def test_both_ported_pf_coil_systems_deviate_on_nothing():
+    """The two supported PF configurations are each accepted whole, and named.
+
+    Until 2026-08-30 the spherical tokamaks' configuration deviated on **five** of the
+    dimensions this function checks (`-1`, `-2`, `-3`, `-6`, `-7`) and this test pinned
+    that tuple, with a docstring saying it would shrink the day one of the five was
+    ported. All five are ported, so it is empty; what the test pins now is the pair of
+    accepted configurations and the arm each resolves to.
+
+    `-1` is gone from the dimensions altogether. `.build.iohcl` used to be refused when
+    zero; it is now the *family selector* -- `-2`, `-6` and `-7` are each measured
+    against the occupant set written for this machine's own `iohcl`, which is what keeps
+    a mixed configuration (no solenoid, conventional `i_pf_location`) refused rather
+    than silently reaching a namespace with no such occupant. That mix is the third
+    assertion below.
+    """
+    from functional_process.indat import (
+        TFCoilShapeModel,
+        _pf_coil_system_arm,
+        _pf_coil_system_deviations,
+    )
+
+    spherical = {
+        **SPHERICAL_TOKAMAK_PF_SWITCHES,
+        "i_tf_shape": TFCoilShapeModel.PICTURE_FRAME,
+    }
+    conventional = {
+        **CONVENTIONAL_PF_SWITCHES,
+        "i_tf_shape": TFCoilShapeModel.D_SHAPE,
+    }
+    assert _pf_coil_system_deviations(**spherical) == ()
+    assert _pf_coil_system_arm(**spherical) == 2
+    assert _pf_coil_system_deviations(**conventional) == ()
+    assert _pf_coil_system_arm(**conventional) == 0
+
+    # A configuration that borrows half of each is refused, and says so on every
+    # dimension it borrowed. Without the family split this would pass three
+    # independent membership tests and then look for occupants that do not exist.
+    mixed = {**conventional, "iohcl": 0}
+    assert _pf_coil_system_deviations(**mixed) == (-2, -6, -7)
+
+
+def test_the_pf_coil_refusal_still_names_every_deviating_dimension(tmp_path):
     """A file that misses on several PF dimensions at once is told about all of them.
 
     `_pf_coil_system_arm` short-circuits -- it returns the first refused dimension and
     never evaluates the rest -- which is correct for *choosing* an occupant and wrong
-    for *sizing* the work. `next_steps.md` §16.11 recorded the two spherical tokamaks
-    as refused on "four dimensions at once (`-1`, `-3`, `-6`, `-7`)"; both files
-    actually deviate on **five**. `-2` was invisible because `-1` fires first, and the
-    fifth is not a detail: `i_pf_location = (2, 3, 3, 4)` with
-    `n_pf_coils_in_group = (2, 2, 2, 2)` changes every array index in the package.
-
-    This is `consolidation_round_3.md` §5's frontier rule made structural rather than
-    remembered -- the pinned tuple is the ST configuration read straight out of both
-    `IN.DAT`s, so the day one of the five is ported the tuple shrinks here.
-    """
-    from functional_process.indat import (
-        TFCoilShapeModel,
-        _pf_coil_system_deviations,
-    )
-
-    spherical_tokamak = {
-        "iohcl": 0,
-        "n_pf_coil_groups": 4,
-        "i_pf_location": (2, 3, 3, 4),
-        "n_pf_coils_in_group": (2, 2, 2, 2),
-        "itart": 1,
-        "itartpf": 1,
-        "i_pf_current": 1,
-        "i_pf_conductor": 0,
-        "i_pf_superconductor": 9,
-        "i_cs_superconductor": 1,
-        "i_tf_shape": TFCoilShapeModel.PICTURE_FRAME,
-        "i_r_pf_outside_tf_placement": 1,
-    }
-    assert _pf_coil_system_deviations(**spherical_tokamak) == (-1, -2, -3, -6, -7)
-
-    # And the reference tokamak, which assembles, deviates on none -- the same call
-    # that reports five here has to report zero there or it is measuring nothing.
-    assert (
-        _pf_coil_system_deviations(
-            iohcl=1,
-            n_pf_coil_groups=4,
-            i_pf_location=(2, 2, 3, 3),
-            n_pf_coils_in_group=(1, 1, 2, 2),
-            itart=0,
-            itartpf=0,
-            i_pf_current=1,
-            i_pf_conductor=0,
-            i_pf_superconductor=3,
-            i_cs_superconductor=1,
-            i_tf_shape=TFCoilShapeModel.D_SHAPE,
-            i_r_pf_outside_tf_placement=0,
-        )
-        == ()
-    )
-
-
-def test_the_pf_coil_refusal_message_carries_all_five_reasons(tmp_path):
-    """The message a spherical-tokamak-shaped file gets names each refused dimension.
+    for *sizing* the work, and `consolidation_round_3.md` §5 is about exactly that. The
+    spherical tokamaks used to be this test's subject and are now accepted, so the
+    subject is the mixed configuration instead: no central solenoid, but a conventional
+    machine's coil topology, superconductors and outside-TF placement.
 
     Reached through `machine_from_indat` rather than through the helper, because the
     point is what a *user* sees: one `NotImplementedError` whose first paragraph is
@@ -1263,7 +1289,38 @@ def test_the_pf_coil_refusal_message_carries_all_five_reasons(tmp_path):
     refused, and this case is about the PF package, not about whichever of those the
     constructor would reach first.
     """
-    indat = tmp_path / "STLIKE.DAT"
+    indat = tmp_path / "MIXEDPF.DAT"
+    indat.write_text(
+        "".join(
+            f"{f} = {v if isinstance(v, str) else int(v)}\n"
+            for f, v in {**TOKAMAK_BASELINE_INDAT, "iohcl": 0}.items()
+        )
+    )
+    with pytest.raises(NotImplementedError) as refusal:
+        machine_from_indat(indat)
+    message = str(refusal.value)
+    assert "pf_coil_system_arm == -2 is a real PROCESS branch" in message
+    for arm in (-6, -7):
+        assert f"AND pf_coil_system_arm == {arm}:" in message
+    assert "3 of the six dimensions" in message
+
+
+def test_a_spherical_tokamak_pf_system_assembles_without_a_central_solenoid(tmp_path):
+    """`iohcl = 0` gives an empty `.tokamak.cs_coil` and the eight-coil PF namespace.
+
+    The measured shape of blocker `-1`: absence, not a variant. `pfcoil()` skips
+    `ohcalc` outright when there is no solenoid (`pfcoil.py:1048-1050`), so none of
+    `.tokamak.cs_coil`'s seven nodes has a PROCESS counterpart -- the slot is `None`,
+    the way `models/tokamak/namespace.py`'s `water_use` is, and the PF occupants on this
+    arm declare *fewer reads* rather than reading the fields a solenoid would have
+    written.
+
+    Written over `TOKAMAK_BASELINE_INDAT` rather than over the real ST file for the
+    reason the refusal test gives: the two tracked spherical tokamaks are still refused
+    above this point, on the CroCo TF turn (`i_tf_turn_type = 2`) and the two REBCO tape
+    slots behind it, which are a different package.
+    """
+    indat = tmp_path / "STPF.DAT"
     indat.write_text(
         "".join(
             f"{f} = {v if isinstance(v, str) else int(v)}\n"
@@ -1272,16 +1329,25 @@ def test_the_pf_coil_refusal_message_carries_all_five_reasons(tmp_path):
                 "iohcl": 0,
                 "i_pf_location": "2,3,3,4",
                 "n_pf_coils_in_group": "2,2,2,2",
-                "itartpf": 1,
                 "i_pf_superconductor": 9,
                 "i_r_pf_outside_tf_placement": 1,
             }.items()
         )
     )
-    with pytest.raises(NotImplementedError) as refusal:
-        machine_from_indat(indat)
-    message = str(refusal.value)
-    assert "pf_coil_system_arm == -1 is a real PROCESS branch" in message
-    for arm in (-2, -6, -7):
-        assert f"AND pf_coil_system_arm == {arm}:" in message
-    assert "5 of the seven dimensions" in message
+    machine = machine_from_indat(indat)
+    assert machine.tokamak.cs_coil is None
+    assert isinstance(machine.tokamak.pf_coil, PFCoilSphericalTokamak)
+
+    # And the fields `ohcalc` would have written are boundary inputs, not zeros some
+    # node claims to have computed.
+    owners = {v.path_str() for v in graph_for(machine).owners}
+    for cs_field in (
+        ".pf_coil.a_cs_poloidal",
+        ".pf_coil.a_cs_cable_space",
+        ".pf_coil.b_cs_peak_flat_top_end",
+        ".pf_coil.temp_cs_superconductor_margin",
+    ):
+        assert cs_field not in owners
+    # What `pfcoil()` itself still writes on this arm does have a producer.
+    assert ".pf_coil.f_j_cs_start_end_flat_top" in owners
+    assert ".pf_coil.m_pf_coil_conductor_total" in owners

@@ -109,11 +109,16 @@ from functional_process.models.fw import (
     FirstWallSingleNull,
 )
 from functional_process.models.namespace import Build, Divertor
-from functional_process.models.pfcoil import N_CS_PF_COILS
+from functional_process.models.pfcoil import (
+    N_CS_PF_COILS,
+    REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+)
 from functional_process.models.pfcoil.namespace import (
     CSCoil,
     PFCoil,
     PFCoilCsWstNb3Sn,
+    PFCoilSphericalTokamak,
 )
 from functional_process.models.pfcoil.superconductor import (
     CSCriticalCurrentDensitiesIterNb3Sn,
@@ -1220,25 +1225,24 @@ UNPORTED = {
     ("i_len_sol_outboard_power_decay", OutbordSOLPowerDecayLengthModel.MAST_2014_2): (
         "same shape as MAST-1, selecting the MAST-2 length; not live"
     ),
-    ("pf_coil_system_arm", -1): (
-        "`.build.iohcl == 0`: no central solenoid at all -- no CS filaments, "
-        "`c_cs_flat_top_end = 0`, the flux swing's `:626-661` arm, `ohcalc` skipped "
-        "entirely and index 6 of every coil array left at zero. A different occupant "
-        "set for every node in the package. Not written (`pfcoil/geometry.md`, "
-        "`currents.md`, `fields.md`, `masses.md`, `inductance.md`)"
-    ),
     ("pf_coil_system_arm", -2): (
-        "an `i_pf_location`/group topology other than `n_pf_coil_groups = 4`, "
-        "`i_pf_location = (2, 2, 3, 3)`, `n_pf_coils_in_group = (1, 1, 2, 2)`: the "
-        "pattern fixes every array index in the package (`pfcoil/__init__.py`'s module "
-        "constants), so a different pattern is a different occupant per node. Not "
-        "written"
+        "an `i_pf_location`/group topology no occupant set matches. Two are written: "
+        "`n_pf_coil_groups = 4` with `i_pf_location = (2, 2, 3, 3)` and "
+        "`n_pf_coils_in_group = (1, 1, 2, 2)` (a machine with a central solenoid), and "
+        "`(2, 3, 3, 4)` with `(2, 2, 2, 2)` (a machine without one). The pattern fixes "
+        "every array index in the package (`pfcoil/__init__.py`'s `PFCoilTopology`), "
+        "so a third pattern is a third `PFCoilTopology` and a third set of node "
+        "instances. Not written"
     ),
     ("pf_coil_system_arm", -3): (
-        "`.physics.itart == 1` (or `itartpf != 0`): the ST arm places coils from "
-        "`z_tf_inside_half - zref[g]`, computes `ccls` from `aspect**1.6` and never "
-        "calls `efc` -- genuinely different read sets in placement and currents. Not "
-        "written"
+        "`.physics.itart == 1` **and** `.physics.itartpf == 0`: PROCESS's Peng and "
+        "Strickler ST arm. It places an `i_pf_location = 2` group at "
+        "`z_tf_inside_half - zref[g]` (`pfcoil.py:1250-1253`), computes `ccls` from "
+        "`aspect**1.6` and never calls `efc` (`:411-454`), and `init.py:639-643` "
+        "overwrites `i_pf_location[:3]` before any of that -- genuinely different read "
+        "sets in placement and currents. Not written. **`itart = 1` alone does not "
+        "reach it**: both tracked spherical tokamaks set `itartpf = 1`, and those two "
+        "sites are the only ones in `process/` that read `itartpf` at all"
     ),
     ("pf_coil_system_arm", -4): (
         "`.pf_coil.i_pf_current == 0`: inverts which of `ccl0`/`ccl0_ma` is input and "
@@ -1251,18 +1255,27 @@ UNPORTED = {
         "with different read sets (`pfcoil.py:917-1002`). Not written"
     ),
     ("pf_coil_system_arm", -6): (
-        "a PF/CS superconductor pair with no occupant: the ported pairs are "
-        "(`i_pf_superconductor == 3` NbTi, `i_cs_superconductor == 1` ITER Nb3Sn), "
-        "arm 0, and (3 NbTi, 5 WST Nb3Sn), arm 1 (`low_aspect_ratio_DEMO.IN.DAT`). "
-        "The switch's only effect in the ported closure is which element of "
-        "`.tfcoil.dcond` is read, and per the binding policy that is still a "
-        "different occupant per pair, not a parameter (`masses.md` § switches "
-        "touched). Any other pair: not written"
+        "a superconductor choice with no occupant. With a central solenoid the ported "
+        "pairs are (`i_pf_superconductor == 3` NbTi, `i_cs_superconductor == 1` ITER "
+        "Nb3Sn), arm 0, and (3 NbTi, 5 WST Nb3Sn), arm 1 "
+        "(`low_aspect_ratio_DEMO.IN.DAT`); without one, `i_pf_superconductor == 9` "
+        "(Hazelton/Zhai REBCO tape), arm 2, and `i_cs_superconductor` selects nothing "
+        "because there is no CS conductor to weigh or to take a critical surface of. "
+        "The switch's effect in the ported closure is which element of `.tfcoil.dcond` "
+        "is read and which critical surface `superconpf` takes, and per the binding "
+        "policy that is a different occupant per value, not a parameter (`masses.md` "
+        "§ switches touched). Anything else: not written"
     ),
     ("pf_coil_system_arm", -7): (
-        "`i_tf_shape == PICTURE_FRAME` or `i_r_pf_outside_tf_placement == 1`: the "
-        "outside-TF coil is placed flat at `r_pf_outside_tf_midplane`, dropping the "
-        "`sqrt(r^2 - z^2)` and its `isinf` kludge (`pfcoil.py:1323-1339`). Not written"
+        "an outside-TF placement with no occupant. Two are written: `i_tf_shape == "
+        "D_SHAPE` with `i_r_pf_outside_tf_placement == 0`, where the coil's radius "
+        "follows the TF curve as `sqrt(r^2 - z^2)` with its `isinf` kludge "
+        "(`pfcoil.py:1327-1339`), and `i_tf_shape == PICTURE_FRAME` **or** "
+        "`i_r_pf_outside_tf_placement == 1`, where it is stacked flat at "
+        "`r_pf_outside_tf_midplane` (`:1322-1326`). The two switches enter only "
+        "through that disjunction, so the pair `(D_SHAPE, 1)` is the second occupant "
+        "and not a third. Refused only where the topology's own arm disagrees -- see "
+        "`_pf_coil_system_deviations`"
     ),
     ("tf_field_and_force_arm", True): (
         "`itart == 1` **and** `i_cp_joints == 1`: a spherical tokamak whose centrepost "
@@ -3578,29 +3591,39 @@ def _pf_coil_system_arm(
 
     One predicate, thirteen slots -- the `_fw_blkt_vv_shape_arm` shape at package
     scale: the five `pfcoil/*.md` records name overlapping subsets of these switches
-    and every ported occupant is the one for the single joint configuration below, so
-    the factory resolves the conjunction once and both namespaces
-    (`models/pfcoil/namespace.py`) are keyed on the result. Arm `0` is the supported
-    configuration; each negative arm names which dimension deviated, in the order the
+    and every ported occupant answers one joint configuration, so the factory resolves
+    the conjunction once and both namespaces (`models/pfcoil/namespace.py`) are keyed on
+    the result. Each negative arm names which dimension deviated, in the order the
     records argue they differ most structurally (`UNPORTED` carries each reason).
-    Positive arms are the ported superconductor pairs: arm `0` is the reference pair
-    (`i_pf_superconductor = 3` NbTi, `i_cs_superconductor = 1` ITER Nb3Sn), arm `1` is
-    `(3, 5)` -- NbTi PF, WST Nb3Sn CS, `low_aspect_ratio_DEMO.IN.DAT`'s pair. Every
-    other switch is answered identically on both arms; the pair selects which
-    `.tfcoil.dcond` element the masses occupant reads, and nothing else.
+
+    **Three positive arms, and `.build.iohcl` is what splits them in two.**
+
+    | arm | machine | topology | superconductor |
+    |---|---|---|---|
+    | 0 | central solenoid | `(2, 2, 3, 3)` / `(1, 1, 2, 2)` | NbTi PF, ITER Nb3Sn CS |
+    | 1 | central solenoid | the same | NbTi PF, WST Nb3Sn CS |
+    | 2 | **no** central solenoid | `(2, 3, 3, 4)` / `(2, 2, 2, 2)` | REBCO tape PF |
+
+    Arms 0 and 1 differ in one slot occupant each way (`masses`, and the CS's two
+    critical-surface slots); arm 2 is a different `PFCoilTopology` and a different
+    occupant in nine of the thirteen slots, plus **`.tokamak.cs_coil` empty**. That
+    last one is the structural point: `iohcl = 0` is absence, not a variant --
+    `pfcoil()` skips `ohcalc` entirely (`pfcoil.py:1048-1050`), so there is no node to
+    write and no zero to fabricate.
 
     `n_pf_coil_groups`/`i_pf_location`/`n_pf_coils_in_group` are the **coil-count
     topology** -- not switches in `naming_convention.md`'s sense, but they fix every
-    array index in the package (`pfcoil/__init__.py`'s module constants), so a
+    array index in the package (`pfcoil/__init__.py`'s `PFCoilTopology`), so a
     deviation refuses the same way a switch value without an occupant does.
 
     What this function deliberately cannot see: `noh = 30`, the CS pancake-segment
     count, a step function of the *converged* CS geometry rather than of any input
     (`inductance.md` § 'noh is a step function of the CS geometry'). It stays a module
-    constant on `PFCoilInductance`.
+    constant on `PFCoilInductance` -- and note it is a constant only arms 0 and 1 need:
+    on arm 2 `induct` never fills `roh`/`zoh` at all.
 
     **The negative arm this returns is the first of possibly several.** The predicates
-    live in `_pf_coil_system_deviations`, which evaluates all seven; this function keeps
+    live in `_pf_coil_system_deviations`, which evaluates all six; this function keeps
     the "one arm index" contract the slot registries need, and `machine_from_indat`
     asks for the whole list when the arm comes back negative, so that the *refusal*
     reports every deviation while the *choice* still reports one. See that function for
@@ -3622,6 +3645,8 @@ def _pf_coil_system_arm(
     )
     if deviations:
         return deviations[0]
+    if int(iohcl) == 0:
+        return 2
     return (
         0
         if SuperconductorModel(int(i_cs_superconductor))
@@ -3652,49 +3677,84 @@ def _pf_coil_system_deviations(
     This exists because of `consolidation_round_3.md` §5's standing lesson: a refusal
     that names one blocker is read as *the* blocker, and the count is then wrong in the
     audit. `next_steps.md` §16.11 recorded the spherical tokamaks as refused on "four
-    dimensions at once (`-1`, `-3`, `-6`, `-7`)"; measured on 2026-08-30 by probing past
-    each one in turn, both files deviate on **five** -- `-2` as well, because
-    `i_pf_location = (2, 3, 3, 4)` and `n_pf_coils_in_group = (2, 2, 2, 2)` are not the
-    ported pattern either. The short-circuit is why nobody saw it: `-1` fires first and
-    `-2` was never evaluated. Sizing a package from a refusal message is only sound if
-    the message is complete, so the message is complete now.
+    dimensions at once"; measured on 2026-08-30 by probing past each one in turn, both
+    files deviated on **five**, because the short-circuit meant `-2` was never
+    evaluated. Sizing a package from a refusal message is only sound if the message is
+    complete, so the message is complete.
+
+    **`.build.iohcl` is not one of the dimensions any more, and it never was one in the
+    way the others are.** It used to be `-1`, refused outright; the ported occupant sets
+    now cover both of its values, and it is instead the *family selector* -- the four
+    remaining dimensions that admit more than one answer are each checked against what
+    the occupant set for **this machine's** `iohcl` was written for. That keeps the
+    union-of-arms trap shut: a file with `iohcl = 0` and a conventional
+    `i_pf_location` is refused on `-2`, rather than passing four independent membership
+    tests and reaching a namespace that has no such occupant.
+
+    Which arm each dimension is measured against:
+
+    | dim | `iohcl = 1` | `iohcl = 0` |
+    |---|---|---|
+    | `-2` | `(2, 2, 3, 3)` / `(1, 1, 2, 2)` | `(2, 3, 3, 4)` / `(2, 2, 2, 2)` |
+    | `-6` | `(3, 1)` or `(3, 5)` | `i_pf_superconductor = 9`; CS switch unread |
+    | `-7` | radius follows the TF curve | radius stacked at the midplane |
+
+    `-3` (the `itart == 1 and itartpf == 0` ST arm), `-4` (`i_pf_current = 0`) and `-5`
+    (resistive conductors) are the same question on both families and are checked once.
 
     Returns
     -------
     :
         The deviating arm indices, ascending in the order the dimensions are checked
-        (so descending numerically); empty when the configuration is one of the two
+        (so descending numerically); empty when the configuration is one of the three
         ported ones.
     """
+    has_cs = int(iohcl) != 0
+    topology = REFERENCE_TOPOLOGY if has_cs else SPHERICAL_TOKAMAK_TOPOLOGY
+
+    # `place_pf_outside_tf` reads its two switches only through this disjunction
+    # (`pfcoil.py:1322-1326`), and each written occupant bakes one answer to it:
+    # `PFCoilPlacement` the curve, `PFCoilPlacementSphericalTokamak` the stack.
+    stacked_outside_tf = (
+        i_tf_shape is TFCoilShapeModel.PICTURE_FRAME
+        or int(i_r_pf_outside_tf_placement) == 1
+    )
+    occupant_stacks_outside_tf = not has_cs
+
     deviations = []
-    if int(iohcl) == 0:
-        deviations.append(-1)
     if (
-        int(n_pf_coil_groups) != 4
-        or tuple(int(v) for v in i_pf_location[:4]) != (2, 2, 3, 3)
-        or tuple(int(v) for v in n_pf_coils_in_group[:4]) != (1, 1, 2, 2)
+        int(n_pf_coil_groups) != topology.n_pf_coil_groups
+        or tuple(int(v) for v in i_pf_location[: topology.n_pf_coil_groups])
+        != tuple(int(v) for v in topology.i_pf_location)
+        or tuple(int(v) for v in n_pf_coils_in_group[: topology.n_pf_coil_groups])
+        != topology.n_pf_coils_in_group
     ):
         deviations.append(-2)
-    if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK or (
-        int(itartpf) != 0
+    if (
+        SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK
+        and int(itartpf) == 0
     ):
         deviations.append(-3)
     if int(i_pf_current) == 0:
         deviations.append(-4)
     if PFConductorModel(int(i_pf_conductor)) is not PFConductorModel.SUPERCONDUCTING:
         deviations.append(-5)
-    if (
-        SuperconductorModel(int(i_pf_superconductor)),
-        SuperconductorModel(int(i_cs_superconductor)),
-    ) not in {
-        (SuperconductorModel.OLD_LUBELL_NBTI, SuperconductorModel.ITER_NB3SN),
-        (SuperconductorModel.OLD_LUBELL_NBTI, SuperconductorModel.WST_NB3SN),
-    }:
+    if has_cs:
+        supported_superconductors = (
+            SuperconductorModel(int(i_pf_superconductor)),
+            SuperconductorModel(int(i_cs_superconductor)),
+        ) in {
+            (SuperconductorModel.OLD_LUBELL_NBTI, SuperconductorModel.ITER_NB3SN),
+            (SuperconductorModel.OLD_LUBELL_NBTI, SuperconductorModel.WST_NB3SN),
+        }
+    else:
+        supported_superconductors = (
+            SuperconductorModel(int(i_pf_superconductor))
+            is SuperconductorModel.HAZELTON_ZHAI_REBCO
+        )
+    if not supported_superconductors:
         deviations.append(-6)
-    if (
-        i_tf_shape is not TFCoilShapeModel.D_SHAPE
-        or int(i_r_pf_outside_tf_placement) != 0
-    ):
+    if stacked_outside_tf is not occupant_stacks_outside_tf:
         deviations.append(-7)
     return tuple(deviations)
 
@@ -3719,7 +3779,7 @@ def _refuse_pf_coil_system(deviations):
         f"{UNPORTED[field, first]}"
     )
     closing = (
-        f"{len(deviations)} of the seven dimensions of the PF coil system's joint "
+        f"{len(deviations)} of the six dimensions of the PF coil system's joint "
         f"configuration deviate at once; every one of them needs an occupant set "
         f"before this file assembles."
     )
@@ -3731,16 +3791,27 @@ def _refuse_pf_coil_system(deviations):
     raise NotImplementedError("\n\n".join(message))
 
 
-CS_COIL = {0: CSCoil, 1: CSCoil}
+CS_COIL = {0: CSCoil, 1: CSCoil, 2: None}
 """`_pf_coil_system_arm` -> `.tokamak.cs_coil`'s occupant namespace.
 
-The same namespace on both positive arms: nothing in `CSCoil` reads `.tfcoil.dcond` --
-the CS conductor density is read by the masses node in `.tokamak.pf_coil`, which is
-where the two arms differ.
+The same namespace on both central-solenoid arms: nothing in `CSCoil` reads
+`.tfcoil.dcond` -- the CS conductor density is read by the masses node in
+`.tokamak.pf_coil`, which is where those two arms differ.
 
 Since 2026-08-27 the namespace has one factory-filled slot of its own
-(`critical_current`), so the two arms are the same *class* and no longer the same
-*instance* -- `_cs_coil` below builds it."""
+(`critical_current`), so the two are the same *class* and no longer the same
+*instance* -- `_cs_coil` below builds it.
+
+**Arm 2 is `None`, and that is the whole of blocker `-1`.** `.build.iohcl = 0` means
+the machine has no central solenoid, so `pfcoil()` never calls `ohcalc`
+(`pfcoil.py:1048-1050`) and none of this namespace's seven nodes has a PROCESS
+counterpart to port. The slot is left empty, the way
+`models/tokamak/namespace.py`'s `water_use` and `BETA_NORM_MAX`'s `USER_INPUT` are:
+whatever reads a `.pf_coil.*cs*` output surfaces as a boundary input and is enumerated
+by name. Writing a namespace of nodes that compute zeros for a subsystem the machine
+does not have is the `EcrhDensityLimit` bug class this port names explicitly, and it is
+the reason the eight PF-side occupants on arm 2 declare *fewer reads* rather than the
+same reads against zeros."""
 
 CS_SUPERCONDUCTOR = {
     SuperconductorModel.ITER_NB3SN: CSCriticalCurrentDensitiesIterNb3Sn,
@@ -3779,10 +3850,14 @@ because the two slots hold different classes, and a registry maps a switch value
 occupant for **one** place. Added 2026-08-30 with the margin itself.
 """
 
-PF_COIL = {0: PFCoil, 1: PFCoilCsWstNb3Sn}
-"""`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace. Arm 1 differs in
-exactly one slot occupant, `masses` (`.tfcoil.dcond[4]` as the CS conductor
-density)."""
+PF_COIL = {0: PFCoil, 1: PFCoilCsWstNb3Sn, 2: PFCoilSphericalTokamak}
+"""`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace.
+
+Arm 1 differs from arm 0 in exactly one slot occupant, `masses` (`.tfcoil.dcond[4]` as
+the CS conductor density). Arm 2 differs from both in **all thirteen** -- eight of them
+because the occupant declares different reads with no central solenoid, and the other
+five because they carry the eight-coil `PFCoilTopology`. See
+`models/pfcoil/namespace.py`."""
 
 
 _INDAT_INTEGER = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$")
@@ -4404,21 +4479,31 @@ def _tokamak_device(
             "pf_coil_system_arm",
             pf_coil_arm,
             CS_COIL,
-            build=lambda cls: cls(
-                critical_current=_slot_occupant(
-                    "i_cs_superconductor",
-                    SuperconductorModel(
-                        int(switches.get("i_cs_superconductor", 1))  # `pfcoil_vars:225`
+            # `None` on arm 2: this machine has no central solenoid, so the slot is
+            # empty rather than filled with nodes computing zeros. See `CS_COIL`.
+            build=lambda cls: (
+                None
+                if cls is None
+                else cls(
+                    critical_current=_slot_occupant(
+                        "i_cs_superconductor",
+                        SuperconductorModel(
+                            int(
+                                switches.get("i_cs_superconductor", 1)
+                            )  # `pfcoil_vars:225`
+                        ),
+                        CS_SUPERCONDUCTOR,
                     ),
-                    CS_SUPERCONDUCTOR,
-                ),
-                temperature_margin=_slot_occupant(
-                    "i_cs_superconductor",
-                    SuperconductorModel(
-                        int(switches.get("i_cs_superconductor", 1))  # `pfcoil_vars:225`
+                    temperature_margin=_slot_occupant(
+                        "i_cs_superconductor",
+                        SuperconductorModel(
+                            int(
+                                switches.get("i_cs_superconductor", 1)
+                            )  # `pfcoil_vars:225`
+                        ),
+                        CS_TEMPERATURE_MARGIN,
                     ),
-                    CS_TEMPERATURE_MARGIN,
-                ),
+                )
             ),
         ),
         shield=shield,

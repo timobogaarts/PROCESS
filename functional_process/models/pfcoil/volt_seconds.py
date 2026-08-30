@@ -40,6 +40,7 @@ measured in `mda.CUTS` (the existing three entries -- `t_plant_pulse_burn`,
 necessary; `test_mda.py` re-derives the table).
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
@@ -48,6 +49,9 @@ from functional_process.models.pfcoil import (
     N_PF_COILS,
     NGC2,
     PLASMA_INDEX,
+    REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+    PFCoilTopology,
 )
 from functional_process.paths import pf_coil, physics
 
@@ -57,6 +61,8 @@ def calculate_pf_coil_turn_currents(
     c_pf_coil_turn_peak_input,
     c_pf_cs_coils_peak_ma,
     plasma_current,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """Per-turn current of every circuit at the six waveform time points (A).
 
@@ -85,22 +91,51 @@ def calculate_pf_coil_turn_currents(
     :
         `.pf_coil.c_pf_coil_turn` (`NGC2` x 6), A.
     """
+    plasma = topology.plasma_index
     per_turn = (
-        f_c_pf_cs_peak_time_array[:PLASMA_INDEX, :]
+        f_c_pf_cs_peak_time_array[:plasma, :]
         * jnp.copysign(
-            c_pf_coil_turn_peak_input[:PLASMA_INDEX],
-            c_pf_cs_coils_peak_ma[:PLASMA_INDEX],
+            c_pf_coil_turn_peak_input[:plasma],
+            c_pf_cs_coils_peak_ma[:plasma],
         )[:, None]
     )
     plasma_row = plasma_current * jnp.array([0.0, 0.0, 1.0, 1.0, 1.0, 0.0])
     return (
-        jnp
-        .zeros((NGC2, 6))
-        .at[:PLASMA_INDEX, :]
-        .set(per_turn)
-        .at[PLASMA_INDEX, :]
-        .set(plasma_row)
+        jnp.zeros((NGC2, 6)).at[:plasma, :].set(per_turn).at[plasma, :].set(plasma_row)
     )
+
+
+def calculate_pf_volt_seconds_no_central_solenoid(
+    ind_pf_cs_plasma_mutual,
+    c_pf_coil_turn,
+    *,
+    topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+):
+    """`calculate_pf_cs_volt_seconds` on a machine with no central solenoid.
+
+    Ports `PFCoil.vsec`, `process/models/pfcoil.py:1615-1720`, at `iohcl = 0`. Two
+    differences, both from the same `if`:
+
+    - `nef = n_pf_cs_plasma_circuits - 1` rather than `- 2` (`:1622-1626`), so the PF
+      loop covers **every** circuit but the plasma -- there is no CS circuit to leave
+      out of it.
+    - `vs_cs_ramp` and `vs_cs_burn` are **never assigned** on this arm (`:1647`,
+      `:1677`, both guarded), so PROCESS's totals are the PF sums plus whatever those
+      two fields already hold -- their `pfcoil_variables.py` storage default, `0.0`.
+      Reproduced by leaving them out of the sums entirely rather than adding a zero,
+      because the two are the same number and only one of them is the same *statement*.
+
+    Returns
+    -------
+    tuple
+        `(vs_cs_pf_total_burn, vs_cs_pf_total_pulse)`, Wb.
+    """
+    n = topology.n_pf_coils
+    ind_plasma = ind_pf_cs_plasma_mutual[topology.plasma_index, :]
+
+    vs_ramp = jnp.sum(ind_plasma[:n] * (c_pf_coil_turn[:n, 2] - c_pf_coil_turn[:n, 1]))
+    vs_burn = jnp.sum(ind_plasma[:n] * (c_pf_coil_turn[:n, 4] - c_pf_coil_turn[:n, 2]))
+    return vs_burn, vs_ramp + vs_burn
 
 
 def calculate_pf_cs_volt_seconds(ind_pf_cs_plasma_mutual, c_pf_coil_turn):
@@ -166,6 +201,11 @@ class PFCoilTurnCurrents(ExplicitFunction):
     own -- `pfcoil()` computes the block unconditionally.
     """
 
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static, and the only thing that changes between the two machines: which row is
+    the plasma's. The read set does not move -- `pfcoil()`'s tail reads the three arrays
+    whole and branches on nothing -- so one node serves both topologies."""
+
     c_pf_coil_turn = OutputInto(pf_coil)
 
     def __call__(
@@ -180,6 +220,7 @@ class PFCoilTurnCurrents(ExplicitFunction):
             c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
             c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
             plasma_current=plasma_current,
+            topology=self.topology,
         )
 
 
@@ -200,4 +241,28 @@ class PFCoilVoltSeconds(ExplicitFunction):
         return calculate_pf_cs_volt_seconds(
             ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
             c_pf_coil_turn=c_pf_coil_turn,
+        )
+
+
+class PFCoilVoltSecondsNoCentralSolenoid(PFCoilVoltSeconds):
+    """cottax node: `.tokamak.pf_coil.volt_seconds`, the `iohcl = 0` occupant.
+
+    The same two reads and the same two outputs as `PFCoilVoltSeconds` -- `vsec` reads
+    the inductance matrix and the turn currents whole on both arms -- so this is a
+    subclass with a different body rather than a different signature. What differs is
+    which circuits the sums run over; see
+    `calculate_pf_volt_seconds_no_central_solenoid`.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    def __call__(
+        self,
+        ind_pf_cs_plasma_mutual=From(pf_coil),
+        c_pf_coil_turn=From(pf_coil),
+    ):
+        return calculate_pf_volt_seconds_no_central_solenoid(
+            ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
+            c_pf_coil_turn=c_pf_coil_turn,
+            topology=self.topology,
         )

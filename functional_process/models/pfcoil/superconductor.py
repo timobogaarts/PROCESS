@@ -60,6 +60,7 @@ computes (`1.1018e9` A/m^2 on `large_tokamak_nof`) that nothing in the graph own
 return, is still unowned -- see the note at the foot of this file.
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -68,8 +69,14 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.pfcoil import CS_INDEX, N_PF_COILS
+from functional_process.models.pfcoil import (
+    CS_INDEX,
+    N_PF_COILS,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+    PFCoilTopology,
+)
 from functional_process.models.physics.superconductors import (
+    hijc_rebco,
     itersc,
     jcrit_nbti,
     western_superconducting_nb3sn,
@@ -77,7 +84,7 @@ from functional_process.models.physics.superconductors import (
 from functional_process.models.tfcoil.superconducting import (
     solve_current_sharing_temperature,
 )
-from functional_process.paths import pf_coil, tfcoil
+from functional_process.paths import pf_coil, superconducting_tfcoil, tfcoil
 
 ITER_NB3SN_B_C20MAX = 32.97
 """`bc20m` for the ITER Nb3Sn arm (T) -- critical field at 0 K and 0 strain,
@@ -369,6 +376,76 @@ def calculate_pf_strand_critical_current_density(
         c0=OLD_LUBELL_NBTI_C0,
         b_c20max=OLD_LUBELL_NBTI_B_C20MAX,
         temp_c0max=OLD_LUBELL_NBTI_TEMP_C0MAX,
+    )
+    return j_crit_sc * (1.0 - fcupfsu)
+
+
+HAZELTON_ZHAI_REBCO_B_C20MAX = 138.0
+"""`bc20m` in `superconpf`'s `HAZELTON_ZHAI_REBCO` arm (`pfcoil.py:4853`) -- upper
+critical field at zero temperature and strain (T)."""
+
+HAZELTON_ZHAI_REBCO_T_C0 = 92.0
+"""`tc0m` in the same arm (`pfcoil.py:4854`) -- critical temperature at zero field and
+strain (K)."""
+
+
+def calculate_pf_strand_critical_current_density_hazelton_zhai_rebco(
+    b_pf_coil_peak,
+    bpf2,
+    temp_pf_peak_field,
+    fcupfsu,
+    dr_hts_tape,
+    dx_hts_tape_rebco,
+    dx_hts_tape_total,
+):
+    """`calculate_pf_strand_critical_current_density` for REBCO tape PF coils.
+
+    The same block of `pfcoil()` (`:871-904`) with `superconpf`'s
+    `HAZELTON_ZHAI_REBCO` arm (`:4851-4866`) in place of the `OLD_LUBELL_NBTI` one --
+    `i_pf_superconductor = 9`, both spherical tokamaks'
+    (`spherical_tokamak_eval.IN.DAT:235`, `st_regression.IN.DAT:1670`).
+
+    Everything the NbTi sibling's docstring argues carries over unchanged: the scalar is
+    the *last* PF coil's because the assignment has no index, `fhe`/`fcu` do not enter
+    the critical surface (they scale `superconpf`'s first return, not its third), and
+    the strand branch at `:898` is written as its `else` arm because both reachable
+    values of the **CS** switch it tests are outside `{2, 6, 8}` -- including on a
+    machine with no CS at all, where `.pf_coil.i_cs_superconductor` keeps
+    `pfcoil_variables.py`'s default `1`.
+
+    **Three reads the NbTi arm does not have**: the tape's width and its REBCO/total
+    thicknesses, which live in `.superconducting_tfcoil` and are the TF coil's tape
+    geometry. That is PROCESS's own wiring (`pfcoil.py:892-894` passes exactly those
+    three fields into the PF call), not a shortcut -- there is no PF-side tape geometry
+    in `pfcoil_variables.py` to read instead.
+
+    Parameters
+    ----------
+    b_pf_coil_peak, bpf2 :
+        Field at the inner and outer edge of the last PF coil (T).
+    temp_pf_peak_field :
+        Helium temperature at the peak-field point (K). `.tfcoil.tftmp`.
+    fcupfsu :
+        Copper fraction of the PF superconducting strand. `.pf_coil.fcupfsu`.
+    dr_hts_tape, dx_hts_tape_rebco, dx_hts_tape_total :
+        Tape width, REBCO layer thickness and total tape thickness (m).
+        `.superconducting_tfcoil.dr_tf_hts_tape`, `.dx_tf_hts_tape_rebco`,
+        `.dx_tf_hts_tape_total`.
+
+    Returns
+    -------
+    :
+        Strand critical current density (A/m^2).
+    """
+    b_pf_peak = jnp.maximum(jnp.abs(b_pf_coil_peak), jnp.abs(bpf2))
+    j_crit_sc, _b_critical, _temp_critical = hijc_rebco(
+        temp_conductor=temp_pf_peak_field,
+        b_conductor=b_pf_peak,
+        b_c20max=HAZELTON_ZHAI_REBCO_B_C20MAX,
+        t_c0=HAZELTON_ZHAI_REBCO_T_C0,
+        dr_hts_tape=dr_hts_tape,
+        dx_hts_tape_rebco=dx_hts_tape_rebco,
+        dx_hts_tape_total=dx_hts_tape_total,
     )
     return j_crit_sc * (1.0 - fcupfsu)
 
@@ -781,6 +858,55 @@ class PFStrandCriticalCurrentDensity(ExplicitFunction):
             bpf2=bpf2_last,
             temp_pf_peak_field=tftmp,
             fcupfsu=fcupfsu,
+        )
+
+
+class PFStrandCriticalCurrentDensityHazeltonZhaiRebco(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.strand_critical_current`,
+    `i_pf_superconductor == 9`.
+
+    Both spherical tokamaks' value (`spherical_tokamak_eval.IN.DAT:235`,
+    `st_regression.IN.DAT:1670`), and the reason `indat._pf_coil_system_deviations`'
+    `-6` fired on them.
+
+    **A sibling rather than a subclass**, unlike `CSCriticalCurrentDensitiesWstNb3Sn`:
+    that family overrides one `staticmethod` and keeps its ports, and this arm cannot,
+    because `hijc_rebco` needs the tape's three dimensions and `jcrit_nbti` does not.
+    Three extra reads is a different node.
+
+    **The two peak fields are read whole here and per index on the conventional arm**,
+    and that is not a style choice either: `PFCoilPeakFieldNoCentralSolenoid` owns both
+    arrays whole (there is no CS node to own the last slot), and cottax matches reads by
+    equality -- a `FromExactly(b_pf_coil_peak[7])` against a whole-array owner is
+    refused outright as a read that would silently become a boundary input. The index
+    the calculation actually wants moves with the topology, so it is taken inside.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+    """Static -- which coil the `pfcoil()` loop finishes on, and therefore which slot of
+    the two peak-field arrays the surviving scalar came from."""
+
+    j_crit_str_pf = OutputInto(pf_coil)
+
+    def __call__(
+        self,
+        b_pf_coil_peak=From(pf_coil),
+        bpf2=From(pf_coil),
+        tftmp=From(tfcoil),
+        fcupfsu=From(pf_coil),
+        dr_tf_hts_tape=From(superconducting_tfcoil),
+        dx_tf_hts_tape_rebco=From(superconducting_tfcoil),
+        dx_tf_hts_tape_total=From(superconducting_tfcoil),
+    ):
+        last = self.topology.n_pf_coils - 1
+        return calculate_pf_strand_critical_current_density_hazelton_zhai_rebco(
+            b_pf_coil_peak=b_pf_coil_peak[last],
+            bpf2=bpf2[last],
+            temp_pf_peak_field=tftmp,
+            fcupfsu=fcupfsu,
+            dr_hts_tape=dr_tf_hts_tape,
+            dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
+            dx_hts_tape_total=dx_tf_hts_tape_total,
         )
 
 

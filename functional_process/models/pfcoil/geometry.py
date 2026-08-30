@@ -39,17 +39,20 @@ other value is UNPORTED with its reason in `geometry.md`:
 | `.pf_coil.i_r_pf_outside_tf_placement` | `0` -- radius follows the TF curve |
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.pfcoil import (
     CS_INDEX,
-    N_COILS_IN_GROUP,
     N_CS_FILAMENTS,
-    N_PF_GROUPS,
     N_PF_GROUPS_MAX,
     NFXF,
     NGC2,
+    REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+    PFCoilTopology,
+    PFLocation,
 )
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import (
@@ -280,14 +283,24 @@ def calculate_pf_coil_group_positions(
     dz_tf_upper_lower_midplane,
     zref,
     r_pf_outside_tf_midplane,
+    rref=None,
+    *,
+    topology=REFERENCE_TOPOLOGY,
+    r_pf_outside_tf_is_constant=False,
 ):
-    """Coil centres by `(group, coil)` for `i_pf_location = (2, 2, 3, 3)`.
+    """Coil centres by `(group, coil)`, for one topology's `i_pf_location` pattern.
 
-    Ports `pfcoil()`'s placement loop (`process/models/pfcoil.py:247-354`) for this run's
-    four groups, i.e. `place_pf_above_tf` (`:1178-1263`) for groups 0 and 1 and
-    `place_pf_outside_tf` (`:1265-1343`) for groups 2 and 3, at `itart = 0`,
-    `i_tf_shape != PICTURE_FRAME` and `i_r_pf_outside_tf_placement = 0`. The
-    `top_bottom` toggle is resolved at trace time -- see the module docstring.
+    Ports `pfcoil()`'s placement loop (`process/models/pfcoil.py:245-352`), i.e.
+    `place_pf_above_tf` (`:1178-1263`) for an `i_pf_location = 2` group,
+    `place_pf_outside_tf` (`:1265-1343`) for a `3` and `place_pf_generally`
+    (`:1345-1401`) for a `4`, at `not (itart == 1 and itartpf == 0)`. The `top_bottom`
+    toggle is carried here exactly as `pfcoil()` carries it, and resolved at trace time
+    -- see the module docstring.
+
+    `i_pf_location = 1` (`place_pf_above_cs`, `:1115-1176`) is **UNPORTED**: it is the
+    only arm that also needs `r_cs_middle`/`dr_pf_cs_middle_offset`, so it is a
+    different read set rather than a different branch, and no tracked file uses it.
+    A topology carrying it raises here rather than falling through.
 
     `place_pf_outside_tf`'s `np.isinf` kludge (`:1334-1339`, log-and-set-`1e10`) is kept
     as a `jnp.where`; the `logger.error` beside it is pure reporting and is dropped, the
@@ -306,48 +319,92 @@ def calculate_pf_coil_group_positions(
         Up/down asymmetry of the TF coil about the midplane (m).
         `.build.dz_tf_upper_lower_midplane`.
     zref :
-        Per-group vertical placement ratio, four entries. For an
-        `i_pf_location = 3` group this is the coil height in units of `rminor`.
-        `.pf_coil.zref[:4]`.
+        Per-group vertical placement ratio, one entry per group. For an
+        `i_pf_location = 3` or `4` group this is the coil height in units of `rminor`.
+        `.pf_coil.zref[:n_pf_coil_groups]`.
     r_pf_outside_tf_midplane :
         Radius at which an `i_pf_location = 3` coil would sit on the midplane (m).
         `.pf_coil.r_pf_outside_tf_midplane`.
+    rref :
+        Per-group radial placement ratio, in units of `rminor` from the plasma centre.
+        `.pf_coil.rref[:n_pf_coil_groups]`. Read **only** by an `i_pf_location = 4`
+        group, so it stays `None` on a topology that has none -- declaring it there
+        would be the union-of-arms invented edge the occupant split exists to remove.
+    topology :
+        Static. Which groups exist, how many coils each holds and where each sits.
+    r_pf_outside_tf_is_constant :
+        Static. `i_tf_shape == PICTURE_FRAME or i_r_pf_outside_tf_placement == 1`
+        (`pfcoil.py:1322-1326`) -- the two switches enter `place_pf_outside_tf` only
+        through this disjunction, so the occupant resolves it once. `True` stacks an
+        `i_pf_location = 3` group at the midplane radius; `False` follows the D-shaped
+        TF curve.
 
     Returns
     -------
     tuple
         `(r_pf_coil_middle_group_array, z_pf_coil_middle_group_array)`, each
-        `(N_PF_GROUPS, N_PF_COILS_IN_GROUP_MAX)`. A group holding one coil leaves its
-        second column at zero, exactly as PROCESS's pre-zeroed array does.
+        `(topology.n_pf_coil_groups, N_PF_COILS_IN_GROUP_MAX)`. A group holding one coil
+        leaves its second column at zero, exactly as PROCESS's pre-zeroed array does.
     """
-    r_group = jnp.zeros((N_PF_GROUPS, N_PF_COILS_IN_GROUP_MAX))
-    z_group = jnp.zeros((N_PF_GROUPS, N_PF_COILS_IN_GROUP_MAX))
+    n_groups = topology.n_pf_coil_groups
+    r_group = jnp.zeros((n_groups, N_PF_COILS_IN_GROUP_MAX))
+    z_group = jnp.zeros((n_groups, N_PF_COILS_IN_GROUP_MAX))
 
-    # Groups 0 and 1: `i_pf_location = 2`, stacked above/below the TF coil.
+    # `pfcoil()` initialises the toggle once, before the group loop (`:127`), and
+    # `place_pf_above_tf` flips it per coil placed (`:1252-1261`) -- so it is carried
+    # across groups as well as within one.
+    top_bottom = 1
+
     r_above_tf = rmajor + rpf2 * triang * rminor
     z_above_tf_top = z_tf_top + _PF_ABOVE_TF_Z_CLEARANCE
     z_above_tf_bottom = -1.0 * (
         z_tf_top - dz_tf_upper_lower_midplane + _PF_ABOVE_TF_Z_CLEARANCE
     )
-    r_group = r_group.at[0, 0].set(r_above_tf).at[1, 0].set(r_above_tf)
-    z_group = z_group.at[0, 0].set(z_above_tf_top).at[1, 0].set(z_above_tf_bottom)
 
-    # Groups 2 and 3: `i_pf_location = 3`, radially outside the TF coil, one coil above
-    # and one below the midplane, radius following the D-shaped TF curve.
-    for group in (2, 3):
-        for coil in range(N_COILS_IN_GROUP[group]):
+    for group in range(n_groups):
+        location = topology.i_pf_location[group]
+        for coil in range(topology.n_pf_coils_in_group[group]):
             sign = 1.0 if coil == 0 else -1.0
-            z = rminor * zref[group] * sign
-            r_raw = jnp.sqrt(r_pf_outside_tf_midplane**2 - z**2)
-            r = jnp.where(jnp.isinf(r_raw), 1e10, r_raw)
-            z_group = z_group.at[group, coil].set(z)
+
+            if location is PFLocation.ABOVE_TF:
+                r = r_above_tf
+                z = z_above_tf_top if top_bottom == 1 else z_above_tf_bottom
+                top_bottom = -top_bottom
+
+            elif location is PFLocation.OUTSIDE_TF:
+                z = rminor * zref[group] * sign
+                if r_pf_outside_tf_is_constant:
+                    r = jnp.asarray(r_pf_outside_tf_midplane)
+                else:
+                    r_raw = jnp.sqrt(r_pf_outside_tf_midplane**2 - z**2)
+                    r = jnp.where(jnp.isinf(r_raw), 1e10, r_raw)
+
+            elif location is PFLocation.GENERALLY_PLACED:
+                z = rminor * zref[group] * sign
+                r = rminor * rref[group] + rmajor
+
+            else:
+                raise NotImplementedError(
+                    f"i_pf_location = {int(location)} on group {group} is a real "
+                    "PROCESS branch (place_pf_above_cs, pfcoil.py:1115) but is not "
+                    "ported: it is the only placement that reads r_cs_middle and "
+                    "dr_pf_cs_middle_offset, so it is a different read set rather "
+                    "than a different arm of this one, and no tracked input file "
+                    "uses it"
+                )
+
             r_group = r_group.at[group, coil].set(r)
+            z_group = z_group.at[group, coil].set(z)
 
     return r_group, z_group
 
 
 def calculate_pf_coil_positions(
-    r_pf_coil_middle_group_array, z_pf_coil_middle_group_array, r_cs_middle
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    r_cs_middle=None,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """Coil centres flattened out of the group arrays, with the CS in its own slot.
 
@@ -355,24 +412,29 @@ def calculate_pf_coil_positions(
     CS's writes into the same two arrays (`:182`, `:186-188`). Group-then-coil order,
     which is what fixes every per-coil index in this package.
 
+    `r_cs_middle` is read only when the topology has a central solenoid; with
+    `iohcl = 0` there is no slot for it and PROCESS's own CS write at `:182` lands on
+    the *last PF coil's* index, where this same loop overwrites it one block later.
+
     Returns
     -------
     tuple
-        `(r_pf_coil_middle, z_pf_coil_middle)`, seven entries each -- six PF coils then
-        the CS.
+        `(r_pf_coil_middle, z_pf_coil_middle)`, `topology.n_cs_pf_coils` entries each --
+        the PF coils in group-then-coil order, then the CS if there is one.
     """
     r_flat = [
         r_pf_coil_middle_group_array[group, coil]
-        for group in range(N_PF_GROUPS)
-        for coil in range(N_COILS_IN_GROUP[group])
+        for group in range(topology.n_pf_coil_groups)
+        for coil in range(topology.n_pf_coils_in_group[group])
     ]
     z_flat = [
         z_pf_coil_middle_group_array[group, coil]
-        for group in range(N_PF_GROUPS)
-        for coil in range(N_COILS_IN_GROUP[group])
+        for group in range(topology.n_pf_coil_groups)
+        for coil in range(topology.n_pf_coils_in_group[group])
     ]
-    r_flat.append(jnp.asarray(r_cs_middle))
-    z_flat.append(jnp.zeros_like(jnp.asarray(r_cs_middle)))
+    if topology.has_central_solenoid:
+        r_flat.append(jnp.asarray(r_cs_middle))
+        z_flat.append(jnp.zeros_like(jnp.asarray(r_cs_middle)))
     return jnp.stack(r_flat), jnp.stack(z_flat)
 
 
@@ -487,7 +549,7 @@ class CSCoilTurnGeometry(ExplicitFunction):
 class PFCoilPlacement(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.placement`.
 
-    Occupant for `i_pf_location = (2, 2, 3, 3)` with `itart = 0`,
+    Occupant for `i_pf_location = (2, 2, 3, 3)` with `not (itart == 1 and itartpf == 0)`,
     `i_tf_shape = D_SHAPE` and `i_r_pf_outside_tf_placement = 0`. Owns the two
     `(N_PF_GROUPS_MAX, 2)` group arrays and `.pf_coil.r_pf_outside_tf_midplane`
     (`pfcoil.py:239-242`, one line, folded in here because it is this placement's own
@@ -495,8 +557,18 @@ class PFCoilPlacement(ExplicitFunction):
 
     `r_cs_middle` is *not* read: no group on this arm has `i_pf_location = 1`, and it is
     only `place_pf_above_cs` that needs it. Declaring it would be exactly the
-    union-of-arms invented edge the occupant split exists to remove.
+    union-of-arms invented edge the occupant split exists to remove. `rref` is not read
+    for the same reason -- no group here has `i_pf_location = 4`.
     """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static, and the reference topology by construction: this occupant's whole
+    identity is that pattern. `PFCoilPlacementSphericalTokamak` carries the other one."""
+
+    r_pf_outside_tf_is_constant: bool = eqx.field(static=True, default=False)
+    """`i_tf_shape == PICTURE_FRAME or i_r_pf_outside_tf_placement == 1`
+    (`pfcoil.py:1322-1326`), resolved once. `False` here -- a D-shaped TF with the
+    default placement, so an outside-TF coil's radius follows the TF curve."""
 
     r_pf_outside_tf_midplane = OutputInto(pf_coil)
     r_pf_coil_middle_group_array = OutputInto(pf_coil)
@@ -515,7 +587,38 @@ class PFCoilPlacement(ExplicitFunction):
         zref=From(pf_coil),
     ):
         r_pf_outside_tf_midplane = r_tf_outboard_out + dr_pf_tf_outboard_out_offset
+        return self._placed(
+            r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+            rmajor=rmajor,
+            rminor=rminor,
+            triang=triang,
+            rpf2=rpf2,
+            z_tf_top=z_tf_top,
+            dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
+            zref=zref,
+            rref=None,
+        )
 
+    def _placed(
+        self,
+        r_pf_outside_tf_midplane,
+        rmajor,
+        rminor,
+        triang,
+        rpf2,
+        z_tf_top,
+        dz_tf_upper_lower_midplane,
+        zref,
+        rref,
+    ):
+        """The placement and its `N_PF_GROUPS_MAX` padding, given this arm's reads.
+
+        Not a port surface: `_params` reads `__call__`'s signature only, so each
+        occupant still declares its own ports -- the `CoilsMass` shape `masses.py`
+        already uses. The only entry that differs between the two occupants is whether
+        `rref` is a read or a `None`.
+        """
+        n_groups = self.topology.n_pf_coil_groups
         r_group, z_group = calculate_pf_coil_group_positions(
             rmajor=rmajor,
             rminor=rminor,
@@ -523,26 +626,94 @@ class PFCoilPlacement(ExplicitFunction):
             rpf2=rpf2,
             z_tf_top=z_tf_top,
             dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
-            zref=zref[:N_PF_GROUPS],
+            zref=zref[:n_groups],
             r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+            rref=None if rref is None else rref[:n_groups],
+            topology=self.topology,
+            r_pf_outside_tf_is_constant=self.r_pf_outside_tf_is_constant,
         )
         pad = jnp.zeros((N_PF_GROUPS_MAX, N_PF_COILS_IN_GROUP_MAX))
         return (
             r_pf_outside_tf_midplane,
-            pad.at[:N_PF_GROUPS].set(r_group),
-            pad.at[:N_PF_GROUPS].set(z_group),
+            pad.at[:n_groups].set(r_group),
+            pad.at[:n_groups].set(z_group),
+        )
+
+
+class PFCoilPlacementSphericalTokamak(PFCoilPlacement):
+    """cottax node: `.tokamak.pf_coil.placement`, the spherical tokamaks' occupant.
+
+    Occupant for `i_pf_location = (2, 3, 3, 4)` with
+    `n_pf_coils_in_group = (2, 2, 2, 2)`, `i_tf_shape = PICTURE_FRAME` and
+    `i_r_pf_outside_tf_placement = 1` --
+    `spherical_tokamak_eval.IN.DAT` (`:233`, `:236-237`, `:357`) and
+    `st_regression.IN.DAT` (`:1755`, `:1764`, `:1788`, `:803`), which set the same four.
+
+    **Three differences from `PFCoilPlacement`, all of them structural**, and none of
+    them a value:
+
+    1. The topology. Group 0 holds *two* `i_pf_location = 2` coils, so `pfcoil()`'s
+       `top_bottom` toggle flips inside one group instead of between two; groups 1 and 2
+       are the outside-TF pairs; group 3 is the `i_pf_location = 4` pair, which
+       `place_pf_generally` (`pfcoil.py:1345-1401`) places from `rref`/`zref` about the
+       plasma centre.
+    2. `r_pf_outside_tf_is_constant`. `i_tf_shape = 2` and
+       `i_r_pf_outside_tf_placement = 1` are the two halves of one disjunction
+       (`:1322-1326`); either alone stacks the outside-TF coils at the midplane radius
+       instead of following the TF curve, and both are set on both files.
+    3. **`rref` is a read here and is not one on the conventional arm.** That is the
+       whole reason this is a second occupant rather than a second static field: the
+       `i_pf_location = 4` group is the only thing in `pfcoil()` that touches
+       `.pf_coil.rref`, so declaring it on an arm with no such group would be an
+       invented edge.
+
+    `itart`/`itartpf` do **not** enter: both files set `itartpf = 1`, and
+    `place_pf_above_tf`'s spherical-tokamak arm is guarded by `itart == 1 and
+    itartpf == 0` (`:1250`). See `indat._pf_coil_system_deviations`' `-3`.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+    r_pf_outside_tf_is_constant: bool = eqx.field(static=True, default=True)
+
+    def __call__(
+        self,
+        r_tf_outboard_out=From(superconducting_tfcoil),
+        dr_pf_tf_outboard_out_offset=From(pf_coil),
+        rmajor=From(physics),
+        rminor=From(physics),
+        triang=From(physics),
+        rpf2=From(pf_coil),
+        z_tf_top=From(build),
+        dz_tf_upper_lower_midplane=From(build),
+        zref=From(pf_coil),
+        rref=From(pf_coil),
+    ):
+        r_pf_outside_tf_midplane = r_tf_outboard_out + dr_pf_tf_outboard_out_offset
+        return self._placed(
+            r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+            rmajor=rmajor,
+            rminor=rminor,
+            triang=triang,
+            rpf2=rpf2,
+            z_tf_top=z_tf_top,
+            dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
+            zref=zref,
+            rref=rref,
         )
 
 
 class PFCoilPositions(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.positions`. Owns `.pf_coil.r_pf_coil_middle` and
-    `.pf_coil.z_pf_coil_middle` at their full `NGC2` width -- six PF coils flattened out
+    `.pf_coil.z_pf_coil_middle` at their full `NGC2` width -- the PF coils flattened out
     of the group arrays, then the CS, then structural zeros.
 
-    Index 7 (the plasma) is *not* written by PROCESS in these two arrays -- `pfcoil()`'s
+    The plasma's index is *not* written by PROCESS in these two arrays -- `pfcoil()`'s
     "Plasma size and shape" block (`:1067-1079`) sets the plasma's inner/outer radius and
     upper/lower height but never its centre -- so it stays zero here too.
     """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static. Which slot each coil occupies, and whether there is a CS slot at all."""
 
     r_pf_coil_middle = OutputInto(pf_coil)
     z_pf_coil_middle = OutputInto(pf_coil)
@@ -553,13 +724,54 @@ class PFCoilPositions(ExplicitFunction):
         z_pf_coil_middle_group_array=From(pf_coil),
         r_cs_middle=From(pf_coil),
     ):
+        return self._flattened(
+            r_pf_coil_middle_group_array,
+            z_pf_coil_middle_group_array,
+            r_cs_middle,
+        )
+
+    def _flattened(
+        self,
+        r_pf_coil_middle_group_array,
+        z_pf_coil_middle_group_array,
+        r_cs_middle,
+    ):
+        """The flattening and its `NGC2` padding, given this arm's reads."""
+        n_groups = self.topology.n_pf_coil_groups
         r_flat, z_flat = calculate_pf_coil_positions(
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:N_PF_GROUPS],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:N_PF_GROUPS],
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
             r_cs_middle=r_cs_middle,
+            topology=self.topology,
         )
         pad = jnp.zeros(NGC2)
+        filled = self.topology.n_cs_pf_coils
         return (
-            pad.at[: CS_INDEX + 1].set(r_flat),
-            pad.at[: CS_INDEX + 1].set(z_flat),
+            pad.at[:filled].set(r_flat),
+            pad.at[:filled].set(z_flat),
+        )
+
+
+class PFCoilPositionsNoCentralSolenoid(PFCoilPositions):
+    """cottax node: `.tokamak.pf_coil.positions`, the `iohcl = 0` occupant.
+
+    **`r_cs_middle` is not read**, and that is the whole difference. With no central
+    solenoid there is no slot for it in either array -- `pfcoil()`'s CS write at `:182`
+    lands on `n_cs_pf_coils - 1`, which with `iohcl = 0` is the *last PF coil's* index,
+    and the `ncl` loop three hundred lines later (`:663-672`) overwrites it with that
+    coil's own centre. So the CS geometry never survives into these arrays on this arm,
+    and reading it would be an edge to a namespace this machine does not have.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    def __call__(
+        self,
+        r_pf_coil_middle_group_array=From(pf_coil),
+        z_pf_coil_middle_group_array=From(pf_coil),
+    ):
+        return self._flattened(
+            r_pf_coil_middle_group_array,
+            z_pf_coil_middle_group_array,
+            r_cs_middle=None,
         )

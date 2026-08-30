@@ -50,6 +50,7 @@ second (`:513-515`) *is* reproduced, because unlike `pfbuspwr` it reaches a stor
 field.
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
@@ -57,29 +58,48 @@ from functional_process.models.pfcoil import (
     N_COILS_IN_GROUP,
     N_PF_GROUPS,
     PLASMA_INDEX,
+    REFERENCE_TOPOLOGY,
+    PFCoilTopology,
 )
 from functional_process.paths import heat_transport, pf_coil, pf_power, physics, times
 
-N_PF_GROUPS_WITH_CS = N_PF_GROUPS + 1
-"""`n_pf_coil_groups` as `pfpwr` uses it: five, the four PF groups plus the CS.
 
-`pfpwr` increments the field's own value by one when `iohcl != 0` (`power.py:342-344`)
-rather than reading a stored five, and `pfcoil()` separately writes
-`n_pf_coils_in_group[n_pf_coil_groups] = 1` (`pfcoil.py:155`) so the CS reads as a
-one-coil group. Both are the package's baked `iohcl = 1` topology; neither is a port."""
+def coils_in_group_with_cs(topology):
+    """`n_pf_coils_in_group` as `pfpwr` reads it -- with the CS's own group appended.
+
+    `pfpwr` increments `n_pf_coil_groups` by one when `iohcl != 0` (`power.py:346-347`)
+    rather than reading a stored value, and `pfcoil()` separately writes
+    `n_pf_coils_in_group[n_pf_coil_groups] = 1` (`pfcoil.py:155`) so the CS reads as a
+    one-coil group. Both are guarded on the same switch, so with no solenoid the groups
+    are exactly the coil set's own -- **not** four groups plus an empty fifth.
+    """
+    if topology.has_central_solenoid:
+        return (*topology.n_pf_coils_in_group, 1)
+    return topology.n_pf_coils_in_group
+
+
+def group_circuit_index(coils_in_group):
+    """`pf_group_circuit_index`, `pfpwr`'s running `ic` (`power.py:349-357`).
+
+    The **last** coil of each group, which is the one every per-group quantity is
+    evaluated at. `models/pfcoil/inductance.py`'s `topology.last_coil_of_group` is the
+    same construction for the same reason; kept separate because that one stops at the
+    PF groups and this one includes the CS's.
+    """
+    return tuple(
+        sum(coils_in_group[: group + 1]) - 1 for group in range(len(coils_in_group))
+    )
+
+
+N_PF_GROUPS_WITH_CS = N_PF_GROUPS + 1
+"""`n_pf_coil_groups` as `pfpwr` uses it on the reference topology: five, the four PF
+groups plus the CS. An alias of `REFERENCE_TOPOLOGY`, kept for the harness cases."""
 
 COILS_IN_GROUP_WITH_CS = (*N_COILS_IN_GROUP, 1)
 """`(1, 1, 2, 2, 1)` -- `N_COILS_IN_GROUP` with the CS's own one-coil group appended."""
 
-GROUP_CIRCUIT_INDEX = tuple(
-    sum(COILS_IN_GROUP_WITH_CS[: group + 1]) - 1 for group in range(N_PF_GROUPS_WITH_CS)
-)
-"""`pf_group_circuit_index` = `(0, 1, 3, 5, 6)`, `pfpwr`'s running `ic`.
-
-The **last** coil of each group, which is the one every per-group quantity is evaluated
-at (`power.py:348-350`). `models/pfcoil/inductance.py::_last_coil_of_each_group` is the
-same construction for the same reason; kept separate because that one stops at the four
-PF groups and this one includes the CS."""
+GROUP_CIRCUIT_INDEX = group_circuit_index(COILS_IN_GROUP_WITH_CS)
+"""`(0, 1, 3, 5, 6)` on the reference topology."""
 
 N_PF_CS_PLASMA_CIRCUITS = PLASMA_INDEX + 1
 """`.pf_coil.n_pf_cs_plasma_circuits` = 8 -- six PF coils, the CS, and the plasma."""
@@ -125,6 +145,7 @@ def _pf_bus_and_coil_resistances(
     c_pf_cs_coils_peak_ma,
     c_pf_cs_coil_pulse_end_ma,
     n_pf_coil_turns,
+    topology,
 ):
     """Per-group busbar and coil resistance, and the peak resistive circuit power.
 
@@ -136,14 +157,17 @@ def _pf_bus_and_coil_resistances(
     Returns
     -------
     tuple
-        `(res_pf_bus, res_pf_circuit_total, srcktpm)` -- two length-5 arrays (ohm) and
-        the summed peak resistive power in the PF circuits (kW), `.pf_power.srcktpm`.
+        `(res_pf_bus, res_pf_circuit_total, srcktpm)` -- two arrays (ohm), one entry
+        per group `pfpwr` sees, and the summed peak resistive power in the PF circuits
+        (kW), `.pf_power.srcktpm`.
     """
+    coils_in_group = coils_in_group_with_cs(topology)
+    circuit_index = group_circuit_index(coils_in_group)
     res_pf_bus = []
     res_pf_circuit_total = []
     p_pf_circuit_resistive_peak = []
-    for group in range(N_PF_GROUPS_WITH_CS):
-        ic = GROUP_CIRCUIT_INDEX[group]
+    for group in range(len(coils_in_group)):
+        ic = circuit_index[group]
         # Section area of the aluminium bussing (cm^2), then its resistance (ohm).
         # `/ 10000` is the cm^2 -> m^2 conversion PROCESS spells inline; the missing
         # factor 1.5 is folded into `rhopfbus` itself, as `power.py:363-366` says.
@@ -162,7 +186,7 @@ def _pf_bus_and_coil_resistances(
                 / ((1.0 - f_a_pf_coil_void[ic]) * 1.0e6 * c_pf_cs_coils_peak_ma[ic])
             )
             * n_pf_coil_turns[ic] ** 2
-            * COILS_IN_GROUP_WITH_CS[group]
+            * coils_in_group[group]
         )
         total = coil + bus
 
@@ -186,18 +210,19 @@ def _pf_bus_and_coil_resistances(
 
 
 def _pf_loss_power_supply_j(
-    *, interval, c_pf_coil_turn, ind_pf_cs_plasma_mutual, f_p_pf_psu_loss
+    *, interval, c_pf_coil_turn, ind_pf_cs_plasma_mutual, f_p_pf_psu_loss, topology
 ):
     """Power-supply conversion loss over one interval (J). `power.py:122-176`.
 
     `sum_i (k_ps/2) * |(I_i[n+1] + I_i[n]) * sum_j M_ij (I_j[n+1] - I_j[n])|`, the
     plasma circuit excluded from the outer sum and included in the inner one.
     """
+    n_circuits = topology.plasma_index + 1
     loss = 0.0
-    for circuit in range(N_PF_CS_PLASMA_CIRCUITS - 1):
+    for circuit in range(n_circuits - 1):
         c_sum = c_pf_coil_turn[circuit, interval + 1] + c_pf_coil_turn[circuit, interval]
         delta_flux = 0.0
-        for coupled in range(N_PF_CS_PLASMA_CIRCUITS):
+        for coupled in range(n_circuits):
             delta_flux += ind_pf_cs_plasma_mutual[circuit, coupled] * (
                 c_pf_coil_turn[coupled, interval + 1] - c_pf_coil_turn[coupled, interval]
             )
@@ -205,15 +230,18 @@ def _pf_loss_power_supply_j(
     return loss
 
 
-def _pf_loss_busbar_j(*, interval, dt_pulse_phase_s, c_pf_coil_turn, res_pf_bus):
+def _pf_loss_busbar_j(
+    *, interval, dt_pulse_phase_s, c_pf_coil_turn, res_pf_bus, topology
+):
     """Busbar resistive loss over one interval (J). `power.py:178-222`.
 
     `dt * sum_groups I_mean^2 R_bus`, `I_mean` the average of the group's
     representative circuit current at the two ends of the interval.
     """
+    circuit_index = group_circuit_index(coils_in_group_with_cs(topology))
     loss = 0.0
-    for group in range(N_PF_GROUPS_WITH_CS):
-        ic = GROUP_CIRCUIT_INDEX[group]
+    for group in range(len(circuit_index)):
+        ic = circuit_index[group]
         c_mean = 0.5 * (c_pf_coil_turn[ic, interval + 1] + c_pf_coil_turn[ic, interval])
         loss += dt_pulse_phase_s * c_mean**2 * res_pf_bus[group]
     return loss
@@ -229,6 +257,7 @@ def _pf_loss_interval_total_j(
     c_pf_coil_turn,
     ind_pf_cs_plasma_mutual,
     res_pf_bus,
+    topology,
 ):
     """Storage + power supply + busbar loss over one interval (J). `power.py:224-299`.
 
@@ -246,12 +275,14 @@ def _pf_loss_interval_total_j(
             c_pf_coil_turn=c_pf_coil_turn,
             ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
             f_p_pf_psu_loss=f_p_pf_psu_loss,
+            topology=topology,
         )
         + _pf_loss_busbar_j(
             interval=interval,
             dt_pulse_phase_s=dt_pulse_phase_s,
             c_pf_coil_turn=c_pf_coil_turn,
             res_pf_bus=res_pf_bus,
+            topology=topology,
         )
     )
     return jnp.where(dt_pulse_phase_s <= 0.0, 0.0, total)
@@ -279,6 +310,8 @@ def calculate_pf_coil_power_supplies(
     t_plant_pulse_fusion_ramp,
     t_plant_pulse_burn,
     t_plant_pulse_plasma_current_ramp_down,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """`Power.pfpwr` -- the MVA, power and energy requirements of the PF coil system.
 
@@ -365,24 +398,27 @@ def calculate_pf_coil_power_supplies(
         c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
         c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
         n_pf_coil_turns=n_pf_coil_turns,
+        topology=topology,
     )
+    coils_in_group = coils_in_group_with_cs(topology)
+    n_circuits = topology.plasma_index + 1
 
     # ---- inductive MVA and stored energy (`power.py:414-499`) ----------------------
     # `delktim` is the ramp-up duration; every dI/dt in this block is taken across it.
     delktim = t_plant_pulse_plasma_current_ramp_up
 
-    vpfi = [0.0] * N_PF_CS_PLASMA_CIRCUITS
+    vpfi = [0.0] * n_circuits
     poloidalenergy = [0.0] * N_PF_ACTIVE_POINTS
     powpfi = 0.0
     powpfr = 0.0
     powpfr2 = 0.0
     coil = -1
-    for group in range(N_PF_GROUPS_WITH_CS):
-        for _ in range(COILS_IN_GROUP_WITH_CS[group]):
+    for group in range(len(coils_in_group)):
+        for _ in range(coils_in_group[group]):
             coil += 1
             inductxcurrent = [0.0] * N_PF_ACTIVE_POINTS
             powpfii = 0.0
-            for circuit in range(N_PF_CS_PLASMA_CIRCUITS):
+            for circuit in range(n_circuits):
                 #  Voltage in `coil` due to the change of current in `circuit`
                 vpfij = (
                     ind_pf_cs_plasma_mutual[coil, circuit]
@@ -450,6 +486,7 @@ def calculate_pf_coil_power_supplies(
                 c_pf_coil_turn=c_pf_coil_turn,
                 ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
                 res_pf_bus=res_pf_bus,
+                topology=topology,
             )
         )
     poloidalpower = jnp.stack(poloidalpower)
@@ -471,11 +508,11 @@ def calculate_pf_coil_power_supplies(
     peakpoloidalpower = jnp.max(jnp.abs(poloidalpower)) / 1.0e6
     peakmva = jnp.maximum(powpfr + powpfi, powpfr2)
 
-    pfckts = (N_PF_CS_PLASMA_CIRCUITS - 2) + PFCKTS_SPARE_CIRCUITS
+    pfckts = (n_circuits - 2) + PFCKTS_SPARE_CIRCUITS
     spfbusl = pfbusl * pfckts
     spsmva = 0.0
     acptmax = 0.0
-    for circuit in range(N_PF_CS_PLASMA_CIRCUITS - 1):
+    for circuit in range(n_circuits - 1):
         spsmva += 1.0e-6 * jnp.abs(vpfi[circuit] * c_pf_coil_turn_peak_input[circuit])
         acptmax += 1.0e-3 * jnp.abs(c_pf_coil_turn_peak_input[circuit]) / pfckts
 
@@ -517,6 +554,12 @@ class PfCoilPowerSupplies(ExplicitFunction):
     geometry and currents, and the node is the point where the coil set meets the plant
     electrical system, so the width is the subsystem's and not the port's.
     """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static, and the same object the PF coil package's own nodes carry: `pfpwr`'s four
+    loop bounds are the coil topology's (module docstring), so a machine with no central
+    solenoid loops over its groups and not over a fifth that does not exist. The read set
+    does not move with it -- every array is read whole -- so one occupant serves both."""
 
     srcktpm = OutputInto(pf_power)
     poloidalpower = OutputInto(pf_power)
@@ -578,4 +621,5 @@ class PfCoilPowerSupplies(ExplicitFunction):
             t_plant_pulse_plasma_current_ramp_down=(
                 t_plant_pulse_plasma_current_ramp_down
             ),
+            topology=self.topology,
         )

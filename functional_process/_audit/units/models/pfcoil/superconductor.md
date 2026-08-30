@@ -197,3 +197,43 @@ Written 2026-08-27 inside `pfcoil/fields.md` § "the CS chain", because the wave
 wrote this module was asked to leave `unit_registry.md` alone while two sibling agents
 had it open. Split out to its own record with its own registry row on 2026-08-29; the
 material is unchanged apart from the heading levels.
+
+
+## 2026-08-30 (evening) -- the spherical tokamaks' PF coil system, arm 2
+
+`next_steps.md` §18.2 listed five of the eight blockers stopping
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` as `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`). All five are closed. The package now carries
+a `PFCoilTopology` (`models/pfcoil/__init__.py`) instead of five loose module
+constants, and `indat._pf_coil_system_arm` has a third positive arm, `2`, for a machine
+with **no central solenoid**: `iohcl = 0`, `n_pf_coil_groups = 4`,
+`i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`,
+`i_pf_superconductor = 9`, picture-frame TF. `.tokamak.cs_coil` is `None` on that arm.
+
+**`-3` was a refusal that outlived its cause, and that is a correction to this
+record's own frontier.** The predicate refused `itart == 1` *or* `itartpf != 0`.
+Measured over `process/`: `itartpf` is read in exactly two places
+(`pfcoil.py:1250`, `:411`) and both guard on `itart == 1 **and** itartpf == 0`, and
+`core/init.py:640` overwrites `i_pf_location[:3]` under the same conjunction. Both
+tracked ST files set `itartpf = 1`, so **neither ever reaches PROCESS's Peng and
+Strickler ST arm** -- their PF coil system takes the conventional placement and the
+conventional SVD current solve throughout. The predicate is now the conjunction, and
+the ST arm stays UNPORTED with nothing reaching it.
+
+**What changed here.**
+`calculate_pf_strand_critical_current_density_hazelton_zhai_rebco` +
+`PFStrandCriticalCurrentDensityHazeltonZhaiRebco` port `superconpf`'s
+`HAZELTON_ZHAI_REBCO` arm (`pfcoil.py:4851-4866`) for
+`.pf_coil.i_pf_superconductor == 9`, both spherical tokamaks' value. This record's
+prediction that a widened pair predicate would need per-value occupants is confirmed
+for the one value that arrived: the arm needs `superconductors.hijc_rebco` and the
+tape's three `.superconducting_tfcoil.d*_hts_tape*` dimensions, which `jcrit_nbti` does
+not, so **three extra reads make it a sibling rather than a `_critical_surface`
+override**. That is the difference between it and `CSCriticalCurrentDensitiesWstNb3Sn`.
+
+The strand branch at `:898` still reproduces only its `else` arm, and the argument
+survives the new machine: it tests the **CS** switch, which on a machine with no CS
+keeps `pfcoil_variables.py`'s default `1` and is outside `{2, 6, 8}`.
+
+Two per-index reads became two whole-array reads, and that was cottax's refusal rather
+than a preference -- see `pfcoil/fields.md`'s section of the same date.

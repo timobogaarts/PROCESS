@@ -294,3 +294,43 @@ radial limit floored at 1 mm and a vertical limit left at whatever negative or
 sub-millimetre value produced the clamp -- an asymmetry with no stated physical
 justification. Reproduced as written; not reachable on any tracked input (both compute
 ~9.9 mm).
+
+
+## 2026-08-30 (evening) -- the spherical tokamaks' PF coil system, arm 2
+
+`next_steps.md` §18.2 listed five of the eight blockers stopping
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` as `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`). All five are closed. The package now carries
+a `PFCoilTopology` (`models/pfcoil/__init__.py`) instead of five loose module
+constants, and `indat._pf_coil_system_arm` has a third positive arm, `2`, for a machine
+with **no central solenoid**: `iohcl = 0`, `n_pf_coil_groups = 4`,
+`i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`,
+`i_pf_superconductor = 9`, picture-frame TF. `.tokamak.cs_coil` is `None` on that arm.
+
+**`-3` was a refusal that outlived its cause, and that is a correction to this
+record's own frontier.** The predicate refused `itart == 1` *or* `itartpf != 0`.
+Measured over `process/`: `itartpf` is read in exactly two places
+(`pfcoil.py:1250`, `:411`) and both guard on `itart == 1 **and** itartpf == 0`, and
+`core/init.py:640` overwrites `i_pf_location[:3]` under the same conjunction. Both
+tracked ST files set `itartpf = 1`, so **neither ever reaches PROCESS's Peng and
+Strickler ST arm** -- their PF coil system takes the conventional placement and the
+conventional SVD current solve throughout. The predicate is now the conjunction, and
+the ST arm stays UNPORTED with nothing reaching it.
+
+**What changed here.** `calculate_pf_coil_group_positions` is now a loop over the
+topology's `i_pf_location`, carrying `pfcoil()`'s `top_bottom` toggle across groups and
+within one (`:127`, `:1252-1261`), with two static arguments: the `PFCoilTopology` and
+`r_pf_outside_tf_is_constant`, which is `i_tf_shape == PICTURE_FRAME or
+i_r_pf_outside_tf_placement == 1` -- the single disjunction those two switches enter
+`place_pf_outside_tf` through (`:1322-1326`). `place_pf_generally` (`:1345-1401`) is
+ported, which is what `i_pf_location = 4` needs and which no conventional file reaches;
+`place_pf_above_cs` (`i_pf_location = 1`) is still UNPORTED and now raises by name
+rather than falling through.
+
+Two occupants where there was one: `PFCoilPlacement` (unchanged reads) and
+`PFCoilPlacementSphericalTokamak`, which **adds `.pf_coil.rref`** -- the only read in
+`pfcoil()` that touches it, and the reason this is a second occupant rather than a
+second static field. `PFCoilPositions` gains
+`PFCoilPositionsNoCentralSolenoid`, which drops `r_cs_middle`: with `iohcl = 0`,
+`pfcoil()`'s CS write at `:182` lands on the *last PF coil's* index and the `ncl` loop
+at `:663-672` overwrites it, so the CS geometry never survives into those arrays.

@@ -280,3 +280,46 @@ membership. Stellarator untouched — `.tokamak.cs_coil` is not on its graph.
 
 Tier 1 throughout: 3 new contracts in `test_fields.py`, 7 in `test_stresses.py`, 3 in
 `test_superconductor.py`, green plain and under `--fp-gradients`.
+
+
+## 2026-08-30 (evening) -- the spherical tokamaks' PF coil system, arm 2
+
+`next_steps.md` §18.2 listed five of the eight blockers stopping
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` as `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`). All five are closed. The package now carries
+a `PFCoilTopology` (`models/pfcoil/__init__.py`) instead of five loose module
+constants, and `indat._pf_coil_system_arm` has a third positive arm, `2`, for a machine
+with **no central solenoid**: `iohcl = 0`, `n_pf_coil_groups = 4`,
+`i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`,
+`i_pf_superconductor = 9`, picture-frame TF. `.tokamak.cs_coil` is `None` on that arm.
+
+**`-3` was a refusal that outlived its cause, and that is a correction to this
+record's own frontier.** The predicate refused `itart == 1` *or* `itartpf != 0`.
+Measured over `process/`: `itartpf` is read in exactly two places
+(`pfcoil.py:1250`, `:411`) and both guard on `itart == 1 **and** itartpf == 0`, and
+`core/init.py:640` overwrites `i_pf_location[:3]` under the same conjunction. Both
+tracked ST files set `itartpf = 1`, so **neither ever reaches PROCESS's Peng and
+Strickler ST arm** -- their PF coil system takes the conventional placement and the
+conventional SVD current solve throughout. The predicate is now the conjunction, and
+the ST arm stays UNPORTED with nothing reaching it.
+
+**What changed here.** The per-group loop moved into `_peak_fields_from_loops`, shared
+by `calculate_pf_coil_peak_fields` and the new
+`calculate_pf_coil_peak_fields_no_central_solenoid`. The no-solenoid arm is
+`peak_b_field_at_pf_coil`'s `kk = 0` path (`pfcoil.py:4487-4489`): **no CS filaments at
+all**, so the five CS reads and the two group arrays go with them -- the group arrays
+are read on the conventional arm *only* to reproduce the filament-clobbering defect
+this record already documents, and with no filaments there is nothing to clobber.
+
+`_cs_filament_positions` now clobbers the leading filaments with the *fixed-current*
+groups' coils in `nocoil` order (`:474-479`) rather than with slots 0 and 1 by name;
+on the reference topology that is the same two entries.
+
+**`PFCoilPeakFieldNoCentralSolenoid` owns `.pf_coil.b_pf_coil_peak` and `.bpf2` whole**,
+where `PFCoilPeakField` owns six slots of each. Per-index ownership exists on the
+conventional arm because index 6 belongs to `CSCoilPeakField`; with no solenoid that
+node does not exist and the group loop writes every slot PROCESS writes. cottax
+enforced the consequence rather than the port choosing it: a
+`FromExactly(b_pf_coil_peak[7])` read against a whole-array owner is refused outright as
+a read that would silently become a boundary input, which is how
+`PFStrandCriticalCurrentDensityHazeltonZhaiRebco` came to read both arrays whole.

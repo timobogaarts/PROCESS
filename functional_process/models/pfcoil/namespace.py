@@ -51,39 +51,52 @@ import dataclasses
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
+from functional_process.models.pfcoil import SPHERICAL_TOKAMAK_TOPOLOGY
 from functional_process.models.pfcoil.currents import (
     CSCurrentDensityPulseStart,
     CSFluxSwing,
     PFCoilEquilibriumCurrents,
     PFCoilInitiationCurrents,
+    PFCoilInitiationCurrentsNoCentralSolenoid,
     PFCoilTimePointCurrents,
+    PFCoilTimePointCurrentsNoCentralSolenoid,
 )
 from functional_process.models.pfcoil.fields import (
     CSCoilPeakField,
     PFCoilCurrentWaveform,
     PFCoilPeakField,
+    PFCoilPeakFieldNoCentralSolenoid,
 )
 from functional_process.models.pfcoil.geometry import (
     CSCoilGeometry,
     CSCoilTurnGeometry,
     PFCoilPlacement,
+    PFCoilPlacementSphericalTokamak,
     PFCoilPositions,
+    PFCoilPositionsNoCentralSolenoid,
 )
-from functional_process.models.pfcoil.inductance import PFCoilInductance
+from functional_process.models.pfcoil.inductance import (
+    PFCoilInductance,
+    PFCoilInductanceNoCentralSolenoid,
+)
 from functional_process.models.pfcoil.masses import (
     PFCoilMasses,
     PFCoilMassesCsWstNb3Sn,
+    PFCoilMassesNoCentralSolenoid,
     PFCoilSizes,
+    PFCoilSizesNoCentralSolenoid,
 )
 from functional_process.models.pfcoil.stresses import CSCoilStresses
 from functional_process.models.pfcoil.superconductor import (
     CSCriticalCurrentDensitiesIterNb3Sn,
     CSTemperatureMarginIterNb3Sn,
     PFStrandCriticalCurrentDensity,
+    PFStrandCriticalCurrentDensityHazeltonZhaiRebco,
 )
 from functional_process.models.pfcoil.volt_seconds import (
     PFCoilTurnCurrents,
     PFCoilVoltSeconds,
+    PFCoilVoltSecondsNoCentralSolenoid,
 )
 
 
@@ -298,3 +311,104 @@ class PFCoilCsWstNb3Sn(PFCoil):
     masses: PFCoilMassesCsWstNb3Sn = PFCoilMassesCsWstNb3Sn()
     """Conductor and structure masses (`pfcoil.py:851-1023`), CS conductor density
     from `.tfcoil.dcond[4]` (WST Nb3Sn) instead of `.tfcoil.dcond[0]`."""
+
+
+class PFCoilSphericalTokamak(PFCoil):
+    """`.tokamak.pf_coil` for a machine with **no central solenoid** --
+    `indat._pf_coil_system_arm` arm 2, `spherical_tokamak_eval.IN.DAT` and
+    `st_regression.IN.DAT`.
+
+    Thirteen slots re-occupied and none inherited, which is the honest count of what
+    `iohcl = 0` and `i_pf_location = (2, 3, 3, 4)` change together. They split into two
+    kinds, and the distinction is the one this port keeps making:
+
+    **Eight occupants declare different reads.** `placement` gains `.pf_coil.rref` (the
+    `i_pf_location = 4` group); `positions`, `initiation_currents`, `sizes`, `masses`,
+    `inductance` and `time_point_currents` each *drop* the CS fields they would
+    otherwise read, because with `ohcalc` never entered (`pfcoil.py:1048-1050`) those
+    fields have no producer at all; `peak_field` drops five and owns two whole arrays
+    instead of twelve slots of them; `strand_critical_current` swaps NbTi for REBCO tape
+    and gains the tape's three dimensions. A different read set is a different node --
+    a node that read `.pf_coil.a_cs_poloidal` on a machine with no solenoid would be
+    reading a boundary zero and calling it a cross-section.
+
+    **Five carry the same body with the eight-coil `PFCoilTopology`.**
+    `equilibrium_currents`, `waveform`, `turn_currents` and `volt_seconds` read the same
+    fields on both machines -- `pfcoil()` reads those arrays whole and branches on
+    nothing -- so what changes is only which slots the loops cover, which is static
+    graph-assembly data (`pfcoil/__init__.py`).
+
+    **`flux_swing` has no counterpart here**, and it is not a slot this class leaves
+    empty: it lives in `.tokamak.cs_coil`, which arm 2 makes `None` outright. Its one
+    output, `.pf_coil.f_j_cs_start_end_flat_top`, is produced by
+    `time_point_currents` instead -- `pfcoil.py:658-661` assigns the constant `1.0` on
+    this arm, over a storage default of `0.0`, so it is a value that must be produced
+    and not one absence can supply. That also means the package's four-node cycle
+    (`currents.py`'s module docstring) is **broken on this machine**: with `flux_swing`
+    gone the ring `sizes -> flux_swing -> time_point_currents` has no middle. Whether
+    the remaining edges still close one is `Blocking`'s question.
+    """
+
+    placement: PFCoilPlacementSphericalTokamak = PFCoilPlacementSphericalTokamak()
+    """`i_pf_location = (2, 3, 3, 4)`, picture-frame TF, `rref` read
+    (`pfcoil.py:245-352`)."""
+
+    positions: PFCoilPositionsNoCentralSolenoid = PFCoilPositionsNoCentralSolenoid()
+    """The group positions flattened, with no CS slot to append (`:663-672`)."""
+
+    initiation_currents: PFCoilInitiationCurrentsNoCentralSolenoid = (
+        PFCoilInitiationCurrentsNoCentralSolenoid()
+    )
+    """The plasma-initiation SVD solve with `nfxf = 0` (`:366-405`, `:202-204`)."""
+
+    equilibrium_currents: PFCoilEquilibriumCurrents = PFCoilEquilibriumCurrents(
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY
+    )
+    """The equilibrium SVD solve (`:456-598`). One fixed-current group (the pair above
+    the TF) and three solved-for (the two outside it and the generally-placed pair),
+    against the conventional arm's two and two."""
+
+    time_point_currents: PFCoilTimePointCurrentsNoCentralSolenoid = (
+        PFCoilTimePointCurrentsNoCentralSolenoid()
+    )
+    """Per-coil currents at the pulse's time points (`:663-728`), and
+    `.pf_coil.f_j_cs_start_end_flat_top = 1.0` (`:660`)."""
+
+    waveform: PFCoilCurrentWaveform = PFCoilCurrentWaveform(
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY
+    )
+    """Peak currents and the waveform fraction array over eight circuits plus the
+    plasma (`waveform()`, `:2869-2940`)."""
+
+    peak_field: PFCoilPeakFieldNoCentralSolenoid = PFCoilPeakFieldNoCentralSolenoid()
+    """Peak field at each of the eight PF coils, owned as two whole arrays
+    (`peak_b_field_at_pf_coil` with `kk = 0`, `:4487-4489`)."""
+
+    sizes: PFCoilSizesNoCentralSolenoid = PFCoilSizesNoCentralSolenoid()
+    """Coil cross-sections, turns and edges (`:730-849`), with the plasma one index
+    further along and no CS slot between."""
+
+    masses: PFCoilMassesNoCentralSolenoid = PFCoilMassesNoCentralSolenoid()
+    """Conductor and structure masses (`:849-1026`), REBCO tape conductor density
+    (`.tfcoil.dcond[8]`) and no CS steel or cable space."""
+
+    strand_critical_current: PFStrandCriticalCurrentDensityHazeltonZhaiRebco = (
+        PFStrandCriticalCurrentDensityHazeltonZhaiRebco()
+    )
+    """`.pf_coil.j_crit_str_pf` from `superconpf`'s `HAZELTON_ZHAI_REBCO` arm
+    (`:4851-4866`), evaluated at the last of eight coils rather than the last of six."""
+
+    inductance: PFCoilInductanceNoCentralSolenoid = PFCoilInductanceNoCentralSolenoid()
+    """The mutual-inductance matrix (`induct`, `:1721-1984`) with its two CS blocks
+    guarded out and `nef = n_cs_pf_coils`."""
+
+    turn_currents: PFCoilTurnCurrents = PFCoilTurnCurrents(
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY
+    )
+    """Per-turn circuit currents at the six waveform time points (`:1082-1111`)."""
+
+    volt_seconds: PFCoilVoltSecondsNoCentralSolenoid = (
+        PFCoilVoltSecondsNoCentralSolenoid()
+    )
+    """`PFCoil.vsec` (`:1615-1720`), `iohcl = 0` arm -- the PF sums alone, with
+    `vs_cs_ramp`/`vs_cs_burn` never assigned."""

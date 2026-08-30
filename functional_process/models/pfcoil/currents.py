@@ -41,19 +41,20 @@ means PROCESS's `first_call` seeding of it is the iteration's initial guess. See
 `inductance.md` § "The cycle, one node larger".
 """
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.pfcoil import (
-    CS_INDEX,
     LROW1,
-    N_COILS_IN_GROUP,
-    N_PF_GROUPS,
     N_PF_GROUPS_MAX,
     NGC2,
     NPTS,
-    PLASMA_INDEX,
+    REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+    PFCoilTopology,
+    PFLocation,
 )
 from functional_process.models.pfcoil.fields import calculate_b_field_at_point
 from functional_process.models.pfcoil.geometry import place_cs_filaments
@@ -63,14 +64,25 @@ _SIGMA_FLOOR = 1.0e-10
 """`PFCoil.solv`'s `sigma[j] > 1.0e-10` guard (`pfcoil.py:1608`) -- singular values below
 this do not contribute to the solution."""
 
-FIXED_CURRENT_GROUPS = (0, 1)
-"""The `i_pf_location = 2` divertor-coil groups, whose current PROCESS fixes
-analytically and then hands to the equilibrium solve as fixed-current filaments
-(`pfcoil.py:485-511`). Each holds one coil on this run, so `nfxf0 = 2`."""
+_COILS_PER_EQUILIBRIUM_GROUP = 2
+"""`ncls0[ccount] = 2`, `pfcoil.py:538`.
 
-EQUILIBRIUM_GROUPS = (2, 3)
-"""The `i_pf_location = 3` groups, whose current the SVD solves for, in `pcls0`'s order
-(`pfcoil.py:519-532`)."""
+**A literal in PROCESS, not the group's own coil count**, and reproduced as one. The
+reduced least-squares problem the equilibrium solve poses always declares two coils per
+group and reads `r_pf_coil_middle_group_array[group, 0]` and `[group, 1]` (`:539-548`);
+on a group holding one coil the second entry is the pre-zeroed array's zero and PROCESS
+sums a filament at the origin. Every group either topology sends to this solve holds two
+coils, so the distinction is invisible here -- it is written this way so that a topology
+where it is *not* invisible cannot silently disagree with PROCESS."""
+
+FIXED_CURRENT_GROUPS = REFERENCE_TOPOLOGY.groups_at(PFLocation.ABOVE_TF)
+"""The `i_pf_location = 2` divertor-coil groups of the reference topology, whose current
+PROCESS fixes analytically and then hands to the equilibrium solve as fixed-current
+filaments (`pfcoil.py:485-511`). Each holds one coil on that run, so `nfxf0 = 2`."""
+
+EQUILIBRIUM_GROUPS = REFERENCE_TOPOLOGY.groups_at(PFLocation.OUTSIDE_TF)
+"""The reference topology's `i_pf_location = 3` groups, whose current the SVD solves
+for, in `pcls0`'s order (`pfcoil.py:519-532`)."""
 
 
 def _fixb(rpts, zpts, r_fix, z_fix, c_fix):
@@ -264,6 +276,8 @@ def calculate_plasma_initiation_currents(
     j_cs_flat_top_end,
     f_j_cs_start_pulse_end_flat_top,
     alfapf,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """Group currents that null the poloidal field across the plasma midplane.
 
@@ -308,7 +322,60 @@ def calculate_plasma_initiation_currents(
         r_group=r_pf_coil_middle_group_array,
         z_group=z_pf_coil_middle_group_array,
         alfa=alfapf,
-        n_in_group=N_COILS_IN_GROUP,
+        n_in_group=topology.n_pf_coils_in_group,
+    )
+
+
+def calculate_plasma_initiation_currents_no_central_solenoid(
+    rmajor,
+    rminor,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    alfapf,
+    *,
+    topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+):
+    """`calculate_plasma_initiation_currents` on a machine with no central solenoid.
+
+    Ports the same block, `process/models/pfcoil.py:366-405`, at `iohcl = 0`. The
+    difference is `nfxf`: `:202-204` sets it to zero and `c_cs_flat_top_end` to zero
+    with it, so `efc` is handed **no fixed-current filaments at all** and `fixb`'s
+    `nfix <= 0` early return (`:5160-5161`) leaves `bfix` zero. There is nothing here
+    to place and nothing to place it from -- `place_cs_filaments` is not called, and
+    neither `r_cs_middle` nor `dz_cs_full` nor `a_cs_poloidal` nor `j_cs_flat_top_end`
+    is read. **Absence, not a filament carrying zero current**: the two are numerically
+    the same and structurally different, and it is the read set that decides which
+    occupant this is.
+
+    The block still *runs*: PROCESS guards it with `j_cs_pulse_start != 0`
+    (`pfcoil.py:358`) and `j_cs_pulse_start = j_cs_flat_top_end *
+    f_j_cs_start_pulse_end_flat_top` is computed unconditionally at `:161-164` from two
+    inputs that keep their `pfcoil_variables.py` defaults (`1.85e7`, `0.9`) on both
+    spherical tokamaks. So the guard is true, and the 32 midplane test points and the
+    smoothing solve are exactly the conventional arm's.
+
+    Returns
+    -------
+    tuple
+        `(ssq0, ccl0)` -- `.pf_coil.ssq0` and `.pf_coil.ccl0`.
+    """
+    drpt = 2.0 * rminor / (NPTS - 1)
+    rpt0 = rmajor - rminor
+    rpts = rpt0 + jnp.arange(NPTS) * drpt
+
+    empty = jnp.zeros(0)
+    return calculate_efc_currents(
+        rpts=rpts,
+        zpts=jnp.zeros(NPTS),
+        brin=jnp.zeros(NPTS),
+        bzin=jnp.zeros(NPTS),
+        r_fix=empty,
+        z_fix=empty,
+        c_fix=empty,
+        r_group=r_pf_coil_middle_group_array,
+        z_group=z_pf_coil_middle_group_array,
+        alfa=alfapf,
+        n_in_group=topology.n_pf_coils_in_group,
     )
 
 
@@ -323,18 +390,28 @@ def calculate_equilibrium_currents(
     r_pf_coil_middle_group_array,
     z_pf_coil_middle_group_array,
     alfapf,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """Group currents at flat-top: divertor coils fixed, equilibrium coils solved for.
 
     Ports `pfcoil()`'s `i_pf_current = 1` conventional-aspect-ratio arm,
-    `process/models/pfcoil.py:456-598`. Groups 0 and 1 are `i_pf_location = 2` divertor
-    coils whose current is set analytically from the plasma's elongation and the coil's
-    own height (`:489-499`) and then handed to the solve as *fixed* filaments
-    (`:501-511`); groups 2 and 3 are the equilibrium coils, solved against the vertical
-    field the plasma needs at `(rmajor, 0)` (`:556-595`).
+    `process/models/pfcoil.py:456-598`. An `i_pf_location = 2` group is a divertor coil
+    whose current is set analytically from the plasma's elongation and the coil's own
+    height (`:489-499`) and then handed to the solve as *fixed* filaments, one per coil
+    in the group, all carrying the group's current (`:501-511`); an `i_pf_location = 3`
+    or `4` group is an equilibrium coil, solved against the vertical field the plasma
+    needs at `(rmajor, 0)` (`:556-595`). The two location values reach the solve by the
+    same two lines (`:519-532`), so they are one case here.
 
-    The `i_pf_location = 1` arm (a coil above the CS, current forced to zero) is not
-    reachable on this run and is not ported.
+    **This is the arm both spherical tokamaks take too.** The ST scaling that bypasses
+    the SVD entirely (`:411-454`) is guarded by `itart == 1 and itartpf == 0`, and both
+    tracked ST files set `itartpf = 1` -- see `indat._pf_coil_system_deviations`' `-3`.
+    That arm remains UNPORTED and is a different occupant; nothing in this function
+    reads `itart` or `itartpf`.
+
+    The `i_pf_location = 1` arm (a coil above the CS, current forced to zero, and a
+    hard error if `iohcl = 0`) is not reachable on either topology and is not ported.
 
     Returns
     -------
@@ -342,16 +419,39 @@ def calculate_equilibrium_currents(
         `(ccls, b_plasma_vertical_required)` -- the current in each group (A), padded to
         `N_PF_GROUPS_MAX`, and `.physics.b_plasma_vertical_required` (T).
     """
-    # Divertor coils: fixed current, RK 07/12 (`pfcoil.py:489-499`).
+    fixed_groups = topology.groups_at(PFLocation.ABOVE_TF)
+    equilibrium_groups = topology.groups_at(
+        PFLocation.OUTSIDE_TF, PFLocation.GENERALLY_PLACED
+    )
+    if len(fixed_groups) + len(equilibrium_groups) != topology.n_pf_coil_groups:
+        raise NotImplementedError(
+            "i_pf_location = 1 (a PF coil stacked on the central solenoid) has no "
+            "occupant here: pfcoil.py:459-476 forces its current to zero, adds its "
+            "coils to the fixed filaments and raises outright when iohcl = 0. That is "
+            "a different arm of the current allocation, not a different topology"
+        )
+
+    # Divertor coils: fixed current, RK 07/12 (`pfcoil.py:489-499`). The current is a
+    # property of the *group*, evaluated at its first coil's height; every coil in the
+    # group becomes a filament carrying it (`:501-511`).
     fixed = [
         plasma_current
         * 2.0
         * (1.0 - (kappa * rminor) / jnp.abs(z_pf_coil_middle_group_array[group, 0]))
-        for group in FIXED_CURRENT_GROUPS
+        for group in fixed_groups
     ]
-    c_fix = jnp.stack(fixed)
-    r_fix = jnp.stack([r_pf_coil_middle_group_array[g, 0] for g in FIXED_CURRENT_GROUPS])
-    z_fix = jnp.stack([z_pf_coil_middle_group_array[g, 0] for g in FIXED_CURRENT_GROUPS])
+    fixed_coils = [
+        (slot, group, coil)
+        for slot, group in enumerate(fixed_groups)
+        for coil in range(topology.n_pf_coils_in_group[group])
+    ]
+    c_fix = jnp.stack([fixed[slot] for slot, _, _ in fixed_coils])
+    r_fix = jnp.stack([
+        r_pf_coil_middle_group_array[group, coil] for _, group, coil in fixed_coils
+    ])
+    z_fix = jnp.stack([
+        z_pf_coil_middle_group_array[group, coil] for _, group, coil in fixed_coils
+    ])
 
     # Vertical field required to hold the plasma in equilibrium (`:563-575`).
     b_plasma_vertical_required = (
@@ -367,10 +467,10 @@ def calculate_equilibrium_currents(
     )
 
     r_equilibrium = jnp.stack([
-        r_pf_coil_middle_group_array[g] for g in EQUILIBRIUM_GROUPS
+        r_pf_coil_middle_group_array[g] for g in equilibrium_groups
     ])
     z_equilibrium = jnp.stack([
-        z_pf_coil_middle_group_array[g] for g in EQUILIBRIUM_GROUPS
+        z_pf_coil_middle_group_array[g] for g in equilibrium_groups
     ])
 
     _ssq, solved = calculate_efc_currents(
@@ -384,13 +484,13 @@ def calculate_equilibrium_currents(
         r_group=r_equilibrium,
         z_group=z_equilibrium,
         alfa=alfapf,
-        n_in_group=tuple(N_COILS_IN_GROUP[g] for g in EQUILIBRIUM_GROUPS),
+        n_in_group=(_COILS_PER_EQUILIBRIUM_GROUP,) * len(equilibrium_groups),
     )
 
     ccls = jnp.zeros(N_PF_GROUPS_MAX)
-    for slot, group in enumerate(FIXED_CURRENT_GROUPS):
+    for slot, group in enumerate(fixed_groups):
         ccls = ccls.at[group].set(fixed[slot])
-    for slot, group in enumerate(EQUILIBRIUM_GROUPS):
+    for slot, group in enumerate(equilibrium_groups):
         ccls = ccls.at[group].set(solved[slot])
     return ccls, b_plasma_vertical_required
 
@@ -406,6 +506,8 @@ def calculate_cs_flux_swing(
     a_cs_poloidal,
     j_cs_flat_top_end,
     f_j_cs_start_pulse_end_flat_top,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """CS current-density ratio between beginning and end of flat-top.
 
@@ -443,7 +545,9 @@ def calculate_cs_flux_swing(
         `.pf_coil.f_j_cs_start_end_flat_top`.
     """
     per_group = jnp.stack([
-        ccls[group] for group, n in enumerate(N_COILS_IN_GROUP) for _ in range(n)
+        ccls[group]
+        for group, n in enumerate(topology.n_pf_coils_in_group)
+        for _ in range(n)
     ])
     pfflux = jnp.sum(per_group * ind_pf_cs_plasma_mutual_column / n_pf_coil_turns)
 
@@ -475,6 +579,8 @@ def calculate_time_point_currents(
     j_cs_flat_top_end,
     f_j_cs_start_pulse_end_flat_top,
     f_j_cs_start_end_flat_top,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """Each coil's current at the three time points the rest of the model cares about.
 
@@ -487,9 +593,12 @@ def calculate_time_point_currents(
     -------
     tuple
         `(c_pf_cs_coil_pulse_start_ma, c_pf_cs_coil_flat_top_ma,
-        c_pf_cs_coil_pulse_end_ma)`, seven entries each (MA) -- six PF coils then the CS.
+        c_pf_cs_coil_pulse_end_ma)`, `topology.n_cs_pf_coils` entries each (MA) -- the
+        PF coils then the CS.
     """
-    group_of_coil = [group for group, n in enumerate(N_COILS_IN_GROUP) for _ in range(n)]
+    group_of_coil = [
+        group for group, n in enumerate(topology.n_pf_coils_in_group) for _ in range(n)
+    ]
     start = [1.0e-6 * ccl0[g] for g in group_of_coil]
     flat = [
         1.0e-6
@@ -510,6 +619,66 @@ def calculate_time_point_currents(
     end.append(1.0e-6 * c_cs_flat_top_end)
 
     return jnp.stack(start), jnp.stack(flat), jnp.stack(end)
+
+
+F_J_CS_START_END_FLAT_TOP_NO_CS = 1.0
+"""`pfcoil.py:660` -- what `f_j_cs_start_end_flat_top` is set to when `iohcl = 0`.
+
+**Not the storage default.** `pfcoil_variables.py:206` gives the field `0.0`, and
+PROCESS writes `1.0` over it in the no-solenoid arm together with `dics = 0` and a
+`logger.error` ("OH coil not present; check volt-second calculations..."). So this one
+number has to be *produced*: leaving the slot empty and letting the boundary supply the
+storage default would put `0.0` into the beginning-of-flat-top currents, which is a
+different machine, not an absent one. Owned by
+`PFCoilTimePointCurrentsNoCentralSolenoid`, the only reader of the field
+(measured by grep over `functional_process/` and `process/`; every other mention is
+`outpf`/`outvolt` reporting)."""
+
+
+def calculate_time_point_currents_no_central_solenoid(
+    ccl0,
+    ccls,
+    f_j_cs_start_pulse_end_flat_top,
+    *,
+    topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+):
+    """`calculate_time_point_currents` on a machine with no central solenoid.
+
+    Ports the same `ncl` loop, `process/models/pfcoil.py:663-716`, at `iohcl = 0`. Two
+    differences, both consequences of the solenoid's absence:
+
+    - **There is no CS entry.** `c_cs_flat_top_end` is `0.0` (`:203`), so the three
+      values PROCESS writes at `:718-728` are three zeros -- and they land at index
+      `ncl`, which with `iohcl = 0` is the *plasma's* index, not a coil's. Nothing here
+      writes them: they are the storage zeros of a slot no coil owns.
+    - **`f_j_cs_start_end_flat_top` is the constant `1.0`**, not a value flowing in from
+      the flux-swing balance -- see `F_J_CS_START_END_FLAT_TOP_NO_CS`. It is returned
+      alongside the three current arrays because this node owns it.
+
+    `a_cs_poloidal` and `j_cs_flat_top_end` are therefore not read at all, which is what
+    makes this a different occupant rather than the same one with a zero passed in.
+
+    Returns
+    -------
+    tuple
+        `(c_pf_cs_coil_pulse_start_ma, c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma, f_j_cs_start_end_flat_top)` -- the three arrays
+        `topology.n_pf_coils` entries long (MA), then the ratio.
+    """
+    ratio = F_J_CS_START_END_FLAT_TOP_NO_CS
+    group_of_coil = [
+        group for group, n in enumerate(topology.n_pf_coils_in_group) for _ in range(n)
+    ]
+    start = jnp.stack([1.0e-6 * ccl0[g] for g in group_of_coil])
+    flat = jnp.stack([
+        1.0e-6 * (ccls[g] - (ccl0[g] * ratio / f_j_cs_start_pulse_end_flat_top))
+        for g in group_of_coil
+    ])
+    end = jnp.stack([
+        1.0e-6 * (ccls[g] - (ccl0[g] * (1.0 / f_j_cs_start_pulse_end_flat_top)))
+        for g in group_of_coil
+    ])
+    return start, flat, end, ratio * jnp.ones_like(f_j_cs_start_pulse_end_flat_top)
 
 
 class CSCurrentDensityPulseStart(ExplicitFunction):
@@ -542,6 +711,10 @@ class PFCoilInitiationCurrents(ExplicitFunction):
     node in this package.
     """
 
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static. How many groups the solve has and how many coils each holds -- the shape
+    of the least-squares problem, not a value in it."""
+
     ssq0 = OutputInto(pf_coil)
     ccl0 = OutputInto(pf_coil)
 
@@ -558,33 +731,76 @@ class PFCoilInitiationCurrents(ExplicitFunction):
         f_j_cs_start_pulse_end_flat_top=From(pf_coil),
         alfapf=From(pf_coil),
     ):
+        n_groups = self.topology.n_pf_coil_groups
         return calculate_plasma_initiation_currents(
             rmajor=rmajor,
             rminor=rminor,
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:N_PF_GROUPS],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:N_PF_GROUPS],
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
             r_cs_middle=r_cs_middle,
             dz_cs_full=dz_cs_full,
             a_cs_poloidal=a_cs_poloidal,
             j_cs_flat_top_end=j_cs_flat_top_end,
             f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
             alfapf=alfapf,
+            topology=self.topology,
+        )
+
+
+class PFCoilInitiationCurrentsNoCentralSolenoid(PFCoilInitiationCurrents):
+    """cottax node: `.tokamak.pf_coil.initiation_currents`, the `iohcl = 0` occupant.
+
+    Occupant for `spherical_tokamak_eval.IN.DAT:69` / `st_regression.IN.DAT:1485`.
+    **Five reads fewer**, not five zeros: `r_cs_middle`, `dz_cs_full`, `a_cs_poloidal`
+    and `j_cs_flat_top_end` all exist only to place and charge the CS filaments, and
+    `pfcoil.py:202-204` sets `nfxf = 0` before any of them is used. See
+    `calculate_plasma_initiation_currents_no_central_solenoid`.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    def __call__(
+        self,
+        rmajor=From(physics),
+        rminor=From(physics),
+        r_pf_coil_middle_group_array=From(pf_coil),
+        z_pf_coil_middle_group_array=From(pf_coil),
+        alfapf=From(pf_coil),
+    ):
+        n_groups = self.topology.n_pf_coil_groups
+        return calculate_plasma_initiation_currents_no_central_solenoid(
+            rmajor=rmajor,
+            rminor=rminor,
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+            alfapf=alfapf,
+            topology=self.topology,
         )
 
 
 class PFCoilEquilibriumCurrents(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.equilibrium_currents`.
 
-    Occupant for `i_pf_current = 1` with `itart = 0` and
-    `i_pf_location = (2, 2, 3, 3)`. Owns `.pf_coil.ccls` and
-    `.physics.b_plasma_vertical_required` -- the latter is written by both arms of the
-    `itart` branch (`pfcoil.py:444-454` and `:575`) from the same expression, so it
-    belongs to whichever occupant is instantiated.
+    Occupant for `i_pf_current = 1` with `not (itart == 1 and itartpf == 0)`. Owns
+    `.pf_coil.ccls` and `.physics.b_plasma_vertical_required` -- the latter is written
+    by both arms of the `itart` branch (`pfcoil.py:444-454` and `:575`) from the same
+    expression, so it belongs to whichever occupant is instantiated.
+
+    **One node for both topologies, and the reads are why.** Which groups are fixed and
+    which are solved for follows from `i_pf_location`, which is `topology`'s; the read
+    set does not change with it, because both arms read the same two group arrays whole.
+    That is the difference between this slot and `placement`, where the ST arm gains
+    `rref` and so needs an occupant of its own.
 
     UNPORTED arms: `i_pf_current = 0` (currents read from `ccls_ma` instead of solved
     for) and `itart = 1, itartpf = 0` (the spherical-tokamak scaling that bypasses the
-    SVD entirely, `:411-454`).
+    SVD entirely, `:411-454`; **neither tracked ST file takes it**, both setting
+    `itartpf = 1`).
     """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static. Which groups are fixed-current divertor coils and which are equilibrium
+    coils -- the shape of the reduced least-squares problem."""
 
     ccls = OutputInto(pf_coil)
     b_plasma_vertical_required = OutputInto(physics)
@@ -602,6 +818,7 @@ class PFCoilEquilibriumCurrents(ExplicitFunction):
         z_pf_coil_middle_group_array=From(pf_coil),
         alfapf=From(pf_coil),
     ):
+        n_groups = self.topology.n_pf_coil_groups
         return calculate_equilibrium_currents(
             rmajor=rmajor,
             rminor=rminor,
@@ -610,9 +827,10 @@ class PFCoilEquilibriumCurrents(ExplicitFunction):
             plasma_current=plasma_current,
             beta_poloidal_vol_avg=beta_poloidal_vol_avg,
             ind_plasma_internal_norm=ind_plasma_internal_norm,
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:N_PF_GROUPS],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:N_PF_GROUPS],
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
             alfapf=alfapf,
+            topology=self.topology,
         )
 
 
@@ -626,6 +844,10 @@ class CSFluxSwing(ExplicitFunction):
     value really is the sizing pass's output, and PROCESS really does bootstrap it
     (`pfcoil.py:605-608`).
     """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static, and necessarily a topology *with* a central solenoid -- this node is the
+    solenoid's flux-swing balance, and `iohcl = 0` deletes it rather than changing it."""
 
     f_j_cs_start_end_flat_top = OutputInto(pf_coil)
 
@@ -642,12 +864,13 @@ class CSFluxSwing(ExplicitFunction):
         j_cs_flat_top_end=From(pf_coil),
         f_j_cs_start_pulse_end_flat_top=From(pf_coil),
     ):
+        n_pf_coils = self.topology.n_pf_coils
         return calculate_cs_flux_swing(
-            ccls=ccls[:N_PF_GROUPS],
+            ccls=ccls[: self.topology.n_pf_coil_groups],
             ind_pf_cs_plasma_mutual_column=ind_pf_cs_plasma_mutual[
-                :CS_INDEX, PLASMA_INDEX
+                :n_pf_coils, self.topology.plasma_index
             ],
-            n_pf_coil_turns=n_pf_coil_turns[:CS_INDEX],
+            n_pf_coil_turns=n_pf_coil_turns[:n_pf_coils],
             vs_plasma_ramp_required=vs_plasma_ramp_required,
             dr_cs_bore=dr_cs_bore,
             dr_cs=dr_cs,
@@ -655,6 +878,7 @@ class CSFluxSwing(ExplicitFunction):
             a_cs_poloidal=a_cs_poloidal,
             j_cs_flat_top_end=j_cs_flat_top_end,
             f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+            topology=self.topology,
         )
 
 
@@ -666,6 +890,9 @@ class PFCoilTimePointCurrents(ExplicitFunction):
     `.pf_coil.ccl0_ma`/`.pf_coil.ccls_ma`, which on this arm are a pure unit conversion
     of `ccl0`/`ccls` (`pfcoil.py:678-680`) rather than inputs.
     """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static. Which slot each coil's three currents land in."""
 
     c_pf_cs_coil_pulse_start_ma = OutputInto(pf_coil)
     c_pf_cs_coil_flat_top_ma = OutputInto(pf_coil)
@@ -689,12 +916,64 @@ class PFCoilTimePointCurrents(ExplicitFunction):
             j_cs_flat_top_end=j_cs_flat_top_end,
             f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
             f_j_cs_start_end_flat_top=f_j_cs_start_end_flat_top,
+            topology=self.topology,
         )
         pad = jnp.zeros(NGC2)
+        filled = self.topology.n_cs_pf_coils
         return (
-            pad.at[: CS_INDEX + 1].set(start),
-            pad.at[: CS_INDEX + 1].set(flat),
-            pad.at[: CS_INDEX + 1].set(end),
+            pad.at[:filled].set(start),
+            pad.at[:filled].set(flat),
+            pad.at[:filled].set(end),
             1.0e-6 * ccl0,
             1.0e-6 * ccls,
+        )
+
+
+class PFCoilTimePointCurrentsNoCentralSolenoid(PFCoilTimePointCurrents):
+    """cottax node: `.tokamak.pf_coil.time_point_currents`, the `iohcl = 0` occupant.
+
+    Occupant for `i_pf_current != 0` with no central solenoid. Two differences from
+    `PFCoilTimePointCurrents`:
+
+    - `a_cs_poloidal` and `j_cs_flat_top_end` are not read. They exist here only to form
+      `c_cs_flat_top_end`, which `pfcoil.py:203` sets to zero outright on this arm.
+    - **It owns `.pf_coil.f_j_cs_start_end_flat_top` instead of reading it.** On the
+      conventional arm that ratio comes from `.tokamak.cs_coil.flux_swing`; with no
+      solenoid `pfcoil.py:658-661` assigns the constant `1.0` and there is no
+      flux-swing node to assign it. The field's storage default is `0.0`, not `1.0`, so
+      this is a value that has to be produced rather than left to the boundary --
+      see `F_J_CS_START_END_FLAT_TOP_NO_CS`.
+
+    **This breaks the package's four-node cycle on this machine**, which is a finding
+    rather than a convenience: with `flux_swing` gone the edge
+    `sizes -> flux_swing -> time_point_currents` has no middle, and
+    `.pf_coil.f_j_cs_start_end_flat_top` stops being loop-carried. Whether the remaining
+    edges still close a ring is `Blocking`'s question, not this class's.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    f_j_cs_start_end_flat_top = OutputInto(pf_coil)
+
+    def __call__(
+        self,
+        ccl0=From(pf_coil),
+        ccls=From(pf_coil),
+        f_j_cs_start_pulse_end_flat_top=From(pf_coil),
+    ):
+        start, flat, end, ratio = calculate_time_point_currents_no_central_solenoid(
+            ccl0=ccl0,
+            ccls=ccls,
+            f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+            topology=self.topology,
+        )
+        pad = jnp.zeros(NGC2)
+        filled = self.topology.n_cs_pf_coils
+        return (
+            pad.at[:filled].set(start),
+            pad.at[:filled].set(flat),
+            pad.at[:filled].set(end),
+            1.0e-6 * ccl0,
+            1.0e-6 * ccls,
+            ratio,
         )

@@ -3207,3 +3207,171 @@ arm was checked. Recorded as another instance of §16.3's pattern.
 
 The stellarator is unaffected and still solves cold in both formulations at 58 iterations
 under CLARABEL against PROCESS's 46.
+
+## 20. The PF cluster, closed — 2026-08-30 (evening)
+
+§18.2's eight model-level blockers are five fewer. All five `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`) are closed; the three CroCo ones (`1`, `2`,
+`3`) are not, and are a different agent's. **Neither ST file assembles yet** — see
+§20.4 for the current refusal.
+
+### 20.1 What landed
+
+`indat._pf_coil_system_arm` gained a third positive arm, `2`: `iohcl = 0`,
+`n_pf_coil_groups = 4`, `i_pf_location = (2, 3, 3, 4)`,
+`n_pf_coils_in_group = (2, 2, 2, 2)`, `i_pf_superconductor = 9`, picture-frame TF —
+byte for byte what both `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` set.
+
+`models/pfcoil/__init__.py` now carries a **`PFCoilTopology`** frozen dataclass in place
+of five loose module constants (`N_PF_GROUPS`, `N_COILS_IN_GROUP`, `CS_INDEX`,
+`N_CS_PF_COILS`, `PLASMA_INDEX`, `NFXF`, which remain as aliases of
+`REFERENCE_TOPOLOGY`). It is an `eqx.field(static=True)` on every node that needs it —
+the `BootstrapCurrentFractionScaling(n_plasma_profile_elements=201)` and `NOH = 30`
+precedent, a *shape*, not a switch. Every place a switch would have created a dead read,
+a second occupant was written instead (`next_steps.md` §14.2's rule, `NeutronWallLoad`'s
+lesson).
+
+Nine new occupants, all in `.tokamak.pf_coil` (`PFCoilSphericalTokamak`):
+`PFCoilPlacementSphericalTokamak`, `PFCoilPositionsNoCentralSolenoid`,
+`PFCoilInitiationCurrentsNoCentralSolenoid`,
+`PFCoilTimePointCurrentsNoCentralSolenoid`, `PFCoilPeakFieldNoCentralSolenoid`,
+`PFCoilSizesNoCentralSolenoid`, `PFCoilMassesNoCentralSolenoid`,
+`PFCoilInductanceNoCentralSolenoid`, `PFCoilVoltSecondsNoCentralSolenoid`,
+`PFStrandCriticalCurrentDensityHazeltonZhaiRebco`. Four slots reuse the conventional
+node with the other topology (`equilibrium_currents`, `waveform`, `turn_currents`) —
+their read sets do not move. `physics/superconductors.py` gained `hijc_rebco`.
+
+### 20.2 `iohcl = 0` is absence, and this is where the reads go
+
+`.tokamak.cs_coil` is `None` on arm 2 (`indat.CS_COIL[2]`), and
+`models/tokamak/namespace.py`'s slot is `CSCoil | None`. That is not a convenience: with
+`iohcl = 0`, `pfcoil()` never calls `ohcalc` (`pfcoil.py:1048-1050`), so none of that
+namespace's seven nodes has a PROCESS counterpart to port.
+
+**Measured, on the assembled arm-2 graph** (`graph_for`, 230 nodes): every field
+`ohcalc` would have written is a boundary input with no owner —
+`.pf_coil.a_cs_poloidal`, `.a_cs_cable_space`, `.a_cs_steel_poloidal`,
+`.b_cs_peak_flat_top_end`, `.b_cs_peak_pulse_start`,
+`.temp_cs_superconductor_margin`, `.j_cs_critical_*`, `.dz_cs_full`, `.r_cs_middle`,
+`.z_cs_upper`. Nothing in the arm-2 graph reads any of them: each of the nine occupants
+above *drops* those reads rather than reading them as zeros. That was the whole design
+constraint, and it is the `EcrhDensityLimit` bug class avoided by construction.
+
+**The one field that is not absence** is
+`.pf_coil.f_j_cs_start_end_flat_top`. `pfcoil.py:658-661` assigns the constant `1.0` in
+the no-solenoid arm, over a `pfcoil_variables.py:206` storage default of `0.0`, and
+`time_point_currents` (its only reader, in either tree) would otherwise get a different
+machine's ratio. `PFCoilTimePointCurrentsNoCentralSolenoid` owns it. This is
+`CSCoilPeakField`'s `b_cs_self_outer_midplane = 0.0` argument with the sign reversed:
+there, the default matched and owning it was a choice; here it does not and owning it is
+forced.
+
+**A structural consequence, unmeasured beyond its statement:** the package's four-node
+cycle is broken on arm 2. `flux_swing` is a `.tokamak.cs_coil` slot, so the ring
+`sizes -> flux_swing -> time_point_currents` has no middle and
+`.pf_coil.f_j_cs_start_end_flat_top` stops being loop-carried. Whether the remaining
+edges close a ring is `Blocking`'s question and **nobody has asked it** — `mda.CUTS` has
+not been re-derived for arm 2.
+
+### 20.3 What it was verified against
+
+**A whole-`pfcoil()` chain at `iohcl = 0`, bit for bit.**
+`tests/functional_process/models/pfcoil/test_masses.py::TestPFCoilChainSphericalTokamak`
+is the existing chain contract's third member: the port's blocks composed in
+`pfcoil()`'s own order against PROCESS's own `PFCoil.pfcoil()` driven on the eight-coil
+topology. **All twenty-eight returned quantities agree with relative difference exactly
+`0.0`** at the legacy point — placement (all three `place_pf_*` arms), positions, the
+plasma-initiation SVD, the equilibrium SVD, the time-point currents, the waveform, the
+sizing, the Green's-function peak fields and every mass.
+
+Two more were verified in scratch and agree bit for bit but have **no harness case yet**:
+`calculate_pf_plasma_inductances_no_central_solenoid` against `PFCoil.induct(False)`,
+and `calculate_pf_volt_seconds_no_central_solenoid` against `PFCoil.vsec()`.
+
+`hijc_rebco` is bit-exact against `process.models.superconductors.hijc_rebco` over 200
+random points spanning both sides of the critical field, with finite gradients — also
+**no harness case yet**.
+
+**The legacy point is a plausible spherical tokamak, not a converged one**, and that is
+stated in the contract's own docstring. `rmajor`, `aspect`, `kappa`, `triang`, `rpf2`,
+`zref` and `rref` are `spherical_tokamak_eval.IN.DAT`'s own; `z_tf_top`,
+`dz_tf_upper_lower_midplane` and `r_tf_outboard_out` are chosen consistent with a 4.5 m
+machine, because no ST file converges through this port yet. The oracle is PROCESS at
+exactly those numbers, so nothing is lost — but the point is not a machine PROCESS
+solved.
+
+### 20.4 What still refuses, measured
+
+`machine_from_indat("tests/regression/input_files/spherical_tokamak_eval.IN.DAT")` now
+raises on `i_tf_turn_type == 2` — the CroCo TF turn — and nothing else in the PF
+package. Patching past the CroCo refusals in a scratch probe, the file assembles
+(`cs_coil is None`, `pf_coil` is `PFCoilSphericalTokamak`) and `graph_for` builds a
+230-node graph.
+
+**A ninth model-level blocker, not in §18.2's list**, is behind the CroCo one and was
+found by that probe: `tf_stress_arm == (0, 1, 0)` — `i_tf_stress_model != 1` selects
+`extended_plane_strain` (`process/models/tfcoil/base.py:3719-4234`, 517 lines) instead
+of `plane_stress`. It is live on both ST files (`spherical_tokamak_eval.IN.DAT:350`,
+`st_regression.IN.DAT:1223`). §18.2 could not see it because it did not exist then:
+`stresscl` landed on 2026-08-30 (registry row 55) and brought the refusal with it. It
+belongs to the TF package, not this one.
+
+### 20.5 What is left in the PF cluster, for a cold pick-up
+
+1. **Two harness cases owed**, both against PROCESS callables that already exist, both
+   already verified bit-exact in scratch:
+   - `tests/functional_process/models/pfcoil/test_inductance.py` —
+     `calculate_pf_plasma_inductances_no_central_solenoid` vs `PFCoil.induct(False)`
+     with `data.build.iohcl = 0`, `n_pf_coils_in_group = (2,2,2,2)`,
+     `i_pf_location = (2,3,3,4)`, `n_cs_pf_coils = 8`, `n_pf_cs_plasma_circuits = 9`.
+     The existing `TestCalculatePfCsPlasmaInductances` adapter is the template; the
+     three `static_argnames` it needs for `noh` are **not** needed here (§20.2).
+   - `tests/functional_process/models/pfcoil/test_volt_seconds.py` —
+     `calculate_pf_volt_seconds_no_central_solenoid` vs `PFCoil.vsec()`.
+2. **A harness case for `hijc_rebco`** in
+   `tests/functional_process/models/physics/test_superconductors.py`, and one for
+   `calculate_pf_strand_critical_current_density_hazelton_zhai_rebco` in
+   `tests/functional_process/models/pfcoil/test_superconductor.py` (reference:
+   `process.models.pfcoil.superconpf` at `isumat = 9`, third return, times
+   `1 - fcupfsu`).
+3. **Gradient checks have not been run on the new code.** `--fp-gradients` on
+   `tests/functional_process/models/pfcoil` exceeded a 600 s budget and was abandoned;
+   the value tests are green. Run it.
+4. **`mda.CUTS` has not been re-derived for arm 2** (§20.2). Until it is, nothing is
+   known about whether the arm-2 graph has a cycle at all, let alone whether the
+   existing three cuts break it.
+5. **The `-4` and `-5` arms are still UNPORTED and now reachable in principle**:
+   `i_pf_current = 0` (currents input rather than solved) and
+   `i_pf_conductor = RESISTIVE`. Neither ST file sets them.
+6. **`place_pf_above_cs` (`i_pf_location = 1`) is still UNPORTED** and now raises by
+   name from inside `calculate_pf_coil_group_positions` rather than falling through. It
+   is the only placement that reads `r_cs_middle`/`dr_pf_cs_middle_offset`.
+
+### 20.6 Corrections to the existing record
+
+- **§18.2's `-3` was wrong about why it fires.** `_pf_coil_system_deviations` refused
+  `itart == 1` **or** `itartpf != 0`. Measured over `process/`: `itartpf` is read in
+  exactly two places (`pfcoil.py:411`, `:1250`), both guarded on
+  `itart == 1 **and** itartpf == 0`, and `core/init.py:640` overwrites
+  `i_pf_location[:3]` under the same conjunction. Both tracked ST files set
+  `itartpf = 1`. So **neither file ever reaches PROCESS's Peng and Strickler ST arm** —
+  their PF coil system takes the conventional placement and the conventional SVD
+  current solve throughout, and `-3` was a refusal that outlived its cause. The
+  predicate is now the conjunction; the ST arm stays UNPORTED with nothing reaching it.
+  This is the third instance in this file's history of a refusal being read as evidence
+  about PROCESS when it was evidence about the port.
+- **§18.2 said eight model-level blockers, "identical on both files".** It is nine, and
+  the ninth (`tf_stress_arm`) arrived after that measurement — see §20.4. The count was
+  right when it was taken.
+- **`inductance.md`'s "`noh` is a step function of the CS geometry" open question is
+  closed for arm 2 only.** On a machine with no solenoid `induct` never fills
+  `roh`/`zoh` (`pfcoil.py:1783-1791` is guarded) and no inductance depends on the
+  segment count at all. The policy gap stands for arms 0 and 1.
+- **`ncls0[ccount] = 2` (`pfcoil.py:538`) is a literal, not the group's coil count.**
+  `currents.py` used `N_COILS_IN_GROUP[g]` for the equilibrium solve's per-group width,
+  which coincides with `2` on both ported topologies. Now written as the literal, with
+  the coincidence recorded, so a topology where it differs cannot silently disagree.
+- **The fixed-current filaments are one per coil, not one per group** (`:501-511`,
+  `nocoil`). The reference topology's `i_pf_location = 2` groups hold one coil each, so
+  the old `[group, 0]`-only code was right there and wrong in general; arm 0 has two
+  such coils in one group.
