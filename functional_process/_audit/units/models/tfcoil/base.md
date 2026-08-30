@@ -409,3 +409,88 @@ Arm `-2` (`PICTURE_FRAME`, `itart == 0`) is therefore **not** the next blocker, 
 the direct answer to the question this wave was asked to check: the two `UNPORTED`
 entries were one dispatch, not two waves of work. `machine_survey` was not run, since
 neither file assembles and `survey` needs an assembled graph.
+
+## 2026-08-30 — `stresscl` REFUSED, measured: `sig_tf_case`, `sig_tf_wp`, `str_wp`
+
+A missing-producer wave (`_audit/units/models/build.md`, same date) asked for
+`.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp` and `.tfcoil.str_wp` as producers. **All
+three are outputs of `stresscl` and none of them is portable as a wiring change.** This
+section records the measurement so the next wave does not re-derive it.
+
+### the three fields have exactly one writer each, and it is the same one
+
+| field | written at | PROCESS on `large_tokamak_nof` | port |
+|---|---|---|---|
+| `.tfcoil.sig_tf_wp` | `base.py:3232` (`s_shear_tf_peak[n_tf_bucking]`) | `4.9699609e+08` | `0.0` |
+| `.tfcoil.sig_tf_case` | `base.py:3233` (`s_shear_tf_peak[n_tf_bucking - 1]`) | `5.9391981e+08` | `0.0` |
+| `.tfcoil.str_wp` | `base.py:2988` or `:3035`, per `i_tf_stress_model` | `0.0017456388` | `0.0` |
+
+The surrounding `superconducting.py`/`resistive.py` sites (`:2208`, `:2220`, `:2631`,
+`:4161`, `:2211`…) are not second writers: each is
+`data.tfcoil.X = data.tfcoil.X if data.tfcoil.X is None else X`, storing `stresscl`'s
+return value.
+
+### `.tfcoil.sig_tf_wp` already has an owner, and it is the wrong device
+
+`models/stellarator/coils/forces.py::MaximumStress` owns `.tfcoil.sig_tf_wp` and is
+registered on the stellarator. It is **not** a wiring candidate for a tokamak:
+`calculate_maximum_stress` is `max_force_density * dr_tf_wp_with_insulation * 1e6`, a
+one-line scaling whose input comes from `.stellarator_config.stella_config_max_force_
+density` and four other `stella_config_*` fields that do not exist on a tokamak graph at
+all. Same `VarPath`, same physical quantity, entirely different model — the
+`ZTfInsideHalf` situation (`models/build.md` § "a note on `.build.z_tf_inside_half`'s
+two occupants") rather than a lost registration. Checked, not assumed: registering the
+stellarator node on a tokamak would fail on its own declared reads before it produced a
+wrong number.
+
+### what porting `stresscl` actually costs
+
+`stresscl` is `base.py:2222-3274` — **1053 lines**, 65 parameters, four internal
+switches (`i_tf_stress_model`, `i_tf_bucking`, `i_tf_tresca`, `i_pf_conductor`), and its
+body is not arithmetic on scalars: it builds nine `n_tf_layer`-length and seven
+`n_tf_layer * n_radial_array`-length arrays, calls out to a layer solver, then reduces
+them with a **Python `argmax` loop over the radial array** (`:3199-3226`) whose index
+`ii_max` selects which radial station every reported stress is read from. The two fields
+this wave wanted are the last four lines of that reduction.
+
+The solver it calls is `plane_stress` (`:4236-4459`, **224 lines**) on
+`i_tf_stress_model == 1` — the **live arm on `large_tokamak_nof`**, which sets neither
+`i_tf_stress_model` (default `1`, `tfcoil_variables.py:211`) nor `i_tf_bucking` (default
+`-1`, resolved to `1` for a superconducting coil at `init.py:891-895`) — or
+`extended_plane_strain` (`:3719-4235`, 517 lines) on `0`/`2`, plus four smearing helpers
+(`eyoung_parallel`, `eyoung_parallel_array`, `eyoung_t_nested_squares`, `eyoung_series`,
+`:3660-4670`). Even scoped to the live arm alone that is **~1300 lines of one unit**,
+against the 30–150 a producer in this port has cost so far. It is a unit of its own with
+its own registry row, not a slot to fill; the refusal is one of scope, not of
+traceability (nothing in it is CoolProp-backed or otherwise untraceable — the `argmax`
+loop and the `n_tf_layer` assembly would need `jnp` rewrites, which is work, not a
+blocker).
+
+### the cost of the absence, measured rather than assumed
+
+`base.md`'s scope section says `stresscl` "feeds only stresses, which no boundary read
+depends on". That was true of `_audit/tokamak_boundary.md`'s **ten** reads and is not
+true of the constraint surface, which was added later:
+
+- **constraint 31** (`constraints.py:936`) is `sig_tf_case <= sig_tf_case_max`, and
+  **constraint 32** (`:952`) is `sig_tf_wp <= sig_tf_wp_max`. Both are on
+  `large_tokamak_nof.IN.DAT:146-147`. With both operands' producers absent the port
+  evaluates `0 <= max`, so **two active constraints are silently satisfied** — not a
+  wrong number, a dropped constraint, which is worse because no residual reports it.
+- **`.tfcoil.str_wp` feeds the superconductor fits**, not just constraint 88 (which this
+  file does not activate). `i_str_wp` defaults to `1` (`tfcoil_variables.py:508`) and is
+  unset in this input, so `superconducting.py:2902-2905` / `:4001-4004` read the
+  *strain* from it for both the critical-current surface (constraint 33) and the
+  temperature margin (constraint 36), **both active here**. Zero strain is the peak of
+  the Nb3Sn strain fit, so the absence is optimistic rather than neutral.
+
+`.tfcoil.str_wp` therefore stays on `missing_producers_tokamak.txt`;
+`.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` are not on it only because they are read
+by the constraint surface and not by any MDA node, so they appear on the MDF graph's
+boundary instead (`tests/functional_process/test_boundary.py::
+test_no_new_boundary_input_is_something_process_computes`, which names all three).
+
+**Recommended next step, not taken here:** `stresscl` as its own registry row and its
+own record, scoped to the `(i_tf_stress_model, i_tf_bucking) == (1, 1)` cell the tracked
+tokamaks take, with `plane_stress` as a tier-2 sub-unit of it and the other stress-model
+arms `UNPORTED`.

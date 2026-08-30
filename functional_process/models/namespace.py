@@ -18,6 +18,7 @@ import dataclasses
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.build import (
+    BlktUpperThickness,
     DivertorGeometryConventional,
     DivertorGeometrySphericalTokamak,
     DrTfInboardFromWindingPack,
@@ -29,10 +30,12 @@ from functional_process.models.build import (
     ShldOutboardOuterRadius,
     ShldVvGapOutboard,
     TfInboardRadiiTfOutsideCs,
+    TfInnerBore,
     VacuumVesselAndShieldRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
     TfOutboardMidDShape,
     TfOutboardMidUnrippled,
+    TfTopHeight,
     WpConductorMaxWidthSuperconducting,
     ZTfInsideHalf,
 )
@@ -43,19 +46,22 @@ from functional_process.models.divertor import (
 
 
 class Build(ModelNamespace):
-    """The tokamak's radial and vertical build -- thirteen slots, fifteen classes.
+    """The tokamak's radial and vertical build -- eighteen slots, twenty-four classes.
 
     `process/models/build.py::Build`, `caller.py:288`. The structural spine of the
     device, and with no stellarator counterpart at all: `models/stellarator/build.py`'s
     `Build` is a different model of a different machine.
 
-    Thirteen slots and fifteen occupant classes, because
-    `dr_tf_inboard_winding_pack`'s two arms are two classes in one slot and
-    `divertor_geometry`'s conventional and spherical-tokamak arms are two more (its
-    third disposition, `None`, is absence rather than a class).
+    Eighteen slots and twenty-four occupant classes, because six slots hold more than
+    one arm: `dr_tf_inboard_winding_pack`, `tf_inboard_radii`, `tf_outboard_mid`,
+    `tf_outboard_edge_ripple`, `tf_top_height` (added 2026-08-30) and
+    `divertor_geometry` (whose third disposition, `None`, is absence rather than a
+    class). `models/build.py` declares twenty-five classes; the twenty-fifth,
+    `TfTopHeight`, is that slot's abstract family base and occupies nothing.
 
-    **Six of the thirteen slots are switched, and only one of the switches is an `i_*`
-    integer alone** (`tf_inboard_radii`'s `.build.i_tf_inside_cs`, added 2026-08-27).
+    **Seven of the eighteen slots are switched, and only two of the switches are an
+    `i_*` integer alone** (`tf_inboard_radii`'s `.build.i_tf_inside_cs`, added
+    2026-08-27, and `tf_top_height`'s `.physics.i_single_null`, added 2026-08-30).
     `.tfcoil.i_tf_sup` and `.tfcoil.i_tf_shape` are ordinary switches;
     the other two are conditions on things that are not switches at all -- whether
     iteration variable 140 is active, and whether the *input* value of
@@ -105,6 +111,29 @@ class Build(ModelNamespace):
     stellarator's own `Build` node deliberately does not own. Never two in one graph, so
     there is nothing to settle -- but a field with that many producers is exactly the
     "which writer wins" check `_audit/test_harness.md` says is owed."""
+
+    tf_top_height: TfTopHeight = dataclasses.field(kw_only=True)
+    """`.physics.i_single_null` -- `.build.z_tf_top` and
+    `.build.dz_tf_upper_lower_midplane`, both arms written (`build.py:820-841`).
+
+    Added 2026-08-30. The single-null arm is what every assembling tokamak takes; the
+    double-null one is written but not yet reachable, its two inputs being refused
+    earlier for `i_tf_turn_type == 2`. Both fields were missing producers on
+    `large_tokamak_nof`
+    (`missing_producers_tokamak.txt`), frozen at `0.0` against PROCESS's `8.656` m and
+    `-1.234` m -- and `.build.z_tf_top` is *read*, by
+    `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull` (which places the coil's arcs
+    from it) and `models/pfcoil/geometry.py` (which places the divertor PF coils from
+    it), so the cold graph was drawing a TF coil whose top sat on the midplane."""
+
+    blkt_upper_thickness: BlktUpperThickness = BlktUpperThickness()
+    """`.build.dz_blkt_upper`, the mean of the two radial blanket thicknesses
+    (`build.py:1664-1667`). Unswitched.
+
+    Added 2026-08-30 as the slot above's missing dependency -- the single-null
+    `z_tf_top` stack reads it, and it was itself on `missing_producers_tokamak.txt`.
+    Its two operands are run inputs whenever `.fwbs.blktmodel == 0`, which is every
+    tracked tokamak."""
 
     dr_tf_inboard_winding_pack: (
         DrTfInboardFromWindingPack | DrTfWpWithInsulationFromInboardBuild
@@ -194,6 +223,16 @@ class Build(ModelNamespace):
     shld_vv_gap_outboard: ShldVvGapOutboard = ShldVvGapOutboard()
     """`.build.dr_shld_vv_gap_outboard`. Unswitched -- the source's two arms are one
     expression."""
+
+    tf_inner_bore: TfInnerBore = TfInnerBore()
+    """`.build.dr_tf_inner_bore`, the midplane bore between the two TF legs
+    (`build.py:1911-1913`, rewritten verbatim at `:1949-1955`). Unswitched.
+
+    Added 2026-08-30, another `missing_producers_tokamak.txt` row: `11.794` m in
+    PROCESS, `0.0` here, read by `models/structure.py`'s support masses and
+    `costs/costs_2015.py`'s Account 22. Evaluated at the post-ripple
+    `.build.r_tf_outboard_mid`, so it reproduces whichever of the source's two identical
+    writes lands -- the same resolution `tf_outboard_edge_ripple` uses one slot up."""
 
 
 class Divertor(ModelNamespace):

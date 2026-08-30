@@ -251,10 +251,145 @@ def calculate_z_tf_inside_half(
     )
 
 
+def calculate_tf_top_height_double_null(z_tf_inside_half, dr_tf_inboard):
+    """Height to the top of the TF coil and the up-down offset (m), double null.
+
+    Ports `process/models/build.py:820-824`, the
+    `i_single_null == DivertorNumberModels.DOUBLE_NULL` arm. A double-null machine is
+    up-down symmetric, so the top of the coil is the inside half-height plus one
+    inboard-leg thickness and the offset between the upper and lower halves is exactly
+    zero -- the source assigns the literal `0.0e0`.
+
+    **`.build.z_tf_top` had no producer in this port until 2026-08-30**, and it is not
+    an unread accumulation: `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull` and
+    `TfCoilShapePictureFrameTart` both read it to place the coil's arcs, and
+    `models/pfcoil/geometry.py` places the divertor PF coils from it. Frozen at the cold
+    `0.0` it puts the top of the TF coil at the midplane. See
+    `_audit/units/models/build.md` § "the vertical build's two missing producers".
+
+    Parameters
+    ----------
+    z_tf_inside_half :
+        Half-height to the inside edge of the TF coil (m). `.build.z_tf_inside_half`.
+    dr_tf_inboard :
+        Inboard TF coil radial thickness (m), used here as the coil's vertical
+        thickness. `.build.dr_tf_inboard`.
+
+    Returns
+    -------
+    :
+        `(.build.z_tf_top, .build.dz_tf_upper_lower_midplane)` (m).
+    """
+    z_tf_top = z_tf_inside_half + dr_tf_inboard
+    return z_tf_top, jnp.zeros_like(z_tf_top)
+
+
+def calculate_tf_top_height_single_null(
+    z_tf_inside_half,
+    dr_tf_inboard,
+    dr_tf_shld_gap,
+    dz_shld_thermal,
+    dz_shld_vv_gap,
+    dz_vv_upper,
+    dz_shld_upper,
+    dr_shld_blkt_gap,
+    dz_blkt_upper,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    dz_fw_plasma_gap,
+    z_plasma_xpoint_upper,
+):
+    """Height to the top of the TF coil and the up-down offset (m), single null.
+
+    Ports `process/models/build.py:826-841`, the
+    `i_single_null == DivertorNumberModels.SINGLE_NULL` arm and the reference tokamak's.
+    The upper build is stacked independently of the lower one -- a single-null machine
+    has a divertor below and a blanket above -- so `z_tf_top` is **not**
+    `z_tf_inside_half + dr_tf_inboard` here, and `dz_tf_upper_lower_midplane` is
+    precisely that difference: how much further the coil reaches above the midplane than
+    below it. It is routinely negative (`-1.234` m on `large_tokamak_nof`), because the
+    divertor stack below is taller than the blanket stack above.
+
+    `z_tf_inside_half` and `dr_tf_inboard` appear **only** in the offset, never in the
+    top height, so the two returned values are not two views of one number: the source
+    computes them from disjoint halves of the vertical build and the second subtracts
+    the first arm's expression from the first.
+
+    `.build.dz_blkt_upper` is produced by `calculate_dz_blkt_upper` below (also landed
+    2026-08-30, and for the same reason). The other twelve reads are run inputs or other
+    slots' products.
+
+    Parameters
+    ----------
+    z_tf_inside_half, dr_tf_inboard :
+        Inside half-height and inboard leg thickness (m) -- the *lower* half's reach,
+        subtracted to form the offset. `.build.z_tf_inside_half`,
+        `.build.dr_tf_inboard`.
+    dr_tf_shld_gap, dz_shld_thermal, dz_shld_vv_gap, dz_vv_upper, dz_shld_upper :
+        TF-thermal shield gap, thermal shield thickness, vessel-thermal shield gap,
+        upper vessel and upper shield thicknesses (m).
+    dr_shld_blkt_gap, dz_blkt_upper :
+        Shield-blanket gap and upper blanket thickness (m). `.build.dr_shld_blkt_gap`,
+        `.build.dz_blkt_upper`.
+    dr_fw_inboard, dr_fw_outboard :
+        Inboard and outboard first wall thicknesses (m); the source takes their mean.
+    dz_fw_plasma_gap, z_plasma_xpoint_upper :
+        Upper first wall-plasma gap and upper X-point height (m).
+
+    Returns
+    -------
+    :
+        `(.build.z_tf_top, .build.dz_tf_upper_lower_midplane)` (m).
+    """
+    z_tf_top = (
+        dr_tf_inboard
+        + dr_tf_shld_gap
+        + dz_shld_thermal
+        + dz_shld_vv_gap
+        + dz_vv_upper
+        + dz_shld_upper
+        + dr_shld_blkt_gap
+        + dz_blkt_upper
+        + 0.5 * (dr_fw_inboard + dr_fw_outboard)
+        + dz_fw_plasma_gap
+        + z_plasma_xpoint_upper
+    )
+    return z_tf_top, z_tf_top - (z_tf_inside_half + dr_tf_inboard)
+
+
 # ---------------------------------------------------------------------------
 # Radial build -- `Build.calculate_radial_build`, the part outside `if output:`
 # (`process/models/build.py:1649-1977`).
 # ---------------------------------------------------------------------------
+
+
+def calculate_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
+    """Top/bottom blanket thickness (m) -- the mean of the two radial thicknesses.
+
+    Ports `process/models/build.py:1664-1667`, unconditional: it sits *below* the
+    `blktmodel > 0` block that may have just rewritten `dr_blkt_inboard`/`_outboard`,
+    and runs on every configuration. On the reference tokamak `.fwbs.blktmodel` is `0`,
+    so both operands are run inputs (`large_tokamak_nof.IN.DAT`'s `dr_blkt_inboard`/
+    `dr_blkt_outboard`) and this is a producer with no unproduced dependency.
+
+    **Landed 2026-08-30 as `calculate_tf_top_height_single_null`'s missing dependency.**
+    It is on `missing_producers_tokamak.txt` in its own right -- `models/fw.py` and
+    `models/vacuum/vacuum.py` read it too -- but the reason it is ported *now* is that
+    the single-null `z_tf_top` stack reads it, and landing that producer on top of a
+    frozen `0.0` would have produced a number that only looked produced.
+
+    Parameters
+    ----------
+    dr_blkt_inboard, dr_blkt_outboard :
+        Inboard and outboard blanket radial thicknesses (m). `.build.dr_blkt_inboard`,
+        `.build.dr_blkt_outboard`.
+
+    Returns
+    -------
+    :
+        `.build.dz_blkt_upper` (m).
+    """
+    return 0.5 * (dr_blkt_inboard + dr_blkt_outboard)
 
 
 def calculate_dr_tf_inboard(
@@ -775,6 +910,45 @@ def calculate_r_tf_outboard_mid(r_tf_outboard_mid_unrippled, r_tf_outboard_midmi
     return jnp.maximum(r_tf_outboard_mid_unrippled, r_tf_outboard_midmin)
 
 
+def calculate_dr_tf_inner_bore(
+    r_tf_outboard_mid, dr_tf_outboard, r_tf_inboard_mid, dr_tf_inboard
+):
+    """TF coil horizontal bore at the midplane (m) -- inner face to inner face.
+
+    Ports `process/models/build.py:1911-1913` **and** `:1949-1955`, which are the same
+    expression written twice: PROCESS computes it once from the stacked-up
+    `r_tf_outboard_mid` and then recomputes it verbatim inside the "if the ripple is too
+    large, move the outboard leg" branch. That first write is a
+    `redundant-duplicate-write` -- only the second survives when the branch is taken,
+    and when it is not, the two are equal. This port evaluates it once, at the *final*
+    `.build.r_tf_outboard_mid` (`calculate_r_tf_outboard_mid`'s `jnp.maximum`), which
+    reproduces whichever of the source's two writes lands. Same resolution as
+    `TfOutboardEdgeRipple`'s.
+
+    Read by `models/structure.py`'s support-structure masses and
+    `models/costs/costs_2015.py`'s Account 22 magnet costs; unproduced in this port
+    until 2026-08-30, when it was frozen at the cold `0.0` against PROCESS's `11.794` m
+    on `large_tokamak_nof`.
+
+    Parameters
+    ----------
+    r_tf_outboard_mid, dr_tf_outboard :
+        Radius to the centre of the outboard TF leg and its radial thickness (m).
+        `.build.r_tf_outboard_mid`, `.build.dr_tf_outboard`.
+    r_tf_inboard_mid, dr_tf_inboard :
+        Radius to the centre of the inboard TF leg and its radial thickness (m).
+        `.build.r_tf_inboard_mid`, `.build.dr_tf_inboard`.
+
+    Returns
+    -------
+    :
+        `.build.dr_tf_inner_bore` (m).
+    """
+    return (r_tf_outboard_mid - 0.5 * dr_tf_outboard) - (
+        r_tf_inboard_mid - 0.5 * dr_tf_inboard
+    )
+
+
 def calculate_dr_shld_vv_gap_outboard(
     r_tf_outboard_mid,
     dr_tf_outboard,
@@ -1082,6 +1256,108 @@ class ZTfInsideHalf(ExplicitFunction):
             dz_shld_thermal,
             dr_tf_shld_gap,
         )
+
+
+class TfTopHeight(ExplicitFunction):
+    """The family that owns `.build.z_tf_top` and
+    `.build.dz_tf_upper_lower_midplane`. Switched on `.physics.i_single_null`.
+
+    Two arms, both written, and they own the **same two fields** -- which is what makes
+    this a genuine two-armed slot rather than two nodes (`configuration.py`'s
+    exclusivity rule). They read very different things: the double-null arm reads two
+    fields and the single-null arm thirteen, because a symmetric machine can reflect the
+    lower build while a single-null one has to stack the upper one from scratch.
+
+    `.physics.i_single_null` is already answered once in `indat.machine_from_indat` --
+    `_n_divertors` derives `.divertor.n_divertors` from it there -- so this slot costs no
+    new switch read, only a new registry.
+    """
+
+
+class TfTopHeightSingleNull(TfTopHeight):
+    """cottax node: `calculate_tf_top_height_single_null`. Answers
+    `.physics.i_single_null == 1`, the arm `large_tokamak_eval`/`_nof` and
+    `low_aspect_ratio_DEMO` take.
+    """
+
+    z_tf_top = OutputInto(build)
+    dz_tf_upper_lower_midplane = OutputInto(build)
+
+    def __call__(
+        self,
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+        dr_tf_shld_gap=From(build),
+        dz_shld_thermal=From(build),
+        dz_shld_vv_gap=From(build),
+        dz_vv_upper=From(build),
+        dz_shld_upper=From(build),
+        dr_shld_blkt_gap=From(build),
+        dz_blkt_upper=From(build),
+        dr_fw_inboard=From(build),
+        dr_fw_outboard=From(build),
+        dz_fw_plasma_gap=From(build),
+        z_plasma_xpoint_upper=From(build),
+    ):
+        return calculate_tf_top_height_single_null(
+            z_tf_inside_half,
+            dr_tf_inboard,
+            dr_tf_shld_gap,
+            dz_shld_thermal,
+            dz_shld_vv_gap,
+            dz_vv_upper,
+            dz_shld_upper,
+            dr_shld_blkt_gap,
+            dz_blkt_upper,
+            dr_fw_inboard,
+            dr_fw_outboard,
+            dz_fw_plasma_gap,
+            z_plasma_xpoint_upper,
+        )
+
+
+class TfTopHeightDoubleNull(TfTopHeight):
+    """cottax node: `calculate_tf_top_height_double_null`. Answers
+    `.physics.i_single_null == 0`.
+
+    **Written and tested but not yet reachable through `machine_from_indat`**: the two
+    tracked inputs that set `i_single_null = 0` (`spherical_tokamak_eval.IN.DAT:292`,
+    `st_regression.IN.DAT:638`) are refused earlier for an unrelated reason
+    (`i_tf_turn_type == 2`, the CroCo turn). Written anyway rather than left `UNPORTED`,
+    because it is four lines of the same source block and refusing it would make this
+    slot the only one in `Build` whose refusal is about a switch it does not read.
+
+    Owns `.build.dz_tf_upper_lower_midplane` even though the source assigns it a
+    literal `0.0e0`: the field is read (`models/pfcoil/geometry.py` offsets the lower
+    divertor coils by it) and a constant is still a producer. Leaving it unowned here
+    would make the two arms' write-sets differ and turn an ordinary switch into a
+    partial-overlap orphan -- exactly the hazard `boundary.orphaned_by` exists to catch.
+    """
+
+    z_tf_top = OutputInto(build)
+    dz_tf_upper_lower_midplane = OutputInto(build)
+
+    def __call__(
+        self,
+        z_tf_inside_half=From(build),
+        dr_tf_inboard=From(build),
+    ):
+        return calculate_tf_top_height_double_null(z_tf_inside_half, dr_tf_inboard)
+
+
+class BlktUpperThickness(ExplicitFunction):
+    """cottax node: `calculate_dz_blkt_upper`. No switch -- `process/models/build.py:
+    1664-1667` sits below the `.fwbs.blktmodel` branch and runs on every configuration.
+    """
+
+    dz_blkt_upper = OutputInto(build)
+
+    def __call__(
+        self,
+        dr_blkt_inboard=From(build),
+        dr_blkt_outboard=From(build),
+    ):
+        return calculate_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard)
 
 
 class DrTfInboardFromWindingPack(ExplicitFunction):
@@ -1488,6 +1764,29 @@ class ShldVvGapOutboard(ExplicitFunction):
             dr_shld_thermal_outboard,
             dr_tf_shld_gap,
             dr_shld_blkt_gap,
+        )
+
+
+class TfInnerBore(ExplicitFunction):
+    """cottax node: `calculate_dr_tf_inner_bore`. No switch -- both of PROCESS's writes
+    (`:1911`, `:1949`) are the same expression and neither is guarded by a switch, only
+    by the ripple test that `calculate_r_tf_outboard_mid` already resolves.
+
+    Reads `.build.r_tf_outboard_mid` (post-ripple), so it sits downstream of
+    `tf_outboard_mid` in the same way `ShldVvGapOutboard` does.
+    """
+
+    dr_tf_inner_bore = OutputInto(build)
+
+    def __call__(
+        self,
+        r_tf_outboard_mid=From(build),
+        dr_tf_outboard=From(build),
+        r_tf_inboard_mid=From(build),
+        dr_tf_inboard=From(build),
+    ):
+        return calculate_dr_tf_inner_bore(
+            r_tf_outboard_mid, dr_tf_outboard, r_tf_inboard_mid, dr_tf_inboard
         )
 
 
