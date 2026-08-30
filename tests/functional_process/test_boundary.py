@@ -32,7 +32,12 @@ from functional_process.boundary import (
     readers_of,
     unproduced_but_computed,
 )
-from functional_process.indat import GRAPH, graph_for, machine_from_indat
+from functional_process.indat import (
+    GRAPH,
+    REFERENCE_INPUT_FILE,
+    graph_for,
+    machine_from_indat,
+)
 from functional_process.mda import driven_graph
 from functional_process.sand import iteration_variable_path
 from functional_process.sand_harness import reference_run
@@ -187,28 +192,37 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """356 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """357 inputs and 11 guesses, against the stellarator's 297 and 6.
 
-    **360 -> 356 later on 2026-08-30**, and the four rows that left are the cleanest run
-    this measure has had: four producers landed and **not one new read came with them**,
-    because every field the four nodes declare was already on the boundary or already
-    owned. `.tokamak.build.tf_top_height` took `.build.z_tf_top` and
-    `.build.dz_tf_upper_lower_midplane`, `.tokamak.build.blkt_upper_thickness` took
-    `.build.dz_blkt_upper` (the first one's own missing dependency) and
-    `.tokamak.build.tf_inner_bore` took `.build.dr_tf_inner_bore`. `z_tf_top` is the one
-    that was doing damage: `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull` places
-    the coil's arcs from it and `models/pfcoil/geometry.py` places the divertor PF coils
-    from it, so at the cold `0.0` the graph drew a TF coil whose top sat on the
-    midplane.
+    **361 -> 360 -> 356 -> 357 on 2026-08-30**, in three steps, and the set of them is
+    the whole argument for why this number is pinned rather than bounded.
 
-    **361 -> 360 earlier on 2026-08-30**, and the one row that left is the point of the
-    whole measure: `.physics.beta_poloidal_vol_avg` stopped being an input because
-    `.tokamak.plasma_beta.poloidal` landed. A producer arriving takes a row off the
-    boundary, which is exactly the direction this number is supposed to move -- and this
-    particular row had been sitting there as an unproduced read since `batch5.md`
-    recorded it, feeding `0.0` into `calculate_equilibrium_currents` and breaking every
-    cold tokamak solve (`optimise_design.md` §16, and
-    `test_no_new_boundary_input_is_something_process_computes` below).
+    **361 -> 360.** `.physics.beta_poloidal_vol_avg` left, because
+    `.tokamak.plasma_beta.poloidal` landed. It had sat there as an unproduced read since
+    `batch5.md` recorded it, feeding `0.0` into `calculate_equilibrium_currents`
+    (`optimise_design.md` §16).
+
+    **360 -> 356**, the cleanest run this measure has had: four producers landed and
+    **not one new read came with them**, because every field the four nodes declare was
+    already on the boundary or already owned. `.tokamak.build.tf_top_height` took
+    `.build.z_tf_top` and `.build.dz_tf_upper_lower_midplane`,
+    `.tokamak.build.blkt_upper_thickness` took `.build.dz_blkt_upper` (the first one's
+    own missing dependency) and `.tokamak.build.tf_inner_bore` took
+    `.build.dr_tf_inner_bore`. `z_tf_top` is the one that was doing damage:
+    `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull` places the coil's arcs from it
+    and `models/pfcoil/geometry.py` places the divertor PF coils from it, so at the cold
+    `0.0` the graph drew a TF coil whose top sat on the midplane.
+
+    **356 -> 357**, and this one moves the count the *wrong* way while being the same
+    kind of good news. `.power.pf_coil_power` (`Power.pfpwr`) landed: four rows leave
+    (`.pf_power.srcktpm`, `.pf_power.ensxpfm`, `.heat_transport.peakmva`,
+    `.pf_coil.p_pf_electric_supplies_mw`) and five arrive, which are that node's own
+    genuine `IN.DAT` reads -- `.pf_coil.etapsu`, `.pf_coil.rho_pf_coil`,
+    `.pf_coil.rhopfbus`, `.pf_power.f_p_pf_energy_store_loss`,
+    `.pf_power.f_p_pf_psu_loss`. None of the five is a field PROCESS computes. **So the
+    input count going up is not evidence of anything on its own**: what discriminates is
+    which side of `computed_by_process` each row falls on, which is the test below and
+    not this one.
 
     The two halves of the missing-producer wave (2026-08-27) moved the input half from
     347 to **361** together: the TF half +9, the CS/physics half −2 +7. Each half's own
@@ -303,13 +317,13 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (356, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (357, 11)
     assert (stell[INPUT], stell[GUESSED]) == (297, 6)
 
 
 # ================================================ boundary entries PROCESS computes
 def test_no_new_boundary_input_is_something_process_computes():
-    """The fourteen missing producers on the MDA graph, pinned so it can only go down.
+    """The ten missing producers on the MDA graph, pinned so it can only go down.
 
     **This is the check that was missing, and it is the reason it was missing.** A
     boundary `input` entry is either one of the ~109 genuine `IN.DAT` inputs or a read
@@ -335,17 +349,27 @@ def test_no_new_boundary_input_is_something_process_computes():
     down from eighteen: `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
     `.build.dz_blkt_upper` and `.build.dr_tf_inner_bore` left when
     `models/namespace.py::Build` gained `tf_top_height`, `blkt_upper_thickness` and
-    `tf_inner_bore` (2026-08-30).
+    `tf_inner_bore`, and `.pf_power.srcktpm`, `.pf_power.ensxpfm`,
+    `.heat_transport.peakmva` and `.pf_coil.p_pf_electric_supplies_mw` left when
+    `.power.pf_coil_power` landed `Power.pfpwr` (both 2026-08-30).
 
-    The MDF-assembled graph shows **three more** (`.tfcoil.sig_tf_case`,
-    `.tfcoil.sig_tf_wp`, `.pf_coil.temp_cs_superconductor_margin`), because the
-    constraint surface declares reads the MDA graph never makes. They are equally
-    missing and equally worth porting; they are simply not on *this* graph's boundary,
-    and pinning two different graphs in one list would make the number mean nothing.
-    Two of those three, plus `.tfcoil.str_wp` which is still on this list, are all
-    outputs of one unported unit -- `process/models/tfcoil/base.py::stresscl`, 1053 lines
-    calling a 517-line `extended_plane_strain` layer solver. See
-    `_audit/units/models/build.md` § "the TF stress chain is not a wiring problem".
+    The MDF-assembled graph shows **more than this one does** -- `.tfcoil.sig_tf_case`,
+    `.tfcoil.sig_tf_wp` and, until 2026-08-30, `.pf_coil.temp_cs_superconductor_margin`
+    -- because the constraint surface declares reads the MDA graph never makes. They are
+    equally missing and equally worth porting; they are simply not on *this* graph's
+    boundary, and pinning two different graphs in one list would make the number mean
+    nothing.
+
+    `.pf_coil.temp_cs_superconductor_margin` is the demonstration that this is a real
+    gap and not a bookkeeping one: constraint 60 was comparing a frozen `0.0` against a
+    real bound for as long as it sat there, and nothing in *this* list could have said
+    so. The same is true of `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp`, which
+    constraints 31 and 32 read on `large_tokamak_nof` -- and of `.tfcoil.str_wp`, still
+    on this list, which feeds the Nb3Sn critical surface (33) and temperature margin
+    (36). All three are outputs of one unported unit,
+    `process/models/tfcoil/base.py::stresscl`, 1053 lines calling a 517-line
+    `extended_plane_strain` layer solver. See `_audit/units/models/build.md` § "the TF
+    stress chain is not a wiring problem".
 
     Equality against the pin, not `<=`: a row leaving is a producer landing and should
     update the pin deliberately (`--missing --write`, implemented 2026-08-30 -- the flag
@@ -406,3 +430,45 @@ def test_the_landed_vertical_and_bore_producers_are_not_on_the_boundary():
         assert var in graph.owners, var.path_str()
         assert graph.owners[var].path_str() == owner
         assert var.path_str() not in pinned
+
+
+def test_the_pf_power_producers_landed_and_the_stellarator_still_has_none():
+    """`Power.pfpwr`'s four fields plus the CS margin are owned; the pin lists none.
+
+    The same narrow guard as the one above, for the five producers landed on 2026-08-30.
+    Four come from one node -- `.power.pf_coil_power`, the port of `Power.pfpwr`, which
+    `cost_boundary_inputs.md` §7 had recorded as "not ported anywhere in
+    `functional_process/` ... there is nothing to register" -- and the fifth,
+    `.pf_coil.temp_cs_superconductor_margin`, from `.tokamak.cs_coil.temperature_margin`,
+    the deferral `models/pfcoil/superconductor.py` recorded as owed to a shared root
+    find with the TF coil's margin.
+
+    **The stellarator half is the assertion that matters most here**, and it is not
+    symmetry for its own sake: `Power` is one of the five namespaces `models/tokamak/
+    namespace.py` calls device-agnostic, and `pf_coil_power` is the first slot in it
+    that is not. A stellarator has no PF coils and `stellarator.py` never calls
+    `Power.run`, so the slot is `None` there -- absence spelled as absence. A regression
+    that filled it would compute a PF power supply for a machine that has none, which is
+    exactly the `EcrhDensityLimit` bug class, and no value test anywhere would notice.
+    """
+    tokamak = graph_for(machine_from_indat(MISSING_PRODUCERS_INPUT_FILE))
+    expected = {
+        V("pf_power", "srcktpm"): ".power.pf_coil_power",
+        V("pf_power", "ensxpfm"): ".power.pf_coil_power",
+        V("heat_transport", "peakmva"): ".power.pf_coil_power",
+        V("pf_coil", "p_pf_electric_supplies_mw"): ".power.pf_coil_power",
+        V("pf_coil", "temp_cs_superconductor_margin"): (
+            ".tokamak.cs_coil.temperature_margin"
+        ),
+    }
+    pin = Path(MISSING_PRODUCERS_PIN).read_text()
+    for var, owner in expected.items():
+        assert var in tokamak.owners, f"{var.path_str()} lost its producer"
+        assert tokamak.owners[var].path_str() == owner
+        assert var.path_str() not in pin
+
+    stellarator = graph_for(machine_from_indat(REFERENCE_INPUT_FILE))
+    assert not (set(expected) & set(stellarator.owners)), (
+        "a stellarator has no PF coils and never calls `Power.run`; nothing on it may "
+        "own a PF-coil power-supply or central-solenoid field"
+    )

@@ -77,6 +77,7 @@ from functional_process.models.pfcoil.masses import (
 from functional_process.models.pfcoil.stresses import CSCoilStresses
 from functional_process.models.pfcoil.superconductor import (
     CSCriticalCurrentDensitiesIterNb3Sn,
+    CSTemperatureMarginIterNb3Sn,
 )
 from functional_process.models.pfcoil.volt_seconds import (
     PFCoilTurnCurrents,
@@ -85,22 +86,23 @@ from functional_process.models.pfcoil.volt_seconds import (
 
 
 class CSCoil(ModelNamespace):
-    """`.tokamak.cs_coil` -- the central solenoid, six slots.
+    """`.tokamak.cs_coil` -- the central solenoid, seven slots.
 
     Three until 2026-08-27. `optimise_design.md` §11.5 found four constraints (26, 27,
-    60, 72) reading fields whose only producer is `ohcalc`, and the three new slots
-    below -- `peak_field`, `critical_current`, `stresses` -- are that closure.
+    60, 72) reading fields whose only producer is `ohcalc`, and the three slots added
+    then -- `peak_field`, `critical_current`, `stresses` -- were most of that closure.
+    `temperature_margin` (2026-08-30) is the rest of it.
 
     **This paragraph used to say the CS chain was UNPORTED, and named two reasons.** One
     is gone: `stresses.py` replaces `ohcalc`'s `scipy.special` ellipk/ellipe with the
-    AGM, which is traceable, differentiable and agrees with scipy to 1-2 ulp. The other
-    two stand. `cs_fatigue.ncycle` is still unported and `.tokamak.cs_fatigue` is still
-    an empty slot -- no active constraint reads it. And
-    `.pf_coil.temp_cs_superconductor_margin` (constraint 60) is still a boundary zero:
-    it is `superconpf`'s `scipy.optimize.newton` secant solve, an
-    `ImplicitFunction`/`RootFind` pair shared with the TF coil's own margin, and
-    `superconductor.py::CSCriticalCurrentDensitiesIterNb3Sn` records why it is left for
-    one commit rather than two.
+    AGM, which is traceable, differentiable and agrees with scipy to 1-2 ulp. The second
+    is gone too, as of 2026-08-30: `.pf_coil.temp_cs_superconductor_margin` (constraint
+    60) was a boundary zero against PROCESS's `3.4208032` K and now has a producer --
+    `superconpf`'s `scipy.optimize.newton` secant solve, driven by the TF coil's own
+    replica of it (`solve_current_sharing_temperature`), which is the shared driver
+    `superconductor.py` said the deferral was waiting for. What stands is
+    `cs_fatigue.ncycle`: still unported, `.tokamak.cs_fatigue` still an empty slot, no
+    active constraint reading it.
 
     The CS's own self-field is no longer part of any of that: `peak_field` owns
     `b_pf_coil_peak[6]`/`bpf2[6]`, the two slots `PFCoilPeakField` leaves alone.
@@ -151,6 +153,22 @@ class CSCoil(ModelNamespace):
     exists, so it carries no `UNPORTED` entries at all.
 
     Added 2026-08-27 (`optimise_design.md` §11.5), constraints 26 and 27."""
+
+    temperature_margin: CSTemperatureMarginIterNb3Sn = dataclasses.field(kw_only=True)
+    """`.pf_coil.i_cs_superconductor` again -- constraint 60's
+    `.pf_coil.temp_cs_superconductor_margin`.
+
+    The second factory-filled slot, filled from the same registry
+    (`indat.CS_TEMPERATURE_MARGIN`, keyed on the same two reachable values) and for the
+    same reason as `critical_current`: `_pf_coil_system_arm`'s arm `1` spans both, so
+    the fit has to be chosen by asking the switch again.
+
+    Separate from `critical_current` rather than a fifth output of it: the two come out
+    of the same `superconpf` calls but not the same read set -- only this one needs
+    `.pf_coil.c_pf_cs_coils_peak_ma`. The TF coil splits its own two the same way.
+
+    Added 2026-08-30 as a missing producer measured on `large_tokamak_nof` (`0.0`
+    against PROCESS's `3.4208032` K)."""
 
     stresses: CSCoilStresses = CSCoilStresses()
     """The CS's hoop/axial/radial stress state and its Tresca and von Mises

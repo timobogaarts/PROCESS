@@ -113,6 +113,8 @@ from functional_process.models.pfcoil.namespace import (
 from functional_process.models.pfcoil.superconductor import (
     CSCriticalCurrentDensitiesIterNb3Sn,
     CSCriticalCurrentDensitiesWstNb3Sn,
+    CSTemperatureMarginIterNb3Sn,
+    CSTemperatureMarginWstNb3Sn,
 )
 from functional_process.models.physics.bootstrap_current import (
     NoDiamagneticCurrent,
@@ -211,6 +213,7 @@ from functional_process.models.power.electric_production import (
     PowerProfilesOverTime,
 )
 from functional_process.models.power.namespace import Power
+from functional_process.models.power.pf_coil_power import PfCoilPowerSupplies
 from functional_process.models.power.tf_coil_power import (
     TfPowerResistive,
     TfPowerSuperconducting,
@@ -3631,6 +3634,18 @@ the six occupants it would then owe are enumerated in
 than in `UNPORTED`, because an `UNPORTED` entry nothing can reach is a refusal that
 never fires."""
 
+CS_TEMPERATURE_MARGIN = {
+    SuperconductorModel.ITER_NB3SN: CSTemperatureMarginIterNb3Sn,
+    SuperconductorModel.WST_NB3SN: CSTemperatureMarginWstNb3Sn,
+}
+"""`.pf_coil.i_cs_superconductor` -> `.tokamak.cs_coil.temperature_margin`'s occupant.
+
+The same switch, the same two reachable values and the same totality argument as
+`CS_SUPERCONDUCTOR` above -- a second registry rather than a second use of that one
+because the two slots hold different classes, and a registry maps a switch value to an
+occupant for **one** place. Added 2026-08-30 with the margin itself.
+"""
+
 PF_COIL = {0: PFCoil, 1: PFCoilCsWstNb3Sn}
 """`_pf_coil_system_arm` -> `.tokamak.pf_coil`'s occupant namespace. Arm 1 differs in
 exactly one slot occupant, `masses` (`.tfcoil.dcond[4]` as the CS conductor
@@ -4246,7 +4261,14 @@ def _tokamak_device(
                         int(switches.get("i_cs_superconductor", 1))  # `pfcoil_vars:225`
                     ),
                     CS_SUPERCONDUCTOR,
-                )
+                ),
+                temperature_margin=_slot_occupant(
+                    "i_cs_superconductor",
+                    SuperconductorModel(
+                        int(switches.get("i_cs_superconductor", 1))  # `pfcoil_vars:225`
+                    ),
+                    CS_TEMPERATURE_MARGIN,
+                ),
             ),
         ),
         shield=shield,
@@ -4509,6 +4531,11 @@ def machine_from_indat(input_file, stella_conf=None):
         int(switches.get("secondary_cycle_liq", 4))
     )
     power = Power(
+        # `Power.pfpwr`, the PF-coil power supply -- present on a tokamak and genuinely
+        # absent on a stellarator, which has no PF coils and whose `stellarator.py`
+        # never calls `Power.run` at all. The only slot in this namespace whose
+        # occupancy is decided by the device rather than by a switch.
+        pf_coil_power=(PfCoilPowerSupplies() if device is TokamakProcess else None),
         tf_power=tf_power,
         # `pf_power_variables.py:18` -- the two arms read complementary fields.
         acpow=_slot_occupant(

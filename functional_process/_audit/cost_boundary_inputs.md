@@ -282,6 +282,26 @@ run. `.costs.c2252` and its seven sub-accounts are all exactly `0.0`.
 occurrences of the name are `boundary_inputs_audit.md`'s own prose). It is not
 "written-but-unregistered" — there is nothing to register.
 
+### Update 2026-08-30 — `Power.pfpwr` is ported, and all seven rows above are stale
+
+`functional_process/models/power/pf_coil_power.py::PfCoilPowerSupplies` ports the whole
+of `pfpwr` (`power.py:300-604`) and its four `_pf_loss_*` helpers, owns all eleven fields
+it writes — the seven in the table above included — and is registered as
+`Power.pf_coil_power`, filled on a tokamak and `None` on a stellarator. Registry unit
+#14, chunk D; record `_audit/units/models/power/pf_coil_power.md`.
+
+**Every fact this section states remains true; only the verdict changes.** The seven
+fields really are `0.0` on the stellarator, `stellarator.py` really never calls
+`Power.run`, and §8's arithmetic — the three affected accounts are exactly `0.0` on both
+sides, so they cannot contribute to `.costs.coe`'s difference — is untouched, because
+this is a *tokamak* producer and the run §8 measures is the stellarator's. What was
+wrong was reasoning about the tokamak from the stellarator's converged state: on
+`large_tokamak_nof`, `srcktpm` is 1113.0075 kW, `ensxpfm` 17038.228 MJ, `peakmva`
+134.98773 MVA and `p_pf_electric_supplies_mw` 4.8813983 MW, and every one of them was
+`0.0` in the port until this node landed. `boundary.unproduced_but_computed` is what
+found that, and it found it by measuring PROCESS's write set rather than by grepping for
+a writer and reasoning about dormancy — which is exactly what this section did.
+
 ## 7. Written-but-unregistered producers: **none, in either direction**
 
 The brief asks this to be called out loudly if true. It is not true here, and the check
@@ -289,7 +309,11 @@ was made rather than assumed:
 
 - **`PFCoil` / `CSCoil` / `Power.pfpwr`** — no port exists. `unit_registry.md` has no unit
   for any of them; the only mention of `.pf_power.*` in it is `objectives.md`'s
-  hole-in-MDA note that `pf_power.srcktpm` has no producer.
+  hole-in-MDA note that `pf_power.srcktpm` has no producer. **All three are ported now**
+  (`models/pfcoil/` from 2026-08-27, `pf_coil_power.py` from 2026-08-30), and
+  `objectives.md`'s hole is closed with them: `.pf_power.srcktpm` has a producer, so the
+  `i_figure_merit` branch that reads it (`objectives.py:61`) is computable from the
+  graph.
 - **`.structure.gsmass` / `.fncmass`** — a port exists for the surrounding unit
   (`structure.py`, registered) and deliberately excludes these two fields,
   with the reason in its module docstring. Registering them would add two constant-`0.0`

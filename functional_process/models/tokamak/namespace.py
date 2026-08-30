@@ -31,11 +31,18 @@ scope rule that produced §A exists because an earlier non-recursive glob silent
 `models/stellarator/coils/` (6 files, 1950 LOC), and because `models/geometry/**` (11
 files) lives under `process/models/` while being reached zero times by any solve.
 
-**What is deliberately *not* here.** The five device-agnostic subsystems --
-`costs` (40 nodes), `power` (20), `availability` (4), `vacuum` (3), `buildings` (2) --
+**What is deliberately *not* here.** The five near-device-agnostic subsystems --
+`costs` (40 nodes), `power` (21), `availability` (4), `vacuum` (3), `buildings` (2) --
 are slots of `TokamakProcess` itself, beside `tokamak`, because they are not the
 tokamak's: measured, they touch no `.stellarator*` data at all, and `costs/costs.py` is
-entered by *the same 42 functions* on both devices (§C). `physics` likewise: 31 of its 33
+entered by *the same 42 functions* on both devices (§C). **"Agnostic" is one node weaker
+than it was as of 2026-08-30**: `power` gained `pf_coil_power` (`Power.pfpwr`, the
+PF-coil power supply), which a stellarator has no PF coils to need and which is `None`
+in its `Power`. That is still not a reason to move the namespace here -- twenty of its
+twenty-one nodes are shared, and §C measured that `pfpwr` is the *only* subsystem of
+`power.py` a tokamak adds -- but the slot is a genuine device difference inside an
+otherwise shared namespace, so the count above is now "one slot that can be absent"
+rather than "no device dependence at all". `physics` likewise: 31 of its 33
 nodes are shared, and the two that are not are a slot each in
 `models/physics/namespace.py` (`confinement_time.scaling`, whose tokamak occupant
 `IterIpb98y2ConfinementTime` already exists, and
