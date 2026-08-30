@@ -2412,3 +2412,270 @@ untouched by everything in this section. It wants its own look.
 - `condition_scale`'s "a fifth to a third of QP subproblems solving inaccurately"
   withdrawn: `optimal_inaccurate` appears **zero times in 1854 subproblems** across the
   whole SAND matrix. It was an OSQP artefact — ADMM reports `user_limit`.
+
+## 16. The cold-start matrix, and twenty-two producers that were never there (2026-08-30)
+
+§17.4 of `next_steps.md` carried two items: the cold start across the full matrix, and
+"c72's infeasibility", **promoted to blocking** because every cell of the tokamak SAND
+ablation returned zero iterations on an `infeasible` first QP. Both are answered here.
+The answer is not about the solver, the formulation, the seed or the QP: **the port's
+graph does not produce everything PROCESS computes**, and c72 is what that looks like
+from the far end of a long chain.
+
+This section records three wrong answers before the right one, at length, because each
+was persuasive, each was argued from real measurements, and the thing that killed each
+was cheap and could have been run first.
+
+### 16.1 The matrix, cold, at PROCESS's own `epsvmc`
+
+Four reference configurations (IFE excluded; the two ST files blocked per §18), both
+formulations, three drivers, `tolerance = 1e-6` throughout so counts are comparable with
+PROCESS's own.
+
+| configuration | form | driver | it | conv | feasible at the answer |
+|---|---|---|---|---|---|
+| `stellarator_helias` | MDF | CLARABEL | 58 | 8.909e-07 | **yes** |
+| `stellarator_helias` | MDF | OSQP | 60 | 7.916e-02 | no (worst ie +2.5e+00) |
+| `stellarator_helias` | MDF | SLSQP | 26 | -- | **yes** |
+| `stellarator_helias` | SAND | CLARABEL | 58 | 7.434e-08 | converged |
+| `stellarator_helias` | SAND | OSQP | 214 | 2.481e-07 | converged |
+| `stellarator_helias` | SAND | SLSQP | 112 | -- | converged |
+| `large_tokamak_nof` | MDF | CLARABEL | **0** | -- | first QP empty |
+| `large_tokamak_nof` | MDF | OSQP | **0** | -- | first QP empty |
+| `large_tokamak_nof` | MDF | SLSQP | 6 | -- | no (ie **+3.9e+02**) |
+| `large_tokamak_nof` | SAND | CLARABEL | 2 | 1.352e+01 | no (ie +1.3e+02) |
+| `large_tokamak_nof` | SAND | OSQP | 2 | 1.352e+01 | no (ie +1.3e+02) |
+| `large_tokamak_nof` | SAND | SLSQP | 35 | -- | no (ie +9.0e+01) |
+| `low_aspect_ratio_DEMO` | MDF | CLARABEL | **0** | -- | first QP empty |
+| `low_aspect_ratio_DEMO` | MDF | OSQP | **0** | -- | first QP empty |
+| `low_aspect_ratio_DEMO` | MDF | SLSQP | 15 | -- | no (ie +7.1e+02) |
+| `low_aspect_ratio_DEMO` | SAND | CLARABEL | **0** | -- | c90, §16.7 |
+| `low_aspect_ratio_DEMO` | SAND | OSQP | **0** | -- | c90, §16.7 |
+| `low_aspect_ratio_DEMO` | SAND | SLSQP | 23 | -- | no (ie +2.5e+02) |
+| `large_tokamak_eval`* | MDF | CLARABEL | **0** | -- | first QP empty |
+| `large_tokamak_eval`* | MDF | OSQP | **0** | -- | first QP empty |
+| `large_tokamak_eval`* | MDF | SLSQP | 500 | -- | worst-dx **3.39e-12**, ie +2.8e+02 |
+| `large_tokamak_eval`* | SAND | CLARABEL | **0** | -- | c72 +2.73e+02, constant |
+| `large_tokamak_eval`* | SAND | OSQP | **0** | -- | c72 +2.73e+02, constant |
+| `large_tokamak_eval`* | SAND | SLSQP | 500 | -- | worst-dx 3.38e-12, ie +2.7e+02 |
+
+\* evaluation-mode file: PROCESS reports `0 iterations, conv 0` and solves it with
+`fsolve` over the equalities alone, so these six cells are **not** a comparison against
+PROCESS. §16.9 of the previous section measured its fsolve analogue (MDF 3 iterations
+under both QP solvers, SLSQP 4, worst-dx 3.33e-07).
+
+The stellarator rows reproduce §15.2's numbers **exactly** (58/60, 58/214) from a harness
+rebuilt from scratch after the machine lost power and cleared `/tmp`. That is what makes
+the tokamak rows worth reading.
+
+**The two `large_tokamak_eval` SLSQP rows are the single most informative cells here.**
+They reach `worst-dx 3.4e-12` -- PROCESS's design to twelve digits -- with equalities at
+`1.3e-15`, and still report `worst ie +2.8e+02`. The port lands exactly on PROCESS's
+answer and correctly reports that PROCESS's answer violates three of its own
+inequalities, which `fsolve` never examines. Everything the port computes is right
+there; what differs is that the port looks.
+
+**Caveat on this table's own feasibility column.** It applies an absolute `1e-6` to
+conditions in whatever units they carry. That is right for MDF, whose conditions are all
+PROCESS's normalised residuals, and **wrong for SAND**, whose residual equalities are in
+physical units -- on a variable of order `1e20` a relative error of `1e-6` *is* `1e14`.
+The `max|eq|` figures on SAND rows are therefore not evidence of anything and are omitted
+above; read `conv` and `worst ie`. `condition_scale` exists for exactly this and the
+report should apply it.
+
+### 16.2 A recorded result, retracted: SLSQP does not solve `large_tokamak_nof`
+
+`next_steps.md` recorded "SLSQP converges `large_tokamak_nof` in 36 iterations" and
+reasoned from it that the port's problem was solvable and the blockage `pyvmcon`-specific.
+**It is not converged.** The 35-iteration run stops with c72 violated by `+9.0e+01`. The
+old harness had no feasibility check, so a run that merely *returned* was recorded as a
+run that *solved*.
+
+The inference built on it was the reason c72 was framed as a solver question at all, and
+it is backwards. `pyvmcon.solve_qsp` (`vmcon.py:322-337`) builds the linearised
+constraints as hard `cvxpy` constraints with bounds in `cp.Variable(bounds=...)` and
+raises when `delta.value is None`: no elastic mode, no relaxation. SLSQP solves a relaxed
+subproblem, never refuses, and returns an infeasible point. `pyvmcon` refusing was the
+more honest report every time.
+
+### 16.3 Three wrong answers, and what killed each
+
+Recorded in full because the pattern is the lesson: in each case an algebraic argument
+looked conclusive, was stated as established, and was overturned by a measurement that
+cost minutes.
+
+**(a) "The burn-time loop is degenerate."**
+`vs_plasma_burn_required = v_loop * csawth * (t_ramp + t_burn)` (`physics.py:4886`),
+`t_burn = |vs_cs_pf_total_burn| / v_loop - t_ramp` (`pulse.py:302`), `csawth` defaults to
+`1.0` and neither file overrides it, and at PROCESS's converged point
+`vs_plasma_burn_required = 273.6610190288024` against `vs_cs_pf_total_burn =
+-273.6610190288024` -- **identical to sixteen digits**. Substituting gives `t_burn =
+t_burn`. PROCESS appears to confess it, above the formula: *"N.B. t_plant_pulse_burn on
+first iteration will not be correct ... but the value will be correct on subsequent
+calls."*
+
+Killed by measuring `d(t_plant_pulse_burn)/dx` with PROCESS's own finite differences at
+its converged point: **strongly nonzero on 13 of 20 design variables**, largest
+`2.035026e+04` on `dr_bore` (relative 2.83). `d(c13)/dx` is `d(t_burn)/dx / 7200` to
+every digit -- c13 *is* the burn time against its floor -- which is how the optimiser
+parks it at `t_plant_pulse_burn = 7200.0595` with c13 active at `+8.27e-06`.
+
+**The sixteen-digit agreement is a bookkeeping tautology**: PROCESS computes the one
+quantity from the other for reporting. An exact algebraic identity between two *reported*
+quantities is not evidence about the rank of the system that produced them. The
+distinguishing measurement is the derivative row, and it costs 40 pipeline evaluations.
+
+**(b) "The cold design is genuinely infeasible; the port is honest and PROCESS is not."**
+At PROCESS's *converged* design the port reproduces its whole state -- **983 of 1039
+variables to 1e-9** on `large_tokamak_nof`, **989 of 1045** on `low_aspect_ratio_DEMO`,
+worst real disagreement `4.4e-04`, and the burn-time/volt-second/CS-stress chain to six
+digits. Cold, they diverge 55x. Since `Caller.call_models` runs at most ten Gauss-Seidel
+passes and `check_agreement` only tests the objective and constraints, PROCESS's cold
+state is plainly not converged -- so the port, which drives its loops, must be the
+consistent one and the cold design must really be infeasible.
+
+Killed by §16.4. The port's cold state is consistent with a **smaller model set**. The
+983/1039 agreement is not evidence of correctness: at PROCESS's converged design
+`mdf.seed` fills boundary inputs from PROCESS's own `DataStructure`, handing every
+missing producer exactly the right value. **The measurement that looked like vindication
+was taken at the one point where the defect is structurally invisible.**
+
+**(c) "Seeding is the fix; SAND should tolerate an infeasible start."**
+`_seed` fills coupling unknowns and `^hat.*` cuts from a completed MDA at the cold design
+-- burn time `142424` where PROCESS's iteration 0 sees `2568`. SAND promotes coupling
+into the optimiser, so it should escape. Reseeding all 1034 coupling values from
+PROCESS's own cold state moves c72 from `+386` to `+1.8` under SLSQP: two orders of
+magnitude, so the seed is genuinely doing damage.
+
+But seeded from PROCESS's **converged answer** -- where c72 is active and satisfied --
+SAND takes 2 steps and ends at c72 `+5.4e-01`. It is handed a feasible point and walks
+away from it. If starting at the answer does not work, the start is not the problem.
+(That row is §17.1's unmeasured C2 regression, and it is more serious than filed: not a
+cosmetic diagnostic-stage wobble but SAND failing to hold a feasible point. §17.1's
+cheapest hypothesis -- SAND's coupling unknowns have no `bounds` entries at all and are
+unbounded both ways -- is still unmeasured and is the next thing to try.)
+
+### 16.4 The actual finding: twenty-two producers are missing
+
+The question none of the above asked: **does the port's graph produce everything PROCESS
+computes?**
+
+Method, appealing to no audit record: snapshot every numeric field of every area of a
+`SingleRun`'s `DataStructure` before any model runs; evaluate one `Evaluators.fcnvmc1` at
+the cold `x`; snapshot again. Everything that moved is something PROCESS's pipeline
+computes. Intersect with the port's boundary `input` entries -- variables nothing in the
+graph owns -- minus the run's iteration variables, which are boundary inputs by intent.
+
+**PROCESS writes 789 of 2270 fields in one pass. Twenty-two of them are boundary inputs
+of the port's graph.** Twenty are frozen at exactly `0.0`:
+
+```
+.physics.beta_poloidal_vol_avg          0  vs  1.0874279
+.physics.dlamie                         0  vs  17.810652
+.pf_coil.p_pf_electric_supplies_mw      0  vs  4.8813983
+.pf_coil.temp_cs_superconductor_margin  0  vs  3.4208032
+.pf_power.ensxpfm                       0  vs  17038.228
+.pf_power.srcktpm                       0  vs  1113.0075
+.tfcoil.sig_tf_case                     0  vs  5.9391981e+08
+.tfcoil.sig_tf_wp                       0  vs  4.9699609e+08
+.build.dr_tf_inner_bore                 0  vs  11.794021
+.fwbs.dewmkg                            0  vs  14404818
+... 22 total, every one disagreeing
+```
+
+`.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` appear **nowhere** in
+`functional_process/models/`. Six of the twenty-two have an owning node somewhere and are
+still unowned on the tokamak -- a wiring problem, not a porting one.
+
+This is the defect class `boundary.py`'s docstring names: *"A slot whose new occupant does
+not write what the old one wrote does not fail: its consumers silently fall back to
+whatever value sits in the `DataStructure` ... That defect class has eight recorded
+instances and not one of them was found by a check."* Twenty-two more, and again not
+found by a check.
+
+### 16.5 Why no existing stage could see it
+
+`boundary.py` already counts the boundary and pins it -- 297 inputs on the stellarator,
+361 on the tokamak -- and already says the number *"should only ever go down, because
+everything else on it is a read whose producer is not ported yet"*. What it could not do
+is tell the ~109 genuine inputs from the unported producers. A field PROCESS writes every
+pass is definitionally the second kind.
+
+`tokamak_boundary.md` did this analysis by hand for `large_tokamak_eval`'s traced surface
+and got it right -- but by grepping `process/` for a writer and reasoning about whether
+that writer was dormant. That is correct where it was applied, must be redone per
+configuration, and cannot see a writer that fires for a reason the reader did not
+anticipate. Running the pipeline and diffing is mechanical and complete.
+
+And **Stage A / C2 cannot see it by construction**, per §16.3(b): they seed boundary
+inputs from PROCESS's converged `DataStructure`. Only a cold start exposes a missing
+producer.
+
+### 16.6 What landed, and the honest result
+
+`calculate_poloidal_beta` + `PoloidalBeta`, registered `.tokamak.plasma_beta.poloidal`.
+The slot list ran `physics.py:3818-3822` (`toroidal`) then `3831-3835` (`thermal`) and
+skipped `3825` between them. `constraint_48`'s docstring has recorded the hole since
+`batch5.md` -- *"not yet ported anywhere in `functional_process`"* -- and ported over it,
+because its own read was harmless. The read that was not harmless is in
+`models/pfcoil/currents.py::calculate_equilibrium_currents`, inside
+`log(8*aspect) + beta_poloidal_vol_avg + l_i/2 - 1.5`.
+
+`boundary.computed_by_process` and `boundary.unproduced_but_computed` landed with it,
+pinned at eighteen rows on the MDA graph (`missing_producers_tokamak.txt`; three more
+appear once the constraint surface is added, because constraints declare reads the MDA
+graph never makes). Tokamak boundary 361 -> 360.
+
+**The port did not move the tokamak.** Re-measured after it landed: MDF `0/0/3`
+iterations, SAND `2/2/35`, c72 still `+3.9e+02` / `+1.3e+02` / `+9.1e+01`. `conv` shifts
+from `1.352e+01` to `1.364e+01` and MDF's SLSQP arm from 6 to 3 iterations, so the value
+*is* consumed -- it is simply not decisive. The prediction that this was "the root of the
+c72 chain" was an O(1)-term-in-an-O(1)-bracket argument and it is **not supported**: it
+was stated before the switch arm (`i_pf_current`) was checked, and before the other
+twenty-one were ruled out as dominating. Landing it was right; the causal claim was
+another instance of §16.3's pattern.
+
+### 16.7 Two more defects, independent of all of the above
+
+**c90 blocks `low_aspect_ratio_DEMO` outright.** Both SAND cells stop at zero iterations,
+`_why_no_step` naming `^cond.constraints.c90 +1.00e+00` -- the `1 - value/bound`
+signature of `value = 0`. `cs_fatigue.ncycle` is unported and the port says so in three
+places (`models/pfcoil/namespace.py:97`, `models/pfcoil/stresses.py:35-37`,
+`models/tokamak/namespace.py:12`). `stresses.py` reads *"Neither is read by any active
+constraint"* -- true when written, for the stellarator and `large_tokamak_nof`; DEMO
+activates c90. Same shape as the array-element `ixc` refusal that cost three
+configurations (`0dca2227`) and as `constraint_48`'s hole: a documented omission whose
+justification quietly expired.
+
+**`degenerate_fixed_points` cannot inspect any multi-node cycle.** It builds the body it
+differentiates as `graph.subgraph(tuple(set(producers.values())))` -- the direct producers
+only, one level deep. For a single-node cycle that is the whole body, and the two it was
+written for (`EtaTurbineStep`, `CplifeAvail`) both were. For any longer cycle a kept node
+reads something no kept node produces, `_run_acyclic` raises `KeyError`, and the bare
+`except Exception: continue` -- commented *"undetectable is not degenerate"* -- files the
+block as healthy. **Five of six driven blocks on `large_tokamak_nof` fail this way**,
+including `^problem.times.t_plant_pulse_burn.cycle`, whose cycle spans eight nodes. So the
+port has had no working degeneracy check on any non-trivial loop, in either formulation,
+for as long as those loops have existed -- the second time this function's `except` has
+silently reported every fixed point healthy (its docstring records the first). The body
+wants `graph.ancestors` with the declared problem nodes excluded; including them
+re-creates the cycles, which is its own `ValueError`. Not fixed here: it is a change on
+SAND's assembly path, it wants its own test, and nothing above depends on it.
+
+**`mdf.inner_residuals` crashes on the tokamak.** `float(np.asarray(env[unknown]))` at
+`mdf.py:750` raises on any array-valued inner unknown, and the burn-time cycle owns
+`n_pf_coil_turns`, an array. The one instrument for *"did the MDA converge"* -- whose
+docstring says *"`PicardDriver` stops at `max_iter` silently"* -- has never been able to
+run on the configurations that need it most. Same defect class as the `reference_run`
+array bug (`d2890d90`).
+
+### 16.8 What this changes
+
+- **c72 is not a solver blocker and not a PF-coil porting bug.** It is the far end of a
+  chain that starts at missing producers. §17.4's promotion of it to blocking was correct
+  about severity and wrong about cause.
+- **The cold start is the only place the port is tested against a graph it has to produce
+  itself.** Everything else hands it PROCESS's answers. That makes cold starts the
+  harness's most valuable stage, not its most fragile one.
+- **The guard exists now** and is pinned; the number may only go down.
+- Twenty-one producers remain, plus `ncycle`.

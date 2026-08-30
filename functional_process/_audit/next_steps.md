@@ -3120,3 +3120,73 @@ reads. Neither is written.
 `sand_harness.mda_env`'s own call has always used keywords and nothing else in the repo
 called `reference_problem` at all -- the ST probe was its first caller. Fixed to
 keywords.
+
+## 19. State, 2026-08-30 (evening) — the cold-start matrix, and the missing producers
+
+`optimise_design.md` §16 is the full account. This is the punch list.
+
+**The finding in one line.** The port's graph does not produce everything PROCESS
+computes: **twenty-two boundary `input` entries on `large_tokamak_nof` are fields
+PROCESS writes every pipeline pass**, twenty of them frozen at exactly `0.0`. c72's
+infeasibility, which §17.4 promoted to blocking, is the far end of that chain. Three
+earlier explanations — a degenerate burn-time loop, a genuinely infeasible cold design,
+and a bad coupling seed — were each argued from real measurements and each overturned;
+§16.3 records them because the pattern (algebraic argument stated as established, killed
+by a cheap measurement) is the reusable lesson.
+
+### 19.1 The work, priority-ordered
+
+1. **Port the remaining twenty-one producers** (`missing_producers_tokamak.txt` pins
+   eighteen on the MDA graph; `.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp` and
+   `.pf_coil.temp_cs_superconductor_margin` appear only once the constraint surface is
+   added). Six have an owning node already and are a **wiring** problem, not a porting
+   one: `.build.dz_blkt_upper`, `.costs.c2214`, `.costs.c2222`, `.costs.c2252`,
+   `.fwbs.dewmkg`, `.tfcoil.sig_tf_wp`. Two — `.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp`
+   — appear nowhere in `functional_process/models/` at all.
+   **Not every row is a defect**: `tokamak_boundary.md` has precedent for "produced on
+   the stellarator, an input on the tokamak" being correct, and `.buildings.
+   dz_tf_cryostat` (seed `2.5`, not `0.0`) and `.physics.dlamie` (PROCESS may write it
+   only on the stellarator path) both need that judgement before a node is invented.
+2. **Port `cs_fatigue.ncycle`.** `low_aspect_ratio_DEMO`'s SAND cells stop at **zero**
+   iterations on c90, violated with an identically zero row at exactly `+1.000000`.
+   Blocks that configuration from any start.
+3. **Fix `degenerate_fixed_points`' one-level body** (§16.7). `graph.ancestors` with the
+   declared problem nodes excluded. Five of six driven blocks on the tokamak are
+   currently reported healthy without being inspected at all.
+4. **Fix `mdf.inner_residuals`' array crash** (`mdf.py:750`). The one instrument for "did
+   the MDA converge" cannot run on any configuration with an array-valued inner unknown.
+5. **Bound SAND's coupling unknowns.** §17.1's cheapest hypothesis, still unmeasured, and
+   now more important than when filed: seeded at PROCESS's *converged answer*, SAND takes
+   two steps and walks off a feasible point to c72 `+5.4e-01`. `VmconDriver.bounds`
+   leaves an unknown with no entry unbounded on both sides and SAND's `^hat.*`/residual
+   unknowns have no entries.
+6. **Scale the harness's feasibility report.** §16.1's `max|eq|` column applies an
+   absolute `1e-6` to SAND's residual equalities, which are in physical units — on a
+   `1e20` variable a relative `1e-6` *is* `1e14`. `condition_scale` exists for this.
+
+### 19.2 Retracted from the record
+
+- **"SLSQP converges `large_tokamak_nof` in 36 iterations"** — it stops infeasible with
+  c72 at `+9.0e+01`. The old harness had no feasibility check, so a run that *returned*
+  was recorded as a run that *solved*. The inference built on it — that `pyvmcon` was
+  refusing something another solver could do — is backwards: `pyvmcon` has no QP
+  relaxation and refusing was the more honest report.
+- **§17.4's framing of c72 as a solver question.** Correct about severity, wrong about
+  cause.
+
+### 19.3 Verified state
+
+`functional_process/models/physics/physics.py` gained `calculate_poloidal_beta` and
+`PoloidalBeta`, registered `.tokamak.plasma_beta.poloidal` (`tokamak_namespace.py`).
+`boundary.py` gained `computed_by_process` and `unproduced_but_computed`;
+`missing_producers_tokamak.txt` pins eighteen; tokamak boundary 361 → 360. Two meta-tests
+in `test_boundary.py`. Commit `e76d82d9`.
+
+**The poloidal-beta port did not move the tokamak** — MDF `0/0/3`, SAND `2/2/35`, c72
+unchanged at `+3.9e+02`/`+1.3e+02`/`+9.1e+01`. It was worth landing (a real hole,
+`constraint_48` had read it unproduced since `batch5.md`) but the claim that it was the
+root of the c72 chain is **not supported**, and was made before the `i_pf_current` switch
+arm was checked. Recorded as another instance of §16.3's pattern.
+
+The stellarator is unaffected and still solves cold in both formulations at 58 iterations
+under CLARABEL against PROCESS's 46.
