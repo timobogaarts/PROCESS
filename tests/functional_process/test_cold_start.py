@@ -326,41 +326,44 @@ def test_the_pin_never_lists_a_configuration_that_does_not_assemble():
 
 
 # ============================================================== the two defects
-def test_the_missing_stresscl_producer_costs_seven_variables_per_tokamak(reports):
-    """`.tfcoil.str_wp` is `boundary.MISSING_PRODUCERS_PIN`'s one remaining row, and
-    this is what it costs.
+def test_the_landed_stresscl_producer_closed_its_own_seven_rows(reports):
+    """`stresscl` landed the same day this stage was written, and this is the guard that
+    it stayed landed.
 
-    Zero strain is the *peak* of the Nb3Sn critical-current fit, so seeding it at
-    `DataStructure()`'s `0.0` makes every critical current and the TF temperature margin
-    come out high -- an optimistic error on the quantity constraints 33/36 read. On
-    `large_tokamak_nof` the margin is `1.58` against PROCESS's `1.24`, +27 %.
+    This test used to assert the opposite. `.tfcoil.str_wp` was
+    `boundary.MISSING_PRODUCERS_PIN`'s last row, seeded at `DataStructure()`'s `0.0` --
+    the *peak* of the Nb3Sn critical-current fit -- so every critical current and both
+    temperature margins came out high, an **optimistic** error on exactly what
+    constraints 33 and 36 read (`1.58` against PROCESS's `1.24` on `large_tokamak_nof`,
+    +27 %). The prediction recorded with it was that substituting PROCESS's own cold
+    `0.0018442328` would remove exactly seven rows and add none. Registry row 55 landed
+    the producer hours later and reproduced that: the seven agree, the pin is empty, and
+    `large_tokamak_nof` went 631 -> 646 cold agreements.
 
-    **The warm harness reports none of this**, because at PROCESS's converged design the
-    seed supplies `str_wp` itself. Confirmed by substitution on `large_tokamak_eval`:
-    replacing the seeded `0.0` with PROCESS's own cold `0.0018442328` removes exactly
-    these seven rows and adds none (688/27 -> 695/20, measured on the raw `compare`,
-    before the output-pass split).
+    **The warm harness could not have seen any of it**, because at PROCESS's converged
+    design the seed supplies `str_wp` itself -- which is this stage's whole argument.
 
-    Narrow guard rather than trusting the pin's row count: this is the row the
-    missing-producer audit and this stage agree on, and it is the demonstration that the
-    two checks measure one defect.
+    What survived is one row, `.tfcoil.insstrain`, a new output of the landed node, and
+    the port is the correct side of it: nine digits of agreement at PROCESS's converged
+    design and 6.2e-03 relative cold, an ordinary two-fixed-points disagreement smaller
+    than any of the seven it replaced. It carries its own reason in `ACCEPTED`.
     """
     from functional_process.boundary import MISSING_PRODUCERS_PIN
 
-    assert Path(MISSING_PRODUCERS_PIN).read_text().split() == [".tfcoil.str_wp"]
+    assert Path(MISSING_PRODUCERS_PIN).read_text().split() == []
+    closed = (
+        ".tfcoil.temp_tf_superconductor_margin",
+        ".tfcoil.j_tf_wp_critical",
+        ".superconducting_tfcoil.c_tf_turn_cables_critical",
+    )
     for name in (
         "large_tokamak_nof.IN.DAT",
         "low_aspect_ratio_DEMO.IN.DAT",
         "large_tokamak_eval.IN.DAT",
     ):
-        off = {d.var.path_str(): d for d in reports[name].real}
-        assert ".tfcoil.temp_tf_superconductor_margin" in off, name
-        assert off[".tfcoil.temp_tf_superconductor_margin"].got > (
-            off[".tfcoil.temp_tf_superconductor_margin"].expected
-        ), (
-            f"{name}: the missing strain should make the margin optimistic, "
-            f"not pessimistic"
-        )
+        off = {d.var.path_str() for d in reports[name].real}
+        for row in closed:
+            assert row not in off, f"{name}: {row} disagrees again -- stresscl unwired?"
 
 
 def test_the_pinned_noh_is_right_on_one_configuration_and_wrong_on_two():

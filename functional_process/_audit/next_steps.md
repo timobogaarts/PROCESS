@@ -3473,6 +3473,35 @@ surfaces, and three tokamaks that took zero SQP steps this morning solve cold.
    `1e-6` to residual equalities carried in physical units. On a `1e20` variable a
    relative `1e-6` *is* `1e14`. `condition_scale` exists for this.
 
+### 21.2b Landed after §21.2 was written, at session close
+
+- **The CroCo cluster is closed** (§18 blockers 1-3) and the two ST files now refuse on
+  a **ninth** blocker, `tf_stress_arm == (0, 1, 0)` -- `extended_plane_strain`, 517
+  lines, with `plane_stress`-shaped plumbing already in `models/tfcoil/stress.py`.
+  That is the cheapest remaining item by blocked-files-per-line, and it unblocks
+  `spherical_tokamak_eval` outright (`st_regression` additionally needs iteration
+  variable 135). **Whether the five PF dimensions are also cleared is not established**
+  -- `machine_from_indat` reports only the first unmet switch, and the PF agent had not
+  reported at close. Check its handover before assuming either way.
+- **`cold_start`'s `TF_STRESS_UNPORTED` entry closed itself.** It predicted that giving
+  `.tfcoil.str_wp` a producer would remove exactly seven rows and add none; `stresscl`
+  landed hours later in a sibling worktree and reproduced that (`large_tokamak_nof`
+  631 -> 646 cold agreements, pin empty). The entry is now `TF_STRESS_LANDED` and its
+  test asserts the fix rather than the defect.
+  What survived is one row: **`.tfcoil.insstrain`**, a new output of the landed node,
+  and the port is the correct side -- nine digits of agreement at PROCESS's converged
+  design (`-0.00591260699` both), 6.2e-03 relative cold (port `-0.00775040112` against
+  PROCESS's own `-0.007703004533833493`). Ordinary two-fixed-points disagreement,
+  smaller than any of the seven it replaced.
+- **Four parallel agents on one shared boundary list cost four merge collisions**: two
+  independent ports of `.build.dz_blkt_upper` under different slot names, two
+  implementations of `boundary --missing --write`, two `optimise_design.md` §16 drafts,
+  and one stale refusal (`.costs.c2252`, refused for a prerequisite that landed the same
+  afternoon in a sibling worktree). All resolved, all recorded. The lesson is not "do
+  not parallelise" -- 17 producers landed in one pass -- but **give each agent a
+  disjoint slice of the pin and expect to re-measure the pin after every merge**, since
+  a refusal is only valid against the tree that was current when it was written.
+
 ### 21.3 Measurements taken today that tomorrow should not redo
 
 - **`large_tokamak_eval`'s c72 is immovable, and no producer changes that.** PROCESS's

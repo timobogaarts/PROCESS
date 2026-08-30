@@ -555,34 +555,28 @@ TOKAMAK_DEMO = "low_aspect_ratio_DEMO.IN.DAT"
 TOKAMAK_EVAL = "large_tokamak_eval.IN.DAT"
 """The four `CONFIGURATIONS`, by the base name a pin row and an `ACCEPTED` key use."""
 
-TF_STRESS_UNPORTED = (
-    "**The one remaining missing producer, seen as a wrong number instead of as a "
-    "missing owner.** `.tfcoil.str_wp` is the sole row of "
-    "`boundary.MISSING_PRODUCERS_PIN`: it is an output of "
-    "`process/models/tfcoil/base.py::stresscl`, which is unported, so nothing in the "
-    "graph owns it and the cold seed hands it `DataStructure()`'s `0.0`. Zero strain is "
-    "the *peak* of the Nb3Sn critical-current fit, so every critical current comes out "
-    "high and the temperature margin with it. Confirmed by substitution on "
-    "`large_tokamak_eval`: replacing the seeded `0.0` with PROCESS's own cold "
-    "`0.0018442328` removes exactly these seven rows and adds none (688/27 -> 695/20). "
-    "**The warm harness cannot see any of this**, because at PROCESS's converged design "
-    "the seed supplies `str_wp` itself -- which is the entire argument for this stage. "
-    "Worst here: `.tfcoil.temp_tf_superconductor_margin`, `1.58` against PROCESS's "
-    "`1.24` on `large_tokamak_nof` (+27 %), an *optimistic* error on the quantity "
-    "constraint 36 reads."
+TF_STRESS_LANDED = (
+    "**`stresscl` landed the same day this stage was written, and closed its own "
+    "entry.** This block used to hold seven rows -- the CICC critical-surface chain "
+    "and both temperature margins -- caused by `.tfcoil.str_wp` having no producer and "
+    "the cold seed handing it `DataStructure()`'s `0.0`, the *peak* of the Nb3Sn fit. "
+    "Registry row 55 (`models/tfcoil/stress.py`) owns it now and all seven agree; the "
+    "prediction recorded here (substituting PROCESS's cold `0.0018442328` removes "
+    "exactly those seven and adds none) was measured, and the producer landing "
+    "reproduced it. `large_tokamak_nof` cold went 631 -> 646 agreements.\n\n"
+    "**What it left is one row, and the port is the correct side.** "
+    "`.tfcoil.insstrain` is a new output of the landed node. At PROCESS's converged "
+    "design port and PROCESS agree to nine digits (`-0.00591260699` both). Cold they "
+    "differ by 6.2e-03 relative: port `-0.00775040112` against PROCESS's own "
+    "`-0.007703004533833493` after one pipeline pass. That is the ordinary "
+    "two-fixed-points-of-two-maps case this module's `drift` measurement settles for "
+    "the rest of the file -- PROCESS's cold state is settled here (worst motion "
+    "2.74e-08 over three further Gauss-Seidel passes, against this row's 6.2e-03) -- "
+    "and it is a *smaller* disagreement than the seven it replaced."
 )
 
-TF_STRESS_ROWS = (
-    ".superconducting_tfcoil.c_tf_turn_cables_critical",
-    ".superconducting_tfcoil.f_c_tf_turn_operating_critical",
-    ".superconducting_tfcoil.j_tf_superconductor_critical",
-    ".tfcoil.j_crit_str_tf",
-    ".tfcoil.j_tf_wp_critical",
-    ".tfcoil.temp_margin",
-    ".tfcoil.temp_tf_superconductor_margin",
-)
-"""What `.tfcoil.str_wp = 0` reaches. Identical on all three tokamaks; the stellarator
-registers no CICC critical-surface node and has none of them."""
+TF_STRESS_ROWS = (".tfcoil.insstrain",)
+"""What survived `stresscl` landing. The seven rows this used to name now agree."""
 
 NOH_WRONG = (
     "**A real port defect this stage found, and it is not fixed here.** "
@@ -870,7 +864,7 @@ def _because(reason: str, mapping) -> dict:
 
 ACCEPTED = {
     **_because(
-        TF_STRESS_UNPORTED,
+        TF_STRESS_LANDED,
         {
             TOKAMAK_NOF: TF_STRESS_ROWS,
             TOKAMAK_DEMO: TF_STRESS_ROWS,
