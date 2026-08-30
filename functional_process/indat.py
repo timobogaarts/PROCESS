@@ -3399,7 +3399,7 @@ occupant since wave 1, precisely so that its occupant could hang on *this* key r
 than a freshly minted one, and the D-shaped wave supplied it."""
 
 
-def _pf_coil_system_arm(  # noqa: PLR0911 -- one return per refused dimension, by design
+def _pf_coil_system_arm(
     iohcl,
     n_pf_coil_groups,
     i_pf_location,
@@ -3437,45 +3437,137 @@ def _pf_coil_system_arm(  # noqa: PLR0911 -- one return per refused dimension, b
     count, a step function of the *converged* CS geometry rather than of any input
     (`inductance.md` § 'noh is a step function of the CS geometry'). It stays a module
     constant on `PFCoilInductance`.
+
+    **The negative arm this returns is the first of possibly several.** The predicates
+    live in `_pf_coil_system_deviations`, which evaluates all seven; this function keeps
+    the "one arm index" contract the slot registries need, and `machine_from_indat`
+    asks for the whole list when the arm comes back negative, so that the *refusal*
+    reports every deviation while the *choice* still reports one. See that function for
+    why the distinction matters (it cost this audit a wrong count once already).
     """
+    deviations = _pf_coil_system_deviations(
+        iohcl=iohcl,
+        n_pf_coil_groups=n_pf_coil_groups,
+        i_pf_location=i_pf_location,
+        n_pf_coils_in_group=n_pf_coils_in_group,
+        itart=itart,
+        itartpf=itartpf,
+        i_pf_current=i_pf_current,
+        i_pf_conductor=i_pf_conductor,
+        i_pf_superconductor=i_pf_superconductor,
+        i_cs_superconductor=i_cs_superconductor,
+        i_tf_shape=i_tf_shape,
+        i_r_pf_outside_tf_placement=i_r_pf_outside_tf_placement,
+    )
+    if deviations:
+        return deviations[0]
+    return (
+        0
+        if SuperconductorModel(int(i_cs_superconductor))
+        is SuperconductorModel.ITER_NB3SN
+        else 1
+    )
+
+
+def _pf_coil_system_deviations(
+    *,
+    iohcl,
+    n_pf_coil_groups,
+    i_pf_location,
+    n_pf_coils_in_group,
+    itart,
+    itartpf,
+    i_pf_current,
+    i_pf_conductor,
+    i_pf_superconductor,
+    i_cs_superconductor,
+    i_tf_shape,
+    i_r_pf_outside_tf_placement,
+) -> tuple[int, ...]:
+    """**Every** dimension of the joint PF configuration with no occupant, not just the
+    first -- in `_pf_coil_system_arm`'s own order, so `deviations[0]` is exactly the arm
+    that function used to return by short-circuit.
+
+    This exists because of `consolidation_round_3.md` §5's standing lesson: a refusal
+    that names one blocker is read as *the* blocker, and the count is then wrong in the
+    audit. `next_steps.md` §16.11 recorded the spherical tokamaks as refused on "four
+    dimensions at once (`-1`, `-3`, `-6`, `-7`)"; measured on 2026-08-30 by probing past
+    each one in turn, both files deviate on **five** -- `-2` as well, because
+    `i_pf_location = (2, 3, 3, 4)` and `n_pf_coils_in_group = (2, 2, 2, 2)` are not the
+    ported pattern either. The short-circuit is why nobody saw it: `-1` fires first and
+    `-2` was never evaluated. Sizing a package from a refusal message is only sound if
+    the message is complete, so the message is complete now.
+
+    Returns
+    -------
+    :
+        The deviating arm indices, ascending in the order the dimensions are checked
+        (so descending numerically); empty when the configuration is one of the two
+        ported ones.
+    """
+    deviations = []
     if int(iohcl) == 0:
-        return -1
+        deviations.append(-1)
     if (
         int(n_pf_coil_groups) != 4
         or tuple(int(v) for v in i_pf_location[:4]) != (2, 2, 3, 3)
         or tuple(int(v) for v in n_pf_coils_in_group[:4]) != (1, 1, 2, 2)
     ):
-        return -2
+        deviations.append(-2)
     if SphericalTokamakModel(int(itart)) is SphericalTokamakModel.SPHERICAL_TOKAMAK or (
         int(itartpf) != 0
     ):
-        return -3
+        deviations.append(-3)
     if int(i_pf_current) == 0:
-        return -4
+        deviations.append(-4)
     if PFConductorModel(int(i_pf_conductor)) is not PFConductorModel.SUPERCONDUCTING:
-        return -5
-    sc_pair = (
+        deviations.append(-5)
+    if (
         SuperconductorModel(int(i_pf_superconductor)),
         SuperconductorModel(int(i_cs_superconductor)),
-    )
-    if sc_pair == (
-        SuperconductorModel.OLD_LUBELL_NBTI,
-        SuperconductorModel.ITER_NB3SN,
-    ):
-        sc_arm = 0
-    elif sc_pair == (
-        SuperconductorModel.OLD_LUBELL_NBTI,
-        SuperconductorModel.WST_NB3SN,
-    ):
-        sc_arm = 1
-    else:
-        return -6
+    ) not in {
+        (SuperconductorModel.OLD_LUBELL_NBTI, SuperconductorModel.ITER_NB3SN),
+        (SuperconductorModel.OLD_LUBELL_NBTI, SuperconductorModel.WST_NB3SN),
+    }:
+        deviations.append(-6)
     if (
         i_tf_shape is not TFCoilShapeModel.D_SHAPE
         or int(i_r_pf_outside_tf_placement) != 0
     ):
-        return -7
-    return sc_arm
+        deviations.append(-7)
+    return tuple(deviations)
+
+
+def _refuse_pf_coil_system(deviations):
+    """`_slot_occupant`'s `NotImplementedError`, but for every deviating dimension.
+
+    The first line is byte-for-byte what `_slot_occupant("pf_coil_system_arm", ...)`
+    used to raise, so a reader who has seen the old message sees the same one; the
+    remaining dimensions follow, each with its own recorded `UNPORTED` reason. The
+    closing line is the count, because that is the number a plan gets sized from.
+
+    Raises
+    ------
+    NotImplementedError
+        Always -- this is only called when `deviations` is non-empty.
+    """
+    field = "pf_coil_system_arm"
+    first, *rest = deviations
+    opening = (
+        f"{field} == {first} is a real PROCESS branch but is not ported: "
+        f"{UNPORTED[field, first]}"
+    )
+    closing = (
+        f"{len(deviations)} of the seven dimensions of the PF coil system's joint "
+        f"configuration deviate at once; every one of them needs an occupant set "
+        f"before this file assembles."
+    )
+    message = [
+        opening,
+        *(f"AND {field} == {arm}: {UNPORTED[field, arm]}" for arm in rest),
+        closing,
+    ]
+    raise NotImplementedError("\n\n".join(message))
 
 
 CS_COIL = {0: CSCoil, 1: CSCoil}
@@ -4041,20 +4133,32 @@ def _tokamak_device(
         )
     )
     # One predicate, thirteen slots, resolved once -- see `_pf_coil_system_arm`.
-    pf_coil_arm = _pf_coil_system_arm(
-        switches.get("iohcl", 1),  # `build_variables.py:177`
-        switches.get("n_pf_coil_groups", 3),  # `pfcoil_variables.py:320`
-        int_lists.get("i_pf_location", (2, 2, 3, 0)),  # `:220`
-        int_lists.get("n_pf_coils_in_group", (1, 1, 2, 0)),  # `:310`
-        itart,
-        switches.get("itartpf", 0),  # `physics_variables.py:1000`
-        switches.get("i_pf_current", 1),  # `pfcoil_variables.py:279`
-        i_pf_conductor,
-        switches.get("i_pf_superconductor", 1),  # `:254`
-        switches.get("i_cs_superconductor", 1),  # `:239`
-        i_tf_shape,
-        switches.get("i_r_pf_outside_tf_placement", 0),  # `:287`
-    )
+    pf_coil_switches = {
+        "iohcl": switches.get("iohcl", 1),  # `build_variables.py:177`
+        "n_pf_coil_groups": switches.get(
+            "n_pf_coil_groups", 3
+        ),  # `pfcoil_variables.py:320`
+        "i_pf_location": int_lists.get("i_pf_location", (2, 2, 3, 0)),  # `:220`
+        "n_pf_coils_in_group": int_lists.get(
+            "n_pf_coils_in_group", (1, 1, 2, 0)
+        ),  # `:310`
+        "itart": itart,
+        "itartpf": switches.get("itartpf", 0),  # `physics_variables.py:1000`
+        "i_pf_current": switches.get("i_pf_current", 1),  # `pfcoil_variables.py:279`
+        "i_pf_conductor": i_pf_conductor,
+        "i_pf_superconductor": switches.get("i_pf_superconductor", 1),  # `:254`
+        "i_cs_superconductor": switches.get("i_cs_superconductor", 1),  # `:239`
+        "i_tf_shape": i_tf_shape,
+        "i_r_pf_outside_tf_placement": switches.get(
+            "i_r_pf_outside_tf_placement", 0
+        ),  # `:287`
+    }
+    pf_coil_arm = _pf_coil_system_arm(**pf_coil_switches)
+    # The refusal names **every** deviating dimension, not just the first -- see
+    # `_pf_coil_system_deviations`. Raised here rather than left to `_slot_occupant`
+    # below, which can only ever see one arm index and so can only ever say one thing.
+    if pf_coil_arm < 0:
+        _refuse_pf_coil_system(_pf_coil_system_deviations(**pf_coil_switches))
     shield = TokamakShield(
         half_height=_slot_occupant("n_divertors", n_divertors, SHIELD_HALF_HEIGHT),
         volumes=_slot_occupant("fw_blkt_vv_shape_arm", shape_arm, SHIELD_VOLUMES),

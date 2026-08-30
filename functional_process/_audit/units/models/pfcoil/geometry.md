@@ -186,28 +186,44 @@ None. `place_pf_outside_tf` imports `TFCoilShapeModel` from
   the flattening to become a runtime concatenation of variable-length pieces. Not
   decided here.
 
-## the spherical tokamaks miss on four of seven dimensions at once (measured 2026-08-29)
+## the spherical tokamaks miss on five of seven dimensions at once (measured 2026-08-30)
 
-The ST closing wave probed `_pf_coil_system_arm` past its first refusal, because that
-function returns at the **first** deviating dimension and a single refusal message
-therefore sizes nothing. Both `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`
-deviate on four of the seven:
+**This section said "four of seven" until 2026-08-30 and was wrong by one**, in exactly
+the way `consolidation_round_3.md` §5 warns about. The ST closing wave probed
+`_pf_coil_system_arm` past its first refusal, because that function returns at the
+**first** deviating dimension and a single refusal message therefore sizes nothing — but
+it probed by neutralising one dimension at a time, which still lets a short-circuit hide
+the next. Evaluating all seven predicates independently (`_pf_coil_system_deviations`,
+added 2026-08-30) says **five**. Both `spherical_tokamak_eval.IN.DAT` and
+`st_regression.IN.DAT` deviate identically:
 
 | arm | dimension | ST value |
 |---|---|---|
 | `-1` | `iohcl` | `0` — **no central solenoid at all** |
+| `-2` | `n_pf_coil_groups` / `i_pf_location` / `n_pf_coils_in_group` | `4` / `(2, 3, 3, 4)` / `(2, 2, 2, 2)` — **not** the ported `(2, 2, 3, 3)` / `(1, 1, 2, 2)` pattern |
 | `-3` | `itart` / `itartpf` | `1` / `1` — spherical tokamak PF placement |
 | `-6` | `(i_pf_superconductor, i_cs_superconductor)` | `(9, 1)` — `HAZELTON_ZHAI_REBCO` PF conductor |
 | `-7` | `i_tf_shape` / `i_r_pf_outside_tf_placement` | `2` (picture frame) / `1` |
 
-`-2` (coil-group topology), `-4` (`i_pf_current`) and `-5` (`i_pf_conductor`) agree with
-the reference configuration.
+`-4` (`i_pf_current`) and `-5` (`i_pf_conductor`) agree with the reference configuration.
+
+`-2` is not a rounding error on the count: the group pattern fixes every array index in
+`pfcoil/__init__.py`'s module constants, so it is a different occupant per node in the
+same sense `-1` is. The two files place four *pairs* of coils in locations 2/3/3/4 where
+the ported pattern places one, one, two and two in locations 2/2/3/3.
+
+**The refusal now names all five.** `machine_from_indat` calls
+`_pf_coil_system_deviations` and raises one `NotImplementedError` carrying every refused
+dimension's recorded reason plus the count, instead of leaving `_slot_occupant` to
+report the one arm index it can see. `test_machine.py::
+test_the_pf_coil_refusal_names_every_deviating_dimension` pins the tuple, so the day one
+of the five is ported the tuple shrinks in a test rather than in somebody's memory.
 
 **This is a package, not an arm.** `-1` alone is what `UNPORTED` already says it is —
 "a different occupant set for every node in the package", across `geometry.md`,
-`currents.md`, `fields.md`, `masses.md` and `inductance.md` — and three more dimensions
+`currents.md`, `fields.md`, `masses.md` and `inductance.md` — and four more dimensions
 sit behind it. The earlier brief's expectation that `pf_coil_system_arm == -3` was the
-remaining item is off by three dimensions in one direction and by a whole subsystem in the
+remaining item is off by four dimensions in one direction and by a whole subsystem in the
 other.
 
 Two things worth carrying forward:
