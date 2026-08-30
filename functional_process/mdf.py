@@ -739,6 +739,20 @@ def inner_residuals(schedule: Schedule, env):
     "did the MDA converge here", which is the one question MDF's correctness rests on and
     SAND answers structurally instead (its residuals are equalities the SQP drives to
     zero).
+
+    **One row per unknown, reduced over its elements.** An inner unknown need not be a
+    scalar -- the tokamak PF-coil ring is cut at `.pf_coil.n_pf_coil_turns` (a per-coil
+    vector) and `.pf_coil.ind_pf_cs_plasma_mutual` (a circuit-by-circuit matrix), so
+    `^problem.times.t_plant_pulse_burn.cycle` owns an array on every tokamak. This used
+    to `float(np.asarray(env[unknown]))`, which raises `TypeError: only 0-dimensional
+    arrays can be converted to Python scalars` on exactly those, so the one instrument
+    for *"did the MDA converge"* had **never run on any tokamak configuration** -- the
+    same defect class as `sand_harness.reference_run`'s array-element `ixc` crash
+    (`d2890d90`), found the same way, by pointing an existing instrument at a second
+    machine. The reduction keeps the element with the **worst relative** gap, since that
+    is the element a caller sorting on the fourth column is asking about, and reports
+    that element's signed gap beside it so the two columns describe the same number.
+    A zero-sized unknown contributes no row: there is nothing to be unconverged about.
     """
     rows = []
     for step in schedule.steps:
@@ -747,13 +761,18 @@ def inner_residuals(schedule: Schedule, env):
         values = step.condition_map(env)(*[env[u] for u in step.unknowns])
         fixed_point = issubclass(step.problem_type, FixedPoint)
         for unknown, value in zip(step.unknowns, values, strict=True):
-            current = float(np.asarray(env[unknown]))
-            residual = float(np.asarray(value)) - (current if fixed_point else 0.0)
+            current = np.asarray(env[unknown], dtype=float)
+            gap = np.asarray(value, dtype=float) - (current if fixed_point else 0.0)
+            gap, current = np.broadcast_arrays(gap, current)
+            if gap.size == 0:
+                continue
+            relative = np.abs(gap) / np.maximum(np.abs(current), 1e-30)
+            worst = int(np.argmax(relative))
             rows.append((
                 step.problem,
                 unknown,
-                residual,
-                abs(residual) / max(abs(current), 1e-30),
+                float(gap.reshape(-1)[worst]),
+                float(relative.reshape(-1)[worst]),
             ))
     return rows
 

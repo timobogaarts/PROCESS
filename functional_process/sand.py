@@ -82,6 +82,7 @@ from functional_process.core.solver.drivers import VmconDriver
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, prefix_path
 from cottax.tools.path import path_map
+from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
 from functional_process.core.solver import constraints as ported_constraints
@@ -534,6 +535,164 @@ def optimise_graph(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class FixedPointResidual:
+    """One `FixedPoint`'s residual Jacobian `d(g(u) - u)/du` at a point -- or the reason
+    it could not be formed.
+
+    The two states are kept apart deliberately, and that separation is the whole repair:
+    `degenerate_fixed_points` used to answer "is this block degenerate" with a bare
+    `except Exception: continue`, so *"checked, and the Jacobian has full rank"* and
+    *"the check itself raised"* came back as the same answer -- healthy. A caller reads
+    `undetectable` to tell them apart, and `rank` against `columns` for the question in
+    between (rank-deficient but not identically zero, which no boolean covers).
+    """
+
+    problem: NodePath
+    jacobian: np.ndarray | None
+    """`(n, n)` over the block's unknowns, flattened and concatenated, with the identity
+    subtracted; `None` exactly when `undetectable` is set."""
+    undetectable: str | None
+    """The exception that stopped the measurement, `f"{type}: {message}"`, or `None`."""
+
+    @property
+    def rank(self) -> int | None:
+        """Numerical rank of `jacobian`, or `None` if it could not be formed."""
+        if self.jacobian is None:
+            return None
+        return int(np.linalg.matrix_rank(self.jacobian))
+
+    @property
+    def columns(self) -> int | None:
+        """How many flattened unknowns the block owns -- the rank a well-posed residual
+        block has. `rank < columns` is a singular SAND equality.
+        """
+        return None if self.jacobian is None else int(self.jacobian.shape[1])
+
+    @property
+    def degenerate(self) -> bool:
+        """`True` only when the residual is *identically* zero here -- the strongest form
+        of rank deficiency, and the only one `sand_schedule` can act on by dropping the
+        problem. An undetectable block is not degenerate and not healthy either.
+        """
+        return self.jacobian is not None and bool(np.allclose(self.jacobian, 0.0))
+
+
+def fixed_point_residuals(graph, env, problems=None):
+    """`d(g(u) - u)/du` for every `FixedPoint` in `graph`, differentiated at `env`.
+
+    The measurement `degenerate_fixed_points` filters, exposed on its own because the
+    boolean throws away two things a caller wants: the **rank** (a block can be singular
+    without being identically zero) and the **failure** (a block whose residual could not
+    be formed at all).
+
+    The body: the transitive closure, not the direct producers
+    ---------------------------------------------------------
+    `g` is evaluated by re-running the nodes between `owns` and the problem's conditions.
+    This used to keep only the conditions' **direct** producers
+    (`graph.subgraph(set(graph.owners[r] for r in reads))`), which is the whole body for
+    a single-node cycle and a *fragment* of it for any longer one. The fragment's other
+    inputs then come off `env` as frozen constants, so the derivative that comes back is
+    the derivative of a *different function* -- and, being a number rather than an
+    exception, it is indistinguishable from a measurement. Measured on
+    `large_tokamak_nof` at PROCESS's converged design, old body against this one:
+
+    | block | old body | this body | worst cell |
+    |---|---|---|---|
+    | `times.t_plant_pulse_burn.cycle` | 3 nodes, `J = -I` | 56 nodes | **1.31e+06** |
+    | `physics.proton_rate_density.cycle` | 3 nodes | 18 nodes | **2.15e-01** |
+    | the four genuine self-loops | 1-3 nodes | 1-83 nodes | 0, exactly |
+
+    The burn-time row is the one to read: the one-level body reports that block as
+    `g` **not depending on its own unknowns at all** -- a perfectly conditioned,
+    full-rank, unambiguously healthy fixed point -- where the real residual has
+    `cond 9.1e+12`. That is the failure this closure exists to stop, and it is silent by
+    construction (`_audit/optimise_design.md` §16.7, whose "five of six" count is
+    corrected there).
+
+    `graph.ancestors` is the fix, and the **declared problem nodes have to come out of
+    it**: they are what breaks the graph's cycles, so a closure that keeps them
+    re-creates every cycle it walked through and `subgraph` hands `_run_acyclic` a
+    `ValueError: computational graph has a dependency cycle`. Dropping them turns each
+    one's unknowns into unowned inputs of the body, supplied from `env` -- which is the
+    right reading anyway: this is the *partial* derivative of one block's residual with
+    respect to its own unknowns, holding every other block's unknowns fixed, and that is
+    the block SAND hands the SQP as an equality.
+
+    Flattened, so an array-valued unknown is measurable
+    --------------------------------------------------
+    `owns` and `conditions_of` are ravelled and concatenated rather than `jnp.stack`ed,
+    because a `FixedPoint` may own a non-scalar (`array_valued_problems` names the
+    standing tokamak instance). The old `jnp.stack(...).reshape(len(reads))` raised
+    `ValueError: Cannot stack arrays with different numbers of dimensions: got (),
+    (22, 22), (22,)` on the burn-time cycle of **every** tokamak configuration, and the
+    bare `except` filed it as healthy. Both defects had to be repaired to see that block
+    at all: the flattening lets the measurement run, and the closure makes what it
+    returns true.
+
+    Returns
+    -------
+    :
+        `tuple[FixedPointResidual, ...]`, one per problem, in binding order.
+    """
+    from cottax.evaluate import _run_acyclic
+
+    if problems is None:
+        problems = tuple(n for n in graph.declared if isinstance(graph[n], FixedPoint))
+    residuals = []
+    for problem in problems:
+        definition = graph[problem]
+        # `conditions_of`, not `.reads`: a problem that has been through `Initialise`
+        # also reads its `Start` port(s), and those are driver data, not conditions.
+        # Including them put a `^guess.*` in `step`'s output stack, where `env` has no
+        # value for it -- a `KeyError` the bare `except` below then swallowed, so every
+        # fixed point silently reported "not degenerate" and the two identity ones
+        # (`eta_turbine_step`, `cplife_avail`, both since deleted by the switch
+        # conversion) reached `reduce_jacobian` as exactly-zero rows of `J_RY`, i.e. a
+        # singular equality block.
+        owns, reads = definition.owns, conditions_of(definition)
+        producers = {r: graph.owners[r] for r in reads if r in graph.owners}
+        inside = graph.ancestors(set(producers.values()))
+        body = graph.subgraph([n for n in inside if n not in graph.declared])
+
+        def residual(flat, _body=body, _owns=owns, _reads=reads, _unravel=None):
+            values = dict(env)
+            values.update(zip(_owns, _unravel(flat), strict=True))
+            out = _run_acyclic(_body, values)
+            return jnp.concatenate([jnp.ravel(jnp.asarray(out[r])) for r in _reads])
+
+        try:
+            start, unravel = ravel_pytree([jnp.asarray(env[v]) for v in owns])
+            # `np.array`, not `np.asarray`: a JAX array converts to a **read-only** view,
+            # and the identity subtraction below is in place.
+            jacobian = np.array(
+                jax.jacfwd(functools.partial(residual, _unravel=unravel))(start),
+                dtype=float,
+            ).reshape(-1, start.size)
+        except Exception as error:  # noqa: BLE001 -- recorded, not swallowed
+            reason = f"{type(error).__name__}: {error}"
+            residuals.append(FixedPointResidual(problem, None, reason))
+            continue
+        if jacobian.shape[0] != jacobian.shape[1]:
+            # A `FixedPoint`'s conditions are `g(u)`, one per unknown and of the same
+            # shape, so this is square by construction -- and if it ever is not, the
+            # identity below would be nonsense and the residual is not the thing this
+            # function claims to measure. Recorded as the block's own reason rather than
+            # raised, because one malformed block must not stop the other measurements.
+            residuals.append(
+                FixedPointResidual(
+                    problem,
+                    None,
+                    f"ValueError: residual is {jacobian.shape}, not square -- "
+                    f"`conditions_of` and `owns` do not correspond element for element",
+                )
+            )
+            continue
+        jacobian -= np.eye(start.size)
+        residuals.append(FixedPointResidual(problem, jacobian, None))
+    return tuple(residuals)
+
+
 def degenerate_fixed_points(graph, env, problems=None):
     """`FixedPoint` problems whose residual `g(u) - u` is *structurally* zero here.
 
@@ -551,52 +710,41 @@ def degenerate_fixed_points(graph, env, problems=None):
     states it only for the switches someone has split.
 
     Detected, not listed: each candidate's `d(g(u) - u)/du` is differentiated at `env`'s
-    own values and reported degenerate when the whole row **and** column vanish. Listing
-    them by name would bake one configuration into the code, which is exactly what
-    `machine_from_indat` exists to avoid.
+    own values (`fixed_point_residuals`) and reported degenerate when the whole row
+    **and** column vanish. Listing them by name would bake one configuration into the
+    code, which is exactly what `machine_from_indat` exists to avoid.
+
+    **A block that could not be measured raises rather than reporting healthy.** That is
+    the narrowing: the previous shape returned "not degenerate" for a block whose check
+    crashed, which is how a defect that hid five of six tokamak blocks survived
+    (`fixed_point_residuals` says how). `sand_schedule` and `reference_problem` both act
+    on this answer, so a caller who cannot be told the difference will act on the wrong
+    one; `fixed_point_residuals` is there for a caller that wants to see the failure
+    rather than stop on it.
 
     Returns
     -------
     :
         `tuple[NodePath, ...]` -- the degenerate problems, in binding order.
+
+    Raises
+    ------
+    ValueError
+        If any candidate's residual Jacobian could not be formed, naming each block and
+        the exception that stopped it.
     """
-    if problems is None:
-        problems = tuple(n for n in graph.declared if isinstance(graph[n], FixedPoint))
-    degenerate = []
-    for problem in problems:
-        definition = graph[problem]
-        # `conditions_of`, not `.reads`: a problem that has been through `Initialise`
-        # also reads its `Start` port(s), and those are driver data, not conditions.
-        # Including them put a `^guess.*` in `step`'s output stack, where `env` has no
-        # value for it -- a `KeyError` the bare `except` below then swallowed, so every
-        # fixed point silently reported "not degenerate" and the two identity ones
-        # (`eta_turbine_step`, `cplife_avail`, both since deleted by the switch
-        # conversion) reached `reduce_jacobian` as exactly-zero rows of `J_RY`, i.e. a
-        # singular equality block.
-        owns, reads = definition.owns, conditions_of(definition)
-        producers = {r: graph.owners[r] for r in reads if r in graph.owners}
-        body = graph.subgraph(tuple(set(producers.values())))
-
-        def step(*unknowns, _body=body, _owns=owns, _reads=reads):
-            values = dict(env)
-            values.update(zip(_owns, unknowns, strict=True))
-            from cottax.evaluate import _run_acyclic
-
-            out = _run_acyclic(_body, values)
-            return jnp.stack([jnp.asarray(out[r]) for r in _reads])
-
-        try:
-            start = tuple(jnp.asarray(env[v]) for v in owns)
-            jacobian = jax.jacfwd(step, argnums=tuple(range(len(owns))))(*start)
-            block = np.stack(
-                [np.asarray(c, dtype=float).reshape(len(reads)) for c in jacobian],
-                axis=1,
-            ) - np.eye(len(owns))
-        except Exception:  # noqa: BLE001 -- undetectable is not degenerate
-            continue
-        if np.allclose(block, 0.0):
-            degenerate.append(problem)
-    return tuple(degenerate)
+    measured = fixed_point_residuals(graph, env, problems)
+    undetectable = [r for r in measured if r.undetectable is not None]
+    if undetectable:
+        detail = "; ".join(
+            f"{r.problem.path_str()} ({r.undetectable})" for r in undetectable
+        )
+        raise ValueError(
+            f"cannot tell whether {len(undetectable)} of {len(measured)} fixed "
+            f"point(s) are degenerate, so cannot report the rest healthy either: "
+            f"{detail}"
+        )
+    return tuple(r.problem for r in measured if r.degenerate)
 
 
 def array_valued_problems(graph, env, problems=None):

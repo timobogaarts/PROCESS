@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 from cottax.evaluate import schedule_for
 from cottax.graph import Graph
-from cottax.problem import Optimise, Start, driver_vars
+from cottax.problem import FixedPoint, Optimise, Start, driver_vars
 from cottax.rewrites import Assign
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
@@ -880,3 +880,149 @@ def test_vmcon_driver_needs_a_start():
     (drive,) = schedule_for(graph).steps
     with pytest.raises(ValueError, match="starting value"):
         driver(drive.condition_map({}), {})
+
+
+# ---------------------------------------------------- the degeneracy instrument
+
+
+class _Scale:
+    """`y = factor * x`. A class, not a lambda, for `_Objective`'s reason -- a stable
+    jit cache key.
+    """
+
+    def __init__(self, factor):
+        self.factor = factor
+
+    def __call__(self, x):
+        return self.factor * x
+
+    def __eq__(self, other):
+        return isinstance(other, _Scale) and other.factor == self.factor
+
+    def __hash__(self):
+        return hash((type(self), self.factor))
+
+
+def _chain_fixed_point(second):
+    """A `FixedPoint` whose `g` is computed by **two** nodes: `g(u) = second * 3 * u`.
+
+    The shape the repaired `fixed_point_residuals` exists for and the old one could not
+    see: the condition's direct producer (`B`) is not the whole body, because `B` reads
+    `.toy.a`, which `A` produces from the unknown. A one-level body either loses the `A`
+    edge or cannot run at all, and either way the measured `dg/du` is wrong.
+    """
+    u = VarPath((GetAttrKey("toy"), GetAttrKey("u")))
+    a = VarPath((GetAttrKey("toy"), GetAttrKey("a")))
+    hat = VarPath((GetAttrKey("^hat"), GetAttrKey("toy"), GetAttrKey("u")))
+    problem = NodePath((GetAttrKey("P"),))
+    graph = Graph(
+        path_map([
+            (
+                NodePath((GetAttrKey("A"),)),
+                CallableNode(inputs=(In(u),), outputs=(Out(a),), fn=_Scale(3.0)),
+            ),
+            (
+                NodePath((GetAttrKey("B"),)),
+                CallableNode(inputs=(In(a),), outputs=(Out(hat),), fn=_Scale(second)),
+            ),
+            (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
+        ])
+    )
+    env = {
+        u: jnp.asarray(2.0),
+        a: jnp.asarray(6.0),
+        hat: jnp.asarray(6.0 * second),
+    }
+    return graph, problem, env
+
+
+def test_a_multi_node_cycles_residual_is_measured_and_not_guessed():
+    """`d(g(u) - u)/du` on a two-node body is `3 * second - 1`, exactly.
+
+    The regression guard for `_audit/optimise_design.md` §16.7: the body used to be the
+    conditions' **direct** producers, which here is `B` alone, so `A`'s edge from the
+    unknown was either missing (the derivative then comes out `-1` for every `second`,
+    i.e. always "healthy") or unrunnable (`_run_acyclic` raises, and the old bare
+    `except Exception: continue` filed the block as healthy too). Both failures are
+    caught by asserting the *number*, which is why this checks the Jacobian and not
+    merely that the call returned.
+    """
+    from functional_process.sand import fixed_point_residuals
+
+    for second, expected in ((0.25, 3.0 * 0.25 - 1.0), (2.0, 3.0 * 2.0 - 1.0)):
+        graph, problem, env = _chain_fixed_point(second)
+        (measured,) = fixed_point_residuals(graph, env)
+        assert measured.problem == problem
+        assert measured.undetectable is None
+        assert measured.jacobian == pytest.approx(np.array([[expected]]))
+        assert measured.rank == 1
+        assert measured.columns == 1
+        assert not measured.degenerate
+
+
+def test_an_identity_two_node_cycle_is_detected_as_degenerate():
+    """`second = 1/3` makes `g(u) = u` -- an identity fixed point behind two nodes.
+
+    The case the old one-level body could not reach at all: `EtaTurbineStep` and
+    `CplifeAvail`, the two it was written for, were single-node cycles, so an identity
+    hidden behind a longer chain was reported healthy and would reach `reduce_jacobian`
+    as a zero row of `J_RY`, i.e. a singular equality block.
+    """
+    from functional_process.sand import degenerate_fixed_points, fixed_point_residuals
+
+    graph, problem, env = _chain_fixed_point(1.0 / 3.0)
+    (measured,) = fixed_point_residuals(graph, env)
+    assert measured.degenerate
+    assert measured.rank == 0
+    assert degenerate_fixed_points(graph, env) == (problem,)
+
+
+def test_an_unmeasurable_block_is_reported_rather_than_called_healthy():
+    """An env with no value for a body input cannot be differentiated -- and that must
+    not come back as "not degenerate".
+
+    The narrowing of the bare `except`: `fixed_point_residuals` records the exception
+    against the block, and `degenerate_fixed_points` refuses to answer for **any** block
+    rather than reporting the rest healthy. Its own docstring records that this `except`
+    has now silently reported every fixed point healthy twice.
+    """
+    from functional_process.sand import degenerate_fixed_points, fixed_point_residuals
+
+    graph, _problem, env = _chain_fixed_point(0.25)
+    starved = {k: v for k, v in env.items() if k.path_str() != ".toy.u"}
+    (measured,) = fixed_point_residuals(graph, starved)
+    assert measured.jacobian is None
+    assert measured.rank is None
+    assert not measured.degenerate
+    assert "KeyError" in measured.undetectable
+    with pytest.raises(ValueError, match="cannot tell whether"):
+        degenerate_fixed_points(graph, starved)
+
+
+def test_an_array_valued_fixed_point_is_still_measurable():
+    """The tokamak PF ring owns arrays (see
+    `test_the_pf_ring_is_detected_as_an_array_unknown_problem`), and the old
+    `jnp.stack(...).reshape(len(reads))` raised on exactly those -- one more block the
+    bare `except` filed as healthy. Flattening makes the residual a real `(n, n)` matrix,
+    so its rank is a number rather than an exception.
+    """
+    from functional_process.sand import fixed_point_residuals
+
+    u = VarPath((GetAttrKey("toy"), GetAttrKey("v")))
+    hat = VarPath((GetAttrKey("^hat"), GetAttrKey("toy"), GetAttrKey("v")))
+    problem = NodePath((GetAttrKey("P"),))
+    graph = Graph(
+        path_map([
+            (
+                NodePath((GetAttrKey("A"),)),
+                CallableNode(inputs=(In(u),), outputs=(Out(hat),), fn=_Scale(0.5)),
+            ),
+            (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
+        ])
+    )
+    env = {u: jnp.ones((4,)), hat: jnp.full((4,), 0.5)}
+    (measured,) = fixed_point_residuals(graph, env)
+    assert measured.undetectable is None
+    assert measured.jacobian.shape == (4, 4)
+    assert measured.jacobian == pytest.approx(-0.5 * np.eye(4))
+    assert measured.rank == 4
