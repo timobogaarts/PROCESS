@@ -3207,3 +3207,71 @@ arm was checked. Recorded as another instance of §16.3's pattern.
 
 The stellarator is unaffected and still solves cold in both formulations at 58 iterations
 under CLARABEL against PROCESS's 46.
+
+## 20. State, 2026-08-30 (late) — the cold start is a stage now, and it found two things
+
+`optimise_design.md` §17 is the full account. This is the punch list.
+
+**In one line.** §16's rule — *a check performed where the seed supplies the answer is not
+a check* — is now an instrument: `functional_process/cold_start.py` seeds the port's MDA
+from the pre-model `DataStructure` and diffs every owned variable against PROCESS's own
+state after one cold pipeline pass, on all four assembling configurations, pinned in
+`reference_cold_start.txt` with a required reason per row.
+
+**Cold agreement, first run:** stellarator 453/49, `large_tokamak_nof` 631/79,
+`low_aspect_ratio_DEMO` 672/44, `large_tokamak_eval` 688/24 (agree/disagree, plus 2–3
+output-pass-only each). `large_tokamak_nof` warm is 682/33; **the 46-row gap is the point
+of the stage** and it is two causes.
+
+### 20.1 The work this adds, priority-ordered
+
+1. **`inductance.NOH = 30` is wrong on two of the three tokamaks — a new defect, pinned
+   not fixed.** `noh` is `ceil(2 * z_pf_coil_upper[CS] / (r_pf_coil_outer[CS] -
+   r_pf_coil_inner[CS]))` and every mutual inductance depends on it. Measured: 30/30
+   (cold/converged) on `large_tokamak_eval`, **32/27** on `large_tokamak_nof`, **28/27**
+   on `low_aspect_ratio_DEMO`. The constant is right on exactly the file it was measured
+   on, and **no single constant is right at both designs of either other file**, so this
+   is not a matter of picking a better number: it is
+   `_audit/units/models/pfcoil/inductance.md`'s "a structural integer that the solve
+   moves", with a price on it. Substitution measures the price: `NOH = 32` takes
+   `large_tokamak_nof` cold from 631/82 to **662/51**. Whoever answers the convention
+   question should expect `test_the_pinned_noh_is_right_on_one_configuration_and_wrong_on_two`
+   to fail; that is what it is for.
+2. **`stresscl` is now priced, not just named.** §19.1 item 1's last row,
+   `.tfcoil.str_wp`, seeds at `0.0` — the *peak* of the Nb3Sn fit — and costs seven
+   variables on each of the three tokamaks, worst `.tfcoil.temp_tf_superconductor_margin`
+   at `1.58` against PROCESS's `1.24` (+27 %, and **optimistic**). Confirmed by
+   substitution: PROCESS's own cold `str_wp` removes exactly those seven and adds none.
+   Unchanged in priority, now with a number attached.
+3. **The stellarator's 44-row cold chain is closed, and is not work.**
+   `.build.z_tf_inside_half` and everything under it is PROCESS's solve-pass /
+   report-pass ordering split (`st_coil`-then-`st_build` against the reverse). The port
+   computes PROCESS's own output-pass answer to **sixteen digits**; PROCESS is the side
+   that is not self-consistent. Same finding as
+   `mda_harness.EXPLAINED_DISAGREEMENTS`'s `p_plant_electric_base_total_mw` entry, seen
+   from the cold side. Do not chase it.
+4. **A caveat for reading any cold row below `1e-4`.** `PicardDriver`'s own tolerance is
+   `rtol = atol = 1e-4` and `compare` runs at `1e-6`, so a residue at `1e-6` inside or
+   downstream of a `Drive` is the algorithm's stopping criterion showing through.
+   `large_tokamak_eval`'s ten remaining rows are exactly that, at `1.1e-06`. If those
+   rows are ever wanted as a real check, the driver tolerance has to move first — and it
+   cannot today: at `1e-9` the PF block goes non-finite before it converges, which is its
+   own item and is **not** investigated here.
+
+### 20.2 What §19's list still owes, unchanged
+
+Items 2–6 of §19.1 (`cs_fatigue.ncycle`, `degenerate_fixed_points`' one-level body,
+`mdf.inner_residuals`' array crash, SAND's unbounded coupling unknowns, the feasibility
+report's scaling) are untouched by this session.
+
+### 20.3 Verified state
+
+New: `functional_process/cold_start.py`, `functional_process/reference_cold_start.txt`
+(215 rows: 4 agreement counts, 4 error counts, 196 disagreements, 11 output-pass-only),
+`tests/functional_process/test_cold_start.py` (14 tests, ~59 s on a warm cache).
+Changed: `mda_harness.compare` gained `seed=None`; `boundary.computed_by_process` now
+delegates to `cold_start.cold_state` so the declaration-side and value-side halves of the
+missing-producer question come from one evaluation. No port model changed, and no
+existing pin moved.
+
+`tests/functional_process` 5790 → 5804 passed, 5011 skipped. `tests/unit` 846 passed.

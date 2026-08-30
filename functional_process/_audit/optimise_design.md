@@ -2767,3 +2767,199 @@ constraints 31 and 32 are active on `large_tokamak_nof` and the port evaluates b
 so the absence is optimistic. `tfcoil/base.md`'s standing note that `stresscl` "feeds
 only stresses, which no boundary read depends on" was true of the ten boundary reads and
 is false of the constraint surface.
+
+## 17. The cold start becomes a stage (2026-08-30)
+
+§16 ended with a rule and no instrument: **"a check performed where the seed supplies the
+answer is not a check"**, and *"the cold start is the only place the port is tested against
+a graph it has to produce itself."* Twenty-two missing producers had been found by a
+throwaway script; nothing in the harness could have found the twenty-third. This section
+records the stage that closes that -- `functional_process/cold_start.py`,
+`tests/functional_process/test_cold_start.py`, `functional_process/reference_cold_start.txt`
+-- and the three things it found on its first run.
+
+### 17.1 The measurement, and the one line that makes it different
+
+`mda_harness.compare(graph, data)` gained a `seed` argument, defaulting to `data`. That is
+the whole mechanism. Every existing stage seeds boundary inputs from the same converged
+`DataStructure` it diffs against, so a variable nothing owns is handed PROCESS's answer
+through the boundary and passes on a number the port never computed. `cold_start` passes
+**two different structures**:
+
+- `ColdState.seed` -- the `DataStructure` as `init_process` left it, before any model ran
+  (a `deepcopy` of `SingleRun(...).data`; `set_scaled_iteration_variable` destroys it on
+  the first model call, which is why `sand_harness.ReferenceRun.cold` exists too).
+- `ColdState.process` -- the same structure after `load_iteration_variables` and one
+  `Evaluators.fcnvmc1` at the cold `x`. `fcnvmc1` rather than a bare
+  `_call_models_once` because it is what PROCESS's own solver calls on iteration zero,
+  Gauss-Seidel loop and all.
+
+Every genuine `IN.DAT` input is identical in the two -- PROCESS's pipeline does not write
+them, which is what makes them inputs -- so the *only* thing the split changes is that a
+computed field is seeded with its uninitialised default. `boundary.computed_by_process`
+now delegates to `cold_state` rather than running its own `SingleRun`, so the
+declaration-side question (*does anything own it?*) and the value-side question (*does the
+port compute it?*) are answered from one evaluation at one point.
+
+### 17.2 The discriminator, measured rather than argued
+
+§16.3 records three persuasive, wrong answers, each killed by a cheap measurement. The
+cheap measurement for *"is a cold disagreement the port's fault, or has PROCESS simply not
+settled?"* is to run PROCESS's own map further from where `check_agreement` stopped it and
+see what moves. `ColdState.unsettled`/`drift` do exactly that, `EXTRA_PASSES = 3`.
+
+| configuration | GS passes | fields still moving | worst drift | smallest disagreement | largest |
+|---|---|---|---|---|---|
+| `stellarator_helias` | 5 | 88 | `7.00e-07` | `1.21e-04` | `5.27e-01` |
+| `large_tokamak_nof` | 6 | 15 | `2.74e-08` | `1.17e-06` | `1.00e+00` |
+| `low_aspect_ratio_DEMO` | 5 | 0 | `0` | `1.04e-06` | `1.00e+00` |
+| `large_tokamak_eval` | 6 | 0 | `0` | `1.10e-06` | `1.00e+00` |
+
+**PROCESS's cold state is an exact fixed point of PROCESS's own pipeline on two of the
+four**, and creeps at `7e-07` / `2.7e-08` on the others -- in every case at least 40x
+below that configuration's *smallest* reported disagreement. The independent check on
+`large_tokamak_nof`: thirty further passes move the burn time, the TF temperature margin,
+`dlscal` and `.costs.coe` by **exactly zero to eight significant figures**. So
+"the port drives its loops and PROCESS does not" -- true in general, and the reason
+§16.3(b) was tempting -- explains nothing in this pin. The two sides are two fixed points
+of two maps, which is a difference in the maps.
+
+`.numerics.n_model_calls` is excluded (`BOOKKEEPING`): the probe increments it, and it was
+the single reported motion on the two configurations that are exact fixed points -- a
+textbook case of a measurement artefact hiding a null result.
+
+### 17.3 A third outcome that only a cold measurement has: nothing to compare against
+
+`Physics.outplas` is called from `Physics.output()` and never from `run()`
+(`physics.py:219-223`), so `.physics.nu_star`, `.rho_star` and `.beta_mcdonald` are
+computed by PROCESS's **report** pass only. Warm, the converged `DataStructure` holds the
+report pass's values and `mda_harness.compare` sees them agree; cold, PROCESS holds `0.0`
+and the port holds its own correct answer. Neither side is wrong and the comparison is
+empty.
+
+These are counted in `ColdReport.output_pass_only` and scored as neither agreement nor
+defect -- and **the category is derived from PROCESS's measured write set, never from a
+hand list**, the same discipline `boundary.computed_by_process` applies to the converse
+question. A new one appears as a count moving, not as a silent pass.
+
+### 17.4 What this stage found
+
+**Result at the cold point, first run:**
+
+| configuration | agree | disagree | output-pass-only | errors |
+|---|---|---|---|---|
+| `stellarator_helias` | 453 | 49 | 2 | 27 |
+| `large_tokamak_nof` | 631 | 79 | 3 | 22 |
+| `low_aspect_ratio_DEMO` | 672 | 44 | 3 | 22 |
+| `large_tokamak_eval` | 688 | 24 | 3 | 22 |
+
+`large_tokamak_nof` warm, for comparison, is **682 / 33**. The 46-row gap is the stage's
+whole reason for existing, and it is two causes.
+
+**(a) `.tfcoil.str_wp` -- the last missing producer, priced.** It is the one row of
+`boundary.missing_producers_tokamak.txt`, an output of the unported
+`process/models/tfcoil/base.py::stresscl`. Seeded at `DataStructure()`'s `0.0`, which is
+the *peak* of the Nb3Sn critical-current fit, so every critical current comes out high and
+the TF temperature margin with it: `1.58` against PROCESS's `1.24` on `large_tokamak_nof`
+(+27 %), `2.53` against `2.29` on DEMO, `4.77` against `4.48` on eval. Seven variables on
+each of the three tokamaks, and the error is **optimistic** on exactly the quantity
+constraints 33 and 36 read. Confirmed by substitution on `large_tokamak_eval`: replacing
+the seeded `0.0` with PROCESS's own cold `0.0018442328` removes exactly those seven rows
+and adds none (688/27 -> 695/20 on the raw `compare`). §16.9 predicted the *shape* of this
+from the declaration side; this is the number.
+
+**(b) `inductance.NOH = 30` is wrong on two of the three tokamaks -- a new defect.**
+`PFCoil.induct` splits the CS into
+`noh = ceil(2 * z_pf_coil_upper[CS] / (r_pf_coil_outer[CS] - r_pf_coil_inner[CS]))`
+pancake segments (`pfcoil.py:1758-1765`) and every inductance depends on that integer.
+The port pins `NOH = 30`, measured on `large_tokamak_eval`. Measured from PROCESS's own
+`DataStructure`s:
+
+| configuration | ratio cold | `noh` cold | ratio converged | `noh` converged |
+|---|---|---|---|---|
+| `large_tokamak_eval` | 29.028 | **30** | 29.028 | **30** |
+| `large_tokamak_nof` | 31.746 | 32 | 26.867 | 27 |
+| `low_aspect_ratio_DEMO` | 27.010 | 28 | 26.407 | 27 |
+
+The constant is right on exactly the file it was measured on. Confirmed by substitution:
+with `NOH = 32` on `large_tokamak_nof` the cold result goes **631/82 to 662/51**, 31 of
+the 65 chained rows vanish outright and the other 34 fall by one to two orders
+(`.times.t_plant_pulse_burn` `3.76e-04 -> 8.89e-06`; `.pf_coil.ind_pf_cs_plasma_mutual`
+`5.10e-04 -> 6.55e-05`) to below `PicardDriver`'s own `1e-4` tolerance.
+
+**The fix is not a different constant.** `noh` is 32 at this file's cold design and 27 at
+its converged one, so no assembly-time integer is right at both --
+`_audit/units/models/pfcoil/inductance.md`'s "a structural integer that the solve moves"
+is not a stylistic worry, it is a live wrong answer whose size is now measured. Pinned
+with that reason; `test_the_pinned_noh_is_right_on_one_configuration_and_wrong_on_two` is
+the standing measurement and will fail the day the convention question is answered.
+
+**Why the warm harness saw neither.** (a) is invisible warm by construction -- the seed
+supplies `str_wp`. (b) *is* visible warm, at `1.68e-04` on
+`.pf_coil.ind_pf_cs_plasma_mutual`, and had been sitting in `run_mda_harness`'s "all
+disagreements" list unexplained; what the cold stage added was the *cause*, because `noh`
+cold and `noh` converged differ, which is the observation that identifies the mechanism.
+
+**(c) The stellarator's 44-row chain is PROCESS disagreeing with itself, and is not a
+defect.** `Stellarator.run(output=False)` runs `st_coil` then `st_build`;
+`Stellarator.run(output=True)` runs `st_build` then `st_coil` (`stellarator.py:141-146`
+against `:159-165`). Measured at the cold design: PROCESS's solve pass leaves
+`.build.z_tf_inside_half = 3.611990999471611`, **PROCESS's own output-pass order leaves
+`5.513665371874896`, and the port computes `5.513665371874896`** -- the report-pass arm to
+sixteen digits, with `.buildings.a_plant_floor_effective` following at `424256.91005`
+against PROCESS's own `424256.91004`. Everything below is that one geometry through the
+buildings volumes, the site accounts, and the AC-power and cost chain, up to `.costs.coe`
+at `3.4e-02`.
+
+`mda_harness.EXPLAINED_DISAGREEMENTS`'s `.heat_transport.p_plant_electric_base_total_mw`
+entry is the same finding from the other side: warm, PROCESS *stores* the report-pass
+geometry, so the port agrees on `z_tf_inside_half` and disagrees only on the one field the
+report pass never recomputes; cold, PROCESS stores the solve-pass geometry, so the
+disagreement is the whole chain. The port is self-consistent with one of PROCESS's two
+arms and PROCESS is not self-consistent between them, so neither point can be made to
+agree everywhere.
+
+### 17.5 The pin, and the rule that every row carries a reason
+
+`reference_cold_start.txt` holds, per configuration, the agreement count, the *error*
+count and every disagreeing and output-pass-only path. The error count is pinned because
+that is the one bucket where a regression is silent -- an entry there is a variable
+neither passed nor failed. The cold tokamaks sit at 22 against the warm run's 20, and the
+two extra are the same `Physics.output()` cause as §17.3 seen as a shape rather than a
+value: `calculate_effective_charge_ionisation_profiles` is also output-pass-only, so
+`.physics.n_charge_plasma_effective_profile` is `(0,)` in the cold structure against the
+port's `(201,)`. **`cold_start.ACCEPTED` must have an entry for every pinned disagreement
+or the stage refuses**, and it is keyed on
+`(configuration, path)` rather than on the path, because the cause is per-machine:
+`.costs.coe` is off by `3.4e-02` on the stellarator through the report-pass geometry and
+by `2.2e-04` on `large_tokamak_nof` through `noh`.
+
+That rule is the whole lesson of §16 written into the harness. In a bare list of paths a
+row somebody chased and a row nobody looked at read identically, and the twenty-two
+missing producers survived weeks inside exactly that ambiguity. Six causes cover all 196
+pinned disagreements: the two defects above, the stellarator pass-order chain, the
+already-recorded `n_pf_coil_turns` dead tail and `VacuumOld` duct-solve tolerance (both
+deferring to `mda_harness.EXPLAINED_DISAGREEMENTS` as the authority rather than restating
+it), and `large_tokamak_eval`'s ten residual rows at `1.1e-06`, which are `PicardDriver`'s
+own `rtol = atol = 1e-4` showing through a comparison run at `1e-6` -- **two orders better
+than the driver promises**, and a standing caveat for reading any row of this pin below
+`1e-4` inside or downstream of a `Drive`.
+
+`test_the_reason_table_has_no_rows_that_no_longer_disagree` closes the other half:
+`ACCEPTED` may not outlive what it explains. Landing `stresscl` should make seven of its
+entries fail, which is the point -- the failure mode this whole file keeps recording
+(`constraint_48`, `0dca2227`, `stresses.py`'s "neither is read by any active constraint")
+is a documented omission whose justification quietly expired.
+
+### 17.6 What this does not do
+
+- **It does not fix either defect.** Both are pinned with their evidence. `stresscl` is a
+  1053-line unit with its own registry row; `noh` is an open convention question whose
+  answer is not a number.
+- **It does not run the constraint surface.** `unproduced_but_computed` already records
+  that the MDF-assembled graph shows more missing producers than the MDA graph, because
+  constraints declare reads the MDA never makes. The same is true here: this stage
+  measures the MDA graph's owned variables, so a constraint-only read like
+  `.tfcoil.sig_tf_case` cannot appear.
+- **It says nothing about derivatives.** Stage B remains the only check that a right value
+  has the right sensitivity.

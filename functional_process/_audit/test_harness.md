@@ -326,8 +326,23 @@ project's own closed-items list is a supply of defects to reintroduce for exactl
 purpose (`next_steps.md` §11.7). The same question is open for every other tolerance and
 skip in this harness.
 
+### The cold-start stage — `cold_start.py` (2026-08-30)
+
+Everything above seeds from a converged PROCESS run, which is right for the question the
+tiers ask and makes one defect class structurally invisible: a variable no node owns is a
+boundary input, so the seed hands it PROCESS's own answer and the check passes on a number
+the port never computed. `functional_process/cold_start.py` is the stage that does not —
+it seeds from the `DataStructure` as `init_process` left it and diffs against PROCESS's own
+state after one cold pipeline pass, on all four assembling configurations, pinned in
+`reference_cold_start.txt` with a required reason per row.
+
+`optimise_design.md` §17 is its record and is authoritative; the two lines worth carrying
+here are that the mechanism is one argument (`compare(..., seed=...)` — the seed and the
+expectation stop being the same structure) and that whether PROCESS's *own* cold state has
+settled is **measured on every run** (`ColdState.drift`) rather than argued, because
+`optimise_design.md` §16.3 records three arguments about exactly that which were all
+persuasive and all wrong.
+
 ### Not built
 
-`converged` sampling (it raises rather than skipping quietly), and a cold-start path: every
-tier-3/4 harness seeds from a converged PROCESS run, so nothing yet validates the graph
-from a cold input file (`optimise_design.md` §10.6).
+`converged` sampling (it raises rather than skipping quietly).

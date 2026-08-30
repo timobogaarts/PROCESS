@@ -195,64 +195,26 @@ def computed_by_process(input_file: str) -> frozenset[tuple[str, str]]:
     area of a `SingleRun`'s `DataStructure` before any model has run, evaluate once at
     the cold `x`, snapshot again, and return what moved.
 
-    Expensive -- one `SingleRun` plus one `Evaluators.fcnvmc1`, several seconds -- so
-    callers pin the result rather than recomputing it per test.
+    One `SingleRun` plus one `Evaluators.fcnvmc1` -- 0.3 s on a tokamak, 6 s on the
+    stellarator, which re-reads its preset file inside every model call. Callers still
+    pin the result rather than recomputing it per test, because the *graph* half of the
+    comparison is the expensive part, not this.
+
+    **The measurement itself moved to `cold_start.cold_state`** on 2026-08-30, and this
+    is now a one-line delegation to it. Not a tidy-up: `cold_start` is the value-side
+    twin of this function -- it asks whether the graph *computes* what PROCESS computes
+    where this one asks whether it *owns* it -- and the two answers are only comparable
+    if they come from the same pipeline evaluation at the same point. Two independent
+    `SingleRun`s would have been two chances to drift. `cold_state` also caches and
+    copies the input file to a scratch directory first, so a caller no longer leaves an
+    `OUT.DAT`/`MFILE.DAT` beside the repository's own `IN.DAT`.
     """
-    # Imported here, not at module scope: this module is imported by graph assembly,
-    # and `process.main` pulls in the whole of PROCESS. Same reason `_machine_graph`
-    # below defers its own imports.
-    import numpy as np  # noqa: PLC0415
+    # Imported here, not at module scope: this module is imported by graph assembly, and
+    # `cold_start` reaches `process.main`, which pulls in the whole of PROCESS. Same
+    # reason `_machine_graph` below defers its own imports.
+    from functional_process.cold_start import cold_state  # noqa: PLC0415
 
-    from process.core.solver.evaluators import Evaluators  # noqa: PLC0415
-    from process.core.solver.iteration_variables import (  # noqa: PLC0415
-        load_iteration_variables,
-    )
-    from process.main import SingleRun  # noqa: PLC0415
-
-    def snapshot(data):
-        out = {}
-        for area_name in dir(data):
-            if area_name.startswith("_"):
-                continue
-            area = getattr(data, area_name)
-            if not hasattr(area, "__dataclass_fields__"):
-                continue
-            for field in area.__dataclass_fields__:
-                try:
-                    out[area_name, field] = np.array(
-                        getattr(area, field), dtype=float, copy=True
-                    )
-                except (TypeError, ValueError, AttributeError):  # noqa: PERF203
-                    continue
-        return out
-
-    run = SingleRun(input_file, "vmcon")
-    data = run.data
-    before = snapshot(data)
-    n = int(data.numerics.n_iteration_variables)
-    m = int(data.numerics.n_equality_constraints) + int(
-        data.numerics.n_inequality_constraints
-    )
-    load_iteration_variables(data)
-    x = np.array(data.numerics.xcm[:n], dtype=float)
-    Evaluators(run.models, data, x).fcnvmc1(n, m, x, 1)
-    after = snapshot(data)
-
-    moved = set()
-    for key, was in before.items():
-        now = after.get(key)
-        if now is None or now.shape != was.shape:
-            moved.add(key)
-            continue
-        clean = {"nan": 0.0, "posinf": 0.0, "neginf": 0.0}
-        if not np.allclose(
-            np.nan_to_num(was, **clean),
-            np.nan_to_num(now, **clean),
-            rtol=1e-12,
-            atol=0.0,
-        ):
-            moved.add(key)
-    return frozenset(moved)
+    return cold_state(input_file).written
 
 
 def unproduced_but_computed(

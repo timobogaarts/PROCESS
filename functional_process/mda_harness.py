@@ -1226,9 +1226,27 @@ def _is_trivially_zero(got, expected) -> bool:
     )
 
 
-def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
-    """Drive `graph` (any `total_process`-shaped `Graph`) from `data`'s own converged
-    values, and diff every value the schedule produces against `data` itself.
+def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
+    """Drive `graph` (any `total_process`-shaped `Graph`) from `seed`'s values, and diff
+    every value the schedule produces against `data`'s own.
+
+    **`seed` defaults to `data`, which is this module's whole subject and also its
+    blind spot.** Seeding from the same converged run the answers are read off is the
+    right thing to do for the question this module asks -- *"does the graph reproduce an
+    answer PROCESS already found?"* -- and it is structurally unable to see a missing
+    producer: a variable nothing in the graph owns is a boundary input, so the seed
+    hands it PROCESS's own converged value and the comparison passes on a number the
+    port never computed. That is exactly how 983 of 1039 variables agreed to 1e-9 on
+    `large_tokamak_nof` while twenty-two producers were absent
+    (`_audit/optimise_design.md` §16.3(b), §16.5).
+
+    Passing a **different** `seed` is what separates the two. `cold_start.py` passes the
+    pre-model `DataStructure` and compares against PROCESS's state after one pipeline
+    pass: every genuine `IN.DAT` input is identical in the two structures (PROCESS's
+    pipeline does not write them, which is what makes them inputs), so the only thing
+    the split changes is that a missing producer is seeded with its uninitialised
+    default instead of with the answer. **A check performed where the seed supplies the
+    answer is not a check.**
 
     **`atol` is 0.0 -- the comparison is purely relative.** It used to be `1e-9`, on
     the reasoning that a variable small enough should not be held to `rtol`. An
@@ -1250,6 +1268,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
     and is counted in `trivial_agreements`.
     """
     report = ComparisonReport()
+    seed = data if seed is None else seed
     # Audited on the graph *as passed in*, before `_without_excluded`: the excluded
     # nodes are minted islands with nothing to compare numerically, but their static
     # switch kwargs are registered values like any other and are just as capable of
@@ -1282,12 +1301,16 @@ def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
         if var in starts:
             continue
         try:
-            env[var] = jnp.asarray(_ground_truth(data, var))
+            env[var] = jnp.asarray(_ground_truth(seed, var))
         except (AttributeError, KeyError):
             ungrounded.append(var)
             env[var] = jnp.asarray(0.0)  # placeholder -- see `ungrounded_inputs`
-    # Starting guesses for every driven unknown -- same converged run's own value,
-    # written to the unknown's `^guess.*` port.
+    # Starting guesses for every driven unknown -- the seed run's own value, written to
+    # the unknown's `^guess.*` port. Taking these from `seed` too, not from `data`, is
+    # what makes the cold run cold all the way down: a driver started at PROCESS's
+    # converged answer still has to satisfy its own residual, but its *fixed point* is
+    # determined by the block's boundary inputs, and seeding those two from different
+    # points would be neither the warm measurement nor the cold one.
     for problem, problem_type in zip(
         blocking.problems, blocking.problem_types, strict=True
     ):
@@ -1295,7 +1318,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0) -> ComparisonReport:
             continue
         for var, guess in starts_for(driven, problem):
             try:
-                env[guess] = jnp.asarray(_ground_truth(data, var))
+                env[guess] = jnp.asarray(_ground_truth(seed, var))
             except (AttributeError, KeyError):
                 ungrounded.append(var)
                 env[guess] = jnp.asarray(0.0)
