@@ -53,20 +53,30 @@ from functional_process.paths import blanket, divertor, fwbs, physics
 def calculate_divertor_heat_flux_split(
     deg_blkt_inboard_poloidal_plasma,
     p_plasma_neutron_mw,
+    p_plasma_rad_mw,
     n_divertors,
 ):
     """`Divertor.run()`'s unconditional preamble: the single-divertor subtended angle,
-    the solid-angle fraction it corresponds to, and the neutron power it intercepts.
+    the solid-angle fraction it corresponds to, and the neutron and radiation powers it
+    intercepts.
 
     Ports `Divertor.single_divertor_angle` (`process/models/divertor.py:106-113`) and
-    the `f_ster_div_single`/`incident_neutron_power` lines of `run()` (`:41-50`),
-    unchanged. `n_divertors` is read here purely arithmetically (a multiplier), not to
-    branch -- an ordinary input, unlike its role inside `divwade` (see module
-    docstring).
+    the `f_ster_div_single`/`incident_neutron_power`/`incident_radiation_power` lines of
+    `run()` (`:41-56`), unchanged. `n_divertors` is read here purely arithmetically (a
+    multiplier), not to branch -- an ordinary input, unlike its role inside `divwade`
+    (see module docstring).
 
-    `.fwbs.p_div_rad_total_mw` (`run()`'s `incident_radiation_power` sibling call,
-    `:52-56`) is not ported: not on `.tokamak.divertor`'s declared boundary and not
-    needed to produce what is (`divertor.md` § scope discipline).
+    **`.fwbs.p_div_rad_total_mw` joined this node on 2026-08-30 and it is a missing
+    producer, not a new feature.** `divertor.md` § scope discipline dropped it in wave 1
+    with the reason recorded -- `tokamak_boundary.md`'s `.tokamak.divertor` row listed
+    two reads and this was not one of them -- and that reason was about *this* slot's
+    boundary, not about the assembled machine's. Four nodes read the field
+    (`.tokamak.ccfe_hcpb.first_wall_radiation_powers`,
+    `.tokamak.ccfe_hcpb.pumping_power`, `.power.component_thermal_powers`,
+    `.power.delta_eta_step`) and none of them produced it, so all four saw the cold
+    `0.0` while PROCESS computes 10.98 MW on `large_tokamak_nof`.
+    `boundary.unproduced_but_computed` is what named it; see
+    `_audit/optimise_design.md` §16.
 
     Parameters
     ----------
@@ -75,18 +85,29 @@ def calculate_divertor_heat_flux_split(
         `.blanket.deg_blkt_inboard_poloidal_plasma`.
     p_plasma_neutron_mw :
         Total neutron power from the plasma (MW). `.physics.p_plasma_neutron_mw`.
+    p_plasma_rad_mw :
+        Total radiated power from the plasma (MW). `.physics.p_plasma_rad_mw` -- the
+        *clipped* field `.tokamak.physics.total_radiation_power` owns, which is what
+        `divertor.py:54` reads, not one of `radiation_power.py`'s `_unclipped` mints.
     n_divertors :
         Number of divertors (1 or 2). `.divertor.n_divertors`.
 
     Returns
     -------
     tuple
-        `(deg_div_poloidal_plasma, f_ster_div_single, p_div_nuclear_heat_total_mw)`.
+        `(deg_div_poloidal_plasma, f_ster_div_single, p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw)`.
     """
     deg_div_poloidal_plasma = (180.0 - deg_blkt_inboard_poloidal_plasma) / 2.0
     f_ster_div_single = deg_div_poloidal_plasma / 360.0
     p_div_nuclear_heat_total_mw = p_plasma_neutron_mw * f_ster_div_single * n_divertors
-    return deg_div_poloidal_plasma, f_ster_div_single, p_div_nuclear_heat_total_mw
+    p_div_rad_total_mw = p_plasma_rad_mw * f_ster_div_single * n_divertors
+    return (
+        deg_div_poloidal_plasma,
+        f_ster_div_single,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+    )
 
 
 def _divwade_hldiv_base(
@@ -297,15 +318,20 @@ class DivertorHeatFluxSplit(ExplicitFunction):
     deg_div_poloidal_plasma = OutputInto(divertor)
     f_ster_div_single = OutputInto(fwbs)
     p_div_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_div_rad_total_mw = OutputInto(fwbs)
 
     def __call__(
         self,
         deg_blkt_inboard_poloidal_plasma=From(blanket),
         p_plasma_neutron_mw=From(physics),
+        p_plasma_rad_mw=From(physics),
         n_divertors=From(divertor),
     ):
         return calculate_divertor_heat_flux_split(
-            deg_blkt_inboard_poloidal_plasma, p_plasma_neutron_mw, n_divertors
+            deg_blkt_inboard_poloidal_plasma,
+            p_plasma_neutron_mw,
+            p_plasma_rad_mw,
+            n_divertors,
         )
 
 

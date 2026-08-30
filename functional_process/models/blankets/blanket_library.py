@@ -13,11 +13,20 @@ tokamak surface produces.
 
 The other ten entered functions (`set_blanket_module_geometry`,
 `pipe_hydraulic_diameter`, the four poloidal-segment/module-geometry helpers, the two
-poloidal-plasma-angle helpers) are **deliberately out of scope**: measured, every one of
+poloidal-plasma-angle helpers) were **deliberately out of scope**: measured, every one of
 their writes lands in `.blanket.*` or in `.fwbs.b_bz_liq`/`a_bz_liq`/
 `radius_blkt_channel*`, and none of those reaches any of the sixteen variables
 `_audit/tokamak_boundary.md` §`.tokamak.ccfe_hcpb` lists. See
 `_audit/units/models/blankets/blanket_library.md` (read it first) for the evidence table.
+
+**One of the ten is in scope since 2026-08-30**, and the sentence above is exactly why
+it was missed: `calculate_blkt_inboard_poloidal_plasma_angle` writes `.blanket.*`, so
+the reads-nothing-of-*this*-slot's-boundary test passed -- while
+`.tokamak.divertor.heat_flux_split`, a different slot, was reading the field and getting
+the cold `0.0`. The test that catches this is asked of the assembled machine
+(`boundary.unproduced_but_computed`), not of a slot. Nine remain out of scope, on the
+same evidence, and nothing about that evidence rules out the same surprise: what changed
+is that there is now a check that would say so.
 
 **Switches.** `component_volumes` (`blanket_library.py:91-94`) chooses D-shaped vs
 elliptical blanket geometry on `itart == 1 or i_fw_blkt_vv_shape == D_SHAPED`; the
@@ -949,4 +958,96 @@ class BlanketCoverageFactorsDoubleNull(BlanketCoverageFactors):
             f_a_fw_outboard_hcd,
             vol_blkt_total_full_coverage,
             vol_blkt_inboard_full_coverage,
+        )
+
+
+def calculate_blkt_inboard_poloidal_plasma_angle(
+    rminor,
+    dz_blkt_half,
+    dr_fw_plasma_gap_inboard,
+):
+    """Poloidal angle the inboard blanket subtends at the plasma mid-plane (degrees).
+
+    Ports `BlanketLibrary.calculate_blkt_inboard_poloidal_plasma_angle`
+    (`process/models/blankets/blanket_library.py:3771-3797`), unchanged
+    (`np.degrees`/`np.arctan` -> `jnp.degrees`/`jnp.arctan`). The angle is measured from
+    the first-wall surface, and the Shafranov shift is neglected -- PROCESS's own
+    comment at `hcpb.py:51-53` says the formula would take the shift added to the minor
+    radius if it were carried.
+
+    **Called from `CCFE_HCPB.run` (`hcpb.py:64-69`), not from `component_volumes`** --
+    which is why its node is a slot of `.tokamak.ccfe_hcpb` in `hcpb.py`'s own call
+    order rather than one of the four `component_volumes` slots, even though the
+    function is defined on the base class. `DCLL.run` (`dcll.py:117-123`) calls the same
+    staticmethod with the same three arguments; a DCLL machine would bind this same node
+    into its own slot.
+
+    **A missing producer, ported 2026-08-30.** `.tokamak.divertor.heat_flux_split` reads
+    `.blanket.deg_blkt_inboard_poloidal_plasma` -- it is the whole input to
+    `Divertor.single_divertor_angle` -- and nothing owned it, so the divertor's subtended
+    angle was `(180 - 0)/2 = 90` degrees against PROCESS's `(180 - 127.797)/2 = 26.1`,
+    a factor 3.4 on `f_ster_div_single` and on everything the two incident powers feed.
+    This file's own module docstring listed "the two poloidal-plasma-angle helpers" as
+    deliberately out of scope on the grounds that none of their writes reaches
+    `.tokamak.ccfe_hcpb`'s sixteen boundary variables; that was true and it was the wrong
+    question, because the reader is in a different slot. See
+    `boundary.unproduced_but_computed` and `_audit/optimise_design.md` §16.
+
+    Parameters
+    ----------
+    rminor :
+        Plasma minor radius (m). `.physics.rminor`.
+    dz_blkt_half :
+        Vertical half-height of the inboard blanket (m). `.blanket.dz_blkt_half`.
+    dr_fw_plasma_gap_inboard :
+        Inboard first-wall-to-plasma radial gap (m). `.build.dr_fw_plasma_gap_inboard`.
+
+    Returns
+    -------
+    :
+        Poloidal angle subtended by the inboard blanket at the plasma mid-plane
+        (degrees). `.blanket.deg_blkt_inboard_poloidal_plasma`.
+    """
+    return jnp.degrees(
+        2.0 * jnp.arctan(dz_blkt_half / (rminor + dr_fw_plasma_gap_inboard))
+    )
+
+
+class BlanketInboardPoloidalAngle(ExplicitFunction):
+    """cottax node: `calculate_blkt_inboard_poloidal_plasma_angle`. Unswitched --
+    `hcpb.py:64` runs it whatever `n_divertors`, `itart` or the blanket shape are, and
+    the formula reads none of them.
+
+    Owns `.blanket.deg_blkt_inboard_poloidal_plasma` only. Its immediate successor,
+    `.blanket.f_deg_blkt_inboard_poloidal_plasma` (`hcpb.py:71-73`, the same angle over
+    360), is UNPORTED: PROCESS writes it and only `blanket_library.py:687-688`'s
+    reporting reads it, so nothing in this graph does, and owning it would add an output
+    with no consumer rather than close a hole.
+
+    **Its outboard sibling stays UNPORTED, and the reason is structural, not scope.**
+    `hcpb.py:54-62` computes `.blanket.deg_blkt_outboard_poloidal_plasma` from
+    `.divertor.deg_div_poloidal_plasma`, which `.tokamak.divertor.heat_flux_split` owns
+    and computes *from this node's output*. So if the outboard angle is ever ported it
+    must be a **separate node**: folded into this one, the merged node would read what
+    the divertor writes and write what the divertor reads, and the pair would be an SCC.
+
+    PROCESS runs the divertor (`caller.py:324`) *before* the blanket (`:343`), so its
+    `Divertor.run` reads the inboard angle the **previous** pipeline pass wrote -- the
+    coupling is real and `Caller.call_models`' up-to-ten-passes loop is what closes it,
+    which is the implicit-cycle pattern `CLAUDE.md` describes. It stays out of this
+    graph only because nothing here reads the outboard angle; that is an absence of a
+    consumer, not a proof of acyclicity, and a future pass that ports it should expect
+    to declare the loop rather than to find there is none.
+    """
+
+    deg_blkt_inboard_poloidal_plasma = OutputInto(blanket)
+
+    def __call__(
+        self,
+        rminor=From(physics),
+        dz_blkt_half=From(blanket),
+        dr_fw_plasma_gap_inboard=From(build),
+    ):
+        return calculate_blkt_inboard_poloidal_plasma_angle(
+            rminor, dz_blkt_half, dr_fw_plasma_gap_inboard
         )

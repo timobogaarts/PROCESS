@@ -25,11 +25,15 @@ from process.models.divertor import Divertor
 
 
 def _reference_divertor_heat_flux_split(
-    deg_blkt_inboard_poloidal_plasma, p_plasma_neutron_mw, n_divertors
+    deg_blkt_inboard_poloidal_plasma, p_plasma_neutron_mw, p_plasma_rad_mw, n_divertors
 ):
-    """Call PROCESS's `single_divertor_angle` property plus `incident_neutron_power`
-    through the port's signature -- exactly `Divertor.run()`'s own preamble
-    (`process/models/divertor.py:41-50`), composed rather than re-derived.
+    """Call PROCESS's `single_divertor_angle` property plus `incident_neutron_power` and
+    `incident_radiation_power` through the port's signature -- exactly `Divertor.run()`'s
+    own preamble (`process/models/divertor.py:41-56`), composed rather than re-derived.
+
+    `incident_radiation_power` joined this composition on 2026-08-30, when
+    `.fwbs.p_div_rad_total_mw` turned out to be a missing producer read by four nodes of
+    the assembled machine (see the port function's docstring).
     """
     data = DataStructure()
     data.blanket.deg_blkt_inboard_poloidal_plasma = deg_blkt_inboard_poloidal_plasma
@@ -42,7 +46,17 @@ def _reference_divertor_heat_flux_split(
         f_ster_div_single=f_ster_div_single,
         n_divertors=n_divertors,
     )
-    return deg_div_poloidal_plasma, f_ster_div_single, p_div_nuclear_heat_total_mw
+    p_div_rad_total_mw = Divertor.incident_radiation_power(
+        p_plasma_rad_mw=p_plasma_rad_mw,
+        f_ster_div_single=f_ster_div_single,
+        n_divertors=n_divertors,
+    )
+    return (
+        deg_div_poloidal_plasma,
+        f_ster_div_single,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+    )
 
 
 class TestCalculateDivertorHeatFluxSplit(Tier1Contract):
@@ -57,6 +71,7 @@ class TestCalculateDivertorHeatFluxSplit(Tier1Contract):
             "single-null-plausible",
             deg_blkt_inboard_poloidal_plasma=100.0,
             p_plasma_neutron_mw=1500.0,
+            p_plasma_rad_mw=300.0,
             n_divertors=1,
         ),
     ]
@@ -64,6 +79,7 @@ class TestCalculateDivertorHeatFluxSplit(Tier1Contract):
     fuzz_bounds = {
         "deg_blkt_inboard_poloidal_plasma": (10.0, 170.0),
         "p_plasma_neutron_mw": (100.0, 3000.0),
+        "p_plasma_rad_mw": (10.0, 600.0),
         "n_divertors": (1.0, 2.0),
     }
 

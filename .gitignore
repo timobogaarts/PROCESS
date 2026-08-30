@@ -66,3 +66,4 @@ env-fork
 !documentation/**/*.html
 process/_version.py
 *.ipynb
+.claude/

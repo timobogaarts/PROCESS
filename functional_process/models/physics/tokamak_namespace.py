@@ -35,8 +35,10 @@ from functional_process.models.physics.exhaust import EuDemoReAttachmentMetric
 from functional_process.models.physics.physics import (
     BetaLimitFromNorm,
     BetaNormMaxWesson,
+    CoulombLogarithmIonElectron,
     PlasmaEnergyFromBeta,
     PlasmaOhmicHeating,
+    PlasmaSurfaceNeutronFlux,
     PoloidalBeta,
     PositiveSeparatrixPower,
     PulseRampTimes,
@@ -59,7 +61,12 @@ class TokamakPhysics(ModelNamespace):
     """`.tokamak.physics` -- the radiation, separatrix and ohmic blocks of
     `physics.py`.
 
-    Six slots, one of them switched. What is *not* here and might be expected:
+    Eight slots, one of them switched. The last two (`coulomb_logarithm`,
+    `plasma_surface_neutron_flux`, both 2026-08-30) are the two *inline* writes of
+    `Physics.run` -- arithmetic with no `calculate_*` staticmethod around it, which is
+    why a wave that ported this file by its staticmethods walked past both.
+
+    What is *not* here and might be expected:
 
     * `SurfaceAveragedPoloidalField` is `.tokamak.plasma_fields`', because PROCESS puts
       it in `plasma_fields.py` and injects that model into `Physics`.
@@ -123,6 +130,25 @@ class TokamakPhysics(ModelNamespace):
 
     The node's class docstring records why it reads the mint
     `.physics.p_plasma_separatrix_mw_raw` rather than the field."""
+
+    coulomb_logarithm: CoulombLogarithmIonElectron = CoulombLogarithmIonElectron()
+    """`.physics.dlamie` (`physics.py:279-283`). Unswitched, so a default.
+
+    Added 2026-08-30. **A tokamak slot for a field both devices read**, which is the
+    honest shape of it: `Physics.run` is the only writer in `process/` and
+    `caller.py:272-275` returns before the stellarator could reach it, so
+    `.physics.dlamie` stays a genuine boundary input on the stellarator machine and
+    stops being one here. Read by `.physics.ion_electron_equilibration` and
+    `.physics.dimensionless_plasma_parameters`, both of which had been dividing by a
+    frozen `0.0`."""
+
+    plasma_surface_neutron_flux: PlasmaSurfaceNeutronFlux = PlasmaSurfaceNeutronFlux()
+    """`.physics.pflux_plasma_surface_neutron_avg_mw` (`physics.py:835-837`).
+    Unswitched, so a default.
+
+    Added 2026-08-30. Its one reader is `.tokamak.first_wall`, whose neutron flux is
+    `ffwal` times this and nothing else -- so the whole first-wall neutron loading was
+    `0.0` while PROCESS computed `0.71479842`."""
 
 
 class TokamakPlasmaBeta(ModelNamespace):

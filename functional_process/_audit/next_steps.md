@@ -3136,17 +3136,23 @@ by a cheap measurement) is the reusable lesson.
 
 ### 19.1 The work, priority-ordered
 
-1. **Port the remaining twenty-one producers** (`missing_producers_tokamak.txt` pins
-   eighteen on the MDA graph; `.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp` and
-   `.pf_coil.temp_cs_superconductor_margin` appear only once the constraint surface is
-   added). Six have an owning node already and are a **wiring** problem, not a porting
-   one: `.build.dz_blkt_upper`, `.costs.c2214`, `.costs.c2222`, `.costs.c2252`,
-   `.fwbs.dewmkg`, `.tfcoil.sig_tf_wp`. Two — `.tfcoil.sig_tf_case`, `.tfcoil.sig_tf_wp`
-   — appear nowhere in `functional_process/models/` at all.
-   **Not every row is a defect**: `tokamak_boundary.md` has precedent for "produced on
-   the stellarator, an input on the tokamak" being correct, and `.buildings.
-   dz_tf_cryostat` (seed `2.5`, not `0.0`) and `.physics.dlamie` (PROCESS may write it
-   only on the stellarator path) both need that judgement before a node is invented.
+1. **Five producers remain** — seventeen of the twenty-two landed on 2026-08-30 in
+   three parallel waves (`optimise_design.md` §16.9). The pin holds `.costs.c2214`,
+   `.costs.c2222`, `.costs.c2252`, `.fwbs.dewmkg` and `.tfcoil.str_wp`;
+   `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` are missing on the constraint surface
+   only. **The three `tfcoil` rows are one job**: all are outputs of
+   `tfcoil/base.py::stresscl`, 1053 lines with 65 parameters, which wants its own
+   registry row rather than a slot. Its absence is not cosmetic — constraints 31 and 32
+   are active on `large_tokamak_nof` and the port evaluates both as `0 <= max`, dropped
+   rather than wrong, and `str_wp = 0` is the peak of the Nb3Sn strain fit feeding 33
+   and 36.
+   Two triage hints written into the agent briefs were **wrong** and are worth recording
+   as such: `.buildings.dz_tf_cryostat` (seed `2.5`, not `0.0`) looked like a genuine
+   input and is not — `cryostat.py:58-60` writes it unconditionally before the only live
+   reader — and `.physics.dlamie` looked stellarator-only and is the reverse: its only
+   writer in `process/` is on the tokamak path, so **PROCESS's own stellarator computes
+   with a `dlamie` nothing ever wrote**.
+
 2. **Port `cs_fatigue.ncycle`.** `low_aspect_ratio_DEMO`'s SAND cells stop at **zero**
    iterations on c90, violated with an identically zero row at exactly `+1.000000`.
    Blocks that configuration from any start.

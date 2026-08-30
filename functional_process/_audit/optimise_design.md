@@ -2679,3 +2679,73 @@ array bug (`d2890d90`).
   harness's most valuable stage, not its most fragile one.
 - **The guard exists now** and is pinned; the number may only go down.
 - Twenty-one producers remain, plus `ncycle`.
+
+### 16.9 The three waves that followed, and the shapes of the same hole
+
+Pinned at eighteen after the first landing (thirteen now). The next five were taken
+together, and each is a different reason a producer goes missing:
+
+| variable | PROCESS writes it at | producer landed | what the port used instead |
+|---|---|---|---|
+| `.physics.dlamie` | `physics.py:279-283`, inline in `Physics.run` | `.tokamak.physics.coulomb_logarithm` | `0.0` |
+| `.physics.pflux_plasma_surface_neutron_avg_mw` | `physics.py:835-837`, inline | `.tokamak.physics.plasma_surface_neutron_flux` | `0.0` |
+| `.fwbs.p_div_rad_total_mw` | `divertor.py:52-56` | `.tokamak.divertor.heat_flux_split` (extended) | `0.0` |
+| `.blanket.deg_blkt_inboard_poloidal_plasma` | `hcpb.py:64-69` | `.tokamak.ccfe_hcpb.inboard_poloidal_angle` | `0.0` |
+| `.buildings.dz_tf_cryostat` | `cryostat.py:58-60` | `.tokamak.cryostat` (extended) | **`2.5`** |
+
+- **Inline arithmetic with no staticmethod around it** (the two `physics.py` rows). The
+  wave that ported `physics.py` walked its `calculate_*` staticmethods; these two are
+  three lines each written straight into `run()`, and nothing pointed at them.
+- **A slot's boundary row is not the machine's** (`p_div_rad_total_mw`). `divertor.md`
+  dropped `incident_radiation_power` *deliberately and with the reason recorded* —
+  `tokamak_boundary.md`'s `.tokamak.divertor` row listed two reads and this was not one.
+  Four nodes in the assembled machine read it. Same story, same wording, for the blanket
+  angle: `blanket_library.py`'s module docstring called the two poloidal-angle helpers
+  out of scope because none of their writes reaches `.tokamak.ccfe_hcpb`'s own boundary
+  variables — while `.tokamak.divertor` was reading one of them. **The scope test wave 1
+  applied was per-slot, and this defect class is per-machine.**
+- **A device-conditional writer** (`dlamie`). Every grep hit outside `physics.py` is a
+  *read*, two of them in `stellarator.py`, and the only write is in `Physics.run`, which
+  `caller.py:272-275` returns before ever reaching on the stellarator arm. So the same
+  `VarPath` is a genuine boundary input on one machine and a missing producer on the
+  other, and it is correct for it to appear in `reference_boundary.txt` and not in
+  `reference_boundary_tokamak.txt`.
+- **An input PROCESS overwrites** (`dz_tf_cryostat`). The hard one. It is a real
+  `InputVariable` (`core/input.py:377`, default `2.5`), so the port was not reading a
+  suspicious `0.0` — it was reading a plausible number, `2.5` against PROCESS's
+  `5.5730055`. Twenty of the original twenty-two rows could have been found by grepping
+  the cold state for zeros; this one could not, which is the argument for measuring
+  PROCESS's write set instead. It is nonetheless a producer and not an input: the
+  overwrite is unconditional, `caller.py` runs the cryostat (`:351`) before the
+  buildings (`:370`), and every other read of the field in `process/` is inside an
+  `if output:` reporting block in `build.py`. No live read ever sees the input value.
+
+**Two further waves landed the same day**, taking the pin from twenty-two to **five**
+and the tokamak boundary from 361 to **353**:
+
+- **build** (`.tokamak.build`'s `tf_top_height`, `blkt_upper_thickness`,
+  `tf_inner_bore`): `.build.z_tf_top`, `.build.dz_tf_upper_lower_midplane`,
+  `.build.dz_blkt_upper`, `.build.dr_tf_inner_bore`. `z_tf_top` is read by
+  `TfCoilShapeDShapeSingleNull` (coil arc placement) and `pfcoil/geometry.py` (divertor
+  PF coil placement), so at the cold `0.0` **the graph drew a TF coil whose top sat on
+  the midplane**. Four producers landed with *zero* new declared reads.
+- **PF power** (`.power.pf_coil_power`, the port of `Power.pfpwr`, wholly unported
+  until now): `.pf_power.srcktpm`, `.pf_power.ensxpfm`, `.heat_transport.peakmva`,
+  `.pf_coil.p_pf_electric_supplies_mw`, plus `.pf_coil.temp_cs_superconductor_margin`
+  from `.tokamak.cs_coil.temperature_margin`. This wave moved the input count *up*
+  (356 -> 357) because the node declares five genuine `IN.DAT` reads of its own --
+  which is why the boundary total alone is not the measure and
+  `computed_by_process` is.
+
+**What is still missing: five rows.** `.costs.c2214`, `.costs.c2222`, `.costs.c2252`,
+`.fwbs.dewmkg`, `.tfcoil.str_wp`, plus `.tfcoil.sig_tf_case` and `.tfcoil.sig_tf_wp` on
+the constraint surface only. The last three are all outputs of
+`process/models/tfcoil/base.py::stresscl` -- 1053 lines, 65 parameters, a 224-line
+`plane_stress` solver and an `argmax` reduction -- which is a unit with its own registry
+row, not a slot to fill. **The cost of that absence is measured and it is not small:
+constraints 31 and 32 are active on `large_tokamak_nof` and the port evaluates both as
+`0 <= max`** -- dropped constraints, not merely wrong values, which no residual reports
+-- and `str_wp = 0` is the *peak* of the Nb3Sn strain fit feeding constraints 33 and 36,
+so the absence is optimistic. `tfcoil/base.md`'s standing note that `stresscl` "feeds
+only stresses, which no boundary read depends on" was true of the ten boundary reads and
+is false of the constraint surface.

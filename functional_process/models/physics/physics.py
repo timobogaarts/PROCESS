@@ -468,6 +468,97 @@ def plasma_ohmic_heating(
 
 
 # ---------------------------------------------------------------------------
+# Two inline writes of `Physics.run` that had no producer anywhere in this port,
+# both found by `boundary.unproduced_but_computed` on `large_tokamak_nof`
+# (`optimise_design.md` §16). Neither is a call to anything -- they are
+# arithmetic written straight into `run()`, which is exactly why the wave that
+# ported `physics.py` by its `calculate_*` staticmethods walked past them.
+# ---------------------------------------------------------------------------
+
+
+def calculate_coulomb_logarithm_ion_electron(
+    nd_plasma_electrons_vol_avg, temp_plasma_electron_vol_avg_kev
+):
+    """Coulomb logarithm for ion-electron collisions.
+
+    Ports `Physics.run`, `process/models/physics/physics.py:279-283`, unchanged:
+
+        ln(Lambda)_ie = 31.3 - ln(n_e)/2 + ln(T_e [eV])
+
+    **This is a tokamak-only producer, and that is not obvious from a grep.**
+    `.physics.dlamie` is read on both devices -- `stellarator.py:2021` and `:2125` pass
+    it into the stellarator's own physics -- but every one of those is a *read*. The
+    only write in `process/` is this line, inside `Physics.run`, and
+    `caller.py:272-275` returns from the stellarator arm before `caller.py:290` ever
+    calls `Physics.run`. So a stellarator run reads a `dlamie` nothing computed: it is
+    a genuine boundary input there (`reference_boundary.txt`) and a missing producer
+    here, and the same `VarPath` is honestly both. Ported into `.tokamak.physics` for
+    that reason and not into the shared `.physics` subsystem.
+
+    **The electron-electron sibling `.physics.dlamee` (`:274-278`, identical but for
+    `31.0`) is UNPORTED**: nothing in this graph reads it, so owning it would add an
+    output with no consumer instead of closing a hole. Its one PROCESS reader is
+    `current_drive.py:1720`, inside the `i_hcd_primary == 3` arm that `indat.py` refuses
+    for a second reason as well (`ElectronCyclotron.electron_cyclotron_fenstermacher` is
+    not written either) -- so this is two lines of work the day that arm is wanted, not
+    a hole.
+
+    Parameters
+    ----------
+    nd_plasma_electrons_vol_avg :
+        Volume-averaged electron density (m^-3).
+        `.physics.nd_plasma_electrons_vol_avg`.
+    temp_plasma_electron_vol_avg_kev :
+        Volume-averaged electron temperature (keV) -- converted to eV inside, as
+        PROCESS does. `.physics.temp_plasma_electron_vol_avg_kev`.
+
+    Returns
+    -------
+    :
+        Coulomb logarithm, ion-electron (dimensionless). `.physics.dlamie`.
+    """
+    return (
+        31.3
+        - (jnp.log(nd_plasma_electrons_vol_avg) / 2.0)
+        + jnp.log(temp_plasma_electron_vol_avg_kev * 1000.0)
+    )
+
+
+def calculate_pflux_plasma_surface_neutron_avg_mw(p_neutron_total_mw, a_plasma_surface):
+    """Average neutron flux through the plasma surface (MW/m^2).
+
+    Ports `Physics.run`, `process/models/physics/physics.py:835-837`, unchanged: the
+    total neutron power divided by the plasma surface area.
+
+    **`p_neutron_total_mw`, not `p_plasma_neutron_mw`.** PROCESS divides the *total*
+    (`.physics.p_neutron_total_mw`, which `.physics.set_fusion_powers` owns and which
+    includes the beam-target contribution), while the divertor's own split three lines
+    away uses the plasma-only figure. Two different fields with confusable names, and
+    the port takes the one the source line takes.
+
+    A missing producer, ported 2026-08-30: `.tokamak.first_wall` reads this field --
+    `calculate_pflux_fw_neutron_mw_ffwal` is `ffwal` times it and nothing else -- so with
+    no owner the whole first-wall neutron flux was `0.0` against PROCESS's `0.71479842`
+    on `large_tokamak_nof`.
+
+    Parameters
+    ----------
+    p_neutron_total_mw :
+        Total neutron power, plasma plus beam-target (MW).
+        `.physics.p_neutron_total_mw`.
+    a_plasma_surface :
+        Plasma surface area (m^2). `.physics.a_plasma_surface`.
+
+    Returns
+    -------
+    :
+        Average neutron flux through the plasma surface (MW/m^2).
+        `.physics.pflux_plasma_surface_neutron_avg_mw`.
+    """
+    return p_neutron_total_mw / a_plasma_surface
+
+
+# ---------------------------------------------------------------------------
 # cottax nodes
 # ---------------------------------------------------------------------------
 
@@ -755,6 +846,48 @@ class PlasmaOhmicHeating(ExplicitFunction):
             vol_plasma=vol_plasma,
             zeff=n_charge_plasma_effective_vol_avg,
             plasma_res_factor=plasma_res_factor,
+        )
+
+
+class CoulombLogarithmIonElectron(ExplicitFunction):
+    """cottax node: `calculate_coulomb_logarithm_ion_electron`. Unswitched --
+    `Physics.run` computes it on every tokamak pass, whatever the machine's arms.
+
+    Owns `.physics.dlamie` only; see the function's docstring for why `.physics.dlamee`
+    beside it is UNPORTED, and for why this node is a tokamak slot even though both
+    devices read the field.
+    """
+
+    dlamie = OutputInto(physics)
+
+    def __call__(
+        self,
+        nd_plasma_electrons_vol_avg=From(physics),
+        temp_plasma_electron_vol_avg_kev=From(physics),
+    ):
+        return calculate_coulomb_logarithm_ion_electron(
+            nd_plasma_electrons_vol_avg, temp_plasma_electron_vol_avg_kev
+        )
+
+
+class PlasmaSurfaceNeutronFlux(ExplicitFunction):
+    """cottax node: `calculate_pflux_plasma_surface_neutron_avg_mw`. Unswitched.
+
+    Both reads are produced on the tokamak path -- `.physics.p_neutron_total_mw` by
+    `.physics.set_fusion_powers` and `.physics.a_plasma_surface` by
+    `.tokamak.plasma_geom.geometry` -- so this node adds no boundary input at all,
+    only takes one away.
+    """
+
+    pflux_plasma_surface_neutron_avg_mw = OutputInto(physics)
+
+    def __call__(
+        self,
+        p_neutron_total_mw=From(physics),
+        a_plasma_surface=From(physics),
+    ):
+        return calculate_pflux_plasma_surface_neutron_avg_mw(
+            p_neutron_total_mw, a_plasma_surface
         )
 
 

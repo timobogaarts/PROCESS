@@ -250,9 +250,14 @@ class Divertor(ModelNamespace):
     """
 
     heat_flux_split: DivertorHeatFluxSplit = DivertorHeatFluxSplit()
-    """`.fwbs.f_ster_div_single`, `.fwbs.p_div_nuclear_heat_total_mw` and
-    `.divertor.deg_div_poloidal_plasma`. **Not** switch-gated: it runs whatever
-    `i_div_heat_load` is.
+    """`.fwbs.f_ster_div_single`, `.fwbs.p_div_nuclear_heat_total_mw`,
+    `.fwbs.p_div_rad_total_mw` and `.divertor.deg_div_poloidal_plasma`. **Not**
+    switch-gated: it runs whatever `i_div_heat_load` is.
+
+    `.fwbs.p_div_rad_total_mw` was added 2026-08-30. Wave 1 dropped
+    `incident_radiation_power` on the grounds that `tokamak_boundary.md`'s row for this
+    slot did not list its output; four nodes in the assembled machine read it anyway and
+    got the cold `0.0`. A slot's own boundary row is not the machine's.
 
     It reads `.divertor.n_divertors` as an ordinary multiplier, which is the cleanest
     illustration in this wave of the policy `_audit/switch_kwarg_survey.md` needs: a

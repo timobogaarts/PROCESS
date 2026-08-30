@@ -1,10 +1,5 @@
-.blanket.deg_blkt_inboard_poloidal_plasma
-.buildings.dz_tf_cryostat
 .costs.c2214
 .costs.c2222
 .costs.c2252
 .fwbs.dewmkg
-.fwbs.p_div_rad_total_mw
-.physics.dlamie
-.physics.pflux_plasma_surface_neutron_avg_mw
 .tfcoil.str_wp

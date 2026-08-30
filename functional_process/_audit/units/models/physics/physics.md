@@ -5,9 +5,10 @@ confidence: medium-high
 ---
 
 **Ported: the tokamak arm's minimal closure, not the file.**
-`functional_process/models/physics/physics.py` declares eight pure functions and nine
-cottax nodes (two of them family heads; the ramp-time family has two occupants since
-2026-08-27, see §"2026-08-27 — pulse ramp-time arm 0"). Case:
+`functional_process/models/physics/physics.py` declares the tokamak arm's pure functions
+and their cottax nodes (two family heads; the ramp-time family has two occupants since
+2026-08-27, see §"2026-08-27 — pulse ramp-time arm 0", and two more nodes joined
+2026-08-30, see the last section). Case:
 `tests/functional_process/models/physics/test_physics.py`.
 
 **No registry row yet.** `unit_registry.md` is the consolidation pass's file, and
@@ -656,3 +657,72 @@ The **other** invisible blocker was `pf_coil_system_arm`, a derived arm index th
 in no `IN.DAT` and that no column of a switch table can ever reach. That one is answered
 differently: `report()` now ends with one real `machine_from_indat` attempt
 (`assembly_verdict`), which is exact and costs a second.
+
+## 2026-08-30 — the two inline writes of `Physics.run` that had no producer
+
+`optimise_design.md` §16.3. `boundary.unproduced_but_computed` named
+`.physics.dlamie` and `.physics.pflux_plasma_surface_neutron_avg_mw` on
+`large_tokamak_nof`: both written by `Physics.run` on every tokamak pass, both frozen
+at `0.0` in the port, and both read.
+
+**Why this record's own tracing walked past them.** The table in §source is a trace of
+the *eight variables `tokamak_boundary.md` attributes to this slot*, and neither field
+is one of them. Their readers are elsewhere — `.physics.ion_electron_equilibration` and
+`.physics.dimensionless_plasma_parameters` for `dlamie`, `.tokamak.first_wall` for the
+neutron flux — so the per-slot closure test could not see them. The same shape as
+`divertor.md`'s and `blanket_library.md`'s misses in the same wave: the scope test was
+per-slot, the defect is per-machine.
+
+There is a second reason specific to this file. Both are **inline arithmetic inside
+`run()`** with no `calculate_*` staticmethod around them, and the extraction seam this
+record documents (§"the extraction seam") is exactly *"find the staticmethod, lift it"*.
+A field written by three loose lines in a 600-line `run()` has no seam to find.
+
+### `dlamie` — `physics.py:279-283`
+
+| VarPath | read/write | classification | note |
+|---|---|---|---|
+| `.physics.nd_plasma_electrons_vol_avg` | read | explicit-arg | already a boundary input (iteration variable), so no new row |
+| `.physics.temp_plasma_electron_vol_avg_kev` | read | explicit-arg | likewise |
+| `.physics.dlamie` | write | explicit-arg | `:279-283` |
+
+**A tokamak-only producer for a field both devices read, and the asymmetry is real.**
+`grep -rn dlamie process/` finds twelve hits; eleven are reads, two of them in
+`stellarator.py` (`:2021`, `:2125`). The only write is this one, inside `Physics.run`,
+and `caller.py:272-275` returns from the stellarator arm before `caller.py:290` calls
+it. So a PROCESS stellarator run computes with a `dlamie` nothing ever wrote. The port
+reproduces that faithfully: `.physics.dlamie` stays an `input` row of
+`reference_boundary.txt` and is gone from `reference_boundary_tokamak.txt`, and the node
+is a slot of `.tokamak.physics` rather than of the shared `.physics`.
+
+The electron-electron sibling `.physics.dlamee` (`:274-278`, the same expression with
+`31.0` for `31.3`) is **not** ported. Nothing in this graph reads it; its one PROCESS
+reader is `current_drive.py:1720`, inside the `i_hcd_primary == 3` arm that `indat.py`
+refuses for an independent second reason (`ElectronCyclotron.
+electron_cyclotron_fenstermacher` is unwritten). Two lines of work the day that arm is
+wanted, not a hole — and `indat.py`'s refusal text still names `.physics.dlamee`
+correctly, because it still is not written.
+
+### `pflux_plasma_surface_neutron_avg_mw` — `physics.py:835-837`
+
+| VarPath | read/write | classification | note |
+|---|---|---|---|
+| `.physics.p_neutron_total_mw` | read | explicit-arg | owned by `.physics.set_fusion_powers` — **not** `p_plasma_neutron_mw`, see below |
+| `.physics.a_plasma_surface` | read | explicit-arg | owned by `.tokamak.plasma_geom.geometry` |
+| `.physics.pflux_plasma_surface_neutron_avg_mw` | write | explicit-arg | `:835-837` |
+
+Both reads are produced on the tokamak path, so this node adds no boundary input at all.
+Its one reader, `.tokamak.first_wall`, computes the first-wall neutron flux as `ffwal`
+times this and nothing else (`fw.py:397-417`), so the whole first-wall neutron loading
+was `0.0` against PROCESS's `0.71479842` on `large_tokamak_nof`.
+
+**`p_neutron_total_mw`, not `p_plasma_neutron_mw`.** PROCESS divides by the plasma
+surface area the *total* neutron power including the beam-target contribution, while
+`Divertor.run`'s split three lines away uses the plasma-only figure. Two confusable
+names for two different fields; the port takes the one the source line takes.
+
+Both tier 1, both with a `Tier1Contract` in `test_physics.py` whose reference is
+transcribed from the source lines (the convention this file already uses for its five
+other inline blocks), legacy points read off the converged `large_tokamak_eval` run —
+`dlamie = 17.834316405099152`, `pflux = 1.0911547345980364` there. No cycle created;
+the guess half of the tokamak boundary is unmoved at 11.
