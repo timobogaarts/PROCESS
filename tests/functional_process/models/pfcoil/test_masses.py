@@ -52,16 +52,20 @@ from functional_process.models.pfcoil import (
     N_PF_GROUPS,
     NGC2,
     PLASMA_INDEX,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
 )
 from functional_process.models.pfcoil.currents import (
     calculate_cs_flux_swing,
     calculate_equilibrium_currents,
     calculate_plasma_initiation_currents,
+    calculate_plasma_initiation_currents_no_central_solenoid,
     calculate_time_point_currents,
+    calculate_time_point_currents_no_central_solenoid,
 )
 from functional_process.models.pfcoil.fields import (
     calculate_coil_current_waveform,
     calculate_pf_coil_peak_fields,
+    calculate_pf_coil_peak_fields_no_central_solenoid,
 )
 from functional_process.models.pfcoil.geometry import (
     calculate_cs_geometry,
@@ -70,6 +74,7 @@ from functional_process.models.pfcoil.geometry import (
 )
 from functional_process.models.pfcoil.masses import (
     calculate_pf_coil_masses,
+    calculate_pf_coil_masses_no_central_solenoid,
     calculate_pf_coil_sizes,
 )
 from functional_process.models.pfcoil.volt_seconds import (
@@ -690,3 +695,442 @@ class TestPFCoilChainCsWstNb3Sn(Tier1Contract):
         "f_z_cs_tf_internal": _LEGACY["f_z_cs_tf_internal"],
     }
     fuzz_bounds = _fuzz_bounds()
+
+
+# ---------------------------------------------------------------------------
+# The same contract for a machine with **no central solenoid** -- `iohcl = 0`,
+# `i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`, the spherical
+# tokamaks' PF coil system (`indat._pf_coil_system_arm` arm 2). Added 2026-08-30.
+#
+# One reference and one ported side again, and for the same reason: none of these blocks
+# is a PROCESS callable, so the oracle has to be `pfcoil()` itself, driven at `iohcl = 0`
+# with the eight-coil topology. What it covers that `TestPFCoilChain` cannot:
+# `geometry.calculate_pf_coil_group_positions`' `i_pf_location = 4` arm and its
+# stacked-radius arm, `calculate_pf_coil_positions` with no CS slot,
+# `currents.calculate_plasma_initiation_currents_no_central_solenoid`,
+# `calculate_equilibrium_currents` with one fixed-current group and three solved-for,
+# `calculate_time_point_currents_no_central_solenoid`,
+# `fields.calculate_pf_coil_peak_fields_no_central_solenoid`,
+# `masses.calculate_pf_coil_sizes` on a topology with no CS entry, and
+# `masses.calculate_pf_coil_masses_no_central_solenoid`.
+# ---------------------------------------------------------------------------
+
+I_PF_LOCATION_SPHERICAL_TOKAMAK = np.array([2, 3, 3, 4, 0, 0, 0, 0, 0, 0])
+"""`.pf_coil.i_pf_location` on both spherical tokamaks -- one pair above the TF coil,
+two pairs outside it, one generally placed."""
+
+
+def _ported_pf_coil_chain_no_central_solenoid(
+    z_tf_top,
+    dz_tf_upper_lower_midplane,
+    rpf2,
+    zref,
+    rref,
+    r_tf_outboard_out,
+    dr_pf_tf_outboard_out_offset,
+    rmajor,
+    rminor,
+    kappa,
+    triang,
+    aspect,
+    plasma_current,
+    beta_poloidal_vol_avg,
+    ind_plasma_internal_norm,
+    alfapf,
+    f_j_cs_start_pulse_end_flat_top,
+    j_pf_coil_wp_peak,
+    c_pf_coil_turn_peak_input,
+    pf_current_safety_factor,
+    f_a_pf_coil_void,
+    sigpfcf,
+    sigpfcalw,
+    den_steel,
+    den_pf_conductor,
+):
+    """`_ported_pf_coil_chain`'s sibling, composed in the same order at `iohcl = 0`.
+
+    Ten declared inputs fewer, which is the whole point of the arm: nothing here reads
+    the CS's geometry, its current density, its steel fraction or its conductor density,
+    because `ohcalc` is never entered on this machine and no CS field has a producer.
+    """
+    n = SPHERICAL_TOKAMAK_TOPOLOGY.n_pf_coils
+    r_pf_outside_tf_midplane = r_tf_outboard_out + dr_pf_tf_outboard_out_offset
+    r_group, z_group = calculate_pf_coil_group_positions(
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        rpf2=rpf2,
+        z_tf_top=z_tf_top,
+        dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
+        zref=zref,
+        r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+        rref=rref,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+        r_pf_outside_tf_is_constant=True,
+    )
+    r_pf_coil_middle, z_pf_coil_middle = calculate_pf_coil_positions(
+        r_pf_coil_middle_group_array=r_group,
+        z_pf_coil_middle_group_array=z_group,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+    ssq0, ccl0 = calculate_plasma_initiation_currents_no_central_solenoid(
+        rmajor=rmajor,
+        rminor=rminor,
+        r_pf_coil_middle_group_array=r_group,
+        z_pf_coil_middle_group_array=z_group,
+        alfapf=alfapf,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+    ccls, b_plasma_vertical_required = calculate_equilibrium_currents(
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        aspect=aspect,
+        plasma_current=plasma_current,
+        beta_poloidal_vol_avg=beta_poloidal_vol_avg,
+        ind_plasma_internal_norm=ind_plasma_internal_norm,
+        r_pf_coil_middle_group_array=r_group,
+        z_pf_coil_middle_group_array=z_group,
+        alfapf=alfapf,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+    (
+        c_start,
+        c_flat,
+        c_end,
+        f_j_cs_start_end_flat_top,
+    ) = calculate_time_point_currents_no_central_solenoid(
+        ccl0=ccl0,
+        ccls=ccls,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+    c_peak, f_c_peak_time = calculate_coil_current_waveform(c_start, c_flat, c_end)
+
+    (
+        n_pf_coil_turns,
+        r_pf_coil_inner,
+        r_pf_coil_outer,
+        z_pf_coil_upper,
+        z_pf_coil_lower,
+        r_pf_coil_outer_max,
+    ) = calculate_pf_coil_sizes(
+        c_pf_cs_coils_peak_ma=c_peak,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        pf_current_safety_factor=pf_current_safety_factor,
+        r_cs_inner=None,
+        r_cs_outer=None,
+        z_cs_upper=None,
+        z_cs_lower=None,
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+    b_pf_coil_peak, bpf2 = calculate_pf_coil_peak_fields_no_central_solenoid(
+        c_pf_cs_coil_pulse_start_ma=c_start,
+        c_pf_cs_coil_flat_top_ma=c_flat,
+        c_pf_cs_coil_pulse_end_ma=c_end,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner[:n],
+        r_pf_coil_outer=r_pf_coil_outer[:n],
+        z_pf_coil_upper=z_pf_coil_upper[:n],
+        z_pf_coil_lower=z_pf_coil_lower[:n],
+        rmajor=rmajor,
+        plasma_current=plasma_current,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+    (
+        m_pf_coil_conductor,
+        m_pf_coil_structure,
+        pfcaseth,
+        m_pf_coil_conductor_total,
+        m_pf_coil_structure_total,
+        m_pf_coil_max,
+        ricpf,
+    ) = calculate_pf_coil_masses_no_central_solenoid(
+        c_pf_cs_coils_peak_ma=c_peak,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        n_pf_coil_turns=n_pf_coil_turns[:n],
+        r_pf_coil_middle=r_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner[:n],
+        r_pf_coil_outer=r_pf_coil_outer[:n],
+        z_pf_coil_upper=z_pf_coil_upper[:n],
+        z_pf_coil_lower=z_pf_coil_lower[:n],
+        b_pf_coil_peak=b_pf_coil_peak,
+        bpf2=bpf2,
+        f_a_pf_coil_void=f_a_pf_coil_void,
+        pf_current_safety_factor=pf_current_safety_factor,
+        sigpfcf=sigpfcf,
+        sigpfcalw=sigpfcalw,
+        den_steel=den_steel,
+        den_pf_conductor=den_pf_conductor,
+        topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+    )
+
+    return (
+        m_pf_coil_conductor_total,
+        m_pf_coil_structure_total,
+        m_pf_coil_conductor,
+        m_pf_coil_structure,
+        pfcaseth,
+        m_pf_coil_max,
+        ricpf,
+        r_pf_coil_outer_max,
+        n_pf_coil_turns,
+        r_pf_coil_inner,
+        r_pf_coil_outer,
+        z_pf_coil_upper,
+        z_pf_coil_lower,
+        r_pf_coil_middle,
+        z_pf_coil_middle,
+        ccl0,
+        ccls,
+        ssq0,
+        b_plasma_vertical_required,
+        f_j_cs_start_end_flat_top,
+        c_start,
+        c_flat,
+        c_end,
+        c_peak,
+        f_c_peak_time,
+        b_pf_coil_peak,
+        bpf2,
+        r_pf_outside_tf_midplane,
+    )
+
+
+def _reference_pf_coil_chain_no_central_solenoid(
+    z_tf_top,
+    dz_tf_upper_lower_midplane,
+    rpf2,
+    zref,
+    rref,
+    r_tf_outboard_out,
+    dr_pf_tf_outboard_out_offset,
+    rmajor,
+    rminor,
+    kappa,
+    triang,
+    aspect,
+    plasma_current,
+    beta_poloidal_vol_avg,
+    ind_plasma_internal_norm,
+    alfapf,
+    f_j_cs_start_pulse_end_flat_top,
+    j_pf_coil_wp_peak,
+    c_pf_coil_turn_peak_input,
+    pf_current_safety_factor,
+    f_a_pf_coil_void,
+    sigpfcf,
+    sigpfcalw,
+    den_steel,
+    den_pf_conductor,
+):
+    """`PFCoil.pfcoil()` at `iohcl = 0` on the spherical tokamaks' topology.
+
+    `.pf_coil.j_cs_flat_top_end` keeps its `pfcoil_variables.py` default `1.85e7`,
+    because the guard at `pfcoil.py:358` reads its product with
+    `f_j_cs_start_pulse_end_flat_top` and the block behind that guard is the
+    plasma-initiation solve -- which *does* run on this arm, with `nfxf = 0` and
+    therefore no dependence on either value. That the ported side declares neither and
+    still agrees is the check.
+
+    `.tfcoil.dcond[8]` carries the REBCO tape density and every other element is
+    `_DCOND_POISON`, the same discrimination `TestPFCoilChainCsWstNb3Sn` uses.
+    """
+    n = SPHERICAL_TOKAMAK_TOPOLOGY.n_pf_coils
+    data = DataStructure()
+    build, p, physics = data.build, data.pf_coil, data.physics
+
+    build.iohcl = 0
+    build.z_tf_top = z_tf_top
+    build.dz_tf_upper_lower_midplane = dz_tf_upper_lower_midplane
+
+    p.n_pf_coil_groups = SPHERICAL_TOKAMAK_TOPOLOGY.n_pf_coil_groups
+    p.n_pf_coils_in_group = np.array(
+        [*SPHERICAL_TOKAMAK_TOPOLOGY.n_pf_coils_in_group, 0, 0, 0, 0, 0, 0], dtype=int
+    )
+    p.i_pf_location = I_PF_LOCATION_SPHERICAL_TOKAMAK.copy()
+    p.i_pf_conductor = 0
+    p.i_pf_current = 1
+    p.i_r_pf_outside_tf_placement = 1
+    p.i_pf_superconductor = 9
+    p.first_call = False
+
+    p.rpf2 = rpf2
+    p.zref = np.concatenate([np.asarray(zref, dtype=float), np.ones(6)])
+    p.rref = np.concatenate([np.asarray(rref, dtype=float), np.full(6, 7.0)])
+    p.dr_pf_tf_outboard_out_offset = dr_pf_tf_outboard_out_offset
+    p.alfapf = alfapf
+    p.f_j_cs_start_pulse_end_flat_top = f_j_cs_start_pulse_end_flat_top
+    p.pf_current_safety_factor = pf_current_safety_factor
+    p.sigpfcf = sigpfcf
+    p.sigpfcalw = sigpfcalw
+
+    p.j_pf_coil_wp_peak = np.zeros(NGC2)
+    p.j_pf_coil_wp_peak[:n] = j_pf_coil_wp_peak
+    p.c_pf_coil_turn_peak_input = np.zeros(NGC2)
+    p.c_pf_coil_turn_peak_input[:n] = c_pf_coil_turn_peak_input
+    p.f_a_pf_coil_void = np.full(NGC2, 0.3)
+    p.f_a_pf_coil_void[:n] = f_a_pf_coil_void
+    p.ind_pf_cs_plasma_mutual = np.zeros((NGC2, NGC2))
+    p.n_pf_coil_turns = np.full(NGC2, 100.0)
+
+    data.superconducting_tfcoil.r_tf_outboard_out = r_tf_outboard_out
+    data.fwbs.den_steel = den_steel
+    data.tfcoil.dcond = np.full(
+        np.asarray(data.tfcoil.dcond).shape, _DCOND_POISON, dtype=float
+    )
+    data.tfcoil.dcond[8] = den_pf_conductor
+
+    physics.rmajor = rmajor
+    physics.rminor = rminor
+    physics.kappa = kappa
+    physics.triang = triang
+    physics.aspect = aspect
+    physics.plasma_current = plasma_current
+    physics.beta_poloidal_vol_avg = beta_poloidal_vol_avg
+    physics.ind_plasma_internal_norm = ind_plasma_internal_norm
+    physics.itart = 1
+    physics.itartpf = 1
+
+    cs_fatigue = CsFatigue()
+    cs_fatigue.data = data
+    cs_coil = CSCoil(cs_fatigue=cs_fatigue)
+    cs_coil.data = data
+    model = PFCoil(cs_fatigue=cs_fatigue, cs_coil=cs_coil)
+    model.data = data
+    model.pfcoil()
+
+    plasma = SPHERICAL_TOKAMAK_TOPOLOGY.plasma_index
+    return (
+        p.m_pf_coil_conductor_total,
+        p.m_pf_coil_structure_total,
+        p.m_pf_coil_conductor[:n],
+        p.m_pf_coil_structure[:n],
+        p.pfcaseth[:n],
+        p.m_pf_coil_max,
+        p.ricpf,
+        p.r_pf_coil_outer_max,
+        p.n_pf_coil_turns[: plasma + 1],
+        p.r_pf_coil_inner[: plasma + 1],
+        p.r_pf_coil_outer[: plasma + 1],
+        p.z_pf_coil_upper[: plasma + 1],
+        p.z_pf_coil_lower[: plasma + 1],
+        p.r_pf_coil_middle[:n],
+        p.z_pf_coil_middle[:n],
+        p.ccl0,
+        p.ccls,
+        p.ssq0,
+        physics.b_plasma_vertical_required,
+        p.f_j_cs_start_end_flat_top,
+        p.c_pf_cs_coil_pulse_start_ma[:n],
+        p.c_pf_cs_coil_flat_top_ma[:n],
+        p.c_pf_cs_coil_pulse_end_ma[:n],
+        p.c_pf_cs_coils_peak_ma[:n],
+        p.f_c_pf_cs_peak_time_array[:n],
+        p.b_pf_coil_peak[:n],
+        p.bpf2[:n],
+        p.r_pf_outside_tf_midplane,
+    )
+
+
+_LEGACY_SPHERICAL_TOKAMAK = {
+    "z_tf_top": 4.0,
+    "dz_tf_upper_lower_midplane": -0.5,
+    "rpf2": -1.63,
+    "zref": np.array([3.6, 1.2, 2.5, 5.2]),
+    "rref": np.array([7.0, 7.0, 7.0, 2.0]),
+    "r_tf_outboard_out": 8.3,
+    "dr_pf_tf_outboard_out_offset": 1.0,
+    "rmajor": 4.5,
+    "rminor": 2.5,
+    "kappa": 2.8,
+    "triang": 0.5,
+    "aspect": 1.8,
+    "plasma_current": 20.0e6,
+    "beta_poloidal_vol_avg": 1.1,
+    "ind_plasma_internal_norm": 1.2,
+    "alfapf": 5e-10,
+    "f_j_cs_start_pulse_end_flat_top": 0.9,
+    "j_pf_coil_wp_peak": np.full(8, 1.1e7),
+    "c_pf_coil_turn_peak_input": np.full(8, 40000.0),
+    "pf_current_safety_factor": 1.0,
+    "f_a_pf_coil_void": np.full(8, 0.3),
+    "sigpfcf": 0.666,
+    "sigpfcalw": 500.0,
+    "den_steel": 7800.0,
+    "den_pf_conductor": 6200.0,
+}
+"""A plausible spherical tokamak, **not a converged point**, and the difference is worth
+naming.
+
+`rmajor`, `aspect`, `kappa`, `triang`, `rpf2`, `zref` and `rref` are
+`spherical_tokamak_eval.IN.DAT`'s own (`:239-244`, `:260`, `:285`, `:291`, `:296`); the
+build quantities the PF system reads (`z_tf_top`, `dz_tf_upper_lower_midplane`,
+`r_tf_outboard_out`) are chosen consistent with a 4.5 m machine, because neither ST file
+converges through this port yet -- both are still refused on the CroCo TF turn -- and
+there is therefore no converged run to read them off.
+
+That costs nothing this contract measures. The oracle is PROCESS's own `pfcoil()`
+evaluated at exactly these numbers, so what is compared is two functions at one point of
+their common domain, and the fuzz sweep moves every one of them by +-10%."""
+
+
+def _spherical_tokamak_fuzz_bounds(fraction=0.10):
+    """`+-fraction` around every legacy input but `zref`, elementwise and sign-safe.
+
+    `zref` is held fixed for the reason `_fuzz_bounds` holds it fixed on the
+    conventional arm: it sets the outside-TF and generally-placed coil heights, and this
+    contract is measuring the chain rather than the placement's domain.
+    """
+    bounds = {}
+    for name, value in _LEGACY_SPHERICAL_TOKAMAK.items():
+        if name == "zref":
+            continue
+        base = np.asarray(value, dtype=float)
+        low = base * (1.0 - fraction)
+        high = base * (1.0 + fraction)
+        bounds[name] = (np.minimum(low, high), np.maximum(low, high))
+    return bounds
+
+
+class TestPFCoilChainSphericalTokamak(Tier1Contract):
+    """The no-central-solenoid chain, against `PFCoil.pfcoil()` at `iohcl = 0`.
+
+    Bit-for-bit at the legacy point, on every one of the twenty-eight returned
+    quantities -- including both SVD solves. The tolerance below is still the chain's
+    rather than zero, for the reason `TestPFCoilChain`'s gives: the fuzz sweep moves the
+    least-squares matrix and scipy's and jax's LAPACK drivers need not agree in the last
+    bits everywhere.
+    """
+
+    audit_record = "models/pfcoil/masses.md"
+    reference = _reference_pf_coil_chain_no_central_solenoid
+    ported = _ported_pf_coil_chain_no_central_solenoid
+    reference_domain_errors = (ProcessValueError,)
+
+    value_tolerance = Tolerance(
+        rtol=5e-11,
+        atol=0.0,
+        reason=(
+            "the same amplification argument as TestPFCoilChain -- two SVD solves "
+            "feeding the coil sizing, the Green's-function peak field and the mass "
+            "sums. Measured worst component 0.0 at the reference point (all "
+            "twenty-eight outputs agree bit for bit), so the headroom is entirely for "
+            "the fuzz sweep"
+        ),
+    )
+
+    samples = [legacy_sample("spherical-tokamak-plausible", **_LEGACY_SPHERICAL_TOKAMAK)]
+
+    fuzz_fixed = {"zref": _LEGACY_SPHERICAL_TOKAMAK["zref"]}
+    fuzz_bounds = _spherical_tokamak_fuzz_bounds()

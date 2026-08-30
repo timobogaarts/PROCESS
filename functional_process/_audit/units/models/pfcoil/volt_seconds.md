@@ -141,3 +141,39 @@ test_the_merged_pf_volt_second_burn_time_cycle_keeps_its_cuts` pins the table.
 
 None. The `iohcl == 0` arm and the CS stress-profile consumer of `c_pf_coil_turn`
 stay UNPORTED with the rest of their chains.
+
+
+## 2026-08-30 (evening) -- the spherical tokamaks' PF coil system, arm 2
+
+`next_steps.md` §18.2 listed five of the eight blockers stopping
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` as `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`). All five are closed. The package now carries
+a `PFCoilTopology` (`models/pfcoil/__init__.py`) instead of five loose module
+constants, and `indat._pf_coil_system_arm` has a third positive arm, `2`, for a machine
+with **no central solenoid**: `iohcl = 0`, `n_pf_coil_groups = 4`,
+`i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`,
+`i_pf_superconductor = 9`, picture-frame TF. `.tokamak.cs_coil` is `None` on that arm.
+
+**`-3` was a refusal that outlived its cause, and that is a correction to this
+record's own frontier.** The predicate refused `itart == 1` *or* `itartpf != 0`.
+Measured over `process/`: `itartpf` is read in exactly two places
+(`pfcoil.py:1250`, `:411`) and both guard on `itart == 1 **and** itartpf == 0`, and
+`core/init.py:640` overwrites `i_pf_location[:3]` under the same conjunction. Both
+tracked ST files set `itartpf = 1`, so **neither ever reaches PROCESS's Peng and
+Strickler ST arm** -- their PF coil system takes the conventional placement and the
+conventional SVD current solve throughout. The predicate is now the conjunction, and
+the ST arm stays UNPORTED with nothing reaching it.
+
+**What changed here.** `calculate_pf_volt_seconds_no_central_solenoid` ports `vsec` at
+`iohcl = 0` (`pfcoil.py:1622-1626`): `nef = n_pf_cs_plasma_circuits - 1` rather than
+`- 2`, so the PF loop covers every circuit but the plasma, and `vs_cs_ramp`/
+`vs_cs_burn` are **never assigned** (`:1647`, `:1677`, both guarded) so PROCESS's
+totals are the PF sums plus those fields' storage default `0.0`. Reproduced by leaving
+them out of the sums rather than adding a zero: the two are the same number and only
+one of them is the same statement.
+
+`PFCoilVoltSecondsNoCentralSolenoid` is a subclass -- same two reads, same two outputs,
+different body -- because `vsec` reads the inductance matrix and the turn currents whole
+on both arms. `PFCoilTurnCurrents` is one node for both, with the topology deciding
+which row is the plasma's. Bit-exact against `vsec` in the scratch verification;
+**an ST case in `test_volt_seconds.py` is owed** -- see `next_steps.md`.

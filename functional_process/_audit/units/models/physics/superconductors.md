@@ -333,3 +333,28 @@ of `inf`/`nan` -- the same convention JAX already uses at `jnp.maximum`'s kink.
 `Tier1Contract.test_gradient_finite_at_zero` (`--fp-gradients`) now checks the whole
 class automatically: it zeroes each differentiable argument in turn and requires a
 finite Jacobian wherever the value is finite.
+
+
+## 2026-08-30 (evening) -- `hijc_rebco` ported
+
+`hijc_rebco` (`process/models/superconductors.py:728-849`) is the eighth in-scope
+function and was the one gap this record left: Wolf et al.'s parameterisation with
+Hazelton and Zhai's fit values, the arm `superconpf`/`supercon` take at
+`i_*_superconductor == 9`. Ported for `models/pfcoil/superconductor.py`'s REBCO PF
+strand occupant (both spherical tokamaks set `i_pf_superconductor = 9`);
+`next_steps.md` §18.5 records that the CroCo TF package needs the same function, so
+this landing may collide with that wave's.
+
+**Its `if b_critical > b_conductor` is not a switch and does not become an occupant.**
+Both arms are the same expression with the sign of the last bracket reversed, and
+PROCESS says why in its own comment (`:818-822`): above the critical field
+`1 - b/b_c` is negative and its fractional power `q = 0.9` would be `nan`, so the sign
+is flipped to keep a real -- and deliberately negative -- critical current. Written as
+one `jnp.where`-free `safe_pow(|1 - b/b_c|, q)`, which is the same number on both sides
+and forms no `nan` in an untaken branch to leak into the tangent. `safe_pow` guards both
+fractional powers of the reduced field.
+
+Verified **bit-exact** against PROCESS over 200 random `(temp_conductor, b_conductor)`
+points spanning both sides of the critical field (worst relative difference `0.0`), with
+finite gradients in both arguments. **A harness contract is owed** -- see
+`next_steps.md`.

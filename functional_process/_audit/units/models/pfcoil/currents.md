@@ -240,3 +240,54 @@ package.
   outputs on this arm and *inputs* on `i_pf_current = 0` (`:684-685`). A dual-role field
   across occupants is fine while only one occupant exists, but the second occupant
   cannot simply be another class binding the same `VarPath` in the other direction.
+
+
+## 2026-08-30 (evening) -- the spherical tokamaks' PF coil system, arm 2
+
+`next_steps.md` §18.2 listed five of the eight blockers stopping
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` as `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`). All five are closed. The package now carries
+a `PFCoilTopology` (`models/pfcoil/__init__.py`) instead of five loose module
+constants, and `indat._pf_coil_system_arm` has a third positive arm, `2`, for a machine
+with **no central solenoid**: `iohcl = 0`, `n_pf_coil_groups = 4`,
+`i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`,
+`i_pf_superconductor = 9`, picture-frame TF. `.tokamak.cs_coil` is `None` on that arm.
+
+**`-3` was a refusal that outlived its cause, and that is a correction to this
+record's own frontier.** The predicate refused `itart == 1` *or* `itartpf != 0`.
+Measured over `process/`: `itartpf` is read in exactly two places
+(`pfcoil.py:1250`, `:411`) and both guard on `itart == 1 **and** itartpf == 0`, and
+`core/init.py:640` overwrites `i_pf_location[:3]` under the same conjunction. Both
+tracked ST files set `itartpf = 1`, so **neither ever reaches PROCESS's Peng and
+Strickler ST arm** -- their PF coil system takes the conventional placement and the
+conventional SVD current solve throughout. The predicate is now the conjunction, and
+the ST arm stays UNPORTED with nothing reaching it.
+
+**What changed here.** Three functions gained a static `topology`
+(`calculate_plasma_initiation_currents`, `calculate_equilibrium_currents`,
+`calculate_cs_flux_swing`, `calculate_time_point_currents`) and two siblings were
+written for the no-solenoid arm:
+
+- `calculate_plasma_initiation_currents_no_central_solenoid` -- `nfxf = 0`
+  (`pfcoil.py:202-204`), so `efc` gets **no fixed-current filaments** and four CS reads
+  disappear. The block still runs: its guard reads `j_cs_pulse_start`, which
+  `pfcoil()` computes unconditionally at `:161-164` from two inputs that keep their
+  defaults.
+- `calculate_time_point_currents_no_central_solenoid` -- no CS entry, and it **owns**
+  `.pf_coil.f_j_cs_start_end_flat_top = 1.0` (`:660`). That one is not absence:
+  `pfcoil_variables.py:206` gives the field `0.0` and PROCESS writes `1.0` over it on
+  this arm, so leaving the slot empty would have put a different machine's ratio into
+  the beginning-of-flat-top currents. Its only reader in either tree is
+  `time_point_currents` itself.
+
+`calculate_equilibrium_currents` is one function for both machines: which groups are
+fixed-current and which are solved for follows from `i_pf_location`, and the read set
+does not move. Two findings inside it, both reproduced as written --
+`ncls0[ccount] = 2` (`:538`) is a **literal**, not the group's own coil count, and the
+fixed filaments are one per coil of every `i_pf_location = 2` group (`:501-511`), not
+one per group.
+
+**The four-node cycle is broken on arm 2.** `flux_swing` lives in `.tokamak.cs_coil`,
+which is `None` there, so `sizes -> flux_swing -> time_point_currents` has no middle
+and `.pf_coil.f_j_cs_start_end_flat_top` stops being loop-carried. Whether the
+remaining edges close a ring is `Blocking`'s question and is not measured here.

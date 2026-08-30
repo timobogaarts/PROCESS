@@ -257,3 +257,48 @@ occasionally is not.
   in the group that same geometric factor. On this run each multi-coil group is an
   up/down symmetric pair, so it is exact; on an asymmetric group it would be an
   unflagged approximation. Reproduced. Worth a note to the physics owners.
+
+
+## 2026-08-30 (evening) -- the spherical tokamaks' PF coil system, arm 2
+
+`next_steps.md` §18.2 listed five of the eight blockers stopping
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` as `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`). All five are closed. The package now carries
+a `PFCoilTopology` (`models/pfcoil/__init__.py`) instead of five loose module
+constants, and `indat._pf_coil_system_arm` has a third positive arm, `2`, for a machine
+with **no central solenoid**: `iohcl = 0`, `n_pf_coil_groups = 4`,
+`i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`,
+`i_pf_superconductor = 9`, picture-frame TF. `.tokamak.cs_coil` is `None` on that arm.
+
+**`-3` was a refusal that outlived its cause, and that is a correction to this
+record's own frontier.** The predicate refused `itart == 1` *or* `itartpf != 0`.
+Measured over `process/`: `itartpf` is read in exactly two places
+(`pfcoil.py:1250`, `:411`) and both guard on `itart == 1 **and** itartpf == 0`, and
+`core/init.py:640` overwrites `i_pf_location[:3]` under the same conjunction. Both
+tracked ST files set `itartpf = 1`, so **neither ever reaches PROCESS's Peng and
+Strickler ST arm** -- their PF coil system takes the conventional placement and the
+conventional SVD current solve throughout. The predicate is now the conjunction, and
+the ST arm stays UNPORTED with nothing reaching it.
+
+**What changed here.** `calculate_pf_plasma_inductances_no_central_solenoid` ports
+`induct` at `iohcl = 0`: three of the four blocks survive and one does not. `induct`
+guards the CS/plasma block (`pfcoil.py:1812`), the CS self-inductance and the CS/PF
+block (`:1893`) on `iohcl != 0`, and sets `nef = n_cs_pf_coils` rather than
+`n_cs_pf_coils - 1` (`:1943-1947`) so the PF/PF block covers every coil.
+
+Four reads disappear with those blocks -- `dr_cs` and `r_cs_middle` outright, and
+`r_pf_coil_inner`/`r_pf_coil_outer`, whose only use in `induct` is the CS's radial
+winding thickness (`:1896-1899`). **`noh` disappears too**, and that closes this
+record's own open question *for this arm only*: the piecewise-constant discontinuity in
+`dr_cs` that the reference occupant carries is simply not present on a machine with no
+solenoid, because `roh`/`zoh` are never filled (`:1783-1791` is guarded) and no
+inductance depends on the segment count. The policy gap stands for arms 0 and 1.
+
+`PFCoilInductanceNoCentralSolenoid` is a sibling rather than a subclass, for the same
+reason `PFCoilMassesNoCentralSolenoid` is: it declares four reads fewer, and a subclass
+may widen a signature but not narrow it. It owns `.pf_coil.ind_pf_cs_plasma_mutual`
+whole, on the same producer-side argument. Bit-exact against `induct` in the
+scratch verification that produced `TestPFCoilChainSphericalTokamak`'s point; the
+matrix itself is not in that contract's return tuple (it is `induct`'s, not
+`pfcoil()`'s) and **an ST case in `test_inductance.py` is owed** -- see
+`next_steps.md`.

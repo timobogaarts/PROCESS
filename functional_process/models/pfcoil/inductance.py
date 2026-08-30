@@ -34,6 +34,7 @@ so `noh = 30` and the nearest step is `0.9 %` away in `dr_cs`. This port fixes
 switch whose value moves with the solve is not something the conventions cover.
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
@@ -45,6 +46,8 @@ from functional_process.models.pfcoil import (
     N_PF_GROUPS,
     NGC2,
     PLASMA_INDEX,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+    PFCoilTopology,
 )
 from functional_process.models.pfcoil.fields import calculate_b_field_at_point
 from functional_process.paths import build, pf_coil, physics
@@ -319,6 +322,99 @@ def _last_coil_of_each_group():
     return [sum(N_COILS_IN_GROUP[: group + 1]) - 1 for group in range(N_PF_GROUPS)]
 
 
+def calculate_pf_plasma_inductances_no_central_solenoid(
+    rmajor,
+    ind_plasma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    n_pf_coil_turns,
+    *,
+    topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+):
+    """`calculate_pf_cs_plasma_inductances` on a machine with no central solenoid.
+
+    Ports `PFCoil.induct`, `process/models/pfcoil.py:1721-1984`, at `iohcl = 0`.
+    **Three of the four blocks survive and one does not**: `induct` guards the CS/plasma
+    block (`:1812`), the CS self-inductance and the CS/PF block (`:1893`) on
+    `iohcl != 0`, and sets `nef = n_cs_pf_coils` rather than `n_cs_pf_coils - 1`
+    (`:1943-1947`) so that the PF/PF block covers every coil. What is left is the plasma
+    self-inductance, PF/plasma and PF/PF.
+
+    Six reads disappear with those blocks: `dr_cs` and `r_cs_middle` outright, and
+    `r_pf_coil_inner`/`r_pf_coil_outer`, whose only use in `induct` is the CS's radial
+    winding thickness (`:1896-1899`). **`noh` disappears too**, and that is worth its own
+    sentence: it is the module docstring's "graph-assembly constant computed from solved
+    geometry", and on this arm `roh`/`zoh` are never filled (`:1783-1791` is guarded) so
+    no inductance depends on it at all. The piecewise-constant discontinuity in
+    `dr_cs` that the reference occupant carries is simply not present here.
+
+    Parameters
+    ----------
+    rmajor :
+        Plasma major radius (m) -- the plasma filament's radius. `.physics.rmajor`.
+    ind_plasma :
+        Plasma self inductance (H). `.physics.ind_plasma`.
+    r_pf_coil_middle, z_pf_coil_middle :
+        Coil centres (m), `topology.n_cs_pf_coils` entries -- all PF coils.
+    z_pf_coil_upper, z_pf_coil_lower :
+        Coil upper/lower edges (m); their difference gives the equivalent circular
+        cross-section of the diagonal's thin-ring self-inductance.
+    n_pf_coil_turns :
+        Turns in each coil.
+
+    Returns
+    -------
+    :
+        `.pf_coil.ind_pf_cs_plasma_mutual`, `(NGC2, NGC2)`.
+    """
+    ind = jnp.zeros((NGC2, NGC2))
+    plasma = topology.plasma_index
+    n_pf_coils = topology.n_pf_coils
+
+    # --- Plasma self ------------------------------------------------------------------
+    ind = ind.at[plasma, plasma].set(ind_plasma)
+
+    # --- PF coil / plasma -------------------------------------------------------------
+    last_of_group = [
+        topology.last_coil_of_group(group) for group in range(topology.n_pf_coil_groups)
+    ]
+    xpfpl = _mutual_inductances(
+        jnp.stack([r_pf_coil_middle[c] for c in last_of_group]),
+        jnp.stack([z_pf_coil_middle[c] for c in last_of_group]),
+        rmajor,
+        0.0,
+    )
+    for group in range(topology.n_pf_coil_groups):
+        for coil in topology.coils_of_group(group):
+            value = xpfpl[group] * n_pf_coil_turns[coil]
+            ind = ind.at[coil, plasma].set(value)
+            ind = ind.at[plasma, coil].set(value)
+
+    # --- PF coil / PF coil ------------------------------------------------------------
+    for i in range(n_pf_coils):
+        others = [k for k in range(n_pf_coils) if k != i]
+        xc = _mutual_inductances(
+            jnp.stack([r_pf_coil_middle[k] for k in others]),
+            jnp.stack([z_pf_coil_middle[k] for k in others]),
+            r_pf_coil_middle[i],
+            z_pf_coil_middle[i],
+        )
+        for slot, k in enumerate(others):
+            ind = ind.at[i, k].set(xc[slot] * n_pf_coil_turns[k] * n_pf_coil_turns[i])
+
+        rl = jnp.abs(z_pf_coil_upper[i] - z_pf_coil_lower[i]) / jnp.sqrt(jnp.pi)
+        ind = ind.at[i, i].set(
+            RMU0
+            * n_pf_coil_turns[i] ** 2
+            * r_pf_coil_middle[i]
+            * (jnp.log(8.0 * r_pf_coil_middle[i] / rl) - _PF_SELF_INDUCTANCE_OFFSET)
+        )
+
+    return ind
+
+
 class PFCoilInductance(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.inductance`.
 
@@ -369,4 +465,45 @@ class PFCoilInductance(ExplicitFunction):
             z_pf_coil_upper=z_pf_coil_upper[:N_CS_PF_COILS],
             z_pf_coil_lower=z_pf_coil_lower[:N_CS_PF_COILS],
             n_pf_coil_turns=n_pf_coil_turns[:N_CS_PF_COILS],
+        )
+
+
+class PFCoilInductanceNoCentralSolenoid(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.inductance`, the `iohcl = 0` occupant.
+
+    Owns `.pf_coil.ind_pf_cs_plasma_mutual` whole, on the same producer-side argument as
+    `PFCoilInductance`: `induct` zeroes the matrix (`pfcoil.py:1750`) and fills every
+    entry of the circuit block that exists on this arm.
+
+    Not a subclass of `PFCoilInductance`, because it declares **four reads fewer**
+    (`dr_cs`, `r_cs_middle`, `r_pf_coil_inner`, `r_pf_coil_outer`) and a subclass may
+    only widen a signature, not narrow it. See
+    `calculate_pf_plasma_inductances_no_central_solenoid` for which blocks of `induct`
+    those reads belong to and why the `noh` discontinuity is not present here.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    ind_pf_cs_plasma_mutual = OutputInto(pf_coil)
+
+    def __call__(
+        self,
+        rmajor=From(physics),
+        ind_plasma=From(physics),
+        r_pf_coil_middle=From(pf_coil),
+        z_pf_coil_middle=From(pf_coil),
+        z_pf_coil_upper=From(pf_coil),
+        z_pf_coil_lower=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+    ):
+        n = self.topology.n_cs_pf_coils
+        return calculate_pf_plasma_inductances_no_central_solenoid(
+            rmajor=rmajor,
+            ind_plasma=ind_plasma,
+            r_pf_coil_middle=r_pf_coil_middle[:n],
+            z_pf_coil_middle=z_pf_coil_middle[:n],
+            z_pf_coil_upper=z_pf_coil_upper[:n],
+            z_pf_coil_lower=z_pf_coil_lower[:n],
+            n_pf_coil_turns=n_pf_coil_turns[:n],
+            topology=self.topology,
         )

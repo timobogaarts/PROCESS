@@ -34,6 +34,7 @@ occupant, not a parameter of this one. On `large_tokamak_eval.IN.DAT`
 (`pfcoil_variables.py:230`), which is the arm baked in below.
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -46,7 +47,9 @@ from functional_process.models.pfcoil import (
     CS_INDEX,
     N_PF_COILS,
     NGC2,
-    PLASMA_INDEX,
+    REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+    PFCoilTopology,
 )
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import fwbs, pf_coil, physics, tfcoil
@@ -59,6 +62,13 @@ I_PF_SUPERCONDUCTOR = 3
 I_CS_SUPERCONDUCTOR = 1
 """`.pf_coil.i_cs_superconductor` on the reference run (`:245`) -- ITER Nb3Sn,
 `pfcoil_variables.py:256`. Selects `.tfcoil.dcond[0] = 6080` kg/m^3."""
+
+I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO = 9
+"""`.pf_coil.i_pf_superconductor` on both spherical tokamaks
+(`spherical_tokamak_eval.IN.DAT:235`, `st_regression.IN.DAT:1670`) -- Hazelton/Zhai
+REBCO tape, `pfcoil_variables.py`'s `SuperconductorModel` value 9. Selects
+`.tfcoil.dcond[8]` as the PF conductor density and, in `superconpf`, the `hijc_rebco`
+critical surface."""
 
 I_CS_SUPERCONDUCTOR_WST_NB3SN = 5
 """`.pf_coil.i_cs_superconductor` on `low_aspect_ratio_DEMO.IN.DAT:845` -- WST Nb3Sn.
@@ -86,6 +96,8 @@ def calculate_pf_coil_sizes(
     rmajor,
     rminor,
     kappa,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """Winding-pack cross-section, turn count and edge coordinates for every coil.
 
@@ -128,19 +140,18 @@ def calculate_pf_coil_sizes(
         z_pf_coil_lower, r_pf_coil_outer_max)` -- the five arrays eight entries long
         (six PF coils, the CS, the plasma) and the largest PF coil outer radius (m).
     """
-    peak = c_pf_cs_coils_peak_ma[:N_PF_COILS]
-    area = (
-        jnp.abs(peak * 1.0e6 / j_pf_coil_wp_peak[:N_PF_COILS]) * pf_current_safety_factor
-    )
-    turns_pf = jnp.abs(peak * 1.0e6 / c_pf_coil_turn_peak_input[:N_PF_COILS])
+    n = topology.n_pf_coils
+    peak = c_pf_cs_coils_peak_ma[:n]
+    area = jnp.abs(peak * 1.0e6 / j_pf_coil_wp_peak[:n]) * pf_current_safety_factor
+    turns_pf = jnp.abs(peak * 1.0e6 / c_pf_coil_turn_peak_input[:n])
 
     # Square cross-section. `safe_sqrt`, not `jnp.sqrt`: `area` is zero whenever
     # `pf_current_safety_factor` or a coil's peak current is, and `sqrt`'s derivative
     # there is `inf` while its value is correct -- `_audit/next_steps.md` §9's trap, and
     # `test_gradient_finite_at_zero` catches it at exactly that point.
     dx = 0.5 * safe_sqrt(area)
-    r_mid = r_pf_coil_middle[:N_PF_COILS]
-    z_mid = z_pf_coil_middle[:N_PF_COILS]
+    r_mid = r_pf_coil_middle[:n]
+    z_mid = z_pf_coil_middle[:n]
 
     r_inner_pf = r_mid - dx
     r_outer_pf = r_mid + dx
@@ -150,29 +161,27 @@ def calculate_pf_coil_sizes(
 
     r_pf_coil_outer_max = jnp.max(r_outer_pf)
 
-    turns_cs = (
-        1.0e6
-        * jnp.abs(c_pf_cs_coils_peak_ma[CS_INDEX])
-        / c_pf_coil_turn_peak_input[CS_INDEX]
-    )
+    turns_tail = [jnp.ones(())]
+    r_inner_tail = [rmajor - rminor]
+    r_outer_tail = [rmajor + rminor]
+    z_upper_tail = [rminor * kappa]
+    z_lower_tail = [-rminor * kappa]
+    if topology.has_central_solenoid:
+        cs = topology.cs_index
+        turns_tail.insert(
+            0,
+            1.0e6 * jnp.abs(c_pf_cs_coils_peak_ma[cs]) / c_pf_coil_turn_peak_input[cs],
+        )
+        r_inner_tail.insert(0, jnp.asarray(r_cs_inner))
+        r_outer_tail.insert(0, jnp.asarray(r_cs_outer))
+        z_upper_tail.insert(0, jnp.asarray(z_cs_upper))
+        z_lower_tail.insert(0, jnp.asarray(z_cs_lower))
 
-    n_pf_coil_turns = jnp.concatenate([turns_pf, jnp.stack([turns_cs, jnp.ones(())])])
-    r_pf_coil_inner = jnp.concatenate([
-        r_inner_pf,
-        jnp.stack([jnp.asarray(r_cs_inner), rmajor - rminor]),
-    ])
-    r_pf_coil_outer = jnp.concatenate([
-        r_outer_pf,
-        jnp.stack([jnp.asarray(r_cs_outer), rmajor + rminor]),
-    ])
-    z_pf_coil_upper = jnp.concatenate([
-        z_upper_pf,
-        jnp.stack([jnp.asarray(z_cs_upper), rminor * kappa]),
-    ])
-    z_pf_coil_lower = jnp.concatenate([
-        z_lower_pf,
-        jnp.stack([jnp.asarray(z_cs_lower), -rminor * kappa]),
-    ])
+    n_pf_coil_turns = jnp.concatenate([turns_pf, jnp.stack(turns_tail)])
+    r_pf_coil_inner = jnp.concatenate([r_inner_pf, jnp.stack(r_inner_tail)])
+    r_pf_coil_outer = jnp.concatenate([r_outer_pf, jnp.stack(r_outer_tail)])
+    z_pf_coil_upper = jnp.concatenate([z_upper_pf, jnp.stack(z_upper_tail)])
+    z_pf_coil_lower = jnp.concatenate([z_lower_pf, jnp.stack(z_lower_tail)])
 
     return (
         n_pf_coil_turns,
@@ -181,6 +190,139 @@ def calculate_pf_coil_sizes(
         z_pf_coil_upper,
         z_pf_coil_lower,
         r_pf_coil_outer_max,
+    )
+
+
+def _pf_coil_masses_per_coil(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    n_pf_coil_turns,
+    r_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    b_pf_coil_peak,
+    bpf2,
+    f_a_pf_coil_void,
+    pf_current_safety_factor,
+    sigpfcf,
+    sigpfcalw,
+    den_steel,
+    den_pf_conductor,
+    n_pf_coils,
+):
+    """The per-PF-coil half of `pfcoil()`'s mass loop (`pfcoil.py:849-1026`).
+
+    Everything the loop does for an `i_pf_location != 1` superconducting coil, and
+    nothing the central solenoid needs -- so it is the same body on both arms, and the
+    two callers differ only in what they append to it.
+
+    Returns
+    -------
+    tuple
+        `(m_pf_coil_conductor, m_pf_coil_structure, pfcaseth, m_pf_coil_max)` -- three
+        arrays `n_pf_coils` long (kg, kg, m) and the heaviest coil (tonnes).
+    """
+    peak = c_pf_cs_coils_peak_ma[:n_pf_coils]
+    turns = n_pf_coil_turns[:n_pf_coils]
+    r_mid = r_pf_coil_middle[:n_pf_coils]
+
+    area = (
+        jnp.abs(peak * 1.0e6 / j_pf_coil_wp_peak[:n_pf_coils]) * pf_current_safety_factor
+    )
+    aturn = area / turns
+    rll = 2.0 * jnp.pi * r_mid * turns
+    volpf = aturn * rll
+
+    m_conductor_pf = volpf * den_pf_conductor * (1.0 - f_a_pf_coil_void)
+
+    forcepf = 0.5e6 * (b_pf_coil_peak + bpf2) * jnp.abs(peak) * r_mid
+    areaspf = sigpfcf * forcepf / (sigpfcalw * 1.0e6)
+
+    drpdz = (
+        r_pf_coil_outer[:n_pf_coils]
+        - r_pf_coil_inner[:n_pf_coils]
+        + jnp.abs(z_pf_coil_upper[:n_pf_coils] - z_pf_coil_lower[:n_pf_coils])
+    )
+    pfcaseth_pf = 0.25 * (-drpdz + jnp.sqrt(drpdz * drpdz + 4.0 * areaspf))
+    m_structure_pf = areaspf * 2.0 * jnp.pi * r_mid * den_steel
+
+    m_pf_coil_max = jnp.max(1.0e-3 * (m_conductor_pf + m_structure_pf))
+    return m_conductor_pf, m_structure_pf, pfcaseth_pf, m_pf_coil_max
+
+
+def calculate_pf_coil_masses_no_central_solenoid(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    n_pf_coil_turns,
+    r_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    b_pf_coil_peak,
+    bpf2,
+    f_a_pf_coil_void,
+    pf_current_safety_factor,
+    sigpfcf,
+    sigpfcalw,
+    den_steel,
+    den_pf_conductor,
+    *,
+    topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+):
+    """`calculate_pf_coil_masses` on a machine with no central solenoid.
+
+    Ports `pfcoil()`'s per-coil mass loop (`process/models/pfcoil.py:849-1026`) and its
+    summations (`:1052-1064`) at `iohcl = 0`, `i_pf_conductor = SUPERCONDUCTING`.
+    `ohcalc`'s CS steel and conductor block (`:3504-3583`) is **not** ported here and
+    not replaced by zeros: `ohcalc` is not entered at all on this arm
+    (`:1048-1050`), so `.pf_coil.a_cs_steel_poloidal` and `.pf_coil.a_cs_cable_space`
+    have no producer -- absence, spelled as absence, exactly as
+    `models/tokamak/namespace.py`'s rule asks. The two conductor densities become one:
+    `den_cs_conductor` is not read, because there is no CS conductor to weigh.
+
+    Returns
+    -------
+    tuple
+        `(m_pf_coil_conductor, m_pf_coil_structure, pfcaseth,
+        m_pf_coil_conductor_total, m_pf_coil_structure_total, m_pf_coil_max, ricpf)` --
+        three per-coil arrays `topology.n_pf_coils` long (kg, kg, m), then the totals
+        (kg, kg, tonnes, MA).
+    """
+    (
+        m_pf_coil_conductor,
+        m_pf_coil_structure,
+        pfcaseth,
+        m_pf_coil_max,
+    ) = _pf_coil_masses_per_coil(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        n_pf_coil_turns=n_pf_coil_turns,
+        r_pf_coil_middle=r_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner,
+        r_pf_coil_outer=r_pf_coil_outer,
+        z_pf_coil_upper=z_pf_coil_upper,
+        z_pf_coil_lower=z_pf_coil_lower,
+        b_pf_coil_peak=b_pf_coil_peak,
+        bpf2=bpf2,
+        f_a_pf_coil_void=f_a_pf_coil_void,
+        pf_current_safety_factor=pf_current_safety_factor,
+        sigpfcf=sigpfcf,
+        sigpfcalw=sigpfcalw,
+        den_steel=den_steel,
+        den_pf_conductor=den_pf_conductor,
+        n_pf_coils=topology.n_pf_coils,
+    )
+    return (
+        m_pf_coil_conductor,
+        m_pf_coil_structure,
+        pfcaseth,
+        jnp.sum(m_pf_coil_conductor),
+        jnp.sum(m_pf_coil_structure),
+        m_pf_coil_max,
+        jnp.sum(jnp.abs(c_pf_cs_coils_peak_ma[: topology.n_cs_pf_coils])),
     )
 
 
@@ -266,31 +408,30 @@ def calculate_pf_coil_masses(
         a_cs_steel_poloidal, a_cs_cable_space)` -- the three per-coil arrays seven
         entries long (kg, kg, m), then the totals (kg, kg, tonnes, MA, m^2, m^2).
     """
-    peak = c_pf_cs_coils_peak_ma[:N_PF_COILS]
-    turns = n_pf_coil_turns[:N_PF_COILS]
-    r_mid = r_pf_coil_middle[:N_PF_COILS]
-
-    area = (
-        jnp.abs(peak * 1.0e6 / j_pf_coil_wp_peak[:N_PF_COILS]) * pf_current_safety_factor
+    (
+        m_conductor_pf,
+        m_structure_pf,
+        pfcaseth_pf,
+        m_pf_coil_max,
+    ) = _pf_coil_masses_per_coil(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+        n_pf_coil_turns=n_pf_coil_turns,
+        r_pf_coil_middle=r_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner,
+        r_pf_coil_outer=r_pf_coil_outer,
+        z_pf_coil_upper=z_pf_coil_upper,
+        z_pf_coil_lower=z_pf_coil_lower,
+        b_pf_coil_peak=b_pf_coil_peak,
+        bpf2=bpf2,
+        f_a_pf_coil_void=f_a_pf_coil_void,
+        pf_current_safety_factor=pf_current_safety_factor,
+        sigpfcf=sigpfcf,
+        sigpfcalw=sigpfcalw,
+        den_steel=den_steel,
+        den_pf_conductor=den_pf_conductor,
+        n_pf_coils=N_PF_COILS,
     )
-    aturn = area / turns
-    rll = 2.0 * jnp.pi * r_mid * turns
-    volpf = aturn * rll
-
-    m_conductor_pf = volpf * den_pf_conductor * (1.0 - f_a_pf_coil_void)
-
-    forcepf = 0.5e6 * (b_pf_coil_peak + bpf2) * jnp.abs(peak) * r_mid
-    areaspf = sigpfcf * forcepf / (sigpfcalw * 1.0e6)
-
-    drpdz = (
-        r_pf_coil_outer[:N_PF_COILS]
-        - r_pf_coil_inner[:N_PF_COILS]
-        + jnp.abs(z_pf_coil_upper[:N_PF_COILS] - z_pf_coil_lower[:N_PF_COILS])
-    )
-    pfcaseth_pf = 0.25 * (-drpdz + jnp.sqrt(drpdz * drpdz + 4.0 * areaspf))
-    m_structure_pf = areaspf * 2.0 * jnp.pi * r_mid * den_steel
-
-    m_pf_coil_max = jnp.max(1.0e-3 * (m_conductor_pf + m_structure_pf))
 
     # --- Central Solenoid (`ohcalc`, superconducting arm) ---
     r_cs_middle = r_pf_coil_middle[CS_INDEX]
@@ -353,6 +494,9 @@ class PFCoilSizes(ExplicitFunction):
     `currents.py`'s module docstring.
     """
 
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static. Which slot each coil occupies and whether there is a CS slot to fill."""
+
     n_pf_coil_turns = OutputInto(pf_coil)
     r_pf_coil_inner = OutputInto(pf_coil)
     r_pf_coil_outer = OutputInto(pf_coil)
@@ -376,6 +520,40 @@ class PFCoilSizes(ExplicitFunction):
         rminor=From(physics),
         kappa=From(physics),
     ):
+        return self._sized(
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            c_pf_coil_turn_peak_input,
+            r_pf_coil_middle,
+            z_pf_coil_middle,
+            pf_current_safety_factor,
+            r_cs_inner,
+            r_cs_outer,
+            z_cs_upper,
+            z_cs_lower,
+            rmajor,
+            rminor,
+            kappa,
+        )
+
+    def _sized(
+        self,
+        c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak,
+        c_pf_coil_turn_peak_input,
+        r_pf_coil_middle,
+        z_pf_coil_middle,
+        pf_current_safety_factor,
+        r_cs_inner,
+        r_cs_outer,
+        z_cs_upper,
+        z_cs_lower,
+        rmajor,
+        rminor,
+        kappa,
+    ):
+        """The sizing and its `NGC2` padding, given this arm's reads."""
+        coils = self.topology.n_cs_pf_coils
         (
             turns,
             r_inner,
@@ -384,11 +562,11 @@ class PFCoilSizes(ExplicitFunction):
             z_lower,
             r_pf_coil_outer_max,
         ) = calculate_pf_coil_sizes(
-            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[: CS_INDEX + 1],
-            j_pf_coil_wp_peak=j_pf_coil_wp_peak[: CS_INDEX + 1],
-            c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input[: CS_INDEX + 1],
-            r_pf_coil_middle=r_pf_coil_middle[: CS_INDEX + 1],
-            z_pf_coil_middle=z_pf_coil_middle[: CS_INDEX + 1],
+            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[:coils],
+            j_pf_coil_wp_peak=j_pf_coil_wp_peak[:coils],
+            c_pf_coil_turn_peak_input=c_pf_coil_turn_peak_input[:coils],
+            r_pf_coil_middle=r_pf_coil_middle[:coils],
+            z_pf_coil_middle=z_pf_coil_middle[:coils],
             pf_current_safety_factor=pf_current_safety_factor,
             r_cs_inner=r_cs_inner,
             r_cs_outer=r_cs_outer,
@@ -397,15 +575,58 @@ class PFCoilSizes(ExplicitFunction):
             rmajor=rmajor,
             rminor=rminor,
             kappa=kappa,
+            topology=self.topology,
         )
         pad = jnp.zeros(NGC2)
+        filled = self.topology.plasma_index + 1
         return (
-            pad.at[: PLASMA_INDEX + 1].set(turns),
-            pad.at[: PLASMA_INDEX + 1].set(r_inner),
-            pad.at[: PLASMA_INDEX + 1].set(r_outer),
-            pad.at[: PLASMA_INDEX + 1].set(z_upper),
-            pad.at[: PLASMA_INDEX + 1].set(z_lower),
+            pad.at[:filled].set(turns),
+            pad.at[:filled].set(r_inner),
+            pad.at[:filled].set(r_outer),
+            pad.at[:filled].set(z_upper),
+            pad.at[:filled].set(z_lower),
             r_pf_coil_outer_max,
+        )
+
+
+class PFCoilSizesNoCentralSolenoid(PFCoilSizes):
+    """cottax node: `.tokamak.pf_coil.sizes`, the `iohcl = 0` occupant.
+
+    **Four reads fewer**: the CS's own four edges (`r_cs_inner`, `r_cs_outer`,
+    `z_cs_upper`, `z_cs_lower`) fill index `n_cs_pf_coils - 1` of the four edge arrays
+    on the conventional arm, and with no solenoid there is no such index -- `ohcalc`,
+    which writes them, is never entered (`pfcoil.py:1048-1050`). The plasma still gets
+    its slot (`:1067-1079`), one index further along than on a machine with a CS.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    def __call__(
+        self,
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        c_pf_coil_turn_peak_input=From(pf_coil),
+        r_pf_coil_middle=From(pf_coil),
+        z_pf_coil_middle=From(pf_coil),
+        pf_current_safety_factor=From(pf_coil),
+        rmajor=From(physics),
+        rminor=From(physics),
+        kappa=From(physics),
+    ):
+        return self._sized(
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            c_pf_coil_turn_peak_input,
+            r_pf_coil_middle,
+            z_pf_coil_middle,
+            pf_current_safety_factor,
+            r_cs_inner=None,
+            r_cs_outer=None,
+            z_cs_upper=None,
+            z_cs_lower=None,
+            rmajor=rmajor,
+            rminor=rminor,
+            kappa=kappa,
         )
 
 
@@ -603,6 +824,101 @@ class PFCoilMasses(ExplicitFunction):
             a_cs_poloidal,
             f_a_cs_turn_steel,
             f_a_cs_void,
+        )
+
+
+class PFCoilMassesNoCentralSolenoid(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.masses`, the `iohcl = 0` occupant.
+
+    Not a subclass of `PFCoilMasses`: **it owns two outputs fewer**, and an `Output` is
+    inherited by attribute name (`_declared_outputs_on_cls`), so a subclass could add
+    slots but not drop them. `.pf_coil.a_cs_steel_poloidal` and
+    `.pf_coil.a_cs_cable_space` come from `ohcalc` (`pfcoil.py:3504-3583`), which
+    `pfcoil()` skips entirely when there is no solenoid (`:1048-1050`) -- so on this
+    machine they have no producer, which is the honest answer and not a pair of zeros.
+    `den_cs_conductor` disappears with them, and with it the whole
+    `(i_pf_superconductor, i_cs_superconductor)` pair's *second* half: the CS
+    superconductor switch has nothing left to select.
+
+    `.pf_coil.b_pf_coil_peak` and `.pf_coil.bpf2` are read **whole** here rather than as
+    six per-index reads, matching `PFCoilPeakFieldNoCentralSolenoid`, which owns them
+    whole for the mirror-image reason.
+
+    Occupant for `i_pf_conductor = SUPERCONDUCTING` with
+    `i_pf_superconductor = HAZELTON_ZHAI_REBCO` (9) --
+    `spherical_tokamak_eval.IN.DAT:235` and `st_regression.IN.DAT:1670`. The switch
+    enters this node only as the index of a density in `.tfcoil.dcond`, the same shape
+    `PFCoilMasses` uses; a different material is a different occupant.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    m_pf_coil_conductor = OutputInto(pf_coil)
+    m_pf_coil_structure = OutputInto(pf_coil)
+    pfcaseth = OutputInto(pf_coil)
+    m_pf_coil_conductor_total = OutputInto(pf_coil)
+    m_pf_coil_structure_total = OutputInto(pf_coil)
+    m_pf_coil_max = OutputInto(pf_coil)
+    ricpf = OutputInto(pf_coil)
+
+    def __call__(
+        self,
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        r_pf_coil_middle=From(pf_coil),
+        r_pf_coil_inner=From(pf_coil),
+        r_pf_coil_outer=From(pf_coil),
+        z_pf_coil_upper=From(pf_coil),
+        z_pf_coil_lower=From(pf_coil),
+        b_pf_coil_peak=From(pf_coil),
+        bpf2=From(pf_coil),
+        f_a_pf_coil_void=From(pf_coil),
+        pf_current_safety_factor=From(pf_coil),
+        sigpfcf=From(pf_coil),
+        sigpfcalw=From(pf_coil),
+        den_steel=From(fwbs),
+        den_pf_conductor=FromExactly(
+            tfcoil.dcond[I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO - 1]
+        ),
+    ):
+        n = self.topology.n_pf_coils
+        (
+            m_conductor,
+            m_structure,
+            pfcaseth,
+            m_conductor_total,
+            m_structure_total,
+            m_pf_coil_max,
+            ricpf,
+        ) = calculate_pf_coil_masses_no_central_solenoid(
+            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[: self.topology.n_cs_pf_coils],
+            j_pf_coil_wp_peak=j_pf_coil_wp_peak[:n],
+            n_pf_coil_turns=n_pf_coil_turns[:n],
+            r_pf_coil_middle=r_pf_coil_middle[:n],
+            r_pf_coil_inner=r_pf_coil_inner[:n],
+            r_pf_coil_outer=r_pf_coil_outer[:n],
+            z_pf_coil_upper=z_pf_coil_upper[:n],
+            z_pf_coil_lower=z_pf_coil_lower[:n],
+            b_pf_coil_peak=b_pf_coil_peak[:n],
+            bpf2=bpf2[:n],
+            f_a_pf_coil_void=f_a_pf_coil_void[:n],
+            pf_current_safety_factor=pf_current_safety_factor,
+            sigpfcf=sigpfcf,
+            sigpfcalw=sigpfcalw,
+            den_steel=den_steel,
+            den_pf_conductor=den_pf_conductor,
+            topology=self.topology,
+        )
+        pad = jnp.zeros(NGC2)
+        return (
+            pad.at[:n].set(m_conductor),
+            pad.at[:n].set(m_structure),
+            pad.at[:n].set(pfcaseth),
+            m_conductor_total,
+            m_structure_total,
+            m_pf_coil_max,
+            ricpf,
         )
 
 

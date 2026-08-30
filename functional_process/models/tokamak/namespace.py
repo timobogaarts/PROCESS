@@ -301,13 +301,22 @@ class Tokamak(ModelNamespace):
     `cost_boundary_inputs.md` category (d) carries the producer `file:line` for each.
     The package's four-node cycle is cut and driven in `mda.py`, not here."""
 
-    cs_coil: CSCoil = dataclasses.field(kw_only=True)
-    """`pfcoil.py::CSCoil`, injected at `main.py:652` -- three slots. The central
+    cs_coil: CSCoil | None = dataclasses.field(kw_only=True)
+    """`pfcoil.py::CSCoil`, injected at `main.py:652` -- seven slots. The central
     solenoid, and the site of decision 12 (`i_cs_superconductor = 1`).
 
     A slot of its own rather than part of `pf_coil` because PROCESS injects it as a
     separate `Model` with its own switch; a stellarator has none at all
-    (`st_init` sets `data.build.iohcl = 0` unconditionally)."""
+    (`st_init` sets `data.build.iohcl = 0` unconditionally).
+
+    **`| None` since 2026-08-30, and a tokamak can now take that arm too.** The
+    spherical tokamaks set `iohcl = 0` in their own IN.DATs
+    (`spherical_tokamak_eval.IN.DAT:69`, `st_regression.IN.DAT:1485`), and `pfcoil()`
+    then never calls `ohcalc` (`pfcoil.py:1048-1050`) -- so this is the same absence the
+    stellarator has, arrived at from an input rather than from `st_init`. `indat.CS_COIL`
+    maps arm 2 to `None` and every `.tokamak.pf_coil` occupant on that arm drops the CS
+    reads instead of reading zeros; that is the difference between a machine without a
+    solenoid and a machine whose solenoid has no size."""
 
     cs_fatigue: CsFatigue = CsFatigue()
     """`cs_fatigue.py::CsFatigue`, injected at `main.py:652` and reached through

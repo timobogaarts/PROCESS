@@ -293,3 +293,53 @@ Frontier: with this occupant registered, `machine_from_indat` +
 against cottax `db4f025`), and the assembled masses node's read set carries
 `.tfcoil.dcond[2]` and `.tfcoil.dcond[4]`, measured on the graph rather than read off
 the source.
+
+
+## 2026-08-30 (evening) -- the spherical tokamaks' PF coil system, arm 2
+
+`next_steps.md` §18.2 listed five of the eight blockers stopping
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` as `pf_coil_system_arm`
+deviations (`-1`, `-2`, `-3`, `-6`, `-7`). All five are closed. The package now carries
+a `PFCoilTopology` (`models/pfcoil/__init__.py`) instead of five loose module
+constants, and `indat._pf_coil_system_arm` has a third positive arm, `2`, for a machine
+with **no central solenoid**: `iohcl = 0`, `n_pf_coil_groups = 4`,
+`i_pf_location = (2, 3, 3, 4)`, `n_pf_coils_in_group = (2, 2, 2, 2)`,
+`i_pf_superconductor = 9`, picture-frame TF. `.tokamak.cs_coil` is `None` on that arm.
+
+**`-3` was a refusal that outlived its cause, and that is a correction to this
+record's own frontier.** The predicate refused `itart == 1` *or* `itartpf != 0`.
+Measured over `process/`: `itartpf` is read in exactly two places
+(`pfcoil.py:1250`, `:411`) and both guard on `itart == 1 **and** itartpf == 0`, and
+`core/init.py:640` overwrites `i_pf_location[:3]` under the same conjunction. Both
+tracked ST files set `itartpf = 1`, so **neither ever reaches PROCESS's Peng and
+Strickler ST arm** -- their PF coil system takes the conventional placement and the
+conventional SVD current solve throughout. The predicate is now the conjunction, and
+the ST arm stays UNPORTED with nothing reaching it.
+
+**What changed here.** The per-coil half of the mass loop moved into
+`_pf_coil_masses_per_coil`, shared with the new
+`calculate_pf_coil_masses_no_central_solenoid`. That sibling **owns two outputs fewer**
+-- `.pf_coil.a_cs_steel_poloidal` and `.pf_coil.a_cs_cable_space` come from `ohcalc`
+(`pfcoil.py:3504-3583`), which `pfcoil()` skips entirely at `iohcl = 0` (`:1048-1050`),
+so on that machine they have no producer and are boundary inputs rather than zeros a
+node claims to have computed. `den_cs_conductor` disappears with them, and with it the
+second half of the `(i_pf_superconductor, i_cs_superconductor)` pair: the CS
+superconductor switch has nothing left to select.
+
+`PFCoilMassesNoCentralSolenoid` is therefore **not** a subclass of `PFCoilMasses` -- an
+`Output` is inherited by attribute name, so a subclass can add slots but not drop them.
+`PFCoilSizesNoCentralSolenoid` *is* a subclass, dropping four reads (the CS's own
+edges) and putting the plasma one index further along.
+
+`I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO = 9` joins the two existing density-index
+constants; it selects `.tfcoil.dcond[8]`.
+
+**Verified against `PFCoil.pfcoil()` itself, at `iohcl = 0`.**
+`TestPFCoilChainSphericalTokamak` (`tests/functional_process/models/pfcoil/
+test_masses.py`) is the existing chain contract's third member: the same
+composed-blocks-against-PROCESS's-own-routine shape, on the eight-coil topology. All
+**twenty-eight** returned quantities agree **bit for bit** at the legacy point --
+placement, positions, both SVD solves, the time-point currents, the waveform, the
+sizing, the Green's-function peak fields and every mass. The point is a plausible
+spherical tokamak rather than a converged one, and the record says why: neither ST file
+converges through this port yet, because both are still refused on the CroCo TF turn.

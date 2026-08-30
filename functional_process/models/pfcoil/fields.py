@@ -39,6 +39,7 @@ a live traced run, not inferred: the filament arrays handed to
 here exactly; see `fields.md` § "A PROCESS defect ported faithfully".
 """
 
+import equinox as eqx
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -49,12 +50,15 @@ from cottax.interfaces.pytree_namespace_module import (
 
 from functional_process.models.pfcoil import (
     CS_INDEX,
-    N_COILS_IN_GROUP,
     N_CS_FILAMENTS,
     N_PF_COILS,
     N_PF_GROUPS,
     NFXF,
     NGC2,
+    REFERENCE_TOPOLOGY,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
+    PFCoilTopology,
+    PFLocation,
 )
 from functional_process.paths import pf_coil, physics
 from process.core import constants
@@ -242,13 +246,15 @@ def _cs_filament_positions(
     dz_cs_full,
     r_pf_coil_middle_group_array,
     z_pf_coil_middle_group_array,
+    topology=REFERENCE_TOPOLOGY,
 ):
-    """The 14 "CS" filament positions as `peak_b_field_at_pf_coil` actually finds them.
+    """The `nfxf` "CS" filament positions as `peak_b_field_at_pf_coil` finds them.
 
     `CSCoil.place_cs_filaments` (`pfcoil.py:3151-3226`) puts filament `k` of the upper
     half at `z = (dz_cs_full/2) / n * (k + 0.5)` and mirrors it into the lower half, all
-    at `r = r_cs_middle`. `pfcoil()`'s equilibrium branch then overwrites entries 0 and 1
-    with the group-0 and group-1 PF coil positions (`:474-479`) and never restores them.
+    at `r = r_cs_middle`. `pfcoil()`'s equilibrium branch then overwrites the leading
+    entries with the *fixed-current* groups' PF coil positions (`:474-479`, `nocoil`
+    counting one per coil of every `i_pf_location = 2` group) and never restores them.
     See this module's docstring; this helper reproduces the state that is actually read.
     """
     z_cs_inside_half = dz_cs_full / 2.0
@@ -256,11 +262,108 @@ def _cs_filament_positions(
     z_filaments = jnp.concatenate([upper, -upper])
     r_filaments = jnp.full(NFXF, r_cs_middle)
 
-    r_filaments = r_filaments.at[0].set(r_pf_coil_middle_group_array[0, 0])
-    r_filaments = r_filaments.at[1].set(r_pf_coil_middle_group_array[1, 0])
-    z_filaments = z_filaments.at[0].set(z_pf_coil_middle_group_array[0, 0])
-    z_filaments = z_filaments.at[1].set(z_pf_coil_middle_group_array[1, 0])
+    clobbered = [
+        (group, coil)
+        for group in topology.groups_at(PFLocation.ABOVE_TF)
+        for coil in range(topology.n_pf_coils_in_group[group])
+    ]
+    for slot, (group, coil) in enumerate(clobbered):
+        r_filaments = r_filaments.at[slot].set(r_pf_coil_middle_group_array[group, coil])
+        z_filaments = z_filaments.at[slot].set(z_pf_coil_middle_group_array[group, coil])
     return r_filaments, z_filaments
+
+
+def _peak_fields_from_loops(
+    c_peak,
+    waveform,
+    time_column,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    rmajor,
+    plasma_current,
+    cs_filaments,
+    topology,
+):
+    """One `peak_b_field_at_pf_coil` call per group, at that group's first coil.
+
+    The body `calculate_pf_coil_peak_fields` and its `iohcl = 0` sibling share; both
+    docstrings carry the argument.
+
+    `cs_filaments` is `(r, z, current_scale)` when the machine has a central solenoid
+    and `None` when it does not -- `peak_b_field_at_pf_coil` sets `kk = 0` outright at
+    `pfcoil.py:4487-4489` in that case, so there is no filament to omit the current of.
+    """
+    b_inner = []
+    b_outer = []
+    for group in range(topology.n_pf_coil_groups):
+        target = topology.first_coil_of_group(group)
+
+        column = time_column[target]
+        f_at_time = jnp.take(waveform, column, axis=1)
+
+        r_parts = []
+        z_parts = []
+        c_parts = []
+        if cs_filaments is not None:
+            r_cs, z_cs, current_scale = cs_filaments
+            r_parts.append(r_cs)
+            z_parts.append(z_cs)
+            c_parts.append(
+                jnp.full(r_cs.shape, f_at_time[topology.cs_index] * current_scale)
+            )
+
+        for coil in range(topology.n_pf_coils):
+            current = c_peak[coil] * f_at_time[coil]
+            if topology.group_of_coil(coil) == group:
+                # Self field, Lyle's method: four filaments at +-1/8 and +-3/8 of the
+                # coil height, each carrying a quarter of the current (`:4520-4573`).
+                dzpf = z_pf_coil_upper[coil] - z_pf_coil_lower[coil]
+                offsets = (0.125, 0.375, -0.125, -0.375)
+                r_parts.append(jnp.full(4, r_pf_coil_middle[coil]))
+                z_parts.append(
+                    jnp.stack([z_pf_coil_middle[coil] + dzpf * o for o in offsets])
+                )
+                c_parts.append(jnp.full(4, current * 0.25e6))
+            else:
+                # Field from a different coil: one filament at its centre (`:4575-4588`).
+                r_parts.append(r_pf_coil_middle[coil][None])
+                z_parts.append(z_pf_coil_middle[coil][None])
+                c_parts.append((current * 1.0e6)[None])
+
+        # Plasma filament -- see the docstring: present with a zero current when
+        # PROCESS's `t_b_field_peak > 2` does not hold.
+        r_parts.append(jnp.asarray(rmajor)[None])
+        z_parts.append(jnp.zeros(1))
+        c_parts.append(jnp.where(column >= 2, plasma_current, 0.0)[None])
+
+        r_loops = jnp.concatenate(r_parts)
+        z_loops = jnp.concatenate(z_parts)
+        c_loops = jnp.concatenate(c_parts)
+
+        _, br_in, bz_in, _ = calculate_b_field_at_point(
+            r_current_loop=r_loops,
+            z_current_loop=z_loops,
+            c_current_loop=c_loops,
+            r_test_point=r_pf_coil_inner[target],
+            z_test_point=z_pf_coil_middle[target],
+        )
+        _, br_out, bz_out, _ = calculate_b_field_at_point(
+            r_current_loop=r_loops,
+            z_current_loop=z_loops,
+            c_current_loop=c_loops,
+            r_test_point=r_pf_coil_outer[target],
+            z_test_point=z_pf_coil_middle[target],
+        )
+
+        n_in_group = topology.n_pf_coils_in_group[group]
+        b_inner.extend([jnp.sqrt(br_in**2 + bz_in**2)] * n_in_group)
+        b_outer.extend([jnp.sqrt(br_out**2 + bz_out**2)] * n_in_group)
+
+    return jnp.stack(b_inner), jnp.stack(b_outer)
 
 
 def calculate_pf_coil_peak_fields(
@@ -282,6 +385,8 @@ def calculate_pf_coil_peak_fields(
     j_cs_flat_top_end,
     rmajor,
     plasma_current,
+    *,
+    topology=REFERENCE_TOPOLOGY,
 ):
     """Peak field at the inner and outer edge of each of the six PF coils.
 
@@ -355,97 +460,95 @@ def calculate_pf_coil_peak_fields(
         dz_cs_full,
         r_pf_coil_middle_group_array,
         z_pf_coil_middle_group_array,
+        topology,
     )
 
     # Sign of the CS filament current: positive when the CS runs harder at the beginning
     # of the pulse than at the end of flat-top (`pfcoil.py:4493-4497`).
     sgn = jnp.where(j_cs_pulse_start > j_cs_flat_top_end, 1.0, -1.0)
 
-    b_inner = []
-    b_outer = []
-    first_coil_of_group = 0
-    for group in range(N_PF_GROUPS):
-        n_in_group = N_COILS_IN_GROUP[group]
-        target = first_coil_of_group
-
-        column = time_column[target]
-        f_at_time = jnp.take(waveform, column, axis=1)
-
-        # The 14 CS filaments: positions above, one shared current.
-        c_cs_filament = (
-            f_at_time[CS_INDEX] * j_cs_flat_top_end * sgn * a_cs_poloidal / NFXF
-        )
-        r_parts = [r_cs_filaments]
-        z_parts = [z_cs_filaments]
-        c_parts = [jnp.full(NFXF, c_cs_filament)]
-
-        for coil in range(N_PF_COILS):
-            current = c_peak[coil] * f_at_time[coil]
-            if _group_of_coil(coil) == group:
-                # Self field, Lyle's method: four filaments at +-1/8 and +-3/8 of the
-                # coil height, each carrying a quarter of the current (`:4520-4573`).
-                dzpf = z_pf_coil_upper[coil] - z_pf_coil_lower[coil]
-                offsets = (0.125, 0.375, -0.125, -0.375)
-                r_parts.append(jnp.full(4, r_pf_coil_middle[coil]))
-                z_parts.append(
-                    jnp.stack([z_pf_coil_middle[coil] + dzpf * o for o in offsets])
-                )
-                c_parts.append(jnp.full(4, current * 0.25e6))
-            else:
-                # Field from a different coil: one filament at its centre (`:4575-4588`).
-                r_parts.append(r_pf_coil_middle[coil][None])
-                z_parts.append(z_pf_coil_middle[coil][None])
-                c_parts.append((current * 1.0e6)[None])
-
-        # Plasma filament -- see the docstring: present with a zero current when
-        # PROCESS's `t_b_field_peak > 2` does not hold.
-        r_parts.append(jnp.asarray(rmajor)[None])
-        z_parts.append(jnp.zeros(1))
-        c_parts.append(jnp.where(column >= 2, plasma_current, 0.0)[None])
-
-        r_loops = jnp.concatenate(r_parts)
-        z_loops = jnp.concatenate(z_parts)
-        c_loops = jnp.concatenate(c_parts)
-
-        _, br_in, bz_in, _ = calculate_b_field_at_point(
-            r_current_loop=r_loops,
-            z_current_loop=z_loops,
-            c_current_loop=c_loops,
-            r_test_point=r_pf_coil_inner[target],
-            z_test_point=z_pf_coil_middle[target],
-        )
-        _, br_out, bz_out, _ = calculate_b_field_at_point(
-            r_current_loop=r_loops,
-            z_current_loop=z_loops,
-            c_current_loop=c_loops,
-            r_test_point=r_pf_coil_outer[target],
-            z_test_point=z_pf_coil_middle[target],
-        )
-
-        bpfin = jnp.sqrt(br_in**2 + bz_in**2)
-        bpfout = jnp.sqrt(br_out**2 + bz_out**2)
-        b_inner.extend([bpfin] * n_in_group)
-        b_outer.extend([bpfout] * n_in_group)
-
-        first_coil_of_group += n_in_group
-
-    return jnp.stack(b_inner), jnp.stack(b_outer)
+    return _peak_fields_from_loops(
+        c_peak=c_peak,
+        waveform=waveform,
+        time_column=time_column,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner,
+        r_pf_coil_outer=r_pf_coil_outer,
+        z_pf_coil_upper=z_pf_coil_upper,
+        z_pf_coil_lower=z_pf_coil_lower,
+        rmajor=rmajor,
+        plasma_current=plasma_current,
+        cs_filaments=(
+            r_cs_filaments,
+            z_cs_filaments,
+            j_cs_flat_top_end * sgn * a_cs_poloidal / topology.nfxf,
+        ),
+        topology=topology,
+    )
 
 
-def _group_of_coil(coil):
-    """Group index of a flattened coil index, on the reference topology.
+def calculate_pf_coil_peak_fields_no_central_solenoid(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    rmajor,
+    plasma_current,
+    *,
+    topology=SPHERICAL_TOKAMAK_TOPOLOGY,
+):
+    """`calculate_pf_coil_peak_fields` on a machine with no central solenoid.
 
-    Raises
-    ------
-    IndexError
-        If `coil` is not one of the six PF coils this topology has.
+    Ports the same routine, `peak_b_field_at_pf_coil`
+    (`process/models/pfcoil.py:4414-4638`), at `iohcl = 0`. One difference and it is
+    an early one: `:4487-4489` sets `kk = 0` -- **no CS filaments contribute at all**,
+    so the fourteen loops, the `sgn` comparison and the five CS fields that feed them
+    (`r_cs_middle`, `dz_cs_full`, `a_cs_poloidal`, `j_cs_pulse_start`,
+    `j_cs_flat_top_end`) are not read. Nor are the two group arrays, whose only use in
+    the conventional arm is to reproduce the filament-clobbering defect this module's
+    docstring records -- with no filaments there is nothing to clobber.
+
+    The time-point re-derivation, Lyle's four-filament self-field expansion and the
+    plasma loop are unchanged; see `calculate_pf_coil_peak_fields` for all three.
+
+    Returns
+    -------
+    tuple
+        `(b_pf_coil_peak, bpf2)`, `topology.n_pf_coils` entries each -- the field
+        magnitude at the inner and at the outer edge of each PF coil (T).
     """
-    seen = 0
-    for group, n in enumerate(N_COILS_IN_GROUP):
-        seen += n
-        if coil < seen:
-            return group
-    raise IndexError(coil)
+    c_peak, waveform = calculate_coil_current_waveform(
+        c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma,
+    )
+    time_column = _peak_time_column(
+        c_pf_cs_coil_pulse_start_ma,
+        c_pf_cs_coil_flat_top_ma,
+        c_pf_cs_coil_pulse_end_ma,
+        c_peak,
+    )
+    return _peak_fields_from_loops(
+        c_peak=c_peak,
+        waveform=waveform,
+        time_column=time_column,
+        r_pf_coil_middle=r_pf_coil_middle,
+        z_pf_coil_middle=z_pf_coil_middle,
+        r_pf_coil_inner=r_pf_coil_inner,
+        r_pf_coil_outer=r_pf_coil_outer,
+        z_pf_coil_upper=z_pf_coil_upper,
+        z_pf_coil_lower=z_pf_coil_lower,
+        rmajor=rmajor,
+        plasma_current=plasma_current,
+        cs_filaments=None,
+        topology=topology,
+    )
 
 
 class PFCoilPeakField(ExplicitFunction):
@@ -500,6 +603,7 @@ class PFCoilPeakField(ExplicitFunction):
         plasma_current=From(physics),
     ):
         b_inner, b_outer = calculate_pf_coil_peak_fields(
+            topology=REFERENCE_TOPOLOGY,
             c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
             c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
             c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
@@ -522,6 +626,60 @@ class PFCoilPeakField(ExplicitFunction):
         return (*b_inner, *b_outer)
 
 
+class PFCoilPeakFieldNoCentralSolenoid(ExplicitFunction):
+    """cottax node: `.tokamak.pf_coil.peak_field`, the `iohcl = 0` occupant.
+
+    **Owns `.pf_coil.b_pf_coil_peak` and `.pf_coil.bpf2` whole**, where
+    `PFCoilPeakField` owns six slots of each -- and that difference is the point rather
+    than a convenience. Per-index ownership exists on the conventional arm because index
+    6 belongs to `CSCoil.ohcalc`'s own self-field node (`CSCoilPeakField`). With
+    `iohcl = 0` that node does not exist, `ohcalc` is never entered
+    (`pfcoil.py:1048-1050`), and the group loop writes every slot PROCESS writes -- so
+    there is no slice of either array this node does not compute, which is exactly
+    `_audit/naming_convention.md` § "Array elements"' test for owning one whole.
+
+    Occupant for `i_pf_current = 1`, `not (itart == 1 and itartpf == 0)` and
+    `i_pf_location = (2, 3, 3, 4)`.
+    """
+
+    topology: PFCoilTopology = eqx.field(static=True, default=SPHERICAL_TOKAMAK_TOPOLOGY)
+
+    b_pf_coil_peak = OutputInto(pf_coil)
+    bpf2 = OutputInto(pf_coil)
+
+    def __call__(
+        self,
+        c_pf_cs_coil_pulse_start_ma=From(pf_coil),
+        c_pf_cs_coil_flat_top_ma=From(pf_coil),
+        c_pf_cs_coil_pulse_end_ma=From(pf_coil),
+        r_pf_coil_middle=From(pf_coil),
+        z_pf_coil_middle=From(pf_coil),
+        r_pf_coil_inner=From(pf_coil),
+        r_pf_coil_outer=From(pf_coil),
+        z_pf_coil_upper=From(pf_coil),
+        z_pf_coil_lower=From(pf_coil),
+        rmajor=From(physics),
+        plasma_current=From(physics),
+    ):
+        n = self.topology.n_pf_coils
+        b_inner, b_outer = calculate_pf_coil_peak_fields_no_central_solenoid(
+            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[:n],
+            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[:n],
+            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[:n],
+            r_pf_coil_middle=r_pf_coil_middle[:n],
+            z_pf_coil_middle=z_pf_coil_middle[:n],
+            r_pf_coil_inner=r_pf_coil_inner[:n],
+            r_pf_coil_outer=r_pf_coil_outer[:n],
+            z_pf_coil_upper=z_pf_coil_upper[:n],
+            z_pf_coil_lower=z_pf_coil_lower[:n],
+            rmajor=rmajor,
+            plasma_current=plasma_current,
+            topology=self.topology,
+        )
+        pad = jnp.zeros(NGC2)
+        return pad.at[:n].set(b_inner), pad.at[:n].set(b_outer)
+
+
 class PFCoilCurrentWaveform(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.waveform`. Ports `PFCoil.waveform`
     (`process/models/pfcoil.py:2869-2940`) as a node in its own right.
@@ -542,6 +700,12 @@ class PFCoilCurrentWaveform(ExplicitFunction):
     here so the owned array matches PROCESS's state.
     """
 
+    topology: PFCoilTopology = eqx.field(static=True, default=REFERENCE_TOPOLOGY)
+    """Static. How many circuits `waveform`'s loop covers, and which row is the plasma's.
+    The same node serves both topologies: `waveform` reads the three current arrays
+    whole and branches on nothing, so the read set does not move with the topology --
+    contrast `peak_field`, whose `iohcl = 0` arm drops five reads."""
+
     c_pf_cs_coils_peak_ma = OutputInto(pf_coil)
     f_c_pf_cs_peak_time_array = OutputInto(pf_coil)
 
@@ -551,19 +715,16 @@ class PFCoilCurrentWaveform(ExplicitFunction):
         c_pf_cs_coil_flat_top_ma=From(pf_coil),
         c_pf_cs_coil_pulse_end_ma=From(pf_coil),
     ):
+        coils = self.topology.n_cs_pf_coils
+        plasma = self.topology.plasma_index
         peak, waveform = calculate_coil_current_waveform(
-            c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
-            c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
-            c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
+            c_pf_cs_coil_pulse_start_ma[:coils],
+            c_pf_cs_coil_flat_top_ma[:coils],
+            c_pf_cs_coil_pulse_end_ma[:coils],
         )
-        peak_full = jnp.zeros(NGC2).at[: CS_INDEX + 1].set(peak)
+        peak_full = jnp.zeros(NGC2).at[:coils].set(peak)
         waveform_full = (
-            jnp
-            .zeros((NGC2, 6))
-            .at[: CS_INDEX + 1, :]
-            .set(waveform)
-            .at[CS_INDEX + 1, :]
-            .set(1.0)
+            jnp.zeros((NGC2, 6)).at[:coils, :].set(waveform).at[plasma, :].set(1.0)
         )
         return peak_full, waveform_full
 
