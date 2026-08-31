@@ -43,20 +43,29 @@ the tree only through `REFERENCE_MACHINE` attribute access and fresh
 """
 
 import dataclasses
+import functools
 import re
 from pathlib import Path
 
 import pytest
 
+from functional_process import sand
 from functional_process.indat import (
     REFERENCE_INPUT_FILE,
     REFERENCE_MACHINE,
     ST_INIT_I_PLASMA_PEDESTAL,
+    SWITCH_VALUE_DEFAULTS,
     UNPORTED,
+    iteration_variables_from_indat,
     machine_from_indat,
+    presence_flags_from_indat,
+    problem_from_indat,
+    resolve_i_tf_bucking,
+    switch_values_from_indat,
     switches_from_indat,
 )
 from functional_process.models.switch_enums import IFEModel
+from functional_process.vocabulary import AREAS, TFConductorModel
 
 
 @dataclasses.dataclass(frozen=True)
@@ -849,3 +858,236 @@ def test_factory_switches_that_only_prove_themselves_by_a_refusal(
     indat = _indat_with_override(tmp_path, switch, value)
     with pytest.raises(NotImplementedError, match=re.escape(UNPORTED[unported_key])):
         machine_from_indat(indat)
+
+
+# --------------------------------------------------------------------------------------
+# The problem statement and the static switch values, read from the **file**
+# (`_audit/next_steps.md` §23.6 items 1 and 2). Everything below is the same discipline
+# the rest of this module applies to a switch read from the file -- but the oracle is
+# PROCESS's own initialised `DataStructure` rather than the reference machine, because
+# these are the values `sand.switch_values_for` used to need a PROCESS run to obtain.
+# --------------------------------------------------------------------------------------
+
+
+CONFIGURATIONS = (
+    "stellarator_helias",
+    "helias_5b",
+    "large_tokamak_nof",
+    "large_tokamak_eval",
+    "low_aspect_ratio_DEMO",
+    "spherical_tokamak_eval",
+    "st_regression",
+)
+"""`provider.CONFIGURATIONS`' seven, by stem. `IFE.IN.DAT` is unported everywhere."""
+
+_INPUT_FILES = Path(REFERENCE_INPUT_FILE).resolve().parent
+
+
+def _configuration(stem):
+    return str(_INPUT_FILES / f"{stem}.IN.DAT")
+
+
+@functools.lru_cache(maxsize=None)
+def _initialised(stem):
+    """The `DataStructure` as `init_process` left it -- the oracle for everything below.
+
+    An un-run `SingleRun` *is* that state (`cold_start.ColdState.seed`'s docstring), and
+    it costs ~0.02 s per file because no model runs, so this is a cheaper oracle than
+    `cold_state` and answers exactly the questions here: sentinels, presence flags and
+    the problem statement are all resolved by `init_process` and by nothing after it.
+    """
+    from process.main import SingleRun
+
+    from functional_process.cold_start import _scratch_copy
+
+    return SingleRun(_scratch_copy(_configuration(stem)), "vmcon").data
+
+
+def _area_holding(data, name):
+    hits = [a for a in AREAS if hasattr(getattr(data, a), name)]
+    assert len(hits) == 1, f"{name} resolves to {hits}"
+    return getattr(data, hits[0])
+
+
+class TestSwitchValuesWithoutProcess:
+    """`switch_values_from_indat` answers what `sand.switch_values_for` answers.
+
+    §23.6 item 2 named `switch_values_for(data, icc, i_figure_merit)`'s `DataStructure`
+    as one of the two things still holding the solve path to PROCESS. This is the
+    measurement that it no longer has to be.
+    """
+
+    def test_the_name_set_is_sands_own(self):
+        """A switch added to the ported constraint/objective surface with no default
+        here must fail, not fall through to a wrong integer."""
+        assert set(SWITCH_VALUE_DEFAULTS) == set(sand.SWITCH_PARAMETER_NAMES)
+
+    def test_every_default_equals_process(self):
+        """§23.2's rule on the one scalar defaults table this port has: vendored for
+        runtime, asserted equal in tests. Compared against a **bare** `DataStructure`,
+        which is where a dataclass default lives before any file is read."""
+        from process.core.model import DataStructure
+
+        bare = DataStructure()
+        for name, default in SWITCH_VALUE_DEFAULTS.items():
+            assert getattr(_area_holding(bare, name), name) == default, name
+
+    @pytest.mark.parametrize("stem", CONFIGURATIONS)
+    def test_every_switch_equals_the_initialised_structure(self, stem):
+        """All fifteen, against `init_process`'s own answer -- not just the subset this
+        run's constraints ask for, because the function answers all fifteen and a wrong
+        one would only surface on the file that first activates a constraint using it."""
+        data = _initialised(stem)
+        ours = switch_values_from_indat(_configuration(stem))
+        theirs = {n: int(getattr(_area_holding(data, n), n)) for n in ours}
+        assert ours == theirs
+
+    @pytest.mark.parametrize("stem", CONFIGURATIONS)
+    def test_it_is_a_drop_in_for_switch_values_for(self, stem):
+        """`sand._bind` intersects `switch_values` with the signature it binds, so a
+        superset is exactly as correct as the subset -- provided every name the subset
+        does carry agrees. That is what this asserts, against the real function."""
+        data = _initialised(stem)
+        n = int(data.numerics.n_constraints)
+        theirs = sand.switch_values_for(
+            data, list(data.numerics.icc[:n]), int(data.numerics.i_figure_merit)
+        )
+        ours = switch_values_from_indat(_configuration(stem))
+        assert theirs, "no active constraint on this file names a switch"
+        assert {k: ours[k] for k in theirs} == theirs
+
+    def test_the_i_tf_bucking_sentinel_is_resolved_not_passed_through(self):
+        """`init.py:891-895`. The raw `-1` is "the file did not choose"; passing it
+        through would hand a constraint a layer count of `-1`."""
+        assert resolve_i_tf_bucking(-1, TFConductorModel.WATER_COOLED_COPPER) == 0
+        assert resolve_i_tf_bucking(-1, TFConductorModel.SUPERCONDUCTING) == 1
+        assert resolve_i_tf_bucking(-1, TFConductorModel.HELIUM_COOLED_ALUMINIUM) == 1
+        # A value the file states is never touched, at either conductor.
+        for conductor in TFConductorModel:
+            assert resolve_i_tf_bucking(0, conductor) == 0
+            assert resolve_i_tf_bucking(2, conductor) == 2
+
+    def test_no_tracked_file_is_copper_so_the_old_inline_rule_was_not_wrong_yet(self):
+        """Why `_tf_stress_arm`'s inline `-1 -> 1` passed every test it ever ran under,
+        and why moving it was a fix rather than a refactor: the rule differs from
+        `init.py`'s only for a water-cooled copper machine, and none of the seven is
+        one. A file that were would have silently taken the bucked-case stress arm."""
+        conductors = {
+            stem: switch_values_from_indat(_configuration(stem))["i_tf_sup"]
+            for stem in CONFIGURATIONS
+        }
+        assert TFConductorModel.WATER_COOLED_COPPER not in set(conductors.values()), (
+            conductors
+        )
+
+
+class TestPresenceFlagsFromTheText:
+    """The two `init.py` presence flags, which no value and no node can answer.
+
+    Neither is a declared PROCESS input, so the old `switches.get(...)` scan looked for
+    names an `IN.DAT` cannot contain and could only ever return `0`
+    (`_audit/init_audit.md` §3).
+    """
+
+    @pytest.mark.parametrize("stem", CONFIGURATIONS)
+    def test_both_flags_equal_process(self, stem):
+        data = _initialised(stem)
+        ours = presence_flags_from_indat(_configuration(stem))
+        assert ours == {
+            "tfc_sidewall_is_fraction": bool(data.tfcoil.tfc_sidewall_is_fraction),
+            "i_f_dr_tf_plasma_case": bool(data.tfcoil.i_f_dr_tf_plasma_case),
+        }
+
+    def test_the_flags_are_true_on_four_of_the_seven(self):
+        """`init_audit.md` §2a's own count, and the number the defect suppressed: before
+        the fix both flags were `False` on all seven."""
+        true = [
+            stem
+            for stem in CONFIGURATIONS
+            if all(presence_flags_from_indat(_configuration(stem)).values())
+        ]
+        assert len(true) == 4, true
+
+    def test_naming_the_partner_field_flips_the_flag(self, tmp_path):
+        """Presence, and nothing else: the same file with one line added."""
+        base = (tmp_path / "BARE.DAT").resolve()
+        base.write_text("istell = 0\n")
+        assert presence_flags_from_indat(str(base)) == {
+            "tfc_sidewall_is_fraction": True,
+            "i_f_dr_tf_plasma_case": True,
+        }
+        named = (tmp_path / "NAMED.DAT").resolve()
+        named.write_text("istell = 0\ndx_tf_side_case_min = 0.05\n")
+        assert presence_flags_from_indat(str(named)) == {
+            "tfc_sidewall_is_fraction": False,
+            "i_f_dr_tf_plasma_case": True,
+        }
+
+    def test_the_sidewall_slot_now_has_an_occupant_on_a_spherical_tokamak(self):
+        """The consequence, and the one that was measured as a missing producer:
+        `.tfcoil.dx_tf_side_case_min` had no producer on either spherical tokamak
+        because the flag was stuck at `False` (`next_steps.md` §22.6)."""
+        machine = machine_from_indat(_configuration("st_regression"))
+        assert machine.tokamak.cicc_superconducting_tf_coil.dx_tf_side_case_min
+        # And the large tokamak, which *does* name the field, still has none.
+        large = machine_from_indat(_configuration("large_tokamak_eval"))
+        assert large.tokamak.cicc_superconducting_tf_coil.dx_tf_side_case_min is None
+
+
+class TestProblemStatementFromTheFile:
+    """§23.6 item 1: `icc` had no reader here at all. It needed no new parsing."""
+
+    @pytest.mark.parametrize("stem", CONFIGURATIONS)
+    def test_icc_equals_process_in_order(self, stem):
+        """**In order**, not as a set: PROCESS's equality/inequality split is positional
+        (§23.4), so a sorted `icc` would silently restate the problem."""
+        data = _initialised(stem)
+        n = int(data.numerics.n_constraints)
+        assert list(problem_from_indat(_configuration(stem)).icc) == [
+            int(c) for c in data.numerics.icc[:n]
+        ]
+
+    @pytest.mark.parametrize("stem", CONFIGURATIONS)
+    def test_ixc_equals_process(self, stem):
+        data = _initialised(stem)
+        n = int(data.numerics.n_iteration_variables)
+        assert set(problem_from_indat(_configuration(stem)).ixc) == {
+            int(i) for i in data.numerics.ixc[:n]
+        }
+        # And the reader every consumer in this module actually calls.
+        assert iteration_variables_from_indat(_configuration(stem)) == {
+            int(i) for i in data.numerics.ixc[:n]
+        }
+
+    @pytest.mark.parametrize("stem", CONFIGURATIONS)
+    def test_the_equality_count_is_stated_by_every_tracked_file(self, stem):
+        """A correction to `init_audit.md` §2a, measured: the `-1` sentinel on
+        `.numerics.n_equality_constraints` fires on **0 of 7**, not 7 of 7. Every
+        tracked file states the count, so `set_active_constraints` takes its `else`
+        branch and derives `n_inequality_constraints` instead -- which §2c already
+        lists. The sentinel is real (`numerics.py:166`), it is simply never reached
+        here, and the reader hands `None` on to whoever would resolve it."""
+        data = _initialised(stem)
+        problem = problem_from_indat(_configuration(stem))
+        assert problem.n_equality_constraints == int(
+            data.numerics.n_equality_constraints
+        )
+        assert problem.n_inequality_constraints is None
+        assert int(data.numerics.n_inequality_constraints) == int(
+            data.numerics.n_constraints
+        ) - int(data.numerics.n_equality_constraints)
+
+    @pytest.mark.parametrize("stem", CONFIGURATIONS)
+    def test_i_figure_merit_is_the_files_own_or_none(self, stem):
+        """**The one part of the problem statement the file does not always state.**
+        `large_tokamak_eval` and `spherical_tokamak_eval` set no `i_figure_merit` and
+        PROCESS's `numerics.py:154` default of `7` answers them. `Problem` reports
+        `None` rather than transcribing that default -- deliberately, because unlike a
+        switch value nothing here consumes it yet, and a caller stating the problem has
+        to decide. Pinned so the hole is visible rather than discovered by a `TypeError`
+        in `abs(None)`."""
+        stated = problem_from_indat(_configuration(stem)).i_figure_merit
+        assert stated in (None, int(_initialised(stem).numerics.i_figure_merit))
+        assert (stated is None) == (
+            stem in {"large_tokamak_eval", "spherical_tokamak_eval"}
+        )

@@ -100,13 +100,50 @@ CONFIGURATIONS = (
     "tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT",
     "tests/regression/input_files/large_tokamak_eval.IN.DAT",
 )
-"""The reference configurations this stage is measured on -- every one that assembles.
+"""The reference configurations this stage is measured on.
 
-`helias_5b` (`istell = 1`), `spherical_tokamak_eval` and `st_regression`
-(`i_tf_turn_type = 2`) are refused by `indat.machine_from_indat` before a graph exists,
-so there is nothing to seed; `machine_survey.assembly_verdict` is the authority on why,
-and `IFE.IN.DAT` is out of scope entirely. Named as repository-relative paths, resolved
-by `_resolve`, exactly as `boundary.TOKAMAK_INPUT_FILE` is.
+**Not "every one that assembles" any more**, and the gap is now three files rather than
+the two switch refusals this used to name. `IFE.IN.DAT` is out of scope entirely
+(`ife == 1`, a whole unported device). The other three assemble and are absent for
+reasons that are *not* assembly:
+
+- `spherical_tokamak_eval` and `st_regression` were refused on
+  `tf_stress_arm == (0, 1, 0)` (`extended_plane_strain`) until the port of it landed on
+  2026-08-31; `machine_survey.assembly_verdict` reports **ASSEMBLES** for both as of that
+  day. They are absent here only because this stage has never been run on them -- adding
+  them is a measurement nobody has taken, not a refusal. **This paragraph has now been
+  wrong twice in two days for the same reason** (it said `i_tf_turn_type == 2` after the
+  CroCo wave closed that, and `tf_stress_arm` after the stress port closed that), which
+  is why it now names `assembly_verdict` as the authority instead of a switch: a refusal
+  is only valid against the tree that was current when it was written.
+- `helias_5b`, below.
+
+`helias_5b` assembles (`_audit/next_steps.md` §20) and is deliberately not here yet,
+and unlike the two above it has been measured and has a reason.
+Measured, on 2026-08-31, rather than assumed either way: its cold report is **74
+disagreements**, and 49 of those are exactly the reference stellarator's own two
+accepted causes (`STELLARATOR_ARM_ORDER_ROWS`, `VACUUM_DUCT_ROWS`) -- a strict subset, so
+those would cost one `_because` row each. The other **25 are one new chain and it is a
+port defect, not an accepted disagreement**: `helias_5b.IN.DAT:121` sets
+`i_p_coolant_pumping = 0` (`USER_INPUT`) with the pump powers given directly
+(`120 + 56 = 176` MW for FW+blanket, `24` MW for the divertor), while
+`stellarator_helias.IN.DAT:198` sets `1` (`FRACTION_OF_HEAT`) --- and
+`models/stellarator/stellarator_fwbs_s2.py` **always computes as if the value were
+`FRACTION_OF_HEAT`**, a drop its own docstring records as *"the absence of the
+computation, not a second formula to port"*, which was true of every machine that
+existed when it was written. So the port returns `15.58` MW where PROCESS reads `176.0`,
+and the error runs downstream through `.power.*` and `.heat_transport.*` into
+`.costs.concost` -- **this file's own objective** (`i_figure_merit = 7`), off by `+3.1 %`
+at a fixed cold design, and into `c16`, one of its five active constraints, through
+`p_plant_electric_net_mw` (off by `+11.1 %`).
+
+Adding the row therefore needs the `USER_INPUT` arm ported, not 25 `ACCEPTED` entries:
+an entry here is a reason a disagreement is *understood*, and pinning a live unported
+switch arm as acceptable is the exact ambiguity `ACCEPTED`'s own docstring exists to
+end. Recorded on the list rather than papered over.
+
+Named as repository-relative paths, resolved by `_resolve`, exactly as
+`boundary.TOKAMAK_INPUT_FILE` is.
 """
 
 PIN = os.path.join(os.path.dirname(__file__), "reference_cold_start.txt")

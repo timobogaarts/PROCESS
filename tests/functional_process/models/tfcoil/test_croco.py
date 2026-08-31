@@ -786,26 +786,25 @@ def test_croco_nodes_own_the_tape_stack(tmp_path):
     assert owned  # the set is non-empty, so the assertion above is meaningful
 
 
-def test_the_two_tracked_spherical_tokamaks_no_longer_refuse_the_croco_cluster():
-    """§18.2's three CroCo blockers are gone from the refusal, and nothing else is.
+def test_the_two_tracked_spherical_tokamaks_assemble():
+    """Both ST files build a machine and a graph -- the CroCo cluster's whole point.
 
-    The files still do not assemble -- five PF dimensions and the stress model remain --
-    so what is checked is the *content* of the refusal, which is the only thing this
-    wave moved.
+    **This assertion has been strengthened twice and the history is the reason it is
+    written this way.** When the CroCo wave landed it could only check the *content* of
+    a refusal, because five PF dimensions and `i_tf_stress_model` still blocked
+    assembly; the previous version of this test asserted the files still raised and
+    listed the three switch names that had left the message. Both later blockers closed
+    (`_audit/units/models/tfcoil/stress.md`, the `extended_plane_strain` section), so
+    that version would now fail for the best possible reason -- which is exactly what a
+    test written around a refusal does when the refusal expires. Asserting that they
+    assemble is the claim that cannot rot in that direction.
     """
+    from functional_process.indat import graph_for
+
     for name in ("spherical_tokamak_eval", "st_regression"):
-        path = f"tests/regression/input_files/{name}.IN.DAT"
-        with pytest.raises(NotImplementedError) as excinfo:
-            machine_from_indat(path)
-        # Only the *header* -- `<field> == <value> is a real PROCESS branch...` -- says
-        # what was refused. The recorded reasons quote other switches freely, and one of
-        # them (`_TF_STRESS_MODEL_REASON`) now mentions `i_tf_turn_type` precisely
-        # because this wave uncovered it, so a substring test over the whole message
-        # would pass today and fail for the wrong reason tomorrow.
-        refused = str(excinfo.value).split(" is a real PROCESS branch", 1)[0]
-        assert "i_tf_turn_type" not in refused
-        assert "i_str_wp_i_tf_sc_mat_cicc_sc_properties" not in refused
-        assert "i_str_wp_i_tf_sc_mat_temp_margin" not in refused
+        machine = machine_from_indat(f"tests/regression/input_files/{name}.IN.DAT")
+        graph = graph_for(machine)
+        assert graph.nodes, name
 
 
 def test_hijc_rebco_is_the_only_new_material_fit():

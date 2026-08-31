@@ -50,7 +50,7 @@ import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, OutputInto
 
 from functional_process.paths import stellarator_config
-from process.models.stellarator.preset_config import (
+from functional_process.vocabulary import (
     HELIAS3,
     HELIAS4,
     HELIAS5B,

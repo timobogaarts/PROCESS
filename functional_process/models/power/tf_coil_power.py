@@ -26,7 +26,7 @@ from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, Ou
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.paths import buildings, heat_transport, physics, tfcoil
-from process.core import constants
+from functional_process.vocabulary import constants
 
 
 def calculate_tf_power_resistive(

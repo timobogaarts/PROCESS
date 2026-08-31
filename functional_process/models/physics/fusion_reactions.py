@@ -28,7 +28,7 @@ from cottax.interfaces.pytree_namespace_module import (
 from functional_process.models.physics.plasma_profiles import _simpson
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.paths import physics
-from process.core import constants
+from functional_process.vocabulary import constants
 
 REACTION_CONSTANTS_DT = {
     "bg": 34.3827,

@@ -33,7 +33,11 @@ from functional_process.mda import (
     schedule,
     starts_for,
 )
-from process.models.superconductors import SuperconductorModel
+# The port's own copy, not PROCESS's, because the keys of `indat.WINDING_PACK_MATERIAL`
+# are that one and the comparison below is `is`. §23.2 vendored the enum and
+# `test_vocabulary.py` asserts the two are equal member for member, so nothing is lost
+# by reading the port's.
+from functional_process.vocabulary import SuperconductorModel
 
 
 def _cut_all(sub, vars_):

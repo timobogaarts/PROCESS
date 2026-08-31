@@ -88,9 +88,12 @@ from jax.tree_util import GetAttrKey, SequenceKey
 from functional_process.core.solver import constraints as ported_constraints
 from functional_process.core.solver import objectives as ported_objectives
 from functional_process.mda import assign_drivers, cut_graph, default_drivers
-from process.core.model import DataStructure
-from process.core.solver.iteration_variables import ITERATION_VARIABLES
-from process.data_structure.numerics import FiguresOfMerit
+from functional_process.vocabulary import (
+    AREAS,
+    ITERATION_VARIABLES,
+    FiguresOfMerit,
+)
+from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 
 COND = MintKey("cond")
 """The namespace constraint/objective values are minted into -- the same one
@@ -192,7 +195,7 @@ def switch_values_for(data, icc, i_figure_merit):
     merit = FiguresOfMerit(abs(int(i_figure_merit)))
     metric = ported_objectives.OBJECTIVE_METRICS[merit]
     needed |= set(inspect.signature(metric).parameters) & set(SWITCH_PARAMETER_NAMES)
-    areas = _data_structure_areas()
+    areas = AREAS
     values = {}
     for name in sorted(needed):
         hits = [a for a in areas if hasattr(getattr(data, a), name)]
@@ -272,26 +275,172 @@ def design_bounds(ixc):
     )
 
 
-def _data_structure_areas():
-    return [f.name for f in dataclasses.fields(DataStructure())]
+NON_INPUT_FIELDS = {
+    "available_radial_space": "build",
+    "b_cs_peak_flat_top_end": "pf_coil",
+    "b_cs_peak_pulse_start": "pf_coil",
+    "b_plasma_total": "physics",
+    "b_tf_inboard_peak_with_ripple": "tfcoil",
+    "beta_beam": "physics",
+    "beta_fast_alpha": "physics",
+    "beta_poloidal_eps": "physics",
+    "beta_poloidal_vol_avg": "physics",
+    "beta_thermal_vol_avg": "physics",
+    "beta_toroidal_vol_avg": "physics",
+    "big_q_plasma": "current_drive",
+    "bktcycles": "costs",
+    "c_tf_total": "tfcoil",
+    "cdirt": "costs",
+    "coe": "costs",
+    "concost": "costs",
+    "coppera_m2": "rebco",
+    "cplife": "costs",
+    "dr_fw_outboard": "build",
+    "dx_tf_inboard_out_toroidal": "tfcoil",
+    "eps": "physics",
+    "eta_cd_norm_hcd_primary": "current_drive",
+    "f_p_beam_shine_through": "current_drive",
+    "f_p_plasma_separatrix_rad": "physics",
+    "f_pden_alpha_electron_mw": "physics",
+    "f_pden_alpha_ions_mw": "physics",
+    "f_t_alpha_energy_confinement": "physics",
+    "flu_tf_neutron_fast_peak": "fwbs",
+    "fzmin": "reinke",
+    "j_cs_critical_flat_top_end": "pf_coil",
+    "j_cs_critical_pulse_start": "pf_coil",
+    "j_cs_pulse_start": "pf_coil",
+    "j_tf_wp": "tfcoil",
+    "j_tf_wp_critical": "tfcoil",
+    "j_tf_wp_quench_heat_max": "tfcoil",
+    "life_blkt_fpy": "fwbs",
+    "life_div_fpy": "costs",
+    "n_beam_decay_lengths_core": "current_drive",
+    "n_charge_plasma_effective_vol_avg": "physics",
+    "n_cycle": "cs_fatigue",
+    "n_iter_vacuum_pumps": "vacuum",
+    "nd_beam_ions": "physics",
+    "nd_beam_ions_out": "physics",
+    "nd_plasma_electron_line": "physics",
+    "nd_plasma_electron_on_axis": "physics",
+    "nd_plasma_electrons_max": "physics",
+    "nd_plasma_ions_total_vol_avg": "physics",
+    "p_cp_resistive_mw": "tfcoil",
+    "p_cryo_plant_electric_mw": "heat_transport",
+    "p_div_bt_q_aspect_rmajor_mw": "physics",
+    "p_fusion_total_mw": "physics",
+    "p_hcd_injected_electrons_mw": "current_drive",
+    "p_hcd_injected_ions_mw": "current_drive",
+    "p_hcd_injected_total_mw": "current_drive",
+    "p_l_h_threshold_mw": "physics",
+    "p_plant_electric_net_mw": "heat_transport",
+    "p_plasma_heating_total_mw": "physics",
+    "p_plasma_separatrix_mw": "physics",
+    "p_plasma_separatrix_rmajor_mw": "physics",
+    "p_tf_leg_resistive_mw": "tfcoil",
+    "pden_alpha_total_mw": "physics",
+    "pden_electron_transport_loss_mw": "physics",
+    "pden_ion_electron_equilibration_mw": "physics",
+    "pden_ion_transport_loss_mw": "physics",
+    "pden_non_alpha_charged_mw": "physics",
+    "pden_plasma_core_rad_mw": "physics",
+    "pden_plasma_ohmic_mw": "physics",
+    "pden_plasma_rad_mw": "physics",
+    "peakpoloidalpower": "pf_power",
+    "pflux_fw_neutron_mw": "physics",
+    "pflux_fw_rad_max_mw": "constraints",
+    "plasma_current": "physics",
+    "powerht_constraint": "stellarator",
+    "powerscaling_constraint": "stellarator",
+    "psolradmw": "physics",
+    "ptfnucpm3": "fwbs",
+    "q95_min": "physics",
+    "radius_beam_tangency": "current_drive",
+    "radius_beam_tangency_max": "current_drive",
+    "rbld": "build",
+    "required_radial_space": "build",
+    "rminor": "physics",
+    "sig_tf_case": "tfcoil",
+    "sig_tf_cs_bucked": "tfcoil",
+    "sig_tf_wp": "tfcoil",
+    "srcktpm": "pf_power",
+    "str_wp": "tfcoil",
+    "stress_shear_cs_peak": "pf_coil",
+    "t_current_ramp_up_min": "constraints",
+    "t_plant_pulse_total": "times",
+    "tcpav2": "tfcoil",
+    "temp_cp_peak": "tfcoil",
+    "temp_croco_quench": "tfcoil",
+    "temp_cs_superconductor_margin": "pf_coil",
+    "temp_fw_peak": "fwbs",
+    "temp_plasma_electron_density_weighted_kev": "physics",
+    "temp_plasma_ion_density_weighted_kev": "physics",
+    "temp_tf_superconductor_margin": "tfcoil",
+    "tfcmw": "tfcoil",
+    "toroidalgap": "tfcoil",
+    "v_tf_coil_dump_quench_kv": "tfcoil",
+    "vol_plasma": "physics",
+    "vs_cs_pf_total_pulse": "pf_coil",
+    "vs_cs_pf_total_ramp": "pf_coil",
+    "vs_plasma_ramp_required": "physics",
+    "vs_plasma_total_required": "physics",
+    "vv_stress_quench": "superconducting_tfcoil",
+}
+"""`field name -> DataStructure area` for every name the ported constraint/objective
+layer can ask for that is **not** a declared PROCESS input.
+
+`_Resolver` used to answer stage two by scanning a live `DataStructure`, and its
+docstring justified that with "those are user inputs" -- a constraint's *bound*. Measured
+over the whole surface (`core/solver/constraints.py`'s 82 `constraint_*` plus
+`objectives.py`'s `OBJECTIVE_METRICS`, 196 distinct non-switch parameter names): **87 are
+declared inputs and 109 are not.** The 108 rows here are those 109 minus
+`nd_plasma_electron_max_array_7`, which is one element of an array and has no field of
+its own -- the old scan raised on it too, so leaving it out preserves that exactly.
+
+They are PROCESS *outputs* -- `sig_tf_wp`, `plasma_current`, `p_fusion_total_mw` -- and
+most of them resolve at **stage one** on any given machine, because a ported node owns
+them. A row is reached only when this machine's graph does not produce that quantity, in
+which case the constraint reads it as a frozen boundary input; the reference stellarator
+sends 13 names to stage two and the five tokamak configurations 15-22, of which 8 land
+here rather than in `INPUT_VARIABLES` (`_audit/next_steps.md` §23.7 lists them).
+
+Generated by introspection, never hand-typed -- the same rule as `vocabulary/`. To
+regenerate, print `sorted` `{name: area}` for every non-switch parameter of every
+`constraint_*`/objective metric that `INPUT_VARIABLES` does not declare with a module,
+taking `area` from the unique `DataStructure` field-name scan.
+`test_sand.py::TestStageTwo` asserts exactly that set and exactly those areas, so a new
+constraint naming a new output fails a test rather than silently failing to assemble.
+"""
 
 
 class _Resolver:
-    """`parameter name -> VarPath`, graph first, `DataStructure` second.
+    """`parameter name -> VarPath`, graph first, PROCESS's declared inputs second.
 
     Two stages, and the order matters. A name that some node in `graph` already owns or
     reads resolves to *that* `VarPath`, so a constraint node is wired into the real
     dataflow rather than to a same-named field in another area. Only a name the graph has
-    never heard of falls back to scanning `DataStructure`'s areas -- which is the correct
-    answer for a constraint's *bound* (`pflux_fw_neutron_max_mw`,
-    `sig_tf_wp_max`, ...): those are user inputs, and reading one simply adds a boundary
-    input.
+    never heard of falls through to stage two, which is a **lookup, not a scan**:
+    `vocabulary.input_variables.INPUT_VARIABLES` is PROCESS's own `name -> area` table --
+    the one `process/core/input.py` uses to decide what an `IN.DAT` assignment writes --
+    plus `NON_INPUT_FIELDS` for the 108 names on that surface that are outputs rather
+    than inputs.
 
-    Both stages require the match to be **unique** and raise naming the candidates
-    otherwise. PROCESS's own naming convention is what makes this work (field names are
-    globally unique across areas in practice, `documentation/source/development/
-    standards.md`), and it is checked rather than assumed -- the same rule
-    `mda_constraint_harness._resolve_args` and `mda_harness._backing_field` already use.
+    **This replaced a live `DataStructure` and the port's last runtime `process` import
+    outside the harnesses** (§23.5's second open item). The old stage two built a
+    `DataStructure` and asked all 36 areas which one had a field of this name; the table
+    answers the same question from a vendored source, and answers it *better*, because
+    PROCESS's input layer knows which of two same-named fields an assignment actually
+    writes and a `hasattr` scan can only report the tie. `copper_rrr` is the one case
+    where they differ: it exists on both `rebco` and `superconducting_tfcoil`, so the
+    scan raised "ambiguous"; `process/core/input.py:283` declares it once, on `rebco`,
+    and `parse_input_file` writes exactly `variable_config.module`, so `rebco` is the
+    answer. (`superconducting_tfcoil.copper_rrr` is a duplicate default no PROCESS model
+    reads.) Measured across all 863 declarations naming a module: 862 agree with the
+    scan, 0 mismatch, 0 missing from the `DataStructure`, and that one tie broken.
+
+    Stage one still requires its match to be **unique** and raises naming the candidates
+    otherwise -- the same rule `mda_constraint_harness._resolve_args` and
+    `mda_harness._backing_field` use, resting on PROCESS's globally-unique field names
+    (`documentation/source/development/standards.md`).
     """
 
     def __init__(self, graph: Graph):
@@ -300,8 +449,6 @@ class _Resolver:
             keys = var.keys
             if len(keys) == 2 and all(isinstance(k, GetAttrKey) for k in keys):
                 self.by_name.setdefault(keys[-1].name, set()).add(var)
-        self.areas = _data_structure_areas()
-        self.data = DataStructure()
 
     def __call__(self, name: str) -> VarPath:
         hits = self.by_name.get(name)
@@ -313,16 +460,25 @@ class _Resolver:
                 f"({sorted(v.path_str() for v in hits)}) -- resolution is by unique "
                 f"name, so this one has to be given explicitly"
             )
-        areas = [a for a in self.areas if hasattr(getattr(self.data, a), name)]
-        if len(areas) == 1:
-            return VarPath((GetAttrKey(areas[0]), GetAttrKey(name)))
+        area = NON_INPUT_FIELDS.get(name)
+        if area is None:
+            declaration = INPUT_VARIABLES.get(name)
+            # `ixc`/`icc` carry `module=None`: they are the problem statement, not a
+            # field, so they are no more resolvable than an undeclared name.
+            area = None if declaration is None else declaration.module
+        if area is not None:
+            return VarPath((GetAttrKey(area), GetAttrKey(name)))
         raise ValueError(
-            f"{name!r} is in no node of the graph and "
-            + (
-                "no `DataStructure` area has a field of that name"
-                if not areas
-                else f"is ambiguous across `DataStructure` areas {areas}"
-            )
+            f"{name!r} resolves to nothing, and the two halves of that are different "
+            f"failures. (1) No node in this graph owns or reads it -- it is not part of "
+            f"*this* machine's dataflow, and the same name may well be produced on "
+            f"another device configuration, so check the machine before the spelling. "
+            f"(2) It is not a declared PROCESS input either "
+            f"(`vocabulary/input_variables.py`, PROCESS's own `INPUT_VARIABLES`), so it "
+            f"cannot be a constraint bound read off the boundary -- which leaves a "
+            f"typo, or a quantity an unported model computes, in which case it "
+            f"belongs in "
+            f"`NON_INPUT_FIELDS` with its `DataStructure` area."
         )
 
 

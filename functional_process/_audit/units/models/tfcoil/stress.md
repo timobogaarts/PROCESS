@@ -11,6 +11,13 @@ confidence: high
 this unit and refused it as a slot fill; its "recommended next step, not taken here" is
 what landed.
 
+**2026-08-31: `extended_plane_strain` landed too, and both tracked spherical tokamaks
+assemble.** The section "the second solver" at the end of this record is that wave;
+everything before it describes the plane-stress arm and is unchanged except where a
+sentence has been overtaken (marked in place). `spherical_tokamak_eval` and
+`st_regression` both build a `TokamakProcess` and a 234-node graph, and nothing else on
+either file refuses.
+
 ## source
 
 `process/models/tfcoil/base.py`, **partial**, four disjoint ranges:
@@ -32,12 +39,13 @@ reason each unported arm is unported; `indat.py`'s `_TF_STRESS_MODEL_REASON`,
 `_TF_BUCKING_REASON` and the `tf_field_and_force_arm` entry hold the same reasons in the
 form the factory raises them. Not duplicated here.
 
-**`extended_plane_strain` (`base.py:3719-4234`, 517 lines) is not ported and is the
-single largest exclusion.** It is the live solver on both tracked *spherical* tokamaks
+**`extended_plane_strain` (`base.py:3719-4234`, 517 lines) was the single largest
+exclusion and is now ported** -- see "the second solver" below. This paragraph's
+prediction held exactly: it was the live solver on both tracked *spherical* tokamaks
 (`spherical_tokamak_eval.IN.DAT:350`, `st_regression.IN.DAT:1223`), neither of which
-assembles today for an unrelated reason (`i_tf_turn_type == 2`, the CroCo turn). So the
-refusal costs nothing measurable now and will be the next thing to cost something the
-day the CroCo unit lands.
+assembled at the time for an unrelated reason (`i_tf_turn_type == 2`, the CroCo turn),
+so the refusal cost nothing measurable *then* and became the only thing costing anything
+the day the CroCo unit landed.
 
 ## why this unit exists at all: two dropped constraints
 
@@ -331,4 +339,207 @@ vertical stress back by it — but the modulus also entered the *transverse* sol
 `eyoung_axial`, which `plane_stress` does not read. On this arm the round trip is
 therefore exactly neutral for the three outputs that matter, and the port keeps it only
 because it is not neutral on the `extended_plane_strain` arms, which do read
-`eyoung_axial`. Worth re-checking if that arm is ever ported.
+`eyoung_axial`. **Resolved for the extended arm, 2026-08-31**: it is indeed not neutral
+there. The `ey_z[2]` reaching `extended_plane_strain` is
+`205e9 * f_tf_stress_front_case = 1.3636e11` at `spherical_tokamak_eval`'s converged
+point -- a 33 % cut in the front case's axial stiffness, which changes the whole stack's
+`eps_z`, and only the resulting *stress* is divided back out. Reproduced, not repaired;
+the port agrees with `stresscl` to the last bit on all three outputs it owns, which is
+the only claim being made.
+
+
+## the second solver: `extended_plane_strain`, 2026-08-31
+
+`process/models/tfcoil/base.py:3719-4234`, ported as `extended_plane_strain` in
+`stress.py`, wrapped as `tf_stress_extended_plane_strain_bucked_case`, occupied by
+`TfStressExtendedPlaneStrainBuckedCaseAveragedTurn`, registered as
+`TF_STRESS[(0, 1, 0)]`. Both tracked spherical tokamaks assemble: 234 nodes each, and
+this was the last blocker on either.
+
+### what was measured before the port was estimated
+
+The CroCo wave's discipline -- check every write against its next use *before*
+estimating -- applied to `stresscl`'s five outputs on the `i_tf_stress_model == 0`
+branch. **Two of them are dead there, and dead in a way a value test cannot see:**
+
+| output | at `i_tf_stress_model == 1` | at `== 0` | only reader |
+|---|---|---|---|
+| `sig_tf_wp` | `s_shear_tf_peak[n_tf_bucking]` | same | constraint 32 |
+| `sig_tf_case` | `s_shear_tf_peak[n_tf_bucking - 1]` | same | constraint 31 |
+| `str_wp` | `sig_tf_z[n_tf_bucking] / eyoung_wp_axial_eff` (`:2988`) | `str_tf_z[n_tf_bucking * n_radial_array]` (`:3034`) | constraints 33, 36 via `i_str_wp == 1` |
+| `casestr` | `sig_tf_z[n_tf_bucking - 1] / eyoung_steel` (`:2991`) | **`None`** | `out_stress` only (`base.py:3646`) |
+| `insstrain` | `sig_tf_r[...] * ... / eyoung_ins` (`:2994`) | **`None`** | `out_stress` only (`base.py:3653`) |
+
+`casestr` and `insstrain` are initialised to `None` at `:2520-2521` and assigned only
+inside the `i_tf_stress_model == 1` branch. `superconducting.py:2224-2231` then writes
+that `None` over the `DataStructure`'s `0.0` default (`tfcoil_variables.py:74`, `:208`),
+so a converged `SingleRun` on `spherical_tokamak_eval.IN.DAT` really does end with
+`.tfcoil.casestr is None` and `.tfcoil.insstrain is None` -- measured on the live
+pipeline, not inferred from the source. Grep confirms the only reader of either field
+anywhere in `process/` is the printer. **So this occupant owns three fields where its
+sibling owns five**, and a port that returned a number for the other two would have
+invented one.
+`tests/functional_process/models/tfcoil/test_stress.py::test_casestr_and_insstrain_are_none_on_this_arm`
+keeps that measurement executable.
+
+Three more reads drop out for a related reason. The vertical stress is *solved for* on
+this arm rather than being `vforce / (a_tf_coil_inboard_case + a_tf_turn_steel *
+n_tf_coil_turns)` broadcast over the whole leg, so **`.tfcoil.vforce`,
+`.tfcoil.a_tf_coil_inboard_case` and `.tfcoil.a_tf_turn_steel` are not read at all**;
+`.superconducting_tfcoil.vforce_inboard_tot` -- the whole *set's* inboard tension, not
+one coil's -- arrives instead (`base.py:3021`). Net: 37 reads on the plane-stress arm,
+35 here, and one of the 35 is a field the other never touches.
+
+### why a second occupant and not a switch
+
+`next_steps.md` §14.2's rule, and a textbook instance of it. An `i_tf_stress_model`
+kwarg on `tf_stress_plane_stress_bucked_case` would have to declare `vforce`,
+`a_tf_coil_inboard_case`, `a_tf_turn_steel` **and** `vforce_inboard_tot` as reads, three
+of which are dead on whichever arm runs -- the `NeutronWallLoad` defect exactly -- and
+would have to own `casestr`/`insstrain` on an arm where PROCESS's answer for them is
+`None`. Two occupants, one switch key, no dead read.
+
+### the solver itself
+
+The docstring's promise holds: the linear solve is `4 x 4` regardless of layer count.
+Each layer contributes a `5 x 5` transfer matrix on the vector
+`(A, B, eps_z, 1, eps_z_slip)`, the stack collapses onto the outermost layer's, and four
+scalar conditions -- zero radial stress outside, zero radial stress (or zero
+displacement at a zero inner radius) inside, prescribed total axial force, zero axial
+force on the slip layers -- become four rows. 517 lines of PROCESS became roughly 200 of
+port, and the numerical core is one `jnp.linalg.solve` on a `(4, 4)`.
+
+Everything that varies with `nlayers` or `i_tf_bucking` is a **static** Python loop, as
+in `plane_stress`: `nlayers` is `len(d_curr)` and `i_tf_bucking` is a static argument,
+because it decides how many rows of the transfer-matrix construction exist rather than a
+value inside them.
+
+Two grids differ between the solvers and it is worth naming, because OQ1 turns on it.
+`plane_stress`'s radial grid is **open** -- step `(rad[ii+1] - rad[ii]) / n_radial_array`
+-- so it never samples a layer's outer face. `extended_plane_strain`'s is **closed**:
+step `/ (n_radial_array - 1)` (`base.py:4160`), last point exactly on the outer radius.
+At `spherical_tokamak_eval`'s converged point the peak Tresca stress in each of the
+three layers sits *on* a boundary, so `n_radial_array = 100` and `= 500` give
+bit-identical answers -- measured, both are samples -- and OQ1's quadrature artefact is
+smaller on this arm than on the other.
+
+### JAX-difficulty flags
+
+- `np.linalg.solve` on the 4x4 -> `jnp.linalg.solve` -- **minor**, but the matrix is
+  worse conditioned than `plane_stress`'s and **`extended_plane_strain` does no row
+  equilibration**, where `plane_stress` does (`base.py:4404-4419`). Measured condition
+  numbers: `3.4e13` on PROCESS's FNSF sample, `4.8e12` at `spherical_tokamak_eval`'s
+  converged point, so `cond * eps` is `7.5e-3` and `1.1e-3`. The *achievable* accuracy
+  of the raw solution vector is therefore far worse than what either implementation
+  delivers, because the ill-conditioned direction is one the outputs barely use -- which
+  is what the validation section's scale-relative criterion is about.
+- The `f_int_a[0]` division-by-zero guard -> double `jnp.where` -- **workaround-known**,
+  applied. PROCESS branches on `f_rec_fac[0] == 0`, which is *exactly* the condition
+  under which `log(rad[1] / rad[0])` is infinite: `currents_enclosed[0]` is identically
+  zero, so `f_rec_fac[0] = -RMU0/2 * d_curr[0]^2 * rad[0]^2`, which vanishes whenever
+  `rad[0]` does. The guard covers precisely the `nan` case and nothing else, so the
+  double-`where` is exact rather than approximate.
+- The `rad[kk] > 0` guard on `m_ext[0, 1, kk]` -> double `jnp.where` --
+  **workaround-known**, applied, same idiom.
+- The layer loops (`m_int`, `m_ext`, `m_tot`, and the reverse pass over the radial
+  distributions) are all over `range(nlayers)` with `nlayers` static -- unrolled, no
+  `lax.scan`. The reverse pass additionally has a closed form: PROCESS recomputes
+  `a_vec_layer` from `a_vec_solution` at the end of every iteration rather than
+  accumulating, so layer `ii`'s vector is `m_ext[ii+1] @ m_tot[ii+1] @ a_vec_solution`
+  and the outermost is the solution itself. Ported as that, not as the loop.
+- `sum()` over a numpy array -> `jnp.sum` for the two axial-stiffness areas -- **minor**,
+  a reassociation of a sum of at most `nlayers` terms.
+- Nothing CoolProp-backed and nothing otherwise untraceable.
+
+### the PROCESS defect this port reproduces
+
+**At `rad[0] == 0` the solver returns `nan`, and it is reproduced rather than repaired.**
+The inner boundary condition forces `B = 0` at a zero inner radius, so `b_plot / r` is
+`0 / 0` at the innermost test point, and `f_int_a_plot`'s `f_rec_fac * log(rad[1] / 0)`
+is `0 * inf` for the same reason. PROCESS's own unit test records exactly this: its
+first `ExtendedPlaneStrainParam` carries
+`nan_init = ["sigr", "sigt", "sigz", "str_r", "str_t", "r_deflect"]`, six of the eight
+returned arrays. The port produces `nan` in those six first elements and nowhere else --
+verified against PROCESS on that sample, identical `nan` positions and `<= 1e-12`
+relative agreement everywhere else.
+
+**It is unreachable from the ported node.** `stresscl` raises `ProcessValueError` 245
+whenever `r_tf_inboard_in` is zero and `i_tf_stress_model != 2` (`base.py:2524-2527`),
+and `2` is refused in `indat.py`. The only way to see it is to call the solver directly,
+which is why the refusal reason for `i_tf_stress_model == 2` now says what `2` actually
+buys -- the removal of that guard and the `radtf[0] = 1e-9` patch at `:2963-2965` --
+instead of saying the solver is unported.
+
+### validation
+
+`tests/functional_process/models/tfcoil/test_stress.py`, two new `Tier1Contract`s and
+two hand-written tests. Local suite `tests/functional_process/models/tfcoil`:
+**366 -> 378 passed** (361 skipped, gradient and fuzz cases opt-in as usual).
+
+Against a real converged spherical tokamak -- a `SingleRun` on
+`spherical_tokamak_eval.IN.DAT`, calling the port with that run's own `DataStructure`
+values:
+
+| output | PROCESS pipeline | port | relative |
+|---|---|---|---|
+| `sig_tf_wp` | `302391298.07593733` | same | `0` |
+| `sig_tf_case` | `390959416.2857399` | same | `0` |
+| `str_wp` | `0.0010498113096371342` | same | `0` |
+
+Against `stresscl` called directly at `large_tokamak_nof`'s converged geometry with
+`i_tf_stress_model = 0`: `7.7e-16`, `5.3e-16`, `0`. That call exists to test the
+*inert-argument* claim -- `vforce = 0` and both steel areas `1.0`, absurd values against
+a real machine's `4.6e7` and `1.6e-1`, so a read that leaked through would show as an
+enormous diff rather than a marginal one.
+
+**One contract carries `gradient_floor = 1e-8`, the second in the port to need one**,
+and the five components that need it are all boundary conditions rather than model
+disagreements. Three are on `sigr[1499]`, which *is* the outer boundary condition (zero
+radial stress): the port's `jacfwd` returns an exact `0.0` there and PROCESS's finite
+difference, straddling the same cancellation at `epsfcn = 1e-3`, reports `-5.7e-5` with
+a Richardson error bar of `8.7e-18` -- an error bar that is small because the perturbed
+evaluations agree with each other, not because the derivative is known. The other two
+miss by `1.7e-8` and `1.2e-7` relative. Same size and same reason as `TestPlaneStress`'s.
+
+**PROCESS's second unit-test sample is carried by a hand-written test rather than by the
+contract, and the reason is a real limitation of an elementwise tolerance.** The FNSF
+five-layer stack at `i_tf_bucking = 3` is the *only* oracle anywhere for the
+`nonslip_layer > 1` half of this function -- the slip interface row of `m_ext`, the slip
+axial-force row, the `eps_z_slip` inner boundary condition, the
+`str_z = a_vec_solution[4]` branch. It agrees, but at `1e-13` of each output array's
+*scale*:
+
+| array | max abs difference | array scale | ratio |
+|---|---|---|---|
+| `sigr` | `2.2e-06` | `5.7e+07` | `3.8e-14` |
+| `sigt` | `6.8e-06` | `2.2e+08` | `3.1e-14` |
+| `sigz` | `1.7e-06` | `4.2e+08` | `4.1e-15` |
+| `str_r` | `1.8e-16` | `7.8e-03` | `2.3e-14` |
+| `str_t` | `5.1e-17` | `1.5e-03` | `3.5e-14` |
+| `str_z` | `5.4e-18` | `1.2e-03` | `4.6e-15` |
+| `r_deflect` | `1.2e-16` | `4.3e-03` | `2.8e-14` |
+
+Elementwise, two components are unbounded in relative terms and neither is a
+disagreement about the model: `sigr[0]` **is** the inner boundary condition, so PROCESS
+returns a hard `0.0` where the port returns `-2.1e-6` from the same cancelling
+expression; and the worst relative miss on `sigz`, `1.25e-12`, is on an element of
+`1.3e6` inside an array whose scale is `4.2e8`. A per-element `rtol` loose enough to
+pass both would be `1e-11` on 12000 numbers that mostly agree to `1e-15` -- a worse test
+than the one that is there. So the criterion used is the one that matches the claim,
+`1e-13` of each array's own scale, written out in a test function rather than hidden
+behind a widened `Tolerance` on the contract.
+
+### what did not change, and one test that had to
+
+The boundary and missing-producer counts above are for the *tokamak reference* machine,
+which is `large_tokamak_nof` and takes the plane-stress arm; this wave does not move
+them. What it moves is which files assemble at all.
+
+`test_croco.py::test_the_two_tracked_spherical_tokamaks_no_longer_refuse_the_croco_cluster`
+had to be rewritten, and the reason is the one this project keeps rediscovering: it
+asserted that both ST files still *raised*, and checked only which switch names had left
+the refusal message, because when it was written five PF dimensions and
+`i_tf_stress_model` still blocked assembly. Every one of those closed, so the test
+started failing for the best possible reason. It is now
+`test_the_two_tracked_spherical_tokamaks_assemble`, which asserts the stronger claim and
+cannot rot in that direction.

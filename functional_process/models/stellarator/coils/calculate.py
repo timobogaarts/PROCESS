@@ -79,7 +79,7 @@ from functional_process.paths import (
     stellarator_config,
     tfcoil,
 )
-from process.models.superconductors import SuperconductorModel
+from functional_process.vocabulary import SuperconductorModel
 
 
 def calculate_coil_toroidal_thickness(

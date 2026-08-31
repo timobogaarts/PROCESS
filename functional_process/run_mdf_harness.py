@@ -1,7 +1,21 @@
-"""Run the MDF formulation's validation ladder against
-`tests/regression/input_files/stellarator_helias.IN.DAT` and print the report.
+"""Run the MDF formulation's validation ladder and print the report.
 
-    $PY functional_process/run_mdf_harness.py
+    $PY functional_process/run_mdf_harness.py                   # the stellarator
+    $PY functional_process/run_mdf_harness.py --input <IN.DAT>  # any other machine
+    $PY functional_process/run_mdf_harness.py --machine         # the tokamak
+
+With no argument this is exactly what it always was: the Helias stellarator,
+`tests/regression/input_files/stellarator_helias.IN.DAT`, whose numbers other records
+quote. `--input`/`--machine` are spelled exactly as `run_sand_harness.py`'s and
+`run_mda_harness.py`'s (whose `input_file` this imports rather than restates).
+
+A non-reference machine differs from the stellarator path in exactly two threaded values,
+both derived from its own file and both already parameters of `mdf.assemble`: the graph
+(`graph_for(machine_from_indat(...))`) and the static switch values
+(`sand.switch_values_for`, read off the cold initialised `DataStructure` instead of
+`mdf_graph`'s own default). The reference file keeps `None` for both, which is the
+literal code path it has always run -- its numbers are pinned regression evidence
+(`_audit/next_steps.md` §16.1) and must not move because a second device exists.
 
 Sibling of `run_sand_harness.py`, deliberately stage for stage: **A** the conditions at
 PROCESS's converged point, **B** the Jacobian against PROCESS's own finite differences,
@@ -29,6 +43,7 @@ formulation rather than extra diligence:
 One PROCESS run (~95 s) serves all of it, same as `run_sand_harness.py`.
 """
 
+import sys
 import time
 
 import jax
@@ -38,7 +53,13 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
 
-from functional_process import mdf  # noqa: E402
+from functional_process import mdf, sand  # noqa: E402
+from functional_process.indat import (  # noqa: E402
+    REFERENCE_INPUT_FILE,
+    graph_for,
+    machine_from_indat,
+)
+from functional_process.run_mda_harness import _resolve, input_file  # noqa: E402
 from functional_process.sand_harness import (  # noqa: E402
     process_jacobian_with_error,
     reference_run,
@@ -168,9 +189,16 @@ def _measure(mdf_problem, data, label, bounds, tolerance):
     return x, trace, primed
 
 
-def main():
-    """Run the ladder and print each stage's report."""
-    reference = reference_run()
+def main(argv=None):
+    """Run the ladder and print each stage's report. `argv` defaults to this process's
+    own, so importing and calling `main([...])` is the same thing as the command line.
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    path = input_file(argv)
+    is_reference = path == _resolve(REFERENCE_INPUT_FILE)
+    print(f"input file:     {path}")
+
+    reference = reference_run(str(path))
     print(
         f"PROCESS: {reference.solver_iterations} VMCON iterations in "
         f"{reference.solve_seconds:.1f} s, convergence parameter "
@@ -182,15 +210,38 @@ def main():
         f"  i_figure_merit {reference.i_figure_merit}, epsfcn {reference.epsfcn}"
     )
 
+    # The two per-machine values -- see the module docstring. `None` for the reference
+    # keeps that path byte-identical to what it always was.
+    machine_graph = None if is_reference else graph_for(machine_from_indat(str(path)))
+    switch_values = (
+        None
+        if is_reference
+        else sand.switch_values_for(
+            reference.cold, reference.icc, reference.i_figure_merit
+        )
+    )
+    if switch_values is not None:
+        print(f"  switch values (from the file's own cold init): {switch_values}")
+
     problem = mdf.assemble(
-        reference.ixc, reference.icc, reference.n_equality, reference.i_figure_merit
+        reference.ixc,
+        reference.icc,
+        reference.n_equality,
+        reference.i_figure_merit,
+        graph=machine_graph,
+        switch_values=switch_values,
     )
     print("\nMDF shape:", mdf.mdf_shape(problem))
     if problem.report["omitted"]:
         print(f"CONSTRAINTS OMITTED: {problem.report['omitted']}")
 
     nested, name, _ = mdf.nested_blocking(
-        reference.ixc, reference.icc, reference.n_equality, reference.i_figure_merit
+        reference.ixc,
+        reference.icc,
+        reference.n_equality,
+        reference.i_figure_merit,
+        graph=machine_graph,
+        switch_values=switch_values,
     )
     index = nested.index[name]
     print(

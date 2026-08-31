@@ -85,7 +85,7 @@ from functional_process.paths import (
     tfcoil,
     times,
 )
-from process.models.tfcoil.base import TFConductorModel
+from functional_process.vocabulary import TFConductorModel
 
 DAY_SECONDS = 60 * 60 * 24
 DAYS_IN_YEAR = 365.25

@@ -291,3 +291,53 @@ one per group.
 which is `None` there, so `sizes -> flux_swing -> time_point_currents` has no middle
 and `.pf_coil.f_j_cs_start_end_flat_top` stops being loop-carried. Whether the
 remaining edges close a ring is `Blocking`'s question and is not measured here.
+
+## 2026-08-31 -- the arm-2 cycle, measured; and a degenerate SVD in the equilibrium solve
+
+**The paragraph above is now measured, and the answer is that a ring does remain but
+this package is only half of it.** On the arm-2 graph of either tracked ST file the
+SCC is four nodes -- `pf_coil.inductance`, `pf_coil.volt_seconds`, `pulse.burn_time`,
+`plasma_inductance.volt_seconds` -- and `sizes`, `waveform`, `time_point_currents` and
+`turn_currents` are all *outside* it, exactly as predicted. `.pf_coil.n_pf_coil_turns`
+keeps its owner and its readers and loses its closing readers. The full measurement,
+including which of `mda.CUTS` land and why one of the two that lands is redundant on
+this arm, is in `functional_process/mda.py`'s `CUTS` docstring; it is recorded there
+rather than here because it is a property of the whole graph, not of this module.
+
+**`calculate_equilibrium_currents` has a non-finite gradient at an exactly repeated
+singular value, and the spherical tokamak sits a hair from it.** Found by the first
+`--fp-gradients` run over this package (2026-08-31; §20.5 item 3 -- the checks had never
+been run on any of the arm-2 code). `test_masses.py::TestPFCoilChainSphericalTokamak::
+test_gradient_finite_at_zero` fails on `zref[3]`: with `zref[3] = 0` the value of every
+one of the chain's twenty-eight outputs stays finite and the gradient of twenty-one of
+them is `nan`. Measured, not inferred:
+
+- The first output to go non-finite is **`ccls`** -- `ccl0`, `ssq0` and
+  `b_plasma_vertical_required` are all still finite, so the plasma-initiation solve is
+  not implicated and the equilibrium solve is.
+- `zref[3] = 0` puts group 3's up/down pair at `(9.5, 0)` and `(9.5, -0.0)` -- the
+  **same point**. Group 3 is `i_pf_location = 4`, the generally-placed arm, whose `z` is
+  `rminor * zref[group] * sign`; at `zref = 0` the `sign` toggle has nothing to toggle.
+- The equilibrium solve's singular values are then `[2.15e-7, 1.0e-9, 1.0e-9]`, a gap of
+  **exactly `0.0`**, and `jnp.linalg.svd`'s JVP carries a `1 / (s_i^2 - s_j^2)` term.
+
+So this is **not** the `x ** p` / `jnp.sqrt` trap `test_gradient_finite_at_zero`'s own
+message names (`next_steps.md` §9), and `safe_pow`/`safe_sqrt` will not touch it. It is
+a different class -- a matrix decomposition differentiated at a degenerate spectrum --
+and it belongs beside the unguarded-division class `_harness/boundary.py` already
+distinguishes.
+
+**The worrying half is that the degeneracy is not confined to the boundary point.** At
+the contract's *own* legacy point (`zref[3] = 5.2`) the same two singular values are
+`1.0e-9` apart by `4.1e-25` -- distinct only by rounding. The two pinned values are the
+Tikhonov ridge `alfapf` puts on the solve, and two of the three solved groups contribute
+nothing outside it: this machine's equilibrium problem has three free groups and
+effectively one constrained direction. `test_gradient_agreement` passes at that point,
+so the Jacobian there is finite -- but it is finite on a `4e-25` gap, and any input that
+closes that gap turns it into `nan`. **Not fixed here**, deliberately: the fix belongs in
+`currents._solv` (or in a `boundary.py` registration), neither of which this pass owns,
+and the useful artefact is the measurement rather than a guard chosen without one.
+
+The two conventional chain contracts (`TestPFCoilChain`,
+`TestPFCoilChainCsWstNb3Sn`) pass every gradient check, so the defect is specific to the
+generally-placed arm that only the spherical tokamaks reach.

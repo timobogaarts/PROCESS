@@ -76,7 +76,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.paths import build, physics, superconducting_tfcoil, tfcoil
-from process.core import constants
+from functional_process.vocabulary import constants
 
 N_TF_INDUCTANCE_INTERVALS = 100
 """`NINTERVALS` in `tf_coil_self_inductance` (`process/models/tfcoil/base.py:2118`).

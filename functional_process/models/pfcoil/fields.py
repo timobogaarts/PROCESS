@@ -61,7 +61,7 @@ from functional_process.models.pfcoil import (
     PFLocation,
 )
 from functional_process.paths import pf_coil, physics
-from process.core import constants
+from functional_process.vocabulary import constants
 
 RMU0 = constants.RMU0
 """Vacuum permeability (H/m), `process/core/constants.py:277`. Imported rather than

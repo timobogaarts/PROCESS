@@ -57,8 +57,8 @@ through at all, so "maximise it" is not a well-posed optimisation regardless of 
 port represents the precondition.
 """
 
-from process.data_structure.numerics import FiguresOfMerit
-from process.models.availability import AvailabilityModel
+from functional_process.vocabulary import FiguresOfMerit
+from functional_process.vocabulary import AvailabilityModel
 
 
 def objective_metric_1(rmajor):

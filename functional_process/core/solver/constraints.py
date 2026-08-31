@@ -48,12 +48,12 @@ and a caller differentiating one of these functions must exclude them
 
 import jax.numpy as jnp
 
-from process.core import constants
-from process.data_structure.build_variables import TFCSRadialConfiguration
-from process.data_structure.physics_variables import PlasmaIgnitionModel
-from process.models.physics.density_limit import DensityLimitModel
-from process.models.physics.physics import BetaComponentLimits
-from process.models.tfcoil.base import TFConductorModel
+from functional_process.vocabulary import constants
+from functional_process.vocabulary import TFCSRadialConfiguration
+from functional_process.vocabulary import PlasmaIgnitionModel
+from functional_process.vocabulary import DensityLimitModel
+from functional_process.vocabulary import BetaComponentLimits
+from functional_process.vocabulary import TFConductorModel
 
 
 def leq(value, bound):

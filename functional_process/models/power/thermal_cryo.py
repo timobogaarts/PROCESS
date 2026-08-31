@@ -55,12 +55,12 @@ from functional_process.paths import (
     tfcoil,
     times,
 )
-from process.core import constants
-from process.core.exceptions import ProcessValueError
-from process.data_structure.blanket_variables import BlktModelTypes
-from process.data_structure.pfcoil_variables import PFConductorModel
-from process.models.power import ElectricConversionModelTypes, PumpingPowerModelTypes
-from process.models.tfcoil.base import TFConductorModel
+from functional_process.vocabulary import constants
+from functional_process.vocabulary import ProcessValueError
+from functional_process.vocabulary import BlktModelTypes
+from functional_process.vocabulary import PFConductorModel
+from functional_process.vocabulary import ElectricConversionModelTypes, PumpingPowerModelTypes
+from functional_process.vocabulary import TFConductorModel
 
 
 def calculate_plant_thermal_efficiency(

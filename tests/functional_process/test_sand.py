@@ -11,6 +11,8 @@ a mislabelled switch argument) fail loudly instead.
 
 import inspect
 import re
+import subprocess  # noqa: S404
+import sys
 from pathlib import Path
 
 import jax
@@ -27,10 +29,14 @@ from jax.tree_util import GetAttrKey, SequenceKey
 
 import functional_process
 from functional_process.core.solver import constraints as ported_constraints
+from functional_process.core.solver import objectives as ported_objectives
 from functional_process.core.solver.drivers import VmconDriver
 from functional_process.indat import GRAPH
 from functional_process.sand import (
+    NON_INPUT_FIELDS,
     REFERENCE_SWITCH_VALUES,
+    SWITCH_PARAMETER_NAMES,
+    _Resolver,
     constraint_nodes,
     design_bounds,
     iteration_variable_path,
@@ -41,6 +47,10 @@ from functional_process.sand import (
     sand_shape,
 )
 from functional_process.sand_harness import ground_truth
+from functional_process.vocabulary import AREAS
+from functional_process.vocabulary.input_variables import INPUT_VARIABLES
+from process.core.input import INPUT_VARIABLES as PROCESS_INPUT_VARIABLES
+from process.core.model import DataStructure
 from process.core.solver.iteration_variables import ITERATION_VARIABLES
 
 REPO_ROOT = Path(functional_process.__file__).resolve().parent.parent
@@ -480,6 +490,186 @@ def test_design_bounds_are_processs_own_table():
     for var, lower, upper in design_bounds(REFERENCE_IXC):
         assert lower < upper
         assert var in {iteration_variable_path(i) for i in REFERENCE_IXC}
+
+
+_EMPTY_GRAPH = Graph(path_map({}))
+"""A graph with no nodes: stage one can never hit, so stage two is what is tested."""
+
+
+class TestStageTwo:
+    """`_Resolver`'s second stage: PROCESS's declared inputs, not a `DataStructure`.
+
+    Stage two used to build a live `DataStructure` and ask all 36 areas which one had a
+    field of the wanted name -- the port's last runtime `process` import outside the
+    harnesses. It is now a lookup in the vendored `INPUT_VARIABLES` plus
+    `COMPUTED_BY_AN_UNPORTED_MODEL`. These tests hold the swap to the old answer, which
+    is the only thing that makes it safe: PROCESS is importable *here*, so the scan the
+    port no longer performs can still be performed as an oracle.
+    """
+
+    @staticmethod
+    def _scan(data, name):
+        """The old stage two, verbatim: areas of `data` carrying a field `name`."""
+        return [a for a in AREAS if hasattr(getattr(data, a), name)]
+
+    def test_the_vendored_table_agrees_with_the_datastructure_scan(self):
+        """All 863 declarations that name a module land where the scan would put them.
+
+        This is the whole argument for the swap in one assertion. `copper_rrr` is the
+        single exclusion and it has its own test below.
+        """
+        data = DataStructure()
+        for name, declaration in INPUT_VARIABLES.items():
+            if declaration.module is None or name == "copper_rrr":
+                continue
+            assert self._scan(data, name) == [declaration.module], name
+
+    def test_ixc_and_icc_carry_no_field_and_resolve_to_nothing(self):
+        """The two `set_variable=False` rows are the problem statement, not values.
+
+        `INPUT_VARIABLES` records them with `module=None`; a `module=None` row must not
+        become `VarPath(.None.ixc)`.
+        """
+        assert {n for n, d in INPUT_VARIABLES.items() if d.module is None} == {
+            "ixc",
+            "icc",
+        }
+        resolve = _Resolver(_EMPTY_GRAPH)
+        for name in ("ixc", "icc"):
+            with pytest.raises(ValueError, match="resolves to nothing"):
+                resolve(name)
+
+    def test_copper_rrr_is_rebco_because_the_input_layer_says_so(self):
+        """The one name where the table and the scan differ, and why the table wins.
+
+        `copper_rrr` is a field on **both** `rebco` and `superconducting_tfcoil`, so the
+        old scan could only raise "ambiguous". `process/core/input.py` declares it once,
+        on `rebco`, and `parse_input_file` writes exactly `variable_config.module` --
+        so an `IN.DAT` assignment to `copper_rrr` moves `rebco.copper_rrr` and nothing
+        else, and the ambiguity was an artefact of asking `hasattr` a question only the
+        input layer can answer. (`superconducting_tfcoil.copper_rrr` is a duplicate
+        default: no PROCESS model reads either field.)
+        """
+        assert len(self._scan(DataStructure(), "copper_rrr")) == 2
+        assert INPUT_VARIABLES["copper_rrr"].module == "rebco"
+        assert PROCESS_INPUT_VARIABLES["copper_rrr"].module == "rebco"
+        assert _Resolver(_EMPTY_GRAPH)("copper_rrr") == VarPath((
+            GetAttrKey("rebco"),
+            GetAttrKey("copper_rrr"),
+        ))
+
+    def test_the_non_input_table_is_exactly_the_undeclared_parameter_surface(self):
+        """`NON_INPUT_FIELDS` covers every output the constraint layer can name.
+
+        The set is *derived* here rather than transcribed, so a new `constraint_*` naming
+        a quantity nobody declares as an input fails this test instead of silently
+        failing to assemble on some machine nobody has run yet. One name is excluded on
+        purpose: `nd_plasma_electron_max_array_7` is an array element with no field of
+        its own, and the old `DataStructure` scan raised on it too.
+        """
+        data = DataStructure()
+        names = set()
+        for attribute in dir(ported_constraints):
+            if attribute.startswith("constraint_"):
+                names |= set(
+                    inspect.signature(getattr(ported_constraints, attribute)).parameters
+                )
+        for metric in ported_objectives.OBJECTIVE_METRICS.values():
+            names |= set(inspect.signature(metric).parameters)
+        names -= set(SWITCH_PARAMETER_NAMES)
+        undeclared = {
+            name
+            for name in names
+            if INPUT_VARIABLES.get(name) is None or INPUT_VARIABLES[name].module is None
+        }
+        assert self._scan(data, "nd_plasma_electron_max_array_7") == []
+        assert set(NON_INPUT_FIELDS) == undeclared - {"nd_plasma_electron_max_array_7"}
+        assert not set(NON_INPUT_FIELDS) & {
+            n for n, d in INPUT_VARIABLES.items() if d.module is not None
+        }
+
+    @pytest.mark.parametrize(("name", "area"), sorted(NON_INPUT_FIELDS.items()))
+    def test_every_non_input_row_is_the_scans_own_answer(self, name, area):
+        """Each row names the unique `DataStructure` area the old scan would have found.
+
+        108 cases, and they are the whole of what the swap had to reproduce by hand:
+        `INPUT_VARIABLES` could never have answered for any of them.
+        """
+        assert self._scan(DataStructure(), name) == [area]
+
+    def test_the_error_message_names_both_failures_separately(self):
+        """An unresolvable name is two different bugs and the message says which.
+
+        Not in *this* graph (a configuration mismatch -- the name may be fine on another
+        device) versus not a declared PROCESS input at all (a typo). The old message
+        conflated them into one sentence about `DataStructure` areas.
+        """
+        with pytest.raises(ValueError) as excinfo:
+            _Resolver(_EMPTY_GRAPH)("rmajorr")
+        message = str(excinfo.value)
+        assert "No node in this graph" in message
+        assert "not a declared PROCESS input" in message
+        assert "NON_INPUT_FIELDS" in message
+
+    def test_a_name_the_graph_owns_still_wins_over_the_table(self):
+        """Stage one is unchanged: the graph's own `VarPath`, not the input table's.
+
+        `aspect` is a declared input (`physics`) *and* a variable of the reference
+        machine; resolving it must give the graph's variable so the constraint is wired
+        into the real dataflow.
+        """
+        assert INPUT_VARIABLES["aspect"].module == "physics"
+        resolved = _Resolver(GRAPH)("aspect")
+        assert resolved in GRAPH.variables
+
+    def test_sand_imports_and_resolves_with_process_blocked(self):
+        """§23.5's second open item, closed: `sand` needs no `process` at runtime.
+
+        Proved the way `test_process_free_import.py` proves the rest -- a subprocess
+        with `sys.meta_path` raising on any `process` import -- but carried here rather
+        than added there, because that file was being edited by another agent when this
+        was written. What it runs is the *whole* stage-two path, not just the import:
+        `constraint_nodes` for the reference stellarator problem, whose 14 constraints
+        send 13 distinct names to stage two.
+        """
+        probe = subprocess.run(  # noqa: S603
+            [sys.executable, "-c", _BLOCKED_PROBE],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert probe.returncode == 0, probe.stderr[-4000:]
+        assert "NODES 14" in probe.stdout, probe.stdout
+
+
+_BLOCKED_PROBE = '''
+import sys
+
+class _Block:
+    """Raise on any `process` import, from anywhere, at any depth."""
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "process" or fullname.startswith("process."):
+            raise ImportError("BLOCKED: " + fullname)
+        return None
+
+sys.meta_path.insert(0, _Block())
+
+import jax
+jax.config.update("jax_enable_x64", True)
+
+from functional_process.indat import GRAPH
+from functional_process.sand import constraint_nodes
+
+nodes, equalities, inequalities, omitted = constraint_nodes(
+    GRAPH, [2, 16, 24, 8, 17, 18, 67, 82, 83, 62, 32, 34, 35, 65], 2
+)
+assert not omitted, omitted
+assert "process" not in sys.modules, "`process` was imported despite the block"
+print("NODES", len(nodes))
+'''
+"""Deliberately a copy of `test_process_free_import.py`'s block rather than an import of
+it: a test that proves independence should not depend on another test module."""
 
 
 class _Conditions:

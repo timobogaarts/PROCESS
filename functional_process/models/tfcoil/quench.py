@@ -52,7 +52,9 @@ record), one call to `calculate_quench_protection_current_density` makes exactly
 | temperatures | the 75 Gauss-Legendre nodes of `[tftmp, temp_tf_conductor_quench_max]` = `[4.75, 150.0]` K, i.e. `4.7868...` to `149.9631...` K |
 | calls | 150 `PropsSI` (75 x 2) on the **first** evaluation, **0** on every later one |
 
-The zero is the important number. `process/core/coolprop_interface.py` memoises each
+The zero is the important number. The CoolProp wrapper -- PROCESS's
+`process/core/coolprop_interface.py`, vendored verbatim as
+`functional_process/fluid_properties.py` -- memoises each
 property on its input tuple (`@cache`), and the quadrature grid depends only on `tftmp`
 and `temp_tf_conductor_quench_max` -- **neither is written by any model and neither is an
 iteration variable** (`grep` over `process/models/**` finds no assignment to either;
@@ -95,7 +97,6 @@ from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, Ou
 
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import constraints, superconducting_tfcoil, tfcoil
-from process.core.coolprop_interface import FluidProperties
 
 QUENCH_HELIUM_PRESSURE_PA = 6.0e5
 """ITER TF coolant pressure, hardcoded in three places in `process/models/tfcoil/
@@ -455,7 +456,7 @@ def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
     return values as a **static** field. See that class for the decision and its guard.
 
     150 `PropsSI` calls the first time a `(temp_he_peak, temp_quench_max)` pair is seen
-    and none afterwards -- `process/core/coolprop_interface.py` memoises on
+    and none afterwards -- `functional_process/fluid_properties.py` memoises on
     `(T, P, fluid)` with `functools.cache`, and the grid is a pure function of those two
     numbers.
     """
@@ -464,6 +465,17 @@ def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
             temp_he_peak=temp_he_peak, temp_quench_max=temp_quench_max
         )
     )
+    # The wrapper is vendored (`functional_process/fluid_properties.py`, a verbatim copy
+    # of `process/core/coolprop_interface.py`, equality-tested against it in
+    # `tests/functional_process/test_fluid_properties.py`), so this call no longer needs
+    # `process` -- §23.6, the last runtime PROCESS import in the port.
+    #
+    # **The deferral stays, for a second reason.** It was here so that importing this
+    # module needed no `process`; it is here now because `import CoolProp` costs ~3 s
+    # (measured) and only a tokamak assembly ever wants the table. Do not lift it to
+    # module scope.
+    from functional_process.fluid_properties import FluidProperties  # noqa: PLC0415
+
     states = [
         FluidProperties.of(
             "He", temperature=float(t), pressure=QUENCH_HELIUM_PRESSURE_PA

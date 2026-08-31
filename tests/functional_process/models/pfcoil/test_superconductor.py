@@ -28,6 +28,7 @@ from functional_process.models.pfcoil.superconductor import (
     calculate_cs_temperature_margin_iter_nb3sn,
     calculate_cs_temperature_margin_wst_nb3sn,
     calculate_pf_strand_critical_current_density,
+    calculate_pf_strand_critical_current_density_hazelton_zhai_rebco,
 )
 from process.models.pfcoil import superconpf
 from process.models.superconductors import SuperconductorModel
@@ -425,4 +426,138 @@ class TestPFStrandCriticalCurrentDensity(Tier1Contract):
         "bpf2": (0.5, 6.0),
         "temp_pf_peak_field": (4.0, 6.0),
         "fcupfsu": (0.4, 0.85),
+    }
+
+
+# ---------------------------------------------------------------------------------
+# The REBCO-tape PF arm (`i_pf_superconductor = 9`), 2026-08-31.
+# ---------------------------------------------------------------------------------
+#
+# The last of the eight PF coils on `test_masses.py::TestPFCoilChainSphericalTokamak`'s
+# legacy point -- the one that survives `pfcoil()`'s loop, since the assignment at
+# `pfcoil.py:900-904` carries no index. Read off that contract's own reference chain.
+_ST_B_PF_COIL_PEAK_LAST = 1.3945960069778585
+_ST_BPF2_LAST = 0.977502159795704
+_ST_TEMP_PF_PEAK_FIELD = 20.0
+"""`.tfcoil.tftmp` on both tracked spherical tokamaks
+(`spherical_tokamak_eval.IN.DAT:363`, `st_regression.IN.DAT:1332`) -- 20 K, not the
+4.75 K of the NbTi machines, which is the point of an HTS coil and is why this
+contract's temperature bounds sit where they do."""
+_ST_FCUPFSU = 0.69
+"""`pfcoil_variables.py:217`'s default. Neither ST file sets it -- `st_regression.IN.DAT`
+carries the line commented out."""
+_ST_DR_HTS_TAPE = 6.2886208094437651e-3
+_ST_DX_HTS_TAPE_REBCO = 1.0e-6
+_ST_DX_HTS_TAPE_TOTAL = 2.11e-4
+"""The tape geometry, and **it is the TF coil's, not the PF coil's** --
+`pfcoil.py:892-894` passes `.superconducting_tfcoil.dr_tf_hts_tape` /
+`.dx_tf_hts_tape_rebco` /
+`.dx_tf_hts_tape_total` straight into the PF call, because `pfcoil_variables.py` has no
+tape geometry of its own. The width and total thickness are the CroCo turn's own outputs
+(`tests/functional_process/models/tfcoil/test_croco.py:509-511`, the same two numbers);
+`dx_tf_hts_tape_rebco` is `1.0e-6` on both ST files explicitly
+(`spherical_tokamak_eval.IN.DAT:73`, `st_regression.IN.DAT:787`) and by default."""
+
+
+def _reference_pf_strand_critical_current_density_hazelton_zhai_rebco(
+    b_pf_coil_peak,
+    bpf2,
+    temp_pf_peak_field,
+    fcupfsu,
+    dr_hts_tape,
+    dx_hts_tape_rebco,
+    dx_hts_tape_total,
+):
+    """`pfcoil()`'s `:871-904` for one coil at `i_pf_superconductor = 9`.
+
+    The whole real `superconpf` again, `HAZELTON_ZHAI_REBCO` arm: `bmax`, the third of
+    its four returns, and the `else` strand branch. `bc20m = 138` / `tc0m = 92` are
+    `superconpf`'s own literals (`pfcoil.py:4853-4854`) and are therefore *not*
+    arguments on either side -- the port carries them as module constants for the same
+    reason.
+
+    **The three tape dimensions are real inputs here**, unlike in
+    `_reference_superconpf`/`_reference_pf_strand_critical_current_density`, where they
+    are held constants because the NbTi and Nb3Sn arms never read them. This is the arm
+    they exist for.
+
+    `fhe`, `j_pf_wp` and the six arguments this arm does not read are held at the
+    spherical tokamak's own values rather than at zeros, for the reason the sibling
+    adapters give: a regression in the branch selection must surface as a value mismatch
+    and not as a division by zero. They reach only `j_crit_cable` (the second return,
+    discarded) and the temperature-margin root find (the fourth, also discarded, and run
+    anyway because `superconpf` always runs it).
+    """
+    _jcritwp, _j_crit_cable, j_crit_sc, _tmarg = superconpf(
+        b_pf_peak=max(abs(float(b_pf_coil_peak)), abs(float(bpf2))),
+        fhe=0.3,
+        fcu=float(fcupfsu),
+        j_pf_wp=1.1e7,
+        isumat=SuperconductorModel.HAZELTON_ZHAI_REBCO,
+        fhts=0.5,
+        strain=-0.005,
+        temp_pf_peak_field=float(temp_pf_peak_field),
+        bcritsc=24.0,
+        tcritsc=16.0,
+        b_crit_upper_nbti=14.86,
+        t_crit_nbti=9.04,
+        dr_hts_tape=float(dr_hts_tape),
+        dx_hts_tape_rebco=float(dx_hts_tape_rebco),
+        dx_hts_tape_total=float(dx_hts_tape_total),
+    )
+    return j_crit_sc * (1.0 - float(fcupfsu))
+
+
+class TestPFStrandCriticalCurrentDensityHazeltonZhaiRebco(Tier1Contract):
+    """`calculate_pf_strand_critical_current_density_hazelton_zhai_rebco` ->
+    `superconpf(isumat=9)`'s third return times `1 - fcupfsu`.
+
+    Owed since 2026-08-30 (`_audit/next_steps.md` §20.5 item 2). The REBCO-tape PF arm
+    both spherical tokamaks set (`spherical_tokamak_eval.IN.DAT:235`,
+    `st_regression.IN.DAT:1670`), and the sibling of
+    `TestPFStrandCriticalCurrentDensity`, which is the same block of `pfcoil()` with the
+    `OLD_LUBELL_NBTI` arm.
+
+    **Distinct from `TestHijcRebco`**, which covers the same fit in
+    `tests/functional_process/models/physics/test_superconductors.py`. That contract
+    tests `hijc_rebco` against `process.models.superconductors.hijc_rebco` -- the
+    critical surface alone, called directly with its own arguments. This one tests the
+    *PF block around it*: which of `superconpf`'s four returns is taken, that
+    `bc20m = 138` / `tc0m = 92` are the constants this arm passes, that `bmax` is
+    `max(|b_pf_coil_peak|, |bpf2|)`, and that the strand branch is the `else` one
+    (`* (1 - fcupfsu)`, not the `/ (1 - fcupfsu)` of the `{2, 6, 8}` arm). None of that
+    is reachable from the material fit's own contract.
+
+    `b_pf_coil_peak` and `bpf2` are fuzzed independently so the draws cross the
+    `max(|.|, |.|)` over: the legacy point has the inner edge above the outer.
+    """
+
+    audit_record = "models/pfcoil/superconductor.md"
+    reference = _reference_pf_strand_critical_current_density_hazelton_zhai_rebco
+    ported = calculate_pf_strand_critical_current_density_hazelton_zhai_rebco
+
+    samples = [
+        legacy_sample(
+            "spherical-tokamak-plausible-last-pf-coil",
+            b_pf_coil_peak=_ST_B_PF_COIL_PEAK_LAST,
+            bpf2=_ST_BPF2_LAST,
+            temp_pf_peak_field=_ST_TEMP_PF_PEAK_FIELD,
+            fcupfsu=_ST_FCUPFSU,
+            dr_hts_tape=_ST_DR_HTS_TAPE,
+            dx_hts_tape_rebco=_ST_DX_HTS_TAPE_REBCO,
+            dx_hts_tape_total=_ST_DX_HTS_TAPE_TOTAL,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "b_pf_coil_peak": (0.5, 6.0),
+        "bpf2": (0.5, 6.0),
+        # Well under `tc0m = 92 K`: above it PROCESS's `(1 - T/T_c0) ** 1.4` returns a
+        # *complex* and the port returns `nan`, a type-level disagreement neither side
+        # is trying to reproduce (`TestHijcRebco`'s docstring, and `hijc_rebco`'s).
+        "temp_pf_peak_field": (4.0, 40.0),
+        "fcupfsu": (0.4, 0.85),
+        "dr_hts_tape": (2.0e-3, 8.0e-3),
+        "dx_hts_tape_rebco": (5.0e-7, 2.0e-6),
+        "dx_hts_tape_total": (5.0e-5, 3.0e-4),
     }

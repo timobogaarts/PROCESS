@@ -63,7 +63,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.paths import current_drive, physics, times
-from process.core import constants
+from functional_process.vocabulary import constants
 
 # ---------------------------------------------------------------------------
 # `plasma_fields.py::PlasmaFields.calculate_surface_averaged_poloidal_field`

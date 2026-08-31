@@ -81,7 +81,7 @@ from cottax.interfaces.pytree_namespace_module import (
 
 from functional_process.models.safe_math import safe_pow
 from functional_process.paths import physics
-from process.data_structure.physics_variables import OutbordSOLPowerDecayLengthModel
+from functional_process.vocabulary import OutbordSOLPowerDecayLengthModel
 
 # ---------------------------------------------------------------------------
 # `ScrapeOffLayer`'s four `@staticmethod`s -- direct ports, source order preserved.

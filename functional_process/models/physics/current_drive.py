@@ -47,8 +47,8 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.paths import current_drive, heat_transport, physics
-from process.core import constants
-from process.data_structure.physics_variables import PlasmaIgnitionModel
+from functional_process.vocabulary import constants
+from functional_process.vocabulary import PlasmaIgnitionModel
 
 # ---------------------------------------------------------------------------
 # Stage 1 -- the current drive efficiency of the primary heating system.

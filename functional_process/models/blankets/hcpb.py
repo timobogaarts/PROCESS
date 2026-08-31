@@ -93,7 +93,7 @@ from functional_process.paths import (
     primary_pumping,
     tfcoil,
 )
-from process.core import constants
+from functional_process.vocabulary import constants
 
 
 def calculate_fw_coolant_void_fractions(radius_fw_channel, dx_fw_module, dr_fw_inboard):

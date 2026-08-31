@@ -27,10 +27,17 @@ cell the tracked tokamaks take, and nothing else:
 | switch | value ported | why the others are not here |
 |---|---|---|
 | `i_tf_sup` | `1` (superconducting) | **resolved above this file.** `caller.py:295-316` picks `CICCSuperconductingTFCoil` at `i_tf_sup == 1`; a resistive machine has a different occupant of `.tokamak`'s TF slot entirely, not a different arm of this node |
-| `i_tf_stress_model` | `1` (generalised plane stress) | `0`/`2` route to `extended_plane_strain` (`base.py:3719-4234`, **517 lines**), a different solver returning three strain arrays this one does not compute. Refused in `indat.py`, and it is the live arm of both tracked *spherical* tokamaks -- see the record |
+| `i_tf_stress_model` | `1` (generalised plane stress) **and** `0` (extended plane strain) | Two solvers, two wrappers, two occupants -- `plane_stress` and `extended_plane_strain` (`base.py:3719-4234`). `2` reaches the same code as `0` on every tracked value but is refused rather than aliased, because nobody has measured a file that sets it |
 | `i_tf_bucking` | `1` (nose casing bucks, no CS layer) | `>= 2` (bucked-and-wedged) prepends a **central-solenoid** layer whose properties are rebuilt from scratch out of nine `.pf_coil` fields (`base.py:2531-2650`); `3` adds a Kapton interlayer on top. Neither reads-set is written |
 | `i_tf_tresca` | **not read at all** | measured, not assumed: its two branches (`base.py:3196`, `:3218`) are both gated on `ii >= i_tf_bucking + 1`, and the two layers this node reports are `n_tf_bucking` and `n_tf_bucking - 1`. Neither can reach the gate, so no CEA out-of-plane correction and no von Mises array is computed here |
 | `i_tf_turns_integer` | **both arms written** | it picks *which field* the cable-space width for the transverse smearing comes from -- `.superconducting_tfcoil.dx_tf_turn_cable_space_average` at `0`, `.superconducting_tfcoil.dr_tf_turn_cable_space` at `1` (`base.py:2745-2749`). A different read, so a different occupant; `low_aspect_ratio_DEMO` is the integer one and it assembles today |
+
+The two `i_tf_stress_model` wrappers are **siblings, not a switch**: the plane-strain
+one reads the axial moduli and `.superconducting_tfcoil.vforce_inboard_tot` where the
+plane-stress one reads neither, does not read `.tfcoil.a_tf_coil_inboard_case` /
+`.tfcoil.a_tf_turn_steel` at all, and owns three fields rather than five. Only its
+averaged-turn arm is written; `(0, 1, 1)` is refused, because both tracked spherical
+tokamaks set `i_tf_turns_integer = 0`.
 
 `tf_field_and_force` carries a fifth: `itart == 1 and i_cp_joints == 1` (a spherical
 tokamak with *sliding* centrepost joints) splits the vertical tension between centrepost
@@ -91,7 +98,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.paths import build, physics, superconducting_tfcoil, tfcoil
-from process.core import constants
+from functional_process.vocabulary import constants
 
 N_RADIAL_ARRAY = 500
 """`n_radial_array`: test points per stress layer.
@@ -447,6 +454,409 @@ def plane_stress(*, nu, rad, ey, j, n_radial_array=N_RADIAL_ARRAY):
         + 0.5 * beta_r * rradius * log_r
     )
     return sigr, sigt, r_deflect, rradius
+
+
+# ---------------------------------------------------------------------------
+# The second layer solver -- `process/models/tfcoil/base.py:3719-4234`
+# ---------------------------------------------------------------------------
+
+
+def _lame_row(r_sq):
+    """`[r^2, 1, 0, 0, 0]` as a length-5 row -- PROCESS's `rad_row_helper`.
+
+    `base.py` reuses one `(1, 5)` scratch array for this and overwrites its first two
+    entries before every inner product; here each use builds its own row, which is the
+    same value and one fewer aliasing hazard.
+    """
+    zero = jnp.zeros_like(r_sq)
+    return jnp.stack([r_sq, jnp.ones_like(r_sq), zero, zero, zero])
+
+
+def extended_plane_strain(
+    *,
+    nu_t,
+    nu_zt,
+    ey_t,
+    ey_z,
+    rad,
+    d_curr,
+    v_force,
+    i_tf_bucking,
+    n_radial_array=N_RADIAL_ARRAY,
+):
+    """Axisymmetric extended plane strain in a stack of current-carrying layers.
+
+    Ports `extended_plane_strain`, `process/models/tfcoil/base.py:3719-4234` -- the
+    solver `i_tf_stress_model in {0, 2}` selects, and the live one on both tracked
+    spherical tokamaks. Derivation: PROCESS issue #1414.
+
+    **Why it is a second function and not a second branch of `plane_stress`.** It solves
+    a different problem: transverse-isotropic materials (two moduli and three Poisson's
+    ratios per layer rather than one of each), a genuine axial degree of freedom driven
+    by a prescribed total tension rather than a stress read off afterwards, and an
+    optional *slip* boundary at layer `i_tf_bucking` below which the layers carry no net
+    axial force. It therefore returns three strain arrays and an axial stress array that
+    `plane_stress` never computes, and takes `v_force` where `plane_stress` takes
+    nothing.
+
+    **The linear system is 4x4 whatever the layer count.** Each layer's radial
+    displacement is Lame's `u = A r + B / r` plus a particular integral for the Lorentz
+    body force; continuity across an interface is a fixed `5 x 5` transfer matrix, so the
+    whole stack collapses onto the outermost layer's solution vector
+    `(A, B, eps_z, 1, eps_z_slip)`. Four scalar conditions -- zero radial stress outside,
+    zero radial stress (or zero displacement, at a zero inner radius) inside, prescribed
+    total axial force, zero axial force on the slip layers -- are inner products with
+    that vector, so stacking them gives one `4 x 4` solve. The `1` in slot 3 is what
+    carries the inhomogeneous terms, which is why the solve drops that column into the
+    right-hand side.
+
+    PROCESS's `nlayers` argument is the length of `d_curr` here, static at trace time,
+    for the same reason `plane_stress` drops it.
+
+    Parameters
+    ----------
+    nu_t :
+        Per-layer transverse (radial-toroidal) Poisson's ratio, length `nlayers`.
+    nu_zt :
+        Per-layer axial-transverse Poisson's ratio, length `nlayers`.
+    ey_t, ey_z :
+        Per-layer transverse and axial Young's moduli (Pa), length `nlayers`.
+    rad :
+        Layer boundary radii (m), length `nlayers + 1`, inboard to outboard.
+    d_curr :
+        Per-layer uniform current density (A/m^2), length `nlayers`.
+    v_force :
+        Total axial tension carried by the force-carrying layers (N). On the TF coil
+        this is `.superconducting_tfcoil.vforce_inboard_tot`, the *whole set's* inboard
+        tension, not one coil's -- `base.py:3021` passes `vforce_inboard_tot` where the
+        plane-stress arm divides `vforce` by the steel area itself.
+    i_tf_bucking :
+        The index of the innermost layer that carries axial force; layers inboard of it
+        are decoupled (the "slip" layers) and their axial force is separately
+        constrained to zero. A **static** argument: it decides how many rows of the
+        transfer-matrix construction exist, not a value inside them. PROCESS clamps it
+        up to `1` (`base.py:3919`) and so does this.
+    n_radial_array :
+        Test points per layer. Unlike `plane_stress`'s, this grid is **closed**: the step
+        is `(rad[ii+1] - rad[ii]) / (n_radial_array - 1)` (`base.py:4160`), so the last
+        point of a layer sits exactly on its outer radius.
+
+    Returns
+    -------
+    :
+        `(rradius, sigr, sigt, sigz, str_r, str_t, str_z, r_deflect)` in PROCESS's own
+        return order -- the radius each quantity was evaluated at (m), the three
+        principal stresses (Pa), the three principal strains, and the radial
+        displacement (m); each of length `nlayers * n_radial_array`, laid out layer by
+        layer.
+
+    Notes
+    -----
+    **A zero inner radius produces `nan`, and that is reproduced rather than repaired.**
+    At `rad[0] == 0` the innermost test point is `r = 0`; the inner boundary condition
+    forces `B = 0` there, so `b_plot / r` is `0 / 0` and PROCESS's own unit test records
+    the first element of `sigr`, `sigt`, `sigz`, `str_r`, `str_t` and `r_deflect` as
+    `nan` (`tests/unit/models/tfcoil/test_tfcoil.py`'s `nan_init`). `f_int_a_plot`'s
+    `f_rec_fac * log(rad[1] / 0)` is `0 * inf` and `nan` for the same reason. Both are
+    left unguarded here so the port returns what PROCESS returns; the guard PROCESS
+    *does* have -- on `f_int_a[0]`, `base.py:3979-3980` -- is reproduced below.
+    **This is not reachable from the ported node**: `stresscl` raises
+    `ProcessValueError` at `base.py:2524-2527` whenever `r_tf_inboard_in` is zero and
+    `i_tf_stress_model != 2`, and the arm registered in `indat.py` is `0`.
+    """
+    nlayers = len(d_curr)
+    # `base.py:3917-3919`. Static, so a Python `int` and Python `max`.
+    nonslip_layer = max(int(i_tf_bucking), 1)
+
+    nu_t = jnp.asarray(nu_t, dtype=float)
+    nu_zt = jnp.asarray(nu_zt, dtype=float)
+    ey_t = jnp.asarray(ey_t, dtype=float)
+    ey_z = jnp.asarray(ey_z, dtype=float)
+    rad = jnp.asarray(rad, dtype=float)
+    d_curr = jnp.asarray(d_curr, dtype=float)
+
+    # ---- stiffness tensor factors (`base.py:3925-3944`, writeup §3 and §12) --------
+    nu_tz = nu_zt * ey_t / ey_z
+    denominator = 1.0 - nu_t - 2.0 * nu_tz * nu_zt
+    ey_bar_z = ey_z * (1.0 - nu_t) / denominator
+    ey_bar_t = ey_t * (1.0 - nu_tz * nu_zt) / denominator / (1.0 + nu_t)
+    nu_bar_t = (nu_t + nu_tz * nu_zt) / (1.0 - nu_tz * nu_zt)
+    nu_bar_tz = nu_tz / (1.0 - nu_t)
+    nu_bar_zt = nu_zt * (1.0 + nu_t) / (1.0 - nu_tz * nu_zt)
+
+    # ---- Lorentz force parameters (`base.py:3946-3990`, writeup §13) ---------------
+    r_inner = rad[:nlayers]
+    r_outer = rad[1 : nlayers + 1]
+    currents = jnp.pi * d_curr * (r_outer**2 - r_inner**2)
+    # `currents_enclosed[ii]` is the sum of layers 0..ii-1, so a shifted cumulative sum.
+    currents_enclosed = jnp.concatenate([
+        jnp.zeros(1),
+        jnp.cumsum(currents)[: nlayers - 1],
+    ])
+    f_lin_fac = constants.RMU0 / 2.0 * d_curr**2
+    f_rec_fac = (
+        constants.RMU0
+        / 2.0
+        * (d_curr * currents_enclosed / jnp.pi - d_curr**2 * r_inner**2)
+    )
+
+    # A zero inner radius makes `log(r_outer / r_inner)` infinite; PROCESS lets that
+    # happen and then overwrites element 0 when `f_rec_fac[0] == 0`. It always is when
+    # `rad[0] == 0` -- `currents_enclosed[0]` is identically zero, so
+    # `f_rec_fac[0] = -RMU0/2 * d_curr[0]^2 * rad[0]^2` -- so the overwrite covers
+    # exactly the case that would have been `nan`. The `where` on the divisor is the
+    # `safe_math` idiom: it keeps the *untaken* branch's tangent finite.
+    safe_r_inner = jnp.where(r_inner == 0.0, 1.0, r_inner)
+    f_int_a = 0.5 * f_lin_fac * (r_outer**2 - r_inner**2) + f_rec_fac * jnp.log(
+        r_outer / safe_r_inner
+    )
+    f_int_a = f_int_a.at[0].set(
+        jnp.where(
+            f_rec_fac[0] == 0.0,
+            0.5 * f_lin_fac[0] * (rad[1] ** 2 - rad[0] ** 2),
+            f_int_a[0],
+        )
+    )
+    f_int_b = 0.25 * f_lin_fac * (r_outer**4 - r_inner**4) + 0.5 * f_rec_fac * (
+        r_outer**2 - r_inner**2
+    )
+
+    # ---- within-layer transfer matrices (`base.py:3992-4010`, writeup §5) ----------
+    # `m_int[kk]` carries the solution vector from layer `kk`'s outer radius to its
+    # inner one. PROCESS stores these as `(5, 5, nlayers)`; the layer index leads here,
+    # which is the same matrices and the ordinary `A @ B` for the products below.
+    m_int = jnp.repeat(jnp.eye(5)[None, :, :], nlayers, axis=0)
+    m_int = m_int.at[:, 0, 3].set(-0.5 / ey_bar_t * f_int_a)
+    m_int = m_int.at[:, 1, 3].set(0.5 / ey_bar_t * f_int_b)
+
+    # ---- between-layer transfer matrices (`base.py:4012-4058`, writeup §6 and §15) --
+    # `m_ext[kk]` carries it from layer `kk`'s inner radius to layer `kk-1`'s outer one.
+    # `m_ext[0]` is left as zeros, exactly as PROCESS leaves it: the only use of it is
+    # the final update of the innermost iteration, whose result is never read.
+    m_ext = jnp.zeros((nlayers, 5, 5))
+    for kk in range(1, nonslip_layer - 1):
+        ey_fac = ey_bar_t[kk] / ey_bar_t[kk - 1]
+        m_ext = m_ext.at[kk, 0, 2].set(0.0)
+        m_ext = m_ext.at[kk, 0, 4].set(
+            0.5 * (ey_fac * nu_bar_zt[kk] - nu_bar_zt[kk - 1])
+        )
+    if nonslip_layer > 1:
+        # The slip interface itself: axial strain switches sides here.
+        kk = nonslip_layer - 1
+        ey_fac = ey_bar_t[kk] / ey_bar_t[kk - 1]
+        m_ext = m_ext.at[kk, 0, 2].set(0.5 * ey_fac * nu_bar_zt[kk])
+        m_ext = m_ext.at[kk, 0, 4].set(0.5 * (-nu_bar_zt[kk - 1]))
+    for kk in range(nonslip_layer, nlayers):
+        ey_fac = ey_bar_t[kk] / ey_bar_t[kk - 1]
+        m_ext = m_ext.at[kk, 0, 2].set(
+            0.5 * (ey_fac * nu_bar_zt[kk] - nu_bar_zt[kk - 1])
+        )
+        m_ext = m_ext.at[kk, 0, 4].set(0.0)
+    for kk in range(1, nlayers):
+        # Written after the three loops above, because rows 1 and 2 below read the
+        # `m_ext[kk, 0, 2]` and `m_ext[kk, 0, 4]` they set (`base.py:4048-4051`).
+        ey_fac = ey_bar_t[kk] / ey_bar_t[kk - 1]
+        m_ext = m_ext.at[kk, 0, 0].set(
+            0.5 * (ey_fac * (1.0 + nu_bar_t[kk]) + 1.0 - nu_bar_t[kk - 1])
+        )
+        # `base.py:4041`: the `B` column is dropped at a zero interface radius, where
+        # `1 / r^2` is meaningless. Double `where`, so the untaken branch never divides.
+        safe_rad = jnp.where(rad[kk] > 0.0, rad[kk], 1.0)
+        m_ext = m_ext.at[kk, 0, 1].set(
+            jnp.where(
+                rad[kk] > 0.0,
+                0.5
+                / safe_rad**2
+                * (1.0 - nu_bar_t[kk - 1] - ey_fac * (1.0 - nu_bar_t[kk])),
+                0.0,
+            )
+        )
+        m_ext = m_ext.at[kk, 1, 0].set(rad[kk] ** 2 * (1.0 - m_ext[kk, 0, 0]))
+        m_ext = m_ext.at[kk, 1, 1].set(1.0 - rad[kk] ** 2 * m_ext[kk, 0, 1])
+        m_ext = m_ext.at[kk, 1, 2].set(-(rad[kk] ** 2) * m_ext[kk, 0, 2])
+        m_ext = m_ext.at[kk, 1, 4].set(-(rad[kk] ** 2) * m_ext[kk, 0, 4])
+        m_ext = m_ext.at[kk, 2, 2].set(1.0)
+        m_ext = m_ext.at[kk, 3, 3].set(1.0)
+        m_ext = m_ext.at[kk, 4, 4].set(1.0)
+
+    # ---- outermost-to-each transfer matrices (`base.py:4060-4070`, writeup §7) -----
+    m_tot_layers = [None] * nlayers
+    m_tot_layers[nlayers - 1] = m_int[nlayers - 1]
+    for kk in range(nlayers - 2, -1, -1):
+        m_tot_layers[kk] = m_int[kk] @ (m_ext[kk + 1] @ m_tot_layers[kk + 1])
+    m_tot = jnp.stack(m_tot_layers)
+
+    # ---- the axial force inner products (`base.py:4072-4147`, writeup §8) ----------
+    # PROCESS sums with Python's `sum` over a numpy array (left to right from `0`);
+    # `jnp.sum` may associate differently, which is a rounding difference on a sum of
+    # `nlayers` terms and nothing else.
+    ey_bar_z_area = jnp.pi * jnp.sum(
+        ey_bar_z[nonslip_layer - 1 : nlayers]
+        * (rad[nonslip_layer : nlayers + 1] ** 2 - rad[nonslip_layer - 1 : nlayers] ** 2)
+    )
+    ey_bar_z_area_slip = jnp.pi * jnp.sum(
+        ey_bar_z[: nonslip_layer - 1]
+        * (rad[1:nonslip_layer] ** 2 - rad[: nonslip_layer - 1] ** 2)
+    )
+
+    v_force_row = (
+        2.0
+        * jnp.pi
+        * ey_bar_z[nlayers - 1]
+        * nu_bar_tz[nlayers - 1]
+        * _lame_row(rad[nlayers] ** 2)
+    )
+    v_force_row -= (
+        2.0
+        * jnp.pi
+        * ey_bar_z[nonslip_layer - 1]
+        * nu_bar_tz[nonslip_layer - 1]
+        * (_lame_row(rad[nonslip_layer - 1] ** 2) @ m_tot[nonslip_layer - 1])
+    )
+    for kk in range(nonslip_layer, nlayers):
+        v_force_row += (
+            2.0
+            * jnp.pi
+            * (ey_bar_z[kk - 1] * nu_bar_tz[kk - 1] - ey_bar_z[kk] * nu_bar_tz[kk])
+            * (_lame_row(rad[kk] ** 2) @ m_tot[kk])
+        )
+    v_force_row = v_force_row.at[2].add(ey_bar_z_area)
+
+    if nonslip_layer > 1:
+        v_force_row_slip = (
+            2.0
+            * jnp.pi
+            * ey_bar_z[nonslip_layer - 2]
+            * nu_bar_tz[nonslip_layer - 2]
+            * (_lame_row(rad[nonslip_layer - 1] ** 2) @ m_tot[nonslip_layer - 1])
+        )
+        v_force_row_slip -= (
+            2.0
+            * jnp.pi
+            * ey_bar_z[0]
+            * nu_bar_tz[0]
+            * (_lame_row(rad[0] ** 2) @ m_tot[0])
+        )
+        for kk in range(1, nonslip_layer - 1):
+            v_force_row_slip += (
+                2.0
+                * jnp.pi
+                * (ey_bar_z[kk - 1] * nu_bar_tz[kk - 1] - ey_bar_z[kk] * nu_bar_tz[kk])
+                * (_lame_row(rad[kk] ** 2) @ m_tot[kk])
+            )
+        v_force_row_slip = v_force_row_slip.at[4].add(ey_bar_z_area_slip)
+    else:
+        # `base.py:4145-4147`: with no slip layers the fourth condition is vacuous, and
+        # a unit entry in the `eps_z_slip` column is what keeps the 4x4 non-singular.
+        v_force_row_slip = jnp.array([0.0, 0.0, 0.0, 0.0, 1.0])
+
+    # ---- boundary conditions and the 4x4 solve (`base.py:4149-4198`, writeup §9-10) -
+    zero = jnp.zeros(())
+    bc_outer = jnp.stack([
+        (1.0 + nu_bar_t[nlayers - 1]) * rad[nlayers] ** 2,
+        -1.0 + nu_bar_t[nlayers - 1],
+        nu_bar_zt[nlayers - 1] * rad[nlayers] ** 2,
+        zero,
+        zero,
+    ])
+    if nonslip_layer > 1:
+        # The innermost layer is a slip layer, so its axial strain is `eps_z_slip`.
+        bc_inner = jnp.stack([
+            (1.0 + nu_bar_t[0]) * rad[0] ** 2,
+            -1.0 + nu_bar_t[0],
+            zero,
+            zero,
+            nu_bar_zt[0] * rad[0] ** 2,
+        ])
+    else:
+        bc_inner = jnp.stack([
+            (1.0 + nu_bar_t[0]) * rad[0] ** 2,
+            -1.0 + nu_bar_t[0],
+            nu_bar_zt[0] * rad[0] ** 2,
+            zero,
+            zero,
+        ])
+    bc_inner @= m_tot[0]
+
+    m_bc = jnp.stack([
+        bc_outer,
+        bc_inner,
+        v_force_row.at[3].add(-v_force),
+        v_force_row_slip,
+    ])
+
+    # Column 3 multiplies the constant `1.0`, so it is the right-hand side; the other
+    # four columns are the unknowns `(A, B, eps_z, eps_z_slip)`.
+    m_toinv = jnp.concatenate([m_bc[:, :3], m_bc[:, 4:5]], axis=1)
+    solution = jnp.linalg.solve(m_toinv, -m_bc[:, 3])
+    a_vec_solution = jnp.stack([
+        solution[0],
+        solution[1],
+        solution[2],
+        jnp.ones(()),
+        solution[3],
+    ])
+
+    # ---- the radial distributions (`base.py:4200-4232`) ---------------------------
+    # PROCESS recomputes `a_vec_layer` from `a_vec_solution` at the end of every
+    # iteration rather than accumulating, so layer `ii`'s vector is a closed form:
+    # `m_ext[ii+1] @ m_tot[ii+1] @ a_vec_solution`, and the outermost is the solution
+    # itself.
+    layer_vectors = [None] * nlayers
+    layer_vectors[nlayers - 1] = a_vec_solution
+    for ii in range(nlayers - 2, -1, -1):
+        layer_vectors[ii] = m_ext[ii + 1] @ (m_tot[ii + 1] @ a_vec_solution)
+
+    offsets = jnp.arange(n_radial_array)
+    rradius_parts, sigr_parts, sigt_parts, sigz_parts = [], [], [], []
+    str_r_parts, str_t_parts, str_z_parts, deflect_parts = [], [], [], []
+    for ii in range(nlayers):
+        a_layer = layer_vectors[ii][0]
+        b_layer = layer_vectors[ii][1]
+        dradius = (rad[ii + 1] - rad[ii]) / (n_radial_array - 1)
+        radius = rad[ii] + dradius * offsets
+
+        f_int_a_plot = 0.5 * f_lin_fac[ii] * (rad[ii + 1] ** 2 - radius**2) + f_rec_fac[
+            ii
+        ] * jnp.log(rad[ii + 1] / radius)
+        f_int_b_plot = 0.25 * f_lin_fac[ii] * (
+            rad[ii + 1] ** 4 - radius**4
+        ) + 0.5 * f_rec_fac[ii] * (rad[ii + 1] ** 2 - radius**2)
+        a_plot = a_layer - 0.5 / ey_bar_t[ii] * f_int_a_plot
+        b_plot = b_layer + 0.5 / ey_bar_t[ii] * f_int_b_plot
+
+        str_r = a_plot - b_plot / radius**2
+        str_t = a_plot + b_plot / radius**2
+        # A slip layer takes `eps_z_slip`, everything else the force-carrying `eps_z`.
+        # `ii` and `nonslip_layer` are both static, so this is a Python `if`.
+        str_z = jnp.full(
+            (n_radial_array,),
+            a_vec_solution[4] if ii < nonslip_layer - 1 else a_vec_solution[2],
+        )
+
+        rradius_parts.append(radius)
+        deflect_parts.append(a_plot * radius + b_plot / radius)
+        str_r_parts.append(str_r)
+        str_t_parts.append(str_t)
+        str_z_parts.append(str_z)
+        sigr_parts.append(
+            ey_bar_t[ii] * (str_r + nu_bar_t[ii] * str_t + nu_bar_zt[ii] * str_z)
+        )
+        sigt_parts.append(
+            ey_bar_t[ii] * (str_t + nu_bar_t[ii] * str_r + nu_bar_zt[ii] * str_z)
+        )
+        sigz_parts.append(ey_bar_z[ii] * (str_z + nu_bar_tz[ii] * (str_r + str_t)))
+
+    return (
+        jnp.concatenate(rradius_parts),
+        jnp.concatenate(sigr_parts),
+        jnp.concatenate(sigt_parts),
+        jnp.concatenate(sigz_parts),
+        jnp.concatenate(str_r_parts),
+        jnp.concatenate(str_t_parts),
+        jnp.concatenate(str_z_parts),
+        jnp.concatenate(deflect_parts),
+    )
 
 
 def tresca_stress(stress_x, stress_y, stress_z):
@@ -1012,6 +1422,230 @@ def tf_stress_plane_stress_bucked_case(
     return peak[N_TF_BUCKING], peak[N_TF_BUCKING - 1], str_wp, casestr, insstrain
 
 
+def tf_stress_extended_plane_strain_bucked_case(
+    *,
+    r_tf_inboard_in,
+    r_tf_wp_inboard_inner,
+    r_tf_wp_inboard_outer,
+    tan_theta_coil,
+    rad_tf_coil_inboard_toroidal_half,
+    dr_tf_plasma_case,
+    a_tf_coil_inboard_steel,
+    a_tf_plasma_case,
+    a_tf_coil_nose_case,
+    eyoung_steel,
+    poisson_steel,
+    eyoung_cond_axial,
+    poisson_cond_axial,
+    eyoung_cond_trans,
+    poisson_cond_trans,
+    eyoung_ins,
+    poisson_ins,
+    eyoung_copper,
+    poisson_copper,
+    dx_tf_turn_insulation,
+    dx_tf_wp_insertion_gap,
+    dx_tf_wp_insulation,
+    n_tf_coil_turns,
+    dx_tf_turn_cable_space_eyoung,
+    dia_tf_turn_coolant_channel,
+    f_a_tf_turn_cable_copper,
+    dx_tf_turn_steel,
+    dx_tf_side_case_average,
+    dx_tf_wp_toroidal_average,
+    a_tf_coil_inboard_insulation,
+    a_tf_wp_steel,
+    a_tf_wp_conductor,
+    a_tf_wp_with_insulation,
+    c_tf_total,
+    vforce_inboard_tot,
+    n_tf_graded_layers=1,
+    n_radial_array=N_RADIAL_ARRAY,
+):
+    """Peak Tresca stresses and winding-pack strain, extended-plane-strain solver.
+
+    Ports `TFCoil.stresscl`, `process/models/tfcoil/base.py:2222-3274`, on the
+    `(i_tf_sup, i_tf_stress_model, i_tf_bucking) == (1, 0, 1)` cell -- the one both
+    tracked spherical tokamaks take (`spherical_tokamak_eval.IN.DAT:350`,
+    `st_regression.IN.DAT:1223`). `i_tf_stress_model == 2` reaches the same solver
+    through the same `elif` (`base.py:3005`) and differs only in two zero-bore guards
+    this cell cannot reach; it is nonetheless refused in `indat.py` rather than aliased
+    here, because "same code path on the tracked values" is a measurement nobody has
+    made for a file that sets `2`.
+
+    **The sibling of `tf_stress_plane_stress_bucked_case`, not a switch on it.** Five
+    things change with `i_tf_stress_model`, and only one of them is a formula:
+
+    1. The solver is `extended_plane_strain`, which additionally **reads** the axial
+       moduli and Poisson's ratios (`eyoung_axial`, `poisson_axial`) that the
+       plane-stress arm assembles and never uses, and the total inboard tension
+       `.superconducting_tfcoil.vforce_inboard_tot` in place of one coil's
+       `.tfcoil.vforce`.
+    2. The vertical stress is *solved for*, radially resolved, rather than being
+       `vforce / (steel area)` broadcast over the whole leg -- so
+       `.tfcoil.a_tf_coil_inboard_case` and `.tfcoil.a_tf_turn_steel`, the two areas
+       that divide it there, are **not read here at all**.
+    3. `.tfcoil.str_wp` comes off `str_tf_z` at the winding pack's inner face
+       (`base.py:3034`) instead of off that uniform stress (`:2988`).
+    4. The vertical unsmearing factor is `eyoung_steel / eyoung_wp_axial_eff` rather
+       than `1.0` (`base.py:3083-3087`), so the axial stress is lifted onto the steel
+       conduit as well as the two transverse ones.
+    5. `.tfcoil.casestr` and `.tfcoil.insstrain` are **not owned**. `stresscl` sets
+       both only inside the `i_tf_stress_model == 1` branch (`base.py:2991-2998`) and
+       leaves them at the `None` they were initialised to (`:2520-2521`); the store at
+       `superconducting.py:2224-2231` then writes that `None` over the
+       `DataStructure`'s `0.0`. Their only reader anywhere is the printer
+       (`base.py:3646`, `:3653`) -- measured, not assumed -- so nothing downstream can
+       tell, but a port that returned a number for them would be inventing one.
+
+    That is four differences in the reads-set and one in the owns-set, which is why this
+    is a second occupant and not a `i_tf_stress_model` keyword
+    (`_audit/next_steps.md` §14.2).
+
+    Parameters
+    ----------
+    vforce_inboard_tot :
+        Inboard vertical tension summed over the whole TF coil set (N), from
+        `tf_field_and_force_clamped_joints`. **Not** `.tfcoil.vforce`: the extended
+        plane strain solver's axial condition is on the layer stack's total tension,
+        and `base.py:3021` passes `vforce_inboard_tot` there.
+
+    Every other parameter is the corresponding one of
+    `tf_stress_plane_stress_bucked_case`, read the same way and used for the same thing;
+    see that function's docstring.
+
+    Returns
+    -------
+    :
+        `(sig_tf_wp, sig_tf_case, str_wp)` -- peak Tresca stress in the winding pack and
+        in the nose case (Pa), and the vertical strain at the winding pack's inner face.
+    """
+    n_tf_layer = N_TF_BUCKING + n_tf_graded_layers + 1
+
+    (
+        r_wp_inner_eff,
+        r_wp_outer_eff,
+        eyoung_wp_trans_eff,
+        poisson_wp_trans_eff,
+        eyoung_wp_axial_eff,
+        poisson_wp_axial_eff,
+        eyoung_wp_stiffest_leg,
+    ) = _winding_pack_smeared_properties(
+        r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
+        r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
+        tan_theta_coil=tan_theta_coil,
+        rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
+        a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
+        a_tf_plasma_case=a_tf_plasma_case,
+        a_tf_coil_nose_case=a_tf_coil_nose_case,
+        eyoung_steel=eyoung_steel,
+        poisson_steel=poisson_steel,
+        eyoung_cond_axial=eyoung_cond_axial,
+        poisson_cond_axial=poisson_cond_axial,
+        eyoung_cond_trans=eyoung_cond_trans,
+        poisson_cond_trans=poisson_cond_trans,
+        eyoung_ins=eyoung_ins,
+        poisson_ins=poisson_ins,
+        eyoung_copper=eyoung_copper,
+        poisson_copper=poisson_copper,
+        dx_tf_turn_insulation=dx_tf_turn_insulation,
+        dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
+        dx_tf_wp_insulation=dx_tf_wp_insulation,
+        n_tf_coil_turns=n_tf_coil_turns,
+        dx_tf_turn_cable_space_eyoung=dx_tf_turn_cable_space_eyoung,
+        dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
+        f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+        dx_tf_turn_steel=dx_tf_turn_steel,
+        dx_tf_side_case_average=dx_tf_side_case_average,
+        dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
+        a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
+        a_tf_wp_steel=a_tf_wp_steel,
+        a_tf_wp_conductor=a_tf_wp_conductor,
+        a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+    )
+
+    # ---- the layer stack (`base.py:2664-2698`, `:2906-2946`) -----------------------
+    # The same stack the plane-stress arm builds -- nose casing, winding pack, plasma-
+    # side case -- with the *axial* pair carried through this time, because this solver
+    # reads it.
+    dr_wp_layer = (r_wp_outer_eff - r_wp_inner_eff) / n_tf_graded_layers
+    j_wp = c_tf_total / (jnp.pi * (r_wp_outer_eff**2 - r_wp_inner_eff**2))
+
+    radtf = [r_tf_inboard_in]
+    jeff = [0.0]
+    eyoung_trans = [eyoung_steel]
+    poisson_trans = [poisson_steel]
+    eyoung_axial = [eyoung_steel]
+    poisson_axial = [poisson_steel]
+    for ii in range(n_tf_graded_layers):
+        radtf.append(r_wp_inner_eff + ii * dr_wp_layer)
+        jeff.append(j_wp)
+        eyoung_trans.append(eyoung_wp_trans_eff)
+        poisson_trans.append(poisson_wp_trans_eff)
+        eyoung_axial.append(eyoung_wp_axial_eff)
+        poisson_axial.append(poisson_wp_axial_eff)
+    radtf.append(r_wp_outer_eff)
+    jeff.append(0.0)
+    eyoung_trans.append(eyoung_steel)
+    poisson_trans.append(poisson_steel)
+    eyoung_axial.append(eyoung_steel)
+    poisson_axial.append(poisson_steel)
+    radtf.append(r_wp_outer_eff + dr_tf_plasma_case)
+
+    # PROCESS Issue #1509, `base.py:2949-2962`. On *this* arm the round trip is not
+    # neutral: the scaled modulus enters the solve through `ey_z`, and only the
+    # resulting vertical stress is scaled back out -- which is `stress.md`'s OQ3, now
+    # live.
+    f_tf_stress_front_case = (
+        a_tf_plasma_case
+        / rad_tf_coil_inboard_toroidal_half
+        / (radtf[n_tf_layer] ** 2 - radtf[n_tf_layer - 1] ** 2)
+    )
+    eyoung_axial[n_tf_layer - 1] *= f_tf_stress_front_case
+
+    def _stack(values):
+        return jnp.stack([jnp.asarray(v, dtype=float) for v in values])
+
+    _, sig_tf_r, sig_tf_t, sig_tf_z, _, _, str_tf_z, _ = extended_plane_strain(
+        nu_t=_stack(poisson_trans),
+        nu_zt=_stack(poisson_axial),
+        ey_t=_stack(eyoung_trans),
+        ey_z=_stack(eyoung_axial),
+        rad=_stack(radtf),
+        d_curr=_stack(jeff),
+        v_force=vforce_inboard_tot,
+        i_tf_bucking=N_TF_BUCKING,
+        n_radial_array=n_radial_array,
+    )
+
+    # ---- the strain in the conductor (`base.py:3034`) ------------------------------
+    # The *first* station of the winding pack layer, i.e. its inner face -- not a peak
+    # and not an average.
+    str_wp = str_tf_z[N_TF_BUCKING * n_radial_array]
+
+    # ---- unsmearing (`base.py:3068-3131`) -----------------------------------------
+    # `i_tf_sup == 1` with a plane-*strain* model: all three factors bite.
+    fac_sig_z = eyoung_steel / eyoung_wp_axial_eff
+    fac_sig_t = fac_sig_r = eyoung_wp_stiffest_leg / eyoung_wp_trans_eff
+    wp_slice = slice(
+        N_TF_BUCKING * n_radial_array,
+        (N_TF_BUCKING + n_tf_graded_layers) * n_radial_array,
+    )
+    sig_tf_r = sig_tf_r.at[wp_slice].multiply(fac_sig_r)
+    sig_tf_t = sig_tf_t.at[wp_slice].multiply(fac_sig_t)
+    sig_tf_z = sig_tf_z.at[wp_slice].multiply(fac_sig_z)
+
+    # The front case's axial stiffness correction, undone (`base.py:3123-3131`).
+    sig_tf_z = sig_tf_z.at[
+        (N_TF_BUCKING + n_tf_graded_layers) * n_radial_array :
+    ].divide(f_tf_stress_front_case)
+
+    # ---- the reduction (`base.py:3196-3231`) --------------------------------------
+    s_shear_tf = tresca_stress(sig_tf_r, sig_tf_t, sig_tf_z)
+    peak = s_shear_tf[_layer_peak_indices(s_shear_tf, n_tf_layer, n_radial_array)]
+    return peak[N_TF_BUCKING], peak[N_TF_BUCKING - 1], str_wp
+
+
 # ---------------------------------------------------------------------------
 # The nodes
 # ---------------------------------------------------------------------------
@@ -1283,5 +1917,117 @@ class TfStressPlaneStressBuckedCaseIntegerTurn(TfStressPlaneStressBuckedCase):
             vforce=vforce,
             a_tf_coil_inboard_case=a_tf_coil_inboard_case,
             a_tf_turn_steel=a_tf_turn_steel,
+            n_tf_graded_layers=self.n_tf_graded_layers,
+        )
+
+
+class TfStressExtendedPlaneStrainBuckedCaseAveragedTurn(TfStress):
+    """`i_tf_stress_model == 0` (extended plane strain) with `i_tf_bucking == 1` and
+    `i_tf_turns_integer == 0`.
+
+    The arm of both tracked spherical tokamaks -- `spherical_tokamak_eval` and
+    `st_regression` set all three switches explicitly (`:350/:354/:358` and
+    `:1223/:1042/:1180`) -- and the last blocker that stood between the port and either
+    of them.
+
+    **It owns three fields where its plane-stress sibling owns five**, which is why
+    `TfStress` is a family base and neither class is the whole of it: `.tfcoil.casestr`
+    and `.tfcoil.insstrain` are computed only inside `stresscl`'s
+    `i_tf_stress_model == 1` branch and left `None` here (`base.py:2520-2521`,
+    `:2991-2998`). Not owning them is the `next_steps.md` §14.2 answer to a switch that
+    would otherwise create a dead read.
+
+    **Only the averaged-turn arm exists, and that was measured.** The integer-turn arm
+    of this solver is a real PROCESS branch, but no tracked file reaches it: both ST
+    files set `i_tf_turns_integer = 0`. It is refused in `indat.py` as `(0, 1, 1)`
+    rather than written blind, for the same reason its plane-stress counterpart names --
+    the two arms read *different* fields, and on the integer arm
+    `.superconducting_tfcoil.dx_tf_turn_cable_space_average` has no producer.
+
+    `n_tf_graded_layers` is a static field for the same reason as on the sibling: it
+    fixes the layer stack's shape, so it cannot be a traced input. Both ST files leave
+    it at PROCESS's default of `1`.
+    """
+
+    n_tf_graded_layers: int = 1
+
+    sig_tf_wp = OutputInto(tfcoil)
+    sig_tf_case = OutputInto(tfcoil)
+    str_wp = OutputInto(tfcoil)
+
+    def __call__(
+        self,
+        r_tf_inboard_in=From(build),
+        r_tf_wp_inboard_inner=From(superconducting_tfcoil),
+        r_tf_wp_inboard_outer=From(superconducting_tfcoil),
+        tan_theta_coil=From(superconducting_tfcoil),
+        rad_tf_coil_inboard_toroidal_half=From(superconducting_tfcoil),
+        dr_tf_plasma_case=From(tfcoil),
+        a_tf_coil_inboard_steel=From(superconducting_tfcoil),
+        a_tf_plasma_case=From(superconducting_tfcoil),
+        a_tf_coil_nose_case=From(superconducting_tfcoil),
+        eyoung_steel=From(tfcoil),
+        poisson_steel=From(tfcoil),
+        eyoung_cond_axial=From(tfcoil),
+        poisson_cond_axial=From(tfcoil),
+        eyoung_cond_trans=From(tfcoil),
+        poisson_cond_trans=From(tfcoil),
+        eyoung_ins=From(tfcoil),
+        poisson_ins=From(tfcoil),
+        eyoung_copper=From(tfcoil),
+        poisson_copper=From(tfcoil),
+        dx_tf_turn_insulation=From(tfcoil),
+        dx_tf_wp_insertion_gap=From(tfcoil),
+        dx_tf_wp_insulation=From(tfcoil),
+        n_tf_coil_turns=From(tfcoil),
+        dx_tf_turn_cable_space_average=From(superconducting_tfcoil),
+        dia_tf_turn_coolant_channel=From(tfcoil),
+        f_a_tf_turn_cable_copper=From(tfcoil),
+        dx_tf_turn_steel=From(tfcoil),
+        dx_tf_side_case_average=From(superconducting_tfcoil),
+        dx_tf_wp_toroidal_average=From(superconducting_tfcoil),
+        a_tf_coil_inboard_insulation=From(superconducting_tfcoil),
+        a_tf_wp_steel=From(tfcoil),
+        a_tf_wp_conductor=From(tfcoil),
+        a_tf_wp_with_insulation=From(superconducting_tfcoil),
+        c_tf_total=From(tfcoil),
+        vforce_inboard_tot=From(superconducting_tfcoil),
+    ):
+        return tf_stress_extended_plane_strain_bucked_case(
+            r_tf_inboard_in=r_tf_inboard_in,
+            r_tf_wp_inboard_inner=r_tf_wp_inboard_inner,
+            r_tf_wp_inboard_outer=r_tf_wp_inboard_outer,
+            tan_theta_coil=tan_theta_coil,
+            rad_tf_coil_inboard_toroidal_half=rad_tf_coil_inboard_toroidal_half,
+            dr_tf_plasma_case=dr_tf_plasma_case,
+            a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
+            a_tf_plasma_case=a_tf_plasma_case,
+            a_tf_coil_nose_case=a_tf_coil_nose_case,
+            eyoung_steel=eyoung_steel,
+            poisson_steel=poisson_steel,
+            eyoung_cond_axial=eyoung_cond_axial,
+            poisson_cond_axial=poisson_cond_axial,
+            eyoung_cond_trans=eyoung_cond_trans,
+            poisson_cond_trans=poisson_cond_trans,
+            eyoung_ins=eyoung_ins,
+            poisson_ins=poisson_ins,
+            eyoung_copper=eyoung_copper,
+            poisson_copper=poisson_copper,
+            dx_tf_turn_insulation=dx_tf_turn_insulation,
+            dx_tf_wp_insertion_gap=dx_tf_wp_insertion_gap,
+            dx_tf_wp_insulation=dx_tf_wp_insulation,
+            n_tf_coil_turns=n_tf_coil_turns,
+            dx_tf_turn_cable_space_eyoung=dx_tf_turn_cable_space_average,
+            dia_tf_turn_coolant_channel=dia_tf_turn_coolant_channel,
+            f_a_tf_turn_cable_copper=f_a_tf_turn_cable_copper,
+            dx_tf_turn_steel=dx_tf_turn_steel,
+            dx_tf_side_case_average=dx_tf_side_case_average,
+            dx_tf_wp_toroidal_average=dx_tf_wp_toroidal_average,
+            a_tf_coil_inboard_insulation=a_tf_coil_inboard_insulation,
+            a_tf_wp_steel=a_tf_wp_steel,
+            a_tf_wp_conductor=a_tf_wp_conductor,
+            a_tf_wp_with_insulation=a_tf_wp_with_insulation,
+            c_tf_total=c_tf_total,
+            vforce_inboard_tot=vforce_inboard_tot,
             n_tf_graded_layers=self.n_tf_graded_layers,
         )

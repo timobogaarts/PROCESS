@@ -3512,7 +3512,9 @@ surfaces, and three tokamaks that took zero SQP steps this morning solve cold.
   *correct* value and leaves it just as unreachable.
 - **PROCESS's converged stellarator answer is not the global optimum.** PROCESS+SLSQP
   (a new adapter, PROCESS's own models/Jacobian/scaling through SciPy) reaches a
-  **feasible** point at `objf 1.16603189` against PROCESS+VMCON's `1.2178` -- ~4 %
+  **feasible** point at `objf 1.16603189` against PROCESS+VMCON's **`1.21491678`**
+  (**corrected 2026-08-31**; this line read `1.2178`, which is the *port's* converged
+  objective, not PROCESS's -- see below) -- ~4 %
   better cost of electricity. Checked: bounds identical to VMCON's, answer inside the
   box, `objf` self-consistent to `1.15e-11`, equality/inequality split correct, worst
   inequality `-3.4e-08`. It hit the 500 cap so it is not converged either, but where it
@@ -3827,3 +3829,909 @@ belongs to the TF package, not this one.
   `nocoil`). The reference topology's `i_pf_location = 2` groups hold one coil each, so
   the old `[group, 0]`-only code was right there and wrong in general; arm 0 has two
   such coils in one group.
+
+## 22. The boundary provider — cutting the PROCESS seed, 2026-08-31
+
+**Decision.** Boundary values stop arriving wholesale from PROCESS's `DataStructure`. A
+**provider** answers exactly the boundary the assembled graph declares, per
+configuration. **The end state is no `process` dependency at runtime** -- the oracle
+phase below is a transition, not the destination.
+
+### 22.1 Why: the seed is a proven bug generator, not a suspicion
+
+§21.5's rule -- *a check performed where the seed supplies the answer is not a check* --
+already has a body count, and every item is in this file:
+
+- **The 22 missing producers** (§19): fields PROCESS writes every pipeline pass that the
+  port read as inputs, 20 frozen at exactly `0.0`. Invisible *because the seed supplied
+  them*; every cold tokamak solve failed on the consequence.
+- **Wrong answer #2 of four** (§21.4): the 983/1039 agreement that read as vindication
+  was measured where `mdf.seed` hands every missing producer the right answer.
+- **`.tfcoil.f_a_tf_turn_cable_space_extra_void`** (§20.4): computed on one device,
+  input on the other, `0.0` both ways. A port that read it "would agree numerically and
+  be reading a coincidence." Caught by reading `run`, not by any check.
+- **`.tfcoil.str_wp = 0.0`** (§20.1): the *peak* of the Nb3Sn strain fit, costing seven
+  variables per tokamak, worst +27 % and optimistic.
+
+### 22.2 The shape, and half of it exists
+
+`boundary(graph: Graph)` (`boundary.py:122`) is already "tell me your boundary
+variables", already keyed on the assembled graph and therefore already
+configuration-dependent -- 297 inputs on the stellarator against 384 on the tokamak,
+same function. Arm 2's occupants *dropping* the solenoid reads is the same property seen
+from the other side. What is missing is the provider.
+
+**Signature is `(graph, problem)`, not `(config)`.** An `ixc` entry is owned by the
+solver, not supplied -- same `VarPath`, different role per run. Precedent:
+`.physics.aspect` is owned by its node only when it is not an active iteration variable
+(unit 1C).
+
+**Each path is answered with a reason, not just a value.** Four categories: genuine
+`IN.DAT` input; `IN.DAT` default; `init.py`-derived; **or a field PROCESS's models
+compute** -- which is a missing producer and a bug, and which
+`boundary.unproduced_but_computed` already detects.
+
+### 22.3 The transition: the seed becomes the oracle, not the source
+
+Do **not** cut the dependency by deleting the seed. Build the provider beside it and
+assert path-by-path agreement, per configuration; delete the seed for a configuration
+the day it agrees everywhere. This is exactly the move `cold_start.py` made for the
+output side, and that instrument found the `NOH` defect on its first run.
+
+Until then every *disagreement* is a finding -- the inverse of today, where every
+*agreement* may be a coincidence. It also turns "how far are we from independence" into
+a number that moves: **N of 384 paths answered independently, M still from PROCESS**,
+per configuration.
+
+**Answering is not the same as answering right**, and this is the failure mode to design
+against. `.buildings.dz_tf_cryostat` seeds at `2.5`, looks exactly like a genuine input,
+and is written unconditionally by `cryostat.py:58-60` before its only live reader -- a
+defaults table would supply `2.5` confidently and be wrong. `.physics.dlamie` is worse:
+its only writer in `process/` is on the tokamak path, so **PROCESS's own stellarator
+computes with a `dlamie` nothing ever wrote**, and there is no right answer to supply.
+The reason column is what makes these visible; a bare value hides them.
+
+### 22.4 Ordering, and one unverified estimate
+
+Against the alternative of porting `process/core/input.py` (1,482 lines, 873 input-
+variable declarations) first: **the parser is the safe half**. It is transcription and it
+fails loudly -- a name that does not parse raises. `init.py` is where the silent bugs
+are, because it decides whether a boundary input is a user's number or a derived one,
+and the port has been re-implementing it piecemeal and unaudited already
+(`_tf_stress_arm` resolves `i_tf_bucking = -1 -> 1` with a comment saying `init.py` does
+it too). Demand-driven ordering also bounds the work by configuration rather than by
+PROCESS's whole input surface: the union of boundaries over seven configs, not 873
+declarations.
+
+**Unverified, flagged as such:** "`init.py` is 1,302 lines and contains no physics" is
+read off its size and its fingerprints in `indat.py`, **not** off an audit of it. §16.3's
+pattern is this file's most repeated defect; do not build on this estimate without
+measuring it.
+
+### 22.5 First step
+
+`missing_producers_tokamak.txt` is the **only** value-side pin and it covers one file,
+while `boundary`/`computed_by_process` both already take a configuration. Five
+configurations assemble today, seven soon. Extend the pins to every configuration, add
+the reason column, and have the cold-matrix runner diff provider against seed.
+
+### 22.6 As built, 2026-08-31 -- and the two corrections it forced
+
+`functional_process/provider.py`, `tests/functional_process/test_provider.py`, seven
+pins `reference_provider_<stem>.txt`. `$PY -m functional_process.provider --write`.
+
+**The signature is `(graph, owned_paths, input_file)`, not `(graph, problem)`** -- a
+narrowing of §22.2, not a reversal. Of a problem's four parts only `ixc` reaches the
+provider: `icc` and `i_figure_merit` change which nodes are live, and that is already in
+the assembled graph `boundary()` is asked of. It takes `VarPath`s rather than `ixc`
+integers because the integers are throwaway indirection over what are structurally
+paths, so the provider needs no change when the problem is stated structurally.
+
+Eight reasons, ladder-ordered, `computed` **above** `input` -- which is what makes
+§22.3's `.buildings.dz_tf_cryostat` case detectable rather than answered confidently and
+wrongly. Source is tracked apart from reason (`indat` / `defaults` / `process`), so
+"answered independently" is a number: **271-360 of 303-397 paths per configuration**,
+the remainder still the seed.
+
+| configuration | paths | independent | input | default | derived | computed | unwritten | solver | guess |
+|---|---|---|---|---|---|---|---|---|---|
+| `stellarator_helias` | 303 | 271 | 78 | 126 | 17 | 0 | 68 | 8 | 6 |
+| `helias_5b` | 303 | 276 | 69 | 140 | 17 | 0 | 68 | 3 | 6 |
+| `large_tokamak_nof` | 397 | 345 | 66 | 219 | 16 | 0 | 65 | 20 | 11 |
+| `large_tokamak_eval` | 395 | 360 | 84 | 216 | 17 | 0 | 65 | 2 | 11 |
+| `low_aspect_ratio_DEMO` | 397 | 346 | 100 | 186 | 16 | 0 | 65 | 19 | 11 |
+| `spherical_tokamak_eval` | 388 | 355 | 82 | 209 | 16 | **2** | 67 | 3 | 9 |
+| `st_regression` | 388 | 345 | 72 | 209 | 15 | **2** | 67 | 14 | 9 |
+
+**The finding: two missing producers, both on the spherical tokamaks** --
+`.build.r_cp_top` and `.tfcoil.dx_tf_side_case_min`. Both STs began assembling *while
+this was being written* (§20's blockers closing), so these are on the two configurations
+nothing had ever pointed the check at, which is exactly what §22.5 predicted extending
+the pins would buy. Zero on the other five -- and on `large_tokamak_nof` that reproduces
+`boundary.missing_producers`' own answer, the one file it covers.
+
+**The diff found five to eight `off` rows per configuration, and the two devices'
+lists are disjoint** -- a defaults table would have answered each one confidently and
+been wrong, §22.3's stated failure mode, measured rather than argued. Common to every
+tokamak: `.tfcoil.eff_tf_cryo` (the dataclass default is a `-1.0` *sentinel*; `init.py`
+resolves it to `0.13`), `.tfcoil.eyoung_ins` (`1e8` against `2e10`),
+`.tfcoil.eyoung_cond_axial`, `.pf_coil.rho_pf_coil`, `.physics.f_nd_beam_electron`. The
+stellarators disagree on a different set: `init.py`'s stellarator arm zeroes the central
+solenoid (`.build.dr_cs`, `.build.dr_cs_tf_gap`) and rewrites all four pulse times --
+`.times.t_plant_pulse_burn` from `1000` s to `3.15576e7` s, one year, i.e. steady state.
+`spherical_tokamak_eval` adds a sixth kind: `.build.dz_shld_upper` is set to `0.3` **in
+the input file** and the seed holds `0.6`, and the file's own trailing comment says
+"calculated if `blktmodel > 0`". A genuine `IN.DAT` line that PROCESS overrides.
+
+**Two corrections to what was measured, both found by measuring:**
+
+- **The field-level write set cannot classify an array element.** `computed` is measured
+  per `DataStructure` *field*, so an array whose first element PROCESS normalises marks
+  every element written. On the first run that reported **eleven false missing
+  producers** on each large tokamak -- `.impurity_radiation.f_nd_impurity_electron_array
+  [2]`..`[13]`. Measured element-wise between the two `cold_state` snapshots, PROCESS
+  moves `[0]` (and `[1]` on `large_tokamak_eval`) and nothing else. The provider now
+  compares elements at their index; `boundary.unproduced_but_computed` sidesteps the
+  question by never classifying an indexed path at all, which is why it never reported
+  them and also why it cannot report a real one.
+- **A last-wins name scan answers an array with its last element.** `zref(10) = 1.0`
+  made the provider answer the ten-element `.pf_coil.zref` with `1.0`. Indexed
+  assignments now map to "named, value not resolvable".
+
+**What was not done.** (a) The seed is still the *source* for 27-52 paths per
+configuration -- every `derived` row, every `solver`/`guess`/element row, and every
+`input` whose value is an array, list or string. Only scalars are resolved from the file
+text. (b) The seed path is untouched; nothing consumes the provider yet, so no
+configuration has had its seed deleted (§22.3's exit condition). (c) `unwritten` (65-68
+rows) merges two things deliberately: a hard-coded constant nothing anywhere writes (the
+`.costs.UC*` unit costs) and §22.3's `.physics.dlamie` case, where PROCESS's own
+stellarator computes with a value nothing wrote. They are told apart *between* pins -- a
+path that is `unwritten` on one machine and `computed`/owned on another is the second
+kind -- rather than by a third reason, because a third reason would depend on which
+configurations had been measured and so would make the pin unstable. (d) §22.4's
+"`init.py` is 1,302 lines and contains no physics" is **still unverified**; nothing here
+audited it. What *is* now measured is that **13 distinct boundary paths across
+the seven configurations end up at a value neither the input file nor the dataclass
+default supplies** -- twelve of them nobody set at all (so `init.py` derived them) and
+one, `.build.dz_shld_upper`, set in the file and overridden afterwards. That is a lower
+bound on `init.py`'s reach over the boundary, and not a statement about its content.
+
+## 23. PROCESS-free at runtime — the target, measured, 2026-08-31
+
+**Decision.** `functional_process` must import and run with no `process` package present.
+**`tests/functional_process` must keep importing it** -- co-importability in one
+interpreter is the harness's entire design (`CLAUDE.md` § the environment) and nothing
+here weakens it. Runtime-free, test-bound.
+
+**Why now, in the user's framing:** once each `IN.DAT` yields a SAND/MDF problem without
+PROCESS, every regression file becomes an independent end-to-end case and the work
+becomes "debug each regression test in turn" -- against the tracked reference outputs at
+their percentage tolerance, which is PROCESS's own convention. It also ends the seed
+class of defect at the root (§22.1).
+
+### 23.1 The import surface, measured
+
+The **model layer's** dependency is not physics -- it is *vocabulary*. Every
+`from process ...` under `functional_process/models/` and `core/` is one of:
+
+| kind | examples | shape |
+|---|---|---|
+| physical constants | `process.core.constants` (11 sites) | a module of numbers |
+| switch enums | `SuperconductorModel`, `TFConductorModel`, `DensityLimitModel`, `PFConductorModel`, `BlktModelTypes`, `PlasmaIgnitionModel`, ~15 in all | class declarations, no behaviour |
+| data tables | `ITERATION_VARIABLES` (`sand.py`, `indat.py`) | id -> `(module, name, array_index)` |
+| preset dicts | `process.models.stellarator.preset_config` | five machine configs |
+
+`indat.py` alone holds 19 of them, all enums plus `ITERATION_VARIABLES`. The rest of the
+count sits in files that **should** keep importing PROCESS: `cold_start.py`,
+`mda_harness.py`, `mda_constraint_harness.py`, `sand_harness.py`, `run_*_harness.py`.
+Those are the validation harnesses; leave them alone.
+
+So the runtime-free work is: **vendor a vocabulary**, then the parser (§22.5) and
+`init.py`'s derivations (`_audit/init_audit.md`). It is not 4,900 lines of
+`input.py`/`init.py`/`caller.py`/`main.py`, and an earlier estimate in this session that
+said so was counting the wrong thing.
+
+### 23.2 Vendor for runtime, assert equality in tests
+
+Vendoring reverses a decision made deliberately in unit #8: `STELLARATOR_MACHINE_PRESETS`
+**imports** the five preset dicts rather than re-typing them, because "transcription buys
+a non-importing test and pays with a drift mode." That reasoning is correct and the
+mitigation is available -- **the equality test lives in `tests/`, where `process` is
+importable.** Every vendored constant, enum and table gets a test asserting it equals
+PROCESS's. Drift then fails a test instead of silently changing an answer, and the
+runtime carries no import.
+
+Do not vendor by copying a value and moving on. A vendored table with no equality test is
+the drift mode unit #8 warned about, with nothing catching it.
+
+### 23.3 The ST equilibrium SVD -- accepted and documented, not fixed
+
+`PFCoilChainSphericalTokamak`'s equilibrium current solve has a repeated singular value:
+`[2.15e-7, 1.0e-9, 1.0e-9]`, and `jnp.linalg.svd`'s JVP carries `1/(si^2 - sj^2)`. At
+`zref[3] = 0` the gap is exactly `0.0` and 21 of 28 gradient outputs are `nan`; **at the
+contract's own legacy point the same pair is `4.1e-25` apart** -- finite only by
+rounding. This is a degenerate matrix spectrum, not the `x**p at 0` class, so `safe_pow`
+and `safe_sqrt` do not reach it.
+
+**Decision (user, 2026-08-31): accept and document.** Do not add a ridge, reformulate
+`currents._solv`, or register a boundary exclusion. What is owed is that the fact is
+*written where a reader of the ST results will find it* -- `currents.md` has it; the ST
+rows of any results table should point at it.
+
+**Open and unmeasured, stated as such:** `spherical_tokamak_eval` converges cold in 3 SQP
+iterations in both formulations, and VMCON steered on gradients passing through this
+decomposition. Nobody has checked whether that Jacobian is near-singular at the cold
+solve's own iterates. Accepting the degeneracy is not the same as establishing the ST
+solve is unaffected by it, and this file has four recorded instances of that conflation.
+
+### 23.4 The problem statement, and why it waits
+
+`(ixc, icc, n_equality, i_figure_merit)` is weird in four separable ways: integer ID
+indirection over what are structurally paths; a **positional** equality/inequality split;
+an `if/elif` objective keyed on `i_figure_merit` with sign encoding sense; and
+constraints addressable by ID where cottax mints one `Compare` per place.
+
+Two of the four are local rewrites (the positional split, the objective chain). Killing
+the IDs is not: every `IN.DAT` still says `ixc = [4, 6, 29]`, so the translation does not
+disappear -- **it moves to the parser and becomes part of §23.1's work.** That is where it
+belongs, and it is why this waits for the parser rather than leading it.
+
+`provider.provide(graph, owned, input_file)` already takes an owned **`VarPath` set**
+rather than an `ixc` list, so it needs no change when this lands.
+
+### 22.7 `init.py` audited, 2026-08-31 -- the estimate survives with a correction, and one absorbed rule is wrong
+
+Full record: **`_audit/init_audit.md`**. Measured by wrapping each stage of
+`init_process` (`parse_input_file`, `set_active_constraints`, `set_device_type`,
+`st_init`, `check_process`) with a `deepcopy` either side, inside a real `SingleRun`, on
+all seven configurations, and diffing field by field. Every claim in that file is marked
+measured or read.
+
+**§22.4's estimate holds on computation and fails on content.** Not one write in
+`init.py` has a physics formula on its right-hand side -- the complete set of RHS shapes
+over all **35 fields it writes** is a literal, a copy, `abs(x) > 0`, `a + b + 1`,
+`max(a, b)`, `teped * 1.001`, and `count - n_*`. But "no physics" was doing work it
+cannot do, namely licensing "so it is just defaults", and four things in the file are not
+defaults: a **literature material-property table** keyed on the superconductor
+(`eyoung_cond_axial` 32/80/6.8/145 GPa with DOIs, `eyoung_ins`, `eff_tf_cryo`) -- the
+`dcond[]` shape that already cost §14.5 a near-miss; **three build-geometry identities**
+under the double-null branch, one of which overwrites a value the file set; **one
+optimiser bound moved from a physics comparison** (`boundl[3] = teped * 1.001`, measured
+firing on `large_tokamak_nof`); and **two physical consistency rules** (SC PF coil ->
+`rho_pf_coil = 0`, no NBI -> `f_nd_beam_electron = 0`). Also 51 `raise` and 16 warn sites,
+a dozen of which encode physics-validity ranges the port does not enforce.
+
+**The classification, by count.** 8 **sentinel** resolutions (a default that is not a
+value: `-1.0`, `-1`, `0`=`DEFAULT`, and two *plausible-looking* ones -- `eyoung_ins` at
+`1e8` and `eyoung_cond_axial` at `6.6e8`, which a defaults table reads as answers and
+`init.py` replaces by two orders of magnitude); 4 **presence flags** (a boolean recording
+whether the IN.DAT *named* a partner field -- not a function of any value, and none of
+the four is a declared input); 18 **derivations**; **0 genuine parse-time inputs**, and
+the inverse is the interesting half -- three writes *destroy* a genuine input. **12 of 35
+fields have a dataclass default that is not an answer.**
+
+**Both pins accounted for, with nothing left over.** Every `derived` row on every
+configuration is explained: `init.py` owns **11-13** of the 15-17 (the
+`f_nd_impurity_electron_array[i]` alias loop plus `n_divertors`), and the remaining **4**
+belong to `initialise_imprad` (`main.py:430`) -- a **fifth initialisation source** that
+reads data files from disk and that nothing in §22 had named. All **13 `off` rows** split
+**7 `init.py` / 6 `st_init`**, one behaviour per row. §22.6 was right that 13 is a lower
+bound: the measured *latent* count -- boundary paths whose field `init.py` can write,
+answered independently, agreeing today only because the branch did not fire -- is **5 per
+stellarator and 8 per tokamak**, roughly double, before `st_init`'s 5-6 per pin.
+
+**Attribution correction.** §22.6 credited the zeroed solenoid and the rewritten pulse
+times to `init.py`. They are `st_init`
+(`process/models/stellarator/initialization.py`), which `init_process` calls -- 18 fields
+on `istell != 0`, nine of them overwriting values the stellarator IN.DAT set explicitly.
+It is a sixth arm of the stellarator variant dispatch, not a parse step;
+`indat.ST_INIT_I_PLASMA_PEDESTAL` is the precedent for stating one, and there are
+seventeen more.
+
+**Six rules the port has already absorbed piecemeal, and a seventh absorbed wrongly.**
+`_n_divertors` (`indat.py:2400`), `_tf_shape` (`:2491`), `_tf_wp_geom` (`:2517`),
+`_tf_field_and_force_arm` (`:3170`), `_tf_stress_arm` (`:3197`) and
+`ST_INIT_I_PLASMA_PEDESTAL` (`:2005`) each re-derive an `init.py`/`st_init` rule
+independently, each with its own comment saying so, none registered as an `init.py`
+boundary anywhere. Nine further sites merely document the dependence.
+
+**The seventh is a live defect.** `indat.py:4420-4428` reads
+`i_f_dr_tf_plasma_case` and `tfc_sidewall_is_fraction` out of `switches_from_indat` with
+a `0` fallback -- but **neither is a declared PROCESS input**, so that scan can only ever
+return `0`, while `init.py:925-930` sets both to `True` whenever the partner field is
+unset, which is **4 of the 7 configurations**. The factory takes the `False` arm where
+PROCESS takes the `True` arm. **This is the cause of one of §22.6's two new missing
+producers**: `st_regression.IN.DAT:1000` comments out `dx_tf_side_case_min` and sets
+`f_dr_tf_plasma_case` instead, so PROCESS computes the sidewall from the fraction while
+the port's slot resolves to `None` and nothing produces
+`.tfcoil.dx_tf_side_case_min`. `large_tokamak_eval.IN.DAT:369-370` sets both fields, which
+is why no tokamak ever saw it. `models/tfcoil/base.py:41-46`'s "`large_tokamak_eval.IN.DAT`
+does not set `tfc_sidewall_is_fraction`" is true of that file and false as a general
+statement: no IN.DAT can set it. §22.6's other missing producer, `.build.r_cp_top`, is
+**not** an `init.py` field -- `init.py:758-764` only validates `i_r_cp_top`.
+
+**Scoped next, in cost order.** (1) Fix `indat.py:4420-4428` to resolve the two presence
+flags from the file's *name set* the way `init.py` does; one ST missing producer should
+close. (2) Give the provider an `init_rule` layer -- 12 sentinel/presence defaults plus 18
+derivations is a bounded table, and the 13 `off` rows are its acceptance test. (3) The
+material table is not a provider concern; it belongs wherever `dcond[]` ends up, and the
+provider only needs to stop answering those fields from a stale default. (4) `st_init`'s
+other seventeen forcings. (5) `initialise_imprad` needs a home. Not started -- §22.7 is
+analysis only, and nothing under `functional_process/*.py` or `process/` was touched.
+
+## 24. The target architecture, and what an importer must carry, 2026-08-31
+
+**The end state, in the user's words:** *models + default solvers / cycle cutters +
+import legacy PROCESS input file*. §23 is the runtime-independence half; this is the
+shape the pieces settle into.
+
+### 24.1 A derivation ported as a node removes a boundary input
+
+That is the mechanism, not an aesthetic preference: a node that owns `.build.dr_cs`
+means nothing supplies it, and cottax's containment check enforces it. So **"port
+`init.py`'s derivations" and "raise the provider's independence ratio" are one job
+counted from two ends** -- 18 `init.py` derivations, `st_init`'s 18, and
+`initialise_imprad`'s 4 (`_audit/init_audit.md`).
+
+With derivations as nodes and `mdf.nested_blocking` already stating the MDA as a block
+*inside* the graph, raw-input -> solved-machine is one graph under one blocking. Nothing
+structural is in the way.
+
+### 24.2 Three categories resist being nodes -- they define the importer
+
+1. **Presence flags (4) are irreducible.** They record whether the `IN.DAT` *named* a
+   partner field: a property of the text, not of any value. No node recovers that from
+   values, so **the importer must emit presence alongside values**. The live defect at
+   `indat.py:4420-4428` is exactly this mistake -- it infers presence by scanning for a
+   switch that is not a declared input, so the scan can only ever return `0`
+   (`init_audit.md`; it causes one of §22.6's two new missing producers).
+2. **Sentinel resolutions (8) are self-loops as stated** -- `eff_tf_cryo = -1.0 -> 0.13`
+   reads and writes one path. The fix makes them nodes again: **the importer emits a
+   `raw` namespace and resolution nodes map raw -> resolved.** This also disarms the
+   two sentinels that *look* like answers (`eyoung_ins` at `1e8`, `eyoung_cond_axial` at
+   `6.6e8`, both replaced by two orders of magnitude): as a raw->resolved edge they
+   cannot be mistaken for user input the way a flat defaults table mistakes them.
+3. **`boundl[3] = teped*1.001` is not a graph value** -- it is a bound on a design
+   variable, so it belongs to the problem statement (§23.4). Likewise `init.py`'s 51
+   raises / 16 warns, which are importer validation, and the ~12 that encode
+   physics-validity ranges the port does not enforce at all.
+
+### 24.3 What the importer emits
+
+Values (scalars **and arrays** -- only scalars are read from file text today);
+**presence**; the `raw` namespace for sentinel resolution; and the problem statement
+(`ixc`/`icc`/`i_figure_merit`), which is where §23.4's integer-ID translation lands once
+it stops being `sand.iteration_variable_path`'s job.
+
+### 24.4 One consequence for `mda.CUTS`
+
+The cuts are **sufficient and non-minimal** on arm 2: `t_plant_pulse_burn` alone breaks
+the four-node SCC, and the redundant `ind_pf_cs_plasma_mutual` cut makes Picard carry a
+matrix PROCESS reads fresh (`pfcoil()` calls `induct` before `vsec`). Today that is
+cosmetic and one table serves every machine. **In the target state it is not**: every
+configuration assembles and solves without PROCESS, so a redundant cut carrying a stale
+value is a wrong answer on some machine nobody has run yet.
+
+### 24.5 The importer, as built — 2026-08-31
+
+Full record: **`_audit/importer.md`**. `functional_process/importer.py`,
+`functional_process/vocabulary/input_variables.py` (865 vendored rows),
+`tests/functional_process/test_importer.py` (56 tests). A skeleton on purpose: §24.3's
+four emissions and nothing else — no sentinel resolution, no `init.py`/`st_init`/
+`initialise_imprad` derivation, no validation raise, no node.
+
+`read_indat(path) -> Imported`, carrying `values` (scalars **and** arrays, as sparse
+`ArrayInput`s that record which of PROCESS's two array spellings was used), `present`,
+`raw_values()` under `.raw.<area>.<field>`, and `problem` (`ixc`/`icc`/`i_figure_merit`).
+It imports neither `process` nor `numpy` nor `jax` — 60 ms, and §23's independence is
+*checked*, in a subprocess with `process` blocked at `sys.meta_path`, not asserted by
+reading the source.
+
+**[measured] The oracle is clean on all seven configurations**: 104–183 names per file,
+name sets **equal** to `parse_input_file`'s own return dict, zero value disagreements,
+zero unknown names, zero unparsed lines, and zero fields PROCESS's parse wrote that the
+importer misses. Taken one stage earlier than `init_audit.md`'s: the spy wraps
+`parse_input_file` itself inside a real `SingleRun` and aborts before
+`set_active_constraints`, because `init.py` destroys three genuine inputs and `st_init`
+overwrites nine, so any later point cannot tell a parse bug from a derivation.
+
+Three corrections and one trap, all measured:
+
+- **PROCESS declares 865 input variables, not §22.4's 873.** 863 name an area; `ixc` and
+  `icc` name none, which is exactly `names - places = 2` on every file. No row uses
+  `target_name` or `additional_validation`; no `module` is dotted.
+- **The reverse-direction diff confirms `init_audit.md` §5's fifth source and adds a
+  fourth and a fifth of its own.** Thirteen fields differ from a bare `DataStructure()`
+  at the pre-init point without the parse having written them: `globals.fileprefix`/
+  `output_prefix` (`SingleRun.set_filenames`), `numerics.lablxc`/`boundl`/`boundu`
+  (`initialise_iteration_variables`, `init_process`'s first line) and eight
+  `impurity_radiation.*` arrays (`initialise_imprad`, which runs *before* `init_process`,
+  not inside it).
+- **15 `DataStructure` fields default to `NaN`**, so a field-level diff reports them as
+  differing from themselves. Any future diff of this shape needs `equal_nan=True`;
+  `provider._same`'s `np.nan_to_num` is the same trap met from the other side.
+
+**What it unblocks.** `Imported.named()` is the question `indat.py:4420-4428` needs and
+cannot ask — presence is a property of the text (§24.2 item 1), and that code infers it
+by scanning for names that are not declared PROCESS inputs, so it can only return `0`.
+Not fixed here; `indat.py` is owned elsewhere. **Next**, and it closes §22.6's stated gap
+(a) by construction: point `provider.py` at `read_indat` instead of its own scalar
+scanner, which ends both "only scalars are resolved from the file text" and "an indexed
+assignment is named, value not resolvable".
+
+## 25. Corrections measured 2026-08-31
+
+- **§21.3's "PROCESS+VMCON's `1.2178`" was the port's number, not PROCESS's.** Measured
+  directly (`reference_run` on `stellarator_helias`, then
+  `objective_function(6, r.data)`): PROCESS's converged **`objf = 1.2149167845171462`**,
+  `coe = 121.49167845171463`, and `objf` is exactly `coe/100`. The port's converged
+  objective is `1.217757951` (MDF) / `1.217759555` (SAND) -- which is what `1.2178`
+  rounds to. **The self-consistent reading is ruled out arithmetically**: the +17.604 MW
+  chain puts the port's `coe` at PROCESS's own x at `123.597` (`rel_diff 1.73e-2`), i.e.
+  `objf 1.23597`, not `1.2178`. The section's *conclusion* survives -- SLSQP's
+  `1.16603189` is 4.02 % better rather than 4.25 % -- only the VMCON figure was wrong.
+- **§17.2's "every cell agrees on `objf` to six digits (1.21775...)" is port-vs-port**,
+  not port-vs-PROCESS: it compares cells of the port's own matrix to each other. Read as
+  agreement with PROCESS it is false by the measurement above, and it was read that way
+  twice in one session. The two differ in the third digit, and the difference is the
+  explained +17.604 MW (`mda_harness.EXPLAINED_DISAGREEMENTS`), not a defect.
+- **`epsfcn` on `stellarator_helias` is `0.01`**, not the `1.0e-3` the x109 section
+  records. The argument there is unaffected; the value is wrong for this file.
+- **`mda_harness`'s disagreement count is 472/34**, not the audit table's 499. All 34 are
+  acyclic, none in a driven block, and eighteen are the +17.604 MW chain.
+
+### 23.5 The vocabulary is vendored, and the model layer no longer imports PROCESS
+
+**Done, measured.** `functional_process/vocabulary/` now holds every declaration §23.1
+counted, and `tests/functional_process/test_process_free_import.py` proves the
+consequence by running a subprocess whose `sys.meta_path` raises on `import process`:
+**117 modules import clean** -- all of `models/`, `core/` and `vocabulary/`, plus
+`paths`, `total_process`, `indat`, `sand`, `mda`, `boundary` and `machine_survey`.
+`indat` is the one worth naming: it builds `GRAPH`, the whole reference stellarator
+machine, *at import*, so a complete stellarator assembly now happens with PROCESS
+unavailable. Blocking rather than uninstalling was deliberate -- the env stays the
+co-importable one the harness needs, and the check is a test rather than a ritual.
+
+**What was vendored, and how.** `constants.py` (89 numbers) and `stellarator_presets.py`
+(the five dicts) are byte-for-byte copies. `enums.py` (34 classes) and
+`superconductors.py` (4) are `inspect.getsource` output, emitted in dependency order --
+**not** retyped and **not** reduced to `NAME = value`. That last point is the one real
+surprise of the job: 36 of the 38 vendored enums hang a `DynamicClassAttribute` table off
+their member tuples via `__new__`, and two of those tables are branched on
+(`CurrentDriveModel.method` at `indat.py:2708`, `SuperconductorModel.sc_shape` at
+`:1383`). A first pass generated flat `NAME = value` stubs, every equality-of-values test
+passed, and `indat` then died on `'CurrentDriveModel' object has no attribute 'method'`.
+**A vendored enum is its class body, not its value list.** `iteration_variables.py` is
+the `IterationVariable` dataclass plus the 83-entry literal, and `areas.py` is
+`DataStructure`'s 36 field names, which is all `paths.py` ever wanted from it.
+
+**The equality tests: 263, in two files.** `test_vocabulary.py` (260) asserts constants by
+value *and* type in both directions, every enum's full `name -> value` map in both
+directions, every `DynamicClassAttribute` per member -- with the attribute *list read off
+PROCESS* rather than typed, so one added upstream is covered the moment it exists -- the
+whole `ITERATION_VARIABLES` table field by field, the five presets by dict equality, and
+`AREAS` in order. `test_every_vendored_enum_is_covered` closes the loop by asserting the
+coverage map names every `IntEnum` the package exports: a vendored value with no equality
+test cannot be added without that failing, which is §23.2's rule made mechanical rather
+than remembered.
+
+**Two things still import PROCESS at runtime, both stated rather than forced.**
+
+1. **`models/tfcoil/quench.py` -> `process.core.coolprop_interface`.** A CoolProp wrapper
+   is *behaviour*, not vocabulary, so §23.2 does not reach it. The import is deferred into
+   `helium_properties_at_quench_nodes` so the module -- and everything downstream of it --
+   imports clean; only an actual helium lookup pays. **Consequence, measured: assembling a
+   tokamak still needs PROCESS**, because `indat.py` makes exactly one such lookup at
+   assembly time. Stellarators do not. The exit is small and known: the whole surface is
+   `PropsSI("D", ...)` and `PropsSI("C", ...)` on helium, and `CoolProp` is an ordinary
+   third-party package that imports without PROCESS -- so this is ~10 lines whenever
+   someone decides a delegating wrapper is worth vendoring. It was not decided here.
+2. **`sand._Resolver.data` -> `process.core.model.DataStructure`.** Stage two of name
+   resolution asks "which area has a field called this", and the answer is PROCESS's
+   36 x N field-name sets -- a data structure, not a vocabulary. Deferred to a lazy
+   property, so importing `sand` is clean and a problem whose every name resolves off the
+   graph (stage one) never touches it. Only a constraint *bound* -- a user input no node
+   produces -- reaches that branch.
+
+`mdf` is excluded by design (it imports `mda_harness`/`sand_harness`, which are supposed
+to import PROCESS). `render_xdsm` does not import, for an unrelated pre-existing reason:
+`cottax.visualization` no longer exports `render_dsm_html`.
+
+**One existing test needed a one-line change and it is worth recording why.**
+`test_mda.py` compared `WINDING_PACK_MATERIAL`'s keys against PROCESS's
+`SuperconductorModel` with `is`. The keys are the port's enum now, so the identity failed
+while every value was equal. Tests may import PROCESS -- that is the design -- but a
+**cross-class `is` on a vendored enum is a new failure mode this vendoring introduces**,
+and `test_vocabulary.py` compares `Enum`-valued attributes on `(type name, member name,
+value)` rather than identity for exactly that reason. Anything else reaching for `is`
+against a PROCESS enum member should read the port's copy instead.
+
+Verified: `tests/functional_process/models` + `core` + `test_paths` + `test_boundary` +
+`test_machine` + `test_sand` + `test_switch_coverage` + `test_mda` + `test_mda_harness` +
+the two new files, all green. Not the full suite.
+
+### 23.6 The CoolProp import is cut, and every ported configuration now assembles PROCESS-free
+
+**Done, measured, 2026-08-31.** §23.5 left exactly two runtime `process` imports and
+named the consequence of the first: *"assembling a tokamak still needs PROCESS"*. It does
+not any more.
+
+**What was vendored.** `functional_process/fluid_properties.py` — `process/core/
+coolprop_interface.py` copied **byte for byte** from `from functools import cache`
+onward, the whole `FluidProperties` class and all nine memoised `PropsSI` wrappers, not
+the `D`/`C` subset `quench.py` uses. A delegating copy that stays a copy is cheaper to
+keep honest than a subset that has to justify what it dropped, and it lets the equality
+test check all nine. `models/tfcoil/quench.py`'s deferred import now points at it.
+
+**Where it lives, and why not in `vocabulary/`.** §23.1 sorted the model layer's PROCESS
+imports into constants, enums, tables and presets — *declarations* — and §23.2's rule was
+written for those. This is **behaviour**: it calls a C library and returns numbers no
+test can read off a source line. So it is a sibling of `vocabulary/`, not a member, and
+§23.2 is applied to it regardless, which is the part that matters.
+
+**The equality test: `tests/functional_process/test_fluid_properties.py`, 74 cases, all
+`==` rather than `approx`** — both copies call the same `PropsSI` in the same installed
+`CoolProp` 8.0.0, so anything but bit-identity would mean the copy had drifted, not that
+floating point had. The range is read off `quench.py` rather than invented: helium at
+`6.0e5` Pa (a literal in three places in PROCESS, never an input), and temperatures
+covering **all four `(tftmp, temp_tf_conductor_quench_max)` intervals the seven
+regression inputs produce** — `tftmp ∈ {4.2, 4.5, 4.75, 20.0}`, `temp_tf_conductor_
+quench_max = 150.0` on every one of them — as the **shipped 75-node tables**, 300 states,
+compared element by element against PROCESS's; plus a denser 61-point 4–200 K sweep, all
+nine properties at five temperatures, the `P/S` and `P/Q` arms of `of`, water as well as
+helium, a check that the nine properties *are* the whole class surface, and a
+source-identity check. Helium at 6 bar is supercritical, so no phase boundary lies inside
+the swept range for the two copies to land on different sides of.
+
+**The proof, extended past imports to assembly.** `test_process_free_import.py` gains a
+second subprocess — same `sys.meta_path` block, reused verbatim from the first so the two
+cannot drift — that runs `graph_for(machine_from_indat(...))` with `import process`
+raising. Measured on all seven regression inputs:
+
+| input | nodes | PROCESS-free assembly |
+|---|---|---|
+| `large_tokamak_nof` | 238 | yes |
+| `large_tokamak_eval` | 240 | yes |
+| `low_aspect_ratio_DEMO` | 238 | yes |
+| `spherical_tokamak_eval` | 234 | yes |
+| `st_regression` | 234 | yes |
+| `stellarator_helias` | 150 | yes |
+| `helias_5b` | 150 | yes |
+| `IFE` | — | refused, `NotImplementedError`: `ife == 1` is unported. **Not** a `process` import |
+
+The two the test file pins are `large_tokamak_nof` and `spherical_tokamak_eval`; the
+other five were measured the same way and are recorded here rather than frozen into the
+test.
+
+**Import time did not regress, and is now pinned.** `import CoolProp` costs **~3 s**
+(measured with `-X importtime`), which is why the deferral in
+`helium_properties_at_quench_nodes` is *kept* rather than lifted once `process` stopped
+being the reason for it. `test_importing_the_model_layer_does_not_load_coolprop` asserts
+that sweeping all 117 modules leaves `CoolProp` out of `sys.modules`; only an actual
+tokamak assembly pays.
+
+**What is behind it — reported, not fixed.** Nothing new surfaced at *assembly* time: the
+CoolProp lookup was the last one on that path, and no other `process` import fired on any
+of the seven. The frontier moves one stage on, to the **problem statement**, and the
+blockers there are §23.4's, not CoolProp's:
+
+1. **There is no `icc` reader.** `indat.py` has `switches_from_indat`,
+   `numbers_from_indat`, `int_lists_from_indat` and `iteration_variables_from_indat` —
+   and no constraint-list equivalent (`grep` finds no `icc_from_indat`). `icc` repeats one
+   per line like `ixc`, so `int_lists_from_indat` cannot hold it. Today the active
+   constraint list still comes from a PROCESS run.
+2. **`sand.switch_values_for(data, icc, i_figure_merit)` takes a PROCESS
+   `DataStructure`**, so `optimise_graph`'s switch arguments do too. This is the same
+   dependency as §23.5's second item (`sand._Resolver.data` → `DataStructure`), reached
+   from a different direction, and it closes with the parser + `init_rule` work of §22.7,
+   not with another vendoring.
+3. `provider.py` still defers `process.core.input.INPUT_VARIABLES` and
+   `process.core.model.DataStructure`, and `vocabulary/input_variables.py` defers the
+   first. Owned elsewhere this session; named here for completeness only.
+
+So: **assembly is PROCESS-free for every ported configuration; solving is not**, and the
+gap is the problem statement, which §23.4 already says waits for the parser.
+
+Verified: `test_fluid_properties.py` (74), `test_process_free_import.py` (7, up from 3),
+`models/tfcoil/test_quench.py` (275), `test_vocabulary.py` (260) — all green. Not the
+full suite.
+
+### 22.7 The provider is consumed, 2026-08-31 -- and the cold matrix does not move
+
+§22.6 left the provider classifying a boundary nothing read: *"the seed path is
+untouched; nothing consumes the provider yet"*. It is consumed now.
+
+**Where.** `run_cold_matrix._boundary_seed` copies `reference.cold`, hands the copy to
+`provider.install`, and passes *that* to `mdf.seed`, `sand_harness.mda_env`,
+`run_sand_harness._seed` and the pre-solve probe. **No seeding machinery was touched** --
+`mda.py`, `mdf.py` and `sand.py` go on reading a `DataStructure` through `ground_truth`
+exactly as before, and the only thing that changed is which `DataStructure` they are
+handed. The override is one function at the harness call site, which is what makes it
+safe to have done while `mda.py` was owned by somebody else.
+
+`--provider` (the default) writes only the paths the seed agrees with; `--provider-strict`
+writes the `off` rows too; `--seed` is the old path exactly, kept so the two can be
+diffed.
+
+**The whole table was regenerated in one pass and did not move.** Fourteen rows, seven
+configurations, 1880 s: `SQP`, `status`, `objf`, `max|eq|` and `min ie` are identical to
+`reference_cold_matrix.txt`'s previous contents in every cell, as are the notes. That
+also settles that table's own provenance caveat -- its two spherical-tokamak rows had
+been re-run against a strictly later tree than the other five, and the argument that
+nothing in between touched either graph is now a measurement.
+
+Two things make the null result worth having rather than circular. First, the
+substitution is inert **by construction** in the default mode, so a row that *had* moved
+would have been a defect in `install` -- that is the point of running it: the claim
+"these 258-350 values need not come from PROCESS" is now checked against fourteen solves
+rather than against a classification. Second, `--provider-strict` moves the same table a
+great deal, so the harness is demonstrably capable of reporting a difference.
+
+| configuration | provider | seed | held (`off`) | `None` both | supplied | paths |
+|---|---|---|---|---|---|---|
+| `stellarator_helias` | 258 | 18 | 8 | 5 | 289 | 303 |
+| `helias_5b` | 263 | 18 | 8 | 5 | 294 | 303 |
+| `large_tokamak_nof` | 335 | 21 | 5 | 5 | 366 | 397 |
+| `large_tokamak_eval` | 350 | 22 | 5 | 5 | 382 | 395 |
+| `low_aspect_ratio_DEMO` | 336 | 21 | 5 | 5 | 367 | 397 |
+| `spherical_tokamak_eval` | 343 | 21 | 7 | 5 | 376 | 388 |
+| `st_regression` | 333 | 20 | 7 | 5 | 365 | 388 |
+
+**`supplied` is the denominator that means something, and it is not §22.6's.** It drops
+the `solver` and `guess` rows (`provider.NOT_SUPPLIED`): a `guess` is a `Drive`'s `Start`
+port and a `solver` row is owned by the problem, so neither is a value any provider could
+answer and counting them in the denominator understates the ratio. §22.6's published
+"271-360 of 303-397" is over the raw `paths`; the same measurement over `supplied` is
+**258-350 of 289-382**, and the two must not be quoted interchangeably. `none` is the
+five paths (`.vacuum.l1`, `.vacuum.l2`, `.vacuum.l3`, `.vacuum.ceff_i`,
+`.vacuum.xmult_i`) that are `None` in both the defaults and the seed -- nothing to supply
+and nothing to disagree about. The five columns sum to `supplied`, which is what says no
+path went missing between the classification and the solve.
+
+**`--provider-strict`: taking the provider at its word costs four of the seven
+configurations their solve.** 1544 s, same seven files, the 13 distinct `off` paths of
+§22.6 written instead of held:
+
+| configuration | seed / `--provider` | `--provider-strict` |
+|---|---|---|
+| `stellarator_helias` | MDF 67 conv, SAND 83 conv | **both fail** |
+| `helias_5b` | MDF 3 conv, SAND 7 conv | **both fail** |
+| `large_tokamak_nof` | MDF 7 conv `1.6`, SAND 10 conv `1.6` | MDF **6**, SAND **16**, both `1.6`; `max\|eq\|` 7.66e-05 / 1.66e-08 |
+| `large_tokamak_eval` | both no-step | **both fail** |
+| `low_aspect_ratio_DEMO` | MDF 10 stopped `-0.4063`, SAND cap(500) `-0.4021` | MDF 10 **converged** `-0.4713`, SAND cap(500) `-0.4426` |
+| `spherical_tokamak_eval` | MDF 3 conv, SAND 3 conv | **both fail** |
+| `st_regression` | both FAILED | both FAILED (unchanged) |
+
+Counts at **1e-8** throughout, the tolerance both ladder harnesses run and the one
+`run_cold_matrix` imports rather than restates.
+
+All four new failures are the *same* failure, and it is legible: SAND's pre-solve probe
+stops with **`1 of N conditions non-finite at the seeded start, first
+`^cond.numerics.objf`** and MDF's SQP refuses the same problem one layer further in. The
+leading suspect is `.tfcoil.eff_tf_cryo`, whose dataclass default is a `-1.0` *sentinel*
+that `init.py` resolves to `0.13` -- a negative cryoplant efficiency reaches
+`buildings.py`/`costs.py`'s `x ** 0.5` sites, which is the defect class
+`run_sand_harness._seed`'s docstring already names. **This is a hypothesis, not a
+measurement, and the attribution run needs a quiet tree.** Holding that one path back and
+moving the other seven was attempted on `helias_5b` about an hour after the pass and did
+not answer the question: the working tree had moved under another agent's edits in
+between, and *both* that variant and full strict now raise
+`jax.errors.TracerBoolConversionError` in `core/solver/drivers.py:752` instead of going
+non-finite -- a different failure, and one a moved value plausibly causes in its own right
+(a branch predicate under `jit`). What that same tree does still reproduce, exactly, is
+the **default** mode's `helias_5b` row (MDF 3 / SAND 7, same objective to every digit), so
+the null result above is not in doubt; only the strict pass's cause is.
+
+`low_aspect_ratio_DEMO`'s MDF *improving* under strict -- `stopped` to `converged`, with
+`max|eq|` 5.93e-12 -> 1.49e-14 -- is not evidence the provider is right there. It is a
+different machine (the four `.tfcoil.*`/`.pf_coil.*` values PROCESS overrides), and its
+objective is 16 % away from the one PROCESS's own solve reaches. What it does show is
+that the `off` rows reach the physics, not just the reporting.
+
+**What was not done.** (a) The seed is not deleted for any configuration -- §22.3's exit
+condition is "agrees everywhere", and every configuration still has 5 to 8 `off` rows and
+18 to 22 paths the provider answers `from_process`. (b) The `off` rows are still held at
+the seed in the default mode, so the default table's honesty rests on those rows being
+pinned and named (`reference_provider_*.txt`) rather than on their being absent -- the
+provider is being trusted *where the oracle agrees*, which is one step short of
+independence and should not be quoted as independence. (c) The provider is asked about
+`driven_graph(graph_for(machine_from_indat(...)))`, which for `stellarator_helias` is not
+the graph that row solves (the reference file runs `graph=None` deliberately); the
+mismatch is bounded in the safe direction -- an unread write, or a fallback to the seed --
+and is recorded in `_boundary_seed`'s docstring rather than special-cased. (d) The
+`--provider-strict` table is in this record only; `reference_cold_matrix.txt` holds the
+default mode, because a table whose stellarator rows are `FAILED` is not the artefact
+other records quote.
+
+Verified: `tests/functional_process/test_provider.py` (24, up from 19),
+`tests/functional_process/test_cold_matrix.py` (17, up from 13) — green. Not the full
+suite.
+
+### 23.7 The last runtime `process` import is gone, and the premise behind it was wrong
+
+**Done, measured, 2026-08-31.** §23.5 named `sand._Resolver.data` →
+`process.core.model.DataStructure` as the port's *"one surviving runtime `process` import
+outside the harnesses"*. It is now a table lookup, and `functional_process/sand.py`
+imports no `process` at all.
+
+**What stage two actually is.** `_Resolver` resolves a constraint/objective parameter
+name to a `VarPath`: stage one is the graph (a name some node owns or reads wins,
+uniquely, unchanged), stage two is everything else. Stage two used to build a live
+`DataStructure` and ask all 36 areas which one had a field of that name. It is now
+`vocabulary.input_variables.INPUT_VARIABLES` — PROCESS's own `name -> area` table, the
+one `process/core/input.py` uses to decide what an `IN.DAT` assignment writes — plus a
+new `sand.NON_INPUT_FIELDS`.
+
+**`NON_INPUT_FIELDS` exists because the docstring's premise was false.** `_Resolver`
+claimed every name reaching stage two was a constraint's *bound*, i.e. a user input, and
+`INPUT_VARIABLES` would therefore be a complete replacement. Measured over the whole
+ported surface — 82 `constraint_*` plus `objectives.OBJECTIVE_METRICS`, **196 distinct
+non-switch parameter names — 87 are declared inputs and 109 are not.** The 109 are
+PROCESS *outputs* (`sig_tf_wp`, `plasma_current`, `p_fusion_total_mw`, ...); most resolve
+at stage one on any given machine because a ported node owns them, and a name reaches
+stage two exactly when *this* machine's graph does not produce it, in which case the
+constraint reads it as a frozen boundary input. `NON_INPUT_FIELDS` is those 109 minus
+`nd_plasma_electron_max_array_7` (an array element with no field of its own — the old
+scan raised on it too, so the exclusion preserves that exactly). It is generated by
+introspection, and `test_sand.py::TestStageTwo` re-derives the set and re-scans every
+area, so a new constraint naming a new output fails a test rather than silently failing
+to assemble on a machine nobody has run yet.
+
+A first attempt swapped in `INPUT_VARIABLES` alone. It passed the seven-configuration
+diff below and then failed
+`test_an_unassemblable_constraint_raises_rather_than_being_dropped`, which asserts
+constraint 76 is the *only* one of the ~82 that cannot be assembled: **the per-run
+measurement missed 101 of the 109, because they belong to constraints no regression input
+activates.** The standing test caught what the measurement could not, which is the
+argument for that test's existence.
+
+**Behaviour-preserving, measured on all seven regression inputs.** Both resolvers built
+side by side (old = the `DataStructure` scan, new = the shipped code) and every stage-two
+name diffed: **0 disagreements**, every name resolving to the identical `VarPath`.
+
+| input | names reaching stage two | of which not declared inputs |
+|---|---|---|
+| `large_tokamak_nof` | 22 | `sig_tf_cs_bucked` |
+| `large_tokamak_eval` | 22 | `sig_tf_cs_bucked` |
+| `low_aspect_ratio_DEMO` | 21 | `sig_tf_cs_bucked` |
+| `spherical_tokamak_eval` | 15 | `psolradmw`, `p_plasma_separatrix_rmajor_mw`, `pflux_fw_rad_max_mw` |
+| `st_regression` | 16 | the same three, plus `big_q_plasma` (the objective's) |
+| `stellarator_helias` | 13 | `pden_plasma_ohmic_mw`, `beta_thermal_vol_avg`, `beta_toroidal_vol_avg` |
+| `helias_5b` | 6 | `pden_plasma_ohmic_mw`, `beta_thermal_vol_avg`, `beta_toroidal_vol_avg` |
+
+Eight distinct names across the seven, each written by a PROCESS model
+(`physics.py:3818`, `tfcoil/superconducting.py:2214`, ...) that the port has not reached.
+That list is a **measure of the port's remaining holes**, and it shrinks as the port
+grows: the day `plasma_ohmic_heating` is ported, `pden_plasma_ohmic_mw` resolves at stage
+one and its row goes dead.
+
+**`copper_rrr`: the table is more correct than the scan, and `input.py` says why.** It is
+a field on **both** `rebco` and `superconducting_tfcoil`, so the old scan could only raise
+"ambiguous across `DataStructure` areas". Checked against `process/core/input.py` rather
+than assumed: it is declared **once**, at `input.py:283`, as
+`InputVariable("rebco", float, ...)`, with no `target_name` and no `additional_actions`;
+`parse_input_file` (`input.py:1284-1303`) writes exactly `variable_config.module` and
+nothing else. So an `IN.DAT` assignment to `copper_rrr` moves `rebco.copper_rrr` alone,
+the table is right, and the ambiguity was an artefact of asking `hasattr` a question only
+the input layer can answer. There is no last-wins hazard: one key, one row.
+(`superconducting_tfcoil.copper_rrr` is a duplicate default — `grep` finds no PROCESS
+model reading *either* field.) Across all 863 declarations naming a module: 862 agree
+with the scan, 0 mismatch, 0 missing from the `DataStructure`, that one tie broken.
+`ixc`/`icc` carry `module=None` and stay unresolvable, as they were.
+
+**The error message now names two different failures.** A name that resolves to nothing
+is either *not in this machine's graph* — a configuration mismatch, and the same name may
+well be produced on another device, so check the machine before the spelling — or *not a
+declared PROCESS input*, which leaves a typo or an unported model's output needing a
+`NON_INPUT_FIELDS` row. The old message could only say "no `DataStructure` area has a
+field of that name", which conflated both into a claim about PROCESS rather than about
+the port.
+
+**The proof lives in `test_sand.py`, not `test_process_free_import.py`.** Same
+`sys.meta_path` block, same subprocess shape, deliberately copied rather than imported;
+it runs `constraint_nodes` on the reference stellarator problem — 14 constraints, 13
+names through stage two — with `import process` raising. It went here because
+`test_process_free_import.py` was being edited by the §23.6 agent at the time; folding it
+in there is a fair later cleanup.
+
+Verified: `test_sand.py` (146, up from 45 — 108 of the new ones are the per-row
+`NON_INPUT_FIELDS` scan), `test_mdf.py`, `test_boundary.py` — 180 green. Not the full
+suite. `ruff check` on `sand.py` reports the same two findings it reports at `HEAD` and
+no new one.
+
+### 23.7 The problem statement and the switch values are read from the file — 2026-08-31
+
+**Done, measured.** §23.6 closed assembly and named two things holding *solving* to
+PROCESS. Both are closed. `functional_process/indat.py` only; `importer.py` needed no
+change, which is the point — it already answered more than §23.6 knew.
+
+**The four readers are views of one parse.** `switches_from_indat`,
+`numbers_from_indat`, `int_lists_from_indat` and `iteration_variables_from_indat` no
+longer scan the file with a regex each; they read `importer.read_indat`'s `Imported`,
+and `machine_from_indat` parses **once** and hands the same object to all four
+(`_as_imported` takes either a path or an `Imported`, so no signature moved).
+
+**[measured] Every reader is byte-identical on all eight tracked `IN.DAT`s** — the seven
+plus `IFE` — for `switches`, `numbers`, `int_lists` and `ixc`. Zero diffs, so nothing in
+this section rests on a behaviour change nobody noticed. Selection stayed on the value
+*text* rather than on `INPUT_VARIABLES`' declared type, deliberately: the two disagree in
+both directions (a declared `float` written `16`, a declared `int` written `1.0`), and an
+unknown name is still a name the factory may be asked about (`test_machine.write_indat`
+writes them).
+
+**Item 1, `icc`: wiring, not parsing.** `problem_from_indat` returns
+`importer.Problem` — `ixc`, `icc`, `i_figure_merit` and the two constraint counts.
+`read_indat` already appended both repeating names per occurrence, which is exactly what
+defeated `int_lists_from_indat`. **[measured] `icc` equals PROCESS's
+`numerics.icc[:n_constraints]` *in order* on all seven**, and order is kept unsorted
+because the equality/inequality split is positional (§23.4).
+
+**Item 2, switch values: `switch_values_from_indat(input_file)` needs no
+`DataStructure`.** It answers all fifteen of `sand.SWITCH_PARAMETER_NAMES` from the file
+plus `SWITCH_VALUE_DEFAULTS` (PROCESS's own dataclass defaults, each with its source
+line, asserted equal to a bare `DataStructure` in `test_switch_coverage.py`). It takes no
+`icc` and no `i_figure_merit` either: `sand._bind` intersects `switch_values` with the
+signature it binds, so a superset is as correct as the subset and is not a function of
+the problem statement. **[measured] all fifteen equal `init_process`'s answer on all
+seven configurations, and `sand.switch_values_for`'s own subset agrees name for name.**
+
+**One sentinel of the eight is resolved: `i_tf_bucking`** (`init.py:891-895`, `-1` -> `0`
+for water-cooled copper, `1` otherwise). It is the only one a switch value needs.
+`resolve_i_tf_bucking` is the single copy; `_tf_stress_arm` re-implemented the `-1 -> 1`
+half inline with a comment saying so, and now takes the resolved value. **Not touched,
+and stated rather than silently skipped:** `eff_tf_cryo`, `eyoung_ins`,
+`eyoung_cond_axial` and `i_cp_joints` are *values*, so they belong to the boundary
+provider, not to assembly or to a switch — and the first three are the `off` rows every
+tokamak pin already carries. `i_tf_wp_geom` and `i_tf_shape` are resolved elsewhere in
+`indat.py` against the same `init.py` lines and were left there.
+`n_equality_constraints` belongs to the problem statement and is discussed below.
+
+**The presence defect is fixed, and the missing-producer count moved.**
+`presence_flags_from_indat` asks `Imported.named()`; the old code scanned
+`switches_from_indat` for `i_f_dr_tf_plasma_case`/`tfc_sidewall_is_fraction`, which are
+not declared PROCESS inputs, so it could only ever return `0` (§24.2 item 1). **[measured]
+both flags now equal `init_process`'s on all seven, `True` on four** — the two
+stellarators and the two spherical tokamaks. On the STs `.tfcoil.dx_tf_side_case_min`
+gains a producer and **the provider's `computed` count goes 2 -> 1 on both**, leaving
+`.build.r_cp_top` alone (`st_regression` 347 answered independently, up from 345;
+`spherical_tokamak_eval` 357, up from 355).
+
+**[measured] All seven node counts are unchanged at §23.6's table**, now frozen in
+`test_machine.NODE_COUNTS` rather than only recorded here. That is not luck and it is
+asserted separately: flipping the flags changes two slots and the changes cancel —
+`DX_TF_SIDE_CASE_MIN[True]` is a node where `[False]` is `None` (+1), and
+`DR_TF_PLASMA_CASE[True]` is an `ExplicitFunction` where `[False]` is a
+`FixedPointFunction`, which mints a second `^problem` node for its own cut (-1).
+
+**Two things found behind this, reported and not fixed:**
+
+1. **`init_audit.md` §2a's `n_equality_constraints` row is wrong in direction.
+   [measured] the `-1` sentinel fires on 0 of 7, not 7 of 7.** Every tracked file states
+   `n_equality_constraints`, so `set_active_constraints` takes its **`else`** branch and
+   derives `n_inequality_constraints = count - n_equality` instead — which §2c already
+   lists. The sentinel is real (`numerics.py:166`); it is simply never reached by any
+   file the port has. Pinned in `test_the_equality_count_is_stated_by_every_tracked_file`.
+2. **`i_figure_merit` is the one part of the problem statement a file may not state.**
+   `large_tokamak_eval` and `spherical_tokamak_eval` set none and PROCESS's
+   `numerics.py:154` default of `7` answers them. `Problem` reports `None` and nothing
+   resolves it — a caller stating the problem must, and `abs(None)` in
+   `switch_values_for`/`objective_node` is where it would otherwise be discovered.
+   Pinned, not fixed.
+
+**Owed, because the files are owned elsewhere this session:**
+
+- **`reference_provider_st_regression.txt` and `reference_provider_spherical_tokamak_
+  eval.txt` are stale** — one `computed` row each is gone and the `input`/`guess` tallies
+  moved. `$PY -m functional_process.provider --write` regenerates them; `test_provider.py`
+  will fail against the old pins until it is run. Not run here.
+- **`sand.switch_values_for` is unchanged and still takes a `DataStructure`.** Nothing
+  was removed; `switch_values_from_indat` is the alternative, and pointing
+  `run_cold_matrix.py`/`run_mdf_harness.py` at it is a one-line change in files owned
+  elsewhere. Until then the solve path still calls the PROCESS-fed one.
+- **`sand._Resolver.data` still needs a `DataStructure`** (§23.5 item 2) — unrelated to
+  the switch values, reached only by a constraint *bound*, and untouched here.
+
+Verified: `test_machine.py`, `test_switch_coverage.py`, `test_importer.py`,
+`test_boundary.py` — **557 passed, 123 skipped**, and `test_process_free_import.py` (7)
+separately, since `indat.py` gained an import. `ruff format` clean on all three changed
+files. Not the full suite.

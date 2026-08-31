@@ -55,7 +55,7 @@ from functional_process.paths import (
     physics,
     tfcoil,
 )
-from process.models.physics.current_drive import (
+from functional_process.vocabulary import (
     CurrentDriveMethodType,
     CurrentDriveModel,
 )

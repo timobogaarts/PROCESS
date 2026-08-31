@@ -61,7 +61,7 @@ from functional_process.paths import (
     times,
     vacuum,
 )
-from process.data_structure.pfcoil_variables import PFConductorModel
+from functional_process.vocabulary import PFConductorModel
 
 
 def convert_fpy_to_calendar(

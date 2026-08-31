@@ -43,9 +43,11 @@ from functional_process.models.pfcoil import (
     N_PF_GROUPS,
     NGC2,
     PLASMA_INDEX,
+    SPHERICAL_TOKAMAK_TOPOLOGY,
 )
 from functional_process.models.pfcoil.inductance import (
     calculate_pf_cs_plasma_inductances,
+    calculate_pf_plasma_inductances_no_central_solenoid,
     calculate_solenoid_self_inductance,
 )
 from process.core.model import DataStructure
@@ -267,4 +269,199 @@ class TestCalculatePfCsPlasmaInductances(Tier1Contract):
         "z_pf_coil_middle": _around(_Z_MID, 0.08),
         "z_pf_coil_lower": _around(_Z_LO, 0.05),
         "n_pf_coil_turns": _around(_TURNS, 0.15),
+    }
+
+
+# ---------------------------------------------------------------------------------
+# The no-central-solenoid arm (`iohcl = 0`), 2026-08-31.
+# ---------------------------------------------------------------------------------
+#
+# The eight-coil spherical-tokamak geometry, read off
+# `test_masses.py::TestPFCoilChainSphericalTokamak`'s own legacy point by running its
+# reference chain (`PFCoil.pfcoil()` at `iohcl = 0`) once. So this contract's inputs are
+# PROCESS's own outputs for that machine rather than numbers invented here -- but the
+# machine is still `_LEGACY_SPHERICAL_TOKAMAK`'s "plausible, not converged" point, and
+# that caveat carries over verbatim: no ST file assembles through this port yet, so
+# there is no converged run to read a coil set off.
+_ST_R_MID = np.array([
+    2.4625000000000004,
+    2.4625000000000004,
+    9.3,
+    9.3,
+    9.3,
+    9.3,
+    9.5,
+    9.5,
+])
+_ST_Z_MID = np.array([4.86, -5.36, 3.0, -3.0, 6.25, -6.25, 13.0, -13.0])
+_ST_Z_UP = np.array([
+    5.492692096669603,
+    -5.992692096669603,
+    3.3853576857560688,
+    -3.3853576857560688,
+    6.5386583645056495,
+    -6.5386583645056495,
+    13.167712578033077,
+    -13.167712578033077,
+])
+_ST_Z_LO = np.array([
+    4.227307903330398,
+    -4.727307903330398,
+    2.6146423142439312,
+    -2.6146423142439312,
+    5.9613416354943505,
+    -5.9613416354943505,
+    12.832287421966923,
+    -12.832287421966923,
+])
+_ST_TURNS = np.array([
+    440.3292181069958,
+    440.3292181069958,
+    163.35060056840018,
+    163.35060056840018,
+    91.65601653898428,
+    91.65601653898428,
+    30.940259713551036,
+    30.940259713551036,
+])
+_ST_RMAJOR = 4.5
+_ST_IND_PLASMA = 8.0e-6
+"""`.physics.ind_plasma` for a 4.5 m machine, chosen the way
+`TestPFCoilChainSphericalTokamak`'s build quantities are and for the same reason. It is
+read straight through into the matrix's `[plasma, plasma]` entry on both sides
+(`pfcoil.py:1858-1862`), so no fit depends on it -- what the contract checks is that
+both sides put it in the same slot."""
+
+_ST_R_IN_LAST = 9.332287421966923
+_ST_R_OUT_LAST = 9.667712578033077
+"""`r_pf_coil_inner[7]`/`r_pf_coil_outer[7]` from the same chain, and **the port declares
+neither**, which is a finding about `induct` rather than a gap in the port.
+
+`induct` computes `noh` *before* it looks at `iohcl` (`pfcoil.py:1756-1780`), so on a
+machine with no CS it still divides `2 * z_pf_coil_upper[n_cs_pf_coils - 1]` by
+`r_pf_coil_outer[...] - r_pf_coil_inner[...]` -- which on arm 2 is not the solenoid but
+the **last PF coil**, index 7. The quotient is then unused: `roh`/`zoh` are filled only
+under `iohcl != 0` (`:1783-1791`) and all three blocks that read them are guarded, so
+every inductance is independent of `noh` (`_audit/next_steps.md` §20.6). Two consequences
+for this adapter, both stated rather than worked around:
+
+- the two fields must be seeded to something with a non-zero difference or PROCESS
+  raises `ZeroDivisionError` on a quantity it will not use;
+- on this geometry `z_pf_coil_upper[7]` is *negative* (a below-midplane coil), so
+  `math.ceil` of the quotient is negative and `max(noh, 0)` (`:1778`, PROCESS's own
+  FNSF-case guard, with its own `TODO`) clamps it to **zero**. `roh`/`zoh` are then
+  zero-length arrays. That is the guard doing real work on a machine PROCESS's comment
+  did not have in mind.
+
+Held fixed, not fuzzed, because no output depends on them -- fuzzing them would test
+`ceil`."""
+
+
+def _reference_pf_plasma_inductances_no_central_solenoid(
+    rmajor,
+    ind_plasma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    n_pf_coil_turns,
+):
+    """`PFCoil.induct(False)` on a cold `DataStructure` with `iohcl = 0`.
+
+    The sibling adapter's shape with the spherical tokamaks' topology
+    (`n_pf_coils_in_group = (2, 2, 2, 2)`, `n_cs_pf_coils = 8`,
+    `n_pf_cs_plasma_circuits = 9`) and four fewer seeded fields: `dr_cs` and
+    `r_cs_middle` are never read on this arm, and `r_pf_coil_inner`/`r_pf_coil_outer`
+    reach only `noh` -- see `_ST_R_IN_LAST`.
+
+    **No `static_argnames`**, unlike `TestCalculatePfCsPlasmaInductances`. The three that
+    contract declares static are the three `noh` is a step function of, and here `noh`
+    reaches no output at all, so `z_pf_coil_upper` is an ordinary differentiated input
+    whose only use is the PF/PF diagonal's `rl = |z_upper - z_lower| / sqrt(pi)`.
+    """
+    data = DataStructure()
+    p = data.pf_coil
+
+    data.build.iohcl = 0
+    data.physics.rmajor = rmajor
+    data.physics.ind_plasma = ind_plasma
+
+    topology = SPHERICAL_TOKAMAK_TOPOLOGY
+    n = topology.n_cs_pf_coils
+    p.n_cs_pf_coils = n
+    p.n_pf_cs_plasma_circuits = topology.plasma_index + 1
+    p.n_pf_coil_groups = topology.n_pf_coil_groups
+    p.n_pf_coils_in_group = np.array(
+        [*topology.n_pf_coils_in_group, 0, 0, 0, 0, 0, 0], dtype=int
+    )
+    p.ind_pf_cs_plasma_mutual = np.zeros((NGC2, NGC2))
+
+    for name, value in (
+        ("r_pf_coil_middle", r_pf_coil_middle),
+        ("z_pf_coil_middle", z_pf_coil_middle),
+        ("z_pf_coil_upper", z_pf_coil_upper),
+        ("z_pf_coil_lower", z_pf_coil_lower),
+        ("n_pf_coil_turns", n_pf_coil_turns),
+    ):
+        full = np.zeros(NGC2)
+        full[:n] = np.asarray(value, dtype=float)
+        setattr(p, name, full)
+
+    # Only `noh` reads these two, and only through `r_out[7] - r_in[7]`.
+    p.r_pf_coil_inner = np.zeros(NGC2)
+    p.r_pf_coil_outer = np.zeros(NGC2)
+    p.r_pf_coil_inner[n - 1] = _ST_R_IN_LAST
+    p.r_pf_coil_outer[n - 1] = _ST_R_OUT_LAST
+
+    model = PFCoil(cs_fatigue=None, cs_coil=None)
+    model.data = data
+    model.induct(False)
+    return p.ind_pf_cs_plasma_mutual
+
+
+class TestCalculatePfPlasmaInductancesNoCentralSolenoid(Tier1Contract):
+    """`calculate_pf_plasma_inductances_no_central_solenoid` -> `PFCoil.induct(False)`
+    at `iohcl = 0`, on the spherical tokamaks' eight-coil topology.
+
+    Owed since 2026-08-30 (`_audit/next_steps.md` §20.5 item 1): the function was
+    verified bit-exact in a scratch script and nothing in the test tree held it.
+
+    **Three of `induct`'s four blocks survive here and the fourth is absence, not a
+    zero.** The CS/plasma block, the CS self-inductance and the CS/PF block are all
+    guarded on `iohcl != 0`, so the matrix this returns has the plasma self-inductance,
+    the PF/plasma column and the full 8x8 PF/PF block -- and `nef = n_cs_pf_coils`
+    rather than `- 1` (`pfcoil.py:1943-1947`), so the last PF coil is *in* that block
+    where on the reference arm index 7 is the plasma's neighbour. A port that read the
+    absent CS fields as zeros would still fill row/column 8 of the matrix; both sides
+    leave them at `0.0` because neither computes them.
+    """
+
+    audit_record = "models/pfcoil/inductance.md"
+    reference = _reference_pf_plasma_inductances_no_central_solenoid
+    ported = calculate_pf_plasma_inductances_no_central_solenoid
+
+    samples = [
+        legacy_sample(
+            "spherical-tokamak-plausible",
+            rmajor=_ST_RMAJOR,
+            ind_plasma=_ST_IND_PLASMA,
+            r_pf_coil_middle=_ST_R_MID,
+            z_pf_coil_middle=_ST_Z_MID,
+            z_pf_coil_upper=_ST_Z_UP,
+            z_pf_coil_lower=_ST_Z_LO,
+            n_pf_coil_turns=_ST_TURNS,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "rmajor": _around(_ST_RMAJOR, 0.10),
+        "ind_plasma": _around(_ST_IND_PLASMA, 0.20),
+        "r_pf_coil_middle": _around(_ST_R_MID, 0.08),
+        "z_pf_coil_middle": _around(_ST_Z_MID, 0.08),
+        # Upper and lower edges are drawn independently: their difference is the
+        # diagonal's equivalent circular radius, so a draw that moved them together
+        # would leave `rl` untested.
+        "z_pf_coil_upper": _around(_ST_Z_UP, 0.05),
+        "z_pf_coil_lower": _around(_ST_Z_LO, 0.05),
+        "n_pf_coil_turns": _around(_ST_TURNS, 0.15),
     }

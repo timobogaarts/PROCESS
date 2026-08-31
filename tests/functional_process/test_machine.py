@@ -1400,3 +1400,59 @@ def test_a_spherical_tokamak_pf_system_assembles_without_a_central_solenoid(tmp_
     # What `pfcoil()` itself still writes on this arm does have a producer.
     assert ".pf_coil.f_j_cs_start_end_flat_top" in owners
     assert ".pf_coil.m_pf_coil_conductor_total" in owners
+
+
+NODE_COUNTS = {
+    "large_tokamak_nof": 238,
+    "large_tokamak_eval": 240,
+    "low_aspect_ratio_DEMO": 238,
+    "spherical_tokamak_eval": 234,
+    "st_regression": 234,
+    "stellarator_helias": 150,
+    "helias_5b": 150,
+}
+"""`_audit/next_steps.md` §23.6's table, which was recorded there and frozen nowhere.
+
+Two of the seven were pinned in `test_process_free_import.py` and the other five were
+"measured the same way and recorded here rather than frozen into the test". This is the
+freeze, and it exists because the presence-flag fix immediately below is exactly the
+kind of change that moves a count silently.
+"""
+
+
+@pytest.mark.parametrize("stem", sorted(NODE_COUNTS), ids=sorted(NODE_COUNTS))
+def test_every_tracked_configuration_assembles_at_its_recorded_node_count(stem):
+    path = str(Path(REFERENCE_INPUT_FILE).resolve().parent / f"{stem}.IN.DAT")
+    assert len(graph_for(machine_from_indat(path)).definitions) == NODE_COUNTS[stem]
+
+
+def test_the_presence_flags_swap_two_nodes_and_add_none(tmp_path):
+    """Why the two spherical tokamaks still count 234 after gaining a producer.
+
+    `init.py:925-930`'s two presence flags were stuck at `False` on every file
+    (`init_audit.md` §3) and are now read from the text, which flips both on four of
+    the seven. That changes two slots at once and the changes cancel:
+
+    - `DX_TF_SIDE_CASE_MIN[True]` is a node where `[False]` is `None` -- **+1**, and it
+      is the missing producer `.tfcoil.dx_tf_side_case_min` (`next_steps.md` §22.6).
+    - `DR_TF_PLASMA_CASE[True]` is an `ExplicitFunction` where `[False]` is a
+      `FixedPointFunction` -- a node that reads what it owns, so it mints a second
+      `^problem` node for its own cut. **-1**.
+
+    Net zero on the two spherical tokamaks, and *neither* half of that is a coincidence
+    worth trusting silently, which is why it is asserted rather than left to the total.
+    """
+    directory = Path(REFERENCE_INPUT_FILE).resolve().parent
+    fraction = graph_for(machine_from_indat(str(directory / "st_regression.IN.DAT")))
+    from_input = graph_for(
+        machine_from_indat(str(directory / "large_tokamak_eval.IN.DAT"))
+    )
+
+    def nodes_named(graph, fragment):
+        return {str(n) for n in graph.definitions if fragment in str(n)}
+
+    assert len(nodes_named(fraction, "dx_tf_side_case_min")) == 1
+    assert not nodes_named(from_input, "dx_tf_side_case_min")
+    assert len(nodes_named(fraction, "dr_tf_plasma_case")) == 1
+    assert len(nodes_named(from_input, "dr_tf_plasma_case")) == 2
+    assert any("^problem" in n for n in nodes_named(from_input, "dr_tf_plasma_case"))

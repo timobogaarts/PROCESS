@@ -31,12 +31,14 @@ import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.tfcoil.stress import (
+    extended_plane_strain,
     eyoung_parallel,
     eyoung_parallel_array,
     eyoung_series,
     eyoung_t_nested_squares,
     plane_stress,
     tf_field_and_force_clamped_joints,
+    tf_stress_extended_plane_strain_bucked_case,
     tf_stress_plane_stress_bucked_case,
 )
 from process.models.tfcoil import base as tfcoil_base
@@ -648,6 +650,449 @@ class TestTfStressPlaneStressBuckedCase(Tier1Contract):
             "vforce",
             "a_tf_coil_inboard_case",
             "a_tf_turn_steel",
+            "n_tf_coil_turns",
+        }
+    } | {"n_radial_array": 100}
+
+
+# ---------------------------------------------------------------------------
+# `extended_plane_strain`
+# ---------------------------------------------------------------------------
+
+# `spherical_tokamak_eval.IN.DAT` at PROCESS's converged point, measured with a
+# `SingleRun`. Live switch values there: `i_tf_sup = 1`, `i_tf_stress_model = 0`,
+# `i_tf_bucking = 1`, `i_tf_turns_integer = 0`, `i_tf_tresca = 0`, `itart = 1`,
+# `i_cp_joints = 0`, `n_tf_graded_layers = 1`. That run's own three answers are
+# `sig_tf_wp = 302391298.07593733`, `sig_tf_case = 390959416.2857399`,
+# `str_wp = 0.0010498113096371342`, and `.tfcoil.casestr` / `.tfcoil.insstrain` are
+# **`None`** in the converged `DataStructure` -- which is the measurement behind this
+# arm owning three fields rather than five.
+_CONVERGED_ST = {
+    "r_tf_inboard_in": 0.30885540192106586,
+    "r_tf_wp_inboard_inner": 0.4381694923304086,
+    "r_tf_wp_inboard_outer": 1.1676646529646093,
+    "tan_theta_coil": 0.2679491924311227,
+    "rad_tf_coil_inboard_toroidal_half": 0.2617993877991494,
+    "dr_tf_plasma_case": 0.041190748956456545,
+    "a_tf_coil_inboard_steel": 0.2524170599339434,
+    "a_tf_plasma_case": 0.017242815688178703,
+    "a_tf_coil_nose_case": 0.026470758397272677,
+    "eyoung_steel": 205000000000.0,
+    "poisson_steel": 0.3,
+    "eyoung_cond_axial": 0.0,
+    "poisson_cond_axial": 0.3,
+    "eyoung_cond_trans": 0.0,
+    "poisson_cond_trans": 0.3,
+    "eyoung_ins": 20000000000.0,
+    "poisson_ins": 0.34,
+    "eyoung_copper": 117000000000.0,
+    "poisson_copper": 0.35,
+    "dx_tf_turn_insulation": 0.0008,
+    "dx_tf_wp_insertion_gap": 0.01,
+    "dx_tf_wp_insulation": 0.018,
+    "n_tf_coil_turns": 80.35714282107192,
+    "dx_tf_turn_cable_space_eyoung": 0.025501408508296027,
+    "dia_tf_turn_coolant_channel": 0.005,
+    "f_a_tf_turn_cable_copper": 0.69,
+    "dx_tf_turn_steel": 0.008,
+    "dx_tf_side_case_average": 0.0763146550516272,
+    "dx_tf_wp_toroidal_average": 0.27765265230686775,
+    "a_tf_coil_inboard_insulation": 0.0443988263059861,
+    "a_tf_wp_steel": 0.09736114275723116,
+    "a_tf_wp_conductor": 0.027362227248714482,
+    "a_tf_wp_with_insulation": 0.20254626619511037,
+    "c_tf_total": 67499999.96970041,
+    "vforce_inboard_tot": 551215676.8768669,
+}
+"""Every argument of `tf_stress_extended_plane_strain_bucked_case` at that point."""
+
+
+def _reference_extended_plane_strain(
+    nu_t, nu_zt, ey_t, ey_z, rad, d_curr, v_force, i_tf_bucking, n_radial_array
+):
+    """`extended_plane_strain` with `nlayers` supplied from the shapes."""
+    return tfcoil_base.extended_plane_strain(
+        nu_t=np.asarray(nu_t, dtype=float),
+        nu_zt=np.asarray(nu_zt, dtype=float),
+        ey_t=np.asarray(ey_t, dtype=float),
+        ey_z=np.asarray(ey_z, dtype=float),
+        rad=np.asarray(rad, dtype=float),
+        d_curr=np.asarray(d_curr, dtype=float),
+        v_force=float(v_force),
+        nlayers=len(d_curr),
+        n_radial_array=int(n_radial_array),
+        i_tf_bucking=int(i_tf_bucking),
+    )
+
+
+_FNSF_SLIP_STACK = {
+    "nu_t": np.array([
+        0.30000000502169133,
+        0.34000000000000002,
+        0.29999999999999999,
+        0.30901178507421895,
+        0.29999999999999999,
+    ]),
+    "nu_zt": np.array([
+        0.31163570564277626,
+        0.34000000000000002,
+        0.29999999999999999,
+        0.31377709779186291,
+        0.29999999999999999,
+    ]),
+    "ey_t": np.array([
+        118643750000.0,
+        2500000000.0,
+        205000000000.0,
+        43163597776.087654,
+        205000000000.0,
+    ]),
+    "ey_z": np.array([
+        48005309351.198608,
+        2500000000.0,
+        205000000000.0,
+        124208626934.75433,
+        390554854819.81116,
+    ]),
+    "rad": np.array([
+        2.3322000000000003,
+        2.8846200000000004,
+        2.9346200000000002,
+        3.4817726429672304,
+        4.0290604740948242,
+        4.0890604740948238,
+    ]),
+    "d_curr": np.array([0.0, 0.0, 0.0, 18343613.563061949, 0.0]),
+    "v_force": 4051971733.3410816,
+    "i_tf_bucking": 3,
+    "n_radial_array": 100,
+}
+"""PROCESS's own `test_extended_plane_strain` second sample (`test_tfcoil.py:1521-1573`)
+-- the FNSF five-layer stack at `i_tf_bucking = 3`, the only oracle anywhere for the
+`nonslip_layer > 1` branches. Used by
+`test_extended_plane_strain_matches_process_on_a_slip_stack` rather than by the contract;
+that function says why."""
+
+
+class TestExtendedPlaneStrain(Tier1Contract):
+    """`extended_plane_strain` -> `extended_plane_strain`, `np.linalg.solve` on the
+    4x4 becoming `jnp.linalg.solve`.
+
+    One sample: the three-layer stack the ported `stresscl` builds at
+    `spherical_tokamak_eval`'s converged point, which is the `nonslip_layer == 1` cell
+    the node actually reaches and the one where the slip force row degenerates to
+    `[0, 0, 0, 0, 1]`. Eight returns of `nlayers * n_radial_array` elements each -- 12000
+    numbers, every one compared at `rtol = 1e-12`.
+
+    **Neither of PROCESS's own two parametrisations is here, and each is absent for its
+    own measured reason.**
+
+    Its *first* sample has `rad[0] == 0`, so the innermost test point is `r = 0`; the
+    inner boundary condition forces `B = 0` there, `b_plot / r` is `0 / 0`, and PROCESS's
+    own test declares the first element of `sigr`, `sigt`, `sigz`, `str_r`, `str_t` and
+    `r_deflect` to be `nan` (its `nan_init` field). The port returns `nan` in exactly
+    those six places and nowhere else -- measured -- but `test_outputs_finite` exists
+    precisely to fail on a `nan`, so carrying the sample would mean disabling the check
+    that makes the others worth anything. The point is unreachable from the node in any
+    case: `stresscl` raises `ProcessValueError` 245 at a zero inner radius unless
+    `i_tf_stress_model == 2` (`base.py:2524-2527`), and `2` is refused in `indat.py`.
+
+    Its *second* sample is `_FNSF_SLIP_STACK`, and it agrees -- but at `1e-13` of each
+    array's *scale*, not of each element, which an elementwise `rtol` cannot express.
+    `test_extended_plane_strain_matches_process_on_a_slip_stack` below carries it with
+    the criterion that fits, and the numbers are there.
+    """
+
+    audit_record = "models/tfcoil/stress.md"
+    reference = _reference_extended_plane_strain
+    ported = extended_plane_strain
+    static_argnames = ("n_radial_array", "i_tf_bucking")
+
+    gradient_floor = 1.0e-8
+    """The second contract in the port to set one, and the same size as
+    `TestPlaneStress`'s for the same reason. Measured, at `--fp-gradients`: five of the
+    12000 x 22 derivative components need it, and every one is a *boundary condition*
+    rather than a disagreement about the model.
+
+    Three are on `sigr[1499]`, the outermost radial station -- which **is** the outer
+    boundary condition, zero radial stress. The port's `jacfwd` propagates the same
+    cancelling expression to an exact `0.0` (or `2.1e-19`) there while PROCESS's finite
+    difference, straddling the same cancellation with `epsfcn = 1e-3`, reports `-5.7e-5`
+    with a Richardson error bar of `8.7e-18` -- an error bar that is small because the
+    three perturbed evaluations agree with each other, not because the derivative is
+    known. The other two, on `sigr[8]` and `sigr[1497]`, miss by `1.7e-8` and `1.2e-7`
+    *relative* on derivatives of `2.3e5` and `-4.9e2`.
+
+    `1e-8` is the same order above the worst of these as it is on `TestPlaneStress`, and
+    eight orders below a derivative that is wrong rather than cancelled."""
+
+    samples = [
+        legacy_sample(
+            "extended-plane-strain-spherical-tokamak-eval-converged",
+            # The three layers `tf_stress_extended_plane_strain_bucked_case` assembles
+            # at that point: nose casing, winding pack, plasma-side case. `ey_z[2]` is
+            # already scaled by `f_tf_stress_front_case` (`base.py:2960`), which is
+            # what makes this solver read a modulus its plane-stress sibling ignores.
+            nu_t=np.array([0.3, 0.3064907778275952, 0.3]),
+            nu_zt=np.array([0.3, 0.3086653348093896, 0.3]),
+            ey_t=np.array([205000000000.0, 70097031864.01279, 205000000000.0]),
+            ey_z=np.array([
+                205000000000.0,
+                146170145629.56116,
+                136363213453.44171,
+            ]),
+            rad=np.array([
+                0.30885540192106586,
+                0.4432860345278621,
+                1.1812995718120933,
+                1.2224903207685498,
+            ]),
+            d_curr=np.array([0.0, 17920369.937168237, 0.0]),
+            v_force=551215676.8768669,
+            i_tf_bucking=1,
+            n_radial_array=500,
+        ),
+    ]
+
+
+def test_extended_plane_strain_matches_process_on_a_slip_stack():
+    """The `nonslip_layer > 1` branches, against PROCESS, at `1e-13` of array scale.
+
+    `_FNSF_SLIP_STACK` is the only oracle in existence for the half of
+    `extended_plane_strain` that `i_tf_bucking == 1` cannot reach: two axially decoupled
+    inner layers, so the slip interface row of `m_ext`, the slip axial-force row, the
+    `eps_z_slip` inner boundary condition and the `str_z = a_vec_solution[4]` branch all
+    run. Without it those are written and untested.
+
+    **It is here and not in `TestExtendedPlaneStrain.samples` because of what the
+    disagreement is, and that was measured rather than guessed.** The 4x4 this sample
+    produces has condition number `3.4e13` -- `extended_plane_strain` does no row
+    equilibration, where `plane_stress` does (`base.py:4404-4419`) -- so `cond * eps` is
+    `7.5e-3` and the *achievable* accuracy of the raw solution vector is far worse than
+    anything either implementation delivers. What both actually deliver agrees to about
+    `1e-13` of each output array's scale:
+
+    | array | max abs difference | array scale | ratio |
+    |---|---|---|---|
+    | `sigr` | `2.2e-06` | `5.7e+07` | `3.8e-14` |
+    | `sigt` | `6.8e-06` | `2.2e+08` | `3.1e-14` |
+    | `sigz` | `1.7e-06` | `4.2e+08` | `4.1e-15` |
+    | `str_r` | `1.8e-16` | `7.8e-03` | `2.3e-14` |
+    | `str_t` | `5.1e-17` | `1.5e-03` | `3.5e-14` |
+    | `str_z` | `5.4e-18` | `1.2e-03` | `4.6e-15` |
+    | `r_deflect`| `1.2e-16` | `4.3e-03` | `2.8e-14` |
+
+    Elementwise, two of those are unbounded in *relative* terms and neither is a
+    disagreement about the model: `sigr[0]` **is** the inner boundary condition, so
+    PROCESS returns a hard `0.0` and the port returns `-2.1e-6` from the same cancelling
+    expression; and the largest relative miss on `sigz`, `1.25e-12`, is on an element of
+    `1.3e6` inside an array whose scale is `4.2e8`. A per-element `rtol` that passed both
+    would have to be `1e-11` or looser on 12000 numbers that mostly agree to `1e-15`,
+    which is a worse test than this one. So the criterion here is the one that matches
+    the claim: **`1e-13` of each array's own scale, checked array by array.**
+    """
+    reference = _reference_extended_plane_strain(**_FNSF_SLIP_STACK)
+    ported = extended_plane_strain(**_FNSF_SLIP_STACK)
+    names = (
+        "rradius",
+        "sigr",
+        "sigt",
+        "sigz",
+        "str_r",
+        "str_t",
+        "str_z",
+        "r_deflect",
+    )
+    for name, expected_raw, actual_raw in zip(names, reference, ported, strict=True):
+        expected = np.asarray(expected_raw, dtype=float)
+        actual = np.asarray(actual_raw, dtype=float)
+        assert np.all(np.isfinite(actual)), name
+        scale = np.max(np.abs(expected))
+        error = np.max(np.abs(actual - expected))
+        assert error <= 1.0e-13 * scale, (
+            f"{name}: max |diff| {error:g} exceeds 1e-13 of the array scale {scale:g}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# `stresscl`, the `i_tf_stress_model == 0` arm
+# ---------------------------------------------------------------------------
+
+
+def _reference_stresscl_extended(*, n_radial_array=500, n_tf_graded_layers=1, **kwargs):
+    """`stresscl` pinned to `(i_tf_sup, i_tf_stress_model, i_tf_bucking) == (1, 0, 1)`.
+
+    The sibling of `_reference_stresscl`, and the inert-argument list moves by exactly
+    the three arguments the arms disagree about: `vforce_inboard_tot` is **live** here
+    and passed through, while `vforce`, `a_tf_coil_inboard_case` and `a_tf_turn_steel`
+    join the inert set, because the vertical stress is solved for rather than divided
+    out of a steel area (`base.py:2980-2989` runs only at `i_tf_stress_model == 1`).
+    They are supplied as deliberately absurd values -- `vforce = 0`, both areas `1.0`,
+    against a real machine's `4.6e7` and `1.6e-1` -- so that "the port declares no edge
+    PROCESS does not make here" is tested rather than asserted: if any of the three
+    reached the answer, the diff would be enormous rather than marginal.
+
+    Returns the **three** values the node owns. `casestr` and `insstrain` come back as
+    `None` from this arm and are not returned; that they do is checked by
+    `test_casestr_and_insstrain_are_none_on_this_arm` below rather than left as a claim
+    in prose.
+    """
+    sig_tf_wp, sig_tf_case, str_wp = _stresscl_extended_raw(
+        n_radial_array=n_radial_array,
+        n_tf_graded_layers=n_tf_graded_layers,
+        **kwargs,
+    )[:3]
+    return sig_tf_wp, sig_tf_case, str_wp
+
+
+def _stresscl_extended_raw(*, n_radial_array=500, n_tf_graded_layers=1, **kwargs):
+    """`(sig_tf_wp, sig_tf_case, str_wp, casestr, insstrain)` from PROCESS itself."""
+    out = TFCoil.stresscl(
+        n_tf_layer=1 + n_tf_graded_layers + 1,
+        n_radial_array=int(n_radial_array),
+        n_tf_wp_stress_layers=5,
+        i_tf_bucking=1,
+        i_tf_sup=1,
+        i_tf_stress_model=0,
+        i_tf_tresca=0,
+        i_tf_turns_integer=0,
+        n_tf_graded_layers=n_tf_graded_layers,
+        dx_tf_turn_cable_space_average=kwargs.pop("dx_tf_turn_cable_space_eyoung"),
+        dr_tf_turn_cable_space=0.0,
+        # Inert on this arm -- see `_reference_stresscl` for the CS-layer and
+        # conductor-model group, and this function's docstring for the three that are
+        # inert *here* and live on the plane-stress arm.
+        dr_bore=0.0,
+        dr_cs=0.0,
+        i_tf_inside_cs=0,
+        dr_tf_inboard=0.0,
+        dr_cs_tf_gap=0.0,
+        i_pf_conductor=0,
+        j_cs_flat_top_end=0.0,
+        j_cs_pulse_start=0.0,
+        c_pf_coil_turn_peak_input=np.ones(64),
+        n_pf_coils_in_group=np.ones(12, dtype=np.int64),
+        f_dr_dz_cs_turn=70.0 / 22.0,
+        radius_cs_turn_corners=0.003,
+        f_a_cs_turn_steel=0.8,
+        a_cs_poloidal=1.0,
+        eyoung_res_tf_buck=150000000000.0,
+        eyoung_al=69000000000.0,
+        poisson_al=0.35,
+        fcoolcp=0.3,
+        vforce=0.0,
+        a_tf_coil_inboard_case=1.0,
+        a_tf_turn_steel=1.0,
+        **kwargs,
+    )
+    sig_tf_wp, sig_tf_case, _cs_bucked, str_wp, casestr, insstrain = out[27:33]
+    return sig_tf_wp, sig_tf_case, str_wp, casestr, insstrain
+
+
+def test_casestr_and_insstrain_are_none_on_this_arm():
+    """`stresscl` returns `None` for both at `i_tf_stress_model == 0`.
+
+    The measurement behind `TfStressExtendedPlaneStrainBuckedCaseAveragedTurn` owning
+    three fields where its plane-stress sibling owns five. Both are initialised to
+    `None` (`base.py:2520-2521`) and assigned only inside the
+    `i_tf_stress_model == 1` branch (`:2991-2998`); `superconducting.py:2224-2231`
+    then writes that `None` over the `DataStructure`'s `0.0`, so a port that returned a
+    number for either would be inventing one. Their only reader anywhere is the printer
+    (`base.py:3646`, `:3653`), which is why nothing downstream reports it.
+
+    The same `None` was observed end to end: a `SingleRun` on
+    `spherical_tokamak_eval.IN.DAT` leaves `.tfcoil.casestr` and `.tfcoil.insstrain` at
+    `None` in the converged `DataStructure`.
+    """
+    _, _, _, casestr, insstrain = _stresscl_extended_raw(
+        n_radial_array=100, **_CONVERGED_ST
+    )
+    assert casestr is None
+    assert insstrain is None
+
+
+class TestTfStressExtendedPlaneStrainBuckedCase(Tier1Contract):
+    """`stresscl` -> `tf_stress_extended_plane_strain_bucked_case`.
+
+    `spherical_tokamak_eval`'s converged point at the `500` stations the pipeline runs,
+    and the same geometry at `100`. The two agree to every printed digit here, which is
+    worth recording rather than assuming: on this stack the peak Tresca stress in each
+    of the three layers sits on a layer boundary, and `extended_plane_strain`'s grid is
+    **closed** (`base.py:4160` divides by `n_radial_array - 1`, not `n_radial_array`),
+    so both resolutions sample it exactly. `stress.md`'s OQ1 -- how much of the
+    reported stress is a quadrature artefact -- is therefore *smaller* on this arm than
+    on the plane-stress one, whose grid is open at the outer end and cannot land on the
+    outer boundary at all.
+
+    There is no PROCESS unit-test parametrisation for this cell: `test_stresscl`'s
+    single sample is `i_tf_stress_model = 1`. The oracle is `stresscl` itself, called on
+    the same converged point, and the port additionally reproduces that run's own
+    `DataStructure` fields exactly -- `sig_tf_wp = 302391298.07593733`,
+    `sig_tf_case = 390959416.2857399`, `str_wp = 0.0010498113096371342`, relative
+    difference `0.0` on all three.
+
+    **The fuzz holds the geometry fixed and varies the material and load**, for the same
+    reason as on the sibling contract: the ten arguments that place the four layer
+    boundaries have to stay ordered and positive or the transfer matrices are singular
+    on both sides.
+    """
+
+    audit_record = "models/tfcoil/stress.md"
+    reference = _reference_stresscl_extended
+    ported = tf_stress_extended_plane_strain_bucked_case
+    static_argnames = ("n_radial_array", "n_tf_graded_layers")
+
+    samples = [
+        legacy_sample(
+            "stresscl-extended-spherical-tokamak-eval-converged",
+            **_CONVERGED_ST,
+            n_radial_array=500,
+        ),
+        legacy_sample(
+            "stresscl-extended-spherical-tokamak-eval-converged-100",
+            **_CONVERGED_ST,
+            n_radial_array=100,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "eyoung_steel": (1.5e11, 2.5e11),
+        "poisson_steel": (0.25, 0.35),
+        "eyoung_cond_axial": (0.0, 1.0e11),
+        "poisson_cond_axial": (0.25, 0.35),
+        "eyoung_cond_trans": (0.0, 1.0e11),
+        "poisson_cond_trans": (0.25, 0.35),
+        "eyoung_ins": (1.0e10, 3.0e10),
+        "poisson_ins": (0.3, 0.4),
+        "eyoung_copper": (1.0e11, 1.3e11),
+        "poisson_copper": (0.3, 0.4),
+        "f_a_tf_turn_cable_copper": (0.6, 0.95),
+        "a_tf_wp_steel": (0.06, 0.14),
+        "a_tf_wp_conductor": (0.018, 0.04),
+        "c_tf_total": (5.0e7, 9.0e7),
+        "vforce_inboard_tot": (3.5e8, 7.5e8),
+        "n_tf_coil_turns": (60.0, 120.0),
+    }
+    fuzz_fixed = {
+        key: value
+        for key, value in _CONVERGED_ST.items()
+        if key
+        not in {
+            "eyoung_steel",
+            "poisson_steel",
+            "eyoung_cond_axial",
+            "poisson_cond_axial",
+            "eyoung_cond_trans",
+            "poisson_cond_trans",
+            "eyoung_ins",
+            "poisson_ins",
+            "eyoung_copper",
+            "poisson_copper",
+            "f_a_tf_turn_cable_copper",
+            "a_tf_wp_steel",
+            "a_tf_wp_conductor",
+            "c_tf_total",
+            "vforce_inboard_tot",
             "n_tf_coil_turns",
         }
     } | {"n_radial_array": 100}

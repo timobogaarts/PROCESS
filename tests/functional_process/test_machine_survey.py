@@ -265,11 +265,16 @@ def test_the_report_ends_with_what_the_factory_actually_does():
     """The switch table cannot see a slot dispatched on a *derived* arm index, so the
     report ends with one real assembly attempt.
 
-    Both tracked spherical tokamaks were surveyed as "exactly four switch values away"
-    while also being refused by `pf_coil_system_arm`, whose name appears in no `IN.DAT`.
-    A column can never show that; an assembly attempt always can.
+    The measurement this guards was originally a *refusal*: both tracked spherical
+    tokamaks surveyed as "exactly four switch values away" while also being refused by
+    `pf_coil_system_arm`, whose name appears in no `IN.DAT`. A switch column can never
+    show that; an assembly attempt always can. The refusal has since expired -- the five
+    PF dimensions closed, then `extended_plane_strain`
+    (`_audit/units/models/tfcoil/stress.md`) -- so the assertion is now that both files
+    assemble, which is the same check of the same machinery against the answer it
+    currently gives.
     """
     assert assembly_verdict(TOKAMAK) == "ASSEMBLES."
     assert report(TOKAMAK).rstrip().endswith("ASSEMBLES.")
-    refusal = assembly_verdict(SPHERICAL)
-    assert refusal.startswith("ASSEMBLY REFUSED")
+    assert assembly_verdict(SPHERICAL) == "ASSEMBLES."
+    assert report(SPHERICAL).rstrip().endswith("ASSEMBLES.")

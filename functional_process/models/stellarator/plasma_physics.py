@@ -71,7 +71,7 @@ from functional_process.paths import (
     physics,
     stellarator,
 )
-from process.core import constants
+from functional_process.vocabulary import constants
 
 
 def calculate_total_field(b_plasma_toroidal_on_axis, b_plasma_surface_poloidal_average):

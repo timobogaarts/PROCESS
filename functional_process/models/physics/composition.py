@@ -49,8 +49,8 @@ from functional_process.models.physics.impurity_radiation import (
     calculate_average_charge_at_temp,
 )
 from functional_process.paths import current_drive, impurity_radiation, physics
-from process.core import constants
-from process.data_structure.physics_variables import PlasmaIgnitionModel
+from functional_process.vocabulary import constants
+from functional_process.vocabulary import PlasmaIgnitionModel
 
 H_INDEX = 0
 """`element2index("H_", ...)` -- always 0, see module docstring."""

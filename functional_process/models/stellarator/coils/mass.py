@@ -48,7 +48,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.paths import fwbs, tfcoil
-from process.core import constants
+from functional_process.vocabulary import constants
 
 
 def calculate_coils_mass(

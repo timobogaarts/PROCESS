@@ -54,7 +54,7 @@ from cottax.interfaces.pytree_namespace_module import (
 
 from functional_process.models.pfcoil import CS_INDEX
 from functional_process.paths import pf_coil, tfcoil
-from process.core import constants
+from functional_process.vocabulary import constants
 
 RMU0 = constants.RMU0
 """Vacuum permeability (H/m), imported for the same reason `fields.py` imports it."""

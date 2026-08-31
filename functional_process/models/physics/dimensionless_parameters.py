@@ -11,7 +11,7 @@ from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, Ou
 
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import physics
-from process.core import constants
+from functional_process.vocabulary import constants
 
 
 def calculate_dimensionless_plasma_parameters(

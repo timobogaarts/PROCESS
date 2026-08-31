@@ -237,3 +237,34 @@ keeps `pfcoil_variables.py`'s default `1` and is outside `{2, 6, 8}`.
 
 Two per-index reads became two whole-array reads, and that was cottax's refusal rather
 than a preference -- see `pfcoil/fields.md`'s section of the same date.
+
+## 2026-08-31 -- the REBCO-tape PF arm has a harness case
+
+`tests/functional_process/models/pfcoil/test_superconductor.py::
+TestPFStrandCriticalCurrentDensityHazeltonZhaiRebco` holds
+`calculate_pf_strand_critical_current_density_hazelton_zhai_rebco` against the real
+`superconpf` at `isumat = 9` -- third return, times `1 - fcupfsu` -- closing half of
+`next_steps.md` §20.5 item 2. All 74 tests in the file pass with `--fp-gradients` (25 s).
+
+**The other half of that item was already closed and the record did not know it.**
+§20.5 asks for a harness case for `hijc_rebco` in
+`tests/functional_process/models/physics/test_superconductors.py`; `TestHijcRebco` has
+been there since commit `b527727c` (the CroCo turn wave, 2026-08-30), with two legacy
+samples including the CroCo tape geometry. It landed after §20.5 was written. All 103
+tests in that file pass with `--fp-gradients` (9 s).
+
+The two contracts are not duplicates and the distinction is worth keeping: `TestHijcRebco`
+tests the **critical surface** against `process.models.superconductors.hijc_rebco`, called
+directly with its own arguments. The contract added here tests the **PF block around it**
+-- that `bc20m = 138` / `tc0m = 92` are the constants this arm passes (`pfcoil.py:4853-4854`),
+that `bmax` is `max(|b_pf_coil_peak|, |bpf2|)`, that the third of `superconpf`'s four
+returns is the one taken, and that the strand branch is the `else` one (`* (1 - fcupfsu)`,
+not the `/ (1 - fcupfsu)` of the `{2, 6, 8}` arm). None of that is reachable from the
+material fit's own contract. `tests/functional_process/models/tfcoil/test_croco.py`
+exercises `hijc_rebco` a third time, through the CroCo properties path, and likewise
+covers none of the PF-side wiring.
+
+The tape geometry is the **TF coil's**: `pfcoil.py:892-894` passes
+`.superconducting_tfcoil.dr_tf_hts_tape` / `.dx_tf_hts_tape_rebco` /
+`.dx_tf_hts_tape_total` straight into the PF call, because `pfcoil_variables.py` has no
+tape geometry of its own. Reproduced, not tidied.

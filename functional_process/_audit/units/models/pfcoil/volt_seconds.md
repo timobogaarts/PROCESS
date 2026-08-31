@@ -177,3 +177,27 @@ different body -- because `vsec` reads the inductance matrix and the turn curren
 on both arms. `PFCoilTurnCurrents` is one node for both, with the topology deciding
 which row is the plasma's. Bit-exact against `vsec` in the scratch verification;
 **an ST case in `test_volt_seconds.py` is owed** -- see `next_steps.md`.
+
+## 2026-08-31 -- the no-central-solenoid arm has a harness case
+
+`tests/functional_process/models/pfcoil/test_volt_seconds.py::
+TestCalculatePfVoltSecondsNoCentralSolenoid` holds
+`calculate_pf_volt_seconds_no_central_solenoid` against `PFCoil.vsec` at `iohcl = 0`,
+closing the second half of `next_steps.md` §20.5 item 1. Agrees at the legacy point and
+under fuzz; all 20 tests in the file pass with `--fp-gradients` (7 s).
+
+What the contract actually discriminates is the **index range**, not the arithmetic:
+`nef = n_pf_cs_plasma_circuits - 1` on this arm, one larger than the conventional arm's
+`- 2`, so the last PF coil is inside both sums where on `large_tokamak_eval` index 7 is
+the plasma's. A port that kept the conventional `- 2` would silently drop coil 7 from
+both totals and would still return plausible numbers.
+
+**The legacy point's burn term is exactly zero, and that is the machine, not the port.**
+On `TestPFCoilChainSphericalTokamak`'s point the plasma-initiation solve returns
+`ccl0 = 0` exactly; `calculate_time_point_currents_no_central_solenoid` builds both the
+flat-top and the end-of-burn currents as `ccls - ccl0 * k`, so the two coincide, the
+waveform fractions are `(0, -0, 1, 1, 1, 0)`, and `vs_cs_pf_total_burn` is `0.0` on both
+sides. `vs_cs_pf_total_pulse` (the ramp term) is not degenerate, and the fuzz draws --
+which move every entry of the turn-current matrix independently -- separate columns 2
+and 4 and put a non-zero burn term under test. Recorded rather than tuned away: the
+legacy point is PROCESS's own answer for that machine.

@@ -36,7 +36,7 @@ from functional_process.paths import (
     stellarator,
     stellarator_config,
 )
-from process.core import constants
+from functional_process.vocabulary import constants
 
 KEV = 1e3 * constants.ELECTRON_CHARGE
 

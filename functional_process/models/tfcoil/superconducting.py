@@ -107,7 +107,7 @@ from functional_process.paths import (
     superconducting_tfcoil,
     tfcoil,
 )
-from process.core import constants
+from functional_process.vocabulary import constants
 
 _RIPPLE_FIT_COEFFICIENTS = {
     16: (0.28101, 1.8481, -0.88159, 0.93834),

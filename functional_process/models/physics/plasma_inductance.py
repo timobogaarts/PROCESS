@@ -38,7 +38,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.paths import physics, times
-from process.core import constants
+from functional_process.vocabulary import constants
 
 RMU0 = constants.RMU0
 """Vacuum permeability (H/m), `process/core/constants.py:277`."""

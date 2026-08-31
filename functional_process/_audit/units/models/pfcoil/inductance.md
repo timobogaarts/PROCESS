@@ -302,3 +302,34 @@ scratch verification that produced `TestPFCoilChainSphericalTokamak`'s point; th
 matrix itself is not in that contract's return tuple (it is `induct`'s, not
 `pfcoil()`'s) and **an ST case in `test_inductance.py` is owed** -- see
 `next_steps.md`.
+
+## 2026-08-31 -- the no-central-solenoid arm has a harness case
+
+`calculate_pf_plasma_inductances_no_central_solenoid` was verified bit-exact in a
+scratch script when it landed (2026-08-30) and nothing in the test tree held it;
+`tests/functional_process/models/pfcoil/test_inductance.py::
+TestCalculatePfPlasmaInductancesNoCentralSolenoid` does now, against `PFCoil.induct(False)`
+at `iohcl = 0` on the eight-coil topology. It agrees at the legacy point and under fuzz,
+and passes every gradient check (`--fp-gradients`, 30 tests over this file, 76 s).
+
+**`noh` is computed before `induct` looks at `iohcl`, and on arm 2 it divides by the last
+PF coil.** `pfcoil.py:1756-1780` reads
+`2 * z_pf_coil_upper[n_cs_pf_coils - 1] / (r_pf_coil_outer[...] - r_pf_coil_inner[...])`
+unconditionally. With no solenoid, index `n_cs_pf_coils - 1` is index 7 -- the last PF
+coil, not the CS. The quotient is then never used (`roh`/`zoh` are filled only under
+`iohcl != 0` and all three blocks reading them are guarded), so no inductance depends on
+it, which is what §20.6 already recorded. Two live consequences the harness adapter had
+to face, both stated in its docstring rather than worked around:
+
+- the two radii must be seeded to something with a non-zero difference, or PROCESS
+  raises `ZeroDivisionError` computing a number it will not use;
+- on the spherical tokamaks' geometry `z_pf_coil_upper[7]` is **negative** (coil 7 is
+  below the midplane), so `math.ceil` gives a negative `noh` and `max(noh, 0)`
+  (`:1778` -- PROCESS's own FNSF guard, carrying its own `TODO` that "noh should always
+  be positive") clamps it to zero. That guard, written for a different machine, is what
+  keeps `roh = np.zeros(noh)` legal here.
+
+The contract therefore declares **no `static_argnames`**, unlike its `iohcl = 1` sibling:
+the three that contract holds static are the three `noh` steps on, and `noh` reaches no
+output on this arm, so `z_pf_coil_upper` is an ordinary differentiated input whose only
+use is the PF/PF diagonal's `rl = |z_upper - z_lower| / sqrt(pi)`.

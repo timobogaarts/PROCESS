@@ -66,16 +66,18 @@ The areas, and what they hold -- PROCESS's own names, which are not always self-
 | `numerics`, `constraints`, `scan`, `globals` | the solve itself, not the machine |
 """
 
-import dataclasses
 import difflib
 
 from cottax.interfaces.pytree_namespace_module import Area
 from jax.tree_util import GetAttrKey
 
-from process.core.model import DataStructure
-
-AREAS = tuple(f.name for f in dataclasses.fields(DataStructure))
-"""Every area PROCESS has, straight from `DataStructure` -- 36 of them."""
+# `AREAS` -- every area PROCESS has, 36 of them. Was
+# `tuple(f.name for f in dataclasses.fields(DataStructure))`, read live off PROCESS; the
+# list is vocabulary, not physics, so §23.2 vendors it and
+# `tests/functional_process/test_vocabulary.py` asserts the vendored tuple still equals
+# that expression, order included. Re-exported from here because every caller in the port
+# imports it from `paths`.
+from functional_process.vocabulary import AREAS
 
 
 class _Root:

@@ -254,6 +254,64 @@ problem over two unknowns, driven Picard -- `FixedPointCut` -> `PicardDriver`, p
 round-2 brief's decision (validation against PROCESS first; a `RootFind` on the
 `n_pf_coil_turns` residual is the recorded later upgrade, deliberately not done now).
 
+**On a machine with no central solenoid the merged SCC is four nodes, not nine, and
+`n_pf_coil_turns` drops out of this table entirely.** Measured 2026-08-31 on the arm-2
+graph (`indat._pf_coil_system_arm == 2`, `iohcl = 0`, eight PF coils) of
+`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`. Measured **twice**, and the
+second time is what makes it evidence: first on a stand-in graph, with the then-last
+unported occupant (`tf_stress_arm == (0, 1, 0)`, `extended_plane_strain`) replaced by
+the plane-stress node, and then again once that occupant actually landed, on the real
+assembly. The two graphs agree in every respect this paragraph reports -- 234 nodes,
+the same six cycles, the same five landing cuts, `schedule()` building -- so the
+stand-in probe was sound, which is worth knowing the next time one is needed. Both
+files give the same answer:
+
+    .tokamak.pf_coil.inductance  --.pf_coil.ind_pf_cs_plasma_mutual-->
+    .tokamak.pf_coil.volt_seconds --.pf_coil.vs_cs_pf_total_burn-->
+    .tokamak.pulse.burn_time      --.times.t_plant_pulse_burn-->
+    .tokamak.plasma_inductance.volt_seconds --.physics.ind_plasma--> (back to the first)
+
+`cs_coil.flux_swing` is gone with the namespace, and `sizes`, `waveform`,
+`time_point_currents` and `turn_currents` leave the SCC with it: `next_steps.md` §20.2
+predicted exactly that and it holds. `.pf_coil.n_pf_coil_turns` is still *owned* (by
+`pf_coil.sizes`) and still read by `pf_coil.inductance`, but has **no closing readers**
+-- there is no path back to `sizes` any more -- so `cut_graph` skips it, as it skips
+`.fwbs.f_ster_div_single` (the divertor arm has no cycle here) and
+`.tfcoil.dx_tf_wp_primary_toroidal` (picture-frame TF, so `build.tf_outboard_mid` does
+not close the winding-pack ring). Six of `CUTS`'s eight entries are owned on arm 2 and
+five land: the three density/fusion cuts, plus `t_plant_pulse_burn` and
+`ind_pf_cs_plasma_mutual`, which `cut_graph` groups into one two-unknown
+`^problem.times.t_plant_pulse_burn.cycle`. `schedule()` builds on both files.
+
+**Sufficient, but not minimal, and that is the one thing arm 2 changes about this
+table.** The four-node SCC is two rings sharing the `burn_time -> t_plant_pulse_burn ->
+plasma_inductance.volt_seconds` edge (the long one above, and the two-node
+`v_plasma_loop_burn` ring), so **`.times.t_plant_pulse_burn` alone breaks it** -- it is
+the only one of the SCC's five closing-reader variables that does, measured by cutting
+each in turn on `graph.subgraph(cycle)` and checking `.is_acyclic`. Cutting
+`.pf_coil.ind_pf_cs_plasma_mutual` as well is therefore redundant, and redundant in a
+way worth naming rather than tidying: PROCESS's `pfcoil()` calls `induct` before `vsec`
+in one pass, so `vsec` reads the matrix *fresh*, and cutting it makes the port's Picard
+carry a stale value across an iterate where PROCESS does not. On the reference tokamak
+that cut is necessary (the pre-merge PF ring closes through it) and is PROCESS's own
+`first_call` seed; on arm 2 it is neither. The entry stays, because `CUTS` is one table
+serving every machine and `cut_graph`'s "cut where there are closing readers" rule is
+what makes it portable -- but note that
+`test_mda.py::_assert_every_raw_cycle_is_cut_sufficiently_and_minimally`, which asserts
+sufficiency *and* minimality, would fail on an arm-2 graph, and that is a property of
+this table rather than of the port. Deciding between "drop redundant cuts in
+`cut_graph`" and "let a machine carry a redundant unknown" is open, and should be taken
+when an ST file assembles for real rather than against a stand-in.
+
+**One more arm-2 cycle exists on `st_regression.IN.DAT` only** and belongs to the TF
+package, not this one: `.tokamak.build.dr_tf_inboard_winding_pack`,
+`.tokamak.build.tf_inboard_radii` and `.tokamak.cicc_superconducting_tf_coil.
+dr_tf_plasma_case` join that node's declared self-loop into one four-node block.
+`spherical_tokamak_eval.IN.DAT` has the two-node self-loop alone. The block declares one
+problem either way, so `Blocking` accepts it and no new entry is needed here; recorded
+because a raw cycle *merging into* a declared problem's block is a shape this table has
+not had before.
+
 **The second cycle is `ipowerflow != 0`-only** (`next_steps.md` §5:
 `AFwTotalWithPowerflow` is the `ipowerflow != 0` arm; `AFwTotalNoPowerflow` -- the
 `ipowerflow == 0` arm -- does not read `.fwbs.f_ster_div_single` at all, so there is

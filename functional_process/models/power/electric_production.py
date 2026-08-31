@@ -33,8 +33,8 @@ from functional_process.paths import (
     tfcoil,
     times,
 )
-from process.models.power import PumpingPowerModelTypes
-from process.models.tfcoil.base import TFConductorModel
+from functional_process.vocabulary import PumpingPowerModelTypes
+from functional_process.vocabulary import TFConductorModel
 
 
 def calculate_acpow(

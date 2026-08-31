@@ -38,7 +38,7 @@ from cottax.interfaces.pytree_namespace_module import (
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.paths import current_drive, physics, stellarator
-from process.data_structure.physics_variables import (
+from functional_process.vocabulary import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
     PlasmaIgnitionModel,

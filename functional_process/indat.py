@@ -351,6 +351,7 @@ from functional_process.models.tfcoil.quench import (
 )
 from functional_process.models.tfcoil.stress import (
     TfFieldAndForceClampedJoints,
+    TfStressExtendedPlaneStrainBuckedCaseAveragedTurn,
     TfStressPlaneStressBuckedCaseAveragedTurn,
     TfStressPlaneStressBuckedCaseIntegerTurn,
 )
@@ -403,13 +404,15 @@ from functional_process.models.vacuum.vacuum import (
     VacuumVesselEllipticalDoubleNull,
     VacuumVesselEllipticalSingleNull,
 )
+from functional_process.importer import Imported, read_indat
 from functional_process.total_process import StellaratorProcess, TokamakProcess
-from process.core.solver.iteration_variables import ITERATION_VARIABLES
-from process.data_structure.blanket_variables import BlktModelTypes
-from process.data_structure.build_variables import TFCSRadialConfiguration
-from process.data_structure.divertor_variables import DivertorHeatLoadModel
-from process.data_structure.pfcoil_variables import PFConductorModel
-from process.data_structure.physics_variables import (
+from functional_process.vocabulary import ITERATION_VARIABLES
+from functional_process.vocabulary.input_variables import INPUT_VARIABLES
+from functional_process.vocabulary import BlktModelTypes
+from functional_process.vocabulary import TFCSRadialConfiguration
+from functional_process.vocabulary import DivertorHeatLoadModel
+from functional_process.vocabulary import PFConductorModel
+from functional_process.vocabulary import (
     ConfinementRadiationLossModel,
     ConfinementTimeModel,
     CurrentProfileIndexModel,
@@ -417,35 +420,35 @@ from process.data_structure.physics_variables import (
     OutbordSOLPowerDecayLengthModel,
     PlasmaIgnitionModel,
 )
-from process.data_structure.superconducting_tf_coil_variables import TFWPIntegerTurnType
-from process.models.build import FwBlktVVShape
-from process.models.physics.bootstrap_current import BootstrapCurrentFractionModel
-from process.models.physics.current_drive import (
+from functional_process.vocabulary import TFWPIntegerTurnType
+from functional_process.vocabulary import FwBlktVVShape
+from functional_process.vocabulary import BootstrapCurrentFractionModel
+from functional_process.vocabulary import (
     CurrentDriveMethodType,
     CurrentDriveModel,
 )
-from process.models.physics.density_limit import DensityLimitModel
-from process.models.physics.l_h_transition import PlasmaConfinementTransitionModel
-from process.models.physics.physics import IndInternalNormModel
-from process.models.physics.plasma_current import (
+from functional_process.vocabulary import DensityLimitModel
+from functional_process.vocabulary import PlasmaConfinementTransitionModel
+from functional_process.vocabulary import IndInternalNormModel
+from functional_process.vocabulary import (
     PlasmaCurrentModel,
     PlasmaDiamagneticCurrentModel,
 )
-from process.models.physics.plasma_geometry import (
+from functional_process.vocabulary import (
     PlasmaGeometryModelType,
     PlasmaShapeModelType,
 )
-from process.models.power import (
+from functional_process.vocabulary import (
     ElectricConversionModelTypes,
     PumpingPowerModelTypes,
 )
-from process.models.superconductors import SuperconductorModel, SuperconductorShape
-from process.models.tfcoil.base import (
+from functional_process.vocabulary import SuperconductorModel, SuperconductorShape
+from functional_process.vocabulary import (
     TFCoilShapeModel,
     TFConductorModel,
     TFPlasmaCaseType,
 )
-from process.models.tfcoil.superconducting import (
+from functional_process.vocabulary import (
     SuperconductingTFTurnType,
     SuperconductingTFWPShapeType,
 )
@@ -629,19 +632,31 @@ _CROCO_TURN_DIMENSION_INPUT_REASON = (
 )
 
 _TF_STRESS_MODEL_REASON = (
-    "`i_tf_stress_model != 1` selects `extended_plane_strain` "
-    "(process/models/tfcoil/base.py:3719-4234, **517 lines**) instead of "
-    "`plane_stress`: a generalised plane *strain* formulation that permits a zero bore, "
-    "is O(n) in layers, and returns three strain arrays the plane-stress solver never "
-    "computes -- `.tfcoil.str_wp` comes off `str_tf_z` there (`:3034`) rather than off "
-    "the uniform vertical stress (`:2988`), so it is a different function of different "
-    "inputs, not a different constant. A second solver and a second occupant, and "
-    "neither is written. Live on both tracked spherical tokamaks "
-    "(spherical_tokamak_eval.IN.DAT:350, st_regression.IN.DAT:1223). **Until "
-    "2026-08-30 that was hidden**: those two files were refused earlier, for "
-    "`i_tf_turn_type == 2`, and this is the blocker the CroCo wave uncovered behind it. "
-    "It is not one `_audit/next_steps.md` §18 counted, because the stress slot itself "
-    "landed after §18 was measured"
+    "`i_tf_stress_model == 2` reaches `extended_plane_strain` through the same `elif` "
+    "as `0` (process/models/tfcoil/base.py:3005), which **is** ported "
+    "(`tf_stress_extended_plane_strain_bucked_case`). What `2` additionally does is "
+    "switch off two zero-bore guards: `stresscl` raises `ProcessValueError` 245 when "
+    "`r_tf_inboard_in` is zero at `0` or `1` (`base.py:2524-2527`) and patches "
+    "`radtf[0]` to `1e-9` (`:2963-2965`), and `2` does neither, because the plane-"
+    "strain solver's inner boundary condition is zero *displacement* rather than zero "
+    "stress there. So `2` is `0` plus a reachable `rad[0] == 0`, on which the solver "
+    "returns `nan` in the first element of six of its eight arrays -- PROCESS's own "
+    "unit test records that as `nan_init`. Not aliased onto `0`: 'the same code path "
+    "on the values a tracked file happens to take' is a measurement, and no tracked "
+    "file sets `2`, so nobody has made it"
+)
+
+_EXTENDED_PLANE_STRAIN_INTEGER_TURN_REASON = (
+    "`i_tf_stress_model == 0` with `i_tf_turns_integer == 1`. The solver is ported and "
+    "so is the `i_tf_bucking == 1` layer stack; what is not written is the *integer-"
+    "turn* read of the cable-space width the transverse smearing is built on "
+    "(`base.py:2745-2749`, `.superconducting_tfcoil.dr_tf_turn_cable_space` rather than "
+    "`.dx_tf_turn_cable_space_average`). A different read is a different node, exactly "
+    "as on the plane-stress side, where both arms *are* written. Unreachable on both "
+    "tracked spherical tokamaks -- `spherical_tokamak_eval.IN.DAT:354` and "
+    "`st_regression.IN.DAT:1042` both set `i_tf_turns_integer = 0` -- so it is refused "
+    "rather than written blind; writing it is a copy of the sibling arm the day a file "
+    "needs it"
 )
 
 _TF_BUCKING_REASON = (
@@ -1344,12 +1359,16 @@ UNPORTED = {
     ),
     **{
         ("tf_stress_arm", (_model, _bucking, _integer)): (
-            _TF_STRESS_MODEL_REASON if _model != 1 else _TF_BUCKING_REASON
+            _TF_STRESS_MODEL_REASON
+            if _model == 2
+            else _TF_BUCKING_REASON
+            if _bucking != 1
+            else _EXTENDED_PLANE_STRAIN_INTEGER_TURN_REASON
         )
         for _model in (0, 1, 2)
         for _bucking in (0, 1, 2, 3)
         for _integer in (0, 1)
-        if (_model, _bucking, _integer) not in {(1, 1, 0), (1, 1, 1)}
+        if (_model, _bucking, _integer) not in {(1, 1, 0), (1, 1, 1), (0, 1, 0)}
     },
     # ---- the CroCo namespace's three registries, 2026-08-30 -----------------------
     #
@@ -3189,18 +3208,19 @@ def _tf_stress_arm(
     Kapton interlayer sit inboard of the casing) -- and the third is carried in the key
     rather than resolved away because it decides one read, not one formula.
 
-    `i_tf_bucking` is `-1` in every input file that does not set it and
-    `init.py:891-895` turns that into `1` for a superconducting coil; the resolution is
-    done here rather than by the caller, as `init.py` does it too.
+    **`i_tf_bucking` arrives resolved.** It is `-1` in every input file that does not set
+    it, and `init.py:891-895` answers that by conductor -- `0` for water-cooled copper,
+    `1` otherwise. This function used to do the `-1 -> 1` half inline, which is right on
+    every tracked configuration and wrong for a copper machine; the rule now lives once
+    in `resolve_i_tf_bucking`, where `switch_values_from_indat` reads it too.
     """
-    if int(i_tf_bucking) == -1:
-        i_tf_bucking = 1
     return (int(i_tf_stress_model), int(i_tf_bucking), 1 if i_tf_turns_integer else 0)
 
 
 TF_STRESS = {
     (1, 1, 0): TfStressPlaneStressBuckedCaseAveragedTurn,
     (1, 1, 1): TfStressPlaneStressBuckedCaseIntegerTurn,
+    (0, 1, 0): TfStressExtendedPlaneStrainBuckedCaseAveragedTurn,
 }
 """The stress arm -> its occupant. See `_tf_stress_arm` and `stress.py`'s docstring."""
 
@@ -4025,92 +4045,102 @@ five because they carry the eight-coil `PFCoilTopology`. See
 `models/pfcoil/namespace.py`."""
 
 
-_INDAT_INTEGER = re.compile(r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*(\*.*)?$")
+def _as_imported(source):
+    """`Imported` for a path, or the one already read.
+
+    Every reader below takes either, so `machine_from_indat` reads the file **once** and
+    hands the same `Imported` to all of them, while a caller with only a path keeps the
+    signature it always had.
+    """
+    return source if isinstance(source, Imported) else read_indat(source)
+
+
+_INTEGER_TEXT = re.compile(r"-?\d+")
 
 
 def switches_from_indat(input_file):
     """Every `name = <integer>` this input file sets, as a plain dict.
 
-    Deliberately not a full IN.DAT parser: the only thing a machine is built from is
-    integer switches, and PROCESS's own `SingleRun` is what reads everything else.
+    Not a parser any more -- `importer.read_indat` is, and this is a **view** of its
+    assignments: the names whose value text is a bare integer, last occurrence winning.
+    Selection is by the *text*, not by the declared type, because that is what the
+    regex this replaced selected on and the two disagree in both directions (a declared
+    `float` written `16`; a declared `int` written `1.0`). Unknown names survive for the
+    same reason -- `test_machine.write_indat` writes them, and a name PROCESS does not
+    declare is still a name this factory may be asked about.
+
     A name the file never mentions is simply absent, which is what "falls through to the
-    default" means.
+    default" means. What a switch *is* has not changed; where the file is read has.
     """
-    text = Path(input_file).read_text()
     found = {}
-    for line in text.splitlines():
-        match = _INDAT_INTEGER.match(line)
-        if match:
-            found[match.group(1)] = int(match.group(2))
+    for assignment in _as_imported(input_file).assignments:
+        if assignment.index is None and _INTEGER_TEXT.fullmatch(assignment.text):
+            found[assignment.name] = int(assignment.text)
     return found
-
-
-_INDAT_NUMBER = re.compile(
-    r"\s*([A-Za-z_]\w*)\s*=\s*(-?[\d.]+(?:[eEdD][-+]?\d+)?)\s*(\*.*)?$"
-)
 
 
 def numbers_from_indat(input_file):
     """Every `name = <number>` this input file sets, as a plain dict of floats.
 
-    `switches_from_indat`'s sibling, and needed for exactly one thing: the tokamak's
-    `.build.dz_xpoint_divertor`, whose *input value* decides whether a node owns that
-    field or it stays an input (`_divertor_geometry_arm`). A float is not a switch, but
-    a float that decides which nodes exist is one for this factory's purposes, and the
-    same argument applies -- an input cannot change between two evaluations of one
-    assembled graph.
+    `switches_from_indat`'s sibling over the same `Imported`, and needed for exactly one
+    thing: the tokamak's `.build.dz_xpoint_divertor`, whose *input value* decides whether
+    a node owns that field or it stays an input (`_divertor_geometry_arm`). A float is
+    not a switch, but a float that decides which nodes exist is one for this factory's
+    purposes, and the same argument applies -- an input cannot change between two
+    evaluations of one assembled graph.
 
-    Deliberately still not a full IN.DAT parser. A name the file never mentions is
-    absent, which is what "falls through to the default" means.
+    The Fortran `d`-exponent fix is `importer._cast`'s (which is `validate_variable`'s),
+    not a second copy of it here.
     """
-    text = Path(input_file).read_text()
     found = {}
-    for line in text.splitlines():
-        match = _INDAT_NUMBER.match(line)
-        if match:
-            found[match.group(1)] = float(
-                match.group(2).replace("d", "e").replace("D", "e")
-            )
+    for assignment in _as_imported(input_file).assignments:
+        if assignment.index is not None:
+            continue
+        try:
+            found[assignment.name] = float(assignment.text.lower().replace("d", "e"))
+        except ValueError:
+            continue
     return found
-
-
-_INDAT_INT_LIST = re.compile(
-    r"\s*([A-Za-z_]\w*)\s*=\s*(-?\d+(?:\s*,\s*-?\d+)+)\s*,?\s*(\*.*)?$"
-)
 
 
 def int_lists_from_indat(input_file):
     """Every `name = <int>, <int>, ...` this input file sets, as a dict of tuples.
 
-    The third sibling, and needed for exactly one consumer: the PF coil system's
+    The third view, and needed for exactly one consumer: the PF coil system's
     coil-count topology (`i_pf_location = 2,2,3,3`, `n_pf_coils_in_group = 1,1,2,2`),
     which `_pf_coil_system_arm` checks against the one supported pattern. A
     comma-separated list is not an integer switch, but a list that fixes every array
     index in a package decides which occupants exist, and the factory's standing test
     holds -- an input cannot change between two evaluations of one assembled graph.
 
-    Deliberately still not a full IN.DAT parser; a name the file never mentions is
-    absent, and the caller supplies PROCESS's own `DataStructure` default.
+    Still text-selected rather than type-selected, for `switches_from_indat`'s reason:
+    `importer` already knows these two names are `int` arrays, but the caller's question
+    is "did the file spell a list of integers here", and a declared `float` array
+    spelled `2,2,3,3` answers it too.
     """
-    text = Path(input_file).read_text()
     found = {}
-    for line in text.splitlines():
-        match = _INDAT_INT_LIST.match(line)
-        if match:
-            found[match.group(1)] = tuple(
-                int(v) for v in match.group(2).split(",") if v.strip()
-            )
+    for assignment in _as_imported(input_file).assignments:
+        if assignment.index is not None or "," not in assignment.text:
+            continue
+        items = [v.strip() for v in assignment.text.split(",") if v.strip()]
+        if len(items) > 1 and all(_INTEGER_TEXT.fullmatch(v) for v in items):
+            found[assignment.name] = tuple(int(v) for v in items)
     return found
 
 
 def iteration_variables_from_indat(input_file):
     """The `ixc` this input file declares, as a frozenset of iteration-variable IDs.
 
-    `ixc` is the one name in an IN.DAT that legitimately repeats -- one line per active
-    unknown -- so `switches_from_indat`'s last-wins dict cannot hold it. It is read here
-    because **an iteration variable can decide graph topology**: `140 in ixc` picks
-    which of two inverse assignments `process/models/build.py` makes, one producing
-    `.build.dr_tf_inboard` and the other `.tfcoil.dr_tf_wp_with_insulation`.
+    `ixc` is one of the two names in an IN.DAT that legitimately repeat -- one line per
+    active unknown -- so `switches_from_indat`'s last-wins dict cannot hold it. That is
+    `importer.Problem`'s job now: it appends per occurrence, for both `ixc` and `icc`,
+    because both set no field at all and reach PROCESS through an `additional_actions`
+    hook. This reads the answer rather than re-scanning for it.
+
+    It is read here because **an iteration variable can decide graph topology**:
+    `140 in ixc` picks which of two inverse assignments `process/models/build.py` makes,
+    one producing `.build.dr_tf_inboard` and the other
+    `.tfcoil.dr_tf_wp_with_insulation`.
 
     That is a genuinely new kind of key for this factory, and it satisfies the same test
     every switch does (`machine_from_indat`'s docstring): the active set is fixed for a
@@ -4118,14 +4148,172 @@ def iteration_variables_from_indat(input_file):
     `ixc` mid-solve -- so it cannot change between two evaluations of one assembled
     graph. What an iteration variable's *value* does is a different question, and that
     one is the optimiser's.
+
+    A `frozenset` rather than `Problem.ixc`'s tuple, because every consumer here asks
+    membership and the *order* of `ixc` belongs to the problem statement, not to
+    assembly. `problem_from_indat` is where the order is kept.
     """
-    text = Path(input_file).read_text()
-    found = set()
-    for line in text.splitlines():
-        match = _INDAT_INTEGER.match(line)
-        if match and match.group(1) == "ixc":
-            found.add(int(match.group(2)))
-    return frozenset(found)
+    return frozenset(_as_imported(input_file).problem.ixc)
+
+
+def problem_from_indat(input_file):
+    """The problem statement this input file declares -- `importer.Problem`, in order.
+
+    **`icc` had no reader here at all** (`next_steps.md` §23.6 item 1), so the active
+    constraint list still came from a PROCESS run while everything else about the
+    machine came from the file. It needed no new parsing: `icc` repeats one per line
+    exactly as `ixc` does, and `read_indat` already appends both per occurrence and
+    returns them together with `i_figure_merit` and the two constraint counts.
+
+    Order is preserved and not sorted. PROCESS's equality/inequality split is
+    **positional** -- `icc`'s first `n_equality_constraints` entries are the equalities
+    (§23.4) -- so sorting `icc` would silently restate the problem.
+
+    `n_equality_constraints` is `None` when the file does not set it, which is the `-1`
+    sentinel `init.py` resolves to `count - n_inequality`
+    (`_audit/init_audit.md` §2a). That is the one sentinel of the eight that belongs to
+    the problem statement rather than to a value, and it is **not** resolved here --
+    `sand`/`mdf` take `n_equality` as an argument and the resolution is theirs to make
+    with the count in hand.
+    """
+    return _as_imported(input_file).problem
+
+
+# ------------------------------------------------------------- sentinel resolution
+#
+# `_audit/init_audit.md` §2a: eight `init.py` writes are a **sentinel** resolved to a
+# value, not a default. §24.2 item 2 says why they cannot be nodes as stated -- each
+# reads and writes one path -- and what the shape is instead: the importer emits a `raw`
+# namespace and a resolution maps raw -> resolved. These are that step, done in the
+# factory because that is where the answer is needed, and each is *one* function so no
+# consumer can carry a second copy of the rule.
+#
+# Only the sentinels the factory or the switch values actually need are here.
+# `i_tf_wp_geom` and `i_tf_shape` are resolved elsewhere in this module against the same
+# `init.py` lines; `eff_tf_cryo`, `eyoung_ins`, `eyoung_cond_axial` and `i_cp_joints` are
+# *values*, so they belong to the boundary and not to assembly, and
+# `n_equality_constraints` belongs to the problem statement (`problem_from_indat`).
+
+
+def resolve_i_tf_bucking(i_tf_bucking, i_tf_sup):
+    """`init.py:891-895`: the `-1` sentinel -> `0` for copper, `1` for anything else.
+
+    `.tfcoil.i_tf_bucking`'s dataclass default is `-1`, which is not a value: it means
+    "the file did not choose", and `init.py` chooses by conductor -- no bucking cylinder
+    for a water-cooled copper magnet, bucking for superconducting and for aluminium.
+    Measured firing on 5 of the 7 tracked configurations (`init_audit.md` §2a); the two
+    spherical tokamaks set `i_tf_bucking = 1` in the file.
+
+    `_tf_stress_arm` used to do the `-1 -> 1` half of this inline, with a comment saying
+    it was `init.py`'s rule -- correct on every tracked file and wrong for a copper
+    machine, which no tracked file is. The resolution is here now, once, and both
+    `_tokamak_device` and `switch_values_from_indat` read it, because a sentinel resolved
+    in two places is the transcription this module removes everywhere else.
+    """
+    if int(i_tf_bucking) != -1:
+        return int(i_tf_bucking)
+    return 0 if int(i_tf_sup) == TFConductorModel.WATER_COOLED_COPPER else 1
+
+
+# ------------------------------------------------------------------ presence (§24.2)
+
+
+def presence_flags_from_indat(input_file):
+    """`init.py:925-930`'s two presence flags, as `{name: bool}`.
+
+    **A property of the text, not of any value** (§24.2 item 1), and the reason this is
+    a reader rather than a node: neither `.tfcoil.tfc_sidewall_is_fraction` nor
+    `.tfcoil.i_f_dr_tf_plasma_case` is a declared PROCESS input, so no `IN.DAT` can set
+    either and no node can recover them from values. `init.py` sets each `True` when the
+    partner field is still at its `0.0` dataclass default, i.e. when the file did not
+    name it, and `Imported.named` is exactly that question.
+
+    This replaces `switches.get("i_f_dr_tf_plasma_case", 0)` and its sibling, which
+    scanned the file for the *flags themselves* -- names an `IN.DAT` cannot contain --
+    so the scan could only ever return `0` and both flags were always `False`
+    (`init_audit.md` §3). Measured: `True` on 4 of the 7 tracked configurations, which
+    is `init.py`'s own count.
+
+    **Presence, not a value test.** `init.py` tests `< 0.1e-10` on the partner field
+    rather than asking whether the file named it; the two differ only for a file that
+    names the field and sets it to (near) zero. No tracked file does, and presence is
+    the question the audit says this is -- so a file that does would be the interesting
+    case, not a silent disagreement. It is stated here rather than guarded, because
+    guarding it would need a defaults table this module deliberately does not have.
+    """
+    imported = _as_imported(input_file)
+    return {
+        # `tfcoil_variables.py:86` -- `dx_tf_side_case_min` defaults to `0.0`.
+        "tfc_sidewall_is_fraction": not imported.named("dx_tf_side_case_min"),
+        # `tfcoil_variables.py:77` -- `dr_tf_plasma_case` defaults to `0.0`.
+        "i_f_dr_tf_plasma_case": not imported.named("dr_tf_plasma_case"),
+    }
+
+
+# ------------------------------------------------------------------ switch values
+
+
+SWITCH_VALUE_DEFAULTS = {
+    "bkt_life_csf": 0.0,  # `cs_fatigue_variables.py:31` -- a float, read as an int
+    "i_beta_component": 0,  # `physics_variables.py:835`
+    "i_cp_lifetime": 0,  # `cost_variables.py:334`
+    "i_density_limit": 8,  # `physics_variables.py:863`
+    "i_plant_availability": 2,  # `cost_variables.py:408`
+    "i_plasma_ignited": 0,  # `physics_variables.py:881`
+    "i_q95_fixed": 0,  # `constraint_variables.py:52`
+    "i_rad_loss": 1,  # `physics_variables.py:954`
+    "i_tf_bucking": -1,  # `tfcoil_variables.py:308` -- a **sentinel**, resolved below
+    "i_tf_inside_cs": 0,  # `build_variables.py:189`
+    "i_tf_sup": 1,  # `tfcoil_variables.py:261`
+    "ibkt_life": 0,  # `cost_variables.py:416`
+    "ireactor": 1,  # `cost_variables.py:521`
+    "istell": 0,  # `stellarator_variables.py:46`
+    "itart": 0,  # `physics_variables.py:994`
+}
+"""`sand.SWITCH_PARAMETER_NAMES` -> PROCESS's own `DataStructure` default.
+
+The one place in this port that transcribes a *scalar* default, and it is here because
+`switch_values_for` reads the same fifteen fields off an **initialised**
+`DataStructure` -- which is the last thing in the solve path that needs PROCESS
+(§23.6 item 2). A default is transcribed with its source line beside it, and
+`test_switch_coverage.py` asserts every one of the fifteen equals PROCESS's, in both
+directions, so a drift fails a test rather than changing an answer.
+
+The name set is `sand.SWITCH_PARAMETER_NAMES`, asserted equal there too -- a switch
+added to the constraint surface with no default here must fail, not fall through.
+"""
+
+
+def switch_values_from_indat(input_file):
+    """`sand`'s static switch arguments for one run, read from the **file**.
+
+    The drop-in for `sand.switch_values_for(data, icc, i_figure_merit)`, and the point
+    is what it does *not* take: no `DataStructure`, so no PROCESS run
+    (`next_steps.md` §23.6 item 2). It also takes no `icc` and no `i_figure_merit`,
+    because it answers all fifteen names rather than the subset this run's constraints
+    and objective ask for -- `sand._bind` intersects with the signature it is binding
+    (`{p: switch_values[p] for p in parameters if p in switch_values}`), so a superset is
+    exactly as correct as the subset and is not a function of the problem statement.
+
+    Each name is read from `importer.read_indat`'s values at its declared area, falling
+    back to `SWITCH_VALUE_DEFAULTS`, and cast to `int` for `switch_values_for`'s own
+    reason: a switch selects a formula and is never a trace-time array. `bkt_life_csf`
+    is a declared `float` and is cast the same way, as `switch_values_for` casts it.
+
+    **One sentinel is resolved and the other fourteen names have none**:
+    `i_tf_bucking`'s `-1` is "the file did not choose" and `init.py` answers it by
+    conductor, so a raw `-1` would reach a constraint as a layer count. See
+    `resolve_i_tf_bucking`.
+    """
+    imported = _as_imported(input_file)
+    values = {
+        name: int(imported.get(INPUT_VARIABLES[name].module, name, default))
+        for name, default in SWITCH_VALUE_DEFAULTS.items()
+    }
+    values["i_tf_bucking"] = resolve_i_tf_bucking(
+        values["i_tf_bucking"], values["i_tf_sup"]
+    )
+    return values
 
 
 _QUENCH_GRID_FIELDS = ("tftmp", "temp_tf_conductor_quench_max")
@@ -4186,6 +4374,7 @@ def _tokamak_device(
     numbers,
     ixc,
     int_lists,
+    presence,
     i_tf_sup,
     i_plasma_ignited,
     itart,
@@ -4197,7 +4386,8 @@ def _tokamak_device(
     Split out of `machine_from_indat` rather than inlined, and the reason is length
     rather than principle: this is still the factory, and every `i_*` integer it reads is
     read here for the same reasons that function's docstring gives. It takes
-    `switches`/`numbers`/`ixc` already parsed, plus the values `machine_from_indat`
+    `switches`/`numbers`/`ixc`/`presence` already parsed, plus the values
+    `machine_from_indat`
     has already resolved and threaded -- `i_tf_sup`, `i_plasma_ignited`, `itart` and
     `i_tf_sc_mat` -- because **a switch is answered once**: re-reading any of them here
     would be the second transcription that `model_tree_design.md` §8 step 4d removed
@@ -4398,16 +4588,21 @@ def _tokamak_device(
         tf_global_geometry=_slot_occupant(
             "i_tf_case_geom", i_tf_case_geom, TF_GLOBAL_GEOMETRY
         ),
+        # Neither flag is a declared PROCESS input, so neither is in `switches` and
+        # neither ever could be: `init.py:925-930` sets each from whether the file
+        # *named* the partner field. `presence_flags_from_indat` asks `Imported.named`,
+        # which is the only question that can answer it (§24.2 item 1).
         dr_tf_plasma_case=_slot_occupant(
             "i_f_dr_tf_plasma_case",
-            bool(switches.get("i_f_dr_tf_plasma_case", 0)),  # `tfcoil_variables.py:83`
+            presence["i_f_dr_tf_plasma_case"],
             DR_TF_PLASMA_CASE,
         ),
-        # `None` is an occupant here, not a refusal: at the default `False` PROCESS
-        # computes no `.tfcoil.dx_tf_side_case_min` at all and the field is an input.
+        # `None` is an occupant here, not a refusal: at `False` -- the file named
+        # `dx_tf_side_case_min` -- PROCESS computes no `.tfcoil.dx_tf_side_case_min` at
+        # all and the field is an input.
         dx_tf_side_case_min=_slot_occupant(
             "tfc_sidewall_is_fraction",
-            bool(switches.get("tfc_sidewall_is_fraction", 0)),  # `:95`
+            presence["tfc_sidewall_is_fraction"],
             DX_TF_SIDE_CASE_MIN,
             build=lambda cls: None if cls is None else cls(),
         ),
@@ -4454,7 +4649,12 @@ def _tokamak_device(
             "tf_stress_arm",
             _tf_stress_arm(
                 switches.get("i_tf_stress_model", 1),  # `tfcoil_variables.py:211`
-                switches.get("i_tf_bucking", -1),  # `tfcoil_variables.py:341`
+                # The `-1` sentinel is `init.py:891-895`'s to resolve, and it needs the
+                # conductor to do it -- see `resolve_i_tf_bucking`.
+                resolve_i_tf_bucking(
+                    switches.get("i_tf_bucking", -1),  # `tfcoil_variables.py:308`
+                    i_tf_sup,
+                ),
                 i_tf_turns_integer,  # resolved above, beside `i_tf_wp_geom`
             ),
             TF_STRESS,
@@ -4839,7 +5039,11 @@ def machine_from_indat(input_file, stella_conf=None):
         which is looked up first, so a typo'd device is reported as `istell` rather than
         as whichever slot the constructor happened to reach.
     """
-    switches = switches_from_indat(input_file)
+    # One read of the file, four views of it: `importer.read_indat` is the parser now,
+    # and the readers below take the `Imported` it returns rather than the path, so a
+    # machine costs one parse instead of four scans.
+    imported = read_indat(input_file)
+    switches = switches_from_indat(imported)
 
     def pick(field, registry, default, **kw):
         return _slot_occupant(field, switches.get(field, default), registry, **kw)
@@ -5171,9 +5375,10 @@ def machine_from_indat(input_file, stella_conf=None):
             # re-read, because a switch is answered once.
             tokamak=_tokamak_device(
                 switches,
-                numbers_from_indat(input_file),
-                iteration_variables_from_indat(input_file),
-                int_lists_from_indat(input_file),
+                numbers_from_indat(imported),
+                iteration_variables_from_indat(imported),
+                int_lists_from_indat(imported),
+                presence_flags_from_indat(imported),
                 i_tf_sup,
                 i_plasma_ignited,
                 itart,

@@ -349,3 +349,31 @@ Measured on `large_tokamak_eval.IN.DAT`:
 **`c35` was `inf` at the cold seed and is finite now**, which is the whole point of the
 row: the constraint divided by a boundary constant that PROCESS's own solve moves off
 zero and the port had frozen at the `DataStructure` default.
+
+### 2026-08-31 — the wrapper is vendored, and the import is gone
+
+`helium_properties_at_quench_nodes` no longer imports `process`. The wrapper it needs is
+now `functional_process/fluid_properties.py`, a **byte-for-byte copy** of
+`process/core/coolprop_interface.py` (checked as such by
+`test_fluid_properties.py::test_vendored_source_is_verbatim`, not just asserted here),
+sitting beside `vocabulary/` rather than inside it because a CoolProp wrapper is
+behaviour, not a declaration — §23.2's rule was written for constants, enums and tables
+and is applied to it anyway.
+
+**Nothing about this unit's numerics changed, and that is the claim being made.** Both
+copies call the same `PropsSI` in the same installed `CoolProp` 8.0.0, so
+`tests/functional_process/test_fluid_properties.py` asserts `==`, not `approx`, over the
+range this chain actually queries: helium at `QUENCH_HELIUM_PRESSURE_PA = 6.0e5` Pa, all
+four `(tftmp, temp_tf_conductor_quench_max)` intervals the seven regression inputs
+produce — `(4.2, 4.5, 4.75, 20.0)` × `150.0`, i.e. **300 quadrature states**, the shipped
+table itself — plus a denser 61-point 4–200 K sweep and all nine properties, not only the
+`D`/`C` pair this unit uses. The CoolProp policy call recorded above (option (a), the
+static table, with `indat._quench_helium_table`'s refusal as its guard) is **untouched**:
+this cut an import, not a seam. `CLAUDE.md`'s "CoolProp is not JAX-traceable" stays open.
+
+**The lazy import stays, for a new reason as well as the old one.** It was deferred so
+that importing this module needed no `process`; `import CoolProp` costs **~3 s**
+(measured), and only a tokamak assembly ever wants a helium table, so it stays deferred
+now that `process` is not the issue. `test_process_free_import.py::
+test_importing_the_model_layer_does_not_load_coolprop` pins that: sweeping all 117
+modules must leave `CoolProp` out of `sys.modules`.
