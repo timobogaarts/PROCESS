@@ -284,7 +284,6 @@ input .pf_coil.j_cs_flat_top_end
 input .pf_coil.j_pf_coil_wp_peak
 input .pf_coil.pf_current_safety_factor
 input .pf_coil.radius_cs_turn_corners
-input .pf_coil.rho_pf_coil
 input .pf_coil.rhopfbus
 input .pf_coil.rpf2
 input .pf_coil.sigpfcalw
@@ -304,7 +303,6 @@ input .physics.csawth
 input .physics.ejima_coeff
 input .physics.f_c_plasma_non_inductive
 input .physics.f_nd_alpha_thermal_electron
-input .physics.f_nd_beam_electron
 input .physics.f_nd_plasma_pedestal_greenwald
 input .physics.f_nd_plasma_separatrix_greenwald
 input .physics.f_nd_protium_electrons
@@ -341,7 +339,6 @@ input .primary_pumping.p_he
 input .primary_pumping.t_in_bb
 input .primary_pumping.t_out_bb
 input .tfcoil.c_tf_turn
-input .tfcoil.dcond
 input .tfcoil.dcond[0]
 input .tfcoil.dcond[2]
 input .tfcoil.den_tf_coil_case
@@ -353,11 +350,7 @@ input .tfcoil.dx_tf_turn_insulation
 input .tfcoil.dx_tf_turn_steel
 input .tfcoil.dx_tf_wp_insertion_gap
 input .tfcoil.dx_tf_wp_insulation
-input .tfcoil.eff_tf_cryo
-input .tfcoil.eyoung_cond_axial
-input .tfcoil.eyoung_cond_trans
 input .tfcoil.eyoung_copper
-input .tfcoil.eyoung_ins
 input .tfcoil.eyoung_steel
 input .tfcoil.f_a_tf_turn_cable_copper
 input .tfcoil.f_a_tf_turn_cable_space_extra_void

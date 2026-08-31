@@ -1216,3 +1216,40 @@ def test_an_array_valued_fixed_point_is_still_measurable():
     assert measured.jacobian.shape == (4, 4)
     assert measured.jacobian == pytest.approx(-0.5 * np.eye(4))
     assert measured.rank == 4
+
+
+def test_boundary_seeds_agree_with_guess_sources():
+    """`cottax.boundary.seeds` and `mda.guess_sources` name the same start values.
+
+    The two answer "where does this `^guess.*` port's value come from" differently:
+    `seeds` says `unminted(port)` -- the place in a caller's own structure -- and
+    `guess_sources` says the *unknown*, which for a `FixedPointCut` is the minted copy
+    `^hat.X`. `sand_harness.mda_env` seeds by `guess_sources`, so this pins the claim
+    its comment makes: wherever the two disagree by name, `ground_truth` still reaches
+    the same `DataStructure` field, because it falls back to `unminted` for a mint with
+    no `KNOWN_MINT_VALUES` entry and no entry is spelled `^hat.*`.
+
+    A *missing* start raises in either shape and is the loud case; a start pointed at a
+    different place is silent, which is what this test exists for.
+    """
+    from cottax.boundary import seeds
+    from cottax.tools.minting import unminted
+
+    from functional_process.mda import guess_sources
+    from functional_process.mda_harness import KNOWN_MINT_VALUES
+    from functional_process.sand_harness import mda_schedule
+
+    _driven, runnable, schedule, _run = mda_schedule(None)
+    guesses = guess_sources(runnable)
+    seeded = seeds(schedule)
+
+    assert set(seeded) == {v for v in schedule.inputs if v in guesses}
+    for port, place in seeded.items():
+        assert unminted(guesses[port]) == place, (
+            f"{port.path_str()} is seeded from {place.path_str()} by the boundary and "
+            f"from {guesses[port].path_str()} here, and they are not the same place"
+        )
+        assert guesses[port].path_str() not in KNOWN_MINT_VALUES, (
+            f"{guesses[port].path_str()} now has an analytic mint value, so "
+            f"`ground_truth` no longer agrees with the boundary's `unminted` seed"
+        )

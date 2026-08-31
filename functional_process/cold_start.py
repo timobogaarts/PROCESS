@@ -120,27 +120,33 @@ reasons that are *not* assembly:
 
 `helias_5b` assembles (`_audit/next_steps.md` §20) and is deliberately not here yet,
 and unlike the two above it has been measured and has a reason.
-Measured, on 2026-08-31, rather than assumed either way: its cold report is **74
+Measured, on 2026-08-31, rather than assumed either way: its cold report was **74
 disagreements**, and 49 of those are exactly the reference stellarator's own two
 accepted causes (`STELLARATOR_ARM_ORDER_ROWS`, `VACUUM_DUCT_ROWS`) -- a strict subset, so
-those would cost one `_because` row each. The other **25 are one new chain and it is a
+those would cost one `_because` row each. The other **25 were one new chain and a
 port defect, not an accepted disagreement**: `helias_5b.IN.DAT:121` sets
 `i_p_coolant_pumping = 0` (`USER_INPUT`) with the pump powers given directly
 (`120 + 56 = 176` MW for FW+blanket, `24` MW for the divertor), while
 `stellarator_helias.IN.DAT:198` sets `1` (`FRACTION_OF_HEAT`) --- and
-`models/stellarator/stellarator_fwbs_s2.py` **always computes as if the value were
-`FRACTION_OF_HEAT`**, a drop its own docstring records as *"the absence of the
+`models/stellarator/stellarator_fwbs_s2.py` **always computed as if the value were
+`FRACTION_OF_HEAT`**, a drop its own docstring recorded as *"the absence of the
 computation, not a second formula to port"*, which was true of every machine that
-existed when it was written. So the port returns `15.58` MW where PROCESS reads `176.0`,
-and the error runs downstream through `.power.*` and `.heat_transport.*` into
-`.costs.concost` -- **this file's own objective** (`i_figure_merit = 7`), off by `+3.1 %`
-at a fixed cold design, and into `c16`, one of its five active constraints, through
-`p_plant_electric_net_mw` (off by `+11.1 %`).
+existed when it was written.
 
-Adding the row therefore needs the `USER_INPUT` arm ported, not 25 `ACCEPTED` entries:
-an entry here is a reason a disagreement is *understood*, and pinning a live unported
-switch arm as acceptable is the exact ambiguity `ACCEPTED`'s own docstring exists to
-end. Recorded on the list rather than papered over.
+**Fixed the same day**: the `USER_INPUT` arm is ported as a second occupant
+(`DetailedPowerflowBlanketShieldPowerUserInputPumping`), selected by a third integer on
+`indat.py`'s `_blanket_shield_power_arm`, and the four
+`.heat_transport.p_*_coolant_pump_mw` fields are boundary inputs on it -- which is what
+PROCESS does there. At PROCESS's own converged point the machine's MDA report went
+**64 -> 34 disagreements** with none added, `.primary_pumping.p_fw_blkt_coolant_pump_mw`
+`16.8 -> 176.0`, and `c16` `-9.88e-02 -> +1.08e-02` (PROCESS: `-1.91e-06`).
+
+This paragraph's *conclusion* still stands, and the row is still not added: adding it is
+a **cold** measurement (`PIN`'s seed is the pre-model `DataStructure`, not the converged
+one), and that measurement has not been re-taken since the fix. What is no longer true is
+that the blocker is an unported switch arm. Recorded rather than papered over -- and the
+count above is the pre-fix one, kept deliberately so the next reader compares against a
+number that was really measured rather than one this file predicted.
 
 Named as repository-relative paths, resolved by `_resolve`, exactly as
 `boundary.TOKAMAK_INPUT_FILE` is.

@@ -240,3 +240,48 @@ def test_the_boundary_block_s_columns_close():
     assert "258" in block
     assert "289" in block
     assert "303" in block
+
+
+# ======================================================================== `--native`
+def test_native_is_a_fourth_mode_and_the_seed_still_wins_over_it():
+    """`--seed` stays the mode that cannot be half-applied, for the reason above; the new
+    flag sits between it and the two provider modes.
+    """
+    from functional_process.run_cold_matrix import NATIVE
+
+    assert _mode(["--native"]) == NATIVE
+    assert _mode(["--seed", "--native"]) == SEED_ONLY
+    assert _mode(["--native", "--provider-strict"]) == NATIVE
+
+
+def test_a_native_row_reports_no_value_from_process_at_all():
+    """The one number a native row exists to state. `written == supplied` and
+    `from_process == 0` are true **by construction** -- there is no seed in a native run
+    to fall back to -- so a non-zero `from_process` here would mean the mode had grown a
+    PROCESS dependency without anyone noticing.
+    """
+    from functional_process.run_cold_matrix import NATIVE, _native_counts
+
+    class _State:
+        sources = {("a", "b"): "indat", ("a", "c"): "defaults", ("d", "e"): "defaults"}
+
+    counts = _native_counts(_State(), NATIVE)
+    assert counts["from_process"] == counts["held"] == counts["nothing"] == 0
+    assert counts["written"] == counts["supplied"] == counts["paths"] == 3
+    assert (counts["indat"], counts["defaults"]) == (1, 2)
+
+
+def test_a_place_the_native_state_could_not_answer_reaches_the_notes():
+    """A miss is seeded `0.0` by `mdf.seed`'s own fallback, so the table has to say which
+    places those were or a hole is indistinguishable from a real zero. Measured: **zero**
+    on all seven configurations, which is a claim that only means something if the
+    reporting works when it is not zero.
+    """
+    row = Row(
+        name="x",
+        assembles=True,
+        omitted_paths=(".physics.made_up", ".build.also_made_up"),
+    )
+    text = render([row])
+    assert "UNANSWERED NATIVELY" in text
+    assert ".physics.made_up" in text and ".build.also_made_up" in text

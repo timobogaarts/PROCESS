@@ -67,3 +67,6 @@ env-fork
 process/_version.py
 *.ipynb
 .claude/
+
+# scratch pickles from measurement probes -- never belong in the tree
+*.pkl

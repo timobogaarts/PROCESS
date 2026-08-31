@@ -103,14 +103,25 @@ DIVISION_BY_ZERO_AT_BOUNDARY = {
     ),
     # ---- stellarator_fwbs_s2.py: exp(-thickness / decay_length) with a zero decay
     # length. The exponential saturates to a finite 1 - 0; its tangent does not.
+    # Both `i_p_coolant_pumping` occupants share `_detailed_powerflow_core`, so they
+    # share all three of these exactly.
     ("TestDetailedPowerflowBlanketShieldPower", "declblkt"): (
-        "stellarator_fwbs_s2.py:307, exp(-dr_blkt_inboard / decaybzi)"
+        "stellarator_fwbs_s2.py:332, exp(-dr_blkt_inboard / decaybzi)"
     ),
     ("TestDetailedPowerflowBlanketShieldPower", "declfw"): (
-        "stellarator_fwbs_s2.py:298, exp(-2 * bfwi / decayfwi)"
+        "stellarator_fwbs_s2.py:323, exp(-2 * bfwi / decayfwi)"
     ),
     ("TestDetailedPowerflowBlanketShieldPower", "declshld"): (
-        "stellarator_fwbs_s2.py:340, exp(-dr_shld_inboard / decayshldi)"
+        "stellarator_fwbs_s2.py:354, exp(-dr_shld_inboard / decayshldi)"
+    ),
+    ("TestDetailedPowerflowBlanketShieldPowerUserInputPumping", "declblkt"): (
+        "stellarator_fwbs_s2.py:332, exp(-dr_blkt_inboard / decaybzi)"
+    ),
+    ("TestDetailedPowerflowBlanketShieldPowerUserInputPumping", "declfw"): (
+        "stellarator_fwbs_s2.py:323, exp(-2 * bfwi / decayfwi)"
+    ),
+    ("TestDetailedPowerflowBlanketShieldPowerUserInputPumping", "declshld"): (
+        "stellarator_fwbs_s2.py:354, exp(-dr_shld_inboard / decayshldi)"
     ),
     # ---- physics: a density/geometry ratio whose denominator is the zeroed argument.
     ("TestFastAlphaBetaIpdg89", "nd_plasma_electrons_vol_avg"): (
@@ -263,6 +274,36 @@ DIVISION_BY_ZERO_AT_BOUNDARY = {
     ),
     ("TestCalculateL34Alpha31Coefficient", "inverse_q"): (
         "bootstrap_current.py:1728-1733, same denominator, via f34_teff"
+    ),
+    # ---- the Haaland friction factor, and the two ways into its one singularity
+    # (2026-08-31, the coolant-hydraulics port). The bracket is
+    # `(roughness / radius / 3.7) ** 1.11 + 6.9 / reynolds` and the return is
+    # `(1.8 * log10(bracket)) ** (-2)`. Zeroing *either* `reynolds` or `radius_channel`
+    # sends one of those two terms to `+inf`; `log10` keeps it `+inf`, and the trailing
+    # negative power saturates the value back to a finite `0.0` while the tangent
+    # through the division stays `nan`. Exactly the register's second class -- an
+    # unguarded division rescued downstream -- and `safe_pow` is no use: the exponents
+    # are `1.11` and `-2`, and the singular thing is the reciprocal, not the power.
+    # Registered rather than repaired, per this module's "what it is not": a guarded
+    # reciprocal here would be a modelling claim about the friction factor of a fluid
+    # that is not moving, or of a pipe with no radius.
+    ("TestDarcyFrictionHaaland", "reynolds"): (
+        "pumping.py:75, 6.9 / reynolds inside the Haaland bracket; "
+        "(1.8 * log10(inf)) ** -2 saturates the value to 0.0"
+    ),
+    ("TestDarcyFrictionHaaland", "radius_channel"): (
+        "pumping.py:75, roughness_channel / radius_channel inside the same bracket; "
+        "same saturation through the ** -2"
+    ),
+    # The same singularity entered from the mass-flux side: `gnielinski_*` derives
+    # `vel = mflux / den` and hence `reynolds`, so `mflux_coolant == 0` is
+    # `reynolds == 0` above, reached through this file's own call to
+    # `darcy_friction_haaland`. `f` saturates to `0.0`, the Nusselt number's leading
+    # `f / 8` factor makes the value a finite `-0.0`, and the tangent is `nan`. One
+    # singularity with two entry points, not two -- cf. the `divwade` pair above.
+    ("TestGnielinskiHeatTransferCoefficient", "mflux_coolant"): (
+        "pumping.py:75 via :128-146, mflux_coolant == 0 zeroes the Reynolds number "
+        "and reaches 6.9 / reynolds through darcy_friction_haaland"
     ),
 }
 """`(contract class name, argument name)` -> where the `inf` primal is produced.

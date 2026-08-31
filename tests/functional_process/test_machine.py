@@ -215,7 +215,7 @@ SLOTS = [
         _plain,
     ),
     (
-        "blktmodel_ipowerflow",
+        "blktmodel_ipowerflow_i_p_coolant_pumping",
         BLANKET_SHIELD_POWER,
         lambda m: m.stellarator.fwbs.blanket_shield_power,
         _plain,
@@ -463,7 +463,12 @@ integer is silently ignored -- which is PROCESS's own behaviour, not a test arte
 The companion values are overlaid on `TOKAMAK_BASELINE_INDAT` below, under the field
 being tested so the field under test still wins a clash."""
 
-BASELINE_INDAT = {"istell": 6, "i_cost_model": 0, "i_plasma_ignited": 1}
+BASELINE_INDAT = {
+    "istell": 6,
+    "i_cost_model": 0,
+    "i_plasma_ignited": 1,
+    "i_p_coolant_pumping": 1,
+}
 """The least an IN.DAT must say for `machine_from_indat` to get past the slots whose
 PROCESS default is refused. Written into every temp file below so a test about one field
 fails on that field and not on `istell`.
@@ -472,7 +477,14 @@ fails on that field and not on `istell`.
 default is `NON_IGNITED`, whose head arm adds injected heating and therefore reads a
 variable the written arm does not, so it is a real branch this port has not written.
 Refusing is the same honest answer `istell` gives -- a machine assembled from the wrong
-arm's reads is exactly the invented-edge defect the split removes."""
+arm's reads is exactly the invented-edge defect the split removes.
+
+`i_p_coolant_pumping` joined on 2026-08-31 for the identical reason and it is the
+starkest of the three: `fwbs_variables.py:249`'s default is `2` (`MECHANICAL`), and
+`stellarator.py:924-928` *raises* on that value -- **PROCESS itself will not run a
+stellarator that leaves the switch alone**, so neither will the factory. `1`
+(`FRACTION_OF_HEAT`) is `stellarator_helias.IN.DAT`'s own value and the arm the
+reference machine takes."""
 
 
 def write_indat(tmp_path, **switches):
@@ -668,9 +680,11 @@ def _build_occupant(name, entry, machine):
         return entry(n_plasma_profile_elements=grid.n_plasma_profile_elements)
     if name == "PF_MAGNET_COST":
         standing = machine.costs.pf_magnet_cost
+        # `iohcl` left this list on 2026-08-31: it is the registry's second *key* now,
+        # not a kwarg (`_audit/switch_consultation_audit.md` §2), so every arm here
+        # takes the same two fields.
         return entry(
             n_cs_pf_coils=standing.n_cs_pf_coils,
-            iohcl=standing.iohcl,
             i_pf_conductor=standing.i_pf_conductor,
         )
     return entry()
@@ -1403,13 +1417,13 @@ def test_a_spherical_tokamak_pf_system_assembles_without_a_central_solenoid(tmp_
 
 
 NODE_COUNTS = {
-    "large_tokamak_nof": 238,
-    "large_tokamak_eval": 240,
-    "low_aspect_ratio_DEMO": 238,
-    "spherical_tokamak_eval": 234,
-    "st_regression": 234,
-    "stellarator_helias": 150,
-    "helias_5b": 150,
+    "large_tokamak_nof": 243,
+    "large_tokamak_eval": 245,
+    "low_aspect_ratio_DEMO": 243,
+    "spherical_tokamak_eval": 241,
+    "st_regression": 241,
+    "stellarator_helias": 154,
+    "helias_5b": 154,
 }
 """`_audit/next_steps.md` §23.6's table, which was recorded there and frozen nowhere.
 
@@ -1417,6 +1431,21 @@ Two of the seven were pinned in `test_process_free_import.py` and the other five
 "measured the same way and recorded here rather than frozen into the test". This is the
 freeze, and it exists because the presence-flag fix immediately below is exactly the
 kind of change that moves a count silently.
+
+**Moved once since, by `models/initialisation`** -- the port of `init.py` and `st_init`'s
+thirteen `off` writes (`_audit/init_audit.md` §5b). Every configuration gains exactly the
+occupants its own switches ask for, and
+`test_the_seed_nodes_account_for_every_moved_node_count` asserts the split rather than
+leaving it to the totals:
+
+- the three single-null pulsed tokamaks: **+5**, the `init.py` occupants whose fields
+  their own nodes read;
+- the two spherical tokamaks: **+7** -- those five, plus `esbldgm3` (they are not
+  pulsed) and the double-null upper-build identity;
+- the two stellarators: **+4** -- `eff_tf_cryo`, `esbldgm3`, and `st_init`'s two.
+
+`TfConductorYoungsModulus` is one node for two fields, which is why the tokamak count
+is five and not six.
 """
 
 
@@ -1424,6 +1453,47 @@ kind of change that moves a count silently.
 def test_every_tracked_configuration_assembles_at_its_recorded_node_count(stem):
     path = str(Path(REFERENCE_INPUT_FILE).resolve().parent / f"{stem}.IN.DAT")
     assert len(graph_for(machine_from_indat(path)).definitions) == NODE_COUNTS[stem]
+
+
+SEED_NODE_COUNTS = {
+    "large_tokamak_nof": 5,
+    "large_tokamak_eval": 5,
+    "low_aspect_ratio_DEMO": 5,
+    "spherical_tokamak_eval": 7,
+    "st_regression": 7,
+    "stellarator_helias": 4,
+    "helias_5b": 4,
+}
+"""How many `.initialisation.*` nodes each configuration's own switches ask for.
+
+Asserted separately from `NODE_COUNTS` for the reason the presence-flag test below
+exists: a total is not an account. Two slot changes cancelled exactly once already, and
+a count that moves by the right amount for the wrong reason is the failure this file is
+supposed to catch.
+"""
+
+
+@pytest.mark.parametrize("stem", sorted(SEED_NODE_COUNTS), ids=sorted(SEED_NODE_COUNTS))
+def test_the_seed_nodes_account_for_every_moved_node_count(stem):
+    """`models/initialisation` is the whole of `NODE_COUNTS`' one movement.
+
+    The split is not uniform and that is the content: `init.py` writes different fields
+    on different machines, and `st_init` writes on one device only. A tokamak gets the
+    five `init.py` occupants whose fields its own nodes read; a double-null tokamak gets
+    two more (`esbldgm3`, because it is not pulsed, and the upper-build identity); a
+    stellarator gets two of the five plus `st_init`'s pair, because its graph has no TF
+    stress chain and no beam.
+    """
+    path = str(Path(REFERENCE_INPUT_FILE).resolve().parent / f"{stem}.IN.DAT")
+    graph = graph_for(machine_from_indat(path))
+    seed_nodes = [
+        node
+        for node in graph.definitions
+        if node.path_str().startswith(".initialisation")
+    ]
+    assert len(seed_nodes) == SEED_NODE_COUNTS[stem], sorted(
+        n.path_str() for n in seed_nodes
+    )
 
 
 def test_the_presence_flags_swap_two_nodes_and_add_none(tmp_path):

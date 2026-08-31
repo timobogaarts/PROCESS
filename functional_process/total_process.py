@@ -65,6 +65,7 @@ from cottax.interfaces.pytree_namespace_module import ModelNamespace
 from functional_process.models.availability.namespace import Availability
 from functional_process.models.buildings.namespace import Buildings
 from functional_process.models.costs.namespace import Costs
+from functional_process.models.initialisation import Initialisation
 from functional_process.models.physics.namespace import Physics
 from functional_process.models.power.namespace import Power
 from functional_process.models.stellarator.namespace import Stellarator
@@ -128,6 +129,18 @@ class StellaratorProcess(ModelNamespace):
 
     Binding order is the order written here (`vars()`, not the MRO -- a namespace is
         written, not inherited), and it is only a tiebreak: the run order is derived.
+    """
+
+    initialisation: Initialisation = dataclasses.field(kw_only=True)
+    """`process/core/init.py` and `st_init`'s own writes, as nodes.
+
+    **Device-agnostic, and the only slot here that is not a subsystem of the machine.**
+    It is the seed, which is not a part of the reactor but is a part of the computation:
+    thirteen of its writes land on values neither the input file nor the dataclass
+    default supplies, and until they are owned by nodes those thirteen are boundary
+    inputs answered from a stale default (`_audit/init_audit.md` §5b, and the `off` rows
+    of every `reference_provider_*.txt`). Its slots are filled by `indat._initialisation`
+    from the file's raw values and this machine's switches.
     """
 
     costs: Costs = dataclasses.field(kw_only=True)
@@ -197,6 +210,11 @@ class TokamakProcess(ModelNamespace):
     is a measurement taken *of this class* rather than an estimate written beside
     it.
     """
+
+    initialisation: Initialisation = dataclasses.field(kw_only=True)
+    """The seed's own writes, as nodes -- the same slot, and the same occupants, as on a
+    stellarator. `init.py` does not branch on the device; `st_init` does, and its
+    forcings are the arm of it that a tokamak's machine leaves empty."""
 
     costs: Costs = dataclasses.field(kw_only=True)
     """The cost model (`.costs.i_cost_model`), and the same one slot the stellarator has.

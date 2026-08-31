@@ -216,18 +216,19 @@ def _pf_loss_power_supply_j(
 
     `sum_i (k_ps/2) * |(I_i[n+1] + I_i[n]) * sum_j M_ij (I_j[n+1] - I_j[n])|`, the
     plasma circuit excluded from the outer sum and included in the inner one.
+
+    Both of PROCESS's `for`s become array expressions: the inner sum over `j` is a
+    matrix-vector product and the outer one over `i` a `jnp.sum`. **The summation order
+    moves** -- see `pf_coil_power.md` § "Reductions reassociated by vectorisation".
     """
     n_circuits = topology.plasma_index + 1
-    loss = 0.0
-    for circuit in range(n_circuits - 1):
-        c_sum = c_pf_coil_turn[circuit, interval + 1] + c_pf_coil_turn[circuit, interval]
-        delta_flux = 0.0
-        for coupled in range(n_circuits):
-            delta_flux += ind_pf_cs_plasma_mutual[circuit, coupled] * (
-                c_pf_coil_turn[coupled, interval + 1] - c_pf_coil_turn[coupled, interval]
-            )
-        loss += 0.5 * f_p_pf_psu_loss * jnp.abs(c_sum * delta_flux)
-    return loss
+    current = c_pf_coil_turn[:n_circuits]
+    delta = current[:, interval + 1] - current[:, interval]
+    c_sum = current[:, interval + 1] + current[:, interval]
+    coupling = ind_pf_cs_plasma_mutual[: n_circuits - 1, :n_circuits]
+
+    delta_flux = coupling @ delta
+    return jnp.sum(0.5 * f_p_pf_psu_loss * jnp.abs(c_sum[: n_circuits - 1] * delta_flux))
 
 
 def _pf_loss_busbar_j(
@@ -238,13 +239,10 @@ def _pf_loss_busbar_j(
     `dt * sum_groups I_mean^2 R_bus`, `I_mean` the average of the group's
     representative circuit current at the two ends of the interval.
     """
-    circuit_index = group_circuit_index(coils_in_group_with_cs(topology))
-    loss = 0.0
-    for group in range(len(circuit_index)):
-        ic = circuit_index[group]
-        c_mean = 0.5 * (c_pf_coil_turn[ic, interval + 1] + c_pf_coil_turn[ic, interval])
-        loss += dt_pulse_phase_s * c_mean**2 * res_pf_bus[group]
-    return loss
+    circuit_index = jnp.asarray(group_circuit_index(coils_in_group_with_cs(topology)))
+    representative = c_pf_coil_turn[circuit_index]
+    c_mean = 0.5 * (representative[:, interval + 1] + representative[:, interval])
+    return jnp.sum(dt_pulse_phase_s * c_mean**2 * res_pf_bus[: circuit_index.shape[0]])
 
 
 def _pf_loss_interval_total_j(
@@ -407,53 +405,36 @@ def calculate_pf_coil_power_supplies(
     # `delktim` is the ramp-up duration; every dI/dt in this block is taken across it.
     delktim = t_plant_pulse_plasma_current_ramp_up
 
-    vpfi = [0.0] * n_circuits
-    poloidalenergy = [0.0] * N_PF_ACTIVE_POINTS
-    powpfi = 0.0
-    powpfr = 0.0
-    powpfr2 = 0.0
-    coil = -1
-    for group in range(len(coils_in_group)):
-        for _ in range(coils_in_group[group]):
-            coil += 1
-            inductxcurrent = [0.0] * N_PF_ACTIVE_POINTS
-            powpfii = 0.0
-            for circuit in range(n_circuits):
-                #  Voltage in `coil` due to the change of current in `circuit`
-                vpfij = (
-                    ind_pf_cs_plasma_mutual[coil, circuit]
-                    * (c_pf_coil_turn[circuit, 2] - c_pf_coil_turn[circuit, 1])
-                    / delktim
-                )
-                vpfi[coil] += vpfij
-                powpfii += vpfij * c_pf_coil_turn[coil, 2] / 1.0e6
-                for point in range(N_PF_ACTIVE_POINTS):
-                    inductxcurrent[point] += (
-                        ind_pf_cs_plasma_mutual[coil, circuit]
-                        * c_pf_coil_turn[circuit, point]
-                    )
+    # PROCESS's `group`/`coil`/`circuit`/`point` nest (`power.py:414-499`) is four deep
+    # and its innermost body a single `+=`, so unrolled it cost about 2,800 jaxpr
+    # equations for 336 iterations of arithmetic. Written as arrays it is two matrix
+    # products and four `jnp.sum`s: the coil and circuit axes are the two axes of
+    # `ind_pf_cs_plasma_mutual`, and the point axis is `c_pf_coil_turn`'s second.
+    # **The summation order moves** -- see `pf_coil_power.md` § "Reductions reassociated
+    # by vectorisation".
+    n_coils = sum(coils_in_group)
+    group_of_coil = [group for group, n in enumerate(coils_in_group) for _ in range(n)]
+    res_per_coil = jnp.stack([res_pf_circuit_total[group] for group in group_of_coil])
 
-            for point in range(N_PF_ACTIVE_POINTS):
-                poloidalenergy[point] += (
-                    0.5 * inductxcurrent[point] * c_pf_coil_turn[coil, point]
-                )
+    coupling = ind_pf_cs_plasma_mutual[:n_coils, :n_circuits]
+    c_circuit = c_pf_coil_turn[:n_circuits, :N_PF_ACTIVE_POINTS]
+    c_coil = c_pf_coil_turn[:n_coils, :N_PF_ACTIVE_POINTS]
+    # `I[2] - I[1]` is a property of the *circuit*, so PROCESS recomputes it once per
+    # (coil, circuit) pair; here it is one vector subtraction.
+    d_current = c_pf_coil_turn[:n_circuits, 2] - c_pf_coil_turn[:n_circuits, 1]
 
-            # Resistive power at the start (index 2) and end (index 4) of flat-top (MW)
-            powpfr += (
-                n_pf_coil_turns[coil]
-                * c_pf_coil_turn[coil, 2]
-                * res_pf_circuit_total[group]
-                / 1.0e6
-            )
-            powpfr2 += (
-                n_pf_coil_turns[coil]
-                * c_pf_coil_turn[coil, 4]
-                * res_pf_circuit_total[group]
-                / 1.0e6
-            )
-            powpfi += powpfii
+    #  Voltage in each coil due to the change of current in each circuit.
+    vpfij = coupling * d_current / delktim
+    vpfi = jnp.zeros(n_circuits).at[:n_coils].set(jnp.sum(vpfij, axis=1))
+    powpfi = jnp.sum(vpfij * c_coil[:, 2, None] / 1.0e6)
 
-    poloidalenergy = jnp.stack([jnp.asarray(e) for e in poloidalenergy])
+    inductxcurrent = coupling @ c_circuit
+    poloidalenergy = jnp.sum(0.5 * inductxcurrent * c_coil, axis=0)
+
+    # Resistive power at the start (index 2) and end (index 4) of flat-top (MW)
+    turns = n_pf_coil_turns[:n_coils]
+    powpfr = jnp.sum(turns * c_coil[:, 2] * res_per_coil / 1.0e6)
+    powpfr2 = jnp.sum(turns * c_coil[:, 4] * res_per_coil / 1.0e6)
 
     # ---- dissipation over each interval (`power.py:501-566`) -----------------------
     t0 = 0.0
@@ -510,11 +491,9 @@ def calculate_pf_coil_power_supplies(
 
     pfckts = (n_circuits - 2) + PFCKTS_SPARE_CIRCUITS
     spfbusl = pfbusl * pfckts
-    spsmva = 0.0
-    acptmax = 0.0
-    for circuit in range(n_circuits - 1):
-        spsmva += 1.0e-6 * jnp.abs(vpfi[circuit] * c_pf_coil_turn_peak_input[circuit])
-        acptmax += 1.0e-3 * jnp.abs(c_pf_coil_turn_peak_input[circuit]) / pfckts
+    peak_turn_current = c_pf_coil_turn_peak_input[: n_circuits - 1]
+    spsmva = jnp.sum(1.0e-6 * jnp.abs(vpfi[: n_circuits - 1] * peak_turn_current))
+    acptmax = jnp.sum(1.0e-3 * jnp.abs(peak_turn_current) / pfckts)
 
     #  Wall-plug power dissipated in the ohmic-heating supply, additional to that
     #  required to move stored energy around (`power.py:596-604`, issue #713).

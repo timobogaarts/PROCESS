@@ -83,7 +83,7 @@ copies the seed, hands it to `provider.install`, and every downstream reader
 (`mdf.seed`, `mda_env`, `run_sand_harness._seed`) is given that copy instead. The
 seeding machinery is untouched -- what moves is its *input*.
 
-Three modes, `--provider` (the default), `--provider-strict` and `--seed`:
+Four modes, `--provider` (the default), `--provider-strict`, `--seed` and `--native`:
 
 - **`--provider`** writes only the independently answered paths the seed *agrees* with,
   so the substitution is inert by construction and the table stays comparable with every
@@ -95,6 +95,28 @@ Three modes, `--provider` (the default), `--provider-strict` and `--seed`:
   the experiment: a row that moves under it is a boundary value `init.py` supplies and
   the file does not.
 - **`--seed`** is the old path exactly, kept so the two can be diffed.
+- **`--native`** has no `DataStructure` in it at all, and no PROCESS run. The env is
+  `native.native_state` -- `importer.read_indat`'s values over a vendored table of
+  PROCESS's dataclass defaults -- and the problem is `native.native_reference`'s, off
+  `indat.problem_from_indat` and the vendored `ITERATION_VARIABLES` bounds. The other
+  three modes all *install into* a copy of PROCESS's seed, so they measure how much of
+  the boundary need not come from PROCESS; this one measures what happens when none of
+  it does.
+
+  **It is strictly weaker than `--provider-strict`, and that is the measurement.** The
+  provider answers a `derived` path from the seed; a native state has nothing to fall
+  back to and answers it with the bare dataclass default, so `init.py`'s and
+  `st_init`'s writes are simply absent. §22.7 measured that taking the provider at its
+  word at 13 `off` paths costs four of seven configurations their solve; a native row
+  starts from 12-24 wrong paths, not 5-8. A native row that *does* solve is therefore
+  worth more than a `--provider` row that does, and a native row that does not is a
+  work list keyed to `_audit/init_audit.md`, which is what this mode is for.
+
+  The `PRO` column is `-` on a native row: it is PROCESS's own iteration count and this
+  mode does not run PROCESS. The SAND column carries one further caveat --
+  `native.NativeReference` -- because with no converged run there is no warm env for
+  `sand.residual_condition_scales`, so a native SAND row is a differently scaled problem
+  from the same file's `--provider` row while the MDF rows are directly comparable.
 """
 
 from __future__ import annotations
@@ -113,11 +135,12 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
 
-from functional_process import mdf, provider, sand  # noqa: E402
+from functional_process import mdf, native, provider, sand  # noqa: E402
 from functional_process.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
     graph_for,
     machine_from_indat,
+    switch_values_from_indat,
 )
 from functional_process.run_mda_harness import _resolve  # noqa: E402
 from functional_process.run_mdf_harness import MAX_ITER as MDF_MAX_ITER  # noqa: E402
@@ -172,7 +195,8 @@ this file chose would make both rows new measurements of a problem nobody has ru
 
 
 PROVIDER, PROVIDER_STRICT, SEED_ONLY = "provider", "provider-strict", "seed"
-"""The three boundary-value modes; see this module's docstring. `PROVIDER` is the
+NATIVE = "native"
+"""The four boundary-value modes; see this module's docstring. `PROVIDER` is the
 default because it is the only one that is simultaneously a measurement and inert."""
 
 
@@ -200,6 +224,9 @@ class Row:
     boundary: dict = field(default_factory=dict)
     """`provider.installed`'s counts for this configuration, plus `mode` and the paths
     the provider was allowed to move. Empty when the provider was not consulted."""
+    omitted_paths: tuple = ()
+    """`NATIVE` only: the places this run asked for and the native state could not
+    answer, so each was seeded `0.0`. The work list, per configuration."""
 
 
 def _blank():
@@ -512,6 +539,14 @@ def run_one(path, mode=PROVIDER) -> Row:
     `boundary.computed_by_process`. A provider failure is a row like any other: the
     configuration falls back to the seed and says so, since a matrix that lost six rows
     to a classifier would be a worse instrument than one that lost a column.
+
+    **`NATIVE` takes a different second phase and no PROCESS run at all.** The other
+    three modes need `reference_run` for the seed they start from; a native row starts
+    from `native.native_state` and states its problem with `native.native_reference`, so
+    the only thing PROCESS would still be paying for is the `PRO` column, and a run that
+    is proving independence should not have PROCESS in it for a column. That column is
+    `-` on a native row, deliberately -- the count is in `reference_cold_matrix.txt`
+    beside every other row and is a property of the file, not of this pass.
     """
     began = time.perf_counter()
     name = path.name[: -len(".IN.DAT")] if path.name.endswith(".IN.DAT") else path.stem
@@ -536,6 +571,28 @@ def run_one(path, mode=PROVIDER) -> Row:
         row.seconds = time.perf_counter() - began
         print(f"  ASSEMBLY REFUSED: {row.note}")
         return row
+
+    if mode == NATIVE:
+        try:
+            reference = native.native_reference(str(path))
+        except Exception as failure:  # noqa: BLE001 -- a row, not an exit
+            row.note = f"native env failed: {type(failure).__name__}: {failure}"
+            row.seconds = time.perf_counter() - began
+            print(f"  {row.note}")
+            traceback.print_exc()
+            return row
+        cold = reference.cold
+        row.n_ixc, row.n_icc = len(reference.ixc), len(reference.icc)
+        row.boundary = _native_counts(cold, mode)
+        print(
+            f"  native: {row.boundary['written']} value(s) from the file and the "
+            f"vendored defaults ({row.boundary['indat']} indat / "
+            f"{row.boundary['defaults']} defaults), 0 from PROCESS; "
+            f"{len(reference.ixc)} ixc, {len(reference.icc)} icc "
+            f"({reference.n_equality} eq), i_figure_merit {reference.i_figure_merit}"
+        )
+        switch_values = None if is_reference else switch_values_from_indat(str(path))
+        return _solve_both(row, reference, machine_graph, switch_values, cold, began)
 
     try:
         reference = reference_run(str(path))
@@ -582,6 +639,16 @@ def run_one(path, mode=PROVIDER) -> Row:
             cold, reference.icc, reference.i_figure_merit
         )
 
+    return _solve_both(row, reference, machine_graph, switch_values, cold, began)
+
+
+def _solve_both(row, reference, machine_graph, switch_values, cold, began):
+    """Cold MDF and cold SAND for one configuration, each a row rather than an exit.
+
+    Factored out of `run_one` when `NATIVE` arrived: the two modes differ entirely in
+    *where the four arguments come from* and not at all in what is done with them, and a
+    second copy of this loop would be the place a difference crept in unnoticed.
+    """
     omitted = []
     for label, run, store in (
         ("MDF", cold_mdf, row.mdf),
@@ -607,9 +674,42 @@ def run_one(path, mode=PROVIDER) -> Row:
             f"min ie {store['min_ie']}"
             + (f" -- {store['note']}" if store["note"] else "")
         )
+    if getattr(cold, "missing", None):
+        # Every place the run asked for and the native state could not answer, deduped
+        # and in the order asked. `mdf.seed`/`mda_env` already turned each into a `0.0`,
+        # so this is the difference between a measured hole and a silent zero.
+        seen = list(dict.fromkeys(cold.missing))
+        row.boundary["unanswered"] = len(seen)
+        row.omitted_paths = tuple(f".{a}.{f}" for a, f in seen)
+        print(f"  native: {len(seen)} place(s) unanswered -- {row.omitted_paths}")
     row.omitted = "; ".join(omitted) if omitted else ""
     row.seconds = time.perf_counter() - began
     return row
+
+
+def _native_counts(state, mode) -> dict:
+    """`installed`-shaped counts for a native row, so the boundary block still adds up.
+
+    The columns mean what they meant, with the seed's two gone: `written` is every place
+    the state answers, `from_process` is **zero by construction** -- there is no PROCESS
+    object in a native run to fall back to -- and `held`/`nothing` are zero for the same
+    reason. `unanswered` is filled in after the solve, because it is a property of what
+    the run asked for and not of the state.
+    """
+    sources = state.sources
+    return {
+        "mode": mode,
+        "paths": len(sources),
+        "supplied": len(sources),
+        "independent": len(sources),
+        "written": len(sources),
+        "held": 0,
+        "nothing": 0,
+        "from_process": 0,
+        "indat": sum(1 for s in sources.values() if s == "indat"),
+        "defaults": sum(1 for s in sources.values() if s == "defaults"),
+        "unanswered": 0,
+    }
 
 
 _COLUMNS = (
@@ -702,6 +802,11 @@ def render(rows) -> str:
                 notes.append(f"{row.name} {form}: {store['note']}")
         if row.omitted:
             notes.append(f"{row.name}: CONSTRAINTS OMITTED -- {row.omitted}")
+        if row.omitted_paths:
+            notes.append(
+                f"{row.name}: UNANSWERED NATIVELY (seeded 0.0) -- "
+                + ", ".join(row.omitted_paths)
+            )
     out = ["", "COLD MATRIX -- MDF and SAND from each input file's own cold start", ""]
     out.extend(lines)
     out += [
@@ -816,6 +921,7 @@ def _mode(argv) -> str:
     """The boundary-value mode named on the command line; `PROVIDER` by default."""
     for flag, mode in (
         ("--seed", SEED_ONLY),
+        ("--native", NATIVE),
         ("--provider-strict", PROVIDER_STRICT),
         ("--provider", PROVIDER),
     ):

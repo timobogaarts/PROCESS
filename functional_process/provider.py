@@ -45,6 +45,17 @@ seed, and a disagreement is a finding -- a path classified `input`/`default` tha
 `init.py` in fact moved. Regenerate the pins (never hand-edit) with::
 
     $PY -m functional_process.provider --write
+
+Where this stops, and what carries on
+-------------------------------------
+Everything here needs the seed -- to classify against, and to answer the `derived`,
+`computed` and array rows from. `install` therefore writes its answers *into* a copy of
+a `DataStructure`, so even the 89-92 % it answers independently reaches `mdf.seed`
+through a PROCESS object (§22.7). **`functional_process/native.py` is the module with no
+`DataStructure` in it**: it answers `.<area>.<field>` out of `importer.read_indat` and a
+vendored table of PROCESS's dataclass defaults, and it has no classification at all. The
+two are complementary rather than alternatives -- this one says which of that one's
+answers are wrong, which is what turns a native failure into a work list (§22.8).
 """
 
 from __future__ import annotations

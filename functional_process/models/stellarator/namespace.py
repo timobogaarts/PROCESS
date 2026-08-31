@@ -141,6 +141,7 @@ from functional_process.models.stellarator.stellarator_fwbs_s1_s5 import (
 )
 from functional_process.models.stellarator.stellarator_fwbs_s2 import (
     DetailedPowerflowBlanketShieldPower,
+    DetailedPowerflowBlanketShieldPowerUserInputPumping,
     ExponentialAttenuationBlanketShieldPower,
 )
 from functional_process.models.stellarator.stellarator_fwbs_s3 import DivertorPlateMass
@@ -292,24 +293,34 @@ class StellaratorFwbs(ModelNamespace):
     """First wall, blanket and shield -- the `st_fwbs` chunk's registered nodes."""
 
     blanket_shield_power: (
-        BlanketShieldPowerExponential | DetailedPowerflowBlanketShieldPower
+        BlanketShieldPowerExponential
+        | DetailedPowerflowBlanketShieldPower
+        | DetailedPowerflowBlanketShieldPowerUserInputPumping
     ) = dataclasses.field(kw_only=True)
     """Blanket/shield power deposition, on `.fwbs.blktmodel` x `.heat_transport.
-    ipowerflow` jointly -- one slot, two integers, resolved by
-    `_blanket_shield_power_arm` in `machine_from_indat`.
+    ipowerflow` x `.fwbs.i_p_coolant_pumping` jointly -- one slot, three integers,
+    resolved by `_blanket_shield_power_arm` in `machine_from_indat`.
 
     A **ragged** family, which is allowed and deliberate: the arm-1 occupant
     (`blktmodel == 0 & ipowerflow == 0`) is a two-node namespace (it also owns the
-    TF-coil nuclear heating), the arm-2 one (`blktmodel == 0 & ipowerflow == 1`,
-    PROCESS's own default and the reference run) a single node. Occupants of one slot
-    need not have equal shape or equal output sets; what checks the consequences is the
-    boundary postcondition, not a shape rule.
+    TF-coil nuclear heating), the arm-2 one (`blktmodel == 0 & ipowerflow == 1 &
+    i_p_coolant_pumping == 1`, PROCESS's own default and the reference run) a single
+    node, and the arm-3 one (the same at `i_p_coolant_pumping == 0`, `helias_5b`) a
+    single node owning **four fields fewer** -- the coolant pumping powers, which that
+    value of the switch makes run inputs rather than computed values. Occupants of one
+    slot need not have equal shape or equal output sets; what checks the consequences is
+    the boundary postcondition, not a shape rule.
+
+    The third integer joined on 2026-08-31 and it was a live defect, not a refinement:
+    the arm-2 occupant was assembled for `helias_5b` too, and answered `16.8 MW` of
+    FW+blanket pumping power where that file states `176.0`.
 
     Arm 0 -- `blktmodel == 1`, at either `ipowerflow` -- is refused: it is
-    `blanket_neutronics()`, which calls `hcpb.nuclear_heating_*`, unported. That is also
-    why the `| None` this annotation used to carry was **dead**: `0` is the only arm
-    outside the registry, it is in `UNPORTED`, and it raises -- absence was never
-    reachable.
+    `blanket_neutronics()`, which calls `hcpb.nuclear_heating_*`, unported. Arm 4 --
+    `i_p_coolant_pumping` mechanical, at `ipowerflow == 1` -- is refused because
+    PROCESS itself raises there. That is also
+    why the `| None` this annotation used to carry was **dead**: every arm outside the
+    registry is in `UNPORTED`, and they raise -- absence was never reachable.
     """
 
     blanket_masses: BlanketComponentMasses = dataclasses.field(kw_only=True)

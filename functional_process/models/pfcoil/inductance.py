@@ -35,6 +35,7 @@ switch whose value moves with the solve is not something the conventions cover.
 """
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
@@ -101,6 +102,24 @@ def _mutual_inductances(r_loop, z_loop, r_test, z_test):
         z_test_point=z_test,
     )
     return ind
+
+
+_mutual_inductances_over_test_points = jax.vmap(
+    _mutual_inductances, in_axes=(None, None, 0, 0)
+)
+"""`_mutual_inductances` batched over the test point, one loop set held fixed.
+
+`induct` evaluates the same loop set at several test points -- the thirty CS filaments
+against each PF group's representative coil, and every PF coil against every other -- and
+each of those was a separate trace of the field kernel. There is no reduction inside
+`_mutual_inductances` (it returns the per-loop array; the caller sums or indexes it), so
+batching is only a leading axis."""
+
+_mutual_inductances_over_loop_sets = jax.vmap(
+    _mutual_inductances, in_axes=(0, None, None, None)
+)
+"""`_mutual_inductances` batched over the *loop set*, one test point held fixed -- the
+inner and outer CS filament radii against the plasma filament."""
 
 
 def calculate_solenoid_self_inductance(a, b, c, n):
@@ -240,8 +259,9 @@ def calculate_pf_cs_plasma_inductances(
 
     # Loop/test roles swapped -- see `_mutual_inductances`. The "loops" are the 2 x NOH
     # equivalent CS filaments; the test point is the single plasma filament.
-    xc_in = _mutual_inductances(reqv - deltar, zoh, rmajor, 0.0)
-    xc_out = _mutual_inductances(reqv + deltar, zoh, rmajor, 0.0)
+    xc_in, xc_out = _mutual_inductances_over_loop_sets(
+        jnp.stack([reqv - deltar, reqv + deltar]), zoh, rmajor, 0.0
+    )
     xohpl = jnp.sum(0.5 * (xc_in + xc_out))
 
     ind_cs_plasma = xohpl / NOH * n_pf_coil_turns[CS_INDEX]
@@ -259,11 +279,14 @@ def calculate_pf_cs_plasma_inductances(
         rmajor,
         0.0,
     )
-    for group in range(N_PF_GROUPS):
-        for coil in _coils_of_group(group):
-            value = xpfpl[group] * n_pf_coil_turns[coil]
-            ind = ind.at[coil, PLASMA_INDEX].set(value)
-            ind = ind.at[PLASMA_INDEX, coil].set(value)
+    plasma_column = (
+        jnp.stack([
+            xpfpl[group] for group in range(N_PF_GROUPS) for _ in _coils_of_group(group)
+        ])
+        * n_pf_coil_turns[:N_PF_COILS]
+    )
+    ind = ind.at[:N_PF_COILS, PLASMA_INDEX].set(plasma_column)
+    ind = ind.at[PLASMA_INDEX, :N_PF_COILS].set(plasma_column)
 
     # --- 3b. Central Solenoid self, then Central Solenoid / PF coil -------------------
     ind = ind.at[CS_INDEX, CS_INDEX].set(
@@ -275,40 +298,50 @@ def calculate_pf_cs_plasma_inductances(
         )
     )
 
-    for group in range(N_PF_GROUPS):
-        target = last_of_group[group]
-        xohpf = jnp.sum(
-            _mutual_inductances(
-                roh, zoh, r_pf_coil_middle[target], z_pf_coil_middle[target]
-            )
-        )
-        for coil in _coils_of_group(group):
-            value = xohpf * n_pf_coil_turns[coil] * n_pf_coil_turns[CS_INDEX] / NOH
-            ind = ind.at[coil, CS_INDEX].set(value)
-            ind = ind.at[CS_INDEX, coil].set(value)
+    # The thirty CS filaments seen from each group's representative coil: one loop set,
+    # four test points, so one batched call.
+    targets = jnp.asarray(last_of_group)
+    xohpf = jnp.sum(
+        _mutual_inductances_over_test_points(
+            roh, zoh, r_pf_coil_middle[targets], z_pf_coil_middle[targets]
+        ),
+        axis=1,
+    )
+    xohpf_of_coil = jnp.stack([
+        xohpf[group] for group in range(N_PF_GROUPS) for _ in _coils_of_group(group)
+    ])
+    cs_column = (
+        xohpf_of_coil * n_pf_coil_turns[:N_PF_COILS] * n_pf_coil_turns[CS_INDEX] / NOH
+    )
+    ind = ind.at[:N_PF_COILS, CS_INDEX].set(cs_column)
+    ind = ind.at[CS_INDEX, :N_PF_COILS].set(cs_column)
 
     # --- 4. PF coil / PF coil ---------------------------------------------------------
-    for i in range(N_PF_COILS):
-        others = [k for k in range(N_PF_COILS) if k != i]
-        xc = _mutual_inductances(
-            jnp.stack([r_pf_coil_middle[k] for k in others]),
-            jnp.stack([z_pf_coil_middle[k] for k in others]),
-            r_pf_coil_middle[i],
-            z_pf_coil_middle[i],
-        )
-        for slot, k in enumerate(others):
-            ind = ind.at[i, k].set(xc[slot] * n_pf_coil_turns[k] * n_pf_coil_turns[i])
+    # Every ordered pair at once. The self pairs are computed too and then overwritten
+    # by the thin-ring diagonal below -- `calculate_b_field_at_point`'s `_S_MAX` clamp
+    # keeps a coil against itself finite and finitely differentiable, and the `.set`
+    # discards it either way, so it costs one column of arithmetic and saves five traces
+    # of the kernel.
+    r_coils = r_pf_coil_middle[:N_PF_COILS]
+    z_coils = z_pf_coil_middle[:N_PF_COILS]
+    turns = n_pf_coil_turns[:N_PF_COILS]
+    xc = _mutual_inductances_over_test_points(r_coils, z_coils, r_coils, z_coils)
 
-        # Diagonal: thin ring of equivalent circular cross-section.
-        rl = jnp.abs(z_pf_coil_upper[i] - z_pf_coil_lower[i]) / jnp.sqrt(jnp.pi)
-        ind = ind.at[i, i].set(
+    # Diagonal: thin ring of equivalent circular cross-section.
+    rl = jnp.abs(z_pf_coil_upper[:N_PF_COILS] - z_pf_coil_lower[:N_PF_COILS]) / jnp.sqrt(
+        jnp.pi
+    )
+    block = (
+        (xc * turns[None, :] * turns[:, None])
+        .at[jnp.diag_indices(N_PF_COILS)]
+        .set(
             RMU0
-            * n_pf_coil_turns[i] ** 2
-            * r_pf_coil_middle[i]
-            * (jnp.log(8.0 * r_pf_coil_middle[i] / rl) - _PF_SELF_INDUCTANCE_OFFSET)
+            * turns**2
+            * r_coils
+            * (jnp.log(8.0 * r_coils / rl) - _PF_SELF_INDUCTANCE_OFFSET)
         )
-
-    return ind
+    )
+    return ind.at[:N_PF_COILS, :N_PF_COILS].set(block)
 
 
 def _coils_of_group(group):
@@ -386,33 +419,38 @@ def calculate_pf_plasma_inductances_no_central_solenoid(
         rmajor,
         0.0,
     )
-    for group in range(topology.n_pf_coil_groups):
-        for coil in topology.coils_of_group(group):
-            value = xpfpl[group] * n_pf_coil_turns[coil]
-            ind = ind.at[coil, plasma].set(value)
-            ind = ind.at[plasma, coil].set(value)
+    plasma_column = (
+        jnp.stack([
+            xpfpl[group]
+            for group in range(topology.n_pf_coil_groups)
+            for _ in topology.coils_of_group(group)
+        ])
+        * n_pf_coil_turns[:n_pf_coils]
+    )
+    ind = ind.at[:n_pf_coils, plasma].set(plasma_column)
+    ind = ind.at[plasma, :n_pf_coils].set(plasma_column)
 
     # --- PF coil / PF coil ------------------------------------------------------------
-    for i in range(n_pf_coils):
-        others = [k for k in range(n_pf_coils) if k != i]
-        xc = _mutual_inductances(
-            jnp.stack([r_pf_coil_middle[k] for k in others]),
-            jnp.stack([z_pf_coil_middle[k] for k in others]),
-            r_pf_coil_middle[i],
-            z_pf_coil_middle[i],
-        )
-        for slot, k in enumerate(others):
-            ind = ind.at[i, k].set(xc[slot] * n_pf_coil_turns[k] * n_pf_coil_turns[i])
+    # Every ordered pair at once; see `_ind_pf_cs_plasma_mutual` for why the self pairs
+    # are computed and then overwritten rather than excluded.
+    r_coils = r_pf_coil_middle[:n_pf_coils]
+    z_coils = z_pf_coil_middle[:n_pf_coils]
+    turns = n_pf_coil_turns[:n_pf_coils]
+    xc = _mutual_inductances_over_test_points(r_coils, z_coils, r_coils, z_coils)
 
-        rl = jnp.abs(z_pf_coil_upper[i] - z_pf_coil_lower[i]) / jnp.sqrt(jnp.pi)
-        ind = ind.at[i, i].set(
+    rl = jnp.abs(z_pf_coil_upper[:n_pf_coils] - z_pf_coil_lower[:n_pf_coils]) / jnp.sqrt(
+        jnp.pi
+    )
+    return ind.at[:n_pf_coils, :n_pf_coils].set(
+        (xc * turns[None, :] * turns[:, None])
+        .at[jnp.diag_indices(n_pf_coils)]
+        .set(
             RMU0
-            * n_pf_coil_turns[i] ** 2
-            * r_pf_coil_middle[i]
-            * (jnp.log(8.0 * r_pf_coil_middle[i] / rl) - _PF_SELF_INDUCTANCE_OFFSET)
+            * turns**2
+            * r_coils
+            * (jnp.log(8.0 * r_coils / rl) - _PF_SELF_INDUCTANCE_OFFSET)
         )
-
-    return ind
+    )
 
 
 class PFCoilInductance(ExplicitFunction):

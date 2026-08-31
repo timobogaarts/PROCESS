@@ -56,7 +56,10 @@ from functional_process.models.pfcoil import (
     PFCoilTopology,
     PFLocation,
 )
-from functional_process.models.pfcoil.fields import calculate_b_field_at_point
+from functional_process.models.pfcoil.fields import (
+    _b_field_over_filament_sets,
+    _b_field_over_test_points,
+)
 from functional_process.models.pfcoil.geometry import place_cs_filaments
 from functional_process.paths import build, pf_coil, physics
 
@@ -91,28 +94,13 @@ def _fixb(rpts, zpts, r_fix, z_fix, c_fix):
     Ports `fixb`, `process/models/pfcoil.py:5133-5183`. PROCESS's `nfix <= 0` early
     return is not reproduced as a branch: both call sites on this arm pass a positive
     `nfix`, and a zero-length `r_fix` makes the sum below zero anyway.
+
+    PROCESS's `for i in range(npts)` is one `vmap` over the test points rather than a
+    trace-time unrolling -- see `_b_field_over_test_points`.
     """
     npts = rpts.shape[0]
-    br = []
-    bz = []
-    for i in range(npts):
-        _, brw, bzw, _ = calculate_b_field_at_point(
-            r_current_loop=r_fix,
-            z_current_loop=z_fix,
-            c_current_loop=c_fix,
-            r_test_point=rpts[i],
-            z_test_point=zpts[i],
-        )
-        br.append(brw)
-        bz.append(bzw)
-    return (
-        jnp
-        .zeros(LROW1)
-        .at[:npts]
-        .set(jnp.stack(br))
-        .at[npts : 2 * npts]
-        .set(jnp.stack(bz))
-    )
+    _, br, bz, _ = _b_field_over_test_points(r_fix, z_fix, c_fix, rpts, zpts)
+    return jnp.zeros(LROW1).at[:npts].set(br).at[npts : 2 * npts].set(bz)
 
 
 def _mtrx(rpts, zpts, brin, bzin, r_group, z_group, n_in_group, alfa, bfix):
@@ -123,6 +111,14 @@ def _mtrx(rpts, zpts, brin, bzin, r_group, z_group, n_in_group, alfa, bfix):
     value. `gmat` keeps PROCESS's full `(LROW1, N_PF_GROUPS_MAX)` padding; `_solv` trims
     the unused columns before decomposing, for a reason given there.
 
+    **Both of PROCESS's loops are gone.** The whole matrix is one call to
+    `_b_field_over_filament_sets`: the group axis is the filament-set axis and the test
+    point axis is the batch within it, so `2 * npts * n_groups` traces of the field
+    kernel become one. `n_in_group` survives only as the **unit-current mask** -- a
+    group's row is padded out to the widest group's width, and the padding carries no
+    current, which contributes exactly zero because `brx`/`bzx` are linear in it. The
+    `2 * npts * n_groups` scattered `.at[i, j].set` writes become three block writes.
+
     Returns
     -------
     tuple
@@ -131,28 +127,42 @@ def _mtrx(rpts, zpts, brin, bzin, r_group, z_group, n_in_group, alfa, bfix):
     """
     npts = rpts.shape[0]
     n_groups = len(n_in_group)
+    width = max(n_in_group)
 
-    bvec = jnp.zeros(LROW1)
-    gmat = jnp.zeros((LROW1, N_PF_GROUPS_MAX))
-
-    for i in range(npts):
-        bvec = bvec.at[i].set(brin[i] - bfix[i])
-        bvec = bvec.at[i + npts].set(bzin[i] - bfix[i + npts])
-        for j in range(n_groups):
-            nc = n_in_group[j]
-            _, br, bz, _ = calculate_b_field_at_point(
-                r_current_loop=r_group[j, :nc],
-                z_current_loop=z_group[j, :nc],
-                c_current_loop=jnp.ones(nc),
-                r_test_point=rpts[i],
-                z_test_point=zpts[i],
-            )
-            gmat = gmat.at[i, j].set(br)
-            gmat = gmat.at[i + npts, j].set(bz)
+    currents = jnp.asarray([
+        [1.0 if coil < n else 0.0 for coil in range(width)] for n in n_in_group
+    ])
+    _, br_by_group, bz_by_group, _ = _b_field_over_filament_sets(
+        r_group[:n_groups, :width],
+        z_group[:n_groups, :width],
+        currents,
+        jnp.broadcast_to(rpts, (n_groups, npts)),
+        jnp.broadcast_to(zpts, (n_groups, npts)),
+    )
+    br_block = br_by_group.T
+    bz_block = bz_by_group.T
 
     # Smoothing constraint rows: one per group, on the diagonal.
-    for j in range(n_groups):
-        gmat = gmat.at[2 * npts + j, j].set(n_in_group[j] * alfa)
+    smoothing = jnp.diag(jnp.asarray(n_in_group, dtype=br_block.dtype) * alfa)
+
+    bvec = (
+        jnp
+        .zeros(LROW1)
+        .at[:npts]
+        .set(brin - bfix[:npts])
+        .at[npts : 2 * npts]
+        .set(bzin - bfix[npts : 2 * npts])
+    )
+    gmat = (
+        jnp
+        .zeros((LROW1, N_PF_GROUPS_MAX))
+        .at[:npts, :n_groups]
+        .set(br_block)
+        .at[npts : 2 * npts, :n_groups]
+        .set(bz_block)
+        .at[2 * npts : 2 * npts + n_groups, :n_groups]
+        .set(smoothing)
+    )
 
     return 2 * npts + n_groups, gmat, bvec
 

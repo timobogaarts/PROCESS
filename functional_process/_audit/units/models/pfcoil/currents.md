@@ -341,3 +341,37 @@ and the useful artefact is the measurement rather than a guard chosen without on
 The two conventional chain contracts (`TestPFCoilChain`,
 `TestPFCoilChainCsWstNb3Sn`) pass every gradient check, so the defect is specific to the
 generally-placed arm that only the spherical tokamaks reach.
+
+## 2026-08-31 -- `fixb` and `mtrx` are batched calls, not unrolled loops
+
+`efc`'s two assembly helpers were the largest single consumer of trace-time program size
+in the port. `_fixb` traced `fields.calculate_b_field_at_point` once per test point (32
+on the initiation solve) and `_mtrx` once per *(test point, group)* pair (32 x 4), plus
+`2 * npts * n_groups` scattered `.at[i, j].set` writes into `gmat`. On
+`large_tokamak_nof` that was 3,369 equations here and most of `fields.py`'s 19,366.
+
+Both now make **one** call each, through `fields._b_field_over_test_points` and
+`fields._b_field_over_filament_sets` (see `fields.md` § "the field kernel is batched").
+`gmat` is assembled from two blocks and a `jnp.diag` instead of `2 * npts * n_groups + n`
+scatters, and `bvec` from two slice writes.
+
+`n_in_group` changes role rather than disappearing. It was a *shape* -- how many columns
+of each group's row to hand the kernel. It is now a **unit-current mask**: every group's
+row is padded to the widest group's width and the padding carries current `0.0`, which
+contributes exactly zero because `brx`/`bzx` are linear in the current. Groups still
+differ in how many coils they hold, and the answer still says so; it is expressed in the
+currents instead of in the slice bounds. `_COILS_PER_EQUILIBRIUM_GROUP`'s note above --
+that PROCESS sums a filament at the origin on a one-coil group -- is unaffected: that
+literal `2` still reaches `_mtrx` as `n_in_group`, and a group declared with two coils
+still gets two unit currents.
+
+### Reductions reassociated by vectorisation
+
+The padding lengthens the kernel's `jnp.sum` over loops, so XLA reassociates it. The
+added terms are exactly zero and the change is at the last bits. Verified before the
+padding step: the `vmap` alone reproduced the unrolled `_fixb` and `_mtrx` **bit for
+bit** on 24 random samples across three shapes (32 points x 4 groups with 14 fixed
+filaments, 1 point x 2 groups, and the no-solenoid arm's zero fixed filaments). Tier-1
+contracts pass unchanged after the padding.
+
+`currents.py`'s share of `large_tokamak_nof` fell from 3,369 equations to 591.

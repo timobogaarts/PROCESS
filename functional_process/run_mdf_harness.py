@@ -198,7 +198,9 @@ def main(argv=None):
     is_reference = path == _resolve(REFERENCE_INPUT_FILE)
     print(f"input file:     {path}")
 
-    reference = reference_run(str(path))
+    # `use_cache=False`: `condition_map_cost` needs live `reference.models`, which a
+    # cached run does not carry (see `sand_harness.reference_run`).
+    reference = reference_run(str(path), use_cache=False)
     print(
         f"PROCESS: {reference.solver_iterations} VMCON iterations in "
         f"{reference.solve_seconds:.1f} s, convergence parameter "

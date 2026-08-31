@@ -13,8 +13,6 @@ guess process ^guess.vacuum.d_duct
 input indat .build.dr_blkt_inboard
 input indat .build.dr_blkt_outboard
 input indat .build.dr_cryostat
-default defaults .build.dr_cs
-default defaults .build.dr_cs_tf_gap
 input indat .build.dr_fw_plasma_gap_inboard
 input indat .build.dr_fw_plasma_gap_outboard
 default defaults .build.dr_shld_blkt_gap
@@ -32,7 +30,6 @@ default defaults .buildings.admv
 default defaults .buildings.clh2
 default defaults .buildings.conv
 default defaults .buildings.dz_tf_cryostat
-default defaults .buildings.esbldgm3
 default defaults .buildings.fndt
 default defaults .buildings.hccl
 default defaults .buildings.hcwt
@@ -276,7 +273,6 @@ input indat .tfcoil.dx_tf_turn_general
 input indat .tfcoil.dx_tf_turn_insulation
 input indat .tfcoil.dx_tf_turn_steel
 input indat .tfcoil.dx_tf_wp_insulation
-default defaults .tfcoil.eff_tf_cryo
 solver process .tfcoil.f_a_tf_turn_cable_copper
 input indat .tfcoil.f_a_tf_turn_cable_space_extra_void
 input indat .tfcoil.i_tf_sc_mat
@@ -291,12 +287,8 @@ input indat .tfcoil.temp_tf_cryo
 unwritten defaults .tfcoil.tfcmw
 input indat .tfcoil.tftmp
 input indat .tfcoil.tmargmin
-default defaults .times.t_plant_pulse_burn
-default defaults .times.t_plant_pulse_coil_precharge
 default defaults .times.t_plant_pulse_dwell
 default defaults .times.t_plant_pulse_fusion_ramp
-default defaults .times.t_plant_pulse_plasma_current_ramp_down
-default defaults .times.t_plant_pulse_plasma_current_ramp_up
 unwritten defaults .vacuum.ceff_i
 default defaults .vacuum.i_vac_pump_dwell
 default defaults .vacuum.i_vacuum_pump_type
@@ -307,11 +299,3 @@ default defaults .vacuum.outgrat_fw
 default defaults .vacuum.pres_div_chamber_burn
 default defaults .vacuum.pres_vv_chamber_base
 unwritten defaults .vacuum.xmult_i
-off .build.dr_cs
-off .build.dr_cs_tf_gap
-off .buildings.esbldgm3
-off .tfcoil.eff_tf_cryo
-off .times.t_plant_pulse_burn
-off .times.t_plant_pulse_coil_precharge
-off .times.t_plant_pulse_plasma_current_ramp_down
-off .times.t_plant_pulse_plasma_current_ramp_up

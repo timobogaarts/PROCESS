@@ -259,8 +259,12 @@ through first wall, blanket, shield and divertor, with per-component coolant pum
 power. Self-contained (no cross-model calls anywhere in this arm), the largest of the
 three arms.
 
-Ported: `calculate_detailed_powerflow_blanket_shield_power` in
-`stellarator_fwbs_s2.py`, the full arm **except**:
+Ported, as of 2026-08-31 in **three** functions rather than one --
+`_detailed_powerflow_core` (the arm's `i_p_coolant_pumping`-independent arithmetic) plus
+one thin wrapper per live value of that switch,
+`calculate_detailed_powerflow_blanket_shield_power` (`FRACTION_OF_HEAT`) and
+`calculate_detailed_powerflow_blanket_shield_power_user_input_pumping` (`USER_INPUT`) --
+in `stellarator_fwbs_s2.py`, the full arm **except**:
 
 - the CoolProp/`irefprop`-gated `.fwbs.temp_blkt_coolant_out` block (803-823) -- see § 4.1.
 - the confirmed `.fwbs.p_div_rad_total_mw` bug -- reproduced, not fixed, see § 4.2 (a
@@ -269,8 +273,9 @@ Ported: `calculate_detailed_powerflow_blanket_shield_power` in
 - the redundant duplicate write of `.fwbs.p_fw_hcd_rad_total_mw` (770-780, identical
   expression computed twice under two different comments) -- collapsed to one
   computation, `redundant-duplicate-write` per `_audit/schema.md`.
-- the trivial branches of two switches (`i_p_coolant_pumping != FRACTION_OF_HEAT`,
-  `i_tf_sup != SUPERCONDUCTING`) -- see § 4.3.
+- the trivial branch of `i_tf_sup != SUPERCONDUCTING` -- see § 4.3. (`i_p_coolant_pumping`
+  was dropped the same way until 2026-08-31; that was a defect, and § 4.3 now records
+  what it cost and what replaced it.)
 
 ### 4.1 CoolProp block, excluded
 
@@ -326,14 +331,39 @@ reference (verified: `test_value_agreement`/`test_gradient_agreement` both pass,
   outside `{0, 1}` -- a model-enforced domain restriction narrower than the input
   validator's). Two live values for a stellarator: `USER_INPUT` (0, `pass` -- this arm
   writes nothing to `.heat_transport.p_fw_coolant_pump_mw`/`p_blkt_coolant_pump_mw` at
-  all, leaving them at whatever IN.DAT/a previous call supplied) and `FRACTION_OF_HEAT`
-  (1, computes both from local nuclear-heating/radiation intermediates). Reads-sets
-  genuinely differ (nominally calls for a split per `traceability_policy.md`'s default),
-  but the `USER_INPUT` branch is not a computation to port at all (literally `pass`) --
-  same shape `tf_nuclear_heating.py` already used for its own trivial
-  switch branch (see next bullet), not a fresh judgment call. The port always computes
-  as if `FRACTION_OF_HEAT`; `USER_INPUT` and the two raising values are out of port
-  scope, flagged here rather than silently defaulted.
+  all, leaving them at whatever IN.DAT supplied; and the *second* dispatch at 1000 is an
+  `if FRACTION_OF_HEAT` with no `else`, so `p_shld_coolant_pump_mw` and
+  `p_div_coolant_pump_mw` are unwritten too -- **four** fields, not two) and
+  `FRACTION_OF_HEAT` (1, computes all four from local nuclear-heating/radiation
+  intermediates).
+
+  **This record used to say the switch was dropped, on the `tf_nuclear_heating.py`
+  "absence of a computation" precedent. That was wrong, and it was measured wrong on
+  2026-08-31.** The precedent does not transfer: `i_tf_sup`'s resistive branch writes
+  `0.0`, a value the graph can derive; `USER_INPUT` writes *nothing*, which makes the
+  four fields **run inputs**, and a node that declares `OutputInto` for them on that arm
+  is claiming to produce a number the input file already states. `helias_5b.IN.DAT:121`
+  states them (`p_blkt_coolant_pump_mw = 120`, `p_fw_coolant_pump_mw = 56`,
+  `p_div_coolant_pump_mw = 24`); the port answered `10.9`, `5.9` and `0.52`, and
+  `.primary_pumping.p_fw_blkt_coolant_pump_mw` came out `16.8` against PROCESS's `176.0`
+  -- carrying through `.power.*` into `.costs.concost` and into constraint 16 via
+  `.heat_transport.p_plant_electric_net_mw` (`+9.9 %`, `c16 = -9.88e-02` where PROCESS
+  reads `-1.91e-06`). The machine nonetheless reported "converged", on a different
+  problem. That is the `EcrhDensityLimit` bug class (`unit_registry.md`), reached by a
+  dropped switch rather than by an unconditional registration.
+
+  Resolved the way `_audit/next_steps.md` § 14.2 requires: **a second occupant, not a
+  kwarg.** `_detailed_powerflow_core` holds the arithmetic both values share;
+  `calculate_detailed_powerflow_blanket_shield_power` adds the four pumping powers and
+  `..._user_input_pumping` adds nothing, and the two `ExplicitFunction`s over them
+  declare twelve and sixteen outputs respectively. `indat.py`'s
+  `_blanket_shield_power_arm` grew a third integer and selects between them; the two
+  mechanical values (`2`, `3`) are refused there, because PROCESS raises on them.
+  Verification: a second tier-1 harness case,
+  `TestDetailedPowerflowBlanketShieldPowerUserInputPumping`, against a real `st_fwbs`
+  call at `i_p_coolant_pumping = 0`; and the `FRACTION_OF_HEAT` function checked
+  bit-identical to its pre-split self on 200 random argument tuples, since
+  `stellarator_helias` is the pinned reference machine and its numbers are evidence.
 - **`.tfcoil.i_tf_sup`** (`TFConductorModel`): gates `p_tf_nuclear_heat_mw` between
   `pnucsi + pnucso - pnucshldi - pnucshldo` (`SUPERCONDUCTING`) and the literal `0.0`
   (resistive). **Direct precedent already on record**: `tf_nuclear_heating.py`'s own
@@ -377,7 +407,7 @@ copies drifting; this table gives the classification pass over the same list).
 | `.heat_transport.f_p_shld_coolant_pump_total_heat` | read | explicit-arg | |
 | `.physics.p_plasma_separatrix_mw` | read | explicit-arg | |
 | `.heat_transport.f_p_div_coolant_pump_total_heat` | read | explicit-arg | |
-| `.fwbs.i_p_coolant_pumping` | read (dropped) | switch, see § 4.3 | not a port parameter |
+| `.fwbs.i_p_coolant_pumping` | read (**switch, two occupants**) | slot arm, see § 4.3 | not a port parameter -- selects the occupant at assembly |
 | `.tfcoil.i_tf_sup` | read (dropped) | switch, see § 4.3 | not a port parameter |
 | `.fwbs.i_blkt_coolant_type`, `.fwbs.irefprop`, `.fwbs.coolp` | read (excluded) | see § 4.1 | not a port parameter, CoolProp block dropped whole |
 | `.fwbs.p_div_nuclear_heat_total_mw` | write | own-write (returned) | |
@@ -419,8 +449,13 @@ literal per § 4.2.
 
 ## cottax node -- arm 3
 
-`DetailedPowerflowBlanketShieldPower` (`ExplicitFunction`) in `stellarator_fwbs_s2.py`.
-Not registered in `total_process.py`, same reservation as arm 2 (§ 5).
+Two, one per live `i_p_coolant_pumping` value (§ 4.3):
+`DetailedPowerflowBlanketShieldPower` (16 outputs) and
+`DetailedPowerflowBlanketShieldPowerUserInputPumping` (12 -- the same minus the four
+`.heat_transport.p_*_coolant_pump_mw`, which are run inputs on that arm), both
+`ExplicitFunction` in `stellarator_fwbs_s2.py`. Registered in `indat.py`'s
+`BLANKET_SHIELD_POWER` as arms 2 and 3; `stellarator_helias` takes the first,
+`helias_5b` the second.
 
 ## tier signal -- both ported arms
 
@@ -431,8 +466,9 @@ assessment).
 
 ## switches touched
 
-See § 4.3 for `i_p_coolant_pumping`/`i_tf_sup` (arm 3 only, both dropped to their
-"live"/nontrivial branch, not added to `switches.md`, out of file boundary). `blktmodel`
+See § 4.3 for `i_p_coolant_pumping` (arm 3 only, **two occupants since 2026-08-31**, a
+third integer on the joint slot key) and `i_tf_sup` (arm 3 only, still dropped to its
+nontrivial branch). `blktmodel`
 and `ipowerflow` themselves are the topology-changing switches selecting among the three
 arms -- see § 5 for the shape `next_steps.md` § 1 already asked this unit to characterize
 precisely.
@@ -451,11 +487,12 @@ reproduced in the port, see § 3. Arm 3: none.
   `non-traceable-external-call`, `blocker`. Whole block excluded from the port, not
   worked around, since it has no downstream consumer inside this unit.
 - **`i_p_coolant_pumping`'s `ProcessValueError`** (arm 3, values outside `{0, 1}`) --
-  the port does not reproduce the raise (a traced function cannot raise on a
-  data-dependent condition, per `test_harness.md`'s domain-guard convention) and does
-  not reproduce the `USER_INPUT` (0) branch either, since it is not a computation (see
-  § 4.3) -- `minor`, `workaround-known`, both branches simply out of port scope rather
-  than `jnp.where`-guarded.
+  the port does not reproduce the raise inside a traced function (a traced function
+  cannot raise on a data-dependent condition, per `test_harness.md`'s domain-guard
+  convention); it raises at **assembly** instead, from `indat.py`'s
+  `_blanket_shield_power_arm` arm 4, which is where a run-constant switch belongs.
+  `USER_INPUT` (0) **is** ported now, as its own occupant -- see § 4.3. `minor`,
+  `resolved`.
 - **`i_tf_sup`'s resistive branch** (arm 3) -- `minor`, `workaround-known`, dropped
   entirely per direct precedent (§ 4.3), not `jnp.where`-guarded.
 - **Gradient testing entanglement, arm 3 only** (not a JAX-tracing difficulty, a

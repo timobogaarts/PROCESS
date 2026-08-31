@@ -117,7 +117,22 @@ class Row:
     value: int
     verdict: str
     """`factory` (a slot dispatches on it) / `pinned` (the tree hardcodes it as a static
-    kwarg) / `unknown` (the port has never read it)."""
+    kwarg) / `unknown` (the port has never read it).
+
+    **`pinned` stays an `elif` behind `factory`, and the contradiction check does not
+    live here.** `_audit/switch_consultation_audit.md` §6 proposed lifting it -- `iohcl`
+    was in `factory_fields()` *and* pinned on `PfMagnetCost`, so the `DISAGREES` branch
+    never ran for it and §2's live wrong answer was invisible to this module. Lifting it
+    was tried on 2026-08-31 and **reverted**, because this function's `graph` defaults to
+    `indat.GRAPH` -- the *reference* machine, built from `stellarator_helias` -- so
+    comparing any other file's switches against its pins is unsound in both directions.
+    It immediately reported `large_tokamak_eval`'s `i_p_coolant_pumping = 3` as
+    contradicted by a `1` that belongs to a stellarator this file has nothing to do with.
+    A pinned-value check is only meaningful against the machine *that file* assembles,
+    and that is what
+    `tests/functional_process/test_switch_coverage.py::
+    test_no_pinned_switch_contradicts_its_own_input_file` does for all seven
+    configurations. The guard exists; it simply cannot be this function."""
     detail: str = ""
     readers: tuple[str, ...] = ()
     coolprop: bool = False

@@ -157,3 +157,38 @@ sides because the waveform has the same currents at the ends of that interval.
    `indat`, which is the only place in that factory that branches on the device rather
    than on a switch. It is honest and it is one line, but if a second such slot appears
    it wants a named predicate rather than a second copy of the test.
+
+## 2026-08-31 -- `pfpwr`'s nested loops are array expressions
+
+The module docstring's "every loop here is an ordinary Python `for` that unrolls at trace
+time" was accurate and, measured, expensive: 6,828 jaxpr equations on `large_tokamak_nof`
+from a routine whose loops run seven and eight times. The trip counts are small; the
+nesting is not. `pfpwr`'s inductive block is four deep (`group`, `coil`, `circuit`,
+`point`) and its innermost body is a single `+=`, which unrolled costs about nine
+equations -- two or three scalar gathers, an arithmetic operation, an add -- of which one
+is arithmetic. 336 iterations became ~2,800 equations; `_pf_loss_power_supply_j`'s
+`5 x 7 x 8` became ~2,520.
+
+Rewritten as arrays, with no change of algorithm:
+
+- `_pf_loss_power_supply_j` -- `sum_j M_ij dI_j` is `coupling @ delta` and the outer sum
+  over `i` is `jnp.sum`. `dI_j` does not depend on `i`, so PROCESS recomputes it once per
+  pair; it is one vector subtraction here.
+- `_pf_loss_busbar_j` -- one gather of the representative circuits, then `jnp.sum`.
+- The inductive block -- `vpfij` is the outer product `coupling * d_current / delktim`,
+  `inductxcurrent` is `coupling @ c_circuit`, and `vpfi`, `powpfi`, `poloidalenergy`,
+  `powpfr`, `powpfr2` are four `jnp.sum`s over the coil or circuit axis.
+- `spsmva` / `acptmax` -- `jnp.sum` over the circuit axis.
+
+`pf_coil_power.py`'s share of `large_tokamak_nof` fell from 6,828 equations to 598.
+
+### Reductions reassociated by vectorisation
+
+**Every one of the sums above was an ordered Python accumulation and is now an XLA
+reduce, so the last bits move.** Measured against the previous implementation over 20
+random samples on both topologies, the worst disagreement in any of the eleven returned
+values is **37 ulp** (`poloidalpower`, which is a difference of two stored energies
+divided by an interval, so it amplifies whatever the energies disagree by); the rest are
+at most 8 ulp. That is ~1e-14 relative -- three orders below the `1e-9` these values are
+compared at anywhere in the harness, and the tier-1 contracts pass unchanged. A reader
+diffing this unit against PROCESS should not expect bit-identity from it.

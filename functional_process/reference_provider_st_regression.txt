@@ -32,10 +32,8 @@ input indat .build.dr_vv_outboard
 unwritten defaults .build.dr_vv_shells
 input indat .build.dz_shld_lower
 input indat .build.dz_shld_thermal
-input indat .build.dz_shld_upper
 input indat .build.dz_shld_vv_gap
 input indat .build.dz_vv_lower
-input indat .build.dz_vv_upper
 input indat .build.dz_xpoint_divertor
 default defaults .build.f_z_cryostat
 input indat .build.gapomin
@@ -43,7 +41,6 @@ computed process .build.r_cp_top
 default defaults .buildings.admv
 default defaults .buildings.clh2
 default defaults .buildings.conv
-default defaults .buildings.esbldgm3
 default defaults .buildings.fndt
 default defaults .buildings.hccl
 default defaults .buildings.hcwt
@@ -257,21 +254,16 @@ derived process .impurity_radiation.m_impurity_amu_array
 derived process .impurity_radiation.pden_impurity_lz_nd_temp_array
 input indat .impurity_radiation.radius_plasma_core_norm
 derived process .impurity_radiation.temp_impurity_keV_array
-unwritten defaults .pf_coil.a_cs_cable_space
 default defaults .pf_coil.alfapf
 default defaults .pf_coil.c_pf_coil_turn_peak_input
 default defaults .pf_coil.dr_pf_tf_outboard_out_offset
 default defaults .pf_coil.etapsu
-default defaults .pf_coil.f_a_cs_void
 default defaults .pf_coil.f_a_pf_coil_void
 default defaults .pf_coil.f_j_cs_start_pulse_end_flat_top
-default defaults .pf_coil.fcuohsu
 default defaults .pf_coil.fcupfsu
-default defaults .pf_coil.i_cs_superconductor
 input indat .pf_coil.i_pf_superconductor
 default defaults .pf_coil.j_pf_coil_wp_peak
 unwritten defaults .pf_coil.pf_current_safety_factor
-default defaults .pf_coil.rho_pf_coil
 default defaults .pf_coil.rhopfbus
 default defaults .pf_coil.rpf2
 input process .pf_coil.rref
@@ -294,7 +286,6 @@ default defaults .physics.csawth
 default defaults .physics.ejima_coeff
 default defaults .physics.f_c_plasma_non_inductive
 solver process .physics.f_nd_alpha_thermal_electron
-default defaults .physics.f_nd_beam_electron
 solver process .physics.f_nd_plasma_pedestal_greenwald
 solver process .physics.f_nd_plasma_separatrix_greenwald
 default defaults .physics.f_nd_protium_electrons
@@ -338,7 +329,6 @@ input indat .superconducting_tfcoil.dx_tf_hts_tape_hastelloy
 input indat .superconducting_tfcoil.dx_tf_hts_tape_rebco
 default defaults .tfcoil.c_tf_turn
 input indat .tfcoil.casths_fraction
-default defaults .tfcoil.dcond
 default process .tfcoil.dcond[8]
 default defaults .tfcoil.den_tf_coil_case
 default defaults .tfcoil.den_tf_wp_turn_insulation
@@ -349,11 +339,7 @@ default defaults .tfcoil.dx_tf_turn_insulation
 default defaults .tfcoil.dx_tf_turn_steel
 default defaults .tfcoil.dx_tf_wp_insertion_gap
 default defaults .tfcoil.dx_tf_wp_insulation
-default defaults .tfcoil.eff_tf_cryo
-default defaults .tfcoil.eyoung_cond_axial
-default defaults .tfcoil.eyoung_cond_trans
 unwritten defaults .tfcoil.eyoung_copper
-default defaults .tfcoil.eyoung_ins
 default defaults .tfcoil.eyoung_steel
 default defaults .tfcoil.f_a_tf_turn_cable_copper
 input indat .tfcoil.f_dr_tf_plasma_case
@@ -392,10 +378,3 @@ default defaults .vacuum.outgrat_fw
 default defaults .vacuum.pres_div_chamber_burn
 default defaults .vacuum.pres_vv_chamber_base
 unwritten defaults .vacuum.xmult_i
-off .build.dz_shld_upper
-off .buildings.esbldgm3
-off .pf_coil.rho_pf_coil
-off .physics.f_nd_beam_electron
-off .tfcoil.eff_tf_cryo
-off .tfcoil.eyoung_cond_axial
-off .tfcoil.eyoung_ins

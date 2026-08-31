@@ -616,7 +616,8 @@ _CAUSES_A_REFUSAL = (
     ("ife", 1, ("ife", IFEModel.INERTIAL_CONFINEMENT)),
     ("istell", 0, ("i_plasma_ignited_separatrix", 1)),
     ("i_cost_model", 1, ("i_cost_model", 1)),
-    ("blktmodel", 1, ("blktmodel_ipowerflow", 0)),
+    ("blktmodel", 1, ("blktmodel_ipowerflow_i_p_coolant_pumping", 0)),
+    ("i_p_coolant_pumping", 2, ("blktmodel_ipowerflow_i_p_coolant_pumping", 4)),
     ("blkttype", 1, ("blktmodel_blkttype", 1)),
 )
 """Five refusals, for four different reasons.
@@ -1091,3 +1092,50 @@ class TestProblemStatementFromTheFile:
         assert (stated is None) == (
             stem in {"large_tokamak_eval", "spherical_tokamak_eval"}
         )
+
+
+@pytest.mark.parametrize("stem", CONFIGURATIONS)
+def test_no_pinned_switch_contradicts_its_own_input_file(stem):
+    """**Every** switch the assembled tree pins as a static kwarg holds the value the
+    file that built it states.
+
+    `test_no_slot_contradicts_a_factory_switch` above asks a narrower question of one
+    file: it walks `REFERENCE_INPUT_FILE`'s machine for overrides of the switches
+    `COHERENCE_CASES` names. This one asks the blunt question of all seven tracked
+    configurations at once, needs no case list, and costs seven assemblies and no
+    PROCESS run.
+
+    It exists because that narrowness let a live wrong answer stand
+    (`_audit/switch_consultation_audit.md` §2). `PfMagnetCost` pinned
+    `iohcl=CentralSolenoidConfiguration.PRESENT` while `spherical_tokamak_eval` and
+    `st_regression` both set `iohcl = 0`, so Account 222.2 costed six PF coils plus a
+    central solenoid those machines do not have -- 404.67 against PROCESS's 425.36 on
+    the first, 502.80 against 528.81 on the second -- while the *same* assembled
+    machine's `_pf_coil_system_arm` read the switch correctly and picked the
+    eight-coil, no-solenoid topology. Both files sat in `reference_cold_matrix.txt` as
+    converged the whole time.
+
+    `machine_survey.survey` had computed the answer and thrown it away behind an `elif`
+    that only ran for switches *not* in `factory_fields()`; `iohcl` was in both. That
+    `elif` is now a `contradicted` verdict of its own, and this is the test that fails
+    when one appears. On the tree as it stood before the fix it failed on exactly these
+    two rows and passed on the other five.
+    """
+    from cottax.interfaces.pytree_namespace_module import to_graph
+
+    from functional_process.machine_survey import pinned_switches
+
+    path = _configuration(stem)
+    pinned = pinned_switches(to_graph(machine_from_indat(path)))
+    contradicted = {
+        name: (value, sorted(pinned[name]))
+        for name, value in switches_from_indat(path).items()
+        if name in pinned and value not in pinned[name]
+    }
+    assert not contradicted, (
+        f"{stem}: the tree pins these switches to values the file does not set: "
+        + ", ".join(
+            f"{name} = {value} but the tree holds {held}"
+            for name, (value, held) in sorted(contradicted.items())
+        )
+    )

@@ -40,10 +40,20 @@ consolidation pass, per this dispatch's boundary.
 
 import equinox as eqx
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from cottax.interfaces.pytree_namespace_module import (
+    ExplicitFunction,
+    From,
+    FromExactly,
+    OutputInto,
+)
 
+from functional_process.models.pfcoil.masses import (
+    I_CS_SUPERCONDUCTOR,
+    I_CS_SUPERCONDUCTOR_WST_NB3SN,
+    I_PF_SUPERCONDUCTOR,
+    I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO,
+)
 from functional_process.models.safe_math import safe_pow, safe_sqrt
-from functional_process.models.switch_enums import CentralSolenoidConfiguration
 from functional_process.paths import (
     buildings,
     costs,
@@ -1694,14 +1704,18 @@ def calculate_pf_magnet_cost(
     match) and not a scan variable (`process/core/scan.py` -> no match), so it is
     exactly `naming_convention.md`'s static-kwarg category -- the same move
     `ImpurityRadiationTotals.imp_indices` already makes for "which impurity species
-    exist". With `n_cs_pf_coils` and `.build.iohcl` static, both loops are ordinary
-    Python `range`s unrolled at trace time and no `lax.fori_loop` or padding is needed.
-    `mda_harness.switch_audit` checks both values against the run automatically.
+    exist". With `n_cs_pf_coils` static and the central-solenoid arm chosen by which
+    occupant was selected, both loops are ordinary Python `range`s unrolled at trace
+    time and no `lax.fori_loop` or padding is needed.
+    `mda_harness.switch_audit` checks the count against the run automatically.
 
     **`supercond_cost_model` is a dispatcher argument, not a static kwarg, since
-    2026-08-30**, and this function is now three: it forwards to
-    `calculate_pf_magnet_cost_per_kg` or `calculate_pf_magnet_cost_per_kam`, which share
-    `_pf_magnet_cost`. The two arms read **disjoint** strand-cost fields -- arm `0` reads
+    2026-08-30, and `iohcl` joined it on 2026-08-31**; this function is now a 2x2
+    dispatcher over `calculate_pf_magnet_cost_per_kg`/`_per_kam` and their
+    `_no_central_solenoid` siblings, all four sharing `_pf_magnet_cost`. It survives
+    only as the shape the tier-1 contract exercises -- no node carries either switch.
+    The two `supercond_cost_model` arms read **disjoint** strand-cost fields -- arm `0`
+    reads
     `.costs.ucsc` and `.tfcoil.dcond`, arm `1` reads `.costs.sc_mat_cost_0`,
     `.tfcoil.j_crit_str_0`, `.pf_coil.j_crit_str_pf` and `.pf_coil.j_crit_str_cs` -- so
     one node carrying the switch declared four edges the reference run does not make.
@@ -1731,7 +1745,9 @@ def calculate_pf_magnet_cost(
         Number of PF coils including the central solenoid. `.pf_coil.n_cs_pf_coils`.
         Static (loop bound).
     iohcl :
-        1 if a central solenoid is present, else 0. `.build.iohcl`. Static (loop bound).
+        1 if a central solenoid is present, else 0. `.build.iohcl`. A dispatcher
+        argument: it selects one of the two `_no_central_solenoid` pairs and reaches no
+        occupant.
     i_pf_conductor :
         0: superconducting PF coils; 1: resistive. `.pf_coil.i_pf_conductor`. Static.
     supercond_cost_model :
@@ -1795,9 +1811,37 @@ def calculate_pf_magnet_cost(
         `(c22221, c22222, c22223, c22224, c2222)`.
     """
     if supercond_cost_model == 0:
-        return calculate_pf_magnet_cost_per_kg(
+        if iohcl == 1:
+            return calculate_pf_magnet_cost_per_kg(
+                n_cs_pf_coils,
+                i_pf_conductor,
+                lsa,
+                r_pf_coil_middle,
+                n_pf_coil_turns,
+                cconshpf,
+                ucsc,
+                i_pf_superconductor,
+                fcupfsu,
+                f_a_pf_coil_void,
+                c_pf_cs_coils_peak_ma,
+                j_pf_coil_wp_peak,
+                jnp.asarray(dcond)[i_pf_superconductor - 1],
+                jnp.asarray(dcond)[i_cs_superconductor - 1],
+                uccu,
+                cconfix,
+                i_cs_superconductor,
+                a_cs_cable_space,
+                f_a_cs_void,
+                fcuohsu,
+                ucwindpf,
+                uccase,
+                m_pf_coil_structure_total,
+                ucfnc,
+                fncmass,
+                fkind,
+            )
+        return calculate_pf_magnet_cost_per_kg_no_central_solenoid(
             n_cs_pf_coils,
-            iohcl,
             i_pf_conductor,
             lsa,
             r_pf_coil_middle,
@@ -1809,13 +1853,9 @@ def calculate_pf_magnet_cost(
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
             j_pf_coil_wp_peak,
-            dcond,
+            jnp.asarray(dcond)[i_pf_superconductor - 1],
             uccu,
             cconfix,
-            i_cs_superconductor,
-            a_cs_cable_space,
-            f_a_cs_void,
-            fcuohsu,
             ucwindpf,
             uccase,
             m_pf_coil_structure_total,
@@ -1823,9 +1863,38 @@ def calculate_pf_magnet_cost(
             fncmass,
             fkind,
         )
-    return calculate_pf_magnet_cost_per_kam(
+    if iohcl == 1:
+        return calculate_pf_magnet_cost_per_kam(
+            n_cs_pf_coils,
+            i_pf_conductor,
+            lsa,
+            r_pf_coil_middle,
+            n_pf_coil_turns,
+            cconshpf,
+            i_pf_superconductor,
+            fcupfsu,
+            f_a_pf_coil_void,
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            sc_mat_cost_0,
+            j_crit_str_0,
+            j_crit_str_pf,
+            uccu,
+            cconfix,
+            i_cs_superconductor,
+            a_cs_cable_space,
+            f_a_cs_void,
+            fcuohsu,
+            j_crit_str_cs,
+            ucwindpf,
+            uccase,
+            m_pf_coil_structure_total,
+            ucfnc,
+            fncmass,
+            fkind,
+        )
+    return calculate_pf_magnet_cost_per_kam_no_central_solenoid(
         n_cs_pf_coils,
-        iohcl,
         i_pf_conductor,
         lsa,
         r_pf_coil_middle,
@@ -1841,11 +1910,6 @@ def calculate_pf_magnet_cost(
         j_crit_str_pf,
         uccu,
         cconfix,
-        i_cs_superconductor,
-        a_cs_cable_space,
-        f_a_cs_void,
-        fcuohsu,
-        j_crit_str_cs,
         ucwindpf,
         uccase,
         m_pf_coil_structure_total,
@@ -1855,20 +1919,54 @@ def calculate_pf_magnet_cost(
     )
 
 
-def _n_pf_coils_costed(n_cs_pf_coils, iohcl):
-    """How many of `n_cs_pf_coils` slots `acc2222`'s first loop walks
-    (`costs.py:1630-1633`).
+def _pf_strand_costs_per_kg(
+    n_pf_coils_costed,
+    is_superconducting,
+    ucsc,
+    i_pf_superconductor,
+    fcupfsu,
+    f_a_pf_coil_void,
+    c_pf_cs_coils_peak_ma,
+    n_pf_coil_turns,
+    j_pf_coil_wp_peak,
+    den_pf_conductor,
+):
+    """One PF coil's superconductor strand cost per metre, per costed coil
+    (`costs.py:1639-1655`).
 
-    `npf = n_cs_pf_coils - 1` when a central solenoid occupies the last slot, else all
-    of them. A module-level helper rather than a line repeated in three places, because
-    the CS block below keys off the same `iohcl` and the two must not drift apart.
+    `n_pf_coils_costed` is the loop bound `acc2222`'s first loop walks, and it is the
+    *only* thing `.build.iohcl` used to decide here: `n_cs_pf_coils - 1` when a central
+    solenoid occupies the last slot, all of them when there is none. The two callers
+    each pass the count their own arm implies, so the switch is answered by which
+    occupant was selected rather than re-read inside the formula.
+
+    **`den_pf_conductor` is the density itself, not `.tfcoil.dcond` and an index into
+    it** (2026-08-31). PROCESS writes `dcond(i_pf_superconductor)`; the node above now
+    reads that one element as its own port, for the reason `pfcoil/masses.py` already
+    does -- see `PfMagnetCostPerKg`.
     """
-    return n_cs_pf_coils - 1 if iohcl == 1 else n_cs_pf_coils
+    n_pf_coil_turns = jnp.asarray(n_pf_coil_turns)
+    f_a_pf_coil_void = jnp.asarray(f_a_pf_coil_void)
+    c_pf_cs_coils_peak_ma = jnp.asarray(c_pf_cs_coils_peak_ma)
+    j_pf_coil_wp_peak = jnp.asarray(j_pf_coil_wp_peak)
+    return [
+        (
+            jnp.asarray(ucsc)[i_pf_superconductor - 1]
+            * (1.0e0 - fcupfsu)
+            * (1.0e0 - f_a_pf_coil_void[i])
+            * abs(c_pf_cs_coils_peak_ma[i] / n_pf_coil_turns[i])
+            * 1.0e6
+            / j_pf_coil_wp_peak[i]
+            * den_pf_conductor
+        )
+        if is_superconducting
+        else 0.0
+        for i in range(n_pf_coils_costed)
+    ]
 
 
 def calculate_pf_magnet_cost_per_kg(
     n_cs_pf_coils,
-    iohcl,
     i_pf_conductor,
     lsa,
     r_pf_coil_middle,
@@ -1880,7 +1978,8 @@ def calculate_pf_magnet_cost_per_kg(
     f_a_pf_coil_void,
     c_pf_cs_coils_peak_ma,
     j_pf_coil_wp_peak,
-    dcond,
+    den_pf_conductor,
+    den_cs_conductor,
     uccu,
     cconfix,
     i_cs_superconductor,
@@ -1894,9 +1993,9 @@ def calculate_pf_magnet_cost_per_kg(
     fncmass,
     fkind,
 ):
-    """Account 222.2's `supercond_cost_model == PER_KG` arm -- the legacy `$/kg`
-    superconductor costing (`costs.py:1639-1655` for the PF coils, `:1770-1790` for the
-    central solenoid).
+    """Account 222.2's `supercond_cost_model == PER_KG` arm on a machine **with** a
+    central solenoid -- the legacy `$/kg` superconductor costing (`costs.py:1639-1655`
+    for the PF coils, `:1770-1790` for the central solenoid).
 
     Each coil's superconductor strand cost per metre is the volume of non-copper,
     non-void conductor in one turn times its density times its unit cost per kilogram:
@@ -1911,29 +2010,36 @@ def calculate_pf_magnet_cost_per_kg(
     model here, which is the case the policy leaves as a read -- exactly as
     `.tfcoil.i_tf_sc_mat` does for Account 222.1.
 
+    **The two conductor *densities* are scalars here, not `.tfcoil.dcond` and an index
+    into it** (2026-08-31). The array read moved out to the caller for a reason that is
+    not about this arithmetic at all: `pfcoil/masses.py` and
+    `tfcoil/superconducting.py` already read the same array **by element**
+    (`FromExactly(tfcoil.dcond[k])`), so a node reading it whole named the same storage
+    both ways -- and a pytree cannot be written back at a path named both whole and by
+    element (`cottax.tools.pytree.check_antichain`). Measured on 2026-08-31: two such
+    pairs on `large_tokamak_nof`/`large_tokamak_eval`, two on `low_aspect_ratio_DEMO`,
+    one on `spherical_tokamak_eval`, none on either stellarator (which has no PF magnet
+    cost node). `radiation_power.py`'s `f_nd_impurity_electron_array` is the standing
+    precedent for the fix; `.costs.ucsc` stays whole because nothing reads *it* by
+    element.
+
     Parameters and returns are `calculate_pf_magnet_cost`'s, less
-    `supercond_cost_model` and the other arm's four fields.
+    `supercond_cost_model` and the other arm's four fields, and with `dcond` replaced by
+    the two elements the dispatcher selects out of it.
     """
     is_superconducting = i_pf_conductor == 0
-    n_pf_coil_turns = jnp.asarray(n_pf_coil_turns)
-    f_a_pf_coil_void = jnp.asarray(f_a_pf_coil_void)
-    c_pf_cs_coils_peak_ma = jnp.asarray(c_pf_cs_coils_peak_ma)
-    j_pf_coil_wp_peak = jnp.asarray(j_pf_coil_wp_peak)
-
-    costpfsc = [
-        (
-            jnp.asarray(ucsc)[i_pf_superconductor - 1]
-            * (1.0e0 - fcupfsu)
-            * (1.0e0 - f_a_pf_coil_void[i])
-            * abs(c_pf_cs_coils_peak_ma[i] / n_pf_coil_turns[i])
-            * 1.0e6
-            / j_pf_coil_wp_peak[i]
-            * jnp.asarray(dcond)[i_pf_superconductor - 1]
-        )
-        if is_superconducting
-        else 0.0
-        for i in range(_n_pf_coils_costed(n_cs_pf_coils, iohcl))
-    ]
+    costpfsc = _pf_strand_costs_per_kg(
+        n_cs_pf_coils - 1,
+        is_superconducting,
+        ucsc,
+        i_pf_superconductor,
+        fcupfsu,
+        f_a_pf_coil_void,
+        c_pf_cs_coils_peak_ma,
+        n_pf_coil_turns,
+        j_pf_coil_wp_peak,
+        den_pf_conductor,
+    )
     #  Issue #328: use the CS conductor cross-sectional area (m^2).
     costpfsc_cs = (
         (
@@ -1941,17 +2047,16 @@ def calculate_pf_magnet_cost_per_kg(
             * a_cs_cable_space
             * (1 - f_a_cs_void)
             * (1 - fcuohsu)
-            / n_pf_coil_turns[n_cs_pf_coils - 1]
-            * jnp.asarray(dcond)[i_cs_superconductor - 1]
+            / jnp.asarray(n_pf_coil_turns)[n_cs_pf_coils - 1]
+            * den_cs_conductor
         )
-        if is_superconducting and iohcl == 1
+        if is_superconducting
         else 0.0
     )
     return _pf_magnet_cost(
         costpfsc,
         costpfsc_cs,
         n_cs_pf_coils,
-        iohcl,
         i_pf_conductor,
         lsa,
         r_pf_coil_middle,
@@ -1963,9 +2068,84 @@ def calculate_pf_magnet_cost_per_kg(
         j_pf_coil_wp_peak,
         uccu,
         cconfix,
-        a_cs_cable_space,
-        f_a_cs_void,
-        fcuohsu,
+        ucwindpf,
+        uccase,
+        m_pf_coil_structure_total,
+        ucfnc,
+        fncmass,
+        fkind,
+        a_cs_cable_space=a_cs_cable_space,
+        f_a_cs_void=f_a_cs_void,
+        fcuohsu=fcuohsu,
+    )
+
+
+def calculate_pf_magnet_cost_per_kg_no_central_solenoid(
+    n_cs_pf_coils,
+    i_pf_conductor,
+    lsa,
+    r_pf_coil_middle,
+    n_pf_coil_turns,
+    cconshpf,
+    ucsc,
+    i_pf_superconductor,
+    fcupfsu,
+    f_a_pf_coil_void,
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    den_pf_conductor,
+    uccu,
+    cconfix,
+    ucwindpf,
+    uccase,
+    m_pf_coil_structure_total,
+    ucfnc,
+    fncmass,
+    fkind,
+):
+    """The same arm on a machine with **no** central solenoid (`.build.iohcl == 0`).
+
+    Two differences from the sibling above, both of them `costs.py`'s own: the first
+    loop walks all `n_cs_pf_coils` slots rather than `n_cs_pf_coils - 1`
+    (`costs.py:1630-1633`), and neither of the two CS conductor terms exists at all
+    (`:1770-1790` and `:1745-1760` are both inside `if iohcl == 1`).
+
+    **Four reads leave with this occupant**: `.pf_coil.i_cs_superconductor`,
+    `.pf_coil.a_cs_cable_space`, `.pf_coil.f_a_cs_void` and `.pf_coil.fcuohsu` -- which
+    is why `iohcl` is a family here and not a static kwarg. On both tracked spherical
+    tokamaks PROCESS never writes `a_cs_cable_space` at all (`provider`'s pin records it
+    as `unwritten`), so the sibling's port would read a field the run does not produce.
+
+    `den_pf_conductor` is the one `.tfcoil.dcond` element this arm needs, taken as a
+    scalar for the antichain reason `calculate_pf_magnet_cost_per_kg` states.
+    """
+    costpfsc = _pf_strand_costs_per_kg(
+        n_cs_pf_coils,
+        i_pf_conductor == 0,
+        ucsc,
+        i_pf_superconductor,
+        fcupfsu,
+        f_a_pf_coil_void,
+        c_pf_cs_coils_peak_ma,
+        n_pf_coil_turns,
+        j_pf_coil_wp_peak,
+        den_pf_conductor,
+    )
+    return _pf_magnet_cost(
+        costpfsc,
+        None,
+        n_cs_pf_coils,
+        i_pf_conductor,
+        lsa,
+        r_pf_coil_middle,
+        n_pf_coil_turns,
+        cconshpf,
+        fcupfsu,
+        f_a_pf_coil_void,
+        c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak,
+        uccu,
+        cconfix,
         ucwindpf,
         uccase,
         m_pf_coil_structure_total,
@@ -1977,7 +2157,6 @@ def calculate_pf_magnet_cost_per_kg(
 
 def calculate_pf_magnet_cost_per_kam(
     n_cs_pf_coils,
-    iohcl,
     i_pf_conductor,
     lsa,
     r_pf_coil_middle,
@@ -2005,9 +2184,9 @@ def calculate_pf_magnet_cost_per_kam(
     fncmass,
     fkind,
 ):
-    """Account 222.2's `supercond_cost_model == PER_KAM` arm -- strand cost scaled by
-    critical current density (`costs.py:1656-1666` for the PF coils, `:1791-1801` for the
-    central solenoid).
+    """Account 222.2's `supercond_cost_model == PER_KAM` arm on a machine **with** a
+    central solenoid -- strand cost scaled by critical current density
+    (`costs.py:1656-1666` for the PF coils, `:1791-1801` for the central solenoid).
 
     **`.costs.ucsc` and `.tfcoil.dcond` are not read at all** on this arm; see its
     sibling above. Both strand costs here are constants over the loop -- neither reads
@@ -2018,29 +2197,24 @@ def calculate_pf_magnet_cost_per_kam(
     `supercond_cost_model` and the other arm's two fields.
     """
     is_superconducting = i_pf_conductor == 0
-    costpfsc_pf = (
-        (
-            jnp.asarray(sc_mat_cost_0)[i_pf_superconductor - 1]
-            * jnp.asarray(j_crit_str_0)[i_pf_superconductor - 1]
-            / j_crit_str_pf
-        )
-        if is_superconducting
-        else 0.0
+    costpfsc_pf = _pf_strand_cost_per_kam(
+        is_superconducting,
+        sc_mat_cost_0,
+        j_crit_str_0,
+        i_pf_superconductor,
+        j_crit_str_pf,
     )
-    costpfsc_cs = (
-        (
-            jnp.asarray(sc_mat_cost_0)[i_cs_superconductor - 1]
-            * jnp.asarray(j_crit_str_0)[i_cs_superconductor - 1]
-            / j_crit_str_cs
-        )
-        if is_superconducting and iohcl == 1
-        else 0.0
+    costpfsc_cs = _pf_strand_cost_per_kam(
+        is_superconducting,
+        sc_mat_cost_0,
+        j_crit_str_0,
+        i_cs_superconductor,
+        j_crit_str_cs,
     )
     return _pf_magnet_cost(
-        [costpfsc_pf] * _n_pf_coils_costed(n_cs_pf_coils, iohcl),
+        [costpfsc_pf] * (n_cs_pf_coils - 1),
         costpfsc_cs,
         n_cs_pf_coils,
-        iohcl,
         i_pf_conductor,
         lsa,
         r_pf_coil_middle,
@@ -2052,9 +2226,70 @@ def calculate_pf_magnet_cost_per_kam(
         j_pf_coil_wp_peak,
         uccu,
         cconfix,
-        a_cs_cable_space,
-        f_a_cs_void,
-        fcuohsu,
+        ucwindpf,
+        uccase,
+        m_pf_coil_structure_total,
+        ucfnc,
+        fncmass,
+        fkind,
+        a_cs_cable_space=a_cs_cable_space,
+        f_a_cs_void=f_a_cs_void,
+        fcuohsu=fcuohsu,
+    )
+
+
+def calculate_pf_magnet_cost_per_kam_no_central_solenoid(
+    n_cs_pf_coils,
+    i_pf_conductor,
+    lsa,
+    r_pf_coil_middle,
+    n_pf_coil_turns,
+    cconshpf,
+    i_pf_superconductor,
+    fcupfsu,
+    f_a_pf_coil_void,
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    sc_mat_cost_0,
+    j_crit_str_0,
+    j_crit_str_pf,
+    uccu,
+    cconfix,
+    ucwindpf,
+    uccase,
+    m_pf_coil_structure_total,
+    ucfnc,
+    fncmass,
+    fkind,
+):
+    """The `PER_KAM` arm with no central solenoid -- the same two differences
+    `calculate_pf_magnet_cost_per_kg_no_central_solenoid` documents.
+
+    **Five reads leave with this occupant**, one more than the `PER_KG` pair, because
+    this arm's CS strand cost also needs `.pf_coil.j_crit_str_cs`.
+    """
+    costpfsc_pf = _pf_strand_cost_per_kam(
+        i_pf_conductor == 0,
+        sc_mat_cost_0,
+        j_crit_str_0,
+        i_pf_superconductor,
+        j_crit_str_pf,
+    )
+    return _pf_magnet_cost(
+        [costpfsc_pf] * n_cs_pf_coils,
+        None,
+        n_cs_pf_coils,
+        i_pf_conductor,
+        lsa,
+        r_pf_coil_middle,
+        n_pf_coil_turns,
+        cconshpf,
+        fcupfsu,
+        f_a_pf_coil_void,
+        c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak,
+        uccu,
+        cconfix,
         ucwindpf,
         uccase,
         m_pf_coil_structure_total,
@@ -2064,11 +2299,31 @@ def calculate_pf_magnet_cost_per_kam(
     )
 
 
+def _pf_strand_cost_per_kam(
+    is_superconducting, sc_mat_cost_0, j_crit_str_0, i_superconductor, j_crit_str
+):
+    """The `PER_KAM` strand cost per metre for one conductor family
+    (`costs.py:1656-1666`, and the byte-identical `:1791-1801` for the CS).
+
+    One helper for both sites because the two differ only in which superconductor index
+    and which critical current density they read -- the shape the source repeats and
+    `_pf_magnet_cost`'s docstring already names.
+    """
+    return (
+        (
+            jnp.asarray(sc_mat_cost_0)[i_superconductor - 1]
+            * jnp.asarray(j_crit_str_0)[i_superconductor - 1]
+            / j_crit_str
+        )
+        if is_superconducting
+        else 0.0
+    )
+
+
 def _pf_magnet_cost(
     costpfsc,
     costpfsc_cs,
     n_cs_pf_coils,
-    iohcl,
     i_pf_conductor,
     lsa,
     r_pf_coil_middle,
@@ -2080,17 +2335,18 @@ def _pf_magnet_cost(
     j_pf_coil_wp_peak,
     uccu,
     cconfix,
-    a_cs_cable_space,
-    f_a_cs_void,
-    fcuohsu,
     ucwindpf,
     uccase,
     m_pf_coil_structure_total,
     ucfnc,
     fncmass,
     fkind,
+    *,
+    a_cs_cable_space=None,
+    f_a_cs_void=None,
+    fcuohsu=None,
 ):
-    """The ~40 lines both `supercond_cost_model` arms share, given the superconductor
+    """The ~40 lines all four `Account 222.2` occupants share, given the superconductor
     strand cost per metre each arm computed for each PF coil and for the CS.
 
     `costpfsc`/`costpfsc_cs` are data, not switches: which of the two expressions
@@ -2099,6 +2355,13 @@ def _pf_magnet_cost(
     `acc2222` branches on `supercond_cost_model` twice -- once per PF coil and once for
     the central solenoid -- with the copper, conduit and winding-length arithmetic
     interleaved between the two sites.
+
+    **`iohcl` is not a parameter.** `costpfsc_cs is None` marks a machine with no
+    central solenoid -- absence, not a variant, the same reading `_pf_coil_system_arm`
+    gives the switch -- and the three CS-only fields are keyword-only with no default
+    value so that a no-solenoid caller cannot supply them. `len(costpfsc)` is the first
+    loop's bound, so the caller's own arm decides how many coils are costed rather than
+    a switch re-read here.
     """
     cmlsa = jnp.asarray([0.6900e0, 0.8450e0, 0.9225e0, 1.0000e0])[lsa - 1]
     scale = fkind * cmlsa
@@ -2121,7 +2384,7 @@ def _pf_magnet_cost(
     is_superconducting = i_pf_conductor == 0
 
     c22221 = 0.0
-    for i in range(_n_pf_coils_costed(n_cs_pf_coils, iohcl)):
+    for i in range(len(costpfsc)):
         copper_fraction = fcupfsu if is_superconducting else 1.0
         costpfcu = (
             uccu
@@ -2138,7 +2401,7 @@ def _pf_magnet_cost(
             1.0e-6 * 2.0 * jnp.pi * r_pf_coil_middle[i] * n_pf_coil_turns[i] * cpfconpm
         )
 
-    if iohcl == 1:
+    if costpfsc_cs is not None:
         cs = n_cs_pf_coils - 1
         # PROCESS's own comment on the resistive branch: "MDK I don't know if this is
         # ccorrect as we never use the resistive model" (`costs.py:1758-1759`). The
@@ -4143,26 +4406,39 @@ class TfMagnetCostResistive(ExplicitFunction):
 
 
 class PfMagnetCost(ExplicitFunction):
-    """The Account 222.2 PF-magnet family. One occupant per `.costs.supercond_cost_model`
-    value, exactly as `TfMagnetCostSuperconducting` above.
+    """The Account 222.2 PF-magnet family. **Four occupants** -- one per
+    `.costs.supercond_cost_model` value times one per `.build.iohcl` value.
 
-    The switch was an `eqx.field(static=True)` here and the node was unregistered because
-    of it (`_audit/cost_boundary_inputs.md` §13.2): its two arms read **disjoint**
-    strand-cost fields -- `.costs.ucsc` + `.tfcoil.dcond` against `.costs.sc_mat_cost_0`
-    + `.tfcoil.j_crit_str_0` + `.pf_coil.j_crit_str_pf` + `.pf_coil.j_crit_str_cs` -- so
-    one node carrying the switch declared four edges the reference run does not make,
-    and one of those four (`.pf_coil.j_crit_str_pf`) had no producer at all. Both are
-    fixed: the family is here and
+    `supercond_cost_model` was an `eqx.field(static=True)` here and the node was
+    unregistered because of it (`_audit/cost_boundary_inputs.md` §13.2): its two arms
+    read **disjoint** strand-cost fields -- `.costs.ucsc` + `.tfcoil.dcond` against
+    `.costs.sc_mat_cost_0` + `.tfcoil.j_crit_str_0` + `.pf_coil.j_crit_str_pf` +
+    `.pf_coil.j_crit_str_cs` -- so one node carrying the switch declared four edges the
+    reference run does not make, and one of those four (`.pf_coil.j_crit_str_pf`) had no
+    producer at all. Both are fixed: the family is here and
     `models/pfcoil/superconductor.py::PFStrandCriticalCurrentDensity` owns the field.
 
-    The three remaining static fields are not switches of the same kind.
-    `n_cs_pf_coils`/`iohcl` are loop bounds -- run-configuration counts fixed before the
-    solve, `naming_convention.md`'s static-kwarg category -- and `i_pf_conductor`
-    branches inside *both* arms rather than between them.
+    **`iohcl` was the second such kwarg and it was live, not hypothetical**
+    (`_audit/switch_consultation_audit.md` §2). It was pinned to
+    `CentralSolenoidConfiguration.PRESENT` while both tracked spherical tokamaks set
+    `iohcl = 0`, so the same assembled machine held a PF coil *system* with eight coils
+    and no solenoid (`indat._pf_coil_system_deviations` reads the switch correctly) and
+    a PF magnet *cost* for six coils plus a solenoid. Splitting the family on it is
+    `next_steps.md` §14.2's rule -- no switch is a static kwarg -- and the reads agree
+    independently: four fields (`.pf_coil.i_cs_superconductor`,
+    `.pf_coil.a_cs_cable_space`, `.pf_coil.f_a_cs_void`, `.pf_coil.fcuohsu`, and on the
+    `PER_KAM` arm `.pf_coil.j_crit_str_cs` as a fifth) are read *only* inside the CS
+    block, and `a_cs_cable_space` is `unwritten` on both ST files -- a declared edge to
+    a field the run never fills.
+
+    `n_cs_pf_coils` stays a static field and is **not** a switch: it is the topology's
+    coil count, `naming_convention.md`'s static-kwarg category, threaded from the same
+    `PFCoilTopology` the PF coil system is built from (7 with a solenoid, 8 without).
+    `i_pf_conductor` also stays -- it branches inside *every* arm rather than between
+    them.
     """
 
     n_cs_pf_coils: int = eqx.field(static=True)
-    iohcl: CentralSolenoidConfiguration = eqx.field(static=True)
     i_pf_conductor: PFConductorModel = eqx.field(static=True)
 
     c22221 = OutputInto(costs)
@@ -4172,43 +4448,54 @@ class PfMagnetCost(ExplicitFunction):
     c2222 = OutputInto(costs)
 
 
-class PfMagnetCostPerKg(PfMagnetCost):
-    """`.costs.supercond_cost_model == PER_KG` (0) -- PROCESS's own default
-    (`cost_variables.py:552`) and the reference run's.
+class PfMagnetCostPerKgWithCentralSolenoid(PfMagnetCost):
+    """`supercond_cost_model == PER_KG` (0) with a central solenoid -- the whole
+    calculation, and **no ports**: the two conductor densities are the only thing its
+    occupants differ in, and each declares its own.
 
-    **Four reads leave with this occupant**: `.costs.sc_mat_cost_0`,
+    Abstract in use rather than by `ABC`: `ExplicitFunction._signature_of` reads
+    `__call__`'s signature only, so a class with no `__call__` declares no reads and is
+    never bound. The shape is `PFCoilMasses._masses`'s and `CoilsMass`'s.
+
+    **Four reads leave with the `PER_KAM` sibling**: `.costs.sc_mat_cost_0`,
     `.tfcoil.j_crit_str_0`, `.pf_coil.j_crit_str_pf`, `.pf_coil.j_crit_str_cs`.
     """
 
-    def __call__(
+    def _cost(
         self,
-        lsa=From(costs),
-        r_pf_coil_middle=From(pf_coil),
-        n_pf_coil_turns=From(pf_coil),
-        cconshpf=From(costs),
-        ucsc=From(costs),
-        i_pf_superconductor=From(pf_coil),
-        fcupfsu=From(pf_coil),
-        f_a_pf_coil_void=From(pf_coil),
-        c_pf_cs_coils_peak_ma=From(pf_coil),
-        j_pf_coil_wp_peak=From(pf_coil),
-        dcond=From(tfcoil),
-        uccu=From(costs),
-        cconfix=From(costs),
-        i_cs_superconductor=From(pf_coil),
-        a_cs_cable_space=From(pf_coil),
-        f_a_cs_void=From(pf_coil),
-        fcuohsu=From(pf_coil),
-        ucwindpf=From(costs),
-        uccase=From(costs),
-        m_pf_coil_structure_total=From(pf_coil),
-        ucfnc=From(costs),
-        fncmass=From(structure),
-        fkind=From(costs),
+        lsa,
+        r_pf_coil_middle,
+        n_pf_coil_turns,
+        cconshpf,
+        ucsc,
+        i_pf_superconductor,
+        fcupfsu,
+        f_a_pf_coil_void,
+        c_pf_cs_coils_peak_ma,
+        j_pf_coil_wp_peak,
+        den_pf_conductor,
+        den_cs_conductor,
+        uccu,
+        cconfix,
+        i_cs_superconductor,
+        a_cs_cable_space,
+        f_a_cs_void,
+        fcuohsu,
+        ucwindpf,
+        uccase,
+        m_pf_coil_structure_total,
+        ucfnc,
+        fncmass,
+        fkind,
     ):
+        """The account, given this occupant's two conductor densities.
+
+        Not a port surface -- `_params` reads `__call__`'s signature only, so what each
+        occupant declares is still its own parameter list, and the only entries that
+        differ between them are the two `.tfcoil.dcond[k]` elements.
+        """
         return calculate_pf_magnet_cost_per_kg(
             self.n_cs_pf_coils,
-            self.iohcl,
             self.i_pf_conductor,
             lsa,
             r_pf_coil_middle,
@@ -4220,7 +4507,8 @@ class PfMagnetCostPerKg(PfMagnetCost):
             f_a_pf_coil_void,
             c_pf_cs_coils_peak_ma,
             j_pf_coil_wp_peak,
-            dcond,
+            den_pf_conductor,
+            den_cs_conductor,
             uccu,
             cconfix,
             i_cs_superconductor,
@@ -4236,9 +4524,223 @@ class PfMagnetCostPerKg(PfMagnetCost):
         )
 
 
+class PfMagnetCostPerKg(PfMagnetCostPerKgWithCentralSolenoid):
+    """`supercond_cost_model == PER_KG` (0) with a central solenoid, on the
+    `(i_pf_superconductor, i_cs_superconductor) = (3, 1)` pair -- NbTi PF coils, ITER
+    Nb3Sn CS. `indat._pf_coil_system_arm` arm `0`, and PROCESS's own default
+    (`cost_variables.py:552`) with the reference tokamaks' materials
+    (`large_tokamak_nof`, `large_tokamak_eval`).
+
+    **`.tfcoil.dcond` is read by element here, not whole** (2026-08-31), which is what
+    makes this class a material occupant at all. `pfcoil/masses.py` and
+    `tfcoil/superconducting.py` already read the same array by element, so a node
+    reading it whole named one storage location two ways and
+    `cottax.tools.pytree.check_antichain` refuses to write such a pytree back --
+    measured as 2 violations on `large_tokamak_nof`/`large_tokamak_eval`, 2 on
+    `low_aspect_ratio_DEMO` and 1 on `spherical_tokamak_eval`, and it was the entire
+    blocker to running the MDA through `cottax.boundary.run`.
+    `models/physics/radiation_power.py`'s `f_nd_impurity_electron_array` is the
+    standing precedent.
+
+    **`.costs.ucsc` stays whole and both `i_*_superconductor` switches stay ordinary
+    reads.** Nothing reads `.costs.ucsc` by element, so no antichain question arises
+    there, and the switches still index that cost table -- the case
+    `naming_convention.md` leaves as a read, exactly as `.tfcoil.i_tf_sc_mat` is for
+    Account 222.1. The occupant split here is forced by *where a value is stored*, not
+    by what a switch selects, and saying so is why the reads stay.
+    """
+
+    def __call__(
+        self,
+        lsa=From(costs),
+        r_pf_coil_middle=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        cconshpf=From(costs),
+        ucsc=From(costs),
+        i_pf_superconductor=From(pf_coil),
+        fcupfsu=From(pf_coil),
+        f_a_pf_coil_void=From(pf_coil),
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        den_pf_conductor=FromExactly(tfcoil.dcond[I_PF_SUPERCONDUCTOR - 1]),
+        den_cs_conductor=FromExactly(tfcoil.dcond[I_CS_SUPERCONDUCTOR - 1]),
+        uccu=From(costs),
+        cconfix=From(costs),
+        i_cs_superconductor=From(pf_coil),
+        a_cs_cable_space=From(pf_coil),
+        f_a_cs_void=From(pf_coil),
+        fcuohsu=From(pf_coil),
+        ucwindpf=From(costs),
+        uccase=From(costs),
+        m_pf_coil_structure_total=From(pf_coil),
+        ucfnc=From(costs),
+        fncmass=From(structure),
+        fkind=From(costs),
+    ):
+        return self._cost(
+            lsa,
+            r_pf_coil_middle,
+            n_pf_coil_turns,
+            cconshpf,
+            ucsc,
+            i_pf_superconductor,
+            fcupfsu,
+            f_a_pf_coil_void,
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            den_pf_conductor,
+            den_cs_conductor,
+            uccu,
+            cconfix,
+            i_cs_superconductor,
+            a_cs_cable_space,
+            f_a_cs_void,
+            fcuohsu,
+            ucwindpf,
+            uccase,
+            m_pf_coil_structure_total,
+            ucfnc,
+            fncmass,
+            fkind,
+        )
+
+
+class PfMagnetCostPerKgCsWstNb3Sn(PfMagnetCostPerKgWithCentralSolenoid):
+    """The same arm on the `(3, 5)` pair -- NbTi PF coils, WST Nb3Sn CS,
+    `low_aspect_ratio_DEMO.IN.DAT`'s materials, `indat._pf_coil_system_arm` arm `1`.
+
+    One read differs from `PfMagnetCostPerKg` and nothing else does: the CS conductor
+    density is `.tfcoil.dcond[4]` instead of `.tfcoil.dcond[0]`. That is exactly the
+    difference between `PFCoilMassesCsWstNb3Sn` and `PFCoilMasses`, and it is the same
+    switch pair resolved by the same predicate -- the two nodes read the same storage
+    and now name it the same way. The two elements hold the same 6080 kg/m^3 today and
+    the split is still the point (`pfcoil/masses.py`'s
+    `I_CS_SUPERCONDUCTOR_WST_NB3SN`).
+    """
+
+    def __call__(
+        self,
+        lsa=From(costs),
+        r_pf_coil_middle=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        cconshpf=From(costs),
+        ucsc=From(costs),
+        i_pf_superconductor=From(pf_coil),
+        fcupfsu=From(pf_coil),
+        f_a_pf_coil_void=From(pf_coil),
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        den_pf_conductor=FromExactly(tfcoil.dcond[I_PF_SUPERCONDUCTOR - 1]),
+        den_cs_conductor=FromExactly(tfcoil.dcond[I_CS_SUPERCONDUCTOR_WST_NB3SN - 1]),
+        uccu=From(costs),
+        cconfix=From(costs),
+        i_cs_superconductor=From(pf_coil),
+        a_cs_cable_space=From(pf_coil),
+        f_a_cs_void=From(pf_coil),
+        fcuohsu=From(pf_coil),
+        ucwindpf=From(costs),
+        uccase=From(costs),
+        m_pf_coil_structure_total=From(pf_coil),
+        ucfnc=From(costs),
+        fncmass=From(structure),
+        fkind=From(costs),
+    ):
+        return self._cost(
+            lsa,
+            r_pf_coil_middle,
+            n_pf_coil_turns,
+            cconshpf,
+            ucsc,
+            i_pf_superconductor,
+            fcupfsu,
+            f_a_pf_coil_void,
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            den_pf_conductor,
+            den_cs_conductor,
+            uccu,
+            cconfix,
+            i_cs_superconductor,
+            a_cs_cable_space,
+            f_a_cs_void,
+            fcuohsu,
+            ucwindpf,
+            uccase,
+            m_pf_coil_structure_total,
+            ucfnc,
+            fncmass,
+            fkind,
+        )
+
+
+class PfMagnetCostPerKgNoCentralSolenoid(PfMagnetCost):
+    """`supercond_cost_model == PER_KG` (0) on a machine with `.build.iohcl == 0` --
+    both tracked spherical tokamaks.
+
+    **Four reads leave with the sibling above**: `.pf_coil.i_cs_superconductor`,
+    `.pf_coil.a_cs_cable_space`, `.pf_coil.f_a_cs_void` and `.pf_coil.fcuohsu`. All four
+    are read only inside `acc2222`'s `iohcl == 1` block, and `a_cs_cable_space` has no
+    producer on a machine with no solenoid at all.
+
+    `i_pf_superconductor = 9` (Hazelton/Zhai REBCO tape) on both tracked spherical
+    tokamaks, so the one conductor density this arm needs is `.tfcoil.dcond[8]` --
+    read by element for `PfMagnetCostPerKg`'s reason, and the same element
+    `PFCoilMassesNoCentralSolenoid` reads. There is no CS density: with no solenoid
+    the whole CS block is skipped, so this occupant is not split further.
+    """
+
+    def __call__(
+        self,
+        lsa=From(costs),
+        r_pf_coil_middle=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        cconshpf=From(costs),
+        ucsc=From(costs),
+        i_pf_superconductor=From(pf_coil),
+        fcupfsu=From(pf_coil),
+        f_a_pf_coil_void=From(pf_coil),
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        den_pf_conductor=FromExactly(
+            tfcoil.dcond[I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO - 1]
+        ),
+        uccu=From(costs),
+        cconfix=From(costs),
+        ucwindpf=From(costs),
+        uccase=From(costs),
+        m_pf_coil_structure_total=From(pf_coil),
+        ucfnc=From(costs),
+        fncmass=From(structure),
+        fkind=From(costs),
+    ):
+        return calculate_pf_magnet_cost_per_kg_no_central_solenoid(
+            self.n_cs_pf_coils,
+            self.i_pf_conductor,
+            lsa,
+            r_pf_coil_middle,
+            n_pf_coil_turns,
+            cconshpf,
+            ucsc,
+            i_pf_superconductor,
+            fcupfsu,
+            f_a_pf_coil_void,
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            den_pf_conductor,
+            uccu,
+            cconfix,
+            ucwindpf,
+            uccase,
+            m_pf_coil_structure_total,
+            ucfnc,
+            fncmass,
+            fkind,
+        )
+
+
 class PfMagnetCostPerKam(PfMagnetCost):
-    """`.costs.supercond_cost_model == PER_KAM` (1) -- strand cost scaled by critical
-    current density.
+    """`supercond_cost_model == PER_KAM` (1) with a central solenoid -- strand cost
+    scaled by critical current density.
 
     **Two reads leave with this occupant**: `.costs.ucsc` and `.tfcoil.dcond`.
 
@@ -4247,7 +4749,8 @@ class PfMagnetCostPerKam(PfMagnetCost):
     `.costs.supercond_cost_model`'s, `TF_MAGNET_COST_SUPERCONDUCTING` is already total
     over both its values, and a `PF_MAGNET_COST` that refused arm `1` would make
     `supercond_cost_model = 1` assemble a TF coil and then fail on the PF coils -- a new
-    slot narrowing the set of files the port accepts.
+    slot narrowing the set of files the port accepts. The same argument makes the
+    `iohcl` split total: all four combinations exist.
     """
 
     def __call__(
@@ -4280,7 +4783,6 @@ class PfMagnetCostPerKam(PfMagnetCost):
     ):
         return calculate_pf_magnet_cost_per_kam(
             self.n_cs_pf_coils,
-            self.iohcl,
             self.i_pf_conductor,
             lsa,
             r_pf_coil_middle,
@@ -4301,6 +4803,64 @@ class PfMagnetCostPerKam(PfMagnetCost):
             f_a_cs_void,
             fcuohsu,
             j_crit_str_cs,
+            ucwindpf,
+            uccase,
+            m_pf_coil_structure_total,
+            ucfnc,
+            fncmass,
+            fkind,
+        )
+
+
+class PfMagnetCostPerKamNoCentralSolenoid(PfMagnetCost):
+    """`supercond_cost_model == PER_KAM` (1) on a machine with `.build.iohcl == 0`.
+
+    **Five reads leave with the sibling above** -- the `PER_KG` pair's four plus
+    `.pf_coil.j_crit_str_cs`, which only this arm's CS strand cost needs. Written for
+    the same totality reason `PfMagnetCostPerKam` is: refusing one of the four
+    combinations would let a file assemble its TF coils and then fail on its PF coils.
+    """
+
+    def __call__(
+        self,
+        lsa=From(costs),
+        r_pf_coil_middle=From(pf_coil),
+        n_pf_coil_turns=From(pf_coil),
+        cconshpf=From(costs),
+        i_pf_superconductor=From(pf_coil),
+        fcupfsu=From(pf_coil),
+        f_a_pf_coil_void=From(pf_coil),
+        c_pf_cs_coils_peak_ma=From(pf_coil),
+        j_pf_coil_wp_peak=From(pf_coil),
+        sc_mat_cost_0=From(costs),
+        j_crit_str_0=From(tfcoil),
+        j_crit_str_pf=From(pf_coil),
+        uccu=From(costs),
+        cconfix=From(costs),
+        ucwindpf=From(costs),
+        uccase=From(costs),
+        m_pf_coil_structure_total=From(pf_coil),
+        ucfnc=From(costs),
+        fncmass=From(structure),
+        fkind=From(costs),
+    ):
+        return calculate_pf_magnet_cost_per_kam_no_central_solenoid(
+            self.n_cs_pf_coils,
+            self.i_pf_conductor,
+            lsa,
+            r_pf_coil_middle,
+            n_pf_coil_turns,
+            cconshpf,
+            i_pf_superconductor,
+            fcupfsu,
+            f_a_pf_coil_void,
+            c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak,
+            sc_mat_cost_0,
+            j_crit_str_0,
+            j_crit_str_pf,
+            uccu,
+            cconfix,
             ucwindpf,
             uccase,
             m_pf_coil_structure_total,

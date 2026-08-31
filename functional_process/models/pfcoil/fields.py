@@ -40,6 +40,7 @@ here exactly; see `fields.md` § "A PROCESS defect ported faithfully".
 """
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -166,6 +167,36 @@ def calculate_b_field_at_point(
         jnp.sum(bzx),
         jnp.sum(ind_mutual_array * c_current_loop),
     )
+
+
+_b_field_over_test_points = jax.vmap(
+    calculate_b_field_at_point, in_axes=(None, None, None, 0, 0)
+)
+"""`calculate_b_field_at_point` batched over the *test point*, the loops held fixed.
+
+**A batching axis, not a rewrite.** The kernel already takes the current loops as arrays
+and reduces over them with `jnp.sum`; `vmap` adds a leading axis to the two scalar
+test-point arguments and leaves every expression inside untouched, that reduction
+included, so each batch element computes exactly what its own separate call computed.
+
+What it buys is jaxpr size, which is what XLA's compile time scales superlinearly in.
+Every caller ran this kernel once per test point *at trace time*, so its ~110 equations
+were emitted 32 times in `currents._fixb`, 32 times per group in `currents._mtrx`, and
+twice per group here -- 171 copies on `large_tokamak_nof`, roughly half that
+configuration's entire program, against a stellarator that reaches none of them.
+Batched, the kernel is emitted once per call site."""
+
+_b_field_over_filament_sets = jax.vmap(
+    _b_field_over_test_points, in_axes=(0, 0, 0, 0, 0)
+)
+"""`_b_field_over_test_points` batched again over *independent filament sets*.
+
+Two axes: a set of current loops, and for each set its own test points.
+`peak_b_field_at_pf_coil` has exactly that shape -- one filament set per PF group, each
+evaluated at its own coil's inner and outer edge -- and unbatched it traced the kernel
+once per group. The sets have to be padded to a common width for this, which
+`_peak_fields_from_loops` does with zero-current filaments; see the comment there for why
+that is exact."""
 
 
 def calculate_coil_current_waveform(
@@ -297,8 +328,11 @@ def _peak_fields_from_loops(
     and `None` when it does not -- `peak_b_field_at_pf_coil` sets `kk = 0` outright at
     `pfcoil.py:4487-4489` in that case, so there is no filament to omit the current of.
     """
-    b_inner = []
-    b_outer = []
+    r_per_group = []
+    z_per_group = []
+    c_per_group = []
+    r_test_per_group = []
+    z_test_per_group = []
     for group in range(topology.n_pf_coil_groups):
         target = topology.first_coil_of_group(group)
 
@@ -340,30 +374,48 @@ def _peak_fields_from_loops(
         z_parts.append(jnp.zeros(1))
         c_parts.append(jnp.where(column >= 2, plasma_current, 0.0)[None])
 
-        r_loops = jnp.concatenate(r_parts)
-        z_loops = jnp.concatenate(z_parts)
-        c_loops = jnp.concatenate(c_parts)
-
-        _, br_in, bz_in, _ = calculate_b_field_at_point(
-            r_current_loop=r_loops,
-            z_current_loop=z_loops,
-            c_current_loop=c_loops,
-            r_test_point=r_pf_coil_inner[target],
-            z_test_point=z_pf_coil_middle[target],
+        r_per_group.append(jnp.concatenate(r_parts))
+        z_per_group.append(jnp.concatenate(z_parts))
+        c_per_group.append(jnp.concatenate(c_parts))
+        r_test_per_group.append(
+            jnp.stack([r_pf_coil_inner[target], r_pf_coil_outer[target]])
         )
-        _, br_out, bz_out, _ = calculate_b_field_at_point(
-            r_current_loop=r_loops,
-            z_current_loop=z_loops,
-            c_current_loop=c_loops,
-            r_test_point=r_pf_coil_outer[target],
-            z_test_point=z_pf_coil_middle[target],
-        )
+        z_test_per_group.append(jnp.full(2, z_pf_coil_middle[target]))
 
-        n_in_group = topology.n_pf_coils_in_group[group]
-        b_inner.extend([jnp.sqrt(br_in**2 + bz_in**2)] * n_in_group)
-        b_outer.extend([jnp.sqrt(br_out**2 + bz_out**2)] * n_in_group)
+    # One call for the whole calculation: `n_pf_coil_groups` filament sets crossed with
+    # the two test points (inner and outer edge) each is evaluated at. A group whose
+    # target coil expands into Lyle's four self-field filaments carries three loops more
+    # than one whose does not, so the sets are padded to a common width with filaments at
+    # `r = 1 m` carrying **no current** -- `brx`/`bzx` are linear in the current, so a
+    # zero-current loop contributes exactly zero, and a unit radius keeps every
+    # denominator in the kernel away from zero. Same trick, and the same justification,
+    # as the plasma filament's masked current above.
+    width = max(r.shape[0] for r in r_per_group)
 
-    return jnp.stack(b_inner), jnp.stack(b_outer)
+    def _padded(parts, fill):
+        return jnp.stack([
+            jnp.concatenate([part, jnp.full(width - part.shape[0], fill)])
+            for part in parts
+        ])
+
+    _, br, bz, _ = _b_field_over_filament_sets(
+        _padded(r_per_group, 1.0),
+        _padded(z_per_group, 0.0),
+        _padded(c_per_group, 0.0),
+        jnp.stack(r_test_per_group),
+        jnp.stack(z_test_per_group),
+    )
+    b_edge = jnp.sqrt(br**2 + bz**2)
+
+    coil_of_row = [
+        group
+        for group in range(topology.n_pf_coil_groups)
+        for _ in range(topology.n_pf_coils_in_group[group])
+    ]
+    return (
+        jnp.stack([b_edge[group, 0] for group in coil_of_row]),
+        jnp.stack([b_edge[group, 1] for group in coil_of_row]),
+    )
 
 
 def calculate_pf_coil_peak_fields(
@@ -906,21 +958,16 @@ def _cs_external_field(
         jnp.where(column >= 2, plasma_current, 0.0)[None],
     ])
 
-    _, _, bz_in, _ = calculate_b_field_at_point(
-        r_current_loop=r_loops,
-        z_current_loop=z_loops,
-        c_current_loop=c_loops,
-        r_test_point=r_cs_inner,
-        z_test_point=z_cs_middle,
+    # Two test points, one identical loop set -- one batched call, not two traces of the
+    # kernel. See `_b_field_over_test_points`.
+    _, _, bz_edges, _ = _b_field_over_test_points(
+        r_loops,
+        z_loops,
+        c_loops,
+        jnp.stack([r_cs_inner, r_cs_outer]),
+        jnp.stack([z_cs_middle, z_cs_middle]),
     )
-    _, _, bz_out, _ = calculate_b_field_at_point(
-        r_current_loop=r_loops,
-        z_current_loop=z_loops,
-        c_current_loop=c_loops,
-        r_test_point=r_cs_outer,
-        z_test_point=z_cs_middle,
-    )
-    return bz_in, bz_out
+    return bz_edges[0], bz_edges[1]
 
 
 def calculate_cs_peak_fields(

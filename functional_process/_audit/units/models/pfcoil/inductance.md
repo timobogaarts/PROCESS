@@ -333,3 +333,38 @@ The contract therefore declares **no `static_argnames`**, unlike its `iohcl = 1`
 the three that contract holds static are the three `noh` steps on, and `noh` reaches no
 output on this arm, so `z_pf_coil_upper` is an ordinary differentiated input whose only
 use is the PF/PF diagonal's `rl = |z_upper - z_lower| / sqrt(pi)`.
+
+## 2026-08-31 -- every pair at once
+
+`induct` evaluates the same Green's-function kernel at many points, and the port traced
+it once per point: four times for the CS/PF-group inductances (thirty CS filaments seen
+from each group's representative coil), six times for the PF/PF block (each coil against
+the other five), twice for the inner/outer CS filament radii against the plasma. Thirteen
+traces of a ~110-equation kernel, 1,960 equations in this module plus its share of
+`fields.py`'s.
+
+Three batched forms replace them, none of which changes an expression inside
+`_mutual_inductances`:
+
+- `_mutual_inductances_over_test_points`, `in_axes=(None, None, 0, 0)` -- the CS/PF-group
+  block, four test points over one thirty-filament set, and the PF/PF block.
+- `_mutual_inductances_over_loop_sets`, `in_axes=(0, None, None, None)` -- the inner and
+  outer CS radii against the one plasma filament.
+- The PF/PF block is now the **full `(n_pf_coils, n_pf_coils)` matrix in one call**,
+  self pairs included. A coil against itself is finite -- `_S_MAX` clamps `s` at
+  `0.999999` before `log(1/(1 - s))`, and its tangent is finite for the same reason -- and
+  the diagonal is overwritten by the thin-ring self-inductance immediately afterwards, so
+  computing it costs one column of arithmetic and saves five traces of the kernel.
+
+The `2 * n_pf_coils * (n_pf_coils - 1)` scattered `.at[i, k].set` writes become one
+`.at[:n, :n].set` of a block; the plasma and CS columns become one paired write each.
+
+### Reductions reassociated by vectorisation
+
+`xohpf` was `jnp.sum` over a thirty-element vector per group and is now `jnp.sum(..., axis=1)`
+over a `(4, 30)` block, which XLA is free to reduce in a different order. Expect the CS/PF
+mutual inductances to differ from the unrolled version in the last bits. Everything else
+here is elementwise and unchanged; the tier-1 contracts pass at their own tolerances.
+
+This module's share of `large_tokamak_nof` fell from 1,960 equations to 418, and it
+accounts for most of `fields.py`'s remaining drop as well.

@@ -136,14 +136,19 @@ correctly against an incorrect linear model of one constraint** — not terminat
 prematurely, and not descending a wrong objective (the `objf` row is correct to `7.7e-10`
 against the same central difference). PROCESS is unaffected, and the reason is worth stating as a
 mechanism rather than a coincidence: its answer sits `5.8e-03` below the switch, and its
-finite difference (`epsfcn = 1.0e-3`, `numerics.py:595`) is **six orders of magnitude wider
-than the feature**. A coarse finite difference is a low-pass filter on the derivative — it
+finite difference (`epsfcn = 0.01`, this file's own override of the `1.0e-3` default at
+`numerics.py:595`) is **seven orders of magnitude wider than the feature**. A coarse finite
+difference is a low-pass filter on the derivative — it
 cannot resolve a kink narrower than its own step, so it returns a chord *across* it where
 AD returns the exact one-sided slope. The exact derivative is the correct answer to a
 question an SQP is not asking: it wants a model valid over a finite step. **Here the
 approximate gradient is the more useful one precisely because it is approximate.**
-(`_audit/closed/x109_hypotheses.md` says `epsfcn = 0.01`; the value is `1.0e-3`, matching
-`_harness/finite_difference.py`'s `PROCESS_EPSFCN`. The argument is unchanged.)
+(This paragraph used to "correct" `_audit/closed/x109_hypotheses.md`'s `0.01` to `1.0e-3`.
+**The correction was itself wrong and is withdrawn** — `1.0e-3` is the *default*, which is
+what `_harness/finite_difference.py`'s `PROCESS_EPSFCN` carries; `stellarator_helias`
+overrides it to `0.01` and is the only one of the seven reference files that overrides it
+at all. Measured on all seven, `_audit/x109.md` §epsfcn. The argument is unchanged either
+way, but the wider step is the true one for the file this whole investigation ran on.)
 
 XDSM/DSM of the assembled SAND graph: `python -m functional_process.render_xdsm sand`
 writes `xdsm_sand.html`/`dsm_sand.html` (self-contained, pan/zoom). The bare form renders
@@ -2941,6 +2946,20 @@ Do **not** resolve this by reverting to OSQP. The 10x was that.
 
 ### 17.2 The one thing today's fix did not move: 11 % on two variables
 
+> **[ANSWERED — and it was already answered when this was written, 2026-08-31.]** Both
+> halves of the 11 % were diagnosed five days earlier in §11.11 and its two closed
+> records, by a *stronger* method than the one proposed below. `x56` is a flat direction
+> (pinning it at PROCESS's value costs the objective **+39 ppm**); `x109` is not, and its
+> cause is a kink in PROCESS's own model — every converged point of the port's problem
+> sits on `(Te + Ti)/20 == 0.65` to `1.9e-09`, where two of 690 Jacobian cells, both in
+> the `c24` row, disagree with a central difference of the port's own condition map.
+> Neither is a model difference; neither is a defect in the port's formulas. §17.2's own
+> premise was separately withdrawn in §25 ("agrees on `objf` to six digits" is
+> port-vs-port, not port-vs-PROCESS). **This is not the highest-value measurement left in
+> the ladder; it is a measurement already taken.** The live descendant is
+> `_audit/x109.md` §open — SAND still has no Stage B0, which is the check that found the
+> kink and the only thing in the repo that would find the next one.
+
 `worst relative deviation from PROCESS's x` is **1.08e-01 in every converged cell** of
 the whole matrix — two formulations x two QP solvers x two starts x two tolerances —
 while every cell agrees on `objf` to six digits (1.21775...). It sits on
@@ -4259,6 +4278,100 @@ Not fixed here; `indat.py` is owned elsewhere. **Next**, and it closes §22.6's 
 scanner, which ends both "only scalars are resolved from the file text" and "an indexed
 assignment is named, value not resolvable".
 
+### 24.4 The MDA is jitted, and `.tfcoil.dcond` is an antichain, 2026-08-31
+
+`sand_harness.mda_env` ran the MDA **eagerly** -- 805 separate XLA compiles and 14,417
+primitive dispatches on `large_tokamak_nof` -- and `run_cold_matrix` calls it three
+times per configuration. It now runs under `equinox.filter_jit`.
+
+**The blocker was a naming defect, not a jit one.** Any boundary that hands a schedule a
+*structure* (`cottax.boundary.run`, `collapse`, `tree_from_variables`) must name each
+value once: `check_antichain` refuses a path named both whole and by element. Measured
+2026-08-31, before the fix:
+
+| configuration | variables | violations |
+|---|---|---|
+| `large_tokamak_nof` / `large_tokamak_eval` | 1135 | 2 (`.tfcoil.dcond[0]`, `[2]`) |
+| `low_aspect_ratio_DEMO` | 1141 | 2 (`.tfcoil.dcond[2]`, `[4]`) |
+| `spherical_tokamak_eval` | 1084 | 1 (`.tfcoil.dcond[8]`) |
+| both stellarators | 831 / 828 | 0 |
+
+One node read `.tfcoil.dcond` whole -- `.costs.pf_magnet_cost`, the `PER_KG` arms of
+Account 222.2 -- against three that read it by element (`pfcoil.masses`,
+`cicc_superconducting_tf_coil.superconducting_tf_coil_areas_and_masses`,
+`stellarator.coils.coils_mass`). The whole reader was narrowed, following
+`models/physics/radiation_power.py`'s `f_nd_impurity_electron_array` precedent: the two
+`PER_KG` occupants now declare `FromExactly(tfcoil.dcond[k])` per material, sharing
+`PfMagnetCostPerKgWithCentralSolenoid._cost`, and one new occupant
+(`PfMagnetCostPerKgCsWstNb3Sn`, `PF_MAGNET_COST` arm `4`) carries the WST Nb3Sn CS that
+`low_aspect_ratio_DEMO` selects. `_pf_magnet_cost_arm` gained the PF coil system's own
+arm, and `_pf_coil_material_arm` was split out of `_pf_coil_system_arm` so the cost
+registry and the mass registry cannot disagree about which element they read.
+`.costs.ucsc` stays a whole read -- nothing reads *it* by element -- and both
+`i_*_superconductor` switches stay ordinary reads, because they still index that cost
+table. The occupant split here is forced by **where a value is stored**, not by what a
+switch selects. Net: `.tfcoil.dcond` leaves each tokamak graph, one variable fewer.
+
+**`cottax.boundary.run` was not usable verbatim, and this is a contract mismatch rather
+than a bug.** It ends in `collapse(tree, out, exclude=MintKey)` -- the caller's own
+structure back out, minted names dropped -- and this harness's callers need those names:
+`sand.residual_condition_scales` looks up `env[unknown]` where a `FixedPointCut`'s
+unknown *is* `^hat.X`, and `degenerate_fixed_points`/`array_valued_problems`
+differentiate at the env's own values including the cut copies. `_mda_runner` therefore
+jits the schedule directly, taking and returning a **`PathMap`** -- which solves the same
+problem `run` solves a second way: an `Env` is `dict[VarPath, Any]`, jax flattens a dict
+by *sorting* its keys, and a `VarPath` is deliberately unordered, so an env cannot cross
+a jit boundary; a `PathMap`'s paths are aux data and only its values are children.
+`boundary.seeds` is checked against `mda.guess_sources` rather than replacing it
+(`test_sand.py::test_boundary_seeds_agree_with_guess_sources`): the two name different
+sources on three of five stellarator starts (`unminted(port)` against the unknown
+`^hat.X`) and reach the same field, because `ground_truth` falls back to `unminted` and
+no `KNOWN_MINT_VALUES` entry is spelled `^hat.*`.
+
+**Warm and cold were two jit signatures, and the difference was `weak_type` alone.**
+PROCESS overwrites every iteration variable with a numpy scalar on its first model call,
+so `reference.data` hands back strongly-typed values where `reference.cold` -- the un-run
+`DataStructure` -- still holds the input file's Python floats. 13 such names on
+`stellarator_helias`, 26 on `large_tokamak_nof`, every one a `weak_type` difference and
+nothing else, which made `run_cold_matrix` pay the compile **twice** per configuration.
+`_strongly_typed` spends the weakness; measured value-neutral (see below).
+
+**Timing** (seconds; "cold in-process" = first call in a fresh interpreter, "warm
+in-process" = the jit cache already holds this signature):
+
+| configuration | eager, cold in-process | eager, warm in-process | jit compile | jit warm |
+|---|---|---|---|---|
+| `stellarator_helias` | 8.52 | 1.49 | 3.24 | 0.045 |
+| `large_tokamak_nof` | 22.27 | 7.68 | 21.20 | 0.050 |
+
+Schedule construction is 0.10 s / 0.29 s and was never the cost. The compile is paid
+once per configuration now instead of twice, and the third and later calls are ~50 ms
+against 1.5-7.7 s.
+
+**The jit is not bit-identical to eager, and the drift is XLA's.** Measured key by key
+against the eager envs:
+
+| configuration | differing keys | worst relative difference |
+|---|---|---|
+| `stellarator_helias` | 254 / 831 (warm), 221 / 831 (cold) | `1.1e-13` |
+| `large_tokamak_nof` | 399 / 1134 (warm), 388 / 1134 (cold) | `5.0e-12` |
+
+Isolated rather than assumed: the same schedule run **eagerly** from the
+`_strongly_typed` env reproduces the old env with **0** differing keys, so neither the
+seeding nor the weak-type normalisation contributes anything. Fusing an evaluation
+reassociates and contracts its arithmetic, and the MDA's drives are iterative, so a
+last-bit change in a residual moves the step a Newton solve takes. The one entry that
+looks alarming -- `^cond.stellarator.wp_width_r_min`, `0.0` eagerly and `-2.8e-14`
+jitted -- is that same effect on a *residual*, where a relative measure has nothing to
+divide by. Nothing approaches the `1e-8` these envs are used at, but a cold SAND solve's
+step count is a discrete function of its seed, so a matrix row moving by one iteration
+is a consequence, and it is the reason this is recorded rather than waved through.
+
+**Not done here, deliberately:** the ~100 s-per-solve implied by the matrix against
+§13.4's ~20 s stellarator solve is untouched and unexplained; `st_regression` still
+fails to build an MDA schedule at all (`coupled block [...] declares no problem` on the
+TF inboard radii ring), which is prior to and unaffected by any of this.
+
 ## 25. Corrections measured 2026-08-31
 
 - **§21.3's "PROCESS+VMCON's `1.2178`" was the port's number, not PROCESS's.** Measured
@@ -4276,7 +4389,15 @@ assignment is named, value not resolvable".
   twice in one session. The two differ in the third digit, and the difference is the
   explained +17.604 MW (`mda_harness.EXPLAINED_DISAGREEMENTS`), not a defect.
 - **`epsfcn` on `stellarator_helias` is `0.01`**, not the `1.0e-3` the x109 section
-  records. The argument there is unaffected; the value is wrong for this file.
+  records. The argument there is unaffected; the value is wrong for this file. **Now
+  measured on all seven reference configurations** (`reference_run(path).epsfcn`, or
+  equivalently `SingleRun(path).data.numerics.epsfcn` — the value is set by `init_process`
+  and needs no solve, so this cost seconds rather than seven 100 s runs):
+  `stellarator_helias` **0.01**, every other file **0.001**. `stellarator_helias` is the
+  only override in the set (`IN.DAT:230`, with the file's own comment saying the larger
+  step suits its starting point); `st_regression.IN.DAT:46` has an `epsfcn = 0.001` line
+  but it is commented out (`*`), so it lands on the default anyway. The x109 paragraph in
+  the preamble is corrected. `_audit/x109.md` §epsfcn.
 - **`mda_harness`'s disagreement count is 472/34**, not the audit table's 499. All 34 are
   acyclic, none in a driven block, and eighteen are the +17.604 MW chain.
 
@@ -4735,3 +4856,582 @@ Verified: `test_machine.py`, `test_switch_coverage.py`, `test_importer.py`,
 `test_boundary.py` — **557 passed, 123 skipped**, and `test_process_free_import.py` (7)
 separately, since `indat.py` gained an import. `ruff format` clean on all three changed
 files. Not the full suite.
+
+### 24.6 The refusal table does not bound the class of ignored switches — 2026-08-31
+
+Full record: **`_audit/switch_consultation_audit.md`**. Analysis only; nothing under
+`functional_process/*.py` was changed by that pass.
+
+**The question.** `indat.UNPORTED` holds 219 rows over 50 switch axes, and a file
+selecting a refused arm is refused. But a refusal only fires where a `_slot_occupant`
+call for that field is *reached*, so a node registered on a branch that never asks the
+switch computes one arm unconditionally and assembly sees nothing to refuse. The proven
+seed was `helias_5b` setting `i_p_coolant_pumping = 0`, assembling, and getting
+`FRACTION_OF_HEAT` pump power (15.58 MW against PROCESS's 176.0) while sitting in
+`reference_cold_matrix.txt` as converged.
+
+**Measured, four probes, all seven configurations** (trace of every `_slot_occupant`
+call and every `IN.DAT` key read; a 672-assembly sweep forcing each of the 96 sweepable
+`(field, value)` refusals into each file; `machine_survey.pinned_switches` against each
+file's own values; and, for each unenforced row, a grep for PROCESS readers restricted to
+the call path that configuration actually takes).
+
+**Result: the class is small — two instances, one live.** Eighteen of the 22 sweepable
+axes are unenforced on exactly the two stellarators or exactly the five tokamaks, and
+**fifteen of those eighteen are correct**: no module on that configuration's own PROCESS
+call path reads the switch, so PROCESS ignores it too (`Stellarator.run` never reaches
+`physics.py`, `current_drive.py`, `fw.py`, `hcpb.py` or `divertor.py`). The seed instance
+itself closed while the audit ran — `_blanket_shield_power_arm` became a three-switch
+joint dispatch and `helias_5b` now assembles
+`DetailedPowerflowBlanketShieldPowerUserInputPumping`, measured.
+
+1. **LIVE — `PfMagnetCost` is pinned to a central solenoid two tracked files do not
+   have.** `indat.py:5244-5255` builds it with `iohcl=CentralSolenoidConfiguration.
+   PRESENT` and `n_cs_pf_coils=N_CS_PF_COILS` (7, the reference topology).
+   `spherical_tokamak_eval` and `st_regression` both set `iohcl = 0`, and the same
+   assembled machine's PF coil *system* reads it correctly (`indat.py:3935` selects
+   `SPHERICAL_TOKAMAK_TOPOLOGY`, 8 coils, no CS). One machine, two answers to one switch:
+   `costs.py:1858-1866` drops a coil from the loop and `:1947`/`:2036` add two CS cost
+   terms that should not exist. Both files are in the cold matrix as converged. The
+   comment above the call still justifies the pin by a `pf_coil_system_arm` refusal that
+   commit `253c426a` retired — **a refusal that stopped firing and left a hardcoded
+   answer standing behind it**, which is the seed defect arrived at from the opposite
+   direction. Owed to whoever owns `indat.py`: thread `iohcl` and the topology's
+   `n_cs_pf_coils` from the locals `_pf_coil_system_arm` already computes.
+2. **LATENT — a resistive stellarator gets superconducting TF nuclear heating.**
+   `i_tf_sup == 0` is in no `UNPORTED` row and the only stellarator slot that dispatches
+   it (`TF_POWER`) has an arm 0, so `stellarator_helias` with `i_tf_sup = 0` assembles.
+   Diffing the two trees gives three occupant changes, all in `.power`; unchanged are
+   `DetailedPowerflowBlanketShieldPower` (whose own docstring says it *"always computes
+   `p_tf_nuclear_heat_mw` as if `i_tf_sup == SUPERCONDUCTING`"*),
+   `tf_nuclear_heating.py`, and the whole `IterNb3sn*` coil namespace. No tracked file
+   sets it. Weaker third case, recorded not scheduled: `BUILDING_SIZING[1]` pins
+   `i_hcd_primary=ITER_NEUTRAL_BEAM` (`indat.py:2046`) and no tracked file sets
+   `i_bldgs_size = 1`.
+
+**The structural lesson, and why the table cannot be the instrument.** Neither instance
+is a missing `UNPORTED` row, and neither was found by the sweep. A partially-enforced
+axis (`i_tf_sup`: 2 refused, 0 silently accepted) and a fully-enforced one are
+*indistinguishable* in any table keyed on `UNPORTED`'s rows. Both were found in seconds
+by introspecting the assembled graph's static kwargs and diffing them against the file.
+
+**Proposed guard, not added.** `machine_survey.survey` already computes the answer and
+discards it: its `DISAGREES, tree holds [...]` branch sits behind an `elif` that only
+runs for switches *not* in `factory_fields()`, and `iohcl` is in both — so §2 was
+invisible to the survey by one `elif`. The check to add, beside
+`test_no_slot_contradicts_a_factory_switch` (which asks this of `REFERENCE_INPUT_FILE`
+only): for each of `provider.CONFIGURATIONS`, assert every pinned switch the file names
+holds that file's value. Seven assemblies, no PROCESS run, and it fails on exactly two
+rows today — so it lands **with** §1's fix, not before it. The deeper fix for §2's class
+is to make a node's dropped-arm docstring sentence a declared attribute
+(`assumes = {"i_tf_sup": SUPERCONDUCTING}`) checked at assembly; today those sentences
+are the port's only record that an assumption exists and nothing reads them.
+
+### 24.7 Which refusals a silent file hits — 8 of 88 axes, and 3 of those cost anything — 2026-08-31
+
+Full record: **`_audit/unported_arm_census.md`**. Analysis only; nothing under
+`functional_process/*.py`, `process/*.py` or `tests/` was changed.
+
+**The question, and why it is not §24.6's.** §24.6 asked which switches a file names that
+the tree quietly ignores. This asks the complement: which refusals a file that names
+*nothing* still trips. Every refusal, slot and pin in this port was shaped by the same eight
+regression files, and sampling the repo's other inputs cannot fix that — **[measured]**, the
+five `examples/data`, three `tests/integration/data` and one `tests/unit/data` input files
+contribute exactly four `switch = value` pairs the eight regression files do not already
+carry (`isweep = 6`, `ifispact = 0`, `ixc = 42`, `ixc = 61`): **zero new physics arms**. The
+premise in the brief is confirmed. What *does* predict an unseen file is PROCESS's own
+defaults, because a file selects the default for every switch it is silent about.
+
+**Measured, two probes.** Direct axes: the default read out of
+`process/data_structure/*_variables.py` and compared against the axis's refused values.
+Derived axes: the `*_arm` predicates **called** with PROCESS's defaults and the returned arm
+looked up in `UNPORTED` — necessary because eleven of them are joint dispatches over two or
+three switches. §2a's sentinels were resolved, not read: `i_tf_bucking = -1` taken literally
+puts `tf_stress_arm` on `(1, -1, 0)`, which is in no registry, instead of the ported
+`(1, 1, 0)`.
+
+**Result.** 88 dispatched axes; 50 carry `UNPORTED` rows (219 of them); 38 are fully ported.
+**Tier 1 — default-and-unported — is 8 axes**, and three of the eight are not port work:
+
+| axis | default | why it is tier 1 | cost |
+|---|---|---|---|
+| `i_cost_model` | `1` `KOVARI_2014` | PROCESS's own default cost model is unported | **1227 LOC**, whole `Model` package |
+| `i_hcd_primary` | `5` `ITER_NEUTRAL_BEAM` | needs `NeutralBeam.iternb` + the beam wall-plug block | **~160 LOC** of formula |
+| `i_bootstrap_current` | `3` `WILSON` | ported arm is Sauter (`4`) | **~130 LOC**, one staticmethod |
+| `pf_coil_system_arm` | `-2` | the dataclass PF topology (3 groups) is a third `PFCoilTopology` | 13 node instances — but no real tokamak input omits its PF layout |
+| `i_p_coolant_pumping` | `2` `MECHANICAL` | **[IN FLIGHT]** | §5's CoolProp policy, not a formula |
+| `i_density_limit` | `8` `ASDEX_NEW` | formula already ported and Tier-1-tested | a node class + one registry line |
+| `hcd_primary_powers_arm` | `-1` | the same fact as `i_hcd_primary = 5` at the joint slot | none, independently |
+| `blktmodel_ipowerflow_..._pumping` | `4` | `stellarator.py:924-928` **raises** here | none — PROCESS refuses too |
+
+**So the genuinely new model work a silent unseen file forces is three arms**: Wilson
+bootstrap, the 2015 cost model, and the ITER neutral-beam block. That is a good result and
+the census reports it as one rather than inflating it. Tier 2 (42 axes, 211 rows) is ranked
+there by three named sources — a tracked file already setting the value, a `documentation/`
+recommendation, and unit-test coverage — with the top row being `i_tf_sc_mat = 9`, which
+**both** tracked spherical tokamaks set.
+
+**Two findings worth carrying out of it.**
+
+1. **A doc slip, not fixed (read-only pass).** `_blanket_shield_power_arm`'s docstring says
+   "Arm 2 is PROCESS's own default (`blktmodel = 0`, `ipowerflow = 1`,
+   `i_p_coolant_pumping = 1`)". The default is `2` (`fwbs_variables.py:249`); `1` is the
+   reference *stellarator run's* value. The arithmetic and the arm-4 `UNPORTED` row are both
+   correct — only that sentence is wrong. Owed to whoever owns `indat.py`.
+2. **The docs' recommended ST configuration is not the one this port was shaped by.**
+   `plasma_beta.md:277-279` and `plasma_inductance.md:57-59` pair `i_beta_norm_max = 3` with
+   `i_ind_plasma_internal_norm = 2` and call the pair spherical-tokamak-only and
+   self-consistent. Both are in `UNPORTED`; both tracked STs set `0`/`0`. A user following
+   the documentation to write a new ST input is refused at two axes this port considers
+   tier 2.
+
+**The census's own blind spot, stated there and repeated here**: it is keyed on `UNPORTED`'s
+rows, so it inherits §24.6's limit exactly — it ranks the refusals that exist and cannot find
+the ones that are missing. It also evaluates one configuration (`itart = 0`, `i_tf_sup = 1`);
+a spherical or resistive machine resolves four sentinels differently and may have a different
+tier 1. Re-running the second probe with a different defaults dict is minutes of work and was
+not done.
+
+### 24.8 The seed's thirteen writes are nodes, and the pins carry no disagreement — 2026-08-31
+
+**Done, measured.** Full record: `_audit/units/models/initialisation.md`, registry row
+59. New files: `functional_process/models/initialisation.py` (8 nodes),
+`tests/functional_process/models/test_initialisation.py` (44 cases). Six resolutions
+added to `indat.py` beside `resolve_i_tf_bucking`; one slot added to each device class.
+
+**The headline is a number, not a claim.** `init_audit.md` §5b named 13 `off` rows across
+the seven `reference_provider_*.txt` pins — the paths where the provider's independent
+answer disagrees with PROCESS's seed, and therefore the paths that break a
+`--provider-strict` solve. **All 13 are gone, and no new disagreement appeared.**
+
+| configuration | `off` before | after | boundary paths | independent | `from_process` |
+|---|---|---|---|---|---|
+| `stellarator_helias` | 8 | **0** | 303 → 295 | 271 → 263 | 32 → **32** |
+| `helias_5b` | 8 | **0** | 304 → 296 | 277 → 269 | 27 → **27** |
+| `large_tokamak_nof` | 5 | **0** | 397 → 391 | 345 → 339 | 52 → **52** |
+| `large_tokamak_eval` | 5 | **0** | 395 → 389 | 360 → 354 | 35 → **35** |
+| `low_aspect_ratio_DEMO` | 5 | **0** | 397 → 391 | 346 → 340 | 51 → **51** |
+| `spherical_tokamak_eval` | 7 | **0** | 384 → 375 | 353 → 344 | 31 → **31** |
+| `st_regression` | 7 | **0** | 384 → 375 | 343 → 334 | 41 → **41** |
+
+**`from_process` is unchanged on all seven, and that column is the check.** The
+independent count falls by exactly the number of paths that left the boundary, which is
+what says §24.1's mechanism actually fired: a derivation ported as a node *removes* a
+boundary input rather than moving it to the seed. Had a path been reclassified rather
+than produced, `from_process` would have risen. The ratio over `supplied` is flat by
+construction — this work does not raise it, it shrinks the denominator, and shrinking the
+denominator is the stronger result because the removed paths are precisely the ones the
+provider was getting *wrong*.
+
+**The shape, and the one narrowing of §24.2 item 2.** Seven of the eight nodes have **no
+reads**: they carry a literature constant selected by a switch, and a switch is resolved
+at assembly in this port. The raw side of each raw → resolved edge is the file's text,
+threaded as a static field rather than as a `.raw.*` graph read. Two reasons, both
+load-bearing:
+
+1. **A `.raw.*` root would be seeded at `0.0` in silence.** `mdf.seed` grounds a `VarPath`
+   it cannot resolve on the `DataStructure` at `0.0` (`mdf.py:411-414`) rather than
+   raising, and no `DataStructure` has a `raw` field. Every sentinel would then resolve
+   against zero and no value test could see it. Making `raw` a real root means giving the
+   seeding path a second namespace — `mdf.py`, `sand_harness.py` and `provider.py` all
+   read a `DataStructure` — which is a change to files this wave did not own.
+2. **Static is sound exactly while the field cannot move during a solve**, and that is
+   checked rather than assumed: `indat._refuse_seed_owned_unknowns` refuses a machine
+   whose `ixc` names any of the fourteen fields these nodes own. Four of the fourteen
+   have an `ITERATION_VARIABLES` entry, so the guard is not hypothetical.
+
+**Two rules applied, both from §14.2, and they decide the counts.** A slot is empty where
+PROCESS writes nothing (`esbldgm3` on a pulsed plant, the double-null upper build on a
+single-null machine) and where nothing in this port reads the field (the two Young's
+moduli, the PF resistivity and the beam fraction on a stellarator, whose graph has no TF
+stress chain and no beam). `init.py:610`'s third write, `dz_fw_plasma_gap =
+dz_xpoint_divertor`, is **deliberately not ported**: `.build.dz_fw_plasma_gap` is not a
+boundary path on either double-null configuration, so it is a write with no next use.
+
+**Node counts moved, once, and the split is asserted rather than totalled**
+(`test_machine.SEED_NODE_COUNTS`): +5 on the three single-null pulsed tokamaks, +7 on the
+two spherical tokamaks, +4 on the two stellarators. `test_boundary`'s pins moved with
+them — the stellarator's input half 297 → 289, the tokamak's 384 → 378, both regenerated.
+
+**The check that was removed, and where it went.** A path a node produces is no longer a
+boundary path, so `provider.disagreements` stops comparing it with the seed. The pins
+going to zero `off` rows is the removal of a check as much as it is the closing of a gap.
+`test_initialisation.py` is the replacement: the resolvers arm by arm against `init.py`'s
+own branches, **and** every occupied slot against a real `init_process`, field by field,
+on all seven configurations, with exact equality.
+
+**Owed, because the file is owned elsewhere this session:**
+
+- **`test_provider.py::test_the_stellarators_and_the_tokamaks_disagree_with_the_seed_
+  differently` fails and should be inverted.** Its four assertions name `off` rows that no
+  longer exist; the property worth pinning now is that **both pins carry no `off` row at
+  all**, with the per-configuration attribution living in
+  `_audit/units/models/initialisation.md`. Nothing else in `test_provider.py` moved — the
+  other 30 cases pass against the regenerated pins.
+- **`reference_cold_matrix.txt` was not regenerated** (~1900 s, and it is another agent's
+  file). It was already stale for `helias_5b` and both spherical tokamaks before this
+  wave; it is now also stale in the sense that `install(..., disagreeing=True)` has
+  nothing left to move on any configuration, which is the interesting new measurement and
+  the reason to re-run it.
+
+**Not touched, and stated rather than silently skipped.** `init.py`'s 51 raises and 16
+warnings; the four presence flags (§24.2 item 1 — two are already answered by
+`presence_flags_from_indat`, two have no reader); `boundl[3] = teped * 1.001`, which
+belongs to the problem statement (§23.4); and `initialise_imprad`'s 4 `derived` rows per
+pin, still homeless. `init_audit.md` §5c's **latent** set is partly closed as a
+side-effect — `.tfcoil.eyoung_cond_trans` and `.build.dz_vv_upper` are now owned — and the
+rest (`.buildings.triv`, `.heat_transport.p_tritium_plant_electric_mw`,
+`.build.dr_blkt_inboard`, `.tfcoil.temp_cp_average`, `.pf_coil.i_pf_location[0:3]`) are
+untouched.
+
+### 22.8 The solve environment is native — built from the file, with no `DataStructure` anywhere — 2026-08-31
+
+**Done, measured.** §22.7 consumed the provider by *installing* its answers into a deep
+copy of `reference.cold`, so even the 89-92 % answered independently reached `mdf.seed`
+and `sand_harness.mda_env` inside a PROCESS object. That object is gone from the path.
+
+**`functional_process/native.py`, and the interface is one attribute lookup deep.**
+`ground_truth` reaches a `DataStructure` only through `get_at`, which walks `GetAttrKey`s
+— i.e. `getattr` — so the whole of the interface a solve needs is `.<area>.<field>`.
+`native_state(input_file) -> NativeState` is a duck-typed stand-in that answers exactly
+that, filled from two sources and no third:
+
+1. `importer.read_indat`'s values, scalars **and arrays** — which closes §22.6's stated
+   gap (a) by construction: `.pf_coil.zref` and its siblings came from the seed even on
+   the `--provider` path because the provider could only resolve a scalar from file text.
+2. `DATACLASS_DEFAULTS` — **564 vendored rows**, `(area, field) -> DataStructure()`'s own
+   default, under §23.2's rule (vendor for runtime, assert equality in tests;
+   `test_provider.py` re-derives every row off a live `DataStructure`).
+
+`native_reference(input_file)` is the same for the problem: `indat.problem_from_indat`'s
+`ixc`/`icc`/`i_figure_merit`, and bounds from the vendored `ITERATION_VARIABLES` with the
+file's own `boundl`/`boundu` over them. `run_cold_matrix.py` gains `--native` beside
+`--provider`/`--provider-strict`/`--seed`; **the seed path is untouched** and was re-run
+to prove it.
+
+**The table's demand rule is two demands, not one**, and the second is not padding: every
+place the seven schedules *read*, and every place their input files *state*.
+`large_tokamak_nof` sets all fourteen elements of
+`.impurity_radiation.f_nd_impurity_electrons`, **nothing in the graph reads that field**,
+and `init.py`'s alias loop copies it into `.f_nd_impurity_electron_array`, which the graph
+does read. Without the stated half the file's own impurity fractions would not be in the
+state at all and "the alias node is missing" would have looked like "the values are
+missing".
+
+**A native pass costs 390 s against ~1900 s**, because it runs no PROCESS at all — not
+even for the `PRO` column, which is `-` on a native row. Independence is *checked* the way
+§23 checks it: `test_provider.py` builds a `native_reference` in a subprocess with
+`process` blocked at `sys.meta_path`.
+
+#### What it measures
+
+**[measured] The native env builds on all seven, and answers every place the run asks
+for.** 564 places on every configuration (**102-157** of them from that file's own
+`IN.DAT` text, the rest from the vendored defaults, **0 from PROCESS**), and
+`NativeState.missing` — the instrument that
+records a place asked for and not answered, which `mdf.seed` would otherwise turn into a
+silent `0.0` — is **empty on all seven**. So nothing below is a hole in the table; every
+remaining gap is a *derivation*, which is the distinction this module exists to keep.
+
+**[measured] The native env's values disagree with PROCESS's seed on 5-6 boundary paths
+per configuration, and they are the same paths on every machine.** Measured against
+`provider.answers_for`'s own boundary on the tree of 2026-08-31 evening, *after* the
+`init.py`/`st_init` node ports of the same day landed:
+
+| configuration | boundary places | native and wrong |
+|---|---|---|
+| `stellarator_helias` | 278 | 6 |
+| `helias_5b` | 279 | 6 |
+| `large_tokamak_nof` | 367 | 6 |
+| `large_tokamak_eval` | 365 | 6 |
+| `low_aspect_ratio_DEMO` | 367 | 6 |
+| `spherical_tokamak_eval` | 355 | 5 |
+| `st_regression` | 355 | 5 |
+
+The six are `.impurity_radiation.impurity_arr_zav`, `.pden_impurity_lz_nd_temp_array`,
+`.temp_impurity_keV_array`, `.m_impurity_amu_array`, `.f_nd_impurity_electron_array` and
+`.divertor.n_divertors` — the two spherical tokamaks lacking the last. **Earlier the same
+day the count was 12-24**, and the difference is not a change here: it is §24.1's
+mechanism happening live, a derivation ported as a node ceasing to be a boundary input at
+all. `.tfcoil.eff_tf_cryo`, `.build.dr_cs`, `.times.t_plant_pulse_burn` and the rest of
+§22.6's `off` list left the boundary during this session, and `test_provider.py`'s
+`test_no_configuration_disagrees_with_the_seed_any_more` now pins **zero `off` rows on
+all seven** where it used to pin 5-8.
+
+#### The per-configuration verdict
+
+**Both stellarators build and solve natively; all five tokamaks fail.** Every
+`--provider` row quoted below was re-measured on the *same* tree as the native row beside
+it, because `reference_cold_matrix.txt` is stale for `helias_5b` and both spherical
+tokamaks — the whole table was not regenerated (~1900 s, and another agent was live).
+
+| configuration | native env builds | native solve | same-tree `--provider` |
+|---|---|---|---|
+| `stellarator_helias` | yes | MDF **cap(800)** `1.2246498`; SAND **112 converged** `1.2245797` | MDF 67 conv / SAND 83 conv, `1.2177573` |
+| `helias_5b` | yes | MDF **4 converged** `0.7727954`; SAND **7 converged** `0.7727954` | MDF 4 conv / SAND 7 conv, `0.7642155` |
+| `large_tokamak_nof` | yes | MDF x below a lower bound; SAND non-finite 9/34, first `^cond.constraints.c2` | MDF 7 conv `1.6` / SAND 10 conv `1.6` (table) |
+| `large_tokamak_eval` | yes | MDF non-finite; SAND non-finite 10/33, first `^cond.numerics.objf` | no-step / no-step (table) |
+| `low_aspect_ratio_DEMO` | yes | MDF x below a lower bound; SAND non-finite 11/33 | MDF 10 stopped / SAND cap(500) (table) |
+| `spherical_tokamak_eval` | yes | MDF non-finite; SAND non-finite 8/22 | MDF 3 conv / SAND 3 conv, `0.5946446` |
+| `st_regression` | yes | neither formulation *builds* — see below | FAILED / FAILED (table) |
+
+`helias_5b` is the closest comparison there is: **same SQP counts, same status, both
+formulations**, objective `0.77280` against `0.76422` — +1.1 %, which is `st_init`'s.
+`stellarator_helias` is the harder one and splits: SAND converges in 112 steps against 83
+to an objective 0.56 % high, while MDF runs to its 800 cap at a `max|eq|` of `3.8e-07`
+rather than converging. `reference_cold_matrix.txt`'s `stellarator_helias` row reproduced
+cell for cell on this tree (MDF 67, SAND 83, `1.21775735`), so that row is *not* stale and
+the native/provider gap there is real; `spherical_tokamak_eval`'s has moved
+(`0.5946446` now against the table's `0.5935323`), which is the cost fix.
+
+#### Why the tokamaks fail, attributed rather than suspected
+
+**[measured] §22.7's leading suspect was wrong, and the real one is `initialise_imprad`.**
+That section named `.tfcoil.eff_tf_cryo`'s `-1.0` sentinel as the likely cause of the
+non-finite `^cond.numerics.objf`, flagged it as a hypothesis, and said the attribution run
+needed a quiet tree. Run here on `large_tokamak_eval`, patching one path at a time back to
+the seed's value and re-solving:
+
+- baseline: **10 of 33** conditions non-finite at the seeded start, first
+  `^cond.numerics.objf`;
+- `+ .impurity_radiation.impurity_arr_zav` alone: **1 of 33**, first `^cond.constraints.c36`;
+- `+ .tfcoil.eff_tf_cryo` alone: **10 of 33**, unchanged. Likewise `eyoung_ins`,
+  `eyoung_cond_axial`, `rho_pf_coil`, `f_nd_beam_electron`, `n_divertors` and all four
+  other impurity tables individually;
+- `+ .tfcoil.temp_tf_superconductor_margin_min`: **9 of 33**;
+- **`+` all twelve: `no-step` for both formulations** — which is exactly what
+  `reference_cold_matrix.txt`'s `large_tokamak_eval` row records. The twelve are
+  sufficient to reproduce the reference row.
+
+**The two MDF failures that are not non-finite are the same cause seen from the bound
+side.** `large_tokamak_nof` and `low_aspect_ratio_DEMO` fail with *"x is initially in an
+infeasible region because at least one x is lower than a lower bound"*, and the x is
+`.impurity_radiation.f_nd_impurity_electron_array[12]` at `0.0` against a lower bound of
+`1e-8` — it is an active `ixc` entry whose value the file states as
+`f_nd_impurity_electrons(13) = 0.00038` and which only `init.py`'s alias loop moves into
+the array the design vector addresses.
+
+#### The work list, keyed to `_audit/init_audit.md`
+
+1. **`initialise_imprad` (`main.py:430`) — four arrays, and it is the whole tokamak
+   story.** `impurity_arr_zav`, `pden_impurity_lz_nd_temp_array`,
+   `temp_impurity_keV_array` (each `(14, 200)`) and `m_impurity_amu_array`. `init_audit.md`
+   §5 named it "a fifth initialisation source that reads data files from disk and that
+   nothing in §22 had named"; it is now the highest-value item on the list by a wide
+   margin. It reads `process/data/impuritydata/`, so porting it is a data-file question
+   as much as a node question.
+2. **`init.py`'s `f_nd_impurity_electron_array[i]` alias loop** (`init_audit.md`'s 11-13
+   derived rows). A fourteen-element copy from a field the native state **already holds**,
+   so this one is a rename node and nothing else — and it is what both `large_tokamak_nof`
+   and `low_aspect_ratio_DEMO` fail on.
+3. **`init.py:606-617`, `.divertor.n_divertors`** (`init_audit.md` §2 row, 5/7). Already
+   re-derived independently at `indat.py:2400` (`_n_divertors`) — one of `init_audit.md`
+   §6's "six rules the port has absorbed piecemeal" — but registered nowhere as a boundary
+   answer, so the value the graph reads is still the `2` default.
+4. **`init.py`'s `boundl[3] = teped * 1.001`.** The single bound disagreement, on
+   `large_tokamak_nof` alone (native `5.0`, PROCESS `5.5055`), reproducing
+   `init_audit.md`'s measurement that it fires there. §24.2 item 3 already places it in
+   the problem statement rather than the graph; `native_bounds` states that it does not
+   apply it.
+5. **An eighth initialisation source, not in `init_audit.md` §5's list.**
+   `SingleRun.init` sorts `ixc` at `process/main.py:434-438`, *after* `init_process`
+   returns, so it is outside every stage that audit wrapped. Three of the seven files
+   state `ixc` out of order (`stellarator_helias` ends `109, 59, 56`; also
+   `large_tokamak_nof`, `st_regression`), and the order is the design vector's, i.e.
+   VMCON's column order. §23.7's "byte-identical on all eight" could not catch it because
+   `iteration_variables_from_indat` returns a `frozenset`. `native_reference` sorts;
+   pinned in `test_provider.py`.
+
+#### What was not done
+
+- **`st_regression` does not build in either formulation**, natively or otherwise, on
+  this tree: `coupled block ['.tokamak.build.dr_tf_inboard_winding_pack',
+  '.tokamak.build.tf_inboard_radii', '.tokamak.cicc_superconducting_tf_coil.
+  dr_tf_plasma_case'] declares no problem`. That is a cut, not a boundary value, and it is
+  a different failure from the `FAILED` its `reference_cold_matrix.txt` row records.
+- **A native SAND row is not comparable to a `--provider` SAND row at the last digit.**
+  `sand_harness.assemble` reads a *warm* env to find the degenerate and array-valued fixed
+  points and `sand.residual_condition_scales` reads it for its `1/|u|` factors; with no
+  PROCESS run there is no warm env, so `NativeReference` supplies the cold one for both
+  roles. The MDF column has no such caveat. Stated in `NativeReference`'s docstring.
+- **`reference_cold_matrix.txt` still holds the `--provider` rows only.** Same reason
+  §22.7 kept `--provider-strict` out of it: it is the artefact other records quote, and a
+  table mixing two modes would be unreadable. Its header now says so and names the three
+  stale rows.
+- **The seed is still not deleted for any configuration.** §22.3's exit condition is
+  "agrees everywhere", and the five or six impurity/divertor paths above are exactly the
+  disagreement. Two of seven configurations *solve* without it, which is the first time
+  that has been true of anything.
+
+### 24.9 The tokamak's compile cost was 58 traces of one field kernel — 2026-08-31
+
+§24.4 left `large_tokamak_nof` at 21 s to compile the jitted MDA and `stellarator_helias`
+at 3.2 s, and read the gap as node count. It is not. Measured with JAX's staged API
+(`make_jaxpr`, then `jit(fn).lower(pm).compile()`; every timing below is a **cold compile
+in a warm process** — one configuration per interpreter, jax already imported):
+
+| configuration | nodes | jaxpr eqns | eqns/node | TRACE | LOWER | XLA compile |
+|---|---|---|---|---|---|---|
+| `large_tokamak_nof`, before | 243 | **39,127** | 161 | 3.65 | 1.42 | **15.43** |
+| `large_tokamak_nof`, after | 243 | **13,283** | 55 | 2.22 | 1.01 | **7.78** |
+| `stellarator_helias` (unchanged) | 154 | 3,360 | 22 | 1.03 | 0.48 | 2.98 |
+
+1.6x the nodes but 11.6x the equations. **The cause was Python `for` loops over static
+shapes unrolling into the jaxpr**, concentrated in the packages a stellarator never
+reaches — which is exactly why the stellarator's program was small and why the ratio
+looked like a node-count effect.
+
+Attributing every equation to its innermost `functional_process/models` source frame
+found the whole gap in four files:
+
+| file | before | after |
+|---|---|---|
+| `models/pfcoil/fields.py` | 19,366 | 2,517 |
+| `models/power/pf_coil_power.py` | 6,828 | 598 |
+| `models/pfcoil/currents.py` | 3,369 | 591 |
+| `models/pfcoil/inductance.py` | 1,960 | 418 |
+
+`fields.calculate_b_field_at_point` alone was traced **171 times** on
+`large_tokamak_nof`: it takes a *scalar* test point against an array of loops, and
+`_fixb`, `_mtrx`, `_peak_fields_from_loops` and `induct` all wanted many test points.
+Two `vmap`s (over test points, and over independent filament sets) take that to twelve.
+`pfpwr`'s four-deep `group`/`coil`/`circuit`/`point` nest became two matrix products and
+four `jnp.sum`s. Each unit's record carries the detail, and each carries a
+**"Reductions reassociated by vectorisation"** section: several of these sums changed
+association, worst case 37 ulp (`poloidalpower`), and a later reader diffing against
+PROCESS should expect last-bit differences rather than bit-identity. Every tier-1
+contract passes unchanged at its own declared tolerance — 2,110 cases across
+`models/pfcoil`, `models/tfcoil`, `models/power` and `test_machine.py`.
+
+**What was deliberately left alone.** `models/tfcoil/stress.py` has fifteen Python loops
+and 1,122 equations, and every one of those loops runs over `nlayers`, `n_members` or
+`n_tf_graded_layers` — three to five trips. Its one genuinely large axis,
+`n_radial_array = 1500`, was already vectorised (`jnp.arange`/`jnp.repeat`, with only a
+`nlayers`-long `concatenate` left in Python). Unrolling a five-trip loop is not the
+defect; nesting eight-trip loops four deep is. Same argument for `models/pfcoil/stresses.py`
+(548 equations, `_N_AGM` Fourier terms) and `models/pfcoil/geometry.py`.
+
+**Where the remaining 13,283 sits**: 2,517 `fields.py` (twelve batched kernel traces —
+further collapse would mean padding across `induct`'s and `efc`'s call sites, which do
+not share a shape), 2,110 with no `models/` frame at all (cottax's schedule and drivers),
+2,037 `bootstrap_current.py`, 1,122 `tfcoil/stress.py`, 1,104 `costs.py`. The next
+tokamak-only concentration is `bootstrap_current.py`, which is out of this pass's scope.
+
+All seven configurations still assemble at `test_machine.py::NODE_COUNTS`.
+`st_regression` still cannot build an MDA *schedule* — the undriven
+`dr_tf_inboard_winding_pack` / `tf_inboard_radii` / `dr_tf_plasma_case` block of §23.6 —
+so its jaxpr is not measurable here; that blocker predates this pass and is untouched by
+it.
+
+### 22.9 The native env is closed — every configuration behaves as its provider row — 2026-08-31
+
+**Done, measured.** §22.8 left six boundary paths where a `NativeState` disagreed with
+PROCESS's cold seed, and named four items to close them. All four are closed, plus a
+fifth the measurement itself turned up. The disagreement is now zero on all seven
+configurations and every one of them **solves natively exactly as it solves on the
+`--provider` path**.
+
+`native.py` gains a **third source**: `DERIVATIONS`, applied over the parsed file because
+that is where `init_process` applies them. A place a derivation writes reports
+`source == "derived"`, so §22.6's `source` column has three rows rather than two.
+
+#### The six, closed
+
+| path | rule | where |
+|---|---|---|
+| `.impurity_radiation.impurity_arr_zav` | vendored `(14, 200)` table | `_initialise_imprad` |
+| `.pden_impurity_lz_nd_temp_array` | vendored `(14, 200)` table | `_initialise_imprad` |
+| `.temp_impurity_keV_array` | vendored, one row broadcast to 14 | `_initialise_imprad` |
+| `.m_impurity_amu_array` | 14 literals from `constants.py` | `_initialise_imprad` |
+| `.f_nd_impurity_electron_array[i]` | `= f_nd_impurity_electrons[i]` | `_alias_impurity_fractions` |
+| `.divertor.n_divertors` | `2` if double-null else `1` | `_single_or_double_null` |
+
+**The four `initialise_imprad` tables are constants, not nodes, and the argument is one
+line**: they depend on nothing — not on the input file, not on a switch, not on an
+iteration variable — and a node with no inputs whose value never changes *is* a constant.
+The three `(14, 200)` ones are vendored as `functional_process/data/impurity_tables.npz`
+(29 kB) rather than as a re-port of `read_impurity_file`, so the port needs neither the
+`process` package's data directory nor its `C `-comment/regex parser at runtime;
+`m_impurity_amu_array` is fourteen literals because fourteen numbers read better as
+fourteen numbers. §23.2's rule is honoured both ways:
+`test_the_vendored_impurity_tables_are_initialise_imprad_s_own` and
+`test_the_vendored_impurity_masses_are_process_s_constants` assert every element against
+a live `initialise_imprad`, element for element and with no tolerance.
+
+`init.py:606-617` is ported **whole**, not just its `n_divertors` line: the double-null
+branch also forces `dz_fw_plasma_gap`, `dz_shld_upper` (over an input the file states) and
+`dz_vv_upper` to their lower counterparts. Splitting one `if` across two sessions is how
+a branch gets half-ported. `i_single_null = 0` is the *double*-null value, so the two
+spherical tokamaks are the double-null machines among the seven and the three large
+tokamaks are not.
+
+`boundl[3] = teped * 1.001` is a **bound**, so it is in `native_bounds`
+(`_pedestal_temperature_bound`) and not in `DERIVATIONS` — §24.2 item 3's placement,
+made. All four of PROCESS's guards are transcribed. It fires on `large_tokamak_nof`
+alone (`5.0` -> `5.5055`); `spherical_tokamak_eval` has `4` in `ixc` and
+`i_plasma_pedestal = 1` and is stopped only by the `boundl[3] < teped * 1.001`
+comparison itself. **After it, `native_bounds` agrees with PROCESS's `boundl`/`boundu`
+at every `ixc` entry of all seven files — 0 of 8/3/20/2/19/3/14.**
+
+#### The fifth item, and why the instrument that found the six could not have found it
+
+**[measured] `.tfcoil.temp_tf_superconductor_margin_min` was `0.0` against PROCESS's
+`1.5`, and a boundary diff read zero.** `init.py:1171-1190` makes `tmargmin` a deprecated
+alias that wins over both `temp_tf_superconductor_margin_min` and
+`temp_cs_superconductor_margin_min`; `large_tokamak_eval` states only `tmargmin = 1.5`.
+That field is what constraint 36 compares a computed margin against — and it is **not in
+`provider.answers_for`'s boundary**, so the env diff of §22.8 and of this section, both
+built on that boundary, reported *zero* disagreements on all seven while it was still
+wrong. A boundary-derived agreement count is a **lower bound** on the disagreement, and
+that is worth knowing before the next one is quoted as a clean bill of health. The diff
+that found it compares every place `native_state` holds against the seed, which is a
+different and stricter instrument; `_deprecated_temperature_margin_alias` closes it.
+
+#### What the configurations do, native, measured on this tree
+
+`reference_cold_matrix.txt` was **not** regenerated — another agent is vectorising
+`models/pfcoil` and `models/tfcoil/stress.py`, so a full pass now would mix two changes.
+The rows are recorded here instead. `provider` columns are §22.8's own same-tree
+measurements and `reference_cold_matrix.txt`'s rows where §22.8 says they are current.
+
+| configuration | native MDF | native SAND | provider |
+|---|---|---|---|
+| `stellarator_helias` | **67 conv** `1.21775735` | 112 conv `1.21775753` | MDF 67 / SAND 83, `1.2177573` |
+| `helias_5b` | **4 conv** `0.764215516` | **7 conv** `0.764215517` | MDF 4 / SAND 7, `0.7642155` |
+| `large_tokamak_nof` | **7 conv** `1.6` | **10 conv** `1.6` | MDF 7 / SAND 10, `1.6` |
+| `large_tokamak_eval` | **no-step** | **no-step** | no-step / no-step |
+| `low_aspect_ratio_DEMO` | **10 stopped** `-0.406311573` | 117 conv `-0.399154825` | MDF 10 stopped / SAND cap(500) |
+| `spherical_tokamak_eval` | **3 conv** `0.594644641` | **3 conv** `0.594644641` | MDF 3 / SAND 3, `0.5946446` |
+| `st_regression` | FAILED (no schedule) | FAILED (no schedule) | FAILED / FAILED |
+
+**Every MDF cell matches its provider cell — count, status and objective.** §22.8's
+`stellarator_helias` gap (`1.2246498` at the 800 cap, +0.56 %) and `helias_5b`'s (+1.1 %)
+are gone: both now land on the provider's objective to nine and ten digits. The three
+tokamaks that failed non-finite now do what their reference rows do, and
+`spherical_tokamak_eval` — which §22.8 recorded as failing natively — solves.
+
+**The SAND column is the one place a native row is not expected to match**, and it does
+not: `stellarator_helias` takes 112 steps against 83, `low_aspect_ratio_DEMO` converges
+in 117 where the provider hits its 500 cap. `NativeReference`'s docstring already says
+why — `sand.residual_condition_scales` reads a *warm* env for its `1/|u|` factors and a
+native run has none, so it is a differently scaled problem. Landing on the same objective
+from a different scaling (`low_aspect_ratio_DEMO` SAND `-0.399` against MDF `-0.406`, both
+feasible) is the expected shape, not a discrepancy in the values.
+
+**`st_regression` is unchanged and is not a value failure.** It still cannot build a
+schedule — the undriven `dr_tf_inboard_winding_pack` / `tf_inboard_radii` /
+`dr_tf_plasma_case` block of §23.6 — in either mode. That is a cut, not a boundary value.
+
+#### What was not done
+
+- **The seed is still not deleted.** §22.3's exit condition is "agrees everywhere", and
+  the *stricter* diff above still reads 10-24 disagreements per configuration. Every one
+  of them is an `init.py` sentinel resolution (`eff_tf_cryo`, `eyoung_ins`,
+  `eyoung_cond_axial`, `i_tf_bucking`, `i_tf_shape`, `i_tf_wp_geom`), a physics-
+  conditioned write (`rho_pf_coil`, `f_nd_beam_electron`) or one of `st_init`'s eighteen
+  — i.e. exactly §22.8's list of paths that *left the boundary* when their derivations
+  were ported as nodes (§24.1). The graph computes them, so the state's value is dead;
+  that they are dead is an inference from the solve rows above, not a measurement of each
+  path, and confirming it one path at a time is the next step.
+- **`reference_cold_matrix.txt` still holds `--provider` rows only**, and is now stale for
+  more cells than its header names. Regenerating it is a job for a quiet tree.

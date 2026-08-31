@@ -32,6 +32,16 @@
 # `spherical_tokamak_eval` are evaluation files that PROCESS solves with `fsolve`
 # over the equalities alone and never runs VMCON on, so `n_solver_iterations` is 0
 # and the column has no scale to offer for those two rows.
+#
+# THESE ROWS ARE NOT THE `--native` ROWS, and they are not stale by accident. A fourth
+# mode landed 2026-08-31 (`--native`, `_audit/next_steps.md` §22.8): no `DataStructure`
+# and no PROCESS run anywhere in the pass, the env built from `importer.read_indat` and
+# a vendored defaults table. Its rows are recorded in §22.8, NOT here, for the same
+# reason `--provider-strict`'s are not here -- the default mode is the artefact other
+# records quote, and a table mixing two modes' rows would be unreadable. Regenerating
+# this file is ~1900 s and needs a quiet tree; three rows below are known stale against
+# the current tree (`helias_5b`, both spherical tokamaks) and are marked as such in
+# §22.8 rather than re-run.
 
 COLD MATRIX -- MDF and SAND from each input file's own cold start
 

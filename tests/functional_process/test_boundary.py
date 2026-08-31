@@ -129,7 +129,7 @@ def test_the_reference_machine_s_boundary_is_the_pin():
     assert [(kind, var.path_str()) for kind, var in boundary(driven)] == list(read_pin())
 
 
-def test_the_split_is_297_inputs_and_one_guess_per_unsupplied_driven_unknown():
+def test_the_split_is_289_inputs_and_one_guess_per_unsupplied_driven_unknown():
     """The guess half is mechanical -- `Assign` mints one `Start` per driven unknown --
     so it is derived, not audited, and pinning it separately is what keeps the audited
     half honest when a problem is added.
@@ -160,11 +160,19 @@ def test_the_split_is_297_inputs_and_one_guess_per_unsupplied_driven_unknown():
       inputs, and the tree says so now instead of driving a residual that determines
       nothing. The sixteen removals are dead reads that left with their arms -- see
       `_audit/next_steps.md` §14.11 for the per-variable attribution.
+
+    **297 -> 289 input, guesses unchanged**, with `models/initialisation` (the port of
+    `init.py` and `st_init`'s `off` writes, `_audit/init_audit.md` §5b). All eight are
+    removals and every one is a producer landing: `.tfcoil.eff_tf_cryo` and
+    `.buildings.esbldgm3` from `init.py`, and `st_init`'s `.build.dr_cs`,
+    `.build.dr_cs_tf_gap` and its four pulse phase durations. They are exactly the
+    stellarator pins' eight `off` rows -- the paths where believing the input file and
+    the dataclass defaults gave a machine with a central solenoid and a 1000 s burn.
     """
     driven = driven_graph(GRAPH)
     have = counts(boundary(driven))
-    assert have[INPUT] == len(GRAPH.unowned_inputs) == 297
-    assert have[INPUT] + have[GUESSED] == len(driven.unowned_inputs) == 303
+    assert have[INPUT] == len(GRAPH.unowned_inputs) == 289
+    assert have[INPUT] + have[GUESSED] == len(driven.unowned_inputs) == 295
 
     # Every guess pairs with an unknown, and an unknown is owned *inside* the driven
     # graph -- which is what makes the guess half derived rather than audited. Asked of
@@ -193,7 +201,22 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """384 inputs and 11 guesses, against the stellarator's 297 and 6.
+    """377 inputs and 11 guesses, against the stellarator's 289 and 6.
+
+    **378 -> 377 with the `.tfcoil.dcond` antichain fix.** One node read that array
+    *whole* (`.costs.pf_magnet_cost`'s `PER_KG` arms) while three read it *by element*,
+    and a path named both whole and indexed is not an antichain -- which `cottax`'s
+    pytree machinery refuses, so `mda_env` could not cross a structure boundary and ran
+    eagerly. The `PER_KG` occupants now declare `FromExactly(tfcoil.dcond[k])` per
+    material, following `radiation_power.py`'s precedent, and the whole-array read is
+    gone. The stellarator never read it, which is why only the tokamak half moves.
+
+    **384 -> 378 and 297 -> 289** with `models/initialisation`: six of `init.py`'s
+    writes land on this tokamak (`eff_tf_cryo`, `eyoung_ins`, `eyoung_cond_axial`,
+    `eyoung_cond_trans`, `rho_pf_coil`, `f_nd_beam_electron`) against two on the
+    stellarator, and `st_init`'s six are the stellarator's alone -- so the gap narrows
+    from 87 to 89 in the input half while both halves shrink. The device-dependence is
+    the point: the same seed file writes different fields on the two machines.
 
     **369 -> 378 with the TF stress chain** (`models/tfcoil/stress.py`, registry row
     55), and this is the clearest instance in the file of growth being the good kind.
@@ -349,8 +372,8 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (384, 11)
-    assert (stell[INPUT], stell[GUESSED]) == (297, 6)
+    assert (tok[INPUT], tok[GUESSED]) == (377, 11)
+    assert (stell[INPUT], stell[GUESSED]) == (289, 6)
 
 
 # ================================================ boundary entries PROCESS computes

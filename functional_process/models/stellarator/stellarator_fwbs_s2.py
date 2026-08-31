@@ -18,8 +18,11 @@ Two ported arms, both `blktmodel != 1` (`stellarator.py:680`'s `else` branch):
   `tf_nuclear_heating.py`'s `calculate_sc_tf_coil_nuclear_heating`,
   already ported) for `flu_tf_neutron_fast_peak`/`p_tf_nuclear_heat_mw` -- that call is
   a tier-3 composition edge onto an already-validated node, not reproduced here.
-- **Arm 3** (`ipowerflow == 1`, `stellarator.py:730-1029`, the "new model"):
-  `calculate_detailed_powerflow_blanket_shield_power` below. Self-contained (no
+- **Arm 3** (`ipowerflow == 1`, `stellarator.py:730-1029`, the "new model"): split
+  further by `.fwbs.i_p_coolant_pumping` into `_detailed_powerflow_core` plus
+  `calculate_detailed_powerflow_blanket_shield_power` (`FRACTION_OF_HEAT`) and
+  `calculate_detailed_powerflow_blanket_shield_power_user_input_pumping`
+  (`USER_INPUT`) below -- see the next section. Self-contained (no
   cross-model calls), but two things are carved out of the port, both documented in the
   audit record: the CoolProp/`irefprop`-gated `temp_blkt_coolant_out` computation
   (803-823, not consumed anywhere else inside this arm, `non-traceable-external-call`),
@@ -29,11 +32,31 @@ Two ported arms, both `blktmodel != 1` (`stellarator.py:680`'s `else` branch):
   bugs" section) -- reproduced here as a literal `0.0`, not as an input, matching
   PROCESS's own actual runtime behaviour.
 
-Both arms drop the trivial branches of two switches they read, matching the precedent
-`tf_nuclear_heating.py` already set for `i_tf_sup` on a sibling field (see
-this file's own docstring): `i_tf_sup != SUPERCONDUCTING` and
-`i_p_coolant_pumping != FRACTION_OF_HEAT` are both "the absence of the computation," not
-a second formula to port -- see the audit record's "switches touched" section.
+Both arms drop the trivial branch of `i_tf_sup` (`!= SUPERCONDUCTING` is "the absence
+of the computation," not a second formula to port), matching the precedent
+`tf_nuclear_heating.py` already set for that switch on a sibling field -- see the audit
+record's "switches touched" section.
+
+`.fwbs.i_p_coolant_pumping` used to be dropped on the same grounds and **that was a
+defect**, fixed 2026-08-31. Arm 3's four `.heat_transport.p_*_coolant_pump_mw` writes
+are gated on it (`stellarator.py:901-928` and `:1000-1013`), and the two values a
+stellarator may legally take differ in *ownership*, not in formula:
+
+- `FRACTION_OF_HEAT` (1) -- `stellarator_helias.IN.DAT:198`, the pinned reference
+  machine -- computes all four as fractions of the incident thermal power.
+- `USER_INPUT` (0) -- `helias_5b.IN.DAT:121` -- computes none of them; the input file
+  supplies them (`120 + 56` MW FW+blanket, `24` MW divertor) and they are boundary
+  inputs of the graph.
+- `MECHANICAL` (2) and `MECHANICAL_WITH_PRESSURE_DROP` (3) are not reachable at all:
+  `stellarator.py:924-928` raises `ProcessValueError("i_p_coolant_pumping = 0 or 1 only
+  for stellarator")`. `indat.py` refuses those two arms rather than assembling one.
+
+So the port carries **two occupants, not one node with a kwarg** (`_audit/next_steps.md`
+§14.2): a node that owns a `VarPath` on one value of a switch and must not own it on
+another is two nodes. Computing arm 3 unconditionally as if `FRACTION_OF_HEAT` made
+`helias_5b` answer `15.6`/`16.8` MW where PROCESS reads `176.0`, and carried the error
+downstream into `.costs.concost` and `.power.p_plant_electric_net_mw` -- the
+`EcrhDensityLimit` bug class, on a machine that nonetheless reported "converged".
 """
 
 import jax.numpy as jnp
@@ -140,7 +163,7 @@ class ExponentialAttenuationBlanketShieldPower(ExplicitFunction):
         )
 
 
-def calculate_detailed_powerflow_blanket_shield_power(
+def _detailed_powerflow_core(
     p_neutron_total_mw,
     f_ster_div_single,
     f_a_fw_outboard_hcd,
@@ -157,22 +180,22 @@ def calculate_detailed_powerflow_blanket_shield_power(
     dr_blkt_inboard,
     dr_blkt_outboard,
     declblkt,
-    f_p_fw_coolant_pump_total_heat,
-    p_beam_orbit_loss_mw,
     f_p_blkt_coolant_pump_total_heat,
     f_p_blkt_multiplication,
     declshld,
     dr_shld_inboard,
     dr_shld_outboard,
-    f_p_shld_coolant_pump_total_heat,
-    p_plasma_separatrix_mw,
-    f_p_div_coolant_pump_total_heat,
 ):
-    """S2 arm 3 (`blktmodel != 1 & ipowerflow == 1`, `stellarator.py:730-1029`).
+    """S2 arm 3's `i_p_coolant_pumping`-independent arithmetic
+    (`blktmodel != 1 & ipowerflow == 1`, `stellarator.py:730-1029`).
 
     The "new model": inboard/outboard power-flow accounting through first wall, blanket
-    and shield, with per-component coolant pumping power. Ports the arm's arithmetic in
-    full **except**:
+    and shield. **Everything in the arm except the four coolant-pumping powers**, which
+    `stellarator.py:901-928`/`:996-1013` gate on `.fwbs.i_p_coolant_pumping` and which
+    the two public wrappers below own one arm each. Not a node itself -- the two
+    wrappers are what `indat.py`'s `BLANKET_SHIELD_POWER` registry holds.
+
+    Ports the arm's arithmetic in full **except**:
 
     - the CoolProp/`irefprop`-gated `temp_blkt_coolant_out` block (`stellarator.py:
       803-823`) -- excluded entirely (not computed, not returned). It is not read again
@@ -186,18 +209,17 @@ def calculate_detailed_powerflow_blanket_shield_power(
       `stellarator_E_fwbs_synthesis.md` section 6) but is never written anywhere on this
       call path (`blktmodel != 1` means `blanket_neutronics()`, the only other writer,
       never runs) -- its value is deterministically the dataclass default `0.0` for the
-      run's whole lifetime. Both read sites are reproduced below as a literal `0.0`, not
+      run's whole lifetime. Both read sites are reproduced as a literal `0.0`, not
       as a function parameter, matching PROCESS's own actual behaviour exactly (not an
-      approximation of it).
+      approximation of it). The first site is here; the second is in the
+      `FRACTION_OF_HEAT` wrapper, the only arm that reaches it.
     - the redundant duplicate write of `.fwbs.p_fw_hcd_rad_total_mw`
       (`stellarator.py:770-780` computes the identical expression twice under two
       different comments) -- collapsed to a single computation, per
       `_audit/schema.md`'s `redundant-duplicate-write` classification.
-    - `i_p_coolant_pumping != FRACTION_OF_HEAT` (`USER_INPUT`, or the two values that
-      raise `ProcessValueError`) and `i_tf_sup != SUPERCONDUCTING` -- both dropped, see
-      module docstring and the audit record's switches-touched section. This function
-      always computes as if `i_p_coolant_pumping == FRACTION_OF_HEAT` and
-      `i_tf_sup == SUPERCONDUCTING`.
+    - `i_tf_sup != SUPERCONDUCTING` -- dropped, see module docstring and the audit
+      record's switches-touched section. This function always computes
+      `p_tf_nuclear_heat_mw` as if `i_tf_sup == SUPERCONDUCTING`.
 
     Parameters
     ----------
@@ -233,40 +255,33 @@ def calculate_detailed_powerflow_blanket_shield_power(
         Blanket thicknesses (m). `.build.dr_blkt_inboard`/`dr_blkt_outboard`.
     declblkt :
         Blanket power decay length (m). `.fwbs.declblkt`.
-    f_p_fw_coolant_pump_total_heat :
-        FW coolant pumping power fraction. `.heat_transport.f_p_fw_coolant_pump_total_heat`.
-    p_beam_orbit_loss_mw :
-        NBI orbit loss power (MW). `.current_drive.p_beam_orbit_loss_mw`.
     f_p_blkt_coolant_pump_total_heat :
         Blanket coolant pumping power fraction.
-        `.heat_transport.f_p_blkt_coolant_pump_total_heat`.
+        `.heat_transport.f_p_blkt_coolant_pump_total_heat`. Read here even though no
+        pumping power is computed here: `stellarator.py:929-933`'s
+        `p_blkt_multiplication_mw` accumulation is **outside** the
+        `i_p_coolant_pumping` dispatch and reads it unconditionally, on every arm.
     f_p_blkt_multiplication :
         Blanket energy multiplication factor. `.fwbs.f_p_blkt_multiplication`.
     declshld :
         Shield power decay length (m). `.fwbs.declshld`.
     dr_shld_inboard, dr_shld_outboard :
         Shield thicknesses (m). `.build.dr_shld_inboard`/`dr_shld_outboard`.
-    f_p_shld_coolant_pump_total_heat :
-        Shield coolant pumping power fraction.
-        `.heat_transport.f_p_shld_coolant_pump_total_heat`.
-    p_plasma_separatrix_mw :
-        Power to the separatrix (MW). `.physics.p_plasma_separatrix_mw`.
-    f_p_div_coolant_pump_total_heat :
-        Divertor coolant pumping power fraction.
-        `.heat_transport.f_p_div_coolant_pump_total_heat`.
 
     Returns
     -------
     :
+        The twelve arm outputs that do not depend on `i_p_coolant_pumping` --
         `(p_div_nuclear_heat_total_mw, p_fw_hcd_nuclear_heat_mw, p_fw_hcd_rad_total_mw,
         pradloss, p_fw_rad_total_mw, f_a_fw_coolant_inboard, f_a_fw_coolant_outboard,
         p_fw_nuclear_heat_total_mw, p_blkt_multiplication_mw,
-        p_blkt_nuclear_heat_total_mw, p_fw_coolant_pump_mw, p_blkt_coolant_pump_mw,
-        p_shld_nuclear_heat_mw, p_shld_coolant_pump_mw, p_div_coolant_pump_mw,
-        p_tf_nuclear_heat_mw)`. `f_a_fw_coolant_inboard`/`f_a_fw_coolant_outboard` are
-        Python locals in the source (never written to `.fwbs.*` in this arm -- see the
-        audit record's cross-boundary ledger), consumed downstream by S4's FW-mass
-        `else` branch, out of this unit's scope.
+        p_blkt_nuclear_heat_total_mw, p_shld_nuclear_heat_mw, p_tf_nuclear_heat_mw)` --
+        followed by the eight source locals the pumping formulas need
+        (`p_fw_inboard_nuclear_heat_mw`, `p_fw_outboard_nuclear_heat_mw`, `psurffwi`,
+        `psurffwo`, `pnucbzi`, `pnucbzo`, `pnucshldi`, `pnucshldo`). The trailing eight
+        are Python locals in the source, not `data` fields; they cross this boundary
+        only because the function was split at the switch, and neither wrapper exposes
+        them.
     """
     pnuc_cp = 0.0  # local-intermediate, see docstring
     p_div_nuclear_heat_total_mw = p_neutron_total_mw * f_ster_div_single
@@ -317,18 +332,6 @@ def calculate_detailed_powerflow_blanket_shield_power(
     pnucbzi = pnucbsi * (1.0 - jnp.exp(-dr_blkt_inboard / decaybzi))
     pnucbzo = pnucbso * (1.0 - jnp.exp(-dr_blkt_outboard / decaybzo))
 
-    # FRACTION_OF_HEAT branch only -- see docstring/module docstring.
-    p_fw_coolant_pump_mw = f_p_fw_coolant_pump_total_heat * (
-        p_fw_inboard_nuclear_heat_mw
-        + p_fw_outboard_nuclear_heat_mw
-        + psurffwi
-        + psurffwo
-        + p_beam_orbit_loss_mw
-    )
-    p_blkt_coolant_pump_mw = f_p_blkt_coolant_pump_total_heat * (
-        pnucbzi * f_p_blkt_multiplication + pnucbzo * f_p_blkt_multiplication
-    )
-
     # Unconditional in the source (not gated by i_p_coolant_pumping) -- two sequential
     # accumulations onto the same field, combined here into one expression.
     p_blkt_multiplication_mw = f_p_blkt_coolant_pump_total_heat * (
@@ -353,15 +356,167 @@ def calculate_detailed_powerflow_blanket_shield_power(
 
     p_shld_nuclear_heat_mw = pnucshldi + pnucshldo
 
-    # FRACTION_OF_HEAT branch only.
+    # SUPERCONDUCTING branch only.
+    p_tf_nuclear_heat_mw = pnucsi + pnucso - pnucshldi - pnucshldo
+
+    return (
+        p_div_nuclear_heat_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        pradloss,
+        p_fw_rad_total_mw,
+        f_a_fw_coolant_inboard,
+        f_a_fw_coolant_outboard,
+        p_fw_nuclear_heat_total_mw,
+        p_blkt_multiplication_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_shld_nuclear_heat_mw,
+        p_tf_nuclear_heat_mw,
+        p_fw_inboard_nuclear_heat_mw,
+        p_fw_outboard_nuclear_heat_mw,
+        psurffwi,
+        psurffwo,
+        pnucbzi,
+        pnucbzo,
+        pnucshldi,
+        pnucshldo,
+    )
+
+
+def calculate_detailed_powerflow_blanket_shield_power(
+    p_neutron_total_mw,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    pnucloss,
+    a_fw_inboard,
+    a_fw_outboard,
+    a_fw_total,
+    p_plasma_rad_mw,
+    fhole,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    radius_fw_channel,
+    declfw,
+    dr_blkt_inboard,
+    dr_blkt_outboard,
+    declblkt,
+    f_p_fw_coolant_pump_total_heat,
+    p_beam_orbit_loss_mw,
+    f_p_blkt_coolant_pump_total_heat,
+    f_p_blkt_multiplication,
+    declshld,
+    dr_shld_inboard,
+    dr_shld_outboard,
+    f_p_shld_coolant_pump_total_heat,
+    p_plasma_separatrix_mw,
+    f_p_div_coolant_pump_total_heat,
+):
+    """S2 arm 3 at `i_p_coolant_pumping == FRACTION_OF_HEAT` (1).
+
+    `_detailed_powerflow_core` plus the four pumping powers PROCESS computes on this
+    arm and this arm only (`stellarator.py:907-923` for the first-wall and blanket pair,
+    `:1000-1013` for the shield and divertor pair): each is a fixed fraction `fpump_i`
+    of the non-pumping thermal power reaching that component's coolant.
+
+    **The arithmetic below is bit-for-bit what this function computed before the
+    `i_p_coolant_pumping` split** -- the switch used to be dropped as "the absence of a
+    computation," which was true only of the files that existed then; see the module
+    docstring.
+
+    Parameters
+    ----------
+    f_p_fw_coolant_pump_total_heat :
+        FW coolant pumping power fraction. `.heat_transport.f_p_fw_coolant_pump_total_heat`.
+    p_beam_orbit_loss_mw :
+        NBI orbit loss power (MW). `.current_drive.p_beam_orbit_loss_mw`.
+    f_p_shld_coolant_pump_total_heat :
+        Shield coolant pumping power fraction.
+        `.heat_transport.f_p_shld_coolant_pump_total_heat`.
+    p_plasma_separatrix_mw :
+        Power to the separatrix (MW). `.physics.p_plasma_separatrix_mw`.
+    f_p_div_coolant_pump_total_heat :
+        Divertor coolant pumping power fraction.
+        `.heat_transport.f_p_div_coolant_pump_total_heat`.
+
+    Every other parameter is `_detailed_powerflow_core`'s; see its docstring.
+
+    Returns
+    -------
+    :
+        `(p_div_nuclear_heat_total_mw, p_fw_hcd_nuclear_heat_mw, p_fw_hcd_rad_total_mw,
+        pradloss, p_fw_rad_total_mw, f_a_fw_coolant_inboard, f_a_fw_coolant_outboard,
+        p_fw_nuclear_heat_total_mw, p_blkt_multiplication_mw,
+        p_blkt_nuclear_heat_total_mw, p_fw_coolant_pump_mw, p_blkt_coolant_pump_mw,
+        p_shld_nuclear_heat_mw, p_shld_coolant_pump_mw, p_div_coolant_pump_mw,
+        p_tf_nuclear_heat_mw)`. `f_a_fw_coolant_inboard`/`f_a_fw_coolant_outboard` are
+        Python locals in the source (never written to `.fwbs.*` in this arm -- see the
+        audit record's cross-boundary ledger), consumed downstream by S4's FW-mass
+        `else` branch, out of this unit's scope.
+    """
+    (
+        p_div_nuclear_heat_total_mw,
+        p_fw_hcd_nuclear_heat_mw,
+        p_fw_hcd_rad_total_mw,
+        pradloss,
+        p_fw_rad_total_mw,
+        f_a_fw_coolant_inboard,
+        f_a_fw_coolant_outboard,
+        p_fw_nuclear_heat_total_mw,
+        p_blkt_multiplication_mw,
+        p_blkt_nuclear_heat_total_mw,
+        p_shld_nuclear_heat_mw,
+        p_tf_nuclear_heat_mw,
+        p_fw_inboard_nuclear_heat_mw,
+        p_fw_outboard_nuclear_heat_mw,
+        psurffwi,
+        psurffwo,
+        pnucbzi,
+        pnucbzo,
+        pnucshldi,
+        pnucshldo,
+    ) = _detailed_powerflow_core(
+        p_neutron_total_mw,
+        f_ster_div_single,
+        f_a_fw_outboard_hcd,
+        pnucloss,
+        a_fw_inboard,
+        a_fw_outboard,
+        a_fw_total,
+        p_plasma_rad_mw,
+        fhole,
+        dr_fw_inboard,
+        dr_fw_outboard,
+        radius_fw_channel,
+        declfw,
+        dr_blkt_inboard,
+        dr_blkt_outboard,
+        declblkt,
+        f_p_blkt_coolant_pump_total_heat,
+        f_p_blkt_multiplication,
+        declshld,
+        dr_shld_inboard,
+        dr_shld_outboard,
+    )
+
+    # FRACTION_OF_HEAT branch only -- see docstring/module docstring.
+    p_fw_coolant_pump_mw = f_p_fw_coolant_pump_total_heat * (
+        p_fw_inboard_nuclear_heat_mw
+        + p_fw_outboard_nuclear_heat_mw
+        + psurffwi
+        + psurffwo
+        + p_beam_orbit_loss_mw
+    )
+    p_blkt_coolant_pump_mw = f_p_blkt_coolant_pump_total_heat * (
+        pnucbzi * f_p_blkt_multiplication + pnucbzo * f_p_blkt_multiplication
+    )
+
     p_shld_coolant_pump_mw = f_p_shld_coolant_pump_total_heat * (pnucshldi + pnucshldo)
-    # Second read site of the buggy `p_div_rad_total_mw` field -- see docstring.
+    # Second read site of the buggy `p_div_rad_total_mw` field -- see the core's
+    # docstring. Reached on this arm only.
+    p_div_rad_total_mw = 0.0
     p_div_coolant_pump_mw = f_p_div_coolant_pump_total_heat * (
         p_plasma_separatrix_mw + p_div_nuclear_heat_total_mw + p_div_rad_total_mw
     )
-
-    # SUPERCONDUCTING branch only.
-    p_tf_nuclear_heat_mw = pnucsi + pnucso - pnucshldi - pnucshldo
 
     return (
         p_div_nuclear_heat_total_mw,
@@ -381,6 +536,91 @@ def calculate_detailed_powerflow_blanket_shield_power(
         p_div_coolant_pump_mw,
         p_tf_nuclear_heat_mw,
     )
+
+
+def calculate_detailed_powerflow_blanket_shield_power_user_input_pumping(
+    p_neutron_total_mw,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    pnucloss,
+    a_fw_inboard,
+    a_fw_outboard,
+    a_fw_total,
+    p_plasma_rad_mw,
+    fhole,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    radius_fw_channel,
+    declfw,
+    dr_blkt_inboard,
+    dr_blkt_outboard,
+    declblkt,
+    f_p_blkt_coolant_pump_total_heat,
+    f_p_blkt_multiplication,
+    declshld,
+    dr_shld_inboard,
+    dr_shld_outboard,
+):
+    """S2 arm 3 at `i_p_coolant_pumping == USER_INPUT` (0).
+
+    Exactly `_detailed_powerflow_core`, and that is the whole content of the arm:
+    `stellarator.py:904-906` is
+
+    ```
+    if i_p_coolant_pumping == PumpingPowerModelTypes.USER_INPUT:
+        #   Use input
+        pass
+    ```
+
+    and the second dispatch (`:1000`) is an `if FRACTION_OF_HEAT` with no `else`, so
+    the shield and divertor pumping powers are not written either. All four of
+    `.heat_transport.p_fw_coolant_pump_mw`, `p_blkt_coolant_pump_mw`,
+    `p_shld_coolant_pump_mw` and `p_div_coolant_pump_mw` keep the values the input file
+    gave them -- **boundary inputs on this arm, not outputs of any node**. That is why
+    this is a second occupant rather than a `jnp.where` inside the first: a node that
+    owns a `VarPath` on one switch value and must not own it on another is two nodes
+    (`_audit/next_steps.md` §14.2), and declaring the ownership unconditionally is what
+    made this port answer `15.6 MW` where `helias_5b.IN.DAT` says `176.0`.
+
+    Parameters are `_detailed_powerflow_core`'s twenty-one; the five that only feed the
+    pumping formulas (`f_p_fw_coolant_pump_total_heat`, `p_beam_orbit_loss_mw`,
+    `f_p_shld_coolant_pump_total_heat`, `p_plasma_separatrix_mw`,
+    `f_p_div_coolant_pump_total_heat`) are genuinely unread on this arm and are
+    therefore absent from the signature rather than accepted and discarded.
+
+    Returns
+    -------
+    :
+        `(p_div_nuclear_heat_total_mw, p_fw_hcd_nuclear_heat_mw, p_fw_hcd_rad_total_mw,
+        pradloss, p_fw_rad_total_mw, f_a_fw_coolant_inboard, f_a_fw_coolant_outboard,
+        p_fw_nuclear_heat_total_mw, p_blkt_multiplication_mw,
+        p_blkt_nuclear_heat_total_mw, p_shld_nuclear_heat_mw, p_tf_nuclear_heat_mw)` --
+        the `FRACTION_OF_HEAT` sibling's sixteen minus the four pumping powers, in the
+        same relative order.
+    """
+    return _detailed_powerflow_core(
+        p_neutron_total_mw,
+        f_ster_div_single,
+        f_a_fw_outboard_hcd,
+        pnucloss,
+        a_fw_inboard,
+        a_fw_outboard,
+        a_fw_total,
+        p_plasma_rad_mw,
+        fhole,
+        dr_fw_inboard,
+        dr_fw_outboard,
+        radius_fw_channel,
+        declfw,
+        dr_blkt_inboard,
+        dr_blkt_outboard,
+        declblkt,
+        f_p_blkt_coolant_pump_total_heat,
+        f_p_blkt_multiplication,
+        declshld,
+        dr_shld_inboard,
+        dr_shld_outboard,
+    )[:12]
 
 
 class DetailedPowerflowBlanketShieldPower(ExplicitFunction):
@@ -468,4 +708,80 @@ class DetailedPowerflowBlanketShieldPower(ExplicitFunction):
             f_p_shld_coolant_pump_total_heat,
             p_plasma_separatrix_mw,
             f_p_div_coolant_pump_total_heat,
+        )
+
+
+class DetailedPowerflowBlanketShieldPowerUserInputPumping(ExplicitFunction):
+    """cottax node:
+    `calculate_detailed_powerflow_blanket_shield_power_user_input_pumping`.
+
+    The sibling above's arm at `.fwbs.i_p_coolant_pumping == USER_INPUT` (0), and it
+    exists because the ownership genuinely differs: the four
+    `.heat_transport.p_*_coolant_pump_mw` fields the `FRACTION_OF_HEAT` occupant owns
+    are **run inputs** on this arm, written by nobody (`stellarator.py:904-906` is a
+    bare `pass`). Registered by `indat.py`'s `BLANKET_SHIELD_POWER` under arm index 3.
+
+    `f_a_fw_coolant_inboard`/`f_a_fw_coolant_outboard` get the same best-effort
+    `.fwbs.*` `VarPath`s, and for the same reason, as the sibling above.
+    """
+
+    p_div_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_fw_hcd_nuclear_heat_mw = OutputInto(fwbs)
+    p_fw_hcd_rad_total_mw = OutputInto(fwbs)
+    pradloss = OutputInto(fwbs)
+    p_fw_rad_total_mw = OutputInto(fwbs)
+    f_a_fw_coolant_inboard = OutputInto(fwbs)
+    f_a_fw_coolant_outboard = OutputInto(fwbs)
+    p_fw_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_blkt_multiplication_mw = OutputInto(fwbs)
+    p_blkt_nuclear_heat_total_mw = OutputInto(fwbs)
+    p_shld_nuclear_heat_mw = OutputInto(fwbs)
+    p_tf_nuclear_heat_mw = OutputInto(fwbs)
+
+    def __call__(
+        self,
+        p_neutron_total_mw=From(physics),
+        f_ster_div_single=From(fwbs),
+        f_a_fw_outboard_hcd=From(fwbs),
+        pnucloss=From(fwbs),
+        a_fw_inboard=From(first_wall),
+        a_fw_outboard=From(first_wall),
+        a_fw_total=From(first_wall),
+        p_plasma_rad_mw=From(physics),
+        fhole=From(fwbs),
+        dr_fw_inboard=From(build),
+        dr_fw_outboard=From(build),
+        radius_fw_channel=From(fwbs),
+        declfw=From(fwbs),
+        dr_blkt_inboard=From(build),
+        dr_blkt_outboard=From(build),
+        declblkt=From(fwbs),
+        f_p_blkt_coolant_pump_total_heat=From(heat_transport),
+        f_p_blkt_multiplication=From(fwbs),
+        declshld=From(fwbs),
+        dr_shld_inboard=From(build),
+        dr_shld_outboard=From(build),
+    ):
+        return calculate_detailed_powerflow_blanket_shield_power_user_input_pumping(
+            p_neutron_total_mw,
+            f_ster_div_single,
+            f_a_fw_outboard_hcd,
+            pnucloss,
+            a_fw_inboard,
+            a_fw_outboard,
+            a_fw_total,
+            p_plasma_rad_mw,
+            fhole,
+            dr_fw_inboard,
+            dr_fw_outboard,
+            radius_fw_channel,
+            declfw,
+            dr_blkt_inboard,
+            dr_blkt_outboard,
+            declblkt,
+            f_p_blkt_coolant_pump_total_heat,
+            f_p_blkt_multiplication,
+            declshld,
+            dr_shld_inboard,
+            dr_shld_outboard,
         )

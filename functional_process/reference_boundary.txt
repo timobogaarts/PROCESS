@@ -12,8 +12,6 @@ guess ^guess.vacuum.d_duct
 input .build.dr_blkt_inboard
 input .build.dr_blkt_outboard
 input .build.dr_cryostat
-input .build.dr_cs
-input .build.dr_cs_tf_gap
 input .build.dr_fw_plasma_gap_inboard
 input .build.dr_fw_plasma_gap_outboard
 input .build.dr_shld_blkt_gap
@@ -31,7 +29,6 @@ input .buildings.admv
 input .buildings.clh2
 input .buildings.conv
 input .buildings.dz_tf_cryostat
-input .buildings.esbldgm3
 input .buildings.fndt
 input .buildings.hccl
 input .buildings.hcwt
@@ -275,7 +272,6 @@ input .tfcoil.dx_tf_turn_general
 input .tfcoil.dx_tf_turn_insulation
 input .tfcoil.dx_tf_turn_steel
 input .tfcoil.dx_tf_wp_insulation
-input .tfcoil.eff_tf_cryo
 input .tfcoil.f_a_tf_turn_cable_copper
 input .tfcoil.f_a_tf_turn_cable_space_extra_void
 input .tfcoil.i_tf_sc_mat
@@ -290,12 +286,8 @@ input .tfcoil.temp_tf_cryo
 input .tfcoil.tfcmw
 input .tfcoil.tftmp
 input .tfcoil.tmargmin
-input .times.t_plant_pulse_burn
-input .times.t_plant_pulse_coil_precharge
 input .times.t_plant_pulse_dwell
 input .times.t_plant_pulse_fusion_ramp
-input .times.t_plant_pulse_plasma_current_ramp_down
-input .times.t_plant_pulse_plasma_current_ramp_up
 input .vacuum.ceff_i
 input .vacuum.i_vac_pump_dwell
 input .vacuum.i_vacuum_pump_type

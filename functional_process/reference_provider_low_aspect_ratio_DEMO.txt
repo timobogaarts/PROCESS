@@ -285,7 +285,6 @@ solver process .pf_coil.j_cs_flat_top_end
 input process .pf_coil.j_pf_coil_wp_peak
 unwritten defaults .pf_coil.pf_current_safety_factor
 unwritten defaults .pf_coil.radius_cs_turn_corners
-default defaults .pf_coil.rho_pf_coil
 default defaults .pf_coil.rhopfbus
 input indat .pf_coil.rpf2
 default defaults .pf_coil.sigpfcalw
@@ -306,7 +305,6 @@ default defaults .physics.csawth
 input indat .physics.ejima_coeff
 solver process .physics.f_c_plasma_non_inductive
 solver process .physics.f_nd_alpha_thermal_electron
-default defaults .physics.f_nd_beam_electron
 input indat .physics.f_nd_plasma_pedestal_greenwald
 default defaults .physics.f_nd_plasma_separatrix_greenwald
 default defaults .physics.f_nd_protium_electrons
@@ -343,7 +341,6 @@ default defaults .primary_pumping.gamma_he
 default defaults .primary_pumping.p_he
 default defaults .primary_pumping.t_in_bb
 input indat .primary_pumping.t_out_bb
-default defaults .tfcoil.dcond
 default process .tfcoil.dcond[2]
 default process .tfcoil.dcond[4]
 default defaults .tfcoil.den_tf_coil_case
@@ -355,11 +352,7 @@ input indat .tfcoil.dx_tf_turn_insulation
 solver process .tfcoil.dx_tf_turn_steel
 default defaults .tfcoil.dx_tf_wp_insertion_gap
 input indat .tfcoil.dx_tf_wp_insulation
-default defaults .tfcoil.eff_tf_cryo
-default defaults .tfcoil.eyoung_cond_axial
-default defaults .tfcoil.eyoung_cond_trans
 unwritten defaults .tfcoil.eyoung_copper
-default defaults .tfcoil.eyoung_ins
 default defaults .tfcoil.eyoung_steel
 solver process .tfcoil.f_a_tf_turn_cable_copper
 input indat .tfcoil.f_a_tf_turn_cable_space_extra_void
@@ -401,8 +394,3 @@ default defaults .vacuum.outgrat_fw
 default defaults .vacuum.pres_div_chamber_burn
 default defaults .vacuum.pres_vv_chamber_base
 unwritten defaults .vacuum.xmult_i
-off .pf_coil.rho_pf_coil
-off .physics.f_nd_beam_electron
-off .tfcoil.eff_tf_cryo
-off .tfcoil.eyoung_cond_axial
-off .tfcoil.eyoung_ins

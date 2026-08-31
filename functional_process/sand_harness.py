@@ -55,7 +55,8 @@ cost chain. See `_audit/optimise_design.md` §5.1.
 import shutil
 import tempfile
 import time
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import equinox as eqx
@@ -66,6 +67,7 @@ from cottax.blocking import Blocking
 from cottax.evaluate import schedule_for
 from cottax.plan import Delete
 from cottax.tools.minting import unminted
+from cottax.tools.path import path_map
 from cottax.tools.pytree import get_at
 
 from functional_process._harness.finite_difference import fd_gradient_with_error
@@ -142,12 +144,48 @@ class ReferenceRun:
     solve_seconds: float
 
 
-def reference_run(input_file=None) -> ReferenceRun:
-    """Run PROCESS in-process to convergence and capture everything the ladder needs."""
+_REFERENCE_CACHE_VERSION = "reference-v1"
+"""Bumped when `ReferenceRun`'s *contents* change, so an old pickle can never be read
+back under a key whose meaning has moved -- `mda_harness._CACHE_VERSION`'s discipline."""
+
+
+def reference_run(input_file=None, *, use_cache: bool = True) -> ReferenceRun:
+    """Run PROCESS in-process to convergence and capture everything the ladder needs.
+
+    **Cached on disk**, keyed exactly as `mda_harness`'s converged runs are -- on the
+    input files *and* the state of `process/` -- so a change to either invalidates it.
+    The saving is the point: this function performs two `SingleRun`s, of which the
+    solve is ~95 s, and `run_cold_matrix` pays it seven times for a ~1900 s pass that is
+    mostly PROCESS. `FP_HARNESS_NO_CACHE=1` forces the run.
+
+    **A cached run carries `models=None`**, and that is not an oversight. `models` holds
+    live PROCESS `Model` instances, each with its own `self.data`; pickling them and
+    re-attaching them to a different `DataStructure` is a correctness question nobody has
+    answered, so the cache declines to answer it. Only Stage B needs `models` -- it
+    rebuilds `Evaluators` for PROCESS's finite-difference Jacobian
+    (`run_mdf_harness.py:107`, `sand_harness.py:548`) -- and both ladder mains therefore
+    pass `use_cache=False`. The two callers that do not touch `models`
+    (`boundary.py:318`, `run_cold_matrix.py:578`) get the cache for free.
+    """
+    import pickle  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
     from process.core.solver.iteration_variables import ITERATION_VARIABLES
     from process.main import SingleRun
 
+    from functional_process.mda_harness import CACHE_DIR, _cache_key  # noqa: PLC0415
+
     input_file = input_file or REFERENCE_INPUT_FILE
+    use_cache = use_cache and not os.environ.get("FP_HARNESS_NO_CACHE")
+    cached = (
+        Path(CACHE_DIR) / f"{_REFERENCE_CACHE_VERSION}-{_cache_key(input_file)}.pkl"
+        if use_cache
+        else None
+    )
+    if cached is not None and cached.exists():
+        with cached.open("rb") as handle:
+            return pickle.load(handle)  # noqa: S301 -- our own file, written just below
+
     cold = SingleRun(_scratch_copy(input_file), "vmcon").data
     run = SingleRun(_scratch_copy(input_file), "vmcon")
     started = time.perf_counter()
@@ -181,7 +219,7 @@ def reference_run(input_file=None) -> ReferenceRun:
             return float(field)
         return float(field[iteration_variable.array_index])
 
-    return ReferenceRun(
+    result = ReferenceRun(
         data=data,
         models=run.models,
         cold=cold,
@@ -206,6 +244,13 @@ def reference_run(input_file=None) -> ReferenceRun:
         convergence_parameter=float(data.globals.convergence_parameter),
         solve_seconds=elapsed,
     )
+    if cached is not None:
+        Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
+        partial = cached.with_suffix(".partial")
+        with partial.open("wb") as handle:
+            pickle.dump(replace(result, models=None), handle)
+        partial.replace(cached)
+    return result
 
 
 UNWRITTEN_BY_PROCESS = float("nan")
@@ -264,6 +309,81 @@ def ground_truth(data, var):
     return UNWRITTEN_BY_PROCESS if value is None else value
 
 
+_MDA_SCHEDULES: dict = {}
+"""`graph -> (driven, runnable, schedule, jitted runner)`, built once per graph.
+
+Keyed by the `Graph` itself, which is hashable and frozen, so two `graph_for()` calls
+that build equal graphs share one entry -- and, more to the point, one **jit cache**:
+`_mda_runner` closes over the `Schedule`, so a fresh `Schedule` object per call would
+retrace whatever the cache already held. `run_cold_matrix` calls `mda_env` three times
+per configuration (two for SAND, one to prime MDF), and the second and third calls are
+what this table is for.
+
+Construction itself is cheap and was never the cost: measured 2026-08-31 at 0.07-0.27 s
+per configuration against a 7.8-29 s eager run. It is cached because the jit is, not for
+its own sake.
+"""
+
+
+def mda_schedule(graph=None):
+    """`(driven, runnable, schedule, run)` for `graph` -- the MDA, assembled once.
+
+    `driven` is the cut graph the SAND layer assembles against; `runnable` is that graph
+    with drivers assigned (`guess_sources` is asked of it, not of `driven`, because the
+    `^guess.*` ports are minted by `Assign`); `schedule` is what evaluates it; and `run`
+    is `schedule` under `equinox.filter_jit`.
+    """
+    from functional_process.indat import graph_for  # noqa: PLC0415
+
+    key = graph if graph is not None else graph_for()
+    cached = _MDA_SCHEDULES.get(key)
+    if cached is None:
+        driven = cut_graph(_without_excluded(key))
+        blocking = Blocking.scc(driven)
+        runnable = assign_drivers(blocking.graph, default_drivers(blocking.graph))
+        schedule = schedule_for(Blocking.scc(runnable))
+        cached = _MDA_SCHEDULES[key] = (
+            driven,
+            runnable,
+            schedule,
+            _mda_runner(schedule),
+        )
+    return cached
+
+
+def _mda_runner(schedule):
+    """`schedule` under `jit`, taking and returning a `PathMap` rather than a `dict`.
+
+    **The dict is what cannot cross the jit boundary, and `PathMap` is the fix.** An
+    `Env` is `dict[VarPath, Any]`; jax flattens a dict by *sorting* its keys, and a
+    `VarPath` is deliberately unordered (`~/jaxgraph/CLAUDE.md` § Names, "No order"), so
+    an env handed to a jitted function raises on the sort before the schedule is
+    reached. `cottax.boundary.run` exists to say exactly that, and solves it by taking
+    the caller's own pytree instead. `PathMap` solves it a second way, and the one that
+    fits here: its paths are aux data (structure jax carries) and only the values are
+    children, so a name is a jit cache key rather than something jax orders.
+
+    **Why not `cottax.boundary.run` itself.** `run` ends in
+    `collapse(tree, out, exclude=MintKey)` -- the caller's structure back out, minted
+    names dropped -- and this harness's callers need those names. `sand.
+    residual_condition_scales` looks up `env[unknown]` where a `FixedPointCut`'s unknown
+    *is* `^hat.X`, and `degenerate_fixed_points`/`array_valued_problems` differentiate at
+    the env's own values including the cut copies. So `run`'s return contract, not its
+    jittability, is what rules it out; it stays the right shape for a caller that wants
+    its `DataStructure` back. `boundary.seeds` is checked against this module's own
+    seeding rather than replacing it -- see `mda_env`.
+
+    Measured on 2026-08-31 (`stellarator_helias`): 805 separate XLA compiles and 14,417
+    primitive dispatches eagerly; one compile and one dispatch here.
+    """
+
+    @eqx.filter_jit
+    def run(values):
+        return path_map(schedule(dict(values)))
+
+    return run
+
+
 def mda_env(reference, graph=None, data=None):
     """Run the plain MDA schedule seeded from `data` (default `reference.data`); return
     its output env.
@@ -279,15 +399,31 @@ def mda_env(reference, graph=None, data=None):
     block from a **completed MDA run's own output env** rather than from the
     `DataStructure` removes that whole class of hole: everything the graph produces is
     grounded by the graph.
+
+    **The run is jitted** (2026-08-31, `_mda_runner`), and it is **not** bit-identical
+    to the eager one. Measured key by key against the eager envs, warm and cold:
+
+    | | differing keys | worst relative difference |
+    |---|---|---|
+    | `stellarator_helias` | 254 / 831 | `1.1e-13` |
+    | `large_tokamak_nof` | 399 / 1134 | `5.0e-12` |
+
+    **The seeding is not the cause and neither is `_strongly_typed`** -- both were
+    isolated: the same schedule run *eagerly* from the normalised env reproduces the old
+    env with **0** differing keys, so every difference above is XLA's, not this
+    function's. Fusing an evaluation reassociates and contracts its arithmetic, and the
+    MDA's drives are iterative, so a last-bit change in a residual moves the step the
+    Newton solve takes and lands a few ulp away. The one entry that looks alarming --
+    `^cond.stellarator.wp_width_r_min`, `0.0` eagerly and `-2.8e-14` jitted -- is that
+    same effect on a *residual*, where a relative measure has nothing to divide by.
+    Nothing here approaches the `1e-8` these envs are used at, but a cold SAND solve's
+    step count is a discrete function of its seed, so a row moving by one iteration is a
+    consequence a reader of any C2/C3 count must know about.
     """
-    from functional_process.indat import graph_for
-    from functional_process.mda import guess_sources
+    from functional_process.mda import guess_sources  # noqa: PLC0415
 
     data = reference.data if data is None else data
-    driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
-    blocking = Blocking.scc(driven)
-    runnable = assign_drivers(blocking.graph, default_drivers(blocking.graph))
-    schedule = schedule_for(Blocking.scc(runnable))
+    driven, runnable, schedule, run = mda_schedule(graph)
     # Seeded over the **schedule's own inputs**, which is the driven graph's boundary:
     # `Assign` mints each driver's `^guess.*` `Start` ports into it and `Supply` takes
     # the supplied ones back out, so asking the schedule is what keeps this in step with
@@ -297,15 +433,47 @@ def mda_env(reference, graph=None, data=None):
     # `Drive.role_data` raised `KeyError` on its own start. A `^guess.*` port is
     # grounded from the unknown it starts (`guess_sources`); there is nothing in `data`
     # spelled `^guess.*`.
+    #
+    # `cottax.boundary.seeds` answers the same question a different way -- it maps a
+    # `Start` port to `unminted(port)`, the place in the caller's structure, where
+    # `guess_sources` maps it to the *unknown*, which for a `FixedPointCut` is the
+    # minted copy `^hat.X`. On this graph the two disagree by name on three of five
+    # starts and agree on every value, because `ground_truth` falls back to `unminted`
+    # for a mint with no `KNOWN_MINT_VALUES` entry and none of the entries is spelled
+    # `^hat.*`. Checked rather than assumed: `test_sand.py::test_boundary_seeds_agree`.
     guesses = guess_sources(runnable)
     env = {}
     for var in schedule.inputs:
         source = guesses.get(var, var)
         try:
-            env[var] = jnp.asarray(ground_truth(data, source))
+            env[var] = _strongly_typed(ground_truth(data, source))
         except (AttributeError, KeyError):
-            env[var] = jnp.asarray(0.0)
-    return driven, schedule(dict(env))
+            env[var] = _strongly_typed(0.0)
+    return driven, dict(run(path_map(env)))
+
+
+def _strongly_typed(value):
+    """`value` as a jax array whose `weak_type` is `False`, whatever it came in as.
+
+    **A weak type is a distinct jit signature, and warm and cold data differ in exactly
+    that.** A Python `float` traces weak; a `numpy.float64` traces strong. PROCESS
+    overwrites every iteration variable in place with a numpy scalar on its first model
+    call (`set_scaled_iteration_variable`), so `reference.data` hands back strong values
+    at the very places `reference.cold` -- the un-run `DataStructure`, still holding the
+    input file's own Python floats -- hands back weak ones. Measured 2026-08-31: 13 such
+    names on `stellarator_helias` and 26 on `large_tokamak_nof`, every one of them a
+    `weak_type` difference and nothing else. Left alone they made the warm and the cold
+    env two signatures of one jitted schedule, so `run_cold_matrix`'s two SAND calls per
+    configuration paid the ~22 s compile **twice**.
+
+    Normalising is safe because weakness only decides *promotion*, and with
+    `jax_enable_x64` on there is nothing to promote to: `float64` is the widest float
+    either way, and the env-identity check below is what confirms it rather than this
+    paragraph. `lax.convert_element_type` to a value's own dtype is the documented way
+    to spend the weakness; it is a no-op on anything already strong.
+    """
+    array = jnp.asarray(value)
+    return jax.lax.convert_element_type(array, array.dtype)
 
 
 def assemble(reference, driven, env, omit=(), switch_values=None):

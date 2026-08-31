@@ -33,6 +33,7 @@ from functional_process._harness import Tier1Contract
 from functional_process._harness.sampling import Sample, fuzz_samples
 from functional_process.models.stellarator.stellarator_fwbs_s2 import (
     calculate_detailed_powerflow_blanket_shield_power,
+    calculate_detailed_powerflow_blanket_shield_power_user_input_pumping,
     calculate_exponential_attenuation_blanket_shield_power,
 )
 from process.core.model import DataStructure
@@ -343,3 +344,153 @@ class TestDetailedPowerflowBlanketShieldPower(Tier1Contract):
     )
 
     samples = _arm_c_samples(count=12, seed=0)
+
+
+def _arm_c_user_input_samples(count, seed):
+    """`_arm_c_samples`, minus the five parameters the `USER_INPUT` arm does not read.
+
+    Same draws, same two `st_fwbs`-imposed relations
+    (`a_fw_inboard = a_fw_outboard = 0.5 * a_fw_total`,
+    `pnucloss = p_neutron_total_mw * fhole`), same bounds -- the arm's shared arithmetic
+    is literally the same function (`_detailed_powerflow_core`), so sampling it
+    differently would only make the two cases harder to compare.
+    """
+    return [
+        Sample(
+            MappingProxyType({
+                k: v
+                for k, v in s.kwargs.items()
+                if k
+                not in {
+                    "f_p_fw_coolant_pump_total_heat",
+                    "p_beam_orbit_loss_mw",
+                    "f_p_shld_coolant_pump_total_heat",
+                    "p_plasma_separatrix_mw",
+                    "f_p_div_coolant_pump_total_heat",
+                }
+            }),
+            s.provenance,
+            s.label,
+        )
+        for s in _arm_c_samples(count, seed)
+    ]
+
+
+def _reference_detailed_powerflow_user_input_pumping(
+    p_neutron_total_mw,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    pnucloss,
+    a_fw_inboard,
+    a_fw_outboard,
+    a_fw_total,
+    p_plasma_rad_mw,
+    fhole,
+    dr_fw_inboard,
+    dr_fw_outboard,
+    radius_fw_channel,
+    declfw,
+    dr_blkt_inboard,
+    dr_blkt_outboard,
+    declblkt,
+    f_p_blkt_coolant_pump_total_heat,
+    f_p_blkt_multiplication,
+    declshld,
+    dr_shld_inboard,
+    dr_shld_outboard,
+):
+    """Call PROCESS's `Stellarator.st_fwbs` (`blktmodel=0, ipowerflow=1,
+    i_p_coolant_pumping=0`) through the `USER_INPUT` arm's signature.
+
+    Identical to `_reference_detailed_powerflow` except for the switch value and the
+    five arguments that arm does not read; `pnucloss`/`a_fw_inboard`/`a_fw_outboard` are
+    accepted and not set directly for the same reason (S1 derives all three), see that
+    function's docstring.
+
+    **The four `.heat_transport.p_*_coolant_pump_mw` fields are deliberately left at
+    their `DataStructure` defaults and are not returned.** On this arm PROCESS writes
+    none of them, which is the whole content of the arm and the property the port had to
+    be taught; a reference that set them would be asserting the opposite.
+    """
+    del pnucloss, a_fw_inboard, a_fw_outboard  # see docstring
+    stel, data = _make_stellarator()
+    data.heat_transport.ipowerflow = 1
+    data.fwbs.i_p_coolant_pumping = 0  # USER_INPUT -- what this case is about
+
+    data.physics.p_neutron_total_mw = p_neutron_total_mw
+    data.fwbs.f_ster_div_single = f_ster_div_single
+    data.fwbs.f_a_fw_outboard_hcd = f_a_fw_outboard_hcd
+    data.first_wall.a_fw_total = a_fw_total
+    data.physics.p_plasma_rad_mw = p_plasma_rad_mw
+    data.fwbs.fhole = fhole
+    data.build.dr_fw_inboard = dr_fw_inboard
+    data.build.dr_fw_outboard = dr_fw_outboard
+    data.fwbs.radius_fw_channel = radius_fw_channel
+    data.fwbs.declfw = declfw
+    data.build.dr_blkt_inboard = dr_blkt_inboard
+    data.build.dr_blkt_outboard = dr_blkt_outboard
+    data.fwbs.declblkt = declblkt
+    data.heat_transport.f_p_blkt_coolant_pump_total_heat = (
+        f_p_blkt_coolant_pump_total_heat
+    )
+    data.fwbs.f_p_blkt_multiplication = f_p_blkt_multiplication
+    data.fwbs.declshld = declshld
+    data.build.dr_shld_inboard = dr_shld_inboard
+    data.build.dr_shld_outboard = dr_shld_outboard
+
+    stel.st_fwbs(output=False)
+
+    return (
+        data.fwbs.p_div_nuclear_heat_total_mw,
+        data.fwbs.p_fw_hcd_nuclear_heat_mw,
+        data.fwbs.p_fw_hcd_rad_total_mw,
+        data.fwbs.pradloss,
+        data.fwbs.p_fw_rad_total_mw,
+        # f_a_fw_coolant_inboard/outboard: Python locals, never in `data` -- see
+        # `_reference_detailed_powerflow`'s own note and the wrapper below.
+        data.fwbs.p_fw_nuclear_heat_total_mw,
+        data.fwbs.p_blkt_multiplication_mw,
+        data.fwbs.p_blkt_nuclear_heat_total_mw,
+        data.fwbs.p_shld_nuclear_heat_mw,
+        data.fwbs.p_tf_nuclear_heat_mw,
+    )
+
+
+def _ported_user_input_pumping_observable(*args, **kwargs):
+    """`calculate_detailed_powerflow_blanket_shield_power_user_input_pumping`, minus the
+    two outputs that never round-trip through `data`. Same wrapper, same reason, as
+    `_ported_detailed_powerflow_observable`."""
+    full = calculate_detailed_powerflow_blanket_shield_power_user_input_pumping(
+        *args, **kwargs
+    )
+    return full[:5] + full[7:]
+
+
+class TestDetailedPowerflowBlanketShieldPowerUserInputPumping(Tier1Contract):
+    """S2 arm 3 at `i_p_coolant_pumping == USER_INPUT` ->
+    `calculate_detailed_powerflow_blanket_shield_power_user_input_pumping`.
+
+    The value-agreement half of this case is what
+    `TestDetailedPowerflowBlanketShieldPower` cannot say: that arm's reference sets
+    `i_p_coolant_pumping = 1`, so nothing there ever asked what PROCESS does at `0`.
+    `helias_5b.IN.DAT` does, and the port answered as if the switch said `1`.
+    """
+
+    audit_record = "models/stellarator/stellarator_fwbs_s2.md"
+    reference = _reference_detailed_powerflow_user_input_pumping
+    ported = _ported_user_input_pumping_observable
+
+    # Same six entangled arguments, same reasoning, as the sibling case above --
+    # `st_fwbs`'s S1 forces `a_fw_inboard`/`a_fw_outboard` from `a_fw_total` and
+    # `pnucloss` from `p_neutron_total_mw * fhole` before this arm ever runs, so no
+    # single-argument perturbation of any of the six means the same thing on both sides.
+    static_argnames = (
+        "p_neutron_total_mw",
+        "a_fw_total",
+        "a_fw_inboard",
+        "a_fw_outboard",
+        "fhole",
+        "pnucloss",
+    )
+
+    samples = _arm_c_user_input_samples(count=12, seed=0)

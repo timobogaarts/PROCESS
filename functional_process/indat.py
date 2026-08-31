@@ -93,7 +93,10 @@ from functional_process.models.costs.costs import (
     EnergyStorageCostUnpulsed,
     PfCoilPowerConditioningCost,
     PfMagnetCostPerKam,
+    PfMagnetCostPerKamNoCentralSolenoid,
     PfMagnetCostPerKg,
+    PfMagnetCostPerKgCsWstNb3Sn,
+    PfMagnetCostPerKgNoCentralSolenoid,
     ReactorStructureCost,
     TfMagnetCostSuperconductingPerKam,
     TfMagnetCostSuperconductingPerKg,
@@ -108,9 +111,20 @@ from functional_process.models.fw import (
     FirstWallDShapedDoubleNull,
     FirstWallSingleNull,
 )
+from functional_process.models.initialisation import (
+    BeamElectronDensityFraction,
+    DoubleNullUpperBuild,
+    EnergyStorageBuildingVolume,
+    Initialisation,
+    StellaratorPulseTimes,
+    StellaratorSolenoidAbsent,
+    PfCoilResistivity,
+    TfConductorYoungsModulus,
+    TfCryoplantEfficiency,
+    TfInsulationYoungsModulus,
+)
 from functional_process.models.namespace import Build, Divertor
 from functional_process.models.pfcoil import (
-    N_CS_PF_COILS,
     REFERENCE_TOPOLOGY,
     SPHERICAL_TOKAMAK_TOPOLOGY,
 )
@@ -304,6 +318,7 @@ from functional_process.models.stellarator.preset_config import (
 )
 from functional_process.models.stellarator.stellarator_fwbs_s2 import (
     DetailedPowerflowBlanketShieldPower,
+    DetailedPowerflowBlanketShieldPowerUserInputPumping,
 )
 from functional_process.models.stellarator.stellarator_fwbs_s4 import (
     BlanketComponentMasses,
@@ -312,7 +327,6 @@ from functional_process.models.structure import Structure
 from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
     BlanketLifetimeModel,
-    CentralSolenoidConfiguration,
     CoilNuclearHeatingModel,
     FastAlphaPressureModel,
     IFEModel,
@@ -442,7 +456,11 @@ from functional_process.vocabulary import (
     ElectricConversionModelTypes,
     PumpingPowerModelTypes,
 )
-from functional_process.vocabulary import SuperconductorModel, SuperconductorShape
+from functional_process.vocabulary import (
+    SuperconductorMaterial,
+    SuperconductorModel,
+    SuperconductorShape,
+)
 from functional_process.vocabulary import (
     TFCoilShapeModel,
     TFConductorModel,
@@ -744,7 +762,18 @@ UNPORTED = {
             (5, "stambaugh"),
         )
     },
-    ("blktmodel_ipowerflow", 0): (
+    ("blktmodel_ipowerflow_i_p_coolant_pumping", 4): (
+        "`i_p_coolant_pumping` 2 (`MECHANICAL`) or 3 (`MECHANICAL_WITH_PRESSURE_DROP`) "
+        "with `ipowerflow == 1`: `stellarator.py:924-928` raises "
+        '`ProcessValueError("i_p_coolant_pumping = 0 or 1 only for stellarator")`. '
+        "There is no arm to port -- PROCESS refuses the configuration, so this port "
+        "refuses it too rather than assembling a graph that answers a question PROCESS "
+        "will not. This is also the default `i_p_coolant_pumping` "
+        "(`fwbs_variables.py:249` is `2`), so a stellarator input file that never "
+        "states the switch is refused here, which is the correct answer and not an "
+        "over-strict one."
+    ),
+    ("blktmodel_ipowerflow_i_p_coolant_pumping", 0): (
         "S2's blktmodel == 1 arm is `blanket_neutronics()`, which calls "
         "`self.hcpb.nuclear_heating_blanket()`/`nuclear_heating_shield()` with zero "
         "arguments against 2-/7-keyword-argument @staticmethods -- a live PROCESS bug "
@@ -1097,10 +1126,19 @@ UNPORTED = {
         "written"
     ),
     ("i_p_coolant_pumping", 0): (
-        "`USER_INPUT` has no arm at all in `powerflow_calc` -- the pumping powers are "
-        "inputs. Absence rather than a refusal in principle, and filed here because the "
-        "slot's other arms all produce something and no occupant in this port declares "
-        "per-arm absence yet"
+        "`USER_INPUT` has no arm at all in `powerflow_calc` (`hcpb.py:816-...` is an "
+        "`if`/`elif` chain over the other three values) -- the pumping powers are "
+        "inputs. Absence rather than a refusal in principle. **This is the tokamak "
+        "slot only.** The stellarator's own `USER_INPUT` arm was the identical shape "
+        "and is ported (2026-08-31): `st_fwbs`'s "
+        "`DetailedPowerflowBlanketShieldPowerUserInputPumping`, arm 3 of "
+        "`blktmodel_ipowerflow_i_p_coolant_pumping`, where the four "
+        "`.heat_transport.p_*_coolant_pump_mw` fields are simply not owned. The same "
+        "answer here is a one-line change -- `PumpingPowerModelTypes.USER_INPUT: None` "
+        "in `PUMPING_POWER`, `build=` made `None`-tolerant, and `| None` added to "
+        "`models/blankets/namespace.py`'s `pumping_power` annotation -- and is left "
+        "undone only because no tokamak input file in this repository sets it (all "
+        "five set `3`), so nothing would measure it"
     ),
     ("i_p_coolant_pumping", 1): (
         "`FRACTION_OF_HEAT` (`hcpb.py:817-838`) owns a **different set**: "
@@ -1438,7 +1476,8 @@ here. Refusing that one instead would have made `PowerProfilesOverTime`, a porte
 registered occupant, unreachable through this factory.
 
 Keyed by `(field, value)`. For the two dispatches that read two integers at once the
-`field` is the joint name `blktmodel_ipowerflow` / `blktmodel_blkttype` and the `value`
+`field` is the joint name `blktmodel_ipowerflow_i_p_coolant_pumping` /
+`blktmodel_blkttype` and the `value`
 is an **arm index**, not a switch value -- see `_blanket_shield_power_arm` /
 `_blanket_mass_arm`, whose docstrings are the mapping.
 
@@ -2214,22 +2253,73 @@ declared `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0` and `.tfcoil.j_crit_str_
 three edges the reference run does not make."""
 
 PF_MAGNET_COST = {
-    SuperconductorCostModel.PER_KG: PfMagnetCostPerKg,
-    SuperconductorCostModel.PER_KAM: PfMagnetCostPerKam,
+    0: PfMagnetCostPerKg,
+    1: PfMagnetCostPerKam,
+    2: PfMagnetCostPerKgNoCentralSolenoid,
+    3: PfMagnetCostPerKamNoCentralSolenoid,
+    4: PfMagnetCostPerKgCsWstNb3Sn,
 }
-"""`.costs.supercond_cost_model` -> the Account 222.2 occupant.
+"""`_pf_magnet_cost_arm(supercond_cost_model, iohcl, pf_coil_arm)` -> the Account 222.2
+occupant.
 
-The same switch and the same two arms as `TF_MAGNET_COST_SUPERCONDUCTING`, one account
+The same `supercond_cost_model` arms as `TF_MAGNET_COST_SUPERCONDUCTING`, one account
 later and read a second time -- the shape `CS_SUPERCONDUCTOR` and `CS_TEMPERATURE_MARGIN`
-already have. Also total, for the reason that pair is: a registry that refused `PER_KAM`
-here while the TF registry accepted it would let a file assemble its TF coils and then
-fail on its PF coils.
+already have. Total over all four combinations, for the reason that pair is: a registry
+that refused an arm here while the TF registry accepted it would let a file assemble its
+TF coils and then fail on its PF coils.
 
 Added 2026-08-30 with the split of `PfMagnetCost` into a family
 (`_audit/cost_boundary_inputs.md` §13.2). The four fields that leave with the `PER_KG`
 occupant are `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0`, `.pf_coil.j_crit_str_pf`
 and `.pf_coil.j_crit_str_cs`; the last two are the reason this account waited for a
-producer while Account 222.1's split did not."""
+producer while Account 222.1's split did not.
+
+**Doubled on 2026-08-31 by `.build.iohcl`**, which had been an `eqx.field(static=True)`
+pinned to `PRESENT` on every machine -- `_audit/switch_consultation_audit.md` §2, the one
+live wrong answer that audit found. Both tracked spherical tokamaks set `iohcl = 0` and
+were costing six PF coils plus a central solenoid they do not have, while the same
+assembled machine's `_pf_coil_system_arm` read the switch correctly. §14.2's rule settles
+it on its own (no switch is a static kwarg), and the reads agree independently: four
+fields on the `PER_KG` arm and five on `PER_KAM` are read *only* inside `acc2222`'s
+`iohcl == 1` block, and `.pf_coil.a_cs_cable_space` is `unwritten` on both ST files."""
+
+
+def _pf_magnet_cost_arm(supercond_cost_model, iohcl, pf_coil_arm) -> int:
+    """`.costs.supercond_cost_model` x `.build.iohcl` x the PF coil system's own arm ->
+    `PF_MAGNET_COST`'s arm index.
+
+    The joint-arm shape `_blanket_shield_power_arm` and `_energy_storage_arm` already
+    use: switches that each pick a different pair of reads inside one account, so the
+    conjunction is resolved once here and the registry is keyed on the result.
+
+    Arms `0`/`1`/`4` are the central-solenoid machines and `2`/`3` are the ones without.
+
+    **`pf_coil_arm` joined the conjunction on 2026-08-31, and it is a storage question
+    rather than a switch one.** The `PER_KG` arms multiply by a superconductor density
+    out of `.tfcoil.dcond`, and `pfcoil/masses.py` reads the *same array by element*
+    (`FromExactly(tfcoil.dcond[k])`, one element per material). A node reading it whole
+    beside one reading it by element names one storage location two ways, which
+    `cottax.tools.pytree.check_antichain` refuses to write a pytree back through -- the
+    single blocker to running the MDA through `cottax.boundary.run`, measured as 2
+    violations on each large tokamak, 2 on `low_aspect_ratio_DEMO` and 1 on
+    `spherical_tokamak_eval`. So the `PER_KG`-with-solenoid occupant is split on the CS
+    material exactly as `masses` is, and `_pf_coil_system_arm`'s own answer is what
+    says which -- the two nodes cannot disagree about which element they read, for the
+    same reason `_pf_coil_topology` made the coil counts agree.
+
+    `pf_coil_arm` is `_pf_coil_material_arm`'s answer, which is `_pf_coil_system_arm`'s
+    own positive arm. Only its values `0` and `1` reach the `iohcl != 0` branch (arm `2`
+    *is* `iohcl == 0`), and a `PER_KAM` machine reads no density at all, so the split is
+    exactly one new arm and not four.
+    """
+    if (
+        SuperconductorCostModel(int(supercond_cost_model))
+        is SuperconductorCostModel.PER_KG
+    ):
+        if int(iohcl) == 0:
+            return 2
+        return 4 if int(pf_coil_arm) == 1 else 0
+    return 1 if int(iohcl) != 0 else 3
 
 
 COST_OF_ELECTRICITY = {
@@ -2281,34 +2371,58 @@ def _cost_of_electricity_arm(ireactor: int, ipnet: int, itart: int) -> int:
 BLANKET_SHIELD_POWER = {
     1: BlanketShieldPowerExponential,
     2: DetailedPowerflowBlanketShieldPower,
+    3: DetailedPowerflowBlanketShieldPowerUserInputPumping,
 }
-"""`_blanket_shield_power_arm(blktmodel, ipowerflow)` -> the blanket/shield-power
-occupant. Keyed by the **arm index** that function documents, never by a switch value."""
+"""`_blanket_shield_power_arm(blktmodel, ipowerflow, i_p_coolant_pumping)` -> the
+blanket/shield-power occupant. Keyed by the **arm index** that function documents, never
+by a switch value."""
 
 BLANKET_MASSES = {2: BlanketComponentMasses}
 """`_blanket_mass_arm(blktmodel, blkttype)` -> the blanket-mass occupant, same kind of
 key."""
 
 
-def _blanket_shield_power_arm(blktmodel: int, ipowerflow: int) -> int:
-    """Which arm of `st_fwbs`'s blanket/shield-power dispatch a pair of switches selects.
+def _blanket_shield_power_arm(
+    blktmodel: int, ipowerflow: int, i_p_coolant_pumping: int
+) -> int:
+    """Which arm of `st_fwbs`'s blanket/shield-power dispatch three switches select.
 
-    `stellarator.py:608-...`, transcribed:
+    `stellarator.py:608-...` and `:901-928`/`:1000-1013`, transcribed:
 
     ```
     if blktmodel == 1:              -> arm 0   blanket_neutronics(); UNPORTED
     else:                           # blktmodel == 0
         if ipowerflow == 0:         -> arm 1   BlanketShieldPowerExponential
-        else:                       -> arm 2   DetailedPowerflowBlanketShieldPower
+        else:                       # ipowerflow == 1
+            if i_p_coolant_pumping == 1  -> arm 2  DetailedPowerflowBlanketShieldPower
+            if i_p_coolant_pumping == 0  -> arm 3  ...UserInputPumping
+            otherwise                    -> arm 4  ProcessValueError; UNPORTED
     ```
 
-    So `blktmodel` is the **outer** test and `ipowerflow` only distinguishes the two
-    arms *inside* `blktmodel == 0`. Arm 2 is PROCESS's own default (`blktmodel = 0`,
-    `ipowerflow = 1`) and the reference run.
+    So `blktmodel` is the **outer** test, `ipowerflow` distinguishes the two arms
+    *inside* `blktmodel == 0`, and `i_p_coolant_pumping` splits the `ipowerflow == 1`
+    one again. Arm 2 is PROCESS's own default (`blktmodel = 0`, `ipowerflow = 1`,
+    `i_p_coolant_pumping = 1`) and the reference run; arm 3 is `helias_5b.IN.DAT`.
+
+    **`i_p_coolant_pumping` is not asked on arm 1.** `stellarator.py:684-728` writes no
+    pumping power at all, so the switch has no arm there to be wrong about -- the same
+    reason `_energy_storage_arm` only asks `istore` of a pulsed plant.
+
+    Arm 4 is the two mechanical-pumping values (`2`, `3`). PROCESS does not compute
+    anything there either: `stellarator.py:924-928` raises `ProcessValueError`. It is
+    refused rather than absent, because a graph assembled for it would be a graph
+    PROCESS refuses to run.
     """
     if blktmodel == 1:
         return 0
-    return 2 if ipowerflow == 1 else 1
+    if ipowerflow != 1:
+        return 1
+    pumping = PumpingPowerModelTypes(int(i_p_coolant_pumping))
+    if pumping is PumpingPowerModelTypes.FRACTION_OF_HEAT:
+        return 2
+    if pumping is PumpingPowerModelTypes.USER_INPUT:
+        return 3
+    return 4
 
 
 def _blanket_mass_arm(blktmodel: int, blkttype: int) -> int:
@@ -3758,6 +3872,19 @@ occupant since wave 1, precisely so that its occupant could hang on *this* key r
 than a freshly minted one, and the D-shaped wave supplied it."""
 
 
+def _pf_coil_topology(iohcl):
+    """`.build.iohcl` -> the `PFCoilTopology` the ported occupant set was written for.
+
+    One line, but a *shared* one: `_pf_coil_system_deviations` measures a file's coil
+    counts against it and `machine_from_indat` threads its `n_cs_pf_coils` into Account
+    222.2's occupant. Those two were the "one machine, two answers to one switch" pair
+    of `_audit/switch_consultation_audit.md` §2 -- the cost side held
+    `N_CS_PF_COILS` (7, with a solenoid) while the PF coil system correctly held 8 and
+    none -- so the answer is written once and read twice rather than transcribed.
+    """
+    return REFERENCE_TOPOLOGY if int(iohcl) != 0 else SPHERICAL_TOKAMAK_TOPOLOGY
+
+
 def _pf_coil_system_arm(
     iohcl,
     n_pf_coil_groups,
@@ -3830,6 +3957,22 @@ def _pf_coil_system_arm(
     )
     if deviations:
         return deviations[0]
+    return _pf_coil_material_arm(iohcl, i_cs_superconductor)
+
+
+def _pf_coil_material_arm(iohcl, i_cs_superconductor) -> int:
+    """`_pf_coil_system_arm`'s **positive** arms alone: `.build.iohcl` x the CS
+    superconductor material, with no deviation check in front of it.
+
+    Split out on 2026-08-31 so `_pf_magnet_cost_arm` can ask the same question with the
+    same answer. Account 222.2's `PER_KG` occupants read a `.tfcoil.dcond` element and
+    `pfcoil/masses.py`'s occupants read the same element, so the two must agree about
+    *which* -- and the way to make two slot registries agree is to key them on one
+    function, exactly as `_pf_coil_topology` does for the coil counts. The deviations
+    stay on the caller above: `machine_from_indat` has already refused a negative arm
+    long before it reaches the cost namespace, so re-running six predicates here would
+    only be a second place able to disagree.
+    """
     if int(iohcl) == 0:
         return 2
     return (
@@ -3895,7 +4038,7 @@ def _pf_coil_system_deviations(
         ported ones.
     """
     has_cs = int(iohcl) != 0
-    topology = REFERENCE_TOPOLOGY if has_cs else SPHERICAL_TOKAMAK_TOPOLOGY
+    topology = _pf_coil_topology(iohcl)
 
     # `place_pf_outside_tf` reads its two switches only through this disjunction
     # (`pfcoil.py:1322-1326`), and each written occupant bakes one answer to it:
@@ -4213,6 +4356,369 @@ def resolve_i_tf_bucking(i_tf_bucking, i_tf_sup):
     if int(i_tf_bucking) != -1:
         return int(i_tf_bucking)
     return 0 if int(i_tf_sup) == TFConductorModel.WATER_COOLED_COPPER else 1
+
+
+EFF_TF_CRYO_UNSET = -1.0
+"""`tfcoil_variables.py`'s `eff_tf_cryo` default: a **sentinel**, not an efficiency.
+
+`init.py:933` tests `abs(eff_tf_cryo + 1) < 1e-6` rather than equality, so the sentinel
+is a small neighbourhood of `-1.0` and not the literal; `resolve_eff_tf_cryo` keeps that
+test rather than tightening it.
+"""
+
+
+def resolve_eff_tf_cryo(eff_tf_cryo, i_tf_sup):
+    """`init.py:933-940`: the `-1.0` sentinel -> the cryoplant efficiency for a magnet.
+
+    0.13 is the ITER cryoplant's, used for superconducting coils; 0.40 is a Strawbridge
+    plot extrapolation, used for cryo-aluminium. **A water-cooled copper magnet gets
+    neither** -- `init.py` has no arm for it and the sentinel stands, so a copper machine
+    reaches `.power.thermal_cryo` with `-1.0` and divides by it. Reproduced rather than
+    repaired; no tracked configuration is copper, and the alternative is inventing a
+    number PROCESS does not have.
+
+    Measured firing on **7 of the 7** tracked configurations (`init_audit.md` §2a), which
+    makes it the one sentinel that is an `off` row on every pin: the provider answers it
+    from the dataclass default and gets `-1.0` where PROCESS has `0.13`.
+
+    Raw -> resolved, in the shape `next_steps.md` §24.2 item 2 asks for: the raw value is
+    the file's (`importer.read_indat`), the resolution is here, and the resolved value is
+    owned by `models/initialisation.TfCryoplantEfficiency` rather than supplied to the
+    boundary.
+    """
+    conductor = TFConductorModel(int(i_tf_sup))
+    if abs(float(eff_tf_cryo) + 1.0) >= 1e-6:
+        return float(eff_tf_cryo)
+    if conductor is TFConductorModel.SUPERCONDUCTING:
+        return 0.13
+    if conductor is TFConductorModel.HELIUM_COOLED_ALUMINIUM:
+        return 0.40
+    return float(eff_tf_cryo)
+
+
+EYOUNG_INS_UNSET = 1.0e8
+"""`tfcoil_variables.py:383`'s `eyoung_ins` default -- **a sentinel that looks like an
+answer**. `1e8` Pa is a plausible Young's modulus and `init.py:961` replaces it by two
+orders of magnitude, so a flat defaults table supplies it confidently and is wrong
+(`init_audit.md` §2a). The test is `<= 1e8`, not equality, so any modulus at or below the
+sentinel is treated as unset -- transcribed rather than tightened."""
+
+I_TF_COND_EYOUNG_AXIAL_DEFAULT = 0
+"""`tfcoil_variables.py:275`. `0` means the conductor's stiffness is not considered, and
+it is what every tracked file gets -- none of the seven names this switch."""
+
+I_TF_COND_EYOUNG_TRANS_DEFAULT = 1
+"""`tfcoil_variables.py:287`. Read only when `i_tf_cond_eyoung_axial == 2`."""
+
+
+def resolve_eyoung_ins(eyoung_ins, i_tf_sup):
+    """`init.py:961-975`: the insulation Young's modulus, by magnet technology.
+
+    20 GPa is the ITER design value (DDD11-2 v2 2, 2009) and is used for copper *and*
+    for superconducting magnets -- the comment at `:962` says copper has no insulation
+    material defined and borrows ITER's. 2.5 GPa is Kapton polymer, for cryo-aluminium.
+
+    Measured firing on **7 of 7** (`init_audit.md` §2a); an `off` row on all five
+    tokamak pins, where `.tfcoil.eyoung_ins` reaches the TF stress model at `1e8` Pa
+    instead of `2e10`.
+    """
+    conductor = TFConductorModel(int(i_tf_sup))
+    if float(eyoung_ins) > EYOUNG_INS_UNSET:
+        return float(eyoung_ins)
+    if conductor in {
+        TFConductorModel.WATER_COOLED_COPPER,
+        TFConductorModel.SUPERCONDUCTING,
+    }:
+        return 20.0e9
+    if conductor is TFConductorModel.HELIUM_COOLED_ALUMINIUM:
+        return 2.5e9
+    return float(eyoung_ins)
+
+
+EYOUNG_COND_AXIAL_LITERATURE = {
+    # Nyilas, A et al., Superconductor Science and Technology 16, no. 9 (2003): 1036-42.
+    # https://doi.org/10.1088/0953-2048/16/9/313.
+    SuperconductorMaterial.NB3SN: 32e9,
+    # Brown, M. et al., IOP Conference Series: Materials Science and Engineering 279
+    # (2017): 012022. https://doi.org/10.1088/1757-899X/279/1/012022.
+    SuperconductorMaterial.BI2212: 80e9,
+    # Vedrine, P. et al., IEEE Transactions on Applied Superconductivity 9, no. 2
+    # (1999): 236-39. https://doi.org/10.1109/77.783280.
+    SuperconductorMaterial.NBTI: 6.8e9,
+    # Fujishiro, H. et al., Physica C: Superconductivity, 426-431 (2005): 699-704.
+    # https://doi.org/10.1016/j.physc.2005.01.045.
+    SuperconductorMaterial.REBCO: 145e9,
+}
+"""`init.py:1002-1027`'s literature table: conductor axial Young's modulus (Pa) keyed on
+the superconductor material, each with the DOI `init.py` carries beside it.
+
+**The `dcond[]` shape**, and this port has already had one near-miss with it
+(`next_steps.md` §14.5). It is a table, so it is written as one -- keyed on
+`SuperconductorMaterial` rather than on `i_tf_sc_mat`, because `init.py` keys on
+`SuperconductorModel(...).material` and two models can name one material.
+"""
+
+
+def resolve_eyoung_cond(
+    eyoung_cond_axial,
+    eyoung_cond_trans,
+    i_tf_cond_eyoung_axial,
+    i_tf_cond_eyoung_trans,
+    i_tf_sc_mat,
+):
+    """`init.py:992-1034`: `(eyoung_cond_axial, eyoung_cond_trans)`, both at once.
+
+    One function because `init.py` writes them in one `if/elif` whose arms are not
+    independent: at `== 0` both are zeroed, at `== 2` the axial modulus comes from the
+    literature table and the transverse one is either zero or a copy of it, and at
+    `== 1` **neither is written** and the file's own values stand. That last arm is why
+    this returns the raw values rather than raising on it.
+
+    `eyoung_cond_axial`'s default is `6.6e8` Pa -- the second sentinel that looks like an
+    answer (`init_audit.md` §2a). Measured firing on 7 of 7, and an `off` row on all five
+    tokamak pins, where PROCESS has `0` and a defaults table has `6.6e8`.
+    """
+    axial, trans = float(eyoung_cond_axial), float(eyoung_cond_trans)
+    if int(i_tf_cond_eyoung_axial) == 0:
+        # Conductor stiffness is not considered.
+        return 0.0, 0.0
+    if int(i_tf_cond_eyoung_axial) != 2:
+        # `== 1`: both are the user's, and `init.py` writes neither.
+        return axial, trans
+    axial = EYOUNG_COND_AXIAL_LITERATURE.get(
+        SuperconductorModel(int(i_tf_sc_mat)).material, axial
+    )
+    return axial, (0.0 if int(i_tf_cond_eyoung_trans) == 0 else axial)
+
+
+I_PF_CONDUCTOR_DEFAULT = 0
+"""`pfcoil_variables.py:230` -- `0` is superconducting, which is the arm `init.py:1140`
+zeroes the resistivity on."""
+
+I_HCD_CALCULATIONS_DEFAULT = 1
+"""`current_drive_variables.py:223`."""
+
+I_HCD_PRIMARY_DEFAULT = 5
+"""`current_drive_variables.py:190` -- one of the two NBI values, so a silent file has a
+beam."""
+
+NBI_PRIMARY_HEATING = frozenset({5, 8})
+"""The `i_hcd_primary` values that are neutral beam injection, as `init.py:1146` spells
+them: a bare set of two integers, with no enum in PROCESS behind it."""
+
+
+def resolve_rho_pf_coil(rho_pf_coil, i_pf_conductor):
+    """`init.py:1140`: a superconducting PF coil has zero resistivity.
+
+    A **physical consistency rule**, not a default (`init_audit.md` §1.4): the number it
+    replaces (`2.5e-8` ohm-m, copper) is a real resistivity, and a defaults table hands
+    a superconductor copper's. Measured firing on 7 of 7 and an `off` row on all five
+    tokamak pins.
+    """
+    if PFConductorModel(int(i_pf_conductor)) is PFConductorModel.SUPERCONDUCTING:
+        return 0.0
+    return float(rho_pf_coil)
+
+
+def resolve_f_nd_beam_electron(f_nd_beam_electron, i_hcd_calculations, i_hcd_primary):
+    """`init.py:1145-1147`: no NBI means no hot beam density.
+
+    The second physical consistency rule. The condition is the conjunction `init.py`
+    writes as a nested `if`: heating and current drive must be calculated *and* the
+    primary heating method must be one of the two NBI ones, or the fraction is zeroed.
+    Measured firing on 7 of 7; an `off` row on all five tokamak pins, where the default
+    `0.005` stands against PROCESS's `0`.
+    """
+    if int(i_hcd_calculations) == 1 and int(i_hcd_primary) in NBI_PRIMARY_HEATING:
+        return float(f_nd_beam_electron)
+    return 0.0
+
+
+I_PULSED_PLANT_DEFAULT = 0
+"""`pulse_variables.py:30`. `0` is a steady-state plant, and `init.py:827` then zeroes
+the energy storage building's volume."""
+
+I_SINGLE_NULL_DEFAULT = 1
+"""`physics_variables.py`'s own default: a single-null plasma, the arm under which
+`init.py` writes none of the three upper-build identities."""
+
+
+def resolve_esbldgm3(esbldgm3, i_pulsed_plant):
+    """`init.py:827`: a steady-state plant needs no energy storage building.
+
+    The `else` of the pulsed-plant branch, and the whole of it -- the `if` arm writes
+    only `.globals.icase`, a label. Measured firing on 3 of 7 by `init_audit.md`'s count
+    of *diffs*; it is an `off` row on **4** pins, the two stellarators and the two
+    spherical tokamaks, because `buildings_variables.py:143`'s `1.0e3` m^3 default is
+    what a defaults table supplies for a plant that has no such building at all.
+    """
+    if int(i_pulsed_plant) == 1:
+        return float(esbldgm3)
+    return 0.0
+
+
+SEED_OWNED_FIELDS = (
+    "eff_tf_cryo",
+    "eyoung_ins",
+    "eyoung_cond_axial",
+    "eyoung_cond_trans",
+    "rho_pf_coil",
+    "f_nd_beam_electron",
+    "esbldgm3",
+    "dz_shld_upper",
+    "dz_vv_upper",
+    "dr_cs",
+    "dr_cs_tf_gap",
+    "t_plant_pulse_coil_precharge",
+    "t_plant_pulse_plasma_current_ramp_up",
+    "t_plant_pulse_burn",
+    "t_plant_pulse_plasma_current_ramp_down",
+)
+"""Every field `models/initialisation` may own, as an `IN.DAT`/`ITERATION_VARIABLES`
+name. Checked against this run's `ixc` by `_refuse_seed_owned_unknowns`.
+
+Four of the fourteen have an `ITERATION_VARIABLES` entry -- `f_nd_beam_electron`,
+`dr_cs`, `dr_cs_tf_gap`, `t_plant_pulse_plasma_current_ramp_up` -- so the check is not
+hypothetical, and `large_tokamak_nof` in fact makes `dr_cs` an unknown. The list is the
+full set rather than those four so that adding an occupant cannot silently skip the
+check: a field is named here because a node here may write it, not because PROCESS
+happens to declare an ID for it today.
+"""
+
+
+def _refuse_seed_owned_unknowns(ixc, owned):
+    """Refuse a machine whose `ixc` names a field one of `_initialisation`'s nodes owns.
+
+    `models/initialisation`'s occupants are constants resolved at assembly, which is
+    sound exactly while the field cannot move during a solve. No model writes any of
+    them, so the only way one *could* move is by being an iteration variable -- and a
+    constant node owning an unknown would overwrite the optimiser's own value on every
+    evaluation, silently. Checked, not assumed; `_quench_helium_table` makes the same
+    argument for the same reason.
+    """
+    frozen = {
+        name
+        for identifier in ixc
+        if (variable := ITERATION_VARIABLES.get(int(identifier))) is not None
+        for name in ((variable.target_name or variable.name),)
+        if name in owned
+    }
+    if frozen:
+        raise NotImplementedError(
+            f"{sorted(frozen)} is an iteration variable on this run and is also "
+            f"written by `process/core/init.py` or `st_init`, which "
+            f"`models/initialisation` ports as a constant node resolved at assembly. A "
+            f"constant that owns an unknown overwrites the optimiser's value on every "
+            f"evaluation, so this machine is refused rather than assembled with one. "
+            f"Resolving it means giving the field a real producer, not relaxing this "
+            f"check"
+        )
+
+
+def _initialisation(imported, device, i_tf_sup, i_tf_sc_mat, ixc):
+    """The seed's own writes, as occupied slots: `models/initialisation.Initialisation`.
+
+    Shared by both devices, because `init.py` is: it runs on a tokamak and on a
+    stellarator alike, and the fields it resolves belong to no one subsystem. Every
+    occupant is built from the file's **raw** value (`importer.read_indat`, §24.2 item 2)
+    and this machine's already-resolved switches -- never from a `DataStructure`, so
+    nothing here reaches PROCESS.
+
+    **A slot is empty where the write has no next use**, which is the rule this port
+    applies to every port it declares and not a special case for the seed: the TF stress
+    model is the only reader of the two Young's moduli, and this port's stellarator has
+    no TF stress node, so an occupant there would produce a value nothing reads. `device`
+    is the switch that answers it, resolved before this is called.
+    """
+    tokamak = device is TokamakProcess
+    i_pulsed_plant = imported.get("pulse", "i_pulsed_plant", I_PULSED_PLANT_DEFAULT)
+    i_single_null = imported.get("physics", "i_single_null", I_SINGLE_NULL_DEFAULT)
+    owned = {"eff_tf_cryo"}
+    if int(i_pulsed_plant) != 1:
+        owned.add("esbldgm3")
+    if tokamak and int(i_single_null) == 0:
+        owned.add("dz_shld_upper")
+    if not tokamak:
+        owned |= {
+            "dr_cs",
+            "dr_cs_tf_gap",
+            "t_plant_pulse_coil_precharge",
+            "t_plant_pulse_plasma_current_ramp_up",
+            "t_plant_pulse_burn",
+            "t_plant_pulse_plasma_current_ramp_down",
+        }
+    if tokamak:
+        owned |= {
+            "eyoung_ins",
+            "eyoung_cond_axial",
+            "eyoung_cond_trans",
+            "rho_pf_coil",
+            "f_nd_beam_electron",
+        }
+    _refuse_seed_owned_unknowns(ixc, owned & set(SEED_OWNED_FIELDS))
+    axial, transverse = resolve_eyoung_cond(
+        imported.get("tfcoil", "eyoung_cond_axial", 6.6e8),
+        imported.get("tfcoil", "eyoung_cond_trans", 0.0),
+        imported.get("tfcoil", "i_tf_cond_eyoung_axial", I_TF_COND_EYOUNG_AXIAL_DEFAULT),
+        imported.get("tfcoil", "i_tf_cond_eyoung_trans", I_TF_COND_EYOUNG_TRANS_DEFAULT),
+        i_tf_sc_mat,
+    )
+    return Initialisation(
+        tf_cryoplant_efficiency=TfCryoplantEfficiency(
+            value=resolve_eff_tf_cryo(
+                # `tfcoil_variables.py`'s own default is the sentinel, so a file that
+                # does not name `eff_tf_cryo` and a file that names it as `-1.0` are the
+                # same machine -- which is what `init.py` means by "unset".
+                imported.get("tfcoil", "eff_tf_cryo", EFF_TF_CRYO_UNSET),
+                i_tf_sup,
+            )
+        ),
+        tf_insulation_youngs_modulus=TfInsulationYoungsModulus(
+            value=resolve_eyoung_ins(
+                imported.get("tfcoil", "eyoung_ins", EYOUNG_INS_UNSET), i_tf_sup
+            )
+        )
+        if tokamak
+        else None,
+        tf_conductor_youngs_modulus=TfConductorYoungsModulus(
+            axial=axial, transverse=transverse
+        )
+        if tokamak
+        else None,
+        pf_coil_resistivity=PfCoilResistivity(
+            value=resolve_rho_pf_coil(
+                imported.get("pf_coil", "rho_pf_coil", 2.5e-8),
+                imported.get("pf_coil", "i_pf_conductor", I_PF_CONDUCTOR_DEFAULT),
+            )
+        )
+        if tokamak
+        else None,
+        beam_electron_density_fraction=BeamElectronDensityFraction(
+            value=resolve_f_nd_beam_electron(
+                imported.get("physics", "f_nd_beam_electron", 0.005),
+                imported.get(
+                    "current_drive", "i_hcd_calculations", I_HCD_CALCULATIONS_DEFAULT
+                ),
+                imported.get("current_drive", "i_hcd_primary", I_HCD_PRIMARY_DEFAULT),
+            )
+        )
+        if tokamak
+        else None,
+        energy_storage_building_volume=EnergyStorageBuildingVolume(
+            value=resolve_esbldgm3(
+                imported.get("buildings", "esbldgm3", 1.0e3), i_pulsed_plant
+            )
+        )
+        if int(i_pulsed_plant) != 1
+        else None,
+        double_null_upper_build=DoubleNullUpperBuild()
+        if tokamak and int(i_single_null) == 0
+        else None,
+        # `st_init` returns at its first line on `istell == 0`, so both of its slots are
+        # the stellarator arm of one dispatch and neither is a kwarg on a shared node.
+        stellarator_solenoid_absent=None if tokamak else StellaratorSolenoidAbsent(),
+        stellarator_pulse_times=None if tokamak else StellaratorPulseTimes(),
+    )
 
 
 # ------------------------------------------------------------------ presence (§24.2)
@@ -5145,6 +5651,19 @@ def machine_from_indat(input_file, stella_conf=None):
     # whether the cryoplant runs at all, and it is `PfMagnetCost`'s one remaining static
     # branch. Read above `costs` rather than below it since Account 222.2 came back.
     i_pf_conductor = PFConductorModel(int(switches.get("i_pf_conductor", 0)))
+    # `build_variables.py:177`, the same read and the same default `_tokamak_device`'s
+    # `pf_coil_switches` makes -- Account 222.2 is the one slot outside that function
+    # that needs the PF coil topology, and the two live in different scopes. Kept as a
+    # second read of one dict entry rather than a second *answer*: both go through
+    # `_pf_coil_topology`, so a machine cannot hold two topologies again.
+    pf_magnet_cost_iohcl = switches.get("iohcl", 1)
+    # The PF coil system's own positive arm, asked of the same two switches
+    # `_pf_coil_system_arm` asks -- see `_pf_coil_material_arm` for why it is one
+    # function and not two copies of one `if`.
+    pf_magnet_cost_material_arm = _pf_coil_material_arm(
+        pf_magnet_cost_iohcl,
+        switches.get("i_cs_superconductor", 1),  # `pfcoil_variables.py:239`
+    )
     cost_of_electricity = _slot_occupant(
         "ireactor_ipnet_itart",
         _cost_of_electricity_arm(ireactor, switches.get("ipnet", 0), itart),
@@ -5196,21 +5715,38 @@ def machine_from_indat(input_file, stella_conf=None):
             ),
             # The third device-decided slot, and the only one that is *also* switched:
             # `None` on a stellarator (no PF coil system to cost, §12.2's argument),
-            # and on a tokamak the same `supercond_cost_model` occupant one account
-            # later. The three static kwargs are the PF loop's bounds and its conductor
-            # branch, all three fixed by `_pf_coil_system_deviations` before any tokamak
-            # finishes assembling -- `-1` refuses `iohcl != 1`, `-2` refuses any coil
-            # count but `(1, 1, 2, 2)` over four groups, `-5` refuses a resistive PF
-            # conductor -- so `N_CS_PF_COILS` is the count and not a guess. `switch_
-            # audit` value-checks all three against the run.
+            # and on a tokamak the `supercond_cost_model` x `iohcl` occupant one account
+            # later.
+            #
+            # **`iohcl` used to be pinned here to `PRESENT` and it was wrong on two
+            # tracked files** (`_audit/switch_consultation_audit.md` §2). The comment
+            # that stood here justified the pin by a `_pf_coil_system_deviations`
+            # refusal -- "`-1` refuses `iohcl != 1`" -- that commit `253c426a` retired
+            # when the no-central-solenoid arm landed. The refusal stopped firing and
+            # the hardcoded answer behind it was never revisited, so both spherical
+            # tokamaks costed six PF coils plus a solenoid they do not have while the
+            # PF coil *system* eleven hundred lines above read the same switch
+            # correctly. The switch is now a second occupant (§14.2: no switch is a
+            # static kwarg) and the count comes from the same `_pf_coil_topology` the
+            # PF coil system is measured against, so the two cannot disagree again.
+            #
+            # `n_cs_pf_coils` and `i_pf_conductor` stay static kwargs and are not
+            # switches: the first is the topology's coil count and the second branches
+            # inside every arm rather than between them. `_pf_coil_system_deviations`
+            # `-5` still fixes the conductor before any tokamak finishes assembling.
             pf_magnet_cost=(
                 _slot_occupant(
-                    "supercond_cost_model",
-                    supercond_cost_model,
+                    "supercond_cost_model_iohcl",
+                    _pf_magnet_cost_arm(
+                        supercond_cost_model,
+                        pf_magnet_cost_iohcl,
+                        pf_magnet_cost_material_arm,
+                    ),
                     PF_MAGNET_COST,
                     build=lambda cls: cls(
-                        n_cs_pf_coils=N_CS_PF_COILS,
-                        iohcl=CentralSolenoidConfiguration.PRESENT,
+                        n_cs_pf_coils=_pf_coil_topology(
+                            pf_magnet_cost_iohcl
+                        ).n_cs_pf_coils,
                         i_pf_conductor=i_pf_conductor,
                     ),
                 )
@@ -5367,8 +5903,15 @@ def machine_from_indat(input_file, stella_conf=None):
         tail=confinement_tail,
     )
 
+    # `init.py` runs on both devices, so its resolutions are built once, above the
+    # branch, exactly like every other shared slot here.
+    initialisation = _initialisation(
+        imported, device, i_tf_sup, i_tf_sc_mat, iteration_variables_from_indat(imported)
+    )
+
     if device is TokamakProcess:
         return TokamakProcess(
+            initialisation=initialisation,
             # Everything device-specific, and no longer `Tokamak()`: twenty-six of
             # its twenty-eight slots have occupants, most of them switched. `i_tf_sup`,
             # `i_plasma_ignited`, `itart` and `i_tf_sc_mat` are *threaded* rather than
@@ -5454,8 +5997,14 @@ def machine_from_indat(input_file, stella_conf=None):
     blktmodel = switches.get("blktmodel", 0)
     ipowerflow = switches.get("ipowerflow", 1)
     blanket_shield_power = _slot_occupant(
-        "blktmodel_ipowerflow",
-        _blanket_shield_power_arm(blktmodel, ipowerflow),
+        "blktmodel_ipowerflow_i_p_coolant_pumping",
+        _blanket_shield_power_arm(
+            blktmodel,
+            ipowerflow,
+            # `fwbs_variables.py:249`. A stellarator that leaves it there lands on
+            # arm 4, which refuses -- correctly: PROCESS raises on that value too.
+            switches.get("i_p_coolant_pumping", 2),
+        ),
         BLANKET_SHIELD_POWER,
     )
     blanket_masses = _slot_occupant(
@@ -5481,6 +6030,7 @@ def machine_from_indat(input_file, stella_conf=None):
     # answered the question itself, with a module constant no instrument could see.
     coils_mass = _slot_occupant("i_tf_sc_mat", i_tf_sc_mat, COILS_MASS_MATERIAL)
     return StellaratorProcess(
+        initialisation=initialisation,
         costs=costs,
         stellarator=Stellarator(
             coils=StellaratorCoils(

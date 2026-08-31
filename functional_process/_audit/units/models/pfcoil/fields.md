@@ -323,3 +323,42 @@ enforced the consequence rather than the port choosing it: a
 `FromExactly(b_pf_coil_peak[7])` read against a whole-array owner is refused outright as
 a read that would silently become a boundary input, which is how
 `PFStrandCriticalCurrentDensityHazeltonZhaiRebco` came to read both arrays whole.
+
+## 2026-08-31 -- the field kernel is batched, not re-traced
+
+`calculate_b_field_at_point` is a *scalar* test point against an *array* of current
+loops, and every caller in this package wanted many test points. Each of those was a
+separate Python call, so the kernel's ~110 jaxpr equations were emitted once per test
+point at trace time. Counted on `large_tokamak_nof`: **171 copies**, 19,366 equations,
+just under half that configuration's whole 39,127-equation MDA program -- against a
+stellarator, which reaches none of this code, at 3,360 equations for 154 nodes. XLA's
+compile time scales superlinearly in program size, so this one shape was most of why a
+tokamak MDA cost 15.4 s to compile and a stellarator 2.5 s.
+
+Two `vmap`s now stand next to the kernel and nothing inside it changed:
+
+- `_b_field_over_test_points` -- `in_axes=(None, None, None, 0, 0)`, many test points
+  over one filament set. This is `currents._fixb`'s 32-point loop, `induct`'s repeated
+  evaluations, and the inner/outer edge pair here.
+- `_b_field_over_filament_sets` -- the same again over *independent* filament sets, for
+  `_peak_fields_from_loops`, where each PF group has both its own filaments and its own
+  two test points.
+
+`_peak_fields_from_loops` pads the per-group filament sets to a common width to use the
+second one. **The padding carries zero current**, which contributes exactly zero because
+`brx` and `bzx` are linear in `c_current_loop`, and sits at `r = 1 m` so no denominator
+in the kernel approaches zero. It is the same device the plasma filament already used
+(module docstring: "included unconditionally with the current masked to zero"), applied
+to the group axis.
+
+### Reductions reassociated by vectorisation
+
+The padding lengthens the `jnp.sum` over loops inside the kernel by the padding width, so
+XLA reassociates that reduction. The added terms are exactly `0.0`, so the value is the
+same to within the last bits; a reader diffing this unit against PROCESS should expect
+~1 ulp on `b_pf_inner`/`b_pf_outer`, not bit-identity. The harness's tier-1 contracts pass
+unchanged at their own tolerances. Nothing else about the kernel moved: `_fixb`'s and
+`_mtrx`'s `vmap` alone was verified bit-identical to the unrolled loops over 24 random
+samples before the padding was added.
+
+`fields.py`'s share of `large_tokamak_nof` fell from 19,366 equations to 2,517.
