@@ -61,7 +61,37 @@ constraints keep a factor of 1.0; MDF declares no residual equalities, so its co
 already PROCESS's normalised residual. `min ie` is cottax's sign convention as VMCON
 sees it: **negative is violated**. `PROCESS` is `numerics.n_solver_iterations` from the
 run that produced the reference -- it is the count for a *converged* solve from the same
-`IN.DAT`, and it is the only external scale on this table.
+`IN.DAT`.
+
+`PRO objf`, `d objf` and `worst dx` compare the port with **PROCESS's own answer**
+--------------------------------------------------------------------------------
+Until 2026-08-31 this table carried PROCESS's iteration count and never PROCESS's
+*answer*, so every "matches" claim the record made off it compared the port against
+**itself** under a different seeding mode -- which is exactly `_audit/next_steps.md`
+§17.2's error, and it was repeated twice after §17.2 named it. `reference_run` is
+disk-cached, so the three columns cost about `0.01 s` a row.
+
+`PRO objf` is `objective_function(i_figure_merit, reference.data)`; `d objf` its relative
+distance from the port's; `worst dx` the largest relative deviation over the `ixc` design
+vector (`run_sand_harness.py`'s own `rel` column, worst-cased, with the iteration
+variable named in the notes).
+
+**A gap can be right.** `stellarator_helias` reads `1.2149167845171462` against the
+port's `1.21775735`, and that 0.23 % is the `+17.604 MW` chain
+`mda_harness.EXPLAINED_DISAGREEMENTS` documents, where PROCESS's converged
+`DataStructure` is internally inconsistent and the port is the self-consistent side. Such
+rows are flagged **EXPLAINED** in the notes (`EXPLAINED_OBJECTIVE_READS`), because a
+column that reported them as failures would be worse than no column at all.
+
+The problem type comes from the file, not from a default
+--------------------------------------------------------
+`large_tokamak_eval` and `spherical_tokamak_eval` state `i_process_run_mode = -2`, and
+PROCESS answers that by **root-finding the equalities** with `scipy.optimize.fsolve`,
+forming no objective and never examining the inequalities. `Row.root_find` reads that off
+the file (`importer.Problem.is_evaluation`) and the MDF arm assembles a `RootFind`
+accordingly (`mdf.assemble`). Their `PRO objf` cell reads `none`, not a number: PROCESS
+forms none, and `reference.i_figure_merit` is `7` on both only because
+`numerics.py:154`'s dataclass default put it there.
 
 **Every `SQP` count is at `1e-8`**, and saying so is not pedantry. `MDF_TOLERANCE` and
 `SAND_TOLERANCE` are imported from -- or default identically to -- the two ladder
@@ -136,12 +166,14 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402
 
 from functional_process import mdf, native, provider, sand  # noqa: E402
+from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
     graph_for,
     machine_from_indat,
     switch_values_from_indat,
 )
+from functional_process.mda_harness import EXPLAINED_DISAGREEMENTS  # noqa: E402
 from functional_process.run_mda_harness import _resolve  # noqa: E402
 from functional_process.run_mdf_harness import MAX_ITER as MDF_MAX_ITER  # noqa: E402
 from functional_process.run_mdf_harness import TOLERANCE as MDF_TOLERANCE  # noqa: E402
@@ -158,6 +190,7 @@ from functional_process.sand_harness import (  # noqa: E402
     ground_truth,
     mda_env,
     reference_run,
+    run_schedule,
 )
 
 CONFIGURATIONS = (
@@ -227,6 +260,18 @@ class Row:
     omitted_paths: tuple = ()
     """`NATIVE` only: the places this run asked for and the native state could not
     answer, so each was seeded `0.0`. The work list, per configuration."""
+    root_find: bool = False
+    """Does this file state a root find (`i_process_run_mode = -2`) rather than an
+    optimisation? Read off the file's own text (`importer.Problem.is_evaluation`), so it
+    is the same answer in every boundary mode including `NATIVE`."""
+    process_objf: float | None = None
+    """PROCESS's own converged objective, `objective_function(i_figure_merit, data)`.
+
+    `None` in two distinct situations the table must not conflate: a `--native` row (no
+    PROCESS run at all, so the `PRO` column is `-` too) and a root-find row (PROCESS
+    **forms no objective** in evaluation mode -- `_Fsolve.solve` ends `self.objf = None`
+    -- so there is no number to compare against and inventing one would be worse than
+    the blank). `render` distinguishes them by `root_find`."""
 
 
 def _blank():
@@ -246,6 +291,11 @@ def _blank():
         "max_eq": None,
         "min_ie": None,
         "seconds": None,
+        "dx": None,
+        "dx_at": None,
+        "dobjf": None,
+        "explained": "",
+        "withheld": "",
     }
 
 
@@ -338,12 +388,17 @@ def _boundary_seed(reference, path, mode):
     return cold, {**counts, "mode": mode}, moved
 
 
-def cold_mdf(reference, machine_graph, switch_values, cold):
+def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
     """Build MDF for this run and solve it from the input file's own cold values.
 
     The same three calls `run_mdf_harness._measure` makes for its C3 -- `seed` off
     `reference.cold`, `prime` the MDA once, `solve` -- with the shape reported alongside,
     because on a table the shape is what makes a solve's cost legible.
+
+    `root_find` states the file's own problem type instead of an `Optimise` for the two
+    files whose `i_process_run_mode` is `-2` (`mdf.assemble`; `_run_mode` chooses). The
+    row then reports `objf` as `-`, because PROCESS forms none in that mode and neither
+    does the port.
     """
     result = _blank()
     began = time.perf_counter()
@@ -354,6 +409,7 @@ def cold_mdf(reference, machine_graph, switch_values, cold):
         reference.i_figure_merit,
         graph=machine_graph,
         switch_values=switch_values,
+        root_find=root_find,
     )
     shape = mdf.mdf_shape(problem)
     result.update(
@@ -367,8 +423,38 @@ def cold_mdf(reference, machine_graph, switch_values, cold):
     )
     env = mdf.seed(problem, cold)
     env, _primed = mdf.prime(problem, env)
+    if root_find:
+        outcome: dict = {}
+        x, out, seconds = mdf.solve(
+            problem, env, optimiser=mdf.root_find_driver(problem, outcome=outcome)
+        )
+        # The residuals at the answer, from the same condition map the driver was
+        # handed -- not from `out`, so that what is reported is what was driven.
+        at = mdf.condition_map(problem, env)(*[jnp.asarray(v) for v in x])
+        residuals = [float(np.asarray(v)) for v in at]
+        # PROCESS's own last act in this mode: evaluate every constraint, equalities and
+        # inequalities alike, once at the answer (`_Fsolve.solve`). `min ie` is that.
+        inequalities = [float(np.asarray(out[c])) for c in problem.reported]
+        result.update(
+            iterations=outcome.get("steps"),
+            objf=None,
+            max_eq=max(abs(r) for r in residuals) if residuals else 0.0,
+            min_ie=min(inequalities) if inequalities else None,
+            status="converged" if outcome.get("successful") else "not-converged",
+            seconds=seconds,
+            note=(
+                f"RootFind over {len(residuals)} equality/-ies, "
+                f"{len(inequalities)} inequality/-ies evaluated at the answer and not "
+                f"driven -- PROCESS's own `fsolve` shape"
+                + ("" if outcome.get("successful") else f" ({outcome.get('result')})")
+            ),
+        )
+        result["_x"] = tuple(float(np.asarray(v)) for v in x)
+        result["_omitted"] = problem.report["omitted"]
+        result["_seconds_total"] = time.perf_counter() - began
+        return result
     trace: list = []
-    _x, _out, seconds = mdf.solve(
+    x, _out, seconds = mdf.solve(
         problem,
         env,
         bounds=reference.bounds,
@@ -386,6 +472,7 @@ def cold_mdf(reference, machine_graph, switch_values, cold):
         seconds=seconds,
         note="" if trace else "first QP infeasible -- the start came back untouched",
     )
+    result["_x"] = tuple(float(np.asarray(v)) for v in x)
     result["_omitted"] = problem.report["omitted"]
     result["_seconds_total"] = time.perf_counter() - began
     return result
@@ -476,8 +563,13 @@ def cold_sand(reference, machine_graph, switch_values, cold):
         return result
 
     started = time.perf_counter()
-    solve_schedule(_inputs_only(solve_schedule, seeded))
+    out = run_schedule(
+        solve_schedule, _inputs_only(solve_schedule, seeded), whole=False
+    )
     elapsed = time.perf_counter() - started
+    result["_x"] = tuple(
+        float(np.asarray(out[sand.iteration_variable_path(i)])) for i in reference.ixc
+    )
     iterations, objf, max_eq, min_ie = _trace_tail(trace)
     note = ""
     if not trace:
@@ -503,6 +595,164 @@ def cold_sand(reference, machine_graph, switch_values, cold):
     )
     result["_seconds_total"] = time.perf_counter() - began
     return result
+
+
+EXPLAINED_OBJECTIVE_READS = {
+    ".costs.coe": ".heat_transport.p_plant_electric_base_total_mw",
+    ".costs.cdirt": ".heat_transport.p_plant_electric_base_total_mw",
+    ".costs.concost": ".heat_transport.p_plant_electric_base_total_mw",
+}
+"""`objective read -> the `mda_harness.EXPLAINED_DISAGREEMENTS` key that explains a gap
+on it`.
+
+Why this table exists at all
+----------------------------
+The `PRO objf` column below is the first thing on this matrix that compares the port
+against **PROCESS's answer** rather than against the port under another seeding mode
+(`_audit/next_steps.md` §17.2's error, repeated twice since). The first time it was run
+it reported `stellarator_helias` off by 0.23 %, and a column that called that a
+regression would be worse than no column: it is the `+17.604 MW` chain
+`mda_harness.EXPLAINED_DISAGREEMENTS` already documents at
+`.heat_transport.p_plant_electric_base_total_mw`, where **PROCESS's own converged
+`DataStructure` is internally inconsistent and the port is the self-consistent side**.
+That entry's own last sentence names the tail of the chain -- *"the rest is that delta
+through the linear cost accumulation to `.costs.coe`"* -- and every objective metric that
+reads a cost total is therefore downstream of it.
+
+Why it is a read map and not a configuration list
+-------------------------------------------------
+The property is of the **metric**, not of the machine: `objective_metric_6` is `coe/100`
+and `objective_metric_7` is `cdirt/1e3` or `concost/1e4`, so any file choosing figure of
+merit 6 or 7 inherits the same chain, and a list of today's seven configurations would go
+stale the first time an eighth arrived. `_explained_by` asks the assembled objective node
+what it reads and looks the answer up here.
+
+**A gap is marked explained only when the design vector agrees**, which is the second
+half of the rule and the part that keeps it honest: the chain is a difference in
+*evaluating* the objective at a shared point. A row whose `worst dx` has moved is not
+this; it is a different answer, and it gets no label.
+"""
+
+_UNKNOWN_EXPLANATIONS = sorted(
+    set(EXPLAINED_OBJECTIVE_READS.values()) - set(EXPLAINED_DISAGREEMENTS)
+)
+if _UNKNOWN_EXPLANATIONS:  # pragma: no cover -- a wiring error, checked at import
+    raise ValueError(
+        f"EXPLAINED_OBJECTIVE_READS points at {_UNKNOWN_EXPLANATIONS}, which "
+        f"`mda_harness.EXPLAINED_DISAGREEMENTS` no longer documents -- a row would be "
+        f"labelled 'explained' by a record that has been deleted. Re-derive the label "
+        f"or drop the entry; do not silence this."
+    )
+"""The label may only cite a live record.
+
+A matrix cell reading EXPLAINED is a claim that somebody has already chased this
+difference and written down why. If the write-up is deleted or renamed and the label
+outlives it, the cell becomes an assertion with nothing behind it -- which is strictly
+worse than the unlabelled 0.23 % it replaced. Checked at import so the failure lands on
+whoever moved the record, not on a reader of a table generated three weeks later.
+"""
+
+
+_EXPLAINED_DX = 1e-4
+"""How closely the design vector must agree before an objective gap may be called
+explained. Loose on purpose -- the cold solves land within `1e-6`-ish of PROCESS's `x`
+when they land at all, so this separates "the same point" from "a different answer"
+rather than grading the solve."""
+
+
+def _explained_by(reference, graph, switch_values):
+    """`(key, read)` if this run's objective is downstream of a documented, deliberate
+    disagreement, else `None`.
+
+    Asks `sand.objective_node` -- the same call `mdf.assemble` makes -- which `VarPath`s
+    the run's figure of merit reads, so this cannot drift from what was actually
+    assembled the way a hand-kept per-configuration list would.
+    """
+    try:
+        _name, node, _objective = sand.objective_node(
+            graph if graph is not None else graph_for(),
+            reference.i_figure_merit,
+            switch_values,
+        )
+    except Exception:  # noqa: BLE001 -- an unmarked row, never a lost row
+        return None
+    for port in node.inputs:
+        read = port.var.path_str()
+        if read in EXPLAINED_OBJECTIVE_READS:
+            return EXPLAINED_OBJECTIVE_READS[read], read
+    return None
+
+
+def _process_objective(reference, root_find):
+    """PROCESS's **own** converged objective, or `None` when it forms none.
+
+    `objective_function(i_figure_merit, data)` is the function PROCESS's solver
+    maximises or minimises, read at the converged `DataStructure` -- so this is the
+    number the port's `objf` column has to be compared against, and until 2026-08-31
+    this table had no column for it at all. Every "matches PROCESS" claim in the record
+    before then compared the port against *itself* under a different seeding mode, which
+    is exactly `_audit/next_steps.md` §17.2's error.
+
+    `root_find` short-circuits it, and not as an optimisation: a file whose
+    `i_process_run_mode` is `-2` is answered by `_Fsolve`, whose `solve` ends
+    `self.objf = None` and whose output writer omits the figure-of-merit line entirely.
+    `reference.i_figure_merit` is `7` on both such files **because `numerics.py:154`
+    defaults it there**, not because the file or the solver ever chose it -- evaluating
+    that metric would produce a number PROCESS never formed and print it in a column
+    headed "PROCESS".
+    """
+    if root_find:
+        return None
+    from process.core.solver.objectives import objective_function  # noqa: PLC0415
+
+    try:
+        return float(objective_function(reference.i_figure_merit, reference.data))
+    except Exception:  # noqa: BLE001 -- an empty cell, never a lost row
+        return None
+
+
+def _against_process(store, reference, process_objf, explained=None):
+    """Fill a formulation's `dx`/`dobjf`/`explained` -- the port's answer against
+    PROCESS's own.
+
+    `dx` is the **worst relative deviation over the `ixc` design vector**, the same
+    quantity `run_sand_harness.main`'s per-variable table prints in its `rel` column and
+    computed the same way (`|port - PROCESS| / |PROCESS|`, `reference.converged` being
+    PROCESS's converged value per iteration-variable ID). It is reported as one number
+    plus the ID it occurred at, because on a matrix the row is the unit and the full
+    table belongs to the per-configuration harness.
+
+    A `NativeReference` has no `converged` and no objective -- there was no PROCESS run
+    -- so both columns stay `-` on a `--native` row, exactly as `PRO` does.
+    """
+    x = store.get("_x")
+    converged = getattr(reference, "converged", None)
+    if x and converged:
+        rels = [
+            abs(got - converged[i]) / max(abs(converged[i]), 1e-300)
+            for i, got in zip(reference.ixc, x, strict=True)
+        ]
+        if rels:
+            worst = int(np.argmax(rels))
+            store["dx"] = rels[worst]
+            store["dx_at"] = reference.ixc[worst]
+    if process_objf is not None and store.get("objf") is not None:
+        store["dobjf"] = abs(store["objf"] - process_objf) / max(
+            abs(process_objf), 1e-300
+        )
+        if explained is not None and store["dx"] is not None:
+            if store["dx"] <= _EXPLAINED_DX:
+                store["explained"] = explained[0]
+            else:
+                # The label is **withheld, and the withholding is itself reported.**
+                # This row's objective is downstream of a documented chain, so the
+                # tempting reading is "explained" -- but the two objectives were
+                # evaluated at two different design points, and a difference measured
+                # across two points is not evidence about either. Saying "withheld and
+                # here is why" is the only honest cell; silently labelling it would
+                # repeat §17.2's error in a new place, and silently dropping the
+                # explanation would lose the fact that a documented chain is in play.
+                store["withheld"] = explained[0]
 
 
 _HEADLINE = 260
@@ -551,7 +801,16 @@ def run_one(path, mode=PROVIDER) -> Row:
     began = time.perf_counter()
     name = path.name[: -len(".IN.DAT")] if path.name.endswith(".IN.DAT") else path.stem
     row = Row(name=name)
+    # The file's own problem type, read from its text before anything else runs: a file
+    # stating `i_process_run_mode = -2` is a **root find over its equalities**, which is
+    # what PROCESS answers it with (`scipy.optimize.fsolve`, no objective, the
+    # inequalities evaluated once at the answer). It is read here rather than off a
+    # `ReferenceRun` so that every boundary mode -- `NATIVE` included, which runs no
+    # PROCESS -- gets the same answer from the same place.
+    row.root_find = read_indat(str(path)).problem.is_evaluation
     print(f"\n=== {name} ", "=" * 40, flush=True)
+    if row.root_find:
+        print("  states a ROOT FIND (i_process_run_mode = -2), not an optimisation")
 
     # Assembly first: a refusal costs a `machine_from_indat` and saves the PROCESS run.
     is_reference = path == _resolve(REFERENCE_INPUT_FILE)
@@ -605,12 +864,15 @@ def run_one(path, mode=PROVIDER) -> Row:
     row.process_iterations = reference.solver_iterations
     row.n_ixc = len(reference.ixc)
     row.n_icc = len(reference.icc)
+    row.process_objf = _process_objective(reference, row.root_find)
     print(
-        f"  PROCESS: {reference.solver_iterations} VMCON iterations in "
+        f"  PROCESS: {reference.solver_iterations} "
+        f"{'fsolve' if row.root_find else 'VMCON'} iterations in "
         f"{reference.solve_seconds:.1f} s, conv "
         f"{reference.convergence_parameter:.2e}; "
         f"{len(reference.ixc)} ixc, {len(reference.icc)} icc "
-        f"({reference.n_equality} eq)"
+        f"({reference.n_equality} eq), objf "
+        + ("none formed (evaluation mode)" if row.root_find else f"{row.process_objf!r}")
     )
     cold = reference.cold
     try:
@@ -649,13 +911,15 @@ def _solve_both(row, reference, machine_graph, switch_values, cold, began):
     *where the four arguments come from* and not at all in what is done with them, and a
     second copy of this loop would be the place a difference crept in unnoticed.
     """
+    # Only the MDF arm states the file's problem type today; see `cold_sand`.
+    explained = _explained_by(reference, machine_graph, switch_values)
     omitted = []
-    for label, run, store in (
-        ("MDF", cold_mdf, row.mdf),
-        ("SAND", cold_sand, row.sand),
+    for label, run, store, kwargs in (
+        ("MDF", cold_mdf, row.mdf, {"root_find": row.root_find}),
+        ("SAND", cold_sand, row.sand, {}),
     ):
         try:
-            store.update(run(reference, machine_graph, switch_values, cold))
+            store.update(run(reference, machine_graph, switch_values, cold, **kwargs))
         except Exception as failure:  # noqa: BLE001 -- a row, not an exit
             store.update(_blank())
             store.update(
@@ -666,12 +930,23 @@ def _solve_both(row, reference, machine_graph, switch_values, cold, began):
             print(f"  {label}: FAILED -- {store['note']}")
             traceback.print_exc()
             continue
+        # The one column on this table that compares the port with **PROCESS's answer**
+        # rather than with the port under another seeding mode. Cheap -- both numbers
+        # are already in hand -- and it is the check §17.2 got wrong three times.
+        _against_process(store, reference, row.process_objf, explained)
         if store.get("_omitted"):
             omitted.append(f"{label} {store['_omitted']}")
         print(
             f"  {label}: {store['iterations']} SQP it, {store['status']}, "
             f"objf {store['objf']}, max|eq| {store['max_eq']}, "
             f"min ie {store['min_ie']}"
+            + (
+                f", vs PROCESS: worst dx {store['dx']:.2e} at x{store['dx_at']}"
+                if store["dx"] is not None
+                else ""
+            )
+            + (f", d objf {store['dobjf']:.2e}" if store["dobjf"] is not None else "")
+            + (f" [EXPLAINED {store['explained']}]" if store["explained"] else "")
             + (f" -- {store['note']}" if store["note"] else "")
         )
     if getattr(cold, "missing", None):
@@ -725,6 +1000,9 @@ _COLUMNS = (
     ("SQP", 5, "{}"),
     ("status", 11, "{}"),
     ("objf", 15, "{}"),
+    ("PRO objf", 15, "{}"),
+    ("d objf", 9, "{}"),
+    ("worst dx", 9, "{}"),
     ("max|eq|", 10, "{}"),
     ("min ie", 11, "{}"),
     ("PRO", 4, "{}"),
@@ -793,6 +1071,13 @@ def render(rows) -> str:
                     _cell(store["iterations"], 5),
                     _cell(store["status"] or None, 11),
                     _cell(store["objf"], 15, "g"),
+                    _cell(
+                        "none" if row.root_find else row.process_objf,
+                        15,
+                        None if row.root_find else "g",
+                    ),
+                    _cell(store["dobjf"], 9, "e"),
+                    _cell(store["dx"], 9, "e"),
                     _cell(store["max_eq"], 10, "e"),
                     _cell(store["min_ie"], 11, "e"),
                     _cell(row.process_iterations, 4),
@@ -800,6 +1085,45 @@ def render(rows) -> str:
             )
             if store["note"]:
                 notes.append(f"{row.name} {form}: {store['note']}")
+            if store["dx"] is not None:
+                notes.append(
+                    f"{row.name} {form}: worst dx {store['dx']:.2e} at "
+                    f"ixc {store['dx_at']} (over {row.n_ixc} design variable(s), "
+                    f"against PROCESS's own converged x)"
+                )
+            if row.root_find and store["objf"] is not None:
+                notes.append(
+                    f"{row.name} {form}: this file states a ROOT FIND, but the {form} "
+                    f"arm still assembled an `Optimise` and so reports an `objf` of "
+                    f"{store['objf']:.9g} beside a `PRO objf` of `none`. That number is "
+                    f"`objective_metric_7` evaluated at `i_figure_merit = 7`, which is "
+                    f"`numerics.py:154`'s DEFAULT and not a figure of merit this file "
+                    f"or PROCESS ever chose -- PROCESS forms no objective here at all. "
+                    f"The MDF arm states the root find (`mdf.assemble(root_find=True)`);"
+                    f" SAND does not yet (§24.10)."
+                )
+            if store["withheld"]:
+                notes.append(
+                    f"{row.name} {form}: objective gap {store['dobjf']:.2e} is NOT "
+                    f"labelled explained, and the reason is measured: the design vector "
+                    f"moved {store['dx']:.2e} (ixc {store['dx_at']}), so the two "
+                    f"objectives were evaluated at two DIFFERENT points and the "
+                    f"difference is not evidence about either. This objective does read "
+                    f"a path downstream of "
+                    f"`mda_harness.EXPLAINED_DISAGREEMENTS[{store['withheld']!r}]`, so "
+                    f"part of the gap may be that chain -- but separating the two needs "
+                    f"the port's objective at PROCESS'S OWN x, which is a Stage A "
+                    f"measurement (`run_sand_harness.py`) and not a matrix row."
+                )
+            if store["explained"]:
+                notes.append(
+                    f"{row.name} {form}: EXPLAINED GAP, not a regression -- the "
+                    f"objective differs by {store['dobjf']:.2e} at a design vector "
+                    f"agreeing to {store['dx']:.2e}, which is "
+                    f"`mda_harness.EXPLAINED_DISAGREEMENTS[{store['explained']!r}]`: "
+                    f"PROCESS's own converged `DataStructure` is internally "
+                    f"inconsistent there and the port is the self-consistent side."
+                )
         if row.omitted:
             notes.append(f"{row.name}: CONSTRAINTS OMITTED -- {row.omitted}")
         if row.omitted_paths:
@@ -831,9 +1155,47 @@ def render(rows) -> str:
             "sign: NEGATIVE IS VIOLATED."
         ),
         (
-            "`PRO` is PROCESS's own VMCON iteration count for a converged solve of the "
+            "`PRO` is PROCESS's own solver iteration count for a converged solve of the "
             "same file."
         ),
+        "",
+        (
+            "`PRO objf`/`d objf`/`worst dx` compare the port with PROCESS'S OWN ANSWER, "
+            "which is the"
+        ),
+        (
+            "only comparison on this table that is not the port against itself under "
+            "another seeding mode:"
+        ),
+        (
+            "  PRO objf  `objective_function(i_figure_merit, converged data)`. `none` "
+            "means PROCESS FORMED NO"
+        ),
+        (
+            "            OBJECTIVE -- the file states `i_process_run_mode = -2`, so "
+            "`_Fsolve.solve` ends"
+        ),
+        (
+            "            `self.objf = None`. `-` means no PROCESS run happened at all "
+            "(`--native`)."
+        ),
+        (
+            "  d objf    |port - PROCESS| / |PROCESS| on that objective. A row flagged "
+            "EXPLAINED in the"
+        ),
+        (
+            "            notes is a DOCUMENTED disagreement, not a regression "
+            "(`EXPLAINED_OBJECTIVE_READS`)."
+        ),
+        (
+            "  worst dx  the largest |port - PROCESS| / |PROCESS| over the `ixc` design "
+            "vector -- the same"
+        ),
+        (
+            "            quantity `run_sand_harness.py`'s per-variable table prints as "
+            "`rel`. The notes"
+        ),
+        "            block says which iteration variable it occurred at.",
     ]
     out += _boundary_block(rows)
     if notes:
@@ -903,7 +1265,101 @@ reader can `git diff` two runs of the matrix and see which cell moved.
 """
 
 
-def checkpoint(rows, out=OUT) -> None:
+PORT_FILES = (
+    "mdf.py",
+    "sand.py",
+    "sand_harness.py",
+    "mda.py",
+    "mda_harness.py",
+    "indat.py",
+    "native.py",
+    "provider.py",
+    "importer.py",
+    "run_cold_matrix.py",
+)
+"""The modules a row's numbers depend on, for the provenance header.
+
+Not every file in the package -- the ones a changed byte in could move a cell. A row is
+`machine_from_indat` -> `reference_run` -> the provider or the native state -> `assemble`
+-> `solve`, and this is that path's source.
+"""
+
+
+def provenance(mode=PROVIDER, argv=()) -> list[str]:
+    """The header every table carries: **which tree state these rows were measured on.**
+
+    Emitted by `checkpoint`, not hand-written on top afterwards -- which is the whole
+    change. The previous table's header was a hand-added block, so the first re-run
+    silently deleted it and a reader of the new file had no way to know what it was
+    measured against. A provenance line that a re-run destroys is worse than none,
+    because its absence is invisible.
+
+    The dirty-file list is the load-bearing part. `git rev-parse HEAD` alone is a lie on
+    a working tree with uncommitted edits, and every table this port has ever produced
+    was produced on one -- including this one. So the header names the commit *and* every
+    file of `PORT_FILES` that differs from it, because a row measured against
+    `mdf.py + 200 uncommitted lines` is not a row measured against that commit.
+    """
+    import subprocess  # noqa: PLC0415, S404 -- header only, not a solve path
+
+    def git(*args):
+        try:
+            return subprocess.run(  # noqa: S603
+                ["git", *args],  # noqa: S607
+                capture_output=True,
+                text=True,
+                timeout=20,
+                cwd=str(Path(__file__).resolve().parent.parent),
+                check=False,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):  # pragma: no cover
+            return ""
+
+    head = git("rev-parse", "--short", "HEAD") or "unknown"
+    subject = git("log", "-1", "--format=%s") or ""
+    changed = {
+        line[3:].strip()
+        for line in (git("status", "--porcelain") or "").splitlines()
+        if line[3:].strip()
+    }
+    dirty = sorted(
+        name for name in PORT_FILES if f"functional_process/{name}" in changed
+    )
+    when = time.strftime("%Y-%m-%d %H:%M")
+    lines = [
+        "# Generated by `$PY functional_process/run_cold_matrix.py"
+        + ("" if not argv else " " + " ".join(argv))
+        + "`; do not hand-edit",
+        "# the table -- a re-run overwrites it, this header included.",
+        "#",
+        f"# MEASURED {when}, boundary mode `--{mode}`.",
+        f"# TREE: HEAD {head} ({subject[:88]})",
+    ]
+    if dirty:
+        lines += [
+            "#   ...plus UNCOMMITTED edits to "
+            + ", ".join(f"`{name}`" for name in dirty)
+            + ".",
+            (
+                "#   These rows were measured on that working tree, NOT on the "
+                "commit above."
+            ),
+        ]
+    else:
+        lines.append(
+            "#   Every file in `PORT_FILES` is clean, so these rows are that commit's."
+        )
+    lines += [
+        "#",
+        "# A row is one configuration under BOTH formulations; a failure is a row and",
+        "# never an exit, so a `REFUSED`/`FAILED`/`no-step` cell is a measurement with",
+        "# its reason in the NOTES block, not a gap in the run.",
+        "",
+    ]
+    return lines
+
+
+def checkpoint(rows, out=OUT, mode=PROVIDER, argv=()) -> None:
     """Write the table as it stands. Called after every configuration; see `OUT`.
 
     Failing to write the checkpoint must never lose the row that was just computed, so
@@ -912,7 +1368,9 @@ def checkpoint(rows, out=OUT) -> None:
     of PROCESS runs.
     """
     try:
-        Path(out).write_text(render(rows) + "\n", encoding="utf-8")
+        Path(out).write_text(
+            "\n".join(provenance(mode, argv)) + render(rows) + "\n", encoding="utf-8"
+        )
     except OSError as failure:  # pragma: no cover -- reported, never fatal
         print(f"  (could not checkpoint to {out}: {failure})", flush=True)
 
@@ -951,7 +1409,7 @@ def main(argv=None, out=OUT):
     rows: list[Row] = []
     for path in paths:
         rows.append(run_one(path, mode))
-        checkpoint(rows, out)
+        checkpoint(rows, out, mode, argv)
         print(f"  (checkpointed {len(rows)} of {len(paths)} row(s) to {out})")
     print(render(rows))
     print(f"\n{len(rows)} configuration(s) in {time.perf_counter() - began:.0f} s")

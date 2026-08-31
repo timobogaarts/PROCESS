@@ -97,7 +97,9 @@ is recorded in the audit record rather than smoothed over.
 
 import equinox as eqx
 import jax.numpy as jnp
+import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+from jax import lax
 
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import current_drive, physics
@@ -105,6 +107,42 @@ from functional_process.paths import current_drive, physics
 # ---------------------------------------------------------------------------
 # Numerics shared with PROCESS
 # ---------------------------------------------------------------------------
+
+
+def _profile_at(profile, radial_elements):
+    """`profile[radial_elements]`, emitted as a **slice** when the index set allows it.
+
+    Pure expression rewrite -- same elements, same order, same value. It exists only to
+    keep the Sauter scaling's jaxpr small. `radial_elements` is
+    `np.arange(2, n_plasma_profile_elements)` at the one live call site
+    (`bootstrap_fraction_sauter`), so every index expression in this module is a
+    *contiguous, statically known* run. Written as `profile[indices]`, `jnp` cannot know
+    that: it must emit the general fancy-index lowering, which is **seven** jaxpr
+    equations per site (`lt`/`add`/`select_n` for negative-index wraparound,
+    `convert_element_type`, `broadcast_in_dim`, then a `gather`). `lax.slice_in_dim` is
+    one.
+
+    Measured on `large_tokamak_nof`'s profile shape (`n = 201`): 188 gathers, and the
+    whole node's program falls from 2,095 equations to 902. It pays twice, because the
+    MDA solve also compiles `jacfwd`, whose XLA pass scales with the forward program
+    (`_audit/next_steps.md` §24.10).
+
+    The fallback is not decoration: the tier-1 contracts drive the coefficient functions
+    directly and a future caller could pass a traced or non-contiguous index array, for
+    which the gather is the *correct* lowering. Contiguity is checked, not assumed.
+    """
+    indices = (
+        np.asarray(radial_elements)
+        if isinstance(radial_elements, np.ndarray)
+        else radial_elements
+    )
+    if isinstance(indices, np.ndarray) and indices.ndim == 1 and indices.size > 0:
+        start = int(indices[0])
+        if start >= 0 and np.array_equal(
+            indices, np.arange(start, start + indices.size)
+        ):
+            return lax.slice_in_dim(profile, start, start + indices.size)
+    return profile[radial_elements]
 
 
 def _gradient(profile_y, coordinate):
@@ -160,8 +198,8 @@ def _coulomb_logarithm_sauter(radial_elements, tempe, ne):
     """
     return (
         15.9
-        - 0.5 * jnp.log(ne[radial_elements - 1])
-        + jnp.log(tempe[radial_elements - 1])
+        - 0.5 * jnp.log(_profile_at(ne, radial_elements - 1))
+        + jnp.log(_profile_at(tempe, radial_elements - 1))
     )
 
 
@@ -174,8 +212,11 @@ def _electron_collisions_sauter(radial_elements, tempe, ne):
     return (
         670.0
         * _coulomb_logarithm_sauter(radial_elements, tempe, ne)
-        * ne[radial_elements - 1]
-        / (tempe[radial_elements - 1] * jnp.sqrt(tempe[radial_elements - 1]))
+        * _profile_at(ne, radial_elements - 1)
+        / (
+            _profile_at(tempe, radial_elements - 1)
+            * jnp.sqrt(_profile_at(tempe, radial_elements - 1))
+        )
     )
 
 
@@ -190,12 +231,12 @@ def _electron_collisionality_sauter(
     return (
         _electron_collisions_sauter(radial_elements, tempe, ne)
         * 1.4
-        * zeff[radial_elements - 1]
+        * _profile_at(zeff, radial_elements - 1)
         * rmajor
         / jnp.abs(
-            inverse_q[radial_elements - 1]
-            * (sqeps[radial_elements - 1] ** 3)
-            * jnp.sqrt(tempe[radial_elements - 1])
+            _profile_at(inverse_q, radial_elements - 1)
+            * (_profile_at(sqeps, radial_elements - 1) ** 3)
+            * jnp.sqrt(_profile_at(tempe, radial_elements - 1))
             * 1.875e7
         )
     )
@@ -214,12 +255,15 @@ def _ion_collisions_sauter(radial_elements, zeff, ni, tempi, amain):
     not `n_charge_plasma_effective_vol_avg`. Kept verbatim; see the record's **D1**.
     """
     return (
-        zeff[radial_elements - 1] ** 4
-        * ni[radial_elements - 1]
+        _profile_at(zeff, radial_elements - 1) ** 4
+        * _profile_at(ni, radial_elements - 1)
         * 322.0
         / (
-            tempi[radial_elements - 1]
-            * jnp.sqrt(tempi[radial_elements - 1] * amain[radial_elements - 1])
+            _profile_at(tempi, radial_elements - 1)
+            * jnp.sqrt(
+                _profile_at(tempi, radial_elements - 1)
+                * _profile_at(amain, radial_elements - 1)
+            )
         )
     )
 
@@ -238,9 +282,12 @@ def _ion_collisionality_sauter(
         * _ion_collisions_sauter(radial_elements, zeff, ni, tempi, amain)
         * rmajor
         / (
-            jnp.abs(inverse_q[radial_elements - 1] + 1.0e-4)
-            * sqeps[radial_elements - 1] ** 3
-            * jnp.sqrt(tempi[radial_elements - 1] / amain[radial_elements - 1])
+            jnp.abs(_profile_at(inverse_q, radial_elements - 1) + 1.0e-4)
+            * _profile_at(sqeps, radial_elements - 1) ** 3
+            * jnp.sqrt(
+                _profile_at(tempi, radial_elements - 1)
+                / _profile_at(amain, radial_elements - 1)
+            )
         )
     )
 
@@ -263,7 +310,7 @@ def _trapped_particle_fraction_sauter(radial_elements, sqeps):
     ----------
     O. Sauter, C. Angioni, Y. R. Lin-Liu, Phys. Plasmas 6 (1999) 2834.
     """
-    sqeps_reduced = sqeps[radial_elements - 1]
+    sqeps_reduced = _profile_at(sqeps, radial_elements - 1)
     eps = sqeps_reduced**2
     zz = 1.0 - eps
     return 1.0 - zz * jnp.sqrt(zz) / (1.0 + 1.46 * sqeps_reduced)
@@ -300,16 +347,22 @@ def _beta_poloidal_sauter(
             radial_elements != nr,
             1.6e-4
             * jnp.pi
-            * (ne[radial_elements] + ne[radial_elements - 1])
-            * (tempe[radial_elements] + tempe[radial_elements - 1]),
-            6.4e-4 * jnp.pi * ne[radial_elements - 1] * tempe[radial_elements - 1],
+            * (_profile_at(ne, radial_elements) + _profile_at(ne, radial_elements - 1))
+            * (
+                _profile_at(tempe, radial_elements)
+                + _profile_at(tempe, radial_elements - 1)
+            ),
+            6.4e-4
+            * jnp.pi
+            * _profile_at(ne, radial_elements - 1)
+            * _profile_at(tempe, radial_elements - 1),
         )
         * (
             rmajor
             / (
                 b_plasma_toroidal_on_axis
-                * rho[radial_elements - 1]
-                * jnp.abs(inverse_q[radial_elements - 1] + 1.0e-4)
+                * _profile_at(rho, radial_elements - 1)
+                * jnp.abs(_profile_at(inverse_q, radial_elements - 1) + 1.0e-4)
             )
         )
         ** 2
@@ -341,27 +394,41 @@ def _beta_poloidal_total_sauter(
             * jnp.pi
             * (
                 (
-                    (ne[radial_elements] + ne[radial_elements - 1])
-                    * (tempe[radial_elements] + tempe[radial_elements - 1])
+                    (
+                        _profile_at(ne, radial_elements)
+                        + _profile_at(ne, radial_elements - 1)
+                    )
+                    * (
+                        _profile_at(tempe, radial_elements)
+                        + _profile_at(tempe, radial_elements - 1)
+                    )
                 )
                 + (
-                    (ni[radial_elements] + ni[radial_elements - 1])
-                    * (tempi[radial_elements] + tempi[radial_elements - 1])
+                    (
+                        _profile_at(ni, radial_elements)
+                        + _profile_at(ni, radial_elements - 1)
+                    )
+                    * (
+                        _profile_at(tempi, radial_elements)
+                        + _profile_at(tempi, radial_elements - 1)
+                    )
                 )
             ),
             6.4e-4
             * jnp.pi
             * (
-                ne[radial_elements - 1] * tempe[radial_elements - 1]
-                + ni[radial_elements - 1] * tempi[radial_elements - 1]
+                _profile_at(ne, radial_elements - 1)
+                * _profile_at(tempe, radial_elements - 1)
+                + _profile_at(ni, radial_elements - 1)
+                * _profile_at(tempi, radial_elements - 1)
             ),
         )
         * (
             rmajor
             / (
                 b_plasma_toroidal_on_axis
-                * rho[radial_elements - 1]
-                * jnp.abs(inverse_q[radial_elements - 1] + 1.0e-4)
+                * _profile_at(rho, radial_elements - 1)
+                * jnp.abs(_profile_at(inverse_q, radial_elements - 1) + 1.0e-4)
             )
         )
         ** 2
@@ -397,7 +464,7 @@ def _calculate_l31_coefficient(
     multiplication by `_beta_poloidal_total_sauter` is the correction Fable suggested on
     15/05/2015 (`bootstrap_current.py:1919`).
     """
-    charge_profile = zeff[radial_elements - 1]
+    charge_profile = _profile_at(zeff, radial_elements - 1)
     f_trapped = _trapped_particle_fraction_sauter(radial_elements, sqeps)
     electron_collisionality = _electron_collisionality_sauter(
         radial_elements, rmajor, zeff, inverse_q, sqeps, tempe, ne
@@ -448,7 +515,7 @@ def _calculate_l31_32_coefficient(
     `bootstrap_current.py:1933-2120`, unchanged except for the dropped `triang`.
     Eqs. 15b-15e of Sauter 1999, plus Fable's 2015 correction.
     """
-    charge_profile = zeff[radial_elements - 1]
+    charge_profile = _profile_at(zeff, radial_elements - 1)
     f_trapped = _trapped_particle_fraction_sauter(radial_elements, sqeps)
     electron_collisionality = _electron_collisionality_sauter(
         radial_elements, rmajor, zeff, inverse_q, sqeps, tempe, ne
@@ -575,7 +642,7 @@ def _calculate_l34_alpha_31_coefficient(
     (`bootstrap_current.py:2231-2233`), where PROCESS's own signature calls it `zeff` --
     see `_ion_collisions_sauter` and audit record **D1**.
     """
-    charge_profile = zeff[radial_elements - 1]
+    charge_profile = _profile_at(zeff, radial_elements - 1)
     f_trapped = _trapped_particle_fraction_sauter(radial_elements, sqeps)
     electron_collisionality = _electron_collisionality_sauter(
         radial_elements, rmajor, zeff, inverse_q, sqeps, tempe, ne
@@ -769,16 +836,16 @@ def bootstrap_fraction_sauter(
     zmain = jnp.full_like(inverse_q, 1.0 + f_plasma_fuel_helium3)
 
     # From 2 because the coefficient functions should return 0 at j == 1 (`:1530-1532`).
-    radial_elements = jnp.arange(2, n_plasma_profile_elements)
+    radial_elements = np.arange(2, n_plasma_profile_elements)
 
-    drho = rho[radial_elements] - rho[radial_elements - 1]
+    drho = _profile_at(rho, radial_elements) - _profile_at(rho, radial_elements - 1)
 
     # Area of annulus, assuming a circular plasma cross-section (`:1538`).
-    da = 2 * jnp.pi * rho[radial_elements - 1] * drho
+    da = 2 * jnp.pi * _profile_at(rho, radial_elements - 1) * drho
 
-    dlogte_drho = _gradient(jnp.log(tempe), rho)[radial_elements - 1]
-    dlogti_drho = _gradient(jnp.log(tempi), rho)[radial_elements - 1]
-    dlogne_drho = _gradient(jnp.log(ne), rho)[radial_elements - 1]
+    dlogte_drho = _profile_at(_gradient(jnp.log(tempe), rho), radial_elements - 1)
+    dlogti_drho = _profile_at(_gradient(jnp.log(tempi), rho), radial_elements - 1)
+    dlogne_drho = _profile_at(_gradient(jnp.log(ne), rho), radial_elements - 1)
 
     jboot = (
         0.5
@@ -835,8 +902,8 @@ def bootstrap_fraction_sauter(
         * (
             -b_plasma_toroidal_on_axis
             / (0.2 * jnp.pi * rmajor)
-            * rho[radial_elements - 1]
-            * inverse_q[radial_elements - 1]
+            * _profile_at(rho, radial_elements - 1)
+            * _profile_at(inverse_q, radial_elements - 1)
         )
     )  # A/m2
 

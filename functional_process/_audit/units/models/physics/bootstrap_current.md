@@ -698,3 +698,71 @@ wave (these two, FIESTA in `plasma_current.md`, `i_beta_norm_max == 0` in `physi
 The two that remain are unported model *packages*: `i_tf_turn_type == 2`, the whole CROCO
 TF coil class (`tfcoil/superconducting.md`), and `pf_coil_system_arm`, which both files
 miss on four of its seven refused dimensions at once (`pfcoil/geometry.md`).
+
+## contiguous indexing, expressed as slices (2026-08-31)
+
+**Value-preserving expression rewrite; bit-identical, verified.** `next_steps.md` §24.9
+named this unit the next concentration in `large_tokamak_nof`'s MDA program, at 2,056
+equations of ~18,000. Measured, **more than half of those were the lowering of
+`profile[radial_elements]`, not physics.**
+
+`radial_elements` is `arange(2, n_plasma_profile_elements)` -- one construction site
+(`bootstrap_fraction_sauter`), threaded into every coefficient function, and **contiguous
+by construction**. Written `profile[radial_elements]`, `jnp` cannot see that and emits the
+general fancy-index lowering: `sub` (for the `- 1` sites), `lt`/`add`/`select_n` for
+negative-index wraparound, `convert_element_type`, `broadcast_in_dim`, then `gather` --
+**seven jaxpr equations per site**, at 188 sites. `lax.slice_in_dim` is one.
+
+`_profile_at(profile, radial_elements)` does the rewrite, **checking contiguity rather
+than assuming it**: a `np.ndarray` index that equals `arange(start, start + size)` becomes
+a slice, and anything else -- a traced index array, a non-contiguous one -- falls back to
+`profile[radial_elements]`, which is the correct lowering there. The three coefficient
+contracts drive these helpers directly with their own `radial_elements`, so the fallback
+is a live path, not decoration. `bootstrap_fraction_sauter`'s own `jnp.arange` became
+`np.arange` (it is a static index set, and this also removes an `iota`).
+
+| | before | after |
+|---|---|---|
+| standalone `bootstrap_fraction_sauter` jaxpr, `n = 201` | 2,095 | 988 |
+| attributed in `large_tokamak_nof`'s MDA jaxpr | 2,056 | **949** |
+| `gather` equations | 188 | 0 |
+| optimised HLO instructions | 659 | 344 |
+
+It pays twice: the MDA solve also compiles `jacfwd`, whose XLA pass is 5-6x the value
+map's and scales with the forward program (§24.10).
+
+**Verified.** `bootstrap_fraction_sauter`'s fraction and profile are **bit-identical**
+before and after on the same inputs -- as they must be, since a slice reads the same
+elements in the same order. All 1,385 `tests/functional_process/models/physics` cases pass
+at their own tolerances, gradient checks included; nothing moved.
+
+**XLA's CSE already handled the repeated subexpressions, so they were not hand-hoisted.**
+`ne[radial_elements] + ne[radial_elements - 1]` and friends appear on many lines; the
+optimised HLO of the *old* code has 18 gathers against the jaxpr's 188, and the new code's
+188 slices fuse to 3. Hoisting them by hand would be churn with no runtime gain. The jaxpr
+count still matters, because §24.10's measured bottleneck is *compile* time, which scales
+with the program handed to XLA, not with the program XLA emits.
+
+### the remaining 949, and where it is
+
+Not a trace-count effect: the node is traced **once** by the MDA (standalone 988 against
+949 attributed). But within that one trace, the scaling calls its own helpers repeatedly,
+because PROCESS does -- `_calculate_l31_32_coefficient` and
+`_calculate_l34_alpha_31_coefficient` each re-enter `_calculate_l31_coefficient`, and each
+of the three recomputes the trapped fraction, the collisionalities and the local poloidal
+betas from scratch. Counted in one trace:
+
+| helper | invocations | equations |
+|---|---|---|
+| `_beta_poloidal_total_sauter` | 6 | 126 |
+| `_trapped_particle_fraction_sauter` | 5 | 40 |
+| `_electron_collisionality_sauter` (+ its two factors) | 5 | 100 |
+| `_beta_poloidal_sauter` | 4 | 60 |
+| `_calculate_l31_coefficient` | 3 | 87 |
+| `_gradient` | 3 | 129 (distinct arguments -- not redundant) |
+
+Computing each shared quantity once would take the unit to roughly 460 equations, another
+2x. It was **not** done in this pass: it means restructuring the three coefficient
+functions to accept precomputed quantities, which changes the signatures the three tier-1
+contracts pin, and that is a port change rather than an expression change. Recorded as the
+next lever for this unit, with the numbers to justify it.

@@ -22,20 +22,26 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
+from functional_process.mda_harness import EXPLAINED_DISAGREEMENTS  # noqa: E402
 from functional_process.run_cold_matrix import (  # noqa: E402
     CONFIGURATIONS,
+    EXPLAINED_OBJECTIVE_READS,
+    PORT_FILES,
     PROVIDER,
     PROVIDER_STRICT,
     SEED_ONLY,
     Row,
+    _against_process,
     _blank,
     _boundary_seed,
     _cell,
     _headline,
     _mode,
+    _process_objective,
     _status,
     _trace_tail,
     checkpoint,
+    provenance,
     render,
 )
 
@@ -285,3 +291,176 @@ def test_a_place_the_native_state_could_not_answer_reaches_the_notes():
     text = render([row])
     assert "UNANSWERED NATIVELY" in text
     assert ".physics.made_up" in text and ".build.also_made_up" in text
+
+
+# ------------------------------- the "matches PROCESS" columns (§24.10)
+#
+# `reference_cold_matrix.txt` carried PROCESS's iteration count and never PROCESS's
+# *answer*, so every "matches" claim made off it compared the port against itself under
+# another seeding mode -- `_audit/next_steps.md` §17.2's error, repeated twice after
+# §17.2 named it. These check the three columns that close it, and in particular that a
+# documented disagreement is labelled rather than reported as a failure.
+
+
+class _Reference:
+    """The four fields `_against_process` reads off a `ReferenceRun`."""
+
+    def __init__(self, ixc, converged):
+        self.ixc = ixc
+        self.converged = converged
+
+
+def test_the_worst_deviation_is_over_the_whole_design_vector():
+    """One number and the iteration variable it happened at -- `run_sand_harness.py`'s
+    own `rel` column, worst-cased, computed the same way.
+    """
+    store = _blank()
+    store.update(_x=(1.0, 2.2, 3.0))
+    _against_process(store, _Reference([4, 6, 29], {4: 1.0, 6: 2.0, 29: 3.0}), None)
+    assert store["dx"] == pytest.approx(0.1)
+    assert store["dx_at"] == 6
+    assert store["dobjf"] is None
+
+
+def test_a_native_row_compares_against_nothing_because_there_was_no_process_run():
+    """A `NativeReference` has no `converged` and no objective, and the columns must
+    stay empty rather than fall back to something -- `PRO` is `-` on those rows for the
+    same reason.
+    """
+    store = _blank()
+    store.update(_x=(1.0,), objf=5.0)
+    _against_process(store, _Reference([4], {}), None)
+    assert store["dx"] is None
+    assert store["dobjf"] is None
+    assert store["explained"] == ""
+
+
+def test_a_documented_disagreement_is_labelled_not_failed():
+    """The stellarator's 0.23 %: `objective_metric_6` is `coe/100`, and `.costs.coe` is
+    the tail of the `+17.604 MW` chain `EXPLAINED_DISAGREEMENTS` documents, where
+    PROCESS's converged `DataStructure` is internally inconsistent and the port is the
+    self-consistent side. A column that called that a regression would be worse than no
+    column.
+    """
+    store = _blank()
+    store.update(_x=(1.0,), objf=1.21775735)
+    _against_process(
+        store,
+        _Reference([4], {4: 1.0}),
+        1.2149167845171462,
+        (".heat_transport.p_plant_electric_base_total_mw", ".costs.coe"),
+    )
+    assert store["dobjf"] == pytest.approx(2.3e-3, rel=0.1)
+    assert store["explained"] == ".heat_transport.p_plant_electric_base_total_mw"
+    table = render([
+        Row(name="stellarator_helias", assembles=True, mdf=store, process_objf=1.2149)
+    ])
+    assert "EXPLAINED GAP, not a regression" in table
+
+
+def test_an_objective_gap_at_a_moved_design_is_not_explained():
+    """The second half of the rule, and the part that keeps the label honest: the chain
+    is a difference in *evaluating* the objective at a shared point. A row whose design
+    vector has moved is a different answer and gets no label.
+    """
+    store = _blank()
+    store.update(_x=(1.5,), objf=1.21775735)
+    _against_process(
+        store,
+        _Reference([4], {4: 1.0}),
+        1.2149167845171462,
+        (".heat_transport.p_plant_electric_base_total_mw", ".costs.coe"),
+    )
+    assert store["dx"] == pytest.approx(0.5)
+    assert store["explained"] == ""
+    # ...and the withholding is reported rather than silent, because "a documented chain
+    # is in play but this comparison cannot attribute the gap to it" is a third state,
+    # not the absence of the first two.
+    assert store["withheld"] == ".heat_transport.p_plant_electric_base_total_mw"
+    table = render([Row(name="stellarator_helias", assembles=True, mdf=store)])
+    assert "NOT labelled explained" in table
+    assert "two DIFFERENT points" in table
+
+
+def test_every_explanation_cites_a_record_that_still_exists():
+    """A cell reading EXPLAINED claims somebody already chased this and wrote down why.
+    If the write-up is deleted and the label outlives it, the cell asserts something with
+    nothing behind it -- strictly worse than the unlabelled number it replaced. Checked
+    at import too, so the failure lands on whoever moved the record.
+    """
+    assert EXPLAINED_OBJECTIVE_READS
+    for read, key in EXPLAINED_OBJECTIVE_READS.items():
+        assert key in EXPLAINED_DISAGREEMENTS, read
+
+
+def test_a_root_find_row_says_process_formed_no_objective():
+    """`none`, not a number and not a blank.
+
+    `reference.i_figure_merit` is `7` on both `_eval` files **because
+    `numerics.py:154` defaults it there** -- PROCESS's `_Fsolve.solve` ends
+    `self.objf = None` and never evaluates a metric. Printing `objective_function(7,
+    data)` in a column headed `PRO objf` would be inventing PROCESS's answer.
+    """
+    store = _blank()
+    store.update(built=True, iterations=3, status="converged", max_eq=3.6e-14)
+    table = render([
+        Row(name="large_tokamak_eval", assembles=True, root_find=True, mdf=store)
+    ])
+    assert "none" in table
+    # And the short circuit is in `_process_objective` itself, not only in the renderer.
+    assert _process_objective(_Reference([], {}), root_find=True) is None
+
+
+def test_the_table_carries_its_own_provenance_header(tmp_path):
+    """The header is emitted by `checkpoint`, not hand-written on top afterwards.
+
+    That is the whole change: the previous table's provenance was a hand-added block, so
+    the first re-run silently deleted it and a reader of the new file had no way to know
+    what tree the rows came from. A provenance line a re-run destroys is worse than none,
+    because its absence is invisible.
+    """
+    out = tmp_path / "matrix.txt"
+    checkpoint([Row(name="helias_5b", assembles=True)], out, PROVIDER, ["--provider"])
+    text = out.read_text()
+    assert text.startswith("# Generated by")
+    assert "MEASURED" in text
+    assert "TREE: HEAD" in text
+    assert "boundary mode `--provider`" in text
+    assert "COLD MATRIX" in text
+    assert "helias_5b" in text
+
+
+def test_the_header_names_uncommitted_edits_and_does_not_claim_the_commit():
+    """`git rev-parse HEAD` alone is a lie on a dirty tree, and every table this port has
+    produced was produced on one. So the header names the commit *and* every file of
+    `PORT_FILES` that differs from it -- a row measured against `mdf.py` plus two hundred
+    uncommitted lines is not a row measured against that commit.
+    """
+    lines = provenance()
+    assert any(line.startswith("# TREE: HEAD") for line in lines)
+    body = "\n".join(lines)
+    # Exactly one of the two claims is made, never both and never neither.
+    dirty = "UNCOMMITTED edits" in body
+    clean = "is clean, so these rows are that commit's" in body
+    assert dirty != clean
+    # And `PORT_FILES` is the path a row's numbers actually travel, not the package.
+    assert {"mdf.py", "sand.py", "run_cold_matrix.py", "native.py"} <= set(PORT_FILES)
+
+
+def test_a_formulation_that_optimised_a_root_find_file_says_so():
+    """The two arms disagree about the problem type today, and the table must not let
+    that pass as a number.
+
+    SAND still assembles an `Optimise` on the `_eval` files, so it reports an `objf`
+    beside a `PRO objf` of `none`. That number is `numerics.py:154`'s default figure of
+    merit evaluated at the answer -- not a quantity PROCESS forms -- and a reader
+    comparing the two cells would otherwise conclude PROCESS had simply failed to report
+    its own objective.
+    """
+    store = _blank()
+    store.update(built=True, iterations=3, status="converged", objf=0.594644641)
+    table = render([
+        Row(name="spherical_tokamak_eval", assembles=True, root_find=True, sand=store)
+    ])
+    assert "states a ROOT FIND, but the SAND arm still assembled an `Optimise`" in table
+    assert "numerics.py:154`'s DEFAULT" in table

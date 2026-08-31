@@ -24,10 +24,14 @@ second half, and it emits four things -- three of which no node can (§24.2, §2
    `1e8`, `eyoung_cond_axial` at `6.6e8`, both replaced by two orders of magnitude) --
    as a raw value they cannot be mistaken for a user's number the way a flat defaults
    table mistakes them.
-4. **The problem statement** -- `ixc`, `icc`, `i_figure_merit` (§23.4, §24.3). These are
-   the only two names in PROCESS's registry that set no field at all; they reach the
-   `DataStructure` through an `additional_actions` hook, which is a parser concern by
-   construction.
+4. **The problem statement** -- `ixc`, `icc`, `i_figure_merit`, and
+   `i_process_run_mode` (§23.4, §24.3). `ixc`/`icc` are the only two names in PROCESS's
+   registry that set no field at all; they reach the `DataStructure` through an
+   `additional_actions` hook, which is a parser concern by construction.
+   `i_process_run_mode` is what says *which kind of problem the file states* -- `-2`
+   makes PROCESS root-find the equalities with `fsolve` and form no objective at all --
+   and reading it here is what let the port stop building an `Optimise` for the two
+   `_eval` files (`Problem.is_evaluation`, §24.10).
 
 **Deliberately out of scope, and each is the next layer.** Sentinel resolution;
 `init.py`/`st_init`/`initialise_imprad` derivations; validation raises (`init.py` holds
@@ -108,15 +112,31 @@ class Assignment:
     text: str
 
 
+OPTIMISATION_RUN_MODE = 1
+EVALUATION_RUN_MODE = -2
+"""`process.data_structure.numerics.PROCESSRunMode`, vendored (§23.2).
+
+`1` is `numerics.py:150`'s dataclass default, so a file that names no run mode optimises.
+`-2` is the mode `main.py:452-456` answers by replacing VMCON with `scipy.optimize.fsolve`
+over the **equalities alone** -- `_Fsolve.evaluate_eq_cons` calls
+`fcnvmc1(n, self.meq, ...)`, and `_Fsolve.solve` ends with `self.objf = None`.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class Problem:
-    """§23.4's four parts, as the file states them.
+    """§23.4's parts, as the file states them.
 
     Integer IDs, not paths: translating `ixc = [4, 6, 29]` into `VarPath`s is a table
     lookup (`vocabulary.iteration_variables`) and belongs to whoever states the problem,
     not to the reader of the text. `n_equality_constraints` is `None` when the file does
     not set it, which is the `-1` sentinel `init.py` resolves to `count - n_inequality`
     -- the resolution is not done here.
+
+    **`i_process_run_mode` is part of the problem statement, not a value**, and it is the
+    one field here that changes *which kind of problem* the file states. Carried since
+    2026-08-31, when `_audit/next_steps.md` §24.10 measured that the port was building an
+    `Optimise` for two files PROCESS root-finds.
     """
 
     ixc: tuple[int, ...] = ()
@@ -124,6 +144,29 @@ class Problem:
     i_figure_merit: int | None = None
     n_equality_constraints: int | None = None
     n_inequality_constraints: int | None = None
+    i_process_run_mode: int | None = None
+    """`None` when the file names none, which is `OPTIMISATION_RUN_MODE` -- unresolved
+    here for the same reason `n_equality_constraints`' sentinel is."""
+
+    @property
+    def is_evaluation(self) -> bool:
+        """Whether this file states a **root find** rather than an optimisation.
+
+        The discriminator is the file's own `i_process_run_mode = -2` and nothing
+        inferred. Two weaker rules were considered and are wrong:
+
+        - *"no `i_figure_merit`"* -- `large_tokamak_nof` names none either and optimises
+          (its `i_figure_merit = 1` is stated, but a file may omit it and still optimise
+          on `numerics.py:154`'s default of `7`).
+        - *"square"* (`len(icc[:n_equality]) == len(ixc)`) -- `helias_5b` is square
+          (3 equalities, 3 iteration variables) and PROCESS runs **VMCON** on it, in 3
+          iterations, because it names `i_process_run_mode = 1`. Squareness is a
+          *consequence* of the evaluation mode, not its cause, and a caller should check
+          it as a consistency test rather than use it as the test.
+        """
+        if self.i_process_run_mode is None:
+            return False
+        return int(self.i_process_run_mode) == EVALUATION_RUN_MODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +312,7 @@ def read_indat(path: str | Path) -> Imported:
                 "numerics",
                 "n_inequality_constraints",
             )),
+            i_process_run_mode=values.get(("numerics", "i_process_run_mode")),
         ),
         unknown=tuple(unknown),
         errors=tuple(errors),

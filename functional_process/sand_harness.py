@@ -384,6 +384,216 @@ def _mda_runner(schedule):
     return run
 
 
+_SCHEDULE_RUNNERS: dict = {}
+"""`Schedule -> tuple[step-or-jitted-run, ...]`, built once per schedule.
+
+Keyed by the `Schedule`, which is a frozen `equinox.Module` over a `Blocking` and
+therefore hashable, for the same reason `_MDA_SCHEDULES` is keyed by its `Graph`: the
+jitted groups are closures over the steps, so a second `run_schedule` on an equal
+schedule must find the *same* callables or it retraces what the cache already holds.
+"""
+
+
+def run_schedule(schedule, env, whole=None):
+    """`schedule(env)`, jitted whole where that is possible and part by part where not.
+
+    **One jit is tried first, and it is `_mda_runner`'s exactly.** A schedule whose every
+    driver traces is one program, one XLA compile, and one dispatch -- which is what
+    `mda_env` already gets. `Mdf.eager` is such a schedule *now*: `mdf.traceable_drivers`
+    says a `SeededNewtonDriver`'s cold-start fallback raises
+    `TracerArrayConversionError` on a traced `start`, and that is **stale** -- `drivers.
+    _usable` opens with `isinstance(flat, jax.core.Tracer)`, the one-line upstream fix
+    that docstring proposed. Measured on `large_tokamak_nof`: **1 compile, 10.6 s**,
+    against 32 and 16.4 s for the walk below (`_audit/next_steps.md` §24.11).
+
+    **The fallback is the SAND solve schedule, and it is not conservatism.** Its `Drive`
+    is a `VmconDriver`: a `cvxpy` QP, a `pyvmcon` line search and a Python callback, none
+    of it traceable at all. So the driver stays exactly where it is, eager, and
+    everything on either side of it is fused: maximal runs of `Call` steps become one
+    jitted program each, and a `Drive`'s **body** -- the block re-run after the driver
+    converges it, which is `Drive.__call__`'s own last line -- becomes another.
+    Everything each step was doing op by op through `evaluate._run_acyclic` (a separate
+    ~25 ms XLA compile per `jnp` primitive, `_audit/optimise_design.md` §18.6) is then
+    one program.
+
+    **Which of the two a schedule gets is measured, not declared**, because nothing
+    structural distinguishes them: a driver's traceability is a property of its body, and
+    `Drive` carries no flag for it. The whole-schedule jit is attempted once per schedule
+    and the verdict cached; a failure costs one trace (symbolic, no compile) and falls
+    back to a walk that computes the same values by the same nodes in the same order.
+    A caller reads `schedule_verdict(schedule)` for which it got and why.
+
+    **Where the eager cost actually sits differs between the two, and the split is not
+    the one §18.6 assumed** (`_audit/next_steps.md` §24.11 carries the correction).
+    Measured on `large_tokamak_nof`, cold, one process each:
+
+    | | undriven `Call` steps | `Drive` steps |
+    |---|---|---|
+    | `mdf.prime` (239 `Call`, 6 `Drive`) | 35.8 s, 718 compiles | 13.5 s, 260 |
+    | SAND solve (92 `Call`, 1 `Drive`) | 2.8 s, 40 compiles | 105.4 s, 729 |
+
+    The SAND `Optimise` fuses nearly the whole graph into one SCC, so its 92 `Call`
+    steps are the *leftovers* and its eager cost is inside the `Drive` -- one
+    `_run_acyclic` over the whole block on the way out. Jitting only the `Call` runs
+    would have bought that schedule 2.8 s of 108, which is why the body is jitted too.
+
+    **A jitted part takes and returns a `PathMap`, for `_mda_runner`'s reason**: an
+    `Env` is `dict[VarPath, Any]`, jax flattens a dict by sorting its keys, and a
+    `VarPath` is deliberately unordered. A `PathMap`'s paths are aux data, so a name is
+    a jit cache key rather than something jax orders. `check_antichain` -- what
+    `cottax.boundary.run` would ask, and what `.tfcoil.dcond` failed before §24.4
+    narrowed it -- is measured clean on both schedules of all six assembling
+    configurations (§24.11), and `path_map` does not ask it anyway.
+
+    The owned-name guard is `Schedule.__call__`'s and is re-asked here, because walking
+    the steps directly is what skips it: a value handed in at a name the run computes
+    can only be clobbered unread or read stale under an ordering bug.
+
+    Parameters
+    ----------
+    whole :
+        `False` to skip the single-jit probe for a schedule already known to hold a
+        host-side driver; `None` (the default) to probe and cache the verdict.
+
+    Raises
+    ------
+    ValueError
+        If `env` carries a value at a name this schedule's own nodes produce.
+    """
+    if stale := [var for var in env if var in schedule._owned]:
+        raise ValueError(
+            f"value(s) at {sorted(v.path_str() for v in stale)}, which this schedule's "
+            f"own nodes produce -- hand the run its inputs and take results from the "
+            f"env it returns"
+        )
+    if whole is False:
+        # The caller already knows this schedule holds a host-side driver and does not
+        # want the probe. Measured on `large_tokamak_nof`'s SAND solve schedule: the
+        # failed attempt is one symbolic trace, no extra XLA compile, ~5 s (62.3 s
+        # against 57.2 s). Worth paying once where the answer is unknown, worth skipping
+        # where it is not.
+        _SCHEDULE_WHOLE.setdefault(schedule, False)
+    whole = _SCHEDULE_WHOLE.get(schedule)
+    if whole is None:
+        whole = _SCHEDULE_WHOLE[schedule] = _mda_runner(schedule)
+        try:
+            out = dict(whole(path_map(env)))
+        except Exception as refusal:  # noqa: BLE001 -- the verdict, not an error
+            # A driver that does not trace. Recorded rather than raised: the walk below
+            # computes the same values from the same nodes in the same order, so this
+            # is a choice of algorithm for one schedule and not a failure of the run.
+            whole = _SCHEDULE_WHOLE[schedule] = False
+            _SCHEDULE_VERDICT[schedule] = f"{type(refusal).__name__}: {refusal}"
+        else:
+            _SCHEDULE_VERDICT[schedule] = None
+            return out
+    if whole is not False:
+        return dict(whole(path_map(env)))
+    runners = _SCHEDULE_RUNNERS.get(schedule)
+    if runners is None:
+        runners = _SCHEDULE_RUNNERS[schedule] = _schedule_runners(schedule)
+    for runner in runners:
+        env = runner(env)
+    return env
+
+
+_SCHEDULE_WHOLE: dict = {}
+"""`Schedule -> jitted whole-schedule runner, or `False` where one refused to trace."""
+
+_SCHEDULE_VERDICT: dict = {}
+"""`Schedule -> None if it jits whole, else the refusal that sent it to the walk."""
+
+
+def schedule_verdict(schedule):
+    """`(jitted_whole, reason)` for a schedule `run_schedule` has run.
+
+    `reason` is `None` where the single jit took, and the driver's own refusal --
+    exception type and message -- where it did not. Exposed because "this schedule is
+    one XLA program" and "this schedule is a walk with the driver eager" is a 3x
+    difference in cold cost with no visible difference in the answer, so a caller that
+    reports timings must be able to say which one it measured.
+    """
+    return _SCHEDULE_WHOLE.get(schedule) is not False, _SCHEDULE_VERDICT.get(schedule)
+
+
+def _schedule_runners(schedule):
+    """`schedule.steps` as `Env -> Env` callables, with everything but the drivers
+    jitted. Split out so the grouping is `_SCHEDULE_RUNNERS`'s value and not rebuilt.
+    """
+    from cottax.evaluate import Drive  # noqa: PLC0415
+
+    runners, group = [], []
+    for step in schedule.steps:
+        if isinstance(step, Drive):
+            if group:
+                runners.append(_jitted_group(tuple(group)))
+                group = []
+            runners.append(_driven_runner(step))
+        else:
+            group.append(step)
+    if group:
+        runners.append(_jitted_group(tuple(group)))
+    return tuple(runners)
+
+
+def _jitted_group(steps):
+    """One `jit` over a run of undriven steps, as an `Env -> Env` callable.
+
+    `dict(values)` inside the trace rather than outside it: `_run_acyclic` writes into
+    the env it is handed, and the caller's own dict must not be one a tracer lands in.
+    """
+
+    @eqx.filter_jit
+    def jitted(values):
+        env = dict(values)
+        for step in steps:
+            env = step(env)
+        return path_map(env)
+
+    def run(env):
+        return dict(jitted(path_map(env)))
+
+    return run
+
+
+def _driven_runner(step):
+    """`Drive.__call__`, with the body's re-run jitted and the driver left eager.
+
+    Re-implemented rather than wrapped because the two halves of `Drive.__call__` need
+    different treatment and it does not separate them: the driver is host code (`cvxpy`,
+    `pyvmcon`, a Python callback, or a `SeededNewtonDriver` whose cold-start fallback
+    raises on a traced start), while the body is the block itself and is exactly what a
+    jit is for. The condition map the driver iterates is untouched -- `VmconDriver` jits
+    it already -- so this changes nothing the driver sees, only the once-per-solve
+    `_run_acyclic` on the way out.
+
+    A nested body (`Drive.body` is the interior's own `Schedule` where `Blocking.inner`
+    states one) is run through `run_schedule` instead, so its own drivers stay eager
+    too. Nothing in this tree builds one today; this is the branch that keeps that from
+    being silently wrong when something does.
+    """
+    from cottax.evaluate import Schedule  # noqa: PLC0415
+
+    body = (
+        (lambda env: run_schedule(step.body, env))
+        if isinstance(step.body, Schedule)
+        else _jitted_group((step.body,))
+    )
+
+    def run(env):
+        converged = step.driver(step.condition_map(env), step.role_data(env))
+        if len(converged) != len(step.unknowns):
+            raise ValueError(
+                f"{type(step.driver).__name__} for block "
+                f"{[n.path_str() for n in step.nodes]} returned {len(converged)} "
+                f"value(s) for {len(step.unknowns)} unknown(s)"
+            )
+        env.update(zip(step.unknowns, converged, strict=True))
+        return body(env)
+
+    return run
+
+
 def mda_env(reference, graph=None, data=None):
     """Run the plain MDA schedule seeded from `data` (default `reference.data`); return
     its output env.

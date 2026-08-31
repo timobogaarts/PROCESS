@@ -5435,3 +5435,426 @@ schedule — the undriven `dr_tf_inboard_winding_pack` / `tf_inboard_radii` /
   path, and confirming it one path at a time is the next step.
 - **`reference_cold_matrix.txt` still holds `--provider` rows only**, and is now stale for
   more cells than its header names. Regenerating it is a job for a quiet tree.
+
+### 24.10 The cold matrix's 120 s per solve is compile, and three eager paths are most of it — 2026-08-31
+
+Measured in full in `_audit/optimise_design.md` §18; the punch-list version.
+
+`run_cold_matrix` is ~1690 s for 14 solves. `stellarator_helias` costs 21.7 s (MDF) and
+30.5 s (SAND) — which reproduces §13.4 and clears the tree of drift — and
+`large_tokamak_nof` costs **75.0 s and 110.0 s**. That is the whole gap.
+
+**None of it is in the solve loop.** The tokamaks converge in 7 (MDF) and 10 (SAND) SQP
+iterations, and the entire steady state is 0.14 s: 8 ms per iteration evaluating against
+12 ms in `cvxpy`'s QP, the same split §13.4 recorded. Recompile-per-iteration, QP cost
+scaling with condition count, and per-row matrix overhead were each checked and ruled out
+with numbers.
+
+It is **cold XLA compilation, in two kinds**:
+
+1. **Two jitted compiles per solve** — the condition map and its `jacfwd`. 34.8 s on the
+   tokamak, of which `jacfwd`'s XLA pass alone is **22.3 s**. `jacfwd`'s program is only
+   **2.2x–2.4x** the forward program's equations (32,560 against 14,401 for tokamak MDF),
+   not `n_unknowns` times it, so §24.9's 39,127 -> 13,283 vectorisation already bought the
+   tokamak solves roughly 3x here as an unmeasured side effect.
+2. **~1000 eager per-primitive XLA compiles per phase**, in three cottax graphs still run
+   through `evaluate._run_acyclic` un-jitted — the same defect §24.4 fixed for
+   `sand_harness.mda_env`:
+
+   | path | wall (tokamak) | in `backend_compile_and_load` | compiles |
+   |---|---|---|---|
+   | `mdf.prime` | 32.6 s | 22.5 s | 988 |
+   | `sand.fixed_point_residuals` (99 % of `sand_harness.assemble`) | 37.5 s | 26.6 s | 1050 |
+   | the SAND schedule's 92 non-`Drive` `Call` steps, at solve time | ~31 s | — | ~767 |
+
+**Next, in order.** (a) Jit those three, following §24.4 — ~60 s of the tokamak's 185 s,
+proven pattern, and the known cost is `check_antichain`'s refusal of a path named both
+whole and by element, so each boundary needs checking first. (b) `jacfwd`'s XLA pass, 22 s
+per tokamak solve, which shrinks with the forward program — so `bootstrap_current.py`
+(2037 equations, §24.9's next concentration) pays twice. Nothing was implemented in that
+pass; no library code changed.
+
+### 24.10 The two `_eval` files were the wrong problem type, and the matrix had no column for PROCESS's answer — 2026-08-31
+
+Two independent defects, found together because the second is what makes the first
+visible. Both are closed; a third finding fell out of closing them and is *not*.
+
+#### 1. `i_process_run_mode = -2` is a root find, and the port was optimising it
+
+**[measured] The premise, per file.** `importer.read_indat` over all seven
+configurations, against `sand_harness.reference_run`:
+
+| file | `i_process_run_mode` | `i_figure_merit` in file | `ixc` | `n_equality` | PROCESS |
+|---|---|---|---|---|---|
+| `large_tokamak_eval` | **-2** | **absent** | 2 | 2 | `fsolve`, 0 VMCON iterations |
+| `spherical_tokamak_eval` | **-2** | **absent** | 3 | 3 | `fsolve`, 0 VMCON iterations |
+| `stellarator_helias` | 1 | 6 | 8 | 2 | VMCON, 46 |
+| `helias_5b` | 1 | 7 | **3** | **3** | **VMCON**, 3 |
+| `large_tokamak_nof` | *(absent → 1)* | 1 | 20 | 3 | VMCON, 8 |
+| `low_aspect_ratio_DEMO` | 1 | -14 | 19 | 4 | VMCON, 16 |
+| `st_regression` | 1 | -5 | 14 | 3 | VMCON, 10 |
+
+`main.run_scan` branches on `i_process_run_mode` **and on nothing else**
+(`process/main.py:449-462`): `-2` replaces VMCON with `scipy.optimize.fsolve` over
+`_Fsolve.evaluate_eq_cons`, which is `fcnvmc1(n, self.meq, x, 0)` — **the equalities
+alone**. `_Fsolve.solve` then evaluates all `m` constraints once at the root and ends
+`self.objf = None`, and `solver_handler.py:190-191` omits the figure-of-merit line
+entirely. So on those two files PROCESS root-finds a square system and **never examines
+the inequalities**, while the port built an `Optimise` and handed VMCON that square
+system plus 23 (resp. 15) inequalities that are infeasible by construction.
+
+**This reframes §21.3.** "Inequality-infeasible by construction" was recorded as a
+property of `large_tokamak_eval`; it is a property of **asking an evaluation-mode file an
+optimisation question**. `c72` violated at `+5.53e-01` with an identically zero gradient
+row is not a defect in the file or in the port's constraint — it is a constraint PROCESS
+never looks at, in a problem PROCESS never poses.
+
+**The discriminator is the stated mode, and the two weaker rules are both wrong.**
+Recorded because both were proposed:
+
+- *"no `i_figure_merit`"* singles out the same two files here, but only because a file in
+  evaluation mode has no reason to name one. Nothing stops it naming one anyway.
+- *"square"* is **not even necessary**: `helias_5b` is 3 equalities against 3 iteration
+  variables and PROCESS runs **VMCON** on it, in 3 iterations. Squareness is a
+  *consequence* of the mode. `mdf.assemble` therefore checks it as a **consistency test**
+  and refuses a non-square root find, rather than using it as the test.
+
+**As built.** `importer.Problem` gains `i_process_run_mode` and `is_evaluation` (§24.3:
+the run mode is part of the problem statement, and it is the part that says *which kind*
+of problem the file states). `mdf.assemble(..., root_find=True)` states a cottax
+`RootFind`: `mdf_graph` mints **no objective node at all** when `i_figure_merit is None`,
+`conditions` is the equalities alone, the inequalities move to `Mdf.reported` — still in
+the graph, evaluated once at the answer exactly as PROCESS evaluates them — and
+`condition_map`'s roles become `(Residual,) * n` instead of
+`(Objective, Equality…, Inequality…)`. `MdfNewtonDriver` (`SeededNewtonDriver` with
+`throw=False` and its stats reported) drives it. `run_cold_matrix.Row.root_find` reads the
+mode off the **file**, so it is the same answer in every boundary mode including
+`--native`, which runs no PROCESS.
+
+**Deliberately not done: PROCESS's default `7` is not transcribed.** `reference.i_figure_merit`
+*is* `7` on both files — `numerics.py:154` puts it there — and evaluating that metric
+would produce a number PROCESS never forms. `PRO objf` reads `none` on those rows and
+`_process_objective` short-circuits before `objective_function` is called.
+
+**[measured] Both files now reproduce PROCESS's own `fsolve` answer directly**, cold, from
+the input file's own values:
+
+| file | before (`Optimise`) | after (`RootFind`) | worst dx vs PROCESS's `fsolve` x |
+|---|---|---|---|
+| `large_tokamak_eval` | **no-step** (first QP infeasible) | **3 Newton steps, converged**, max\|eq\| `3.6e-14` | **3.29e-12** (ixc 4) |
+| `spherical_tokamak_eval` | 3 SQP, converged | **2 Newton steps, converged**, max\|eq\| `1.2e-09` | **3.64e-09** (ixc 6) |
+
+`large_tokamak_eval`'s row was the last `no-step` on the matrix and it was never a solver
+failure. Note `spherical_tokamak_eval`'s `min ie` of `-13.76` at its root: deeply violated
+inequalities at an answer PROCESS agrees with to nine digits, which is what "PROCESS never
+examines them" looks like from the other side.
+
+#### 2. The matrix compared the port against itself
+
+`reference_cold_matrix.txt` carried PROCESS's **iteration count** and never PROCESS's
+**answer**, so every "matches" claim made off it compared the port under one seeding mode
+against the port under another — **§17.2's error, repeated twice after §17.2 named it.**
+Three columns close it, at ~0.01 s a row because `reference_run` is disk-cached:
+`PRO objf` (`objective_function(i_figure_merit, converged data)`), `d objf`, and
+`worst dx` (the largest relative deviation over the `ixc` design vector — the same
+quantity `run_sand_harness.py`'s per-variable table prints as `rel`, worst-cased, with the
+iteration variable named in the notes).
+
+**The provenance header is now emitted by `checkpoint`, not hand-written on top.** The old
+header was a hand-added block, so the first re-run silently deleted it; a provenance line
+a re-run destroys is worse than none, because its absence is invisible. It names HEAD
+**and every file of `PORT_FILES` that differs from it**, since `git rev-parse HEAD` alone
+is a lie on a dirty tree and every table this port has ever produced was produced on one.
+
+#### 3. The finding that fell out, and is open
+
+**[measured] The objective agreement on `stellarator_helias` is not at a shared design
+point, and this was assumed to be the `+17.604 MW` chain before it was measured.** MDF
+cold: `objf 1.2177573510` against PROCESS's `1.2149167845` — `d objf 2.34e-03` — but
+**`worst dx 1.08e-01` at ixc 109** (`f_nd_alpha_thermal_electron`). Two objectives
+evaluated at two different points, and a difference measured across two points is not
+evidence about either.
+
+It is also **not arithmetically the chain as stated**:
+`EXPLAINED_DISAGREEMENTS[".heat_transport.p_plant_electric_base_total_mw"]` records the
+chain reaching `.costs.coe` at `rel_diff = 1.73e-2`, and `objective_metric_6` is
+`coe/100`, so the chain predicts `1.73e-2` where `2.34e-03` is observed — an order of
+magnitude apart. Both cannot be the same number, and the difference is presumably the
+design point.
+
+`run_cold_matrix` therefore **withholds the label and reports the withholding**, which is
+a third state and not the absence of the other two: `EXPLAINED_OBJECTIVE_READS` maps an
+objective's *read* to the record that would explain a gap on it (checked at import against
+live `EXPLAINED_DISAGREEMENTS` keys, so a label can never outlive its write-up), and
+`_against_process` labels a row **explained** only when `worst dx <= 1e-4` — the chain is a
+difference in *evaluating* the objective at a shared point. Above that the note says the
+gap is not attributable by this measurement and names what would settle it.
+
+**Open, and this is the next step for whoever picks it up:** the port's objective at
+**PROCESS's own converged `x`**, which decomposes `d objf` into "the model evaluates it
+differently" and "the optimiser landed somewhere else". That is a Stage A measurement
+(`run_sand_harness.py`), not a matrix row. Until it is taken, no row on this table should
+be described as matching PROCESS's objective — the two `_eval` root finds, which match
+PROCESS's `x` to 1e-12 and 1e-9, are the only "matches PROCESS" claims the table currently
+supports.
+
+#### The matrix, regenerated
+
+All seven configurations in **one** pass, 751 s, `--provider`, on the working tree of
+2026-08-31 (HEAD `60d9ba88` plus uncommitted `importer.py`/`mdf.py`/`run_cold_matrix.py`
+and another session's in-flight `sand_harness.py`). The header now says that itself.
+
+| configuration | form | SQP | status | objf | PRO objf | d objf | worst dx | PRO |
+|---|---|---|---|---|---|---|---|---|
+| `stellarator_helias` | MDF | 67 | conv | 1.21775735 | 1.21491678 | 2.34e-03 | 1.08e-01 | 46 |
+| | SAND | **90** | conv | 1.21775735 | 1.21491678 | 2.34e-03 | 1.08e-01 | |
+| `helias_5b` | MDF | 4 | conv | 0.764215516 | 0.763518372 | 9.13e-04 | 2.01e-03 | 3 |
+| | SAND | 7 | conv | 0.764215517 | 0.763518372 | 9.13e-04 | 6.18e-03 | |
+| `large_tokamak_nof` | MDF | 7 | conv | 1.6 | 1.6 | 1.16e-11 | 2.01e-02 | 8 |
+| | SAND | 10 | conv | 1.6 | 1.6 | 4.78e-12 | **6.37e-01** | |
+| `large_tokamak_eval` | MDF | **3** | **conv** | — | **none** | — | **3.29e-12** | 0 |
+| | SAND | 0 | no-step | — | none | — | 1.68e-02 | |
+| `low_aspect_ratio_DEMO` | MDF | 10 | stopped | -0.406311573 | -0.40629623 | 3.78e-05 | **1.15e-04** | 16 |
+| | SAND | 500 | cap | -0.401520642 | -0.40629623 | 1.18e-02 | 7.09e-02 | |
+| `spherical_tokamak_eval` | MDF | **2** | **conv** | — | **none** | — | **3.64e-09** | 0 |
+| | SAND | 3 | conv | 0.594644641 | none | — | 3.63e-09 | |
+| `st_regression` | both | — | FAILED | — | -16.5885765 | — | — | 10 |
+
+**[measured] `low_aspect_ratio_DEMO`'s `10 stopped` is a different cause from the `_eval`
+files, and it is not a wrong answer.** It states `i_figure_merit = -14` and
+`i_process_run_mode = 1`, so it is a genuine optimisation and VMCON is the right solver
+for it. The new columns say what "stopped" means here: `worst dx 1.15e-04` over **19**
+design variables and `d objf 3.78e-05`, with `min ie -1.41e-06`. It **lands on PROCESS's
+answer** and stops because the convergence test is not met at a marginally violated
+inequality — a termination-criterion artefact, not a different solution. Before these
+columns existed the row read "10 stopped and slightly infeasible" with no way to tell
+that from a solve that had wandered off.
+
+**[measured] `stellarator_helias` SAND is 90 SQP iterations, not the 83 §22.9 records.**
+Flagged rather than explained: this pass ran with another session's uncommitted
+`sand_harness.py` in the tree, which is exactly what the new provenance header exists to
+disclose. Re-measure on a clean tree before quoting either number.
+
+#### Not done
+
+- **SAND still states an `Optimise` on the two `_eval` files**, so their SAND rows are
+  unchanged (`large_tokamak_eval` SAND still no-steps on `c72`). It is the same fix —
+  SAND's unknowns are design + coupling against equalities + residuals, which is already
+  square — but it runs through `sand_harness.assemble`, and that file was being edited by
+  another session throughout this one. The MDF/SAND split on those two rows is now
+  formulation *and* problem type, and the table says so.
+- **`worst dx` is large on rows that "converged"** — `large_tokamak_nof` SAND is
+  `6.37e-01` at ixc 135, MDF `2.01e-02` at ixc 57, both at `d objf ~1e-11`. A flat
+  optimum, a genuinely different local solution, and a wrong model all produce that shape;
+  distinguishing them is the same Stage A measurement item 3 asks for.
+
+### 24.11 `bootstrap_current.py` halved — the cost was contiguous indexing, not physics — 2026-08-31
+
+**Done, measured.** §24.9 left `bootstrap_current.py` as the next tokamak-only
+concentration in `large_tokamak_nof`'s MDA program (2,056 equations) and §24.10 (b) noted
+it pays twice, because `jacfwd`'s XLA pass scales with the forward program. It is now
+**949**: ~1,100 equations removed from the value map and again from the Jacobian.
+
+**The defect is not §24.9's.** There are no unrolled Python loops in this file. The cost
+was the lowering of `profile[radial_elements]`. `radial_elements` is
+`arange(2, n_plasma_profile_elements)` -- contiguous, one construction site -- but written
+as fancy indexing `jnp` must emit the general form: `sub`, `lt`/`add`/`select_n` for
+negative-index wraparound, `convert_element_type`, `broadcast_in_dim`, `gather` --
+**seven equations per site, at 188 sites**. `lax.slice_in_dim` is one. A new
+`_profile_at` helper emits the slice when the index array is *checked* contiguous and
+falls back to the gather otherwise, because the three coefficient contracts drive these
+helpers with their own index arrays. Bit-identical output; all 1,385
+`tests/functional_process/models/physics` cases pass unchanged, gradient checks included.
+
+**This is a class, not one file.** Any port that indexes a profile with a statically
+contiguous index array pays 7x. Worth one grep across `functional_process/models/**` for
+`[<name>]` where `<name>` is an `arange`.
+
+**XLA CSE already deduplicates the repeated subexpressions** -- the *old* code's optimised
+HLO has 18 gathers against the jaxpr's 188 -- so hand-hoisting them is churn. The jaxpr
+count still matters because the bottleneck §24.10 measured is *compile* time, which scales
+with the program handed to XLA (optimised HLO also halved, 659 -> 344).
+
+**Two corrections to what was believed going in.** (1) The node is traced **once** by the
+MDA: standalone `make_jaxpr` of `bootstrap_fraction_sauter` gives 988 against the 949
+attributed in the MDA jaxpr. The ~4x seen on `_beta_poloidal_total_sauter`'s lines is
+**not** `Drive`'s double-trace and nothing in `~/jaxgraph` is implicated. (2) It is
+intra-file recomputation, faithful to PROCESS: within one trace
+`_beta_poloidal_total_sauter` runs 6 times, `_trapped_particle_fraction_sauter` and
+`_electron_collisionality_sauter` 5, `_beta_poloidal_sauter` 4,
+`_calculate_l31_coefficient` 3 -- because the two higher coefficient functions each
+re-enter the lower one and each recomputes the same collisionalities and betas.
+
+**Next lever for this unit, not taken:** computing each shared quantity once would reach
+roughly 460 equations, another 2x. It changes the signatures the three tier-1 coefficient
+contracts pin, so it is a port change rather than an expression change. Numbers are in the
+unit record's "## contiguous indexing, expressed as slices".
+
+Where the tokamak's program sits now, by attributed file (17,122 equations counting
+subjaxprs): 2,648 `pfcoil/fields.py`, 1,524 `models/safe_math.py`, 1,217
+`tfcoil/stress.py`, 1,159 `costs/costs.py`, **949 `physics/bootstrap_current.py`**, 832
+`physics/superconductors.py`, 770 `tfcoil/superconducting.py`. `safe_math.py` at 1,524 is
+new information and has not been looked at.
+
+### 24.11 The three eager paths are jitted, and §18.6 misattributed one of them — 2026-08-31
+
+`sand_harness.run_schedule` is §24.4's `PathMap` pattern applied to a schedule that
+**cannot** be jitted whole: `mdf.eager`'s `SeededNewtonDriver`s raise on a traced start
+(`mdf.traceable_drivers`) and the SAND schedule's `Drive` is `VmconDriver` (`cvxpy`,
+`pyvmcon`, a Python callback). It leaves every driver eager and fuses everything else --
+maximal runs of `Call` steps, and each `Drive`'s **body**, the block re-run on the way
+out of `Drive.__call__`.
+
+**The antichain is clean at every one of the three sites, on every configuration.**
+Measured with the pairwise prefix check over each site's own variables; `.tfcoil.dcond`
+was the only violation this tree ever had and §24.4 removed it.
+
+| site | variables | violations |
+|---|---|---|
+| `mdf.eager.subgraph` | 840--1187 (six configurations) | **0** |
+| SAND solve schedule (`large_tokamak_nof`) | 1205 | **0** |
+| the six `fixed_point_residuals` bodies | 4--434 each | **0** |
+
+`fixed_point_residuals` needs no boundary at all: `env` is a **closure** over the
+residual, not a jit argument, so nothing is flattened and `check_antichain` is never
+reached. Its fix is one `eqx.filter_jit` around the existing `jax.jacfwd`.
+
+**§18.6's third row is wrong, and the correction is the reason `run_schedule` jits
+`Drive.body`.** The SAND `Optimise` fuses nearly the whole graph into one SCC, so the 92
+`Call` steps are the *leftovers*, not the cost. Measured on `large_tokamak_nof`, cold,
+one process each, counting `backend_compile_and_load`:
+
+| phase | eager | jitted | undriven `Call` steps | `Drive` steps |
+|---|---|---|---|---|
+| `mdf.prime` (239 `Call`, 6 `Drive`) | **49.3 s, 978 compiles** | **16.4 s, 32** | 35.8 s / 718 -> 11.4 s / 7 | 13.5 s / 260 -> 5.0 s / 25 |
+| SAND solve schedule (92 `Call`, 1 `Drive`) | **108.3 s, 769** | **55.1 s, 9** | 2.8 s / 40 -> 2.6 s / 2 | 105.4 s / 729 -> 52.5 s / 7 |
+| `sand.fixed_point_residuals` (99 % of `assemble`) | **45.9 s, 1035** | **4.0 s, 6** | -- | -- |
+
+Jitting only the `Call` runs would have bought the SAND schedule 2.8 s of 108.
+
+**Values move by XLA reassociation and nothing more**, key by key against the eager env:
+
+| | keys | differing | worst relative | worst absolute |
+|---|---|---|---|---|
+| `mdf.prime` | 1183 | 402 | `1.2e-11` | -- |
+| SAND solve schedule | 1205 | 648 | `1.4e-03` | `1.8e-15` |
+| `fixed_point_residuals` | 6 Jacobians | -- | `~1e-14` | `1.5e-08` of `1.3e+06` |
+
+The SAND row's `1.4e-03` is §24.4's own caveat again and not a finding: both entries that
+reach it are residuals at zero (`^cond^cond.physics.temp_plasma_ion_vol_avg_kev` at
+`1.3e-12`, `.physics.pden_ion_electron_equilibration_mw` at `3.5e-14`), where a relative
+measure has nothing to divide by. The largest absolute difference anywhere in that env is
+`1e-10`, and the largest relative difference at any quantity with a scale is `6.9e-07` on
+`^cond.constraints.c60` -- a *constraint residual* at `1.3e-05`, i.e. the same effect
+once more. `tests/functional_process/test_sand.py`, `test_mdf.py` and `test_boundary.py`:
+188 passed.
+
+**Correction, measured the same day: `mdf.eager` jits *whole*, and the walk was
+conservatism.** `mdf.traceable_drivers`' claim that a `SeededNewtonDriver`'s cold-start
+fallback raises `TracerArrayConversionError` on a traced `start` is **stale** --
+`core/solver/drivers._usable` now opens with `isinstance(flat, jax.core.Tracer)`, which
+is the one-line upstream fix that docstring proposed and recorded as "Reported, not
+applied". So `run_schedule` tries `_mda_runner`'s single jit first and falls back to the
+walk only where a driver refuses to trace:
+
+| `large_tokamak_nof`, cold | wall | compiles |
+|---|---|---|
+| `mdf.prime`, eager | 49.3 s | 978 |
+| `mdf.prime`, walk (`Call` runs + `Drive` bodies) | 16.4 s | 32 |
+| **`mdf.prime`, one jit** | **13.4 s** | **1** |
+
+Values are *tighter* whole than fragmented: 392 of 1183 keys differ from the eager env,
+worst relative `6.5e-14` against the walk's `1.2e-11`.
+
+**The SAND solve schedule is the genuine fallback, and its residual is not
+fragmentation.** `VmconDriver` is a `cvxpy` QP, a `pyvmcon` line search and a Python
+callback; the probe fails with `TracerArrayConversionError` on the `float64[26]` unknowns
+vector. Its 9--10 compiles are four large genuine ones and nothing else -- per-compile,
+in order: `0.16, 0.01, 0.02, 0.01, 3.93, 23.00, 0.18, 5.35, 1.96` s. The `23.00 s` is
+`jacfwd` of the condition map (§18.3 measured `22.75 s` independently) and the `3.93 s`
+its forward program; the two jitted `Call` runs are the `0.16` and the `0.01`. So of the
+~57 s walk, ~46 s is XLA on programs a jit cannot avoid and ~11 s is VMCON's own host
+loop. Fragmentation is `0.17 s` of it.
+
+The probe costs one symbolic trace and no extra compile where it fails -- 62.3 s against
+57.2 s on that schedule -- so `run_schedule(..., whole=False)` skips it for a caller that
+already knows.
+
+**Landed and queued.** `sand.fixed_point_residuals`' `eqx.filter_jit` is **in** (another
+agent applied it). Still queued, in files this pass did not hold: `mdf.prime`'s
+`mdf.eager(...)` -> `run_schedule(mdf.eager, ...)`, and `run_cold_matrix.cold_sand` /
+`run_sand_harness.main`'s `solve_schedule(...)` -> `run_schedule(solve_schedule, ...,
+whole=False)`. Nothing calls `run_schedule` yet, so the matrix is unchanged until they
+land.
+
+### 24.12 The contiguous-index class was one file; `safe_math.py` was half spelling — 2026-08-31
+
+**Done, measured.** §24.11 left two follow-ons. Both were swept with the same instrument
+(every jaxpr equation of `large_tokamak_nof`'s cold MDA program attributed to its
+innermost `functional_process/models` frame, recursing into sub-jaxprs and inheriting the
+enclosing frame across `pjit`). Program **17,134 -> 16,433**.
+
+#### (a) The contiguous-index sweep: nothing left to convert
+
+**`bootstrap_current.py` was the class, not an instance of it.** The whole remaining
+program holds **61 `gather` equations** (~370 equations, 2.2 %), against the 188 that one
+file had on its own. Every site was read; **none** is a statically contiguous `arange`:
+
+| site | gathers | index | verdict |
+|---|---|---|---|
+| `physics/impurity_radiation.py:203` | 24 | `jnp.interp`'s `searchsorted` | data-dependent |
+| `physics/radiation_power.py:142` | 8 | `jnp.interp`'s `searchsorted` | data-dependent |
+| `power/pf_coil_power.py:243` | 5 | `group_circuit_index` = `(0,1,3,5,6)` | not contiguous |
+| `pfcoil/inductance.py:306` | 4 | `last_of_group` | not contiguous |
+| `pfcoil/fields.py:340`, `:948` | 6 | `time_column[target]`, and `_peak_time_column` is a `jnp.where` over **traced** currents | traced |
+| `tfcoil/stress.py:433-435` | 6 | `layer_of = repeat(arange(nlayers), n_radial_array)` | contiguous **runs**, not a contiguous set |
+| `pfcoil/currents.py:213` | 2 | `lax.cummax` output | traced |
+| `physics/radiation_power.py:703-705` | 3 | `selected` species | not contiguous |
+| `tfcoil/stress.py:418`, `:1421` | 3 | static scalar; `argmax` output | one is already minimal, one traced |
+
+**Nothing was converted, and that is the finding.** The one rewritable site is
+`stress.py`'s `kk[layer_of]` family, where `x[repeat(arange(n), m)] == repeat(x[:n], m)`
+exactly (3 equations against 7) -- **24 equations of 16,433**, i.e. 0.15 %, on a file a
+parallel pass may hold. Not worth the churn; recorded here so it need not be re-derived.
+
+#### (b) `safe_math.py`: 1,524 -> 823, and **no guard was touched**
+
+122 `safe_pow` and 58 `safe_sqrt` invocations. By primitive, **half the cost was the
+spelling**:
+
+| primitive | before | after | why |
+|---|---|---|---|
+| `jit` | 386 | **0** | `jnp.where` stages a `jit[name=_where]` around its `select_n` |
+| `convert_element_type` | 214 | 2 | that wrapper promotes the Python-scalar branch; `lax.full_like` does it statically |
+| `pow` | 246 | 130 | `jnp.zeros_like(x) ** p` was a **live `pow` computing a compile-time constant** |
+| `select_n` / `eq` / `sqrt` / `broadcast_in_dim` | 386 / 180 / 70 / 42 | 386 / 193 / 70 / 42 | **the guard itself; unchanged** |
+
+`jnp.where(c, a, b)` became `lax.select(c, a, b)` -- which is what it lowers to -- and the
+zero branch became `lax.full_like(x, 0.0 ** p)`, folded in Python because `0.0 ** p` is
+exactly `0.0`, `1.0` or `inf` and never anything a rounding mode could touch. `p` traced
+keeps the staged `pow` (7 sites, 15 equations). Per call: `safe_pow` 7 -> 4 scalar, 10 -> 6
+array; `safe_sqrt` 6 -> 4 scalar, 10 -> 6 array.
+
+**Bit-identical, checked three ways.** Directly against the `jnp.where` spelling over
+`{0, -0, 1e-300, 1e-8, 0.5, 1, 2, 1e12, -3, +-inf, nan}` x `{p = 0.5, .25, 1, 0, -1.5, 2,
+1.7, -1}` x `{float64, float32, 1-D, 2-D, vmap, traced p, int base, Python float}`,
+comparing **value, dtype, `jax.grad` and `jax.grad(jax.grad)`**: 0 mismatches.
+`tests/functional_process/models`: **4,765 passed**, gradient checks included.
+And end to end, the cold MDA env of `large_tokamak_nof` before and after: **0 of 1,134
+keys differ** -- not "within tolerance", identical.
+
+**What was deliberately not done.** No guard was removed on the argument that its input is
+provably positive, and none was merged. The four defects of §9 are why they are there, a
+positivity proof that holds today does not survive the next iteration variable moving, and
+the remaining 823 equations are 193 comparisons, 386 selects, the 200 `pow`/`sqrt` the
+unguarded expression would pay anyway, and 42 constant broadcasts for the array-valued
+sites. **There is nothing left in this module to remove that is not a guard.**
+
+#### Where the tokamak's program sits now
+
+2,648 `pfcoil/fields.py`, 1,217 `tfcoil/stress.py`, 1,159 `costs/costs.py`, 949
+`physics/bootstrap_current.py`, 832 `physics/superconductors.py`, **823 `models/safe_math.py`**,
+770 `tfcoil/superconducting.py`. The next levers are all *port* changes rather than
+expression ones: `fields.py`'s twelve batched kernel traces (§24.9), and
+`bootstrap_current.py`'s intra-file recomputation (§24.11, ~460 equations if the shared
+quantities are computed once).

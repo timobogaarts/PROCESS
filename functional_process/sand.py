@@ -822,7 +822,13 @@ def fixed_point_residuals(graph, env, problems=None):
             # `np.array`, not `np.asarray`: a JAX array converts to a **read-only** view,
             # and the identity subtraction below is in place.
             jacobian = np.array(
-                jax.jacfwd(functools.partial(residual, _unravel=unravel))(start),
+                # Jitted: eagerly this is six `jacfwd`s over `_run_acyclic` bodies, one
+                # XLA compile per `jnp` primitive -- 45.9 s / 1035 compiles against
+                # 4.0 s / 6 (`_audit/next_steps.md` §24.11). `env` is a closure, not an
+                # argument, so no `VarPath` is flattened and no antichain question arises.
+                eqx.filter_jit(
+                    jax.jacfwd(functools.partial(residual, _unravel=unravel))
+                )(start),
                 dtype=float,
             ).reshape(-1, start.size)
         except Exception as error:  # noqa: BLE001 -- recorded, not swallowed

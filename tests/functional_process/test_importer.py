@@ -29,7 +29,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from functional_process.importer import ArrayInput, read_indat
+from functional_process.importer import (
+    EVALUATION_RUN_MODE,
+    OPTIMISATION_RUN_MODE,
+    ArrayInput,
+    Problem,
+    read_indat,
+)
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -364,3 +370,76 @@ def test_no_value_is_nan():
             )
             for number in numbers:
                 assert isinstance(number, str) or not math.isnan(number), (stem, place)
+
+
+# --------------------------------------------------------- the run mode (§24.10)
+
+
+def test_the_run_mode_is_read_off_the_file_and_says_which_problem_it_states():
+    """`i_process_run_mode` is the discriminator PROCESS itself uses.
+
+    `main.run_scan` reads it and nothing else: `1` keeps VMCON, `-2` replaces the solver
+    with `scipy.optimize.fsolve` over the equalities alone. Reading it here is what let
+    the port stop building an `Optimise` for the two `_eval` files (§24.10).
+    """
+    root = Path(__file__).resolve().parents[2] / "tests/regression/input_files"
+    stated = {
+        p.name[: -len(".IN.DAT")]: read_indat(p).problem.i_process_run_mode
+        for p in sorted(root.glob("*.IN.DAT"))
+        if p.name != "IFE.IN.DAT"
+    }
+    assert stated["large_tokamak_eval"] == EVALUATION_RUN_MODE
+    assert stated["spherical_tokamak_eval"] == EVALUATION_RUN_MODE
+    assert stated["stellarator_helias"] == OPTIMISATION_RUN_MODE
+    assert stated["helias_5b"] == OPTIMISATION_RUN_MODE
+    assert stated["low_aspect_ratio_DEMO"] == OPTIMISATION_RUN_MODE
+    assert stated["st_regression"] == OPTIMISATION_RUN_MODE
+    # `large_tokamak_nof` names no run mode at all, which is the `numerics.py:150`
+    # default -- unresolved here, exactly as `n_equality_constraints`' sentinel is.
+    assert stated["large_tokamak_nof"] is None
+
+
+def test_a_file_naming_no_run_mode_optimises():
+    """The unresolved `None` must not read as "not an optimisation"."""
+    assert not Problem().is_evaluation
+    assert not Problem(i_process_run_mode=OPTIMISATION_RUN_MODE).is_evaluation
+    assert Problem(i_process_run_mode=EVALUATION_RUN_MODE).is_evaluation
+
+
+def test_exactly_the_two_eval_files_state_a_root_find():
+    """The premise §24.10 rests on, measured per file rather than assumed.
+
+    Three properties, and only the **first** is the discriminator: PROCESS branches on
+    `i_process_run_mode` alone (`main.py:449-462`). The other two are checked here
+    because both were proposed as the test and both are wrong:
+
+    - *"no `i_figure_merit`"* is **necessary but not sufficient** on these seven -- it
+      does single out the same two files, but only because a file in evaluation mode has
+      no reason to name one. Nothing stops it naming one anyway.
+    - *"square"* is **not even necessary**: `helias_5b` states 3 equalities against 3
+      iteration variables and PROCESS runs VMCON on it. Squareness is a consequence of
+      the mode, which is why `mdf.assemble` checks it as a consistency test instead.
+    """
+    root = Path(__file__).resolve().parents[2] / "tests/regression/input_files"
+    problems = {
+        p.name[: -len(".IN.DAT")]: read_indat(p).problem
+        for p in sorted(root.glob("*.IN.DAT"))
+        if p.name != "IFE.IN.DAT"
+    }
+    root_finds = {n for n, q in problems.items() if q.is_evaluation}
+    assert root_finds == {"large_tokamak_eval", "spherical_tokamak_eval"}
+
+    # Each root find is square -- one equality per iteration variable -- which is what
+    # makes `fsolve` over the equalities a well-posed problem at all.
+    for name in root_finds:
+        problem = problems[name]
+        assert problem.n_equality_constraints == len(problem.ixc), name
+
+    # And no root find names a figure of merit, so the `7` a `ReferenceRun` reports for
+    # them comes from `numerics.py:154`'s default and from nowhere else.
+    assert all(problems[n].i_figure_merit is None for n in root_finds)
+
+    # The counterexample that rules out "square" as the discriminator.
+    helias = problems["helias_5b"]
+    assert helias.n_equality_constraints == len(helias.ixc) == 3
+    assert not helias.is_evaluation

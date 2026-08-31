@@ -55,6 +55,7 @@ from functional_process.sand_harness import (  # noqa: E402
     process_jacobian_with_error,
     reduce_jacobian,
     reference_run,
+    run_schedule,
     stage_a,
     to_process_spelling,
 )
@@ -509,7 +510,9 @@ def main(argv=None):
                 print(f"  {name:<56s} {value}")
             continue
         started = time.perf_counter()
-        out = solve_schedule(_inputs_only(solve_schedule, seeded))
+        out = run_schedule(
+            solve_schedule, _inputs_only(solve_schedule, seeded), whole=False
+        )
         elapsed = time.perf_counter() - started
         print(f"\nSTAGE C {label}: {len(trace)} SQP iterations in {elapsed:.1f} s")
         print(f"  ({len(borrowed)} unknown(s)/input(s) seeded from the MDA env)")

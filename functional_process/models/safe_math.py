@@ -26,15 +26,72 @@ none: it becomes `0`. That is the same convention JAX already applies at the kin
 poison the whole Jacobian row -- and it is what PROCESS's own one-sided finite
 difference cannot distinguish from a very large slope anyway.
 
-The idiom is the *double* `jnp.where`, and both halves are load-bearing. `jnp.where`
-evaluates both branches; a single `jnp.where(x > 0, x ** p, 0.0)` still computes
+The idiom is the *double* select, and both halves are load-bearing. A select
+evaluates both branches; a single `where(x > 0, x ** p, 0.0)` still computes
 `0.0 ** (p - 1)` in the untaken branch and still leaks its `inf` into the tangent. The
-inner `where` is what keeps the untaken branch's *argument* away from zero.
+inner select is what keeps the untaken branch's *argument* away from zero.
+
+How the guard is spelled, and why not `jnp.where` (2026-08-31)
+--------------------------------------------------------------
+`_audit/next_steps.md` §24.11 measured this module at **1,524 jaxpr equations** in
+`large_tokamak_nof`'s MDA program -- second only to `models/pfcoil/fields.py` -- across
+122 `safe_pow` and 58 `safe_sqrt` invocations. Attributing them by primitive found that
+**half of them were the spelling, not the guard**:
+
+- `jnp.where` stages a `jit[name=_where]` wrapper around its `select_n` (386 `jit`
+  equations), and promotes its Python-scalar branch inside that wrapper with a
+  `convert_element_type` + `broadcast_in_dim` pair (214 + 42) that `lax.full_like` does
+  once, statically, for free on a scalar.
+- `jnp.zeros_like(x) ** p` was a **live `pow` equation computing a compile-time
+  constant** (124 of the 246 `pow`s). `0.0 ** p` is exactly `0.0` for `p > 0`, `1.0` for
+  `p == 0` and `inf` for `p < 0` -- exact in binary in every case -- so when `p` is not
+  itself traced the constant is folded here rather than emitted.
+
+Both are pure expression rewrites: `lax.select` *is* what `jnp.where` lowers to, and
+`lax.full_like` preserves `x`'s shape, dtype and weak type, so no promotion changes.
+**Neither branch, neither comparison and neither derivative is touched** -- the guard is
+the same double select it always was. Verified bit-identical (value *and* `jax.grad`)
+against the `jnp.where` spelling over `{0, 1e-300, 1e-8, 0.5, 1, 2, 1e12, -3, +-inf,
+nan}` x `{p = 0.5, 0.25, 1, 0, -1.5, 2, 1.7}` x `{float64, float32, array, traced p,
+int base, Python float}`: 0 mismatches.
+
+| | `jnp.where` | `lax.select` |
+|---|---|---|
+| `safe_pow`, scalar | 7 | **4** |
+| `safe_pow`, array | 10 | **6** |
+| `safe_pow`, traced `p` | 7 | **5** |
+| `safe_sqrt`, scalar | 6 | **4** |
+| `safe_sqrt`, array | 10 | **6** |
+
+**What was *not* done, deliberately.** No call site's guard was removed on the argument
+that its input is provably positive. The guards exist because four real defects were
+found without them, `_harness/boundary.py` registers the sites, and a proof of
+positivity that holds today is not one that survives the next iteration variable moving.
+The saving above is entirely in how the same guard is written.
 """
 
 import jax.numpy as jnp
+import numpy as np
+from jax import lax
 
 __all__ = ["safe_pow", "safe_sqrt"]
+
+
+def _zero_to_the(like, p):
+    """`0.0 ** p`, as an array shaped and typed like `like`.
+
+    Folded to a constant when `p` is a concrete number -- `0.0 ** p` is `0.0`, `1.0` or
+    `inf`, all exact -- and left as a staged `pow` when `p` is a tracer, where there is
+    no constant to fold to. `numpy`'s `power` is asked rather than Python's `**` because
+    Python raises `ZeroDivisionError` for `p < 0` where both `numpy` and XLA return
+    `inf`, which is the value this branch must reproduce.
+    """
+    try:
+        exponent = float(p)
+    except (TypeError, ValueError):  # a tracer: no constant to fold to
+        return jnp.zeros_like(like) ** p
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return lax.full_like(like, np.power(np.float64(0.0), np.float64(exponent)))
 
 
 def safe_pow(x, p):
@@ -57,8 +114,10 @@ def safe_pow(x, p):
         `x ** p`, bit-identical for every `x != 0`, and `0.0 ** p` at `x == 0` with a
         derivative of `0` instead of `inf`/`nan`.
     """
+    x = jnp.asarray(x)
     at_zero = x == 0.0
-    return jnp.where(at_zero, jnp.zeros_like(x) ** p, jnp.where(at_zero, 1.0, x) ** p)
+    powered = lax.select(at_zero, lax.full_like(x, 1.0), x) ** p
+    return lax.select(at_zero, _zero_to_the(powered, p), powered)
 
 
 def safe_sqrt(x):
@@ -81,5 +140,7 @@ def safe_sqrt(x):
     guaranteed to round identically, and every call site here is a transcription of a
     PROCESS expression that used a square root.
     """
+    x = jnp.asarray(x)
     at_zero = x == 0.0
-    return jnp.where(at_zero, 0.0, jnp.sqrt(jnp.where(at_zero, 1.0, x)))
+    rooted = jnp.sqrt(lax.select(at_zero, lax.full_like(x, 1.0), x))
+    return lax.select(at_zero, lax.full_like(rooted, 0.0), rooted)

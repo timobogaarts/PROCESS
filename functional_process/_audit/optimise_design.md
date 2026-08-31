@@ -3135,3 +3135,143 @@ is a documented omission whose justification quietly expired.
   `.tfcoil.sig_tf_case` cannot appear.
 - **It says nothing about derivatives.** Stage B remains the only check that a right value
   has the right sensitivity.
+
+## 18. Where a cold solve's 100 seconds go (2026-08-31) — it is compile, and mostly not the solve's
+
+`run_cold_matrix` takes ~1690 s for 14 solves, ~120 s per solve. §13.4 measured a full
+326-iteration stellarator SAND solve at **11.93 s wall plus 7.59 s compile** and §13.3 put
+one value-and-Jacobian pair at **0.74 ms**. Both of those numbers are still right. They
+are numbers about a *driver*, handed a problem that was already assembled and an env that
+was already primed, and the matrix pays for the assembling and the priming.
+
+### 18.1 Method
+
+Two configurations (`stellarator_helias`, the subject of §13.4, and `large_tokamak_nof`,
+the largest that solves), two formulations, and **two processes each**: a `probe` process
+that builds and never solves, and a `solve` process that solves and never probes. Nothing
+is measured second in a process where the same thing was measured first, because JAX's
+in-process compile cache has produced three wrong conclusions in this investigation
+already. `jax_enable_x64` on, `provider` boundary mode, PROCESS reference disk-cached.
+
+- **TRACE / LOWER / XLA compile are separated** with `jax.make_jaxpr(fn)(x)`, then
+  `jax.jit(fn).lower(x)` (which retraces — so LOWER is an upper bound on the lowering
+  alone), then `.compile()`. Equation counts are off the same jaxpr, top-level and
+  counted recursively into sub-jaxprs.
+- **Evaluation against everything else** is a wrapper on `pyvmcon.solve` that times each
+  `problem(x)` call, exactly §13.1's instrument. The **first** call is reported separately
+  because it carries both jits' whole trace-lower-compile; "OTHER" is
+  `pyvmcon.solve` total minus every `problem(x)`, i.e. the QP, the line search and the
+  host bookkeeping.
+- Scratch scripts only; **no library code changed in this pass.**
+
+### 18.2 The phase table, cold, one process per column
+
+Seconds. `-` means the phase does not exist for that formulation.
+
+| phase | helias MDF | helias SAND | tokamak MDF | tokamak SAND |
+|---|---|---|---|---|
+| `machine_from_indat` + `graph_for` | 0.09 | 0.06 | 0.34 | 0.37 |
+| `reference_run` (disk-cached) | 1.43 | 1.52 | 1.45 | 1.50 |
+| `mda_env` (warm) | - | **3.75** | - | **9.54** |
+| `assemble` | 0.13 | **9.87** | 0.18 | **34.36** |
+| `seed` | 0.13 | 0.02 | 0.12 | 0.03 |
+| `prime` (MDF) / schedule + scales + 2nd `mda_env` (SAND) | **8.33** | 0.08 | **30.64** | 0.12 |
+| solve wall (compile included) | **11.55** | **14.89** | **42.04** | **63.82** |
+| **whole process** | **21.7** | **30.5** | **75.0** | **110.0** |
+
+`stellarator_helias` reproduces §13.4 (21.7 s and 30.5 s against its ~20 s), so the tree
+has not drifted; **`large_tokamak_nof` is the 100 s row**, and a matrix row is both
+formulations — 185 s per tokamak configuration, which is the 1690 s.
+
+### 18.3 The condition map and its `jacfwd`, cold, each in its own process
+
+| | value eqns (top/rec) | TRACE | LOWER | XLA | steady | `jacfwd` eqns | TRACE | LOWER | XLA | steady |
+|---|---|---|---|---|---|---|---|---|---|---|
+| helias MDF (8 unknowns) | 3974 / 6905 | 0.52 | 0.29 | 1.15 | 0.5 ms | 7899 / 13791 | 2.02 | 0.52 | **4.35** | 0.6 ms |
+| helias SAND (14) | 2994 / 4437 | 0.25 | 0.21 | 0.95 | 0.3 ms | 6269 / 8688 | 1.18 | 0.36 | **4.14** | 0.7 ms |
+| tokamak MDF (20) | 14401 / 19437 | 1.61 | 0.69 | 4.36 | 0.8 ms | 32560 / 43846 | 6.56 | 1.43 | **22.26** | 3.3 ms |
+| tokamak SAND (26) | 11675 / 13438 | 1.15 | 0.55 | 3.80 | 0.8 ms | 27993 / 31525 | 3.63 | 1.49 | **22.75** | 12.7 ms |
+
+**The `jacfwd` hypothesis is half right.** It is *not* an equation blow-up: forward-mode
+Jacobian programs here are **2.2x–2.4x** the forward program's equations, never
+`n_unknowns` times it — JVP roughly doubles the equation count and the 8–26 tangent
+columns ride in the *shapes*, not in new equations. But `jacfwd`'s XLA pass is
+**5.1x/6.0x** the value map's on the tokamaks for 2.3x the equations, and at 22.3 s /
+22.8 s it is **~65 % of the whole solve's compile**. So it is the lever, just not for the
+reason proposed. And because its program tracks the forward program's size, §24.9's
+39,127 -> 13,283 vectorisation of the MDA jaxpr propagated into it: that pass bought the
+tokamak solves roughly a 3x compile reduction as a side effect nobody measured.
+
+### 18.4 Steady state per iteration: evaluation against the QP
+
+Excluding the first `problem(x)` call, which is the two jits.
+
+| | its | evals | first eval (= both compiles) | evals after | ms/it evaluating | ms/it OTHER (QP + line search + host) |
+|---|---|---|---|---|---|---|
+| helias MDF | 67 | 133 | **8.83 s** | 0.155 s | 2.3 | **8.9** |
+| helias SAND | 90 | 179 | **7.43 s** | 0.232 s | 2.6 | **10.3** |
+| tokamak MDF | 7 | 13 | **34.78 s** | 0.054 s | 7.7 | **11.9** |
+| tokamak SAND | 10 | 19 | **32.20 s** | 0.085 s | 8.5 | **12.7** |
+
+§13.4's 2.1 ms evaluating against 11.8 ms in the QP is reproduced to within a tenth of a
+millisecond on the stellarator, four months and one QP-solver change later. **The solve
+loop is not where any of the missing time is**: on the tokamak the entire steady state is
+**0.14 s of a 42–64 s solve**, and the tokamaks converge in 7 and 10 iterations.
+
+### 18.5 Three alternative explanations, closed with numbers
+
+- **Recompiles per iteration** (the `weak_type` signature split found in `mda_env`
+  today): **ruled out.** 132 further evaluations cost 0.155 s and 18 cost 0.085 s — one
+  recompile would be seconds, and every table above would show it.
+- **`cvxpy` QP scaling with condition count**: **ruled out.** OTHER is 8.9 / 10.3 / 11.9 /
+  12.7 ms per iteration at 15, 21, 27 and 33 conditions. Flat, and the same order §13.4
+  measured.
+- **The matrix doing per-row work a bare solve does not**: **ruled out.** Every phase the
+  matrix runs is in §18.2's table; the two formulations sum to the row, and the row sums
+  to the matrix.
+
+### 18.6 What it actually is: ~1000 eager per-primitive XLA compiles per phase
+
+The compile the solve pays (§18.3) is real but is the *smaller* half on the tokamak.
+`cProfile`, cumulative, on the two biggest phases:
+
+| phase | wall | `backend_compile_and_load` | number of compiles | per compile |
+|---|---|---|---|---|
+| `mdf.prime`, tokamak | 32.6 s | **22.5 s** | **988** | 23 ms |
+| `sand_harness.assemble`, tokamak | 37.8 s | **26.6 s** | **1050** | 25 ms |
+| tokamak SAND solve, `_run_acyclic` steps | ~31 s of 63.8 | (of 51.8 s over 769) | ~767 tiny | 66 ms |
+
+All three are **the same defect**: a cottax graph run through `evaluate._run_acyclic`
+**un-jitted**, so every `jnp` primitive is dispatched eagerly and XLA compiles each one
+on its own. §24.4 of `next_steps.md` already fixed this for `sand_harness.mda_env`
+(805 eager compiles -> one `filter_jit`); three paths were not in that pass's scope:
+
+- **`mdf.prime`** — one eager MDA run to fill the env.
+- **`sand.degenerate_fixed_points` -> `fixed_point_residuals`**, which is 37.5 s of
+  `assemble`'s 37.8 s: six `jax.jacfwd` calls over inner fixed-point residuals, evaluated
+  op-by-op under `jvp`+`vmap`.
+- **the SAND schedule's 92 non-`Drive` `Call` steps at solve time** — 95 `_run_acyclic`
+  calls inside the one `schedule(...)`, which is why the tokamak's solve wall is 63.8 s
+  while `pyvmcon.solve` inside it is 32.4 s.
+
+### 18.7 The verdict, and the lever (not applied in this pass)
+
+**The 5x is not in the solve.** §13.3 and §13.4 measured a driver on a problem someone
+else had built; a cold matrix row pays for building it. Per cold tokamak solve, roughly:
+**~33 s of jitted compile inside the driver (two-thirds of it `jacfwd`'s XLA pass), ~30 s
+of eager per-primitive compile in the un-jitted build/prime phase, ~31 s more of the same
+in the schedule's `Call` steps, and 0.14 s of actual solving.**
+
+Two levers, in order of size and both cheap to state:
+
+1. **Jit the three remaining eager paths**, exactly as §24.4 did for `mda_env`:
+   `mdf.prime`, `fixed_point_residuals`, and the schedule's `Call` steps. ~60 s of the
+   tokamak's 185 s, and the pattern is already proven in this tree. The cost is §24.4's
+   own: `check_antichain` refuses a path named both whole and by element, so each path
+   needs its boundary checked first.
+2. **`jacfwd`'s XLA pass**, 22 s per tokamak solve. It scales with the forward program, so
+   §24.9's next concentration (`bootstrap_current.py`, 2037 equations) pays twice. There
+   is no evidence here for a cheaper Jacobian formulation — the equation count is already
+   only 2.3x the forward program, which is what forward mode should cost.
+
+Neither is applied here. This section is the measurement.

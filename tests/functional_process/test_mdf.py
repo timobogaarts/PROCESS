@@ -26,7 +26,14 @@ import numpy as np
 import pytest
 from cottax.evaluate import ConditionMap, schedule_for
 from cottax.graph import Graph
-from cottax.problem import FixedPoint, Optimise, Start, driver_vars
+from cottax.problem import (
+    FixedPoint,
+    Optimise,
+    Residual,
+    RootFind,
+    Start,
+    driver_vars,
+)
 
 from functional_process import mdf, sand
 from functional_process.core.solver.drivers import SeededNewtonDriver
@@ -451,3 +458,136 @@ def test_x64_is_on():
     a 1e-7 derivative disagreement against a 1e-7 noise floor.
     """
     assert jax.config.jax_enable_x64
+
+
+# ------------------------------------------------- the root-find arm (§24.10)
+#
+# The two `_eval` files state `i_process_run_mode = -2`, and PROCESS answers that by
+# root-finding the equalities with `scipy.optimize.fsolve` -- no objective, the
+# inequalities evaluated once at the answer. These check that `root_find=True` states
+# *that* problem and not an `Optimise` with the objective quietly defaulted to `7`.
+# The value check -- that both files then reproduce PROCESS's own `fsolve` answer -- is a
+# `run_cold_matrix.py` row, because it needs a real PROCESS run.
+
+
+@pytest.fixture(scope="module")
+def square_problem():
+    """A `RootFind` assembly: the reference `icc` truncated to a square subproblem.
+
+    The reference file is not itself an evaluation-mode run, so this states a square
+    problem out of it -- two equalities against two iteration variables -- rather than
+    reading one of the `_eval` files, which would need `machine_from_indat` and a
+    machine graph for a purely structural check.
+    """
+    ixc = REFERENCE_IXC[:REFERENCE_N_EQUALITY]
+    return mdf.assemble(
+        ixc,
+        REFERENCE_ICC,
+        REFERENCE_N_EQUALITY,
+        REFERENCE_FIGURE_OF_MERIT,
+        root_find=True,
+    )
+
+
+def test_a_root_find_drives_the_equalities_and_nothing_else(square_problem):
+    """One condition per design variable, and every one of them an equality.
+
+    This is the whole difference from the `Optimise` arm and it is what PROCESS's
+    `_Fsolve.evaluate_eq_cons` does: `fcnvmc1(n, self.meq, x, 0)` returns the first
+    `meq` constraints and stops.
+    """
+    assert issubclass(square_problem.problem_type, RootFind)
+    assert len(square_problem.conditions) == len(square_problem.design)
+    assert square_problem.conditions == tuple(square_problem.report["equalities"])
+    assert square_problem.n_inequality == 0
+
+
+def test_a_root_find_forms_no_objective_at_all(square_problem):
+    """Not "an objective nobody reads" -- no objective node in the graph.
+
+    `_Fsolve.solve` ends `self.objf = None` and the output writer omits the
+    figure-of-merit line entirely. A node computing `numerics.py:154`'s default of `7`
+    would be inventing a quantity PROCESS never forms, which is exactly the paper-over
+    §24.10 was opened to remove.
+    """
+    assert square_problem.report["objective"] is None
+    assert not any(
+        v.path_str() == "^cond.numerics.objf" for v in square_problem.conditions
+    )
+    assert "^cond.numerics.objf" not in {
+        v.path_str() for v in square_problem.graph.variables
+    }
+
+
+def test_the_inequalities_survive_for_reporting_but_are_not_driven(square_problem):
+    """PROCESS evaluates all `m` constraints once at the root, so the port must be able
+    to as well -- `min ie` on the cold matrix is that evaluation.
+
+    They are in `reported` and in the graph, and in neither `conditions` nor the count
+    the driver reads its split from.
+    """
+    assert square_problem.reported == tuple(square_problem.report["inequalities"])
+    assert square_problem.reported
+    assert not set(square_problem.reported) & set(square_problem.conditions)
+    assert set(square_problem.reported) <= set(square_problem.graph.variables)
+
+
+def test_the_condition_roles_are_residuals_not_an_objective_and_bounds(square_problem):
+    """`RootFind.condition_roles` is `(Residual,) * n`, and the map must say so.
+
+    The roles travel on the driver seam (`_audit/optimise_design.md` §8), so a map that
+    still claimed `(Objective, Equality, ...)` would hand a root find to a driver as an
+    optimisation with a constraint standing in for the objective.
+    """
+    env = dict.fromkeys(square_problem.eager.inputs, jnp.asarray(1.0))
+    conditions = mdf.condition_map(square_problem, env)
+    assert conditions.roles == (Residual,) * len(square_problem.conditions)
+
+
+def test_a_non_square_problem_is_refused_rather_than_root_found():
+    """Squareness is a *consequence* of PROCESS's evaluation mode, not the test for it,
+    so a caller that asks for a root find over a non-square problem is told so.
+
+    `fsolve` on `n` unknowns and `meq != n` residuals is not a problem PROCESS could
+    answer either; failing at assembly beats failing inside optimistix's linear solve.
+    """
+    with pytest.raises(ValueError, match="one equality per iteration variable"):
+        mdf.assemble(
+            REFERENCE_IXC,
+            REFERENCE_ICC,
+            REFERENCE_N_EQUALITY,
+            REFERENCE_FIGURE_OF_MERIT,
+            root_find=True,
+        )
+
+
+def test_the_optimise_arm_is_untouched(problem, square_problem):
+    """The two arms differ in the problem, not in the graph underneath it.
+
+    Everything structural about the MDA -- how many blocks, how many of them driven --
+    is the same object built the same way; only the outer problem changed. If this ever
+    fails, `root_find` has started changing the model rather than the question asked of
+    it.
+    """
+    assert issubclass(problem.problem_type, Optimise)
+    assert problem.reported == ()
+    assert problem.report["objective"] is not None
+    # Exactly one block apart, and the one is the objective node: it is an ordinary
+    # `CallableNode` in the graph, so an assembly that mints none has one block fewer.
+    # Nothing about the *MDA* moved -- the driven-block count is identical.
+    assert problem.report["blocks"] == square_problem.report["blocks"] + 1
+    assert problem.report["driven_blocks"] == square_problem.report["driven_blocks"]
+
+
+def test_the_root_find_driver_refuses_an_optimise_and_needs_a_start(
+    problem, square_problem
+):
+    """`mdf.solve` picks the driver off `problem_type`, so the mismatch is caught at the
+    one place a caller could get it wrong by hand.
+    """
+    with pytest.raises(TypeError, match="states an Optimise"):
+        mdf.root_find_driver(problem)
+    driver = mdf.root_find_driver(square_problem)
+    assert driver.drives is RootFind
+    with pytest.raises(ValueError, match="needs a starting value"):
+        driver(mdf.condition_map(square_problem, {}), {})

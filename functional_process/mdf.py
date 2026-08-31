@@ -173,9 +173,19 @@ from cottax.blocking import Blocking
 from cottax.evaluate import ConditionMap, Drive, Schedule, schedule_for
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
-from cottax.problem import Equality, Inequality, Objective, FixedPoint, Start
+from cottax.problem import (
+    Equality,
+    FixedPoint,
+    Inequality,
+    Objective,
+    Optimise,
+    Residual,
+    RootFind,
+    Start,
+)
 from cottax.spec import VarPath
 from cottax.tools.path import path_map
+from jax.flatten_util import ravel_pytree
 
 from functional_process import sand
 from functional_process.core.solver.drivers import SeededNewtonDriver, VmconDriver
@@ -187,7 +197,7 @@ from functional_process.mda import (
     guess_sources,
 )
 from functional_process.mda_harness import _without_excluded
-from functional_process.sand_harness import ground_truth
+from functional_process.sand_harness import ground_truth, run_schedule
 
 
 @dataclasses.dataclass(frozen=True)
@@ -210,11 +220,26 @@ class Mdf:
     design: tuple[VarPath, ...]
     """The run's `ixc`, in PROCESS's own order."""
     conditions: tuple[VarPath, ...]
-    """`(objective, *equalities, *inequalities)` -- `Optimise.inputs`' own order, which
-    is the positional contract `VmconDriver` reads its split from."""
+    """What the outer driver is handed.
+
+    For an `Optimise`: `(objective, *equalities, *inequalities)` -- `Optimise.inputs`'
+    own order, which is the positional contract `VmconDriver` reads its split from.
+    For a `RootFind`: the equalities alone, one per design variable.
+    """
     n_equality: int
     n_inequality: int
     report: dict
+    problem_type: type = Optimise
+    """Which problem this file states -- `Optimise` or `RootFind`. See `assemble`."""
+    reported: tuple[VarPath, ...] = ()
+    """Conditions assembled but **not driven**: a `RootFind`'s inequalities.
+
+    PROCESS does the same and it is not an afterthought there either: `_Fsolve.solve`
+    root-finds `evaluate_eq_cons` (equalities only, `fcnvmc1(n, self.meq, ...)`) and then
+    evaluates all `m` constraints once at the answer, so the inequalities are *reported*
+    at a point they had no vote in choosing. Empty for an `Optimise`, whose inequalities
+    are in `conditions`.
+    """
 
 
 def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=()):
@@ -229,22 +254,32 @@ def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=(
 
     The one thing this does *not* do is insert the `Optimise`. See `nested_blocking`.
 
+    **`i_figure_merit=None` mints no objective node at all**, and that is the honest
+    shape for a file PROCESS runs in evaluation mode: `_Fsolve.solve` ends with
+    `self.objf = None` and the output writer skips the figure-of-merit line entirely
+    (`solver_handler.py:190-191`). A node computing PROCESS's `numerics.py:154` default
+    of `7` would be inventing a quantity PROCESS never forms.
+
     Returns
     -------
     :
-        `(graph, conditions, n_inequality, report)`.
+        `(graph, conditions, n_inequality, report)`. `conditions` is
+        `(objective, *equalities, *inequalities)`, the objective absent when there is
+        none.
     """
     nodes, equalities, inequalities, omitted = sand.constraint_nodes(
         graph, icc, n_equality, switch_values, omit
     )
-    objective_name, objective_definition, objective = sand.objective_node(
-        graph, i_figure_merit, switch_values
-    )
-    nodes[objective_name] = objective_definition
+    objective = None
+    if i_figure_merit is not None:
+        objective_name, objective_definition, objective = sand.objective_node(
+            graph, i_figure_merit, switch_values
+        )
+        nodes[objective_name] = objective_definition
     inserted = (Plan(graph) + Insert(path_map(nodes.items()))).graph
     return (
         inserted,
-        (objective, *equalities, *inequalities),
+        ((objective,) if objective is not None else ()) + (*equalities, *inequalities),
         len(inequalities),
         {
             "equalities": equalities,
@@ -298,6 +333,7 @@ def assemble(
     graph=None,
     switch_values=None,
     omit=(),
+    root_find=False,
 ):
     """The whole MDF assembly: cut the raw cycles, add the conditions, build both
     schedules.
@@ -309,16 +345,51 @@ def assemble(
     MDF needs it**: dropping it changes which graph is being optimised, and the two
     formulations have to optimise the same one.
 
+    `root_find`: state a `RootFind` over the equalities instead of an `Optimise`
+    -----------------------------------------------------------------------------
+    **This is a different problem type, not a different tolerance**, and it is the one
+    PROCESS states for a file whose `i_process_run_mode` is `-2`
+    (`importer.Problem.is_evaluation`). PROCESS answers that mode by replacing VMCON with
+    `scipy.optimize.fsolve` over `evaluate_eq_cons` -- the equalities *alone*
+    (`fcnvmc1(n, self.meq, ...)`) -- forming no objective (`self.objf = None`) and
+    letting the inequalities be evaluated once, at the answer, with no vote in choosing
+    it.
+
+    The port built an `Optimise` for those files anyway, and the cost was measured before
+    this arm existed: `large_tokamak_eval`'s 2x2 square system reached VMCON as a
+    2-variable design with 1 objective, 2 equalities and 23 inequalities, several of them
+    infeasible at every point of the 2-dimensional feasible set (§21.3's
+    "inequality-infeasible by construction" note -- which is this, not a quirk of
+    that file), and `pyvmcon`'s first QP had none, so the row read `no-step`.
+
+    `n_equality` must equal `len(ixc)` for a root find, and that is checked rather than
+    assumed: squareness is a *consequence* of PROCESS's evaluation mode (the mode is
+    what makes it a root find) and a file that states the mode without being square is
+    stating something PROCESS's own `fsolve` call could not answer either.
+
     Raises
     ------
     ValueError
         Via `sand.constraint_nodes`, on any active constraint that cannot be assembled.
         Same policy and same reason as SAND's: an `Optimise` over 12 of PROCESS's 14
-        active constraints is a different problem.
+        active constraints is a different problem. Also when `root_find` is asked of a
+        problem that is not square.
     """
+    if root_find and n_equality != len(ixc):
+        raise ValueError(
+            f"a root find needs one equality per iteration variable, and this file "
+            f"states {n_equality} equality constraint(s) against {len(ixc)} iteration "
+            f"variable(s) -- PROCESS's own `fsolve` over `evaluate_eq_cons` would be "
+            f"the same non-square system, so there is nothing to root-find here"
+        )
     driven = cut_graph(_without_excluded(graph if graph is not None else graph_for()))
     graph, conditions, n_inequality, report = mdf_graph(
-        driven, icc, n_equality, i_figure_merit, switch_values, omit
+        driven,
+        icc,
+        n_equality,
+        None if root_find else i_figure_merit,
+        switch_values,
+        omit,
     )
     drivers = default_drivers(graph)
     # Two algorithms over one structure means **two graphs** now, not two driver maps:
@@ -338,6 +409,12 @@ def assemble(
         )
     report["blocks"] = len(blocking.blocks)
     report["driven_blocks"] = sum(1 for t in blocking.problem_types if t is not None)
+    driven_conditions, reported = conditions, ()
+    if root_find:
+        # The equalities alone are driven; the inequalities stay in the graph so they
+        # can be read at the answer, exactly as PROCESS reads them there.
+        driven_conditions = tuple(report["equalities"])
+        reported = tuple(report["inequalities"])
     return Mdf(
         graph=graph,
         eager=eager,
@@ -345,10 +422,12 @@ def assemble(
             Blocking.scc(assign_drivers(graph, traceable_drivers(drivers)))
         ),
         design=design,
-        conditions=conditions,
+        conditions=driven_conditions,
         n_equality=n_equality,
-        n_inequality=n_inequality,
+        n_inequality=0 if root_find else n_inequality,
         report=report,
+        problem_type=RootFind if root_find else Optimise,
+        reported=reported,
     )
 
 
@@ -410,7 +489,7 @@ def seed(mdf: Mdf, data, design_values=None):
         source = starts.get(var, var)
         try:
             env[var] = jnp.asarray(ground_truth(data, source))
-        except (AttributeError, KeyError):  # noqa: PERF203 -- per-variable by nature
+        except (AttributeError, KeyError):
             env[var] = jnp.asarray(0.0)
     if design_values is not None:
         values = [jnp.asarray(v) for v in design_values]
@@ -451,7 +530,11 @@ def prime(mdf: Mdf, env):
     Checked, not asserted, by `test_mdf.py::test_one_pass_of_the_schedule_is_idempotent`,
     which applies `check_agreement`'s own `rtol = 1e-6` to one pass against two.
     """
-    out = mdf.eager(_inputs_only(mdf, env))
+    # Jitted, driver by driver: `Mdf.eager`'s `SeededNewtonDriver`s cannot be traced,
+    # so the schedule is walked with every `Call` run and every `Drive` body fused and
+    # the drivers left eager. 49.3 s / 978 XLA compiles -> 16.4 s / 32 on
+    # `large_tokamak_nof` (`_audit/next_steps.md` §24.11).
+    out = run_schedule(mdf.eager, _inputs_only(mdf, env))
     primed = dict(env)
     for guess, unknown in guess_ports(mdf).items():
         # Written to the `Start` port, which is where the driver reads it. Writing the
@@ -539,9 +622,7 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
     # names, and a `Schedule` refuses a value at an owned name (`_inputs_only`).
     design = set(mdf.design)
     context = {
-        var: value
-        for var, value in _inputs_only(mdf, env).items()
-        if var not in design
+        var: value for var, value in _inputs_only(mdf, env).items() if var not in design
     }
     # `roles` is cottax's own answer to what this module worked around with
     # `VmconDriver.n_equality`/`n_inequality`: the condition map now carries what each
@@ -549,8 +630,15 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
     # instead of beside it (`_audit/optimise_design.md` §8, closed upstream). MDF's
     # order is the one `mdf_graph` assembles -- objective, equalities, inequalities --
     # and it is spelled here rather than counted by anyone.
-    n_equality = len(mdf.conditions) - 1 - mdf.n_inequality
-    roles = (Objective,) + (Equality,) * n_equality + (Inequality,) * mdf.n_inequality
+    if issubclass(mdf.problem_type, RootFind):
+        # Every condition vanishes at the answer, and none of them is an objective or a
+        # one-sided bound -- which is precisely `RootFind.condition_roles`.
+        roles = (Residual,) * len(mdf.conditions)
+    else:
+        n_equality = len(mdf.conditions) - 1 - mdf.n_inequality
+        roles = (
+            (Objective,) + (Equality,) * n_equality + (Inequality,) * mdf.n_inequality
+        )
     return MdfConditionMap(
         body=mdf.traceable.subgraph,
         unknowns=mdf.design,
@@ -579,8 +667,98 @@ def driver(mdf: Mdf, bounds=(), callback=None, **kwargs) -> VmconDriver:
     )
 
 
+class MdfNewtonDriver(SeededNewtonDriver):
+    """`SeededNewtonDriver` that reports optimistix's verdict instead of raising it.
+
+    The algorithm is unchanged -- `optx.Newton` on the raveled residual, the same one
+    that answers every `RootFind` inside the MDA -- and only two things move, both for
+    the same reason: on this table a solve that did not converge has to be a *row*, not
+    an exception (`run_cold_matrix`'s "a failure is a row, not an exit"). So
+    `throw=False`, and `stats` is written to `outcome` where a caller can read the step
+    count and the `RESULTS` code back out.
+
+    **`Start` is required and never fallen back on.** `SeededNewtonDriver`'s `seed`
+    exists for the inner coil island, whose cold guess is a structural `0.0`; the outer
+    design vector is seeded from the input file's own `ixc` values, which are real
+    numbers a user chose, so there is nothing to fall back to and nothing that should.
+
+    Bounds are **not** honoured, deliberately: `scipy.optimize.fsolve` (MINPACK `hybrd`)
+    takes none either, so a bounded Newton here would be answering a different question
+    from the one PROCESS answers in this mode. A root that leaves `boundl`/`boundu` is
+    therefore visible in the design table rather than clipped out of it.
+    """
+
+    outcome: object = None
+    """A `dict` this driver writes `steps`/`result` into, or `None`. Not a return value
+    because `AbstractDriver.__call__`'s contract is the answer and nothing else."""
+
+    max_steps: int = 256
+
+    def __call__(self, conditions: ConditionMap, data) -> tuple:
+        """The root of `conditions`, started from `data[Start]`.
+
+        Raises
+        ------
+        ValueError
+            If no `Start` was supplied. Unlike `SeededNewtonDriver` there is no
+            fallback: the outer design vector is seeded from the input file's own
+            `ixc` values, so there is nothing to fall back to.
+        """
+        import optimistix as optx  # noqa: PLC0415 -- only this arm needs it
+
+        start = data.get(Start)
+        if start is None:
+            raise ValueError(
+                f"MdfNewtonDriver needs a starting value for every design variable "
+                f"({', '.join(v.path_str() for v in conditions.unknowns)})"
+            )
+        flat_guess, unravel = ravel_pytree(start)
+
+        def residual(flat, args=None):
+            out, _ = ravel_pytree(conditions(*unravel(flat)))
+            return out
+
+        solution = optx.root_find(
+            residual,
+            optx.Newton(rtol=self.rtol, atol=self.atol),
+            flat_guess,
+            throw=False,
+            max_steps=self.max_steps,
+        )
+        if self.outcome is not None:
+            self.outcome["steps"] = int(np.asarray(solution.stats["num_steps"]))
+            # `RESULTS` members `str()` to `optimistix._solution.RESULTS<>`, which says
+            # nothing, so the verdict is recorded as the boolean a row can print and the
+            # `.value` string optimistix writes its diagnosis into.
+            self.outcome["successful"] = bool(solution.result == optx.RESULTS.successful)
+            self.outcome["result"] = str(getattr(solution.result, "_value", ""))
+        return unravel(solution.value)
+
+
+def root_find_driver(mdf: Mdf, outcome=None, **kwargs) -> MdfNewtonDriver:
+    """The driver for a `RootFind` MDF -- `mdf.problem_type` decides, not the caller.
+
+    `rtol`/`atol` default to `SeededNewtonDriver`'s `1e-4` on the *residual*, and the
+    residuals here are PROCESS's own normalised constraint residuals, so `1e-4` is
+    already a fraction of a percent on each equality. PROCESS's `fsolve` uses MINPACK's
+    default `xtol = 1.49e-8` on the *step*, which is a tighter but incomparable rule;
+    the honest comparison is the answer, and that is what the matrix column measures.
+
+    Raises
+    ------
+    TypeError
+        If `mdf` states an `Optimise` -- `mdf.driver` is the one to build for that.
+    """
+    if not issubclass(mdf.problem_type, RootFind):
+        raise TypeError(
+            f"this MDF states an {mdf.problem_type.__name__}, not a RootFind -- "
+            f"`mdf.driver` is the one to build"
+        )
+    return MdfNewtonDriver(outcome=outcome, **kwargs)
+
+
 def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
-    """Drive the outer `Optimise`, then re-run the MDA at the answer.
+    """Drive the outer problem, then re-run the MDA at the answer.
 
     Exactly what `cottax.evaluate.Drive.__call__` does -- call the driver with a
     condition map and a start, put the answer back into the env, re-run the body so the
@@ -599,6 +777,13 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     """
     conditions = condition_map(mdf, env)
     start = tuple(jnp.asarray(env[var]) for var in mdf.design)
+    if optimiser is None and issubclass(mdf.problem_type, RootFind):
+        # A `RootFind` takes neither an objective nor a bound nor a per-iterate callback:
+        # `bounds` and `callback` are dropped here rather than forwarded, so that a
+        # caller passing the `Optimise` arm's arguments gets PROCESS's unbounded
+        # `fsolve` semantics and not a silently different problem. `outcome` is how a
+        # caller gets the step count back (`root_find_driver`).
+        optimiser = root_find_driver(mdf, **kwargs)
     optimiser = optimiser or driver(mdf, bounds=bounds, callback=callback, **kwargs)
     started = time.perf_counter()
     # The driver is called directly here, not through a `Drive`, so the driver-data
@@ -821,6 +1006,7 @@ def mdf_shape(mdf: Mdf) -> dict:
 __all__ = [
     "Mdf",
     "MdfConditionMap",
+    "MdfNewtonDriver",
     "assemble",
     "central_difference",
     "condition_map",
@@ -832,6 +1018,7 @@ __all__ = [
     "mdf_shape",
     "nested_blocking",
     "prime",
+    "root_find_driver",
     "seed",
     "solve",
     "traceable_drivers",
