@@ -517,8 +517,27 @@ def schedule_verdict(schedule):
 
 
 def _schedule_runners(schedule):
-    """`schedule.steps` as `Env -> Env` callables, with everything but the drivers
-    jitted. Split out so the grouping is `_SCHEDULE_RUNNERS`'s value and not rebuilt.
+    """`schedule.steps` as `Env -> Env` callables, with the drivers and everything
+    *upstream* of them eager. Split out so the grouping is `_SCHEDULE_RUNNERS`'s value
+    and not rebuilt.
+
+    **An undriven group upstream of a host-side driver is left eager on purpose, and
+    this is measured, not caution.** Fusing a run of `Call` steps reassociates its
+    arithmetic, so its outputs move by ~1 ulp -- exactly the drift §24.4 recorded for
+    `mda_env`. Downstream of the last `Drive` that is harmless: it moves reported values
+    in the last bit. *Upstream* of one it moves the values the driver is handed, and an
+    SQP trajectory is not a continuous function of them. Measured on
+    `stellarator_helias`'s cold SAND solve (`_audit/optimise_design.md` §19): the 25 `Call`
+    steps ahead of its `Drive` produced two differing values under the group jit, worst
+    `4.4e-16` relative, one of them (`.tfcoil.a_tf_turn_steel`) inside the `Drive`'s own
+    context -- and the solve went from **90 iterations converged at `1.21775735`** to
+    **108 `stopped`** at `max|eq| 2.85e-02`. The seed was bit-identical; only the
+    trajectory moved.
+
+    Nothing is lost by leaving them eager. §24.11's own split says where the cost is: on
+    `large_tokamak_nof`'s SAND solve the undriven steps are **2.8 s of 108** and the
+    `Drive` is 105.4 s, so the body jit below -- which runs *after* the driver has
+    converged and cannot move it -- is the whole saving.
     """
     from cottax.evaluate import Drive  # noqa: PLC0415
 
@@ -526,14 +545,30 @@ def _schedule_runners(schedule):
     for step in schedule.steps:
         if isinstance(step, Drive):
             if group:
-                runners.append(_jitted_group(tuple(group)))
+                runners.append(_eager_group(tuple(group)))
                 group = []
             runners.append(_driven_runner(step))
         else:
             group.append(step)
     if group:
+        # The trailing group: everything after the last `Drive`, so no driver reads it.
+        # With no `Drive` at all there is nothing to protect and the fusion is free.
         runners.append(_jitted_group(tuple(group)))
     return tuple(runners)
+
+
+def _eager_group(steps):
+    """A run of undriven steps, unfused, as an `Env -> Env` callable.
+
+    Used for every group a `Drive` is downstream of; see `_schedule_runners`.
+    """
+
+    def run(env):
+        for step in steps:
+            env = step(env)
+        return env
+
+    return run
 
 
 def _jitted_group(steps):

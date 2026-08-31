@@ -62,6 +62,7 @@ CUTS = (
     resolve(times.t_plant_pulse_burn, VarPath),
     resolve(pf_coil.ind_pf_cs_plasma_mutual, VarPath),
     resolve(pf_coil.n_pf_coil_turns, VarPath),
+    resolve(tfcoil.dr_tf_plasma_case, VarPath),
 )
 """The variables cut to turn each raw cross-node cycle into a declared `FixedPoint`.
 
@@ -303,14 +304,64 @@ this table rather than of the port. Deciding between "drop redundant cuts in
 `cut_graph`" and "let a machine carry a redundant unknown" is open, and should be taken
 when an ST file assembles for real rather than against a stand-in.
 
-**One more arm-2 cycle exists on `st_regression.IN.DAT` only** and belongs to the TF
-package, not this one: `.tokamak.build.dr_tf_inboard_winding_pack`,
-`.tokamak.build.tf_inboard_radii` and `.tokamak.cicc_superconducting_tf_coil.
-dr_tf_plasma_case` join that node's declared self-loop into one four-node block.
-`spherical_tokamak_eval.IN.DAT` has the two-node self-loop alone. The block declares one
-problem either way, so `Blocking` accepts it and no new entry is needed here; recorded
-because a raw cycle *merging into* a declared problem's block is a shape this table has
-not had before.
+**`dr_tf_plasma_case` cuts the inboard-TF radial-build cycle, and it is the entry that
+made `st_regression.IN.DAT` assemble at all** (2026-08-31). The earlier reading of this
+cycle -- *"the block declares one problem either way, so `Blocking` accepts it and no new
+entry is needed here"* -- was **wrong**, and wrong in a way worth naming: it read the
+four-node shape off `large_tokamak_nof` and assumed the ST had it too. It does not. The
+TF plasma-side case slot has two occupants, and only one of them declares a loop:
+`DrTfPlasmaCaseFromInput` (`i_f_dr_tf_plasma_case == False`) is a `FixedPointFunction`
+whose `^problem.tokamak.cicc_superconducting_tf_coil.dr_tf_plasma_case` sits *inside* the
+SCC, while `DrTfPlasmaCaseFromFraction` (`True`, and `st_regression`'s arm) is a plain
+`ExplicitFunction`. So on `st_regression` the SCC is three nodes with **no problem in
+it**, and `Blocking` raised *"declares no problem ... there is nothing to hand a
+driver"* -- the one reference machine that built no schedule.
+
+The cycle is three nodes and two rings sharing one return edge:
+
+    build.dr_tf_inboard_winding_pack --.build.dr_tf_inboard--> build.tf_inboard_radii
+    build.tf_inboard_radii           --.build.r_tf_inboard_in-->
+    cicc_superconducting_tf_coil.dr_tf_plasma_case
+                                     --.tfcoil.dr_tf_plasma_case--> (back to the first)
+
+plus the short ring `dr_tf_inboard_winding_pack --.build.dr_tf_inboard-->
+dr_tf_plasma_case --.tfcoil.dr_tf_plasma_case-->` back, which skips `tf_inboard_radii`.
+It exists only where iteration variable 140 is active: that is what puts
+`DrTfInboardFromWindingPack` in the slot and makes `.build.dr_tf_inboard` a *produced*
+variable rather than a run input (`models/build.py`, `process/models/build.py:1683-1688`).
+
+**Measured, then tie-broken.** Of the SCC's seven owned variables exactly three have
+closing readers, and two of those are sufficient single cuts:
+`.build.dr_tf_inboard` (it is the forward edge of *both* rings) and
+`.tfcoil.dr_tf_plasma_case` (the return edge of both); `.build.r_tf_inboard_in` breaks
+only the long ring and leaves the short one, so it is not sufficient. Sufficiency does
+not pick between the first two, and the tie-break is the standing one -- **PROCESS's own
+stale read**. `Caller._call_models_once` runs `build.run()` (`caller.py:288`) *before*
+`cicc_sctfcoil.run()` (`:306`), and of the three edges only one crosses that pass
+boundary: `process/models/build.py:1685-1687` reads `self.data.tfcoil.dr_tf_plasma_case`
+-- the value `tf_global_geometry` wrote on the **previous** pass
+(`process/models/tfcoil/base.py:325`, clamped at `:333-340`). The other two are read
+fresh inside one sweep: `.build.dr_tf_inboard` is written at `build.py:1684` and read at
+`base.py:325`/`:333` later in the same pass, and `.build.r_tf_inboard_in` is written at
+`build.py:1719-1725` and read at `base.py:333` in that same pass. Cutting the one edge
+PROCESS actually carries makes one Picard iterate exactly one PROCESS pass, rather than a
+differently-rotated recurrence that merely shares the fixed point -- the same argument,
+and the same conclusion, as `dx_tf_wp_primary_toroidal` above. `.tfcoil.dr_tf_plasma_case`
+is also a real `DataStructure` field (`tfcoil_variables.py:77`), so a harness seeds the
+guess straight off converged `data` with no `KNOWN_MINT_VALUES` entry.
+
+**Where it lands, and why the other three tokamaks do not move.** `cut_graph` skips a cut
+whose SCC already declares a problem (see its own comment): on `large_tokamak_nof` the
+same three nodes merge with `DrTfPlasmaCaseFromInput`'s self-loop into a four-node block
+that already has one, and on `large_tokamak_eval`/`low_aspect_ratio_DEMO` (140 not in
+`ixc`, so `.build.dr_tf_inboard` is a boundary input) the only cycle is that two-node
+self-loop. All three skip. `spherical_tokamak_eval.IN.DAT` -- the other arm-2 machine, and
+the natural place to expect a shared cut -- turns out **not** to share it: 140 is not in
+its `ixc` either, so `.build.dr_tf_inboard` is unproduced, `.tfcoil.dr_tf_plasma_case`
+has no closing readers, and there is no TF cycle there at all. On the stellarators the
+variable is owned by `.stellarator.coils.coil_casing` with no closing readers. So this
+entry is live on exactly one of the seven reference machines, and inert -- checked, not
+assumed -- on the other six.
 
 **The second cycle is `ipowerflow != 0`-only** (`next_steps.md` §5:
 `AFwTotalWithPowerflow` is the `ipowerflow != 0` arm; `AFwTotalNoPowerflow` -- the
@@ -354,6 +405,7 @@ def cut_graph(graph=GRAPH):
     # had rather than ones a sibling cut already moved.
     by_cycle: dict = {}
     cycles = [frozenset(c) for c in graph.cycles]
+    declared = frozenset(graph.declared)
     for var in CUTS:
         if var not in graph.owners:
             # Not produced in this configuration at all -- `closing_readers` refuses
@@ -368,6 +420,29 @@ def cut_graph(graph=GRAPH):
             continue  # this cycle does not exist in this configuration
         owner = graph.owners[var]
         key = next((i for i, c in enumerate(cycles) if owner in c), var)
+        if key is not var and any(n in declared for n in cycles[key]):
+            # **The SCC already declares its own problem, so it needs no cut.**
+            # `Blocking` allows a block exactly one problem -- *"one driver answers one
+            # problem, so `Combine` them into a single problem over every unknown, or
+            # nest one inside the other"* -- and `cut_graph`'s whole job is to give a
+            # problem to an SCC that has none. Where a `FixedPointFunction`'s declared
+            # self-loop already sits inside the SCC, that job is done: the self-loop's
+            # driver re-runs every other node of the block on each iterate, which is
+            # exactly what a cut here would buy. Adding one anyway mints a *second*
+            # problem in the same block and `Blocking` refuses it outright.
+            #
+            # This is the same shape as the `closing_readers` skip above -- a cut
+            # applies where the cycle it names actually needs breaking -- and it is what
+            # lets `.tfcoil.dr_tf_plasma_case` be one table entry serving every machine:
+            # on `st_regression.IN.DAT` the TF case slot is `DrTfPlasmaCaseFromFraction`
+            # (an `ExplicitFunction`, no loop) and the three-node SCC has no problem, so
+            # the cut lands; on `large_tokamak_nof`/`_eval`/`low_aspect_ratio_DEMO` the
+            # slot is `DrTfPlasmaCaseFromInput` (a `FixedPointFunction`) and its
+            # `^problem.tokamak.cicc_superconducting_tf_coil.dr_tf_plasma_case` is in the
+            # SCC, so the cut is skipped and those three graphs are bit-for-bit what they
+            # were. Measured: without this guard all three raise *"declares 2
+            # problems"*.
+            continue
         by_cycle.setdefault(key, []).append(Cut(var=var, readers=readers))
     for cuts in by_cycle.values():
         # One cut keeps its historical name (`^problem.physics.proton_rate_density`);

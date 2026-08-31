@@ -3275,3 +3275,100 @@ Two levers, in order of size and both cheap to state:
    only 2.3x the forward program, which is what forward mode should cost.
 
 Neither is applied here. This section is the measurement.
+
+## 19. §18.7's lever cost a converged solve, and the reason is one ulp (2026-08-31)
+
+`stellarator_helias`'s cold SAND row regressed from **90 iterations converged at
+`objf 1.21775735`** to **108 `stopped`** at `max|eq| 2.85e-02`, `objf 1.22217408`,
+between the two commits of 2026-08-31. Bisected by A/B in one process, not inferred.
+
+### 19.1 The cause: `run_schedule`'s undriven-group jit, upstream of the driver
+
+Four changes landed that day and only one moves this row. With everything else held,
+swapping the solve's `run_schedule(solve_schedule, ..., whole=False)` for a plain
+`solve_schedule(env)` gives **90 converged, `1.21775735`** — the pre-regression number
+exactly. `mda_env`'s jit (§24.4 of `next_steps.md`), `_strongly_typed`, and the
+`bootstrap_current`/`safe_math` rewrites are all *in* the reproducing run and none of
+them is implicated.
+
+**The seed did not move; the trajectory did.** The cold and warm `mda_env` envs and the
+`_seed`ed start were compared key by key between the two runs: **0 of 317 seeded values
+differ**, bitwise (831 MDA keys likewise, the one "difference" being a `nan` that is not
+equal to itself). §24.4's ~1e-12 seed drift is therefore *not* this.
+
+What differs is one step later. `stellarator_helias`'s SAND solve schedule is
+`25 x Call`, then the `Drive`, then `20 x Call`. Running those first 25 as one
+`eqx.filter_jit`ed group instead of step by step changes **two** of 384 values:
+
+| path | relative | absolute |
+|---|---|---|
+| `.heat_transport.etath_liq` | `4.85e-16` | `1.67e-16` |
+| `.tfcoil.a_tf_turn_steel` | `4.43e-16` | `2.17e-19` |
+
+One ulp each, XLA reassociation — the same effect §24.4 measured on `mda_env`. And
+`.tfcoil.a_tf_turn_steel` is **inside the `Drive`'s own context**, so VMCON is handed a
+different problem. The two solves are then bit-identical for **14 SQP iterations**
+(convergence, `f`, `max|eq|`, `min ie` agree to all 17 digits at 0..13) and diverge at
+15. An SQP trajectory is not a continuous function of its data; a converged solve and an
+infeasible stop are both reachable from points 1 ulp apart.
+
+### 19.2 `max|eq| 2.85e-02` is a real violation, not a scale artefact
+
+The trap §24.11 hit twice does not apply here. The worst equality at the stopped point is
+`^cond.stellarator.wp_width_r_min` at scaled `+2.851e-02` with
+`residual_condition_scales` factor **`1.3948`** — an O(1) factor, i.e. `|u| = 0.717` —
+so the unscaled residual is `+2.044e-02` and the relative one really is 2.9 %. The next
+worst is `^cond.constraints.c16` at `9.5e-04`. The solve stopped genuinely infeasible.
+(The two `1e-18`-scaled rows, `fusden_alpha_total` and `proton_rate_density`, *are* the
+divide-by-nothing shape and sit at `7.7e-04`/`6.8e-04`; they are not the reported
+maximum either way.)
+
+### 19.3 The fix, and why it costs nothing
+
+`_schedule_runners` now fuses only the group **after the last `Drive`** and leaves every
+group a driver is downstream of eager (`_eager_group`). The `Drive`'s **body** stays
+jitted: it runs after the driver has converged and cannot move it.
+
+Nothing is given up. §24.11's own split says where the eager cost is — on
+`large_tokamak_nof`'s SAND solve the undriven steps are **2.8 s of 108** against the
+`Drive`'s **105.4 s** — so the body jit is the whole saving and the group jit was buying
+2.6 % at the price of the answer. Measured after the fix: `stellarator_helias` cold SAND
+is **90, converged, `1.2177573520529628`, `max|eq| 1.84e-06`**, identical to the fully
+eager solve. `test_sand.py` 147 passed, `test_mdf.py` + `test_cold_matrix.py` 52 passed.
+
+**The rule this establishes:** a jit boundary may be moved freely *downstream* of a
+host-side driver and never *across* its inputs. Fusing reassociates, reassociation moves
+the last bit, and every iterative host-side algorithm in this harness — VMCON here, and
+`SeededNewtonDriver` for the same reason — turns a last-bit change in its data into a
+different sequence of steps. `mda_env`'s jit is safe under this rule only because its
+drives are Newton solves converged to a tolerance; the SAND `Optimise` is not, and
+§24.4's "a row moving by one iteration is a consequence" understated it by 18 iterations
+and a status.
+
+**Still open, and this fix does not touch it:** the row's `d objf 2.34e-03` against
+PROCESS and `worst dx 1.08e-01` at ixc 6/109 are unchanged — the port converges to its own
+answer, not PROCESS's, and that gap is §17/§24.10's business.
+
+### 19.1 The rule in §19 is a workaround, not a principle — reopened 2026-08-31
+
+§19 concludes "a jit boundary may move freely downstream of a host-side driver, never
+across its inputs". **That is a description of what preserved today's answer, not a
+design anyone should keep.** It says the port may only jit the parts of its graph that
+nothing downstream is sensitive to, which on this graph is a minority of it.
+
+The situation it papers over: XLA reassociates float arithmetic when it fuses, so
+fusing *anything* can move last bits; §19 measured `.tfcoil.a_tf_turn_steel` moving
+`4.43e-16` relative and the SQP turning that into 18 extra iterations and a status flip.
+
+Two real answers, neither taken:
+
+1. **Constrain XLA's float reassociation** and jit the whole graph. Costs fusion, buys
+   determinism across our own refactors -- which is the property that actually matters
+   here, distinct from bit-matching PROCESS (the user's standing ruling is that matching
+   PROCESS bit-for-bit is *not* a goal; reproducibility across port changes is another
+   question and this is the evidence for it).
+2. **Make the solve tolerate `1e-16`.** If a last-bit perturbation flips convergence the
+   solve is on a knife edge and **both** answers are luck -- including the 90-converged
+   one §19 restored. Scaling, tolerances or a restart policy, not arithmetic freezing.
+
+Do not extend §19's rule to new sites without revisiting this.
