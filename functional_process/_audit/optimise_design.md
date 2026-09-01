@@ -4358,3 +4358,807 @@ been the more flattering sentence and the false one.
   between 90-converged and 108-stopped, and the whole acceptance criterion here was that
   the rows do not move. The probe run in §22.2 says the `stellarator_helias` row does not
   move; the other four were not checked that way.
+
+## 23. Neither the row's weight nor the lift: the fork survives both (2026-09-01)
+
+**Where this was measured, and it is not the working tree.** Every number in this
+section comes from a scratch rsync of the live tree (uncommitted changes included) at
+
+    /tmp/claude-1000/-home-tbogaarts-PROCESS/df0c22b1-02c2-4e73-99ce-b061606f318d/
+      scratchpad/PROCESS_sand
+
+with `cottax` shared, read-only, from `~/jaxgraph/src`. `sand.py`/`sand_harness.py`
+there gained three parameters (§23.9); nothing was applied to `/home/tbogaarts/PROCESS`,
+and the diff is `<copy>/section23.patch` (it applies cleanly to the live tree; checked
+with `patch --dry-run`, not applied). The runner is `<scratchpad>/exp23/exp23.py`, with
+`struct23.py` (the Arm 2 shape probe), `jac23.py` (§23.6's control) and `summary.py`
+beside it -- **outside** the copy, invoked with `PYTHONPATH=<copy>`, which is why the
+import trap below does not reach them.
+
+**The import trap, checked rather than assumed.** `$PY <tree>/functional_process/x.py`
+puts the *script's* directory on `sys.path[0]`, where the `functional_process` package
+is not found, so the import falls through to the editable install at
+`/home/tbogaarts/PROCESS` -- and the usual verification, `$PY -c "import
+functional_process"` run in the tree, **passes anyway** because `-c` puts the cwd on the
+path. Two independent facts say this section did not fall into it. (a) The runner prints
+`functional_process.__file__` as its own first line and asserts it names the copy, per
+run. (b) Every arm calls `sand_harness.assemble(..., keep=...)`, a parameter the live
+tree's `assemble` does not have -- a run that had resolved to the live tree would have
+died on `TypeError`, not returned a number. Nothing here needed re-taking.
+
+**The question.** §20-§22 leave `stellarator_helias` SAND forking on 1 ulp of
+`.tfcoil.a_tf_turn_steel` between *90 converged* and *108 stopped*, with two candidate
+mechanisms: the conditioning excess that §20.12 traced entirely to one row
+(`^cond.stellarator.wp_width_r_min`, row norm `2892`, `cond(J)` `1.7e4` against MDF's
+`42`), and the structural *lift* of that row -- `Intersect`'s `RootFind` is combined into
+the SQP by SAND and left in the graph by MDF. **Measured, both are refuted as *the*
+mechanism**, and the sharpest single number is §23.5's: the arm that removes the lift
+gets the best conditioning of any arm and the worst answer of any arm.
+
+### 23.1 Arm 0 reproduces, and the 2892 row is re-derived rather than inherited
+
+Cold SAND, `--provider` boundary, `max_iter = 500`, `whole=False`, both `fuse_upstream`
+policies. §22.3's published row and §20.3's eager row both come back to the last printed
+digit:
+
+| | its | status | `objf` | `max\|eq\|` | `min ie` |
+|---|---|---|---|---|---|
+| fused (the published row) | **108** | stopped | `1.2221740786343283` | `0.02851456050213086` | `1.1216805262392882e-11` |
+| eager | **90** | converged | `1.2177573520529628` | `1.839436700669305e-06` | `-8.82673122093447e-10` |
+
+`^driver_out.status^problem.sand` is `2` on the 108 row -- `QSPSolverException`, i.e.
+`cvxpy` refusing a subproblem -- and `0` on the 90 row. The block is 124 nodes, 14
+design, 8 equalities, 12 inequalities, 46 schedule steps.
+
+`cond(J)` over the **20x14 constraint block** VMCON is handed (rows by
+`condition_scale`, columns by `design_scale`), and every equality row's norm in the same
+units, at the seeded start:
+
+| | `cond(J)` |
+|---|---|
+| at the seeded start | **`2.527e+04`** |
+| at the last iterate (108 branch) | `1.648e+04` |
+| at the last iterate (90 branch) | `1.655e+04` |
+
+| equality row | norm at start |
+|---|---|
+| **`^cond.stellarator.wp_width_r_min`** | **`3.029e+03`** |
+| `^cond.physics.fusden_alpha_total` | `5.214e+00` |
+| `^cond.physics.proton_rate_density` | `4.954e+00` |
+| `^cond.constraints.c16` | `3.412e+00` |
+| `^cond.constraints.c2` | `1.932e+00` |
+| `^cond^cond.physics.temp_plasma_ion_vol_avg_kev` | `1.745e+00` |
+| `^cond^cond.power.delta_eta` | `1.694e+00` |
+| `^cond.fwbs.f_ster_div_single` | `1.650e+00` |
+
+(inequality rows span `5.2e-02` to `8.0e+00`.) The drop-one sweep reproduces §20.12(c):
+at the last iterate, dropping `^cond.stellarator.wp_width_r_min` takes `cond(J)`
+`1.648e+04 -> 6.588e+01`; the next-best drop leaves it at `1.648e+04`. §20.12 measured
+`2892` and `6.75e+01` at iteration 13 of a different branch; `3029`/`2811` and `65.9`
+here. **The figure is now this section's own.**
+
+The row's *bare* norm -- before `residual_condition_scales` multiplies it by `1.39475`
+-- is **`2171.62`**, and its diagonal cell `d(^cond.wp)/d(.wp)` is `2160.78`, so the row
+is essentially its own diagonal. That is what makes it a length: `1/|u|` is `1/0.6286`,
+and equilibration wants `1/2172 = 4.605e-04`, a factor **3030** smaller. §20.12's
+sentence -- *"`residual_condition_scales` normalises its value and leaves its derivative
+at 2892"* -- is exactly right, and Arm 1 is the test of what fixing that buys.
+
+### 23.2 Arm 1a: one row equilibrated -- converged, and bitwise fusion-invariant
+
+`^cond.stellarator.wp_width_r_min`'s factor replaced by `1/2171.62 = 4.6049e-04`
+(its row norm then measures `1.0000` exactly, as it must); every other factor left on the
+`1/|u|` units rule.
+
+| | `cond(J)` start | `cond(J)` last | its | status | `objf` | `max\|eq\|` in Arm 0's units |
+|---|---|---|---|---|---|---|
+| fused | `9.915e+01` | `5.709e+01` | **121** | converged | `1.2177573462463236` | `1.14e-06` |
+| eager | `9.915e+01` | `5.709e+01` | **121** | converged | `1.2177573462463236` | `1.14e-06` |
+
+`cond(J)` `2.5e4 -> 99`, and **the two fusion policies agree bit for bit**: same
+iteration count, same `objf` to all 17 digits, `0 of 8` design variables moved,
+`max rel |dx| = 0.000e+00`. That is MDF's property, on SAND, from one number.
+
+Read on its own this is the answer the brief asked for. §23.4 is why it is not.
+
+**A units note that matters for every row below.** `max|eq|` as the harnesses print it is
+in `condition_scale`'s own units (§13.1), which is precisely what these arms change, so
+the column is re-measured for every arm at its own final point on **`residual_condition_
+scales`' ruler** -- the one every published row uses. That is the `max|eq|base` column.
+Arm 0's fused row reads `2.851e-02` on both rulers; Arm 1a's `1.35e-09` own-units figure
+is `1.14e-06` on Arm 0's.
+
+### 23.3 Arm 1b: equilibrating *every* equality row is worse than equilibrating one
+
+All eight equality rows divided by their own norm at the start point -- PROCESS's own
+`c2` and `c16` included, which departs from `VmconDriver.condition_scale`'s standing rule
+that PROCESS's constraints keep `1.0`, and is what "full row equilibration" means.
+
+| | `cond(J)` start | its | status | `objf` | `max\|eq\|base` |
+|---|---|---|---|---|---|
+| fused | `9.550e+01` | 451 | converged | `1.217757347386511` | `8.97e-07` |
+| eager | `9.550e+01` | **500** | **cap(500)** | `1.2219175164590899` | `5.70e-01` |
+
+Better conditioning than Arm 1a (`95.5` against `99.2`), **four times** the iterations,
+one arm of the pair failing outright, and a `6.6e-02` fork between the two policies. So
+"more equilibration" is not "better", and `cond(J)` does not order these outcomes.
+
+**Arm 1c**, a generalisable form -- equilibrate only the *outlier* equality rows, those
+whose bare norm exceeds `10x` the median (on this file: `wp_width_r_min` at `2172`,
+`proton_rate_density` at `5.5e+15`, `fusden_alpha_total` at `2.2e+18`) -- converges both
+ways, 161/154 iterations, `objf` agreeing to `1.7e-07`, and is **not** bitwise
+invariant. It is the rule that would apply to any configuration; it is not Arm 1a.
+
+### 23.4 The factor sweep, which refutes §23.2's reading
+
+§20.12 warns that this problem's iteration count swings 33-73 across a factor sweep of
+this same row, so one lucky factor proves nothing. The sweep was therefore taken. Only
+`^cond.stellarator.wp_width_r_min`'s factor varies; everything else is Arm 0.
+
+| factor | `cond(J)` start | fused | eager | fusion-invariant? |
+|---|---|---|---|---|
+| `1.39475` (**Arm 0**, the `1/\|u\|` rule) | `2.53e+04` | 108 **stopped** `1.2221741` | 90 conv `1.2177574` | no, `4.4e-01` |
+| `1e-1` | `1.81e+03` | 152 conv | 136 conv | no, `1.1e-06` |
+| `1e-2` | `1.87e+02` | 151 conv | 272 conv | no, `3.8e-04` |
+| `5e-3` | `1.05e+02` | 49 **stopped** `1.3237234` | 49 **stopped** `1.3237234` | **yes -- on a wrong answer** |
+| `1e-3` | `8.65e+01` | 107 conv | 107 conv | **yes**, `0.0e+00` |
+| `4.605e-4` (**Arm 1a**, `1/`row norm) | `9.92e+01` | 121 conv | 121 conv | **yes**, `0.0e+00` |
+| `3e-4` | `1.13e+02` | 112 conv | 97 conv | no, `1.1e-04` |
+| `1e-4` | `1.45e+02` | 96 conv | 228 conv | no, `2.7e-04` |
+| `3e-5` | `1.54e+02` | **500 cap** `1.2327832` | 271 conv | no, `2.1e-02` |
+| `1e-5` | `1.55e+02` | 103 conv | 103 conv | `5.7e-15` (same path, last-bit) |
+
+Three things this kills, and the first is my own §23.2 reading:
+
+1. **Bitwise fusion invariance is not a property of equilibration.** It appears at
+   `1e-3` and at `4.6e-4`, is absent at `3e-4` and `1e-4`, and reappears at `1e-5`. It
+   also appears at `5e-3` **on a solve that stopped at 49 iterations with `objf 1.3237`
+   and `min ie -0.41`** -- a badly infeasible point both policies happen to reach
+   identically. Invariance here means "the two policies took the same discrete path this
+   time", not "the formulation is insensitive". MDF's invariance (§20.13) may still be
+   structural; SAND's, at any factor, is not shown to be.
+2. **`cond(J)` does not order the outcomes.** Every factor from `1e-1` down sits between
+   `86` and `1812`, a 20x band, inside which the results run from *121 converged
+   bitwise* to *49 stopped* to *500 cap*. The two failures (`5e-3`, `3e-5`) are not at
+   the ends of the conditioning range; `5e-3`'s `105` is better-conditioned than
+   `1e-4`'s `145`, which converged twice.
+3. **What *is* robust is convergence, not the answer's stability.** 15 of the 18
+   down-weighted runs converge, all to `objf 1.2177574 +- 4e-07`, against the baseline's
+   1 of 2 and its two branches `0.36 %` apart in `objf` and `44 %` apart in `x`. So
+   down-weighting this row converts a *categorical* fork into a *numerical* one, of
+   order `1e-4` in `x`, most of the time. That is a real improvement and it is not a fix.
+
+### 23.5 Arm 2: the lift removed -- the best conditioning of any arm, and the worst answer
+
+`sand_graph(keep={^problem.stellarator.coils.intersect})` leaves that `RootFind` in the
+graph, and `sand_schedule(nest=True)` answers the `Optimise` at the outer level with
+`Blocking.scc(...).nest(...)` -- `mdf.in_graph_root_find`'s own step 4 on a different
+outer problem. The block shape moves exactly as intended:
+
+| | Arm 0 | Arm 2 |
+|---|---|---|
+| drive nodes | 124 | 125 |
+| design / equalities / inequalities | 14 / 8 / 12 | **13 / 7 / 12** |
+| `.stellarator.wp_width_r_min` | outer unknown | **inner unknown** |
+| `^cond.stellarator.wp_width_r_min` | outer equality | **inner condition** |
+| inner `Drive`s in the body | 0 | **1**, over a 123-step body |
+| `cond(J)` at start / last | `2.53e+04` / `1.65e+04` | **`8.10e+01` / `5.30e+01`** |
+
+`81` at the start and `53` at the last iterate is the closest any arm gets to MDF's `42`,
+and the drop-one sweep now finds nothing to drop: the best single removal leaves
+`80.3` of `81.0`. The conditioning pathology is **gone**, structurally, not by weighting.
+
+The solve:
+
+| | its | status | `objf` | `d objf` vs PROCESS | `max\|eq\|base` | `min ie` |
+|---|---|---|---|---|---|---|
+| fused | 37 | **stopped** (`QSPSolverException`) | `1.2395613934868683` | `+2.03e-02` | `2.04e-02` | `-2.04e-03` |
+| eager | 37 | **stopped** | `1.2395614052556239` | `+2.03e-02` | `2.04e-02` | `-2.04e-03` |
+
+Worse than every other arm on this table. It walks to `.physics.hfact = 1.19999999` --
+pinned at its upper bound of `1.2` -- and `cvxpy` then refuses a subproblem at 37. It is
+also **not** fusion-invariant, though its fork is `8.4e-07` in `x` rather than Arm 0's
+`4.4e-01`, so the two policies are on the same trajectory rather than on different ones.
+
+**`low_aspect_ratio_DEMO` gets no Arm 2**, on its own terms rather than by budget: the
+brief conditions that run on Arm 2 helping, and it does not -- and that file's graph has
+no `^problem.stellarator.coils.intersect` to keep, so the arm is undefined there.
+
+### 23.6 The control that makes §23.5 mean something: Arm 2's derivative is Arm 0's, reduced
+
+An in-graph root find could easily have been differentiating a different function, in
+which case §23.5 would be a measurement of a bug. It is not. At the same seeded design
+point, with `J0` Arm 0's `21x14` Jacobian and `J2` Arm 2's `20x13`, `r` the `wp`
+residual row and `y` the `wp` column:
+
+    J2  ==  J0[C, D] - J0[C, y] J0[r, D] / J0[r, y]
+
+-- `sand_harness.reduce_jacobian`'s Schur complement with a `1x1` `J_RY`. Measured:
+
+| | |
+|---|---|
+| condition **values** (20 shared rows) | **bit-identical**, max relative `0.000e+00` |
+| condition **derivatives** (260 cells) | max relative **`2.242e-15`** |
+| cells above `1e-8` relative | **0** |
+| `J0[r, y]` | `2.160777e+03` |
+| `wp` residual at the seed | `-8.5e-14` (the MDA has converged it) |
+
+So the nested formulation evaluates the same conditions and differentiates the same
+function, to the last bit and to round-off respectively. **Arm 2 fails with the correct
+gradients.**
+
+**Arm 2t** is a second control on the same arm: the inner `SeededNewtonDriver`'s
+`rtol`/`atol` moved from `1e-4` to `1e-10` through `sand_schedule(inner_drivers=...)`
+(verified to have taken -- the driver in the built schedule reports `1e-10`). The result
+is **bit-identical to Arm 2** in every column. `mdf.py`'s standing warning that MDF
+*"needs the inner solve to converge at every trial point"* is therefore not what limits
+this arm; a scalar Newton on this block lands on the same float either way.
+
+### 23.7 `low_aspect_ratio_DEMO`
+
+The baseline reproduces §22.3's row (`cap(500)`, `objf -0.401520642`) to
+`-0.4015206418715735`, and -- worth recording -- **that row is already bitwise
+fusion-invariant**: `0 of 19` design variables move, identical `objf`. A row that caps
+can be perfectly fusion-stable, which is one more reason not to read invariance as
+health.
+
+Arm 1c (outlier equalities, the only Arm-1 rule that is defined off this file's own
+numbers) equilibrates two rows and is **inert**: `cond(J)` `871.5 -> 871.6`, still
+`cap(500)`, `objf -0.4014727` against `-0.4015206`. Its one visible effect is on
+feasibility, `min ie` `-3.32e-03 -> -3.73e-05`. This file has no `2892` row -- its
+equality norms span `0.70` to `12.7` -- so there is nothing for the rule to catch, and
+its cap is not a conditioning problem. The rule being inert where there is no outlier is
+the behaviour wanted; it is not evidence for the rule.
+
+### 23.8 The table
+
+`stellarator_helias` unless marked. `d objf` is relative to PROCESS's `1.2149167845`
+(`-0.40629623` on LAR); the `+2.34e-03` shared by every converged row is
+`EXPLAINED_OBJECTIVE_READS`' `+17.604 MW` chain, not a disagreement.
+
+| arm | `cond(J)` start | fuse | its | status | `objf` | `d objf` | `max\|eq\|base` | `min ie` | fusion-invariant |
+|---|---|---|---|---|---|---|---|---|---|
+| **0** baseline | `2.53e+04` | on | 108 | stopped | `1.2221740786` | `+5.97e-03` | `2.85e-02` | `1.12e-11` | **no**, `dx 4.4e-01` |
+| | | off | 90 | converged | `1.2177573521` | `+2.34e-03` | `1.84e-06` | `-8.8e-10` | |
+| **1a** wp row `1/`norm | `9.92e+01` | on | 121 | converged | `1.2177573462` | `+2.34e-03` | `1.14e-06` | `-6.8e-09` | **yes**, `dx 0.0e+00` |
+| | | off | 121 | converged | `1.2177573462` | `+2.34e-03` | `1.14e-06` | `-6.8e-09` | |
+| **1b** all eq rows | `9.55e+01` | on | 451 | converged | `1.2177573474` | `+2.34e-03` | `8.97e-07` | `-1.0e-08` | **no**, `dx 6.6e-02` |
+| | | off | 500 | cap(500) | `1.2219175165` | `+5.76e-03` | `5.70e-01` | `-7.2e-06` | |
+| **1c** outlier eq rows | `8.98e+01` | on | 161 | converged | `1.2177575531` | `+2.34e-03` | `1.78e-06` | `-2.0e-08` | **no**, `dx 5.9e-05` |
+| | | off | 154 | converged | `1.2177577654` | `+2.34e-03` | `5.27e-05` | `1.3e-11` | |
+| **2** `Intersect` in graph | `8.10e+01` | on | 37 | stopped | `1.2395613935` | `+2.03e-02` | `2.04e-02` | `-2.0e-03` | **no**, `dx 8.4e-07` |
+| | | off | 37 | stopped | `1.2395614053` | `+2.03e-02` | `2.04e-02` | `-2.0e-03` | |
+| **2t** + inner tol `1e-10` | `8.10e+01` | on/off | 37 | stopped | *bit-identical to Arm 2* | | | | |
+| LAR **0** baseline | `8.72e+02` | on | 500 | cap(500) | `-0.4015206419` | `+1.18e-02` | `1.37e-07` | `-3.3e-03` | **yes**, `dx 0.0e+00` |
+| | | off | 500 | cap(500) | `-0.4015206419` | `+1.18e-02` | `1.37e-07` | `-3.3e-03` | |
+| LAR **1c** outlier rows | `8.72e+02` | on | 500 | cap(500) | `-0.4014726541` | `+1.19e-02` | `1.37e-07` | `-3.7e-05` | **yes**, `dx 0.0e+00` |
+| | | off | 500 | cap(500) | `-0.4014726541` | `+1.19e-02` | `1.37e-07` | `-3.7e-05` | |
+
+### 23.9 The verdict, and what it is not
+
+**Conditioning is not the mechanism, and the structural lift is not the mechanism.**
+Stated as the two experiments that would have shown otherwise and did not:
+
+- If the fork were *the row's weight in the QP*, the factor sweep would be monotone in
+  the factor and every sufficiently-equilibrated point would behave like Arm 1a. It is
+  not and they do not (§23.4): `5e-3` stops at a bad point, `3e-5` caps on one policy,
+  and `1e-4` -- a factor **between** two bitwise-invariant ones -- forks.
+- If the fork were *the lift*, removing it would reproduce MDF's behaviour. It removes
+  MDF's conditioning (`81`, from `2.5e4`, against MDF's `42`) and reproduces none of
+  MDF's robustness: 37 iterations, stopped, `2.03 %` from PROCESS, still not
+  fusion-invariant (§23.5) -- and with **provably correct derivatives** (§23.6) and a
+  **provably irrelevant inner tolerance** (§23.6, Arm 2t).
+
+What the arms *do* establish, and it is worth having:
+
+1. **`residual_condition_scales`' factor for this one row is a bad one, and that is now
+   measured rather than argued.** `1.39475` leaves the row's derivative at `2172`; at
+   any factor from `1e-1` down, 15 of 18 runs converge to one optimum against the
+   baseline's 1 of 2 with its branches `44 %` apart in `x`. The units rule is right about
+   *units* and this row's units are not its unknown's -- `VmconDriver.condition_scale`'s
+   own docstring already says so -- so a row-norm term for exactly the rows whose units
+   are not their unknown's is a defensible change. It buys convergence, not stability.
+2. **The in-graph move is a design preference here, not a necessity, and on this
+   configuration it is currently a regression.** It is structurally clean, it builds with
+   no new mechanism, its derivative is exactly right, and its answer is the worst on the
+   table. Nothing here argues against MDF-style nesting in general; it argues that
+   *this* block's lift is not what breaks *this* solve.
+3. **The fragility is in the trajectory, not in the formulation.** Every lever tried on
+   this configuration moves it, and none of them removes the sensitivity: 1 ulp of
+   `a_tf_turn_steel` (§20.3), the schedule's fusion policy (§19), one row's weight
+   anywhere in a decade-wide band (§23.4), removing that row from the problem entirely
+   (§23.5) -- and, independently and after this section's runs, a module-level compiled-
+   call cache in another agent's tree, which takes the same solve from *108 stopped* to
+   *257 converged* at `objf 1.21775737` and MDF from 67 to 108 iterations. That patch is
+   **not** in the copy measured here, so Arm 0 is still the published baseline; it is
+   reported because it is a sixth independent lever moving the same fork, which is
+   evidence about the configuration and not about any of these arms. A solve whose
+   outcome six unrelated levers can flip is not being held back by one Jacobian row.
+
+**What is still not established** -- and this is the same sentence §20.12 and §21.5 end
+on, now with two more explanations removed rather than one: what actually amplifies a
+`4e-16` input into a different outcome. It is not the `c24` kink (§20.12b), not the
+condition number (§20.12c, §23.4), not a frozen or dropped value (§20.12d), not the QP
+solver (§21.1), not this row's weight (§23.4), not this row's presence in the problem
+(§23.5), not the inner solve's tolerance (§23.6). The one thing every failing branch
+still has in common is `QSPSolverException` on a QP whose *inputs* are the ones that
+differ -- and §21.1 has already shown `cvxpy` to be deterministic given those inputs.
+The next thing with any evidence behind it is the merit function and the line search
+between the QP and the next iterate, which no section has instrumented.
+
+### 23.10 What landed in the copy, and what was not done
+
+Three parameters, all defaulting to today's behaviour, all with the arm they exist to
+run named in their docstrings:
+
+- **`sand.sand_graph(keep=())`** -- declared problems neither residualised nor combined.
+  A knob rather than a hard-coded exception, so the question is re-runnable on any file.
+- **`sand.sand_schedule(nest=False, inner_drivers=None)`** -- `Blocking.scc(...).nest(
+  <the Optimise>)` instead of the flat blocking, and per-problem driver overrides for a
+  kept problem's algorithm. `sand_schedule` and `sand.constraints_outside_block` now
+  find the `Optimise` **by type off `graph.definitions`** rather than through
+  `blocking.problems`, which raises on the two-problem block `keep` deliberately creates.
+- **`sand_harness.assemble(keep=())`** -- forwarded; a kept problem is never dropped as
+  degenerate or array-valued.
+
+`tests/functional_process/test_sand.py` + `test_mdf.py`: **193 passed** in the copy.
+`ruff check`/`format` clean on the two edited files (the pre-existing `I001`/`F401` on
+`sand.py`'s import block is untouched and predates this).
+
+Not done:
+
+- No test pins the new parameters. The arms are a scratch runner outside the copy, not a
+  case; `keep`/`nest` reaching `main` should arrive with one.
+- Arm 2 was run at one nesting only (the `Optimise` nested, `Intersect` inner). The
+  converse -- `Intersect` outer, as `mdf.in_graph_root_find` does for its own root find
+  -- was not tried and is a different formulation, not a variant of this one.
+- The `1c` outlier rule's threshold (`10x` the median) was chosen once and not swept. On
+  `stellarator_helias` it catches three rows and on `low_aspect_ratio_DEMO` two; whether
+  it is the right rule is not settled by two files.
+- No arm was run on the other five configurations, and no SLSQP arm was run at all
+  (§22.6's gap is still open).
+
+## 24. The inner jit leaves the driver, and one configuration of seven moves (2026-09-01)
+
+**Measured in a scratch copy of the working tree, not in `~/PROCESS`:**
+`/tmp/claude-1000/-home-tbogaarts-PROCESS/df0c22b1-02c2-4e73-99ce-b061606f318d/scratchpad/PROCESS_mdf`.
+Two other agents were running against `~/PROCESS` and `~/jaxgraph` at the time, so every
+number below comes from a tree only this work could touch. `cottax` was shared read-only
+from `~/jaxgraph/src`. The copy's `functional_process/` and `process/` were verified
+identical to the live tree at the start except for the two files this section changes
+(`core/solver/drivers.py`, and the new `core/solver/host_cache.py`) and four
+visualization artefacts not on any solve path.
+
+§22.6's second bullet -- *"the inner jits are still rebuilt per solve; hoisting `live`
+into an argument to make them cacheable is untried"* -- is now tried, and the section
+splits into what it bought (§24.1), what it cost (§24.2), and a measurement trap that
+invalidated the first two attempts to find out (§24.3).
+
+### 24.1 The jit moves to `core/solver/host_cache.py`, and both cache facts are measured
+
+`VmconDriver` and `SlsqpDriver` no longer call `jax.jit` at all. Two module-level
+`eqx.filter_jit` functions -- `flat_conditions` and `flat_condition_jacobian` -- take the
+`ConditionMap` as an **argument** and are shared by both drivers.
+
+**Why a new module and not `ConditionMap`, and not the driver.** The only reason any of
+this exists is that `pyvmcon` and `scipy.optimize` iterate in Python, on the host, so
+there is no enclosing jit for the per-iteration model call to be hoisted into. That is a
+forced inelegance and it belongs next to the drivers that force it. Putting the
+compilation on `ConditionMap` would put a notion of "compiled" into the graph's own
+vocabulary that only a host-loop driver needs -- a jax-native constrained optimiser would
+call `jax.jacfwd(conditions)` inside its own trace and meet no compilation boundary at
+all. Putting it inside the driver is what was wrong before: `jax.jit` caches on the
+identity of the function it wraps, and a closure built inside `host` is a fresh object
+every solve.
+
+**Two functions, not one.** `jax.jacfwd(f)` returns an ordinary Python function that
+traces `f` under JVP; it is *not* compiled, and calling one eagerly runs the block op by
+op. So the `jacfwd` goes inside a second jitted function rather than being wrapped around
+the first.
+
+**The cache-key facts, both measured rather than assumed.** They are a *correctness*
+gate, not only a performance one: a module-level cache that collided would hand one
+problem another problem's compiled program, silently.
+
+| direction | probe | result |
+|---|---|---|
+| same map, two `eqx.combine`s -> same key | `hashable_partition(cmap, eqx.is_array)[1]` | hash equal, `==` True, distinct objects |
+| same map, context **values** changed -> same key | tree-map `x * 1.01` over the array half | hash equal (**correct**: the values are traced arguments, so one program serves both -- and the second call returns a *different answer* from the same program, which is the proof that they are not baked in) |
+| `spherical_tokamak_eval` vs `st_regression` -> different key | two `MdfConditionMap`s | hash **unequal**, `==` False |
+| same file, optimise vs root find -> different key | two problem shapes of one file | hash **unequal**, `==` False |
+| `unravel` as a static argument | `jax.flatten_util.ravel_pytree` | returns `jax._src.util.HashablePartial`; two `unravel`s of the same pytree structure hash equal and compare equal |
+
+End to end on `spherical_tokamak_eval`'s MDF condition map: first call 1 compile for
+values and 1 for the Jacobian; a recombined map and a third combine each cost **0**.
+
+**A note on `Static`, because the obvious probe fails.** `eqx.Module.__hash__` on the
+raw static half raises `TypeError: unhashable type: 'list'`. That is not a hole in the
+scheme -- `eqx.filter_jit` does not use it. It goes through
+`equinox._compile_utils.hashable_partition`, which is what the table above measures.
+Reported because the first probe written for this looked like a refutation and was not.
+
+**The invariant that must not be undone, and it is preserved.** `eqx.combine` stays
+**inside** the `jax.pure_callback`, in `_sqp_callback.wrapped`, at runtime, on concrete
+arrays. `_sqp_callback` is unchanged by this section. Nothing dynamic is captured in a
+closure built at trace time -- which is exactly why the first design considered here
+(hoisting the jitted callables into `VmconDriver.__call__`) was abandoned: `__call__`
+runs at *trace* time, so a closure over `dyn` built there and executed at callback time
+would capture a tracer outside its trace and raise `UnexpectedTracerError` the first time
+a solve was nested. The module-level design gets this for free, because `cmap` is an
+argument and never a capture. What `__call__` still reads off `conditions` at trace time
+is `conditions.conditions` and `conditions.unknowns` -- tuples of `VarPath`, i.e. names,
+never arrays -- for `condition_scale` and the bounds, exactly as before.
+`vmap_method="sequential"` on the `pure_callback` is untouched.
+
+**Compiles, `stellarator_helias` SAND, one process each, the schedule run twice.**
+Same instrument as §22.2 (patching `jax._src.compiler.backend_compile_and_load`).
+
+| | first call | second call |
+|---|---|---|
+| before, probe on (`whole=None`) | 4 compiles | 2 compiles |
+| **after, probe on** | 4 compiles | **0 compiles** |
+| before, `whole=False` (the cold matrix's path) | 11 compiles | 3 compiles |
+| **after, `whole=False`** | 11 compiles | **1 compile** |
+
+The target was 2 -> 0 and it is met. The walk path gains the same 2, which the
+`__call__`-hoist design would **not** have delivered: there the driver is invoked eagerly
+once per `run_schedule` call, so anything built in `__call__` is rebuilt too. A
+module-level function has one identity for the life of the process, so the cache survives
+both.
+
+Wall times are deliberately not tabulated here: the change moves this solve from 108
+iterations to 257 (§24.2), so before-and-after seconds are not measuring the same work.
+Per-iteration cost is §24.4.
+
+### 24.2 The bitwise gate: six configurations of seven reproduce, `stellarator_helias` does not
+
+Full `run_cold_matrix.py --provider` pass before and after, both correctly resolved
+(§24.3), diffed row by row.
+
+**Ten of twelve rows are byte-for-byte identical**, `st_regression SAND`'s `FAILED` and
+`low_aspect_ratio_DEMO SAND`'s `cap(500)` included. The two that move are both
+`stellarator_helias`:
+
+| row | before | after |
+|---|---|---|
+| `stellarator_helias` MDF | 67 it, converged, `objf 1.21775735`, `max\|eq\| 4.60e-11`, `min ie -2.59e-10` | 108 it, converged, `objf 1.21775747`, `max\|eq\| 4.20e-11`, `min ie -1.95e-10` |
+| `stellarator_helias` SAND | 108 it, **stopped**, `objf 1.22217408`, `max\|eq\| 2.85e-02`, `d objf 5.97e-03`, `worst dx 5.98e-01` | 257 it, **converged**, `objf 1.21775737`, `max\|eq\| 3.57e-05`, `d objf 2.34e-03`, `worst dx 1.08e-01` |
+
+**The gate is failed, and it is failed in the good direction -- which does not make it
+passed.** The SAND row moves from a stopped solve that was two and a half percent off in
+its equalities to a converged one that agrees with the MDF row's objective to seven
+digits and halves the gap to PROCESS. Nothing was widened to get that; it is what the
+solver did. But the acceptance criterion was *bitwise*, and this is not bitwise, so the
+change is reported as landed-and-moving rather than landed-clean, and whether to keep it
+is not this measurement's call.
+
+**Constant folding is the demonstrated cause, not the suspected one.** Two independent
+lines of evidence, both taken at `stellarator_helias`'s cold SAND start, comparing
+`jax.jit(lambda flat_x: stack(cmap(*unravel(flat_x))))` (A, arrays closed over) against
+`host_cache.flat_conditions(cmap, flat_x, unravel)` (B, arrays as arguments) on **the same
+`cmap` object**:
+
+1. **The optimised HLO.** A folds; B cannot.
+
+   | | parameters | constants | lines |
+   |---|---|---|---|
+   | values, A closed-over | 736 | 1279 | 10627 |
+   | values, B argument | 2105 | 1109 | 14075 |
+   | jacobian, A closed-over | 2943 | 4270 | 34109 |
+   | jacobian, B argument | 6089 | 3046 | 38451 |
+
+2. **A three-way value comparison against an eager call.** 17 of 21 conditions and 100 of
+   294 Jacobian cells differ between A and B. Almost all of it is 1-2 ulp. Of the 17
+   moved conditions, **B agrees with the eager call on 6 and A on 2** -- i.e. the
+   argument form stays closer to unfused arithmetic, which is what a folded constant
+   subgraph would predict. `plain jax.jit` reproduces `eqx.filter_jit`'s B bitwise, so
+   equinox contributes nothing to the difference.
+
+**Why 1-2 ulp becomes a different solve is already in this file.** Two of the moved
+conditions are SAND coupling residuals that are ratios of near-zero quantities
+(`^cond.physics.proton_rate_density` reads exactly `-0.25` under A and `+0.25` under B;
+`^cond.stellarator.wp_width_r_min` flips sign at `2.27e-13`), so a last-bit move in the
+denominator is an order-one move in the residual. §19 and §20 are two full sections about
+this exact solve flipping between 90-converged and 108-stopped on a `-2` ulp change to one
+variable, and §20's conclusion was that the eager answer had been on the tolerant side of
+one bit by accident. This is the third landing of the same coin.
+
+**What that implies for any version of this fix.** The hazard is not specific to the
+design chosen: the whole mechanism by which the cache becomes reusable is that the solve's
+arrays stop being trace-time constants, so XLA loses the freedom to fold them. Any
+formulation that makes the compiled program reusable across solves gives up the folding.
+"Keep the 2 compiles per solve" and "keep this row bitwise" are the same choice.
+
+### 24.3 A measurement trap: `python functional_process/run_cold_matrix.py` does not measure this tree
+
+The first two matrix passes taken for §24.2 were void, and the reason is worth recording
+because nothing announced it and both looked exactly like valid runs.
+
+Invoking `$PY functional_process/run_cold_matrix.py` from the copy's root puts
+**`<copy>/functional_process`** on `sys.path[0]` -- the *script's* directory, not the
+current one, and `''` is not added for a script invocation. `<copy>/functional_process`
+contains no `functional_process` package, so `from functional_process import mdf` falls
+through to the editable install and resolves to **`/home/tbogaarts/PROCESS`**. Measured
+directly: `drivers.__file__` came back as `/home/tbogaarts/PROCESS/functional_process/
+core/solver/drivers.py` and `hasattr(drivers, "flat_conditions")` was `False`.
+
+`CLAUDE.md`'s check (`$PY -c "import functional_process; print(...)"`) passes in that same
+directory, because `python -c` *does* put `''` first. So the check and the run disagree,
+and the run is the one that matters. The fix is `PYTHONPATH=<copy>`, and the tell that
+something was wrong was a contradiction rather than an error: a standalone script and the
+matrix reported different answers for the same configuration on the same tree.
+
+**What was salvaged.** The pre-change baseline pass was itself run against the live tree,
+and the live tree's `drivers.py` was verified byte-identical to the copy's pre-change
+version at the time (and every other file on the solve path identical), so it stands as a
+valid "before". The "after" pass was re-taken with `PYTHONPATH` set. It ran out of memory
+part way (15 GB box, two other agents, `LLVM ERROR: Unable to allocate section memory`),
+so the last three configurations were re-run one process at a time; all three reproduce
+the baseline bitwise.
+
+### 24.4 Where a `stellarator_helias` SAND iteration's time actually goes
+
+Warm second call, `whole=False`, 257 SQP iterations, 7.62 s wall of which
+`pyvmcon.solve` is 7.497 s. Timed with `perf_counter` around each section and
+`jax.block_until_ready` inside the jitted wrappers so device time is not misattributed;
+CLARABEL's own time is `cvxpy`'s `solver_stats.solve_time`.
+
+| section | total s | calls | ms/iteration | % of solve |
+|---|---|---|---|---|
+| 1 jitted values (`flat_conditions`) | 2.390 | 513 | 9.30 | 31.9 |
+| 2 jitted Jacobian (`flat_condition_jacobian`, 14 columns) | 2.453 | 513 | 9.54 | 32.7 |
+| 3 `cvxpy` problem construction | 0.182 | 257 | 0.71 | 2.4 |
+| 4 `cvxpy` canonicalisation/compilation | 2.159 | 257 | 8.40 | 28.8 |
+| 5 CLARABEL's own solve | 0.069 | 257 | 0.27 | 0.9 |
+| 6 `pyvmcon` line search and the rest | 0.244 | | 0.95 | 3.3 |
+
+**Neither half is the whole answer, and that is the useful result.** The model calls are
+64 % and the QP is 31 %, so no amount of jit hygiene alone gets near the ~0.5 ms per
+Jacobian target -- and neither does fixing `cvxpy` alone.
+
+**The QP's time is canonicalisation, not solving, by a factor of 31.** `pyvmcon.solve_qsp`
+(`vmcon.py:312-329`) builds a fresh `cp.Variable`, `cp.Minimize` and `cp.Problem` on
+**every** call; there is no `cp.Parameter` anywhere and therefore no DPP-parametrised
+problem to re-solve. So `cvxpy` re-canonicalises and re-compiles a 14-variable QP 257
+times, at 8.40 ms each, to hand CLARABEL 0.27 ms of actual work. That is the textbook
+failure mode and it is confirmed both by reading the source and by the split above. Fixing
+it is a `pyvmcon` change (a parametrised problem built once) or a native QP, not anything
+this port can do from outside.
+
+**Forward-mode AD is nearly free here, and that was not expected.** Per *call*, values
+cost 4.66 ms and the 14-column Jacobian 4.78 ms -- a 2.5 % premium for fourteen tangents.
+So the 9.5 ms/iteration attributed to the Jacobian is not fourteen forward passes' worth
+of arithmetic; it is one dispatch's worth. At this size the model calls are dominated by
+per-call overhead rather than FLOPs, which is the same conclusion §18 reached about
+compiles and is why the remaining lever is *fewer, larger* host round trips rather than a
+cheaper Jacobian.
+
+(513 calls to 257 iterations is 2 per iteration: VMCON evaluates at the trial point and
+again in the line search, and `_Problem.__call__` computes values and Jacobian together.)
+
+### 24.5 `low_aspect_ratio_DEMO` MDF: the stop is a refused QP, and the answer is feasible
+
+The row reads `stopped` at 10 iterations with `max|eq| 5.93e-12` and `min ie -1.41e-06`,
+and `MAX_ITER` is 800, so the cap is not what ended it. Reading the driver's own reported
+`Status` says what did:
+
+    Steps=10  Converged=False  Status=2      # 2 = QSPSolverException
+
+VMCON's 11th quadratic subproblem could not be solved -- `cvxpy` raised, `pyvmcon` turned
+it into `QSPSolverException`, and `VmconDriver` kept the last point. It is not a line
+search failure (`Status=3`) and not exhaustion (`Status=1`).
+
+**The point it kept is feasible.** Evaluating every condition at the returned answer:
+
+- all four equalities at `|.| <= 2.2e-14`;
+- **all 25 inequalities satisfied**, the tightest being `^cond.constraints.c5` at
+  `+7.74e-12` in VMCON's sign;
+- the last convergence value is `1.41e-07`, against a `1e-8` tolerance -- one order of
+  magnitude short of the KKT test, not two.
+
+The `-1.41e-06` on the table is the *trace's* last callback value, recorded at the
+iterate VMCON was standing on when the QP was refused; the answer `VmconDriver` returns
+and `mdf.solve` re-runs the MDA at is a step further on and is clean. Both numbers are
+correct; they are measured at different points.
+
+**So the KKT-versus-feasibility hypothesis does not explain this row.** The proposed
+mechanism -- a violation with a near-zero multiplier being invisible to
+`|∇f·δ| + |Σλ_eq·eq| + |Σλ_ie·ie|` -- requires a violation, and there is none. The row is
+a feasible, nearly-KKT point that the QP solver declined to improve on. PROCESS takes 16
+iterations on the same file and gets `objf -0.40629623` against the port's
+`-0.40631157`, a `3.78e-05` gap, with `worst dx 1.15e-04`.
+
+**And PROCESS's own answer is the less feasible of the two, in the port's arithmetic.**
+Evaluating the port's conditions at PROCESS's converged `x` leaves two inequalities
+violated -- `^cond.constraints.c31` at `-4.35e-05` and `^cond.constraints.c90` at
+`-2.14e-06` in VMCON's sign -- where the port's own answer violates none. That is the
+scale against which "essentially feasible" should be read on this file.
+
+### 24.6 `st_regression` MDF converges in 4 because its objective is a constant
+
+The `custom_jvp` on `_solv` (§21.3) does fix the row: measured here at **4 iterations,
+`Status=0`, `Converged=True`, convergence value `4.95e-09`** against a `1e-8` tolerance.
+That reproduces, and it is a real fix to a real `nan`.
+
+**It is also not a solved optimisation, and the table already said so.** The row's
+`d objf 1.00e+00` and `worst dx 9.90e+01 at ixc 152` are not near-misses; the objective
+printed `-0` at *every* iteration of the trace, from iteration 0. The reason is
+structural:
+
+- `st_regression.IN.DAT` states `i_figure_merit = -5`, i.e. **maximise `FUSION_GAIN_Q`**,
+  and `sand.objective_node` mints a node reading exactly one path,
+  `.current_drive.big_q_plasma`;
+- that path is **not owned by the tokamak graph**. Measured: `VarPath(.current_drive.
+  big_q_plasma) in set(graph.owned)` is `False` for `st_regression` and for
+  `large_tokamak_nof`, and `True` only for the stellarator graph, whose
+  `models/stellarator/heating.py` is the port's sole producer of it;
+- so it is a boundary input, seeded from the cold `DataStructure` at `0.0`, which the
+  provider does not answer. The objective is therefore `-1 * 0.0 = -0.0` everywhere, with
+  an identically zero gradient.
+
+**What VMCON actually solved is a feasibility problem**, and it found a feasible-ish point
+in 4 iterations. Nothing pins the design vector along the objective's (empty) descent
+direction, which is precisely why `ixc 152` can sit 99x away from PROCESS's value without
+the solve noticing. PROCESS's own `big_q_plasma` is `16.5886` and its objective
+`-16.5885765`.
+
+**And this row *is* the KKT hypothesis' best case.** With `∇f ≡ 0` the convergence test
+`|∇f·δ| + |Σλ_eq·eq| + |Σλ_ie·ie|` loses its first term exactly, so it is testing the
+multiplier products alone -- and a violated inequality carrying a small multiplier is
+invisible to it. That is consistent with converging at `4.95e-09` while
+`^cond.constraints.c16` is violated by `1.51e-03`.
+
+**Is `-1.51e-03` a bad answer?** On that constraint alone, no -- and the comparison is
+worth stating because it is the opposite of the expected one. `c16` is the *same*
+constraint whose Jacobian row was `nan` before §21.3. Evaluating the port's conditions at
+**PROCESS's own converged `x`** puts `c16` at `-1.06e-01` in VMCON's sign: PROCESS's
+answer violates it by seventy times more than the port's does. So `min ie -1.51e-03` is
+inside what PROCESS itself lands on for this constraint, and it is not the thing wrong
+with this row. The constant objective is.
+
+The `st_regression` **SAND** row still fails at assembly with
+`KeyError: VarPath(^cond.numerics.objf)`, unchanged and not investigated here.
+
+### 24.7 Converging and agreeing are different axes, and here is each separately
+
+Read off the (identical) before and after passes; `stellarator_helias` is quoted after
+§24.2's move, with the before value in brackets.
+
+**Did the solve converge?**
+
+| configuration | MDF | SAND |
+|---|---|---|
+| `stellarator_helias` | converged, 108 it [67] | converged, 257 it [**stopped**, 108] |
+| `helias_5b` | converged, 4 it | converged, 7 it |
+| `large_tokamak_nof` | converged, 7 it | converged, 10 it |
+| `large_tokamak_eval` | converged, 3 it (root find) | n/a -- the file states a root find |
+| `low_aspect_ratio_DEMO` | **stopped**, 10 it (`Status=2`, §24.5) | **cap(500)** |
+| `spherical_tokamak_eval` | converged, 2 it (root find) | n/a |
+| `st_regression` | converged, 4 it -- of a constant objective (§24.6) | **FAILED** to assemble |
+
+**Does it agree with PROCESS?** A different question, and the ranking is different.
+
+| configuration | `d objf` | `worst dx` | verdict |
+|---|---|---|---|
+| `large_tokamak_eval` MDF | -- (no objective) | `3.29e-12` | **agrees** -- PROCESS's own `fsolve` answer, to round-off |
+| `spherical_tokamak_eval` MDF | -- | `3.64e-09` | **agrees** |
+| `large_tokamak_nof` MDF | `1.16e-11` | `2.01e-02` | objective agrees to 11 digits; design differs 2 % at ixc 57 |
+| `large_tokamak_nof` SAND | `4.78e-12` | `6.37e-01` | objective agrees; design differs **64 %** at ixc 135 |
+| `low_aspect_ratio_DEMO` MDF | `3.78e-05` | `1.15e-04` | **agrees** to four digits, though the solve stopped |
+| `helias_5b` MDF / SAND | `9.13e-04` | `2.01e-03` / `6.18e-03` | agrees to three digits |
+| `stellarator_helias` MDF | `2.34e-03` | `1.08e-01` | partial; see below |
+| `stellarator_helias` SAND | `2.34e-03` [`5.97e-03`] | `1.08e-01` [`5.98e-01`] | after §24.2, identical to the MDF row's disagreement |
+| `low_aspect_ratio_DEMO` SAND | `1.18e-02` | `7.09e-02` | **does not agree**, and did not converge |
+| `st_regression` MDF | `1.00e+00` | `9.90e+01` | **does not agree** -- constant objective (§24.6) |
+
+Two rows make the point that the axes are independent in *both* directions:
+`low_aspect_ratio_DEMO` MDF **stopped** and agrees to four digits; `st_regression` MDF
+**converged** and does not agree at all.
+
+`stellarator_helias`'s `2.34e-03` is characterised, not chased, as briefed: MDF and SAND
+now disagree with PROCESS by the *same* amount at the *same* design distance
+(`1.08e-01` at ixc 109), which is new information -- before this change the two
+formulations disagreed with PROCESS differently, and it was open whether that was the
+formulations or the solver trajectories. It was the trajectory. The remaining gap is a
+single number shared by both formulations and is the one the matrix's own note points at
+`EXPLAINED_DISAGREEMENTS['.heat_transport.p_plant_electric_base_total_mw']` for;
+separating "the port's physics differs" from "the two objectives were evaluated at two
+different points" still needs the port's objective at PROCESS's own `x`, which is a Stage
+A measurement and was not taken here.
+
+### 24.8 The MDF compile census, and the 5 are not what was expected
+
+Every configuration, MDF only, two calls each, in one process per configuration. Compiles
+counted by patching `jax._src.compiler.backend_compile_and_load`, and each compile's MLIR
+`sym_name` and line count recorded, so a count can be resolved into *which* programs.
+Taken after §24.1; the two rows §24.1 changes are `solve`'s, and they are called out.
+
+| configuration | `prime` 1st | `prime` 2nd | solve 1st | solve 2nd | verdict |
+|---|---|---|---|---|---|
+| `spherical_tokamak_eval` (root find) | 1, 8.67 s | 0, 0.02 s | **5, 17.11 s** | **0, 0.02 s** | `(True, None)` |
+| `large_tokamak_eval` (root find) | 1, 10.81 s | 0, 0.02 s | 5, 19.24 s | 0, 0.04 s | `(True, None)` |
+| `st_regression` | 1, 8.29 s | 0, 0.01 s | 854, 57.44 s | 9, 2.58 s | `(True, None)` |
+| `helias_5b` | 7, 3.51 s | 0, 0.01 s | 260, 20.14 s | 7, 1.88 s | `(True, None)` |
+| `low_aspect_ratio_DEMO` | 1, 12.52 s | 0, 0.02 s | 971, 84.37 s | 14, 4.62 s | `(True, None)` |
+| `large_tokamak_nof` | 1, 9.95 s | 0, 0.02 s | 970, 84.65 s | 14, 4.32 s | `(True, None)` |
+| `stellarator_helias` | 7, 3.49 s | 0, 0.01 s | 268, 27.74 s | 7, 7.96 s | `(True, None)` |
+
+**Every schedule jits whole, on all seven, both `prime` and the two in-graph root finds:
+`schedule_verdict` is `(True, None)` everywhere and there is no refusal reason to quote.**
+`mdf.prime` reproduces the reference point exactly (1 compile on the tokamaks;
+`spherical_tokamak_eval` 1 compile / 0 on the second call), and the stellarators' 7 is the
+same program plus six 5-line scalar casts.
+
+**What the in-graph root find's 5 compiles are.** The brief's hypothesis -- XLA emitting
+the `lax.while_loop` body and condition as separate modules, plus `optimistix` staging --
+is **refuted**. Named, on `spherical_tokamak_eval`:
+
+    jit_run                     33935 MLIR lines     <- the entire schedule, one program
+    jit_stage                       5 MLIR lines
+    jit_convert_element_type        5 MLIR lines
+    jit_convert_element_type        5 MLIR lines
+    jit_convert_element_type        5 MLIR lines
+
+`large_tokamak_eval` is the same five with `jit_run` at 37 506 lines. So it is **one real
+program and four trivial scalar ones**: the `while_loop` is *inside* `jit_run`, exactly as
+an accepted whole-schedule jit implies, and the other four are eager `jnp` ops at the
+boundary -- three dtype canonicalisations and jax's own internal `stage_p` primitive
+(`jax/_src/core.py:1298`), not `optimistix`'s. Reported as a correction: the "5 = loop
+body + condition + staging" story was plausible, is the sort of thing that gets repeated,
+and is wrong.
+
+**`mdf.solve` costs ~950 XLA compiles that nothing needs, and they are not the driver's.**
+The 971 on `low_aspect_ratio_DEMO` resolve as:
+
+    jit_flat_condition_jacobian  50102 lines   x1     <- the driver's Jacobian (§24.1)
+    jit_flat_conditions          19086 lines   x1     <- the driver's values   (§24.1)
+    jit_multiply  x136, jit_add x86, jit_subtract x70, jit_true_divide x64,
+    jit_dynamic_slice x49, jit_integer_pow x48, jit_broadcast_in_dim x48,
+    jit__where x42, jit__reduce_sum x27, jit_scatter x24, ... , a few jit_while
+
+-- i.e. **two** programs for the whole solve, and ~969 one-primitive programs. That
+per-primitive pattern is §18.6's signature of an *eager* `Schedule.__call__`, and there is
+exactly one in this path: `mdf.solve`'s last act is
+
+    out = mdf.eager(_inputs_only(mdf, at))
+
+-- a direct schedule call, **not** through `sand_harness.run_schedule`. `mdf.prime` a few
+lines away does go through `run_schedule` and costs 1 compile for the same schedule. So
+this is a one-line asymmetry costing roughly 950 compiles and, at §18's ~25 ms each, most
+of the ~60 s gap between the two `solve` columns. It is not the SQP: the SQP is the two
+big programs, and after §24.1 it is two on the first call and **zero** thereafter.
+
+The stellarators' 260/268 rather than ~970 is the smaller graph (154 nodes against 243),
+same mechanism.
+
+**What the second call still costs (7-14 compiles) is the same eager re-run** meeting
+shapes its first pass did not, not the driver: the driver's two programs are cache hits by
+then, which is what §24.1 bought.
+
+### 24.9 What was not done, and what is now open
+
+- **The bitwise gate is failed** (§24.2). Whether to keep §24.1 given that
+  `stellarator_helias` moves is not decided here. No tolerance was widened and no row was
+  re-baselined.
+- **`mdf.solve`'s eager final MDA re-run (§24.8) was measured, not fixed.** Routing it
+  through `run_schedule` is a one-line change with an obvious prediction (~950 compiles ->
+  ~1, as `prime` already shows) and it was left alone because it would move a second thing
+  in the same pass as §24.1, and this file has three sections about what that costs.
+- **`SlsqpDriver` shares the two helpers** (`scaled_problem` builds no `jax.jit` of its
+  own any more) but, as in §22.6, no SAND or MDF row was run through it, so the shared
+  path is exercised only by the unit tests.
+- **`pyvmcon`'s per-iteration `cvxpy` rebuild (§24.4)** is diagnosed and untouched; it is
+  upstream code.
+- **`st_regression`'s objective (§24.6) is unported, not broken.** Porting a producer for
+  `.current_drive.big_q_plasma` on the tokamak graph would turn that row from a feasibility
+  solve into the optimisation the file states. Until then the row's `d objf` and `worst dx`
+  columns are not measuring what they appear to measure, and the table should probably say
+  so in its own notes rather than only here.
+- **`st_regression` SAND** still fails at assembly with
+  `KeyError: VarPath(^cond.numerics.objf)`; not investigated.
+- **`low_aspect_ratio_DEMO`'s refused QP (§24.5)** was identified (`Status=2`) but not
+  diagnosed: what makes the 11th subproblem infeasible for `cvxpy`/CLARABEL, and whether a
+  different `qsp_solver` takes the step, is untried. PROCESS's own 16 iterations on the
+  same file say a step exists.
+- Scoped tests after §24.1: `tests/functional_process/test_mdf.py test_sand.py
+  test_cold_matrix.py` -- **223 passed**, unchanged.

@@ -39,6 +39,11 @@ from cottax.spec import VarPath
 from cottax.tools.path import written
 from jax.flatten_util import ravel_pytree
 
+from functional_process.core.solver.host_cache import (
+    flat_condition_jacobian,
+    flat_conditions,
+)
+
 
 UNSCALABLE_BELOW = 1e-12
 """Magnitude below which a start value cannot condition its own coordinate.
@@ -125,22 +130,22 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
         [by_name.get(c, 1.0) for c in conditions.conditions], dtype=float
     )
 
-    def flat_conditions(flat_x):
-        return jnp.stack([jnp.asarray(v) for v in conditions(*unravel(flat_x))])
-
-    _evaluate = jax.jit(flat_conditions)
-    _jacobian = jax.jit(jax.jacfwd(flat_conditions))
-
+    # The two module-level jits, shared with `VmconDriver`; this function builds no
+    # `jax.jit` of its own, so a second SLSQP solve of the same block is a cache hit
+    # rather than a re-trace (`flat_conditions`' docstring, §24.1).
     def evaluate(x_scaled):
         flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-        return np.asarray(_evaluate(flat_x), dtype=float) * condition_scale
+        return (
+            np.asarray(flat_conditions(conditions, flat_x, unravel), dtype=float)
+            * condition_scale
+        )
 
     def jacobian(x_scaled):
         flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
         # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column, one
         # `condition_scale` factor per row.
         return (
-            np.asarray(_jacobian(flat_x), dtype=float)
+            np.asarray(flat_condition_jacobian(conditions, flat_x, unravel), dtype=float)
             * condition_scale[:, None]
             / scale[None, :]
         )
@@ -1025,7 +1030,11 @@ class VmconDriver(AbstractDriver):
             Everything that needs a *concrete* start is here and nowhere else: the
             scaling, the scaled bounds, the callback's unscaling. `live` is the
             recombined `ConditionMap`, so the model inside is a jax function again and
-            `jax.jit`/`jax.jacfwd` apply to it exactly as they did before the wrap.
+            `jax.jacfwd` applies to it exactly as it did before the wrap -- but the
+            compilation of it is **not** this driver's business and is not done here.
+            `flat_conditions`/`flat_condition_jacobian` are module-level and cached on
+            the condition map itself, so a fresh `eqx.combine` per solve is a cache hit
+            rather than the two re-compiles §22.2 measured on every call.
             """
             # PROCESS's own conditioning, from the starting point, exactly as
             # `load_iteration_variables` derives it -- and through `design_scale`, so
@@ -1035,18 +1044,18 @@ class VmconDriver(AbstractDriver):
             # docstring carries the case that found it.
             scale = design_scale(flat_start) if scaled else np.ones_like(flat_start)
 
-            def flat_conditions(flat_x):
-                values = live(*unravel(flat_x))
-                return jnp.stack([jnp.asarray(v) for v in values])
-
-            # **Kept, and deliberately unlike `cottax.drivers.SLSQPDriver`**, which
+            # **Compiled, and deliberately unlike `cottax.drivers.SLSQPDriver`**, which
             # leaves its inner model eager. An SQP iteration here converges a whole
             # PROCESS block; running it op by op costs far more than the one trace it
             # replaces, and the `pure_callback` boundary is per *solve*, not per
-            # iteration, so there is nothing about the wrap that makes an inner jit
-            # wrong. `_audit/optimise_design.md` §22 has what dropping it would cost.
-            evaluate = jax.jit(flat_conditions)
-            jacobian = jax.jit(jax.jacfwd(flat_conditions))
+            # iteration, so there is nothing about the wrap that makes a compiled inner
+            # model wrong. `_audit/optimise_design.md` §22 has what dropping it would
+            # cost. The jits themselves live at module level -- see `flat_conditions`.
+            def evaluate(flat_x):
+                return flat_conditions(live, flat_x, unravel)
+
+            def jacobian(flat_x):
+                return flat_condition_jacobian(live, flat_x, unravel)
 
             def scaled_values(x_scaled):
                 flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)

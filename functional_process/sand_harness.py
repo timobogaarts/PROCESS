@@ -785,8 +785,16 @@ def _strongly_typed(value):
     return jax.lax.convert_element_type(array, array.dtype)
 
 
-def assemble(reference, driven, env, omit=(), switch_values=None):
+def assemble(reference, driven, env, omit=(), switch_values=None, keep=()):
     """The SAND graph for `reference`'s own `ixc`/`icc`/`i_figure_merit`.
+
+    `keep` names declared problems that are **not** lifted into the SQP -- neither
+    residualised nor combined, so their unknowns stay out of `Optimise.design` and their
+    residuals out of `Optimise.equalities`. It is forwarded to `sand.sand_graph`, whose
+    docstring carries the reasoning; a caller passing it must also pass
+    `sand.sand_schedule(nest=True)`, and a kept problem is never dropped as degenerate
+    or array-valued here (dropping it would answer a different question from leaving it
+    in the graph). Empty -- every published row -- is the path that was always taken.
 
     `env` is used only to detect the structurally degenerate fixed points, whose problem
     nodes are then dropped: an identity `FixedPointFunction` is a perfectly well-posed
@@ -807,9 +815,14 @@ def assemble(reference, driven, env, omit=(), switch_values=None):
     know about, which is why it travels in the report rather than in a log line. The
     stellarator has none, so its path is untouched.
     """
-    degenerate = degenerate_fixed_points(driven, env)
-    array_valued = array_valued_problems(
-        driven, env, tuple(p for p in driven.declared if p not in set(degenerate))
+    keep = frozenset(keep)
+    degenerate = tuple(p for p in degenerate_fixed_points(driven, env) if p not in keep)
+    array_valued = tuple(
+        p
+        for p in array_valued_problems(
+            driven, env, tuple(p for p in driven.declared if p not in set(degenerate))
+        )
+        if p not in keep
     )
     dropped = tuple(degenerate) + tuple(array_valued)
     graph = Delete(dropped).apply(driven) if dropped else driven
@@ -824,7 +837,7 @@ def assemble(reference, driven, env, omit=(), switch_values=None):
             switch_values=switch_values,
             omit=omit_now,
         )
-        combined, residualised = sand_graph(with_problem)
+        combined, residualised = sand_graph(with_problem, keep=keep)
         return combined, residualised, report
 
     combined, residualised, report = build(omit)

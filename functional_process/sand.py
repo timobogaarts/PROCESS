@@ -947,9 +947,9 @@ def array_valued_problems(graph, env, problems=None):
     )
 
 
-def sand_graph(graph, skip=()):
-    """`graph` with every `FixedPoint` (bar `skip`) residualised and every problem
-    combined into one `^problem.sand`.
+def sand_graph(graph, skip=(), keep=()):
+    """`graph` with every `FixedPoint` (bar `skip`/`keep`) residualised and every problem
+    (bar `keep`) combined into one `^problem.sand`.
 
     `Residualise` converts `FixedPoint -> RootFind` (`r = g(u) - u`, always available);
     `Combine` folds `problem.py`'s `+`, and `Optimise + RootFind -> Optimise` **is**
@@ -960,15 +960,43 @@ def sand_graph(graph, skip=()):
     for problems a caller has *deleted*, not merely left alone. `sand_schedule` handles
     `degenerate_fixed_points` by dropping the problem node outright, which is the
     structurally honest answer: its unknown reverts to an ordinary boundary input.
+
+    `keep` -- which problems are *not* lifted into the SQP
+    -----------------------------------------------------
+    A problem named here is neither residualised nor combined: it stays a declared
+    problem of the returned graph, keeps its own unknowns and conditions, and is
+    answered by its own driver. Its unknowns therefore never join `Optimise.design`
+    and its residuals never join `Optimise.equalities`, which is exactly the shape
+    `mdf.py` leaves the same block in.
+
+    **This is a knob and not an exception**, deliberately: the question *"is SAND's
+    trouble on `stellarator_helias` the conditioning of one lifted row, or the lift
+    itself"* (`_audit/optimise_design.md` §23) is answered by moving one problem across
+    this parameter and changing nothing else. Hard-coding a name here would have made
+    the answer un-rerunnable on any other configuration.
+
+    A kept problem lands **inside the `Optimise`'s own SCC** -- the optimiser owns
+    variables everything reads and reads variables everything produces, so the two
+    problems share a block and `Blocking.scc` alone refuses it (*"declares 2 problems"*,
+    §6.1). `sand_schedule(nest=True)` is the caller-side half of this knob: it nests
+    the `Optimise` so the kept problem is driven in the interior, one inner solve per
+    outer condition evaluation. Passing `keep` without `nest=True` raises there rather
+    than here, because it is the *schedule* that cannot be built, not the graph.
     """
+    keep = frozenset(keep)
     plan = Plan(graph)
     residualised = []
     for problem in graph.declared:
-        if problem in skip or not isinstance(graph[problem], FixedPoint):
+        if problem in skip or problem in keep:
+            continue
+        if not isinstance(graph[problem], FixedPoint):
             continue
         plan = plan + Residualise(problem)
         residualised.append(problem)
-    plan = plan + Combine(NodePath((GetAttrKey("sand"),)), tuple(plan.graph.declared))
+    plan = plan + Combine(
+        NodePath((GetAttrKey("sand"),)),
+        tuple(p for p in plan.graph.declared if p not in keep),
+    )
     return plan.graph, tuple(residualised)
 
 
@@ -1001,10 +1029,14 @@ def constraints_outside_block(graph):
     reads at least one block-produced variable -- so nothing changes there.
     """
     blocking = Blocking.scc(graph)
+    # The `Optimise`'s own block, found by walking `blocks` for the node rather than by
+    # asking `blocking.problems`. That property raises on a block declaring two
+    # problems, which is exactly the shape `sand_graph(keep=...)` leaves behind, and
+    # this question -- *which constraints are outside the optimiser's block* -- has the
+    # same answer either way. Nothing else about the check changes.
+    optimise = next(p for p, d in graph.definitions.items() if isinstance(d, Optimise))
     problem_block = next(
-        frozenset(nodes)
-        for nodes, problem in zip(blocking.blocks, blocking.problems, strict=True)
-        if problem is not None
+        frozenset(nodes) for nodes in blocking.blocks if optimise in nodes
     )
     outside = {}
     for name in graph.nodes:
@@ -1098,6 +1130,8 @@ def sand_schedule(
     callback=None,
     condition_scale=(),
     max_iter=None,
+    nest=False,
+    inner_drivers=None,
 ):
     """A `Schedule` for `graph`'s single `^problem.sand`, answered by `driver`.
 
@@ -1108,8 +1142,36 @@ def sand_schedule(
 
     `max_iter` is forwarded the same way, and `None` keeps the driver's own default --
     see `mda.default_drivers` for what that default is and why a SAND block outgrows it.
+
+    `nest` -- the other half of `sand_graph`'s `keep`
+    ------------------------------------------------
+    `False` -- the default, and every published SAND row -- takes `Blocking.scc` flat,
+    which requires the `Optimise` to be the *only* declared problem in its block. `True`
+    takes `Blocking.scc(...).nest(<the Optimise>)` instead: the `Optimise` is answered at
+    the outer level and everything else in its block is blocked again, so a problem
+    `sand_graph(keep=...)` left in the graph becomes an inner `Drive` run once per outer
+    condition evaluation. That is `mdf.in_graph_root_find`'s own step 4 on a different
+    outer problem; nothing new is built here.
+
+    Nesting is not free and is not the default: an inner `Drive` inside the outer block's
+    body means the outer conditions are the output of a *converged inner solve*, so
+    `jax.jacfwd` of the condition map differentiates through that solve. That is the
+    point when the inner block is a genuine coupled loop, and it is dead weight when it
+    is not.
+
+    The `Optimise` is found by **type off the definitions**, not through
+    `blocking.problem_types`: the latter raises on a block declaring two problems, which
+    is precisely the shape `keep` creates and `nest` exists to answer, so asking it here
+    would refuse the arm before the nesting could be stated.
+
+    `inner_drivers` is `{problem: driver}` laid over `default_drivers`' choices, for a
+    caller that wants a *different algorithm* on a problem `keep` left in the graph --
+    the inner solve's tolerance is a real variable of the nested formulation, since the
+    outer conditions are only as smooth as the inner solve is converged
+    (`mdf.py`'s own *"what it needs instead is that the inner solve converge at every
+    trial point"*). Empty or `None` keeps the mechanical per-type choice.
     """
-    blocking = Blocking.scc(graph)
+    optimise = next(p for p, d in graph.definitions.items() if isinstance(d, Optimise))
     drivers = default_drivers(
         graph,
         bounds=bounds,
@@ -1118,14 +1180,12 @@ def sand_schedule(
         max_iter=max_iter,
     )
     if driver is not None:
-        problem = next(
-            p
-            for p, t in zip(blocking.problems, blocking.problem_types, strict=True)
-            if t is not None and issubclass(t, Optimise)
-        )
-        drivers[problem] = driver
+        drivers[optimise] = driver
+    drivers.update(inner_drivers or {})
     # Drivers go into the graph (`Assign`), and `schedule_for` reads them from there.
-    return schedule_for(Blocking.scc(assign_drivers(blocking.graph, drivers)))
+    assigned = assign_drivers(graph, drivers)
+    blocking = Blocking.scc(assigned)
+    return schedule_for(blocking.nest(optimise) if nest else blocking)
 
 
 def sand_shape(schedule: Schedule) -> dict:
