@@ -5162,3 +5162,337 @@ then, which is what §24.1 bought.
   same file say a step exists.
 - Scoped tests after §24.1: `tests/functional_process/test_mdf.py test_sand.py
   test_cold_matrix.py` -- **223 passed**, unchanged.
+
+---
+
+## 26. The missing-producer census, all seven configurations (2026-09-01)
+
+> **Measured in a scratch copy, not in the live tree**, at
+> `/tmp/claude-1000/-home-tbogaarts-PROCESS/df0c22b1-02c2-4e73-99ce-b061606f318d/scratchpad/PROCESS_producers`,
+> against `HEAD 6bb65494` plus that copy's own changes to `boundary.py`,
+> `core/solver/drivers.py` and their two test files. Source changes are supplied as
+> `.patch` files in the copy and were **not** applied to `~/PROCESS`. Every number
+> below was taken with `PYTHONPATH` set to the copy and with
+> `functional_process.__file__` printed as the first line of each run, per §27.5 of
+> `next_steps.md`.
+
+`next_steps.md` §27.4 asks the question this section answers: *how much of the
+instability currently blamed on the solver is actually a missing producer?* The answer,
+across the seven in-scope configurations, is **four paths, on three files, and none of
+them on `stellarator_helias`**.
+
+### 26.1 The measurement, and why the existing pins could not have made it
+
+Two independent discriminators were run over all seven files and they agree row for row.
+
+**Discriminator A -- structural, no PROCESS at all.** A path this configuration's graph
+*reads* and does not *own*, which some **other** configuration's graph does own. That is
+`big_q_plasma`'s shape exactly. It costs seven graph assemblies and answers **24 to 31
+rows per configuration** -- far too many to be a verdict, and useful only as a ranking
+(`boundary.owned_elsewhere`). `.physics.aspect` is on every tokamak's list because a
+stellarator's graph computes it from the config file, and it is a perfectly genuine
+tokamak input.
+
+**Discriminator B -- the value side.** `provider.answers_for`'s `computed` reason:
+PROCESS's own pipeline writes this path from cold, so the port freezes a seed where
+PROCESS has a live value. Independently cross-checked against a third quantity -- the
+frozen seed differenced against PROCESS's **converged** `DataStructure`
+(`sand_harness.reference_run`) -- and the two agree exactly, `0/0/0/0/1/3/4` per file in
+`CONFIGURATIONS` order.
+
+**Neither had ever been run on the graph that has the conditions in it, and that is the
+whole finding.** `reference_boundary*.txt`, `missing_producers_tokamak.txt`,
+`reference_provider_*.txt` and `boundary.unproduced_but_computed` are all measured on
+`driven_graph(graph_for(machine_from_indat(...)))` -- the **models**. The objective node
+and the constraint nodes are inserted later, by `mdf.mdf_graph`/`sand.optimise_graph`. A
+path read *only* by a condition is therefore invisible to every existing pin, and
+`.current_drive.big_q_plasma` is exactly that: nothing among the 241 model nodes of
+`st_regression` reads it, so it never entered that file's boundary at all.
+`reference_provider_st_regression.txt` reports **one** `computed` row; the same
+measurement over `mdf_graph`'s graph reports **four**.
+
+### 26.2 [measured] The census -- 4 paths, 8 rows, 3 files
+
+Frozen seed against PROCESS's own converged value, over the problem graph, iteration
+variables excluded (the optimiser owns those on purpose):
+
+| configuration | path | seed | PROCESS converged | read by |
+|---|---|---|---|---|
+| `stellarator_helias` | -- none -- | | | |
+| `helias_5b` | -- none -- | | | |
+| `large_tokamak_nof` | -- none -- | | | |
+| `large_tokamak_eval` | -- none -- | | | |
+| `low_aspect_ratio_DEMO` | `.cs_fatigue.n_cycle_min` | `20000.0` | `29382.181` | `.Constraint90` |
+| `spherical_tokamak_eval` | `.build.r_cp_top` | `0.0` | `1.2089` | `.tokamak.cicc_superconducting_tf_coil.tf_coil_shape` |
+| | `.constraints.pflux_fw_rad_max_mw` | `0.0` | `0.49896` | `.Constraint67` |
+| | `.physics.p_plasma_separatrix_rmajor_mw` | `0.0` | `40.2816` | `.Constraint56` |
+| `st_regression` | `.current_drive.big_q_plasma` | `0.0` | `16.58858` | `.Objective` |
+| | `.build.r_cp_top` | `0.0` | `1.3405` | `.tokamak.cicc_superconducting_tf_coil.tf_coil_shape` |
+| | `.constraints.pflux_fw_rad_max_mw` | `0.0` | `0.36324` | `.Constraint67` |
+| | `.physics.p_plasma_separatrix_rmajor_mw` | `0.0` | `40.0000` | `.Constraint56` |
+
+**One of the eight is a false positive, and it was found by reading the code the
+discriminator flagged.** `.cs_fatigue.n_cycle_min` on `low_aspect_ratio_DEMO` is a
+**dead read**. PROCESS's `constraint_equation_90` has a *side effect* --
+`if data.costs.ibkt_life == 1 and data.cs_fatigue.bkt_life_csf == 1:
+data.cs_fatigue.n_cycle_min = data.costs.bktcycles` (`constraints.py:1895`) -- and that
+file sets both switches (`:626`, `:634`). The port's `constraint_90` already reproduces
+the override *in the value it compares*, and `ibkt_life`/`bkt_life_csf` are bound
+statically, so the node's body is `partial(constraint_90, ibkt_life=1, bkt_life_csf=1)`
+and the `n_cycle_min` argument is discarded. `.costs.bktcycles` **is** owned on that
+configuration. The frozen `20000.0` is never used. The wart is that the node still
+declares the read, which puts a path on the boundary that nothing consumes.
+
+That leaves **seven live rows on two files**, and both files are spherical tokamaks.
+
+### 26.3 [measured] Blast radius, ranked
+
+| rank | path | configuration(s) | objective? | constraint? | cone | why it ranks here |
+|---|---|---|---|---|---|---|
+| 1 | `.current_drive.big_q_plasma` | `st_regression` | **yes, it *is* the objective** | -- | 1 | `objective_metric_5` is the identity on it. The objective and its whole gradient row are identically zero, so VMCON's convergence test loses its first term exactly and the run solves a **feasibility problem** and reports `converged` |
+| 2 | `.physics.p_plasma_separatrix_rmajor_mw` | `st_regression` | no | c56 (`leq`, driven) | 1 | frozen `0.0` against a bound of `40`, so c56 reads as satisfied with margin and has a zero row. **PROCESS's own converged answer is `39.99999999988` -- c56 is *active*, sitting exactly on its bound.** The port is solving a strictly relaxed problem whose single most binding constraint is absent |
+| 3 | `.physics.p_plasma_separatrix_rmajor_mw` | `spherical_tokamak_eval` | no | c56 (reported, not driven) | 1 | same freeze; PROCESS reads `40.2816` against the same bound of `40`, i.e. **violated at PROCESS's own answer**, where the port prints it comfortably satisfied. Evaluation mode, so it does not change the solve -- it changes what the row says |
+| 4 | `.build.r_cp_top` | both STs | no | 1 inequality | 43 nodes | the centrepost top radius, frozen at `0.0` where PROCESS has `1.21`/`1.34` m. Read by `.tokamak.cicc_superconducting_tf_coil.tf_coil_shape`, so it is *live* in the model chain rather than inert -- a wrong value propagating, not a dead one. Already on `reference_provider_*.txt` as this port's only pre-existing `computed` row |
+| 5 | `.constraints.pflux_fw_rad_max_mw` | both STs | no | c67 (`leq`) | 1 | frozen `0.0` against a bound of `1.2`; PROCESS reads `0.36`/`0.50`, i.e. **not** binding at its own answer. A zero gradient row and an inert constraint, but not one that changes where the optimum is |
+| -- | `.cs_fatigue.n_cycle_min` | `low_aspect_ratio_DEMO` | no | c90, discarded | 1 | see §26.2 -- a declared read the body throws away. Cosmetic |
+
+### 26.4 [measured] `stellarator_helias` SAND: **no.** Nothing in that problem is frozen
+
+`next_steps.md` §27.4's headline question, asked of the configuration under most
+suspicion (§21, §23, §24 -- six independent levers flip its outcome), and the answer is
+a clean negative:
+
+- **0** boundary inputs of that configuration's problem graph are classified `computed`.
+- **0** of its 294 boundary inputs differ from PROCESS's converged `DataStructure`.
+- **0** of its 15 driven conditions -- the objective, 2 equalities, 12 inequalities -- is
+  unreachable from its 8 design variables. Every row of the Jacobian is live.
+
+The 27 `owned-elsewhere` rows it does have are all either declared `IN.DAT`
+inputs/defaults (`.tfcoil.dx_tf_turn_general`, `.physics.kappa`) or the `unwritten`
+shape §22 already documents -- a path PROCESS's own stellarator pipeline never writes
+either, so PROCESS computes with the same untouched default the port does
+(`.physics.plasma_current`, `.physics.p_plasma_ohmic_mw`, `.pf_power.ensxpfm`,
+`.build.r_tf_inboard_mid`, ... all at `0.0` on both sides). `.physics.dlamie`'s case
+from §22 generalises to fifteen more paths.
+
+**So the `stellarator_helias` fork is not a missing producer, and §27.6's remaining
+candidate -- instrument the merit function and the line search -- keeps the whole of the
+evidence.** This is the fourth structural explanation ruled out for that configuration
+and the first one ruled out *cheaply*: it cost no solve.
+
+### 26.5 The guard, implemented -- and it is structural, not numeric
+
+Two checks, deliberately a matched pair. Both follow `drivers._refuse_non_finite`'s
+convention: refuse loudly, name the offending rows, and stay a *measurement* --
+`run_cold_matrix.run_one` catches any raise per phase and records it as a row with a
+reason.
+
+**1. `boundary.inert_conditions` / `refuse_inert_conditions` -- before anything runs.**
+A condition of the stated problem that is not in `Graph.reach(design)` has an
+identically zero Jacobian row by construction: no design variable reaches it, so its
+value is a constant over the whole design space. It is a walk over declared reads and
+owns -- **no PROCESS run, no seed, no solve, no Jacobian**; the whole seven-file census
+is seven graph assemblies:
+
+```
+$ $PY -m functional_process.boundary --inert
+stellarator_helias.IN.DAT          8 design,  15 driven condition(s) -> 0 inert
+helias_5b.IN.DAT                   3 design,   6 driven condition(s) -> 1 inert
+    .Constraint11    1/2 operand(s) frozen, 25 in cone: .physics.rmajor
+large_tokamak_nof.IN.DAT          20 design,  27 driven condition(s) -> 0 inert
+large_tokamak_eval.IN.DAT          2 design,   2 driven condition(s) -> 0 inert  (+8/23 reported-only)
+low_aspect_ratio_DEMO.IN.DAT      19 design,  26 driven condition(s) -> 0 inert
+spherical_tokamak_eval.IN.DAT      3 design,   3 driven condition(s) -> 0 inert  (+2/15 reported-only)
+    reported-only .Constraint56    2/2 operand(s) frozen, 2 in cone: ...
+    reported-only .Constraint67    2/2 operand(s) frozen, 2 in cone: ...
+st_regression.IN.DAT              14 design,  19 driven condition(s) -> 3 inert
+    .Objective       1/1 operand(s) frozen, 1 in cone: .current_drive.big_q_plasma
+    .Constraint56    2/2 operand(s) frozen, 2 in cone: .constraints.p_plasma_separatrix_rmajor_max_mw, .physics.p_plasma_separatrix_rmajor_mw
+    .Constraint67    2/2 operand(s) frozen, 2 in cone: .constraints.pflux_fw_rad_max, .constraints.pflux_fw_rad_max_mw
+```
+
+**`n of n operands frozen` is the discriminator, and it separates the two kinds
+cleanly.** Every one of the four defects reads `1/1` or `2/2` -- a condition comparing
+two constants. Every benign row reads `0/2`, `1/2` or `1/3`.
+
+An **evaluation-mode file's inequalities are `reported`, not `driven`**, and are
+excluded from the refusal: PROCESS root-finds the equalities alone on
+`i_process_run_mode = -2` and never examines the inequalities, so eight of
+`large_tokamak_eval`'s 23 are inert *by design*. They are still printed, because
+`spherical_tokamak_eval`'s `.Constraint56` is one of them and it is a real defect.
+
+**2. `drivers._refuse_inert_objective` -- at the first Jacobian the SQP forms.** Row 0
+is the objective (`_Problem.__call__`'s own `f=values[0]`) and the columns are the
+design variables; if the whole row is zero the driver refuses. Checked **once**, at the
+first evaluation, not per iteration -- a zero objective gradient at an interior iterate
+is a legitimate thing for a well-posed problem to reach; one at the starting point is a
+statement about the problem. Other zero rows are *named and not refused on*, because
+`helias_5b`'s c11 is one and that file converges.
+
+Run end to end, the `st_regression` MDF row goes from `converged`/`objf -0` to:
+
+```
+st_regression MDF: ValueError: the objective ^cond.numerics.objf has an identically zero
+gradient with respect to all 14 design variable(s), so this is not an optimisation: the
+SQP will solve the feasibility problem that remains and report it as converged.
+  design variables: ['.physics.temp_plasma_electron_vol_avg_kev', ... ]
+  other conditions with an all-zero row: ['^cond.constraints.c56', '^cond.constraints.c67']
+```
+
+-- one `FAILED` row with the cause in the notes, and the numeric check independently
+rediscovering c56 and c67, which the static one had already named without running
+anything.
+
+### 26.6 Two predictions this section made and measurement refuted
+
+- **"An inert condition caused by the file's own problem statement will have an empty
+  frozen-read cone."** False, and it would have made the check useless. Every chain
+  ends at the boundary: `helias_5b`'s `.Constraint11` has **25** perfectly ordinary
+  inputs in its cone (`.build.dr_blkt_inboard`, `.tfcoil.tftmp`, ...) and looked exactly
+  like a defect. The field was rewritten to hold the node's **own** operands, where the
+  ratio `len(frozen)/operands` does separate the two, and `Inert.frozen`'s docstring
+  records the refutation rather than the first design.
+- **"`.cs_fatigue.n_cycle_min` on `low_aspect_ratio_DEMO` is a missing producer."** Both
+  discriminators said so and both were right about the *declaration*; the read is dead
+  (§26.2). Whatever is wrong with that configuration's SAND cap at 500 is not this.
+
+And one correction to a claim already in the tree: `models/physics/exhaust.py`'s module
+docstring says `calculate_psep_over_r_metric` is left unported because *"no active
+constraint and no ported node reads `.physics.p_plasma_separatrix_rmajor_mw`, so an
+occupant for it would be a producer with no consumer."* That was true when it was
+written and is **not true now** -- constraint 56 is active on both spherical tokamaks
+and reads exactly that path. It is the same shape as the `.physics.p_div_bt_q_aspect_
+rmajor_mw`/constraint 68 finding §11.5 records two bullets above it, and it is
+"the same three lines and one `physics.py` line" by that docstring's own account.
+
+### 26.7 Not resolved
+
+- **Whether porting the four producers fixes anything.** Out of scope by instruction --
+  this section finds and ranks them; it does not fix them. What is *known* is that
+  `st_regression` cannot be measured at all until `big_q_plasma` has a producer, because
+  the file's objective is the only thing that makes it an optimisation.
+- **`spherical_tokamak_eval` MDF's `min ie -1.38e+01`** is not explained by anything
+  here: all three of its frozen paths make constraints read as *satisfied*, so none of
+  them can produce a violation of that size. Unchanged as an open item.
+- **`st_regression` SAND's `KeyError: VarPath(^cond.numerics.objf)`** shares the root
+  (`sand` has no objective condition to prune to when the metric is a bare boundary
+  read) but was not investigated further; the guard does not reach it, because assembly
+  fails before any driver is built.
+- **The `unwritten` bucket** -- 65 to 68 rows on every configuration, paths PROCESS's
+  own pipeline never writes either -- is faithful by construction *on the machines
+  measured*, but §22's `.physics.dlamie` case shows the same path can be `unwritten` on
+  one machine and `computed` on another. Nothing checks that a path is `unwritten`
+  for the same *reason* PROCESS leaves it alone.
+- **Only `mdf.mdf_graph`'s assembly is checked.** SAND's `sand.optimise_graph` inserts
+  the same conditions, so the census transfers; the guard is not wired into the SAND
+  path, and `run_sand_harness.py` does not call `refuse_inert_conditions` either.
+- Scoped tests: `tests/functional_process/test_boundary.py` (**39 passed**),
+  `tests/functional_process/core/solver/test_drivers.py` (**15 passed**), plus the two
+  `run_cold_matrix` rows quoted above.
+
+### 26.8 The `from the seed` paths, enumerated -- and none of them is downstream of PROCESS's solve
+
+Every configuration's `--provider` boundary line ends *"N from the seed"* (18/18/21/22/21/20/19
+in `CONFIGURATIONS` order). Those are the paths `provider.answers_for` classifies but
+cannot *answer* -- `a.independent` is false -- so they keep `reference.cold`'s value.
+They are the exact set the port still needs a live PROCESS for. **Reproduced to the row**:
+the same counts fall out of a fresh `provide(driven_graph(graph_for(...)), ...)` over the
+model graph, and the problem graph adds 0--3 more (the conditions' own reads, §26.1).
+
+#### 26.8.1 [measured] Every one is an init-time constant. The concern is dependence, not contamination
+
+For each of the 30 distinct rows, three values were compared: `cold_state.seed` (after
+`init_process`, before any model), `cold_state.process` (after one `Evaluators.fcnvmc1`
+pass) and `reference_run(...).data` (PROCESS's **converged** answer).
+
+**Every non-`computed` row is bit-identical across all three.** No model pass moves them
+and no solve moves them. So the coordinator's caution is confirmed by measurement rather
+than by argument: these are a *starting state*, `install` runs with `disagreeing=False`
+so every value it does write is bit-identical to the one it replaces, and nothing here is
+the port being handed a piece of PROCESS's answer.
+
+**The exception is exactly the `computed` reason, and it is §26's list.** Five rows move
+(`.build.r_cp_top`, `.constraints.pflux_fw_rad_max_mw`,
+`.physics.p_plasma_separatrix_rmajor_mw`, `.current_drive.big_q_plasma`,
+`.cs_fatigue.n_cycle_min`) -- the missing producers, already ranked in §26.3, and the
+only from-the-seed rows that are downstream of anything.
+
+#### 26.8.2 [measured] The enumeration, by class
+
+| rows | path(s) | reason | on | class |
+|---|---|---|---|---|
+| 12 | `.impurity_radiation.f_nd_impurity_electron_array[2..13]` | `derived` | 7/7 (11/7 where element 12 is `ixc` 135) | **1** -- `init.py:382-385` copies the declared input array `f_nd_impurity_electrons` element-wise |
+| 4 | `.impurity_radiation.{temp_impurity_keV_array, pden_impurity_lz_nd_temp_array, impurity_arr_zav, m_impurity_amu_array}` | `derived` | 7/7 | **3** -- atomic-physics **data tables**, read by `init_imp_element` from 28 shipped `.dat` files in `process/data/lz_non_corona_14_elements/`. Neither an `IN.DAT` input nor a computation |
+| 1 | `.divertor.n_divertors` | `derived` | 5/7 | **1** -- `init.py:607-617`, `2` for a double null and `1` otherwise, off `.physics.i_single_null` |
+| 4 | `.pf_coil.{zref, rref, c_pf_coil_turn_peak_input, j_pf_coil_wp_peak}` | `input` | 5/2/3/3 of 7 | **2** -- declared `InputVariable`s the file *does* name, whose text is an **array**; `provider._scalar` returns `None` for it and `answer` falls back to the seed |
+| 1--2 | `.tfcoil.dcond[0/2/4/8]` | `default` | 4/3/1/2 of 7 | **2** -- a declared input the file does not name, addressed per element; `answer` never marks an element independent |
+| 1--4 | the five `computed` paths | `computed` | see §26.2 | **missing producer** |
+
+#### 26.8.3 [measured] The gap is `provider.py`'s, not the port's -- `native.py` already derives almost all of it
+
+Asked from the other side, statically (`native_state(input_file).values` against each
+problem graph's boundary, no solve), the answer is far smaller than the 18--22:
+
+| configuration | boundary places | native cannot answer |
+|---|---|---|
+| `stellarator_helias` | 308 | **5** |
+| `helias_5b` | 302 | **5** |
+| `large_tokamak_nof` | 412 | **5** |
+| `large_tokamak_eval` | 410 | **5** |
+| `low_aspect_ratio_DEMO` | 411 | **5** |
+| `spherical_tokamak_eval` | 389 | **5** |
+| `st_regression` | 391 | **6** |
+
+`native.DERIVATIONS` already carries `_initialise_imprad` (which fills the four tables
+from the port's own **vendored** `impurity_tables()`/`M_IMPURITY_AMU_ARRAY`, so the
+`.dat` files are a build-time dependency and not a runtime one), `_alias_impurity_fractions`
+(the twelve element rows) and `_single_or_double_null` (`n_divertors`), and
+`DATACLASS_DEFAULTS` + `read_indat` cover the `pf_coil` arrays and `dcond`. **So class 1
+and class 3 are already derived somewhere in this tree; what is missing is a rule in
+`provider.py`, whose answer ladder has no `derived` arm and falls through to the seed.**
+That is a smaller and much more specific work item than "18 paths need deriving".
+
+#### 26.8.4 [measured] The `none: 5` column is closed, and it is benign
+
+The five that appear on *every* configuration are
+`.vacuum.{l1, l2, l3, ceff_i, xmult_i}`, and the two instruments agree exactly: they are
+the `nothing` rows `provider.install` counts (`None` in both columns) **and** the whole
+of the static native gap. They are **not `DataStructure` fields at all** --
+`VacuumData` has no such attributes -- so `provider._get` returns `None` because the
+attribute is absent. They are *minted* names for locals of PROCESS's
+`_solve_vacuum_pumping_old` per-species loop, read by one node,
+`.vacuum.duct_diameter_root_find`, which `models/vacuum/namespace.py:22` registers as a
+**deliberate island**: no producer edge, no consumer edge, undriven, cone of 2, reaching
+no condition on any configuration. Nothing evaluates them in a solve.
+
+One correction to a docstring in the tree: `provider.install` says *"`.vacuum.l1` and
+four siblings **default to `None`**"*. They have no default because they have no field;
+the behaviour is the same and the reason is not.
+
+`st_regression`'s sixth is `.current_drive.big_q_plasma` -- the native side finding the
+same missing producer from the other direction, with no graph reachability argument
+needed.
+
+#### 26.8.5 What this does not settle
+
+- **`provider.py` gaining a `derived` arm is untried.** Whether wiring `native.DERIVATIONS`
+  into the provider's ladder leaves the matrix bitwise is a one-line experiment and a
+  measurement, and it was not run here.
+- **`--native` was not run.** The comparison above is static, per the instruction; a
+  native *solve* pass would say whether answering these paths independently changes an
+  answer, and §22.7's result (13 `off` paths cost four of seven configurations their
+  solve) says not to assume it does not.
+- **The four impurity tables are vendored, not validated here.** That
+  `impurity_tables()` reproduces `init_imp_element`'s reads of the 28 `.dat` files is
+  `native.py`'s claim and this section relies on it; it was not re-measured.
+- **One pre-existing test failure, met in passing and not caused by anything here.**
+  `tests/functional_process/test_provider.py::test_each_configuration_s_answer_is_its_pin[st_regression]`
+  fails at `HEAD 6bb65494`. Confirmed not to be this section's: the same test fails in
+  the same copy with `boundary.py` and `drivers.py` restored from `~/PROCESS`
+  (1 failed, 6 passed, 3 s), and neither change touches `provider.provide`'s path. The
+  diff is a **new guess port** -- `^guess.tfcoil.dr_tf_plasma_case` where the pin has
+  `^guess.times.t_plant_pulse_burn` -- plus one extra `unwritten defaults
+  .vacuum.xmult_i` row. By `boundary.py`'s own rule a `guess` moves only when a `Drive`
+  does, so `reference_provider_st_regression.txt` is stale against a structural change,
+  and the fix is `$PY -m functional_process.provider --write`. Not done here, because
+  regenerating a published pin belongs to whoever made the structure move.

@@ -211,6 +211,66 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     )
 
 
+def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
+    """Raise if the objective's gradient row is identically zero at the **start**.
+
+    The numeric twin of `boundary.inert_conditions`, and the guard whose absence cost
+    a session (`_audit/optimise_design.md` §26). `st_regression.IN.DAT` states a real
+    optimisation -- `i_process_run_mode = 1`, which PROCESS solves in 16 VMCON
+    iterations to `objf = -16.5885765` -- and maximises `FUSION_GAIN_Q`, whose metric
+    reads `.current_drive.big_q_plasma`. On a *tokamak* graph nothing owns that path;
+    only `models/stellarator/heating.py` does. So it was a boundary input frozen at its
+    cold `0.0`, the objective was identically zero with an identically zero gradient at
+    every iterate, and VMCON quietly solved the **feasibility** problem that leaves
+    while reporting `converged` in 4 iterations. `d objf 1.00e+00` and
+    `worst dx 9.90e+01` were the only symptoms and both read as ordinary disagreement.
+
+    **Row 0 is the objective**, by `_Problem.__call__`'s own `f=values[0]`, and the
+    columns are the design variables. `grad f == 0` deletes the first term of VMCON's
+    convergence test exactly, so the test is then over the constraints alone -- which
+    is why the run converged and said so.
+
+    **Checked once, at the first evaluation, and not on every call.** A zero objective
+    gradient at an *interior* iterate is a legitimate thing for a well-posed problem to
+    reach (a stationary point, or an optimum in every design direction); a zero one at
+    the starting point is a statement about the problem rather than about where it got
+    to. Refusing per-iteration would turn success into a crash.
+
+    Other identically zero rows are *named and not refused on*. A constraint the
+    design cannot steer is common and often intended -- `helias_5b`'s equality 11
+    compares a radial build against `.physics.rmajor` on a file whose three iteration
+    variables are the temperature, the density and `hfact` -- so listing them helps a
+    reader while refusing on them would fail working configurations.
+
+    Raises
+    ------
+    ValueError
+        Naming the objective, the design variables, and any other zero rows.
+    """
+    jacobian = np.asarray(jacobian, dtype=float)
+    if jacobian.size == 0 or np.any(jacobian[0] != 0.0):
+        return
+    names = [c.path_str() for c in conditions.conditions]
+    others = [
+        n
+        for n, row in zip(names[1:], jacobian[1:], strict=True)
+        if not np.any(row != 0.0)
+    ]
+    raise ValueError(
+        f"the objective {names[0]} has an identically zero gradient with respect to "
+        f"all {jacobian.shape[1]} design variable(s), so this is not an optimisation: "
+        "the SQP will solve the feasibility problem that remains and report it as "
+        "converged.\n"
+        f"  design variables: {[u.path_str() for u in conditions.unknowns]}\n"
+        f"  other conditions with an all-zero row: {others or 'none'}\n"
+        "The usual cause is a MISSING PRODUCER -- the objective reads a path this "
+        "configuration's graph does not own, so it is a boundary input frozen at its "
+        "seed while PROCESS computes a live value. "
+        "`$PY -m functional_process.boundary --inert --input <IN.DAT>` names the path "
+        "without running anything; see `_audit/optimise_design.md` §26."
+    )
+
+
 class Status(DriverOut):
     """The integer code the driver's own solver library stopped with.
 
@@ -1075,6 +1135,11 @@ class VmconDriver(AbstractDriver):
                     )
                 return np.stack(columns, axis=1)
 
+            # Flipped by the first `_Problem.__call__`. `_refuse_inert_objective` is a
+            # statement about the problem, not about an iterate, and its docstring says
+            # why running it per-iteration would fail working configurations.
+            started = [True]
+
             class _Problem(AbstractProblem):
                 def __call__(_self, x_scaled):  # noqa: N805 -- pyvmcon's own signature
                     flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
@@ -1089,6 +1154,9 @@ class VmconDriver(AbstractDriver):
                         / scale[None, :]
                     )
                     _refuse_non_finite(values, full, conditions)
+                    if started[0]:
+                        started[0] = False
+                        _refuse_inert_objective(full, conditions)
                     return Result(
                         f=values[0],
                         df=full[0],

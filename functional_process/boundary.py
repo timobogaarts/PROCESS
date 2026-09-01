@@ -45,10 +45,23 @@ Regenerate a pin (never hand-edit one) with::
 
     $PY -m functional_process.boundary --write             # the stellarator
     $PY -m functional_process.boundary --machine --write   # the tokamak
+
+**The boundary of the model graph is not the boundary of the problem.** Everything
+above -- the pins, `provider.py`'s classification, `unproduced_but_computed` -- is
+measured on `driven_graph(graph_for(...))`, which carries the models and *not* the
+objective or the constraint nodes. A path read only by a condition is therefore
+invisible to all of it, and that is how `st_regression`'s objective came to read a
+frozen `0.0` for a whole session (`_audit/optimise_design.md` §26). `inert_conditions`
+and `refuse_inert_conditions` are the check for that half, over `mdf.mdf_graph`'s
+graph, and they need no PROCESS run at all::
+
+    $PY -m functional_process.boundary --inert             # all seven configurations
+    $PY -m functional_process.boundary --inert --input tests/.../st_regression.IN.DAT
 """
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from collections.abc import Iterable, Mapping
 
@@ -253,6 +266,238 @@ def unproduced_but_computed(
     return tuple(found)
 
 
+@dataclasses.dataclass(frozen=True)
+class Inert:
+    """One condition of a stated problem that **no design variable reaches**.
+
+    Its value is a constant over the whole design space, so its Jacobian row is
+    identically zero and the optimiser cannot steer it. The row is still *evaluated*
+    and still *reported*, which is what makes this defect quiet: an inert objective
+    reads `-0` and an inert `leq` whose frozen operand is `0.0` reads as comfortably
+    satisfied.
+    """
+
+    condition: VarPath
+    """The condition's own `VarPath` -- `^cond.numerics.objf`, `^cond.constraints.c56`.
+    """
+
+    node: NodePath
+    """The node owning it -- what the diagnostic names, `.Objective`/`.Constraint56`."""
+
+    frozen: tuple[VarPath, ...]
+    """The condition node's **own** operands that are boundary inputs, name-sorted.
+
+    Its own reads, not its cone. **A predicted discriminator that measurement
+    refuted, and the correction:** the first version of this field held every boundary
+    input in the ancestor cone, on the reasoning that a condition inert because of the
+    file's own problem statement would have an empty one and a condition inert because
+    of a missing producer would not. It is never empty. Every chain ends at the
+    boundary, so `helias_5b`'s `.Constraint11` -- which is inert purely because its
+    three iteration variables are the temperature, the density and `hfact`, none of
+    which moves a stellarator's radial build -- listed twenty-five perfectly ordinary
+    inputs (`.build.dr_blkt_inboard`, `.tfcoil.tftmp`, ...) and looked exactly like a
+    defect. The cone size is kept as `cone` for scale; the *direct* operands are what
+    separates the two:
+
+    - `len(frozen) == len(operands)` is a condition comparing two constants, and no
+      configuration of a working problem should state one. Both `st_regression`
+      rows are this shape -- `.Constraint56` is `leq(.physics.p_plasma_separatrix_
+      rmajor_mw, .constraints.p_plasma_separatrix_rmajor_max_mw)` with *both* operands
+      frozen, and `.Objective` is `objective_metric_5(.current_drive.big_q_plasma)`,
+      one operand of one.
+    - a condition with a live operand it still cannot steer is the second kind.
+      `.Constraint11` is `eq(.build.rbld, .physics.rmajor)`: `rbld` is owned and
+      genuinely computed, and the `ixc` simply does not reach it.
+
+    Neither test is a verdict on its own. The verdict is the value side --
+    `provider.answers_for`'s `computed` reason, or `unproduced_but_computed` -- which
+    asks whether PROCESS's own pipeline writes the path this graph freezes.
+    """
+
+    operands: int
+    """How many variables the condition node reads in total. `len(frozen)` out of this
+    many is the ratio the field above is about."""
+
+    cone: int
+    """How many boundary inputs are in the whole ancestor cone. Scale, not evidence --
+    see `frozen`. `st_regression`'s `.Objective` has 1; `helias_5b`'s `.Constraint11`
+    has 25."""
+
+
+def _frozen(graph: Graph, design: Iterable[VarPath]) -> set[VarPath]:
+    """The graph's boundary inputs **minus the design variables**.
+
+    The subtraction is not cosmetic. `mdf.mdf_graph` inserts the conditions and *not*
+    the `Optimise`, so every active `ixc` entry is an unowned input of that graph --
+    owned by the problem, which is not in it. Counting those as frozen would call a
+    steered variable stuck and would put a design variable in a diagnostic that says
+    "this is a missing producer".
+    """
+    return set(graph.unowned_inputs) - set(design)
+
+
+def frozen_reads(
+    graph: Graph, name: NodePath, design: Iterable[VarPath] = ()
+) -> tuple[VarPath, ...]:
+    """The graph's frozen boundary inputs among `name`'s **own** reads, name-sorted."""
+    outside = _frozen(graph, design)
+    return tuple(
+        sorted(
+            (v for v in graph[name].reads if v in outside), key=lambda v: v.path_str()
+        )
+    )
+
+
+def frozen_cone(graph: Graph, name: NodePath, design: Iterable[VarPath] = ()) -> int:
+    """How many frozen boundary inputs feed `name`, transitively.
+
+    `Graph.ancestors` is inclusive, so this counts `name`'s own reads too.
+    """
+    outside = _frozen(graph, design)
+    return len({
+        var
+        for above in graph.ancestors((name,))
+        for var in graph[above].reads
+        if var in outside
+    })
+
+
+def inert_conditions(
+    graph: Graph, design: Iterable[VarPath], conditions: Iterable[VarPath]
+) -> tuple[Inert, ...]:
+    """The `conditions` of `graph` that no variable in `design` reaches. **The check.**
+
+    `_audit/optimise_design.md` §26 is what this exists for. `st_regression.IN.DAT`
+    states a real optimisation (`i_process_run_mode = 1`) maximising `FUSION_GAIN_Q`,
+    which reads `.current_drive.big_q_plasma` -- a path only
+    `models/stellarator/heating.py` owns, so on a *tokamak* graph it is a boundary
+    input frozen at its cold `0.0`. VMCON was handed an objective that was identically
+    zero with an identically zero gradient, solved the feasibility problem that leaves,
+    and reported `converged` in 4 iterations. Nothing refused and nothing warned; the
+    only symptoms in `reference_cold_matrix.txt` were `objf -0` and `d objf 1.00e+00`,
+    both of which read as ordinary disagreement.
+
+    **Structural, and that is the point.** `Graph.reach` is a walk over declared reads
+    and owns -- no PROCESS run, no seed, no solve, no Jacobian. The whole census over
+    the seven reference configurations costs seven graph assemblies. The numeric twin
+    (`drivers._refuse_inert_objective`, on the first Jacobian the SQP forms) catches the
+    same defect one step later and catches numeric coincidences this cannot see; this
+    one catches it before anything is evaluated and can say *which boundary path* the
+    row rests on, which a zero Jacobian row cannot.
+
+    `design` entries the graph does not know are dropped rather than raising: an `ixc`
+    the assembled graph does not carry as a variable is a different defect with its own
+    report, and this check should not be the thing that fails on it.
+
+    Parameters
+    ----------
+    graph :
+        The assembled problem graph -- `mdf.mdf_graph`'s, i.e. models *plus* the
+        objective and constraint nodes. The plain model graph carries none of the
+        conditions and so has nothing for this to check, which is exactly why the
+        `reference_provider_*.txt` pins never saw `big_q_plasma`.
+    design :
+        The design variables' `VarPath`s -- `sand.iteration_variable_path` over the
+        run's `ixc`.
+    conditions :
+        The conditions to check, objective first if there is one.
+    """
+    design = tuple(design)
+    known = set(graph.variables)
+    reached = set(graph.reach([v for v in design if v in known]))
+    owners = graph.owners
+    found = []
+    for condition in conditions:
+        name = owners.get(condition)
+        if name is None or name in reached:
+            continue
+        found.append(
+            Inert(
+                condition,
+                name,
+                frozen_reads(graph, name, design),
+                len(graph[name].reads),
+                frozen_cone(graph, name, design),
+            )
+        )
+    return tuple(found)
+
+
+def refuse_inert_conditions(
+    graph: Graph, design: Iterable[VarPath], conditions: Iterable[VarPath]
+) -> None:
+    """Raise unless every one of `conditions` is reachable from `design`.
+
+    Same shape as `check_boundary` and `drivers._refuse_non_finite`: a refusal that
+    names the offending rows and their cause, so that a caller which records refusals
+    (`run_cold_matrix.py` turns any raise into a row with a reason) reports a
+    *measurement* rather than a crash.
+
+    Raises
+    ------
+    ValueError
+        Naming every inert condition, how many of its operands are frozen, and which.
+    """
+    inert = inert_conditions(graph, design, conditions)
+    if not inert:
+        return
+    lines = [
+        f"  {row.node.path_str()}  ({row.condition.path_str()})  "
+        f"{len(row.frozen)} of its {row.operands} operand(s) frozen"
+        + (": " + ", ".join(v.path_str() for v in row.frozen) if row.frozen else "")
+        + f"; {row.cone} boundary input(s) in its cone"
+        for row in inert
+    ]
+    raise ValueError(
+        f"{len(inert)} condition(s) of this problem are not reachable from any design "
+        "variable, so their Jacobian rows are identically zero and the optimiser "
+        "cannot steer them:\n"
+        + "\n".join(lines)
+        + "\n\nAn inert OBJECTIVE turns the optimisation into a feasibility problem "
+        "while still reporting `converged` -- see `_audit/optimise_design.md` §26. A "
+        "row that rests on a frozen boundary input is a missing producer: PROCESS "
+        "computes that path and this graph does not own it, so the port evaluates the "
+        "condition at a seed where PROCESS evaluates it at a live value."
+    )
+
+
+def owned_elsewhere(
+    graph: Graph, others: Mapping[str, Graph]
+) -> tuple[tuple[VarPath, tuple[str, ...]], ...]:
+    """Boundary inputs of `graph` that some *other* configuration's graph **owns**.
+
+    **The cheap discriminator, and the one that would have caught `st_regression`.**
+    A path this graph reads but does not produce, which a node elsewhere in the repo
+    does produce, is the `big_q_plasma` shape exactly: not an input at all, but a
+    quantity whose producer sits on a variant arm this configuration does not select.
+
+    It is a *lead*, not a verdict, and the difference matters -- 24 to 31 rows per
+    configuration answer it and only a handful are defects. `.physics.aspect` is owned
+    by a stellarator's graph (`aspect = rmajor / rminor` falls out of the config file)
+    and is a declared input on every tokamak, which is correct on both. The verdict
+    needs the value side: `unproduced_but_computed`, or `provider.answers_for`'s
+    `computed` reason. Use this to *rank* what to check, and note that it is not
+    sufficient on its own either -- `.physics.p_plasma_separatrix_rmajor_mw` is owned
+    by no graph in the repo at all (`models/physics/exhaust.py` leaves
+    `calculate_psep_over_r_metric` unported) and is still a missing producer.
+
+    Returns
+    -------
+    :
+        `(path, (name, ...))` per row, the names those of `others` that own it, sorted
+        by written path.
+    """
+    mine = set(graph.owners)
+    rows = []
+    for kind, var in boundary(graph):
+        if kind != INPUT or var in mine:
+            continue
+        owners = tuple(sorted(k for k, g in others.items() if var in g.owners))
+        if owners:
+            rows.append((var, owners))
+    return tuple(rows)
+
+
 def orphaned_by(base: Graph, swapped: Graph) -> tuple[VarPath, ...]:
     """Reads that `base` produced, `swapped` does not, and something still reads.
 
@@ -293,7 +538,8 @@ def write_pin(graph: Graph, path: str = PIN) -> tuple[tuple[str, VarPath], ...]:
             "# produce. Generated by `$PY -m functional_process.boundary --write`;\n"
             "# do not hand-edit. `input` is read from PROCESS's DataStructure and\n"
             "# growth in it is a lost producer; `guess` is a Start port for a driven\n"
-            "# unknown and moves only when a Drive does. See functional_process/boundary.py.\n"
+            "# unknown and moves only when a Drive does. See "
+            "functional_process/boundary.py.\n"
         )
         for kind, var in rows:
             handle.write(f"{kind} {var.path_str()}\n")
@@ -396,11 +642,94 @@ def _main_missing(argv: list[str]) -> int:
     return 0
 
 
+def problem_graph(input_file: str):
+    """`(graph, design, driven, reported)` for one file -- assembly only, no PROCESS.
+
+    What `inert_conditions` takes, built the way `run_cold_matrix.py`'s MDF arm builds
+    it, so this check and that row are about the same problem. Kept here rather than in
+    `mdf` because it is the *problem statement*, read off the file: `mdf.mdf_graph`
+    already takes `icc`/`n_equality`/`i_figure_merit` as arguments precisely so that it
+    does not do this.
+
+    **`driven` and `reported` are separated because inertness means different things
+    for them.** `i_figure_merit` is `None` for an evaluation-mode file
+    (`i_process_run_mode = -2`), which mints no objective node, and PROCESS then
+    root-finds the *equalities* with `scipy.optimize.fsolve`, forms no objective and
+    never examines the inequalities. So on such a file only the equalities are `driven`
+    and an inert inequality is not a defect at all -- eight of `large_tokamak_eval`'s 23
+    are inert and nothing is driving them by design. They are still *evaluated at the
+    answer and printed*, which is where an inert one can still mislead a reader, so
+    they come back as `reported` rather than being dropped: `spherical_tokamak_eval`'s
+    `.Constraint56` is inert, reads a frozen `0.0` against a bound of `40`, and PROCESS
+    at its own answer reads `40.28` -- a **violated** constraint the port reports as
+    comfortably satisfied. That belongs in the census and not in the refusal.
+    """
+    from functional_process import mdf  # noqa: PLC0415
+    from functional_process.indat import (  # noqa: PLC0415
+        graph_for,
+        machine_from_indat,
+        problem_from_indat,
+        switch_values_from_indat,
+    )
+    from functional_process.sand import iteration_variable_path  # noqa: PLC0415
+
+    problem = problem_from_indat(input_file)
+    icc = tuple(problem.icc)
+    n_equality = problem.n_equality_constraints
+    if n_equality is None:  # the `-1` sentinel -- see `indat.problem_from_indat`
+        n_equality = len(icc) - (problem.n_inequality_constraints or 0)
+    graph, _, _, report = mdf.mdf_graph(
+        graph_for(machine_from_indat(input_file)),
+        icc,
+        n_equality,
+        None if problem.is_evaluation else problem.i_figure_merit,
+        switch_values_from_indat(input_file),
+    )
+    conditions = tuple(report["equalities"])
+    reported = ()
+    if problem.is_evaluation:
+        reported = tuple(report["inequalities"])
+    else:
+        conditions = (report["objective"], *conditions, *report["inequalities"])
+    design = tuple(iteration_variable_path(i) for i in problem.ixc)
+    return graph, design, conditions, reported
+
+
+def _main_inert(argv: list[str]) -> int:
+    """`--inert [<IN.DAT> ...]`: the inert-condition census. Assembly only, no solve."""
+    from functional_process.run_cold_matrix import CONFIGURATIONS  # noqa: PLC0415
+
+    files = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"] or list(
+        CONFIGURATIONS
+    )
+    total = 0
+    for input_file in files:
+        graph, design, driven, reported = problem_graph(input_file)
+        rows = inert_conditions(graph, design, driven)
+        loose = inert_conditions(graph, design, reported)
+        total += len(rows)
+        print(
+            f"{os.path.basename(input_file):32} {len(design):3} design, "
+            f"{len(driven):3} driven condition(s) -> {len(rows)} inert"
+            + (f"  (+{len(loose)}/{len(reported)} reported-only)" if reported else "")
+        )
+        for label, found in (("", rows), ("reported-only ", loose)):
+            for row in found:
+                print(
+                    f"    {label}{row.node.path_str():16} {len(row.frozen)}/"
+                    f"{row.operands} operand(s) frozen, {row.cone} in cone: "
+                    + ", ".join(v.path_str() for v in row.frozen)
+                )
+    return 1 if total else 0
+
+
 def _main(argv: list[str]) -> int:
     from functional_process.mda import driven_graph
 
     if "--missing" in argv:
         return _main_missing(argv)
+    if "--inert" in argv:
+        return _main_inert(argv)
     graph, pin = _machine_graph(argv)
     driven = driven_graph(graph)
     rows = boundary(driven)

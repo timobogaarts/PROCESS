@@ -7,6 +7,7 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 """
 
 import jax.numpy as jnp
+import numpy as np
 import pytest
 from cottax.evaluate import schedule_for
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
@@ -14,7 +15,7 @@ from cottax.problem import Start, driver_vars
 from cottax.rewrites import Assign
 from cottax.spec import VarPath
 
-from functional_process.core.solver.drivers import PicardDriver
+from functional_process.core.solver.drivers import PicardDriver, _refuse_inert_objective
 from functional_process.models.power.thermal_cryo import CryoQNucStep
 from functional_process.paths import fwbs
 from functional_process.models.switch_enums import CoilNuclearHeatingModel
@@ -174,3 +175,56 @@ def test_scaling_leaves_a_workable_problem_when_a_coordinate_is_unscalable():
     scale = design_scale(np.array([1e-13, 2.0, 0.0, -4.0, -3.8e-27]))
     assert np.all(np.isfinite(scale))
     assert np.all(scale != 0.0)
+
+
+# ================================================ the inert-objective refusal (§26)
+
+
+class _Rows:
+    """A stand-in for `ConditionMap` carrying only what `_refuse_inert_objective`
+    reads: the condition names (objective first) and the unknowns.
+    """
+
+    def __init__(self, conditions, unknowns):
+        self.conditions = tuple(conditions)
+        self.unknowns = tuple(unknowns)
+
+
+def _rows():
+    return _Rows(
+        (vpath(toy.objf), vpath(toy.c1), vpath(toy.c2)), (vpath(toy.u), vpath(toy.v))
+    )
+
+
+def test_a_steerable_objective_is_not_refused():
+    _refuse_inert_objective([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], _rows())
+
+
+def test_an_objective_row_of_zeros_is_refused_and_the_message_says_why():
+    """`st_regression`'s shape: the objective reads one path this graph does not own,
+    so its whole gradient row is zero and the SQP solves the feasibility problem that
+    remains -- reporting `converged` while doing it (`_audit/optimise_design.md` §26).
+    """
+    with pytest.raises(ValueError, match=r"identically zero gradient") as caught:
+        _refuse_inert_objective([[0.0, 0.0], [0.0, 1.0], [1.0, 1.0]], _rows())
+    message = str(caught.value)
+    assert "feasibility" in message
+    assert "MISSING PRODUCER" in message
+    assert vpath(toy.u).path_str() in message  # the design variables, named
+
+
+def test_other_zero_rows_are_named_and_not_refused_on():
+    """A constraint the design cannot steer is common and often intended -- refusing on
+    one would fail `helias_5b`, whose equality 11 compares a radial build against
+    `.physics.rmajor` on a file with three iteration variables that do not move it.
+    """
+    _refuse_inert_objective([[1.0, 0.0], [0.0, 0.0], [1.0, 1.0]], _rows())
+    with pytest.raises(ValueError, match=r"identically zero gradient") as caught:
+        _refuse_inert_objective([[0.0, 0.0], [0.0, 0.0], [1.0, 1.0]], _rows())
+    assert vpath(toy.c1).path_str() in str(caught.value)
+    assert vpath(toy.c2).path_str() not in str(caught.value)
+
+
+def test_an_empty_jacobian_is_not_refused():
+    """A problem with no conditions is a different defect and has its own report."""
+    _refuse_inert_objective(np.zeros((0, 0)), _Rows((), ()))

@@ -28,8 +28,14 @@ from functional_process.boundary import (
     check_boundary,
     computed_by_process,
     counts,
+    frozen_cone,
+    frozen_reads,
+    inert_conditions,
+    owned_elsewhere,
+    problem_graph,
     read_pin,
     readers_of,
+    refuse_inert_conditions,
     unproduced_but_computed,
 )
 from functional_process.indat import (
@@ -40,6 +46,7 @@ from functional_process.indat import (
     machine_from_indat,
 )
 from functional_process.mda import driven_graph
+from functional_process.run_cold_matrix import CONFIGURATIONS
 from functional_process.sand import iteration_variable_path
 from functional_process.sand_harness import reference_run
 
@@ -54,6 +61,13 @@ def G(*keys) -> VarPath:
     from jax.tree_util import GetAttrKey
 
     return VarPath((MintKey("guess"), *(GetAttrKey(k) for k in keys)))
+
+
+def C(*keys) -> VarPath:
+    """A condition's minted path -- `sand.constraint_nodes`' own `^cond.<place>`."""
+    from jax.tree_util import GetAttrKey
+
+    return VarPath((MintKey("cond"), *(GetAttrKey(k) for k in keys)))
 
 
 def N(*keys) -> NodePath:
@@ -702,3 +716,160 @@ def test_the_pf_magnet_cost_landed_without_moving_its_hole():
     assert REFERENCE_MACHINE.costs.pf_magnet_cost is None
     assert V("costs", "c2222") not in GRAPH.owners
     assert V("pf_coil", "j_crit_str_pf") not in GRAPH.owners
+
+
+# ======================================================= inert conditions (§26)
+#
+# The guard for the defect class `_audit/optimise_design.md` §26 is about: a condition
+# no design variable reaches, whose Jacobian row is therefore identically zero and which
+# the optimiser cannot steer. `st_regression` is the case that motivated it -- an
+# objective reading a path only the *stellarator* graph owns, frozen at its cold `0.0`,
+# so VMCON solved a feasibility problem and reported `converged`.
+
+
+@pytest.fixture
+def steerable():
+    """`.d` is a design variable; `^cond.ok` moves with it, `^cond.dead` does not."""
+    return Graph(
+        path_map({
+            N("model"): call([V("d"), V("frozen")], [V("mid")]),
+            N("Ok"): call([V("mid")], [C("ok")]),
+            N("Dead"): call([V("frozen"), V("other")], [C("dead")]),
+        })
+    )
+
+
+def test_a_condition_the_design_reaches_is_not_inert(steerable):
+    assert inert_conditions(steerable, [V("d")], [C("ok")]) == ()
+
+
+def test_a_condition_the_design_cannot_reach_is_named_with_its_frozen_operands(
+    steerable,
+):
+    (row,) = inert_conditions(steerable, [V("d")], [C("ok"), C("dead")])
+    assert row.condition == C("dead")
+    assert row.node == N("Dead")
+    assert row.frozen == (V("frozen"), V("other"))
+    assert (row.operands, row.cone) == (2, 2)
+
+
+def test_frozen_is_the_node_s_own_operands_and_cone_is_the_whole_ancestry(steerable):
+    """The correction §26 records: the cone is never empty, so it cannot discriminate.
+    `.Ok` reads one owned variable and rests on one boundary input behind it.
+    """
+    assert frozen_reads(steerable, N("Ok"), [V("d")]) == ()
+    assert frozen_cone(steerable, N("Ok"), [V("d")]) == 1
+
+
+def test_a_design_variable_is_not_frozen():
+    """`mdf.mdf_graph` inserts the conditions and not the `Optimise`, so every active
+    `ixc` entry is an unowned input of the graph the check runs on. Without the
+    subtraction `.Ok`'s cone counts `.d`, the one variable the optimiser is steering.
+    """
+    graph = Graph(
+        path_map({
+            N("model"): call([V("d"), V("frozen")], [V("mid")]),
+            N("Ok"): call([V("mid")], [C("ok")]),
+        })
+    )
+    assert frozen_cone(graph, N("Ok")) == 2
+    assert frozen_cone(graph, N("Ok"), [V("d")]) == 1
+
+
+def test_a_design_variable_the_graph_does_not_carry_is_dropped_not_raised(steerable):
+    """An `ixc` the assembled graph has no variable for is a different defect with its
+    own report; this check must not be the thing that fails on it.
+    """
+    assert inert_conditions(steerable, [V("d"), V("absent")], [C("ok")]) == ()
+
+
+def test_the_refusal_names_the_row_its_operands_and_the_cause(steerable):
+    with pytest.raises(ValueError, match=r"not reachable from any design variable"):
+        refuse_inert_conditions(steerable, [V("d")], [C("ok"), C("dead")])
+    with pytest.raises(ValueError, match=r"operand\(s\) frozen") as caught:
+        refuse_inert_conditions(steerable, [V("d")], [C("dead")])
+    message = str(caught.value)
+    assert N("Dead").path_str() in message
+    assert V("frozen").path_str() in message
+    assert "missing producer" in message
+
+
+def test_a_steerable_problem_is_not_refused(steerable):
+    refuse_inert_conditions(steerable, [V("d")], [C("ok")])
+
+
+def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
+    """**The measurement, and the whole point of the check.** Assembly only -- no
+    PROCESS run, no seed, no solve -- so the seven-configuration census is seven graph
+    builds.
+
+    `st_regression` is the row that matters: `.Objective` is `objective_metric_5`, which
+    reads `.current_drive.big_q_plasma`, owned only by `models/stellarator/heating.py`
+    and so a boundary input on this tokamak. `.Constraint56` and `.Constraint67` are the
+    same defect on constraints -- both operands frozen, i.e. a `leq` between two
+    constants. `helias_5b`'s `.Constraint11` is the *other* kind and is deliberately
+    still reported: nothing is missing there, the file's three iteration variables
+    simply do not move a stellarator's radial build.
+    """
+    expected = {
+        "stellarator_helias": set(),
+        "helias_5b": {".Constraint11"},
+        "large_tokamak_nof": set(),
+        "large_tokamak_eval": set(),
+        "low_aspect_ratio_DEMO": set(),
+        "spherical_tokamak_eval": set(),
+        "st_regression": {".Objective", ".Constraint56", ".Constraint67"},
+    }
+    found = {}
+    for input_file in CONFIGURATIONS:
+        stem = Path(input_file).name.removesuffix(".IN.DAT")
+        graph, design, driven, _reported = problem_graph(input_file)
+        rows = inert_conditions(graph, design, driven)
+        found[stem] = {row.node.path_str() for row in rows}
+        if stem == "st_regression":
+            objective = next(r for r in rows if r.node.path_str() == ".Objective")
+            assert objective.frozen == (V("current_drive", "big_q_plasma"),)
+            assert (objective.operands, objective.cone) == (1, 1)
+    assert found == expected
+
+
+def test_an_evaluation_file_s_inequalities_are_reported_and_not_driven():
+    """PROCESS root-finds the equalities alone on `i_process_run_mode = -2` and never
+    examines the inequalities, so an inert one there is not a defect -- eight of
+    `large_tokamak_eval`'s 23 are inert by design. They still come back as `reported`,
+    because `spherical_tokamak_eval`'s inert `.Constraint56` reads a frozen `0.0`
+    against a bound of `40` where PROCESS at its own answer reads `40.28`: a violated
+    constraint the port prints as satisfied.
+    """
+    root = Path(TOKAMAK_INPUT_FILE).parent
+    graph, design, driven, reported = problem_graph(
+        str(root / "spherical_tokamak_eval.IN.DAT")
+    )
+    assert inert_conditions(graph, design, driven) == ()
+    loose = {row.node.path_str() for row in inert_conditions(graph, design, reported)}
+    assert loose == {".Constraint56", ".Constraint67"}
+
+
+def test_owned_elsewhere_finds_big_q_plasma_and_is_a_lead_not_a_verdict():
+    """The cheap cross-configuration discriminator: a path this graph reads, does not
+    own, and another configuration's graph *does* own. It finds `big_q_plasma` -- and
+    also `.physics.aspect`, which is a stellarator output and a genuine tokamak input,
+    so it ranks work rather than deciding it.
+    """
+    root = Path(TOKAMAK_INPUT_FILE).parent
+    graph, _design, _driven, _reported = problem_graph(
+        str(root / "st_regression.IN.DAT")
+    )
+    rows = dict(owned_elsewhere(graph, {"reference": GRAPH}))
+    assert rows[V("current_drive", "big_q_plasma")] == ("reference",)
+    assert V("physics", "aspect") in rows
+
+    # **And the model graph alone does not see it**, which is §26's finding in one
+    # assertion: nothing among the models reads `big_q_plasma`, only the objective node
+    # does, so every measurement taken on `driven_graph(graph_for(...))` -- the pins,
+    # `provider.answers_for`, `unproduced_but_computed` -- was blind to it by
+    # construction.
+    models = graph_for(machine_from_indat(str(root / "st_regression.IN.DAT")))
+    assert V("current_drive", "big_q_plasma") not in dict(
+        owned_elsewhere(models, {"reference": GRAPH})
+    )
