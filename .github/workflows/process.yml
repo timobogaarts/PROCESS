@@ -213,46 +213,26 @@ jobs:
       group: docs-jobs
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    # depends on tracking; only runs upon merge to main
-    needs: tracking
+    # Publishes the uncut-graph DSM pages and nothing else.
+    #
+    # Upstream this job builds the full mkdocs site and depends on `tracking`, because
+    # the published docs embed two of its outputs: a summary plot rendered from a freshly
+    # tracked MFILE, and `tracking.html` itself. On this fork the site exists only to
+    # render four generated HTML pages that are already committed, so neither the
+    # dependency nor the docs build is needed -- and both were failure modes standing
+    # between a push and four static files. `git log` has the upstream job if the full
+    # documentation is wanted back.
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-      - name: Setup python and hatch
-        uses: Fusion-Power-Plant-Framework/fppf-actions/setup-hatch@c6af22fc8d00be67cca53a61177301462f499fb2
-        with:
-          python-version: ${{ env.python-version }}
-      - run: git config --global --add safe.directory '*'
-      - name: Download STF_TF.json files
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: sig-tfs
-          path: tracking/
-      - name: Download MFILEs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: tracked-mfiles
-          path: tracking/
-      - run: mv tracking/large_tokamak_nof.SIG_TF.json tracking/large_tokamak_nof_SIG_TF.json
-      - name: Create an example plot summary
-        run: hatch run process plot summary -f tracking/large_tokamak_nof_MFILE.DAT
-      - name: Move plot summary file to docs images
-        run: mv tracking/large_tokamak_nof_MFILE.DATSUMMARY.pdf documentation/source/images/plot_summary.pdf
-      - run: hatch run docs:build
-      - name: Download tracking html
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: tracking-html
-      - run: mv tracking.html site || cp site/404.html site/tracking.html
-      - name: Add uncut-graph DSM pages
+      - name: Collect the uncut-graph DSM pages
         run: |
+          mkdir -p site
           cp functional_process/dsm_provenance_uncut.html site/
           cp functional_process/dsm_scc_uncut.html site/
           cp functional_process/dsm_provenance_uncut_tokamak.html site/
           cp functional_process/dsm_scc_uncut_tokamak.html site/
-          cp documentation/source/dsm_index.html site/dsm.html
+          cp documentation/source/dsm_index.html site/index.html
       - name: Upload documentation page
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
