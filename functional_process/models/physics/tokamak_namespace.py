@@ -31,7 +31,10 @@ from functional_process.models.physics.current_drive import (
     HcdSecondaryDrivenCurrent,
     HcdSecondaryHeating,
 )
-from functional_process.models.physics.exhaust import EuDemoReAttachmentMetric
+from functional_process.models.physics.exhaust import (
+    EuDemoReAttachmentMetric,
+    PsepOverRMetric,
+)
 from functional_process.models.physics.physics import (
     BetaLimitFromNorm,
     BetaNormMaxWesson,
@@ -130,6 +133,24 @@ class TokamakPhysics(ModelNamespace):
 
     The node's class docstring records why it reads the mint
     `.physics.p_plasma_separatrix_mw_raw` rather than the field."""
+
+    psep_over_r_metric: PsepOverRMetric = PsepOverRMetric()
+    """`.physics.p_plasma_separatrix_rmajor_mw` (`physics.py:811-816`). Unswitched, so
+    a default.
+
+    Added 2026-09-01 for `optimise_design.md` §26.3 ranks 2 and 3 -- and it is the
+    slot beside `re_attachment_metric` in every sense: the same `physics.py` block, the
+    same mint read, the same defect shape (a constraint reading a frozen boundary
+    constant and reporting a zero Jacobian row), found by a different discriminator two
+    weeks later.
+
+    **The difference is that this one is binding.** Constraint 56 is active on both
+    tracked spherical tokamaks; PROCESS converges `st_regression` to
+    `39.99999999988` against a bound of `40`, i.e. exactly *on* it, and reaches
+    `40.2816` on `spherical_tokamak_eval`, i.e. *violating* it at its own answer. The
+    port, reading the frozen `0.0`, was solving a strictly relaxed problem and printing
+    the row satisfied. c68's freeze (the slot above) cost a gradient; this one cost the
+    optimum."""
 
     coulomb_logarithm: CoulombLogarithmIonElectron = CoulombLogarithmIonElectron()
     """`.physics.dlamie` (`physics.py:279-283`). Unswitched, so a default.

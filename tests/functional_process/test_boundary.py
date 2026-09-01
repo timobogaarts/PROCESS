@@ -215,7 +215,21 @@ def test_the_tokamak_s_boundary_is_its_own_pin():
 
 
 def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
-    """377 inputs and 11 guesses, against the stellarator's 289 and 6.
+    """378 inputs and 11 guesses, against the stellarator's 289 and 6.
+
+    **377 -> 378 on 2026-09-01** (missing-producer wave 2, `optimise_design.md` §29):
+    three producers landed and exactly **one** new declared read came with them,
+    `.constraints.f_fw_rad_max` -- the radiation-wall-load peaking factor, a plain
+    `IN.DAT` constant (`core/input.py`, `constraint_variables.py:57`) that PROCESS
+    computes nowhere, which is the discriminator the test below applies and not this
+    one. None of the three producers' *outputs* was on this file's boundary
+    (`.build.r_cp_top` is read only by the picture-frame TF shape, which
+    `large_tokamak_eval` does not take; `.physics.p_plasma_separatrix_rmajor_mw` and
+    `.constraints.pflux_fw_rad_max_mw` are read only by constraints 56 and 67, which
+    this file does not state), so the input half goes **up** by one here while the two
+    spherical tokamaks -- where those outputs *are* read -- lose a `computed` row each.
+    The stellarator half does not move at all: none of the three nodes is on that
+    device.
 
     **378 -> 377 with the `.tfcoil.dcond` antichain fix.** One node read that array
     *whole* (`.costs.pf_magnet_cost`'s `PER_KG` arms) while three read it *by element*,
@@ -386,7 +400,7 @@ def test_the_tokamak_reads_more_than_the_stellarator_and_guesses_more():
     tok = counts(
         boundary(driven_graph(graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))))
     )
-    assert (tok[INPUT], tok[GUESSED]) == (377, 11)
+    assert (tok[INPUT], tok[GUESSED]) == (378, 11)
     assert (stell[INPUT], stell[GUESSED]) == (289, 6)
 
 
@@ -805,11 +819,18 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
 
     `st_regression` is the row that matters: `.Objective` is `objective_metric_5`, which
     reads `.current_drive.big_q_plasma`, owned only by `models/stellarator/heating.py`
-    and so a boundary input on this tokamak. `.Constraint56` and `.Constraint67` are the
-    same defect on constraints -- both operands frozen, i.e. a `leq` between two
-    constants. `helias_5b`'s `.Constraint11` is the *other* kind and is deliberately
-    still reported: nothing is missing there, the file's three iteration variables
-    simply do not move a stellarator's radial build.
+    and so a boundary input on this tokamak. `helias_5b`'s `.Constraint11` is the
+    *other* kind and is deliberately still reported: nothing is missing there, the
+    file's three iteration variables simply do not move a stellarator's radial build.
+
+    **`.Constraint56` and `.Constraint67` left this list on 2026-09-01**
+    (`optimise_design.md` §29). They were the same defect on constraints -- both
+    operands frozen, i.e. a `leq` between two constants -- and both now have producers
+    (`.tokamak.physics.psep_over_r_metric`, `.tokamak.radiated_wall_load`). The
+    objective's row is the last one left, and it stays until
+    `.current_drive.big_q_plasma` has a tokamak producer. **This assertion is the
+    check's own regression test in both directions**: it caught the defect when the two
+    constraints were inert and it now pins that they are not.
     """
     expected = {
         "stellarator_helias": set(),
@@ -818,7 +839,7 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
         "large_tokamak_eval": set(),
         "low_aspect_ratio_DEMO": set(),
         "spherical_tokamak_eval": set(),
-        "st_regression": {".Objective", ".Constraint56", ".Constraint67"},
+        "st_regression": {".Objective"},
     }
     found = {}
     for input_file in CONFIGURATIONS:
@@ -836,10 +857,18 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
 def test_an_evaluation_file_s_inequalities_are_reported_and_not_driven():
     """PROCESS root-finds the equalities alone on `i_process_run_mode = -2` and never
     examines the inequalities, so an inert one there is not a defect -- eight of
-    `large_tokamak_eval`'s 23 are inert by design. They still come back as `reported`,
-    because `spherical_tokamak_eval`'s inert `.Constraint56` reads a frozen `0.0`
-    against a bound of `40` where PROCESS at its own answer reads `40.28`: a violated
-    constraint the port prints as satisfied.
+    `large_tokamak_eval`'s 23 are inert by design. They come back as `reported` rather
+    than being dropped because an inert *reported* row can still mislead a reader, and
+    `spherical_tokamak_eval` used to carry the proof: its `.Constraint56` read a frozen
+    `0.0` against a bound of `40` where PROCESS at its own answer reads `40.28`, i.e. a
+    violated constraint the port printed as satisfied.
+
+    **That file's reported-only list is empty as of 2026-09-01** -- the first
+    configuration's to be (`optimise_design.md` §29.6) -- so the *separation* is
+    asserted on `large_tokamak_eval`, which still has eight, and
+    `spherical_tokamak_eval` now pins the fix. Both halves are kept: dropping the
+    spherical assertion would lose the regression test for exactly the defect the wave
+    closed.
     """
     root = Path(TOKAMAK_INPUT_FILE).parent
     graph, design, driven, reported = problem_graph(
@@ -847,7 +876,11 @@ def test_an_evaluation_file_s_inequalities_are_reported_and_not_driven():
     )
     assert inert_conditions(graph, design, driven) == ()
     loose = {row.node.path_str() for row in inert_conditions(graph, design, reported)}
-    assert loose == {".Constraint56", ".Constraint67"}
+    assert loose == set()
+
+    graph, design, driven, reported = problem_graph(TOKAMAK_INPUT_FILE)
+    assert inert_conditions(graph, design, driven) == ()
+    assert len(inert_conditions(graph, design, reported)) == 8
 
 
 def test_owned_elsewhere_finds_big_q_plasma_and_is_a_lead_not_a_verdict():

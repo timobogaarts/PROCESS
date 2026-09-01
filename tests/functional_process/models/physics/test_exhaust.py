@@ -9,6 +9,7 @@ takes no `self.data` access at all, so no adapter is needed.
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
 from functional_process.models.physics.exhaust import (
     calculate_eu_demo_re_attachment_metric,
+    calculate_psep_over_r_metric,
     calculate_radiation_fraction,
 )
 from process.models.physics.exhaust import PlasmaExhaust
@@ -97,5 +98,59 @@ class TestEuDemoReAttachmentMetric(Tier1Contract):
         "b_plasma_toroidal_on_axis": (1.0, 15.0),
         "q95": (2.0, 10.0),
         "aspect": (1.5, 5.0),
+        "rmajor": (2.0, 20.0),
+    }
+
+
+class TestPsepOverRMetric(Tier1Contract):
+    """`P_sep / R0`, `exhaust.py:127-147`. No adapter -- another bare static.
+
+    **Both legacy points are PROCESS's own converged answer on a file where
+    constraint 56 is active, and both are worth naming.** `st_regression` sits at
+    `39.99999999988` against a bound of `40` -- the constraint is *active*, exactly on
+    its bound, and it is the single most binding constraint of that problem;
+    `spherical_tokamak_eval` reads `40.2816` against the same bound, i.e. PROCESS
+    **violates** it at its own answer (evaluation mode, so nothing enforces it). Until
+    2026-09-01 this port had no producer for the path at all and read a frozen `0.0`,
+    which the `leq` reported as satisfied with the whole of its margin to spare
+    (`optimise_design.md` §26.3 ranks 2 and 3, §29 for what porting it moved).
+
+    The `p_plasma_separatrix_mw` written down here is PROCESS's *converged* field --
+    i.e. post-KLUDGE. The node reads the pre-KLUDGE mint
+    `.physics.p_plasma_separatrix_mw_raw` instead, and at 180 MW the two differ by
+    ~1e-79; see `PsepOverRMetric`'s docstring for why the distinction is kept anyway.
+    No test in this port can see it, and this case does not pretend to.
+
+    `rmajor` is bounded away from zero in the fuzz box: PROCESS divides by it with no
+    guard and would produce an `inf` too, which is faithful but uninteresting.
+    """
+
+    audit_record = "models/physics/exhaust.md"
+    reference = staticmethod(PlasmaExhaust.calculate_psep_over_r_metric)
+    ported = calculate_psep_over_r_metric
+
+    samples = [
+        legacy_sample(
+            "st_regression-converged-and-active",
+            p_plasma_separatrix_mw=179.99999999946084,
+            rmajor=4.5,
+        ),
+        legacy_sample(
+            "spherical_tokamak_eval-converged-and-violating",
+            p_plasma_separatrix_mw=181.2672921059313,
+            rmajor=4.5,
+        ),
+        *fuzz_samples(
+            {
+                "p_plasma_separatrix_mw": (10.0, 500.0),
+                "rmajor": (2.0, 20.0),
+            },
+            count=5,
+            seed=56,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "p_plasma_separatrix_mw": (10.0, 500.0),
         "rmajor": (2.0, 20.0),
     }

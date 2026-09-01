@@ -15,12 +15,16 @@ the registry's stated scope" -- is **narrowed rather than withdrawn**:
   solve moves -- constraint 68 is one of the two inequalities `large_tokamak_eval`
   *violates*, and §11.4 measured its whole port gradient row as identically zero because
   of exactly this gap.
-- `calculate_psep_over_r_metric` stays unported. It is the same three lines and one
-  `physics.py` line above (`:812-817`), and it is left alone on purpose: no active
-  constraint and no ported node reads `.physics.p_plasma_separatrix_rmajor_mw`, so an
-  occupant for it would be a producer with no consumer. It is a two-line follow-up the
-  day one appears -- the same disposition `PlasmaEnergyFromBeta` records for
-  `.physics.e_plasma_beta_thermal`.
+- `calculate_psep_over_r_metric` **is ported as of 2026-09-01**, and the sentence that
+  used to stand here -- *"no active constraint and no ported node reads
+  `.physics.p_plasma_separatrix_rmajor_mw`, so an occupant for it would be a producer
+  with no consumer"* -- was **false when `optimise_design.md` §26 measured it**, not
+  merely stale. Constraint 56 is active on both tracked spherical tokamaks
+  (`spherical_tokamak_eval.IN.DAT:21`, `st_regression.IN.DAT:689`) and reads exactly
+  that path. The reason no earlier pin caught it is §26.1's: every boundary pin in this
+  port is measured over the *model* graph, and a path read only by a condition is
+  invisible to all of them. The docstring's own prediction -- "a two-line follow-up the
+  day one appears" -- held; see `PsepOverRMetric`.
 """
 
 import jax.numpy as jnp
@@ -134,3 +138,67 @@ class EuDemoReAttachmentMetric(ExplicitFunction):
             aspect,
             rmajor,
         )
+
+
+def calculate_psep_over_r_metric(p_plasma_separatrix_mw, rmajor):
+    """Power crossing the separatrix per unit major radius, P_sep / R0 [MW / m].
+
+    Ports `PlasmaExhaust.calculate_psep_over_r_metric`,
+    `process/models/physics/exhaust.py:127-147`, unchanged.
+
+    Parameters
+    ----------
+    p_plasma_separatrix_mw :
+        Power crossing the separatrix (MW).
+    rmajor :
+        Plasma major radius (m).
+
+    Returns
+    -------
+    :
+        `P_sep / R0` (MW/m). `.physics.p_plasma_separatrix_rmajor_mw`.
+    """
+    return p_plasma_separatrix_mw / rmajor
+
+
+class PsepOverRMetric(ExplicitFunction):
+    """cottax node: `calculate_psep_over_r_metric`, ports declared.
+
+    **Reads the mint, not the field** -- the identical argument
+    `EuDemoReAttachmentMetric`'s docstring makes, and for a stronger reason here:
+    `physics.py:811-816` is the *first* of the three call sites that see
+    `.physics.p_plasma_separatrix_mw` before the KLUDGE at `:843-845` divides it by
+    `1 - exp(-P_sep)`, and it sits three lines above the re-attachment metric in the
+    same block. So this node reads `.physics.p_plasma_separatrix_mw_raw`
+    (`physics.py::SeparatrixPower`) exactly as its neighbour does.
+
+    At both tracked spherical tokamaks the two readings are the same number to every
+    bit -- `P_sep` is 180.0/181.3 MW, so `1 - exp(-P_sep)` differs from 1 by ~1e-79 --
+    and no test in this port could tell them apart. The mint is read anyway, for the
+    reason recorded next door: the transform is a no-op only while P_sep is large, and
+    wiring by "the values agree here" is how a port acquires a defect only a different
+    input file can see.
+
+    **Why this node matters and the two beside it do not, yet.** `.physics.
+    p_plasma_separatrix_rmajor_mw` is read by constraint 56 (`leq(P_sep/R0, 40)`),
+    which is active on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` and
+    on no other tracked file. Frozen at the cold `0.0` the constraint read as satisfied
+    with the whole of its margin to spare and contributed an identically zero Jacobian
+    row; PROCESS's own converged answers are `39.99999999988` (st_regression -- *on*
+    the bound, the single most binding constraint of that problem) and `40.2816`
+    (spherical_tokamak_eval -- **violated** at PROCESS's own answer, where the port
+    printed it comfortably satisfied). `optimise_design.md` §26.3 ranks it 2nd and 3rd
+    of the seven live missing-producer rows; §29 measures what porting it moved.
+
+    Unswitched: `Physics.run` computes it outside every `if`, one statement after
+    `.physics.p_plasma_separatrix_mw` itself.
+    """
+
+    p_plasma_separatrix_rmajor_mw = OutputInto(physics)
+
+    def __call__(
+        self,
+        p_plasma_separatrix_mw_raw=From(physics),
+        rmajor=From(physics),
+    ):
+        return calculate_psep_over_r_metric(p_plasma_separatrix_mw_raw, rmajor)

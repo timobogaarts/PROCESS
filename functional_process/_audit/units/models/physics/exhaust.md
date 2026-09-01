@@ -140,3 +140,55 @@ Registered as a sixth slot of `.tokamak.physics` (`re_attachment_metric`), unswi
 so an instance default. Tier 1; `test_exhaust.py::TestEuDemoReAttachmentMetric` diffs
 the real staticmethod at the violating operating point, green plain and under
 `--fp-gradients`. No cycle created.
+
+## 2026-09-01 — `calculate_psep_over_r_metric` ported (missing-producer wave 2)
+
+**The section above ends with a claim that was already false when it was written, and
+this section is its correction.** It says `calculate_psep_over_r_metric` "stays unported
+on purpose: no active constraint and no ported node reads
+`.physics.p_plasma_separatrix_rmajor_mw`, so an occupant would be a producer with no
+consumer." Constraint 56 is active on `spherical_tokamak_eval.IN.DAT` (`:21`) and
+`st_regression.IN.DAT` (`:689`) and reads exactly that path. Both files were already in
+`run_cold_matrix.CONFIGURATIONS` on 2026-08-27.
+
+**Why the claim survived four days of pins that were all looking at this.** It is
+`optimise_design.md` §26.1's finding and it is structural, not an oversight:
+`reference_boundary*.txt`, `missing_producers_tokamak.txt`,
+`reference_provider_*.txt` and `boundary.unproduced_but_computed` are every one of them
+measured on `driven_graph(graph_for(...))` — the **models**. The objective and the
+constraint nodes are inserted later, by `mdf.mdf_graph`/`sand.optimise_graph`. A path
+read *only by a condition* is invisible to all four pins, and this is one:
+`reference_provider_st_regression.txt` reported **one** `computed` row where the same
+measurement over `mdf_graph`'s graph reports four. The lesson generalises past this
+unit — a "nothing reads it" note in this port means "no *model* reads it" unless it
+says otherwise.
+
+The function is `exhaust.py:127-147` unchanged, one division. The node
+(`PsepOverRMetric`) reads the **mint** `.physics.p_plasma_separatrix_mw_raw` for the
+identical reason its neighbour does, and the reason is slightly stronger here:
+`physics.py:811-816` is the *first* of the three call sites that see
+`.physics.p_plasma_separatrix_mw` before the KLUDGE at `:843-845`, sitting three lines
+above the re-attachment metric in the same block. At `P_sep` = 180.0/181.3 MW the two
+readings differ by ~1e-79 and no test in this port can tell them apart; the wiring is
+from the source, not from the agreement.
+
+**What the freeze cost, per file, measured against PROCESS's converged
+`DataStructure`:**
+
+| file | port before | PROCESS | c56 bound | verdict before | verdict at PROCESS's answer |
+|---|---|---|---|---|---|
+| `st_regression` | `0.0` | `39.99999999988` | `40` (`leq`) | satisfied, margin 40, zero row | **active — exactly on the bound** |
+| `spherical_tokamak_eval` | `0.0` | `40.2816` | `40` (`leq`) | satisfied, margin 40, zero row | **violated by +0.7%** |
+
+`st_regression` is the one that matters: c56 is the single most binding constraint of
+that problem and the port was solving a strictly relaxed version of it without one.
+`spherical_tokamak_eval` runs in evaluation mode (`i_process_run_mode = -2`), so its
+inequalities are reported and not driven — the freeze changed what the row *said*, not
+where the answer went.
+
+Registered as a seventh slot of `.tokamak.physics` (`psep_over_r_metric`), unswitched,
+so an instance default — `Physics.run` computes it outside every `if`. Tier 1;
+`test_exhaust.py::TestPsepOverRMetric` diffs the real staticmethod at *both* files'
+converged answers, green plain and under `--fp-gradients` (82 passed in the file). No
+cycle created and no SCC moved: `Blocking.scc` over both spherical tokamaks' graphs is
+identical before and after (measured, not assumed — see `optimise_design.md` §29.3).

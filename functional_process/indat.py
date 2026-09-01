@@ -69,6 +69,7 @@ from functional_process.models.build import (
     DrTfInboardFromWindingPack,
     DrTfOutboardSuperconducting,
     DrTfWpWithInsulationFromInboardBuild,
+    RCpTopFromTfInboardOut,
     TfInboardRadiiNoCsPrecomp,
     TfInboardRadiiTfOutsideCs,
     TfOutboardEdgeRipple,
@@ -1161,6 +1162,19 @@ UNPORTED = {
         "DCLL routes to `process/models/blankets/dcll.py` at `caller.py:347-349` -- a "
         "different occupant of `.tokamak.ccfe_hcpb` entirely, with its own liquid-metal "
         "breeder model. Nothing of it is ported"
+    ),
+    ("r_cp_top_arm", -1): (
+        "the **resistive** spherical tokamak's centrepost top radius "
+        "(`build.py:1750-1810`, `itart == 1 and i_tf_sup != 1`). Three sub-arms behind "
+        "`.build.i_r_cp_top`, and all three own `.build.f_r_cp` as well as "
+        "`.build.r_cp_top`, so the write set differs from the ported arm's and they "
+        "cannot be one occupant. All three also apply the same clamp -- "
+        "`r_cp_top = max(r_cp_top, 1.01 * r_tf_inboard_out)`, spelled in PROCESS as an "
+        "`if` plus a `logger.error` -- which is a genuine `jnp.where` and not a domain "
+        "error. Unwritten because no input file in this repository selects it: both "
+        "spherical tokamaks are `i_tf_sup = 1`, which fails the outer guard before "
+        "`i_r_cp_top` is read at all, and everything else is `itart = 0`. Note that "
+        "both ST files *do* set `i_r_cp_top = 2`, and on both it is inert"
     ),
     ("first_wall_arm", -2): (
         "the D-shaped first wall **at a single divertor** -- one cell of "
@@ -2951,6 +2965,39 @@ Its consequence is measured rather than assumed -- `large_tokamak_eval.IN.DAT` s
 that run even though `tokamak_boundary.md` attributes it to this slot. That file's
 attribution is an `ast` walk over `Assign` targets, which cannot see an `ixc` guard;
 `build.md` records the contradiction rather than smoothing it."""
+
+
+def _r_cp_top_arm(itart: int, i_tf_sup: int) -> int:
+    """`(itart, i_tf_sup)` -> the centrepost-top-radius slot's arm.
+
+    ```
+    itart == 1 and i_tf_sup != 1  -> arm -1  a resistive ST's demountable centrepost:
+                                             three `i_r_cp_top` sub-arms, all of which
+                                             also own `.build.f_r_cp` and all of which
+                                             clamp to 1.01 * r_tf_inboard_out; UNPORTED
+    otherwise                     -> arm  0  RCpTopFromTfInboardOut (`build.py:1813`)
+    ```
+
+    **The outer guard is read before `.build.i_r_cp_top`, and that ordering is the
+    whole content of this function.** Both tracked spherical tokamaks set
+    `i_r_cp_top = 2` and both set `i_tf_sup = 1`, so on both files the `i_r_cp_top`
+    input never reaches a formula -- confirmed against PROCESS's own converged
+    `DataStructure`, where `r_cp_top == r_tf_inboard_out` exactly rather than
+    `f_r_cp * r_tf_inboard_out = 1.4 * r_tf_inboard_out`. A dispatch keyed on
+    `i_r_cp_top` first would have picked the wrong arm on the two files that most need
+    the right one.
+
+    Added 2026-09-01 (`optimise_design.md` §26.3 rank 4 / §29).
+    """
+    return -1 if int(itart) == 1 and int(i_tf_sup) != 1 else 0
+
+
+R_CP_TOP = {
+    0: RCpTopFromTfInboardOut,
+}
+"""`_r_cp_top_arm(...)` -> `.build.r_cp_top`'s occupant. One written arm, covering all
+seven tracked configurations; the resistive-ST arm `-1` is a real PROCESS branch with a
+wider write set and is UNPORTED."""
 
 
 def _tf_inboard_radii_arm(i_tf_inside_cs: int, i_cs_precomp: int) -> int:
@@ -5056,6 +5103,14 @@ def _tokamak_device(
             "dr_tf_inboard_winding_pack",
             0 if 140 in ixc else 1,
             DR_TF_INBOARD_WINDING_PACK,
+        ),
+        r_cp_top=_slot_occupant(
+            "r_cp_top_arm",
+            _r_cp_top_arm(
+                itart,
+                i_tf_sup,
+            ),
+            R_CP_TOP,
         ),
         tf_inboard_radii=_slot_occupant(
             "tf_inboard_radii_arm",

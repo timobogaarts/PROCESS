@@ -297,10 +297,17 @@ def test_every_configuration_has_a_pin():
 def test_the_only_missing_producers_left_are_the_two_spherical_tokamak_rows():
     """`computed` is the missing-producer count and **may only go down**.
 
+    **It reached zero on 2026-09-01** (missing-producer wave 2). The name is kept
+    because the history is the point: this test's own docstring is the record of the
+    count going 2 -> 1 -> 0, and renaming it each time would erase that.
+
     Measured on 2026-08-31 over all seven configurations: zero on both stellarators,
     both large tokamaks and `low_aspect_ratio_DEMO` -- which reproduces
     `boundary.missing_producers`' own answer on `large_tokamak_nof`, the one file that
-    check covers -- and **one on each spherical tokamak**, `.build.r_cp_top`.
+    check covers -- and **one on each spherical tokamak**, `.build.r_cp_top`. That last
+    row closed on 2026-09-01: `build.py:1812-1813` is ported as
+    `RCpTopFromTfInboardOut`, the nineteenth slot of `.tokamak.build`
+    (`optimise_design.md` §29, `_audit/units/models/build.md`).
 
     It was **two** when first measured; `.tfcoil.dx_tf_side_case_min` closed the same
     day. Its cause was not a missing model but a wrong presence inference: `indat.py`
@@ -321,16 +328,7 @@ def test_the_only_missing_producers_left_are_the_two_spherical_tokamak_rows():
         )
         for stem in CONFIGURATIONS
     }
-    st = [".build.r_cp_top"]
-    assert found == {
-        "stellarator_helias": [],
-        "helias_5b": [],
-        "large_tokamak_nof": [],
-        "large_tokamak_eval": [],
-        "low_aspect_ratio_DEMO": [],
-        "spherical_tokamak_eval": st,
-        "st_regression": st,
-    }
+    assert found == {stem: [] for stem in CONFIGURATIONS}
 
 
 @pytest.mark.parametrize("stem", CONFIGURATIONS)

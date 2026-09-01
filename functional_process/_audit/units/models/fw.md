@@ -311,3 +311,60 @@ inboard radius `rmajor - rminor - gap` goes small in the ST regime and a
 conventional-aspect box would never visit it. Green at `--fp-gradients`.
 
 No new boundary input.
+
+## 2026-09-01 — the radiated wall load ported (missing-producer wave 2)
+
+`optimise_design.md` §26.2's fifth live row, and the shortest of the three ported that
+day: `fw.py:130-144`, four lines of `FirstWall.run()` with no `calculate_*` staticmethod
+of their own.
+
+```
+pflux_fw_rad_mw     = ffwal * p_plasma_rad_mw / a_plasma_surface   # :131-135
+pflux_fw_rad_max_mw = pflux_fw_rad_mw * f_fw_rad_max               # :142-144
+```
+
+`.constraints.pflux_fw_rad_max_mw` is read by constraint 67, active on
+`spherical_tokamak_eval.IN.DAT` (`:25`) and `st_regression.IN.DAT` (`:2464`) and on no
+other tracked tokamak. It was frozen at the cold `0.0` against a bound of `1.2`, where
+PROCESS converges to `0.36324` (`st_regression`) and `0.49896`
+(`spherical_tokamak_eval`). **Neither is binding at PROCESS's own answer**, which is why
+§26.3 ranks this row last of the five: the freeze cost an identically zero Jacobian row
+and a report that read `0.0`, not a wrong optimum. It is the control for the c56 row in
+the same wave, which *is* binding.
+
+**A third slot of this unit, not two more outputs of `FirstWall`,** and the reason is
+sharper than `first_wall_geometry`'s. The *other* `i_pflux_fw_neutron` arm of these same
+two lines divides by `.first_wall.a_fw_total`, which `FirstWall` owns; folding them in
+would make the live arm's node read a field the dead arm makes it own — precisely the
+`FixedPointFunction` shape `('first_wall_arm', -3)` already records as this unit's
+obstacle. Split out, the two arms are two occupants of one slot and neither reads what
+it owns.
+
+**No new `i_pflux_fw_neutron` refusal was minted, deliberately.**
+`_first_wall_arm`'s `('first_wall_arm', -3)` already refuses `!= 1`, and a graph that
+has `.tokamak.radiated_wall_load` has `.tokamak.first_wall` too, so no assembled machine
+can reach the unwritten arm here without having been refused there first. A second,
+identical refusal would assert that the two arms can be chosen apart; they cannot.
+
+**The stellarator already had a port of the same two PROCESS lines and it is not
+reused.** `models/stellarator/plasma_physics.py::_radiated_wall_load` ports
+`stellarator.py:2241-2251`, which computes `.physics.rad_fraction_total` from the
+heating powers in the same breath; `FirstWall.run` does not, and the tokamak's radiation
+fraction is `exhaust.py::calculate_radiation_fraction` against a different denominator
+in a different slot. Same two `VarPath`s, two devices, two nodes, never both in one
+graph — `build.py::calculate_dz_blkt_upper`'s correspondence exactly.
+
+**Test.** `TestRadiatedWallLoadScaledPlasmaSurface`, tier 1, adapter runs real
+`FirstWall.run()` and reads the two fields back off `data` — the "close the `data`
+back-door" technique the three composites above use. The geometry is fixed at the
+D-shaped double-null spherical-tokamak point and *nothing in the contract depends on it
+being right*: at `i_pflux_fw_neutron == 1` these four lines read none of it. Both legacy
+samples are PROCESS's own converged operating points on the two files where c67 is
+active; the fuzz box moves `f_fw_rad_max` off `1.0` so the peaking factor is actually
+exercised (both files set it to exactly 1, so the two outputs coincide there). Green
+plain and under `--fp-gradients` (90 passed in the file).
+
+**One new boundary read**, `.constraints.f_fw_rad_max`, an ordinary declared IN.DAT
+input (`constraint_variables.py`) that both ST files set explicitly. `.constraints.
+pflux_fw_rad_max_mw` and `.physics.pflux_fw_rad_mw` leave the boundary. No cycle
+created; `Blocking.scc` identical before and after on both files.

@@ -38,7 +38,6 @@ input indat .build.dz_vv_lower
 input indat .build.dz_xpoint_divertor
 default defaults .build.f_z_cryostat
 input indat .build.gapomin
-computed process .build.r_cp_top
 default defaults .buildings.admv
 default defaults .buildings.clh2
 default defaults .buildings.conv
@@ -62,6 +61,7 @@ default defaults .buildings.wgt
 default defaults .buildings.wgt2
 default defaults .buildings.wsvfac
 unwritten defaults .ccfe_hcpb.fw_armour_u_nuc_heating
+input indat .constraints.f_fw_rad_max
 default defaults .constraints.flu_tf_neutron_fast_max
 unwritten defaults .costs.UCAD
 unwritten defaults .costs.UCAF

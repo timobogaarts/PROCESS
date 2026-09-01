@@ -41,6 +41,7 @@ from functional_process.models.build import (
     calculate_dr_tf_wp_with_insulation,
     calculate_dx_tf_wp_conductor_max_superconducting,
     calculate_dz_blkt_upper,
+    calculate_r_cp_top_from_tf_inboard_out,
     calculate_r_shld_inboard_inner,
     calculate_r_shld_outboard_outer,
     calculate_r_tf_inboard_radii_no_cs_precomp,
@@ -1521,3 +1522,102 @@ class TestRbld(Tier1Contract):
         "dr_fw_plasma_gap_inboard": (0.05, 0.6),
         "rminor": (1.5, 4.0),
     }
+
+
+def _reference_r_cp_top(r_tf_inboard_out):
+    """`Build.calculate_radial_build`'s `else` at `:1812-1813`, `itart == 0`.
+
+    Driven through `_place_tf_leg` for the reason that helper gives: PROCESS computes
+    `r_tf_inboard_out` 60 lines above the block under test, so it cannot be overridden
+    onto the `DataStructure` directly. `BASELINE`'s `itart` is `0`, which is the arm.
+    """
+    data = _radial(build__dr_tf_inboard=_place_tf_leg(r_tf_inboard_out))
+    assert abs(data.build.r_tf_inboard_out - r_tf_inboard_out) < 1e-12, (
+        "the placement did not land where it was asked"
+    )
+    return data.build.r_cp_top
+
+
+class TestRCpTop(Tier1Contract):
+    """`calculate_r_cp_top_from_tf_inboard_out` vs `calculate_radial_build:1812-1813`.
+
+    An identity, tested for the same two reasons `TestDivertorGeometrySphericalTokamak`
+    is: it pins the *write set* (that this arm writes `r_cp_top` and leaves
+    `.build.f_r_cp` alone, which the three refused arms do not -- see the `assert` in
+    the sibling contract below) and it gives the gradient check a row to look at.
+
+    The legacy value is `st_regression.IN.DAT` at PROCESS's own solution, where
+    `r_cp_top == r_tf_inboard_out == 1.3405301988363134` -- one of the four frozen
+    boundary paths `optimise_design.md` §26.2 found, and the only one this port's own
+    pins had already reported (`reference_provider_st_regression.txt`'s single
+    `computed` row).
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_r_cp_top
+    ported = calculate_r_cp_top_from_tf_inboard_out
+
+    samples = [
+        legacy_sample("st_regression-converged", r_tf_inboard_out=1.3405301988363134),
+        legacy_sample(
+            "spherical_tokamak_eval-converged", r_tf_inboard_out=1.208855401921066
+        ),
+    ]
+
+    fuzz_bounds = {"r_tf_inboard_out": (0.8, 5.0)}
+
+
+def _reference_r_cp_top_superconducting_spherical_tokamak(r_tf_inboard_out):
+    """The same PROCESS lines reached with `itart = 1`, `i_tf_sup = 1` **and**
+    `i_r_cp_top = 2`, `f_r_cp = 1.4` -- both tracked spherical tokamaks' own switches.
+
+    **This adapter exists to execute a claim rather than assert it.** PROCESS's guard
+    is `if itart == 1 and i_tf_sup != 1:` (`build.py:1750`), so a superconducting
+    spherical tokamak takes the `else` and `.build.i_r_cp_top` is never read -- even
+    though both ST input files set it to `2`, whose formula would give
+    `f_r_cp * r_tf_inboard_out = 1.4 * r_tf_inboard_out`. `f_r_cp` is set to `1.4` here
+    for exactly that reason: were the dispatch keyed on `i_r_cp_top` first, this
+    reference would return 40% more than the port and the value test would fail rather
+    than quietly agree. The `assert` pins the other half of the claim -- the three
+    refused arms all *write* `.build.f_r_cp` and this one must not.
+
+    Same lever, same helper, same `else` branch as `_reference_r_cp_top`: two
+    contracts, because `Tier1Contract` takes one reference and the two switch settings
+    are two different journeys to it.
+    """
+    f_r_cp_before = 1.4
+    data = _radial(
+        build__dr_tf_inboard=_place_tf_leg(r_tf_inboard_out),
+        physics__itart=1,
+        tfcoil__i_tf_sup=1,
+        build__i_r_cp_top=2,
+        build__f_r_cp=f_r_cp_before,
+    )
+    assert abs(data.build.r_tf_inboard_out - r_tf_inboard_out) < 1e-12, (
+        "the placement did not land where it was asked"
+    )
+    assert data.build.f_r_cp == f_r_cp_before, (
+        "this arm must leave .build.f_r_cp alone; the three refused arms write it"
+    )
+    return data.build.r_cp_top
+
+
+class TestRCpTopSuperconductingSphericalTokamak(Tier1Contract):
+    """`calculate_r_cp_top_from_tf_inboard_out` vs the same two PROCESS lines reached
+    through `itart = 1, i_tf_sup = 1, i_r_cp_top = 2` -- the two tracked spherical
+    tokamaks' literal configuration, and the executable form of
+    `indat._r_cp_top_arm`'s claim that `i_r_cp_top` is inert on both of them.
+    """
+
+    audit_record = "models/build.md"
+    reference = _reference_r_cp_top_superconducting_spherical_tokamak
+    ported = calculate_r_cp_top_from_tf_inboard_out
+
+    samples = [
+        legacy_sample("st_regression-converged", r_tf_inboard_out=1.3405301988363134),
+        legacy_sample(
+            "spherical_tokamak_eval-converged", r_tf_inboard_out=1.208855401921066
+        ),
+    ]
+
+    fuzz_bounds = {"r_tf_inboard_out": (0.8, 5.0)}

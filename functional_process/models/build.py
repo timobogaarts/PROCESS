@@ -44,6 +44,7 @@ Switches, one occupant class per value, no static kwargs
 | `.physics.itart` | `0` | `DivertorGeometryConventional` |
 | input `dz_xpoint_divertor < 1e-5` | true (`0.0`) | `DivertorGeometryConventional` |
 | `.fwbs.blktmodel` | `0` | no occupant -- `dr_blkt_*`/`dz_shld_upper` are run inputs |
+| `(.physics.itart, .tfcoil.i_tf_sup)` | not (`1`, not-`1`) | `RCpTopFromTfInboardOut` |
 
 `itart == 1` with `dz_xpoint_divertor` left at `0.0` is `DivertorGeometrySpherical-`
 `Tokamak` (not live on the reference run); `itart == 1` with it set is the slot's `None`
@@ -1904,3 +1905,61 @@ class RadialBuildToPlasmaCentre(ExplicitFunction):
             dr_fw_plasma_gap_inboard,
             rminor,
         )
+
+
+def calculate_r_cp_top_from_tf_inboard_out(r_tf_inboard_out):
+    """Centrepost top radius (m) for every machine that is not a *resistive* spherical
+    tokamak. Ports `process/models/build.py:1812-1813`, unchanged.
+
+    PROCESS guards the whole `r_cp_top` block with
+    `if itart == 1 and i_tf_sup != 1:` (`:1750`) and this is its `else`: a machine with
+    no demountable resistive centrepost has no separate top radius at all, so the
+    "centrepost top" is just the plasma-facing edge of the inboard TF leg.
+
+    **One line, and it is an identity -- which is the point.** It is here as a node
+    because `.build.r_cp_top` is *read* (`models/tfcoil/base.py::
+    TfCoilShapePictureFrameTart` places the coil's corner arcs from it, and
+    `models/buildings/buildings.py` sizes the hot cell from it) and was **frozen at the
+    cold `0.0`** on both tracked spherical tokamaks, where PROCESS has `1.2089` m and
+    `1.3405` m -- a wrong value propagating through 43 nodes, not an inert one
+    (`optimise_design.md` §26.3, rank 4). An identity node is what makes the graph say
+    "these are the same length", instead of a boundary read saying "this is an input"
+    about a quantity PROCESS derives.
+
+    **The three arms this is not** all live under `itart == 1 and i_tf_sup != 1` and
+    all three additionally *clamp* to `1.01 * r_tf_inboard_out` and write
+    `.build.f_r_cp`; see `indat._r_cp_top_arm` for the refusals. Both tracked spherical
+    tokamaks set `i_r_cp_top = 2` (`spherical_tokamak_eval.IN.DAT:78`,
+    `st_regression.IN.DAT:2029`) and **that input is inert on both**, because both also
+    set `i_tf_sup = 1`: the outer guard fails before `i_r_cp_top` is ever consulted.
+    Confirmed against PROCESS's own converged `DataStructure` on both files --
+    `r_cp_top == r_tf_inboard_out` to the last bit, where `i_r_cp_top == 2`'s formula
+    `f_r_cp * r_tf_inboard_out` would have given `1.4x` that.
+
+    Parameters
+    ----------
+    r_tf_inboard_out :
+        Plasma-facing radius of the inboard TF leg (m). `.build.r_tf_inboard_out`.
+
+    Returns
+    -------
+    :
+        Centrepost top radius (m). `.build.r_cp_top`.
+    """
+    return r_tf_inboard_out
+
+
+class RCpTopFromTfInboardOut(ExplicitFunction):
+    """cottax node: `calculate_r_cp_top_from_tf_inboard_out`, ports declared.
+
+    Answers `(.physics.itart, .tfcoil.i_tf_sup)` -- every cell except the resistive
+    spherical tokamak (`itart == 1` and `i_tf_sup != 1`), which is
+    `indat._r_cp_top_arm`'s refused arm `-1`. That is *all five* tracked **tokamak**
+    configurations' cell -- the two spherical ones included, because both are
+    superconducting -- and the stellarators have no `.tokamak.build` at all.
+    """
+
+    r_cp_top = OutputInto(build)
+
+    def __call__(self, r_tf_inboard_out=From(build)):
+        return calculate_r_cp_top_from_tf_inboard_out(r_tf_inboard_out)

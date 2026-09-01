@@ -74,6 +74,7 @@ default defaults .buildings.wgt
 default defaults .buildings.wgt2
 default defaults .buildings.wsvfac
 unwritten defaults .ccfe_hcpb.fw_armour_u_nuc_heating
+default defaults .constraints.f_fw_rad_max
 input indat .constraints.flu_tf_neutron_fast_max
 unwritten defaults .costs.UCAD
 unwritten defaults .costs.UCAF

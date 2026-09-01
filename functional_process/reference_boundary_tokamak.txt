@@ -73,6 +73,7 @@ input .buildings.wgt
 input .buildings.wgt2
 input .buildings.wsvfac
 input .ccfe_hcpb.fw_armour_u_nuc_heating
+input .constraints.f_fw_rad_max
 input .constraints.flu_tf_neutron_fast_max
 input .costs.UCAD
 input .costs.UCAF

@@ -904,3 +904,72 @@ the stack at `:807` is a plain sum, so the solve is one subtraction with slope e
   `--fp-fuzz 12` (461 passed), gradients included.
 
 Stellarator untouched: `.tokamak.build` is not on its graph.
+
+## 2026-09-01 — `.build.r_cp_top` ported (missing-producer wave 2)
+
+`optimise_design.md` §26.3's rank-4 row, and **the one of the four that this port's own
+pins had already been reporting for days**: `.build.r_cp_top` is the single `computed`
+line of `reference_provider_st_regression.txt` and
+`reference_provider_spherical_tokamak_eval.txt`, and
+`models/tfcoil/base.py::TfCoilShapePictureFrameTart`'s docstring names it a lost
+producer in so many words. It is here now because §26 ranked it: 43 nodes in the cone,
+the largest of the four, and *live* rather than inert — `TfCoilShapePictureFrameTart`
+places the coil's corner arcs from it and `models/buildings/buildings.py` sizes the hot
+cell from it, so a frozen `0.0` is a wrong number propagating, not a dead one. PROCESS
+has `1.3405` m (`st_regression`) and `1.2089` m (`spherical_tokamak_eval`).
+
+**The whole port is one line, and the work was entirely in reading the switch.**
+`process/models/build.py:1750` guards the block with `if itart == 1 and i_tf_sup != 1:`
+— a *resistive* spherical tokamak, whose demountable centrepost has a top radius of its
+own. Everything else falls to the `else` at `:1812-1813`:
+
+```python
+self.data.build.r_cp_top = self.data.build.r_tf_inboard_out
+```
+
+**Both tracked spherical tokamaks set `i_r_cp_top = 2` and on both it is inert.**
+`spherical_tokamak_eval.IN.DAT:78` and `st_regression.IN.DAT:2029` set it; both also set
+`i_tf_sup = 1`, so the outer guard fails and `i_r_cp_top` is never read. A dispatch keyed
+on `i_r_cp_top` first would have selected `r_cp_top = f_r_cp * r_tf_inboard_out` and, at
+`f_r_cp = 1.4` on both files, produced a centrepost 40% too wide on exactly the two
+configurations this wave exists to fix. Confirmed against PROCESS's own converged
+`DataStructure`: `r_cp_top == r_tf_inboard_out` to the last bit on both.
+`indat._r_cp_top_arm` reads the two switches in PROCESS's own order and its docstring
+carries the reason.
+
+**An identity node, and it is worth having one.** `calculate_r_cp_top_from_tf_inboard_
+out` returns its single argument. That is a node rather than a boundary read because the
+graph should say "these are the same length" where PROCESS derives one from the other,
+instead of saying "this is an input" about a quantity nothing supplies — the same
+argument `TestDivertorGeometrySphericalTokamak` makes for its one-line arm.
+
+**The refused arm** (`('r_cp_top_arm', -1)`) is the resistive ST's three `i_r_cp_top`
+sub-arms. All three additionally own `.build.f_r_cp`, so the write set differs from the
+ported arm's and they cannot be one occupant; all three apply the same clamp,
+`r_cp_top = max(r_cp_top, 1.01 * r_tf_inboard_out)`, spelled in PROCESS as an `if` plus
+a `logger.error` — a genuine `jnp.where` rather than a domain error, for whoever writes
+it. Unwritten because no input file in this repository selects it.
+
+**Tests.** Two tier-1 contracts against the *same* ported function, because
+`Tier1Contract` takes one reference and the two switch settings are two journeys to it.
+`TestRCpTop` drives `BASELINE` (`itart = 0`) through `_place_tf_leg`, the existing
+"move an upstream thickness, keep PROCESS as the oracle" lever.
+`TestRCpTopSuperconductingSphericalTokamak` sets `itart = 1, i_tf_sup = 1,
+i_r_cp_top = 2, f_r_cp = 1.4` — both ST files' literal configuration — and so **executes
+the inertness claim rather than asserting it**: were the dispatch keyed on `i_r_cp_top`
+first, that reference would return 40% more than the port and the value test would fail
+instead of quietly agreeing. Its `assert` pins the other half of the claim, that this arm
+leaves `.build.f_r_cp` alone where the three refused arms write it. Both files'
+converged radii are legacy samples on both contracts. Green plain and under
+`--fp-gradients` (202 passed in the file).
+
+### measured
+
+- `reference_provider_st_regression.txt` / `_spherical_tokamak_eval.txt`: **`computed`
+  1 → 0** on both, and `.build.r_cp_top` leaves the boundary. Those two files' `computed`
+  column is now empty, which is what "may only go down" was written for.
+- `Blocking.scc` on both spherical tokamaks: **identical before and after.** The
+  pre-existing three-node SCC (`dr_tf_inboard_winding_pack` / `tf_inboard_radii` /
+  `dr_tf_plasma_case`, `st_regression` only) neither grew nor moved, and the new node
+  joined no block — `r_tf_inboard_out` is upstream of it and `r_cp_top` is downstream of
+  everything that reads it. Nineteenth slot of `Build`, twenty-fifth occupant class. The stellarators are untouched: `.tokamak.build` is not on their graph, and both stellarator provider pins are byte-identical.

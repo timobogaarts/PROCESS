@@ -26,6 +26,7 @@ from functional_process.models.build import (
     DrTfWpWithInsulationFromInboardBuild,
     PlasmaXpointHeights,
     RadialBuildToPlasmaCentre,
+    RCpTopFromTfInboardOut,
     ShldInboardInnerRadius,
     ShldOutboardOuterRadius,
     ShldVvGapOutboard,
@@ -46,20 +47,22 @@ from functional_process.models.divertor import (
 
 
 class Build(ModelNamespace):
-    """The tokamak's radial and vertical build -- eighteen slots, twenty-four classes.
+    """The tokamak's radial and vertical build -- nineteen slots, twenty-five classes.
 
     `process/models/build.py::Build`, `caller.py:288`. The structural spine of the
     device, and with no stellarator counterpart at all: `models/stellarator/build.py`'s
     `Build` is a different model of a different machine.
 
-    Eighteen slots and twenty-four occupant classes, because six slots hold more than
+    Nineteen slots and twenty-five occupant classes, because six slots hold more than
     one arm: `dr_tf_inboard_winding_pack`, `tf_inboard_radii`, `tf_outboard_mid`,
     `tf_outboard_edge_ripple`, `tf_top_height` (added 2026-08-30) and
     `divertor_geometry` (whose third disposition, `None`, is absence rather than a
-    class). `models/build.py` declares twenty-five classes; the twenty-fifth,
+    class). `models/build.py` declares twenty-six classes; the twenty-sixth,
     `TfTopHeight`, is that slot's abstract family base and occupies nothing.
 
-    **Seven of the eighteen slots are switched, and only two of the switches are an
+    `r_cp_top` (added 2026-09-01) is the nineteenth slot and the twenty-fifth class.
+
+    **Eight of the nineteen slots are switched, and only two of the switches are an
     `i_*` integer alone** (`tf_inboard_radii`'s `.build.i_tf_inside_cs`, added
     2026-08-27, and `tf_top_height`'s `.physics.i_single_null`, added 2026-08-30).
     `.tfcoil.i_tf_sup` and `.tfcoil.i_tf_shape` are ordinary switches;
@@ -186,6 +189,25 @@ class Build(ModelNamespace):
     """The two shield radii, built inwards and outwards from the plasma. Unswitched, and
     the reason the whole central-solenoid radial chain is outside this closure:
     `r_shld_inboard_inner` is not accumulated outwards from the bore."""
+
+    r_cp_top: RCpTopFromTfInboardOut = dataclasses.field(kw_only=True)
+    """`(.physics.itart, .tfcoil.i_tf_sup)` -- every cell but the resistive spherical
+    tokamak, which is `indat._r_cp_top_arm`'s UNPORTED arm `-1`.
+    `.build.r_cp_top` (`build.py:1750-1813`).
+
+    Added 2026-09-01, `optimise_design.md` §26.3 rank 4 and the one row of the four
+    that this port's *own* pins had already reported: `.build.r_cp_top` is the single
+    `computed` line of `reference_provider_st_regression.txt` and
+    `reference_provider_spherical_tokamak_eval.txt`, and
+    `models/tfcoil/base.py::TfCoilShapePictureFrameTart`'s docstring names it as a lost
+    producer in so many words. Frozen at `0.0` where PROCESS has `1.34`/`1.21` m, and
+    *read* -- by that TF coil shape (which drew a centrepost of zero radius) and by the
+    hot-cell sizing in `models/buildings/buildings.py`. 43 nodes in the cone, the
+    largest of the four.
+
+    A `kw_only` field and not a default, because the arm that is refused is a real
+    PROCESS branch with a different write set (it also owns `.build.f_r_cp`) rather
+    than an unreachable one -- exactly `tf_inboard_radii`'s situation."""
 
     dr_tf_outboard: DrTfOutboardSuperconducting = dataclasses.field(kw_only=True)
     """`.tfcoil.i_tf_sup`. The non-superconducting arm scales by

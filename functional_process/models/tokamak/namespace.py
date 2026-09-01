@@ -72,7 +72,11 @@ from cottax.interfaces.pytree_namespace_module import ModelNamespace
 from functional_process.models.blankets.namespace import CcfeHcpb
 from functional_process.models.cryostat import Cryostat
 from functional_process.models.cs_fatigue import CsFatigue
-from functional_process.models.fw import FirstWall, FirstWallGeometry
+from functional_process.models.fw import (
+    FirstWall,
+    FirstWallGeometry,
+    RadiatedWallLoad,
+)
 from functional_process.models.namespace import Build, Divertor
 from functional_process.models.pfcoil.namespace import CSCoil, PFCoil
 from functional_process.models.physics.bootstrap_current import (
@@ -374,6 +378,25 @@ class Tokamak(ModelNamespace):
     the boundary zeros behind 7 of the 11 non-finite roots. A slot of its own because
     `first_wall` reads both fields it would otherwise own; a default because there is no
     switch anywhere beneath it (the `plasma_beta`/`cryostat` rule)."""
+
+    radiated_wall_load: RadiatedWallLoad = RadiatedWallLoad()
+    """`fw.py:130-144` -- `.physics.pflux_fw_rad_mw` and
+    `.constraints.pflux_fw_rad_max_mw`. A third slot cut out of `FirstWall.run`, on
+    `first_wall_geometry`'s grounds: the *other* `i_pflux_fw_neutron` arm of these two
+    lines divides by `.first_wall.a_fw_total`, which `first_wall` owns, so folding them
+    into that slot would make one arm read what the other makes it own.
+
+    Added 2026-09-01, `optimise_design.md` §26.2 rank 5:
+    `.constraints.pflux_fw_rad_max_mw` was frozen at `0.0` on both tracked spherical
+    tokamaks against constraint 67's bound of `1.2`, where PROCESS reads `0.36324` and
+    `0.49896`. Not binding at PROCESS's own answer, so what the freeze cost is an
+    identically zero Jacobian row and a report that says `0.0`, not a wrong optimum.
+
+    A default rather than a `kw_only` field: the `i_pflux_fw_neutron` arm this occupant
+    is *not* is refused upstream, by `indat._first_wall_arm`'s
+    `('first_wall_arm', -3)`, and no assembled machine can have this slot without
+    having passed that refusal. The ported function's docstring carries the
+    argument."""
 
     shield: TokamakShield = dataclasses.field(kw_only=True)
     """`shield.py::Shield`, §A row 8 (`caller.py:329`) -- 4 entered functions, 270

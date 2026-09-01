@@ -43,6 +43,7 @@ from functional_process.models.fw import (
     calculate_first_wall_outputs,
     calculate_first_wall_outputs_double_null,
     calculate_first_wall_outputs_dshaped_double_null,
+    calculate_radiated_wall_load_scaled_plasma_surface,
     set_fw_geometry,
 )
 from process.core.model import DataStructure
@@ -689,4 +690,104 @@ class TestCalculateFirstWallOutputsDshapedDoubleNull(Tier1Contract):
         "f_p_alpha_plasma_deposited": (0.7, 1.0),
         "ffwal": (0.8, 1.2),
         "pflux_plasma_surface_neutron_avg_mw": (0.1, 5.0),
+    }
+
+
+def _reference_radiated_wall_load_scaled_plasma_surface(
+    ffwal, p_plasma_rad_mw, a_plasma_surface, f_fw_rad_max
+):
+    """Real `FirstWall.run()` at `i_pflux_fw_neutron == 1`, read back off `data`.
+
+    `fw.py:130-144` has no `calculate_*` staticmethod of its own -- it is four lines
+    inside `run()` -- so this is the same "close the `data` back-door" adapter the three
+    composites above use, and for the same reason. The geometry is fixed at the
+    D-shaped double-null spherical-tokamak point (both tracked ST files' arm, and the
+    one whose `.constraints.pflux_fw_rad_max_mw` was the frozen boundary path); the four
+    fields the ported function actually reads are the only ones that vary.
+
+    **Nothing in this contract depends on the geometry being right**, and that is the
+    useful property: `run()` computes `.first_wall.a_fw_total` from all of it and the
+    `i_pflux_fw_neutron == 1` arm of these four lines then reads *none* of it -- only
+    `ffwal`, `p_plasma_rad_mw` and `a_plasma_surface`. The geometry is here to let
+    `run()` reach line 130 at all.
+    """
+    data = DataStructure()
+    data.build.z_plasma_xpoint_lower = 4.0
+    data.build.dz_xpoint_divertor = 0.5
+    data.divertor.dz_divertor = 0.4
+    data.build.dz_blkt_upper = 0.5
+    data.build.z_plasma_xpoint_upper = 4.0
+    data.build.dz_fw_plasma_gap = 0.2
+    data.divertor.n_divertors = 2
+    data.build.dr_fw_inboard = 0.03
+    data.build.dr_fw_outboard = 0.03
+    data.physics.itart = 1
+    data.fwbs.i_fw_blkt_vv_shape = 1
+    data.physics.rmajor = 3.6
+    data.physics.rminor = 2.0
+    data.physics.triang = 0.5
+    data.build.dr_fw_plasma_gap_inboard = 0.1
+    data.build.dr_fw_plasma_gap_outboard = 0.2
+    data.fwbs.f_ster_div_single = 0.1
+    data.fwbs.f_a_fw_outboard_hcd = 0.1
+    data.physics.p_alpha_total_mw = 100.0
+    data.physics.f_p_alpha_plasma_deposited = 0.95
+    data.physics.pflux_plasma_surface_neutron_avg_mw = 1.0
+    data.physics.i_pflux_fw_neutron = 1
+
+    data.physics.ffwal = ffwal
+    data.physics.p_plasma_rad_mw = p_plasma_rad_mw
+    data.physics.a_plasma_surface = a_plasma_surface
+    data.constraints.f_fw_rad_max = f_fw_rad_max
+
+    fw = FirstWall()
+    fw.data = data
+    fw.run()
+
+    return fw.data.physics.pflux_fw_rad_mw, fw.data.constraints.pflux_fw_rad_max_mw
+
+
+class TestRadiatedWallLoadScaledPlasmaSurface(Tier1Contract):
+    """`calculate_radiated_wall_load_scaled_plasma_surface` -> real `FirstWall.run()`
+    at `i_pflux_fw_neutron == 1` (`fw.py:130-144`).
+
+    The legacy points are PROCESS's own converged answers on the two files where
+    constraint 67 is active and this port had no producer:
+    `.constraints.pflux_fw_rad_max_mw` was frozen at `0.0` against a bound of `1.2`
+    where PROCESS reads `0.36324` (`st_regression`) and `0.49896`
+    (`spherical_tokamak_eval`) -- `optimise_design.md` §26.2, rank 5. Neither is
+    binding at PROCESS's answer, so what the freeze cost was a zero Jacobian row and a
+    report that said `0.0`.
+
+    `f_fw_rad_max` is `1.0` on both files, so the two outputs coincide there; the fuzz
+    box moves it away from 1 so the peaking factor is actually exercised.
+    `a_plasma_surface` is bounded away from zero -- PROCESS divides by it with no guard.
+    """
+
+    audit_record = "models/fw.md"
+    reference = _reference_radiated_wall_load_scaled_plasma_surface
+    ported = calculate_radiated_wall_load_scaled_plasma_surface
+
+    samples = [
+        legacy_sample(
+            "st_regression-converged",
+            ffwal=0.92,
+            p_plasma_rad_mw=319.9999999940988,
+            a_plasma_surface=810.4940458049573,
+            f_fw_rad_max=1.0,
+        ),
+        legacy_sample(
+            "spherical_tokamak_eval-converged",
+            ffwal=0.92,
+            p_plasma_rad_mw=439.57059868288485,
+            a_plasma_surface=810.4940458049573,
+            f_fw_rad_max=1.0,
+        ),
+    ]
+
+    fuzz_bounds = {
+        "ffwal": (0.8, 1.2),
+        "p_plasma_rad_mw": (10.0, 1000.0),
+        "a_plasma_surface": (100.0, 2000.0),
+        "f_fw_rad_max": (0.5, 3.0),
     }

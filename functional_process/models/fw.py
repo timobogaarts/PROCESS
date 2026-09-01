@@ -83,7 +83,14 @@ that is what `('first_wall_arm', -2)` now says.
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.engineering.ivc_functions import dshellarea, eshellarea
-from functional_process.paths import build, divertor, first_wall, fwbs, physics
+from functional_process.paths import (
+    build,
+    constraints,
+    divertor,
+    first_wall,
+    fwbs,
+    physics,
+)
 
 
 def calculate_first_wall_half_height(
@@ -926,4 +933,102 @@ class FirstWallGeometry(ExplicitFunction):
         return set_fw_geometry(
             radius_fw_channel=radius_fw_channel,
             dr_fw_wall=dr_fw_wall,
+        )
+
+
+def calculate_radiated_wall_load_scaled_plasma_surface(
+    ffwal,
+    p_plasma_rad_mw,
+    a_plasma_surface,
+    f_fw_rad_max,
+):
+    """Photon (radiation) wall load and the peak the constraint bounds, MW/m^2.
+
+    Ports `FirstWall.run`'s `process/models/fw.py:130-144`, the
+    `i_pflux_fw_neutron == 1` arm, unchanged. Two statements of PROCESS in one
+    function because the second is the first times a peaking factor and PROCESS writes
+    them adjacently with nothing between:
+
+    ```
+    pflux_fw_rad_mw     = ffwal * p_plasma_rad_mw / a_plasma_surface   # :131-135
+    pflux_fw_rad_max_mw = pflux_fw_rad_mw * f_fw_rad_max               # :142-144
+    ```
+
+    **The stellarator has its own port of the same two lines**, and the two are
+    genuinely different code: `models/stellarator/plasma_physics.py::
+    _radiated_wall_load` ports `process/models/stellarator/stellarator.py:2241-2251`,
+    which additionally computes `.physics.rad_fraction_total` from the heating powers
+    in the same breath. `FirstWall.run` does not -- the tokamak's radiation fraction is
+    `exhaust.py::calculate_radiation_fraction`, a different quantity against a
+    different denominator, produced by a different slot. Same two `VarPath`s, two
+    devices, two nodes, never both in one graph; the correspondence
+    `build.py::calculate_dz_blkt_upper` and `ZTfInsideHalf` already record.
+
+    **No `i_pflux_fw_neutron` refusal is minted for this node**, because the one that
+    already exists covers it. `indat._first_wall_arm` refuses
+    `i_pflux_fw_neutron != 1` at `('first_wall_arm', -3)`, and a graph that has this
+    node has `.tokamak.first_wall` too, so no assembled machine can reach the
+    `a_fw_total`-normalised arm here without having been refused there first. Writing a
+    second, identical refusal would say the two arms can be chosen apart, and they
+    cannot.
+
+    Parameters
+    ----------
+    ffwal :
+        Factor to scale plasma surface area to first-wall area. `.physics.ffwal`.
+    p_plasma_rad_mw :
+        Total radiated power from the plasma (MW). `.physics.p_plasma_rad_mw`.
+    a_plasma_surface :
+        Plasma surface area (m^2). `.physics.a_plasma_surface`.
+    f_fw_rad_max :
+        Peaking factor for the radiation wall load. `.constraints.f_fw_rad_max`.
+
+    Returns
+    -------
+    :
+        `(pflux_fw_rad_mw, pflux_fw_rad_max_mw)` (MW/m^2).
+    """
+    pflux_fw_rad_mw = ffwal * p_plasma_rad_mw / a_plasma_surface
+    pflux_fw_rad_max_mw = pflux_fw_rad_mw * f_fw_rad_max
+    return pflux_fw_rad_mw, pflux_fw_rad_max_mw
+
+
+class RadiatedWallLoad(ExplicitFunction):
+    """cottax node: `calculate_radiated_wall_load_scaled_plasma_surface`, ports
+    declared. `.tokamak.radiated_wall_load`.
+
+    A node of its own rather than two more outputs of `FirstWall`, on exactly
+    `FirstWallGeometry`'s grounds and with a sharper consequence: the *other*
+    `i_pflux_fw_neutron` arm of these same two lines divides by
+    `.first_wall.a_fw_total`, which `FirstWall` owns, so folding them in would make the
+    live arm's node read a field the dead arm makes it own. Split, the two arms are two
+    occupants of one slot and neither reads what it owns.
+
+    **`.constraints.pflux_fw_rad_max_mw` was a frozen `0.0` on both tracked spherical
+    tokamaks** (`optimise_design.md` §26.2, rank 5), where PROCESS reads `0.36324`
+    (`st_regression`) and `0.49896` (`spherical_tokamak_eval`) against constraint 67's
+    bound of `1.2`. Unlike constraint 56's path this one is **not** binding at
+    PROCESS's own answer, so what the freeze cost was a live Jacobian row and an
+    honest report, not a wrong optimum -- which is why §26.3 ranks it last of the five
+    live rows and why §29 predicts, and measures, a smaller move.
+
+    Unswitched *in this port*: see the ported function's docstring for why the
+    `i_pflux_fw_neutron` refusal lives in `_first_wall_arm` and is not repeated here.
+    """
+
+    pflux_fw_rad_mw = OutputInto(physics)
+    pflux_fw_rad_max_mw = OutputInto(constraints)
+
+    def __call__(
+        self,
+        ffwal=From(physics),
+        p_plasma_rad_mw=From(physics),
+        a_plasma_surface=From(physics),
+        f_fw_rad_max=From(constraints),
+    ):
+        return calculate_radiated_wall_load_scaled_plasma_surface(
+            ffwal=ffwal,
+            p_plasma_rad_mw=p_plasma_rad_mw,
+            a_plasma_surface=a_plasma_surface,
+            f_fw_rad_max=f_fw_rad_max,
         )
