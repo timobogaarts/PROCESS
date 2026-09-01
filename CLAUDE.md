@@ -45,7 +45,16 @@ $PY -m pip install -e "$HOME/jaxgraph[dev,viz]"    # editable cottax, same
 ```
 
 Both installs are **editable**, so edits to `process/`, `functional_process/` and
-`~/jaxgraph/src/cottax/` are live with no reinstall. Verified state at creation
+`~/jaxgraph/src/cottax/` are live with no reinstall. **Check that this is still true of
+`cottax` before trusting it** — on 2026-09-01 the env was found resolving `cottax` from a
+*snapshot copy*, not from `~/jaxgraph/src`, with no `"editable": true` in its
+`direct_url.json`; every cottax edit made for days had been invisible to the port, and
+nothing failed to say so. One line settles it:
+`$PY -c "import cottax; print(cottax.__file__)"` must print a path under
+`~/jaxgraph/src`. Re-editable with `$PY -m pip install -e ~/jaxgraph --no-deps`. This
+matters most for bit-level work: a silent switch of cottax underneath a measurement is
+the kind of thing that produces an irreproducible number and a confident wrong
+explanation. Verified state at creation
 (rebuilt 2026-08-18 after the env was lost): `process 0.0.1.dev1186+g769950de1`,
 `cottax 0.1.0`, `jax 0.11.1` (CPU — no CUDA jaxlib, and jax warns about that on every
 import; harmless), `numpy 2.5.2`, `pytest 9.1.1`. **`tests/unit` → 846 passed;

@@ -41,6 +41,8 @@ means PROCESS's `first_call` seeding of it is the iteration's initial guess. See
 `inductance.md` § "The cycle, one node larger".
 """
 
+from functools import partial
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -167,6 +169,7 @@ def _mtrx(rpts, zpts, brin, bzin, r_group, z_group, n_in_group, alfa, bfix):
     return 2 * npts + n_groups, gmat, bvec
 
 
+@partial(jax.custom_jvp, nondiff_argnums=(2,))
 def _solv(gmat, bvec, n_groups):
     """Group currents from the matrix equation, by singular value decomposition.
 
@@ -200,6 +203,21 @@ def _solv(gmat, bvec, n_groups):
     one thing whose tangent is nonzero while its value is not. Trimming the columns
     removes the degenerate block, and with it the `0/0`. Same numbers, finite
     derivative -- the `safe_math.py` bargain, in linear algebra rather than in `sqrt`.
+
+    **Trimming was not enough, and the `custom_jvp` below is why** (2026-09-01,
+    `_audit/optimise_design.md` §21.3). The trimmed matrix still carries a *repeated*
+    singular value whenever the field block cannot span the groups: with one field point
+    the two field rows have rank 1, so `n_groups >= 3` leaves at least two directions
+    whose only content is the smoothing block, and those come back as `sigma = alfa`
+    twice. That is a **structural** degeneracy of this formulation, not an accident of a
+    point -- `st_regression` has three equilibrium groups and one field point and hits it
+    on every evaluation. Whether the two computed values are then *bit*-equal is a
+    rounding accident: measured on `st_regression`, the eager per-primitive SVD returns
+    them 1 ulp apart (`...550`/`...549`) and the same program under one `jax.jit`
+    returns them bit-identical (`...549`/`...549`), so `1/(sigma_i^2 - sigma_j^2)` is
+    `1/0` in the jitted program only and the whole tangent is `nan` there and finite
+    here. A derivative that exists or not depending on a fusion decision is not a
+    derivative, so it is no longer taken this way.
     """
     umat, sigma, vmat = jnp.linalg.svd(gmat[:, :n_groups], full_matrices=False)
 
@@ -214,6 +232,53 @@ def _solv(gmat, bvec, n_groups):
 
     ccls = vmat.T @ zvec
     return jnp.zeros(N_PF_GROUPS_MAX).at[:n_groups].set(ccls)
+
+
+@_solv.defjvp
+def _solv_jvp(n_groups, primals, tangents):
+    """The least-squares sensitivity, taken without differentiating `U` and `V`.
+
+    The **value** is `_solv`'s own, evaluated by the SVD exactly as before, so nothing
+    any configuration prints moves by a bit. Only the tangent changes, and only in how
+    it is obtained.
+
+    `_solv` returns the minimiser of `||A x - b||` (`A = gmat[:, :n_groups]`), which
+    satisfies the normal equations `A^T A x = A^T b`. Differentiating *those* gives
+
+        A^T A dx = dA^T (b - A x) + A^T (db - dA x)
+
+    -- a linear solve of an `n_groups x n_groups` system, defined whenever `A` has full
+    column rank, and **indifferent to whether two singular values coincide**. The SVD's
+    own JVP is not: it divides by `sigma_i^2 - sigma_j^2` to get `dU`/`dV` separately,
+    and this matrix has a structurally repeated singular value (see `_solv`'s docstring).
+    Neither `U` nor `V` is well defined there; `x` is, and it is the only thing anyone
+    reads.
+
+    Checked rather than asserted, on `st_regression`'s own equilibrium solve
+    (`sigma = [1.25e-07, 1.0e-09, 1.0e-09]`, the last two bit-identical in the jitted
+    program): this rule agrees with a central finite difference of `_solv` itself to 8
+    significant figures in three independent directions, and with the SVD JVP to all
+    digits at the points where that one is finite at all.
+
+    **The one case where this rule is not the derivative of what `_solv` computes** is a
+    singular value at or below `_SIGMA_FLOOR`, where `_solv` reproduces PROCESS's carried
+    `zvec` rather than the pseudo-inverse and the function it computes is not the
+    least-squares solution -- and is discontinuous in `sigma` at the floor, so it has no
+    derivative there in any case. The SVD JVP was not right there either; it was `nan`-
+    prone there for the same tie reason. Recorded rather than papered over: on every
+    configuration measured, `sigma_min` is `alfa` (`1e-9`), an order of magnitude above
+    the `1e-10` floor, so the floor is not active on any live path.
+    """
+    gmat, bvec = primals
+    dgmat, dbvec = tangents
+    out = _solv(gmat, bvec, n_groups)
+    a = gmat[:, :n_groups]
+    da = dgmat[:, :n_groups]
+    x = out[:n_groups]
+    residual = bvec - a @ x
+    rhs = a.T @ (dbvec - da @ x) + da.T @ residual
+    dx = jnp.linalg.solve(a.T @ a, rhs)
+    return out, jnp.zeros(N_PF_GROUPS_MAX).at[:n_groups].set(dx)
 
 
 def _rsid(brin, bzin, ccls, bfix, gmat, n_groups):
