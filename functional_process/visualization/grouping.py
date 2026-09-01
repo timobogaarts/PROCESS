@@ -781,6 +781,17 @@ def group_palette(groups: Iterable[Group]) -> dict[Group, Shade]:
     return out
 
 
+TIP_VARS = 12
+"""How many variable names one hover may list before it stops and says how many are left.
+
+One number for every list the tooltip draws -- a cell's shared variables and a node's own
+`reads`/`owns` alike -- because they are the same kind of list read the same way, and a
+cap that differed between them would be a difference the reader has to discover. Some
+nodes here declare tens of ports; an uncapped tip is a page-height column of names that
+covers the matrix it is describing, which is worse than a truncated one that says so.
+"""
+
+
 def _edges(graph: Graph) -> dict[tuple[NodePath, NodePath], list[VarPath]]:
     """Node -> node, with the variables that flow along each. The boundary is dropped."""
     owners = graph.owners
@@ -831,8 +842,24 @@ def _matrix_struct(
     hue = {name: palette[at[name]] for name in graph.nodes}
     index = {name: i for i, name in enumerate(order)}
 
-    rows = [
-        {
+    # A row carries the node's **declared ports**, not the union of the edges this matrix
+    # happens to draw for it. The two differ, and the difference is the whole reason to
+    # prefer the declaration: a node reads boundary variables nothing in the graph owns
+    # and owns variables nothing downstream reads, and neither appears as a mark anywhere
+    # in the matrix. Reading a node's inputs off its incoming cells would therefore
+    # describe the picture rather than the node -- and a diagonal hover is the one place
+    # a reader is asking about the node itself. `reads`/`owns` are `NodeDefinition`'s own
+    # ports (`cottax/spec.py`), the same two lists `xdsm_struct` ships as
+    # `reads`/`writes`, so the two diagrams answer this question from one source.
+    def _ports(vars_: Sequence[VarPath]) -> tuple[list[str], int]:
+        seen = list(dict.fromkeys(vars_))
+        return [formatter.var(v) for v in seen[:TIP_VARS]], len(seen)
+
+    rows = []
+    for name in order:
+        reads, n_reads = _ports(graph[name].reads)
+        writes, n_writes = _ports(graph[name].owns)
+        rows.append({
             "name": formatter.node((name, graph[name])),
             "group": group_label(at[name]),
             "colour": hue[name].colour,
@@ -840,16 +867,18 @@ def _matrix_struct(
             "overlay": hue[name].overlay,
             "problem": isinstance(graph[name], DeclaredNode),
             "minted": is_minted(name),
-        }
-        for name in order
-    ]
+            "reads": reads,
+            "nr": n_reads,
+            "writes": writes,
+            "nw": n_writes,
+        })
 
     cells = [
         {
             "r": index[source],  # outputs in rows: this row produces ...
             "c": index[target],  # ... what this column reads
             "n": len(shared),
-            "v": [formatter.var(v) for v in shared[:12]],
+            "v": [formatter.var(v) for v in shared[:TIP_VARS]],
             "colour": hue[source].colour,
         }
         for (source, target), shared in _edges(graph).items()
@@ -973,6 +1002,14 @@ h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:.01em; }
   border:1px solid var(--rule); border-radius:6px; padding:6px 8px; font-size:11px;
   max-width:44ch; box-shadow:0 4px 14px #0003; display:none;
   font-family:ui-monospace,Menlo,monospace; white-space:pre-wrap; }
+/* The tooltip's three voices, spelled the way `cottax`'s XDSM tip spells its own
+   (`xdsm_html.py`, the `'h'` line class): a section header is bold and underlined, its
+   items are the indented lines below it. `.dim` is the supporting context a hover leads
+   *away* from -- which nodes, which row -- and `.fb` is the one thing on a DSM worth an
+   accent, a mark below the diagonal. */
+#tip .h { font-weight:700; text-decoration:underline; }
+#tip .dim { color:var(--dim); }
+#tip .fb { color:var(--accent); font-weight:700; }
 #bar { position:absolute; right:10px; top:10px; z-index:5; display:flex; gap:6px; }
 #bar button { font:11px inherit; padding:4px 9px; border-radius:5px; cursor:pointer;
   border:1px solid var(--rule); background:var(--bg); color:var(--fg); }
@@ -1175,6 +1212,55 @@ function show(e, html) {
   tip.style.left = Math.min(e.clientX + 14, innerWidth - r.width - 8) + 'px';
   tip.style.top = Math.min(e.clientY + 14, innerHeight - r.height - 8) + 'px';
 }
+/* Everything between the two markers below is *pure*: it reads `D` and `esc` and touches
+   no DOM, no event and no layout. That is what makes the wording testable without a
+   browser -- `tests/functional_process/test_dsm_tooltips.py` slices this block out of a
+   rendered page by those markers, evaluates it beside the page's own `D`, and asserts on
+   the literal string. Keep it that way: anything here that reached for `tip` or an event
+   would take the tooltip's text back out of reach of the only check there is on it. */
+/* TOOLTIP-TEXT-BEGIN */
+/* A capped list of names as its own indented block, with the tail counted rather than
+   drawn -- the one idiom every list in this tooltip uses (a node's ports, a cell's
+   shared variables), so `... N more` always means the same thing. `total` is the real
+   length; `vars` is what survived `TIP_VARS` back in `_matrix_struct`. */
+function varList(vars, total) {
+  return vars.map(v => '  ' + esc(v)).join('\n') +
+    (total > vars.length ? `\n  <span class="dim">... ${total - vars.length} more</span>` : '');
+}
+/* A node's own i/o, from its *declared* ports -- the same `reads:` / `writes:` pair
+   cottax's XDSM tip shows for a diagonal box, and for the same reason: the diagonal is
+   where a reader is asking about the node, not about a coupling. A name repeated twice
+   (row and column, which on the diagonal are the same node) answered nothing. */
+function portList(label, vars, total) {
+  if (!total) return `<span class="h">${label}:</span> <span class="dim">none</span>`;
+  return `<span class="h">${label}:</span> ${total}\n` + varList(vars, total);
+}
+function nodeTip(i) {
+  const r = D.rows[i];
+  return `<b>${esc(r.name)}</b>\n` +
+    `<span class="dim">${esc(r.group)} &middot; row/col ${i}</span>\n` +
+    portList('reads', r.reads, r.nr) + '\n' + portList('writes', r.writes, r.nw);
+}
+/* Variables first. The question at a mark is *which* variable couples these two nodes;
+   the two names are already on the row and column headers and under the crosshair, so
+   leading with them spent the tip's first line on what the reader could already see.
+   They stay, as the footer, spelt `from`/`to` so the direction needs no memory of which
+   axis is which -- and the feedback marking, the one thing a DSM exists to show, keeps
+   its arrow and its accent down there where it qualifies the coupling rather than
+   announcing it.
+
+   One variable is its own headline; several get a count above the list, so the first
+   line is the size of the coupling either way. */
+function cellTip(d) {
+  const r = D.rows[d.r], c = D.rows[d.c], fb = d.r > d.c;
+  const head = d.n === 1 ? `<b>${esc(d.v[0])}</b>`
+    : `<b>${d.n} variables</b>\n` + varList(d.v, d.n);
+  return head + '\n' +
+    (fb ? '<span class="fb">&#8595; feeds backwards</span>'
+        : '<span class="dim">feeds forwards</span>') + '\n' +
+    `<span class="dim">  from  ${esc(r.name)}\n  to    ${esc(c.name)}</span>`;
+}
+/* TOOLTIP-TEXT-END */
 stage.addEventListener('mousemove', e => {
   const t = e.target;
   if (t.dataset && t.dataset.i) {
@@ -1185,10 +1271,7 @@ stage.addEventListener('mousemove', e => {
         `contained in: ${esc(d.box.container)}${d.box.crosses ? ' (nothing)' : ''}\n` +
         esc(d.box.members.join('\n')));
     } else {
-      const r = D.rows[d.r], c = D.rows[d.c];
-      show(e, `<b>${esc(r.name)}</b>\n  ${d.r > d.c ? '&#8595; feeds backwards' : 'feeds'} ` +
-        `${d.n} var(s) to\n<b>${esc(c.name)}</b>\n` + esc(d.v.join('\n')) +
-        (d.n > d.v.length ? `\n... ${d.n - d.v.length} more` : ''));
+      show(e, cellTip(d));
     }
     return;
   }
@@ -1199,7 +1282,10 @@ stage.addEventListener('mousemove', e => {
     cx.setAttribute('width', CELL); cx.setAttribute('height', n * CELL);
     cy.setAttribute('x', X0); cy.setAttribute('y', Y0 + i * CELL);
     cy.setAttribute('width', n * CELL); cy.setAttribute('height', CELL);
-    show(e, `row ${i}  <b>${esc(D.rows[i].name)}</b>\ncol ${j}  <b>${esc(D.rows[j].name)}</b>`);
+    /* On the diagonal row and column are one node, so the generic two-name readout said
+       the same thing twice. `nodeTip` answers the question that cell actually poses. */
+    show(e, i === j ? nodeTip(i)
+      : `row ${i}  <b>${esc(D.rows[i].name)}</b>\ncol ${j}  <b>${esc(D.rows[j].name)}</b>`);
   } else {
     cx.setAttribute('width', 0); cy.setAttribute('width', 0);
     tip.style.display = 'none';
