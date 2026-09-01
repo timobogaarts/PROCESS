@@ -562,3 +562,138 @@ and verify **inside the run** by printing `functional_process.__file__` as its f
   KKT-vs-feasibility explanation does **not** apply there — refuted. It does apply to
   `st_regression`, where `grad f == 0` deletes the test's first term exactly.
 - **`IFE.IN.DAT`** remains out of scope: `.ife.*` has no unit in `unit_registry.md`.
+
+## 28. Plan for the next session, 2026-09-01 (close)
+
+**Read §27 first for the state as of midday; this section supersedes its §27.3/§27.6
+lists.** Ten commits landed after it (`cd01d16a` … `3107bf49`).
+
+### 28.1 The shape of what was learned today
+
+Three things were believed and are now measured false. They are listed first because each
+was acted on before it was checked, and the pattern is the lesson.
+
+1. **"`--native` solves better than `--provider`, so something is seeding differently."**
+   The starting states are **bit-identical** — 0 differing boundary places on six of seven
+   configurations. What differed is that `--provider` read PROCESS's **converged**
+   `DataStructure` to decide the SAND block's *shape* (`degenerate_fixed_points`) and the
+   QP's *row weights* (`residual_condition_scales`). §17.2's error, relocated from the seed
+   into the problem statement. One of the two "improvements" (`low_aspect_ratio_DEMO`) is
+   causal; the other (`stellarator_helias` 257 → 169) is noise — one ulp in one scale row
+   moves that count by 58.
+2. **"c1 and c2 are cycles; c83 is the sole active inequality at the solution."** All
+   three wrong (§30). c1 is an *assignment* — making it produce `beta_total_vol_avg`
+   leaves the graph acyclic, and `Stellarator.run()` already inlines it saying so. c2 owns
+   no unknown anywhere. c83 is one of **four** in the solution's active set, and §23(d)
+   had already withdrawn the identity reading.
+3. **"The compile is slow because XLA folds closure arithmetic."** Refuted (§25): the
+   whole constant pool is 24.6 kB, everything folded is scalar, no reduction, matmul,
+   decomposition or loop is folded. **Compilation dominates because the module is 38 635
+   lines (132 125 for a tokamak)**, not because it computes anything.
+
+The general lesson, already stated in §23 and re-earned twice: on this problem *any*
+agreement measurement is weak evidence. Bitwise fusion-invariance is not a health signal —
+it appears on a solve that stopped at 49 iterations with `min ie -0.41`.
+
+### 28.2 The rule that organises the constraint work
+
+An equality constraint is often a cycle wearing different clothes. Over a chain
+`A → a → B → b → C → c`, the constraint `a − c = 0` is `a = C(B(a))` — a fixed point, and
+it exists only because two things now produce `a`.
+
+The resolution is **not** to demote `A` to a guess. The equation determines the nearest
+**producerless** variable upstream, which may be far from the constraint — and that is
+exactly what an `ixc` entry names. So:
+
+> **an `ixc` entry + an equality = drop a producer + supply its replacing equation = one cycle**
+
+Whence the decomposition of every configuration:
+
+    eq  equalities        determine  eq  of the ixc      <- the implicit system
+    ixc − eq                         the design freedom
+    inequalities + objective         the actual optimisation
+
+| configuration | mode | ixc | eq | DOF | ineq |
+|---|---|---|---|---|---|
+| helias_5b | OPT | 3 | 3 | **0** | 2 |
+| large_tokamak_eval | EVAL | 2 | 2 | 0 (correct) | 23 |
+| spherical_tokamak_eval | EVAL | 3 | 3 | 0 (correct) | 15 |
+| stellarator_helias | OPT | 8 | 2 | 6 | 12 |
+| st_regression | OPT | 14 | 3 | 11 | 15 |
+| low_aspect_ratio_DEMO | OPT | 19 | 4 | 15 | 21 |
+| large_tokamak_nof | OPT | 20 | 3 | 17 | 23 |
+
+Both evaluation files are exactly square, which is the cycle reading confirmed: PROCESS
+root-finds them with `fsolve` and never forms an objective.
+
+**And `helias_5b` is only well-posed as an optimisation because one of its three
+equalities is broken** — c11 is inert there, restoring a degree of freedom by failing. No
+configuration is over-determined, but the balance holds *by authorship* and nothing checks
+the counting half.
+
+### 28.3 The queue, in the order to take it
+
+1. **The `min ie` sign on the root-find arm** (§29). `^cond.*` carries PROCESS's
+   *unnegated* normalised residual — **positive means violated** — and
+   `run_cold_matrix.cold_mdf`'s SQP arm reads the VMCON-signed callback trace while its
+   root-find arm reads the raw `^cond` values. So on the two `i_process_run_mode = -2`
+   files the column prints the most comfortably *satisfied* constraint under a footer
+   saying "NEGATIVE IS VIOLATED". `spherical_tokamak_eval`'s `-1.38e+01` and
+   `large_tokamak_eval`'s `-1.99e+00` are both that artefact; the genuinely violated
+   inequality is **c56 at `+7.04e-03`**. One-line fix, but it moves every root-find row of
+   a published pin, so it needs its own commit and a regenerated matrix.
+2. **Regenerate `reference_cold_matrix.txt`.** Stale since `b14da8c1`. Run it **alone**:
+   two passes died on `LLVM ERROR: Unable to allocate section memory` before
+   `jax.clear_caches()` between rows landed, and a configuration peaks at 4.2 GB on a
+   15 GB machine. Use `$PY -m functional_process.run_cold_matrix` (see §27.5).
+3. **Port `.current_drive.big_q_plasma`.** The last missing producer, and the reason
+   `st_regression` cannot be measured end to end under any seeding mode. First establish
+   whether it is a *registration* problem — the node exists in
+   `models/stellarator/heating.py` and may simply be absent from the tokamak graph — or a
+   real port.
+4. **Retire `--provider` and make `--native` the default.** Understood (§27), not done.
+   The axis is already split (`--compare-process`), so this is the flip plus deletion.
+5. **The balance guard.** `refuse_inert_conditions` catches dead rows; the counting half
+   would have flagged `helias_5b` on day one. Same static walk, no solve.
+6. **`degenerate_fixed_points` needs a rule.** It asks a *structural* question ("is `g`
+   the identity?") with a *pointwise* measurement, so `jnp.maximum(u, m)` reads as
+   degenerate wherever it is evaluated on the flat side, and a live coupling is silently
+   deleted. Its own docstring records the right long-term answer — split the switch and
+   spell the identity arm as an empty slot. Until then it should **sample several points
+   and refuse on disagreement**, matching its existing "a block that could not be measured
+   raises rather than reporting healthy" discipline. Choosing the cold start instead of
+   the warm one is just the other arbitrary single point.
+7. **The SLSQP column.** Never run across the matrix. It separates *"this problem is
+   degenerate"* from *"VMCON handles degeneracy badly"*, and for SAND there is no PROCESS
+   answer to compare against at all, so a second independent optimiser is the closest
+   thing to an oracle available.
+8. **Instrument the merit function and line search.** Now the *sole* surviving candidate
+   for the `stellarator_helias` fork: §26 cleared missing producers on that configuration
+   (0 of 294 boundary inputs differ, 0 of 15 conditions unreachable), and §23 ruled out the
+   row's weight, the row's presence, the inner tolerance and the conditioning. §21.4 points
+   at it independently — the failing QP sits one line-search step past the state the
+   published row reports.
+
+### 28.4 Later, and deliberately not now
+
+**Reproducing PROCESS comes first.** MDF is PROCESS's own formulation and the regression
+suite is the only oracle for numerical behaviour; restructuring before matching would make
+every remaining disagreement unattributable — port bug or formulation change. §30 is
+therefore diagnostic, and its recommendations wait.
+
+When they are taken, they are: c1 → a producer for `beta_total_vol_avg` where `ixc 5` is
+active (no SCC forms; PROCESS already does this); c11 → a `RootFind` over `rmajor` on the
+two files where `ixc 3` is active; the pure checks and the ~21 specifications left alone,
+because a constraint over only-computed quantities **cannot** become a producer and cottax
+refuses it as a type error (`output(s) already produced here`).
+
+Beyond that sits the reduced-space formulation §28.2 implies and nobody has built: let the
+graph close the `eq` equalities with a Newton and hand the optimiser only the `ixc − eq`
+design variables, the objective and the inequalities. That is what "multidisciplinary
+feasible" means taken literally, and it is a third point beyond today's MDF and SAND.
+
+Also open: the nine (helias) / twelve (tokamak) node outputs baked as compile-time
+constants because `models/initialisation.py` bodies return Python floats — a `Scan`, which
+is PROCESS's core sweep workflow, therefore recompiles the whole module per point; and
+`optimise_graph`'s docstring is stale about the producer-dropping policy, which
+`indat.py:5055` already implements (`0 if 140 in ixc else 1`).
