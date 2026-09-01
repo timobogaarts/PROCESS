@@ -1514,6 +1514,23 @@ def _timing_block(rows) -> list[str]:
 
     Empty when `phase_timing.install()` found jax's internals moved; the header line says
     so rather than printing a table of zeros.
+
+    **The `model` and `other` columns are UNVERIFIED and must not be quoted.** A direct
+    probe of `stellarator_helias` -- wrapping `host_cache.flat_conditions` plus
+    `flat_condition_jacobian` and running `run_one` on the same tree -- reports `model`
+    4.14 s for the whole row against this block's 6.6 + 4.4 = 11.0 s, and `compile`
+    11.1 s against 25.3 s. The probe reproduces itself to three figures across two runs,
+    so the disagreement is not noise and is not yet explained. `trace`, `lower` and the
+    *shape* of the conclusion (compilation dominates) survive it; the per-arm split does
+    not. `_audit/next_steps.md` §28.3 carries it as an open item.
+
+    What the probe does establish, twice: **552 calls each** of values and Jacobian for
+    108 + 169 = 277 SQP iterations -- about four evaluations per iteration, i.e. the
+    line-search trials §21.1 had to instrument `pyvmcon`'s problem object to see --
+    at 13.7 ms and 32.7 ms per call *inclusive*, and roughly 3.75 ms per call once the
+    trace/lower/compile inside each is subtracted. So a few hundred iterations at a few
+    milliseconds genuinely cannot account for the wall clock, and they do not: the
+    arithmetic is seconds and the compiler is tens of seconds.
     """
     timed = [(row, arm, split) for row in rows for arm, split in row.timings.items()]
     if not timed:
@@ -1525,11 +1542,11 @@ def _timing_block(rows) -> list[str]:
     block = [
         "",
         (
-            "PHASE TIMINGS -- seconds per arm, EXCLUSIVE, summing to that arm's own "
-            "wall clock."
+            "PHASE TIMINGS -- seconds per arm, EXCLUSIVE. `model`/`other` UNVERIFIED "
+            "-- see `_timing_block`."
         ),
         (
-            "`model` is graph evaluation inside the driver and `sqp` the optimiser's own "
+            "`model` is graph evaluation inside the driver, `sqp` the optimiser's own "
             "cost (cvxpy, CLARABEL,"
         ),
         (

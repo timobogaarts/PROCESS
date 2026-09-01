@@ -697,3 +697,33 @@ constants because `models/initialisation.py` bodies return Python floats — a `
 is PROCESS's core sweep workflow, therefore recompiles the whole module per point; and
 `optimise_graph`'s docstring is stale about the producer-dropping policy, which
 `indat.py:5055` already implements (`0 if 140 in ixc else 1`).
+
+### 28.5 The phase-timing block's `model` column is unverified
+
+Added at the close of 2026-09-01 and **not to be quoted until reconciled.** The per-arm
+split in `reference_cold_matrix.txt`'s `PHASE TIMINGS` disagrees with a direct probe of the
+same configuration on the same tree:
+
+| | probe, whole row | published table, MDF + SAND |
+|---|---|---|
+| `model` | **4.14 s** | 6.6 + 4.4 = **11.0 s** |
+| `compile` | 11.1 s | 14.3 + 11.0 = 25.3 s |
+
+The probe wraps `host_cache.flat_conditions`/`flat_condition_jacobian`, calls
+`run_one(..., NATIVE, True)`, and reproduces itself to three significant figures across two
+runs (`model` 4.19 / 4.14, `sqp` 1.79 / 1.77, 552 / 552 calls). So the disagreement is not
+run-to-run noise. Untested causes: the table resets `phase_timing` per *arm* where the probe
+resets once per *row*; the arm span may include work the probe attributes elsewhere; and
+`split`'s residual clamp may be absorbing something. **Resolve before the column is used
+for anything.**
+
+What the probe does establish, and what survives the disagreement:
+
+- **552 calls each** of the value and Jacobian entry points for 108 + 169 = 277 SQP
+  iterations -- about four model evaluations per iteration, i.e. the line-search trials
+  §21.1 had to wrap `pyvmcon`'s problem object to see.
+- **13.7 ms and 32.7 ms per call inclusive; ~3.75 ms exclusive** of the trace/lower/compile
+  happening inside each. So 75-85 % of a "model evaluation" is compilation, and a few
+  hundred iterations at a few milliseconds cannot and do not account for the wall clock.
+- The shape of §28's conclusion is unaffected: **compilation dominates, arithmetic is
+  seconds.** It is the per-arm attribution that is wrong, not the direction.
