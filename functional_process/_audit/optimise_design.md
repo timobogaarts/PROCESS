@@ -5496,3 +5496,297 @@ needed.
   does, so `reference_provider_st_regression.txt` is stale against a structural change,
   and the fix is `$PY -m functional_process.provider --write`. Not done here, because
   regenerating a published pin belongs to whoever made the structure move.
+
+## 27. `--native` does not solve from a different place: it solves a different problem (2026-09-01)
+
+> **Measured in a scratch copy, not in the live tree**, at
+> `/tmp/claude-1000/-home-tbogaarts-PROCESS/df0c22b1-02c2-4e73-99ce-b061606f318d/scratchpad/PROCESS_seed`,
+> against `HEAD b14da8c1` plus that copy's own changes to `run_cold_matrix.py` and
+> `tests/functional_process/test_cold_matrix.py`. Source changes are supplied as
+> `.patch` files in the copy and were **not** applied to `~/PROCESS`. Every number below
+> was taken with `PYTHONPATH` set to the copy and with `functional_process.__file__`
+> printed as the first line of each run, per §27.5 of `next_steps.md`.
+
+The question: `--native` beat `--provider` on two SAND rows -- `stellarator_helias`
+257 -> 169 and `low_aspect_ratio_DEMO` 500-cap -> 107 converged -- and a PROCESS-free
+starting state has no business beating one seeded from PROCESS's own `init_process`.
+
+**It doesn't.** The two starting states are *bit-identical*. What differs is the
+**problem statement**, in two places, and both of them read PROCESS's **converged
+answer** under `--provider`.
+
+### 27.1 [measured] The env diff is empty. All of it
+
+For each configuration: `boundary.problem_graph(f)`'s boundary, read through
+`sand_harness.ground_truth` from (a) `native.native_state(f)` and (b) a deep copy of
+`reference.cold` with `provider.install(answers_for(f), ..., disagreeing=False)`.
+
+| configuration | boundary places | differ, native vs provider |
+|---|---|---|
+| `stellarator_helias` | 302 | **0** |
+| `helias_5b` | 296 | **0** |
+| `large_tokamak_nof` | 401 | **0** |
+| `large_tokamak_eval` | 399 | **0** |
+| `low_aspect_ratio_DEMO` | 400 | **0** |
+| `spherical_tokamak_eval` | 381 | **0** |
+| `st_regression` | 382 | 1 -- and it is not a value difference, see below |
+
+Not "small differences" -- **zero**, on every path, bitwise, on six of seven files. The
+only places either side declines to answer are the same five on both,
+`.vacuum.{l1, l2, l3, ceff_i, xmult_i}`, which §26.8.4 already closed: they are not
+`DataStructure` fields at all, both sides raise `AttributeError`, and both are seeded
+`0.0`.
+
+`st_regression`'s single row is `.current_drive.big_q_plasma` -- §26.3's rank-1 missing
+producer, read only by `.Objective`. The provider holds it at `0.0` (the seed's, PROCESS
+never having written it before the models run) and the native state raises, which
+`mdf.seed`/`mda_env` turn into `0.0`. **The value the solve receives is the same `0.0` on
+both sides**; only the route to it differs, and the native route is the one that leaves a
+row in `NativeState.missing` saying so. So the effective starting states are identical on
+**all seven** files.
+
+This **confirms** §26 rather than contradicting it. §26.8.3 measured that only 5 places
+per configuration cannot be answered natively and §26.8.1 that every non-`computed`
+boundary row is bit-identical across seed / post-model / converged. Those two together
+*predict* an empty diff, and the prediction holds. So question 3 of the brief -- *which
+env is closer to `init_process`, and which to the input file?* -- has no content: they
+are the same env, and `native.DERIVATIONS` reproduces `init.py` exactly on everything
+these seven problem graphs read.
+
+The prediction this refutes is the framing of the investigation itself, which the
+coordinator and I both held: *"something is providing different values"*. Nothing is.
+
+### 27.2 [measured] What actually differs: two calls that read `reference.data`
+
+`native.NativeReference.data is .cold` -- with no PROCESS run there is no converged
+`DataStructure`, so the "warm" env falls back to the cold one. Two consumers read that
+env, and neither of them is a value the solve starts from:
+
+| consumer | what it decides | `--provider` reads | `--native` reads |
+|---|---|---|---|
+| `sand_harness.assemble` -> `sand.degenerate_fixed_points` | **the SHAPE** -- which `FixedPoint` problems are dropped, their unknowns reverting to frozen boundary inputs | PROCESS's converged `DataStructure` | the run's own cold start |
+| `sand.residual_condition_scales` | **the ROW WEIGHTS** -- the `1/\|u\|` factor on every residual equality of the QP | same | same |
+
+`run_cold_matrix.py`'s docstring already warned about the second ("a native SAND row is
+a differently scaled problem"). The first was not documented anywhere and is the larger
+effect. **Both mean the `--provider` SAND rows are conditioned on PROCESS's answer** --
+§17.2's error, in the problem statement rather than in a column.
+
+Everything else was checked and is identical on both files: `ixc` (same list *and* same
+order), `icc`, `n_equality`, `i_figure_merit`, and all 8/19 bound pairs.
+`switch_values` does differ in provenance -- `sand.switch_values_for(cold, ...)` gives 10
+keys against `switch_values_from_indat`'s 15 on `low_aspect_ratio_DEMO`, the extra 5
+being `i_cp_lifetime`, `i_plant_availability`, `i_tf_sup`, `ireactor`, `itart` -- but it
+is not the cause: §27.4's crossed arms hold `switch_values` fixed at the provider's and
+still reproduce both rows exactly.
+
+### 27.3 [measured] The 2x2 that separates them
+
+**And it removes a second confound the two published tables carried.** They were not
+measured on the same tree: `reference_cold_matrix.txt`'s header reads
+`HEAD 6bb65494` and `native_baseline.txt`'s reads `HEAD 2e949920`, one commit apart, and
+the working tree today is `b14da8c1`, one further. Nothing in either intervening commit
+should move a number (`2e949920` adds `jax.clear_caches()` between configurations;
+`b14da8c1` adds two refusals), but §19 and §24 both record this codebase moving a
+converged solve on changes that "should not" -- so a cross-tree comparison of iteration
+counts was never safe to read. Every arm below is one process, one tree.
+
+`--provider`'s reference and `--provider`'s installed cold `DataStructure` throughout --
+including its `switch_values` -- with only `assemble_env` and `scale_env` varying. `warm`
+is PROCESS's converged env, `cold` the run's own.
+
+**`stellarator_helias`** -- shape identical in all four arms (desg 14, cond 21, eq 8):
+
+| assemble | scale | SQP | status | objf |
+|---|---|---|---|---|
+| warm | warm | **257** | converged | 1.217757367901031 |
+| cold | cold | **169** | converged | 1.2177574282449604 |
+| warm | cold | **169** | converged | 1.2177574282449604 |
+| cold | warm | **257** | converged | 1.217757367901031 |
+
+Bit-for-bit determined by `scale_env`; `assemble_env` does nothing. The published
+`--provider` (257) and `--native` (169) rows are reproduced exactly.
+
+**`low_aspect_ratio_DEMO`**:
+
+| assemble | scale | desg/cond/eq | SQP | status | objf |
+|---|---|---|---|---|---|
+| warm | warm | 25/32/10 | **500** | cap(500) | -0.4015206418721025 |
+| cold | cold | 26/33/11 | **107** | converged | -0.3991548192190167 |
+| warm | cold | 25/32/10 | **500** | cap(500) | -0.401472632818502 |
+| cold | warm | 26/33/11 | **85** | converged | -0.3991548275187122 |
+
+Here it is `assemble_env` that decides, replicated across a large change of scaling; and
+**`--native`'s own combination is not the best of the four** (85 beats its 107).
+
+**The seed is bit-identical in every arm of both tables**: 0 of 14 and 0 of 25/26 shared
+unknowns differ, after `_seed` has run over the cold env. There is no sense in which one
+mode "starts from a better point".
+
+### 27.4 [measured] The extra unknown is `max()`'s knee, and the degeneracy test is not structural
+
+`low_aspect_ratio_DEMO`'s shape difference is one problem,
+`^problem.tokamak.cicc_superconducting_tf_coil.dr_tf_plasma_case`. Its residual
+Jacobian `d(g(u) - u)/du`:
+
+| env | `.tfcoil.dr_tf_plasma_case` | `max\|J\|` | verdict |
+|---|---|---|---|
+| warm (PROCESS converged) | `0.072873764` | **0.0** | degenerate -> **dropped**, unknown frozen |
+| cold (own start) | `0.072834767` | **0.5** | not degenerate -> kept as unknown + equality |
+
+The unknown moves **0.05 %** between the two points and the verdict flips. The body says
+why: `dr_tf_plasma_case_from_input` is `jnp.maximum(u, m)` with `m` independent of `u`
+(`models/tfcoil/base.py:266`). Above the clamp it is the identity (`J = 0`, "degenerate");
+below it, `J = -1`; and **exactly at the knee JAX's `maximum` hands each argument the
+subgradient `0.5`**, which is the `0.5` measured. The cold env sits exactly on the knee,
+PROCESS's converged answer sits strictly above it.
+
+So `degenerate_fixed_points`' docstring claim -- *"`g(u) - u` is **structurally** zero
+here"* -- does not hold for this node. It is zero on one side of a clamp, and the
+function evaluates a region-dependent property at a single point and acts on the answer
+as though it were structural. That is a real defect, not a mode difference, and it is
+independent of which env you hand it.
+
+Which reading is *right* is answerable, and the answer is that dropping it is wrong:
+`sand_harness.assemble`'s own docstring says a dropped problem's unknown "reverts to an
+ordinary boundary input", so the `--provider` arm freezes the TF plasma-side case
+thickness at its cold value while the inboard radial build it closes (`mda.py:308-342`)
+goes on moving. The consequence is measured -- the cap at 500 in **both** scale arms,
+each ending on a violated inequality (`min ie -3.318e-03` and `-3.341e-05`) where both
+cold-assemble arms finish feasible -- and it is missing-producer-shaped: a live coupling
+deleted from the problem, not a rank-deficient equality removed from it.
+
+**And "solves better" is not "agrees better", which the split now makes visible.**
+Scored against PROCESS (§27.6), the converged cold-assemble row is *further* from
+PROCESS's objective than the capped warm-assemble one: `d objf 1.76e-02` against
+`1.18e-02`, at the same `worst dx 7.09e-02` (ixc 41). Read with the sign, that is what a
+correctly-constrained problem should look like beside a relaxed one -- the warm arm has
+one variable frozen that ought to be determined, so it is optimising over a strictly
+larger feasible set and reaches a more extreme objective without ever converging -- but
+PROCESS's own `-0.40629623` is more extreme than *both*, and this section does not
+explain that. It is recorded rather than argued.
+
+### 27.5 [measured] Causal or coincidence: **one of each**, and the stellarator is coincidence
+
+The brief asked for this and §23 warned it would be needed. A sweep of the scale family
+`s_warm * (s_cold / s_warm) ** t` on `stellarator_helias`, shape held at the provider's,
+`t = 0` being `--provider` and `t = 1` being `--native`:
+
+| t | 0.0 | 0.25 | 0.5 | 0.75 | 1.0 | 1.25 | 1.5 | 2.0 |
+|---|---|---|---|---|---|---|---|---|
+| SQP | 257 | 221 | 103 | **66** | 107 | 202 | 200 | 118 |
+
+Non-monotonic, 4x range, and the **best** point is `t = 0.75`, an arbitrary
+interpolation belonging to neither mode.
+
+And the sharpest number in this section: `t = 1.0` gives **107** where the arm built from
+`s_cold` itself gives **169**. The two scale sets were differenced and they differ in
+**one row by exactly one ulp** -- `^cond.stellarator.wp_width_r_min`,
+`1.5907936959295021` against `1.5907936959295024`, the other five bitwise equal. A
+relative perturbation of `2.2e-16` on one row weight moves the iteration count by 58.
+
+**So `stellarator_helias` 257 -> 169 carries no information.** It is trajectory noise,
+and §27.2's "bitwise agreement is weak evidence on this problem" now has a companion:
+*iteration count is not evidence either, at this resolution*. This is the fifth
+structural story to die on that configuration.
+
+**`low_aspect_ratio_DEMO` is the opposite verdict.** The lever is a deleted equation, not
+a weight; it replicates across both scale arms (500 / 500 against 107 / 85); and it has a
+mechanism that was read off the source rather than inferred from the count. The
+*magnitude* is still noise -- 85 against 107 is the same scale lever -- but
+`cap(500)` against `converged` is not.
+
+### 27.6 The axis split, implemented
+
+The owner's decision (seed natively, compare against PROCESS, retire `--provider` once
+this was understood) was blocked by one thing: a `--native` row had `process_objf = None`
+**by construction**, so `PRO`, `PRO objf`, `d objf` and `worst dx` were blank. That was
+never a real coupling -- `sand_harness.reference_run` is disk-cached, and scoring a
+finished solve needs PROCESS's answer *loaded*, not *used as a seed*.
+
+`run_cold_matrix.py` now has two axes:
+
+- **seeding** -- `--provider` (still the default), `--provider-strict`, `--seed`,
+  `--native`;
+- **scoring** -- `--compare-process` / `--no-compare-process`, defaulting to
+  `compares_by_default(mode)`, which is `True` wherever PROCESS already ran for the seed
+  and `False` on `--native`.
+
+They compose freely. In `run_one` the scoring object is a local named **`oracle`** and
+never `reference`; it reaches `_against_process` and nothing that assembles, seeds or
+solves, so a future edit that leaks it into the solve path has to rename it first. The
+table gained a **`seed` column** and the header two lines that say seeding and scoring
+separately, because the failure mode being designed against is a reader taking a filled
+`PRO objf` for "seeded from PROCESS". `_against_process` also now takes the seeding
+reference's `ixc` and **blanks `dx` rather than comparing two differently ordered ID
+lists** -- they agree on all seven files today, and a permutation reported as a
+per-variable disagreement would be silent in the one column that exists to catch silence.
+
+`--provider` is deliberately **not** deleted: it still has a pin against it, and a mode
+that explains a published row should not vanish in the commit that explains it.
+
+#### 27.6.1 [measured] The intended default table -- `--native --compare-process`, all seven
+
+691 s, one pass, in the copy. Every solve column reproduces the published `--native`
+table exactly and every `PRO*` column reproduces the published `--provider` table's,
+which is the check that the split is inert on both axes.
+
+```
+         configuration   seed  form  graph  nodes  desg  cond   eq  blks  drvn   SQP      status            objf        PRO objf    d objf  worst dx    max|eq|      min ie  PRO
+    stellarator_helias    nat   MDF    154    169     8    15    2   158     5   108   converged      1.21775747      1.21491678  2.34e-03  1.08e-01   4.20e-11   -1.95e-10   46
+    stellarator_helias    nat  SAND    154    124    14    21    8    46    14   169   converged      1.21775743      1.21491678  2.34e-03  1.08e-01   1.04e-07    1.62e-12   46
+             helias_5b    nat   MDF    154    160     3     6    3   149     5     4   converged     0.764215516     0.763518372  9.13e-04  2.01e-03   1.93e-12    7.01e-02    3
+             helias_5b    nat  SAND    154     96     9    12    9    65     9     7   converged     0.764215517     0.763518372  9.13e-04  6.18e-03   1.10e-13    7.02e-02    3
+     large_tokamak_nof    nat   MDF    243    271    20    27    3   245     6     7   converged             1.6             1.6  1.16e-11  2.01e-02   2.41e-06   -1.23e-06    8
+     large_tokamak_nof    nat  SAND    243    180    27    34   10    92    27    10   converged             1.6             1.6  4.82e-12  6.37e-01   7.19e-06   -1.06e-04    8
+    large_tokamak_eval    nat   MDF    245    271     2     2    2    25     2     3   converged               -            none         -  3.29e-12   3.47e-14   -1.99e+00    0
+ low_aspect_ratio_DEMO    nat   MDF    243    270    19    26    4   246     6    10     stopped    -0.406311573     -0.40629623  3.78e-05  1.15e-04   5.93e-12   -1.41e-06   16
+ low_aspect_ratio_DEMO    nat  SAND    243    183    26    33   11    88    26   107   converged    -0.399154819     -0.40629623  1.76e-02  7.09e-02   4.96e-13    1.44e-12   16
+spherical_tokamak_eval    nat   MDF    241    259     3     3    3    29     2     2   converged               -            none         -  3.64e-09   1.16e-09   -1.38e+01    0
+         st_regression    nat   MDF    241      -     -     -    -     -     -     -      FAILED               -     -16.5885765         -         -          -           -   10
+         st_regression    nat  SAND    241      -     -     -    -     -     -     -      FAILED               -     -16.5885765         -         -          -           -   10
+```
+
+Three readings the old table could not give:
+
+1. **Every row now carries both facts.** `seed nat` and a filled `PRO objf` on the same
+   line -- no PROCESS object in the solve path, PROCESS's answer beside the result.
+2. **`st_regression` fails under `--native` too**, on `b14da8c1`'s
+   `_refuse_inert_objective`, naming `.current_drive.big_q_plasma`. That is worth stating:
+   the missing producer is a property of the **graph**, not of the seed, so no seeding
+   mode can hide it and none can fix it. The `PRO objf -16.5885765` and `PRO 10` cells are
+   filled on both its lines, which is exactly the pairing `--provider` used to be needed
+   for -- the file PROCESS solves in 10 iterations and the port refuses.
+3. **`low_aspect_ratio_DEMO` SAND converges and *disagrees more*** -- see §27.4's last
+   paragraph. Under `--provider` that row read `cap(500)`/`d objf 1.18e-02`; here it reads
+   `converged`/`1.76e-02`. A table with only one of the two columns would have called
+   that an improvement.
+
+`--provider`'s own rows are unchanged by the split: the `helias_5b` smoke row was run
+both ways and the `PRO*` group is identical, which it must be, since for the three
+seeding modes that already ran PROCESS `oracle is reference`.
+
+### 27.7 Not resolved
+
+- **The degeneracy test needs a rule, and this section does not supply one.** "Evaluate
+  at the cold start" is not a fix, it is the other single point. The honest shapes are
+  either to declare the clamp's arms as a switch (as `models/tfcoil/base.py`'s module
+  docstring already does for `tfc_sidewall_is_fraction`) or to test degeneracy over a
+  *sample* of points and refuse when they disagree. Both are out of scope here.
+- **`low_aspect_ratio_DEMO` is not the only file whose shape moves**, and the third one
+  was found by reading the tables rather than by measuring: `large_tokamak_nof`'s SAND
+  row goes `26/33/9` under `--provider` to `27/34/10` under `--native`, the same `+1`
+  unknown and `+1` equality. It converges in 10 iterations either way, so the drop costs
+  it nothing *there* -- which is exactly why it went unnoticed. The residual Jacobian was
+  measured on `stellarator_helias` (shape does not move) and `low_aspect_ratio_DEMO`
+  (it does); the remaining tokamaks were not put through `fixed_point_residuals`, and
+  every one of them has the same `dr_tf_plasma_case` node.
+- **`sand.residual_condition_scales`' reference point is now an open question**, not a
+  detail. §27.5 shows the choice is worth up to 4x in iterations and that no point in the
+  family is defensible on the evidence available; §23's sweep said the same about one
+  row's factor. The scaling wants a principled rule, and it does not have one.
+- **`switch_values_for` vs `switch_values_from_indat` disagree on 5 keys** for
+  `low_aspect_ratio_DEMO` (§27.2). Shown not to be the cause of anything here, and not
+  investigated further; two routes to the same statically bound switches should not
+  return different dictionaries.
+- **The `--provider` retirement itself.** Understood now; not done.

@@ -152,11 +152,30 @@ Four modes, `--provider` (the default), `--provider-strict`, `--seed` and `--nat
   worth more than a `--provider` row that does, and a native row that does not is a
   work list keyed to `_audit/init_audit.md`, which is what this mode is for.
 
-  The `PRO` column is `-` on a native row: it is PROCESS's own iteration count and this
-  mode does not run PROCESS. The SAND column carries one further caveat --
-  `native.NativeReference` -- because with no converged run there is no warm env for
-  `sand.residual_condition_scales`, so a native SAND row is a differently scaled problem
-  from the same file's `--provider` row while the MDF rows are directly comparable.
+  The SAND column carries one caveat -- `native.NativeReference` -- because with no
+  converged run there is no warm env for `sand.residual_condition_scales` **or for
+  `sand_harness.assemble`'s degeneracy test**, so a native SAND row is a differently
+  scaled and sometimes differently *shaped* problem from the same file's `--provider`
+  row, while the MDF rows are directly comparable. `_audit/optimise_design.md` §27
+  measures both and shows they are the whole of the difference: the two modes' boundary
+  values are bit-identical on all seven files.
+
+Seeding and scoring are two axes, and `--compare-process` is the second one
+--------------------------------------------------------------------------
+Until 2026-09-01 a `--native` row's `PRO`, `PRO objf`, `d objf` and `worst dx` cells were
+blank **by construction**, and that was the only remaining reason to run `--provider` at
+all. The coupling was never real. `sand_harness.reference_run` is disk-cached and costs
+~4.6 s cold and ~0.01 s warm, and scoring a finished solve against PROCESS's converged
+answer needs that answer *loaded*, not *used as a seed*.
+
+So `--compare-process` / `--no-compare-process` compose freely with the four seeding
+modes. In `run_one` the scoring object is a local named `oracle` and never `reference`;
+it reaches `_against_process` and nothing that assembles, seeds or solves. The table
+prints the two facts in two places -- a `seed` column for where the start came from, the
+`PRO*` group for whether the answer was scored -- so that a filled `PRO objf` beside
+`seed nat` reads as what it is.
+
+**`--native --compare-process` is the intended default table.**
 """
 
 from __future__ import annotations
@@ -242,6 +261,16 @@ NATIVE = "native"
 """The four boundary-value modes; see this module's docstring. `PROVIDER` is the
 default because it is the only one that is simultaneously a measurement and inert."""
 
+SEED_LABEL = {
+    PROVIDER: "prov",
+    PROVIDER_STRICT: "strict",
+    SEED_ONLY: "seed",
+    NATIVE: "nat",
+}
+"""What the `seed` column prints. **Seeding and comparison are two axes, not one**, and
+this column exists so that no reader can take a filled `PRO objf` cell as evidence that
+PROCESS supplied the starting state -- see `run_one`'s `compare` argument."""
+
 
 @dataclass
 class Row:
@@ -254,6 +283,17 @@ class Row:
     """
 
     name: str
+    seed_mode: str = PROVIDER
+    """Where this row's **starting state** came from -- one of the four boundary modes.
+    Printed as the `seed` column, and deliberately independent of `compared`."""
+    compared: bool = False
+    """Was PROCESS run for this row's `PRO`/`PRO objf`/`d objf`/`worst dx` cells?
+
+    **This is not the seeding question**, and conflating the two is the thing the split
+    exists to prevent: a `--native --compare-process` row is seeded with no PROCESS
+    object in the path at all and still scored against PROCESS's converged answer,
+    because loading that answer costs one disk-cached `reference_run` and nothing about
+    *scoring* a solve requires having *started* it from PROCESS."""
     assembles: bool | None = None
     note: str = ""
     graph_nodes: int | None = None
@@ -746,9 +786,25 @@ def _process_objective(reference, root_find):
         return None
 
 
-def _against_process(store, reference, process_objf, explained=None):
+def _against_process(store, oracle, process_objf, explained=None, ixc=None):
     """Fill a formulation's `dx`/`dobjf`/`explained` -- the port's answer against
     PROCESS's own.
+
+    **`oracle` is PROCESS's run and only PROCESS's run.** On a
+    `--native --compare-process` row the solve was seeded and stated from a
+    `native.NativeReference` and this object is a separate, disk-cached `ReferenceRun`
+    loaded for scoring; the caller passes the right one and this function does not know
+    or care which mode produced `store`.
+
+    `ixc` is the **design vector's own order**, which is the order `store["_x"]` was
+    written in, and it is compared against `oracle.ixc` rather than assumed equal:
+    `native.native_reference` sorts the file's `ixc` and `SingleRun.init` sorts PROCESS's
+    (`native_reference`'s docstring records that this is an eighth initialisation source
+    and that three of the seven files state `ixc` out of order). They agree on all seven
+    today, and a `dx` column computed by zipping two differently ordered ID lists would
+    report a per-variable disagreement that is really a permutation -- silently, and in
+    the one column that exists to catch silent disagreement. So a mismatch blanks the
+    column instead.
 
     `dx` is the **worst relative deviation over the `ixc` design vector**, the same
     quantity `run_sand_harness.main`'s per-variable table prints in its `rel` column and
@@ -757,20 +813,22 @@ def _against_process(store, reference, process_objf, explained=None):
     plus the ID it occurred at, because on a matrix the row is the unit and the full
     table belongs to the per-configuration harness.
 
-    A `NativeReference` has no `converged` and no objective -- there was no PROCESS run
-    -- so both columns stay `-` on a `--native` row, exactly as `PRO` does.
+    A `NativeReference` has no `converged` and no objective, so a `--native` row without
+    `--compare-process` never reaches here at all (`_solve_both` skips the call) and both
+    columns stay `-`, exactly as `PRO` does.
     """
     x = store.get("_x")
-    converged = getattr(reference, "converged", None)
-    if x and converged:
+    converged = getattr(oracle, "converged", None)
+    order = list(oracle.ixc) if ixc is None else list(ixc)
+    if x and converged and order == list(oracle.ixc):
         rels = [
             abs(got - converged[i]) / max(abs(converged[i]), 1e-300)
-            for i, got in zip(reference.ixc, x, strict=True)
+            for i, got in zip(order, x, strict=True)
         ]
         if rels:
             worst = int(np.argmax(rels))
             store["dx"] = rels[worst]
-            store["dx_at"] = reference.ixc[worst]
+            store["dx_at"] = order[worst]
     if process_objf is not None and store.get("objf") is not None:
         store["dobjf"] = abs(store["objf"] - process_objf) / max(
             abs(process_objf), 1e-300
@@ -811,7 +869,18 @@ def _headline(refusal) -> str:
     return f"{text[:_HEADLINE].rstrip()} [...] (run `machine_from_indat` for the rest)"
 
 
-def run_one(path, mode=PROVIDER) -> Row:
+def compares_by_default(mode: str) -> bool:
+    """Does `mode` score its rows against PROCESS unless told not to?
+
+    Yes for the three modes that already run PROCESS to build their seed -- the
+    comparison is then free. No for `NATIVE`, which is the mode whose whole claim is
+    that PROCESS is not in the path, so paying 4.6 s a row for it is a choice the caller
+    makes with `--compare-process` rather than one this file makes for them.
+    """
+    return mode != NATIVE
+
+
+def run_one(path, mode=PROVIDER, compare=None) -> Row:
     """One configuration: assembly verdict, PROCESS, cold MDF, cold SAND.
 
     Nothing here raises. Each of the five phases records what it got and the next one
@@ -825,17 +894,30 @@ def run_one(path, mode=PROVIDER) -> Row:
     configuration falls back to the seed and says so, since a matrix that lost six rows
     to a classifier would be a worse instrument than one that lost a column.
 
-    **`NATIVE` takes a different second phase and no PROCESS run at all.** The other
-    three modes need `reference_run` for the seed they start from; a native row starts
-    from `native.native_state` and states its problem with `native.native_reference`, so
-    the only thing PROCESS would still be paying for is the `PRO` column, and a run that
-    is proving independence should not have PROCESS in it for a column. That column is
-    `-` on a native row, deliberately -- the count is in `reference_cold_matrix.txt`
-    beside every other row and is a property of the file, not of this pass.
+    **`NATIVE` takes a different second phase and seeds from no PROCESS object at all.**
+    The other three modes need `reference_run` for the seed they start from; a native row
+    starts from `native.native_state` and states its problem with
+    `native.native_reference`.
+
+    **Seeding and comparison are separate axes, and `compare` is the second one.** Until
+    2026-09-01 they were one: a `--native` row had `process_objf = None` *by
+    construction*, so `PRO objf`, `d objf` and `worst dx` were blank, and that was the
+    only reason `--provider` still existed. It was never a real coupling. `reference_run`
+    is disk-cached (~4.6 s a row, and 0.01 s once warm), and scoring a solve against
+    PROCESS's converged answer requires *having* that answer, not *having started from*
+    it -- so `compare=True` loads it as an **oracle** and nothing else. It is never
+    handed to `mdf.assemble`, `mda_env`, `sand_harness.assemble` or `_seed`; the local is
+    called `oracle` rather than `reference` precisely so that a future edit that leaks it
+    into the solve path has to rename it first.
+
+    `compare` defaults to `compares_by_default(mode)` -- free where PROCESS already ran,
+    opt-in on `NATIVE` via `--compare-process`.
     """
     began = time.perf_counter()
+    if compare is None:
+        compare = compares_by_default(mode)
     name = path.name[: -len(".IN.DAT")] if path.name.endswith(".IN.DAT") else path.stem
-    row = Row(name=name)
+    row = Row(name=name, seed_mode=mode, compared=bool(compare))
     # The file's own problem type, read from its text before anything else runs: a file
     # stating `i_process_run_mode = -2` is a **root find over its equalities**, which is
     # what PROCESS answers it with (`scipy.optimize.fsolve`, no objective, the
@@ -886,7 +968,34 @@ def run_one(path, mode=PROVIDER) -> Row:
             f"({reference.n_equality} eq), i_figure_merit {reference.i_figure_merit}"
         )
         switch_values = None if is_reference else switch_values_from_indat(str(path))
-        return _solve_both(row, reference, machine_graph, switch_values, cold, began)
+        oracle = None
+        if compare:
+            # **Scoring only.** Loaded after the native reference is already built and
+            # never passed to anything that assembles, seeds or solves -- see this
+            # function's docstring on why the name is `oracle`.
+            try:
+                oracle = reference_run(str(path))
+            except Exception as failure:  # noqa: BLE001 -- an empty column, not a lost row
+                row.compared = False
+                print(
+                    f"  compare: PROCESS run failed, PRO columns stay blank -- "
+                    f"{type(failure).__name__}: {failure}"
+                )
+            else:
+                row.process_iterations = oracle.solver_iterations
+                row.process_objf = _process_objective(oracle, row.root_find)
+                said = (
+                    "formed no objective (evaluation mode)"
+                    if row.root_find
+                    else repr(row.process_objf)
+                )
+                print(
+                    f"  compare: PROCESS {said} in {oracle.solver_iterations} "
+                    f"iteration(s) -- SCORING ONLY, this row is seeded natively"
+                )
+        return _solve_both(
+            row, reference, machine_graph, switch_values, cold, began, oracle=oracle
+        )
 
     try:
         reference = reference_run(str(path))
@@ -896,10 +1005,16 @@ def run_one(path, mode=PROVIDER) -> Row:
         print(f"  {row.note}")
         traceback.print_exc()
         return row
-    row.process_iterations = reference.solver_iterations
     row.n_ixc = len(reference.ixc)
     row.n_icc = len(reference.icc)
-    row.process_objf = _process_objective(reference, row.root_find)
+    # These three modes seed *from* `reference`, so PROCESS ran whatever `compare` says.
+    # `compare=False` still suppresses the comparison columns -- the axes are separate in
+    # both directions, and `--no-compare-process` is how a reader asks for the port's own
+    # numbers with nothing of PROCESS's answer beside them.
+    oracle = reference if compare else None
+    if oracle is not None:
+        row.process_iterations = oracle.solver_iterations
+        row.process_objf = _process_objective(oracle, row.root_find)
     print(
         f"  PROCESS: {reference.solver_iterations} "
         f"{'fsolve' if row.root_find else 'VMCON'} iterations in "
@@ -907,7 +1022,11 @@ def run_one(path, mode=PROVIDER) -> Row:
         f"{reference.convergence_parameter:.2e}; "
         f"{len(reference.ixc)} ixc, {len(reference.icc)} icc "
         f"({reference.n_equality} eq), objf "
-        + ("none formed (evaluation mode)" if row.root_find else f"{row.process_objf!r}")
+        + (
+            "none formed (evaluation mode)"
+            if row.root_find
+            else ("not compared" if oracle is None else f"{row.process_objf!r}")
+        )
     )
     cold = reference.cold
     try:
@@ -936,10 +1055,12 @@ def run_one(path, mode=PROVIDER) -> Row:
             cold, reference.icc, reference.i_figure_merit
         )
 
-    return _solve_both(row, reference, machine_graph, switch_values, cold, began)
+    return _solve_both(
+        row, reference, machine_graph, switch_values, cold, began, oracle=oracle
+    )
 
 
-def _solve_both(row, reference, machine_graph, switch_values, cold, began):
+def _solve_both(row, reference, machine_graph, switch_values, cold, began, oracle=None):
     """Cold MDF and cold SAND for one configuration, each a row rather than an exit.
 
     Factored out of `run_one` when `NATIVE` arrived: the two modes differ entirely in
@@ -958,6 +1079,12 @@ def _solve_both(row, reference, machine_graph, switch_values, cold, began):
     writes down, and reporting it beside PROCESS's answer under a "formulation" heading
     implies a comparison that has no content. So the run is one row, and the row is MDF's
     because MDF is the one that is PROCESS's own problem.
+
+    **`oracle` is the comparison side and `reference` is the seeding side.** They are the
+    same object for the three provider/seed modes and *different* objects for
+    `--native --compare-process`, which is exactly why they are two parameters: `oracle`
+    reaches `_against_process` and nothing else, and `reference` reaches every build and
+    every solve. `oracle is None` leaves the `PRO` columns blank.
     """
     arms = [("MDF", cold_mdf, row.mdf, {"root_find": row.root_find})]
     if not row.root_find:
@@ -977,10 +1104,15 @@ def _solve_both(row, reference, machine_graph, switch_values, cold, began):
             print(f"  {label}: FAILED -- {store['note']}")
             traceback.print_exc()
             continue
-        # The one column on this table that compares the port with **PROCESS's answer**
-        # rather than with the port under another seeding mode. Cheap -- both numbers
-        # are already in hand -- and it is the check §17.2 got wrong three times.
-        _against_process(store, reference, row.process_objf, explained)
+        # The one column group on this table that compares the port with **PROCESS's
+        # answer** rather than with the port under another seeding mode. Cheap -- both
+        # numbers are already in hand -- and it is the check §17.2 got wrong three times.
+        # `oracle`, never `reference`: on a `--native --compare-process` row those are
+        # two different objects and only one of them is PROCESS's.
+        if oracle is not None:
+            _against_process(
+                store, oracle, row.process_objf, explained, ixc=reference.ixc
+            )
         if store.get("_omitted"):
             omitted.append(f"{label} {store['_omitted']}")
         print(
@@ -1036,6 +1168,7 @@ def _native_counts(state, mode) -> dict:
 
 _COLUMNS = (
     ("configuration", 22, "{}"),
+    ("seed", 6, "{}"),
     ("form", 5, "{}"),
     ("graph", 6, "{}"),
     ("nodes", 6, "{}"),
@@ -1089,9 +1222,11 @@ def render(rows) -> str:
             lines.append(
                 _cell(row.name, 22)
                 + " "
+                + _cell(SEED_LABEL.get(row.seed_mode, row.seed_mode), 6)
+                + " "
                 + " ".join(
                     _cell("REFUSED" if i == 0 else None, w)
-                    for i, (_h, w, _f) in enumerate(_COLUMNS[1:])
+                    for i, (_h, w, _f) in enumerate(_COLUMNS[2:])
                 )
             )
             notes.append(f"{row.name}: ASSEMBLY REFUSED -- {row.note}")
@@ -1111,6 +1246,7 @@ def render(rows) -> str:
             lines.append(
                 " ".join([
                     _cell(row.name, 22),
+                    _cell(SEED_LABEL.get(row.seed_mode, row.seed_mode), 6),
                     _cell(form, 5),
                     _cell(row.graph_nodes, 6),
                     _cell(store["nodes"], 6),
@@ -1226,6 +1362,31 @@ def render(rows) -> str:
         ),
         "",
         (
+            "TWO INDEPENDENT AXES, and this table keeps them apart on purpose. `seed` "
+            "is where the"
+        ),
+        (
+            "STARTING STATE came from; the `PRO*` columns are whether the finished "
+            "answer was SCORED"
+        ),
+        (
+            "against PROCESS's. `seed nat` with a filled `PRO objf` means no PROCESS "
+            "object was in the"
+        ),
+        (
+            "solve path at all and PROCESS's converged answer was loaded afterwards, "
+            "for scoring only"
+        ),
+        (
+            "(`run_one`'s `oracle`, `--compare-process`). A blank `PRO*` group means no "
+            "comparison was"
+        ),
+        (
+            "asked for -- it is NOT evidence that the row was seeded natively; read the "
+            "`seed` column."
+        ),
+        "",
+        (
             "`PRO objf`/`d objf`/`worst dx` compare the port with PROCESS'S OWN ANSWER, "
             "which is the"
         ),
@@ -1242,9 +1403,14 @@ def render(rows) -> str:
             "`_Fsolve.solve` ends"
         ),
         (
-            "            `self.objf = None`. `-` means no PROCESS run happened at all "
-            "(`--native`)."
+            "            `self.objf = None`. `-` means NO COMPARISON WAS ASKED FOR "
+            "(`--no-compare-process`,"
         ),
+        (
+            "            or `--native` without `--compare-process`) -- a statement "
+            "about this column, not"
+        ),
+        "            about the seed.",
         (
             "  d objf    |port - PROCESS| / |PROCESS| on that objective. A row flagged "
             "EXPLAINED in the"
@@ -1351,7 +1517,7 @@ Not every file in the package -- the ones a changed byte in could move a cell. A
 """
 
 
-def provenance(mode=PROVIDER, argv=()) -> list[str]:
+def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
     """The header every table carries: **which tree state these rows were measured on.**
 
     Emitted by `checkpoint`, not hand-written on top afterwards -- which is the whole
@@ -1398,7 +1564,25 @@ def provenance(mode=PROVIDER, argv=()) -> list[str]:
         + "`; do not hand-edit",
         "# the table -- a re-run overwrites it, this header included.",
         "#",
-        f"# MEASURED {when}, boundary mode `--{mode}`.",
+        f"# MEASURED {when}.",
+        f"# SEEDED    `--{mode}` -- where every starting value came from.",
+        (
+            "# SCORED    "
+            + (
+                "against PROCESS's converged answer (`PRO`/`PRO objf`/`d objf`/"
+                "`worst dx`)."
+                if compare
+                else "NOT against PROCESS -- the `PRO*` columns are blank by request."
+            )
+        ),
+        (
+            "#   These are TWO AXES. A `--native` row that is scored still had no "
+            "PROCESS object"
+        ),
+        (
+            "#   in its solve path; the answer is loaded afterwards, for the columns "
+            "only."
+        ),
         f"# TREE: HEAD {head} ({subject[:88]})",
     ]
     if dirty:
@@ -1425,7 +1609,7 @@ def provenance(mode=PROVIDER, argv=()) -> list[str]:
     return lines
 
 
-def checkpoint(rows, out=OUT, mode=PROVIDER, argv=()) -> None:
+def checkpoint(rows, out=OUT, mode=PROVIDER, argv=(), compare=None) -> None:
     """Write the table as it stands. Called after every configuration; see `OUT`.
 
     Failing to write the checkpoint must never lose the row that was just computed, so
@@ -1435,14 +1619,18 @@ def checkpoint(rows, out=OUT, mode=PROVIDER, argv=()) -> None:
     """
     try:
         Path(out).write_text(
-            "\n".join(provenance(mode, argv)) + render(rows) + "\n", encoding="utf-8"
+            "\n".join(provenance(mode, argv, compare)) + render(rows) + "\n",
+            encoding="utf-8",
         )
     except OSError as failure:  # pragma: no cover -- reported, never fatal
         print(f"  (could not checkpoint to {out}: {failure})", flush=True)
 
 
 def _mode(argv) -> str:
-    """The boundary-value mode named on the command line; `PROVIDER` by default."""
+    """The **seeding** mode named on the command line; `PROVIDER` by default.
+
+    Comparison is `_compare`'s axis, not this one.
+    """
     for flag, mode in (
         ("--seed", SEED_ONLY),
         ("--native", NATIVE),
@@ -1454,15 +1642,38 @@ def _mode(argv) -> str:
     return PROVIDER
 
 
+def _compare(argv, mode: str) -> bool:
+    """Should the rows be **scored against PROCESS**? An axis of its own.
+
+    `--compare-process` and `--no-compare-process` set it explicitly; otherwise
+    `compares_by_default(mode)` decides, which is `True` wherever PROCESS already ran to
+    build the seed and `False` on `--native`. The pairing this exists for is
+    `--native --compare-process`: seeded with no `DataStructure` anywhere in the solve
+    path, scored against PROCESS's converged answer, and the two facts reported in two
+    different places on the table.
+    """
+    if "--no-compare-process" in argv:
+        return False
+    if "--compare-process" in argv:
+        return True
+    return compares_by_default(mode)
+
+
 def main(argv=None, out=OUT):
     """Walk the configurations, run both formulations cold on each, print the table.
 
     `--input <path>` may be repeated and replaces the default list entirely; with none
     given every entry of `CONFIGURATIONS` runs. `--out <path>` moves the checkpoint file;
     the table is written there after **each** configuration, so an interrupted run leaves
-    every row it finished (see `OUT`). `--seed`/`--provider`/`--provider-strict` choose
-    where the boundary values come from (see this module's docstring); the default is
-    `--provider`.
+    every row it finished (see `OUT`).
+    `--seed`/`--provider`/`--provider-strict`/`--native` choose where the boundary values
+    come from (see this module's docstring); the default is `--provider`.
+
+    `--compare-process`/`--no-compare-process` are the **other** axis: whether the
+    finished rows are scored against PROCESS's converged answer. They compose freely with
+    the seeding flags, and `--native --compare-process` is the pairing the split was made
+    for -- no `DataStructure` anywhere in the solve path, and the `PRO` columns filled
+    from a disk-cached run loaded afterwards.
     """
     argv = sys.argv[1:] if argv is None else argv
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"]
@@ -1470,12 +1681,13 @@ def main(argv=None, out=OUT):
         out = argv[argv.index("--out") + 1]
     paths = [_resolve(p) for p in (chosen or CONFIGURATIONS)]
     mode = _mode(argv)
-    print(f"boundary values: {mode}")
+    compare = _compare(argv, mode)
+    print(f"seeding: {mode}    scored against PROCESS: {compare}")
     began = time.perf_counter()
     rows: list[Row] = []
     for path in paths:
-        rows.append(run_one(path, mode))
-        checkpoint(rows, out, mode, argv)
+        rows.append(run_one(path, mode, compare))
+        checkpoint(rows, out, mode, argv, compare)
         print(f"  (checkpointed {len(rows)} of {len(paths)} row(s) to {out})")
         # Configurations are independent, and jax caches every executable it compiles
         # for the life of the process. A whole pass therefore accumulates all seven
