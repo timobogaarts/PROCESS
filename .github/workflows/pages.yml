@@ -1,0 +1,58 @@
+---
+name: Publish DSM pages
+
+# Publishes the uncut-graph DSM pages and nothing else.
+#
+# This fork's Pages site exists for one purpose: to render four generated HTML pages
+# that are already committed under `functional_process/`. Everything else that used to
+# run on a push here -- unit, integration, example and regression tests, the tracking
+# chain and the quality checks -- lived in `.github/workflows/process.yml`, which is
+# deleted on this fork. `git log` has it if it is wanted back.
+#
+# There is no build step on purpose. Upstream's docs job runs `hatch run docs:build`,
+# and neither `hatch` nor `mkdocs` is installed in the `process_port` env, so that step
+# was never verifiable locally. Copying five committed files cannot fail for a reason
+# nobody can reproduce.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One Pages deployment at a time; a queued run waits rather than racing the live one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Names the deployment and, more usefully, makes the published URL visible in the
+    # run summary and in the repository's Environments panel -- otherwise the site is
+    # live with no link to it anywhere in the UI.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Collect the uncut-graph DSM pages
+        run: |
+          mkdir -p site
+          cp functional_process/dsm_provenance_uncut.html site/
+          cp functional_process/dsm_scc_uncut.html site/
+          cp functional_process/dsm_provenance_uncut_tokamak.html site/
+          cp functional_process/dsm_scc_uncut_tokamak.html site/
+          cp documentation/source/dsm_index.html site/index.html
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          path: site/
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128
