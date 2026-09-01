@@ -1200,22 +1200,30 @@ class VmconDriver(AbstractDriver):
                     )
 
             status = VMCON_CONVERGED
+            # `sqp` is the optimiser's own cost -- `cvxpy` canonicalisation, CLARABEL, the
+            # line search -- because `phase` is exclusive and every graph evaluation
+            # underneath scopes itself as `model` (`host_cache.flat_conditions`). The two
+            # therefore separate "the model is expensive" from "the optimiser is
+            # expensive", which no single wall-clock number can.
+            from functional_process.phase_timing import phase  # noqa: PLC0415
+
             try:
-                x_scaled, _lambda_eq, _lambda_ie, _result = solve(
-                    _Problem(),
-                    flat_start * scale,
-                    scaled_lower,
-                    scaled_upper,
-                    max_iter=max_iter,
-                    epsilon=tolerance,
-                    qsp_options={"solver": qsp_solver},
-                    initial_B=(
-                        None
-                        if initial_b is None
-                        else np.identity(len(flat_start)) * initial_b
-                    ),
-                    callback=wrapped,
-                )
+                with phase("sqp"):
+                    x_scaled, _lambda_eq, _lambda_ie, _result = solve(
+                        _Problem(),
+                        flat_start * scale,
+                        scaled_lower,
+                        scaled_upper,
+                        max_iter=max_iter,
+                        epsilon=tolerance,
+                        qsp_options={"solver": qsp_solver},
+                        initial_B=(
+                            None
+                            if initial_b is None
+                            else np.identity(len(flat_start)) * initial_b
+                        ),
+                        callback=wrapped,
+                    )
             except VMCONConvergenceException as e:
                 # `solver.py:262-272`'s own pattern: keep the best point, report the
                 # failure out of band rather than propagating out of a `Schedule` run.

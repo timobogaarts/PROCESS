@@ -1529,15 +1529,18 @@ def _timing_block(rows) -> list[str]:
             "wall clock."
         ),
         (
-            "`solve` is the residual after the three measured phases: it carries the "
-            "graph assembly, the"
+            "`model` is graph evaluation inside the driver and `sqp` the optimiser's own "
+            "cost (cvxpy, CLARABEL,"
         ),
         (
-            "cached PROCESS reference load and every dispatch, and is the only column "
-            "that is arithmetic."
+            "the line search). `other` is the residual: graph assembly, the cached "
+            "PROCESS load, dispatch."
         ),
         "",
-        "         configuration  form     trace     lower   compile     solve     total",
+        (
+            "         configuration  form     trace     lower   compile     model"
+            "       sqp     other     total"
+        ),
     ]
     for row, arm, split in timed:
         total = sum(split.values())
@@ -1548,6 +1551,8 @@ def _timing_block(rows) -> list[str]:
                 _cell(f"{split.get('trace', 0.0):.1f}", 9),
                 _cell(f"{split.get('lower', 0.0):.1f}", 9),
                 _cell(f"{split.get('compile', 0.0):.1f}", 9),
+                _cell(f"{split.get('model', 0.0):.1f}", 9),
+                _cell(f"{split.get('sqp', 0.0):.1f}", 9),
                 _cell(f"{split.get('solve', 0.0):.1f}", 9),
                 _cell(f"{total:.1f}", 9),
             ])

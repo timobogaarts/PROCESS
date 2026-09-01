@@ -49,8 +49,23 @@ import jax.numpy as jnp
 from cottax.evaluate import ConditionMap
 
 
-@eqx.filter_jit
 def flat_conditions(conditions: ConditionMap, flat_x, unravel):
+    """Timed wrapper around `_flat_conditions`; see `phase_timing`.
+
+    The `model` phase is what a host-side SQP spends *evaluating the graph*, as opposed to
+    what it spends in `cvxpy` and its own line search. Splitting them is the only way to
+    tell "the model is expensive" from "the optimiser is expensive", and
+    `_audit/optimise_design.md` §24 measured those at roughly two-thirds and one-third on
+    one configuration -- a number worth having on every arm rather than once.
+    """
+    from functional_process.phase_timing import phase  # noqa: PLC0415
+
+    with phase("model"):
+        return _flat_conditions(conditions, flat_x, unravel)
+
+
+@eqx.filter_jit
+def _flat_conditions(conditions: ConditionMap, flat_x, unravel):
     """The block's conditions, stacked, at one flat design vector.
 
     `flat_x`/`unravel` rather than the unknowns themselves because that is the shape a
@@ -60,8 +75,16 @@ def flat_conditions(conditions: ConditionMap, flat_x, unravel):
     return jnp.stack([jnp.asarray(v) for v in conditions(*unravel(flat_x))])
 
 
-@eqx.filter_jit
 def flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
+    """Timed wrapper around `_flat_condition_jacobian`; see `flat_conditions`."""
+    from functional_process.phase_timing import phase  # noqa: PLC0415
+
+    with phase("model"):
+        return _flat_condition_jacobian(conditions, flat_x, unravel)
+
+
+@eqx.filter_jit
+def _flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
     """`d(conditions)/d(flat_x)` by forward-mode AD -- `flat_conditions`' Jacobian.
 
     **A second jitted function, not `jax.jacfwd(flat_conditions)`.** `jax.jacfwd` returns
