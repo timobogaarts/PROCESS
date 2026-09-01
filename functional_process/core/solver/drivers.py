@@ -20,12 +20,21 @@ candidate for `PicardDriver` -- it answers any `FixedPoint`, generically, the sa
 `functional_process.sand` assembles.
 """
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
 from cottax.evaluate import AbstractDriver, ConditionMap
-from cottax.problem import FixedPoint, Optimise, RootFind, Start
+from cottax.problem import (
+    Converged,
+    DriverOut,
+    FixedPoint,
+    Optimise,
+    RootFind,
+    Start,
+    Steps,
+)
 from cottax.spec import VarPath
 from cottax.tools.path import written
 from jax.flatten_util import ravel_pytree
@@ -69,7 +78,7 @@ def design_scale(flat_start):
     return scale
 
 
-def scaled_problem(driver, conditions: ConditionMap, start: tuple):
+def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     """The pieces every SQP driver here needs, built once from a block's `ConditionMap`.
 
     Returns `(evaluate, jacobian, unravel, scale, condition_scale, bounds)`, where
@@ -88,8 +97,15 @@ def scaled_problem(driver, conditions: ConditionMap, start: tuple):
     here -- design variables by `1 / x_start` (PROCESS's own conditioning, from
     `load_iteration_variables`), conditions by `driver.condition_scale`, and bounds by
     the same design factor with the swap a negative scale forces.
+
+    **Takes an already-flat, already-concrete start** (`flat_start`) and the `unravel`
+    that goes with it, rather than the `Start` tuple it used to take. `design_scale`
+    needs *values*, and since `SlsqpDriver` runs inside a `jax.pure_callback` its start
+    is a tracer everywhere except on the host -- so the ravel happens in the driver,
+    outside the callback, and the concrete array arrives here from inside it. Passing
+    the tuple would have meant re-raveling a pytree the caller had already raveled, and
+    a round trip is exactly where a bit goes missing.
     """
-    flat_start, unravel = ravel_pytree(start)
     flat_start = np.asarray(flat_start, dtype=float)
 
     scale = (
@@ -190,26 +206,142 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     )
 
 
-class Outcome(dict):  # noqa: FURB189 -- `UserDict` would be unhashable for the same
-    # reason and would still need the `__hash__` below; subclassing `dict` keeps a
-    # driver's `self.outcome.update(...)` a plain dict write.
-    """A `dict` a driver writes its solver's verdict into, hashed by **identity**.
+class Status(DriverOut):
+    """The integer code the driver's own solver library stopped with.
 
-    A plain `dict` cannot be a driver field. A driver is an `eqx.Module` and goes into
-    the graph (`assign_drivers`), so `Schedule.__hash__` reaches it through
-    `Graph.__hash__` -- and `sand_harness.run_schedule` hashes the schedule on every
-    call, to key its whole-jit verdict and its runner groups. A `dict` field therefore
-    raises `TypeError: unhashable type: 'dict'` at the *schedule*, several frames away
-    from the driver that carries it, which is exactly the kind of error that gets
-    misread as a cottax problem. `callback` escapes this only because a function is
-    hashable by identity, so this is the same trick made explicit.
+    **Port-local, and deliberately not upstream.** `Steps` and `Converged` mean the same
+    thing for every iterative algorithm, so `cottax` ships them; a *status code* does not
+    -- `optimistix.RESULTS`, `scipy`'s `OptimizeResult.status` and "which `pyvmcon`
+    exception fired" are three different alphabets, and a shared kind would imply an
+    agreement that does not exist. What a code means is the driver's to document; the
+    problem's place is in the name (`^driver_out.status.<place>`), so which alphabet a
+    given value is written in is never in doubt.
 
-    Identity is the right hash for a mutable results sink anyway: two outcomes are the
-    same outcome when they are the same object, and the values are written *after* every
-    hash that matters has been taken.
+    An integer and not a string, because it has to survive a trace: `str(int(tracer))`
+    is exactly what forced the old `jax.debug.callback`. A caller that wants words
+    renders them from the code, which is what it was doing anyway.
+
+    **Lives here, not in `mdf`, since 2026-09-01.** It was written for
+    `mdf.MdfNewtonDriver` because that was the first driver to report one; with
+    `VmconDriver` and `SlsqpDriver` reporting one too it belongs beside the drivers that
+    write it rather than beside the one assembly that first read it. `mdf` re-exports the
+    name, so `mdf.Status` still resolves.
     """
 
-    __hash__ = object.__hash__  # type: ignore[assignment]
+    label = "status"
+
+
+VMCON_CONVERGED = 0
+"""`Status` for a `VmconDriver` solve `pyvmcon.solve` returned from normally."""
+
+VMCON_STATUS: dict[str, int] = {
+    "VMCONConvergenceException": 1,
+    "QSPSolverException": 2,
+    "LineSearchConvergenceException": 3,
+}
+"""`Status` per `pyvmcon` failure, keyed by **exception class name**.
+
+Keyed by name rather than by class so this table can be written without importing
+`pyvmcon` at module scope -- `VmconDriver.__call__` imports it inside the call, and has
+since long before this table existed, so that a tree without `pyvmcon` still imports this
+module.
+
+The three are genuinely different outcomes and the distinction is the whole reason a
+`Status` port exists: `1` is the loop running out of `max_iter` (the point is good, the
+tolerance was not reached), `2` is `cvxpy` finding the first QP subproblem infeasible
+(usually zero steps taken, and `run_sand_harness._why_no_step` is the instrument that
+says why), `3` is the line search failing to make progress along an otherwise valid
+search direction. A caller that renders one word for all three is discarding exactly the
+information this column was added to carry.
+
+**Anything not in this table takes `1`**, the base class's code, because
+`QSPSolverException` and `LineSearchConvergenceException` are the only two subclasses
+`pyvmcon` defines and a fourth invented upstream would be a base-class failure until
+someone measured it and gave it a number.
+"""
+
+
+def _sqp_callback(conditions: ConditionMap, start, host):
+    """`jax.pure_callback` around one host-side SQP solve, plus its verdict.
+
+    **The whole point of this function**: `pyvmcon` and `scipy` are NumPy, so a `Drive`
+    answered by either used to refuse to trace at all -- `sand_harness.run_schedule`'s
+    whole-schedule jit failed with `TracerArrayConversionError: ... traced array with
+    shape float64[14]` on the unknowns vector, and every SAND schedule fell back to a
+    step-by-step walk with the driver eager. Wrapped like this the solve is one opaque
+    host round trip *inside* one XLA program, exactly as `cottax.drivers.SLSQPDriver`
+    does it (`~/jaxgraph/src/cottax/drivers/scipy_slsqp.py`, which is the model this
+    copies).
+
+    **The static half rides in the closure.** `eqx.partition(conditions, eqx.is_array)`
+    sends only the live arrays across the boundary; the names, the `Step` and every `fn`
+    stay in `host`'s closure, because a different graph is a different trace and
+    therefore a different closure anyway. `host(dyn, flat)` recombines them.
+
+    **`float64` at the boundary, deliberately.** Both solvers are float64 libraries and
+    the model runs in whatever precision the caller enabled, so the conversion is this
+    wrapper's and happens at its own edge: `float64` out to the solver, `flat_guess`'s
+    own dtype back. Without that, `pure_callback`'s dtype canonicalisation is free to
+    move a bit, and this problem is measurably sensitive at the last bit
+    (`_audit/optimise_design.md` §21.2).
+
+    **`vmap` over this is sequential**: neither library vectorises, so a batch of solves
+    is a host-side loop where a batch of jax-native ones would map.
+
+    **There is no JVP, and this is the honest cost.** `jax.pure_callback` defines no
+    derivative rule, so differentiating *through* a converged constrained solve is not
+    something this wrap provides -- that needs the implicit KKT system. Measured, not
+    assumed: `jax.jvp`/`jax.grad` of a `pure_callback` raises
+    `ValueError: Pure callbacks do not support JVP. Please use jax.custom_jvp to use
+    callbacks while taking gradients.` So a driver nested inside another differentiated
+    block fails **loudly**, with a message naming the fix, and not as a silent zero --
+    which is a better failure than the pre-wrap one, though a smaller trade than "it
+    just works". `pyvmcon.solve` returns the equality and inequality multipliers the KKT
+    system needs, so the road is open; it is unwritten because nothing here nests one.
+    The same note `cottax`'s own SLSQP driver makes, for the same reason.
+
+    Parameters
+    ----------
+    conditions :
+        The block's `ConditionMap`; partitioned here, recombined inside `host`.
+    start :
+        The `Start` tuple, raveled here so `host` receives one flat vector.
+    host :
+        `f(live_conditions, flat_start_float64) -> (x, steps, converged, status)`, all
+        four NumPy, `x` in the block's *unscaled* coordinates.
+
+    Returns
+    -------
+    :
+        `(*unknowns, steps, converged, status)` -- `AbstractDriver.__call__`'s contract
+        for a driver whose `reports` is `(Steps, Converged, Status)`.
+    """
+    flat_guess, unravel = ravel_pytree(start)
+    dynamic, static = eqx.partition(conditions, eqx.is_array)
+
+    def wrapped(dyn, flat):
+        live = eqx.combine(dyn, static)
+        x, steps, converged, status = host(live, np.asarray(flat, dtype=np.float64))
+        return (
+            np.asarray(x, dtype=np.asarray(flat).dtype),
+            np.int32(steps),
+            np.bool_(converged),
+            np.int32(status),
+        )
+
+    answer, steps, converged, status = jax.pure_callback(
+        wrapped,
+        (
+            jax.ShapeDtypeStruct(flat_guess.shape, flat_guess.dtype),
+            jax.ShapeDtypeStruct((), np.int32),
+            jax.ShapeDtypeStruct((), np.bool_),
+            jax.ShapeDtypeStruct((), np.int32),
+        ),
+        dynamic,
+        flat_guess,
+        vmap_method="sequential",
+    )
+    return (*unravel(answer), steps, converged, status)
 
 
 def start_from(data, driver_name: str, conditions: ConditionMap) -> tuple:
@@ -279,22 +411,35 @@ class SlsqpDriver(AbstractDriver):
     tolerance: float = 1e-8
     callback: object = None
     """`f(iteration, x_unscaled) -> None`, or `None`. Plain callable, leaf-free, same
-    treatment as `VmconDriver.callback`."""
-    outcome: object = None
-    """A caller-supplied `Outcome` this driver writes SLSQP's own verdict into, or
-    `None`. A bare `dict` will not do -- see `Outcome`, which is one and says why.
+    treatment as `VmconDriver.callback` -- and, like it, now called from inside a
+    `jax.pure_callback`."""
 
-    Same shape and same reason as `mdf.MdfNewtonDriver.outcome`: an `eqx.Module` is
-    frozen, so a driver cannot record what happened on itself, and SLSQP's status is not
-    recoverable from the returned point. `scipy` reports success, an exit code and a
-    message (*"Optimization terminated successfully"*, *"Iteration limit reached"*,
-    *"Inequality constraints incompatible"*, ...) and those are three different outcomes
-    that a caller comparing this driver against `VmconDriver` must be able to tell apart
-    -- `VmconDriver` distinguishes them by *which* `pyvmcon` exception it caught. Keys
-    written: `success`, `status`, `message`, `nit`, `nfev`, `fun`."""
+    @property
+    def reports(self) -> tuple:
+        """`(Steps, Converged, Status)`, the same three `VmconDriver` reports, so the
+        two SQPs can be compared on their verdicts and not only on their answers.
+
+        `Steps` is `OptimizeResult.nit`, `Converged` is `.success`, `Status` is `.status`
+        -- **scipy's alphabet, not `pyvmcon`'s**, which is exactly why `Status` is a
+        port-local kind whose meaning belongs to the driver that writes it. `0` is
+        *"Optimization terminated successfully"*, `9` *"Iteration limit reached"*, `4`
+        *"Inequality constraints incompatible"*, and so on; `scipy` owns the list.
+
+        **What is lost against the deleted `Outcome` sink**: `message`, `nfev` and
+        `fun`. A message is a string and cannot survive a trace (the whole reason
+        `Status` is an integer); `nfev` and `fun` were never read by anything in this
+        tree, and either could be added as a further `DriverOut` kind the day something
+        wants one.
+        """
+        return (Steps, Converged, Status)
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
-        """Values for the block's unknowns, positionally.
+        """Values for the block's unknowns, then `steps`, `converged` and `status`.
+
+        Wrapped in `jax.pure_callback` exactly as `VmconDriver` is, and for the same
+        reason -- `scipy` is host code, and a `Drive` answered by it would otherwise be
+        a hole in any traced schedule. Every caveat `VmconDriver.__call__` and
+        `_sqp_callback` state applies here unchanged, the missing JVP included.
 
         Raises
         ------
@@ -314,78 +459,81 @@ class SlsqpDriver(AbstractDriver):
                 f"({', '.join(written(conditions.conditions))})"
             )
 
-        evaluate, jacobian, unravel, scale, _, (lower, upper) = scaled_problem(
-            self, conditions, start
-        )
+        _flat, unravel = ravel_pytree(start)
         meq = self.n_equality
-        x0 = np.asarray(ravel_pytree(start)[0], dtype=float) * scale
+        driver, user_callback = self, self.callback
+        max_iter, tolerance = self.max_iter, self.tolerance
 
-        # One evaluation per point, reused by objective and every constraint: SLSQP
-        # calls `fun`, `jac` and each constraint separately at the same `x`, and an
-        # evaluation here converges a whole block.
-        cache: dict = {}
-
-        def at(x):
-            key = x.tobytes()
-            if key not in cache:
-                cache.clear()  # only the current point is ever wanted
-                cache[key] = (evaluate(x), jacobian(x))
-            return cache[key]
-
-        iteration = [0]
-
-        def objective(x):
-            return float(at(np.asarray(x))[0][0])
-
-        def objective_gradient(x):
-            return at(np.asarray(x))[1][0]
-
-        constraints = [
-            {
-                "type": "eq",
-                "fun": lambda x: at(np.asarray(x))[0][1 : 1 + meq],
-                "jac": lambda x: at(np.asarray(x))[1][1 : 1 + meq],
-            },
-            {
-                # cottax `g <= 0` -> SLSQP `c(x) >= 0`.
-                "type": "ineq",
-                "fun": lambda x: -at(np.asarray(x))[0][1 + meq :],
-                "jac": lambda x: -at(np.asarray(x))[1][1 + meq :],
-            },
-        ]
-        constraints = [c for c in constraints if len(np.atleast_1d(c["fun"](x0)))]
-
-        def on_step(xk):
-            iteration[0] += 1
-            if self.callback is not None:
-                self.callback(iteration[0], np.asarray(xk) / scale)
-
-        result = minimize(
-            objective,
-            x0,
-            jac=objective_gradient,
-            bounds=list(zip(lower, upper, strict=True)),
-            constraints=constraints,
-            method="SLSQP",
-            options={"maxiter": self.max_iter, "ftol": self.tolerance},
-            callback=on_step,
-        )
-        # No `self.last_result = ...`: an `eqx.Module` is frozen, and a driver that
-        # mutated itself would not survive being reused across blocks anyway. What the
-        # solver said is reported through `callback` and `outcome`, like
-        # `VmconDriver`'s and `mdf.MdfNewtonDriver`'s respectively.
-        if self.outcome is not None:
-            self.outcome.update(
-                success=bool(result.success),
-                status=int(result.status),
-                message=str(result.message),
-                nit=int(result.nit),
-                nfev=int(result.nfev),
-                fun=float(result.fun),
+        def host(live, flat_start):
+            evaluate, jacobian, _unravel, scale, _, (lower, upper) = scaled_problem(
+                driver, live, flat_start, unravel
             )
-        if self.callback is not None:
-            self.callback(-1, np.asarray(result.x, dtype=float) / scale)
-        return unravel(jnp.asarray(np.asarray(result.x, dtype=float) / scale))
+            x0 = flat_start * scale
+
+            # One evaluation per point, reused by objective and every constraint: SLSQP
+            # calls `fun`, `jac` and each constraint separately at the same `x`, and an
+            # evaluation here converges a whole block.
+            cache: dict = {}
+
+            def at(x):
+                key = x.tobytes()
+                if key not in cache:
+                    cache.clear()  # only the current point is ever wanted
+                    cache[key] = (evaluate(x), jacobian(x))
+                return cache[key]
+
+            iteration = [0]
+
+            def objective(x):
+                return float(at(np.asarray(x))[0][0])
+
+            def objective_gradient(x):
+                return at(np.asarray(x))[1][0]
+
+            constraints = [
+                {
+                    "type": "eq",
+                    "fun": lambda x: at(np.asarray(x))[0][1 : 1 + meq],
+                    "jac": lambda x: at(np.asarray(x))[1][1 : 1 + meq],
+                },
+                {
+                    # cottax `g <= 0` -> SLSQP `c(x) >= 0`.
+                    "type": "ineq",
+                    "fun": lambda x: -at(np.asarray(x))[0][1 + meq :],
+                    "jac": lambda x: -at(np.asarray(x))[1][1 + meq :],
+                },
+            ]
+            constraints = [c for c in constraints if len(np.atleast_1d(c["fun"](x0)))]
+
+            def on_step(xk):
+                iteration[0] += 1
+                if user_callback is not None:
+                    user_callback(iteration[0], np.asarray(xk) / scale)
+
+            result = minimize(
+                objective,
+                x0,
+                jac=objective_gradient,
+                bounds=list(zip(lower, upper, strict=True)),
+                constraints=constraints,
+                method="SLSQP",
+                options={"maxiter": max_iter, "ftol": tolerance},
+                callback=on_step,
+            )
+            # No `self.last_result = ...`: an `eqx.Module` is frozen, and a driver that
+            # mutated itself would not survive being reused across blocks anyway. What
+            # the solver said is `reports`' job now, and the mutable `Outcome` sink that
+            # used to carry it is deleted.
+            if user_callback is not None:
+                user_callback(-1, np.asarray(result.x, dtype=float) / scale)
+            return (
+                np.asarray(result.x, dtype=float) / scale,
+                int(result.nit),
+                bool(result.success),
+                int(result.status),
+            )
+
+        return _sqp_callback(conditions, start, host)
 
 
 class SeededNewtonDriver(AbstractDriver):
@@ -566,13 +714,32 @@ class VmconDriver(AbstractDriver):
 
     What this costs, stated rather than buried
     ------------------------------------------
-    `pyvmcon` is NumPy, so **a `Drive` answered by this driver is not one traced
-    program** the way `PicardDriver`'s `lax.while_loop` and `NewtonDriver`'s
-    `optimistix` are. The trace boundary is *per SQP iteration*: each iteration is one
-    jitted condition evaluation plus one jitted `jacfwd`, with the QP subproblem solved
-    on the host in between. That is acceptable at the outermost block (nothing
-    differentiates through it) and would be **wrong nested inside anything** -- a
-    `VmconDriver` inside another driven block cannot be differentiated through.
+    `pyvmcon` is NumPy, so the solve runs on the host. Since 2026-09-01 it does so
+    inside **one `jax.pure_callback`** (`_sqp_callback`), which is what makes a `Drive`
+    answered by this driver *traceable*: the whole SAND schedule is now one XLA program
+    with one host round trip in the middle of it, where before the `Drive` refused to
+    trace at all (`TracerArrayConversionError` on the unknowns vector) and
+    `sand_harness.run_schedule` fell back to a step-by-step walk.
+
+    **"One compile" here means the optimiser is *outside* the compiler, not compiled by
+    it.** The SQP loop, the `cvxpy` QP, the line search and this driver's own
+    `jax.jit(flat_conditions)`/`jax.jit(jacfwd(...))` all still run as host code inside
+    the callback, at their own cost and with their own compiles. What the wrap buys is
+    that everything *around* the solve fuses into one program and that the block stops
+    being a hole in the graph -- not that VMCON got faster.
+
+    **There is no JVP.** `jax.pure_callback` defines no derivative rule, and
+    differentiating through a converged constrained solve needs the implicit KKT
+    system, which this wrap does not provide. Measured rather than assumed: `jax.jvp`
+    or `jax.grad` through a `pure_callback` raises *"Pure callbacks do not support JVP.
+    Please use `jax.custom_jvp` to use callbacks while taking gradients."* -- so a
+    `VmconDriver` nested inside another differentiated block fails **loudly, naming the
+    fix**, and not as a silent zero. That is a smaller loss than it first looks, and it
+    is still a loss: the refusal used to come at *trace* time and now comes only when
+    something asks for a derivative. Nothing here nests one. `pyvmcon.solve` returns the
+    equality and inequality Lagrange multipliers that system needs, so writing the
+    `custom_jvp` is possible -- see `_audit/optimise_design.md` §22 for what it would
+    take. Until it exists, treat this driver as an outermost block only.
 
     Sign convention -- checked, not assumed
     ---------------------------------------
@@ -633,9 +800,13 @@ class VmconDriver(AbstractDriver):
     `pyvmcon` signals non-convergence by raising (`VMCONConvergenceException` and its
     subclasses). This follows `process/core/solver/solver.py:262-272` and returns `e.x`
     -- the best point reached -- rather than propagating, so a `Schedule` run always
-    produces an env. Whether it converged is reported out of band through `callback`
-    (same shape as PROCESS's own `_solver_callback`), which is the only way a caller
-    learns it, and is exactly what `functional_process.sand.solve` records.
+    produces an env. **Which of the four ways it ended is now data**: `reports` names
+    `Steps`, `Converged` and `Status`, so the verdict comes back through the
+    `^driver_out.*` ports `Assign` mints and lands in the env like every other value.
+    `callback` remains, and remains useful -- it is a per-iteration *effect*, which is
+    what a callback is legitimately for -- but it is no longer the only way a caller
+    learns whether the solve converged, and the mutable `Outcome` sink that used to
+    carry `SlsqpDriver`'s verdict is gone entirely.
     """
 
     drives = Optimise
@@ -754,19 +925,51 @@ class VmconDriver(AbstractDriver):
     callback: object = None
     """`f(iteration, result, x, convergence_parameter) -> None`, in the driver's own
     *unscaled* coordinates, or `None`. `eqx.field(static=True)` is deliberately not used
-    -- a plain callable is already a static leaf-free field for `eqx.filter_jit`, and
-    nothing jits this driver."""
+    -- a plain callable is already a static leaf-free field for `eqx.filter_jit`.
+
+    **A per-iteration effect, and it now runs inside a `pure_callback`.** That is
+    legitimate where the effect is the point (`run_cold_matrix._recorder` printing or
+    recording a trace while a long solve runs) and is not the channel any *reported*
+    number travels on any more -- `reports` is. jax is free to elide a `pure_callback`
+    whose outputs are unused; these are used, so it runs, but a caller must not read the
+    trace as proof the solve happened."""
+
+    @property
+    def reports(self) -> tuple:
+        """`(Steps, Converged, Status)` -- what `__call__` returns after the unknowns.
+
+        `Steps` is how many times `pyvmcon.solve` called its per-iteration callback,
+        which is `len(trace)` for the harnesses that record one and is the number both
+        ladder harnesses print. `Converged` is whether `solve` returned rather than
+        raising. `Status` is `VMCON_CONVERGED`/`VMCON_STATUS`, i.e. *which* `pyvmcon`
+        exception fired -- three genuinely different outcomes that a caller comparing
+        this driver against `SlsqpDriver` has to be able to tell apart.
+
+        A property and not a `ClassVar` because that is what `AbstractDriver.reports`
+        is; this driver always says all three, and a driver whose report costs something
+        makes it conditional on its own fields, which a class attribute could not
+        express.
+        """
+        return (Steps, Converged, Status)
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
-        """Values for the block's unknowns, positionally -- `AbstractDriver`'s own
-        contract, see its abstract `__call__` docstring.
+        """Values for the block's unknowns, then `steps`, `converged` and `status` --
+        `AbstractDriver`'s own contract, see its abstract `__call__` docstring.
+
+        The solve happens on the host inside one `jax.pure_callback` (`_sqp_callback`),
+        so this is traceable: everything that reads a *concrete* start -- `design_scale`,
+        the scaled bounds, the callback's unscaling -- lives inside `host` and sees
+        NumPy, while everything derivable from the driver's own fields is built out here
+        and refuses out here, as an ordinary Python error rather than one surfacing from
+        inside a callback.
 
         Raises
         ------
         ValueError
             If no `Start` data is supplied (there is no shape to guess a pytree from),
             or if `n_equality + n_inequality + 1` does not equal the number of
-            conditions the block declares.
+            conditions the block declares, or if `condition_scale` names something the
+            block does not read.
         """
         start = start_from(data, "VmconDriver", conditions)
         expected = 1 + self.n_equality + self.n_inequality
@@ -783,87 +986,18 @@ class VmconDriver(AbstractDriver):
         from pyvmcon import Result, VMCONConvergenceException, solve
         from pyvmcon.problem import AbstractProblem
 
-        flat_start, unravel = ravel_pytree(start)
-        flat_start = np.asarray(flat_start, dtype=float)
-        # PROCESS's own conditioning, from the starting point, exactly as
-        # `load_iteration_variables` derives it -- and through `design_scale`, so this
-        # path and `scaled_problem`'s (SLSQP) share one rule rather than two spellings
-        # of it. The floor matters: this used to test `flat_start != 0.0`, which a
-        # coordinate that is *numerically* zero passes, and `design_scale`'s docstring
-        # carries the case that found it.
-        scale = design_scale(flat_start) if self.scaled else np.ones_like(flat_start)
-
-        def flat_conditions(flat_x):
-            values = conditions(*unravel(flat_x))
-            return jnp.stack([jnp.asarray(v) for v in values])
-
-        evaluate = jax.jit(flat_conditions)
-        jacobian = jax.jit(jax.jacfwd(flat_conditions))
-
+        _flat, unravel = ravel_pytree(start)
         meq = self.n_equality
         by_name = {var: float(factor) for var, factor in self.condition_scale}
-        unknown_names = set(conditions.unknowns)
         stray = set(by_name) - set(conditions.conditions)
         if stray:
             raise ValueError(
                 f"condition_scale names {written(tuple(stray))}, which this block does "
                 f"not read as a condition (it reads {written(conditions.conditions)})"
             )
-        del unknown_names
         condition_scale = np.array(
             [by_name.get(c, 1.0) for c in conditions.conditions], dtype=float
         )
-
-        epsfcn = self.epsfcn
-
-        def scaled_values(x_scaled):
-            flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-            return np.asarray(evaluate(flat_x), dtype=float) * condition_scale
-
-        def finite_difference(x_scaled):
-            """`Evaluators.fcnvmc2`'s own quotient, in this driver's coordinates."""
-            columns = []
-            for i in range(len(x_scaled)):
-                forward = np.array(x_scaled, dtype=float)
-                backward = np.array(x_scaled, dtype=float)
-                forward[i] = x_scaled[i] * (1.0 + epsfcn)
-                backward[i] = x_scaled[i] * (1.0 - epsfcn)
-                step = forward[i] - backward[i]
-                columns.append((scaled_values(forward) - scaled_values(backward)) / step)
-            return np.stack(columns, axis=1)
-
-        class _Problem(AbstractProblem):
-            def __call__(_self, x_scaled):  # noqa: N805 -- pyvmcon's own signature
-                flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-                values = np.asarray(evaluate(flat_x), dtype=float) * condition_scale
-                # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column; and
-                # one `condition_scale` factor per row, see that field.
-                full = (
-                    finite_difference(x_scaled)
-                    if epsfcn is not None
-                    else np.asarray(jacobian(flat_x), dtype=float)
-                    * condition_scale[:, None]
-                    / scale[None, :]
-                )
-                _refuse_non_finite(values, full, conditions)
-                return Result(
-                    f=values[0],
-                    df=full[0],
-                    eq=values[1 : 1 + meq],
-                    deq=full[1 : 1 + meq],
-                    # cottax says `g <= 0`, VMCON wants `i >= 0` -- see the docstring.
-                    ie=-values[1 + meq :],
-                    die=-full[1 + meq :],
-                )
-
-            @property
-            def num_equality(_self):  # noqa: N805
-                return meq
-
-            @property
-            def num_inequality(_self):  # noqa: N805
-                return self.n_inequality
-
         bounds = {var: (lo, hi) for var, lo, hi in self.bounds}
         lower = np.array(
             [bounds.get(v, (-np.inf, np.inf))[0] for v in conditions.unknowns],
@@ -873,40 +1007,151 @@ class VmconDriver(AbstractDriver):
             [bounds.get(v, (-np.inf, np.inf))[1] for v in conditions.unknowns],
             dtype=float,
         )
-        # Bounds are on the design variables, so they scale with them; a negative scale
-        # (a variable starting below zero) swaps which bound is which.
-        scaled_lower = np.where(scale > 0, lower * scale, upper * scale)
-        scaled_upper = np.where(scale > 0, upper * scale, lower * scale)
-
+        epsfcn = self.epsfcn
         callback = self.callback
-        if callback is None:
-            wrapped = None
-        else:
+        # Every field read out here rather than through `self` inside `host`, so that
+        # what the callback closes over is a handful of plain values and it is obvious
+        # by inspection that nothing live crosses the boundary except `dynamic` and the
+        # start. `SlsqpDriver` passes the driver itself, because `scaled_problem` takes
+        # one; both are leaf-free either way.
+        scaled = self.scaled
+        n_inequality = self.n_inequality
+        max_iter, tolerance = self.max_iter, self.tolerance
+        qsp_solver, initial_b = self.qsp_solver, self.initial_b
+
+        def host(live, flat_start):
+            """One VMCON solve, on the host, on concrete NumPy.
+
+            Everything that needs a *concrete* start is here and nowhere else: the
+            scaling, the scaled bounds, the callback's unscaling. `live` is the
+            recombined `ConditionMap`, so the model inside is a jax function again and
+            `jax.jit`/`jax.jacfwd` apply to it exactly as they did before the wrap.
+            """
+            # PROCESS's own conditioning, from the starting point, exactly as
+            # `load_iteration_variables` derives it -- and through `design_scale`, so
+            # this path and `scaled_problem`'s (SLSQP) share one rule rather than two
+            # spellings of it. The floor matters: this used to test `flat_start != 0.0`,
+            # which a coordinate that is *numerically* zero passes, and `design_scale`'s
+            # docstring carries the case that found it.
+            scale = design_scale(flat_start) if scaled else np.ones_like(flat_start)
+
+            def flat_conditions(flat_x):
+                values = live(*unravel(flat_x))
+                return jnp.stack([jnp.asarray(v) for v in values])
+
+            # **Kept, and deliberately unlike `cottax.drivers.SLSQPDriver`**, which
+            # leaves its inner model eager. An SQP iteration here converges a whole
+            # PROCESS block; running it op by op costs far more than the one trace it
+            # replaces, and the `pure_callback` boundary is per *solve*, not per
+            # iteration, so there is nothing about the wrap that makes an inner jit
+            # wrong. `_audit/optimise_design.md` §22 has what dropping it would cost.
+            evaluate = jax.jit(flat_conditions)
+            jacobian = jax.jit(jax.jacfwd(flat_conditions))
+
+            def scaled_values(x_scaled):
+                flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
+                return np.asarray(evaluate(flat_x), dtype=float) * condition_scale
+
+            def finite_difference(x_scaled):
+                """`Evaluators.fcnvmc2`'s own quotient, in this driver's coordinates."""
+                columns = []
+                for i in range(len(x_scaled)):
+                    forward = np.array(x_scaled, dtype=float)
+                    backward = np.array(x_scaled, dtype=float)
+                    forward[i] = x_scaled[i] * (1.0 + epsfcn)
+                    backward[i] = x_scaled[i] * (1.0 - epsfcn)
+                    step = forward[i] - backward[i]
+                    columns.append(
+                        (scaled_values(forward) - scaled_values(backward)) / step
+                    )
+                return np.stack(columns, axis=1)
+
+            class _Problem(AbstractProblem):
+                def __call__(_self, x_scaled):  # noqa: N805 -- pyvmcon's own signature
+                    flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
+                    values = np.asarray(evaluate(flat_x), dtype=float) * condition_scale
+                    # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column;
+                    # and one `condition_scale` factor per row, see that field.
+                    full = (
+                        finite_difference(x_scaled)
+                        if epsfcn is not None
+                        else np.asarray(jacobian(flat_x), dtype=float)
+                        * condition_scale[:, None]
+                        / scale[None, :]
+                    )
+                    _refuse_non_finite(values, full, conditions)
+                    return Result(
+                        f=values[0],
+                        df=full[0],
+                        eq=values[1 : 1 + meq],
+                        deq=full[1 : 1 + meq],
+                        # cottax says `g <= 0`, VMCON wants `i >= 0` -- see the
+                        # docstring.
+                        ie=-values[1 + meq :],
+                        die=-full[1 + meq :],
+                    )
+
+                @property
+                def num_equality(_self):  # noqa: N805
+                    return meq
+
+                @property
+                def num_inequality(_self):  # noqa: N805
+                    return n_inequality
+
+            # Bounds are on the design variables, so they scale with them; a negative
+            # scale (a variable starting below zero) swaps which bound is which.
+            scaled_lower = np.where(scale > 0, lower * scale, upper * scale)
+            scaled_upper = np.where(scale > 0, upper * scale, lower * scale)
+
+            # **Always installed, and provably inert.** `pyvmcon.solve` substitutes its
+            # own `lambda _i, _result, _x, _con: None` when handed `None`, so counting
+            # here calls a callback where the library would have called one anyway and
+            # cannot change an iterate. It is how `Steps` is measured: `pyvmcon` returns
+            # no iteration count, and this is the same number `len(trace)` gives the two
+            # ladder harnesses.
+            steps = [0]
 
             def wrapped(i, result, x_scaled, convergence):
-                callback(
-                    i, result, np.asarray(x_scaled, dtype=float) / scale, convergence
+                steps[0] += 1
+                if callback is not None:
+                    callback(
+                        i,
+                        result,
+                        np.asarray(x_scaled, dtype=float) / scale,
+                        convergence,
+                    )
+
+            status = VMCON_CONVERGED
+            try:
+                x_scaled, _lambda_eq, _lambda_ie, _result = solve(
+                    _Problem(),
+                    flat_start * scale,
+                    scaled_lower,
+                    scaled_upper,
+                    max_iter=max_iter,
+                    epsilon=tolerance,
+                    qsp_options={"solver": qsp_solver},
+                    initial_B=(
+                        None
+                        if initial_b is None
+                        else np.identity(len(flat_start)) * initial_b
+                    ),
+                    callback=wrapped,
                 )
-
-        try:
-            x_scaled, _lambda_eq, _lambda_ie, _result = solve(
-                _Problem(),
-                flat_start * scale,
-                scaled_lower,
-                scaled_upper,
-                max_iter=self.max_iter,
-                epsilon=self.tolerance,
-                qsp_options={"solver": self.qsp_solver},
-                initial_B=(
-                    None
-                    if self.initial_b is None
-                    else np.identity(len(flat_start)) * self.initial_b
-                ),
-                callback=wrapped,
+            except VMCONConvergenceException as e:
+                # `solver.py:262-272`'s own pattern: keep the best point, report the
+                # failure out of band rather than propagating out of a `Schedule` run.
+                # "Out of band" now means a reported port, not a caller's mutable sink.
+                x_scaled = e.x
+                status = VMCON_STATUS.get(
+                    type(e).__name__, VMCON_STATUS["VMCONConvergenceException"]
+                )
+            return (
+                np.asarray(x_scaled, dtype=float) / scale,
+                steps[0],
+                status == VMCON_CONVERGED,
+                status,
             )
-        except VMCONConvergenceException as e:
-            # `solver.py:262-272`'s own pattern: keep the best point, report the failure
-            # out of band rather than propagating out of a `Schedule` run.
-            x_scaled = e.x
 
-        return unravel(jnp.asarray(np.asarray(x_scaled, dtype=float) / scale))
+        return _sqp_callback(conditions, start, host)

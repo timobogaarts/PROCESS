@@ -635,6 +635,17 @@ def _driven_runner(step, fuse_upstream=True):
     states one) is run through `run_schedule` instead, so its own drivers stay eager
     too. Nothing in this tree builds one today; this is the branch that keeps that from
     being silently wrong when something does.
+
+    **The binding follows `Drive.__call__` exactly, reports included** -- see the comment
+    in `run`. Re-implementing a contract is how a copy drifts from it, and this one had:
+    it bound `step.unknowns` alone for as long as no driver reaching it reported
+    anything.
+
+    Raises
+    ------
+    ValueError
+        If the driver returns a number of values other than one per unknown followed by
+        one per reported kind.
     """
     from cottax.evaluate import Schedule  # noqa: PLC0415
 
@@ -645,14 +656,38 @@ def _driven_runner(step, fuse_upstream=True):
     )
 
     def run(env):
-        converged = step.driver(step.condition_map(env), step.role_data(env))
-        if len(converged) != len(step.unknowns):
+        answered = step.driver(step.condition_map(env), step.role_data(env))
+        # **`Drive.__call__`'s own contract, and this used to get it wrong.** A driver
+        # returns one value per unknown *and then* one per kind in `driver.reports`
+        # (`cottax.problem.AbstractDriver.__call__`), which `Drive` binds as
+        # `self.unknowns + self.reports` (`cottax.evaluate.Drive.__call__`). This
+        # re-implementation checked and bound `step.unknowns` alone, which was invisible
+        # only because every driver reaching it reported nothing. The moment
+        # `VmconDriver` gained `(Steps, Converged, Status)` it became a spurious
+        # `ValueError`.
+        #
+        # **It could not have mis-bound a report to an unknown**, and that is worth
+        # writing down because it is the failure one expects here and it is not the one
+        # available: the reports come *after* the unknowns positionally, so even a
+        # truncating `zip` would have paired every unknown with its own value and merely
+        # dropped the verdict. The bug's whole reachable surface is the length check --
+        # loud, which is why this was caught the first time a driver reported anything
+        # rather than quietly answering the wrong question.
+        bound = step.unknowns + step.reports
+        if len(answered) != len(bound):
+            reported = (
+                f" and {len(step.reports)} report(s) "
+                f"{[v.path_str() for v in step.reports]}"
+                if step.reports
+                else ""
+            )
             raise ValueError(
                 f"{type(step.driver).__name__} for block "
-                f"{[n.path_str() for n in step.nodes]} returned {len(converged)} "
-                f"value(s) for {len(step.unknowns)} unknown(s)"
+                f"{[n.path_str() for n in step.nodes]} returned {len(answered)} "
+                f"value(s) for {len(step.unknowns)} unknown(s) "
+                f"{[v.path_str() for v in step.unknowns]}{reported}"
             )
-        env.update(zip(step.unknowns, converged, strict=True))
+        env.update(zip(bound, answered, strict=True))
         return body(env)
 
     return run

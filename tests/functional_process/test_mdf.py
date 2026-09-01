@@ -31,17 +31,20 @@ from cottax.blocking import Blocking
 from cottax.evaluate import ConditionMap, Drive, Schedule, schedule_for
 from cottax.graph import Graph
 from cottax.problem import (
+    Converged,
     FixedPoint,
     Optimise,
     Residual,
     RootFind,
     Start,
+    Steps,
     conditions_of,
     driver_vars,
+    unknowns_of,
 )
 
 from functional_process import mdf, sand
-from functional_process.core.solver.drivers import Outcome, SeededNewtonDriver
+from functional_process.core.solver.drivers import SeededNewtonDriver
 from functional_process.mda import assign_drivers, default_drivers
 from functional_process.run_mdf_harness import MAX_ITER, _why_it_stopped
 from functional_process.sand_harness import REFERENCE_INPUT_FILE, _scratch_copy
@@ -661,7 +664,9 @@ def test_the_problem_is_a_node_of_the_graph_and_owns_the_design(in_graph):
     "who determines this" for the design vector the way it does for everything else.
     """
     node = in_graph.graph[in_graph.problem]
-    assert set(node.owns) == set(in_graph.design)
+    # `unknowns_of`, not `owns`: the node also owns what its driver reports
+    # (`^driver_out.*.RootFind`), which is not something the root find solves for.
+    assert set(unknowns_of(node)) == set(in_graph.design)
     assert set(node.owns) & set(in_graph.mdf.eager.inputs) == set(in_graph.design)
     assert set(in_graph.design) & set(in_graph.schedule.inputs) == set()
     # Its conditions are PROCESS's equalities and nothing else -- driver data
@@ -787,56 +792,72 @@ def test_a_place_already_bound_is_refused(square_problem):
         mdf.in_graph_root_find(square_problem, place=taken)
 
 
-def test_the_step_count_and_the_whole_schedule_jit_are_not_alternatives(
+def test_the_verdict_and_the_whole_schedule_jit_are_not_alternatives(
     square_problem,
 ):
-    """An `Outcome` is asked for by default **and** the schedule still hashes.
+    """The verdict is reported **and** the schedule still hashes -- by construction now.
 
     This used to be a trade: `MdfNewtonDriver.outcome` was a plain `dict`, a driver is a
     field of the graph, `Schedule.__hash__` reaches it through `Graph.__hash__`, and
     `sand_harness.run_schedule` keys its whole-jit verdict on the schedule -- so asking
     for the step count cost 856/993 XLA compiles instead of 5, for the same answer
-    (`_audit/in_graph_rootfind.md` §6). `core/solver/drivers.Outcome` -- a `dict` hashed
-    by identity -- closes it, and this pins that it stays closed, because the failure it
-    prevents surfaces on the *schedule*, several frames from the driver that caused it.
+    (`_audit/in_graph_rootfind.md` §6). `Outcome` -- a `dict` hashed by identity --
+    closed it by making the sink hashable; `DriverOut` closes it by there being no sink:
+    the verdict is a value the driver returns and a name the node owns, so nothing
+    mutable is a driver field at all.
     """
     built = mdf.in_graph_root_find(square_problem)
-    assert isinstance(built.outcome, Outcome)
-    assert isinstance(built.outcome, dict), "written and read as an ordinary dict"
-    assert built.steps is None, "nothing has run yet"
     assert hash(built.schedule)
+    assert built.steps({}) is None, "nothing has run yet, so the env holds no verdict"
 
 
-def test_a_caller_supplied_outcome_is_the_object_that_gets_written(square_problem):
-    """The caller's own `Outcome` reaches the driver -- not a copy of it.
+def test_the_driver_reports_its_verdict_through_ports_the_node_owns(square_problem):
+    """`Assign` mints one name per reported kind, and the problem node owns it.
 
-    `run_cold_matrix.py` builds an outcome, hands it to the driver and reads
-    `outcome.get("steps")` off **its own** object afterwards. Coercing a caller's
-    container into a fresh one would leave that read empty and the row's iteration count
-    blank, with nothing raising -- which is why a bare `dict` is refused rather than
-    wrapped.
+    The structural half of the change: a diagnostic is a name in the graph, so `owners`
+    reports it, `prune` could ask for it, and a `Schedule` refuses an incoming value at
+    it -- none of which a mutable field on a frozen driver could offer.
     """
-    mine = Outcome()
-    built = mdf.in_graph_root_find(square_problem, outcome=mine)
-    assert built.outcome is mine
-    assert built.graph[built.problem].driver.outcome is mine
+    built = mdf.in_graph_root_find(square_problem)
+    node = built.graph[built.problem]
+    assert [p.var.path_str() for p in node.driver_out] == [
+        "^driver_out.steps.RootFind",
+        "^driver_out.converged.RootFind",
+        "^driver_out.status.RootFind",
+    ]
+    for kind in (Steps, Converged, mdf.Status):
+        assert built.graph.owners[kind.name_for(built.problem)] == built.problem
 
 
-def test_a_bare_dict_outcome_is_refused_and_the_message_names_outcome(square_problem):
-    """`{}` is refused at construction, naming the class that works.
+def test_the_unknowns_are_still_only_the_design(square_problem):
+    """`owns` grew by the reports; what the root find *solves for* did not.
 
-    The refusal is at the driver, where the mistake is made; without it the `TypeError`
-    lands inside `run_schedule` on a `Schedule`, which reads as a cottax problem and is
+    The one assertion the design predicted would move, and the reason `mda.starts_for`
+    had to stop asking `owns`: a `Start` pairs with the unknowns, and a step count is
     not one.
     """
-    with pytest.raises(
-        TypeError,
-        match=re.escape(
-            "outcome is a dict; it must be an `Outcome` "
-            "(`functional_process.core.solver.drivers.Outcome`, also `mdf.Outcome`)"
-        ),
-    ):
-        mdf.in_graph_root_find(square_problem, outcome={})
+    node = built = mdf.in_graph_root_find(square_problem)
+    node = built.graph[built.problem]
+    assert unknowns_of(node) == built.design
+    assert set(node.owns) - set(unknowns_of(node)) == {
+        Steps.name_for(built.problem),
+        Converged.name_for(built.problem),
+        mdf.Status.name_for(built.problem),
+    }
+
+
+def test_two_runs_of_one_assembly_report_their_own_verdicts(square_problem):
+    """A verdict is a question about a *run*, not a field on the assembly.
+
+    Under `Outcome` the sink lived on the driver, so a second run of one assembly
+    overwrote the first run's step count and there was no way to hold both. Reading the
+    env makes that unrepresentable.
+    """
+    built = mdf.in_graph_root_find(square_problem)
+    first = {Steps.name_for(built.problem): 3}
+    second = {Steps.name_for(built.problem): 7}
+    assert built.steps(first) == 3
+    assert built.steps(second) == 7
 
 
 # ------------------------------------------------- the value check, on the real files
@@ -900,14 +921,15 @@ def test_the_in_graph_root_find_gives_the_same_answer(name):
     x, _at, _seconds = mdf.in_graph_solve(built, env)
     got = [float(np.asarray(v)) for v in x]
     # The closed trade, end to end: the whole run is **one** XLA program *and* the
-    # driver's verdict came back. Either alone used to be available and not both
-    # (`_audit/in_graph_rootfind.md` §6): `Outcome` fixed the hash and
-    # `jax.debug.callback` the write, and this is where both halves meet.
+    # driver's verdict came back -- out of the env, as data, with no callback and no
+    # sink. Either alone used to be available and not both
+    # (`_audit/in_graph_rootfind.md` §6), and the step count here is a traced `int64[]`
+    # that survived the compile.
     whole, reason = schedule_verdict(built.schedule)
     assert whole, f"the single jit was refused: {reason}"
-    assert built.steps is not None
-    assert built.steps > 0
-    assert built.successful is True
+    assert built.steps(_at) is not None
+    assert int(np.asarray(built.steps(_at))) > 0
+    assert bool(np.asarray(built.successful(_at)))
     against_process = [
         abs(v - reference.converged[i]) / abs(reference.converged[i])
         for i, v in zip(reference.ixc, got, strict=True)

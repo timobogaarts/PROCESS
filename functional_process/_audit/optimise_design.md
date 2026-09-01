@@ -3846,3 +3846,515 @@ against PROCESS's 46, reproduced and jit-invariant -- and the *"both formulation
 on 58"* clause withdrawn until SAND's rows are re-measured and the move from 83/58 to
 90/80 is explained. The 1.26x ratio itself is unchanged; what is withdrawn is the
 independent second witness.
+
+## 21. The fork is one cell of the Jacobian, and a jit-only `nan` in the SVD (2026-09-01)
+
+§20.12 closed with *"the next thing to look at is the QP solve itself -- every failing
+run ends in `QSPSolver`, i.e. `cvxpy` refusing a subproblem, which is the one component
+nobody has instrumented"*. It is instrumented here. The QP is **not** where the
+divergence starts, and `cvxpy` is not doing anything unexpected: the fork enters through
+**one cell of the constraint Jacobian**, one iteration earlier than §20.12 could see, and
+`cvxpy` is deterministic across 14 consecutive bit-identical subproblems.
+
+Two further things came out of the same instrument, both of them independent of the fork:
+a **jitted and an unjitted `jax.jacfwd` of the same map at the same point do not agree**
+(§21.2), and `st_regression`'s MDF arm was blocked by a `nan` that exists only under
+`jit`, whose mechanism is a repeated singular value inside `PFCoil.solv` (§21.3, fixed).
+
+**Provenance, because the env moved under this measurement.** Part way through, `cottax`
+was reinstalled editable in `process_port` -- until then it resolved to a snapshot copy,
+not to `~/jaxgraph/src`, and the tree behind it gained a `DriverOut` mechanism. Every
+comparison in this section is **between two runs in one process**, so none of them
+straddles the change; and the two that most needed it were re-taken afterwards and
+reproduce **digit for digit**: the fork control (90 against 108, first differing QP 14,
+the same `conv` values to all 17 digits) and §21.2's jit/eager Jacobian table (same 105
+cells, same `5.154e-13`). The cottax change is therefore measured to be inert here, not
+assumed to be. The one number taken before the swap and not re-taken is flagged where it
+appears.
+
+### 21.1 (A), not (B): the QP's *inputs* differ, in one derivative cell
+
+Both SAND branches -- unperturbed, and `.tfcoil.a_tf_turn_steel -1 ulp` in the env the
+`Drive` is handed, §20.3's reproducer, eager throughout -- run with `pyvmcon`'s problem
+object wrapped in a recorder (so **every** evaluation is captured, line-search trials
+included, not only the ones the callback sees) and `pyvmcon.vmcon.solve_qsp` replaced by
+a verbatim copy of itself that also keeps `cvxpy`'s `Problem.status`, `solver_stats`,
+`delta` and both multiplier vectors.
+
+**Every VMCON problem evaluation, in order.** Branch A makes 179, branch B 217. The
+first one whose result differs is **#27**, and at #27 the design point `x` is
+bit-identical:
+
+| quantity | agreement at evaluation #27 |
+|---|---|
+| `f`, `eq`, `ie` (every condition **value**) | bit-identical |
+| `df`, `die` | bit-identical |
+| **`deq`** | **1 of 112 cells differs, by 1 ulp** |
+
+The cell is `^cond.constraints.c16` / `.stellarator.wp_width_r_min`:
+`-0.16700190547850377` against `-0.1670019054785038`, `1.66e-16` relative. Evaluations
+0-26 agree in all six quantities, and `x` at #27 is the same 14 floats, so this is the
+**direct** effect of the perturbed context at that point and not an accumulation: a
+deterministic map, the same `x`, one different context value, one different output bit.
+
+**What that says about the perturbation itself, and it is worth stating plainly:** one
+ulp of `.tfcoil.a_tf_turn_steel` is invisible in *every condition value at every point
+the solve visits* and visible in *exactly one derivative cell*. The conditions can agree
+bitwise while their derivatives do not, because `jax.jacfwd` closes over the context --
+which is why §20.12's iteration-by-iteration diff of the condition vector saw nothing
+until `conv` moved.
+
+**The QP, subproblem by subproblem.**
+
+| | branch A | branch B |
+|---|---|---|
+| first QP whose **inputs** (`x`, `B`, `f`, `df`, `eq`, `deq`, `ie`, `die`) differ | \-- | **14** |
+| first QP whose **outputs** (`delta`, `lamda_eq`, `lamda_ie`) differ | \-- | **14** |
+| QPs 0-13 | bit-identical inputs | **bit-identical outputs** |
+
+**So it is (A), and (B) is refuted by measurement.** Fourteen consecutive QP subproblems
+with bit-identical data returned bit-identical search directions and multipliers;
+CLARABEL is deterministic on this problem. The QP's outputs differ at 14 because its
+*inputs* do.
+
+At QP 14, with `x`, `f`, `df`, `eq`, `ie` and `die` all still bit-identical:
+
+| QP 14 | cells differing | max `|ulp|` | max relative |
+|---|---|---|---|
+| `deq` | **1 of 112** (the same `c16`/`wp_width_r_min` cell) | 1 | `1.66e-16` |
+| `B` (VMCON's Hessian approximation) | 135 of 196 | 160 | `1.91e-14` |
+| `delta` (the search direction) | 14 of 14 | `9.6e+06` | `1.79e-09` |
+| `lamda_equality` | 8 of 8 | `9.3e+05` | `1.68e-10` |
+| `lamda_inequality` | 12 of 12 | `2.7e+10` | `4.06e-06` |
+
+`B` differs before `deq` reaches the QP because `calculate_new_B` is fed the *line
+search's* evaluation at the previous iteration -- #27 and #28 -- which is exactly where
+the one cell first moved. So the amplification chain, end to end and every step of it
+measured, is:
+
+**1 ulp in one `deq` cell -> 160 ulp in `B` -> `1.8e-09` in the search direction ->
+`4e-06` in a multiplier that sits at `1e-11` -> `conv` differs by `4e-13` at iteration 14
+(§20.12's observation) -> `x` differs at iteration 15 -> 18 more iterations and an
+infeasible QP at 108.**
+
+### 21.2 A jitted and an unjitted `jax.jacfwd` do not agree on `stellarator_helias`
+
+Asked as a correctness question in its own right, and the answer is that **they differ**,
+by about a thousand times more than the fusion perturbation that flips the solve.
+
+`VmconDriver` builds `jacobian = jax.jit(jax.jacfwd(flat_conditions))`. Compared against
+a bare `jax.jacfwd(flat_conditions)` at the same points of the same cold solve (control
+first: **repeated calls are bit-identical both ways**, so neither side is itself
+nondeterministic):
+
+| at SQP iterate 27 | jit vs eager |
+|---|---|
+| Jacobian, cells differing | **105 of 294** |
+| Jacobian, max relative | **`5.15e-13`** (`^cond.constraints.c67` / `.physics.temp_plasma_electron_vol_avg_kev`) |
+| objective-gradient row, max relative | `3.69e-13` (`d objf / d .stellarator.wp_width_r_min`) |
+| values, `^cond.constraints.c16` | `1.18e-13` relative |
+| values, `^cond.stellarator.wp_width_r_min` | `8.84e-12` relative |
+| values, `^cond.fwbs.f_ster_div_single` | `6.63e-11` relative |
+| values, `^cond.constraints.c83` | `3.71e-05` relative -- on a residual of `6e-12` |
+
+(The one entry that looks alarming, a residual at `-1.3e-15` against `-8.9e-16`, is a
+cancellation to nothing and is reported as `4.5e-01` relative by arithmetic rather than
+by meaning.) The same picture holds at iterates 13, 40 and 178: 102-107 of 294 cells,
+the same eight rows touched every time.
+
+**Put beside §20.2 this is the headline of this section.** Fusing the 25 upstream `Call`
+steps moves `.tfcoil.a_tf_turn_steel` by `4.4e-16` and that flips a converged solve into
+an infeasible stop. The jit boundary *inside the driver* -- which has been there the
+whole time, on every run, in both fusion policies (§20's own wording caution) -- moves
+the Jacobian the SQP is handed by up to `5e-13`. **The schedule-fusion axis is not the
+port's largest source of last-bit motion in the SQP's data; the driver's own jit is,
+by three orders of magnitude.** That does not make the fused/eager finding wrong -- it
+makes it a small instance of a general fact, and it retires "fuse or do not fuse the
+upstream groups" as anything that could be called a determinism policy.
+
+Nothing here says which of the two Jacobians is *right*. Both are correct to the
+precision floating point allows; XLA reassociates when it fuses and that is all this is.
+What it does say is that the port's answer on this configuration is a function of a
+compilation decision, and no `fuse_upstream` setting changes that.
+
+**And the difference is load-bearing for the answer, not merely present in it.** The
+whole cold SAND solve was re-run with `VmconDriver`'s `jax.jit(jax.jacfwd(...))` replaced
+by a bare `jax.jacfwd(...)` -- the *value* path keeps its jit, so the Jacobian's
+compilation is the only thing that changes, and the schedule is §19.3's eager one with no
+perturbation anywhere:
+
+| `stellarator_helias`, cold SAND, C3 `1e-8`, eager schedule | its | outcome | `objf` | `max\|eq\|` | `conv` | s |
+|---|---|---|---|---|---|---|
+| Jacobian **jitted** (the default, and every number in §19-§20) | **90** | converged | `1.2177573520529628` | `1.84e-06` | `8.09e-10` | 12 |
+| Jacobian **unjitted** | **70** | `QSPSolver` | `1.2226348012227457` | `2.19e-03` | `8.49e-02` | 218 |
+
+A **third** outcome from the same problem, worse than either of §20's two, reached by
+changing nothing but how the derivative is compiled. (Run twice, either side of the
+cottax reinstall, byte-identical `objf` and `x` both times.) The 18x wall-clock cost is
+also why the jit is there and is not going away; the point is not that the unjitted
+Jacobian is better -- it is that **three different compilation choices give three
+different answers**, and §20.3's ulp perturbation is the smallest of the three levers,
+not a special one.
+
+### 21.3 `st_regression`'s non-finite jitted row: a repeated singular value in `PFCoil.solv`
+
+`run_cold_matrix`'s `st_regression` MDF arm fails at the **first** SQP evaluation with
+`ValueError: the SQP was handed a non-finite problem`, `non-finite derivative rows:
+['^cond.constraints.c16']`, every condition *value* finite. HEAD `9335f784` recorded that
+the unjitted `jax.jacfwd` is fully finite at the same point. Reproduced here directly:
+the whole `c16` row is `nan` under `jax.jit(jax.jacfwd(f))` and finite in all 14 columns
+under `jax.jacfwd(f)`, with the value finite either way.
+
+**`safe_math.py` is not involved, and was the first suspect.** The obvious reading -- a
+`select`/`where` guard whose dead branch leaks an `inf` into the tangent -- is wrong here:
+`safe_pow`/`safe_sqrt`'s double select keeps the untaken branch's *argument* away from
+zero, so neither branch ever evaluates `0.0 ** (p-1)`, and §24.12's `lax.select` rewrite
+did not change that. The file was not edited. The `safe_sqrt` in `_pf_coil_sizes` sits
+*downstream* of the real fault and merely carries it.
+
+**Localised, not guessed.** One `jax.jvp` of the entire MDA with every intermediate value
+as an output -- 17,246 scalar slots -- jitted and eager. 405 slots have a non-finite
+tangent under jit and **none** does eager. Ordered by the step that produces them, the
+earliest is
+
+    step 116  call[.tokamak.pf_coil.equilibrium_currents]   .pf_coil.ccls[1..3]
+
+and the other 402 are its downstream cone: `c_pf_cs_coil_*_ma`, `c_pf_cs_coils_peak_ma`,
+`n_pf_coil_turns`, `r_pf_coil_outer_max`, `b_pf_coil_peak`, the cryostat volumes, the
+`t_plant_pulse_burn` fixed-point block, the PF masses, the costs, and finally `c16`
+(net electric power), which is the row the SQP refuses.
+
+**The mechanism.** `_solv` (`models/pfcoil/currents.py`, porting `PFCoil.solv`) takes
+`jnp.linalg.svd` of the damped least-squares matrix. On `st_regression`'s equilibrium
+solve that matrix has **a repeated singular value**:
+
+    sigma = [1.25498145e-07, 1.00000000e-09, 1.00000000e-09]
+
+and the repetition is **structural, not incidental**. There is one field point, so the
+two field rows have rank 1; the smoothing block is `alfa * I` over `n_groups` columns; so
+with `n_groups >= 3` at least two directions carry nothing but `alfa`, and both come back
+as `sigma = alfa = 1e-9`. JAX's SVD JVP computes `dU`/`dV` by dividing by
+`sigma_i^2 - sigma_j^2`. Whether that divisor is *exactly* zero is a rounding accident,
+and it is decided by the compilation: bit patterns of the same `sigma`, printed from
+inside the same program with `jax.debug.print` of
+`lax.bitcast_convert_type(sigma, int64)`:
+
+| | sigma[1] | sigma[2] |
+|---|---|---|
+| eager (op by op) | `4472406533629990550` | `4472406533629990549` |
+| **one `jax.jit`** | `4472406533629990549` | `4472406533629990549` |
+
+One ulp apart eagerly, **bit-identical fused** -- so `1/(sigma_i^2 - sigma_j^2)` is
+`1/0` in the jitted program only. Reproduced away from PROCESS entirely, in five lines:
+`jvp` of `V diag(1/s) U^T b` at `diag(1, 2, 3)` gives `[-1.83, -0.92, -0.61]`; at
+`diag(1, 2, 2)` gives `[nan, nan, nan]`; at `diag(1, 2, nextafter(2))` gives
+`[-2, -1, -1]`.
+
+**Was the finite eager derivative right?** Yes, and this is worth knowing before deciding
+how much it polluted: at the same point the SVD JVP, the analytic least-squares
+sensitivity and a central finite difference of `_solv` itself agree to **8 significant
+figures** in three independent perturbation directions (the tangents are genuinely of
+order `1e+16` there -- `sigma_min` is `1e-9` -- and the finite difference confirms that
+too). So the defect was `nan` or nothing; it was not silently wrong numbers. It was
+`nan` only because the tie landed exactly, which is the part a fusion decision chooses.
+
+**The fix** (`models/pfcoil/currents.py`): a `jax.custom_jvp` on `_solv`. The **value** is
+the existing SVD path, untouched, so no configuration's numbers move. The **tangent**
+comes from the normal equations the solution already satisfies,
+
+    A^T A dx = dA^T (b - A x) + A^T (db - dA x),
+
+an `n_groups x n_groups` linear solve that is defined whenever `A` has full column rank
+and does not care whether two singular values coincide. `U` and `V` are individually
+undefined at a repeated singular value; `x` is not, and `x` is all anyone reads.
+
+**After, measured:**
+
+| | before | after |
+|---|---|---|
+| `st_regression`, `c16` Jacobian row, jitted | `nan` in all 14 columns | finite |
+| `st_regression`, `c16` Jacobian row, eager | finite | finite |
+| `st_regression` MDF C3 `1e-6`, cold | `ValueError` at evaluation 0 | **4 its, converged**, `conv 4.95e-09`, `max|eq| 4.76e-06` |
+| the same row, eager vs fused | \-- | `dx 0.00e+00` |
+| `stellarator_helias` SAND C3 `1e-8` eager | 90, converged, `1.2177573520529628` | identical, `dx 0.00e+00` |
+| `large_tokamak_nof` SAND C3 `1e-8` fused | 10, converged, `1.6000000000354158` | identical count and `objf`, `dx 1.58e-10` |
+| `large_tokamak_nof` MDF C3 `1e-8` fused | 7, converged | identical count and `objf`, `dx 2.11e-12` |
+
+(The two tokamak `dx` columns are not zero because the derivative is now computed by a
+different arithmetic path; the iteration count, the status and `objf` to twelve digits
+are unchanged. `stellarator_helias` is bitwise unmoved because the stellarator graph has
+no PF-coil equilibrium solve to reach.) `tests/functional_process/models/pfcoil`:
+**508 passed with `--fp-gradients`**, which includes
+`TestCalculateEfcCurrents::test_gradient_agreement` against **PROCESS's own finite
+difference** on both the legacy and the fuzz sample.
+
+**The limit of the rule, stated rather than buried.** With a singular value at or below
+`_SIGMA_FLOOR` (`1e-10`) `_solv` reproduces PROCESS's carried-`zvec` behaviour and is no
+longer the least-squares solution, so this rule is not its derivative there. It is not a
+regression: the function is discontinuous in `sigma` at the floor and has no derivative
+there in any spelling, and the SVD JVP was `nan`-prone there for the same tie reason. On
+every configuration measured `sigma_min` is `alfa = 1e-9`, an order of magnitude above the
+floor, so the floor is not active on any live path.
+
+### 21.4 What `cvxpy` actually reports, and where the failing run really stops
+
+§17's lesson was that a solver default can hide in plain sight, so this was checked at the
+call site rather than inferred from `VmconDriver.qsp_solver`'s default.
+
+- **CLARABEL is genuinely the solver.** `qsp.solver_stats.solver_name` is `'CLARABEL'` on
+  **all 109** subproblems of the failing branch. (`cvxpy.CLARABEL` is the string
+  `"CLARABEL"`, so the driver passing the name and PROCESS passing `cvxpy.CLARABEL`
+  are the same argument.)
+- **Status counts: 108 `optimal`, 1 `infeasible`, 0 `optimal_inaccurate`.** That is a
+  second, independent confirmation of §15's withdrawal of the "a fifth to a third of QP
+  subproblems solve inaccurately" claim.
+- **The failing subproblem is infeasible, not inaccurate.** CLARABEL exits after **3**
+  interior-point iterations with `qsp.value = inf` and `delta.value is None`; the
+  preceding 108 took 10-13 iterations each and returned `optimal`.
+
+**And one thing nobody had noticed, which the recorder makes obvious.** The point at
+which the QP is infeasible is *far worse* than the point before it:
+
+| | iteration 107 (last one the callback sees) | iteration 108 (where the QP fails) |
+|---|---|---|
+| `max\|eq\|` | `2.85e-02` | **`6.44e-01`** |
+| `min ie` | `+1.12e-11` | **`-2.01e+00`** |
+| `cond(J)` | `1.65e+04` | **`2.56e+06`** |
+| `\|df\|` | `5.59e+00` | `1.90e+01` |
+
+So the published row *"108, stopped, `max|eq| 2.85e-02`"* is **iteration 107's** state --
+the last one a callback fires for -- and VMCON's actual last point is one line-search
+step beyond it, at a place where the linearised problem has no feasible point at all. The
+open question §20.12 handed on should therefore be re-aimed: not *"why does the QP
+fail"* (it fails because it is handed an infeasible linearisation) but **"why does the
+line search accept a step from `max|eq| 2.9e-02` to `6.4e-01`"** -- i.e. `perform_linesearch`
+and the `mu` penalty update, which are still uninstrumented.
+
+### 21.5 What is not ruled out
+
+- **Why the same 1-ulp context change is invisible in every value and visible in one
+  derivative cell** is measured but not explained at the level of the arithmetic: which
+  expression in `c16`'s path amplifies `a_tf_turn_steel` into
+  `d/d wp_width_r_min` and not into the value has not been traced.
+- **Which of the three outcomes in §21.2's table is the right answer**, if any. The
+  unjitted-Jacobian run is not a control that says the jitted one is wrong; it is a third
+  data point saying the answer depends on the compilation. Nothing here identifies a
+  formulation change that would make all three agree, and `SlsqpDriver` was not put
+  through this axis (§20.4 put it through the ulp one).
+- **The line search.** §21.4 names it as the next thing to instrument and does not
+  instrument it. Nothing here says the accepted step is *wrong* -- only that it is large
+  and lands somewhere the QP cannot linearise.
+- **Whether `st_regression`'s newly-converging MDF row is a good answer.** It reports
+  `min ie -1.51e-03`, i.e. a violated inequality at the point it calls converged. That is
+  the cold matrix's business, not this section's; what is established here is only that
+  the row is no longer blocked by a `nan`.
+- **Other configurations' PF-coil derivatives.** The `custom_jvp` changes the derivative
+  path wherever `_solv` runs, which is every tokamak. Two were measured (`st_regression`,
+  `large_tokamak_nof`); `large_tokamak_eval`, `low_aspect_ratio_DEMO` and
+  `spherical_tokamak_eval` were not, and belong to the next cold-matrix regeneration.
+
+## 22. The SQP drivers go through `jax.pure_callback`, and the SAND schedule becomes one program (2026-09-01)
+
+`VmconDriver` and `SlsqpDriver` now run their host-side solve inside one
+`jax.pure_callback`, exactly the way `cottax.drivers.SLSQPDriver`
+(`~/jaxgraph/src/cottax/drivers/scipy_slsqp.py`) does, and report `(Steps, Converged,
+Status)` through `DriverOut` ports instead of through a mutable `Outcome` dict.
+`drivers.Outcome` is deleted and `Status` moved from `mdf` to `drivers`.
+
+### 22.1 The verdict, before and after
+
+`sand_harness.run_schedule` probes each schedule with a whole-schedule jit once and
+caches the verdict; `schedule_verdict` reads it back. On `stellarator_helias`'s cold SAND
+solve schedule, verbatim:
+
+**Before**
+
+    (False, "TracerArrayConversionError: The numpy.ndarray conversion method
+    __array__() was called on traced array with shape float64[14]
+    The error occurred while tracing the function run at
+    /home/tbogaarts/miniconda/envs/process_port/lib/python3.12/site-packages/equinox/_jit.py:43
+    for jit. This concrete value was not available in Python because it depends on the
+    values of the arguments dynamic_nodonate['first'][283], ... [296].
+    See https://docs.jax.dev/en/latest/errors.html#jax.errors.TracerArrayConversionError")
+
+`float64[14]` is the block's 14 unknowns; the 14 named arguments are their `^guess.*`
+ports. The `__array__` call was `design_scale(np.asarray(flat_start))` -- PROCESS's own
+`1/x_start` conditioning, which needs *values*.
+
+**After**
+
+    (True, None)
+
+### 22.2 Compiles and wall time -- `stellarator_helias` SAND, one process each
+
+Counted by patching `jax._src.compiler.backend_compile_and_load`. The solve schedule is
+run twice in the same process.
+
+| | verdict | first call | second call |
+|---|---|---|---|
+| before, probe on (probe fails, walks) | `(False, TracerArrayConversionError)` | 9 compiles, 11.4 s | 2 compiles, 9.30 s |
+| before, `whole=False` (the cold matrix's path) | `(False, None)` | 9 compiles, 12.0 s | 2 compiles, 8.59 s |
+| **after, probe on** | **`(True, None)`** | **4 compiles, 10.8 s** | **2 compiles, 7.63 s** |
+| after, `whole=False` | `(False, None)` | 11 compiles, 10.8 s | 3 compiles, 7.96 s |
+
+**"One compile" here means the optimiser is *outside* the compiler, not compiled by
+it.** The reference number this was measured against -- the in-graph root find's *0
+compiles / 0.02 s* second call (§21's tree, `next_steps.md` §24.11) -- is not reachable
+here and it would be wrong to report a number as if it were. That solve is
+`optimistix.Newton` inside a `lax.while_loop`: the whole iteration is *in* the XLA
+program, so a second call is a cache hit and a dispatch. This one is `pyvmcon` +
+`cvxpy` + a Python line search behind a host callback: the second call re-runs all 108
+SQP iterations on the host, at full price. What the wrap buys is that the block stops
+being a hole in the schedule -- everything around it fuses -- not that VMCON got faster.
+
+**The 2 compiles on every call, including the second, are the driver's own inner jits.**
+`jax.jit(flat_conditions)` and `jax.jit(jacfwd(flat_conditions))` are built inside
+`host`, so they close over that call's recombined `ConditionMap` and are a fresh function
+object each solve: jax's cache misses and retraces. This is unchanged behaviour (the
+before-rows show the same 2), and it is the obvious next saving -- hoisting `live` out of
+the closure into an argument would make them cacheable across solves. Not done here: it
+changes what the jitted function sees, and this change's whole acceptance criterion was
+that nothing the solver sees moves.
+
+**The inner jits were kept, deliberately, unlike the `cottax` driver being copied.**
+`SLSQPDriver` leaves its model eager because a cottax test model is a handful of ops. One
+evaluation here converges most of a PROCESS graph; `next_steps.md` §24.11's split (the
+SAND `Drive` costing 105.4 s of 108 on `large_tokamak_nof`, at 729 compiles, when run op
+by op) is what that would cost. The `pure_callback` boundary is per *solve*, not per
+iteration, so there is nothing about the wrap that makes an inner jit wrong.
+
+**First-call wall time is unchanged within noise** (11.4 s / 12.0 s before, 10.8 s
+after, two runs). That is the expected result and worth stating as such: one host round
+trip per solve is not a cost anything can measure against a 108-iteration SQP.
+
+### 22.3 The cold matrix: every SAND row reproduces bitwise
+
+Full `run_cold_matrix.py --provider` pass, 7 configurations, 481 s, diffed against
+`functional_process/reference_cold_matrix.txt`.
+
+**All five SAND rows are byte-for-byte identical**, `st_regression`'s `FAILED` included:
+
+    stellarator_helias    SAND  108 SQP it  stopped    1.22217408  max|eq| 2.85e-02  min ie 1.12e-11
+    helias_5b             SAND    7 SQP it  converged 0.764215517  max|eq| 1.10e-13  min ie 7.02e-02
+    large_tokamak_nof     SAND   10 SQP it  converged         1.6  max|eq| 4.51e-06  min ie -9.58e-05
+    low_aspect_ratio_DEMO SAND  500 SQP it  cap(500)  -0.401520642 max|eq| 1.09e-11  min ie -3.32e-03
+    st_regression         SAND       FAILED  KeyError: VarPath(^cond.numerics.objf)
+
+The `stellarator_helias` row is the sensitive one (§21.2: a `5.15e-13` Jacobian
+difference moves it between 70 its/`QSPSolver` and 90 converged), and it reproduces to
+the last printed digit -- `1.2221740786343283`, `0.02851456050213086`,
+`1.1216805262392882e-11`, and all eight `ixc` values -- on both the walk path and the
+whole-jit path. So the `pure_callback` boundary moves nothing here. The explicit
+`float64` conversion at the boundary is why: the reference driver converts for exactly
+this reason and the same conversion was written here.
+
+**Four MDF rows moved, and none of the movement is this change's.** They are the
+regeneration §21.5 asked for:
+
+| row | reference | now | cause |
+|---|---|---|---|
+| `st_regression` MDF | `FAILED`, non-finite derivative row `^cond.constraints.c16` | converged in 4, `min ie -1.51e-03` | §21.3's `custom_jvp` on `_solv` |
+| `large_tokamak_eval` MDF | `max\|eq\|` 3.53e-14, blks 247, drvn 6 | 3.47e-14, blks 25, drvn 2 | ditto, plus the in-graph root find's `interior_*` shape columns |
+| `spherical_tokamak_eval` MDF | blks 245, drvn 4 | blks 29, drvn 2 | in-graph root find shape columns |
+| both eval rows' notes | no "Stated IN the graph" clause | present | ditto |
+
+The argument that this is not the callback wrap, stated so it can be checked rather than
+believed: (a) both `*_eval` rows are `RootFind`s answered by `MdfNewtonDriver`, which
+this change does not touch at all; (b) `st_regression` MDF failed on a `nan` *derivative*
+row, and nothing in a `pure_callback` around a solve can make a `nan` finite, whereas
+§21.3's `custom_jvp` is documented as doing exactly that for exactly that row; (c) the
+reference table lacks the "Stated IN the graph" note that HEAD's own `cold_mdf` emits
+unconditionally on a root-find row, so it predates that code and is stale for those rows
+independently of anything here. What is **not** established is a controlled before/after
+for those four rows: that would need the matrix re-run with this change alone reverted,
+and it was not done.
+
+### 22.4 The latent mis-binding in `sand_harness._driven_runner`
+
+`_driven_runner` re-implements `cottax.evaluate.Drive.__call__` so the driver can stay
+eager while the body is jitted. Its binding read
+
+    if len(converged) != len(step.unknowns): raise ValueError(...)
+    env.update(zip(step.unknowns, converged, strict=True))
+
+-- the unknowns alone, where `Drive.__call__` binds `self.unknowns + self.reports`
+(`evaluate.py:373-388`) and `AbstractDriver.__call__`'s contract is *"the problem's
+unknowns, positionally, ... followed by one value per kind in `reports`, in that order"*
+(`problem.py:684`). Nothing had caught it because every driver that had ever reached this
+function reported nothing. It is fixed to `step.unknowns + step.reports`, and
+`test_driven_runner_binds_reports_not_unknowns` in `tests/functional_process/test_sand.py`
+is the case that would have.
+
+**The expected failure mode is not the available one, and that is a correction worth
+recording.** The natural worry -- and the one this fix was briefed as addressing -- is
+that the old code "either raises spuriously or silently binds report values to unknown
+paths". Only the first is reachable. A driver returns its unknowns *first* and its
+reports after (`problem.py:684`), so `zip(step.unknowns, answered)` pairs every unknown
+with its own value whether or not `strict=True` is set; the truncation would have dropped
+the verdict, never mis-assigned it. So the bug's entire reachable surface was a loud
+`ValueError` at the first driver that reported anything, which is what happened. Reported
+here rather than quietly fixed: a tidy "found and fixed a silent mis-binding" would have
+been the more flattering sentence and the false one.
+
+### 22.5 What the wrap costs, stated
+
+- **No JVP.** `jax.pure_callback` defines no derivative rule. Measured, not assumed:
+  `jax.jvp` and `jax.grad` through one both raise
+  `ValueError: Pure callbacks do not support JVP. Please use jax.custom_jvp to use
+  callbacks while taking gradients.` So a `VmconDriver` nested inside another
+  differentiated block fails loudly and names the fix -- **not** a silent zero, which is
+  what was expected before it was measured. It is still a loss: the refusal used to
+  arrive at trace time and now arrives only when something asks for a derivative.
+- **What writing it would take.** The derivative of a converged constrained solve is the
+  implicit KKT system: differentiate the stationarity and active-constraint conditions at
+  the optimum and solve the resulting linear system for `dx/dp`. That needs the Lagrange
+  multipliers, and `pyvmcon.solve` already returns them (`lamda_equality`,
+  `lamda_inequality`, currently discarded as `_lambda_eq`/`_lambda_ie`), plus a decision
+  about which inequalities are active and what to do at a degenerate one. `scipy` returns
+  the same for `SlsqpDriver`. So the road is open and nothing here nests one; the same
+  note cottax's own SLSQP driver makes.
+- **Exceptions cross the boundary.** `_refuse_non_finite`'s `ValueError` is raised inside
+  `host`. Eagerly it propagates unchanged, which is what `run_cold_matrix`'s per-arm
+  `except Exception` catches and what the `st_regression` MDF row's reason used to be.
+  Under a trace it surfaces through jax's callback machinery instead, and no claim is
+  made here about what type it arrives as -- that was not measured.
+- **The per-iteration `callback` now runs inside a `pure_callback`.** It still works
+  (`run_cold_matrix._recorder`'s trace is what the 108/objf/max|eq| numbers above come
+  from, taken after the wrap). But jax is free to elide a `pure_callback` whose outputs
+  are unused, so a trace is no longer evidence that a solve ran -- the reported ports
+  are.
+- **`Steps` is counted by the callback, and that is provably inert.** `pyvmcon.solve`
+  substitutes its own `lambda _i, _result, _x, _con: None` when handed `None`
+  (`vmcon.py`), so installing a counting callback calls one where the library would have
+  called one anyway. `pyvmcon` returns no iteration count and this is the same number
+  `len(trace)` gives the two ladder harnesses.
+- **Status codes are per driver, and that is why `Status` is port-local.**
+  `VMCON_CONVERGED = 0`; `VMCON_STATUS` gives `1` for a bare `VMCONConvergenceException`
+  (the `max_iter` exhaustion), `2` for `QSPSolverException` (first QP infeasible), `3`
+  for `LineSearchConvergenceException`. `SlsqpDriver` reports `scipy`'s own
+  `OptimizeResult.status` instead. `Status` moved from `mdf` to `drivers` because three
+  drivers now write one; `mdf` re-exports the name.
+- **`SlsqpDriver.outcome`'s `message`, `nfev` and `fun` are gone** with `Outcome`. A
+  message is a string and cannot survive a trace, which is why `Status` is an integer;
+  nothing in this tree read `nfev` or `fun`, and either could become a further
+  `DriverOut` kind the day something does.
+
+### 22.6 What was not done
+
+- No controlled re-run of the four moved MDF rows with this change alone reverted
+  (§22.3).
+- The inner jits are still rebuilt per solve (§22.2); hoisting `live` into an argument to
+  make them cacheable is untried.
+- `SlsqpDriver` was wrapped and its reports tested on the toy problem, but no SAND or MDF
+  row was run through it after the change -- the controlled VMCON/SLSQP comparison §15
+  and §20.4 rest on has not been re-taken.
+- The `pure_callback` is `vmap_method='sequential'`; no batched solve was attempted.
+- **`run_cold_matrix.cold_sand` still passes `whole=False`**, so the published matrix is
+  measured on the walk path and does not take the whole-schedule jit the wrap now makes
+  available. That flag was there to skip a probe known to fail; it is now skipping a
+  probe known to succeed, and flipping it is a one-word change that would move every SAND
+  row onto the fused path. Deliberately not done in the same change as the wrap: §19/§20
+  are two full sections about a one-ulp fusion difference flipping this exact solve
+  between 90-converged and 108-stopped, and the whole acceptance criterion here was that
+  the rows do not move. The probe run in §22.2 says the `stellarator_helias` row does not
+  move; the other four were not checked that way.

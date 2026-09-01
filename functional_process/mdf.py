@@ -174,6 +174,8 @@ from cottax.evaluate import ConditionMap, Drive, Schedule, schedule_for
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
 from cottax.problem import (
+    Converged,
+    DriverOut,
     Equality,
     FixedPoint,
     Inequality,
@@ -182,6 +184,7 @@ from cottax.problem import (
     Residual,
     RootFind,
     Start,
+    Steps,
 )
 from cottax.spec import In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
@@ -190,8 +193,12 @@ from jax.tree_util import GetAttrKey
 
 from functional_process import sand
 from functional_process.core.solver.drivers import (
-    Outcome,
     SeededNewtonDriver,
+    # `Status` was written here, for `MdfNewtonDriver`, and moved to `drivers` when
+    # `VmconDriver` and `SlsqpDriver` started reporting one too: a port kind belongs
+    # beside the drivers that write it, not beside the one assembly that first read it.
+    # Re-exported (`__all__`) so `mdf.Status` still resolves for every existing caller.
+    Status,
     VmconDriver,
 )
 from functional_process.indat import graph_for
@@ -689,8 +696,19 @@ class MdfNewtonDriver(SeededNewtonDriver):
     that answers every `RootFind` inside the MDA -- and only two things move, both for
     the same reason: on this table a solve that did not converge has to be a *row*, not
     an exception (`run_cold_matrix`'s "a failure is a row, not an exit"). So
-    `throw=False`, and `stats` is written to `outcome` where a caller can read the step
-    count and the `RESULTS` code back out.
+    `throw=False`, and `stats` is **reported**: `reports` names `Steps`, `Converged` and
+    `Status`, so the verdict comes back through the ports `Assign` mints for them and
+    lands in the env like every other value.
+
+    **This class is where the `DriverOut` design was bought, so what it replaced is worth
+    stating.** The three numbers used to leave through a `jax.debug.callback` writing
+    into a mutable `Outcome` dict held as a driver field. That worked and was wrong twice
+    over: it was a host effect smuggled through a traced program to carry what is plainly
+    data, and the sink had to be a *field* to be reachable, which made the whole
+    `Schedule` unhashable unless the dict was hashed by identity. Before that was
+    understood, asking for a step count silently forfeited the whole-program jit --
+    measured at 856 XLA compiles against 5. None of it is needed: a report is an ordinary
+    output of this node, and a tracer is a perfectly good value to return.
 
     **`Start` is required and never fallen back on.** `SeededNewtonDriver`'s `seed`
     exists for the inner coil island, whose cold guess is a structural `0.0`; the outer
@@ -703,47 +721,30 @@ class MdfNewtonDriver(SeededNewtonDriver):
     therefore visible in the design table rather than clipped out of it.
     """
 
-    outcome: Outcome | None = None
-    """An `Outcome` this driver writes `steps`/`successful`/`result` into, or `None`. Not
-    a return value because `AbstractDriver.__call__`'s contract is the answer and nothing
-    else.
-
-    **An `Outcome` and not a bare `dict`, and that is checked rather than coerced.** A
-    driver is an `eqx.Module` and goes into the graph, so a `dict` here makes the whole
-    `Schedule` unhashable and `sand_harness.run_schedule` fails several frames away
-    (`core/solver/drivers.Outcome`, which is one and says why; measured in
-    `_audit/in_graph_rootfind.md` §6). Coercing a `dict` to an `Outcome` here would be
-    worse than refusing it: the caller would keep writing into *their* object and this
-    driver would write into a copy, so the step count would silently read back empty.
-    `mdf.Outcome` is the same class, re-exported so a caller of this module needs one
-    import and not two."""
-
     max_steps: int = 256
 
-    def __check_init__(self) -> None:  # noqa: PLW3201 -- equinox's post-init hook
-        """Refuse a bare `dict`, naming the class that works.
+    @property
+    def reports(self):
+        """`(Steps, Converged, Status)` -- what `__call__` returns after the design.
 
-        On construction rather than at the call site, so a driver built by hand is
-        caught in the same place `Assign` would catch a type mismatch -- and long before
-        `run_schedule` hashes a schedule several frames away.
-
-        Raises
-        ------
-        TypeError
-            If `outcome` is anything but an `Outcome` or `None`.
+        A property and not a `ClassVar` because that is what `AbstractDriver.reports` is:
+        what an algorithm needs is a property of the algorithm, what is worth saying is a
+        property of this use of it. This driver always says all three; a driver whose
+        report costs something (a padded per-iteration buffer) makes it conditional on
+        its own fields, which a class attribute could not express.
         """
-        if self.outcome is not None and not isinstance(self.outcome, Outcome):
-            raise TypeError(
-                f"outcome is a {type(self.outcome).__name__}; it must be an "
-                f"`Outcome` (`functional_process.core.solver.drivers.Outcome`, also "
-                f"`mdf.Outcome`) -- a driver is a field of the graph, so a plain `dict` "
-                f"makes the whole `Schedule` unhashable and `run_schedule` fails on the "
-                f"schedule rather than here. `Outcome` is a `dict` hashed by identity, "
-                f"so it is written and read exactly as one"
-            )
+        return (Steps, Converged, Status)
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
-        """The root of `conditions`, started from `data[Start]`.
+        """The root of `conditions` started from `data[Start]`, then the verdict.
+
+        Returns the design values positionally, then `steps`, `converged` and the
+        `optimistix.RESULTS` code -- `AbstractDriver.__call__`'s contract, which is the
+        unknowns followed by one value per kind in `reports`.
+
+        All three are jax arrays and stay so: converting them here (`int(...)`,
+        `bool(...)`, `str(...)`) is what used to raise `TracerArrayConversionError` under
+        a trace and cost this driver its jit. A caller renders them.
 
         Raises
         ------
@@ -773,39 +774,15 @@ class MdfNewtonDriver(SeededNewtonDriver):
             throw=False,
             max_steps=self.max_steps,
         )
-        if self.outcome is not None:
-            # **Through `jax.debug.callback`, and that is not decoration.** The three
-            # values are `int`/`bool`/`str` of jax arrays, and inside a trace those are
-            # tracers: `int(np.asarray(tracer))` raises `TracerArrayConversionError`, so
-            # writing them directly made this driver untraceable and cost
-            # `run_schedule`'s single jit -- the same defect class `traceable_drivers`
-            # documents on the *inner* solvers, made by the outer one
-            # (`_audit/in_graph_rootfind.md` §6). A callback runs host-side when the
-            # program runs, so one code path serves the eager call and the compiled one.
-            jax.debug.callback(
-                self._record,
-                solution.stats["num_steps"],
-                solution.result == optx.RESULTS.successful,
-                getattr(solution.result, "_value", jnp.asarray(-1)),
-            )
-        return unravel(solution.value)
-
-    def _record(self, steps, successful, code) -> None:
-        """Write one solve's verdict into `outcome`, from concrete arrays.
-
-        Called by `jax.debug.callback`, so `steps`/`successful`/`code` are always numpy
-        and never tracers, however the surrounding schedule is run. `RESULTS` members
-        `str()` to `optimistix._solution.RESULTS<>`, which says nothing, so the verdict
-        is recorded as the boolean a row can print and the integer code beside it.
-        """
-        self.outcome["steps"] = int(np.asarray(steps))
-        self.outcome["successful"] = bool(np.asarray(successful))
-        self.outcome["result"] = str(int(np.asarray(code)))
+        return (
+            *unravel(solution.value),
+            solution.stats["num_steps"],
+            solution.result == optx.RESULTS.successful,
+            getattr(solution.result, "_value", jnp.asarray(-1)),
+        )
 
 
-def root_find_driver(
-    mdf: Mdf, outcome: Outcome | None = None, **kwargs
-) -> MdfNewtonDriver:
+def root_find_driver(mdf: Mdf, **kwargs) -> MdfNewtonDriver:
     """The driver for a `RootFind` MDF -- `mdf.problem_type` decides, not the caller.
 
     `rtol`/`atol` default to `SeededNewtonDriver`'s `1e-4` on the *residual*, and the
@@ -814,22 +791,21 @@ def root_find_driver(
     default `xtol = 1.49e-8` on the *step*, which is a tighter but incomparable rule;
     the honest comparison is the answer, and that is what the matrix column measures.
 
-    `outcome` is passed through **unwrapped**: the object the caller holds is the object
-    this driver writes into, which is the whole point of a results sink. A bare `dict` is
-    refused by `MdfNewtonDriver.__check_init__` rather than coerced, for the same reason.
+    The verdict needs no argument here any more: this driver `reports` it, so
+    `solve` binds it into the env it returns and `verdict` reads it back out. There is
+    no results sink to hand in, and therefore nothing that has to be a driver field.
 
     Raises
     ------
     TypeError
-        If `mdf` states an `Optimise` -- `mdf.driver` is the one to build for that. Also,
-        via the driver, if `outcome` is a bare `dict` rather than an `Outcome`.
+        If `mdf` states an `Optimise` -- `mdf.driver` is the one to build for that.
     """
     if not issubclass(mdf.problem_type, RootFind):
         raise TypeError(
             f"this MDF states an {mdf.problem_type.__name__}, not a RootFind -- "
             f"`mdf.driver` is the one to build"
         )
-    return MdfNewtonDriver(outcome=outcome, **kwargs)
+    return MdfNewtonDriver(**kwargs)
 
 
 def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
@@ -844,11 +820,17 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     `AbstractDriver` whose `drives` is `Optimise` will do, which is how the same MDF
     problem can be handed to a second SQP as a controlled comparison.
 
+    **What the driver reports lands in `out`**, under the names `Assign` would mint for
+    it at `IN_GRAPH_PLACE` -- so the outer-`solve` shape and the in-graph shape report
+    the same verdict under the same keys and are directly comparable. `reported` is how
+    a caller reads one; nothing here has to know which kinds a given driver names.
+
     Returns
     -------
     :
         `(x, out, seconds)` -- the design values in `mdf.design` order, the full output
-        env of the MDA at that point, and the wall clock for the whole solve.
+        env of the MDA at that point (plus the driver's own reports), and the wall clock
+        for the whole solve.
     """
     conditions = condition_map(mdf, env)
     start = tuple(jnp.asarray(env[var]) for var in mdf.design)
@@ -856,19 +838,47 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
         # A `RootFind` takes neither an objective nor a bound nor a per-iterate callback:
         # `bounds` and `callback` are dropped here rather than forwarded, so that a
         # caller passing the `Optimise` arm's arguments gets PROCESS's unbounded
-        # `fsolve` semantics and not a silently different problem. `outcome` is how a
-        # caller gets the step count back (`root_find_driver`).
+        # `fsolve` semantics and not a silently different problem. The step count comes
+        # back through the driver's own reports, in the env this returns (`verdict`).
         optimiser = root_find_driver(mdf, **kwargs)
     optimiser = optimiser or driver(mdf, bounds=bounds, callback=callback, **kwargs)
     started = time.perf_counter()
     # The driver is called directly here, not through a `Drive`, so the driver-data
     # mapping `Drive.role_data` would have built has to be built by hand: `Start` is
     # what `VmconDriver.requires` names, and the design values are what starts it.
-    x = optimiser(conditions, {Start: start})
+    answered = optimiser(conditions, {Start: start})
     elapsed = time.perf_counter() - started
+    # `Drive.__call__`'s own split, written out for the same reason the rest of this
+    # function is: the driver returns its unknowns and then one value per kind in
+    # `reports`, so the design is the first `len(mdf.design)` and the verdict is the
+    # rest.
+    x, verdict = answered[: len(mdf.design)], answered[len(mdf.design) :]
     at = dict(env)
     at.update(zip(mdf.design, x, strict=True))
-    return tuple(x), mdf.eager(_inputs_only(mdf, at)), elapsed
+    out = mdf.eager(_inputs_only(mdf, at))
+    out.update(
+        zip((kind.name_for(IN_GRAPH_PLACE) for kind in optimiser.reports),
+            verdict, strict=True)
+    )
+    return tuple(x), out, elapsed
+
+
+def verdict(out, kind: type[DriverOut], place: NodePath = None):
+    """What a driver said about its own run, out of the env a solve returned.
+
+    Named `verdict` and not `reported`: `InGraphRootFind.reported` already means the
+    inequalities evaluated at the answer, and one word for two things in one module is
+    how a reader ends up debugging the wrong one.
+
+    `None` where this run's driver did not report that kind -- a `VmconDriver` that
+    names no `reports` leaves nothing behind, and asking is not an error.
+
+    `place` defaults to `IN_GRAPH_PLACE`, which is where both shapes bind the outer
+    problem: `in_graph_root_find` really does bind it there, and `solve` -- which drives
+    by hand and has no node -- writes its reports under the same name so the two are
+    read the same way.
+    """
+    return out.get(kind.name_for(IN_GRAPH_PLACE if place is None else place))
 
 
 def evaluation(conditions: MdfConditionMap, start, repeats=5):
@@ -1105,28 +1115,31 @@ class InGraphRootFind:
     """`Blocking.scc(graph).nest(problem)`: the SCC blocking, nested at the problem."""
     schedule: Schedule
     problem: NodePath
-    outcome: Outcome
-    """What the outer `MdfNewtonDriver` writes its step count and verdict into. A field
-    and not a return value, for `MdfNewtonDriver.outcome`'s own reason: a `Drive` returns
-    an env, so the solver's own diagnosis has nowhere else to go.
 
-    **Always present, and it costs nothing.** It used to default to `None`, because a
-    plain `dict` on the driver made the `Driven` node -- and therefore the `Graph`, the
-    `Blocking` and the `Schedule` -- unhashable, and `sand_harness.run_schedule` keys its
-    whole-jit verdict on the schedule; asking for the step count therefore cost the
-    single jit. `core/solver/drivers.Outcome` is a `dict` hashed by **identity** and
-    closes that: the step count and the one-program run are no longer alternatives
-    (`_audit/in_graph_rootfind.md` §6, re-measured)."""
+    def verdict(self, out, kind: type[DriverOut]):
+        """What the outer driver said about its own run, out of a run's env.
 
-    @property
-    def steps(self) -> int | None:
-        """How many Newton steps the outer solve took -- `None` before it has run."""
-        return self.outcome.get("steps")
+        **A question about a run, not a field on the assembly**, which is the shape the
+        `DriverOut` change buys. It used to be `self.outcome.get(...)` -- a mutable dict
+        the driver wrote into through a `jax.debug.callback`, held as a field here
+        because a `Drive` returns an env and the solver's diagnosis had nowhere else to
+        go. It has somewhere now: the outer `MdfNewtonDriver` owns
+        `^driver_out.<kind>.<problem>` and `Drive` binds it like any other output, so the
+        verdict is in the env the run returns and this is a lookup.
 
-    @property
-    def successful(self) -> bool | None:
-        """Optimistix's own verdict on the outer solve -- `None` before it has run."""
-        return self.outcome.get("successful")
+        That also removes the reason `InGraphRootFind` could only be used once: an
+        assembly is now a value with no run-state on it, so two runs of one assembly
+        report their own step counts instead of overwriting one sink.
+        """
+        return out.get(kind.name_for(self.problem))
+
+    def steps(self, out) -> int | None:
+        """How many Newton steps the outer solve took, from that run's env."""
+        return self.verdict(out, Steps)
+
+    def successful(self, out) -> bool | None:
+        """Optimistix's own verdict on the outer solve, from that run's env."""
+        return self.verdict(out, Converged)
 
     @property
     def index(self) -> int:
@@ -1195,7 +1208,6 @@ def in_graph_root_find(
     mdf: Mdf,
     place: NodePath = IN_GRAPH_PLACE,
     driver=None,
-    outcome: Outcome | None = None,
     traceable: bool = True,
     **kwargs,
 ) -> InGraphRootFind:
@@ -1226,13 +1238,12 @@ def in_graph_root_find(
     with an `isinstance(flat, jax.core.Tracer)` test, `_audit/next_steps.md` §24.11); the
     default stays `True` only so that this change moves the structure and not the seeds.
 
-    `outcome` is the `Outcome` `MdfNewtonDriver` writes `steps`/`successful`/`result`
-    into. `None` (the default) constructs a fresh one; a caller passing its own gets
-    **that object** written, never a copy. A bare `dict` is refused, naming `Outcome`
-    (`MdfNewtonDriver.outcome`). Asking for the step count no longer costs anything --
-    `Outcome` hashes by identity, so the schedule stays hashable and
-    `sand_harness.run_schedule`'s single jit stays available
-    (`_audit/in_graph_rootfind.md` §6).
+    The verdict takes no argument: `MdfNewtonDriver` `reports` its step count, its
+    convergence and its `RESULTS` code, so `Assign` mints `^driver_out.*.<place>` for
+    them, `Drive` binds them into the env, and `built.steps(out)` reads one back. The
+    schedule stays hashable because nothing mutable is a driver field any more, so the
+    step count and `run_schedule`'s single jit were never really alternatives
+    (`_audit/in_graph_rootfind.md` §6 measured the old trade at 856 compiles against 5).
 
     `**kwargs` reach `MdfNewtonDriver` (`rtol`, `atol`, `max_steps`); `driver` overrides
     it outright, for a caller comparing two algorithms over one structure.
@@ -1249,7 +1260,6 @@ def in_graph_root_find(
             f"root find somewhere else"
         )
     with_problem = (Plan(mdf.graph) + Insert(path_map([(place, node)]))).graph
-    outcome = Outcome() if outcome is None else outcome
     drivers = default_drivers(with_problem)
     if traceable:
         drivers = traceable_drivers(drivers)
@@ -1257,7 +1267,7 @@ def in_graph_root_find(
     # dispatches on the problem type and cannot know this one is the outer solve. It is
     # replaced rather than skipped: `MdfNewtonDriver` reports optimistix's verdict
     # instead of raising it, which is what makes a non-converged outer solve a row.
-    drivers[place] = driver or MdfNewtonDriver(outcome=outcome, **kwargs)
+    drivers[place] = driver or MdfNewtonDriver(**kwargs)
     assigned = assign_drivers(with_problem, drivers)
     blocking = Blocking.scc(assigned).nest(place)
     return InGraphRootFind(
@@ -1266,7 +1276,6 @@ def in_graph_root_find(
         blocking=blocking,
         schedule=schedule_for(blocking),
         problem=place,
-        outcome=outcome,
     )
 
 
@@ -1344,18 +1353,20 @@ def in_graph_solve(built: InGraphRootFind, env, whole=None):
     **The path is chosen on whether the schedule can actually be hashed**, asked by
     hashing it. `run_schedule` keys its whole-jit verdict and its runner groups on the
     schedule, so an unhashable one fails several frames in with a `TypeError` naming
-    `dict`. Every driver this module builds is hashable today -- `Outcome` is what closed
-    that (`InGraphRootFind.outcome`) -- so this is a guard against a hand-built driver
-    carrying some other unhashable field, not a trade-off any caller has to make. It is
-    *asked*, and not inferred from `outcome`, because inferring it is what made the two
-    look mutually exclusive when only one particular field ever made them so.
+    `dict`. Every driver this module builds is hashable today, and now trivially so --
+    the verdict travels through `DriverOut` ports, so there is no mutable results sink on
+    a driver to make a schedule unhashable in the first place. This stays as a guard
+    against a hand-built driver carrying some other unhashable field, not a trade-off any
+    caller has to make; it is *asked* rather than inferred, because inferring it from one
+    particular field is what made the step count and the single jit look mutually
+    exclusive when only that field ever made them so.
 
     Returns
     -------
     :
         `(x, out, seconds)` -- the design values in `built.design` order, the full output
-        env, and the wall clock of the whole run. `built.steps` and `built.successful`
-        carry the driver's own verdict.
+        env, and the wall clock of the whole run. `built.steps(out)` and
+        `built.successful(out)` read the driver's own verdict back out of that env.
     """
     inputs = in_graph_inputs(built, env)
     started = time.perf_counter()
@@ -1419,7 +1430,7 @@ __all__ = [
     "Mdf",
     "MdfConditionMap",
     "MdfNewtonDriver",
-    "Outcome",
+    "Status",
     "assemble",
     "central_difference",
     "condition_map",
@@ -1440,4 +1451,5 @@ __all__ = [
     "seed",
     "solve",
     "traceable_drivers",
+    "verdict",
 ]

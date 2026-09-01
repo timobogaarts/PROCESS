@@ -19,9 +19,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.evaluate import schedule_for
+from cottax.evaluate import Drive, schedule_for
 from cottax.graph import Graph
-from cottax.problem import FixedPoint, Optimise, Start, driver_vars
+from cottax.problem import (
+    Converged,
+    FixedPoint,
+    Optimise,
+    Start,
+    Steps,
+    driver_vars,
+)
 from cottax.rewrites import Assign
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
@@ -30,7 +37,13 @@ from jax.tree_util import GetAttrKey, SequenceKey
 import functional_process
 from functional_process.core.solver import constraints as ported_constraints
 from functional_process.core.solver import objectives as ported_objectives
-from functional_process.core.solver.drivers import VmconDriver
+from functional_process.core.solver.drivers import (
+    VMCON_CONVERGED,
+    VMCON_STATUS,
+    SlsqpDriver,
+    Status,
+    VmconDriver,
+)
 from functional_process.indat import GRAPH
 from functional_process.sand import (
     NON_INPUT_FIELDS,
@@ -46,7 +59,7 @@ from functional_process.sand import (
     sand_schedule,
     sand_shape,
 )
-from functional_process.sand_harness import ground_truth
+from functional_process.sand_harness import ground_truth, run_schedule, schedule_verdict
 from functional_process.vocabulary import AREAS
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 from process.core.input import INPUT_VARIABLES as PROCESS_INPUT_VARIABLES
@@ -865,6 +878,200 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
     schedule = schedule_for(graph)
     with pytest.raises(ValueError, match="equalities"):
         schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
+
+
+# ------------------------------------------------- what the driver says about its run
+
+TOY_PROBLEM = NodePath((GetAttrKey("Opt"),))
+"""Where `_toy_problem` binds its `Optimise`, which is the place every `DriverOut` port
+it mints is named from (`^driver_out.<label>.Opt`)."""
+
+
+def test_vmcon_driver_returns_its_reports_after_the_unknowns():
+    """`AbstractDriver.__call__`'s contract: the unknowns, then one value per kind in
+    `reports`, in `reports` order.
+
+    Asked of the **driver**, directly, so this pins the contract at the seam rather than
+    at any one caller's re-implementation of it -- `Drive.__call__`, `mdf.solve` and
+    `sand_harness._driven_runner` all read the same positional split, and the last of
+    the three had it wrong (see `test_driven_runner_binds_reports_not_unknowns`).
+    """
+    driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
+    graph, x, y, gx, gy = _toy_problem(driver)
+    drive = next(step for step in schedule_for(graph).steps if isinstance(step, Drive))
+    answered = driver(
+        drive.condition_map({}), {Start: (jnp.asarray(0.0), jnp.asarray(0.0))}
+    )
+    assert len(answered) == len(drive.unknowns) + len(driver.reports)
+    values, (steps, converged, status) = answered[:2], answered[2:]
+    assert float(values[0]) == pytest.approx(2.5, abs=1e-6)
+    assert float(values[1]) == pytest.approx(1.5, abs=1e-6)
+    assert int(steps) > 0
+    assert bool(converged) is True
+    assert int(status) == VMCON_CONVERGED
+
+
+def test_vmcon_driver_reports_which_pyvmcon_exception_fired():
+    """A cap hit is `Converged False` with the base-class `Status`, and the driver still
+    returns the best point rather than raising -- `solver.py:262-272`'s own pattern.
+
+    The three `VMCON_STATUS` codes are the whole reason `Status` is not a bool: a solve
+    that ran out of iterations and one whose first QP had no feasible point are opposite
+    diagnoses and used to be distinguishable only by which exception a caller's
+    `except` clause happened to see.
+    """
+    driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False, max_iter=1)
+    graph, x, y, gx, gy = _toy_problem(driver)
+    drive = next(step for step in schedule_for(graph).steps if isinstance(step, Drive))
+    *_values, steps, converged, status = driver(
+        drive.condition_map({}), {Start: (jnp.asarray(0.0), jnp.asarray(0.0))}
+    )
+    assert bool(converged) is False
+    assert int(status) == VMCON_STATUS["VMCONConvergenceException"]
+    assert int(steps) == 1
+
+
+def test_driven_runner_binds_reports_not_unknowns():
+    """`sand_harness._driven_runner` must bind `unknowns + reports`, as `Drive` does.
+
+    **The regression this exists for.** `_driven_runner` re-implements
+    `cottax.evaluate.Drive.__call__` so that the driver can stay eager while the body is
+    jitted, and its binding read
+
+        if len(converged) != len(step.unknowns): raise ...
+        env.update(zip(step.unknowns, converged, strict=True))
+
+    -- the unknowns alone. That was invisible for as long as every driver reaching it
+    reported nothing, and became a spurious `ValueError` the moment `VmconDriver` gained
+    `(Steps, Converged, Status)`. It could *not* have mis-bound a verdict to a design
+    variable, which is the failure one expects here: reports come after the unknowns
+    positionally, so even a truncating `zip` pairs each unknown with its own value and
+    merely drops the verdict. Both halves are asserted below anyway, because the order is
+    a contract and not a guarantee this test should assume.
+
+    Checked on the **walk** path (`whole=False`), because that is the path
+    `_driven_runner` is on: the whole-schedule jit goes through cottax's own `Drive` and
+    could never have had this bug.
+    """
+    driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
+    graph, x, y, gx, gy = _toy_problem(driver)
+    schedule = schedule_for(graph)
+    out = run_schedule(
+        schedule, {gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}, whole=False
+    )
+    # The unknowns hold the optimum and not a verdict -- the half a non-strict `zip`
+    # would have got wrong silently.
+    assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
+    assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
+    # ...and the verdict is in the env under the names `Assign` minted for it.
+    assert int(out[Steps.name_for(TOY_PROBLEM)]) > 0
+    assert bool(out[Converged.name_for(TOY_PROBLEM)]) is True
+    assert int(out[Status.name_for(TOY_PROBLEM)]) == VMCON_CONVERGED
+
+
+def test_driven_runner_and_whole_jit_agree_on_the_verdict():
+    """The two `run_schedule` paths bind the same reports to the same names.
+
+    They are different code -- cottax's `Drive.__call__` under one jit, this port's
+    `_driven_runner` walking the steps -- and the point of the `DriverOut` change is
+    that a caller reads the verdict the same way whichever ran.
+    """
+    driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
+    graph, x, y, gx, gy = _toy_problem(driver)
+    schedule = schedule_for(graph)
+    env = {gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}
+    walked = run_schedule(schedule, dict(env), whole=False)
+    jitted = schedule_for(graph)(dict(env))
+    for var in (x, y, Steps.name_for(TOY_PROBLEM), Status.name_for(TOY_PROBLEM)):
+        # Exact, deliberately: the claim is that the two paths bind the *same*
+        # value, not a nearby one.
+        assert float(np.asarray(walked[var])) == float(  # noqa: RUF069
+            np.asarray(jitted[var])
+        )
+
+
+def test_vmcon_driver_traces_under_one_whole_schedule_jit():
+    """The `pure_callback` wrap's whole purpose: a `Drive` answered by `VmconDriver` is
+    now inside one traced program instead of being a hole in it.
+
+    Before the wrap this raised `TracerArrayConversionError` on the unknowns vector --
+    `design_scale` and the scaled bounds read the *values* of a start that is a tracer
+    under a trace -- and `run_schedule` recorded that refusal and fell back to the walk.
+    `schedule_verdict` is where that decision is readable, so it is what is asserted:
+    a regression here is silent otherwise, costing only speed and structure.
+    """
+    import functional_process.sand_harness as harness
+
+    driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
+    graph, x, y, gx, gy = _toy_problem(driver)
+    schedule = schedule_for(graph)
+    # `run_schedule` caches its verdict per schedule, and an equal schedule is the same
+    # key -- the tests above deliberately run this very one with `whole=False`, which
+    # records `False` with no reason. Evicting is the honest way to ask the question;
+    # perturbing a driver field to get a different hash would be testing a different
+    # schedule and calling it this one.
+    harness._SCHEDULE_WHOLE.pop(schedule, None)
+    harness._SCHEDULE_VERDICT.pop(schedule, None)
+    out = run_schedule(schedule, {gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
+    assert schedule_verdict(schedule) == (True, None)
+    assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
+
+
+def test_vmcon_driver_answer_survives_the_callback_boundary_bitwise():
+    """`jax.pure_callback` canonicalises dtypes at its boundary, and this problem is
+    sensitive at the last bit (`_audit/optimise_design.md` §21.2), so the wrap converts
+    to `float64` explicitly on the way in and back to the start's dtype on the way out.
+
+    Bitwise, not `approx`: a tolerance here would pass on exactly the drift the explicit
+    conversion exists to prevent. The two paths differ in whether the solve runs inside
+    a trace, and nothing else.
+    """
+    driver = VmconDriver(n_equality=0, n_inequality=1, scaled=True)
+    graph, x, y, gx, gy = _toy_problem(driver)
+    schedule = schedule_for(graph)
+    env = {gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)}
+    walked = run_schedule(schedule, dict(env), whole=False)
+    jitted = jax.jit(lambda values: path_map(schedule_for(graph)(dict(values))))(
+        path_map(env)
+    )
+    jitted = dict(jitted)
+    assert float(walked[x]) == float(jitted[x])  # noqa: RUF069 -- bitwise is the point
+    assert float(walked[y]) == float(jitted[y])  # noqa: RUF069 -- bitwise is the point
+
+
+def test_slsqp_driver_reports_scipys_own_alphabet():
+    """`SlsqpDriver` reports the same three kinds, in scipy's numbering.
+
+    The kinds are shared and the *codes* are not: `Status` is port-local precisely
+    because `pyvmcon`'s three exceptions and `scipy`'s `OptimizeResult.status` are
+    different alphabets, and a caller comparing the two SQPs has to know which it is
+    reading. `0` is scipy's own "terminated successfully".
+    """
+    driver = SlsqpDriver(n_equality=0, n_inequality=1, scaled=False)
+    graph, x, y, gx, gy = _toy_problem(driver)
+    drive = next(step for step in schedule_for(graph).steps if isinstance(step, Drive))
+    *values, steps, converged, status = driver(
+        drive.condition_map({}), {Start: (jnp.asarray(0.0), jnp.asarray(0.0))}
+    )
+    assert float(values[0]) == pytest.approx(2.5, abs=1e-6)
+    assert bool(converged) is True
+    assert int(status) == 0
+    assert int(steps) > 0
+
+
+def test_outcome_sink_is_gone():
+    """The mutable results sink both SQP drivers used to write into is deleted.
+
+    A `DriverOut` port and an `Outcome` dict are two channels for one fact, and keeping
+    both is how they drift apart. This asserts the deletion rather than trusting a grep:
+    a re-added field would restore a hashability trap (`Schedule.__hash__` reaches a
+    driver's fields) that cost a whole investigation once already.
+    """
+    import functional_process.core.solver.drivers as drivers_module
+
+    assert not hasattr(drivers_module, "Outcome")
+    assert "outcome" not in SlsqpDriver.__dataclass_fields__
+    assert "outcome" not in VmconDriver.__dataclass_fields__
 
 
 # ---------------------------------------------------------------- the tokamak study

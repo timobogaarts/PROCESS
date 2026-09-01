@@ -456,6 +456,13 @@ def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
         # block's own interior is the measurement the restructuring exists for.
         result.update(blocks=shape["interior_blocks"], driven=shape["interior_driven"])
         x, out, seconds = mdf.in_graph_solve(built, env)
+        # The driver's own verdict, out of the env the run returned. `MdfNewtonDriver`
+        # reports it through `DriverOut` ports the problem node owns, so there is no
+        # results sink to hand in and no `jax.debug.callback` to carry it. Both survived
+        # the whole-schedule jit as traced arrays, which is why they are rendered here
+        # rather than used raw.
+        steps = int(np.asarray(built.steps(out)))
+        converged = bool(np.asarray(built.successful(out)))
         # The conditions at the answer come out of `out`, which is now the right place
         # rather than a second-best one: the schedule evaluated them *inside* the driven
         # block, so what is reported is literally what was driven. The outer arm had to
@@ -465,18 +472,18 @@ def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
         # inequalities alike, once at the answer (`_Fsolve.solve`). `min ie` is that.
         inequalities = [float(np.asarray(out[c])) for c in problem.reported]
         result.update(
-            iterations=built.steps,
+            iterations=steps,
             objf=None,
             max_eq=max(abs(r) for r in residuals) if residuals else 0.0,
             min_ie=min(inequalities) if inequalities else None,
-            status="converged" if built.successful else "not-converged",
+            status="converged" if converged else "not-converged",
             seconds=seconds,
             note=(
                 f"RootFind over {len(residuals)} equality/-ies, "
                 f"{len(inequalities)} inequality/-ies evaluated at the answer and not "
                 f"driven -- PROCESS's own `fsolve` shape. Stated IN the graph: the "
                 f"blocking drives {shape['block']} of {shape['nodes']} nodes"
-                + ("" if built.successful else " (did not converge)")
+                + ("" if converged else f" ({mdf.verdict(out, mdf.Status)})")
             ),
         )
         result["_x"] = tuple(float(np.asarray(v)) for v in x)
