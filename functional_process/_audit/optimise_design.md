@@ -5497,296 +5497,446 @@ needed.
   and the fix is `$PY -m functional_process.provider --write`. Not done here, because
   regenerating a published pin belongs to whoever made the structure move.
 
-## 27. `--native` does not solve from a different place: it solves a different problem (2026-09-01)
+## 30. Every active constraint, classified by what it owns (2026-09-01)
 
 > **Measured in a scratch copy, not in the live tree**, at
-> `/tmp/claude-1000/-home-tbogaarts-PROCESS/df0c22b1-02c2-4e73-99ce-b061606f318d/scratchpad/PROCESS_seed`,
-> against `HEAD b14da8c1` plus that copy's own changes to `run_cold_matrix.py` and
-> `tests/functional_process/test_cold_matrix.py`. Source changes are supplied as
-> `.patch` files in the copy and were **not** applied to `~/PROCESS`. Every number below
-> was taken with `PYTHONPATH` set to the copy and with `functional_process.__file__`
-> printed as the first line of each run, per §27.5 of `next_steps.md`.
+> `/tmp/claude-1000/-home-tbogaarts-PROCESS/df0c22b1-02c2-4e73-99ce-b061606f318d/scratchpad/PROCESS_cshape`,
+> against `HEAD 6bb65494` with **no source change of any kind made by this section** —
+> the only files added are `audit_cshape.py` at the copy's root, its saved output
+> `constraint_shape_census.txt`, and `section30.patch` (this section's own diff against
+> `~/PROCESS`). The copy's `functional_process/run_cold_matrix.py` also differs from the
+> live tree; that is a *live-tree* change made by another agent after this copy was
+> taken, not a change here, and nothing measured below reads that module. Nothing was
+> applied to `~/PROCESS`. Every
+> number here is **static**: graph assembly, `sand._Resolver`, declared `reads`/`owns`,
+> `Graph.reach`, `Graph.strongly_connected_components`, and one `Insert` probe.
+> **No solve was run, no PROCESS pipeline was run, no seed was read.**
+> `functional_process.__file__` was printed as the first line of every run.
 
-The question: `--native` beat `--provider` on two SAND rows -- `stellarator_helias`
-257 -> 169 and `low_aspect_ratio_DEMO` 500-cap -> 107 converged -- and a PROCESS-free
-starting state has no business beating one seeded from PROCESS's own `init_process`.
+The question this section answers: the repo owner's observation that *an equality
+constraint is often a cycle in the graph wearing different clothes*, and that handing
+such a relation to the SQP lifts graph structure into the optimiser (the move §23 tested
+on a SAND residual). Nobody had looked at PROCESS's own constraints that way.
 
-**It doesn't.** The two starting states are *bit-identical*. What differs is the
-**problem statement**, in two places, and both of them read PROCESS's **converged
-answer** under `--provider`.
+### 30.1 The axis, and why the obvious one is wrong
 
-### 27.1 [measured] The env diff is empty. All of it
+The first classification tried here — *"cycle-shaped if every argument is node-produced,
+specification if any argument is exogenous"* — **is not the right axis, and it gives the
+wrong answer on the two constraints it was supposed to settle.** Under it, `c1` (beta
+consistency), `c2` (global power balance) and `c11` (`rbld == rmajor`) all come back
+**specification** and `c83` comes back **cycle-shaped** — the exact reverse of the
+scouting hypothesis and, as it turns out, the exact reverse of the truth.
 
-For each configuration: `boundary.problem_graph(f)`'s boundary, read through
-`sand_harness.ground_truth` from (a) `native.native_state(f)` and (b) a deep copy of
-`reference.cold` with `provider.install(answers_for(f), ..., disagreeing=False)`.
+The reason is that "exogenous" conflates three different things that the resolver reports
+identically as *not owned by any node*:
 
-| configuration | boundary places | differ, native vs provider |
+| kind | what it is | example |
 |---|---|---|
-| `stellarator_helias` | 302 | **0** |
-| `helias_5b` | 296 | **0** |
-| `large_tokamak_nof` | 401 | **0** |
-| `large_tokamak_eval` | 399 | **0** |
-| `low_aspect_ratio_DEMO` | 400 | **0** |
-| `spherical_tokamak_eval` | 381 | **0** |
-| `st_regression` | 382 | 1 -- and it is not a value difference, see below |
+| **design** | an active `numerics.ixc` — a free unknown the SQP moves | `.physics.rmajor` (ID 3) on `large_tokamak_nof` |
+| **input** | a prescribed value the file or a default supplies | `.constraints.pflux_fw_neutron_max_mw` |
+| **frozen** | a path with no producer that PROCESS *does* compute — a porting gap | `.physics.p_plasma_separatrix_rmajor_mw` on the STs (§26) |
 
-Not "small differences" -- **zero**, on every path, bitwise, on six of seven files. The
-only places either side declines to answer are the same five on both,
-`.vacuum.{l1, l2, l3, ceff_i, xmult_i}`, which §26.8.4 already closed: they are not
-`DataStructure` fields at all, both sides raise `AttributeError`, and both are seeded
-`0.0`.
+The axis that actually discriminates is the owner's: **does the constraint own an
+unknown, or is every argument already computed?**
 
-`st_regression`'s single row is `.current_drive.big_q_plasma` -- §26.3's rank-1 missing
-producer, read only by `.Objective`. The provider holds it at `0.0` (the seed's, PROCESS
-never having written it before the models run) and the native state raises, which
-`mdf.seed`/`mda_env` turn into `0.0`. **The value the solve receives is the same `0.0` on
-both sides**; only the route to it differs, and the native route is the one that leaves a
-row in `NativeState.missing` saying so. So the effective starting states are identical on
-**all seven** files.
+- **DETERMINING** — at least one argument is an active `ixc`. One equation, one named
+  unknown; it *could* become a producer node plus a driver.
+- **PURE CHECK** — every argument is owned by a node. It adds an equation and no
+  unknown. It cannot become a producer: cottax refuses to mint one (see §30.4).
+- **SPEC** — the free arguments are all prescribed inputs. A computed quantity against a
+  given.
+- **INERT** — no computed and no `ixc` argument at all. A constant compared to a
+  constant; §26.5's refusal already covers these.
 
-This **confirms** §26 rather than contradicting it. §26.8.3 measured that only 5 places
-per configuration cannot be answered natively and §26.8.1 that every non-`computed`
-boundary row is bit-identical across seed / post-model / converged. Those two together
-*predict* an empty diff, and the prediction holds. So question 3 of the brief -- *which
-env is closer to `init_process`, and which to the input file?* -- has no content: they
-are the same env, and `native.DERIVATIONS` reproduces `init.py` exactly on everything
-these seven problem graphs read.
+### 30.2 [measured] The classification grid, all seven configurations
 
-The prediction this refutes is the framing of the investigation itself, which the
-coordinator and I both held: *"something is providing different values"*. Nothing is.
+`role/verdict`; `eq`/`ineq` is PROCESS's **positional** split (`icc[:n_equality]`), not
+the body's `eq`/`leq`/`geq`. Full per-argument detail in `constraint_shape_census.txt`
+(`##### final #####`).
 
-### 27.2 [measured] What actually differs: two calls that read `reference.data`
+| id | ste_hel | hel_5b | lt_nof | lt_eval | laDEMO | spt_eval | st_reg |
+|---|---|---|---|---|---|---|---|
+| c1 | -- | -- | eq/**DET** | eq/**DET** | eq/**DET** | eq/**DET** | eq/**DET** |
+| c2 | eq/SPEC | eq/SPEC | eq/SPEC | eq/SPEC | eq/SPEC | eq/SPEC | eq/SPEC |
+| c5 | -- | -- | ineq/**DET** | ineq/**DET** | ineq/**DET** | ineq/**DET** | ineq/**DET** |
+| c8 | ineq/SPEC | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c9 | -- | -- | ineq/SPEC | ineq/SPEC | -- | ineq/SPEC | ineq/SPEC |
+| **c11** | -- | **eq/SPEC** | **eq/DET** | -- | **eq/DET** | **eq/SPEC** | **eq/SPEC** |
+| c13 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c15 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC |
+| c16 | **eq**/SPEC | **eq**/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC |
+| c17 | ineq/SPEC | -- | -- | -- | -- | ineq/SPEC | ineq/SPEC |
+| c18 | ineq/SPEC | -- | -- | -- | -- | -- | -- |
+| c24 | ineq/SPEC | ineq/SPEC | ineq/**DET** | ineq/SPEC | ineq/**DET** | ineq/SPEC | ineq/**DET** |
+| c25 | -- | -- | ineq/SPEC | ineq/SPEC | -- | -- | -- |
+| c26 | -- | -- | ineq/**DET** | ineq/SPEC | ineq/**DET** | -- | -- |
+| c27 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c30 | -- | -- | ineq/SPEC | ineq/SPEC | **eq**/SPEC | ineq/SPEC | ineq/SPEC |
+| c31 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC |
+| c32 | ineq/SPEC | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC |
+| c33 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC |
+| c34 | ineq/SPEC | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c35 | ineq/**CHK** | -- | ineq/**CHK** | ineq/**CHK** | ineq/**CHK** | -- | -- |
+| c36 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c46 | -- | -- | -- | -- | -- | ineq/**CHK** | ineq/**CHK** |
+| c56 | -- | -- | -- | -- | -- | ineq/*INERT* | ineq/*INERT* |
+| c60 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c62 | ineq/SPEC | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC | ineq/SPEC |
+| c65 | ineq/SPEC | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c67 | ineq/SPEC | -- | -- | -- | -- | ineq/*INERT* | ineq/*INERT* |
+| c68 | -- | -- | ineq/**DET** | ineq/SPEC | ineq/**DET** | -- | -- |
+| c72 | -- | -- | ineq/SPEC | ineq/SPEC | ineq/SPEC | -- | -- |
+| c81 | -- | -- | ineq/**CHK** | ineq/**CHK** | ineq/**CHK** | ineq/**CHK** | ineq/**CHK** |
+| c82 | ineq/**CHK** | -- | -- | -- | -- | -- | -- |
+| c83 | ineq/**CHK** | -- | -- | -- | -- | -- | -- |
+| c84 | -- | ineq/SPEC | -- | -- | -- | -- | -- |
+| c90 | -- | -- | -- | -- | ineq/SPEC | -- | -- |
 
-`native.NativeReference.data is .cold` -- with no PROCESS run there is no converged
-`DataStructure`, so the "warm" env falls back to the cold one. Two consumers read that
-env, and neither of them is a value the solve starts from:
+The headline count: of 35 distinct constraint ids across the seven files, **6 are pure
+checks** (`c35`, `c46`, `c81`, `c82`, `c83`, and — see §30.3 — `c2` in every useful
+sense), **6 are determining on at least one configuration** (`c1`, `c5`, `c11`, `c24`,
+`c26`, `c68`), **2 are inert**, and the remaining ~21 are ordinary specifications
+comparing one computed quantity against one prescribed bound. **The overwhelming
+majority of PROCESS's constraint set is exactly what it looks like** — a limit against a
+number in the input file. The interesting structure is confined to a handful.
 
-| consumer | what it decides | `--provider` reads | `--native` reads |
+### 30.3 [measured] Three things the scouting got wrong
+
+Flagged as required, and all three were *my* predictions or the brief's, not artefacts.
+
+**(a) `c1` is not a cycle. It is an assignment.** Beta consistency was the one
+constraint whose own docstring calls it `Compare`-shaped. It is `DETERMINING`, and on
+the three files where `.physics.beta_total_vol_avg` is `ixc 5`, the invertibility probe
+(§30.4) says making the constraint its **producer adds no cycle at all — the graph stays
+acyclic**. So `c1` is not an implicit relation needing a `RootFind`; it is a plain
+`CallableNode` writing beta, and PROCESS *knows this*: `Stellarator.run()` refuses
+`ixc 5` when `istell > 0` and directly overwrites `.physics.beta_total_vol_avg` with this
+constraint's own right-hand side, commenting *"This replaces constraint equation 1 as it
+is just an equality"* (already recorded in `constraints.py`'s `constraint_1` docstring).
+The port's graph factory reproduces the split independently: `.physics.beta_total_vol_avg`
+**is** node-produced on both stellarators (`.stellarator.stellarator_beta_and_stored_energy`)
+and is **not** produced on any tokamak. The same physical statement is a node on one
+device and an SQP equality with a free unknown on the other, and the choice is PROCESS's,
+not the port's.
+
+**(b) `c2` is not a determining constraint and it is not a specification either.** Global
+power balance takes nine node-produced arguments plus `f_p_alpha_plasma_deposited` (a
+physical constant, `0.95`, not a bound) and — on the two stellarators —
+`.physics.pden_plasma_ohmic_mw`, an `unwritten` path PROCESS never writes either (§22).
+It names **no** unknown. It is an equation with no local variable to own, on every one of
+the seven files, and it is an equality on every one of the seven. It is the purest
+instance of the owner's point: *it adds an equation without adding an unknown.* The
+unknown it actually determines is `.physics.hfact` (`ixc 10`), five nodes upstream
+through the confinement scaling — see §30.6 for why "the unknown" is not well defined.
+
+**(c) `c83` is not "the sole active inequality at the solution", and this repo already
+measured it.** §23(a) records the active set (`|ie| < 1e-6`) over SAND iterations 11–17
+as `^cond.constraints.c83` **alone**, with `c35` joining once at 12 — which is where the
+brief's claim comes from — but §23(b) records that **at the solution the active set is
+four constraints in both formulations: `c24`, `c83`, `c62`, `c35`**, matching §17.2's
+"one of exactly four binding inequalities". §23(d) additionally **withdraws** the reading
+that `c83` is an identity: *"it starts at `-2.361e-01` and converges early, in both
+formulations, so it is an ordinary binding constraint and not a degenerate row"*. So:
+`c83` is binding at the solution, is sole-active for a stretch of the trajectory, and is
+**not** an equality in disguise. Confirmed from the record, not re-measured — the tracked
+`stellarator_helias.MFILE.DAT`/`OUT.DAT` in this tree are crash stubs (1.4 kB, no
+constraint rows) and cannot answer it, and re-measuring costs a solve.
+
+### 30.4 [measured] What a constraint would look like as graph structure
+
+For every constraint, for every free argument, a probe node owning that argument and
+reading the others was `Insert`ed and the resulting SCC measured. **This is the decisive
+test and it needs no solve**: a constraint that *could* be graph structure must be able
+to become a producer, and cottax's own `Graph.__check_init__` says whether it can.
+
+**Every pure check is refused, by cottax, for the stated reason.**
+
+```
+c82  toroidalgap -> REFUSED: output(s) already produced here
+     dx_tf_inboard_out_toroidal -> REFUSED
+c83  available_radial_space  -> REFUSED: output(s) already produced here:
+                                ['.build.available_radial_space']
+     required_radial_space   -> REFUSED
+c35  j_tf_wp -> REFUSED;  j_tf_wp_quench_heat_max -> REFUSED
+c81  nd_plasma_electron_on_axis -> REFUSED;  nd_plasma_pedestal_electron -> REFUSED
+c46  eps -> REFUSED;  plasma_current -> REFUSED;  c_tf_total -> REFUSED
+```
+
+That is the owner's claim demonstrated rather than argued: **a constraint over
+only-computed quantities cannot become a producer, because every variable already has
+one.** It is not a design preference; it is a type error.
+
+**The determining constraints, and the cycle each would close:**
+
+| constraint | owned variable | SCC formed | members |
 |---|---|---|---|
-| `sand_harness.assemble` -> `sand.degenerate_fixed_points` | **the SHAPE** -- which `FixedPoint` problems are dropped, their unknowns reverting to frozen boundary inputs | PROCESS's converged `DataStructure` | the run's own cold start |
-| `sand.residual_condition_scales` | **the ROW WEIGHTS** -- the `1/\|u\|` factor on every residual equality of the QP | same | same |
+| `c11` (tokamaks) | `.physics.rmajor` | **3 nodes** | `Close_c11`, `.tokamak.build.radial_build_to_plasma_centre`, `.tokamak.plasma_geom.minor_radius` |
+| `c11` (`helias_5b`) | `.physics.rmajor` | **10 nodes** | `.stellarator.build`, `.stellarator.coils.{coil_current, coil_radial_thickness, intersect, winding_pack_intersect_inputs, winding_pack_total_size_post}`, `.stellarator.stellarator_{plasma_geometry, scaling_factors}`, `^problem.stellarator.coils.intersect` |
+| `c1` | `.physics.beta_total_vol_avg` | **none — acyclic** | it is a producer, not a problem |
+| `c1` | `.physics.nd_plasma_electrons_vol_avg` | 11 nodes | the whole density-profile/fusion-rate loop |
+| `c5` | `.physics.nd_plasma_electrons_vol_avg` | 9 nodes | same loop, minus `set_fusion_powers` |
+| `c24` | `.physics.beta_total_vol_avg` | 3 nodes | `.tokamak.plasma_beta.{thermal, toroidal}` |
+| `c26` | `.pf_coil.j_cs_flat_top_end` | 16 nodes | the CS/PF sizing chain |
+| `c68` | `.physics.rmajor` | 28 nodes | `rmajor`'s whole tokamak cone |
 
-`run_cold_matrix.py`'s docstring already warned about the second ("a native SAND row is
-a differently scaled problem"). The first was not documented anywhere and is the larger
-effect. **Both mean the `--provider` SAND rows are conditioned on PROCESS's answer** --
-§17.2's error, in the problem statement rather than in a column.
+**`c11` on a tokamak is a three-node cycle.** That is the sharpest single result here:
+the equality PROCESS hands the SQP, on `large_tokamak_nof` and `low_aspect_ratio_DEMO`,
+has a *local* closure — `rmajor → minor_radius → radial_build_to_plasma_centre → rbld →
+rmajor` — and nothing else in a 243-node graph is involved. A `RootFind` over one scalar
+would answer it, and the SQP would lose one design variable and one equality row.
 
-Everything else was checked and is identical on both files: `ixc` (same list *and* same
-order), `icc`, `n_equality`, `i_figure_merit`, and all 8/19 bound pairs.
-`switch_values` does differ in provenance -- `sand.switch_values_for(cold, ...)` gives 10
-keys against `switch_values_from_indat`'s 15 on `low_aspect_ratio_DEMO`, the extra 5
-being `i_cp_lifetime`, `i_plant_availability`, `i_tf_sup`, `ireactor`, `itart` -- but it
-is not the cause: §27.4's crossed arms hold `switch_values` fixed at the provider's and
-still reproduce both rows exactly.
+**One honesty note on the probe.** It is mechanical: it reports what is *structurally*
+possible, not what is *meaningful*. It cheerfully says that making `c2` the producer of
+`f_p_alpha_plasma_deposited` closes a 5-to-7-node SCC — i.e. "solve the power balance for
+the alpha deposition fraction". That is a physical absurdity and the probe cannot know
+it. Read the SCC column as *"if you chose this unknown, this is the block you would
+get"*, never as *"this is the unknown"*.
 
-### 27.3 [measured] The 2x2 that separates them
+### 30.5 [measured] The `c11`/`c83` verdict: it is two relations, not one
 
-**And it removes a second confound the two published tables carried.** They were not
-measured on the same tree: `reference_cold_matrix.txt`'s header reads
-`HEAD 6bb65494` and `native_baseline.txt`'s reads `HEAD 2e949920`, one commit apart, and
-the working tree today is `b14da8c1`, one further. Nothing in either intervening commit
-should move a number (`2e949920` adds `jax.clear_caches()` between configurations;
-`b14da8c1` adds two refusals), but §19 and §24 both record this codebase moving a
-converged solve on changes that "should not" -- so a cross-tree comparison of iteration
-counts was never safe to read. Every arm below is one process, one tree.
+The anomaly as briefed: `stellarator_helias` enforces `c83` and not `c11`; `helias_5b`
+enforces `c11` and not `c83`; the same physical question appears as an equality on one
+machine and a slack inequality on the other. The owner's sharpening: **a graph cycle
+cannot be conditionally active.**
 
-`--provider`'s reference and `--provider`'s installed cold `DataStructure` throughout --
-including its `switch_values` -- with only `assemble_env` and `scale_env` varying. `warm`
-is PROCESS's converged env, `cold` the run's own.
+The owner is right, and the resolution is that **`c11` is not one relation. Its direction
+of causation is set by the input file, and it points four different ways across seven
+files.** The discriminator is one bit that is *not* in `icc` at all — whether
+`ixc = 3` (`.physics.rmajor`) is active:
 
-**`stellarator_helias`** -- shape identical in all four arms (desg 14, cond 21, eq 8):
-
-| assemble | scale | SQP | status | objf |
+| configuration | `c11`? | `ixc 3`? | `c83`? | what `c11` *is* there |
 |---|---|---|---|---|
-| warm | warm | **257** | converged | 1.217757367901031 |
-| cold | cold | **169** | converged | 1.2177574282449604 |
-| warm | cold | **169** | converged | 1.2177574282449604 |
-| cold | warm | **257** | converged | 1.217757367901031 |
+| `stellarator_helias` | no | **yes** | **yes** | absent; `rmajor` free, pinned by `c83` |
+| `helias_5b` | **yes** | no | no | **inert** — see below |
+| `large_tokamak_nof` | **yes** | **yes** | no | **determining**: one equation, one unknown, 3-node cycle |
+| `large_tokamak_eval` | no | no | no | absent; `rmajor` fixed, build unconstrained |
+| `low_aspect_ratio_DEMO` | **yes** | **yes** | no | **determining**, 3-node cycle |
+| `spherical_tokamak_eval` | **yes** | no | no | **specification**: build must sum to a prescribed `rmajor` |
+| `st_regression` | **yes** | no | no | **specification** |
 
-Bit-for-bit determined by `scale_env`; `assemble_env` does nothing. The published
-`--provider` (257) and `--native` (169) rows are reproduced exactly.
+`.physics.rmajor` has **no producer in any of the seven graphs**, and is read by 14
+nodes on a stellarator and 45 on a tokamak. `.build.rbld` is produced everywhere
+(`.stellarator.build` / `.tokamak.build.radial_build_to_plasma_centre`) and — measured —
+**read by nobody, on all seven**. So are `.build.available_radial_space` and
+`.build.required_radial_space`. The dataflow is strictly one-directional, `rmajor →
+everything → build → rbld`, source to sink. **There is no cycle in the graph today**;
+`c11` creates one only by making the constraint the producer of `rmajor`, which is
+legal exactly when `rmajor` is not otherwise determined — i.e. when `ixc 3` is active.
 
-**`low_aspect_ratio_DEMO`**:
+`c83` is a different statement with the same physics: both operands are minted by the
+same `.stellarator.build` node, no producer can be minted for either (refused above), so
+it owns nothing and closes nothing. It is a **pure check** — and on `stellarator_helias`
+it is the only thing standing between the free `rmajor` and a build that does not close,
+which it does through the SQP by pushing `ixc 2`, `3` and `59` (the three that reach it)
+until two computed quantities line up. That is the owner's "cannot be satisfied locally"
+exactly.
 
-| assemble | scale | desg/cond/eq | SQP | status | objf |
+**And `helias_5b`'s `c11` is dead.** `Graph.reach` says **zero** of its three iteration
+variables (`4` Te, `6` ne, `10` hfact) reach either operand. It is a constant compared to
+a constant: a permanently-fixed row with an all-zero gradient in the SQP. This reproduces
+§26.5's inert census independently (`.Constraint11  1/2 operand(s) frozen, 25 in cone`)
+and §26.5's own note that *"`helias_5b`'s c11 is one [zero row] and that file converges"*.
+So `helias_5b` — a stellarator — has **no working radial-build closure at all**: `c11`
+is inert and `c83` is not in its `icc`, while its `Build` node computes `rbld`,
+`available_radial_space` and `required_radial_space` and nobody reads any of them. That
+is PROCESS's own problem statement, faithfully ported; it is not a port defect.
+
+**Verdict.** Build↔major-radius is **not** a structural identity. It is a *choice of
+which variable the radial build determines*, and PROCESS spells that choice in `ixc`,
+not in `icc`. `c11` is graph structure on exactly two of the seven files. On three it is
+an ordinary specification pinning the build to a fixed machine size. On one it is dead.
+On one it is absent and its job is done by a slack inequality. The relation is real; the
+*equation* is conditional, and legitimately so.
+
+### 30.6 [measured] The global balance, and what nothing is checking
+
+`ixc` and `icc` balance globally, by hand, in the input file, with nothing verifying it.
+The arithmetic, per configuration:
+
+| configuration | mode | `ixc` | equalities | DOF | inert conditions |
 |---|---|---|---|---|---|
-| warm | warm | 25/32/10 | **500** | cap(500) | -0.4015206418721025 |
-| cold | cold | 26/33/11 | **107** | converged | -0.3991548192190167 |
-| warm | cold | 25/32/10 | **500** | cap(500) | -0.401472632818502 |
-| cold | warm | 26/33/11 | **85** | converged | -0.3991548275187122 |
+| `stellarator_helias` | OPT `fom=6` | 8 | 2 `[2, 16]` | **6** | 0 |
+| `helias_5b` | OPT `fom=7` | 3 | 3 `[2, 11, 16]` | **0** | **1** (`c11`) |
+| `large_tokamak_nof` | OPT `fom=1` | 20 | 3 `[1, 2, 11]` | **17** | 0 |
+| `large_tokamak_eval` | EVAL (`fsolve`) | 2 | 2 `[1, 2]` | **0** (correct for `fsolve`) | 0 driven, 8/23 reported-only |
+| `low_aspect_ratio_DEMO` | OPT `fom=-14` | 19 | 4 `[1, 2, 11, 30]` | **15** | 0 |
+| `spherical_tokamak_eval` | EVAL (`fsolve`) | 3 | 3 `[1, 2, 11]` | **0** (correct) | 0 driven, 2/15 reported-only |
+| `st_regression` | OPT `fom=-5` | 14 | 3 `[1, 2, 11]` | **11** | **3** (objective, `c56`, `c67`) |
 
-Here it is `assemble_env` that decides, replicated across a large change of scaling; and
-**`--native`'s own combination is not the best of the four** (85 beats its 107).
+**Every configuration is square or over-determined in the right direction — except
+`helias_5b`, and it is square only by accident.** Three unknowns, three equalities, zero
+freedom for an objective it nominally has (`fom = 7`, `i_figure_merit` is set). If all
+three equalities were live, that file would be a root-find dressed as an optimisation and
+the objective would be decorative. It converges *because* one of the three (`c11`) is
+inert, which restores one degree of freedom by being broken. **Say that loudly: the
+`helias_5b` problem statement is only well-posed as an optimisation because one of its
+three equality constraints does not work.**
 
-**The seed is bit-identical in every arm of both tables**: 0 of 14 and 0 of 25/26 shared
-unknowns differ, after `_seed` has run over the cold env. There is no sense in which one
-mode "starts from a better point".
+The two evaluation-mode files are correct as-is: PROCESS root-finds the equalities alone
+with `scipy.optimize.fsolve` and needs exactly `n_ixc == n_equality`, which both have.
 
-### 27.4 [measured] The extra unknown is `max()`'s knee, and the degeneracy test is not structural
+**No configuration is over-determined**, and no active `ixc` collides with a node
+producer (see §30.7). The balance holds on all seven — but it holds by authorship, and
+the only thing in the repo that would catch a violation is `boundary.refuse_inert_conditions`
+(§26.5), which catches the *inert* half and not the counting half.
 
-`low_aspect_ratio_DEMO`'s shape difference is one problem,
-`^problem.tokamak.cicc_superconducting_tf_coil.dr_tf_plasma_case`. Its residual
-Jacobian `d(g(u) - u)/du`:
+**Which unknown does an equation determine? Often it does not name one.** Measured, per
+constraint, the set of active `ixc` whose `Graph.reach` touches any of its arguments:
 
-| env | `.tfcoil.dr_tf_plasma_case` | `max\|J\|` | verdict |
-|---|---|---|---|
-| warm (PROCESS converged) | `0.072873764` | **0.0** | degenerate -> **dropped**, unknown frozen |
-| cold (own start) | `0.072834767` | **0.5** | not degenerate -> kept as unknown + equality |
+- `stellarator_helias` `c2` (global power balance, an equality): reached by **6** of 8
+  design variables `[2, 3, 4, 6, 10, 109]`. It is one equation and six candidate
+  unknowns.
+- `large_tokamak_nof` `c2`: **10** of 20 `[2, 3, 4, 5, 6, 10, 18, 44, 109, 135]`.
+- `large_tokamak_nof` `c11`: **5** `[3, 16, 29, 57, 140]` — `rmajor` plus four build
+  thicknesses that also move `rbld`. Even the tidy 3-node cycle does not name its own
+  unknown; `ixc 3` is the *conventional* choice, not a forced one.
+- `large_tokamak_nof` `c16` (net electric power): **19** of 20.
 
-The unknown moves **0.05 %** between the two points and the verdict flips. The body says
-why: `dr_tf_plasma_case_from_input` is `jnp.maximum(u, m)` with `m` independent of `u`
-(`models/tfcoil/base.py:266`). Above the clamp it is the identity (`J = 0`, "degenerate");
-below it, `J = -1`; and **exactly at the knee JAX's `maximum` hands each argument the
-subgradient `0.5`**, which is the `0.5` measured. The cold env sits exactly on the knee,
-PROCESS's converged answer sits strictly above it.
+**This ambiguity is itself the finding.** A relation among five computed quantities does
+not say which one it defines. Turning any of these into graph structure requires a
+*modelling decision* the input file currently makes implicitly, by listing some variables
+in `ixc` and not others — and PROCESS's own tokamak/stellarator split for `c1` (§30.3a)
+shows the decision genuinely differs by machine.
 
-So `degenerate_fixed_points`' docstring claim -- *"`g(u) - u` is **structurally** zero
-here"* -- does not hold for this node. It is zero on one side of a clamp, and the
-function evaluates a region-dependent property at a single point and acts on the answer
-as though it were structural. That is a real defect, not a mode difference, and it is
-independent of which env you hand it.
+### 30.7 [measured] The `ixc`-with-a-producer question — no defect, but the docstring is stale
 
-Which reading is *right* is answerable, and the answer is that dropping it is wrong:
-`sand_harness.assemble`'s own docstring says a dropped problem's unknown "reverts to an
-ordinary boundary input", so the `--provider` arm freezes the TF plasma-side case
-thickness at its cold value while the inboard radial build it closes (`mda.py:308-342`)
-goes on moving. The consequence is measured -- the cap at 500 in **both** scale arms,
-each ending on a violated inequality (`min ie -3.318e-03` and `-3.341e-05`) where both
-cold-assemble arms finish feasible -- and it is missing-producer-shaped: a live coupling
-deleted from the problem, not a rank-deficient equality removed from it.
+`optimise_graph`'s docstring says an `ixc` whose variable *is* produced by a node is a
+duplicate-ownership conflict `Graph.__check_init__` refuses, that the "drop the producer
+when the `ixc` is active" policy generalises, and that it "is not applied here because no
+such ID is active in this run". Checked on all seven:
 
-**And "solves better" is not "agrees better", which the split now makes visible.**
-Scored against PROCESS (§27.6), the converged cold-assemble row is *further* from
-PROCESS's objective than the capped warm-assemble one: `d objf 1.76e-02` against
-`1.18e-02`, at the same `worst dx 7.09e-02` (ixc 41). Read with the sign, that is what a
-correctly-constrained problem should look like beside a relaxed one -- the warm arm has
-one variable frozen that ought to be determined, so it is optimising over a strictly
-larger feasible set and reaches a more extreme objective without ever converging -- but
-PROCESS's own `-0.40629623` is more extreme than *both*, and this section does not
-explain that. It is recorded rather than argued.
+**Conclusion sound, premise stale, and the policy is already applied — in `indat.py`.**
 
-### 27.5 [measured] Causal or coincidence: **one of each**, and the stellarator is coincidence
+- **0 of 7 configurations has an active `ixc` that is also node-produced.** No conflict
+  exists today, on any file. Nothing is broken.
+- But `ixc 3` (`.physics.rmajor`) **is** active on three configurations
+  (`stellarator_helias`, `large_tokamak_nof`, `low_aspect_ratio_DEMO`), so the
+  docstring's "no such ID is active in this run" no longer describes the seven-file
+  world. It is benign because `rmajor` has no producer in *any* of the seven graphs.
+- The latent surface is not small: **5 to 13 of the 83 iteration variables are
+  node-produced per configuration.** On the stellarators that includes `ID 1`
+  (`.physics.aspect` ← `.stellarator.default_aspect_ratio`), `ID 5`
+  (`.physics.beta_total_vol_avg`), `ID 13`, `ID 16`, `ID 29`, `ID 60`, `ID 140`; on the
+  tokamaks `ID 7`, `ID 12`, `ID 65`, `ID 142` and, per file, `ID 13`/`ID 140`.
+  Activating any of them in an `IN.DAT` fails assembly loudly rather than silently, which
+  is the right failure — but it is a failure, and no test asserts the seven files avoid
+  it.
+- **The policy is not unapplied. It is applied once, and keyed on `ixc`**
+  (`indat.py:5055`):
 
-The brief asked for this and §23 warned it would be needed. A sweep of the scale family
-`s_warm * (s_cold / s_warm) ** t` on `stellarator_helias`, shape held at the provider's,
-`t = 0` being `--provider` and `t = 1` being `--native`:
+  ```python
+  dr_tf_inboard_winding_pack=_slot_occupant(
+      "dr_tf_inboard_winding_pack",
+      0 if 140 in ixc else 1,
+      DR_TF_INBOARD_WINDING_PACK,
+  ),
+  ```
 
-| t | 0.0 | 0.25 | 0.5 | 0.75 | 1.0 | 1.25 | 1.5 | 2.0 |
-|---|---|---|---|---|---|---|---|---|
-| SQP | 257 | 221 | 103 | **66** | 107 | 202 | 200 | 118 |
+  This is the reason `ID 13` is produced and `ID 140` free on `large_tokamak_nof` and
+  `st_regression`, and `ID 140` produced and `ID 13` free on `low_aspect_ratio_DEMO`,
+  `large_tokamak_eval` and `spherical_tokamak_eval` — the pair swaps roles per file. **The
+  problem statement already reshapes the model graph**, in exactly one place, silently,
+  and `optimise_graph`'s docstring says the opposite. That is a documentation defect worth
+  a one-line fix; it is not a behaviour defect.
 
-Non-monotonic, 4x range, and the **best** point is `t = 0.75`, an arbitrary
-interpolation belonging to neither mode.
+### 30.8 Cross-configuration inconsistencies — the same statement, differently spelled
 
-And the sharpest number in this section: `t = 1.0` gives **107** where the arm built from
-`s_cold` itself gives **169**. The two scale sets were differenced and they differ in
-**one row by exactly one ulp** -- `^cond.stellarator.wp_width_r_min`,
-`1.5907936959295021` against `1.5907936959295024`, the other five bitwise equal. A
-relative perturbation of `2.2e-16` on one row weight moves the iteration count by 58.
+Beyond `c11`/`c83`, measured:
 
-**So `stellarator_helias` 257 -> 169 carries no information.** It is trajectory noise,
-and §27.2's "bitwise agreement is weak evidence on this problem" now has a companion:
-*iteration count is not evidence either, at this resolution*. This is the fifth
-structural story to die on that configuration.
+1. **`c16` (net electric power) is an equality on both stellarators and an inequality on
+   all five tokamaks.** Same body (`geq`), same arguments, same meaning — `"produce at
+   least P_net"` on a tokamak, `"produce exactly P_net"` on a stellarator. This is the
+   `sand.py` module docstring's standing counterexample generalised: the split is
+   positional and user-chosen, and the two device families chose differently.
+2. **`c30` (injected-power upper limit) is an equality on `low_aspect_ratio_DEMO` and an
+   inequality on the four other tokamaks that carry it.** A `leq` body driven to
+   equality. Same shape as `c16`, different constraint, different direction of oddity.
+3. **`c1` is a node on the stellarators and an SQP equality on the tokamaks** — §30.3a.
+   PROCESS's own code makes this choice, with a comment saying why.
+4. **`c24` (beta upper limit) changes class with `ixc 5`.** `DETERMINING` on
+   `large_tokamak_nof`, `low_aspect_ratio_DEMO`, `st_regression` (where beta is free);
+   `SPEC` on `large_tokamak_eval`, `spherical_tokamak_eval` (beta fixed in the file) and
+   on both stellarators (beta node-produced). Three different structural roles for one
+   inequality id, and again the discriminator is `ixc`, not `icc`.
+5. **`c26`/`c68` do the same thing with `ixc 37` and `ixc 2`/`18`/`3`.**
+6. **`c17` (radiation fraction) is a stellarator-and-ST constraint** appearing on
+   `stellarator_helias`, `spherical_tokamak_eval` and `st_regression` and nowhere else —
+   and on the two STs it reads `.physics.psolradmw`, which has **no producer**, where on
+   the stellarator every operand is live. Same id, live on one family, half-frozen on
+   another.
+7. **`c82`/`c83` are structurally stellarator-only.** `.build.available_radial_space`,
+   `.build.required_radial_space` and `.tfcoil.toroidalgap` have no producer in any
+   tokamak graph, so those constraints could not be assembled there even if an `IN.DAT`
+   asked for them. The stellarator's `Build` node offers *two* spellings of "does the
+   build close" — `rbld` and the available/required pair — and the two stellarator files
+   pick different ones.
+8. **`c56`/`c67` are inert on both STs** and live on `stellarator_helias` (`c67`), for the
+   missing-producer reasons §26 already itemises. Nothing new, but it shows up on this
+   axis too.
 
-**`low_aspect_ratio_DEMO` is the opposite verdict.** The lever is a deleted equation, not
-a weight; it replicates across both scale arms (500 / 500 against 107 / 85); and it has a
-mechanism that was read off the source rather than inferred from the count. The
-*magnitude* is still noise -- 85 against 107 is the same scale lever -- but
-`cap(500)` against `converged` is not.
+### 30.9 The conditional-activation question, answered per determining constraint
 
-### 27.6 The axis split, implemented
+*What does the graph do on a configuration where the relation is not active?*
 
-The owner's decision (seed natively, compare against PROCESS, retire `--provider` once
-this was understood) was blocked by one thing: a `--native` row had `process_objf = None`
-**by construction**, so `PRO`, `PRO objf`, `d objf` and `worst dx` were blank. That was
-never a real coupling -- `sand_harness.reference_run` is disk-cached, and scoring a
-finished solve needs PROCESS's answer *loaded*, not *used as a seed*.
+- **`c11` absent, `rmajor` free (`stellarator_helias`).** The system is **not**
+  under-determined: `rmajor` is one of 8 unknowns against 2 equalities and 12
+  inequalities, and it is pinned by the objective (`fom = 6`) subject to `c83` and the
+  three other inequalities §23(b) finds binding at the solution. The solve answers a
+  *different question* — "the cheapest machine whose build fits", rather than "the
+  machine whose build sums to `rmajor`". `rbld` is computed and discarded.
+- **`c11` absent, `rmajor` fixed (`large_tokamak_eval`).** `rbld` is computed and nothing
+  compares it to anything. The radial build is genuinely unchecked on that file. This is
+  an evaluation run, so it is defensible — but it means the tracked reference output for
+  `large_tokamak_eval` contains an `rbld` no constraint ever looked at.
+- **`c1` absent (both stellarators).** Enforced by another route, and the *right* one:
+  `.physics.beta_total_vol_avg` is node-produced, so the relation holds by construction
+  at every iterate rather than only at convergence.
+- **`c24` `SPEC` rather than `DETERMINING`.** Still enforced, just against a fixed beta
+  instead of a free one.
+- **`c2` is active on all seven**, so the question does not arise — which is itself worth
+  noting: the one constraint that owns no unknown anywhere is also the one nobody omits.
 
-`run_cold_matrix.py` now has two axes:
+### 30.10 Recommendation — diagnostic only, nothing to apply
 
-- **seeding** -- `--provider` (still the default), `--provider-strict`, `--seed`,
-  `--native`;
-- **scoring** -- `--compare-process` / `--no-compare-process`, defaulting to
-  `compares_by_default(mode)`, which is `True` wherever PROCESS already ran for the seed
-  and `False` on `--native`.
+Reproducing PROCESS comes first and MDF is PROCESS's own formulation; nothing here should
+be acted on before the regression suite says the port matches. What this section buys is
+a ranked list of what *would* be available later, with the cost of each already measured:
 
-They compose freely. In `run_one` the scoring object is a local named **`oracle`** and
-never `reference`; it reaches `_against_process` and nothing that assembles, seeds or
-solves, so a future edit that leaks it into the solve path has to rename it first. The
-table gained a **`seed` column** and the header two lines that say seeding and scoring
-separately, because the failure mode being designed against is a reader taking a filled
-`PRO objf` for "seeded from PROCESS". `_against_process` also now takes the seeding
-reference's `ixc` and **blanks `dx` rather than comparing two differently ordered ID
-lists** -- they agree on all seven files today, and a permutation reported as a
-per-variable disagreement would be silent in the one column that exists to catch silence.
+1. **`c1` → a producer node for `.physics.beta_total_vol_avg`.** Cheapest and cleanest:
+   the probe says **no SCC forms**, PROCESS's own stellarator path already does exactly
+   this, and it removes one equality row and one design variable from the SQP on the
+   three files where `ixc 5` is active. Only faithful where `ixc 5` *is* active — on
+   `large_tokamak_eval`/`spherical_tokamak_eval` beta is a prescribed input and the
+   causation runs the other way.
+2. **`c11` → a `RootFind` over `.physics.rmajor`, on the two files where `ixc 3` is
+   active.** A 3-node SCC on a 243-node graph. Removes one equality and one design
+   variable. **Not** applicable to `helias_5b`/`spherical_tokamak_eval`/`st_regression`,
+   where `c11` is a genuine specification against a fixed `rmajor` — and this is the
+   point: the rewrite must be per-configuration, because the relation genuinely is.
+3. **Leave every pure check where it is.** `c35`, `c46`, `c81`, `c82`, `c83` cannot become
+   graph structure; cottax refuses to mint the producer. They belong to the optimiser.
+4. **Leave every specification where it is.** ~21 of 35 ids are a computed quantity
+   against an input bound. There is nothing to lift.
+5. **Add the balance check nobody has.** `boundary.refuse_inert_conditions` already
+   catches a dead row; the counting half — `n_equality` against the number of *live*
+   design variables, per mode — is the same walk over declared reads and owns and would
+   have flagged `helias_5b` on the day it was added. That is a guard, not a
+   restructuring, and it is the one thing here that could reasonably land soon.
 
-`--provider` is deliberately **not** deleted: it still has a pin against it, and a mode
-that explains a published row should not vanish in the commit that explains it.
+### 30.11 What could not be resolved
 
-#### 27.6.1 [measured] The intended default table -- `--native --compare-process`, all seven
-
-691 s, one pass, in the copy. Every solve column reproduces the published `--native`
-table exactly and every `PRO*` column reproduces the published `--provider` table's,
-which is the check that the split is inert on both axes.
-
-```
-         configuration   seed  form  graph  nodes  desg  cond   eq  blks  drvn   SQP      status            objf        PRO objf    d objf  worst dx    max|eq|      min ie  PRO
-    stellarator_helias    nat   MDF    154    169     8    15    2   158     5   108   converged      1.21775747      1.21491678  2.34e-03  1.08e-01   4.20e-11   -1.95e-10   46
-    stellarator_helias    nat  SAND    154    124    14    21    8    46    14   169   converged      1.21775743      1.21491678  2.34e-03  1.08e-01   1.04e-07    1.62e-12   46
-             helias_5b    nat   MDF    154    160     3     6    3   149     5     4   converged     0.764215516     0.763518372  9.13e-04  2.01e-03   1.93e-12    7.01e-02    3
-             helias_5b    nat  SAND    154     96     9    12    9    65     9     7   converged     0.764215517     0.763518372  9.13e-04  6.18e-03   1.10e-13    7.02e-02    3
-     large_tokamak_nof    nat   MDF    243    271    20    27    3   245     6     7   converged             1.6             1.6  1.16e-11  2.01e-02   2.41e-06   -1.23e-06    8
-     large_tokamak_nof    nat  SAND    243    180    27    34   10    92    27    10   converged             1.6             1.6  4.82e-12  6.37e-01   7.19e-06   -1.06e-04    8
-    large_tokamak_eval    nat   MDF    245    271     2     2    2    25     2     3   converged               -            none         -  3.29e-12   3.47e-14   -1.99e+00    0
- low_aspect_ratio_DEMO    nat   MDF    243    270    19    26    4   246     6    10     stopped    -0.406311573     -0.40629623  3.78e-05  1.15e-04   5.93e-12   -1.41e-06   16
- low_aspect_ratio_DEMO    nat  SAND    243    183    26    33   11    88    26   107   converged    -0.399154819     -0.40629623  1.76e-02  7.09e-02   4.96e-13    1.44e-12   16
-spherical_tokamak_eval    nat   MDF    241    259     3     3    3    29     2     2   converged               -            none         -  3.64e-09   1.16e-09   -1.38e+01    0
-         st_regression    nat   MDF    241      -     -     -    -     -     -     -      FAILED               -     -16.5885765         -         -          -           -   10
-         st_regression    nat  SAND    241      -     -     -    -     -     -     -      FAILED               -     -16.5885765         -         -          -           -   10
-```
-
-Three readings the old table could not give:
-
-1. **Every row now carries both facts.** `seed nat` and a filled `PRO objf` on the same
-   line -- no PROCESS object in the solve path, PROCESS's answer beside the result.
-2. **`st_regression` fails under `--native` too**, on `b14da8c1`'s
-   `_refuse_inert_objective`, naming `.current_drive.big_q_plasma`. That is worth stating:
-   the missing producer is a property of the **graph**, not of the seed, so no seeding
-   mode can hide it and none can fix it. The `PRO objf -16.5885765` and `PRO 10` cells are
-   filled on both its lines, which is exactly the pairing `--provider` used to be needed
-   for -- the file PROCESS solves in 10 iterations and the port refuses.
-3. **`low_aspect_ratio_DEMO` SAND converges and *disagrees more*** -- see §27.4's last
-   paragraph. Under `--provider` that row read `cap(500)`/`d objf 1.18e-02`; here it reads
-   `converged`/`1.76e-02`. A table with only one of the two columns would have called
-   that an improvement.
-
-`--provider`'s own rows are unchanged by the split: the `helias_5b` smoke row was run
-both ways and the `PRO*` group is identical, which it must be, since for the three
-seeding modes that already ran PROCESS `oracle is reference`.
-
-### 27.7 Not resolved
-
-- **The degeneracy test needs a rule, and this section does not supply one.** "Evaluate
-  at the cold start" is not a fix, it is the other single point. The honest shapes are
-  either to declare the clamp's arms as a switch (as `models/tfcoil/base.py`'s module
-  docstring already does for `tfc_sidewall_is_fraction`) or to test degeneracy over a
-  *sample* of points and refuse when they disagree. Both are out of scope here.
-- **`low_aspect_ratio_DEMO` is not the only file whose shape moves**, and the third one
-  was found by reading the tables rather than by measuring: `large_tokamak_nof`'s SAND
-  row goes `26/33/9` under `--provider` to `27/34/10` under `--native`, the same `+1`
-  unknown and `+1` equality. It converges in 10 iterations either way, so the drop costs
-  it nothing *there* -- which is exactly why it went unnoticed. The residual Jacobian was
-  measured on `stellarator_helias` (shape does not move) and `low_aspect_ratio_DEMO`
-  (it does); the remaining tokamaks were not put through `fixed_point_residuals`, and
-  every one of them has the same `dr_tf_plasma_case` node.
-- **`sand.residual_condition_scales`' reference point is now an open question**, not a
-  detail. §27.5 shows the choice is worth up to 4x in iterations and that no point in the
-  family is defensible on the evidence available; §23's sweep said the same about one
-  row's factor. The scaling wants a principled rule, and it does not have one.
-- **`switch_values_for` vs `switch_values_from_indat` disagree on 5 keys** for
-  `low_aspect_ratio_DEMO` (§27.2). Shown not to be the cause of anything here, and not
-  investigated further; two routes to the same statically bound switches should not
-  return different dictionaries.
-- **The `--provider` retirement itself.** Understood now; not done.
+- **Whether `c83` sits at its bound at the port's own solution** was answered from §23's
+  record, not re-measured. The tracked `stellarator_helias` MFILE/OUT in this tree are
+  crash stubs and carry no constraint rows, and a fresh measurement costs a solve.
+- **Whether `helias_5b`'s inert `c11` is satisfied or violated at its constant value** is
+  a value question and needs a run. Structurally it is a constant; which constant is not
+  visible from assembly.
+- **Which unknown each multi-argument equality "really" determines** is not answerable
+  statically and, per §30.6, may not be answerable at all — `c2` on
+  `large_tokamak_nof` is reachable from half the design vector. Any rewrite has to make
+  that choice explicitly; today the `IN.DAT` makes it by omission.
+- **Whether the `unwritten` paths (`beta_beam`, `pden_plasma_ohmic_mw`,
+  `beta_thermal_vol_avg`, `beta_toroidal_vol_avg`, `sig_tf_cs_bucked`, `psolradmw`) are
+  genuinely inert in PROCESS too** is taken from §22 and §26's census rather than
+  re-measured; those measurements were made over the *model* graph and the `mdf` graph
+  respectively, and this section's argument does not turn on them.
