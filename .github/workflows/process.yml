@@ -246,6 +246,13 @@ jobs:
         with:
           name: tracking-html
       - run: mv tracking.html site || cp site/404.html site/tracking.html
+      - name: Add uncut-graph DSM pages
+        run: |
+          cp functional_process/dsm_provenance_uncut.html site/
+          cp functional_process/dsm_scc_uncut.html site/
+          cp functional_process/dsm_provenance_uncut_tokamak.html site/
+          cp functional_process/dsm_scc_uncut_tokamak.html site/
+          cp documentation/source/dsm_index.html site/dsm.html
       - name: Upload documentation page
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:

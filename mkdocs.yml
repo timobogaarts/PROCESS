@@ -34,6 +34,7 @@ nav:
           - Python Optimisation and Numba: development/numba.md
       - Style:
           - Standards: development/standards.md
+      - Uncut Graph DSMs: dsm.html
   - Models:
       - Physics Models:
           - Plasma:

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROCESS port -- uncut dependency graphs</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1b1e23;
+    --muted: #55606b;
+    --border: #d8dee4;
+    --card-bg: #f6f8fa;
+    --link: #0a5fb5;
+    --code-bg: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a;
+      --fg: #e6e9ec;
+      --muted: #9aa4ae;
+      --border: #333a41;
+      --card-bg: #1c2024;
+      --link: #6cb2ff;
+      --code-bg: #22272c;
+    }
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+  }
+  body {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 4rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 0.4rem;
+  }
+  p.lede {
+    color: var(--muted);
+    margin-top: 0;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 0.3em;
+    font-size: 0.92em;
+  }
+  .callout {
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    border-radius: 0.5rem;
+    padding: 0.9rem 1.1rem;
+    margin: 1.4rem 0;
+  }
+  .callout p {
+    margin: 0.4em 0;
+  }
+  h2 {
+    font-size: 1.05rem;
+    margin-top: 2rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.3rem;
+  }
+  .links {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 0;
+  }
+  .links li {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.8rem;
+  }
+  .links a {
+    color: var(--link);
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 1.02rem;
+  }
+  .links a:hover {
+    text-decoration: underline;
+  }
+  .links .desc {
+    color: var(--muted);
+    margin-top: 0.3rem;
+    font-size: 0.95rem;
+  }
+  footer {
+    margin-top: 2.5rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>Uncut dependency graphs</h1>
+<p class="lede">
+  Design structure matrices (DSMs) of the PROCESS port's dependency graph, as declared —
+  before any cut, driver, or optimisation problem is added to it.
+</p>
+
+<div class="callout">
+  <p>
+    <strong>These are the graph as declared, not as run.</strong> The port models PROCESS
+    as a graph of named nodes with typed inputs and outputs. The pages below show that
+    graph <em>uncut and undriven</em>: no feedback loop has been broken, no algorithm has
+    been chosen to solve it, no optimisation problem has been laid on top. That matters
+    for reading the "SCC" pages in particular &mdash; a strongly connected component (SCC)
+    there means <em>these nodes are mutually coupled</em>, not "this is the order they run
+    in." A raw cycle has no order; only after a cut assigns it a driver does a run order
+    exist at all.
+  </p>
+</div>
+
+<p>
+  Two orderings, on two reference machines, give four pages. <strong>Provenance</strong>
+  ordering groups nodes by where they were written in the source &mdash; subsystems laid
+  out in their dependency order, each given a colour band. A mark below the diagonal
+  <em>inside</em> one colour band is a place where provenance and dependency disagree
+  within a subsystem; a mark below the diagonal <em>across</em> bands is real feedback
+  between subsystems. <strong>SCC</strong> ordering instead groups nodes by strongly
+  connected component, so any coupling &mdash; within or across subsystems &mdash; is
+  visible as an off-diagonal block rather than scattered marks.
+</p>
+
+<p>
+  The headline measurement (see
+  <code>functional_process/_audit/uncut_graph.md</code> for the full account): on the
+  reference stellarator, the uncut graph has <strong>144 blocks, of which 2 are genuinely
+  coupled</strong>; on the reference tokamak, <strong>223 blocks, of which 3</strong>.
+  Cutting those loops to make them solvable changes <strong>zero</strong> block counts on
+  either machine &mdash; every cut lands inside an SCC that already existed uncut, it just
+  gives that SCC an algorithm. PROCESS's declared dependency structure is almost entirely
+  acyclic, and the coupling that does exist is small, local to one subsystem, and does not
+  cross subsystem boundaries on either machine measured.
+</p>
+
+<h2>Reference stellarator (<code>stellarator_helias.IN.DAT</code>)</h2>
+<ul class="links">
+  <li>
+    <a href="dsm_provenance_uncut.html">Provenance order</a>
+    <div class="desc">
+      Nodes grouped by subsystem, subsystems in dependency order. Best view for seeing
+      how one subsystem's internals relate to the next.
+    </div>
+  </li>
+  <li>
+    <a href="dsm_scc_uncut.html">SCC order (mutual coupling, not a run order)</a>
+    <div class="desc">
+      Nodes grouped by strongly connected component. Two blocks are genuinely coupled
+      here: a 6-node cycle inside <code>physics</code> (fusion power and density
+      profile) and a 2-node cycle inside <code>stellarator</code> (divertor / first-wall
+      area). Everything else is a singleton.
+    </div>
+  </li>
+</ul>
+
+<h2>Reference tokamak (<code>large_tokamak_eval.IN.DAT</code>)</h2>
+<ul class="links">
+  <li>
+    <a href="dsm_provenance_uncut_tokamak.html">Provenance order</a>
+    <div class="desc">
+      Same layout as the stellarator page, for the larger tokamak graph.
+    </div>
+  </li>
+  <li>
+    <a href="dsm_scc_uncut_tokamak.html">SCC order (mutual coupling, not a run order)</a>
+    <div class="desc">
+      Three blocks are genuinely coupled here: a 4-node TF-build/winding-pack cycle, an
+      8-node <code>physics</code> cycle (the stellarator's cycle plus the pedestal
+      profile arm), and a 9-node PF-coil/volt-second/burn-time cycle.
+    </div>
+  </li>
+</ul>
+
+<footer>
+  Generated by <code>functional_process/render_xdsm.py</code>
+  (<code>grouped_uncut</code> CLI mode). These four files are committed artifacts, not
+  rebuilt by this site's CI &mdash; see
+  <code>functional_process/_audit/uncut_graph.md</code> for how they were produced and
+  when they were last regenerated.
+</footer>
+
+</body>
+</html>
