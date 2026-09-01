@@ -194,7 +194,13 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
 
-from functional_process import mdf, native, provider, sand  # noqa: E402
+from functional_process import (  # noqa: E402
+    mdf,
+    native,
+    phase_timing,
+    provider,
+    sand,
+)
 from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
@@ -304,6 +310,10 @@ class Row:
     sand: dict = field(default_factory=dict)
     omitted: object = None
     seconds: float = 0.0
+    timings: dict = field(default_factory=dict)
+    """`{formulation: {phase: seconds}}` -- where each arm's wall clock went, from
+    `phase_timing`. Empty when the patches did not install (see `phase_timing.install`),
+    which `render` reports rather than papering over."""
     boundary: dict = field(default_factory=dict)
     """`provider.installed`'s counts for this configuration, plus `mode` and the paths
     the provider was allowed to move. Empty when the provider was not consulted."""
@@ -1093,7 +1103,13 @@ def _solve_both(row, reference, machine_graph, switch_values, cold, began, oracl
     omitted = []
     for label, run, store, kwargs in arms:
         try:
+            # Phase split per *arm*, not per row: MDF and SAND compile different programs
+            # (§25 measured 38 635 MLIR lines against 132 125 on one machine), and a row
+            # total would average the two into a number describing neither.
+            phase_timing.reset()
+            arm_began = time.perf_counter()
             store.update(run(reference, machine_graph, switch_values, cold, **kwargs))
+            row.timings[label] = phase_timing.split(time.perf_counter() - arm_began)
         except Exception as failure:  # noqa: BLE001 -- a row, not an exit
             store.update(_blank())
             store.update(
@@ -1430,6 +1446,7 @@ def render(rows) -> str:
         "            block says which iteration variable it occurred at.",
     ]
     out += _boundary_block(rows)
+    out += _timing_block(rows)
     if notes:
         out += ["", "NOTES"]
         out += [f"  {note}" for note in notes]
@@ -1476,6 +1493,63 @@ def _boundary_block(rows) -> list[str]:
                 _cell(have["nothing"], 5),
                 _cell(have["supplied"], 9),
                 _cell(have["paths"], 6),
+            ])
+        )
+    return block
+
+
+def _timing_block(rows) -> list[str]:
+    """Where each arm's wall clock went -- tracing, lowering, compiling, solving.
+
+    **The point of the column, from `_audit/optimise_design.md` §24/§25**: this port's
+    cost is compilation, not arithmetic. One schedule lowers to 33 935 MLIR lines
+    (132 125 for a tokamak) and `low_aspect_ratio_DEMO`'s 500 SQP iterations are about
+    15 s of a ~160 s row. Those were hand measurements on one configuration; this is the
+    same question asked of every arm, every pass.
+
+    `solve` is the **residual** of the arm's wall clock after the three measured phases,
+    so the four sum to the total by construction and include the graph assembly, the
+    PROCESS reference load and every dispatch -- see `phase_timing.split`. Times are
+    exclusive, so lowering inside a nested trace is not counted twice.
+
+    Empty when `phase_timing.install()` found jax's internals moved; the header line says
+    so rather than printing a table of zeros.
+    """
+    timed = [(row, arm, split) for row in rows for arm, split in row.timings.items()]
+    if not timed:
+        return [
+            "",
+            "PHASE TIMINGS -- unavailable (jax internals moved; see",
+            "`phase_timing.install`).",
+        ]
+    block = [
+        "",
+        (
+            "PHASE TIMINGS -- seconds per arm, EXCLUSIVE, summing to that arm's own "
+            "wall clock."
+        ),
+        (
+            "`solve` is the residual after the three measured phases: it carries the "
+            "graph assembly, the"
+        ),
+        (
+            "cached PROCESS reference load and every dispatch, and is the only column "
+            "that is arithmetic."
+        ),
+        "",
+        "         configuration  form     trace     lower   compile     solve     total",
+    ]
+    for row, arm, split in timed:
+        total = sum(split.values())
+        block.append(
+            " ".join([
+                _cell(row.name, 22),
+                _cell(arm, 4),
+                _cell(f"{split.get('trace', 0.0):.1f}", 9),
+                _cell(f"{split.get('lower', 0.0):.1f}", 9),
+                _cell(f"{split.get('compile', 0.0):.1f}", 9),
+                _cell(f"{split.get('solve', 0.0):.1f}", 9),
+                _cell(f"{total:.1f}", 9),
             ])
         )
     return block
@@ -1682,7 +1756,13 @@ def main(argv=None, out=OUT):
     paths = [_resolve(p) for p in (chosen or CONFIGURATIONS)]
     mode = _mode(argv)
     compare = _compare(argv, mode)
-    print(f"seeding: {mode}    scored against PROCESS: {compare}")
+    # Patch jax's trace/lower/compile entry points before the first graph is built, so no
+    # phase is missed. Idempotent, and a `False` costs the timing block, not the run.
+    timed = phase_timing.install()
+    print(
+        f"seeding: {mode}    scored against PROCESS: {compare}    "
+        f"phase timing: {'on' if timed else 'UNAVAILABLE (jax internals moved)'}"
+    )
     began = time.perf_counter()
     rows: list[Row] = []
     for path in paths:
