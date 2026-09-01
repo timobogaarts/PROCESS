@@ -1477,6 +1477,22 @@ def main(argv=None, out=OUT):
         rows.append(run_one(path, mode))
         checkpoint(rows, out, mode, argv)
         print(f"  (checkpointed {len(rows)} of {len(paths)} row(s) to {out})")
+        # Configurations are independent, and jax caches every executable it compiles
+        # for the life of the process. A whole pass therefore accumulates all seven
+        # graphs' modules, and on 2026-09-01 that stopped fitting: the pass died on the
+        # fifth configuration with `LLVM ERROR: Unable to allocate section memory`,
+        # twice, while that same configuration run *alone* completes in 158 s at a
+        # 4.1 GB peak.
+        # `_audit/optimise_design.md` §24 measures one schedule at 33935 MLIR lines, and
+        # the same section's `host_cache` change took the SAND Jacobian from 2943 to 6089
+        # parameters -- bigger modules, and enough of them to cross the line.
+        #
+        # Nothing is lost by dropping them: the next configuration is a different graph
+        # and would miss every entry anyway, so this frees memory without costing a
+        # single cache hit. It is *not* a fix for a leak -- there is no leak, only a
+        # cache doing
+        # exactly what it promises for longer than this runner needs.
+        jax.clear_caches()
     print(render(rows))
     print(f"\n{len(rows)} configuration(s) in {time.perf_counter() - began:.0f} s")
     return rows
