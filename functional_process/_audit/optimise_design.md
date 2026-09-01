@@ -5496,6 +5496,408 @@ needed.
   does, so `reference_provider_st_regression.txt` is stale against a structural change,
   and the fix is `$PY -m functional_process.provider --write`. Not done here, because
   regenerating a published pin belongs to whoever made the structure move.
+---
+
+## 28. The carried values become arguments, and the one-line fix does not work (2026-09-01)
+
+> **Measured in a scratch copy, not in the live tree**, at
+> `/tmp/claude-1000/-home-tbogaarts-PROCESS/df0c22b1-02c2-4e73-99ce-b061606f318d/scratchpad/PROCESS_arrays`.
+> The copy's baseline is **`b14da8c1`** ("Refuse a solve whose objective cannot move,
+> and find the four that could not") -- verified file by file: every path under
+> `functional_process/` and `process/` is byte-identical to that commit. `~/PROCESS`
+> moved on to `3107bf49` while this section was being measured, which is why the
+> baseline is named by commit and not by "HEAD". Two other agents were running against
+> `~/PROCESS` and `~/jaxgraph` throughout, so nothing here was applied to either; the
+> source changes are supplied as `.patch` files in the copy. `cottax` was shared
+> read-only from `~/jaxgraph/src`. Every run below set `PYTHONPATH` to the copy and
+> printed `functional_process.__file__` as its first line (§24.3's trap).
+
+§25 censused the compiled XLA modules and found nine values on `stellarator_helias` and
+twelve on `large_tokamak_nof` baked in as compile-time constants, every one of them a
+*node output* rather than a boundary input, and named one line per node as the cause:
+`models/initialisation.py`'s input-less `ExplicitFunction`s return Python floats. This
+section fixes that. It splits into a census that found more of them than §25 could see
+(§28.1), a **refutation of the proposed repair** (§28.2), what actually works and what it
+costs (§28.3), the compile-time constants before and after (§28.4), the Scan question --
+which the change does **not** answer, and the three separate causes that is now known to
+have (§28.5) -- the bitwise gate (§28.6), the design question the owner asked (§28.7), and
+what is left open (§28.8).
+
+### 28.1 Fourteen nodes, not nine values — the census taken from the graph
+
+§25 counted *constants in a compiled module*, which undercounts twice: a module holds one
+`f64[] constant(0)` however many nodes supply a zero, and a module only contains the nodes
+that block actually reaches. Counted from the graph instead — every `CallableNode` with no
+inputs, called, its output leaves type-checked — the seven tracked configurations hold
+**fourteen** such declarations between them, **twenty-six output paths**:
+
+| declaration | outputs | on |
+|---|---|---|
+| `.initialisation.tf_cryoplant_efficiency` | `.tfcoil.eff_tf_cryo` | all 7 |
+| `.initialisation.tf_insulation_youngs_modulus` | `.tfcoil.eyoung_ins` | 5 tokamaks |
+| `.initialisation.tf_conductor_youngs_modulus` | `.tfcoil.eyoung_cond_axial`, `…_trans` | 5 tokamaks |
+| `.initialisation.pf_coil_resistivity` | `.pf_coil.rho_pf_coil` | 5 tokamaks |
+| `.initialisation.beam_electron_density_fraction` | `.physics.f_nd_beam_electron` | 5 tokamaks |
+| `.initialisation.energy_storage_building_volume` | `.buildings.esbldgm3` | 4 |
+| `.initialisation.stellarator_solenoid_absent` | `.build.dr_cs`, `.build.dr_cs_tf_gap` | 2 stellarators |
+| `.initialisation.stellarator_pulse_times` | the four `.times.t_plant_pulse_*` | 2 stellarators |
+| `.costs.energy_storage_cost` | `.costs.c2253` | 4 |
+| `.tokamak.diamagnetic_current` | `.current_drive.f_c_plasma_diamagnetic` | 3 |
+| `.tokamak.pfirsch_schluter_current` | `.current_drive.f_c_plasma_pfirsch_schluter` | 3 |
+| `.tokamak.current_drive.secondary_heating` | `.current_drive.eta_cd_hcd_secondary`, `…p_hcd_secondary_extra_heat_mw`, `.heat_transport.p_hcd_secondary_electric_mw` | 5 tokamaks |
+| `.tokamak.ccfe_hcpb.centrepost_neutronics` | `.fwbs.pnuc_cp_tf`, `…p_cp_shield_nuclear_heat_mw`, `…pnuc_cp`, `…neut_flux_cp` | 3 |
+| `.tokamak.cicc_superconducting_tf_coil.croco_turn_cable_space_extra_void` | `.tfcoil.f_a_tf_turn_cable_space_extra_void` | 2 |
+
+Five nodes / nine paths on `stellarator_helias` — **exactly §25's nine** — and nine nodes
+/ fifteen paths on `large_tokamak_nof` against §25's twelve, the three extra being
+`CentrepostNeutronicsAbsent` outputs that block never reaches. So §25's count is right for
+what it measured and this one is the superset.
+
+`DoubleNullUpperBuild` is deliberately **not** in the table: it reads
+`.build.dz_shld_lower`/`.build.dz_vv_lower` from the graph, so its outputs are already
+traced values and there is nothing to fix. It is the only member of `initialisation.py`'s
+family that computes rather than carries, and §28.7 turns on that.
+
+An AST scan over `functional_process/` for a node body returning a Python literal (or a
+`self.<field>`) finds twelve classes and no thirteenth, which agrees with the dynamic
+census once the two nodes whose bodies call a ported *function* returning literals
+(`croco_turn_cable_space_extra_void`, `calculate_centrepost_neutronics_absent`) are added.
+Nodes *with* inputs were checked too and none returns a constant limb.
+
+### 28.2 `return jnp.asarray(...)` buys nothing, and this was measured before changing anything
+
+The repair named in §25 -- one line per node, `return jnp.asarray(...)` so the value
+becomes an `eqx.is_array` leaf -- **does not work**, and the reason is two facts that
+compose.
+
+**Fact 1: an array built inside the traced body is a jaxpr constant, exactly as the
+Python float was.** Minimal probe, `eqx.filter_jit` over `(x * v + 1.0) * 3.0`, optimised
+HLO:
+
+| where the value lives | parameters | constants |
+|---|---|---|
+| `v` a Python-float field of the node | 2 | 4 |
+| **`v` an array field of the node** | **4** | **3** |
+| `0.13` a literal in the body | 2 | 4 |
+| **`jnp.asarray(0.13)` in the body** | **2** | **4** |
+
+The last row is the proposed fix and it is bit-for-bit the row above it.
+
+**Fact 2: the node's fields are not reachable from the compiled function's arguments at
+all.** `cottax`'s `ExplicitFunction.node_definition` builds
+`CallableNode(fn=self.__call__)`, and a plain bound method is not a pytree.
+`jax.tree_util.tree_leaves` of a real graph node definition whose declaration holds a
+`jnp.asarray(0.13)` returns **zero** array leaves. So even moving the conversion to the
+field would not have helped on its own: `eqx.filter_jit` never sees it, the value is
+consumed at trace time, and it lands in the module as a constant and in the cache key as
+configuration.
+
+Both were measured before a line of the port was edited. **Flagging it as the prediction
+that failed**: the task's mechanism ("`eqx.filter_jit` traces `eqx.is_array` leaves and
+bakes everything else") is right about `filter_jit` and wrong about what `filter_jit` can
+see here.
+
+### 28.3 What works: the declaration reaches the trace through `fn`
+
+`functional_process/models/carried.py` is the new home. Three pieces:
+
+- **`carried(default=...)`** — `eqx.field(kw_only=True, converter=jnp.asarray, …)`. The
+  conversion happens when the declaration is *built*, at assembly. `jnp.asarray` of a
+  Python float keeps `weak_type=True`, so promotion is unchanged.
+- **`carried_all(…)`** — the same for the one node whose ported function hands back four
+  values together.
+- **`CarriesValues`** — an `ExplicitFunction` subclass overriding exactly one query:
+  `node_definition` builds `CallableNode(fn=jtu.Partial(_apply, self))`. `jax.tree_util.Partial`
+  registers its `args` as pytree children and its `func` as static aux, so the
+  declaration's **array** leaves become parameters of the compiled program and its
+  non-array leaves stay in the cache key, which is where they belong.
+
+Measured on the minimal probe with a module-level `_apply`: 4 parameters / 3 constants,
+`hash()` works, `==` works, and two declarations differing only in the carried value
+**share one compiled program** (second call, 0 compiles).
+
+**`fn=self` was tried and rejected.** Using the declaration directly as the callable is a
+pytree with no wrapper and has the same effect on the trace, but `Graph.__hash__` hashes
+`tuple(self.definitions.items())` and an `eqx.Module` holding a `jax.Array` is
+unhashable — which would take out `mdf._hashable`, `sand_harness._SCHEDULE_WHOLE` and
+`_SCHEDULE_RUNNERS` at once. A `Partial` hashes by identity and keeps all of them.
+`hash(GRAPH)` was re-checked after the change and still answers.
+
+**What it costs, stated rather than hidden.** `CallableNode.__check_init__` binds
+`len(inputs)` positional arguments against `inspect.signature(fn)`; a `Partial` reports
+`(*args)`, so the arity check is inert for these fourteen nodes. Every one of them
+declares no inputs, so there is no arity to get wrong — but it is one more reason this
+belongs in `cottax`, where the signature is still in hand. The general statement is *a
+node's own array fields are data the graph should trace, not configuration it should
+specialise on*, and that is a property of `CallableNode`, not of these fourteen classes.
+
+**One collateral repair.** `mda_harness._declaration_modules` walks
+`node.fn.__self__` to find the declaration behind a node definition. A `Partial` has no
+`__self__`; without a `functools.partial` limb the walk stops at the `fn` leaf and every
+`CarriesValues` declaration goes **unaudited in silence** — a missing switch registration
+would read as "no switches to check" rather than as a mismatch. The limb is added and
+`test_switch_coverage.py` passes.
+
+### 28.4 The compile-time constants: measured on `stellarator_helias`'s SAND Jacobian
+
+§25's instrument, re-taken. The `(cmap, flat_x, unravel)` the cold SAND solve hands
+`host_cache.flat_condition_jacobian` on its **first** call are captured by a spy that then
+aborts the solve; the two `host_cache` functions are lowered and compiled from those
+arguments and their optimised HLO counted. The pre-change numbers reproduce §25 exactly,
+which is the check that the instrument is the same one.
+
+| | parameters | constants | constant bytes | lines |
+|---|---|---|---|---|
+| values, before | 2105 | 1109 | 9269 | 14084 |
+| **values, after** | **2116** | **1108** | **9261** | **14104** |
+| jacobian, before | 6089 | 3046 | 24636 | 38626 |
+| **jacobian, after** | **6105** | **3045** | **24628** | **38657** |
+
+**The constant *count* barely moves and that is not a failure -- it is what a shared
+constant pool looks like.** Seven of the nine values on this configuration are `0.0`, and
+XLA holds one `f64[] constant(0)` however many places want a zero, so removing seven zeros
+removes no constants at all. The count that answers the question is which *literals* are
+in the module:
+
+| literal | before, values | after, values | before, jacobian | after, jacobian |
+|---|---|---|---|---|
+| `constant(0.13)` (`.tfcoil.eff_tf_cryo`) | 1 | **0** | 1 | **0** |
+| `constant(31557600)` (`.times.t_plant_pulse_burn`) | 1 | **0** | 2 | **0** |
+| distinct scalar literals in the module | 235 | **233** | 268 | **266** |
+
+Both carried values that are not zero are **gone from the compiled program**, replaced by
+parameters (+11 and +16 parameter references), and the modules grow by 20 and 31 lines --
+arithmetic XLA can no longer do at compile time. The remaining `3045` constants are the
+port's own coefficients, not node outputs.
+
+**One §25 claim this section could not reproduce.** §25's Arm D found `1 / eyoung_ins`,
+`4 * eyoung_ins` and a series stiffness folded on the host at `tfcoil/stress.py:188`.
+Searching this configuration's pre-change modules for the analogous products of its own
+carried values -- `1/0.13`, `4*0.13`, `1/3.15576e7`, `2*3.15576e7`, `3.15576e7/2` -- finds
+**none**. Not a contradiction: Arm D was measured on a tokamak, and the TF stress model
+is not in the stellarator's SAND block at all. It does mean the folding half of the case
+is unverified *on this configuration*; what is verified here is the presence of the
+constants and their removal.
+
+### 28.5 The Scan win was **not** bought, and the three causes are now separately measured
+
+This is the part the task asked to measure rather than assert, and the measurement says
+the change does not deliver it.
+
+**The probe.** `stellarator_helias`, two machines identical but for
+`.tfcoil.eff_tf_cryo` -- `0.13` as `indat.resolve_eff_tf_cryo` gives it, and `0.14`, which
+is what an IN.DAT naming `eff_tf_cryo = 0.14` produces (`indat.graph_for`'s docstring: a
+machine comes from an IN.DAT or from an explicit `eqx.tree_at` on one). The *whole
+occupant* is replaced rather than its `value` leaf, because `eqx.tree_at` is tree surgery
+and does not run a field's converter -- writing `0.14` into a `carried()` field would put a
+Python float back and measure the very thing being removed. Each arm builds the cold SAND
+condition map and compiles its values and its Jacobian; every XLA compilation in the
+process is counted by patching `jax._src.compiler.backend_compile_and_load` (§22.2's
+instrument). Arm 1 pays for the first compile of anything; **arm 2 is the scan point.**
+
+| | arm 1 | arm 2 | condition-map static halves equal |
+|---|---|---|---|
+| before (`HEAD 6bb65494`) | 2 compiles | **2 compiles** | False |
+| after (`CarriesValues`) | 2 compiles | **2 compiles** | False |
+| after **+ every node's `fn` a `jtu.Partial`** (probe, see below) | 2 compiles | **2 compiles** | False |
+
+The condition value moves as it should in every arm (`1.3351754993456164` ->
+`1.3194361957424183`), so the perturbation is real and reaches the answer; and arm 1's
+value is **bitwise identical before and after the change**, which is the first evidence
+for §28.6's gate.
+
+**Why, in three parts, each localised.** `eqx.filter_jit` keys its cache on
+`hashable_partition(x, eqx.is_array)[1]` -- the argument with its array leaves removed --
+so anything non-array that differs between two machines forces a recompile.
+
+1. **The carried values.** A Python-float payload is a non-array leaf and lands in the
+   key. This is what §25 named and what this section fixes. Measured directly: with the
+   old spelling the graph's static halves differ; the fourteen declarations no longer
+   contribute.
+2. **Every node's `fn`, which is a bound method** (`cottax`'s
+   `ExplicitFunction.node_definition`). Two *equal* declarations produce bound methods
+   that compare and hash **unequal** -- measured: `ConvertFpyToCalendar() ==
+   ConvertFpyToCalendar()` is `True`, `hash` equal, and `a.__call__ == b.__call__` is
+   `False` with unequal hashes. So on `stellarator_helias` **141 static leaves of the
+   graph differ** between two machines that differ in one number, one per ordinary node,
+   and they would differ between *any* two assemblies of the same file. This is the
+   dominant cause and it is one line of `cottax`, not of this port: with
+   `ExplicitFunction.node_definition` monkeypatched to build `fn=jtu.Partial(_apply,
+   self)` for every node -- a **probe**, nothing in `functional_process/` was changed by
+   it and `~/jaxgraph` was not touched -- the graph's static halves become **equal**.
+3. **The constraint nodes' `functools.partial`.** With (1) and (2) out of the way the
+   SAND condition map's static half still differs at exactly **three** leaves, and all
+   three are `functools.partial(constraint_N, <switch>=...)` from
+   `sand.py:496`/`sand.py:618` (`bound = functools.partial(fn, **static) if static else
+   fn`) -- the three active constraints on this file that bind a switch. A plain
+   `functools.partial` is not a pytree and compares by identity, so a rebuilt constraint
+   never matches the cached one. `jax.tree_util.Partial` in those two places would
+   decompose it and leave the bound switch values in the key *by value*, where they
+   belong. **Not changed here** -- it is a third defect of the same family and it deserves
+   its own bitwise gate.
+
+So the honest statement is: **this change removes one of three independent causes of the
+per-scan-point recompile, and the other two are now named, localised and measured.** The
+Scan win arrives when all three are gone; none of the three is more than a few lines.
+
+### 28.6 The bitwise gate: `--provider` reproduces every row, `--native` moves two residual cells
+
+**`--provider`, against `functional_process/reference_cold_matrix.txt`.** All twelve rows,
+every column -- iteration count, status, `objf` to nine figures, `PRO objf`, `d objf`,
+`worst dx`, `max|eq|`, `min ie` -- plus the whole boundary-values block, reproduce
+**byte for byte**, with one apparent exception that is measured *not* to be this change's:
+
+| row | the pin says | this pass says |
+|---|---|---|
+| `st_regression` MDF | `4` SQP it, `converged`, `objf -0`, `d objf 1.00e+00`, `worst dx 9.90e+01` | `FAILED` -- `_refuse_inert_objective`: *"the objective `^cond.numerics.objf` has an identically zero gradient with respect to all 14 design variable(s)"* |
+
+**That row is `b14da8c1`'s, not this section's, and it was checked rather than assumed.**
+`drivers._refuse_inert_objective` was added by `b14da8c1` ("Refuse a solve whose objective
+cannot move, and find the four that could not", 21:26) and
+`reference_cold_matrix.txt` was last regenerated by `2e949920` (20:42), **the commit
+before it**. So the pin predates the guard and is stale for exactly the configurations the
+guard's own message says it found. The proof is direct: with the seven changed files
+restored from the live tree and `models/carried.py` removed -- i.e. this copy at
+`b14da8c1` exactly -- `run_cold_matrix.run_one("st_regression.IN.DAT", PROVIDER)` gives
+the *same* `FAILED`, and the objective's gradient row is `[0.]*14` with
+`max|.| = 0` and `0/14` non-zero entries. It is `[0.]*14` after the change too, bit for
+bit. **Nothing about the objective row moved.**
+
+That also disposes of an explanation this section drafted and then had to withdraw: that
+the zeros ceasing to be foldable constants had turned a not-quite-zero objective row into
+an exactly-zero one. It was never not-quite-zero. **Flagged as a prediction that failed.**
+
+So the honest reading of the `--provider` gate is **twelve of twelve**, including the two
+rows §24 moved (`stellarator_helias` MDF 108/`1.21775747`, SAND 257/`1.21775737`),
+`low_aspect_ratio_DEMO SAND`'s `cap(500)` and `st_regression SAND`'s `FAILED`. Given §24's
+measurement that a `5.15e-13` Jacobian difference flips this stellarator between outcomes,
+that is the result the change had to produce.
+
+**`--native`, against a baseline taken in this copy before the change** (there was no
+`native_baseline.txt`; the pre-change pass is now written to `<copy>/native_baseline.txt`,
+577 s, seven configurations). **Eleven of twelve rows byte for byte**; one moves, and only
+in its two residual columns:
+
+| row | before | after |
+|---|---|---|
+| `low_aspect_ratio_DEMO` SAND | 107 it, `converged`, `objf -0.399154819`, `max\|eq\| 4.96e-13`, `min ie 1.44e-12` | 107 it, `converged`, `objf -0.399154819`, **`max\|eq\| 3.34e-13`**, **`min ie 8.45e-12`** |
+
+Same iteration count, same status, same objective to nine figures; the converged
+equality residual and the least inequality margin move at the `1e-13`/`1e-12` level. That
+is the rounding shift the change was expected to cause -- arithmetic XLA used to fold is
+now done at run time -- landing in the one place where it is visible without changing
+what the solve did. **It is a real bitwise move and it is reported as one; nothing was
+widened.** Every other native row, `st_regression`'s two `FAILED`s included, is identical.
+
+### 28.7 `value: float = dataclasses.field(kw_only=True)` — the objection is right, and the fix is not "make it an input"
+
+The objection, in the owner's words: *"that `value: float` is not a kw_only thing;
+that's bad design. It should then not be a model but an input no?"* Three parts.
+
+**1. He is right that these are not models.** A body of `return self.value` has no
+function in it. The arrow from the node's inputs to its outputs is the identity on a
+datum the graph did not compute, which is the definition of a *source*, not of a model.
+Calling it an `ExplicitFunction` does not change what it is, and the `kw_only` field is
+the tell: it is the one datum the class exists to carry, and it is spelled as a
+constructor detail because there is no vocabulary for "this node's output is stated, not
+derived".
+
+Of the fifteen declarations in this family (the fourteen of §28.1 plus
+`DoubleNullUpperBuild`), **one derives from graph values and fourteen do not**:
+
+| kind | declarations | what the body does |
+|---|---|---|
+| **derives** | `DoubleNullUpperBuild` | reads `.build.dz_shld_lower`/`.build.dz_vv_lower`, writes the upper pair. A real node. |
+| **carries a resolution** | `TfCryoplantEfficiency`, `TfInsulationYoungsModulus`, `TfConductorYoungsModulus`, `PfCoilResistivity`, `BeamElectronDensityFraction`, `EnergyStorageBuildingVolume` | `return self.value`. The *derivation* is real -- a sentinel test, a switch-keyed literature table, a physical consistency rule -- and it lives in `indat.resolve_*`, at assembly. The node carries the answer. |
+| **carries a literal** | `StellaratorSolenoidAbsent`, `StellaratorPulseTimes`, `EnergyStorageCostUnpulsed`, `NoDiamagneticCurrent`, `NoPfirschSchluterCurrent`, `HcdSecondaryHeatingNone`, `CrocoTurnCableSpaceExtraVoid`, `CentrepostNeutronicsAbsent` | returns a constant. PROCESS's own source on that arm is a literal assignment (or, for four of them, nothing at all -- the `DataStructure` default stands). |
+
+So the honest count is: **the port has one model and fourteen constant sources in this
+family**, and the fourteen are wearing a model's clothes.
+
+**2. But "make it an input" would give the wrong number, measurably.** A boundary input
+is answered by whatever the provider can find, and for these paths what it finds is
+wrong: `.tfcoil.eff_tf_cryo` comes back `-1.0`, which is a *sentinel and not a value*, and
+`.power.thermal_cryo` divides by it; `.buildings.esbldgm3` comes back `1.0e3` m^3 on a
+plant that stores nothing; `.build.dr_cs` comes back `0.811 m` on a machine with no
+solenoid. Those are the `off` rows of every `reference_provider_*.txt` pin, and §22.7
+measured the cost of believing the provider at thirteen of them: **four of seven
+configurations lose their solve**. Whatever these things are, deleting them is not the
+answer.
+
+**3. The real gap is that cottax has two kinds of name and needs three.** Today a
+variable is either *owned by a node* or *a boundary input*, and the port's entire
+argument for `initialisation.py` is "owned, because owned is enforced and boundary is
+not". What is missing is a third: **a name the graph owns whose value is stated at
+assembly** -- a `Source`/`Constant` declaration with declared outputs, an array-valued
+payload, and no body. `ExplicitFunction` with `return self.value` is that declaration
+written in the vocabulary that exists.
+
+**Recommendation, and it is a recommendation -- nothing below is done here.**
+
+1. **Add the declaration kind, in `cottax` (`Source`) or in `functional_process` until
+   `cottax` has one.** `CarriesValues` should be read as its 80 % stand-in: it already
+   holds the payload as data and already makes that data visible to the trace. What it
+   does not do is *say* that the node has no body, which is the part the owner is
+   objecting to.
+2. **Move the eight literal carriers to it.** They lose nothing: there is no body worth
+   calling, and the audit sentence ("on this arm PROCESS's own source is four literal
+   assignments") is exactly a `Source`'s docstring.
+3. **Move the six resolutions to it as well, and leave `indat.resolve_*` where it is.**
+   The resolution is a function of *switches* and of the input file's raw text, and
+   neither is a graph value in this port -- `machine_from_indat`'s docstring gives the
+   rule for switches, and `initialisation.py`'s gives the rule for raw values
+   (`mdf.seed` grounds an unrecognised `VarPath` at `0.0` silently, so a `.raw.*` read
+   would resolve every sentinel against zero without a word). A node body cannot hold
+   this computation; a `Source` payload is the honest place for its answer.
+4. **Leave `DoubleNullUpperBuild` an `ExplicitFunction`.** It is the one member of the
+   family that reads the graph and it should not move with the rest.
+5. **Do not fold them into a defaults table.** `next_steps.md` §24.1's argument survives
+   intact: a table has to be *consulted* by the provider, which is a second copy of
+   `init.py` in a file the graph cannot depend on. Ownership is the point; the objection
+   is about the *shape* of the owner, not about whether there should be one.
+
+**One thing the redesign does not fix, and must not be allowed to hide.** A `Source`
+whose payload is a Python `float` has exactly the defect this section is about: §28.2
+measured that a scalar payload is a compile-time constant whatever the declaration is
+called. The design fix and the compiler fix are independent, and `carried()` (or its
+equivalent) has to survive the redesign.
+
+### 28.8 What this section did not settle
+
+- **The Scan win is not delivered by this change**, and §28.5 says so with numbers rather
+  than hedging. Two of the three causes remain, both outside the scope of a change to
+  `initialisation.py`: one line of `cottax` (`ExplicitFunction.node_definition`, the
+  bound method) and two lines of `sand.py` (`functools.partial` -> `jax.tree_util.Partial`
+  at `:496` and `:618`). Each deserves its own bitwise gate; neither was attempted here.
+- **§25's Arm D folding could not be reproduced on `stellarator_helias`.** Arm D measured
+  it on a tokamak's TF stress model, which this configuration's SAND block does not
+  contain, and no analogous folded product of `0.13` or `3.15576e7` appears in either
+  pre-change module. The constants were there and are now gone; that they were *folded*
+  is, on this configuration, unverified. The `--native` row that did move
+  (`low_aspect_ratio_DEMO SAND`, §28.6) is a tokamak and is the one place the folding is
+  visible in an answer.
+- **`reference_cold_matrix.txt` is stale at `st_regression MDF`** and this section did not
+  regenerate it. The pin is `2e949920`'s and `b14da8c1` added the guard that changes that
+  row; regenerating a published pin belongs to whoever moved the structure
+  (§26's own closing rule).
+- **The arity check is inert for the fourteen** (§28.3). Every one of them declares no
+  inputs, so nothing is lost today, but a `CarriesValues` node that later grew a read
+  would not get `CallableNode.__check_init__`'s "n inputs declared, but ..." error.
+- **`tests/functional_process/models/test_initialisation.py`'s `SEED_FIELDS` docstring is
+  now stale**: it says `StellaratorSolenoidAbsent` and `StellaratorPulseTimes` "carry
+  theirs as literals in the body", and since this section they carry them as fields like
+  everybody else. The test itself still passes (it checks the *seed*, not the node), and
+  the line was left alone to keep the diff inside the port.
+- **Graph hashing is unchanged in practice and worth stating anyway.** With `fn` a
+  `Partial`, `hash(CallableNode)` becomes identity-based for the fourteen. That is not a
+  regression: `hash(a.__call__) != hash(b.__call__)` already held for two *equal*
+  declarations, so two separately assembled graphs never hashed equal before this section
+  either. `hash(GRAPH)` was re-checked and still answers, which is what `mdf._hashable`
+  and `sand_harness._SCHEDULE_WHOLE` need.
+- **Nodes with inputs were checked and none carries a constant limb**, by AST scan; a body
+  that returned `(x * 2, 0.0)` would be the same defect and there is none. The scan is a
+  one-off, not a test -- there is no guard that stops the next one being written.
+
 
 ## 29. The three producers §26 found are ported, and one of them was binding (2026-09-01)
 

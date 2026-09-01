@@ -96,11 +96,13 @@ is recorded in the audit record rather than smoothed over.
 """
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 from jax import lax
 
+from functional_process.models.carried import CarriesValues, carried
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.paths import current_drive, physics
 
@@ -1126,7 +1128,7 @@ class PlasmaDiamagneticCurrentFraction(ExplicitFunction):
     """
 
 
-class NoDiamagneticCurrent(PlasmaDiamagneticCurrentFraction):
+class NoDiamagneticCurrent(PlasmaDiamagneticCurrentFraction, CarriesValues):
     """`i_diamagnetic_current == NONE` (0) -- the default, and this input's value.
 
     **A node with no reads, and that is the finding rather than an accident.** PROCESS
@@ -1138,12 +1140,19 @@ class NoDiamagneticCurrent(PlasmaDiamagneticCurrentFraction):
     as `current_drive.py`'s `NoSecondaryHcd` argues: `_audit/tokamak_boundary.md` §"The
     twelve that are simply inputs" is explicit that the boundary is for variables PROCESS
     computes *nowhere*, not for ones a switch happened to skip.
+
+    The zero is `carried` and not a literal in the body: a constant this node's readers
+    multiply by is one XLA deletes the readers of (`models/carried.py`,
+    `_audit/optimise_design.md` §28).
     """
 
     f_c_plasma_diamagnetic = OutputInto(current_drive)
 
+    fraction: jax.Array = carried(0.0)
+    """The diamagnetic current fraction PROCESS never assigns on this arm."""
+
     def __call__(self):
-        return 0.0
+        return self.fraction
 
 
 class SceneDiamagneticCurrent(PlasmaDiamagneticCurrentFraction):
@@ -1191,18 +1200,22 @@ class PlasmaPfirschSchluterCurrentFraction(ExplicitFunction):
     """
 
 
-class NoPfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction):
+class NoPfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction, CarriesValues):
     """`i_pfirsch_schluter_current == 0` -- the default, and this input's value.
 
     Same shape and same argument as `NoDiamagneticCurrent`: `physics.py:538-541` has no
     `else`, the field is not an `IN.DAT` variable, nothing else writes it, and it holds
-    its `current_drive_variables.py:283` default of `0.0`.
+    its `current_drive_variables.py:283` default of `0.0`. The zero is `carried` for the
+    reason `NoDiamagneticCurrent`'s is.
     """
 
     f_c_plasma_pfirsch_schluter = OutputInto(current_drive)
 
+    fraction: jax.Array = carried(0.0)
+    """The Pfirsch-Schluter current fraction PROCESS never assigns on this arm."""
+
     def __call__(self):
-        return 0.0
+        return self.fraction
 
 
 class ScenePfirschSchluterCurrent(PlasmaPfirschSchluterCurrentFraction):

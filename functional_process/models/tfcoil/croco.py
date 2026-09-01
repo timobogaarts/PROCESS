@@ -100,6 +100,7 @@ never used. `i_str_wp` is still a key of both registries, because it is the swit
 decides *which field* a strain would be read from and arm `8` does use one.
 """
 
+import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -107,6 +108,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.models.carried import CarriesValues, carried
 from functional_process.models.physics.superconductors import hijc_rebco
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.models.tfcoil.superconducting import (
@@ -746,7 +748,7 @@ class CrocoCableGeometry(ExplicitFunction):
         )
 
 
-class CrocoTurnCableSpaceExtraVoid(ExplicitFunction):
+class CrocoTurnCableSpaceExtraVoid(CarriesValues):
     """cottax node: `run`'s literal `f_a_tf_turn_cable_space_extra_void = 0.0`
     (`superconducting.py:3894`). Reads nothing.
 
@@ -760,8 +762,14 @@ class CrocoTurnCableSpaceExtraVoid(ExplicitFunction):
 
     f_a_tf_turn_cable_space_extra_void = OutputInto(tfcoil)
 
+    extra_void: jax.Array = carried(default_factory=croco_turn_cable_space_extra_void)
+    """The ported literal, held as an array on the declaration rather than produced
+    inside the body -- a value built during the trace is a constant exactly as the
+    literal was (`models/carried.py`, `_audit/optimise_design.md` §28). The unit still
+    supplies it, at assembly instead of at call."""
+
     def __call__(self):
-        return croco_turn_cable_space_extra_void()
+        return self.extra_void
 
 
 class CrocoInboardAreasAndFractions(ExplicitFunction):

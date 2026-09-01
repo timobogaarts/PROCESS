@@ -47,6 +47,7 @@ PROCESS-faithful, registered vacuum path). `compare` drops it (and its own
 """
 
 import dataclasses
+import functools
 import os
 import pickle
 import sys
@@ -548,6 +549,12 @@ def _declaration_modules(obj, seen):
     which carries a `static` `__func__` field) are filtered out by module origin --
     they are not this project's registrations.
 
+    **A `CarriesValues` node's `fn` is a `functools.partial`, not a bound method**
+    (`models/carried.py`), and a partial has no `__self__` -- the declaration is its
+    first positional argument instead. Without the `partial` limb below the walk stops
+    at the `fn` leaf and every such declaration goes unaudited, silently: a missing
+    switch registration would read as "no switches to check" rather than as a mismatch.
+
     Yields
     ------
     :
@@ -564,6 +571,8 @@ def _declaration_modules(obj, seen):
     elif isinstance(obj, (tuple, list)):
         for item in obj:
             yield from _declaration_modules(item, seen)
+    elif isinstance(obj, functools.partial):
+        yield from _declaration_modules(obj.args, seen)
     elif callable(obj) and hasattr(obj, "__self__"):
         yield from _declaration_modules(obj.__self__, seen)
 

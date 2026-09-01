@@ -20,10 +20,15 @@ the graph depend on.
 **Why they are `raw -> resolved` and not self-loops** (§24.2 item 2). `eff_tf_cryo =
 -1.0 -> 0.13` reads and writes one path, which is not a node. The raw value comes from
 `importer.read_indat` -- `Imported.raw_values()`'s `.raw.<area>.<field>` namespace exists
-for exactly this -- and is threaded here as a **static field on the node**, resolved at
+for exactly this -- and is threaded here as a **field on the node**, resolved at
 assembly by `indat.resolve_*`, rather than as a traced graph read. That narrowing is
 deliberate and it is the same argument `indat._quench_helium_table` makes for the helium
 property table:
+
+(The field is *assembly-time*, which is not the same as *trace-time*: since §28 it holds
+an array and is an argument of the compiled program, not a constant folded into it. What
+is fixed at assembly is which value the node carries, not whether the compiler may see
+through it.)
 
 - The raw value is the input file's text. No model writes any of these fields, so the
   only way one could move during a solve is by being an iteration variable -- and that
@@ -46,10 +51,19 @@ shared home for the resolutions that decide a *switch* rather than a value, and
 superconducting and for a cryo-aluminium magnet and *not* for a water-cooled copper one,
 which is left at the `-1.0` sentinel. That is reproduced, not repaired: a defect the
 record names is a defect the port carries (`traceability_policy.md`).
+
+**Every value one of these nodes carries is an array, not a Python scalar**
+(`models/carried.py`, `_audit/optimise_design.md` §28). A carrier whose answer is a
+`float` is a compile-time constant in the program XLA builds -- folded into the
+arithmetic that reads it, and part of `eqx.filter_jit`'s cache key, so a `Scan` sweeping
+the input that set it recompiles the whole module at every point. `carried()` is the
+field that says so, and `CarriesValues` is what makes the field visible to the trace;
+the module docstring there records why the obvious repair does not work.
 """
 
 import dataclasses
 
+import jax
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
@@ -57,6 +71,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
+from functional_process.models.carried import CarriesValues, carried
 from functional_process.paths import (
     build,
     buildings,
@@ -67,7 +82,7 @@ from functional_process.paths import (
 )
 
 
-class TfCryoplantEfficiency(ExplicitFunction):
+class TfCryoplantEfficiency(CarriesValues):
     """cottax node: `.tfcoil.eff_tf_cryo`, `init.py:933-940`'s sentinel resolved.
 
     A node with no reads. That is not a degenerate case here, it is the shape of the
@@ -85,7 +100,7 @@ class TfCryoplantEfficiency(ExplicitFunction):
 
     eff_tf_cryo = OutputInto(tfcoil)
 
-    value: float = dataclasses.field(kw_only=True)
+    value: jax.Array = carried()
     """The resolved efficiency, from `indat.resolve_eff_tf_cryo`. A fraction in [0, 1]
     -- except on the copper arm PROCESS does not resolve, where the `-1.0` stands."""
 
@@ -93,7 +108,7 @@ class TfCryoplantEfficiency(ExplicitFunction):
         return self.value
 
 
-class TfInsulationYoungsModulus(ExplicitFunction):
+class TfInsulationYoungsModulus(CarriesValues):
     """cottax node: `.tfcoil.eyoung_ins`, `init.py:961-975`'s material table.
 
     20 GPa (ITER, DDD11-2 v2 2 2009) for a copper or superconducting magnet, 2.5 GPa
@@ -105,14 +120,14 @@ class TfInsulationYoungsModulus(ExplicitFunction):
 
     eyoung_ins = OutputInto(tfcoil)
 
-    value: float = dataclasses.field(kw_only=True)
+    value: jax.Array = carried()
     """Insulation Young's modulus (Pa), from `indat.resolve_eyoung_ins`."""
 
     def __call__(self):
         return self.value
 
 
-class TfConductorYoungsModulus(ExplicitFunction):
+class TfConductorYoungsModulus(CarriesValues):
     """cottax node: `.tfcoil.eyoung_cond_axial` and `.tfcoil.eyoung_cond_trans`,
     `init.py:992-1034`.
 
@@ -130,8 +145,8 @@ class TfConductorYoungsModulus(ExplicitFunction):
     eyoung_cond_axial = OutputInto(tfcoil)
     eyoung_cond_trans = OutputInto(tfcoil)
 
-    axial: float = dataclasses.field(kw_only=True)
-    transverse: float = dataclasses.field(kw_only=True)
+    axial: jax.Array = carried()
+    transverse: jax.Array = carried()
     """Named for the outputs rather than spelling the field names twice: a
     `NodalDeclaration` field is data, not a port, and `eyoung_cond_axial` as both an
     output name and a field name would read as though the two were connected."""
@@ -140,7 +155,7 @@ class TfConductorYoungsModulus(ExplicitFunction):
         return self.axial, self.transverse
 
 
-class PfCoilResistivity(ExplicitFunction):
+class PfCoilResistivity(CarriesValues):
     """cottax node: `.pf_coil.rho_pf_coil`, `init.py:1140`.
 
     A **physical consistency rule**: a superconducting PF coil has no resistivity, so the
@@ -150,14 +165,14 @@ class PfCoilResistivity(ExplicitFunction):
 
     rho_pf_coil = OutputInto(pf_coil)
 
-    value: float = dataclasses.field(kw_only=True)
+    value: jax.Array = carried()
     """PF coil winding resistivity (ohm-m), from `indat.resolve_rho_pf_coil`."""
 
     def __call__(self):
         return self.value
 
 
-class BeamElectronDensityFraction(ExplicitFunction):
+class BeamElectronDensityFraction(CarriesValues):
     """cottax node: `.physics.f_nd_beam_electron`, `init.py:1145-1147`.
 
     The second physical consistency rule: a machine with no neutral beam has no hot beam
@@ -171,14 +186,14 @@ class BeamElectronDensityFraction(ExplicitFunction):
 
     f_nd_beam_electron = OutputInto(physics)
 
-    value: float = dataclasses.field(kw_only=True)
+    value: jax.Array = carried()
     """Hot beam density as a fraction of the electron density."""
 
     def __call__(self):
         return self.value
 
 
-class EnergyStorageBuildingVolume(ExplicitFunction):
+class EnergyStorageBuildingVolume(CarriesValues):
     """cottax node: `.buildings.esbldgm3`, `init.py:827`.
 
     A steady-state plant stores no pulse energy, so it has no energy storage building,
@@ -190,7 +205,7 @@ class EnergyStorageBuildingVolume(ExplicitFunction):
 
     esbldgm3 = OutputInto(buildings)
 
-    value: float = dataclasses.field(kw_only=True)
+    value: jax.Array = carried()
     """Energy storage building volume (m^3). `0.0` wherever this node exists."""
 
     def __call__(self):
@@ -226,7 +241,7 @@ class DoubleNullUpperBuild(ExplicitFunction):
         return dz_shld_lower, dz_vv_lower
 
 
-class StellaratorSolenoidAbsent(ExplicitFunction):
+class StellaratorSolenoidAbsent(CarriesValues):
     """cottax node: `.build.dr_cs` and `.build.dr_cs_tf_gap`, `st_init:23,26`.
 
     **A stellarator has no central solenoid**, and `st_init` says so by zeroing its
@@ -247,11 +262,19 @@ class StellaratorSolenoidAbsent(ExplicitFunction):
     dr_cs = OutputInto(build)
     dr_cs_tf_gap = OutputInto(build)
 
+    thickness: jax.Array = carried(0.0)
+    """`st_init:23`'s literal: the solenoid a stellarator does not have is 0 m thick."""
+    gap: jax.Array = carried(0.0)
+    """`st_init:26`'s literal: and the gap to the TF coil it does not have is 0 m.
+
+    Named for the quantity rather than for the output, the same way
+    `TfConductorYoungsModulus`' pair is: a field is data, not a port."""
+
     def __call__(self):
-        return 0.0, 0.0
+        return self.thickness, self.gap
 
 
-class StellaratorPulseTimes(ExplicitFunction):
+class StellaratorPulseTimes(CarriesValues):
     """cottax node: the four pulse phase durations `st_init:43-46` forces.
 
     **A stellarator runs steady state**, so there is no precharge, no plasma current
@@ -270,9 +293,14 @@ class StellaratorPulseTimes(ExplicitFunction):
     t_plant_pulse_burn = OutputInto(times)
     t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
 
+    precharge: jax.Array = carried(0.0)
+    ramp_up: jax.Array = carried(0.0)
+    burn: jax.Array = carried(3.15576e7)
+    """`st_init:45`'s own comment: one year."""
+    ramp_down: jax.Array = carried(0.0)
+
     def __call__(self):
-        # `st_init:45`'s own comment: one year.
-        return 0.0, 0.0, 3.15576e7, 0.0
+        return self.precharge, self.ramp_up, self.burn, self.ramp_down
 
 
 class Initialisation(ModelNamespace):
