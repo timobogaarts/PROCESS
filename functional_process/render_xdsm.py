@@ -4,6 +4,9 @@ Run directly, from the repo root, in the `process_port` env:
 
     $PY -m functional_process.render_xdsm            # xdsm.html, dsm.html
     $PY -m functional_process.render_xdsm grouped    # dsm_provenance.html, dsm_scc.html
+    $PY -m functional_process.render_xdsm grouped_uncut  # ..._uncut.html, the same
+                                                      # pair undriven, uncut -- see
+                                                      # `grouped_uncut`
     $PY -m functional_process.render_xdsm sand       # xdsm_sand.html, dsm_sand.html
 
 Either fast mode takes `--machine [<IN.DAT>]`, which draws a *different device* and
@@ -44,6 +47,14 @@ provenance-against-structure comparison as a picture instead of a table -- see `
 below, and `visualization/grouping.py`'s module docstring for what the two of them
 show and for why the grouping lives here rather than in `cottax.visualization`.
 
+`grouped_uncut` writes `dsm_provenance_uncut.html`/`dsm_scc_uncut.html`: the identical
+pair, but of the graph exactly as it is declared -- no `driven_graph`, no cut, no
+assigned driver. Where `grouped`'s SCC page shows the order the graph *runs* in, this
+one shows which nodes are **genuinely coupled before any cut has broken a loop open**,
+which is a question about PROCESS itself (how much of it is really cyclic) that the cut
+graph's blocking cannot answer, because the cut has already answered it one way. See
+`grouped_uncut`'s own docstring and `_audit/uncut_graph.md` for the measured census.
+
 `sand` writes `xdsm_sand.html`/`dsm_sand.html` for **the graph the SAND solve actually
 runs**, which is a different and much more informative object: `GRAPH` with its raw
 cycles cut into declared `FixedPoint` problems (`mda.driven_graph`), the run's own
@@ -76,7 +87,15 @@ from functools import partial
 from pathlib import Path
 
 from cottax.interfaces.pytree_namespace_module import xDSMFormatterFlat
-from cottax.visualization import render_dsm_html, render_xdsm_html
+from cottax.visualization import render_xdsm_html
+
+# `render_dsm_html` used to be re-exported by `cottax.visualization` itself; jaxgraph's
+# "theory 2 notebook" commit (b1a2bbc) dropped `ragraph_dsm`'s imports from that
+# `__init__.py` as unrelated notebook cleanup, and the module still defines the function
+# -- only the package-level re-export went missing. Importing the submodule directly
+# survives that either way and needs no jaxgraph edit (out of scope here: this file's
+# territory is `functional_process/`, not `~/jaxgraph`).
+from cottax.visualization.ragraph_dsm import render_dsm_html
 
 from functional_process.boundary import TOKAMAK_INPUT_FILE
 from functional_process.indat import GRAPH, graph_for, machine_from_indat
@@ -266,6 +285,134 @@ def grouped(depth: int | None = None, input_file: str | None = None):
     return OUTDIR / f"dsm_provenance{suffix}.html"
 
 
+def grouped_uncut(depth: int | None = None, input_file: str | None = None):
+    """Write `dsm_provenance_uncut.html`/`dsm_scc_uncut.html`: `grouped`'s comparison,
+    but of the graph exactly as `machine_graph` returns it -- **no `driven_graph`, no
+    `cut_graph`, no `assign_drivers`, no problem that `indat.py` did not already
+    declare**. With `input_file` the pair is drawn for that machine instead, into
+    `dsm_provenance_uncut_tokamak.html`/`dsm_scc_uncut_tokamak.html` -- see
+    `machine_graph`.
+
+    **Why this is a different picture from `grouped`'s, not a redundant one.**
+    `grouped`'s own docstring refuses to run `Blocking.scc` on anything but the driven
+    graph, and the reason it gives is correct: *"a raw cycle has no order, so
+    `Blocking.scc` on the undriven graph would be reporting on a schedule nothing can
+    run."* That objection is about what the *ordering* means, not about whether
+    `Blocking.scc` can be computed at all -- and it can: `Graph.strongly_connected_
+    components` (`~jaxgraph/src/cottax/graph.py`) is `nx.condensation` followed by a
+    topological sort of the condensation, which reads only `reads`/`owns` edges and
+    never asks whether a coupled component declares a problem. Verified directly:
+    `Blocking.scc(machine_graph()[0])` returns **144 blocks** for the reference
+    stellarator and raises nothing, and `grouping_report`/`structure_order`/
+    `render_grouped_dsm_html` (this module's `grouped` already imports all three) never
+    touch `Blocking.problems`/`.problem_types` -- the properties that *do* raise
+    `"coupled block [...] declares no problem"` (`graph.py`'s `needs_driver`) -- so
+    nothing here needs a problem declared, still less a driver assigned. **So the
+    likely obstacle the brief for this function warned about does not occur**: there is
+    no `st_regression`-shaped refusal to route around, because nothing in this call
+    path asks the question that refusal answers.
+
+    **What the SCC page means here, stated plainly because the page carries no prose.**
+    A block of size 1 (or a `DeclaredNode` paired with the problem minted over it, which
+    is not a "real" coupling -- see `BlockGrouping.real`) sits at a definite position:
+    the condensation's topological order says its predecessors' blocks run first, and
+    that holds whether or not anything downstream has been given an algorithm yet. What
+    does **not** hold, for a block that is genuinely coupled (`real > 1`) and has no
+    problem declared inside it, is any claim about the order of *its own members* --
+    `strongly_connected_components` breaks that tie by binding order for lack of
+    anything else to break it by, not because binding order is when those nodes run.
+    Reading a raw block's internal row order as a schedule is exactly the error
+    `grouped`'s docstring warns about; reading the blocks themselves, and which ones are
+    coupled to which, is not the same claim and is what this page is for. `mda.CUTS` is
+    PROCESS's own answer, for every coupled block this graph has, to "what closes this
+    loop" -- see `functional_process/_audit/uncut_graph.md` for the full census against
+    it, machine by machine.
+
+    **Measured** (`Blocking.scc` on `machine_graph()[0]`/`machine_graph(TOKAMAK_INPUT_
+    FILE)[0]`, both 2026-09-01): the reference stellarator's declared graph has **2**
+    genuinely coupled SCCs (a 6-node density/fusion/composition cycle inside `physics`,
+    a 2-node `stellarator.divertor`/`stellarator.fw_area` cycle) among 144 total blocks;
+    the reference tokamak's has **3**, none of them the stellarator's pair verbatim --
+    an 8-node density/fusion/pedestal cycle inside `physics` (the same loop, enlarged by
+    the pedestal profile arm), a 4-node TF build/winding-pack cycle, and a 9-node
+    PF-coil/volt-second/burn-time cycle, neither of the last two present on the
+    stellarator at all -- among 223 total blocks. Cutting (`mda.driven_graph`) changes
+    neither total: every `FixedPointCut` lands *inside* an SCC that already existed
+    here and adds one minted problem node to it, so the driven graph has the same 144
+    (stellarator) / 223 (tokamak) blocks, each coupled block one member larger. The
+    full table -- which `CUTS` entry targets which of these blocks, and which of `CUTS`
+    turns out to be inert on which machine -- is `_audit/uncut_graph.md`'s, not
+    repeated here because it is a measurement, not a structural fact this function's
+    own behaviour depends on.
+
+    Everything else mirrors `grouped`: the axis is `dependency_group_sequence` of *this*
+    graph (not the driven one -- there is no driven one here), rows within a group stay
+    in declaration order, and the two files differ only in row order, as the parallel
+    `common` dict below holds fixed.
+    """
+    from cottax import Blocking
+    from functional_process.visualization.grouping import (
+        dependency_group_sequence,
+        group_label,
+        grouping_report,
+        provenance_order,
+        render_grouped_dsm_html,
+        structure_order,
+    )
+
+    declared, suffix = machine_graph(input_file)
+    blocking = Blocking.scc(declared)
+    report = grouping_report(blocking, depth=depth)
+    print(f"grouped_uncut ({machine_label(suffix)}): {report.summary()}")
+
+    axis = dependency_group_sequence(declared, depth=depth)
+    print("  group axis: " + " -> ".join(group_label(g) for g in axis))
+    # Every genuinely coupled block is printed here, not just the crossing/nesting
+    # subsets `grouped` prints -- this function's whole point is the census of
+    # coupling itself, so a block confined to one group (e.g. the stellarator's
+    # divertor/fw_area pair) is exactly as much the answer as one that spans several.
+    for block in report.coupled:
+        kind = (
+            "CROSSES"
+            if block.crosses
+            else f"within {group_label(block.container)}"
+            if block.nests
+            else "single-group"
+        )
+        print(
+            f"  {kind}: "
+            + ", ".join(sorted(".".join(g) for g in block.named_groups))
+            + " -- "
+            + ", ".join(sorted(SPELLING.node((m, declared[m])) for m in block.members))
+        )
+
+    common = {
+        "depth": depth,
+        "outdir": str(OUTDIR),
+        "write": True,
+        "formatter": SPELLING,
+    }
+    render_grouped_dsm_html(
+        blocking,
+        order=provenance_order(
+            declared.nodes, depth=depth, owners=declared.owners, groups=axis
+        ),
+        title=f"PROCESS port, {machine_label(suffix)} "
+        "-- UNCUT graph, ordered by provenance",
+        file_name=f"dsm_provenance_uncut{suffix}",
+        **common,
+    )
+    render_grouped_dsm_html(
+        blocking,
+        order=structure_order(blocking),
+        title=f"PROCESS port, {machine_label(suffix)} "
+        "-- UNCUT graph, SCC membership (mutual coupling, not a run order)",
+        file_name=f"dsm_scc_uncut{suffix}",
+        **common,
+    )
+    return OUTDIR / f"dsm_provenance_uncut{suffix}.html"
+
+
 def cold_reference(input_file=None):
     """What the SAND assembly needs, from the input file alone -- **no solve**.
 
@@ -381,9 +528,9 @@ def sand():
     return OUTDIR / "xdsm_sand.html"
 
 
-MODES = {"sand": sand, "grouped": grouped}
+MODES = {"sand": sand, "grouped": grouped, "grouped_uncut": grouped_uncut}
 
-USAGE = """usage: python -m functional_process.render_xdsm [sand|grouped]
+USAGE = """usage: python -m functional_process.render_xdsm [sand|grouped|grouped_uncut]
                                                 [--machine [IN.DAT]]
 
   (no argument)  the declared model graph  -> xdsm.html, dsm.html        (fast)
@@ -391,6 +538,8 @@ USAGE = """usage: python -m functional_process.render_xdsm [sand|grouped]
                                               dsm_sand.html
   grouped        provenance vs. structure  -> dsm_provenance.html,
                                               dsm_scc.html               (fast)
+  grouped_uncut  the same pair, undriven,  -> dsm_provenance_uncut.html,
+                 uncut                        dsm_scc_uncut.html         (fast)
 
   --machine [IN.DAT]   draw that machine instead of the reference stellarator,
                        into `*_tokamak.html` (default: the conventional large

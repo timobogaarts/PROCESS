@@ -93,6 +93,16 @@ accordingly (`mdf.assemble`). Their `PRO objf` cell reads `none`, not a number: 
 forms none, and `reference.i_figure_merit` is `7` on both only because
 `numerics.py:154`'s dataclass default put it there.
 
+**Such a file gets ONE row, and the formulation column is not a choice it has.** MDF and
+SAND are two ways of distributing an *optimisation*; a file that states none has nothing
+to distribute, and MDF's design vector is `ixc` exactly, so the MDF root find is
+PROCESS's own square system rather than one of two readings of it. The second row this
+table used to print was a SAND `Optimise` over design *and* coupling against a figure of
+merit the file never named -- a number with nothing to compare it to, under a heading
+implying there was. `_solve_both` carries the argument; the notes block states it on
+every affected row rather than leaving the single line to be read as a missing
+measurement.
+
 **Every `SQP` count is at `1e-8`**, and saying so is not pedantry. `MDF_TOLERANCE` and
 `SAND_TOLERANCE` are imported from -- or default identically to -- the two ladder
 harnesses, so the stellarator's 67 (MDF) and 83 (SAND) are exactly the counts those
@@ -424,29 +434,49 @@ def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
     env = mdf.seed(problem, cold)
     env, _primed = mdf.prime(problem, env)
     if root_find:
-        outcome: dict = {}
-        x, out, seconds = mdf.solve(
-            problem, env, optimiser=mdf.root_find_driver(problem, outcome=outcome)
-        )
-        # The residuals at the answer, from the same condition map the driver was
-        # handed -- not from `out`, so that what is reported is what was driven.
-        at = mdf.condition_map(problem, env)(*[jnp.asarray(v) for v in x])
-        residuals = [float(np.asarray(v)) for v in at]
+        # **Stated in the graph, not driven from outside it** (`mdf.in_graph_root_find`,
+        # `_audit/in_graph_rootfind.md`). The root find is a problem node the blocking
+        # sees, so `Blocking.scc` decides what it drives: 39 nodes of 259 on
+        # `spherical_tokamak_eval`, 35 of 271 on `large_tokamak_eval`, with the two
+        # coupled SCCs that fall inside the loop as its `Blocking.inner`. The outer
+        # arm re-ran the whole MDA per residual instead -- ~85 % of it for nothing, since
+        # 69/117 nodes are upstream and constant during the solve and 152/120 are
+        # downstream of the constraints and have no vote in choosing x.
+        #
+        # This is not a different problem from the ordinary graph-based MDA solve and it
+        # should not be written as one: it is the same graph, with the file's own
+        # problem declared inside it, decomposed by the same `Blocking.scc` as the rest.
+        # Same answer -- `3.635e-09`/`3.292e-12` against PROCESS's `fsolve` x, agreeing
+        # with the outer arm to `1.4e-15` -- and one XLA program instead of 856.
+        built = mdf.in_graph_root_find(problem)
+        shape = mdf.in_graph_shape(built)
+        # `interior_*`, not `inner_*`: `in_graph_shape` returns `mdf_shape`'s keys too,
+        # and those are the whole MDA's blocking -- which is what this row would report
+        # if the formulation had not changed, i.e. exactly the wrong number. The driven
+        # block's own interior is the measurement the restructuring exists for.
+        result.update(blocks=shape["interior_blocks"], driven=shape["interior_driven"])
+        x, out, seconds = mdf.in_graph_solve(built, env)
+        # The conditions at the answer come out of `out`, which is now the right place
+        # rather than a second-best one: the schedule evaluated them *inside* the driven
+        # block, so what is reported is literally what was driven. The outer arm had to
+        # rebuild a condition map to say the same thing.
+        residuals = [float(np.asarray(out[c])) for c in problem.conditions]
         # PROCESS's own last act in this mode: evaluate every constraint, equalities and
         # inequalities alike, once at the answer (`_Fsolve.solve`). `min ie` is that.
         inequalities = [float(np.asarray(out[c])) for c in problem.reported]
         result.update(
-            iterations=outcome.get("steps"),
+            iterations=built.steps,
             objf=None,
             max_eq=max(abs(r) for r in residuals) if residuals else 0.0,
             min_ie=min(inequalities) if inequalities else None,
-            status="converged" if outcome.get("successful") else "not-converged",
+            status="converged" if built.successful else "not-converged",
             seconds=seconds,
             note=(
                 f"RootFind over {len(residuals)} equality/-ies, "
                 f"{len(inequalities)} inequality/-ies evaluated at the answer and not "
-                f"driven -- PROCESS's own `fsolve` shape"
-                + ("" if outcome.get("successful") else f" ({outcome.get('result')})")
+                f"driven -- PROCESS's own `fsolve` shape. Stated IN the graph: the "
+                f"blocking drives {shape['block']} of {shape['nodes']} nodes"
+                + ("" if built.successful else " (did not converge)")
             ),
         )
         result["_x"] = tuple(float(np.asarray(v)) for v in x)
@@ -563,9 +593,7 @@ def cold_sand(reference, machine_graph, switch_values, cold):
         return result
 
     started = time.perf_counter()
-    out = run_schedule(
-        solve_schedule, _inputs_only(solve_schedule, seeded), whole=False
-    )
+    out = run_schedule(solve_schedule, _inputs_only(solve_schedule, seeded), whole=False)
     elapsed = time.perf_counter() - started
     result["_x"] = tuple(
         float(np.asarray(out[sand.iteration_variable_path(i)])) for i in reference.ixc
@@ -910,14 +938,26 @@ def _solve_both(row, reference, machine_graph, switch_values, cold, began):
     Factored out of `run_one` when `NATIVE` arrived: the two modes differ entirely in
     *where the four arguments come from* and not at all in what is done with them, and a
     second copy of this loop would be the place a difference crept in unnoticed.
+
+    **An evaluation-mode file gets one arm, not two, and the formulation split is not a
+    thing that exists for it.** MDF and SAND are two ways of *distributing an
+    optimisation*: MDF hands the optimiser PROCESS's `ixc` and converges the MDA inside
+    each evaluation, SAND hands it the design and the coupling together and holds them
+    with residual equalities. A file stating `i_process_run_mode = -2` poses no
+    optimisation to distribute -- PROCESS root-finds the equalities alone with
+    `scipy.optimize.fsolve` and forms no objective at all -- and MDF's design vector *is*
+    `ixc`, so the MDF root find poses **exactly** the square system PROCESS poses. A SAND
+    row would state a larger square system over design *and* coupling that PROCESS never
+    writes down, and reporting it beside PROCESS's answer under a "formulation" heading
+    implies a comparison that has no content. So the run is one row, and the row is MDF's
+    because MDF is the one that is PROCESS's own problem.
     """
-    # Only the MDF arm states the file's problem type today; see `cold_sand`.
+    arms = [("MDF", cold_mdf, row.mdf, {"root_find": row.root_find})]
+    if not row.root_find:
+        arms.append(("SAND", cold_sand, row.sand, {}))
     explained = _explained_by(reference, machine_graph, switch_values)
     omitted = []
-    for label, run, store, kwargs in (
-        ("MDF", cold_mdf, row.mdf, {"root_find": row.root_find}),
-        ("SAND", cold_sand, row.sand, {}),
-    ):
+    for label, run, store, kwargs in arms:
         try:
             store.update(run(reference, machine_graph, switch_values, cold, **kwargs))
         except Exception as failure:  # noqa: BLE001 -- a row, not an exit
@@ -1055,7 +1095,11 @@ def render(rows) -> str:
             # guard is not defensive padding: without it a row with nothing to say still
             # emits an empty note line, which reads as a note somebody forgot to write.
             notes.append(f"{row.name}: {row.note}")
-        for form, measured in (("MDF", row.mdf), ("SAND", row.sand)):
+        forms = [("MDF", row.mdf)]
+        if not row.root_find:
+            # One line, not two, for an evaluation-mode file -- `_solve_both` says why.
+            forms.append(("SAND", row.sand))
+        for form, measured in forms:
             store = measured or _blank()
             lines.append(
                 " ".join([
@@ -1091,17 +1135,32 @@ def render(rows) -> str:
                     f"ixc {store['dx_at']} (over {row.n_ixc} design variable(s), "
                     f"against PROCESS's own converged x)"
                 )
-            if row.root_find and store["objf"] is not None:
+            if row.root_find:
                 notes.append(
-                    f"{row.name} {form}: this file states a ROOT FIND, but the {form} "
-                    f"arm still assembled an `Optimise` and so reports an `objf` of "
-                    f"{store['objf']:.9g} beside a `PRO objf` of `none`. That number is "
-                    f"`objective_metric_7` evaluated at `i_figure_merit = 7`, which is "
-                    f"`numerics.py:154`'s DEFAULT and not a figure of merit this file "
-                    f"or PROCESS ever chose -- PROCESS forms no objective here at all. "
-                    f"The MDF arm states the root find (`mdf.assemble(root_find=True)`);"
-                    f" SAND does not yet (§24.10)."
+                    f"{row.name}: this file states a ROOT FIND "
+                    f"(`i_process_run_mode = -2`), so it gets ONE row and not two. "
+                    f"PROCESS root-finds the equalities alone with "
+                    f"`scipy.optimize.fsolve`, forms no objective and never examines "
+                    f"the inequalities; MDF's design vector IS PROCESS's `ixc`, so this "
+                    f"row poses exactly PROCESS's own square system "
+                    f"(`mdf.assemble(root_find=True)`). MDF-against-SAND is a split "
+                    f"between two ways of distributing an OPTIMISATION, and this file "
+                    f"states none -- a SAND row here would solve a larger square system "
+                    f"over design and coupling that PROCESS never writes down. The "
+                    f"inequalities are still evaluated once at the answer, exactly as "
+                    f"PROCESS evaluates them, and reported through `Mdf.reported`."
                 )
+                if store["objf"] is not None:
+                    # Nothing produces this today -- `mdf_graph` mints no objective node
+                    # when the file names no figure of merit -- but a number in this
+                    # cell would be `objective_metric_7` at `numerics.py:154`'s DEFAULT,
+                    # which is not a metric this file or PROCESS ever chose, and it
+                    # would sit beside a `PRO objf` of `none` looking comparable.
+                    notes.append(
+                        f"{row.name} {form}: UNEXPECTED `objf` "
+                        f"{store['objf']:.9g} on a root-find row -- PROCESS forms no "
+                        f"objective for this file, so this number compares to nothing."
+                    )
             if store["withheld"]:
                 notes.append(
                     f"{row.name} {form}: objective gap {store['dobjf']:.2e} is NOT "

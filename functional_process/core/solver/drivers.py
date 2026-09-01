@@ -190,6 +190,28 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     )
 
 
+class Outcome(dict):  # noqa: FURB189 -- `UserDict` would be unhashable for the same
+    # reason and would still need the `__hash__` below; subclassing `dict` keeps a
+    # driver's `self.outcome.update(...)` a plain dict write.
+    """A `dict` a driver writes its solver's verdict into, hashed by **identity**.
+
+    A plain `dict` cannot be a driver field. A driver is an `eqx.Module` and goes into
+    the graph (`assign_drivers`), so `Schedule.__hash__` reaches it through
+    `Graph.__hash__` -- and `sand_harness.run_schedule` hashes the schedule on every
+    call, to key its whole-jit verdict and its runner groups. A `dict` field therefore
+    raises `TypeError: unhashable type: 'dict'` at the *schedule*, several frames away
+    from the driver that carries it, which is exactly the kind of error that gets
+    misread as a cottax problem. `callback` escapes this only because a function is
+    hashable by identity, so this is the same trick made explicit.
+
+    Identity is the right hash for a mutable results sink anyway: two outcomes are the
+    same outcome when they are the same object, and the values are written *after* every
+    hash that matters has been taken.
+    """
+
+    __hash__ = object.__hash__  # type: ignore[assignment]
+
+
 def start_from(data, driver_name: str, conditions: ConditionMap) -> tuple:
     """The `Start` tuple out of a driver's `data` mapping, or a clear refusal.
 
@@ -258,6 +280,18 @@ class SlsqpDriver(AbstractDriver):
     callback: object = None
     """`f(iteration, x_unscaled) -> None`, or `None`. Plain callable, leaf-free, same
     treatment as `VmconDriver.callback`."""
+    outcome: object = None
+    """A caller-supplied `Outcome` this driver writes SLSQP's own verdict into, or
+    `None`. A bare `dict` will not do -- see `Outcome`, which is one and says why.
+
+    Same shape and same reason as `mdf.MdfNewtonDriver.outcome`: an `eqx.Module` is
+    frozen, so a driver cannot record what happened on itself, and SLSQP's status is not
+    recoverable from the returned point. `scipy` reports success, an exit code and a
+    message (*"Optimization terminated successfully"*, *"Iteration limit reached"*,
+    *"Inequality constraints incompatible"*, ...) and those are three different outcomes
+    that a caller comparing this driver against `VmconDriver` must be able to tell apart
+    -- `VmconDriver` distinguishes them by *which* `pyvmcon` exception it caught. Keys
+    written: `success`, `status`, `message`, `nit`, `nfev`, `fun`."""
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
         """Values for the block's unknowns, positionally.
@@ -338,7 +372,17 @@ class SlsqpDriver(AbstractDriver):
         )
         # No `self.last_result = ...`: an `eqx.Module` is frozen, and a driver that
         # mutated itself would not survive being reused across blocks anyway. What the
-        # solver said is reported through `callback`, like `VmconDriver`'s.
+        # solver said is reported through `callback` and `outcome`, like
+        # `VmconDriver`'s and `mdf.MdfNewtonDriver`'s respectively.
+        if self.outcome is not None:
+            self.outcome.update(
+                success=bool(result.success),
+                status=int(result.status),
+                message=str(result.message),
+                nit=int(result.nit),
+                nfev=int(result.nfev),
+                fun=float(result.fun),
+            )
         if self.callback is not None:
             self.callback(-1, np.asarray(result.x, dtype=float) / scale)
         return unravel(jnp.asarray(np.asarray(result.x, dtype=float) / scale))

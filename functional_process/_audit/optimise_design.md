@@ -3372,3 +3372,477 @@ Two real answers, neither taken:
    one §19 restored. Scaling, tolerances or a restart policy, not arithmetic freezing.
 
 Do not extend §19's rule to new sites without revisiting this.
+
+## 20. The fused/eager split is one ulp of one variable, and the diagnosis is still open (2026-09-01)
+
+§19.1 offered two answers to §19's fusion problem and said neither had been taken. This
+section takes the **second** one -- *"if a last-bit perturbation flips convergence the
+solve is on a knife edge and **both** answers are luck"* -- and tests its **first half**,
+which comes back true. The second half, *why*, is **not settled here**: §20.12 records
+three candidate causes and rules out or weakens each, and none of them survives as an
+explanation. Every number below is measured in this working tree, one process per table,
+and marked as such; the causal reading is flagged wherever it is a reading.
+
+**What was measured, in one line:** on `stellarator_helias`'s cold SAND solve a **hand
+perturbation of `.tfcoil.a_tf_turn_steel` by -1 ulp, with every group eager**, reproduces
+the fused run's 108-`stopped` outcome **bit for bit** -- same `objf`, same `max|eq|`,
+`max rel |dx| = 0.000e+00` across all eight iteration variables. So the fused/eager
+difference **is** that one bit, and nothing else the fusion did contributes.
+
+**What is not established:** that "the problem is intrinsically a knife edge". §20.12
+measures the constraint Jacobian's condition number (SAND `1.7e4`, carried entirely by
+**one** row; MDF `42` on the same physical problem), the active set at the fork and at
+the solution, and what the assembly dropped or froze (nothing) -- and no single one of
+those explains the flip. **This project's record is that "it is the conditioning" has
+been the wrong answer every previous time it was reached** (§17's OSQP-for-CLARABEL,
+§16.1b's `MAX_ITER`, §12.2's cap, `SlsqpDriver`'s own docstring on five overturned
+diagnoses), so the diagnosis is held open rather than asserted.
+
+**A wording caution that will otherwise be misread:** "eager" here and in §15 does **not**
+mean "not compiled". `VmconDriver` jits the condition map it iterates and `jax.jacfwd` of
+it (`drivers.py`, `evaluate = jax.jit(flat_conditions)`), and `SlsqpDriver` does the same
+through `scaled_problem`, so the arithmetic the SQP actually differentiates has always
+been one XLA program. What "eager" names is the **schedule walk around the driver** --
+whether the `Call` steps outside the `Drive` are run step by step or fused into one
+program. The fused/eager axis is a schedule-shape choice, never a compiled/interpreted
+one.
+
+### 20.1 What was run, and the flag it was run behind
+
+`run_schedule`/`_schedule_runners` take a new `fuse_upstream` parameter. `False` -- still
+the default -- is §19.3's protected grouping. `True` is the whole-program policy: every
+undriven group fused, upstream ones included, leaving eager only the host-side driver
+itself, which cannot trace at all (`cvxpy`, `pyvmcon`, a Python callback). Nothing else
+about the schedules changed; the two policies are the same steps in the same order
+through the same nodes.
+
+`SlsqpDriver` gained an `outcome` field, written the way `mdf.MdfNewtonDriver`'s already
+was, because SLSQP's status is not recoverable from the returned point and *converged* /
+*iteration limit* / *positive directional derivative* are three different outcomes this
+comparison has to keep apart. It takes a new `drivers.Outcome` -- a `dict` hashed by
+**identity** -- rather than a bare `dict`, which cannot be a driver field at all:
+`Schedule.__hash__` reaches every driver through `Graph.__hash__`, and `run_schedule`
+hashes the schedule on every call, so a `dict` field raises `TypeError: unhashable type`
+at the schedule, several frames from the driver carrying it.
+
+Everything else is `run_cold_matrix.cold_sand`'s own path: the warm MDA env for assembly
+and `residual_condition_scales`, the cold MDA env for `_seed`, `max_iter = 500`,
+`VmconDriver`'s default `1e-6` convergence test, `max|eq|` always reported in
+`condition_scale`'s units so the column compares across the table (§13.1's rule).
+
+### 20.2 What fusing the 25 upstream `Call` steps actually moves, with the sign
+
+§19 gave relative magnitudes; the ulp counts and directions are the part that matters and
+they were not recorded. Measured by running the group both ways on the same seeded env
+and diffing every value the `Drive` is handed:
+
+| path | eager | fused | relative | ulp | in the `Drive`'s context |
+|---|---|---|---|---|---|
+| `.tfcoil.a_tf_turn_steel` | `0.0004898559999999999` | `0.0004898559999999997` | `4.427e-16` | **-2** | **yes** |
+| `.heat_transport.etath_liq` | `0.3434546216433674` | `0.34345462164336754` | `4.849e-16` | +3 | no |
+
+2 of 384 values, exactly as §19 found. **The fusion moves the one value the driver reads
+downward by two ulp**, which is the whole of the difference between the two solves.
+
+### 20.3 The hand perturbation, eager throughout -- `VmconDriver`
+
+Each row is the reference cold SAND solve with the named value moved by hand in the env
+the `Drive` is handed, and **no** fusion anywhere:
+
+| run | its | status | `objf` | `max\|eq\|` | `min ie` | `max rel \|dx\|` vs eager |
+|---|---|---|---|---|---|---|
+| eager (§19.3's default) | **90** | converged | `1.2177573520529628` | `1.84e-06` | `-8.83e-10` | -- |
+| fused | **108** | stopped | `1.2221740786343283` | `2.85e-02` | `1.12e-11` | `6.12e-01` |
+| eager, `a_tf_turn_steel` **-1 ulp** | **108** | stopped | `1.2221740786343283` | `2.85e-02` | `1.12e-11` | `6.12e-01` |
+| eager, `a_tf_turn_steel` **-2 ulp** | **108** | stopped | `1.2221740786343283` | `2.85e-02` | `1.12e-11` | `6.12e-01` |
+| eager, `a_tf_turn_steel` **+1 ulp** | 90 | converged | `1.2177573520529628` | `1.84e-06` | `-8.83e-10` | `0.00e+00` |
+| eager, `a_tf_turn_steel` **+2 ulp** | 90 | converged | `1.2177573520529628` | `1.84e-06` | `-8.83e-10` | `0.00e+00` |
+| eager, `etath_liq` +-1, +2 ulp | 90 | converged | `1.2177573520529628` | `1.84e-06` | `-8.83e-10` | `0.00e+00` |
+
+Three things this says that §19 could not:
+
+1. **`max rel |dx|` between the fused run and the eager `-1 ulp` run is `0.000e+00`.**
+   Not "similar" -- the same eight floats. One bit on one variable is a complete
+   explanation of the 18 extra iterations and the status flip; nothing else the fusion
+   did contributes.
+2. **The edge has a side.** Down flips it, up does not, and `-2` behaves like `-1`. So
+   the 90-converged answer is not robust to the perturbation, it merely happens to sit on
+   the tolerant side of *this* boundary. A refactor that moved the arithmetic the other
+   way would have handed §19 the opposite conclusion.
+3. **`.heat_transport.etath_liq` is inert**, confirming §19's context argument by
+   measurement rather than by inspection: a value the `Drive` does not read cannot move
+   it, however many ulp it slips.
+
+### 20.4 `SlsqpDriver` on the same problem -- the same edge, sharper
+
+The main experiment §19.1 asked for. A second SQP with its own QP solver, its own line
+search and its own Hessian update, on the identical problem through `scaled_problem`:
+
+| run | its | scipy verdict | `objf` | `max\|eq\|` | `min ie` |
+|---|---|---|---|---|---|
+| **scaled** (`VmconDriver`'s `condition_scale`), eager | **153** | success | `1.2175536499979944` | `2.44e-11` | `-2.22e-15` |
+| scaled, fused | **500** | iteration limit | `1.2176017027671482` | `2.33e-03` | `-7.77e-16` |
+| scaled, eager, `a_tf_turn_steel` **-2 ulp** | **500** | iteration limit | `1.2176017027671482` | `2.33e-03` | `-7.77e-16` |
+| scaled, eager, `a_tf_turn_steel` **-1 ulp** | **500** | iteration limit | `1.2176474064` | `6.42e-05` | `-0.00e+00` |
+| scaled, eager, `a_tf_turn_steel` **+1 ulp** | **500** | iteration limit | `1.2175875902` | `4.89e-06` | `-3.33e-16` |
+| **unscaled** (§13.6's setting -- the one SLSQP wants), eager | **237** | success | `1.2176260901487665` | `5.95e-13` | `+6.66e-16` |
+| unscaled, fused | **500** | iteration limit | `1.2176903287194838` | `9.94e-06` | `-2.22e-16` |
+| unscaled, eager, `a_tf_turn_steel` **-2 ulp** | **500** | iteration limit | `1.2176903287194838` | `9.94e-06` | `-2.22e-16` |
+
+`ftol = 1e-8` (the class default), `maxiter = 500`, same `bounds`, same `jax.jacfwd`
+Jacobian, same sign translation. §16.6's note that the residual scaling is load-bearing
+for pyvmcon and harmful to SLSQP is reproduced here cold -- unscaled SLSQP reaches
+`max|eq| 5.9e-13` where scaled reaches `2.4e-11` -- and **it does not change the
+verdict**, which is the answer to *"if scaling changes the verdict, that is itself the
+finding"*: it does not.
+
+- **`max rel |dx|` between the fused run and the eager `-2 ulp` run is `0.000e+00`** in
+  both scalings. Same result as §20.3 by a completely different solver: the fusion is
+  exactly a two-ulp perturbation and nothing else.
+- **SLSQP is more fragile, not less.** `+1 ulp` -- which `VmconDriver` shrugs off --
+  takes it from 153 iterations and *"Optimization terminated successfully"* to the 500
+  cap. Every one of the four perturbations tried breaks it. So the eager 153-converged
+  row is luck by the same argument, and by a wider margin.
+- **Under whole-program fusion SLSQP does not give a stable answer either.** That is the
+  question this section was opened to answer, and the answer is no.
+
+### 20.5 `large_tokamak_nof`: the same fusion is inert, for a structural reason
+
+Same experiment on the other configuration §24.11 profiled. Fusing its 24 upstream `Call`
+steps moves **1 of 440** values -- `.heat_transport.etath_liq`, +3 ulp again -- and that
+value is **not in this `Drive`'s context**. So the prediction is that fusion changes
+nothing, and it is what happens:
+
+| run | its | status | `objf` | `max\|eq\|` | `min ie` | eager vs fused |
+|---|---|---|---|---|---|---|
+| `VmconDriver` | 10 | converged | `1.6000000000354158` | `4.51e-06` | `-9.58e-05` | `dx 0.00e+00` |
+| `SlsqpDriver`, scaled | 12 | success | `1.6000000000000654` | `1.98e-14` | `-6.00e-11` | `dx 0.00e+00` |
+| `SlsqpDriver`, unscaled | 19 | *positive directional derivative* | `1.6000000000000000` | `1.87e-14` | `-1.73e-14` | `dx 0.00e+00` |
+
+Bitwise agreement between the two policies, for all three drivers. **The fusion
+sensitivity is not a property of the jit policy; it is a property of whether the one or
+two values fusion happens to move are read by a host-side driver.** That is a fact about
+one graph and one arithmetic reassociation, and it is not something a policy can be
+written against -- which is the argument against §19's rule stated as a measurement
+rather than as a preference.
+
+### 20.6 The optimum is flat: three "converged" runs, three points
+
+Not asked for, and worth recording because it does not depend on any ulp. Three runs on
+the stellarator that all report success land on three different points:
+
+| run | `objf` | `max\|eq\|` | `x109` | `max rel \|dx\|` vs `VmconDriver` |
+|---|---|---|---|---|
+| `VmconDriver`, 90 its | `1.2177573520529628` | `1.84e-06` | `0.0299518` | -- |
+| `SlsqpDriver` scaled, 153 its | `1.2175536499979944` | `2.44e-11` | `0.0326286` | `8.94e-02` |
+| `SlsqpDriver` unscaled, 237 its | `1.2176260901487665` | `5.95e-13` | `0.0323901` | `8.14e-02` |
+
+(All three in one process, so the `dx` column is a like-for-like diff and not two runs
+compared through a printed table. The two SLSQP answers are `7.31e-03` apart from each
+other.) SLSQP's answers are **more feasible and lower in objective** than the one VMCON
+declares converged, at design points ~8-9 % away. On `large_tokamak_nof` it is starker: VMCON
+and SLSQP differ by `1.50e-01` relative in `x` while both report `objf = 1.6` to twelve
+digits. An objective that flat over that much of the design space means the *answer* is weakly
+determined even where the solve succeeds. Read as a fact about the objective, which is
+what it is; it is **not** evidence that the constraint Jacobian is ill-conditioned, and
+§20.12 measures that separately and finds it is not (SAND `1.7e4` from one row, MDF
+`42`).
+
+### 20.7 What the default should be
+
+**`fuse_upstream=True`, i.e. one jit over everything the host-side driver does not sit
+in.** Recommended here, and **applied** -- see §20.9, written after the user accepted the
+finding.
+
+The case, from the numbers above rather than from taste:
+
+- §19's rule was adopted because it restored a converged row. §20.3 measures that the row
+  it restored is one bit from the row it replaced, and that the sign of that bit -- not
+  anything the rule states -- decides which. Whatever the underlying cause turns out to
+  be (§20.12 leaves it open), a rule that selects an outcome by which way one ulp fell is
+  not buying determinism, and calling it one costs the reader the ability to see that
+  this solve is fragile.
+- It is not buying speed either, in either direction. §24.11's split (2.8 s of 108 on
+  `large_tokamak_nof`) says the upstream groups are a rounding error against the `Drive`,
+  and the solve-only wall times here -- 10-12 s per stellarator run, 34-40 s per tokamak
+  run, first row in each process paying compile -- separate the two policies by less than
+  the run-to-run spread. So this is a design choice, not a performance one, and the
+  design the user has ruled for is the single jit.
+- It cannot be extended safely anyway. §20.5 shows the rule's protection is contingent on
+  which values a given fusion happens to reassociate and whether a given `Drive` reads
+  them -- a per-configuration accident, re-rolled by every model edit, that no policy
+  statement can cover. §19.1's *"do not extend §19's rule to new sites"* is right, and
+  the reason is now measured.
+
+**The honest consequence, stated up front:** flipping the default puts
+`stellarator_helias`'s cold SAND row back to **108, stopped, `objf 1.22217408`,
+`max|eq| 2.85e-02`** -- a genuine 2.9 % violation, per §19.2, which that section
+established is not a scale artefact. That is a worse-looking table and a truer one. The
+row should carry §20.3's sentence: this solve is 1 ulp from converging and 1 ulp from
+stopping, and which it does is not evidence about the model.
+
+**What the flip costs elsewhere.** It changes `run_cold_matrix.py`'s published
+stellarator row, and that file and `reference_cold_matrix.txt` were being edited in
+parallel with this measurement, so the regeneration and its provenance are handled
+separately from this section -- the flip itself is §20.9.
+
+### 20.8 What would actually fix it, and what would not
+
+- **Constraining XLA's reassociation** (§19.1 item 1) is ruled out by the user and is in
+  any case now beside the point: it would freeze *one* source of last-bit motion in a
+  solve that §20.3 shows is sensitive to last-bit motion from **any** source -- a model
+  edit, a `jnp` version, a different CPU. It would buy reproducibility across our own
+  refactors of the traced arithmetic only, and hide the fragility rather than remove it.
+- **Neither SQP is the problem.** Two independently written solvers, two QP backends, two
+  Hessian strategies, two scalings, all flip on the same bit of the same variable
+  (§20.4). The next thing to try is therefore not a third optimiser.
+- **The open work is to find the mechanism, and §20.12 says which three explanations it
+  is not.** The reproducer is cheap and deterministic: perturb `.tfcoil.a_tf_turn_steel`
+  by `-1 ulp` in the env the `Drive` is handed, eager throughout, and the failure appears
+  with no jit anywhere in the picture. Any candidate fix has to survive **both** signs of
+  `+-1` and `+-2 ulp`, has to do so for SLSQP too (§20.4: it survives none of them), and
+  -- from §20.11 -- has to do so for **MDF**, which flips on 1 ulp of a design start
+  despite a constraint Jacobian conditioned at `42`.
+
+### 20.9 The flip, applied (2026-09-01)
+
+`run_schedule`, `_schedule_runners` and `_driven_runner` now default to
+`fuse_upstream=True`. **Every undriven group is one jit, upstream of a `Drive` included;
+the only thing left eager is the host-side driver itself**, which cannot trace at all.
+`fuse_upstream=False` still restores §19.3's grouping and is kept for one purpose:
+diffing the two policies is how §20.2-§20.5 were measured and how any successor to them
+will be.
+
+**What this does to the published numbers.** `stellarator_helias`'s cold SAND row goes
+back to **108, `stopped`, `objf 1.22217408`, `max|eq| 2.85e-02`** -- a genuine 2.9 %
+violation, per §19.2, which established that it is not a scale artefact. The other
+configuration measured here, `large_tokamak_nof`, does not move at all (§20.5: bitwise
+agreement between the policies for all three drivers).
+
+**That is a real number, and §20.3 is why it is not a regression the flip caused.** The
+90-converged row it replaces is reproduced, bit for bit, by *any* eager run whose
+`.tfcoil.a_tf_turn_steel` sits on the `+` side of one ulp, and the 108-stopped row by any
+run on the `-` side. Both are the same solve, and which one a given build prints is
+decided by a bit that no part of this codebase chooses, states, or tests. Defaulting to
+the policy that happened to print the better number would report that selection as a
+property of the model.
+
+The row should therefore be read with §20.3's sentence attached: **this solve is 1 ulp
+from converging and 1 ulp from stopping, and which it does is not, on its own, evidence
+about the port's physics.** *Why* it is that sensitive is open (§20.12) and is the thing
+worth fixing; the default is not what fixes it either way. The 2.34e-03 `d objf` and 1.08e-01 `worst dx` against PROCESS that §19
+left open are unchanged and remain §17/§24.10's business.
+
+`run_cold_matrix.py` and `reference_cold_matrix.txt` are untouched by this change; their
+regeneration and its provenance note are handled separately.
+
+### 20.10 §15's CLARABEL table, re-measured eager and fused (2026-09-01)
+
+§15's counts are the authority for every iteration number this project quotes, §17's
+*"the gap is 1.26x"* included, and **every row of it predates `run_schedule`**. With the
+default now `fuse_upstream=True` that table describes a path that is no longer the
+default one, so here is the counterpart. `stellarator_helias`, CLARABEL throughout, one
+process, `SAND_MAX_ITER = 500` / MDF `MAX_ITER = 800`, `dx` against the same cell's eager
+run:
+
+| cell | its | `conv` | outcome | `objf` | `max\|eq\|` | `dx` vs eager |
+|---|---|---|---|---|---|---|
+| MDF C3 `1e-8` eager | 67 | `2.54e-09` | converged | `1.21775735097` | `4.60e-11` | -- |
+| MDF C3 `1e-8` **fused** | **67** | `2.54e-09` | converged | `1.21775735097` | `4.60e-11` | **`0.00e+00`** |
+| MDF C3 `1e-6` eager | **58** | `8.91e-07` | converged | `1.21775795134` | `6.72e-08` | -- |
+| MDF C3 `1e-6` **fused** | **58** | `8.91e-07` | converged | `1.21775795134` | `6.72e-08` | **`0.00e+00`** |
+| MDF C2 `1e-8` eager | 45 | `7.23e-02` | `QSPSolver` | `1.22542131693` | `3.23e-03` | -- |
+| MDF C2 `1e-8` **fused** | 45 | `7.23e-02` | `QSPSolver` | `1.22542131693` | `3.23e-03` | **`0.00e+00`** |
+| MDF C2 `1e-6` eager | 45 | `7.23e-02` | `QSPSolver` | `1.22542131693` | `3.23e-03` | -- |
+| MDF C2 `1e-6` **fused** | 45 | `7.23e-02` | `QSPSolver` | `1.22542131693` | `3.23e-03` | **`0.00e+00`** |
+| SAND C3 `1e-8` eager | **90** | `8.09e-10` | converged | `1.21775735205` | `1.84e-06` | -- |
+| SAND C3 `1e-8` **fused** | **108** | `7.96e-02` | `QSPSolver` | `1.22217407863` | `2.85e-02` | `6.12e-01` |
+| SAND C3 `1e-6` eager | **80** | `1.73e-08` | converged | `1.21775769566` | `1.14e-04` | -- |
+| SAND C3 `1e-6` **fused** | **108** | `7.96e-02` | `QSPSolver` | `1.22217407863` | `2.85e-02` | `6.12e-01` |
+| SAND C2 `1e-8` eager | **231** | `2.70e-09` | converged | `1.21775734211` | `9.85e-07` | -- |
+| SAND C2 `1e-8` **fused** | **500** | `9.88e-04` | cap(500) | `1.21774371415` | `1.07e-02` | `1.88e-03` |
+| SAND C2 `1e-6` eager | **178** | `3.65e-07` | converged | `1.21775930434` | `1.93e-03` | -- |
+| SAND C2 `1e-6` **fused** | **422** | `6.53e-07` | converged | `1.21776186746` | `1.96e-05` | `8.38e-04` |
+
+**The control §15 asked for, and it splits.** MDF's four eager cells reproduce §15
+*exactly*, `conv` included -- C3 **67** at `1e-8`, C3 **58** at `1e-6` with
+`conv 8.91e-07` to three digits, C2 **45** giving up in the QP solver (§15's
+"infeasible"). **SAND's do not**: §15 records C3 83 / **58** and C2 207 `unbounded`;
+this tree gives C3 **90** / **80** and C2 **231 converged**. Nothing in this session
+touched SAND's formulation, so those three rows moved between 2026-08-30 and now for
+reasons that are not the fusion work and are not identified here -- they are simply
+stale. **This is stated as a measurement of today's tree, not as a correction to §15's
+own measurement of its tree.**
+
+**MDF is bitwise invariant to fusion, in all four cells.** That is structural rather than
+lucky, and §20.11 says why: MDF's outer driver closes over 294 context names and **not
+one of them is a value the schedule computes** -- the whole MDA is re-run inside every
+evaluation, so there is nothing a schedule-level fusion can move. Measured directly:
+fusing `mdf.eager` against a fully eager walk moves **1 of 859** values
+(`.physics.nu_star`, and that "difference" is a `nan` failing to equal itself), and the
+**primed env the solve actually closes over is identical in 308 of 308 values**.
+
+**SAND moves in all four.** C3 both ways is the §19 flip. C2 is new and is not a flip to
+a worse answer in one case and is in the other: at `1e-8` fused runs to the 500 cap where
+eager converged at 231, and at `1e-6` fused converges in 422 where eager took 178, both
+landing within `1e-3` relative of the eager answer.
+
+### 20.11 MDF under the §20.3 reproducer -- and the control that overturns the obvious reading
+
+**The perturbation §20.3 uses cannot be applied to MDF at all**, and that is the first
+result. `.tfcoil.a_tf_turn_steel` and `.heat_transport.etath_liq` are **not in MDF's
+outer context and not in its primed env** (measured: `False` for both, on a context of
+294 names). In SAND they are outputs of the 25 `Call` steps that run *once*, outside the
+`Drive`; in MDF the equivalent computation happens *inside* every evaluation. So MDF has
+no analogue to perturb, which is exactly why fusion cannot reach it.
+
+The two things MDF *does* hand its driver once and freeze are the five `^guess.*` start
+ports (filled by `prime`) and the eight design start values. Both were perturbed, eager
+throughout, `1e-8`:
+
+| run | its | `conv` | outcome | `objf` | `max\|eq\|` |
+|---|---|---|---|---|---|
+| MDF C3, unperturbed | **67** | `2.54e-09` | converged | `1.21775735097` | `4.60e-11` |
+| `^guess.power.delta_eta` `+-1`, `+-2 ulp` | **67** | `2.54e-09` | converged | `1.21775735097` | `4.60e-11` |
+| `^guess.physics.fusden_alpha_total` `-1 ulp` | **67** | `2.54e-09` | converged | `1.21775735097` | `4.60e-11` |
+| `^guess.fwbs.f_ster_div_single` `-2 ulp` | **67** | `2.54e-09` | converged | `1.21775735097` | `4.60e-11` |
+| **`.physics.rmajor` `-1 ulp`** | **114** | `4.22e-02` | **`QSPSolver`** | `1.21799442644` | `6.86e-04` |
+| **`.physics.rmajor` `+1 ulp`** | **85** | `5.49e-02` | **`QSPSolver`** | `1.22624525641` | `4.50e-03` |
+| `.physics.hfact` `-1 ulp` | **86** | `6.08e-09` | converged | `1.21775738697` | `3.59e-09` |
+
+And the same two design starts under SAND, for symmetry:
+
+| run | its | `conv` | outcome | `objf` | `max\|eq\|` |
+|---|---|---|---|---|---|
+| SAND C3, unperturbed | **90** | `8.09e-10` | converged | `1.21775735205` | `1.84e-06` |
+| `.physics.rmajor` `-1 ulp` | **71** | `8.54e-10` | converged | `1.21775739006` | `1.00e-08` |
+| **`.physics.hfact` `-1 ulp`** | **275** | `3.78e+01` | **`QSPSolver`** | `4.89365312691` | `9.99e+01` |
+
+**Two findings, and the second is the one that matters.**
+
+1. **A `^guess.*` start is inert, bit for bit.** Four perturbations, four runs identical
+   to all 17 digits in `objf` and identical in `x`. That is not luck: a `^guess.*` value
+   starts an inner solve that is then driven to its own tolerance inside every
+   evaluation, so a last-bit change in where it starts is absorbed before the outer
+   driver ever sees a condition. **This is a real robustness property of MDF's shape**,
+   and it is why fusion cannot move MDF.
+
+2. **MDF is *not* robust to the perturbation itself.** One ulp on `.physics.rmajor` --
+   the design start, which nothing re-converges -- takes MDF from 67 converged to **114
+   and a QP-solver failure** at `-1`, and to **85 and a QP-solver failure** at `+1`.
+   Both directions, and both worse than the unperturbed run. SAND survives the same
+   perturbation on `rmajor` and fails catastrophically on `hfact` (`objf 4.89`,
+   `max|eq| 99.9`).
+
+**So the reading "SAND is fragile, MDF is sound" is wrong, and it was the reading the
+first draft of this section was heading for.** Both formulations flip on one ulp of what
+their SQP starts from. What differs is only **which inputs are exposed**: SAND freezes a
+once-computed context that a jit boundary can reassociate, MDF freezes only a design
+start and a set of guesses that get re-converged. MDF's fusion-invariance is a
+consequence of that exposure difference, not of the underlying solve being better
+behaved.
+
+### 20.12 What the fork is not: four diagnostics, three explanations weakened
+
+The obvious inference from §20.3 -- *"the problem is intrinsically ill-conditioned"* --
+is an inference, and this project's record is that it has been the wrong one every
+previous time (§17 OSQP-for-CLARABEL, §16.1b `MAX_ITER`, §12.2 a cap, §24.10 an
+evaluation-mode file, §24.9 unrolled loops; `SlsqpDriver`'s docstring on five overturned
+diagnoses in one session). So it was tested. Instrumented run of both SAND branches --
+unperturbed, and `.tfcoil.a_tf_turn_steel -1 ulp` -- recording the full condition vector
+and the Jacobian VMCON is handed at every SQP iteration.
+
+**(a) The active set does not change at the fork, and `c24` is not in it there.** The two
+branches are bit-identical through iteration 13. At **14** the *only* recorded quantity
+that differs is `conv` (`0.007118612933389929` against `...93017`, `4e-13` relative);
+every equality, every inequality and `x` itself are still bit-identical. At **15** all of
+them differ. So the divergence enters through the convergence parameter one iteration
+before it reaches any constraint -- there is no constraint entering or leaving the active
+set at the fork. Across iterations 11-17 the active set (`|ie| < 1e-6`) is
+`^cond.constraints.c83` alone, with `c35` joining once at 12. `c24` is at `-3.9e-02` at
+13 and `+1.0e-03` at 14 -- nowhere near active. **The `c24` kink is not the trigger.**
+
+**(b) The kink is present in both formulations, and only one of them is fusion-stable.**
+At the *solution* the active set is the same four constraints in both -- `c24`, `c83`,
+`c62`, `c35` -- matching §17.2's "one of exactly four binding inequalities". MDF carries
+`fast_alpha_beta`'s clamped square root in its active set exactly as SAND does, converges
+at `42` condition number, and still flips on 1 ulp of `rmajor` (§20.11). **A kink both
+formulations share cannot explain a fragility both formulations have and a fusion
+sensitivity only one of them has.** Smoothing the clamp was therefore not run; it is not
+ruled out as a *fix*, only as *the* explanation.
+
+**(c) The conditioning is a number, and it is modest -- but it is also wildly uneven.**
+Condition number of the constraint Jacobian VMCON is handed, over the whole trajectory:
+
+| | min | median | max |
+|---|---|---|---|
+| SAND branch A (90 its) | `1.244e+04` | `1.660e+04` | `3.502e+04` |
+| SAND branch B (108 its) | `1.241e+04` | `1.660e+04` | `3.503e+04` |
+| **MDF (67 its)** | **`3.783e+01`** | **`4.241e+01`** | **`1.078e+03`** |
+
+`1.7e4` in double precision leaves ~11 digits; it does not by itself turn a `4e-16` input
+into a different answer, and **MDF at `42` flips anyway**. So the condition number is not
+the mechanism. What it *is* is a clean measurement of a formulation gap nobody had taken:
+**SAND's entire conditioning excess is one row.** Dropping each row in turn at iteration
+13 (`cond 1.758e+04`):
+
+| row dropped | resulting `cond(J)` | its value | its row norm |
+|---|---|---|---|
+| **`^cond.stellarator.wp_width_r_min`** | **`6.75e+01`** | `+1.67e-02` | **`2.892e+03`** |
+| `^cond.constraints.c24` | `1.760e+04` | `-3.94e-02` | `3.01e+00` |
+| `^cond.constraints.c83` | `1.843e+04` | `+6.36e-12` | `7.63e-01` |
+| ... every other row | `1.76e+04`-`1.15e+08` | | `0.09`-`5.4` |
+
+The largest singular value of the whole 20x14 Jacobian is `2.892e+03` and the next is
+`8.589e+00`; that top value **is** this row. It is the same row §19.2 found holding the
+worst equality at the 108-stopped point, and the same one `VmconDriver.condition_scale`'s
+docstring already describes as *"the coil-island (`Intersect`) residual, the largest row
+left and the only one whose units are genuinely not its unknown's"* -- where equilibrating
+it by its row norm took `2.1e4` to `85` and C2 from 62 iterations to `max_iter`. That
+measurement stands; what is new is the **MDF comparison**, which says the well-conditioned
+version of this problem exists (`42`) and is the one that does not expose this residual as
+a constraint at all. `residual_condition_scales` gives this row a factor of `1.3948`,
+which normalises its *value* and leaves its *derivative* at `2892`.
+
+**(d) Nothing was dropped or frozen.** The named suspicion -- a missing producer or a
+value held at its seed -- is measurable from the assembly's own report and is clean on
+this configuration: `degenerate: 0`, `array_valued: 0`, `omitted: 0`, `external: 0`, with
+4 `residualised` problems, 8 design, 2 PROCESS equalities and 12 PROCESS inequalities. An
+early reading that `c83` was an identity (it sits at `~6e-12` for most of the trajectory)
+is **withdrawn on measurement**: it starts at `-2.361e-01` and converges early, in *both*
+formulations, so it is an ordinary binding constraint and not a degenerate row.
+
+**Where that leaves the diagnosis.** Measured: the fused/eager difference is one ulp of
+one variable; both formulations flip on one ulp of a design start; the constraint
+Jacobian is modestly conditioned in SAND and well conditioned in MDF; the active set does
+not change at the fork; nothing is frozen or dropped. **Not established:** what actually
+amplifies `4e-16` into a different outcome over 14 iterations. It is not the `c24` kink
+alone, not the condition number alone, and not a frozen value. The next thing to look at
+is the QP solve itself -- every failing run in §20.10 and §20.11 ends in `QSPSolver`,
+i.e. `cvxpy` refusing a subproblem, which is the one component nobody has instrumented
+and which is exactly where §17's last confident diagnosis turned out to live.
+
+### 20.13 What §17's "1.26x" headline should now say
+
+`next_steps.md` is not this file's to edit; this is the wording, with the measurements
+behind it.
+
+§17 rests on §15's *"58 iterations in both formulations against PROCESS's 46"*, and the
+strength of the claim is that **two independent formulations agree**. After §20.10:
+
+- **MDF's 58 stands, and is stronger than it was.** It reproduces exactly (`conv
+  8.91e-07`), and it is now also measured to be **bitwise invariant to the whole-program
+  jit** -- the same 58, the same `objf` to 12 digits, `dx 0.00e+00`. Fusion does not
+  touch it, and §20.11 says why structurally rather than by luck.
+- **SAND's 58 does not reproduce in this tree, eager or fused.** Cold at `1e-6` it is
+  **80** eager and **108 stopped** fused. Its `1e-8` row is 90, not §15's 83, and its C2
+  row is 231 converged, not 207 `unbounded`. Those moved for reasons predating this
+  session and not identified here.
+- **Neither 58 survives the ulp reproducer.** MDF's goes to 114/85 with a QP failure on
+  `+-1 ulp` of `.physics.rmajor` (§20.11).
+
+Suggested correction: *"the gap is 1.26x"* should be attributed to **MDF alone** -- 58
+against PROCESS's 46, reproduced and jit-invariant -- and the *"both formulations agree
+on 58"* clause withdrawn until SAND's rows are re-measured and the move from 83/58 to
+90/80 is explained. The 1.26x ratio itself is unchanged; what is withdrawn is the
+independent second witness.

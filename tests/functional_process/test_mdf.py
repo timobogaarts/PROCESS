@@ -7,8 +7,10 @@ one:
 
 - **What MDF claims is structural**, so most of it *is* checkable here -- that the
   optimiser's problem is exactly PROCESS's (eight design variables, fifteen conditions,
-  no coupling anywhere in either), and that cottax states the nesting and refuses to run
-  it are both assertions about objects, not about numbers.
+  no coupling anywhere in either), and that cottax both states *and runs* the nesting are
+  assertions about objects, not about numbers. (It used to be "states and refuses to
+  run": the refusal was about a missing `Assign` and the regex pinning it was loose
+  enough not to notice -- `_audit/in_graph_rootfind.md` §1.)
 - **The one claim that is not** -- that `jax.jacfwd` through thirteen driven blocks is
   the right derivative -- cannot be made without running the thing, so
   `test_the_gradient_through_the_inner_solve_is_correct` runs a real cold MDA. It is the
@@ -19,12 +21,14 @@ one:
 
 import dataclasses
 import operator
+import re
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.evaluate import ConditionMap, schedule_for
+from cottax.blocking import Blocking
+from cottax.evaluate import ConditionMap, Drive, Schedule, schedule_for
 from cottax.graph import Graph
 from cottax.problem import (
     FixedPoint,
@@ -32,12 +36,13 @@ from cottax.problem import (
     Residual,
     RootFind,
     Start,
+    conditions_of,
     driver_vars,
 )
 
 from functional_process import mdf, sand
-from functional_process.core.solver.drivers import SeededNewtonDriver
-from functional_process.mda import default_drivers
+from functional_process.core.solver.drivers import Outcome, SeededNewtonDriver
+from functional_process.mda import assign_drivers, default_drivers
 from functional_process.run_mdf_harness import MAX_ITER, _why_it_stopped
 from functional_process.sand_harness import REFERENCE_INPUT_FILE, _scratch_copy
 from process.main import SingleRun
@@ -135,21 +140,59 @@ def test_cottax_states_mdf_structurally(problem):
     assert sum(1 for t in interior.problem_types if t is not None) > 1
 
 
-def test_cottax_cannot_run_that_nesting(problem):
-    """...and the second half: `schedule_for` ignores `Blocking.inner`, so it refuses.
+def test_the_undriven_nesting_is_refused_for_want_of_an_assign():
+    """`nested_blocking` attaches no drivers, so `schedule_for` refuses it -- and the
+    refusal names the missing `Assign`, not the nesting.
 
-    Pinned as a test rather than left as a docstring claim because this is the single
-    upstream gap the whole module is built around, and the day it stops being true is the
-    day `mdf.MdfConditionMap` should be deleted in favour of a real nested `Drive`. A
-    failure here is good news, not a regression.
+    **This test used to claim the opposite** (`test_cottax_cannot_run_that_nesting`:
+    *"`schedule_for` ignores `Blocking.inner`, so it refuses"*), and it passed for years
+    of the port's life because its regex was `r"declares|problem"`, which the driver
+    message matches on the word "problem". The claim was falsified upstream and the test
+    could not see it. So the message is matched exactly here, and
+    `test_cottax_runs_that_nesting_once_the_drivers_are_assigned` is the other half:
+    together they say *why* it refuses, which is the thing a loose regex threw away.
+    `_audit/in_graph_rootfind.md` §1.
+    """
+    nested, _name, _report = mdf.nested_blocking(
+        REFERENCE_IXC, REFERENCE_ICC, REFERENCE_N_EQUALITY, REFERENCE_FIGURE_OF_MERIT
+    )
+    # Matched as the whole distinctive sentence, not a fragment. A `match=` loose enough
+    # to catch a different failure is how the claim this test replaces survived being
+    # falsified upstream -- so the assertion says which refusal, in cottax's own words.
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"carries no driver, so nothing answers block .* structure says it must be "
+            r"driven, and `Assign` is how the algorithm is said"
+        ),
+    ):
+        schedule_for(nested)
+
+
+def test_cottax_runs_that_nesting_once_the_drivers_are_assigned():
+    """...and with `Assign` done, MDF schedules: a `Drive` whose body is a `Schedule`.
+
+    The upstream gap this module was built around is closed (`~/jaxgraph` `33af0a5`):
+    `Drive.body` is a `Step`, `ConditionMap.body` is a `Step`, and `Schedule.steps`
+    descends into `blocking.inner`. Exercised rather than read -- the previous claim in
+    this file was read off a docstring and was stale by the time anyone looked.
+
+    A failure here is not a regression in `mdf.py`; it is cottax having moved.
     """
     nested, name, _report = mdf.nested_blocking(
         REFERENCE_IXC, REFERENCE_ICC, REFERENCE_N_EQUALITY, REFERENCE_FIGURE_OF_MERIT
     )
-    drivers = dict(default_drivers(problem.eager.blocking.graph))
-    drivers[name] = mdf.driver(problem)
-    with pytest.raises(ValueError, match=r"declares|problem"):
-        schedule_for(nested)
+    graph = nested.graph
+    blocking = Blocking.scc(assign_drivers(graph, default_drivers(graph))).nest(name)
+    schedule = schedule_for(blocking)
+    outer = schedule.steps[blocking.index[name]]
+    assert isinstance(outer, Drive)
+    assert outer.problem == name
+    # The body is the interior's own `Schedule`, not a `Call` over an acyclic graph --
+    # which is exactly what "one iteration of the outer driver is a whole run of the
+    # inner one" means, and what `MdfConditionMap` was written to fake.
+    assert isinstance(outer.body, Schedule)
+    assert set(outer.body.nodes) == set(blocking.blocks[blocking.index[name]]) - {name}
 
 
 def test_the_condition_map_is_a_condition_map(problem):
@@ -591,3 +634,295 @@ def test_the_root_find_driver_refuses_an_optimise_and_needs_a_start(
     assert driver.drives is RootFind
     with pytest.raises(ValueError, match="needs a starting value"):
         driver(mdf.condition_map(square_problem, {}), {})
+
+
+# ------------------------------------- the root find stated *inside* the graph
+#
+# `assemble` + `solve` keeps the problem outside the graph: the outer driver is called by
+# hand and `MdfConditionMap` re-runs the whole MDA per residual. `in_graph_root_find`
+# states it as a node instead and lets `Blocking.scc` decide what it drives. These check
+# the structural half -- what lands in the block, and that the nesting is real. The value
+# half (both `_eval` files still reproduce PROCESS's own `fsolve` x) is the `tier4` test
+# at the bottom, because it needs a PROCESS run.
+
+
+@pytest.fixture(scope="module")
+def in_graph(square_problem):
+    """`square_problem` with its `RootFind` inserted, driven, blocked and nested."""
+    return mdf.in_graph_root_find(square_problem)
+
+
+def test_the_problem_is_a_node_of_the_graph_and_owns_the_design(in_graph):
+    """The design variables stop being boundary inputs and become owned.
+
+    That is the whole formulation in one assertion: an `ixc` entry is no longer something
+    a caller supplies per residual evaluation, it is something a node of the graph
+    produces -- so `Blocking` can see the cycle it closes, and `Graph.owners` answers
+    "who determines this" for the design vector the way it does for everything else.
+    """
+    node = in_graph.graph[in_graph.problem]
+    assert set(node.owns) == set(in_graph.design)
+    assert set(node.owns) & set(in_graph.mdf.eager.inputs) == set(in_graph.design)
+    assert set(in_graph.design) & set(in_graph.schedule.inputs) == set()
+    # Its conditions are PROCESS's equalities and nothing else -- driver data
+    # (`^guess.*`, minted by `Assign`) is a read of the graph, not a condition.
+    assert conditions_of(node) == in_graph.conditions
+
+
+def test_the_blocking_drives_the_cycle_and_not_the_whole_graph(in_graph):
+    """The driven block is a minority of the graph, and the rest is ordinary steps.
+
+    The measured claim this formulation exists for. With the problem outside the graph a
+    residual evaluation runs every node; with it inside, `Blocking.scc` puts in the block
+    exactly what is coupled to it, everything upstream runs once before and everything
+    downstream once after.
+
+    **The bound is loose on purpose, because the fraction is a property of the run and
+    not of the formulation** [measured, `_audit/in_graph_rootfind.md` §2]: 61 of 169 here
+    (this fixture root-finds the reference stellarator's first two `ixc`, which reach
+    deep into the coil set), against 39 of 260 on `spherical_tokamak_eval` and 35 of 272
+    on `large_tokamak_eval` -- the two files that actually state this problem. A tighter
+    assertion would be pinning one configuration's reachability and calling it a law.
+    """
+    assert len(in_graph.block) < len(in_graph.graph.nodes) / 2
+    assert in_graph.index > 0, "nothing upstream of the loop -- wrong graph"
+    assert in_graph.index < len(in_graph.blocking.blocks) - 1, "nothing downstream"
+
+
+def test_the_driven_block_is_exactly_what_reachability_predicts(in_graph):
+    """`block == descendants(readers of design) & ancestors(owners of conditions)`, plus
+    the problem itself.
+
+    Not a restatement of `Blocking.scc`: this is the *independent* prediction, computed
+    from `Graph.descendants`/`ancestors` on the graph **without** the problem in it, and
+    it is what says the SCC the problem closes is the loop and nothing more. If the block
+    is ever bigger than this, some node reads a design variable that nothing predicted --
+    a more interesting result than agreement, so the assertion is two-sided.
+    """
+    graph = in_graph.mdf.graph
+    entry = {n for d in in_graph.design for n in graph.readers.get(d, ())}
+    exit_ = {graph.owners[c] for c in in_graph.conditions}
+    loop = set(graph.descendants(entry)) & set(graph.ancestors(exit_))
+    assert set(in_graph.block) == loop | {in_graph.problem}
+
+
+def test_the_interior_is_the_block_one_problem_in_and_holds_its_coupled_blocks(in_graph):
+    """`Blocking.inner` at the root find is the block minus the root find, blocked again.
+
+    This is the part that exercises `Blocking.inner` for the first time in this tree. The
+    interior is not a partition of the block -- the outer problem is in none of its
+    sub-blocks -- and stating it is what says which of the block's problems is outer.
+    """
+    interior = in_graph.interior
+    assert interior is not None
+    assert in_graph.problem not in interior.index
+    assert set(interior.graph.nodes) == set(in_graph.block) - {in_graph.problem}
+    # The coupled blocks that fall inside the loop are driven at the inner level, so one
+    # outer Newton step is one run of the interior's schedule.
+    assert sum(1 for t in interior.problem_types if t is not None) >= 1
+    assert len(interior.blocks) > 1
+
+
+def test_the_outer_drive_body_is_the_interiors_own_schedule(in_graph):
+    """`Drive.body` is a `Schedule`, not a `Call` -- which is what nesting *is*.
+
+    `Call(sub.runnable)` is the flat case and would be a silent wrong answer here: the
+    block holds driven sub-blocks, and running them as one acyclic body would evaluate a
+    fixed point once instead of converging it.
+    """
+    outer = in_graph.drive
+    assert isinstance(outer, Drive)
+    assert isinstance(outer.body, Schedule)
+    assert issubclass(outer.problem_type, RootFind)
+    assert outer.unknowns == in_graph.design
+    assert outer.conditions == in_graph.conditions
+    assert set(outer.body.nodes) == set(in_graph.block) - {in_graph.problem}
+
+
+def test_the_design_values_arrive_at_the_start_ports(in_graph):
+    """A design variable is owned now, so its value is driver data, not an input.
+
+    `Assign` mints one `^guess.<place>` per unknown and `in_graph_inputs` fills it from
+    the unknown's own name in the seed env -- the same rule `seed`/`prime` already apply
+    to every inner unknown. Getting this wrong is silent: the ports fall to `0.0` and the
+    outer Newton starts from the cold point rather than from the input file's `ixc`.
+    """
+    node = in_graph.graph[in_graph.problem]
+    guesses = driver_vars(node, Start)
+    assert len(guesses) == len(in_graph.design)
+    assert set(guesses) <= set(in_graph.schedule.inputs)
+    env = {v: jnp.asarray(3.0) for v in in_graph.mdf.eager.inputs}
+    env |= {v: jnp.asarray(0.0) for v in in_graph.mdf.eager.unknowns}
+    inputs = mdf.in_graph_inputs(in_graph, env)
+    assert all(float(inputs[g]) == pytest.approx(3.0) for g in guesses)
+
+
+def test_an_optimise_is_not_stated_in_graph_here(problem):
+    """The `Optimise` arm nests just as well but its driver does not trace, so it is
+    refused rather than silently answered by a `SeededNewtonDriver`.
+
+    `default_drivers` would happily put a `VmconDriver` on an `Optimise`; what it cannot
+    do is make the resulting schedule traceable, and `in_graph_solve` would then be a
+    different measurement wearing the same name.
+    """
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "this MDF states an Optimise, and only the `RootFind` arm is stated in-graph"
+        ),
+    ):
+        mdf.in_graph_root_find(problem)
+
+
+def test_a_place_already_bound_is_refused(square_problem):
+    """A node name is a binding, so binding twice is a caller error and says so."""
+    taken = next(iter(square_problem.graph.nodes))
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            f"{taken!r} is already a node of this graph -- pass `place` to bind the "
+            f"root find somewhere else"
+        ),
+    ):
+        mdf.in_graph_root_find(square_problem, place=taken)
+
+
+def test_the_step_count_and_the_whole_schedule_jit_are_not_alternatives(
+    square_problem,
+):
+    """An `Outcome` is asked for by default **and** the schedule still hashes.
+
+    This used to be a trade: `MdfNewtonDriver.outcome` was a plain `dict`, a driver is a
+    field of the graph, `Schedule.__hash__` reaches it through `Graph.__hash__`, and
+    `sand_harness.run_schedule` keys its whole-jit verdict on the schedule -- so asking
+    for the step count cost 856/993 XLA compiles instead of 5, for the same answer
+    (`_audit/in_graph_rootfind.md` §6). `core/solver/drivers.Outcome` -- a `dict` hashed
+    by identity -- closes it, and this pins that it stays closed, because the failure it
+    prevents surfaces on the *schedule*, several frames from the driver that caused it.
+    """
+    built = mdf.in_graph_root_find(square_problem)
+    assert isinstance(built.outcome, Outcome)
+    assert isinstance(built.outcome, dict), "written and read as an ordinary dict"
+    assert built.steps is None, "nothing has run yet"
+    assert hash(built.schedule)
+
+
+def test_a_caller_supplied_outcome_is_the_object_that_gets_written(square_problem):
+    """The caller's own `Outcome` reaches the driver -- not a copy of it.
+
+    `run_cold_matrix.py` builds an outcome, hands it to the driver and reads
+    `outcome.get("steps")` off **its own** object afterwards. Coercing a caller's
+    container into a fresh one would leave that read empty and the row's iteration count
+    blank, with nothing raising -- which is why a bare `dict` is refused rather than
+    wrapped.
+    """
+    mine = Outcome()
+    built = mdf.in_graph_root_find(square_problem, outcome=mine)
+    assert built.outcome is mine
+    assert built.graph[built.problem].driver.outcome is mine
+
+
+def test_a_bare_dict_outcome_is_refused_and_the_message_names_outcome(square_problem):
+    """`{}` is refused at construction, naming the class that works.
+
+    The refusal is at the driver, where the mistake is made; without it the `TypeError`
+    lands inside `run_schedule` on a `Schedule`, which reads as a cottax problem and is
+    not one.
+    """
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "outcome is a dict; it must be an `Outcome` "
+            "(`functional_process.core.solver.drivers.Outcome`, also `mdf.Outcome`)"
+        ),
+    ):
+        mdf.in_graph_root_find(square_problem, outcome={})
+
+
+# ------------------------------------------------- the value check, on the real files
+
+
+EVALUATION_FILES = ["large_tokamak_eval", "spherical_tokamak_eval"]
+"""The two configurations whose `i_process_run_mode` is `-2`. `run_cold_matrix.py` finds
+them by reading the mode; they are named here so this test is one parametrisation and not
+a survey."""
+
+WORST_DX = 1e-8
+"""What §24.10's table measured for these two files (`3.29e-12` and `3.64e-09`), rounded
+up to one bound. A restructuring that moves the answer past this is a bug until shown
+otherwise -- and `_audit/optimise_design.md` §19--§20's finding, that a last-bit
+perturbation can move an iterative solve's trajectory, is why the *tighter* check in this
+test is the one against the outer-driver answer rather than against PROCESS."""
+
+
+@pytest.mark.tier4
+@pytest.mark.parametrize("name", EVALUATION_FILES)
+def test_the_in_graph_root_find_gives_the_same_answer(name):
+    """Both `_eval` files reproduce PROCESS's own `fsolve` x, and the two formulations
+    agree with each other to roundoff.
+
+    Two comparisons, and they answer different questions:
+
+    - **against PROCESS** (`reference.converged`) says the port still solves the problem
+      PROCESS states, to §24.10's measured `3.29e-12` / `3.64e-09`.
+    - **against the outer driver**, at the same primed env, says the *restructuring*
+      moved nothing -- which is the stronger claim, since both arms share every model,
+      every inner driver and every seed and differ only in where the problem is stated.
+      Measured at `~1e-15`, i.e. XLA reassociation and nothing else.
+
+    Not marked `tier4` for the MDA's sake but for PROCESS's: `reference_run` is disk
+    cached, and a cold cache costs one ~95 s solve per file.
+    """
+    from functional_process.indat import (  # noqa: PLC0415 -- module import is ~20 s
+        graph_for,
+        machine_from_indat,
+        switch_values_from_indat,
+    )
+    from functional_process.sand_harness import (  # noqa: PLC0415
+        reference_run,
+        schedule_verdict,
+    )
+
+    path = f"tests/regression/input_files/{name}.IN.DAT"
+    reference = reference_run(path)
+    assembled = mdf.assemble(
+        reference.ixc,
+        reference.icc,
+        reference.n_equality,
+        reference.i_figure_merit,
+        graph=graph_for(machine_from_indat(path)),
+        switch_values=switch_values_from_indat(path),
+        root_find=True,
+    )
+    env, _out = mdf.prime(assembled, mdf.seed(assembled, reference.cold))
+
+    built = mdf.in_graph_root_find(assembled)
+    x, _at, _seconds = mdf.in_graph_solve(built, env)
+    got = [float(np.asarray(v)) for v in x]
+    # The closed trade, end to end: the whole run is **one** XLA program *and* the
+    # driver's verdict came back. Either alone used to be available and not both
+    # (`_audit/in_graph_rootfind.md` §6): `Outcome` fixed the hash and
+    # `jax.debug.callback` the write, and this is where both halves meet.
+    whole, reason = schedule_verdict(built.schedule)
+    assert whole, f"the single jit was refused: {reason}"
+    assert built.steps is not None
+    assert built.steps > 0
+    assert built.successful is True
+    against_process = [
+        abs(v - reference.converged[i]) / abs(reference.converged[i])
+        for i, v in zip(reference.ixc, got, strict=True)
+    ]
+    assert max(against_process) < WORST_DX, dict(
+        zip(reference.ixc, against_process, strict=True)
+    )
+
+    outer, _out, _seconds = mdf.solve(
+        assembled, env, optimiser=mdf.root_find_driver(assembled)
+    )
+    against_outer = [
+        abs(v - float(np.asarray(w))) / abs(float(np.asarray(w)))
+        for v, w in zip(got, outer, strict=True)
+    ]
+    assert max(against_outer) < 1e-12, dict(
+        zip(reference.ixc, against_outer, strict=True)
+    )

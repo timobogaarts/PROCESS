@@ -38,6 +38,7 @@ from cottax.problem import (
     RootFind,
     Start,
     driver_vars,
+    unknowns_of,
 )
 from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
@@ -491,9 +492,16 @@ def starts_for(graph, problem):
     would be seeding the output.
 
     The pairing is read off the node rather than re-derived with `Initialise.start_of`:
-    `Start`s pair with `owns` by declaration order (`cottax.problem._check_starts`), so
-    the node itself is the authority on which guess belongs to which unknown, and
-    `strict=True` fails loudly if that ever stops being true.
+    `Start`s pair with the *unknowns* by declaration order
+    (`cottax.problem._check_driver_data`), so the node itself is the authority on which
+    guess belongs to which unknown, and `strict=True` fails loudly if that ever stops
+    being true.
+
+    **`unknowns_of`, not `owns`.** A driven node also owns whatever its driver reports
+    (`cottax.problem.DriverOut` -- `^driver_out.steps.<place>` and friends), and a report
+    is not something a start pairs with. Asking `owns` here would zip a `Start` against a
+    step count and `strict=True` would refuse a perfectly good graph -- loudly, which is
+    why this is a one-line fix and not a lurking wrong answer.
 
     **A `Supply`-ed start is not returned**, because there is nothing for a caller to
     seed: `supply_starts` points those ports at a node that computes the guess, so the
@@ -515,7 +523,7 @@ def starts_for(graph, problem):
         return ()
     return tuple(
         (unknown, start)
-        for unknown, start in zip(node.owns, starts, strict=True)
+        for unknown, start in zip(unknowns_of(node), starts, strict=True)
         if start not in graph.owners
     )
 

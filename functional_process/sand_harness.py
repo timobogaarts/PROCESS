@@ -385,16 +385,18 @@ def _mda_runner(schedule):
 
 
 _SCHEDULE_RUNNERS: dict = {}
-"""`Schedule -> tuple[step-or-jitted-run, ...]`, built once per schedule.
+"""`(Schedule, fuse_upstream) -> tuple[step-or-jitted-run, ...]`, built once per key.
 
 Keyed by the `Schedule`, which is a frozen `equinox.Module` over a `Blocking` and
 therefore hashable, for the same reason `_MDA_SCHEDULES` is keyed by its `Graph`: the
 jitted groups are closures over the steps, so a second `run_schedule` on an equal
 schedule must find the *same* callables or it retraces what the cache already holds.
+`fuse_upstream` joins the key because the two groupings are different closures over the
+same steps and a shared entry would hand one policy's runners to the other's caller.
 """
 
 
-def run_schedule(schedule, env, whole=None):
+def run_schedule(schedule, env, whole=None, fuse_upstream=True):
     """`schedule(env)`, jitted whole where that is possible and part by part where not.
 
     **One jit is tried first, and it is `_mda_runner`'s exactly.** A schedule whose every
@@ -454,6 +456,13 @@ def run_schedule(schedule, env, whole=None):
     whole :
         `False` to skip the single-jit probe for a schedule already known to hold a
         host-side driver; `None` (the default) to probe and cache the verdict.
+    fuse_upstream :
+        `True` -- the default -- fuses **every** undriven group, including those a
+        `Drive` reads: one jit over everything the host-side driver does not sit in.
+        `False` restores §19.3's grouping, which left every group upstream of a `Drive`
+        eager. That was the default until 2026-09-01 and is kept only so the two
+        policies can be diffed; `_audit/optimise_design.md` §20 is the measurement that
+        retired it, and §20.9 the flip itself.
 
     Raises
     ------
@@ -489,9 +498,12 @@ def run_schedule(schedule, env, whole=None):
             return out
     if whole is not False:
         return dict(whole(path_map(env)))
-    runners = _SCHEDULE_RUNNERS.get(schedule)
+    key = (schedule, bool(fuse_upstream))
+    runners = _SCHEDULE_RUNNERS.get(key)
     if runners is None:
-        runners = _SCHEDULE_RUNNERS[schedule] = _schedule_runners(schedule)
+        runners = _SCHEDULE_RUNNERS[key] = _schedule_runners(
+            schedule, fuse_upstream=fuse_upstream
+        )
     for runner in runners:
         env = runner(env)
     return env
@@ -516,38 +528,52 @@ def schedule_verdict(schedule):
     return _SCHEDULE_WHOLE.get(schedule) is not False, _SCHEDULE_VERDICT.get(schedule)
 
 
-def _schedule_runners(schedule):
-    """`schedule.steps` as `Env -> Env` callables, with the drivers and everything
-    *upstream* of them eager. Split out so the grouping is `_SCHEDULE_RUNNERS`'s value
-    and not rebuilt.
+def _schedule_runners(schedule, fuse_upstream=True):
+    """`schedule.steps` as `Env -> Env` callables: every undriven group one jit, every
+    driver eager. Split out so the grouping is `_SCHEDULE_RUNNERS`'s value and not
+    rebuilt.
 
-    **An undriven group upstream of a host-side driver is left eager on purpose, and
-    this is measured, not caution.** Fusing a run of `Call` steps reassociates its
-    arithmetic, so its outputs move by ~1 ulp -- exactly the drift §24.4 recorded for
-    `mda_env`. Downstream of the last `Drive` that is harmless: it moves reported values
-    in the last bit. *Upstream* of one it moves the values the driver is handed, and an
-    SQP trajectory is not a continuous function of them. Measured on
-    `stellarator_helias`'s cold SAND solve (`_audit/optimise_design.md` §19): the 25 `Call`
-    steps ahead of its `Drive` produced two differing values under the group jit, worst
-    `4.4e-16` relative, one of them (`.tfcoil.a_tf_turn_steel`) inside the `Drive`'s own
-    context -- and the solve went from **90 iterations converged at `1.21775735`** to
-    **108 `stopped`** at `max|eq| 2.85e-02`. The seed was bit-identical; only the
-    trajectory moved.
+    **The whole schedule is fused except the host-side driver itself**, which cannot
+    trace at all (`cvxpy`, `pyvmcon`, a Python callback). `fuse_upstream=False` restores
+    the earlier policy -- groups a `Drive` reads left eager -- and is kept only so the
+    two can be diffed.
 
-    Nothing is lost by leaving them eager. §24.11's own split says where the cost is: on
-    `large_tokamak_nof`'s SAND solve the undriven steps are **2.8 s of 108** and the
-    `Drive` is 105.4 s, so the body jit below -- which runs *after* the driver has
-    converged and cannot move it -- is the whole saving.
+    **What that earlier policy was, and why it is no longer the default.** Fusing a run
+    of `Call` steps reassociates its arithmetic, so its outputs move by ~1 ulp -- the
+    drift §24.4 recorded for `mda_env`. Downstream of the last `Drive` that is harmless.
+    *Upstream* of one it moves the values the driver is handed, and an SQP trajectory is
+    not a continuous function of them: measured on `stellarator_helias`'s cold SAND solve
+    (`_audit/optimise_design.md` §19), the 25 `Call` steps ahead of its `Drive` produce
+    two differing values under the group jit, worst `4.4e-16` relative, one of them
+    (`.tfcoil.a_tf_turn_steel`) inside the `Drive`'s own context -- and the solve went
+    from **90 iterations converged at `1.21775735`** to **108 `stopped`** at
+    `max|eq| 2.85e-02`. So §19.3 left those groups eager, and §19 called that a rule.
+
+    **§20 measured that the rule protects a coin flip, so it was retired (2026-09-01).**
+    Perturbing `.tfcoil.a_tf_turn_steel` by hand, eager throughout, reproduces the fused
+    108-`stopped` run **bit for bit** at `-1` and `-2` ulp and leaves the 90-converged
+    run untouched at `+1` and `+2`. The fusion moves that value by exactly `-2` ulp; the
+    eager answer was on the tolerant side of one bit and nothing chose it. `SlsqpDriver`
+    flips on `+1` too. On `large_tokamak_nof` the same fusion moves only
+    `.heat_transport.etath_liq`, which no `Drive` there reads, and both policies agree
+    bitwise for all three drivers -- i.e. the protection was contingent on an accident of
+    which values a given fusion reassociates, not on anything a policy can state.
+
+    Speed decided nothing either way. §24.11's split -- on `large_tokamak_nof`'s SAND
+    solve the undriven steps are **2.8 s of 108** against the `Drive`'s 105.4 s -- says
+    the group jit was always a rounding error against the body jit below, which runs
+    *after* the driver has converged and cannot move it.
     """
     from cottax.evaluate import Drive  # noqa: PLC0415
 
+    upstream_group = _jitted_group if fuse_upstream else _eager_group
     runners, group = [], []
     for step in schedule.steps:
         if isinstance(step, Drive):
             if group:
-                runners.append(_eager_group(tuple(group)))
+                runners.append(upstream_group(tuple(group)))
                 group = []
-            runners.append(_driven_runner(step))
+            runners.append(_driven_runner(step, fuse_upstream=fuse_upstream))
         else:
             group.append(step)
     if group:
@@ -560,7 +586,10 @@ def _schedule_runners(schedule):
 def _eager_group(steps):
     """A run of undriven steps, unfused, as an `Env -> Env` callable.
 
-    Used for every group a `Drive` is downstream of; see `_schedule_runners`.
+    Reached only under `_schedule_runners(fuse_upstream=False)`, the retired policy that
+    left every group a `Drive` reads eager; see there, and `_audit/optimise_design.md`
+    §20 for what retired it. Kept because diffing the two policies is how that section
+    was measured and how any successor to it will be.
     """
 
     def run(env):
@@ -591,7 +620,7 @@ def _jitted_group(steps):
     return run
 
 
-def _driven_runner(step):
+def _driven_runner(step, fuse_upstream=True):
     """`Drive.__call__`, with the body's re-run jitted and the driver left eager.
 
     Re-implemented rather than wrapped because the two halves of `Drive.__call__` need
@@ -610,7 +639,7 @@ def _driven_runner(step):
     from cottax.evaluate import Schedule  # noqa: PLC0415
 
     body = (
-        (lambda env: run_schedule(step.body, env))
+        (lambda env: run_schedule(step.body, env, fuse_upstream=fuse_upstream))
         if isinstance(step.body, Schedule)
         else _jitted_group((step.body,))
     )

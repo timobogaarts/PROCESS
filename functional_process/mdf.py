@@ -31,37 +31,27 @@ that exactly and cannot yet run it, and the boundary between those two is sharp:
   were 174/131/twelve/111/11 before `1db889f6` dissolved ten `FixedPoint`s into switch
   slots; `run_mdf_harness.py` prints the live ones, and `_audit/optimise_design.md` §14
   measures what the change cost the outer solve.)
-- **Evaluation: not expressible today.** `Schedule.steps` derives one `Call`/`Drive` per
-  block from `blocking.subgraphs` and **never reads `blocking.inner`**, so `schedule_for`
-  on the nested blocking builds a `Drive` over the entire 123-node block and dies on the
-  same `problem_type` refusal. `~/jaxgraph`'s own `CLAUDE.md` says so without hedging:
-  *"nothing builds a nested one yet: the steps are derived from the blocking, so a
-  sub-schedule has no slot to sit in. Nesting lands on `Drive.body`, which becomes a
-  `Step` rather than a `Graph`. Until then ... `schedule_for` still refuses MDF."*
+- **Evaluation: expressible too, since `~/jaxgraph` `33af0a5`.** This paragraph used to
+  say the opposite, and the correction is `_audit/in_graph_rootfind.md` §1: `Drive` now
+  carries `(subgraph, problem, body : Step)`, `ConditionMap.body` is a `Step` run by
+  calling it, and `Schedule.steps` builds `Schedule(held)` for a block whose
+  `blocking.inner` entry is not `None`. So `schedule_for` on a nested blocking builds a
+  nested `Drive`, and the *one type* this section named as the missing upstream piece is
+  no longer missing. **Measured, not read** (`_audit/in_graph_rootfind.md` §1):
+  `schedule_for(Blocking.scc(assign_drivers(g)).nest(opt))` on the stellarator reference
+  builds a 47-step schedule whose `Drive` over the 123-node block has a 112-block
+  `Schedule` for a body.
 
-So the missing upstream piece is **one type**: `Drive.body` is a `Graph` (run by
-`_run_acyclic`, therefore acyclic) where MDF needs it to be a `Step`. `MdfConditionMap`
-below is that one change, made locally and only for the outer problem: a `ConditionMap`
-whose body is run by a `Schedule` instead of by `_run_acyclic`. Nothing else about the
-driver interface moves -- `VmconDriver` is handed this object **unchanged** and cannot
-tell the difference, which is the evidence that the gap really is that narrow. See §
-"What this module does not do" for what stays out of scope.
+  What the old claim's own evidence turned out to be: `nested_blocking()` returns a graph
+  with **no drivers assigned at all** (`cut_graph` is structure only and
+  `sand.optimise_graph` attaches nothing by default), so `schedule_for` refused it with
+  *"carries no driver ... `Assign` is how the algorithm is said"* -- a refusal about the
+  missing `Assign`, not about the nesting. `test_mdf.py`'s regex matched that message and
+  the test passed for the wrong reason; §1 records both.
 
-**Status against `cottax` (checked 2026-08-26, `~/jaxgraph` HEAD `ef093ba`).** Everything
-above is still accurate *at that commit*: `Drive`'s fields are `(subgraph, driver)`,
-`ConditionMap.body` is annotated `Graph` and run by `_run_acyclic`, and `Schedule.steps`
-builds `Drive(sub, driver)` without ever reading `blocking.inner`. So `MdfConditionMap`
-stays, and this module still cannot be replaced by `schedule_for(nested_blocking(...))`.
-
-The fix is, however, **in flight upstream and not yet committed**: `~/jaxgraph`'s working
-tree carries an unlanded change giving `Drive` a `problem` and a `body : Step`, making
-`ConditionMap.body` a `Step`, and having `Schedule.steps` descend into `blocking.inner`
--- exactly the one type this section names. When that lands, the replacement to make is
-`nested_blocking()` -> `schedule_for` -> delete `MdfConditionMap`, and cottax's own
-`tests/test_evaluate.py::test_a_solve_nested_in_a_solve_runs` is the worked example.
-Do not port against that working tree before it is committed: it is another session's
-unfinished work, and this port pins `cottax` at a commit for exactly this reason
-(`_audit/next_steps.md` §13.1).
+`MdfConditionMap` below is therefore **redundant** and is kept for one release anyway:
+removing it is a second change, and one change at a time is what makes a moved answer
+attributable (`_audit/in_graph_rootfind.md` §7).
 
 Why bother, given SAND works
 ----------------------------
@@ -154,12 +144,22 @@ Two consequences worth stating rather than discovering:
   works around it by clearing `seed` (the start is supplied explicitly by `prime()`
   instead), and the one-line upstream fix is recorded there.
 
-What this module does not do
-----------------------------
-It does not make cottax able to *run* a nested blocking, and does not try to:
-the outer `Drive` is performed by calling the driver directly (`solve()`), which is what
-`Drive.__call__` would do. Nothing here is a `Step`, so an MDF cannot be nested inside
-anything else, and that limit is the same one upstream has.
+Two shapes of outer solve, and the second is the one to prefer
+--------------------------------------------------------------
+`assemble` + `solve` is the **outer-driver** shape: the problem is not in the graph, the
+outer `Drive` is performed by calling the driver directly, and `MdfConditionMap` re-runs
+the *entire* MDA schedule on every residual evaluation.
+
+`in_graph_root_find` + `in_graph_solve` is the **in-graph** shape, for the two files
+whose `i_process_run_mode` is `-2`: the `RootFind` is a node of the graph, `Blocking.scc`
+decides what it drives, and the driven block is the SCC the problem actually closes --
+39 of 259 nodes on `spherical_tokamak_eval`, 35 of 271 on `large_tokamak_eval`
+[measured]. Everything upstream of the design variables runs **once**, before the solve;
+everything downstream of the constraints runs **once**, after it. The two coupled blocks
+that genuinely fall inside the loop become the driven block's `Blocking.inner`, so one
+outer Newton step is one run of that interior's own `Schedule`.
+
+`_audit/in_graph_rootfind.md` carries the block sizes, the answer agreement and the cost.
 """
 
 import dataclasses
@@ -183,12 +183,17 @@ from cottax.problem import (
     RootFind,
     Start,
 )
-from cottax.spec import VarPath
+from cottax.spec import In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
 from jax.flatten_util import ravel_pytree
+from jax.tree_util import GetAttrKey
 
 from functional_process import sand
-from functional_process.core.solver.drivers import SeededNewtonDriver, VmconDriver
+from functional_process.core.solver.drivers import (
+    Outcome,
+    SeededNewtonDriver,
+    VmconDriver,
+)
 from functional_process.indat import graph_for
 from functional_process.mda import (
     assign_drivers,
@@ -572,17 +577,27 @@ def restart(mdf: Mdf, out):
 class MdfConditionMap(ConditionMap):
     """`f(*design) -> conditions`, with a whole converged MDA inside every call.
 
-    A `cottax.evaluate.ConditionMap` in every respect the driver can observe -- same
-    `unknowns`/`conditions`/`context` fields, same `f(*unknowns) -> tuple` contract, so
-    `VmconDriver` takes it unchanged and unmodified -- differing in **one** thing:
-    `ConditionMap.__call__` runs its body with `_run_acyclic`, which requires the body to
-    be acyclic, and this runs it with a `Schedule`, which does not.
+    **Redundant since `~/jaxgraph` `33af0a5`, and kept for one more change anyway.**
+    `ConditionMap.body` is a `Step` upstream now and `__call__` does
+    `at = self.body(env)` -- which is what this subclass was written to do -- so a
+    `ConditionMap` whose body is a `Schedule` is cottax's own object and needs no
+    subclass. `_audit/in_graph_rootfind.md` §1 measures that; §7 says why removing it is
+    a *separate* pass: a restructuring and a deletion landing together makes a moved
+    answer unattributable.
 
-    That single difference is the whole of the upstream gap this module documents. cottax
-    already says where the fix belongs: *"Nesting lands on `Drive.body`, which becomes a
-    `Step` rather than a `Graph`"*. `body` is kept here as the schedule's own graph in
-    run order, so it stays a truthful answer to "what does this map compute", and
-    `schedule` carries how.
+    What it was: a `cottax.evaluate.ConditionMap` in every respect the driver can observe
+    -- same `unknowns`/`conditions`/`context` fields, same `f(*unknowns) -> tuple`
+    contract, so `VmconDriver` takes it unchanged -- differing in **one** thing, that
+    `ConditionMap.__call__` used to run its body with `_run_acyclic`, which requires an
+    acyclic body, and this runs it with a `Schedule`, which does not. `body` is kept here
+    as the schedule's own graph in run order, so it stays a truthful answer to "what does
+    this map compute", and `schedule` carries how.
+
+    Note what this object is *not*, and what `in_graph_root_find` is for: its `schedule`
+    is the **whole** MDA, so every residual evaluation re-runs every node of the graph,
+    including the ~85 % that are either upstream of the design variables (constant during
+    the solve) or downstream of the constraints (no vote in choosing `x`). A `Drive` over
+    a block `Blocking.scc` chose runs only what is coupled.
 
     Subclassing rather than duck-typing is deliberate: `isinstance(x, ConditionMap)`
     stays true, so if a driver ever checks -- `core/solver/drivers.py` is being edited
@@ -688,11 +703,44 @@ class MdfNewtonDriver(SeededNewtonDriver):
     therefore visible in the design table rather than clipped out of it.
     """
 
-    outcome: object = None
-    """A `dict` this driver writes `steps`/`result` into, or `None`. Not a return value
-    because `AbstractDriver.__call__`'s contract is the answer and nothing else."""
+    outcome: Outcome | None = None
+    """An `Outcome` this driver writes `steps`/`successful`/`result` into, or `None`. Not
+    a return value because `AbstractDriver.__call__`'s contract is the answer and nothing
+    else.
+
+    **An `Outcome` and not a bare `dict`, and that is checked rather than coerced.** A
+    driver is an `eqx.Module` and goes into the graph, so a `dict` here makes the whole
+    `Schedule` unhashable and `sand_harness.run_schedule` fails several frames away
+    (`core/solver/drivers.Outcome`, which is one and says why; measured in
+    `_audit/in_graph_rootfind.md` §6). Coercing a `dict` to an `Outcome` here would be
+    worse than refusing it: the caller would keep writing into *their* object and this
+    driver would write into a copy, so the step count would silently read back empty.
+    `mdf.Outcome` is the same class, re-exported so a caller of this module needs one
+    import and not two."""
 
     max_steps: int = 256
+
+    def __check_init__(self) -> None:  # noqa: PLW3201 -- equinox's post-init hook
+        """Refuse a bare `dict`, naming the class that works.
+
+        On construction rather than at the call site, so a driver built by hand is
+        caught in the same place `Assign` would catch a type mismatch -- and long before
+        `run_schedule` hashes a schedule several frames away.
+
+        Raises
+        ------
+        TypeError
+            If `outcome` is anything but an `Outcome` or `None`.
+        """
+        if self.outcome is not None and not isinstance(self.outcome, Outcome):
+            raise TypeError(
+                f"outcome is a {type(self.outcome).__name__}; it must be an "
+                f"`Outcome` (`functional_process.core.solver.drivers.Outcome`, also "
+                f"`mdf.Outcome`) -- a driver is a field of the graph, so a plain `dict` "
+                f"makes the whole `Schedule` unhashable and `run_schedule` fails on the "
+                f"schedule rather than here. `Outcome` is a `dict` hashed by identity, "
+                f"so it is written and read exactly as one"
+            )
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
         """The root of `conditions`, started from `data[Start]`.
@@ -726,16 +774,38 @@ class MdfNewtonDriver(SeededNewtonDriver):
             max_steps=self.max_steps,
         )
         if self.outcome is not None:
-            self.outcome["steps"] = int(np.asarray(solution.stats["num_steps"]))
-            # `RESULTS` members `str()` to `optimistix._solution.RESULTS<>`, which says
-            # nothing, so the verdict is recorded as the boolean a row can print and the
-            # `.value` string optimistix writes its diagnosis into.
-            self.outcome["successful"] = bool(solution.result == optx.RESULTS.successful)
-            self.outcome["result"] = str(getattr(solution.result, "_value", ""))
+            # **Through `jax.debug.callback`, and that is not decoration.** The three
+            # values are `int`/`bool`/`str` of jax arrays, and inside a trace those are
+            # tracers: `int(np.asarray(tracer))` raises `TracerArrayConversionError`, so
+            # writing them directly made this driver untraceable and cost
+            # `run_schedule`'s single jit -- the same defect class `traceable_drivers`
+            # documents on the *inner* solvers, made by the outer one
+            # (`_audit/in_graph_rootfind.md` §6). A callback runs host-side when the
+            # program runs, so one code path serves the eager call and the compiled one.
+            jax.debug.callback(
+                self._record,
+                solution.stats["num_steps"],
+                solution.result == optx.RESULTS.successful,
+                getattr(solution.result, "_value", jnp.asarray(-1)),
+            )
         return unravel(solution.value)
 
+    def _record(self, steps, successful, code) -> None:
+        """Write one solve's verdict into `outcome`, from concrete arrays.
 
-def root_find_driver(mdf: Mdf, outcome=None, **kwargs) -> MdfNewtonDriver:
+        Called by `jax.debug.callback`, so `steps`/`successful`/`code` are always numpy
+        and never tracers, however the surrounding schedule is run. `RESULTS` members
+        `str()` to `optimistix._solution.RESULTS<>`, which says nothing, so the verdict
+        is recorded as the boolean a row can print and the integer code beside it.
+        """
+        self.outcome["steps"] = int(np.asarray(steps))
+        self.outcome["successful"] = bool(np.asarray(successful))
+        self.outcome["result"] = str(int(np.asarray(code)))
+
+
+def root_find_driver(
+    mdf: Mdf, outcome: Outcome | None = None, **kwargs
+) -> MdfNewtonDriver:
     """The driver for a `RootFind` MDF -- `mdf.problem_type` decides, not the caller.
 
     `rtol`/`atol` default to `SeededNewtonDriver`'s `1e-4` on the *residual*, and the
@@ -744,10 +814,15 @@ def root_find_driver(mdf: Mdf, outcome=None, **kwargs) -> MdfNewtonDriver:
     default `xtol = 1.49e-8` on the *step*, which is a tighter but incomparable rule;
     the honest comparison is the answer, and that is what the matrix column measures.
 
+    `outcome` is passed through **unwrapped**: the object the caller holds is the object
+    this driver writes into, which is the whole point of a results sink. A bare `dict` is
+    refused by `MdfNewtonDriver.__check_init__` rather than coerced, for the same reason.
+
     Raises
     ------
     TypeError
-        If `mdf` states an `Optimise` -- `mdf.driver` is the one to build for that.
+        If `mdf` states an `Optimise` -- `mdf.driver` is the one to build for that. Also,
+        via the driver, if `outcome` is a bare `dict` rather than an `Outcome`.
     """
     if not issubclass(mdf.problem_type, RootFind):
         raise TypeError(
@@ -965,10 +1040,17 @@ def inner_residuals(schedule: Schedule, env):
 def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, **kwargs):
     """MDF **stated as structure**: `Blocking.scc(graph + Optimise).nest(the Optimise)`.
 
-    Nothing runs this -- `schedule_for` refuses it, see this module's docstring -- and
-    that is exactly why it is here: it is the difference between "cottax cannot express
-    MDF" (false) and "cottax cannot evaluate a nesting it can express" (true), and the
-    two have completely different consequences for the rewrite.
+    The returned graph carries **no drivers** -- `cut_graph` is structure only and
+    `sand.optimise_graph` attaches none by default, because `Combine` refuses to join two
+    problems that already carry an algorithm. So `schedule_for` on this blocking refuses
+    it, and the refusal is *"carries no driver ... `Assign` is how the algorithm is
+    said"*: a missing `Assign`, **not** a limit on nesting.
+
+    That distinction is the whole of `_audit/in_graph_rootfind.md` §1. This function's
+    docstring used to say "nothing runs this", and `test_mdf.py` pinned it with a regex
+    loose enough to match the driver message -- so the claim survived the upstream change
+    that falsified it. `assign_drivers(blocking.graph, default_drivers(...))` and then
+    `Blocking.scc(...).nest(...)` schedules fine [measured].
 
     Returns
     -------
@@ -981,6 +1063,334 @@ def nested_blocking(ixc, icc, n_equality, i_figure_merit, graph=None, **kwargs):
         driven, ixc, icc, n_equality, i_figure_merit, **kwargs
     )
     return Blocking.scc(with_problem).nest(problem_name), problem_name, report
+
+
+IN_GRAPH_PLACE = NodePath((GetAttrKey("RootFind"),))
+"""Where the in-graph problem binds.
+
+A plain `NodePath`, the same shape `sand.optimise_graph` binds its `Optimise` at
+(`.Opt`), and deliberately **not** one of `rewrites`' minted problem namespaces:
+`^problem.<var>` names a problem after the *one* variable it owns, and a root find over
+two or three `ixc` entries has no single variable to be named from. `in_graph_root_find`
+takes `place` so a caller assembling two of them in one graph can say where each goes.
+"""
+
+
+@dataclasses.dataclass(frozen=True)
+class InGraphRootFind:
+    """PROCESS's evaluation-mode root find, **stated as a node of the graph**.
+
+    The contrast with `Mdf` + `solve` is the whole point, and it is structural rather
+    than numerical (`_audit/in_graph_rootfind.md` §3 measures that the answer does not
+    move):
+
+    | | outer driver (`solve`) | in-graph (`in_graph_solve`) |
+    |---|---|---|
+    | where the problem is | nowhere: `Mdf.design`/`conditions` | a `RootFind` node |
+    | what decides the loop | the caller, handing over the schedule | `Blocking.scc` |
+    | nodes per residual | every node of the graph | the block, one problem in |
+    | the coupled blocks inside | re-driven by the flat schedule | `Blocking.inner` |
+    | upstream / downstream | re-evaluated per residual | run once, before / after |
+
+    `mdf` is kept whole rather than unpacked because every downstream reader wants
+    something from it -- `design`, `conditions`, `reported`, `report`, and `eager` for
+    `prime` -- and a second copy of those fields would be a second thing to keep in step.
+    """
+
+    mdf: Mdf
+    """The assembly this states -- a `RootFind` one (`assemble(root_find=True)`)."""
+    graph: Graph
+    """`mdf.graph` plus the `RootFind`, with every problem's driver `Assign`ed on."""
+    blocking: Blocking
+    """`Blocking.scc(graph).nest(problem)`: the SCC blocking, nested at the problem."""
+    schedule: Schedule
+    problem: NodePath
+    outcome: Outcome
+    """What the outer `MdfNewtonDriver` writes its step count and verdict into. A field
+    and not a return value, for `MdfNewtonDriver.outcome`'s own reason: a `Drive` returns
+    an env, so the solver's own diagnosis has nowhere else to go.
+
+    **Always present, and it costs nothing.** It used to default to `None`, because a
+    plain `dict` on the driver made the `Driven` node -- and therefore the `Graph`, the
+    `Blocking` and the `Schedule` -- unhashable, and `sand_harness.run_schedule` keys its
+    whole-jit verdict on the schedule; asking for the step count therefore cost the
+    single jit. `core/solver/drivers.Outcome` is a `dict` hashed by **identity** and
+    closes that: the step count and the one-program run are no longer alternatives
+    (`_audit/in_graph_rootfind.md` §6, re-measured)."""
+
+    @property
+    def steps(self) -> int | None:
+        """How many Newton steps the outer solve took -- `None` before it has run."""
+        return self.outcome.get("steps")
+
+    @property
+    def successful(self) -> bool | None:
+        """Optimistix's own verdict on the outer solve -- `None` before it has run."""
+        return self.outcome.get("successful")
+
+    @property
+    def index(self) -> int:
+        """Which block of `blocking` the root find is answered at."""
+        return self.blocking.index[self.problem]
+
+    @property
+    def drive(self) -> Drive:
+        """The outer `Drive` step -- the surface a caller measures a residual on."""
+        return self.schedule.steps[self.index]
+
+    @property
+    def block(self) -> tuple:
+        """The nodes `Blocking.scc` put in the driven block, the problem included."""
+        return self.blocking.blocks[self.index]
+
+    @property
+    def interior(self) -> Blocking:
+        """How that block is blocked one level down -- the block minus the root find."""
+        return self.blocking.inner[self.index]
+
+    @property
+    def design(self) -> tuple[VarPath, ...]:
+        """The run's `ixc`, in PROCESS's own order -- what the root find owns."""
+        return self.mdf.design
+
+    @property
+    def conditions(self) -> tuple[VarPath, ...]:
+        """The equalities alone -- what the root find reads, one per design variable."""
+        return self.mdf.conditions
+
+    @property
+    def reported(self) -> tuple[VarPath, ...]:
+        """The inequalities: in the graph, evaluated once at the answer, never driven."""
+        return self.mdf.reported
+
+
+def root_find_node(mdf: Mdf) -> RootFind:
+    """The `RootFind` `mdf` states, as a cottax node: owns `design`, reads `conditions`.
+
+    One condition per unknown, paired by declaration order -- which
+    `Square.__check_init__` enforces and `assemble(root_find=True)` already guaranteed by
+    refusing a non-square file. No `Start` port is declared here: driver data belongs to
+    the driver, so `Assign` mints `^guess.<place>` when one is attached
+    (`cottax.problem._check_no_driver_ports`).
+
+    Raises
+    ------
+    TypeError
+        If `mdf` states an `Optimise`. See the message.
+    """
+    if not issubclass(mdf.problem_type, RootFind):
+        raise TypeError(
+            f"this MDF states an {mdf.problem_type.__name__}, and only the `RootFind` "
+            f"arm is stated in-graph here -- an `Optimise` nests just as well "
+            f"(`_audit/in_graph_rootfind.md` §1 measures it), but its outer driver is a "
+            f"`VmconDriver`, which does not trace, so that is a separate change"
+        )
+    return RootFind(
+        inputs=tuple(In(c) for c in mdf.conditions),
+        outputs=tuple(Out(v) for v in mdf.design),
+    )
+
+
+def in_graph_root_find(
+    mdf: Mdf,
+    place: NodePath = IN_GRAPH_PLACE,
+    driver=None,
+    outcome: Outcome | None = None,
+    traceable: bool = True,
+    **kwargs,
+) -> InGraphRootFind:
+    """State `mdf`'s root find inside the graph and let `Blocking.scc` decide what it
+    drives.
+
+    Four steps, and none of them is a new mechanism -- every one is cottax's own:
+
+    1. `Insert` the `RootFind` (`root_find_node`). It owns the `ixc` design variables,
+       which were boundary inputs of `mdf.graph` (`assemble` refuses an assembly where
+       they are not), so registering it turns free inputs into owned variables and
+       changes nothing else.
+    2. `Assign` a driver onto every problem, the new one included (`assign_drivers`).
+       This is the step `nested_blocking` omits, and omitting it is what made
+       `schedule_for` look like it refused the nesting.
+    3. `Blocking.scc` -- **the finest blocking, and no caller decision at all.** What
+       lands in the driven block is what the graph says is coupled to the root find, and
+       that is the measurement this whole formulation is about.
+    4. `.nest(place)` -- the root find answered at its own level, everything else in its
+       block blocked again by `Blocking.scc`. The two coupled blocks that fall inside the
+       loop become inner `Drive`s, so one outer Newton step is one run of the interior's
+       `Schedule`.
+
+    `traceable` clears every inner `SeededNewtonDriver`'s `seed` (`traceable_drivers`),
+    matching what `condition_map` hands the outer driver today, so the two shapes
+    differentiate the same function. It is kept as a switch rather than hardcoded because
+    the defect that motivated it is fixed upstream (`core/solver/drivers._usable` opens
+    with an `isinstance(flat, jax.core.Tracer)` test, `_audit/next_steps.md` §24.11); the
+    default stays `True` only so that this change moves the structure and not the seeds.
+
+    `outcome` is the `Outcome` `MdfNewtonDriver` writes `steps`/`successful`/`result`
+    into. `None` (the default) constructs a fresh one; a caller passing its own gets
+    **that object** written, never a copy. A bare `dict` is refused, naming `Outcome`
+    (`MdfNewtonDriver.outcome`). Asking for the step count no longer costs anything --
+    `Outcome` hashes by identity, so the schedule stays hashable and
+    `sand_harness.run_schedule`'s single jit stays available
+    (`_audit/in_graph_rootfind.md` §6).
+
+    `**kwargs` reach `MdfNewtonDriver` (`rtol`, `atol`, `max_steps`); `driver` overrides
+    it outright, for a caller comparing two algorithms over one structure.
+
+    Raises
+    ------
+    ValueError
+        If `place` already names a node of `mdf.graph`.
+    """
+    node = root_find_node(mdf)
+    if place in mdf.graph.definitions:
+        raise ValueError(
+            f"{place!r} is already a node of this graph -- pass `place` to bind the "
+            f"root find somewhere else"
+        )
+    with_problem = (Plan(mdf.graph) + Insert(path_map([(place, node)]))).graph
+    outcome = Outcome() if outcome is None else outcome
+    drivers = default_drivers(with_problem)
+    if traceable:
+        drivers = traceable_drivers(drivers)
+    # `default_drivers` already put a `SeededNewtonDriver` on the new `RootFind` -- it
+    # dispatches on the problem type and cannot know this one is the outer solve. It is
+    # replaced rather than skipped: `MdfNewtonDriver` reports optimistix's verdict
+    # instead of raising it, which is what makes a non-converged outer solve a row.
+    drivers[place] = driver or MdfNewtonDriver(outcome=outcome, **kwargs)
+    assigned = assign_drivers(with_problem, drivers)
+    blocking = Blocking.scc(assigned).nest(place)
+    return InGraphRootFind(
+        mdf=mdf,
+        graph=assigned,
+        blocking=blocking,
+        schedule=schedule_for(blocking),
+        problem=place,
+        outcome=outcome,
+    )
+
+
+def in_graph_inputs(built: InGraphRootFind, env):
+    """The env `built.schedule` is handed, out of an `Mdf` seed/prime env.
+
+    Two things move between the two shapes, and both are the same fact from opposite
+    sides: the design variables are **owned** here rather than supplied, so their values
+    have to arrive at the outer problem's `Start` ports (`^guess.<place>`, minted by
+    `Assign`) instead of at their own names -- exactly the rule `seed`/`prime` already
+    apply to every inner unknown, now applied to the outer one too. Everything else is
+    carried across unchanged.
+
+    A `Schedule` refuses a value at a name its own nodes own, so this filters to
+    `schedule.inputs` at the door rather than handing the store on whole
+    (`_inputs_only`'s reason, one level up).
+
+    Raises
+    ------
+    KeyError
+        If `env` answers no value for some schedule input, its own name and its
+        unknown's both.
+    """
+    starts = guess_sources(built.graph)
+    out, missing = {}, []
+    for var in built.schedule.inputs:
+        if var in env:
+            out[var] = env[var]
+        elif var in starts and starts[var] in env:
+            # A `^guess.*` port is grounded from the unknown it starts. For the outer
+            # root find that unknown is a design variable, whose value `seed` read off
+            # the input file's own `ixc`.
+            out[var] = env[starts[var]]
+        else:
+            missing.append(var)
+    if missing:
+        raise KeyError(
+            f"no value for schedule input(s) "
+            f"{[v.path_str() for v in missing]} -- `seed` then `prime` is what fills "
+            f"this env, and a `^guess.*` port is filled from the unknown it starts"
+        )
+    return out
+
+
+def _hashable(value) -> bool:
+    """Whether `value` can be a key -- asked, never inferred from what it holds.
+
+    `run_schedule` hashes the schedule it is given, and a `Schedule` reaches every
+    driver field through `Graph.__hash__`, so the question is about the whole object and
+    not about any one field a caller could enumerate.
+    """
+    try:
+        hash(value)
+    except TypeError:
+        return False
+    return True
+
+
+def in_graph_solve(built: InGraphRootFind, env, whole=None):
+    """Run the whole schedule: upstream once, the root find, downstream once.
+
+    The counterpart of `solve`, and shorter for a structural reason rather than a
+    stylistic one -- `solve` writes out by hand what `Drive.__call__` does, because the
+    `Drive` it would be could not be constructed. Here it can, so the outer solve is one
+    step of an ordinary `Schedule` walk and there is nothing to write out.
+
+    **Which walk it is matters more than the restructuring does, at this size**, and the
+    two are independent: run step by step, a `Schedule` re-enters Python once per node
+    and XLA compiles once per `jnp` primitive (`_audit/optimise_design.md` §18.6), so the
+    ~215 ordinary `Call` steps either side of the driven block dominate everything the
+    restructuring saved. `run_schedule` is the fix and it is not this module's
+    (`_audit/next_steps.md` §24.11): one jit for the whole run, the outer Newton in it.
+    `whole` is forwarded to it; `whole=False` skips its single-jit probe.
+
+    **The path is chosen on whether the schedule can actually be hashed**, asked by
+    hashing it. `run_schedule` keys its whole-jit verdict and its runner groups on the
+    schedule, so an unhashable one fails several frames in with a `TypeError` naming
+    `dict`. Every driver this module builds is hashable today -- `Outcome` is what closed
+    that (`InGraphRootFind.outcome`) -- so this is a guard against a hand-built driver
+    carrying some other unhashable field, not a trade-off any caller has to make. It is
+    *asked*, and not inferred from `outcome`, because inferring it is what made the two
+    look mutually exclusive when only one particular field ever made them so.
+
+    Returns
+    -------
+    :
+        `(x, out, seconds)` -- the design values in `built.design` order, the full output
+        env, and the wall clock of the whole run. `built.steps` and `built.successful`
+        carry the driver's own verdict.
+    """
+    inputs = in_graph_inputs(built, env)
+    started = time.perf_counter()
+    if _hashable(built.schedule):
+        out = run_schedule(built.schedule, inputs, whole=whole)
+    else:
+        # The walk computes the same values by the same nodes in the same order -- it is
+        # the cost that differs, not the answer (`_audit/in_graph_rootfind.md` §6).
+        out = built.schedule(inputs)
+    return (
+        tuple(out[var] for var in built.design),
+        out,
+        time.perf_counter() - started,
+    )
+
+
+def in_graph_shape(built: InGraphRootFind) -> dict:
+    """The assembly's shape -- `mdf_shape` plus what the blocking decided.
+
+    `block` against `nodes` is the measurement the formulation exists for: how much of
+    the graph a residual evaluation actually touches. `inner_blocks`/`inner_driven` here
+    are the *driven block's* interior, not the whole MDA's -- `mdf_shape`'s are that.
+    """
+    interior = built.interior
+    return {
+        **mdf_shape(built.mdf),
+        "graph_nodes": len(built.graph.nodes),
+        "outer_blocks": len(built.blocking.blocks),
+        "block": len(built.block),
+        "body": len(built.drive.body.nodes),
+        "interior_blocks": len(interior.blocks),
+        "interior_driven": sum(1 for t in interior.problem_types if t is not None),
+        "upstream": built.index,
+        "downstream": len(built.blocking.blocks) - built.index - 1,
+    }
 
 
 def mdf_shape(mdf: Mdf) -> dict:
@@ -1004,14 +1414,21 @@ def mdf_shape(mdf: Mdf) -> dict:
 
 
 __all__ = [
+    "IN_GRAPH_PLACE",
+    "InGraphRootFind",
     "Mdf",
     "MdfConditionMap",
     "MdfNewtonDriver",
+    "Outcome",
     "assemble",
     "central_difference",
     "condition_map",
     "driver",
     "evaluation",
+    "in_graph_inputs",
+    "in_graph_root_find",
+    "in_graph_shape",
+    "in_graph_solve",
     "inner_residuals",
     "jacobian",
     "mdf_graph",
@@ -1019,6 +1436,7 @@ __all__ = [
     "nested_blocking",
     "prime",
     "root_find_driver",
+    "root_find_node",
     "seed",
     "solve",
     "traceable_drivers",

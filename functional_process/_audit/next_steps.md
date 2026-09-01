@@ -2918,6 +2918,27 @@ failure at 60 to **58**. PROCESS is 46. The gap is 1.26x, both formulations agre
 count, and neither the tolerance (worth 10–27 iterations) nor the derivative explains
 any of it.
 
+> **[CORRECTED 2026-09-01 — `optimise_design.md` §20.10, §20.13. The ratio stands; the
+> second witness does not.]** §15's CLARABEL rows were re-measured under both jit
+> policies. **MDF reproduces exactly and is bitwise invariant to fusion**: cold **58** at
+> `1e-6` (`conv 8.91e-07`), 67 at `1e-8`, `dx = 0.00e+00` between fused and eager in every
+> cell — and that invariance is structural rather than lucky, because MDF's outer context
+> holds no value the schedule computes. **SAND's rows do not reproduce at all**, on either
+> policy: cold `1e-6` is **80** where §15 records 58, `1e-8` is **90** where §15 records
+> 83, and C2 is **231 converged** where §15 records 207 `unbounded`. Those moved before
+> that session and the cause is unidentified.
+>
+> So **"1.26x" is now MDF's number alone** — 58 against PROCESS's 46, reproduced and
+> jit-invariant. The clause *"both formulations agree on the count"* is **withdrawn**
+> until SAND's rows are re-measured and the 83/58 → 90/80 move is explained. Two
+> independent formulations landing on one count was the strongest evidence in this record
+> that the residual gap is real rather than an artefact, and that evidence is currently
+> suspended, not disproved.
+>
+> Also worth carrying, because it will be misread otherwise: **"eager" in these tables
+> never meant "not compiled."** `VmconDriver` jits the condition map it iterates and the
+> `jacfwd` of it; the fused/eager axis is the schedule walk *around* the driver.
+
 ### 17.1 The warm regression, which is the price of the fix — pick a policy
 
 C2 (start at PROCESS's converged x) **stops short under CLARABEL in both harnesses**
@@ -5858,3 +5879,379 @@ sites. **There is nothing left in this module to remove that is not a guard.**
 expression ones: `fields.py`'s twelve batched kernel traces (§24.9), and
 `bootstrap_current.py`'s intra-file recomputation (§24.11, ~460 equations if the shared
 quantities are computed once).
+
+## 26. The objective gap is decomposed, and the `_eval` files stop being two rows — 2026-09-01
+
+§24.10 item 3 named one open measurement — *"the port's objective at **PROCESS's own
+converged `x`**, which decomposes `d objf` into 'the model evaluates it differently' and
+'the optimiser landed somewhere else'"* — and said no row of the cold matrix should be
+described as matching PROCESS's objective until it was taken. It is taken.
+
+### 26.1 The measurement, and the flag that makes it one command
+
+Stage A of `run_sand_harness.py` already *was* this measurement: it evaluates every
+condition of the SAND block at PROCESS's converged point and prints the port's value
+beside PROCESS's own, `^cond.numerics.objf` included. What it did not have was a way to
+run it alone — Stage B's finite-difference Jacobian is `5 * len(ixc)` PROCESS pipeline
+sweeps and Stage C is two full solves, so taking one number cost the whole ladder or a
+scratch script restating `main`'s setup, which is the third harness
+`run_cold_matrix.py`'s docstring exists to refuse.
+
+`run_sand_harness.py --stages A` (`stages()`, default `ABC`, refuses a letter that is
+not a stage rather than running the ones it recognised;
+`tests/functional_process/test_run_sand_harness.py`, 5 cases). The setup ahead of Stage
+A is deliberately **not** gated — the PROCESS run, the MDA env and the assembly are what
+every stage is a measurement *of*. A run without Stage B takes the disk cache for
+`reference_run` (Stage B is the only stage that needs the live model objects), so
+`--stages A` on the stellarator costs the MDA and the assembly rather than PROCESS's own
+93 s solve.
+
+### 26.2 [measured] `stellarator_helias`: at a shared design point the gap **is** the
+chain, to the digit
+
+| | value |
+|---|---|
+| port's objective at **PROCESS's** converged `x` | `+1.235973781` |
+| PROCESS's objective at its own `x` | `+1.214916785` |
+| **relative gap at the shared point** | **`1.7332e-02`** |
+
+`mda_harness.EXPLAINED_DISAGREEMENTS[".heat_transport.p_plant_electric_base_total_mw"]`
+records the `+17.604 MW` chain reaching `.costs.coe` at `rel_diff = 1.73e-2`, and
+`objective_metric_6` is `coe/100`. **That is the number, not a number of the same order.**
+
+**A second, independent witness in the same table, and it is exact.** `^cond.constraints.c16`
+reads `+1.760374481e-02` against PROCESS's `+3.779981883e-09`. c16 is the *net electric
+power* lower limit — `geq(p_plant_electric_net_mw, p_plant_electric_net_required_mw)`,
+`constraints.py:640` — and `stellarator_helias.IN.DAT:18` sets that requirement to
+`1000` MW. So the port's normalised residual is `17.60374481 MW / 1000 MW`: the chain's
+own `-17.604` on `p_plant_electric_net_mw`, read off a constraint rather than off the
+cost accumulation, agreeing to eight significant digits. PROCESS sits on the bound
+(`3.8e-09`); the port is short by exactly that offset.
+
+**Everything else at PROCESS's point agrees.** 11 of 15 comparable conditions are exact
+at `rel < 1e-9` and the rest are `1e-16`--`1e-14`, except two that are the
+divide-by-nothing shape §24.11 met twice: `c2` at `6.02e-07` (both sides `-7.375e-10`)
+and `c35` at `1.15e-09` (both `-1.94e-07`).
+
+#### The decomposition, which is the point
+
+| quantity | value |
+|---|---|
+| the model's own gap, at a shared `x` | **`+1.7332e-02`** |
+| the port's optimiser moving off that point | **`-1.4739e-02`** |
+| `d objf` the matrix reports at the port's optimum | `+2.3381e-03` |
+
+**The matrix row's small `d objf` was two larger effects partially cancelling, not
+agreement**, and this is the third form of §17.2's error rather than a fourth: the two
+objectives being differenced were never at the same design point (`worst dx 1.08e-01` at
+ixc 109), and the difference of two quantities measured at two points is not evidence
+about either. §24.10 recorded the arithmetic conflict honestly — *"the chain predicts
+`1.73e-2` where `2.34e-03` is observed — an order of magnitude apart. Both cannot be the
+same number, and the difference is presumably the design point"* — and withheld the
+`EXPLAINED` label on that reasoning. **The guess was right and the withholding was
+right.** `EXPLAINED_OBJECTIVE_READS`'s `worst dx <= 1e-4` gate is what a label needs, and
+this row still does not pass it.
+
+**Not measured, and it is the obvious next question:** PROCESS's *own* objective at the
+**port's** design point. If the `+17.604 MW` offset were constant in `x` — which nothing
+here establishes — PROCESS's metric at the port's answer would be `1.196700`, i.e. **1.5 %
+better than PROCESS's own converged `1.214917`**, and the port would be finding a better
+design by PROCESS's own measure rather than a worse one by its own. That is a claim worth
+either proving or killing, and proving it costs one PROCESS pipeline evaluation at the
+port's `x`, not a solve. Recorded as an inference, flagged as an inference.
+
+### 26.3 [measured] `large_tokamak_nof`: the model is **exact** at PROCESS's point, so
+`worst dx 6.37e-01` is not a wrong model
+
+| | value |
+|---|---|
+| port's objective at PROCESS's converged `x` | `+1.600000000` |
+| PROCESS's objective at its own `x` | `+1.600000000` |
+| relative gap | **`0.00e+00`** |
+
+23 of 27 comparable conditions exact at `rel < 1e-9`. §24.10's "Not done" item said of
+this configuration's `worst dx 6.37e-01` (SAND, ixc 135 `f_nd_impurity_electrons(13)`)
+and `2.01e-02` (MDF, ixc 57 `dr_tf_nose_case`) at `d objf ~1e-11`: *"a flat optimum, a
+genuinely different local solution, and a wrong model all produce that shape."*
+**The third is now ruled out** — the model reproduces PROCESS's objective exactly and its
+constraints to `1e-15` at PROCESS's own point. What remains is a flat optimum or a
+genuinely different solution, and those two are not separated here.
+
+**One lead this turned up, and it is not the objective.** `^cond.constraints.c13` is the
+worst comparable row on this configuration: port `-6.516518645e-06` against PROCESS's
+`-8.266498332e-06`, `2.12e-01` relative and `1.75e-06` absolute — three orders of
+magnitude worse than the `1e-15`--`1e-09` every other constraint manages, on a residual
+too far from zero for the divide-by-nothing reading to apply. c13 is the **burn time**
+lower limit (`geq(times.t_plant_pulse_burn, constraints.t_burn_min)`,
+`constraints.py:589`), and `.times.t_plant_pulse_burn` is exactly the value
+`mda.CUTS` cuts (§24.4) and whose fixed point this configuration's SAND assembly reports
+as an **array-valued problem dropped, loop-carried value frozen at the seed**
+(`^problem.times.t_plant_pulse_burn.cycle`, printed by `sand_harness.assemble` on both
+tokamaks). That is the one structural candidate in view. **Not measured**: whether the
+port's converged `.times.t_plant_pulse_burn` differs from PROCESS's by the corresponding
+amount. One diff of that path between the warm MDA env and `reference.data` settles it,
+and `mda_harness`'s 472/34 census is where it should be reconciled — the path is not in
+`EXPLAINED_DISAGREEMENTS` today. `c16` on the same file (`2.58e-03` relative,
+`4.2e-08` absolute, both sides `-1.6e-05`) is small enough to be that same shape and is
+named only so a later reader does not rediscover it as new.
+
+### 26.4 [measured] `large_tokamak_eval`, taken en route — c72 is PROCESS's own value
+
+`--machine` is `large_tokamak_eval`, not `large_tokamak_nof`, so this row was measured
+before the intended one and is kept because it settles something. 23 of 26 exact, and
+**`^cond.constraints.c72` reads `+5.529140796e-01` on both sides at `rel 1.20e-15`.**
+§21.3 recorded that constraint as violated by `+5.53e-01` with an identically zero
+gradient row, and §24.10 reframed it as *"a constraint PROCESS never looks at, in a
+problem PROCESS never poses"*. It is now checked from the other side: PROCESS's own
+converged `DataStructure` carries that same violation to fifteen digits. The port
+reproduces PROCESS exactly; what differed was only which problem was being asked.
+
+Its `^cond.numerics.objf` row (`1.33e-06`) compares two evaluations of
+`objective_metric_7`, which **PROCESS never forms for this file** — it is a model
+agreement check between the port and `objective_function`, not a comparison with an
+answer PROCESS produced. It is not evidence about that file's solve.
+
+### 26.5 The `_eval` files are one row, because the formulation split has no content for
+them
+
+§24.10 left *"SAND still states an `Optimise` on the two `_eval` files"* as the same fix
+applied in a second place. **It is not the same fix, and applying it there would have
+been wrong.** MDF and SAND are two ways of distributing an *optimisation*: MDF hands the
+optimiser PROCESS's `ixc` and converges the MDA inside each evaluation, SAND hands it
+design and coupling together and holds them with residual equalities. A file stating
+`i_process_run_mode = -2` states no optimisation to distribute. MDF's design vector *is*
+`ixc`, so the MDF root find poses **exactly** PROCESS's own square system; a SAND root
+find would pose a larger square system over design *and* coupling that PROCESS never
+writes down, and printing it under a "formulation" heading beside PROCESS's answer
+implies a comparison with no content.
+
+So `run_cold_matrix` runs **one arm** on a root-find file and prints **one line**
+(`_solve_both`, `render`), and the notes block states the argument on every affected row
+so the single line reads as a decision rather than as a measurement that failed. The
+inequalities are still evaluated once at the answer, exactly as PROCESS evaluates them,
+and reported through `Mdf.reported`.
+
+**A test changed sides, and that is worth recording.**
+`test_a_formulation_that_optimised_a_root_find_file_says_so` pinned the *label* on the
+mismatch — a SAND `objf` beside a `PRO objf` of `none`. It was right about the mismatch
+and wrong about the remedy. It is replaced by
+`test_a_root_find_file_gets_one_row_and_the_table_says_why` (one MDF line, no SAND line,
+the argument in the notes) and `test_an_objf_on_a_root_find_row_is_flagged_as_unexpected`
+— which keeps the old guard alive for a state nothing produces today: `mdf_graph` mints
+no objective node when the file names no figure of merit, so a number in that cell would
+be a defect, and the note now says so instead of explaining a known gap.
+
+`tests/functional_process/test_cold_matrix.py` 30 passed,
+`test_run_sand_harness.py` 5 passed. **The matrix itself was not regenerated** — these
+two rows change shape, and §24.10's table already carries a provenance header saying it
+was measured on a dirty tree.
+
+### 26.6 What this leaves open
+
+1. **PROCESS's objective at the port's `x`** (§26.2). One pipeline evaluation. It decides
+   whether the stellarator's port answer is better or worse than PROCESS's by PROCESS's
+   own metric, and no claim about that row should be made until it is taken.
+1b. **Where `spherical_tokamak_eval`'s `-16.35 MW` comes from** (§26.7). The documented
+   chain's cause is stellarator-specific and this file is not a stellarator. The largest
+   single unexplained thing this measurement found.
+2. **`.times.t_plant_pulse_burn` against PROCESS's** (§26.3, §26.7). One diff, and now
+   backed by two configurations rather than one.
+3. **A flat optimum against a different local solution** on `large_tokamak_nof`
+   (§26.3) — unchanged from §24.10 except that "a wrong model" is eliminated.
+4. ~~**Regenerate the cold matrix on a clean tree.**~~ **Done 2026-09-01 — §26.8.** Every
+   optimisation row byte-identical; the two `_eval` SAND rows gone as intended; and
+   `st_regression`'s failures replaced by the two real ones behind the schedule blocker
+   `9335f784` closed. §24.10's "90" is still unreconciled against §22.9's "83" and
+   `optimise_design.md` §20.10's "90 eager / 108 fused" — see item 8.
+5. **`st_regression`'s objective condition is unreachable from its SAND block** (§26.7).
+   `KeyError: VarPath(^cond.numerics.objf)`, the same failure its SAND matrix row has, and
+   in the same class as the two constraints that run reports as omitted. **Not** the
+   schedule blocker `9335f784` closed, and now known to sit one layer up from it.
+6. **Instrument `cvxpy`'s QP refusal** (`optimise_design.md` §20.11-20.12). Every
+   one-ulp failure measured across both formulations ends in `QSPSolver` — the QP
+   declining a subproblem — and that component has never been instrumented. It is also
+   exactly where §17's own last confident diagnosis turned out to live (the OSQP/CLARABEL
+   default). **This is the live lead, and it displaced three hypotheses that did not
+   survive measurement**: the active set does not change at the fork and `c24` is not
+   even active there, so the documented kink is not the trigger; `cond(J)` is `1.7e4`
+   median for SAND and **42** for MDF, and MDF flips anyway, so conditioning is not the
+   mechanism; and nothing is frozen or dropped on this configuration (`degenerate`,
+   `array_valued`, `omitted`, `external` all `0`).
+7. **SAND's conditioning is one row.** `^cond.stellarator.wp_width_r_min` has row norm
+   **2892** against O(1) for every other; it *is* the top singular value, and dropping it
+   takes `cond(J)` from `1.7e4` to **68**. The same row §19.2 flagged and the one
+   `VmconDriver.condition_scale`'s docstring calls the coil-island residual. New here is
+   the MDF comparison at 42, which shows a well-conditioned version of this same problem
+   exists — so this is a scaling defect in one condition, not a property of the machine.
+8. **Why SAND's §15 rows moved** (83/58 → 90/80, C2 `unbounded` → 231 converged),
+   unidentified and predating the fusion work. §17's correction depends on it.
+
+### 26.9 The Stage B Jacobian, 2026-09-01 — 111 of 120 cells inside PROCESS's own error bar
+
+Taken with the new `--stages AB` (§26.1) on `stellarator_helias`. Port Jacobian `(21, 14)`,
+**0 non-finite cells**, jitted median **0.757 ms** against PROCESS's 40 pipeline sweeps in
+2.06 s for the same quantity. Nine of the 120 compared cells fall outside 4x the finite
+difference's own Richardson error bar: **seven of the eight `objf` columns** (1.3 % to
+15 %) and **`c16` at x3 and x59** (`1.6e-02`, `4.1e-03`). Every other constraint row agrees
+at `1e-4` to `1e-16`.
+
+**This is not an error in the port's descent direction, and §11 already measured that** --
+*"against a central difference of the port's own condition map the `objf` row is correct to
+`7.7e-10`; §10.5c's 18-34 % is a port-vs-PROCESS difference"*. It is the
+`p_plant_electric_base_total_mw` chain, which §26.2 measures in *value* at `1.73e-02` on the
+same file, now seen differentiated -- and `c16` being the only other starred row is
+consistent rather than coincidental, since it reads that same field. Today's 1.3-15 % is
+also smaller than the 18-34 % §10.5c recorded.
+
+`c24` at x3 reads `1.35e+282` and is **not** starred, which is the whole story in one cell:
+PROCESS's FD entry there is numerically zero and its own error bar swamps the difference.
+That is the documented kink -- `fast_alpha_beta`'s clamped square root, every converged
+point on `(Te + Ti)/20 == 0.65` to `1.9e-09`, `epsfcn = 0.01` seven orders wider than the
+feature, so PROCESS returns a chord across it and `c24` alone drifts like `h^0.52`.
+
+### 26.7 [measured] All seven configurations, and c16 is the most informative row in the table
+
+§§26.2--26.4 report the three configurations the open items named. The remaining four were
+taken the same way and the set is worth reading whole. **Six of seven**; `st_regression`
+is the exception and its reason is known (below).
+
+| configuration | port objf at PROCESS's `x` | PROCESS's own | rel | exact rows |
+|---|---|---|---|---|
+| `large_tokamak_nof` | `+1.600000000` | `+1.600000000` | **`0.00e+00`** | 23/27 |
+| `large_tokamak_eval` † | `+0.9286072531` | `+0.9286060221` | `1.33e-06` | 23/26 |
+| `low_aspect_ratio_DEMO` | `-0.4062952568` | `-0.4062962302` | `2.40e-06` | 13/26 |
+| `helias_5b` | `+0.7636707575` | `+0.7635183720` | `2.00e-04` | 4/6 |
+| `spherical_tokamak_eval` † | `+0.5926272532` | `+0.5886069969` | `6.83e-03` | 14/17 |
+| `stellarator_helias` | `+1.235973781` | `+1.214916785` | **`1.73e-02`** | 11/15 |
+| `st_regression` | — | — | — | Stage A does not run |
+
+† These two state `i_process_run_mode = -2`, so PROCESS forms **no** objective for them
+(§24.10). The cell compares two evaluations of `objective_metric_7` at
+`numerics.py:154`'s dataclass default — a model-against-model check, not a comparison
+with anything PROCESS produced, and not evidence about that file's solve.
+
+**Read the `exact rows` column with care and never as a score.** Most non-exact rows are
+residuals sitting at `1e-11`--`1e-16` where a relative measure has nothing to divide by —
+`low_aspect_ratio_DEMO`'s 13 of 26 is almost entirely that, with `c1` at `3.78e-01`
+comparing `+6.9e-15` against `+5.0e-15`. The rows that carry information are the ones with
+a scale, and there are few of them.
+
+**`st_regression` fails Stage A with `KeyError: VarPath(^cond.numerics.objf)`** — the
+objective's own condition is absent from the block's evaluated map. That is the *same*
+failure `run_cold_matrix.py`'s docstring already records for its SAND build, and it is
+consistent with what the run prints just above it: constraints 56 and 67 are omitted for
+*"reads nothing the SAND block produces ... unreachable by its condition map"*, and this
+file's objective (`i_figure_merit = -5`) is evidently in that class too. **HEAD
+`9335f784` fixed this configuration's MDA *schedule*, which is a different and earlier
+blocker**; nothing about the objective condition moved with it, and this measurement is
+the first thing to say so.
+
+#### c16 disagrees on three configurations, and one of the three is not a stellarator
+
+`^cond.constraints.c16` is the net electric power lower limit and it is normalised as
+`1 - value/bound` (`constraints.py:194`), so the difference in normalised residual times
+the file's own `p_plant_electric_net_required_mw` is a difference in **megawatts** of
+`p_plant_electric_net_mw`. Every configuration that has c16 active, at PROCESS's own
+converged point:
+
+| configuration | bound (MW) | Δ normalised | **Δ `p_plant_electric_net_mw` (MW)** |
+|---|---|---|---|
+| `stellarator_helias` | 1000 | `+1.760374e-02` | **`-17.6037`** |
+| `spherical_tokamak_eval` | 100 | `+1.635017e-01` | **`-16.3502`** |
+| `helias_5b` | 1000 | `+1.082474e-02` | **`-10.8247`** |
+| `large_tokamak_nof` | 400 | `+4.23e-08` | `-1.7e-05` |
+| `low_aspect_ratio_DEMO` | 350 | `+5.97e-08` | `-2.1e-05` |
+| `large_tokamak_eval` | 400 | `~0` (`rel 1.69e-13`) | `~0` |
+
+Three consequences, in increasing order of how much they should worry a reader:
+
+1. **`stellarator_helias`'s `-17.6037 MW` is `EXPLAINED_DISAGREEMENTS`' `+17.604 MW`
+   chain, read off a constraint instead of off the cost accumulation**, to six digits.
+   §26.2 uses it as the second witness for the objective gap. Nothing new.
+2. **The chain's magnitude is per-machine, not a constant.** `helias_5b` runs the same
+   documented mechanism at **`-10.8247 MW`**. The write-up in `mda_harness.py` explains
+   the mechanism with the reference stellarator's number embedded in the prose; the
+   mechanism generalises and the number does not, and a reader checking a second machine
+   against `17.604` would conclude the explanation had failed.
+3. **`spherical_tokamak_eval` is not a stellarator, and the documented cause is
+   stellarator-specific.** `EXPLAINED_DISAGREEMENTS`' account is that
+   `Stellarator.run(output=True)` reruns `st_build`/`st_coil` in the opposite order to
+   the solve pass, so `.build.z_tf_inside_half` moves between passes, so
+   `a_plant_floor_effective` moves while `p_plant_electric_base_total_mw` is never
+   recomputed. **None of that applies to a spherical tokamak**, and this file
+   nevertheless shows a `-16.3502 MW` offset in the same field. Either there is a second
+   dual-write of the same shape on the tokamak path, or the documented cause is a special
+   case of something more general. **This is a new finding and it is not explained here.**
+   The measurement that would settle it is the one `mda_harness` already knows how to
+   take: instrument the report pass on `spherical_tokamak_eval` and diff
+   `a_plant_floor_effective` and `p_plant_electric_base_total_mw` between the solve pass
+   and the report pass, exactly as the stellarator's account was built.
+
+#### c13 is a second systematic row, and it points at a frozen loop-carried value
+
+§26.3 raised `^cond.constraints.c13` — the burn time lower limit — on
+`large_tokamak_nof` at `1.75e-06` absolute against surrounding constraints agreeing to
+`1e-15`. It repeats on `low_aspect_ratio_DEMO`: `-6.251810273e-01` against
+`-6.251849209e-01`, `6.23e-06` relative and **`3.89e-06` absolute**. Two configurations,
+same constraint, same order of magnitude, and both are files whose SAND assembly reports
+`^problem.times.t_plant_pulse_burn.cycle` as an **array-valued problem dropped, its
+loop-carried value frozen at the seed**. `.times.t_plant_pulse_burn` is the value
+`mda.CUTS` cuts (§24.4) and the only quantity c13 reads. **Still not measured**, and it is
+now worth more than it was: one diff of that path between the warm MDA env and
+`reference.data`, on either file. §24.4's own warning is the frame — *"in the target
+state a redundant cut carrying a stale value is a wrong answer on some machine nobody has
+run yet"* — except that this is not the redundant cut but the array-valued drop, and the
+machines have now been run.
+
+#### One item that reads as closed
+
+`low_aspect_ratio_DEMO`'s `^cond.constraints.c90` reads `+2.159935106e-06` against
+PROCESS's `-1.979780784e-10`. §19.1 item 2 (*"Port `cs_fatigue.ncycle`"*) recorded that
+constraint as **violated at exactly `+1.000000` with an identically zero gradient row,
+blocking that configuration from any start**. It is neither `+1.0` nor zero-rowed now, and
+§24.10's matrix has that configuration solving. Stage A is at PROCESS's converged point
+and the blocker was recorded at a cold one, so this is consistent with the item having
+been closed since rather than proof of it; the residual `2.16e-06` absolute is small, real,
+and unexplained.
+
+### 26.8 [measured] The matrix regenerated, 2026-09-01 — one row set changed, and it is the intended one
+
+§26.6 item 4 asked for this on three grounds. All seven configurations, `--provider`,
+one pass, **383 s** against §24.10's 751 s — the jit work of §24.4/§24.11/§20.9 roughly
+halving a full matrix run is the first end-to-end measurement of it.
+
+**Every optimisation row is byte-identical to the tracked table of 2026-08-31 22:24.**
+`stellarator_helias` MDF 67/SAND 108, `helias_5b` 4/7, `large_tokamak_nof` 7/10,
+`low_aspect_ratio_DEMO` 10/500 — objectives, `d objf`, `worst dx`, `max|eq|` and `min ie`
+all unchanged to every printed digit. **The fused default (`optimise_design.md` §20.9)
+moved nothing here**, which is consistent with §20.11's account rather than lucky: fusion
+only reaches an answer where it moves a value a host-side `Drive` reads, and on six of
+seven configurations it does not.
+
+**What changed, and both were intended:**
+
+1. **The two `_eval` SAND rows are gone** (§26.5), taking with them
+   `large_tokamak_eval`'s `no-step` — the last one on the table — and
+   `spherical_tokamak_eval`'s `objf 0.594644641` beside a `PRO objf` of `none`. Their MDF
+   rows are unchanged: `3.29e-12` and `3.64e-09` against PROCESS's own `fsolve` x.
+2. **`st_regression`'s two failures are now different failures**, and this is HEAD
+   `9335f784` showing up in the table for the first time. Both arms used to read *"coupled
+   block [`dr_tf_inboard_winding_pack`, `tf_inboard_radii`, `dr_tf_plasma_case`] declares
+   no problem"* — the schedule blocker that commit closed. Behind it:
+
+   - **MDF: `ValueError: the SQP was handed a non-finite problem`**, with
+     `non-finite derivative rows: ['^cond.constraints.c16']` and no non-finite condition
+     values and no all-zero column. This is the lead `9335f784` recorded and did not
+     chase: **unjitted `jax.jacfwd` gives a fully finite Jacobian at the same point where
+     `jax.jit(jax.jacfwd(...))` does not.** A jit artefact in a derivative is a different
+     and more serious class than anything else on this table.
+   - **SAND: `KeyError: VarPath(^cond.numerics.objf)`** — §26.7's finding, reached from
+     the matrix instead of from Stage A.
+
+**`c16` is now implicated in three separate ways and they should not be conflated.** It
+carries the `+17.604`/`10.82`/`16.35 MW` net-electric offset on three configurations
+(§26.7); it is one of the two Jacobian rows outside PROCESS's own FD error bar on
+`stellarator_helias` (§26.9, and that is the same chain differentiated); and its
+derivative row goes non-finite under jit on `st_regression` alone. The first two are one
+cause. The third is not obviously related to either, and assuming it is would be the
+fourth repetition of §17.2's error.

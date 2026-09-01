@@ -3,6 +3,7 @@
     $PY functional_process/run_sand_harness.py                   # the stellarator
     $PY functional_process/run_sand_harness.py --input <IN.DAT>  # any other machine
     $PY functional_process/run_sand_harness.py --machine         # the tokamak
+    $PY functional_process/run_sand_harness.py --stages A        # one stage, not three
 
 With no argument this is exactly what it always was: the Helias stellarator,
 `tests/regression/input_files/stellarator_helias.IN.DAT`, whose numbers other records
@@ -25,6 +26,11 @@ One PROCESS run (~95 s for the stellarator) serves all three stages: Stage A nee
 converged `DataStructure`, Stage B needs its live model objects to re-run the pipeline
 for the finite-difference reference, and Stage C needs both its converged answer (to
 start C2 at) and the input file's own cold start (to start C3 at).
+
+`--stages` runs a subset (`stages()`); **only Stage B needs those live model objects**,
+so a selection without it takes `reference_run`'s disk cache and skips PROCESS's solve
+altogether. Everything ahead of Stage A is run regardless -- it is what the stages are a
+measurement *of*.
 """
 
 import sys
@@ -272,6 +278,40 @@ def _inputs_only(schedule, env):
     return {var: value for var, value in env.items() if var in inputs}
 
 
+def stages(argv: list[str]) -> str:
+    """Which of the three stages this invocation runs -- `--stages ABC` by default.
+
+    **Stage A alone is a real use, and it did not have a spelling.**
+    `_audit/next_steps.md` §24.10 item 3 asks for the port's objective *at PROCESS's own
+    converged x*, which is exactly Stage A's `^cond.numerics.objf` row and nothing else;
+    taking it meant either sitting through Stage B's finite-difference Jacobian
+    (`5 * len(ixc)` PROCESS pipeline sweeps) and Stage C's two solves, or writing a
+    scratch script that restates this function's setup -- which is the third harness
+    `run_cold_matrix.py`'s docstring exists to refuse. One flag is cheaper than either.
+
+    The setup ahead of Stage A is *not* optional and is not gated: the PROCESS run, the
+    MDA env and the assembly are what every stage is a measurement *of*, and a run that
+    skipped them would report on a different problem.
+
+    Raises
+    ------
+    SystemExit
+        On a letter that is not a stage, rather than silently running the ones it did
+        recognise -- `--stages D` meaning "A, B and C" is the kind of default that gets
+        a number recorded against the wrong measurement.
+    """
+    if "--stages" not in argv:
+        return "ABC"
+    index = argv.index("--stages") + 1
+    if index >= len(argv) or argv[index].startswith("-"):
+        raise SystemExit("--stages needs a subset of ABC, e.g. --stages A")
+    asked = argv[index].upper()
+    unknown = set(asked) - set("ABC")
+    if unknown:
+        raise SystemExit(f"--stages: {''.join(sorted(unknown))} is not a stage (ABC)")
+    return asked
+
+
 def main(argv=None):
     """Run the three stages and print each one's report. `argv` defaults to this
     process's own, so importing and calling `main([...])` is the same thing as the
@@ -280,11 +320,15 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     path = input_file(argv)
     is_reference = path == _resolve(REFERENCE_INPUT_FILE)
+    asked = stages(argv)
     print(f"input file:     {path}")
+    print(f"stages:         {asked}")
 
     # `use_cache=False`: Stage B rebuilds `Evaluators` from `reference.models`, and a
-    # cached run carries `models=None` by design (see `sand_harness.reference_run`).
-    reference = reference_run(str(path), use_cache=False)
+    # cached run carries `models=None` by design (see `sand_harness.reference_run`). Only
+    # Stage B wants them, so a run without it takes the cache and skips PROCESS's own
+    # solve -- ~95 s on the stellarator, which is most of a Stage A measurement.
+    reference = reference_run(str(path), use_cache="B" not in asked)
     print(
         f"PROCESS: {reference.solver_iterations} VMCON iterations in "
         f"{reference.solve_seconds:.1f} s, convergence parameter "
@@ -347,225 +391,241 @@ def main(argv=None):
     names = [c.path_str() for c in drive.conditions]
 
     # ---------------------------------------------------------------- A
-    print()
-    print(stage_a(reference, condition_map, names, start).summary())
+    if "A" in asked:
+        print()
+        print(stage_a(reference, condition_map, names, start).summary())
 
     # ---------------------------------------------------------------- B
-    full, compile_seconds, jit_ms = port_jacobian(condition_map, start)
-    condition_rows = [
-        i
-        for i, name in enumerate(names)
-        if name == "^cond.numerics.objf" or name.startswith("^cond.constraints.")
-    ]
-    residual_rows = [i for i in range(len(names)) if i not in condition_rows]
-    design = list(range(len(reference.ixc)))
-    coupling = list(range(len(reference.ixc), len(start)))
-    reduced = reduce_jacobian(
-        full,
-        condition_rows,
-        design,
-        residual_rows,
-        coupling,
-        [float(np.asarray(start[k])) for k in coupling],
-    )
-    port_objective, port_constraints = to_process_spelling(reduced, reference.scale)
-    process, process_error, fd_seconds = process_jacobian_with_error(reference)
+    if "B" in asked:
+        full, compile_seconds, jit_ms = port_jacobian(condition_map, start)
+        condition_rows = [
+            i
+            for i, name in enumerate(names)
+            if name == "^cond.numerics.objf" or name.startswith("^cond.constraints.")
+        ]
+        residual_rows = [i for i in range(len(names)) if i not in condition_rows]
+        design = list(range(len(reference.ixc)))
+        coupling = list(range(len(reference.ixc), len(start)))
+        reduced = reduce_jacobian(
+            full,
+            condition_rows,
+            design,
+            residual_rows,
+            coupling,
+            [float(np.asarray(start[k])) for k in coupling],
+        )
+        port_objective, port_constraints = to_process_spelling(reduced, reference.scale)
+        process, process_error, fd_seconds = process_jacobian_with_error(reference)
 
-    print(f"\nSTAGE B -- Jacobian, port {full.shape} against PROCESS's own")
-    print(
-        f"  port: compile {compile_seconds:.2f} s, jitted median {jit_ms:.3f} ms, "
-        f"{int((~np.isfinite(full)).sum())} non-finite cells"
-    )
-    print(
-        f"  PROCESS: {5 * len(reference.ixc)} pipeline sweeps for the same Jacobian "
-        f"with Richardson error bars, {fd_seconds:.2f} s"
-    )
-    print("  |port - PROCESS| / |PROCESS|; '*' = outside the FD's own error bar x 4")
-    print(f"{'':8s}" + "".join(f"{'x' + str(i):>12s}" for i in reference.ixc))
+        print(f"\nSTAGE B -- Jacobian, port {full.shape} against PROCESS's own")
+        print(
+            f"  port: compile {compile_seconds:.2f} s, jitted median {jit_ms:.3f} ms, "
+            f"{int((~np.isfinite(full)).sum())} non-finite cells"
+        )
+        print(
+            f"  PROCESS: {5 * len(reference.ixc)} pipeline sweeps for the same Jacobian "
+            f"with Richardson error bars, {fd_seconds:.2f} s"
+        )
+        print("  |port - PROCESS| / |PROCESS|; '*' = outside the FD's own error bar x 4")
+        print(f"{'':8s}" + "".join(f"{'x' + str(i):>12s}" for i in reference.ixc))
 
-    def row(label, port, reference_row, error_row):
-        def relative(k):
-            return abs(port[k] - reference_row[k]) / max(abs(reference_row[k]), 1e-300)
+        def row(label, port, reference_row, error_row):
+            def relative(k):
+                return abs(port[k] - reference_row[k]) / max(
+                    abs(reference_row[k]), 1e-300
+                )
 
-        cells = "".join(
-            f"{relative(k):10.2e} "
-            + (
-                "*"
-                if abs(port[k] - reference_row[k]) > 4 * max(error_row[k], 1e-300)
-                else " "
+            cells = "".join(
+                f"{relative(k):10.2e} "
+                + (
+                    "*"
+                    if abs(port[k] - reference_row[k]) > 4 * max(error_row[k], 1e-300)
+                    else " "
+                )
+                for k in range(len(port))
             )
-            for k in range(len(port))
-        )
-        print(f"{label:8s}{cells}")
+            print(f"{label:8s}{cells}")
 
-    row("objf", port_objective, process[0], process_error[0])
-    # Keyed by the assembled conditions, not by position in `reference.icc`: an omitted
-    # constraint (`report["omitted"]`) has no port row, while PROCESS's own Jacobian
-    # still carries every active constraint in `icc` order. Identical to the old
-    # positional loop whenever nothing is omitted -- i.e. on the stellarator.
-    assembled = [
-        int(names[i].rsplit(".c", 1)[1]) for i in condition_rows[1:]
-    ]  # `condition_rows[0]` is the objective
-    for j, cid in enumerate(assembled):
-        at_icc = reference.icc.index(cid)
-        row(
-            f"c{cid}",
-            port_constraints[j],
-            process[1:][at_icc],
-            process_error[1:][at_icc],
-        )
+        row("objf", port_objective, process[0], process_error[0])
+        # Keyed by the assembled conditions, not by position in `reference.icc`: an
+        # omitted constraint (`report["omitted"]`) has no port row, while PROCESS's own
+        # Jacobian still carries every active constraint in `icc` order. Identical to the
+        # old positional loop whenever nothing is omitted -- i.e. on the stellarator.
+        assembled = [
+            int(names[i].rsplit(".c", 1)[1]) for i in condition_rows[1:]
+        ]  # `condition_rows[0]` is the objective
+        for j, cid in enumerate(assembled):
+            at_icc = reference.icc.index(cid)
+            row(
+                f"c{cid}",
+                port_constraints[j],
+                process[1:][at_icc],
+                process_error[1:][at_icc],
+            )
 
     # ---------------------------------------------------------------- C
-    # The design variables -- everything else the block solves for is coupling, and is
-    # seeded from an MDA run rather than from a `DataStructure` field that a cold run
-    # has never written.
-    design_paths = {sand.iteration_variable_path(i) for i in reference.ixc}
-    for label, base, starts in (
-        ("C2 (start at PROCESS's converged x)", reference.data, reference.converged),
-        ("C3 (cold start from the IN.DAT values)", reference.cold, reference.initial),
-    ):
-        # The coupling unknowns are seeded from an MDA run **at this stage's own
-        # design** -- `env` (built from PROCESS's converged state) for C2, a fresh cold
-        # MDA for C3. Seeding a cold solve's coupling from a converged run would make
-        # "cold" a half-truth; seeding it from the cold `DataStructure`'s zeros made the
-        # solve impossible. See `_seed`.
-        try:
-            stage_env = (
-                env
-                if base is reference.data
-                else mda_env(reference, graph=machine_graph, data=base)[1]
-            )
-        except Exception as failure:  # noqa: BLE001 -- report the stage, run the next
-            print(f"\nSTAGE C {label}: the MDA at this stage's design failed before")
-            print(f"  any solve could be seeded: {type(failure).__name__}: {failure}")
-            continue
-        trace: list = []
-
-        def record(i, result, _x, convergence, _trace=trace):
-            _trace.append((
-                i,
-                float(convergence),
-                float(np.asarray(result.f)),
-                float(np.max(np.abs(result.eq))) if len(result.eq) else 0.0,
-                float(np.min(result.ie)) if len(result.ie) else 0.0,
-            ))
-
-        solve_schedule = sand.sand_schedule(
-            combined,
-            None,
-            bounds=reference.bounds,
-            condition_scale=condition_scale,
-            callback=record,
-            max_iter=SAND_MAX_ITER,
-        )
-        solve_drive = sand.sand_shape(solve_schedule)["drive"]
-        # Which unknowns count as "design" differs by stage, because the stages mean
-        # different things. C2's premise is *start where PROCESS ended*, so every
-        # unknown PROCESS has a value for should come from PROCESS -- that is the
-        # definition of the stage. C3's premise is *start from the input file*, and an
-        # input file carries values for design variables only; everything else has to
-        # come from an MDA at that design, because the `DataStructure` field behind it
-        # holds a dataclass default that no run has ever written.
-        from_process = base is reference.data
-        seeded, borrowed = _seed(
-            solve_schedule,
-            solve_drive,
-            base,
-            stage_env,
-            design=set(solve_drive.unknowns) if from_process else design_paths,
-        )
-        # One probe of the conditions at the seeded start, before any solve. A SAND
-        # condition map holds the coupling unknowns fixed at their seed, so a seed the
-        # models cannot evaluate shows up here as non-finite conditions -- and handing
-        # those to an SQP produces a wander, not an answer. Documenting exactly which
-        # conditions are non-finite and stopping is the honest report; a seeding rule
-        # that gets a cold start past a genuine model singularity is a separate,
-        # recorded decision (`_seed`'s own docstring is the stellarator's precedent).
-        # At a healthy start (every C2, and the stellarator's C3) nothing is printed
-        # and nothing changes.
-        probe_context = {}
-        for var in solve_drive.context:
-            if var in stage_env:
-                probe_context[var] = stage_env[var]
-            else:
-                try:
-                    probe_context[var] = jnp.asarray(ground_truth(base, var))
-                except (AttributeError, KeyError):
-                    probe_context[var] = jnp.asarray(0.0)
-        at_start = solve_drive.condition_map(probe_context)(*[
-            jnp.asarray(seeded[u]) for u in solve_drive.unknowns
-        ])
-        non_finite = [
-            (condition.path_str(), float(np.asarray(value)))
-            for condition, value in zip(solve_drive.conditions, at_start, strict=True)
-            if not np.all(np.isfinite(np.asarray(value)))
-        ]
-        if non_finite:
-            print(
-                f"\nSTAGE C {label}: NOT SOLVED -- {len(non_finite)} of "
-                f"{len(solve_drive.conditions)} conditions are non-finite at the "
-                f"seeded start:"
-            )
-            for name, value in non_finite:
-                print(f"  {name:<56s} {value}")
-            continue
-        started = time.perf_counter()
-        out = run_schedule(
-            solve_schedule, _inputs_only(solve_schedule, seeded), whole=False
-        )
-        elapsed = time.perf_counter() - started
-        print(f"\nSTAGE C {label}: {len(trace)} SQP iterations in {elapsed:.1f} s")
-        print(f"  ({len(borrowed)} unknown(s)/input(s) seeded from the MDA env)")
-        if not trace:
-            # `VmconDriver` returns the best point on a `VMCONConvergenceException`
-            # rather than propagating it, so zero recorded iterations is ambiguous
-            # between "converged where it stood" and "the first QP was infeasible and
-            # the start came back untouched". Measured on the tokamak: pyvmcon's
-            # `QSPSolverException` ("no feasible solution") from constraint **72**'s
-            # constantly-violated, zero-gradient row produced exactly this shape. Say
-            # so instead of letting a swallowed failure read as a perfect solve.
-            # (This said 68 until 2026-08-30, when the rows were actually measured:
-            # c72 is `+5.53e-01` with an identically zero row, while c68 is violated
-            # by `+4.95e-02` and *can* move, `|row| 2.95e-02`. 68 was named from a
-            # violated-constraint list, which does not look at gradients -- being
-            # violated is half the test and the cheaper half.)
-            stuck = _why_no_step(solve_drive, probe_context, seeded)
-            if stuck:
-                print(
-                    f"  NO SQP ITERATION RECORDED, and the reason is measured: "
-                    f"{len(stuck)} condition(s) are away from satisfaction with an "
-                    f"identically zero gradient row, so no linearised step can reach "
-                    f"a feasible point and `pyvmcon`'s first QP has none:"
+    if "C" in asked:
+        # The design variables -- everything else the block solves for is coupling, and
+        # is seeded from an MDA run rather than from a `DataStructure` field that a cold
+        # run has never written.
+        design_paths = {sand.iteration_variable_path(i) for i in reference.ixc}
+        for label, base, starts in (
+            ("C2 (start at PROCESS's converged x)", reference.data, reference.converged),
+            (
+                "C3 (cold start from the IN.DAT values)",
+                reference.cold,
+                reference.initial,
+            ),
+        ):
+            # The coupling unknowns are seeded from an MDA run **at this stage's own
+            # design** -- `env` (built from PROCESS's converged state) for C2, a fresh
+            # cold MDA for C3. Seeding a cold solve's coupling from a converged run would
+            # make "cold" a half-truth; seeding it from the cold `DataStructure`'s zeros
+            # made the solve impossible. See `_seed`.
+            try:
+                stage_env = (
+                    env
+                    if base is reference.data
+                    else mda_env(reference, graph=machine_graph, data=base)[1]
                 )
-                for name, value in stuck:
-                    print(f"    {name:<52s} {value:+.6e}  (constant in every unknown)")
-            else:
+            except Exception as failure:  # noqa: BLE001 -- report the stage, run the next
+                print(f"\nSTAGE C {label}: the MDA at this stage's design failed before")
                 print(
-                    "  NO SQP ITERATION RECORDED, and no condition is both violated "
-                    "and constant -- so this is VMCON converging where it stood, not "
-                    "a QP that had nowhere to go."
+                    f"  any solve could be seeded: {type(failure).__name__}: {failure}"
                 )
-        print(
-            f"  {'it':>3s} {'conv':>12s} {'objf':>14s} {'max|eq|':>11s} {'min ie':>12s}"
-        )
-        for entry in trace:
-            print(
-                f"  {entry[0]:3d} {entry[1]:12.3e} {entry[2]:14.9f} "
-                f"{entry[3]:11.3e} {entry[4]:12.3e}"
+                continue
+            trace: list = []
+
+            def record(i, result, _x, convergence, _trace=trace):
+                _trace.append((
+                    i,
+                    float(convergence),
+                    float(np.asarray(result.f)),
+                    float(np.max(np.abs(result.eq))) if len(result.eq) else 0.0,
+                    float(np.min(result.ie)) if len(result.ie) else 0.0,
+                ))
+
+            solve_schedule = sand.sand_schedule(
+                combined,
+                None,
+                bounds=reference.bounds,
+                condition_scale=condition_scale,
+                callback=record,
+                max_iter=SAND_MAX_ITER,
             )
-        print(
-            f"\n  {'ixc':>5s} {'name':<36s} {'start':>16s} {'PROCESS':>18s} "
-            f"{'port':>18s} {'rel':>10s}"
-        )
-        for i in reference.ixc:
-            var = sand.iteration_variable_path(i)
-            got = float(np.asarray(out[var]))
-            expected = reference.converged[i]
-            print(
-                f"  {i:5d} {ITERATION_VARIABLES[i].name:<36s} "
-                f"{starts[i]:16.8g} {expected:18.10g} {got:18.10g} "
-                f"{abs(got - expected) / abs(expected):10.2e}"
+            solve_drive = sand.sand_shape(solve_schedule)["drive"]
+            # Which unknowns count as "design" differs by stage, because the stages mean
+            # different things. C2's premise is *start where PROCESS ended*, so every
+            # unknown PROCESS has a value for should come from PROCESS -- that is the
+            # definition of the stage. C3's premise is *start from the input file*, and
+            # an input file carries values for design variables only; everything else has
+            # to come from an MDA at that design, because the `DataStructure` field
+            # behind it holds a dataclass default that no run has ever written.
+            from_process = base is reference.data
+            seeded, borrowed = _seed(
+                solve_schedule,
+                solve_drive,
+                base,
+                stage_env,
+                design=set(solve_drive.unknowns) if from_process else design_paths,
             )
+            # One probe of the conditions at the seeded start, before any solve. A SAND
+            # condition map holds the coupling unknowns fixed at their seed, so a seed
+            # the models cannot evaluate shows up here as non-finite conditions -- and
+            # handing those to an SQP produces a wander, not an answer. Documenting
+            # exactly which conditions are non-finite and stopping is the honest report;
+            # a seeding rule that gets a cold start past a genuine model singularity is a
+            # separate, recorded decision (`_seed`'s own docstring is the stellarator's
+            # precedent). At a healthy start (every C2, and the stellarator's C3) nothing
+            # is printed and nothing changes.
+            probe_context = {}
+            for var in solve_drive.context:
+                if var in stage_env:
+                    probe_context[var] = stage_env[var]
+                else:
+                    try:
+                        probe_context[var] = jnp.asarray(ground_truth(base, var))
+                    except (AttributeError, KeyError):
+                        probe_context[var] = jnp.asarray(0.0)
+            at_start = solve_drive.condition_map(probe_context)(*[
+                jnp.asarray(seeded[u]) for u in solve_drive.unknowns
+            ])
+            non_finite = [
+                (condition.path_str(), float(np.asarray(value)))
+                for condition, value in zip(
+                    solve_drive.conditions, at_start, strict=True
+                )
+                if not np.all(np.isfinite(np.asarray(value)))
+            ]
+            if non_finite:
+                print(
+                    f"\nSTAGE C {label}: NOT SOLVED -- {len(non_finite)} of "
+                    f"{len(solve_drive.conditions)} conditions are non-finite at the "
+                    f"seeded start:"
+                )
+                for name, value in non_finite:
+                    print(f"  {name:<56s} {value}")
+                continue
+            started = time.perf_counter()
+            out = run_schedule(
+                solve_schedule, _inputs_only(solve_schedule, seeded), whole=False
+            )
+            elapsed = time.perf_counter() - started
+            print(f"\nSTAGE C {label}: {len(trace)} SQP iterations in {elapsed:.1f} s")
+            print(f"  ({len(borrowed)} unknown(s)/input(s) seeded from the MDA env)")
+            if not trace:
+                # `VmconDriver` returns the best point on a `VMCONConvergenceException`
+                # rather than propagating it, so zero recorded iterations is ambiguous
+                # between "converged where it stood" and "the first QP was infeasible and
+                # the start came back untouched". Measured on the tokamak: pyvmcon's
+                # `QSPSolverException` ("no feasible solution") from constraint **72**'s
+                # constantly-violated, zero-gradient row produced exactly this shape. Say
+                # so instead of letting a swallowed failure read as a perfect solve.
+                # (This said 68 until 2026-08-30, when the rows were actually measured:
+                # c72 is `+5.53e-01` with an identically zero row, while c68 is violated
+                # by `+4.95e-02` and *can* move, `|row| 2.95e-02`. 68 was named from a
+                # violated-constraint list, which does not look at gradients -- being
+                # violated is half the test and the cheaper half.)
+                stuck = _why_no_step(solve_drive, probe_context, seeded)
+                if stuck:
+                    print(
+                        f"  NO SQP ITERATION RECORDED, and the reason is measured: "
+                        f"{len(stuck)} condition(s) are away from satisfaction with an "
+                        f"identically zero gradient row, so no linearised step can "
+                        f"reach a feasible point and `pyvmcon`'s first QP has none:"
+                    )
+                    for name, value in stuck:
+                        print(
+                            f"    {name:<52s} {value:+.6e}  (constant in every unknown)"
+                        )
+                else:
+                    print(
+                        "  NO SQP ITERATION RECORDED, and no condition is both violated "
+                        "and constant -- so this is VMCON converging where it stood, "
+                        "not a QP that had nowhere to go."
+                    )
+            print(
+                f"  {'it':>3s} {'conv':>12s} {'objf':>14s} {'max|eq|':>11s} "
+                f"{'min ie':>12s}"
+            )
+            for entry in trace:
+                print(
+                    f"  {entry[0]:3d} {entry[1]:12.3e} {entry[2]:14.9f} "
+                    f"{entry[3]:11.3e} {entry[4]:12.3e}"
+                )
+            print(
+                f"\n  {'ixc':>5s} {'name':<36s} {'start':>16s} {'PROCESS':>18s} "
+                f"{'port':>18s} {'rel':>10s}"
+            )
+            for i in reference.ixc:
+                var = sand.iteration_variable_path(i)
+                got = float(np.asarray(out[var]))
+                expected = reference.converged[i]
+                print(
+                    f"  {i:5d} {ITERATION_VARIABLES[i].name:<36s} "
+                    f"{starts[i]:16.8g} {expected:18.10g} {got:18.10g} "
+                    f"{abs(got - expected) / abs(expected):10.2e}"
+                )
 
 
 if __name__ == "__main__":

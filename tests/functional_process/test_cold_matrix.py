@@ -447,20 +447,44 @@ def test_the_header_names_uncommitted_edits_and_does_not_claim_the_commit():
     assert {"mdf.py", "sand.py", "run_cold_matrix.py", "native.py"} <= set(PORT_FILES)
 
 
-def test_a_formulation_that_optimised_a_root_find_file_says_so():
-    """The two arms disagree about the problem type today, and the table must not let
-    that pass as a number.
+def test_a_root_find_file_gets_one_row_and_the_table_says_why():
+    """An evaluation-mode file has no MDF/SAND split, and the single line must read as a
+    decision rather than as a missing measurement.
 
-    SAND still assembles an `Optimise` on the `_eval` files, so it reports an `objf`
-    beside a `PRO objf` of `none`. That number is `numerics.py:154`'s default figure of
-    merit evaluated at the answer -- not a quantity PROCESS forms -- and a reader
-    comparing the two cells would otherwise conclude PROCESS had simply failed to report
-    its own objective.
+    This test previously pinned the opposite: SAND assembled an `Optimise` on the
+    `_eval` files, reported an `objf` beside a `PRO objf` of `none`, and the table
+    labelled that mismatch. The label was right about the mismatch and wrong about the
+    remedy -- MDF-against-SAND is a split between two ways of distributing an
+    *optimisation*, and a file stating `i_process_run_mode = -2` states none, so the
+    second row was never a second reading of the same problem. It is gone, and what
+    replaces it is the argument for its absence.
     """
     store = _blank()
-    store.update(built=True, iterations=3, status="converged", objf=0.594644641)
+    store.update(built=True, iterations=3, status="conv", dx=3.6e-09)
     table = render([
-        Row(name="spherical_tokamak_eval", assembles=True, root_find=True, sand=store)
+        Row(name="spherical_tokamak_eval", assembles=True, root_find=True, mdf=store)
     ])
-    assert "states a ROOT FIND, but the SAND arm still assembled an `Optimise`" in table
-    assert "numerics.py:154`'s DEFAULT" in table
+    assert "states a ROOT FIND" in table
+    assert "ONE row and not two" in table
+    # The single line is MDF's, and no SAND line is printed at all. Counted above the
+    # NOTES block, since the note that explains the absence necessarily says "SAND".
+    grid = table.split("\nNOTES")[0].split("\n")
+    body = [line for line in grid if "spherical_tokamak_eval" in line]
+    assert len(body) == 1
+    assert " MDF " in body[0]
+    assert " SAND " not in body[0]
+
+
+def test_an_objf_on_a_root_find_row_is_flagged_as_unexpected():
+    """Nothing produces one today -- `mdf_graph` mints no objective node when the file
+    names no figure of merit -- but a number in that cell would be `objective_metric_7`
+    at `numerics.py:154`'s default, which is not a metric this file or PROCESS ever
+    chose, sitting beside a `PRO objf` of `none` and looking comparable to it.
+    """
+    store = _blank()
+    store.update(built=True, iterations=3, status="conv", objf=0.594644641)
+    table = render([
+        Row(name="spherical_tokamak_eval", assembles=True, root_find=True, mdf=store)
+    ])
+    assert "UNEXPECTED `objf`" in table
+    assert "compares to nothing" in table
