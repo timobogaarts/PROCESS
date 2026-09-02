@@ -7359,3 +7359,38 @@ jit setup §31.6 named and did not explain.
 `tests/functional_process` `test_mdf` / `test_cold_matrix` / `test_run_sand_harness` /
 `test_sand`: 232 passed; `test_mda`: 12; `-k "driver or vmcon or slsqp or optimise"`: 40;
 `tests/unit`: 846.
+
+### 31.15 [measured] The crack-growth scan is `pow`-bound, not loop-bound, and the obvious fix moves values
+
+§31.12 landed `cs_fatigue`'s masked `scan` at 1.49 ms per call and left "the masked
+no-ops are the price" as the explanation. That is right about *what* costs and wrong
+about *why*, and the difference matters if anyone tries to tune the bound.
+
+Timed across six bounds in one interleaved process:
+
+| bound | 32 | 64 | 128 | 256 | 512 | 1024 |
+|---|---|---|---|---|---|---|
+| ms | 0.165 | 0.240 | 0.417 | 0.735 | 1.467 | 2.737 |
+| us/step above dispatch | 2.74 | 2.53 | 2.66 | 2.57 | 2.71 | 2.60 |
+
+A clean straight line: **2.61 us/step + 0.083 ms fixed**, and the fixed part is jax's
+dispatch (a `jax.jit` on `x * 2.0` measured 0.077 ms in the same process). So it *is*
+jitted and there is no loop overhead worth naming -- **each step genuinely costs
+2.6 us.**
+
+**Because each step is 62 transcendentals.** Counting primitives in the scan body: 48
+`pow`, 8 `sqrt`, plus 101 `mul`, 87 `select_n`, 66 `add`. `surface_stress_intensity_factor`
+carries 16 `safe_pow`/`safe_sqrt` calls and is evaluated twice per step, at both crack-front
+angles. 2.61 us over 62 transcendentals is ~42 ns each, which is exactly what libm `pow`
+costs. The 87 `select_n` are `safe_math`'s double selects (§31.4) -- cheap, but they are
+why the body is wider than the formula looks.
+
+**A third of the `pow`s are avoidable in principle and were left alone.** Eight sites in
+`surface_stress_intensity_factor` are written `x ** 2.0` / `x ** 4.0` with *float*
+exponents, which jax lowers to `pow`; `x ** 2` / `x ** 4` lower to `integer_pow`, i.e.
+multiplies. **But they are not bitwise equal**: over 20 000 lognormal samples, `x ** 2.0`
+vs `x ** 2` differs on 16 and `x ** 4.0` vs `x ** 4` on 10 040, worst relative difference
+`3.99e-16` (1 ulp). This is a Tier-1 unit with a value-agreement contract against PROCESS,
+on a problem documented as sensitive at the last bit (§19, §20, §21.2), and the prize is
+roughly a third of one tokamak-only node's 1.5 ms. **Not taken.** Recorded here so the
+next reader does not have to rediscover either half.
