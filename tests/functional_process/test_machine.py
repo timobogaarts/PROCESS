@@ -377,6 +377,7 @@ DERIVED_UNPORTED_KEYS = {
     "pf_coil_system_arm",
     "plasma_geometry_arm",
     "pulse_ramp_times_arm",
+    "r_cp_top_arm",
     "structure_arm",
     "surface_poloidal_field_arm",
     "tf_coil_shape_arm",
@@ -1417,14 +1418,31 @@ def test_a_spherical_tokamak_pf_system_assembles_without_a_central_solenoid(tmp_
 
 
 NODE_COUNTS = {
-    "large_tokamak_nof": 243,
-    "large_tokamak_eval": 245,
-    "low_aspect_ratio_DEMO": 243,
-    "spherical_tokamak_eval": 241,
-    "st_regression": 241,
+    "large_tokamak_nof": 246,
+    "large_tokamak_eval": 248,
+    "low_aspect_ratio_DEMO": 246,
+    "spherical_tokamak_eval": 243,
+    "st_regression": 243,
     "stellarator_helias": 154,
     "helias_5b": 154,
 }
+"""Re-pinned 2026-09-02, and the arithmetic is written down because a bare number is
+what let this drift unnoticed for two days.
+
+**+3 on every tokamak**, measured by diffing the node set against the graph at
+`60d9ba88` (2026-08-31), the commit that last set these numbers -- three ports landed
+since and nothing was removed:
+
+    .tokamak.build.r_cp_top
+    .tokamak.physics.psep_over_r_metric
+    .tokamak.radiated_wall_load
+
+**-1 more on the two spherical files**, which is today's `burn_time` gate: `Pulse.run`
+does not compute the burn time when `i_pulsed_plant = 0`, so the slot is empty on a
+steady-state machine and the node is not in the graph. That is why they read `243` where
+the other three tokamaks read `246`/`248`.
+
+Both stellarators are unmoved at `154`; none of the four changes is theirs."""
 """`_audit/next_steps.md` §23.6's table, which was recorded there and frozen nowhere.
 
 Two of the seven were pinned in `test_process_free_import.py` and the other five were
