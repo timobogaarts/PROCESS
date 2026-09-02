@@ -3,15 +3,23 @@
 
 `cottax.evaluate.AbstractDriver`'s own docstring names the intended pairing directly:
 *"a Newton drives `RootFind`, a Picard `FixedPoint`, an optimiser `Optimise`."*
-`cottax.drivers.NewtonDriver` (`~/jaxgraph/src/cottax/drivers/optimistix.py`) implements
-the first; nothing in `cottax` implements the other two. Written here, in
-`functional_process`, not in `~/jaxgraph` -- unlike the earlier `Feasibility`/`to_graph`
-gaps (genuine core-library holes, fixed upstream), a driver is exactly the kind of
-generic, swappable *solver choice* `AbstractDriver` exists to make pluggable, not core
-graph machinery; this port is free to bring its own without asking `cottax` to grow one.
-The argument is stronger for `VmconDriver` than for `PicardDriver`: an SQP is a much
-larger algorithm choice, and the backing solver (`pyvmcon`) is a **PROCESS** dependency,
-not a `cottax` one.
+Written here, in `functional_process`, not in `~/jaxgraph` -- unlike the earlier
+`Feasibility`/`to_graph` gaps (genuine core-library holes, fixed upstream), a driver is
+exactly the kind of generic, swappable *solver choice* `AbstractDriver` exists to make
+pluggable, not core graph machinery; this port is free to bring its own without asking
+`cottax` to grow one. The argument is stronger for `VmconDriver` than for
+`PicardDriver`: an SQP is a much larger algorithm choice, and the backing solver
+(`pyvmcon`) is a **PROCESS** dependency, not a `cottax` one.
+
+**This docstring used to say "nothing in `cottax` implements the other two", and that is
+stale**: `~/jaxgraph/src/cottax/drivers/optimistix.py` now carries `NewtonDriver`,
+`ScaledNewtonDriver`, `PicardDriver` and `OptimiseDriver`. The one below is worth
+comparing against rather than assuming equivalent -- cottax's `PicardDriver` is built on
+`optx.fixed_point`, so it has an **implicit adjoint** where this one differentiates
+through its own `lax.while_loop`, and that difference is measurable and large
+(`_audit/optimise_design.md` §31.27; `PicardDriver.implicit` below is the same change
+made opt-in here). It also runs at `rtol=atol=1e-4` with `max_steps=256` against this
+class's `1e-6`/`1e-8` and `max_iter=20`.
 
 Every `FixedPointFunction`/`FixedPointCut` block the factory assembles
 (`DeltaEtaStep`, `CryoQNucStep`, the two cut cross-node cycles once cut, ...) is a
