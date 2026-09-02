@@ -48,6 +48,90 @@ import jax
 import jax.numpy as jnp
 from cottax.evaluate import ConditionMap
 
+_BOUND: list = []
+"""`bind`'s memo: `[((treedef, static), (values, jacobian))]`, one entry per block.
+
+**A list scanned with `==`, not a dict**, and that is not laziness. `equinox.Module`'s
+`__eq__` and `__hash__` disagree here: for the static half of
+`eqx.partition((conditions, unravel), eqx.is_array)`, two partitions of the *same* block
+compare **equal** while their **hashes differ** (measured 2026-09-02,
+`_audit/optimise_design.md` §31.14). Anything keyed on the hash -- a `dict`, or
+`jax.jit(..., static_argnums=...)` -- therefore misses every time and retraces the whole
+block on every solve, which is exactly the defect §24.1 removed. `eqx.filter_jit` avoids
+it by wrapping the static half in a by-value-hashing wrapper, which is *why* today's
+spelling caches at all.
+
+The scan is `O(blocks)` at ~25 ms per comparison and runs **once per solve**, against a
+compile of ~15 s. A process holds a handful of blocks (MDF's and SAND's, per
+configuration), so the list never grows to a size where this matters.
+"""
+
+
+def bind(conditions: ConditionMap, unravel):
+    """`(values, jacobian)` for this block, each taking only `flat_x`.
+
+    **What this is for.** `flat_conditions` below passes the whole `ConditionMap` as an
+    argument, and `eqx.filter_jit` re-partitions, re-flattens and re-hashes it on *every*
+    call. That pytree is **5 462 leaves** on `stellarator_helias` MDF, and flattening it
+    is 8.37 ms of a 10.58 ms call -- the dominant cost of a host-side SQP iteration, and
+    the reason `_audit/optimise_design.md` §18.3 (0.5 ms) and §24.4 (4.66 ms) disagreed
+    for a month: §18.3 measured a program with the map folded in as a *constant*.
+
+    Binding does that work **once per solve** instead. The static half is closed over and
+    only the **312 array leaves** are passed positionally to a plain `jax.jit`, so a call
+    flattens 313 leaves rather than 5 462. Measured interleaved in one process, medians
+    over 40 rounds (§31.14):
+
+    | | ms/call |
+    |---|---|
+    | `flat_conditions` (today) | 10.58 |
+    | **bound** | **0.73** |
+    | bare `jax.jit` dispatch of one scalar | 0.26 |
+
+    **14.5x, and 0.26 ms of what remains is jax's own dispatch floor** -- so this is
+    within about 2x of what any host-side loop can reach. Output is bitwise identical to
+    `flat_conditions`.
+
+    Not free at bind time: `eqx.partition` alone is ~63 ms. That is why the result is
+    memoised in `_BOUND` -- see its docstring for why the memo is a list and not a dict.
+    """
+    dynamic, static = eqx.partition((conditions, unravel), eqx.is_array)
+    leaves, treedef = jax.tree_util.tree_flatten(dynamic)
+
+    for (cached_treedef, cached_static), (values, jacobian) in _BOUND:
+        if cached_treedef == treedef and cached_static == static:
+            return _timed(values, leaves), _timed(jacobian, leaves)
+
+    def rebuild(array_leaves):
+        return eqx.combine(jax.tree_util.tree_unflatten(treedef, array_leaves), static)
+
+    @jax.jit
+    def values(array_leaves, flat_x):
+        block, unflatten = rebuild(array_leaves)
+        return jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat_x))])
+
+    @jax.jit
+    def jacobian(array_leaves, flat_x):
+        block, unflatten = rebuild(array_leaves)
+        return jax.jacfwd(
+            lambda flat: jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat))])
+        )(flat_x)
+
+    _BOUND.append(((treedef, static), (values, jacobian)))
+    return _timed(values, leaves), _timed(jacobian, leaves)
+
+
+def _timed(fn, leaves):
+    """`fn` with `leaves` bound, inside `phase("model")` -- see `flat_conditions`."""
+
+    def call(flat_x):
+        from functional_process.phase_timing import phase  # noqa: PLC0415
+
+        with phase("model"):
+            return fn(leaves, flat_x)
+
+    return call
+
 
 def flat_conditions(conditions: ConditionMap, flat_x, unravel):
     """Timed wrapper around `_flat_conditions`; see `phase_timing`.

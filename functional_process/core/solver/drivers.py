@@ -39,10 +39,7 @@ from cottax.spec import VarPath
 from cottax.tools.path import written
 from jax.flatten_util import ravel_pytree
 
-from functional_process.core.solver.host_cache import (
-    flat_condition_jacobian,
-    flat_conditions,
-)
+from functional_process.core.solver.host_cache import bind
 
 
 UNSCALABLE_BELOW = 1e-12
@@ -130,22 +127,25 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
         [by_name.get(c, 1.0) for c in conditions.conditions], dtype=float
     )
 
-    # The two module-level jits, shared with `VmconDriver`; this function builds no
-    # `jax.jit` of its own, so a second SLSQP solve of the same block is a cache hit
-    # rather than a re-trace (`flat_conditions`' docstring, §24.1).
+    # **Bound once here, not per call.** `host_cache.bind` partitions and flattens the
+    # `ConditionMap` a single time and hands back two callables that take only `flat_x`,
+    # so a per-iteration call flattens 313 pytree leaves instead of 5 462 -- 10.58 ms ->
+    # 0.73 ms on `stellarator_helias` MDF, bitwise identical
+    # (`_audit/optimise_design.md` §31.14). `bind` memoises, so a second solve of the
+    # same block is a cache hit rather than a re-trace, which is §24.1's property kept
+    # rather than given back. This function still builds no `jax.jit` of its own.
+    bound_values, bound_jacobian = bind(conditions, unravel)
+
     def evaluate(x_scaled):
         flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-        return (
-            np.asarray(flat_conditions(conditions, flat_x, unravel), dtype=float)
-            * condition_scale
-        )
+        return np.asarray(bound_values(flat_x), dtype=float) * condition_scale
 
     def jacobian(x_scaled):
         flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
         # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column, one
         # `condition_scale` factor per row.
         return (
-            np.asarray(flat_condition_jacobian(conditions, flat_x, unravel), dtype=float)
+            np.asarray(bound_jacobian(flat_x), dtype=float)
             * condition_scale[:, None]
             / scale[None, :]
         )
@@ -1110,12 +1110,15 @@ class VmconDriver(AbstractDriver):
             # replaces, and the `pure_callback` boundary is per *solve*, not per
             # iteration, so there is nothing about the wrap that makes a compiled inner
             # model wrong. `_audit/optimise_design.md` §22 has what dropping it would
-            # cost. The jits themselves live at module level -- see `flat_conditions`.
-            def evaluate(flat_x):
-                return flat_conditions(live, flat_x, unravel)
-
-            def jacobian(flat_x):
-                return flat_condition_jacobian(live, flat_x, unravel)
+            # cost.
+            #
+            # **Bound once per solve** (`host_cache.bind`): the condition map is
+            # partitioned and flattened here rather than on every iteration, so a call
+            # flattens 313 pytree leaves instead of 5 462. That flatten was 8.37 ms of a
+            # 10.58 ms call and was the single largest per-iteration cost this driver
+            # had -- 10.58 -> 0.73 ms, bitwise identical (§31.14). `bind` memoises across
+            # solves, so §24.1's "a second solve is a cache hit" is kept, not given back.
+            evaluate, jacobian = bind(live, unravel)
 
             def scaled_values(x_scaled):
                 flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)

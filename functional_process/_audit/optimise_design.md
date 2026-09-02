@@ -7291,3 +7291,71 @@ while the open goal is *minimal* compile and run time across seven configuration
 than three, both in `vacuum.py`, both with a known conversion whose cost is understood.
 Revisit when an objective-only gradient is actually wanted, and do the `vmap`
 restructuring rather than the mechanical scan.
+
+### 31.14 [landed] The condition map is bound once per solve — 10.58 → 0.73 ms per call
+
+**This supersedes §31.6's "arm B" description and corrects the note added to
+`next_steps.md` §31.3 item 4 earlier the same day**, which reported that the 6x "did not
+reproduce" and measured **7.96 ms against 8.85 ms**. That measurement was of the wrong
+arm: it passed the partitioned static half through `jax.jit(..., static_argnums=...)`,
+and *that* spelling's cost is a by-value hash of the `ConditionMap` on every call. The
+correct arm is 14.5x.
+
+**The anatomy, measured interleaved round-robin in one process** so machine load hits
+every arm equally (medians over 40 rounds; another agent was running a tokamak row
+concurrently, which is exactly why the comparison is interleaved rather than sequential):
+
+| arm | ms/call |
+|---|---|
+| **A** today: `eqx.filter_jit(_flat_conditions)(conditions, flat_x, unravel)` | **10.58** |
+| **B** static half closed over, 312 array leaves passed positionally to a plain `jax.jit` | **0.73** |
+| **C** `static_argnums` for `treedef`/`static` | 9.62 |
+| **D** `.lower().compile()`'s executable called directly | 2.64 |
+| **E** `jax.jit` on `x * 2.0` -- pure dispatch | 0.26 |
+
+and the pieces, timed the same way:
+
+| | ms |
+|---|---|
+| `tree_flatten((cmap, flat_x, unravel))` -- **5 462 leaves** | **8.37** |
+| `hash((treedef, static))` | **8.03** |
+| `tree_flatten((leaves, flat_x))` -- 313 leaves | **0.024** |
+| `eqx.partition((cmap, unravel), eqx.is_array)` | 63 |
+| `treedef == ` and `static ==` | 25 |
+
+So: **arm A is a pytree flatten** (8.37 of 10.58 ms), **arm C is a pytree hash** (8.03 of
+9.62), and they are the same object traversed for two different reasons. Arm D is not a
+floor -- `Compiled.__call__` re-flattens and structure-checks its arguments, so it is
+*slower* than arm B. Arm B's remaining 0.73 ms is 0.26 ms of jax dispatch plus ~0.47 ms
+of flatten-and-execute, i.e. **within ~3x of anything a host loop can reach**.
+
+**The memo is a list scanned with `==`, not a dict, and that is forced.** For the static
+half, two partitions of the same block compare **equal** while their **hashes differ** --
+`equinox.Module` supplies both `__eq__` and `__hash__` and they disagree here. Anything
+keyed on the hash (a `dict`, or `static_argnums`) misses every time and retraces the
+whole block per solve, which is the defect §24.1 removed. `eqx.filter_jit` escapes this
+by wrapping the static half in a by-value-hashing wrapper, which is *why* today's
+spelling caches at all. A 25 ms `==` scan over a handful of blocks, once per solve,
+against a ~15 s compile, is the right trade.
+
+**Landed in both driver paths** -- `scaled_problem` (SLSQP) and `VmconDriver.__call__`'s
+own `_sqp_callback` (which is what the cold matrix actually runs). Full `--native` row on
+`stellarator_helias`, cache off:
+
+| | before | after |
+|---|---|---|
+| `model` phase, MDF | 6.6 s | **2.6 s** |
+| `model` phase, SAND | 4.4 s | **2.4 s** |
+| XLA compiles for the row | 54 | **54** |
+| MDF | `objf 1.21775747`, 108 it | *identical* |
+| SAND | `objf 1.21775743`, 169 it | *identical* |
+
+**The compile count is unchanged, which is the check that the memo works** -- a
+per-solve retrace would have shown up there immediately. `max|eq|` and `min ie` are
+identical on both arms. The `model` phase falls by less than the 14.5x per-call figure
+because it also holds the first calls' compilation and the ~1.75 s of one-time per-solve
+jit setup §31.6 named and did not explain.
+
+`tests/functional_process` `test_mdf` / `test_cold_matrix` / `test_run_sand_harness` /
+`test_sand`: 232 passed; `test_mda`: 12; `-k "driver or vmcon or slsqp or optimise"`: 40;
+`tests/unit`: 846.

@@ -797,29 +797,17 @@ Same pattern as §28.1, and the same lesson.
 3. **The ~1.75 s of first-call jit setup** that is neither trace, lower, compile, nor
    `filter_jit` — arm-independent, bounded, unexplained. A `cProfile` of the first two
    calls (§31.6).
-4. **Bind the condition map once per solve — designed, NOT landed, and there is a trap.**
-   6.0x on the steady state and bitwise identical (§31.6), and it belongs in
-   `host_cache.py` beside the existing pair. Two things found while attempting it
-   (2026-09-02) and not yet resolved:
+4. **[done — §31.14] The condition map is bound once per solve.** **10.58 → 0.73 ms
+   per call (14.5x)**, answer bitwise identical, XLA compile count unchanged at 54.
+   Landed in both driver paths; `model` phase 6.6 → 2.6 s (MDF) and 4.4 → 2.4 s (SAND).
+   Arm A's cost was a `tree_flatten` of a **5 462-leaf** pytree (8.37 of 10.58 ms);
+   binding flattens 313 leaves instead. **The note previously here — that the 6x "did
+   not reproduce" at 7.96 ms against 8.85 — was measuring the wrong arm**, one whose
+   cost is a per-call by-value *hash* of the same pytree (8.03 ms). The
+   `equinox.Module` hash/eq inconsistency it found is real and is why the memo is a list
+   scanned with `==` rather than a dict. The floor beneath the bound arm is ~0.26 ms of
+   jax dispatch, and is not removable from a host loop.
 
-   - **The obvious spelling silently defeats §24.1.** Passing the partitioned static half
-     through `jax.jit(..., static_argnums=...)` retraces on *every* bind: measured 1 XLA
-     compile on the first bind and **1 more on a second bind of the same block**, where
-     the whole point of §24.1 was that a second solve is a cache hit. Cause: for the
-     static half of `eqx.partition((conditions, unravel), eqx.is_array)`,
-     **`static == static2` is `True` while their hashes differ** — a broken
-     hash/eq contract (both come from `equinox.Module`; `ConditionMap` and
-     `MdfConditionMap` inherit both). jax keys its static-argument cache on the hash, so
-     it misses. `eqx.filter_jit` avoids this by wrapping the static half in a
-     by-value-hashing wrapper, which is *why* today's spelling caches at all. A bind must
-     do the same, or memoise on a linear `==` scan (there are only a handful of distinct
-     blocks per process).
-   - **The 6.0x could not be reproduced on the day**, and the measurement is not to be
-     trusted either way: a module-level bound call read **7.96 ms against today's
-     8.85 ms** on the MDF map, ~10 % rather than ~8x, taken while a second agent was
-     running a tokamak row on the same 15 GB box. Re-measure on a quiet machine before
-     landing anything. The floor beneath it is ~0.50/0.76 ms, set by jax dispatch, and is
-     not removable from a host loop (§31.6).
 5. **The persistent compilation cache** — 2.57x, two env vars, bitwise identical, but
    **leave it off while the structural work is in flight**: a cache hit erases compile
    time from the phase table (§31.7).
