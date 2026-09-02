@@ -7599,3 +7599,52 @@ port does not impose, widening the gap rather than explaining it.
 (`_audit/x109.md`); decide by logging branch state against the blow-outs. (2) PROCESS's
 10-pass Gauss-Seidel acting as an unintended smoother; decide by capping the port's Picards
 at 10 / `1e-6` and re-taking the jitter table. (3) `initial_B`, low prior.
+
+### 31.22 [measured] What a warm-cached pass is made of, and how far it is from the floor
+
+`--cache` lands the matrix at **170 s** with bitwise-identical rows and `compile` at 0.0.
+Column sums across the ten arms: `trace` 14.2, `lower` 22.8, `compile` **0.0**, `model`
+55.7, `sqp` 4.3, `other` 47.0 -- 144 s of arms plus ~26 s between and outside them.
+
+**`model` in a warm run is mostly executable *loading*, not arithmetic**, and the tokamak
+makes that unmistakable. `large_tokamak_nof` MDF converges in **7** SQP iterations -- on
+the order of 28 entry-point calls -- yet its `model` column reads **11.4 s**. Attributing a
+whole warm tokamak row (45.7 s):
+
+| scope | calls | s |
+|---|---|---|
+| `mdf.solve` | 1 | 19.08 |
+| `sand_harness.run_schedule` | 1 | 13.33 |
+| **XLA: load cached executable** | **49** | **10.22** |
+| `mdf.prime` | 1 | 3.72 |
+| `sand_harness.mda_env` | 2 | 3.36 |
+| `sand_harness.assemble` | 1 | 2.25 |
+| `mdf.assemble` / `sand_schedule` / `condition_map` / scales | -- | 0.35 |
+
+Across the whole pass that load is **37.4 s over 280 calls** (§31.20's instrument), i.e.
+~134 ms each and ~22 % of the wall clock. It is the price of the cache, and the only way
+down is fewer or smaller programs.
+
+**So the arithmetic is already on the floor and is not what is left.** §31.17 measured the
+steady-state model calls at 0.822 / 1.017 ms and a whole helias row's worth at **1.01 s**;
+a `cProfile` of a warm row shows no hot spot in this repository's code at all -- the top
+entries are `compilation_cache.get_executable_and_time`, then jax's own `core.bind` and
+`pjit._infer_params`, i.e. Python dispatch inside jax.
+
+**Distance to the stated goal** ("the matrix in model + trace + lower, each on the
+floor"): `compile` is done. `trace` (1.4 s/arm) and `lower` (2.3 s/arm) are the cost of
+building the programs and are not cached by anything today. What stands between 170 s and
+~45 s is **37 s of executable loading** plus roughly 90 s of jax-side Python during
+tracing, priming and first calls. Neither is model arithmetic, and neither yields to a
+knob found so far.
+
+**One untried lever, now unblocked.** `jax.export` refuses `pure_callback`, and the
+callback turns out to be in the **model**, not the driver -- equinox's in-trace error
+reporting inside the inner `optimistix` drives. With **`EQX_ON_ERROR=nan`** the bound
+Jacobian program exports cleanly (0.26 MB of StableHLO) and its output is **bitwise
+identical** to the jitted one. An export carries StableHLO rather than code, so a reload
+still compiles -- but *with the persistent cache warm that compile is 0.68 s against 5.34 s
+cold*, and `Exported.call` costs 0.90 s against 5.83 s. **Export plus cache is therefore
+the only measured route that removes trace and lower as well as compile.** Not landed:
+`Exported.serialize()` needs `flatbuffers`, which is absent from `process_port`, so a
+genuine cross-process round trip has not been demonstrated.
