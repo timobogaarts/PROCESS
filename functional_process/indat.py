@@ -238,6 +238,7 @@ from functional_process.models.power.electric_production import (
     PowerProfilesOverTime,
 )
 from functional_process.models.power.namespace import Power
+from functional_process.models.physics.tokamak_namespace import PulseBurnTime
 from functional_process.models.power.pf_coil_power import PfCoilPowerSupplies
 from functional_process.models.power.tf_coil_power import (
     TfPowerResistive,
@@ -5042,6 +5043,15 @@ def _tokamak_device(
             SEPARATRIX_POWER,
         )
     )
+    # `Pulse.run` gates the burn-time calculation on `i_pulsed_plant == 1`
+    # (`pulse.py:154-162`), so on a steady-state machine PROCESS never computes it and
+    # `.times.t_plant_pulse_burn` stays the file's own input. An empty slot is how that
+    # is said here -- see `TokamakPulse.burn_time` for the 13 rows it was costing on the
+    # two `i_pulsed_plant = 0` files.
+    is_pulsed = (
+        PlantOperationModel(int(switches.get("i_pulsed_plant", 0)))
+        is not PlantOperationModel.CONTINUOUS
+    )
     pulse = TokamakPulse(
         ramp_times=_slot_occupant(
             "pulse_ramp_times_arm",
@@ -5051,7 +5061,8 @@ def _tokamak_device(
                 switches.get("i_t_current_ramp_up", 0),  # `:44`
             ),
             PULSE_RAMP_TIMES,
-        )
+        ),
+        burn_time=PulseBurnTime() if is_pulsed else None,
     )
     current_drive = _slot_occupant(
         "i_hcd_calculations",

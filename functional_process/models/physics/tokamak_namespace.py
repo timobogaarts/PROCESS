@@ -267,10 +267,29 @@ class TokamakPulse(ModelNamespace):
     section says the same. Recorded so that a reader who finds a stellarator import in
     the tokamak's pulse namespace sees a decision rather than an accident."""
 
-    burn_time: PulseBurnTime = PulseBurnTime()
-    """`Pulse.calculate_burn_time` (`pulse.py:275-316`). No switch of its own --
-    `i_pulsed_plant` decides whether this node's *machine* is pulsed, not which formula
-    it uses -- so no `kw_only` factory, per `pulse.md`'s registration instructions.
+    burn_time: PulseBurnTime | None = dataclasses.field(kw_only=True)
+    """`Pulse.calculate_burn_time` (`pulse.py:275-316`).
+
+    **`i_pulsed_plant` is topology, and this slot used to deny it.** This docstring said
+    *"No switch of its own -- `i_pulsed_plant` decides whether this node's machine is
+    pulsed, not which formula it uses"*, and that is wrong: `Pulse.run` gates the whole
+    calculation on `if self.data.pulse.i_pulsed_plant == 1` (`pulse.py:154-162`), so on a
+    **steady-state machine PROCESS never computes the burn time at all** and
+    `.times.t_plant_pulse_burn` keeps its input value. A node that always runs is a
+    different machine, not a different formula.
+
+    Measured, `spherical_tokamak_eval` and `st_regression` (both `i_pulsed_plant = 0`):
+    with no CS the volt-seconds are zero, so `abs(vs) / v_loop - t_plant_pulse_fusion_ramp`
+    returns **-10** where PROCESS keeps **1000**. The 1010 lands on
+    `.times.t_plant_pulse_plasma_present` (port `100.785` against PROCESS `1110.785`) and
+    runs through `.power.qac` -> `.heat_transport.helpow` (**25 %**) ->
+    `.buildings.a_plant_floor_effective` into eight cost accounts and the
+    electric-production chain -- **13 rows**, and the reason both spherical files were
+    held out of `cold_start.CONFIGURATIONS`.
+
+    `kw_only` and `| None` for the same reason `ramp_times` above is switched: the slot
+    is answered by `indat`, from the file's own switch, and an empty slot is how this
+    port spells "PROCESS does not run this model here"."
     Reads `.pf_coil.vs_cs_pf_total_burn`, produced since 2026-08-27 by
     `.tokamak.pf_coil.volt_seconds` (`pfcoil.py::vsec`, `cold_boundary.md` producer 4)
     -- the registration that merged this node's two-node ring with the PF coil ring

@@ -4,13 +4,11 @@
 # only go down; `off` is an independently answered path the seed
 # disagrees with.
 # See functional_process/provider.py.
-guess process ^guess.pf_coil.ind_pf_cs_plasma_mutual
 guess process ^guess.physics.f_temp_plasma_electron_density_vol_avg
 guess process ^guess.physics.fusden_alpha_total
 guess process ^guess.physics.proton_rate_density
 guess process ^guess.physics.temp_plasma_ion_vol_avg_kev
 guess process ^guess.power.delta_eta
-guess process ^guess.times.t_plant_pulse_burn
 guess process ^guess.vacuum.d_duct
 input indat .build.dr_blkt_inboard
 input indat .build.dr_blkt_outboard
@@ -366,6 +364,7 @@ unwritten defaults .tfcoil.tfcmw
 input indat .tfcoil.tftmp
 default defaults .tfcoil.theta1_coil
 default defaults .tfcoil.theta1_vv
+input indat .times.t_plant_pulse_burn
 input indat .times.t_plant_pulse_dwell
 default defaults .times.t_plant_pulse_fusion_ramp
 unwritten defaults .vacuum.ceff_i

@@ -308,39 +308,37 @@ def test_the_cold_pin_is_exact(reports):
 
 
 def test_the_pin_never_lists_a_configuration_that_does_not_assemble():
-    """What is out, and why, so that each absence is a decision rather than an accident.
+    """Every configuration that assembles is measured; only `IFE` is out.
 
-    **This test used to say all three of `helias_5b`, `spherical_tokamak_eval` and
-    `st_regression` were "refused by `machine_from_indat` before a graph exists".** That
-    was stale on the day it was written and stayed stale: `cold_start`'s own module
-    docstring already recorded `machine_survey.assembly_verdict` reporting **ASSEMBLES**
-    for the two spherical files, and all three have now been run. Absence is a
-    *measurement* decision here, not an assembly one, which is why this test names the
-    reason per file instead of asserting one blanket cause.
+    **This test twice named files as "refused by `machine_from_indat` before a graph
+    exists" that assembled fine**, and both times the refusal was stale rather than
+    wrong-at-the-time. It now asserts the positive -- every tracked file is in -- so a
+    file dropping out is the failure rather than a docstring quietly going out of date.
 
-    - `helias_5b` is **in** (2026-09-02). Its 49 real disagreements are covered exactly
-      by the two causes the reference stellarator already carries, `STELLARATOR_ARM_ORDER`
-      and `VACUUM_DUCT_SOLVE`, with **nothing left over** -- so it cost two `_because`
-      entries and no new prose.
-    - `spherical_tokamak_eval` and `st_regression` are **held**, and for one reason:
-      13 of their 57 real disagreements are a single chain rooted in `.buildings.sizing`
-      at `3e-03`--`8e-03` -- `a_plant_floor_effective` and `volnucb` through the site
-      accounts (`c21`, `c22`, `capcost`, `concost`, ...) and the electric-production
-      chain. It is the same *shape* as the stellarator's `z_tf_inside_half` chain and
-      cannot be the same *cause*, because `STELLARATOR_ARM_ORDER` is about
-      `Stellarator.run`'s `st_coil`/`st_build` ordering and neither file runs it.
-      Pinning them under a stellarator's reason would be a wrong explanation, not a
-      pending one.
-    - `IFE.IN.DAT` is out of scope entirely: `ife == 1`, a whole unported device.
+    `helias_5b` joined on 2026-09-02: its 49 real disagreements were covered exactly by
+    the two causes the reference stellarator already carried, with nothing left over.
+
+    `spherical_tokamak_eval` and `st_regression` joined the same day, and only after two
+    port defects they alone exposed were **fixed rather than pinned** -- the PF topology
+    never threaded into `PfCoilPowerSupplies` (`pfckts` 12 against 13, and ten rows), and
+    `burn_time` running on an `i_pulsed_plant = 0` machine where `Pulse.run` does not
+    (thirteen rows, `-10` against `1000`). Their remaining 15 are the vacuum-duct solve
+    and the PF turns' dead tail.
+
+    `IFE.IN.DAT` stays out: `ife == 1`, a whole unported device.
     """
     pinned = {line.split(" ", 1)[0] for line in read_pin(PIN)}
     assert pinned == {Path(name).name for name in CONFIGURATIONS}
-    assert "helias_5b.IN.DAT" in pinned
-    assert not pinned & {
+    assert pinned >= {
+        "stellarator_helias.IN.DAT",
+        "helias_5b.IN.DAT",
+        "large_tokamak_nof.IN.DAT",
+        "low_aspect_ratio_DEMO.IN.DAT",
+        "large_tokamak_eval.IN.DAT",
         "spherical_tokamak_eval.IN.DAT",
         "st_regression.IN.DAT",
-        "IFE.IN.DAT",
     }
+    assert "IFE.IN.DAT" not in pinned
 
 
 # ============================================================== the two defects

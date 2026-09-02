@@ -100,6 +100,8 @@ CONFIGURATIONS = (
     "tests/regression/input_files/large_tokamak_nof.IN.DAT",
     "tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT",
     "tests/regression/input_files/large_tokamak_eval.IN.DAT",
+    "tests/regression/input_files/spherical_tokamak_eval.IN.DAT",
+    "tests/regression/input_files/st_regression.IN.DAT",
 )
 """The reference configurations this stage is measured on.
 
@@ -598,6 +600,8 @@ TOKAMAK_NOF = "large_tokamak_nof.IN.DAT"
 TOKAMAK_DEMO = "low_aspect_ratio_DEMO.IN.DAT"
 TOKAMAK_EVAL = "large_tokamak_eval.IN.DAT"
 HELIAS_5B = "helias_5b.IN.DAT"
+SPHERICAL_EVAL = "spherical_tokamak_eval.IN.DAT"
+ST_REGRESSION = "st_regression.IN.DAT"
 """The four `CONFIGURATIONS`, by the base name a pin row and an `ACCEPTED` key use."""
 
 TF_STRESS_LANDED = (
@@ -835,6 +839,13 @@ PF_TURNS_DEAD_TAIL = (
 
 PF_TURNS_ROWS = (".pf_coil.n_pf_coil_turns", "^hat.pf_coil.n_pf_coil_turns")
 
+PF_TURNS_ROWS_SPHERICAL = (".pf_coil.n_pf_coil_turns",)
+"""The same cause on the two spherical files, **without the `^hat` twin.**
+
+Those machines set `iohcl = 0`, so the PF cycle's minted copy does not carry the dead
+tail the way it does where a CS exists -- the array itself still does. One row, not two,
+and measured rather than assumed: pinning the twin here left it stale."""
+
 VACUUM_DUCT_SOLVE = (
     "`VacuumOld`'s duct-diameter Newton solve, a deliberate solver-tolerance difference "
     "documented at `models/vacuum.py:262-271` and in "
@@ -848,6 +859,34 @@ VACUUM_DUCT_SOLVE = (
     "224 is their sum. One cause, five rows, present on every machine that registers "
     "`VacuumOld` -- which is all four."
 )
+
+VACUUM_DUCT_ROWS_SPHERICAL = (
+    ".vacuum.dia_vv_vacuum_ducts",
+    ".vacuum.dlscal",
+    ".costs.c224",
+    ".costs.c2243",
+    ".costs.c2244",
+    # The cost sums below `c224`, traced rather than assumed: `.costs.c224` is the only
+    # disagreeing input of `.costs.fusion_power_island_cost`, `c22` the only one of
+    # `.costs.total_plant_direct_cost`, and `concost` the only one of
+    # `.costs.cost_of_electricity`. So this is `c224` propagating and **not** the
+    # stellarator's `z_tf_inside_half` chain, whose row list happens to contain the same
+    # aggregate names because the same sums sit below it there.
+    ".costs.c22",
+    ".costs.capcost",
+    ".costs.ccont",
+    ".costs.cdirt",
+    ".costs.cindrt",
+    ".costs.coe",
+    ".costs.coecap",
+    ".costs.concost",
+    ".costs.moneyint",
+)
+"""`VACUUM_DUCT_SOLVE`'s rows on the two `i_pulsed_plant = 0` spherical files.
+
+Its own list plus the cost aggregates it reaches on these two machines. Separate from
+`VACUUM_DUCT_ROWS` because on the other configurations those sums are downstream of a
+*different* cause and are pinned there."""
 
 VACUUM_DUCT_ROWS = (
     ".costs.c224",
@@ -921,6 +960,8 @@ ACCEPTED = {
             TOKAMAK_NOF: PF_TURNS_ROWS,
             TOKAMAK_DEMO: PF_TURNS_ROWS,
             TOKAMAK_EVAL: PF_TURNS_ROWS,
+            SPHERICAL_EVAL: PF_TURNS_ROWS_SPHERICAL,
+            ST_REGRESSION: PF_TURNS_ROWS_SPHERICAL,
         },
     ),
     **_because(
@@ -931,6 +972,8 @@ ACCEPTED = {
             TOKAMAK_NOF: VACUUM_DUCT_ROWS,
             TOKAMAK_DEMO: VACUUM_DUCT_ROWS,
             TOKAMAK_EVAL: VACUUM_DUCT_ROWS,
+            SPHERICAL_EVAL: VACUUM_DUCT_ROWS_SPHERICAL,
+            ST_REGRESSION: VACUUM_DUCT_ROWS_SPHERICAL,
         },
     ),
     **_because(DRIVER_TOLERANCE, {TOKAMAK_EVAL: DRIVER_TOLERANCE_ROWS_EVAL}),
