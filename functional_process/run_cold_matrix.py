@@ -202,6 +202,7 @@ from functional_process import (  # noqa: E402
     provider,
     sand,
 )
+from functional_process.core.solver import host_cache  # noqa: E402
 from functional_process.core.solver.host_cache import flat_conditions  # noqa: E402
 from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
@@ -1821,7 +1822,16 @@ def main(argv=None, out=OUT):
         # single cache hit. It is *not* a fix for a leak -- there is no leak, only a
         # cache doing
         # exactly what it promises for longer than this runner needs.
+        #
+        # `host_cache._BOUND` is dropped with it, and for the same reason. That memo
+        # holds each block's two `jax.jit` wrappers so a second solve of the *same*
+        # block is a cache hit (§31.14); keeping them across configurations would pin
+        # the jitted callables that own the compiled programs `clear_caches` is being
+        # called to release, and the next configuration is a different graph that would
+        # miss every entry anyway. Re-binding costs ~90 ms on the next row against a
+        # ~25 s row. Same argument, same place, so they are cleared together.
         jax.clear_caches()
+        host_cache._BOUND.clear()
     print(render(rows))
     print(f"\n{len(rows)} configuration(s) in {time.perf_counter() - began:.0f} s")
     return rows
