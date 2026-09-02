@@ -64,7 +64,7 @@ from cottax.evaluate import Schedule
 from cottax.plan import Delete
 from cottax.spec import NodePath, VarPath
 
-from functional_process.mda import driven_graph, starts_for
+from functional_process.mda import driven_graph, given_start, starts_for
 
 EXCLUDED_NODE_NAMES = ("duct_diameter_root_find",)
 """`.vacuum.duct_diameter_root_find`: see this module's own docstring -- no real
@@ -1328,10 +1328,15 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
             continue
         for var, guess in starts_for(driven, problem):
             try:
-                env[guess] = jnp.asarray(_ground_truth(seed, var))
+                grounded = _ground_truth(seed, var)
             except (AttributeError, KeyError):
                 ungrounded.append(var)
-                env[guess] = jnp.asarray(0.0)
+                grounded = 0.0
+            # A `^guess.*` port may be *given* its value rather than read off the seed
+            # run -- `mda.GIVEN_STARTS` for which, and why a cold dataclass default is
+            # not a starting guess. Same rule as `mdf.seed` and `sand_harness.mda_env`:
+            # three seeding sites, one table, which is the point of the table.
+            env[guess] = jnp.asarray(given_start(var, grounded))
 
     report.ungrounded_inputs = ungrounded
     # Everything that reads an ungrounded input, directly or transitively, can only

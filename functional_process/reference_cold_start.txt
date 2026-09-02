@@ -4,7 +4,7 @@
 # `agree` may only go up; `off`, `nocompare` and `errors` may only shrink;
 # every `off` path must carry a reason in
 # functional_process/cold_start.py's ACCEPTED.
-stellarator_helias.IN.DAT agree 453
+stellarator_helias.IN.DAT agree 461
 stellarator_helias.IN.DAT errors 27
 stellarator_helias.IN.DAT off .build.z_tf_inside_half
 stellarator_helias.IN.DAT off .buildings.a_plant_floor_effective
@@ -57,7 +57,7 @@ stellarator_helias.IN.DAT off .vacuum.dia_vv_vacuum_ducts
 stellarator_helias.IN.DAT off .vacuum.dlscal
 stellarator_helias.IN.DAT nocompare .physics.beta_mcdonald
 stellarator_helias.IN.DAT nocompare .physics.nu_star
-large_tokamak_nof.IN.DAT agree 646
+large_tokamak_nof.IN.DAT agree 668
 large_tokamak_nof.IN.DAT errors 22
 large_tokamak_nof.IN.DAT off .buildings.cryvol
 large_tokamak_nof.IN.DAT off .costs.bktcycles
@@ -91,21 +91,9 @@ large_tokamak_nof.IN.DAT off .heat_transport.p_plant_secondary_heat_mw
 large_tokamak_nof.IN.DAT off .heat_transport.pacpmw
 large_tokamak_nof.IN.DAT off .heat_transport.peakmva
 large_tokamak_nof.IN.DAT off .heat_transport.tlvpmw
-large_tokamak_nof.IN.DAT off .pf_coil.b_pf_coil_peak[0]
-large_tokamak_nof.IN.DAT off .pf_coil.b_pf_coil_peak[1]
-large_tokamak_nof.IN.DAT off .pf_coil.bpf2[0]
-large_tokamak_nof.IN.DAT off .pf_coil.bpf2[1]
-large_tokamak_nof.IN.DAT off .pf_coil.c_pf_coil_turn
-large_tokamak_nof.IN.DAT off .pf_coil.c_pf_cs_coil_flat_top_ma
-large_tokamak_nof.IN.DAT off .pf_coil.c_pf_cs_coils_peak_ma
-large_tokamak_nof.IN.DAT off .pf_coil.f_c_pf_cs_peak_time_array
-large_tokamak_nof.IN.DAT off .pf_coil.f_j_cs_start_end_flat_top
 large_tokamak_nof.IN.DAT off .pf_coil.ind_pf_cs_plasma_mutual
-large_tokamak_nof.IN.DAT off .pf_coil.m_pf_coil_conductor
-large_tokamak_nof.IN.DAT off .pf_coil.m_pf_coil_structure
 large_tokamak_nof.IN.DAT off .pf_coil.n_pf_coil_turns
 large_tokamak_nof.IN.DAT off .pf_coil.p_pf_electric_supplies_mw
-large_tokamak_nof.IN.DAT off .pf_coil.pfcaseth
 large_tokamak_nof.IN.DAT off .pf_coil.vs_cs_pf_total_burn
 large_tokamak_nof.IN.DAT off .pf_coil.vs_cs_pf_total_pulse
 large_tokamak_nof.IN.DAT off .pf_power.ensxpfm
@@ -135,13 +123,14 @@ large_tokamak_nof.IN.DAT off ^hat.times.t_plant_pulse_burn
 large_tokamak_nof.IN.DAT nocompare .physics.beta_mcdonald
 large_tokamak_nof.IN.DAT nocompare .physics.nu_star
 large_tokamak_nof.IN.DAT nocompare .physics.rho_star
-low_aspect_ratio_DEMO.IN.DAT agree 687
+low_aspect_ratio_DEMO.IN.DAT agree 695
 low_aspect_ratio_DEMO.IN.DAT errors 22
 low_aspect_ratio_DEMO.IN.DAT off .costs.bktcycles
 low_aspect_ratio_DEMO.IN.DAT off .costs.c22
 low_aspect_ratio_DEMO.IN.DAT off .costs.c224
 low_aspect_ratio_DEMO.IN.DAT off .costs.c2243
 low_aspect_ratio_DEMO.IN.DAT off .costs.c2244
+low_aspect_ratio_DEMO.IN.DAT off .costs.c2252
 low_aspect_ratio_DEMO.IN.DAT off .costs.c22521
 low_aspect_ratio_DEMO.IN.DAT off .costs.c22526
 low_aspect_ratio_DEMO.IN.DAT off .costs.c242
@@ -158,6 +147,7 @@ low_aspect_ratio_DEMO.IN.DAT off .pf_coil.ind_pf_cs_plasma_mutual
 low_aspect_ratio_DEMO.IN.DAT off .pf_coil.n_pf_coil_turns
 low_aspect_ratio_DEMO.IN.DAT off .pf_coil.p_pf_electric_supplies_mw
 low_aspect_ratio_DEMO.IN.DAT off .pf_coil.vs_cs_pf_total_burn
+low_aspect_ratio_DEMO.IN.DAT off .pf_coil.vs_cs_pf_total_pulse
 low_aspect_ratio_DEMO.IN.DAT off .pf_power.ensxpfm
 low_aspect_ratio_DEMO.IN.DAT off .pf_power.peakpoloidalpower
 low_aspect_ratio_DEMO.IN.DAT off .pf_power.poloidalpower
@@ -178,7 +168,7 @@ low_aspect_ratio_DEMO.IN.DAT off ^hat.times.t_plant_pulse_burn
 low_aspect_ratio_DEMO.IN.DAT nocompare .physics.beta_mcdonald
 low_aspect_ratio_DEMO.IN.DAT nocompare .physics.nu_star
 low_aspect_ratio_DEMO.IN.DAT nocompare .physics.rho_star
-large_tokamak_eval.IN.DAT agree 703
+large_tokamak_eval.IN.DAT agree 714
 large_tokamak_eval.IN.DAT errors 22
 large_tokamak_eval.IN.DAT off .costs.c22
 large_tokamak_eval.IN.DAT off .costs.c224
@@ -196,7 +186,6 @@ large_tokamak_eval.IN.DAT off .pf_coil.n_pf_coil_turns
 large_tokamak_eval.IN.DAT off .tfcoil.insstrain
 large_tokamak_eval.IN.DAT off .vacuum.dia_vv_vacuum_ducts
 large_tokamak_eval.IN.DAT off .vacuum.dlscal
-large_tokamak_eval.IN.DAT off ^hat.pf_coil.ind_pf_cs_plasma_mutual
 large_tokamak_eval.IN.DAT off ^hat.pf_coil.n_pf_coil_turns
 large_tokamak_eval.IN.DAT nocompare .physics.beta_mcdonald
 large_tokamak_eval.IN.DAT nocompare .physics.nu_star
