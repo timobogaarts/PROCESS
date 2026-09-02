@@ -48,7 +48,7 @@ class _Contraction:
 
 def test_picard_driver_converges_on_a_contraction_mapping():
     """`u = 0.5u + 3` has the exact fixed point `u = 6`; Picard must find it."""
-    driver = PicardDriver(rtol=1e-10, atol=1e-12, max_iter=100)
+    driver = PicardDriver(rtol=1e-10, atol=1e-12, max_steps=100)
     (result,) = driver(_Contraction(), {Start: (jnp.asarray(0.0),)})
     assert float(result) == pytest.approx(6.0, abs=1e-8)
 
@@ -57,7 +57,7 @@ def test_picard_driver_converges_regardless_of_starting_point():
     """A genuine contraction (|derivative| < 1) reaches the same fixed point from
     any starting guess, not just a convenient one.
     """
-    driver = PicardDriver(rtol=1e-10, atol=1e-12, max_iter=100)
+    driver = PicardDriver(rtol=1e-10, atol=1e-12, max_steps=100)
     for start in (0.0, 100.0, -50.0):
         (result,) = driver(_Contraction(), {Start: (jnp.asarray(start),)})
         assert float(result) == pytest.approx(6.0, abs=1e-8)

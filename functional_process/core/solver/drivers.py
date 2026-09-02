@@ -33,6 +33,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
+from cottax.drivers import PicardDriver as CottaxPicardDriver
 from cottax.evaluate import AbstractDriver, ConditionMap
 from cottax.problem import (
     Converged,
@@ -708,165 +709,70 @@ def _usable(start) -> bool:
     )
 
 
-class PicardDriver(AbstractDriver):
-    """Fixed-point (Gauss-Seidel/Picard) iteration answering `FixedPoint`.
+class PicardDriver(CottaxPicardDriver):
+    """`cottax.drivers.PicardDriver` at this port's tolerances -- `optx.fixed_point`, and
+    therefore an **implicit adjoint**.
 
-    Repeatedly evaluates the block's conditions and feeds the result back in as the
-    next guess, until the iterate stops changing (by `rtol`/`atol`, `jnp.allclose`'s own
-    convention) or `max_iter` is reached -- exactly the shape PROCESS's own
-    `Caller.call_models` already uses (re-running the whole pipeline up to 10 times and
-    checking `check_agreement`'s idempotence), not a new algorithm invented for this
-    port. Bounded and `jax.lax.while_loop`-based, so it stays traceable/jittable like
-    `NewtonDriver`.
+    **A subclass, because the hand-written loop this replaced was a defect.** Until
+    2026-09-02 this class carried its own `jax.lax.while_loop`, so jax differentiated
+    *through the iterations actually taken* -- and the convergence test makes that trip
+    count a function of `x`, so the Jacobian jumped whenever it changed. On
+    `stellarator_helias` it does: the four `PicardDriver`s exit after `[2, 2, 3, 4]`
+    passes at the start point and `[2, 2, 2, 4]` at iterate 30 of the trajectory, an
+    iterate where `objf` blows out to 1.378. `SeededNewtonDriver` above has always gone
+    through `optx.root_find` and always had an adjoint; the two were never symmetric.
 
-    Needs a `start` for every unknown, same requirement and same reasoning as
-    `NewtonDriver`: there is no shape to guess a pytree from. For the block-by-block
-    verification harness this driver exists for, the natural `start` is the reference
-    PROCESS run's own converged value at that `VarPath` -- not `ITERATION_VARIABLES`'
-    generic defaults, which matter for a real from-scratch optimisation with no known
-    answer yet, not for checking whether this graph reproduces an answer PROCESS
-    already found.
-    """
-
-    drives = FixedPoint
-    requires = (Start,)
-
-    rtol: float = 1e-6
-    atol: float = 1e-8
-    max_iter: int = 20
-    implicit: bool = False
-    """Use `optx.fixed_point` -- and so an **implicit adjoint** -- instead of this
-    class's hand-written `lax.while_loop`.
-
-    **Opt-in, and the default is the defect.** A hand-rolled loop has no implicit adjoint, so jax differentiates
-    *through the iterations actually taken* -- and the convergence test makes the number
-    of iterations a function of `x`. The Jacobian therefore jumps whenever the trip count
-    changes, which on `stellarator_helias` it does: the four `PicardDriver`s exit after
-    `[2, 2, 3, 4]` passes at the start point and `[2, 2, 2, 4]` at iterate 30 of the
-    trajectory, an iterate where `objf` blows out to 1.378.
-
-    `optx.fixed_point` carries optimistix's `ImplicitAdjoint`, which takes the derivative
-    at the converged point through the implicit function theorem, so it **does not depend
-    on how many passes were taken**. Measured, `stellarator_helias` MDF at `1e-6`,
-    perturbing `rmajor` (`_audit/optimise_design.md` §31.27):
+    An implicit adjoint takes the derivative at the converged point through the implicit
+    function theorem, so it **cannot depend on how many passes were taken**. Measured,
+    `stellarator_helias` MDF at `1e-6`, perturbing `rmajor`
+    (`_audit/optimise_design.md` §31.27):
 
     | perturbation | 0 | ±1e-13 | ±1e-12 | ±1e-11 | ±1e-10 |
     |---|---|---|---|---|---|
-    | hand-rolled loop (the default) | 66 | 129, 84 | 101, 227 | 399, 206 | **31 stopped, 83 stopped** |
-    | `implicit=True` | **45** | 45, 45 | 45, 45 | 45, 48 | 42, 56 |
+    | the old hand-rolled loop | 66 | 129, 84 | 101, 227 | 399, 206 | **31 stopped, 83 stopped** |
+    | this | **45** | 45, 45 | 45, 45 | 45, 48 | 42, 56 |
 
-    PROCESS takes **46**. Every implicit solve converged, at `max|eq| <= 2.36e-07`, where
-    the hand-rolled loop failed on two of nine and spanned 31--399 iterations.
+    **PROCESS takes 46.** Every implicit solve converged, `max|eq| <= 2.36e-07`, where the
+    hand-rolled loop failed two of nine and spanned 31--399 iterations.
 
-    **So why is this not the default?** Because a full matrix says it is not ready.
-    `stellarator_helias` MDF improves (108 -> 66 iterations at the same `objf`) and
-    `large_tokamak_nof` MDF's feasibility improves by four orders (`max|eq|`
-    `2.41e-06 -> 8.60e-10`), but **three arms stop taking a step at all** --
-    `large_tokamak_nof` SAND (converged in 10 -> `no-step`) and both
-    `low_aspect_ratio_DEMO` arms. `no-step` is "first QP infeasible, the start came back
-    untouched", which is the signature of a non-finite condition or Jacobian at the start,
-    and the likely cause is `ImplicitAdjoint`'s linear solve being singular on a block
-    where the hand-rolled loop simply never formed one. **Diagnosing that is what stands
-    between this flag and the default.**
+    **Why PROCESS never had the problem**, and it is not luck: `Caller.call_models` is
+    warm-started from the previous evaluation's `DataStructure`, so its pass count is
+    locally constant -- measured at 2 across perturbations from `0` to `±1e-8`. This port
+    freezes the inner guess with `mdf.prime` **deliberately**, to make the map a pure
+    function of `x`; that decision also made the trip count a function of `x`, and without
+    an adjoint the trip count reached the derivative.
 
-    **Why PROCESS never had this**: `Caller.call_models` is warm-started from the previous
-    evaluation's `DataStructure`, so its pass count is locally constant -- 2 across
-    perturbations from `0` to `±1e-8`. This port freezes the inner guess with `mdf.prime`
-    deliberately, to make the map a pure function of `x`; that made the trip count a
-    function of `x` too, and without an implicit adjoint the trip count reaches the
-    derivative.
+    **It does not make compilation cheaper** -- the opposite. Forward mode through a
+    `while_loop` does not unroll (the tangent rides in the loop carry, and the program is
+    byte-identical in size at `max_steps` 20 and 100), so differentiating through was the
+    *compact* option: 15 893 StableHLO lines against this class's **17 800** (+12 %), XLA
+    5.91 s against 6.12 s. The adjoint's linear solve is added work. It is bought for
+    correctness and stability, not speed (§31.28).
+
+    **Tolerances are this port's, the budget is cottax's.** `rtol`/`atol` stay at
+    `1e-6`/`1e-8` -- the values the hand-rolled loop used, so the fixed points are held to
+    the same standard as before. `max_steps` becomes cottax's **256** rather than the old
+    `max_iter = 20`: under `throw=False` a fixed point that runs out of budget returns a
+    *non-converged* iterate, and an implicit derivative taken at a point that is not a
+    fixed point is not meaningful, so a budget that was merely generous for a
+    differentiate-through loop is load-bearing here.
     """
-    n_passes: int | None = None
-    """Run **exactly** this many passes instead of iterating to `rtol`/`atol`.
 
-    **Why an alternative to convergence exists at all.** The convergence test makes the
-    *number of passes a function of `x`*, and therefore makes this block's output a
-    **discontinuous** function of `x` -- the iterate jumps whenever the trip count
-    changes. An outer SQP differentiating through that gets a linearisation that can flip
-    under an arbitrarily small step, and on `stellarator_helias` it does: the four
-    `PicardDriver`s exit after `[2, 2, 3, 4]` passes at the start point and `[2, 2, 2, 4]`
-    at iterate 30, which is an iterate where `objf` blows out to 1.378
-    (`_audit/optimise_design.md` §31.25).
-
-    **PROCESS does not have this problem**, and not by luck: its `Caller.call_models`
-    Gauss-Seidel is warm-started from the previous evaluation's `DataStructure`, so its
-    pass count is locally *constant* -- measured at 2 across perturbations from `0` to
-    `+-1e-8`. This port freezes the guess with `mdf.prime` **deliberately**, to make the
-    map a pure function of `x`; the same decision is what made the trip count a function
-    of `x` too.
-
-    **Measured, `stellarator_helias` MDF, perturbing `rmajor`** (iteration counts; `F` is
-    a failed solve):
-
-    | perturbation | 0 | +-1e-13 | +-1e-12 | +-1e-11 | +-1e-10 | +-1e-9 |
-    |---|---|---|---|---|---|---|
-    | converge (today) | 66 | 129, 84 | 101, 227 | 399, 206 | **31 F, 83 F** | **31 F, 48 F** |
-    | `n_passes=10` | 45 | 45, 45 | 45, 45 | 45, 45 | 42, 56 | 38, 43 |
-
-    All 33 fixed-pass solves converged, against 36 % failures for the convergence test,
-    and **45 against PROCESS's own 46**. It is the *variability* of the count and not
-    truncation: `n_passes=4` (the depth stock already reaches) is as stable as
-    `n_passes=20`. Capping `max_iter` at 10 reproduces stock **bit-identically**, so the
-    number of passes is not the lever -- the test is.
-
-    **It does not move the answer, it de-noises it**: over eleven perturbed starts,
-    `objf` spans 1.217757340--1.217757756, within `3.4e-07` of stock's 1.217757471.
-
-    `None` (the default) keeps the convergence test, so nothing moves unless a caller asks
-    for it. **A fixed count needs a residual report** so that a too-shallow `n` is loud
-    rather than silent, and this class does not have one yet -- see §31.25's open items.
-    """
+    rtol: float = 1e-6
+    atol: float = 1e-8
+    max_steps: int = 256
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
-        """Values for the block's unknowns, positionally -- `AbstractDriver`'s own
-        contract, see its abstract `__call__` docstring.
+        """`cottax.drivers.PicardDriver.__call__`, behind this port's refusal message.
 
-        Raises
-        ------
-        ValueError
-            If no `Start` data is supplied -- there is no shape to guess a pytree from.
+        The **only** thing this override adds is `start_from`: cottax indexes `data[Start]`
+        directly and a missing start therefore surfaces as a bare `KeyError`, where this
+        port has always named the driver and told the caller what is missing. The solve
+        itself is entirely the superclass's -- no loop, no tolerance handling and no
+        adjoint is re-implemented here, which is the whole point of subclassing.
         """
-        start = start_from(data, "PicardDriver", conditions)
-        flat_start, unravel = ravel_pytree(start)
-
-        def one_pass(current):
-            return ravel_pytree(conditions(*unravel(current)))[0]
-
-        if self.implicit and self.n_passes is None:
-            # The default: an implicit adjoint, so the derivative comes from the
-            # converged point and not from the iterations taken -- see
-            # `differentiate_through` for what that is worth and why.
-            solution = optx.fixed_point(
-                lambda flat, _args: one_pass(flat),
-                optx.FixedPointIteration(rtol=self.rtol, atol=self.atol),
-                flat_start,
-                max_steps=self.max_iter,
-                throw=False,
-            )
-            return unravel(solution.value)
-
-        if self.n_passes is not None:
-            # Exactly `n_passes`, with no data-dependent exit -- see `n_passes`.
-            final_flat = jax.lax.fori_loop(
-                0, int(self.n_passes), lambda _i, cur: one_pass(cur), flat_start
-            )
-            return unravel(final_flat)
-
-        def cond_fn(carry):
-            it, _current, converged = carry
-            return jnp.logical_and(it < self.max_iter, jnp.logical_not(converged))
-
-        def body_fn(carry):
-            it, current, _converged = carry
-            next_flat = one_pass(current)
-            tol = self.atol + self.rtol * jnp.abs(next_flat)
-            converged = jnp.all(jnp.abs(next_flat - current) <= tol)
-            return (it + 1, next_flat, converged)
-
-        _it, final_flat, _converged = jax.lax.while_loop(
-            cond_fn, body_fn, (0, flat_start, jnp.asarray(False))
-        )
-        return unravel(final_flat)
+        start_from(data, "PicardDriver", conditions)
+        return super().__call__(conditions, data)
 
 
 class VmconDriver(AbstractDriver):

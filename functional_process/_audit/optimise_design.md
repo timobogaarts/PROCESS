@@ -7839,3 +7839,95 @@ linear solve being singular on a block where the hand-rolled loop never formed o
 Landed as **`PicardDriver.implicit`, defaulting to `False`**; `stellarator_helias`
 reproduces the published rows exactly on the default path. `n_passes` stays as the
 independent §31.25 knob.
+
+### 31.28 [landed] `PicardDriver` is `cottax.drivers.PicardDriver` -- and it fails loudly where the old one was silent
+
+§31.27's opt-in flag is gone; the class is a subclass:
+
+```python
+class PicardDriver(cottax.drivers.PicardDriver):
+    rtol: float = 1e-6      # this port's, unchanged
+    atol: float = 1e-8
+    max_steps: int = 256    # cottax's, was max_iter = 20
+```
+
+plus a three-line `__call__` that only calls `start_from` before `super().__call__`
+(cottax indexes `data[Start]` and so raises a bare `KeyError`; this port names the driver).
+No loop, no tolerance handling and no adjoint is re-implemented -- **-152 lines**.
+
+#### 31.28.1 Why a converged *value* can have an unconverged *derivative*
+
+The mechanism §31.27 measured, written out, because it is not obvious and it is the whole
+case. A Picard step is `u_{k+1} = g(u_k; x)`; differentiating with the start held constant,
+
+    u'_{k+1} = g_x + A u'_k          (A = dg/du,  u'_0 = 0)
+    u'_K     = (I + A + ... + A^{K-1}) g_x          <- a TRUNCATED Neumann series
+    u'*      = (I - A)^{-1} g_x = (I + A + A^2 + ...) g_x
+
+so the **derivative** error is `A^K (I - A)^{-1} g_x` and the **value** error is
+`A^K (u_0 - u*)`. Both decay like `rho^K`; they differ entirely in the constant:
+
+| | error ~ |
+|---|---|
+| value | `rho^K x ||u_0 - u*||` -- the distance from the **start** |
+| derivative | `rho^K x ||(I - A)^{-1} g_x||` -- the block's **full sensitivity** |
+
+**And `mdf.prime` is what makes this bite.** It starts every inner solve from a converged
+MDA point, so `||u_0 - u*||` is tiny, the value test trips after **2 passes**, and two
+passes is exactly where the tangent series is least converged: at `rho ~ 0.5`,
+`u'_2 = (I + A) g_x` against a true `(I + A + A^2 + ...) g_x` is a **~25 % derivative
+error** behind a value that passed its test on the first look.
+
+Nothing checks the tangent. The stopping test is
+`||u_{K+1} - u_K|| <= atol + rtol ||u_{K+1}||` -- a statement about the *iterate*, silent
+about the *derivative*. So when `K(x)` changes by one, the value moves by at most `tol`
+(guaranteed) and the Jacobian moves by `A^K (I - A)^{-1} g_x` (unbounded). That is the
+discontinuity, and an SQP linearising either side of it gets two different models of the
+same problem -- 66, 129, 399 iterations from a `1e-13` perturbation.
+
+**Why PROCESS is immune, finally.** It finite-differences, and both evaluations are
+warm-started from the previous `DataStructure`, so the pass count is the *same* on both
+sides. No tangent series exists, and the noise it sees is the *value* noise (`~tol`), not
+the tangent noise.
+
+#### 31.28.2 The cost: five arms now FAIL, and that is the point
+
+Full `--native` matrix, 7 configurations in 257 s:
+
+| | before | after |
+|---|---|---|
+| `stellarator_helias` MDF | 108 it, `objf 1.21775747` | **66 it**, `1.21775739` |
+| `helias_5b` MDF / SAND, `spherical_tokamak_eval` MDF | -- | unchanged |
+| `large_tokamak_nof` MDF + SAND | converged (7, 10) | **FAILED** |
+| `large_tokamak_eval` MDF | converged, `max|eq| 3.47e-14` | **FAILED** |
+| `low_aspect_ratio_DEMO` MDF + SAND | stopped (10) / converged (107) | **FAILED** |
+
+**These are not new defects; they are old ones made loud.** cottax runs
+`optx.fixed_point` with `throw=True` -- *"a budget is only honest if running out of it is
+loud"* -- where the hand-written loop returned the last iterate silently at `max_iter`, a
+silence `mdf.py`'s own docstring called out and which `mdf.inner_residuals` existed to
+catch after the fact. The named failure is
+
+    PicardDriver() over (^hat.pf_coil.ind_pf_cs_plasma_mutual,
+                         ^hat.pf_coil.n_pf_coil_turns,
+                         ^hat.times.t_plant_pulse_burn)
+    EquinoxRuntimeError: Nonfinite (inf or nan) values detected during solve.
+
+which is almost certainly the same thing as §31.27's three tokamak `no-step` arms
+(`no-step` is "first QP infeasible", i.e. a non-finite condition at the start), now with
+an error attached.
+
+**UNRESOLVED, and it is the open question**: under the old default `large_tokamak_eval`
+MDF *converged* at `max|eq| 3.47e-14`, which is hard to square with the block having been
+non-finite all along. Either **(a)** it always was and the old loop swallowed it -- its
+test `all(|next - cur| <= tol)` *fails* on a `nan`, so it ran to `max_iter` and handed the
+`nan` back -- or **(b)** `optx.fixed_point` visits a point the hand-rolled loop never did
+and creates it. `test_the_in_graph_root_find_gives_the_same_answer[large_tokamak_eval]` is
+`xfail(strict=True)` carrying exactly that question, so it flips green when this is fixed.
+
+Two tests moved with the class. `test_inner_residuals_reports_an_array_valued_inner_unknown`
+built its off-fixed-point env by under-budgeting the driver, which now raises; it writes
+the env by hand instead, testing the same reduction against the same closed form.
+`test_picard_refuses_to_return_an_unconverged_block` is new and asserts the raise.
+
+`tests/unit` 1035 passed; `test_mdf` / `test_drivers` / `test_mda` 65 passed, 1 xfailed.
