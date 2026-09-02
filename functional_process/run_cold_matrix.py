@@ -1721,6 +1721,34 @@ def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
     return lines
 
 
+def _return_freed_memory_to_the_os() -> None:
+    """`malloc_trim(0)`, because `jax.clear_caches()` frees memory it does not give back.
+
+    **Measured** (`_audit/optimise_design.md` §31.16, 2026-09-02). At the end of a
+    `stellarator_helias` row, `gc.collect()` and `jax.clear_caches()` together change
+    RSS by nothing measurable, and `malloc_trim(0)` alone takes it **1.611 GiB ->
+    0.648 GiB**. glibc's allocator had returned the freed arenas to its own pool and not
+    to the kernel, so the next configuration started 1 GiB deeper than it needed to.
+
+    That matters here and almost nowhere else: a pass died twice on
+    `LLVM ERROR: Unable to allocate section memory` at the fifth configuration on a 15 GB
+    box, and §31.16 established the peak is **resident compiled executables** -- roughly
+    200 bytes per character of pre-optimisation StableHLO the row lowers -- rather than
+    the compiler's transient workspace. A warm compilation cache removes *all* compile
+    time and only **1.2%** of the peak, so it is not the lever; releasing what the
+    previous row is finished with is.
+
+    Best effort: glibc-only, and a `malloc_trim` that is absent or fails is not a reason
+    to lose a pass that is otherwise working.
+    """
+    import ctypes  # noqa: PLC0415
+
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):  # not glibc, or no symbol -- not fatal
+        pass
+
+
 def checkpoint(rows, out=OUT, mode=PROVIDER, argv=(), compare=None) -> None:
     """Write the table as it stands. Called after every configuration; see `OUT`.
 
@@ -1832,6 +1860,7 @@ def main(argv=None, out=OUT):
         # ~25 s row. Same argument, same place, so they are cleared together.
         jax.clear_caches()
         host_cache._BOUND.clear()
+        _return_freed_memory_to_the_os()
     print(render(rows))
     print(f"\n{len(rows)} configuration(s) in {time.perf_counter() - began:.0f} s")
     return rows

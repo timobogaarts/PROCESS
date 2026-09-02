@@ -7394,3 +7394,101 @@ vs `x ** 2` differs on 16 and `x ** 4.0` vs `x ** 4` on 10 040, worst relative d
 on a problem documented as sensitive at the last bit (§19, §20, §21.2), and the prize is
 roughly a third of one tokamak-only node's 1.5 ms. **Not taken.** Recorded here so the
 next reader does not have to rediscover either half.
+
+### 31.16 [measured] The 4.2 GB is resident compiled executables, and the cache is not the lever
+
+Peak RSS is **~200 bytes per character of pre-optimisation StableHLO the row lowers**, and
+a tokamak row lowers 16.5 M characters of it. The decisive measurement is cold cache
+against warm:
+
+| configuration | cache | wall | peak RSS |
+|---|---|---|---|
+| `stellarator_helias` | cold | 60 / 55 s | 1.671 / 1.665 GiB |
+| `stellarator_helias` | warm | 27 / 26 s | 1.535 / 1.536 GiB |
+| `large_tokamak_nof` | cold | 141 / 146 s | 3.889 / 3.911 GiB |
+| `large_tokamak_nof` | warm | 50 s | 3.843 GiB |
+
+A warm cache removes **all** compilation (`phase_timing`'s `compile` column goes to 0.0)
+and cuts the tokamak's wall clock 146 -> 50 s, for **48 MiB — 1.2%** of the peak. **So the
+compilation cache is a speed lever and not a memory lever, and it will not stop the OOM.**
+
+What the memory is: 88--93 % of the growth happens inside `compile_or_get_cached`, and
+0.87 GiB of the stellarator's growth happens there with *zero* compilation -- i.e.
+deserialising and loading 336 executables. Compiling the tokamak's largest module alone in
+a fresh process costs +962 MiB peak, of which 510 MiB is transient workspace `malloc_trim`
+returns and **335 MiB is the loaded executable**; the anonymous *executable* mapping (the
+machine code itself) is **8.0 MiB**. It is **XLA, not LLVM**:
+`--xla_cpu_parallel_codegen_split_count=1`, `--xla_llvm_disable_expensive_passes=true` and
+`--xla_backend_optimization_level=0` all land within noise. `LLVM ERROR: Unable to
+allocate section memory` is LLVM being the allocation that *fails* inside an already-4 GB
+process, not the consumer. Not live arrays either: `jax.live_arrays()` totals **0.20 MiB**.
+
+**Three levers, measured.** (1) Emit less HLO -- the only large one, linear and
+flag-insensitive; the two `_flat_condition_jacobian` programs alone are 42 % of a
+tokamak's bytes. (2) Drop executables between arms: 3.889 -> **3.239 GiB (-17 %)** at
+146 -> 188 s. (3) **`malloc_trim(0)`**: at the end of a stellarator row, `gc.collect()`
+and `jax.clear_caches()` change RSS by nothing measurable and `malloc_trim` alone takes it
+**1.611 -> 0.648 GiB**. glibc had returned the freed arenas to its own pool and not to the
+kernel, so every subsequent configuration started ~1 GiB deeper than it needed to. (3) is
+landed in `run_cold_matrix`.
+
+**Named residual, unexplained:** after `clear_caches` + `gc` + `trim`, RSS still sits
+0.236 GiB (stellarator cold), 0.130 (warm) and 0.532 GiB (tokamak cold) above the
+post-import baseline. It scales with configuration, is not device data, and is not free
+heap.
+
+### 31.17 [measured] The floor *is* reached in situ, and the model is now 2.5 % of a row
+
+The question §31.14 left open -- whether 0.73 ms survives inside a real solve, or whether
+the `model` phase's implied ~6 ms/call means it does not. Every call of both entry points
+timed individually across a full `--native` row (both arms, 108 + 169 = 277 SQP
+iterations):
+
+| | n | p50 | p90 | p99 | max |
+|---|---|---|---|---|---|
+| values | 552 | **0.775 ms** | 0.994 | 1.74 | 2636 |
+| jacobian | 552 | **0.980 ms** | 1.152 | 1.93 | 8653 |
+
+**Exactly two calls of 552 are large in each**, and they are the first call of each of the
+two blocks -- the compiles. Excluding them:
+
+| | calls | mean | total |
+|---|---|---|---|
+| values | 550 | **0.822 ms** | **0.452 s** |
+| jacobian | 550 | **1.017 ms** | **0.559 s** |
+| the 2 + 2 first calls | 4 | -- | **19.99 s** |
+
+So the floor is reached and the distribution is tight (p90 within 30 % of the median).
+**The entire steady-state model cost of a whole helias row is 1.01 s**, against 11.1 +
+12.3 = 23.4 s of compilation on the same row.
+
+**This reframes what is left.** PROCESS solves the same file in ~93 s at 46 VMCON
+iterations, differencing the whole pipeline per iteration variable -- on the order of
+seconds per Jacobian against this port's **1.0 ms**, which is the three-orders-of-magnitude
+the rewrite was for. It does not show up as three orders on the row because the row is no
+longer a solve: `stellarator_helias` MDF is 11.1 s compile, 2.6 s `model`, 1.0 s `sqp`,
+2.0 s other. **There is essentially nothing left to win on the model side** -- 1.01 s of
+2.5 % -- and every remaining lever is compile-side (§31.16's "emit less HLO", the
+persistent cache, and the ~1.6 s of per-solve jit setup §31.6 named and still nobody has
+explained).
+
+### 31.18 [landed] All seven configurations in one pass, 410 s, no OOM
+
+First time: §28.3 item 2 records two passes dying on `LLVM ERROR: Unable to allocate
+section memory` at the fifth configuration. With `jax.clear_caches()`, `host_cache._BOUND`
+and `malloc_trim(0)` cleared together between rows, the whole matrix completes.
+
+`stellarator_helias` and `helias_5b` reproduce `reference_cold_matrix.txt`'s published rows
+**to every printed digit on both arms** (`1.21775747`/108, `1.21775743`/169;
+`0.764215516`/4, `0.764215517`/7), across the four changes landed this day -- the two eager
+walks jitted, the bind, and `cs_fatigue`'s scan.
+
+`large_tokamak_nof` converges on both arms (7 and 10 iterations, `objf 1.6`);
+`low_aspect_ratio_DEMO` stops on MDF at 10 and converges on SAND at 107;
+`large_tokamak_eval` and `spherical_tokamak_eval` converge as root finds. **`st_regression`
+still FAILS on both arms**, for §27.4's unchanged reason -- `.current_drive.big_q_plasma`
+has no producer in the tokamak graph, so the objective has an identically zero gradient and
+the assembly refuses it rather than solving a feasibility problem and calling it converged.
+
+**Compilation is now the whole cost**: the tokamaks spend 37--45 s compiling against
+6--9 s of `model`.
