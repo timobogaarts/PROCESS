@@ -37,6 +37,7 @@ from cottax import (
     Start,
 )
 from cottax.blocking import Blocking
+from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.rewrites import Assign
 from cottax.spec import NodePath
