@@ -19,7 +19,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.evaluate import Drive, schedule_for
+from cottax.blocking import Blocking
+from cottax.evaluate import Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
     Converged,
@@ -832,7 +833,7 @@ def test_vmcon_driver_reaches_a_known_constrained_optimum():
     graph, x, y, gx, gy = _toy_problem(
         VmconDriver(n_equality=0, n_inequality=1, scaled=False)
     )
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
@@ -851,7 +852,7 @@ def test_vmcon_driver_honours_bounds_as_bounds():
             bounds=((x, -np.inf, 2.0),),
         )
     )
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
     assert float(out[x]) <= 2.0 + 1e-9
 
@@ -862,7 +863,7 @@ def test_vmcon_driver_scaling_does_not_move_the_answer():
     graph, x, y, gx, gy = _toy_problem(
         VmconDriver(n_equality=0, n_inequality=1, scaled=True)
     )
-    out = schedule_for(graph)({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
+    out = Schedule(Blocking.scc(graph))({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
 
@@ -875,7 +876,7 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
     graph, x, y, gx, gy = _toy_problem(
         VmconDriver(n_equality=1, n_inequality=1, scaled=False)
     )
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     with pytest.raises(ValueError, match="equalities"):
         schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
 
@@ -898,7 +899,9 @@ def test_vmcon_driver_returns_its_reports_after_the_unknowns():
     """
     driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
     graph, x, y, gx, gy = _toy_problem(driver)
-    drive = next(step for step in schedule_for(graph).steps if isinstance(step, Drive))
+    drive = next(
+        step for step in Schedule(Blocking.scc(graph)).steps if isinstance(step, Drive)
+    )
     answered = driver(
         drive.condition_map({}), {Start: (jnp.asarray(0.0), jnp.asarray(0.0))}
     )
@@ -922,7 +925,9 @@ def test_vmcon_driver_reports_which_pyvmcon_exception_fired():
     """
     driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False, max_iter=1)
     graph, x, y, gx, gy = _toy_problem(driver)
-    drive = next(step for step in schedule_for(graph).steps if isinstance(step, Drive))
+    drive = next(
+        step for step in Schedule(Blocking.scc(graph)).steps if isinstance(step, Drive)
+    )
     *_values, steps, converged, status = driver(
         drive.condition_map({}), {Start: (jnp.asarray(0.0), jnp.asarray(0.0))}
     )
@@ -955,7 +960,7 @@ def test_driven_runner_binds_reports_not_unknowns():
     """
     driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
     graph, x, y, gx, gy = _toy_problem(driver)
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     out = run_schedule(
         schedule, {gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}, whole=False
     )
@@ -978,10 +983,10 @@ def test_driven_runner_and_whole_jit_agree_on_the_verdict():
     """
     driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
     graph, x, y, gx, gy = _toy_problem(driver)
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     env = {gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}
     walked = run_schedule(schedule, dict(env), whole=False)
-    jitted = schedule_for(graph)(dict(env))
+    jitted = Schedule(Blocking.scc(graph))(dict(env))
     for var in (x, y, Steps.name_for(TOY_PROBLEM), Status.name_for(TOY_PROBLEM)):
         # Exact, deliberately: the claim is that the two paths bind the *same*
         # value, not a nearby one.
@@ -1004,7 +1009,7 @@ def test_vmcon_driver_traces_under_one_whole_schedule_jit():
 
     driver = VmconDriver(n_equality=0, n_inequality=1, scaled=False)
     graph, x, y, gx, gy = _toy_problem(driver)
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     # `run_schedule` caches its verdict per schedule, and an equal schedule is the same
     # key -- the tests above deliberately run this very one with `whole=False`, which
     # records `False` with no reason. Evicting is the honest way to ask the question;
@@ -1028,12 +1033,12 @@ def test_vmcon_driver_answer_survives_the_callback_boundary_bitwise():
     """
     driver = VmconDriver(n_equality=0, n_inequality=1, scaled=True)
     graph, x, y, gx, gy = _toy_problem(driver)
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     env = {gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)}
     walked = run_schedule(schedule, dict(env), whole=False)
-    jitted = jax.jit(lambda values: path_map(schedule_for(graph)(dict(values))))(
-        path_map(env)
-    )
+    jitted = jax.jit(
+        lambda values: path_map(Schedule(Blocking.scc(graph))(dict(values)))
+    )(path_map(env))
     jitted = dict(jitted)
     assert float(walked[x]) == float(jitted[x])  # noqa: RUF069 -- bitwise is the point
     assert float(walked[y]) == float(jitted[y])  # noqa: RUF069 -- bitwise is the point
@@ -1049,7 +1054,9 @@ def test_slsqp_driver_reports_scipys_own_alphabet():
     """
     driver = SlsqpDriver(n_equality=0, n_inequality=1, scaled=False)
     graph, x, y, gx, gy = _toy_problem(driver)
-    drive = next(step for step in schedule_for(graph).steps if isinstance(step, Drive))
+    drive = next(
+        step for step in Schedule(Blocking.scc(graph)).steps if isinstance(step, Drive)
+    )
     *values, steps, converged, status = driver(
         drive.condition_map({}), {Start: (jnp.asarray(0.0), jnp.asarray(0.0))}
     )
@@ -1274,7 +1281,7 @@ def test_vmcon_driver_needs_a_start():
     """
     driver = VmconDriver(n_equality=0, n_inequality=1)
     graph, x, y, gx, gy = _toy_problem(driver)
-    (drive,) = schedule_for(graph).steps
+    (drive,) = Schedule(Blocking.scc(graph)).steps
     with pytest.raises(ValueError, match="starting value"):
         driver(drive.condition_map({}), {})
 

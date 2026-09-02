@@ -11,7 +11,7 @@ runnable."
 
 import equinox as eqx
 from cottax.blocking import Blocking
-from cottax.evaluate import schedule_for
+from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.problem import Driven, FixedPoint, RootFind, Start, driver_vars
 from cottax.rewrites import Cut
@@ -28,11 +28,11 @@ from functional_process.indat import (
 from functional_process.mda import (
     CUTS,
     ROOT_FIND_SEEDS,
-    default_drivers,
     driven_graph,
     schedule,
     starts_for,
 )
+
 # The port's own copy, not PROCESS's, because the keys of `indat.WINDING_PACK_MATERIAL`
 # are that one and the comparison below is `is`. §23.2 vendored the enum and
 # `test_vocabulary.py` asserts the two are equal member for member, so nothing is lost
@@ -452,7 +452,7 @@ def test_every_superconductor_schedules_and_only_bi2212_keeps_its_guess():
             occupant(),
         )
         graph = driven_graph(to_graph(machine))
-        schedule_for(Blocking.scc(graph))  # raises if the block cannot be driven
+        Schedule(Blocking.scc(graph))  # raises if the block cannot be driven
         at_boundary = [
             v
             for v in graph.unowned_inputs

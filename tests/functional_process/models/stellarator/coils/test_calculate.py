@@ -25,7 +25,8 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
-from cottax.evaluate import AbstractDriver, schedule_for
+from cottax.blocking import Blocking
+from cottax.evaluate import AbstractDriver, Schedule
 from cottax.rewrites import Assign
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start
@@ -1139,7 +1140,9 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     driver = _GenericBisectionRootFind(
         lower=r_coil_minor / 40.0, upper=r_coil_minor / 1.0
     )
-    schedule = schedule_for(Assign(Intersect().problem_name, driver).apply(graph))
+    schedule = Schedule(
+        Blocking.scc(Assign(Intersect().problem_name, driver).apply(graph))
+    )
     out = schedule(env)
 
     reference = winding_pack_total_size(

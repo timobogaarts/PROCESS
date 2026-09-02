@@ -59,7 +59,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from cottax.blocking import Blocking
-from cottax.evaluate import schedule_for
+from cottax.evaluate import Schedule
 from cottax.plan import Delete
 from cottax.spec import NodePath, VarPath
 
@@ -1291,7 +1291,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
     blocking = Blocking.scc(driven)
     # Drivers live in the graph now (`Assign`, applied by `driven_graph`), so
     # `schedule_for` takes none.
-    schedule = schedule_for(blocking)
+    schedule = Schedule(blocking)
 
     env = {}
     ungrounded = []

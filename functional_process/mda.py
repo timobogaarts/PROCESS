@@ -29,7 +29,7 @@ fails if either membership changes.
 """
 
 from cottax.blocking import Blocking
-from cottax.evaluate import Schedule, schedule_for
+from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve
 from cottax.problem import (
     Driven,
@@ -815,4 +815,4 @@ def schedule(graph=GRAPH) -> Schedule:
     """
     driven = driven_graph(graph)
     blocking = Blocking.scc(driven)
-    return schedule_for(blocking)
+    return Schedule(blocking)

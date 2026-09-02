@@ -38,7 +38,7 @@ that exactly and cannot yet run it, and the boundary between those two is sharp:
   `blocking.inner` entry is not `None`. So `schedule_for` on a nested blocking builds a
   nested `Drive`, and the *one type* this section named as the missing upstream piece is
   no longer missing. **Measured, not read** (`_audit/in_graph_rootfind.md` §1):
-  `schedule_for(Blocking.scc(assign_drivers(g)).nest(opt))` on the stellarator reference
+  `Schedule(Blocking.scc(assign_drivers(g)).nest(opt))` on the stellarator reference
   builds a 47-step schedule whose `Drive` over the 123-node block has a 112-block
   `Schedule` for a body.
 
@@ -170,7 +170,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from cottax.blocking import Blocking
-from cottax.evaluate import ConditionMap, Drive, Schedule, schedule_for
+from cottax.evaluate import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
 from cottax.problem import (
@@ -411,7 +411,7 @@ def assemble(
     eager_graph = assign_drivers(graph, drivers)
     blocking = Blocking.scc(eager_graph)
     design = tuple(sand.iteration_variable_path(i) for i in ixc)
-    eager = schedule_for(blocking)
+    eager = Schedule(blocking)
     missing = [d for d in design if d not in eager.inputs]
     if missing:
         raise ValueError(
@@ -430,7 +430,7 @@ def assemble(
     return Mdf(
         graph=graph,
         eager=eager,
-        traceable=schedule_for(
+        traceable=Schedule(
             Blocking.scc(assign_drivers(graph, traceable_drivers(drivers)))
         ),
         design=design,
@@ -873,8 +873,11 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     # in its last bits even where the table does not.
     out = run_schedule(mdf.eager, _inputs_only(mdf, at))
     out.update(
-        zip((kind.name_for(IN_GRAPH_PLACE) for kind in optimiser.reports),
-            verdict, strict=True)
+        zip(
+            (kind.name_for(IN_GRAPH_PLACE) for kind in optimiser.reports),
+            verdict,
+            strict=True,
+        )
     )
     return tuple(x), out, elapsed
 
@@ -1290,7 +1293,7 @@ def in_graph_root_find(
         mdf=mdf,
         graph=assigned,
         blocking=blocking,
-        schedule=schedule_for(blocking),
+        schedule=Schedule(blocking),
         problem=place,
     )
 

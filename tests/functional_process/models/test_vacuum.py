@@ -35,8 +35,8 @@ from cottax import (
     Graph,
     RootFind,
     Start,
-    schedule_for,
 )
+from cottax.blocking import Blocking
 from cottax.interfaces.pytree_namespace_module import to_graph
 from cottax.rewrites import Assign
 from cottax.spec import NodePath
@@ -337,8 +337,8 @@ def test_duct_diameter_root_find_drive_matches_solve_duct_diameter():
     `test_old_model` legacy point).
     """
     d = DuctDiameterRootFind()
-    schedule = schedule_for(
-        Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
+    schedule = Schedule(
+        Blocking.scc(Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d)))
     )
 
     for sample in _duct_diameter_samples():
@@ -358,8 +358,8 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
     this is not a contract case.
     """
     d = DuctDiameterRootFind()
-    schedule = schedule_for(
-        Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d))
+    schedule = Schedule(
+        Blocking.scc(Assign(d.problem_name, _NewtonRootFindDriver()).apply(to_graph(d)))
     )
 
     sample = _duct_diameter_samples()[-1]  # the test_old_model legacy point
@@ -508,8 +508,8 @@ def test_duct_feasibility_drives_to_a_point_that_satisfies_every_condition():
     body = graph.runnable  # every plain node, problem nodes dropped
     merged = Graph(path_map({**dict(body.definitions), name: joined}))
 
-    schedule = schedule_for(
-        Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged)
+    schedule = Schedule(
+        Blocking.scc(Assign(name, _MeritFunctionFeasibilityDriver()).apply(merged))
     )
     env = {
         vpath(".vacuum.l1"): jnp.asarray(kw["l1"]),

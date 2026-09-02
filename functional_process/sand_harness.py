@@ -64,7 +64,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from cottax.blocking import Blocking
-from cottax.evaluate import schedule_for
+from cottax.evaluate import Schedule
 from cottax.plan import Delete
 from cottax.tools.minting import unminted
 from cottax.tools.path import path_map
@@ -341,7 +341,7 @@ def mda_schedule(graph=None):
         driven = cut_graph(_without_excluded(key))
         blocking = Blocking.scc(driven)
         runnable = assign_drivers(blocking.graph, default_drivers(blocking.graph))
-        schedule = schedule_for(Blocking.scc(runnable))
+        schedule = Schedule(Blocking.scc(runnable))
         cached = _MDA_SCHEDULES[key] = (
             driven,
             runnable,
@@ -564,7 +564,7 @@ def _schedule_runners(schedule, fuse_upstream=True):
     the group jit was always a rounding error against the body jit below, which runs
     *after* the driver has converged and cannot move it.
     """
-    from cottax.evaluate import Drive  # noqa: PLC0415
+    from cottax.evaluate import Drive  # noqa: PLC0415, Schedule
 
     upstream_group = _jitted_group if fuse_upstream else _eager_group
     runners, group = [], []

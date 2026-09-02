@@ -5,7 +5,8 @@ from types import MappingProxyType
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.evaluate import schedule_for
+from cottax.blocking import Blocking
+from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.problem import RootFind, Start, driver_vars
 from cottax.rewrites import Assign
@@ -611,7 +612,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
         to_graph(node)
     )
     (guess_path,) = driver_vars(graph[node.problem_name], Start)
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     wp_width_r_path = resolve(stellarator.wp_width_r, VarPath)
     lhs_path = resolve(stellarator.lhs, VarPath)
     rhs_path = resolve(stellarator.rhs, VarPath)

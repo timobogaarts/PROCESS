@@ -28,7 +28,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from cottax.blocking import Blocking
-from cottax.evaluate import ConditionMap, Drive, Schedule, schedule_for
+from cottax.evaluate import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
 from cottax.problem import (
     Converged,
@@ -169,7 +169,7 @@ def test_the_undriven_nesting_is_refused_for_want_of_an_assign():
             r"driven, and `Assign` is how the algorithm is said"
         ),
     ):
-        schedule_for(nested)
+        Schedule(nested)
 
 
 def test_cottax_runs_that_nesting_once_the_drivers_are_assigned():
@@ -187,7 +187,7 @@ def test_cottax_runs_that_nesting_once_the_drivers_are_assigned():
     )
     graph = nested.graph
     blocking = Blocking.scc(assign_drivers(graph, default_drivers(graph))).nest(name)
-    schedule = schedule_for(blocking)
+    schedule = Schedule(blocking)
     outer = schedule.steps[blocking.index[name]]
     assert isinstance(outer, Drive)
     assert outer.problem == name
@@ -452,7 +452,7 @@ def _array_fixed_point(max_iter):
     )
     graph = Assign(problem, PicardDriver(max_steps=max_iter)).apply(graph)
     (start,) = driver_vars(graph[problem], Start)
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     out = schedule({start: jnp.zeros(3)})
     return schedule, out, u, np.asarray(rate), np.asarray(offset)
 

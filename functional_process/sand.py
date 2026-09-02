@@ -72,13 +72,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from cottax.blocking import Blocking
-from cottax.evaluate import Drive, Schedule, schedule_for
+from cottax.evaluate import Drive, Schedule
 from cottax.graph import Graph
 from cottax.plan import Insert, Plan
 from cottax.problem import Driven, FixedPoint, Optimise, conditions_of
 from cottax.rewrites import Assign, Combine, Residualise
 
-from functional_process.core.solver.drivers import VmconDriver
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, prefix_path
 from cottax.tools.path import path_map
@@ -1185,7 +1184,7 @@ def sand_schedule(
     # Drivers go into the graph (`Assign`), and `schedule_for` reads them from there.
     assigned = assign_drivers(graph, drivers)
     blocking = Blocking.scc(assigned)
-    return schedule_for(blocking.nest(optimise) if nest else blocking)
+    return Schedule(blocking.nest(optimise) if nest else blocking)
 
 
 def sand_shape(schedule: Schedule) -> dict:

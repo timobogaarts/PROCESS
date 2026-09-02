@@ -9,7 +9,8 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from cottax.evaluate import schedule_for
+from cottax.blocking import Blocking
+from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
 from cottax.problem import Start, driver_vars
 from cottax.rewrites import Assign
@@ -115,7 +116,7 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     # Built through `schedule_for` rather than by constructing a `Drive` directly: the
     # schedule is what the port actually runs, and it assembles the `Drive` itself, so
     # this test does not restate `Drive`'s constructor signature.
-    schedule = schedule_for(graph)
+    schedule = Schedule(Blocking.scc(graph))
     # The guess port is read off the problem rather than spelled out, the same way
     # `mda.starts_for` does it: the node is the authority on where its start is read.
     (guess,) = driver_vars(graph[problem], Start)
