@@ -12,7 +12,8 @@ function).
 **`ncycle` was the record's stop item for four days, and it is ported on the terms that
 record's open question 1 settled** (DECIDED-DEFERRED, 2026-08-27): an eager
 `lax.while_loop`, Tier-1 value agreement, and the gradient checks structurally excused
-because `n_cycle` is a count. What changed is only the "deferred" half -- that decision
+because `n_cycle` is a count. (The loop is a **masked `lax.scan`** since 2026-09-02 --
+see `_MAX_CRACK_STEPS`; the tier and the value contract are unchanged.) What changed is only the "deferred" half -- that decision
 rested on *"no reader needs `n_cycle` yet (constraint 90 is not active on any tracked
 input and the CS stress chain feeding it is UNPORTED)"*, and both clauses have since
 stopped being true. `stresses.py` landed the CS stress chain on 2026-08-27, and
@@ -27,9 +28,14 @@ ratios `(k_a / k_max)`, `(k_c / k_max)` is exactly `1` on every pass and the
 corresponding crack dimension advances by the full `delta`. `a` or `c` therefore
 strictly increases towards a fixed bound each iteration, which bounds the trip count at
 `(bound - start) / delta` -- a few hundred passes on the tracked inputs. A non-finite
-input exits immediately instead, because `nan <= x` is `False`. This matters more here
-than it would in a script: `lax.while_loop` has no iteration cap, so a loop that could
-stall would stall the whole graph evaluation, not just this node.
+input exits immediately instead, because `nan <= x` is `False`.
+
+**That argument is now load-bearing rather than reassuring**: it is what licenses the
+static bound in `_MAX_CRACK_STEPS`, which turned this from a `lax.while_loop` into a
+masked `lax.scan` so that the whole graph can be differentiated in reverse mode at all
+(`_audit/optimise_design.md` §31.9, §31.12). It also removes the hazard the original
+form carried -- `lax.while_loop` has no iteration cap, so a loop that could stall would
+stall the whole graph evaluation and not just this node.
 
 The stop item's other two candidate resolutions (a bespoke Tier-2 `residual`, or a new
 tier) are not revisited -- see the record for why the tier question was decided the way
@@ -187,6 +193,43 @@ contract here -- for a fixed step the termination is deterministic, so PROCESS's
 is exact for this discretisation rather than an approximation to something else.
 """
 
+_MAX_CRACK_STEPS = 512
+"""Static trip bound for the crack-growth integration -- what makes it a `scan`.
+
+**Why a `scan` at all.** `lax.while_loop` has no reverse-mode rule -- an unbounded trip
+count cannot be taped -- and this loop sits in the differentiated path via the condition
+map, so it made `jax.jacrev`, and even `jax.grad` of a single condition, fail outright
+on the whole graph (`_audit/optimise_design.md` §31.9). A `scan` transposes, storing
+`_MAX_CRACK_STEPS` copies of a four-scalar carry, which is nothing. The value is
+unchanged for the same discretisation: the body advances iff the original `while`
+guard holds and is a masked no-op afterwards, which is that loop's semantics exactly.
+
+**Why a bound exists at all** is this module's docstring's own termination argument,
+restated as a number: `k_max` is `max(k_a, k_c)`, so one of the two ratios is exactly
+`1` on every pass and the corresponding crack dimension advances by the full `_DELTA`.
+The trip count is at most `max(a_limit - a_0, c_limit - c_0) / _DELTA`, i.e.
+`max(dz_cs_turn_conduit / sf_vertical_crack, dr_cs_turn_conduit / sf_radial_crack) /
+1e-4`. **`512` therefore covers any conduit up to `0.051 m` at a safety factor of `1`,
+or `0.102 m` at `2`** -- PROCESS's own defaults are `0.022`/`0.07` at `2.0`.
+
+**Why exactly this bound, and what it costs.** Measured (2026-09-02, §31.12): **115**
+trips on PROCESS's defaults, *invariant* across `max_hoop_stress` from 100 to 800 MPa --
+`surface_stress_intensity_factor` is linear in stress, so the `k_a/k_max` ratio that
+sets the step cancels it, even though `n_cycle` itself moves over 200x. Worst case over
+108 combinations spanning `dz_cs_turn_conduit` 0.011--0.044, `dr_cs_turn_conduit`
+0.035--0.14, `t_crack_vertical` 0.3--2.0 mm and `paris_power_law` 2.5--4.5: **264**. So
+512 is a little under 2x the worst case seen, and the masked no-ops are the price:
+0.67 ms per call against 2.67 ms at 2048 and ~0.15 ms for the `while`. At a few hundred
+condition-map evaluations per solve that difference is seconds, which is why the bound
+is not simply set enormous. `lax.scan` is a rolled loop, so the *program* does not grow
+with it either way -- only the runtime does.
+
+**Exhausting it is made loud, not silent.** A truncated integration would otherwise
+return a plausible, too-small cycle count. `calculate_n_cycle` checks the guard once
+more at the end and returns `nan` if the crack was still growing, so a geometry beyond
+this bound fails visibly and this constant is the one thing to raise.
+"""
+
 _PHI = (jnp.pi / 2.0, 0.0)
 """The two crack-front angles `k_a` and `k_c` are evaluated at.
 
@@ -315,8 +358,27 @@ def calculate_n_cycle(
         jnp.zeros_like(jnp.asarray(t_crack_vertical, float)),
         jnp.zeros_like(jnp.asarray(t_crack_vertical, float)),
     )
-    _, _, n_pulse, _ = lax.while_loop(growing, step, start)
-    return n_pulse / 2.0
+    # `lax.scan` over a static bound rather than `lax.while_loop`, masked by the same
+    # guard: see `_MAX_CRACK_STEPS` for the bound's derivation, its measured headroom,
+    # and why reverse-mode AD is what forces the change. `step` is evaluated on every
+    # pass and its result discarded once `growing` is false, which is exactly the
+    # `while`'s semantics and is why the value does not move.
+
+    def masked_step(state, _):
+        advanced = step(state)
+        keep = growing(state)
+        return tuple(
+            jnp.where(keep, new, old) for old, new in zip(state, advanced, strict=True)
+        ), None
+
+    final, _ = lax.scan(masked_step, start, None, length=_MAX_CRACK_STEPS)
+    # Still growing after `_MAX_CRACK_STEPS`? Then the bound truncated the integration
+    # and `n_pulse` is an underestimate that would otherwise look entirely plausible.
+    # `nan` instead, per `_MAX_CRACK_STEPS`' last paragraph -- this cannot fire on any
+    # geometry in that constant's measured sweep, and if it ever does, that constant is
+    # what to raise.
+    _, _, n_pulse, _ = final
+    return jnp.where(growing(final), jnp.nan, n_pulse / 2.0)
 
 
 class CsFatigue(ExplicitFunction):
