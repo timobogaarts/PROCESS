@@ -6803,3 +6803,313 @@ section's to do and two more agents are working in it.
   genuinely inert in PROCESS too** is taken from §22 and §26's census rather than
   re-measured; those measurements were made over the *model* graph and the `mdf` graph
   respectively, and this section's argument does not turn on them.
+
+## 31. Where the module size comes from, and the eager-dispatch tail closed — 2026-09-02
+
+Taken on `HEAD` (`stellarator_helias` throughout, `--native`, persistent compilation
+cache **off** unless a row says otherwise). Every figure below was reproduced across at
+least two runs. **CPU only** — `jax.default_backend()` is `cpu`, one `CpuDevice`, no CUDA
+jaxlib; nothing here is a hardware-independent property, and §24.4's "dispatch-bound, not
+FLOP-bound" reading is a CPU result whose balance a GPU would change.
+
+### 31.1 [correction] §28.1's "38 635 lines" is three different programs quoted as one
+
+§28.1 says *"compilation dominates because the module is 38 635 lines (132 125 for a
+tokamak)"*. That number is **`stellarator_helias`'s SAND Jacobian program**, optimised
+HLO, from §28.4's table (38 626 / 38 657). It is not the schedule, it is not source, and
+it is not the unit §24.8's `jit_run` counts. The three, measured together:
+
+| program | jaxpr eqns | StableHLO (pre-opt) | optimised HLO |
+|---|---|---|---|
+| MDA schedule (`mda_schedule`, 154 nodes) | 3 366 top / 6 006 recursive | **8 075** | 20 333 |
+| SAND value map (`host_cache._flat_conditions`) | -- | -- | 14 104 (§28.4) |
+| SAND Jacobian (`_flat_condition_jacobian`) | -- | -- | 38 657 (§28.4) |
+
+**XLA *grows* the module 2.5x** (8 075 -> 20 333), which is most of the apparent gap
+between the pre-opt and optimised counts, and the reason two records could quote "lines"
+and disagree by 4x without either being wrong.
+
+### 31.2 [measured] The size is the model bodies, not the whole-program jit
+
+Every one of the MDA schedule's 6 006 recursive jaxpr equations attributed to its
+innermost source frame:
+
+| bucket | equations |
+|---|---|
+| a `functional_process/models/` frame | 4 244 (70.7 %) |
+| `core/solver/drivers.py` | **96 (1.6 %)** |
+| cottax's schedule/blocking machinery | **0** |
+| no user frame (jax's `source_info_util` filtered it) | 1 666 (27.7 %) |
+
+The unattributed 1 666 are `select_n` 312, `convert_element_type` 152,
+`broadcast_in_dim` 128, `squeeze` 107, plus comparisons, `gather` and `dynamic_slice` --
+`jnp.where`, indexing and dtype promotion generated *inside* `jnp` calls made by model
+code, i.e. model arithmetic that is merely unattributable.
+
+**So the schedule contributes ~1.6 %.** "50 lines per node" is not an artefact of jitting
+the whole program. Nor is it the stellarator's number: at 154 nodes it is **21.9 jaxpr
+equations / node** (52 StableHLO lines / node). The 55/node figure is
+`large_tokamak_nof`'s, from §24.9, *after* that section's vectorisation took it from 161.
+
+The average also hides the distribution -- four files carry 45 % of the attributed
+equations: `costs/costs.py` 649, `physics/fusion_reactions.py` 483,
+`physics/plasma_profiles.py` 450, `vacuum/vacuum.py` 385.
+
+### 31.3 [measured] A quarter of the module is scalar constants, and they are inert
+
+2 012 of the 8 075 StableHLO lines are `stablehlo.constant`, against 1 525 `multiply` and
+837 `add`. But **291 distinct values**, 2 009 of them inlined scalar `Literal`s (only 46
+hoisted array `consts`), and 45 % are `0` or `1`: `0.0` x381, `1.0` x293, int `0` x119,
+int `1` x108, `2.0` x90, `1e-6` x69, `0.5` x42. Types are 1 584 `tensor<f64>`, 204
+`tensor<i64>`, 137 `tensor<i32>`.
+
+No baked physics data, no folded subexpressions, no node outputs. **Not worth
+deduplicating**: §28.4 already showed XLA shares the compiled constant pool (removing
+seven `0.0`s removed no constants) and the whole pool is 24.6 kB. Their only cost is
+module *size*, which is compile time, which §31.6 removes another way.
+
+### 31.4 [measured] The `safe_math` guards are needed and nearly free
+
+`safe_math.py` emits 261 of the module's literals -- the largest single model source --
+so it was worth asking whether the guards earn it. Both halves measured, `safe_pow`/
+`safe_sqrt` monkeypatched to bare `x ** p` / `jnp.sqrt(x)` before any model module binds
+the names.
+
+**Cost, per two runs each arm:**
+
+| | guarded | unguarded | Δ |
+|---|---|---|---|
+| jaxpr eqns (recursive) | 6 006 | 5 754 | +252 (4.2 %) |
+| StableHLO lines | 8 075 | 7 611 | +464 (5.7 %) |
+| `stablehlo.constant` | 2 012 | 1 803 | +209 (10.4 %) |
+| `stablehlo.select` | 294 | 156 | +138 |
+| cold trace+lower+XLA | 3.46 / 4.07 s | 3.58 / 3.42 s | **none measurable** |
+| warm median (20 calls, blocking) | 3.94 / 4.45 ms | 3.97 / 3.97 ms | **none measurable** |
+
+Smaller than the 261-literal attribution implies, because unguarded code still emits the
+`pow`/`sqrt`; only the double select and its operands go away. Run-to-run spread exceeds
+the time difference in both directions.
+
+**Necessity.** 52 distinct guard sites are reached on this configuration (104 eager
+invocations; 144 under trace, drives retrace). **Exactly two fire** -- `x == 0.0` at the
+cold design point:
+
+- `models/power/tf_coil_power.py:199`, `safe_sqrt(n_tf_coils * res_tf_leg * 1000.0)` with
+  `.tfcoil.res_tf_leg == 0.0` **exactly**, because `i_tf_sup == 1`: a superconducting leg
+  has no resistance, so this is zero structurally, at every design point, forever.
+- `models/costs/costs.py:2819`, one of five `safe_pow(1e6 * <power>, 0.7)` terms in `cppa`.
+
+Removing the guards produces **62 non-finite Jacobian entries across 44 output paths, in
+every one of 273 input directions**, along a chain that is fully legible:
+`len_tf_bus -> rtfbus -> ztotal -> tfcv -> tfpmkw -> tfckw -> tfcbv /
+p_tf_electric_supplies_mw ->` buildings -> heat_transport -> `costs.c21 / c225 / c226 ->
+costs.coe`. `.costs.coe` is the objective (`objective_metric_6 = coe/100`), so **without
+these two guards the objective's gradient is NaN at the cold start** -- the exact failure
+`safe_math.py`'s docstring says cost hours. Fifty of fifty-two sites do not fire here;
+the module's stated policy (never remove a guard on a positivity argument, because a
+proof that holds today does not survive the next iteration variable moving) stands, and
+costs nothing measurable. **Nothing to change.**
+
+### 31.5 [measured, unrelated] `.physics.nu_star` is NaN in value at the cold point
+
+`dimensionless_parameters.py:64` computes `... * dlamie ... / (e_plasma_beta**2 *
+plasma_current)` with `dlamie == 0.0` and `plasma_current == 0.0` -- a literal `0/0`.
+Both are boundary inputs seeded at cold `0.0`. `plasma_current == 0` is physical for a
+stellarator; `dlamie == 0` is not (the Coulomb logarithm should be ~17). Nothing
+downstream consumes it -- it is the *only* non-finite value and the only extra non-finite
+tangent -- so it is a dead output rather than a live contaminant. It has §27.4's
+missing-producer signature: a path this graph reads, does not own, and froze at cold zero.
+
+### 31.6 The 0.5 ms / 5 ms conflict: both records are right, and the cause is the argument
+
+§18.3 reports 0.5 ms steady state for the helias MDF value map; §24.4 reports 4.66 ms per
+call and §28.5's probe ~3.75 ms exclusive. The async-dispatch hypothesis is **refuted** --
+`jax.block_until_ready` changes nothing at any N, on either entry point -- and so is
+"something the solve context adds": the 5 ms reproduces in complete isolation.
+
+They measured different programs. §18.3's method (`jit(fn).lower(x).compile()`) folds the
+`ConditionMap` in as a **constant**; `host_cache` passes it as an **argument**. The gap is
+`eqx.filter_jit` partitioning, flattening and hashing that argument every call -- **2 382
+pytree leaves** (SAND), **5 461** (MDF); one `tree_flatten` of the args is 2.06/5.59 ms,
+55--62 % of the entry point. **This is §24.1's bill arriving**: that change moved the
+arrays from closure to argument so the jit cache would hit, and `host_cache.py`'s
+docstring costs it in numerics (§24.2's bitwise movement) but never in time.
+
+Three levels, SAND values, and only the middle one is available:
+
+| | per call | arrays are |
+|---|---|---|
+| `host_cache` entry point today | 4.14--4.25 ms | a `filter_jit` argument |
+| pre-flattened leaves -> plain `jax.jit` | **0.48--0.53 ms** | arguments, flattened once |
+| §18.3's row | 0.18--0.22 ms | **constants** |
+
+Level 3 is not a real option: constants mean recompiling whenever the context moves, so
+it pays at ~50 000 calls per solve against a helias solve's ~680, and `Scan` -- PROCESS's
+core sweep -- would recompile per point, which §28.4 already logs as a defect.
+
+**Binding the map once per solve** (partition and flatten once, leaves passed
+positionally; arrays stay arguments) takes the steady state 3.674/4.134 s -> 0.623/0.543 s
+over 670 calls -- **6.0x, ~85 % of the predicted 8.4x** -- with the answer bitwise
+identical (169 iterations, `objf 1.2177574282449604`). Reading it off `model_phase /
+n_calls` understates it badly: that phase also holds the first calls' compilation and
+**~1.75 s of one-time per-solve jit setup that is not tracing, lowering or compilation and
+is arm-independent** (1.85/2.11 s with `filter_jit`, 1.74/1.76 s with plain `jax.jit`).
+What that 1.75 s consists of is **open**; a `cProfile` of the first two calls is the cheap
+next step.
+
+**The floor through any host-side entry point is ~0.50 ms (values) / 0.76 ms (Jacobian)**:
+jax dispatch 0.31/0.37 ms on top of irreducible XLA execution 0.19/0.38 ms. Nothing that
+keeps the optimiser loop in Python goes below it. Ruled out and worth not re-deriving: the
+output side is not a cost (both entry points `jnp.stack` to a single array -- one leaf,
+nothing to unflatten); `unravel` is 0.011--0.016 ms; `pure_callback` does not re-transfer
+(leaves are already `ArrayImpl`).
+
+### 31.7 The persistent compilation cache removes the compile bill; `jax.export` does not
+
+`JAX_COMPILATION_CACHE_DIR` plus `MIN_COMPILE_TIME_SECS=0` and `MIN_ENTRY_SIZE_BYTES=-1`:
+`backend_compile_and_load` is never called on a warm run, **28.39 -> 11.06 s (2.57x)**,
+answer bitwise identical. **Both thresholds are required** -- at jax's defaults only 4 of
+228 programs cache and 6.0--6.5 s of compile survives. Give each entry point its own dir
+(a dir populated by a different script hit only partially, 8.55 s). Not
+`enable_xla_caches`, ruled out with a control.
+
+The key is derived from the lowered module, so a changed objective, constraint set or
+`ixc` changes it automatically -- **nothing to scope by hand**, and editing code cannot
+yield a stale answer, only a miss. Two real caveats: dead entries accumulate (3.1 MB per
+configuration per arm, nothing evicts), and **a cache hit erases compile time from the
+phase table**, so anything measured with it on is not comparable to the published rows.
+Leave it off while the structural work is in flight.
+
+`jax.export` **does not apply**, for two independent reasons. It refuses anything
+containing `jax.pure_callback` (`NotImplementedError: serialization of host_callbacks is
+not yet implemented`), which §22 put the SQP drivers inside; and where it does apply it
+carries StableHLO, not compiled code -- exporting the SAND value map costs 0.65/0.66 s
+with no compile phase, and the first `Exported.call` then pays 0.83/0.82 s of compile. It
+buys serialisation, not compile avoidance, and the cache already gives the latter.
+(`serialize()` also wants `flatbuffers`, absent from `process_port`; not installed.)
+
+### 31.8 [landed] Two eager schedule walks routed through a jit -- 336 -> 54 compiles
+
+A bare `Schedule.__call__` or `condition_map(...)(...)` dispatches every primitive
+eagerly and XLA compiles each as its own module. §24.8 measured one such tail
+(`mdf.solve`'s final MDA re-run) at 268 compiles and §24.9 left it, to avoid moving a
+second thing in §24.1's pass. That constraint is gone, and the **same defect was in
+`run_cold_matrix.cold_sand`** too, where the pre-solve non-finite probe called the
+condition map eagerly.
+
+Every XLA compile of a full `--native` row attributed to its caller, cache off:
+
+| | total | MDF arm | SAND arm |
+|---|---|---|---|
+| before | **336** | | |
+| `mdf.solve` through `run_schedule` | **277** | that call 60 -> 1 | |
+| `cold_sand` probe through `host_cache.flat_conditions` | **54** | 33 | 243 -> 20 |
+
+The SAND 243 were attributed to *model* frames with no orchestration frame between --
+`_plasma_composition` 23, `bottura_scaling` 21, `_simpson` 14,
+`_solve_vacuum_pumping_old` 13 -- which is the signature.
+
+**Of the remaining 54, 39 are under 20 MLIR lines** (the scalar casts §24.8 identified)
+and **10 are over 1 000**: 15 233 and 8 684 and 6 820 (`mdf.solve`), 11 323 / 6 037 /
+5 060 (`sand_harness.run_schedule`), 8 709 (`mdf.prime`), 8 070 (`mda_env`), 5 161 (the
+probe), 1 052 (`assemble`). So the floor is not 2--3: several of those ten are *the same
+MDA schedule* compiled again in a different stage with a different context, and
+consolidating them is a separate piece of work.
+
+Row unchanged to the table's precision (MDF `objf 1.21775747` / 108 it, SAND `1.21775743`
+/ 169 it, identical `max|eq|` and `min ie`). **Not checked bitwise** -- `mda_env`'s
+docstring records the jitted schedule differing from the eager one at `1.1e-13` on 254 of
+831 keys.
+
+### 31.9 [measured] Reverse-mode AD does not work on this graph at all
+
+Why `jax.jacfwd` and not `jacrev`, asked and answered on the MDF condition map
+(15 conditions x 8 unknowns):
+
+| | jaxpr eqns | StableHLO | lower | XLA | run |
+|---|---|---|---|---|---|
+| values | 3 966 | 7 560 | 0.76 s | 1.20 s | 0.319 ms |
+| `jacfwd` | 8 099 (2.04x) | 16 176 (2.14x) | 2.61 s | **4.61 s (3.8x)** | 0.540 ms (1.69x) |
+| `jacrev` | -- | -- | -- | -- | **ValueError** |
+| `grad` of one condition | -- | -- | -- | -- | **ValueError** |
+
+`ValueError: Reverse-mode differentiation does not work for lax.while_loop or
+lax.fori_loop with dynamic start/stop values.` An unbounded trip count cannot be taped.
+The loops in the condition map: `models/vacuum/vacuum.py:329` and `:474` (`while`),
+`:784` (`scan`), four `while` at `core/solver/drivers.py:753`, plus ten unattributed
+`scan` and one `while`.
+
+**The drivers' loops are *not* the blocker, and `mdf.py`'s docstring is wrong about
+this.** `PicardDriver` calls `optx.fixed_point` and `SeededNewtonDriver` calls
+`optx.root_find`; both get optimistix's `ImplicitAdjoint`, which has a transpose rule, so
+a `Drive` is reverse-differentiable through the implicit function theorem rather than
+through its iterations. The refusal comes from **three bare `lax.while_loop`s in ported
+model bodies** -- `models/cs_fatigue.py:318`, `models/vacuum/vacuum.py:329` and `:474` --
+and `vacuum.py:289`'s own comment, which says "`while_loop`'s lack of autodiff support
+costs nothing here", is falsified by this measurement. Consequence: swapping the drivers
+would not restore reverse mode; rewriting those three loops as `scan` or fixed-trip
+`fori_loop` would.
+
+**So it is not a trade-off, it is a blocker** -- and it would not win anyway: reverse
+costs ~`n_outputs` passes against forward's ~`n_inputs`, and here outputs exceed inputs
+(15 v 8, SAND 21 v 14), plus a tape makes the program larger, not smaller. The one shape
+where reverse would win is the scalar objective alone (1 output, 8 inputs) -- which is
+also exactly what fails today. If cheap objective-only gradients are ever wanted, the
+`while_loop`s must become `scan`s first.
+
+**The "explosion" is a 2.0--2.1x constant factor**, not an `n`-fold one: the 8 tangents
+ride in the shapes, not in new equations (§18.3 measured 2.2--2.4x independently, and
+§24.4 a 2.5 % runtime premium for 14 tangents). There is no AD that gets a Jacobian below
+~2x. **The disproportion is XLA's**: 2.14x the lines costs 3.8x the compile, and §18.3 saw
+5.1x/6.0x on tokamaks for 2.3x the equations. So the lever is a smaller *base* program
+(§24.9's vectorisation bought a 3x tokamak compile reduction this way) or not recompiling
+it (§31.7) -- never "avoid `jacfwd`".
+
+The in-graph-optimiser question this raises -- does folding the loop into one jit
+double-compile the driven part? -- has a clean answer *in principle* and a different one
+in practice. In principle it is a consolidation, not a doubling: today the value program
+(7 560 lines) and the Jacobian program (16 176) are two separate modules, two compiles,
+23 736 lines between them, and one module containing `jacfwd` subsumes the primal at
+~16 176. **§31.10 measured it and got 4x instead**, for a reason that is about the
+optimiser's API rather than about `jacfwd`.
+
+### 31.10 [measured] An in-graph SLSQP runs, collapses the compile *count* to 1, and makes compilation 3x worse
+
+A feasibility probe, time-boxed, `stellarator_helias` MDF, scratch only -- nothing landed.
+`slsqp-jax` 0.21.1 turns out to be **already installed in `process_port`** and is an
+`optimistix.AbstractMinimiser`, so `optx.minimise` runs its loop as a `lax.while_loop`
+inside the enclosing jit with a projected-CG QP in jax: no `cvxpy`, no CLARABEL, no host
+boundary per iteration, no environment change.
+
+| | today (host loop) | in-graph SLSQP |
+|---|---|---|
+| XLA compiles for the solve | ~228 (SAND, cache census) | **1** |
+| compile seconds | 15.4--17.6 | **49.7** |
+| optimised HLO lines | 14.1k + 38.7k = **52.8k** | **206.7k--225.3k** |
+| trace + lower | ~2.9 s | **20.4--21.6 s** |
+| per SQP iteration | ~10 ms (arm A) / ~1.7 ms (arm B) | **136 ms** |
+| warm persistent cache | compile -> 0 | compile -> **0** |
+| `jax.export` | refused | **still refused** |
+
+**The compile-count hypothesis is confirmed and buys nothing.** One program instead of
+hundreds, and it is ~4x larger than the two it replaces. Cause **inferred, not measured**:
+SLSQP's API wants six separate callables (objective / equalities / inequalities, each as
+value and Jacobian), so the MDA is staged **six times** rather than twice. **That is the
+next experiment** -- hand it one fused evaluation and re-measure; it needs no new
+optimiser and would separate "in-graph is expensive" from "this API stages six times".
+
+`jax.export` is **still** refused, and for a new reason: `equinox` implements its in-trace
+error reporting as a `pure_callback`, so *any* optimistix solve carries one. The cache,
+not export, remains the answer -- and it works end to end here (compile -> 0, wall
+75.4 -> 30.5 s) while exposing a new floor: **trace+lower is 20--22 s and the cache does
+not touch it**, against ~2.9 s today.
+
+**The real structural blocker is not compilation.** Unrestricted, the solve compiles and
+then *dies at runtime*: an inner `PicardDriver` exhausts its 256-step budget at an SQP
+trial point and `throw=True` raises from inside the program. A host loop can back off from
+a bad trial point; a `lax.while_loop` cannot. The probe only runs inside a **+-5 % trust
+box**, and there it does reduce the residual -- `objf` 1.335 -> 0.9376021046559713,
+`max|eq|` 3.68e-01 -> 9.09e-02, `min ie` -2.79 -> -1.97, 14 steps, identical to the last
+digit across three runs -- but **six of eight coordinates sit on the box corner, so the box
+chose the answer, not the optimiser.** This is not agreement with VMCON's 1.2177 at 169
+iterations and must not be read as any.

@@ -727,3 +727,78 @@ What the probe does establish, and what survives the disagreement:
   hundred iterations at a few milliseconds cannot and do not account for the wall clock.
 - The shape of §28's conclusion is unaffected: **compilation dominates, arithmetic is
   seconds.** It is the per-arm attribution that is wrong, not the direction.
+
+## 31. State, 2026-09-02 — the compile picture, and what it changed
+
+**Read §28 first for the state at the close of 2026-09-01; this supersedes its §28.3
+queue only where it says so.** The detailed measurements all live in
+`optimise_design.md` §31 (§31.1--§31.10) — this is the state and the priority order, not
+a second copy of the numbers.
+
+Note on citations: §28.3's references to "§29" and "§30" are to `optimise_design.md`, not
+to this file, which has no such sections. This one is numbered 31 to match its record.
+
+### 31.1 What landed
+
+One commit, branch `eager-dispatch-compiles`: **two eager schedule walks routed through a
+jit** (`mdf.solve`'s final MDA re-run, which §24.8 measured and §24.9 deliberately left;
+and `run_cold_matrix.cold_sand`'s pre-solve non-finite probe, which had the same defect
+and nobody had looked). A full `--native` row goes **336 → 277 → 54** XLA compiles, of
+which 39 are under 20 MLIR lines. Row unchanged to the table's precision; **not checked
+bitwise** (`optimise_design.md` §31.8).
+
+### 31.2 The four things that were believed and are now measured
+
+Same pattern as §28.1, and the same lesson.
+
+1. **"The 0.5 ms was async dispatch."** No. `block_until_ready` changes nothing.
+   §18.3 folded the `ConditionMap` in as a *constant*; `host_cache` passes it as an
+   *argument*, and `eqx.filter_jit` flattens 2 382 leaves per call. **§24.1's bill,
+   arriving in time rather than in numerics** (§31.6).
+2. **"The module is large because of the whole-program jit."** No — 1.6 % is
+   `drivers.py` and **0 %** is cottax's schedule (§31.2). And "38 635 lines" is the SAND
+   *Jacobian* program, not the schedule; three programs were being quoted as one number
+   (§31.1).
+3. **"`safe_math`'s guards might not earn their 13 % of the literals."** They cost 4 %
+   of the equations and **no measurable time**, exactly two of 52 sites fire, and
+   removing them puts **NaN in the objective's gradient** at the cold start (§31.4).
+   Nothing to change.
+4. **"An in-graph optimiser collapses the compile bill."** It collapses the *count* to 1
+   and makes compilation **3x worse** — 15.4–17.6 s → 49.7 s, 52.8k → 207–225k HLO lines
+   (§31.10).
+
+### 31.3 Now — in priority order
+
+1. **The six-fold staging in the in-graph probe.** The single cheapest experiment on this
+   list: `slsqp-jax`'s API wants six callables, so the MDA is *inferred* to be staged six
+   times. Hand it one fused evaluation and re-measure. It separates "in-graph is
+   expensive" from "this API stages six times", needs no new optimiser, and decides
+   whether the in-graph direction is alive at all.
+2. **Three `lax.while_loop`s block reverse-mode AD everywhere** —
+   `models/cs_fatigue.py:318`, `models/vacuum/vacuum.py:329` and `:474`. Not the drivers:
+   `PicardDriver`/`SeededNewtonDriver` go through optimistix's `ImplicitAdjoint` and
+   transpose fine, so `mdf.py`'s docstring is wrong about the mechanism and
+   `vacuum.py:289`'s "costs nothing here" is falsified (§31.9). Reverse mode would not
+   *win* on the Jacobian's shape, but it is the only way to a cheap objective-only
+   gradient, and the doc defect should be corrected regardless.
+3. **The ~1.75 s of first-call jit setup** that is neither trace, lower, compile, nor
+   `filter_jit` — arm-independent, bounded, unexplained. A `cProfile` of the first two
+   calls (§31.6).
+4. **Bind the condition map once per solve.** 6.0x on the steady state, bitwise
+   identical, belongs in `host_cache.py` beside the existing pair. The floor beneath it
+   is ~0.50/0.76 ms, set by jax dispatch, and is not removable from a host loop (§31.6).
+5. **The persistent compilation cache** — 2.57x, two env vars, bitwise identical, but
+   **leave it off while the structural work is in flight**: a cache hit erases compile
+   time from the phase table (§31.7).
+6. Everything in §28.3 that this section does not touch, in its own order.
+
+### 31.4 Two findings that belong to other work
+
+- **`.physics.nu_star` is NaN in value at the cold point**, from `dlamie == 0.0` over
+  `plasma_current == 0.0` — both boundary inputs frozen at cold zero, and `dlamie` should
+  be ~17. Nothing consumes it, so it is a dead output, not a live contaminant. It has
+  §27.4's missing-producer signature (§31.5).
+- **`jax` is 0.11.0 on at least one machine**, not the 0.11.1 `CLAUDE.md` records.
+  `CLAUDE.md` already says the conda root differs per machine and ties its suite counts to
+  the version; the pin should say "0.11.0 or 0.11.1 depending on machine" rather than be
+  corrected to either.
