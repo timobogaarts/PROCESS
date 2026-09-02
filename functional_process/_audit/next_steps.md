@@ -813,6 +813,20 @@ Same pattern as §28.1, and the same lesson.
    time from the phase table (§31.7).
 6. Everything in §28.3 that this section does not touch, in its own order.
 
+### 31.3b The iteration gap is closed as a question — §31.21
+
+`stellarator_helias` MDF's **108 against PROCESS's 46** is (a) a tolerance difference —
+the port stops at `1e-8` where this file's `epsvmc` is `1e-6`, and at `1e-6` the port
+takes **66** for `1.2e-05` relative on `objf` — and (b) one draw from a chaotic
+trajectory: a `1e-13` perturbation of `rmajor` takes the port 66 → 129 and `1e-10` makes
+it **fail**, while PROCESS sits at 46 throughout. Counting, scaling, the derivative, the
+line search, the inner MDA and the seeding mode are each ruled out with a measurement.
+
+Two things follow. **The `PRO` column compares counts taken at different tolerances** and
+should report the port at `epsvmc` beside its own. And **two of four perturbed starts did
+not converge at all**, which is a bigger problem than the count and is now the open
+question: why is the port's outer problem chaotic where PROCESS's is not?
+
 ### 31.4 Two findings that belong to other work
 
 - **`.physics.nu_star` is NaN in value at the cold point**, from `dlamie == 0.0` over

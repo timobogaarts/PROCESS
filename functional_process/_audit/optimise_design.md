@@ -7540,3 +7540,62 @@ pass: `trace` ~15 s and `lower` ~25 s, neither cached, against `compile` 0.0. An
 from the cache does not go through the `backend_compile_and_load` that `phase_timing`
 patches, so that time lands in the residual instead. It is attribution moving, not work
 appearing.
+
+### 31.21 [measured] The MDF iteration gap is a tolerance difference plus a chaotic trajectory
+
+`reference_cold_matrix.txt` reports `stellarator_helias` MDF at **108** SQP iterations
+against PROCESS's **46**, on a formulation that *is* PROCESS's own. Both halves of that
+gap are now measured, and neither is a defect in the formulation.
+
+**Part 1 — 42 of the difference is the stopping tolerance.** `run_mdf_harness.TOLERANCE`
+is `1e-8`; this file's `epsvmc` is `1e-6`. The trajectory does not depend on the
+tolerance, so one solve gives every row:
+
+| tolerance | iterations | `objf` | `max|eq|` | `min ie` |
+|---|---|---|---|---|
+| `1e-6` (PROCESS's own) | **66** | 1.217772332 | 2.73e-09 | -3.34e-09 |
+| `1e-7` | 88 | 1.217759516 | 4.37e-08 | -2.29e-07 |
+| `1e-8` (the port's) | **108** | 1.217757471 | 4.20e-11 | -1.95e-10 |
+
+All converged; `worst dx` is `1.08e-01` at every tolerance. The knob costs **1.2e-05
+relative on `objf`**, 200x smaller than this file's already-explained `2.34e-03` gap. So
+the `PRO` column has been compared against a port count taken at a **different tolerance**
+throughout, and 66-against-46 is the like-for-like number.
+
+**Part 2 — the remaining 1.43x is one draw from a chaotic distribution.** Perturbing the
+same start value (`rmajor`) by the same relative amount in both codes, at `1e-6`:
+
+| perturbation | PROCESS | port MDF |
+|---|---|---|
+| 0 | **46**, conv 2.3956e-07 | **66** converged |
+| `+1e-13` | **46**, conv 2.3955e-07 | **129** converged |
+| `+1e-10` | **46**, conv 2.4442e-07 | **31, FAILED**, conv 1.39 |
+| `-1e-10` | **46**, conv 2.3070e-07 | **83, FAILED**, conv 68.3 |
+
+**PROCESS does not move at all under a perturbation ten orders of magnitude larger than
+the one that doubles the port's count.** So "108 vs 46" compares a sample of a broad,
+partly divergent distribution against a constant, and a single MDF iteration count on this
+file is not evidence of anything. This also settles §17's archaeology: its 58 and today's
+66 are the same measurement, two draws.
+
+**Alarming, and more important than the count: two of four perturbed starts did not
+converge at all.**
+
+**Ruled out, each with its own measurement.** Counting (both are `pyvmcon` callback
+invocations; PROCESS's retry ladder did not fire). Scaling (`design_scale` is bit-identical
+to `numerics.scale`, ratio all `1.`). The derivative (MDF with `epsfcn=0.01`, PROCESS's own
+quotient at this file's own perturbation, takes **141** at a *worse* `objf` -- the exact
+Jacobian is the better one). The line search (**exactly 2** problem evaluations per
+iteration for all 66, `alpha=1` accepted every time -- §28.3 item 8 is dead on this file).
+The inner MDA (converged to ~1e-16 relative; PROCESS's `rtol=1e-6` Gauss-Seidel is the
+*looser* one, so the port optimises the smoother function and still wanders, which makes
+this stranger rather than explained). Seeding mode (PROCESS-seeded cold also gives 108).
+And `force_vmcon_inequality_satisfication`, which fired -- PROCESS reached conv `1.4e-07`
+at iteration 44 and kept going to 46 -- so 2 of PROCESS's 46 are bought by a criterion the
+port does not impose, widening the gap rather than explaining it.
+
+**What survives**, ranked: (1) the documented kink -- every converged point sits on
+`(Te+Ti)/20 == 0.65` to `1.9e-09` with two `c24` Jacobian cells disagreeing there
+(`_audit/x109.md`); decide by logging branch state against the blow-outs. (2) PROCESS's
+10-pass Gauss-Seidel acting as an unintended smoother; decide by capping the port's Picards
+at 10 / `1e-6` and re-taking the jitter table. (3) `initial_B`, low prior.
