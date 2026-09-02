@@ -627,132 +627,39 @@ TF_STRESS_LANDED = (
 TF_STRESS_ROWS = (".tfcoil.insstrain",)
 """What survived `stresscl` landing. The seven rows this used to name now agree."""
 
-NOH_WRONG = (
-    "**A real port defect this stage found, and it is not fixed here.** "
-    "`PFCoil.induct` splits the CS into "
-    "`noh = ceil(2 * z_pf_coil_upper[CS] / (r_pf_coil_outer[CS] - "
-    "r_pf_coil_inner[CS]))` pancake segments (`pfcoil.py:1758-1765`), and every "
-    "inductance it returns depends "
-    "on that integer -- so `ind_pf_cs_plasma_mutual` is piecewise constant and "
-    "discontinuous "
-    "in the CS geometry. `models/pfcoil/inductance.py` pins `NOH = 30`, measured on "
-    "`large_tokamak_eval`, where the ratio is `29.028`. Measured on the other two:\n\n"
-    "| configuration | ratio cold | `noh` cold | ratio converged | `noh` converged |\n"
-    "|---|---|---|---|---|\n"
-    "| `large_tokamak_eval` | 29.028 | **30** | 29.028 | **30** |\n"
-    "| `large_tokamak_nof` | 31.746 | 32 | 26.867 | 27 |\n"
-    "| `low_aspect_ratio_DEMO` | 27.010 | 28 | 26.407 | 27 |\n\n"
-    "So the port is on the wrong piece at *both* the cold and the converged design of "
-    "both configurations, and **no single constant is right at both** -- which is the "
-    "point, and why the fix is not a different number. Confirmed by substitution: with "
-    "`NOH = 32` on `large_tokamak_nof` the cold result goes **631/82 to 662/51**, 31 of "
-    "these rows disappear outright and the other 34 fall by one to two orders "
-    "(`.times.t_plant_pulse_burn` `3.76e-04 -> 8.89e-06`, "
-    "`.pf_coil.ind_pf_cs_plasma_mutual` `5.10e-04 -> 6.55e-05`) to at most `6.55e-05`, "
-    "below `PicardDriver`'s own `1e-4` tolerance. `_audit/units/models/pfcoil/"
-    "inductance.md` § 'noh is a step function of the CS geometry' already files 'a "
-    "structural integer that the solve moves' as an open convention question; this is "
-    "the measurement of what it costs."
+PF_COIL_SIX_RESIDUAL = (
+    "**What was left when `noh` was fixed, and it was never a `noh` row.** These five "
+    "sat inside `NOH_ROWS_DEMO` until `models/pfcoil/inductance.py` stopped pinning the "
+    "CS segment count and computed it; eighty of that table's eighty-five rows retired "
+    "outright and these did not move *at all* -- byte-identical in "
+    "`reference_cold_start.txt` across the change, which is the evidence that the old "
+    "table over-claimed them. They are one PF coil, index `6`: `2/132` elements of "
+    "`.pf_coil.c_pf_coil_turn` and `f_c_pf_cs_peak_time_array`, `1/22` of "
+    "`c_pf_cs_coil_flat_top_ma`, and the `1.3e-06` those carry into `.costs.c22`. All "
+    "at `5.742e-05`, all with both sides nonzero (`-34.40651` against `-34.40849`), so "
+    "coil `6` is **live** and this is not `PF_TURNS_DEAD_TAIL` leaking either -- that "
+    "row's own worst index is `8`, in the tail, and a wrong turns count would quantise "
+    "rather than land at five parts in a hundred thousand.\n\n"
+    "**The cause is not diagnosed**, and this entry says so rather than guessing. It is "
+    "pinned to stay bounded and visible: at `5.742e-05` it is below `PicardDriver`'s "
+    "`1e-4` tolerance and an order under the `3.86e-04` vacuum-duct rows above it, and "
+    "it is now the largest unexplained PF disagreement on any tokamak. Chasing it is "
+    "`_audit/next_steps.md`'s item, not this table's."
 )
 
-NOH_ROWS_NOF = (
-    ".buildings.cryvol",
-    ".costs.bktcycles",
-    ".costs.c217",
-    ".costs.c2174",
-    ".costs.c2252",
-    ".costs.c22521",
-    ".costs.c22526",
-    ".costs.c2253",
-    ".costs.c226",
-    ".costs.c2262",
-    ".costs.c2263",
-    ".costs.c24",
-    ".costs.c242",
-    ".costs.c243",
-    ".costs.coe",
-    ".costs.coecap",
-    ".costs.coefuelt",
-    ".costs.coeoam",
-    ".costs.cpfact",
-    ".costs.cppa",
-    ".heat_transport.f_p_plant_electric_recirc",
-    ".heat_transport.helpow",
-    ".heat_transport.p_cryo_plant_electric_mw",
-    ".heat_transport.p_plant_electric_net_mw",
-    ".heat_transport.p_plant_electric_recirc_mw",
-    ".heat_transport.p_plant_secondary_heat_mw",
-    ".heat_transport.pacpmw",
-    ".heat_transport.peakmva",
-    ".heat_transport.tlvpmw",
-    ".pf_coil.ind_pf_cs_plasma_mutual",
-    ".pf_coil.p_pf_electric_supplies_mw",
-    ".pf_coil.vs_cs_pf_total_burn",
-    ".pf_coil.vs_cs_pf_total_pulse",
-    ".pf_power.ensxpfm",
-    ".pf_power.peakpoloidalpower",
-    ".pf_power.poloidalpower",
-    ".pf_power.spsmva",
-    ".physics.vs_plasma_burn_required",
-    ".physics.vs_plasma_total_required",
-    ".power.e_plant_net_electric_pulse_kwh",
-    ".power.e_plant_net_electric_pulse_mj",
-    ".power.p_cryo_plant_electric_profile_mw",
-    ".power.p_pf_electric_supplies_profile_mw",
-    ".power.p_plant_core_systems_elec_mw",
-    ".power.p_plant_electric_net_profile_mw",
-    ".power.qac",
-    ".power.qmisc",
-    ".tfcoil.cryo_cool_req",
-    ".times.t_plant_pulse_burn",
-    ".times.t_plant_pulse_plasma_present",
-    ".times.t_plant_pulse_total",
-    "^hat.pf_coil.ind_pf_cs_plasma_mutual",
-    "^hat.times.t_plant_pulse_burn",
-)
-"""`large_tokamak_nof`'s `noh` chain: the inductance matrix, everything the volt-second
-balance carries from it (burn time, pulse durations), the PF power conversion the peak
-currents size, and the cost and cryogenic accounts below those. Sixty-five rows from one
-integer."""
-
-NOH_ROWS_DEMO = (
-    ".costs.bktcycles",
+PF_COIL_SIX_ROWS_DEMO = (
     ".costs.c22",
-    ".costs.c2252",
-    ".costs.c22521",
-    ".costs.c22526",
-    ".costs.c242",
-    ".costs.c243",
-    ".costs.coecap",
-    ".heat_transport.pacpmw",
-    ".heat_transport.peakmva",
-    ".heat_transport.tlvpmw",
     ".pf_coil.c_pf_coil_turn",
     ".pf_coil.c_pf_cs_coil_flat_top_ma",
     ".pf_coil.f_c_pf_cs_peak_time_array",
     ".pf_coil.f_j_cs_start_end_flat_top",
-    ".pf_coil.ind_pf_cs_plasma_mutual",
-    ".pf_coil.p_pf_electric_supplies_mw",
-    ".pf_coil.vs_cs_pf_total_burn",
-    ".pf_coil.vs_cs_pf_total_pulse",
-    ".pf_power.ensxpfm",
-    ".pf_power.peakpoloidalpower",
-    ".pf_power.poloidalpower",
-    ".pf_power.spsmva",
-    ".physics.vs_plasma_burn_required",
-    ".power.e_plant_net_electric_pulse_kwh",
-    ".power.e_plant_net_electric_pulse_mj",
-    ".power.p_pf_electric_supplies_profile_mw",
-    ".times.t_plant_pulse_burn",
-    ".times.t_plant_pulse_plasma_present",
-    ".times.t_plant_pulse_total",
-    "^hat.pf_coil.ind_pf_cs_plasma_mutual",
-    "^hat.times.t_plant_pulse_burn",
 )
-"""The same chain on `low_aspect_ratio_DEMO`, and shorter for the reason the table in
-`NOH_WRONG` predicts: its `noh` is off by one (28 against 30) where
-`large_tokamak_nof`'s is off by two, so the same chain is an order smaller and half of
-it lands inside `compare`'s `rtol`."""
+"""The five, on `low_aspect_ratio_DEMO` only.
+
+`large_tokamak_nof`'s fifty-three-row `noh` chain retired **completely** -- that
+configuration now has eight disagreements in total, none of them PF -- and
+`large_tokamak_eval` never had any, being the one file the old pin was right about."""
+
 
 STELLARATOR_ARM_ORDER = (
     "**Not a port defect: PROCESS's solve pass and its report pass compute different "
@@ -903,9 +810,9 @@ DRIVER_TOLERANCE = (
     "own `rtol = 1e-6` inside or downstream of a `Drive` is the algorithm's convergence "
     "criterion showing through, not a difference in the arithmetic. The cost accounts "
     "below the PF cycle carry that residue through `PfMagnetCost` into `c22` and the "
-    "capital-cost sum. `large_tokamak_eval` is the configuration where `NOH = 30` is "
-    "*right* (see `NOH_WRONG`'s table), which is why this is all that is left of its PF "
-    "chain.\n\n"
+    "capital-cost sum. `large_tokamak_eval` was the one configuration the retired "
+    "`noh` pin happened to be right about, which is why this is all that is left of "
+    "its PF chain -- and why it did not move when `noh` became computed.\n\n"
     "**`^hat.pf_coil.ind_pf_cs_plasma_mutual` was pinned here and is not any more** "
     "(2026-09-02). It used to agree only to `1.49e-06`, which this reason called *two "
     "orders better than the driver promises* -- against `cottax`'s own defaults of "
@@ -949,7 +856,7 @@ ACCEPTED = {
             TOKAMAK_EVAL: TF_STRESS_ROWS,
         },
     ),
-    **_because(NOH_WRONG, {TOKAMAK_NOF: NOH_ROWS_NOF, TOKAMAK_DEMO: NOH_ROWS_DEMO}),
+    **_because(PF_COIL_SIX_RESIDUAL, {TOKAMAK_DEMO: PF_COIL_SIX_ROWS_DEMO}),
     **_because(
         STELLARATOR_ARM_ORDER,
         {STELLARATOR: STELLARATOR_ARM_ORDER_ROWS, HELIAS_5B: STELLARATOR_ARM_ORDER_ROWS},
@@ -990,15 +897,23 @@ the six were settled by substituting the suspected cause and re-measuring, rathe
 by argument, because §16.3 records three persuasive arguments that were all wrong.
 
 **Keyed on `(configuration, path)`, not on the path alone**, because the *cause* is
-per-machine and merging them would lie about it: `.costs.coe` is off by `3.4e-02` on the
-stellarator through the report-pass geometry and by `2.2e-04` on `large_tokamak_nof`
-through `noh`, and one entry covering both would have to be vague enough to cover a
-future third cause too.
+per-machine and merging them would lie about it: `.costs.coe` was off by `3.4e-02` on
+the stellarator through the report-pass geometry and by `2.2e-04` on
+`large_tokamak_nof` through `noh`, and one entry covering both would have been vague
+enough to cover a future third cause too. That is no longer hypothetical: the `noh`
+half of that example is **gone** -- `large_tokamak_nof` has no PF disagreement left at
+all -- while the stellarator half stands, which is exactly the outcome a merged entry
+would have hidden.
 
-**Two of the six entries name a defect rather than excusing one.** `NOH_WRONG` is the
-port being wrong on two of the four configurations, and `TF_STRESS_UNPORTED` is the cost
-of the one producer still missing. Pinning them is how they stay visible and bounded;
-it is not a claim that they are acceptable.
+**Two entries name a defect rather than excusing one.** `PF_COIL_SIX_RESIDUAL` is an
+undiagnosed `5.7e-05` on one PF coil of one configuration, and `TF_STRESS_UNPORTED` is
+the cost of the one producer still missing. Pinning them is how they stay visible and
+bounded; it is not a claim that they are acceptable.
+
+**`NOH_WRONG` used to be the third**, and its retirement on 2026-09-02 is the case for
+this table's shape: it named a defect precisely enough that fixing it retired eighty of
+its eighty-five rows in one change, and precise enough that the five that stayed were
+visibly *not* what it claimed. A vaguer entry would have absorbed them silently.
 """
 
 

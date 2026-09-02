@@ -17,8 +17,8 @@ describes grows from three nodes to four, and PROCESS's `first_call` bootstrap
 **the cycle's initial guess**, not an external input. See § "The cycle, one node larger"
 in the record.
 
-**`noh` is a graph-assembly constant, and that is a finding, not a convenience.**
-`induct` chooses how many pancake segments to split the CS into as
+**`noh` is computed, and the discontinuity is real.** `induct` chooses how many pancake
+segments to split the CS into as
 
     noh = ceil(2 * z_pf_coil_upper[CS] / (r_pf_coil_outer[CS] - r_pf_coil_inner[CS]))
 
@@ -27,11 +27,35 @@ the CS radial thickness is an iteration variable. Every inductance this routine 
 depends on it, so `ind_pf_cs_plasma_mutual` is a **piecewise-constant-discontinuous**
 function of `dr_cs`: PROCESS's answer steps whenever `dz_cs_full / dr_cs` crosses an
 integer, and the derivative its own finite difference reports is the derivative of the
-piece it happens to be sitting on. On `large_tokamak_eval.IN.DAT` the ratio is `29.027`,
-so `noh = 30` and the nearest step is `0.9 %` away in `dr_cs`. This port fixes
-`noh = 30`: a different `noh` is a different occupant, the same way a different
-`i_pf_location` pattern is. Flagged in the record's open questions -- a structural
-switch whose value moves with the solve is not something the conventions cover.
+piece it happens to be sitting on.
+
+This port computes it, which was not the first answer. It was pinned at `NOH = 30` --
+the value `large_tokamak_eval.IN.DAT` takes, its ratio being `29.027` -- on the argument
+that a different `noh` is a different occupant, the way a different `i_pf_location`
+pattern is. That argument was wrong about the cost. The pin is right on
+`large_tokamak_eval` and wrong on the other two solenoid tokamaks, where the solve walks
+across several integers: `32 -> 29 -> 27` on `large_tokamak_nof` and `28 -> 27` on
+`low_aspect_ratio_DEMO`. It cost **80 of the 85 disagreeing rows** the cold report used
+to carry under `cold_start.NOH_WRONG` (`large_tokamak_nof` 668 agreeing/61 off ->
+`721/8`; `low_aspect_ratio_DEMO` `695/40` -> `722/13`), with no new disagreement and no
+new error anywhere.
+
+**The pinned arm was the one with the wrong derivative** -- a correct tangent taken on
+the wrong piece -- which is why the usual "a `ceil` is not differentiable" objection
+does not decide this. It is also not the §31.27 situation: that was a *truncated Neumann
+series*, a derivative with unbounded error and invisible to the value test. A `ceil`
+gives the correct derivative of a piecewise function; the error is confined to the
+value, and only within one step.
+
+What was measured before landing it, because a discontinuity inside an SQP loop deserves
+more than an argument: the ratio is **constant across every evaluation inside a given
+SQP window** on both configurations, so no Jacobian is ever taken across a step -- the
+integer changes between iterates, as a pure value change. Driving `large_tokamak_nof`'s
+cold start to `7.1e-15` of an integer and perturbing across it eleven times gives seven
+iterations and `max|eq| = 2.748e-06` on every row, with a bit-identical objective; the
+**pinned** arm's objective is not bit-identical across the same straddle. A ±1e-13 to
+±1e-9 jitter table on `.build.dr_cs`, 44 solves, moves no iteration count, status, or
+residual on either arm.
 """
 
 import equinox as eqx
@@ -57,9 +81,18 @@ from functional_process.vocabulary import constants
 RMU0 = constants.RMU0
 """Vacuum permeability (H/m), `process/core/constants.py:277`."""
 
-NOH = 30
-"""Number of pancake segments the CS is split into, on the reference arm. See the module
-docstring: `ceil(2 * 7.936395 / 0.546817) = ceil(29.027) = 30`."""
+NOH_PAD = 64
+"""Length of the CS's segment arrays.
+
+`induct` splits the solenoid into `noh = ceil(2 * z_cs_half / dr_cs)` pancake segments
+(`pfcoil.py:1758-1765`), a count that moves with the design. A traced `noh` cannot size
+an array, so the arrays are always `NOH_PAD` long and an `active` mask keeps the
+arithmetic to exactly `noh` of them. `64` is the smallest power of two comfortably above
+every `noh` the tracked configurations reach (27 to 32) and stands in for PROCESS's own
+`nohmax = 200` clamp (`pfcoil.py:1733`), tightened; the clamp is applied in
+`_cs_segments`, so a design that ran past the pad is pinned at `NOH_PAD` rather than
+silently truncated."""
+
 
 NPLAS = 1
 """`nplas`, a literal `1` in `induct` (`pfcoil.py:1734`) -- the plasma is one filament,
@@ -171,6 +204,38 @@ def calculate_solenoid_self_inductance(a, b, c, n):
     return jnp.where(at_zero, 0.0, inductance)
 
 
+def _cs_segments(z_cs_half, dr_cs_edges, r_cs_middle):
+    """The CS's pancake segments: `(noh, delzoh, zoh, roh, active)`.
+
+    `noh = ceil(2 * z / dr)` as `induct` computes it (`pfcoil.py:1758-1765`), clipped
+    into `[1, NOH_PAD]` -- PROCESS's own `min(noh, nohmax)`/`max(noh, 0)` guards
+    (`:1774-1778`) with a tighter cap, and a lower clip of `1` rather than `0` because
+    `xohpl / noh` divides by it.
+
+    `noh` stays a **float**: `jnp.ceil` of a traced quantity is traceable, and the value
+    is only ever divided by, never used as a length. The arrays are `NOH_PAD` long and
+    `active` masks the tail out of both sums that consume them, so the trace has one
+    shape for every design while the *arithmetic* sees exactly `noh` segments.
+
+    `jnp.ceil` has a derivative of zero almost everywhere, so the tangent of everything
+    downstream is the tangent of the piece the design is standing on. The discontinuity
+    is entirely in the value, and only where a step is crossed -- measured at `3.6e-07`
+    relative on `M[CS, plasma]` and `6.1e-06` on `M[PF, CS]`. See the module docstring
+    for why that is the right trade against pinning the count.
+    """
+    ratio = 2.0 * z_cs_half / dr_cs_edges
+    noh = jnp.clip(jnp.ceil(ratio), 1.0, float(NOH_PAD))
+    delzoh = 2.0 * z_cs_half / noh
+    index = jnp.arange(NOH_PAD)
+    return (
+        noh,
+        delzoh,
+        z_cs_half - delzoh * (0.5 + index),
+        jnp.full(NOH_PAD, r_cs_middle),
+        index < noh,
+    )
+
+
 def calculate_pf_cs_plasma_inductances(
     rmajor,
     ind_plasma,
@@ -239,9 +304,11 @@ def calculate_pf_cs_plasma_inductances(
     ind = jnp.zeros((NGC2, NGC2))
 
     z_cs_half = z_pf_coil_upper[CS_INDEX]
-    delzoh = 2.0 * z_cs_half / NOH
-    zoh = z_cs_half - delzoh * (0.5 + jnp.arange(NOH))
-    roh = jnp.full(NOH, r_cs_middle)
+    noh, delzoh, zoh, roh, active = _cs_segments(
+        z_cs_half=z_cs_half,
+        dr_cs_edges=r_pf_coil_outer[CS_INDEX] - r_pf_coil_inner[CS_INDEX],
+        r_cs_middle=r_cs_middle,
+    )
 
     # --- 1. Central Solenoid / plasma -------------------------------------------------
     # `deltar` needs `dr_cs >= delzoh`; below that PROCESS substitutes a small positive
@@ -262,9 +329,9 @@ def calculate_pf_cs_plasma_inductances(
     xc_in, xc_out = _mutual_inductances_over_loop_sets(
         jnp.stack([reqv - deltar, reqv + deltar]), zoh, rmajor, 0.0
     )
-    xohpl = jnp.sum(0.5 * (xc_in + xc_out))
+    xohpl = jnp.sum(jnp.where(active, 0.5 * (xc_in + xc_out), 0.0))
 
-    ind_cs_plasma = xohpl / NOH * n_pf_coil_turns[CS_INDEX]
+    ind_cs_plasma = xohpl / noh * n_pf_coil_turns[CS_INDEX]
     ind = ind.at[PLASMA_INDEX, CS_INDEX].set(ind_cs_plasma)
     ind = ind.at[CS_INDEX, PLASMA_INDEX].set(ind_cs_plasma)
 
@@ -302,8 +369,12 @@ def calculate_pf_cs_plasma_inductances(
     # four test points, so one batched call.
     targets = jnp.asarray(last_of_group)
     xohpf = jnp.sum(
-        _mutual_inductances_over_test_points(
-            roh, zoh, r_pf_coil_middle[targets], z_pf_coil_middle[targets]
+        jnp.where(
+            active[None, :],
+            _mutual_inductances_over_test_points(
+                roh, zoh, r_pf_coil_middle[targets], z_pf_coil_middle[targets]
+            ),
+            0.0,
         ),
         axis=1,
     )
@@ -311,7 +382,7 @@ def calculate_pf_cs_plasma_inductances(
         xohpf[group] for group in range(N_PF_GROUPS) for _ in _coils_of_group(group)
     ])
     cs_column = (
-        xohpf_of_coil * n_pf_coil_turns[:N_PF_COILS] * n_pf_coil_turns[CS_INDEX] / NOH
+        xohpf_of_coil * n_pf_coil_turns[:N_PF_COILS] * n_pf_coil_turns[CS_INDEX] / noh
     )
     ind = ind.at[:N_PF_COILS, CS_INDEX].set(cs_column)
     ind = ind.at[CS_INDEX, :N_PF_COILS].set(cs_column)

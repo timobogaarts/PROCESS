@@ -382,51 +382,64 @@ def test_the_landed_stresscl_producer_closed_its_own_seven_rows(reports):
             assert row not in off, f"{name}: {row} disagrees again -- stresscl unwired?"
 
 
-def test_the_pinned_noh_is_right_on_one_configuration_and_wrong_on_two():
-    """The defect this stage found: `inductance.NOH` is a per-machine, per-*design*
-    quantity pinned as a module constant.
+def test_the_port_computes_the_same_noh_process_does_on_every_configuration():
+    """The answer to the question its predecessor was the standing measurement of.
 
     `PFCoil.induct` (`pfcoil.py:1758-1765`) splits the CS into
     `ceil(2 * z_pf_coil_upper[CS] / (r_pf_coil_outer[CS] - r_pf_coil_inner[CS]))`
     segments and every inductance depends on that integer, so the port's answer is a
-    piecewise-constant function of the CS geometry and `NOH = 30` selects one piece.
-    Measured from PROCESS's own cold `DataStructure`, which is the honest place to ask,
-    since `.build.dr_cs` is an iteration variable on two of these three files:
+    piecewise-constant function of the CS geometry. The port used to pin `NOH = 30`,
+    which selected one piece -- right on `large_tokamak_eval`, where it was measured,
+    and wrong on the other two:
 
-    | configuration | ratio cold | `noh` cold |
-    |---|---|---|
-    | `large_tokamak_eval` | 29.028 | 30 |
-    | `large_tokamak_nof` | 31.746 | 32 |
-    | `low_aspect_ratio_DEMO` | 27.010 | 28 |
+    | configuration | ratio cold | `noh` cold | old pin |
+    |---|---|---|---|
+    | `large_tokamak_eval` | 29.028 | 30 | 30, right |
+    | `large_tokamak_nof` | 31.746 | 32 | 30, wrong by two |
+    | `low_aspect_ratio_DEMO` | 27.010 | 28 | 30, wrong by two |
 
-    So the constant is right on exactly the configuration it was measured on. It is also
-    wrong at those two files' *converged* designs, and by a different amount (27 for
-    both), which is the finding that makes this not a matter of picking a better number:
-    `noh` moves with the solve. `_audit/units/models/pfcoil/inductance.md` files that as
-    an open convention question; this test is the standing measurement of it, and it
-    will start failing the day the question is answered.
+    `_cs_segments` now computes it, so this test asks the question the other way round:
+    the port's `noh` must equal the one PROCESS's own cold `DataStructure` implies, on
+    **every** configuration that has a solenoid, not just the one the constant came
+    from. `.build.dr_cs` is an iteration variable on two of these files, which is why
+    the cold state is the honest place to ask.
+
+    That change retired eighty of `cold_start`'s eighty-five `NOH_ROWS_*` rows;
+    `PF_COIL_SIX_RESIDUAL` records what stayed, and why it was never a `noh` row.
     """
     import math
 
-    from functional_process.models.pfcoil.inductance import NOH
+    from functional_process.models.pfcoil.inductance import NOH_PAD, _cs_segments
 
-    assert NOH == 30
-    expected = {
-        "large_tokamak_eval.IN.DAT": 30,
-        "large_tokamak_nof.IN.DAT": 32,
-        "low_aspect_ratio_DEMO.IN.DAT": 28,
-    }
+    seen = {}
     for name in CONFIGURATIONS:
-        if Path(name).name not in expected:
+        state = cold_state(name)
+        if not int(state.process.build.iohcl):
+            # No central solenoid: `pfcoil()` skips `ohcalc` outright
+            # (`pfcoil.py:1048-1050`), `induct` never reaches the segment split, and the
+            # port's occupant is `PFCoilInductanceNoCentralSolenoid`, which has no
+            # `_cs_segments` call to check. The CS slot of the geometry arrays is unset
+            # on these files -- one of them reads a *negative* ratio -- so asking here
+            # would be measuring uninitialised memory, not the port.
             continue
-        pf = cold_state(name).process.pf_coil
-        cs = int(pf.n_cs_pf_coils) - 1
-        ratio = (
-            2.0
-            * pf.z_pf_coil_upper[cs]
-            / (pf.r_pf_coil_outer[cs] - pf.r_pf_coil_inner[cs])
+        pf = state.process.pf_coil
+        n = int(pf.n_cs_pf_coils) - 1
+        dr = pf.r_pf_coil_outer[n] - pf.r_pf_coil_inner[n]
+        ratio = 2.0 * pf.z_pf_coil_upper[n] / dr
+        ported, *_ = _cs_segments(
+            z_cs_half=pf.z_pf_coil_upper[n],
+            dr_cs_edges=dr,
+            r_cs_middle=pf.r_pf_coil_middle[n],
         )
-        assert math.ceil(ratio) == expected[Path(name).name], Path(name).name
+        assert int(ported) == math.ceil(ratio), Path(name).name
+        seen[Path(name).name] = int(ported)
+
+    # The three the retired pin was measured against, and its two errors.
+    assert seen["large_tokamak_eval.IN.DAT"] == 30
+    assert seen["large_tokamak_nof.IN.DAT"] == 32
+    assert seen["low_aspect_ratio_DEMO.IN.DAT"] == 28
+    # Every count stays inside the pad, which is the assumption `NOH_PAD` encodes.
+    assert max(seen.values()) <= NOH_PAD
 
 
 def test_the_stellarator_chain_is_process_s_own_other_arm(reports):

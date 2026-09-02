@@ -26,7 +26,7 @@ UNPORTED:
 
 | lines | what | why not |
 |---|---|---|
-| `1767-1778` | the `nohmax` clamp, the `logger.error`, and the `max(noh, 0)` guard for the "FNSF case, noh = -7" TODO | with `noh` a graph-assembly constant there is nothing left to clamp; the negative-`noh` case is a different occupant and a PROCESS bug report |
+| `1767-1778` | the `nohmax` clamp, the `logger.error`, and the `max(noh, 0)` guard for the "FNSF case, noh = -7" TODO | **reproduced since 2026-09-02**, `noh` being computed: `_cs_segments` clips into `[1, NOH_PAD]` — PROCESS's `min(noh, nohmax)`/`max(noh, 0)` with a tighter cap, and a lower bound of `1` rather than `0` because `xohpl / noh` divides by it. The `logger.error` is not ported; the negative-`noh` case remains a PROCESS bug report |
 | `1986-2019` | the `output=True` reporting block and the mfile dump | pure reporting, writes nothing to `data` |
 | `1944-1947` | `.pf_coil.nef` | `n_cs_pf_coils - 1` on this arm — loop bookkeeping, the same category `pfcoil/__init__.py` records for `n_cs_pf_coils` itself |
 
@@ -51,11 +51,47 @@ geometry is therefore taken across a discontinuity at this operating point**, an
 solver consumes it. Measured, not argued: perturbing `z_pf_coil_upper[CS]` down by
 `1e-3` relative gives a ratio of `28.998` and `noh = 29`.
 
-This port fixes `noh = 30` as a module constant, i.e. a different `noh` is a different
-occupant, the same way a different `i_pf_location` pattern is. Three arguments are
-consequently `static_argnames` in the contract — see § tier signal. The wider problem is
-in § open questions: the conventions cover a switch read from input, and this is a
-structural integer that the solve itself moves.
+**This port pinned `noh = 30` and no longer does** (2026-09-02). The pin said a
+different `noh` is a different occupant, the way a different `i_pf_location` pattern is.
+That is right for a single evaluation and was wrong about the cost. It is right on
+`large_tokamak_eval` — the file it was measured on — and wrong on both other solenoid
+tokamaks, at their cold *and* their converged designs, by different amounts, so no
+single constant works:
+
+| configuration | ratio cold | `noh` cold | ratio converged | `noh` converged |
+|---|---|---|---|---|
+| `large_tokamak_eval` | 29.028 | **30** | 29.028 | **30** |
+| `large_tokamak_nof` | 31.746 | 32 | 26.867 | 27 |
+| `low_aspect_ratio_DEMO` | 27.010 | 28 | 26.407 | 27 |
+
+`_cs_segments` now computes it. `noh` stays a **float** — `jnp.ceil` of a traced
+quantity is traceable, and the value is only ever divided by, never used as a length —
+and the segment arrays are a fixed `NOH_PAD = 64` long with an `active` mask keeping the
+arithmetic to exactly `noh` of them, so the trace has one shape for every design.
+
+What it bought, measured cold against PROCESS: `large_tokamak_nof` **669 agreeing / 61
+off → 722 / 8**, `low_aspect_ratio_DEMO` **696 / 41 → 723 / 13**, `large_tokamak_eval`
+unmoved, `errors` unmoved everywhere, and **no new disagreement on any configuration**.
+Eighty of `cold_start`'s eighty-five `NOH_ROWS_*` rows retired; the five that stayed
+turned out never to have been `noh` rows at all and are now `PF_COIL_SIX_RESIDUAL`.
+
+**The pinned arm was the one with the wrong derivative** — a correct tangent taken on
+the wrong piece. A `ceil` gives the *correct* derivative of a piecewise function, and
+confines the error to the value, within one step. Measured before landing it, because a
+discontinuity inside an SQP loop deserves more than an argument: the ratio is constant
+across every evaluation inside a given SQP window on both files, so **no Jacobian is
+ever taken across a step** — the integer changes between iterates, as a pure value
+change (`32 → 29 → 27` on `large_tokamak_nof` over seven iterations, `28 → 27` on
+`low_aspect_ratio_DEMO`, every crossing while `conv ≥ 4.9e-03`). Driving
+`large_tokamak_nof`'s cold start to `7.1e-15` of an integer and perturbing across it
+eleven times gives seven iterations and `max|eq| = 2.748e-06` on every row with a
+bit-identical objective; the *pinned* arm's objective is not bit-identical across the
+same straddle. A ±1e-13 to ±1e-9 jitter table on `.build.dr_cs`, 44 solves, moves no
+iteration count, status or residual on either arm.
+
+One real cost: `low_aspect_ratio_DEMO` SAND goes **57 → 79** iterations — to a
+*feasible* answer (`min ie −1.85e-07` violated → `+1.18e-11` satisfied) where the pinned
+arm returned a marginally infeasible one.
 
 ## The cycle, one node larger
 
@@ -141,8 +177,9 @@ package not already derivable from what it produces.
 
 ## cottax node
 
-`PFCoilInductance(ExplicitFunction)`. Occupant for `iohcl = 1`,
-`n_pf_coils_in_group = (1, 1, 2, 2)` and `noh = 30`.
+`PFCoilInductance(ExplicitFunction)`. Occupant for `iohcl = 1` and
+`n_pf_coils_in_group = (1, 1, 2, 2)`. **`noh` is not part of the draw** since
+2026-09-02 — it is computed inside the occupant, not selected between occupants.
 
 ## tier signal
 
@@ -165,21 +202,26 @@ tolerance can absorb. What is lost is one term of Bunet's formula (`c`) and the
 `rl = |z_upper - z_lower|`, and `r_pf_coil_inner`/`r_pf_coil_outer` are read at index 6
 only, so no PF coil's geometry goes unchecked.
 
-**Fuzzing** is `±5-20 %` around the reference point with those three held fixed (a draw
-that changed `noh` would be a draw for a different occupant), and `dr_cs` bounded above
-`delzoh = 0.5291 m` so the Rosa-Grover split keeps its `sqrt` branch.
+**Fuzzing** is `±5-20 %` around the reference point with those three held fixed, and
+`dr_cs` bounded above `delzoh = 0.5291 m` so the Rosa-Grover split keeps its `sqrt`
+branch. Holding them fixed used to be a statement about the *draw* — a draw that changed
+`noh` would have been a draw for a different occupant. It is now purely about the
+**gradient** comparison: `noh` moving is fine and the value test covers it, but PROCESS's
+`epsfcn = 1e-3` difference quotient in those three directions is taken across its own
+discontinuity, so there is no reference derivative to compare against. Measured after
+the change: 114 gradient cases pass with the three static, the same count as before.
 
 ## switches touched
 
 | switch | reachable values | live on `large_tokamak_eval` | decision | evidence |
 |---|---|---|---|---|
 | `.build.iohcl` | `0`, `1` | `1` | **split** | `:1783` (no CS segments), `:1812-1856` (no CS/plasma coupling), `:1893-1941` (no CS self, no CS/PF), `:1944-1947` (`nef` differs). Four separate blocks disappear |
-| `noh` | any positive integer | `30` | **split** (structural) | see § "noh is a step function of the CS geometry" |
+| `noh` | any positive integer | *computed* | **not a slot** | see § "noh is a step function of the CS geometry" — pinned at `30` until 2026-09-02, now `ceil` of the solved ratio |
 | `.pf_coil.n_pf_coils_in_group` pattern | — | `(1, 1, 2, 2)` | **split** (structural) | fixes every array index, as everywhere else in this package |
 | `dr_cs >= delzoh` | — | true (`0.5468 >= 0.5291`) | **not** split — a `jnp.where` | `:1814-1819`. This is a numerical guard on a continuous quantity, not a model choice: the same formula with a substituted radicand. Ported as the double-`jnp.where` idiom so the untaken branch's `sqrt` of a negative number cannot leak `nan` into the tangent |
 
-**UNPORTED** for `indat.py`: `iohcl = 0`; any `noh != 30`; any coil-group pattern other
-than `(1, 1, 2, 2)`.
+**UNPORTED** for `indat.py`: `iohcl = 0`; any coil-group pattern other than
+`(1, 1, 2, 2)`. `noh` was on this list until 2026-09-02 and is not a refusal any more.
 
 ## calls into other models
 
@@ -211,8 +253,10 @@ occasionally is not.
 
 ## JAX-difficulty flags
 
-- **`math.ceil`** on a traced quantity — the `noh` problem above. Resolved by making it
-  structural, not by tracing it.
+- **`math.ceil`** on a traced quantity — the `noh` problem above. Resolved by
+  *tracing* it since 2026-09-02: `jnp.ceil` is traceable, the count stays a float
+  because it is only ever divided by, and the arrays it would otherwise size are padded
+  to `NOH_PAD` and masked. Resolved by making it structural, before that.
 - **`if dr_cs >= delzoh`** (`:1814-1819`) → the double `jnp.where`
   (`models/safe_math.py`'s idiom): a single `where` would still evaluate
   `sqrt((dr_cs**2 - delzoh**2) / 12)` on the untaken branch and leak its `nan` into the
@@ -236,14 +280,19 @@ occasionally is not.
 
 ## open questions
 
-- **A structural integer that the solve moves.** `noh` is not a switch read from the
-  input file — it is `ceil` of a ratio of two solved lengths. The port's answer ("a
-  different `noh` is a different occupant") is right for a single evaluation and wrong
-  for an optimisation that walks across the step. Nothing in
+- **A structural integer that the solve moves — answered here, still needs a policy.**
+  `noh` is not a switch read from the input file; it is `ceil` of a ratio of two solved
+  lengths. Pinning it as an occupant was right for a single evaluation and wrong for an
+  optimisation that walks across the step, and this unit now **computes it**: pad the
+  arrays to a fixed length, mask to the live count, keep the count a float so it stays
+  traceable. That is a concrete answer, and it generalises — `cs_fatigue`'s `n_cycle` is
+  the same class (`cs_fatigue.md` § marching integration already cites this section) and
+  is now masked-`lax.scan`, the same shape. What is still missing is the *policy* saying
+  when a structural integer should be padded-and-masked rather than pinned; nothing in
   `naming_convention.md` or `switch_elimination_design.md` covers a structural value
-  that changes *during* a solve. This is the sharpest instance of that problem the port
-  has hit; `n_cs_current_filaments` and the coil-group pattern are at least fixed by the
-  input file. **Needs a policy**, not a per-unit decision.
+  that changes during a solve. `n_cs_current_filaments` and the coil-group pattern are
+  at least fixed by the input file. **Still needs a policy**, now with two worked
+  instances rather than none.
 - **Should the port smooth `noh`?** Doing so would make the graph differentiable and
   would *not* reproduce PROCESS. The whole point of the harness is that it would then
   fail the value test, loudly, which is the right failure. Flagged only so that nobody
