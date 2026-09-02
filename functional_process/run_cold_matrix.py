@@ -1721,6 +1721,32 @@ def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
     return lines
 
 
+def _enable_compilation_cache(directory: str) -> None:
+    """Point jax's persistent compilation cache at `directory`, thresholds lowered.
+
+    **Measured** (`_audit/optimise_design.md` §31.20): the whole seven-configuration
+    pass goes **410 s -> 184 s** with every result row **bitwise identical**, and the
+    `compile` column reads `0.0` on every arm because `backend_compile_and_load` is
+    never reached. The cache is 131 files / 43.5 MB.
+
+    **Both thresholds have to be lowered or almost nothing is cached.** At jax's
+    defaults only 4 of 228 programs qualified and 6.0--6.5 s of compilation survived
+    (§31.7): `min_compile_time_secs` admits only programs that took over a second, and
+    this graph's cost is many medium modules rather than a few huge ones.
+
+    **Opt-in, and it should stay that way for measurement runs.** A cache hit does not
+    go through the entry point `phase_timing` patches, so `compile` reads zero and that
+    time reappears in the `model` residual -- a cached row's phase table is therefore
+    *not* comparable with a published one. It is also **not** a memory lever: peak RSS
+    moves 2.750 -> 2.802 GiB across the same pass, because §31.16 established the peak
+    is resident executables rather than the compiler's workspace.
+    """
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    jax.config.update("jax_compilation_cache_dir", directory)
+    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.0)
+    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+
+
 def _return_freed_memory_to_the_os() -> None:
     """`malloc_trim(0)`, because `jax.clear_caches()` frees memory it does not give back.
 
@@ -1809,6 +1835,11 @@ def main(argv=None, out=OUT):
     `--seed`/`--provider`/`--provider-strict`/`--native` choose where the boundary values
     come from (see this module's docstring); the default is `--provider`.
 
+    `--cache <dir>` turns on jax's persistent compilation cache, which takes the whole
+    pass from 410 s to 184 s with bitwise-identical rows (`_enable_compilation_cache`).
+    Off by default, because a cached row's phase table is not comparable with a
+    published one.
+
     `--compare-process`/`--no-compare-process` are the **other** axis: whether the
     finished rows are scored against PROCESS's converged answer. They compose freely with
     the seeding flags, and `--native --compare-process` is the pairing the split was made
@@ -1825,10 +1856,19 @@ def main(argv=None, out=OUT):
     # Patch jax's trace/lower/compile entry points before the first graph is built, so no
     # phase is missed. Idempotent, and a `False` costs the timing block, not the run.
     timed = phase_timing.install()
+    cache_dir = argv[argv.index("--cache") + 1] if "--cache" in argv else None
+    if cache_dir:
+        _enable_compilation_cache(cache_dir)
     print(
         f"seeding: {mode}    scored against PROCESS: {compare}    "
         f"phase timing: {'on' if timed else 'UNAVAILABLE (jax internals moved)'}"
     )
+    if cache_dir:
+        print(
+            f"compilation cache: {cache_dir} -- the `compile` column will read 0.0 and "
+            f"that time reappears in `model`; this table is NOT comparable with an "
+            f"uncached one (see `_enable_compilation_cache`)"
+        )
     began = time.perf_counter()
     rows: list[Row] = []
     for path in paths:
