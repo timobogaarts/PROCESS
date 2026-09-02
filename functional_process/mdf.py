@@ -855,7 +855,23 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     x, verdict = answered[: len(mdf.design)], answered[len(mdf.design) :]
     at = dict(env)
     at.update(zip(mdf.design, x, strict=True))
-    out = mdf.eager(_inputs_only(mdf, at))
+    # Through `run_schedule`, not a bare `mdf.eager(...)`, for the reason `prime` a few
+    # lines above already goes that way: a direct `Schedule.__call__` dispatches every
+    # primitive eagerly and XLA compiles each one as its own module.
+    # `_audit/optimise_design.md` §24.8 measured that tail at 268 compiles in an
+    # MDF-only process and §24.9 left it alone, to avoid moving a second thing in
+    # §24.1's pass. Measured here on a full `run_cold_matrix --native` row
+    # (`stellarator_helias`, MDF then SAND, persistent cache OFF): **336 -> 277** XLA
+    # compiles for the row, and this call itself **60 -> 1**. The gap to §24.8's 268 is
+    # that a row runs SAND too, so jax's in-process cache already holds most of the
+    # one-primitive programs by the time this line is reached -- inference from the
+    # counts, not separately verified.
+    # The row's result is unchanged to the table's precision (`objf 1.21775747` MDF /
+    # `1.21775743` SAND, 108/169 iterations, identical `max|eq|`/`min ie`). NOT checked
+    # bitwise: `sand_harness.mda_env`'s docstring records the jitted schedule differing
+    # from the eager one at `1.1e-13` on 254 of 831 keys, so the reported env may move
+    # in its last bits even where the table does not.
+    out = run_schedule(mdf.eager, _inputs_only(mdf, at))
     out.update(
         zip((kind.name_for(IN_GRAPH_PLACE) for kind in optimiser.reports),
             verdict, strict=True)

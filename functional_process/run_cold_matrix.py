@@ -193,6 +193,7 @@ import numpy as np
 jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
+from jax.flatten_util import ravel_pytree  # noqa: E402
 
 from functional_process import (  # noqa: E402
     mdf,
@@ -201,6 +202,7 @@ from functional_process import (  # noqa: E402
     provider,
     sand,
 )
+from functional_process.core.solver.host_cache import flat_conditions  # noqa: E402
 from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
@@ -630,9 +632,22 @@ def cold_sand(reference, machine_graph, switch_values, cold):
                 probe_context[var] = jnp.asarray(ground_truth(cold, var))
             except (AttributeError, KeyError):
                 probe_context[var] = jnp.asarray(0.0)
-    at_start = solve_drive.condition_map(probe_context)(*[
-        jnp.asarray(seeded[u]) for u in solve_drive.unknowns
-    ])
+    # Through `host_cache`, not called directly. A bare `condition_map(...)(...)` is an
+    # **eager** walk of the whole SAND block, and XLA compiles every primitive in every
+    # model body as its own module -- measured at 225 of this row's 277 XLA compiles on
+    # `stellarator_helias` (persistent cache off), attributed to model frames
+    # (`_plasma_composition` 23, `bottura_scaling` 21, `_simpson` 14, ...) with no
+    # orchestration frame between them and this line. Same defect class as `mdf.solve`'s
+    # tail (`_audit/optimise_design.md` §24.8) in a different place.
+    # `host_cache._flat_conditions` is the jitted spelling of exactly this call, and it
+    # is module-level so the jit cache is keyed on its arguments rather than on a fresh
+    # closure (that module's docstring, §24.1).
+    flat_probe, probe_unravel = ravel_pytree(
+        tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
+    )
+    at_start = flat_conditions(
+        solve_drive.condition_map(probe_context), flat_probe, probe_unravel
+    )
     non_finite = [
         condition.path_str()
         for condition, value in zip(solve_drive.conditions, at_start, strict=True)
