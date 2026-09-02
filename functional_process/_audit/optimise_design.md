@@ -7931,3 +7931,86 @@ the env by hand instead, testing the same reduction against the same closed form
 `test_picard_refuses_to_return_an_unconverged_block` is new and asserts the raise.
 
 `tests/unit` 1035 passed; `test_mdf` / `test_drivers` / `test_mda` 65 passed, 1 xfailed.
+
+### 31.29 [landed] The PF-coil seed, and the matrix at PROCESS's own tolerances
+
+§31.28's subclass surfaced a non-finite iterate in
+`^problem.times.t_plant_pulse_burn.cycle` that failed all three tokamaks. The cause, and
+the fix, are both PROCESS's.
+
+**The cause.** That block's cut variables are `^hat.times.t_plant_pulse_burn`,
+`^hat.pf_coil.ind_pf_cs_plasma_mutual` and `^hat.pf_coil.n_pf_coil_turns`, and the last
+two are seeded from a cold `DataStructure` whose dataclass defaults are `np.zeros(...)`.
+The block contains **both volt-second producers and the consumer**
+(`.tokamak.plasma_inductance.volt_seconds`, `.tokamak.pf_coil.volt_seconds`,
+`.tokamak.pulse.burn_time`), so the first Picard pass runs the PF chain at **zero turns
+and zero mutual inductance**, both producers return `0.0`, and `pulse.py:121`'s
+`abs(vs_cs_pf_total_burn) / v_plasma_loop_burn` is `0.0 / 0.0`. `optx.fixed_point` stops
+on a non-finite iterate and returns it; `mdf.prime` writes it into the `^guess` port; the
+block is frozen at a poisoned value for the whole solve.
+
+**The fix is PROCESS's own number** (`process/models/pfcoil.py:600-608`):
+
+    if self.data.pf_coil.first_call:
+        self.data.pf_coil.ind_pf_cs_plasma_mutual[:, :] = 1.0e0
+        self.data.pf_coil.n_pf_coil_turns[:] = 100.0e0
+
+-- *"we set them to (very) approximate values to avoid strange behaviour"*. That guard is
+a starting guess wearing mutable state, and this port drops mutable state, so the value
+came out with the mechanism. `mda.GIVEN_STARTS` puts it back as an **explicit given
+value**, consulted by `given_start` before the `DataStructure` is read, in `mdf.seed` and
+`sand_harness.mda_env`, and **only for `^guess.*` ports**.
+
+Three details that decided it. Keys are the **unminted** path -- a `FixedPointCut`'s
+unknown is `^hat.pf_coil.n_pf_coil_turns` and a first attempt keyed on
+`.pf_coil.n_pf_coil_turns` silently matched nothing. The value is broadcast with
+`jnp.full_like` over whatever the `DataStructure` holds, so the table says what a coil is
+worth and never how many there are. And it is **not** a `Supply` edge: cottax refuses a
+`Start` produced by the block it starts, both producers are inside this block, and cottax
+states the honest answer for that case itself -- such a machine keeps its `^guess.*`
+boundary input.
+
+**Not a `safe_divide` in `calculate_burn_time`**: that function is a faithful port and
+PROCESS computes `0.0 / 0.0` there too. PROCESS never *evaluates* it at zero turns,
+because it initialises by running `first_call`. Guarding the division would move this
+port's answer away from PROCESS's at points where PROCESS is fine, to paper over a seed
+this port chose. The seed was the defect.
+
+#### 31.29.1 [measured] Every arm that runs now converges, and three improved
+
+Full `--native` matrix against the morning's:
+
+| | before | after |
+|---|---|---|
+| `stellarator_helias` MDF | 108 it | **66 it**, same `objf` |
+| `low_aspect_ratio_DEMO` MDF | **stopped**, `max|eq|` 5.93e-12, `min ie` -1.41e-06 | **converged**, **7.33e-15**, **+9.26e-12** |
+| `low_aspect_ratio_DEMO` SAND | 107 it | **57 it**, same `objf` |
+| the other seven arms | -- | identical |
+
+`test_the_in_graph_root_find_gives_the_same_answer[large_tokamak_eval]` **XPASSed
+strictly**; its `xfail` is removed. `st_regression` still fails on §27.4's unrelated
+missing producer.
+
+#### 31.29.2 [measured] At PROCESS's own `epsvmc`, the port matches or beats it everywhere
+
+**`epsvmc` is per file**, which §31.21 did not say and which changes how its result reads:
+`1e-6` by default (`numerics.py:598`) and so on both stellarators, `1e-7` on
+`large_tokamak_nof`, **`1e-8` on `low_aspect_ratio_DEMO`** -- i.e. that row was *already*
+like-for-like -- and `1e-9` on `st_regression`. The port's flat `MDF_TOLERANCE = 1e-8` is
+therefore 100x tighter than PROCESS on the stellarators and 10x on one tokamak.
+
+Re-run with MDF stopped at each file's own value:
+
+| configuration | port MDF | PROCESS |
+|---|---|---|
+| `stellarator_helias` | **45** | 46 |
+| `helias_5b` | **3** | 3 |
+| `large_tokamak_nof` | **7** | 8 |
+| `low_aspect_ratio_DEMO` | **11** | 16 |
+| `large_tokamak_eval` / `spherical_tokamak_eval` | 3 / 2 | root finds |
+
+**Match or better on every configuration that solves**, `d objf` unchanged from the
+tighter run. So §31.21's "108 against 46" was a tolerance mismatch stacked on the chaotic
+trajectory, and §31.27's adjoint plus this seed remove both. **The `PRO` column should
+report the port at the file's own `epsvmc` beside its `1e-8` count**; comparing counts
+taken at two stopping criteria is what made this look like a defect for a month.

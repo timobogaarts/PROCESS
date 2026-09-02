@@ -729,7 +729,10 @@ def mda_env(reference, graph=None, data=None):
     step count is a discrete function of its seed, so a row moving by one iteration is a
     consequence a reader of any C2/C3 count must know about.
     """
-    from functional_process.mda import guess_sources  # noqa: PLC0415
+    from functional_process.mda import (  # noqa: PLC0415
+        given_start,
+        guess_sources,
+    )
 
     data = reference.data if data is None else data
     driven, runnable, schedule, run = mda_schedule(graph)
@@ -755,9 +758,16 @@ def mda_env(reference, graph=None, data=None):
     for var in schedule.inputs:
         source = guesses.get(var, var)
         try:
-            env[var] = _strongly_typed(ground_truth(data, source))
+            grounded = ground_truth(data, source)
         except (AttributeError, KeyError):
-            env[var] = _strongly_typed(0.0)
+            grounded = 0.0
+        # A `^guess.*` port may be *given* its value rather than read off `data` --
+        # `mda.GIVEN_STARTS` for which, and why a cold dataclass default is not a
+        # starting guess. Only guess ports: an ordinary input is the machine's own
+        # number and the table has no standing over it.
+        if var in guesses:
+            grounded = given_start(source, grounded)
+        env[var] = _strongly_typed(grounded)
     return driven, dict(run(path_map(env)))
 
 

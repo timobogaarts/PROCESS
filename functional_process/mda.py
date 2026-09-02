@@ -44,6 +44,7 @@ from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
 from cottax.spec import DeclaredNode, NodePath, VarPath
 from cottax.tools.path import path_map, written
+import jax.numpy as jnp
 from jax.tree_util import GetAttrKey
 
 from functional_process.core.solver.drivers import (
@@ -564,6 +565,76 @@ fewer `guess` entry on the boundary.
 Keyed by `path_str()` on both sides so the table reads as a table; resolved against the
 graph's own owners at use, which is the check that the producer is really there.
 """
+
+GIVEN_STARTS = {
+    ".pf_coil.ind_pf_cs_plasma_mutual": 1.0,
+    ".pf_coil.n_pf_coil_turns": 100.0,
+}
+"""`unknown -> the value its `^guess.*` port is **given**`, applied by `given_start`.
+
+**PROCESS's own numbers, and its own reason.** `process/models/pfcoil.py:600-608`:
+
+    # If this is the first visit to the routine the inductance matrix
+    # ind_pf_cs_plasma_mutual and the turns array have not yet been calculated,
+    # so we set them to (very) approximate values to avoid strange behaviour...
+    if self.data.pf_coil.first_call:
+        self.data.pf_coil.ind_pf_cs_plasma_mutual[:, :] = 1.0e0
+        self.data.pf_coil.n_pf_coil_turns[:] = 100.0e0
+        self.data.pf_coil.first_call = False
+
+That guard is a *starting guess* wearing mutable state, and this port drops mutable
+state -- so the value came out with the mechanism. These two are exactly the cut
+variables of `^problem.times.t_plant_pulse_burn.cycle`, and without them that block's
+first Picard pass runs the PF chain at **zero turns and zero mutual inductance**: both
+volt-second producers come out `0.0`, and `pulse.calculate_burn_time`'s
+`abs(vs_cs_pf_total_burn) / v_plasma_loop_burn` is `0.0 / 0.0`. The iterate is `nan`,
+`optx.fixed_point` stops on a non-finite iterate and returns it, `mdf.prime` writes it
+into the `^guess` port, and every later call reads it back -- the block frozen at a
+poisoned value for the whole solve (`_audit/optimise_design.md` §31.29). All three
+tokamak configurations fail on it.
+
+**Why a *given* value and not a `Supply` edge.** `SUPPLIED_STARTS` is the better
+mechanism and does not apply here: cottax refuses a `Start` produced by the block it
+starts (*"the driver reads its data before the block runs, so a producer inside the
+block cannot have run yet"*, `supply_starts`), and both producers -- `.tokamak.pf_coil.
+volt_seconds` and `.tokamak.plasma_inductance.volt_seconds` -- are **inside** this
+block. cottax states the honest answer for that case itself: such a machine keeps its
+`^guess.*` boundary input. So the guess is given, explicitly, from a table that says
+where the number came from.
+
+**Why not guard the division instead.** `calculate_burn_time` is a faithful port --
+PROCESS computes `0.0 / 0.0` there too. It never *evaluates* it at zero turns, because
+it initialises by running `first_call`. Wrapping the division in `safe_divide` would
+make this port's answer differ from PROCESS's at points where PROCESS is fine, to paper
+over a seed we chose. The seed is the defect.
+
+Values are broadcast to the shape the cold `DataStructure` carries, so the table says
+what a coil is worth and never how many there are. Keys are the **unminted** path: the
+unknown of a `FixedPointCut` is `^hat.pf_coil.n_pf_coil_turns`, and what PROCESS writes
+a number for is `.pf_coil.n_pf_coil_turns`.
+"""
+
+
+def given_start(unknown, fallback):
+    """`GIVEN_STARTS`' value for `unknown`, shaped like `fallback`, or `fallback`.
+
+    `fallback` is what the `DataStructure` answered, which supplies the shape and is the
+    answer whenever the table says nothing. A table entry replaces the *value* only: a
+    dataclass default of `np.zeros(22)` becomes `100.0` twenty-two times, and nothing
+    here decides how many PF coils a machine has.
+    """
+    from cottax.tools.minting import unminted  # noqa: PLC0415
+
+    # Keyed on the **quantity**, not on the minted copy. A `FixedPointCut`'s unknown is
+    # `^hat.pf_coil.n_pf_coil_turns`; the number PROCESS writes is for
+    # `.pf_coil.n_pf_coil_turns`, and a table that had to spell the mint would be a table
+    # about cottax's naming rather than about the machine. `unminted` is the same
+    # normalisation `mda_harness._ground_truth` already applies for the same reason.
+    given = GIVEN_STARTS.get(unminted(unknown).path_str())
+    if given is None:
+        return fallback
+    return jnp.full_like(jnp.asarray(fallback, dtype=float), given)
+
 
 ROOT_FIND_SEEDS = {
     # PROCESS's own starting value, `d = np.full(4, 1e-6)`

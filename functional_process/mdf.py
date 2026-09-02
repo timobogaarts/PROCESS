@@ -206,6 +206,7 @@ from functional_process.mda import (
     assign_drivers,
     cut_graph,
     default_drivers,
+    given_start,
     guess_sources,
 )
 from functional_process.mda_harness import _without_excluded
@@ -500,9 +501,15 @@ def seed(mdf: Mdf, data, design_values=None):
         # name -- there is no `DataStructure` field spelled that way.
         source = starts.get(var, var)
         try:
-            env[var] = jnp.asarray(ground_truth(data, source))
+            grounded = ground_truth(data, source)
         except (AttributeError, KeyError):
-            env[var] = jnp.asarray(0.0)
+            grounded = 0.0
+        # A `^guess.*` port may be *given* its value instead of read off `data` --
+        # `mda.GIVEN_STARTS` for which, and why a cold dataclass default is not a
+        # starting guess. Guess ports only; an ordinary input is the machine's own number.
+        if var in starts:
+            grounded = given_start(source, grounded)
+        env[var] = jnp.asarray(grounded)
     if design_values is not None:
         values = [jnp.asarray(v) for v in design_values]
         env.update(zip(mdf.design, values, strict=True))

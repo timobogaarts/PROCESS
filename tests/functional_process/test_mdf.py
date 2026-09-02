@@ -903,31 +903,7 @@ test is the one against the outer-driver answer rather than against PROCESS."""
 
 
 @pytest.mark.tier4
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param(
-            n,
-            marks=pytest.mark.xfail(
-                n == "large_tokamak_eval",
-                strict=True,
-                reason=(
-                    "Newly SURFACED, not newly caused (`_audit/optimise_design.md` "
-                    "§31.27): the `PicardDriver` over "
-                    "(ind_pf_cs_plasma_mutual, n_pf_coil_turns, t_plant_pulse_burn) "
-                    "raises `Nonfinite (inf or nan) values detected during solve`. The "
-                    "old hand-written `lax.while_loop` returned that iterate silently -- "
-                    "its convergence test is `all(|next - cur| <= tol)`, which a `nan` "
-                    "fails, so it simply ran to `max_iter` and handed the `nan` back. "
-                    "Whether the block was always non-finite or optimistix visits a "
-                    "point the hand-rolled loop never did is UNRESOLVED and is the same "
-                    "question as the three tokamak `no-step` arms."
-                ),
-            ),
-        )
-        for n in EVALUATION_FILES
-    ],
-)
+@pytest.mark.parametrize("name", EVALUATION_FILES)
 def test_the_in_graph_root_find_gives_the_same_answer(name):
     """Both `_eval` files reproduce PROCESS's own `fsolve` x, and the two formulations
     agree with each other to roundoff.
