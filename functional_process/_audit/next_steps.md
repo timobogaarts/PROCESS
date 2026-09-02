@@ -524,6 +524,20 @@ file; it is **how much of the instability currently blamed on the solver is actu
 missing producer**, and how many more there are. The mechanical discriminator: a path
 this graph *reads* but does not *own*, which some other subsystem's node does own.
 
+**Closed 2026-09-02 — and it was a registration, not a port.** The discriminator above
+was right and the lead was cheap to settle: three of the four operands were already
+produced on the tokamak graph and the fourth was a pinned boundary input, so the whole
+fix is a two-line pure function plus one namespace slot
+(`models/physics/current_drive.py::FusionGain`, `.tokamak.current_drive.fusion_gain`).
+The file now solves under both formulations in PROCESS's own 10 iterations to PROCESS's
+own `objf`. See §28.3 item 3 and
+`_audit/units/models/physics/current_drive.md` § "2026-09-02". **The paragraph above is
+kept unedited** because the *reason it went missing* is the transferable finding and is
+not fixed by this node: `.current_drive.big_q_plasma` has no reader inside the model
+graph, so every instrument measured on `driven_graph(graph_for(...))` was blind to it by
+construction. `boundary.inert_conditions` is the instrument that is not, and it is where
+the next path of this shape will surface.
+
 Related, and not to be conflated: `st_regression`'s `min ie -1.51e-03` is **not** what is
 wrong with that row — PROCESS's own converged `x` scores `-1.06e-01` on the same
 constraint, 70x worse.
@@ -646,11 +660,21 @@ the counting half.
    two passes died on `LLVM ERROR: Unable to allocate section memory` before
    `jax.clear_caches()` between rows landed, and a configuration peaks at 4.2 GB on a
    15 GB machine. Use `$PY -m functional_process.run_cold_matrix` (see §27.5).
-3. **Port `.current_drive.big_q_plasma`.** The last missing producer, and the reason
-   `st_regression` cannot be measured end to end under any seeding mode. First establish
-   whether it is a *registration* problem — the node exists in
-   `models/stellarator/heating.py` and may simply be absent from the tokamak graph — or a
-   real port.
+3. ~~**Port `.current_drive.big_q_plasma`.**~~ **DONE 2026-09-02, and the answer to the
+   question was *registration*.** All four operands of PROCESS's tokamak formula were
+   already on the tokamak graph — three produced by existing nodes
+   (`.physics.set_fusion_powers`, `.tokamak.physics.ohmic_heating`,
+   `.tokamak.current_drive.injected_power_total`) and the fourth,
+   `.current_drive.p_beam_orbit_loss_mw`, an ordinary pinned boundary input. The fix is
+   `models/physics/current_drive.py::fusion_gain`/`FusionGain` (the tokamak's *own* line,
+   `current_drive.py:2301-2308`, which unlike `st_heat`'s carries no degenerate guard) and
+   one slot in `TokamakCurrentDrive`. `st_regression` now solves from a native cold start
+   under **both** formulations — MDF and SAND each **10 SQP iterations, converged, `objf
+   -16.5885765`**, against PROCESS's `-16.58857650779728` in **10** — and SAND's
+   `KeyError: VarPath(^cond.numerics.objf)` is gone with the same root, verified. Record:
+   `_audit/units/models/physics/current_drive.md` § "2026-09-02", which also carries the
+   controlled before/after on the other configurations and the one gap left (`FusionGain`
+   has no harness case of its own; its value evidence is the cold point).
 4. **Retire `--provider` and make `--native` the default.** Understood (§27), not done.
    The axis is already split (`--compare-process`), so this is the flip plus deletion.
 5. **The balance guard.** `refuse_inert_conditions` catches dead rows; the counting half

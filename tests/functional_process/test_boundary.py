@@ -817,20 +817,27 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
     PROCESS run, no seed, no solve -- so the seven-configuration census is seven graph
     builds.
 
-    `st_regression` is the row that matters: `.Objective` is `objective_metric_5`, which
-    reads `.current_drive.big_q_plasma`, owned only by `models/stellarator/heating.py`
-    and so a boundary input on this tokamak. `helias_5b`'s `.Constraint11` is the
-    *other* kind and is deliberately still reported: nothing is missing there, the
-    file's three iteration variables simply do not move a stellarator's radial build.
+    **The name is kept and the expectation has moved, on purpose.** `st_regression`'s
+    `.Objective` was the row this check was written for: `objective_metric_5` reads
+    `.current_drive.big_q_plasma`, which for a whole session was owned only by
+    `models/stellarator/heating.py` and so was a frozen boundary input on this tokamak
+    (`optimise_design.md` §26, §27.4). It has a tokamak producer since 2026-09-02 --
+    `models/physics/current_drive.py::FusionGain`, `.tokamak.current_drive.fusion_gain`,
+    a port of the source's own last line (`current_drive.py:2301-2308`) -- so the census
+    is now **clean on six of seven**, and this assertion is what would say so if the
+    node were ever unregistered again.
+
+    `helias_5b`'s `.Constraint11` is the *other* kind and is deliberately still
+    reported: nothing is missing there, the file's three iteration variables simply do
+    not move a stellarator's radial build.
 
     **`.Constraint56` and `.Constraint67` left this list on 2026-09-01**
     (`optimise_design.md` §29). They were the same defect on constraints -- both
     operands frozen, i.e. a `leq` between two constants -- and both now have producers
-    (`.tokamak.physics.psep_over_r_metric`, `.tokamak.radiated_wall_load`). The
-    objective's row is the last one left, and it stays until
-    `.current_drive.big_q_plasma` has a tokamak producer. **This assertion is the
-    check's own regression test in both directions**: it caught the defect when the two
-    constraints were inert and it now pins that they are not.
+    (`.tokamak.physics.psep_over_r_metric`, `.tokamak.radiated_wall_load`).
+    **This assertion is the check's own regression test in both directions**: it caught
+    the defect when the two constraints and the objective were inert, and it now pins
+    that none of the three is.
     """
     expected = {
         "stellarator_helias": set(),
@@ -839,7 +846,7 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
         "large_tokamak_eval": set(),
         "low_aspect_ratio_DEMO": set(),
         "spherical_tokamak_eval": set(),
-        "st_regression": {".Objective"},
+        "st_regression": set(),
     }
     found = {}
     for input_file in CONFIGURATIONS:
@@ -848,9 +855,11 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
         rows = inert_conditions(graph, design, driven)
         found[stem] = {row.node.path_str() for row in rows}
         if stem == "st_regression":
-            objective = next(r for r in rows if r.node.path_str() == ".Objective")
-            assert objective.frozen == (V("current_drive", "big_q_plasma"),)
-            assert (objective.operands, objective.cone) == (1, 1)
+            # The half the census cannot show: the objective is not merely absent from
+            # the inert list, it reads a path this graph *owns*. A row that vanished
+            # because the condition stopped being assembled would look identical above.
+            assert V("current_drive", "big_q_plasma") in graph.owners
+            assert V("current_drive", "big_q_plasma") not in set(graph.unowned_inputs)
     assert found == expected
 
 
@@ -885,24 +894,34 @@ def test_an_evaluation_file_s_inequalities_are_reported_and_not_driven():
 
 def test_owned_elsewhere_finds_big_q_plasma_and_is_a_lead_not_a_verdict():
     """The cheap cross-configuration discriminator: a path this graph reads, does not
-    own, and another configuration's graph *does* own. It finds `big_q_plasma` -- and
-    also `.physics.aspect`, which is a stellarator output and a genuine tokamak input,
-    so it ranks work rather than deciding it.
+    own, and another configuration's graph *does* own.
+
+    **It found `big_q_plasma`, and the lead was right** -- the node existed in
+    `models/stellarator/heating.py`, every one of its four operands was already on the
+    tokamak graph, and the fix was a registration plus a two-line port of the tokamak's
+    own line (`current_drive.py:2301-2308` → `FusionGain`, 2026-09-02). So the row this
+    test was named for is *gone*, and its absence is now the assertion: `big_q_plasma`
+    is owned here.
+
+    `.physics.aspect` is what keeps the instrument honest and stays asserted -- a
+    stellarator output and a genuine tokamak *input*, so `owned_elsewhere` ranks work
+    rather than deciding it. A discriminator with no false positive in it would be a
+    verdict, and this one is not.
     """
     root = Path(TOKAMAK_INPUT_FILE).parent
     graph, _design, _driven, _reported = problem_graph(
         str(root / "st_regression.IN.DAT")
     )
     rows = dict(owned_elsewhere(graph, {"reference": GRAPH}))
-    assert rows[V("current_drive", "big_q_plasma")] == ("reference",)
+    assert V("current_drive", "big_q_plasma") not in rows
+    assert V("current_drive", "big_q_plasma") in graph.owners
     assert V("physics", "aspect") in rows
 
-    # **And the model graph alone does not see it**, which is §26's finding in one
-    # assertion: nothing among the models reads `big_q_plasma`, only the objective node
-    # does, so every measurement taken on `driven_graph(graph_for(...))` -- the pins,
-    # `provider.answers_for`, `unproduced_but_computed` -- was blind to it by
-    # construction.
+    # **The model graph alone still does not see it**, which is §26's finding in one
+    # assertion and is the part the registration does *not* change: nothing among the
+    # models reads `big_q_plasma`, only the objective node does, so every measurement
+    # taken on `driven_graph(graph_for(...))` -- the pins, `provider.answers_for`,
+    # `unproduced_but_computed` -- was blind to it by construction and would be blind to
+    # the next path of this shape. `inert_conditions` is the instrument that is not.
     models = graph_for(machine_from_indat(str(root / "st_regression.IN.DAT")))
-    assert V("current_drive", "big_q_plasma") not in dict(
-        owned_elsewhere(models, {"reference": GRAPH})
-    )
+    assert models.readers.get(V("current_drive", "big_q_plasma"), ()) == ()

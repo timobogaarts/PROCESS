@@ -330,6 +330,59 @@ def hcd_electric_total_mw(
     return p_hcd_primary_electric_mw + p_hcd_secondary_electric_mw
 
 
+def fusion_gain(
+    *,
+    p_fusion_total_mw,
+    p_hcd_injected_total_mw,
+    p_beam_orbit_loss_mw,
+    p_plasma_ohmic_mw,
+):
+    """Fusion gain `Q`: fusion power over input (injection + orbit loss + ohmic) power.
+
+    Ports `process/models/physics/current_drive.py:2301-2308`, unchanged and unguarded
+    -- the source divides straight, and the stellarator's own `st_heat` (ported at
+    `models/stellarator/heating.py::calculate_fusion_gain`) is the one that carries a
+    `< 1e-6 -> 1e18` degenerate guard. **The two devices' formulas are otherwise
+    identical**, which is why this is a two-line function and not a model: what was
+    missing on the tokamak graph was the *node*, not the physics.
+
+    The last statement of `CurrentDrive.current_drive`, and the last line of the
+    `i_hcd_calculations != 0` body -- so on the `= 0` arm PROCESS does not write it at
+    all, exactly as `TokamakCurrentDrive`'s docstring says of every slot there.
+
+    `_audit/units/models/physics/current_drive.md`'s data-footprint table has carried
+    the two `.physics` reads as *"outside this unit's closure -- feed only
+    `big_q_plasma`"* since the unit was written; this closes that. The reason it was
+    left out then was that no node in the graph read `.current_drive.big_q_plasma`;
+    `st_regression.IN.DAT`'s `i_figure_merit = -5` (`FUSION_GAIN_Q`) is the reader that
+    arrived, and its absence is what `_audit/optimise_design.md` §26/§27.4 is about.
+
+    Parameters
+    ----------
+    p_fusion_total_mw :
+        Total fusion power (MW). `.physics.p_fusion_total_mw`.
+    p_hcd_injected_total_mw :
+        Total injected heating/current-drive power (MW).
+        `.current_drive.p_hcd_injected_total_mw`.
+    p_beam_orbit_loss_mw :
+        Neutral-beam orbit-loss power (MW). `.current_drive.p_beam_orbit_loss_mw`.
+        Zeroed by the source at `:1668-1669` on every arm this unit ports (no neutral
+        beam), and a boundary input of this graph rather than an output of any node --
+        the audit record's "a node declaring them would be asserting five switch values
+        at once" still holds.
+    p_plasma_ohmic_mw :
+        Ohmic heating power (MW). `.physics.p_plasma_ohmic_mw`.
+
+    Returns
+    -------
+    :
+        `big_q_plasma`.
+    """
+    return p_fusion_total_mw / (
+        p_hcd_injected_total_mw + p_beam_orbit_loss_mw + p_plasma_ohmic_mw
+    )
+
+
 # ---------------------------------------------------------------------------
 # The composite -- one function reproducing the whole of `CurrentDrive.current_drive`
 # for the arm this port supports, so there is a boundary PROCESS itself has to diff
@@ -823,4 +876,39 @@ class HcdElectricTotalIgnited(HcdElectricTotal):
             p_hcd_primary_electric_mw=0.0,
             p_hcd_secondary_electric_mw=0.0,
             i_plasma_ignited=PlasmaIgnitionModel.IGNITED,
+        )
+
+
+class FusionGain(ExplicitFunction):
+    """cottax node: `fusion_gain`, ports declared. Switch independent.
+
+    Owns `.current_drive.big_q_plasma` on a **tokamak** graph. The stellarator's
+    counterpart is `models/stellarator/heating.py::FusionGain`, registered in
+    `models/stellarator/namespace.py`; the two never coexist, for the reason
+    `TokamakCurrentDrive.electric_total`'s docstring gives about
+    `.heat_transport.p_hcd_electric_total_mw` -- ownership is per-graph and the two
+    device graphs are never assembled together.
+
+    Nothing inside the model graph reads this path: its only reader is the problem
+    layer -- `core/solver/objectives.py::objective_metric_5` (`i_figure_merit = -5`,
+    `FUSION_GAIN_Q`, `st_regression.IN.DAT`'s) and
+    `core/solver/constraints.py::constraint_28`. That is exactly why the node was
+    missing for as long as it was: `boundary.py`'s pins are measured on the model graph,
+    where an unread output is invisible.
+    """
+
+    big_q_plasma = OutputInto(current_drive)
+
+    def __call__(
+        self,
+        p_fusion_total_mw=From(physics),
+        p_hcd_injected_total_mw=From(current_drive),
+        p_beam_orbit_loss_mw=From(current_drive),
+        p_plasma_ohmic_mw=From(physics),
+    ):
+        return fusion_gain(
+            p_fusion_total_mw=p_fusion_total_mw,
+            p_hcd_injected_total_mw=p_hcd_injected_total_mw,
+            p_beam_orbit_loss_mw=p_beam_orbit_loss_mw,
+            p_plasma_ohmic_mw=p_plasma_ohmic_mw,
         )

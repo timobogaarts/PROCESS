@@ -133,7 +133,8 @@ by grep.
 | `.heat_transport.p_hcd_primary_electric_mw` | L2290 | local-intermediate | written at L2138; **default is `None`**, not `0.0` (`heat_transport_variables.py:130`), so a run that skips the primary block crashes at L2289 — one more reason `i_hcd_calculations = 0` is UNPORTED rather than trivially "everything stays default" |
 | `.current_drive.p_hcd_ecrh_injected_total_mw` | L2147 (`+=`), L2154 | local-intermediate | zeroed at L1663; see "the accumulators" |
 | `.physics.temp_plasma_electron_vol_avg_kev` | L1862, L1873 | explicit-arg | **outside this unit's closure** — feeds only `eta_cd_dimensionless_hcd_*` |
-| `.physics.p_fusion_total_mw`, `.physics.p_plasma_ohmic_mw` | L2303, L2307 | explicit-arg | **outside this unit's closure** — feed only `big_q_plasma` |
+| `.physics.p_fusion_total_mw`, `.physics.p_plasma_ohmic_mw` | L2303, L2307 | explicit-arg | feed only `big_q_plasma`; **inside the closure since 2026-09-02** — see § "2026-09-02" |
+| `.current_drive.p_beam_orbit_loss_mw` | L2306 | explicit-arg | zeroed by this same method at L1669 on every ported arm, and a **boundary input** of the graph (`reference_boundary_tokamak.txt:197`), not an output of any node — see § "2026-09-02" |
 
 ### writes (ported)
 
@@ -152,6 +153,7 @@ by grep.
 | `.heat_transport.p_hcd_primary_electric_mw` | L2138 | ″ |
 | `.current_drive.p_hcd_injected_total_mw` | L2265 | `HcdInjectedPowerTotal` |
 | `.heat_transport.p_hcd_electric_total_mw` | L2289, L2299 | `HcdElectricTotalNonIgnited` / `HcdElectricTotalIgnited` |
+| `.current_drive.big_q_plasma` | L2302 | `FusionGain` (2026-09-02) |
 
 Three of these — `.current_drive.p_hcd_ecrh_injected_total_mw`,
 `.current_drive.p_hcd_injected_total_mw`, `.heat_transport.p_hcd_electric_total_mw` — are
@@ -237,10 +239,10 @@ Four occupant families and three switch-independent nodes:
 | `HcdPrimaryPowers` | `i_hcd_primary` × `i_hcd_secondary` | `HcdPrimaryPowersElectronCyclotronNoSecondary` | primary method ECRH (`3, 7, 10, 13`) × secondary `0` |
 | `HcdElectricTotal` | `i_plasma_ignited` | `HcdElectricTotalNonIgnited`, `HcdElectricTotalIgnited` | `0`, `1` |
 
-plus `HcdSecondaryDrivenCurrent`, `HcdPrimaryInjectedPower`, `HcdInjectedPowerTotal`,
-which are switch-independent once the arms above have produced their outputs — a real
-result of the split, not a shortcut: PROCESS computes these three lines outside every
-`if` in the method (L1821-1855, L2265-2270).
+plus `HcdSecondaryDrivenCurrent`, `HcdPrimaryInjectedPower`, `HcdInjectedPowerTotal` and
+(since 2026-09-02) `FusionGain`, which are switch-independent once the arms above have
+produced their outputs — a real result of the split, not a shortcut: PROCESS computes
+these four lines outside every `if` in the method (L1821-1855, L2265-2270, L2301-2308).
 
 Full bodies in `models/physics/current_drive.py`. Which occupant belongs in which
 `Tokamak` slot is the consolidation pass's call, not this record's.
@@ -259,8 +261,10 @@ listed so the omission is a decision rather than a gap:
 - `.current_drive.c_hcd_primary_driven`, `.f_c_plasma_hcd_primary` (L1845, L1852).
 - `.current_drive.p_hcd_injected_current_total_mw`, `.p_hcd_injected_electrons_mw`,
   `.p_hcd_injected_ions_mw` (L2273, L2279, L2284).
-- `.current_drive.big_q_plasma` (L2302) — the fusion gain, read by constraints rather
-  than by any node currently in the graph.
+- ~~`.current_drive.big_q_plasma` (L2302) — the fusion gain, read by constraints rather
+  than by any node currently in the graph.~~ **Ported 2026-09-02** (`fusion_gain`,
+  `FusionGain`); the sentence above is left struck through because it is the exact
+  reasoning that let `st_regression` read a frozen `0.0` — see § "2026-09-02".
 - The other four technologies' zeroed accumulators (`p_hcd_beam_/lowhyb_/icrh_/ebw_
   injected_total_mw`, L1664-1667), `c_beam_total` and `p_beam_orbit_loss_mw` (L1668-1669)
   — zero on this arm, and a node declaring them would be asserting five switch values at
@@ -509,3 +513,115 @@ write-set, not just a different formula, so it is a different occupant. Not writ
 
 So the spherical tokamaks' next frontier is the TART divertor geometry arm
 (`build.py`'s unit), not heating and current drive.
+
+## 2026-09-02 — `.current_drive.big_q_plasma` (L2301-2308): registration, not a port
+
+**The verdict first, with the evidence, because the two answers are different jobs.**
+`_audit/next_steps.md` §28.3 item 3 asked whether `st_regression`'s failure was *"a
+**registration** problem — the node exists in `models/stellarator/heating.py` and may
+simply be absent from the tokamak graph — or a real port."* Measured on
+`graph_for(machine_from_indat("st_regression.IN.DAT"))`, before any edit:
+
+| path | owner | on the boundary? |
+|---|---|---|
+| `.physics.p_fusion_total_mw` | `.physics.set_fusion_powers` | no |
+| `.physics.p_plasma_ohmic_mw` | `.tokamak.physics.ohmic_heating` | no |
+| `.current_drive.p_hcd_injected_total_mw` | `.tokamak.current_drive.injected_power_total` | no |
+| `.current_drive.p_beam_orbit_loss_mw` | none | **yes, an ordinary pinned input** |
+| `.current_drive.big_q_plasma` | **none** | no — *nothing in the model graph reads it* |
+
+All four operands of PROCESS's own tokamak formula are already on the tokamak graph;
+three are produced by nodes that have been there for weeks and the fourth is a boundary
+input the pin has carried since the tokamak boundary was first written
+(`reference_boundary_tokamak.txt:197`). Nothing had to be reverse-engineered, no switch
+value had to be decided, no new read was introduced. **Registration.**
+
+`models/stellarator/heating.py::calculate_fusion_gain` is the *same physics* and was
+ported (unit #5) with `FusionGain` registered in the stellarator namespace. It was not
+simply reused here for two reasons, one of principle and one of arithmetic:
+
+- a unit is a PROCESS source file, and `st_heat` is not the function a tokamak runs;
+- **the two source lines are not identical.** `st_heat` guards the denominator
+  (`< 1e-6` → `1e18`, `heating.py:129-137`); `current_drive.py:2301` divides straight.
+  Transcribing the guard onto the tokamak would be inventing an arm PROCESS does not
+  have, in exactly the direction that hides a degenerate configuration.
+
+So: `fusion_gain` (the pure core, two lines) and `FusionGain` (the node) in
+`models/physics/current_drive.py`, one slot in `TokamakCurrentDrive`. Eight lines of
+code for a failure that had stood since §26.
+
+### Why it went missing, which is the transferable part
+
+`.current_drive.big_q_plasma` has **no reader inside the model graph**. Its readers are
+the problem layer's — `objective_metric_5` (`i_figure_merit = -5`, `FUSION_GAIN_Q`) and
+`constraint_28`. Every instrument that could have caught it looks at the model graph:
+`boundary.py`'s pins, `provider.py`'s classification, `unproduced_but_computed`. An
+output nothing reads is invisible to all of them, and the record's own § "What this unit
+does *not* port and why" wrote the reason down in 2026-08 — *"read by constraints rather
+than by any node currently in the graph"* — as a justification rather than as a debt.
+`boundary.inert_conditions` (2026-09-01) is the instrument that closes the gap, and
+`drivers._refuse_inert_objective` is its numeric twin.
+
+### Measured
+
+`$PY -m functional_process.boundary --inert`: `st_regression` 14 design, 19 driven
+condition(s) → **0 inert** (was 1: `.Objective`, `1/1 operand(s) frozen`). The other six
+rows unchanged, `helias_5b`'s `.Constraint11` included.
+
+`run_cold_matrix --input st_regression.IN.DAT --native --compare-process`, twice, and
+once more with `MDF_TOLERANCE` rebound to the file's own `epsvmc = 1e-9` (§31.29.2's
+method) — **all three runs bit-identical**:
+
+| form | SQP | status | objf | PROCESS | d objf | worst dx | max\|eq\| | min ie |
+|---|---|---|---|---|---|---|---|---|
+| MDF | **10** | converged | `-16.588576507853947` | `-16.58857650779728` in **10** | `3.42e-12` | `1.18e-04` at x140 | `2.66e-15` | `2.83e-12` |
+| SAND | **10** | converged | `-16.588576508201427` | ″ | `2.44e-11` | `1.59e-02` at x93 | `8.88e-16` | `3.74e-13` |
+
+Both formulations, from a **native** cold start with no `DataStructure` anywhere in the
+solve path, reach PROCESS's own answer in PROCESS's own iteration count. The `1e-8` and
+`1e-9` runs agree to the last digit, so this row is converged well inside both stopping
+criteria and the tolerance caveat §31.29.2 raises does not bite here.
+
+SAND's `KeyError: VarPath(^cond.numerics.objf)` is gone, and it had the stated root: the
+objective node was minted over a path the graph could not place, so the condition map had
+no `^cond.numerics.objf` to look up. Verified, not assumed — the same build now assembles
+and solves.
+
+### The other six, controlled
+
+The reference table in `reference_cold_matrix.txt` was measured at `2a6902f2` and the
+tree has moved since, so a diff against it confounds this change with several others
+(`stellarator_helias`'s MDF count is 66 at `HEAD`, against the pinned 108 — none of it
+this node's doing). Measured instead against **`HEAD` with the one slot commented out**,
+same command, same cache:
+
+| configuration | form | baseline | with `FusionGain` |
+|---|---|---|---|
+| `large_tokamak_nof` | MDF | 7 it, `1.6`, d objf `1.14e-11`, max\|eq\| `2.39e-06` | **identical** |
+| ″ | SAND | 10 it, `1.6`, d objf `4.83e-12`, max\|eq\| `7.19e-06` | **identical** |
+| `stellarator_helias` | MDF | 66 it, `1.21775739` | **identical** |
+| ″ | SAND | 169 it, `1.21775743` | **identical** |
+
+Every solver column is bit-identical. The only columns that move are `graph` (246→247),
+`nodes` and `blks` — the one node and its one schedule slot. The stellarator is
+untouched by construction: its graph is 154 nodes before and after, and ownership is
+per-graph (`TokamakCurrentDrive.electric_total`'s docstring makes the same argument for
+`.heat_transport.p_hcd_electric_total_mw`).
+
+`cold_start --write` moves exactly five rows of `reference_cold_start.txt`, each
+`agree +1`, on the five tokamak configurations — `.current_drive.big_q_plasma` agrees
+with PROCESS at the cold point on every one of them. No new `off` row, no change to
+`errors` or `nocompare`. Both boundary pins re-check clean (tokamak 389, stellarator 295).
+
+### What is *not* covered
+
+`FusionGain` has no harness case of its own. The unit's Tier-1 evidence runs through
+`calculate_current_drive_ecrh_primary_no_secondary`, the composite diffed sample-by-sample
+against a live `CurrentDrive`, and this line is deliberately **not** in it: the composite
+is scoped to the closure that produces the three `.tokamak.current_drive` boundary reads,
+and `.physics.p_fusion_total_mw`/`.p_plasma_ohmic_mw` are two more `DataStructure` fields
+a caller would have to set up for a two-line division. The value evidence is the cold
+point instead — five configurations agreeing with PROCESS to `1e-9` on a path the port
+now computes for itself — and it is weaker than a fuzz-and-gradient contract. Adding the
+line to the composite (three more arguments, one more tuple slot) is the cheap way to
+close it and is left as a follow-up rather than done blind.

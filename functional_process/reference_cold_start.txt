@@ -110,7 +110,7 @@ helias_5b.IN.DAT off .vacuum.dia_vv_vacuum_ducts
 helias_5b.IN.DAT off .vacuum.dlscal
 helias_5b.IN.DAT nocompare .physics.beta_mcdonald
 helias_5b.IN.DAT nocompare .physics.nu_star
-large_tokamak_nof.IN.DAT agree 668
+large_tokamak_nof.IN.DAT agree 669
 large_tokamak_nof.IN.DAT errors 22
 large_tokamak_nof.IN.DAT off .buildings.cryvol
 large_tokamak_nof.IN.DAT off .costs.bktcycles
@@ -176,7 +176,7 @@ large_tokamak_nof.IN.DAT off ^hat.times.t_plant_pulse_burn
 large_tokamak_nof.IN.DAT nocompare .physics.beta_mcdonald
 large_tokamak_nof.IN.DAT nocompare .physics.nu_star
 large_tokamak_nof.IN.DAT nocompare .physics.rho_star
-low_aspect_ratio_DEMO.IN.DAT agree 695
+low_aspect_ratio_DEMO.IN.DAT agree 696
 low_aspect_ratio_DEMO.IN.DAT errors 22
 low_aspect_ratio_DEMO.IN.DAT off .costs.bktcycles
 low_aspect_ratio_DEMO.IN.DAT off .costs.c22
@@ -221,7 +221,7 @@ low_aspect_ratio_DEMO.IN.DAT off ^hat.times.t_plant_pulse_burn
 low_aspect_ratio_DEMO.IN.DAT nocompare .physics.beta_mcdonald
 low_aspect_ratio_DEMO.IN.DAT nocompare .physics.nu_star
 low_aspect_ratio_DEMO.IN.DAT nocompare .physics.rho_star
-large_tokamak_eval.IN.DAT agree 714
+large_tokamak_eval.IN.DAT agree 715
 large_tokamak_eval.IN.DAT errors 22
 large_tokamak_eval.IN.DAT off .costs.c22
 large_tokamak_eval.IN.DAT off .costs.c224
@@ -243,7 +243,7 @@ large_tokamak_eval.IN.DAT off ^hat.pf_coil.n_pf_coil_turns
 large_tokamak_eval.IN.DAT nocompare .physics.beta_mcdonald
 large_tokamak_eval.IN.DAT nocompare .physics.nu_star
 large_tokamak_eval.IN.DAT nocompare .physics.rho_star
-spherical_tokamak_eval.IN.DAT agree 673
+spherical_tokamak_eval.IN.DAT agree 674
 spherical_tokamak_eval.IN.DAT errors 24
 spherical_tokamak_eval.IN.DAT off .costs.c22
 spherical_tokamak_eval.IN.DAT off .costs.c224
@@ -264,7 +264,7 @@ spherical_tokamak_eval.IN.DAT nocompare .cs_fatigue.n_cycle
 spherical_tokamak_eval.IN.DAT nocompare .physics.beta_mcdonald
 spherical_tokamak_eval.IN.DAT nocompare .physics.nu_star
 spherical_tokamak_eval.IN.DAT nocompare .physics.rho_star
-st_regression.IN.DAT agree 674
+st_regression.IN.DAT agree 675
 st_regression.IN.DAT errors 24
 st_regression.IN.DAT off .costs.c22
 st_regression.IN.DAT off .costs.c224

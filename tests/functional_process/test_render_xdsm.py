@@ -117,17 +117,18 @@ def test_the_reference_tokamak_has_exactly_three_genuinely_coupled_uncut_sccs():
     and a 9-node PF-coil/volt-second/burn-time cycle -- matching `mda.CUTS`'s own
     accounting of which cuts land on `large_tokamak_eval.IN.DAT`.
 
-    The block **total** moved `223 -> 226` on 2026-09-02 and the coupled structure did
-    not: the three nodes that arrived since it was pinned (`.tokamak.build.r_cp_top`,
-    `.tokamak.physics.psep_over_r_metric`, `.tokamak.radiated_wall_load`) are acyclic, so
-    each is its own singleton block. The assertions this test is *about* -- three coupled
+    The block **total** moved `223 -> 227` on 2026-09-02 and the coupled structure did
+    not: the four nodes that arrived since it was pinned (`.tokamak.build.r_cp_top`,
+    `.tokamak.physics.psep_over_r_metric`, `.tokamak.radiated_wall_load` and
+    `.tokamak.current_drive.fusion_gain`) are acyclic, so each is its own singleton
+    block. The assertions this test is *about* -- three coupled
     SCCs of sizes `[4, 8, 9]` -- never moved, which is the reason to keep the total here
     rather than drop it: it is the line that notices a port landing.
     """
     declared = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
     blocking = Blocking.scc(declared)
     report = grouping_report(blocking)
-    assert len(blocking.blocks) == 226
+    assert len(blocking.blocks) == 227
     assert len(report.coupled) == 3
     sizes = sorted(len(b.members) for b in report.coupled)
     assert sizes == [4, 8, 9]

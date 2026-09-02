@@ -1418,16 +1418,22 @@ def test_a_spherical_tokamak_pf_system_assembles_without_a_central_solenoid(tmp_
 
 
 NODE_COUNTS = {
-    "large_tokamak_nof": 246,
-    "large_tokamak_eval": 248,
-    "low_aspect_ratio_DEMO": 246,
-    "spherical_tokamak_eval": 243,
-    "st_regression": 243,
+    "large_tokamak_nof": 247,
+    "large_tokamak_eval": 249,
+    "low_aspect_ratio_DEMO": 247,
+    "spherical_tokamak_eval": 244,
+    "st_regression": 244,
     "stellarator_helias": 154,
     "helias_5b": 154,
 }
 """Re-pinned 2026-09-02, and the arithmetic is written down because a bare number is
 what let this drift unnoticed for two days.
+
+**+1 on every tokamak, and only the tokamaks**, for `FusionGain` -- the node that gave
+`.current_drive.big_q_plasma` a producer and closed the last inert condition on
+`st_regression` (`_audit/next_steps.md` §28.3). It sits in `TokamakCurrentDrive`, so
+neither stellarator sees it. That is the whole of the difference from the four
+movements below.
 
 **+3 on every tokamak**, measured by diffing the node set against the graph at
 `60d9ba88` (2026-08-31), the commit that last set these numbers -- three ports landed

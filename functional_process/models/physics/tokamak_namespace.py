@@ -23,6 +23,7 @@ import dataclasses
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 
 from functional_process.models.physics.current_drive import (
+    FusionGain,
     HcdElectricTotal,
     HcdInjectedPowerTotal,
     HcdPrimaryEfficiency,
@@ -297,17 +298,17 @@ class TokamakPulse(ModelNamespace):
 
 
 class TokamakCurrentDrive(ModelNamespace):
-    """`.tokamak.current_drive` -- heating and current drive, seven slots.
+    """`.tokamak.current_drive` -- heating and current drive, eight slots.
 
     `process/models/physics/current_drive.py::CurrentDrive` and its four injected
     sources, run from `physics.py:593` when `.current_drive.i_hcd_calculations != 0`.
     That switch is **topology, not an occupant**: `1` means these nodes exist and `0`
     means none of them does, so it is answered by whether the slot is filled at all.
 
-    Four of the seven slots are switched. Three are not, and that is a **result** rather
-    than a convenience: PROCESS computes those three lines outside every `if` in the
-    method (`current_drive.py:1821-1855`, `:2265-2270`), so the split found real
-    unswitched work inside a method that looks switched throughout.
+    Four of the eight slots are switched. Four are not, and that is a **result** rather
+    than a convenience: PROCESS computes those four lines outside every `if` in the
+    method (`current_drive.py:1821-1855`, `:2265-2270`, `:2301-2308`), so the split found
+    real unswitched work inside a method that looks switched throughout.
     """
 
     primary_efficiency: HcdPrimaryEfficiency = dataclasses.field(kw_only=True)
@@ -359,6 +360,18 @@ class TokamakCurrentDrive(ModelNamespace):
     `.heat_transport.p_hcd_electric_loss_mw` and `.current_drive.p_hcd_injected_total_mw`
     and leaves this field a boundary input. So the two devices do not collide, and they
     could not: ownership is per-graph and the two graphs are never assembled together."""
+
+    fusion_gain: FusionGain = FusionGain()
+    """Unswitched, and PROCESS's own last statement in this method
+    (`current_drive.py:2301-2308`). Owns `.current_drive.big_q_plasma`.
+
+    **The one slot here no other node in the graph reads.** Its readers are the problem
+    layer's: `objective_metric_5` (`i_figure_merit = -5`, `FUSION_GAIN_Q`, which
+    `st_regression.IN.DAT` states) and `constraint_28`. That is why it was absent for
+    as long as it was -- `boundary.py`'s pins and `provider.py`'s classification are
+    both measured on the *model* graph, where an output nothing reads is invisible, and
+    the objective read a frozen `0.0` instead (`_audit/optimise_design.md` §26, §27.4).
+    The stellarator has had its counterpart registered since unit #5."""
 
 
 class TokamakPlasmaGeom(ModelNamespace):
