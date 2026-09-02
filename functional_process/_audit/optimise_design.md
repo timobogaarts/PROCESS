@@ -7788,3 +7788,54 @@ an export actually buys is trace+lower, `2.59 s -> 4.4 ms`; what it costs is `2.
 call. **Break-even is ~830 calls.** So it is a clear win on an arm like
 `large_tokamak_nof` MDF (7 SQP iterations, ~28 calls) and roughly neutral on
 `stellarator_helias` MDF (~432).
+
+### 31.27 [measured] The chaos is a *missing implicit adjoint*, not the varying pass count
+
+§31.25 found that fixing the Picard pass count removes the chaos, and read that as the
+convergence test being the problem. That is the symptom. **The cause is that
+`PicardDriver` has no implicit adjoint at all.**
+
+`functional_process`'s `PicardDriver` is a **hand-written `jax.lax.while_loop`**
+(`core/solver/drivers.py`), so jax differentiates *through the iterations actually
+taken*. `SeededNewtonDriver`, two hundred lines above it, calls `optx.root_find` and does
+get optimistix's `ImplicitAdjoint` -- the two were never symmetric. And `cottax` has since
+grown its own `PicardDriver` (`~/jaxgraph/src/cottax/drivers/optimistix.py:82`) built on
+`optx.fixed_point`, so this module's docstring claim that *"nothing in `cottax` implements
+the other two"* is stale.
+
+**With an implicit adjoint the derivative comes from the converged point via the implicit
+function theorem and cannot depend on the trip count.** That is why §31.25's fixed pass
+count worked: it made the trip count constant, so differentiating through it was at least
+continuous. The adjoint makes the trip count *irrelevant*, which is the stronger fix.
+
+**Measured**, `stellarator_helias` MDF at `1e-6`, perturbing `rmajor`, convergence test
+**kept** in both arms:
+
+| perturbation | 0 | +1e-13 | -1e-13 | +1e-12 | -1e-12 | +1e-11 | -1e-11 | +1e-10 | -1e-10 |
+|---|---|---|---|---|---|---|---|---|---|
+| hand-rolled loop | 66 | 129 | 84 | 101 | 227 | 399 | 206 | **31 stopped** | **83 stopped** |
+| `optx.fixed_point` | **45** | 45 | 45 | 45 | 45 | 45 | 48 | 42 | 56 |
+
+Every implicit solve converged, `objf` in `1.2177577--1.2177635`, `max|eq| <= 2.36e-07`.
+**PROCESS takes 46.** So the implicit adjoint alone reproduces PROCESS's iteration count
+and its insensitivity, with the pass count untouched.
+
+**And it is not ready to be the default.** Full matrix, `--native`:
+
+| | before | after |
+|---|---|---|
+| `stellarator_helias` MDF | 108 it, `max|eq|` 4.20e-11 | **66 it**, 5.50e-10, same `objf` |
+| `large_tokamak_nof` MDF | 7 it, `max|eq|` **2.41e-06** | 18 it, **8.60e-10** |
+| `large_tokamak_nof` SAND | converged, 10 it | **no-step** |
+| `low_aspect_ratio_DEMO` MDF | stopped, 10 it | **no-step** |
+| `low_aspect_ratio_DEMO` SAND | converged, 107 it | **no-step** |
+| the other five arms | -- | unchanged |
+
+`no-step` is *"first QP infeasible, the start came back untouched"* -- the signature of a
+non-finite condition or Jacobian at the start, and the likely cause is `ImplicitAdjoint`'s
+linear solve being singular on a block where the hand-rolled loop never formed one.
+**Diagnosing that is what stands between this and the default.**
+
+Landed as **`PicardDriver.implicit`, defaulting to `False`**; `stellarator_helias`
+reproduces the published rows exactly on the default path. `n_passes` stays as the
+independent §31.25 knob.

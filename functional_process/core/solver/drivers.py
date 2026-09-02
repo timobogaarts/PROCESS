@@ -726,6 +726,48 @@ class PicardDriver(AbstractDriver):
     rtol: float = 1e-6
     atol: float = 1e-8
     max_iter: int = 20
+    implicit: bool = False
+    """Use `optx.fixed_point` -- and so an **implicit adjoint** -- instead of this
+    class's hand-written `lax.while_loop`.
+
+    **Opt-in, and the default is the defect.** A hand-rolled loop has no implicit adjoint, so jax differentiates
+    *through the iterations actually taken* -- and the convergence test makes the number
+    of iterations a function of `x`. The Jacobian therefore jumps whenever the trip count
+    changes, which on `stellarator_helias` it does: the four `PicardDriver`s exit after
+    `[2, 2, 3, 4]` passes at the start point and `[2, 2, 2, 4]` at iterate 30 of the
+    trajectory, an iterate where `objf` blows out to 1.378.
+
+    `optx.fixed_point` carries optimistix's `ImplicitAdjoint`, which takes the derivative
+    at the converged point through the implicit function theorem, so it **does not depend
+    on how many passes were taken**. Measured, `stellarator_helias` MDF at `1e-6`,
+    perturbing `rmajor` (`_audit/optimise_design.md` §31.27):
+
+    | perturbation | 0 | ±1e-13 | ±1e-12 | ±1e-11 | ±1e-10 |
+    |---|---|---|---|---|---|
+    | hand-rolled loop (the default) | 66 | 129, 84 | 101, 227 | 399, 206 | **31 stopped, 83 stopped** |
+    | `implicit=True` | **45** | 45, 45 | 45, 45 | 45, 48 | 42, 56 |
+
+    PROCESS takes **46**. Every implicit solve converged, at `max|eq| <= 2.36e-07`, where
+    the hand-rolled loop failed on two of nine and spanned 31--399 iterations.
+
+    **So why is this not the default?** Because a full matrix says it is not ready.
+    `stellarator_helias` MDF improves (108 -> 66 iterations at the same `objf`) and
+    `large_tokamak_nof` MDF's feasibility improves by four orders (`max|eq|`
+    `2.41e-06 -> 8.60e-10`), but **three arms stop taking a step at all** --
+    `large_tokamak_nof` SAND (converged in 10 -> `no-step`) and both
+    `low_aspect_ratio_DEMO` arms. `no-step` is "first QP infeasible, the start came back
+    untouched", which is the signature of a non-finite condition or Jacobian at the start,
+    and the likely cause is `ImplicitAdjoint`'s linear solve being singular on a block
+    where the hand-rolled loop simply never formed one. **Diagnosing that is what stands
+    between this flag and the default.**
+
+    **Why PROCESS never had this**: `Caller.call_models` is warm-started from the previous
+    evaluation's `DataStructure`, so its pass count is locally constant -- 2 across
+    perturbations from `0` to `±1e-8`. This port freezes the inner guess with `mdf.prime`
+    deliberately, to make the map a pure function of `x`; that made the trip count a
+    function of `x` too, and without an implicit adjoint the trip count reaches the
+    derivative.
+    """
     n_passes: int | None = None
     """Run **exactly** this many passes instead of iterating to `rtol`/`atol`.
 
@@ -781,6 +823,19 @@ class PicardDriver(AbstractDriver):
 
         def one_pass(current):
             return ravel_pytree(conditions(*unravel(current)))[0]
+
+        if self.implicit and self.n_passes is None:
+            # The default: an implicit adjoint, so the derivative comes from the
+            # converged point and not from the iterations taken -- see
+            # `differentiate_through` for what that is worth and why.
+            solution = optx.fixed_point(
+                lambda flat, _args: one_pass(flat),
+                optx.FixedPointIteration(rtol=self.rtol, atol=self.atol),
+                flat_start,
+                max_steps=self.max_iter,
+                throw=False,
+            )
+            return unravel(solution.value)
 
         if self.n_passes is not None:
             # Exactly `n_passes`, with no data-dependent exit -- see `n_passes`.
