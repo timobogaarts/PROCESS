@@ -779,7 +779,10 @@ Same pattern as §28.1, and the same lesson.
    `min ie -0.99` and a non-binding step cap. Two sub-questions: why the QP runs to its cap
    when 25 iterations give a bitwise identical answer, and whether `EQX_ON_ERROR=nan` is
    honest when the optimiser walks through NaN trial points unnoticed.
-2. **Three `lax.while_loop`s block reverse-mode AD everywhere** —
+2. **[one of three done] `lax.while_loop`s block reverse-mode AD everywhere** —
+   `models/cs_fatigue.py:318` is now a masked `lax.scan` at a static bound of 512, and
+   `jax.grad` of `calculate_n_cycle` agrees with `jacfwd` to every printed digit where it
+   previously raised. Two remain, both in `vacuum.py`. The originals were —
    `models/cs_fatigue.py:318`, `models/vacuum/vacuum.py:329` and `:474`. All three are now
    sized (§31.12): cs_fatigue is a masked `scan` at a static bound of ~512 (measured worst
    case 264); `:474` is a `vmap` over its 64 independent candidates plus a first-fit
@@ -794,9 +797,29 @@ Same pattern as §28.1, and the same lesson.
 3. **The ~1.75 s of first-call jit setup** that is neither trace, lower, compile, nor
    `filter_jit` — arm-independent, bounded, unexplained. A `cProfile` of the first two
    calls (§31.6).
-4. **Bind the condition map once per solve.** 6.0x on the steady state, bitwise
-   identical, belongs in `host_cache.py` beside the existing pair. The floor beneath it
-   is ~0.50/0.76 ms, set by jax dispatch, and is not removable from a host loop (§31.6).
+4. **Bind the condition map once per solve — designed, NOT landed, and there is a trap.**
+   6.0x on the steady state and bitwise identical (§31.6), and it belongs in
+   `host_cache.py` beside the existing pair. Two things found while attempting it
+   (2026-09-02) and not yet resolved:
+
+   - **The obvious spelling silently defeats §24.1.** Passing the partitioned static half
+     through `jax.jit(..., static_argnums=...)` retraces on *every* bind: measured 1 XLA
+     compile on the first bind and **1 more on a second bind of the same block**, where
+     the whole point of §24.1 was that a second solve is a cache hit. Cause: for the
+     static half of `eqx.partition((conditions, unravel), eqx.is_array)`,
+     **`static == static2` is `True` while their hashes differ** — a broken
+     hash/eq contract (both come from `equinox.Module`; `ConditionMap` and
+     `MdfConditionMap` inherit both). jax keys its static-argument cache on the hash, so
+     it misses. `eqx.filter_jit` avoids this by wrapping the static half in a
+     by-value-hashing wrapper, which is *why* today's spelling caches at all. A bind must
+     do the same, or memoise on a linear `==` scan (there are only a handful of distinct
+     blocks per process).
+   - **The 6.0x could not be reproduced on the day**, and the measurement is not to be
+     trusted either way: a module-level bound call read **7.96 ms against today's
+     8.85 ms** on the MDF map, ~10 % rather than ~8x, taken while a second agent was
+     running a tokamak row on the same 15 GB box. Re-measure on a quiet machine before
+     landing anything. The floor beneath it is ~0.50/0.76 ms, set by jax dispatch, and is
+     not removable from a host loop (§31.6).
 5. **The persistent compilation cache** — 2.57x, two env vars, bitwise identical, but
    **leave it off while the structural work is in flight**: a cache hit erases compile
    time from the phase table (§31.7).
