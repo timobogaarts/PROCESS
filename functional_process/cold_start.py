@@ -679,20 +679,8 @@ NOH_ROWS_NOF = (
     ".heat_transport.pacpmw",
     ".heat_transport.peakmva",
     ".heat_transport.tlvpmw",
-    ".pf_coil.b_pf_coil_peak[0]",
-    ".pf_coil.b_pf_coil_peak[1]",
-    ".pf_coil.bpf2[0]",
-    ".pf_coil.bpf2[1]",
-    ".pf_coil.c_pf_coil_turn",
-    ".pf_coil.c_pf_cs_coil_flat_top_ma",
-    ".pf_coil.c_pf_cs_coils_peak_ma",
-    ".pf_coil.f_c_pf_cs_peak_time_array",
-    ".pf_coil.f_j_cs_start_end_flat_top",
     ".pf_coil.ind_pf_cs_plasma_mutual",
-    ".pf_coil.m_pf_coil_conductor",
-    ".pf_coil.m_pf_coil_structure",
     ".pf_coil.p_pf_electric_supplies_mw",
-    ".pf_coil.pfcaseth",
     ".pf_coil.vs_cs_pf_total_burn",
     ".pf_coil.vs_cs_pf_total_pulse",
     ".pf_power.ensxpfm",
@@ -724,6 +712,7 @@ integer."""
 NOH_ROWS_DEMO = (
     ".costs.bktcycles",
     ".costs.c22",
+    ".costs.c2252",
     ".costs.c22521",
     ".costs.c22526",
     ".costs.c242",
@@ -739,6 +728,7 @@ NOH_ROWS_DEMO = (
     ".pf_coil.ind_pf_cs_plasma_mutual",
     ".pf_coil.p_pf_electric_supplies_mw",
     ".pf_coil.vs_cs_pf_total_burn",
+    ".pf_coil.vs_cs_pf_total_pulse",
     ".pf_power.ensxpfm",
     ".pf_power.peakpoloidalpower",
     ".pf_power.poloidalpower",
@@ -867,16 +857,21 @@ VACUUM_DUCT_ROWS = (
 
 DRIVER_TOLERANCE = (
     "**Below the driver's own convergence tolerance, so it is not evidence about the "
-    "model.** `PicardDriver` (`cottax.drivers`) stops when its iterate moves by less "
-    "than `rtol = atol = 1e-4`, and `^hat.pf_coil.ind_pf_cs_plasma_mutual` is the "
-    "loop-carried unknown of the PF cycle: it agrees to `1.49e-06`, **two orders better "
-    "than the driver promises**, on 480 of its 484 entries exactly. `compare`'s "
-    "`rtol = 1e-6` is tighter than any driven block's own tolerance, so a residue at "
-    "`1e-6` inside or downstream of a `Drive` is the algorithm's convergence criterion "
-    "showing through, not a difference in the arithmetic. The cost accounts below it "
-    "carry the same `1.1e-06` through `PfMagnetCost` into `c22` and the capital-cost "
-    "sum. `large_tokamak_eval` is the configuration where `NOH = 30` is *right* "
-    "(see `NOH_WRONG`'s table), which is why this is all that is left of its PF chain."
+    "model.** `PicardDriver` is `cottax.drivers.PicardDriver` at this port's tolerances "
+    "-- `rtol = 1e-6`, `atol = 1e-8`, `max_steps = 256` -- and a residue at `compare`'s "
+    "own `rtol = 1e-6` inside or downstream of a `Drive` is the algorithm's convergence "
+    "criterion showing through, not a difference in the arithmetic. The cost accounts "
+    "below the PF cycle carry that residue through `PfMagnetCost` into `c22` and the "
+    "capital-cost sum. `large_tokamak_eval` is the configuration where `NOH = 30` is "
+    "*right* (see `NOH_WRONG`'s table), which is why this is all that is left of its PF "
+    "chain.\n\n"
+    "**`^hat.pf_coil.ind_pf_cs_plasma_mutual` was pinned here and is not any more** "
+    "(2026-09-02). It used to agree only to `1.49e-06`, which this reason called *two "
+    "orders better than the driver promises* -- against `cottax`'s own defaults of "
+    "`rtol = atol = 1e-4`. This port's subclass holds the fixed point two and four "
+    "orders tighter than that, on an implicit adjoint and from a starting guess that is "
+    "no longer a dataclass zero (`mda.GIVEN_STARTS`), so the loop-carried unknown now "
+    "agrees inside `compare`'s own tolerance and has nothing left to explain."
 )
 
 DRIVER_TOLERANCE_ROWS_EVAL = (
@@ -889,7 +884,6 @@ DRIVER_TOLERANCE_ROWS_EVAL = (
     ".costs.coecap",
     ".costs.concost",
     ".costs.moneyint",
-    "^hat.pf_coil.ind_pf_cs_plasma_mutual",
 )
 
 
