@@ -7492,3 +7492,51 @@ the assembly refuses it rather than solving a feasibility problem and calling it
 
 **Compilation is now the whole cost**: the tokamaks spend 37--45 s compiling against
 6--9 s of `model`.
+
+### 31.19 [measured] The bind closes over structure, not data — and closing over data moves the answer
+
+The concern this answers: does `host_cache.bind` reach 0.73 ms by *closing over* the live
+arrays, i.e. by baking them into the module as constants? If so it would be the wrong
+trade twice over -- it re-opens §24.2's sensitivity, and a program whose data is constant
+is not a program `jax.export` can usefully carry.
+
+**It does not.** Optimised HLO for the same block, three spellings, `stellarator_helias`
+MDF:
+
+| | lines | `parameter()` | `constant()` | bitwise == today's `filter_jit` |
+|---|---|---|---|---|
+| **B** the bind: static half closed over, array leaves passed positionally | 14 813 | **1 921** | 1 205 | **True** |
+| **C** everything closed over | 11 339 | **864** | 1 202 | **False** |
+
+The bind keeps **1 921 parameters**; closing over drops 1 057 of them, cuts 3 474 lines,
+and **changes the answer**. Note the constant *count* barely moves (1 205 against 1 202) --
+§28.4's point about a shared constant pool -- so the difference is not "more constants", it
+is XLA being free to *fold arithmetic* it could not fold through a parameter. That folding
+is exactly what §24.1 gave up on purpose and what §24.2 measured as a moved answer, and
+here it is again, reproduced from the other direction.
+
+What `bind` actually closes over is `treedef` and the **non-array** half of
+`eqx.partition` -- the node `fn`s, the paths, the pytree shape. That is the program's
+structure, which every jitted function closes over. No live value is in it.
+
+### 31.20 [measured] The whole matrix with the persistent compilation cache: 410 -> 184 s, bitwise identical
+
+Seven configurations, `--native`, one pass, cache dir populated by a preceding pass.
+
+| | wall | peak RSS | `compile` column |
+|---|---|---|---|
+| uncached | **410 s** | -- | 11--45 s per arm |
+| cold, writing the cache | 458 s | 2.750 GiB | as above |
+| **warm** | **184 s** | 2.802 GiB | **0.0 everywhere** |
+
+**2.2x, and every result row is bitwise identical to the uncached pass.** The cache is
+131 files / 43.5 MB -- small, because the two eager-walk fixes took a row from 336 XLA
+compiles to 54 (§31.8). Peak RSS is unmoved (2.750 -> 2.802 GiB), which is §31.16's
+finding reproduced at matrix scale: the cache is a speed lever and not a memory one.
+
+**What the cache does not touch is now the visible floor.** Warm phase totals across the
+pass: `trace` ~15 s and `lower` ~25 s, neither cached, against `compile` 0.0. And `model`
+*rises* (helias MDF 2.6 -> 3.5 s, tokamak 8.3 -> 12.6 s) because loading an executable
+from the cache does not go through the `backend_compile_and_load` that `phase_timing`
+patches, so that time lands in the residual instead. It is attribution moving, not work
+appearing.
