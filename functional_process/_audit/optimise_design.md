@@ -7710,3 +7710,81 @@ Output **bitwise identical** to the jitted Jacobian, reproduced across three pro
 artefact* per block, deserialised at startup, with the hot loop still going through
 `host_cache.bind` rather than through `Exported.call`. That requires the exported module
 and the jitted module to share a cache key, which this measurement says they do not.
+
+### 31.25 [measured] The chaos is the Picard convergence *test*, and a fixed pass count matches PROCESS's iteration count
+
+§31.21 left one question: why is the port's outer problem chaotic where PROCESS's is not.
+Both of its ranked hypotheses are now decided.
+
+**H1, the `(Te + Ti) / 20 == 0.65` kink -- REFUTED as the cause.** The predicate was logged
+at every SQP iterate. The trajectory dithers across the boundary constantly in *every*
+run -- 31 flips in 66 iterates (converged), 61/129 (converged), 221/399 (converged),
+13/31 (failed), 32/83 (failed) -- a rate of 0.4--0.55 per iterate that **does not separate
+the converged runs from the blow-outs**. The causal test settles it: under the fix below,
+with the kink untouched, the dithering is unchanged (19 flips in 45 iterates, the answer
+still on the boundary at `|above| = 8.8e-06`) and every perturbed start converges. The
+kink is a real corner -- a `6.57e-05` second-difference spike in `objf`, `6.8e6` times the
+local curvature, and `c24/x4` AD-against-wide-FD off by 0.90 -- identically in both modes.
+
+**H2 -- CONFIRMED in substance, REFUTED as prescribed.** Capping the Picards at 10 /
+`1e-6` reproduces stock **bit-identically**, so the *number* of passes is not the lever.
+Removing the **convergence test** is:
+
+| perturbation of `rmajor` | 0 | ±1e-13 | ±1e-12 | ±1e-11 | ±1e-10 | ±1e-9 |
+|---|---|---|---|---|---|---|
+| convergence test (today) | 66 | 129, 84 | 101, 227 | 399, 206 | **31 F, 83 F** | **31 F, 48 F** |
+| **fixed 10 passes** | **45** | 45, 45 | 45, 45 | 45, 45 | 42, 56 | 38, 43 |
+
+**All 33 fixed-pass solves converged**, against 36 % failures for the convergence test --
+and **45 against PROCESS's own 46**.
+
+**The mechanism, measured directly.** The four `PicardDriver`s exit after `[2, 2, 3, 4]`
+passes at the start point and `[2, 2, 2, 4]` at iterate 30 of the stock trajectory -- an
+iterate where `objf` blows out to 1.378. **The trip count is a function of `x`, so the
+block's output is a discontinuous function of `x`**, and an SQP differentiating through it
+gets a linearisation that flips under an arbitrarily small step. It is the *variability*
+and not truncation: `n_passes=4`, the depth stock already reaches, is as stable as
+`n_passes=20`.
+
+**Why PROCESS does not have it, and it is not luck.** `Caller.call_models` is warm-started
+from the previous evaluation's `DataStructure`, so its pass count is locally *constant* --
+measured at 2 across perturbations from `0` to `±1e-8`, 3 at `±1e-5`, 4 beyond. This port
+freezes the inner guess with `mdf.prime` **deliberately**, to make the map a pure function
+of `x`. That same decision is what made the trip count a function of `x` too. The port
+bought purity and paid in smoothness.
+
+**The cost: it does not move the answer, it de-noises it.** `n_passes=10` at `1e-8` over
+eleven perturbed starts gives `objf` in `1.217757340--1.217757756`, within **`3.4e-07`** of
+§31.21's stock answer `1.217757471`, all converged (46--119 against one stock draw of 108).
+`max|eq|` `6.0e-10`--`2.4e-07`, `min ie` >= `-1.25e-06`. Runtime: 11 -> 16 (`n=4`) or 40
+(`n=10`) block-map evaluations on **4 of 158 blocks**.
+
+**Landed as `PicardDriver.n_passes`, defaulting to `None`** -- the convergence test, so
+nothing moves unless a caller asks. Verified: `stellarator_helias` reproduces the published
+rows exactly on the default path (`1.21775747`/108, `1.21775743`/169).
+
+**Open, and it should be closed before the default flips**: `SeededNewtonDriver` has the
+same defect class and was not tested (likely the residual 38--56 spread at `|p| >= 1e-10`);
+this is one configuration and one perturbed variable; and **a fixed count needs a residual
+report** so that a too-shallow `n` is loud rather than silent.
+
+### 31.26 [measured] The export's per-call cost is removable, but only by paying the trace back
+
+Completing §31.24. `Exported.call` costs 3.5 ms per call against the bound path's
+0.631 ms, and `jax.jit(exp.call)` brings that to **0.647 ms** -- matching. But its **first
+call costs 5.70 s**, because jitting an exported callable traces and lowers it again,
+which is the very thing the export existed to skip. So the three options, `stellarator_helias`
+MDF Jacobian, cache warm:
+
+| | startup | per call |
+|---|---|---|
+| ordinary bound `jax.jit` | 2.59 s trace+lower + 0.66 s compile = **3.25 s** | **0.631 ms** |
+| `Exported.call` | 4.4 ms deserialize + 0.87 s first call = **0.87 s** | 3.5 ms |
+| `jax.jit(Exported.call)` | **5.70 s** | 0.647 ms |
+
+All three bitwise identical. **Deserialising the blob is genuinely free at 4.4 ms; what
+costs 0.87 s is turning it into an executable, and the ordinary path pays that too.** What
+an export actually buys is trace+lower, `2.59 s -> 4.4 ms`; what it costs is `2.87 ms` per
+call. **Break-even is ~830 calls.** So it is a clear win on an arm like
+`large_tokamak_nof` MDF (7 SQP iterations, ~28 calls) and roughly neutral on
+`stellarator_helias` MDF (~432).

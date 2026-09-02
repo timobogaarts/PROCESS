@@ -726,6 +726,46 @@ class PicardDriver(AbstractDriver):
     rtol: float = 1e-6
     atol: float = 1e-8
     max_iter: int = 20
+    n_passes: int | None = None
+    """Run **exactly** this many passes instead of iterating to `rtol`/`atol`.
+
+    **Why an alternative to convergence exists at all.** The convergence test makes the
+    *number of passes a function of `x`*, and therefore makes this block's output a
+    **discontinuous** function of `x` -- the iterate jumps whenever the trip count
+    changes. An outer SQP differentiating through that gets a linearisation that can flip
+    under an arbitrarily small step, and on `stellarator_helias` it does: the four
+    `PicardDriver`s exit after `[2, 2, 3, 4]` passes at the start point and `[2, 2, 2, 4]`
+    at iterate 30, which is an iterate where `objf` blows out to 1.378
+    (`_audit/optimise_design.md` §31.25).
+
+    **PROCESS does not have this problem**, and not by luck: its `Caller.call_models`
+    Gauss-Seidel is warm-started from the previous evaluation's `DataStructure`, so its
+    pass count is locally *constant* -- measured at 2 across perturbations from `0` to
+    `+-1e-8`. This port freezes the guess with `mdf.prime` **deliberately**, to make the
+    map a pure function of `x`; the same decision is what made the trip count a function
+    of `x` too.
+
+    **Measured, `stellarator_helias` MDF, perturbing `rmajor`** (iteration counts; `F` is
+    a failed solve):
+
+    | perturbation | 0 | +-1e-13 | +-1e-12 | +-1e-11 | +-1e-10 | +-1e-9 |
+    |---|---|---|---|---|---|---|
+    | converge (today) | 66 | 129, 84 | 101, 227 | 399, 206 | **31 F, 83 F** | **31 F, 48 F** |
+    | `n_passes=10` | 45 | 45, 45 | 45, 45 | 45, 45 | 42, 56 | 38, 43 |
+
+    All 33 fixed-pass solves converged, against 36 % failures for the convergence test,
+    and **45 against PROCESS's own 46**. It is the *variability* of the count and not
+    truncation: `n_passes=4` (the depth stock already reaches) is as stable as
+    `n_passes=20`. Capping `max_iter` at 10 reproduces stock **bit-identically**, so the
+    number of passes is not the lever -- the test is.
+
+    **It does not move the answer, it de-noises it**: over eleven perturbed starts,
+    `objf` spans 1.217757340--1.217757756, within `3.4e-07` of stock's 1.217757471.
+
+    `None` (the default) keeps the convergence test, so nothing moves unless a caller asks
+    for it. **A fixed count needs a residual report** so that a too-shallow `n` is loud
+    rather than silent, and this class does not have one yet -- see §31.25's open items.
+    """
 
     def __call__(self, conditions: ConditionMap, data) -> tuple:
         """Values for the block's unknowns, positionally -- `AbstractDriver`'s own
@@ -739,13 +779,23 @@ class PicardDriver(AbstractDriver):
         start = start_from(data, "PicardDriver", conditions)
         flat_start, unravel = ravel_pytree(start)
 
+        def one_pass(current):
+            return ravel_pytree(conditions(*unravel(current)))[0]
+
+        if self.n_passes is not None:
+            # Exactly `n_passes`, with no data-dependent exit -- see `n_passes`.
+            final_flat = jax.lax.fori_loop(
+                0, int(self.n_passes), lambda _i, cur: one_pass(cur), flat_start
+            )
+            return unravel(final_flat)
+
         def cond_fn(carry):
             it, _current, converged = carry
             return jnp.logical_and(it < self.max_iter, jnp.logical_not(converged))
 
         def body_fn(carry):
             it, current, _converged = carry
-            next_flat, _ = ravel_pytree(conditions(*unravel(current)))
+            next_flat = one_pass(current)
             tol = self.atol + self.rtol * jnp.abs(next_flat)
             converged = jnp.all(jnp.abs(next_flat - current) <= tol)
             return (it + 1, next_flat, converged)
