@@ -7136,3 +7136,110 @@ box**, and there it does reduce the residual -- `objf` 1.335 -> 0.93760210465597
 digit across three runs -- but **six of eight coordinates sit on the box corner, so the box
 chose the answer, not the optimiser.** This is not agreement with VMCON's 1.2177 at 169
 iterations and must not be read as any.
+
+### 31.11 [correction to §31.10] The 136 ms was a library default; the in-graph SQP is faster per iteration than today
+
+§31.10's verdict was taken before either of its two named unknowns was measured, and both
+turn out to overturn it. It stands as a record of what the first pass saw; **the numbers
+to use are here.**
+
+**The 136 ms/iteration was a QP budget doing nothing.** `slsqp_jax.QPConfig` defaults to
+`max_iter=100 x max_cg_iter=50` -- up to **5 000 projected-CG iterations per SQP step** on
+an 8-variable QP:
+
+| QP budget | product | ms/step | answer |
+|---|---|---|---|
+| 100x50 (default) | 5 000 | **105.5 / 106.5** | `objf 0.716519723292585` |
+| 20x20 | 400 | **12.9 / 13.4** | *bitwise identical* |
+| 5x5 | 25 | **3.56 / 3.81** | *bitwise identical* |
+
+Identical answer and the same 18 steps at all three budgets; ~102 of every 106 ms was CG
+iterating to its cap and changing nothing (fits `0.021 ms/CG-iteration + 3.0 ms floor`).
+Against today's arm A at ~10 ms/iteration and arm B at ~1.7, the in-graph SQP at 3.6 ms is
+**~2.6x faster per iteration than today's arrangement** -- indicative only, since this is
+MDF-8 against SAND-14 and not like-for-like.
+
+**The six-fold staging was real, was worse than six, and fixing it changes no runtime.**
+Measured rather than inferred, by counting occurrences of a distinctive node
+(`plasma_profiles.py:102`): one `conds` is 144, one `jacfwd` 240, and the whole unfused
+program **3 024** -- about 21 evaluations' worth, not six. Fusing the six callables into
+one evaluation: StableHLO **185 767 -> 102 703 (-45 %)**, compile **48.58 -> 33.08 s
+(-32 %)**, trace 15.15 -> 6.92 s, and **ms/step 105.46 -> 106.45, i.e. no change at all.**
+XLA's CSE was already merging the duplicates, so duplicate staging costs *compile* time and
+never *run* time. The fused program is still **3.4x** the 52.8k baseline, so the residue is
+SLSQP's own algorithm rather than the API.
+
+**`EQX_ON_ERROR=nan` removes the runtime blocker** (§31.7's flag, applied to the raise
+rather than to export). No trust box: **0 of 8 coordinates on a bound** where the boxed run
+had 6 of 8, `objf` 0.9376 -> **0.7165**, `max|eq|` 9.09e-02 -> **2.00e-02**, an 18x fall
+from the start point. It still **does not solve** -- `RESULTS<Nonlinear solve diverged>` at
+step 18 with `min ie -0.99`, and raising `max_steps` 20 -> 300 changes nothing, so the cap
+is not binding and SLSQP is giving up.
+
+**`jax.export` now works on the real program and is still worse than the cache.** StableHLO
+1.4 MB exports cleanly, and `Exported.call` then pays **32.45 s of XLA compile**, because
+an export carries StableHLO and not code. The cache takes that to zero. **Closed.**
+
+**One hypothesis refuted:** the inner-`PicardDriver` theory. The compiled program is flat
+across design points (`conds` 0.26--0.46 ms at `x0`, +1 %, +5 %, +20 %) -- it does not get
+slower away from the primed guess, so per-trial-point inner solves are not the cost.
+
+**Verdict: alive.** The honest remaining cost is compile+trace at ~2--3x (33.1 s against
+15.4--17.6; trace 9.3 s against 2.9) against a competitive per-iteration cost, with the
+cache neutralising compile across processes. Three things decide it: making it actually
+solve (it stalls at 18 steps); why the QP runs to its cap when a 25-iteration budget gives
+the same answer; and whether `EQX_ON_ERROR=nan` is honest here, since it optimises
+*through* NaN trial points and something has to notice them.
+
+### 31.12 [measured] The three `while_loop`s, sized
+
+§31.9 named three bare `lax.while_loop`s as the reason reverse mode is refused. What it
+would take to remove each, measured rather than estimated.
+
+**`models/cs_fatigue.py:318` -- convertible, cheaply.** A fixed-step Euler integration of
+crack growth (`_DELTA = 1e-4` m per step, hardcoded in PROCESS), terminating on
+`a <= a_limit & c <= c_limit & k_max <= k_limit`. Trip counts, PROCESS's own defaults:
+
+- **115 trips, invariant across `max_hoop_stress` from 100 to 800 MPa** -- because
+  `surface_stress_intensity_factor` is linear in stress, so the `k_a/k_max` ratio that sets
+  the step cancels it. `n_cycle` itself moves over 200x across that range.
+- **Worst case 264** over 108 combinations spanning `dz_cs_turn_conduit` 0.011--0.044,
+  `dr_cs_turn_conduit` 0.035--0.14, `t_crack_vertical` 0.3--2.0 mm and
+  `paris_power_law` 2.5--4.5.
+
+The count is set by geometry alone and is analytically bounded by
+`max(dz/sf_v, dr/sf_r) / _DELTA`. **A `lax.scan` with a static bound of ~512 and masking is
+viable**: 2--4x the typical trip count, in cheap scalar arithmetic, and it restores
+reverse-mode differentiability with the same value for the same discretisation.
+
+**`models/vacuum/vacuum.py:474` -- convertible, but it is a *search*, not a solve.** The
+outer loop walks the geometric sequence `ceff_init * 0.9^k`, capped at 64, and stops at the
+first `k` whose duct area fits between the TF coils. Nothing is driven to zero, so
+declaring it a `RootFind` on `area(d(ceff)) - a1max` **changes the answer** -- PROCESS lands
+on a grid point, a root find lands on the exact boundary. Exact alignment is kept a
+different way: the 64 candidates are **independent**, so `vmap` the inner Newton over all
+64 and take the first that fits (`argmax` over the fits mask). Same grid, same roots, same
+selection, no `while_loop` -- and the sequential loop becomes one batched solve. Cost: 64
+scalar Newtons per species always, instead of however many the early exit took.
+
+**`models/vacuum/vacuum.py:329` -- a genuine implicit model, and its node already exists.**
+`DuctDiameterRootFind(ImplicitFunction)` sits twenty lines below it, registered in
+`total_process.py`, declaring the same `duct_diameter_residual`. It is a **disconnected
+island** and is excluded from the graph both formulations optimise
+(`mda_harness.EXCLUDED_NODE_NAMES`), because every one of its `VarPath`s is minted: the
+unknown is a local of `_solve_vacuum_pumping_old`'s per-species loop. That loop is
+`lax.fori_loop(0, 4, ...)` -- **four species, static bounds**, so four names is tractable;
+the obstacle is that the unknown is per-species *and* per-outer-shrink-iteration, so
+declaring it requires the `:474` restructuring above first. Do that, and each species
+becomes one declared `RootFind` rather than up to 64 eager ones.
+
+**The mechanism it would use is already proven on this graph.** `Blocking.scc` over the
+154-node MDA yields **143 blocks: 138 singletons and 5 cyclic**, and the schedule is
+**138 `Call` steps and 5 `Drive` steps**. Four of those five cycles are exactly a node
+paired with its own `^problem.*` -- `.stellarator.coils.intersect`,
+`.physics.profiles.ion_vol_avg_temperature`, `.power.delta_eta_step`, and
+`.stellarator.fw_area`/`.stellarator.divertor`/`^problem.fwbs.f_ster_div_single` -- i.e.
+implicit models driven to their own declared problem. Only **one** is a genuine multi-node
+physics cycle: the 7-node plasma block (`fusion_power_totals_mw`, `fusion_totals_no_beam`,
+`parabolic_on_axis_densities`, `density_profile`, `fusion_rates`, `plasma_composition`).
+A declared `DuctDiameterRootFind` would be a sixth block of the first kind.

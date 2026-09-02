@@ -764,18 +764,28 @@ Same pattern as §28.1, and the same lesson.
    removing them puts **NaN in the objective's gradient** at the cold start (§31.4).
    Nothing to change.
 4. **"An in-graph optimiser collapses the compile bill."** It collapses the *count* to 1
-   and makes compilation **3x worse** — 15.4–17.6 s → 49.7 s, 52.8k → 207–225k HLO lines
-   (§31.10).
+   and makes compilation 2–3x worse (§31.10, §31.11). But **§31.10's verdict is retracted**:
+   its 136 ms/iteration was `slsqp_jax`'s default QP budget of 5 000 projected-CG
+   iterations doing nothing, and at a 25-iteration budget the same answer costs **3.6 ms —
+   ~2.6x faster per iteration than today**. Verdict is now *alive*, blocked on the solve
+   stalling at 18 steps rather than on cost (§31.11).
 
 ### 31.3 Now — in priority order
 
-1. **The six-fold staging in the in-graph probe.** The single cheapest experiment on this
-   list: `slsqp-jax`'s API wants six callables, so the MDA is *inferred* to be staged six
-   times. Hand it one fused evaluation and re-measure. It separates "in-graph is
-   expensive" from "this API stages six times", needs no new optimiser, and decides
-   whether the in-graph direction is alive at all.
+1. **[done — §31.11] Make the in-graph SQP actually solve.** The staging question is
+   answered: the duplication was 21-fold, not six, fusing it halves the program and
+   changes runtime **not at all** (XLA's CSE was already merging it), and the 136 ms was a
+   QP budget. What is left is that SLSQP reports `Nonlinear solve diverged` at step 18 with
+   `min ie -0.99` and a non-binding step cap. Two sub-questions: why the QP runs to its cap
+   when 25 iterations give a bitwise identical answer, and whether `EQX_ON_ERROR=nan` is
+   honest when the optimiser walks through NaN trial points unnoticed.
 2. **Three `lax.while_loop`s block reverse-mode AD everywhere** —
-   `models/cs_fatigue.py:318`, `models/vacuum/vacuum.py:329` and `:474`. Not the drivers:
+   `models/cs_fatigue.py:318`, `models/vacuum/vacuum.py:329` and `:474`. All three are now
+   sized (§31.12): cs_fatigue is a masked `scan` at a static bound of ~512 (measured worst
+   case 264); `:474` is a `vmap` over its 64 independent candidates plus a first-fit
+   select, which keeps PROCESS's grid and so its exact value; `:329` is a genuine implicit
+   model whose node is already written and registered, blocked on `:474` being restructured
+   first. Not the drivers:
    `PicardDriver`/`SeededNewtonDriver` go through optimistix's `ImplicitAdjoint` and
    transpose fine, so `mdf.py`'s docstring is wrong about the mechanism and
    `vacuum.py:289`'s "costs nothing here" is falsified (§31.9). Reverse mode would not
