@@ -7212,6 +7212,12 @@ The count is set by geometry alone and is analytically bounded by
 viable**: 2--4x the typical trip count, in cheap scalar arithmetic, and it restores
 reverse-mode differentiability with the same value for the same discretisation.
 
+**Update 2026-09-02: `cs_fatigue` is converted and landed** (masked `lax.scan`,
+`_MAX_CRACK_STEPS = 512`, `nan` on exhaustion). `jax.grad` of `calculate_n_cycle` now
+agrees with `jacfwd` to every printed digit where it previously raised, at 1.49 ms per
+call against ~0.15 ms for the `while`. The two `vacuum.py` loops are **analysed and
+deliberately not converted** -- see the cost note at the end of this section.
+
 **`models/vacuum/vacuum.py:474` -- convertible, but it is a *search*, not a solve.** The
 outer loop walks the geometric sequence `ceff_init * 0.9^k`, capped at 64, and stops at the
 first `k` whose duct area fits between the TF coils. Nothing is driven to zero, so
@@ -7243,3 +7249,45 @@ implicit models driven to their own declared problem. Only **one** is a genuine 
 physics cycle: the 7-node plasma block (`fusion_power_totals_mw`, `fusion_totals_no_beam`,
 `parabolic_on_axis_densities`, `density_profile`, `fusion_rates`, `plasma_composition`).
 A declared `DuctDiameterRootFind` would be a sixth block of the first kind.
+
+
+### 31.13 Why the two `vacuum.py` loops were not converted with `cs_fatigue`
+
+The mechanical conversion is available and is **semantically free**: both loops already
+carry static caps in the port (`solve_duct_diameter(max_iter=100)`,
+`solve_duct_geometry(max_outer=64)`), so a masked `lax.scan` at those same caps has
+*exactly* today's semantics with no truncation risk at all. It was not done, for a reason
+worth writing down rather than rediscovering.
+
+**The naive conversion is a large runtime regression, because the two loops nest.**
+`solve_duct_geometry`'s outer shrink calls `solve_duct_diameter` on every pass, and both
+exit early today -- the Newton's own docstring records a 300-point fuzz sweep never
+needing more than **10** of its 100 iterations to reach a `5e-13` residual. Masked scans
+at the existing caps run them always: `64 x 100 = 6 400` Newton steps per gas species,
+`x4` species (`lax.fori_loop(0, 4, ...)`) = **~25 600 scalar steps** where today's early
+exits take a few hundred. Scaling from `cs_fatigue`'s measured 512-step scan at 1.49 ms
+(~2.9 us/step, a comparable body), that is **~50 ms per vacuum evaluation against ~0.4 ms
+today** -- and at a few hundred condition-map evaluations per solve, tens of seconds a row.
+Estimate, not measurement, but the ratio is structural and not close.
+
+**The restructuring that fixes it is real work, not a spelling change.** The 64 shrink
+candidates are `ceff_init * 0.9^k` and are **independent** -- only the *stopping* is
+sequential -- so the outer loop becomes `vmap` over 64 candidates plus a first-fit
+`argmax` over the fits mask, and the inner Newton becomes one batched scan of width 64.
+That keeps PROCESS's grid, so it keeps the exact answer (and `TestSolveDuctDiameter` is a
+`Tier2Contract` -- residual-based, no value agreement -- so the contract is the root, not
+PROCESS's iterate). With the Newton bound cut from 100 to ~32 on the fuzz sweep's evidence
+it lands near today's cost.
+
+**And the trade does not currently pay.** Reverse mode was never going to *win* on this
+Jacobian -- it costs `n_outputs` passes against forward's `n_inputs`, and outputs exceed
+inputs on every configuration (§31.9). Its one real prize is a cheap objective-only
+gradient. Spending a 10x on a model that sits in every condition-map evaluation, to enable
+a mode that is slower for the derivative actually being taken, is the wrong order of work
+while the open goal is *minimal* compile and run time across seven configurations.
+`cs_fatigue` was converted because it was cheap and self-contained; these are neither.
+
+**So the state is:** reverse-mode AD remains refused graph-wide, now by two loops rather
+than three, both in `vacuum.py`, both with a known conversion whose cost is understood.
+Revisit when an objective-only gradient is actually wanted, and do the `vmap`
+restructuring rather than the mechanical scan.
