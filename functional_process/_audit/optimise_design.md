@@ -7025,8 +7025,13 @@ is wrong:
   `Call` steps into one program each plus the `Drive`'s body as another, which is that
   function's whole design and is documented in its docstring.
 - `mdf.prime`'s 8 709 and `mda_env`'s 8 070 are **different graphs**, not one graph
-  twice: the MDF cut graph against the SAND driven graph, which the row's own table
-  prints as 169 nodes against 124.
+  twice. Measured directly (`stellarator_helias`): `mda_schedule` is 143 steps over 154
+  definitions with 289 inputs; `mdf.eager` is **158 steps over 169 definitions with 302
+  inputs** -- the same MDA plus MDF's 15 condition nodes (154 + 15 = 169). The two
+  `Schedule` objects are neither identical nor equal. (An earlier draft of this
+  paragraph cited the row table's `nodes` column, 169 against 124, as the evidence.
+  That was wrong: the table says in its own legend that `nodes` is not comparable across
+  formulations -- MDF's is graph + conditions, SAND's is the one `Drive`'s nodes.)
 - `mdf.solve`'s three are the Jacobian program, the value program, and the tail's MDA
   re-run.
 
