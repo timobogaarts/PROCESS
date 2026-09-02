@@ -308,17 +308,35 @@ def test_the_cold_pin_is_exact(reports):
 
 
 def test_the_pin_never_lists_a_configuration_that_does_not_assemble():
-    """`helias_5b`, `spherical_tokamak_eval` and `st_regression` are refused by
-    `machine_from_indat` before a graph exists, so there is nothing to cold-start.
+    """What is out, and why, so that each absence is a decision rather than an accident.
 
-    Named here so the four are a decision rather than an accident: a fifth appearing in
-    `CONFIGURATIONS` without a graph would fail deep inside `cold_report` with an
-    assembly error rather than saying what it is.
+    **This test used to say all three of `helias_5b`, `spherical_tokamak_eval` and
+    `st_regression` were "refused by `machine_from_indat` before a graph exists".** That
+    was stale on the day it was written and stayed stale: `cold_start`'s own module
+    docstring already recorded `machine_survey.assembly_verdict` reporting **ASSEMBLES**
+    for the two spherical files, and all three have now been run. Absence is a
+    *measurement* decision here, not an assembly one, which is why this test names the
+    reason per file instead of asserting one blanket cause.
+
+    - `helias_5b` is **in** (2026-09-02). Its 49 real disagreements are covered exactly
+      by the two causes the reference stellarator already carries, `STELLARATOR_ARM_ORDER`
+      and `VACUUM_DUCT_SOLVE`, with **nothing left over** -- so it cost two `_because`
+      entries and no new prose.
+    - `spherical_tokamak_eval` and `st_regression` are **held**, and for one reason:
+      13 of their 57 real disagreements are a single chain rooted in `.buildings.sizing`
+      at `3e-03`--`8e-03` -- `a_plant_floor_effective` and `volnucb` through the site
+      accounts (`c21`, `c22`, `capcost`, `concost`, ...) and the electric-production
+      chain. It is the same *shape* as the stellarator's `z_tf_inside_half` chain and
+      cannot be the same *cause*, because `STELLARATOR_ARM_ORDER` is about
+      `Stellarator.run`'s `st_coil`/`st_build` ordering and neither file runs it.
+      Pinning them under a stellarator's reason would be a wrong explanation, not a
+      pending one.
+    - `IFE.IN.DAT` is out of scope entirely: `ife == 1`, a whole unported device.
     """
     pinned = {line.split(" ", 1)[0] for line in read_pin(PIN)}
     assert pinned == {Path(name).name for name in CONFIGURATIONS}
+    assert "helias_5b.IN.DAT" in pinned
     assert not pinned & {
-        "helias_5b.IN.DAT",
         "spherical_tokamak_eval.IN.DAT",
         "st_regression.IN.DAT",
         "IFE.IN.DAT",

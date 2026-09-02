@@ -5837,7 +5837,25 @@ def machine_from_indat(input_file, stella_conf=None):
         # absent on a stellarator, which has no PF coils and whose `stellarator.py`
         # never calls `Power.run` at all. The only slot in this namespace whose
         # occupancy is decided by the device rather than by a switch.
-        pf_coil_power=(PfCoilPowerSupplies() if device is TokamakProcess else None),
+        # **The topology is threaded, not defaulted.** `PfCoilPowerSupplies.topology`
+        # is a static field the class's own docstring says "one occupant serves both"
+        # through -- and this call site never set it, so every machine got
+        # `REFERENCE_TOPOLOGY`. On a solenoid-less machine that is 7 CS+PF coils where
+        # there are 8, and `pfpwr`'s `pfckts = (n_pf_cs_plasma_circuits - 2) + 6` comes
+        # out **12 against PROCESS's 13** -- a 1/13 that propagates into `spfbusl`,
+        # `acptmax`, `srcktpm` and six Account 22.5.2 power-conditioning rows, at
+        # 2e-02 to 2.5e-01 relative. Found by running `cold_start` on
+        # `spherical_tokamak_eval` and `st_regression` for the first time.
+        #
+        # `_pf_coil_topology`'s own docstring already named this shape: the cost side
+        # once held `N_CS_PF_COILS` (7, with a solenoid) while the PF coil system
+        # correctly held 8 and none, and the answer is "written once and read twice
+        # rather than transcribed". This is the third reader, and it was missed.
+        pf_coil_power=(
+            PfCoilPowerSupplies(topology=_pf_coil_topology(pf_magnet_cost_iohcl))
+            if device is TokamakProcess
+            else None
+        ),
         tf_power=tf_power,
         # `pf_power_variables.py:18` -- the two arms read complementary fields.
         acpow=_slot_occupant(

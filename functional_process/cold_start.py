@@ -96,6 +96,7 @@ import numpy as np
 
 CONFIGURATIONS = (
     "tests/regression/input_files/stellarator_helias.IN.DAT",
+    "tests/regression/input_files/helias_5b.IN.DAT",
     "tests/regression/input_files/large_tokamak_nof.IN.DAT",
     "tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT",
     "tests/regression/input_files/large_tokamak_eval.IN.DAT",
@@ -596,6 +597,7 @@ STELLARATOR = "stellarator_helias.IN.DAT"
 TOKAMAK_NOF = "large_tokamak_nof.IN.DAT"
 TOKAMAK_DEMO = "low_aspect_ratio_DEMO.IN.DAT"
 TOKAMAK_EVAL = "large_tokamak_eval.IN.DAT"
+HELIAS_5B = "helias_5b.IN.DAT"
 """The four `CONFIGURATIONS`, by the base name a pin row and an `ACCEPTED` key use."""
 
 TF_STRESS_LANDED = (
@@ -909,7 +911,10 @@ ACCEPTED = {
         },
     ),
     **_because(NOH_WRONG, {TOKAMAK_NOF: NOH_ROWS_NOF, TOKAMAK_DEMO: NOH_ROWS_DEMO}),
-    **_because(STELLARATOR_ARM_ORDER, {STELLARATOR: STELLARATOR_ARM_ORDER_ROWS}),
+    **_because(
+        STELLARATOR_ARM_ORDER,
+        {STELLARATOR: STELLARATOR_ARM_ORDER_ROWS, HELIAS_5B: STELLARATOR_ARM_ORDER_ROWS},
+    ),
     **_because(
         PF_TURNS_DEAD_TAIL,
         {
@@ -922,6 +927,7 @@ ACCEPTED = {
         VACUUM_DUCT_SOLVE,
         {
             STELLARATOR: VACUUM_DUCT_ROWS,
+            HELIAS_5B: VACUUM_DUCT_ROWS,
             TOKAMAK_NOF: VACUUM_DUCT_ROWS,
             TOKAMAK_DEMO: VACUUM_DUCT_ROWS,
             TOKAMAK_EVAL: VACUUM_DUCT_ROWS,
