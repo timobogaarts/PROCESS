@@ -7648,3 +7648,65 @@ cold*, and `Exported.call` costs 0.90 s against 5.83 s. **Export plus cache is t
 the only measured route that removes trace and lower as well as compile.** Not landed:
 `Exported.serialize()` needs `flatbuffers`, which is absent from `process_port`, so a
 genuine cross-process round trip has not been demonstrated.
+
+### 31.23 [measured] Where a warm row's 19 s actually goes -- arithmetic is 4 % of it
+
+Splitting every model call by whether an XLA executable was loaded inside it,
+`stellarator_helias`, `--cache` warm, whole row (both arms, 19.0 s):
+
+| | calls | total | of which XLA load | of which the rest |
+|---|---|---|---|---|
+| values | 552 | 2.45 s | 0.36 s | 2.10 s |
+| jacobian | 552 | 6.10 s | 1.30 s | 4.80 s |
+
+**Exactly 2 calls of each loaded anything** -- the two blocks' first calls. The other
+**550 of each are pure arithmetic: median 0.612 ms (values) and 0.804 ms (jacobian),
+summing to 0.34 s and 0.44 s.**
+
+So **the whole row's arithmetic is 0.78 s of 19.0 s -- 4 %** -- and the four first calls
+cost **7.77 s**, of which only 1.66 s is loading and the remaining ~6 s is tracing and
+lowering *inside* the call. The rest of the row is the MDA: `run_schedule` 6.20 s,
+`mdf.prime` 1.40 s, `mda_env` 1.38 s (x2), `sand_harness.assemble` 0.65 s.
+
+**That is the answer to "why can it not be reduced further".** 96 % of a warm row is
+*building and loading programs*, not running them, and each configuration needs its
+programs built once. No knob in this repository touches that; only emitting less HLO, or
+not building at all, does.
+
+### 31.24 [measured] `jax.export` round-trips across processes and is a startup win, a steady-state loss
+
+With `EQX_ON_ERROR=nan` removing equinox's in-trace `pure_callback` (§31.22) and
+`flatbuffers` on the path (**not installed in `process_port`** -- taken here via
+`pip install --target` into a scratch directory and `PYTHONPATH`, so the shared env is
+untouched), a genuine cross-process round trip works. The bound MDF Jacobian, written in
+one process and loaded in another:
+
+| | |
+|---|---|
+| `export(...)` in the writing process (= trace + lower) | 2.77 s, blob **0.27 MB** |
+| `deserialize` in a fresh process | **4.3 ms** |
+| first `Exported.call`, cache cold for *its* module | 5.81 s |
+| **first `Exported.call`, cache warm** | **0.87 s** |
+| second `Exported.call` | **4.4 ms** |
+| the ordinary path in the same process, cache warm | trace+lower **2.58 s** + compile **0.66 s** |
+
+Output **bitwise identical** to the jitted Jacobian, reproduced across three processes.
+
+**Two findings, and the second is the catch.**
+
+1. **An export needs its own cache entry.** Its StableHLO is not the module `jax.jit`
+   lowers, so it misses the entry the jit path populated -- 5.81 s on the first load and
+   0.87 s thereafter. So export plus cache composes, but only after the *export* path has
+   been run once. Startup then costs **0.87 s against 3.24 s**, i.e. trace and lower are
+   gone (2.58 s -> 4.3 ms).
+2. **`Exported.call` is 4.4 ms per call against the bound path's 0.804 ms** -- 5x, because
+   it redoes argument handling that `bind` does once. So export trades ~2.4 s of startup
+   for ~3.6 ms per call, and **whether it wins depends on the iteration count**: a
+   `large_tokamak_nof` MDF arm (7 SQP iterations, ~28 calls) wins ~2.3 s; a
+   `stellarator_helias` MDF arm (108 iterations, ~432 calls) wins ~2.4 s and loses ~1.6 s,
+   so nets ~0.8 s.
+
+**Not landed**, and the shape it would have to take if it were: export as a *build
+artefact* per block, deserialised at startup, with the hot loop still going through
+`host_cache.bind` rather than through `Exported.call`. That requires the exported module
+and the jitted module to share a cache key, which this measurement says they do not.
