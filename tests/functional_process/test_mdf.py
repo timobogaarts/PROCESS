@@ -27,6 +27,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import ConditionMap, Drive, Schedule
 from cottax.graph import Graph
@@ -333,7 +334,7 @@ def test_the_inner_solve_is_actually_converged_at_that_point(problem, cold_run):
     conditions, start = cold_run
     env = dict(conditions.context)
     env.update(zip(problem.design, start, strict=True))
-    rows = mdf.inner_residuals(problem.eager, problem.eager(env))
+    rows = mdf.inner_residuals(problem.eager, dict(problem.eager.run(path_map(env))))
     assert rows
     worst = max(rows, key=operator.itemgetter(3))
     assert worst[3] < 1e-6, (
@@ -362,11 +363,11 @@ def test_one_pass_of_the_schedule_is_idempotent(problem, cold_run):
     conditions, start = cold_run
     env = dict(conditions.context)
     env.update(zip(problem.design, start, strict=True))
-    once = problem.eager(dict(env))
+    once = dict(problem.eager.run(path_map(dict(env))))
     # A schedule refuses values at owned names now, so its own output cannot be fed
     # back wholesale: `restart` keeps the inputs and re-seeds every `Start` port from
     # the unknown its driver converged -- the second pass starts where the first ended.
-    twice = problem.eager(mdf.restart(problem, once))
+    twice = dict(problem.eager.run(path_map(mdf.restart(problem, once))))
     for condition in problem.conditions:
         first = np.asarray(once[condition], dtype=float)
         second = np.asarray(twice[condition], dtype=float)
@@ -453,7 +454,7 @@ def _array_fixed_point(max_iter):
     graph = Assign(problem, PicardDriver(max_steps=max_iter)).apply(graph)
     (start,) = driver_vars(graph[problem], Start)
     schedule = Schedule(Blocking.scc(graph))
-    out = schedule({start: jnp.zeros(3)})
+    out = schedule.run(path_map({start: jnp.zeros(3)}))
     return schedule, out, u, np.asarray(rate), np.asarray(offset)
 
 

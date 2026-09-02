@@ -5,6 +5,7 @@ from types import MappingProxyType
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import resolve, to_graph
@@ -634,7 +635,7 @@ def test_intersect_bisection_newton_polish_drives_to_the_same_answer_as_intersec
             # claim that any starting guess reaches the same root.
             guess_path: jnp.asarray(kwargs["xin"]),
         }
-        out = schedule(env)
+        out = schedule.run(path_map(env))
         want = intersect(
             jnp.asarray(kwargs["x1"]),
             jnp.asarray(kwargs["y1"]),

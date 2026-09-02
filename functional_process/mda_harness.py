@@ -58,6 +58,7 @@ from pathlib import Path
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
+from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule
 from cottax.plan import Delete
@@ -1343,7 +1344,7 @@ def compare(graph, data, rtol=1e-6, atol=0.0, seed=None) -> ComparisonReport:
             unverifiable_owners |= set(driven.descendants([reader]))
 
     try:
-        out = schedule(env)
+        out = dict(schedule.run(path_map(env)))
     except Exception as e:  # noqa: BLE001 -- report, don't crash the harness
         report.errors.append(f"schedule() raised: {type(e).__name__}: {e}")
         return report

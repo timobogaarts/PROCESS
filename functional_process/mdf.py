@@ -629,7 +629,7 @@ class MdfConditionMap(ConditionMap):
             )
         env = dict(self.context)
         env.update(zip(self.unknowns, design, strict=True))
-        at = self.schedule(env)
+        at = self.schedule.run(path_map(env))
         return tuple(at[condition] for condition in self.conditions)
 
 
@@ -1394,7 +1394,7 @@ def in_graph_solve(built: InGraphRootFind, env, whole=None):
     else:
         # The walk computes the same values by the same nodes in the same order -- it is
         # the cost that differs, not the answer (`_audit/in_graph_rootfind.md` §6).
-        out = built.schedule(inputs)
+        out = dict(built.schedule.run(path_map(inputs)))
     return (
         tuple(out[var] for var in built.design),
         out,

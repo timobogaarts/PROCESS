@@ -9,6 +9,7 @@ proves the iteration mechanics themselves, independent of any real node), and a 
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import Schedule
 from cottax.interfaces.pytree_namespace_module import area, resolve, to_graph
@@ -125,7 +126,7 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
         vpath(fwbs.p_tf_nuclear_heat_mw): jnp.asarray(p_tf_nuclear_heat_mw),
     }
 
-    out = schedule(env)
+    out = schedule.run(path_map(env))
 
     got = out[vpath(fwbs.qnuc)]
     assert float(got) == pytest.approx(float(expected), abs=1e-6)

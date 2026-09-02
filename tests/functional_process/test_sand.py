@@ -834,7 +834,7 @@ def test_vmcon_driver_reaches_a_known_constrained_optimum():
         VmconDriver(n_equality=0, n_inequality=1, scaled=False)
     )
     schedule = Schedule(Blocking.scc(graph))
-    out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
+    out = schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
 
@@ -853,7 +853,7 @@ def test_vmcon_driver_honours_bounds_as_bounds():
         )
     )
     schedule = Schedule(Blocking.scc(graph))
-    out = schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
+    out = schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
     assert float(out[x]) <= 2.0 + 1e-9
 
 
@@ -863,7 +863,9 @@ def test_vmcon_driver_scaling_does_not_move_the_answer():
     graph, x, y, gx, gy = _toy_problem(
         VmconDriver(n_equality=0, n_inequality=1, scaled=True)
     )
-    out = Schedule(Blocking.scc(graph))({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
+    out = Schedule(Blocking.scc(graph)).run(
+        path_map({gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)})
+    )
     assert float(out[x]) == pytest.approx(2.5, abs=1e-6)
     assert float(out[y]) == pytest.approx(1.5, abs=1e-6)
 
@@ -878,7 +880,7 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
     )
     schedule = Schedule(Blocking.scc(graph))
     with pytest.raises(ValueError, match="equalities"):
-        schedule({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)})
+        schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
 
 
 # ------------------------------------------------- what the driver says about its run
@@ -986,7 +988,7 @@ def test_driven_runner_and_whole_jit_agree_on_the_verdict():
     schedule = Schedule(Blocking.scc(graph))
     env = {gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}
     walked = run_schedule(schedule, dict(env), whole=False)
-    jitted = Schedule(Blocking.scc(graph))(dict(env))
+    jitted = Schedule(Blocking.scc(graph)).run(path_map(dict(env)))
     for var in (x, y, Steps.name_for(TOY_PROBLEM), Status.name_for(TOY_PROBLEM)):
         # Exact, deliberately: the claim is that the two paths bind the *same*
         # value, not a nearby one.
@@ -1037,7 +1039,9 @@ def test_vmcon_driver_answer_survives_the_callback_boundary_bitwise():
     env = {gx: jnp.asarray(1.0), gy: jnp.asarray(1.0)}
     walked = run_schedule(schedule, dict(env), whole=False)
     jitted = jax.jit(
-        lambda values: path_map(Schedule(Blocking.scc(graph))(dict(values)))
+        lambda values: path_map(
+            Schedule(Blocking.scc(graph)).run(path_map(dict(values)))
+        )
     )(path_map(env))
     jitted = dict(jitted)
     assert float(walked[x]) == float(jitted[x])  # noqa: RUF069 -- bitwise is the point

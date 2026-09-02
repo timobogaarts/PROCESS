@@ -379,7 +379,7 @@ def _mda_runner(schedule):
 
     @eqx.filter_jit
     def run(values):
-        return path_map(schedule(dict(values)))
+        return schedule.run(values)
 
     return run
 
@@ -594,7 +594,7 @@ def _eager_group(steps):
 
     def run(env):
         for step in steps:
-            env = step(env)
+            env = step._run(env)
         return env
 
     return run
@@ -611,7 +611,7 @@ def _jitted_group(steps):
     def jitted(values):
         env = dict(values)
         for step in steps:
-            env = step(env)
+            env = step._run(env)
         return path_map(env)
 
     def run(env):

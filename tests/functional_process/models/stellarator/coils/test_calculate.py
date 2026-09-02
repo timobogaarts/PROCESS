@@ -25,6 +25,7 @@ import jax
 import numpy as np
 import optimistix as optx
 import pytest
+from cottax.tools.path import path_map
 from cottax.blocking import Blocking
 from cottax.evaluate import AbstractDriver, Schedule
 from cottax.rewrites import Assign
@@ -1143,7 +1144,7 @@ def test_winding_pack_intersect_driven_matches_the_pure_function():
     schedule = Schedule(
         Blocking.scc(Assign(Intersect().problem_name, driver).apply(graph))
     )
-    out = schedule(env)
+    out = schedule.run(path_map(env))
 
     reference = winding_pack_total_size(
         **base, j_tf_wp=jax.numpy.asarray(0.0), i_tf_sc_mat=i_tf_sc_mat
