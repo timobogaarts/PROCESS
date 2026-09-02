@@ -7012,9 +7012,27 @@ The SAND 243 were attributed to *model* frames with no orchestration frame betwe
 **Of the remaining 54, 39 are under 20 MLIR lines** (the scalar casts §24.8 identified)
 and **10 are over 1 000**: 15 233 and 8 684 and 6 820 (`mdf.solve`), 11 323 / 6 037 /
 5 060 (`sand_harness.run_schedule`), 8 709 (`mdf.prime`), 8 070 (`mda_env`), 5 161 (the
-probe), 1 052 (`assemble`). So the floor is not 2--3: several of those ten are *the same
-MDA schedule* compiled again in a different stage with a different context, and
-consolidating them is a separate piece of work.
+probe), 1 052 (`assemble`).
+
+**So the floor is not 2--3, and the reason is not redundancy.** Checked rather than
+assumed, because the obvious reading -- "the same schedule compiled again per stage" --
+is wrong:
+
+- `run_schedule`'s three are **disjoint pieces of one schedule**, not three copies of it.
+  `cold_sand` passes `whole=False`, and the SAND solve schedule's `Drive` is a
+  `VmconDriver` -- `cvxpy`, `pyvmcon`, a Python callback, none of it traceable -- so the
+  schedule *cannot* be one program. `run_schedule`'s fallback fuses maximal runs of
+  `Call` steps into one program each plus the `Drive`'s body as another, which is that
+  function's whole design and is documented in its docstring.
+- `mdf.prime`'s 8 709 and `mda_env`'s 8 070 are **different graphs**, not one graph
+  twice: the MDF cut graph against the SAND driven graph, which the row's own table
+  prints as 169 nodes against 124.
+- `mdf.solve`'s three are the Jacobian program, the value program, and the tail's MDA
+  re-run.
+
+The genuine duplication is *across the two arms* -- MDF's `prime` and SAND's `mda_env`
+evaluate largely the same physics in one process -- and that is inherent to a row running
+both formulations, not a defect to consolidate away.
 
 Row unchanged to the table's precision (MDF `objf 1.21775747` / 108 it, SAND `1.21775743`
 / 169 it, identical `max|eq|` and `min ie`). **Not checked bitwise** -- `mda_env`'s
