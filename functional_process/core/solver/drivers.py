@@ -535,6 +535,38 @@ exception is the clearer failure and none of the above applies.
 """
 
 
+try:  # pragma: no cover -- the fallback is exercised only on a jax that moved this
+    from jax._src.core import trace_state_clean as _trace_state_clean
+except ImportError:  # pragma: no cover
+
+    def _trace_state_clean() -> bool:
+        """`True` when jax's own answer is unavailable -- see `_nothing_is_tracing`."""
+        return True
+
+
+def _nothing_is_tracing(values) -> bool:
+    """Is this call outside every jax trace, so a host call needs no callback at all?
+
+    Two questions, and both have to be answered `yes`. The **tracer test** is the one
+    that matters in practice: under `sand_harness.run_schedule`'s whole-schedule jit a
+    `Drive`'s unknowns arrive as tracers, and a host solve on a tracer is exactly what
+    `jax.pure_callback` exists for. The **trace-state test** covers the case the tracer
+    test cannot see -- a trace all of whose inputs happen to be concrete constants,
+    where running the solve now would constant-fold a whole SQP into the program rather
+    than leave a callback in it. That has never been observed here (a jitted schedule
+    hands its steps jit arguments, not constants), and it is one call to ask.
+
+    `jax._src.core.trace_state_clean` is private, hence the import guard: a jax that
+    moved it degrades to the tracer test alone, which is the test that was going to
+    decide every real call anyway.
+    """
+    if any(
+        isinstance(leaf, jax.core.Tracer) for leaf in jax.tree_util.tree_leaves(values)
+    ):
+        return False
+    return _trace_state_clean()
+
+
 def _sqp_callback(conditions: ConditionMap, start, host):
     """`jax.pure_callback` around one host-side SQP solve, plus its verdict.
 
@@ -558,6 +590,17 @@ def _sqp_callback(conditions: ConditionMap, start, host):
     own dtype back. Without that, `pure_callback`'s dtype canonicalisation is free to
     move a bit, and this problem is measurably sensitive at the last bit
     (`_audit/optimise_design.md` §21.2).
+
+    **Outside a trace there is no callback and no partition at all** (2026-09-03).
+    `pure_callback`'s whole job is to put a host round trip *inside an XLA program*;
+    called eagerly it still builds one, and since the callback it wraps is a fresh
+    closure per solve, jax compiles that seven-line program again on every solve. The
+    partition is there only to get arrays across that boundary, so with no boundary it
+    is a round trip back to the map that was handed in. `_nothing_is_tracing` decides,
+    and the eager branch calls the host on `conditions` itself and puts its four outputs
+    back on device at the dtypes the `ShapeDtypeStruct`s declare. Same host call, same
+    numbers, one fewer compile and one fewer 5 462-leaf traversal --
+    `_audit/optimise_design.md` §32.3.
 
     **`vmap` over this is sequential**: neither library vectorises, so a batch of solves
     is a host-side loop where a batch of jax-native ones would map.
@@ -591,10 +634,9 @@ def _sqp_callback(conditions: ConditionMap, start, host):
         for a driver whose `reports` is `(Steps, Converged, Status)`.
     """
     flat_guess, unravel = ravel_pytree(start)
-    dynamic, static = eqx.partition(conditions, eqx.is_array)
 
-    def wrapped(dyn, flat):
-        live = eqx.combine(dyn, static)
+    def solved(live, flat):
+        """One solve, with the four host answers at the dtypes the wrap declares."""
         x, steps, converged, status = host(live, np.asarray(flat, dtype=np.float64))
         return (
             np.asarray(x, dtype=np.asarray(flat).dtype),
@@ -603,18 +645,60 @@ def _sqp_callback(conditions: ConditionMap, start, host):
             np.int32(status),
         )
 
-    answer, steps, converged, status = jax.pure_callback(
-        wrapped,
-        (
-            jax.ShapeDtypeStruct(flat_guess.shape, flat_guess.dtype),
-            jax.ShapeDtypeStruct((), np.int32),
-            jax.ShapeDtypeStruct((), np.bool_),
-            jax.ShapeDtypeStruct((), np.int32),
-        ),
-        dynamic,
-        flat_guess,
-        vmap_method="sequential",
-    )
+    if _nothing_is_tracing((conditions, flat_guess)):
+        # **Eager: call the host directly, and do not partition at all.**
+        #
+        # Two costs go with the callback, and both are measured (2026-09-03,
+        # `_audit/optimise_design.md` §32.3):
+        #
+        # 1. `wrapped` below is a fresh closure every solve, and `jax.pure_callback`
+        #    puts it in the primitive's parameters as a `_FlatCallback` that hashes on
+        #    the *identity* of the function it wraps (`jax._src.callback`). So an eager
+        #    `pure_callback` misses jax's cache every time and compiles a fresh
+        #    seven-line `jit_pure_callback` program per solve -- **24 ms** on
+        #    `stellarator_helias` MDF, **40 ms** on `large_tokamak_nof` MDF, and the
+        #    *only* compile a steady-state solve still paid.
+        # 2. The partition exists solely so `jax.pure_callback` carries arrays and the
+        #    `fn`s ride in a closure; `wrapped` recombines them at the other end. With
+        #    no boundary to cross, `eqx.combine(*eqx.partition(c, is_array))` is `c`,
+        #    and the round trip is **38 ms** on the stellarator and **58-62 ms** on the
+        #    tokamak, the latter ~14 % of that steady solve.
+        #
+        # Outside a trace the callback is buying nothing: there is no program for the
+        # host round trip to sit inside. So the host runs here on the condition map it
+        # was handed, and the outputs are put back on device at exactly the dtypes the
+        # `ShapeDtypeStruct`s declare, which is what keeps this a shortcut rather than a
+        # second code path.
+        #
+        # **The arguments are handed over as they are, NOT converted to NumPy**, and
+        # that too is measured rather than stylistic: `jax.pure_callback`'s own eager
+        # impl does `device_put(args, cpu)` and passes jax arrays, so converting here
+        # would be a *different* boundary from the one this is shortcutting -- and an
+        # expensive one, since `bind` then closes the 312 leaves over a `jax.jit` that
+        # is called ~550 times a solve and re-transfers each NumPy leaf on every call.
+        # Measured on `stellarator_helias` MDF: converting cost **+22 %** on the solve,
+        # which is how the conversion was found at all.
+        answer, steps, converged, status = (
+            jnp.asarray(value) for value in solved(conditions, flat_guess)
+        )
+    else:
+        dynamic, static = eqx.partition(conditions, eqx.is_array)
+
+        def wrapped(dyn, flat):
+            return solved(eqx.combine(dyn, static), flat)
+
+        answer, steps, converged, status = jax.pure_callback(
+            wrapped,
+            (
+                jax.ShapeDtypeStruct(flat_guess.shape, flat_guess.dtype),
+                jax.ShapeDtypeStruct((), np.int32),
+                jax.ShapeDtypeStruct((), np.bool_),
+                jax.ShapeDtypeStruct((), np.int32),
+            ),
+            dynamic,
+            flat_guess,
+            vmap_method="sequential",
+        )
     return (*unravel(answer), steps, converged, status)
 
 

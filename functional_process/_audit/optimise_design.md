@@ -9488,3 +9488,268 @@ that arm to ~70 iterations would put it where MDF already is.
   the statistic was not designed to detect near-degeneracy of the active set specifically.
 - **Nothing here touched the other four configurations**, and `helias_5b`,
   `st_regression` and the two root-find arms are too short for any of it (§31.34.3).
+## 32. The repeated-solve regime — a cache hit made cheap, the last compile removed, and an entry point that does not re-assemble (2026-09-03)
+
+Every section above measures a *cold* solve: one configuration, one process, the
+compiler paid in full. This one measures the regime nothing in this repo had measured
+before — **the same configuration solved repeatedly in one process, with nothing
+cleared** — because that is what an interactive user, a notebook and a scan actually do,
+and because it turns out to be 30–75x better than any number this record has published.
+
+It was reachable only by accident. `run_cold_matrix.run_one` is the discoverable way to
+solve a configuration and is the wrong loop to call twice: it **re-assembles**, and
+every memo below the assembly is keyed on what was built. Three changes land here — the
+`bind` memo's lookup, the eager `pure_callback`, and a documented build-once entry point
+(`functional_process.session`) — and the answers do not move.
+
+### 32.1 [measured] What a `bind` cache *hit* cost, and why a single flatten answers it
+
+Measured on `stellarator_helias` MDF's live condition map, medians over 15 rounds in one
+process. The shape reproduces §31.14 exactly: **5 462 leaves, 312 arrays, 5 150 frozen.**
+
+| operation | ms |
+|---|---|
+| `eqx.partition((cmap, unravel), eqx.is_array)` | **44.51** |
+| `static ==` (one memo entry) | **15.78** |
+| `tree_flatten(dynamic)` | 5.33 |
+| `tree_flatten((cmap, unravel))` — the whole tree | **5.63** |
+| `eqx.is_array` over all 5 462 leaves | 1.30 |
+| `hash(frozen)` | 0.79 |
+| `treedef ==` | 0.30 |
+| `hash(whole treedef)` | 0.08 |
+| `frozen ==` (5 150 leaves) | **0.01** |
+| **`_flat_key` — flatten, mask, split** | **7.39** |
+
+So `bind` paid `44.51 + 5.33 + 15.78n` **before it could tell whether it already held
+the block**: a cache *hit* cost the expensive half of a miss. In situ, timed inside the
+solve rather than on a bench: **56–63 ms** per steady `stellarator_helias` MDF solve and
+**82–119 ms** per `large_tokamak_nof` MDF solve, the latter 17 % of that solve.
+
+**§31.14's list-not-dict finding is re-measured and still true.** Two partitions of the
+same block compare **equal** (`static == static2` is `True`) while their **hashes
+differ** (`hash(static) == hash(static2)` is `False`). Nothing here hashes anything.
+
+**The cheap key is `(treedef, mask, frozen)` over the whole tree**, and it determines the
+partition rather than approximating it: `treedef` plus `mask` *is* the dynamic half's
+treedef, and those two plus `frozen` *is* the static half's value. The `mask` is not
+redundant — `[array, 1.0]` and `[1.0, array]` share a `treedef` and a `frozen` and have
+different dynamic halves — and it costs a `bytes` comparison.
+
+**The array leaves come out in partition order, checked and not assumed**:
+`tree_flatten(eqx.partition(t, is_array)[0])[0]` and `_flat_key`'s `arrays` are the
+*same objects in the same order*, verified on both reference configurations and pinned
+by `tests/functional_process/core/solver/test_host_cache.py`
+`::test_the_cheap_key_agrees_with_the_partition`. Were that false the cached program
+would be called with its arguments permuted — silently, and with a plausible wrong
+answer rather than a crash.
+
+The `(treedef, static)` scan is **kept behind the cheap key, not replaced**, as a net.
+The cheap key is the stricter of the two (equal frozen leaves plus an equal treedef is
+what `Module.__eq__` compares anyway), so the fallback is expected never to fire; when it
+does, the entry it hits records the cheap key it did not match. A *miss* on the cheap key
+is only ever slow, never wrong.
+
+**One exposure is inherited unchanged and is worth naming**: two frozen leaves that
+compare equal without being the same value (`0.0` and `-0.0`, `True` and `1`) are a hit.
+`static ==` allowed exactly the same set, so this is not a new hazard.
+
+### 32.2 [measured] The regime itself, and the trap that hides it
+
+**Through `functional_process.session` — assemble once, seed/prime/solve per point.**
+Seconds per solve, `--native`, one process, nothing cleared:
+
+| | solve 0 | 1 | 2 | 3 | 4 | 5 | steady |
+|---|---|---|---|---|---|---|---|
+| `stellarator_helias` MDF | 24.91 | 1.06 | 1.36 | 0.96 | 0.98 | 0.97 | **0.98** |
+| `stellarator_helias` SAND | 23.60 | 2.32 | 1.86 | 2.06 | 1.72 | 1.69 | **1.86** |
+| `large_tokamak_nof` MDF | 96.03 | 0.64 | 0.58 | 0.54 | 0.54 | 0.40 | **0.54** |
+| `large_tokamak_nof` SAND | 70.34 | 0.53 | 0.49 | 0.53 | 0.55 | 0.54 | **0.53** |
+
+**It flattens on solve 1**, every repeat returns an identical answer, and **XLA compiles
+after the first solve are zero on all four arms** — as are `trace` and `lower`. RSS moves
+by 0.000–0.006 GiB across five repeats.
+
+**The naive loop — `run_cold_matrix.run_one` in a `for` — remains a trap, and this
+section does not fix it.** Same configuration, nothing cleared:
+
+| solve | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| seconds | 41.0 | 34.3 | 35.4 | 32.0 | 33.4 |
+| XLA compiles | 44 | **13** | **13** | **13** | **13** |
+| `_BOUND` entries | 2 | 4 | 6 | 8 | 10 |
+| RSS / GiB | 1.29 | 1.74 | 2.17 | 2.59 | **3.02** |
+
+Thirteen compiles on **every** repeat, for ever, and **+0.42–0.46 GiB a solve** — §31.16's
+4.2 GB ceiling arrives at about solve seven of a *single* configuration. The diagnosis is
+exact and structural: `run_one` re-assembles, so the block handed to `bind` is
+structurally equal but freshly allocated, `sand_harness._SCHEDULE_WHOLE` and
+`_SCHEDULE_RUNNERS` are keyed on the `Schedule` **object**, and jax's executable cache is
+keyed on what those hand it. **Only the documented path is fast**; the naive one is
+merely bounded now (§32.3's `_BOUND_LIMIT`), and bounding a memo does not bound jax's
+executable cache, which is where the gigabytes are.
+
+**What this exonerates**: `run_cold_matrix.main`'s per-row `jax.clear_caches()` +
+`_BOUND.clear()` is *not* what destroys the regime — re-assembly is. That clearing exists
+because seven *different* configurations share no cache entry and the previous row's
+executables are what a pass runs out of memory on (§31.16, §31.18), and **it stays**.
+
+**A per-point re-seed is cheap and is the supported way to walk a scan.** Medians over 9
+rounds, warm:
+
+| | `stellarator_helias` | `large_tokamak_nof` |
+|---|---|---|
+| `mdf.seed` + `mdf.prime`, same start | **31.9 ms**, 0 compiles | **44.2 ms**, 0 compiles |
+| ditto from `x * 1.05` | **31.5 ms**, 0 compiles | **46.3 ms** |
+| ditto from the answer | 36.3 ms, 0 compiles | 46.0 ms, 0 compiles |
+
+One caveat, measured and reproduced exactly across two runs: on the tokamak the **first**
+call that passes an explicit `design_values` compiles once (10.8–11.2 s) and the eight
+after it cost 46 ms with none. So a re-seed to a new design point is compile-free
+*after* the first one in a process, not from the first — which is the same "the first
+solve pays the compiler" rule one level down, and not a reason to avoid re-seeding.
+
+### 32.3 [landed] The three changes, isolated
+
+Interleaved round-robin in one process — old and new arms alternating, so machine load
+hits both equally (§31.14's method). `bind` = the cheap key only; `cb` = the eager
+`pure_callback` removal only; `new` = both. Medians of 8–10 rounds, seconds per solve:
+
+| | old | +`bind` | +`cb` | **new** | |
+|---|---|---|---|---|---|
+| `stellarator_helias` MDF | 1.313 | 1.248 | 1.171 | **1.118** | −15 % |
+| `stellarator_helias` SAND | 2.152 | 2.067 | 2.171 | **1.914** | −11 % |
+| `large_tokamak_nof` MDF | 0.566 | 0.496 | 0.407 | **0.323** | −43 % |
+| `large_tokamak_nof` SAND | 0.611 | 0.499 | 0.422 | **0.393** | −36 % |
+
+The stellarator SAND `cb` cell is *above* its `bind` cell, which is noise and not a
+finding: the two differ by 5 % on a row whose spread is 1.90–3.12 s. Every other cell is
+monotone and the `new` column is below the `old` column on all four arms.
+
+#### (A) `host_cache.bind` is looked up on `_flat_key` — §32.1 has the anatomy
+
+`_BOUND` becomes a list of `_Bound` records so an entry can carry both keys.
+`_BOUND_LIMIT = 16` is the bound the memo did not have: **its docstring used to end "the
+list never grows to a size where this matters", and §32.2's naive loop falsifies that at
+two entries a solve, without limit.** Eviction is FIFO and is not free — dropping an
+entry drops the `jax.jit` wrappers that own the block's compiled programs — so reaching
+the limit means something is rebuilding blocks in a loop, and the fix is to stop, not to
+raise the number.
+
+#### (B) Outside a trace, `_sqp_callback` calls the host directly and does not partition
+
+`jax.pure_callback` exists to put a host round trip **inside an XLA program**. Called
+eagerly it still builds one, and `jax._src.callback._FlatCallback` hashes on the
+*identity* of the function it wraps — and `_sqp_callback`'s `wrapped` is a fresh closure
+every solve. So an eager `pure_callback` **missed jax's cache every time and compiled a
+fresh seven-line `jit_pure_callback` program per solve**: **24 ms** on the stellarator,
+**40 ms** on the tokamak, and the *only* compile a steady-state solve still paid. The
+interleaved run confirms the mechanism from the other side — 20 compiles in 10 rounds of
+the two old-callback arms, zero in the two new ones.
+
+The partition goes with it. `eqx.partition(conditions, is_array)` is there **only** so
+`pure_callback` can carry arrays while the `fn`s ride in a closure, and `wrapped`
+recombines them at the far end; with no boundary to cross,
+`eqx.combine(*eqx.partition(c, is_array))` is `c`. That round trip is **38 ms** on the
+stellarator and **58–62 ms** on the tokamak, the latter ~14 % of a steady solve.
+
+**A wrong first attempt, kept because it is the useful part.** The first spelling handed
+the host `jax.tree_util.tree_map(np.asarray, dynamic)`, reasoning that a callback
+delivers NumPy. Measured, that cost **+22 %** on the stellarator solve — worse than the
+compile it removed, and the four-arm split is what found it. The cause is downstream:
+`bind` closes those 312 leaves over a `jax.jit` that is called ~550 times a solve, and a
+NumPy leaf is re-transferred on every call. `jax.pure_callback`'s own eager impl does
+`device_put(args, cpu)` and passes jax arrays, so passing them through unconverted is
+both faster *and* the more faithful shortcut.
+
+#### (C) `functional_process.session` — the entry point that does not re-assemble
+
+`run_cold_matrix.cold_mdf`/`cold_sand` are split into `build_mdf`/`solve_mdf` and
+`build_sand`/`solve_sand`, and `cold_mdf` is now exactly "build then solve". `session`
+imports those halves, so **a session's answer and a matrix row's are the same
+computation by construction** rather than by comparison — `run_cold_matrix.py`'s own rule
+for why it is not a third harness, applied once more, and pinned by
+`tests/functional_process/test_session.py::test_a_session_solves_through_the_matrix_s_own_functions`.
+
+One thing had to move to make a SAND session possible: the **solve schedule is built
+once, callback and all**. `sand_harness.run_schedule` memoises its whole-schedule jit and
+its fused runners on the `Schedule` *object*, so a schedule rebuilt per solve re-traces
+everything it holds. The only per-solve state that forced a rebuild was the callback's
+trace list, and a list can be cleared.
+
+`$PY -m functional_process.session --repeat 8 --arm both` prints §32.2's table, including
+the compile count and the RSS series, and says outright whether the answer moved.
+
+### 32.4 [measured] What a steady-state solve is now made of
+
+Exclusive phase timings, quiet machine, medians of three steady solves. The `model`/
+`other` caveat of `run_cold_matrix._timing_block` applies to the split as it always has.
+
+| | `stellarator_helias` MDF | `large_tokamak_nof` MDF |
+|---|---|---|
+| total | **1.02 s** | **0.34 s** |
+| `sqp` (cvxpy, CLARABEL, line search) | 0.69–0.70 s — **68 %** | 0.096–0.102 s — **28 %** |
+| `model` (graph evaluation) | 0.25–0.26 s — **25 %** | 0.128–0.143 s — **38 %** |
+| everything else | 0.066–0.087 s — **7 %** | 0.116–0.133 s — **34 %** |
+| ...of which `mdf.prime` | 0.011–0.014 s | 0.019–0.027 s |
+| ...of which `bind` | 0.009–0.011 s — **1 %** | 0.013–0.014 s — **4 %** |
+| `trace` / `lower` / `compile` | **0.000 s** | **0.000 s** |
+
+**This supersedes the attribution this work started from** — "59–70 % QP, then `bind` on
+a hit, then the one compile". On the stellarator the QP share *rises* to 68 %, because
+what was removed was everything else; `bind` falls from 5–6 % to 1 % and the compile is
+gone. On the tokamak the QP was never the story — that arm converges in **7** SQP
+iterations against the stellarator's 66 — and the residue there is now model evaluation
+and orchestration in roughly equal thirds with the QP.
+
+**What is left to attack, in order.** The stellarator's 0.69 s of `sqp` is `cvxpy`
+canonicalisation plus CLARABEL over 66 subproblems and is not this port's code at all;
+it is the ceiling until an in-graph SQP (§31.10, §31.11) is real. The tokamak's 0.12 s
+"everything else" is `mdf.seed`, `condition_map`, the final `run_schedule` at the answer,
+and jax dispatch — none of it dominant, none of it free.
+
+### 32.5 [stopgap, with a removal condition] `_flat_key` is deliberately disposable
+
+**`_flat_key` is a stopgap and should be deleted, not kept.** A parallel session is
+designing the same fix one layer up, in `cottax`: a `Graph` that carries a precomputed
+`(static_key, array_leaves)` pair, computed once at construction — which is where the
+structure is actually known, and where every consumer would get it for free instead of
+re-deriving it per solve.
+
+**The removal condition, in words that can be checked in six months:** when
+`cottax`'s `Graph` carries a precomputed `(static_key, array_leaves)` pair, delete
+`functional_process/core/solver/host_cache.py::_flat_key` and key `bind` on what the
+graph already has. `_BOUND`'s two-key structure goes with it; the `(treedef, static)`
+fallback is the thing that stays, unchanged since §31.14.
+
+**Why landing it here first is still right**, and it is two reasons, not one:
+
+1. **It is evidence for the cottax change.** "A cache hit costs 60–120 ms, 12–47 % of a
+   steady solve" is what justifies putting the pair in `Graph`; without a measurement it
+   is a plausible micro-optimisation that a reviewer is right to refuse.
+2. **Discovering it does not help is far cheaper here.** This is 25 lines in a 300-line
+   module that says of itself that it exists only because `pyvmcon` iterates on the host.
+   The same finding made *after* every consumer depends on a cached pair is a migration.
+
+**The failure mode this note exists to prevent, named so it can be pointed at**: a second
+cache that outlives its reason because nobody dared delete it. Two caches answering one
+question is worse than either alone — they can disagree, and the one that is wrong is the
+one nobody is reading. `_flat_key`'s own docstring carries this condition too, so a
+reader who never opens this file still meets it.
+
+### 32.6 Not resolved
+
+- **The naive loop is still a trap** and is now *bounded* rather than fixed: 13 compiles
+  and +0.42–0.46 GiB a repeat. A `run_one` that took an optional prepared build, or that
+  memoised its assembly on `(path, mode)`, would close it; that is a change to the
+  matrix's own contract and was not made in a pass whose rule was "answers must not
+  move".
+- **The first solve is untouched.** 25 s (stellarator) and 70–96 s (tokamak) is still
+  overwhelmingly compilation, and §31.20's persistent cache is the only lever measured
+  against it.
+- **`sand_harness._SCHEDULE_WHOLE`/`_SCHEDULE_RUNNERS` are unbounded dicts keyed on
+  `Schedule` objects**, and the naive loop grows them exactly as it grew `_BOUND`. They
+  were not given a bound here because they are a different module's and because a bound
+  is a bandage on the same trap; recorded so the next person does not have to re-find it.
+- **The stellarator SAND `cb`-only cell is noise**, so the split of that arm's 11 % between
+  the two changes is unmeasured. The MDF arms and the tokamak SAND arm are monotone and
+  are where the attribution should be read from.

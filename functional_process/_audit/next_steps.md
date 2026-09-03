@@ -868,3 +868,43 @@ question: why is the port's outer problem chaotic where PROCESS's is not?
   `CLAUDE.md` already says the conda root differs per machine and ties its suite counts to
   the version; the pin should say "0.11.0 or 0.11.1 depending on machine" rather than be
   corrected to either.
+
+## 32. The repeated-solve regime, 2026-09-03 — measured, made fast, and one stopgap to remove
+
+`_audit/optimise_design.md` §32 is the record. Three changes landed and the answers did
+not move: all four `stellarator_helias`/`large_tokamak_nof` rows are character-identical
+to `reference_cold_matrix.txt`.
+
+### 32.1 What is now fast, and what is still a trap
+
+**`functional_process.session` is the entry point for solving one configuration more
+than once in a process** — assemble once, seed/prime/solve per point. Steady state, all
+zero compiles after solve 0: `stellarator_helias` **0.98 s** MDF / **1.86 s** SAND,
+`large_tokamak_nof` **0.54 s** MDF / **0.53 s** SAND, against 25–96 s for the first solve.
+
+**`run_cold_matrix.run_one` in a loop is still a trap**, and this pass did not fix it:
+13 XLA compiles on every repeat, `_BOUND` +2 a solve, RSS +0.42–0.46 GiB a solve. The
+cause is re-assembly, not the per-row cache clearing. Closing it would mean `run_one`
+taking (or memoising) a prepared build, which changes the matrix's contract and belongs
+to a pass that is allowed to move a row.
+
+### 32.2 One item with a deadline: delete `host_cache._flat_key`
+
+It is a **declared stopgap** (§32.5). When `cottax`'s `Graph` carries a precomputed
+`(static_key, array_leaves)` pair — the same trick hoisted to where the structure is
+known, which a parallel session is designing — `_flat_key` and `_Bound.key` are to be
+**deleted**, not kept beside it. Two caches answering one question can disagree, and the
+one that is wrong is the one nobody reads. `_flat_key`'s own docstring carries the
+condition, so it is met by a reader who never opens this file.
+
+### 32.3 Left open, and cheap to pick up
+
+- **`sand_harness._SCHEDULE_WHOLE` / `_SCHEDULE_RUNNERS` are unbounded dicts keyed on
+  `Schedule` objects**, and the naive loop grows them exactly as it grew `_BOUND`. Not
+  bounded here because a bound is a bandage on the same trap.
+- **The tokamak's steady residue is a third orchestration** — `mdf.seed`, `condition_map`,
+  the final `run_schedule` at the answer, jax dispatch — none of it dominant and none of
+  it free. The stellarator's is 68 % `cvxpy`/CLARABEL, which is the ceiling until an
+  in-graph SQP (§31.10/§31.11) is real.
+- **The first solve is untouched**; §31.20's persistent compilation cache remains the only
+  measured lever against it.
