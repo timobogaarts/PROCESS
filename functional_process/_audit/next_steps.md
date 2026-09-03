@@ -825,6 +825,20 @@ Same pattern as §28.1, and the same lesson.
    that doc defect is corrected** — `solve_duct_diameter`'s docstring, `vacuum.md`'s
    JAX-difficulty flag and this item all now say the port *is* differentiated even though
    `Tier2Contract` is not (§31.33.1). `mdf.py`'s docstring is still wrong.
+
+   **The loops were never the whole list, and now they are (§33).** A second blocker of a
+   different kind was found and closed: three guards that are *finite under `jacfwd` and
+   non-finite under `jacrev` at the same point*, because forward mode multiplies then
+   selects (discarding an infinity) while the transpose selects then multiplies
+   (`0 * inf = nan`). `bootstrap_current.py:820`, `stellarator/heating.py:193` and
+   `superconductors.py:188`, all repaired, all bitwise identical in value and forward
+   derivative. A census of **393 nodes** on two configurations found no others. With
+   those repaired *and* `solve_duct_geometry` stood down behind a `stop_gradient`
+   stand-in, **`jax.grad` of `.costs.coe` through the whole tokamak graph returns finite
+   and agrees with `jacfwd` to 2.0e-14** (§33.7). So the answer to "what is still blocking
+   reverse mode on the scalar objective" is now one line of code: **`:474`, and nothing
+   else.** Converting it is the next measurement on this thread, after which the claim is
+   testable rather than argued.
 3. **The ~1.75 s of first-call jit setup** that is neither trace, lower, compile, nor
    `filter_jit` — arm-independent, bounded, unexplained. A `cProfile` of the first two
    calls (§31.6).

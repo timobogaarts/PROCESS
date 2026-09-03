@@ -187,10 +187,19 @@ def calculate_fusion_gain(
         `big_q_plasma`, the fusion gain factor.
     """
     denominator = p_hcd_injected_total_mw + p_beam_orbit_loss_mw + p_plasma_ohmic_mw
+    degenerate = jnp.abs(denominator) < _Q_DEGENERATE_GUARD_MW
+    # The *double* `jnp.where`, and the inner one is load-bearing. A single select still
+    # evaluates `p_fusion / 0` on the untaken arm: `inf` in value and `-inf` in
+    # `d/d denominator`. Forward mode multiplies and then selects, so it discards both;
+    # the transposed select runs first and then multiplies, and `0 * inf` is `nan`. So
+    # the single spelling is finite under `jacfwd` and non-finite under `jacrev` at the
+    # same point (`_audit/optimise_design.md` §33). Substituting `1.0` changes no
+    # value: the arm it appears on is the one the outer select discards.
+    safe_denominator = jnp.where(degenerate, 1.0, denominator)
     return jnp.where(
-        jnp.abs(denominator) < _Q_DEGENERATE_GUARD_MW,
+        degenerate,
         _Q_DEGENERATE_VALUE,
-        p_fusion_total_mw / denominator,
+        p_fusion_total_mw / safe_denominator,
     )
 
 
