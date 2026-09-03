@@ -8998,3 +8998,259 @@ tread.
   of this configuration and the same `stop_gradient`-plus-one-step treatment does not
   obviously apply to a discrete first-fit selection. `next_steps.md` §31.3 item 2's other
   half stands.
+
+### 31.34 [measured] The amplification belongs to the *configuration*, not to SAND; and a finite-difference derivative at the staircase fails at every step size, PROCESS's own included
+
+Two follow-ups to §31.33, both of which came out against the reading that motivated them.
+§31.33.9 proposed that SAND's `1.52`-per-iteration amplification might belong to SAND's
+extra residual equalities and coupling unknowns, and a third staircase repair -- a
+finite-difference tangent, the way PROCESS's own solver gets one -- was put forward with a
+better prior than the two §31.33.5 refused, because **PROCESS converges in 46 iterations
+using exactly that derivative**. Neither survives its measurement, and both fail
+informatively.
+
+All rows below are cold native solves on `28c7d88a` plus nothing, in a worktree
+[measured 2026-09-03]. The two controls reproduce their §31.33 values exactly --
+`stellarator_helias` SAND at 94 it / `objf 1.2177573469684084` / `2.880e-06`, MDF at 66 it
+/ `1.217757387160884` / `5.495e-10` -- so this is the same problem those sections measured.
+
+#### 31.34.1 [measured] MDF's exponent is not near 1: both arms amplify, and only the budget differs
+
+The instrument is §31.33.6's, pointed at MDF: two solves differing by nothing but `+-1`
+ulp on ten Jacobian cells, recorded per SQP iteration, the separation
+`max |dx| / |x|` fitted in log space over every iterate where it is growing and unsaturated.
+
+| arm | seed | its | status | decades/it | factor/it | `r^2` | its for 1 ulp -> `O(1)` | separation at the last iterate |
+|---|---|---|---|---|---|---|---|---|
+| `stellarator_helias` **SAND** | 3 | 94 | converged | **`+0.183`** | **`1.52`** | `0.94` | **87** | **`1.35e-03`** |
+| `stellarator_helias` **MDF** | 1 | 66 | converged | `+0.121` | `1.32` | `0.89` | 133 | `4.92e-07` |
+| `stellarator_helias` **MDF** | 2 | 66 | converged | `+0.132` | `1.36` | `0.89` | 121 | `8.87e-07` |
+| `stellarator_helias` **MDF** | 3 | 66 | converged | `+0.132` | `1.36` | `0.88` | 121 | `1.81e-06` |
+
+**§31.33.9's proposed reading is refuted.** MDF's exponent is not near 1 and it is not
+qualitatively different from SAND's -- `1.32`-`1.36` against `1.52`, a factor of 1.4 in the
+exponent, with the same quality of fit. **Both arms of this configuration are chaotic.**
+
+What separates them is arithmetic, and it is worth writing out because it is the whole
+mechanism:
+
+- MDF needs **121-133** iterations to take one ulp to `O(1)` and is given **66**. The
+  perturbation reaches `~1e-6` and the solve ends. All three nudged MDF runs converge in
+  **exactly 66 iterations** with `objf` agreeing to nine digits.
+- SAND needs **87** and is given **94**. The perturbation reaches `O(1)` *before* the solve
+  ends, and which side of `converged` it lands on stops being determined by anything.
+
+So the arm is not stable; **it stops in time.** That is a much weaker property than
+stability and it is the one MDF actually has. It also predicts the failure mode: any change
+that lengthens an MDF solve past ~120 iterations should make MDF behave like SAND, and any
+change that shortens SAND below ~85 should make SAND behave like MDF -- which is a testable
+consequence and is exactly what §31.33.2's implicit duct derivative did in the wrong
+direction, taking SAND from 169 iterations (nearly twice the budget) to 94 (just over it).
+
+#### 31.34.2 [measured] A third arm relocates it: `low_aspect_ratio_DEMO` SAND is not chaotic at all
+
+The obvious objection to §31.34.1 is that both rows are the same configuration. The port
+has exactly one other SAND arm long enough to fit a rate -- `low_aspect_ratio_DEMO`, 79
+iterations, 26 design variables and 33 conditions against `stellarator_helias`'s 14 and 21
+-- so it is a SAND arm of comparable length and *greater* size.
+
+| arm | seed | its | status | decades/it | factor/it | `r^2` | its for 1 ulp -> `O(1)` |
+|---|---|---|---|---|---|---|---|
+| `low_aspect_ratio_DEMO` SAND | 1 | 79 | converged | `+0.008` | `1.02` | **`0.11`** | 2 032 |
+| `low_aspect_ratio_DEMO` SAND | 2 | 79 | converged | `+0.003` | `1.01` | **`0.04`** | 5 066 |
+| `low_aspect_ratio_DEMO` SAND | 3 | 79 | converged | `+0.006` | `1.01` | **`0.10`** | 2 519 |
+
+An `r^2` of `0.04`-`0.11` is **no trend at all**: the honest statement is not "the exponent
+is `0.006`" but "there is no measurable growth". The separation starts at `4.03e-16`, has a
+median of `6e-14`-`4e-13` and never exceeds `3.17e-12` over 79 iterations, and all three
+nudged runs converge in exactly 79 iterations with `objf` agreeing to 13 digits.
+
+**So the amplification is not a property of the SAND formulation.** A 79-iteration SAND
+solve of a larger problem is flat; a 94-iteration SAND solve and a 66-iteration MDF solve
+of `stellarator_helias` both amplify at `1.3`-`1.5` per iteration. **It is a property of
+this configuration**, and both of its formulations have it. That is a sharper localisation
+than either §31.33.9's proposal or the alternative, and it moves the question from *"what
+is wrong with SAND"* to *"what is ill-conditioned about `stellarator_helias`"*.
+
+#### 31.34.3 [refused] `large_tokamak_nof` MDF is too short to fit, and is reported as such
+
+It converges in **7** iterations, which leaves **6** points to fit. The fit that comes out
+(`+0.274` decades/it, factor `1.88`) has `r^2 = 0.506` and is quoted here **only to say it
+must not be quoted**: six points at `r^2 = 0.5` is noise, and the separation over those six
+iterates (`1.59e-14` to `2.20e-12`) never leaves the range where a single QP's round-off
+dominates. Both runs converge in 7 iterations to a bitwise identical `objf`. **No exponent
+is claimed for this arm.** `helias_5b` SAND (7 it) and `st_regression` SAND (10 it) are
+shorter still and were not attempted.
+
+#### 31.34.4 [measured] The node-local finite-difference tangent: seven step sizes, none converge, and three of them *are* the straight-through repair
+
+The proposal: `jax.custom_jvp` on `floor(pumpn + 0.5)`, value exact, tangent a centred
+finite difference of the rounding,
+
+    slope(x, h) = [floor(x + h + 0.5) - floor(x - h + 0.5)] / (2h)
+
+with `h` relative (`h = eps * |x|`, PROCESS's `epsfcn` shape) or absolute (in pump units).
+`stellarator_helias` SAND, everything else identical [measured]:
+
+| tangent | `h` at `pumpn ~ 166` | its | status | `objf` | largest equality residual |
+|---|---|---|---|---|---|
+| **as shipped** (exact, `0`) | -- | **94** | **converged** | `1.2177573469684084` | `2.880e-06` |
+| FD, relative `1e-4` | `0.0166` | 23 | **stopped** | `1.2167762112910354` | `2.293e-03` |
+| FD, relative **`1e-3`** (**PROCESS's `epsfcn`**) | `0.166` | 500 | **`cap(500)`** | `1.2175331621973338` | `7.692e-06` |
+| FD, relative `1e-2` | `1.66` | 500 | **`cap(500)`** | `1.2217146379725337` | `2.618e-02` |
+| FD, relative `1e-1` | `16.6` | 218 | **stopped** | `1.225958529860703` | `7.267e-01` |
+| FD, absolute `0.5` | `0.5` | 50 | **stopped** | `1.8704890575974105` | `8.321e+01` |
+| FD, absolute `1.0` | `1.0` | 50 | **stopped** | `1.8704890575974105` | `8.321e+01` |
+| FD, absolute `5.0` | `5.0` | 50 | **stopped** | `1.8704890575974105` | `8.321e+01` |
+
+**Gate 1 fails at every one of the seven settings**, so gates 2 (the `+-1` ulp nudge
+control) and 3 (the seven-configuration matrix) were not run. Two features of the table are
+worth more than the verdict.
+
+**The three absolute rows are bitwise identical to §31.33.5's straight-through row** --
+same iteration count, same `objf` to the last digit, same residual, same `min ie`. That is
+not a coincidence, it is an identity: for any `h` that is a positive multiple of `0.5`,
+`floor(x + h + 0.5) - floor(x - h + 0.5) = 2h` **exactly, for every `x`**, so `slope = 1`
+identically and the rule *is* the straight-through estimator. **At every step size where
+the FD is principled -- one whole tread or a whole number of them -- the third repair
+collapses onto the second, which was already refuted.**
+
+**And below half a tread it is worse than the defect it replaces.** With `h < 0.5` the
+slope is `0` unless a half-integer lies inside `[x - h, x + h]` and `1/(2h)` when one does:
+at PROCESS's relative `1e-3` that is a tangent that telegraphs between `0` and **`3.01`**
+as the iterate moves. It is an unbiased estimator of the envelope slope `1` in expectation
+over `x`, with variance `~1/(2h)` -- and, decisively, **it is itself discontinuous in `x`**,
+at the points where `x +- h` cross a half-integer. So it replaces a derivative that is zero
+everywhere and continuous with one that jumps by `3.01`, which is the *same defect class*
+§31.31 and §31.33.1 spent two sections removing from the duct Newton, an order of magnitude
+larger. The smaller the step, the taller the spike: at relative `1e-4` the spike is `30.1`
+and the solve dies in 23 iterations.
+
+Between the two regimes there is nothing. `1e-2` and `1e-1` are neither -- `h = 1.66` and
+`16.6` are not multiples of `0.5`, so the slope alternates between `2/(2h)` and `3/(2h)`
+(respectively `33/(2h)` and `34/(2h)`) as `x` moves, a smaller telegraph on a larger base,
+and both run to the cap or stop. **There is no step size at which this works**, which is
+the plain answer to "is it sensitive to `epsfcn`": it is, in both directions, and neither
+limit is usable.
+
+#### 31.34.5 [measured] What PROCESS actually does is not that -- and when the port does *it*, the answer moves and the convergence does not transfer
+
+A node-local FD rule composes a **secant of one factor** with **exact derivatives of every
+other factor**. PROCESS does something different and better-posed: `Evaluators.fcnvmc2`
+differences the **whole condition vector** with respect to each design variable at one
+relative step, so the linear model it hands VMCON is the secant of the *actual composed
+function* and is therefore right about a step of size `epsfcn * x`. That is the property
+§31.33.4 ended on, and it is why PROCESS's 46 iterations are an existence proof for
+PROCESS's derivative and **not** for the rule in §31.34.4.
+
+`VmconDriver.epsfcn` already exists to take exactly this measurement, so it was taken. No
+model change, no fidelity cost in any value -- only the Jacobian is replaced [measured]:
+
+| arm | `epsfcn` | its | status | `objf` | `d objf` vs exact | largest equality residual |
+|---|---|---|---|---|---|---|
+| SAND | none (exact) | **94** | **converged** | `1.2177573469684084` | -- | `2.880e-06` |
+| SAND | `1e-4` | 47 | **stopped** | `1.2702727284530526` | `4.3e-02` | `9.870e-02` |
+| SAND | **`1e-3`** (**PROCESS's own**) | **32** | **stopped** | `1.2249210103277137` | `5.9e-03` | `3.752e-02` |
+| SAND | `1e-2` | 135 | converged | `1.217926525579062` | **`1.4e-04`** | `1.877e-07` |
+| MDF | none (exact) | **66** | **converged** | `1.217757387160884` | -- | `5.495e-10` |
+| MDF | **`1e-3`** (**PROCESS's own**) | 172 | **converged** | `1.2177100538174044` | **`3.9e-05`** | `9.903e-14` |
+| MDF | `1e-2` | 160 | converged | `1.2181528731673845` | **`3.2e-04`** | `6.749e-12` |
+
+Three things, in order of how much they change the picture.
+
+**PROCESS's derivative does work on PROCESS's problem, and the port reproduces that.** MDF
+is the arm whose design vector *is* `ixc`, and at PROCESS's own `epsfcn` it converges --
+in **172** iterations against the exact Jacobian's **66**, i.e. **2.6x the cost**. So the
+existence proof is real and it is an existence proof for a *slower* solve.
+
+**It converges to a different answer, and the answer moves with the step.** `3.9e-05`
+relative at `1e-3` and `3.2e-04` at `1e-2` -- an order of magnitude in the error for an
+order of magnitude in the step, which is the signature of a first-order artefact rather
+than of noise. An FD-derivative optimiser finds the stationary point of the *smoothed*
+problem, and which smoothed problem that is depends on `epsfcn`. **This is the knob with no
+principled value, and it is a knob on the answer and not merely on the path.**
+
+**It does not transfer to SAND.** At PROCESS's own `epsfcn` the SAND arm stops after 32
+iterations at a residual of `3.75e-02`. One of the three settings converges (`1e-2`, 135
+iterations) and it lands `1.4e-04` away. SAND is a different problem -- 14 unknowns and 21
+conditions against `ixc`'s 8 and 15, with residual equalities holding the coupling -- and
+PROCESS's instrument was never posed against it.
+
+**The nudge control cannot be applied to these rows, and that is stated rather than
+finessed.** With `epsfcn` set, `_Problem.__call__` takes the `finite_difference` branch and
+never calls the bound `jacobian` at all (`drivers.py`, *"`epsfcn` could not use it
+anyway"*), so §31.32.3's instrument -- which perturbs `jacobian`'s output -- is **inert**.
+Running it confirms that: `epsfcn = 1e-2` under three different nudge seeds returns 135
+iterations and `objf 1.217926525579062` **bit for bit identical** to the unperturbed run.
+That is a nulled instrument, **not** a passed gate, and it must not be read as one.
+
+#### 31.34.6 The verdict on the third repair, and the caveat it was posed with
+
+**Refused, and more firmly than the other two.** The straight-through estimator (§31.33.5)
+and the dropped rounding (§31.33.5) each converged somewhere or bought something; this one
+converges nowhere. At its principled step sizes it *is* the straight-through estimator, by
+an exact identity; below them it introduces a derivative discontinuity of `3` to `30`
+where the shipped code has a continuous zero; and PROCESS's version of the idea -- the only
+one with an existence proof behind it -- is a different construction that costs 2.6x the
+iterations on the arm it works on, moves the answer by `3.9e-05`, and does not converge at
+all on the arm this was meant to fix.
+
+So the caveat carried into this experiment does not have to be spent. **The port's central
+claim -- exact derivatives, scored against PROCESS's finite differences -- stands, and no
+declared exception is introduced**, because no exception earned one. Had the rule worked it
+would have had to be named in the audit record as a documented exception at a point of
+genuine non-differentiability, visible rather than quiet; it did not, and the file is
+unchanged.
+
+And the standing conclusion is now supported by three refuted repairs rather than two:
+**the discreteness is real, PROCESS has it too, PROCESS's own instrument is blind to it,
+and the optimiser must cope.** What §31.34.1 and §31.34.2 add is that coping is not
+actually the hard part -- `low_aspect_ratio_DEMO` SAND carries the same staircase and is
+not chaotic at all.
+
+#### 31.34.7 What this changes in §31.33
+
+- **§31.33.9's first open item is answered, against its own hypothesis.** MDF's exponent is
+  `1.32`-`1.36`, not near 1. The amplification is not SAND's; it is
+  `stellarator_helias`'s, and both of its arms have it (§31.34.1). MDF survives by
+  finishing in 66 iterations against a 121-133 iteration budget, not by being stable.
+- **§31.33.6's "the whole coin flip" is refined.** It is not the exponent alone but the
+  **ratio of the solve length to the budget** `16 / (decades per iteration)`:
+  `94/87 = 1.08` for SAND, `66/127 = 0.52` for MDF, `79/2000+ = 0.04` for
+  `low_aspect_ratio_DEMO` SAND. Crossing 1 is what makes a row a coin.
+- **§31.33.2's iteration-count improvement is re-read.** Taking SAND from 169 to 94 halved
+  the exposure to the amplification (`169/87 = 1.94` -> `1.08`) as well as the wall clock.
+  That is a second, unclaimed benefit of the implicit duct derivative, and it is measured
+  here rather than asserted there.
+- **§31.33.7's four grounds for refusing the staircase gain a fifth**: the FD repair fails
+  at all seven step sizes and coincides exactly with the already-refuted second repair at
+  the three principled ones (§31.34.4).
+- **Nothing changes in §31.33.1 to §31.33.5, or §31.33.8.** No code moved in this section.
+
+#### 31.34.8 Not resolved
+
+- **What is ill-conditioned about `stellarator_helias`.** §31.34.2 localises the
+  amplification to the configuration and stops there. **One candidate is already ruled
+  out**: the raw design vector's dynamic range is not the discriminator, because
+  `low_aspect_ratio_DEMO` SAND's is *larger* -- `1.73e+23` between its smallest and largest
+  coordinate at the answer against `stellarator_helias` SAND's `2.20e+22` and MDF's
+  `5.78e+21` [measured] -- and it is the flat one. (`design_scale` normalises every
+  coordinate to `1.0` anyway, so the raw spread was never the right quantity; it is
+  recorded because it is the first thing anyone will reach for.) What is left untested is
+  the conditioning *after* scaling -- the QP's Hessian approximation along the trajectory,
+  `pyvmcon`'s `initial_B`, the `condition_scale` factors SAND's residual equalities carry
+  -- plus the stellarator-specific `EXPLAINED_DISAGREEMENTS` chain and the `1.08e-01`
+  design-vector disagreement with PROCESS at `ixc 109`. Measuring the scaled Hessian's
+  condition number per iterate on the three arms above is the obvious next measurement and
+  was not done.
+- **The exponent is measured on one perturbation class.** Ten Jacobian cells at `+-1` ulp,
+  three seeds per arm. §31.33.6's caveat stands: an input-space perturbation
+  (§20.3, §31.31.1) may not have the same exponent, and nothing here checked.
+- **`helias_5b`, `st_regression` and both root-find arms have no exponent** -- all are 10
+  iterations or fewer, and §31.34.3's refusal applies to each.
+- **The nudge control has no spelling that works under `epsfcn`** (§31.34.5). Perturbing
+  `evaluate` instead of `jacobian` would be a *different* perturbation class -- a value-level
+  ulp amplified by `1/(2 * epsfcn * x)`, i.e. 500x at `1e-3` -- and is not the same control.
+  If the `epsfcn` family is ever revisited, that instrument has to be built first.
+- **`thermal_cryo.py:814`'s `jnp.ceil` still has no A/B of its own**, unchanged from
+  §31.33.9.
