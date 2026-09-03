@@ -2026,12 +2026,18 @@ def main(argv=None, out=OUT):
         # exactly what it promises for longer than this runner needs.
         #
         # `host_cache._BOUND` is dropped with it, and for the same reason. That memo
-        # holds each block's two `jax.jit` wrappers so a second solve of the *same*
-        # block is a cache hit (§31.14); keeping them across configurations would pin
-        # the jitted callables that own the compiled programs `clear_caches` is being
-        # called to release, and the next configuration is a different graph that would
-        # miss every entry anyway. Re-binding costs ~90 ms on the next row against a
-        # ~25 s row. Same argument, same place, so they are cleared together.
+        # holds each block's `jax.jit` wrappers so a second solve of the *same* block is
+        # a cache hit (§31.14); keeping them across configurations would pin the jitted
+        # callables that own the compiled programs `clear_caches` is being called to
+        # release, and the next configuration is a different graph that would miss every
+        # entry anyway. Re-binding costs ~50 ms on the next row against a ~25 s row.
+        # Same argument, same place, so they are cleared together.
+        #
+        # **This clearing is not what makes a repeated solve slow**, and it is regularly
+        # mistaken for it. A *row* is one configuration and the next row is a different
+        # graph, so nothing here could have been a hit. What destroys the repeated-solve
+        # regime is re-*assembly*, which `functional_process.session` exists to avoid;
+        # `_audit/optimise_design.md` §32.2 separates the two and exonerates this line.
         jax.clear_caches()
         host_cache._BOUND.clear()
         _return_freed_memory_to_the_os()
