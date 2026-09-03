@@ -817,7 +817,16 @@ def bootstrap_fraction_sauter(
     rho = jnp.sqrt(a_plasma_poloidal / jnp.pi) * roa
 
     # Square root of local aspect ratio (`:1497`).
-    sqeps = jnp.sqrt(roa * (rminor / rmajor))
+    #
+    # `safe_sqrt`, not `jnp.sqrt`: `roa[0]` is exactly `0` -- the profile grid starts on
+    # axis -- so the radicand is `0` at element 0, where `sqrt` is `0` in value and `inf`
+    # in derivative. Element 0 is never read (every use is
+    # `_profile_at(sqeps, radial_elements - 1)`, i.e. `arange(1, n-1)`), and a slice
+    # *discards* its tangent in forward mode but *transposes to a zero pad* in reverse,
+    # where `0 * inf` is `nan`. So the unguarded spelling is finite under `jacfwd` and
+    # non-finite under `jacrev` at the same point -- `_audit/optimise_design.md` §31.33.
+    # Value-identical: `safe_sqrt` returns `0.0` at `0` and is bit-identical elsewhere.
+    sqeps = safe_sqrt(roa * (rminor / rmajor))
 
     # Electron and ion density profiles, in 1e19 m^-3 (`:1500-1504`).
     ne = nd_plasma_electron_profile * 1e-19
