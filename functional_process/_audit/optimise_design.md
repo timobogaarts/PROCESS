@@ -10826,3 +10826,133 @@ points visited, not on a proof. What the batched census adds is that the *transf
 one site of exposure in this graph, not many, because the port had already written almost
 everything as an explicit select rather than as a branch — the same property that made the
 `jacfwd` count small.
+
+### 31.38 [measured] Choosing `eps`: the full matrix at both candidates, and the reframing hypothesis is refuted -- the smoothed answer moves *away* from PROCESS
+
+§31.37 measured the smoothing on one row of one configuration. The answer shift is a
+**global** change, so this is the seven-configuration matrix at both candidate `eps`, plus
+the measurement that was hoped to reframe the trade: since PROCESS's `epsfcn = 1e-2` on
+`stellarator_helias` is `~10^5` times wider than the port's `5.5e-08` approach to the
+threshold, PROCESS never resolves the kink either -- so does a smoothed port agree with
+PROCESS *better*?
+
+**It does not.** On `2e27e3c6` [measured 2026-09-03], `--native --compare-process`, three
+full matrices from one script.
+
+#### 31.38.1 [measured] The `eps = 1e-9` hole from §31.37, closed
+
+It was **a reporting bug in the sweep script, not a solve failure**. `cold_sand` returned
+a row with `iterations = None`, the format string raised `TypeError`, and the shell filter
+kept only the result line -- so the row vanished. Recovered:
+
+> `EPS=1e-9 :: its=none status=non-finite`
+> `note: refused at the first iterate (the driver reported a non-finite problem;`
+> `re-evaluating at the seeded start no longer reproduces it)`
+
+So `eps = 1e-9` is a **`non-finite` refusal**, `VmconDriver`'s `VMCON_NON_FINITE` path
+(§31.31.2), not a stopped or diverged solve. The `note`'s second clause is the harness
+saying it could not reproduce the non-finiteness on re-evaluation, which is itself the
+signature §31.31.2 built the status code for. Not diagnosed further; it sits an order of
+magnitude below the arm's own approach to the threshold and neither candidate `eps` is
+near it.
+
+#### 31.38.2 [measured] The baseline reproduces the tracked reference exactly
+
+`reference_cold_matrix.txt` and a fresh `--native --compare-process` matrix at `2e27e3c6`
+agree **line for line on all twelve rows**, so the guard repairs to
+`bootstrap_current.py`/`superconductors.py`/`heating.py` moved nothing and the A/B below is
+against the right baseline.
+
+#### 31.38.3 [measured] Every row that moves, both candidates
+
+| row | `eps = 1e-6` | `eps = 1e-3` |
+|---|---|---|
+| **`stellarator_helias` MDF** | **66 -> 43 it**, `objf 1.21775739 -> 1.21776466` | **66 -> 41 it**, `objf -> 1.21848284` |
+| **`stellarator_helias` SAND** | **94 -> 72 it**, `objf -> 1.21776466`, `max\|eq\| 2.88e-06 -> 1.07e-07` | **94 -> 24 it**, `objf -> 1.21848284`, `max\|eq\| 2.88e-06 -> 7.13e-06` |
+| `helias_5b` MDF / SAND | **identical** | **identical** |
+| `large_tokamak_nof` MDF / SAND | **identical** | **identical** |
+| `large_tokamak_eval` MDF | `max\|eq\| 3.47e-14 -> 3.60e-14`; `worst dx 3.29e-12 -> 3.30e-12` | **`worst dx 3.29e-12 -> 3.84e-08`** (and the coordinate moves, `ixc 4 -> ixc 6`) |
+| `low_aspect_ratio_DEMO` MDF | `max\|eq\| 7.33e-15 -> 9.33e-15` | `objf` in the 9th digit, `max\|eq\| -> 9.99e-15` |
+| `low_aspect_ratio_DEMO` SAND | `max\|eq\| 5.98e-15 -> 5.78e-15` | `objf` in the 9th digit, `max\|eq\| 5.98e-15 -> 5.29e-13` |
+| `spherical_tokamak_eval` MDF | **identical** | **`worst dx 3.64e-09 -> 2.63e-08`** |
+| `st_regression` MDF | `d objf 3.42e-12 -> 3.43e-12` | **`d objf 3.42e-12 -> 1.04e-08`** |
+| `st_regression` SAND | `max\|eq\| 8.88e-16 -> 7.30e-13` | **`d objf 2.44e-11 -> 1.04e-08`**, `max\|eq\| -> 2.90e-13` |
+
+**All twelve rows converge at both `eps`.** Nothing is lost either way, and that is the
+first thing to say.
+
+**But `eps = 1e-3` is not confined to the configuration it was chosen for.** Four other
+configurations move, and three of them move *away* from PROCESS by three to four orders of
+magnitude on rows that were agreeing to twelve digits: `st_regression`'s `d objf`
+`3.42e-12 -> 1.04e-08` on both arms, `large_tokamak_eval`'s `worst dx`
+`3.29e-12 -> 3.84e-08`, `spherical_tokamak_eval`'s `3.64e-09 -> 2.63e-08`. **At
+`eps = 1e-6` those same rows are inert** (`3.43e-12`, `3.30e-12`, unchanged), because the
+smoothing's below-threshold floor is 32 times smaller.
+
+#### 31.38.4 [measured] The reframing hypothesis, refuted: agreement with PROCESS gets *worse*, not better
+
+| configuration | form | base `d objf` / `worst dx` | `eps = 1e-6` | `eps = 1e-3` |
+|---|---|---|---|---|
+| **`stellarator_helias`** | MDF | `2.34e-03` / **`1.08e-01` @ `ixc 109`** | `2.34e-03` / **`1.08e-01` @ `ixc 109`** | **`2.94e-03`** / **`1.09e-01`** @ `ixc 109` |
+| **`stellarator_helias`** | SAND | `2.34e-03` / **`1.08e-01` @ `ixc 109`** | `2.34e-03` / **`1.08e-01` @ `ixc 109`** | **`2.94e-03`** / **`1.09e-01`** @ `ixc 109` |
+| every other row | -- | -- | unchanged to three digits | three rows degrade (§31.38.3) |
+
+**`eps = 1e-3` moves the answer away from PROCESS on the configuration the fix is for**:
+`d objf` rises 26 % relative, and `ixc 109` -- the coordinate `_audit/x109.md` tracks, and
+the one unique to this configuration -- goes from `1.08e-01` to `1.09e-01`. **`eps = 1e-6`
+leaves both unchanged to every displayed digit.**
+
+**The hypothesis was reasonable and the reason it fails is worth recording**, because it
+will occur to the next reader too. PROCESS's smoothing is in its **derivative** -- it
+evaluates the exact kinked function and differences it over a step `10^5` times wider than
+the feature -- while `eps` smooths the **function value**. Those are different objects.
+A wide finite difference of a kinked `f` and an exact derivative of a rounded `f` agree
+about the *slope* far from the kink and about nothing in particular near it, and they place
+the optimum at different points. **There was never a reason for the two to coincide, and
+they do not.**
+
+#### 31.38.5 [measured] Function-level fidelity, which points the same way
+
+The tier-1 contract `TestFastAlphaBetaWard` compares the port against
+`PlasmaBeta.fast_alpha_beta` pointwise, so the smoothing's disagreement with PROCESS's own
+expression is a direct cost. Swept over the contract's own fuzz box (`temp_*` in
+`1.0 .. 30.0`, so `Te + Ti` in `2 .. 60` keV, threshold at `13.0`), `beta_fast_alpha`
+ranging `0 .. 1.4507e-02` [measured]:
+
+| | `eps = 1e-6` | `eps = 1e-3` |
+|---|---|---|
+| max `\|Δ beta_fast_alpha\|` | `1.45e-06` (`1.0e-04` of the range) | `4.59e-05` (`3.2e-03` of the range) |
+| relative disagreement at the contract's legacy sample (`Te+Ti = 26`) | `3.0e-13` | `3.0e-07` |
+| relative disagreement just above the threshold (`Te+Ti = 13.1`) | `5.0e-09` | **`4.9e-03`** |
+| below the threshold, where PROCESS returns **exactly `0`** | `1.45e-06` absolute | `4.59e-05` absolute |
+
+`eps = 1e-6` disagrees with PROCESS's expression by at most `5e-09` relative anywhere above
+the threshold; `eps = 1e-3` by `0.5 %` just above it. Both introduce a small nonzero floor
+where PROCESS returns exactly zero, which is the qualitative infidelity and is unavoidable
+for any regularisation of this family.
+
+#### 31.38.6 The recommendation, and what it rests on
+
+**`eps = 1e-6`, on the numbers.** Both candidates remove the chaos -- 5 of 5 nudge draws
+converge at each (§31.37.3) -- and both leave all twelve matrix rows converged. What
+separates them:
+
+| | `eps = 1e-6` | `eps = 1e-3` |
+|---|---|---|
+| `objf` shift, `stellarator_helias` | **`6.0e-06`** | `6.0e-04` |
+| agreement with PROCESS, `stellarator_helias` | **unchanged** | `d objf` +26 %, `ixc 109` `1.08e-01 -> 1.09e-01` |
+| other configurations | **inert** | three degrade by 3-4 orders |
+| `stellarator_helias` SAND `max\|eq\|` | **`2.88e-06 -> 1.07e-07`, 27x better** | `2.88e-06 -> 7.13e-06`, 2.5x worse |
+| iteration counts, `stellarator_helias` | 66 -> 43, 94 -> 72 | 66 -> 41, **94 -> 24** |
+| nudge-draw iteration spread | 60-87 | **identical, 24 every draw** |
+| function-level disagreement above the threshold | `<= 5e-09` | `<= 4.9e-03` |
+
+**What `eps = 1e-3` buys is reproducibility**: identical iteration counts across every
+nudge draw, which would make the tracked matrix immune to an innocuous refactor or a `jax`
+bump flipping a row. That is a real operational property and it is the only column where it
+wins.
+
+**What it costs is everything else**: a hundred times the answer shift, a measurable
+degradation in agreement with PROCESS on the very configuration the fix is for, three other
+configurations pushed 3-4 orders further from PROCESS, and a worse residual on the arm it
+was meant to help.
