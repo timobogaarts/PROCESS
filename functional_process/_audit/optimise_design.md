@@ -9254,3 +9254,237 @@ not chaotic at all.
   If the `epsfcn` family is ever revisited, that instrument has to be built first.
 - **`thermal_cryo.py:814`'s `jnp.ceil` still has no A/B of its own**, unchanged from
   §31.33.9.
+
+### 31.35 [measured] The QP's own conditioning, across the three arms: five candidate mechanisms, five nulls -- the amplification is smooth, and every discrete difference is a consequence of it
+
+§31.34.8 named the conditioning of the problem the QP actually sees as the next thing to
+measure, with a clean three-arm control available: `stellarator_helias` SAND (94 it,
+amplifying), `stellarator_helias` MDF (66 it, amplifying but finishing in time), and
+`low_aspect_ratio_DEMO` SAND (79 it, flat -- and *larger*, 26 design variables against 14).
+**Every mechanism proposed for it comes out null, and the nulls are the finding.** Nothing
+in the tree was edited; the instrument is two monkeypatches.
+
+Everything below is on `690d9b2e` in a worktree [measured 2026-09-03]. The three baseline
+solves reproduce their recorded rows exactly (94 it / `1.2177573469684084`, 66 it /
+`1.217757387160884`, 79 it / `-0.39915544266312386`).
+
+#### 31.35.1 The instrument
+
+`pyvmcon.vmcon.solve_qsp` is called **exactly once per VMCON iteration**, with the live
+`B` (the BFGS Hessian approximation), the `Result` for that iterate (values and Jacobian,
+already scaled by `VmconDriver`), and the bounds; it returns the step and both multiplier
+vectors. So every quantity the QP is built from and every quantity it produces passes
+through one function, and wrapping it records the whole subproblem without touching
+`drivers.py`. `pyvmcon.vmcon.perform_linesearch` is wrapped the same way for `alpha`, and
+`drivers.design_scale` for the conditioning it hands VMCON. Per iteration this records
+`cond(B)`, its eigenvalue extremes, `||B - I||_F`, the condition numbers of the equality
+Jacobian / the active KKT matrix / the full condition Jacobian, the reduced Hessian
+`cond(Z'BZ)`, the inequality active set, `||delta||` and `alpha`.
+
+#### 31.35.2 [null] The Hessian approximation blows up on every arm and correlates with nothing
+
+| arm | `cond(B)` first | median | max | growth | `||B - I||` max |
+|---|---|---|---|---|---|
+| `stellarator_helias` SAND | `1.000` | `1.735e+06` | **`2.003e+12`** | `+0.0635` dec/it (`r^2 0.75`) | `6.05e+07` |
+| `stellarator_helias` MDF | `1.000` | `1.083e+07` | **`2.789e+11`** | `+0.1003` dec/it (`r^2 0.81`) | `1.46e+07` |
+| `low_aspect_ratio_DEMO` SAND | `1.000` | `1.667e+05` | **`3.596e+08`** | `+0.0425` dec/it (`r^2 0.60`) | `1.69e+05` |
+
+`cond(B)` degrades by eight to twelve orders on **all three** arms, including the flat
+one, and the arm whose `B` degrades *fastest* (MDF, `+0.100` dec/it) is not the unstable
+one. The direct test settles it: correlating `log10 cond(B)` with the per-iteration
+separation growth `d log10 |dx|/|x|` at the same iterate gives **`-0.152`**
+(`stellarator_helias` SAND), **`-0.066`** (MDF) and **`-0.096` to `-0.128`** (LAD, three
+seeds) -- no relationship, and what little there is has the wrong sign.
+
+**So the mechanism is not the Hessian approximation's conditioning, and `initial_B` is not
+the lever.** BFGS moves five to eight orders away from `I` on every arm; that it does so is
+a property of a quasi-Newton method on a nonlinear problem, not of this configuration.
+§31.35.8 says *why* this null was inevitable: `B` is almost entirely projected out of the
+step by the active constraints.
+
+#### 31.35.3 [null] The constraint geometry is *flat along every trajectory*, and does not order with instability
+
+| arm | `cond(deq)` median | growth | `cond(KKT)` median | `cond(full J)` median |
+|---|---|---|---|---|
+| `stellarator_helias` SAND | **`4.354e+03`** | `+0.0001` (`r^2 0.01`) | `1.126e+04` | `1.894e+04` |
+| `stellarator_helias` MDF | **`5.240e+00`** | `+0.0005` (`r^2 0.05`) | `1.063e+01` | `5.177e+01` |
+| `low_aspect_ratio_DEMO` SAND | **`4.700e+01`** | `+0.0000` (`r^2 0.02`) | `4.773e+02` | `1.242e+03` |
+
+Two independent readings, both negative. **Along a trajectory nothing degrades**: every
+growth rate is within `5e-4` decades per iteration of zero at `r^2 <= 0.05`, so the
+constraint geometry the QP sees at iteration 90 is the geometry it saw at iteration 1.
+**And between arms the ordering is wrong**: by `cond(deq)` the ranking is
+`stellarator_helias` SAND (`4 354`) > LAD (`47`) > `stellarator_helias` MDF (`5.2`),
+while by instability it is `stellarator_helias` SAND > `stellarator_helias` MDF > LAD.
+**MDF has the best-conditioned constraints of the three and the second-worst
+instability.** SAND's residual equalities do make its constraint set three orders worse
+conditioned than MDF's -- that part of §31.34.8's suspicion is confirmed -- but it does not
+explain the ordering, so it is not the cause.
+
+#### 31.35.4 [null] `design_scale`'s floor is never reached, on any arm
+
+§31.34.8's specific hypothesis: a coordinate starting within `UNSCALABLE_BELOW = 1e-12`
+gets `scale = 1` and is thereafter unconditioned. **It does not happen** [measured]:
+
+| arm | `n` | coordinates below the floor | smallest `|x_0|` | `|scale|` range |
+|---|---|---|---|---|
+| `stellarator_helias` SAND | 14 | **none** | `9.159e-03` | `5.00e-21 .. 1.09e+02` |
+| `stellarator_helias` MDF | 8 | **none** | `1.000e-01` | `5.00e-21 .. 1.00e+01` |
+| `low_aspect_ratio_DEMO` SAND | 26 | **none** | `1.500e-04` | `1.45e-20 .. 6.67e+03` |
+
+No start is within eight orders of the floor and none is exactly zero, so PROCESS's
+`1e-12` guard is inert on all three and every coordinate is scaled to `1.0`. The `5e-21`
+scale factors are the reciprocal of the `~2e+20` coordinates §31.34.8 flagged, and after
+scaling they are `1.0` like everything else -- which is why the raw dynamic range was
+already excluded there and is now excluded at the point where it would have acted.
+
+#### 31.35.5 [null] The line search never shortens a step -- on any arm, at any iteration
+
+VMCON's line search starts at `alpha = 1` and shrinks until a merit condition holds. That
+is a nearly-discrete decision and would be an obvious amplifier: two almost identical runs
+landing on different `alpha` is an `O(1)` branch. It never fires.
+
+**`alpha == 1.0` at 100 % of iterations, on all three arms, in both the base and the
+nudged run -- one distinct value across the whole record** [measured]. The two runs choose
+a different `alpha` at **0 of 88**, **0 of 65** and **0 of 78** iterations respectively.
+Every step taken by every solve measured here is the full QP step. The line search is
+excluded completely, and so is the merit function's `mu` update with it.
+
+#### 31.35.6 [null, and it points the wrong way] The active set
+
+Churn *frequency* anti-correlates with instability [measured]:
+
+| arm | active-set size | distinct sets | **iterations that change it** | between-run divergence |
+|---|---|---|---|---|
+| `stellarator_helias` SAND | 3..12 | 9 | **22 of 93 (24 %)** | 16 of 89, **first at k = 38** |
+| `stellarator_helias` MDF | 3..12 | 10 | **25 of 65 (38 %)** | 4 of 66, **first at k = 60** |
+| `low_aspect_ratio_DEMO` SAND | 10..21 | 13 | **61 of 78 (78 %)** | **0 of 79 -- never** |
+
+**The flat arm churns on three iterations in four; the chaotic arm churns on one in
+four.** Whatever active-set churn does, it is not what separates them.
+
+Conditioning on churn, pooled over three nudge seeds per arm, does show a difference in
+the *cost* of one change -- `+0.284` against `+0.106` decades on `stellarator_helias`
+SAND, `+0.130` against `+0.086` on MDF, `+0.040` against `+0.012` on LAD -- but it is a
+factor of 2.7, 1.5 and 3.3, not the order of magnitude the outcome differs by, and it
+accounts for **43 %**, **49 %** and **92 %** of the total growth from **22 %**, **39 %**
+and **78 %** of the iterations, i.e. roughly in proportion to how often it happens.
+
+And the between-run column is the decisive one. **The two runs' active sets first differ at
+iterate 38 on `stellarator_helias` SAND, by which point the trajectories have already
+separated by `~1e-5`**, and at iterate 60 on MDF, `~1e-6`. On LAD they never differ,
+because the separation never leaves `~1e-13`. **The active-set divergence is a consequence
+of the separation, not its cause** -- exactly the reading §31.32.4 gave for the fused
+Jacobian and §31.33.6 for the pump-count staircase, now measured a third time on a third
+mechanism.
+
+#### 31.35.7 [measured] What actually differs is the *burstiness*, and it corrects §31.34's exponent
+
+| arm | net growth per seed | iterations moving the separation `> +0.5` decade | median iteration | p90 | p99 | max |
+|---|---|---|---|---|---|---|
+| `stellarator_helias` SAND (94 it) | **`+13.1` decades** | **24 %** | `+0.024` | `+1.042` | `+2.966` | `+4.834` |
+| `stellarator_helias` MDF (66 it) | `+6.6` decades | **23 %** | `+0.035` | `+0.911` | `+1.934` | `+1.948` |
+| `low_aspect_ratio_DEMO` SAND (79 it) | **`+2.6` decades** | **5 %** | `-0.008` | `+0.353` | `+1.290` | `+1.654` |
+
+**The median iteration moves the separation by nothing, on every arm.** The growth is
+carried entirely by a minority of large jumps, and the arms differ in how often those
+happen (24 %, 23 %, 5 %) and how large they get (`p99` `+2.97`, `+1.93`, `+1.29`).
+
+That is a **correction to §31.34.1's own framing**, and it is worth stating plainly:
+*"`+0.183` decades per SQP iteration, factor `1.52`"* is the mean of a bursty process, not
+a Lyapunov exponent of a smooth one. The `r^2 = 0.94` there is the fit quality of a
+**cumulative** log-separation against iterate, which a bursty process with a positive drift
+fits well; the per-iteration increments behind it have a median of `+0.024` and a maximum
+of `+4.83`. The budget arithmetic in §31.34.1 and the `ratio` in §31.34.7 are unaffected --
+they only use the mean -- but "the arm amplifies at 1.52 per iteration" should be read as
+"the arm gains about 13 decades over 94 iterations, in about 22 jumps".
+
+And the two `stellarator_helias` arms have the **same jump rate** (24 % and 23 %). What
+separates them is that SAND's jumps are larger (`p99 +2.97` against `+1.93`) and it takes
+more of them (about 22 against 15), which compounds to `+13.1` decades against `+6.6`.
+
+#### 31.35.8 [null] The reduced Hessian
+
+`cond(B)` is not what an SQP's local rate depends on -- the step is free only in the null
+space of the active constraints, so the right quantity is the **reduced** Hessian
+`Z' B Z`, with `Z` an orthonormal basis for that null space. It is computed here from the
+same `B` and the same active set, per iteration.
+
+| arm | free directions (of `n`) | zero-free iterates | `cond(Z'BZ)` median | max | growth |
+|---|---|---|---|---|---|
+| `stellarator_helias` SAND | `0..3` of **14**, median **2** | **14 of 94 (15 %)** | `1.945e+02` | `3.132e+06` | `+0.0642` (`r^2 0.81`) |
+| `stellarator_helias` MDF | `0..3` of **8**, median **2** | **13 of 66 (20 %)** | **`8.429e+02`** | **`8.893e+06`** | **`+0.1216`** (`r^2 0.83`) |
+| `low_aspect_ratio_DEMO` SAND | `0..5` of **26**, median **3** | **27 of 79 (34 %)** | `5.963e+01` | `4.940e+05` | `+0.0406` (`r^2 0.35`) |
+
+**Null again, and in the same direction as `cond(B)`**: MDF has the worst-conditioned
+reduced Hessian of the three (`8.4e+02` median, `8.9e+06` peak) and the fastest degradation
+(`+0.122` dec/it), and it is not the unstable arm.
+
+**But the first column explains why both Hessian nulls happened**, and that is worth more
+than the null itself. **The QP has almost no free directions**: 2 of 14 unknowns on
+`stellarator_helias` SAND, 2 of 8 on MDF, 3 of 26 on LAD -- 12-25 % of the space -- and on
+**15 %, 20 % and 34 %** of iterations respectively there are **none at all**, so the step
+is fully determined by the active constraints and `B` does not enter it. That is why
+`cond(B)` reaching `2e+12` correlates with nothing: **`B` is almost entirely projected
+out of the step.** An SQP on these problems is much closer to a constrained linear solve
+than to a quasi-Newton descent, and the ill-conditioning that accumulates in `B` is
+mostly harmless because it lives in directions the constraints have already removed.
+
+It also inverts the intuition about LAD once more: the flat arm is the **most** constrained
+of the three, with a third of its iterates leaving no free direction at all.
+
+#### 31.35.9 What five nulls leave
+
+**No discrete mechanism inside the optimiser is doing this.** The line search never
+branches (§31.35.5). The active set branches, but later than the divergence it would have
+to cause and *less* often on the unstable arm (§31.35.6). The value-level staircases
+branch, but in lockstep between the two runs until they are already `6e-3` apart
+(§31.33.6). And no conditioning number -- `B`, reduced `B`, the equality Jacobian, the KKT
+matrix, the full condition Jacobian -- either degrades along a trajectory or orders the
+three arms correctly (§31.35.2, §31.35.3, §31.35.8).
+
+What is left is the plain reading: **the SQP map itself is expansive on
+`stellarator_helias` and contractive on `low_aspect_ratio_DEMO`**, in a way that is a
+property of the two problems' nonlinearity rather than of any switch, branch or scaling
+inside `pyvmcon`. The amplification is smooth; every discrete thing that eventually differs
+between two nudged runs differs *because* of it.
+
+§31.35.8's free-direction count says where that map lives. With only 2-3 of 8-26 directions
+free, and none at all on 15-34 % of iterations, **the step is set by the linearised active
+constraints far more than by the objective's curvature model** -- so the map whose spectral
+radius matters is the one the *constraint Jacobian* induces, iterated at successive points.
+Its conditioning at a point is flat and benign (§31.35.3); what is not measured is how it
+*moves* between points, which is a statement about the model's second derivatives and not
+about the optimiser at all.
+
+That is a negative result, and it is stated as one rather than dressed up. It does
+usefully narrow the field: **anyone hunting this next should stop instrumenting the
+optimiser and start instrumenting the model.** The candidates that survive are the ones
+this section could not reach -- the curvature of the `stellarator_helias` residual
+equalities themselves, the `1.08e-01` design-vector disagreement with PROCESS at `ixc 109`
+(which says the port and PROCESS are converging to genuinely different points on this
+configuration, and only this one), and the stellarator-specific chain
+`mda_harness.EXPLAINED_DISAGREEMENTS` already documents.
+
+And the practical conclusion from §31.34.7 is unchanged and is the one to act on:
+**`stellarator_helias` SAND's ratio is `1.08`, and shortening the solve moves it under 1.**
+§31.33's implicit duct derivative already did that once, 169 -> 94 iterations, `1.94 ->
+1.08`. Nothing in this section suggests a conditioning fix would work; something that takes
+that arm to ~70 iterations would put it where MDF already is.
+
+#### 31.35.10 Not resolved
+
+- **The expansiveness itself is not explained, only localised.** This section rules five
+  things out and names no cause. A direct measurement -- the spectral radius of the SQP
+  step map, e.g. by finite-differencing `x_{k+1}` with respect to `x_k` around the
+  trajectory -- was not attempted and is the obvious next instrument, at a cost of `n`
+  extra QP solves per iterate.
+- **One nudge seed for the `alpha` and between-run active-set columns.** §31.35.5 and the
+  divergence column of §31.35.6 are seed 3 only; the churn statistics pool three seeds.
+  `alpha == 1.0` everywhere is strong enough not to need repeating, the `k = 38` figure
+  is not.
+- **`cond(KKT)` uses the active set at that iterate**, so a rank-deficient active
+  constraint matrix would show as `inf` rather than as a large finite number; none did, but
+  the statistic was not designed to detect near-degeneracy of the active set specifically.
+- **Nothing here touched the other four configurations**, and `helias_5b`,
+  `st_regression` and the two root-find arms are too short for any of it (§31.34.3).
