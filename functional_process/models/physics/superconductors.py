@@ -185,7 +185,16 @@ def bottura_scaling(
     jc2_inside = (1.0 - f_temp_conductor_critical_no_field**1.52) * (
         1.0 - f_temp_conductor_critical_no_field**2
     )
-    jc3_inside = b_reduced**p * (1.0 - b_reduced) ** q
+    # And guard its *base*, not only the divisor. On the untaken branch `safe_b_critical`
+    # is `1.0`, so `b_reduced` is `b_conductor`, which exceeds 1 wherever the point is
+    # outside the critical surface -- and `(negative) ** q` is `nan` for fractional `q`.
+    # `jnp.where` discards that `nan` in value and in the JVP, but the transposed select
+    # multiplies an exact-zero cotangent by it, so `jacrev` is non-finite where `jacfwd`
+    # is fine (`_audit/optimise_design.md` §31.33). `0.5` is an interior point of the
+    # unit interval, so both powers and both derivatives are finite there; the arm is
+    # unselected, so no value moves.
+    safe_b_reduced = jnp.where(inside_critical_surface, b_reduced, 0.5)
+    jc3_inside = safe_b_reduced**p * (1.0 - safe_b_reduced) ** q
     j_scaling_inside = jc1 * jc2_inside * jc3_inside
 
     jc2_outside = f_temp_conductor_critical_no_field
