@@ -8347,3 +8347,350 @@ correctness, which is the mode actually being taken.
   would exercise the discrete selection §31.13 flagged, in the *value* as well as the
   derivative. Not measured.
 - **`_refuse_inert_objective` still raises across the callback** (§31.31.2).
+
+### 31.32 [measured] The fused Jacobian is not wrong, is not amplified and excites no discontinuity -- the arm is unstable to *any* last-bit Jacobian change, and the census found two value-level staircases nobody had looked for
+
+§31.31.5 left `VmconDriver.fused` off and §31.31.6 asked two questions: whether the
+fusion's `4.44e-16` is somehow not ulp-sized after all, and whether the block holds
+another discontinuity the duct Newton's implicit derivative did not cover. Both are now
+measured, and the answer to the first is **no on every reading of it**. The instrument
+that settles it is a control §31.30 and §31.31 never ran: **fabricate a 1-ulp Jacobian
+perturbation with no fusion anywhere near it, and see whether the split path survives
+it.** It does not.
+
+Everything below is `stellarator_helias` cold SAND, `--native` seeding, split Jacobian
+unless stated, on `c6fb32ce` in a worktree [measured 2026-09-03]. The baseline row
+reproduces the tracked one exactly -- 169 it, converged, `objf 1.2177574282449604`,
+largest equality residual `1.04e-07` -- and so do §31.31.4's implicit-duct row (94 it,
+converged, `objf 1.2177573469684084`, `2.88e-06`) and §31.30.4's fused row (134 it,
+stopped, `objf 1.2276208876288544`, `1.96e-02`), so nothing here is measuring a different
+problem from the sections it revises.
+
+#### 31.32.1 [measured] The discrepancy does not grow anywhere -- but "values are bitwise identical" was a one-point claim and is false
+
+§31.30.4's two numbers were taken at the seeded start. Repeating them at **every point
+`pyvmcon` evaluates**, by computing the fused pair beside the split pair inside
+`scaled_problem` and discarding it (the solve is driven by the split answers, so the
+recording cannot perturb the trajectory):
+
+| | split trajectory (337 evaluations, converged) | fused trajectory (269 evaluations, stopped) |
+|---|---|---|
+| evaluations where **any** condition value differs | **226 of 337** | **168 of 269** |
+| largest absolute value difference | `9.77e-15` | `4.44e-15` |
+| largest **relative** Jacobian difference, any cell, any point | **`3.52e-16`** | **`3.56e-16`** |
+| largest absolute Jacobian difference | `7.11e-15` | `3.55e-15` |
+| distinct cells that ever differ | **45 of 294** | **the same 45** |
+| rows involved | 2, 9, 10, 12, 17, 18, 20 | identical |
+| columns involved | all but `.physics.hfact` and `.power.delta_eta` | identical |
+
+Two corrections to §31.30.4 fall out of the first row. **"Values, fused vs split: bitwise
+identical" is a property of the start, not of the run** -- two thirds of the points on
+either trajectory have a condition value that differs, by up to `9.77e-15` absolute. And
+**"10 of 294 cells" is likewise the start's figure**: over a whole solve it is 45 cells,
+5-16 of them at any one point. Neither correction changes the conclusion, because of the
+third row: **the relative Jacobian difference never exceeds `3.52e-16`, i.e. about 1.6
+ulp, at any of the 337 points the converged path visits, and never exceeds `3.56e-16` at
+any of the 269 points the diverging path visits.** It does not grow, it does not blow up
+at particular points, and it is the same size at the point where the two paths separate
+as at the start.
+
+The named cells are worth having, because they say the difference is not diffuse. The
+rows are `^cond.constraints.c16` (net electric power lower limit), `c24` (beta upper
+limit), `c8` (neutron wall load), `c18` (divertor heat load), `c32` (TF conduit stress),
+`c34` (TF dump voltage) and `c65` (VV quench stress) -- seven of the twenty-one, all of
+them PROCESS constraints rather than SAND's own residual equalities. **Row 0,
+`^cond.numerics.objf`, never differs at any point on either trajectory.** So hypothesis 1
+-- "the discrepancy is not ulp-sized everywhere" -- is **refuted**, and refuted on both
+trajectories rather than only on the one that works.
+
+#### 31.32.2 [measured] A third spelling of the same Jacobian sits further from both than they do from each other
+
+Hypothesis 2 was that `fused` is genuinely wrong -- a `has_aux` unpacking mistake, a
+post-scaling helper applied to the wrong output or twice, a pre- versus post-scaling
+primal, an `epsfcn` interaction. Reading settles the shape of it
+(`host_cache.values_and_jacobian` returns `(primal, derivative)` from
+`derivative, primal = jacfwd(..., has_aux=True)`; `both` in `scaled_problem` calls the
+*same* `_scale_values`/`_scale_jacobian` the split pair calls; the `epsfcn` branch is
+taken before `fused` is looked at), but reading is not a measurement, and a real bug of
+any of those kinds would give an `O(1)` difference rather than `1e-16`, which is already
+evidence.
+
+The measurement is a **third spelling**: `jax.jvp` once per column, each column its own
+`jax.jit` program, no `vmap` and no fusion at all. If `fused` were wrong it would sit
+further from that than `split` does. Nine points spread over the converged trajectory,
+per-cell relative differences scaled by each Jacobian row's own largest entry:
+
+| | max relative difference | cells differing, of 294 |
+|---|---|---|
+| `split` vs `columns` | `7.03e-16` - `5.26e-15` | 80-102 |
+| `fused` vs `columns` | `7.03e-16` - `5.26e-15` | 83-104 |
+| `fused` vs `split` | `9.52e-18` - `1.99e-16` | 7-13 |
+
+**The unvmapped column-by-column spelling is an order of magnitude further from both of
+them than they are from each other, and disagrees with each in about a hundred cells
+against their mutual ten.** Scored against it, `fused` is the closer of the two at 6 of
+the 9 points and `split` at 3. There is no ordering: three schedules of one computation,
+three different last bits, none privileged. **Hypothesis 2 is refuted -- `fused` is not
+wrong, and this is not a defect that could be fixed to make it bitwise.**
+
+#### 31.32.3 [measured] The control that decides it: a *fabricated* 1-ulp Jacobian nudge flips the arm too
+
+This is the experiment §31.30 and §31.31 should have run and did not, and it is what
+answers the objection §31.31.4's table raises -- *"with the loop discontinuity removed the
+arm survives +-1 and +-2 ulp, so a `4.44e-16` Jacobian difference should now be
+harmless."* It does not follow, and the reason is that those are **two different
+perturbations**. §20.3 and §31.31.1 move **one input by one ulp** and then solve a
+consistently perturbed, still-smooth problem. `fused` changes **the Jacobian, at every
+iterate, in a handful of cells that are not the same cells twice**. Nothing in the first
+measurement licenses a claim about the second.
+
+So: keep the split Jacobian, and nudge it by hand. Two nudges -- 10 cells chosen once at
+random and moved `+-1` ulp at every call, and all 45 cells §31.32.1 names moved `+-1` ulp
+at every call -- with no fused program involved anywhere:
+
+| Jacobian handed to VMCON | its | status | `objf` | largest equality residual |
+|---|---|---|---|---|
+| **split, unperturbed** | **169** | **converged** | `1.2177574282449604` | `1.04e-07` |
+| **fused** | 134 | stopped | `1.2276208876288544` | `1.96e-02` |
+| split, `+1 ulp` on 10 random cells (seed 1) | 116 | converged | `1.2177580208748982` | `6.58e-09` |
+| split, `+1 ulp` on 10 random cells (seed 2) | 217 | **stopped** | `1.2242993119685988` | `1.37e-01` |
+| split, `+1 ulp` on 10 random cells (seed 3) | 158 | **stopped** | `1.2278914151646518` | `5.14e-03` |
+| split, `-1 ulp` on 10 random cells (seed 1) | 262 | converged | `1.2177574369340196` | `2.54e-05` |
+| split, `+1 ulp` on all 45 cells | 169 | **stopped** | `4.7052394187183015` | `1.97e+01` |
+| split, `-1 ulp` on all 45 cells | 94 | **stopped** | `1.221667614973372` | `1.89e-02` |
+
+**Three of the six fabricated nudges stop the solve, one of them at `objf 4.71` against
+the answer's `1.218`.** The fused Jacobian is a *smaller* perturbation than any of them --
+5-16 cells at a time rather than 10 or 45 -- and it lands in the same place. There is
+nothing to attribute to fusion: **at this arm's sensitivity, any last-bit change to the
+Jacobian, from any source, is enough to decide whether the run converges.**
+
+And the same control with §31.31.4's implicit duct derivative applied, which is what makes
+the objection sharp, since that measurement is the one that reported the arm "robust":
+
+| Jacobian, **implicit duct derivative in** | its | status | `objf` | largest equality residual |
+|---|---|---|---|---|
+| **split, unperturbed** | **94** | **converged** | `1.2177573469684084` | `2.88e-06` |
+| **fused** | 365 | stopped | `1.2266294933122033` | `3.80e-01` |
+| split, `+1 ulp` on 10 random cells (seed 1) | 120 | converged | `1.217757341789631` | `4.59e-07` |
+| split, `+1 ulp` on 10 random cells (seed 2) | 102 | converged | `1.2177573389306493` | `4.58e-07` |
+| split, `+1 ulp` on 10 random cells (seed 3) | 127 | **stopped** | `1.2287865693587785` | `1.88e+00` |
+| split, `-1 ulp` on 10 random cells (seed 1) | 103 | converged | `1.2177575030302739` | `4.11e-07` |
+
+**The implicit duct derivative does not buy immunity to a last-bit Jacobian change; it
+buys a better rate.** Three of four nudges now converge where three of six did before, and
+the converged ones land in 102-120 iterations rather than 116-262 -- but seed 3 still
+stops, at `1.88e+00`. So §31.31.4's "every perturbation converges" is true of the
+perturbation it tested and **not** of this one, and the fused row in that same table is
+this one. That is the whole discrepancy the objection identified, and it is a difference
+between two experiments rather than an anomaly in either.
+
+#### 31.32.4 [measured] The census: 183 discrete sites in the block, 170 reached, 10 that move
+
+§31.31.6's open item, done exhaustively rather than by grep. The block's own body --
+`jnp.stack([...])` over the 21 conditions, the exact function `bind` traces -- is traced to
+a jaxpr and then **interpreted on the host**, one equation at a time, at 41 iterates spread
+over the converged solve. `while`, `cond` and `scan` are executed by the interpreter rather
+than bound, so their bodies are visited too, and each `while`'s trip count, each `cond`'s
+branch index, and each `select_n`/`max`/`min`/`argmax`/`floor`/`ceil`/`rem` and each bare
+comparison's outcome is recorded **per instance and per iterate**. A site is "moving" when
+one instance's outcome differs between two iterates. This subsumes §31.31.3's
+`jax.debug.callback` instrument and reproduces its answer.
+
+**Structurally**, 4 125 equations at all nesting levels, of which 707 at 183 distinct
+`(primitive, source line)` sites are discrete: `select_n` 337, `eq` 111, `lt` 110, `ne` 38,
+`max` 32, `gt` 21, `min` 15, `le` 10, `floor` 8, `scan` 7, `argmax` 6, `rem` 6, `ge` 2,
+`while` 2, `ceil` 1, `cond` 1. **170 of the 183 sites are reached** at these iterates; the
+13 that are not are untaken branches.
+
+**Dynamically, 10 of the 170 move:**
+
+| primitive | site | instances moving | values seen | verdict |
+|---|---|---|---|---|
+| `while` | `vacuum.py:329` `solve_duct_diameter` | 3 of 3 | trip count `{6, 7, 8, 9, 10, 11}` | §31.31.3's finding, confirmed by a second instrument |
+| `floor` | `vacuum.py:999` `calculate_vacuum_pumping_old` | 1 of 1 | `{100, 155, 162, 163, 165, 166, 167}` | **new -- a value-level staircase, see §31.32.5** |
+| `ceil` | `thermal_cryo.py:814` `calculate_component_thermal_powers_owned` | 1 of 1 | `{3, 4}` | **new -- same class** |
+| `gt` | `vacuum.py:317` `solve_duct_diameter.cond` | 4 of 32 | `{0, 1}` | the duct Newton's own exit test, i.e. the same defect |
+| `gt`, `max` | `coils/calculate.py:531`, `:532` `jcrit_iter_nb3sn` | 1 of 1 each | 3 array patterns each | a `max(0, .)` floor on the critical current, moving element-wise |
+| `lt` | `superconductors.py:161` and `:178` `bottura_scaling` | 1 of 1 each | 3 array patterns each | same shape; `:161` does **not** survive DCE |
+| `gt` | `pure_formulas.py:361` `_fast_alpha_fraction_ward` | 1 of 1 | `{0, 1}` | a scalar clamp that flips |
+| `max` | `vacuum.py:762` `outer_body.do_process` | 1 of 3 | `{0, 1}` | one species' pump selection flips |
+
+**And the sites that are constant are the more useful half of the answer**, because a
+branch that never flips is not a live defect:
+
+- **`solve_duct_geometry` (`vacuum.py:474`) is constant at `K = 1`** on all three of its
+  instances at all 41 iterates -- §31.31.3's reading, confirmed. The duct fits on the first
+  candidate every time here. §31.31.6 already says this is luck rather than safety and that
+  the other six configurations are unmeasured; this record does not change that.
+- **The `lax.cond` at `vacuum.py:774`** (`outer_body`'s shrink-or-stop) has four instances,
+  two of which always take branch 0 and two always branch 1. It is a
+  *configuration-dependent* constant, not a safe one, and it is the same caveat.
+- **All 7 `scan`s are structurally incapable of moving**: `scan`'s `length` is a
+  compile-time constant, so a masked `scan` -- `cs_fatigue`'s, `tfcoil/base.py`'s,
+  `coils.py`'s -- has no data-dependent trip count by construction. §31.31.6's
+  "`cs_fatigue`'s masked scan is safe" is not an accident of this configuration; it is a
+  property of the conversion, and it is the argument for doing that conversion elsewhere.
+- 160 sites are constant, 33 of them `select_n` and 91 of them bare comparisons.
+
+**The measurement that closes the fused question is the margin.** For every comparison the
+interpreter also records how close it came to a tie -- `|a - b| / max(|a|, |b|, 1)` for a
+comparison, distance to the nearest integer for a `floor`/`ceil`, both minimised over every
+element, every instance and every iterate, **excluding exact ties**, which are structural
+(`safe_sqrt`'s `x == 0` guard on a genuinely zero element, a profile's boundary point) and
+cannot be flipped by a last bit because they are not *near* one -- they are *on* one, with a
+fixed branch either way. The tightest ten:
+
+| relative margin | moves? | primitive | site |
+|---|---|---|---|
+| `6.58e-42` | no | `eq` | `safe_math.py:144` `safe_sqrt` -- a denormal against zero, the structural guard |
+| **`3.68e-11`** | **yes** | `gt` | `vacuum.py:317` `solve_duct_diameter.cond` -- the Newton exit test |
+| `1.00e-09` | no | `le` | `pure_formulas.py:172` `phyaux` |
+| `9.50e-09` | no | `eq` | `fusion_reactions.py:123` `bosch_hale_reactivity` |
+| `1.00e-08` | no | `max` | `profiles.py:385` `calculate_parabolic_temperature_profile` |
+| `9.88e-07` | yes | `gt` | `pure_formulas.py:361` `_fast_alpha_fraction_ward` |
+| `6.95e-05` | yes | `lt` | `superconductors.py:178` `bottura_scaling` |
+| `1.54e-04` | yes | `floor` | `vacuum.py:999` `calculate_vacuum_pumping_old` |
+| `2.41e-04` | no | `max` | `pure_formulas.py:469` `_fast_alpha_beta` |
+| `1.02e-03` | no | `le` | `radiation_power.py:158` `calculate_impurity_radiation_power_density` |
+
+**Nothing in the block comes within five orders of magnitude of being flipped by a `1e-15`
+difference.** The closest live predicate anywhere is the duct Newton's own exit test at
+`3.68e-11`, and the closest one outside that loop is `9.88e-07`. So **hypothesis 3 is
+refuted as an explanation of the fused divergence**: the fused program cannot be exciting a
+discontinuity at the point where it differs, because at the points where it differs no
+discontinuity is anywhere near. The two trajectories do end up straddling different
+branches -- that is what §31.32.1's 45 cells become after a hundred iterations of
+separation -- but that is a *consequence* of the separation, not its cause.
+
+#### 31.32.5 [measured] What the census did find: two value-level staircases, live on the objective
+
+The duct Newton makes the *derivative* jump while the value stays continuous. The two new
+sites are worse in kind: **the value itself jumps, and the derivative is identically zero
+across the jump**, so the Jacobian the SQP is handed carries no trace of it at all.
+
+- **`vacuum.py:999`: `n_vac_pumps_high = jnp.floor(pumpn + 0.5)`** -- the count of
+  high-vacuum pumps, rounded. It takes **seven distinct values, 100 to 167, across 41
+  sampled iterates of one solve** [measured], i.e. its argument crosses a half-integer
+  something like sixty times along a trajectory that is supposed to be converging.
+- **`thermal_cryo.py:814`: `n_primary_heat_exchangers = jnp.ceil(p_plant_primary_heat_mw /
+  1000)`** -- moves between 3 and 4 [measured]. It reaches `costs.py:684`, where it
+  multiplies the reactor cooling system cost.
+
+**Both are live on the objective, and that is measured rather than inferred.** jax's own
+dead-code elimination keeps both in the values program *and* in the Jacobian program, and
+the direct test settles it: stepping `calculate_vacuum_pumping_old`'s `n_vac_pumps_high` by
+exactly `+1` -- one whole tread of the staircase -- and re-evaluating the block moves
+**exactly one of the 21 conditions, `^cond.numerics.objf`, by `7.80e-05` relative**
+[measured], and no constraint at all.
+
+So the figure of merit this arm minimises is **piecewise smooth with jumps of order `1e-4`
+relative**, and the gradient it is minimised with is blind to every one of them. That is a
+plausible reason the converged run stops at a largest equality residual of `1.04e-07`
+rather than at machine precision, and why it takes 169 iterations to get there. It is
+**not** the fused mechanism -- §31.32.4's margin says a `1e-15` difference cannot step the
+staircase at any measured point -- but it is a defect of exactly the class §31.31 was
+hunting, it was invisible to every instrument used before this one, and it is upstream of
+the objective rather than of a constraint, which is the worst place for it.
+
+`availability.py:370`'s `math.floor` on the same quantity is a **Python** `floor` on a
+static field and is therefore not in the traced block at all; it is a different thing with
+the same name and is not implicated here.
+
+#### 31.32.6 The recommendation on `fused`, and what it rests on
+
+**`fused` is safe on the evidence -- it is not wrong, not amplified, and excites nothing --
+and it should still not be turned on today, for a reason that has nothing to do with
+fusion.**
+
+The three grounds for holding it off are each answered. It is not wrong (§31.32.2: a third
+spelling is further from both than they are from each other, and `fused` is the closer of
+the two at 6 of 9 points). Its discrepancy does not grow (§31.32.1: `<= 3.52e-16` relative
+at all 337 points of the converged path and all 269 of the diverging one). It excites no
+discontinuity (§31.32.4: the nearest live predicate is `3.68e-11` from flipping). And
+§31.31.5's actual argument -- *"at fixed everything-else, one Jacobian gives a stable arm
+and the other does not"* -- **does not survive its own control**: fabricated `+-1` ulp
+nudges of the split Jacobian stop this arm in 3 of 6 draws without the implicit duct fix and
+1 of 4 with it, and the fused Jacobian is a strictly smaller perturbation than any of them.
+`fused` is one draw from a distribution the arm has been sitting in the whole time; the
+split path's 169-iteration convergence is another draw from the same distribution, and
+`reference_cold_matrix.txt` records it because it happened, not because anything protects
+it.
+
+What that does *not* license is flipping the switch. **`reference_cold_matrix.txt`'s
+headline is that all twelve rows converge, and flipping `fused` would spend one of them for
+~20 % of the SAND arm's emitted HLO.** Re-baselining a tracked output is a trade to make
+deliberately and with the other five configurations measured, exactly as §31.30.5 says. What
+this record changes is the *reason*: it is no longer "we would be banking a compile saving
+on top of a live defect" (§31.31.5), which was wrong, but "we would be spending a converged
+row on a saving, and the row is worth more than the saving until the arm's instability is
+fixed."
+
+**The instability is the thing to fix, and it is not `fused`'s.** An arm whose status
+depends on the last bit of a Jacobian cell is an arm whose 169-iteration convergence is not
+evidence of anything, and it makes every A/B on this row uninterpretable -- which is what
+§19, §20, §21.2, §31.25 and §31.27 have each run into separately. Two named contributors now
+exist -- the duct Newton's trip count (§31.31.3, fix measured at §31.31.4, not landed) and
+the pump-count staircase (§31.32.5, no fix proposed) -- and §31.32.3 shows the first
+accounts for part but not all of it. When the arm converges from every last-bit
+perturbation, `fused` will cost nothing to turn on and there will be no row to spend.
+
+#### 31.32.7 What this changes in §31.30 and §31.31
+
+- **§31.30.4's "condition values, fused vs split: bitwise identical" is a one-point
+  measurement and is false along the trajectory** -- 226 of 337 evaluations have a condition
+  value that differs, by up to `9.77e-15` (§31.32.1). Its "10 of 294 cells" is likewise the
+  start's figure; over a solve it is 45 cells, 5-16 at a time. Its conclusion -- ulp-scale,
+  scheduling, no bitwise spelling -- is unchanged and now holds over a trajectory rather
+  than at a point.
+- **§31.30.4's "the fused answer is not *wrong*; it is a different walk of a chaotic
+  trajectory" was right, and §31.31.5 overturned it on insufficient evidence.** §31.31.4's
+  fused-plus-implicit row is real and reproduces (365 it, stopped, `3.80e-01`), but it was
+  read as *"one Jacobian gives a stable arm and the other does not"* without a control, and
+  with the control the split Jacobian is not stable either.
+- **§31.31.4's "every perturbation converges" holds only for the perturbation it tested** --
+  one input, `+-1`/`+-2` ulp. Under a per-iterate Jacobian nudge the implicit-duct arm still
+  stops in 1 of 4 draws (§31.32.3). The implicit derivative's real, measured benefit is the
+  rate: 94 iterations against 169, and 102-120 against 116-262 under perturbation. That is a
+  good enough reason to land it; "it removes the knife edge" is too strong.
+- **§31.31.5's "banking the fusion's compile saving now would be banking it on top of a live
+  defect" is withdrawn.** The live defect is real and worth fixing, but it is not what the
+  fused row was showing, and the fused row is not the instrument that makes it visible --
+  §31.32.3's fabricated nudge is, and it is cheaper and needs no second program.
+- **§31.31.6's "whether the Newton is the *only* remaining discontinuity" is answered for
+  this configuration**: it is not, there are nine other moving sites, and two of them
+  (§31.32.5) are value-level rather than derivative-level. Its "`cs_fatigue`'s masked scan is
+  safe" is now a structural statement rather than an observation -- a `scan`'s trip count is
+  a compile-time constant.
+- **Nothing changes in §31.30.1, §31.30.2, §31.30.3 or §31.31.2.** The emitted-line counts,
+  the probe's deletion, the `scaled_problem` unification and the `Status`-carried refusal are
+  untouched, and every run above exercised all four.
+
+#### 31.32.8 Not resolved
+
+- **Nothing here fixes the instability.** Six configurations are unmeasured under the
+  fabricated-nudge control, and no fix is proposed for the pump-count staircase. Smoothing a
+  pump count would change answers on every row that reads a cost, so it wants the same
+  seven-configuration treatment §31.31.6 asks for the duct derivative -- and probably wants
+  to be considered *with* it, since they touch the same arm and would otherwise be
+  re-baselined twice.
+- **The census instrument is not landed.** It is a jaxpr interpreter that executes
+  `while`/`cond`/`scan` bodies on the host and records every discrete outcome per instance
+  per iterate; it costs 0.4 s an iterate on this block after a 10 s first pass, and it found
+  in one run what §31.31.3 found with one hand-written `debug.callback`. It has no unit and
+  no registry row, so it is described here and not committed. Rebuilding it is half a day;
+  the design is above, and the one non-obvious part is that jax 0.11 groups a `scan`'s
+  inputs and outputs with `FlatTree`s (`ft_in`/`ft_out`) rather than with
+  `num_consts`/`num_carry`.
+- **The margins are minima over 41 sampled iterates, not over all 337.** A predicate that
+  passed within `1e-15` of a tie at an unsampled point would not have been seen. The gap
+  between the tightest live margin (`3.68e-11`) and a last bit (`1e-16`) is five orders of
+  magnitude, so this is unlikely to change the conclusion, but it is a sample.
+- **`floor`/`ceil`/`rem`/`argmax` on the other six configurations.** Eight `floor`s, one
+  `ceil`, six `rem`s and six `argmax`es are in this block; only the two named above move
+  *here*. `solve_duct_geometry`'s `K = 1` is the standing warning about reading that as
+  safety.
+- **Whether `SlsqpDriver` shows the same instability.** It cannot use `fused` (§31.30.4) but
+  it takes the same split Jacobian, and the two drivers exist to be a controlled comparison.
+  If a fabricated nudge leaves SLSQP's answer alone, that is a statement about `pyvmcon`'s QP
+  handling rather than about the problem, and it is the next cheap measurement.
