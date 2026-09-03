@@ -9753,3 +9753,363 @@ reader who never opens this file still meets it.
 - **The stellarator SAND `cb`-only cell is noise**, so the split of that arm's 11 % between
   the two changes is unmeasured. The MDF arms and the tokamak SAND arm are monotone and
   are where the attribution should be read from.
+
+## 33. The forward-safe, reverse-unsound guard: three sites in 393 node measurements, and the mechanism is an operand order (2026-09-03)
+
+An OpenMDAO comparison found a component of the tokamak graph where, at the same point on
+the same body, `jax.jacfwd` was entirely finite and `jax.jacrev` returned 201 non-finite
+entries in each of three columns. That it **NaNs rather than raises** is the diagnostic
+detail: §31.9's `lax.while_loop` refusal raises, and so does a missing transpose rule. A
+NaN means the transpose *ran* and produced a non-finite number, which points at a
+numerical asymmetry between the two modes rather than at a missing rule.
+
+The hypothesis under test was the *double-`where`* pitfall — a guard written as "compute
+the dangerous thing, then select it away", where forward mode discards the poisoned
+tangent and reverse mode multiplies a zero cotangent by an infinite local derivative.
+**The mechanism is confirmed. The hypothesis about which construct carries it is half
+wrong, and the census is a near-null**, which is the result worth stating loudly: across
+**393 node measurements** on two configurations there are **three** such sites, and the
+one the OpenMDAO comparison actually hit is not a `jnp.where` at all.
+
+Everything below is on `4739f91b` merged with `main` at `80544e02`, in a worktree
+[measured 2026-09-03].
+
+### 33.1 [measured] The asymmetry is an operand *order*, not a construct
+
+Minimal reproductions, `x64` on, at `x == 0`:
+
+| body | `jacfwd` | `jacrev` |
+|---|---|---|
+| `where(x>0, sqrt(x), 0)` | 0 | **nan** |
+| `lax.select(x>0, sqrt(x), 0)` | 0 | **nan** |
+| `where(x!=0, 1/x, 0)` | 0 | **nan** |
+| `where(x>0, sqrt(where(x>0, x, 1)), 0)` | 0 | 0 |
+| `lax.cond(x>0, sqrt, zero, x)` | 0 | 0 |
+| `sqrt(maximum(x, 0))` | **inf** | **inf** |
+| `sqrt(clip(x, 0, None))` | **inf** | **inf** |
+| `safe_math.safe_sqrt(x)` | 0 | 0 |
+| `safe_math.safe_pow(x, p)`, `p = 0.5 / 0.7 / -1.5` | 0 | 0 |
+
+The jaxprs say why, and it is not about `select`. **The JVP multiplies first and selects
+last:**
+
+    e = div 0.5 (sqrt a)      -- inf
+    f = mul b e               -- inf
+    g = select_n c 0.0 f      -- 0.0; the inf is discarded
+
+**The transpose selects first and multiplies last:**
+
+    g = select_n b 0.0 1.0    -- 0.0, exactly
+    d = div 0.5 (sqrt a)      -- inf
+    i = mul g d               -- 0.0 * inf = nan
+
+The guard never changes; what changes is which side of the multiply the discard falls on.
+**Forward selects after multiplying; reverse multiplies after selecting.** Three
+consequences the original framing did not have:
+
+- **`lax.cond` is sound where `jnp.where` is not.** An unbatched `cond` is a real branch
+  and the untaken arm is never evaluated in either mode. (Under `vmap` it lowers to a
+  select and the asymmetry returns, so this is not a general licence.)
+- **`jnp.clip`/`jnp.maximum` clamps are unsound in *both* modes**, not asymmetric: the
+  clamp feeds the singular argument straight into the operation. That is
+  `safe_math.py`'s original defect class and §31.4's subject — a different one, and one
+  this port already closed.
+- **`safe_math.safe_pow`/`safe_sqrt` are already transpose-sound**, measured rather than
+  assumed. They are double selects that substitute the *argument*, not only the result;
+  the docstring's "both halves are load-bearing" is exactly this property, written for
+  the forward-mode reason and correct for the reverse-mode one too.
+
+### 33.2 [measured] Any discarding linear map does it — and the tokamak's was a *slice*
+
+Because the mechanism is the operand order rather than the construct, **anything whose
+transpose re-injects an exact zero** carries it. A slice is such a map: its transpose is
+a pad with zeros.
+
+```python
+s = jnp.sqrt(x)                         # x[0] == 0 -> s[0] == 0, ds[0]/dx[0] == inf
+return lax.slice_in_dim(s, 1, x.size)   # element 0 is never used
+```
+
+`jacfwd` column 0 is `[0, 0, 0]`; `jacrev` column 0 is `[nan, nan, nan]`. The grad jaxpr,
+in four equations:
+
+    b = sqrt a
+    c = div 0.5 b                             -- c[0] = inf
+    f = pad e 0.0 padding_config=((1,0,0),)   -- f[0] = 0.0, the slice transposed
+    g = mul f c                               -- g[0] = 0 * inf = nan
+
+**This, not a `jnp.where`, is what the tokamak graph actually had**, which is why a grep
+for the double-`where` idiom would not have found it and why the census below is by
+*jaxpr*, not by source pattern.
+
+### 33.3 The instrument
+
+Per configuration: build the graph from its `IN.DAT`, drive the `Schedule` from a
+converged PROCESS run, and take every `CallableNode`'s real input values out of the
+resulting context. Then, per node:
+
+- a **JVP with a random tangent** and a **VJP with a random cotangent** — one pass each
+  rather than `n_in`/`n_out` passes, and at least as sensitive as any single Jacobian
+  column, since non-finiteness propagates additively through the contraction. The VJP
+  probe is also *exactly* the shape §31.9 named as reverse mode's one win: a scalar read
+  of many outputs.
+- the node's **JVP jaxpr interpreted on the host**, equation by equation, recording every
+  equation that manufactures a non-finite from finite inputs. Those are the **latent**
+  sites — the ones a discarding map downstream turns into a reverse-mode NaN and which
+  forward mode therefore never reports.
+
+This is §31.32.4's instrument asking a different question. That census asked whether a
+*predicate moves* between iterates; this one asks whether a *derivative is finite* at
+one. The enumeration is shared; the classification is new.
+
+**The classification is a property of the JVP jaxpr, not of the source.** A guard is
+transpose-sound exactly when its JVP jaxpr manufactures no non-finite: whatever the
+discard downstream is — select, slice, masked sum — there is no infinity for the
+transposed multiply to reach. That is why the test is run on the program rather than on
+the spelling.
+
+### 33.4 [measured] The census, three ways
+
+Two configurations, each at its own converged PROCESS point: `large_tokamak_eval.IN.DAT`
+(244 `CallableNode`s) and `stellarator_helias.IN.DAT` (149). **393 node measurements.**
+
+| | tokamak | stellarator | total |
+|---|---|---|---|
+| `CallableNode`s | 244 | 149 | **393** |
+| clean in both modes | 232 | 137 | **369** |
+| no differentiable input | 10 | 8 | 18 |
+| **finite forward, non-finite reverse** | **1** | **2** | **3** |
+| non-finite in *both* modes (not this class) | 0 | 1 | 1 |
+| reverse *raises* (§31.9's `while_loop`) | 1 | 1 | 2 |
+
+And the three counts the brief asked for, stated as what each one actually measures:
+
+- **Unsound in principle — 803 guard constructs [measured, static].** An `ast` walk over
+  `functional_process/models/**` counts 331 `safe_pow`, 266 `jnp.where`, 83 `safe_sqrt`,
+  70 `jnp.maximum`, 43 `jnp.minimum`, 6 `jnp.clip` and 4 `lax.select`, against 1 996
+  singularity-capable operations (1 233 `/`, 218 fractional/negative/traced `**`, 50
+  `jnp.log`, 47 `jnp.sqrt`, 7 `jnp.log10`, 5 `jnp.arcsin`, 1 `jnp.arccos`, and 435
+  integer `**` that are regular at 0). This is an **upper bound and nothing more**: it
+  counts sites that *could* be singular for some input, not sites that are.
+- **Unsound and reachable — 3 sites [measured, dynamic].** Sites whose JVP jaxpr
+  manufactures a non-finite at a real converged point, and whose VJP is consequently
+  non-finite while the JVP is not. Three distinct `(primitive, source line)` sites, in
+  three nodes, across both configurations. **All three fire**; none is a
+  latent-but-not-firing site.
+- **Inert — everything else.** 369 of 393 nodes are clean in both modes; 18 have no
+  differentiable input at all; and one (`.physics.dimensionless_plasma_parameters`) is
+  non-finite in *forward* mode too, which makes it §31.5's known `.physics.nu_star`
+  defect rather than a member of this class — deliberately not repaired here.
+
+**Zero sites are unsound-in-principle-but-not-firing.** That is worth stating precisely,
+because it is the strongest thing this instrument can say and it is also the weakest: a
+guard whose dangerous branch has a *finite* derivative at this point is transpose-sound
+here whatever the discard downstream does, but the instrument sees only the points it is
+run at. Two configurations of seven were measured. The residual risk is a branch that
+becomes singular at a design point not visited — which is `safe_math.py`'s own stated
+policy for keeping guards it cannot see fire, and the reason §33.9 does not recommend
+touching the other 800.
+
+**Why the reachable count is so small.** The port already writes the safe spelling nearly
+everywhere, having paid for the lesson at least four times before this one:
+`safe_math.safe_pow`/`safe_sqrt` substitute the argument, not just the result;
+`pure_formulas._fast_alpha_fraction_ward`, `stellarator/density_limits`, `tfcoil/base`,
+`tfcoil/stress.eyoung_series`, `pfcoil/inductance`, `physics/profiles` and
+`costs.py`'s net-electric-power root each carry an explicit double-`where` with a comment
+saying why; `superconducting.solve_current_sharing_temperature`'s carry collapses to a
+*flat state* rather than being frozen by a mask, for exactly this reason (its own
+comment: "a secant step whose denominator has gone to zero is `inf` — which `jnp.where`
+discards in value and multiplies by zero in the JVP"); and `cs_fatigue`'s masked `scan`
+is sound on the same argument, because the masked step re-evaluates a frozen state that
+is finite. **The near-null is a result about the port, not about the method.**
+
+### 33.5 [measured] The three sites
+
+| # | site | shape | node | JVP | VJP |
+|---|---|---|---|---|---|
+| 1 | `models/physics/bootstrap_current.py:820` `bootstrap_fraction_sauter` | bare `jnp.sqrt` at an exact zero, discarded by a **slice** | `.tokamak.bootstrap_current` | 0 / 201 | **3 / 619** |
+| 2 | `models/stellarator/heating.py:193` `calculate_fusion_gain` | single `jnp.where`, division on the unselected arm | `.stellarator.fusion_gain` | 0 / 1 | **4 / 4** |
+| 3 | `models/physics/superconductors.py:188` `bottura_scaling` | single `jnp.where`, fractional power of a negative base on the unselected arm | `.stellarator.coils.winding_pack_intersect_inputs` | 0 / 601 | **8 / 14** |
+
+**1 — the slice, and the one the OpenMDAO comparison hit.**
+`sqeps = jnp.sqrt(roa * (rminor / rmajor))` with `roa[0] == 0.0` exactly, because the
+profile grid starts on axis. Value `0`, derivative `inf`. Element 0 is never read — every
+use is `_profile_at(sqeps, radial_elements - 1)` with `radial_elements = arange(2, n)` —
+and `_profile_at` emits `lax.slice_in_dim` for a contiguous run (its own docstring
+explains that rewrite as a jaxpr-size saving; it is also, unintentionally, the discard).
+Under a full `jacrev` the three non-finite input cotangents become **three columns of 201
+non-finite entries each**, which is the reported finding exactly.
+
+**2 — the shape the brief predicted.**
+
+```python
+denominator = p_hcd_injected_total_mw + p_beam_orbit_loss_mw + p_plasma_ohmic_mw
+return jnp.where(
+    jnp.abs(denominator) < _Q_DEGENERATE_GUARD_MW,
+    _Q_DEGENERATE_VALUE,
+    p_fusion_total_mw / denominator,      # evaluated at denominator == 0
+)
+```
+
+`inf` in value and `-inf` in `d/d denominator` on the arm the guard exists to discard.
+Textbook single `where`; the repair is the inner one.
+
+**3 — the same, one level less obvious.** `safe_b_critical` is substituted to `1.0`
+outside the critical surface, so `b_reduced` is `b_conductor`, which exceeds 1 there, and
+`(1.0 - b_reduced) ** q` is `nan` for fractional `q`. The divisor was guarded (the
+comment at `:181` says so) and the *base* was not. §31.32.4 already recorded
+`superconductors.py:161`/`:178`'s comparisons as moving between iterates without noticing
+that the arm they select is poisoned; this is the derivative-side reading of the same
+two lines.
+
+### 33.6 [landed, measured] The repairs, and what they cost
+
+Three one-expression changes, each substituting the singular *argument* on the arm that
+is discarded:
+
+```python
+sqeps = safe_sqrt(roa * (rminor / rmajor))                        # 1
+safe_denominator = jnp.where(degenerate, 1.0, denominator)        # 2
+safe_b_reduced = jnp.where(inside_critical_surface, b_reduced, 0.5)   # 3
+```
+
+**Nothing moved. This is the check, not the claim:**
+
+| | site 1 | site 2 | site 3 |
+|---|---|---|---|
+| value bitwise identical | 201 / 201 | 1 / 1 | 601 / 601 |
+| JVP bitwise identical | 201 / 201 | 1 / 1 | 601 / 601 |
+| **full `jacfwd` bitwise identical** | **124 419 / 124 419** | 4 / 4 | 8 414 / 8 414 |
+| VJP non-finite | 3 / 619 → **0** | 4 / 4 → **0** | 8 / 14 → **0** |
+
+and, end to end, **every variable the schedule produces is bitwise identical**: 1 140 of
+1 140 on the tokamak, 831 of 831 on the stellarator. `run_cold_matrix.py --native --compare-process` reproduces
+`reference_cold_matrix.txt` **on all twelve rows and the whole boundary block, line
+for line** -- including the re-baselined `stellarator_helias` SAND row at 94
+iterations. The only lines that differ are the header (command, timestamp, tree) and
+the phase-timing block, which moved because this run started from an empty
+compilation cache (`compile` 0.0 s -> 8.1-42.5 s per row); no answer moved. Tests: 153 passed / 150 skipped over the three
+units' harness cases; 839 passed over `tests/unit/models` and `tests/unit/core`.
+
+**The cost, measured rather than inherited from §31.4:**
+
+| | jaxpr eqns | HLO (value) | HLO (`jacfwd`) | warm median call |
+|---|---|---|---|---|
+| site 1, `.tokamak.bootstrap_current` | 952 → 957 (+0.53 %) | 2 058 → 2 092 (+1.65 %) | 5 413 → 5 512 (+1.83 %) | 0.0594 → 0.0564 ms |
+| site 2, `.stellarator.fusion_gain` | 12 → 12 (0 %) | 61 → 65 (+6.56 %) | 222 → 237 (+6.76 %) | 0.0126 → 0.0131 ms |
+| site 3, `.stellarator.coils.winding_pack_intersect_inputs` | 144 → 144 (0 %) | 406 → **358 (−11.82 %)** | 1 296 → 1 433 (+10.57 %) | 0.0301 → 0.0308 ms |
+
+Three things this table says that the "nearly free" verdict of §31.4 does not:
+
+- **The percentage is not one number.** On a 2 000-line program the double select is
+  1.6–1.8 %, which is §31.4's band. On a 61-line one it is 6.6 %, and on the `jacfwd`
+  program of a 1 300-line one it is 10.6 %. The *absolute* cost is tiny and roughly
+  constant per site; the percentage is just the reciprocal of how big the node is.
+- **Site 3's value program got 11.8 % smaller.** Substituting the base removes a `pow`
+  whose result XLA could otherwise not fold, so the safe spelling is not monotonically
+  more code.
+- **No steady-state cost is measurable.** Every per-call difference is at or inside the
+  process-to-process spread: measuring the *repaired* arm twice in two processes gave
+  0.0301 → 0.0308 ms on site 3 and 0.0126 → 0.0131 ms on site 2 with the code unchanged,
+  which is the same size as the before/after difference. An earlier single reading of
+  0.0427 ms on site 3 was taken with two other jobs on the machine and is discarded for
+  that reason, not because it was inconvenient.
+
+### 33.7 [measured] What is still blocking a reverse-mode objective gradient — and it is one loop
+
+The point of the exercise, and the number that must not be estimated. Differentiating
+`.costs.coe` — figure of merit 6 — through the whole tokamak `Schedule` with respect to
+four of PROCESS's own iteration variables (`rmajor`, `beta_total_vol_avg`,
+`nd_plasma_electrons_vol_avg`, `temp_plasma_electron_vol_avg_kev`):
+
+| | on the repaired tree |
+|---|---|
+| value | `559.675135872` |
+| `jax.jacfwd` | **0 of 4 non-finite** [98.7 s cold, trace+lower+compile+run] |
+| `jax.grad` | **`ValueError`: reverse-mode differentiation does not work for `lax.while_loop`** |
+
+So the repairs are **necessary and not sufficient**, and the remaining refusal is
+§31.9's, narrowed to one site. To show that it is the *only* one left, the same
+measurement was repeated with `vacuum.solve_duct_geometry`'s result wrapped in
+`jax.lax.stop_gradient` — a **stand-in, not a repair**, deliberately not committed,
+because unlike §31.33.1's treatment of `solve_duct_diameter` it drops that node's
+contribution to the derivative rather than recovering it. Both modes were therefore
+re-measured under the patch and compared against each other:
+
+| | under the stand-in |
+|---|---|
+| `jax.jacfwd` | 0 of 4 non-finite [98.7 s] |
+| **`jax.grad`** | **0 of 4 non-finite** [114.8 s] |
+| `max |grad − jacfwd| / |jacfwd|` | **2.0e-14** |
+
+**`jax.grad` of the scalar objective works on the whole graph, and agrees with forward
+mode to fourteen digits, as soon as that one loop is out of the way.** Nothing else
+refuses and nothing else returns a NaN. The answer to "what is still blocking reverse
+mode on the scalar objective" is therefore short and checkable:
+**`models/vacuum/vacuum.py:474`, `solve_duct_geometry`, and nothing else.**
+
+Two caveats, both worth carrying:
+
+- **The 2.0e-14 is agreement between two modes under the same stand-in**, not agreement
+  with the true derivative. The stand-in changes the answer — unpatched `jacfwd` gives
+  `d(coe)/d(rmajor) = -333.363886` and patched gives `-333.598584`, a 7e-4 relative
+  difference — so the vacuum path is a real, small contribution that a genuine repair
+  must recover, the way §31.33.1 recovered the duct diameter's.
+- **Reverse mode did not win here.** 114.8 s against 98.7 s cold wall time, i.e. **0.86x**
+  — but both numbers are dominated by compilation, and no steady-state per-call
+  comparison was taken. §31.9's argument that reverse wins on a 1-output objective is
+  about pass counts, and at four inputs there are not enough passes to win. Where the
+  crossover is remains **unmeasured**.
+
+### 33.8 The third instance of "works only by accident of how it is consumed"
+
+This is the third defect of that exact shape this audit has found, and the shape is worth
+naming because it is what keeps turning up:
+
+1. **CoolProp's result is static** — but only because of how it is used; nothing declares
+   it.
+2. **Declaration array fields are invisible to `filter_jit`** unless wrapped — correct
+   only while nothing looks at them.
+3. **This guard is finite** — but only because the graph is differentiated forwards.
+
+In each case the code is correct under the *current* consumer and silently wrong under a
+consumer nobody has written yet. Nothing in `bootstrap_fraction_sauter` said "this square
+root's derivative is infinite on axis, and that is fine because the element is sliced
+away". The value tests passed, the `jacfwd` tests passed, and the harness's
+gradient-agreement check — which compares against PROCESS's own finite difference, in
+forward mode — passed too. The defect was invisible to every test that existed.
+
+The instrument that finds this class is therefore not a test of the *answer*; it is a
+test of the *program*. And it is a **forward-mode** test for a **reverse-mode** defect,
+which is the only kind that can exist today, because §33.7's loop means no reverse-mode
+test can run on the whole graph at all.
+
+### 33.9 Recommendation: fix the three, keep the other 800, and keep the instrument
+
+- **Fix the three sites.** Done, measured, bitwise identical in value and forward
+  derivative on both configurations, whole-schedule and cold-matrix verified (§33.6).
+- **Do not sweep the remaining 800 guard constructs.** There is nothing to fix that this
+  instrument can see: their JVP jaxprs manufacture no non-finite at either measured
+  point. Rewriting a sound guard into a "safer" spelling costs HLO for no measured
+  defect, and this tree is demonstrably sensitive at the last bit (§31.19, §31.32).
+  `safe_math.py`'s policy of never *removing* a guard on a positivity argument stands;
+  this measurement is its mirror image — do not *add* one on a symmetry argument either.
+- **Run the census on the other five configurations.** Two of seven were measured, and
+  the two disagreed: the tokamak's one site is not the stellarator's two. That is direct
+  evidence that this defect class is **configuration-dependent**, exactly like §31.32.4's
+  "constant at `K = 1` here is luck rather than safety". The remaining five are ~20
+  minutes each [estimated, from the two measured].
+- **Keep the instrument, not the finding.** It is
+  `JVP jaxpr → host interpretation → equations that manufacture a non-finite`, per node,
+  at a real converged point. It is cheap, it needs no reverse mode, and it would have
+  found all three sites the day each was written. Its natural home is beside the
+  harness's existing gradient-agreement check — as a **forward-mode** test that reports a
+  **reverse-mode** defect, which is the only kind that can exist while §33.7's loop
+  stands.
+- **`vacuum.py:474` is now the whole of the reverse-mode punch list.** §31.9 named three
+  `while_loop`s; `cs_fatigue` became a masked `scan`, `solve_duct_diameter` became
+  implicit (§31.33.1), these three guards are repaired, and §33.7 shows that with the
+  last loop stood down the whole-graph `jax.grad` is finite and correct to 2.0e-14. The
+  next measurement on this thread is `solve_duct_geometry` as a `vmap` over its 64
+  candidates plus a first-fit select (§31.12's sizing), after which the claim
+  "reverse mode works on this graph" becomes testable rather than argued.
