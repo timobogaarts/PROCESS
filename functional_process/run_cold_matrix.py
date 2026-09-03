@@ -193,6 +193,7 @@ import numpy as np
 jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
+from jax.flatten_util import ravel_pytree  # noqa: E402
 
 from functional_process import (  # noqa: E402
     mdf,
@@ -203,8 +204,9 @@ from functional_process import (  # noqa: E402
 )
 from functional_process.core.solver import host_cache  # noqa: E402
 from functional_process.core.solver.drivers import (  # noqa: E402
-    SUMMARY_MARKER,
-    NonFiniteProblemError,
+    VMCON_NON_FINITE,
+    Status,
+    non_finite_summary,
 )
 from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
@@ -652,31 +654,41 @@ def cold_sand(reference, machine_graph, switch_values, cold):
                 probe_context[var] = jnp.asarray(0.0)
 
     started = time.perf_counter()
-    try:
-        out = run_schedule(
-            solve_schedule, _inputs_only(solve_schedule, seeded), whole=False
+    out = run_schedule(solve_schedule, _inputs_only(solve_schedule, seeded), whole=False)
+    elapsed = time.perf_counter() - started
+
+    # **A stated outcome, not an exit -- and read as data, not caught.** The driver
+    # refuses a non-finite problem (`drivers._refuse_non_finite`) and reports
+    # `VMCON_NON_FINITE` through its own `Status` port, so the verdict arrives in the
+    # env this run returned like every other value. Nothing crosses the
+    # `jax.pure_callback` boundary as an exception, which is the point: that callback
+    # promises a pure function of its inputs, and jax may elide, repeat or reorder it.
+    #
+    # The names are recomputed here rather than carried, because they are wanted only
+    # for a row that already failed: `non_finite_summary` runs the same check eagerly
+    # on the host and reports which conditions were non-finite in VALUE and which in
+    # DERIVATIVE -- the distinction the deleted pre-solve probe could not draw at all,
+    # and the one that cost a full investigation the first time it was met.
+    reported = mdf.verdict(out, Status, solve_drive.problem)
+    if reported is not None and int(np.asarray(reported)) == VMCON_NON_FINITE:
+        flat_probe, probe_unravel = ravel_pytree(
+            tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
         )
-    except (NonFiniteProblemError, jax.errors.JaxRuntimeError) as failure:
-        # **A stated outcome, not an exit** -- the probe's actual purpose, kept. The
-        # two caught types are narrow on purpose and `_non_finite_refusal` narrows the
-        # second one further: a solve raises `ValueError` for a stale condition count, a
-        # stray `condition_scale` name, an inert objective and whatever `cvxpy` or a
-        # model body throws, and labelling any of those "non-finite" would turn an
-        # unrelated defect into a plausible measurement. Anything not recognised is
-        # re-raised unchanged.
-        #
-        # The note carries more than the probe's did, because the guard knows more: the
-        # probe could only say how many *values* were non-finite and name the first,
-        # where this says which conditions failed in value, which failed in
-        # *derivative*, and which unknowns have an all-zero column -- the distinction
-        # that cost a full investigation the first time it was met.
-        note = _non_finite_refusal(failure)
-        if note is None:
-            raise
-        result.update(status="non-finite", note=note)
+        summary = non_finite_summary(
+            solve_drive.condition_map(probe_context), probe_unravel, flat_probe
+        )
+        result.update(
+            status="non-finite",
+            note=(
+                f"refused at the first iterate -- {summary}"
+                if summary
+                else "refused at the first iterate (the driver reported a non-finite "
+                "problem; re-evaluating at the seeded start no longer reproduces it)"
+            ),
+        )
         result["_seconds_total"] = time.perf_counter() - began
         return result
-    elapsed = time.perf_counter() - started
+
     result["_x"] = tuple(
         float(np.asarray(out[sand.iteration_variable_path(i)])) for i in reference.ixc
     )
@@ -902,66 +914,6 @@ def _headline(refusal) -> str:
     if len(text) <= _HEADLINE:
         return text
     return f"{text[:_HEADLINE].rstrip()} [...] (run `machine_from_indat` for the rest)"
-
-
-def _non_finite_refusal(failure) -> str | None:
-    """The table note for `failure`, or `None` if it is not a non-finite refusal.
-
-    `None` is the caller's instruction to re-raise, and it is the whole discrimination
-    step. Two types are caught around the solve because
-    `drivers.NonFiniteProblemError` can reach a caller in two shapes, and **the one this
-    file gets is not the exception**, measured 2026-09-03:
-
-    - `sand_harness.run_schedule`, **including with `whole=False`** -- the call
-      `cold_sand` makes -- runs the driver's `jax.pure_callback` inside a compiled
-      program. XLA cannot carry a Python exception, so it arrives as
-      `jax.errors.JaxRuntimeError: INTERNAL: CpuCallback error calling callback: <the
-      host traceback, as text>`, with the class and every attribute gone.
-      `cottax.evaluate.Schedule.run` does the same.
-    - the exception itself only reaches a caller that is *not* going through a compiled
-      schedule, which nothing here does today.
-
-    That was not the expectation, and it is the finding that shaped this function: an
-    `except NonFiniteProblemError` alone would have caught nothing on the one path that
-    matters, and the row would have been the crash the probe existed to prevent. So the
-    note is taken from the message's `SUMMARY_MARKER` line, which is written for exactly
-    this and is the same string `.summary` carries -- one rendering, both arrivals, no
-    chance of the two drifting. The `isinstance` arm stays for the shape that is not
-    reached today rather than being deleted as unreachable: it costs one branch, and a
-    driver run outside a compiled schedule is a change nothing would announce.
-
-    `jax.errors.JaxRuntimeError` is a wide envelope and most of what arrives in it is
-    not this, so the marker is what narrows it. Matching on the marker rather than on
-    any phrase of the prose: the prose can be rewritten, the marker is a named constant
-    that a rewrite has to move deliberately.
-    """
-    if isinstance(failure, NonFiniteProblemError):
-        return _non_finite_note(failure.summary)
-    text = str(failure)
-    if SUMMARY_MARKER not in text:
-        return None
-    tail = text[text.index(SUMMARY_MARKER) + len(SUMMARY_MARKER) :]
-    return _non_finite_note(tail.splitlines()[0].strip())
-
-
-def _non_finite_note(summary: str) -> str:
-    """The table cell for a non-finite refusal, out of the refusal's own one-liner.
-
-    A prefix and nothing else, because the content is `_refuse_non_finite`'s to write --
-    see `SUMMARY_MARKER`. Quoting the *message* instead would spend the cell's first 180
-    characters on what a non-finite QP does to a solver and truncate before the names,
-    which are the only part the table needs.
-
-    **It says strictly more than the probe it replaces**, which could only report how
-    many *values* were non-finite and name the first. The summary reports the values and
-    the derivative rows **separately**, and `_refuse_non_finite`'s docstring records why
-    that distinction is the load-bearing one: on the cold SAND start that motivated the
-    guard every condition was finite in value and only the derivatives were `nan` -- a
-    row the old probe would have called healthy and then handed to VMCON. The
-    identically zero columns come along because an unknown the conditions cannot see is
-    the usual company that failure keeps.
-    """
-    return f"refused at the first iterate -- {summary}"
 
 
 def compares_by_default(mode: str) -> bool:

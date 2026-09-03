@@ -212,14 +212,6 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     )
 
 
-SUMMARY_MARKER = "SUMMARY: "
-"""Where `NonFiniteProblemError.summary` starts inside the message.
-
-The one thing a caller reporting this refusal in a single cell may match on. It is here
-rather than in that caller because the string it delimits is written here: a marker
-owned by the reader and a message owned by the writer is exactly the pairing that goes
-stale silently."""
-
 _SUMMARY_HEADS = 3
 """How many names of each kind `summary` quotes before `...`. Enough to recognise the
 failure; a table cell cannot hold thirty paths and the full lists are above it in the
@@ -251,21 +243,20 @@ class NonFiniteProblemError(ValueError):
     contract nobody can see. `ValueError` remains its base so every existing
     `except ValueError` -- and every caller that only wants the message -- is unaffected.
 
-    **The class does not reach a caller through any schedule, and that is why `summary`
-    is also in the message.** Measured 2026-09-03, and it was not the expectation: every
-    path in this tree that runs a `VmconDriver` puts it inside a `jax.pure_callback`
-    under a **compiled** program -- `cottax.evaluate.Schedule.run` and
-    `sand_harness.run_schedule` alike, the latter with `whole=False` included, which is
-    the call `run_cold_matrix.cold_sand` makes. XLA cannot carry a Python exception, so
-    what such a caller sees is `jax.errors.JaxRuntimeError: INTERNAL: CpuCallback error
-    calling callback: <the host traceback, as text>`. The class is gone, the attributes
-    are gone, and **only the message text is left**.
+    **It is not raised across a `jax.pure_callback`, and must not be.** Measured
+    2026-09-03: every path in this tree that runs a `VmconDriver` puts it inside a
+    *compiled* callback, so an exception out of it arrives as
+    `jax.errors.JaxRuntimeError` carrying the host traceback as text, with the class and
+    every attribute gone -- and, more fundamentally, `pure_callback` promises a pure
+    function of its inputs, so raising out of one is a side effect jax is entitled to
+    elide, repeat or reorder. `VmconDriver.__call__`'s `host` therefore **catches this
+    inside the callback** and returns `VMCON_NON_FINITE` as a `Status`; that constant's
+    docstring carries the argument.
 
-    So a caller catching the type alone would have caught nothing on the one path that
-    matters, and the one-line rendering a reporting caller needs is put **in the
-    message**, after `SUMMARY_MARKER`, where it survives being turned into text. The
-    type still earns its name: it is what `_refuse_non_finite`'s own tests assert on,
-    and it is what a future eager or in-graph driver would deliver.
+    So this type is what a **direct, eager** caller sees -- the unit tests, and any
+    future driver that is not behind a callback -- where an exception is the clearer
+    failure. `non_finite_summary` is the eager entry point a reporting caller uses to
+    turn a returned status back into names.
 
     The four tuples plus `summary` are set by `_refuse_non_finite`. Empty on an instance
     built any other way -- they are a convenience for a caller *reporting* this, never
@@ -312,8 +303,8 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     than this function -- values only, no derivative rows, no identically zero columns,
     no names -- and it was a whole third XLA module over the same block, built for a
     check this one already makes on the first iterate. It is gone; the row now comes
-    from catching `NonFiniteProblemError`, whose docstring says why the type has a
-    name.
+    from the `VMCON_NON_FINITE` status this refusal is turned into at the callback
+    boundary, with `non_finite_summary` recomputing the names for it.
 
     Raises
     ------
@@ -346,19 +337,50 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
         f"  unknowns with an all-zero column: {zeroed or 'none'}\n"
         "A derivative that is `nan` where the value is finite usually means an "
         "unbounded slope evaluated at its boundary -- `x ** p` with `0 < p < 1`, or "
-        "`sqrt`, at exactly `0.0` -- reached because an unknown was started there.\n"
-        # Last, on its own line, and after a marker: this is the half a caller with one
-        # table cell quotes, and the only half that survives being rendered to text by
-        # a compiled `pure_callback`. See `NonFiniteProblemError`.
-        f"{SUMMARY_MARKER}{summary}"
+        "`sqrt`, at exactly `0.0` -- reached because an unknown was started there."
     )
-    # The same lists as fields, so an *eager* caller need not parse anything.
+    # The lists as fields, so a caller reporting this need parse nothing. Nothing
+    # extracts them from the *message* any more -- see `VMCON_NON_FINITE` for why the
+    # compiled path stopped depending on the message surviving at all.
     refusal.summary = summary
     refusal.bad_values = tuple(bad_values)
     refusal.bad_rows = tuple(bad_rows)
     refusal.zero_columns = tuple(zeroed)
     refusal.n_conditions = len(names)
     raise refusal
+
+
+def non_finite_summary(conditions: ConditionMap, unravel, flat_start) -> str | None:
+    """`_refuse_non_finite`'s one-line verdict at `flat_start`, or `None` if it is clean.
+
+    **The eager companion to `VMCON_NON_FINITE`.** The status code says *that* a solve
+    was refused; this says *what* -- which conditions were non-finite in value, which in
+    derivative, and which unknowns have an all-zero Jacobian column. Splitting it this
+    way is what lets the compiled path stay free of exceptions: the verdict travels as
+    data through a `Status` port, and the names are recomputed here, on the host, only
+    for a row that already failed.
+
+    **It costs nothing on a healthy run and one cache hit on a failed one.** `bind`
+    memoises, so a caller diagnosing the solve it just ran asks for programs that are
+    already compiled. A caller that builds a *fresh* condition map (from a hand-rebuilt
+    context, as `run_cold_matrix` does) pays for one -- which is the price of a
+    diagnostic on a failed row, not of every row.
+
+    Deliberately **not** a second copy of the check: it calls `_refuse_non_finite` and
+    catches it, so there is exactly one definition of "non-finite problem" in this
+    module and no chance of the reporting and the refusing drifting apart.
+    """
+    values, jacobian, _fused = bind(conditions, unravel)
+    flat = jnp.asarray(np.asarray(flat_start, dtype=float))
+    try:
+        _refuse_non_finite(
+            np.asarray(values(flat), dtype=float),
+            np.asarray(jacobian(flat), dtype=float),
+            conditions,
+        )
+    except NonFiniteProblemError as refusal:
+        return refusal.summary
+    return None
 
 
 def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
@@ -473,6 +495,43 @@ information this column was added to carry.
 `QSPSolverException` and `LineSearchConvergenceException` are the only two subclasses
 `pyvmcon` defines and a fourth invented upstream would be a base-class failure until
 someone measured it and gave it a number.
+
+`VMCON_NON_FINITE` is `4` and is deliberately **not** in this table: it is not a
+`pyvmcon` outcome at all -- see its own docstring.
+"""
+
+VMCON_NON_FINITE = 4
+"""`Status` for a solve `_refuse_non_finite` stopped before VMCON could take a step.
+
+**Why this is a status and not an exception**, which is the whole point of the code.
+`_refuse_non_finite` runs inside `_Problem.__call__`, which runs on the host inside the
+`jax.pure_callback` `_sqp_callback` wraps -- and `pure_callback` promises a **pure
+function of its inputs**. jax is free to elide it under DCE, to execute it more than
+once, or to reorder it; raising out of it is a side effect, and what a *compiled*
+callback does with a Python exception is unspecified. Measured 2026-09-03: it arrives as
+`jax.errors.JaxRuntimeError: INTERNAL: CpuCallback error calling callback: <the host
+traceback, as text>`, class and attributes gone, on **every** path in this tree
+(`cottax.evaluate.Schedule.run` and `sand_harness.run_schedule` alike, `whole=False`
+included). A caller that recognised the failure by matching that text would be resting a
+reported outcome on implementation detail.
+
+So the refusal stops being an exception at the callback boundary and becomes data, which
+is exactly what `Status` was introduced for: *"the verdict comes back through the
+`^driver_out.*` ports `Assign` mints and lands in the env like every other value"*
+(`VmconDriver`'s own class docstring). `run_cold_matrix.cold_sand` reads it with
+`mdf.verdict(out, Status, place)` and renders its row from that.
+
+**Not `1`**, and the distinction is the same one the three `pyvmcon` codes make: `1`-`3`
+are *"the solve ran and did not get there"*, where the returned point is the best one
+found. `4` is *"the problem handed to the solver was not a problem"* -- no step was
+taken, the returned point is the start, and the fault is upstream in the model or the
+seed rather than in the optimiser. Rendering them alike would put a row that never
+started in the same column as one that ran to `max_iter`.
+
+`_refuse_non_finite` still **raises** for a caller that reaches it directly and eagerly
+-- the unit tests' path, and any future in-graph or host-side driver -- because there an
+exception is the clearer failure and none of the above applies.
+`non_finite_summary` is how a caller turns the status back into names.
 """
 
 
@@ -1152,12 +1211,26 @@ class VmconDriver(AbstractDriver):
       residual `1.04e-07`** becomes **stopped, 134 it, `objf 1.22762089`, largest
       equality residual `1.96e-02`**
 
-    Three rows of four are untouched and one flips out of convergence. That is exactly
-    the behaviour §19, §20 and §21.2 record -- an SQP trajectory turning on a 2-ulp
-    input -- and it is why `reference_cold_matrix.txt` is not re-baselined for it: the
-    fused answer is not *wrong*, it is a different walk of a chaotic trajectory, and
-    trading a converged row for a stopped one is not a compile-time saving worth taking
-    silently. [measured]
+    Three rows of four are untouched and one flips out of convergence -- the behaviour
+    §19, §20 and §21.2 record, an SQP trajectory turning on a 2-ulp input.
+
+    **And it is not merely a coin toss, which is the finding that keeps this off.**
+    §31.31 asked whether anything principled protects the converged run. Repeating §20's
+    hand perturbation on today's tree says no -- `-1 ulp` on `.tfcoil.a_tf_turn_steel`
+    still flips the arm to `stopped`. But the *reason* is measurable and fixable:
+    `.vacuum.vacuum_old` is in this block, and `solve_duct_diameter`'s `lax.while_loop`
+    trip count takes **six distinct values over one solve** (6, 7, 8, 9, 10, 11 across
+    2 025 exits), so the tangent's truncation index moves under the SQP -- §31.28.1's
+    mechanism, in a loop nobody had checked. Give that loop an implicit derivative
+    (converge under `stop_gradient`, one differentiable Newton step from the root) and
+    **every one of those perturbations converges**, the baseline in 94 iterations rather
+    than 169 -- while the fused Jacobian on the same fixed tree does not converge even
+    unperturbed (365 iterations, stopped). [measured]
+
+    So at fixed everything-else the split path is protected and the fused one is not.
+    `reference_cold_matrix.txt` is not re-baselined for this, and this field stays off:
+    the compile saving is real but taking it now would spend the one row that makes the
+    duct-Newton defect visible. §31.31.4 has both tables.
 
     **What it is worth, so the trade is stated and not implied.** In *emitted MLIR
     lines*, which is a property of the program and so cannot be moved by machine load --
@@ -1469,6 +1542,22 @@ class VmconDriver(AbstractDriver):
                 status = VMCON_STATUS.get(
                     type(e).__name__, VMCON_STATUS["VMCONConvergenceException"]
                 )
+            except NonFiniteProblemError:
+                # **Caught here, inside the callback, on purpose** -- see
+                # `VMCON_NON_FINITE`. `_refuse_non_finite` raises because raising is the
+                # right failure for a *direct* call, but `jax.pure_callback` promises a
+                # pure function of its inputs and an exception is a side effect: jax may
+                # elide the callback under DCE, run it twice, or reorder it, and what a
+                # compiled callback does with a Python exception is implementation
+                # detail (it arrives as `JaxRuntimeError` carrying the traceback as
+                # *text*). So the refusal stops being an exception at this boundary and
+                # becomes a status code, which is what `Status` exists for.
+                #
+                # The start is returned untouched, exactly as a
+                # `VMCONConvergenceException` returns `e.x`: there is no better point,
+                # because the solve never took a step.
+                x_scaled = flat_start * scale
+                status = VMCON_NON_FINITE
             return (
                 np.asarray(x_scaled, dtype=float) / scale,
                 steps[0],

@@ -8180,3 +8180,170 @@ tokamak row.
   caller.** They are kept as the documented baseline `bind` is measured against (this
   section uses `flat_conditions` as exactly that) and are not dead in the sense of being
   unreachable, but nothing runs them in a solve any more.
+
+### 31.31 [measured] §31.30.4's ten cells are not a coin: the duct Newton's trip count is a live discontinuity, and removing it removes the knife edge
+
+Three follow-ups to §31.30, in the order they had to be taken. The first was meant to
+decide whether `VmconDriver.fused` should default on; the third overturned the question.
+
+#### 31.31.1 [measured] §20.3's perturbation, repeated on today's tree -- the arm is still sensitive
+
+§20.3 established that `stellarator_helias` SAND's converged run was not protected:
+moving `.tfcoil.a_tf_turn_steel` by **-1 ulp** reproduced the "stopped" run bit for bit
+while `+1`/`+2` left the converged one untouched. That was measured 2026-09-01, and
+§31.28's implicit adjoint landed 2026-09-02, so it needed repeating before being used as
+an argument.
+
+`.tfcoil.a_tf_turn_steel` is **not a schedule input** on this tree -- an upstream `Call`
+computes it -- so the injection point is the `ConditionMap.context` the driver receives,
+which is the same env §20 moved. Cold SAND, split Jacobian, `SAND_MAX_ITER` [measured
+2026-09-03]:
+
+| run | its | status | `objf` | largest equality residual | `dx` vs base |
+|---|---|---|---|---|---|
+| baseline | **169** | converged | `1.2177574282449604` | `1.04e-07` | -- |
+| `-1 ulp` | **444** | **stopped** | `1.2219592724680666` | `2.56e-03` | `5.28e-01` |
+| `-2 ulp` | 159 | converged | `1.2177575717387195` | `2.97e-05` | `3.18e-05` |
+| `+1 ulp` | 215 | converged | `1.2177573467910956` | `1.01e-07` | `7.70e-05` |
+| `+2 ulp` | 215 | converged | `1.2177573467910956` | `1.01e-07` | `7.70e-05` |
+
+**Both outcomes are still reachable, so the coin-flip reading survives** -- and the arm
+is *more* chaotic than §20 found, not less: there, `+1`/`+2` were inert to the last bit
+(`dx 0.00e+00`) and `-1`/`-2` agreed exactly. Here every one of the four moves the
+trajectory and only one of the four flips the status. Taken alone this says: flip `fused`
+on, the converged 169 is luck. §31.31.3 is why that is the wrong conclusion.
+
+#### 31.31.2 [landed] The refusal crosses the callback as a `Status`, not as an exception
+
+§31.30.2 landed a design that recognised the non-finite refusal by matching a marker in
+the **traceback text** of a `JaxRuntimeError`. It worked and was tested, and it was
+wrong in principle: `jax.pure_callback` promises a *pure function of its inputs*: jax may
+elide it under DCE, execute it more than once, or reorder it. Raising out of one is a
+side effect, and what a compiled callback does with a Python exception is implementation
+detail, not contract.
+
+The repo already had the pattern and the change was to use it. `_sqp_callback` returns
+`(answer, steps, converged, status)`, and `Status` exists precisely so that *"the verdict
+comes back through the `^driver_out.*` ports `Assign` mints and lands in the env like
+every other value"*. So:
+
+- **`VMCON_NON_FINITE = 4`**, deliberately outside `VMCON_STATUS`'s `1`-`3`, because
+  those mean *"the solve ran and did not get there"* with the best point returned, and
+  this means *"what was handed to the solver was not a problem"* with no step taken and
+  the fault upstream. Rendering them alike would put a row that never started in the same
+  column as one that ran to `max_iter`.
+- `VmconDriver.__call__`'s `host` catches `NonFiniteProblemError` **inside** the
+  callback. **Nothing crosses the boundary as an exception.**
+- `_refuse_non_finite` still raises for a **direct, eager** caller -- the unit tests, and
+  any future in-graph or host-side driver -- because there an exception is the clearer
+  failure and none of the above applies.
+- `non_finite_summary(conditions, unravel, flat_start)` turns a returned status back into
+  names, on the host, by calling `_refuse_non_finite` and catching it -- so there is one
+  definition of "non-finite problem" in the module and the reporting cannot drift from
+  the refusing. It runs **only for a row that already failed**, so §31.30.1's saving is
+  untouched.
+
+`run_cold_matrix.cold_sand` now reads `mdf.verdict(out, Status, solve_drive.problem)`
+and renders the row from it; `SUMMARY_MARKER` and the text matching are deleted. The
+`stellarator_helias` row is unchanged (`MDF` 66 it / `objf 1.21775739`, `SAND` 169 it /
+`objf 1.21775743`) [measured].
+
+`_refuse_inert_objective` still raises across the callback. It is a **start-only** check
+whose whole purpose is to stop a misconfigured run before it reports a meaningless
+"converged", so a status code would have to be acted on by every caller rather than by
+one; left as it is, and named here so it is a decision rather than an oversight.
+
+#### 31.31.3 [measured] The duct Newton's trip count moves six ways during one solve
+
+§31.28.1's mechanism -- differentiating *through* an iteration makes the tangent a
+truncated series whose truncation index is `K(x)`, so the derivative jumps wherever `K`
+does -- is not specific to Picard. It applies to any hand-rolled `lax.while_loop` with a
+data-dependent trip count, and §31.13 left two in `vacuum.py` unconverted for a *runtime*
+reason that predates anyone asking whether they reach a derivative.
+
+They do. Structurally, `.vacuum.vacuum_old` is **one of the 123 nodes in the
+`stellarator_helias` SAND block**, and both loops are traced when `bind`'s Jacobian
+program is built [measured]. Instrumenting each loop's exit index with a
+`jax.debug.callback` and running one cold SAND solve [measured]:
+
+| loop | exits | trip counts | verdict |
+|---|---|---|---|
+| `solve_duct_diameter` (Newton, `max_iter=100`) | 2 025 | `{6: 657, 7: 12, 8: 6, 9: 673, 10: 675, 11: 2}` | **K MOVES**, six values |
+| `solve_duct_geometry` (10 % shrink, `max_outer=64`) | 2 025 | `{1: 2025}` | **K is CONSTANT** |
+
+So §31.13's two loops are not equally implicated on this configuration. The shrink loop
+-- the one whose *value* is a discrete selection and which looked worse in kind -- never
+shrinks here: the duct fits on the first candidate every time, so it contributes a
+constant and is inert. **The Newton is the live one**, and it crosses a truncation
+boundary constantly while the SQP is linearising it.
+
+#### 31.31.4 [measured, not landed] An implicit duct derivative removes the knife edge -- and then the fusion is clearly bad
+
+The fix is §31.28's, locally: converge under `stop_gradient`, then take **one
+differentiable Newton step from the converged root**, so the value moves by the residual
+(`< 5e-13` by that function's own fuzz sweep) and the tangent becomes the exact implicit
+`-(df/dp)/(df/dd)`, independent of `K`. Applied as a measurement only. §31.31.1's table,
+repeated with it in [measured]:
+
+| run | split Jacobian, **loop implicit** | split Jacobian, today |
+|---|---|---|
+| baseline | **94 it, converged**, `1.2177573469684084` | 169 it, converged |
+| `-1 ulp` | **94 it, converged**, `dx 1.5e-08` | **444 it, stopped** |
+| `-2 ulp` | **94 it, converged**, `dx 1.5e-08` | 159 it, converged |
+| `+1 ulp` | **235 it, converged**, residual `4.4e-11` | 215 it, converged |
+| `+2 ulp` | **235 it, converged**, residual `4.5e-11` | 215 it, converged |
+
+**Every perturbation converges, and the baseline converges in 94 iterations instead of
+169.** The knife edge §20 found and §31.31.1 reproduced is gone -- which is exactly what
+§31.28's implicit adjoint did for the Picard arm, by the same argument, in a different
+loop.
+
+And then the control that decides `fused`. With the implicit derivative in and
+`VmconDriver.fused` **on** [measured]:
+
+| run | implicit + **fused** |
+|---|---|
+| baseline | **365 it, stopped**, residual `3.80e-01` |
+| `-1 ulp` | 500 it, `cap(500)`, residual `6.32e-01` |
+| `-2 ulp` | 481 it, stopped, residual `2.39e+00` |
+| `+1 ulp` | 270 it, converged |
+| `+2 ulp` | 106 it, converged |
+
+So once the loop discontinuity is removed, **the split path is robust across every
+perturbation tried and the fused path does not converge even unperturbed.** That is the
+opposite of "another draw from the same coin": at fixed everything-else, one Jacobian
+gives a stable arm and the other does not.
+
+#### 31.31.5 The conclusion, and what it changes
+
+**`VmconDriver.fused` stays off.** The authorisation to flip it rested on "nothing
+principled is protecting the converged run", and §31.31.1 alone supports that. §31.31.3
+and §31.31.4 measure the thing that *was* doing the damage, and show that with it removed
+the split path is protected and the fused path is not. Banking the fusion's compile saving
+now would be banking it on top of a live defect, and would spend the one row that makes
+the defect visible.
+
+**The duct Newton is the better target**, exactly as §31.13's cost argument did not
+consider: that section weighed a masked-`scan` conversion for *reverse-mode* AD and
+concluded it did not pay. The implicit derivative is a different and much cheaper change
+-- it keeps the `while_loop` and its early exit, adds one Newton step, and touches
+neither the runtime nor the value beyond the residual -- and it buys forward-mode
+correctness, which is the mode actually being taken.
+
+#### 31.31.6 Not resolved
+
+- **The implicit fix is not landed.** It changes answers (`objf`
+  `1.2177574282449604 -> 1.2177573469684084`, a relative `6.7e-08`; the largest equality
+  residual `1.04e-07 -> 2.88e-06`) and therefore wants the whole cold matrix, all seven
+  configurations, plus `TestSolveDuctDiameter`'s tier-2 residual contract, before it
+  lands. Nothing here ran that.
+- **Whether the Newton is the *only* remaining discontinuity.** With it implicit, the
+  fused path still diverges wildly from the split one, which says the arm is still
+  amplifying something. `cs_fatigue`'s masked scan is safe and `solve_duct_geometry` is
+  inert here, but no survey of the other `while_loop`s and `where`-selected branches in
+  the block has been done.
+- **`solve_duct_geometry` on the other six configurations.** It is constant at `K = 1`
+  on `stellarator_helias`; a configuration whose duct does not fit on the first candidate
+  would exercise the discrete selection §31.13 flagged, in the *value* as well as the
+  derivative. Not measured.
+- **`_refuse_inert_objective` still raises across the callback** (§31.31.2).
