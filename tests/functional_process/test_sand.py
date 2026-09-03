@@ -33,6 +33,7 @@ from cottax.problem import (
 from cottax.rewrites import Assign
 from cottax.spec import CallableNode, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
+from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
 
 import functional_process
@@ -40,10 +41,14 @@ from functional_process.core.solver import constraints as ported_constraints
 from functional_process.core.solver import objectives as ported_objectives
 from functional_process.core.solver.drivers import (
     VMCON_CONVERGED,
+    VMCON_NON_FINITE,
     VMCON_STATUS,
+    NonFiniteProblemError,
     SlsqpDriver,
     Status,
     VmconDriver,
+    _refuse_non_finite,
+    non_finite_summary,
 )
 from functional_process.indat import GRAPH
 from functional_process.sand import (
@@ -743,8 +748,12 @@ def test_a_residual_whose_unknown_has_no_scale_keeps_a_factor_of_one():
 # ---------------------------------------------------------------- the driver
 
 
-def _toy_problem(driver=None):
+def _toy_problem(driver=None, objective=None):
     """`min (x-3)^2 + (y-2)^2` subject to `x + y - 4 <= 0`, as a cottax graph.
+
+    `objective` replaces the objective's `fn` and nothing else -- one caller wants a
+    body whose *derivative* is not finite at the start while every value is, which is
+    the only shape `drivers._refuse_non_finite` catches that a values-only check misses.
 
     **Takes the driver**, because `Assign` is what mints the `^guess.*` ports this
     returns -- the algorithm's own `requires` names them, so there is nothing to hand
@@ -768,7 +777,7 @@ def _toy_problem(driver=None):
                 CallableNode(
                     inputs=(In(x), In(y)),
                     outputs=(Out(f),),
-                    fn=_Objective(),
+                    fn=_Objective() if objective is None else objective,
                 ),
             ),
             (
@@ -883,11 +892,135 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
         schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
 
 
-# ------------------------------------------------- what the driver says about its run
+class _UnboundedSlope:
+    """`sqrt(x) + y`: finite everywhere on `x >= 0`, with an infinite slope at `x = 0`.
+
+    The shape `drivers._refuse_non_finite`'s docstring names as the usual cause -- a
+    value that is perfectly well defined and a derivative that is not -- so a start at
+    `x = 0` produces exactly the failure a values-only probe cannot see.
+    """
+
+    def __call__(self, x, y):
+        return jnp.sqrt(x) + y
+
+    def __eq__(self, other):
+        return isinstance(other, _UnboundedSlope)
+
+    def __hash__(self):
+        return hash(type(self))
+
 
 TOY_PROBLEM = NodePath((GetAttrKey("Opt"),))
 """Where `_toy_problem` binds its `Optimise`, which is the place every `DriverOut` port
 it mints is named from (`^driver_out.<label>.Opt`)."""
+
+
+def _non_finite_toy():
+    """The toy problem with `sqrt(x)` as its objective, started at `x = 0`."""
+    graph, _x, _y, gx, gy = _toy_problem(
+        VmconDriver(n_equality=0, n_inequality=1, scaled=False),
+        objective=_UnboundedSlope(),
+    )
+    return graph, path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(1.0)})
+
+
+def test_the_non_finite_refusal_carries_its_lists_and_a_one_line_summary():
+    """`_refuse_non_finite`'s own shape, asked of it directly -- the eager path.
+
+    Raising is the right failure for a **direct** call, and the named type is what a
+    caller tells this apart by: a solve raises `ValueError` for a stale condition count,
+    a stray `condition_scale` name and an inert objective, and catching `ValueError`
+    would label all of them "non-finite".
+
+    The **separation of value from derivative** is the load-bearing part and is checked
+    on a point where every value is finite and one row's derivative is not -- the exact
+    case the deleted pre-solve probe could not see, and the one that cost a full
+    investigation.
+    """
+    f = VarPath((GetAttrKey("c"), GetAttrKey("f")))
+    g = VarPath((GetAttrKey("c"), GetAttrKey("g")))
+    x = VarPath((GetAttrKey("d"), GetAttrKey("x")))
+
+    class _Map:
+        conditions = (f, g)
+        unknowns = (x,)
+
+    with pytest.raises(NonFiniteProblemError) as raised:
+        _refuse_non_finite(np.array([1.0, 2.0]), np.array([[np.nan], [1.0]]), _Map())
+    refusal = raised.value
+    assert isinstance(refusal, ValueError)  # every existing `except` still catches it
+    assert refusal.bad_values == ()
+    assert refusal.bad_rows == (f.path_str(),)
+    assert refusal.zero_columns == ()
+    assert refusal.n_conditions == 2
+    assert "0/2 non-finite in VALUE" in refusal.summary
+    assert f"1/2 non-finite in DERIVATIVE ({f.path_str()})" in refusal.summary
+
+
+@pytest.mark.parametrize("whole", [False, None])
+def test_a_non_finite_solve_returns_a_status_and_raises_nothing(whole):
+    """**No exception crosses the `jax.pure_callback` boundary. This is the contract.**
+
+    `pure_callback` promises a pure function of its inputs: jax may elide it under DCE,
+    run it more than once, or reorder it, so raising out of one is a side effect and
+    what a *compiled* callback does with a Python exception is unspecified (measured: it
+    arrives as `JaxRuntimeError` carrying the traceback as text, class and attributes
+    gone). Every path in this tree runs a `VmconDriver` inside a compiled callback --
+    `cottax`'s own `Schedule.run` and `sand_harness.run_schedule` alike, `whole=False`
+    included, which is what `run_cold_matrix.cold_sand` calls -- so the refusal must not
+    travel that way.
+
+    It does not: `host` catches it inside the callback and reports `VMCON_NON_FINITE`
+    through the driver's `Status` port, which lands in the returned env like every other
+    value. The run **completes**; the caller reads a verdict.
+
+    Both `whole` settings are checked because they choose different jit strategies and
+    the shape of the outcome must not depend on which one a schedule got.
+    """
+    graph, env = _non_finite_toy()
+    schedule = Schedule(Blocking.scc(graph))
+    # `run_schedule` takes a plain mapping (`_inputs_only`'s shape), `Schedule.run` a
+    # `PathMap`; the two jit strategies are the point of the parametrisation, not the
+    # container.
+    out = (
+        run_schedule(schedule, dict(env.items()), whole=False)
+        if whole is False
+        else schedule.run(env)
+    )
+    status = out[Status.name_for(TOY_PROBLEM)]
+    assert int(np.asarray(status)) == VMCON_NON_FINITE
+    assert not bool(np.asarray(out[Converged.name_for(TOY_PROBLEM)]))
+    # No step was taken, so the reported point is the start, not a "best" one.
+    assert int(np.asarray(out[Steps.name_for(TOY_PROBLEM)])) == 0
+
+
+def test_the_status_is_turned_back_into_names_by_non_finite_summary():
+    """The other half of the split: the status says *that*, this says *what*.
+
+    Recomputed on the host from the same `_refuse_non_finite`, so there is one
+    definition of "non-finite problem" in the module and the reporting cannot drift from
+    the refusing. `None` on a healthy point, so a caller can use it as the test as well
+    as the message.
+    """
+    graph, env = _non_finite_toy()
+    drive = next(
+        step for step in Schedule(Blocking.scc(graph)).steps if hasattr(step, "problem")
+    )
+    context = {v: env[v] for v in drive.context if v in env}
+    conditions = drive.condition_map(context)
+    # The env holds the starts at their `^guess.*` ports; the unknowns are the bare
+    # names, so the start for each is looked up by that correspondence.
+    guesses = {v.path_str().removeprefix("^guess"): env[v] for v in env.keys()}
+    bad, unravel = ravel_pytree(
+        tuple(jnp.asarray(guesses[u.path_str()]) for u in conditions.unknowns)
+    )
+    summary = non_finite_summary(conditions, unravel, bad)
+    assert summary is not None
+    assert "non-finite in DERIVATIVE" in summary
+    assert "0/2 non-finite in VALUE" in summary
+
+
+# ------------------------------------------------- what the driver says about its run
 
 
 def test_vmcon_driver_returns_its_reports_after_the_unknowns():

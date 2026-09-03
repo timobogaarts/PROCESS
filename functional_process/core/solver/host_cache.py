@@ -43,32 +43,123 @@ problem is measurably sensitive at the last bit (§19, §20, §21.2), so §24.2 
 cold-matrix check and not an assertion that nothing moved.
 """
 
+import dataclasses
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from cottax.evaluate import ConditionMap
 
-_BOUND: list = []
-"""`bind`'s memo: `[((treedef, static), (values, jacobian))]`, one entry per block.
 
-**A list scanned with `==`, not a dict**, and that is not laziness. `equinox.Module`'s
-`__eq__` and `__hash__` disagree here: for the static half of
-`eqx.partition((conditions, unravel), eqx.is_array)`, two partitions of the *same* block
-compare **equal** while their **hashes differ** (measured 2026-09-02,
-`_audit/optimise_design.md` §31.14). Anything keyed on the hash -- a `dict`, or
+@dataclasses.dataclass
+class _Bound:
+    """One memoised block: how to recognise it, and its compiled callables."""
+
+    key: tuple
+    """`_flat_key`'s cheap key -- what a *hit* is decided on. Mutable, because a hit on
+    the `==` fallback below records the cheap key it did not match, so the same block is
+    recognised cheaply next time."""
+    treedef: object
+    static: object
+    """`eqx.partition((conditions, unravel), eqx.is_array)`'s halves -- the `==`
+    fallback's key, kept as a net under `key`. See `bind`."""
+    bound: tuple
+    """`(values, jacobian, values_and_jacobian)`, in `bind`'s own order."""
+
+
+_BOUND: list[_Bound] = []
+"""`bind`'s memo, one entry per block, **scanned with `==` and never hashed**.
+
+**Not a dict, and that is not laziness.** `equinox.Module`'s `__eq__` and `__hash__`
+disagree here: for the static half of `eqx.partition((conditions, unravel),
+eqx.is_array)`, two partitions of the *same* block compare **equal** while their
+**hashes differ** (measured 2026-09-02, `_audit/optimise_design.md` §31.14; re-measured
+2026-09-03, §32.1 -- still true). Anything keyed on that hash -- a `dict`, or
 `jax.jit(..., static_argnums=...)` -- therefore misses every time and retraces the whole
 block on every solve, which is exactly the defect §24.1 removed. `eqx.filter_jit` avoids
-it by wrapping the static half in a by-value-hashing wrapper, which is *why* today's
-spelling caches at all.
+it by wrapping the static half in a by-value-hashing wrapper, which is *why*
+`flat_conditions` caches at all.
 
-The scan is `O(blocks)` at ~25 ms per comparison and runs **once per solve**, against a
-compile of ~15 s. A process holds a handful of blocks (MDF's and SAND's, per
-configuration), so the list never grows to a size where this matters.
+**This docstring used to end "the list never grows to a size where this matters", and
+that was falsified by measurement** (§32.2): a loop that re-*assembles* the problem per
+solve -- which is what calling `run_cold_matrix.run_one` repeatedly does -- appends **two
+entries per solve, without bound**, because the freshly built block matches nothing.
+`_BOUND_LIMIT` below is the bound that was missing; `functional_process.session` is the
+entry point that makes the re-assembly unnecessary in the first place.
+"""
+
+_BOUND_LIMIT = 16
+"""How many blocks the memo keeps, oldest evicted first.
+
+A process legitimately holds a handful: MDF's block and SAND's, per configuration, and
+`run_cold_matrix` clears the memo between configurations anyway. Sixteen is therefore
+generous for every intended use and still a *bound*, which the unbounded list was not.
+
+**Eviction is not free and must not be silent to a reader of this file**: dropping an
+entry drops the `jax.jit` wrappers that own the block's compiled programs, so the next
+solve of that block re-traces and re-compiles it (~15 s on `stellarator_helias`).
+Reaching the limit at all means something is rebuilding blocks in a loop -- the trap
+`functional_process.session` exists to route around -- and the right fix is to stop
+rebuilding them, not to raise this number.
 """
 
 
+def _flat_key(tree):
+    """`(key, array_leaves)` for `tree` -- **one** flatten, no partition.
+
+    The whole point of this function is what it does *not* do. `eqx.partition` over the
+    5 462-leaf `(ConditionMap, unravel)` pytree is **44.5 ms** and the `static ==`
+    comparison another **15.8 ms** per entry (measured 2026-09-03 on
+    `stellarator_helias` MDF, §32.1), and `bind` used to pay both *before* it could tell
+    whether it already held the block -- so a cache **hit** cost 60-120 ms, which is
+    12-47 % of a steady-state tokamak solve. This is 7.4 ms and answers the same
+    question.
+
+    `key` is `(treedef, mask, frozen)` where `treedef` is the flatten of the *whole*
+    tree, `mask` says which leaf positions hold arrays, and `frozen` is every non-array
+    leaf in order. Those three **determine the partition**: `treedef` plus `mask` is
+    exactly the dynamic half's treedef, and `treedef` plus `mask` plus `frozen` is
+    exactly the static half's value. So two trees with equal keys have partitions whose
+    compiled programs are interchangeable, which is the property `bind` needs.
+
+    The `mask` is in the key and not implied by the other two. Without it,
+    `[array, 1.0]` and `[1.0, array]` share a `treedef` and a `frozen`, and their
+    dynamic halves differ; it costs a `bytes` comparison to rule out.
+
+    **Array leaves come out in partition order, checked rather than assumed**:
+    `jax.tree_util.tree_flatten(eqx.partition(t, eqx.is_array)[0])[0]` and this
+    function's `arrays` are the *same objects in the same order* on both reference
+    configurations (§32.1) and on a synthetic block
+    (`tests/functional_process/core/solver/test_host_cache.py`
+    `::test_the_cheap_key_agrees_with_the_partition`).
+
+    The `==` this key is compared with inherits one exposure from the `static ==` it
+    replaces, unchanged and worth naming: two frozen leaves that compare equal but are
+    not the same value (`0.0` and `-0.0`, `True` and `1`) would be a hit. Equinox's own
+    `Module.__eq__` compares its leaves with `==` too, so this is the same set of hits
+    the fallback would have allowed, not a new one.
+
+    **This is a stopgap with a stated removal condition** (§32.5). A parallel session is
+    designing the same fix one layer up, in `cottax`: a `Graph` that carries both halves
+    -- the structural key *and* the precomputed array-leaf list -- computed once at
+    construction, where the structure is actually known. **When `cottax`'s `Graph`
+    carries a precomputed `(static_key, array_leaves)` pair, delete this function and
+    key `bind` on what the graph already has.** Do not keep both: a second cache that
+    outlives its reason, because nobody dared remove it, is the failure mode this note
+    exists to prevent. It is landing here first because the 60-120 ms a hit costs today
+    is worth removing today, and because a number measured in a 180-line module is what
+    justifies putting the pair in `Graph` at all.
+    """
+    leaves, treedef = jax.tree_util.tree_flatten(tree)
+    mask = bytes(eqx.is_array(leaf) for leaf in leaves)
+    arrays = [leaf for leaf, live in zip(leaves, mask, strict=True) if live]
+    frozen = tuple(leaf for leaf, live in zip(leaves, mask, strict=True) if not live)
+    return (treedef, mask, frozen), arrays
+
+
 def bind(conditions: ConditionMap, unravel):
-    """`(values, jacobian)` for this block, each taking only `flat_x`.
+    """`(values, jacobian, values_and_jacobian)` for this block, each taking only
+    `flat_x`.
 
     **What this is for.** `flat_conditions` below passes the whole `ConditionMap` as an
     argument, and `eqx.filter_jit` re-partitions, re-flattens and re-hashes it on *every*
@@ -92,15 +183,77 @@ def bind(conditions: ConditionMap, unravel):
     within about 2x of what any host-side loop can reach. Output is bitwise identical to
     `flat_conditions`.
 
-    Not free at bind time: `eqx.partition` alone is ~63 ms. That is why the result is
-    memoised in `_BOUND` -- see its docstring for why the memo is a list and not a dict.
+    **The third callable, and what it is for: compile time.** `jax.jacfwd` computes the
+    primal internally -- `vmap(jvp(...))` produces `(y, jac)` and the `has_aux=False`
+    spelling throws `y` away -- so `values` and `jacobian` above are two programs over
+    the *same* body, and the primal half of the block is traced, lowered and compiled
+    **twice**. `values_and_jacobian` is `jax.jacfwd(..., has_aux=True)` over a body
+    returning `(stacked, stacked)`: `jvp_subtrace_aux` yields the aux as
+    `JVPTracer.primal`, i.e. literally the primal jax already had, so one program
+    returns both. A caller that needs both at every point pays one trace instead of two.
+
+    **Which caller could use it, and which could not.**
+    `pyvmcon.AbstractProblem.__call__(x)` returns `Result(f, df, eq, deq, ie, die)` --
+    value *and* derivative at every point, line-search trial points included -- so
+    `VmconDriver` has no value-only call at all (§31.23 counted 552 `values` against 552
+    `jacobian` on one row). `SlsqpDriver` hands `scipy` separate `fun` and `jac`
+    callables and scipy's line search *does* call `fun` alone, so fusing there would pay
+    a whole Jacobian per trial point. `epsfcn`'s finite difference is the other
+    value-only caller. Hence three callables and not a replacement: this module hands out
+    what is available and the *driver* chooses.
+
+    **It is not bitwise, so nothing chooses it by default.** `VmconDriver.fused` is off,
+    and its docstring carries the measurement: the values agree bit for bit, ten of 294
+    Jacobian cells move by `4.44e-16`, and one cold-matrix row flips from `converged` to
+    `stopped` on that. The *jaxpr* is not the difference -- the same `has_aux` program
+    with its primal output dropped again reproduces the split Jacobian exactly -- the
+    extra **live output** is, because XLA schedules the tangent computation differently
+    once the primal must be materialised too. `_audit/optimise_design.md` §31.30.
+
+    **When something does choose it, the saving arrives by not calling, not by not
+    building.** `jax.jit` is lazy: constructing all three wrappers costs nothing, and
+    the trace/lower/compile happen on a wrapper's *first call*. So `bind` builds three
+    and a solve compiles only the ones it calls -- with `fused` on, the value-only
+    program is never traced, and with it off `values_and_jacobian` is never traced. Both
+    directions are free, which is what makes the switch cost nothing to carry. [measured
+    -- §31.30 counts the emitted programs per row rather than reasoning about laziness.]
+
+    A hit is cheap, and it used not to be
+    -------------------------------------
+    Binding is once per *solve*, which is free against a first solve's ~15 s of
+    compilation and is not free at all against the ~1 s of a **repeated** solve in one
+    process -- the regime `functional_process.session` exists for. Until 2026-09-03 the
+    memo could only be consulted after `eqx.partition` (44.5 ms) and was then scanned
+    with `static ==` (15.8 ms an entry), so a *hit* paid the expensive half of a *miss*:
+    60 ms on `stellarator_helias` MDF and 100-120 ms on `large_tokamak_nof`, the latter
+    17 % of that solve. `_flat_key` above answers the same question in 7.4 ms from a
+    single flatten, and it is tried **first**.
+
+    The `(treedef, static)` scan is kept behind it as a net rather than replaced. The
+    cheap key is the stricter of the two -- equal frozen leaves and an equal treedef is
+    what `Module.__eq__` compares anyway -- so the fallback is expected never to fire;
+    if it does, the entry it hits records the cheap key it did not match, so the block
+    is recognised cheaply from then on. A *miss* on the cheap key is only ever slow,
+    never wrong.
+
+    Not free at bind time on a genuine miss: `eqx.partition` alone is ~44 ms, against
+    the compile it is about to pay for. That is why the result is memoised in `_BOUND`
+    -- see its docstring for why the memo is a list and not a dict.
     """
-    dynamic, static = eqx.partition((conditions, unravel), eqx.is_array)
+    tree = (conditions, unravel)
+    key, leaves = _flat_key(tree)
+
+    for entry in _BOUND:
+        if entry.key == key:
+            return tuple(_timed(fn, leaves) for fn in entry.bound)
+
+    dynamic, static = eqx.partition(tree, eqx.is_array)
     leaves, treedef = jax.tree_util.tree_flatten(dynamic)
 
-    for (cached_treedef, cached_static), (values, jacobian) in _BOUND:
-        if cached_treedef == treedef and cached_static == static:
-            return _timed(values, leaves), _timed(jacobian, leaves)
+    for entry in _BOUND:
+        if entry.treedef == treedef and entry.static == static:
+            entry.key = key
+            return tuple(_timed(fn, leaves) for fn in entry.bound)
 
     def rebuild(array_leaves):
         return eqx.combine(jax.tree_util.tree_unflatten(treedef, array_leaves), static)
@@ -117,8 +270,25 @@ def bind(conditions: ConditionMap, unravel):
             lambda flat: jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat))])
         )(flat_x)
 
-    _BOUND.append(((treedef, static), (values, jacobian)))
-    return _timed(values, leaves), _timed(jacobian, leaves)
+    @jax.jit
+    def values_and_jacobian(array_leaves, flat_x):
+        block, unflatten = rebuild(array_leaves)
+
+        def stacked_twice(flat):
+            # Evaluated **once** and returned twice, not called twice: the second slot
+            # is `has_aux`'s, and `jvp_subtrace_aux` takes `.primal` off the tracer it
+            # is handed. Calling the body a second time would trace the block twice and
+            # give the whole change back.
+            out = jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat))])
+            return out, out
+
+        derivative, primal = jax.jacfwd(stacked_twice, has_aux=True)(flat_x)
+        return primal, derivative
+
+    bound = (values, jacobian, values_and_jacobian)
+    _BOUND.append(_Bound(key, treedef, static, bound))
+    del _BOUND[:-_BOUND_LIMIT]
+    return tuple(_timed(fn, leaves) for fn in bound)
 
 
 def _timed(fn, leaves):

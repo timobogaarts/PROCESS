@@ -284,14 +284,42 @@ def solve_duct_diameter(l1, l2, l3, xmult_i, ceff_i, max_iter=100, tol=1e-10):
     endpoint is ever wanted.
 
     Implemented as `jax.lax.while_loop` rather than a Python `for`/`break`: the
-    iteration count is data-dependent (JAX has no early-exit `break`), and
-    `Tier2Contract` never differentiates `ported` (see `_harness/contracts.py`), so
-    `while_loop`'s lack of autodiff support costs nothing here.
+    iteration count is data-dependent (JAX has no early-exit `break`).
+
+    **The loop is converged under `stop_gradient` and the tangent comes from one
+    differentiable Newton step taken afterwards** -- `_audit/optimise_design.md`
+    §31.28.1's mechanism, applied here. Differentiating *through* `K` Newton steps
+    gives a tangent that is a truncated series in `K`, so it jumps whenever `K(x)`
+    does; on `stellarator_helias` SAND this loop's trip count takes **six** values
+    within one solve (`{6, 7, 8, 9, 10, 11}`, §31.31.3, confirmed by a second
+    instrument at §31.32.4), which makes the Jacobian handed to the SQP discontinuous
+    at a point where the *value* is smooth and converged. Freezing the parameters for
+    the loop and then taking one step `root - f(root)/f'(root)` with them live gives
+    the exact implicit-function-theorem tangent `-(df/dp)/(df/dd)`, independent of
+    `K`, and moves the value only by that last Newton correction: over a 300-point
+    sweep of stellarator-scale parameters the two spellings differ by at most
+    `1.78e-15` absolute with a **median of exactly zero**, and the residual at the
+    answer *falls*, `1.71e-13 -> 1.14e-13` worst case (§31.33.1 [measured]).
+
+    This is **not** `_audit/optimise_design.md` §31.13's rejected masked-`scan`
+    conversion, which was weighed for *reverse*-mode AD and did not pay: the
+    `while_loop` and its early exit are kept exactly as they were and one residual
+    evaluation is added outside it (§31.31.5, and §31.33.1 for the measured cost).
+
+    Earlier revisions of this docstring said `while_loop`'s lack of autodiff support
+    "costs nothing here" because `Tier2Contract` never differentiates `ported`. That
+    was true of the *unit test* and false of the *port*: `.vacuum.vacuum_old` is one of
+    the nodes in the `stellarator_helias` SAND block and this loop is traced into
+    `bind`'s Jacobian program (§31.31.3, measured). `Tier2Contract` still does not
+    differentiate it, so the harness is unchanged by this -- but `jax.grad` of this
+    function now works too, where it used to raise (§31.33.1).
 
     Does not reproduce PROCESS's `logger.error` on non-convergence (100 iterations
     exhausted without reaching `tol`) -- a traced function cannot log conditionally;
     the loop simply stops at whatever `d` it reached, same as PROCESS's own math does
-    (the log call has no effect on `d` either).
+    (the log call has no effect on `d` either). The Newton step below is taken
+    unconditionally, so a run that exhausts `max_iter` gets one further correction
+    rather than none -- an improvement to the value in exactly the case PROCESS logs.
 
     Parameters
     ----------
@@ -312,22 +340,35 @@ def solve_duct_diameter(l1, l2, l3, xmult_i, ceff_i, max_iter=100, tol=1e-10):
         Converged duct diameter `d` (m).
     """
 
+    def residual_at(d, args):
+        return duct_diameter_residual(d, *args)
+
     def cond(carry):
         _d, step, it = carry
         return jnp.logical_and(it < max_iter, step > tol)
 
+    # `stop_gradient` on the *parameters*, not merely on the loop's answer: with no
+    # tangent entering the loop its JVP is trivial, rather than a truncated series
+    # computed and then thrown away.
+    frozen = jax.lax.stop_gradient((l1, l2, l3, xmult_i, ceff_i))
+
     def body(carry):
         d, _step, it = carry
-        residual_fn = lambda x: duct_diameter_residual(x, l1, l2, l3, xmult_i, ceff_i)  # noqa: E731
-        f = residual_fn(d)
-        df = jax.grad(residual_fn)(d)
+        f, df = jax.value_and_grad(residual_at)(d, frozen)
         d_new = d - f / df
         step = jnp.abs((d - d_new) / d)
         return (d_new, step, it + 1)
 
     init = (jnp.asarray(1.0), jnp.asarray(jnp.inf), jnp.asarray(0))
-    d, _step, _it = jax.lax.while_loop(cond, body, init)
-    return d
+    root, _step, _it = jax.lax.while_loop(cond, body, init)
+
+    # One differentiable Newton step from the converged root, with the parameters
+    # live. Every input the loop saw was frozen, so `d(root)/dp = 0` and the returned
+    # tangent is exactly `-(df/dp)/(df/dd)` at the root -- the implicit function
+    # theorem, spelt as a Newton step so the same `jax.grad` supplies the denominator
+    # the loop already used.
+    f, df = jax.value_and_grad(residual_at)(root, (l1, l2, l3, xmult_i, ceff_i))
+    return root - f / df
 
 
 class DuctDiameterRootFind(ImplicitFunction):

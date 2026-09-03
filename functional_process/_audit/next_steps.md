@@ -803,21 +803,28 @@ Same pattern as §28.1, and the same lesson.
    `min ie -0.99` and a non-binding step cap. Two sub-questions: why the QP runs to its cap
    when 25 iterations give a bitwise identical answer, and whether `EQX_ON_ERROR=nan` is
    honest when the optimiser walks through NaN trial points unnoticed.
-2. **[one of three done] `lax.while_loop`s block reverse-mode AD everywhere** —
+2. **[two of three done] `lax.while_loop`s block reverse-mode AD everywhere** —
    `models/cs_fatigue.py:318` is now a masked `lax.scan` at a static bound of 512, and
    `jax.grad` of `calculate_n_cycle` agrees with `jacfwd` to every printed digit where it
-   previously raised. Two remain, both in `vacuum.py`. The originals were —
-   `models/cs_fatigue.py:318`, `models/vacuum/vacuum.py:329` and `:474`. All three are now
-   sized (§31.12): cs_fatigue is a masked `scan` at a static bound of ~512 (measured worst
-   case 264); `:474` is a `vmap` over its 64 independent candidates plus a first-fit
-   select, which keeps PROCESS's grid and so its exact value; `:329` is a genuine implicit
-   model whose node is already written and registered, blocked on `:474` being restructured
-   first. Not the drivers:
+   previously raised. **`models/vacuum/vacuum.py:329` (`solve_duct_diameter`) is now
+   done too, and it did *not* need `:474` restructured first** (§31.33.1): the loop is
+   converged under `jax.lax.stop_gradient` and one differentiable Newton step is taken
+   from its root, so the loop carries no tangent and there is nothing to transpose —
+   `jax.grad(solve_duct_diameter)` agrees with `jacfwd` to every printed digit where it
+   previously raised, `jacfwd` got **24 % cheaper**, and the `while_loop` and its early
+   exit are kept. **One remains, `:474` (`solve_duct_geometry`)**, which is a discrete
+   first-fit selection rather than a root find and does not obviously take the same
+   treatment; §31.12's sizing of it as a `vmap` over 64 candidates still stands, and it is
+   constant at `K = 1` on `stellarator_helias` so nothing is differentiating it there
+   today. Not the drivers:
    `PicardDriver`/`SeededNewtonDriver` go through optimistix's `ImplicitAdjoint` and
    transpose fine, so `mdf.py`'s docstring is wrong about the mechanism and
    `vacuum.py:289`'s "costs nothing here" is falsified (§31.9). Reverse mode would not
    *win* on the Jacobian's shape, but it is the only way to a cheap objective-only
-   gradient, and the doc defect should be corrected regardless.
+   gradient, and the doc defect should be corrected regardless. **The `vacuum.py` half of
+   that doc defect is corrected** — `solve_duct_diameter`'s docstring, `vacuum.md`'s
+   JAX-difficulty flag and this item all now say the port *is* differentiated even though
+   `Tier2Contract` is not (§31.33.1). `mdf.py`'s docstring is still wrong.
 3. **The ~1.75 s of first-call jit setup** that is neither trace, lower, compile, nor
    `filter_jit` — arm-independent, bounded, unexplained. A `cProfile` of the first two
    calls (§31.6).
@@ -861,3 +868,43 @@ question: why is the port's outer problem chaotic where PROCESS's is not?
   `CLAUDE.md` already says the conda root differs per machine and ties its suite counts to
   the version; the pin should say "0.11.0 or 0.11.1 depending on machine" rather than be
   corrected to either.
+
+## 32. The repeated-solve regime, 2026-09-03 — measured, made fast, and one stopgap to remove
+
+`_audit/optimise_design.md` §32 is the record. Three changes landed and the answers did
+not move: all four `stellarator_helias`/`large_tokamak_nof` rows are character-identical
+to `reference_cold_matrix.txt`.
+
+### 32.1 What is now fast, and what is still a trap
+
+**`functional_process.session` is the entry point for solving one configuration more
+than once in a process** — assemble once, seed/prime/solve per point. Steady state, all
+zero compiles after solve 0: `stellarator_helias` **0.98 s** MDF / **1.86 s** SAND,
+`large_tokamak_nof` **0.54 s** MDF / **0.53 s** SAND, against 25–96 s for the first solve.
+
+**`run_cold_matrix.run_one` in a loop is still a trap**, and this pass did not fix it:
+13 XLA compiles on every repeat, `_BOUND` +2 a solve, RSS +0.42–0.46 GiB a solve. The
+cause is re-assembly, not the per-row cache clearing. Closing it would mean `run_one`
+taking (or memoising) a prepared build, which changes the matrix's contract and belongs
+to a pass that is allowed to move a row.
+
+### 32.2 One item with a deadline: delete `host_cache._flat_key`
+
+It is a **declared stopgap** (§32.5). When `cottax`'s `Graph` carries a precomputed
+`(static_key, array_leaves)` pair — the same trick hoisted to where the structure is
+known, which a parallel session is designing — `_flat_key` and `_Bound.key` are to be
+**deleted**, not kept beside it. Two caches answering one question can disagree, and the
+one that is wrong is the one nobody reads. `_flat_key`'s own docstring carries the
+condition, so it is met by a reader who never opens this file.
+
+### 32.3 Left open, and cheap to pick up
+
+- **`sand_harness._SCHEDULE_WHOLE` / `_SCHEDULE_RUNNERS` are unbounded dicts keyed on
+  `Schedule` objects**, and the naive loop grows them exactly as it grew `_BOUND`. Not
+  bounded here because a bound is a bandage on the same trap.
+- **The tokamak's steady residue is a third orchestration** — `mdf.seed`, `condition_map`,
+  the final `run_schedule` at the answer, jax dispatch — none of it dominant and none of
+  it free. The stellarator's is 68 % `cvxpy`/CLARABEL, which is the ceiling until an
+  in-graph SQP (§31.10/§31.11) is real.
+- **The first solve is untouched**; §31.20's persistent compilation cache remains the only
+  measured lever against it.

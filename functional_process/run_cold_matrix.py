@@ -203,7 +203,11 @@ from functional_process import (  # noqa: E402
     sand,
 )
 from functional_process.core.solver import host_cache  # noqa: E402
-from functional_process.core.solver.host_cache import flat_conditions  # noqa: E402
+from functional_process.core.solver.drivers import (  # noqa: E402
+    VMCON_NON_FINITE,
+    Status,
+    non_finite_summary,
+)
 from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
@@ -451,63 +455,105 @@ def _boundary_seed(reference, path, mode):
     return cold, {**counts, "mode": mode}, moved
 
 
-def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
-    """Build MDF for this run and solve it from the input file's own cold values.
+@dataclass
+class MdfBuild:
+    """Everything about an MDF arm that does **not** change between solves.
 
-    The same three calls `run_mdf_harness._measure` makes for its C3 -- `seed` off
-    `reference.cold`, `prime` the MDA once, `solve` -- with the shape reported alongside,
-    because on a table the shape is what makes a solve's cost legible.
-
-    `root_find` states the file's own problem type instead of an `Optimise` for the two
-    files whose `i_process_run_mode` is `-2` (`mdf.assemble`; `_run_mode` chooses). The
-    row then reports `objf` as `-`, because PROCESS forms none in that mode and neither
-    does the port.
+    The unit `functional_process.session` reuses. `problem` is the assembled `Mdf`,
+    `in_graph` its `InGraphRootFind` where the file states one, and `shape` the cells
+    `_blank()` fills from the assembly rather than from the answer.
     """
-    result = _blank()
-    began = time.perf_counter()
-    problem = mdf.assemble(
-        reference.ixc,
-        reference.icc,
-        reference.n_equality,
-        reference.i_figure_merit,
-        graph=machine_graph,
-        switch_values=switch_values,
+
+    problem: object
+    in_graph: object = None
+    root_find: bool = False
+    shape: dict = field(default_factory=dict)
+
+
+def build_mdf(reference, machine_graph, switch_values, root_find=False) -> MdfBuild:
+    """Assemble MDF for this configuration -- the half of a row that a *second* solve of
+    the same configuration must not repeat.
+
+    Split out of `cold_mdf` on 2026-09-03 for `functional_process.session`, and the
+    reason is measured rather than tidy: re-assembling builds a structurally *equal* but
+    freshly allocated block, and every memo downstream is keyed on what was built --
+    `host_cache._BOUND`, `sand_harness._SCHEDULE_WHOLE`, jax's own executable cache --
+    so a loop that re-assembles re-traces and re-compiles the whole graph on every
+    iteration while a loop that does not is 30-75x faster
+    (`_audit/optimise_design.md` §32.2). Nothing here reads `cold`, which is exactly why
+    it can be hoisted.
+    """
+    build = MdfBuild(
+        problem=mdf.assemble(
+            reference.ixc,
+            reference.icc,
+            reference.n_equality,
+            reference.i_figure_merit,
+            graph=machine_graph,
+            switch_values=switch_values,
+            root_find=root_find,
+        ),
         root_find=root_find,
     )
-    shape = mdf.mdf_shape(problem)
-    result.update(
-        built=True,
-        nodes=shape["nodes"],
-        design=shape["design"],
-        conditions=shape["conditions"],
-        equalities=shape["equalities"],
-        blocks=shape["inner_blocks"],
-        driven=shape["inner_driven"],
-    )
-    env = mdf.seed(problem, cold)
-    env, _primed = mdf.prime(problem, env)
+    shape = mdf.mdf_shape(build.problem)
+    build.shape = {
+        "built": True,
+        "nodes": shape["nodes"],
+        "design": shape["design"],
+        "conditions": shape["conditions"],
+        "equalities": shape["equalities"],
+        "blocks": shape["inner_blocks"],
+        "driven": shape["inner_driven"],
+    }
     if root_find:
         # **Stated in the graph, not driven from outside it** (`mdf.in_graph_root_find`,
-        # `_audit/in_graph_rootfind.md`). The root find is a problem node the blocking
-        # sees, so `Blocking.scc` decides what it drives: 39 nodes of 259 on
+        # `_audit/in_graph_rootfind.md`). Built here rather than after `prime` because it
+        # reads only the assembly: the root find is a problem node the blocking sees, so
+        # `Blocking.scc` decides what it drives -- 39 nodes of 259 on
         # `spherical_tokamak_eval`, 35 of 271 on `large_tokamak_eval`, with the two
-        # coupled SCCs that fall inside the loop as its `Blocking.inner`. The outer
-        # arm re-ran the whole MDA per residual instead -- ~85 % of it for nothing, since
+        # coupled SCCs that fall inside the loop as its `Blocking.inner`. The outer arm
+        # re-ran the whole MDA per residual instead -- ~85 % of it for nothing, since
         # 69/117 nodes are upstream and constant during the solve and 152/120 are
         # downstream of the constraints and have no vote in choosing x.
         #
         # This is not a different problem from the ordinary graph-based MDA solve and it
-        # should not be written as one: it is the same graph, with the file's own
-        # problem declared inside it, decomposed by the same `Blocking.scc` as the rest.
-        # Same answer -- `3.635e-09`/`3.292e-12` against PROCESS's `fsolve` x, agreeing
-        # with the outer arm to `1.4e-15` -- and one XLA program instead of 856.
-        built = mdf.in_graph_root_find(problem)
-        shape = mdf.in_graph_shape(built)
+        # should not be written as one: it is the same graph, with the file's own problem
+        # declared inside it, decomposed by the same `Blocking.scc` as the rest. Same
+        # answer -- `3.635e-09`/`3.292e-12` against PROCESS's `fsolve` x, agreeing with
+        # the outer arm to `1.4e-15` -- and one XLA program instead of 856.
+        build.in_graph = mdf.in_graph_root_find(build.problem)
+        interior = mdf.in_graph_shape(build.in_graph)
         # `interior_*`, not `inner_*`: `in_graph_shape` returns `mdf_shape`'s keys too,
         # and those are the whole MDA's blocking -- which is what this row would report
         # if the formulation had not changed, i.e. exactly the wrong number. The driven
         # block's own interior is the measurement the restructuring exists for.
-        result.update(blocks=shape["interior_blocks"], driven=shape["interior_driven"])
+        build.shape["blocks"] = interior["interior_blocks"]
+        build.shape["driven"] = interior["interior_driven"]
+    return build
+
+
+def solve_mdf(build: MdfBuild, reference, cold) -> dict:
+    """Solve an already-assembled MDF from `cold` -- the half of a row that a repeated
+    solve *does* repeat.
+
+    The same three calls `run_mdf_harness._measure` makes for its C3 -- `seed` off the
+    cold `DataStructure`, `prime` the MDA once, `solve`.
+
+    **A re-seed and a re-prime are cheap and are meant to be repeated**: measured warm on
+    `stellarator_helias`, `mdf.seed` plus `mdf.prime` is 10-20 ms with **zero** XLA
+    compiles, and a full re-seed from a *different* start is 25-42 ms
+    (`_audit/optimise_design.md` §32.2). So a scan point is a call to this function and
+    not a reason to rebuild anything.
+    """
+    problem, root_find = build.problem, build.root_find
+    result = _blank()
+    began = time.perf_counter()
+    result.update(build.shape)
+    env = mdf.seed(problem, cold)
+    env, _primed = mdf.prime(problem, env)
+    if root_find:
+        built = build.in_graph
+        shape = mdf.in_graph_shape(built)
         x, out, seconds = mdf.in_graph_solve(built, env)
         # The driver's own verdict, out of the env the run returned. `MdfNewtonDriver`
         # reports it through `DriverOut` ports the problem node owns, so there is no
@@ -568,42 +614,64 @@ def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
     return result
 
 
-def cold_sand(reference, machine_graph, switch_values, cold):
-    """Build SAND for this run and solve it from the input file's own cold values.
+def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
+    """Build MDF for this run and solve it from the input file's own cold values.
 
-    `run_sand_harness.main`'s C3 branch, with its two MDA runs kept as they are there and
-    for the reason recorded there:
+    `build_mdf` then `solve_mdf`, which is what a matrix row is: assemble the problem
+    and solve it once. A caller that wants to solve it *again* calls the two halves --
+    see `functional_process.session`, whose whole point is that a second row's worth of
+    answer costs the second half only.
 
-    - the **warm** env (`reference.data`) is what `sand_harness.assemble` reads to find
-      the degenerate and array-valued fixed points, and what
-      `sand.residual_condition_scales` reads for its `1/|u|` factors;
-    - the **cold** env (`reference.cold`) is what `_seed` hands the solve for every
-      coupling unknown, since a cold `DataStructure` field holds a dataclass default no
-      run has written.
-
-    Building the scales off the cold env instead would be a different problem from the
-    one `run_sand_harness.py` reports, and this file's whole claim is that it is not.
+    `root_find` states the file's own problem type instead of an `Optimise` for the two
+    files whose `i_process_run_mode` is `-2` (`mdf.assemble`; `_run_mode` chooses). The
+    row then reports `objf` as `-`, because PROCESS forms none in that mode and neither
+    does the port.
     """
-    result = _blank()
     began = time.perf_counter()
+    build = build_mdf(reference, machine_graph, switch_values, root_find=root_find)
+    result = solve_mdf(build, reference, cold)
+    result["_seconds_total"] = time.perf_counter() - began
+    return result
+
+
+@dataclass
+class SandBuild:
+    """Everything about a SAND arm that does **not** change between solves.
+
+    `solve_schedule` is built **once**, callback and all, and that is the load-bearing
+    part rather than an economy: `sand_harness.run_schedule` memoises its whole-schedule
+    jit and its fused runners on the `Schedule` **object**, so a schedule rebuilt per
+    solve re-traces and re-compiles everything it holds. The per-solve state that used to
+    force a rebuild is the callback's trace, and a list can simply be cleared.
+    """
+
+    solve_schedule: object
+    drive: object
+    trace: list
+    design_paths: set
+    shape: dict = field(default_factory=dict)
+    omitted: object = None
+
+
+def build_sand(reference, machine_graph, switch_values) -> SandBuild:
+    """Assemble SAND for this configuration, solve schedule included.
+
+    `run_sand_harness.main`'s C3 branch up to the point where `cold` first matters, with
+    its warm MDA run kept as it is there and for the reason recorded there: the **warm**
+    env (`reference.data`) is what `sand_harness.assemble` reads to find the degenerate
+    and array-valued fixed points, and what `sand.residual_condition_scales` reads for
+    its `1/|u|` factors. Building the scales off the cold env instead would be a
+    different problem from the one `run_sand_harness.py` reports, and this file's whole
+    claim is that it is not.
+
+    Split out of `cold_sand` on 2026-09-03 for `functional_process.session` -- see
+    `build_mdf` for why re-assembly is the thing a repeated solve must avoid.
+    """
     driven, env = mda_env(reference, graph=machine_graph)
     combined, report = sand_assemble(reference, driven, env, switch_values=switch_values)
     schedule = sand.sand_schedule(combined, None, bounds=reference.bounds)
     shape = sand.sand_shape(schedule)
-    drive = shape["drive"]
-    condition_scale = sand.residual_condition_scales(drive, env)
-    result.update(
-        built=True,
-        nodes=shape["drive_nodes"],
-        design=shape["design"],
-        conditions=shape["conditions"],
-        equalities=shape["equalities"],
-        blocks=shape["schedule_steps"],
-        driven=shape["unknowns"],
-    )
-    result["_omitted"] = report["omitted"]
-
-    stage_env = mda_env(reference, graph=machine_graph, data=cold)[1]
+    condition_scale = sand.residual_condition_scales(shape["drive"], env)
     trace: list = []
     solve_schedule = sand.sand_schedule(
         combined,
@@ -613,17 +681,67 @@ def cold_sand(reference, machine_graph, switch_values, cold):
         callback=_recorder(trace),
         max_iter=SAND_MAX_ITER,
     )
-    solve_drive = sand.sand_shape(solve_schedule)["drive"]
-    design_paths = {sand.iteration_variable_path(i) for i in reference.ixc}
+    return SandBuild(
+        solve_schedule=solve_schedule,
+        drive=sand.sand_shape(solve_schedule)["drive"],
+        trace=trace,
+        design_paths={sand.iteration_variable_path(i) for i in reference.ixc},
+        shape={
+            "built": True,
+            "nodes": shape["drive_nodes"],
+            "design": shape["design"],
+            "conditions": shape["conditions"],
+            "equalities": shape["equalities"],
+            "blocks": shape["schedule_steps"],
+            "driven": shape["unknowns"],
+        },
+        omitted=report["omitted"],
+    )
+
+
+def solve_sand(build: SandBuild, reference, machine_graph, cold) -> dict:
+    """Solve an already-assembled SAND from `cold`.
+
+    The **cold** env (`reference.cold`, or whatever `cold` a caller substitutes) is what
+    `_seed` hands the solve for every coupling unknown, since a cold `DataStructure`
+    field holds a dataclass default no run has written.
+
+    The trace is cleared rather than replaced, because the schedule closes over it -- see
+    `SandBuild`.
+    """
+    result = _blank()
+    began = time.perf_counter()
+    result.update(build.shape)
+    result["_omitted"] = build.omitted
+    solve_schedule, solve_drive = build.solve_schedule, build.drive
+    trace, design_paths = build.trace, build.design_paths
+    trace.clear()
+
+    stage_env = mda_env(reference, graph=machine_graph, data=cold)[1]
     seeded, _borrowed = _seed(
         solve_schedule, solve_drive, cold, stage_env, design=design_paths
     )
 
-    # The same pre-solve probe `run_sand_harness.main` runs, for the same reason: a SAND
-    # condition map holds the coupling unknowns at their seed, so a seed the models
-    # cannot evaluate shows up as non-finite conditions, and handing those to an SQP
-    # produces a wander rather than an answer. On this table that has to be a *stated*
-    # outcome, not an iteration count.
+    # The context `_why_no_step` reads below. It used to be built for a *pre-solve
+    # probe* as well -- one `host_cache.flat_conditions` call over the seeded start,
+    # emitting a `status="non-finite"` row when any condition value was not finite.
+    #
+    # **That probe is gone, and the guard that replaced it checks strictly more.**
+    # `drivers._refuse_non_finite` runs inside `_Problem.__call__` on the first iterate
+    # and reads the condition values *and* the Jacobian rows, plus any identically zero
+    # Jacobian column, naming every offender. The probe read values alone -- and the
+    # case its own docstring records is one a values-only probe cannot see: a cold SAND
+    # start where all 30 conditions were **finite in value** and only the derivatives
+    # were `nan`. So the probe was the weaker of two checks over the same block.
+    #
+    # It was also a whole extra program. `flat_conditions` has a different signature and
+    # wrapper (`eqx.filter_jit` over the whole `ConditionMap`) from `host_cache.bind`'s
+    # plain `jax.jit` over array leaves, so jax sees a **third module computing the same
+    # block's values** and compiles it -- 5 161 emitted MLIR lines on the stellarator
+    # SAND block against `bind`'s `values` at 5 160, i.e. the same program twice, and
+    # 15 161 against 15 160 on the tokamak. That is 23.7 % and 21.7 % of everything the
+    # SAND arm emitted, or 1.92 s and 10.75 s of first-call wall clock measured
+    # interleaved in one process. [measured, `_audit/optimise_design.md` §31.30.1]
     probe_context = {}
     for var in solve_drive.context:
         if var in stage_env:
@@ -633,41 +751,43 @@ def cold_sand(reference, machine_graph, switch_values, cold):
                 probe_context[var] = jnp.asarray(ground_truth(cold, var))
             except (AttributeError, KeyError):
                 probe_context[var] = jnp.asarray(0.0)
-    # Through `host_cache`, not called directly. A bare `condition_map(...)(...)` is an
-    # **eager** walk of the whole SAND block, and XLA compiles every primitive in every
-    # model body as its own module -- measured at 225 of this row's 277 XLA compiles on
-    # `stellarator_helias` (persistent cache off), attributed to model frames
-    # (`_plasma_composition` 23, `bottura_scaling` 21, `_simpson` 14, ...) with no
-    # orchestration frame between them and this line. Same defect class as `mdf.solve`'s
-    # tail (`_audit/optimise_design.md` §24.8) in a different place.
-    # `host_cache._flat_conditions` is the jitted spelling of exactly this call, and it
-    # is module-level so the jit cache is keyed on its arguments rather than on a fresh
-    # closure (that module's docstring, §24.1).
-    flat_probe, probe_unravel = ravel_pytree(
-        tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
-    )
-    at_start = flat_conditions(
-        solve_drive.condition_map(probe_context), flat_probe, probe_unravel
-    )
-    non_finite = [
-        condition.path_str()
-        for condition, value in zip(solve_drive.conditions, at_start, strict=True)
-        if not np.all(np.isfinite(np.asarray(value)))
-    ]
-    if non_finite:
+
+    started = time.perf_counter()
+    out = run_schedule(solve_schedule, _inputs_only(solve_schedule, seeded), whole=False)
+    elapsed = time.perf_counter() - started
+
+    # **A stated outcome, not an exit -- and read as data, not caught.** The driver
+    # refuses a non-finite problem (`drivers._refuse_non_finite`) and reports
+    # `VMCON_NON_FINITE` through its own `Status` port, so the verdict arrives in the
+    # env this run returned like every other value. Nothing crosses the
+    # `jax.pure_callback` boundary as an exception, which is the point: that callback
+    # promises a pure function of its inputs, and jax may elide, repeat or reorder it.
+    #
+    # The names are recomputed here rather than carried, because they are wanted only
+    # for a row that already failed: `non_finite_summary` runs the same check eagerly
+    # on the host and reports which conditions were non-finite in VALUE and which in
+    # DERIVATIVE -- the distinction the deleted pre-solve probe could not draw at all,
+    # and the one that cost a full investigation the first time it was met.
+    reported = mdf.verdict(out, Status, solve_drive.problem)
+    if reported is not None and int(np.asarray(reported)) == VMCON_NON_FINITE:
+        flat_probe, probe_unravel = ravel_pytree(
+            tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
+        )
+        summary = non_finite_summary(
+            solve_drive.condition_map(probe_context), probe_unravel, flat_probe
+        )
         result.update(
             status="non-finite",
             note=(
-                f"{len(non_finite)} of {len(solve_drive.conditions)} conditions are "
-                f"non-finite at the seeded start, first {non_finite[0]}"
+                f"refused at the first iterate -- {summary}"
+                if summary
+                else "refused at the first iterate (the driver reported a non-finite "
+                "problem; re-evaluating at the seeded start no longer reproduces it)"
             ),
         )
         result["_seconds_total"] = time.perf_counter() - began
         return result
 
-    started = time.perf_counter()
-    out = run_schedule(solve_schedule, _inputs_only(solve_schedule, seeded), whole=False)
-    elapsed = time.perf_counter() - started
     result["_x"] = tuple(
         float(np.asarray(out[sand.iteration_variable_path(i)])) for i in reference.ixc
     )
@@ -694,6 +814,20 @@ def cold_sand(reference, machine_graph, switch_values, cold):
         seconds=elapsed,
         note=note,
     )
+    result["_seconds_total"] = time.perf_counter() - began
+    return result
+
+
+def cold_sand(reference, machine_graph, switch_values, cold):
+    """Build SAND for this run and solve it from the input file's own cold values.
+
+    `build_sand` then `solve_sand`, which is what a matrix row is; a caller that solves
+    the same configuration more than once calls the two halves
+    (`functional_process.session`).
+    """
+    began = time.perf_counter()
+    build = build_sand(reference, machine_graph, switch_values)
+    result = solve_sand(build, reference, machine_graph, cold)
     result["_seconds_total"] = time.perf_counter() - began
     return result
 
@@ -1892,12 +2026,18 @@ def main(argv=None, out=OUT):
         # exactly what it promises for longer than this runner needs.
         #
         # `host_cache._BOUND` is dropped with it, and for the same reason. That memo
-        # holds each block's two `jax.jit` wrappers so a second solve of the *same*
-        # block is a cache hit (§31.14); keeping them across configurations would pin
-        # the jitted callables that own the compiled programs `clear_caches` is being
-        # called to release, and the next configuration is a different graph that would
-        # miss every entry anyway. Re-binding costs ~90 ms on the next row against a
-        # ~25 s row. Same argument, same place, so they are cleared together.
+        # holds each block's `jax.jit` wrappers so a second solve of the *same* block is
+        # a cache hit (§31.14); keeping them across configurations would pin the jitted
+        # callables that own the compiled programs `clear_caches` is being called to
+        # release, and the next configuration is a different graph that would miss every
+        # entry anyway. Re-binding costs ~50 ms on the next row against a ~25 s row.
+        # Same argument, same place, so they are cleared together.
+        #
+        # **This clearing is not what makes a repeated solve slow**, and it is regularly
+        # mistaken for it. A *row* is one configuration and the next row is a different
+        # graph, so nothing here could have been a hit. What destroys the repeated-solve
+        # regime is re-*assembly*, which `functional_process.session` exists to avoid;
+        # `_audit/optimise_design.md` §32.2 separates the two and exonerates this line.
         jax.clear_caches()
         host_cache._BOUND.clear()
         _return_freed_memory_to_the_os()
