@@ -9973,6 +9973,15 @@ makes its length matter.
   pools three; the other two arms pool one each, so their jump counts (16 and 6) are small.
 ## 33. The forward-safe, reverse-unsound guard: three sites in 393 node measurements, and the mechanism is an operand order (2026-09-03)
 
+> **Scope, added after the fact (§33.10, §33.11).** Every count in §33.1–§33.9 was taken
+> **under `jax.jacfwd`**, whose batch axis is over tangent directions. A predicate computed
+> from primals carries no tangent, so it comes through *unbatched* — which is why the
+> `lax.cond` in this graph stayed a `cond` and why the census measured what it did.
+> **"3 of 393" is therefore a statement about that transform, not about the graph.**
+> §33.10 corrects the `lax.cond` claim below, which was stated too generally; §33.11
+> re-runs the question under a design-batched `vmap` — the transform an ensemble, a
+> multi-start or an uncertainty propagation would use — and reports both numbers.
+
 An OpenMDAO comparison found a component of the tokamak graph where, at the same point on
 the same body, `jax.jacfwd` was entirely finite and `jax.jacrev` returned 201 non-finite
 entries in each of three columns. That it **NaNs rather than raises** is the diagnostic
@@ -10001,7 +10010,8 @@ Minimal reproductions, `x64` on, at `x == 0`:
 | `lax.select(x>0, sqrt(x), 0)` | 0 | **nan** |
 | `where(x!=0, 1/x, 0)` | 0 | **nan** |
 | `where(x>0, sqrt(where(x>0, x, 1)), 0)` | 0 | 0 |
-| `lax.cond(x>0, sqrt, zero, x)` | 0 | 0 |
+| `lax.cond(x>0, sqrt, zero, x)`, predicate **unbatched** | 0 | 0 |
+| `lax.cond(...)` under `vmap`, predicate **batched** — see §33.10 | 0 | 0 |
 | `sqrt(maximum(x, 0))` | **inf** | **inf** |
 | `sqrt(clip(x, 0, None))` | **inf** | **inf** |
 | `safe_math.safe_sqrt(x)` | 0 | 0 |
@@ -10024,9 +10034,15 @@ The guard never changes; what changes is which side of the multiply the discard 
 **Forward selects after multiplying; reverse multiplies after selecting.** Three
 consequences the original framing did not have:
 
-- **`lax.cond` is sound where `jnp.where` is not.** An unbatched `cond` is a real branch
-  and the untaken arm is never evaluated in either mode. (Under `vmap` it lowers to a
-  select and the asymmetry returns, so this is not a general licence.)
+- **`lax.cond` does not carry the asymmetry — but the reason first given here was wrong,
+  and §33.10 replaces it.** The original text said "an unbatched `cond` is a real branch
+  and the untaken arm is never evaluated in either mode", with the batched case in a
+  parenthesis. That is too strong: **`cond` does not stay a branch**. Under `vmap` with a
+  batched predicate it lowers to `select_n` and *both* arms are evaluated. The conclusion
+  survives anyway, for a better reason measured in §33.10 — jax's own batching rule emits
+  the double-select idiom — but the sentence as written would have licensed exactly the
+  kind of grep-shaped reasoning this section exists to warn against. Correction due to the
+  user, after the section had landed.
 - **`jnp.clip`/`jnp.maximum` clamps are unsound in *both* modes**, not asymmetric: the
   clamp feeds the singular argument straight into the operation. That is
   `safe_math.py`'s original defect class and §31.4's subject — a different one, and one
@@ -10329,4 +10345,227 @@ test can run on the whole graph at all.
   last loop stood down the whole-graph `jax.grad` is finite and correct to 2.0e-14. The
   next measurement on this thread is `solve_duct_geometry` as a `vmap` over its 64
   candidates plus a first-fit select (§31.12's sizing), after which the claim
-  "reverse mode works on this graph" becomes testable rather than argued.
+  "reverse mode works on this graph" becomes testable rather than argued. **§33.11.3 adds
+  a second reason to do it**: that same loop is what makes a design-batched MDA pay the
+  maximum trip count over the batch rather than the mean.
+- **Say which transform every count belongs to.** Added after the fact (§33.10, §33.11):
+  the counts above are under `jacfwd`, and a design-batched `vmap` is a different program.
+  Measured, the difference in *this* graph is one site — the port's single `lax.cond`
+  becomes a `select_n` — and the guard census under a 4-point design batch is **0 of 936**
+  on the repaired tree. But that is a measurement, not a property of the method, and the
+  next transform someone applies deserves its own run of the same instrument rather than
+  an inherited number.
+
+### 33.10 [correction] `lax.cond` does not stay a branch — the claim in §33.1 was too general
+
+**The sentence §33.1 originally carried was wrong**, and it was wrong in exactly the way
+this section exists to warn against: it stated a rule about a *construct* when the
+mechanism is about a *program*. It said an unbatched `cond` is a real branch whose untaken
+arm is never evaluated, and put the batched case in a parenthesis. **Under `vmap` with a
+batched predicate a `cond` is not a branch at all**: jax lowers it to `select_n`, both arms
+*are* evaluated, and by §33.1's own operand-order mechanism the asymmetry should return.
+The correction is the user's, raised after the section had landed.
+
+The conclusion survives, but only for a reason nobody had checked. Measured, `jax 0.11.1`,
+`x64`, at `x == 0` on a batch where one lane takes each arm:
+
+| body, under `jax.vmap` with a batched predicate | `cond` in jaxpr | `select_n` | `jacfwd` | `grad` |
+|---|---|---|---|---|
+| `cond`, value passed as an **operand** | no | yes | `[0, 0.25]` | `[0, 0.25]` |
+| `cond`, `operand=None`, value **closed over** | no | yes | `[0, 0.25]` | `[0, 0.25]` |
+| `cond`, `operand=None`, **derived** capture | no | yes | `[0, 0.25]` | `[0, 0.25]` |
+| hand-written single `jnp.where` (control) | no | yes | `[0, 0.25]` | **`[nan, 0.25]`** |
+
+Every one of them becomes a `select_n`. Only the hand-written `where` produces the NaN.
+**The reason is that jax's `cond` batching rule writes the repair itself.** From the
+batched jaxpr:
+
+    g:bool[2] = eq c 1                  -- "this lane takes branch 1"
+    h:f64[2] = stop_gradient a
+    i:f64[2] = select_n g h a           -- the operand, substituted on lanes that don't
+    j:f64[2] = sqrt i
+    k:f64[2] = select_n c f j           -- the output, selected
+
+`i = select_n g (stop_gradient a) a` **is the double-`where` idiom** — the same repair
+§33.6 applied by hand at three sites, emitted automatically for every operand of every
+branch, closures included (jax hoists them into operands, which is why rows 2 and 3 behave
+like row 1). The value is unchanged; the tangent is killed on the lanes that do not take
+the branch, so there is no infinity left for the transposed multiply to reach.
+
+**Where the protection stops**, and it is worth stating because it bounds the rule: jax
+can only substitute operands that carry the batch dimension. A value that is singular and
+**unbatched** is not substituted. Measured, with an unbatched `z` and `sqrt(z)` in the
+true branch:
+
+| lanes | `z` | value | `jacfwd` | `grad` |
+|---|---|---|---|---|
+| all take the false branch | 0 | `[0, 0]` | 0 | 0 |
+| mixed | 0 | `[0, 0]` | **inf** | **inf** |
+| mixed | 4 | `[0, 2]` | 0.25 | 0.25 |
+
+That leak is **not** this section's class: it is non-finite in *both* modes, so it is
+§31.4's clamp class and any forward-mode check catches it. **No configuration of `cond`
+tried here reproduces the forward-safe/reverse-unsound asymmetry.**
+
+So the defensible statement, replacing §33.1's:
+
+> **`lax.cond` is a real branch only while its predicate is unbatched.** Under `vmap` with
+> a batched predicate it lowers to `select_n` and both arms are evaluated. It still does
+> not carry the forward/reverse asymmetry, because jax's batching rule substitutes
+> `stop_gradient` for each branch's operands on the lanes that do not take it — the
+> double-select idiom, emitted by the compiler rather than by the author. That is a
+> property of jax's `_cond_batching_rule`, measured on `jax 0.11.1`, not a language
+> guarantee, and it does not extend to an unbatched singular value inside a branch.
+
+#### 33.10.1 [measured] Why the existing census measured a `cond` as a `cond`
+
+`jax.jacfwd` *is* `jvp` under `vmap`, so the port's Jacobians are always traced under a
+batching transform and the question is never "is it vmapped" but "is the **predicate**
+batched". In `jacfwd` the batch axis is over **tangent directions**, and a predicate
+computed from primals carries no tangent. Verified rather than assumed — `cond` present,
+`select_n` absent, in both jaxprs:
+
+| traced program | `cond` | `select_n` |
+|---|---|---|
+| `grad(cond_body)`, scalar | **yes** | no |
+| `jacfwd(cond_body)`, scalar | **yes** | no |
+| `jacfwd(cond_body, argnums=(0,1,2))`, 3 inputs | **yes** | no |
+| `vmap(cond_body)` over a batched predicate | no | yes |
+
+So under the transform §33.1–§33.9 measured, the `cond` survives, and the census measured
+it in the form it actually has.
+
+#### 33.10.2 [measured] There is exactly one `lax.cond` in the ported bodies
+
+`functional_process/models/vacuum/vacuum.py:815`, inside `_solve_vacuum_pumping_old`'s
+`fori_loop`:
+
+```python
+return jax.lax.cond(sss > s_i, do_skip, do_process, operand=None)
+```
+
+One site, in the whole port. It is `operand=None` with both branches closing over
+everything — the form §33.10's rows 2 and 3 cover, and which behaves like the operand
+form because jax hoists the closures.
+
+**What this does to the census: nothing.** That `cond` lives in `.vacuum.vacuum_old`,
+which is one of the two nodes that **refuse reverse mode outright** (§33.3) because of the
+two `lax.while_loop`s in the same function. It contributed no VJP measurement in either
+form, so the 3-of-393 count is unaffected. **The number was right and the explanation was
+wrong**, which is the distinction §33 asked its reader to keep and did not keep itself.
+
+### 33.11 [measured] The census under a design-batched `vmap`, and what it does to "3 of 393"
+
+§33.10.1 is the reason the earlier number came out clean, and it is also the reason the
+number is **conditional on the transform**. `jacfwd` batches over tangents; a `vmap` of
+the MDA over a batch of **design points** batches the predicates too. That is not a corner
+case — it is how an ensemble, a multi-start, a scan or an uncertainty propagation would be
+run, and it is one of the clearest advantages this port could have over
+`process/core/scan.py`, which re-solves each point independently and reuses nothing
+between them. So the question has to be asked twice.
+
+#### 33.11.1 [measured] Structurally, design-batching changes exactly one site in the graph
+
+Every `CallableNode` of the tokamak graph traced twice — once at a design point, once
+under `jax.vmap` over a 4-wide batch of them — and the primitives counted at every nesting
+level. Trace only, no Jacobians.
+
+| | single | batched (B = 4) |
+|---|---|---|
+| nodes traced | 234 | 234 |
+| **nodes that refused to trace under `vmap`** | — | **0** |
+| nodes holding a `cond` | 1 | — |
+| ... whose `cond` **survives** batching | — | **0** |
+| ... whose `cond` **becomes `select_n`** | — | **1** |
+| total `cond` equations | 1 | **0** |
+| total `select_n` equations | 874 | 911 (+37) |
+| nodes holding a `while` | 1 | 1 |
+| total `while` equations | 2 | 2 |
+| total equations, all levels | 15 410 | 16 618 (+7.8 %) |
+
+**The gap is one site**, and it is `vacuum.py:815` — the only `lax.cond` in the port
+(§33.10.2). It converts, its node's `select_n` count goes 13 → 50, and it is inside
+`.vacuum.vacuum_old`, which refuses reverse mode anyway. Every other guard in the graph is
+*already* a `select`, and `vmap` does not change a select's per-lane semantics: a batched
+`jnp.where` is the same `select_n` it was, lane by lane.
+
+**Nothing refused to batch.** All 234 nodes trace under `vmap`, including the two
+`while_loop`s.
+
+#### 33.11.2 [measured] Numerically, what changes is which points are visited
+
+Since batching leaves every `select`-shaped guard semantically identical per lane, the
+soundness question under a design batch reduces to a **reachability** question: does some
+*other* design point put a guard at its singularity? That is measurable one point at a
+time, at the memory cost of one point rather than B.
+
+Four design points — the converged one plus three at 2 % multiplicative spread on the
+eight iteration variables, each a real MDA run — with the same per-node JVP/VJP probes and
+the same host interpretation of the JVP jaxpr:
+
+| design point | clean | no float in | rev-RAISES | **fwd-safe / rev-unsound** | latent sites |
+|---|---|---|---|---|---|
+| 0 (the converged point) | 233 | 10 | 1 | **0** | 0 |
+| 1 (perturbed) | 233 | 10 | 1 | **0** | 0 |
+| 2 (perturbed) | 233 | 10 | 1 | **0** | 0 |
+| 3 (perturbed) | 233 | 10 | 1 | **0** | 0 |
+| **union** | | | | **0** | **0** |
+
+**Zero, at all four points, on the repaired tree.** Not one equation anywhere in the graph
+manufactures a non-finite derivative at any of them, and the only node that is not clean
+is `.vacuum.vacuum_old`, which refuses reverse mode for the `while_loop` reason and not
+this one. Point 0 reproduces §33.3's post-repair census exactly (233 clean / 10 / 1), which
+is the check that the multi-point instrument is the same instrument.
+
+**What this does and does not establish.** It says the three repairs hold at four points
+rather than one, and that a 2 % excursion of all eight iteration variables does not put any
+*other* guard at its singularity. It does **not** establish that none ever will: the
+singularities this class lives on are **structural zeros** — `roa[0] == 0` because the
+profile grid starts on axis, `res_tf_leg == 0` because a superconducting leg has no
+resistance (§31.4) — and a multiplicative perturbation cannot reach a structural zero,
+because `0 x anything` is still `0`. That is itself the finding: **these guards fire at
+points the design vector cannot wander onto, and stop firing nowhere in between.** It is
+also why §33.9's recommendation is "do not sweep" rather than "proved safe".
+
+#### 33.11.3 [measured] Three things a batched MDA would actually hit
+
+Not guard soundness, but the same transform, and nobody had enumerated them.
+
+- **A batched `lax.while_loop` costs the *maximum* trip count over the batch, not the
+  mean.** The carry is masked per lane, so the *values* are right and only the cost
+  differs — which is why timing is the measurement. A 4-wide batch of a loop whose trip
+  counts are `[4, 4, 4, 4000]` takes **0.557 ms** against **0.053 ms** for `[4, 4, 4, 4]`
+  and **0.424 ms** for `[4000] × 4`: one slow lane makes the whole batch pay, **10.5x**
+  here. The live one is `solve_duct_geometry` (`vacuum.py:474`), already the sole
+  remaining reverse-mode blocker (§33.7); its `max_outer` is **64**, so the worst case is
+  bounded, and §31.32.4 measured it constant at `K = 1` on `stellarator_helias`. **So it
+  is a batching cost as well as an AD blocker, and the `vmap`-over-64-candidates
+  restructuring §31.12 sized would fix both at once.**
+- **Vmapping the MDA is viable; vmapping an SQP-driven solve is not.**
+  `core/solver/drivers.py:700` passes `vmap_method="sequential"` to `jax.pure_callback`,
+  and that function's own docstring says why: *"neither library vectorises, so a batch of
+  solves is a host-side loop where a batch of jax-native ones would map."* The same wrap
+  has **no JVP at all** — `jax.jvp`/`jax.grad` of a `pure_callback` raises. So a batched
+  *ensemble of MDA evaluations* maps; a batched *ensemble of optimiser solves* serialises
+  on the host and cannot be differentiated through. That distinction belongs wherever a
+  batched direction is proposed.
+- **Nothing else refuses.** 234 of 234 nodes trace under `vmap` (§33.11.1).
+
+#### 33.11.4 The honest framing
+
+**Both numbers, and which transform each belongs to:**
+
+| | `jacfwd` (tangent-batched) | design-batched `vmap` |
+|---|---|---|
+| what is batched | tangent directions | the design vector |
+| predicates | **unbatched** | **batched** |
+| `lax.cond` sites in the graph | 1, survives as `cond` | 1, becomes `select_n` |
+| nodes that refuse the transform | 2 (`while_loop`, reverse only) | 0 |
+| forward-safe / reverse-unsound sites | **3 of 393** | **0 of 936** (234 nodes x 4 points), after the repairs |
+
+The §33 headline should be read as **"3 of 393 under `jacfwd`"**, and §33.9's
+recommendation not to sweep the other 800 guards rests on that measurement and on the
+points visited, not on a proof. What the batched census adds is that the *transform* costs
+one site of exposure in this graph, not many, because the port had already written almost
+everything as an explicit select rather than as a branch — the same property that made the
+`jacfwd` count small.
