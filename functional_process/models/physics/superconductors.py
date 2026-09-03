@@ -190,7 +190,7 @@ def bottura_scaling(
     # outside the critical surface -- and `(negative) ** q` is `nan` for fractional `q`.
     # `jnp.where` discards that `nan` in value and in the JVP, but the transposed select
     # multiplies an exact-zero cotangent by it, so `jacrev` is non-finite where `jacfwd`
-    # is fine (`_audit/optimise_design.md` §31.33). `0.5` is an interior point of the
+    # is fine (`_audit/optimise_design.md` §33). `0.5` is an interior point of the
     # unit interval, so both powers and both derivatives are finite there; the arm is
     # unselected, so no value moves.
     safe_b_reduced = jnp.where(inside_critical_surface, b_reduced, 0.5)

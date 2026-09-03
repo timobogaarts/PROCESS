@@ -193,7 +193,7 @@ def calculate_fusion_gain(
     # `d/d denominator`. Forward mode multiplies and then selects, so it discards both;
     # the transposed select runs first and then multiplies, and `0 * inf` is `nan`. So
     # the single spelling is finite under `jacfwd` and non-finite under `jacrev` at the
-    # same point (`_audit/optimise_design.md` §31.33). Substituting `1.0` changes no
+    # same point (`_audit/optimise_design.md` §33). Substituting `1.0` changes no
     # value: the arm it appears on is the one the outer select discards.
     safe_denominator = jnp.where(degenerate, 1.0, denominator)
     return jnp.where(

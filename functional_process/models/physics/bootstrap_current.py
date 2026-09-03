@@ -824,7 +824,7 @@ def bootstrap_fraction_sauter(
     # `_profile_at(sqeps, radial_elements - 1)`, i.e. `arange(1, n-1)`), and a slice
     # *discards* its tangent in forward mode but *transposes to a zero pad* in reverse,
     # where `0 * inf` is `nan`. So the unguarded spelling is finite under `jacfwd` and
-    # non-finite under `jacrev` at the same point -- `_audit/optimise_design.md` §31.33.
+    # non-finite under `jacrev` at the same point -- `_audit/optimise_design.md` §33.
     # Value-identical: `safe_sqrt` returns `0.0` at `0` and is bit-identical elsewhere.
     sqeps = safe_sqrt(roa * (rminor / rmajor))
 
