@@ -49,7 +49,8 @@ import jax.numpy as jnp
 from cottax.evaluate import ConditionMap
 
 _BOUND: list = []
-"""`bind`'s memo: `[((treedef, static), (values, jacobian))]`, one entry per block.
+"""`bind`'s memo: `[((treedef, static), (values, jacobian, values_and_jacobian))]`, one
+entry per block.
 
 **A list scanned with `==`, not a dict**, and that is not laziness. `equinox.Module`'s
 `__eq__` and `__hash__` disagree here: for the static half of
@@ -68,7 +69,8 @@ configuration), so the list never grows to a size where this matters.
 
 
 def bind(conditions: ConditionMap, unravel):
-    """`(values, jacobian)` for this block, each taking only `flat_x`.
+    """`(values, jacobian, values_and_jacobian)` for this block, each taking only
+    `flat_x`.
 
     **What this is for.** `flat_conditions` below passes the whole `ConditionMap` as an
     argument, and `eqx.filter_jit` re-partitions, re-flattens and re-hashes it on *every*
@@ -92,15 +94,50 @@ def bind(conditions: ConditionMap, unravel):
     within about 2x of what any host-side loop can reach. Output is bitwise identical to
     `flat_conditions`.
 
+    **The third callable, and what it is for: compile time.** `jax.jacfwd` computes the
+    primal internally -- `vmap(jvp(...))` produces `(y, jac)` and the `has_aux=False`
+    spelling throws `y` away -- so `values` and `jacobian` above are two programs over
+    the *same* body, and the primal half of the block is traced, lowered and compiled
+    **twice**. `values_and_jacobian` is `jax.jacfwd(..., has_aux=True)` over a body
+    returning `(stacked, stacked)`: `jvp_subtrace_aux` yields the aux as
+    `JVPTracer.primal`, i.e. literally the primal jax already had, so one program
+    returns both. A caller that needs both at every point pays one trace instead of two.
+
+    **Which caller could use it, and which could not.**
+    `pyvmcon.AbstractProblem.__call__(x)` returns `Result(f, df, eq, deq, ie, die)` --
+    value *and* derivative at every point, line-search trial points included -- so
+    `VmconDriver` has no value-only call at all (§31.23 counted 552 `values` against 552
+    `jacobian` on one row). `SlsqpDriver` hands `scipy` separate `fun` and `jac`
+    callables and scipy's line search *does* call `fun` alone, so fusing there would pay
+    a whole Jacobian per trial point. `epsfcn`'s finite difference is the other
+    value-only caller. Hence three callables and not a replacement: this module hands out
+    what is available and the *driver* chooses.
+
+    **It is not bitwise, so nothing chooses it by default.** `VmconDriver.fused` is off,
+    and its docstring carries the measurement: the values agree bit for bit, ten of 294
+    Jacobian cells move by `4.44e-16`, and one cold-matrix row flips from `converged` to
+    `stopped` on that. The *jaxpr* is not the difference -- the same `has_aux` program
+    with its primal output dropped again reproduces the split Jacobian exactly -- the
+    extra **live output** is, because XLA schedules the tangent computation differently
+    once the primal must be materialised too. `_audit/optimise_design.md` §31.30.
+
+    **When something does choose it, the saving arrives by not calling, not by not
+    building.** `jax.jit` is lazy: constructing all three wrappers costs nothing, and
+    the trace/lower/compile happen on a wrapper's *first call*. So `bind` builds three
+    and a solve compiles only the ones it calls -- with `fused` on, the value-only
+    program is never traced, and with it off `values_and_jacobian` is never traced. Both
+    directions are free, which is what makes the switch cost nothing to carry. [measured
+    -- §31.30 counts the emitted programs per row rather than reasoning about laziness.]
+
     Not free at bind time: `eqx.partition` alone is ~63 ms. That is why the result is
     memoised in `_BOUND` -- see its docstring for why the memo is a list and not a dict.
     """
     dynamic, static = eqx.partition((conditions, unravel), eqx.is_array)
     leaves, treedef = jax.tree_util.tree_flatten(dynamic)
 
-    for (cached_treedef, cached_static), (values, jacobian) in _BOUND:
+    for (cached_treedef, cached_static), bound in _BOUND:
         if cached_treedef == treedef and cached_static == static:
-            return _timed(values, leaves), _timed(jacobian, leaves)
+            return tuple(_timed(fn, leaves) for fn in bound)
 
     def rebuild(array_leaves):
         return eqx.combine(jax.tree_util.tree_unflatten(treedef, array_leaves), static)
@@ -117,8 +154,24 @@ def bind(conditions: ConditionMap, unravel):
             lambda flat: jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat))])
         )(flat_x)
 
-    _BOUND.append(((treedef, static), (values, jacobian)))
-    return _timed(values, leaves), _timed(jacobian, leaves)
+    @jax.jit
+    def values_and_jacobian(array_leaves, flat_x):
+        block, unflatten = rebuild(array_leaves)
+
+        def stacked_twice(flat):
+            # Evaluated **once** and returned twice, not called twice: the second slot
+            # is `has_aux`'s, and `jvp_subtrace_aux` takes `.primal` off the tracer it
+            # is handed. Calling the body a second time would trace the block twice and
+            # give the whole change back.
+            out = jnp.stack([jnp.asarray(v) for v in block(*unflatten(flat))])
+            return out, out
+
+        derivative, primal = jax.jacfwd(stacked_twice, has_aux=True)(flat_x)
+        return primal, derivative
+
+    bound = (values, jacobian, values_and_jacobian)
+    _BOUND.append(((treedef, static), bound))
+    return tuple(_timed(fn, leaves) for fn in bound)
 
 
 def _timed(fn, leaves):

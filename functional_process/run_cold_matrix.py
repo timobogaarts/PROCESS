@@ -193,7 +193,6 @@ import numpy as np
 jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402
-from jax.flatten_util import ravel_pytree  # noqa: E402
 
 from functional_process import (  # noqa: E402
     mdf,
@@ -203,7 +202,10 @@ from functional_process import (  # noqa: E402
     sand,
 )
 from functional_process.core.solver import host_cache  # noqa: E402
-from functional_process.core.solver.host_cache import flat_conditions  # noqa: E402
+from functional_process.core.solver.drivers import (  # noqa: E402
+    SUMMARY_MARKER,
+    NonFiniteProblemError,
+)
 from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
@@ -619,11 +621,26 @@ def cold_sand(reference, machine_graph, switch_values, cold):
         solve_schedule, solve_drive, cold, stage_env, design=design_paths
     )
 
-    # The same pre-solve probe `run_sand_harness.main` runs, for the same reason: a SAND
-    # condition map holds the coupling unknowns at their seed, so a seed the models
-    # cannot evaluate shows up as non-finite conditions, and handing those to an SQP
-    # produces a wander rather than an answer. On this table that has to be a *stated*
-    # outcome, not an iteration count.
+    # The context `_why_no_step` reads below. It used to be built for a *pre-solve
+    # probe* as well -- one `host_cache.flat_conditions` call over the seeded start,
+    # emitting a `status="non-finite"` row when any condition value was not finite.
+    #
+    # **That probe is gone, and the guard that replaced it checks strictly more.**
+    # `drivers._refuse_non_finite` runs inside `_Problem.__call__` on the first iterate
+    # and reads the condition values *and* the Jacobian rows, plus any identically zero
+    # Jacobian column, naming every offender. The probe read values alone -- and the
+    # case its own docstring records is one a values-only probe cannot see: a cold SAND
+    # start where all 30 conditions were **finite in value** and only the derivatives
+    # were `nan`. So the probe was the weaker of two checks over the same block.
+    #
+    # It was also a whole extra program. `flat_conditions` has a different signature and
+    # wrapper (`eqx.filter_jit` over the whole `ConditionMap`) from `host_cache.bind`'s
+    # plain `jax.jit` over array leaves, so jax sees a **third module computing the same
+    # block's values** and compiles it -- 5 161 emitted MLIR lines on the stellarator
+    # SAND block against `bind`'s `values` at 5 160, i.e. the same program twice, and
+    # 15 161 against 15 160 on the tokamak. That is 23.7 % and 21.7 % of everything the
+    # SAND arm emitted, or 1.92 s and 10.75 s of first-call wall clock measured
+    # interleaved in one process. [measured, `_audit/optimise_design.md` §31.30.1]
     probe_context = {}
     for var in solve_drive.context:
         if var in stage_env:
@@ -633,40 +650,32 @@ def cold_sand(reference, machine_graph, switch_values, cold):
                 probe_context[var] = jnp.asarray(ground_truth(cold, var))
             except (AttributeError, KeyError):
                 probe_context[var] = jnp.asarray(0.0)
-    # Through `host_cache`, not called directly. A bare `condition_map(...)(...)` is an
-    # **eager** walk of the whole SAND block, and XLA compiles every primitive in every
-    # model body as its own module -- measured at 225 of this row's 277 XLA compiles on
-    # `stellarator_helias` (persistent cache off), attributed to model frames
-    # (`_plasma_composition` 23, `bottura_scaling` 21, `_simpson` 14, ...) with no
-    # orchestration frame between them and this line. Same defect class as `mdf.solve`'s
-    # tail (`_audit/optimise_design.md` §24.8) in a different place.
-    # `host_cache._flat_conditions` is the jitted spelling of exactly this call, and it
-    # is module-level so the jit cache is keyed on its arguments rather than on a fresh
-    # closure (that module's docstring, §24.1).
-    flat_probe, probe_unravel = ravel_pytree(
-        tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
-    )
-    at_start = flat_conditions(
-        solve_drive.condition_map(probe_context), flat_probe, probe_unravel
-    )
-    non_finite = [
-        condition.path_str()
-        for condition, value in zip(solve_drive.conditions, at_start, strict=True)
-        if not np.all(np.isfinite(np.asarray(value)))
-    ]
-    if non_finite:
-        result.update(
-            status="non-finite",
-            note=(
-                f"{len(non_finite)} of {len(solve_drive.conditions)} conditions are "
-                f"non-finite at the seeded start, first {non_finite[0]}"
-            ),
-        )
-        result["_seconds_total"] = time.perf_counter() - began
-        return result
 
     started = time.perf_counter()
-    out = run_schedule(solve_schedule, _inputs_only(solve_schedule, seeded), whole=False)
+    try:
+        out = run_schedule(
+            solve_schedule, _inputs_only(solve_schedule, seeded), whole=False
+        )
+    except (NonFiniteProblemError, jax.errors.JaxRuntimeError) as failure:
+        # **A stated outcome, not an exit** -- the probe's actual purpose, kept. The
+        # two caught types are narrow on purpose and `_non_finite_refusal` narrows the
+        # second one further: a solve raises `ValueError` for a stale condition count, a
+        # stray `condition_scale` name, an inert objective and whatever `cvxpy` or a
+        # model body throws, and labelling any of those "non-finite" would turn an
+        # unrelated defect into a plausible measurement. Anything not recognised is
+        # re-raised unchanged.
+        #
+        # The note carries more than the probe's did, because the guard knows more: the
+        # probe could only say how many *values* were non-finite and name the first,
+        # where this says which conditions failed in value, which failed in
+        # *derivative*, and which unknowns have an all-zero column -- the distinction
+        # that cost a full investigation the first time it was met.
+        note = _non_finite_refusal(failure)
+        if note is None:
+            raise
+        result.update(status="non-finite", note=note)
+        result["_seconds_total"] = time.perf_counter() - began
+        return result
     elapsed = time.perf_counter() - started
     result["_x"] = tuple(
         float(np.asarray(out[sand.iteration_variable_path(i)])) for i in reference.ixc
@@ -893,6 +902,66 @@ def _headline(refusal) -> str:
     if len(text) <= _HEADLINE:
         return text
     return f"{text[:_HEADLINE].rstrip()} [...] (run `machine_from_indat` for the rest)"
+
+
+def _non_finite_refusal(failure) -> str | None:
+    """The table note for `failure`, or `None` if it is not a non-finite refusal.
+
+    `None` is the caller's instruction to re-raise, and it is the whole discrimination
+    step. Two types are caught around the solve because
+    `drivers.NonFiniteProblemError` can reach a caller in two shapes, and **the one this
+    file gets is not the exception**, measured 2026-09-03:
+
+    - `sand_harness.run_schedule`, **including with `whole=False`** -- the call
+      `cold_sand` makes -- runs the driver's `jax.pure_callback` inside a compiled
+      program. XLA cannot carry a Python exception, so it arrives as
+      `jax.errors.JaxRuntimeError: INTERNAL: CpuCallback error calling callback: <the
+      host traceback, as text>`, with the class and every attribute gone.
+      `cottax.evaluate.Schedule.run` does the same.
+    - the exception itself only reaches a caller that is *not* going through a compiled
+      schedule, which nothing here does today.
+
+    That was not the expectation, and it is the finding that shaped this function: an
+    `except NonFiniteProblemError` alone would have caught nothing on the one path that
+    matters, and the row would have been the crash the probe existed to prevent. So the
+    note is taken from the message's `SUMMARY_MARKER` line, which is written for exactly
+    this and is the same string `.summary` carries -- one rendering, both arrivals, no
+    chance of the two drifting. The `isinstance` arm stays for the shape that is not
+    reached today rather than being deleted as unreachable: it costs one branch, and a
+    driver run outside a compiled schedule is a change nothing would announce.
+
+    `jax.errors.JaxRuntimeError` is a wide envelope and most of what arrives in it is
+    not this, so the marker is what narrows it. Matching on the marker rather than on
+    any phrase of the prose: the prose can be rewritten, the marker is a named constant
+    that a rewrite has to move deliberately.
+    """
+    if isinstance(failure, NonFiniteProblemError):
+        return _non_finite_note(failure.summary)
+    text = str(failure)
+    if SUMMARY_MARKER not in text:
+        return None
+    tail = text[text.index(SUMMARY_MARKER) + len(SUMMARY_MARKER) :]
+    return _non_finite_note(tail.splitlines()[0].strip())
+
+
+def _non_finite_note(summary: str) -> str:
+    """The table cell for a non-finite refusal, out of the refusal's own one-liner.
+
+    A prefix and nothing else, because the content is `_refuse_non_finite`'s to write --
+    see `SUMMARY_MARKER`. Quoting the *message* instead would spend the cell's first 180
+    characters on what a non-finite QP does to a solver and truncate before the names,
+    which are the only part the table needs.
+
+    **It says strictly more than the probe it replaces**, which could only report how
+    many *values* were non-finite and name the first. The summary reports the values and
+    the derivative rows **separately**, and `_refuse_non_finite`'s docstring records why
+    that distinction is the load-bearing one: on the cold SAND start that motivated the
+    guard every condition was finite in value and only the derivatives were `nan` -- a
+    row the old probe would have called healthy and then handed to VMCON. The
+    identically zero columns come along because an unknown the conditions cannot see is
+    the usual company that failure keeps.
+    """
+    return f"refused at the first iterate -- {summary}"
 
 
 def compares_by_default(mode: str) -> bool:

@@ -39,11 +39,14 @@ import functional_process
 from functional_process.core.solver import constraints as ported_constraints
 from functional_process.core.solver import objectives as ported_objectives
 from functional_process.core.solver.drivers import (
+    SUMMARY_MARKER,
     VMCON_CONVERGED,
     VMCON_STATUS,
+    NonFiniteProblemError,
     SlsqpDriver,
     Status,
     VmconDriver,
+    _refuse_non_finite,
 )
 from functional_process.indat import GRAPH
 from functional_process.sand import (
@@ -743,8 +746,12 @@ def test_a_residual_whose_unknown_has_no_scale_keeps_a_factor_of_one():
 # ---------------------------------------------------------------- the driver
 
 
-def _toy_problem(driver=None):
+def _toy_problem(driver=None, objective=None):
     """`min (x-3)^2 + (y-2)^2` subject to `x + y - 4 <= 0`, as a cottax graph.
+
+    `objective` replaces the objective's `fn` and nothing else -- one caller wants a
+    body whose *derivative* is not finite at the start while every value is, which is
+    the only shape `drivers._refuse_non_finite` catches that a values-only check misses.
 
     **Takes the driver**, because `Assign` is what mints the `^guess.*` ports this
     returns -- the algorithm's own `requires` names them, so there is nothing to hand
@@ -768,7 +775,7 @@ def _toy_problem(driver=None):
                 CallableNode(
                     inputs=(In(x), In(y)),
                     outputs=(Out(f),),
-                    fn=_Objective(),
+                    fn=_Objective() if objective is None else objective,
                 ),
             ),
             (
@@ -881,6 +888,105 @@ def test_vmcon_driver_refuses_a_wrong_condition_count():
     schedule = Schedule(Blocking.scc(graph))
     with pytest.raises(ValueError, match="equalities"):
         schedule.run(path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(0.0)}))
+
+
+class _UnboundedSlope:
+    """`sqrt(x) + y`: finite everywhere on `x >= 0`, with an infinite slope at `x = 0`.
+
+    The shape `drivers._refuse_non_finite`'s docstring names as the usual cause -- a
+    value that is perfectly well defined and a derivative that is not -- so a start at
+    `x = 0` produces exactly the failure a values-only probe cannot see.
+    """
+
+    def __call__(self, x, y):
+        return jnp.sqrt(x) + y
+
+    def __eq__(self, other):
+        return isinstance(other, _UnboundedSlope)
+
+    def __hash__(self):
+        return hash(type(self))
+
+
+def _non_finite_toy():
+    """The toy problem with `sqrt(x)` as its objective, started at `x = 0`."""
+    graph, _x, _y, gx, gy = _toy_problem(
+        VmconDriver(n_equality=0, n_inequality=1, scaled=False),
+        objective=_UnboundedSlope(),
+    )
+    return graph, path_map({gx: jnp.asarray(0.0), gy: jnp.asarray(1.0)})
+
+
+def test_the_non_finite_refusal_carries_its_lists_and_a_one_line_summary():
+    """`_refuse_non_finite`'s own shape, asked of it directly.
+
+    The type is what lets a caller survive a non-finite start and report it as an
+    outcome rather than dying. A solve raises `ValueError` for a stale condition count,
+    a stray `condition_scale` name and an inert objective; a caller that caught
+    `ValueError` would label all of them "non-finite", which turns an unrelated defect
+    into a plausible measurement.
+
+    The **separation of value from derivative** is the load-bearing part and is checked
+    on a point where every value is finite and one row's derivative is not -- the exact
+    case the deleted pre-solve probe could not see, and the one that cost a full
+    investigation.
+
+    `summary` must also appear in the message, because that is the only half that
+    survives the compiled arrival the next test measures.
+    """
+    f = VarPath((GetAttrKey("c"), GetAttrKey("f")))
+    g = VarPath((GetAttrKey("c"), GetAttrKey("g")))
+    x = VarPath((GetAttrKey("d"), GetAttrKey("x")))
+
+    class _Map:
+        conditions = (f, g)
+        unknowns = (x,)
+
+    with pytest.raises(NonFiniteProblemError) as raised:
+        _refuse_non_finite(np.array([1.0, 2.0]), np.array([[np.nan], [1.0]]), _Map())
+    refusal = raised.value
+    assert isinstance(refusal, ValueError)  # every existing `except` still catches it
+    assert refusal.bad_values == ()
+    assert refusal.bad_rows == (f.path_str(),)
+    assert refusal.zero_columns == ()
+    assert refusal.n_conditions == 2
+    assert "0/2 non-finite in VALUE" in refusal.summary
+    assert f"1/2 non-finite in DERIVATIVE ({f.path_str()})" in refusal.summary
+    assert SUMMARY_MARKER + refusal.summary in str(refusal)
+
+
+@pytest.mark.parametrize("whole", [False, None])
+def test_a_solve_delivers_the_refusal_as_text_and_the_summary_is_what_survives(whole):
+    """**The arrival a caller actually gets, and it is not the exception.**
+
+    Every path in this tree that runs a `VmconDriver` puts it inside a
+    `jax.pure_callback` under a compiled program -- `cottax`'s own `Schedule.run` and
+    `sand_harness.run_schedule` alike, `whole=False` included, which is the call
+    `run_cold_matrix.cold_sand` makes. XLA cannot carry a Python exception, so what
+    comes back is `jax.errors.JaxRuntimeError` with the host traceback as *text*: the
+    class is gone and so is every attribute.
+
+    That is why `_refuse_non_finite` writes its one-line rendering into the message
+    after `SUMMARY_MARKER`, and why `run_cold_matrix._non_finite_refusal` matches on the
+    marker rather than on the type. Catching the type alone would have caught nothing
+    here -- which is what a values-only reading of "it is a ValueError, so catch
+    ValueError" would have produced.
+
+    Both `whole` settings are checked because they choose different jit strategies and
+    the *shape of the failure* must not depend on which one a schedule got.
+    """
+    graph, env = _non_finite_toy()
+    schedule = Schedule(Blocking.scc(graph))
+    with pytest.raises(jax.errors.JaxRuntimeError) as raised:
+        if whole is False:
+            run_schedule(schedule, env, whole=False)
+        else:
+            schedule.run(env)
+    text = str(raised.value)
+    assert SUMMARY_MARKER in text
+    summary = text[text.index(SUMMARY_MARKER) + len(SUMMARY_MARKER) :].splitlines()[0]
+    assert "1/2 non-finite in DERIVATIVE" in summary
+    assert "0/2 non-finite in VALUE" in summary
 
 
 # ------------------------------------------------- what the driver says about its run

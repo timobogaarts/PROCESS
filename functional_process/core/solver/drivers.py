@@ -92,10 +92,11 @@ def design_scale(flat_start):
 def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     """The pieces every SQP driver here needs, built once from a block's `ConditionMap`.
 
-    Returns `(evaluate, jacobian, unravel, scale, condition_scale, bounds)`, where
+    Returns `(evaluate, jacobian, both, unravel, scale, condition_scale, bounds)`, where
     `evaluate`/`jacobian` take a **scaled** flat design vector and return
-    already-scaled values and Jacobian, `unravel` puts a flat vector back into the
-    block's unknown pytree, and `bounds` is `(lower, upper)` in scaled coordinates.
+    already-scaled values and Jacobian, `both` returns the pair from **one** compiled
+    program, `unravel` puts a flat vector back into the block's unknown pytree, and
+    `bounds` is `(lower, upper)` in scaled coordinates.
 
     Extracted so `VmconDriver` and `SlsqpDriver` differ **only** in which solver they
     hand the same problem to. That is the whole point of having two: if one takes a
@@ -103,6 +104,24 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     handling, and if neither can, the difference is the problem. A shared builder is
     what makes that a controlled comparison rather than two implementations that might
     be scaling differently.
+
+    **Both drivers now genuinely go through here.** They did not: `SlsqpDriver` called
+    this function while `VmconDriver.__call__`'s `host` carried a second, textually
+    identical copy of the same scaling, bounds and chain rule -- the copy this function
+    was extracted *from*, left behind when it was extracted. `SlsqpDriver`'s own
+    docstring has claimed the shared builder since, so the claim was stale rather than
+    wrong in intent. Unifying them is what gives `both` a caller on the path the cold
+    matrix actually runs, and it is bitwise-checkable precisely because the two spellings
+    were identical expression by expression (`_audit/optimise_design.md` §31.30).
+
+    **`both` exists for compile time, and only VMCON may use it.** `pyvmcon` demands
+    value *and* derivative at every point it evaluates, so a fused program costs it
+    nothing and saves the whole value-only trace/lower/compile;
+    `scipy.optimize.minimize(method="SLSQP")` calls `fun` alone during its line search,
+    so fusing there would pay a full Jacobian per trial point. This function therefore
+    hands out all three and lets the driver choose -- see `host_cache.bind`. It is
+    **not** bitwise and is therefore behind `VmconDriver.fused`, off; that field carries
+    the measurement and the row it moved.
 
     The scaling rules are `VmconDriver`'s, unchanged and deliberately not re-derived
     here -- design variables by `1 / x_start` (PROCESS's own conditioning, from
@@ -143,21 +162,34 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     # (`_audit/optimise_design.md` §31.14). `bind` memoises, so a second solve of the
     # same block is a cache hit rather than a re-trace, which is §24.1's property kept
     # rather than given back. This function still builds no `jax.jit` of its own.
-    bound_values, bound_jacobian = bind(conditions, unravel)
+    bound_values, bound_jacobian, bound_both = bind(conditions, unravel)
+
+    def _scale_values(raw):
+        return np.asarray(raw, dtype=float) * condition_scale
+
+    def _scale_jacobian(raw):
+        # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column, one
+        # `condition_scale` factor per row.
+        return np.asarray(raw, dtype=float) * condition_scale[:, None] / scale[None, :]
 
     def evaluate(x_scaled):
         flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-        return np.asarray(bound_values(flat_x), dtype=float) * condition_scale
+        return _scale_values(bound_values(flat_x))
 
     def jacobian(x_scaled):
         flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-        # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column, one
-        # `condition_scale` factor per row.
-        return (
-            np.asarray(bound_jacobian(flat_x), dtype=float)
-            * condition_scale[:, None]
-            / scale[None, :]
-        )
+        return _scale_jacobian(bound_jacobian(flat_x))
+
+    def both(x_scaled):
+        """`(values, jacobian)` from one program -- `evaluate` and `jacobian` fused.
+
+        Deliberately the *same* post-scaling helpers as the two above, so "fused equals
+        split" is a claim about `host_cache.bind`'s two jaxprs and not about two
+        transcriptions of the chain rule.
+        """
+        flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
+        raw_values, raw_jacobian = bound_both(flat_x)
+        return _scale_values(raw_values), _scale_jacobian(raw_jacobian)
 
     limits = {var: (lo, hi) for var, lo, hi in driver.bounds}
     lower = np.array(
@@ -172,11 +204,89 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     return (
         evaluate,
         jacobian,
+        both,
         unravel,
         scale,
         condition_scale,
         (scaled_lower, scaled_upper),
     )
+
+
+SUMMARY_MARKER = "SUMMARY: "
+"""Where `NonFiniteProblemError.summary` starts inside the message.
+
+The one thing a caller reporting this refusal in a single cell may match on. It is here
+rather than in that caller because the string it delimits is written here: a marker
+owned by the reader and a message owned by the writer is exactly the pairing that goes
+stale silently."""
+
+_SUMMARY_HEADS = 3
+"""How many names of each kind `summary` quotes before `...`. Enough to recognise the
+failure; a table cell cannot hold thirty paths and the full lists are above it in the
+message anyway."""
+
+
+def _first_few(names) -> str:
+    """`(a, b, c, ...)`, or `(none)` -- `summary`'s bracket."""
+    if not names:
+        return "(none)"
+    shown = ", ".join(names[:_SUMMARY_HEADS])
+    return f"({shown}{', ...' if len(names) > _SUMMARY_HEADS else ''})"
+
+
+class NonFiniteProblemError(ValueError):
+    """What `_refuse_non_finite` raises -- a `ValueError` with a name to catch it by.
+
+    **Why the name exists.** A caller that wants to survive a non-finite start and
+    report it as an *outcome* -- `run_cold_matrix.cold_sand`, which must produce a table
+    row rather than an exit -- has to tell this refusal apart from every other
+    `ValueError` a solve can raise, and there are several with nothing in common but
+    their type: `_refuse_inert_objective`'s, `scaled_problem`'s stray-`condition_scale`
+    one, `start_from`'s missing-`Start` one, and whatever `pyvmcon`, `cvxpy` or a model
+    body raises. Catching `ValueError` around a solve would label all of those
+    "non-finite", which is worse than not catching at all: it turns an unrelated defect
+    into a plausible-looking measurement.
+
+    A subclass rather than a sentinel string, because a string in a message is a
+    contract nobody can see. `ValueError` remains its base so every existing
+    `except ValueError` -- and every caller that only wants the message -- is unaffected.
+
+    **The class does not reach a caller through any schedule, and that is why `summary`
+    is also in the message.** Measured 2026-09-03, and it was not the expectation: every
+    path in this tree that runs a `VmconDriver` puts it inside a `jax.pure_callback`
+    under a **compiled** program -- `cottax.evaluate.Schedule.run` and
+    `sand_harness.run_schedule` alike, the latter with `whole=False` included, which is
+    the call `run_cold_matrix.cold_sand` makes. XLA cannot carry a Python exception, so
+    what such a caller sees is `jax.errors.JaxRuntimeError: INTERNAL: CpuCallback error
+    calling callback: <the host traceback, as text>`. The class is gone, the attributes
+    are gone, and **only the message text is left**.
+
+    So a caller catching the type alone would have caught nothing on the one path that
+    matters, and the one-line rendering a reporting caller needs is put **in the
+    message**, after `SUMMARY_MARKER`, where it survives being turned into text. The
+    type still earns its name: it is what `_refuse_non_finite`'s own tests assert on,
+    and it is what a future eager or in-graph driver would deliver.
+
+    The four tuples plus `summary` are set by `_refuse_non_finite`. Empty on an instance
+    built any other way -- they are a convenience for a caller *reporting* this, never
+    the check itself.
+    """
+
+    summary: str = ""
+    """The three lists in one line, for a caller with one cell to put them in.
+
+    Rendered here rather than by the caller so that the eager arrival and the compiled
+    one -- attribute and parsed-from-text -- are the *same string* and not two
+    formattings that can drift apart."""
+
+    bad_values: tuple = ()
+    """Conditions whose **value** is not finite, by `path_str()`."""
+    bad_rows: tuple = ()
+    """Conditions whose **derivative row** holds a non-finite cell, by `path_str()`."""
+    zero_columns: tuple = ()
+    """Unknowns whose Jacobian column is identically zero, by `path_str()`."""
+    n_conditions: int = 0
+    """How many conditions the block declares, so a caller can say "3 of 30"."""
 
 
 def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
@@ -195,6 +305,21 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     Values and derivatives are reported separately because they fail separately: every
     one of the 30 conditions was **finite in value** at that point and only the
     derivatives were `nan`, which is precisely what made the failure look mysterious.
+
+    **This is also the only non-finite check the cold matrix now runs.**
+    `run_cold_matrix.cold_sand` used to probe the condition *values* at the seeded start
+    through `host_cache.flat_conditions` before solving. That probe was strictly weaker
+    than this function -- values only, no derivative rows, no identically zero columns,
+    no names -- and it was a whole third XLA module over the same block, built for a
+    check this one already makes on the first iterate. It is gone; the row now comes
+    from catching `NonFiniteProblemError`, whose docstring says why the type has a
+    name.
+
+    Raises
+    ------
+    NonFiniteProblemError
+        Naming the non-finite values, the non-finite derivative rows, and any unknown
+        whose Jacobian column is identically zero.
     """
     names = [c.path_str() for c in conditions.conditions]
     bad_values = [n for n, v in zip(names, values, strict=True) if not np.isfinite(v)]
@@ -207,7 +332,12 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
     zeroed = [
         u for u, col in zip(unknowns, jacobian.T, strict=True) if not np.any(col != 0.0)
     ]
-    raise ValueError(
+    summary = "; ".join([
+        f"{len(bad_values)}/{len(names)} non-finite in VALUE {_first_few(bad_values)}",
+        f"{len(bad_rows)}/{len(names)} non-finite in DERIVATIVE {_first_few(bad_rows)}",
+        f"{len(zeroed)} unknown(s) with an all-zero column {_first_few(zeroed)}",
+    ])
+    refusal = NonFiniteProblemError(
         "the SQP was handed a non-finite problem, so its QP subproblem cannot be "
         "trusted (a solver will usually report this as non-convexity or infeasibility, "
         "which is not what is wrong):\n"
@@ -216,8 +346,19 @@ def _refuse_non_finite(values, jacobian, conditions: ConditionMap) -> None:
         f"  unknowns with an all-zero column: {zeroed or 'none'}\n"
         "A derivative that is `nan` where the value is finite usually means an "
         "unbounded slope evaluated at its boundary -- `x ** p` with `0 < p < 1`, or "
-        "`sqrt`, at exactly `0.0` -- reached because an unknown was started there."
+        "`sqrt`, at exactly `0.0` -- reached because an unknown was started there.\n"
+        # Last, on its own line, and after a marker: this is the half a caller with one
+        # table cell quotes, and the only half that survives being rendered to text by
+        # a compiled `pure_callback`. See `NonFiniteProblemError`.
+        f"{SUMMARY_MARKER}{summary}"
     )
+    # The same lists as fields, so an *eager* caller need not parse anything.
+    refusal.summary = summary
+    refusal.bad_values = tuple(bad_values)
+    refusal.bad_rows = tuple(bad_rows)
+    refusal.zero_columns = tuple(zeroed)
+    refusal.n_conditions = len(names)
+    raise refusal
 
 
 def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
@@ -539,8 +680,14 @@ class SlsqpDriver(AbstractDriver):
         max_iter, tolerance = self.max_iter, self.tolerance
 
         def host(live, flat_start):
-            evaluate, jacobian, _unravel, scale, _, (lower, upper) = scaled_problem(
-                driver, live, flat_start, unravel
+            # `_both` discarded on purpose. `scipy`'s SLSQP takes separate `fun` and
+            # `jac` callables and its line search calls `fun` alone at trial points, so
+            # the fused program would pay a whole Jacobian for each of those. The `at`
+            # cache below already removes the *duplicate* evaluation SLSQP would
+            # otherwise make at one point; what it cannot remove is a derivative scipy
+            # never asked for.
+            evaluate, jacobian, _both, _unravel, scale, _, (lower, upper) = (
+                scaled_problem(driver, live, flat_start, unravel)
             )
             x0 = flat_start * scale
 
@@ -968,6 +1115,75 @@ class VmconDriver(AbstractDriver):
     1e-5 gives both an inaccurate step and a corrupted quasi-Newton update -- which
     shows up not as a wrong answer but as many more iterations to reach the same one.
     Measured on the MDF stellarator: see `_audit/optimise_design.md` §15."""
+    fused: bool = False
+    """Take the value and the Jacobian from **one** compiled program rather than two.
+
+    `jax.jacfwd` computes the primal internally and discards it, so the default path
+    compiles the block's primal twice -- once as `host_cache.bind`'s `values`, once
+    inside its `jacobian`. `pyvmcon.AbstractProblem.__call__` demands both at every
+    point it evaluates, so there is no value-only call on this path to lose, and
+    `bind`'s `values_and_jacobian` (`jax.jacfwd(..., has_aux=True)`, whose aux is the
+    primal the JVP already had) removes the duplicate program outright.
+
+    **Off by default, because it is not bitwise, and this problem is sensitive at the
+    last bit.** Measured 2026-09-03 on `stellarator_helias`'s cold SAND block
+    (`_audit/optimise_design.md` §31.30), fused against split at the same point:
+
+    | | |
+    |---|---|
+    | condition values | **bitwise identical**, 0 of 21 cells |
+    | Jacobian | **10 of 294 cells differ**, max `4.44e-16` |
+
+    and the cause is measured rather than guessed: the *jaxpr* is the same, because the
+    same `has_aux` program with its primal output **dropped again** reproduces the split
+    Jacobian bit for bit. What moves the ten cells is the extra **live output** -- XLA
+    fuses and schedules the tangent computation differently once the primal must also be
+    materialised. `jax.lax.optimization_barrier` on the primal, on both outputs, and a
+    hand-written `vmap(jvp)` spelling all give the identical ten cells, so there is no
+    spelling of "fused" that is bitwise. [measured]
+
+    **What those ten cells did, end to end** -- the reason this is a field and not the
+    default. `--native` cold matrix, `stellarator_helias` and `large_tokamak_nof`:
+
+    - stellarator MDF: converged, 66 it, `objf 1.21775739` -- **unchanged**
+    - tokamak MDF: converged, 7 it, `objf 1.6` -- **unchanged**
+    - tokamak SAND: converged, 10 it, `objf 1.6` -- **unchanged**
+    - stellarator SAND: **converged, 169 it, `objf 1.21775743`, largest equality
+      residual `1.04e-07`** becomes **stopped, 134 it, `objf 1.22762089`, largest
+      equality residual `1.96e-02`**
+
+    Three rows of four are untouched and one flips out of convergence. That is exactly
+    the behaviour §19, §20 and §21.2 record -- an SQP trajectory turning on a 2-ulp
+    input -- and it is why `reference_cold_matrix.txt` is not re-baselined for it: the
+    fused answer is not *wrong*, it is a different walk of a chaotic trajectory, and
+    trading a converged row for a stopped one is not a compile-time saving worth taking
+    silently. [measured]
+
+    **What it is worth, so the trade is stated and not implied.** In *emitted MLIR
+    lines*, which is a property of the program and so cannot be moved by machine load --
+    whole-row wall clock could not be used, the unchanged tokamak MDF arm having read
+    98.3 s and 62.8 s across two passes [measured]:
+
+    | | stellarator SAND | tokamak SAND |
+    |---|---|---|
+    | `values` + `jacobian` | 5 160 + 11 428 | 15 160 + 39 646 |
+    | fused | **11 544** | **39 884** |
+    | removed | **5 044** | **14 922** |
+
+    i.e. the fused program is the Jacobian program plus **116 lines** of primal outputs
+    (238 on the tokamak) where `values` costs 5 160 to emit on its own. At the survey's
+    0.41-0.52 ms per line cold that is ~2.1-2.6 s and ~6.1-7.8 s per block, on each of
+    the two blocks a configuration solves. [measured]
+
+    Per call it also helps, which is not a compile-time effect at all: 0.667 ms (values)
+    + 0.786 ms (jacobian) = 1.45 ms against **0.763 ms** fused, medians over 20 calls --
+    the redundant primal was being *computed* every iteration too. [measured] An
+    independent A/B put the whole-row saving at 3.44 s of a 46 s stellarator row and
+    ~12.9 s of a 119 s tokamak row.
+
+    Turn it on to reproduce any of the above, or on a configuration whose trajectory is
+    measured to be insensitive. Do not turn it on globally without re-running the cold
+    matrix and reading every row."""
     epsfcn: float | None = None
     """When set, replace `jax.jacfwd` with **PROCESS's own finite difference** at this
     relative perturbation, so that the derivative stops being a difference between the
@@ -1072,33 +1288,29 @@ class VmconDriver(AbstractDriver):
 
         _flat, unravel = ravel_pytree(start)
         meq = self.n_equality
-        by_name = {var: float(factor) for var, factor in self.condition_scale}
-        stray = set(by_name) - set(conditions.conditions)
+        # Asked **out here**, before the callback, even though `scaled_problem` asks it
+        # again inside: a name that is not a condition of this block is a statement
+        # about the driver's own fields, and this class's contract is that such a
+        # refusal is an ordinary Python error rather than one surfacing from inside a
+        # `jax.pure_callback`. The duplicate check costs a set difference.
+        stray = {var for var, _factor in self.condition_scale} - set(
+            conditions.conditions
+        )
         if stray:
             raise ValueError(
                 f"condition_scale names {written(tuple(stray))}, which this block does "
                 f"not read as a condition (it reads {written(conditions.conditions)})"
             )
-        condition_scale = np.array(
-            [by_name.get(c, 1.0) for c in conditions.conditions], dtype=float
-        )
-        bounds = {var: (lo, hi) for var, lo, hi in self.bounds}
-        lower = np.array(
-            [bounds.get(v, (-np.inf, np.inf))[0] for v in conditions.unknowns],
-            dtype=float,
-        )
-        upper = np.array(
-            [bounds.get(v, (-np.inf, np.inf))[1] for v in conditions.unknowns],
-            dtype=float,
-        )
         epsfcn = self.epsfcn
         callback = self.callback
         # Every field read out here rather than through `self` inside `host`, so that
         # what the callback closes over is a handful of plain values and it is obvious
         # by inspection that nothing live crosses the boundary except `dynamic` and the
-        # start. `SlsqpDriver` passes the driver itself, because `scaled_problem` takes
-        # one; both are leaf-free either way.
-        scaled = self.scaled
+        # start. `driver` is the exception, and it is the same exception `SlsqpDriver`
+        # already makes: `scaled_problem` takes a driver, and an `eqx.Module` of floats,
+        # tuples and a plain callable is leaf-free either way.
+        driver = self
+        fused = self.fused
         n_inequality = self.n_inequality
         max_iter, tolerance = self.max_iter, self.tolerance
         qsp_solver, initial_b = self.qsp_solver, self.initial_b
@@ -1111,18 +1323,16 @@ class VmconDriver(AbstractDriver):
             recombined `ConditionMap`, so the model inside is a jax function again and
             `jax.jacfwd` applies to it exactly as it did before the wrap -- but the
             compilation of it is **not** this driver's business and is not done here.
-            `flat_conditions`/`flat_condition_jacobian` are module-level and cached on
-            the condition map itself, so a fresh `eqx.combine` per solve is a cache hit
-            rather than the two re-compiles §22.2 measured on every call.
-            """
-            # PROCESS's own conditioning, from the starting point, exactly as
-            # `load_iteration_variables` derives it -- and through `design_scale`, so
-            # this path and `scaled_problem`'s (SLSQP) share one rule rather than two
-            # spellings of it. The floor matters: this used to test `flat_start != 0.0`,
-            # which a coordinate that is *numerically* zero passes, and `design_scale`'s
-            # docstring carries the case that found it.
-            scale = design_scale(flat_start) if scaled else np.ones_like(flat_start)
+            `host_cache.bind` is module-level and memoises on the condition map's own
+            structure, so a fresh `eqx.combine` per solve is a cache hit rather than the
+            two re-compiles §22.2 measured on every call.
 
+            **The problem itself is `scaled_problem`'s**, which is where the scaling,
+            the chain rule and the scaled bounds live for both SQP drivers. This body
+            used to carry its own copy of all three -- see that function's docstring for
+            why one is better than two identical ones, and §31.30 for the bitwise check
+            that the unification moved nothing.
+            """
             # **Compiled, and deliberately unlike `cottax.drivers.SLSQPDriver`**, which
             # leaves its inner model eager. An SQP iteration here converges a whole
             # PROCESS block; running it op by op costs far more than the one trace it
@@ -1131,17 +1341,17 @@ class VmconDriver(AbstractDriver):
             # model wrong. `_audit/optimise_design.md` §22 has what dropping it would
             # cost.
             #
-            # **Bound once per solve** (`host_cache.bind`): the condition map is
-            # partitioned and flattened here rather than on every iteration, so a call
-            # flattens 313 pytree leaves instead of 5 462. That flatten was 8.37 ms of a
-            # 10.58 ms call and was the single largest per-iteration cost this driver
-            # had -- 10.58 -> 0.73 ms, bitwise identical (§31.14). `bind` memoises across
-            # solves, so §24.1's "a second solve is a cache hit" is kept, not given back.
-            evaluate, jacobian = bind(live, unravel)
-
-            def scaled_values(x_scaled):
-                flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-                return np.asarray(evaluate(flat_x), dtype=float) * condition_scale
+            # **Bound once per solve** (`host_cache.bind`, through `scaled_problem`):
+            # the condition map is partitioned and flattened here rather than on every
+            # iteration, so a call flattens 313 pytree leaves instead of 5 462. That
+            # flatten was 8.37 ms of a 10.58 ms call and was the single largest
+            # per-iteration cost this driver had -- 10.58 -> 0.73 ms, bitwise identical
+            # (§31.14). `bind` memoises across solves, so §24.1's "a second solve is a
+            # cache hit" is kept, not given back.
+            scaled_values, split_jac, both, _unravel, scale, _cond, scaled_box = (
+                scaled_problem(driver, live, flat_start, unravel)
+            )
+            scaled_lower, scaled_upper = scaled_box
 
             def finite_difference(x_scaled):
                 """`Evaluators.fcnvmc2`'s own quotient, in this driver's coordinates."""
@@ -1164,17 +1374,23 @@ class VmconDriver(AbstractDriver):
 
             class _Problem(AbstractProblem):
                 def __call__(_self, x_scaled):  # noqa: N805 -- pyvmcon's own signature
-                    flat_x = jnp.asarray(np.asarray(x_scaled, dtype=float) / scale)
-                    values = np.asarray(evaluate(flat_x), dtype=float) * condition_scale
-                    # d/dx_scaled = (d/dx) / scale -- one chain-rule factor per column;
-                    # and one `condition_scale` factor per row, see that field.
-                    full = (
-                        finite_difference(x_scaled)
-                        if epsfcn is not None
-                        else np.asarray(jacobian(flat_x), dtype=float)
-                        * condition_scale[:, None]
-                        / scale[None, :]
-                    )
+                    # **Two programs by default, one under `fused`.** `pyvmcon` asks for
+                    # the value *and* every derivative at every point it evaluates,
+                    # line-search trials included, so nothing on this path ever wants
+                    # the value alone (§31.23 counted 552 of each on one row) and a
+                    # fused program would be free. It is not bitwise, which is why it is
+                    # a field and not the default -- see `VmconDriver.fused`.
+                    #
+                    # `epsfcn` could not use it anyway: its quotient is `2n` value-only
+                    # evaluations, and asking a fused program for them would compute
+                    # `2n` exact Jacobians to throw away.
+                    if epsfcn is not None:
+                        values = scaled_values(x_scaled)
+                        full = finite_difference(x_scaled)
+                    elif fused:
+                        values, full = both(x_scaled)
+                    else:
+                        values, full = scaled_values(x_scaled), split_jac(x_scaled)
                     _refuse_non_finite(values, full, conditions)
                     if started[0]:
                         started[0] = False
@@ -1198,10 +1414,9 @@ class VmconDriver(AbstractDriver):
                 def num_inequality(_self):  # noqa: N805
                     return n_inequality
 
-            # Bounds are on the design variables, so they scale with them; a negative
-            # scale (a variable starting below zero) swaps which bound is which.
-            scaled_lower = np.where(scale > 0, lower * scale, upper * scale)
-            scaled_upper = np.where(scale > 0, upper * scale, lower * scale)
+            # `scaled_lower`/`scaled_upper` come from `scaled_problem` above -- bounds
+            # are on the design variables, so they scale with them, and a negative scale
+            # (a variable starting below zero) swaps which bound is which.
 
             # **Always installed, and provably inert.** `pyvmcon.solve` substitutes its
             # own `lambda _i, _result, _x, _con: None` when handed `None`, so counting

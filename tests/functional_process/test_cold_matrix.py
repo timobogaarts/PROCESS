@@ -22,6 +22,10 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
+from functional_process.core.solver.drivers import (  # noqa: E402
+    SUMMARY_MARKER,
+    NonFiniteProblemError,
+)
 from functional_process.mda_harness import EXPLAINED_DISAGREEMENTS  # noqa: E402
 from functional_process.run_cold_matrix import (  # noqa: E402
     CONFIGURATIONS,
@@ -38,6 +42,7 @@ from functional_process.run_cold_matrix import (  # noqa: E402
     _cell,
     _compare,
     _headline,
+    _non_finite_refusal,
     _mode,
     _process_objective,
     _status,
@@ -102,6 +107,40 @@ def test_the_tail_of_a_trace_is_the_last_iteration():
         (1, 1e-9, 7.0, 1e-8, 2.0),
     ])
     assert (iterations, objf, max_eq, min_ie) == (2, 7.0, 1e-8, 2.0)
+
+
+def test_a_non_finite_row_is_recognised_in_both_shapes_the_refusal_arrives_in():
+    """`_non_finite_refusal` must survive the compiled arrival, which is the real one.
+
+    The eager arrival carries the exception itself; the compiled one -- what
+    `sand_harness.run_schedule` gives, `whole=False` included, and therefore what
+    `cold_sand` gets -- carries only text. Both must produce the same cell, and anything
+    that is neither must come back `None` so the caller re-raises rather than labelling
+    an unrelated failure "non-finite".
+    """
+    refusal = NonFiniteProblemError("...")
+    refusal.summary = "0/30 non-finite in VALUE (none); 2/30 non-finite in DERIVATIVE (.c.objf, .c.c16); 1 unknown(s) with an all-zero column (.d.qac)"
+    eager = _non_finite_refusal(refusal)
+    wrapped = _non_finite_refusal(
+        RuntimeError(
+            "INTERNAL: CpuCallback error calling callback: Traceback ...\n"
+            f"NonFiniteProblemError: the SQP was handed ...\n{SUMMARY_MARKER}"
+            f"{refusal.summary}\n"
+        )
+    )
+    assert eager == wrapped
+    assert "DERIVATIVE" in eager and ".c.objf" in eager and ".d.qac" in eager
+    # It must not imply a value failure that did not happen -- the distinction the
+    # deleted probe could not draw at all.
+    assert "0/30 non-finite in VALUE (none)" in eager
+
+
+def test_an_unrelated_failure_is_not_labelled_non_finite():
+    """The discrimination, stated as its own test: a `ValueError` from anywhere else in
+    a solve comes back `None`, which is `cold_sand`'s instruction to re-raise it.
+    """
+    assert _non_finite_refusal(ValueError("VmconDriver was told 3 equalities")) is None
+    assert _non_finite_refusal(RuntimeError("INTERNAL: something else entirely")) is None
 
 
 def test_a_cell_with_no_measurement_is_a_dash():

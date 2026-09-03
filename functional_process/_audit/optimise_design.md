@@ -8014,3 +8014,169 @@ tighter run. So §31.21's "108 against 46" was a tolerance mismatch stacked on t
 trajectory, and §31.27's adjoint plus this seed remove both. **The `PRO` column should
 report the port at the file's own `epsvmc` beside its `1e-8` count**; comparing counts
 taken at two stopping criteria is what made this look like a defect for a month.
+
+### 31.30 [landed, and one half refused] The SAND arm emitted three programs over one block; two of them are now one, and the third could not be
+
+Two duplicate-staging levers, ranked #1 and #2 on an independent survey of this port's
+compile cost. **One landed, one is measured and left off by default**, and the reason is
+a two-ulp Jacobian.
+
+#### 31.30.1 The shape of the waste, in emitted MLIR lines rather than in seconds
+
+Wall-clock compile A/B was **not resolvable on this machine** while this was measured --
+concurrent agents were running tokamak rows, and the `large_tokamak_nof` **MDF** arm,
+whose code did not change at all across the three passes, read 98.3 s, 62.9 s and 62.8 s
+[measured]. A 36 % swing on unchanged code is larger than either lever, so seconds are
+quoted below only where they were taken interleaved in one process.
+
+What a program *emits* is a property of the program, so that is the instrument.
+`lower(...).as_text()` line counts, SAND block, one process each [measured 2026-09-03]:
+
+| program | `stellarator_helias` | `large_tokamak_nof` |
+|---|---|---|
+| `host_cache.flat_conditions` (the pre-solve probe) | 5 161 | 15 161 |
+| `bind` `values` | 5 160 | 15 160 |
+| `bind` `jacobian` | 11 428 | 39 646 |
+| `bind` `values_and_jacobian` (fused) | 11 544 | 39 884 |
+| **SAND arm as it stood** (probe + values + jacobian) | **21 749** | **69 967** |
+
+Two facts fall straight out of the table:
+
+- **the probe and `values` are the same program to within one line** (5 161 vs 5 160)
+  -- two wrappers, `eqx.filter_jit` over a whole `ConditionMap` against a plain
+  `jax.jit` over its array leaves, so jax sees two programs and compiles both;
+- **the fused program is the Jacobian program plus the primal outputs and nothing else**
+  -- 11 544 against 11 428, i.e. **116 lines** for what `values` costs 5 160 lines to
+  emit separately (238 against 15 160 on the tokamak).
+
+At the survey's calibration of **0.41-0.52 ms per emitted line cold** that is 2.1-2.7 s
+(stellarator) and 6.2-7.9 s (tokamak) per removed program. An interleaved first-call
+measurement in one process agrees: the probe's program costs **1.92 s** wall on the
+stellarator (0.01 trace + 0.18 lower + 1.45 XLA) and **10.75 s** on the tokamak (0.02 +
+0.64 + 8.72) [measured].
+
+**Trace is not the saving, and §18.3 should not be read as saying it is.** The probe
+traces in 0.01-0.02 s *in situ* against the 1.61 s §18.3 records, because the programs
+built before it in the same process already staged its sub-jaxprs and jax reuses them.
+Removing a duplicate program saves **lowering, XLA compile and executable load, and
+almost no trace**. Both records are right for their own population; §18.3's was one
+program per process.
+
+#### 31.30.2 [landed] The pre-solve probe is deleted; the guard that replaced it checks more
+
+`run_cold_matrix.cold_sand` evaluated the SAND condition map at the seeded start and
+emitted a `status="non-finite"` row if any condition value was not finite.
+`drivers._refuse_non_finite` already runs inside `_Problem.__call__` on the first iterate
+and reads **the values, the Jacobian rows and the identically zero Jacobian columns**,
+naming every offender -- and the case its own docstring records is precisely the one a
+values-only probe cannot see: a cold SAND start where all 30 conditions were finite in
+value and only the derivatives were `nan`. So the probe was the weaker of two checks over
+the same block, and it cost a whole third module. Deleted; the row now comes from
+catching the guard.
+
+**The catch is not `except ValueError`.** `_refuse_non_finite` raises a named
+`NonFiniteProblemError`, because a solve raises `ValueError` for a stale condition count,
+a stray `condition_scale` name, an inert objective and whatever `cvxpy` or a model body
+throws, and labelling any of those "non-finite" would turn an unrelated defect into a
+plausible measurement.
+
+**And the name alone is not enough, which was the surprise.** [measured] Every path in
+this tree that runs a `VmconDriver` puts its `jax.pure_callback` inside a *compiled*
+program -- `cottax.evaluate.Schedule.run` and `sand_harness.run_schedule` alike,
+**`whole=False` included**, which is the call `cold_sand` makes. XLA cannot carry a
+Python exception, so what arrives is
+`jax.errors.JaxRuntimeError: INTERNAL: CpuCallback error calling callback: <the host
+traceback, as text>`: the class is gone and every attribute with it. An
+`except NonFiniteProblemError` alone would have caught **nothing** on the one path that
+matters, and the row would have been the crash the probe existed to prevent. So
+`_refuse_non_finite` writes a one-line rendering into the message after
+`SUMMARY_MARKER`, `run_cold_matrix._non_finite_refusal` matches on that marker, and both
+arrivals produce the same cell from the same string.
+
+The note is strictly more informative than the probe's, which could say only "N of M
+conditions are non-finite, first X": it separates **VALUE** from **DERIVATIVE** and adds
+the all-zero columns. Nothing compares against the probe's wording -- no test did, and
+`reference_cold_matrix.txt` has no `non-finite` row -- so there was nothing to
+re-baseline.
+
+#### 31.30.3 [landed] `VmconDriver` and `SlsqpDriver` now really do share `scaled_problem`
+
+`SlsqpDriver`'s docstring has said *"Both drivers build their problem through
+`scaled_problem`"* since that function was extracted. It was **stale**:
+`VmconDriver.__call__`'s `host` carried a second, textually identical copy of the
+scaling, the chain rule and the scaled bounds -- the copy `scaled_problem` was extracted
+*from*. Unified, so the controlled comparison the two drivers exist for is a fact rather
+than a claim, and so the fused callable has one home rather than two.
+
+**Bitwise, and that is the whole reason it could be done separately from the fusion**:
+with the unification in and the fused program *not* used, a `--native` cold-matrix pass
+reproduces the tracked rows exactly -- `stellarator_helias` MDF 66 it / `objf 1.21775739`
+/ `max|eq| 5.50e-10` / `min ie -2.20e-09`, SAND 169 it / `objf 1.21775743` /
+`1.04e-07` / `1.62e-12`, `large_tokamak_nof` MDF 7 it and SAND 10 it both at `objf 1.6`
+[measured]. That is what made the next section's attribution possible at all.
+
+#### 31.30.4 [measured, not landed] The fused program is not bitwise, and the cause is the extra live output
+
+`jax.jacfwd` computes the primal internally and discards it, so `values` and `jacobian`
+are two programs over the same body. `jax.jacfwd(f, has_aux=True)` over a body returning
+`(stacked, stacked)` returns both from one program -- `jvp_subtrace_aux` yields the aux
+as `JVPTracer.primal`, i.e. the primal jax already had. `pyvmcon` demands value *and*
+derivative at every point it evaluates (§31.23: 552 of each on one row), so nothing on
+that path wants the value alone and the fusion costs it nothing. `scipy`'s SLSQP calls
+`fun` alone in its line search, so it must keep the split.
+
+At the same point, `stellarator_helias` cold SAND block [measured]:
+
+| | |
+|---|---|
+| condition values, fused vs split | **bitwise identical**, 0 of 21 |
+| Jacobian, fused vs split | **10 of 294 cells differ**, max `4.44e-16` |
+
+**The jaxpr is not the difference.** The same `has_aux` program with its primal output
+**dropped again** reproduces the split Jacobian bit for bit. What moves the ten cells is
+the extra **live output**: XLA fuses and schedules the tangent computation differently
+once the primal must also be materialised. Three spellings -- `jacfwd(has_aux=True)` with
+either output order, and a hand-written `vmap(jvp)` -- give the identical ten cells, and
+`jax.lax.optimization_barrier` on the primal or on both outputs does not remove them. So
+there is no bitwise spelling of "fused". The 116 extra emitted lines in §31.30.1 are the
+same fact seen from the other side.
+
+**What the ten cells did end to end.** `--native` cold matrix, fused on:
+
+| row | split | fused |
+|---|---|---|
+| `stellarator_helias` MDF | converged, 66 it, `objf 1.21775739` | converged, 66 it, same `objf`; largest equality residual `5.50e-10` -> `8.16e-10`, `min ie` `-2.20e-09` -> `-4.24e-09` |
+| `stellarator_helias` SAND | **converged, 169 it, `objf 1.21775743`, residual `1.04e-07`** | **stopped, 134 it, `objf 1.22762089`, residual `1.96e-02`** |
+| `large_tokamak_nof` MDF | converged, 7 it, `objf 1.6` | identical |
+| `large_tokamak_nof` SAND | converged, 10 it, `objf 1.6` | identical |
+
+Three of four rows are untouched and one flips out of convergence -- exactly the
+behaviour §19, §20 and §21.2 record, an SQP trajectory turning on a 2-ulp input, and the
+same chaos §31.25 and §31.27 chased. The fused answer is not *wrong*; it is a different
+walk of a chaotic trajectory. But `reference_cold_matrix.txt` is the tracked output and
+its headline is that all twelve rows converge, so **it is not re-baselined for a
+compile-time saving**: the lever is `VmconDriver.fused`, off, carrying this measurement
+in its docstring so the finding is reproducible rather than a paragraph.
+
+**What is therefore still on the table**, for whoever decides the trade: 5 044 emitted
+lines per stellarator block and 14 922 per tokamak block, ~2.1-2.6 s and ~6.1-7.8 s cold
+at the calibration above, on each of the two blocks a configuration solves -- and the
+runtime is not nothing either, since the redundant primal was being *computed* per
+iteration as well: 0.667 ms (values) + 0.786 ms (jacobian) against **0.763 ms** fused,
+`stellarator_helias` SAND, medians over 20 calls [measured]. An independent A/B put the
+whole-row saving at **3.44 s of a 46 s** stellarator row and **~12.9 s of a 119 s**
+tokamak row.
+
+#### 31.30.5 Not resolved
+
+- **Whether the fusion should be turned on.** It is a policy question -- one converged
+  row traded for ~20 % of the SAND arm's emitted HLO -- and it wants the other five
+  configurations measured before anyone answers it. Nothing here answers it.
+- **Whether `stellarator_helias` SAND is unusually fragile or merely the one that got
+  unlucky.** Four rows is a small sample of a chaotic trajectory. §31.27's implicit
+  adjoint was the last thing to make one of these reproducible; whether it made them
+  *stable* is untested.
+- **`host_cache.flat_conditions` and `flat_condition_jacobian` now have no in-tree
+  caller.** They are kept as the documented baseline `bind` is measured against (this
+  section uses `flat_conditions` as exactly that) and are not dead in the sense of being
+  unreachable, but nothing runs them in a solve any more.
