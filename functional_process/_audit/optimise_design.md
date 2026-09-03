@@ -9753,3 +9753,221 @@ reader who never opens this file still meets it.
 - **The stellarator SAND `cb`-only cell is noise**, so the split of that arm's 11 % between
   the two changes is unmeasured. The MDF arms and the tokamak SAND arm are monotone and
   are where the attribution should be read from.
+
+### 31.36 [measured] The jumps are one expression: `_fast_alpha_fraction_ward`'s square-root kink, crossed on 46 % of iterations, moving the `c24` Jacobian row by 339x each time
+
+§31.35.9 said to stop instrumenting the optimiser and start instrumenting the model, and
+§31.35.7 left the sharp question: **the growth is bursty, so what is different about a jump
+iteration?** This section answers it, and the answer is a single line of physics that
+`_audit/x109.md` identified as a *Jacobian-accuracy* defect on 2026-08-25 and that turns
+out to be the *dynamical* mechanism as well.
+
+On `80544e02` in a worktree [measured 2026-09-03]. A **jump** is an iterate where the
+separation between a base run and a `+-1` ulp nudged run grows by more than `+0.5`
+decade -- §31.35.7's definition, unchanged.
+
+#### 31.36.1 The site
+
+`functional_process/models/physics/pure_formulas.py:360-366`, inside
+`_fast_alpha_fraction_ward` (`i_beta_fast_alpha == WARD`, PROCESS's own default and the
+reference run's):
+
+```python
+above = temp_sum_20 - 0.65
+positive = above > 0.0
+return jnp.minimum(
+    0.30,
+    0.26 * density_ratio_sq
+    * jnp.where(positive, safe_sqrt(jnp.where(positive, above, 1.0)), 0.0),
+)
+```
+
+**This is not a step discontinuity; it is a square-root singularity.** The value is
+continuous across `temp_sum_20 = 0.65` -- it is `0` below and `0.26 r^2 sqrt(t - 0.65)`
+above -- but the *derivative* is identically zero below and **unbounded** as `t -> 0.65+`.
+`_audit/x109.md`'s claim #1 names exactly this expression, and its H2 records the
+signature: the `c24` row of the Jacobian drifts like `h^0.52` under a central difference
+where every other row drifts like `h^2.00`. A half-power drift is a square root. It feeds
+`beta_fast_alpha` and reaches `^cond.constraints.c24`, the beta upper limit.
+
+#### 31.36.2 [measured] The three arms differ by *where they sit relative to the threshold*, and by nothing else that matters
+
+`temp_sum_20 - 0.65` sampled at every block evaluation of an unperturbed solve
+(`jax.debug.callback` inside the patched function; nothing in the tree edited):
+
+| arm | range of `temp_sum_20 - 0.65` | closest approach to 0 | straddles 0 | sign flips |
+|---|---|---|---|---|
+| `stellarator_helias` **SAND** (94 it) | `-6.72e-02 .. +1.45e-01` | **`5.50e-08`** | **yes** | **43 of 93 steps (46 %)** |
+| `stellarator_helias` **MDF** (66 it) | `-5.28e-02 .. +1.45e-01` | **`2.45e-07`** | **yes** | **27 of 65 steps (42 %)** |
+| `low_aspect_ratio_DEMO` SAND (79 it) | `+5.73e-01 .. +5.83e-01` | `5.73e-01` | **no** | **0 of 78** |
+
+**Both `stellarator_helias` arms operate *on* the singularity** -- within `1e-7` of it, and
+crossing it on nearly half of all steps. **`low_aspect_ratio_DEMO` sits `0.57` away and
+never crosses.** That is a seven-order-of-magnitude difference in how close the two
+configurations run to the same expression, and it is the only structural difference between
+them this investigation has found that orders correctly with the instability.
+
+#### 31.36.3 [measured] Every crossing moves the `c24` Jacobian row by two orders of magnitude
+
+Measured on the **base run alone**, so this cannot be a consequence of any perturbation --
+the base run never sees the nudge. `|J_k - J_{k-1}|` per row, scaled by the row's own
+largest entry, maximised over the row:
+
+| arm | `max` row-relative `|dJ|`, kink **flipped** | kink **steady** | ratio | the **`c24` row alone** | ratio |
+|---|---|---|---|---|---|
+| `stellarator_helias` SAND | **`7.792e-01`** (n=43) | `1.508e-02` (n=50) | **52x** | `7.356e-01` vs `2.168e-03` | **339x** |
+| `stellarator_helias` MDF | **`9.362e-01`** (n=27) | `4.174e-03` (n=38) | **224x** | `9.362e-01` vs `3.405e-04` | **2 749x** |
+| `low_aspect_ratio_DEMO` SAND | -- (never flips) | `6.415e-01` (n=78) | -- | -- | -- |
+
+And the row that moves most at a jump is `c24` on **both** `stellarator_helias` arms, by a
+wide margin over the next row [measured]: SAND `c24 4.28e-01` against `c65 1.12e-02` (a
+**38x** gap); MDF `c24 1.71e-01` against the next at `1.22e-02` (**14x**).
+
+#### 31.36.4 [measured] Two thirds of the jumps are crossings, and the timing is right
+
+`stellarator_helias` SAND, three nudge seeds pooled -- 26 jump iterates, 67 quiet:
+
+| | jumps | quiet |
+|---|---|---|
+| **`c24` kink sign flip** | **65.4 %** | 38.8 % |
+| active-set change | 30.8 % | 20.9 % |
+| pump-count tread step | 11.5 % | **23.9 %** |
+| `max` row-relative `|dJ|` (median) | **`5.441e-01`** | `1.890e-01` |
+
+and splitting the jumps by whether the kink flipped:
+
+| | median `|dJ|` | n |
+|---|---|---|
+| jump **with** a kink flip | **`7.792e-01`** | 17 |
+| jump **without** one | `2.986e-03` | 9 |
+
+**Timing**, again on the base run alone: median `|dJ|` is `2.246e-02` on the interval
+**before** a jump, `5.441e-01` **at** it, `3.869e-01` after. **The Jacobian moves 24x more
+at the jump than on the step before it.** Simultaneity is the right relationship for a
+one-step map: the step taken at `k` uses `J_k`, so if `J_k` differs from `J_{k-1}` by 78 %
+in one row, two nearby iterates get two different linear models and separate.
+
+**This is the first candidate in five sections that is a cause rather than a consequence,
+and the reason is methodological**: the fused Jacobian (§31.32.4), the pump staircase
+(§31.33.6) and the active set (§31.35.6) were each measured *between* two runs, so each
+could only be observed after the runs differed -- and each turned out to move only after
+the separation was already macroscopic. The kink flip and `|dJ|` are measured on **one**
+trajectory. They are predictors by construction.
+
+#### 31.36.5 [measured] It is the *intermittency*, not the magnitude
+
+`low_aspect_ratio_DEMO`'s Jacobian moves **more** than `stellarator_helias`'s on a typical
+step -- median `|dJ|` `6.415e-01` against `1.508e-02` -- and its jump and quiet medians are
+`6.478e-01` and `6.415e-01`, a **ratio of 1.01** [measured]. So a large, *uniform* Jacobian
+motion is just a nonlinear problem, and the SQP handles it: 6 jumps in 79 iterations, all
+6 coinciding with an active-set change and none with a kink.
+
+What amplifies is a Jacobian that is **quiet and then discontinuous**: `1.5e-02` for a few
+steps, then `7.8e-01`. That is the signature of a derivative singularity being crossed, not
+of a curved problem. It is also why §31.35.3's flat `cond(deq)` was a null and yet the
+Jacobian is the culprit -- the *conditioning* of `J` at a point never degrades; what breaks
+is the *continuity* of `J` between points.
+
+#### 31.36.6 [measured] Where the separation shows up is not where the discontinuity is
+
+Two different questions with two different answers, and conflating them would be easy
+[measured, `stellarator_helias` SAND, three seeds]:
+
+- **the unknown carrying the separation** at a jump: `.tfcoil.t_tf_superconductor_quench`
+  52 %, `.power.delta_eta` 27 %, `.physics.b_plasma_toroidal_on_axis` 13 %,
+  `.physics.f_nd_alpha_thermal_electron` (**`ixc 109`**) 6 %;
+- **the condition row whose *value* differs most** at a jump:
+  `^cond^cond.physics.temp_plasma_ion_vol_avg_kev` 56 %, `c83` 21 %, `c62` 6 %, `c35` 5 %,
+  `c24` 3 %.
+
+So the *values* diverge in SAND's coupling residuals and in constraints far from `c24`,
+while the *Jacobian discontinuity* is in `c24`. The kink perturbs the linear model; the
+resulting step then moves whichever coordinates that QP happens to be free in. **Nothing
+here should be read as "the divergence is in `c24`"** -- it is not. The discontinuity is.
+
+#### 31.36.7 Why PROCESS never sees it -- and a correction to §31.34.5
+
+`stellarator_helias.IN.DAT:230` sets **`epsfcn = 0.01`**, with an inline comment saying this
+file "benefits from a larger step length". `_audit/x109.md` measured it across all seven
+reference configurations and found **this is the only file in the set that overrides the
+`1.0e-3` default**. So PROCESS's finite difference on this configuration is `1e-2` relative
+-- about `10^5` times wider than the port's closest approach to the threshold (`5.5e-08`)
+-- and it averages the singularity away completely, exactly as its `epsfcn` averages the
+pump staircase away (§31.34.4). PROCESS is not solving a problem with a discontinuous
+Jacobian; it is solving a smoothed one, and its 46 iterations are for that.
+
+**That corrects §31.34.5, and in the port's favour.** That section labelled its
+`epsfcn = 1e-3` rows "PROCESS's own" for `stellarator_helias`. They are not: **`1e-2` is
+this file's value**, so the row to read as PROCESS's own instrument is the `1e-2` one -- and
+at PROCESS's actual step **both arms converge**, SAND in 135 iterations and MDF in 160.
+§31.34.5's *"it does not transfer to SAND"* was drawn from the wrong row and is withdrawn;
+what survives, and is the point that mattered, is that both converge to a **different
+answer** (`1.4e-04` relative on SAND, `3.2e-04` on MDF) that moves with the step, because an
+FD-derivative optimiser finds the optimum of the smoothed problem.
+
+#### 31.36.8 What this changes
+
+- **§31.35.9's "the expansiveness is diffuse" is superseded.** It is not diffuse: two
+  thirds of the amplifying jumps on `stellarator_helias` SAND are crossings of one
+  expression, and the arm that does not cross it does not amplify.
+- **§31.35.7's burst finding is explained.** The bursts are the crossings. The median
+  iteration moves the separation by nothing because the median iteration does not cross the
+  kink.
+- **§31.34.2's "the amplification is the configuration's, not the formulation's" is
+  confirmed and given a reason.** Both `stellarator_helias` arms cross the kink at nearly
+  the same rate (46 % and 42 %); `low_aspect_ratio_DEMO` never does. The configuration is
+  what decides where `temp_sum_20` sits.
+- **`_audit/x109.md`'s H2 is promoted from an accuracy defect to the mechanism.** That
+  record has it as *"the wrong object is the `c24` row of the shared `jax.jacfwd`
+  Jacobian"*, carried but not re-measured. It is re-measured here, dynamically, on three
+  arms.
+- **§31.34.5's `epsfcn` reading is corrected** (§31.36.7).
+- **Nothing changes in §31.33.** The pump staircase remains refused on its own evidence, and
+  §31.36.4's table adds a fourth piece: it steps at **fewer** jump iterates (11.5 %) than
+  quiet ones (23.9 %).
+
+#### 31.36.9 What to do about it -- three options, none taken here
+
+`_audit/x109.md`'s open item #2 lists them and this section changes only the priority, not
+the menu. **No code was changed in this pass**, and the choice needs a view on whether
+PROCESS's model is *meant* to be differentiable there, which is a PROCESS question and not
+this port's to answer alone:
+
+1. **Declare the `temp_sum_20 > 0.65` branch as an `Alternative`**, so the two arms are two
+   smooth problems and the SQP solves one of them. This is `x109.md` §8 option (i), noted
+   there as *not* done despite a neighbouring switch on the same function having been
+   converted. It is the only option that removes the discontinuity rather than tolerating
+   it, and §31.36.3's `339x` is the argument for it.
+2. **A trust-region safeguard**, so a step that crosses the kink is not taken on a linear
+   model built on the far side of it. This tolerates the discontinuity and costs nothing in
+   fidelity.
+3. **Leave it, and record that the port's answer sits on the ridge.** Defensible, and it is
+   what the tree does today -- but it should be a decision, and until this section it was
+   not one, because the dynamical cost was unmeasured.
+
+**And the practical target from §31.34.7 now has a second lever.** The ratio is `1.08`;
+shortening the solve moves it under 1 (§31.33 did that once, `1.94 -> 1.08`). Option 1
+attacks the other side -- it would not shorten the solve, it would remove the mechanism that
+makes its length matter.
+
+#### 31.36.10 Not resolved
+
+- **A third of the jumps are not crossings** -- 9 of 26 on `stellarator_helias` SAND, and
+  they have essentially no Jacobian motion (`|dJ|` median `2.99e-03`). Whatever moves those
+  is unmeasured, and it is not the kink, the active set, or the pump tread.
+- **No fix is measured.** Section §31.36.9 lists three and takes none. Option 1 would change
+  answers on any configuration that crosses the threshold and therefore wants the
+  seven-configuration matrix, exactly as §31.33 did.
+- **The `+-1` ulp nudge draw is not reproducible across tree states.** Adding the
+  `jax.debug.callback`s changes how often `bind` is called, so `default_rng(3)` selects
+  different cells than it did in §31.34/§31.35; seed labels are not comparable across
+  sections. The base runs are bitwise unchanged (94 / 66 / 79 iterations, same `objf`), and
+  every conclusion here is a statistic over jumps rather than a single outcome, so nothing
+  above depends on it -- but a row-by-row comparison with §31.34.5's table would be wrong.
+- **`temp_sum_20`'s own trajectory is not explained.** It is a density-weighted temperature
+  sum over 20; why `stellarator_helias` converges to within `1e-7` of `0.65` and
+  `low_aspect_ratio_DEMO` to `0.57` away is a physics question this section only measures.
+  Whether the optimum genuinely sits on the ridge, or is pushed there by the discontinuity
+  itself, is `x109.md`'s open item #3 and is still open.
+- **Only two nudge seeds' worth of jumps on MDF and one on LAD.** `stellarator_helias` SAND
+  pools three; the other two arms pool one each, so their jump counts (16 and 6) are small.
