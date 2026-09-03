@@ -160,6 +160,22 @@ No `implicit-io-via-callee` or `redundant-duplicate-write` anywhere in this file
    `tol=1e-10` rather than reproducing `0.01` -- see that function's docstring and
    `test_vacuum.py`'s `_reference_solve_duct_diameter`/`TestSolveDuctDiameter`, which
    both exercise and document this exact discrepancy.
+4b. **`math.floor(pumpn + 0.5)` makes the figure of merit a staircase, and PROCESS's own
+   optimiser cannot see it.** `process/models/vacuum.py:90` rounds the pump count to an
+   integer, so every quantity downstream of it -- the objective included -- is piecewise
+   constant in the design variables with jumps of `7.8e-05` relative
+   (`_audit/optimise_design.md` §31.32.5 [measured]). Along one converged solve the count
+   takes **eight** distinct values and steps **19** times (§31.33.3 [measured]). PROCESS
+   finite-differences at `epsfcn = 1.0e-3` relative, which is coarse enough that **2 of 14
+   columns straddle a tread** and the secant reconstructs the envelope slope instead
+   (§31.33.4 [measured]); the port's autodiff reads exactly zero there. **Documented, not
+   fixed, and the refusal is measured rather than cautious** -- **three** repairs (a
+   straight-through surrogate derivative; dropping the rounding; a `custom_jvp` finite
+   difference at seven step sizes including PROCESS's own) each make the SAND arm worse,
+   see the 2026-09-03 section below, §31.33.5-§31.33.7 and §31.34.4-§31.34.6. This is a
+   real discreteness in the machine, and `low_aspect_ratio_DEMO` SAND carries it with no
+   measurable instability at all.
+
 5. **Name collision**: `Vacuum.vacuum_simple`'s local `n_iter_vacuum_pumps` (the
    ITER-cryopump-throughput estimate, one of two candidates combined by `max`) and the
    `data` field `.vacuum.n_iter_vacuum_pumps` (which ends up holding the *combined*
@@ -489,16 +505,28 @@ None. Every read in this file is either an explicit argument, a `.vacuum.*`/
 
 ## JAX-difficulty flags
 
-- **`_newton_method_duct_diameter`'s inner Newton loop** (`workaround-known`): fixed
+- **`_newton_method_duct_diameter`'s inner Newton loop** (`resolved 2026-09-03`): fixed
   `d = 1.0` start, up to 100 steps, data-dependent early `break` on `dd <= 0.01`. No
   faithful fixed-trip-count translation (JAX has no early exit); ported as
-  `jax.lax.while_loop` in `solve_duct_diameter` instead. `Tier2Contract` never
-  differentiates `ported` (see `_harness/contracts.py`'s docstring), so
-  `while_loop`'s lack of autodiff support costs nothing here -- worth flagging for
-  whoever eventually wants `jacfwd` through this unit (e.g. for a tier-4 MDA), since
-  `while_loop` would need replacing with a bounded, `jnp.where`-frozen
-  `lax.fori_loop` at that point, the same tradeoff `intersect`'s `optimistix`-based
-  design already made in the other direction.
+  `jax.lax.while_loop` in `solve_duct_diameter`. **The loop is now converged under
+  `stop_gradient` and the tangent comes from one differentiable Newton step taken
+  afterwards** -- see the 2026-09-03 section at the bottom of this record and
+  `_audit/optimise_design.md` §31.33. That removes the two things this flag was
+  worried about, and neither needed the `jnp.where`-frozen `fori_loop` this paragraph
+  used to propose:
+  - `jacfwd` through this unit is now `K`-independent rather than a truncated series
+    whose truncation index moves with the data (the trip count takes **six** values in
+    one `stellarator_helias` SAND solve, §31.31.3 [measured]);
+  - `jax.grad` (reverse mode) **works**, and agrees with `jacfwd` to every printed
+    digit, where before it raised `Reverse-mode differentiation does not work for
+    lax.while_loop` [measured 2026-09-03]. The loop carries no tangent, so there is
+    nothing left for jax to transpose.
+
+  The earlier claim that *"`Tier2Contract` never differentiates `ported`, so
+  `while_loop`'s lack of autodiff support costs nothing here"* was true of the harness
+  and false of the port: `.vacuum.vacuum_old` is one of the 123 nodes in the
+  `stellarator_helias` SAND block and this loop is traced into the Jacobian program
+  (§31.31.3). `next_steps.md` §31.3 item 2 records the same correction.
 - **`_newton_method_duct_diameter`'s outer area-fit loop** (`workaround-known`): a
   genuinely unbounded `while True` in the source (shrink `ceff[i]` by 10% until it
   fits or gives up) -- ported as `jax.lax.while_loop` in `solve_duct_geometry`, same
@@ -762,3 +790,116 @@ nonsense — the bound keeps draws physical rather than hiding a disagreement.
 
 `_vacuum_vessel_arm` gained a third written arm and its refusal narrowed from "the
 D-shaped vessel" to "the D-shaped vessel at a single divertor". No new boundary input.
+
+## 2026-09-03 — `solve_duct_diameter`'s derivative is implicit, and the pump-count rounding is left alone on purpose
+
+Two changes were considered in this file on the same day, for the same reason: the
+`stellarator_helias` SAND arm's status turns on the last bit of a Jacobian cell
+(`_audit/optimise_design.md` §31.32.3), and a census of the block's discrete sites
+(§31.32.4) put **three of the ten moving sites in this file**. One landed; one was
+measured and refused. §31.33 is the full record and is authoritative for the numbers;
+this section says what it means for this unit.
+
+### Landed: converge under `stop_gradient`, then take one differentiable Newton step
+
+`solve_duct_diameter`'s `jax.lax.while_loop` is unchanged, early exit and all. What
+changed is that its five parameters enter it through `jax.lax.stop_gradient`, and the
+returned diameter is one further Newton step taken from the loop's root with the
+parameters live. The tangent is then the exact implicit-function-theorem derivative
+`-(df/dp)/(df/dd)` at the root, independent of the trip count.
+
+**Why it was needed here and not at the harness.** `Tier2Contract` still never
+differentiates `ported`, so this unit's own tests are untouched by the change and were
+green before and after (`tests/functional_process/models/test_vacuum.py`, 131 passed /
+28 skipped, both ways). The port, though, *is* differentiated: `.vacuum.vacuum_old` is
+one of the 123 nodes in the `stellarator_helias` SAND block, and this loop is traced
+into the Jacobian program `bind` emits. Its trip count takes **six** values within one
+solve (`{6: 657, 7: 12, 8: 6, 9: 673, 10: 675, 11: 2}` over 2 025 exits, §31.31.3
+[measured]), and differentiating *through* `K` steps makes the tangent a truncated
+series in `K`, so the Jacobian jumps every time `K` does while the value stays smooth.
+That is §31.28.1's mechanism, in a different loop.
+
+What it costs this unit, over a 300-point sweep of stellarator-scale
+`(l1, l2, l3, xmult_i, ceff_i)` [measured]:
+
+| | through the loop | implicit |
+|---|---|---|
+| `|Δ value|` vs the other spelling | -- | max `1.78e-15`, **median 0** |
+| largest `|residual|` at the answer | `1.71e-13` | **`1.14e-13`** |
+| `|Δ derivative|` relative, same samples | -- | max `1.14e-15`, median `4.14e-16` |
+| value call | 28.5 µs | 29.3 µs |
+| `jacfwd` call | 63.0 µs | **47.7 µs** |
+| `jax.grad` (reverse mode) | **raises** | works, `= jacfwd` to every printed digit |
+
+Three things worth keeping. The **residual gets smaller**, which is what
+`Tier2Contract.test_ported_residual_small` measures, so the tier-2 contract moved in the
+direction it is pointed. The **Jacobian gets 24 % cheaper**, because the loop no longer
+carries a tangent to compute and discard — `_audit/optimise_design.md` §31.13's runtime
+objection to touching these loops does not apply to this change and the timing above is
+the check rather than an assertion. And **reverse mode now works**, which
+`next_steps.md` §31.3 item 2 had listed as blocked on restructuring
+`solve_duct_geometry` first; it is not.
+
+The one place the *value* moves in the port is `.vacuum.dia_vv_vacuum_ducts`, by less
+than `2e-15` relative — three orders of magnitude inside
+`mda_harness.EXPLAINED_DISAGREEMENTS`' own `~2.9e-4` entry for that field, which is
+therefore unaffected and not re-derived.
+
+### Refused: `calculate_vacuum_pumping_old`'s `jnp.floor(pumpn + 0.5)`
+
+`n_vac_pumps_high = jnp.floor(pumpn + 0.5)` is a **value-level** discontinuity whose
+derivative is identically zero, and it is live on the SAND objective: stepping the count
+by exactly `+1` moves `^cond.numerics.objf` by `7.80e-05` relative and no constraint at
+all (§31.32.5 [measured]). Along one solve the raw `pumpn` sweeps `100 → 175` and the
+rounded count takes **eleven** distinct values, stepping between consecutive SQP
+iterations **46 times** before the duct fix and **19 times** after it, in both cases
+stopping well before convergence (§31.33.3 [measured]).
+
+**It is not changed, and the reason is measured rather than conservative.** PROCESS does
+exactly this, in exactly this place — `process/models/vacuum.py:90`,
+`vp.n_vac_pumps_high = math.floor(pumpn + 0.5e0)`, under the comment *"MDK pumpn is
+real: convert to integer by rounding"* — so the staircase is a property of the model,
+not of the port, and it is one PROCESS's own answer sits on. **Three** repairs have now
+been tried and all three are worse:
+
+- **a straight-through derivative** (identical value, `d n / d pumpn = 1` instead of
+  `0`) takes the arm from 94 iterations converged to **50 iterations stopped** at a
+  largest equality residual of `8.3e+01`;
+- **dropping the rounding** converges, and to a residual four orders of magnitude smaller
+  (`2.4e-10` against `2.9e-06`), but it is a different machine — a reactor with 166.118
+  high-vacuum pumps — it moves `objf` by `1.7e-04` relative away from PROCESS's model,
+  and it makes the arm **less** robust to a last-bit Jacobian change, not more: **1 of 4
+  fabricated `±1` ulp draws converge against the shipped 3 of 4.** The hypothesis that
+  this staircase is what makes the arm fragile is refuted by its own control.
+- **a `jax.custom_jvp` whose tangent is a centred finite difference of the rounding** —
+  the value left exact, the derivative taken the way PROCESS's solver gets one — fails at
+  **all seven step sizes tried**, PROCESS's own `epsfcn = 1.0e-3` included (500
+  iterations, `cap(500)`). And at every step size where it is *principled* — an absolute
+  step of one whole tread or a whole number of treads — it is **bitwise identical to the
+  straight-through repair above**, by the exact identity
+  `floor(x + h + 0.5) - floor(x - h + 0.5) = 2h` for any `h` that is a multiple of `0.5`.
+  Below half a tread it is worse than the defect: the tangent telegraphs between `0` and
+  `1/(2h)` — `3.01` at PROCESS's step, `30.1` an order of magnitude below it — and is
+  itself discontinuous in `pumpn`, which is the same defect class `solve_duct_diameter`'s
+  fix above was landed to remove. See §31.34.4.
+
+And PROCESS's own instrument cannot see the staircase in the first place: at
+`epsfcn = 1.0e-3` (`numerics.py:595`), **2 of 14 finite-difference columns straddle a
+tread at the converged answer**, and on those two PROCESS's quotient reads `+1.9e+01` and
+`+9.2e+01` where the port's autodiff reads exactly zero — its secant reconstructs the
+*envelope* derivative, and is therefore right about the step it is going to take, which
+an exact envelope derivative attached to a piecewise-constant value is not.
+
+Nor does PROCESS's *actual* instrument transfer. Differencing the **whole** condition
+vector at `epsfcn = 1.0e-3` (`VmconDriver.epsfcn`, no model change at all) converges on
+**MDF** — the arm that poses PROCESS's own `ixc` problem — in **172 iterations against the
+exact Jacobian's 66**, and lands `3.9e-05` relative away from the exact answer; on **SAND**
+it **stops after 32 iterations**. So PROCESS's 46-iteration convergence is an existence
+proof for PROCESS's problem with PROCESS's derivative, at 2.6× the iterations and at a
+different optimum, and not for anything this unit could adopt. See §31.34.5.
+
+See §31.33.4 to §31.33.7 and §31.34.4 to §31.34.6 for the numbers and the argument. The
+honest summary for this record is that **the discreteness is real, PROCESS has it too, and
+the optimiser has to cope**; the note belongs in "Real findings", not in the code. And the
+optimiser evidently *can* cope: `low_aspect_ratio_DEMO` SAND carries this same staircase
+and shows no measurable sensitivity to a last-bit Jacobian change at all (§31.34.2).

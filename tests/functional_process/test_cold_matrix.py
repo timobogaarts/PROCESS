@@ -18,9 +18,20 @@ misleading about the one row the records most want read carefully.
 from pathlib import Path
 
 import jax
+import numpy as np
 import pytest
 
 jax.config.update("jax_enable_x64", True)
+
+from functional_process.core.solver.drivers import (  # noqa: E402
+    VMCON_CONVERGED,
+    VMCON_NON_FINITE,
+    VMCON_STATUS,
+    NonFiniteProblemError,
+    _refuse_non_finite,
+)
+from cottax.spec import VarPath  # noqa: E402
+from jax.tree_util import GetAttrKey  # noqa: E402
 
 from functional_process.mda_harness import EXPLAINED_DISAGREEMENTS  # noqa: E402
 from functional_process.run_cold_matrix import (  # noqa: E402
@@ -102,6 +113,53 @@ def test_the_tail_of_a_trace_is_the_last_iteration():
         (1, 1e-9, 7.0, 1e-8, 2.0),
     ])
     assert (iterations, objf, max_eq, min_ie) == (2, 7.0, 1e-8, 2.0)
+
+
+def test_the_non_finite_row_is_read_from_a_status_code_not_from_an_exception():
+    """`cold_sand`'s non-finite row travels as **data**, and this pins the alphabet.
+
+    The row used to come from catching an exception raised inside a
+    `jax.pure_callback`. That callback promises a pure function of its inputs -- jax may
+    elide, repeat or reorder it -- and a compiled one turns a Python exception into
+    `JaxRuntimeError` carrying the traceback as text, so recognising the failure meant
+    matching on unspecified behaviour. It now comes from `VMCON_NON_FINITE` arriving on
+    the driver's own `Status` port, which is what `Status` was introduced for.
+
+    What is checked here is the part `cold_sand` depends on and cannot see for itself:
+    that the code is distinct from every `pyvmcon` outcome, so a row that never started
+    is never rendered as one that ran to `max_iter`.
+    """
+    assert VMCON_NON_FINITE not in set(VMCON_STATUS.values())
+    assert VMCON_NON_FINITE != VMCON_CONVERGED
+
+
+def test_the_summary_names_value_and_derivative_separately():
+    """The row must say more than the pre-solve probe it replaces, which could report
+    only "N of M conditions are non-finite, first X".
+
+    `non_finite_summary` is measured end to end in `test_sand`; what matters here is the
+    shape of the sentence the table cell gets, since that is this file's subject.
+    """
+    f = VarPath((GetAttrKey("c"), GetAttrKey("f")))
+    g = VarPath((GetAttrKey("c"), GetAttrKey("g")))
+    x = VarPath((GetAttrKey("d"), GetAttrKey("x")))
+    y = VarPath((GetAttrKey("d"), GetAttrKey("y")))
+
+    class _Map:
+        conditions = (f, g)
+        unknowns = (x, y)
+
+    with pytest.raises(NonFiniteProblemError) as raised:
+        # `f`'s value is finite and its derivative is not -- the case a values-only
+        # check misses -- and nothing depends on `y`, which is reported but not refused
+        # on (`_refuse_inert_objective`'s docstring says why naming beats refusing).
+        _refuse_non_finite(
+            np.array([1.0, 2.0]), np.array([[np.nan, 0.0], [1.0, 0.0]]), _Map()
+        )
+    summary = raised.value.summary
+    assert "0/2 non-finite in VALUE (none)" in summary  # must not imply one that is not
+    assert f"1/2 non-finite in DERIVATIVE ({f.path_str()})" in summary
+    assert f"1 unknown(s) with an all-zero column ({y.path_str()})" in summary
 
 
 def test_a_cell_with_no_measurement_is_a_dash():

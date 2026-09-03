@@ -203,7 +203,11 @@ from functional_process import (  # noqa: E402
     sand,
 )
 from functional_process.core.solver import host_cache  # noqa: E402
-from functional_process.core.solver.host_cache import flat_conditions  # noqa: E402
+from functional_process.core.solver.drivers import (  # noqa: E402
+    VMCON_NON_FINITE,
+    Status,
+    non_finite_summary,
+)
 from functional_process.importer import read_indat  # noqa: E402
 from functional_process.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
@@ -718,11 +722,26 @@ def solve_sand(build: SandBuild, reference, machine_graph, cold) -> dict:
         solve_schedule, solve_drive, cold, stage_env, design=design_paths
     )
 
-    # The same pre-solve probe `run_sand_harness.main` runs, for the same reason: a SAND
-    # condition map holds the coupling unknowns at their seed, so a seed the models
-    # cannot evaluate shows up as non-finite conditions, and handing those to an SQP
-    # produces a wander rather than an answer. On this table that has to be a *stated*
-    # outcome, not an iteration count.
+    # The context `_why_no_step` reads below. It used to be built for a *pre-solve
+    # probe* as well -- one `host_cache.flat_conditions` call over the seeded start,
+    # emitting a `status="non-finite"` row when any condition value was not finite.
+    #
+    # **That probe is gone, and the guard that replaced it checks strictly more.**
+    # `drivers._refuse_non_finite` runs inside `_Problem.__call__` on the first iterate
+    # and reads the condition values *and* the Jacobian rows, plus any identically zero
+    # Jacobian column, naming every offender. The probe read values alone -- and the
+    # case its own docstring records is one a values-only probe cannot see: a cold SAND
+    # start where all 30 conditions were **finite in value** and only the derivatives
+    # were `nan`. So the probe was the weaker of two checks over the same block.
+    #
+    # It was also a whole extra program. `flat_conditions` has a different signature and
+    # wrapper (`eqx.filter_jit` over the whole `ConditionMap`) from `host_cache.bind`'s
+    # plain `jax.jit` over array leaves, so jax sees a **third module computing the same
+    # block's values** and compiles it -- 5 161 emitted MLIR lines on the stellarator
+    # SAND block against `bind`'s `values` at 5 160, i.e. the same program twice, and
+    # 15 161 against 15 160 on the tokamak. That is 23.7 % and 21.7 % of everything the
+    # SAND arm emitted, or 1.92 s and 10.75 s of first-call wall clock measured
+    # interleaved in one process. [measured, `_audit/optimise_design.md` §31.30.1]
     probe_context = {}
     for var in solve_drive.context:
         if var in stage_env:
@@ -732,41 +751,43 @@ def solve_sand(build: SandBuild, reference, machine_graph, cold) -> dict:
                 probe_context[var] = jnp.asarray(ground_truth(cold, var))
             except (AttributeError, KeyError):
                 probe_context[var] = jnp.asarray(0.0)
-    # Through `host_cache`, not called directly. A bare `condition_map(...)(...)` is an
-    # **eager** walk of the whole SAND block, and XLA compiles every primitive in every
-    # model body as its own module -- measured at 225 of this row's 277 XLA compiles on
-    # `stellarator_helias` (persistent cache off), attributed to model frames
-    # (`_plasma_composition` 23, `bottura_scaling` 21, `_simpson` 14, ...) with no
-    # orchestration frame between them and this line. Same defect class as `mdf.solve`'s
-    # tail (`_audit/optimise_design.md` §24.8) in a different place.
-    # `host_cache._flat_conditions` is the jitted spelling of exactly this call, and it
-    # is module-level so the jit cache is keyed on its arguments rather than on a fresh
-    # closure (that module's docstring, §24.1).
-    flat_probe, probe_unravel = ravel_pytree(
-        tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
-    )
-    at_start = flat_conditions(
-        solve_drive.condition_map(probe_context), flat_probe, probe_unravel
-    )
-    non_finite = [
-        condition.path_str()
-        for condition, value in zip(solve_drive.conditions, at_start, strict=True)
-        if not np.all(np.isfinite(np.asarray(value)))
-    ]
-    if non_finite:
+
+    started = time.perf_counter()
+    out = run_schedule(solve_schedule, _inputs_only(solve_schedule, seeded), whole=False)
+    elapsed = time.perf_counter() - started
+
+    # **A stated outcome, not an exit -- and read as data, not caught.** The driver
+    # refuses a non-finite problem (`drivers._refuse_non_finite`) and reports
+    # `VMCON_NON_FINITE` through its own `Status` port, so the verdict arrives in the
+    # env this run returned like every other value. Nothing crosses the
+    # `jax.pure_callback` boundary as an exception, which is the point: that callback
+    # promises a pure function of its inputs, and jax may elide, repeat or reorder it.
+    #
+    # The names are recomputed here rather than carried, because they are wanted only
+    # for a row that already failed: `non_finite_summary` runs the same check eagerly
+    # on the host and reports which conditions were non-finite in VALUE and which in
+    # DERIVATIVE -- the distinction the deleted pre-solve probe could not draw at all,
+    # and the one that cost a full investigation the first time it was met.
+    reported = mdf.verdict(out, Status, solve_drive.problem)
+    if reported is not None and int(np.asarray(reported)) == VMCON_NON_FINITE:
+        flat_probe, probe_unravel = ravel_pytree(
+            tuple(jnp.asarray(seeded[u]) for u in solve_drive.unknowns)
+        )
+        summary = non_finite_summary(
+            solve_drive.condition_map(probe_context), probe_unravel, flat_probe
+        )
         result.update(
             status="non-finite",
             note=(
-                f"{len(non_finite)} of {len(solve_drive.conditions)} conditions are "
-                f"non-finite at the seeded start, first {non_finite[0]}"
+                f"refused at the first iterate -- {summary}"
+                if summary
+                else "refused at the first iterate (the driver reported a non-finite "
+                "problem; re-evaluating at the seeded start no longer reproduces it)"
             ),
         )
         result["_seconds_total"] = time.perf_counter() - began
         return result
 
-    started = time.perf_counter()
-    out = run_schedule(solve_schedule, _inputs_only(solve_schedule, seeded), whole=False)
-    elapsed = time.perf_counter() - started
     result["_x"] = tuple(
         float(np.asarray(out[sand.iteration_variable_path(i)])) for i in reference.ixc
     )

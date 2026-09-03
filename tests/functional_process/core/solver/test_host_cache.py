@@ -112,7 +112,7 @@ def test_a_second_bind_of_an_equal_block_is_a_hit_and_does_not_partition(monkeyp
     Counted rather than timed, because a wall clock on a loaded machine cannot tell
     60 ms from 7 ms reliably and the structural claim is the one worth pinning.
     """
-    values, jacobian = host_cache.bind(_block(), _unravel())
+    first = host_cache.bind(_block(), _unravel())
     assert len(host_cache._BOUND) == 1
 
     partitions = []
@@ -122,18 +122,17 @@ def test_a_second_bind_of_an_equal_block_is_a_hit_and_does_not_partition(monkeyp
         "partition",
         lambda *args, **kwargs: (partitions.append(1), original(*args, **kwargs))[1],
     )
-    again_values, again_jacobian = host_cache.bind(_block(), _unravel())
+    again = host_cache.bind(_block(), _unravel())
 
     assert not partitions
     assert len(host_cache._BOUND) == 1
-    # The *same* jitted callables, not merely equal ones: a fresh pair would own a
-    # fresh jax cache entry and re-trace on its first call.
-    assert (
-        again_values.__closure__[0].cell_contents is values.__closure__[0].cell_contents
-    )
-    assert (
-        again_jacobian.__closure__[0].cell_contents
-        is jacobian.__closure__[0].cell_contents
+    # The *same* jitted callables, not merely equal ones: a fresh set would own a fresh
+    # jax cache entry and re-trace on its first call. All three, because `bind` hands
+    # out `(values, jacobian, values_and_jacobian)` and a driver picks (§31.30).
+    assert len(again) == 3
+    assert all(
+        got.__closure__[0].cell_contents is want.__closure__[0].cell_contents
+        for got, want in zip(again, first, strict=True)
     )
 
 
@@ -161,14 +160,17 @@ def test_the_memo_is_bounded():
 
 
 def test_the_bound_callables_compute_the_block_and_its_derivative():
-    """A cache is worth nothing if it caches the wrong thing: the bound pair must be the
-    block's own values and their Jacobian at the same point.
+    """A cache is worth nothing if it caches the wrong thing: all three bound callables
+    must be the block's own values and their Jacobian at the same point.
     """
     block = _block(weight=2.0, offset=3.0)
-    values, jacobian = host_cache.bind(block, _unravel())
+    values, jacobian, fused = host_cache.bind(block, _unravel())
     at = jnp.asarray([4.0])
     assert values(at).tolist() == pytest.approx([2.0 * 4.0 + 3.0, 4.0 - 1.0])
     assert jacobian(at).ravel().tolist() == pytest.approx([2.0, 1.0])
+    fused_values, fused_jacobian = fused(at)
+    assert fused_values.tolist() == pytest.approx([2.0 * 4.0 + 3.0, 4.0 - 1.0])
+    assert fused_jacobian.ravel().tolist() == pytest.approx([2.0, 1.0])
 
 
 def test_nothing_is_tracing_is_true_on_concrete_values():
