@@ -10330,3 +10330,260 @@ test can run on the whole graph at all.
   next measurement on this thread is `solve_duct_geometry` as a `vmap` over its 64
   candidates plus a first-fit select (§31.12's sizing), after which the claim
   "reverse mode works on this graph" becomes testable rather than argued.
+
+### 31.37 [measured] Yes -- without the kink the arm is not chaotic. Five runs, 24 iterations each, `objf` to fifteen digits; and a cheaper setting converges every draw for a `6e-06` answer shift
+
+§31.36 established the square-root singularity in `_fast_alpha_fraction_ward` as **a**
+cause of the `stellarator_helias` amplification: two thirds of the jumps are crossings,
+measured on a single trajectory so it predicts rather than follows, and the arm that never
+crosses never jumps. It did not establish **sufficiency**, and it left a loose end -- 9 of
+26 jumps are not crossings and show essentially no Jacobian motion. This section closes
+both, and adds an obstruction nobody had priced.
+
+On `aacd69bb` in a worktree [measured 2026-09-03], `stellarator_helias` SAND unless stated.
+A **jump** is §31.35.7's: an iterate where the separation between a base run and a `+-1` ulp
+nudged run grows by more than `+0.5` decade.
+
+#### 31.37.1 [measured] The decade budget: without the crossings the arm is not expansive at all
+
+Decomposing the total log-separation growth of each nudged run by what happened on that
+step, three nudge seeds, `stellarator_helias` SAND [measured]:
+
+| source | decades per solve | iterations | share of steps | mean per iteration |
+|---|---|---|---|---|
+| **crossing jumps** (jump **and** the kink flipped) | **`+12.74`** | 13.7 | 15.3 % | `+0.932` |
+| **other jumps** (jump, no flip) | `+8.38` | 7.0 | 7.8 % | `+1.197` |
+| **quiet** (everything else) | **`-9.59`** | 68.7 | 76.9 % | **`-0.140`** |
+| **total** | **`+11.53`** | 89.4 | -- | `+0.129` |
+
+**The quiet steps are contractive.** That is the fact the whole budget turns on: on 77 % of
+its iterations this arm *shrinks* a perturbation, by `-0.140` decades a step, for a total
+of `-9.59` decades a solve. The arm is net-expansive only because the jumps put back more
+than that.
+
+And the arithmetic §31.34.7 asks of each subset, taking `16` decades as the distance from
+one ulp to `O(1)` [measured]:
+
+| | rate | iterations for 1 ulp -> `O(1)` | ratio (94 it / that) |
+|---|---|---|---|
+| as measured, all sources | `+0.1227` dec/it | 130 | `0.72` |
+| **crossings removed** | **`-0.0128` dec/it** | **-- not expansive** | **0** |
+| crossings only | `+0.1355` dec/it | 118 | `0.80` |
+
+**Remove the crossings and the remaining sources do not add up to an expansive arm**: the
+other jumps' `+8.38` does not cover the quiet steps' `-9.59`. On this arithmetic the kink
+is not merely *a* cause but the *decisive* one.
+
+**Two caveats, and the second is why §31.37.3 exists.** The `ratio` column is estimator-
+dependent -- these rates are the mean log-increment over *all* iterations, where §31.34.1's
+`1.08` was a least-squares slope over the growing window only, so `0.72` and `1.08` are two
+summaries of the same trajectory and should not be differenced. The decade *totals* are
+estimator-free and are what the argument uses. And more seriously: **this is a linear
+decomposition of a nonlinear process.** Deleting the crossing terms is not the same as
+removing the kink, because removing the kink would change every subsequent iterate. The
+arithmetic is suggestive; only a solve without the kink is decisive.
+
+#### 31.37.2 [measured] What the non-crossing jumps are: the active set, after all
+
+`stellarator_helias` SAND, three seeds pooled, at the same iterates [measured]:
+
+| | n | `\|dJ\|` | `\|\|delta\|\|/\|\|x\|\|` | active-set change | distance to the kink |
+|---|---|---|---|---|---|
+| crossing jumps | 41 | **`7.78e-01`** | `6.07e-03` | 22.0 % | `2.11e-03` |
+| **other jumps** | 21 | **`5.80e-03`** | `6.97e-03` | **`47.6 %`** | `3.76e-04` |
+| quiet | 206 | `1.89e-01` | `4.36e-03` | 19.9 % | `5.32e-04` |
+
+Of the coordinator's three candidates, the step size is a weak signal (`1.6x` the quiet
+median, against `2.4x` for churn) and the answer is the **active set**: the non-crossing
+jumps are enriched in active-set changes by `2.4x` over quiet steps and by `2.2x` over
+crossing jumps, while having **no Jacobian motion at all** (`5.80e-03`, a hundred and
+thirty times less than a crossing). They are also not aftershocks -- **0 of the 9 distinct
+other-jump iterates follows a crossing**, and the two sets are disjoint and interleaved
+(other: `2, 4, 37, 54, 55, 75, 81, 86, 87`; crossings: `8, 16, 21, 24, 25, 28, 34, 38, 42,
+44, 52, 56, 58, 68, 70, 77, 91`).
+
+**This partly rehabilitates §31.35.6, and the correction is about the question, not the
+measurement.** That section asked whether active-set churn explains the *whole* divergence
+and answered no, correctly -- churn frequency anti-correlates with instability across arms
+(78 % on the flat arm, 24 % on the chaotic one), and the two runs' active sets do not
+diverge until the separation is already `1e-5`. But *within* one arm, at the specific
+iterates the kink does not explain, an active-set change is what is there. The two findings
+are compatible: churn is not what makes `stellarator_helias` different from
+`low_aspect_ratio_DEMO`, and it is what carries the minority of that arm's jumps.
+
+So the honest picture is **two discrete mechanisms, not one**: a dominant square-root
+singularity (`+12.74` decades a solve) and a subdominant active-set effect (`+8.38`), with
+`-9.59` of contraction underneath both.
+
+#### 31.37.3 [measured] The decisive experiment: remove the singularity and the chaos goes with it
+
+The experiment: replace the singularity with the least invasive thing that removes the
+unbounded derivative, as a scratch monkeypatch, and re-run the same `+-1` ulp
+fabricated-Jacobian control from the same script, so shipped and smoothed rows are directly
+comparable.
+
+```python
+above = temp_sum_20 - 0.65
+soft  = 0.5 * (above + jnp.sqrt(above**2 + eps**2))     # a smooth relu
+fact  = jnp.minimum(0.30, 0.26 * density_ratio_sq * jnp.sqrt(soft))
+```
+
+For `|above| >> eps` this is the shipped function to round-off; at `above = 0` its
+derivative is finite instead of infinite.
+
+`stellarator_helias` SAND. Each row is one unperturbed run plus the same four `+-1` ulp
+draws, all from one script so the rows are comparable to each other [measured]:
+
+| `eps` | value shift at the threshold | derivative cap | converged of 5 | iteration spread | `objf` agreement across the five | `objf` shift vs shipped |
+|---|---|---|---|---|---|---|
+| **shipped** | -- | **unbounded** (`554` at the arm's own closest approach) | **4 of 5** | **87 - 333** | one run at `1.2274514`, `max\|eq\| 1.07e-01` | -- |
+| `1e-9` | `5.81e-06` | `2 907` | **no run completed** | -- | -- | -- |
+| `1e-8` | `1.84e-05` | `919` | **5 of 5** | 54 - 282 | 8 digits | `3.2e-07` |
+| `1e-7` | `5.81e-05` | `291` | 2 of 5 | 63 - 500 (`cap`) | one run at `3.834`, `max\|eq\| 4.35e+02` | `1.4e-06` |
+| **`1e-6`** | `1.84e-04` | `92` | **5 of 5** | **60 - 87** | **9 digits** (`2.4e-09` relative) | **`6.0e-06`** |
+| `1e-5` | `5.81e-04` | `29` | 1 of 5 | 44 - 123 | four different failures | `2.8e-05` |
+| `1e-4` | `1.84e-03` | `9.2` | **0 of 5** | **29, all five** | 7 digits, all five *fail alike* | `4.0e-04` |
+| **`1e-3`** | `5.81e-03` | `2.9` | **5 of 5** | **24, all five** | **15 digits** (`6.1e-15` relative) | **`6.0e-04`** |
+
+**The answer to the question is yes.** At `eps = 1e-3` all five runs take **exactly 24
+iterations** and agree on `objf` to **fifteen significant digits**: a `+-1` ulp Jacobian
+perturbation is absorbed rather than amplified. Against the shipped arm's 87-333 iterations
+and one catastrophic stop that is not an improvement, it is a different regime. **The
+singularity is sufficient as well as necessary**, and §31.37.1's arithmetic is confirmed by
+a solve rather than by a linear decomposition.
+
+**`eps = 1e-6` is the interesting row**, because the price is small: every draw converges,
+the answers agree to nine digits, and `objf` moves by `6.0e-06` relative -- two orders of
+magnitude less than `1e-3`'s, and of the same *kind* as the `6.7e-08` §31.33 already
+spent. It does not make the arm deterministic (iteration counts still range 60-87 against
+`1e-3`'s flat 24), so it buys robustness without buying reproducibility.
+
+**And the response is non-monotonic**, which is itself informative: `1e-7` and `1e-5` are
+worse than both their neighbours. That is what a still-chaotic arm looks like when you vary
+a parameter -- `eps` becomes another lottery seed rather than a dial. Only at `1e-4` and
+above do the five runs stop disagreeing with each other, and `1e-4` is the row that shows
+*determinism and success are separate*: all five agree to seven digits and all five fail.
+
+**One caveat the numbers raise themselves.** The `1e-3` solve is also **four times
+shorter** (24 against 94 iterations), and §31.34.7's ratio argument says a short solve is
+stabilising on its own. This experiment cannot apportion the two. What it can say is that
+the perturbation is not merely outrun but absorbed: `6.1e-15` relative spread after 24
+iterations is about `1.5` decades of growth from a `~1e-16` start, `0.06` decades an
+iteration against the shipped arm's `0.129` (§31.37.1). Both the rate and the length
+improve.
+
+#### 31.37.4 [measured] Why: the regularisation's own trade is exactly conserved, and the arm sits at its worst point
+
+The reason is not a bad choice of `eps`. For this family the two quantities that matter are
+both closed-form at the threshold, and **their product does not depend on `eps` at all**:
+
+| | at `above = 0` |
+|---|---|
+| value change against the shipped function | `Δv = 0.26 r^2 sqrt(eps/2)` |
+| derivative cap | `c = 0.065 r^2 / sqrt(eps/2)` |
+| **product** | **`c × Δv = 0.0169 r^4`, constant** |
+
+So **an order of magnitude off the derivative costs an order of magnitude of value error,
+exactly**, and there is no `eps` that buys one without the other. Measured over the range
+the arm actually visits (`above` from `-6.72e-02` to `+1.45e-01`, fast-alpha fraction
+ranging `0` to `9.90e-02`) [measured]:
+
+| `eps` | max `\|Δ value\|` | as a fraction of the function's range | `\|df/dt\|` max |
+|---|---|---|---|
+| shipped | -- | -- | **`5.54e+02`** (unbounded in principle) |
+| `1e-9` | `5.81e-06` | 0.006 % | `1.1e+04` |
+| `1e-7` | `5.81e-05` | 0.06 % | `1.2e+03` |
+| `1e-5` | `5.81e-04` | **0.59 %** | `3.27e+01` |
+| `1e-4` | `1.84e-03` | 1.9 % | `1.05e+01` |
+| `1e-3` | `5.81e-03` | **5.9 %** | `3.31e+00` |
+
+**And the arm operates at `|above|` down to `5.50e-08`** (§31.36.2), which is precisely
+where the smoothing's error is largest -- the value change is maximal at the threshold and
+decays away from it. A smoothing wide enough to blunt a derivative of `554` has to move the
+fast-alpha fraction by `~3e-04` *at the point the optimum sits*, and that reaches
+`beta_fast_alpha`, `c24` and the answer.
+
+That is a genuine obstruction rather than a tuning failure, and it is the useful thing this
+section found: **you cannot regularise this kink without moving the answer, because the
+optimum is on the kink.**
+
+#### 31.37.5 The `Alternative` option does not apply here, and the record should say so
+
+`_audit/x109.md`'s open item #2 option (i) is *"declare the `temp_sum_20 > 0.65` switch as
+an `Alternative` so the two arms are two smooth problems"*, noting that a neighbouring
+switch on the same function has already been converted. **Checked, and the two are
+categorically different** [measured by reading]:
+
+- **`i_beta_fast_alpha` is an input switch.** `indat.py:5973-5974` reads it from the input
+  file's switch dict at assembly (`FastAlphaPressureModel(int(switches.get(...)))`), and
+  `pure_formulas.py:29-30` records that it is *"kept as a static field on the node"* and
+  *"keeps Python control flow"*. It is resolvable before any solve starts, which is exactly
+  what makes the `Alternative` conversion work for it.
+- **`temp_sum_20` is computed state, and it is a function of two design variables.**
+  `plasma_profiles.py:197-202` gives
+  `temp_plasma_{electron,ion}_density_weighted_kev = temp_plasma_{electron,ion}_vol_avg_kev
+  * f_temp_plasma_electron_density_vol_avg`, and those two volume averages are SAND's
+  `x[2]` and `x[9]` (`.physics.temp_plasma_electron_vol_avg_kev`,
+  `.physics.temp_plasma_ion_vol_avg_kev`). So up to a profile factor,
+  **`temp_sum_20 - 0.65 = 0` is a hyperplane in the design space**, the optimiser steps
+  across it under its own control, and the optimum sits within `5.5e-08` of it.
+
+An `Alternative` cannot resolve that at assembly time. Declaring it would mean either
+solving both arms and comparing -- a materially larger change than the record's phrasing
+suggests -- or an in-graph `cond` on a traced predicate, which reintroduces the same
+discontinuity it was meant to remove. **The honest option list is therefore shorter than
+x109.md's**:
+
+1. **A trust-region safeguard**, so a step is not taken on a linear model built on the far
+   side of the hyperplane. Costs nothing in fidelity, does not touch the physics, and is
+   the only option here that addresses the mechanism without moving the answer. **Untested.**
+2. **Smoothing** -- measured here, and it moves the answer by construction (§31.37.4).
+3. **Accept the ridge**, which is what the tree does, and record it.
+
+`x109.md` is updated in place to carry this.
+
+#### 31.37.6 What this settles and what it does not
+
+- **Sufficiency: yes, on both the arithmetic and the experiment.** Without the crossings
+  the remaining sources sum to `-1.21` decades a solve (§31.37.1), and with the singularity
+  actually removed all five runs agree to fifteen digits (§31.37.3). The square-root kink is
+  not one contributor among several; it is what makes this arm a coin flip.
+- **The loose end is closed**: the non-crossing jumps are active-set changes with no
+  Jacobian motion (§31.37.2), and they are not enough on their own -- which the `eps = 1e-3`
+  row confirms, since they are still present there and the arm is nonetheless deterministic.
+- **A usable fix may exist, and its price is now known.** §31.37.4's conjugacy means the
+  value error and the derivative cap cannot both be small, but the required cap turns out
+  to be modest: `eps = 1e-6` converges every draw for a `6.0e-06` `objf` shift, and full
+  determinism at `eps = 1e-3` costs `6.0e-04`. Whether either is acceptable is a fidelity
+  judgement about PROCESS's model, not a numerical one, and it is not made here.
+- **A trust-region safeguard is now the interesting untested option**, because it is the one
+  intervention with the property this section shows is needed: it changes how a step is
+  taken without changing the model at all, so it cannot move the answer.
+- **The practical lever is unchanged and now has a rival.** Shortening the solve still
+  works (§31.33 did it once, `1.94 -> 1.08`); attacking the mechanism is now known to work
+  too, and to cost `6e-04`.
+
+#### 31.37.7 Not resolved
+
+- **The trust-region experiment is not run.** It is the one intervention that separates
+  "the derivative discontinuity is what destabilises" from "the value near the kink is what
+  matters", and neither `pyvmcon` nor `VmconDriver` exposes a step cap today, so it is not a
+  monkeypatch away -- it wants a driver change and therefore another agent's file.
+- **The smoothing rows are one configuration and one formulation.** No MDF row, no other
+  configuration, and no cold matrix; every smoothed row is a *different problem*, so their
+  iteration counts are not comparable with the shipped ones except as "converged / did not".
+  Any of these would have to clear the full seven-configuration matrix before landing, and
+  the `6e-06` at `eps = 1e-6` is 90x the answer shift §31.33 already spent a matrix on.
+- **`eps = 1e-9` produced no completed run and the reason was not diagnosed** -- the
+  sweep script filtered stdout to the result line, so whatever it raised was discarded.
+  It sits below the arm's own `5.5e-08` approach to the threshold and is the row closest to
+  the shipped function, so its absence leaves the low end of the dose-response unmeasured.
+- **`+-1` ulp draws are not comparable across sections.** As §31.36.10 records, the cell
+  selection depends on how often `bind` is called, so the seed labels here match §31.36's
+  and not §31.34's. Within this section shipped and smoothed rows come from one script and
+  are comparable to each other, which is what the experiment needs.
+- **Why the optimum sits on the hyperplane is still not answered.** `x109.md`'s open item #3
+  asks whether the ridge is genuine or an artefact of the discontinuity, and §31.37 does not
+  touch it. The `c24` reading -- a beta upper limit against which the fast-alpha term
+  switches on -- makes "the optimiser is pushed to exactly where the extra beta turns on" a
+  plausible physical story, and it is a story, not a measurement.
