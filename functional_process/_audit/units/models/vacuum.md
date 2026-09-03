@@ -169,10 +169,12 @@ No `implicit-io-via-callee` or `redundant-duplicate-write` anywhere in this file
    finite-differences at `epsfcn = 1.0e-3` relative, which is coarse enough that **2 of 14
    columns straddle a tread** and the secant reconstructs the envelope slope instead
    (§31.33.4 [measured]); the port's autodiff reads exactly zero there. **Documented, not
-   fixed, and the refusal is measured rather than cautious** -- both repairs (a
-   straight-through surrogate derivative; dropping the rounding) make the SAND arm worse,
-   see the 2026-09-03 section below and §31.33.5-§31.33.7. This is a real discreteness in
-   the machine.
+   fixed, and the refusal is measured rather than cautious** -- **three** repairs (a
+   straight-through surrogate derivative; dropping the rounding; a `custom_jvp` finite
+   difference at seven step sizes including PROCESS's own) each make the SAND arm worse,
+   see the 2026-09-03 section below, §31.33.5-§31.33.7 and §31.34.4-§31.34.6. This is a
+   real discreteness in the machine, and `low_aspect_ratio_DEMO` SAND carries it with no
+   measurable instability at all.
 
 5. **Name collision**: `Vacuum.vacuum_simple`'s local `n_iter_vacuum_pumps` (the
    ITER-cryopump-throughput estimate, one of two candidates combined by `max`) and the
@@ -857,8 +859,8 @@ stopping well before convergence (§31.33.3 [measured]).
 exactly this, in exactly this place — `process/models/vacuum.py:90`,
 `vp.n_vac_pumps_high = math.floor(pumpn + 0.5e0)`, under the comment *"MDK pumpn is
 real: convert to integer by rounding"* — so the staircase is a property of the model,
-not of the port, and it is one PROCESS's own answer sits on. The two repairs an
-optimiser would want were both tried and both are worse:
+not of the port, and it is one PROCESS's own answer sits on. **Three** repairs have now
+been tried and all three are worse:
 
 - **a straight-through derivative** (identical value, `d n / d pumpn = 1` instead of
   `0`) takes the arm from 94 iterations converged to **50 iterations stopped** at a
@@ -869,6 +871,17 @@ optimiser would want were both tried and both are worse:
   and it makes the arm **less** robust to a last-bit Jacobian change, not more: **1 of 4
   fabricated `±1` ulp draws converge against the shipped 3 of 4.** The hypothesis that
   this staircase is what makes the arm fragile is refuted by its own control.
+- **a `jax.custom_jvp` whose tangent is a centred finite difference of the rounding** —
+  the value left exact, the derivative taken the way PROCESS's solver gets one — fails at
+  **all seven step sizes tried**, PROCESS's own `epsfcn = 1.0e-3` included (500
+  iterations, `cap(500)`). And at every step size where it is *principled* — an absolute
+  step of one whole tread or a whole number of treads — it is **bitwise identical to the
+  straight-through repair above**, by the exact identity
+  `floor(x + h + 0.5) - floor(x - h + 0.5) = 2h` for any `h` that is a multiple of `0.5`.
+  Below half a tread it is worse than the defect: the tangent telegraphs between `0` and
+  `1/(2h)` — `3.01` at PROCESS's step, `30.1` an order of magnitude below it — and is
+  itself discontinuous in `pumpn`, which is the same defect class `solve_duct_diameter`'s
+  fix above was landed to remove. See §31.34.4.
 
 And PROCESS's own instrument cannot see the staircase in the first place: at
 `epsfcn = 1.0e-3` (`numerics.py:595`), **2 of 14 finite-difference columns straddle a
@@ -877,6 +890,16 @@ tread at the converged answer**, and on those two PROCESS's quotient reads `+1.9
 *envelope* derivative, and is therefore right about the step it is going to take, which
 an exact envelope derivative attached to a piecewise-constant value is not.
 
-See §31.33.4 to §31.33.7 for the numbers and the argument. The honest summary for this
-record is that **the discreteness is real, PROCESS has it too, and the optimiser has to
-cope**; the note belongs in "Real findings", not in the code.
+Nor does PROCESS's *actual* instrument transfer. Differencing the **whole** condition
+vector at `epsfcn = 1.0e-3` (`VmconDriver.epsfcn`, no model change at all) converges on
+**MDF** — the arm that poses PROCESS's own `ixc` problem — in **172 iterations against the
+exact Jacobian's 66**, and lands `3.9e-05` relative away from the exact answer; on **SAND**
+it **stops after 32 iterations**. So PROCESS's 46-iteration convergence is an existence
+proof for PROCESS's problem with PROCESS's derivative, at 2.6× the iterations and at a
+different optimum, and not for anything this unit could adopt. See §31.34.5.
+
+See §31.33.4 to §31.33.7 and §31.34.4 to §31.34.6 for the numbers and the argument. The
+honest summary for this record is that **the discreteness is real, PROCESS has it too, and
+the optimiser has to cope**; the note belongs in "Real findings", not in the code. And the
+optimiser evidently *can* cope: `low_aspect_ratio_DEMO` SAND carries this same staircase
+and shows no measurable sensitivity to a last-bit Jacobian change at all (§31.34.2).
