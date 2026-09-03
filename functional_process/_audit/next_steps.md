@@ -803,21 +803,28 @@ Same pattern as §28.1, and the same lesson.
    `min ie -0.99` and a non-binding step cap. Two sub-questions: why the QP runs to its cap
    when 25 iterations give a bitwise identical answer, and whether `EQX_ON_ERROR=nan` is
    honest when the optimiser walks through NaN trial points unnoticed.
-2. **[one of three done] `lax.while_loop`s block reverse-mode AD everywhere** —
+2. **[two of three done] `lax.while_loop`s block reverse-mode AD everywhere** —
    `models/cs_fatigue.py:318` is now a masked `lax.scan` at a static bound of 512, and
    `jax.grad` of `calculate_n_cycle` agrees with `jacfwd` to every printed digit where it
-   previously raised. Two remain, both in `vacuum.py`. The originals were —
-   `models/cs_fatigue.py:318`, `models/vacuum/vacuum.py:329` and `:474`. All three are now
-   sized (§31.12): cs_fatigue is a masked `scan` at a static bound of ~512 (measured worst
-   case 264); `:474` is a `vmap` over its 64 independent candidates plus a first-fit
-   select, which keeps PROCESS's grid and so its exact value; `:329` is a genuine implicit
-   model whose node is already written and registered, blocked on `:474` being restructured
-   first. Not the drivers:
+   previously raised. **`models/vacuum/vacuum.py:329` (`solve_duct_diameter`) is now
+   done too, and it did *not* need `:474` restructured first** (§31.33.1): the loop is
+   converged under `jax.lax.stop_gradient` and one differentiable Newton step is taken
+   from its root, so the loop carries no tangent and there is nothing to transpose —
+   `jax.grad(solve_duct_diameter)` agrees with `jacfwd` to every printed digit where it
+   previously raised, `jacfwd` got **24 % cheaper**, and the `while_loop` and its early
+   exit are kept. **One remains, `:474` (`solve_duct_geometry`)**, which is a discrete
+   first-fit selection rather than a root find and does not obviously take the same
+   treatment; §31.12's sizing of it as a `vmap` over 64 candidates still stands, and it is
+   constant at `K = 1` on `stellarator_helias` so nothing is differentiating it there
+   today. Not the drivers:
    `PicardDriver`/`SeededNewtonDriver` go through optimistix's `ImplicitAdjoint` and
    transpose fine, so `mdf.py`'s docstring is wrong about the mechanism and
    `vacuum.py:289`'s "costs nothing here" is falsified (§31.9). Reverse mode would not
    *win* on the Jacobian's shape, but it is the only way to a cheap objective-only
-   gradient, and the doc defect should be corrected regardless.
+   gradient, and the doc defect should be corrected regardless. **The `vacuum.py` half of
+   that doc defect is corrected** — `solve_duct_diameter`'s docstring, `vacuum.md`'s
+   JAX-difficulty flag and this item all now say the port *is* differentiated even though
+   `Tier2Contract` is not (§31.33.1). `mdf.py`'s docstring is still wrong.
 3. **The ~1.75 s of first-call jit setup** that is neither trace, lower, compile, nor
    `filter_jit` — arm-independent, bounded, unexplained. A `cProfile` of the first two
    calls (§31.6).
