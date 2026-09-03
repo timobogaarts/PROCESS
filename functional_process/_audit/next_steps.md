@@ -803,7 +803,8 @@ Same pattern as §28.1, and the same lesson.
    `min ie -0.99` and a non-binding step cap. Two sub-questions: why the QP runs to its cap
    when 25 iterations give a bitwise identical answer, and whether `EQX_ON_ERROR=nan` is
    honest when the optimiser walks through NaN trial points unnoticed.
-2. **[two of three done] `lax.while_loop`s block reverse-mode AD everywhere** —
+2. **[two of three done; and the loops were never the whole list — §33.12.5]
+   `lax.while_loop`s block reverse-mode AD everywhere** —
    `models/cs_fatigue.py:318` is now a masked `lax.scan` at a static bound of 512, and
    `jax.grad` of `calculate_n_cycle` agrees with `jacfwd` to every printed digit where it
    previously raised. **`models/vacuum/vacuum.py:329` (`solve_duct_diameter`) is now
@@ -876,8 +877,16 @@ question: why is the port's outer problem chaotic where PROCESS's is not?
 
 - **`.physics.nu_star` is NaN in value at the cold point**, from `dlamie == 0.0` over
   `plasma_current == 0.0` — both boundary inputs frozen at cold zero, and `dlamie` should
-  be ~17. Nothing consumes it, so it is a dead output, not a live contaminant. It has
-  §27.4's missing-producer signature (§31.5).
+  be ~17. It has §27.4's missing-producer signature (§31.5).
+  **"Nothing consumes it, so it is a dead output, not a live contaminant" is true in
+  value and false under reverse mode (§33.12.3, §33.12.4)** — measured on
+  `stellarator_helias`, its two *sibling* outputs `rho_star` and `beta_mcdonald` have
+  Jacobian rows that are **0/10 non-finite under `jacfwd` and 9/10 under `jacrev`**,
+  because `jacrev`'s one-hot cotangent over outputs is an exact zero on the sick row and
+  `0 * inf` is `nan`. A dead output is not dead to the adjoint. This is now the second of
+  the two things blocking a reverse-mode objective gradient, the other being
+  `vacuum.py:474`; it is `clean` on `large_tokamak_nof`, so it is a stellarator-only
+  condition.
 - **`jax` is 0.11.0 on at least one machine**, not the 0.11.1 `CLAUDE.md` records.
   `CLAUDE.md` already says the conda root differs per machine and ties its suite counts to
   the version; the pin should say "0.11.0 or 0.11.1 depending on machine" rather than be

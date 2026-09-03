@@ -7044,7 +7044,18 @@ Row unchanged to the table's precision (MDF `objf 1.21775747` / 108 it, SAND `1.
 docstring records the jitted schedule differing from the eager one at `1.1e-13` on 254 of
 831 keys.
 
-### 31.9 [measured] Reverse-mode AD does not work on this graph at all
+### 31.9 [measured, headline superseded — see §33.12.5] Reverse-mode AD does not work on this graph at all
+
+> **This heading is wrong in both directions and §33.12.5 restates it.** It was never only
+> the three `lax.while_loop`s named below — a guard whose unselected arm has a singular
+> derivative returns `NaN` rather than raising, which this section did not know about
+> (§33), and a node with a non-finite *output* poisons its siblings' reverse rows
+> (§33.12.4). And it is no longer everywhere: two of the three loops are gone
+> (`cs_fatigue` → masked `scan`; `solve_duct_diameter` → implicit, §31.33.1), the three
+> guard sites are repaired (§33.6), and with the last loop stood down `jax.grad` of the
+> scalar objective through the whole tokamak graph is finite and agrees with `jacfwd` to
+> 2.0e-14 (§33.7). The measurements below stand as taken; the conclusion drawn from them
+> does not.
 
 Why `jax.jacfwd` and not `jacrev`, asked and answered on the MDF condition map
 (15 conditions x 8 unknowns):
@@ -9981,6 +9992,14 @@ makes its length matter.
 > §33.10 corrects the `lax.cond` claim below, which was stated too generally; §33.11
 > re-runs the question under a design-batched `vmap` — the transform an ensemble, a
 > multi-start or an uncertainty propagation would use — and reports both numbers.
+>
+> **§33.12 reconciles this section against the independent OpenMDAO port**, which found
+> the same defects by a different method and whose README reports "three places, two
+> mechanisms". Same three sites at an earlier tree state; their four-line repro is closed
+> here. It also **corrects §33.4's classification of
+> `.physics.dimensionless_plasma_parameters`**, which was aggregated per node and so hid
+> that 18 of its 30 Jacobian entries *are* forward-safe and reverse-unsound — and
+> §33.12.5 restates §31.9's headline once, correctly.
 
 An OpenMDAO comparison found a component of the tokamak graph where, at the same point on
 the same body, `jax.jacfwd` was entirely finite and `jax.jacrev` returned 201 non-finite
@@ -10826,3 +10845,146 @@ points visited, not on a proof. What the batched census adds is that the *transf
 one site of exposure in this graph, not many, because the port had already written almost
 everything as an explicit select rather than as a branch — the same property that made the
 `jacfwd` count small.
+
+### 33.12 [measured] Reconciled against the OpenMDAO comparison — same three sites, and one classification of mine was too coarse
+
+An independent OpenMDAO port of this graph (`~/openmdao_process`) reached the same defect
+class by a completely different route: OpenMDAO chooses a differentiation *direction per
+component* from a shape heuristic (`'fwd' if output elements >= input elements else
+'rev'`), and where it picks reverse on a body holding one of these guards, the component's
+partials come back `NaN` and **21 of the tokamak's 120 total derivatives are silently
+non-finite**. Its README reports *"reverse mode is unsound on this model in at least three
+places, by at least two distinct mechanisms"* and names four components. Two records
+saying "three sites" and "zero sites, repaired" cannot both stand unqualified, so this
+subsection settles which is which.
+
+**They are the same sites at two tree states, and the corroboration is worth more than
+either record alone**: a framework that sums assembled subjacobians and a jaxpr census that
+never leaves one node found the same defects, at the same lines, by methods with nothing in
+common.
+
+#### 33.12.1 [measured] Their four-line repro is pre-repair; it is closed on this tree
+
+Their README gives the mechanism as *`calculate_fusion_gain` guards a division by a
+denominator that is exactly zero on an ignited machine, and measures as primal `1e18`,
+`jacfwd [0.0, 0.0]`, `jacrev [nan, nan]`*. That `1e18` is `heating.py`'s
+`_Q_DEGENERATE_VALUE`, so the repro is **§33's site 2**. Run on `main` at `2e27e3c6`:
+
+| | their README | this tree |
+|---|---|---|
+| primal | `1e18` | **`1e18`** |
+| `jacfwd` | `[0.0, 0.0]` | **`[0.0, 0.0]`** |
+| `jacrev` | **`[nan, nan]`** | **`[0.0, 0.0]`** |
+
+Value and forward derivative identical, reverse finite. One command, and the answer is
+that the repro predates `4739f91b`.
+
+#### 33.12.2 [measured] Their own generated artifacts already agree
+
+Their probe writes a `REVERSE_UNSAFE` tuple into each generated module. The README's prose
+lists four components; the **modules currently on disk**, regenerated across the repairs
+landing, list:
+
+| generated module | `REVERSE_UNSAFE` |
+|---|---|
+| `large_tokamak_nof.py` | `('vacuum__vacuum_old',)` |
+| `stellarator_helias.py` | `('physics__dimensionless_plasma_parameters', 'vacuum__vacuum_old')` |
+
+`tokamak__bootstrap_current` and `stellarator__fusion_gain` — §33's sites 1 and 2 — are
+**gone from their list**, which is independent confirmation that the repairs closed them
+on a configuration §33 never measured (`large_tokamak_nof`). Running §33's own per-node
+probe on that configuration agrees: `.tokamak.bootstrap_current` is `val_bad=0 fwd=0
+rev=0`. A full §33 census of `large_tokamak_nof` -- a **third** configuration, 242 nodes -- gives
+**231 clean, 10 with no differentiable input, 1 `rev-RAISES` (`.vacuum.vacuum_old`), and
+zero of §33's class**, with no latent site anywhere. `.physics.dimensionless_plasma_parameters` is also `clean`
+there (`val_bad=0 fwd=0 rev=0`), which is why their `nof`
+override list omits it and their `stellarator_helias` list keeps it: the `nu_star` NaN
+needs `.physics.plasma_current == 0`, which is a stellarator condition. The two records
+agree component for component on both machines.
+
+**§33's site 3 (`superconductors.py:188`) never appears in their table, and could not
+have.** `plan.py:522` skips the probe entirely wherever the heuristic picks forward, and
+that component has 601 output elements against 14 of input, so OpenMDAO picks forward and
+never asks. The jaxpr census found a site the framework's probe is structurally unable to
+reach — the reciprocal of the point below.
+
+#### 33.12.3 [correction to §33.4] `.physics.dimensionless_plasma_parameters` — my classification was too coarse
+
+This is the one component where the two records genuinely disagree, and **the OpenMDAO
+probe is closer to right than §33 was.**
+
+§33.4 counted this node as *"non-finite in **both** modes (not this class)"* and set it
+aside as §31.5's known `.physics.nu_star`. That is true of the **node** and false of most
+of its **Jacobian**. Measured on `stellarator_helias`, the configuration whose generated
+module carries the override:
+
+| | value | `jacfwd` non-finite | `jacrev` non-finite |
+|---|---|---|---|
+| `out[0]` `nu_star` | **`nan`** | 10 / 10 | 9 / 10 |
+| `out[1]` `rho_star` | `0.00170244` | **0 / 10** | **9 / 10** |
+| `out[2]` `beta_mcdonald` | `0.0402637` | **0 / 10** | **9 / 10** |
+| whole node | 1 of 3 non-finite | 10 / 30 | **27 / 30** |
+
+Rows 1 and 2 are **entirely finite in forward mode and almost entirely non-finite in
+reverse** — 18 of 30 Jacobian entries are forward-safe and reverse-unsound. §33.4's
+per-node aggregate hid that, because one sick output made the whole node read as
+"bad in both modes". The cause is `dimensionless_parameters.py:65`,
+`/ (e_plasma_beta**2 * plasma_current)`, with `.physics.plasma_current` and
+`.physics.dlamie` both **exactly `0.0`** at this point.
+
+**It is still not a fourth guard site.** The underlying defect is a non-finite *value*, not
+a guard written the wrong way round: there is nothing to repair with a double-`where`,
+and §31.5 already owns it. What is new is that a non-finite value does not stay local
+under reverse mode — see §33.12.4. So: **their label "returns non-finite where `jacfwd`
+does not" is substantively right for 18 of the 30 entries, and §33's "both modes" was the
+wrong granularity.** Recorded as a correction rather than argued away.
+
+One caveat on their side, since it cuts the other way: `revmode.reverse_unusable` only ever
+calls `jax.jacrev` — the clause *"where `jax.jacfwd` does not"* is a **fixed string in the
+return value**, not a measured comparison. It happens to be right here for most rows and
+would be wrong for a body that is non-finite in both.
+
+#### 33.12.4 [measured] A third discarding map: `jacrev`'s own one-hot cotangent
+
+§33.2 said the mechanism is an operand order and that *any* linear map which discards a
+component in forward and re-injects an exact zero in reverse carries it, naming `select_n`
+and `lax.slice_in_dim`. §33.12.3 exposes a third, and the most general
+yet: **the row selection `jacrev` performs over outputs.**
+
+```python
+def two_outputs(x):
+    return jnp.stack([1.0 / x, x**2])   # out[0] singular at 0, out[1] regular
+```
+
+at `x == 0`: value `[inf, 0]`, `jacfwd` `[-inf, 0]`, `jacrev` `[-inf, **nan**]`. Row 1's
+derivative is exactly `0` and forward mode gets it; reverse contracts over outputs, so the
+one-hot cotangent selecting row 1 is `0` on the sick row and `0 * inf` poisons it.
+
+**The consequence is worth stating on its own: one non-finite output makes every other
+output of the same node non-finite under reverse mode, however healthy those outputs are.**
+Forward mode has no such coupling. That is why §33's per-node aggregate was the wrong unit
+for this case, and it is the shape to look for wherever a node mixes a singular output with
+regular ones.
+
+#### 33.12.5 Restating §31.9's headline, once and correctly
+
+§31.9 concluded *"reverse-mode AD does not work on this graph at all"* and attributed it to
+three bare `lax.while_loop`s. Every clause of that has since moved, and the pieces are
+spread across §31.33.1, §33 and this subsection. The measured statement, as of `2e27e3c6`:
+
+> **Reverse mode fails on this graph in two ways, and the count is now one loop and one
+> value.** The `while_loop` refusal was three sites and is now **one**:
+> `models/cs_fatigue.py:318` became a masked `scan`, `models/vacuum/vacuum.py:329`
+> (`solve_duct_diameter`) became implicit under `stop_gradient` (§31.33.1), and only
+> `vacuum.py:474` (`solve_duct_geometry`) still raises. The second way is not a loop at
+> all and §31.9 did not know about it: a guard whose unselected arm has a singular
+> derivative returns `NaN` rather than raising — three such sites, all repaired (§33.6).
+> A third is neither: a node with a non-finite *output* poisons its siblings' reverse rows
+> (§33.12.4), which is `.physics.nu_star`'s §31.5 defect wearing a new consequence.
+> With `solve_duct_geometry` stood down behind a `stop_gradient` stand-in, **`jax.grad` of
+> the scalar objective through the whole tokamak graph is finite and agrees with `jacfwd`
+> to 2.0e-14** (§33.7). So "does not work at all" is wrong in both directions: it was never
+> only the loops, and it is no longer everywhere.
+
+The two remaining items are therefore **`vacuum.py:474`** and **`.physics.nu_star`**, and
+neither is a guard.
