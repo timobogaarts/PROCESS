@@ -35,6 +35,7 @@ from functional_process._harness.sampling import (  # noqa: E402
 )
 from functional_process._harness.tolerance import (  # noqa: E402
     MACHINE_PRECISION,
+    DeclaredDeviation,
     Tolerance,
 )
 from functional_process._harness.varpath import path  # noqa: E402
@@ -46,6 +47,7 @@ __all__ = [
     "Sample",
     "Tier1Contract",
     "Tier2Contract",
+    "DeclaredDeviation",
     "Tolerance",
     "ZeroPerturbationError",
     "bounds_from_iteration_variables",
