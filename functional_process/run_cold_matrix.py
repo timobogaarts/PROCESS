@@ -202,7 +202,6 @@ from functional_process import (  # noqa: E402
     provider,
     sand,
 )
-from functional_process.core.solver import host_cache  # noqa: E402
 from functional_process.core.solver.drivers import (  # noqa: E402
     VMCON_NON_FINITE,
     Status,
@@ -477,11 +476,16 @@ def build_mdf(reference, machine_graph, switch_values, root_find=False) -> MdfBu
     Split out of `cold_mdf` on 2026-09-03 for `functional_process.session`, and the
     reason is measured rather than tidy: re-assembling builds a structurally *equal* but
     freshly allocated block, and every memo downstream is keyed on what was built --
-    `host_cache._BOUND`, `sand_harness._SCHEDULE_WHOLE`, jax's own executable cache --
-    so a loop that re-assembles re-traces and re-compiles the whole graph on every
-    iteration while a loop that does not is 30-75x faster
-    (`_audit/optimise_design.md` §32.2). Nothing here reads `cold`, which is exactly why
-    it can be hoisted.
+    `sand_harness._SCHEDULE_WHOLE`, jax's own executable cache -- so a loop that
+    re-assembles re-traces and re-compiles the whole graph on every iteration while a
+    loop that does not is 30-75x faster (`_audit/optimise_design.md` §32.2). Nothing here
+    reads `cold`, which is exactly why it can be hoisted.
+
+    **That 30-75x is the number §37 moved**, and this docstring is left standing as the
+    measurement it was: since the graph became static (§34), the switches stopped being
+    partials (§35) and `host_cache._BOUND` was deleted for a module-level jit (§37), a
+    re-assembled block is a jax cache *hit*. Hoisting is still right -- it saves the
+    assembly itself -- but it is no longer the difference between a second and a minute.
     """
     build = MdfBuild(
         problem=mdf.assemble(
@@ -899,22 +903,31 @@ def _explained_by(reference, graph, switch_values):
     """`(key, read)` if this run's objective is downstream of a documented, deliberate
     disagreement, else `None`.
 
-    Asks `sand.objective_node` -- the same call `mdf.assemble` makes -- which `VarPath`s
+    Asks `sand.objective_nodes` -- the same call `mdf.assemble` makes -- which `VarPath`s
     the run's figure of merit reads, so this cannot drift from what was actually
     assembled the way a hand-kept per-configuration list would.
+
+    **Every node it builds is asked, not just the first.** A maximise run is two nodes
+    since §36 -- the metric and a `.ObjectiveNegated` -- and the negation reads
+    `^metric.numerics.objf`, which is in no `EXPLAINED_OBJECTIVE_READS` table and simply
+    does not match. Asking all of them is what keeps this from depending on which one
+    happens to come out first.
     """
+    from functional_process.indat import objective_selection  # noqa: PLC0415
+
     try:
-        _name, node, _objective = sand.objective_node(
+        nodes, _objective = sand.objective_nodes(
             graph if graph is not None else graph_for(),
-            reference.i_figure_merit,
+            objective_selection(reference.i_figure_merit),
             switch_values,
         )
     except Exception:  # noqa: BLE001 -- an unmarked row, never a lost row
         return None
-    for port in node.inputs:
-        read = port.var.path_str()
-        if read in EXPLAINED_OBJECTIVE_READS:
-            return EXPLAINED_OBJECTIVE_READS[read], read
+    for node in nodes.values():
+        for port in node.inputs:
+            read = port.var.path_str()
+            if read in EXPLAINED_OBJECTIVE_READS:
+                return EXPLAINED_OBJECTIVE_READS[read], read
     return None
 
 
@@ -2025,13 +2038,11 @@ def main(argv=None, out=OUT):
         # cache doing
         # exactly what it promises for longer than this runner needs.
         #
-        # `host_cache._BOUND` is dropped with it, and for the same reason. That memo
-        # holds each block's `jax.jit` wrappers so a second solve of the *same* block is
-        # a cache hit (§31.14); keeping them across configurations would pin the jitted
-        # callables that own the compiled programs `clear_caches` is being called to
-        # release, and the next configuration is a different graph that would miss every
-        # entry anyway. Re-binding costs ~50 ms on the next row against a ~25 s row.
-        # Same argument, same place, so they are cleared together.
+        # **`host_cache._BOUND` used to be cleared here and there is no such memo any
+        # more** (`_audit/optimise_design.md` §37). The three programs are module level
+        # and jax's own cache holds them, so `jax.clear_caches()` above already releases
+        # exactly what that line was for -- one call instead of two, and no port-side
+        # cache left to forget about.
         #
         # **This clearing is not what makes a repeated solve slow**, and it is regularly
         # mistaken for it. A *row* is one configuration and the next row is a different
@@ -2039,7 +2050,6 @@ def main(argv=None, out=OUT):
         # regime is re-*assembly*, which `functional_process.session` exists to avoid;
         # `_audit/optimise_design.md` §32.2 separates the two and exonerates this line.
         jax.clear_caches()
-        host_cache._BOUND.clear()
         _return_freed_memory_to_the_os()
     print(render(rows))
     print(f"\n{len(rows)} configuration(s) in {time.perf_counter() - began:.0f} s")

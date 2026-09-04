@@ -1139,15 +1139,22 @@ def test_nodes_assemble_and_the_sauter_arm_does_not_read_triangularity():
     assert resolve(physics.rminor, VarPath) in read
 
 
-def test_zero_arms_own_their_fields_and_read_nothing():
-    """`NoDiamagneticCurrent`/`NoPfirschSchluterCurrent` are source nodes returning zero.
+def test_zero_arms_own_their_fields_and_state_them(reads_only_its_own_statement):
+    """`NoDiamagneticCurrent`/`NoPfirschSchluterCurrent` are source nodes stating zero.
 
     They exist because PROCESS leaves both fields at their `current_drive_variables.py`
     defaults on this input (no `else` branch at `plasma_current.py:1081-1094` or
     `physics.py:538-541`, and neither field is settable from `IN.DAT`), so the honest
     shape is a declared zero rather than a boundary input standing for "PROCESS did not
     run this code".
+
+    **The zero is no longer in the node.** It used to read nothing and return a
+    `carried()` field; since `_audit/optimise_design.md` §34 it reads exactly one thing
+    -- `^stated.<the place it owns>` -- and hands it back, with the value in
+    `indat.STATED_VALUES`. The check that the zero is still a zero moved with it, to
+    `test_stated.py`; what is asked here is the structure, which is the half this file
+    is about.
     """
     for node in (NoDiamagneticCurrent(), NoPfirschSchluterCurrent()):
-        assert list(node.inputs) == []
-        assert float(node()) == pytest.approx(0.0, abs=0.0)
+        reads_only_its_own_statement(node)
+        assert float(node(0.0)) == pytest.approx(0.0, abs=0.0)

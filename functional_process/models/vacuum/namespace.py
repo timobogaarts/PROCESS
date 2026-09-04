@@ -25,7 +25,7 @@ class Vacuum(ModelNamespace):
     # (see this module's own docstring). Registered anyway, on explicit instruction, as
     # a perfectly valid undriven `RootFind` problem sitting in the graph -- see that
     # class's own docstring. `vacuum.py`'s own `DuctFeasibility` (a bare `Feasibility`
-    # `DeclaredNode`, not a `NodalDeclaration` -- see its docstring for why it cannot be
+    # `ProblemNode`, not a `NodalDeclaration` -- see its docstring for why it cannot be
     # passed to `to_graph()`/listed here the same way) is *not* registered: joining it
     # with this node into one combined block is demonstrated in `test_vacuum.py`, not
     # asserted by this graph.

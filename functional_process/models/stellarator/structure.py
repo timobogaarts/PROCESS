@@ -13,12 +13,12 @@ signature.
 `fncmass` and `gsmass` are not ported: both are unconditional literal `0.0` in the
 source (open question 1 in the record -- whether a constant "producer" should be a graph
 node at all is a policy question, not resolved here, so neither is wrapped in a
-`CallableNode`).
+`ImplementedFunction`).
 
 `StructureMasses` below is the `cottax` node -- a thin `ExplicitFunction` declaration
 wrapping `calculate_structure_masses` unchanged. See `_audit/schema.md`'s "cottax node"
 section for why the pytree-namespace surface
-(`cottax.interfaces.pytree_namespace_module`) rather than a hand-built `CallableNode`:
+(`cottax.interfaces.pytree_namespace_module`) rather than a hand-built `ImplementedFunction`:
 `Output`/`FromExactly` read like the PROCESS `data.<area>.<field>` path they name, instead of a
 `VarPath` built from a string one node at a time.
 """

@@ -23,11 +23,23 @@ misses:
 - `sand_harness._SCHEDULE_WHOLE`/`_SCHEDULE_RUNNERS` are keyed on the `Schedule` object;
 - jax's own executable cache is keyed on what those two hand it.
 
+**The first of those three is no longer true, and the module's premise is weaker than it
+was** (`_audit/optimise_design.md` §37, 2026-09-04). `host_cache._BOUND` does not exist:
+the three programs are module level and the block's structure rides as a value-compared
+jit static argument, so a *re-assembled* block is a jax cache hit. Measured on
+`stellarator_helias` MDF -- assemble, seed, bind and call all three programs, twice, the
+second time from scratch: **19.29 s and 3 compiles before, 0.24 s and 0 compiles after.**
+
+What remains true is that re-assembly is still *work* -- `machine_from_indat`, the graph,
+`mdf.assemble` -- so this module is still the right way to walk a scan; it is no longer
+the difference between a second and a minute for the MDF path. The numbers below are
+`dcda0769`'s and are kept as the measurement they were:
+
 Measured (`_audit/optimise_design.md` §32.2, 2026-09-03): the naive loop -- `run_one` in
-a `for` -- runs **16 XLA compiles on every repeat, for ever**, grows `_BOUND` by two
-entries a solve and does not converge on a steady state. The same configuration solved
-through this module compiles on solve 0 and **not once afterwards**, and per-solve wall
-clock flattens immediately:
+a `for` -- ran **16 XLA compiles on every repeat, for ever**, grew `_BOUND` by two
+entries a solve and did not converge on a steady state. The same configuration solved
+through this module compiled on solve 0 and **not once afterwards**, and per-solve wall
+clock flattened immediately:
 
 | `stellarator_helias` MDF | solve 0 | 1 | 2 | 3 | 4 | 5 |
 |---|---|---|---|---|---|---|
@@ -35,8 +47,7 @@ clock flattens immediately:
 | through this module | 22.5 s | **1.4** | **1.5** | **1.2** | **1.3** | **1.2** |
 
 **The trap is re-assembly, not the caches.** `run_cold_matrix.main`'s per-row
-`jax.clear_caches()` + `host_cache._BOUND.clear()` is often mistaken for the cause and
-is not it: those exist because seven *different* configurations do not share a single
+`jax.clear_caches()` is often mistaken for the cause and is not it: those exist because seven *different* configurations do not share a single
 cache entry between them, and dropping the previous row's executables is what keeps a
 whole pass inside memory (§31.16). A session holds **one** configuration and clears
 nothing.

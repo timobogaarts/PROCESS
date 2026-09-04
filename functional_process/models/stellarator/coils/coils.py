@@ -532,7 +532,7 @@ class Intersect(ImplicitFunction):
 
     `residual` reads the unknown itself back (`wp_width_r_min`, the same `VarPath` its
     own `Output` declares) alongside the two curves -- this is not a self-loop: the
-    `CallableNode` this method becomes only *reads* `.stellarator.wp_width_r_min` (the
+    `ImplementedFunction` this method becomes only *reads* `.stellarator.wp_width_r_min` (the
     current guess) and *writes* `^cond.stellarator.wp_width_r_min` (the residual); a
     separate, bodyless `RootFind` problem node (minted at `^problem.Intersect`) is what
     actually owns the real `.stellarator.wp_width_r_min` -- same shape as

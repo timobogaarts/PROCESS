@@ -19,7 +19,7 @@ mismatch downstream.
 import pytest
 from cottax.interfaces.pytree_namespace_module import Output, to_graph
 from cottax.problem import FixedPoint
-from cottax.spec import CallableNode
+from cottax.spec import ImplementedFunction
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.models.availability.availability import (
@@ -1591,7 +1591,7 @@ def test_cplife_avail_occupants_are_acyclic_and_own_cplife(occupant):
     node = occupant()
     graph = to_graph(node)
     body = graph[node.name]
-    assert isinstance(body, CallableNode)
+    assert isinstance(body, ImplementedFunction)
     assert {out.var for out in node.outputs} == {CPLIFE_VAR}
     assert CPLIFE_VAR not in {inp.var for inp in node.inputs}
     assert graph.is_acyclic
@@ -1614,7 +1614,7 @@ def test_cplife_avail_st_to_graph_assembles():
         itart=SphericalTokamakModel.SPHERICAL_TOKAMAK,
     )
     body, problem = graph[node.name], graph[node.problem_name]
-    assert isinstance(body, CallableNode)
+    assert isinstance(body, ImplementedFunction)
     assert isinstance(problem, FixedPoint)
     assert problem.owns == (CPLIFE_VAR,)
     assert graph.is_acyclic
@@ -1646,7 +1646,7 @@ def test_branch_node_to_graph_assembles(node):
     standalone, no longer raises the pre-split `reads [...], which it also owns` error.
     """
     graph = to_graph(node)
-    assert isinstance(graph[node.name], CallableNode)
+    assert isinstance(graph[node.name], ImplementedFunction)
 
 
 def test_avail_and_cplife_avail_compose_without_ownership_conflict():
@@ -1661,7 +1661,7 @@ def test_avail_and_cplife_avail_compose_without_ownership_conflict():
     cplife_node = CplifeAvailSuperconducting()
     avail_node = AvailNeutronFluence()
     graph = to_graph(cplife_node, avail_node)
-    assert isinstance(graph[avail_node.name], CallableNode)
+    assert isinstance(graph[avail_node.name], ImplementedFunction)
     assert CPLIFE_VAR not in {inp.var for inp in avail_node.inputs}
     assert graph.is_acyclic
 
@@ -1682,5 +1682,5 @@ def test_avail_st_and_cplife_avail_st_compose_without_ownership_conflict():
         i_tf_sup=TFConductorModel.SUPERCONDUCTING,
     )
     graph = to_graph(cplife_node, avail_st_node)
-    assert isinstance(graph[avail_st_node.name], CallableNode)
+    assert isinstance(graph[avail_st_node.name], ImplementedFunction)
     assert graph.is_acyclic

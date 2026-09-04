@@ -917,8 +917,10 @@ def stage_a(reference, condition_map, condition_names, unknowns_start) -> StageA
     PROCESS's numbers come from `constraint_eqns`, whose `cc` entries are
     `-normalised_residual` (`process/core/solver/constraints.py:2007`), so the comparison
     negates them back. The objective comes from `objective_function`, which already
-    carries `np.sign(i_figure_merit)` -- the same sign `sand.objective_node` folds into
-    the node's `fn`.
+    carries `np.sign(i_figure_merit)` -- and so does `^cond.numerics.objf` on this side,
+    so the two are comparable as they stand. Since `_audit/optimise_design.md` §36 the
+    sign is a `.ObjectiveNegated` node rather than a field of the metric's body, which
+    moves *where* it is applied and not the value that arrives here.
     """
     from process.core.solver.constraints import constraint_eqns
     from process.core.solver.objectives import objective_function

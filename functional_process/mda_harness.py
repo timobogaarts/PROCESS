@@ -240,7 +240,18 @@ by anything (confirmed: `grep -rn "physics\\.profile_x" functional_process/model
 finds no remaining `FromExactly`/`Output` binding, only historical docstring mentions). Kept
 as an empty dict, not deleted outright, since a future ungrounded-and-wrong-shaped
 case is exactly what this mechanism is for.
+
+**`indat.STATED_VALUES` is merged in below**, which is the one place a
+`models/stated.StatesValues` output's value enters a run: a stated port
+(`^stated.<place>`) has no `DataStructure` field, and the `unminted` fallback would read
+the place it is *for* -- a cold `.build.dr_cs` at `0.811 m` on a machine with no
+solenoid. Merged rather than written out here because the values are `indat`'s
+`resolve_*`, and this module is downstream of it.
 """
+
+from functional_process.indat import STATED_VALUES  # noqa: E402
+
+KNOWN_MINT_VALUES.update(STATED_VALUES)
 
 DEVICE_ROOTS = ("stellarator", "tokamak")
 """The two device trees a machine's nodes can hang off, as they are spelled in a
@@ -542,19 +553,24 @@ def _declaration_modules(obj, seen):
     """Every `functional_process`-defined `equinox.Module` reachable from one graph
     node definition -- the declaration instance itself plus anything it holds.
 
-    `Graph.definitions` holds `cottax.spec.CallableNode`s, not the declaration
-    classes `total_process.py` instantiates; the declaration is reachable as
-    `node.fn.__self__` (a bound method of the `NodalDeclaration` instance). Walking
-    generically rather than special-casing that one shape also covers `Problem` nodes
-    and any future wrapper. `equinox`'s own internal `Module`s (e.g. `BoundMethod`,
-    which carries a `static` `__func__` field) are filtered out by module origin --
-    they are not this project's registrations.
+    `Graph.definitions` holds `cottax.spec.ImplementedFunction`s, not the declaration
+    classes `total_process.py` instantiates. Since `cottax` builds `fn=self`
+    (`_audit/optimise_design.md` §34), an `ExplicitFunction`'s declaration **is** its
+    `fn` and the first limb below reaches it directly; an `ImplicitFunction`'s is an
+    `equinox` `BoundMethod` and is reached through its fields. Walking generically rather
+    than special-casing either shape also covers `Problem` nodes and any future wrapper.
+    `equinox`'s own internal `Module`s (`BoundMethod` itself, which carries a `static`
+    `__func__` field) are filtered out by module origin -- they are not this project's
+    registrations.
 
-    **A `CarriesValues` node's `fn` is a `functools.partial`, not a bound method**
-    (`models/carried.py`), and a partial has no `__self__` -- the declaration is its
-    first positional argument instead. Without the `partial` limb below the walk stops
-    at the `fn` leaf and every such declaration goes unaudited, silently: a missing
-    switch registration would read as "no switches to check" rather than as a mismatch.
+    **The `functools.partial` and `__self__` limbs are kept and are no longer about
+    `carried.py`.** They existed because a `CarriesValues` node's `fn` was a
+    `jtu.Partial` with the declaration as its first argument, and without the limb every
+    such declaration went unaudited *silently* -- a missing switch registration reading as
+    "no switches to check" rather than as a mismatch. That shape is gone (`models/stated.py`
+    replaced it), but `sand.py`'s constraint bodies are still `functools.partial`s and a
+    bound method is still what a hand-built node may hold, so both limbs stay: the cost of
+    keeping them is nothing and the cost of a silent miss is a wrong number.
 
     Yields
     ------

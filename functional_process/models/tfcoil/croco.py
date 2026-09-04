@@ -100,7 +100,6 @@ never used. `i_str_wp` is still a key of both registries, because it is the swit
 decides *which field* a strain would be read from and arm `8` does use one.
 """
 
-import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -108,7 +107,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.carried import CarriesValues, carried
+from functional_process.models.stated import StatesValues
 from functional_process.models.physics.superconductors import hijc_rebco
 from functional_process.models.safe_math import safe_sqrt
 from functional_process.models.tfcoil.superconducting import (
@@ -351,9 +350,10 @@ def croco_turn_cable_space_extra_void():
     beside its strands -- the void is the interstitial space between the seven circles
     and it is accounted for in `f_a_tf_turn_cable_space_cooling` instead.
 
-    A node with no reads, the same shape as
+    A node that computes nothing, the same shape as
     `models/blankets/hcpb.py::CentrepostNeutronicsAbsent`, and for the same reason: on
-    this arm PROCESS's source *is* a literal. Owning it is what stops
+    this arm PROCESS's source *is* a literal. (Both state their outputs rather than
+    returning them -- `models/stated.py` -- so each reads exactly its own statement.) Owning it is what stops
     `.tfcoil.f_a_tf_turn_cable_space_extra_void` from re-entering the graph as a
     boundary input that the two nodes below would then read from the input file --
     `_audit/optimise_design.md` §16's defect class exactly.
@@ -748,9 +748,9 @@ class CrocoCableGeometry(ExplicitFunction):
         )
 
 
-class CrocoTurnCableSpaceExtraVoid(CarriesValues):
+class CrocoTurnCableSpaceExtraVoid(StatesValues):
     """cottax node: `run`'s literal `f_a_tf_turn_cable_space_extra_void = 0.0`
-    (`superconducting.py:3894`). Reads nothing.
+    (`superconducting.py:3894`). Computes nothing -- it states its one output.
 
     **Conditional ownership across two `Model` classes.** On the cable-in-conduit path
     the same `VarPath` is a plain input that the run file sets; here PROCESS overwrites
@@ -761,15 +761,12 @@ class CrocoTurnCableSpaceExtraVoid(CarriesValues):
     """
 
     f_a_tf_turn_cable_space_extra_void = OutputInto(tfcoil)
-
-    extra_void: jax.Array = carried(default_factory=croco_turn_cable_space_extra_void)
-    """The ported literal, held as an array on the declaration rather than produced
-    inside the body -- a value built during the trace is a constant exactly as the
-    literal was (`models/carried.py`, `_audit/optimise_design.md` §28). The unit still
-    supplies it, at assembly instead of at call."""
-
-    def __call__(self):
-        return self.extra_void
+    """The ported literal, *stated* at `^stated.tfcoil.f_a_tf_turn_cable_space_extra_void`
+    rather than produced inside the body -- a value built during the trace is a constant
+    exactly as the literal was, and one held on the declaration is an array the graph may
+    not carry (`models/stated.py`, `_audit/optimise_design.md` §28, §34). The unit
+    (`croco_turn_cable_space_extra_void`) still supplies it, through
+    `indat.STATED_VALUES`."""
 
 
 class CrocoInboardAreasAndFractions(ExplicitFunction):

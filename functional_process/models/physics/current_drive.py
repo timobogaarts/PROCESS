@@ -39,7 +39,6 @@ ports"): a plain Python int used for ordinary branching in the composite
 marks it `static_argnames`.
 """
 
-import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -47,7 +46,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.carried import CarriesValues, carried
+from functional_process.models.stated import StatesValues
 from functional_process.paths import current_drive, heat_transport, physics
 from functional_process.vocabulary import constants
 from functional_process.vocabulary import PlasmaIgnitionModel
@@ -672,13 +671,15 @@ class HcdSecondaryHeating(ExplicitFunction):
     """
 
 
-class HcdSecondaryHeatingNone(HcdSecondaryHeating, CarriesValues):
+class HcdSecondaryHeatingNone(HcdSecondaryHeating, StatesValues):
     """`i_hcd_secondary == 0` (`NO_CURRENT_DRIVE`): the secondary contributes zero.
 
     PROCESS's default (`current_drive_variables.py:206`) and
     `large_tokamak_eval.IN.DAT`'s value, since that file never sets the switch.
 
-    **A node with no reads, and that is the finding, not an accident.** Of the three
+    **A node that computes nothing, and that is the finding, not an accident.** (It
+    reads its three outputs' statements and nothing else -- `models/stated.py` derives
+    those, so the claim is unchanged from when it read literally nothing.) Of the three
     fields it owns, PROCESS explicitly assigns only one -- `p_hcd_secondary_extra_heat_mw
     = 0.0` at `current_drive.py:1682`, guarded by `if i_hcd_secondary == 0` and by
     nothing else. The other two it simply never writes on this arm:
@@ -695,21 +696,14 @@ class HcdSecondaryHeatingNone(HcdSecondaryHeating, CarriesValues):
     § "The twelve that are simply inputs" is explicit that the boundary is for variables
     PROCESS *computes nowhere*, not for ones a switch happened to skip.
 
-    All three zeros are `carried` fields rather than literals in the body, so they reach
-    the compiled program as arguments (`models/carried.py`,
-    `_audit/optimise_design.md` §28).
+    All three zeros are **stated** rather than literals in the body, so they reach the
+    compiled program as arguments (`models/stated.py`, `_audit/optimise_design.md` §28,
+    §34): each output is read at `^stated.<its place>` and supplied through the env.
     """
 
     eta_cd_hcd_secondary = OutputInto(current_drive)
     p_hcd_secondary_extra_heat_mw = OutputInto(current_drive)
     p_hcd_secondary_electric_mw = OutputInto(heat_transport)
-
-    eta_cd: jax.Array = carried(0.0)
-    p_extra_heat_mw: jax.Array = carried(0.0)
-    p_electric_mw: jax.Array = carried(0.0)
-
-    def __call__(self):
-        return self.eta_cd, self.p_extra_heat_mw, self.p_electric_mw
 
 
 class HcdSecondaryDrivenCurrent(ExplicitFunction):

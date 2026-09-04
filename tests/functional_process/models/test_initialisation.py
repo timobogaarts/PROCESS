@@ -167,20 +167,25 @@ def test_a_steady_state_plant_has_no_energy_storage_building():
 # ----------------------------------------------------- the machines against the seed
 
 SEED_FIELDS = {
-    "tf_cryoplant_efficiency": {"value": ("tfcoil", "eff_tf_cryo")},
-    "tf_insulation_youngs_modulus": {"value": ("tfcoil", "eyoung_ins")},
+    "tf_cryoplant_efficiency": {("tfcoil", "eff_tf_cryo")},
+    "tf_insulation_youngs_modulus": {("tfcoil", "eyoung_ins")},
     "tf_conductor_youngs_modulus": {
-        "axial": ("tfcoil", "eyoung_cond_axial"),
-        "transverse": ("tfcoil", "eyoung_cond_trans"),
+        ("tfcoil", "eyoung_cond_axial"),
+        ("tfcoil", "eyoung_cond_trans"),
     },
-    "pf_coil_resistivity": {"value": ("pf_coil", "rho_pf_coil")},
-    "beam_electron_density_fraction": {"value": ("physics", "f_nd_beam_electron")},
-    "energy_storage_building_volume": {"value": ("buildings", "esbldgm3")},
+    "pf_coil_resistivity": {("pf_coil", "rho_pf_coil")},
+    "beam_electron_density_fraction": {("physics", "f_nd_beam_electron")},
+    "energy_storage_building_volume": {("buildings", "esbldgm3")},
 }
-"""`{slot: {node field: (area, DataStructure field)}}` for every occupant that carries
-its answer as data. The two nodes that carry theirs as literals in the body
-(`StellaratorSolenoidAbsent`, `StellaratorPulseTimes`) are checked separately, and the
-node that reads the graph (`DoubleNullUpperBuild`) is checked by its inputs."""
+"""`{slot: {(area, DataStructure field)}}` for every occupant whose answer is a
+*resolution* -- `init.py` reading a raw value and a switch. The two whose answer is a
+literal (`StellaratorSolenoidAbsent`, `StellaratorPulseTimes`) are checked separately,
+and the node that reads the graph (`DoubleNullUpperBuild`) is checked by its inputs.
+
+**Was `{slot: {node field: place}}` and is now `{slot: {place}}`** (`_audit/
+optimise_design.md` §34). There is no node field left to name: an occupant states its
+outputs and reads them at `^stated.<the place>`, so the place *is* the address on both
+sides and the value is `indat.STATED_VALUES`'."""
 
 ST_INIT_LITERALS = {
     "stellarator_solenoid_absent": {
@@ -208,13 +213,14 @@ def test_every_occupied_slot_agrees_with_init_process(input_file):
     """
     seed = cold_state(input_file).seed
     machine = machine_from_indat(input_file)
-    for slot, fields in SEED_FIELDS.items():
+    for slot, places in SEED_FIELDS.items():
         occupant = getattr(machine.initialisation, slot)
         if occupant is None:
             continue
-        for attribute, (area, field) in fields.items():
-            assert getattr(occupant, attribute) == getattr(getattr(seed, area), field), (
-                f"{slot}.{attribute} against .{area}.{field}"
+        for area, field in places:
+            stated = indat.STATED_VALUES[f"^stated.{area}.{field}"](seed)
+            assert stated == getattr(getattr(seed, area), field), (
+                f"{slot}: ^stated.{area}.{field} against .{area}.{field}"
             )
 
 

@@ -465,7 +465,9 @@ def test_the_ignition_switch_removes_two_reads_from_the_electric_total():
     ) == pytest.approx(219.12, rel=0.0)
 
 
-def test_the_no_secondary_occupant_declares_the_three_zeros():
+def test_the_no_secondary_occupant_declares_the_three_zeros(
+    reads_only_its_own_statement,
+):
     """The `i_hcd_secondary == 0` arm produces three zeros and reads nothing.
 
     PROCESS assigns exactly one of them (`p_hcd_secondary_extra_heat_mw = 0.0`,
@@ -475,15 +477,20 @@ def test_the_no_secondary_occupant_declares_the_three_zeros():
     computed quantities off the boundary -- see the class docstring for why that is the
     right call rather than a convenience.
     """
-    inputs, outputs = _paths(HcdSecondaryHeatingNone())
+    node = reads_only_its_own_statement(HcdSecondaryHeatingNone())
+    inputs, outputs = _paths(node)
 
-    assert inputs == []
+    assert inputs == [
+        "^stated.current_drive.eta_cd_hcd_secondary",
+        "^stated.current_drive.p_hcd_secondary_extra_heat_mw",
+        "^stated.heat_transport.p_hcd_secondary_electric_mw",
+    ]
     assert set(outputs) == {
         ".current_drive.eta_cd_hcd_secondary",
         ".current_drive.p_hcd_secondary_extra_heat_mw",
         ".heat_transport.p_hcd_secondary_electric_mw",
     }
-    assert HcdSecondaryHeatingNone()() == (0.0, 0.0, 0.0)
+    assert HcdSecondaryHeatingNone()(0.0, 0.0, 0.0) == (0.0, 0.0, 0.0)
 
     # The defaults the node is asserting. If PROCESS ever changes one, this fails here
     # rather than silently shifting a run's answer.
@@ -594,7 +601,7 @@ def test_the_nodes_compose_to_the_composite(i_plasma_ignited):
         eta_cd_hcd_secondary,
         p_hcd_secondary_extra_heat_mw,
         p_hcd_secondary_electric_mw,
-    ) = HcdSecondaryHeatingNone()()
+    ) = HcdSecondaryHeatingNone()(0.0, 0.0, 0.0)
     _, f_c_plasma_hcd_secondary = HcdSecondaryDrivenCurrent()(
         eta_cd_hcd_secondary=eta_cd_hcd_secondary,
         p_hcd_secondary_injected_mw=kwargs["p_hcd_secondary_injected_mw"],
@@ -665,7 +672,7 @@ def test_the_freethy_nodes_compose_to_the_composite():
         eta_cd_hcd_secondary,
         p_hcd_secondary_extra_heat_mw,
         p_hcd_secondary_electric_mw,
-    ) = HcdSecondaryHeatingNone()()
+    ) = HcdSecondaryHeatingNone()(0.0, 0.0, 0.0)
     _, f_c_plasma_hcd_secondary = HcdSecondaryDrivenCurrent()(
         eta_cd_hcd_secondary=eta_cd_hcd_secondary,
         p_hcd_secondary_injected_mw=kwargs["p_hcd_secondary_injected_mw"],

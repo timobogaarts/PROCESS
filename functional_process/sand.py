@@ -2,9 +2,9 @@
 and solved as **SAND** (Simultaneous ANalysis and Design).
 
 `mda.py` turns `indat.GRAPH` into something that can be *run*. This module turns
-it into something that can be *solved*: it registers one `CallableNode` per active
+it into something that can be *solved*: it registers one `ImplementedFunction` per active
 constraint and one for the objective (each owning a minted `^cond.*`), inserts an
-`Optimise` `DeclaredNode` owning the active iteration variables' `VarPath`s, then
+`Optimise` `ProblemNode` owning the active iteration variables' `VarPath`s, then
 `Residualise`s every remaining `FixedPoint` and `Combine`s every problem into a single
 `^problem.sand` that `core.solver.drivers.VmconDriver` answers.
 
@@ -78,7 +78,7 @@ from cottax.plan import Insert, Plan
 from cottax.problem import Driven, FixedPoint, Optimise, conditions_of
 from cottax.rewrites import Assign, Combine, Residualise
 
-from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, prefix_path
 from cottax.tools.path import path_map
 from jax.flatten_util import ravel_pytree
@@ -93,6 +93,15 @@ from functional_process.vocabulary import (
     FiguresOfMerit,
 )
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
+
+METRIC = MintKey("metric")
+"""The namespace a figure of merit is minted into **before** its direction is applied.
+
+Only opened on a maximise run: `^metric.numerics.objf` is what the metric node computes
+and `.ObjectiveNegated` reads, and `^cond.numerics.objf` is what `Optimise` minimises.
+On a minimise run there is no negation node and the metric owns `^cond.numerics.objf`
+directly, so this mint does not appear at all -- the *graph shape* is where the direction
+lives (`_audit/optimise_design.md` §36)."""
 
 COND = MintKey("cond")
 """The namespace constraint/objective values are minted into -- the same one
@@ -109,9 +118,11 @@ REFERENCE_SWITCH_VALUES = {
 }
 """Static switch arguments of the reference run's active constraints, and their values.
 
-A constraint parameter is bound as a **static** `functools.partial` keyword if and only
-if its name is a key here; everything else is resolved to a `VarPath` and becomes an
-`In`. That is a deliberately mechanical rule with two checks on it rather than a
+A constraint parameter is **frozen at assembly** if and only if its name is a key here;
+everything else is resolved to a `VarPath` and becomes an `In`. Frozen means it is
+carried as a `(name, value)` pair in a field of the node's body, where the compiler can
+see it and two assemblies compare equal -- not bound into a `functools.partial`, which is
+what it was until `_audit/optimise_design.md` §35. That is a deliberately mechanical rule with two checks on it rather than a
 judgement made per constraint:
 
 - `test_sand.py::test_switch_values_match_the_contracts_static_argnames` asserts, for
@@ -482,22 +493,38 @@ class _Resolver:
 
 
 def _bind(fn, resolve, switch_values):
-    """`(CallableNode-ready fn, inputs)` for one ported constraint/objective function.
+    """`(switch pairs, read names, inputs)` for one ported constraint/objective function.
 
-    Static switch arguments are bound with `functools.partial` at assembly time -- they
-    select a formula, carry no derivative and take part in no edge
-    (`_audit/naming_convention.md` § "switches are not ports"). Everything else becomes
-    one positional `In`.
+    A switch argument is frozen at assembly -- it selects a formula, carries no
+    derivative and takes part in no edge (`_audit/naming_convention.md` § "switches are
+    not ports"). Everything else becomes one positional `In`.
+
+    **The frozen values come back as a tuple of `(name, value)` pairs, not as a bound
+    callable**, and that is the whole of `_audit/optimise_design.md` §35. Binding them
+    with `functools.partial` made a fresh object per assembly that compares by identity,
+    so a re-assembled constraint never matched the cached one -- §28.5's third cause of a
+    per-scan-point recompile, and the last six differing static leaves of 4902 in §34.8a.
+    `jax.tree_util.Partial` would have fixed the comparison and kept the shape; a partial
+    binding an argument is a closure by another name, and the rule this port now holds
+    itself to is that **every input is a port or a pytree-visible field**. So the values
+    go on the body as a field.
+
+    Pairs rather than a `dict` because a body must be *hashable*: `cottax`'s
+    `graph._check_bindings` asks `hash(node)` of every binding, and an `eqx.Module`
+    holding a dict is unhashable. Pairs rather than an `eqx.field(static=True)` because
+    static is treedef, i.e. exactly what hid `machine_config`'s two lists until `fn=self`
+    went looking (§34.2) -- an ordinary field puts each switch where `tree_leaves` can
+    see it, and being a non-array leaf it lands in `eqx.filter_jit`'s cache key **by
+    value**, which is where a formula selector belongs.
     """
     parameters = list(inspect.signature(fn).parameters)
-    static = {p: switch_values[p] for p in parameters if p in switch_values}
-    read = [p for p in parameters if p not in static]
-    bound = functools.partial(fn, **static) if static else fn
-    return bound, read, tuple(In(resolve(p)) for p in read)
+    static = tuple((p, switch_values[p]) for p in parameters if p in switch_values)
+    read = [p for p in parameters if p not in switch_values]
+    return static, read, tuple(In(resolve(p)) for p in read)
 
 
 def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
-    """One `CallableNode` per active constraint, plus the equality/inequality split.
+    """One `ImplementedFunction` per active constraint, plus the equality/inequality split.
 
     Parameters
     ----------
@@ -522,7 +549,7 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
     -------
     :
         `(nodes, equalities, inequalities, omitted)` -- `nodes` a `{NodePath:
-        CallableNode}` dict, `equalities`/`inequalities` tuples of the `^cond.*`
+        ImplementedFunction}` dict, `equalities`/`inequalities` tuples of the `^cond.*`
         `VarPath`s in `icc` order, `omitted` a `{id: reason}` dict.
 
     Raises
@@ -545,7 +572,7 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
                 f"constraints.py` has no `constraint_{cid}`"
             )
         try:
-            bound, read, inputs = _bind(fn, resolve, switch_values)
+            static, read, inputs = _bind(fn, resolve, switch_values)
         except ValueError as e:
             raise ValueError(
                 f"constraint {cid} cannot be assembled: {e}. An `Optimise` missing one "
@@ -555,73 +582,155 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
         condition = prefix_path(
             VarPath((GetAttrKey("constraints"), GetAttrKey(f"c{cid}"))), COND
         )
-        nodes[NodePath((GetAttrKey(f"Constraint{cid}"),))] = CallableNode(
+        nodes[NodePath((GetAttrKey(f"Constraint{cid}"),))] = ImplementedFunction(
             inputs=inputs,
             outputs=(Out(condition),),
             # index 1 of `(residual, normalised_residual, value, bound)` -- see the
             # module docstring.
-            fn=_NormalisedResidual(bound, tuple(read)),
+            fn=_NormalisedResidual(fn, tuple(read), static),
         )
         (equalities if position < n_equality else inequalities).append(condition)
     return nodes, tuple(equalities), tuple(inequalities), omitted
 
 
 class _NormalisedResidual(eqx.Module):
-    """`fn(*args) -> normalised_residual`, as an `eqx.Module` rather than a closure.
+    """`fn(*args, **switches) -> normalised_residual`, as a module and not a closure.
 
     A node definition is a jit cache key, so a body rebuilt per access must still compare
     equal to the last one -- exactly the reason `cottax.rewrites.Compare` uses a
-    `Pairwise` module instead of a lambda.
+    `Pairwise` module instead of a lambda. `fn` is a module-level `constraint_<id>`
+    looked up by name, so it is the *same object* on every assembly and compares equal
+    for free; `names` and `switches` are data and compare by value.
+
+    **`switches` used to be bound into `fn` with `functools.partial` and is a field
+    now** -- see `_bind` for why, and `_audit/optimise_design.md` §35 for what it cost.
     """
 
     fn: object
     names: tuple
+    switches: tuple = ()
+    """`((parameter, value), ...)`, the switch arguments frozen at assembly."""
 
     def __call__(self, *args):
-        return self.fn(**dict(zip(self.names, args, strict=True)))[1]
+        arguments = dict(zip(self.names, args, strict=True))
+        arguments.update(self.switches)
+        return self.fn(**arguments)[1]
 
 
-class _SignedMetric(eqx.Module):
-    """`sign * objective_metric(*args)`. Same not-a-closure reasoning as
-    `_NormalisedResidual`.
+class _Metric(eqx.Module):
+    """`objective_metric(*args, **switches)`, unsigned. Same not-a-closure reasoning as
+    `_NormalisedResidual`, and the same field for the same reason.
+
+    **Was `_SignedMetric`, carrying `np.sign(i_figure_merit)` as a field.** It does not
+    any more: a direction is not a property of the metric -- `rmajor` is not inherently
+    negative -- and a `sign` field is a flag that flips an answer somewhere no reader of
+    the graph can see. A maximise run gets a `.ObjectiveNegated` node instead
+    (`_audit/optimise_design.md` §36), so the convention is forced (always minimise) and
+    the variation is structure.
     """
 
     fn: object
-    sign: float
+    names: tuple = ()
+    switches: tuple = ()
 
     def __call__(self, *args):
-        return self.sign * self.fn(*args)
+        if not self.switches:
+            return self.fn(*args)
+        arguments = dict(zip(self.names, args, strict=True))
+        arguments.update(self.switches)
+        return self.fn(**arguments)
 
 
-def objective_node(graph, i_figure_merit, switch_values=None):
-    """One `CallableNode` computing the run's figure of merit, and the `VarPath` it owns.
+class _Negate(eqx.Module):
+    """`-x`. The whole of "maximise", as a node.
 
-    `_audit/next_steps.md` §6 and `CLAUDE.md` both say the objective is "a query, not a
-    node". That is right about *which* -- `Optimise.objective` is a single `In`, i.e. one
-    `VarPath` -- and wrong about the metric: fourteen of the sixteen
-    `objective_metric_<id>` functions are arithmetic (`0.2 * rmajor`, `coe / 100`), and
-    arithmetic needs a body. The node is still per-query: it does not exist until an
-    `Optimise` is assembled, and a different `i_figure_merit` mints a different node.
+    No fields, so every instance compares equal to every other and the node is one jit
+    cache key however many graphs hold one. XLA folds the multiply away, so it costs
+    nothing in the compiled program; what it buys is that a reader of the DSM sees
+    `-rmajor` being minimised rather than having to know that a `sign` field elsewhere
+    flipped it.
+    """
 
-    The sign is folded in here: PROCESS applies `np.sign(i_figure_merit)` outside the
-    branch (`process/core/solver/objectives.py:54,105`), negative meaning maximise, and
-    `Optimise`'s contract is minimise.
+    def __call__(self, metric):
+        return -metric
+
+
+class ObjectiveSelection(eqx.Module):
+    """Which figure of merit this run states, and in which direction -- resolved once,
+    at the input-parsing boundary, and never re-derived at assembly.
+
+    `indat.objective_selection` builds it from `i_figure_merit`, which is where a
+    configuration decision belongs. `objective_nodes` below takes *this* and no longer
+    sees the integer, so assembly does not branch on an input file's number: it is handed
+    a metric and a direction and inserts the nodes that say so.
+    """
+
+    metric: object
+    """The ported `objective_metric_<id>`, already selected."""
+
+    maximise: bool = eqx.field(static=True)
+    """`i_figure_merit < 0` in PROCESS's spelling (`objectives.py:54,105` applies
+    `np.sign` outside the branch). Static because it decides *which nodes exist*, not a
+    value any of them computes."""
+
+
+def objective_nodes(graph, selection, switch_values=None):
+    """The node(s) computing this run's figure of merit, and the `VarPath` `Optimise`
+    minimises.
+
+    **The objective is an ordinary node, and that is the point.** `CLAUDE.md`'s concept
+    mapping has always said so --
+
+        This is a *query* over the graph's outputs, **not a node** -- the cottax analogue
+        is `Graph.prune(wanted)`/an `Optimise` problem's objective condition, **selected
+        per run rather than baked into structure**.
+
+    -- and it was right about *which* (`Optimise.objective` is a single `In`, i.e. one
+    `VarPath`) and, until now, not implemented about *how*: the metric was constructed
+    here, from `i_figure_merit`, and welded to the problem, so a second metric was not
+    merely hard but **inexpressible**. It exists only as a thing `Optimise` needed.
+
+    Now `Optimise` points at an output and does not own what computes it. The default is
+    still exactly one metric -- nothing here instantiates sixteen -- but a second is only
+    another node, so a trade study that optimises on COE and reads major radius, beta and
+    Q *at the answer* rather than re-solving costs nothing structurally. That is what
+    stopped being foreclosed; it is deliberately not built.
+
+    **Direction is structure, not a field.** Always minimise, and a maximise run gets a
+    `.ObjectiveNegated` node (`_Negate`) between the metric and `^cond.numerics.objf`. So
+    `^cond.numerics.objf` still holds PROCESS's own *signed* figure of merit -- the value
+    every report and every `reference_cold_matrix.txt` `objf` cell carries, and the value
+    `objective_function(i_figure_merit, data)` returns -- while the graph, rather than a
+    `sign` field, is where "this run maximises" is written down.
+
+    Returns
+    -------
+    :
+        `({NodePath: ImplementedFunction}, objective VarPath)`.
     """
     switch_values = REFERENCE_SWITCH_VALUES if switch_values is None else switch_values
-    merit = FiguresOfMerit(abs(int(i_figure_merit)))
-    fn = ported_objectives.OBJECTIVE_METRICS[merit]
     resolve = _Resolver(graph)
-    parameters = list(inspect.signature(fn).parameters)
-    static = {p: switch_values[p] for p in parameters if p in switch_values}
-    read = [p for p in parameters if p not in static]
-    bound = functools.partial(fn, **static) if static else fn
+    static, read, inputs = _bind(selection.metric, resolve, switch_values)
     objective = prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), COND)
-    node = CallableNode(
-        inputs=tuple(In(resolve(p)) for p in read),
-        outputs=(Out(objective),),
-        fn=_SignedMetric(bound, float(np.sign(i_figure_merit))),
+    metric = (
+        prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), METRIC)
+        if selection.maximise
+        else objective
     )
-    return NodePath((GetAttrKey("Objective"),)), node, objective
+    nodes = {
+        NodePath((GetAttrKey("Objective"),)): ImplementedFunction(
+            inputs=inputs,
+            outputs=(Out(metric),),
+            fn=_Metric(selection.metric, tuple(read), static),
+        )
+    }
+    if selection.maximise:
+        nodes[NodePath((GetAttrKey("ObjectiveNegated"),))] = ImplementedFunction(
+            inputs=(In(metric),),
+            outputs=(Out(objective),),
+            fn=_Negate(),
+        )
+    return nodes, objective
 
 
 def optimise_graph(
@@ -655,10 +764,12 @@ def optimise_graph(
     nodes, equalities, inequalities, omitted = constraint_nodes(
         graph, icc, n_equality, switch_values, omit
     )
-    objective_name, objective_definition, objective = objective_node(
-        graph, i_figure_merit, switch_values
+    from functional_process.indat import objective_selection  # noqa: PLC0415
+
+    objective_built, objective = objective_nodes(
+        graph, objective_selection(i_figure_merit), switch_values
     )
-    nodes[objective_name] = objective_definition
+    nodes.update(objective_built)
     problem_name = NodePath((GetAttrKey("Opt"),))
     nodes[problem_name] = Optimise(
         objective=In(objective),

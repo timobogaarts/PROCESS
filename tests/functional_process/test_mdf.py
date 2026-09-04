@@ -430,7 +430,7 @@ def _array_fixed_point(max_iter):
     is the worst is a fact and not a coincidence.
     """
     from cottax.rewrites import Assign
-    from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+    from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
     from cottax.tools.path import path_map
     from jax.tree_util import GetAttrKey
 
@@ -444,7 +444,7 @@ def _array_fixed_point(max_iter):
         path_map([
             (
                 NodePath((GetAttrKey("A"),)),
-                CallableNode(
+                ImplementedFunction(
                     inputs=(In(u),), outputs=(Out(hat),), fn=_Affine(rate, offset)
                 ),
             ),
@@ -645,7 +645,7 @@ def test_the_optimise_arm_is_untouched(problem, square_problem):
     assert problem.reported == ()
     assert problem.report["objective"] is not None
     # Exactly one block apart, and the one is the objective node: it is an ordinary
-    # `CallableNode` in the graph, so an assembly that mints none has one block fewer.
+    # `ImplementedFunction` in the graph, so an assembly that mints none has one block fewer.
     # Nothing about the *MDA* moved -- the driven-block count is identical.
     assert problem.report["blocks"] == square_problem.report["blocks"] + 1
     assert problem.report["driven_blocks"] == square_problem.report["driven_blocks"]

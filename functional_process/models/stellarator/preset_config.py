@@ -211,11 +211,25 @@ def read_stellarator_config_file(config_file):
     :
         `(key, value)` pairs, suitable as `StellaratorMachineConfig(machine_config=...)`
         -- a tuple rather than a dict so the node stays a hashable `eqx.Module` static
-        field. Non-scalar values (the reference file's two arrays) are kept as-is; they
-        match no field and are dropped downstream exactly as PROCESS drops them.
+        field. Non-scalar values (the reference file's two arrays) are kept, as tuples;
+        they match no field and are dropped downstream exactly as PROCESS drops them.
+
+    **The tuple conversion is load-bearing and was not, until 2026-09-04.** `json.load`
+    gives a `list` for a JSON array, and a list is unhashable, so this function's own
+    "stays a hashable `eqx.Module`" claim was false for exactly the one configuration
+    that takes this path (`stellarator_helias`, `istell == 6`, two entries:
+    `D11_star_mono_input` and `nu_star_mono_input`). Nothing said so, because the old
+    `CallableNode(fn=self.__call__)` hashed its receiver *by pointer* -- CPython's
+    `method_hash` is `_Py_HashPointer(im_self) ^ hash(im_func)` -- so `hash(GRAPH)`
+    answered and the payload behind the bound method was never asked. `fn=self` asks it,
+    and `graph._check_hashable` refuses it (`_audit/optimise_design.md` §34.2). The
+    values are dropped downstream either way, so this changes no number.
     """
     with open(config_file) as stream:
-        return tuple(json.load(stream).items())
+        return tuple(
+            (key, tuple(value) if isinstance(value, list) else value)
+            for key, value in json.load(stream).items()
+        )
 
 
 STELLARATOR_MACHINE_PRESETS = {

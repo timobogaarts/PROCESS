@@ -313,7 +313,7 @@ def grouped_uncut(depth: int | None = None, input_file: str | None = None):
     path asks the question that refusal answers.
 
     **What the SCC page means here, stated plainly because the page carries no prose.**
-    A block of size 1 (or a `DeclaredNode` paired with the problem minted over it, which
+    A block of size 1 (or a `ProblemNode` paired with the problem minted over it, which
     is not a "real" coupling -- see `BlockGrouping.real`) sits at a definite position:
     the condensation's topological order says its predecessors' blocks run first, and
     that holds whether or not anything downstream has been given an algorithm yet. What

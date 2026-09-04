@@ -26,6 +26,16 @@ unknown (`mda.driven_graph`), so the split is mechanical and exact:
 - `input` -- read from the `DataStructure`. **Growth here is the defect.**
 - `guess`  -- a `Start` port for a driven unknown. Growth here is a new problem, which
   is structure, not a regression; it should move only when a `Drive` does.
+- `stated` -- a `^stated.<place>` read of a value `models/stated.StatesValues` states at
+  assembly (`indat.STATED_VALUES`). Counted apart for the same reason `guess` is, and
+  the reason is sharper here: the *place* is still owned by a node, so no consumer fell
+  back to the `DataStructure`. What is unowned is the statement itself, and it is
+  unowned deliberately -- a value the graph carried would be one nothing could supply,
+  sweep or differentiate, and one XLA would fold into the arithmetic that reads it
+  (`_audit/optimise_design.md` §34). Growth here means a node stopped deriving something
+  and started stating it, which is a modelling regression of a different kind; it is not
+  a lost producer, and adding it to `input` would have moved the stellarator 289 -> 298
+  and hidden that distinction.
 
 The reference machine today: **297 inputs**, and 6 guesses on top of that once
 `driven_graph` has assigned its problems' drivers. The conventional tokamak
@@ -69,6 +79,10 @@ from cottax.graph import Graph
 from cottax.spec import NodePath, VarPath
 from cottax.tools.minting import MintKey, is_minted
 
+STATED_MINT = MintKey("stated")
+"""`models/stated.STATED`, restated for the same reason `GUESS` is: reading the pin
+should not pull in the model layer."""
+
 GUESS = MintKey("guess")
 """The mint `cottax.rewrites.Initialise` names a `Start` port with -- `^guess.<place>`.
 
@@ -76,7 +90,7 @@ Held here rather than imported from the op so that reading the pin does not depe
 the driver layer, which is where the churn is.
 """
 
-INPUT, GUESSED = "input", "guess"
+INPUT, GUESSED, STATED = "input", "guess", "stated"
 
 PIN = os.path.join(os.path.dirname(__file__), "reference_boundary.txt")
 """The reference machine's audited boundary, one `category<space>path` per line."""
@@ -129,7 +143,12 @@ to it."""
 
 def category(var: VarPath) -> str:
     """Which kind of boundary entry `var` is -- see this module's docstring."""
-    return GUESSED if is_minted(var) and var.keys[0] == GUESS else INPUT
+    if is_minted(var):
+        if var.keys[0] == GUESS:
+            return GUESSED
+        if var.keys[0] == STATED_MINT:
+            return STATED
+    return INPUT
 
 
 def boundary(graph: Graph) -> tuple[tuple[str, VarPath], ...]:
@@ -595,7 +614,7 @@ def read_pin(path: str = PIN) -> tuple[tuple[str, str], ...]:
 
 def counts(rows: Iterable[tuple[str, object]]) -> Mapping[str, int]:
     """How many of each category -- the two numbers worth watching."""
-    out: dict[str, int] = {INPUT: 0, GUESSED: 0}
+    out: dict[str, int] = {INPUT: 0, GUESSED: 0, STATED: 0}
     for kind, _ in rows:
         out[kind] = out.get(kind, 0) + 1
     return out
@@ -735,7 +754,10 @@ def _main(argv: list[str]) -> int:
     rows = boundary(driven)
     have = counts(rows)
     print(f"declared graph: {len(graph.unowned_inputs)} unowned input(s)")
-    print(f"driven graph:   {len(rows)} = {have[INPUT]} input + {have[GUESSED]} guess")
+    print(
+        f"driven graph:   {len(rows)} = {have[INPUT]} input + {have[GUESSED]} guess"
+        f" + {have[STATED]} stated"
+    )
     if "--write" in argv:
         write_pin(driven, pin)
         print(f"wrote {pin}")
@@ -744,7 +766,7 @@ def _main(argv: list[str]) -> int:
     was = counts(pinned)
     print(
         f"pin ({os.path.basename(pin)}): {len(pinned)} = {was[INPUT]} input + "
-        f"{was[GUESSED]} guess"
+        f"{was[GUESSED]} guess + {was[STATED]} stated"
     )
     check_boundary(
         driven,

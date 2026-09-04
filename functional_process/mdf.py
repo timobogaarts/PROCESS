@@ -224,7 +224,7 @@ class Mdf:
     """
 
     graph: Graph
-    """The MDA graph plus one `CallableNode` per active constraint and one for the
+    """The MDA graph plus one `ImplementedFunction` per active constraint and one for the
     objective. **No `Optimise` node**: inserting one fuses the whole graph into a single
     SCC that `schedule_for` cannot run (this module's docstring). The problem is stated
     by `design`/`conditions` below and answered by `solve`."""
@@ -256,7 +256,7 @@ class Mdf:
 
 
 def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=()):
-    """`graph` with `sand.constraint_nodes`' and `sand.objective_node`'s nodes inserted.
+    """`graph` with `sand.constraint_nodes`' and `sand.objective_nodes`' nodes inserted.
 
     Reused wholesale from `sand.py` and deliberately not re-derived: which constraints
     are active, which of them are equalities (positional, from `n_equality`), which
@@ -285,10 +285,12 @@ def mdf_graph(graph, icc, n_equality, i_figure_merit, switch_values=None, omit=(
     )
     objective = None
     if i_figure_merit is not None:
-        objective_name, objective_definition, objective = sand.objective_node(
-            graph, i_figure_merit, switch_values
+        from functional_process.indat import objective_selection  # noqa: PLC0415
+
+        objective_built, objective = sand.objective_nodes(
+            graph, objective_selection(i_figure_merit), switch_values
         )
-        nodes[objective_name] = objective_definition
+        nodes.update(objective_built)
     inserted = (Plan(graph) + Insert(path_map(nodes.items()))).graph
     return (
         inserted,

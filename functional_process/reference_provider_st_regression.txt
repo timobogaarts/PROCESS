@@ -378,3 +378,15 @@ default defaults .vacuum.outgrat_fw
 default defaults .vacuum.pres_div_chamber_burn
 default defaults .vacuum.pres_vv_chamber_base
 unwritten defaults .vacuum.xmult_i
+minted process ^stated.buildings.esbldgm3
+minted process ^stated.costs.c2253
+minted process ^stated.current_drive.eta_cd_hcd_secondary
+minted process ^stated.current_drive.p_hcd_secondary_extra_heat_mw
+minted process ^stated.heat_transport.p_hcd_secondary_electric_mw
+minted process ^stated.pf_coil.rho_pf_coil
+minted process ^stated.physics.f_nd_beam_electron
+minted process ^stated.tfcoil.eff_tf_cryo
+minted process ^stated.tfcoil.eyoung_cond_axial
+minted process ^stated.tfcoil.eyoung_cond_trans
+minted process ^stated.tfcoil.eyoung_ins
+minted process ^stated.tfcoil.f_a_tf_turn_cable_space_extra_void

@@ -49,6 +49,7 @@ from functional_process.models.blankets.blanket_library import (
 )
 from functional_process.models.blankets.hcpb import (
     CentrepostNeutronicsAbsent,
+    calculate_centrepost_neutronics_absent,
     CentrepostNeutronicsSphericalTokamakSuperconducting,
     DivertorSurfaceAndPlateMassDoubleNull,
     DivertorSurfaceAndPlateMassSingleNull,
@@ -352,8 +353,10 @@ from functional_process.models.tfcoil.base import (
     TfGlobalGeometryCircularCase,
     TfGlobalGeometryStraightCase,
 )
+from functional_process.models.physics.plasma_profiles import lmode_profile_reset
 from functional_process.models.tfcoil.croco import (
     CrocoAveragedTurnGeometryFromCurrentPerTurn,
+    croco_turn_cable_space_extra_void,
     HazeltonZhaiRebcoCrocoSuperconductorProperties,
     HazeltonZhaiRebcoCrocoTemperatureMargin,
 )
@@ -423,6 +426,7 @@ from functional_process.models.vacuum.vacuum import (
 from functional_process.importer import Imported, read_indat
 from functional_process.total_process import StellaratorProcess, TokamakProcess
 from functional_process.vocabulary import ITERATION_VARIABLES
+from functional_process.vocabulary import FiguresOfMerit
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 from functional_process.vocabulary import BlktModelTypes
 from functional_process.vocabulary import TFCSRadialConfiguration
@@ -4370,6 +4374,44 @@ def problem_from_indat(input_file):
     return _as_imported(input_file).problem
 
 
+def objective_selection(i_figure_merit):
+    """Which figure of merit the run states, and in which direction --
+    `sand.ObjectiveSelection`, resolved here and nowhere else.
+
+    **This is where `i_figure_merit` is consulted, and assembly no longer sees it.**
+    `sand.objective_nodes` used to take the raw integer and branch on it three ways --
+    `abs()` into `FiguresOfMerit`, the enum into `OBJECTIVE_METRICS`, and `np.sign` into
+    a field of the body -- which is a configuration decision made at graph-assembly time,
+    exactly what `machine_from_indat`'s docstring says this module exists to stop. It now
+    takes a metric and a direction and inserts the nodes that say so.
+
+    `None` is not a merit and not an error: a file whose `i_process_run_mode` is `-2`
+    states a root find, PROCESS forms no objective (`_Fsolve.solve` ends
+    `self.objf = None`) and `mdf.mdf_graph` mints no objective node
+    (`importer.Problem.is_evaluation`). The caller checks for `None` before asking, the
+    same way it already did.
+
+    Parameters
+    ----------
+    i_figure_merit :
+        `numerics.i_figure_merit` as the file states it -- signed, negative meaning
+        maximise (`process/core/solver/objectives.py:54,105`).
+
+    Returns
+    -------
+    :
+        A `sand.ObjectiveSelection`.
+    """
+    from functional_process.core.solver import objectives  # noqa: PLC0415
+    from functional_process.sand import ObjectiveSelection  # noqa: PLC0415
+
+    merit = FiguresOfMerit(abs(int(i_figure_merit)))
+    return ObjectiveSelection(
+        metric=objectives.OBJECTIVE_METRICS[merit],
+        maximise=int(i_figure_merit) < 0,
+    )
+
+
 # ------------------------------------------------------------- sentinel resolution
 #
 # `_audit/init_audit.md` §2a: eight `init.py` writes are a **sentinel** resolved to a
@@ -4605,6 +4647,148 @@ def resolve_esbldgm3(esbldgm3, i_pulsed_plant):
     return 0.0
 
 
+# ------------------------------------------------- the stated values (§34)
+
+
+def _stated_get(data, area, field, default):
+    """`data.<area>.<field>`, or `default` where the state does not hold it.
+
+    `imported.get(area, field, default)`'s counterpart for a *state* rather than for a
+    parsed file, and deliberately the same shape: `STATED_VALUES` below resolves the
+    same quantities `_initialisation` does, from the same `resolve_*` functions and the
+    same PROCESS defaults, so the two agree by construction wherever the state and the
+    file agree -- which `test_stated.py` checks on all seven configurations rather than
+    assuming.
+
+    A `native.NativeState` records the miss and raises `AttributeError`; a
+    `DataStructure` holds every field, so the fallback fires only on the native path and
+    only for a field neither the file nor `native.DATACLASS_DEFAULTS` states -- which is
+    exactly the case `imported.get`'s own default covers.
+    """
+    try:
+        return getattr(getattr(data, area), field)
+    except (AttributeError, KeyError):
+        return default
+
+
+def _stated_eyoung_cond(data, which):
+    """One of `resolve_eyoung_cond`'s pair -- `0` axial, `1` transverse.
+
+    Called twice rather than once because `STATED_VALUES` is a table of one place to one
+    value; the *function* is still called once per lookup and still writes both arms of
+    `init.py`'s single branch, so the pair cannot drift apart.
+    """
+    return resolve_eyoung_cond(
+        _stated_get(data, "tfcoil", "eyoung_cond_axial", 6.6e8),
+        _stated_get(data, "tfcoil", "eyoung_cond_trans", 0.0),
+        _stated_get(
+            data, "tfcoil", "i_tf_cond_eyoung_axial", I_TF_COND_EYOUNG_AXIAL_DEFAULT
+        ),
+        _stated_get(
+            data, "tfcoil", "i_tf_cond_eyoung_trans", I_TF_COND_EYOUNG_TRANS_DEFAULT
+        ),
+        _stated_get(data, "tfcoil", "i_tf_sc_mat", 1),
+    )[which]
+
+
+STATED_VALUES = {
+    # `models/initialisation.py` -- `init.py`'s and `st_init`'s writes. The six
+    # resolutions read their raw value and their switch back off the state and re-apply
+    # `resolve_*`; every one of those is idempotent on its own answer, so the entry gives
+    # the same number whether the state is PROCESS's (already resolved) or native's
+    # (still raw). That is the property `test_stated.py` pins.
+    "^stated.tfcoil.eff_tf_cryo": lambda d: resolve_eff_tf_cryo(
+        _stated_get(d, "tfcoil", "eff_tf_cryo", EFF_TF_CRYO_UNSET),
+        _stated_get(d, "tfcoil", "i_tf_sup", 1),
+    ),
+    "^stated.tfcoil.eyoung_ins": lambda d: resolve_eyoung_ins(
+        _stated_get(d, "tfcoil", "eyoung_ins", EYOUNG_INS_UNSET),
+        _stated_get(d, "tfcoil", "i_tf_sup", 1),
+    ),
+    "^stated.tfcoil.eyoung_cond_axial": lambda d: _stated_eyoung_cond(d, 0),
+    "^stated.tfcoil.eyoung_cond_trans": lambda d: _stated_eyoung_cond(d, 1),
+    "^stated.pf_coil.rho_pf_coil": lambda d: resolve_rho_pf_coil(
+        _stated_get(d, "pf_coil", "rho_pf_coil", 2.5e-8),
+        _stated_get(d, "pf_coil", "i_pf_conductor", I_PF_CONDUCTOR_DEFAULT),
+    ),
+    "^stated.physics.f_nd_beam_electron": lambda d: resolve_f_nd_beam_electron(
+        _stated_get(d, "physics", "f_nd_beam_electron", 0.005),
+        _stated_get(
+            d, "current_drive", "i_hcd_calculations", I_HCD_CALCULATIONS_DEFAULT
+        ),
+        _stated_get(d, "current_drive", "i_hcd_primary", I_HCD_PRIMARY_DEFAULT),
+    ),
+    "^stated.buildings.esbldgm3": lambda d: resolve_esbldgm3(
+        _stated_get(d, "buildings", "esbldgm3", 1.0e3),
+        _stated_get(d, "pulse", "i_pulsed_plant", 0),
+    ),
+    # `st_init`'s literals. No state is consulted: the value is the *port's* claim about
+    # what PROCESS's own source says, and reading it back off a `DataStructure` would
+    # make a cold seed (`.build.dr_cs` at `build_variables.py`'s `0.811 m`) answer for a
+    # machine that has no solenoid -- §28.7's measurement, one level out.
+    "^stated.build.dr_cs": lambda d: 0.0,
+    "^stated.build.dr_cs_tf_gap": lambda d: 0.0,
+    "^stated.times.t_plant_pulse_coil_precharge": lambda d: 0.0,
+    "^stated.times.t_plant_pulse_plasma_current_ramp_up": lambda d: 0.0,
+    "^stated.times.t_plant_pulse_burn": lambda d: 3.15576e7,
+    "^stated.times.t_plant_pulse_plasma_current_ramp_down": lambda d: 0.0,
+    # The remaining literal carriers, each the arm on which PROCESS's own source is a
+    # literal assignment (or nothing at all, the `DataStructure` default standing).
+    "^stated.costs.c2253": lambda d: 0.0,
+    "^stated.current_drive.f_c_plasma_diamagnetic": lambda d: 0.0,
+    "^stated.current_drive.f_c_plasma_pfirsch_schluter": lambda d: 0.0,
+    "^stated.current_drive.eta_cd_hcd_secondary": lambda d: 0.0,
+    "^stated.current_drive.p_hcd_secondary_extra_heat_mw": lambda d: 0.0,
+    "^stated.heat_transport.p_hcd_secondary_electric_mw": lambda d: 0.0,
+    # `models/physics/plasma_profiles.LModeProfileReset` -- `init.py`'s neighbour on
+    # the parabolic arm, seven fields PROCESS coerces inside the pipeline. Not in
+    # §28.1's fourteen (it holds no field, so the array ban does not reach it) and the
+    # same defect: seven literals from an input-less body are seven compile-time
+    # constants. Ordered as the declaration's outputs are.
+    "^stated.physics.radius_plasma_pedestal_temp_norm": (
+        lambda d: lmode_profile_reset()[0]
+    ),
+    "^stated.physics.radius_plasma_pedestal_density_norm": (
+        lambda d: lmode_profile_reset()[1]
+    ),
+    "^stated.physics.temp_plasma_pedestal_kev": lambda d: lmode_profile_reset()[2],
+    "^stated.physics.temp_plasma_separatrix_kev": lambda d: lmode_profile_reset()[3],
+    "^stated.physics.nd_plasma_pedestal_electron": lambda d: lmode_profile_reset()[4],
+    "^stated.physics.nd_plasma_separatrix_electron": lambda d: lmode_profile_reset()[5],
+    "^stated.physics.tbeta": lambda d: lmode_profile_reset()[6],
+    # The two whose literal is a *ported unit*, called rather than restated -- the unit
+    # is still the source of the number, as it was when it filled a `carried()` field's
+    # `default_factory`.
+    "^stated.tfcoil.f_a_tf_turn_cable_space_extra_void": (
+        lambda d: croco_turn_cable_space_extra_void()
+    ),
+    "^stated.fwbs.pnuc_cp_tf": (lambda d: calculate_centrepost_neutronics_absent()[0]),
+    "^stated.fwbs.p_cp_shield_nuclear_heat_mw": (
+        lambda d: calculate_centrepost_neutronics_absent()[1]
+    ),
+    "^stated.fwbs.pnuc_cp": (lambda d: calculate_centrepost_neutronics_absent()[2]),
+    "^stated.fwbs.neut_flux_cp": (lambda d: calculate_centrepost_neutronics_absent()[3]),
+}
+"""What each `models/stated.StatesValues` output is stated to be, by place.
+
+**The table `carried.py`'s fields used to be, moved out of the graph.** `cottax` refuses
+an array in a graph binding (`graph._check_bindings`) because a value carried there is an
+input nothing can supply, sweep or differentiate; so the value lives in the env instead,
+read at `^stated.<the place it is for>`, and this is where a run gets it.
+
+Registered into `mda_harness.KNOWN_MINT_VALUES`, which is the one lookup every seeding
+path in this port already goes through (`sand_harness.ground_truth`,
+`mda_harness._ground_truth`, and so `mdf.seed`, `sand_harness.mda_env`,
+`run_sand_harness._seed` and `run_cold_matrix` above them). Each entry takes the seed
+state and returns a Python float; `seed` wraps it in `jnp.asarray`, which keeps
+`weak_type=True` exactly as `carried()`'s converter did, so promotion is unchanged and
+nothing shifts at the last bit.
+
+Keyed by the string rather than by a `VarPath` because `KNOWN_MINT_VALUES` is, and
+because the key is then greppable against the declaration that owns the place.
+"""
+
+
 SEED_OWNED_FIELDS = (
     "eff_tf_cryo",
     "eyoung_ins",
@@ -4704,59 +4888,20 @@ def _initialisation(imported, device, i_tf_sup, i_tf_sc_mat, ixc):
             "f_nd_beam_electron",
         }
     _refuse_seed_owned_unknowns(ixc, owned & set(SEED_OWNED_FIELDS))
-    axial, transverse = resolve_eyoung_cond(
-        imported.get("tfcoil", "eyoung_cond_axial", 6.6e8),
-        imported.get("tfcoil", "eyoung_cond_trans", 0.0),
-        imported.get("tfcoil", "i_tf_cond_eyoung_axial", I_TF_COND_EYOUNG_AXIAL_DEFAULT),
-        imported.get("tfcoil", "i_tf_cond_eyoung_trans", I_TF_COND_EYOUNG_TRANS_DEFAULT),
-        i_tf_sc_mat,
-    )
+    # **No occupant takes a value any more.** Which slots are filled is still decided
+    # here, from the file's switches; *what* each one writes is `STATED_VALUES`', read
+    # from the env at `^stated.<the place>`. A resolved number held on a declaration is
+    # an array `cottax` refuses in a graph, and a Python one is a constant XLA folds and
+    # `filter_jit` keys on -- `models/stated.py`, `_audit/optimise_design.md` §34.
     return Initialisation(
-        tf_cryoplant_efficiency=TfCryoplantEfficiency(
-            value=resolve_eff_tf_cryo(
-                # `tfcoil_variables.py`'s own default is the sentinel, so a file that
-                # does not name `eff_tf_cryo` and a file that names it as `-1.0` are the
-                # same machine -- which is what `init.py` means by "unset".
-                imported.get("tfcoil", "eff_tf_cryo", EFF_TF_CRYO_UNSET),
-                i_tf_sup,
-            )
-        ),
-        tf_insulation_youngs_modulus=TfInsulationYoungsModulus(
-            value=resolve_eyoung_ins(
-                imported.get("tfcoil", "eyoung_ins", EYOUNG_INS_UNSET), i_tf_sup
-            )
-        )
+        tf_cryoplant_efficiency=TfCryoplantEfficiency(),
+        tf_insulation_youngs_modulus=TfInsulationYoungsModulus() if tokamak else None,
+        tf_conductor_youngs_modulus=TfConductorYoungsModulus() if tokamak else None,
+        pf_coil_resistivity=PfCoilResistivity() if tokamak else None,
+        beam_electron_density_fraction=BeamElectronDensityFraction()
         if tokamak
         else None,
-        tf_conductor_youngs_modulus=TfConductorYoungsModulus(
-            axial=axial, transverse=transverse
-        )
-        if tokamak
-        else None,
-        pf_coil_resistivity=PfCoilResistivity(
-            value=resolve_rho_pf_coil(
-                imported.get("pf_coil", "rho_pf_coil", 2.5e-8),
-                imported.get("pf_coil", "i_pf_conductor", I_PF_CONDUCTOR_DEFAULT),
-            )
-        )
-        if tokamak
-        else None,
-        beam_electron_density_fraction=BeamElectronDensityFraction(
-            value=resolve_f_nd_beam_electron(
-                imported.get("physics", "f_nd_beam_electron", 0.005),
-                imported.get(
-                    "current_drive", "i_hcd_calculations", I_HCD_CALCULATIONS_DEFAULT
-                ),
-                imported.get("current_drive", "i_hcd_primary", I_HCD_PRIMARY_DEFAULT),
-            )
-        )
-        if tokamak
-        else None,
-        energy_storage_building_volume=EnergyStorageBuildingVolume(
-            value=resolve_esbldgm3(
-                imported.get("buildings", "esbldgm3", 1.0e3), i_pulsed_plant
-            )
-        )
+        energy_storage_building_volume=EnergyStorageBuildingVolume()
         if int(i_pulsed_plant) != 1
         else None,
         double_null_upper_build=DoubleNullUpperBuild()

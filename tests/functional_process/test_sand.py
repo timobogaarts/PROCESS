@@ -31,7 +31,7 @@ from cottax.problem import (
     driver_vars,
 )
 from cottax.rewrites import Assign
-from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
@@ -59,7 +59,7 @@ from functional_process.sand import (
     constraint_nodes,
     design_bounds,
     iteration_variable_path,
-    objective_node,
+    objective_nodes,
     optimise_graph,
     sand_graph,
     sand_schedule,
@@ -375,17 +375,40 @@ def _cannot_resolve(cid):
     return False
 
 
-def test_objective_node_folds_in_the_sign_and_owns_one_minted_variable():
-    """`Optimise` minimises, so a negative `i_figure_merit` (PROCESS's "maximise") has
-    to become a negated body -- not a flag on the driver, which would make its `drives`
-    claim a lie, and not a field on `Optimise`, which has none.
+def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
+    """`Optimise` minimises, so a negative `i_figure_merit` (PROCESS's "maximise") has to
+    become a negation -- not a flag on the driver, which would make its `drives` claim a
+    lie, and not a field on `Optimise`, which has none.
+
+    **Since §36 it is not a field on the *body* either.** `_SignedMetric` carried
+    `np.sign(i_figure_merit)`, which is a direction stored where no reader of the graph
+    can see it; the direction is a `.ObjectiveNegated` node now, so the DSM shows
+    `-metric` being minimised. What must not move is the *value*: `^cond.numerics.objf`
+    is still PROCESS's own signed figure of merit, which is the number every report and
+    every `reference_cold_matrix.txt` `objf` cell carries.
     """
-    _name, node, var = objective_node(GRAPH, REFERENCE_FIGURE_OF_MERIT)
+    from functional_process.indat import objective_selection
+
+    minimise, var = objective_nodes(GRAPH, objective_selection(REFERENCE_FIGURE_OF_MERIT))
     assert var.path_str() == "^cond.numerics.objf"
-    assert len(node.outputs) == 1
-    _name, negated, _var = objective_node(GRAPH, -REFERENCE_FIGURE_OF_MERIT)
+    assert [n.path_str() for n in minimise] == [".Objective"]
+    assert len(minimise[NodePath((GetAttrKey("Objective"),))].outputs) == 1
+
+    maximise, negated_var = objective_nodes(
+        GRAPH, objective_selection(-REFERENCE_FIGURE_OF_MERIT)
+    )
+    # Same place minimised, so no report changes; one more node, so the direction is in
+    # the graph.
+    assert negated_var == var
+    assert [n.path_str() for n in maximise] == [".Objective", ".ObjectiveNegated"]
+    metric = maximise[NodePath((GetAttrKey("Objective"),))]
+    negate = maximise[NodePath((GetAttrKey("ObjectiveNegated"),))]
+    assert [o.var.path_str() for o in metric.outputs] == ["^metric.numerics.objf"]
+    assert [i.var.path_str() for i in negate.inputs] == ["^metric.numerics.objf"]
+
     coe = 121.5
-    assert float(node.fn(coe)) == pytest.approx(-float(negated.fn(coe)))
+    body = minimise[NodePath((GetAttrKey("Objective"),))]
+    assert float(body.fn(coe)) == pytest.approx(-float(negate.fn(metric.fn(coe))))
 
 
 def test_sand_assembles_and_orders_its_conditions():
@@ -774,7 +797,7 @@ def _toy_problem(driver=None, objective=None):
         path_map([
             (
                 NodePath((GetAttrKey("F"),)),
-                CallableNode(
+                ImplementedFunction(
                     inputs=(In(x), In(y)),
                     outputs=(Out(f),),
                     fn=_Objective() if objective is None else objective,
@@ -782,7 +805,7 @@ def _toy_problem(driver=None, objective=None):
             ),
             (
                 NodePath((GetAttrKey("G"),)),
-                CallableNode(
+                ImplementedFunction(
                     inputs=(In(x), In(y)),
                     outputs=(Out(g),),
                     fn=_Constraint(),
@@ -1460,11 +1483,11 @@ def _chain_fixed_point(second):
         path_map([
             (
                 NodePath((GetAttrKey("A"),)),
-                CallableNode(inputs=(In(u),), outputs=(Out(a),), fn=_Scale(3.0)),
+                ImplementedFunction(inputs=(In(u),), outputs=(Out(a),), fn=_Scale(3.0)),
             ),
             (
                 NodePath((GetAttrKey("B"),)),
-                CallableNode(inputs=(In(a),), outputs=(Out(hat),), fn=_Scale(second)),
+                ImplementedFunction(inputs=(In(a),), outputs=(Out(hat),), fn=_Scale(second)),
             ),
             (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
         ])
@@ -1556,7 +1579,7 @@ def test_an_array_valued_fixed_point_is_still_measurable():
         path_map([
             (
                 NodePath((GetAttrKey("A"),)),
-                CallableNode(inputs=(In(u),), outputs=(Out(hat),), fn=_Scale(0.5)),
+                ImplementedFunction(inputs=(In(u),), outputs=(Out(hat),), fn=_Scale(0.5)),
             ),
             (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
         ])

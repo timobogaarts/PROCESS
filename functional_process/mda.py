@@ -42,7 +42,7 @@ from cottax.problem import (
 )
 from cottax.rewrites import Assign, Cut, FixedPointCut, Supply, Undrive
 from cottax.graph import Graph
-from cottax.spec import DeclaredNode, NodePath, VarPath
+from cottax.spec import ProblemNode, NodePath, VarPath
 from cottax.tools.path import path_map, written
 import jax.numpy as jnp
 from jax.tree_util import GetAttrKey
@@ -849,7 +849,7 @@ def default_drivers(
     """
     drivers = {}
     for problem, definition in graph.definitions.items():
-        if not isinstance(definition, DeclaredNode) or isinstance(definition, Driven):
+        if not isinstance(definition, ProblemNode) or isinstance(definition, Driven):
             continue
         if isinstance(definition, RootFind):
             drivers[problem] = SeededNewtonDriver(seed=_root_find_seed(problem))

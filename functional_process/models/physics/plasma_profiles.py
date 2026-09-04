@@ -39,6 +39,7 @@ from cottax.interfaces.pytree_namespace_module import (
 from jax.scipy.special import gamma, gammaln
 
 from functional_process.models.safe_math import safe_sqrt
+from functional_process.models.stated import StatesValues
 from functional_process.paths import divertor, physics
 
 # `process/core/constants.py`'s KILOELECTRON_VOLT -- the J-per-keV conversion.
@@ -722,7 +723,7 @@ class ParabolicProfileValues(ExplicitFunction):
         )
 
 
-class LModeProfileReset(ExplicitFunction):
+class LModeProfileReset(StatesValues):
     """cottax node: `lmode_profile_reset`, the `i_plasma_pedestal == 0` arm's
     input-validation reset, as the producer it always was.
 
@@ -733,10 +734,17 @@ class LModeProfileReset(ExplicitFunction):
     ordinary node, because PROCESS performs the reset inside the pipeline and the result
     is a plain post-condition of selecting the parabolic arm.
 
-    **No inputs, by construction.** `lmode_profile_reset` ignores its arguments, so
-    declaring the seven fields as `From`s as well as `OutputInto`s would be a seven-way
-    self-loop stating a dependence the computation does not have. The node calls the
-    function at its own defaults, which are the L-mode values themselves.
+    **No inputs of its own, by construction.** `lmode_profile_reset` ignores its
+    arguments, so declaring the seven fields as `From`s as well as `OutputInto`s would be
+    a seven-way self-loop stating a dependence the computation does not have.
+
+    **The seven constants are `stated`, not returned from the body** (`models/stated.py`,
+    `_audit/optimise_design.md` §34). This node was not in §28.1's fourteen -- it landed
+    after that census and holds no field, so the array ban does not reach it -- but it is
+    the same defect: seven literals handed back by an input-less body are seven
+    compile-time constants, and §25's Arm C measured XLA deleting the readers of one.
+    `indat.STATED_VALUES` calls `lmode_profile_reset` for them, so the unit is still the
+    source of the numbers.
 
     **What registering it fixes -- measured, on the reference stellarator run.** Before
     this node the four of these seven fields the graph touches were unowned boundary
@@ -758,9 +766,6 @@ class LModeProfileReset(ExplicitFunction):
     nd_plasma_pedestal_electron = OutputInto(physics)
     nd_plasma_separatrix_electron = OutputInto(physics)
     tbeta = OutputInto(physics)
-
-    def __call__(self):
-        return lmode_profile_reset()
 
 
 class PedestalProfileValues(ExplicitFunction):

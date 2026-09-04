@@ -59,11 +59,15 @@ def _session(monkeypatch, root_find=False):
 
 
 def test_a_second_solve_reuses_the_first_solve_s_assembly(monkeypatch):
-    """The whole point of the module. Re-assembling builds a structurally equal but
-    freshly allocated block, and every memo below it -- `host_cache._BOUND`,
-    `sand_harness._SCHEDULE_WHOLE`, jax's executable cache -- is keyed on what was
-    built, so a rebuild is a re-trace and a re-compile
-    (`_audit/optimise_design.md` §32.2).
+    """The whole point of the module: a second solve does not re-assemble.
+
+    It used to be that every memo below the assembly -- `host_cache._BOUND`,
+    `sand_harness._SCHEDULE_WHOLE`, jax's executable cache -- was keyed on the *object*
+    that was built, so a rebuild was a re-trace and a re-compile
+    (`_audit/optimise_design.md` §32.2). `_BOUND` is gone and jax's cache now hits on a
+    re-assembled block (§37), so the *penalty* is smaller than that section measured.
+    What this test asserts is unchanged and is the thing the module promises: the second
+    solve reuses the first solve's assembly rather than building another one.
     """
     live, built, solved = _session(monkeypatch)
     live.mdf()
