@@ -340,31 +340,70 @@ def _fast_alpha_fraction_iter_physics_rules(density_ratio_sq, temp_sum_20):
     return jnp.minimum(0.3, 0.29 * density_ratio_sq * (temp_sum_20 - 0.37))
 
 
+WARD_KINK_SMOOTHING = 1.0e-3
+"""Width of the regularisation applied to `_fast_alpha_fraction_ward`'s threshold.
+
+**Its two costs are exactly conjugate.** At the threshold the value shift against
+PROCESS's expression is `0.26 r^2 sqrt(eps/2)` and the derivative cap is
+`0.065 r^2 / sqrt(eps/2)`, so their product is `0.0169 r^4` **whatever `eps` is** -- an
+order of magnitude off the derivative costs an order of magnitude of value error, and no
+retuning improves both (`_audit/optimise_design.md` §31.37.4).
+
+**This cannot simply be reduced.** `eps` in roughly `1e-5 .. 3e-4` lands in a measured
+failure basin: the regularisation leaves a sub-threshold tail whose gradient is linear in
+`eps` (`~0.065 r^2 eps / |a|^{3/2}`, where PROCESS's is exactly zero), and in the band it
+is strong enough to attract the optimiser below the threshold but too weak to guide it
+there -- `stellarator_helias` wanders to `temp_sum_20 - 0.65 ~ -0.3` and 4 of 8 sampled
+`eps` in the band stop (§31.40). `5e-4 .. 5e-3` all converge in 19-24 iterations.
+
+**`5e-4` was measured and deliberately not taken** (§31.41): it clears `test_mdf.py`'s
+`WORST_DX` where this does not (`9.60e-09` and `9.29e-09` against `1e-8`) and is equally
+deterministic (23 iterations, 13 digits), but by a 4 % margin on a tripwire and sitting at
+the basin's edge. A recorded deviation was preferred to an unrecorded fragility.
+"""
+
+
 def _fast_alpha_fraction_ward(density_ratio_sq, temp_sum_20):
     """`i_beta_fast_alpha == WARD` (1): Ward's fast-alpha pressure fraction,
     `physics.py:2049` -- PROCESS's own default and the reference run's.
 
-    `jnp.sqrt(jnp.maximum(0.0, x))` is value-correct and returns `nan` from `jacfwd` on
-    the clamped branch, because `sqrt` has an infinite derivative at zero and `inf * 0`
-    is `nan`. The standard **double `jnp.where`** avoids it: the inner one keeps a
-    finite argument out of `sqrt`'s reverse/forward rule, the outer one selects the
-    value. Same defect and same fix as `costs.py:2874-2888`'s clamped net-electric-power
-    square root (`_audit/next_steps.md` §9, "a JAX trap worth carrying forward").
+    **The `sqrt(temp_sum_20 - 0.65)` threshold is smoothed, and that is a deliberate
+    departure from PROCESS** -- declared as such by `TestFastAlphaBetaWard`'s
+    `declared_deviation`, not absorbed into a tolerance. PROCESS's expression has an
+    unbounded derivative at the threshold and `stellarator_helias` runs *on* it (within
+    `5.5e-08`, crossing on 46 % of SQP steps, each crossing moving the `c24` Jacobian row
+    by `339x`), which made that configuration's converged/stopped outcome turn on the
+    last bit of a Jacobian cell.
 
-    **Live on the reference run, not hypothetical**: the clamp is *active* there
-    (`temp_sum_20 = 0.6449` against the 0.65 threshold), and this row was the only
-    non-finite row of the SAND Jacobian once `.physics.beta_total_vol_avg` gained a
-    producer and constraint 24 started reading it. It was invisible before because
-    nothing downstream of `beta_fast_alpha` fed a condition, so `jacfwd` never traced it.
+    **How it works, which is not what it looks like.** `0.5 * (a + sqrt(a**2 + eps**2))`
+    in place of `max(a, 0)` does not stabilise the same answer -- it **displaces the
+    optimum off the singularity**. The converged `a` tracks `eps` at 2-3x it
+    (`2.40e-03` here, against the shipped `5.5e-08`), and the arm stops crossing the kink
+    because its optimum is no longer on it. Every `+-1` ulp Jacobian draw then takes the
+    same 24 iterations and agrees on `objf` to fifteen digits, against 87-333 iterations
+    and one catastrophic stop before. Defensible -- this is a fitted correlation's
+    threshold and the optimiser was parked `5.5e-08` from it -- but it is **not** "the
+    same answer computed more stably", and should not be read as such.
+
+    **The cost, in one place, accepted deliberately for that determinism**: `objf` moves
+    `6.0e-04` relative on `stellarator_helias`; its agreement with PROCESS degrades
+    (`d objf 2.34e-03 -> 2.94e-03`, `ixc 109` `1.08e-01 -> 1.09e-01`); SAND's largest
+    equality residual goes `2.88e-06 -> 7.13e-06`; three other configurations move 3-4
+    orders further from PROCESS on rows that had agreed to twelve digits; and it takes one
+    tier-1 declared deviation, four `cold_start.ACCEPTED` entries, and a per-configuration
+    `WORST_DX` deviation on two tokamak root-finds. Below the threshold PROCESS returns
+    **exactly zero** and this returns at most `4.6e-05` on a quantity ranging to
+    `1.5e-02` -- the qualitative infidelity, unavoidable for this family.
+    `_audit/optimise_design.md` §31.36-§31.41 has the measurements and the argument.
+
+    The `safe_sqrt`/double-`jnp.where` this used to need is gone with the clamp: the
+    argument to `sqrt` is now strictly positive, so there is no `inf * 0` to guard.
     """
     above = temp_sum_20 - 0.65
-    positive = above > 0.0
-    return jnp.minimum(
-        0.30,
-        0.26
-        * density_ratio_sq
-        * jnp.where(positive, safe_sqrt(jnp.where(positive, above, 1.0)), 0.0),
+    soft = 0.5 * (
+        above + jnp.sqrt(above * above + WARD_KINK_SMOOTHING * WARD_KINK_SMOOTHING)
     )
+    return jnp.minimum(0.30, 0.26 * density_ratio_sq * jnp.sqrt(soft))
 
 
 def fast_alpha_beta_iter_physics_rules(

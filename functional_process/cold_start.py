@@ -847,6 +847,35 @@ def _because(reason: str, mapping) -> dict:
     }
 
 
+WARD_KINK_SMOOTHED = (
+    "**Not a defect on either side: the port deliberately does not compute PROCESS's "
+    "expression here.** `_fast_alpha_fraction_ward` "
+    "(`models/physics/pure_formulas.py`) regularises PROCESS's "
+    "`sqrt(temp_sum_20 - 0.65)` threshold at `WARD_KINK_SMOOTHING = 1e-3`, because its "
+    "unbounded derivative made `stellarator_helias`'s converged/stopped outcome turn on "
+    "the last bit of a Jacobian cell -- 46 % of SQP steps crossed it and each crossing "
+    "moved the `c24` Jacobian row by 339x (`_audit/optimise_design.md` §31.36). The "
+    "same departure is declared at the unit level by `TestFastAlphaBetaWard`'s "
+    "`declared_deviation`, which is the authority on its size.\n\n"
+    "**Why it shows at the cold point, and only on these two files.** Both stellarators "
+    "sit *below* the threshold cold (`temp_sum_20 = 0.6449` against `0.65`), where "
+    "PROCESS returns exactly `0.0` and the regularisation returns a small positive tail "
+    "-- `0.13 r^2 eps / sqrt(|a|)`, linear in `eps`, `~4e-05` at this `eps`. A "
+    "disagreement against an exact zero has no relative size, which is why it appears "
+    "here as a pinned row rather than inside a tolerance. The tokamaks sit above the "
+    "threshold and are perturbed as `eps**2` instead, four orders smaller, so they do "
+    "not reach this table (§31.41).\n\n"
+    "Accepted deliberately, with `eps = 5e-4` measured as the alternative and rejected: "
+    "see `WARD_KINK_SMOOTHING`'s own docstring for that trade."
+)
+"""Why `.physics.beta_fast_alpha` disagrees cold on the two stellarators."""
+
+WARD_KINK_ROWS = (".physics.beta_fast_alpha",)
+"""`WARD_KINK_SMOOTHED`'s one row. It reaches no cost aggregate at the cold point --
+`beta_fast_alpha` feeds `beta_total_vol_avg` and constraint 24, neither of which is a
+pinned cold-point path."""
+
+
 ACCEPTED = {
     **_because(
         TF_STRESS_LANDED,
@@ -884,6 +913,10 @@ ACCEPTED = {
         },
     ),
     **_because(DRIVER_TOLERANCE, {TOKAMAK_EVAL: DRIVER_TOLERANCE_ROWS_EVAL}),
+    **_because(
+        WARD_KINK_SMOOTHED,
+        {STELLARATOR: WARD_KINK_ROWS, HELIAS_5B: WARD_KINK_ROWS},
+    ),
 }
 """`{(configuration, written path): why it is pinned}`. **A pin with no entry is
 refused**, by `check_reasons` and by the test that reads the pin.

@@ -4,7 +4,7 @@
 # `agree` may only go up; `off`, `nocompare` and `errors` may only shrink;
 # every `off` path must carry a reason in
 # functional_process/cold_start.py's ACCEPTED.
-stellarator_helias.IN.DAT agree 461
+stellarator_helias.IN.DAT agree 460
 stellarator_helias.IN.DAT errors 27
 stellarator_helias.IN.DAT off .build.z_tf_inside_half
 stellarator_helias.IN.DAT off .buildings.a_plant_floor_effective
@@ -48,6 +48,7 @@ stellarator_helias.IN.DAT off .heat_transport.p_plant_electric_net_mw
 stellarator_helias.IN.DAT off .heat_transport.p_plant_electric_recirc_mw
 stellarator_helias.IN.DAT off .heat_transport.p_plant_secondary_heat_mw
 stellarator_helias.IN.DAT off .heat_transport.tlvpmw
+stellarator_helias.IN.DAT off .physics.beta_fast_alpha
 stellarator_helias.IN.DAT off .power.e_plant_net_electric_pulse_kwh
 stellarator_helias.IN.DAT off .power.e_plant_net_electric_pulse_mj
 stellarator_helias.IN.DAT off .power.p_plant_core_systems_elec_mw
@@ -57,7 +58,7 @@ stellarator_helias.IN.DAT off .vacuum.dia_vv_vacuum_ducts
 stellarator_helias.IN.DAT off .vacuum.dlscal
 stellarator_helias.IN.DAT nocompare .physics.beta_mcdonald
 stellarator_helias.IN.DAT nocompare .physics.nu_star
-helias_5b.IN.DAT agree 457
+helias_5b.IN.DAT agree 456
 helias_5b.IN.DAT errors 27
 helias_5b.IN.DAT off .build.z_tf_inside_half
 helias_5b.IN.DAT off .buildings.a_plant_floor_effective
@@ -101,6 +102,7 @@ helias_5b.IN.DAT off .heat_transport.p_plant_electric_net_mw
 helias_5b.IN.DAT off .heat_transport.p_plant_electric_recirc_mw
 helias_5b.IN.DAT off .heat_transport.p_plant_secondary_heat_mw
 helias_5b.IN.DAT off .heat_transport.tlvpmw
+helias_5b.IN.DAT off .physics.beta_fast_alpha
 helias_5b.IN.DAT off .power.e_plant_net_electric_pulse_kwh
 helias_5b.IN.DAT off .power.e_plant_net_electric_pulse_mj
 helias_5b.IN.DAT off .power.p_plant_core_systems_elec_mw

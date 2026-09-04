@@ -899,7 +899,36 @@ WORST_DX = 1e-8
 up to one bound. A restructuring that moves the answer past this is a bug until shown
 otherwise -- and `_audit/optimise_design.md` §19--§20's finding, that a last-bit
 perturbation can move an iterative solve's trajectory, is why the *tighter* check in this
-test is the one against the outer-driver answer rather than against PROCESS."""
+test is the one against the outer-driver answer rather than against PROCESS.
+
+**Left standing for every configuration.** A deliberate change that moves one of them is
+recorded in `ACCEPTED_DX` below, per configuration, rather than by raising this number --
+which would weaken the tripwire for files the change never touched."""
+
+ACCEPTED_DX = {
+    "large_tokamak_eval": (
+        3.9e-8,
+        "`WARD_KINK_SMOOTHING = 1e-3` (`models/physics/pure_formulas.py`) regularises "
+        "PROCESS's fast-alpha threshold, which perturbs every configuration's answer a "
+        "little even where the threshold is never crossed -- as `eps**2 / (8 a**1.5)`, "
+        "so it is quadratic in the smoothing width and falls off fast away from the "
+        "kink. Measured 3.840e-08 here against 3.292e-12 before "
+        "(`_audit/optimise_design.md` §31.41). Accepted deliberately: `eps = 5e-4` "
+        "would clear WORST_DX at 9.60e-09 and was rejected because a 4 % margin on a "
+        "tripwire ages worse than a recorded deviation.",
+    ),
+    "spherical_tokamak_eval": (
+        2.7e-8,
+        "the same cause and the same decision; measured 2.626e-08 against 3.635e-09 "
+        "before (`_audit/optimise_design.md` §31.41).",
+    ),
+}
+"""Per-configuration bounds that supersede `WORST_DX`, each with the reason it exists.
+
+Same shape and same discipline as `cold_start.ACCEPTED` and
+`Tier1Contract.declared_deviation`: an entry names its cause and carries its measured
+number, and **an entry that is no longer needed fails** (see the assertion below), so the
+table cannot rot into a set of permanently loosened thresholds."""
 
 
 @pytest.mark.tier4
@@ -960,9 +989,17 @@ def test_the_in_graph_root_find_gives_the_same_answer(name):
         abs(v - reference.converged[i]) / abs(reference.converged[i])
         for i, v in zip(reference.ixc, got, strict=True)
     ]
-    assert max(against_process) < WORST_DX, dict(
+    bound, why = ACCEPTED_DX.get(name, (WORST_DX, None))
+    assert max(against_process) < bound, dict(
         zip(reference.ixc, against_process, strict=True)
     )
+    if why is not None:
+        # An accepted deviation that is no longer exercised is a loosened threshold
+        # wearing a label. Delete the entry rather than leaving it standing.
+        assert max(against_process) >= WORST_DX, (
+            f"{name} has an ACCEPTED_DX entry ({why}) but now agrees with PROCESS to "
+            f"{max(against_process):g}, inside WORST_DX={WORST_DX:g}. Delete the entry"
+        )
 
     outer, _out, _seconds = mdf.solve(
         assembled, env, optimiser=mdf.root_find_driver(assembled)

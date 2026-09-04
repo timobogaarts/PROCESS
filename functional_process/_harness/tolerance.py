@@ -55,6 +55,49 @@ class Tolerance:
         return f"rtol={self.rtol:g} atol={self.atol:g} ({self.reason})"
 
 
+@dataclass(frozen=True)
+class DeclaredDeviation:
+    """A unit that **deliberately does not compute PROCESS's expression**.
+
+    This is not a tolerance. `Tolerance` answers *"how much round-off is allowed"*;
+    this answers *"the port computes something else on purpose, here is what and by how
+    much"*. The two must not be confused, which is why loosening `value_tolerance` is
+    the wrong way to accommodate a regularised port: it would make the instrument unable
+    to see a genuine discrepancy in the same unit, and it would look identical in a diff
+    to a test that was quietly widened.
+
+    A contract carrying one is checked *more* strictly than a plain tier-1 unit, not
+    less. `Tier1Contract.test_value_agreement` still runs, against `bound`; and
+    `test_declared_deviation_is_real` additionally requires that **at least one sample
+    actually exceeds the ordinary tier-1 tolerance**. A declared deviation that is not
+    needed is therefore a *failure* -- so this cannot be used as a silent tolerance
+    loosener, and a reader can tell the two apart at a glance because a loosened
+    tolerance has no `reason`, no `record` and no obligation to be exercised.
+
+    Attributes
+    ----------
+    reason :
+        Why the port does not compute PROCESS's expression, in one sentence.
+    bound :
+        The disagreement this deviation permits. Should be the *measured* worst case
+        with a little headroom, not a round number chosen to pass.
+    record :
+        The audit record (and section) that measures it. Read by
+        `test_declared_deviation_is_documented`, which checks the file exists.
+    """
+
+    reason: str
+    bound: Tolerance
+    record: str
+
+    def describe(self):
+        """One-line rendering for use in an assertion message."""
+        return (
+            f"DECLARED DEVIATION ({self.reason}) bounded at {self.bound.describe()}, "
+            f"measured in {self.record}"
+        )
+
+
 MACHINE_PRECISION = Tolerance(
     rtol=1e-12,
     atol=0.0,

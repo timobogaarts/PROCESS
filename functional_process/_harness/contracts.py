@@ -37,7 +37,11 @@ from functional_process._harness.finite_difference import (
     fd_gradient_with_error,
 )
 from functional_process._harness.sampling import fuzz_samples
-from functional_process._harness.tolerance import MACHINE_PRECISION, Tolerance
+from functional_process._harness.tolerance import (
+    MACHINE_PRECISION,
+    DeclaredDeviation,
+    Tolerance,
+)
 
 
 def _as_array(value):
@@ -176,6 +180,16 @@ class Tier1Contract(PortContract):
     pytestmark = pytest.mark.tier1
 
     value_tolerance = MACHINE_PRECISION
+    declared_deviation: DeclaredDeviation | None = None
+    """Set when the port **deliberately** does not compute PROCESS's expression.
+
+    `None` for every ordinary unit, and `value_tolerance` then means what it says. When
+    set, `test_value_agreement` is checked against `declared_deviation.bound` instead --
+    and `test_declared_deviation_is_real` requires the deviation to be *exercised*, so
+    this is strictly more demanding than leaving it unset, not less. See
+    `_harness/tolerance.DeclaredDeviation` for why this is not a tolerance knob.
+    """
+
     epsfcn = PROCESS_EPSFCN
     gradient_safety = 25.0
     """Multiplier on the finite difference's own error bar.
@@ -258,15 +272,64 @@ class Tier1Contract(PortContract):
             f"output size mismatch: port produced {actual.size} values, PROCESS "
             f"{expected.size} (both counted flattened — see `_as_array`)"
         )
-        bad = self.value_tolerance.mismatches(actual, expected)
+        against = (
+            self.value_tolerance
+            if self.declared_deviation is None
+            else self.declared_deviation.bound
+        )
+        bad = against.mismatches(actual, expected)
         detail = [
             f"  output[{i}]: port={a!r} process={e!r} |diff|={err:g} allowed={allowed:g}"
             for i, a, e, err, allowed in bad
         ]
-        assert not bad, "\n".join([
-            f"value mismatch at {self.value_tolerance.describe()}:",
-            *detail,
-        ])
+        header = (
+            f"value mismatch at {against.describe()}:"
+            if self.declared_deviation is None
+            else f"value mismatch OUTSIDE the declared deviation -- "
+            f"{self.declared_deviation.describe()}:"
+        )
+        assert not bad, "\n".join([header, *detail])
+
+    def test_declared_deviation_is_real(self, sample):
+        """A declared deviation must be **exercised**, or it is a loosened tolerance.
+
+        Skipped for every unit that declares none. For a unit that does, this asserts
+        that *some* sample genuinely disagrees with PROCESS by more than the ordinary
+        tier-1 tolerance -- so a `DeclaredDeviation` cannot be left behind after the
+        deviation is removed, and cannot be added to quieten a unit that would have
+        passed anyway.
+        """
+        if self.declared_deviation is None:
+            pytest.skip("no declared deviation")
+        exercised = getattr(type(self), "_deviation_exercised", False)
+        expected, domain_error = self._reference_or_domain_error(dict(sample.kwargs))
+        if domain_error is None:
+            actual = _as_array(self.ported(**sample.kwargs))
+            if actual.shape == expected.shape and self.value_tolerance.mismatches(
+                actual, expected
+            ):
+                type(self)._deviation_exercised = True
+                exercised = True
+        assert exercised or sample is not self.samples[-1], (
+            f"{type(self).__name__} declares a deviation "
+            f"({self.declared_deviation.reason}) but no sample disagrees with PROCESS "
+            f"by more than {self.value_tolerance.describe()}. A declared deviation that "
+            f"is never exercised is a loosened tolerance wearing a label -- delete it, "
+            f"or add a sample that reaches the regime it exists for"
+        )
+
+    def test_declared_deviation_is_documented(self, audit_root):
+        """A declared deviation names its reason and cites a record that exists."""
+        if self.declared_deviation is None:
+            pytest.skip("no declared deviation")
+        deviation = self.declared_deviation
+        assert deviation.reason.strip(), "a declared deviation must say why"
+        cited = deviation.record.split("#")[0].strip()
+        record = audit_root / cited
+        assert record.is_file() or (audit_root.parent / cited).is_file(), (
+            f"{type(self).__name__}'s declared deviation cites {deviation.record}, "
+            f"which is not a file under {audit_root} or {audit_root.parent}"
+        )
 
     def test_outputs_finite(self, sample):
         """The port's value is free of NaN/Inf on an in-domain point.
