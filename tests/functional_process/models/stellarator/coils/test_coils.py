@@ -556,7 +556,7 @@ class TestIntersect(Tier2Contract):
 
 def test_intersect_declares_a_body_and_a_root_find_problem():
     """`to_graph(Intersect())` must assemble cleanly into exactly two nodes: the
-    `residual` body (a `CallableNode`) and the `RootFind` problem it feeds -- the pair
+    `residual` body (a `ImplementedFunction`) and the `RootFind` problem it feeds -- the pair
     `ImplicitFunction.node_definitions_and_names` documents.
     """
     node = Intersect()

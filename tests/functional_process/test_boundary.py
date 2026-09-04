@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from cottax.graph import Graph
-from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, unminted
 from cottax.tools.path import path_map
 
@@ -77,7 +77,7 @@ def N(*keys) -> NodePath:
 
 
 def call(reads, owns):
-    return CallableNode(
+    return ImplementedFunction(
         inputs=tuple(In(r) for r in reads),
         outputs=tuple(Out(o) for o in owns),
         fn=lambda *a: None,

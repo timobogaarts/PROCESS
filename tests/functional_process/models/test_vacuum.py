@@ -30,7 +30,7 @@ import optimistix as optx
 import pytest
 from cottax import (
     AbstractDriver,
-    CallableNode,
+    ImplementedFunction,
     Feasibility,
     Graph,
     RootFind,
@@ -317,7 +317,7 @@ def test_duct_diameter_root_find_builds_cleanly():
 
     assert set(g.nodes) == {d.name, d.problem_name}
     body, problem = g[d.name], g[d.problem_name]
-    assert isinstance(body, CallableNode)
+    assert isinstance(body, ImplementedFunction)
     assert isinstance(problem, RootFind)
     assert problem.owns == (vpath(".vacuum.d_duct"),)
     assert problem.reads == body.owns
@@ -380,7 +380,7 @@ def test_duct_diameter_root_find_drive_zeroes_the_residual():
 
 
 def _duct_feasibility_graph():
-    """`DuctFeasibility` (a bare `problem.py` `DeclaredNode`, not a `NodalDeclaration`,
+    """`DuctFeasibility` (a bare `problem.py` `ProblemNode`, not a `NodalDeclaration`,
     so it carries no class-derived name the way `DuctFeasibilityConditions`/
     `DuctDiameterRootFind` do) assembled together with `DuctFeasibilityConditions` and
     `DuctDiameterRootFind` via `to_graph`'s `{name: NodeDefinition}` mapping form --

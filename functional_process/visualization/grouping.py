@@ -105,7 +105,7 @@ from jax.tree_util import DictKey, GetAttrKey
 
 from cottax.blocking import Blocking
 from cottax.graph import Graph
-from cottax.spec import DeclaredNode, NodePath, VarPath
+from cottax.spec import ProblemNode, NodePath, VarPath
 from cottax.tools.minting import is_minted, unminted
 from cottax.visualization.xdsm import Formatter, NoFormat, _xesc
 from cottax.visualization.xdsm_html import HtmlDoc
@@ -865,7 +865,7 @@ def _matrix_struct(
             "colour": hue[name].colour,
             "base": hue[name].base,
             "overlay": hue[name].overlay,
-            "problem": isinstance(graph[name], DeclaredNode),
+            "problem": isinstance(graph[name], ProblemNode),
             "minted": is_minted(name),
             "reads": reads,
             "nr": n_reads,

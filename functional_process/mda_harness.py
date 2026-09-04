@@ -542,7 +542,7 @@ def _declaration_modules(obj, seen):
     """Every `functional_process`-defined `equinox.Module` reachable from one graph
     node definition -- the declaration instance itself plus anything it holds.
 
-    `Graph.definitions` holds `cottax.spec.CallableNode`s, not the declaration
+    `Graph.definitions` holds `cottax.spec.ImplementedFunction`s, not the declaration
     classes `total_process.py` instantiates; the declaration is reachable as
     `node.fn.__self__` (a bound method of the `NodalDeclaration` instance). Walking
     generically rather than special-casing that one shape also covers `Problem` nodes

@@ -541,7 +541,7 @@ def solve_duct_geometry(l1, l2, l3, xmult_i, ceff_i_init, a1max, s_i, max_outer=
 # uses). `DuctFeasibilityConditions` mints `.vacuum.a1max`/`.vacuum.s_i` (real locals of
 # `_solve_vacuum_pumping_old`'s per-species loop, same minting precedent as
 # `DuctDiameterRootFind`'s own `l1`/`l2`/`l3`/`xmult_i`/`ceff_i`) and the two inequality
-# residuals as ordinary `Output`s, since a bodyless `DeclaredNode` like `Feasibility`
+# residuals as ordinary `Output`s, since a bodyless `ProblemNode` like `Feasibility`
 # reads pre-computed residual values, it does not compute them itself.
 #
 # **Structural addition only, same discipline as `Intersect`/`DuctDiameterRootFind`
@@ -570,7 +570,7 @@ def pumping_speed_floor_residual(ceff_i, s_i):
 class DuctFeasibilityConditions(ExplicitFunction):
     """cottax node: the two inequality residuals `DuctFeasibility` (below) reads.
 
-    A `DeclaredNode` like `Feasibility` is bodyless -- it owns/reads pre-existing
+    A `ProblemNode` like `Feasibility` is bodyless -- it owns/reads pre-existing
     `VarPath`s, it does not compute them -- so the residuals themselves need an ordinary
     node to produce them, the same role `Intersect.residual`/
     `DuctDiameterRootFind.residual` play for their own `RootFind` problems. `d_duct` is
@@ -606,7 +606,7 @@ DuctFeasibility = Feasibility(
 )
 """The declared problem itself: "find a feasible `ceff_i`", no objective.
 
-A bare `problem.py` `DeclaredNode` instance like this one is not a `NodalDeclaration`
+A bare `problem.py` `ProblemNode` instance like this one is not a `NodalDeclaration`
 (`pytree_namespace_module.py`'s own class-based protocol, which `ExplicitFunction`/
 `ImplicitFunction` implement) and, unlike those, carries no class-derived name of its
 own -- `to_graph(DuctFeasibility)` alone raises `TypeError`. `to_graph` itself now

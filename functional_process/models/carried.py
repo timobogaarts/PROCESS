@@ -29,7 +29,7 @@ The obvious repair -- `return jnp.asarray(self.value)` -- **buys nothing at all*
 1. An array built *inside* the traced body is a jaxpr constant exactly as the Python
    float was. On a minimal probe the optimised HLO is identical (2 parameters, 4
    constants) for `x * 0.13` and for `x * jnp.asarray(0.13)`.
-2. `cottax`'s `ExplicitFunction.node_definition` builds `CallableNode(fn=self.__call__)`,
+2. `cottax`'s `ExplicitFunction.node_definition` builds `ImplementedFunction(fn=self.__call__)`,
    and a **plain bound method is not a pytree**. `jax.tree_util.tree_leaves` of a real
    graph node definition returns *no* array leaves even when the declaration holds one,
    so `eqx.filter_jit` never sees the field and cannot trace it.
@@ -49,7 +49,7 @@ depend on that hash, and an `eqx.Module` holding a `jax.Array` is unhashable. A
 
 **This belongs upstream, not here.** The general statement is "a node's own array fields
 are data the graph should trace, not configuration it should specialise on", which is a
-property of `CallableNode` and not of these fourteen declarations. Until `cottax` says
+property of `ImplementedFunction` and not of these fourteen declarations. Until `cottax` says
 it, `CarriesValues` says it for the declarations that need it; the day
 `ExplicitFunction.node_definition` builds a pytree `fn` itself, this class becomes an
 empty subclass and can go.
@@ -63,7 +63,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction
-from cottax.spec import CallableNode
+from cottax.spec import ImplementedFunction
 from cottax.tools.cache import cached_query
 
 __all__ = ["CarriesValues", "carried", "carried_all"]
@@ -119,7 +119,7 @@ class CarriesValues(ExplicitFunction):
     are `ExplicitFunction`'s. See the module docstring for why `fn` has to be a pytree
     and why it is a `Partial` rather than the declaration itself.
 
-    **What it costs.** `CallableNode.__check_init__` binds `len(inputs)` positional
+    **What it costs.** `ImplementedFunction.__check_init__` binds `len(inputs)` positional
     arguments against `inspect.signature(self.fn)`; a `Partial` reports `(*args)`, so the
     arity check that catches "three inputs declared, two parameters written" is inert for
     these nodes. Acceptable here because every one of them declares *no* inputs -- there
@@ -128,9 +128,9 @@ class CarriesValues(ExplicitFunction):
     """
 
     @cached_query
-    def node_definition(self) -> CallableNode:
+    def node_definition(self) -> ImplementedFunction:
         """`ExplicitFunction.node_definition`, with the declaration held in a pytree."""
-        return CallableNode(
+        return ImplementedFunction(
             inputs=self.inputs,
             outputs=self.outputs,
             fn=jtu.Partial(_apply, self),

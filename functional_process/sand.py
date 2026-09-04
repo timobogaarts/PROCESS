@@ -2,9 +2,9 @@
 and solved as **SAND** (Simultaneous ANalysis and Design).
 
 `mda.py` turns `indat.GRAPH` into something that can be *run*. This module turns
-it into something that can be *solved*: it registers one `CallableNode` per active
+it into something that can be *solved*: it registers one `ImplementedFunction` per active
 constraint and one for the objective (each owning a minted `^cond.*`), inserts an
-`Optimise` `DeclaredNode` owning the active iteration variables' `VarPath`s, then
+`Optimise` `ProblemNode` owning the active iteration variables' `VarPath`s, then
 `Residualise`s every remaining `FixedPoint` and `Combine`s every problem into a single
 `^problem.sand` that `core.solver.drivers.VmconDriver` answers.
 
@@ -78,7 +78,7 @@ from cottax.plan import Insert, Plan
 from cottax.problem import Driven, FixedPoint, Optimise, conditions_of
 from cottax.rewrites import Assign, Combine, Residualise
 
-from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey, prefix_path
 from cottax.tools.path import path_map
 from jax.flatten_util import ravel_pytree
@@ -482,7 +482,7 @@ class _Resolver:
 
 
 def _bind(fn, resolve, switch_values):
-    """`(CallableNode-ready fn, inputs)` for one ported constraint/objective function.
+    """`(ImplementedFunction-ready fn, inputs)` for one ported constraint/objective function.
 
     Static switch arguments are bound with `functools.partial` at assembly time -- they
     select a formula, carry no derivative and take part in no edge
@@ -497,7 +497,7 @@ def _bind(fn, resolve, switch_values):
 
 
 def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
-    """One `CallableNode` per active constraint, plus the equality/inequality split.
+    """One `ImplementedFunction` per active constraint, plus the equality/inequality split.
 
     Parameters
     ----------
@@ -522,7 +522,7 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
     -------
     :
         `(nodes, equalities, inequalities, omitted)` -- `nodes` a `{NodePath:
-        CallableNode}` dict, `equalities`/`inequalities` tuples of the `^cond.*`
+        ImplementedFunction}` dict, `equalities`/`inequalities` tuples of the `^cond.*`
         `VarPath`s in `icc` order, `omitted` a `{id: reason}` dict.
 
     Raises
@@ -555,7 +555,7 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
         condition = prefix_path(
             VarPath((GetAttrKey("constraints"), GetAttrKey(f"c{cid}"))), COND
         )
-        nodes[NodePath((GetAttrKey(f"Constraint{cid}"),))] = CallableNode(
+        nodes[NodePath((GetAttrKey(f"Constraint{cid}"),))] = ImplementedFunction(
             inputs=inputs,
             outputs=(Out(condition),),
             # index 1 of `(residual, normalised_residual, value, bound)` -- see the
@@ -594,7 +594,7 @@ class _SignedMetric(eqx.Module):
 
 
 def objective_node(graph, i_figure_merit, switch_values=None):
-    """One `CallableNode` computing the run's figure of merit, and the `VarPath` it owns.
+    """One `ImplementedFunction` computing the run's figure of merit, and the `VarPath` it owns.
 
     `_audit/next_steps.md` §6 and `CLAUDE.md` both say the objective is "a query, not a
     node". That is right about *which* -- `Optimise.objective` is a single `In`, i.e. one
@@ -616,7 +616,7 @@ def objective_node(graph, i_figure_merit, switch_values=None):
     read = [p for p in parameters if p not in static]
     bound = functools.partial(fn, **static) if static else fn
     objective = prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), COND)
-    node = CallableNode(
+    node = ImplementedFunction(
         inputs=tuple(In(resolve(p)) for p in read),
         outputs=(Out(objective),),
         fn=_SignedMetric(bound, float(np.sign(i_figure_merit))),

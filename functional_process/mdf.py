@@ -224,7 +224,7 @@ class Mdf:
     """
 
     graph: Graph
-    """The MDA graph plus one `CallableNode` per active constraint and one for the
+    """The MDA graph plus one `ImplementedFunction` per active constraint and one for the
     objective. **No `Optimise` node**: inserting one fuses the whole graph into a single
     SCC that `schedule_for` cannot run (this module's docstring). The problem is stated
     by `design`/`conditions` below and answered by `solve`."""

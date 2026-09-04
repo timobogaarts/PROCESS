@@ -18,7 +18,7 @@ from jax.tree_util import DictKey, GetAttrKey
 from cottax.blocking import Blocking
 from cottax.graph import Graph
 from cottax.interfaces.spelling import xDSMFormatterFlat
-from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.minting import MintKey
 from cottax.tools.path import path_map
 from functional_process.visualization.grouping import (
@@ -57,7 +57,7 @@ def M(ns: str, *keys) -> NodePath:
 
 
 def call(reads, owns):
-    return CallableNode(
+    return ImplementedFunction(
         inputs=tuple(In(r) for r in reads),
         outputs=tuple(Out(o) for o in owns),
         fn=lambda *a: None,

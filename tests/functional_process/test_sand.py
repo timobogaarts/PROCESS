@@ -31,7 +31,7 @@ from cottax.problem import (
     driver_vars,
 )
 from cottax.rewrites import Assign
-from cottax.spec import CallableNode, In, NodePath, Out, VarPath
+from cottax.spec import ImplementedFunction, In, NodePath, Out, VarPath
 from cottax.tools.path import path_map
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import GetAttrKey, SequenceKey
@@ -774,7 +774,7 @@ def _toy_problem(driver=None, objective=None):
         path_map([
             (
                 NodePath((GetAttrKey("F"),)),
-                CallableNode(
+                ImplementedFunction(
                     inputs=(In(x), In(y)),
                     outputs=(Out(f),),
                     fn=_Objective() if objective is None else objective,
@@ -782,7 +782,7 @@ def _toy_problem(driver=None, objective=None):
             ),
             (
                 NodePath((GetAttrKey("G"),)),
-                CallableNode(
+                ImplementedFunction(
                     inputs=(In(x), In(y)),
                     outputs=(Out(g),),
                     fn=_Constraint(),
@@ -1460,11 +1460,11 @@ def _chain_fixed_point(second):
         path_map([
             (
                 NodePath((GetAttrKey("A"),)),
-                CallableNode(inputs=(In(u),), outputs=(Out(a),), fn=_Scale(3.0)),
+                ImplementedFunction(inputs=(In(u),), outputs=(Out(a),), fn=_Scale(3.0)),
             ),
             (
                 NodePath((GetAttrKey("B"),)),
-                CallableNode(inputs=(In(a),), outputs=(Out(hat),), fn=_Scale(second)),
+                ImplementedFunction(inputs=(In(a),), outputs=(Out(hat),), fn=_Scale(second)),
             ),
             (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
         ])
@@ -1556,7 +1556,7 @@ def test_an_array_valued_fixed_point_is_still_measurable():
         path_map([
             (
                 NodePath((GetAttrKey("A"),)),
-                CallableNode(inputs=(In(u),), outputs=(Out(hat),), fn=_Scale(0.5)),
+                ImplementedFunction(inputs=(In(u),), outputs=(Out(hat),), fn=_Scale(0.5)),
             ),
             (problem, FixedPoint(inputs=(In(hat),), outputs=(Out(u),))),
         ])

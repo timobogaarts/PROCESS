@@ -79,7 +79,7 @@ def calculate_cs_geometry(z_tf_inside_half, f_z_cs_tf_internal, dr_cs, dr_cs_bor
 
     Ports `CSCoil.calculate_cs_geometry`, `process/models/pfcoil.py:3005-3072`,
     arithmetic unchanged; PROCESS's `CSGeometry` dataclass return becomes a tuple in the
-    source's own field order, since a `CallableNode` binds returns positionally.
+    source's own field order, since a `ImplementedFunction` binds returns positionally.
 
     `dr_cs_full` is `2 * r_cs_coil_outer` in the source (`:3052`) -- twice the *outer
     radius*, not the coil's radial thickness, despite the `dr_` prefix. Ported verbatim;
