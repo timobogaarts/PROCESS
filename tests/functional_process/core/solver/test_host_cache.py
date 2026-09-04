@@ -44,17 +44,12 @@ def _unravel():
     return ravel_pytree((jnp.asarray(1.0),))[1]
 
 
-@pytest.fixture(autouse=True)
-def _empty_memo():
-    """Every test starts and leaves with an empty memo.
-
-    `_BOUND` is module state shared with every other test in the process, and a memo
-    left populated would make a later test's `len(_BOUND)` assertion depend on the order
-    pytest happened to choose.
-    """
-    host_cache._BOUND.clear()
-    yield
-    host_cache._BOUND.clear()
+# **There is no `_empty_memo` fixture any more** (`_audit/optimise_design.md` §37).
+# It existed because `_BOUND` was module state shared with every other test in the
+# process, so a memo left populated made a later test's `len(_BOUND)` assertion depend on
+# collection order. `bind` holds no state now -- jax's own cache does -- and the tests
+# below assert compile counts and program identity instead of memo lengths, neither of
+# which any other test can perturb.
 
 
 def test_the_cheap_key_agrees_with_the_partition():
@@ -74,12 +69,13 @@ def test_the_cheap_key_agrees_with_the_partition():
 
 
 def test_two_independently_built_equal_blocks_have_equal_keys():
-    """The key is by *value*, which is the only reason the memo hits at all.
+    """The key is by *value*, which is the only reason anything hits at all.
 
-    Two `eqx.partition`s of the same block compare equal and hash differently
-    (`_BOUND`'s docstring, §31.14), so a by-value key is forced -- and it has to
-    recognise a block rebuilt from scratch, because that is what
-    `_sqp_callback`/`mdf.condition_map` hand `bind` on every solve.
+    Two `eqx.partition`s of the same block compare equal and hash differently (§31.14),
+    so a by-value key is forced -- and it has to recognise a block rebuilt from scratch,
+    because that is what `_sqp_callback`/`mdf.condition_map` hand `bind` on every solve.
+    This used to be the memo's key; since §37 it is jax's, which needs the same property
+    and hashes as well as compares -- so `_Structure` wraps it and memoises the hash.
     """
     first, _ = host_cache._flat_key((_block(), _unravel()))
     second, _ = host_cache._flat_key((_block(), _unravel()))
@@ -106,15 +102,43 @@ def test_an_array_leaf_that_differs_is_the_same_key():
     assert first == second
 
 
-def test_a_second_bind_of_an_equal_block_is_a_hit_and_does_not_partition(monkeypatch):
-    """The measured point of the change: a hit costs one flatten and no partition.
+def _compiles(fn):
+    """`(result, XLA compilations)` -- §22.2's instrument, scoped to one call."""
+    from jax._src import compiler
 
-    Counted rather than timed, because a wall clock on a loaded machine cannot tell
-    60 ms from 7 ms reliably and the structural claim is the one worth pinning.
+    seen = []
+    real = compiler.backend_compile_and_load
+    compiler.backend_compile_and_load = lambda *a, **k: (
+        seen.append(1),
+        real(*a, **k),
+    )[1]
+    try:
+        return fn(), len(seen)
+    finally:
+        compiler.backend_compile_and_load = real
+
+
+def test_a_second_bind_of_an_equal_block_compiles_nothing(monkeypatch):
+    """The point of §37: a re-assembled block is a **jax cache hit**, with no memo.
+
+    `_BOUND` could never do this. It compared `(treedef, static)` and a re-assembled
+    block's `static` never matched, because the bodies held `functools.partial`s that
+    compare by identity (§34.8a measured six such leaves of 4902; §35 removed them). Now
+    the structure token is a `static_argnums` argument that compares **by value**, so two
+    independently built equal blocks are one entry in jax's own cache.
+
+    Counted rather than timed, because a wall clock on a loaded machine cannot tell a
+    trace from a cache hit reliably and the compile count is the claim worth pinning.
     """
-    first = host_cache.bind(_block(), _unravel())
-    assert len(host_cache._BOUND) == 1
+    values, _jac, _both = host_cache.bind(_block(), _unravel())
+    values(jnp.asarray([1.0]))  # pay for the first compile
 
+    again, compiles = _compiles(
+        lambda: host_cache.bind(_block(), _unravel())[0](jnp.asarray([1.0]))
+    )
+    assert compiles == 0
+
+    # And no `eqx.partition`: binding is `_flat_key`'s single flatten and nothing else.
     partitions = []
     original = eqx.partition
     monkeypatch.setattr(
@@ -122,41 +146,34 @@ def test_a_second_bind_of_an_equal_block_is_a_hit_and_does_not_partition(monkeyp
         "partition",
         lambda *args, **kwargs: (partitions.append(1), original(*args, **kwargs))[1],
     )
-    again = host_cache.bind(_block(), _unravel())
-
+    host_cache.bind(_block(), _unravel())
     assert not partitions
-    assert len(host_cache._BOUND) == 1
-    # The *same* jitted callables, not merely equal ones: a fresh set would own a fresh
-    # jax cache entry and re-trace on its first call. All three, because `bind` hands
-    # out `(values, jacobian, values_and_jacobian)` and a driver picks (§31.30).
-    assert len(again) == 3
-    assert all(
-        got.__closure__[0].cell_contents is want.__closure__[0].cell_contents
-        for got, want in zip(again, first, strict=True)
-    )
 
 
-def test_a_structurally_different_block_gets_its_own_entry():
-    """Different constants, different program -- see `test_a_non_array_leaf_...`."""
-    host_cache.bind(_block(offset=3.0), _unravel())
-    host_cache.bind(_block(offset=4.0), _unravel())
-    assert len(host_cache._BOUND) == 2
+def test_a_structurally_different_block_is_its_own_program():
+    """Different constants, different program -- see `test_a_non_array_leaf_...`.
 
-
-def test_the_memo_is_bounded():
-    """`_BOUND` used to be documented as never growing; the naive repeated-solve loop
-    falsified that at two entries a solve (§32.2). The bound is the correction.
+    A frozen leaf is part of the structure token, so it is part of jax's cache key: this
+    compiles, where `test_a_second_bind_...` does not.
     """
-    for i in range(host_cache._BOUND_LIMIT + 4):
-        host_cache.bind(_block(offset=float(i)), _unravel())
-    assert len(host_cache._BOUND) == host_cache._BOUND_LIMIT
-    # Oldest evicted, newest kept: the block most recently solved is the one most
-    # likely to be solved again.
-    newest, _ = host_cache._flat_key((
-        _block(offset=float(host_cache._BOUND_LIMIT + 3)),
-        _unravel(),
-    ))
-    assert host_cache._BOUND[-1].key == newest
+    host_cache.bind(_block(offset=3.0), _unravel())[0](jnp.asarray([1.0]))
+    _out, compiles = _compiles(
+        lambda: host_cache.bind(_block(offset=4.0), _unravel())[0](jnp.asarray([1.0]))
+    )
+    assert compiles >= 1
+
+
+def test_binding_holds_no_state():
+    """There is nothing left to grow, which is the other half of deleting the memo.
+
+    `_BOUND` had to be bounded (`_BOUND_LIMIT = 16`, with eviction) because a loop that
+    re-assembled appended two entries a solve without limit (§32.2). Nothing here
+    accumulates: `bind` returns three closures over an argument and this module holds no
+    container at all.
+    """
+    assert not hasattr(host_cache, "_BOUND")
+    assert not hasattr(host_cache, "_BOUND_LIMIT")
+    assert not hasattr(host_cache, "_Bound")
 
 
 def test_the_bound_callables_compute_the_block_and_its_derivative():
