@@ -109,9 +109,11 @@ REFERENCE_SWITCH_VALUES = {
 }
 """Static switch arguments of the reference run's active constraints, and their values.
 
-A constraint parameter is bound as a **static** `functools.partial` keyword if and only
-if its name is a key here; everything else is resolved to a `VarPath` and becomes an
-`In`. That is a deliberately mechanical rule with two checks on it rather than a
+A constraint parameter is **frozen at assembly** if and only if its name is a key here;
+everything else is resolved to a `VarPath` and becomes an `In`. Frozen means it is
+carried as a `(name, value)` pair in a field of the node's body, where the compiler can
+see it and two assemblies compare equal -- not bound into a `functools.partial`, which is
+what it was until `_audit/optimise_design.md` §35. That is a deliberately mechanical rule with two checks on it rather than a
 judgement made per constraint:
 
 - `test_sand.py::test_switch_values_match_the_contracts_static_argnames` asserts, for
@@ -482,18 +484,34 @@ class _Resolver:
 
 
 def _bind(fn, resolve, switch_values):
-    """`(ImplementedFunction-ready fn, inputs)` for one ported constraint/objective function.
+    """`(switch pairs, read names, inputs)` for one ported constraint/objective function.
 
-    Static switch arguments are bound with `functools.partial` at assembly time -- they
-    select a formula, carry no derivative and take part in no edge
-    (`_audit/naming_convention.md` § "switches are not ports"). Everything else becomes
-    one positional `In`.
+    A switch argument is frozen at assembly -- it selects a formula, carries no
+    derivative and takes part in no edge (`_audit/naming_convention.md` § "switches are
+    not ports"). Everything else becomes one positional `In`.
+
+    **The frozen values come back as a tuple of `(name, value)` pairs, not as a bound
+    callable**, and that is the whole of `_audit/optimise_design.md` §35. Binding them
+    with `functools.partial` made a fresh object per assembly that compares by identity,
+    so a re-assembled constraint never matched the cached one -- §28.5's third cause of a
+    per-scan-point recompile, and the last six differing static leaves of 4902 in §34.8a.
+    `jax.tree_util.Partial` would have fixed the comparison and kept the shape; a partial
+    binding an argument is a closure by another name, and the rule this port now holds
+    itself to is that **every input is a port or a pytree-visible field**. So the values
+    go on the body as a field.
+
+    Pairs rather than a `dict` because a body must be *hashable*: `cottax`'s
+    `graph._check_bindings` asks `hash(node)` of every binding, and an `eqx.Module`
+    holding a dict is unhashable. Pairs rather than an `eqx.field(static=True)` because
+    static is treedef, i.e. exactly what hid `machine_config`'s two lists until `fn=self`
+    went looking (§34.2) -- an ordinary field puts each switch where `tree_leaves` can
+    see it, and being a non-array leaf it lands in `eqx.filter_jit`'s cache key **by
+    value**, which is where a formula selector belongs.
     """
     parameters = list(inspect.signature(fn).parameters)
-    static = {p: switch_values[p] for p in parameters if p in switch_values}
-    read = [p for p in parameters if p not in static]
-    bound = functools.partial(fn, **static) if static else fn
-    return bound, read, tuple(In(resolve(p)) for p in read)
+    static = tuple((p, switch_values[p]) for p in parameters if p in switch_values)
+    read = [p for p in parameters if p not in switch_values]
+    return static, read, tuple(In(resolve(p)) for p in read)
 
 
 def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
@@ -545,7 +563,7 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
                 f"constraints.py` has no `constraint_{cid}`"
             )
         try:
-            bound, read, inputs = _bind(fn, resolve, switch_values)
+            static, read, inputs = _bind(fn, resolve, switch_values)
         except ValueError as e:
             raise ValueError(
                 f"constraint {cid} cannot be assembled: {e}. An `Optimise` missing one "
@@ -560,37 +578,52 @@ def constraint_nodes(graph, icc, n_equality, switch_values=None, omit=()):
             outputs=(Out(condition),),
             # index 1 of `(residual, normalised_residual, value, bound)` -- see the
             # module docstring.
-            fn=_NormalisedResidual(bound, tuple(read)),
+            fn=_NormalisedResidual(fn, tuple(read), static),
         )
         (equalities if position < n_equality else inequalities).append(condition)
     return nodes, tuple(equalities), tuple(inequalities), omitted
 
 
 class _NormalisedResidual(eqx.Module):
-    """`fn(*args) -> normalised_residual`, as an `eqx.Module` rather than a closure.
+    """`fn(*args, **switches) -> normalised_residual`, as a module and not a closure.
 
     A node definition is a jit cache key, so a body rebuilt per access must still compare
     equal to the last one -- exactly the reason `cottax.rewrites.Compare` uses a
-    `Pairwise` module instead of a lambda.
+    `Pairwise` module instead of a lambda. `fn` is a module-level `constraint_<id>`
+    looked up by name, so it is the *same object* on every assembly and compares equal
+    for free; `names` and `switches` are data and compare by value.
+
+    **`switches` used to be bound into `fn` with `functools.partial` and is a field
+    now** -- see `_bind` for why, and `_audit/optimise_design.md` §35 for what it cost.
     """
 
     fn: object
     names: tuple
+    switches: tuple = ()
+    """`((parameter, value), ...)`, the switch arguments frozen at assembly."""
 
     def __call__(self, *args):
-        return self.fn(**dict(zip(self.names, args, strict=True)))[1]
+        arguments = dict(zip(self.names, args, strict=True))
+        arguments.update(self.switches)
+        return self.fn(**arguments)[1]
 
 
 class _SignedMetric(eqx.Module):
-    """`sign * objective_metric(*args)`. Same not-a-closure reasoning as
-    `_NormalisedResidual`.
+    """`sign * objective_metric(*args, **switches)`. Same not-a-closure reasoning as
+    `_NormalisedResidual`, and the same field for the same reason.
     """
 
     fn: object
     sign: float
+    names: tuple = ()
+    switches: tuple = ()
 
     def __call__(self, *args):
-        return self.sign * self.fn(*args)
+        if not self.switches:
+            return self.sign * self.fn(*args)
+        arguments = dict(zip(self.names, args, strict=True))
+        arguments.update(self.switches)
+        return self.sign * self.fn(**arguments)
 
 
 def objective_node(graph, i_figure_merit, switch_values=None):
@@ -611,15 +644,12 @@ def objective_node(graph, i_figure_merit, switch_values=None):
     merit = FiguresOfMerit(abs(int(i_figure_merit)))
     fn = ported_objectives.OBJECTIVE_METRICS[merit]
     resolve = _Resolver(graph)
-    parameters = list(inspect.signature(fn).parameters)
-    static = {p: switch_values[p] for p in parameters if p in switch_values}
-    read = [p for p in parameters if p not in static]
-    bound = functools.partial(fn, **static) if static else fn
+    static, read, inputs = _bind(fn, resolve, switch_values)
     objective = prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), COND)
     node = ImplementedFunction(
-        inputs=tuple(In(resolve(p)) for p in read),
+        inputs=inputs,
         outputs=(Out(objective),),
-        fn=_SignedMetric(bound, float(np.sign(i_figure_merit))),
+        fn=_SignedMetric(fn, float(np.sign(i_figure_merit)), tuple(read), static),
     )
     return NodePath((GetAttrKey("Objective"),)), node, objective
 
