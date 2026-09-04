@@ -899,22 +899,31 @@ def _explained_by(reference, graph, switch_values):
     """`(key, read)` if this run's objective is downstream of a documented, deliberate
     disagreement, else `None`.
 
-    Asks `sand.objective_node` -- the same call `mdf.assemble` makes -- which `VarPath`s
+    Asks `sand.objective_nodes` -- the same call `mdf.assemble` makes -- which `VarPath`s
     the run's figure of merit reads, so this cannot drift from what was actually
     assembled the way a hand-kept per-configuration list would.
+
+    **Every node it builds is asked, not just the first.** A maximise run is two nodes
+    since §36 -- the metric and a `.ObjectiveNegated` -- and the negation reads
+    `^metric.numerics.objf`, which is in no `EXPLAINED_OBJECTIVE_READS` table and simply
+    does not match. Asking all of them is what keeps this from depending on which one
+    happens to come out first.
     """
+    from functional_process.indat import objective_selection  # noqa: PLC0415
+
     try:
-        _name, node, _objective = sand.objective_node(
+        nodes, _objective = sand.objective_nodes(
             graph if graph is not None else graph_for(),
-            reference.i_figure_merit,
+            objective_selection(reference.i_figure_merit),
             switch_values,
         )
     except Exception:  # noqa: BLE001 -- an unmarked row, never a lost row
         return None
-    for port in node.inputs:
-        read = port.var.path_str()
-        if read in EXPLAINED_OBJECTIVE_READS:
-            return EXPLAINED_OBJECTIVE_READS[read], read
+    for node in nodes.values():
+        for port in node.inputs:
+            read = port.var.path_str()
+            if read in EXPLAINED_OBJECTIVE_READS:
+                return EXPLAINED_OBJECTIVE_READS[read], read
     return None
 
 

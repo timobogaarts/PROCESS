@@ -94,6 +94,15 @@ from functional_process.vocabulary import (
 )
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 
+METRIC = MintKey("metric")
+"""The namespace a figure of merit is minted into **before** its direction is applied.
+
+Only opened on a maximise run: `^metric.numerics.objf` is what the metric node computes
+and `.ObjectiveNegated` reads, and `^cond.numerics.objf` is what `Optimise` minimises.
+On a minimise run there is no negation node and the metric owns `^cond.numerics.objf`
+directly, so this mint does not appear at all -- the *graph shape* is where the direction
+lives (`_audit/optimise_design.md` §36)."""
+
 COND = MintKey("cond")
 """The namespace constraint/objective values are minted into -- the same one
 `Compare`/`Residualise` open. `~/jaxgraph`'s own `CLAUDE.md` explains why it is `^cond`
@@ -608,50 +617,120 @@ class _NormalisedResidual(eqx.Module):
         return self.fn(**arguments)[1]
 
 
-class _SignedMetric(eqx.Module):
-    """`sign * objective_metric(*args, **switches)`. Same not-a-closure reasoning as
+class _Metric(eqx.Module):
+    """`objective_metric(*args, **switches)`, unsigned. Same not-a-closure reasoning as
     `_NormalisedResidual`, and the same field for the same reason.
+
+    **Was `_SignedMetric`, carrying `np.sign(i_figure_merit)` as a field.** It does not
+    any more: a direction is not a property of the metric -- `rmajor` is not inherently
+    negative -- and a `sign` field is a flag that flips an answer somewhere no reader of
+    the graph can see. A maximise run gets a `.ObjectiveNegated` node instead
+    (`_audit/optimise_design.md` §36), so the convention is forced (always minimise) and
+    the variation is structure.
     """
 
     fn: object
-    sign: float
     names: tuple = ()
     switches: tuple = ()
 
     def __call__(self, *args):
         if not self.switches:
-            return self.sign * self.fn(*args)
+            return self.fn(*args)
         arguments = dict(zip(self.names, args, strict=True))
         arguments.update(self.switches)
-        return self.sign * self.fn(**arguments)
+        return self.fn(**arguments)
 
 
-def objective_node(graph, i_figure_merit, switch_values=None):
-    """One `ImplementedFunction` computing the run's figure of merit, and the `VarPath` it owns.
+class _Negate(eqx.Module):
+    """`-x`. The whole of "maximise", as a node.
 
-    `_audit/next_steps.md` §6 and `CLAUDE.md` both say the objective is "a query, not a
-    node". That is right about *which* -- `Optimise.objective` is a single `In`, i.e. one
-    `VarPath` -- and wrong about the metric: fourteen of the sixteen
-    `objective_metric_<id>` functions are arithmetic (`0.2 * rmajor`, `coe / 100`), and
-    arithmetic needs a body. The node is still per-query: it does not exist until an
-    `Optimise` is assembled, and a different `i_figure_merit` mints a different node.
+    No fields, so every instance compares equal to every other and the node is one jit
+    cache key however many graphs hold one. XLA folds the multiply away, so it costs
+    nothing in the compiled program; what it buys is that a reader of the DSM sees
+    `-rmajor` being minimised rather than having to know that a `sign` field elsewhere
+    flipped it.
+    """
 
-    The sign is folded in here: PROCESS applies `np.sign(i_figure_merit)` outside the
-    branch (`process/core/solver/objectives.py:54,105`), negative meaning maximise, and
-    `Optimise`'s contract is minimise.
+    def __call__(self, metric):
+        return -metric
+
+
+class ObjectiveSelection(eqx.Module):
+    """Which figure of merit this run states, and in which direction -- resolved once,
+    at the input-parsing boundary, and never re-derived at assembly.
+
+    `indat.objective_selection` builds it from `i_figure_merit`, which is where a
+    configuration decision belongs. `objective_nodes` below takes *this* and no longer
+    sees the integer, so assembly does not branch on an input file's number: it is handed
+    a metric and a direction and inserts the nodes that say so.
+    """
+
+    metric: object
+    """The ported `objective_metric_<id>`, already selected."""
+
+    maximise: bool = eqx.field(static=True)
+    """`i_figure_merit < 0` in PROCESS's spelling (`objectives.py:54,105` applies
+    `np.sign` outside the branch). Static because it decides *which nodes exist*, not a
+    value any of them computes."""
+
+
+def objective_nodes(graph, selection, switch_values=None):
+    """The node(s) computing this run's figure of merit, and the `VarPath` `Optimise`
+    minimises.
+
+    **The objective is an ordinary node, and that is the point.** `CLAUDE.md`'s concept
+    mapping has always said so --
+
+        This is a *query* over the graph's outputs, **not a node** -- the cottax analogue
+        is `Graph.prune(wanted)`/an `Optimise` problem's objective condition, **selected
+        per run rather than baked into structure**.
+
+    -- and it was right about *which* (`Optimise.objective` is a single `In`, i.e. one
+    `VarPath`) and, until now, not implemented about *how*: the metric was constructed
+    here, from `i_figure_merit`, and welded to the problem, so a second metric was not
+    merely hard but **inexpressible**. It exists only as a thing `Optimise` needed.
+
+    Now `Optimise` points at an output and does not own what computes it. The default is
+    still exactly one metric -- nothing here instantiates sixteen -- but a second is only
+    another node, so a trade study that optimises on COE and reads major radius, beta and
+    Q *at the answer* rather than re-solving costs nothing structurally. That is what
+    stopped being foreclosed; it is deliberately not built.
+
+    **Direction is structure, not a field.** Always minimise, and a maximise run gets a
+    `.ObjectiveNegated` node (`_Negate`) between the metric and `^cond.numerics.objf`. So
+    `^cond.numerics.objf` still holds PROCESS's own *signed* figure of merit -- the value
+    every report and every `reference_cold_matrix.txt` `objf` cell carries, and the value
+    `objective_function(i_figure_merit, data)` returns -- while the graph, rather than a
+    `sign` field, is where "this run maximises" is written down.
+
+    Returns
+    -------
+    :
+        `({NodePath: ImplementedFunction}, objective VarPath)`.
     """
     switch_values = REFERENCE_SWITCH_VALUES if switch_values is None else switch_values
-    merit = FiguresOfMerit(abs(int(i_figure_merit)))
-    fn = ported_objectives.OBJECTIVE_METRICS[merit]
     resolve = _Resolver(graph)
-    static, read, inputs = _bind(fn, resolve, switch_values)
+    static, read, inputs = _bind(selection.metric, resolve, switch_values)
     objective = prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), COND)
-    node = ImplementedFunction(
-        inputs=inputs,
-        outputs=(Out(objective),),
-        fn=_SignedMetric(fn, float(np.sign(i_figure_merit)), tuple(read), static),
+    metric = (
+        prefix_path(VarPath((GetAttrKey("numerics"), GetAttrKey("objf"))), METRIC)
+        if selection.maximise
+        else objective
     )
-    return NodePath((GetAttrKey("Objective"),)), node, objective
+    nodes = {
+        NodePath((GetAttrKey("Objective"),)): ImplementedFunction(
+            inputs=inputs,
+            outputs=(Out(metric),),
+            fn=_Metric(selection.metric, tuple(read), static),
+        )
+    }
+    if selection.maximise:
+        nodes[NodePath((GetAttrKey("ObjectiveNegated"),))] = ImplementedFunction(
+            inputs=(In(metric),),
+            outputs=(Out(objective),),
+            fn=_Negate(),
+        )
+    return nodes, objective
 
 
 def optimise_graph(
@@ -685,10 +764,12 @@ def optimise_graph(
     nodes, equalities, inequalities, omitted = constraint_nodes(
         graph, icc, n_equality, switch_values, omit
     )
-    objective_name, objective_definition, objective = objective_node(
-        graph, i_figure_merit, switch_values
+    from functional_process.indat import objective_selection  # noqa: PLC0415
+
+    objective_built, objective = objective_nodes(
+        graph, objective_selection(i_figure_merit), switch_values
     )
-    nodes[objective_name] = objective_definition
+    nodes.update(objective_built)
     problem_name = NodePath((GetAttrKey("Opt"),))
     nodes[problem_name] = Optimise(
         objective=In(objective),

@@ -59,7 +59,7 @@ from functional_process.sand import (
     constraint_nodes,
     design_bounds,
     iteration_variable_path,
-    objective_node,
+    objective_nodes,
     optimise_graph,
     sand_graph,
     sand_schedule,
@@ -375,17 +375,40 @@ def _cannot_resolve(cid):
     return False
 
 
-def test_objective_node_folds_in_the_sign_and_owns_one_minted_variable():
-    """`Optimise` minimises, so a negative `i_figure_merit` (PROCESS's "maximise") has
-    to become a negated body -- not a flag on the driver, which would make its `drives`
-    claim a lie, and not a field on `Optimise`, which has none.
+def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
+    """`Optimise` minimises, so a negative `i_figure_merit` (PROCESS's "maximise") has to
+    become a negation -- not a flag on the driver, which would make its `drives` claim a
+    lie, and not a field on `Optimise`, which has none.
+
+    **Since §36 it is not a field on the *body* either.** `_SignedMetric` carried
+    `np.sign(i_figure_merit)`, which is a direction stored where no reader of the graph
+    can see it; the direction is a `.ObjectiveNegated` node now, so the DSM shows
+    `-metric` being minimised. What must not move is the *value*: `^cond.numerics.objf`
+    is still PROCESS's own signed figure of merit, which is the number every report and
+    every `reference_cold_matrix.txt` `objf` cell carries.
     """
-    _name, node, var = objective_node(GRAPH, REFERENCE_FIGURE_OF_MERIT)
+    from functional_process.indat import objective_selection
+
+    minimise, var = objective_nodes(GRAPH, objective_selection(REFERENCE_FIGURE_OF_MERIT))
     assert var.path_str() == "^cond.numerics.objf"
-    assert len(node.outputs) == 1
-    _name, negated, _var = objective_node(GRAPH, -REFERENCE_FIGURE_OF_MERIT)
+    assert [n.path_str() for n in minimise] == [".Objective"]
+    assert len(minimise[NodePath((GetAttrKey("Objective"),))].outputs) == 1
+
+    maximise, negated_var = objective_nodes(
+        GRAPH, objective_selection(-REFERENCE_FIGURE_OF_MERIT)
+    )
+    # Same place minimised, so no report changes; one more node, so the direction is in
+    # the graph.
+    assert negated_var == var
+    assert [n.path_str() for n in maximise] == [".Objective", ".ObjectiveNegated"]
+    metric = maximise[NodePath((GetAttrKey("Objective"),))]
+    negate = maximise[NodePath((GetAttrKey("ObjectiveNegated"),))]
+    assert [o.var.path_str() for o in metric.outputs] == ["^metric.numerics.objf"]
+    assert [i.var.path_str() for i in negate.inputs] == ["^metric.numerics.objf"]
+
     coe = 121.5
-    assert float(node.fn(coe)) == pytest.approx(-float(negated.fn(coe)))
+    body = minimise[NodePath((GetAttrKey("Objective"),))]
+    assert float(body.fn(coe)) == pytest.approx(-float(negate.fn(metric.fn(coe))))
 
 
 def test_sand_assembles_and_orders_its_conditions():

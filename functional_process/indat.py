@@ -426,6 +426,7 @@ from functional_process.models.vacuum.vacuum import (
 from functional_process.importer import Imported, read_indat
 from functional_process.total_process import StellaratorProcess, TokamakProcess
 from functional_process.vocabulary import ITERATION_VARIABLES
+from functional_process.vocabulary import FiguresOfMerit
 from functional_process.vocabulary.input_variables import INPUT_VARIABLES
 from functional_process.vocabulary import BlktModelTypes
 from functional_process.vocabulary import TFCSRadialConfiguration
@@ -4371,6 +4372,44 @@ def problem_from_indat(input_file):
     with the count in hand.
     """
     return _as_imported(input_file).problem
+
+
+def objective_selection(i_figure_merit):
+    """Which figure of merit the run states, and in which direction --
+    `sand.ObjectiveSelection`, resolved here and nowhere else.
+
+    **This is where `i_figure_merit` is consulted, and assembly no longer sees it.**
+    `sand.objective_nodes` used to take the raw integer and branch on it three ways --
+    `abs()` into `FiguresOfMerit`, the enum into `OBJECTIVE_METRICS`, and `np.sign` into
+    a field of the body -- which is a configuration decision made at graph-assembly time,
+    exactly what `machine_from_indat`'s docstring says this module exists to stop. It now
+    takes a metric and a direction and inserts the nodes that say so.
+
+    `None` is not a merit and not an error: a file whose `i_process_run_mode` is `-2`
+    states a root find, PROCESS forms no objective (`_Fsolve.solve` ends
+    `self.objf = None`) and `mdf.mdf_graph` mints no objective node
+    (`importer.Problem.is_evaluation`). The caller checks for `None` before asking, the
+    same way it already did.
+
+    Parameters
+    ----------
+    i_figure_merit :
+        `numerics.i_figure_merit` as the file states it -- signed, negative meaning
+        maximise (`process/core/solver/objectives.py:54,105`).
+
+    Returns
+    -------
+    :
+        A `sand.ObjectiveSelection`.
+    """
+    from functional_process.core.solver import objectives  # noqa: PLC0415
+    from functional_process.sand import ObjectiveSelection  # noqa: PLC0415
+
+    merit = FiguresOfMerit(abs(int(i_figure_merit)))
+    return ObjectiveSelection(
+        metric=objectives.OBJECTIVE_METRICS[merit],
+        maximise=int(i_figure_merit) < 0,
+    )
 
 
 # ------------------------------------------------------------- sentinel resolution
