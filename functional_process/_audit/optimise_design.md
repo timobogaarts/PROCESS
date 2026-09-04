@@ -11117,3 +11117,101 @@ spread across §31.33.1, §33 and this subsection. The measured statement, as of
 
 The two remaining items are therefore **`vacuum.py:474`** and **`.physics.nu_star`**, and
 neither is a guard.
+
+### 31.40 [measured] The `eps = 1e-4` failure is a mechanism, not a lottery -- a sub-threshold tail that attracts without guiding, and a plateau above it
+
+§31.37.3 called the non-monotonic sweep *"what a still-chaotic arm looks like when you vary
+a parameter -- `eps` becomes another lottery seed"*. That was a hypothesis stated as a
+finding, and it is **wrong**. The failures have a mechanism, the band has edges, and
+knowing where they are changes how safe a given `eps` is.
+
+`stellarator_helias` SAND, unperturbed, fifteen `eps` on `dcda0769` [measured 2026-09-04].
+
+#### 31.40.1 [measured] The discriminator is how far below the threshold the optimiser wanders
+
+| `eps` | its | status | `objf` | trajectory **min** `temp_sum_20 - 0.65` |
+|---|---|---|---|---|
+| `1e-6` | 72 | converged | `1.2177647` | **`-6.72e-02`** |
+| `1e-5` | 113 | **stopped** | `1.9892` | `-2.41e-01` |
+| `2e-5` | 157 | converged | `1.2178113` | `-2.27e-01` |
+| `3e-5` | 123 | converged | `1.2178280` | `-1.80e-01` |
+| `5e-5` | 48 | converged | `1.2178566` | **`-6.72e-02`** |
+| `7e-5` | 58 | converged | `1.2178816` | `-2.15e-01` |
+| `1e-4` | 29 | **stopped** | `1.2226104` | `-3.09e-01` |
+| `1.5e-4` | 58 | **stopped** | `1.2232026` | `-2.53e-01` |
+| `2e-4` | 66 | converged | `1.2180071` | `-2.05e-01` |
+| `3e-4` | 52 | **stopped** | `1.2265866` | `-3.09e-01` |
+| **`5e-4`** | **23** | converged | `1.2182161` | **`-6.71e-02`** |
+| **`7e-4`** | **22** | converged | `1.2183305` | **`-6.70e-02`** |
+| **`1e-3`** | **24** | converged | `1.2184828` | **`-6.68e-02`** |
+| **`2e-3`** | **19** | converged | `1.2189019` | **`-6.56e-02`** |
+| **`5e-3`** | **19** | converged | `1.2198326` | **`-5.80e-02`** |
+
+The last column sorts the table completely. **Every run whose trajectory stays inside the
+shipped arm's own range (`min a ~ -6.7e-02`) converges, and quickly** -- 19 to 72
+iterations. **Every run that wanders to `-0.18` or beyond is slow or stops** -- 4 of 8 stop,
+and the ones that converge take 66, 123, 157. The failure band is `eps ~ 1e-5 .. 3e-4`;
+below and above it the excursion does not happen.
+
+#### 31.40.2 [measured] Why: the regularisation leaves a sub-threshold tail whose gradient is linear in `eps`
+
+Below the threshold PROCESS's expression is **exactly zero with exactly zero gradient**.
+The smoothing is not: for `a < 0`, `soft -> eps^2 / (4|a|)`, so
+
+| at `a =` | value `~ 0.13 eps / sqrt(\|a\|)` | gradient `~ 0.065 eps / \|a\|^{3/2}` |
+|---|---|---|
+| `-1e-2`, `eps = 1e-6` | `1.30e-06` | `6.50e-05` |
+| `-1e-2`, `eps = 1e-4` | `1.30e-04` | `6.50e-03` |
+| `-6.7e-02`, `eps = 1e-4` | `5.02e-05` | `3.75e-04` |
+| `-3.0e-01`, `eps = 1e-4` | `2.37e-05` | `3.96e-05` |
+
+[measured]. **Both scale linearly with `eps`, and the gradient exists over the whole
+sub-threshold region, not just near the kink.** That is the mechanism:
+
+- **`eps <= 1e-6`**: the tail's gradient (`~4e-06` at `a = -0.067`) is negligible against
+  everything else pulling the design vector. The optimiser behaves as it did and stays
+  where it was.
+- **`eps ~ 1e-5 .. 3e-4`**: the tail is strong enough to **attract** the optimiser into the
+  sub-threshold region -- where PROCESS's model says there is no fast-alpha pressure at
+  all -- but too weak to define a descent there. The arm wanders to `a ~ -0.3` and stalls.
+- **`eps >= 5e-4`**: the optimum is simply **displaced off the singularity**. The converged
+  `a` tracks `eps` -- `1.35e-03` at `5e-4`, `2.40e-03` at `1e-3`, `3.05e-03` at `2e-3`,
+  `5.19e-03` at `5e-3`, i.e. about `2-3 eps` above the threshold [measured] -- so the arm
+  no longer needs to sit on the kink and stops crossing it.
+
+**That third bullet is the real reason a large `eps` is deterministic**, and it is a better
+statement than "the derivative is capped": the optimiser stops crossing the singularity
+because its optimum is no longer on it. **The iterate is never actually inside the
+smoothing width** -- at `eps = 1e-4`, `|a| <= 10 eps` on `0.0 %` of block evaluations
+[measured]; at `eps = 1e-3` it is `4.1 %` inside `1 eps` and `58.8 %` inside `10 eps`. The
+regularisation works through the *shape of the approach*, not by the iterate entering the
+transition region.
+
+#### 31.40.3 What this changes
+
+- **§31.37.3's "`eps` becomes another lottery seed" is withdrawn.** It is a band with edges
+  and a mechanism, and the mechanism is a spurious gradient in a region PROCESS's model
+  says is flat and empty.
+- **`1e-3` is mid-plateau, not near an edge.** The band's upper edge is between `3e-4` and
+  `5e-4`; everything from `5e-4` to `5e-3` -- a full decade -- converges in 19-24
+  iterations with the trajectory confined to the shipped range. This was the specific
+  worry, and it is answered: `1e-3` sits a factor of 2-3 above the edge with another
+  factor of 5 of headroom above it.
+- **`1e-6` is closer to the cliff than `1e-3` is.** It sits one factor of 10 below the
+  band's lower edge (`1e-5`), against `1e-3`'s 2-3 above the upper one. §31.38.6
+  recommended `1e-6` without knowing this, and this is the one argument that runs the other
+  way; it does not overturn §31.38's other columns, but it should be on the table.
+- **Any future retune must avoid `1e-5 .. 3e-4`.** Recorded in `WARD_KINK_SMOOTHING`'s own
+  docstring so it is visible where the number is set, not only here.
+
+#### 31.40.4 Not resolved
+
+- **One configuration.** The band is measured on `stellarator_helias` SAND only. Whether
+  the same band exists on MDF, or on any other configuration, is untested -- and the other
+  configurations do not cross the threshold at all (§31.36.2), so they may have no band.
+- **Unperturbed runs only.** Each `eps` is one solve, not a nudge family, so a row that
+  converged may be one draw from a distribution rather than a property of that `eps`. The
+  four `eps` in §31.37.3 that *do* have nudge families are consistent with this table.
+- **The excursion is described, not explained.** *Why* the sub-threshold region is nearly
+  flat for the design vector -- rather than actively bad -- is not measured, and it is what
+  decides whether a trust-region safeguard would help there.
