@@ -796,6 +796,19 @@ Same pattern as §28.1, and the same lesson.
 
 ### 31.3 Now — in priority order
 
+0. **[2026-09-04] `reference_cold_matrix.txt` is STALE and needs regenerating.** The
+   Ward-kink smoothing landed (`WARD_KINK_SMOOTHING = 1e-3`,
+   `models/physics/pure_formulas.py`; `optimise_design.md` §31.41) and the tracked table
+   records the pre-smoothing numbers. **No test reads the file**, so this is documentation
+   staleness rather than a suite failure, and it was deliberately not regenerated on the
+   landing pass. What will move is measured, not guessed — §31.38.3's `eps = 1e-3` column:
+   `stellarator_helias` both arms (MDF `66 → 41` it, SAND `94 → 24`, `objf →
+   1.21848284`), `large_tokamak_eval` and `spherical_tokamak_eval`'s `worst dx`,
+   `st_regression`'s `d objf`, and `objf` in the ninth digit on `low_aspect_ratio_DEMO`.
+   All twelve rows still converge. One `$PY functional_process/run_cold_matrix.py --native
+   --compare-process` closes it.
+
+
 1. **[done — §31.11] Make the in-graph SQP actually solve.** The staging question is
    answered: the duplication was 21-fold, not six, fusing it halves the program and
    changes runtime **not at all** (XLA's CSE was already merging it), and the 136 ms was a
