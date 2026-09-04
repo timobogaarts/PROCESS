@@ -11421,6 +11421,13 @@ list*, not decoration. Both switches are now in `native.DATACLASS_DEFAULTS` (`0`
 asserted against `DataStructure()`'s own by `test_provider`), so the state answers them
 and the five notes are gone.
 
+**The pin is regenerated, and the diff is the smallest one this file can have.** Every one
+of the twelve rows is untouched -- they do not appear in the diff at all -- and what moves
+is the header, the phase timings (never deterministic, and this run had a warm compilation
+cache), and the boundary block: `564 -> 566` supplied paths on every configuration, which
+is exactly the two switches above. So the record now says 566 because native answers two
+more places, not because anything about a solve changed.
+
 ### 34.8a [measured] `host_cache._BOUND` still misses on re-assembly, and the residue is **six leaves of 4902**
 
 The memo keys on the `(ConditionMap, unravel)` pytree, not on the graph, so a
