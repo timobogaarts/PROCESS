@@ -1139,7 +1139,9 @@ class PlasmaDiamagneticCurrentFraction(ExplicitFunction):
 class NoDiamagneticCurrent(PlasmaDiamagneticCurrentFraction, StatesValues):
     """`i_diamagnetic_current == NONE` (0) -- the default, and this input's value.
 
-    **A node with no reads, and that is the finding rather than an accident.** PROCESS
+    **A node that computes nothing, and that is the finding rather than an accident.**
+    (It reads its own output's statement and nothing else -- `models/stated.py` derives
+    that read, so the claim is unchanged from when it read literally nothing.) PROCESS
     never assigns `.current_drive.f_c_plasma_diamagnetic` on this arm
     (`plasma_current.py:1081-1094` has no `else`), the field is not settable from
     `IN.DAT` (`process/core/input.py` has no entry for it), and no other model writes it

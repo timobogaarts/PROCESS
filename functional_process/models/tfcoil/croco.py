@@ -350,9 +350,10 @@ def croco_turn_cable_space_extra_void():
     beside its strands -- the void is the interstitial space between the seven circles
     and it is accounted for in `f_a_tf_turn_cable_space_cooling` instead.
 
-    A node with no reads, the same shape as
+    A node that computes nothing, the same shape as
     `models/blankets/hcpb.py::CentrepostNeutronicsAbsent`, and for the same reason: on
-    this arm PROCESS's source *is* a literal. Owning it is what stops
+    this arm PROCESS's source *is* a literal. (Both state their outputs rather than
+    returning them -- `models/stated.py` -- so each reads exactly its own statement.) Owning it is what stops
     `.tfcoil.f_a_tf_turn_cable_space_extra_void` from re-entering the graph as a
     boundary input that the two nodes below would then read from the input file --
     `_audit/optimise_design.md` §16's defect class exactly.
@@ -749,7 +750,7 @@ class CrocoCableGeometry(ExplicitFunction):
 
 class CrocoTurnCableSpaceExtraVoid(StatesValues):
     """cottax node: `run`'s literal `f_a_tf_turn_cable_space_extra_void = 0.0`
-    (`superconducting.py:3894`). Reads nothing.
+    (`superconducting.py:3894`). Computes nothing -- it states its one output.
 
     **Conditional ownership across two `Model` classes.** On the cable-in-conduit path
     the same `VarPath` is a plain input that the run file sets; here PROCESS overwrites

@@ -86,14 +86,19 @@ from functional_process.paths import (
 class TfCryoplantEfficiency(StatesValues):
     """cottax node: `.tfcoil.eff_tf_cryo`, `init.py:933-940`'s sentinel resolved.
 
-    A node with no reads. That is not a degenerate case here, it is the shape of the
-    thing: the value is a *literature constant selected by a switch* -- the ITER
+    A node that computes nothing. That is not a degenerate case here, it is the shape of
+    the thing: the value is a *literature constant selected by a switch* -- the ITER
     cryoplant's 0.13 for a superconducting magnet, a Strawbridge-plot extrapolation's
     0.40 for cryo-aluminium -- and a switch is resolved at assembly in this port, never
     read as a graph value (`indat.machine_from_indat`'s docstring says why: no switch in
     PROCESS is ever an iteration or a scan variable). What reaches the graph is one
     number, and what the node buys is that the number has an owner, so the boundary
     provider stops answering `.tfcoil.eff_tf_cryo` from a `-1.0` that is not a value.
+
+    It reads exactly one thing, and it is its own output's statement -- `StatesValues`
+    derives that, so "no reads of its own" is still the claim. It used to be literally
+    no reads and a `carried()` field; §34 moved the value into the env, where the
+    compiler cannot fold it and `filter_jit` cannot key on it.
 
     `-1.0` is what a defaults table supplies today, on all seven tracked
     configurations, and `.power.thermal_cryo`'s cryoplant divides by it.

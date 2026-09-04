@@ -677,7 +677,9 @@ class HcdSecondaryHeatingNone(HcdSecondaryHeating, StatesValues):
     PROCESS's default (`current_drive_variables.py:206`) and
     `large_tokamak_eval.IN.DAT`'s value, since that file never sets the switch.
 
-    **A node with no reads, and that is the finding, not an accident.** Of the three
+    **A node that computes nothing, and that is the finding, not an accident.** (It
+    reads its three outputs' statements and nothing else -- `models/stated.py` derives
+    those, so the claim is unchanged from when it read literally nothing.) Of the three
     fields it owns, PROCESS explicitly assigns only one -- `p_hcd_secondary_extra_heat_mw
     = 0.0` at `current_drive.py:1682`, guarded by `if i_hcd_secondary == 0` and by
     nothing else. The other two it simply never writes on this arm:

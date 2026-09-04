@@ -19,8 +19,10 @@ own place under the `^stated` mint:
 and the body is the identity. Nothing is invented: the read's name is the write's name,
 one namespace out, so a declaration says only *which* variables it states and never what
 they are called. The value reaches a run through the env, like every other boundary
-input, and `sand_harness.KNOWN_MINT_VALUES` is where each one's value is stated
-(`STATED_VALUES` below is registered into it).
+input. `indat.STATED_VALUES` is where each one's value is stated -- next to the
+`resolve_*` functions that produce the six that are resolutions rather than literals --
+and it is merged into `mda_harness.KNOWN_MINT_VALUES`, the one lookup every seeding path
+in this port already goes through.
 
 Why the value may not stay a Python scalar either
 -------------------------------------------------
@@ -41,8 +43,8 @@ An env value is a traced argument, so it is neither folded nor in the key. That 
 whole of the fix, and it is uniform: there is no member of this family for which a
 specialised scalar would be right.
 
-What each spelling costs, and why the ports are minted rather than spelled out
------------------------------------------------------------------------------
+Why the read is minted rather than given a namespace of its own
+--------------------------------------------------------------
 The read has to be a name no `DataStructure` field answers by accident, and it has to
 survive `sand_harness.ground_truth`'s fallback chain. A mint is both: `is_minted` says
 `boundary.py` should count it apart from a physical input, and `unminted` gives the
