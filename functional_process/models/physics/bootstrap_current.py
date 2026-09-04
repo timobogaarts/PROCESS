@@ -96,7 +96,6 @@ is recorded in the audit record rather than smoothed over.
 """
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto

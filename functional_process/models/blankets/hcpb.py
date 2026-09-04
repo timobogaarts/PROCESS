@@ -77,7 +77,6 @@ carrying:
    read has a real edge and the note stands only as history.
 """
 
-import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 

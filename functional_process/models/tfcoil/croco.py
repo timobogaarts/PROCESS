@@ -100,7 +100,6 @@ never used. `i_str_wp` is still a key of both registries, because it is the swit
 decides *which field* a strain would be read from and arm `8` does use one.
 """
 
-import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,

@@ -39,7 +39,6 @@ consolidation pass, per this dispatch's boundary.
 """
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,

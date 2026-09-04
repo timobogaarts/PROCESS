@@ -39,7 +39,6 @@ ports"): a plain Python int used for ordinary branching in the composite
 marks it `static_argnames`.
 """
 
-import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,

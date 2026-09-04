@@ -554,18 +554,23 @@ def _declaration_modules(obj, seen):
     node definition -- the declaration instance itself plus anything it holds.
 
     `Graph.definitions` holds `cottax.spec.ImplementedFunction`s, not the declaration
-    classes `total_process.py` instantiates; the declaration is reachable as
-    `node.fn.__self__` (a bound method of the `NodalDeclaration` instance). Walking
-    generically rather than special-casing that one shape also covers `Problem` nodes
-    and any future wrapper. `equinox`'s own internal `Module`s (e.g. `BoundMethod`,
-    which carries a `static` `__func__` field) are filtered out by module origin --
-    they are not this project's registrations.
+    classes `total_process.py` instantiates. Since `cottax` builds `fn=self`
+    (`_audit/optimise_design.md` §34), an `ExplicitFunction`'s declaration **is** its
+    `fn` and the first limb below reaches it directly; an `ImplicitFunction`'s is an
+    `equinox` `BoundMethod` and is reached through its fields. Walking generically rather
+    than special-casing either shape also covers `Problem` nodes and any future wrapper.
+    `equinox`'s own internal `Module`s (`BoundMethod` itself, which carries a `static`
+    `__func__` field) are filtered out by module origin -- they are not this project's
+    registrations.
 
-    **A `CarriesValues` node's `fn` is a `functools.partial`, not a bound method**
-    (`models/carried.py`), and a partial has no `__self__` -- the declaration is its
-    first positional argument instead. Without the `partial` limb below the walk stops
-    at the `fn` leaf and every such declaration goes unaudited, silently: a missing
-    switch registration would read as "no switches to check" rather than as a mismatch.
+    **The `functools.partial` and `__self__` limbs are kept and are no longer about
+    `carried.py`.** They existed because a `CarriesValues` node's `fn` was a
+    `jtu.Partial` with the declaration as its first argument, and without the limb every
+    such declaration went unaudited *silently* -- a missing switch registration reading as
+    "no switches to check" rather than as a mismatch. That shape is gone (`models/stated.py`
+    replaced it), but `sand.py`'s constraint bodies are still `functools.partial`s and a
+    bound method is still what a hand-built node may hold, so both limbs stay: the cost of
+    keeping them is nothing and the cost of a silent miss is a wrong number.
 
     Yields
     ------

@@ -624,6 +624,14 @@ DATACLASS_DEFAULTS: dict[tuple[str, str], Any] = {
     ("tfcoil", "i_cp_joints"): -1,
     ("tfcoil", "i_tf_bucking"): -1,
     ("tfcoil", "i_tf_case_geom"): 0,
+    # The two `resolve_eyoung_cond` reads. Added 2026-09-04 (`_audit/optimise_design.md`
+    # §34): a stated value's resolution asks the state for its switch, and until these
+    # were here every tokamak row reported them on `state.missing`. The *number* was
+    # right either way -- `indat._stated_get` falls back to the same
+    # `I_TF_COND_EYOUNG_*_DEFAULT` `imported.get` uses -- but a miss list is a work list,
+    # and answering it here is doing the work rather than logging it.
+    ("tfcoil", "i_tf_cond_eyoung_axial"): 0,
+    ("tfcoil", "i_tf_cond_eyoung_trans"): 1,
     ("tfcoil", "i_tf_sc_mat"): 1,
     ("tfcoil", "i_tf_shape"): 0,
     ("tfcoil", "i_tf_stress_model"): 1,
