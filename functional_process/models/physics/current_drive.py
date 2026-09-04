@@ -47,7 +47,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.carried import CarriesValues, carried
+from functional_process.models.stated import StatesValues
 from functional_process.paths import current_drive, heat_transport, physics
 from functional_process.vocabulary import constants
 from functional_process.vocabulary import PlasmaIgnitionModel
@@ -672,7 +672,7 @@ class HcdSecondaryHeating(ExplicitFunction):
     """
 
 
-class HcdSecondaryHeatingNone(HcdSecondaryHeating, CarriesValues):
+class HcdSecondaryHeatingNone(HcdSecondaryHeating, StatesValues):
     """`i_hcd_secondary == 0` (`NO_CURRENT_DRIVE`): the secondary contributes zero.
 
     PROCESS's default (`current_drive_variables.py:206`) and
@@ -695,21 +695,14 @@ class HcdSecondaryHeatingNone(HcdSecondaryHeating, CarriesValues):
     § "The twelve that are simply inputs" is explicit that the boundary is for variables
     PROCESS *computes nowhere*, not for ones a switch happened to skip.
 
-    All three zeros are `carried` fields rather than literals in the body, so they reach
-    the compiled program as arguments (`models/carried.py`,
-    `_audit/optimise_design.md` §28).
+    All three zeros are **stated** rather than literals in the body, so they reach the
+    compiled program as arguments (`models/stated.py`, `_audit/optimise_design.md` §28,
+    §34): each output is read at `^stated.<its place>` and supplied through the env.
     """
 
     eta_cd_hcd_secondary = OutputInto(current_drive)
     p_hcd_secondary_extra_heat_mw = OutputInto(current_drive)
     p_hcd_secondary_electric_mw = OutputInto(heat_transport)
-
-    eta_cd: jax.Array = carried(0.0)
-    p_extra_heat_mw: jax.Array = carried(0.0)
-    p_electric_mw: jax.Array = carried(0.0)
-
-    def __call__(self):
-        return self.eta_cd, self.p_extra_heat_mw, self.p_electric_mw
 
 
 class HcdSecondaryDrivenCurrent(ExplicitFunction):

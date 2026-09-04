@@ -240,7 +240,18 @@ by anything (confirmed: `grep -rn "physics\\.profile_x" functional_process/model
 finds no remaining `FromExactly`/`Output` binding, only historical docstring mentions). Kept
 as an empty dict, not deleted outright, since a future ungrounded-and-wrong-shaped
 case is exactly what this mechanism is for.
+
+**`indat.STATED_VALUES` is merged in below**, which is the one place a
+`models/stated.StatesValues` output's value enters a run: a stated port
+(`^stated.<place>`) has no `DataStructure` field, and the `unminted` fallback would read
+the place it is *for* -- a cold `.build.dr_cs` at `0.811 m` on a machine with no
+solenoid. Merged rather than written out here because the values are `indat`'s
+`resolve_*`, and this module is downstream of it.
 """
+
+from functional_process.indat import STATED_VALUES  # noqa: E402
+
+KNOWN_MINT_VALUES.update(STATED_VALUES)
 
 DEVICE_ROOTS = ("stellarator", "tokamak")
 """The two device trees a machine's nodes can hang off, as they are spelled in a

@@ -81,7 +81,7 @@ import jax
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.models.carried import CarriesValues, carried_all
+from functional_process.models.stated import StatesValues
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.paths import (
     build,
@@ -2230,31 +2230,29 @@ class CentrepostNeutronics(ExplicitFunction):
     """
 
 
-class CentrepostNeutronicsAbsent(CentrepostNeutronics, CarriesValues):
+class CentrepostNeutronicsAbsent(CentrepostNeutronics, StatesValues):
     """cottax node: `calculate_centrepost_neutronics_absent`. `itart == 0`.
 
     Reads nothing -- the same shape as `i_pulsed_plant`'s unpulsed occupant
     (`next_steps.md` §14.4), and legitimate for the same reason: on this arm PROCESS's
     own source is four literal assignments.
 
-    The four are `carried` on the declaration rather than produced in the body: a zero
-    built during the trace is a compile-time constant, and §25 measured XLA deleting the
-    subexpressions such a zero multiplies (`models/carried.py`,
-    `_audit/optimise_design.md` §28). The unit still states them, at assembly.
+    The four are **stated** rather than produced in the body: a zero built during the
+    trace is a compile-time constant, and §25 measured XLA deleting the subexpressions
+    such a zero multiplies (`models/stated.py`, `_audit/optimise_design.md` §28, §34).
+    The unit (`calculate_centrepost_neutronics_absent`) still states them, through
+    `indat.STATED_VALUES`.
+
+    `carried_all` used to hold the four together, because the ported function hands them
+    back as one tuple and four fields would have restated four literals the unit already
+    states. Stating them keeps that: the four are one `default_factory` row in
+    `indat.STATED_VALUES`, zipped onto the four outputs in declaration order.
     """
 
     pnuc_cp_tf = OutputInto(fwbs)
     p_cp_shield_nuclear_heat_mw = OutputInto(fwbs)
     pnuc_cp = OutputInto(fwbs)
     neut_flux_cp = OutputInto(fwbs)
-
-    absent: tuple[jax.Array, ...] = carried_all(
-        default_factory=calculate_centrepost_neutronics_absent
-    )
-    """`(pnuc_cp_tf, p_cp_shield_nuclear_heat_mw, pnuc_cp, neut_flux_cp)`, all zero."""
-
-    def __call__(self):
-        return self.absent
 
 
 class CentrepostNeutronicsSphericalTokamakSuperconducting(CentrepostNeutronics):

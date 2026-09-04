@@ -52,18 +52,19 @@ superconducting and for a cryo-aluminium magnet and *not* for a water-cooled cop
 which is left at the `-1.0` sentinel. That is reproduced, not repaired: a defect the
 record names is a defect the port carries (`traceability_policy.md`).
 
-**Every value one of these nodes carries is an array, not a Python scalar**
-(`models/carried.py`, `_audit/optimise_design.md` §28). A carrier whose answer is a
-`float` is a compile-time constant in the program XLA builds -- folded into the
-arithmetic that reads it, and part of `eqx.filter_jit`'s cache key, so a `Scan` sweeping
-the input that set it recompiles the whole module at every point. `carried()` is the
-field that says so, and `CarriesValues` is what makes the field visible to the trace;
-the module docstring there records why the obvious repair does not work.
+**No value one of these nodes states is held on the node** (`models/stated.py`,
+`_audit/optimise_design.md` §28, §34). A resolved value stored as a field is either a
+`float`, which XLA folds into the arithmetic that reads it and `eqx.filter_jit` puts in
+its cache key -- so a `Scan` sweeping the input that set it recompiles the whole module
+at every point -- or a `jax.Array`, which `cottax` now refuses in a graph outright. So
+each output is *stated* instead: read at `^stated.<the place>` and supplied through the
+env, where it is a traced argument and neither folded nor keyed on. The value itself is
+`indat.STATED_VALUES`'s, resolved from the input file by the same `indat.resolve_*` the
+declarations name below.
 """
 
 import dataclasses
 
-import jax
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
     From,
@@ -71,7 +72,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.carried import CarriesValues, carried
+from functional_process.models.stated import StatesValues
 from functional_process.paths import (
     build,
     buildings,
@@ -82,7 +83,7 @@ from functional_process.paths import (
 )
 
 
-class TfCryoplantEfficiency(CarriesValues):
+class TfCryoplantEfficiency(StatesValues):
     """cottax node: `.tfcoil.eff_tf_cryo`, `init.py:933-940`'s sentinel resolved.
 
     A node with no reads. That is not a degenerate case here, it is the shape of the
@@ -99,16 +100,12 @@ class TfCryoplantEfficiency(CarriesValues):
     """
 
     eff_tf_cryo = OutputInto(tfcoil)
-
-    value: jax.Array = carried()
-    """The resolved efficiency, from `indat.resolve_eff_tf_cryo`. A fraction in [0, 1]
-    -- except on the copper arm PROCESS does not resolve, where the `-1.0` stands."""
-
-    def __call__(self):
-        return self.value
+    """Stated at `^stated.tfcoil.eff_tf_cryo`, from `indat.resolve_eff_tf_cryo`. A
+    fraction in [0, 1] -- except on the copper arm PROCESS does not resolve, where the
+    `-1.0` stands."""
 
 
-class TfInsulationYoungsModulus(CarriesValues):
+class TfInsulationYoungsModulus(StatesValues):
     """cottax node: `.tfcoil.eyoung_ins`, `init.py:961-975`'s material table.
 
     20 GPa (ITER, DDD11-2 v2 2 2009) for a copper or superconducting magnet, 2.5 GPa
@@ -119,15 +116,10 @@ class TfInsulationYoungsModulus(CarriesValues):
     """
 
     eyoung_ins = OutputInto(tfcoil)
-
-    value: jax.Array = carried()
     """Insulation Young's modulus (Pa), from `indat.resolve_eyoung_ins`."""
 
-    def __call__(self):
-        return self.value
 
-
-class TfConductorYoungsModulus(CarriesValues):
+class TfConductorYoungsModulus(StatesValues):
     """cottax node: `.tfcoil.eyoung_cond_axial` and `.tfcoil.eyoung_cond_trans`,
     `init.py:992-1034`.
 
@@ -144,18 +136,13 @@ class TfConductorYoungsModulus(CarriesValues):
 
     eyoung_cond_axial = OutputInto(tfcoil)
     eyoung_cond_trans = OutputInto(tfcoil)
-
-    axial: jax.Array = carried()
-    transverse: jax.Array = carried()
-    """Named for the outputs rather than spelling the field names twice: a
-    `NodalDeclaration` field is data, not a port, and `eyoung_cond_axial` as both an
-    output name and a field name would read as though the two were connected."""
-
-    def __call__(self):
-        return self.axial, self.transverse
+    """Both from one call to `indat.resolve_eyoung_cond`, stated at
+    `^stated.tfcoil.eyoung_cond_axial` and `^stated.tfcoil.eyoung_cond_trans`. The pair
+    used to be two `carried()` fields named `axial`/`transverse`, to avoid spelling the
+    field names twice; there are no fields now, so the outputs name themselves."""
 
 
-class PfCoilResistivity(CarriesValues):
+class PfCoilResistivity(StatesValues):
     """cottax node: `.pf_coil.rho_pf_coil`, `init.py:1140`.
 
     A **physical consistency rule**: a superconducting PF coil has no resistivity, so the
@@ -164,15 +151,10 @@ class PfCoilResistivity(CarriesValues):
     """
 
     rho_pf_coil = OutputInto(pf_coil)
-
-    value: jax.Array = carried()
     """PF coil winding resistivity (ohm-m), from `indat.resolve_rho_pf_coil`."""
 
-    def __call__(self):
-        return self.value
 
-
-class BeamElectronDensityFraction(CarriesValues):
+class BeamElectronDensityFraction(StatesValues):
     """cottax node: `.physics.f_nd_beam_electron`, `init.py:1145-1147`.
 
     The second physical consistency rule: a machine with no neutral beam has no hot beam
@@ -185,15 +167,11 @@ class BeamElectronDensityFraction(CarriesValues):
     """
 
     f_nd_beam_electron = OutputInto(physics)
-
-    value: jax.Array = carried()
-    """Hot beam density as a fraction of the electron density."""
-
-    def __call__(self):
-        return self.value
+    """Hot beam density as a fraction of the electron density, from
+    `indat.resolve_f_nd_beam_electron`."""
 
 
-class EnergyStorageBuildingVolume(CarriesValues):
+class EnergyStorageBuildingVolume(StatesValues):
     """cottax node: `.buildings.esbldgm3`, `init.py:827`.
 
     A steady-state plant stores no pulse energy, so it has no energy storage building,
@@ -204,12 +182,7 @@ class EnergyStorageBuildingVolume(CarriesValues):
     """
 
     esbldgm3 = OutputInto(buildings)
-
-    value: jax.Array = carried()
     """Energy storage building volume (m^3). `0.0` wherever this node exists."""
-
-    def __call__(self):
-        return self.value
 
 
 class DoubleNullUpperBuild(ExplicitFunction):
@@ -241,7 +214,7 @@ class DoubleNullUpperBuild(ExplicitFunction):
         return dz_shld_lower, dz_vv_lower
 
 
-class StellaratorSolenoidAbsent(CarriesValues):
+class StellaratorSolenoidAbsent(StatesValues):
     """cottax node: `.build.dr_cs` and `.build.dr_cs_tf_gap`, `st_init:23,26`.
 
     **A stellarator has no central solenoid**, and `st_init` says so by zeroing its
@@ -260,21 +233,12 @@ class StellaratorSolenoidAbsent(CarriesValues):
     """
 
     dr_cs = OutputInto(build)
-    dr_cs_tf_gap = OutputInto(build)
-
-    thickness: jax.Array = carried(0.0)
     """`st_init:23`'s literal: the solenoid a stellarator does not have is 0 m thick."""
-    gap: jax.Array = carried(0.0)
-    """`st_init:26`'s literal: and the gap to the TF coil it does not have is 0 m.
-
-    Named for the quantity rather than for the output, the same way
-    `TfConductorYoungsModulus`' pair is: a field is data, not a port."""
-
-    def __call__(self):
-        return self.thickness, self.gap
+    dr_cs_tf_gap = OutputInto(build)
+    """`st_init:26`'s literal: and the gap to the TF coil it does not have is 0 m."""
 
 
-class StellaratorPulseTimes(CarriesValues):
+class StellaratorPulseTimes(StatesValues):
     """cottax node: the four pulse phase durations `st_init:43-46` forces.
 
     **A stellarator runs steady state**, so there is no precharge, no plasma current
@@ -291,16 +255,8 @@ class StellaratorPulseTimes(CarriesValues):
     t_plant_pulse_coil_precharge = OutputInto(times)
     t_plant_pulse_plasma_current_ramp_up = OutputInto(times)
     t_plant_pulse_burn = OutputInto(times)
+    """`st_init:45`'s own comment: one year, 3.15576e7 s."""
     t_plant_pulse_plasma_current_ramp_down = OutputInto(times)
-
-    precharge: jax.Array = carried(0.0)
-    ramp_up: jax.Array = carried(0.0)
-    burn: jax.Array = carried(3.15576e7)
-    """`st_init:45`'s own comment: one year."""
-    ramp_down: jax.Array = carried(0.0)
-
-    def __call__(self):
-        return self.precharge, self.ramp_up, self.burn, self.ramp_down
 
 
 class Initialisation(ModelNamespace):

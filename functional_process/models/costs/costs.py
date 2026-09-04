@@ -48,7 +48,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.models.carried import CarriesValues, carried
+from functional_process.models.stated import StatesValues
 from functional_process.models.pfcoil.masses import (
     I_CS_SUPERCONDUCTOR,
     I_CS_SUPERCONDUCTOR_WST_NB3SN,
@@ -4940,7 +4940,7 @@ class EnergyStorageCost(ExplicitFunction):
     c2253 = OutputInto(costs)
 
 
-class EnergyStorageCostUnpulsed(EnergyStorageCost, CarriesValues):
+class EnergyStorageCostUnpulsed(EnergyStorageCost, StatesValues):
     """`i_pulsed_plant == 0`: no storage, so `.costs.c2253` is zero and nothing is read.
 
     A zero-input node, the same shape as `StellaratorMachineConfig` -- and the same
@@ -4949,16 +4949,11 @@ class EnergyStorageCostUnpulsed(EnergyStorageCost, CarriesValues):
     `.costs.c2253` would be a boundary input read from the `DataStructure`, which is the
     defect this port exists to remove, not a simplification.
 
-    The zero is a `carried` field and not a literal in the body, so it reaches the
-    compiled program as an argument rather than as a constant XLA is free to fold the
-    readers of (`models/carried.py`, `_audit/optimise_design.md` §28).
+    The zero is **stated** and not a literal in the body, so it reaches the compiled
+    program as an argument rather than as a constant XLA is free to fold the readers of
+    (`models/stated.py`, `_audit/optimise_design.md` §28, §34): `.costs.c2253` -- account
+    225.3 (M$) -- is read at `^stated.costs.c2253` and supplied through the env.
     """
-
-    cost: jax.Array = carried(0.0)
-    """Account 225.3 (M$), zero on this arm."""
-
-    def __call__(self):
-        return self.cost
 
 
 class EnergyStorageCostPulsed(EnergyStorageCost):

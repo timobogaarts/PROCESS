@@ -21,6 +21,7 @@ from functional_process.boundary import (
     INPUT,
     MISSING_PRODUCERS_INPUT_FILE,
     MISSING_PRODUCERS_PIN,
+    STATED,
     TOKAMAK_INPUT_FILE,
     TOKAMAK_PIN,
     boundary,
@@ -107,7 +108,7 @@ def test_a_start_port_is_not_counted_as_an_input():
 
 def test_boundary_is_categorised_and_stably_ordered(small):
     assert boundary(small) == ((GUESSED, G("y")), (INPUT, V("b")))
-    assert counts(boundary(small)) == {INPUT: 1, GUESSED: 1}
+    assert counts(boundary(small)) == {INPUT: 1, GUESSED: 1, STATED: 0}
 
 
 # ============================================================== the check
@@ -182,11 +183,24 @@ def test_the_split_is_289_inputs_and_one_guess_per_unsupplied_driven_unknown():
     `.build.dr_cs_tf_gap` and its four pulse phase durations. They are exactly the
     stellarator pins' eight `off` rows -- the paths where believing the input file and
     the dataclass defaults gave a machine with a central solenoid and a 1000 s burn.
+
+    **289 and 6 unchanged, and 16 `stated` added** (`_audit/optimise_design.md` §34).
+    Nine are the *same* producer landings this docstring's last paragraph counts --
+    `.tfcoil.eff_tf_cryo`, `.buildings.esbldgm3`, `.costs.c2253`, the solenoid pair and
+    the four pulse durations -- still owned by a node, now reading their statement from
+    `^stated.<the place>` instead of holding it as a field; the other seven are
+    `LModeProfileReset`'s, converted in the same pass and for the same reason. The
+    `input` count is the number that must not grow and it did not; had `stated` been
+    folded into it the row would read 305 and the distinction would be gone.
     """
     driven = driven_graph(GRAPH)
     have = counts(boundary(driven))
-    assert have[INPUT] == len(GRAPH.unowned_inputs) == 289
-    assert have[INPUT] + have[GUESSED] == len(driven.unowned_inputs) == 295
+    assert have[INPUT] == 289
+    assert have[STATED] == 16
+    assert have[INPUT] + have[STATED] == len(GRAPH.unowned_inputs) == 305
+    assert (
+        have[INPUT] + have[GUESSED] + have[STATED] == len(driven.unowned_inputs) == 311
+    )
 
     # Every guess pairs with an unknown, and an unknown is owned *inside* the driven
     # graph -- which is what makes the guess half derived rather than audited. Asked of
