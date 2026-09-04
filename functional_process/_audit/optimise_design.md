@@ -11690,3 +11690,366 @@ is the next change, and it now has a number to be measured against: **6 -> 0.**
   node has no body. `40d3789`'s new `DeclaredFunction` is the nearest upstream shape, and
   it is the wrong one: it means "nobody has supplied the body yet", where this means
   "there is no body to supply".
+
+
+## 35. The frozen switches stop being a closure, and the last six static leaves go (2026-09-04)
+
+Same worktree, same shadowed `cottax`, as §34. This is §28.5's **third and last** cause of
+a per-scan-point recompile, and §34.8a's six differing static leaves of 4902.
+
+### 35.1 [measured] What was there
+
+`sand._bind` partitions a ported constraint's (or the objective metric's) signature into
+formula-selecting switches and real reads. The switches carry no derivative and take part
+in no edge (`_audit/naming_convention.md` § "switches are not ports"), so they are frozen
+at assembly; they were frozen like this:
+
+```python
+static = {p: switch_values[p] for p in parameters if p in switch_values}
+read   = [p for p in parameters if p not in static]
+bound  = functools.partial(fn, **static) if static else fn
+```
+
+`functools.partial` defines no `__eq__`, so `bound` compares by identity and a
+re-assembled constraint never matched the cached one. On `stellarator_helias` MDF that was
+**six** differing leaves of 4902 -- three `partial`s, each counted once under
+`body.definitions` and once under `schedule.blocking.graph.definitions`.
+
+### 35.2 The fix is not `jax.tree_util.Partial`, and the reason is the rule
+
+`jtu.Partial` compares by value and would have closed the measurement. It was rejected,
+and the argument is the owner's: **a partial binding an argument is a closure by another
+name.** Being a switch today does not stop it being an array tomorrow, and then nothing
+catches it -- which is the entire premise of the ban §34 implements
+(`~/jaxgraph/plans/closures_and_undeclared_inputs.md`: *"Every input must be a port or a
+pytree-visible field. A closure over an array is a port you forgot to declare."*).
+
+Note also that `jtu.Partial` would have been legal only by an accident of position: the
+partial is a *field of* `_NormalisedResidual`, not a node's `fn`, so
+`ImplementedFunction._check_reassembles` never sees it. A fix that needs an exception
+explained in a comment is the wrong fix.
+
+**Store the data, not a closure.** The binding was already wrapped in an `eqx.Module`
+which compares fieldwise; equality failed only because that Module's field held a partial.
+So `fn` and the switches are two ordinary fields, applied at call time:
+
+```python
+class _NormalisedResidual(eqx.Module):
+    fn       : object
+    names    : tuple
+    switches : tuple = ()      # ((parameter, value), ...)
+```
+
+Two spellings mattered and both are stated where they are made:
+
+- **A tuple of pairs, not a `dict`.** A body must be hashable -- `graph._check_bindings`
+  asks `hash(node)` of every binding -- and an `eqx.Module` holding a dict is not.
+- **An ordinary field, not `eqx.field(static=True)`.** Static is treedef, which is exactly
+  what hid `machine_config`'s two lists until `fn=self` went looking (§34.2). An ordinary
+  field puts each switch where `tree_leaves` can see it, and a non-array leaf lands in
+  `eqx.filter_jit`'s cache key **by value**, which is where a formula selector belongs.
+
+`fn` itself is a module-level `constraint_<id>` looked up by name, so it is the *same
+object* on every assembly and compares equal for free. That is why 4896 of the 4902 leaves
+already matched.
+
+### 35.3 [measured] 6 of 4902 -> 0 of 4924
+
+`stellarator_helias`'s MDF problem assembled twice from scratch:
+
+| | before | after |
+|---|---|---|
+| conditions, static halves equal | `False` | **`True`** |
+| `host_cache._flat_key` equal | `False` | **`True`** |
+| second `bind` | miss | **hit** |
+| differing static leaves | **6** of 4902 | **0** of 4924 |
+
+The leaf count rises by 22 because the switch values are now pytree-visible leaves instead
+of hidden inside partials. That is the change working, not a cost.
+
+### 35.4 The no-switch fast path, and a check rather than an assumption
+
+`_Metric` still calls positionally when `switches` is empty, so the
+overwhelming majority of nodes take exactly the path they took before. The switched case
+calls all-keyword, which is only safe if no ported body has a positional-only parameter:
+**checked over every `constraint_<id>` and every `objective_metric_<id>` -- none has a
+positional-only parameter, `*args` or `**kwargs`.**
+
+### 35.5 The larger option this defers to
+
+These switches could instead be enumerated and emitted as declared `Alternative`s, one
+node per switch value, which is the structural answer the port already uses for
+`i_beta_fast_alpha` and for every model-selection switch in `indat.py`. That is the right
+long-term shape: it would make the *selection* visible in the graph rather than as a
+frozen pair on a body, and it would let `Graph.prune` see which arm a run actually takes.
+
+It is a much larger change to generic machinery -- `_bind` is signature-partitioning code
+shared by every constraint and the objective -- and it is **deliberately not attempted
+here**. Recorded as the thing this section defers to.
+
+
+## 36. The objective becomes an ordinary node, and maximise becomes a negation (2026-09-04)
+
+### 36.1 What `CLAUDE.md` has always said, and what was implemented
+
+> This is a *query* over the graph's outputs, **not a node** -- the cottax analogue is
+> `Graph.prune(wanted)`/an `Optimise` problem's objective condition, **selected per run
+> rather than baked into structure**.
+
+Right about *which*: `Optimise.objective` is a single `In`, i.e. one `VarPath`. Not
+implemented about *how*. `sand.objective_node` **built** the metric at assembly from
+`i_figure_merit` -- `abs()` into `FiguresOfMerit`, the enum into `OBJECTIVE_METRICS`,
+`np.sign` into a field of the body -- and welded the result to the problem. The objective
+existed only as a thing `Optimise` needed, so a second metric was not merely hard, it was
+**inexpressible**.
+
+### 36.2 Three changes
+
+1. **`i_figure_merit` is consulted at the input-parsing boundary.**
+   `indat.objective_selection` resolves it once into an `ObjectiveSelection(metric,
+   maximise)`. `sand.objective_nodes` takes that and never sees the integer, so assembly
+   does not branch on an input file's number.
+2. **`Optimise` points at an output and does not own what computes it.**
+   `objective_nodes` returns `{NodePath: ImplementedFunction}` and the `VarPath` to
+   minimise.
+3. **Direction is structure, not a field.** Always minimise. A maximise run gets a
+   `.ObjectiveNegated` node (`_Negate`, no fields) reading `^metric.numerics.objf` and
+   owning `^cond.numerics.objf`.
+
+### 36.3 Why the sign is a node and not a flag on `Optimise`
+
+The obvious alternative -- give `Optimise` a direction -- means `cottax`'s core gaining a
+flag, while this port is its consumer and it is pre-Phase-4. The rule the port has followed
+everywhere else applies: **force one convention and express the variation as structure.**
+A multiply by `-1` is traceable, differentiable and folded away by XLA, so it costs nothing
+in the compiled program, and it is **visible**: a reader of the DSM sees `-metric` being
+minimised instead of having to know that a `sign` field somewhere flipped it.
+
+**The eq/ineq case deliberately gets no such treatment.** That convention is already forced
+-- `cottax` states `g <= 0` -- and the VMCON flip to `i >= 0` lives in the driver, which is
+the right boundary: you adapt to a library's convention where you meet the library.
+`CLAUDE.md`'s open item there is a different one (the equality/inequality split is
+positional, not typed) and is untouched.
+
+### 36.4 [measured] The reported value does not move, which was the gate
+
+`^cond.numerics.objf` still holds PROCESS's own **signed** figure of merit -- what
+`objective_function(i_figure_merit, data)` returns, and what every report and every
+`reference_cold_matrix.txt` `objf` cell carries. Only *where* the sign is applied changed:
+it was a field of the body, it is a node now, and the place `Optimise` minimises is the
+same place with the same value.
+
+**Checked bitwise at a fixed design point**, both shapes evaluated in one process at the
+primed cold env, so the answer is about the *expression* and not about where a solve
+wandered to:
+
+| | `sign * metric(...)` | metric node then negate | |
+|---|---|---|---|
+| `st_regression` (maximise) | `-41.668639402196995` | `-41.668639402196995` | **same** |
+| `low_aspect_ratio_DEMO` (maximise) | `-0.5198691015832361` | `-0.5198691015832361` | **same** |
+| `stellarator_helias` (minimise) | `1.3351754993456166` | `1.3351754993456166` | **same** |
+
+Two of the seven configurations maximise (`low_aspect_ratio_DEMO` at `-14`,
+`st_regression` at `-5`), so those are the two graphs that gain a node; the other five are
+structurally unchanged.
+
+### 36.5 [measured] Would an N-metric graph bite? Yes, and the existing check covers it
+
+The use case this keeps open is a trade study: optimise on COE but read major radius, beta
+and Q *at the answer* rather than re-solving. Nothing here builds it -- the default is
+exactly one metric -- but the question the owner asked is whether it *would* work, and it
+was measured rather than assumed.
+
+- **All sixteen metrics resolve their ports on all seven configurations.** No metric fails
+  to assemble for want of a variable, so the naive worry does not bite.
+- **They would not all be *sound*.** Counting a read as answered when a node produces it or
+  the run's own `ixc` owns it:
+
+| configuration | metrics with no frozen read |
+|---|---|
+| `stellarator_helias` | 13 / 16 |
+| `helias_5b` | 10 / 16 |
+| `large_tokamak_nof` | 12 / 16 |
+| `large_tokamak_eval` | 9 / 16 |
+| `low_aspect_ratio_DEMO` | 12 / 16 |
+| `spherical_tokamak_eval` | 7 / 16 |
+| `st_regression` | 7 / 16 |
+
+  Nine metrics read a frozen boundary value somewhere; `.physics.rmajor` and
+  `.times.t_plant_pulse_burn` are the recurring two, with `.pf_power.srcktpm`,
+  `.tfcoil.tfcmw`, `.costs.ireactor`, `.costs.f_t_plant_available` and
+  `.physics.b_plasma_toroidal_on_axis` behind them.
+
+That is **§26's defect class exactly** -- an objective reading a `0.0` nothing produces --
+and it already has a check: `boundary.inert_conditions`/`refuse_inert_conditions` runs over
+`mdf.mdf_graph`'s graph, which is where these nodes live, so an N-metric graph is checked
+by it for free. The constraint on the use case is therefore *which* metrics a given
+configuration can honestly report, not whether the structure permits several.
+
+### 36.6 What this did not do
+
+`i_figure_merit` is consulted in `indat`, which is the input-parsing boundary, and the
+objective node is inserted by `sand`/`mdf` into the **problem** graph. It is **not** in the
+machine `machine_from_indat` returns, and that was deliberate: `boundary.py` states the
+invariant that the model graph *"carries the models and not the objective or the constraint
+nodes"*, and `mdf.mdf_graph` states the other half (*"No `Optimise` node: inserting one
+fuses the whole graph into a single block"*). Moving the objective into the machine would
+put it inside `driven_graph`, hence inside the MDA's blocking and every boundary pin, and
+would very likely move answers. That is a different architecture, not a refactor, and it is
+recorded here rather than attempted.
+
+
+## 37. `host_cache._BOUND` is deleted: the removal condition arrives in the better form (2026-09-04)
+
+### 37.1 The condition, and how it actually arrived
+
+`_flat_key` was landed (§32.5) with a dated removal condition, written to prevent exactly
+the failure it names:
+
+> **When `cottax`'s `Graph` carries a precomputed `(static_key, array_leaves)` pair, delete
+> this function and key `bind` on what the graph already has.** Do not keep both: a second
+> cache that outlives its reason, because nobody dared remove it, is the failure mode this
+> note exists to prevent.
+
+`Graph` does not carry a pair. It is **static outright** and holds no array at all (§34),
+which is the same guarantee reached from the other side and a stronger one. So the note's
+instruction is honoured with its clauses swapped: the **memo** is what goes, and
+`_flat_key` stays with a different job.
+
+### 37.2 What replaced it
+
+`bind` built its three `jax.jit` wrappers *inside* the call -- fresh function objects every
+solve, so jax's own cache was keyed on something that changed, and `_BOUND` had to hold the
+wrappers for a second solve to hit. All three are module level now, `_rebuild` is a
+module-level function (the inverse of `_flat_key`: `mask` says which leaf positions were
+arrays, so the two sequences interleave back), and the block's structure rides as a
+`static_argnums` argument. jax's cache is then keyed on the block **by value** and does what
+the memo was doing.
+
+`_flat_key` stopped being a *cache probe* and became the **structure token**. It can be a
+static argument at all only because of §34: its `frozen` half is a tuple of the non-array
+leaves, and before the array ban one of those could be a `jax.Array` sitting on a
+declaration, which is a `TypeError` in `static_argnums`.
+
+`_Bound`, `_BOUND` and `_BOUND_LIMIT` are gone, with the eviction that came with them --
+the eviction existed because a re-assembling loop appended two entries a solve without
+bound (§32.2), and there is nothing left to grow.
+
+### 37.3 [measured] `_Structure`, and the cost this could have hidden
+
+A `static_argnums` argument is hashed on **every call**, and this token's `frozen` half is
+~5 000 leaves. Medians over 60 calls, `stellarator_helias` MDF, one process:
+
+| token | ms/call |
+|---|---|
+| a **fresh** `_Structure` each call | **9.23** |
+| **one** `_Structure` reused | **0.89** |
+
+So the memoised hash is worth a factor of ten, and without it the removal would have been a
+large silent regression. `_Structure` is a two-slot wrapper whose `__hash__` is computed
+once and whose `__eq__` short-circuits on identity -- the precedent is `cottax`'s own
+`Graph.__hash__`, memoised in `__dict__` for the identical reason (`f333b5e`: *"a warm
+graph and a cold one stay one treedef, one equality and one jit cache key"*). Identity is
+the common case, since `bind` hands one instance to all three programs for a whole solve;
+the deep fallback is what makes a *re-assembled* block a hit.
+
+### 37.4 [measured] The re-assembly gate
+
+`stellarator_helias` MDF: assemble, seed, bind and call all three programs; then do the
+whole thing **again from scratch**, which is the notebook regime. Every XLA compilation
+counted with §22.2's instrument.
+
+| | first assembly | **re-assembled from scratch** |
+|---|---|---|
+| `dcda0769`, pinned `cottax` | 22 compiles, 19.73 s | **3 compiles, 19.29 s** |
+| this branch, shadowed `cottax` | 23 compiles, 20.97 s | **0 compiles, 0.24 s** |
+
+**~77x**, and it is precisely the case `_BOUND` never served: §34.8a measured the memo
+missing every re-assembly, and §35 removed the last cause.
+
+### 37.5 [measured] What removing the memo costs per call
+
+A cross-tree per-call number prices two different graphs, not the mechanism, so both shapes
+were built over the **same block in one process**:
+
+| | ms/call |
+|---|---|
+| A -- module-level jit + `_Structure` as `static_argnums` (now) | **0.59** |
+| B -- per-solve closure over `(treedef, static)` (what `_BOUND` held) | **0.49** |
+| difference | **+0.10** |
+
+About **0.06 s over a 552-call solve** (§31.23's count for one row). `bind` itself is
+~8-9 ms, which is `_flat_key`'s single flatten plus the token's one hash, against the
+memo's own documented *hit* of 7.4 ms -- so binding is unchanged and the whole price of the
+removal is a tenth of a millisecond a call.
+
+**Reported as a cost and not hidden**: the memo was cheaper per call by 20 %. It is not
+worth keeping for that, because what it cost was the entire re-assembly regime, and because
+a second cache nobody dares remove is the failure mode §32.5 wrote the condition against.
+
+The absolute per-call figure is sensitive to how much is retained -- the same call measures
+0.59 ms with one assembly live and ~1.5 ms in a process holding two -- which is why the
+mechanism is priced pairwise rather than by an absolute number.
+
+### 37.6 What moved around it
+
+- `run_cold_matrix.main` drops its `host_cache._BOUND.clear()`; `jax.clear_caches()`
+  already releases what that line was for, so the per-row teardown is one call instead of
+  two and there is no port-side cache left to forget about.
+- `session.py`'s premise is narrowed rather than deleted. Re-assembly is still *work*
+  (`machine_from_indat`, the graph, `mdf.assemble`), so a session is still the right way to
+  walk a scan -- but for the MDF path it is no longer the difference between a second and a
+  minute, and §32.2's numbers are kept and dated as `dcda0769`'s.
+- `test_host_cache.py` loses its `_empty_memo` fixture and its three memo-length
+  assertions, and gains compile-count assertions instead: a re-assembled block compiles
+  nothing, a structurally different one compiles, and `bind` holds no state.
+
+### 37.7 [measured] The answers gate, and how it had to be taken
+
+The cold matrix moved **eight of twelve rows against `reference_cold_matrix.txt`**, and
+almost none of that is this branch's. The pin was `b4238de3`'s and **`main` never
+regenerated it when the epsilon smoothing landed** (`2cd4e940`), so it was stale for
+`main` as well -- which is exactly the trap §28.6 had to work around once already.
+
+So the comparison was re-taken against a baseline instead of a pin: the same
+`--native --compare-process` run on `main` at `2cd4e940`, under the *pinned* `cottax`,
+giving an epsilon-only column. Three columns, one attribution:
+
+| | rows |
+|---|---|
+| moved by epsilon alone (pin -> `main`) | **8 / 12** |
+| identical between `main` and this branch | **8 / 12** |
+| differing between `main` and this branch, **structure only** | **4 / 12** |
+| differing between `main` and this branch, **any answer cell** | **0 / 12** |
+
+The four are `low_aspect_ratio_DEMO` and `st_regression`, MDF and SAND -- the two
+configurations that **maximise** -- and the only cells that move are `nodes` (+1 on all
+four) and `blks` (+1 on the two MDF rows). That is `.ObjectiveNegated` (§36) appearing in
+the graph, which is the change working and not an answer. `SQP`, `status`, `objf`,
+`PRO objf`, `d objf`, `worst dx`, `max|eq|`, `min ie` and `PRO` are identical on all
+twelve rows.
+
+**Both of this section's suspects were tested directly rather than inferred from the
+table**, because "the diff is small" is not attribution:
+
+- **The negation node** -- §36.4: bit-identical at a fixed point on all three
+  configurations tried.
+- **`_rebuild` versus `eqx.combine`** -- the compiled program's own values *and* its
+  Jacobian, both shapes built over the same block in one process:
+  `stellarator_helias`, `st_regression`, `large_tokamak_eval`, **values SAME, jacobian
+  SAME** on all three.
+
+The pin is regenerated here, since this branch is what carries both the epsilon merge and
+the structural change, and leaving it stale is what made this attribution cost an extra
+run.
+
+### 37.8 What this did not settle
+
+- **The `values` call is 20 % slower than the closure it replaced** (§37.5). Small, real,
+  and reported. If it ever matters, the honest fix is upstream: a `Graph` that hands over
+  its own precomputed `(hash, array_leaves)` would remove the token's construction from
+  `bind` entirely, which is §32.5's original prediction after all -- just not needed.
+- **Only the MDF path was measured end to end.** SAND binds through the same function and
+  should behave identically, but the re-assembly gate above is one formulation, and
+  `sand_harness._SCHEDULE_WHOLE`/`_SCHEDULE_RUNNERS` are separate memos with their own
+  keying that this section did not touch.
