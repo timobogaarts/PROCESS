@@ -49,7 +49,7 @@ matching `confinement_time.py`'s convention.
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.paths import physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.l_h_transition import (
     calculate_hubbard2012_lower,
     calculate_hubbard2012_nominal,

@@ -24,7 +24,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.fusion_reactions import (
     alpha_power_beam,
     beam_fusion_cross_section,

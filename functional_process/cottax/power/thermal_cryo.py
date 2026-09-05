@@ -43,7 +43,7 @@ from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
     CoilNuclearHeatingModel,
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     current_drive,
     fwbs,
     heat_transport,
@@ -752,7 +752,7 @@ class CryoQNucStep(FixedPointFunction):
       no dependence on the unknown at all, so the residual `g(u) - u` has derivative
       `-1`: well-posed, one Picard step from anywhere, and SAND-solvable.
     - otherwise -- `g` is the exact identity, the residual is structurally zero, and
-      `functional_process.sand.degenerate_fixed_points` detects that by
+      `functional_process.cottax.sand.degenerate_fixed_points` detects that by
       differentiation and drops the problem, reverting `.fwbs.qnuc` to an ordinary
       boundary input. Which *is* PROCESS's "qnuc is input" semantics, recovered from
       structure rather than from a comment.

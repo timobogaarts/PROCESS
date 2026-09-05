@@ -50,7 +50,7 @@ from functional_process.models.buildings.buildings import (
     calculate_tf_coil_envelope,
 )
 from functional_process.models.safe_math import safe_pow  # noqa: F401
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     buildings,
     costs,

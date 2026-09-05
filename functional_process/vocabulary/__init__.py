@@ -5,7 +5,7 @@ physical constants, ~30 switch enums, two data tables and a list of area names -
 and declarations, no behaviour. This package is those, copied.
 
 §23.2 is the rule that makes the copy safe and it is not optional: **vendor for runtime,
-assert equality in tests**. `tests/functional_process/test_vocabulary.py` asserts every
+assert equality in tests**. `functional_process/tests/test_vocabulary.py` asserts every
 name here equals PROCESS's, and it lives in `tests/`, where `process` *is* importable.
 Unit #8 chose to import the stellarator presets rather than re-type them because
 "transcription buys a non-importing test and pays with a drift mode"; the equality test

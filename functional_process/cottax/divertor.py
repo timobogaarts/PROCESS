@@ -52,7 +52,7 @@ from functional_process.models.divertor import (
     calculate_divertor_heat_load_wade_double_null,
 )
 from functional_process.models.safe_math import safe_pow  # noqa: F401
-from functional_process.paths import blanket, divertor, fwbs, physics
+from functional_process.cottax.paths import blanket, divertor, fwbs, physics
 
 
 class DivertorHeatFluxSplit(ExplicitFunction):

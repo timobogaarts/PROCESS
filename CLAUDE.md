@@ -76,7 +76,7 @@ diffs against PROCESS show precision loss that reads like a porting bug
 ### Commands
 
 ```bash
-$PY -m pytest tests/functional_process      # the port's validation harness — 3752
+$PY -m pytest functional_process/tests         # the port's validation harness — 3752
                                             # passed + 3347 skipped, ~60 s. The cases
                                             # mirror `functional_process/`; the audit
                                             # records stay next to the port. See below.
@@ -103,9 +103,9 @@ before touching it. The short version:
 - **A unit's three files share a stem at the same relative path in three trees**:
   `density_limits.py` (the port) in `functional_process/`, `density_limits.md` (the audit
   record) under `functional_process/_audit/units/`, and `test_density_limits.py` (the
-  case) under `tests/functional_process/`. What binds a record to its unit is its row in
+  case) under `functional_process/tests/`. What binds a record to its unit is its row in
   `_audit/unit_registry.md`, which names the path explicitly and is enforced by the
-  meta-tests in `tests/functional_process/test_registry_coverage.py` — not adjacency.
+  meta-tests in `functional_process/tests/test_registry_coverage.py` — not adjacency.
 - **Tier is a base class.** A case declares `audit_record`/`reference`/`ported`/`samples`
   and subclasses `Tier1Contract` or `Tier2Contract`; it writes no test functions. Tier 2
   has no value-agreement test *by construction*, because PROCESS's answer is not ground

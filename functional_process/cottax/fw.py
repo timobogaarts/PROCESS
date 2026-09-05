@@ -101,7 +101,7 @@ from functional_process.models.engineering.ivc_functions import (
     dshellarea,  # noqa: F401
     eshellarea,  # noqa: F401
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     constraints,
     divertor,

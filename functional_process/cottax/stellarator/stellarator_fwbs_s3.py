@@ -23,7 +23,7 @@ something this function's own signature encodes. `self.first_call_stfwbs` is als
 instance (`stellarator.py:95`), with no `VarPath` -- see the audit record's open
 questions for why that is left unresolved rather than papered over.
 
-Deliberately **not registered** in `functional_process/total_process.py` by this pass:
+Deliberately **not registered** in `functional_process/cottax/total_process.py` by this pass:
 out of this task's boundary, and premature regardless, since `.divertor.
 a_div_surface_total` is also `Divertor`'s own `Output` on the very same `VarPath` this
 node reads -- wiring both into one graph unconditionally today would pick an evaluation
@@ -36,7 +36,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     divertor,
 )
 from functional_process.models.stellarator.stellarator_fwbs_s3 import (
@@ -48,7 +48,7 @@ class DivertorPlateMass(ExplicitFunction):
     """cottax node: `calculate_divertor_plate_mass`, unchanged, ports declared.
 
     See the module docstring for why this node is not registered in
-    `functional_process/total_process.py` yet.
+    `functional_process/cottax/total_process.py` yet.
     """
 
     m_div_plate = OutputInto(divertor)

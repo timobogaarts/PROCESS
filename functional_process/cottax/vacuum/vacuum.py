@@ -48,7 +48,7 @@ from functional_process.models.engineering.ivc_functions import (
     dshellvol,  # noqa: F401
     eshellvol,  # noqa: F401
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     blanket,
     build,
     divertor,

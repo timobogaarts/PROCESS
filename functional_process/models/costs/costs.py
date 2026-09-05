@@ -1056,7 +1056,7 @@ def calculate_first_wall_cost_magnetic_confinement(
     Split out of the composite above rather than left inside it because `ife` is a
     model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
     kwarg: the node calls this function and never sees the integer. The composite keeps
-    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    the refusal -- it is what `functional_process/tests/models/costs/test_costs.py`
     diffs against PROCESS's own method, sample by sample, `ife` included -- and
     `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
     Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
@@ -1173,7 +1173,7 @@ def calculate_blanket_cost_magnetic_confinement(
     Split out of the composite above rather than left inside it because `ife` is a
     model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
     kwarg: the node calls this function and never sees the integer. The composite keeps
-    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    the refusal -- it is what `functional_process/tests/models/costs/test_costs.py`
     diffs against PROCESS's own method, sample by sample, `ife` included -- and
     `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
     Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
@@ -1254,7 +1254,7 @@ def calculate_shield_cost_magnetic_confinement(
     Split out of the composite above rather than left inside it because `ife` is a
     model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
     kwarg: the node calls this function and never sees the integer. The composite keeps
-    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    the refusal -- it is what `functional_process/tests/models/costs/test_costs.py`
     diffs against PROCESS's own method, sample by sample, `ife` included -- and
     `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
     Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
@@ -2543,7 +2543,7 @@ def calculate_power_injection_cost_magnetic_confinement(
     Split out of the composite above rather than left inside it because `ife` is a
     model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
     kwarg: the node calls this function and never sees the integer. The composite keeps
-    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    the refusal -- it is what `functional_process/tests/models/costs/test_costs.py`
     diffs against PROCESS's own method, sample by sample, `ife` included -- and
     `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
     Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
@@ -2770,7 +2770,7 @@ def calculate_auxiliary_component_cooling_cost_magnetic_confinement(
     Split out of the composite above rather than left inside it because `ife` is a
     model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
     kwarg: the node calls this function and never sees the integer. The composite keeps
-    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    the refusal -- it is what `functional_process/tests/models/costs/test_costs.py`
     diffs against PROCESS's own method, sample by sample, `ife` included -- and
     `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
     Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).
@@ -2898,7 +2898,7 @@ def calculate_fuel_processing_cost_magnetic_confinement(
     Split out of the composite above rather than left inside it because `ife` is a
     model-selection switch, and under `_audit/next_steps.md` §14.2 no switch is a static
     kwarg: the node calls this function and never sees the integer. The composite keeps
-    the refusal -- it is what `tests/functional_process/models/costs/test_costs.py`
+    the refusal -- it is what `functional_process/tests/models/costs/test_costs.py`
     diffs against PROCESS's own method, sample by sample, `ife` included -- and
     `machine_from_indat` refuses `ife == 1` at assembly instead, once, for all seven
     Account-22x nodes at once (`indat.py`'s `_ife_cost_accounts_arm`).

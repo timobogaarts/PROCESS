@@ -36,7 +36,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import physics, times
+from functional_process.cottax.paths import physics, times
 from functional_process.models.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,

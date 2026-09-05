@@ -126,7 +126,7 @@ def calculate_build(
         every real run ends with (`output=True`, needed to write `OUT.DAT`/
         `MFILE.DAT`) runs `st_build` first so `st_coil` wins for good -- confirmed
         directly against a converged run via the block-by-block MDA-vs-PROCESS
-        comparison harness (`functional_process/mda_harness.py`), which caught this
+        comparison harness (`functional_process/cottax/mda_harness.py`), which caught this
         port's `Build` node claiming ownership under the wrong (`st_build`'s) formula.
         `st_coil`'s formula is the one PROCESS's real answer keeps, so
         `coils/calculate.py`'s new `ZTfInsideHalf` node owns `.build.z_tf_inside_half`

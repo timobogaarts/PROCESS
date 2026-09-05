@@ -17,7 +17,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     stellarator,
     stellarator_config,
     tfcoil,

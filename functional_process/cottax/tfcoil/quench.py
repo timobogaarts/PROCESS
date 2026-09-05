@@ -93,7 +93,7 @@ pure functions are here, tested against PROCESS, ready for whichever binding is 
 import equinox as eqx
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.paths import constraints, superconducting_tfcoil, tfcoil
+from functional_process.cottax.paths import constraints, superconducting_tfcoil, tfcoil
 from functional_process.models.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,  # noqa: F401 -- re-exported for tests
     calculate_quench_protection_current_density,  # noqa: F401 -- re-exported for tests
@@ -151,7 +151,7 @@ class TfCoilQuenchHeatCurrentDensity(ExplicitFunction):
     `superconducting.md` records for the mass slot.
 
     The harness contracts already excluded both from differentiation for this same
-    reason (`tests/functional_process/models/tfcoil/test_quench.py`'s `_SEAM_STATICS`),
+    reason (`functional_process/tests/models/tfcoil/test_quench.py`'s `_SEAM_STATICS`),
     so the node's declared reads and the case's differentiated arguments now say the
     same thing.
     """

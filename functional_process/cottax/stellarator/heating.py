@@ -31,7 +31,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     current_drive,
     heat_transport,
     physics,

@@ -61,7 +61,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import current_drive, physics, times
+from functional_process.cottax.paths import current_drive, physics, times
 from functional_process.models.physics.physics import (
     calculate_beta_limit_from_norm,
     calculate_beta_norm_max_wesson,

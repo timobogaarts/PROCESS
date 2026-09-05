@@ -105,7 +105,7 @@ from functional_process.models.blankets.hcpb import (
 )
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.cottax.stated import StatesValues
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     ccfe_hcpb,
     current_drive,

@@ -61,7 +61,13 @@ from functional_process.cottax.pfcoil import (
     REFERENCE_TOPOLOGY,
     PFCoilTopology,
 )
-from functional_process.paths import heat_transport, pf_coil, pf_power, physics, times
+from functional_process.cottax.paths import (
+    heat_transport,
+    pf_coil,
+    pf_power,
+    physics,
+    times,
+)
 from functional_process.models.power.pf_coil_power import (
     COILS_IN_GROUP_WITH_CS,
     GROUP_CIRCUIT_INDEX,

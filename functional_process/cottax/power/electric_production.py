@@ -22,7 +22,7 @@ from functional_process.models.switch_enums import (
     CostOfElectricityModel,
     SphericalTokamakModel,
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     buildings,
     fwbs,
     heat_transport,

@@ -11,7 +11,7 @@ into constants, enums, tables and presets -- *declarations* -- and §23.2's vend
 was written for those. A CoolProp wrapper is **behaviour**: it calls a C library and
 returns a number that no test can read off a source line. So it sits beside
 `vocabulary/`, not inside it, and the §23.2 rule is applied to it anyway --
-`tests/functional_process/test_fluid_properties.py` asserts this module agrees with
+`functional_process/tests/test_fluid_properties.py` asserts this module agrees with
 `process.core.coolprop_interface` **exactly** (`==`, not `approx`) over the temperatures
 the quench chain actually queries.
 

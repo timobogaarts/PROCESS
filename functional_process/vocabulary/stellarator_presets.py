@@ -3,7 +3,7 @@
 
 Unit #8 deliberately *imported* these to avoid a transcription drift mode; §23.2 reverses
 that for the runtime and pays the debt with a dict-equality test in
-`tests/functional_process/test_vocabulary.py`.
+`functional_process/tests/test_vocabulary.py`.
 """
 
 HELIAS5B = {

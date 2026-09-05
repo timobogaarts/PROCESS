@@ -51,7 +51,7 @@ from functional_process.models.cs_fatigue import (
     surface_stress_intensity_factor,  # noqa: F401
 )
 from functional_process.models.safe_math import safe_pow, safe_sqrt  # noqa: F401
-from functional_process.paths import cs_fatigue, pf_coil, physics
+from functional_process.cottax.paths import cs_fatigue, pf_coil, physics
 
 
 def calculate_cs_fatigue_n_cycle_gated(

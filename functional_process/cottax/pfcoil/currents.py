@@ -50,7 +50,7 @@ from functional_process.cottax.pfcoil import (
     PFCoilTopology,
     PFLocation,
 )
-from functional_process.paths import build, pf_coil, physics
+from functional_process.cottax.paths import build, pf_coil, physics
 from functional_process.models.pfcoil.currents import (
     calculate_cs_flux_swing,  # noqa: F401 -- re-exported for tests
     calculate_cs_flux_swing_for_topology,

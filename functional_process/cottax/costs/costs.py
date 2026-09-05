@@ -117,7 +117,7 @@ from functional_process.cottax.pfcoil.masses import (
 )
 from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.cottax.stated import StatesValues
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     buildings,
     costs,
     current_drive,

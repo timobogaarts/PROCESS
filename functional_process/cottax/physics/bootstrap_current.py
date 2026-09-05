@@ -99,7 +99,7 @@ import equinox as eqx
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.cottax.stated import StatesValues
-from functional_process.paths import current_drive, physics
+from functional_process.cottax.paths import current_drive, physics
 from functional_process.models.physics.bootstrap_current import (
     _beta_poloidal_sauter,
     _beta_poloidal_total_sauter,

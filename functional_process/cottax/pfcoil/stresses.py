@@ -51,7 +51,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import pf_coil, tfcoil
+from functional_process.cottax.paths import pf_coil, tfcoil
 from functional_process.models.pfcoil.stresses import (
     _ellipe,  # noqa: F401 -- re-exported for tests
     _ellipk,  # noqa: F401 -- re-exported for tests

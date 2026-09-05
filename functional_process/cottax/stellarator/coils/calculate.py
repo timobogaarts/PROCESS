@@ -77,7 +77,7 @@ from functional_process.cottax.stellarator.coils.mass import (
 from functional_process.cottax.stellarator.coils.quench import (
     calculate_quench_protection,  # noqa: F401
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     constraints,
     stellarator,
@@ -905,7 +905,7 @@ class ZTfInsideHalf(ExplicitFunction):
     flag; every real run ends with an `output=True` report pass that runs `st_build`
     then `st_coil`, so `st_coil`'s value is what survives into the converged answer --
     confirmed directly against a real run via the block-by-block MDA-vs-PROCESS
-    comparison harness (`functional_process/mda_harness.py`), which caught `Build`
+    comparison harness (`functional_process/cottax/mda_harness.py`), which caught `Build`
     claiming this field under the wrong (transient, `st_build`) formula. See
     `build.py`'s `calculate_build`/`Build` docstrings for the fuller account, and
     `_audit/next_steps.md` §5 for this session's other "ordering artifact" findings --

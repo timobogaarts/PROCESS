@@ -49,7 +49,7 @@ from functional_process.cottax.pfcoil import (
     SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     cs_fatigue,
     pf_coil,

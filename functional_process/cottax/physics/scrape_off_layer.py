@@ -78,7 +78,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.scrape_off_layer import (
     calculate_eich2013_sol_power_decay_length,
     calculate_mast2014_sol_power_decay_length_1,

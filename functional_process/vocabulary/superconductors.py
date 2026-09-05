@@ -10,7 +10,7 @@ a declaration -- attribute access over a fixed table, no computation -- which is
 generated stubs.
 `indat.py:1383` reads `.sc_shape`, so the attributes are load-bearing, not decoration.
 
-Lines 18-165 of the source, unmodified. `tests/functional_process/test_vocabulary.py`
+Lines 18-165 of the source, unmodified. `functional_process/tests/test_vocabulary.py`
 asserts names, values *and* every attached attribute against PROCESS's.
 """
 

@@ -96,7 +96,12 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import build, physics, superconducting_tfcoil, tfcoil
+from functional_process.cottax.paths import (
+    build,
+    physics,
+    superconducting_tfcoil,
+    tfcoil,
+)
 from functional_process.models.tfcoil.stress import (
     extended_plane_strain,  # noqa: F401 -- re-exported for tests/.../test_stress.py
     eyoung_parallel,  # noqa: F401 -- re-exported for tests/.../test_stress.py
@@ -299,7 +304,7 @@ class TfStressPlaneStressBuckedCaseIntegerTurn(TfStressPlaneStressBuckedCase):
     different fields, and on this one `dx_tf_turn_cable_space_average` has no producer
     at all (`CiccIntegerTurnGeometry` does not own it), so declaring it would put a
     stale `DataStructure` value into the answer -- the exact defect
-    `functional_process/boundary.py` exists to catch.
+    `functional_process/cottax/boundary.py` exists to catch.
     """
 
     def __call__(

@@ -73,7 +73,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.cottax.stated import StatesValues
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     buildings,
     pf_coil,

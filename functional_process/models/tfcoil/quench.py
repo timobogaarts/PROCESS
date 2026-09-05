@@ -391,7 +391,7 @@ def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
     )
     # The wrapper is vendored (`functional_process/fluid_properties.py`, a verbatim copy
     # of `process/core/coolprop_interface.py`, equality-tested against it in
-    # `tests/functional_process/test_fluid_properties.py`), so this call no longer needs
+    # `functional_process/tests/test_fluid_properties.py`), so this call no longer needs
     # `process` -- §23.6, the last runtime PROCESS import in the port.
     #
     # **The deferral stays, for a second reason.** It was here so that importing this

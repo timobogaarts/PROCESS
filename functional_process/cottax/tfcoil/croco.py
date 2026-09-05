@@ -110,7 +110,7 @@ from functional_process.cottax.stated import StatesValues
 from functional_process.cottax.tfcoil.superconducting import (
     TfSuperconductorTemperatureMargin,
 )
-from functional_process.paths import superconducting_tfcoil, tfcoil
+from functional_process.cottax.paths import superconducting_tfcoil, tfcoil
 from functional_process.models.tfcoil.croco import (
     calculate_hazelton_zhai_rebco_croco_temperature_margin,
     croco_averaged_turn_geometry_from_current_per_turn,

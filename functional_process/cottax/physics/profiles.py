@@ -56,7 +56,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.profiles import (
     calculate_density_profile,
     calculate_greenwald_density_fractions,

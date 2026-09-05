@@ -90,7 +90,7 @@ from functional_process.models.build import (
     plasma_outboard_edge_toroidal_ripple_picture_frame,
 )
 from functional_process.models.safe_math import safe_sqrt  # noqa: F401
-from functional_process.paths import build, divertor, physics, tfcoil
+from functional_process.cottax.paths import build, divertor, physics, tfcoil
 
 
 class PlasmaXpointHeights(ExplicitFunction):

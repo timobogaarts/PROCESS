@@ -2,7 +2,7 @@
 
 The dataclass and the table only -- none of that module's initialisation routines, which
 need a `DataStructure`. Equality with PROCESS's table is asserted in
-`tests/functional_process/test_vocabulary.py`.
+`functional_process/tests/test_vocabulary.py`.
 """
 
 from __future__ import annotations

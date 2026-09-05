@@ -207,7 +207,7 @@ max-locals = 17
 # The port's validation harness. Its cases live under tests/ (mirroring the package)
 # while the audit records stay next to the modules they justify, so it picks up the
 # tests/** ignores above and needs only RUF012 added back, for the same reason.
-"tests/functional_process/**" = ["RUF012"]
+"functional_process/tests/**" = ["RUF012"]
 "examples/**" = [ 'B018', 'E402']
 "{tests,tracking,documentation/scripts,examples}/**" = ['INP001']
 "process/{core/io/plot/summary.py,data_structure/*}" = ["E501"]

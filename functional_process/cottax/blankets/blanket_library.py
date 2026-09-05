@@ -81,7 +81,7 @@ from functional_process.models.blankets.blanket_library import (
     calculate_elliptical_blkt_volumes,
 )
 from functional_process.models.engineering.ivc_functions import dshellarea, dshellvol
-from functional_process.paths import blanket, build, divertor, fwbs, physics
+from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
 
 # ruff's docstring rules treat `__all__` membership as the definition of "public" once
 # one is present, so this lists every public name this module resolved before step 2 of

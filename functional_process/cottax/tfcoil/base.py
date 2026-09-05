@@ -73,7 +73,12 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import build, physics, superconducting_tfcoil, tfcoil
+from functional_process.cottax.paths import (
+    build,
+    physics,
+    superconducting_tfcoil,
+    tfcoil,
+)
 from functional_process.models.tfcoil.base import (
     calculate_r_b_tf_inboard_peak,
     calculate_tf_global_geometry_circular_case,

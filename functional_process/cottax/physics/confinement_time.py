@@ -35,7 +35,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import current_drive, physics, stellarator
+from functional_process.cottax.paths import current_drive, physics, stellarator
 from functional_process.models.physics.confinement_time import (
     calculate_confinement_time,
     calculate_double_and_triple_product,

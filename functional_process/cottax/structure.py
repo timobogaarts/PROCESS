@@ -27,7 +27,7 @@ switch as an argument: the function is this combination's occupant, not a genera
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     divertor,
     fwbs,

@@ -60,7 +60,7 @@ from functional_process.models.engineering.ivc_functions import (
     dshellvol,  # noqa: F401
     eshellvol,  # noqa: F401
 )
-from functional_process.paths import blanket, build, divertor, fwbs, physics
+from functional_process.cottax.paths import blanket, build, divertor, fwbs, physics
 from functional_process.models.shield import (
     apply_shield_volume_coverage_factors,  # noqa: F401
     calculate_dshaped_shield_volumes,  # noqa: F401

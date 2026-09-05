@@ -16,7 +16,7 @@ that switch belongs to `physics.py`, not here, and is untouched by this pass.
 PlasmaFields.calculate_total_magnetic_field` is `sqrt(b_toroidal**2 + b_poloidal**2)`,
 and `models/stellarator/plasma_physics.py::calculate_total_field` is the same
 expression, already ported and already harness-tested
-(`tests/functional_process/models/stellarator/test_plasma_physics.py`). Every total-field
+(`functional_process/tests/models/stellarator/test_plasma_physics.py`). Every total-field
 node below -- on-axis, inboard, outboard -- calls that one function; re-deriving it a
 second or third time would be exactly the transcription defect this port keeps finding.
 
@@ -49,7 +49,7 @@ consolidation pass took the second occupant for the on-axis field; this pass add
 inboard/outboard siblings the same way.
 
 No harness contract of its own for the reused `calculate_total_field` call: the pure
-function already has one (`tests/functional_process/models/stellarator/
+function already has one (`functional_process/tests/models/stellarator/
 test_plasma_physics.py`), and a second contract over the same function would diff
 PROCESS against itself. The three toroidal-field/profile functions below are new pure
 ports and do get their own contracts (`test_plasma_fields.py`).
@@ -66,7 +66,7 @@ from cottax.interfaces.pytree_namespace_module import (
 
 from functional_process.cottax.physics.physics import SurfaceAveragedPoloidalField
 from functional_process.cottax.stellarator.plasma_physics import calculate_total_field
-from functional_process.paths import physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.plasma_fields import (
     calculate_plasma_inboard_toroidal_field,
     calculate_plasma_outboard_toroidal_field,

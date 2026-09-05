@@ -17,7 +17,7 @@ from cottax.interfaces.pytree_namespace_module import (
 from functional_process.models.safe_math import (
     safe_sqrt,  # noqa: F401
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     build,
     physics,
     rebco,

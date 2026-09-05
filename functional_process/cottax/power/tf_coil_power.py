@@ -25,7 +25,7 @@ import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.models.safe_math import safe_pow, safe_sqrt
-from functional_process.paths import buildings, heat_transport, physics, tfcoil
+from functional_process.cottax.paths import buildings, heat_transport, physics, tfcoil
 from functional_process.models.power.tf_coil_power import (
     calculate_tf_power_resistive,
     calculate_tf_power_superconducting,

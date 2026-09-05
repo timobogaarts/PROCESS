@@ -13,7 +13,7 @@ same reason unit #8 declined to retype the stellarator presets. The four superco
 enums live in `superconductors.py` instead, and `constants`/`areas`/`iteration_variables`
 /`stellarator_presets` are the other vendored kinds.
 
-`tests/functional_process/test_vocabulary.py` asserts, per class, that the vendored
+`functional_process/tests/test_vocabulary.py` asserts, per class, that the vendored
 member names, values *and* attached attributes equal PROCESS's -- the equality test that
 pays for the copy.
 """

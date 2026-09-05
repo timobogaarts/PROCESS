@@ -65,7 +65,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.density_limit import (
     calculate_asdex_density_limit,
     calculate_asdex_new_density_limit,

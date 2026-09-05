@@ -5,7 +5,7 @@ lines and the largest wholly-unported model in the tokamak scope. The mirror-pat
 still holds -- the import path is `functional_process.cottax.pfcoil`, the same as a flat
 `pfcoil.py` would give, and each submodule has its own record/test pair at the mirrored
 path (`_audit/units/models/pfcoil/<stem>.md`,
-`tests/functional_process/models/pfcoil/test_<stem>.py`).
+`functional_process/tests/models/pfcoil/test_<stem>.py`).
 
 The split follows PROCESS's own data flow inside `PFCoil.pfcoil()`, not an arbitrary
 line count:

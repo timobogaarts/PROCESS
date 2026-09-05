@@ -48,7 +48,7 @@ from functional_process.cottax.pfcoil import (
     SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
 )
-from functional_process.paths import pf_coil, physics
+from functional_process.cottax.paths import pf_coil, physics
 from functional_process.models.pfcoil.volt_seconds import (
     calculate_pf_coil_turn_currents,
     calculate_pf_cs_volt_seconds,

@@ -34,7 +34,7 @@ log changes nothing about what the function computes.
 
 **Why this closure matters beyond `Pulse.run()` itself**: `.times.t_plant_pulse_burn`
 is a heavily-consumed declared input across the port already --
-`functional_process/core/solver/constraints.py::constraint_13`'s own docstring names
+`functional_process/cottax/core/solver/constraints.py::constraint_13`'s own docstring names
 `calculate_burn_time` as the "real *model* producer" it was written without, back when
 this codebase scoped only the stellarator; `objectives.py`'s figures of merit 14/16/19;
 `availability.py`'s three capacity-factor sites; `costs.py`'s fuel-cost terms; and
@@ -88,7 +88,7 @@ audit record.
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.paths import pf_coil, physics, times
+from functional_process.cottax.paths import pf_coil, physics, times
 from functional_process.models.pulse import calculate_burn_time
 
 

@@ -38,7 +38,7 @@ from functional_process.models.cryostat import (
     calculate_external_cryo_geometry,
     calculate_r_cryostat_inboard,  # noqa: F401
 )
-from functional_process.paths import blanket, build, buildings, fwbs, pf_coil
+from functional_process.cottax.paths import blanket, build, buildings, fwbs, pf_coil
 
 
 class Cryostat(ExplicitFunction):

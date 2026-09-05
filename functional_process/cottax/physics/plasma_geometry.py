@@ -56,7 +56,7 @@ ports". None of the functions below takes an `i_*` argument.
 
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.paths import physics
+from functional_process.cottax.paths import physics
 from functional_process.models.physics.plasma_geometry import (
     calculate_geometry_double_arc,
     calculate_geometry_sauter,

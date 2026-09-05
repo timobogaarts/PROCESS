@@ -37,7 +37,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.cottax.stated import StatesValues
-from functional_process.paths import divertor, physics
+from functional_process.cottax.paths import divertor, physics
 from functional_process.models.physics.plasma_profiles import (
     calculate_ion_vol_avg_temperature,
     calculate_parabolic_gradient_lengths,
@@ -183,7 +183,7 @@ class IonVolAvgTemperature(FixedPointFunction):
       the residual `g(u) - u` has derivative `-1` and the fixed point is well-posed and
       SAND-solvable.
     - `f_temp_plasma_ion_electron <= 0` -- `g` is the exact identity, so the residual is
-      structurally zero. `functional_process.sand.degenerate_fixed_points` detects that
+      structurally zero. `functional_process.cottax.sand.degenerate_fixed_points` detects that
       by differentiation and **drops the problem**, which reverts
       `.physics.temp_plasma_ion_vol_avg_kev` to an ordinary boundary input -- exactly
       PROCESS's "use the input value" semantics, recovered from structure rather than

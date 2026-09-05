@@ -109,7 +109,7 @@ from functional_process.models.switch_enums import (
     BlanketLifetimeModel,
     SphericalTokamakModel,
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     constraints,
     costs,
     divertor,

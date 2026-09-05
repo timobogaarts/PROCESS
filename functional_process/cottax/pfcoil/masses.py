@@ -51,7 +51,7 @@ from functional_process.cottax.pfcoil import (
     SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
 )
-from functional_process.paths import fwbs, pf_coil, physics, tfcoil
+from functional_process.cottax.paths import fwbs, pf_coil, physics, tfcoil
 from functional_process.models.pfcoil.masses import (
     calculate_pf_coil_masses,
     calculate_pf_coil_masses_no_central_solenoid,  # noqa: F401 -- re-exported for tests

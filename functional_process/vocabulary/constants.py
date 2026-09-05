@@ -1,6 +1,6 @@
 """Vendored verbatim from `process/core/constants.py` (§23.2).
 
-Numbers only, no imports, no behaviour. `tests/functional_process/test_vocabulary.py`
+Numbers only, no imports, no behaviour. `functional_process/tests/test_vocabulary.py`
 asserts every public name here equals PROCESS's, which is what pays for the copy.
 """
 

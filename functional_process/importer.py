@@ -40,7 +40,7 @@ node. This is what those sit on, not those.
 
 **No `process` import** (§23). The name -> field table is vendored at
 `vocabulary/input_variables.py` and asserted equal to PROCESS's in
-`tests/functional_process/test_importer.py`, per §23.2's standing rule: vendor for
+`functional_process/tests/test_importer.py`, per §23.2's standing rule: vendor for
 runtime, assert equality in tests.
 
 **Fidelity.** The line grammar, the Fortran `d`->`e` exponent fix, the "a comma list

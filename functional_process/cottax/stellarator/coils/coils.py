@@ -45,7 +45,7 @@ from functional_process.models.physics.superconductors import (
     jcrit_rebco,  # noqa: F401
     western_superconducting_nb3sn,  # noqa: F401
 )
-from functional_process.paths import (
+from functional_process.cottax.paths import (
     stellarator,
     tfcoil,
 )

@@ -65,7 +65,7 @@ from functional_process.cottax.pfcoil import (
     SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
 )
-from functional_process.paths import build, pf_coil, physics
+from functional_process.cottax.paths import build, pf_coil, physics
 from functional_process.models.pfcoil.inductance import (
     NOH_PAD,  # noqa: F401 -- re-exported for tests/test_cold_start.py
     _cs_segments,  # noqa: F401 -- re-exported for tests/test_cold_start.py

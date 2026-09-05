@@ -57,7 +57,7 @@ tables -- which cost every tokamak its solve.
   Vendored as `functional_process/data/impurity_tables.npz` rather than as a re-port of
   `read_impurity_file`, so the port needs neither the `process` package's data directory
   nor its ad-hoc `C `-comment/regex parser at runtime -- §23.2's standing rule, and
-  `tests/functional_process/test_provider.py` asserts every element equal to what a live
+  `functional_process/tests/test_provider.py` asserts every element equal to what a live
   `initialise_imprad` writes.
 - `m_impurity_amu_array` -- fourteen atomic masses from `process/core/constants.py`,
   vendored as a literal below because fourteen numbers read better as fourteen numbers.

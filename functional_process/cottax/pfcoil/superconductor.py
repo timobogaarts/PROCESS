@@ -73,7 +73,7 @@ from functional_process.cottax.pfcoil import (
     SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
 )
-from functional_process.paths import pf_coil, superconducting_tfcoil, tfcoil
+from functional_process.cottax.paths import pf_coil, superconducting_tfcoil, tfcoil
 from functional_process.models.pfcoil.superconductor import (
     calculate_cs_critical_current_densities,
     calculate_cs_critical_current_density_iter_nb3sn,

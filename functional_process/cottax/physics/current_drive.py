@@ -46,7 +46,7 @@ from cottax.interfaces.pytree_namespace_module import (
 )
 
 from functional_process.cottax.stated import StatesValues
-from functional_process.paths import current_drive, heat_transport, physics
+from functional_process.cottax.paths import current_drive, heat_transport, physics
 from functional_process.models.physics.current_drive import (
     calculate_current_drive_ecrh_primary_no_secondary,
     calculate_current_drive_freethy_ecrh_primary_no_secondary,

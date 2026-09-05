@@ -36,7 +36,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import current_drive, physics
+from functional_process.cottax.paths import current_drive, physics
 from functional_process.models.physics.pure_formulas import (
     calaculate_stored_thermal_energy,
     calculate_total_plasma_heating_power,

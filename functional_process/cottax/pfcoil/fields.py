@@ -53,7 +53,7 @@ from functional_process.cottax.pfcoil import (
     SPHERICAL_TOKAMAK_TOPOLOGY,
     PFCoilTopology,
 )
-from functional_process.paths import pf_coil, physics
+from functional_process.cottax.paths import pf_coil, physics
 from functional_process.models.pfcoil.fields import (
     calculate_b_field_at_point,  # noqa: F401 -- re-exported for inductance.py / tests
     calculate_coil_current_waveform,  # noqa: F401 -- re-exported for tests

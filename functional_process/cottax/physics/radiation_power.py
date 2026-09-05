@@ -55,7 +55,7 @@ from cottax.interfaces.pytree_namespace_module import (
     OutputInto,
 )
 
-from functional_process.paths import impurity_radiation, physics
+from functional_process.cottax.paths import impurity_radiation, physics
 from functional_process.models.physics.radiation_power import (
     calculate_impurity_radiation_power_density,
     calculate_impurity_radiation_totals,
