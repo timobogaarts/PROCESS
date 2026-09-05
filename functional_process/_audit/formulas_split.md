@@ -8,8 +8,20 @@ Progress on step 1 (bodies extracted, declaration becomes a name):
   `large_tokamak_eval` (the reference arm, `i_l_h_threshold = 19`), `large_tokamak_nof`
   and `st_regression`.
 - [ ] `models/pfcoil/**` — 15 bodies plus most of the slicing group
-- [ ] `models/stellarator/coils/calculate.py` — 5
-- [ ] `models/tfcoil/**` — 3 plus 3 slicing
+- [x] `models/stellarator/coils/calculate.py` — 5 bodies (`CoilCoilToroidalGap`,
+  `Bi2212`/`UserDefinedNb3sn`/`DurhamNbti` `WindingPackIntersectInputs`,
+  `WindingPackTotalSizePost`) plus `models/stellarator/plasma_physics.py`'s
+  `StellaratorBetaAndStoredEnergy` (same shape, found alongside). The five
+  bare-module-function `jcrit_*` arguments (`IterNb3sn`/`OldLubellNbti`/`WstNb3sn`/
+  `CrocoRebco`/`DurhamRebco`) are left as-is -- function-valued, not computed. Bitwise
+  gate passed on `stellarator_helias` and `large_tokamak_nof`.
+- [x] `models/tfcoil/**` — 3 bodies (`croco.py`'s `HazeltonZhaiRebcoCrocoTemperatureMargin`,
+  `superconducting.py`'s `_TemperatureMarginWithStrain` and
+  `OldLubellNbtiTfSuperconductorTemperatureMargin`) plus 3 computed-argument sites
+  (`quench.py`'s `jnp.asarray` wrap, `superconducting.py`'s `type(self).coefficients`
+  and `tfa[0]` slice). `superconducting.py`'s `IterNb3snCiccSuperconductorProperties`
+  (`b_c20max=32.97`) is left as-is -- declaration-level configuration, not computation.
+  Bitwise gate passed on `stellarator_helias` and `large_tokamak_nof`.
 - [ ] `models/physics/**` (bootstrap_current, composition, confinement_time,
   fusion_reactions, plasma_inductance, radiation_power, scrape_off_layer) — 9
 - [ ] `models/power/thermal_cryo.py` — 3 `BinOp`
