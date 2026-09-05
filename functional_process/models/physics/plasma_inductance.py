@@ -221,6 +221,32 @@ def calculate_volt_second_requirements(
     )
 
 
+def internal_inductance_norm_scalings(
+    alphaj,
+    kappa,
+    b_plasma_surface_poloidal_average,
+    plasma_current,
+    vol_plasma,
+    rmajor,
+):
+    """All three normalised-internal-inductance scalings, evaluated unconditionally."""
+    return (
+        calculate_internal_inductance_wesson(alphaj),
+        calculate_internal_inductance_menard(kappa),
+        calculate_normalised_internal_inductance_iter_3(
+            b_plasma_poloidal_vol_avg=b_plasma_surface_poloidal_average,
+            c_plasma=plasma_current,
+            vol_plasma=vol_plasma,
+            rmajor=rmajor,
+        ),
+    )
+
+
+def internal_inductance_norm_wesson(ind_plasma_internal_norm_wesson):
+    """The Wesson scaling's value, unchanged -- this occupant's whole job."""
+    return ind_plasma_internal_norm_wesson
+
+
 class PlasmaInternalInductanceScalings(ExplicitFunction):
     """cottax node: `.tokamak.plasma_inductance.scalings`.
 
@@ -245,15 +271,13 @@ class PlasmaInternalInductanceScalings(ExplicitFunction):
         vol_plasma=From(physics),
         rmajor=From(physics),
     ):
-        return (
-            calculate_internal_inductance_wesson(alphaj),
-            calculate_internal_inductance_menard(kappa),
-            calculate_normalised_internal_inductance_iter_3(
-                b_plasma_poloidal_vol_avg=b_plasma_surface_poloidal_average,
-                c_plasma=plasma_current,
-                vol_plasma=vol_plasma,
-                rmajor=rmajor,
-            ),
+        return internal_inductance_norm_scalings(
+            alphaj,
+            kappa,
+            b_plasma_surface_poloidal_average,
+            plasma_current,
+            vol_plasma,
+            rmajor,
         )
 
 
@@ -278,7 +302,7 @@ class PlasmaInternalInductanceNormWesson(ExplicitFunction):
     ind_plasma_internal_norm = OutputInto(physics)
 
     def __call__(self, ind_plasma_internal_norm_wesson=From(physics)):
-        return ind_plasma_internal_norm_wesson
+        return internal_inductance_norm_wesson(ind_plasma_internal_norm_wesson)
 
 
 class PlasmaVoltSecondRequirements(ExplicitFunction):
