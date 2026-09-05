@@ -1,6 +1,19 @@
 # Splitting the physics from the graph declarations
 
-Status: **planned, nothing started.** Agreed 2026-09-03/05; scheduled for the following week.
+Status: **step 1 in progress**, started 2026-09-05. Agreed 2026-09-03/05.
+
+Progress on step 1 (bodies extracted, declaration becomes a name):
+
+- [x] `models/physics/l_h_transition.py` — 6 Martin08 arms. Bitwise gate passed on
+  `large_tokamak_eval` (the reference arm, `i_l_h_threshold = 19`), `large_tokamak_nof`
+  and `st_regression`.
+- [ ] `models/pfcoil/**` — 15 bodies plus most of the slicing group
+- [ ] `models/stellarator/coils/calculate.py` — 5
+- [ ] `models/tfcoil/**` — 3 plus 3 slicing
+- [ ] `models/physics/**` (bootstrap_current, composition, confinement_time,
+  fusion_reactions, plasma_inductance, radiation_power, scrape_off_layer) — 9
+- [ ] `models/power/thermal_cryo.py` — 3 `BinOp`
+- [ ] the rest: `cs_fatigue.py`, `structure.py`, `vacuum/vacuum.py`
 
 ## The target layout
 
@@ -25,23 +38,52 @@ PROCESS's physics in pure JAX with no graph machinery. `~/openmdao_process` alre
 those bodies and would be the first consumer, so the boundary gets exercised rather than
 merely asserted.
 
-## The census is done — 87 % is mechanical
+## The census — 77 % is already pure delegation, not 87 %
 
-AST walk over every declaration with `From()`-style ports, 2026-09-05:
+AST walk over every declaration with `From()`-style ports. The script now lives at
+`_audit/declaration_census.py` (it used to be quoted as living in a scratchpad, which does
+not survive a session); re-run it rather than trusting this table after any change.
+
+**The first census's `thin` was a proxy and it was too generous.** It accepted any single
+`return f(...)`, without looking at the argument list — so `return f(1e-20 * n, ...)` counted
+as a thin delegator although the arithmetic is still *in* the declaration, and the deferred
+`fn = <function>` interface below could not express it. Tightened to "one return, of one
+call, every argument a bare parameter or one of the declaration's own fields":
 
 | shape of `__call__` | n |
 |---|---|
-| **thin delegator** (one return of one call) | **390** |
+| **pure delegation** (every argument a bare port) | **343** |
+| **pure delegation + own fields** (`self.i_pf_conductor`) | **16** |
+| thin body, **computed arguments** | **31** |
 | multi-statement (2) | 35 |
 | multi-statement (3 / 4 / 6) | 10 |
 | single `BinOp` expression | 6 |
-| tuple-of-calls, tuple-mixed, bare-name | 6 |
+| tuple, bare-name | 6 |
 | **total** | **447** |
 
-So **57 declarations need extraction first** and most are two statements. Clusters:
-`models/pfcoil/**` (currents, fields, geometry, masses, superconductor) and
-`models/physics/l_h_transition.py` (six near-identical Martin08 variants). Script kept at
-`scratchpad/census.py`; re-run it rather than trusting this table after any change.
+So the work is **57 bodies to extract** (the number this file has always carried, and it is
+right) **plus 31 argument lists to look at** — the second group is new and was hidden by the
+proxy. It is not 31 more extractions: reading them, most are *declaration-level
+configuration* rather than computation, and they split three ways.
+
+- **~20 bind a constant, an enum member or `None`** — `p_hcd_injected_total_mw=0.0`,
+  `i_rad_loss=ConfinementRadiationLossModel.CORE_ONLY`, `r_cs_middle=None`. These are the
+  null-arm-of-a-switch pattern; under `fn = <function>` they become fields with defaults,
+  which is where they belong anyway.
+- **~8 slice an array port** — `c_pf_cs_coil_pulse_start_ma[:CS_INDEX + 1]`,
+  `n_pf_coil_turns[CS_INDEX]`, `tfa[0]`. Real computation, and all in `models/pfcoil/**`
+  and `models/tfcoil/**`. These need extraction like the 57.
+- **three are worth a second look on their own account**, not because of this split:
+  `PlasmaCompositionNonIgnited` (`models/physics/composition.py:808`) passes
+  `functools.partial(plasma_composition_non_ignited, f_nd_beam_electron=...)` — a closure
+  over a **port value**, which is the pattern the array ban removed everywhere else;
+  `TfCoilQuenchHeatCurrentDensity` wraps two of its own fields in `jnp.asarray` at the call;
+  `PlantElectricProductionResistiveCentrepostLiquidBreeder` calls two other functions inside
+  its argument list.
+
+Clusters for step 1 are unchanged: `models/pfcoil/**` (currents, fields, geometry,
+inductance, masses, stresses, superconductor — and it owns most of the slicing group too)
+and `models/physics/l_h_transition.py` (six near-identical Martin08 variants).
 
 ## The plan
 

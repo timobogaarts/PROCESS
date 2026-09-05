@@ -31,12 +31,16 @@ Tier-1-tested here, but are **not** wired as occupants in this pass -- each has 
 reads-set that has not been independently checked against another live arm, so wiring
 them is future, not-yet-done work, not a defect. See the audit record's UNPORTED table.
 
-`dnla20 = 1e-20 * nd_plasma_electron_line` (`l_h_transition.py:131`) is the one derived
-local every arm consumes. Unlike `confinement_time.py`'s `ConfinementScalingInputs`
-(which earns its own node because ~40 laws share it across a much larger family), here
-it is a single line consumed only by the six wired occupants in this file, so each
-occupant's `__call__` computes it inline rather than through a shared node -- there is
-no second consumer to justify one.
+`dnla20 = 1e-20 * nd_plasma_electron_line` is the one derived local every arm consumes.
+Unlike `confinement_time.py`'s `ConfinementScalingInputs` (which earns its own node
+because ~40 laws share it across a much larger family), here it is a single line
+consumed only by the six wired occupants in this file, so it does **not** get a node --
+there is no second consumer to justify one. It used to be computed inline in each
+occupant's `__call__`; since 2026-09-05 it lives in a per-arm
+`calculate_martin08_*_threshold_power` function instead, so that a declaration names its
+implementation rather than containing it (`_audit/formulas_split.md`). That is a
+different question from whether it deserves a node, and the answer to that one is still
+no.
 
 Every fractional exponent `0 < p < 1` uses `safe_pow` (`_audit/next_steps.md` §9's
 `x ** p` derivative trap at `x == 0`); integer or `> 1` exponents keep the bare `**`,
@@ -368,6 +372,118 @@ class LHThresholdPower(ExplicitFunction):
     """
 
 
+# ---------------------------------------------------------------------------
+# The wired arms, from the line density the graph carries.
+#
+# `dnla20 = 1e-20 * nd_plasma_electron_line` is the one derived local every arm
+# consumes, and until 2026-09-05 each occupant's `__call__` computed it. It lives here
+# now, one function per wired arm, so that a declaration is a *name* and not a body --
+# `_audit/formulas_split.md`, step 1. The `calculate_martin08_*` formulas above keep
+# their `dnla20` signatures untouched: those are direct ports of PROCESS's own
+# staticmethods and this unit's legacy samples are lifted from the tests that call them,
+# so changing what they take would break the correspondence the audit record rests on.
+#
+# The unwired arms (ITER-1996 x3, Snipes x8, Hubbard x4) get theirs when they are wired;
+# there is nothing to gain from writing fifteen wrappers with no occupant.
+# ---------------------------------------------------------------------------
+
+
+def calculate_martin08_nominal_threshold_power(
+    nd_plasma_electron_line,
+    b_plasma_toroidal_on_axis,
+    a_plasma_surface,
+    m_ions_total_amu,
+):
+    """`i_l_h_threshold == 6`. No `aspect` -- that correction is not part of this arm."""
+    return calculate_martin08_nominal(
+        1.0e-20 * nd_plasma_electron_line,
+        b_plasma_toroidal_on_axis,
+        a_plasma_surface,
+        m_ions_total_amu,
+    )
+
+
+def calculate_martin08_upper_threshold_power(
+    nd_plasma_electron_line,
+    b_plasma_toroidal_on_axis,
+    a_plasma_surface,
+    m_ions_total_amu,
+):
+    """`i_l_h_threshold == 7`."""
+    return calculate_martin08_upper(
+        1.0e-20 * nd_plasma_electron_line,
+        b_plasma_toroidal_on_axis,
+        a_plasma_surface,
+        m_ions_total_amu,
+    )
+
+
+def calculate_martin08_lower_threshold_power(
+    nd_plasma_electron_line,
+    b_plasma_toroidal_on_axis,
+    a_plasma_surface,
+    m_ions_total_amu,
+):
+    """`i_l_h_threshold == 8`."""
+    return calculate_martin08_lower(
+        1.0e-20 * nd_plasma_electron_line,
+        b_plasma_toroidal_on_axis,
+        a_plasma_surface,
+        m_ions_total_amu,
+    )
+
+
+def calculate_martin08_aspect_nominal_threshold_power(
+    nd_plasma_electron_line,
+    b_plasma_toroidal_on_axis,
+    a_plasma_surface,
+    m_ions_total_amu,
+    aspect,
+):
+    """`i_l_h_threshold == 19` -- the reference arm on `large_tokamak_eval.IN.DAT`."""
+    return calculate_martin08_aspect_nominal(
+        1.0e-20 * nd_plasma_electron_line,
+        b_plasma_toroidal_on_axis,
+        a_plasma_surface,
+        m_ions_total_amu,
+        aspect,
+    )
+
+
+def calculate_martin08_aspect_upper_threshold_power(
+    nd_plasma_electron_line,
+    b_plasma_toroidal_on_axis,
+    a_plasma_surface,
+    m_ions_total_amu,
+    aspect,
+):
+    """`i_l_h_threshold == 20`."""
+    return calculate_martin08_aspect_upper(
+        1.0e-20 * nd_plasma_electron_line,
+        b_plasma_toroidal_on_axis,
+        a_plasma_surface,
+        m_ions_total_amu,
+        aspect,
+    )
+
+
+def calculate_martin08_aspect_lower_threshold_power(
+    nd_plasma_electron_line,
+    b_plasma_toroidal_on_axis,
+    a_plasma_surface,
+    m_ions_total_amu,
+    aspect,
+):
+    """`i_l_h_threshold == 21`."""
+    return calculate_martin08_aspect_lower(
+        1.0e-20 * nd_plasma_electron_line,
+        b_plasma_toroidal_on_axis,
+        a_plasma_surface,
+        m_ions_total_amu,
+        aspect,
+    )
+
+
 class Martin08NominalLHThresholdPower(LHThresholdPower):
     """`i_l_h_threshold == 6`. No `aspect` read -- the aspect-ratio correction is not
     part of this arm.
@@ -382,9 +498,11 @@ class Martin08NominalLHThresholdPower(LHThresholdPower):
         a_plasma_surface=From(physics),
         m_ions_total_amu=From(physics),
     ):
-        dnla20 = 1.0e-20 * nd_plasma_electron_line
-        return calculate_martin08_nominal(
-            dnla20, b_plasma_toroidal_on_axis, a_plasma_surface, m_ions_total_amu
+        return calculate_martin08_nominal_threshold_power(
+            nd_plasma_electron_line,
+            b_plasma_toroidal_on_axis,
+            a_plasma_surface,
+            m_ions_total_amu,
         )
 
 
@@ -400,9 +518,11 @@ class Martin08UpperLHThresholdPower(LHThresholdPower):
         a_plasma_surface=From(physics),
         m_ions_total_amu=From(physics),
     ):
-        dnla20 = 1.0e-20 * nd_plasma_electron_line
-        return calculate_martin08_upper(
-            dnla20, b_plasma_toroidal_on_axis, a_plasma_surface, m_ions_total_amu
+        return calculate_martin08_upper_threshold_power(
+            nd_plasma_electron_line,
+            b_plasma_toroidal_on_axis,
+            a_plasma_surface,
+            m_ions_total_amu,
         )
 
 
@@ -418,9 +538,11 @@ class Martin08LowerLHThresholdPower(LHThresholdPower):
         a_plasma_surface=From(physics),
         m_ions_total_amu=From(physics),
     ):
-        dnla20 = 1.0e-20 * nd_plasma_electron_line
-        return calculate_martin08_lower(
-            dnla20, b_plasma_toroidal_on_axis, a_plasma_surface, m_ions_total_amu
+        return calculate_martin08_lower_threshold_power(
+            nd_plasma_electron_line,
+            b_plasma_toroidal_on_axis,
+            a_plasma_surface,
+            m_ions_total_amu,
         )
 
 
@@ -442,9 +564,8 @@ class Martin08AspectNominalLHThresholdPower(LHThresholdPower):
         m_ions_total_amu=From(physics),
         aspect=From(physics),
     ):
-        dnla20 = 1.0e-20 * nd_plasma_electron_line
-        return calculate_martin08_aspect_nominal(
-            dnla20,
+        return calculate_martin08_aspect_nominal_threshold_power(
+            nd_plasma_electron_line,
             b_plasma_toroidal_on_axis,
             a_plasma_surface,
             m_ions_total_amu,
@@ -465,9 +586,8 @@ class Martin08AspectUpperLHThresholdPower(LHThresholdPower):
         m_ions_total_amu=From(physics),
         aspect=From(physics),
     ):
-        dnla20 = 1.0e-20 * nd_plasma_electron_line
-        return calculate_martin08_aspect_upper(
-            dnla20,
+        return calculate_martin08_aspect_upper_threshold_power(
+            nd_plasma_electron_line,
             b_plasma_toroidal_on_axis,
             a_plasma_surface,
             m_ions_total_amu,
@@ -488,9 +608,8 @@ class Martin08AspectLowerLHThresholdPower(LHThresholdPower):
         m_ions_total_amu=From(physics),
         aspect=From(physics),
     ):
-        dnla20 = 1.0e-20 * nd_plasma_electron_line
-        return calculate_martin08_aspect_lower(
-            dnla20,
+        return calculate_martin08_aspect_lower_threshold_power(
+            nd_plasma_electron_line,
             b_plasma_toroidal_on_axis,
             a_plasma_surface,
             m_ions_total_amu,
