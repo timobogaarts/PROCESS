@@ -149,7 +149,7 @@ def test_the_series_reports_one_row_per_solve(monkeypatch):
     monkeypatch.setattr(
         session,
         "solve_mdf",
-        lambda build, reference, cold: {
+        lambda build, reference, cold, **k: {
             "iterations": 3,
             "objf": 1.0,
             "max_eq": 0.0,
@@ -173,7 +173,7 @@ def test_a_moved_answer_is_reported_as_a_defect(monkeypatch):
     monkeypatch.setattr(
         session,
         "solve_mdf",
-        lambda build, reference, cold: {
+        lambda build, reference, cold, **k: {
             "iterations": 3,
             "objf": 1.0,
             "max_eq": 0.0,

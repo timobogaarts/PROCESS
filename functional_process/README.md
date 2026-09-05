@@ -10,6 +10,9 @@ that are actually in scope.
 - Read `../CLAUDE.md` first — it explains why this exists, the `process_port` env, and
   the cottax vocabulary (`VarPath`, `Compare`, `Cut`, `Drive`, tiers 1-4) used
   throughout `_audit/`.
+- **How fast is it, and where does the time go: `_audit/performance.md`.**
+  Read the *warm* matrix for anything about speed -- a cold row is ~97 %
+  compilation, and its `model` column is not evaluation time.
 - **Current phase: Phase 0 (pre-coding audit), stellarator.py (unit #1) audited in full —
   plus the validation harness and its first ports.** Standing practice: a chunk found to
   be tier-1 and self-contained is ported (function + `## cottax node` wrap + harness

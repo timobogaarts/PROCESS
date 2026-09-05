@@ -26,6 +26,32 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
 
 ## Open
 
+**Next session's three, agreed 2026-09-06** — all measured, none diagnosed:
+
+1. **`helias_5b` fails under SLSQP on both arms at iteration 1**, scipy status 6,
+   *"Singular matrix C in LSQ subproblem"*. That is a rank-deficient constraint Jacobian
+   at that configuration's cold start, and VMCON's QP survives it. Nobody has looked at
+   **which** constraints are dependent there, which is the whole question: it is evidence
+   about the problem, not about scipy, and a degeneracy VMCON merely tolerates is still a
+   degeneracy. Unchanged across every SLSQP run since the flag was built
+   (`_audit/performance.md`, `optimise_design.md` §42).
+2. **`stellarator_helias` SAND under SLSQP hits the 500-iteration cap**, 4019 block calls,
+   where VMCON converges in 24. Its line search evaluates ~8 points per iteration there
+   (`nfev/nit` 7.0 against 1.1-1.5 everywhere it converges), so the question is what the
+   line search is failing to make progress on. The Ward kink was smoothed
+   (`WARD_KINK_SMOOTHING`) and this arm is still the pathological one, so it is not that.
+3. **A whole-matrix pass runs out of memory**, and the failure is odd enough to be worth
+   understanding rather than working around. `run_warm_matrix` died on the fourth
+   configuration with `LLVM ERROR: Unable to allocate section memory` — and the request it
+   could not satisfy was **63 bytes**, so this is not one large program but XLA's CPU
+   section allocator having nothing left to map. Both matrix runners now
+   `jax.clear_caches()` between rows, which is a workaround; what is not known is the
+   resident cost per compiled program, whether `clear_caches` actually returns it, and
+   why ~44 programs a configuration exhausts a 15 GB machine when the emitted modules are
+   tens of thousands of MLIR lines rather than millions. Measure RSS per program before
+   theorising.
+
+
 - **`vacuum.py:474` (`solve_duct_geometry`) is the sole remaining reverse-mode AD
   blocker** — a discrete first-fit search, not a root find, so it doesn't take the same
   `stop_gradient`-plus-Newton-step treatment already applied to its two sibling loops.

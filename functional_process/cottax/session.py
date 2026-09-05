@@ -174,6 +174,13 @@ class Session:
     boundary: dict = field(default_factory=dict)
     mdf_build: MdfBuild | None = None
     sand_build: SandBuild | None = None
+    optimiser: object = None
+    """The driver **class** every `Optimise` in this session is answered by, or
+    `None` for `mda.default_drivers`' own choice. A class, not an instance, for
+    `mda.default_drivers`' reason: the equality/inequality counts are read off the
+    assembly, and a caller handing in a built driver would have had to count them.
+    It is a *session* field rather than a per-solve argument because it changes what
+    is assembled, and re-assembling is the one thing this module exists to avoid."""
 
     def mdf(self, cold=None) -> dict:
         """Solve this configuration's MDF arm, assembling it on the first call.
@@ -189,7 +196,10 @@ class Session:
                 root_find=self.root_find,
             )
         return solve_mdf(
-            self.mdf_build, self.reference, self.cold if cold is None else cold
+            self.mdf_build,
+            self.reference,
+            self.cold if cold is None else cold,
+            optimiser=self.optimiser,
         )
 
     def sand(self, cold=None) -> dict:
@@ -212,7 +222,10 @@ class Session:
             )
         if self.sand_build is None:
             self.sand_build = build_sand(
-                self.reference, self.machine_graph, self.switch_values
+                self.reference,
+                self.machine_graph,
+                self.switch_values,
+                optimiser=self.optimiser,
             )
         return solve_sand(
             self.sand_build,
@@ -222,7 +235,7 @@ class Session:
         )
 
 
-def open_session(path, mode: str = NATIVE) -> Session:
+def open_session(path, mode: str = NATIVE, optimiser=None) -> Session:
     """Everything `run_cold_matrix.run_one` does before it first touches a solver.
 
     `mode` is that module's seeding axis, unchanged and with the same four values --
@@ -268,6 +281,7 @@ def open_session(path, mode: str = NATIVE) -> Session:
             )
         )
     return Session(
+        optimiser=optimiser,
         name=name,
         path=path,
         reference=reference,
