@@ -12,7 +12,7 @@ directly -- no `DataStructure` backdoor to close.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.structure import calculate_structure_masses
+from functional_process.cottax.structure import calculate_structure_masses
 from process.data_structure.pfcoil_variables import PFConductorModel
 from process.models.structure import Structure
 

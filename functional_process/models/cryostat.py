@@ -31,53 +31,108 @@ the ones above it and there is no branch anywhere in it, so splitting it would m
 intermediate places for nothing.
 """
 
-import jax.numpy as jnp  # noqa: F401
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
-
-from functional_process.cryostat import (
-    calculate_external_cryo_geometry,
-    calculate_r_cryostat_inboard,  # noqa: F401
-)
-from functional_process.paths import blanket, build, buildings, fwbs, pf_coil
+import jax.numpy as jnp
 
 
-class Cryostat(ExplicitFunction):
-    """cottax node: `.tokamak.cryostat`, owning all seven fields
-    `external_cryo_geometry` writes -- `.fwbs.r_cryostat_inboard` only until 2026-08-30.
+def calculate_r_cryostat_inboard(r_pf_coil_outer, dr_pf_cryostat):
+    """Cryostat inboard radius (m): furthest PF coil's outer radius plus clearance.
 
-    The three areas the outputs land in are PROCESS's own scattering, not a choice made
-    here: the lid clearance goes to `.blanket`, the TF clearance to `.buildings`, and
-    the rest to `.fwbs`, all from one method.
+    Ports `Cryostat.external_cryo_geometry`, `process/models/cryostat.py:39-41`,
+    unchanged (`np.max` -> `jnp.max`).
+
+    Parameters
+    ----------
+    r_pf_coil_outer :
+        Outer radius of each PF coil (m), fixed-size array.
+        `.pf_coil.r_pf_coil_outer`.
+    dr_pf_cryostat :
+        Clearance between the outermost PF coil and the cryostat (m).
+        `.fwbs.dr_pf_cryostat`.
+
+    Returns
+    -------
+    :
+        Cryostat inboard radius (m).
     """
+    return jnp.max(r_pf_coil_outer) + dr_pf_cryostat
 
-    r_cryostat_inboard = OutputInto(fwbs)
-    dz_pf_cryostat = OutputInto(blanket)
-    z_cryostat_half_inside = OutputInto(fwbs)
-    dz_tf_cryostat = OutputInto(buildings)
-    vol_cryostat_internal = OutputInto(fwbs)
-    vol_cryostat = OutputInto(fwbs)
-    dewmkg = OutputInto(fwbs)
 
-    def __call__(
-        self,
-        r_pf_coil_outer=From(pf_coil),
-        dr_pf_cryostat=From(fwbs),
-        f_z_cryostat=From(build),
-        z_pf_coil_upper=From(pf_coil),
-        z_tf_inside_half=From(build),
-        dr_tf_inboard=From(build),
-        dr_cryostat=From(build),
-        vol_vv=From(fwbs),
-        den_steel=From(fwbs),
-    ):
-        return calculate_external_cryo_geometry(
-            r_pf_coil_outer,
-            dr_pf_cryostat,
-            f_z_cryostat,
-            z_pf_coil_upper,
-            z_tf_inside_half,
-            dr_tf_inboard,
-            dr_cryostat,
-            vol_vv,
-            den_steel,
-        )
+def calculate_external_cryo_geometry(
+    r_pf_coil_outer,
+    dr_pf_cryostat,
+    f_z_cryostat,
+    z_pf_coil_upper,
+    z_tf_inside_half,
+    dr_tf_inboard,
+    dr_cryostat,
+    vol_vv,
+    den_steel,
+):
+    """The cryostat's geometry and the cold mass it encloses.
+
+    Ports `Cryostat.external_cryo_geometry` (`process/models/cryostat.py:25-85`) whole,
+    unchanged (`np.max` -> `jnp.max`, `np.pi` -> `jnp.pi`). Six values, computed in the
+    source's own order, each a plain function of the ones before it.
+
+    `dr_tf_inboard` enters only through the TF-to-cryostat clearance and is *subtracted*
+    there, which is worth stating because it is the one read of this function that is a
+    thickness rather than a height: `:58-59` measures from the top of the TF coil, and
+    the top of the TF coil is `z_tf_inside_half + dr_tf_inboard`.
+
+    Parameters
+    ----------
+    r_pf_coil_outer :
+        Outer radius of each PF coil (m), fixed-size array. `.pf_coil.r_pf_coil_outer`.
+    dr_pf_cryostat :
+        Clearance between the outermost PF coil and the cryostat (m).
+        `.fwbs.dr_pf_cryostat`.
+    f_z_cryostat :
+        Cryostat lid clearance scaling factor, ITER-derived. `.build.f_z_cryostat`.
+    z_pf_coil_upper :
+        Upper edge height of each PF coil (m), fixed-size array.
+        `.pf_coil.z_pf_coil_upper`.
+    z_tf_inside_half :
+        Half-height of the TF coil inside edge (m). `.build.z_tf_inside_half`.
+    dr_tf_inboard :
+        Inboard TF coil leg thickness (m). `.build.dr_tf_inboard`.
+    dr_cryostat :
+        Cryostat wall thickness (m). `.build.dr_cryostat`.
+    vol_vv :
+        Vacuum vessel structure volume (m^3). `.fwbs.vol_vv`.
+    den_steel :
+        Steel density (kg/m^3). `.fwbs.den_steel`.
+
+    Returns
+    -------
+    :
+        `(r_cryostat_inboard, dz_pf_cryostat, z_cryostat_half_inside, dz_tf_cryostat,
+        vol_cryostat_internal, vol_cryostat, dewmkg)` -- seven, in the source's order.
+    """
+    r_cryostat_inboard = calculate_r_cryostat_inboard(r_pf_coil_outer, dr_pf_cryostat)
+
+    # Clearance between the uppermost PF coil and the cryostat lid (m), scaled from
+    # ITER by M. Kovari.
+    dz_pf_cryostat = f_z_cryostat * (2.0 * r_cryostat_inboard) / 28.440
+
+    z_cryostat_half_inside = jnp.max(z_pf_coil_upper) + dz_pf_cryostat
+    dz_tf_cryostat = z_cryostat_half_inside - (z_tf_inside_half + dr_tf_inboard)
+
+    vol_cryostat_internal = jnp.pi * r_cryostat_inboard**2 * 2 * z_cryostat_half_inside
+    # The outer cylinder less the inner one.
+    vol_cryostat = (
+        jnp.pi
+        * (r_cryostat_inboard + dr_cryostat) ** 2
+        * 2
+        * (dr_cryostat + z_cryostat_half_inside)
+    ) - vol_cryostat_internal
+
+    dewmkg = (vol_vv + vol_cryostat) * den_steel
+    return (
+        r_cryostat_inboard,
+        dz_pf_cryostat,
+        z_cryostat_half_inside,
+        dz_tf_cryostat,
+        vol_cryostat_internal,
+        vol_cryostat,
+        dewmkg,
+    )

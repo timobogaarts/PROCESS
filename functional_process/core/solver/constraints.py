@@ -494,7 +494,7 @@ def constraint_9(p_fusion_total_mw, p_fusion_total_max_mw):
     """Fusion power upper limit. Ports `constraint_equation_9`.
 
     Bare residual read, no switch, no hole-in-MDA: `p_fusion_total_mw` is produced by
-    `functional_process/models/physics/fusion_reactions.py` (already ported);
+    `functional_process/cottax/physics/fusion_reactions.py` (already ported);
     `p_fusion_total_max_mw` is a plain input constant
     (`data_structure/constraint_variables.py`, never computed by any model).
 
@@ -517,7 +517,7 @@ def constraint_11(rbld, rmajor):
     """Radial build consistency (equality). Ports `constraint_equation_11`.
 
     Bare residual read, no switch, no hole-in-MDA: `rbld` is produced by
-    `functional_process/models/stellarator/build.py`'s `Build` node (already ported,
+    `functional_process/cottax/stellarator/build.py`'s `Build` node (already ported,
     same producer constraint 83 already relies on for `required_radial_space`);
     `rmajor` is produced everywhere in this codebase's already-ported physics units.
 
@@ -541,7 +541,7 @@ def constraint_12(vs_cs_pf_total_pulse, vs_plasma_total_required):
 
     Bare residual read, no switch. **Hole-in-MDA: yes, both operands.**
     `vs_cs_pf_total_pulse` is produced by `process/models/pfcoil.py:1710` — the PF coil
-    subsystem is entirely unported in this codebase (no `functional_process/models/
+    subsystem is entirely unported in this codebase (no `functional_process/cottax/
     pfcoil*` file exists at all). `vs_plasma_total_required` is produced by
     `process/models/physics/physics.py:4889` — inside `physics.py`'s plasma-current/
     inductance section, also not yet ported. Ported anyway per this pass's instruction
@@ -630,7 +630,7 @@ def constraint_15(p_plasma_separatrix_mw, p_l_h_threshold_mw, f_h_mode_margin):
     `constraint_equation_15`.
 
     Bare residual read, no switch. **Hole-in-MDA: partial.**
-    `p_plasma_separatrix_mw` is produced by `functional_process/models/stellarator/
+    `p_plasma_separatrix_mw` is produced by `functional_process/cottax/stellarator/
     plasma_physics.py` (already ported). `p_l_h_threshold_mw` is produced by
     `process/models/physics/l_h_transition.py:86` — unported in this codebase. Ported
     anyway, same reasoning as constraint 12. `f_h_mode_margin` is a plain input
@@ -657,7 +657,7 @@ def constraint_16(p_plant_electric_net_mw, p_plant_electric_net_required_mw):
     """Net electric power lower limit. Ports `constraint_equation_16`.
 
     Bare residual read, no switch, no hole-in-MDA: `p_plant_electric_net_mw` is
-    produced by `functional_process/models/power/electric_production.py`'s
+    produced by `functional_process/cottax/power/electric_production.py`'s
     `PlantElectricProduction` node — built and harness-tested, though **not yet
     registered** in `total_process.py` (a separate, already-known gap, see
     `_audit/next_steps.md`'s alternates-audit backlog, not this constraint's concern).
@@ -725,7 +725,7 @@ def constraint_18(pflux_div_heat_load_mw, pflux_div_heat_load_max_mw):
     """Divertor heat load upper limit. Ports `constraint_equation_18`.
 
     Bare residual read, no switch, no hole-in-MDA: `pflux_div_heat_load_mw` is produced
-    by `functional_process/models/stellarator/divertor.py`'s already-ported `Divertor`
+    by `functional_process/cottax/stellarator/divertor.py`'s already-ported `Divertor`
     node. `pflux_div_heat_load_max_mw` is a plain input constant.
 
     Parameters
@@ -1805,7 +1805,7 @@ def constraint_68(
     exhaust.py:149-183`) -- a trivial closed-form arithmetic staticmethod
     (`(p_plasma_separatrix_mw * b_plasma_toroidal_on_axis) / (q95 * aspect * rmajor)`,
     no `data` access, no branching), inlined here rather than imported since it is not
-    yet ported as its own node in `functional_process/models/physics/exhaust.py`. This
+    yet ported as its own node in `functional_process/cottax/physics/exhaust.py`. This
     makes the `i_q95_fixed == 1` branch `Compare`-shaped in principle (a `calculate_*`
     re-derivation compared to a stored bound) once/if that function is ever registered
     as its own node elsewhere -- flagged for whoever does that, not resolved here.
@@ -2138,7 +2138,7 @@ def constraint_82(toroidalgap, dx_tf_inboard_out_toroidal):
     No switches, no internal branching -- a bare `geq` of two already-produced
     fields. `toroidalgap` (minimal gap between two stellarator coils) and
     `dx_tf_inboard_out_toroidal` (total toroidal width of a TF coil) are both minted by
-    `functional_process/models/stellarator/coils/calculate.py`'s already-ported
+    `functional_process/cottax/stellarator/coils/calculate.py`'s already-ported
     `CoilCoilToroidalGap`/`CoilToroidalThickness` nodes.
 
     Parameters
@@ -2160,7 +2160,7 @@ def constraint_83(available_radial_space, required_radial_space):
     """Radial consistency of the stellarator build. Ports `constraint_equation_83`.
 
     No switches, no internal branching -- a bare `geq` of two already-produced fields,
-    both minted by `functional_process/models/stellarator/build.py`'s already-ported
+    both minted by `functional_process/cottax/stellarator/build.py`'s already-ported
     `Build` node.
 
     Parameters
@@ -2446,7 +2446,7 @@ def constraint_92(f_plasma_fuel_deuterium, f_plasma_fuel_tritium, f_plasma_fuel_
     Equality constraint -- the first one audited in this codebase, hence `eq` above.
     All three operands are plain user-input fractions (`physics_variables.py`), not
     computed outputs of any model -- `plasma_composition`
-    (`functional_process/models/physics/composition.py`) already reads all
+    (`functional_process/cottax/physics/composition.py`) already reads all
     three as ordinary boundary `FromExactly`s, confirming they are leaf inputs, not a
     hole-in-MDA candidate at all (nothing produces them; nothing needs to).
 

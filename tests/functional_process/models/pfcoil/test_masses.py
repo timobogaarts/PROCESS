@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/pfcoil/masses.py`, and for every inline
+"""Harness cases for `functional_process/cottax/pfcoil/masses.py`, and for every inline
 block of `PFCoil.pfcoil()` the package ports.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/masses.md`.
@@ -44,7 +44,7 @@ moving every declared input.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, Tolerance, legacy_sample
-from functional_process.models.pfcoil import (
+from functional_process.cottax.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_FILAMENTS,
     N_CS_PF_COILS,
@@ -54,7 +54,7 @@ from functional_process.models.pfcoil import (
     PLASMA_INDEX,
     SPHERICAL_TOKAMAK_TOPOLOGY,
 )
-from functional_process.models.pfcoil.currents import (
+from functional_process.cottax.pfcoil.currents import (
     calculate_cs_flux_swing,
     calculate_equilibrium_currents,
     calculate_plasma_initiation_currents,
@@ -62,22 +62,22 @@ from functional_process.models.pfcoil.currents import (
     calculate_time_point_currents,
     calculate_time_point_currents_no_central_solenoid,
 )
-from functional_process.models.pfcoil.fields import (
+from functional_process.cottax.pfcoil.fields import (
     calculate_coil_current_waveform,
     calculate_pf_coil_peak_fields,
     calculate_pf_coil_peak_fields_no_central_solenoid,
 )
-from functional_process.models.pfcoil.geometry import (
+from functional_process.cottax.pfcoil.geometry import (
     calculate_cs_geometry,
     calculate_pf_coil_group_positions,
     calculate_pf_coil_positions,
 )
-from functional_process.models.pfcoil.masses import (
+from functional_process.cottax.pfcoil.masses import (
     calculate_pf_coil_masses,
     calculate_pf_coil_masses_no_central_solenoid,
     calculate_pf_coil_sizes,
 )
-from functional_process.models.pfcoil.volt_seconds import (
+from functional_process.cottax.pfcoil.volt_seconds import (
     calculate_pf_coil_turn_currents,
 )
 from process.core.exceptions import ProcessValueError

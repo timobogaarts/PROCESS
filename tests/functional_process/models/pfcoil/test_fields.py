@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/pfcoil/fields.py`.
+"""Harness cases for `functional_process/cottax/pfcoil/fields.py`.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/fields.md`. Three tier-1
 contracts:
@@ -26,7 +26,7 @@ so the oracle sees exactly the state PROCESS's own routine sees. See `fields.md`
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.pfcoil import (
+from functional_process.cottax.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_FILAMENTS,
     N_CS_PF_COILS,
@@ -35,7 +35,7 @@ from functional_process.models.pfcoil import (
     NFXF,
     NGC2,
 )
-from functional_process.models.pfcoil.fields import (
+from functional_process.cottax.pfcoil.fields import (
     calculate_b_field_at_point,
     calculate_coil_current_waveform,
     calculate_cs_bore_magnetic_field,

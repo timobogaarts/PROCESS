@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/pfcoil/geometry.py`.
+"""Harness cases for `functional_process/cottax/pfcoil/geometry.py`.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/geometry.md`. Four tier-1
 contracts, one per unit that PROCESS exposes as a callable of its own:
@@ -27,8 +27,8 @@ oracle. See `geometry.md` § tier signal.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.pfcoil import N_PF_GROUPS, NFXF
-from functional_process.models.pfcoil.geometry import (
+from functional_process.cottax.pfcoil import N_PF_GROUPS, NFXF
+from functional_process.cottax.pfcoil.geometry import (
     calculate_cs_geometry,
     calculate_cs_turn_geometry_eu_demo,
     calculate_pf_coil_group_positions,

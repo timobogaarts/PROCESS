@@ -21,7 +21,7 @@ import numpy as np
 
 import process.models.stellarator.stellarator as stellarator_module
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.stellarator.geometry import (
+from functional_process.cottax.stellarator.geometry import (
     calculate_default_aspect_ratio,
     calculate_stellarator_plasma_geometry,
     calculate_stellarator_scaling_factors,

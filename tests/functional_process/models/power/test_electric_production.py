@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/power/electric_production.py`.
+"""Harness cases for `functional_process/cottax/power/electric_production.py`.
 
 Audit record: `functional_process/_audit/units/models/power/electric_production.md`.
 Legacy points exist in `tests/unit/models/test_power.py` for `acpow`
@@ -12,7 +12,7 @@ this port (see `electric_production.md`).
 """
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
-from functional_process.models.power.electric_production import (
+from functional_process.cottax.power.electric_production import (
     calculate_acpow,
     calculate_plant_electric_production,
     power_profiles_over_time,

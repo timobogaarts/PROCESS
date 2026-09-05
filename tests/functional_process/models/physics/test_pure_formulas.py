@@ -12,7 +12,7 @@ from functional_process._harness import (
     fuzz_samples,
     legacy_sample,
 )
-from functional_process.models.physics.pure_formulas import (
+from functional_process.cottax.physics.pure_formulas import (
     calaculate_stored_thermal_energy,
     calculate_total_plasma_heating_power,
     fast_alpha_beta,

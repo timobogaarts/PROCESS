@@ -16,7 +16,7 @@ doesn't take is still non-degenerate for the parts of `st_build` that run regard
 """
 
 from functional_process._harness import Tier1Contract
-from functional_process.models.stellarator.build import (
+from functional_process.cottax.stellarator.build import (
     calculate_a_fw_total_no_powerflow,
     calculate_a_fw_total_with_powerflow,
     calculate_blktmodel_blanket_thickness,

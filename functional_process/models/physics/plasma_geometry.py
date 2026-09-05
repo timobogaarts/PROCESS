@@ -1,187 +1,309 @@
-"""Pure-functional port of `process/models/physics/plasma_geometry.py`.
+"""Pure physics functions extracted from `models/physics/plasma_geometry.py`.
 
-Registry unit #24. Audit record:
-`functional_process/_audit/units/models/physics/plasma_geometry.md`. Read it first —
-especially "the extraction seam" (functions 3-9 already need no signature change: no
-`self.data` access at all) and "suspected defects in PROCESS" **D1**, which this port
-reproduces faithfully rather than fixes (see `plasma_angles_arcs`'s docstring).
-
-**Scope of this pass.** `_audit/tokamak_boundary.md`'s `.tokamak.plasma_geom` slot lists
-five target outputs -- `.physics.a_plasma_poloidal`, `.physics.a_plasma_surface`,
-`.physics.eps`, `.physics.rminor`, `.physics.vol_plasma` -- and `vol_plasma` alone has
-eleven readers, the most of any row in that table. This file ports the minimal closure
-that produces them on `tests/regression/input_files/large_tokamak_eval.IN.DAT`'s own
-configuration (`i_plasma_geometry=0`, `i_plasma_wall_gap=1` (default),
-`i_plasma_current=4`, `i_plasma_shape` unset (default `0`)), plus the one sibling
-computation (`kappa95`/`triang95`) that shares the same `i_plasma_geometry` branch and is
-therefore "the same unit" by the audit record's own accounting, even though it is not one
-of the five listed outputs.
-
-**Not ported, and why (all per the audit record's own tables):**
-
-- 11 of 13 `i_plasma_geometry` values (1-9, 11, 12) -- none is live on any tracked
-  input, and each needs different reads (`fkzohm`, `ind_plasma_internal_norm`, ...).
-  See the record's "switches touched" table for each value's reads and writes. Value
-  10 (`CREATE_DATA_EU_DEMO_X_POINT`) was added 2026-08-27 because it *is* live -- on
-  `tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT` (`:372`) -- see
-  `calculate_shape_create_data_eu_demo_x_point` below.
-- The Sauter arm of the compound
-  `i_plasma_current == 8 or i_plasma_shape == SAUTER` switch (`plasma_geometry.py:
-  467-469`) -- not live here, and the record notes it "has no regression oracle at all."
-  `sauter_geometry` itself is still ported below (it needs no `self.data` and the audit
-  record recommends porting functions 3-9 verbatim regardless of which arm is wired),
-  just not wired to an occupant class yet.
-- `i_plasma_wall_gap == 0` (writes `.build.dr_fw_plasma_gap_{inboard,outboard}`) -- not
-  live (`large_tokamak_eval` leaves the switch at its default, `1`, which reads and
-  writes nothing in this file: `.build.dr_fw_plasma_gap_*` are then plain boundary
-  inputs read directly by `build`). Nothing to port for the live value; the `==0` arm is
-  reported UNPORTED.
-- `.physics.a_plasma_surface_outboard` (`plasma_geometry.py:461`, written unconditionally
-  from the double-arc arcs even under Sauter -- **D10**) -- not one of the five target
-  outputs, consumed by `models/blankets/dcll.py`, out of this unit's scope.
-- `calculate_iter_physics_basis_elongation` -- **already ported**, by unit #10
-  (`functional_process/models/physics/confinement_time.py`), whose own module docstring
-  records that `PlasmaGeom.calculate_iter_physics_basis_elongation` is called from
-  *its* body, one line, no further dependencies. Not re-ported here to avoid a duplicate
-  definition; see that file if this one's `kappa_ipb` is ever needed.
-- `PlasmaGeom.output()` and the four dead legacy module-level functions (`surfa`,
-  `perim`, `fvol`, `xsect0`) -- reporting-only and dead-in-`process/` respectively; the
-  audit record's **D11** recommends the port simply not carry the legacy four.
-
-Every switch touched by this file (`i_plasma_geometry`, `i_plasma_wall_gap`,
-`i_plasma_current`, `i_plasma_shape`) is consumed only by *which occupant class exists*,
-never inside a function body -- `_audit/naming_convention.md` § "switches are not
-ports". None of the functions below takes an `i_*` argument.
+See that file for the declarations wiring these into the graph, and
+`_audit/units/models/physics/plasma_geometry.md` for the audit record. No
+graph-framework import belongs in this module -- see `_audit/formulas_split.md`.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
+import jax.numpy as jnp
 
-from functional_process.paths import physics
-from functional_process.physics.plasma_geometry import (
-    calculate_geometry_double_arc,
-    calculate_geometry_sauter,
-    calculate_minor_radius,
-    calculate_shape_create_data_eu_demo_x_point,
-    calculate_shape_ipdg89_x_point,
-    plasma_angles_arcs,
-    plasma_cross_section,
-    plasma_poloidal_perimeter,
-    plasma_surface_area,
-    plasma_volume,
-    sauter_geometry,
-)
-
-__all__ = [
-    "calculate_geometry_sauter",
-    "plasma_angles_arcs",
-    "plasma_cross_section",
-    "plasma_poloidal_perimeter",
-    "plasma_surface_area",
-    "plasma_volume",
-    "sauter_geometry",
-]
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 
 
-class PlasmaMinorRadius(ExplicitFunction):
-    """cottax node: `calculate_minor_radius`, ports declared.
+def plasma_angles_arcs(a, kappa, triang):
+    """Parameters of the two arcs describing the plasma cross-section.
 
-    Unconditional -- no switch, no family, matching `calculate_minor_radius`'s own
-    docstring.
+    Ports `PlasmaGeom.plasma_angles_arcs`,
+    `process/models/physics/plasma_geometry.py:711-759`, unchanged.
+
+    **Reproduces D1 faithfully, does not fix it.** The audit record's "suspected
+    defects" **D1** (confirmed by measurement): for `kappa < 1 + triang`, `denomo`
+    goes negative and `arctan` returns the wrong branch, silently flipping the sign of
+    every downstream quantity (perimeter, cross-section, volume, surface). Exactly at
+    `kappa == 1 + triang` or `triang == +-1.0` the source divides by zero. PROCESS
+    itself has no guard here (no exception, no warning) and this port has none either --
+    the precondition `kappa > 1 + triang` is the caller's to hold, same as in PROCESS.
+    Samples in this unit's test file are chosen to respect it (see `_audit/units/
+    models/physics/plasma_geometry.md`'s open question 3).
+
+    Returns
+    -------
+    tuple
+        `(xi, thetai, xo, thetao)` -- inboard/outboard arc radius and half-angle.
     """
+    t = 1.0 - triang
+    denomi = (kappa**2 - t**2) / (2.0 * t)
+    thetai = jnp.arctan(kappa / denomi)
+    xi = a * (denomi + 1.0 - triang)
 
-    rminor = OutputInto(physics)
-    eps = OutputInto(physics)
+    n = 1.0 + triang
+    denomo = (kappa**2 - n**2) / (2.0 * n)
+    thetao = jnp.arctan(kappa / denomo)
+    xo = a * (denomo + 1.0 + triang)
 
-    def __call__(self, rmajor=From(physics), aspect=From(physics)):
-        return calculate_minor_radius(rmajor, aspect)
+    return xi, thetai, xo, thetao
 
 
-class PlasmaShapeKappa95Triang95(ExplicitFunction):
-    """The family that owns `.physics.kappa95`/`.physics.triang95` under
-    `i_plasma_geometry`: one occupant per value, per `_audit/traceability_policy.md`'s
-    split default -- **this pass ports only `IPDG89_X_POINT` (0)**, the value
-    `large_tokamak_eval.IN.DAT` uses. The other twelve values are UNPORTED; see the
-    module docstring and the audit record's "switches touched" table for each one's
-    reads.
+def plasma_poloidal_perimeter(xi, thetai, xo, thetao):
+    """Plasma poloidal perimeter (m). Ports `PlasmaGeom.plasma_poloidal_perimeter`,
+    `process/models/physics/plasma_geometry.py:761-783`, unchanged.
     """
+    return 2.0 * (xo * thetao + xi * thetai)
 
 
-class Ipdg89XPointPlasmaShape(PlasmaShapeKappa95Triang95):
-    """`i_plasma_geometry == IPDG89_X_POINT` (0). Reads `kappa`/`triang` as plain
-    boundary inputs -- under this branch neither is written by this file (the enum's
-    `kappa_model`/`triang_model` are both `USER_INPUT`; see `calculate_shape_ipdg89_
-    x_point`'s docstring).
+def plasma_surface_area(rmajor, rminor, xi, thetai, xo, thetao):
+    """Inboard and outboard plasma surface area (m^2). Ports `PlasmaGeom.
+    plasma_surface_area`, `process/models/physics/plasma_geometry.py:785-830`,
+    unchanged.
+
+    Returns
+    -------
+    tuple
+        `(xsi, xso)`.
     """
+    fourpi = 4.0 * jnp.pi
 
-    kappa95 = OutputInto(physics)
-    triang95 = OutputInto(physics)
+    rc = rmajor - rminor + xi
+    xsi = fourpi * xi * (rc * thetai - xi * jnp.sin(thetai))
 
-    def __call__(self, kappa=From(physics), triang=From(physics)):
-        return calculate_shape_ipdg89_x_point(kappa, triang)
+    rc = rmajor + rminor - xo
+    xso = fourpi * xo * (rc * thetao + xo * jnp.sin(thetao))
+
+    return xsi, xso
 
 
-class CreateDataEuDemoXPointPlasmaShape(PlasmaShapeKappa95Triang95):
-    """`i_plasma_geometry == CREATE_DATA_EU_DEMO_X_POINT` (10). Live on
-    `tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT` (`:372`).
-
-    Unlike the IPDG89 sibling this occupant **owns `kappa` too** -- under value 10 the
-    enum's ownership row is `kappa_model == IPDG89` (computed from `kappa95`),
-    `triang_model == USER_INPUT` (read), and the audit record's dispatch table for
-    value 10 lists reads `{aspect, m_s_limit, triang}` and writes
-    `{kappa95, kappa, triang95}`. The family's name records the two fields *every*
-    occupant owns; this one adds a third, which the record's
-    "conditional-ownership-by-run-config" finding says is the expected shape here.
+def plasma_volume(rmajor, rminor, xi, thetai, xo, thetao):
+    """Plasma volume (m^3). Ports `PlasmaGeom.plasma_volume`,
+    `process/models/physics/plasma_geometry.py:832-896`, unchanged.
     """
+    third = 1.0 / 3.0
 
-    kappa95 = OutputInto(physics)
-    kappa = OutputInto(physics)
-    triang95 = OutputInto(physics)
+    rc = rmajor - rminor + xi
+    vin = (
+        2.0
+        * jnp.pi
+        * xi
+        * (
+            rc**2 * jnp.sin(thetai)
+            - rc * xi * thetai
+            - 0.5 * rc * xi * jnp.sin(2.0 * thetai)
+            + xi * xi * jnp.sin(thetai)
+            - third * xi * xi * (jnp.sin(thetai)) ** 3
+        )
+    )
 
-    def __call__(
-        self,
-        aspect=From(physics),
-        m_s_limit=From(physics),
-        triang=From(physics),
-    ):
-        return calculate_shape_create_data_eu_demo_x_point(aspect, m_s_limit, triang)
+    rc = rmajor + rminor - xo
+    vout = (
+        2.0
+        * jnp.pi
+        * xo
+        * (
+            rc**2 * jnp.sin(thetao)
+            + rc * xo * thetao
+            + 0.5 * rc * xo * jnp.sin(2.0 * thetao)
+            + xo * xo * jnp.sin(thetao)
+            - third * xo * xo * (jnp.sin(thetao)) ** 3
+        )
+    )
+
+    return vout - vin
 
 
-class PlasmaGeometryArm(ExplicitFunction):
-    """The family that owns `.physics.len_plasma_poloidal`, `.vol_plasma`,
-    `.a_plasma_poloidal`, `.a_plasma_surface`: one occupant per arm of the compound
-    switch `i_plasma_current == 8 or i_plasma_shape == SAUTER`
-    (`process/models/physics/plasma_geometry.py:467-469`).
-
-    **This pass ports only the `False` (double-arc) arm** -- `large_tokamak_eval.
-    IN.DAT` sets `i_plasma_current = 4` and leaves `i_plasma_shape` at its default (`0`,
-    `PROCESS_ORIGINAL`), so neither half of the disjunction is true. The Sauter arm
-    (`True`) is UNPORTED: not live on any tracked regression input and, per the audit
-    record, without a regression oracle at all.
-
-    Per the audit record's open question 2, the two switches collapse to one boolean at
-    graph-assembly time -- `i_plasma_current`'s own topology split
-    (`plasma_current.py`, another unit's scope) and this file's split on the same
-    disjunction need to be resolved together by whichever pass wires both; flagged in
-    the final report, not decided here.
+def plasma_cross_section(xi, thetai, xo, thetao):
+    """Plasma cross-sectional area (m^2). Ports `PlasmaGeom.plasma_cross_section`,
+    `process/models/physics/plasma_geometry.py:898-931`, unchanged.
     """
+    return xo**2 * (thetao - jnp.cos(thetao) * jnp.sin(thetao)) + xi**2 * (
+        thetai - jnp.cos(thetai) * jnp.sin(thetai)
+    )
 
 
-class DoubleArcPlasmaGeometry(PlasmaGeometryArm):
-    """`i_plasma_current != 8 and i_plasma_shape != SAUTER` -- the arm
-    `large_tokamak_eval.IN.DAT` takes.
+def sauter_geometry(a, r0, kappa, triang, square):
+    """Sauter-model plasma geometry. Ports `PlasmaGeom.sauter_geometry`,
+    `process/models/physics/plasma_geometry.py:933-1001`, unchanged.
+
+    Ported for completeness (the audit record recommends porting functions 3-9
+    verbatim regardless), but **not wired to an occupant class in this pass** -- the
+    compound switch that selects it (`i_plasma_current == 8 or i_plasma_shape ==
+    SAUTER`) is not live on `large_tokamak_eval.IN.DAT` and the audit record notes it
+    "has no regression oracle at all" among tracked inputs.
+
+    Returns
+    -------
+    tuple
+        `(len_plasma_poloidal, a_plasma_surface, a_plasma_poloidal, vol_plasma)`.
     """
+    w07 = square + 1.0
+    eps = a / r0
 
-    len_plasma_poloidal = OutputInto(physics)
-    vol_plasma = OutputInto(physics)
-    a_plasma_poloidal = OutputInto(physics)
-    a_plasma_surface = OutputInto(physics)
+    len_plasma_poloidal = (
+        2.0
+        * jnp.pi
+        * a
+        * (1.0 + 0.55 * (kappa - 1.0))
+        * (1.0 + 0.08 * triang**2)
+        * (1.0 + 0.2 * (w07 - 1.0))
+    )
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        kappa=From(physics),
-        triang=From(physics),
-        f_vol_plasma=From(physics),
-    ):
-        return calculate_geometry_double_arc(rmajor, rminor, kappa, triang, f_vol_plasma)
+    a_plasma_surface = (
+        2.0 * jnp.pi * r0 * (1.0 - 0.32 * triang * eps) * len_plasma_poloidal
+    )
+
+    a_plasma_poloidal = jnp.pi * a**2 * kappa * (1.0 + 0.52 * (w07 - 1.0))
+
+    vol_plasma = 2.0 * jnp.pi * r0 * (1.0 - 0.25 * triang * eps) * a_plasma_poloidal
+
+    return len_plasma_poloidal, a_plasma_surface, a_plasma_poloidal, vol_plasma
+
+
+def calculate_minor_radius(rmajor, aspect):
+    """Plasma minor radius and inverse aspect ratio. Extracted from `PlasmaGeom.run`'s
+    unconditional preamble, `process/models/physics/plasma_geometry.py:224-227`.
+
+    Unconditional in `process/` -- no switch decides this, so there is one occupant and
+    no family. This file is the sole tokamak producer of both outputs (audit record's
+    data footprint table).
+
+    Returns
+    -------
+    tuple
+        `(rminor, eps)`.
+    """
+    rminor = rmajor / aspect
+    eps = 1.0 / aspect
+    return rminor, eps
+
+
+def calculate_shape_ipdg89_x_point(kappa, triang):
+    """95%-surface elongation and triangularity, IPDG89 fit. Ports the
+    `i_plasma_geometry == IPDG89_X_POINT` (0) branch of `PlasmaGeom.run`,
+    `process/models/physics/plasma_geometry.py:231-241`, unchanged.
+
+    `kappa`/`triang` are read, not written, under this branch (`PlasmaGeometryModelType.
+    IPDG89_X_POINT.kappa_model == triang_model == USER_INPUT` -- the audit record's "the
+    enum is a machine-readable ownership table"): under `i_plasma_geometry == 0` they are
+    plain boundary inputs, not produced by any node in this file.
+
+    Returns
+    -------
+    tuple
+        `(kappa95, triang95)`.
+    """
+    kappa95 = kappa / 1.12
+    triang95 = triang / 1.50
+    return kappa95, triang95
+
+
+def calculate_shape_create_data_eu_demo_x_point(aspect, m_s_limit, triang):
+    """Elongations and 95%-surface triangularity from the CREATE-data EU-DEMO fit.
+
+    Ports the `i_plasma_geometry == CREATE_DATA_EU_DEMO_X_POINT` (10) branch of
+    `PlasmaGeom.run`, `process/models/physics/plasma_geometry.py:362-397`, unchanged:
+    `kappa95` from a fit to CREATE data over `aspect` and the stability margin
+    `m_s_limit` (PROCESS issues #1399/#1648, documented valid for aspect ratio
+    2.6-3.6), a corner-fudge correction above `kappa95 == 1.77`, then
+    `kappa = 1.12 * kappa95` and `triang95 = triang / 1.50`.
+
+    Two of the audit record's JAX flags land here, both `workaround-known`:
+
+    - **F1/D6**: the source's `if kappa95 > 1.77:` is a Python `if` on a freshly
+      computed value -- here a `jnp.where`, which faithfully reproduces the value
+      (both arms give `1.77` at the point, C0) *and* the derivative kink (measured
+      one-sided derivatives 1.0000 from below, 0.7290 from above -- the branch is not
+      C1 in PROCESS and is not made C1 here).
+    - **F3**: the radicand of the fit's square root is sign-unconstrained -- nothing
+      enforces the documented `2.6 < aspect < 3.6` validity range, and outside it the
+      radicand can go negative. PROCESS's `np.sqrt` returns `nan` silently; this port
+      does the same through `safe_sqrt` (identical values, finite derivative at an
+      exactly-zero radicand). Likewise `kappa95 ** ratio` has a *traced* exponent, so
+      it goes through `safe_pow` (F4).
+
+    Returns
+    -------
+    tuple
+        `(kappa95, kappa, triang95)` -- the branch's writes, in source order.
+    """
+    a = 3.68436807e0
+    b = -0.27706527e0
+    c = 0.87040251e0
+    d = -18.83740952e0
+    e = -0.27267618e0
+    f = 20.5141261e0
+
+    kappa95 = (
+        -d
+        - c * aspect
+        - safe_sqrt(
+            (c**2.0e0 - 4.0e0 * a * b) * aspect**2.0e0
+            + (2.0e0 * d * c - 4.0e0 * a * e) * aspect
+            + d**2.0e0
+            - 4.0e0 * a * f
+            + 4.0e0 * a * m_s_limit
+        )
+    ) / (2.0e0 * a)
+
+    # `if kappa95 > 1.77:` in the source -- a traced-value branch (F1), so `jnp.where`
+    # over both arms. The untaken arm is finite whenever `kappa95 > 0`, which holds
+    # everywhere the fit itself is finite, so no tangent poisoning leaks through.
+    ratio = 1.77e0 / kappa95
+    corner_fudge = 0.3e0 * (kappa95 - 1.77e0) / ratio
+    kappa95 = jnp.where(
+        kappa95 > 1.77e0, safe_pow(kappa95, ratio) + corner_fudge, kappa95
+    )
+
+    kappa = 1.12e0 * kappa95
+    triang95 = triang / 1.50e0
+    return kappa95, kappa, triang95
+
+
+def calculate_geometry_double_arc(rmajor, rminor, kappa, triang, f_vol_plasma):
+    """Poloidal perimeter, volume, cross-section and surface area, double-arc model.
+
+    Ports the `else` (non-Sauter) arm of `PlasmaGeom.run`'s geometry-model `if`,
+    `process/models/physics/plasma_geometry.py:445-461,484-509` -- the arcs/surface-area
+    preamble that is shared with the Sauter arm plus the double-arc-specific perimeter,
+    volume and cross-section. Composes the functions above; introduces no new
+    arithmetic of its own.
+
+    `f_vol_plasma` is a plain user-settable volume multiplier (default `1.0`, never
+    assigned by any model in `process/` -- the audit record's **D2**), so it is a
+    boundary read, not a switch.
+
+    Returns
+    -------
+    tuple
+        `(len_plasma_poloidal, vol_plasma, a_plasma_poloidal, a_plasma_surface)`.
+    """
+    xi, thetai, xo, thetao = plasma_angles_arcs(rminor, kappa, triang)
+    xsi, xso = plasma_surface_area(rmajor, rminor, xi, thetai, xo, thetao)
+
+    len_plasma_poloidal = plasma_poloidal_perimeter(xi, thetai, xo, thetao)
+    vol_plasma = f_vol_plasma * plasma_volume(rmajor, rminor, xi, thetai, xo, thetao)
+    a_plasma_poloidal = plasma_cross_section(xi, thetai, xo, thetao)
+    a_plasma_surface = xsi + xso
+
+    return len_plasma_poloidal, vol_plasma, a_plasma_poloidal, a_plasma_surface
+
+
+def calculate_geometry_sauter(rmajor, rminor, kappa, triang, plasma_square):
+    """Poloidal perimeter, volume, cross-section and surface area, Sauter model.
+
+    Ports the `if` (Sauter) arm of `PlasmaGeom.run`'s geometry-model `if`,
+    `process/models/physics/plasma_geometry.py:467-482`, reordered to the same
+    `(len_plasma_poloidal, vol_plasma, a_plasma_poloidal, a_plasma_surface)` tuple shape
+    as `calculate_geometry_double_arc` for symmetry (`sauter_geometry` itself returns
+    `a_plasma_surface` before `a_plasma_poloidal`; unchanged there, only reordered at
+    this composition).
+
+    Ported for completeness (see `sauter_geometry`'s docstring); **not wired to an
+    occupant class in this pass** -- not live on `large_tokamak_eval.IN.DAT`.
+
+    Returns
+    -------
+    tuple
+        `(len_plasma_poloidal, vol_plasma, a_plasma_poloidal, a_plasma_surface)`.
+    """
+    len_plasma_poloidal, a_plasma_surface, a_plasma_poloidal, vol_plasma = (
+        sauter_geometry(rminor, rmajor, kappa, triang, plasma_square)
+    )
+    return len_plasma_poloidal, vol_plasma, a_plasma_poloidal, a_plasma_surface

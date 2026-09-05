@@ -1,5 +1,5 @@
 """Harness cases for the ported device-agnostic TF coil layer
-(`functional_process/models/tfcoil/base.py`).
+(`functional_process/cottax/tfcoil/base.py`).
 
 Every legacy sample below is the **input** half of a case in PROCESS's own
 `tests/unit/models/tfcoil/test_tfcoil.py`, lifted verbatim; the expected half is not
@@ -23,7 +23,7 @@ is right to carry one read; the adapter makes them agree here too. Recorded as d
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.tfcoil.base import (
+from functional_process.cottax.tfcoil.base import (
     calculate_r_b_tf_inboard_peak,
     calculate_tf_global_geometry_circular_case,
     calculate_tf_global_geometry_straight_case,

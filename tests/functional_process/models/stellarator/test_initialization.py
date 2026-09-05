@@ -6,7 +6,7 @@ whole-function gate) and the six duration fields the port reads.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.stellarator.initialization import (
+from functional_process.cottax.stellarator.initialization import (
     calculate_pulse_durations,
 )
 from process.core.model import DataStructure

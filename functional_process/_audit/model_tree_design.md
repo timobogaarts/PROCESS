@@ -29,7 +29,9 @@ class Physics(ModelNamespace):
 
 class Machine(ModelNamespace):
     physics: Physics = Physics()
-    costs: CostModel | None = None  # PROCESS's default cost model is unported: honestly absent
+    costs: CostModel | None = (
+        None  # PROCESS's default cost model is unported: honestly absent
+    )
 
 
 HELIAS = machine_from_indat(REFERENCE_INPUT_FILE)  # Machine() + IN.DAT deltas

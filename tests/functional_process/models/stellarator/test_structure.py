@@ -10,7 +10,7 @@ never touched by either method, so `None` stands in for all of them.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.stellarator.structure import (
+from functional_process.cottax.stellarator.structure import (
     calculate_intercoil_mass_scaling_reference,
     calculate_structure_masses,
 )

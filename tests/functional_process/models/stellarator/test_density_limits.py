@@ -16,7 +16,7 @@ from functional_process._harness import (
     bounds_from_iteration_variables,
     legacy_sample,
 )
-from functional_process.models.stellarator.density_limits import (
+from functional_process.cottax.stellarator.density_limits import (
     calculate_ecrh_density_limit,
     calculate_sudo_density_limit,
 )

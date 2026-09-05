@@ -174,7 +174,7 @@ def main(input_file: str | None = None):
 
 
 # ==================================================== provenance, until the tree lands
-_MODELS = "functional_process.models."
+_MODELS = "functional_process.cottax."
 _SPLIT_FILE = re.compile(r"_[A-Z](?:_.*)?$")
 
 
@@ -561,10 +561,10 @@ def _machine_argument(argv):
 
     A bare `--machine` is `TOKAMAK_INPUT_FILE`; a following word that is not itself a
     flag is the `IN.DAT` to read.
-    """    
+    """
     if MACHINE_FLAG not in argv:
         return None, argv
-    
+
     at = argv.index(MACHINE_FLAG)
     rest = argv[at + 1 :]
     if rest and not rest[0].startswith("-") and rest[0].lstrip("-") not in MODES:
@@ -588,7 +588,7 @@ def mode(argv):
     renderer that silently drew the *stellarator's* SAND graph under a tokamak's name
     would be the exact failure the paragraph above is about.
     """
-    
+
     machine, argv = _machine_argument(list(argv))
     asked = [MODES[a.lstrip("-")] for a in argv if a.lstrip("-") in MODES]
     rest = [a for a in argv if a.lstrip("-") not in MODES]

@@ -7,7 +7,7 @@ random points), just with no independently-validated legacy point to anchor it.
 """
 
 from functional_process._harness import Tier1Contract
-from functional_process.models.stellarator.coils.forces import (
+from functional_process.cottax.stellarator.coils.forces import (
     calculate_centering_force_avg_mn,
     calculate_centering_force_max_mn,
     calculate_centering_force_min_mn,

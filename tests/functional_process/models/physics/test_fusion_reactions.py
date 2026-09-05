@@ -17,7 +17,7 @@ even though it has no cottax node yet.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.fusion_reactions import (
+from functional_process.cottax.physics.fusion_reactions import (
     alpha_power_beam,
     beam_fusion_cross_section,
     beam_slowing_down_state,

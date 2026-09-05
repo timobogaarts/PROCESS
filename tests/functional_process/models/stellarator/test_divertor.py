@@ -8,7 +8,7 @@ in the audit record.
 """
 
 from functional_process._harness import Tier1Contract
-from functional_process.models.stellarator.divertor import calculate_divertor
+from functional_process.cottax.stellarator.divertor import calculate_divertor
 from process.core.model import DataStructure
 from process.models.stellarator.divertor import st_div
 

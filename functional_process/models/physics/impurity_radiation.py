@@ -7,7 +7,7 @@ Registry unit #23. Audit record:
 
 Most of this file's source range -- `ImpurityRadiation`, `create_f_rad_core_profile`,
 `calculate_impurity_radiation_power_density` (roughly L379-755) -- is **already ported**,
-in `functional_process/models/physics/radiation_power.py`
+in `functional_process/cottax/physics/radiation_power.py`
 (`ImpurityRadiationTotals`/`PlasmaRadiationPowers` and the two helper functions they
 wrap). It was found and closed while unit #20 audited `calculate_radiation_powers`'s own
 `ImpurityRadiation(...).calculate_imprad()` call -- see that module's docstring and

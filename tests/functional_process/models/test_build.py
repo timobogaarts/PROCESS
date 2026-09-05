@@ -1,4 +1,4 @@
-"""Harness cases for the ported tokamak build (`functional_process/models/build.py`).
+"""Harness cases for the ported tokamak build (`functional_process/cottax/build.py`).
 
 Audit record: `functional_process/_audit/units/models/build.md`.
 
@@ -31,7 +31,7 @@ finer split the nodes use -- exactly the trade `models/physics/confinement_time.
 import copy
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.build import (
+from functional_process.cottax.build import (
     calculate_divertor_geometry_conventional,
     calculate_divertor_geometry_spherical_tokamak,
     calculate_dr_shld_vv_gap_outboard,

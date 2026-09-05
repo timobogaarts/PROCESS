@@ -10,7 +10,7 @@ unit ports, is stubbed to raise a sentinel exception, caught immediately after. 
 """
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
-from functional_process.models.physics.dimensionless_parameters import (
+from functional_process.cottax.physics.dimensionless_parameters import (
     calculate_dimensionless_plasma_parameters,
 )
 from process.core.model import DataStructure

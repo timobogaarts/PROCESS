@@ -31,7 +31,7 @@ from types import MappingProxyType
 
 from functional_process._harness import Tier1Contract
 from functional_process._harness.sampling import Sample, fuzz_samples
-from functional_process.models.stellarator.stellarator_fwbs_s2 import (
+from functional_process.cottax.stellarator.stellarator_fwbs_s2 import (
     calculate_detailed_powerflow_blanket_shield_power,
     calculate_detailed_powerflow_blanket_shield_power_user_input_pumping,
     calculate_exponential_attenuation_blanket_shield_power,

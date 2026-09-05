@@ -1,1 +1,1 @@
-"""Ported vacuum-system model units. Mirrors `process/models/vacuum.py`."""
+"""Pure vacuum-system model functions. Mirrors `process/models/vacuum.py`."""

@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/pfcoil/stresses.py`.
+"""Harness cases for `functional_process/cottax/pfcoil/stresses.py`.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/fields.md` § "2026-08-27 --
 the CS chain" (this module is owed a registry row of its own; see its own docstring).
@@ -21,7 +21,7 @@ from scipy.special import ellipe as scipy_ellipe
 from scipy.special import ellipk as scipy_ellipk
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
-from functional_process.models.pfcoil.stresses import (
+from functional_process.cottax.pfcoil.stresses import (
     _ellipe,
     _ellipk,
     calculate_cs_hoop_stress,

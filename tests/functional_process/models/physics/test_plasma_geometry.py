@@ -32,7 +32,7 @@ least `0.3`).
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.plasma_geometry import (
+from functional_process.cottax.physics.plasma_geometry import (
     calculate_geometry_double_arc,
     calculate_geometry_sauter,
     calculate_minor_radius,

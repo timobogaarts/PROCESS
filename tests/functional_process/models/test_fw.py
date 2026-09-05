@@ -33,7 +33,7 @@ select). The composite's adapter poisons a *third* field, `.physics.triang`, whi
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.fw import (
+from functional_process.cottax.fw import (
     apply_first_wall_coverage_factors,
     apply_first_wall_coverage_factors_double_null,
     calculate_dshaped_first_wall_areas,

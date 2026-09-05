@@ -6,7 +6,7 @@ No matching PROCESS unit test exists for `calculate_coils_mass` or its 8 sub-fun
 """
 
 from functional_process._harness import Tier1Contract
-from functional_process.models.stellarator.coils.mass import calculate_coils_mass
+from functional_process.cottax.stellarator.coils.mass import calculate_coils_mass
 from process.core.model import DataStructure
 from process.models.stellarator.coils.mass import (
     calculate_coils_mass as _process_calculate_coils_mass,

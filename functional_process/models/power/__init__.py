@@ -1,1 +1,1 @@
-"""Ported power-conversion model units. Mirrors `process/models/power.py`."""
+"""Pure power-conversion physics functions. Mirrors `process/models/power.py`."""

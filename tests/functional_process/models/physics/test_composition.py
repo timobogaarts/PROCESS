@@ -19,7 +19,7 @@ from cottax.spec import VarPath
 
 from functional_process._harness import Tier1Contract, legacy_sample
 from functional_process.indat import PLASMA_COMPOSITION
-from functional_process.models.physics.composition import (
+from functional_process.cottax.physics.composition import (
     CalculateEffectiveChargeIonisationProfiles,
     PlasmaCompositionNonIgnited,
     calculate_effective_charge_ionisation_profiles,

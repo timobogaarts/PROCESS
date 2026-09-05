@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/power/pf_coil_power.py`.
+"""Harness cases for `functional_process/cottax/power/pf_coil_power.py`.
 
 Audit record: `functional_process/_audit/units/models/power/pf_coil_power.md`.
 
@@ -29,8 +29,8 @@ does, where the CS current reverses.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, fuzz_samples
-from functional_process.models.pfcoil import NGC2
-from functional_process.models.power.pf_coil_power import (
+from functional_process.cottax.pfcoil import NGC2
+from functional_process.cottax.power.pf_coil_power import (
     N_PF_ACTIVE_POINTS,
     N_PF_CS_PLASMA_CIRCUITS,
     calculate_pf_coil_power_supplies,

@@ -2,7 +2,7 @@
 
 A **package**, not a module, and deliberately so: `process/models/pfcoil.py` is 5286
 lines and the largest wholly-unported model in the tokamak scope. The mirror-path rule
-still holds -- the import path is `functional_process.models.pfcoil`, the same as a flat
+still holds -- the import path is `functional_process.cottax.pfcoil`, the same as a flat
 `pfcoil.py` would give, and each submodule has its own record/test pair at the mirrored
 path (`_audit/units/models/pfcoil/<stem>.md`,
 `tests/functional_process/models/pfcoil/test_<stem>.py`).
@@ -23,8 +23,8 @@ line count:
 produces the three variables this wave's new consumers declare:
 
 - `.pf_coil.m_pf_coil_conductor_total` and `.pf_coil.m_pf_coil_structure_total`
-  (read by `functional_process/models/structure.py::Structure`), and
-- `.pf_coil.r_pf_coil_outer` (read by `functional_process/models/cryostat.py::Cryostat`).
+  (read by `functional_process/cottax/structure.py::Structure`), and
+- `.pf_coil.r_pf_coil_outer` (read by `functional_process/cottax/cryostat.py::Cryostat`).
 
 Everything reachable *only* through `induct()`, `vsec()`, `outpf()`, `outvolt()`,
 `waveform`'s downstream `c_pf_coil_turn`, the CS stress/fatigue chain, and `superconpf`

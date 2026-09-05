@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/pfcoil/inductance.py`.
+"""Harness cases for `functional_process/cottax/pfcoil/inductance.py`.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/inductance.md`.
 
@@ -37,7 +37,7 @@ of Bunet's formula rather than a whole coil's geometry.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.pfcoil import (
+from functional_process.cottax.pfcoil import (
     N_COILS_IN_GROUP,
     N_CS_PF_COILS,
     N_PF_GROUPS,
@@ -45,7 +45,7 @@ from functional_process.models.pfcoil import (
     PLASMA_INDEX,
     SPHERICAL_TOKAMAK_TOPOLOGY,
 )
-from functional_process.models.pfcoil.inductance import (
+from functional_process.cottax.pfcoil.inductance import (
     calculate_pf_cs_plasma_inductances,
     calculate_pf_plasma_inductances_no_central_solenoid,
     calculate_solenoid_self_inductance,

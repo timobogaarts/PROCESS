@@ -1,5 +1,5 @@
 """Harness cases for the ported CroCo TF coil layer
-(`functional_process/models/tfcoil/croco.py`).
+(`functional_process/cottax/tfcoil/croco.py`).
 
 Same convention as `test_superconducting.py`: each legacy sample is an input point taken
 from PROCESS's own `tests/unit/models/test_superconductors.py` where one exists, and
@@ -30,7 +30,7 @@ from functional_process.indat import (
     UNPORTED,
     machine_from_indat,
 )
-from functional_process.models.tfcoil.croco import (
+from functional_process.cottax.tfcoil.croco import (
     croco_averaged_turn_geometry_from_current_per_turn,
     croco_cable_geometry,
     croco_cable_space_properties,
@@ -40,7 +40,7 @@ from functional_process.models.tfcoil.croco import (
     croco_turn_cable_space_extra_void,
     temperature_margin_hijc_rebco,
 )
-from functional_process.models.tfcoil.namespace import (
+from functional_process.cottax.tfcoil.namespace import (
     CiccSuperconductingTfCoil,
     CrocoSuperconductingTfCoil,
     SuperconductingTfCoil,

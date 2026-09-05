@@ -22,7 +22,7 @@ over.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
-from functional_process.models.physics.physics import (
+from functional_process.cottax.physics.physics import (
     calculate_beta_limit_from_norm,
     calculate_beta_norm_max_wesson,
     calculate_continuous_plant_ramp_times,

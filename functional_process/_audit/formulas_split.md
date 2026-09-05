@@ -167,7 +167,7 @@ class GreenwaldDensityLimit(ExplicitFunction):
     fn = calculate_greenwald_density_limit
     nd_plasma_electron_greenwald_max = OutputInto(physics)
     plasma_current = From(physics)
-    rminor         = From(physics, parameter="minor_radius")   # only where names differ
+    rminor = From(physics, parameter="minor_radius")  # only where names differ
 ```
 
 called by **keyword**, with `__check_init__` comparing declared field names against

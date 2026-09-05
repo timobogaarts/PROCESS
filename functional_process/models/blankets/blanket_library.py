@@ -54,7 +54,7 @@ too, so **all four of this file's slots are now total**. `DShapedBlanketAreas` a
 (`blanket_library.py:71-165`) runs three consecutive, independent blocks: the half-height
 (branches on `n_divertors`), the areas *and* volumes (branch on the shape), and the
 coverage factors (branch on `n_divertors` again). Because wave 1 had already split those
-three blocks into four separate cottax slots, each slot is keyed on exactly **one**
+three blocks into four separate graph slots, each slot is keyed on exactly **one**
 predicate and no slot needs a shape x divertor-count product. That is a property of the
 decomposition, not of PROCESS: `models/fw.py` and `models/vacuum/vacuum.py` keep one
 composite node spanning both branches, so those two slots *do* pay the product. See
@@ -67,415 +67,629 @@ a parameter, which is why they are occupants.
 """
 
 import jax.numpy as jnp
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.blankets.blanket_library import (
-    apply_coverage_factors_double_null,
-    apply_coverage_factors_single_null,
-    calculate_blkt_half_height_double_null,
-    calculate_blkt_half_height_single_null,
-    calculate_blkt_inboard_poloidal_plasma_angle,
-    calculate_dshaped_blkt_areas,
-    calculate_dshaped_blkt_volumes,
-    calculate_elliptical_blkt_areas,
-    calculate_elliptical_blkt_volumes,
-)
 from functional_process.models.engineering.ivc_functions import dshellarea, dshellvol
-from functional_process.paths import blanket, build, divertor, fwbs, physics
-
-# ruff's docstring rules treat `__all__` membership as the definition of "public" once
-# one is present, so this lists every public name this module resolved before step 2 of
-# `_audit/formulas_split.md` moved the pure functions out -- not just `dshellarea`/
-# `dshellvol`/`jnp`, which are unused now that their real uses left with the functions
-# (see `power/electric_production.py`'s commit for why a partial list is the wrong move).
-__all__ = [
-    "BlanketAreas",
-    "BlanketCoverageFactors",
-    "BlanketCoverageFactorsDoubleNull",
-    "BlanketCoverageFactorsSingleNull",
-    "BlanketHalfHeight",
-    "BlanketHalfHeightDoubleNull",
-    "BlanketHalfHeightSingleNull",
-    "BlanketInboardPoloidalAngle",
-    "BlanketVolumes",
-    "DShapedBlanketAreas",
-    "DShapedBlanketVolumes",
-    "EllipticalBlanketAreas",
-    "EllipticalBlanketVolumes",
-    "ExplicitFunction",
-    "From",
-    "OutputInto",
-    "apply_coverage_factors_double_null",
-    "apply_coverage_factors_single_null",
-    "blanket",
-    "build",
-    "calculate_blkt_half_height_double_null",
-    "calculate_blkt_half_height_single_null",
-    "calculate_blkt_inboard_poloidal_plasma_angle",
-    "calculate_dshaped_blkt_areas",
-    "calculate_dshaped_blkt_volumes",
-    "calculate_elliptical_blkt_areas",
-    "calculate_elliptical_blkt_volumes",
-    "divertor",
-    "dshellarea",
-    "dshellvol",
-    "fwbs",
-    "jnp",
-    "physics",
-]
 
 
-class BlanketHalfHeight(ExplicitFunction):
-    """The family that owns `.blanket.dz_blkt_half`: one occupant per `n_divertors` arm
-    of `BlanketLibrary.calculate_blkt_half_height`.
+def _eshellarea(rshell, rmini, rmino, zminor):
+    """Inboard/outboard/total surface area of a two-ellipse toroidal shell.
 
-    Both arms are written (2026-08-27), so this slot is total. They are separate
-    occupants and not one node with a `jnp.where` because the double-null arm reads five
-    fields fewer -- see `calculate_blkt_half_height_double_null`.
+    Ports `process/models/engineering/ivc_functions.py:99-130` verbatim.
+
+    **Filed here rather than in a `models/engineering/ivc_functions.py` port**, and
+    module-private to say so. `ivc_functions.py` is not a `Model` at all -- three plain
+    module functions imported by `fw.py:14-16`, `shield.py:12-13` and `vacuum.py:13`
+    (`tokamak_call_surface.md` §A) -- so it has no slot in the model tree and no natural
+    owner among the units being ported in this wave. Duplicating the twelve lines here is
+    the smaller debt than three agents each half-owning a shared module; the
+    consolidation pass should lift `_eshellarea`/`_eshellvol` into one
+    `functional_process/models/engineering/ivc_functions.py` and have this file import
+    them.
+
+    Parameters
+    ----------
+    rshell :
+        Major radius of the centre of both ellipses (m).
+    rmini :
+        Horizontal distance from `rshell` to the inboard elliptical shell (m).
+    rmino :
+        Horizontal distance from `rshell` to the outboard elliptical shell (m).
+    zminor :
+        Vertical internal half-height of the shell (m).
+
+    Returns
+    -------
+    tuple
+        `(ain, aout, ain + aout)` -- inboard, outboard and total surface area (m2).
     """
+    elong_inboard = zminor / rmini
+    ain = 2.0 * jnp.pi * elong_inboard * (jnp.pi * rshell * rmini - 2.0 * rmini * rmini)
+
+    elong_outboard = zminor / rmino
+    aout = (
+        2.0 * jnp.pi * elong_outboard * (jnp.pi * rshell * rmino + 2.0 * rmino * rmino)
+    )
+
+    return ain, aout, ain + aout
 
 
-class BlanketHalfHeightSingleNull(BlanketHalfHeight):
-    """cottax node: `calculate_blkt_half_height_single_null`. `n_divertors == 1`."""
+def _eshellvol(rshell, rmini, rmino, zminor, drin, drout, dz):
+    """Inboard/outboard/total volume of a two-ellipse toroidal shell.
 
-    dz_blkt_half = OutputInto(blanket)
+    Ports `process/models/engineering/ivc_functions.py:170-246` verbatim. Same filing
+    note as `_eshellarea` above.
 
-    def __call__(
-        self,
-        z_plasma_xpoint_lower=From(build),
-        dz_xpoint_divertor=From(build),
-        dz_divertor=From(divertor),
-        dz_blkt_upper=From(build),
-        z_plasma_xpoint_upper=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_outboard=From(build),
-    ):
-        return calculate_blkt_half_height_single_null(
-            z_plasma_xpoint_lower,
-            dz_xpoint_divertor,
-            dz_divertor,
-            dz_blkt_upper,
-            z_plasma_xpoint_upper,
-            dr_fw_plasma_gap_inboard,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_inboard,
-            dr_fw_outboard,
-        )
+    Parameters
+    ----------
+    rshell :
+        Major radius of the centre of both ellipses (m).
+    rmini :
+        Horizontal distance from `rshell` to the outer edge of the inboard shell (m).
+    rmino :
+        Horizontal distance from `rshell` to the inner edge of the outboard shell (m).
+    zminor :
+        Vertical internal half-height of the shell (m).
+    drin, drout :
+        Horizontal thickness of the inboard/outboard shell at the midplane (m).
+    dz :
+        Vertical thickness of the shell at top/bottom (m).
 
-
-class BlanketHalfHeightDoubleNull(BlanketHalfHeight):
-    """cottax node: `calculate_blkt_half_height_double_null`. `n_divertors == 2`.
-
-    Live on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`, both of which
-    set `i_single_null = 0` (`:292`, `:638`), from which `init.py:606-617` derives
-    `n_divertors = 2`.
+    Returns
+    -------
+    tuple
+        `(vin, vout, vin + vout)` -- inboard, outboard and total volume (m3).
     """
+    # Inboard section: outer (higher R) surface minus inner (lower R) surface.
+    a = rmini
+    b = zminor
+    v1 = 2.0 * jnp.pi * (b / a) * (0.5 * jnp.pi * rshell * a**2 - (2.0 / 3.0) * a**3)
 
-    dz_blkt_half = OutputInto(blanket)
+    a = rmini + drin
+    b = zminor + dz
+    v2 = 2.0 * jnp.pi * (b / a) * (0.5 * jnp.pi * rshell * a**2 - (2.0 / 3.0) * a**3)
 
-    def __call__(
-        self,
-        z_plasma_xpoint_lower=From(build),
-        dz_xpoint_divertor=From(build),
-        dz_divertor=From(divertor),
-        dz_blkt_upper=From(build),
-    ):
-        return calculate_blkt_half_height_double_null(
-            z_plasma_xpoint_lower,
-            dz_xpoint_divertor,
-            dz_divertor,
-            dz_blkt_upper,
-        )
+    vin = v2 - v1
+
+    # Outboard section: the same difference with the sign of the cubic term flipped.
+    a = rmino
+    b = zminor
+    v1 = 2.0 * jnp.pi * (b / a) * (0.5 * jnp.pi * rshell * a**2 + (2.0 / 3.0) * a**3)
+
+    a = rmino + drout
+    b = zminor + dz
+    v2 = 2.0 * jnp.pi * (b / a) * (0.5 * jnp.pi * rshell * a**2 + (2.0 / 3.0) * a**3)
+
+    vout = v2 - v1
+
+    return vin, vout, vin + vout
 
 
-class BlanketAreas(ExplicitFunction):
-    """The family that owns the three `.build.a_blkt_*_full_coverage` fields: one
-    occupant per arm of `component_volumes`' shape decision
-    (`itart == 1 or i_fw_blkt_vv_shape == D_SHAPED`, `blanket_library.py:90-93`).
+def calculate_blkt_half_height_single_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+    z_plasma_xpoint_upper,
+    dr_fw_plasma_gap_inboard,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_inboard,
+    dr_fw_outboard,
+):
+    """Blanket half-height, single-null arm (`n_divertors == 1`).
 
-    Both arms are written (2026-08-27), so this slot is total. They read overlapping but
-    unequal sets -- the D-shaped arm reads no `triang` and no outboard build radius --
-    which is why a shape *parameter* was never an option.
+    Ports the `else` arm of `blanket_library.py:220-229`'s `if n_divertors == 2`. The
+    double-null arm (`z_top = z_bottom`) is `calculate_blkt_half_height_double_null`
+    below. Note the arms genuinely differ in *reads*: the double-null arm needs neither
+    `z_plasma_xpoint_upper` nor any of the four gap/first-wall thicknesses, so folding
+    them into one `jnp.where` would declare five edges a double-null machine does not
+    have.
+
+    `n_divertors` is therefore **not** a parameter of this function. That is the point:
+    the switch chose the occupant, so it is gone from the body.
+
+    Parameters
+    ----------
+    z_plasma_xpoint_lower :
+        Lower vertical position of the plasma X-point (m).
+        `.build.z_plasma_xpoint_lower`.
+    dz_xpoint_divertor :
+        Vertical distance from X-point to divertor (m). `.build.dz_xpoint_divertor`.
+    dz_divertor :
+        Vertical thickness of the divertor (m). `.divertor.dz_divertor`.
+    dz_blkt_upper :
+        Vertical thickness of the upper blanket (m). `.build.dz_blkt_upper`.
+    z_plasma_xpoint_upper :
+        Upper vertical position of the plasma X-point (m).
+        `.build.z_plasma_xpoint_upper`.
+    dr_fw_plasma_gap_inboard, dr_fw_plasma_gap_outboard :
+        First-wall/plasma radial gaps (m). `.build.dr_fw_plasma_gap_inboard`/`_outboard`.
+    dr_fw_inboard, dr_fw_outboard :
+        First-wall radial thicknesses (m). `.build.dr_fw_inboard`/`_outboard`.
+
+    Returns
+    -------
+    :
+        Blanket half-height `dz_blkt_half` (m). `.blanket.dz_blkt_half`.
     """
+    z_bottom = z_plasma_xpoint_lower + dz_xpoint_divertor + dz_divertor - dz_blkt_upper
+
+    z_top = z_plasma_xpoint_upper + 0.5 * (
+        dr_fw_plasma_gap_inboard
+        + dr_fw_plasma_gap_outboard
+        + dr_fw_inboard
+        + dr_fw_outboard
+    )
+
+    return 0.5 * (z_top + z_bottom)
 
 
-class BlanketVolumes(ExplicitFunction):
-    """The family that owns the three `.fwbs.vol_blkt_*_full_coverage` fields, on the
-    same shape predicate as `BlanketAreas` and with the same two arms. Total since
-    2026-08-27.
+def calculate_blkt_half_height_double_null(
+    z_plasma_xpoint_lower,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_blkt_upper,
+):
+    """Blanket half-height, double-null arm (`n_divertors == 2`).
 
-    A separate family from `BlanketAreas` because PROCESS writes the two through two
-    separate `@staticmethod`s into two different namespaces, and nothing downstream reads
-    an area to get a volume.
+    Ports the `if n_divertors == 2` arm of `blanket_library.py:220-229`. A double-null
+    machine is vertically symmetric, so PROCESS sets `z_top = z_bottom` and the
+    `0.5 * (z_top + z_bottom)` that follows collapses to `z_bottom` itself -- written
+    out reduced, as `shield.py`'s `calculate_shield_half_height_double_null` does for
+    the identical branch. (The reduction is exact in floating point, not merely
+    algebraic: `x + x` is representable and `0.5 * (x + x)` is `x` to the bit.)
+
+    **Five fewer reads than the single-null sibling**, which is why this is a second
+    occupant rather than a `jnp.where` over one: `z_plasma_xpoint_upper` and the four
+    gap/first-wall thicknesses are not read by a double-null machine at all, and
+    declaring them would invent five edges.
+
+    Parameters
+    ----------
+    z_plasma_xpoint_lower :
+        Lower vertical position of the plasma X-point (m).
+        `.build.z_plasma_xpoint_lower`.
+    dz_xpoint_divertor :
+        Vertical distance from X-point to divertor (m). `.build.dz_xpoint_divertor`.
+    dz_divertor :
+        Vertical thickness of the divertor (m). `.divertor.dz_divertor`.
+    dz_blkt_upper :
+        Vertical thickness of the upper blanket (m). `.build.dz_blkt_upper`.
+
+    Returns
+    -------
+    :
+        Blanket half-height `dz_blkt_half` (m). `.blanket.dz_blkt_half`.
     """
+    return z_plasma_xpoint_lower + dz_xpoint_divertor + dz_divertor - dz_blkt_upper
 
 
-class EllipticalBlanketAreas(BlanketAreas):
-    """cottax node: `calculate_elliptical_blkt_areas`.
+def calculate_elliptical_blkt_areas(
+    rmajor,
+    rminor,
+    triang,
+    r_shld_inboard_inner,
+    dr_shld_inboard,
+    dr_blkt_inboard,
+    r_shld_outboard_outer,
+    dr_shld_outboard,
+    dr_blkt_outboard,
+    dz_blkt_half,
+):
+    """Full-coverage blanket surface areas, elliptical arm.
 
-    Occupies the elliptical arm of `component_volumes`' shape decision
-    (`itart == 0` and `.fwbs.i_fw_blkt_vv_shape == ELLIPTICAL_SHAPED`).
+    Ports the `@staticmethod` `calculate_elliptical_blkt_areas`
+    (`blanket_library.py:381-449`) verbatim -- already pure in the source, no `self` to
+    close.
+
+    Parameters
+    ----------
+    rmajor, rminor, triang :
+        Plasma major radius (m), minor radius (m), triangularity. `.physics.rmajor`,
+        `.physics.rminor`, `.physics.triang`.
+    r_shld_inboard_inner :
+        Inner radius of the inboard shield (m). `.build.r_shld_inboard_inner`.
+    dr_shld_inboard, dr_blkt_inboard :
+        Inboard shield/blanket radial thicknesses (m). `.build.dr_shld_inboard`,
+        `.build.dr_blkt_inboard`.
+    r_shld_outboard_outer :
+        Outer radius of the outboard shield (m). `.build.r_shld_outboard_outer`.
+    dr_shld_outboard, dr_blkt_outboard :
+        Outboard shield/blanket radial thicknesses (m). `.build.dr_shld_outboard`,
+        `.build.dr_blkt_outboard`.
+    dz_blkt_half :
+        Blanket half-height (m). `.blanket.dz_blkt_half`.
+
+    Returns
+    -------
+    tuple
+        `(a_blkt_inboard_surface_full_coverage, a_blkt_outboard_surface_full_coverage,
+        a_blkt_total_surface_full_coverage)` (m2).
     """
+    # Major radius to the centre of both ellipses -- coincident in radius with the top
+    # of the plasma.
+    r1 = rmajor - rminor * triang
 
-    a_blkt_inboard_surface_full_coverage = OutputInto(build)
-    a_blkt_outboard_surface_full_coverage = OutputInto(build)
-    a_blkt_total_surface_full_coverage = OutputInto(build)
+    r2 = r1 - r_shld_inboard_inner - dr_shld_inboard - dr_blkt_inboard
+    r3 = r_shld_outboard_outer - r1 - dr_shld_outboard - dr_blkt_outboard
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        r_shld_outboard_outer=From(build),
-        dr_shld_outboard=From(build),
-        dr_blkt_outboard=From(build),
-        dz_blkt_half=From(blanket),
-    ):
-        return calculate_elliptical_blkt_areas(
-            rmajor,
-            rminor,
-            triang,
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            r_shld_outboard_outer,
-            dr_shld_outboard,
-            dr_blkt_outboard,
-            dz_blkt_half,
-        )
+    return _eshellarea(r1, r2, r3, dz_blkt_half)
 
 
-class DShapedBlanketAreas(BlanketAreas):
-    """cottax node: `calculate_dshaped_blkt_areas`.
+def calculate_elliptical_blkt_volumes(
+    rmajor,
+    rminor,
+    triang,
+    r_shld_inboard_inner,
+    dr_shld_inboard,
+    dr_blkt_inboard,
+    r_shld_outboard_outer,
+    dr_shld_outboard,
+    dr_blkt_outboard,
+    dz_blkt_half,
+    dz_blkt_upper,
+):
+    """Full-coverage blanket volumes, elliptical arm.
 
-    Occupies the D-shaped arm (`itart == 1 or i_fw_blkt_vv_shape == D_SHAPED`). Live on
-    `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`, which satisfy the
-    disjunction twice over.
+    Ports the `@staticmethod` `calculate_elliptical_blkt_volumes`
+    (`blanket_library.py:451-530`) verbatim -- already pure in the source.
 
-    Reads nine fields to the elliptical sibling's ten, and only five are shared --
-    see `calculate_dshaped_blkt_areas` for the two-way difference list.
+    Parameters
+    ----------
+    rmajor, rminor, triang, r_shld_inboard_inner, dr_shld_inboard, dr_blkt_inboard,
+    r_shld_outboard_outer, dr_shld_outboard, dr_blkt_outboard, dz_blkt_half :
+        As `calculate_elliptical_blkt_areas` above.
+    dz_blkt_upper :
+        Vertical thickness of the upper blanket (m). `.build.dz_blkt_upper`.
+
+    Returns
+    -------
+    tuple
+        `(vol_blkt_inboard_full_coverage, vol_blkt_outboard_full_coverage,
+        vol_blkt_total_full_coverage)` (m3).
     """
+    r1 = rmajor - rminor * triang
 
-    a_blkt_inboard_surface_full_coverage = OutputInto(build)
-    a_blkt_outboard_surface_full_coverage = OutputInto(build)
-    a_blkt_total_surface_full_coverage = OutputInto(build)
+    r2 = r1 - r_shld_inboard_inner - dr_shld_inboard - dr_blkt_inboard
+    r3 = r_shld_outboard_outer - r1 - dr_shld_outboard - dr_blkt_outboard
 
-    def __call__(
-        self,
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        rminor=From(physics),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_outboard=From(build),
-        dz_blkt_half=From(blanket),
-    ):
-        return calculate_dshaped_blkt_areas(
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            dr_fw_inboard,
-            dr_fw_plasma_gap_inboard,
-            rminor,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_outboard,
-            dz_blkt_half,
-        )
+    return _eshellvol(
+        rshell=r1,
+        rmini=r2,
+        rmino=r3,
+        zminor=dz_blkt_half,
+        drin=dr_blkt_inboard,
+        drout=dr_blkt_outboard,
+        dz=dz_blkt_upper,
+    )
 
 
-class EllipticalBlanketVolumes(BlanketVolumes):
-    """cottax node: `calculate_elliptical_blkt_volumes`. Same arm as the areas above."""
+def calculate_dshaped_blkt_areas(
+    r_shld_inboard_inner,
+    dr_shld_inboard,
+    dr_blkt_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_inboard,
+    rminor,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_outboard,
+    dz_blkt_half,
+):
+    """Full-coverage blanket surface areas, D-shaped arm.
 
-    vol_blkt_inboard_full_coverage = OutputInto(fwbs)
-    vol_blkt_outboard_full_coverage = OutputInto(fwbs)
-    vol_blkt_total_full_coverage = OutputInto(fwbs)
+    Ports the `@staticmethod` `calculate_dshaped_blkt_areas`
+    (`blanket_library.py:235-300`) verbatim -- already pure in the source.
 
-    def __call__(
-        self,
-        rmajor=From(physics),
-        rminor=From(physics),
-        triang=From(physics),
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        r_shld_outboard_outer=From(build),
-        dr_shld_outboard=From(build),
-        dr_blkt_outboard=From(build),
-        dz_blkt_half=From(blanket),
-        dz_blkt_upper=From(build),
-    ):
-        return calculate_elliptical_blkt_volumes(
-            rmajor,
-            rminor,
-            triang,
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            r_shld_outboard_outer,
-            dr_shld_outboard,
-            dr_blkt_outboard,
-            dz_blkt_half,
-            dz_blkt_upper,
-        )
+    Live on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`
+    (`i_fw_blkt_vv_shape = 1`, `itart = 1`; either alone would select this arm).
 
+    **Reads-set differences from `calculate_elliptical_blkt_areas`**, which is the whole
+    reason this is a second occupant rather than a parameter of the first:
 
-class DShapedBlanketVolumes(BlanketVolumes):
-    """cottax node: `calculate_dshaped_blkt_volumes`. Same arm as `DShapedBlanketAreas`
-    above, and live on the same two files.
+    - gone: `.physics.rmajor`, `.physics.triang`, `.build.r_shld_outboard_outer`,
+      `.build.dr_shld_outboard`, `.build.dr_blkt_outboard`;
+    - new: `.build.dr_fw_inboard`, `.build.dr_fw_outboard`,
+      `.build.dr_fw_plasma_gap_inboard`, `.build.dr_fw_plasma_gap_outboard`.
+
+    The D-shaped shell is anchored on the *inboard* build (`r1` walks outwards from
+    `r_shld_inboard_inner`) and its width is measured across the plasma, so the outboard
+    build radii the elliptical arm needs do not appear at all.
+
+    Parameters
+    ----------
+    r_shld_inboard_inner :
+        Inner radius of the inboard shield (m). `.build.r_shld_inboard_inner`.
+    dr_shld_inboard, dr_blkt_inboard :
+        Inboard shield/blanket radial thicknesses (m). `.build.dr_shld_inboard`,
+        `.build.dr_blkt_inboard`.
+    dr_fw_inboard, dr_fw_outboard :
+        First-wall radial thicknesses (m). `.build.dr_fw_inboard`/`_outboard`.
+    dr_fw_plasma_gap_inboard, dr_fw_plasma_gap_outboard :
+        First-wall/plasma radial gaps (m). `.build.dr_fw_plasma_gap_inboard`/`_outboard`.
+    rminor :
+        Plasma minor radius (m). `.physics.rminor`.
+    dz_blkt_half :
+        Blanket half-height (m). `.blanket.dz_blkt_half`.
+
+    Returns
+    -------
+    tuple
+        `(a_blkt_inboard_surface_full_coverage, a_blkt_outboard_surface_full_coverage,
+        a_blkt_total_surface_full_coverage)` (m2).
     """
+    # Major radius to the outer edge of the inboard blanket.
+    r1 = r_shld_inboard_inner + dr_shld_inboard + dr_blkt_inboard
 
-    vol_blkt_inboard_full_coverage = OutputInto(fwbs)
-    vol_blkt_outboard_full_coverage = OutputInto(fwbs)
-    vol_blkt_total_full_coverage = OutputInto(fwbs)
+    # Horizontal distance between inside edges -- across the plasma.
+    r2 = (
+        dr_fw_inboard
+        + dr_fw_plasma_gap_inboard
+        + 2.0 * rminor
+        + dr_fw_plasma_gap_outboard
+        + dr_fw_outboard
+    )
 
-    def __call__(
-        self,
-        r_shld_inboard_inner=From(build),
-        dr_shld_inboard=From(build),
-        dr_blkt_inboard=From(build),
-        dr_fw_inboard=From(build),
-        dr_fw_plasma_gap_inboard=From(build),
-        rminor=From(physics),
-        dr_fw_plasma_gap_outboard=From(build),
-        dr_fw_outboard=From(build),
-        dz_blkt_half=From(blanket),
-        dr_blkt_outboard=From(build),
-        dz_blkt_upper=From(build),
-    ):
-        return calculate_dshaped_blkt_volumes(
-            r_shld_inboard_inner,
-            dr_shld_inboard,
-            dr_blkt_inboard,
-            dr_fw_inboard,
-            dr_fw_plasma_gap_inboard,
-            rminor,
-            dr_fw_plasma_gap_outboard,
-            dr_fw_outboard,
-            dz_blkt_half,
-            dr_blkt_outboard,
-            dz_blkt_upper,
-        )
+    return dshellarea(rmajor=r1, rminor=r2, zminor=dz_blkt_half)
 
 
-class BlanketCoverageFactors(ExplicitFunction):
-    """The family that owns `.fwbs.vol_blkt_total` and the five fields written beside
-    it: one occupant per `n_divertors` arm of `BlanketLibrary.apply_coverage_factors`.
+def calculate_dshaped_blkt_volumes(
+    r_shld_inboard_inner,
+    dr_shld_inboard,
+    dr_blkt_inboard,
+    dr_fw_inboard,
+    dr_fw_plasma_gap_inboard,
+    rminor,
+    dr_fw_plasma_gap_outboard,
+    dr_fw_outboard,
+    dz_blkt_half,
+    dr_blkt_outboard,
+    dz_blkt_upper,
+):
+    """Full-coverage blanket volumes, D-shaped arm.
 
-    `.fwbs.vol_blkt_total` is what the whole of this file exists to reach:
-    `CCFE_HCPB.component_masses` (`hcpb.py:306`, `:419`, `:425`, `:444`) reads it and
-    nothing else in the tokamak call surface writes it.
+    Ports the `@staticmethod` `calculate_dshaped_blkt_volumes`
+    (`blanket_library.py:303-378`) verbatim -- already pure in the source. Same `r1`/`r2`
+    geometry as `calculate_dshaped_blkt_areas` above; the extra parameters are the shell
+    thicknesses `dshellvol` needs and `dshellarea` does not.
 
-    Both arms are written (2026-08-27); the slot is total. The arms read the same six
-    fields and differ by one literal, which is enough to make them occupants rather than
-    a parameter (`next_steps.md` §14.2, the `istore` precedent).
+    `dr_blkt_outboard` reappears here where the areas arm dropped it -- as `drout`, the
+    outboard *thickness*, not as a radius. `.physics.rmajor`, `.physics.triang` and
+    `.build.r_shld_outboard_outer`/`.build.dr_shld_outboard` remain unread on this arm.
+
+    Parameters
+    ----------
+    r_shld_inboard_inner, dr_shld_inboard, dr_blkt_inboard, dr_fw_inboard,
+    dr_fw_plasma_gap_inboard, rminor, dr_fw_plasma_gap_outboard, dr_fw_outboard,
+    dz_blkt_half :
+        As `calculate_dshaped_blkt_areas` above.
+    dr_blkt_outboard :
+        Outboard blanket radial thickness (m). `.build.dr_blkt_outboard`.
+    dz_blkt_upper :
+        Vertical thickness of the upper blanket (m). `.build.dz_blkt_upper`.
+
+    Returns
+    -------
+    tuple
+        `(vol_blkt_inboard_full_coverage, vol_blkt_outboard_full_coverage,
+        vol_blkt_total_full_coverage)` (m3).
     """
+    r1 = r_shld_inboard_inner + dr_shld_inboard + dr_blkt_inboard
+
+    r2 = (
+        dr_fw_inboard
+        + dr_fw_plasma_gap_inboard
+        + 2.0 * rminor
+        + dr_fw_plasma_gap_outboard
+        + dr_fw_outboard
+    )
+
+    return dshellvol(
+        rmajor=r1,
+        rminor=r2,
+        zminor=dz_blkt_half,
+        drin=dr_blkt_inboard,
+        drout=dr_blkt_outboard,
+        dz=dz_blkt_upper,
+    )
 
 
-class BlanketCoverageFactorsSingleNull(BlanketCoverageFactors):
-    """cottax node: `apply_coverage_factors_single_null`. `n_divertors == 1`."""
+def apply_coverage_factors_single_null(
+    a_blkt_total_surface_full_coverage,
+    a_blkt_inboard_surface_full_coverage,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    vol_blkt_total_full_coverage,
+    vol_blkt_inboard_full_coverage,
+):
+    """Blanket areas and volumes after divertor/HCD coverage, single-null arm.
 
-    a_blkt_outboard_surface = OutputInto(build)
-    a_blkt_total_surface = OutputInto(build)
-    vol_blkt_outboard = OutputInto(fwbs)
-    vol_blkt_inboard = OutputInto(fwbs)
-    a_blkt_inboard_surface = OutputInto(build)
-    vol_blkt_total = OutputInto(fwbs)
+    Ports the `n_divertors != 2` arm of `apply_coverage_factors`
+    (`blanket_library.py:532-584`), closing its `self.data` back-door. The double-null
+    arm differs only in a literal (`2.0 * f_ster_div_single` in place of
+    `f_ster_div_single`, `blanket_library.py:544`) and is
+    `apply_coverage_factors_double_null` below: under `next_steps.md` §14.2 a switch
+    value selects an occupant even when the arms differ only in a literal -- the
+    `istore` precedent -- so it is a second class, not a `jnp.where`.
 
-    def __call__(
-        self,
-        a_blkt_total_surface_full_coverage=From(build),
-        a_blkt_inboard_surface_full_coverage=From(build),
-        f_ster_div_single=From(fwbs),
-        f_a_fw_outboard_hcd=From(fwbs),
-        vol_blkt_total_full_coverage=From(fwbs),
-        vol_blkt_inboard_full_coverage=From(fwbs),
-    ):
-        return apply_coverage_factors_single_null(
-            a_blkt_total_surface_full_coverage,
-            a_blkt_inboard_surface_full_coverage,
-            f_ster_div_single,
-            f_a_fw_outboard_hcd,
-            vol_blkt_total_full_coverage,
-            vol_blkt_inboard_full_coverage,
-        )
+    Parameters
+    ----------
+    a_blkt_total_surface_full_coverage, a_blkt_inboard_surface_full_coverage :
+        Blanket surface areas at 100 % coverage (m2).
+        `.build.a_blkt_total_surface_full_coverage`,
+        `.build.a_blkt_inboard_surface_full_coverage` -- whichever occupant fills the
+        `blanket_areas` slot (elliptical or D-shaped; both own the same three fields).
+    f_ster_div_single :
+        Divertor solid-angle fraction per divertor. `.fwbs.f_ster_div_single`
+        (`divertor.py:42`).
+    f_a_fw_outboard_hcd :
+        Fraction of the outboard first-wall area taken by HCD apparatus.
+        `.fwbs.f_a_fw_outboard_hcd`.
+    vol_blkt_total_full_coverage, vol_blkt_inboard_full_coverage :
+        Blanket volumes at 100 % coverage (m3) -- whichever occupant fills the
+        `blanket_volumes` slot.
 
-
-class BlanketCoverageFactorsDoubleNull(BlanketCoverageFactors):
-    """cottax node: `apply_coverage_factors_double_null`. `n_divertors == 2`.
-
-    Live on `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT`. Carries
-    PROCESS's areas-doubled/volumes-not asymmetry unrepaired -- see the function's
-    docstring.
+    Returns
+    -------
+    tuple
+        `(a_blkt_outboard_surface, a_blkt_total_surface, vol_blkt_outboard,
+        vol_blkt_inboard, a_blkt_inboard_surface, vol_blkt_total)` -- PROCESS's own
+        write order.
     """
+    covered = 1.0 - f_ster_div_single - f_a_fw_outboard_hcd
 
-    a_blkt_outboard_surface = OutputInto(build)
-    a_blkt_total_surface = OutputInto(build)
-    vol_blkt_outboard = OutputInto(fwbs)
-    vol_blkt_inboard = OutputInto(fwbs)
-    a_blkt_inboard_surface = OutputInto(build)
-    vol_blkt_total = OutputInto(fwbs)
+    a_blkt_outboard_surface = (
+        a_blkt_total_surface_full_coverage * covered
+        - a_blkt_inboard_surface_full_coverage
+    )
+    a_blkt_total_surface = a_blkt_inboard_surface_full_coverage + a_blkt_outboard_surface
 
-    def __call__(
-        self,
-        a_blkt_total_surface_full_coverage=From(build),
-        a_blkt_inboard_surface_full_coverage=From(build),
-        f_ster_div_single=From(fwbs),
-        f_a_fw_outboard_hcd=From(fwbs),
-        vol_blkt_total_full_coverage=From(fwbs),
-        vol_blkt_inboard_full_coverage=From(fwbs),
-    ):
-        return apply_coverage_factors_double_null(
-            a_blkt_total_surface_full_coverage,
-            a_blkt_inboard_surface_full_coverage,
-            f_ster_div_single,
-            f_a_fw_outboard_hcd,
-            vol_blkt_total_full_coverage,
-            vol_blkt_inboard_full_coverage,
-        )
+    vol_blkt_outboard = (
+        vol_blkt_total_full_coverage * covered - vol_blkt_inboard_full_coverage
+    )
+    vol_blkt_inboard = vol_blkt_inboard_full_coverage
+
+    a_blkt_inboard_surface = a_blkt_inboard_surface_full_coverage
+
+    vol_blkt_total = vol_blkt_inboard_full_coverage + vol_blkt_outboard
+
+    return (
+        a_blkt_outboard_surface,
+        a_blkt_total_surface,
+        vol_blkt_outboard,
+        vol_blkt_inboard,
+        a_blkt_inboard_surface,
+        vol_blkt_total,
+    )
 
 
-class BlanketInboardPoloidalAngle(ExplicitFunction):
-    """cottax node: `calculate_blkt_inboard_poloidal_plasma_angle`. Unswitched --
-    `hcpb.py:64` runs it whatever `n_divertors`, `itart` or the blanket shape are, and
-    the formula reads none of them.
+def apply_coverage_factors_double_null(
+    a_blkt_total_surface_full_coverage,
+    a_blkt_inboard_surface_full_coverage,
+    f_ster_div_single,
+    f_a_fw_outboard_hcd,
+    vol_blkt_total_full_coverage,
+    vol_blkt_inboard_full_coverage,
+):
+    """Blanket areas and volumes after divertor/HCD coverage, double-null arm
+    (`n_divertors == 2`).
 
-    Owns `.blanket.deg_blkt_inboard_poloidal_plasma` only. Its immediate successor,
-    `.blanket.f_deg_blkt_inboard_poloidal_plasma` (`hcpb.py:71-73`, the same angle over
-    360), is UNPORTED: PROCESS writes it and only `blanket_library.py:687-688`'s
-    reporting reads it, so nothing in this graph does, and owning it would add an output
-    with no consumer rather than close a hole.
+    Ports the `if n_divertors == 2` arm of `apply_coverage_factors`
+    (`blanket_library.py:538-548`) plus the unbranched tail (`:561-584`) it shares with
+    its single-null sibling.
 
-    **Its outboard sibling stays UNPORTED, and the reason is structural, not scope.**
-    `hcpb.py:54-62` computes `.blanket.deg_blkt_outboard_poloidal_plasma` from
-    `.divertor.deg_div_poloidal_plasma`, which `.tokamak.divertor.heat_flux_split` owns
-    and computes *from this node's output*. So if the outboard angle is ever ported it
-    must be a **separate node**: folded into this one, the merged node would read what
-    the divertor writes and write what the divertor reads, and the pair would be an SCC.
+    **The two divertors are counted in the areas and not in the volumes, and that is
+    PROCESS's own asymmetry, transcribed rather than repaired.** Only the
+    `a_blkt_outboard_surface` assignment sits inside the `if`; `vol_blkt_outboard`
+    (`blanket_library.py:565-573`) is written *below* the branch and uses the
+    single-divertor `1 - f_ster_div_single - f_a_fw_outboard_hcd` on both arms. So a
+    double-null machine subtracts two divertors' solid angle from its blanket *surface*
+    and one divertor's from its blanket *volume*. Nothing in `blanket_library.py`
+    justifies the difference and no comment mentions it; it reads as an arm that was
+    edited where the branch was and not where it was not. Recorded as a defect in
+    `_audit/units/models/blankets/blanket_library.md` (§ 2026-08-27) and reproduced
+    exactly here, per `traceability_policy.md`: the port's job is to agree with PROCESS,
+    including where PROCESS is wrong.
 
-    PROCESS runs the divertor (`caller.py:324`) *before* the blanket (`:343`), so its
-    `Divertor.run` reads the inboard angle the **previous** pipeline pass wrote -- the
-    coupling is real and `Caller.call_models`' up-to-ten-passes loop is what closes it,
-    which is the implicit-cycle pattern `CLAUDE.md` describes. It stays out of this
-    graph only because nothing here reads the outboard angle; that is an absence of a
-    consumer, not a proof of acyclicity, and a future pass that ports it should expect
-    to declare the loop rather than to find there is none.
+    Parameters
+    ----------
+    a_blkt_total_surface_full_coverage, a_blkt_inboard_surface_full_coverage :
+        Blanket surface areas at 100 % coverage (m2).
+        `.build.a_blkt_total_surface_full_coverage`,
+        `.build.a_blkt_inboard_surface_full_coverage` -- whichever occupant fills the
+        `blanket_areas` slot (elliptical or D-shaped; both own the same three fields).
+    f_ster_div_single :
+        Divertor solid-angle fraction **per divertor**. `.fwbs.f_ster_div_single`
+        (`divertor.py:42`) -- the `2.0 *` below is where the second divertor enters.
+    f_a_fw_outboard_hcd :
+        Fraction of the outboard first-wall area taken by HCD apparatus.
+        `.fwbs.f_a_fw_outboard_hcd`.
+    vol_blkt_total_full_coverage, vol_blkt_inboard_full_coverage :
+        Blanket volumes at 100 % coverage (m3) -- whichever occupant fills the
+        `blanket_volumes` slot.
+
+    Returns
+    -------
+    tuple
+        `(a_blkt_outboard_surface, a_blkt_total_surface, vol_blkt_outboard,
+        vol_blkt_inboard, a_blkt_inboard_surface, vol_blkt_total)` -- PROCESS's own
+        write order.
     """
+    # `blanket_library.py:541-547` -- inside the `n_divertors == 2` branch.
+    covered_area = 1.0 - 2.0 * f_ster_div_single - f_a_fw_outboard_hcd
+    # `blanket_library.py:565-572` -- below the branch, one divertor on both arms.
+    covered_volume = 1.0 - f_ster_div_single - f_a_fw_outboard_hcd
 
-    deg_blkt_inboard_poloidal_plasma = OutputInto(blanket)
+    a_blkt_outboard_surface = (
+        a_blkt_total_surface_full_coverage * covered_area
+        - a_blkt_inboard_surface_full_coverage
+    )
+    a_blkt_total_surface = a_blkt_inboard_surface_full_coverage + a_blkt_outboard_surface
 
-    def __call__(
-        self,
-        rminor=From(physics),
-        dz_blkt_half=From(blanket),
-        dr_fw_plasma_gap_inboard=From(build),
-    ):
-        return calculate_blkt_inboard_poloidal_plasma_angle(
-            rminor, dz_blkt_half, dr_fw_plasma_gap_inboard
-        )
+    vol_blkt_outboard = (
+        vol_blkt_total_full_coverage * covered_volume - vol_blkt_inboard_full_coverage
+    )
+    vol_blkt_inboard = vol_blkt_inboard_full_coverage
+
+    a_blkt_inboard_surface = a_blkt_inboard_surface_full_coverage
+
+    vol_blkt_total = vol_blkt_inboard_full_coverage + vol_blkt_outboard
+
+    return (
+        a_blkt_outboard_surface,
+        a_blkt_total_surface,
+        vol_blkt_outboard,
+        vol_blkt_inboard,
+        a_blkt_inboard_surface,
+        vol_blkt_total,
+    )
+
+
+def calculate_blkt_inboard_poloidal_plasma_angle(
+    rminor,
+    dz_blkt_half,
+    dr_fw_plasma_gap_inboard,
+):
+    """Poloidal angle the inboard blanket subtends at the plasma mid-plane (degrees).
+
+    Ports `BlanketLibrary.calculate_blkt_inboard_poloidal_plasma_angle`
+    (`process/models/blankets/blanket_library.py:3771-3797`), unchanged
+    (`np.degrees`/`np.arctan` -> `jnp.degrees`/`jnp.arctan`). The angle is measured from
+    the first-wall surface, and the Shafranov shift is neglected -- PROCESS's own
+    comment at `hcpb.py:51-53` says the formula would take the shift added to the minor
+    radius if it were carried.
+
+    **Called from `CCFE_HCPB.run` (`hcpb.py:64-69`), not from `component_volumes`** --
+    which is why its node is a slot of `.tokamak.ccfe_hcpb` in `hcpb.py`'s own call
+    order rather than one of the four `component_volumes` slots, even though the
+    function is defined on the base class. `DCLL.run` (`dcll.py:117-123`) calls the same
+    staticmethod with the same three arguments; a DCLL machine would bind this same node
+    into its own slot.
+
+    **A missing producer, ported 2026-08-30.** `.tokamak.divertor.heat_flux_split` reads
+    `.blanket.deg_blkt_inboard_poloidal_plasma` -- it is the whole input to
+    `Divertor.single_divertor_angle` -- and nothing owned it, so the divertor's subtended
+    angle was `(180 - 0)/2 = 90` degrees against PROCESS's `(180 - 127.797)/2 = 26.1`,
+    a factor 3.4 on `f_ster_div_single` and on everything the two incident powers feed.
+    This file's own module docstring listed "the two poloidal-plasma-angle helpers" as
+    deliberately out of scope on the grounds that none of their writes reaches
+    `.tokamak.ccfe_hcpb`'s sixteen boundary variables; that was true and it was the wrong
+    question, because the reader is in a different slot. See
+    `boundary.unproduced_but_computed` and `_audit/optimise_design.md` §16.
+
+    Parameters
+    ----------
+    rminor :
+        Plasma minor radius (m). `.physics.rminor`.
+    dz_blkt_half :
+        Vertical half-height of the inboard blanket (m). `.blanket.dz_blkt_half`.
+    dr_fw_plasma_gap_inboard :
+        Inboard first-wall-to-plasma radial gap (m). `.build.dr_fw_plasma_gap_inboard`.
+
+    Returns
+    -------
+    :
+        Poloidal angle subtended by the inboard blanket at the plasma mid-plane
+        (degrees). `.blanket.deg_blkt_inboard_poloidal_plasma`.
+    """
+    return jnp.degrees(
+        2.0 * jnp.arctan(dz_blkt_half / (rminor + dr_fw_plasma_gap_inboard))
+    )

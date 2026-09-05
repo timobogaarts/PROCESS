@@ -1,5 +1,5 @@
 """Harness cases for the ported superconducting / CICC TF coil layer
-(`functional_process/models/tfcoil/superconducting.py`).
+(`functional_process/cottax/tfcoil/superconducting.py`).
 
 Same convention as `test_base.py`: every legacy sample is the **input** half of a case
 in PROCESS's own `tests/unit/models/tfcoil/test_sctfcoil.py`, and the reference adapter
@@ -27,7 +27,7 @@ from functional_process.indat import (
     UNPORTED,
     machine_from_indat,
 )
-from functional_process.models.tfcoil.superconducting import (
+from functional_process.cottax.tfcoil.superconducting import (
     _RIPPLE_FIT_COEFFICIENTS,
     calculate_a_tf_turn,
     cicc_averaged_turn_geometry_from_current_per_turn,

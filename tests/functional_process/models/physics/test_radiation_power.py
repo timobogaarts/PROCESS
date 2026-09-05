@@ -24,7 +24,7 @@ from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.radiation_power import (
+from functional_process.cottax.physics.radiation_power import (
     ImpurityRadiationTotals,
     PlasmaRadiationPowers,
     SynchrotronRadiationPower,

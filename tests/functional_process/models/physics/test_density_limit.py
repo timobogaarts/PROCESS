@@ -1,8 +1,8 @@
 """Harness cases for the ported **tokamak** density-limit chain (`PlasmaDensityLimit`).
 
-Not the stellarator unit -- see `functional_process/models/physics/density_limit.py`'s
+Not the stellarator unit -- see `functional_process/cottax/physics/density_limit.py`'s
 module docstring and `_audit/units/models/physics/density_limit.md` for the distinction
-from `functional_process/models/stellarator/density_limits.py`.
+from `functional_process/cottax/stellarator/density_limits.py`.
 
 Legacy sample values for the eight one-liner formulas are lifted verbatim from
 `tests/unit/models/physics/test_physics.py::test_calculate_density_limit`
@@ -16,7 +16,7 @@ already-validated oracle from a single case. `p_perp` is computed here exactly a
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.density_limit import (
+from functional_process.cottax.physics.density_limit import (
     calculate_asdex_density_limit,
     calculate_asdex_new_density_limit,
     calculate_borrass_iter_i_density_limit,

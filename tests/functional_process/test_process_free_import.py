@@ -8,7 +8,7 @@ environment), and the check is a normal test rather than a manual ritual.
 
 **Two things are asserted and they are not the same claim.**
 
-1. **Import.** Every module under `functional_process/models/`,
+1. **Import.** Every module under `functional_process/cottax/`,
    `functional_process/core/` and `functional_process/vocabulary/` imports, and so do
    `paths`, `total_process`, `indat` (which builds `GRAPH` -- the whole reference
    stellarator machine -- at import time), `sand`, `mda`, `boundary` and
@@ -65,7 +65,7 @@ for p in sorted(root.rglob("*.py")):
     if parts[-1] == "__init__":
         parts = parts[:-1]
     name = ".".join(parts)
-    if name.startswith(("functional_process.models",
+    if name.startswith(("functional_process.cottax",
                         "functional_process.core",
                         "functional_process.vocabulary")):
         modules.append(name)

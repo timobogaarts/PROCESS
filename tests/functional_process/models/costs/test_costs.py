@@ -14,7 +14,7 @@ values), since fuzzing alone would only hit every branch by chance.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.costs.costs import (
+from functional_process.cottax.costs.costs import (
     calculate_atmospheric_recovery_cost,
     calculate_auxiliary_component_cooling_cost,
     calculate_auxiliary_facility_power_cost,

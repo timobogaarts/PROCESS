@@ -155,7 +155,7 @@ def reads_only_its_own_statement():
     asks it of every one of them at once, and these ask it beside their own arm's
     evidence.
     """
-    from functional_process.models.stated import stated_port
+    from functional_process.cottax.stated import stated_port
 
     def check(node):
         assert list(node.inputs) == [stated_port(out) for out in node.outputs]

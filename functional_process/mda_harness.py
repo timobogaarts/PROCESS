@@ -236,7 +236,7 @@ duplicate of `ProfileGrid`'s own `.physics.radius_plasma_profile_norm` (same
 `linspace(0, 1, n_plasma_profile_elements)` formula, same real source) that this
 harness's own comparison run surfaced -- `fusion_reactions.py`/`.md` were corrected to
 read `radius_plasma_profile_norm` directly, so `.physics.profile_x` is no longer read
-by anything (confirmed: `grep -rn "physics\\.profile_x" functional_process/models/`
+by anything (confirmed: `grep -rn "physics\\.profile_x" functional_process/cottax/`
 finds no remaining `FromExactly`/`Output` binding, only historical docstring mentions). Kept
 as an empty dict, not deleted outright, since a future ungrounded-and-wrong-shaped
 case is exactly what this mechanism is for.
@@ -775,7 +775,7 @@ EXPLAINED_DISAGREEMENTS = {
         "`VacuumOld`'s duct diameter, ~2.9e-4 high. **Not a floating-point path "
         "difference -- a deliberate, already-documented solver-tolerance difference.** "
         "This port solves the duct-diameter equation to a relative-step tolerance of "
-        "`1e-10` (`functional_process/models/vacuum.py:250`'s "
+        "`1e-10` (`functional_process/cottax/vacuum.py:250`'s "
         "`solve_duct_diameter(..., tol=1e-10)`, whose own docstring at lines 262-271 "
         "states the deviation and why); PROCESS stops the *same* Newton iteration at "
         "`dd <= 0.01`, a 1% relative-step cutoff "
@@ -786,7 +786,7 @@ EXPLAINED_DISAGREEMENTS = {
         "`DuctDiameterRootFind`. A second, independently documented deviation points "
         "the same way: PROCESS tests its fits-in-the-gap condition on the diameter "
         "*before* the Newton update, this port on the diameter actually returned "
-        "(`functional_process/models/vacuum.py:391-397`)."
+        "(`functional_process/cottax/vacuum.py:391-397`)."
     ),
     ".heat_transport.p_plant_electric_base_total_mw": (
         "**Not a port defect: PROCESS's own converged `DataStructure` is internally "

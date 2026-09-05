@@ -30,14 +30,14 @@ from pathlib import Path
 import equinox as eqx
 from cottax.interfaces.pytree_namespace_module import to_graph
 
-from functional_process.models.availability.availability import (
+from functional_process.cottax.availability.availability import (
     AvailDisplacementsPerAtom,
     AvailNeutronFluence,
     CplifeAvailResistive,
     CplifeAvailSuperconducting,
 )
-from functional_process.models.availability.namespace import Availability
-from functional_process.models.blankets.blanket_library import (
+from functional_process.cottax.availability.namespace import Availability
+from functional_process.cottax.blankets.blanket_library import (
     BlanketCoverageFactorsDoubleNull,
     BlanketCoverageFactorsSingleNull,
     BlanketHalfHeightDoubleNull,
@@ -47,7 +47,7 @@ from functional_process.models.blankets.blanket_library import (
     EllipticalBlanketAreas,
     EllipticalBlanketVolumes,
 )
-from functional_process.models.blankets.hcpb import (
+from functional_process.cottax.blankets.hcpb import (
     CentrepostNeutronicsAbsent,
     calculate_centrepost_neutronics_absent,
     CentrepostNeutronicsSphericalTokamakSuperconducting,
@@ -63,8 +63,8 @@ from functional_process.models.blankets.hcpb import (
     NuclearHeatingShieldSphericalTokamak,
     PumpingPowerMechanicalWithPressureDrop,
 )
-from functional_process.models.blankets.namespace import CcfeHcpb
-from functional_process.models.build import (
+from functional_process.cottax.blankets.namespace import CcfeHcpb
+from functional_process.cottax.build import (
     DivertorGeometryConventional,
     DivertorGeometrySphericalTokamak,
     DrTfInboardFromWindingPack,
@@ -82,12 +82,12 @@ from functional_process.models.build import (
     VacuumVesselAndShieldRadiiTfOutsideCs,
     WpConductorMaxWidthSuperconducting,
 )
-from functional_process.models.buildings.buildings import (
+from functional_process.cottax.buildings.buildings import (
     Bldgs,
     BldgsSizes,
 )
-from functional_process.models.buildings.namespace import Buildings
-from functional_process.models.costs.costs import (
+from functional_process.cottax.buildings.namespace import Buildings
+from functional_process.cottax.costs.costs import (
     CostOfElectricityConventionalAspectRatio,
     CostOfElectricitySphericalTokamak,
     EnergyStorageCostPulsedElectrowattOption1,
@@ -103,17 +103,17 @@ from functional_process.models.costs.costs import (
     TfMagnetCostSuperconductingPerKam,
     TfMagnetCostSuperconductingPerKg,
 )
-from functional_process.models.costs.namespace import Costs
-from functional_process.models.divertor import (
+from functional_process.cottax.costs.namespace import Costs
+from functional_process.cottax.divertor import (
     DivertorHeatLoadWadeDoubleNull,
     DivertorHeatLoadWadeSingleNull,
 )
-from functional_process.models.fw import (
+from functional_process.cottax.fw import (
     FirstWallDoubleNull,
     FirstWallDShapedDoubleNull,
     FirstWallSingleNull,
 )
-from functional_process.models.initialisation import (
+from functional_process.cottax.initialisation import (
     BeamElectronDensityFraction,
     DoubleNullUpperBuild,
     EnergyStorageBuildingVolume,
@@ -125,42 +125,42 @@ from functional_process.models.initialisation import (
     TfCryoplantEfficiency,
     TfInsulationYoungsModulus,
 )
-from functional_process.models.namespace import Build, Divertor
-from functional_process.models.pfcoil import (
+from functional_process.cottax.namespace import Build, Divertor
+from functional_process.cottax.pfcoil import (
     REFERENCE_TOPOLOGY,
     SPHERICAL_TOKAMAK_TOPOLOGY,
 )
-from functional_process.models.pfcoil.namespace import (
+from functional_process.cottax.pfcoil.namespace import (
     CSCoil,
     PFCoil,
     PFCoilCsWstNb3Sn,
     PFCoilSphericalTokamak,
 )
-from functional_process.models.pfcoil.superconductor import (
+from functional_process.cottax.pfcoil.superconductor import (
     CSCriticalCurrentDensitiesIterNb3Sn,
     CSCriticalCurrentDensitiesWstNb3Sn,
     CSTemperatureMarginIterNb3Sn,
     CSTemperatureMarginWstNb3Sn,
 )
-from functional_process.models.physics.bootstrap_current import (
+from functional_process.cottax.physics.bootstrap_current import (
     NoDiamagneticCurrent,
     NoPfirschSchluterCurrent,
     SauterBootstrapCurrentFraction,
     SceneDiamagneticCurrent,
     ScenePfirschSchluterCurrent,
 )
-from functional_process.models.physics.composition import (
+from functional_process.cottax.physics.composition import (
     PlasmaCompositionIgnited,
     PlasmaCompositionNonIgnited,
 )
-from functional_process.models.physics.confinement_time import (
+from functional_process.cottax.physics.confinement_time import (
     ConfinementTailCoreRadiation,
     Iss04ConfinementTime,
     IterIpb98y2ConfinementTime,
     PlasmaPowerLossIgnitedCoreRadiation,
     PlasmaPowerLossNonIgnitedCoreRadiation,
 )
-from functional_process.models.physics.current_drive import (
+from functional_process.cottax.physics.current_drive import (
     HcdElectricTotalIgnited,
     HcdElectricTotalNonIgnited,
     HcdPrimaryEfficiencyFreethyEcrhOMode,
@@ -168,11 +168,11 @@ from functional_process.models.physics.current_drive import (
     HcdPrimaryPowersElectronCyclotronNoSecondary,
     HcdSecondaryHeatingNone,
 )
-from functional_process.models.physics.density_limit import (
+from functional_process.cottax.physics.density_limit import (
     EnforcedDensityLimitGreenwald,
     TokamakDensityLimit,
 )
-from functional_process.models.physics.l_h_transition import (
+from functional_process.cottax.physics.l_h_transition import (
     Martin08AspectLowerLHThresholdPower,
     Martin08AspectNominalLHThresholdPower,
     Martin08AspectUpperLHThresholdPower,
@@ -180,56 +180,56 @@ from functional_process.models.physics.l_h_transition import (
     Martin08NominalLHThresholdPower,
     Martin08UpperLHThresholdPower,
 )
-from functional_process.models.physics.namespace import (
+from functional_process.cottax.physics.namespace import (
     Physics,
     PhysicsConfinementTime,
     PhysicsProfiles,
     ProfileParameterisationParabolic,
     ProfileParameterisationPedestal,
 )
-from functional_process.models.physics.physics import (
+from functional_process.cottax.physics.physics import (
     BetaNormMaxWesson,
     PulseRampTimesContinuousDefault,
     PulseRampTimesPulsedDefault,
     SeparatrixPowerNonIgnited,
     SurfaceAveragedPoloidalFieldAmperes,
 )
-from functional_process.models.physics.plasma_current import (
+from functional_process.cottax.physics.plasma_current import (
     FiestaStPlasmaCurrent,
     Ipdg89PlasmaCurrent,
     TokamakPlasmaCurrent,
     WessonCurrentProfileIndex,
 )
-from functional_process.models.physics.plasma_fields import PlasmaFields
-from functional_process.models.physics.plasma_geometry import (
+from functional_process.cottax.physics.plasma_fields import PlasmaFields
+from functional_process.cottax.physics.plasma_geometry import (
     CreateDataEuDemoXPointPlasmaShape,
     DoubleArcPlasmaGeometry,
     Ipdg89XPointPlasmaShape,
 )
-from functional_process.models.physics.plasma_inductance import (
+from functional_process.cottax.physics.plasma_inductance import (
     PlasmaInternalInductanceNormWesson,
     TokamakPlasmaInductance,
 )
-from functional_process.models.physics.profiles import (
+from functional_process.cottax.physics.profiles import (
     GreenwaldDensityFractions,
     PedestalSeparatrixDensities,
 )
-from functional_process.models.physics.pure_formulas import (
+from functional_process.cottax.physics.pure_formulas import (
     FastAlphaBetaIterPhysicsRules,
     FastAlphaBetaWard,
 )
-from functional_process.models.physics.scrape_off_layer import (
+from functional_process.cottax.physics.scrape_off_layer import (
     OutboardSOLPowerDecayLengthEich2013,
     TokamakScrapeOffLayer,
 )
-from functional_process.models.physics.tokamak_namespace import (
+from functional_process.cottax.physics.tokamak_namespace import (
     TokamakCurrentDrive,
     TokamakPhysics,
     TokamakPlasmaBeta,
     TokamakPlasmaGeom,
     TokamakPulse,
 )
-from functional_process.models.power.electric_production import (
+from functional_process.cottax.power.electric_production import (
     AcpowLine,
     AcpowMotorGeneratorFlywheel,
     PlantElectricProductionLiquidBreeder,
@@ -238,14 +238,14 @@ from functional_process.models.power.electric_production import (
     PlantElectricProductionSingleCoolant,
     PowerProfilesOverTime,
 )
-from functional_process.models.power.namespace import Power
-from functional_process.models.physics.tokamak_namespace import PulseBurnTime
-from functional_process.models.power.pf_coil_power import PfCoilPowerSupplies
-from functional_process.models.power.tf_coil_power import (
+from functional_process.cottax.power.namespace import Power
+from functional_process.cottax.physics.tokamak_namespace import PulseBurnTime
+from functional_process.cottax.power.pf_coil_power import PfCoilPowerSupplies
+from functional_process.cottax.power.tf_coil_power import (
     TfPowerResistive,
     TfPowerSuperconducting,
 )
-from functional_process.models.power.thermal_cryo import (
+from functional_process.cottax.power.thermal_cryo import (
     ComponentThermalPowers,
     CryoLoadsActive,
     CryoLoadsInactive,
@@ -263,18 +263,18 @@ from functional_process.models.power.thermal_cryo import (
     TempTurbineCoolantInFromBlanketCoolant,
     TempTurbineCoolantInFromLiquidBreeder,
 )
-from functional_process.models.shield import (
+from functional_process.cottax.shield import (
     DoubleNullShieldHalfHeight,
     DShapedShieldVolumes,
     EllipticalShieldVolumes,
     SingleNullShieldHalfHeight,
     TokamakShield,
 )
-from functional_process.models.stellarator.build import (
+from functional_process.cottax.stellarator.build import (
     AFwTotalNoPowerflow,
     AFwTotalWithPowerflow,
 )
-from functional_process.models.stellarator.coils.calculate import (
+from functional_process.cottax.stellarator.coils.calculate import (
     Bi2212WindingPackIntersectInputs,
     CrocoRebcoWindingPackIntersectInputs,
     DurhamNbtiWindingPackIntersectInputs,
@@ -284,7 +284,7 @@ from functional_process.models.stellarator.coils.calculate import (
     UserDefinedNb3snWindingPackIntersectInputs,
     WstNb3snWindingPackIntersectInputs,
 )
-from functional_process.models.stellarator.coils.mass import (
+from functional_process.cottax.stellarator.coils.mass import (
     Bi2212CoilsMass,
     CrocoRebcoCoilsMass,
     DurhamNbtiCoilsMass,
@@ -294,18 +294,18 @@ from functional_process.models.stellarator.coils.mass import (
     UserDefinedNb3snCoilsMass,
     WstNb3snCoilsMass,
 )
-from functional_process.models.stellarator.density_limits import EcrhDensityLimit
-from functional_process.models.stellarator.heating import (
+from functional_process.cottax.stellarator.density_limits import EcrhDensityLimit
+from functional_process.cottax.stellarator.heating import (
     EcrhHeating,
     LowhybHeating,
 )
-from functional_process.models.stellarator.namespace import (
+from functional_process.cottax.stellarator.namespace import (
     BlanketShieldPowerExponential,
     Stellarator,
     StellaratorCoils,
     StellaratorFwbs,
 )
-from functional_process.models.stellarator.plasma_physics import (
+from functional_process.cottax.stellarator.plasma_physics import (
     HeatingAndRadiationPowerIgnited,
     HeatingAndRadiationPowerNonIgnited,
     NeutronWallLoadFirstWallAreaComprehensive2014,
@@ -315,18 +315,18 @@ from functional_process.models.stellarator.plasma_physics import (
     RadiatedWallLoadFirstWallAreaPre2014,
     RadiatedWallLoadScaledPlasmaSurface,
 )
-from functional_process.models.stellarator.preset_config import (
+from functional_process.cottax.stellarator.preset_config import (
     StellaratorMachineConfig,
     machine_config_for_istell,
 )
-from functional_process.models.stellarator.stellarator_fwbs_s2 import (
+from functional_process.cottax.stellarator.stellarator_fwbs_s2 import (
     DetailedPowerflowBlanketShieldPower,
     DetailedPowerflowBlanketShieldPowerUserInputPumping,
 )
-from functional_process.models.stellarator.stellarator_fwbs_s4 import (
+from functional_process.cottax.stellarator.stellarator_fwbs_s4 import (
     BlanketComponentMasses,
 )
-from functional_process.models.structure import Structure
+from functional_process.cottax.structure import Structure
 from functional_process.models.switch_enums import (
     BlanketDualCoolantModel,
     BlanketLifetimeModel,
@@ -341,7 +341,7 @@ from functional_process.models.switch_enums import (
     SuperconductorCostModel,
     ThermalStorageModel,
 )
-from functional_process.models.tfcoil.base import (
+from functional_process.cottax.tfcoil.base import (
     DrTfPlasmaCaseFromFraction,
     DrTfPlasmaCaseFromInput,
     DxTfSideCaseMinFromFraction,
@@ -353,28 +353,28 @@ from functional_process.models.tfcoil.base import (
     TfGlobalGeometryCircularCase,
     TfGlobalGeometryStraightCase,
 )
-from functional_process.models.physics.plasma_profiles import lmode_profile_reset
-from functional_process.models.tfcoil.croco import (
+from functional_process.cottax.physics.plasma_profiles import lmode_profile_reset
+from functional_process.cottax.tfcoil.croco import (
     CrocoAveragedTurnGeometryFromCurrentPerTurn,
     croco_turn_cable_space_extra_void,
     HazeltonZhaiRebcoCrocoSuperconductorProperties,
     HazeltonZhaiRebcoCrocoTemperatureMargin,
 )
-from functional_process.models.tfcoil.namespace import (
+from functional_process.cottax.tfcoil.namespace import (
     CiccSuperconductingTfCoil,
     CrocoSuperconductingTfCoil,
 )
-from functional_process.models.tfcoil.quench import (
+from functional_process.cottax.tfcoil.quench import (
     TfCoilQuenchHeatCurrentDensity,
     helium_properties_at_quench_nodes,
 )
-from functional_process.models.tfcoil.stress import (
+from functional_process.cottax.tfcoil.stress import (
     TfFieldAndForceClampedJoints,
     TfStressExtendedPlaneStrainBuckedCaseAveragedTurn,
     TfStressPlaneStressBuckedCaseAveragedTurn,
     TfStressPlaneStressBuckedCaseIntegerTurn,
 )
-from functional_process.models.tfcoil.superconducting import (
+from functional_process.cottax.tfcoil.superconducting import (
     Bi2212SuperconductingTfCoilAreasAndMassesConventional,
     Bi2212SuperconductingTfCoilAreasAndMassesSphericalTokamak,
     CiccAveragedTurnGeometryFromCurrentPerTurn,
@@ -417,8 +417,8 @@ from functional_process.models.tfcoil.superconducting import (
     WstNb3snSuperconductingTfCoilAreasAndMassesSphericalTokamak,
     WstNb3snTfSuperconductorTemperatureMargin,
 )
-from functional_process.models.tokamak.namespace import Tokamak
-from functional_process.models.vacuum.vacuum import (
+from functional_process.cottax.tokamak.namespace import Tokamak
+from functional_process.cottax.vacuum.vacuum import (
     VacuumVesselDShapedDoubleNull,
     VacuumVesselEllipticalDoubleNull,
     VacuumVesselEllipticalSingleNull,

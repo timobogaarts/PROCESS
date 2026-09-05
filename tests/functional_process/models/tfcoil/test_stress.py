@@ -1,5 +1,5 @@
 """Harness cases for the ported TF coil stress chain
-(`functional_process/models/tfcoil/stress.py`).
+(`functional_process/cottax/tfcoil/stress.py`).
 
 Audit record: `functional_process/_audit/units/models/tfcoil/stress.md`.
 
@@ -30,7 +30,7 @@ in `stress.md` rather than hidden here.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.tfcoil.stress import (
+from functional_process.cottax.tfcoil.stress import (
     extended_plane_strain,
     eyoung_parallel,
     eyoung_parallel_array,

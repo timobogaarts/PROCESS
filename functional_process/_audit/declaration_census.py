@@ -5,6 +5,7 @@ list may still carry arithmetic (`f(1e-20 * n, ...)`), which the deferred `fn = 
 interface could not express and which is exactly the containment the split removes. This
 tightens the test to: one `return`, of one call, every argument a bare parameter name.
 """
+
 import ast, pathlib, collections
 
 # The package this file lives in, NOT an absolute path: a hardcoded root measures
@@ -17,8 +18,11 @@ argy = []
 
 
 def classify(fn, params):
-    body = [s for s in fn.body
-            if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))]
+    body = [
+        s
+        for s in fn.body
+        if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))
+    ]
     if len(body) != 1:
         return f"multi-statement ({len(body)})", None
     s = body[0]
@@ -26,14 +30,17 @@ def classify(fn, params):
         return "no return", None
     v = s.value
     if isinstance(v, ast.Call) and isinstance(v.func, (ast.Name, ast.Attribute)):
+
         def ok(node):
             # A bare parameter, or one of the declaration's own fields -- `self.switch`
             # is a legitimate input (a pytree-visible field), not computation.
             if isinstance(node, ast.Name) and node.id in params:
                 return True
-            return (isinstance(node, ast.Attribute)
-                    and isinstance(node.value, ast.Name)
-                    and node.value.id == "self")
+            return (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "self"
+            )
 
         bad, fields = [], 0
         for a in v.args:
@@ -68,12 +75,19 @@ for p in sorted(root.rglob("*.py")):
     except SyntaxError:
         continue
     for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
-        for fn in [n for n in cls.body
-                   if isinstance(n, ast.FunctionDef) and n.name == "__call__"]:
+        for fn in [
+            n
+            for n in cls.body
+            if isinstance(n, ast.FunctionDef) and n.name == "__call__"
+        ]:
             a = fn.args
             defaults = a.defaults + [d for d in a.kw_defaults if d]
-            if not any(isinstance(d, ast.Call) and isinstance(d.func, ast.Name)
-                       and d.func.id in {"From", "Supply", "Start"} for d in defaults):
+            if not any(
+                isinstance(d, ast.Call)
+                and isinstance(d.func, ast.Name)
+                and d.func.id in {"From", "Supply", "Start"}
+                for d in defaults
+            ):
                 continue
             params = {x.arg for x in a.args + a.kwonlyargs}
             k, bad = classify(fn, params)

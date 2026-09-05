@@ -1258,7 +1258,14 @@ def run_one(path, mode=PROVIDER, compare=None, optimiser=None) -> Row:
 
 
 def _solve_both(
-    row, reference, machine_graph, switch_values, cold, began, oracle=None, optimiser=None
+    row,
+    reference,
+    machine_graph,
+    switch_values,
+    cold,
+    began,
+    oracle=None,
+    optimiser=None,
 ):
     """Cold MDF and cold SAND for one configuration, each a row rather than an exit.
 

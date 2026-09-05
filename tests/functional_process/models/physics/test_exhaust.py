@@ -7,7 +7,7 @@ takes no `self.data` access at all, so no adapter is needed.
 """
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
-from functional_process.models.physics.exhaust import (
+from functional_process.cottax.physics.exhaust import (
     calculate_eu_demo_re_attachment_metric,
     calculate_psep_over_r_metric,
     calculate_radiation_fraction,

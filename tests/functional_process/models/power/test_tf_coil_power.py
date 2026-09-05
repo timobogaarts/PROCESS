@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/power/tf_coil_power.py`.
+"""Harness cases for `functional_process/cottax/power/tf_coil_power.py`.
 
 Audit record: `functional_process/_audit/units/models/power/tf_coil_power.md`. No
 legacy points exist for either function in `tests/unit/models/test_power.py`
@@ -10,7 +10,7 @@ those) -- fuzz-only, same situation `build.md` documented for
 """
 
 from functional_process._harness import Tier1Contract, fuzz_samples
-from functional_process.models.power.tf_coil_power import (
+from functional_process.cottax.power.tf_coil_power import (
     calculate_tf_power_resistive,
     calculate_tf_power_superconducting,
 )

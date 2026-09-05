@@ -33,7 +33,7 @@ volumes.
 """
 
 from functional_process._harness import Tier1Contract
-from functional_process.models.stellarator.stellarator_fwbs_s4 import (
+from functional_process.cottax.stellarator.stellarator_fwbs_s4 import (
     calculate_blanket_component_masses,
     calculate_shield_mass,
 )

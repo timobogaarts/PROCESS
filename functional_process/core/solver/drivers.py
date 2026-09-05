@@ -961,9 +961,7 @@ class SlsqpDriver(AbstractDriver):
                     # measure and has not declared convergence at any of these points.
                     # See `_verdict` for what the *final* call carries and why the two
                     # differ.
-                    user_callback(
-                        iteration[0], _Iterate(x), x / scale, float("inf")
-                    )
+                    user_callback(iteration[0], _Iterate(x), x / scale, float("inf"))
 
             result = minimize(
                 objective,

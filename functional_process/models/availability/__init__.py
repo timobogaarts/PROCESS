@@ -1,1 +1,1 @@
-"""Ported availability model units. Mirrors `process/models/availability.py`."""
+"""Pure availability model functions. Mirrors `process/models/availability.py`."""

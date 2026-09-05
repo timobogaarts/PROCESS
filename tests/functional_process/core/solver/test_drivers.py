@@ -18,7 +18,7 @@ from cottax.rewrites import Assign
 from cottax.spec import VarPath
 
 from functional_process.core.solver.drivers import PicardDriver, _refuse_inert_objective
-from functional_process.models.power.thermal_cryo import CryoQNucStep
+from functional_process.cottax.power.thermal_cryo import CryoQNucStep
 from functional_process.paths import fwbs
 from functional_process.models.switch_enums import CoilNuclearHeatingModel
 from process.models.tfcoil.base import TFConductorModel

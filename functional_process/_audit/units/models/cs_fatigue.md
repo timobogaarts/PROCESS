@@ -127,11 +127,15 @@ ever writes — tried during this pass and reverted for exactly that reason.
 while (
     (a <= dz_cs_turn_conduit / self.data.cs_fatigue.sf_vertical_crack)
     and (c <= dr_cs_turn_conduit / self.data.cs_fatigue.sf_radial_crack)
-    and (k_max <= self.data.cs_fatigue.fracture_toughness / self.data.cs_fatigue.sf_fast_fracture)
+    and (
+        k_max
+        <= self.data.cs_fatigue.fracture_toughness
+        / self.data.cs_fatigue.sf_fast_fracture
+    )
 ):
     k_a, k_c = self.surface_stress_intensity_factor(...)
     k_max = max(k_a, k_c)
-    delta_n = delta / (cr * (k_max ** paris_power_law))
+    delta_n = delta / (cr * (k_max**paris_power_law))
     a += delta * (k_a / k_max) ** paris_power_law
     c += delta * (k_c / k_max) ** paris_power_law
     n_pulse += delta_n

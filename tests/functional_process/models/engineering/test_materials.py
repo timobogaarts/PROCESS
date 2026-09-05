@@ -4,7 +4,7 @@
 
 One class, not three: `calculate_tresca_stress` and `calculate_von_mises_stress` live in
 the same PROCESS module but were ported into the stress packages
-(`functional_process/models/pfcoil/stresses.py`, `models/tfcoil/stress.py`) and are
+(`functional_process/cottax/pfcoil/stresses.py`, `models/tfcoil/stress.py`) and are
 covered by those units' cases. Porting them a second time here would give one formula
 two homes.
 """

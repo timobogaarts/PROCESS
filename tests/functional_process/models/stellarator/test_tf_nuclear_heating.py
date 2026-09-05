@@ -6,7 +6,7 @@ argument -- consistent with `switches.md`'s `i_tf_sup` split decision.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.stellarator.tf_nuclear_heating import (
+from functional_process.cottax.stellarator.tf_nuclear_heating import (
     calculate_sc_tf_coil_nuclear_heating,
 )
 from process.core.model import DataStructure

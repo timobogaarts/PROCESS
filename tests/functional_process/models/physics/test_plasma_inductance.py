@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/physics/plasma_inductance.py`.
+"""Harness cases for `functional_process/cottax/physics/plasma_inductance.py`.
 
 Audit record: `functional_process/_audit/units/models/physics/plasma_inductance.md`.
 
@@ -14,7 +14,7 @@ there is nothing left in it to compare once the four functions below agree.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.plasma_inductance import (
+from functional_process.cottax.physics.plasma_inductance import (
     calculate_internal_inductance_menard,
     calculate_internal_inductance_wesson,
     calculate_normalised_internal_inductance_iter_3,

@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/power/thermal_cryo.py`.
+"""Harness cases for `functional_process/cottax/power/thermal_cryo.py`.
 
 Audit record: `functional_process/_audit/units/models/power/thermal_cryo.md`. No
 legacy points exist in `tests/unit/models/test_power.py` for
@@ -33,7 +33,7 @@ from functional_process.indat import (
     _p_fw_div_heat_deposited_arm,
     _temp_turbine_coolant_in_arm,
 )
-from functional_process.models.power.thermal_cryo import (
+from functional_process.cottax.power.thermal_cryo import (
     ComponentThermalPowers,
     Cryo,
     CryoQNucStep,

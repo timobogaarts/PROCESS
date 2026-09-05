@@ -20,7 +20,7 @@ from cottax.interfaces.pytree_namespace_module import resolve, to_graph
 from cottax.spec import VarPath
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.plasma_profiles import (
+from functional_process.cottax.physics.plasma_profiles import (
     PedestalProfileValues,
     calculate_ion_vol_avg_temperature,
     calculate_parabolic_gradient_lengths,

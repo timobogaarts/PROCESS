@@ -25,7 +25,7 @@ value, because `NeProfile.calculate_profile_y`'s parabolic branch is dead code.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.profiles import (
+from functional_process.cottax.physics.profiles import (
     calculate_density_profile,
     calculate_greenwald_density_fractions,
     calculate_parabolic_on_axis_densities,

@@ -15,7 +15,7 @@ than just checking the port agrees with itself.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, fuzz_samples, legacy_sample
-from functional_process.models.stellarator.plasma_physics import (
+from functional_process.cottax.stellarator.plasma_physics import (
     calculate_fusion_power_totals_mw,
     calculate_clipped_radiation_powers,
     calculate_fusion_totals_no_beam,

@@ -5,7 +5,7 @@ conductivity of the EUROFER97 reduced-activation steel the first wall is made of
 
 **Only one, and the other two are deliberately absent.** PROCESS files
 `calculate_tresca_stress` and `calculate_von_mises_stress` in the same module; both are
-already ported -- `functional_process/models/pfcoil/stresses.py:313` and `:334`, with
+already ported -- `functional_process/cottax/pfcoil/stresses.py:313` and `:334`, with
 `models/tfcoil/stress.py:862`'s `tresca_stress` a second call site of the same formula.
 They landed there because their callers are stress models and the shared-helper
 convention had not yet reached this file. Re-porting them here would give one formula

@@ -19,7 +19,7 @@ backdoor" technique used throughout this harness.
 import pytest
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.confinement_time import (
+from functional_process.cottax.physics.confinement_time import (
     Iss04ConfinementTime,
     IterIpb98y2ConfinementTime,
     PlasmaPowerLossIgnitedCoreRadiation,

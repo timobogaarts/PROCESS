@@ -27,7 +27,7 @@ check that the sample is on the operating point and not near it.
 """
 
 from functional_process._harness import Tier1Contract, Tolerance, legacy_sample
-from functional_process.models.blankets.hcpb import (
+from functional_process.cottax.blankets.hcpb import (
     calculate_centrepost_angle_fraction,
     calculate_centrepost_fast_neutron_flux_superconducting,
     calculate_centrepost_neutronics_absent,

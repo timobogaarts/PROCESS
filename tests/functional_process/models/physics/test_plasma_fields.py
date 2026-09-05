@@ -20,7 +20,7 @@ regression MFILE rather than a `tests/unit` parametrisation.
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.plasma_fields import (
+from functional_process.cottax.physics.plasma_fields import (
     PlasmaInboardToroidalField,
     PlasmaOutboardToroidalField,
     TotalMagneticFieldInboard,

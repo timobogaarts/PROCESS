@@ -13,7 +13,7 @@ the `_stellarator()` adapter, so value/gradient agreement is genuine, not assume
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.stellarator.heating import (
+from functional_process.cottax.stellarator.heating import (
     calculate_beam_current,
     calculate_ecrh_heating,
     calculate_fusion_gain,

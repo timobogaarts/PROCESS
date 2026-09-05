@@ -19,7 +19,7 @@ from functional_process._harness import (
     Tier2Contract,
     legacy_sample,
 )
-from functional_process.models.stellarator.coils.coils import (
+from functional_process.cottax.stellarator.coils.coils import (
     Intersect,
     IntersectBisectionNewtonPolish,
     bmax_from_awp,

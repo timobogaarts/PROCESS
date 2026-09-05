@@ -17,7 +17,7 @@ the one the port can reach without also porting `profiles.py` (see
 import pytest
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.current_drive import (
+from functional_process.cottax.physics.current_drive import (
     HcdElectricTotalIgnited,
     HcdElectricTotalNonIgnited,
     HcdInjectedPowerTotal,

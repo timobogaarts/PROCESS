@@ -76,8 +76,8 @@ from functional_process.indat import (
     machine_from_indat,
     switches_from_indat,
 )
-from functional_process.models.pfcoil.namespace import PFCoilSphericalTokamak
-from functional_process.models.tfcoil.superconducting import (
+from functional_process.cottax.pfcoil.namespace import PFCoilSphericalTokamak
+from functional_process.cottax.tfcoil.superconducting import (
     CiccAveragedTurnGeometryFromCurrentPerTurn,
     CiccIntegerTurnGeometry,
     SuperconductingTfWpGeometryDoubleRectangular,

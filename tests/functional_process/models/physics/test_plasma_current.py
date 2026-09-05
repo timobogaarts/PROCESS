@@ -1,7 +1,7 @@
 """Harness cases for the ported tokamak plasma-current chain.
 
 Six contracts, one per pure function in
-`functional_process/models/physics/plasma_current.py`. Audit record:
+`functional_process/cottax/physics/plasma_current.py`. Audit record:
 `functional_process/_audit/units/models/physics/plasma_current.md`.
 
 **Two kinds of oracle here, and the split is the point.**
@@ -48,7 +48,7 @@ verbatim: finite in value and `nan` in derivative at zero field. See the audit r
 from types import MappingProxyType
 
 from functional_process._harness import Sample, Tier1Contract, legacy_sample
-from functional_process.models.physics.plasma_current import (
+from functional_process.cottax.physics.plasma_current import (
     calculate_current_coefficient_fiesta,
     calculate_current_coefficient_ipdg89,
     calculate_current_profile_index_wesson,

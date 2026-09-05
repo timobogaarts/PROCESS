@@ -15,7 +15,7 @@ Audit record: `functional_process/_audit/units/models/divertor.md`. Two units:
 """
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.divertor import (
+from functional_process.cottax.divertor import (
     calculate_divertor_heat_flux_split,
     calculate_divertor_heat_load_wade,
     calculate_divertor_heat_load_wade_double_null,

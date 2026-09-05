@@ -27,7 +27,7 @@ contributes nothing to the graph):
 access -- the extraction seam is free, same shape as `density_limit.py`'s
 `calculate_density_limit`. One deviation: PROCESS's `logger.error` call on a negative
 burn time (`:306-314`) is dropped as pure reporting with no effect on the returned
-value -- same precedent as `functional_process/models/structure.py`'s `aintmass`
+value -- same precedent as `functional_process/cottax/structure.py`'s `aintmass`
 comment ("PROCESS logs and kludges ... dropped here as pure reporting"). Here there
 is not even a kludge: the negative value is returned as-is either way, so dropping the
 log changes nothing about what the function computes.
@@ -61,7 +61,7 @@ reasons, any one of which would be enough on its own:
    `.pf_coil.c_pf_cs_coils_peak_ma`, `.pf_coil.c_pf_coil_turn_peak_input`,
    `.pf_coil.rhopfbus`, `.pf_coil.ind_pf_cs_plasma_mutual`,
    `.pf_coil.n_pf_coil_turns`, and `.pf_power.vpfskv` -- every one of them a
-   `functional_process/models/pfcoil/**` concern, which this wave's fencing assigns to
+   `functional_process/cottax/pfcoil/**` concern, which this wave's fencing assigns to
    a different agent. Declaring these reads now risks binding against a producer
    another agent is mid-rewrite on.
 3. **Dynamic array indexing the naming convention does not cover.** Every PF-coil
@@ -86,28 +86,32 @@ report it") this is reported rather than improvised. See "Open questions" in the
 audit record.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.paths import pf_coil, physics, times
-from functional_process.pulse import calculate_burn_time
+def calculate_burn_time(
+    vs_cs_pf_total_burn, v_plasma_loop_burn, t_plant_pulse_fusion_ramp
+):
+    """Burn time for a pulsed reactor. Ports `Pulse.calculate_burn_time`,
+    `process/models/pulse.py:275-316`.
 
+    PROCESS's `logger.error` on a negative result (`:306-314`) is not reproduced -- it
+    is a diagnostic side effect with no bearing on the returned value, which is
+    returned unclamped either way (module docstring, "`calculate_burn_time` -- ported
+    unchanged").
 
-class PulseBurnTime(ExplicitFunction):
-    """cottax node: `calculate_burn_time`, ports declared.
+    Parameters
+    ----------
+    vs_cs_pf_total_burn :
+        Total volt-seconds in the CS and PF coils available for burn (V.s).
+        `.pf_coil.vs_cs_pf_total_burn`.
+    v_plasma_loop_burn :
+        Plasma loop voltage during burn (V). `.physics.v_plasma_loop_burn`.
+    t_plant_pulse_fusion_ramp :
+        Time for the fusion ramp (s). `.times.t_plant_pulse_fusion_ramp`.
 
-    No switch of its own -- `i_pulsed_plant` is the topology switch that decides
-    whether this node exists in the graph at all (module docstring), not a value this
-    node's body reads or branches on.
+    Returns
+    -------
+    :
+        Burn time (s), `.times.t_plant_pulse_burn`. May be negative -- PROCESS reports
+        that condition but does not guard against it (see module docstring).
     """
-
-    t_plant_pulse_burn = OutputInto(times)
-
-    def __call__(
-        self,
-        vs_cs_pf_total_burn=From(pf_coil),
-        v_plasma_loop_burn=From(physics),
-        t_plant_pulse_fusion_ramp=From(times),
-    ):
-        return calculate_burn_time(
-            vs_cs_pf_total_burn, v_plasma_loop_burn, t_plant_pulse_fusion_ramp
-        )
+    return (abs(vs_cs_pf_total_burn) / v_plasma_loop_burn) - t_plant_pulse_fusion_ramp

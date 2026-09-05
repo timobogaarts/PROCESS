@@ -52,7 +52,7 @@ from functional_process._harness import (
     legacy_sample,
 )
 from functional_process._harness import path as vpath
-from functional_process.models.vacuum.vacuum import (
+from functional_process.cottax.vacuum.vacuum import (
     XMULT,
     DuctDiameterRootFind,
     DuctFeasibility,

@@ -18,7 +18,7 @@ set gets checked against PROCESS's rather than asserted.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.cryostat import (
+from functional_process.cottax.cryostat import (
     calculate_external_cryo_geometry,
     calculate_r_cryostat_inboard,
 )

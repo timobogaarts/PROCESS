@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/pfcoil/superconductor.py`.
+"""Harness cases for `functional_process/cottax/pfcoil/superconductor.py`.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/fields.md` § "2026-08-27 --
 the CS chain" (this module is owed a registry row of its own; see its own docstring).
@@ -21,7 +21,7 @@ produces the two critical current densities this unit is about.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.pfcoil.superconductor import (
+from functional_process.cottax.pfcoil.superconductor import (
     calculate_cs_critical_current_density_iter_nb3sn,
     calculate_cs_critical_current_density_wst_nb3sn,
     calculate_cs_strand_critical_current_density,

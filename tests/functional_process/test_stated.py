@@ -29,7 +29,7 @@ from functional_process import indat  # noqa: E402
 from functional_process.boundary import STATED, boundary  # noqa: E402
 from functional_process.cold_start import cold_state  # noqa: E402
 from functional_process.indat import graph_for, machine_from_indat  # noqa: E402
-from functional_process.models.stated import StatesValues, stated_port  # noqa: E402
+from functional_process.cottax.stated import StatesValues, stated_port  # noqa: E402
 from functional_process.native import native_state  # noqa: E402
 from functional_process.provider import CONFIGURATIONS, stem  # noqa: E402
 

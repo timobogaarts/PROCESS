@@ -1,4 +1,4 @@
-"""Harness cases for `functional_process/models/pfcoil/volt_seconds.py`.
+"""Harness cases for `functional_process/cottax/pfcoil/volt_seconds.py`.
 
 Audit record: `functional_process/_audit/units/models/pfcoil/volt_seconds.md`.
 
@@ -24,13 +24,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.pfcoil import (
+from functional_process.cottax.pfcoil import (
     N_CS_PF_COILS,
     NGC2,
     PLASMA_INDEX,
     SPHERICAL_TOKAMAK_TOPOLOGY,
 )
-from functional_process.models.pfcoil.volt_seconds import (
+from functional_process.cottax.pfcoil.volt_seconds import (
     calculate_pf_cs_volt_seconds,
     calculate_pf_volt_seconds_no_central_solenoid,
 )

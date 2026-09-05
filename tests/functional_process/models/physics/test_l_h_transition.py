@@ -22,7 +22,7 @@ says each arm reads (in particular, that only the aspect-corrected trio reads
 import pytest
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.physics.l_h_transition import (
+from functional_process.cottax.physics.l_h_transition import (
     Martin08AspectLowerLHThresholdPower,
     Martin08AspectNominalLHThresholdPower,
     Martin08AspectUpperLHThresholdPower,

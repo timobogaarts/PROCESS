@@ -20,7 +20,7 @@ classification rather than asserting it.
 import numpy as np
 
 from functional_process._harness import Tier1Contract, legacy_sample
-from functional_process.models.stellarator.neoclassics import (
+from functional_process.cottax.stellarator.neoclassics import (
     calculate_collision_frequency,
     calculate_drift_velocity,
     calculate_effective_thermal_diffusivity,
