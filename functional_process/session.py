@@ -30,6 +30,14 @@ jit static argument, so a *re-assembled* block is a jax cache hit. Measured on
 `stellarator_helias` MDF -- assemble, seed, bind and call all three programs, twice, the
 second time from scratch: **19.29 s and 3 compiles before, 0.24 s and 0 compiles after.**
 
+**That is the bind-and-call probe, not a whole solve, and the distinction matters.** A
+full `open_session(...).mdf()` run twice measures **29 compiles / 20.22 s, then 2 compiles
+/ 7.43 s** (2026-09-05, `stellarator_walkthrough.ipynb`, reproduced three times: 29, 2, 2,
+2 -- never 0). So structural equality does buy the cache hit, and >90 % of the compiles
+go, but two survive every re-assembly and **what they are has not been identified**. The
+probe above touches three programs; a solve also runs `prime`, the schedule and the SQP
+driver, so the residue is most likely there. Do not quote the 0.24 s figure for a solve.
+
 What remains true is that re-assembly is still *work* -- `machine_from_indat`, the graph,
 `mdf.assemble` -- so this module is still the right way to walk a scan; it is no longer
 the difference between a second and a minute for the MDF path. The numbers below are
