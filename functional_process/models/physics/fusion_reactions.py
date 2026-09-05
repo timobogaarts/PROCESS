@@ -846,6 +846,37 @@ def alpha_power_beam(beam_target_reaction_rate_value):
     return beam_target_reaction_rate_value * constants.DT_ALPHA_ENERGY / 1.0e6
 
 
+def fusion_rates_from_profiles(
+    radius_plasma_profile_norm,
+    temp_plasma_electron_profile_kev,
+    nd_plasma_electron_profile,
+    temp_plasma_ion_vol_avg_kev,
+    temp_plasma_electron_vol_avg_kev,
+    f_plasma_fuel_deuterium,
+    f_plasma_fuel_tritium,
+    f_plasma_fuel_helium3,
+    nd_plasma_fuel_ions_vol_avg,
+    nd_plasma_electrons_vol_avg,
+):
+    """`calculate_fusion_rates`, deriving `f_dd_branching_trit` from the ion
+    temperature first.
+    """
+    f_dd_branching_trit = calculate_deuterium_branching_trit(temp_plasma_ion_vol_avg_kev)
+    return calculate_fusion_rates(
+        radius_plasma_profile_norm,
+        temp_plasma_electron_profile_kev,
+        nd_plasma_electron_profile,
+        temp_plasma_ion_vol_avg_kev,
+        temp_plasma_electron_vol_avg_kev,
+        f_plasma_fuel_deuterium,
+        f_plasma_fuel_tritium,
+        f_plasma_fuel_helium3,
+        nd_plasma_fuel_ions_vol_avg,
+        nd_plasma_electrons_vol_avg,
+        f_dd_branching_trit,
+    )
+
+
 class FusionRates(ExplicitFunction):
     """cottax node: `calculate_fusion_rates`, fusing all three in-scope
     `FusionReactionRate` methods (`.deuterium_branching()`, `.calculate_fusion_rates()`,
@@ -901,10 +932,7 @@ class FusionRates(ExplicitFunction):
         nd_plasma_fuel_ions_vol_avg=From(physics),
         nd_plasma_electrons_vol_avg=From(physics),
     ):
-        f_dd_branching_trit = calculate_deuterium_branching_trit(
-            temp_plasma_ion_vol_avg_kev
-        )
-        return calculate_fusion_rates(
+        return fusion_rates_from_profiles(
             radius_plasma_profile_norm,
             temp_plasma_electron_profile_kev,
             nd_plasma_electron_profile,
@@ -915,7 +943,6 @@ class FusionRates(ExplicitFunction):
             f_plasma_fuel_helium3,
             nd_plasma_fuel_ions_vol_avg,
             nd_plasma_electrons_vol_avg,
-            f_dd_branching_trit,
         )
 
 
