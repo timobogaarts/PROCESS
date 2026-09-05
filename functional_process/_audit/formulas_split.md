@@ -1,81 +1,75 @@
 # Splitting the physics from the graph declarations
 
-Status: **planned, nothing started.** Agreed 2026-09-03; scheduled for the following week.
+Status: **planned, nothing started.** Agreed 2026-09-03/05; scheduled for the following week.
 
-## The goal
+## The target layout
 
-`functional_process/formulas/**` becomes **PROCESS's physics as pure JAX functions**,
-importing nothing from cottax, and `models/**` keeps only the graph declarations. The
-physics library is then usable without the graph machinery at all.
+`functional_process/` becomes shaped like `process/` — all the physics functions, mirroring
+the original's structure — with everything cottax-dependent confined to one subtree:
 
-That is a *product*, not tidiness. The OpenMDAO generator in `~/openmdao_process` already
-imports those bodies, so it is the first consumer and a live check that the boundary holds.
-
-## Why this is cheap: the files are already shaped for it
-
-`models/physics/density_limit.py` is representative — module-level pure functions
-(`calculate_greenwald_density_limit`, `select_enforced_density_limit_greenwald`, …) at the
-top, then thin `ExplicitFunction` declarations whose `__call__` is four lines delegating to
-them:
-
-```python
-class GreenwaldDensityLimit(ExplicitFunction):
-    nd_plasma_electron_greenwald_max = OutputInto(physics)
-    def __call__(self, plasma_current=From(physics), rminor=From(physics)):
-        return calculate_greenwald_density_limit(plasma_current, rminor)
+```
+functional_process/
+    <the pure functions, mirroring process/>
+    cottax/      the graph declarations, mirroring the functions by stem
+    tests/       moved in from tests/functional_process/
+    _audit/
 ```
 
-So for files of that shape this is a **file move plus an import**, not a rewrite. What is
-unknown is how many declarations are *not* that shape. Step 1 answers it.
+**Why this shape and not a `formulas/` subtree**: `models/` currently holds *declarations*,
+which collides with what "models" means in PROCESS itself. Putting the functions at the top
+level and naming the cottax subtree for what it contains removes the collision.
+
+**The win is one enforceable sentence**: *nothing outside `functional_process/cottax/`
+imports cottax.* One test, and the physics half is provably standalone — usable as
+PROCESS's physics in pure JAX with no graph machinery. `~/openmdao_process` already imports
+those bodies and would be the first consumer, so the boundary gets exercised rather than
+merely asserted.
+
+## The census is done — 87 % is mechanical
+
+AST walk over every declaration with `From()`-style ports, 2026-09-05:
+
+| shape of `__call__` | n |
+|---|---|
+| **thin delegator** (one return of one call) | **390** |
+| multi-statement (2) | 35 |
+| multi-statement (3 / 4 / 6) | 10 |
+| single `BinOp` expression | 6 |
+| tuple-of-calls, tuple-mixed, bare-name | 6 |
+| **total** | **447** |
+
+So **57 declarations need extraction first** and most are two statements. Clusters:
+`models/pfcoil/**` (currents, fields, geometry, masses, superconductor) and
+`models/physics/l_h_transition.py` (six near-identical Martin08 variants). Script kept at
+`scratchpad/census.py`; re-run it rather than trusting this table after any change.
 
 ## The plan
 
-1. **Census, in reporting mode.** An AST meta-test in the family of
-   `tests/functional_process/test_registry_coverage.py`: for every `ExplicitFunction`
-   subclass, parse `inspect.getsource(cls.__call__)` and check the body is an optional
-   docstring followed by exactly one `return <call>`, whose callee resolves to a
-   **module-level function** — not a lambda, a closure or a method.
+1. **Extract the 57.** Inline physics moves to module-level functions, one commit per file
+   or cluster. Pure refactor, so **bitwise identity is the gate** and the cold matrix is the
+   instrument that already proves it.
+2. **Move the files.** Functions to the top level mirroring `process/`, declarations to
+   `functional_process/cottax/` by matching stem. Mechanical once step 1 is done.
+3. **Move `tests/functional_process/` to `functional_process/tests/`.**
+4. **Update `unit_registry.md`** — it names paths explicitly and is enforced by
+   `tests/functional_process/test_registry_coverage.py`, so all 88 rows move. The test tells
+   you immediately if one is missed.
+5. **Enforce the boundary**: a test asserting nothing outside `functional_process/cottax/`
+   imports cottax. Without it the first person in a hurry imports `From` into a physics file
+   and the separation is over.
 
-   Two nuances to decide once rather than discover:
-   - **Multi-output nodes.** Some return a tuple, and at least one pattern is *four rows
-     each indexing one position of the same call* (`CentrepostNeutronicsAbsent`). The rule
-     is "one call, optionally destructured", not "one call".
-   - **Trivial adaptation.** A unit conversion or an unpack is arguably fine. Decide
-     whether it is allowed and write down the reason.
+**What the audit records and tests mirror**: the *functions*, not the declarations — the
+records are about physics fidelity against PROCESS, not about graph wiring.
 
-   **Report first, gate later.** Turning enforcement on before the list is empty means 230
-   failures and no information. This is the same pattern the guard audit and the carried
-   census used.
+## Later, not now
 
-2. **Extract the non-thin declarations** — inline physics moves to module-level functions,
-   one commit per file or group. Pure refactor, so **bitwise identity is the gate** and the
-   cold matrix is the instrument that already proves it.
+Cache PROCESS's reference answers so `functional_process` runs with no base PROCESS
+installed. Noted 2026-09-05; deliberately out of scope for this split.
 
-3. **Turn the check on as a test.** This is what makes the split durable rather than a
-   tidy-up that decays.
+## The declaration interface — considered, deliberately deferred
 
-4. **Move the files.** Suggested layout, because it extends a convention that already
-   exists — a unit's port, audit record and test are bound by **shared stem across three
-   trees**, so add a fourth:
-
-   | tree | holds |
-   |---|---|
-   | `functional_process/formulas/physics/density_limit.py` | the pure functions |
-   | `functional_process/models/physics/density_limit.py` | the declarations |
-   | `_audit/units/models/physics/density_limit.md` | the record |
-   | `tests/functional_process/…/test_density_limit.py` | the case |
-
-   `unit_registry.md` names paths explicitly, so it extends naturally and nothing needs
-   renaming.
-
-5. **Enforce the boundary**: a test asserting `functional_process/formulas/**` **never
-   imports cottax**. Without it, the first person in a hurry imports `From` into a formulas
-   file and the separation is over.
-
-## The declaration interface — considered, and deliberately not done now
-
-The thin-delegator shape invites a further change: make the declaration name its
-implementation rather than contain it.
+The 87 % thin-delegator result invites making the declaration *name* its implementation
+rather than contain it:
 
 ```python
 class GreenwaldDensityLimit(ExplicitFunction):
@@ -86,39 +80,26 @@ class GreenwaldDensityLimit(ExplicitFunction):
 ```
 
 called by **keyword**, with `__check_init__` comparing declared field names against
-`inspect.signature(fn)` and refusing a mismatch.
+`inspect.signature(fn)` and refusing a mismatch — so the opacity objection dissolves,
+because there is no order to get wrong and the error names the offending parameter.
 
-**Why it is attractive**: the declaration becomes pure data with no user-authored body,
-which is `~/jaxgraph/plans/graph_vs_execution_layer.md` §2 one level down — §2 says a
-*graph* should not contain callables, this says a *declaration* should not contain a body.
-It also makes step 4 fall out for free.
+**Not now**: the steps above deliver the reusable-physics product with no upstream change,
+and this needs an `interfaces/pytree_namespace_module.py` change plus 447 declarations
+rewritten. It is also close to cottax's own `AbstractImplementation` direction, so a second
+spelling now risks having to unify them later. Steps 1–2 make it *smaller* when it happens.
 
-**Why not now**, in order of weight:
+**Rejected, so they are not re-proposed:**
 
-- Steps 1–5 above deliver the reusable-physics product with **no upstream change and
-  almost no churn**. This adds an `interfaces/pytree_namespace_module.py` change plus ~230
-  declarations rewritten, for a benefit that is architectural rather than immediate.
-- It is **close to cottax's own `AbstractImplementation`** direction, so inventing a second
-  spelling of it now risks having to unify them later.
-- Steps 1–3 make it *smaller* when it is done: the extractions are needed either way.
+- **Positional `fn(*args)`** — opaque; parameter names invisible, order silent. No reason to
+  accept that when a construction-time check costs one method.
+- **Signature-as-declaration with the body removed** — leaves two signatures to keep in
+  sync; the opacity relocated, not removed.
+- **Deriving ports from the signature** — inverts the dependency, so renaming a parameter in
+  a physics function would silently change the graph.
 
-**Rejected alternatives, so they are not re-proposed:**
-
-- **Positional `fn(*args)`.** Opaque — the parameter names are invisible and the order is
-  silent. Consistent with how ports already bind (by position; 15–29 nodes take `*args` and
-  4–14 have parameter names differing from the VarPath leaf), but there is no reason to
-  accept opacity when a construction-time check costs one method.
-- **Signature-as-declaration with the body removed** (`def ports(self, x=From(a)): ...`).
-  Keeps today's readability, but leaves *two* signatures to keep in sync — the opacity
-  relocated rather than removed, unless validated, at which point the keyword form is
-  simpler.
-- **Deriving ports from the signature.** Inverts the dependency: renaming a parameter in a
-  physics function would silently change the graph. Fragile.
-
-**One implementation caution, learned the hard way elsewhere.** OpenMDAO has exactly this
-alias mechanism (`primal_name`) and its implementation carries a silent-failure bug:
-`get_function_deps` returns `wrt` in primal names and then filters them against OpenMDAO
-names, so nothing matches and the Jacobian comes back **all zero with no warning** — it
-surfaced as 15 totals of exactly 0.0 while the values stayed bitwise correct. Reproduced as
-a runnable case in `~/openmdao_process`. If the alias is built here, it must be **tested**,
-not merely supported.
+**Implementation caution if the alias is ever built.** OpenMDAO has exactly this mechanism
+(`primal_name`) and its implementation carries a silent-failure bug: `get_function_deps`
+returns `wrt` in primal names then filters against OpenMDAO names, so nothing matches and
+the Jacobian comes back **all zero with no warning** — it surfaced as 15 totals of exactly
+0.0 while values stayed bitwise correct. Runnable case in `~/openmdao_process`. Test the
+alias; do not merely support it.
