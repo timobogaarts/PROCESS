@@ -63,6 +63,7 @@ from functional_process.vacuum.vacuum import (
     _solve_vacuum_pumping_old,  # noqa: F401
     _solve_vacuum_pumping_old_from_fields,  # noqa: F401
     calculate_dshaped_vessel_volumes,  # noqa: F401
+    calculate_duct_feasibility_conditions,
     calculate_elliptical_vessel_volumes,  # noqa: F401
     calculate_vacuum_pumping_old,
     calculate_vacuum_pumping_simple,
@@ -104,7 +105,7 @@ class VacuumPumpingSimple(ExplicitFunction):
         outgasindex=From(vacuum),
         t_plant_pulse_dwell=From(times),
     ):
-        npump = calculate_vacuum_pumping_simple(
+        return calculate_vacuum_pumping_simple(
             molflow_plasma_fuelling_required,
             molflow_vac_pumps,
             volflow_vac_pumps_max,
@@ -117,7 +118,6 @@ class VacuumPumpingSimple(ExplicitFunction):
             outgasindex,
             t_plant_pulse_dwell,
         )
-        return npump
 
 
 class DuctDiameterRootFind(ImplicitFunction):
@@ -203,10 +203,7 @@ class DuctFeasibilityConditions(ExplicitFunction):
         ceff_i=From(vacuum),
         s_i=From(vacuum),
     ):
-        return (
-            duct_fits_residual(d_duct, a1max),
-            pumping_speed_floor_residual(ceff_i, s_i),
-        )
+        return calculate_duct_feasibility_conditions(d_duct, a1max, ceff_i, s_i)
 
 
 DuctFeasibility = Feasibility(

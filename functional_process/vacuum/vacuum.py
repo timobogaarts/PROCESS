@@ -450,6 +450,16 @@ def pumping_speed_floor_residual(ceff_i, s_i):
     return 1.1 * s_i - ceff_i
 
 
+def calculate_duct_feasibility_conditions(d_duct, a1max, ceff_i, s_i):
+    """`DuctFeasibilityConditions`'s own pair of residuals, moved out of the
+    declaration and into a named function (`_audit/formulas_split.md` step 1).
+    """
+    return (
+        duct_fits_residual(d_duct, a1max),
+        pumping_speed_floor_residual(ceff_i, s_i),
+    )
+
+
 def _solve_vacuum_pumping_old(
     p_fusion_total_mw,
     rmajor,
