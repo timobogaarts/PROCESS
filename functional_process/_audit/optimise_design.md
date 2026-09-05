@@ -367,3 +367,46 @@ not all at the converged point). So the evaluation half is close to done. The ot
 is a host-side problem now, not an evaluation one** — and the SLSQP arms, whose `sqp` phase
 reads 0.0 s on all twelve, are the evidence that most of that host cost is one library's
 allocation pattern rather than anything structural.
+
+## 44. The `model` column is not evaluation time (2026-09-06)
+
+The cold matrix's `model` column reads 1.5 s for `stellarator_helias` MDF under VMCON,
+against 41 SQP iterations. That invites the reading "41 iterations at ~35 ms each", and
+it is wrong: **the median call is 1.000 ms and the p90 is 1.2 ms.**
+
+Measured by wrapping `host_cache.bind`'s programs for a whole row (both arms,
+`stellarator_helias`, `--native`) and keeping every call time rather than a mean:
+
+| | |
+|---|---|
+| calls | 128 |
+| median | **1.000 ms** |
+| p90 | 1.2 ms |
+| max | 9 108.7 ms |
+| calls over 10 ms | **2 of 128** |
+| time held by those 2 | **15.79 s of 15.92 s** |
+
+The two are the first call of each arm, carrying that arm's compile. Averaging over them
+gives 53.6 ms/call, which is what a naive reading of the column reproduces and which
+describes no call that actually happened. The same programs, called 15 times at the row's
+final point in the same process, run at **0.732 / 0.929 / 0.763 ms** (`values` /
+`jacobian` / `values_and_jacobian`) — §41's numbers, confirmed from inside a real solve
+rather than beside one.
+
+**So what is in `model`, if the arithmetic is 0.13 s?** `phase_timing` is exclusive and
+subtracts `trace`, `lower` and `compile`, but those three patches cover
+`trace_to_jaxpr_dynamic`, `lower_jaxpr_to_module` and `backend_compile_and_load` and
+nothing else. Everything else the first call does — `eqx.filter_jit`'s partitioning,
+pytree flattening of the condition map, `jacfwd`'s `vmap` setup, argument marshalling —
+runs with `model` as the active phase and lands there. `model` on a cold row is therefore
+**first-call Python overhead plus a rounding error of actual evaluation**, and the
+44 compiles that row pays (24.7 s) are the reason it is a cold row at all.
+
+**Consequence for how this table is read.** A row's `model` figure does not scale with
+iteration count and must not be divided by one. To compare *solvers* use the iteration
+count and `sqp`; to compare *programs* use §41's median-at-a-point; to compare *rows* use
+the total. §43's own warning — "per-call cost is point-dependent, so a solve average is
+not this table" — was about a factor of two between two honest measurements. This is the
+larger version of the same mistake: a mean over a distribution whose top two samples are
+compiles.
+
