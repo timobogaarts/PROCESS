@@ -1349,3 +1349,57 @@ def _cryo_cool_req_no_aluminium(helpow, temp_tf_cryo, temp_cp_coolant_inlet):
         + helpow_cryal * ((293 / temp_cp_coolant_inlet) - 1) / ((293 / 4.5) - 1)
     ) / 1.0e3
     return helpow_cryal, cryo_cool_req
+
+
+def calculate_p_fw_div_heat_deposited_mw_summed(
+    p_fw_nuclear_heat_total_mw,
+    p_fw_rad_total_mw,
+    p_fw_coolant_pump_mw,
+    p_beam_orbit_loss_mw,
+    p_fw_alpha_mw,
+    p_beam_shine_through_mw,
+    p_plasma_separatrix_mw,
+    p_div_nuclear_heat_total_mw,
+    p_div_rad_total_mw,
+    p_div_coolant_pump_mw,
+):
+    """The first wall's and the divertor's deposited heat, summed --
+    `PFwDivHeatDepositedMwSummed`'s own composition of `calculate_p_fw_heat_deposited_mw`
+    and `calculate_p_div_heat_deposited_mw`, moved out of the declaration and into a
+    named function (`_audit/formulas_split.md` step 1).
+    """
+    return calculate_p_fw_heat_deposited_mw(
+        p_fw_nuclear_heat_total_mw,
+        p_fw_rad_total_mw,
+        p_fw_coolant_pump_mw,
+        p_beam_orbit_loss_mw,
+        p_fw_alpha_mw,
+        p_beam_shine_through_mw,
+    ) + calculate_p_div_heat_deposited_mw(
+        p_plasma_separatrix_mw,
+        p_div_nuclear_heat_total_mw,
+        p_div_rad_total_mw,
+        p_div_coolant_pump_mw,
+    )
+
+
+def calculate_p_fw_blkt_coolant_pump_mw_summed(
+    p_fw_coolant_pump_mw, p_blkt_coolant_pump_mw
+):
+    """`PFwBlktCoolantPumpMw`'s own sum of the first wall's and blanket's pump powers
+    (the `USER_INPUT`/`FRACTION_OF_HEAT` arm, where `power` owns the field outright --
+    not `calculate_p_fw_blkt_coolant_pump_mw`'s conditional-ownership pass-through,
+    which is a different function for a different arm), moved out of the declaration
+    and into a named function (`_audit/formulas_split.md` step 1).
+    """
+    return p_fw_coolant_pump_mw + p_blkt_coolant_pump_mw
+
+
+def calculate_cryo_qnuc_when_computed(p_tf_nuclear_heat_mw):
+    """`inuclear == 0 and i_tf_sup == 1`: `.fwbs.qnuc` from `p_tf_nuclear_heat_mw`
+    alone, matching `calculate_cryo_qnuc`'s computed arm without that function's
+    incumbent-`qnuc` read (see `CryoQNuc`'s docstring for why the two arms are split
+    across separate nodes rather than one function). Moved out of the declaration and
+    into a named function (`_audit/formulas_split.md` step 1).
+    """
+    return 1.0e6 * p_tf_nuclear_heat_mw
