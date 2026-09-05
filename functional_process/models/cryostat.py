@@ -31,6 +31,7 @@ the ones above it and there is no branch anywhere in it, so splitting it would m
 intermediate places for nothing.
 """
 
+import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
 from functional_process.cryostat import (
