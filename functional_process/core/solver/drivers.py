@@ -114,11 +114,13 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     matrix actually runs, and it is bitwise-checkable precisely because the two spellings
     were identical expression by expression (`_audit/optimise_design.md` §31.30).
 
-    **`both` exists for compile time, and only VMCON may use it.** `pyvmcon` demands
-    value *and* derivative at every point it evaluates, so a fused program costs it
-    nothing and saves the whole value-only trace/lower/compile;
-    `scipy.optimize.minimize(method="SLSQP")` calls `fun` alone during its line search,
-    so fusing there would pay a full Jacobian per trial point. This function therefore
+    **`both` exists for compile time, and today only VMCON uses it.** `pyvmcon`
+    demands value *and* derivative at every point it evaluates, so a fused program costs
+    it nothing and saves the whole value-only trace/lower/compile.
+    `scipy.optimize.minimize(method="SLSQP")` *asks* for `fun` alone during its line
+    search, which is why `SlsqpDriver` was given the split pair -- but that driver's own
+    `at` cache computes the Jacobian at every distinct point anyway, so the saving was
+    never taken and fusing would in fact be cheaper for it as well. See `SlsqpDriver.at`. This function therefore
     hands out all three and lets the driver choose -- see `host_cache.bind`. It is
     **not** bitwise, and `VmconDriver.fused` chooses it by default anyway since
     2026-09-05; that field's docstring carries the measurement and the row it once
@@ -824,12 +826,22 @@ class SlsqpDriver(AbstractDriver):
         max_iter, tolerance = self.max_iter, self.tolerance
 
         def host(live, flat_start):
-            # `_both` discarded on purpose. `scipy`'s SLSQP takes separate `fun` and
-            # `jac` callables and its line search calls `fun` alone at trial points, so
-            # the fused program would pay a whole Jacobian for each of those. The `at`
-            # cache below already removes the *duplicate* evaluation SLSQP would
-            # otherwise make at one point; what it cannot remove is a derivative scipy
-            # never asked for.
+            # `_both` discarded, and **the stated reason does not survive contact
+            # with the cache below**. `scipy`'s SLSQP takes separate `fun` and `jac`
+            # callables and its line search calls `fun` alone at trial points, so the
+            # argument was that a fused program would pay a whole Jacobian for each of
+            # those. It would -- and so does `at`, which computes `jacobian(x)` at every
+            # distinct point whether or not one is ever asked for. scipy's own counters
+            # say what that costs: `nfev 3518` against `njev 501` on the capped
+            # `stellarator_helias` SAND arm, i.e. **~3 000 Jacobians nobody wanted**, at
+            # §41's 1.8 ms each about 5.4 s of a 22.9 s arm. Where it converges the
+            # waste is small (`nfev/nit` 1.1-1.5), which is why this went unnoticed.
+            #
+            # **The fix is a lazy `at`**, not a fused one: compute the value on demand
+            # and the Jacobian only when `jac` or a constraint's `jac` actually asks.
+            # Not done here, because it changes what this driver evaluates and every
+            # SLSQP row would have to be re-measured against
+            # `reference_slsqp_matrix.txt` (`_audit/next_steps.md`).
             evaluate, jacobian, _both, _unravel, scale, _, (lower, upper) = (
                 scaled_problem(driver, live, flat_start, unravel)
             )
@@ -1553,12 +1565,13 @@ class VmconDriver(AbstractDriver):
                     # bitwise, which is why the split path survives as a field rather
                     # than being deleted -- see `VmconDriver.fused` and §40.
                     #
-                    # **`SlsqpDriver` must not do this**, and does not: scipy's SLSQP
-                    # calls `fun` alone during its line search, where the fused program
-                    # would pay a whole Jacobian per trial point -- 1.73 ms against
-                    # 13.7 ms on `large_tokamak_nof` MDF [measured 2026-09-05]. That
-                    # driver discards `both` explicitly; `fused` is this class's field
-                    # and not `scaled_problem`'s for exactly that reason.
+                    # **`SlsqpDriver` does not use `both`, and the usual reason
+                    # given for that is wrong** -- see `SlsqpDriver.at`. The argument
+                    # is about what `scipy` *asks* for; what that driver *computes* is
+                    # a Jacobian at every distinct point regardless, so fusing would
+                    # help it too. `fused` is this class's field rather than
+                    # `scaled_problem`'s because the two drivers may want different
+                    # answers, not because the answer is settled for the other one.
                     #
                     # `epsfcn` could not use it anyway: its quotient is `2n` value-only
                     # evaluations, and asking a fused program for them would compute

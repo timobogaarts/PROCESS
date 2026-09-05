@@ -279,3 +279,27 @@ reads it as one. `nan` chosen for caution produced a confidently wrong table, wh
 failure mode this port's whole "refuse rather than report healthy" discipline exists to
 avoid — and it produced the *opposite* error, reporting sick when healthy, which is
 cheaper but not free.
+
+### Correction 3: "SLSQP must not fuse" is an argument about the wrong thing
+
+Stated in `scaled_problem`'s docstring, in `SlsqpDriver`'s own `at`-cache comment, and
+(added earlier the same day) in `VmconDriver._Problem.__call__`: scipy's SLSQP calls `fun`
+alone during its line search, so a fused program would pay a whole Jacobian at every trial
+point.
+
+True of what scipy **asks** for. False of what the driver **computes**: `at` caches
+`(evaluate(x), jacobian(x))` at every distinct point, derivative requested or not. So the
+saving the split pair exists to protect was never being taken, and fusing would be
+*cheaper* for SLSQP too — §41's table has the split at 16.03 ms against 13.74 ms fused on
+`large_tokamak_nof` MDF.
+
+scipy's own counters measure the waste, and it is not uniform: `nfev/nit` is 1.1-1.5 where
+SLSQP converges, so the extra Jacobians are a rounding error there and nobody noticed. On
+the capped `stellarator_helias` SAND arm it is 7.0 — `nfev 3518` against `njev 501`, about
+**3 000 Jacobians nobody asked for**, ~5.4 s of a 22.9 s arm.
+
+The repair is a **lazy `at`** rather than a fused one, and it is not made here: it changes
+what the driver evaluates, so every row of `reference_slsqp_matrix.txt` would have to be
+re-measured. Filed in `next_steps.md`. All three comments are corrected to say what is
+actually true, which is that `fused` is a per-driver field because the two drivers may
+want different answers — not because the answer is settled for the other one.

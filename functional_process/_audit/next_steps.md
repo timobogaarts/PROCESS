@@ -68,6 +68,14 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   coupling that happens to look like the identity at that point is silently dropped.
   Should sample several points and refuse on disagreement, matching the rest of the
   port's "can't verify → refuse, don't report healthy" discipline.
+- **`SlsqpDriver.at` computes a Jacobian at every distinct point, asked for or not.**
+  scipy's line search calls `fun` alone at trial points and `at` derives both anyway:
+  `nfev 3518` against `njev 501` on the capped `stellarator_helias` SAND arm is ~3 000
+  unwanted Jacobians, about 5.4 s of a 22.9 s arm at §41's per-call cost. A lazy `at`
+  -- value on demand, Jacobian only when `jac` asks -- is the fix, and it also removes
+  the stated reason `SlsqpDriver` cannot use the fused program. Not done: it changes
+  what the driver evaluates, so every row of `reference_slsqp_matrix.txt` would need
+  re-measuring.
 - **`run_cold_matrix.main`'s docstring claims `--cache` gives "bitwise-identical
   rows", and that has never been tested as stated.** It survived the one direct check
   made of it (§42: a fresh cache reproduces the uncached numbers on `st_regression`),
