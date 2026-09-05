@@ -86,28 +86,32 @@ report it") this is reported rather than improvised. See "Open questions" in the
 audit record.
 """
 
-from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
-from functional_process.paths import pf_coil, physics, times
-from functional_process.pulse import calculate_burn_time
+def calculate_burn_time(
+    vs_cs_pf_total_burn, v_plasma_loop_burn, t_plant_pulse_fusion_ramp
+):
+    """Burn time for a pulsed reactor. Ports `Pulse.calculate_burn_time`,
+    `process/models/pulse.py:275-316`.
 
+    PROCESS's `logger.error` on a negative result (`:306-314`) is not reproduced -- it
+    is a diagnostic side effect with no bearing on the returned value, which is
+    returned unclamped either way (module docstring, "`calculate_burn_time` -- ported
+    unchanged").
 
-class PulseBurnTime(ExplicitFunction):
-    """cottax node: `calculate_burn_time`, ports declared.
+    Parameters
+    ----------
+    vs_cs_pf_total_burn :
+        Total volt-seconds in the CS and PF coils available for burn (V.s).
+        `.pf_coil.vs_cs_pf_total_burn`.
+    v_plasma_loop_burn :
+        Plasma loop voltage during burn (V). `.physics.v_plasma_loop_burn`.
+    t_plant_pulse_fusion_ramp :
+        Time for the fusion ramp (s). `.times.t_plant_pulse_fusion_ramp`.
 
-    No switch of its own -- `i_pulsed_plant` is the topology switch that decides
-    whether this node exists in the graph at all (module docstring), not a value this
-    node's body reads or branches on.
+    Returns
+    -------
+    :
+        Burn time (s), `.times.t_plant_pulse_burn`. May be negative -- PROCESS reports
+        that condition but does not guard against it (see module docstring).
     """
-
-    t_plant_pulse_burn = OutputInto(times)
-
-    def __call__(
-        self,
-        vs_cs_pf_total_burn=From(pf_coil),
-        v_plasma_loop_burn=From(physics),
-        t_plant_pulse_fusion_ramp=From(times),
-    ):
-        return calculate_burn_time(
-            vs_cs_pf_total_burn, v_plasma_loop_burn, t_plant_pulse_fusion_ramp
-        )
+    return (abs(vs_cs_pf_total_burn) / v_plasma_loop_burn) - t_plant_pulse_fusion_ramp
