@@ -482,6 +482,35 @@ def calculate_cs_stresses(
     )
 
 
+def calculate_cs_stresses_from_full_width_current(
+    r_cs_inner,
+    r_cs_outer,
+    r_cs_middle,
+    dz_cs_full,
+    a_cs_toroidal,
+    j_cs_pulse_start,
+    b_cs_peak_pulse_start,
+    c_pf_cs_coils_peak_ma,
+    f_poisson_cs_structure,
+    f_a_cs_turn_steel,
+):
+    """`CSCoilStresses`: picks the CS's own peak current out of the full-width
+    array.
+    """
+    return calculate_cs_stresses(
+        r_cs_inner=r_cs_inner,
+        r_cs_outer=r_cs_outer,
+        r_cs_middle=r_cs_middle,
+        dz_cs_full=dz_cs_full,
+        a_cs_toroidal=a_cs_toroidal,
+        j_cs_pulse_start=j_cs_pulse_start,
+        b_cs_peak_pulse_start=b_cs_peak_pulse_start,
+        c_cs_peak_ma=c_pf_cs_coils_peak_ma[CS_INDEX],
+        f_poisson_cs_structure=f_poisson_cs_structure,
+        f_a_cs_turn_steel=f_a_cs_turn_steel,
+    )
+
+
 class CSCoilStresses(ExplicitFunction):
     """cottax node: `.tokamak.cs_coil.stresses`.
 
@@ -523,7 +552,7 @@ class CSCoilStresses(ExplicitFunction):
         poisson_steel=From(tfcoil),
         f_a_cs_turn_steel=From(pf_coil),
     ):
-        return calculate_cs_stresses(
+        return calculate_cs_stresses_from_full_width_current(
             r_cs_inner=r_cs_inner,
             r_cs_outer=r_cs_outer,
             r_cs_middle=r_cs_middle,
@@ -531,7 +560,7 @@ class CSCoilStresses(ExplicitFunction):
             a_cs_toroidal=a_cs_toroidal,
             j_cs_pulse_start=j_cs_pulse_start,
             b_cs_peak_pulse_start=b_cs_peak_pulse_start,
-            c_cs_peak_ma=c_pf_cs_coils_peak_ma[CS_INDEX],
+            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
             f_poisson_cs_structure=poisson_steel,
             f_a_cs_turn_steel=f_a_cs_turn_steel,
         )
