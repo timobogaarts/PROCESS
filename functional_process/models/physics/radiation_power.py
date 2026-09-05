@@ -521,6 +521,71 @@ class SynchrotronRadiationPower(ExplicitFunction):
         )
 
 
+def impurity_radiation_totals_from_indexed_impurities(
+    imp_indices,
+    radius_plasma_profile_norm,
+    nd_plasma_electron_profile,
+    temp_plasma_electron_profile_kev,
+    f_nd_impurity_electron_array_0,
+    f_nd_impurity_electron_array_1,
+    f_nd_impurity_electron_array_2,
+    f_nd_impurity_electron_array_3,
+    f_nd_impurity_electron_array_4,
+    f_nd_impurity_electron_array_5,
+    f_nd_impurity_electron_array_6,
+    f_nd_impurity_electron_array_7,
+    f_nd_impurity_electron_array_8,
+    f_nd_impurity_electron_array_9,
+    f_nd_impurity_electron_array_10,
+    f_nd_impurity_electron_array_11,
+    f_nd_impurity_electron_array_12,
+    f_nd_impurity_electron_array_13,
+    temp_impurity_keV_array,
+    pden_impurity_lz_nd_temp_array,
+    radius_plasma_core_norm,
+    f_p_plasma_core_rad_reduction,
+):
+    """Reassembles the fourteen individually-addressed fractions, gathers the
+    `imp_indices` species subset, then delegates.
+
+    `imp_indices` is a graph-assembly-time (static) fact -- see
+    `ImpurityRadiationTotals.imp_indices`'s own docstring -- so it arrives here as a
+    plain value, not a port.
+    """
+    f_nd_impurity_electron_array = jnp.stack([
+        f_nd_impurity_electron_array_0,
+        f_nd_impurity_electron_array_1,
+        f_nd_impurity_electron_array_2,
+        f_nd_impurity_electron_array_3,
+        f_nd_impurity_electron_array_4,
+        f_nd_impurity_electron_array_5,
+        f_nd_impurity_electron_array_6,
+        f_nd_impurity_electron_array_7,
+        f_nd_impurity_electron_array_8,
+        f_nd_impurity_electron_array_9,
+        f_nd_impurity_electron_array_10,
+        f_nd_impurity_electron_array_11,
+        f_nd_impurity_electron_array_12,
+        f_nd_impurity_electron_array_13,
+    ])
+    # A jax array (which `jnp.stack` above always produces) refuses list-shaped fancy
+    # indexing outright (`arr[[0, 8]]` raises `TypeError`, not merely a deprecation
+    # warning -- jax's own message: "use `arr[array(seq)]`"), unlike a bare numpy array.
+    # `jnp.array(...)` once, reused for all three gathers, is the fix and matches every
+    # other gather in this codebase.
+    selected = jnp.array(imp_indices)
+    return calculate_impurity_radiation_totals(
+        radius_plasma_profile_norm,
+        nd_plasma_electron_profile,
+        temp_plasma_electron_profile_kev,
+        f_nd_impurity_electron_array[selected],
+        temp_impurity_keV_array[selected],
+        pden_impurity_lz_nd_temp_array[selected],
+        radius_plasma_core_norm,
+        f_p_plasma_core_rad_reduction,
+    )
+
+
 class ImpurityRadiationTotals(ExplicitFunction):
     """cottax node: `calculate_impurity_radiation_totals`, ports declared.
 
@@ -674,7 +739,11 @@ class ImpurityRadiationTotals(ExplicitFunction):
         arguments stay whole-array `FromExactly`s: they are compile-time constants, not
         per-species runtime values a caller would ever address individually.
         """
-        f_nd_impurity_electron_array = jnp.stack([
+        return impurity_radiation_totals_from_indexed_impurities(
+            self.imp_indices,
+            radius_plasma_profile_norm,
+            nd_plasma_electron_profile,
+            temp_plasma_electron_profile_kev,
             f_nd_impurity_electron_array_0,
             f_nd_impurity_electron_array_1,
             f_nd_impurity_electron_array_2,
@@ -689,20 +758,8 @@ class ImpurityRadiationTotals(ExplicitFunction):
             f_nd_impurity_electron_array_11,
             f_nd_impurity_electron_array_12,
             f_nd_impurity_electron_array_13,
-        ])
-        # A jax array (which `jnp.stack` above always produces) refuses list-shaped
-        # fancy indexing outright (`arr[[0, 8]]` raises `TypeError`, not merely a
-        # deprecation warning -- jax's own message: "use `arr[array(seq)]`"), unlike
-        # a bare numpy array. `jnp.array(...)` once, reused for all three gathers,
-        # is the fix and matches every other gather in this codebase.
-        selected = jnp.array(self.imp_indices)
-        return calculate_impurity_radiation_totals(
-            radius_plasma_profile_norm,
-            nd_plasma_electron_profile,
-            temp_plasma_electron_profile_kev,
-            f_nd_impurity_electron_array[selected],
-            temp_impurity_keV_array[selected],
-            pden_impurity_lz_nd_temp_array[selected],
+            temp_impurity_keV_array,
+            pden_impurity_lz_nd_temp_array,
             radius_plasma_core_norm,
             f_p_plasma_core_rad_reduction,
         )
