@@ -393,14 +393,36 @@ final point in the same process, run at **0.732 / 0.929 / 0.763 ms** (`values` /
 `jacobian` / `values_and_jacobian`) — §41's numbers, confirmed from inside a real solve
 rather than beside one.
 
-**So what is in `model`, if the arithmetic is 0.13 s?** `phase_timing` is exclusive and
-subtracts `trace`, `lower` and `compile`, but those three patches cover
-`trace_to_jaxpr_dynamic`, `lower_jaxpr_to_module` and `backend_compile_and_load` and
-nothing else. Everything else the first call does — `eqx.filter_jit`'s partitioning,
-pytree flattening of the condition map, `jacfwd`'s `vmap` setup, argument marshalling —
-runs with `model` as the active phase and lands there. `model` on a cold row is therefore
-**first-call Python overhead plus a rounding error of actual evaluation**, and the
-44 compiles that row pays (24.7 s) are the reason it is a cold row at all.
+**So what is in `model`, if the arithmetic is 0.13 s?** Splitting every call into its
+phases (`phase_timing.totals()` sampled either side of each call) answers it exactly. Of
+128 calls, only two are not ~1.4 ms:
+
+| call | wall | trace | lower | compile | **rest** |
+|---|---|---|---|---|---|
+| first, MDF arm | 9 194 ms | 1 369 | 464 | 6 013 | **1 348** |
+| first, SAND arm | 6 662 ms | 406 | 287 | 5 233 | **737** |
+| each of the other 126 | 1.4 ms | 0 | 0 | 0 | 1.4 |
+
+`rest` over all 128 calls is **2.21 s**, and the 126 ordinary calls hold **0.130 s** of it.
+So `model` is 2.08 s of first-call `rest` plus 0.13 s of evaluation, which is the 2.6 s
+the two arms report.
+
+**And `rest` is not "Python overhead" — it is trace and lower work the two patches cannot
+see.** `cProfile` of that first call, by `tottime`: `jax._src.core.bind` (40 396 calls,
+4.67 s cumulative), `partial_eval.default_process_primitive` (19 311),
+`batching.process_primitive` (`jacfwd`'s `vmap`, 2.52 s cumulative),
+`core.eval_jaxpr` (847 calls, 2.98 s cumulative) and `mlir.jaxpr_subcomp` (0.81 s).
+`phase_timing` patches `trace_to_jaxpr_dynamic` and `lower_jaxpr_to_module`; `jacfwd`
+re-enters primitive binding and `eval_jaxpr` *outside* those entry points — §31's finding
+that `jvp_jaxpr` re-interprets under the same tracer stack rather than rewriting a jaxpr,
+showing up here as mis-attributed time.
+
+**So the table under-reports trace/lower and over-reports `model`.** On `stellarator_helias`
+the honest split of a 13.6 s cold row is roughly **4.4 s trace+lower, 8.3 s compile,
+0.13 s arithmetic** — about **97 % compilation in the broad sense and 1 % evaluation**,
+where the column suggested 2.6 s of "model". The matrix header has always labelled
+`model`/`other` **UNVERIFIED** for exactly this reason; this is what that warning was
+worth.
 
 **Consequence for how this table is read.** A row's `model` figure does not scale with
 iteration count and must not be divided by one. To compare *solvers* use the iteration
