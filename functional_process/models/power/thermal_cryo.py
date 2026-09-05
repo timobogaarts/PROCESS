@@ -1387,54 +1387,6 @@ def _cryo_cool_req_no_aluminium(helpow, temp_tf_cryo, temp_cp_coolant_inlet):
     return helpow_cryal, cryo_cool_req
 
 
-class PlantThermalEfficiency(ExplicitFunction):
-    """cottax node: `calculate_plant_thermal_efficiency`."""
-
-    i_thermal_electric_conversion: ElectricConversionModelTypes = eqx.field(static=True)
-    i_blanket_type: BlktModelTypes = eqx.field(static=True)
-
-    eta_turbine = OutputInto(heat_transport)
-    temp_turbine_coolant_in = OutputInto(heat_transport)
-
-    def __call__(
-        self,
-        eta_turbine=From(heat_transport),
-        delta_eta=From(power),
-        temp_blkt_coolant_out=From(fwbs),
-        temp_turbine_coolant_in=From(heat_transport),
-    ):
-        return calculate_plant_thermal_efficiency(
-            eta_turbine,
-            delta_eta,
-            temp_blkt_coolant_out,
-            temp_turbine_coolant_in,
-            self.i_thermal_electric_conversion,
-            self.i_blanket_type,
-        )
-
-
-class PlantThermalEfficiency2(ExplicitFunction):
-    """cottax node: `calculate_plant_thermal_efficiency_2`."""
-
-    secondary_cycle_liq: ElectricConversionModelTypes = eqx.field(static=True)
-
-    etath_liq = OutputInto(heat_transport)
-    temp_turbine_coolant_in = OutputInto(heat_transport)
-
-    def __call__(
-        self,
-        etath_liq=From(heat_transport),
-        outlet_temp_liq=From(fwbs),
-        temp_turbine_coolant_in=From(heat_transport),
-    ):
-        return calculate_plant_thermal_efficiency_2(
-            etath_liq,
-            outlet_temp_liq,
-            temp_turbine_coolant_in,
-            self.secondary_cycle_liq,
-        )
-
-
 class ComponentThermalPowers(ExplicitFunction):
     """cottax node: `calculate_component_thermal_powers`'s outputs **other than**
     the six self-referencing fields split into their own `FixedPointFunction`s below

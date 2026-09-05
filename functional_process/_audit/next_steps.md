@@ -85,6 +85,22 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   rows", and that has never been tested as stated.** It survived the one direct check
   made of it (§42: a fresh cache reproduces the uncached numbers on `st_regression`),
   but the claim is about all twelve rows and the check was two.
+- **Twenty declarations are unreferenced but only some are dead**, and the distinction is
+  worth keeping: a declaration naming the same field as both an output and a read is
+  refused by `to_graph` outright and can never be wired by anyone; one that is merely
+  unreferenced is a valid arm nobody has wired *yet*. Three of the first kind were
+  deleted 2026-09-05 (`PlantElectricProduction`, `PlantThermalEfficiency`,
+  `PlantThermalEfficiency2`). `Cryo` is the fourth and is **kept**: it has a live test
+  asserting `to_graph(Cryo(...))` raises, which is what stops someone "fixing" the split
+  by re-merging it. The other seventeen are valid unwired arms -- the eight `Jcrit*` are
+  `i_tf_sc_mat == 1..8`, `TfMagnetCostResistive` says in its own docstring it is ported
+  but deliberately unregistered, `WessonInternalInductance` names
+  `large_tokamak_eval.IN.DAT:311` as its arm -- and deleting them would remove
+  capability, not garbage. The mechanical test is
+  `_audit/declaration_census.py`'s sibling reasoning; re-derive it rather than trusting
+  this list. **Open**: the other three ungraphable-by-construction classes have no test
+  pinning why, where `Cryo` does. Giving them one would be better than either keeping
+  them silently or deleting them.
 - **`--provider` should be retired in favour of `--native` as the default** — understood,
   not done. The comparison axis (`--compare-process`) already exists independently.
 - **The reduced-space MDF formulation is unbuilt**: let the graph close the equality
