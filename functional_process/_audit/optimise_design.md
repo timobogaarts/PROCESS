@@ -303,3 +303,67 @@ what the driver evaluates, so every row of `reference_slsqp_matrix.txt` would ha
 re-measured. Filed in `next_steps.md`. All three comments are corrected to say what is
 actually true, which is that `fused` is a per-driver field because the two drivers may
 want different answers — not because the answer is settled for the other one.
+
+## 43. The lazy `at`, and where the evaluation floor actually is (2026-09-05)
+
+§42 filed a lazy `SlsqpDriver.at` as future work. It is done, and it turned out to be two
+defects rather than one.
+
+**Defect 1, the one that was filed.** `at` cached `(evaluate(x), jacobian(x))` together, so
+every point scipy's line search touched derived a Jacobian nobody asked for. Split into
+`values_at`/`jacobian_at` over a two-slot cache (two, because the line search walks past
+the accepted iterate before the callback runs, and one slot would evict exactly the point
+the callback asks about).
+
+**Defect 2, found only by counting programs afterwards.** The per-iterate callback built a
+full `pyvmcon.Result`, which meant a Jacobian at every accepted iterate — and **no callback
+in this tree reads `df`, `deq` or `die`**. `run_cold_matrix._recorder` reads `f`, `eq`,
+`ie` and nothing else. So the callback was, by itself, doubling the derivative cost of a
+solve. Replaced by `_Iterate`, duck-compatible with `Result` but with the three derivative
+attributes as properties.
+
+Counted on `stellarator_helias`, both arms, `--native`, by wrapping `host_cache.bind`:
+
+| | Jacobian programs run | scipy's `njev` |
+|---|---|---|
+| before | ~3 557 (one per distinct point) | 527 |
+| after defect 1 | 1 014 | 527 |
+| after defect 2 | **527** | 527 |
+
+Exactly what was asked for, and no more. **The answers are unchanged**: all twelve rows of
+`reference_slsqp_matrix.txt` are identical before and after.
+
+**What it bought, and a correction to §42's estimate.** §42 put the waste at ~5.4 s of the
+capped `stellarator_helias` SAND arm, by multiplying ~3 000 spared Jacobians by §41's
+1.8 ms. Measured, that arm's wall clock went **22.2 s to 19.5 s** and its `model` phase
+3.2 s to 2.3 s. Real, and smaller than the arithmetic — per-call cost inside a solve is not
+the median-at-a-point §41 measured, which is §41's own warning applied to me. Every other
+arm moves within run-to-run noise, exactly as the `nfev/nit` of 1.1-1.5 predicts.
+
+### Are we at the evaluation floor?
+
+Three separate floors, and the honest answer differs for each.
+
+**1. Redundant work: yes, this is the floor now.** Nothing computes a value or a
+derivative that its caller did not ask for, on either driver. VMCON asks for both at every
+point and gets them from one fused program (§40); SLSQP asks for value-only at line-search
+points and gets exactly that. There is no third thing to remove — the next reduction has to
+come from asking for less, not from wasting less.
+
+**2. Per-call cost: near the floor for the shape of the problem.** §41 measured jax's
+bare-dispatch floor at 0.016-0.024 ms against a `values` call of 0.75-1.73 ms, so the
+boundary is free. A forward-mode tangent runs at ~0.4 of a primal evaluation, which is
+`vmap` amortising about as well as it can. What is left is the *program*: 53 010 emitted
+lines for one tokamak MDF block. That is the lever for both compile time and per-call time,
+and it is untouched.
+
+**3. Whole-solve evaluation cost: no, and the gap is not evaluation.** A warm solve is
+0.36-0.79 s, of which XLA is 87-354 ms (§41). The stellarator arms are **already at
+87-164 ms of actual evaluation** — at or under a 100 ms target — and the tokamak MDF arm is
+178 ms at the converged-point median (354 ms averaged over a real solve, whose calls are
+not all at the converged point). So the evaluation half is close to done. The other
+425-552 ms is host: `pyvmcon` rebuilding its `cvxpy` QP every iteration, and
+`host_cache.call`'s own 1.8 ms and `__eq__`'s 0.5 ms per call. **Getting a solve to 100 ms
+is a host-side problem now, not an evaluation one** — and the SLSQP arms, whose `sqp` phase
+reads 0.0 s on all twelve, are the evidence that most of that host cost is one library's
+allocation pattern rather than anything structural.
