@@ -2059,6 +2059,14 @@ def calculate_confinement_time(
     )
 
 
+def confinement_scaling_inputs(nd_plasma_electron_line, plasma_current):
+    """Unit conversions every scaling law takes.
+
+    Line density in `1e19 m^-3`, current in MA.
+    """
+    return nd_plasma_electron_line * 1.0e-19, plasma_current / 1.0e6
+
+
 # ---------------------------------------------------------------------------
 # cottax nodes
 # ---------------------------------------------------------------------------
@@ -2102,7 +2110,7 @@ class ConfinementScalingInputs(ExplicitFunction):
         nd_plasma_electron_line=From(physics),
         plasma_current=From(physics),
     ):
-        return nd_plasma_electron_line * 1.0e-19, plasma_current / 1.0e6
+        return confinement_scaling_inputs(nd_plasma_electron_line, plasma_current)
 
 
 class PlasmaPowerLoss(ExplicitFunction):
