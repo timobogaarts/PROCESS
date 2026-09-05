@@ -423,7 +423,7 @@ from functional_process.cottax.vacuum.vacuum import (
     VacuumVesselEllipticalDoubleNull,
     VacuumVesselEllipticalSingleNull,
 )
-from functional_process.importer import Imported, read_indat
+from functional_process.cottax.importer import Imported, read_indat
 from functional_process.cottax.total_process import StellaratorProcess, TokamakProcess
 from functional_process.vocabulary import ITERATION_VARIABLES
 from functional_process.vocabulary import FiguresOfMerit

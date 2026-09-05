@@ -55,7 +55,7 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-from functional_process.importer import ArrayInput, Imported, read_indat
+from functional_process.cottax.importer import ArrayInput, Imported, read_indat
 from functional_process.vocabulary.iteration_variables import ITERATION_VARIABLES
 
 

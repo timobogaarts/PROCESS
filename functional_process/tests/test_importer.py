@@ -1,4 +1,4 @@
-"""`functional_process.importer` -- the legacy `IN.DAT` reader (§24).
+"""`functional_process.cottax.importer` -- the legacy `IN.DAT` reader (§24).
 
 Three things are tested, and the middle one is the point.
 
@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from functional_process.importer import (
+from functional_process.cottax.importer import (
     EVALUATION_RUN_MODE,
     OPTIMISATION_RUN_MODE,
     ArrayInput,
@@ -342,7 +342,7 @@ class TestGrammar:
             "        if name.split('.')[0] == 'process':\n"
             "            raise ImportError(name)\n"
             "sys.meta_path.insert(0, Block())\n"
-            "from functional_process.importer import read_indat\n"
+            "from functional_process.cottax.importer import read_indat\n"
             f"r = read_indat({_input_file('st_regression')!r})\n"
             "assert len(r.values) > 100 and 'process' not in sys.modules\n"
         )

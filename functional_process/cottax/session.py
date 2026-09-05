@@ -124,7 +124,7 @@ jax.config.update("jax_enable_x64", True)
 
 from functional_process.cottax import native  # noqa: E402
 from functional_process.cottax import sand as sand_module  # noqa: E402
-from functional_process.importer import read_indat  # noqa: E402
+from functional_process.cottax.importer import read_indat  # noqa: E402
 from functional_process.cottax.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
     graph_for,

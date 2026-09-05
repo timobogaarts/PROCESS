@@ -703,7 +703,7 @@ def test_the_problem_statement_is_sorted_the_way_single_run_sorts_it():
     VMCON's column order. §23.7's "byte-identical on all eight" missed it because
     `iteration_variables_from_indat` returns a `frozenset`.
     """
-    from functional_process.importer import read_indat
+    from functional_process.cottax.importer import read_indat
     from functional_process.cottax.native import native_reference
 
     stated = read_indat(

@@ -1,5 +1,13 @@
 """PROCESS's CoolProp wrapper, vendored so the port runs with no `process` present.
 
+**Deliberately not under `models/`.** That package is PROCESS's physics as pure
+JAX -- importable with no graph machinery and no external library -- and CoolProp
+is an opaque C extension, the one dependency `CLAUDE.md` names as not
+JAX-traceable. Moving this module into `models/` was tried on 2026-09-05 and
+`test_importing_the_model_layer_does_not_load_coolprop` failed immediately, which
+is exactly what that test is for: importing the physics must not drag in a C
+library. Its one consumer, `models/tfcoil/quench.py`, imports it lazily.
+
 §23.5 named this the last runtime `process` import: `models/tfcoil/quench.py`'s
 `helium_properties_at_quench_nodes` reached into `process.core.coolprop_interface`, and
 because `indat.py` makes exactly one such lookup while assembling a **tokamak**, no

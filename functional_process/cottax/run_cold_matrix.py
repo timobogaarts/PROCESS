@@ -195,7 +195,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402
 from jax.flatten_util import ravel_pytree  # noqa: E402
 
-from functional_process import phase_timing  # noqa: E402
+from functional_process.cottax import phase_timing  # noqa: E402
 from functional_process.cottax import (  # noqa: E402
     mdf,
     native,
@@ -208,7 +208,7 @@ from functional_process.cottax.core.solver.drivers import (  # noqa: E402
     Status,
     non_finite_summary,
 )
-from functional_process.importer import read_indat  # noqa: E402
+from functional_process.cottax.importer import read_indat  # noqa: E402
 from functional_process.cottax.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
     graph_for,

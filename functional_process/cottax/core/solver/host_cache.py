@@ -305,7 +305,7 @@ def _timed(fn, structure, leaves):
     """
 
     def call(flat_x):
-        from functional_process.phase_timing import phase  # noqa: PLC0415
+        from functional_process.cottax.phase_timing import phase  # noqa: PLC0415
 
         with phase("model"):
             return fn(structure, leaves, flat_x)
@@ -322,7 +322,7 @@ def flat_conditions(conditions: ConditionMap, flat_x, unravel):
     `_audit/optimise_design.md` §24 measured those at roughly two-thirds and one-third on
     one configuration -- a number worth having on every arm rather than once.
     """
-    from functional_process.phase_timing import phase  # noqa: PLC0415
+    from functional_process.cottax.phase_timing import phase  # noqa: PLC0415
 
     with phase("model"):
         return _flat_conditions(conditions, flat_x, unravel)
@@ -341,7 +341,7 @@ def _flat_conditions(conditions: ConditionMap, flat_x, unravel):
 
 def flat_condition_jacobian(conditions: ConditionMap, flat_x, unravel):
     """Timed wrapper around `_flat_condition_jacobian`; see `flat_conditions`."""
-    from functional_process.phase_timing import phase  # noqa: PLC0415
+    from functional_process.cottax.phase_timing import phase  # noqa: PLC0415
 
     with phase("model"):
         return _flat_condition_jacobian(conditions, flat_x, unravel)

@@ -1678,7 +1678,7 @@ class VmconDriver(AbstractDriver):
             # underneath scopes itself as `model` (`host_cache.flat_conditions`). The two
             # therefore separate "the model is expensive" from "the optimiser is
             # expensive", which no single wall-clock number can.
-            from functional_process.phase_timing import phase  # noqa: PLC0415
+            from functional_process.cottax.phase_timing import phase  # noqa: PLC0415
 
             try:
                 with phase("sqp"):
