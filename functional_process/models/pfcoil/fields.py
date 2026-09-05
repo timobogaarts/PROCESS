@@ -603,6 +603,123 @@ def calculate_pf_coil_peak_fields_no_central_solenoid(
     )
 
 
+# ---------------------------------------------------------------------------
+# Wrapped occupant bodies, `_audit/formulas_split.md` step 1: each of these used to
+# slice the coil arrays to a fixed width (and, for `PFCoilCurrentWaveform`, pad and
+# fill the plasma row) inline in a declaration's `__call__` before delegating. The
+# `calculate_*` signatures above are untouched.
+# ---------------------------------------------------------------------------
+
+
+def calculate_pf_coil_peak_fields_reference_arm(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    r_cs_middle,
+    dz_cs_full,
+    a_cs_poloidal,
+    j_cs_pulse_start,
+    j_cs_flat_top_end,
+    rmajor,
+    plasma_current,
+):
+    """`PFCoilPeakField`: trims each coil array to the seven-entry (six PF + CS) width
+    and flattens the inner/outer 6-vectors to twelve per-index outputs.
+    """
+    b_inner, b_outer = calculate_pf_coil_peak_fields(
+        topology=REFERENCE_TOPOLOGY,
+        c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
+        c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
+        r_pf_coil_middle=r_pf_coil_middle[: CS_INDEX + 1],
+        z_pf_coil_middle=z_pf_coil_middle[: CS_INDEX + 1],
+        r_pf_coil_inner=r_pf_coil_inner[: CS_INDEX + 1],
+        r_pf_coil_outer=r_pf_coil_outer[: CS_INDEX + 1],
+        z_pf_coil_upper=z_pf_coil_upper[: CS_INDEX + 1],
+        z_pf_coil_lower=z_pf_coil_lower[: CS_INDEX + 1],
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:N_PF_GROUPS, :],
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:N_PF_GROUPS, :],
+        r_cs_middle=r_cs_middle,
+        dz_cs_full=dz_cs_full,
+        a_cs_poloidal=a_cs_poloidal,
+        j_cs_pulse_start=j_cs_pulse_start,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        rmajor=rmajor,
+        plasma_current=plasma_current,
+    )
+    return (*b_inner, *b_outer)
+
+
+def calculate_pf_coil_peak_fields_no_central_solenoid_for_topology(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    rmajor,
+    plasma_current,
+    *,
+    topology,
+):
+    """`PFCoilPeakFieldNoCentralSolenoid`: trims each coil array to `topology`'s width
+    and pads the two field vectors back out to `NGC2`.
+    """
+    n = topology.n_pf_coils
+    b_inner, b_outer = calculate_pf_coil_peak_fields_no_central_solenoid(
+        c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[:n],
+        c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[:n],
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[:n],
+        r_pf_coil_middle=r_pf_coil_middle[:n],
+        z_pf_coil_middle=z_pf_coil_middle[:n],
+        r_pf_coil_inner=r_pf_coil_inner[:n],
+        r_pf_coil_outer=r_pf_coil_outer[:n],
+        z_pf_coil_upper=z_pf_coil_upper[:n],
+        z_pf_coil_lower=z_pf_coil_lower[:n],
+        rmajor=rmajor,
+        plasma_current=plasma_current,
+        topology=topology,
+    )
+    pad = jnp.zeros(NGC2)
+    return pad.at[:n].set(b_inner), pad.at[:n].set(b_outer)
+
+
+def calculate_coil_current_waveform_for_topology(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    *,
+    topology,
+):
+    """`PFCoilCurrentWaveform`: trims the three current arrays to `topology`'s width,
+    pads the peak/waveform outputs back out to `NGC2`, and fills the plasma row with
+    ones.
+    """
+    coils = topology.n_cs_pf_coils
+    plasma = topology.plasma_index
+    peak, waveform = calculate_coil_current_waveform(
+        c_pf_cs_coil_pulse_start_ma[:coils],
+        c_pf_cs_coil_flat_top_ma[:coils],
+        c_pf_cs_coil_pulse_end_ma[:coils],
+    )
+    peak_full = jnp.zeros(NGC2).at[:coils].set(peak)
+    waveform_full = (
+        jnp.zeros((NGC2, 6)).at[:coils, :].set(waveform).at[plasma, :].set(1.0)
+    )
+    return peak_full, waveform_full
+
+
 class PFCoilPeakField(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.peak_field`.
 
@@ -654,19 +771,18 @@ class PFCoilPeakField(ExplicitFunction):
         rmajor=From(physics),
         plasma_current=From(physics),
     ):
-        b_inner, b_outer = calculate_pf_coil_peak_fields(
-            topology=REFERENCE_TOPOLOGY,
-            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
-            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
-            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
-            r_pf_coil_middle=r_pf_coil_middle[: CS_INDEX + 1],
-            z_pf_coil_middle=z_pf_coil_middle[: CS_INDEX + 1],
-            r_pf_coil_inner=r_pf_coil_inner[: CS_INDEX + 1],
-            r_pf_coil_outer=r_pf_coil_outer[: CS_INDEX + 1],
-            z_pf_coil_upper=z_pf_coil_upper[: CS_INDEX + 1],
-            z_pf_coil_lower=z_pf_coil_lower[: CS_INDEX + 1],
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:N_PF_GROUPS, :],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:N_PF_GROUPS, :],
+        return calculate_pf_coil_peak_fields_reference_arm(
+            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma,
+            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma,
+            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+            r_pf_coil_middle=r_pf_coil_middle,
+            z_pf_coil_middle=z_pf_coil_middle,
+            r_pf_coil_inner=r_pf_coil_inner,
+            r_pf_coil_outer=r_pf_coil_outer,
+            z_pf_coil_upper=z_pf_coil_upper,
+            z_pf_coil_lower=z_pf_coil_lower,
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
             r_cs_middle=r_cs_middle,
             dz_cs_full=dz_cs_full,
             a_cs_poloidal=a_cs_poloidal,
@@ -675,7 +791,6 @@ class PFCoilPeakField(ExplicitFunction):
             rmajor=rmajor,
             plasma_current=plasma_current,
         )
-        return (*b_inner, *b_outer)
 
 
 class PFCoilPeakFieldNoCentralSolenoid(ExplicitFunction):
@@ -713,23 +828,20 @@ class PFCoilPeakFieldNoCentralSolenoid(ExplicitFunction):
         rmajor=From(physics),
         plasma_current=From(physics),
     ):
-        n = self.topology.n_pf_coils
-        b_inner, b_outer = calculate_pf_coil_peak_fields_no_central_solenoid(
-            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[:n],
-            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[:n],
-            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[:n],
-            r_pf_coil_middle=r_pf_coil_middle[:n],
-            z_pf_coil_middle=z_pf_coil_middle[:n],
-            r_pf_coil_inner=r_pf_coil_inner[:n],
-            r_pf_coil_outer=r_pf_coil_outer[:n],
-            z_pf_coil_upper=z_pf_coil_upper[:n],
-            z_pf_coil_lower=z_pf_coil_lower[:n],
+        return calculate_pf_coil_peak_fields_no_central_solenoid_for_topology(
+            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma,
+            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma,
+            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+            r_pf_coil_middle=r_pf_coil_middle,
+            z_pf_coil_middle=z_pf_coil_middle,
+            r_pf_coil_inner=r_pf_coil_inner,
+            r_pf_coil_outer=r_pf_coil_outer,
+            z_pf_coil_upper=z_pf_coil_upper,
+            z_pf_coil_lower=z_pf_coil_lower,
             rmajor=rmajor,
             plasma_current=plasma_current,
             topology=self.topology,
         )
-        pad = jnp.zeros(NGC2)
-        return pad.at[:n].set(b_inner), pad.at[:n].set(b_outer)
 
 
 class PFCoilCurrentWaveform(ExplicitFunction):
@@ -767,18 +879,12 @@ class PFCoilCurrentWaveform(ExplicitFunction):
         c_pf_cs_coil_flat_top_ma=From(pf_coil),
         c_pf_cs_coil_pulse_end_ma=From(pf_coil),
     ):
-        coils = self.topology.n_cs_pf_coils
-        plasma = self.topology.plasma_index
-        peak, waveform = calculate_coil_current_waveform(
-            c_pf_cs_coil_pulse_start_ma[:coils],
-            c_pf_cs_coil_flat_top_ma[:coils],
-            c_pf_cs_coil_pulse_end_ma[:coils],
+        return calculate_coil_current_waveform_for_topology(
+            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma,
+            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma,
+            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+            topology=self.topology,
         )
-        peak_full = jnp.zeros(NGC2).at[:coils].set(peak)
-        waveform_full = (
-            jnp.zeros((NGC2, 6)).at[:coils, :].set(waveform).at[plasma, :].set(1.0)
-        )
-        return peak_full, waveform_full
 
 
 # ---------------------------------------------------------------------------
@@ -1091,6 +1197,41 @@ def calculate_cs_peak_fields(
     )
 
 
+def calculate_cs_peak_fields_reference_widths(
+    c_pf_cs_coil_pulse_start_ma,
+    c_pf_cs_coil_flat_top_ma,
+    c_pf_cs_coil_pulse_end_ma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_cs_inner,
+    r_cs_outer,
+    z_cs_middle,
+    z_cs_upper,
+    j_cs_flat_top_end,
+    j_cs_pulse_start,
+    rmajor,
+    plasma_current,
+):
+    """`CSCoilPeakField`: trims the three current arrays to the seven-entry (six PF +
+    CS) width and the two coordinate arrays to the six PF coils.
+    """
+    return calculate_cs_peak_fields(
+        c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
+        c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
+        c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
+        r_pf_coil_middle=r_pf_coil_middle[:N_PF_COILS],
+        z_pf_coil_middle=z_pf_coil_middle[:N_PF_COILS],
+        r_cs_inner=r_cs_inner,
+        r_cs_outer=r_cs_outer,
+        z_cs_middle=z_cs_middle,
+        z_cs_upper=z_cs_upper,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        j_cs_pulse_start=j_cs_pulse_start,
+        rmajor=rmajor,
+        plasma_current=plasma_current,
+    )
+
+
 class CSCoilPeakField(ExplicitFunction):
     """cottax node: `.tokamak.cs_coil.peak_field`.
 
@@ -1133,12 +1274,12 @@ class CSCoilPeakField(ExplicitFunction):
         rmajor=From(physics),
         plasma_current=From(physics),
     ):
-        return calculate_cs_peak_fields(
-            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma[: CS_INDEX + 1],
-            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma[: CS_INDEX + 1],
-            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma[: CS_INDEX + 1],
-            r_pf_coil_middle=r_pf_coil_middle[:N_PF_COILS],
-            z_pf_coil_middle=z_pf_coil_middle[:N_PF_COILS],
+        return calculate_cs_peak_fields_reference_widths(
+            c_pf_cs_coil_pulse_start_ma=c_pf_cs_coil_pulse_start_ma,
+            c_pf_cs_coil_flat_top_ma=c_pf_cs_coil_flat_top_ma,
+            c_pf_cs_coil_pulse_end_ma=c_pf_cs_coil_pulse_end_ma,
+            r_pf_coil_middle=r_pf_coil_middle,
+            z_pf_coil_middle=z_pf_coil_middle,
             r_cs_inner=r_cs_inner,
             r_cs_outer=r_cs_outer,
             z_cs_middle=z_cs_middle,

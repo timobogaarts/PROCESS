@@ -2455,7 +2455,7 @@ class _PeakBTfInboardWithRippleKovari(PeakBTfInboardWithRipple):
             dr_tf_wp_no_insulation=dr_tf_wp_no_insulation,
             r_tf_wp_inboard_centre=r_tf_wp_inboard_centre,
             b_tf_inboard_peak_symmetric=b_tf_inboard_peak_symmetric,
-            coefficients=type(self).coefficients,
+            coefficients=self.coefficients,
         )
 
 
@@ -3622,6 +3622,75 @@ class HazeltonZhaiRebcoSuperconductingTfCoilAreasAndMassesSphericalTokamak(
     """
 
 
+def calculate_vv_stress_on_quench(
+    z_tf_inside_half,
+    dr_tf_inboard,
+    r_tf_inboard_mid,
+    r_tf_outboard_mid,
+    r_tf_inboard_out,
+    tfa,
+    z_plasma_xpoint_upper,
+    dz_xpoint_divertor,
+    dz_divertor,
+    dz_shld_upper,
+    dz_vv_upper,
+    r_vv_inboard_out,
+    dr_vv_outboard,
+    dr_tf_outboard,
+    dr_tf_shld_gap,
+    dr_shld_thermal_outboard,
+    dr_shld_vv_gap_outboard,
+    len_tf_coil,
+    theta1_coil,
+    theta1_vv,
+    n_tf_coils,
+    n_tf_coil_turns,
+    a_tf_coil_inboard_steel,
+    a_tf_plasma_case,
+    a_tf_coil_nose_case,
+    dx_tf_side_case_average,
+    t_tf_superconductor_quench,
+    c_tf_coil,
+    dr_vv_shells,
+):
+    """`vv_stress_quench_from_build`'s arm on the whole `tfa` vector -- `tfa[0]` is
+    `tf_coil_shape`'s first arc, sliced here rather than at the declaration (see
+    `VvStressOnQuench`'s own docstring for why `tfa` must be read whole, not as a
+    `FromExactly` element).
+    """
+    return vv_stress_quench_from_build(
+        z_tf_inside_half=z_tf_inside_half,
+        dr_tf_inboard=dr_tf_inboard,
+        r_tf_inboard_mid=r_tf_inboard_mid,
+        r_tf_outboard_mid=r_tf_outboard_mid,
+        r_tf_inboard_out=r_tf_inboard_out,
+        tfa_first_arc=tfa[0],
+        z_plasma_xpoint_upper=z_plasma_xpoint_upper,
+        dz_xpoint_divertor=dz_xpoint_divertor,
+        dz_divertor=dz_divertor,
+        dz_shld_upper=dz_shld_upper,
+        dz_vv_upper=dz_vv_upper,
+        r_vv_inboard_out=r_vv_inboard_out,
+        dr_vv_outboard=dr_vv_outboard,
+        dr_tf_outboard=dr_tf_outboard,
+        dr_tf_shld_gap=dr_tf_shld_gap,
+        dr_shld_thermal_outboard=dr_shld_thermal_outboard,
+        dr_shld_vv_gap_outboard=dr_shld_vv_gap_outboard,
+        len_tf_coil=len_tf_coil,
+        theta1_coil=theta1_coil,
+        theta1_vv=theta1_vv,
+        n_tf_coils=n_tf_coils,
+        n_tf_coil_turns=n_tf_coil_turns,
+        a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
+        a_tf_plasma_case=a_tf_plasma_case,
+        a_tf_coil_nose_case=a_tf_coil_nose_case,
+        dx_tf_side_case_average=dx_tf_side_case_average,
+        t_tf_superconductor_quench=t_tf_superconductor_quench,
+        c_tf_coil=c_tf_coil,
+        dr_vv_shells=dr_vv_shells,
+    )
+
+
 class VvStressOnQuench(ExplicitFunction):
     """cottax node: `.superconducting_tfcoil.vv_stress_quench`, constraint 65's read.
 
@@ -3683,36 +3752,36 @@ class VvStressOnQuench(ExplicitFunction):
         c_tf_coil=From(superconducting_tfcoil),
         dr_vv_shells=From(build),
     ):
-        return vv_stress_quench_from_build(
-            z_tf_inside_half=z_tf_inside_half,
-            dr_tf_inboard=dr_tf_inboard,
-            r_tf_inboard_mid=r_tf_inboard_mid,
-            r_tf_outboard_mid=r_tf_outboard_mid,
-            r_tf_inboard_out=r_tf_inboard_out,
-            tfa_first_arc=tfa[0],
-            z_plasma_xpoint_upper=z_plasma_xpoint_upper,
-            dz_xpoint_divertor=dz_xpoint_divertor,
-            dz_divertor=dz_divertor,
-            dz_shld_upper=dz_shld_upper,
-            dz_vv_upper=dz_vv_upper,
-            r_vv_inboard_out=r_vv_inboard_out,
-            dr_vv_outboard=dr_vv_outboard,
-            dr_tf_outboard=dr_tf_outboard,
-            dr_tf_shld_gap=dr_tf_shld_gap,
-            dr_shld_thermal_outboard=dr_shld_thermal_outboard,
-            dr_shld_vv_gap_outboard=dr_shld_vv_gap_outboard,
-            len_tf_coil=len_tf_coil,
-            theta1_coil=theta1_coil,
-            theta1_vv=theta1_vv,
-            n_tf_coils=n_tf_coils,
-            n_tf_coil_turns=n_tf_coil_turns,
-            a_tf_coil_inboard_steel=a_tf_coil_inboard_steel,
-            a_tf_plasma_case=a_tf_plasma_case,
-            a_tf_coil_nose_case=a_tf_coil_nose_case,
-            dx_tf_side_case_average=dx_tf_side_case_average,
-            t_tf_superconductor_quench=t_tf_superconductor_quench,
-            c_tf_coil=c_tf_coil,
-            dr_vv_shells=dr_vv_shells,
+        return calculate_vv_stress_on_quench(
+            z_tf_inside_half,
+            dr_tf_inboard,
+            r_tf_inboard_mid,
+            r_tf_outboard_mid,
+            r_tf_inboard_out,
+            tfa,
+            z_plasma_xpoint_upper,
+            dz_xpoint_divertor,
+            dz_divertor,
+            dz_shld_upper,
+            dz_vv_upper,
+            r_vv_inboard_out,
+            dr_vv_outboard,
+            dr_tf_outboard,
+            dr_tf_shld_gap,
+            dr_shld_thermal_outboard,
+            dr_shld_vv_gap_outboard,
+            len_tf_coil,
+            theta1_coil,
+            theta1_vv,
+            n_tf_coils,
+            n_tf_coil_turns,
+            a_tf_coil_inboard_steel,
+            a_tf_plasma_case,
+            a_tf_coil_nose_case,
+            dx_tf_side_case_average,
+            t_tf_superconductor_quench,
+            c_tf_coil,
+            dr_vv_shells,
         )
 
 
@@ -3960,6 +4029,33 @@ class TfSuperconductorTemperatureMargin(ExplicitFunction):
     temp_margin = OutputInto(tfcoil)
 
 
+def calculate_temperature_margin_with_strain(
+    fit,
+    j_tf_superconductor,
+    b_tf_inboard_peak_with_ripple,
+    str_wp,
+    b_tf_superconductor_critical_zero_temp_strain,
+    temp_tf_superconductor_critical_zero_field_strain,
+    tftmp,
+):
+    """The strained arms' shared temperature-margin fit, doubled onto both
+    `.tfcoil.temp_tf_superconductor_margin` and `.tfcoil.temp_margin` -- one number to
+    two `VarPath`s, as PROCESS's own duplicate write does (see
+    `_TemperatureMarginWithStrain`'s own docstring). `fit` is the material arm's own
+    `type(self).fit` `staticmethod` (`temperature_margin_itersc` or
+    `temperature_margin_wst_nb3sn`).
+    """
+    margin = fit(
+        j_superconductor=j_tf_superconductor,
+        b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+        strain=str_wp,
+        b_c20max=b_tf_superconductor_critical_zero_temp_strain,
+        temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
+        temp_tf_coolant_peak_field=tftmp,
+    )
+    return margin, margin
+
+
 class _TemperatureMarginWithStrain(TfSuperconductorTemperatureMargin):
     """The strained arms' shared declaration; the `fit` attribute picks the fit.
 
@@ -3979,15 +4075,15 @@ class _TemperatureMarginWithStrain(TfSuperconductorTemperatureMargin):
         temp_tf_superconductor_critical_zero_field_strain=From(superconducting_tfcoil),
         tftmp=From(tfcoil),
     ):
-        margin = type(self).fit(
-            j_superconductor=j_tf_superconductor,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            strain=str_wp,
-            b_c20max=b_tf_superconductor_critical_zero_temp_strain,
-            temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
-            temp_tf_coolant_peak_field=tftmp,
+        return calculate_temperature_margin_with_strain(
+            self.fit,
+            j_tf_superconductor,
+            b_tf_inboard_peak_with_ripple,
+            str_wp,
+            b_tf_superconductor_critical_zero_temp_strain,
+            temp_tf_superconductor_critical_zero_field_strain,
+            tftmp,
         )
-        return margin, margin
 
 
 class IterNb3snTfSuperconductorTemperatureMargin(_TemperatureMarginWithStrain):
@@ -4011,6 +4107,27 @@ class WstNb3snTfSuperconductorTemperatureMargin(_TemperatureMarginWithStrain):
     fit = staticmethod(temperature_margin_wst_nb3sn)
 
 
+def calculate_old_lubell_nbti_temperature_margin(
+    j_tf_superconductor,
+    b_tf_inboard_peak_with_ripple,
+    b_tf_superconductor_critical_zero_temp_strain,
+    temp_tf_superconductor_critical_zero_field_strain,
+    tftmp,
+):
+    """`i_tf_sc_mat == 3`'s temperature margin, doubled onto both
+    `.tfcoil.temp_tf_superconductor_margin` and `.tfcoil.temp_margin` -- one number to
+    two `VarPath`s, as PROCESS's own duplicate write does.
+    """
+    margin = temperature_margin_lubell_nbti(
+        j_superconductor=j_tf_superconductor,
+        b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+        b_c20max=b_tf_superconductor_critical_zero_temp_strain,
+        temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
+        temp_tf_coolant_peak_field=tftmp,
+    )
+    return margin, margin
+
+
 class OldLubellNbtiTfSuperconductorTemperatureMargin(TfSuperconductorTemperatureMargin):
     """`i_tf_sc_mat == 3` -- one read fewer, and one literal more.
 
@@ -4027,11 +4144,10 @@ class OldLubellNbtiTfSuperconductorTemperatureMargin(TfSuperconductorTemperature
         temp_tf_superconductor_critical_zero_field_strain=From(superconducting_tfcoil),
         tftmp=From(tfcoil),
     ):
-        margin = temperature_margin_lubell_nbti(
-            j_superconductor=j_tf_superconductor,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            b_c20max=b_tf_superconductor_critical_zero_temp_strain,
-            temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
-            temp_tf_coolant_peak_field=tftmp,
+        return calculate_old_lubell_nbti_temperature_margin(
+            j_tf_superconductor,
+            b_tf_inboard_peak_with_ripple,
+            b_tf_superconductor_critical_zero_temp_strain,
+            temp_tf_superconductor_critical_zero_field_strain,
+            tftmp,
         )
-        return margin, margin

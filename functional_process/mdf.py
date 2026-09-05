@@ -714,16 +714,20 @@ def condition_map(mdf: Mdf, env, traceable=True) -> MdfConditionMap:
     )
 
 
-def driver(mdf: Mdf, bounds=(), callback=None, **kwargs) -> VmconDriver:
-    """`VmconDriver` for `mdf`, its equality/inequality counts read off the assembly.
+def driver(mdf: Mdf, bounds=(), callback=None, optimiser=VmconDriver, **kwargs):
+    """The block's optimiser, its equality/inequality counts read off the assembly.
 
     The same rule `mda.default_drivers` applies to a real `Optimise` node -- the counts
     come from what was assembled, never from a caller counting conditions.
     `condition_scale` is deliberately not offered: MDF has no residual conditions (see
     this module's docstring), so every row is one of PROCESS's own normalised residuals
     and scaling any of them would break comparability with PROCESS's iterates.
+
+    `optimiser` names the **class** to build, for the same reason `mda.default_drivers`
+    does: the counts come from the assembly here, so a caller handing in a built driver
+    would have had to count them. `SlsqpDriver` is the other class that fits.
     """
-    return VmconDriver(
+    return optimiser(
         n_equality=mdf.n_equality,
         n_inequality=mdf.n_inequality,
         bounds=bounds,
@@ -863,6 +867,14 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
     `AbstractDriver` whose `drives` is `Optimise` will do, which is how the same MDF
     problem can be handed to a second SQP as a controlled comparison.
 
+    **A class is accepted as well as an instance**, and means "build the default driver
+    out of *this* class instead": `optimiser=SlsqpDriver` keeps `bounds`, `callback`,
+    `tolerance` and `max_iter` exactly as the `VmconDriver` arm would have had them and
+    keeps the equality/inequality counts read off the assembly, which an instance cannot
+    do without the caller counting (`driver`'s own docstring). That is the difference
+    between a comparison of two *solvers* and a comparison of two problems that happen
+    to differ somewhere else as well, so the distinction is worth the one `isinstance`.
+
     **What the driver reports lands in `out`**, under the names `Assign` would mint for
     it at `IN_GRAPH_PLACE` -- so the outer-`solve` shape and the in-graph shape report
     the same verdict under the same keys and are directly comparable. `reported` is how
@@ -884,6 +896,10 @@ def solve(mdf: Mdf, env, bounds=(), callback=None, optimiser=None, **kwargs):
         # `fsolve` semantics and not a silently different problem. The step count comes
         # back through the driver's own reports, in the env this returns (`verdict`).
         optimiser = root_find_driver(mdf, **kwargs)
+    if isinstance(optimiser, type):
+        optimiser = driver(
+            mdf, bounds=bounds, callback=callback, optimiser=optimiser, **kwargs
+        )
     optimiser = optimiser or driver(mdf, bounds=bounds, callback=callback, **kwargs)
     started = time.perf_counter()
     # The driver is called directly here, not through a `Drive`, so the driver-data

@@ -827,6 +827,69 @@ class PFCoilMasses(ExplicitFunction):
         )
 
 
+def calculate_pf_coil_masses_no_central_solenoid_for_topology(
+    c_pf_cs_coils_peak_ma,
+    j_pf_coil_wp_peak,
+    n_pf_coil_turns,
+    r_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    b_pf_coil_peak,
+    bpf2,
+    f_a_pf_coil_void,
+    pf_current_safety_factor,
+    sigpfcf,
+    sigpfcalw,
+    den_steel,
+    den_pf_conductor,
+    *,
+    topology,
+):
+    """`PFCoilMassesNoCentralSolenoid`: trims every coil array to `topology`'s width
+    and pads the three per-coil outputs back out to `NGC2`.
+    """
+    n = topology.n_pf_coils
+    (
+        m_conductor,
+        m_structure,
+        pfcaseth,
+        m_conductor_total,
+        m_structure_total,
+        m_pf_coil_max,
+        ricpf,
+    ) = calculate_pf_coil_masses_no_central_solenoid(
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[: topology.n_cs_pf_coils],
+        j_pf_coil_wp_peak=j_pf_coil_wp_peak[:n],
+        n_pf_coil_turns=n_pf_coil_turns[:n],
+        r_pf_coil_middle=r_pf_coil_middle[:n],
+        r_pf_coil_inner=r_pf_coil_inner[:n],
+        r_pf_coil_outer=r_pf_coil_outer[:n],
+        z_pf_coil_upper=z_pf_coil_upper[:n],
+        z_pf_coil_lower=z_pf_coil_lower[:n],
+        b_pf_coil_peak=b_pf_coil_peak[:n],
+        bpf2=bpf2[:n],
+        f_a_pf_coil_void=f_a_pf_coil_void[:n],
+        pf_current_safety_factor=pf_current_safety_factor,
+        sigpfcf=sigpfcf,
+        sigpfcalw=sigpfcalw,
+        den_steel=den_steel,
+        den_pf_conductor=den_pf_conductor,
+        topology=topology,
+    )
+    pad = jnp.zeros(NGC2)
+    return (
+        pad.at[:n].set(m_conductor),
+        pad.at[:n].set(m_structure),
+        pad.at[:n].set(pfcaseth),
+        m_conductor_total,
+        m_structure_total,
+        m_pf_coil_max,
+        ricpf,
+    )
+
+
 class PFCoilMassesNoCentralSolenoid(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.masses`, the `iohcl = 0` occupant.
 
@@ -882,43 +945,24 @@ class PFCoilMassesNoCentralSolenoid(ExplicitFunction):
             tfcoil.dcond[I_PF_SUPERCONDUCTOR_HAZELTON_ZHAI_REBCO - 1]
         ),
     ):
-        n = self.topology.n_pf_coils
-        (
-            m_conductor,
-            m_structure,
-            pfcaseth,
-            m_conductor_total,
-            m_structure_total,
-            m_pf_coil_max,
-            ricpf,
-        ) = calculate_pf_coil_masses_no_central_solenoid(
-            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[: self.topology.n_cs_pf_coils],
-            j_pf_coil_wp_peak=j_pf_coil_wp_peak[:n],
-            n_pf_coil_turns=n_pf_coil_turns[:n],
-            r_pf_coil_middle=r_pf_coil_middle[:n],
-            r_pf_coil_inner=r_pf_coil_inner[:n],
-            r_pf_coil_outer=r_pf_coil_outer[:n],
-            z_pf_coil_upper=z_pf_coil_upper[:n],
-            z_pf_coil_lower=z_pf_coil_lower[:n],
-            b_pf_coil_peak=b_pf_coil_peak[:n],
-            bpf2=bpf2[:n],
-            f_a_pf_coil_void=f_a_pf_coil_void[:n],
+        return calculate_pf_coil_masses_no_central_solenoid_for_topology(
+            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
+            j_pf_coil_wp_peak=j_pf_coil_wp_peak,
+            n_pf_coil_turns=n_pf_coil_turns,
+            r_pf_coil_middle=r_pf_coil_middle,
+            r_pf_coil_inner=r_pf_coil_inner,
+            r_pf_coil_outer=r_pf_coil_outer,
+            z_pf_coil_upper=z_pf_coil_upper,
+            z_pf_coil_lower=z_pf_coil_lower,
+            b_pf_coil_peak=b_pf_coil_peak,
+            bpf2=bpf2,
+            f_a_pf_coil_void=f_a_pf_coil_void,
             pf_current_safety_factor=pf_current_safety_factor,
             sigpfcf=sigpfcf,
             sigpfcalw=sigpfcalw,
             den_steel=den_steel,
             den_pf_conductor=den_pf_conductor,
             topology=self.topology,
-        )
-        pad = jnp.zeros(NGC2)
-        return (
-            pad.at[:n].set(m_conductor),
-            pad.at[:n].set(m_structure),
-            pad.at[:n].set(pfcaseth),
-            m_conductor_total,
-            m_structure_total,
-            m_pf_coil_max,
-            ricpf,
         )
 
 

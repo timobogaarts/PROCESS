@@ -524,6 +524,62 @@ def calculate_pf_plasma_inductances_no_central_solenoid(
     )
 
 
+def calculate_pf_cs_plasma_inductances_at_reference_width(
+    rmajor,
+    ind_plasma,
+    dr_cs,
+    r_cs_middle,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    r_pf_coil_inner,
+    r_pf_coil_outer,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    n_pf_coil_turns,
+):
+    """`PFCoilInductance`: trims every coil array to `N_CS_PF_COILS` entries."""
+    return calculate_pf_cs_plasma_inductances(
+        rmajor=rmajor,
+        ind_plasma=ind_plasma,
+        dr_cs=dr_cs,
+        r_cs_middle=r_cs_middle,
+        r_pf_coil_middle=r_pf_coil_middle[:N_CS_PF_COILS],
+        z_pf_coil_middle=z_pf_coil_middle[:N_CS_PF_COILS],
+        r_pf_coil_inner=r_pf_coil_inner[:N_CS_PF_COILS],
+        r_pf_coil_outer=r_pf_coil_outer[:N_CS_PF_COILS],
+        z_pf_coil_upper=z_pf_coil_upper[:N_CS_PF_COILS],
+        z_pf_coil_lower=z_pf_coil_lower[:N_CS_PF_COILS],
+        n_pf_coil_turns=n_pf_coil_turns[:N_CS_PF_COILS],
+    )
+
+
+def calculate_pf_plasma_inductances_no_central_solenoid_for_topology(
+    rmajor,
+    ind_plasma,
+    r_pf_coil_middle,
+    z_pf_coil_middle,
+    z_pf_coil_upper,
+    z_pf_coil_lower,
+    n_pf_coil_turns,
+    *,
+    topology,
+):
+    """`PFCoilInductanceNoCentralSolenoid`: trims every coil array to
+    `topology.n_cs_pf_coils` entries.
+    """
+    n = topology.n_cs_pf_coils
+    return calculate_pf_plasma_inductances_no_central_solenoid(
+        rmajor=rmajor,
+        ind_plasma=ind_plasma,
+        r_pf_coil_middle=r_pf_coil_middle[:n],
+        z_pf_coil_middle=z_pf_coil_middle[:n],
+        z_pf_coil_upper=z_pf_coil_upper[:n],
+        z_pf_coil_lower=z_pf_coil_lower[:n],
+        n_pf_coil_turns=n_pf_coil_turns[:n],
+        topology=topology,
+    )
+
+
 class PFCoilInductance(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.inductance`.
 
@@ -562,18 +618,18 @@ class PFCoilInductance(ExplicitFunction):
         z_pf_coil_lower=From(pf_coil),
         n_pf_coil_turns=From(pf_coil),
     ):
-        return calculate_pf_cs_plasma_inductances(
+        return calculate_pf_cs_plasma_inductances_at_reference_width(
             rmajor=rmajor,
             ind_plasma=ind_plasma,
             dr_cs=dr_cs,
             r_cs_middle=r_cs_middle,
-            r_pf_coil_middle=r_pf_coil_middle[:N_CS_PF_COILS],
-            z_pf_coil_middle=z_pf_coil_middle[:N_CS_PF_COILS],
-            r_pf_coil_inner=r_pf_coil_inner[:N_CS_PF_COILS],
-            r_pf_coil_outer=r_pf_coil_outer[:N_CS_PF_COILS],
-            z_pf_coil_upper=z_pf_coil_upper[:N_CS_PF_COILS],
-            z_pf_coil_lower=z_pf_coil_lower[:N_CS_PF_COILS],
-            n_pf_coil_turns=n_pf_coil_turns[:N_CS_PF_COILS],
+            r_pf_coil_middle=r_pf_coil_middle,
+            z_pf_coil_middle=z_pf_coil_middle,
+            r_pf_coil_inner=r_pf_coil_inner,
+            r_pf_coil_outer=r_pf_coil_outer,
+            z_pf_coil_upper=z_pf_coil_upper,
+            z_pf_coil_lower=z_pf_coil_lower,
+            n_pf_coil_turns=n_pf_coil_turns,
         )
 
 
@@ -605,14 +661,13 @@ class PFCoilInductanceNoCentralSolenoid(ExplicitFunction):
         z_pf_coil_lower=From(pf_coil),
         n_pf_coil_turns=From(pf_coil),
     ):
-        n = self.topology.n_cs_pf_coils
-        return calculate_pf_plasma_inductances_no_central_solenoid(
+        return calculate_pf_plasma_inductances_no_central_solenoid_for_topology(
             rmajor=rmajor,
             ind_plasma=ind_plasma,
-            r_pf_coil_middle=r_pf_coil_middle[:n],
-            z_pf_coil_middle=z_pf_coil_middle[:n],
-            z_pf_coil_upper=z_pf_coil_upper[:n],
-            z_pf_coil_lower=z_pf_coil_lower[:n],
-            n_pf_coil_turns=n_pf_coil_turns[:n],
+            r_pf_coil_middle=r_pf_coil_middle,
+            z_pf_coil_middle=z_pf_coil_middle,
+            z_pf_coil_upper=z_pf_coil_upper,
+            z_pf_coil_lower=z_pf_coil_lower,
+            n_pf_coil_turns=n_pf_coil_turns,
             topology=self.topology,
         )

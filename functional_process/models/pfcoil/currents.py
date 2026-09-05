@@ -756,6 +756,198 @@ def calculate_time_point_currents_no_central_solenoid(
     return start, flat, end, ratio * jnp.ones_like(f_j_cs_start_pulse_end_flat_top)
 
 
+# ---------------------------------------------------------------------------
+# Wrapped occupant bodies, `_audit/formulas_split.md` step 1: each of these used to be
+# inline in a declaration's `__call__` (deriving `n_groups` from `self.topology` and
+# slicing the group arrays to it, or indexing a single coil out of a full-width array)
+# before delegating to the `calculate_*` function above. The `calculate_*` signatures
+# above are untouched -- direct ports this unit's tier-1 tests bind to -- so the slicing
+# moves to a new function per occupant instead.
+# ---------------------------------------------------------------------------
+
+
+def calculate_plasma_initiation_currents_for_topology(
+    rmajor,
+    rminor,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    r_cs_middle,
+    dz_cs_full,
+    a_cs_poloidal,
+    j_cs_flat_top_end,
+    f_j_cs_start_pulse_end_flat_top,
+    alfapf,
+    *,
+    topology,
+):
+    """`PFCoilInitiationCurrents`: slices the two group arrays to `topology`'s width."""
+    n_groups = topology.n_pf_coil_groups
+    return calculate_plasma_initiation_currents(
+        rmajor=rmajor,
+        rminor=rminor,
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+        r_cs_middle=r_cs_middle,
+        dz_cs_full=dz_cs_full,
+        a_cs_poloidal=a_cs_poloidal,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        alfapf=alfapf,
+        topology=topology,
+    )
+
+
+def calculate_plasma_initiation_currents_no_central_solenoid_for_topology(
+    rmajor,
+    rminor,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    alfapf,
+    *,
+    topology,
+):
+    """`PFCoilInitiationCurrentsNoCentralSolenoid`: slices both group arrays to
+    `topology`'s width.
+    """
+    n_groups = topology.n_pf_coil_groups
+    return calculate_plasma_initiation_currents_no_central_solenoid(
+        rmajor=rmajor,
+        rminor=rminor,
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+        alfapf=alfapf,
+        topology=topology,
+    )
+
+
+def calculate_equilibrium_currents_for_topology(
+    rmajor,
+    rminor,
+    kappa,
+    aspect,
+    plasma_current,
+    beta_poloidal_vol_avg,
+    ind_plasma_internal_norm,
+    r_pf_coil_middle_group_array,
+    z_pf_coil_middle_group_array,
+    alfapf,
+    *,
+    topology,
+):
+    """`PFCoilEquilibriumCurrents`: slices both group arrays to `topology`'s width."""
+    n_groups = topology.n_pf_coil_groups
+    return calculate_equilibrium_currents(
+        rmajor=rmajor,
+        rminor=rminor,
+        kappa=kappa,
+        aspect=aspect,
+        plasma_current=plasma_current,
+        beta_poloidal_vol_avg=beta_poloidal_vol_avg,
+        ind_plasma_internal_norm=ind_plasma_internal_norm,
+        r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
+        z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+        alfapf=alfapf,
+        topology=topology,
+    )
+
+
+def calculate_cs_flux_swing_for_topology(
+    ccls,
+    ind_pf_cs_plasma_mutual,
+    n_pf_coil_turns,
+    vs_plasma_ramp_required,
+    dr_cs_bore,
+    dr_cs,
+    dz_cs_full,
+    a_cs_poloidal,
+    j_cs_flat_top_end,
+    f_j_cs_start_pulse_end_flat_top,
+    *,
+    topology,
+):
+    """`CSFluxSwing`: trims `ccls` and `n_pf_coil_turns` to `topology`'s width and picks
+    the plasma column out of the mutual-inductance matrix.
+    """
+    n_pf_coils = topology.n_pf_coils
+    return calculate_cs_flux_swing(
+        ccls=ccls[: topology.n_pf_coil_groups],
+        ind_pf_cs_plasma_mutual_column=ind_pf_cs_plasma_mutual[
+            :n_pf_coils, topology.plasma_index
+        ],
+        n_pf_coil_turns=n_pf_coil_turns[:n_pf_coils],
+        vs_plasma_ramp_required=vs_plasma_ramp_required,
+        dr_cs_bore=dr_cs_bore,
+        dr_cs=dr_cs,
+        dz_cs_full=dz_cs_full,
+        a_cs_poloidal=a_cs_poloidal,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        topology=topology,
+    )
+
+
+def calculate_time_point_currents_for_topology(
+    ccl0,
+    ccls,
+    a_cs_poloidal,
+    j_cs_flat_top_end,
+    f_j_cs_start_pulse_end_flat_top,
+    f_j_cs_start_end_flat_top,
+    *,
+    topology,
+):
+    """`PFCoilTimePointCurrents`: pads the three time-point currents out to `NGC2` and
+    unit-converts `ccl0`/`ccls` into the `_ma` fields the occupant also owns.
+    """
+    start, flat, end = calculate_time_point_currents(
+        ccl0=ccl0,
+        ccls=ccls,
+        a_cs_poloidal=a_cs_poloidal,
+        j_cs_flat_top_end=j_cs_flat_top_end,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        f_j_cs_start_end_flat_top=f_j_cs_start_end_flat_top,
+        topology=topology,
+    )
+    pad = jnp.zeros(NGC2)
+    filled = topology.n_cs_pf_coils
+    return (
+        pad.at[:filled].set(start),
+        pad.at[:filled].set(flat),
+        pad.at[:filled].set(end),
+        1.0e-6 * ccl0,
+        1.0e-6 * ccls,
+    )
+
+
+def calculate_time_point_currents_no_central_solenoid_for_topology(
+    ccl0,
+    ccls,
+    f_j_cs_start_pulse_end_flat_top,
+    *,
+    topology,
+):
+    """`PFCoilTimePointCurrentsNoCentralSolenoid`: pads the three time-point currents
+    out to `NGC2` and unit-converts `ccl0`/`ccls`, alongside the ratio this occupant
+    also owns.
+    """
+    start, flat, end, ratio = calculate_time_point_currents_no_central_solenoid(
+        ccl0=ccl0,
+        ccls=ccls,
+        f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
+        topology=topology,
+    )
+    pad = jnp.zeros(NGC2)
+    filled = topology.n_cs_pf_coils
+    return (
+        pad.at[:filled].set(start),
+        pad.at[:filled].set(flat),
+        pad.at[:filled].set(end),
+        1.0e-6 * ccl0,
+        1.0e-6 * ccls,
+        ratio,
+    )
+
+
 class CSCurrentDensityPulseStart(ExplicitFunction):
     """cottax node: `.tokamak.cs_coil.current_density_pulse_start`.
 
@@ -806,12 +998,11 @@ class PFCoilInitiationCurrents(ExplicitFunction):
         f_j_cs_start_pulse_end_flat_top=From(pf_coil),
         alfapf=From(pf_coil),
     ):
-        n_groups = self.topology.n_pf_coil_groups
-        return calculate_plasma_initiation_currents(
+        return calculate_plasma_initiation_currents_for_topology(
             rmajor=rmajor,
             rminor=rminor,
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
             r_cs_middle=r_cs_middle,
             dz_cs_full=dz_cs_full,
             a_cs_poloidal=a_cs_poloidal,
@@ -842,12 +1033,11 @@ class PFCoilInitiationCurrentsNoCentralSolenoid(PFCoilInitiationCurrents):
         z_pf_coil_middle_group_array=From(pf_coil),
         alfapf=From(pf_coil),
     ):
-        n_groups = self.topology.n_pf_coil_groups
-        return calculate_plasma_initiation_currents_no_central_solenoid(
+        return calculate_plasma_initiation_currents_no_central_solenoid_for_topology(
             rmajor=rmajor,
             rminor=rminor,
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
             alfapf=alfapf,
             topology=self.topology,
         )
@@ -893,8 +1083,7 @@ class PFCoilEquilibriumCurrents(ExplicitFunction):
         z_pf_coil_middle_group_array=From(pf_coil),
         alfapf=From(pf_coil),
     ):
-        n_groups = self.topology.n_pf_coil_groups
-        return calculate_equilibrium_currents(
+        return calculate_equilibrium_currents_for_topology(
             rmajor=rmajor,
             rminor=rminor,
             kappa=kappa,
@@ -902,8 +1091,8 @@ class PFCoilEquilibriumCurrents(ExplicitFunction):
             plasma_current=plasma_current,
             beta_poloidal_vol_avg=beta_poloidal_vol_avg,
             ind_plasma_internal_norm=ind_plasma_internal_norm,
-            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array[:n_groups],
-            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array[:n_groups],
+            r_pf_coil_middle_group_array=r_pf_coil_middle_group_array,
+            z_pf_coil_middle_group_array=z_pf_coil_middle_group_array,
             alfapf=alfapf,
             topology=self.topology,
         )
@@ -939,13 +1128,10 @@ class CSFluxSwing(ExplicitFunction):
         j_cs_flat_top_end=From(pf_coil),
         f_j_cs_start_pulse_end_flat_top=From(pf_coil),
     ):
-        n_pf_coils = self.topology.n_pf_coils
-        return calculate_cs_flux_swing(
-            ccls=ccls[: self.topology.n_pf_coil_groups],
-            ind_pf_cs_plasma_mutual_column=ind_pf_cs_plasma_mutual[
-                :n_pf_coils, self.topology.plasma_index
-            ],
-            n_pf_coil_turns=n_pf_coil_turns[:n_pf_coils],
+        return calculate_cs_flux_swing_for_topology(
+            ccls=ccls,
+            ind_pf_cs_plasma_mutual=ind_pf_cs_plasma_mutual,
+            n_pf_coil_turns=n_pf_coil_turns,
             vs_plasma_ramp_required=vs_plasma_ramp_required,
             dr_cs_bore=dr_cs_bore,
             dr_cs=dr_cs,
@@ -984,7 +1170,7 @@ class PFCoilTimePointCurrents(ExplicitFunction):
         f_j_cs_start_pulse_end_flat_top=From(pf_coil),
         f_j_cs_start_end_flat_top=From(pf_coil),
     ):
-        start, flat, end = calculate_time_point_currents(
+        return calculate_time_point_currents_for_topology(
             ccl0=ccl0,
             ccls=ccls,
             a_cs_poloidal=a_cs_poloidal,
@@ -992,15 +1178,6 @@ class PFCoilTimePointCurrents(ExplicitFunction):
             f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
             f_j_cs_start_end_flat_top=f_j_cs_start_end_flat_top,
             topology=self.topology,
-        )
-        pad = jnp.zeros(NGC2)
-        filled = self.topology.n_cs_pf_coils
-        return (
-            pad.at[:filled].set(start),
-            pad.at[:filled].set(flat),
-            pad.at[:filled].set(end),
-            1.0e-6 * ccl0,
-            1.0e-6 * ccls,
         )
 
 
@@ -1036,19 +1213,9 @@ class PFCoilTimePointCurrentsNoCentralSolenoid(PFCoilTimePointCurrents):
         ccls=From(pf_coil),
         f_j_cs_start_pulse_end_flat_top=From(pf_coil),
     ):
-        start, flat, end, ratio = calculate_time_point_currents_no_central_solenoid(
+        return calculate_time_point_currents_no_central_solenoid_for_topology(
             ccl0=ccl0,
             ccls=ccls,
             f_j_cs_start_pulse_end_flat_top=f_j_cs_start_pulse_end_flat_top,
             topology=self.topology,
-        )
-        pad = jnp.zeros(NGC2)
-        filled = self.topology.n_cs_pf_coils
-        return (
-            pad.at[:filled].set(start),
-            pad.at[:filled].set(flat),
-            pad.at[:filled].set(end),
-            1.0e-6 * ccl0,
-            1.0e-6 * ccls,
-            ratio,
         )

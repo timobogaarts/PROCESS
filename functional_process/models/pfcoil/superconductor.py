@@ -655,6 +655,44 @@ def _cs_temperature_margin_pair(
     )
 
 
+def calculate_cs_critical_current_densities(
+    critical_surface,
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+    a_cs_cable_space,
+    a_cs_poloidal,
+):
+    """`CSCriticalCurrentDensitiesIterNb3Sn`/`CSCriticalCurrentDensitiesWstNb3Sn`:
+    evaluates the arm's critical surface at both time points and derives the strand
+    density from the flat-top-end conductor density.
+    """
+    shared = {
+        "f_a_cs_void": f_a_cs_void,
+        "fcuohsu": fcuohsu,
+        "strain": str_cs_con_res,
+        "temp_cs_superconductor_operating": temp_cs_superconductor_operating,
+        "a_cs_cable_space": a_cs_cable_space,
+        "a_cs_poloidal": a_cs_poloidal,
+    }
+    j_flat_top_end, j_cond_flat_top_end = critical_surface(
+        b_cs_peak=b_cs_peak_flat_top_end, **shared
+    )
+    j_pulse_start, j_cond_pulse_start = critical_surface(
+        b_cs_peak=b_cs_peak_pulse_start, **shared
+    )
+    return (
+        j_flat_top_end,
+        j_pulse_start,
+        j_cond_flat_top_end,
+        j_cond_pulse_start,
+        calculate_cs_strand_critical_current_density(j_cond_flat_top_end, fcuohsu),
+    )
+
+
 class CSCriticalCurrentDensitiesIterNb3Sn(ExplicitFunction):
     """cottax node: `.tokamak.cs_coil.critical_current`, `i_cs_superconductor == 1`.
 
@@ -706,26 +744,16 @@ class CSCriticalCurrentDensitiesIterNb3Sn(ExplicitFunction):
         a_cs_cable_space=From(pf_coil),
         a_cs_poloidal=From(pf_coil),
     ):
-        shared = {
-            "f_a_cs_void": f_a_cs_void,
-            "fcuohsu": fcuohsu,
-            "strain": str_cs_con_res,
-            "temp_cs_superconductor_operating": temp_cs_superconductor_operating,
-            "a_cs_cable_space": a_cs_cable_space,
-            "a_cs_poloidal": a_cs_poloidal,
-        }
-        j_flat_top_end, j_cond_flat_top_end = self._critical_surface(
-            b_cs_peak=b_cs_peak_flat_top_end, **shared
-        )
-        j_pulse_start, j_cond_pulse_start = self._critical_surface(
-            b_cs_peak=b_cs_peak_pulse_start, **shared
-        )
-        return (
-            j_flat_top_end,
-            j_pulse_start,
-            j_cond_flat_top_end,
-            j_cond_pulse_start,
-            calculate_cs_strand_critical_current_density(j_cond_flat_top_end, fcuohsu),
+        return calculate_cs_critical_current_densities(
+            critical_surface=self._critical_surface,
+            b_cs_peak_flat_top_end=b_cs_peak_flat_top_end,
+            b_cs_peak_pulse_start=b_cs_peak_pulse_start,
+            f_a_cs_void=f_a_cs_void,
+            fcuohsu=fcuohsu,
+            str_cs_con_res=str_cs_con_res,
+            temp_cs_superconductor_operating=temp_cs_superconductor_operating,
+            a_cs_cable_space=a_cs_cable_space,
+            a_cs_poloidal=a_cs_poloidal,
         )
 
 
@@ -748,6 +776,33 @@ class CSCriticalCurrentDensitiesWstNb3Sn(CSCriticalCurrentDensitiesIterNb3Sn):
     """
 
     _critical_surface = staticmethod(calculate_cs_critical_current_density_wst_nb3sn)
+
+
+def calculate_cs_temperature_margin_from_full_width_current(
+    critical_surface,
+    b_cs_peak_flat_top_end,
+    b_cs_peak_pulse_start,
+    c_pf_cs_coils_peak_ma,
+    a_cs_cable_space,
+    f_a_cs_void,
+    fcuohsu,
+    str_cs_con_res,
+    temp_cs_superconductor_operating,
+):
+    """`CSTemperatureMarginIterNb3Sn`/`CSTemperatureMarginWstNb3Sn`: picks the CS's own
+    peak current out of the full-width array before calling the arm's temperature-margin
+    fit.
+    """
+    return critical_surface(
+        b_cs_peak_flat_top_end=b_cs_peak_flat_top_end,
+        b_cs_peak_pulse_start=b_cs_peak_pulse_start,
+        c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[CS_INDEX],
+        a_cs_cable_space=a_cs_cable_space,
+        f_a_cs_void=f_a_cs_void,
+        fcuohsu=fcuohsu,
+        strain=str_cs_con_res,
+        temp_cs_superconductor_operating=temp_cs_superconductor_operating,
+    )
 
 
 class CSTemperatureMarginIterNb3Sn(ExplicitFunction):
@@ -790,14 +845,15 @@ class CSTemperatureMarginIterNb3Sn(ExplicitFunction):
         str_cs_con_res=From(tfcoil),
         temp_cs_superconductor_operating=From(pf_coil),
     ):
-        return self._critical_surface(
+        return calculate_cs_temperature_margin_from_full_width_current(
+            critical_surface=self._critical_surface,
             b_cs_peak_flat_top_end=b_cs_peak_flat_top_end,
             b_cs_peak_pulse_start=b_cs_peak_pulse_start,
-            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma[CS_INDEX],
+            c_pf_cs_coils_peak_ma=c_pf_cs_coils_peak_ma,
             a_cs_cable_space=a_cs_cable_space,
             f_a_cs_void=f_a_cs_void,
             fcuohsu=fcuohsu,
-            strain=str_cs_con_res,
+            str_cs_con_res=str_cs_con_res,
             temp_cs_superconductor_operating=temp_cs_superconductor_operating,
         )
 
@@ -861,6 +917,32 @@ class PFStrandCriticalCurrentDensity(ExplicitFunction):
         )
 
 
+def calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology(
+    b_pf_coil_peak,
+    bpf2,
+    tftmp,
+    fcupfsu,
+    dr_tf_hts_tape,
+    dx_tf_hts_tape_rebco,
+    dx_tf_hts_tape_total,
+    *,
+    topology,
+):
+    """`PFStrandCriticalCurrentDensityHazeltonZhaiRebco`: picks the last PF coil's peak
+    field out of the whole-array reads.
+    """
+    last = topology.n_pf_coils - 1
+    return calculate_pf_strand_critical_current_density_hazelton_zhai_rebco(
+        b_pf_coil_peak=b_pf_coil_peak[last],
+        bpf2=bpf2[last],
+        temp_pf_peak_field=tftmp,
+        fcupfsu=fcupfsu,
+        dr_hts_tape=dr_tf_hts_tape,
+        dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
+        dx_hts_tape_total=dx_tf_hts_tape_total,
+    )
+
+
 class PFStrandCriticalCurrentDensityHazeltonZhaiRebco(ExplicitFunction):
     """cottax node: `.tokamak.pf_coil.strand_critical_current`,
     `i_pf_superconductor == 9`.
@@ -898,15 +980,15 @@ class PFStrandCriticalCurrentDensityHazeltonZhaiRebco(ExplicitFunction):
         dx_tf_hts_tape_rebco=From(superconducting_tfcoil),
         dx_tf_hts_tape_total=From(superconducting_tfcoil),
     ):
-        last = self.topology.n_pf_coils - 1
-        return calculate_pf_strand_critical_current_density_hazelton_zhai_rebco(
-            b_pf_coil_peak=b_pf_coil_peak[last],
-            bpf2=bpf2[last],
-            temp_pf_peak_field=tftmp,
+        return calculate_pf_strand_critical_current_density_hazelton_zhai_rebco_topology(
+            b_pf_coil_peak=b_pf_coil_peak,
+            bpf2=bpf2,
+            tftmp=tftmp,
             fcupfsu=fcupfsu,
-            dr_hts_tape=dr_tf_hts_tape,
-            dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
-            dx_hts_tape_total=dx_tf_hts_tape_total,
+            dr_tf_hts_tape=dr_tf_hts_tape,
+            dx_tf_hts_tape_rebco=dx_tf_hts_tape_rebco,
+            dx_tf_hts_tape_total=dx_tf_hts_tape_total,
+            topology=self.topology,
         )
 
 

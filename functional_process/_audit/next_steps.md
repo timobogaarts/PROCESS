@@ -43,10 +43,15 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   87–333 and one catastrophic stop. Cost and the three rejected repairs are in
   `tried_and_rejected.md`. **Still open**: nine of twenty-six separation jumps are
   active-set changes rather than kink crossings, and are unexplained.
-- **The SLSQP driver has never been run across the full seven-configuration matrix.** It
-  would separate "this problem is degenerate" from "VMCON handles degeneracy badly", and
-  for SAND there is no PROCESS answer to compare against at all, so a second independent
-  optimiser is the closest thing to an oracle available.
+- **[resolved 2026-09-05] The SLSQP driver has now been run across the full
+  seven-configuration matrix** (`run_cold_matrix.py --slsqp`, published as
+  `reference_slsqp_matrix.txt`; `optimise_design.md` §42). 9 of 12 rows converge and
+  agree with VMCON on the answer, several with better constraint residuals and one in
+  17 iterations against 79. **Still open**: `helias_5b` fails on *both* arms at iteration
+  1 with scipy's *"Singular matrix C in LSQ subproblem"* -- a rank-deficient constraint
+  Jacobian at the cold start that VMCON's QP survives and scipy's does not. That is
+  evidence about the problem, and nobody has looked at which constraints are dependent
+  there. `stellarator_helias` SAND hits the 500 cap under SLSQP where VMCON takes 24.
 - **Two unexplained boundary offsets, both on `.heat_transport.p_plant_electric_net_mw`**
   via constraint c16: `spherical_tokamak_eval` shows a `-16.35 MW` offset at PROCESS's own
   converged point, of the same shape as `mda_harness.EXPLAINED_DISAGREEMENTS`' documented
@@ -63,6 +68,39 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   coupling that happens to look like the identity at that point is silently dropped.
   Should sample several points and refuse on disagreement, matching the rest of the
   port's "can't verify → refuse, don't report healthy" discipline.
+- **[resolved 2026-09-05] `SlsqpDriver` derived at points nothing asked about.** Two
+  defects, not one: `at` cached value and Jacobian together, and the per-iterate callback
+  built a full `pyvmcon.Result` whose three derivative fields no callback in this tree
+  reads. Jacobian programs on `stellarator_helias` went 3 557 -> 1 014 -> **527**, which
+  is scipy's own `njev` exactly; the capped SAND arm went 22.2 s to 19.5 s and every row
+  is unchanged (`optimise_design.md` §43).
+- **The remaining warm-solve cost is host-side, not evaluation.** The stellarator arms
+  already spend only 87-164 ms in XLA per solve; 425-552 ms goes to `pyvmcon` rebuilding
+  its `cvxpy` QP every iteration and to `host_cache.call`/`__eq__` per-call overhead
+  (§41, §43). A parametrised (DPP) `cvxpy` problem reused across iterations is the one
+  large lever, and it is upstream of this port. The SLSQP arms' `sqp` phase reading 0.0 s
+  on all twelve rows is the evidence that this is one library's allocation pattern and
+  not anything structural.
+- **`run_cold_matrix.main`'s docstring claims `--cache` gives "bitwise-identical
+  rows", and that has never been tested as stated.** It survived the one direct check
+  made of it (§42: a fresh cache reproduces the uncached numbers on `st_regression`),
+  but the claim is about all twelve rows and the check was two.
+- **Twenty declarations are unreferenced but only some are dead**, and the distinction is
+  worth keeping: a declaration naming the same field as both an output and a read is
+  refused by `to_graph` outright and can never be wired by anyone; one that is merely
+  unreferenced is a valid arm nobody has wired *yet*. Three of the first kind were
+  deleted 2026-09-05 (`PlantElectricProduction`, `PlantThermalEfficiency`,
+  `PlantThermalEfficiency2`). `Cryo` is the fourth and is **kept**: it has a live test
+  asserting `to_graph(Cryo(...))` raises, which is what stops someone "fixing" the split
+  by re-merging it. The other seventeen are valid unwired arms -- the eight `Jcrit*` are
+  `i_tf_sc_mat == 1..8`, `TfMagnetCostResistive` says in its own docstring it is ported
+  but deliberately unregistered, `WessonInternalInductance` names
+  `large_tokamak_eval.IN.DAT:311` as its arm -- and deleting them would remove
+  capability, not garbage. The mechanical test is
+  `_audit/declaration_census.py`'s sibling reasoning; re-derive it rather than trusting
+  this list. **Open**: the other three ungraphable-by-construction classes have no test
+  pinning why, where `Cryo` does. Giving them one would be better than either keeping
+  them silently or deleting them.
 - **`--provider` should be retired in favour of `--native` as the default** — understood,
   not done. The comparison axis (`--compare-process`) already exists independently.
 - **The reduced-space MDF formulation is unbuilt**: let the graph close the equality

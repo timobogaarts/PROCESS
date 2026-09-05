@@ -118,7 +118,10 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     value *and* derivative at every point it evaluates, so a fused program costs it
     nothing and saves the whole value-only trace/lower/compile;
     `scipy.optimize.minimize(method="SLSQP")` calls `fun` alone during its line search,
-    so fusing there would pay a full Jacobian per trial point. This function therefore
+    so fusing there would pay a full Jacobian per trial point. That second half held
+    only from 2026-09-05, when `SlsqpDriver`'s evaluation cache was made lazy -- before
+    that it derived at every point and the sentence described an intention rather than
+    the code (`_audit/optimise_design.md` §42). This function therefore
     hands out all three and lets the driver choose -- see `host_cache.bind`. It is
     **not** bitwise, and `VmconDriver.fused` chooses it by default anyway since
     2026-09-05; that field's docstring carries the measurement and the row it once
@@ -824,56 +827,143 @@ class SlsqpDriver(AbstractDriver):
         max_iter, tolerance = self.max_iter, self.tolerance
 
         def host(live, flat_start):
-            # `_both` discarded on purpose. `scipy`'s SLSQP takes separate `fun` and
-            # `jac` callables and its line search calls `fun` alone at trial points, so
-            # the fused program would pay a whole Jacobian for each of those. The `at`
-            # cache below already removes the *duplicate* evaluation SLSQP would
-            # otherwise make at one point; what it cannot remove is a derivative scipy
-            # never asked for.
+            # `_both` discarded on purpose. `scipy`'s SLSQP takes separate `fun`
+            # and `jac` callables and its line search calls `fun` alone at trial points,
+            # so a fused program would pay a whole Jacobian for each of those.
+            #
+            # **That argument is only true because the cache below is lazy, and for a
+            # while it was not** (`_audit/optimise_design.md` §42, correction 3). `at`
+            # used to derive at every distinct point regardless, so the saving this
+            # sentence claims was never taken: the capped `stellarator_helias` SAND arm
+            # computed `nfev 3518` Jacobians against the `njev 501` scipy asked for. An
+            # argument about what a caller *asks* for is worth nothing until the code
+            # only computes what is asked.
             evaluate, jacobian, _both, _unravel, scale, _, (lower, upper) = (
                 scaled_problem(driver, live, flat_start, unravel)
             )
             x0 = flat_start * scale
 
-            # One evaluation per point, reused by objective and every constraint: SLSQP
-            # calls `fun`, `jac` and each constraint separately at the same `x`, and an
-            # evaluation here converges a whole block.
+            # One evaluation per point, reused by objective and every constraint:
+            # SLSQP calls `fun`, `jac` and each constraint separately at the same `x`,
+            # and an evaluation here converges a whole block.
+            #
+            # **Lazily, in both halves separately** -- the value and the Jacobian are
+            # cached independently, so a point `scipy` only ever asks a *value* for
+            # costs a value. That is the line search, and it is most of what SLSQP
+            # does: before this split, `at` derived at every distinct point and the
+            # capped `stellarator_helias` SAND arm computed `nfev 3518` Jacobians
+            # against the `njev 501` scipy asked for (`_audit/optimise_design.md` §42).
+            #
+            # The two-slot cache is not an optimisation either. One slot is enough for
+            # the value, because scipy asks `fun` and every constraint's `fun` at one
+            # point before moving on -- but the *callback* runs after the line search
+            # has already walked past the accepted iterate, so a single slot would
+            # evict the point the callback is about to ask about and re-derive it every
+            # iteration. Two slots make that a hit, which is why this is a small
+            # `dict` walked in insertion order rather than one entry replaced.
             cache: dict = {}
+            KEPT = 2
 
-            def at(x):
+            def _slot(x):
                 key = x.tobytes()
                 if key not in cache:
-                    cache.clear()  # only the current point is ever wanted
-                    cache[key] = (evaluate(x), jacobian(x))
+                    while len(cache) >= KEPT:
+                        del cache[next(iter(cache))]
+                    cache[key] = [None, None]
                 return cache[key]
+
+            def values_at(x):
+                slot = _slot(x)
+                if slot[0] is None:
+                    slot[0] = evaluate(x)
+                return slot[0]
+
+            def jacobian_at(x):
+                slot = _slot(x)
+                if slot[1] is None:
+                    slot[1] = jacobian(x)
+                return slot[1]
 
             iteration = [0]
 
             def objective(x):
-                return float(at(np.asarray(x))[0][0])
+                return float(values_at(np.asarray(x))[0])
 
             def objective_gradient(x):
-                return at(np.asarray(x))[1][0]
+                return jacobian_at(np.asarray(x))[0]
 
             constraints = [
                 {
                     "type": "eq",
-                    "fun": lambda x: at(np.asarray(x))[0][1 : 1 + meq],
-                    "jac": lambda x: at(np.asarray(x))[1][1 : 1 + meq],
+                    "fun": lambda x: values_at(np.asarray(x))[1 : 1 + meq],
+                    "jac": lambda x: jacobian_at(np.asarray(x))[1 : 1 + meq],
                 },
                 {
                     # cottax `g <= 0` -> SLSQP `c(x) >= 0`.
                     "type": "ineq",
-                    "fun": lambda x: -at(np.asarray(x))[0][1 + meq :],
-                    "jac": lambda x: -at(np.asarray(x))[1][1 + meq :],
+                    "fun": lambda x: -values_at(np.asarray(x))[1 + meq :],
+                    "jac": lambda x: -jacobian_at(np.asarray(x))[1 + meq :],
                 },
             ]
             constraints = [c for c in constraints if len(np.atleast_1d(c["fun"](x0)))]
 
+            class _Iterate:
+                """What one accepted iterate looks like to a `callback`.
+
+                Duck-compatible with `pyvmcon.Result` -- same six attributes, same sign
+                convention as `VmconDriver._Problem.__call__` -- because a callback
+                written against one driver has to read the same numbers from the other
+                or the two are not comparable, which is the whole point of running
+                SLSQP at all (`run_cold_matrix._recorder` is the caller that forced
+                this).
+
+                **The three derivative attributes are lazy, and that is not tidiness.**
+                Every callback in this tree reads `f`, `eq` and `ie` and none reads
+                `df`, `deq` or `die`; building them eagerly ran a Jacobian program per
+                iteration that nothing consumed. Measured on `stellarator_helias`, both
+                arms, `--native`: **1 014 Jacobian programs against the 527 scipy asked
+                for**, so the callback was doubling a solve's derivative cost by itself
+                (`_audit/optimise_design.md` §43).
+
+                A `pyvmcon.Result` cannot be lazy -- it is a plain record and pyvmcon
+                needs every field -- so this is a separate class and not a subclass. It
+                never reaches pyvmcon; `VmconDriver` builds the real one.
+
+                The value half stays eager because the callback always reads it, and it
+                is a cache hit: the cache keeps two points, so the line search walking
+                past the accepted iterate before the callback runs does not evict it.
+                """
+
+                def __init__(self, x):
+                    values = values_at(x)
+                    self._x = x
+                    self.f = values[0]
+                    self.eq = values[1 : 1 + meq]
+                    self.ie = -values[1 + meq :]
+
+                @property
+                def df(self):
+                    return jacobian_at(self._x)[0]
+
+                @property
+                def deq(self):
+                    return jacobian_at(self._x)[1 : 1 + meq]
+
+                @property
+                def die(self):
+                    return -jacobian_at(self._x)[1 + meq :]
+
             def on_step(xk):
                 iteration[0] += 1
                 if user_callback is not None:
-                    user_callback(iteration[0], np.asarray(xk) / scale)
+                    x = np.asarray(xk)
+                    # `inf`, because `scipy` publishes no per-iterate convergence
+                    # measure and has not declared convergence at any of these points.
+                    # See `_verdict` for what the *final* call carries and why the two
+                    # differ.
+                    user_callback(
+                        iteration[0], _Iterate(x), x / scale, float("inf")
+                    )
 
             result = minimize(
                 objective,
@@ -890,7 +980,21 @@ class SlsqpDriver(AbstractDriver):
             # the solver said is `reports`' job now, and the mutable `Outcome` sink that
             # used to carry it is deleted.
             if user_callback is not None:
-                user_callback(-1, np.asarray(result.x, dtype=float) / scale)
+                final = np.asarray(result.x, dtype=float)
+                # **The fourth argument is `VmconDriver`'s convergence parameter, and
+                # SLSQP forms nothing equivalent -- so what goes here is scipy's own
+                # verdict, encoded so that the one thing which reads it can read it.**
+                # `run_cold_matrix._status` is that reader, and all it does is compare
+                # this number to a tolerance; `0.0` therefore means *"scipy said
+                # `success`"* and `inf` *"it did not"*. Writing `nan` instead was tried
+                # and is wrong in the direction that matters: `nan <= tol` is `False`,
+                # so every SLSQP row read `stopped` including the ones where scipy had
+                # said "Optimization terminated successfully" and the residuals were
+                # five orders better than VMCON's (`_audit/optimise_design.md` §42).
+                # A column that turns a success into a failure is not the cautious
+                # choice, it is the wrong answer.
+                converged = 0.0 if result.success else float("inf")
+                user_callback(-1, _Iterate(final), final / scale, converged)
             return (
                 np.asarray(result.x, dtype=float) / scale,
                 int(result.nit),
@@ -1500,12 +1604,20 @@ class VmconDriver(AbstractDriver):
 
             class _Problem(AbstractProblem):
                 def __call__(_self, x_scaled):  # noqa: N805 -- pyvmcon's own signature
-                    # **Two programs by default, one under `fused`.** `pyvmcon` asks for
-                    # the value *and* every derivative at every point it evaluates,
-                    # line-search trials included, so nothing on this path ever wants
-                    # the value alone (§31.23 counted 552 of each on one row) and a
-                    # fused program would be free. It is not bitwise, which is why it is
-                    # a field and not the default -- see `VmconDriver.fused`.
+                    # **One program by default, two under `fused=False`.** `pyvmcon`
+                    # asks for the value *and* every derivative at every point it
+                    # evaluates, line-search trials included, so nothing on this path
+                    # ever wants the value alone (§31.23 counted 552 of each on one row)
+                    # and the fused program is strictly cheaper here. It is still not
+                    # bitwise, which is why the split path survives as a field rather
+                    # than being deleted -- see `VmconDriver.fused` and §40.
+                    #
+                    # **`SlsqpDriver` must not do this**, and does not: scipy's
+                    # SLSQP calls `fun` alone during its line search, and that driver's
+                    # cache is lazy, so a fused program would pay a whole Jacobian per
+                    # trial point -- 1.73 ms against 13.7 ms on `large_tokamak_nof` MDF
+                    # (§41). `fused` is this class's field and not `scaled_problem`'s
+                    # for exactly that reason: the answer differs per driver.
                     #
                     # `epsfcn` could not use it anyway: its quotient is `2n` value-only
                     # evaluations, and asking a fused program for them would compute

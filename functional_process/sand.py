@@ -1242,6 +1242,7 @@ def sand_schedule(
     max_iter=None,
     nest=False,
     inner_drivers=None,
+    optimiser=None,
 ):
     """A `Schedule` for `graph`'s single `^problem.sand`, answered by `driver`.
 
@@ -1249,6 +1250,13 @@ def sand_schedule(
     the combined `Optimise` **node definition**, not counted by the caller -- the
     positional contract `_audit/optimise_design.md` §4.1 warns about only exists if
     somebody chooses to count.
+
+    `optimiser` changes **which class** that default is built from -- `SlsqpDriver` is
+    the other one that fits -- while keeping the counts read off the definition, which
+    is why it is not the same parameter as `driver`: passing a built driver means having
+    counted, and this is exactly the caller that must not. `None` keeps
+    `mda.default_drivers`' own choice. `driver` still wins if both are given, since a
+    caller who built one has already said what it wants.
 
     `max_iter` is forwarded the same way, and `None` keeps the driver's own default --
     see `mda.default_drivers` for what that default is and why a SAND block outgrows it.
@@ -1288,6 +1296,7 @@ def sand_schedule(
         callback=callback,
         condition_scale=condition_scale,
         max_iter=max_iter,
+        **({} if optimiser is None else {"optimiser": optimiser}),
     )
     if driver is not None:
         drivers[optimise] = driver
