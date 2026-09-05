@@ -147,6 +147,18 @@ history.)
   instruments are blind to this by construction, because they only see nodes that exist.
   `boundary.inert_conditions` is the check that is not blind to it.
 
+## The `x109` pinned point (`stellarator_helias`, formerly `_audit/closed/`)
+
+- **"The pinned point is only feasible by a tolerance artefact" / "the multiplier is
+  enormous"** — both checked and refuted. `max|eq| = 2.1e-12`, no inequality violated:
+  genuinely feasible. `Σ|λ_eq| = 1.22`, not the `~6.3e4` the artefact hypothesis needed —
+  refuted by five orders of magnitude.
+- **The `c24` Jacobian disagreement (2 of 690 cells, against a central difference of the
+  port's own condition map) is a kink in PROCESS's own model, not a port defect and not
+  premature termination.** Every converged point sits on `(Te+Ti)/20 == 0.65`, the
+  threshold of `fast_alpha_beta`'s clamped square root — this is the same kink the Ward
+  kink smoothing (above) was later built to address.
+
 ## Measured constants worth not re-deriving
 
 - **Driver benchmark**: the port is **9.1x PROCESS end-to-end** (12.4x with SLSQP instead
