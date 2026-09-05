@@ -274,6 +274,29 @@ def calculate_coil_coil_toroidal_gap(
     return coilcoilgap, toroidalgap
 
 
+def select_coil_coil_toroidal_gap(
+    stella_config_dmin,
+    r_coil_major,
+    r_coil_minor,
+    stella_config_coil_rmajor,
+    stella_config_coil_rminor,
+    dx_tf_inboard_out_toroidal,
+):
+    """`toroidalgap` half of `calculate_coil_coil_toroidal_gap` -- `coilcoilgap` is a
+    local in the source (returned to the caller, never written to `data`), so it is
+    discarded here exactly as the declaration already discarded it.
+    """
+    _coilcoilgap, toroidalgap = calculate_coil_coil_toroidal_gap(
+        stella_config_dmin,
+        r_coil_major,
+        r_coil_minor,
+        stella_config_coil_rmajor,
+        stella_config_coil_rminor,
+        dx_tf_inboard_out_toroidal,
+    )
+    return toroidalgap
+
+
 class CoilCoilToroidalGap(ExplicitFunction):
     toroidalgap = OutputInto(tfcoil)
 
@@ -286,9 +309,7 @@ class CoilCoilToroidalGap(ExplicitFunction):
         stella_config_coil_rminor=From(stellarator_config),
         dx_tf_inboard_out_toroidal=From(tfcoil),
     ):
-        # `coilcoilgap` is a local in the source (returned to the caller, never
-        # written to `data`) -- only `toroidalgap` is a node output here.
-        _coilcoilgap, toroidalgap = calculate_coil_coil_toroidal_gap(
+        return select_coil_coil_toroidal_gap(
             stella_config_dmin,
             r_coil_major,
             r_coil_minor,
@@ -296,7 +317,6 @@ class CoilCoilToroidalGap(ExplicitFunction):
             stella_config_coil_rminor,
             dx_tf_inboard_out_toroidal,
         )
-        return toroidalgap
 
 
 def calculate_coils_summary_variables(
@@ -1368,6 +1388,61 @@ class IterNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
         )
 
 
+def calculate_bi2212_winding_pack_intersect_inputs(
+    self,
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    fhts,
+    j_tf_wp,
+):
+    """`i_tf_sc_mat == BI2212` (2): closes Bi-2212's `jcrit` law over its cable/void/
+    current-density fields, then calls the shared `_curves` helper (`self` is the
+    declaration instance -- `_curves` is not a `calculate_*` physics function, it is
+    this unit's own declaration plumbing, so passing it through is not the signature
+    change the split's hard rule forbids).
+    """
+
+    def jcrit(b_max, t_helium):
+        return jcrit_bi2212(
+            b_max,
+            t_helium,
+            f_a_tf_turn_cable_copper,
+            fhts,
+            f_a_tf_turn_cable_space_extra_void,
+            j_tf_wp,
+        )
+
+    return self._curves(
+        jcrit,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
 class Bi2212WindingPackIntersectInputs(WindingPackIntersectInputs):
     """`i_tf_sc_mat == BI2212` (2).
 
@@ -1402,18 +1477,8 @@ class Bi2212WindingPackIntersectInputs(WindingPackIntersectInputs):
         fhts=From(tfcoil),
         j_tf_wp=From(tfcoil),
     ):
-        def jcrit(b_max, t_helium):
-            return jcrit_bi2212(
-                b_max,
-                t_helium,
-                f_a_tf_turn_cable_copper,
-                fhts,
-                f_a_tf_turn_cable_space_extra_void,
-                j_tf_wp,
-            )
-
-        return self._curves(
-            jcrit,
+        return calculate_bi2212_winding_pack_intersect_inputs(
+            self,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -1428,6 +1493,8 @@ class Bi2212WindingPackIntersectInputs(WindingPackIntersectInputs):
             f_j_tf_wp_critical_max,
             a_tf_turn_cable_space_no_void,
             dx_tf_turn_general,
+            fhts,
+            j_tf_wp,
         )
 
 
@@ -1470,6 +1537,53 @@ class OldLubellNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
         )
 
 
+def calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
+    self,
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    bcritsc,
+    tcritsc,
+):
+    """`i_tf_sc_mat == USER_DEFINED_NB3SN` (4): closes `jcrit_user_defined_nb3sn` over
+    the user-supplied critical field/temperature, then calls the shared `_curves`
+    helper (see `calculate_bi2212_winding_pack_intersect_inputs` for why `self` is a
+    plain argument here).
+    """
+
+    def jcrit(b_max, t_helium):
+        return jcrit_user_defined_nb3sn(b_max, t_helium, bcritsc, tcritsc)
+
+    return self._curves(
+        jcrit,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
 class UserDefinedNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
     """`i_tf_sc_mat == USER_DEFINED_NB3SN` (4) -- the only occupant reading
     `.tfcoil.bcritsc`/`.tfcoil.tcritsc`, which are exactly what "user-defined" means
@@ -1495,11 +1609,8 @@ class UserDefinedNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
         bcritsc=From(tfcoil),
         tcritsc=From(tfcoil),
     ):
-        def jcrit(b_max, t_helium):
-            return jcrit_user_defined_nb3sn(b_max, t_helium, bcritsc, tcritsc)
-
-        return self._curves(
-            jcrit,
+        return calculate_user_defined_nb3sn_winding_pack_intersect_inputs(
+            self,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -1514,6 +1625,8 @@ class UserDefinedNb3snWindingPackIntersectInputs(WindingPackIntersectInputs):
             f_j_tf_wp_critical_max,
             a_tf_turn_cable_space_no_void,
             dx_tf_turn_general,
+            bcritsc,
+            tcritsc,
         )
 
 
@@ -1604,6 +1717,53 @@ class CrocoRebcoWindingPackIntersectInputs(WindingPackIntersectInputs):
         )
 
 
+def calculate_durham_nbti_winding_pack_intersect_inputs(
+    self,
+    r_coil_major,
+    r_coil_minor,
+    coilcurrent,
+    n_tf_coils,
+    stella_config_a1,
+    stella_config_a2,
+    stella_config_wp_ratio,
+    tftmp,
+    tmargmin,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_extra_void,
+    f_j_tf_wp_critical_max,
+    a_tf_turn_cable_space_no_void,
+    dx_tf_turn_general,
+    b_crit_upper_nbti,
+    t_crit_nbti,
+):
+    """`i_tf_sc_mat == DURHAM_NBTI` (7): closes `jcrit_durham_nbti` over Durham NbTi's
+    critical field/temperature, then calls the shared `_curves` helper (see
+    `calculate_bi2212_winding_pack_intersect_inputs` for why `self` is a plain
+    argument here).
+    """
+
+    def jcrit(b_max, t_helium):
+        return jcrit_durham_nbti(b_max, t_helium, b_crit_upper_nbti, t_crit_nbti)
+
+    return self._curves(
+        jcrit,
+        r_coil_major,
+        r_coil_minor,
+        coilcurrent,
+        n_tf_coils,
+        stella_config_a1,
+        stella_config_a2,
+        stella_config_wp_ratio,
+        tftmp,
+        tmargmin,
+        f_a_tf_turn_cable_copper,
+        f_a_tf_turn_cable_space_extra_void,
+        f_j_tf_wp_critical_max,
+        a_tf_turn_cable_space_no_void,
+        dx_tf_turn_general,
+    )
+
+
 class DurhamNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
     """`i_tf_sc_mat == DURHAM_NBTI` (7) -- the only occupant reading
     `.tfcoil.b_crit_upper_nbti`/`.tfcoil.t_crit_nbti`.
@@ -1628,11 +1788,8 @@ class DurhamNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
         b_crit_upper_nbti=From(tfcoil),
         t_crit_nbti=From(tfcoil),
     ):
-        def jcrit(b_max, t_helium):
-            return jcrit_durham_nbti(b_max, t_helium, b_crit_upper_nbti, t_crit_nbti)
-
-        return self._curves(
-            jcrit,
+        return calculate_durham_nbti_winding_pack_intersect_inputs(
+            self,
             r_coil_major,
             r_coil_minor,
             coilcurrent,
@@ -1647,6 +1804,8 @@ class DurhamNbtiWindingPackIntersectInputs(WindingPackIntersectInputs):
             f_j_tf_wp_critical_max,
             a_tf_turn_cable_space_no_void,
             dx_tf_turn_general,
+            b_crit_upper_nbti,
+            t_crit_nbti,
         )
 
 
@@ -1755,21 +1914,10 @@ class WindingPackTotalSizePost(ExplicitFunction):
         dx_tf_wp_insulation=From(tfcoil),
         a_tf_turn_steel=From(tfcoil),
     ):
-        (
-            b_tf_inboard_peak_symmetric,
-            dx_tf_wp_primary_toroidal,
-            dx_tf_wp_secondary_toroidal,
-            dr_tf_wp_with_insulation,
-            j_tf_wp_new,
-            n_tf_coil_turns,
-            c_tf_turn,
-            a_tf_wp_conductor,
-            a_tf_wp_extra_void,
-            a_tf_coil_wp_turn_insulation,
-            a_tf_wp_steel,
-            a_tf_wp_no_insulation,
-            a_tf_wp_with_insulation,
-        ) = winding_pack_post_intersect(
+        # `winding_pack_post_intersect`'s return tuple is already in this exact order
+        # (see its own docstring) -- the unpack-then-repack this used to do was an
+        # identity transform, so the declaration now just delegates directly.
+        return winding_pack_post_intersect(
             wp_width_r_min,
             r_coil_major,
             r_coil_minor,
@@ -1783,21 +1931,6 @@ class WindingPackTotalSizePost(ExplicitFunction):
             dx_tf_turn_general,
             dx_tf_wp_insulation,
             a_tf_turn_steel,
-        )
-        return (
-            b_tf_inboard_peak_symmetric,
-            dx_tf_wp_primary_toroidal,
-            dx_tf_wp_secondary_toroidal,
-            dr_tf_wp_with_insulation,
-            j_tf_wp_new,
-            n_tf_coil_turns,
-            c_tf_turn,
-            a_tf_wp_conductor,
-            a_tf_wp_extra_void,
-            a_tf_coil_wp_turn_insulation,
-            a_tf_wp_steel,
-            a_tf_wp_no_insulation,
-            a_tf_wp_with_insulation,
         )
 
 
