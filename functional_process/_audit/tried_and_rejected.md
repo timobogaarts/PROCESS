@@ -105,6 +105,48 @@ other two `while_loop`s that used to block this — `cs_fatigue` and
 `solve_duct_diameter` — are already converted/repaired, see `optimise_design.md`
 history.)
 
+## Beliefs acted on, then measured false (driver/compile work, `next_steps.md` §28.1/§31.2)
+
+- **"`--native` solves better than `--provider` because something seeds differently."**
+  No — starting states are bit-identical on 6 of 7 configurations. `--provider` read
+  PROCESS's *converged* `DataStructure` to decide the SAND block's shape and the QP's row
+  weights, not the seed; one apparent improvement was causal, the other was noise (a
+  single ulp in one scale row moves an iteration count by 58 on this problem).
+- **"c1 and c2 are cycles; c83 is the sole active inequality at the solution."** All
+  three wrong: c1 is an ordinary assignment (PROCESS's own code already inlines it as
+  one), c2 owns no unknown anywhere, and c83 is one of *four* active inequalities at the
+  solution.
+- **"The compile is slow because XLA folds closure arithmetic."** No — the constant pool
+  is 24.6 kB and nothing expensive (no reduction/matmul/decomposition/loop) is folded.
+  Compilation is dominated by module size (the SAND Jacobian program alone is ~38,600
+  StableHLO lines on the reference config), not by what it computes.
+- **"The 0.5 ms floor was async dispatch."** No — `block_until_ready` changes nothing;
+  it was `eqx.filter_jit` flattening a 2,382-leaf pytree per call (fixed by binding the
+  condition map once per solve instead of once per call, §31.14 above).
+- **"An in-graph optimiser collapses the compile bill" / "duplication is sixfold."**
+  Half right: it collapses compile *count* to 1 but makes compilation 2-3x worse: the
+  real duplication was 21-fold, and fusing it changed runtime *not at all* because XLA's
+  CSE was already merging it. The apparent 136 ms/iteration cost was an unbounded QP
+  budget (5000 projected-CG iterations) doing nothing productive, not a floor.
+
+## Two operational traps not worth rediscovering
+
+- **`$PY functional_process/<script>.py` silently measures the wrong tree.** Running a
+  script by path puts the *script's own directory* on `sys.path[0]`, so a scratch copy's
+  package is not found there and resolution falls through to the live editable install.
+  The natural check (`cd <copy> && $PY -c "import functional_process; print(...)"`)
+  **passes anyway**, because `-c` puts the cwd on the path first — it is not the same
+  resolution the script invocation uses. Use `$PY -m functional_process.<module>` or set
+  `PYTHONPATH`, and confirm by printing `functional_process.__file__` as the run's first
+  line.
+- **A missing producer can be invisible to every graph-structural instrument.** A path a
+  node *reads* but that no node *owns* (e.g. `.current_drive.big_q_plasma` before it was
+  registered) is silently treated as a frozen boundary input — the objective can go
+  identically zero with zero gradient and the optimiser reports "converged" on a
+  feasibility problem it solved by accident. `driven_graph(graph_for(...))`-based
+  instruments are blind to this by construction, because they only see nodes that exist.
+  `boundary.inert_conditions` is the check that is not blind to it.
+
 ## Measured constants worth not re-deriving
 
 - **Driver benchmark**: the port is **9.1x PROCESS end-to-end** (12.4x with SLSQP instead
