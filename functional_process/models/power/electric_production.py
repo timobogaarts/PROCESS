@@ -1545,6 +1545,81 @@ class PlantElectricProductionResistiveCentrepostSingleCoolant(
         )
 
 
+def calculate_plant_electric_production_resistive_centrepost_liquid_breeder(
+    p_cp_coolant_pump_elec,
+    p_blkt_liquid_breeder_heat_deposited_mw,
+    etath_liq,
+    p_plant_electric_base,
+    a_plant_floor_effective,
+    pflux_plant_floor_electric,
+    p_cryo_plant_electric_mw,
+    p_tf_electric_supplies_mw,
+    p_tritium_plant_electric_mw,
+    vachtmw,
+    p_pf_electric_supplies_mw,
+    p_hcd_electric_loss_mw,
+    p_coolant_pump_loss_total_mw,
+    p_div_secondary_heat_mw,
+    p_shld_secondary_heat_mw,
+    p_hcd_secondary_heat_mw,
+    p_tf_nuclear_heat_mw,
+    p_plant_primary_heat_mw,
+    eta_turbine,
+    p_hcd_electric_total_mw,
+    p_coolant_pump_elec_total_mw,
+    p_fusion_total_mw,
+    t_plant_pulse_coil_precharge,
+    t_plant_pulse_plasma_current_ramp_up,
+    t_plant_pulse_fusion_ramp,
+    t_plant_pulse_burn,
+    t_plant_pulse_plasma_current_ramp_down,
+    t_plant_pulse_dwell,
+):
+    """`PlantElectricProductionResistiveCentrepostLiquidBreeder`'s own composition of
+    `centrepost_coolant_pump_power_resistive` and `gross_electric_power_liquid_breeder`
+    -- the two quantities the arm needs before the 23-output call -- moved out of the
+    declaration and into a named function (`_audit/formulas_split.md` step 1). Calls
+    `calculate_plant_electric_production_reactor` directly rather than through
+    `PlantElectricProductionReactor._production`: that method is itself pure
+    delegation to the same function, and a module-level function has no `self` to call
+    it through.
+    """
+    return calculate_plant_electric_production_reactor(
+        centrepost_coolant_pump_power_resistive(p_cp_coolant_pump_elec),
+        gross_electric_power_liquid_breeder(
+            p_plant_primary_heat_mw,
+            eta_turbine,
+            p_blkt_liquid_breeder_heat_deposited_mw,
+            etath_liq,
+        ),
+        p_plant_electric_base,
+        a_plant_floor_effective,
+        pflux_plant_floor_electric,
+        p_cryo_plant_electric_mw,
+        p_tf_electric_supplies_mw,
+        p_tritium_plant_electric_mw,
+        vachtmw,
+        p_pf_electric_supplies_mw,
+        p_hcd_electric_loss_mw,
+        p_coolant_pump_loss_total_mw,
+        p_div_secondary_heat_mw,
+        p_shld_secondary_heat_mw,
+        p_hcd_secondary_heat_mw,
+        p_tf_nuclear_heat_mw,
+        p_plant_primary_heat_mw,
+        eta_turbine,
+        p_hcd_electric_total_mw,
+        p_coolant_pump_elec_total_mw,
+        p_fusion_total_mw,
+        t_plant_pulse_coil_precharge,
+        t_plant_pulse_plasma_current_ramp_up,
+        t_plant_pulse_fusion_ramp,
+        t_plant_pulse_burn,
+        t_plant_pulse_plasma_current_ramp_down,
+        t_plant_pulse_dwell,
+    )
+
+
 class PlantElectricProductionResistiveCentrepostLiquidBreeder(
     PlantElectricProductionReactor
 ):
@@ -1581,14 +1656,10 @@ class PlantElectricProductionResistiveCentrepostLiquidBreeder(
         t_plant_pulse_plasma_current_ramp_down=From(times),
         t_plant_pulse_dwell=From(times),
     ):
-        return self._production(
-            centrepost_coolant_pump_power_resistive(p_cp_coolant_pump_elec),
-            gross_electric_power_liquid_breeder(
-                p_plant_primary_heat_mw,
-                eta_turbine,
-                p_blkt_liquid_breeder_heat_deposited_mw,
-                etath_liq,
-            ),
+        return calculate_plant_electric_production_resistive_centrepost_liquid_breeder(
+            p_cp_coolant_pump_elec,
+            p_blkt_liquid_breeder_heat_deposited_mw,
+            etath_liq,
             p_plant_electric_base,
             a_plant_floor_effective,
             pflux_plant_floor_electric,
