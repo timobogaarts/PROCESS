@@ -24,6 +24,25 @@ any of these; do not re-derive them.
 - **Shipped:** `WARD_KINK_SMOOTHING = 1e-3`, mid-plateau, a factor of 2-3 above the band's
   upper edge with another factor of 5 of headroom. (§31.41)
 
+## The fused Jacobian (`VmconDriver.fused`) — held back, then landed
+
+- **Held back 2026-09-03.** Not bitwise (values agree exactly, ~10 of 294 Jacobian
+  cells move `~1e-16`-`4.4e-16`), and at the time that flipped `stellarator_helias`
+  cold SAND from converged (169 it) to stopped (134 it). §31.32 cleared the fused
+  program itself — not wrong, not amplified, excites no discontinuity — and found the
+  real cause: the arm was unstable to *any* last-bit Jacobian change, evidenced by a
+  *fabricated* `+-1` ulp nudge (no fused program involved) stopping the same arm in 3
+  of 6 draws. Held off anyway: the compile saving was real but not worth spending the
+  one row that made that instability visible.
+- **Shipped 2026-09-05.** `WARD_KINK_SMOOTHING = 1e-3` (above) closed off the
+  instability's mechanism between the hold and this date: the same arm now takes 24
+  iterations on every `+-1` ulp draw and agrees on `objf` to fifteen digits. Re-measured
+  rather than re-argued — full seven-configuration cold matrix, `fused` on, bit-for-bit
+  identical to `reference_cold_matrix.txt` on all twelve rows, no status change anywhere.
+  `VmconDriver.fused` now defaults to `True`; see its docstring for the re-measured HLO
+  line counts and per-call timing, and `optimise_design.md`'s current entry for the
+  landing record.
+
 ## The vacuum pump-count staircase (`jnp.floor(pumpn + 0.5)`, `stellarator_helias`)
 
 Three repairs tried, all worse than the discreteness they replace. Shipped baseline: 94

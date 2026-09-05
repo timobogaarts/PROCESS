@@ -1767,13 +1767,20 @@ PORT_FILES = (
     "provider.py",
     "importer.py",
     "run_cold_matrix.py",
+    "core/solver/drivers.py",
+    "core/solver/host_cache.py",
 )
 """The modules a row's numbers depend on, for the provenance header.
 
 Not every file in the package -- the ones a changed byte in could move a cell. A row is
 `machine_from_indat` -> `reference_run` -> the provider or the native state -> `assemble`
 -> `solve`, and this is that path's source.
-"""
+
+`core/solver/drivers.py`/`host_cache.py` joined the list 2026-09-05: `VmconDriver.fused`
+lives in the first and `host_cache.bind`'s three programs in the second, and a byte
+changed in either can move a cell (it did not, this time -- see `optimise_design.md`'s
+"`VmconDriver.fused` landed on by default" entry -- but the header would not have known
+that without these two names in the list)."""
 
 
 def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
