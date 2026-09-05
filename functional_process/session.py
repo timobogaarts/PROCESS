@@ -30,13 +30,21 @@ jit static argument, so a *re-assembled* block is a jax cache hit. Measured on
 `stellarator_helias` MDF -- assemble, seed, bind and call all three programs, twice, the
 second time from scratch: **19.29 s and 3 compiles before, 0.24 s and 0 compiles after.**
 
-**That is the bind-and-call probe, not a whole solve, and the distinction matters.** A
-full `open_session(...).mdf()` run twice measures **29 compiles / 20.22 s, then 2 compiles
-/ 7.43 s** (2026-09-05, `stellarator_walkthrough.ipynb`, reproduced three times: 29, 2, 2,
-2 -- never 0). So structural equality does buy the cache hit, and >90 % of the compiles
-go, but two survive every re-assembly and **what they are has not been identified**. The
-probe above touches three programs; a solve also runs `prime`, the schedule and the SQP
-driver, so the residue is most likely there. Do not quote the 0.24 s figure for a solve.
+**That is the bind-and-call probe over three programs, not a whole solve.** A full
+`open_session(...).mdf()` run twice measures **29 compiles / 19.3 s, then 0 / 0.9 s**
+(2026-09-05, `stellarator_walkthrough.ipynb`). The 29 is structural: only four of those
+programs cost anything -- `host_cache`'s two for the outer `Optimise` block, and the fused
+schedule traced once each by `prime` and `solve` -- and the other 25 are scalar reshapes at
+~7 ms.
+
+**Two compiles used to survive every re-assembly, and finding out why is worth recording**
+because it is `_audit`'s own warning landing in the one place nobody had looked.
+`mda._root_find_seed(problem)` returned a closure whose `problem` argument the body never
+used, so every assembly minted a fresh function object. `SeededNewtonDriver` compares that
+`seed` field by identity, so **one leaf of a ~150-node graph** made the whole re-assembled
+`Schedule` compare unequal, missing `sand_harness._SCHEDULE_WHOLE`'s memo and recompiling
+the two large programs behind it. Hoisting the body to module level took re-assembly from
+2 compiles / 8.0 s to 0 / 0.9 s, with the answer bit-identical throughout.
 
 What remains true is that re-assembly is still *work* -- `machine_from_indat`, the graph,
 `mdf.assemble` -- so this module is still the right way to walk a scan; it is no longer
