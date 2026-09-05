@@ -31,11 +31,33 @@ jit static argument, so a *re-assembled* block is a jax cache hit. Measured on
 second time from scratch: **19.29 s and 3 compiles before, 0.24 s and 0 compiles after.**
 
 **That is the bind-and-call probe over three programs, not a whole solve.** A full
-`open_session(...).mdf()` run twice measures **29 compiles / 19.3 s, then 0 / 0.9 s**
-(2026-09-05, `stellarator_walkthrough.ipynb`). The 29 is structural: only four of those
-programs cost anything -- `host_cache`'s two for the outer `Optimise` block, and the fused
-schedule traced once each by `prime` and `solve` -- and the other 25 are scalar reshapes at
-~7 ms.
+`open_session(...).mdf()` run twice measured **29 compiles / 19.3 s, then 0 / 0.9 s**
+(2026-09-05, `stellarator_walkthrough.ipynb`). The 29 was structural: only four of those
+programs cost anything -- `host_cache`'s two for the outer `Optimise` block, and the
+fused schedule traced once each by `prime` and `solve` -- and the other 25 were scalar
+reshapes at ~7 ms.
+
+**The fused schedule's second trace is now gone too** (`_audit/optimise_design.md` §39,
+2026-09-05). `mdf.seed`'s env and `mdf.solve`'s re-seeded env disagreed on jax's own
+`weak_type` bit at every design variable and every `^guess.*` port -- `mdf.seed` wraps a
+bare Python `float` in `jnp.asarray`, which is *weakly* typed, while `VmconDriver`'s
+answer comes back through a NumPy array, which never is. Same shape, same dtype,
+different abstract value, so `eqx.filter_jit` traced and compiled the schedule a second
+time under `solve` even though it is the identical `Schedule` object `prime` already ran.
+`mdf.seed` now forces `weak_type` off on every value it hands the schedule
+(`mdf._not_weak`), which is exactly the fix `mda._root_find_seed` was for the two
+programs behind it: make what differs compare equal. Measured on `stellarator_helias`
+MDF: **29 -> 27 compiles, 19-22 s -> ~17.5 s** on the first solve, **0 compiles either
+way** on the second, and the answer bit-identical throughout (`_x` and `objf` compared as
+`float.hex()`, not rounded). The 25 trivial compiles are *not* `models/stated.py` --
+every one of `mdf.seed`'s ~350 inputs, stated or ordinary, shares the same handful of
+(shape, dtype) signatures, so they were already deduplicated to a handful of programs
+before this fix; of the 25, 8 are `mdf.seed`'s own eager type-staging (now folded into
+one XLA op instead of two, at `mdf._not_weak`) and the other 17 are inside
+`core/solver/drivers.py` -- `optimistix`'s own trace-time constant-folding the first time
+`SeededNewtonDriver` is traced, and `VmconDriver`'s `ravel_pytree`/`_sqp_callback`
+setup -- out of this module's reach and, on the numbers above, not worth chasing: each is
+a one-time ~7 ms cost paid once per `Session`, not per scan point.
 
 **Two compiles used to survive every re-assembly, and finding out why is worth recording**
 because it is `_audit`'s own warning landing in the one place nobody had looked.

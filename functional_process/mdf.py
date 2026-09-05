@@ -511,11 +511,45 @@ def seed(mdf: Mdf, data, design_values=None):
         # starting guess. Guess ports only; an ordinary input is the machine's own number.
         if var in starts:
             grounded = given_start(source, grounded)
-        env[var] = jnp.asarray(grounded)
+        env[var] = _not_weak(grounded)
     if design_values is not None:
-        values = [jnp.asarray(v) for v in design_values]
+        values = [_not_weak(v) for v in design_values]
         env.update(zip(mdf.design, values, strict=True))
     return env
+
+
+def _not_weak(value):
+    """`jnp.asarray(value)`, with jax's own `weak_type` bit forced off.
+
+    **Why this matters here and nowhere obvious.** `jnp.asarray` of a bare Python `float`
+    (which is what `ground_truth` returns for most of `data`) is *weakly* typed --
+    `jnp.asarray(1.0).weak_type is True` -- and `weak_type` is part of the abstract
+    value `eqx.filter_jit` keys its cache on, exactly like shape and dtype. `mdf.solve`'s
+    design values are not weak: they come back from `VmconDriver`'s host callback as
+    `jnp.asarray` of a *NumPy* array (`drivers._sqp_callback`), and a NumPy-derived array
+    is never weakly typed. So `seed`'s env and `solve`'s re-seeded env disagreed on
+    `weak_type` at exactly the design variables (and, once `prime` has run once, at every
+    `^guess.*` port too, for the same reason) -- structurally different pytrees at the
+    *same* names, over the *same* `Schedule` object. `sand_harness.run_schedule` found no
+    entry for that structure in jax's own executable cache and dispatched a second
+    compile of the fused schedule on every call after `prime`'s
+    (`_audit/optimise_design.md` §39, where `mda._root_find_seed`'s docstring is the same
+    lesson in a different guise: one leaf's structure, not its value, missing the memo
+    for the whole `Schedule`).
+
+    **One eager XLA program, not two.** Wrapping in `jnp.asarray(value)` and then asking
+    `jax.lax.convert_element_type` to force the same dtype back on works, but is two
+    separate eager dispatches -- one to stage `value` on device at its weak dtype, one to
+    strip the bit -- each its own one-primitive compile the first time a given
+    shape/dtype is seen. Asking `jnp.asarray` for the target dtype directly folds both
+    into the one conversion op XLA already has to run, so the dtype is read off `value`
+    first -- with plain `numpy`, on the host, where reading a dtype costs no XLA program
+    at all -- and handed back as the explicit one. `numpy.asarray` rather than
+    `jax.numpy.result_type` because the latter refuses a bare Python `list` (`grounded`
+    is one for every array-valued field), where `numpy`'s own promotion answers the same
+    question about the same value without caring.
+    """
+    return jnp.asarray(value, dtype=np.asarray(value).dtype)
 
 
 def prime(mdf: Mdf, env):
