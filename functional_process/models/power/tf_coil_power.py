@@ -20,13 +20,44 @@ Both are tier-1: no `self.data` access once ported, no internal iteration, no ca
 into any other model.
 """
 
+import jax.numpy as jnp
+import numpy as np
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
 
+from functional_process.models.safe_math import safe_pow, safe_sqrt
 from functional_process.paths import buildings, heat_transport, physics, tfcoil
 from functional_process.power.tf_coil_power import (
     calculate_tf_power_resistive,
     calculate_tf_power_superconducting,
 )
+from functional_process.vocabulary import constants
+
+# ruff's docstring rules treat `__all__` membership as the definition of "public" once
+# one is present, so this lists every public name this module resolved before step 2 of
+# `_audit/formulas_split.md` moved the pure functions out -- not just `jnp`/`np`/
+# `safe_pow`/`safe_sqrt`/`constants`, which are unused now that their real uses left with
+# the functions (see `power/electric_production.py`'s commit for why a partial list is
+# the wrong move; this file's own first pass over-trimmed the import block and dropped
+# these five without checking, a gap `_audit/formulas_split.md`'s name-preservation gate
+# should have caught and did not, until a later cluster-wide re-check with clean caches).
+__all__ = [
+    "ExplicitFunction",
+    "From",
+    "OutputInto",
+    "TfPowerResistive",
+    "TfPowerSuperconducting",
+    "buildings",
+    "calculate_tf_power_resistive",
+    "calculate_tf_power_superconducting",
+    "constants",
+    "heat_transport",
+    "jnp",
+    "np",
+    "physics",
+    "safe_pow",
+    "safe_sqrt",
+    "tfcoil",
+]
 
 
 class TfPowerResistive(ExplicitFunction):
