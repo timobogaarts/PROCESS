@@ -438,6 +438,137 @@ def calculate_pf_coil_positions(
     return jnp.stack(r_flat), jnp.stack(z_flat)
 
 
+def calculate_cs_geometry_ports(z_tf_inside_half, f_z_cs_tf_internal, dr_cs, dr_cs_bore):
+    """`CSCoilGeometry`: drops `r_cs_coil_middle` from `calculate_cs_geometry`'s tuple.
+
+    It is bit-for-bit `r_cs_middle` (`pfcoil.py:3030`, `:3042`) and `DataStructure` has
+    no field of that name -- see the class docstring.
+    """
+    (
+        z_cs_upper,
+        z_cs_lower,
+        _r_cs_coil_middle,
+        r_cs_middle,
+        z_cs_middle,
+        r_cs_outer,
+        r_cs_inner,
+        a_cs_poloidal,
+        a_cs_toroidal,
+        dz_cs_full,
+        dr_cs_full,
+    ) = calculate_cs_geometry(
+        z_tf_inside_half=z_tf_inside_half,
+        f_z_cs_tf_internal=f_z_cs_tf_internal,
+        dr_cs=dr_cs,
+        dr_cs_bore=dr_cs_bore,
+    )
+    return (
+        z_cs_upper,
+        z_cs_lower,
+        r_cs_middle,
+        z_cs_middle,
+        r_cs_outer,
+        r_cs_inner,
+        a_cs_poloidal,
+        a_cs_toroidal,
+        dz_cs_full,
+        dr_cs_full,
+    )
+
+
+def calculate_cs_turn_geometry_eu_demo_from_turns(
+    a_cs_poloidal,
+    n_pf_coil_turns,
+    f_dr_dz_cs_turn,
+    radius_cs_turn_corners,
+    f_a_cs_turn_steel,
+):
+    """`CSCoilTurnGeometry`: picks the CS's own turn count out of the full-width
+    array.
+    """
+    return calculate_cs_turn_geometry_eu_demo(
+        a_cs_poloidal,
+        n_pf_coil_turns[CS_INDEX],
+        f_dr_dz_cs_turn,
+        radius_cs_turn_corners,
+        f_a_cs_turn_steel,
+    )
+
+
+def calculate_pf_coil_placement(
+    r_pf_outside_tf_midplane,
+    rmajor,
+    rminor,
+    triang,
+    rpf2,
+    z_tf_top,
+    dz_tf_upper_lower_midplane,
+    zref,
+    rref,
+    *,
+    topology,
+    r_pf_outside_tf_is_constant,
+):
+    """`PFCoilPlacement`/`PFCoilPlacementSphericalTokamak`: trims `zref`/`rref` to
+    `topology`'s group count and pads the two group arrays back out to
+    `N_PF_GROUPS_MAX`.
+    """
+    n_groups = topology.n_pf_coil_groups
+    r_group, z_group = calculate_pf_coil_group_positions(
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        rpf2=rpf2,
+        z_tf_top=z_tf_top,
+        dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
+        zref=zref[:n_groups],
+        r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+        rref=None if rref is None else rref[:n_groups],
+        topology=topology,
+        r_pf_outside_tf_is_constant=r_pf_outside_tf_is_constant,
+    )
+    pad = jnp.zeros((N_PF_GROUPS_MAX, N_PF_COILS_IN_GROUP_MAX))
+    return (
+        r_pf_outside_tf_midplane,
+        pad.at[:n_groups].set(r_group),
+        pad.at[:n_groups].set(z_group),
+    )
+
+
+def calculate_pf_coil_placement_for_topology(
+    r_tf_outboard_out,
+    dr_pf_tf_outboard_out_offset,
+    rmajor,
+    rminor,
+    triang,
+    rpf2,
+    z_tf_top,
+    dz_tf_upper_lower_midplane,
+    zref,
+    rref=None,
+    *,
+    topology,
+    r_pf_outside_tf_is_constant,
+):
+    """`PFCoilPlacement`/`PFCoilPlacementSphericalTokamak`: derives
+    `r_pf_outside_tf_midplane` before delegating to `calculate_pf_coil_placement`.
+    """
+    r_pf_outside_tf_midplane = r_tf_outboard_out + dr_pf_tf_outboard_out_offset
+    return calculate_pf_coil_placement(
+        r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+        rmajor=rmajor,
+        rminor=rminor,
+        triang=triang,
+        rpf2=rpf2,
+        z_tf_top=z_tf_top,
+        dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
+        zref=zref,
+        rref=rref,
+        topology=topology,
+        r_pf_outside_tf_is_constant=r_pf_outside_tf_is_constant,
+    )
+
+
 class CSCoilGeometry(ExplicitFunction):
     """cottax node: `.tokamak.cs_coil.geometry`. Owns the CS's own cross-section and
     edge coordinates -- the ten scalar `.pf_coil.*cs*` fields `calculate_cs_geometry`
@@ -473,40 +604,16 @@ class CSCoilGeometry(ExplicitFunction):
         dr_cs=From(build),
         dr_cs_bore=From(build),
     ):
-        (
-            z_cs_upper,
-            z_cs_lower,
-            _r_cs_coil_middle,
-            r_cs_middle,
-            z_cs_middle,
-            r_cs_outer,
-            r_cs_inner,
-            a_cs_poloidal,
-            a_cs_toroidal,
-            dz_cs_full,
-            dr_cs_full,
-        ) = calculate_cs_geometry(
-            z_tf_inside_half=z_tf_inside_half,
-            f_z_cs_tf_internal=f_z_cs_tf_internal,
-            dr_cs=dr_cs,
-            dr_cs_bore=dr_cs_bore,
-        )
         # `CSGeometry.r_cs_coil_middle` is dropped: it is bit-for-bit `r_cs_middle`
         # (`pfcoil.py:3030`, `:3042`) and `DataStructure`'s `PfCoilVariables` has no
         # field of that name -- PROCESS stores it only into
         # `r_pf_coil_middle[n_cs_pf_coils - 1]`, which `PFCoilPositions` owns. Owning it
         # here would mint a `VarPath` that names no place.
-        return (
-            z_cs_upper,
-            z_cs_lower,
-            r_cs_middle,
-            z_cs_middle,
-            r_cs_outer,
-            r_cs_inner,
-            a_cs_poloidal,
-            a_cs_toroidal,
-            dz_cs_full,
-            dr_cs_full,
+        return calculate_cs_geometry_ports(
+            z_tf_inside_half=z_tf_inside_half,
+            f_z_cs_tf_internal=f_z_cs_tf_internal,
+            dr_cs=dr_cs,
+            dr_cs_bore=dr_cs_bore,
         )
 
 
@@ -537,12 +644,12 @@ class CSCoilTurnGeometry(ExplicitFunction):
         radius_cs_turn_corners=From(pf_coil),
         f_a_cs_turn_steel=From(pf_coil),
     ):
-        return calculate_cs_turn_geometry_eu_demo(
-            a_cs_poloidal,
-            n_pf_coil_turns[CS_INDEX],
-            f_dr_dz_cs_turn,
-            radius_cs_turn_corners,
-            f_a_cs_turn_steel,
+        return calculate_cs_turn_geometry_eu_demo_from_turns(
+            a_cs_poloidal=a_cs_poloidal,
+            n_pf_coil_turns=n_pf_coil_turns,
+            f_dr_dz_cs_turn=f_dr_dz_cs_turn,
+            radius_cs_turn_corners=radius_cs_turn_corners,
+            f_a_cs_turn_steel=f_a_cs_turn_steel,
         )
 
 
@@ -586,9 +693,9 @@ class PFCoilPlacement(ExplicitFunction):
         dz_tf_upper_lower_midplane=From(build),
         zref=From(pf_coil),
     ):
-        r_pf_outside_tf_midplane = r_tf_outboard_out + dr_pf_tf_outboard_out_offset
-        return self._placed(
-            r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+        return calculate_pf_coil_placement_for_topology(
+            r_tf_outboard_out=r_tf_outboard_out,
+            dr_pf_tf_outboard_out_offset=dr_pf_tf_outboard_out_offset,
             rmajor=rmajor,
             rminor=rminor,
             triang=triang,
@@ -597,46 +704,8 @@ class PFCoilPlacement(ExplicitFunction):
             dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
             zref=zref,
             rref=None,
-        )
-
-    def _placed(
-        self,
-        r_pf_outside_tf_midplane,
-        rmajor,
-        rminor,
-        triang,
-        rpf2,
-        z_tf_top,
-        dz_tf_upper_lower_midplane,
-        zref,
-        rref,
-    ):
-        """The placement and its `N_PF_GROUPS_MAX` padding, given this arm's reads.
-
-        Not a port surface: `_params` reads `__call__`'s signature only, so each
-        occupant still declares its own ports -- the `CoilsMass` shape `masses.py`
-        already uses. The only entry that differs between the two occupants is whether
-        `rref` is a read or a `None`.
-        """
-        n_groups = self.topology.n_pf_coil_groups
-        r_group, z_group = calculate_pf_coil_group_positions(
-            rmajor=rmajor,
-            rminor=rminor,
-            triang=triang,
-            rpf2=rpf2,
-            z_tf_top=z_tf_top,
-            dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
-            zref=zref[:n_groups],
-            r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
-            rref=None if rref is None else rref[:n_groups],
             topology=self.topology,
             r_pf_outside_tf_is_constant=self.r_pf_outside_tf_is_constant,
-        )
-        pad = jnp.zeros((N_PF_GROUPS_MAX, N_PF_COILS_IN_GROUP_MAX))
-        return (
-            r_pf_outside_tf_midplane,
-            pad.at[:n_groups].set(r_group),
-            pad.at[:n_groups].set(z_group),
         )
 
 
@@ -688,9 +757,9 @@ class PFCoilPlacementSphericalTokamak(PFCoilPlacement):
         zref=From(pf_coil),
         rref=From(pf_coil),
     ):
-        r_pf_outside_tf_midplane = r_tf_outboard_out + dr_pf_tf_outboard_out_offset
-        return self._placed(
-            r_pf_outside_tf_midplane=r_pf_outside_tf_midplane,
+        return calculate_pf_coil_placement_for_topology(
+            r_tf_outboard_out=r_tf_outboard_out,
+            dr_pf_tf_outboard_out_offset=dr_pf_tf_outboard_out_offset,
             rmajor=rmajor,
             rminor=rminor,
             triang=triang,
@@ -699,6 +768,8 @@ class PFCoilPlacementSphericalTokamak(PFCoilPlacement):
             dz_tf_upper_lower_midplane=dz_tf_upper_lower_midplane,
             zref=zref,
             rref=rref,
+            topology=self.topology,
+            r_pf_outside_tf_is_constant=self.r_pf_outside_tf_is_constant,
         )
 
 
