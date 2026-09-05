@@ -895,6 +895,34 @@ class HazeltonZhaiRebcoCrocoSuperconductorProperties(CrocoSuperconductorProperti
         )
 
 
+def calculate_hazelton_zhai_rebco_croco_temperature_margin(
+    j_tf_superconductor,
+    b_tf_inboard_peak_with_ripple,
+    b_tf_superconductor_critical_zero_temp_strain,
+    temp_tf_superconductor_critical_zero_field_strain,
+    dr_tf_hts_tape,
+    dx_tf_hts_tape_rebco,
+    dx_tf_hts_tape_total,
+    tftmp,
+):
+    """`i_tf_sc_mat == 9`'s temperature margin, written to both
+    `.tfcoil.temp_tf_superconductor_margin` and `.tfcoil.temp_margin` -- one number to
+    two `VarPath`s, as PROCESS's own chained assignment does (see
+    `HazeltonZhaiRebcoCrocoTemperatureMargin`'s docstring).
+    """
+    margin = temperature_margin_hijc_rebco(
+        j_superconductor=j_tf_superconductor,
+        b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
+        b_c20max=b_tf_superconductor_critical_zero_temp_strain,
+        temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
+        dr_hts_tape=dr_tf_hts_tape,
+        dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
+        dx_hts_tape_total=dx_tf_hts_tape_total,
+        temp_tf_coolant_peak_field=tftmp,
+    )
+    return margin, margin
+
+
 class HazeltonZhaiRebcoCrocoTemperatureMargin(TfSuperconductorTemperatureMargin):
     """`i_tf_sc_mat == 9` -- constraint 36's read on a CroCo machine.
 
@@ -920,14 +948,13 @@ class HazeltonZhaiRebcoCrocoTemperatureMargin(TfSuperconductorTemperatureMargin)
         dx_tf_hts_tape_total=From(superconducting_tfcoil),
         tftmp=From(tfcoil),
     ):
-        margin = temperature_margin_hijc_rebco(
-            j_superconductor=j_tf_superconductor,
-            b_tf_inboard_peak=b_tf_inboard_peak_with_ripple,
-            b_c20max=b_tf_superconductor_critical_zero_temp_strain,
-            temp_c0max=temp_tf_superconductor_critical_zero_field_strain,
-            dr_hts_tape=dr_tf_hts_tape,
-            dx_hts_tape_rebco=dx_tf_hts_tape_rebco,
-            dx_hts_tape_total=dx_tf_hts_tape_total,
-            temp_tf_coolant_peak_field=tftmp,
+        return calculate_hazelton_zhai_rebco_croco_temperature_margin(
+            j_tf_superconductor,
+            b_tf_inboard_peak_with_ripple,
+            b_tf_superconductor_critical_zero_temp_strain,
+            temp_tf_superconductor_critical_zero_field_strain,
+            dr_tf_hts_tape,
+            dx_tf_hts_tape_rebco,
+            dx_tf_hts_tape_total,
+            tftmp,
         )
-        return margin, margin
