@@ -7,7 +7,11 @@ tightens the test to: one `return`, of one call, every argument a bare parameter
 """
 import ast, pathlib, collections
 
-root = pathlib.Path("/home/tbogaarts/PROCESS/functional_process")
+# The package this file lives in, NOT an absolute path: a hardcoded root measures
+# whichever checkout it names, so running the script from a worktree silently reported
+# the main tree's numbers instead (found 2026-09-05, after it had been handed to four
+# agents as their gate).
+root = pathlib.Path(__file__).resolve().parent.parent
 kinds = collections.Counter()
 argy = []
 
