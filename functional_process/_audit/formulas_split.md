@@ -7,7 +7,13 @@ Progress on step 1 (bodies extracted, declaration becomes a name):
 - [x] `models/physics/l_h_transition.py` — 6 Martin08 arms. Bitwise gate passed on
   `large_tokamak_eval` (the reference arm, `i_l_h_threshold = 19`), `large_tokamak_nof`
   and `st_regression`.
-- [ ] `models/pfcoil/**` — 15 bodies plus most of the slicing group
+- [x] `models/pfcoil/**` — 21 across seven files: currents (6), fields (4), geometry (4),
+  inductance (2), masses (1), stresses (1), superconductor (3), including the slicing
+  group (`c_pf_cs_coil_*[:CS_INDEX + 1]`, `n_pf_coil_turns[CS_INDEX]`,
+  `c_pf_cs_coils_peak_ma[CS_INDEX]`). `geometry.py`'s private `_placed` instance method
+  is gone, replaced by module-level functions. The `None`-binding arguments
+  (`rref=None`, `r_cs_middle=None`, `PFCoilSizesNoCentralSolenoid`'s four) stay --
+  declaration-level configuration.
 - [x] `models/stellarator/coils/calculate.py` — 5 bodies (`CoilCoilToroidalGap`,
   `Bi2212`/`UserDefinedNb3sn`/`DurhamNbti` `WindingPackIntersectInputs`,
   `WindingPackTotalSizePost`) plus `models/stellarator/plasma_physics.py`'s
@@ -22,10 +28,41 @@ Progress on step 1 (bodies extracted, declaration becomes a name):
   and `tfa[0]` slice). `superconducting.py`'s `IterNb3snCiccSuperconductorProperties`
   (`b_c20max=32.97`) is left as-is -- declaration-level configuration, not computation.
   Bitwise gate passed on `stellarator_helias` and `large_tokamak_nof`.
-- [ ] `models/physics/**` (bootstrap_current, composition, confinement_time,
-  fusion_reactions, plasma_inductance, radiation_power, scrape_off_layer) — 9
-- [ ] `models/power/thermal_cryo.py` — 3 `BinOp`
-- [ ] the rest: `cs_fatigue.py`, `structure.py`, `vacuum/vacuum.py`
+- [x] `models/physics/**` — 10: `bootstrap_current` (Sauter), `composition`
+  (`CalculateEffectiveChargeIonisationProfiles`), `confinement_time`
+  (`ConfinementScalingInputs`), `fusion_reactions` (`FusionRates`), `plasma_inductance`
+  (2), `radiation_power` (`ImpurityRadiationTotals`), `scrape_off_layer` (3).
+- [x] `models/power/**` — `thermal_cryo.py`'s 3 `BinOp`s plus
+  `electric_production.py`'s `ResistiveCentrepostLiquidBreeder`, whose argument list
+  composed two other function calls. Its three sibling arms have the same shape and are
+  **not** done.
+- [x] the rest: `cs_fatigue.py`, `structure.py`, `vacuum/vacuum.py` (2 --
+  `VacuumPumpingSimple`, `DuctFeasibilityConditions`).
+
+**Step 1 gate, run once over the merged result rather than per commit** (2026-09-05):
+`tests/functional_process tests/unit` 7713 passed / 8162 skipped, and the **full
+seven-configuration cold matrix is bitwise identical to `reference_cold_matrix.txt` on
+all twelve rows**. Census over the whole package: **380 pure delegation** (from 343),
+35 pure-plus-fields, and the non-thin categories down from 57 to **10**.
+
+**What is deliberately left**, and it is not oversight:
+
+- 22 `thin-but-computed-args`, nearly all binding a bare constant, `None` or an enum
+  member. That is the null-arm-of-a-switch pattern and it becomes a field with a default
+  under the `fn = <function>` interface below, not an extraction.
+- 7 multi-statement (2), 1 multi-statement (3), 1 tuple, 1 `expr:BinOp` — the residue,
+  including `currents.py`'s `CSCurrentDensityPulseStart` (a bare product) and
+  `scrape_off_layer.py`'s `Mast2014SOLPowerDecayLength2`, whose own docstring argues the
+  unit conversion belongs at the call site. Each needs a judgement rather than the
+  mechanical treatment.
+- `models/physics/composition.py:808` `PlasmaCompositionNonIgnited` builds
+  `functools.partial(plasma_composition_non_ignited, f_nd_beam_electron=...)` where
+  `f_nd_beam_electron` is a **live port**. Investigated rather than changed: the partial
+  is built inside `__call__` from that call's own traced argument and consumed in one
+  Python frame, so it never becomes a persistently-compared field the way the
+  identity-keyed-closure defect at `a4468d65` did — it is not a stale-constant bake-in.
+  It is still closure-shaped and wants a deliberate decision when the declaration
+  interface is built.
 
 ## The target layout
 
