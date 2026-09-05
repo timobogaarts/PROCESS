@@ -69,3 +69,39 @@ from a different `cold` `DataStructure`.
 **Gate.** `_x` and `objf` compared as `float.hex()` before/after the Q1 fix on
 `stellarator_helias` MDF: identical to the last bit. `tests/functional_process
 tests/unit` unchanged (see commit).
+
+## 40. `VmconDriver.fused` landed on by default (2026-09-05)
+
+`host_cache.bind`'s fused `values_and_jacobian` program (§31.30) was held off since
+2026-09-03 because turning it on flipped `stellarator_helias` cold SAND from converged
+to stopped — a real row, but §31.32 showed the arm was unstable to *any* last-bit
+Jacobian change, fused or not, and `WARD_KINK_SMOOTHING = 1e-3` (landed since, see
+`tried_and_rejected.md`'s Ward kink entry) closed off the mechanism: the same arm now
+takes 24 iterations on every `+-1` ulp draw. That removed the one reason `fused` was
+held back, so it was re-measured rather than re-argued.
+
+**Re-measured [2026-09-05, measured].** Full seven-configuration cold matrix
+(`--native --compare-process`, twelve MDF/SAND rows) with `fused` on is **bit-for-bit
+identical** to the tracked `reference_cold_matrix.txt` — every status stays `converged`,
+every printed digit of `objf`/`max|eq|`/`min ie`/`worst dx` is unchanged. No row was
+re-baselined because no row moved. The fused-vs-split Jacobian still differs at the last
+bit or two (unchanged from §31.30.4/§31.32.1's finding — not a bitwise spelling, and
+never claimed to be), but nothing downstream of that difference is visible on any row
+today.
+
+**What it buys, SAND arm only, `--native` seeding, isolated via `host_cache`'s three
+programs directly [measured 2026-09-05]:**
+
+| | `values` + `jacobian` | fused | removed | per-call split | per-call fused |
+|---|---|---|---|---|---|
+| `stellarator_helias` SAND | 5 648 + 11 480 = 17 128 lines | 11 595 lines | 5 533 (32%) | 2.560 ms | 1.572 ms (-39%) |
+| `large_tokamak_nof` SAND | 15 810 + 40 301 = 56 111 lines | 40 555 lines | 15 556 (28%) | 9.459 ms | 8.237 ms (-13%) |
+
+Line counts are `lower(...).as_text()` StableHLO line counts — a property of the program,
+not of machine load. Per-call times are medians over every call one solve makes (47 and
+19 calls respectively), each set collected within one process. Whole-row wall clock is
+not quoted; §31.30.1 already found it unusable under concurrent load.
+
+`VmconDriver.fused` now defaults to `True`. `tests/functional_process tests/unit` still
+pass (see the commit that landed this). `tried_and_rejected.md`'s fused entry records the
+held-back-then-shipped history in full.

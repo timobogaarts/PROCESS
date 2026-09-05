@@ -199,13 +199,18 @@ def bind(conditions: ConditionMap, unravel):
     value-only caller. Hence three callables and not a replacement: this module hands out
     what is available and the *driver* chooses.
 
-    **It is not bitwise, so nothing chooses it by default.** `VmconDriver.fused` is off,
-    and its docstring carries the measurement: the values agree bit for bit, ten of 294
-    Jacobian cells move by `4.44e-16`, and one cold-matrix row flips from `converged` to
-    `stopped` on that. The *jaxpr* is not the difference -- the same `has_aux` program
-    with its primal output dropped again reproduces the split Jacobian exactly -- the
-    extra **live output** is, because XLA schedules the tangent computation differently
-    once the primal must be materialised too. `_audit/optimise_design.md` §31.30.
+    **It is not bitwise, and `VmconDriver.fused` chooses it by default anyway** since
+    2026-09-05: the values agree bit for bit, a handful of Jacobian cells move by
+    `~1e-16`-`4.4e-16`, and that no longer moves any cold-matrix row -- see
+    `VmconDriver.fused`'s own docstring for the full history (one row *did* flip
+    `converged` -> `stopped` on it in 2026-09-03, for a reason since fixed
+    (`WARD_KINK_SMOOTHING`), and the re-measured seven-configuration matrix is
+    bit-for-bit unchanged with it on). The *jaxpr* is not the difference -- the same
+    `has_aux` program with its primal output dropped again reproduces the split
+    Jacobian exactly -- the extra **live output** is, because XLA schedules the tangent
+    computation differently once the primal must be materialised too.
+    `_audit/optimise_design.md` §31.30 (git history; see `tried_and_rejected.md` for the
+    live summary).
 
     **When something does choose it, the saving arrives by not calling, not by not
     building.** `jax.jit` is lazy: constructing all three wrappers costs nothing, and

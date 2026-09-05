@@ -120,8 +120,9 @@ def scaled_problem(driver, conditions: ConditionMap, flat_start, unravel):
     `scipy.optimize.minimize(method="SLSQP")` calls `fun` alone during its line search,
     so fusing there would pay a full Jacobian per trial point. This function therefore
     hands out all three and lets the driver choose -- see `host_cache.bind`. It is
-    **not** bitwise and is therefore behind `VmconDriver.fused`, off; that field carries
-    the measurement and the row it moved.
+    **not** bitwise, and `VmconDriver.fused` chooses it by default anyway since
+    2026-09-05; that field's docstring carries the measurement and the row it once
+    moved (fixed since, not merely re-argued).
 
     The scaling rules are `VmconDriver`'s, unchanged and deliberately not re-derived
     here -- design variables by `1 / x_start` (PROCESS's own conditioning, from
@@ -1258,89 +1259,57 @@ class VmconDriver(AbstractDriver):
     1e-5 gives both an inaccurate step and a corrupted quasi-Newton update -- which
     shows up not as a wrong answer but as many more iterations to reach the same one.
     Measured on the MDF stellarator: see `_audit/optimise_design.md` §15."""
-    fused: bool = False
+    fused: bool = True
     """Take the value and the Jacobian from **one** compiled program rather than two.
 
-    `jax.jacfwd` computes the primal internally and discards it, so the default path
+    `jax.jacfwd` computes the primal internally and discards it, so the split path
     compiles the block's primal twice -- once as `host_cache.bind`'s `values`, once
     inside its `jacobian`. `pyvmcon.AbstractProblem.__call__` demands both at every
     point it evaluates, so there is no value-only call on this path to lose, and
     `bind`'s `values_and_jacobian` (`jax.jacfwd(..., has_aux=True)`, whose aux is the
     primal the JVP already had) removes the duplicate program outright.
 
-    **Off by default, because it is not bitwise, and this problem is sensitive at the
-    last bit.** Measured 2026-09-03 on `stellarator_helias`'s cold SAND block
-    (`_audit/optimise_design.md` §31.30), fused against split at the same point:
+    **On by default since 2026-09-05.** It was held off from 2026-09-03 on one
+    argument: `stellarator_helias` cold SAND (`--provider` seeding) flipped from
+    converged (169 it) to stopped (134 it) under it, because the arm was unstable to
+    *any* last-bit Jacobian change -- a *fabricated* `+-1` ulp nudge, no fused program
+    involved, stopped the same arm in 3 of 6 draws (`_audit/tried_and_rejected.md`'s
+    fused entry has the full chase). `WARD_KINK_SMOOTHING = 1e-3`
+    (`models/physics/pure_formulas.py`) landed since and removed the mechanism: the
+    same arm now takes 24 iterations on every `+-1` ulp draw and agrees on `objf` to
+    fifteen digits, so the objection no longer applies.
 
-    | | |
-    |---|---|
-    | condition values | **bitwise identical**, 0 of 21 cells |
-    | Jacobian | **10 of 294 cells differ**, max `4.44e-16` |
+    **Re-measured, not re-argued.** The full seven-configuration cold matrix
+    (`--native --compare-process`, all twelve MDF/SAND rows) is **bit-for-bit
+    identical** to `reference_cold_matrix.txt` with `fused` on -- every `status`, every
+    printed digit of `objf`/`max|eq|`/`min ie`/`worst dx`, unchanged. [measured
+    2026-09-05] The fused-vs-split Jacobian still differs at the last bit or two (it is
+    not a bitwise spelling, and never was -- XLA schedules the tangent computation
+    differently once the primal must also be materialised, `_audit/optimise_design.md`
+    §31.30.4's finding, unchanged), but nothing downstream of that difference moves far
+    enough to alter an iteration count, a status, or a displayed digit on any of the
+    twelve rows.
 
-    and the cause is measured rather than guessed: the *jaxpr* is the same, because the
-    same `has_aux` program with its primal output **dropped again** reproduces the split
-    Jacobian bit for bit. What moves the ten cells is the extra **live output** -- XLA
-    fuses and schedules the tangent computation differently once the primal must also be
-    materialised. `jax.lax.optimization_barrier` on the primal, on both outputs, and a
-    hand-written `vmap(jvp)` spelling all give the identical ten cells, so there is no
-    spelling of "fused" that is bitwise. [measured]
+    **What it buys**, isolated to the SAND arm alone via `host_cache`'s three programs
+    directly, `--native` seeding, same tree, interleaved per config
+    (`_audit/optimise_design.md`'s superseded §31.30.1 had the split-only figures; these
+    are fresh):
 
-    **What those ten cells did, end to end** -- the reason this is a field and not the
-    default. `--native` cold matrix, `stellarator_helias` and `large_tokamak_nof`:
+    | | `values` + `jacobian` | fused | removed | per-call: split | per-call: fused |
+    |---|---|---|---|---|---|
+    | `stellarator_helias` SAND | 5 648 + 11 480 = 17 128 | **11 595** | 5 533 (32%) | 2.560 ms | **1.572 ms** (-39%) |
+    | `large_tokamak_nof` SAND | 15 810 + 40 301 = 56 111 | **40 555** | 15 556 (28%) | 9.459 ms | **8.237 ms** (-13%) |
 
-    - stellarator MDF: converged, 66 it, `objf 1.21775739` -- **unchanged**
-    - tokamak MDF: converged, 7 it, `objf 1.6` -- **unchanged**
-    - tokamak SAND: converged, 10 it, `objf 1.6` -- **unchanged**
-    - stellarator SAND: **converged, 169 it, `objf 1.21775743`, largest equality
-      residual `1.04e-07`** becomes **stopped, 134 it, `objf 1.22762089`, largest
-      equality residual `1.96e-02`**
+    Emitted StableHLO line counts (`lower(...).as_text()`) are a property of the
+    program and not of machine load; per-call times are medians over every call one
+    solve makes (47 and 19 respectively), each set collected within one process.
+    [measured 2026-09-05] Whole-row wall clock is not quoted -- §31.30.1 already found
+    it unusable under concurrent load, and that has not changed.
 
-    Three rows of four are untouched and one flips out of convergence -- the behaviour
-    §19, §20 and §21.2 record, an SQP trajectory turning on a 2-ulp input.
-
-    **And it is not merely a coin toss, which is the finding that keeps this off.**
-    §31.31 asked whether anything principled protects the converged run. Repeating §20's
-    hand perturbation on today's tree says no -- `-1 ulp` on `.tfcoil.a_tf_turn_steel`
-    still flips the arm to `stopped`. But the *reason* is measurable and fixable:
-    `.vacuum.vacuum_old` is in this block, and `solve_duct_diameter`'s `lax.while_loop`
-    trip count takes **six distinct values over one solve** (6, 7, 8, 9, 10, 11 across
-    2 025 exits), so the tangent's truncation index moves under the SQP -- §31.28.1's
-    mechanism, in a loop nobody had checked. Give that loop an implicit derivative
-    (converge under `stop_gradient`, one differentiable Newton step from the root) and
-    **every one of those perturbations converges**, the baseline in 94 iterations rather
-    than 169 -- while the fused Jacobian on the same fixed tree does not converge even
-    unperturbed (365 iterations, stopped). [measured]
-
-    So at fixed everything-else the split path is protected and the fused one is not.
-    `reference_cold_matrix.txt` is not re-baselined for this, and this field stays off:
-    the compile saving is real but taking it now would spend the one row that makes the
-    duct-Newton defect visible. §31.31.4 has both tables.
-
-    **What it is worth, so the trade is stated and not implied.** In *emitted MLIR
-    lines*, which is a property of the program and so cannot be moved by machine load --
-    whole-row wall clock could not be used, the unchanged tokamak MDF arm having read
-    98.3 s and 62.8 s across two passes [measured]:
-
-    | | stellarator SAND | tokamak SAND |
-    |---|---|---|
-    | `values` + `jacobian` | 5 160 + 11 428 | 15 160 + 39 646 |
-    | fused | **11 544** | **39 884** |
-    | removed | **5 044** | **14 922** |
-
-    i.e. the fused program is the Jacobian program plus **116 lines** of primal outputs
-    (238 on the tokamak) where `values` costs 5 160 to emit on its own. At the survey's
-    0.41-0.52 ms per line cold that is ~2.1-2.6 s and ~6.1-7.8 s per block, on each of
-    the two blocks a configuration solves. [measured]
-
-    Per call it also helps, which is not a compile-time effect at all: 0.667 ms (values)
-    + 0.786 ms (jacobian) = 1.45 ms against **0.763 ms** fused, medians over 20 calls --
-    the redundant primal was being *computed* every iteration too. [measured] An
-    independent A/B put the whole-row saving at 3.44 s of a 46 s stellarator row and
-    ~12.9 s of a 119 s tokamak row.
-
-    Turn it on to reproduce any of the above, or on a configuration whose trajectory is
-    measured to be insensitive. Do not turn it on globally without re-running the cold
-    matrix and reading every row."""
+    Off (`fused=False`) still exists for exactly this kind of A/B, or if a future
+    configuration's trajectory turns out to need the split path's separately-schedulable
+    tangent computation. Re-run the cold matrix and read every row before changing the
+    default again."""
     epsfcn: float | None = None
     """When set, replace `jax.jacfwd` with **PROCESS's own finite difference** at this
     relative perturbation, so that the derivative stops being a difference between the
