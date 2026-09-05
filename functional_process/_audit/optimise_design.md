@@ -105,3 +105,66 @@ not quoted; §31.30.1 already found it unusable under concurrent load.
 `VmconDriver.fused` now defaults to `True`. `tests/functional_process tests/unit` still
 pass (see the commit that landed this). `tried_and_rejected.md`'s fused entry records the
 held-back-then-shipped history in full.
+
+## 41. Where a warm solve's time actually goes (2026-09-05)
+
+§40 landed `fused` and left the obvious question unasked: **is a block call expensive
+because the model is expensive, or because calling it is?** Measured on today's tree,
+medians over 15 calls at the converged point, each configuration in its own process,
+persistent compilation cache disabled.
+
+| | design vars | `values` | `jacobian` | fused | split (v+j) | fused saves |
+|---|---|---|---|---|---|---|
+| `stellarator_helias` MDF | 8 | 0.752 ms | 1.189 ms | **1.107 ms** | 1.941 ms | 42.9 % |
+| `stellarator_helias` SAND | 14 | 0.880 ms | 0.975 ms | **0.913 ms** | 1.855 ms | 50.8 % |
+| `large_tokamak_nof` MDF | 20 | 1.730 ms | 14.300 ms | **13.739 ms** | 16.030 ms | 14.3 % |
+| `large_tokamak_nof` SAND | 27 | 1.040 ms | 5.529 ms | **5.560 ms** | 6.569 ms | 15.4 % |
+
+**It is work, not overhead.** `jax`'s own bare-dispatch floor — a jitted `z * 2.0` on one
+scalar, measured in the same process — is **0.016–0.024 ms**, two orders of magnitude
+below `values`. There is no dispatch problem left at this boundary; §31.14's 14.5×
+`bind` win already took it.
+
+**The Jacobian is the cost, and forward mode is already doing well on it.** A tangent
+costs about **0.4 of a primal evaluation** (tokamak MDF: 14.3 ms of Jacobian against
+20 × 1.73 = 34.6 ms if each tangent cost a full primal), which is `vmap` amortising the
+shared work across tangents. So the tokamak's `jacobian/values` ratio of 8.3 is near the
+floor *for a 20-column Jacobian*; it is not slack.
+
+**This reframes the "0.8 ms stellarator / 3 ms tokamak" floor targets.** Those are
+*value* evaluation costs, and on values we are **at or below both**: 0.75–0.88 ms
+stellarator, 1.04–1.73 ms tokamak. What exceeds them is the Jacobian, which is a
+different quantity and scales with the design-variable count.
+
+**Why `fused` helps the stellarator twice as much as the tokamak.** It removes exactly
+one primal evaluation. Where the Jacobian is 1.1–1.6× the value (stellarator) that is
+half the call; where it is 5–8× (tokamak) it is a seventh. Both are worth having, and
+neither is where the remaining time is.
+
+**The remaining time is host-side, and it is `cvxpy`.** A warm solve, XLA calls timed
+against total wall:
+
+| | warm wall | in XLA | calls | host |
+|---|---|---|---|---|
+| `stellarator_helias` MDF | 695 ms | 164 ms (24 %) | 81 | **531 ms** |
+| `stellarator_helias` SAND | 639 ms | 87 ms (14 %) | 47 | **552 ms** |
+| `large_tokamak_nof` MDF | 793 ms | 354 ms (45 %) | 13 | **439 ms** |
+| `large_tokamak_nof` SAND | 571 ms | 146 ms (26 %) | 19 | **425 ms** |
+
+`cProfile` names it: **`pyvmcon` rebuilds the `cvxpy` QP from scratch every SQP
+iteration** — 41 `clarabel_conif.new_solver` constructions for 41 iterations, ~20 000
+`cvxpy` canonicalisation calls in one solve. That is upstream of this port, and it is now
+the largest single item in a warm solve on three of the four arms. A parametrised (DPP)
+problem reused across iterations is the fix if it is ever worth taking.
+
+**Per-call cost is point-dependent, so a solve average is not this table.** The same
+tokamak MDF block averaged **27.2 ms** over the 13 calls of a real solve against 13.7 ms
+median at the converged point: the block contains an inner solve whose trip count moves
+with the iterate. Quote the median-at-a-point for comparing *programs* and the
+solve-average for comparing *solves*; they are not the same number.
+
+**Compile, for the record, on the same tree** (true cold, no persistent cache): 2 programs
+above 100 ms on either MDF arm (16 896 + 8 465 lines = 9.5 s stellarator; 53 010 + 23 679
+= 33.4 s tokamak), 6–7 on the SAND arms, and **every trivial compile put together is
+186–449 ms**. §39's "not worth chasing" holds with the count now measured rather than
+estimated.

@@ -1500,12 +1500,20 @@ class VmconDriver(AbstractDriver):
 
             class _Problem(AbstractProblem):
                 def __call__(_self, x_scaled):  # noqa: N805 -- pyvmcon's own signature
-                    # **Two programs by default, one under `fused`.** `pyvmcon` asks for
-                    # the value *and* every derivative at every point it evaluates,
-                    # line-search trials included, so nothing on this path ever wants
-                    # the value alone (§31.23 counted 552 of each on one row) and a
-                    # fused program would be free. It is not bitwise, which is why it is
-                    # a field and not the default -- see `VmconDriver.fused`.
+                    # **One program by default, two under `fused=False`.** `pyvmcon`
+                    # asks for the value *and* every derivative at every point it
+                    # evaluates, line-search trials included, so nothing on this path
+                    # ever wants the value alone (§31.23 counted 552 of each on one row)
+                    # and the fused program is strictly cheaper here. It is still not
+                    # bitwise, which is why the split path survives as a field rather
+                    # than being deleted -- see `VmconDriver.fused` and §40.
+                    #
+                    # **`SlsqpDriver` must not do this**, and does not: scipy's SLSQP
+                    # calls `fun` alone during its line search, where the fused program
+                    # would pay a whole Jacobian per trial point -- 1.73 ms against
+                    # 13.7 ms on `large_tokamak_nof` MDF [measured 2026-09-05]. That
+                    # driver discards `both` explicitly; `fused` is this class's field
+                    # and not `scaled_problem`'s for exactly that reason.
                     #
                     # `epsfcn` could not use it anyway: its quotient is `2n` value-only
                     # evaluations, and asking a fused program for them would compute
