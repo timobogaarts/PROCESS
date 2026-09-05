@@ -177,7 +177,7 @@ class VacuumPumpingSimple(ExplicitFunction):
         outgasindex=From(vacuum),
         t_plant_pulse_dwell=From(times),
     ):
-        npump = calculate_vacuum_pumping_simple(
+        return calculate_vacuum_pumping_simple(
             molflow_plasma_fuelling_required,
             molflow_vac_pumps,
             volflow_vac_pumps_max,
@@ -190,7 +190,6 @@ class VacuumPumpingSimple(ExplicitFunction):
             outgasindex,
             t_plant_pulse_dwell,
         )
-        return npump
 
 
 # ---------------------------------------------------------------------------
@@ -567,6 +566,16 @@ def pumping_speed_floor_residual(ceff_i, s_i):
     return 1.1 * s_i - ceff_i
 
 
+def calculate_duct_feasibility_conditions(d_duct, a1max, ceff_i, s_i):
+    """`DuctFeasibilityConditions`'s own pair of residuals, moved out of the
+    declaration and into a named function (`_audit/formulas_split.md` step 1).
+    """
+    return (
+        duct_fits_residual(d_duct, a1max),
+        pumping_speed_floor_residual(ceff_i, s_i),
+    )
+
+
 class DuctFeasibilityConditions(ExplicitFunction):
     """cottax node: the two inequality residuals `DuctFeasibility` (below) reads.
 
@@ -591,10 +600,7 @@ class DuctFeasibilityConditions(ExplicitFunction):
         ceff_i=From(vacuum),
         s_i=From(vacuum),
     ):
-        return (
-            duct_fits_residual(d_duct, a1max),
-            pumping_speed_floor_residual(ceff_i, s_i),
-        )
+        return calculate_duct_feasibility_conditions(d_duct, a1max, ceff_i, s_i)
 
 
 DuctFeasibility = Feasibility(
