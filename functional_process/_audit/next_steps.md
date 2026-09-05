@@ -30,15 +30,19 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   blocker** — a discrete first-fit search, not a root find, so it doesn't take the same
   `stop_gradient`-plus-Newton-step treatment already applied to its two sibling loops.
   Sizing for a `vmap`-over-64-candidates conversion exists; not done.
-- **`host_cache._flat_key` is a declared stopgap**, to be deleted (not kept alongside)
-  once `cottax.Graph` carries a precomputed `(static_key, array_leaves)` pair.
-  `sand_harness._SCHEDULE_WHOLE`/`_SCHEDULE_RUNNERS` are unbounded dicts with the same
-  unboundedness `host_cache._BOUND` had before its removal — same trap, not yet fixed.
-- **The `stellarator_helias` SAND-arm instability** (one configuration's SQP solve is
-  chaotic under last-bit perturbation where a comparable tokamak configuration is not).
-  Structural causes are ruled out (see the five QP-conditioning nulls in
-  `tried_and_rejected.md`); the merit function and line search are the one uninstrumented
-  component left with evidence behind it.
+- **`sand_harness._SCHEDULE_WHOLE`/`_SCHEDULE_RUNNERS` are unbounded dicts** with the
+  same trap `host_cache._BOUND` had before its removal. Not yet fixed.
+  (`host_cache._BOUND` and `_flat_key` are **gone** as of 2026-09-05: the removal
+  condition arrived in the better form — the graph is static outright, so there are no
+  array leaves to precompute.)
+- **[resolved 2026-09-05] The `stellarator_helias` SAND-arm instability.** Cause was a
+  square-root singularity in `_fast_alpha_fraction_ward` (`sqrt(temp_sum_20 - 0.65)`:
+  derivative zero below the threshold, unbounded above) that the optimiser sat 5.5e-08
+  from and crossed on 46 % of steps. Smoothed at `WARD_KINK_SMOOTHING = 1e-3`; every
+  ±1 ulp draw now takes 24 iterations and agrees on `objf` to fifteen digits, against
+  87–333 and one catastrophic stop. Cost and the three rejected repairs are in
+  `tried_and_rejected.md`. **Still open**: nine of twenty-six separation jumps are
+  active-set changes rather than kink crossings, and are unexplained.
 - **The SLSQP driver has never been run across the full seven-configuration matrix.** It
   would separate "this problem is degenerate" from "VMCON handles degeneracy badly", and
   for SAND there is no PROCESS answer to compare against at all, so a second independent
