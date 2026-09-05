@@ -37,9 +37,9 @@ own four `@staticmethod`s:
 - Two plain divisions with no PROCESS `calculate_*` counterpart --
   `pflux_plasma_outboard_sol_{parallel,eich13_parallel}_mw = p_plasma_separatrix_mw /
   a_plasma_outboard_sol_{parallel,eich13_parallel}` (`scrape_off_layer.py:90-98`) --
-  composed here rather than given their own named pure function, same as
-  `ConfinementScalingInputs`'s unit conversions in `confinement_time.py` are inlined
-  rather than factored out.
+  each given its own module-level function since 2026-09-05
+  (`_audit/formulas_split.md`, step 1) so that a declaration's `__call__` is a name and
+  not a body; there is still no PROCESS `calculate_*` counterpart to port them from.
 
 **The RAW mint caution.** `ScrapeOffLayer.run()` is called from
 `Physics.run()` at `process/models/physics/physics.py:832`, which reads
@@ -342,6 +342,11 @@ class OutboardSOLPowerDecayLength(ExplicitFunction):
     """
 
 
+def outboard_sol_power_decay_length_eich2013(len_plasma_sol_eich13_power_decay):
+    """The switch's `EICH_2013` arm: pass the already-computed Eich length through."""
+    return len_plasma_sol_eich13_power_decay
+
+
 class OutboardSOLPowerDecayLengthEich2013(OutboardSOLPowerDecayLength):
     """`i_len_sol_outboard_power_decay == EICH_2013` (1) -- PROCESS's own default
     (`physics_variables.py:1718`) and the value live on `large_tokamak_eval.IN.DAT`,
@@ -353,7 +358,9 @@ class OutboardSOLPowerDecayLengthEich2013(OutboardSOLPowerDecayLength):
     len_sol_outboard_power_decay = OutputInto(physics)
 
     def __call__(self, len_plasma_sol_eich13_power_decay=From(physics)):
-        return len_plasma_sol_eich13_power_decay
+        return outboard_sol_power_decay_length_eich2013(
+            len_plasma_sol_eich13_power_decay
+        )
 
 
 class UpstreamSOLOutboardParallelArea(ExplicitFunction):
@@ -415,6 +422,28 @@ class UpstreamSOLOutboardEich13ParallelArea(ExplicitFunction):
         )
 
 
+def outboard_sol_parallel_power_flux(
+    p_plasma_separatrix_mw_raw, a_plasma_outboard_sol_parallel
+):
+    """The switch-selected outboard SOL parallel power flux (MW/m^2).
+
+    No PROCESS `calculate_*` counterpart -- `run()`'s own inline division
+    (`scrape_off_layer.py:90-93`), reproduced as-is.
+    """
+    return p_plasma_separatrix_mw_raw / a_plasma_outboard_sol_parallel
+
+
+def outboard_sol_eich13_parallel_power_flux(
+    p_plasma_separatrix_mw_raw, a_plasma_outboard_sol_eich13_parallel
+):
+    """The unconditional Eich 2013 outboard SOL parallel power flux (MW/m^2).
+
+    No PROCESS `calculate_*` counterpart -- `run()`'s own inline division
+    (`scrape_off_layer.py:95-98`), reproduced as-is.
+    """
+    return p_plasma_separatrix_mw_raw / a_plasma_outboard_sol_eich13_parallel
+
+
 class OutboardSOLParallelPowerFlux(ExplicitFunction):
     """cottax node: `.physics.pflux_plasma_outboard_sol_parallel_mw`, the switch-
     selected power flux. No PROCESS `calculate_*` counterpart -- `run()`'s own inline
@@ -428,7 +457,9 @@ class OutboardSOLParallelPowerFlux(ExplicitFunction):
         p_plasma_separatrix_mw_raw=From(physics),
         a_plasma_outboard_sol_parallel=From(physics),
     ):
-        return p_plasma_separatrix_mw_raw / a_plasma_outboard_sol_parallel
+        return outboard_sol_parallel_power_flux(
+            p_plasma_separatrix_mw_raw, a_plasma_outboard_sol_parallel
+        )
 
 
 class OutboardSOLEich13ParallelPowerFlux(ExplicitFunction):
@@ -444,7 +475,9 @@ class OutboardSOLEich13ParallelPowerFlux(ExplicitFunction):
         p_plasma_separatrix_mw_raw=From(physics),
         a_plasma_outboard_sol_eich13_parallel=From(physics),
     ):
-        return p_plasma_separatrix_mw_raw / a_plasma_outboard_sol_eich13_parallel
+        return outboard_sol_eich13_parallel_power_flux(
+            p_plasma_separatrix_mw_raw, a_plasma_outboard_sol_eich13_parallel
+        )
 
 
 class TokamakScrapeOffLayer(ModelNamespace):
