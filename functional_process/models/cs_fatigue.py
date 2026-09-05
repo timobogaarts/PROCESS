@@ -381,6 +381,45 @@ def calculate_n_cycle(
     return jnp.where(growing(final), jnp.nan, n_pulse / 2.0)
 
 
+def calculate_cs_fatigue_n_cycle_gated(
+    f_c_plasma_inductive,
+    stress_hoop_cs_inner,
+    residual_sig_hoop,
+    t_crack_vertical,
+    dz_cs_turn_conduit,
+    dr_cs_turn_conduit,
+    paris_coefficient,
+    paris_power_law,
+    walker_coefficient,
+    sf_vertical_crack,
+    sf_radial_crack,
+    fracture_toughness,
+    sf_fast_fracture,
+):
+    """`CsFatigue`'s own `f_c_plasma_inductive > 0.0` gate around `calculate_n_cycle`
+    (see that class's docstring for why the guard belongs to the binding), moved out of
+    the declaration and into a named function -- `_audit/formulas_split.md` step 1.
+    """
+    return jnp.where(
+        f_c_plasma_inductive > 0.0,
+        calculate_n_cycle(
+            stress_hoop_cs_inner,
+            residual_sig_hoop,
+            t_crack_vertical,
+            dz_cs_turn_conduit,
+            dr_cs_turn_conduit,
+            paris_coefficient,
+            paris_power_law,
+            walker_coefficient,
+            sf_vertical_crack,
+            sf_radial_crack,
+            fracture_toughness,
+            sf_fast_fracture,
+        ),
+        0.0,
+    )
+
+
 class CsFatigue(ExplicitFunction):
     """cottax node: `.tokamak.cs_fatigue`. Owns `.cs_fatigue.n_cycle`, constraint 90's
     operand.
@@ -419,21 +458,18 @@ class CsFatigue(ExplicitFunction):
         sf_fast_fracture=From(cs_fatigue),
         f_c_plasma_inductive=From(physics),
     ):
-        return jnp.where(
-            f_c_plasma_inductive > 0.0,
-            calculate_n_cycle(
-                stress_hoop_cs_inner,
-                residual_sig_hoop,
-                t_crack_vertical,
-                dz_cs_turn_conduit,
-                dr_cs_turn_conduit,
-                paris_coefficient,
-                paris_power_law,
-                walker_coefficient,
-                sf_vertical_crack,
-                sf_radial_crack,
-                fracture_toughness,
-                sf_fast_fracture,
-            ),
-            0.0,
+        return calculate_cs_fatigue_n_cycle_gated(
+            f_c_plasma_inductive,
+            stress_hoop_cs_inner,
+            residual_sig_hoop,
+            t_crack_vertical,
+            dz_cs_turn_conduit,
+            dr_cs_turn_conduit,
+            paris_coefficient,
+            paris_power_law,
+            walker_coefficient,
+            sf_vertical_crack,
+            sf_radial_crack,
+            fracture_toughness,
+            sf_fast_fracture,
         )
