@@ -488,6 +488,43 @@ def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
     )
 
 
+def calculate_tf_coil_quench_heat_current_density(
+    a_tf_turn_cable_space_no_void,
+    a_tf_turn,
+    t_tf_superconductor_quench,
+    b_tf_inboard_peak_with_ripple,
+    f_a_tf_turn_cable_copper,
+    f_a_tf_turn_cable_space_cooling,
+    tftmp,
+    temp_tf_conductor_quench_max,
+    rrr_tf_cu,
+    t_tf_quench_detection,
+    flu_tf_neutron_fast_max,
+    den_helium_at_nodes,
+    cp_helium_at_nodes,
+):
+    """`.tfcoil.j_tf_wp_quench_heat_max`'s own arm: the two static helium property
+    tables are `tuple`s (hashable, for jit caching -- see `TfCoilQuenchHeatCurrentDensity`
+    docstring), converted to `jnp` arrays here rather than at the call site, then handed
+    unchanged to `j_tf_wp_quench_heat_max`.
+    """
+    return j_tf_wp_quench_heat_max(
+        a_tf_turn_cable_space=a_tf_turn_cable_space_no_void,
+        a_tf_turn=a_tf_turn,
+        tau_discharge=t_tf_superconductor_quench,
+        b_peak=b_tf_inboard_peak_with_ripple,
+        f_a_cable_copper=f_a_tf_turn_cable_copper,
+        f_a_cable_space_helium=f_a_tf_turn_cable_space_cooling,
+        temp_he_peak=tftmp,
+        temp_quench_max=temp_tf_conductor_quench_max,
+        cu_rrr=rrr_tf_cu,
+        t_quench_detection=t_tf_quench_detection,
+        fluence=flu_tf_neutron_fast_max,
+        den_helium_at_nodes=jnp.asarray(den_helium_at_nodes),
+        cp_helium_at_nodes=jnp.asarray(cp_helium_at_nodes),
+    )
+
+
 class TfCoilQuenchHeatCurrentDensity(ExplicitFunction):
     """cottax node: `.tfcoil.j_tf_wp_quench_heat_max`, constraint 35's read.
 
@@ -571,20 +608,20 @@ class TfCoilQuenchHeatCurrentDensity(ExplicitFunction):
         t_tf_quench_detection=From(tfcoil),
         flu_tf_neutron_fast_max=From(constraints),
     ):
-        return j_tf_wp_quench_heat_max(
-            a_tf_turn_cable_space=a_tf_turn_cable_space_no_void,
-            a_tf_turn=a_tf_turn,
-            tau_discharge=t_tf_superconductor_quench,
-            b_peak=b_tf_inboard_peak_with_ripple,
-            f_a_cable_copper=f_a_tf_turn_cable_copper,
-            f_a_cable_space_helium=f_a_tf_turn_cable_space_cooling,
-            temp_he_peak=self.tftmp,
-            temp_quench_max=self.temp_tf_conductor_quench_max,
-            cu_rrr=rrr_tf_cu,
-            t_quench_detection=t_tf_quench_detection,
-            fluence=flu_tf_neutron_fast_max,
-            den_helium_at_nodes=jnp.asarray(self.den_helium_at_nodes),
-            cp_helium_at_nodes=jnp.asarray(self.cp_helium_at_nodes),
+        return calculate_tf_coil_quench_heat_current_density(
+            a_tf_turn_cable_space_no_void,
+            a_tf_turn,
+            t_tf_superconductor_quench,
+            b_tf_inboard_peak_with_ripple,
+            f_a_tf_turn_cable_copper,
+            f_a_tf_turn_cable_space_cooling,
+            self.tftmp,
+            self.temp_tf_conductor_quench_max,
+            rrr_tf_cu,
+            t_tf_quench_detection,
+            flu_tf_neutron_fast_max,
+            self.den_helium_at_nodes,
+            self.cp_helium_at_nodes,
         )
 
 
