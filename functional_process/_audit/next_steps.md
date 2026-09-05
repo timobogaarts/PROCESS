@@ -43,10 +43,15 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   87–333 and one catastrophic stop. Cost and the three rejected repairs are in
   `tried_and_rejected.md`. **Still open**: nine of twenty-six separation jumps are
   active-set changes rather than kink crossings, and are unexplained.
-- **The SLSQP driver has never been run across the full seven-configuration matrix.** It
-  would separate "this problem is degenerate" from "VMCON handles degeneracy badly", and
-  for SAND there is no PROCESS answer to compare against at all, so a second independent
-  optimiser is the closest thing to an oracle available.
+- **[resolved 2026-09-05] The SLSQP driver has now been run across the full
+  seven-configuration matrix** (`run_cold_matrix.py --slsqp`, published as
+  `reference_slsqp_matrix.txt`; `optimise_design.md` §42). 9 of 12 rows converge and
+  agree with VMCON on the answer, several with better constraint residuals and one in
+  17 iterations against 79. **Still open**: `helias_5b` fails on *both* arms at iteration
+  1 with scipy's *"Singular matrix C in LSQ subproblem"* -- a rank-deficient constraint
+  Jacobian at the cold start that VMCON's QP survives and scipy's does not. That is
+  evidence about the problem, and nobody has looked at which constraints are dependent
+  there. `stellarator_helias` SAND hits the 500 cap under SLSQP where VMCON takes 24.
 - **Two unexplained boundary offsets, both on `.heat_transport.p_plant_electric_net_mw`**
   via constraint c16: `spherical_tokamak_eval` shows a `-16.35 MW` offset at PROCESS's own
   converged point, of the same shape as `mda_harness.EXPLAINED_DISAGREEMENTS`' documented
@@ -63,6 +68,10 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   coupling that happens to look like the identity at that point is silently dropped.
   Should sample several points and refuse on disagreement, matching the rest of the
   port's "can't verify → refuse, don't report healthy" discipline.
+- **`run_cold_matrix.main`'s docstring claims `--cache` gives "bitwise-identical
+  rows", and that has never been tested as stated.** It survived the one direct check
+  made of it (§42: a fresh cache reproduces the uncached numbers on `st_regression`),
+  but the claim is about all twelve rows and the check was two.
 - **`--provider` should be retired in favour of `--native` as the default** — understood,
   not done. The comparison axis (`--compare-process`) already exists independently.
 - **The reduced-space MDF formulation is unbuilt**: let the graph close the equality

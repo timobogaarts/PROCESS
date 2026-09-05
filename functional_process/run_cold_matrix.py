@@ -204,6 +204,7 @@ from functional_process import (  # noqa: E402
 )
 from functional_process.core.solver.drivers import (  # noqa: E402
     VMCON_NON_FINITE,
+    SlsqpDriver,
     Status,
     non_finite_summary,
 )
@@ -536,7 +537,7 @@ def build_mdf(reference, machine_graph, switch_values, root_find=False) -> MdfBu
     return build
 
 
-def solve_mdf(build: MdfBuild, reference, cold) -> dict:
+def solve_mdf(build: MdfBuild, reference, cold, optimiser=None) -> dict:
     """Solve an already-assembled MDF from `cold` -- the half of a row that a repeated
     solve *does* repeat.
 
@@ -601,6 +602,12 @@ def solve_mdf(build: MdfBuild, reference, cold) -> dict:
         callback=_recorder(trace),
         tolerance=MDF_TOLERANCE,
         max_iter=MDF_MAX_ITER,
+        # `mdf.solve` accepts a *class* here and builds the default driver out of it,
+        # so every other argument on this call -- bounds, tolerance, cap, callback --
+        # and the equality/inequality counts stay exactly what the VMCON row had. That
+        # is what makes the two tables a comparison of solvers rather than of two
+        # slightly different problems.
+        **({} if optimiser is None else {"optimiser": optimiser}),
     )
     iterations, objf, max_eq, min_ie = _trace_tail(trace)
     result.update(
@@ -618,7 +625,9 @@ def solve_mdf(build: MdfBuild, reference, cold) -> dict:
     return result
 
 
-def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
+def cold_mdf(
+    reference, machine_graph, switch_values, cold, root_find=False, optimiser=None
+):
     """Build MDF for this run and solve it from the input file's own cold values.
 
     `build_mdf` then `solve_mdf`, which is what a matrix row is: assemble the problem
@@ -633,7 +642,7 @@ def cold_mdf(reference, machine_graph, switch_values, cold, root_find=False):
     """
     began = time.perf_counter()
     build = build_mdf(reference, machine_graph, switch_values, root_find=root_find)
-    result = solve_mdf(build, reference, cold)
+    result = solve_mdf(build, reference, cold, optimiser=optimiser)
     result["_seconds_total"] = time.perf_counter() - began
     return result
 
@@ -657,7 +666,7 @@ class SandBuild:
     omitted: object = None
 
 
-def build_sand(reference, machine_graph, switch_values) -> SandBuild:
+def build_sand(reference, machine_graph, switch_values, optimiser=None) -> SandBuild:
     """Assemble SAND for this configuration, solve schedule included.
 
     `run_sand_harness.main`'s C3 branch up to the point where `cold` first matters, with
@@ -684,6 +693,7 @@ def build_sand(reference, machine_graph, switch_values) -> SandBuild:
         condition_scale=condition_scale,
         callback=_recorder(trace),
         max_iter=SAND_MAX_ITER,
+        optimiser=optimiser,
     )
     return SandBuild(
         solve_schedule=solve_schedule,
@@ -822,7 +832,7 @@ def solve_sand(build: SandBuild, reference, machine_graph, cold) -> dict:
     return result
 
 
-def cold_sand(reference, machine_graph, switch_values, cold):
+def cold_sand(reference, machine_graph, switch_values, cold, optimiser=None):
     """Build SAND for this run and solve it from the input file's own cold values.
 
     `build_sand` then `solve_sand`, which is what a matrix row is; a caller that solves
@@ -830,7 +840,7 @@ def cold_sand(reference, machine_graph, switch_values, cold):
     (`functional_process.session`).
     """
     began = time.perf_counter()
-    build = build_sand(reference, machine_graph, switch_values)
+    build = build_sand(reference, machine_graph, switch_values, optimiser=optimiser)
     result = solve_sand(build, reference, machine_graph, cold)
     result["_seconds_total"] = time.perf_counter() - began
     return result
@@ -1053,7 +1063,7 @@ def compares_by_default(mode: str) -> bool:
     return mode != NATIVE
 
 
-def run_one(path, mode=PROVIDER, compare=None) -> Row:
+def run_one(path, mode=PROVIDER, compare=None, optimiser=None) -> Row:
     """One configuration: assembly verdict, PROCESS, cold MDF, cold SAND.
 
     Nothing here raises. Each of the five phases records what it got and the next one
@@ -1167,7 +1177,14 @@ def run_one(path, mode=PROVIDER, compare=None) -> Row:
                     f"iteration(s) -- SCORING ONLY, this row is seeded natively"
                 )
         return _solve_both(
-            row, reference, machine_graph, switch_values, cold, began, oracle=oracle
+            row,
+            reference,
+            machine_graph,
+            switch_values,
+            cold,
+            began,
+            oracle=oracle,
+            optimiser=optimiser,
         )
 
     try:
@@ -1229,11 +1246,20 @@ def run_one(path, mode=PROVIDER, compare=None) -> Row:
         )
 
     return _solve_both(
-        row, reference, machine_graph, switch_values, cold, began, oracle=oracle
+        row,
+        reference,
+        machine_graph,
+        switch_values,
+        cold,
+        began,
+        oracle=oracle,
+        optimiser=optimiser,
     )
 
 
-def _solve_both(row, reference, machine_graph, switch_values, cold, began, oracle=None):
+def _solve_both(
+    row, reference, machine_graph, switch_values, cold, began, oracle=None, optimiser=None
+):
     """Cold MDF and cold SAND for one configuration, each a row rather than an exit.
 
     Factored out of `run_one` when `NATIVE` arrived: the two modes differ entirely in
@@ -1271,7 +1297,16 @@ def _solve_both(row, reference, machine_graph, switch_values, cold, began, oracl
             # total would average the two into a number describing neither.
             phase_timing.reset()
             arm_began = time.perf_counter()
-            store.update(run(reference, machine_graph, switch_values, cold, **kwargs))
+            store.update(
+                run(
+                    reference,
+                    machine_graph,
+                    switch_values,
+                    cold,
+                    optimiser=optimiser,
+                    **kwargs,
+                )
+            )
             row.timings[label] = phase_timing.split(time.perf_counter() - arm_began)
         except Exception as failure:  # noqa: BLE001 -- a row, not an exit
             store.update(_blank())
@@ -1831,6 +1866,11 @@ def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
         "#",
         f"# MEASURED {when}.",
         f"# SEEDED    `--{mode}` -- where every starting value came from.",
+        # A third axis, and it belongs beside the other two rather than only inside the
+        # echoed command line: two tables that differ in nothing but this are the point
+        # of having the flag, and a reader who cannot see which is which has neither.
+        f"# DRIVEN BY {'scipy SLSQP (`--slsqp`)' if '--slsqp' in argv else 'VMCON'} "
+        f"-- which optimiser answered every `Optimise`.",
         (
             "# SCORED    "
             + (
@@ -1998,6 +2038,14 @@ def main(argv=None, out=OUT):
     the seeding flags, and `--native --compare-process` is the pairing the split was made
     for -- no `DataStructure` anywhere in the solve path, and the `PRO` columns filled
     from a disk-cached run loaded afterwards.
+
+    `--slsqp` answers every `Optimise` with `scipy`'s SLSQP instead of VMCON, changing
+    **nothing else**: the same assembly, the same bounds, tolerance and iteration cap,
+    the same equality/inequality counts read off the definition, the same seeding and
+    scoring. That is what makes the two tables comparable, and why the class rather than
+    a built driver is what travels (`mda.default_drivers`' `optimiser`). Write it
+    somewhere other than `OUT` -- `reference_slsqp_matrix.txt` is where the published one
+    lives -- since a VMCON table and an SLSQP table are not the same measurement.
     """
     argv = sys.argv[1:] if argv is None else argv
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"]
@@ -2006,6 +2054,7 @@ def main(argv=None, out=OUT):
     paths = [_resolve(p) for p in (chosen or CONFIGURATIONS)]
     mode = _mode(argv)
     compare = _compare(argv, mode)
+    optimiser = SlsqpDriver if "--slsqp" in argv else None
     # Patch jax's trace/lower/compile entry points before the first graph is built, so no
     # phase is missed. Idempotent, and a `False` costs the timing block, not the run.
     timed = phase_timing.install()
@@ -2014,6 +2063,7 @@ def main(argv=None, out=OUT):
         _enable_compilation_cache(cache_dir)
     print(
         f"seeding: {mode}    scored against PROCESS: {compare}    "
+        f"optimiser: {'SLSQP' if optimiser else 'VMCON'}    "
         f"phase timing: {'on' if timed else 'UNAVAILABLE (jax internals moved)'}"
     )
     if cache_dir:
@@ -2025,7 +2075,7 @@ def main(argv=None, out=OUT):
     began = time.perf_counter()
     rows: list[Row] = []
     for path in paths:
-        rows.append(run_one(path, mode, compare))
+        rows.append(run_one(path, mode, compare, optimiser=optimiser))
         checkpoint(rows, out, mode, argv, compare)
         print(f"  (checkpointed {len(rows)} of {len(paths)} row(s) to {out})")
         # Configurations are independent, and jax caches every executable it compiles

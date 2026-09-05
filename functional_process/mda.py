@@ -816,7 +816,12 @@ def reassign_drivers(graph: Graph, drivers: dict) -> Graph:
 
 
 def default_drivers(
-    graph: Graph, bounds=(), callback=None, condition_scale=(), max_iter=None
+    graph: Graph,
+    bounds=(),
+    callback=None,
+    condition_scale=(),
+    max_iter=None,
+    optimiser=VmconDriver,
 ) -> dict:
     """One driver per **problem**, chosen mechanically by problem type
 
@@ -857,6 +862,20 @@ def default_drivers(
     ordinary nodes) needed 131. `_audit/optimise_design.md` §12 records the measurement
     and why the count moved.
 
+    **`optimiser` names the class, not an instance**, because the counts are read off
+    `Optimise.equalities`/`Optimise.inequalities` *here* and a caller handing in a
+    built driver would have to have counted them itself -- the one thing the paragraph
+    above says never to do. `SlsqpDriver` is the other class that fits: its fields are a
+    strict subset of `VmconDriver`'s, so the same call constructs either. Anything
+    passed here must therefore accept `n_equality`/`n_inequality`/`bounds`/`callback`/
+    `condition_scale` and, if `max_iter` is given, `max_iter`.
+
+    A second optimiser is worth having at all because on a problem with no PROCESS
+    answer to compare against -- every SAND arm -- it is the closest thing to an oracle
+    available: agreement is evidence, and a disagreement separates "this problem is
+    degenerate" from "this solver handles degeneracy badly"
+    (`_audit/optimise_design.md` §42).
+
     Raises
     ------
     TypeError
@@ -876,7 +895,7 @@ def default_drivers(
             # `VmconDriver.max_iter` is an `int` field with a default it would then be
             # handed instead of keeping.
             said = {} if max_iter is None else {"max_iter": max_iter}
-            drivers[problem] = VmconDriver(
+            drivers[problem] = optimiser(
                 n_equality=len(definition.equalities),
                 n_inequality=len(definition.inequalities),
                 bounds=bounds,

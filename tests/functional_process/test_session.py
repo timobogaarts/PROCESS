@@ -41,7 +41,7 @@ def _session(monkeypatch, root_find=False):
     monkeypatch.setattr(
         session,
         "solve_mdf",
-        lambda build, reference, cold: solved.append(("mdf", build, cold)) or {},
+        lambda build, reference, cold, **k: solved.append(("mdf", build, cold)) or {},
     )
     monkeypatch.setattr(
         session,
@@ -135,7 +135,7 @@ def test_the_matrix_row_is_still_the_two_halves_run_back_to_back(monkeypatch):
     monkeypatch.setattr(
         run_cold_matrix,
         "solve_mdf",
-        lambda build, reference, cold: calls.append(("solve", build)) or {},
+        lambda build, reference, cold, **k: calls.append(("solve", build)) or {},
     )
     run_cold_matrix.cold_mdf(_Reference(), None, None, "COLD")
     assert calls == ["build", ("solve", "BUILD")]

@@ -168,3 +168,114 @@ above 100 ms on either MDF arm (16 896 + 8 465 lines = 9.5 s stellarator; 53 010
 = 33.4 s tokamak), 6–7 on the SAND arms, and **every trivial compile put together is
 186–449 ms**. §39's "not worth chasing" holds with the count now measured rather than
 estimated.
+
+## 42. SLSQP across the whole matrix, and two corrections (2026-09-05)
+
+`next_steps.md` has carried *"the SLSQP driver has never been run across the full
+seven-configuration matrix"* since it was written. It has now been run, and the run
+corrected two things this file said.
+
+**How it is run.** `run_cold_matrix.py --slsqp`, which changes the driver **class** and
+nothing else — same assembly, same bounds, same tolerance, same iteration cap, same
+seeding, same scoring, and the equality/inequality counts still read off
+`Optimise.equalities`/`.inequalities` rather than counted by a caller. `optimiser` is
+threaded through `mda.default_drivers`, `sand.sand_schedule`, `mdf.driver`/`mdf.solve`
+and the harness as a *class*, deliberately: a caller handing in a built driver would have
+had to count the conditions itself, which is the one thing §4.1 says never to do. The
+published table is `reference_slsqp_matrix.txt`; its header names the optimiser on its own
+line beside `SEEDED` and `SCORED`.
+
+The two `i_process_run_mode = -2` rows (`large_tokamak_eval`, `spherical_tokamak_eval`)
+come out **byte-identical** to the VMCON table, which is the check that the flag reaches
+only `Optimise` blocks: those two state a `RootFind` and have no optimiser to change.
+
+**Result: 9 of 12 converged, 1 hit the cap, 2 failed** — and where it converges it agrees
+with VMCON on the answer while reaching *better* constraint residuals:
+
+| | SLSQP it | VMCON it | SLSQP `max|eq|` | VMCON `max|eq|` |
+|---|---|---|---|---|
+| `stellarator_helias` MDF | **27** | 41 | 4.85e-10 | 5.56e-10 |
+| `stellarator_helias` SAND | cap(500) | 24 | 3.95e-04 | 7.13e-06 |
+| `helias_5b` MDF | **fails at it 1** | 4 | 1.16e-01 | 1.93e-12 |
+| `helias_5b` SAND | **fails at it 1** | 7 | 3.92e+03 | 1.10e-13 |
+| `large_tokamak_nof` MDF | 8 | 7 | **7.04e-12** | 2.40e-06 |
+| `large_tokamak_nof` SAND | 13 | 10 | **1.39e-13** | 7.17e-06 |
+| `low_aspect_ratio_DEMO` MDF | 12 | 11 | 4.44e-15 | 9.99e-15 |
+| `low_aspect_ratio_DEMO` SAND | **17** | 79 | 1.70e-11 | 5.29e-13 |
+| `st_regression` MDF | 11 | 10 | 7.64e-12 | 2.66e-15 |
+| `st_regression` SAND | 10 | 10 | 8.00e-14 | 7.32e-13 |
+
+The objectives agree to the printed digits everywhere both converge. **This is the oracle
+the open item wanted**: on the SAND arms there is no PROCESS answer to compare against at
+all, and two independent SQPs landing on the same optimum is the strongest evidence
+available that the optimum is the problem's and not the solver's.
+
+`helias_5b` is the one real failure and scipy says why: **"Singular matrix C in LSQ
+subproblem"** at iteration 1, both arms. That is a rank-deficient constraint Jacobian at
+the cold start, which VMCON's own QP happens to survive and scipy's does not. It is
+evidence about the *problem*, not about scipy — the distinction this whole exercise
+exists to draw — and it is a new open item.
+
+**Host cost: `sqp` reads 0.0 s on all twelve SLSQP arms**, against 0.0-2.2 s for VMCON.
+scipy's SLSQP is Fortran and allocates nothing per iteration; `pyvmcon` builds a fresh
+`cvxpy` problem every iteration (§41). On `low_aspect_ratio_DEMO` SAND that is 2.2 s and
+79 iterations against 0.0 s and 17.
+
+**But SLSQP pays for it in evaluations, which §41 predicted and this measures.** Its line
+search calls `fun` at points it never asks a derivative for, and `SlsqpDriver.at` computes
+the Jacobian at *every* distinct point regardless — `nfev/nit` is 1.1-1.5 where it
+converges and **7.0** on the capped stellarator SAND arm (3 518 evaluations for 500
+iterations). At §41's 5.5-8.3x Jacobian-to-value ratio that is the expensive half. So the
+two are not ranked: SLSQP is cheaper per iteration and can be far more expensive per
+solve.
+
+### Correction 1: `fused` does move the matrix, on two configurations
+
+§40 recorded the seven-configuration matrix as **bit-for-bit identical** with `fused` on.
+That was measured on a tree without §39's `mdf._not_weak`, and on today's `main` it is
+false: **four cells move**, all in the residual columns, on `low_aspect_ratio_DEMO` and
+`st_regression`.
+
+| | with `fused` | pin (`fused` off) |
+|---|---|---|
+| `low_aspect_ratio_DEMO` MDF `max|eq|` | 7.33e-15 | 9.99e-15 |
+| `low_aspect_ratio_DEMO` SAND `max|eq|` | 1.74e-13 | 5.29e-13 |
+| `st_regression` MDF `max|eq|` | 2.89e-15 | 2.66e-15 |
+| `st_regression` SAND `max|eq|` / `min ie` | 7.32e-13 / 3.71e-13 | 2.90e-13 / 3.73e-13 |
+
+Every other cell — every `status`, `SQP` count, `objf` and `worst dx` on all twelve
+rows — is unchanged, and the moved cells are residuals at `1e-13`-`1e-15`, orders below
+any tolerance the table applies. So the *conclusion* of §40 stands and the default stays;
+what was wrong is the word "identical".
+
+**Ruled out before concluding, because three explanations were available.** Two uncached
+runs of `st_regression` agree with each other to the last digit, so it is not run-to-run
+nondeterminism. A run *with* a fresh persistent cache reproduces the uncached numbers, so
+it is not the compilation cache — which also **falsifies `main`'s own docstring claim of
+"bitwise-identical rows" under `--cache`** in the other direction: the cache is innocent
+here, and the claim was never tested this way. Setting `fused = False` on today's tree
+reproduces the pin exactly. That is the variable.
+
+`reference_cold_matrix.txt` is therefore re-baselined on today's `main`, which is what it
+is for: the file states the tree's own measurement, and it had stopped doing so.
+
+### Correction 2: a `nan` convergence value turned every SLSQP success into a failure
+
+`SlsqpDriver`'s callback had to grow `VmconDriver`'s four-argument shape for
+`run_cold_matrix._recorder` to read it. The fourth argument is VMCON's convergence
+parameter, which scipy forms no equivalent of, and the first attempt passed `nan` as the
+honest answer.
+
+It is not the honest answer. `_status` compares that number to a tolerance and nothing
+else reads it, and `nan <= tol` is `False` — so **every SLSQP row printed `stopped`,
+including the nine where scipy had said "Optimization terminated successfully"** and the
+residuals were up to five orders better than VMCON's. The first table generated from this
+flag said SLSQP converged on none of twelve rows; it converges on nine. The final callback
+now carries `0.0` for `result.success` and `inf` otherwise, documented at the call site as
+an encoding of scipy's verdict and not a convergence measure.
+
+The general lesson is worth the paragraph: a sentinel is only honest if every consumer
+reads it as one. `nan` chosen for caution produced a confidently wrong table, which is the
+failure mode this port's whole "refuse rather than report healthy" discipline exists to
+avoid — and it produced the *opposite* error, reporting sick when healthy, which is
+cheaper but not free.

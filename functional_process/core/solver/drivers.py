@@ -870,10 +870,41 @@ class SlsqpDriver(AbstractDriver):
             ]
             constraints = [c for c in constraints if len(np.atleast_1d(c["fun"](x0)))]
 
+            def _result_at(x):
+                """A `pyvmcon.Result` for a point `scipy` has already evaluated.
+
+                **Free, and that is the point.** `scipy` calls this driver's callback
+                only at accepted iterates, which are points `at` has just cached, so
+                building the record costs a dict lookup and no evaluation. The sign
+                convention is `VmconDriver._Problem.__call__`'s, deliberately: a
+                callback written against one driver has to read the same numbers from
+                the other or the two are not comparable, which is the whole reason for
+                running SLSQP at all (`run_cold_matrix._recorder` is the caller that
+                made this necessary).
+                """
+                from pyvmcon import Result  # noqa: PLC0415
+
+                values, full = at(x)
+                return Result(
+                    f=values[0],
+                    df=full[0],
+                    eq=values[1 : 1 + meq],
+                    deq=full[1 : 1 + meq],
+                    ie=-values[1 + meq :],
+                    die=-full[1 + meq :],
+                )
+
             def on_step(xk):
                 iteration[0] += 1
                 if user_callback is not None:
-                    user_callback(iteration[0], np.asarray(xk) / scale)
+                    x = np.asarray(xk)
+                    # `inf`, because `scipy` publishes no per-iterate convergence
+                    # measure and has not declared convergence at any of these points.
+                    # See `_verdict` for what the *final* call carries and why the two
+                    # differ.
+                    user_callback(
+                        iteration[0], _result_at(x), x / scale, float("inf")
+                    )
 
             result = minimize(
                 objective,
@@ -890,7 +921,21 @@ class SlsqpDriver(AbstractDriver):
             # the solver said is `reports`' job now, and the mutable `Outcome` sink that
             # used to carry it is deleted.
             if user_callback is not None:
-                user_callback(-1, np.asarray(result.x, dtype=float) / scale)
+                final = np.asarray(result.x, dtype=float)
+                # **The fourth argument is `VmconDriver`'s convergence parameter, and
+                # SLSQP forms nothing equivalent -- so what goes here is scipy's own
+                # verdict, encoded so that the one thing which reads it can read it.**
+                # `run_cold_matrix._status` is that reader, and all it does is compare
+                # this number to a tolerance; `0.0` therefore means *"scipy said
+                # `success`"* and `inf` *"it did not"*. Writing `nan` instead was tried
+                # and is wrong in the direction that matters: `nan <= tol` is `False`,
+                # so every SLSQP row read `stopped` including the ones where scipy had
+                # said "Optimization terminated successfully" and the residuals were
+                # five orders better than VMCON's (`_audit/optimise_design.md` §42).
+                # A column that turns a success into a failure is not the cautious
+                # choice, it is the wrong answer.
+                converged = 0.0 if result.success else float("inf")
+                user_callback(-1, _result_at(final), final / scale, converged)
             return (
                 np.asarray(result.x, dtype=float) / scale,
                 int(result.nit),
