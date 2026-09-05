@@ -675,25 +675,41 @@ def _var(context, path_str):
     )
 
 
-def _root_find_seed(problem):
-    """The seed for the block whose problem is `problem`, or `None`.
+def _root_find_seed(conditions):
+    """A `SeededNewtonDriver`'s starting guess for whichever block it is driving.
 
-    Matched on the problem's own name, which for a `FixedPointCut`/`ImplicitFunction`
-    is minted from the unknown's place -- so `^problem['Intersect']` is matched by the
-    *unknown* it owns, resolved from the context at call time.
+    Matched on the block's *unknown*, not on the problem: for a
+    `FixedPointCut`/`ImplicitFunction` the problem's name is minted from the unknown's
+    place -- so `^problem['Intersect']` is answered by the unknown it owns, resolved
+    from the context at call time.
+
+    **Module level, and that is load-bearing.** This used to be a factory
+    (`_root_find_seed(problem)` returning a closure) whose `problem` argument the body
+    never read: a *fresh function object* on every assembly, equal to no other. A
+    `SeededNewtonDriver` is a frozen `equinox.Module`, so it compares its `seed` field by
+    identity, and one such field made every re-assembled `Schedule` compare unequal to
+    the structurally identical one before it. That is the whole key of
+    `sand_harness._SCHEDULE_WHOLE`, so an assemble-and-solve loop rebuilt and recompiled
+    the schedule's two XLA programs every time round: **2 compiles per re-assembly, 0
+    after this** (`_audit/optimise_design.md` §37 is the same lesson applied to
+    `host_cache._BOUND`, and this is the last instance of it in the port). A module-level
+    function has one identity for the life of the process, which is what a cache key
+    wants.
+
+    Raises
+    ------
+    KeyError
+        If no unknown of this block names an entry in `ROOT_FIND_SEEDS` -- a driver that
+        silently started from nothing would be indistinguishable from a seeded one.
     """
-
-    def seed(conditions):
-        for var in conditions.unknowns:
-            entry = ROOT_FIND_SEEDS.get(var.path_str())
-            if entry is not None:
-                return entry(conditions.context)
-        raise KeyError(
-            f"no starting guess for {written(conditions.unknowns)}, and the one seeded "
-            f"from `data` was unusable -- add an entry to `ROOT_FIND_SEEDS`"
-        )
-
-    return seed
+    for var in conditions.unknowns:
+        entry = ROOT_FIND_SEEDS.get(var.path_str())
+        if entry is not None:
+            return entry(conditions.context)
+    raise KeyError(
+        f"no starting guess for {written(conditions.unknowns)}, and the one seeded "
+        f"from `data` was unusable -- add an entry to `ROOT_FIND_SEEDS`"
+    )
 
 
 def driven_graph(graph=GRAPH, **driver_options):
@@ -852,7 +868,7 @@ def default_drivers(
         if not isinstance(definition, ProblemNode) or isinstance(definition, Driven):
             continue
         if isinstance(definition, RootFind):
-            drivers[problem] = SeededNewtonDriver(seed=_root_find_seed(problem))
+            drivers[problem] = SeededNewtonDriver(seed=_root_find_seed)
         elif isinstance(definition, FixedPoint):
             drivers[problem] = PicardDriver()
         elif isinstance(definition, Optimise):
