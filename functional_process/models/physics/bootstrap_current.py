@@ -920,6 +920,65 @@ def bootstrap_fraction_sauter(
     return jnp.sum(da * jboot, axis=0) / plasma_current, jboot
 
 
+def sauter_bootstrap_current_fraction(
+    *,
+    n_plasma_profile_elements,
+    radius_plasma_profile_norm,
+    nd_plasma_electron_profile,
+    temp_plasma_electron_profile_kev,
+    a_plasma_poloidal,
+    rminor,
+    rmajor,
+    nd_plasma_ions_total_vol_avg,
+    nd_plasma_electrons_vol_avg,
+    temp_plasma_ion_vol_avg_kev,
+    temp_plasma_electron_vol_avg_kev,
+    n_charge_plasma_effective_vol_avg,
+    q0,
+    q95,
+    m_ions_total_amu,
+    f_plasma_fuel_helium3,
+    b_plasma_toroidal_on_axis,
+    plasma_current,
+    cboot,
+    f_c_plasma_bootstrap_max,
+):
+    """The Sauter scaling's three owned values: fraction, profile, capped fraction.
+
+    Scales `bootstrap_fraction_sauter`'s fraction by `cboot` and caps it via
+    `enforce_bootstrap_current_fraction_max`, exactly what
+    `SauterBootstrapCurrentFraction.__call__` used to do inline.
+    """
+    fraction, j_plasma_bootstrap_sauter_profile = bootstrap_fraction_sauter(
+        n_plasma_profile_elements=n_plasma_profile_elements,
+        radius_plasma_profile_norm=radius_plasma_profile_norm,
+        nd_plasma_electron_profile=nd_plasma_electron_profile,
+        temp_plasma_electron_profile_kev=temp_plasma_electron_profile_kev,
+        a_plasma_poloidal=a_plasma_poloidal,
+        rminor=rminor,
+        rmajor=rmajor,
+        nd_plasma_ions_total_vol_avg=nd_plasma_ions_total_vol_avg,
+        nd_plasma_electrons_vol_avg=nd_plasma_electrons_vol_avg,
+        temp_plasma_ion_vol_avg_kev=temp_plasma_ion_vol_avg_kev,
+        temp_plasma_electron_vol_avg_kev=temp_plasma_electron_vol_avg_kev,
+        n_charge_plasma_effective_vol_avg=n_charge_plasma_effective_vol_avg,
+        q0=q0,
+        q95=q95,
+        m_ions_total_amu=m_ions_total_amu,
+        f_plasma_fuel_helium3=f_plasma_fuel_helium3,
+        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
+        plasma_current=plasma_current,
+    )
+    f_c_plasma_bootstrap_sauter = cboot * fraction
+    return (
+        f_c_plasma_bootstrap_sauter,
+        j_plasma_bootstrap_sauter_profile,
+        enforce_bootstrap_current_fraction_max(
+            f_c_plasma_bootstrap_sauter, f_c_plasma_bootstrap_max
+        ),
+    )
+
+
 def enforce_bootstrap_current_fraction_max(
     f_c_plasma_bootstrap, f_c_plasma_bootstrap_max
 ):
@@ -1094,7 +1153,7 @@ class SauterBootstrapCurrentFraction(BootstrapCurrentFractionScaling):
         cboot=From(current_drive),
         f_c_plasma_bootstrap_max=From(current_drive),
     ):
-        fraction, j_plasma_bootstrap_sauter_profile = bootstrap_fraction_sauter(
+        return sauter_bootstrap_current_fraction(
             n_plasma_profile_elements=self.n_plasma_profile_elements,
             radius_plasma_profile_norm=radius_plasma_profile_norm,
             nd_plasma_electron_profile=nd_plasma_electron_profile,
@@ -1113,14 +1172,8 @@ class SauterBootstrapCurrentFraction(BootstrapCurrentFractionScaling):
             f_plasma_fuel_helium3=f_plasma_fuel_helium3,
             b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
             plasma_current=plasma_current,
-        )
-        f_c_plasma_bootstrap_sauter = cboot * fraction
-        return (
-            f_c_plasma_bootstrap_sauter,
-            j_plasma_bootstrap_sauter_profile,
-            enforce_bootstrap_current_fraction_max(
-                f_c_plasma_bootstrap_sauter, f_c_plasma_bootstrap_max
-            ),
+            cboot=cboot,
+            f_c_plasma_bootstrap_max=f_c_plasma_bootstrap_max,
         )
 
 
