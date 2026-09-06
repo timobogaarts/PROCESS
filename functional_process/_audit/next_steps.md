@@ -166,7 +166,21 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   `stellarator_helias` still diverges at step 19 but from 3.6e-3 away with a
   **well-conditioned** Jacobian (singular values 5.59...0.035), so it is QP-subproblem
   infeasibility near five simultaneously-active constraints, **not** a rank collapse and
-  not model chaos. The rest of `optimistix` is reachable and untried at scale.
+  not model chaos. The rest of `optimistix` is reachable and untried at scale. **[root-caused -- §64, §69]**
+  The stall is `slsqp_jax`'s primal active-set QP, not the problem: an LP finds a feasible
+  linearised step at the stall point, VMCON steps out of it in 3 iterations, and the QP
+  exhausts any budget it is given (10x -> bitwise-identical trajectory). It is a
+  **documented** weak point -- the README has a "QP anti-cycling" section, `results.py`
+  has an `infeasible_stationary` code, and a 2026-04 anti-cycling PR was reverted four
+  hours later for leaking ill-conditioned multipliers. **v0.21.1 is the last release**;
+  the maintainer is building a replacement (`sqpdax`) to add interior-point alongside
+  active-set. **Size is not the discriminator**: the *largest* configuration
+  (`large_tokamak_nof`, 20/3/23) converges to `objf = 1.6` exactly with
+  `max|eq| = 1.7e-10`, while `stellarator_helias` (8/2/12) and `st_regression` (14/3/15)
+  fail -- the latter badly infeasible (`max|eq| = 0.86`), which looks like a *different*
+  degeneracy and is **the obvious next thread**. **If this solver is used here, set
+  `active_set_method="lpeca_init"`**: 9x better `objf` and `max|eq|` 4.41e-3 -> 7.67e-7,
+  an algorithmic win rather than a budget one.
   (c) `SlsqpDriver`/`VmconDriver` remain `pure_callback`-based, so a *driver* built on any
   of this is still unwritten -- and that is now the gating item, since everything it needs
   exists.

@@ -1793,8 +1793,10 @@ on both halves.** Three independent measurements:
    4.4e-3 -> 1e-4 -> 8e-6, heading for its own 1.21848284. No local infeasibility.
 3. **The failure is budget-invariant, and starts at step 1.** `slsqp_jax`'s verbose trace
    reports `QP ok: False` with `QPiter` pinned at the cap on **every step from the first**,
-   plus `QPcyc: 2` (active-set cycling). Raising the budget **10x** (200x100 against 20x20)
-   produces a **bitwise-identical trajectory** -- same `f`, same step sizes
+   plus `QPcyc: 2`. (**§69 corrects that gloss**: `QPcyc` is a bitmask and 2 is
+   `reached_max_iter`, *not* the ping-pong "cycling" bit -- the loop exhausts its budget
+   rather than tripping the dedicated cycling detector.) Raising the budget **10x**
+   (200x100 against 20x20) produces a **bitwise-identical trajectory** -- same `f`, same step sizes
    (9.537e-07, 4.883e-04, 1.221e-04, 3.052e-05). So it is not a budget shortfall; the
    active-set QP cycles regardless.
 
@@ -2046,3 +2048,89 @@ node, is enough to move it between cycling at the cap and converging elsewhere.
 infeasible corner -- a last-bit nudge would not rescue it. An active-set QP cycling near a
 corner is exactly the kind of thing a tiny numerical difference knocks loose. Two
 independent lines now say the same: the problem is fine, the QP layer is not.
+
+## 69. `slsqp_jax` at source level: a known weak point, one real knob, and size is not it (2026-09-06)
+
+§64 concluded the `stellarator_helias` stall is `slsqp_jax`'s QP layer rather than the
+problem. Reading the source (v0.21.1, matching GitHub `lucianopaz/slsqp-jax`) confirms it,
+sharpens it, and corrects one thing I wrote.
+
+### The loose end is closed: `QP ok: False` is not over-reported
+
+A fresh verbose run of the **converging** configuration, `helias_5b` MDF at the same
+settings, reproduces the recorded answer exactly (2 steps, `objf = 0.7642155252631632`
+against the recorded `0.764215525`) and reports **`QP ok: True, QPiter: 0, QPcyc: 0` on
+every step**. The flag only fires on the run that is struggling, so §64 stands as read.
+
+### What the QP actually is
+
+A **primal active-set method** -- add most-violated, drop most-negative-multiplier --
+in `slsqp_jax/qp/active_set.py::run_active_set_loop`, shared by all three QP strategies.
+Both configurations (`m_eq = 2`) route through `solve_qp_proximal`, which absorbs
+equalities into an augmented-Lagrangian penalty and active-set-manages only the
+inequalities; the inner equality-constrained subproblem uses `ProjectedCGCholesky`.
+
+**Correction to §64.** I glossed `QPcyc: 2` as "active-set cycling". It is a **bitmask**
+(`slsqp/_step_body.py:863`): bit 0 is `ping_ponged`, bit 1 is `reached_max_iter`. A value
+of 2 is **bit 1 only** -- the loop exhausting `qp_max_iter`, with the dedicated ping-pong
+detector *not* firing. And `QP ok` is `final_converged = converged & ~reached_max_iter`
+(`qp/proximal.py:185`), so hitting the cap forces `False` by construction. Combined with
+the measured budget-invariance -- 10x the budget, bitwise-identical trajectory -- the
+honest reading is that it **exhausts whatever budget it is given without converging**.
+That is cycling in effect; it is not the flag named "cycling", and I should not have
+quoted the flag as if it were.
+
+### It is a documented weak point, and this package is end-of-line
+
+- Its own README has a **"QP anti-cycling"** section describing this failure mode.
+- `slsqp_jax/results.py` carries a dedicated result code **`infeasible_stationary`** for
+  exactly this scenario, with a default-enabled `RestorationConfig` fallback.
+- **PR #54, "Harden QP convergence" (2026-04-22), added a ping-pong anti-cycling
+  short-circuit and was reverted four hours later** (`714ddf2`) because it leaked
+  ill-conditioned multipliers into the outer merit penalty. The shipped default is
+  `ping_pong_threshold = 2**31 - 1`, i.e. disabled.
+- **v0.21.1 is the final release.** All 35 commits since (to 2026-08-07) build a
+  replacement package, `sqpdax`, in the same repository, whose stated goal is to *"enable
+  both active set and interior point based algorithms"*. The maintainer is replacing the
+  active-set-only design rather than patching it.
+
+### One knob is a real win, and two make it worse
+
+`stellarator_helias` MDF, one flag changed at a time from baseline:
+
+| variant | `objf` | vs VMCON `1.21848284` | `max\|eq\|` | `min ie` |
+|---|---|---:|---:|---:|
+| baseline | 1.222062667 | 3.58e-3 | 4.41e-3 | -1.79e-4 |
+| `qp_ping_pong_threshold = 3` | 1.107193558 | 1.11e-1 **worse** | 7.74e-3 | -8.18e-2 |
+| **`active_set_method = "lpeca_init"`** | **1.218082014** | **4.01e-4 (9x better)** | **7.67e-7** | -4.10e-4 |
+| `proximal_tau = 0.0` | 1.114645897 | 1.04e-1 **worse** | 8.91e-4 | -7.48e-2 |
+
+**LPEC-A active-set identification is an algorithmic win, not a budget one** -- 18 steps
+against a 30 cap, and `max|eq|` improves four orders to 7.67e-7. The ping-pong
+short-circuit making things worse is consistent with the maintainer's own revert rationale.
+
+**A gap worth naming**: `expand_factor`, the EXPAND tolerance-ramp rate the anti-cycling
+mechanism itself depends on, is a real parameter of `solve_qp` but is **never exposed**
+through `QPConfig` or `compat.py`'s option mapping, and `SLSQP._solve_qp_subproblem` does
+not pass it. It is silently pinned at 1.0 with no user escape hatch.
+
+### Size is conclusively not the discriminator
+
+| problem | vars / eq / ineq | `objf` | vs VMCON |
+|---|---|---|---:|
+| `helias_5b` | 3 / 2 / 2 | 0.764215525 | **9.3e-09** |
+| `stellarator_helias` | 8 / 2 / 12 | 1.222062667 | 3.6e-03 |
+| `st_regression` | 14 / 3 / 15 | -10.718742 | **5.87**, `max\|eq\| = 0.86` |
+| `large_tokamak_nof` | 20 / 3 / 23 | **1.600000000** | **0.0**, `max\|eq\| = 1.7e-10` |
+
+**The largest problem converges essentially exactly, and two smaller ones fail.** So the
+discriminator is constraint geometry, not dimension. And `st_regression` fails far worse
+than `stellarator_helias` -- badly infeasible rather than near-feasible -- which suggests a
+distinct or more severe degeneracy there rather than the same mechanism scaled up.
+**Uninvestigated**, and it is the obvious next thread if this solver is pursued.
+
+**Verdict**: a genuine limitation of the active-set QP as shipped, on this constraint
+geometry -- not model chaos (§64's LP found a feasible linearised step at the stall), not
+size, and not our usage. It is a recognised structural weak point that the maintainer is
+addressing by replacing the design. If `slsqp_jax` is used here, **use
+`active_set_method="lpeca_init"`**.
