@@ -3228,3 +3228,82 @@ functions across seven configs); reuse that rather than the shortcut above. The 
 numbers here are therefore over the **whole** model layer, not the stellarator block --
 which is the more useful denominator anyway, since the registry is written once for all
 configurations.
+
+## 84. The whole model layer transpiled, compiled, and validated (2026-09-06)
+
+§81 covered the transpiler; this ran it over everything and put the output through Warp.
+
+### Two more "refuse rather than guess" rules, and what they cost
+
+Emitting for real surfaced two ways a body can fail to be self-contained, both now refused:
+
+- **Unresolved globals.** A transpiled body may reference module-level names. Each must
+  resolve to a scalar (emitted as a `wp.constant`) or to another leaf in the same module;
+  anything else -- an enum, a table, a class -- and the function is not self-contained.
+- **Default arguments.** Warp has no equivalent, and silently dropping a default is exactly
+  the guess this design forbids.
+
+**They cost a lot of coverage, and that is the honest number**: 420 of 501 became **326 of
+527** once self-containedness was actually demanded. The 81-refusal figure in §81 was
+measuring "does the arithmetic translate", not "is this function emittable on its own".
+
+### It compiles
+
+**323 `@wp.func` emitted as one Warp module, 65 `wp.constant`s, 717 lines -- and the whole
+module builds in 2.44 s.** Compiling is a real gate that transpiling does not clear on its
+own: Warp's type checker only runs at module build.
+
+### And it agrees -- the self-validating property, demonstrated
+
+§81 claimed the generator can validate itself, because every generated function has its JAX
+original next to it. Done: random positive inputs through both sides, compared where the
+reference is finite.
+
+| | |
+|---|---:|
+| exercised end to end | **115** |
+| **agree to 1e-9** | **115** |
+| disagree | **0** |
+| **worst relative difference** | **0.000e+00 -- bit-identical** |
+| not exercised (harness signature handling, arity) | 170 |
+| non-finite reference (random inputs are unphysical) | 8 |
+
+**Every function the harness could drive agreed bit-for-bit.** The 170 skips are my probe's
+keyword-only-signature handling, not transpiler failures; a real validation stage would
+drive them from the graph's own port declarations instead of guessing an arity.
+
+### Answering "inlined, or called?" with the generated source
+
+Warp caches what it emits (`~/.cache/warp/<version>/`), so this is readable rather than
+assumed. A `@wp.func` becomes:
+
+```c
+static CUDA_CALLABLE wp::float64 _fast_alpha_fraction_ward_0(
+    wp::float64 var_density_ratio_sq, wp::float64 var_temp_sum_20) { ... }
+```
+
+and the kernel body contains `var_3 = _fast_alpha_fraction_ward_0(var_4, var_5);` -- **a
+real call to a `static` device function, not textual inlining.** Whether it is then inlined
+is `nvcc`/`clang`'s decision, which for a small `static` function it almost always takes.
+
+**That softens §74's register-pressure worry**: each `@wp.func` has its own scope rather
+than 28k values being live at once, and the compiler chooses where to inline.
+
+And the adjoint sits right beside it in the same file --
+`adj__fast_alpha_fraction_ward_0(...)`, generated from the same source, with the kernel
+emitted in both forward and backward forms. §80's correction stands (this is not an
+advantage over JAX), but it is visible here rather than taken on trust.
+
+### Less NVIDIA-centred alternatives, for the record
+
+- **Taichi** -- the closest substitute: Python-embedded kernels, backends for CPU, CUDA,
+  Vulkan and Metal, **and built-in autodiff**. The portable analogue if NVIDIA-only is the
+  objection.
+- **JAX Pallas** -- a kernel DSL *inside* JAX, so AD and the existing harness carry over
+  unchanged; targets Triton on GPU. No second language, narrower control.
+- **Enzyme + plain C** -- LLVM-level AD over emitted C, which is exactly §63's path plus
+  the derivatives it lacked. The most portable (any LLVM target) and the heaviest to set up.
+- **Numba** (CPU + CUDA) and **Triton** -- both viable as kernel targets, **neither has
+  autodiff**, which for this port is disqualifying on its own.
+
+**None of these has been tried.** Named so the choice is visible rather than defaulted into.

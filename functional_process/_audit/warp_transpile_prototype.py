@@ -86,6 +86,13 @@ def transpile(fn, name=None):
     fdef = tree.body[0]
     t = ToWarp()
     fdef = t.visit(fdef)
+    # **Refuse defaults rather than drop them.** A default is a value a caller may rely
+    # on; Warp has no equivalent, and silently discarding one is exactly the kind of
+    # guess this transpiler exists not to make.
+    if fdef.args.defaults or any(d is not None for d in fdef.args.kw_defaults):
+        raise Unsupported("default argument value(s)")
+    if fdef.args.vararg or fdef.args.kwarg:
+        raise Unsupported("*args/**kwargs")
     # Annotate every parameter and the return as wp.float64.
     f64 = ast.Attribute(value=ast.Name("wp", ast.Load()), attr="float64", ctx=ast.Load())
     args = fdef.args
