@@ -2586,6 +2586,12 @@ number gates everything after it.
 
 ## 75. §73's anomaly located: an active clamp, not a defect (2026-09-06)
 
+> **§77 refines this.** The clamp is active, but the mechanism is a **ratchet** --
+> the input arm reads the value it writes back, so once the clamp fires the two
+> arguments are equal by construction. And there *is* a way out: move the clamp into
+> the constraint set. The "optimiser drives it there" reading below is not what
+> happens.
+
 §73 recorded a reproducible gradient anomaly on the tokamak inboard radial-build variables
 and could not attribute it; §72's leading suspect was measured and eliminated. Located now,
 and the answer changes what it means.
@@ -2751,3 +2757,83 @@ actually emits them, and two Work-bucket items (`tf_stress_*`,
 `calculate_pf_coil_power_supplies`) have multi-helper chains not expanded past one level
 that could hide further Work-bucket helpers. Treat 237/70/28 as the right order of
 magnitude and the right *shape*, not as exact.
+
+## 77. What the TF case clamp actually models, and the way out (2026-09-06)
+
+§75 located §73's anomaly at `tfcoil/base.py:192` and read it as "a cost-minimising
+optimiser drives the TF case onto its geometric floor and sits there". **That reading is
+half right and it misses the mechanism.** Reading the model properly changes both the
+diagnosis and what to do about it.
+
+### The physics is a wedge, and the minimum is a sagitta
+
+```python
+dr_tf_plasma_case_minimum = (r_tf_inboard_in + dr_tf_inboard) * (1 - cos(pi / n_tf_coils))
+```
+
+A TF coil is one wedge of `n_tf_coils` around the torus. The winding pack is a **rectangle**
+inscribed in that wedge, while the plasma-facing case follows the **arc**. `R (1 - cos(pi/n))`
+is exactly the arc's **sagitta** -- how far the arc bulges past the chord at half-angle
+`pi/n`. So the rule is: *the plasma-side case must be at least as thick as the arc bulges,
+or the winding pack clips its corners.* Real geometry, correctly ported.
+
+PROCESS offers two ways to set the thickness (`i_f_dr_tf_plasma_case`), and **both are
+clamped by the same sagitta**: a direct input, or `f_dr_tf_plasma_case * dr_tf_inboard`.
+
+### Why it sits exactly on the clamp: a ratchet, not an optimum
+
+Both affected files set **`dr_tf_plasma_case = 0.06`**, and both converge to a *larger*
+value -- 0.0714836 and 0.0728348. So the clamp fires because the geometry genuinely demands
+more than the input. That much matches §75.
+
+But the input arm **reads the value it writes back**. PROCESS's own source is
+`dr_tf_plasma_case = data.tfcoil.dr_tf_plasma_case`, a `DataStructure` field the previous
+pass **overwrote**, and `Caller.call_models` re-runs the pipeline up to ten times. So:
+
+- pass 1 reads `0.06`, the clamp fires, writes `0.0714836`;
+- pass 2 reads **`0.0714836`**, not `0.06`.
+
+**It is a ratchet.** `x <- max(x, m)` never comes back down, the file's input is consulted
+exactly once, and thereafter the "input" is whatever the last pass wrote. The port
+reproduces this faithfully as a `FixedPointFunction` (its docstring says so), which is why
+§75 found `a == b` **bit-identically** on `low_aspect_ratio_DEMO`: once latched, the two
+arguments are the same number by construction, not by coincidence.
+
+**And that fixed point is not unique.** `x = max(x, m)` is satisfied by *every* `x >= m`.
+Which value you land on is a property of the iteration history, not of the equations.
+`sand.degenerate_fixed_points` screens identity fixed points; this is a `maximum`, so it
+passes the screen while being degenerate in the same way. PROCESS knows something is off
+here -- its own next comment is *"Warn that the value has been forced to a minimum value at
+some point"*.
+
+### The way out, and it generalises
+
+**Fixing the ratchet alone does not remove the kink.** Read the file's `0.06` instead of the
+written-back value and you still get `max(0.06, minimum(design))`, still active, still
+kinked -- because the geometry really does demand more than 0.06. The ratchet is a separate
+defect worth fixing on its own terms (a non-unique, path-dependent fixed point), but it is
+not the answer to the knife-edge.
+
+**The answer is to move the clamp out of the model and into the constraint set.** Make
+`dr_tf_plasma_case` a design variable and `dr_tf_plasma_case >= dr_tf_plasma_case_minimum`
+an inequality constraint. Then:
+
+- the model body becomes **smooth** -- the variable is just a variable, no `maximum`;
+- the binding is handled by the solver's active set, with a **multiplier**, which is what
+  SQP machinery is for;
+- and the derivative is no longer ambiguous at the tie, because there is no tie in the
+  model.
+
+**The general principle, and it is the more valuable half**: *a `jnp.maximum(x, floor(design))`
+inside a model body is an inequality constraint the solver cannot see.* The clamp still
+binds, but it binds invisibly -- the optimiser gets a kinked residual instead of a
+constraint with a multiplier, and no `icc` row records that the design is limited by coil
+geometry. The switch census (§75) found **48** such sites on `large_tokamak_nof`; how many
+are hidden constraints of this kind rather than genuine numerical floors is **unmeasured**,
+and is the obvious sweep to run next.
+
+**Cost, stated honestly**: promoting a clamp to a constraint adds an `icc`/`ixc` pair,
+changes iteration counts, and changes what PROCESS's regression reference contains -- the
+same conversation `icc = 11`'s removal needed (§52, where the answer turned out to be a
+single metadata row). It is a change to the problem statement, not a refactor, and belongs
+upstream rather than in the port alone.
