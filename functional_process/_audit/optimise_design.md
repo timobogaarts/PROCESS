@@ -2501,3 +2501,84 @@ is worth not re-deriving, not because they are findings:
 disagreement on the tokamak **inboard radial-build variables** remains the one finding that
 is not explained away, and the one whose cause is still unlocated after the ripple switch
 was eliminated.
+
+## 74. NVIDIA Warp as a codegen target -- a design note, nothing measured (2026-09-06)
+
+**This section contains no measurements of its own.** It is a design argument that existed
+only in a session transcript, written down because every number it leans on *is* measured
+elsewhere in this file and the argument is the thing that would otherwise be lost.
+
+§63 priced emitting the graph as straight-line C: at `-O0`, ~28 000 ops cost 3.4 s and
+242 MB against XLA's 15 s and 870 MB, and a scalar emitter would emit fewer still since
+41.6 % of the StableHLO is shape plumbing (§50). Its two largest unpriced costs were
+**derivatives** and **the GPU variant**. [NVIDIA Warp](https://github.com/NVIDIA/warp)
+addresses both, and reframes the codegen problem into a much smaller one.
+
+### The reframing, which is the load-bearing idea
+
+Do **not** emit 28 000 operations. Write each leaf model function once as a `@wp.func`, and
+**codegen only the kernel that calls them in the graph's order** -- roughly **250 call
+sites**, not 28 000 ops. That turns a compiler backend into a small, auditable emitter.
+
+And it lands on a seam the port already has. PROCESS's `calculate_*` staticmethods are
+already pure functions of explicit arguments -- which is exactly what a `@wp.func` is. So
+this is re-annotation plus a graph-ordered stitcher, not a rewrite. **The graph supplies
+the call order**, which is precisely what cannot be recovered from PROCESS's imperative
+`Caller._call_models_once` (`CLAUDE.md` § the current architecture). Same thesis as §67's
+sparsity result: the port has structural information other tools must reverse-engineer.
+
+### What it would fix, each against a measured number here
+
+| | why it matters |
+|---|---|
+| **Shape plumbing disappears** | Warp is scalar-native (built for particles/robotics), so §50's 41.6 % `broadcast_in_dim`/`reshape`/`slice` never exists. That category is an artefact of wrapping scalars into tensors. |
+| **AD comes free** | Warp generates adjoint code source-to-source. §63's largest unpriced cost was that reverse mode is "a real compiler feature" someone would have to write. |
+| **Batching is native** | `wp.launch(kernel, dim=n_points)`, one thread per scan point -- exactly `process/core/scan.py`'s shape, and §71 measured the GPU crossover at **~256 points, 3.4x by 4096**. |
+| **CPU backend too** | Warp compiles to C++ via clang, so the whole thing is testable without a GPU. |
+
+### SAND is the formulation to target, not MDF
+
+Under **MDF** the inner couplings are converged by a solve, so differentiating through it
+needs the implicit function theorem -- machinery that would have to be hand-built. Under
+**SAND** there is no inner solve to differentiate through: the couplings are unknowns of
+the outer problem, so evaluation collapses to **one straight-line residual pass** with no
+nested Newton and no `while_loop`.
+
+That inverts where SAND has been costing us. §53 and §56 found SAND's exposure of couplings
+makes the outer problem *harder* for some solvers, and §72 found why (`wp_width_r_min` is
+non-smooth, and SAND hands that non-smoothness to the outer SQP). **For codegen the same
+property is exactly what you want.**
+
+### And the solver need not be in the kernel
+
+The natural split is **kernel = evaluation, host = optimisation**: the kernel computes
+residuals and Jacobian, VMCON stays where it is. An in-kernel solver is needed only for
+*per-thread independent* solves across a scan sweep -- and writing a per-thread SQP means
+hand-rolling dense linear algebra, which is real work at any size.
+
+**That is precisely the problem `jaxipm`'s paper solves**, and its "iteration-level
+batching" -- replace finished problems mid-batch rather than waiting for the slowest -- is
+the trick that avoids per-thread solvers entirely. §67 established `jaxipm` itself is
+unreachable here (a driver-version wall), but **that idea is the part worth stealing**, and
+it is independent of the package.
+
+### Caveats, the first of which is hardware-specific and measured
+
+- **FP64.** PROCESS is float64 throughout, and §70 measured this card running float64 at
+  **1/16.4** of float32 (76.6 against 1254.7 GFLOP/s). A Warp kernel doing float64 physics
+  hits exactly that wall on a T1000 and would not on a data-centre card at 1/2. **Any
+  Warp/GPU plan has to state which hardware it assumes.**
+- Warp's Python subset is restrictive and typed; some model bodies will not port cleanly.
+- Register pressure: ~28k live values in one kernel would spill badly, hurting occupancy.
+  Whether that matters depends on the batch, since a scan sweep needs throughput rather
+  than occupancy -- **unmeasured**.
+- The non-traceable nodes (CoolProp, `CLAUDE.md` § Difficulties) still need an answer, the
+  same one they need under JAX.
+
+### Status: unstarted, and the cheap first experiment is known
+
+Nothing has been installed, written or measured. The decisive first step is the same one
+§63 named and is unchanged by any of the above: **emit one block's value function, compile
+it, and check bitwise agreement and timing against the JAX path.** Warp changes what that
+emitter is written in and hands back derivatives for free; it does not change that this
+number gates everything after it.
