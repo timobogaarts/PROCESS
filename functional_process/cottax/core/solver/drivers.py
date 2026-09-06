@@ -465,32 +465,45 @@ def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int) -> N
     equality 11 was already named in that function's docstring years before anyone
     connected it to this status code (`_audit/optimise_design.md` §46).
 
-    Reports two things, because they are different failures: a row that is
-    **identically zero** (a constraint no design variable moves at all -- `helias_5b`'s
-    `c11`, `rbld == rmajor` on a file that lists `icc = 11` without `ixc = 3`), and a
-    rank deficiency with no zero row (two constraints that are the same equation, or a
-    combination of others). Rank is computed on the equality block only, since that is
-    the matrix scipy actually factorises -- the full Jacobian is routinely full rank
-    while this block is not.
+    Reports two things, because they are different failures: a row that is **inert** (a
+    constraint no design variable moves -- `helias_5b`'s `c11`, `rbld == rmajor` on a
+    file that lists `icc = 11` without `ixc = 3`), and a rank deficiency with no inert
+    row (two constraints that are the same equation, or a combination of others). Rank
+    is computed on the equality block only, since that is the matrix scipy actually
+    factorises -- the full Jacobian is routinely full rank while this block is not.
+
+    "Inert" is relative to the block's largest entry, not `== 0.0`; see the comment on
+    the test itself for the case that forced that and the false negative it produced.
     """
     jacobian = np.asarray(jacobian, dtype=float)
     block = jacobian[1 : 1 + meq]
     if block.size == 0:
         return
     names = [c.path_str() for c in conditions.conditions][1 : 1 + meq]
-    zero = [n for n, row in zip(names, block, strict=True) if not np.any(row != 0.0)]
+    # **Inert relative to the block, not literally `!= 0.0`.** An exact test was tried
+    # and is a false negative on the case this function exists for: `helias_5b` with
+    # `ixc = 3` added leaves `c11`'s row at `[-1.6e-16, -0.0, -0.0, -0.0]`, sixteen
+    # orders below its siblings and every bit as inert, and the exact test reported
+    # "no zero row" while the block was still rank-deficient on that same row
+    # (`_audit/optimise_design.md` §48). Scaled against the largest row so the
+    # comparison is unit-free, and `1e-10` is far below any row a design variable
+    # genuinely moves -- the live rows in these blocks run 1e-1 to 1e+1.
+    scale = np.max(np.abs(block)) or 1.0
+    inert = np.max(np.abs(block), axis=1) <= 1e-10 * scale
+    zero = [n for n, flat in zip(names, inert, strict=True) if flat]
     rank = int(np.linalg.matrix_rank(block))
     if not zero and rank == min(block.shape):
         return  # scipy said singular, this point does not show why -- say nothing
     detail = (
-        f"identically zero row(s): {zero}"
+        f"row(s) inert to every design variable "
+        f"(max |row| under 1e-10 of the block's largest): {zero}"
         if zero
-        else f"no zero row, but rank {rank} of {min(block.shape)}"
+        else f"no inert row, but rank {rank} of {min(block.shape)}"
     )
     warnings.warn(
         f"SLSQP reported a singular LSQ subproblem, and the equality block "
         f"({block.shape[0]}x{block.shape[1]}) is degenerate at this point -- {detail}. "
-        f"An equality whose row is identically zero is one the design variables "
+        f"An equality whose row is inert is one the design variables "
         f"{[u.path_str() for u in conditions.unknowns]} cannot move: it is satisfied "
         f"or not by the boundary values alone. `pyvmcon` tolerates such a row and "
         f"scipy does not, so this is a statement about the problem rather than about "

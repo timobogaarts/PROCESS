@@ -486,6 +486,13 @@ the row named in that failure, now peaks at 2.09 GB and trims back to 712 MB.
 
 ### Correction: StableHLO character count is not the predictor it was taken for
 
+> **WITHDRAWN the same day -- see §50.** The two classes below are an artefact of
+> compile *order*, not a property of modules: RSS grows only when glibc maps new memory,
+> so a program compiled into arena an earlier one freed reads as "cheap" while producing
+> an equally large executable. Re-measured with the arena trimmed before each compile,
+> every module lands in one band at 171-351 B/char. §31.16's ~200 B/char stands. The
+> paragraphs below are kept because the retraction is the point.
+
 §31.16 is quoted in `tried_and_rejected.md` as **~200 bytes of peak RSS per character of
 pre-optimisation StableHLO**, and this measurement says that constant is an average over
 one *class* of module rather than a property of modules. The 24 large programs here split
@@ -654,3 +661,208 @@ why the scale-spread control comes out the way it does: `large_tokamak_nof` has 
 spread and no such pair. **It is not established.** The test that would establish it is to
 re-run with `c62` dropped, or with the two conditions rescaled relative to each other, and
 see whether the cycle disappears; that has not been done.
+
+## 48. `helias_5b`: which repair, measured -- and a false negative in §46's own diagnostic (2026-09-06)
+
+§46 established that `helias_5b.IN.DAT` states `icc = 11` (`rbld == rmajor`) without
+`ixc = 3` (`rmajor`), leaving an equality no design variable can move. Two repairs
+suggest themselves and only one of them works. Both were built as scratchpad copies and
+run on both arms under both drivers -- eight cells, none skipped.
+
+- **Variant A -- add the variable.** `ixc = 3` inserted with `boundl(3) = 10.0`,
+  `boundu(3) = 30.0` (`stellarator_helias.IN.DAT`'s own convention).
+- **Variant B -- drop the equation.** The `icc = 11` line deleted and
+  `n_equality_constraints` taken 3 -> 2.
+
+| variant | arm | driver | status | it | `objf` (9 s.f.) |
+|---|---|---|---|---:|---:|
+| baseline | MDF | VMCON | converged | 4 | 0.764215516 |
+| baseline | SAND | VMCON | converged | 7 | 0.764215517 |
+| baseline | MDF | SLSQP | stopped | 2 | -- |
+| baseline | SAND | SLSQP | stopped | 2 | -- |
+| **A** | MDF | VMCON | converged | 11 | **0.721837749** |
+| **A** | SAND | VMCON | converged | 12 | **0.721837749** |
+| **A** | MDF | SLSQP | **stopped** | 2 | -- |
+| **A** | SAND | SLSQP | **stopped** | 2 | -- |
+| **B** | MDF | VMCON | converged | 4 | **0.764215516** |
+| **B** | SAND | VMCON | converged | 7 | **0.764215517** |
+| **B** | MDF | SLSQP | **converged** | 5 | **0.764215516** |
+| **B** | SAND | SLSQP | **converged** | 8 | **0.764215517** |
+
+(The `B` and baseline rows above were re-run independently before this was written; the
+figures are that re-run's, and they reproduced the agent's to every digit shown.)
+
+**Variant B is the repair.** SLSQP converges on both arms, to the same optimum VMCON
+reaches, and VMCON's own answer and iteration count are *unchanged* -- 4 and 7, matching
+`reference_warm_matrix.txt` exactly. Dropping an equality whose residual was already
+1.1e-16 and whose row was already zero is a genuine no-op on the physics. That is the
+recommendation to take upstream: `icc = 11` should not be listed on a configuration that
+carries no design variable able to move it.
+
+**Variant A fails on both counts, and the second one is the interesting one.**
+
+1. **It does not fix SLSQP.** Still `stopped` at iteration 2 on both arms. With `rmajor`
+   promoted to a design variable, `c11`'s row reads `[-1.6e-16, -0.0, -0.0, -0.0]` scaled
+   -- sixteen orders below its siblings, and the equality block is still rank-deficient
+   on that same row (smallest left singular vector still `u = [0, -1, 0]` in
+   `[c2, c11, c16]` order). `rmajor` demonstrably *does* enter the differentiable path
+   elsewhere: the objective, `c2` and `c16` carry `rmajor` columns of 1.07, 0.85 and
+   -3.75. So promoting the variable does not connect it to *this* residual. Whatever
+   `.Constraint11` reads `rbld` through is not reached by the promotion. **Not
+   root-caused** -- reproducible, and left open.
+2. **It changes the machine.** VMCON converges to `objf = 0.721837749` on both arms, a
+   5.6 % drop, with `rmajor` moving 22.0 -> **20.911 m** (4.9 %, nowhere near its bounds)
+   and pulling the rest with it (`temp` 7.15 -> 6.567 keV, `hfact` 1.219 -> 1.232). Even
+   had it fixed SLSQP it would have been answering a different design problem.
+
+### Correction: §46's diagnostic tested for exact zero, and variant A walked through it
+
+`_name_singular_equalities`, landed the same day, listed a row only when
+`not np.any(row != 0.0)`. On variant A it therefore reported *"no zero row, but rank 8 of
+9"* -- technically true, and a **false negative** on the very case the function exists
+for: a row at 1e-16 is inert in every sense that matters and the block was still singular
+on it. AD roundoff is enough to defeat an exact test, and an exactness that was a genuine
+finding in §46 (the *baseline* row really is bit-exact zero) does not generalise to a
+test. Now compared against the block's largest entry at `1e-10` -- unit-free, and far
+below the 1e-1 to 1e+1 the live rows carry. Re-checked: baseline still names `c11` on
+both arms, variant B warns not at all, and variant A now names it.
+
+## 49. The `c62` experiment: the pair is real, and rescaling does not fix it (2026-09-06)
+
+§47 named one hypothesis and the experiment that would settle it: `wp_width_r_min` and
+`c62` are a conflicting pair, and SLSQP's single merit penalty cannot authorise the
+trade-off step VMCON takes. Run, on a scratchpad copy of `stellarator_helias.IN.DAT` with
+the `icc = 62` line deleted, and with runtime overrides of
+`sand.residual_condition_scales`.
+
+**Dropping `c62` ends the cycle outright.** `wp_width_r_min` descends smoothly from -0.18
+through -0.40 over ~9 iterations, then drops in **one step** to -1.7e-4 and decays to
+-4.6e-10 -- the same shape VMCON takes on the intact problem, not the back-and-forth
+SLSQP otherwise takes. 91 iterations, `nfev/nit` 6.54 -> 5.31, `max|eq| = 4.6e-10`. So
+`c62` is confirmed as the antagonist: remove it and the zigzag is gone immediately.
+
+**But it is not a fix, it is a different problem.** `objf = 1.22231038` against the intact
+`1.21848284` -- **0.31 % away**, and scipy's own `success` flag never turns `True` even at
+those residuals. §47 asked for exactly this check and this is the answer it warned about:
+an intervention that converges by relaxing the problem has not fixed anything.
+
+**And rescaling does not work either, which kills the cheap fix.** `wp_width_r_min` gets
+1.591 from the natural `1/|u|` rule; `c62` is an ordinary PROCESS inequality with no entry
+in `residual_condition_scales` at all, so it defaults to 1.0. Two targeted overrides, two
+orders of magnitude, opposite targets:
+
+| override | `nfev/nit` | status | tail |
+|---|---:|---|---|
+| `c62` 1.0 -> 50 | 6.38 | still caps | sharp excursions (-0.33, -0.069) mixed with small values |
+| `wp_width_r_min` 1.591 -> 159.1 | 5.58 | still caps | large excursions (-7.0, -4.4, -3.8, -3.6) persist |
+
+Two points is not a sweep and the agent said so. But if this were a pure row-scaling
+artefact, a 100x push on either row should have found daylight, and neither did. **The
+"just rescale it" reading is not supported.**
+
+**What `c62` is, and what it shares with `wp_width_r_min`: nothing physical.**
+`constraint_equation_62` (`process/core/solver/constraints.py:1393-1409`) is a lower limit
+on `f_t_alpha_energy_confinement`, the ratio of alpha-particle to global energy
+confinement time -- a helium-ash thermalisation floor. `wp_width_r_min` is a TF-coil
+winding-pack geometric root find (`stellarator/namespace.py:246-249`, an `Intersect`).
+They share no quantity; the interaction is through the design vector and through SAND's
+formulation.
+
+**Verdict, and it is architectural rather than numerical.** `wp_width_r_min` is a
+**SAND-only** exposure of an inner root find that MDF solves to convergence on every
+evaluation -- which is why the same file under MDF converges under SLSQP in 27 iterations
+and only SAND caps. SAND hands that root find to the outer SQP as one more equality,
+competing in the same merit function against `c62` at a point where both are near-active.
+VMCON's per-constraint multipliers resolve the corner in one large step (`||dx|| = 0.92`
+at iteration 2, §47); SLSQP's single scalar penalty cannot, and cycles. So §47's
+hypothesis survives at the level of *which* pair and *why they fight*, and its suggested
+remedy does not: this is not reachable by a condition-scale tweak, and the lever -- if one
+is wanted -- is whether SAND should expose this particular coupling to the outer solver at
+all. **Not attempted**, and worth noting that the current behaviour costs one row of
+twenty-four under a driver that is not the production one.
+
+## 50. What is in a 2.3-million-character module, and what comes out (2026-09-06)
+
+§45 measured memory per compiled program without ever looking inside one. Two questions
+follow directly and both have clean answers: what is the intermediate representation
+*doing* with millions of characters, and how big is the thing it produces. Probe:
+`compiler.backend_compile_and_load` hooked as in `_audit/rss_per_program.py`, plus an op
+histogram of the module text and the executable's own accessors. `st_regression` SAND,
+34 programs, largest module.
+
+**The IR is 28 106 operations, spelled verbosely.** 2 282 899 characters / 29 128 lines /
+28 106 ops -- about **81 characters per op**, one op per line. Nothing pathological: it is
+MLIR's textual form, where every line carries full tensor types. A model with 28k
+operations is simply a big model, and 2.3 M characters is what 28k typed lines costs.
+
+**But 41.6 % of those ops are not arithmetic.** The mix:
+
+| op | count | share |
+|---|---:|---:|
+| `broadcast_in_dim` | 7 843 | 27.9 % |
+| `multiply` | 5 725 | 20.4 % |
+| `constant` | 3 985 | 14.2 % |
+| `add` | 2 382 | 8.5 % |
+| `slice` | 1 684 | 6.0 % |
+| `divide` | 1 392 | 5.0 % |
+| `reshape` | 1 112 | 4.0 % |
+| `subtract` / `convert` / `select` / `negate` / `compare` | 2 711 | 9.6 % |
+| **pure data movement and shape** | **11 682** | **41.6 %** |
+
+More than a quarter of the module is `broadcast_in_dim`. That is the signature of a
+**scalar-valued graph expressed in an array language**: nearly every node computes a
+scalar, and each one is wrapped into a rank-0 or rank-1 tensor to meet the next op's
+type. Constants are another 14.2 % of ops and 11.8 % of the text. So the honest reading of
+"3 million characters" is *not* "the model is enormous" -- it is **28k scalar operations,
+two fifths of which are shape plumbing**, and that plumbing is the part a vectorisation
+pass could actually remove (§31.2's 55 -> 52 StableHLO lines per node was a first bite).
+
+**XLA's optimised HLO is bigger, not smaller: 9 648 248 characters, 422 % of the input.**
+Fusion does not shrink the text; it expands it, because the optimised module prints each
+fusion's sub-computation. Post-optimisation text size is therefore not a proxy for
+anything, and the other four large programs land at a consistent 260 %.
+
+**The executable serialises to 11.0 MB** -- all 34 programs together, 21.1 MB. XLA's
+`size_of_generated_code_in_bytes()` returns **0** on the CPU backend, so it is not the
+field to read here; `serialize()` is.
+
+**And yet compiling it costs 760 MB, of which loading it back costs ~500.** The decisive
+measurement: capture that 11.0 MB blob during a real solve, then deserialise it three
+times in the same process, trimming between:
+
+| | RSS | time |
+|---|---:|---:|
+| compile from StableHLO | 760.2 MB | 13.80 s |
+| load #1 from the 11.0 MB blob | 476.9 MB | 1.86 s |
+| load #2 | 538.9 MB | 1.65 s |
+| load #3 | 557.2 MB | 1.67 s |
+
+Each load costs about two thirds of a full compile and roughly **45x its own serialised
+size**, and three loads cost three times over. So the resident cost is **the executable**,
+not the compiler's workspace -- §31.16's original claim, and the one §45 muddied. (The
+1.7 s and 500 MB per load say deserialisation is doing real codegen rather than mapping a
+finished binary, which is consistent with the failure mode being LLVM's *section memory*.)
+
+### Correction: §45's "two classes of module" was an allocator artefact, and is withdrawn
+
+§45 reported that large modules split into an expensive class at ~100-440 bytes of RSS per
+StableHLO character and a cheap one at ~5-46, and filed that as a correction to §31.16's
+~200 B/char. **That was wrong, and the error was mine.** RSS grows only when glibc must
+map *new* memory: a compile that fits in arena an earlier compile freed costs nothing
+measurable while producing an equally large executable. The "cheap" programs were simply
+the ones compiled **later**.
+
+Re-measured with `malloc_trim(0)` before each compile, in compile order:
+
+| order | chars | B/char as §45 measured it | B/char with the arena trimmed |
+|---:|---:|---:|---:|
+| 16 | 1 498 177 | 317 | 310 |
+| 21 | 177 529 | -- | 171 |
+| 27 | 2 282 899 | 242 | 351 |
+| 32 | 1 055 811 | **7.3** | **223** |
+| 33 | 499 628 | **4.7** | **184** |
+
+One band, **171-351 B/char**, no classes. §31.16's ~200 B/char stands and
+`tried_and_rejected.md` is restored to it. The lesson is narrower than the mistake: an RSS
+delta measures what the *allocator* did, not what the *program* costs, and the two agree
+only when the arena is empty first.

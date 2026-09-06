@@ -26,53 +26,60 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
 
 ## Open
 
-**The three of 2026-09-06 -- all three diagnosed** (`optimise_design.md` §45-§47).
-Two are closed; the third narrows to one untested hypothesis.
+**The three of 2026-09-06 -- diagnosed, then acted on** (`optimise_design.md` §45-§50).
 
-1. **[closed] `helias_5b`'s "Singular matrix C in LSQ subproblem" is one identically zero
-   equality row** (§46). PROCESS constraint 11, the radial-build consistency equation
-   `rbld == rmajor`, has a bit-exact zero Jacobian row on both arms, and its residual is
-   already `1.1e-16`. The equality block SLSQP factorises is 3x3 of rank 2 (MDF) and 9x9
-   of rank 8 (SAND), machine-zero singular values -- **exact**, not conditioning. Cause is
-   in the input file, faithfully ported: `helias_5b.IN.DAT` lists `icc = 11` without
-   `ixc = 3` (`rmajor`), while its sibling `stellarator_helias.IN.DAT` is the exact
-   complement, `ixc = 3` without `icc = 11`. So one file gives the optimiser the major
-   radius without the equation that pins it, and the other states the equation without the
-   variable it exists to determine. `drivers._refuse_inert_objective`'s docstring already
-   named this row as a deliberately-tolerated case; what was new is that it is the whole
-   of scipy's failure. **Landed**: `drivers._name_singular_equalities` warns on scipy
-   status 6 naming the offending rows, so the diagnosis arrives through the failure rather
-   than through an audit file. Nothing refuses -- refusing would fail a configuration
-   VMCON solves correctly. **Still open, minor**: whether PROCESS's own input file is
-   worth fixing upstream, and whether the `c84`/`c24` anti-parallel beta-bound pair (SAND,
-   `cos = -1.0`, neither active) matters anywhere.
-2. **[narrowed] `stellarator_helias` SAND under SLSQP oscillates in a decaying period-2
-   cycle** on `^cond.stellarator.wp_width_r_min` against `c62`/`c35`, in ramp-and-reset
-   bursts of 1-2 up to 10-11 evaluations (resets at iterations ~18, ~39, ~62, ~102) (§47).
-   Three candidates measured and **rejected**: not a bound (closest unknown is 6.4 % of its
-   range), not the Jacobian (FD agrees to 1e-4-1e-6), and **not the scale spread** -- the
-   control kills it, since `large_tokamak_nof` converges in 13 iterations with a *wider*
-   design-scale ratio (1.97e+23 against 2.18e+22). **The one hypothesis left, untested**:
-   `wp_width_r_min` and `c62` are a conflicting pair, and SLSQP's single scalar merit
-   penalty cannot authorise the large trade-off step VMCON's per-constraint multipliers
-   take at iteration 2 (`||dx|| = 0.92`, `wp_width_r_min` spiking to 52.46 and walked back
-   geometrically). **The experiment that settles it**: re-run with `c62` dropped, or with
-   the two conditions rescaled against each other, and see whether the cycle survives.
-3. **[closed] The whole-matrix OOM is resident compiled executables, and the existing
-   workaround is the right fix** (§45). Two programs a row hold almost all of it -- 447 MB
-   and 444 MB of a 920 MB row on `st_regression` MDF, against 29 MB for the other
-   nineteen; the small scalar-reshape programs cost 1-2 MB each regardless of size, which
-   is allocator granularity. The post-trim floor **saturates** rather than leaking
-   (MDF 594 -> 605 -> 752 -> 796 -> 845 -> 879 -> 851 MB; SAND 575 -> 580 -> 712 -> 769 ->
-   766), and a seven-configuration pass peaks at 2.16 GB (MDF) / 2.23 GB (SAND). The
-   original failure is explained by the trim's absence: four measurements a configuration,
-   ~1 GB each left resident, reaching 15 GB in the fourth. **Correction filed**: §31.16's
-   "~200 bytes of RSS per StableHLO character" is an average over one *class* of module --
-   the large programs split into expensive (97-437 B/char) and cheap (5-46 B/char), and
-   `large_tokamak_nof` SAND lowers a 1.33 M-character module costing 7.9 MB beside a
-   3.14 M-character one costing 934.5 MB. What separates the classes is not known.
-   Probe: `_audit/rss_per_program.py`. **Still open**: a row's 1 GB is not shown to be
-   *necessary* -- the lever is the size of the two expensive modules, a lowering question.
+1. **[closed, repair identified] `helias_5b`'s "Singular matrix C in LSQ subproblem" is
+   one inert equality row** (§46, §48). PROCESS constraint 11, `rbld == rmajor`, has a
+   bit-exact zero Jacobian row on both arms with a residual already at 1.1e-16; the
+   equality block SLSQP factorises is rank 2 of 3 (MDF) and 8 of 9 (SAND). The cause is
+   the input file, faithfully ported: `helias_5b.IN.DAT` states `icc = 11` without
+   `ixc = 3`, and `stellarator_helias.IN.DAT` is the exact complement. **Both repairs were
+   measured on all eight cells** and only one works: **dropping `icc = 11`** converges
+   SLSQP on both arms (5 and 8 iterations) and leaves VMCON's answer and iteration count
+   *identical* (`0.764215516`/`0.764215517`, 4 and 7). **Adding `ixc = 3` does neither
+   job** -- SLSQP still stops at iteration 2 because `c11`'s row stays inert at 1.6e-16,
+   and VMCON converges to a **different machine** (`objf` -5.6 %, `rmajor` 22.0 -> 20.911).
+   **Landed**: `drivers._name_singular_equalities` names the offending rows on scipy
+   status 6; its first spelling tested `!= 0.0` and was a false negative on exactly the
+   variant-A case, now a relative `1e-10` test (§48). **Open**: (a) propose the
+   `icc = 11` removal upstream -- it is PROCESS's input file, not the port's, and it
+   changes iteration counts in the regression data; (b) **not root-caused**: why promoting
+   `.physics.rmajor` to a design variable does not connect it to `.Constraint11`, when it
+   demonstrably reaches the objective, `c2` and `c16` (columns 1.07, 0.85, -3.75). That
+   wiring gap is a port question and the only genuinely unexplained thing left here.
+2. **[closed as architectural] `stellarator_helias` SAND under SLSQP cycles on a
+   conflicting pair, and it is not fixable by rescaling** (§47, §49). The cycle is a
+   decaying period-2 zigzag on `^cond.stellarator.wp_width_r_min` against `c62`; three
+   candidates were measured and rejected (not a bound, not the Jacobian, and **not the
+   scale spread** -- `large_tokamak_nof` converges in 13 with a *wider* design-scale ratio,
+   1.97e+23 against 2.18e+22). **Dropping `c62` ends the cycle outright** -- one large
+   corrective step then near-quadratic decay, 91 iterations -- **but moves `objf` by
+   0.31 %**, so it relaxes the problem rather than fixing it. **Two condition-rescalings,
+   opposite targets, 100x each, both still cap**, which kills the cheap fix. The two share
+   no physical quantity (`c62` is a helium-ash confinement-time floor; `wp_width_r_min` is
+   a TF winding-pack geometric root find). **The verdict is architectural**:
+   `wp_width_r_min` is a SAND-only exposure of an inner root find that MDF solves
+   internally -- which is why the same file under MDF converges under SLSQP in 27 -- and
+   SAND hands it to the outer SQP to compete in one scalar merit function against a
+   near-active `c62`. **Open, and a design question rather than a bug**: whether SAND
+   should expose this coupling to the outer solver at all. Costs one row of twenty-four,
+   under the non-production driver.
+3. **[closed] The whole-matrix OOM is resident compiled executables; the existing trim is
+   the right fix** (§45, §50). Post-trim the floor **saturates** rather than leaking
+   (MDF 594 -> ... -> 851 MB; SAND 575 -> ... -> 766), and a seven-configuration pass peaks
+   at 2.16 GB (MDF) / 2.23 GB (SAND). The original 63-byte failure was the trim's absence:
+   four measurements a configuration, ~1 GB each left resident, reaching 15 GB in the
+   fourth. **Anatomy** (§50): the largest module is 2.28 M characters = 28 106 ops, of
+   which **41.6 % is pure shape plumbing** (`broadcast_in_dim` alone 27.9 %) -- the
+   signature of a scalar-valued graph in an array language; optimised HLO text is *larger*
+   than the input (422 %); the executable **serialises to 11 MB but costs ~500 MB to
+   load**, two thirds of a full compile, so the memory is the executable. **A §45
+   correction was itself withdrawn**: the "expensive/cheap module classes" were compile
+   *order*, not content -- with the arena trimmed first, every module is 171-351 B/char and
+   §31.16's ~200 stands. **Open**: the only real lever is emitting less HLO, and the 41.6 %
+   shape plumbing is where it would come from -- a vectorisation pass over structurally
+   similar nodes, extending §31.2's 55 -> 52 lines/node.
+   Probes: `_audit/rss_per_program.py`, `_audit/hlo_anatomy.py`.
 
 - **`vacuum.py:474` (`solve_duct_geometry`) is the sole remaining reverse-mode AD
   blocker** — a discrete first-fit search, not a root find, so it doesn't take the same
