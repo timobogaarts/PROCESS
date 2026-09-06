@@ -248,6 +248,20 @@ is last by construction. That is why entry coverage and condition coverage came 
 why the two leaves array support did add (`quench`, `tf_magnet_cost`) bought no condition:
 both gate 1/11, and that one is `objf`, which needs all the others anyway.
 
+**`delta_eta_step` is not the ambiguous case its own error message claims, and the
+message was about to justify building a registry for it.** The refusal names four calls --
+`calculate_p_{div,shld}_heat_deposited_mw`, `calculate_p_fw_blkt_{coolant_pump,heat_deposited}_mw`
+-- and calls the choice among them "genuinely ambiguous". Reading `DeltaEtaStep.step`
+(`cottax/power/thermal_cryo.py`) shows none of the four is the leaf: they bind four prelude
+locals, and the producing call is `calculate_delta_eta`, which returns 5 values with the
+body taking index 4 via `_, _, _, _, delta_eta_next = ...`. The arity filter dropped it
+(5 against 1 declared output) and then reported the survivors as an ambiguity -- **the
+message names four calls precisely because it discarded the right one**. Ordering artefact,
+not a property of the node. It is a `Composition` plus an unpack-index derivation exactly
+analogous to the constraint fix, differing only in being spelled as an unpack target
+position rather than a subscript. A registry for truly ambiguous nodes may still be worth
+having; this is not one of them.
+
 **A `self.<attr>` sequence-static mechanism exists** and is exercised end-to-end against
 Warp at 0.000e+00, resolving `imp_indices`, `coefficients` and `den_helium_at_nodes`.
 Constancy was established from declarations rather than intent: `eqx.field(static=True)`
