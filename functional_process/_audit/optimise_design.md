@@ -135,6 +135,50 @@ emitter materialises all four returns even though three are discarded. **The fix
 monomorphisation** -- the same technique already used for function-valued parameters:
 emit a specialised single-return variant per selected index. Not done.
 
+**What is actually blocking coverage is the resolver, not the transpiler.** "71 of 89
+entries blocked" was hiding the shape of the problem, because the emittable subset is
+grown PREFIX-CLOSED -- an entry joins only if every input is already available, so one
+unemittable node near the root withholds its entire downstream cone and the raw count
+measures cone size rather than work. Charging each blocked entry to its *root cause*
+instead (`scratchpad/arity/frontier.py`) collapses 71 blocked entries on `helias_5b` to
+**16 causes**, of which one -- `set_fusion_powers` -- gates 27 on its own, and 37 on
+`stellarator_helias`.
+
+And `set_fusion_powers` is not a transpiler failure. It is blocked on an input **nothing
+in the Drive produces**. Tracing every such hole to the node that `owns` it, from the
+graph's own `owners` map rather than by name:
+
+| configuration | holes | owning nodes | all unresolved? |
+|---|---|---|---|
+| `helias_5b` | 23 | **5** | yes, 23/23 |
+| `large_tokamak_nof` | 36 | 20 | yes, 36/36 |
+
+Zero orphans on either -- every hole is owned by a node the *resolver* refused, so
+transpiler capability is not the binding constraint. On `helias_5b` the entire remaining
+gap is **five nodes**: `.buildings.sizing` (9 holes, and the whole costs subtree behind
+them), `.physics.plasma_composition` (7), `.availability.electric_production` (4),
+`.physics.impurity_radiation_totals` (2), `.power.delta_eta_step` (1).
+
+The 38 refusals across all three configurations sort into six named causes, which is what
+makes them work items rather than a backlog:
+
+| cause | h5b | st_helias | lt_nof | total |
+|---|---|---|---|---|
+| `self.<attr>` passed as an argument | 1 | 1 | 11 | **13** |
+| a local computed in the wrapper body (`Composition`) | 2 | 2 | 5 | **9** |
+| array-valued or sliced argument | 1 | 2 | 5 | **8** |
+| no call matching the node's declared arity | 0 | 0 | 4 | 4 |
+| genuinely ambiguous -- several candidate calls | 1 | 1 | 1 | 3 |
+| leaf parameter absent from the call | 0 | 0 | 1 | 1 |
+
+`self.<attr>` is the largest and the most defensible to fix: `fn` is *bound*, so the
+attribute has a readable value -- a fact about the object rather than a guess about intent.
+It is only legitimate while the attribute is invariant across the Drive, which has to be
+established and not assumed. `Composition` is the biggest lever on the stellarators (2 of
+5 and 2 of 6), and the reason it was refused is worth keeping in view: binding a local to
+a plausible same-named boundary variable would compute the wrong thing while looking like
+float noise.
+
 **Open**: widening past ~38 nodes; whether the adjoint spill is fatal or merely costly;
 `jnp.interp`/`searchsorted` and array-valued lookup tables; and the arity-mismatched
 constraint nodes (`constraint_11/32/34/35/65/82/83` forward to `eq`/`leq`/`geq`, four
