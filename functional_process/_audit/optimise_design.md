@@ -3049,3 +3049,58 @@ remains the gate, and is now better specified: the transpiler must handle litera
 and the payoff to look for is **GPU throughput at batch**, not CPU runtime and not compile
 time. Nothing here contradicts §79's 5-8 day estimate for that stage; the friction found
 was in typing rather than in the arithmetic, which is the cheaper kind.
+
+## 81. A prototype transpiler, and how much it covers (2026-09-06)
+
+§80 established that a Warp port is a **rewrite, not a wrap** -- Warp parses the source of
+the decorated function, so `jnp.sqrt` must become `wp.sqrt` and every literal must be
+`wp.float64(...)`. The obvious follow-up: how much of that can be generated?
+
+**A transpiler translates source to source.** It does not produce machine code -- it emits
+*other Python*, which Warp then compiles. Parse each model function with `ast`, rewrite the
+nodes that differ, unparse as a `@wp.func`. Prototype at
+`_audit/warp_transpile_prototype.py`, ~100 lines, three rewrites:
+
+| | |
+|---|---|
+| `jnp.X(...)` -> `wp.X(...)` | a direct table plus renames (`maximum`->`max`, `minimum`->`min`, ...) |
+| numeric literal -> `wp.float64(n)` | §80's strict-typing finding, applied to every `ast.Constant` |
+| bare signature -> annotated | every parameter and the return as `wp.float64` |
+
+**Design rule, and it is the important one: it refuses rather than guesses.** An
+unrecognised construct raises `Unsupported` and that function goes on the hand-port list. A
+transpiler that silently mistranslates one formula is far worse than one that covers less
+and says so.
+
+### Coverage, swept over the whole model layer
+
+**405 of 501 functions (80.8 %) transpile cleanly**, with no hand-tuning. The 96 refusals
+are highly structured:
+
+| reason | count | what it is |
+|---|---:|---|
+| `jnp.asarray` | 25 | mostly type coercion -- often a no-op once inside a typed kernel |
+| `zeros` / `stack` / `sum` / `zeros_like` / `arange` / `array` / `take` / `repeat` | **52** | **genuinely array-valued** -- the real hand-port list |
+| `clip` / `max` / `isinf` / `round` / `degrees` | 12 | **table gaps**, trivially addable (`clip`->`clamp`, and so on) |
+| other | 7 | assorted |
+
+So the picture is: **~81 % free today, ~87 % after an afternoon's more table entries, and an
+irreducible core of ~50 genuinely array-shaped functions** that need hand-porting -- which
+is the same population §76's census called the "Work" bucket, arrived at independently.
+
+(This sweep covers all 501 functions discovered under `models/**`, not just the **335**
+§76 measured as live on the seven configurations. The live subset should do at least as
+well, since dead code skews odd; not separately measured.)
+
+### The property that makes this unusually favourable
+
+**Every generated function has a reference implementation sitting next to it.** The JAX
+original is right there, so the generator can be validated per function, automatically, on
+random inputs -- no golden files, no manual review of 400 translations. That is exactly the
+shape of the existing Tier-1 harness (`Tier1Contract`, AD against Richardson FD), and §79's
+stage 5 can reuse it rather than inventing a second comparator.
+
+**What it does not solve.** The 52 array-valued functions still need a human, and §80's
+transcription caveat stands: the prototype leaves `**` alone rather than rewriting `x ** 1.5`
+into `x * sqrt(x)`, which is right -- the manual spike's rewrite of exactly that was part of
+its 3.27e-13 disagreement. Preserving expression form is a feature, not an omission.
