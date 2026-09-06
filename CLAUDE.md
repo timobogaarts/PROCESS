@@ -101,9 +101,13 @@ Hardware: **Quadro T1000, 4 GB VRAM** with ~0.5 GB already taken by the display.
 run with `XLA_PYTHON_CLIENT_PREALLOCATE=false` -- XLA grabs 75 % of VRAM by default, which
 on this card leaves nothing.
 
-**Do not expect a speedup.** The port's blocks are ~28k *scalar* operations with ~100 KB
-of runtime buffers and essentially no arithmetic intensity, and a cold row is ~97 %
-compilation; none of that is what a GPU is for. Measured on `helias_5b` MDF, identical
+**Do not expect a speedup on this card, and know why.** The port's blocks are ~28k
+*scalar* operations with ~100 KB of runtime buffers and essentially no arithmetic
+intensity, and a cold row is ~97 % compilation. On top of that, **this GPU runs float64 at
+1/16 the rate of float32** (measured: 76.6 against 1254.7 GFLOP/s on a 1024x1024 matmul),
+and PROCESS is float64 throughout -- so every kernel pays a 16x penalty a data-centre card
+(1/2 rate) would not. Treat the numbers below as specific to a 35 W laptop Quadro, not as a
+verdict on GPUs (`_audit/optimise_design.md` §70). Measured on `helias_5b` MDF, identical
 answer to every digit: cold 13.55 s (CPU) -> 15.57 s (GPU), warm 0.136 s -> 0.227 s. The
 plausible win is **batching** -- `vmap` over many independent solves, which is the shape of
 `process/core/scan.py` -- and that is untested.

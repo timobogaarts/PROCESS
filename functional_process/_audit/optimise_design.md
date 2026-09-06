@@ -2011,8 +2011,11 @@ goes 2.77 -> 12.60 ms.
 **And the ratio grows with the graph.** `low_aspect_ratio_DEMO` is the biggest
 configuration (247 nodes, 19 unknowns, 25 constraints) and the worst by a wide margin,
 4.05-9.04x, while `st_regression` and `helias_5b` sit at 1.7-2.2x. That is the expected
-signature: per-call cost is launch overhead over ~1 648 tiny kernels, so more graph means
-more overhead and no more parallelism to recover it. Per-call goes from **0.8-15 ms on CPU
+signature: per-call cost is dominated by per-kernel fixed costs, so more graph means more
+overhead and no more parallelism to recover it. (**§70 corrects the arithmetic here**: 1 648
+was a *CPU* fusion count, where fusions are loop nests and not kernels at all; the GPU
+compiles this block to **134** kernels, and at 57 us of gap apiece launch overhead is a
+minority share -- FP64 running **16.4x** slower than FP32 on this card is the larger term.) Per-call goes from **0.8-15 ms on CPU
 to 3.8-85 ms on GPU**.
 
 **Nothing here is a GPU indictment** -- it is the workload being the wrong shape, as
@@ -2134,3 +2137,58 @@ geometry -- not model chaos (§64's LP found a feasible linearised step at the s
 size, and not our usage. It is a recognised structural weak point that the maintainer is
 addressing by replacing the design. If `slsqp_jax` is used here, **use
 `active_set_method="lpeca_init"`**.
+
+## 70. What a "fusion" actually is on each backend, and a correction (2026-09-06)
+
+§68 explained the GPU's 2.4x slowdown as *"launch overhead over ~1 648 tiny kernels"*.
+**That sentence is wrong in two independent ways**, and the word "kernel" was doing work
+it should not have been.
+
+**On XLA CPU there are no kernels and no launches.** A `fusion` HLO instruction is a
+sub-computation that LLVM turns into a **loop nest inside the single compiled function**.
+Nothing is dispatched, nothing crosses a device boundary. So a fusion count on CPU says
+nothing about launch cost, because there is none.
+
+**On XLA GPU a fusion *is* a real CUDA kernel** with a real launch. But the counts differ
+enormously between backends, and 1 648 was a *CPU* count -- from `st_regression` SAND --
+which I then reused to explain GPU behaviour. Measured on the same block
+(`stellarator_helias` MDF, the fused value+Jacobian program):
+
+| backend | optimised instructions | **fusions** | parameters |
+|---|---:|---:|---:|
+| CPU | 36 619 | **816** | 6 539 |
+| GPU | 14 776 | **134** | 2 362 |
+
+**The GPU backend fuses roughly six times more aggressively** -- 134 kernels, not 1 648 --
+and emits under half the instructions, because it has a much stronger incentive to avoid
+memory round-trips than the CPU backend does.
+
+### So what does explain the gap?
+
+`stellarator_helias` MDF is 2.12 ms/call on CPU and 9.76 ms/call on GPU, a **7.64 ms**
+difference over **134 kernels** -- **57 us per kernel**. CUDA launch overhead is a few
+microseconds, so **launch overhead alone does not explain it**, and §68's account was too
+glib even after the count is fixed.
+
+What else is in that 57 us, in decreasing confidence:
+
+- **FP64 at 1/16 rate on this card, measured**: a 1024x1024 matmul runs at **1254.7
+  GFLOP/s in fp32 and 76.6 GFLOP/s in fp64** -- a **16.4x** penalty (consumer Turing
+  specifies 1/32; the fp32 figure is presumably not at peak either). **PROCESS is float64
+  throughout**, so every kernel pays this. This is the single most important number for any
+  future GPU plan, and it is hardware-specific: a data-centre card at 1/2 rate is an
+  entirely different proposition from this 35 W laptop part.
+- **Global memory round-trips between kernels.** Values that stay in registers within a
+  CPU loop nest must be written to and re-read from global memory between GPU kernels.
+- Small grids: each kernel here has almost no parallel work, so per-kernel fixed costs
+  dominate whatever they are.
+
+**Not decomposed further, and it would need a profiler** (`nsys`) to attribute the 57 us
+properly. What is established: the fusion counts above, the FP64 ratio, and that the
+launch-overhead story is at best a minority share rather than the explanation.
+
+**The conclusion of §68 is unchanged** -- same answers, median 2.41x slower, ratio growing
+with graph size -- but its *reason* was partly wrong, and the corrected reason points
+somewhere more actionable: on hardware with real FP64 throughput the picture could differ
+substantially, and that is worth knowing before anyone writes off GPU work on the strength
+of these numbers.
