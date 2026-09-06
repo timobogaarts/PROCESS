@@ -2415,3 +2415,50 @@ perturbation would confirm or eliminate it in one run. **Not done.**
 **Also from the same sweep, for the record**: `large_tokamak_eval` (root find, 2 x 2) is
 clean, joining `stellarator_helias` MDF (8 x 15) and `helias_5b` MDF (3 x 5) at zero
 findings. Three configurations remain unmeasured.
+
+### The ripple `jnp.maximum` is eliminated (2026-09-06)
+
+§72 flagged `build.py:916`'s `jnp.maximum(r_tf_outboard_mid_unrippled, r_tf_outboard_midmin)`
+as the leading structural suspect for §73's anomaly, on the reasoning that both implicated
+variables feed it through the physics<->build<->TF SCC. **Measured, and it is not the
+cause.**
+
+Watched with a `jax.debug.callback` -- which fires at runtime with concrete values, unlike
+reading the tracer, which raises `TracerArrayConversionError` here -- across the whole
+solve and under perturbations of `.build.dr_cs` and `.build.dr_bore` from 0 to 1e-3:
+
+```
+last call: unrippled = 13.8128079   midmin = 14.9836619
+winner    : MIDMIN (ripple active)
+gap       : 1.17085   (8.477e-02 relative)
+
+.build.dr_cs    0:M(-1.05)  1e-8:M(-1.05)  1e-7:M(-1.05) ... 1e-3:M(-1.05)
+.build.dr_bore  0:M(-1.05)  1e-8:M(-1.05)  1e-7:M(-1.05) ... 1e-3:M(-1.05)
+```
+
+The ripple constraint **is** active on this configuration -- `midmin` wins, so the TF leg
+really has been moved out -- but the two arguments differ by **1.17 m, 8.5 % relative**, and
+the winner does not flip at any step size. The switch is nowhere near. A `jnp.maximum` this
+far from its own tie cannot contribute a kink.
+
+**So the anomaly's cause is still unlocated**, and the most attractive structural
+explanation is gone. What remains: another switch in the inboard-build chain, or the
+implicit-versus-re-solved question that the step-size sweep did not cleanly settle either.
+The next probe should walk the chain from `dr_cs`/`dr_bore`/`dr_tf_inboard` forward,
+watching *every* `maximum`/`minimum`/`where` the same way, rather than guessing another
+single site.
+
+### Reproducible across configurations
+
+The same sweep on `low_aspect_ratio_DEMO` MDF finds **24 violations** in
+`.build.dr_tf_inboard` and `.build.dr_cs` -- again inboard radial-build variables, and
+again the **same constraint family** (c16, c31-c36, c65) that `large_tokamak_nof` showed on
+`.build.dr_cs`/`.build.dr_bore`. Two independent tokamak configurations, overlapping
+variable sets, overlapping constraint sets.
+
+**Both root-find configurations are clean** (`large_tokamak_eval` 2x2 and
+`spherical_tokamak_eval`, 0 findings each), as are `stellarator_helias` MDF (8x15) and
+`helias_5b` MDF (3x5). So the pattern is specific to the **tokamak inboard radial build**
+under an optimisation arm, and is not a property of the harness's threshold applied to any
+converged block -- four other converged blocks pass it cleanly. That last point matters,
+because §73 hedged on exactly it.
