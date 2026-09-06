@@ -1084,3 +1084,110 @@ Worth flagging from the reference table alone, and only as a question: that arm'
 pathology is the *opposite* shape, with **VMCON** slow (79 iterations against SLSQP's 17)
 rather than SLSQP. Whether that is a different mechanism or the same one striking the
 other solver first is unmeasured speculation.
+
+## 54. The size chain, end to end: 244 nodes to 500 MB (2026-09-06)
+
+§50 and §51 measured pieces; this is the whole chain on one configuration, because
+"70 000 instructions for 244 nodes" is the right thing to be suspicious about and the
+answer is that it is not 244 nodes' worth of anything.
+
+`st_regression` SAND assembles **244 nodes** and compiles 34 programs. The four largest,
+by StableHLO characters:
+
+| chars | ops | `broadcast_in_dim` | ops / node |
+|---:|---:|---:|---:|
+| 2 282 899 | 28 101 | 7 843 | **115.2** |
+| 1 498 177 | 17 988 | 2 124 | 73.7 |
+| 1 055 811 | 12 425 | 1 778 | 50.9 |
+| 499 628 | 5 060 | 186 | **20.7** |
+
+**The model itself is ~21 ops per node.** That is the bottom row, and it is an entirely
+ordinary number for a physics formula -- a handful of multiplies, an add, a divide. The
+chain to 500 MB is four multiplications on top of it, none of them the model getting
+bigger:
+
+1. **244 nodes x ~21 ops = ~5 000 ops** -- the value program. Reasonable.
+2. **x ~5.6 -> 28 101 ops** -- the largest program carries *derivatives*. `jacfwd` is
+   `vmap(jvp)`, so the program holds the primal plus its tangent, and the broadcast count
+   goes 186 -> 7 843 along with it. This is the step people skip: the big program is not
+   the model, it is the model **and its Jacobian**.
+3. **x 2.5 -> 70 065 HLO instructions** -- XLA's own fusion pass (§51). It merges
+   element-wise ops into 1 648 fusion kernels so intermediates stay in registers instead
+   of round-tripping through memory; the printed instruction count *rises* because each
+   fusion is emitted as its own sub-computation with its own parameter list (11 351
+   `parameter` instructions) and its own copies of the constants it captures (3 985 ->
+   6 217).
+4. **-> 11 MB of machine code, ~250 MB resident.**
+
+### Where the memory actually sits: retained against transient
+
+Loading the same 11.0 MB serialized executable three times in one process, trimming the
+allocator arena after each:
+
+| | during load | **retained after trim** | time |
+|---|---:|---:|---:|
+| compile from StableHLO | 762.3 MB | -- | 14.14 s |
+| load #1 | 476.9 MB | **178.1 MB** | 2.18 s |
+| load #2 | 538.9 MB | **247.4 MB** | 1.99 s |
+| load #3 | 557.4 MB | **248.6 MB** | 1.93 s |
+
+So the ~500 MB splits roughly in half. About **250 MB is genuinely retained per loaded
+executable** -- that is the in-memory program, ~20x its serialized size, and it is what
+`clear_caches` + `malloc_trim` reclaims when the executable is dropped. The other ~250-300
+MB is LLVM's transient JIT workspace, released immediately.
+
+**Can it be turned off? No, not by any switch.** §51 measured
+`--xla_backend_optimization_level=0` at **3.8 %** and
+`--xla_llvm_disable_expensive_passes=true` at worse-than-nothing. A more compact IR does
+not help either: MLIR bytecode is 21.6 % of the text, but an `Exported` still holds
+StableHLO and compiles again on load. The only lever is step 1 and step 2 -- fewer ops in,
+which is §51's vectorisation question, and it remains bounded by how much of the graph is
+genuinely repeated structure. **Unmeasured, and still the number that decides this.**
+
+## 55. jax-native optimisation is blocked by one `while_loop`, not by the optimisers (2026-09-06)
+
+Both drivers reach a host NumPy library through `jax.pure_callback`, which makes a
+converged solve opaque: `jax.grad` through one raises *"Pure callbacks do not support
+JVP"* (`_sqp_callback`'s docstring). With the problem better conditioned than it was --
+the Ward kink smoothed, `icc = 11` gone, all four `helias_5b` cells converging -- the
+question was whether a jax-native optimiser can now do the job.
+
+**It can, and the blocker turned out to be somewhere else entirely.**
+
+- `optimistix 0.1.0` is installed (`Newton`, `BFGS`, `GaussNewton`, `LevenbergMarquardt`,
+  `NonlinearCG`, `FixedPointIteration`); `optax` and `jaxopt` are **not**.
+- `cottax`'s own `OptimiseDriver` refuses this problem by construction: its `check()`
+  rejects any `Optimise` whose conditions carry an `Equality`/`Inequality` role, and
+  `helias_5b` MDF has two of each.
+- `optimistix.BFGS` on a quadratic-penalty objective **fails**, and the reason is the
+  finding: `BFGS.step` takes its gradient by `jax.linear_transpose` -- reverse mode -- and
+  this graph's `solve_duct_geometry` (`models/vacuum/vacuum.py`) is a `lax.while_loop`
+  with dynamic bounds, which has a JVP and **no transpose rule**:
+  `ValueError: Reverse-mode differentiation does not work for lax.while_loop`.
+  `optimistix 0.1.0` exposes no `autodiff_mode` switch on its gradient-based solvers, so
+  they all hit the same wall.
+- Forward mode works. A hand-rolled Adam loop over a `jacfwd` gradient of the penalty
+  objective, entirely in `jax.numpy` with no callback anywhere, converges `helias_5b` MDF
+  to **`objf = 0.764211181`** against VMCON's `0.764215516` (4.3e-6, ~6 s.f.), in ~40-150
+  ms warm. The whole 150-step loop wrapped in `lax.scan` **is `jax.jit`-able end to end**,
+  and `jax.jacfwd` **through the entire solve succeeds** (31 s to compile
+  forward-over-forward). `jax.grad` through it fails, same transpose gap.
+- `stellarator_helias` MDF, the harder one: 500 Adam steps, 542 ms warm,
+  `objf = 1.219117069` against `1.21848284` (~3 s.f.), largest equality residual 1.7e-3
+  and one inequality still violated by 3.1e-4 -- a fixed-`rho` penalty leaves
+  infeasibility, as it should.
+
+**This promotes an item that has been sitting at the bottom of `next_steps.md`.**
+`vacuum.py`'s `solve_duct_geometry` was filed as "the sole remaining reverse-mode AD
+blocker" -- a curiosity about one node. It is not: it is **the reason no off-the-shelf
+jax-native optimiser can be used at all**, because every gradient-based `optimistix`
+solver is reverse-mode. Giving that loop a fixed or `scan`-shaped iteration count would
+unlock the entire library with no custom optimiser code, and the `vmap`-over-64-candidates
+conversion already sized in `next_steps.md` is exactly that shape. The other route --
+building a real constrained forward-mode method (augmented Lagrangian, or KKT
+least-squares through `GaussNewton`/`LevenbergMarquardt` on forward-mode Jacobians) --
+is independent and would also work.
+
+**Not a driver yet, and the numbers above are a scoping experiment**: fixed-penalty Adam
+is not competitive with VMCON's 4 iterations and is not meant to be. What it establishes
+is that the *formulation* is expressible in JAX and the barrier is one `while_loop`.
