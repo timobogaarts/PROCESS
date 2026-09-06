@@ -309,6 +309,52 @@ than a crash: a slice-sum reassociated into a different order changes the last b
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
 
+**The resolver was the wrong architecture, and it generated most of this work.** The
+tracked transpiler is **154 lines** and does its job. The resolver is **820** and exists
+solely to answer *"which underlying function IS this node?"* -- because `defn.fn` is a
+callable `eqx.Module` instance whose `__call__` wraps the real computation. Every refusal
+category in this document is an artefact of asking that question: `Composition`,
+`self.<attr>`, "4 distinct calls -- genuinely ambiguous", the arity mismatches. None of them
+is a property of the code being ported.
+
+`scalarise_function` -- written for exactly one node -- asks a different question: *expand
+this node's own body, inlining whatever it calls, into one flat function.* That question has
+no such categories. Pointed at **every** node in the Drive with no resolver at all
+(`scratchpad/species/inline_all.py`):
+
+| configuration | node definitions | scalarise straight off |
+|---|---|---|
+| `helias_5b` | 95 | **46 (48 %)** |
+| `large_tokamak_nof` | 178 | **92 (52 %)** |
+
+Half the graph, first try. **And not one remaining obstacle is "I cannot identify the
+leaf."** What is left is a short, named, mostly mechanical list:
+
+| obstacle | h5b | lt_nof | nature |
+|---|---|---|---|
+| `self.names` is a tuple (constraint wrappers) | 4 | **26** | the sequence-static mechanism already exists |
+| `x ** <non-literal>` (`** p`, `** 1.4`, `** alphat`) | 12 | 8 | **refused only for bit-exactness** -- see below |
+| index bound is a switch, not a literal (`lsa - 1`) | 13 | -- | switches are config-static integers, constant-foldable |
+| `self.topology`, `self.__self__` | 2 | 8 | structured/bound attributes |
+| builtin `operator.sub` (`Compare`/`Pairwise`) | 3 | 3 | one special case |
+| genuine control flow, array intermediates, `y.shape` | ~15 | ~40 | real work |
+
+The `**` row deserves particular attention: `scalarise` refuses a non-literal exponent
+**only because `wp.pow` is not bitwise `lax.integer_pow`**. Under the relaxed `1e-12` gate
+that objection evaporates and those ~20 nodes become a one-line change. A policy chosen for
+tidiness was itself blocking a fifth of the remainder.
+
+**So the honest answer to "what is the real holdup" is: an architectural choice, not the
+physics.** The bodies really are pure `jnp`. Committing early to find-the-leaf turned a
+translation problem into a program-identification problem, and then most of the effort went
+into the taxonomy of ways identification fails. The right shape is inline-everything with a
+small, explicit refusal list.
+
+Two honest limits on this measurement: it counts `scalarise_function` **succeeding**, not the
+result being verified correct -- each expansion still needs checking against `node_def.fn`,
+which is exactly what that module was designed to allow. And a node that scalarises may still
+depend on one that does not.
+
 **`plasma_composition` resolves, no condition flipped, and the "one feature away" claim was
 wrong.** The node is not resolved by finding its leaf but by **building** one:
 `scalarise.py` expands the node's whole `__call__` -- helper, arm, `jax.vmap` and all -- into
