@@ -1518,3 +1518,88 @@ programs, not measured. Measured directly through `host_cache.bind`'s three prog
 the fused pair costs **0.4 %** more than the Jacobian alone, which is why
 `VmconDriver.fused` defaults to `True`. The direction §54 claimed is confirmed; the
 multiplier was a guess and is now a measurement on a named configuration.
+
+## 60. The missing memory, measured in isolation at last (2026-09-06)
+
+Three attempts at per-program memory produced two retractions (§50, §57), all from the
+same mistake: attributing a **process-level** RSS delta to a **single program** while
+glibc's arena reuse makes that meaningless. §57 concluded that per-program retained cost
+"is not a well-defined quantity here". It is -- but only if the process contains exactly
+one program.
+
+**Method, and it is the whole result.** Harvest each program's StableHLO **bytecode**
+straight from the `backend_compile_and_load` hook
+(`module.operation.write_bytecode`), save it, then in a **fresh interpreter per program**
+-- nothing compiled before it, ever -- parse it back and call
+`backend_compile_and_load` directly, with no cottax or session machinery involved.
+Cross-checked against §57's independent `/proc/self/maps` route: 5 952 KB of executable
+pages for the largest program against §57's 5.8 MB. Same number, different method.
+
+### The honest per-program peak
+
+| StableHLO chars | post-opt instrs | peak RSS | peak / instruction |
+|---:|---:|---:|---:|
+| 2 282 899 | 70 065 | **866.9 MB** (857-877 over 3 runs) | 12.7 KB |
+| 1 514 799 | 28 003 | 531.6 MB | 19.4 KB |
+| 1 055 811 | 20 169 | 393.7 MB | 20.0 KB |
+| 516 021 | 8 575 | 245.2 MB | 29.3 KB |
+| 177 529 | 1 190 | 110.7 MB | 95.2 KB |
+
+`peak_MB ~ 157 + 0.0106 x instructions` -- **a ~157 MB fixed cost per compile plus ~11 KB
+per post-optimisation HLO instruction**. The fit is loose (residuals to ~75 MB), so it is
+scaling, not a model; a clean bytes-per-instruction constant does not exist because there
+is a real fixed component. **These supersede every per-program figure in §45, §50 and
+§54.** §45's *whole-configuration* numbers are a different measurement, end to end, and
+stand untouched.
+
+### Where the bytes are, split three ways
+
+Largest program, mean of three runs:
+
+| stage | RSS above baseline | share |
+|---|---:|---:|
+| peak, immediately after compile | 866.9 MB | 100 % |
+| after `gc` + `malloc_trim`, **executable still alive** | 397.9 MB | 45.9 % |
+| after dropping every reference + `clear_caches` + gc + trim | **142.5 MB** | 16.4 % |
+
+- **~469 MB (54 %) is transient LLVM codegen workspace** -- reclaimed by `malloc_trim`
+  while the executable is still live. §57's guess, now measured in isolation.
+- **~255 MB (30 %) is genuinely attached to the live executable** -- it returns when the
+  last Python reference is dropped. So something *is* retained per loaded executable,
+  which partially confirms the hypothesis §57 filed. **Not** the "`HloModule` at 4 KB per
+  instruction" story, though: that number still fails on the smaller programs.
+- **~142 MB survives everything**, and is roughly **size-independent** (63-150 MB across a
+  60x range of instruction counts) -- a fixed per-compile-event residue.
+
+### The crux: that residue is almost all allocator free-list, not live data
+
+For the largest program, after the full drop-and-clean, glibc's own `mallinfo2.uordblks`
+-- bytes it considers **genuinely in use** -- is **~14 MB above baseline**, while process
+RSS is **142.5 MB** above it. The ~128 MB gap is memory glibc has already marked free and
+has not returned to the kernel, and an explicit `malloc_trim(0)` immediately before the
+reading could not reclaim it -- almost certainly fragmentation holes below the arena's
+high-water mark rather than top-of-heap space `brk` can shrink.
+
+**So the answer to "why does compiling a few graphs need gigabytes" is: mostly it does
+not.** Of a 867 MB peak, ~14 MB is live afterwards, ~255 MB is held by the live
+executable and returns when it is dropped, and the rest is allocator behaviour. That makes
+it a **tuning problem rather than a hard cost**, which is the best available outcome.
+
+### Levers, measured
+
+| lever | effect on peak | cost |
+|---|---|---|
+| **`MALLOC_ARENA_MAX=1`** | 866.9 -> **586.1 MB (-32 %)**, reproducible (586.3 / 586.0 / 580.8) | compile **14.7 s -> 23.0 s (+57 %)**; a single arena serialises malloc across XLA's compile threads |
+| `MALLOC_TRIM_THRESHOLD_` / `MALLOC_MMAP_THRESHOLD_=65536` | ~7-13 % alone | adds nothing on top of `ARENA_MAX=1` |
+| `--xla_cpu_parallel_codegen_split_count=1` | **none** (876.8 MB; 591.5 with ARENA_MAX) | -- |
+| *(from §51)* `--xla_backend_optimization_level=0` | 3.8 % | -- |
+| *(from §31.20)* persistent compile cache | 1.2 % | removes all compile *time* |
+
+`MALLOC_ARENA_MAX=1` is a real 32 % lever on the peak -- the only one found -- and it
+costs 57 % more compile time. It barely moves the retained residue. Whether that trade is
+worth making depends on whether a pass is memory-bound or time-bound, and the matrix
+runners are currently neither since `malloc_trim` between rows already bounds them (§45).
+
+**Still not established**: which arena and which allocation class the ~128 MB of
+unreturned-but-free memory belongs to. `mallinfo2` gives aggregates only; answering it
+needs `malloc_info` XML or heap walking.

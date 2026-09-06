@@ -127,8 +127,19 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    `_audit/declaration_census.py` is the tool nearest to it.
    Probes: `_audit/rss_per_program.py`, `_audit/hlo_anatomy.py`.
 
-- **`vacuum.py:316-399` (`solve_duct_geometry`): the conversion is investigated,
-  prototyped and recommended -- it just needs writing** (§55, §58, §59, 2026-09-06).
+- **[DONE 2026-09-06] `vacuum.py` (`solve_duct_geometry`) is a `vmap` selection, and
+  reverse-mode AD works on the port's graph.** `jax.grad` succeeds where it raised and
+  agrees with `jacfwd`; `optimistix.BFGS` converges the real `helias_5b` MDF graph in
+  9.4 s to `objf = 0.7642142560891302` against VMCON's `0.764215516`, equalities at 4e-11
+  and 2.5e-05, both inequalities feasible, **with no custom optimiser code**. Seven of
+  eight comparison cases bit-identical, `nflag` right on all eight, and the eighth's 1 ulp
+  is the *old* loop's fusion context (see the code comment). **Now open instead**: (a)
+  reverse-mode **compile time and memory** are unmeasured -- the tangent tower is
+  replaced by a transpose and nobody knows what that costs here, nor whether
+  `jax.checkpoint` is needed on the big blocks; (b) `slsqp_jax` and the rest of
+  `optimistix` are now reachable and untried at scale; (c) `SlsqpDriver`/`VmconDriver`
+  remain `pure_callback`-based, so a *driver* built on this is still unwritten.
+  *(Superseded rationale, kept because it is the argument:)*
   **Necessary, not optional**: `optimistix/_solver/gauss_newton.py:176` uses `jax.jacrev`
   and offers no `jac` override, so *every* off-the-shelf `optimistix` solver is
   reverse-mode and none can run on this graph today. The node is a **discrete first-fit
