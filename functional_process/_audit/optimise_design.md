@@ -1014,6 +1014,12 @@ always there to be read, and nothing read it.
 
 ## 53. Should SAND expose the root find? The knob exists, and using it is worse (2026-09-06)
 
+> **Largely SUPERSEDED by §56, same day.** The headline is wrong: nesting fails because of
+> a seeding defect in `run_sand_harness._seed`, not because of the formulation, and with
+> that patched it converges in 75 iterations at machine-precision residuals. The candidate
+> rule below is also dead in both directions. Kept in full because the corrections are
+> only legible against it.
+
 §49 ended on a design question rather than a bug: `wp_width_r_min` is a SAND-only exposure
 of an inner root find that MDF solves internally, so should SAND expose it at all?
 
@@ -1191,3 +1197,107 @@ is independent and would also work.
 **Not a driver yet, and the numbers above are a scoping experiment**: fixed-penalty Adam
 is not competitive with VMCON's 4 iterations and is not meant to be. What it establishes
 is that the *formulation* is expressible in JAX and the barrier is one `while_loop`.
+
+## 56. The exposure rule is dead, and §53's mechanism was wrong (2026-09-06)
+
+§53 proposed a rule -- *expose `FixedPoint` residuals, keep genuine `RootFind`s internal*
+-- on one sample against five, and explained the nesting blow-up by inconsistent free
+couplings. Both are now refuted, and the second refutation found a real defect.
+
+### The rule fails in both directions
+
+The SAND coupling table across all five SAND-bearing configurations (the two
+evaluation-mode files have no SAND arm):
+
+| configuration | exposes an `ImplicitFunction`? | SAND SLSQP | SAND VMCON |
+|---|---|---|---|
+| `stellarator_helias` | **yes** -- `Intersect`/`wp_width_r_min` | **cap(500)** | 24 |
+| `helias_5b` | **yes** -- the same `Intersect` | **converged, 8** | 7 |
+| `large_tokamak_nof` | no (5 `FixedPoint`s) | converged, 13 | 10 |
+| `low_aspect_ratio_DEMO` | no (5 `FixedPoint`s) | converged, 17 | **79** |
+| `st_regression` | no (4 `FixedPoint`s) | converged, 10 | 10 |
+
+- **Not necessary**: `low_aspect_ratio_DEMO` exposes none and is badly troubled anyway
+  (79 VMCON iterations against its own MDF's 11).
+- **Not sufficient**: `helias_5b` exposes the *same* `Intersect` as `stellarator_helias`,
+  over 9 unknowns, and converges in **8**.
+
+**That second row only became readable today.** Before `icc = 11` was removed (§52),
+`helias_5b`'s SLSQP arms died at iteration 2 on the tautological constraint, which made it
+look like a confirming case for the rule when it was really failing for an unrelated
+reason. Removing the inert constraint **unconfounded the experiment**, and the case it
+then provided killed the rule. Worth noting as a method point: the rule would have
+survived on stale numbers.
+
+### `DuctDiameterRootFind` is not evidence -- it is not in any graph
+
+§53 flagged a second declared `ImplicitFunction` (`vacuum/vacuum.py:123`) that SAND does
+not expose, and asked why. The answer is that it **never appears in any configuration's
+`driven.declared`, or anywhere in any of these graphs**. Its own docstring says so: it is
+registered in `total_process.py` but *"not wired to any other node ... every one of these
+six `VarPath`s is minted and unique to this class, so it sits as its own disconnected
+island"*, driving deferred. It is not screened out by `degenerate_fixed_points` or
+`array_valued_problems` -- those only examine `FixedPoint`s. So it is **a separate,
+pre-existing gap in the port** (a registered node that nothing reaches), unrelated to SAND
+or to any switch, and it provides no evidence either way. `^problem.stellarator.coils.intersect`
+is the only `ImplicitFunction` any configuration's graph actually contains.
+
+### `low_aspect_ratio_DEMO` is a different mechanism
+
+Its 79-iteration VMCON trajectory: `dx` runs 1.65, 0.078, 0.098, 0.012, 0.064 early and
+then shrinks essentially monotonically to 1e-4-5e-4 over the last twenty; `max|eq|` and
+`min ie` reach ~0 by **iteration 2** and stay there; the objective wobbles in the fifth
+decimal for the whole tail. **Creeping, not oscillating** -- a slow, roughly linear-rate
+asymptotic approach with no ramp-and-reset cycles and no conflicting pair. Structurally
+unlike `stellarator_helias`, and consistent with the table above: SAND has at least one
+second failure mode that has nothing to do with exposing a root find. Uncharacterised.
+
+### §53's mechanism is refuted, and the real cause is a seeding defect
+
+The ladder settles it: nesting 1, 2 or 4 of the five declared problems gives
+**byte-identical** blow-ups at `objf = 1.03194311e+23`. Adding or removing other nested
+couplings changes nothing, so "the other free couplings hand it an inconsistent state" is
+wrong. (Nesting all five is structurally refused by `Combine` -- *"fewer than two problems,
+so nothing to combine"* -- a real limit of `sand_graph` today, not a result.)
+
+A direct `jax.debug.print` at the failure shows the nested Newton's input is **exactly
+`y0 = [0.]`**, the documented flat plateau, on every rung. And the reason is one line in
+`run_sand_harness._seed`:
+
+```python
+coupling = cut or (source in drive.unknowns and source not in design)
+```
+
+`_seed` decides "is this a coupling unknown, and therefore seeded from the converged MDA
+fallback?" by asking whether it is in **`drive.unknowns`** -- the *outer* block's unknown
+set. But `sand_graph(keep=...)` is defined to *remove* a kept problem's unknowns from
+exactly that set and give them to an inner `Drive`. So the moment a coupling is nested it
+stops being recognised as coupling, falls through to `ground_truth(base, source)`, and
+gets the cold `DataStructure` default -- `0.0` -- while the correct value sat unused in
+`fallback` all along (`fallback['.stellarator.wp_width_r_min'] = 0.6286`). An isolated 1-D
+Newton started at a point of zero derivative cannot move.
+
+**This is a latent defect in the port, not a property of the problem**: `_seed` conflates
+*"is a coupling quantity"* with *"is exposed to the outer block"*, and those coincide only
+while nothing is kept. It has never bitten production because `keep=` is a research knob.
+The fix shape is to ask the question about the quantity rather than about which block
+currently owns it. `mda.ROOT_FIND_SEEDS` also has no fallback entry for this path -- it
+moved to `SUPPLIED_STARTS` and nothing replaced it -- so the later rescue path cannot save
+it either.
+
+**With both seeding gaps patched at runtime, nesting works.** Nested SLSQP converges in
+**75 iterations** at `max|eq| = 2.49e-14`, `min ie = -2.23e-13` -- residuals ten orders
+better than the exposed arm ever reached in its 500-iteration cap (3.95e-4). So §53's
+headline, *"the knob exists and using it is worse"*, was **an artefact of the defect
+above**, not a finding about SAND.
+
+**It is still not answer-preserving, and the gap is small but real.** `objf = 1.21833891`
+against VMCON's `1.21848284` -- 1.44e-4 absolute, **0.012 % relative**. That is ~25x
+closer than the drop-`c62` experiment's 0.31 %, and both formulations are at machine
+precision on their residuals, so this reads as convergence to a genuinely different nearby
+point in a non-convex problem -- plausibly a different active-set path -- rather than an
+unconverged one. **Not verified**, and it is the question a real fix would have to answer.
+
+**Negative results, recorded so nobody repeats them**: rescaling `c62` or `wp_width_r_min`
+(§49) does not work; nesting without the seed fix fails identically at every rung; nesting
+every problem is not buildable through `sand_graph` today.

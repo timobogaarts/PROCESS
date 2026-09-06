@@ -68,7 +68,7 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    `wp_width_r_min` is a SAND-only exposure of an inner root find that MDF solves
    internally -- which is why the same file under MDF converges under SLSQP in 27 -- and
    SAND hands it to the outer SQP to compete in one scalar merit function against a
-   near-active `c62`. **[investigated -- §53]** The knob already exists
+   near-active `c62`. **[investigated -- §53, then corrected by §56]** The knob already exists
    (`sand_graph(keep=...)` + `sand_schedule(nest=True)`, whose docstring asks this exact
    question) and **using it is worse**: nesting the `Intersect` blows up on the first
    outer Jacobian (`objf = 1.03e23`, `max|eq| = 4055`), because SAND's other five
@@ -76,12 +76,27 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    is nonetheless structurally the odd one out -- the only one of the six that is an
    `ImplicitFunction` rather than a residualised `FixedPoint`. **Candidate rule**: expose
    `FixedPoint` residuals, keep genuine `RootFind`s internal -- on a sample of one against
-   five, on one configuration. **Open**: (i) the graph declares a *second*
-   `ImplicitFunction`, `^problem.vacuum.duct_diameter_root_find`, which does *not* appear
-   among SAND's exposed couplings for reasons nobody has stated -- check why before
-   generalising any rule; (ii) `low_aspect_ratio_DEMO`'s SAND arm as the cross-check (79
-   VMCON iterations against MDF's 11, and the *opposite* shape -- VMCON slow, SLSQP fine),
-   not reached because that graph is 247 nodes and did not finish compiling in the box. Costs one row of twenty-four,
+   five, on one configuration. **§56 then demolished most of this.** The rule is dead
+   both ways: `helias_5b` exposes the *same* `Intersect` and converges in 8 (readable only
+   after `icc = 11` was removed, which unconfounded it), and `low_aspect_ratio_DEMO`
+   exposes none and still takes 79 VMCON iterations. The nesting blow-up was a **seeding
+   defect**, not the formulation: `_seed` decides "is this coupling?" by
+   `source in drive.unknowns`, and `sand_graph(keep=...)` is *defined* to remove kept
+   unknowns from that set -- so a nested coupling silently falls back to the cold
+   `DataStructure` default `0.0`, landing Newton exactly on its flat plateau, while the
+   right value sits unused in `fallback`. Patched at runtime, nesting converges in 75
+   iterations at `max|eq| = 2.5e-14`. **Open**: (i) **fix `_seed` properly** -- it
+   conflates "is a coupling quantity" with "is exposed to the outer block", which coincide
+   only while nothing is kept; `mda.ROOT_FIND_SEEDS` also lost this path's fallback entry
+   to `SUPPLIED_STARTS`. Latent, since `keep=` is a research knob. (ii) the nested answer
+   is 0.012 % from VMCON's (`1.21833891` against `1.21848284`) with both at machine
+   precision -- probably a different active-set path in a non-convex problem, **unverified**.
+   (iii) `low_aspect_ratio_DEMO`'s slow VMCON arm is a **second, uncharacterised failure
+   mode** -- creeping, feasible by iteration 2, no oscillation, nothing like the
+   stellarator's. (iv) `^problem.vacuum.duct_diameter_root_find` turns out to be in **no**
+   configuration's graph at all -- registered in `total_process.py` but wired to nothing,
+   "driving deferred", a disconnected island. A separate pre-existing gap, and no evidence
+   for any rule. Costs one row of twenty-four,
    under the non-production driver.
 3. **[closed] The whole-matrix OOM is resident compiled executables; the existing trim is
    the right fix** (§45, §50). Post-trim the floor **saturates** rather than leaking
