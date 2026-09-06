@@ -309,6 +309,38 @@ than a crash: a slice-sum reassociated into a different order changes the last b
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
 
+**The `DIRECT` math map is wrong for 6 of its 17 entries, and the 0.000e+00 record
+survived by luck.** `transpile.py` maps `jnp.<f>` straight onto `wp.<f>` for seventeen
+functions. Swept 4000 points each against the JAX counterpart, CPU, float64
+(`scratchpad/transcendental/sweep2.py`):
+
+| exact | differs |
+|---|---|
+| `sin` `cos` `tan` `log` `sqrt` `atan` `floor` `ceil` `sign` `round` `pow` -- 100 % | `tanh` **38.5 %** (4 ulp), `sinh` 48.6 % (3), `cosh` 54.7 % (2), `asin` 77.0 % (1), `acos` 92.8 % (1), `exp` **87.0 %** (1) |
+
+Reachability analysis over every generated kernel shows only `sin`, `cos`, `log`, `sqrt`
+and `pow` are actually called from an included condition -- **all five in the exact
+column**. That is why every leaf so far reported 0.000e+00: not because the mapping is
+sound, but because no reached leaf had yet used one of the six that are not. `tanh` is the
+worst of them and is an unremarkable thing for a physics leaf to call.
+
+**This also corrects the claim that "no leaf had ever exercised a transcendental other than
+`sqrt`".** `wp.sin` appears 144 times across the generated modules and is reached 4 times;
+`cos`, `log` and `pow` are reached too. They agree with JAX, which is a different and much
+weaker statement than never having been tested.
+
+The deeper point is about the gate rather than the map: **agreement is measured at a single
+input point.** A one-point test would pass `exp` with probability 0.87 and `tanh` with 0.385.
+The one function anyone swept over a range turned out to disagree on 13 % of it. Every
+bit-exactness claim in this document rests on single-point evidence and should be read that
+way until the gate samples a range.
+
+**Fix, not yet applied**: the six unsafe names must move out of `DIRECT` into a refusal, so
+a leaf using one is rejected rather than silently mis-emitted -- the same "refuse rather than
+guess" rule the resolver already follows. A verified `_xla_exp` exists (below); the other
+five have no replacement yet. Deferred only because an agent is mid-flight against this file
+and one emitted kernel currently reaches `wp.exp`.
+
 **Correction: the per-condition table above was a lower bound, and "three conditions are
 one node away" was wrong.** `cond_holes.py` stopped *at* each hole and named the node owning
 it, without recursing into that node's own reads -- so it reported the frontier, not the
