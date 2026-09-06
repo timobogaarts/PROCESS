@@ -309,6 +309,59 @@ than a crash: a slice-sum reassociated into a different order changes the last b
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
 
+**`plasma_composition` resolves, no condition flipped, and the "one feature away" claim was
+wrong.** The node is not resolved by finding its leaf but by **building** one:
+`scalarise.py` expands the node's whole `__call__` -- helper, arm, `jax.vmap` and all -- into
+a flat straight-line function of exactly its declared parameters, monomorphised per
+occupant. Fixed-length arrays become N named scalars (`jnp.stack`, slice-sums,
+`.at[i].set()`, literal-index reads, `vmap` unrolled to 14 calls); per-species tables become
+one `wp.array2d` parameter each, chosen over 14 separate parameters so the species index
+stays *data* rather than part of 28 generated identifiers where an off-by-one would silently
+permute rows. Verified 18/18 outputs bit-identical against the real `node_def.fn`, and
+**4000/4000 points on a swept range**.
+
+**Two measured corrections to the scoping, both of which say the frontier analysis
+systematically under-estimates.**
+
+1. On `helias_5b` and `stellarator_helias` all seven "`plasma_composition`-gated" conditions
+   are *also* gated by the `gamma` leaf -- which is an **ancestor of `plasma_composition`
+   itself**. On those two configs this work could not have flipped a condition even in
+   principle.
+2. On `large_tokamak_nof`, where `plasma_composition` does gate 9 conditions alone, none
+   flipped either, because resolving it **exposed a new frontier behind it**: `_simpson`'s
+   `y.shape[...]` (17 conditions), `gammaln` in `calculate_pedestal_on_axis_temperatures`
+   (20), `jnp.min` (20), `REACTION_CONSTANTS_DD2` (13), `jnp.full_like` (12), and per-condition
+   constraint arity mismatches. `c84`/`c24` on `helias_5b` turn out to be blocked by a
+   constraint arity mismatch **independently of `gamma`**.
+
+This is the third time a "what is left" estimate has been revised upward, and the pattern is
+now clear enough to state as a property of the method rather than as three separate
+mistakes: **prefix-closure can only see one layer deep.** Resolving the frontier reveals the
+next one, so every remaining-work estimate derived from it is a lower bound. The honest unit
+of progress is the refusal census driven to zero, not a coverage fraction.
+
+**`_simpson` refused with a measured reason**, which is the right shape for a refusal: its
+`jnp.sum` is over 100 elements, and XLA's reduction is bitwise left-to-right sequential only
+up to ~14 (0/2000 mismatches at n=12 and n=14; **1464/2000 at n=64**). A sequential expansion
+would be arithmetically right and bitwise wrong. Under the relaxed `1e-12` gate this
+particular objection weakens; the second reason does not -- its operands are 201-element
+*intermediate* arrays, which a per-thread scalar kernel has no representation for.
+
+**Sweeping found a bug a single point did not.** XLA fuses `jnp.interp`'s final step
+`fp[i-1] + (delta/dx)*df` into an FMA; Warp emits the unfused pair -- genuinely different
+arithmetic, not just different rounding. It produced a 1-ulp error in one species' `<Z>` at
+**1 of 400 sweep points**. Fixed by emitting an exact Dekker FMA in both interp helpers; the
+pre-existing 1-D helper had the same latent bug. And the corollary, found the same way:
+`_xla_exp` is exact only on **[-8, 8]** -- 19999/20000 on [-20, 5], and **3896/20000** near
+underflow at [-745, -700]. The earlier 8000/8000 figure was measured precisely on the range
+where it holds.
+
+**A latent baseline defect surfaced**: `calculate_divertor_geometry_conventional` emits
+`wp.asin` (77 % exact) and was **inside the passing baseline**, so `large_tokamak_nof`'s
+0.000e+00 was passing through an unverified transcendental at a single point. Under the
+relaxed gate this is acceptable at ~1 ulp and the function stays; under the old exact gate it
+had simply never been tested.
+
 **The `DIRECT` math map is wrong for 6 of its 17 entries, and the 0.000e+00 record
 survived by luck.** `transpile.py` maps `jnp.<f>` straight onto `wp.<f>` for seventeen
 functions. Swept 4000 points each against the JAX counterpart, CPU, float64
