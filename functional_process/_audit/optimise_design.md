@@ -105,7 +105,37 @@ the generated adjoint as size-limited until measured otherwise.
   one -- this pair shares costs/power/availability plumbing, not the profile, build and
   coil-shape machinery that dominates each.
 
-**Open**: widening past ~37 nodes; whether the adjoint spill is fatal or merely costly;
+**Constraint nodes are not a judgement call after all.** They were excluded because
+`constraint_11/32/34/35/65/82/83` forward to `eq`/`leq`/`geq`, which return **4** values
+against a node owning **1**, and picking an element looked like a decision about intent.
+It is not -- three independent places in the code say the same thing:
+
+- `core/solver/constraints.py` -- `eq`/`leq`/`geq` all return
+  `(residual, normalised_residual, constraint_value, constraint_bound)`, no branching;
+- `sand.py`'s `_NormalisedResidual.__call__` -- `return self.fn(**arguments)[1]`, applied
+  uniformly to **every** constraint node, one call path, no per-constraint branch;
+- PROCESS itself -- `tmp_cc = result.normalised_residual`, and `-tmp_cc` is what VMCON has
+  always been driven to zero on.
+
+**Index 1, unconditionally.** The resolver **derives** it rather than hard-coding: it
+AST-parses the wrapper's `__call__` and accepts the arity mismatch only when every `return`
+is provably `self.fn(**kwargs)[K]` for one literal `K`. A structural fact about one wrapper
+class, not a per-node guess -- which is the difference between this and what the arity
+invariant rightly refuses.
+
+Coverage, agreement unchanged at **0.000e+00** on every newly included condition:
+`stellarator_helias` 29 -> **32** entries and 1 -> **4** conditions, `large_tokamak_nof`
+37 -> **38** and 2 -> **3**. `helias_5b` does not move: its four constraint leaves are now
+resolvable but their *upstream* chains are still blocked by `interp`, an unresolved `gamma`
+and array-valued tables -- the two remaining gaps compound rather than add.
+
+**And a cost that was measured rather than assumed**: forward registers jumped **24 -> 110**
+(`stellarator_helias`) and **24 -> 80** for one to three constraint nodes, because the
+emitter materialises all four returns even though three are discarded. **The fix is
+monomorphisation** -- the same technique already used for function-valued parameters:
+emit a specialised single-return variant per selected index. Not done.
+
+**Open**: widening past ~38 nodes; whether the adjoint spill is fatal or merely costly;
 `jnp.interp`/`searchsorted` and array-valued lookup tables; and the arity-mismatched
 constraint nodes (`constraint_11/32/34/35/65/82/83` forward to `eq`/`leq`/`geq`, four
 returns against one owned output) which are **excluded and named rather than guessed at** --
