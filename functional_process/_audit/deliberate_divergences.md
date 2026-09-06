@@ -115,5 +115,12 @@ Recorded so the reasoning is not re-derived.
   `dr_tf_plasma_case` to become a design variable -- a degree of freedom PROCESS does not
   have -- to give the optimiser something to act on. A change to the problem statement, for
   a kink that is currently costing no solver anything.
+- **A C1 (monotone cubic) interpolant in `intersect_residual`** (`optimise_design.md` §89).
+  Verified robust -- 10/10 ulp draws converge in 83-101 iterations where piecewise-linear
+  gives 8/10 with two hard caps -- and it is an order of magnitude cheaper than the
+  alternative of raising the sample count. **Not landed**: it shifts TF coil masses, areas
+  and current densities by ~5e-04 against PROCESS, breaking a tier-3 faithfulness test at
+  `rtol = 1e-9`, and it buys convergence only for `SlsqpDriver`, which is a second opinion
+  rather than the production driver. Patch kept at `scratchpad/mem/coils_C1.py.patch`.
 - **Smoothing the TF case clamp.** Wrong in kind: unlike the Ward kink, this one is real
   geometry (an arc's sagitta) doing its job.

@@ -3545,3 +3545,61 @@ tuples, resolving globals against the defining module rather than the discoverin
 scratchpad copy has the coverage work. **Neither is complete, and merging them is the next
 concrete task**, along with the `zeros_like`/`ones_like` scalar rule and the two-store
 `NativeState` defect (§86) that is unrelated but equally unlanded.
+
+## 89. C1 verified robust -- and then not landed, because of what it costs (2026-09-06)
+
+§87 left the C1 interpolant on one draw. The ulp sweep §86 called for has now been run --
+same protocol, both drivers, N = 200, ten draws (`ulps` in 0, +-1..+-4, +5):
+
+| | piecewise-linear (§86) | **C1** |
+|---|---|---|
+| SLSQP | **8/10** converged, 235-429 iterations, **2 hard caps** | **10/10**, **83-101 iterations** |
+| VMCON | -- | **10/10, exactly 43 every draw** |
+
+**It clears the bar decisively.** Not a lucky draw: a tight spread where the baseline had a
+2:1 range and two caps, and VMCON is provably untouched -- 43 iterations regardless of
+perturbation, confirming the production driver never sees this kink.
+
+The SLSQP/VMCON gap is also **stable rather than scattered**: 9.47e-05 to 1.27e-04 across
+all ten draws, centred on §87's single-draw 1.02e-04. So that disagreement is a real,
+reproducible property of the arm and not sampling noise -- and C1 does not touch it.
+
+### And then it was applied, measured, and reverted
+
+Applying it breaks `test_st_coil_matches_process_end_to_end` -- a tier-3 end-to-end
+comparison against PROCESS at **`rtol = 1e-9`** -- by roughly **5e-04 relative, across the
+whole TF coil chain**:
+
+| quantity | port (C1) | PROCESS | relative |
+|---|---|---|---:|
+| `dr_tf_wp_with_insulation` | 0.52817703 | 0.528366452857 | 3.6e-04 |
+| `a_tf_inboard_total` | 25.83482039 | 25.847257117856 | 4.8e-04 |
+| `m_tf_coils_total` | 5 694 513.48 | 5 697 113.26 | 4.6e-04 |
+| `m_tf_coil_superconductor` | 7 327.51 | 7 332.77 | 7.2e-04 |
+
+**This is not a solver-only change.** §87 measured the crossing point moving 8.1e-05 and I
+reported that as "a genuinely small perturbation"; it propagates to ~5e-04 on TF coil
+masses, areas and current densities. Well inside the 5 % regression tolerance, and five
+orders outside what the port's own faithfulness test demands.
+
+**So the trade, stated plainly: ~5e-04 on TF coil physics outputs, to fix an arm that only
+`SlsqpDriver` fails.** VMCON -- the production driver -- converges that arm in 24-43
+iterations either way, and does so on all ten perturbed draws. SLSQP is a **second opinion**
+kept precisely so that two solvers disagreeing localises a problem (`scaled_problem`'s
+docstring). Degrading agreement with PROCESS across a whole subsystem to make the second
+opinion converge on one configuration inverts what the second opinion is for.
+
+**Reverted; the tree is green.** The patch is kept at
+`scratchpad/mem/coils_C1.py.patch` and the measurements above are the argument for landing
+it should the trade ever look right -- if SLSQP became a production driver, or if the
+`intersect` table itself were revisited on physical grounds rather than numerical ones.
+
+**What is genuinely established and outlives the decision:**
+
+1. The kink mechanism is confirmed -- removing it converts 8/10-with-caps into 10/10.
+2. **C1 is the cheaper intervention than resolution** by an order of magnitude
+   (8.1e-05 against 1.06e-03 crossing/objf perturbation), and unlike resolution it removes
+   the kinks rather than shrinking them (§86's sweep was non-monotone; N = 1500 still caps).
+3. The **SLSQP/VMCON 1e-04 gap is reproducible and is not the interpolation** -- it survives
+   both interventions and all ten draws. That is the open question, and it is a question
+   about the two solvers' KKT points, not about the model.
