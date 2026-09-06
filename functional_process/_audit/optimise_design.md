@@ -71,15 +71,45 @@ one module; **455 validate bit-identical** against their JAX originals (323 sing
 132 multi), zero disagreements. `helias_5b`'s SAND Drive resolves **85 of 94** nodes under
 the arity invariant, `stellarator_helias` 113 of 123.
 
-**The first real kernel**: the maximal prefix-closed sub-DAG of `helias_5b`'s Drive -- 18 of
-89 entries, 1 of 11 conditions, four excluded leaves named -- compiles and is
-**bit-identical** to JAX evaluating the identical sub-DAG (`0.000e+00`). Faster at every
-batch that fits: **5.8x / 6.2x / 6.6x** on CPU at batch 1 / 16 / 256, and 4.5x the best JAX
-number at 4 096 on GPU. **22 registers forward, 244 backward, zero spill.**
+**The first real kernels.** The maximal prefix-closed sub-DAG of each Drive -- excluded
+leaves named, nothing stubbed -- compiled and compared against JAX evaluating the
+**identical** sub-DAG:
 
-**Open**: widening past 18 nodes; whether the adjoint spills as it grows; `stellarator_helias`
-and a tokamak; and `jnp.interp`/`searchsorted`, array-valued lookup tables, and the
-`Composition` nodes the arity invariant refuses.
+| configuration | entries | conditions | agreement | fwd regs | bwd regs / spill |
+|---|---:|---:|---:|---:|---|
+| `helias_5b` | 18/89 | 1/11 | **0.000e+00** | 22 | 244 / **0** |
+| `stellarator_helias` | 29/117 | 1/21 | **0.000e+00** | 24 | 255 / **320 B** |
+| `large_tokamak_nof` | 37/150 | 2/33, incl. the objective | **0.000e+00** | 24 | 255 / **224 B** |
+
+**Bit-identical on all three**, tokamak included. Faster than JAX at every batch that fits:
+5.8x / 6.2x / 6.6x on CPU at batch 1 / 16 / 256, and 4.5x the best JAX number at 4 096 on
+GPU.
+
+**The adjoint spills at 29 nodes.** The forward pass stays cheap and spill-free (22 -> 24
+registers at every size measured); the backward pass begins spilling to local memory at
+**29 leaf calls** -- far earlier than the 40-60 guessed -- and stays spilled at 37. On
+`sm_75` the adjoint cannot carry full occupancy past roughly two dozen leaf calls. **This is
+the constraint on a Warp path, and it is specific**: emit the forward kernel freely, treat
+the generated adjoint as size-limited until measured otherwise.
+
+**Two expectations corrected by measurement:**
+
+- **The 65 536 GPU failure was not card fragmentation** -- it is **JAX's own default GPU
+  preallocation** competing with Warp in the same process. With
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false`, usage drops from ~3.7 GB to ~1.2 GB of 4 and the
+  batch succeeds at 0.0014 us/point. Device memory is ~2 048 bytes/point, close to the
+  ~2 300-2 700 the I/O implies.
+- **Tokamaks do not come nearly free off stellarator leaves.** Only **29 of 144 (20 %)** of
+  `large_tokamak_nof`'s distinct leaves are shared with `stellarator_helias`. The 92 %
+  collapse is a **portfolio-wide** effect across all seven configurations, not a pairwise
+  one -- this pair shares costs/power/availability plumbing, not the profile, build and
+  coil-shape machinery that dominates each.
+
+**Open**: widening past ~37 nodes; whether the adjoint spill is fatal or merely costly;
+`jnp.interp`/`searchsorted` and array-valued lookup tables; and the arity-mismatched
+constraint nodes (`constraint_11/32/34/35/65/82/83` forward to `eq`/`leq`/`geq`, four
+returns against one owned output) which are **excluded and named rather than guessed at** --
+choosing which tuple element a node owns is a judgement about intent, not about code.
 
 ## Two rules this file paid for
 
