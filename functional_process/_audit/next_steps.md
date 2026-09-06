@@ -111,10 +111,23 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    `_audit/declaration_census.py` is the tool nearest to it.
    Probes: `_audit/rss_per_program.py`, `_audit/hlo_anatomy.py`.
 
-- **`vacuum.py:474` (`solve_duct_geometry`) is the sole remaining reverse-mode AD
-  blocker** — a discrete first-fit search, not a root find, so it doesn't take the same
-  `stop_gradient`-plus-Newton-step treatment already applied to its two sibling loops.
-  Sizing for a `vmap`-over-64-candidates conversion exists; not done.
+- **`vacuum.py:474` (`solve_duct_geometry`) blocks every off-the-shelf jax-native
+  optimiser, and is now the highest-value item here** (§55, 2026-09-06). It was filed as
+  "the sole remaining reverse-mode AD blocker", which undersold it by a lot: it is a
+  `lax.while_loop` with dynamic bounds, so it has a JVP and **no transpose rule**, and
+  every gradient-based `optimistix` solver takes its gradient by `jax.linear_transpose` --
+  reverse mode. So `optimistix.BFGS` and its siblings fail on this graph with
+  `ValueError: Reverse-mode differentiation does not work for lax.while_loop`, and
+  `optimistix 0.1.0` offers no `autodiff_mode` switch to force forward mode. Giving the
+  loop a fixed or `scan`-shaped iteration count would unlock the whole library **with no
+  custom optimiser code**, and the `vmap`-over-64-candidates conversion already sized for
+  it is exactly that shape. It is a discrete first-fit search, not a root find, so it does
+  not take the `stop_gradient`-plus-Newton-step treatment its two sibling loops got.
+  **Measured, so the prize is not hypothetical**: forward mode already works -- a
+  hand-rolled Adam loop over a `jacfwd` penalty gradient, no `pure_callback` anywhere,
+  reaches `objf = 0.764211181` on `helias_5b` MDF against VMCON's `0.764215516` (~6 s.f.),
+  is `lax.scan`/`jit`-able end to end, and is `jacfwd`-differentiable *through the whole
+  solve*. `jax.grad` through it still fails, on this same loop.
 - **`sand_harness._SCHEDULE_WHOLE`/`_SCHEDULE_RUNNERS` are unbounded dicts** with the
   same trap `host_cache._BOUND` had before its removal. Not yet fixed.
   (`host_cache._BOUND` and `_flat_key` are **gone** as of 2026-09-05: the removal
