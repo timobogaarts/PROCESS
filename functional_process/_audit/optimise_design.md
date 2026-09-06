@@ -248,6 +248,43 @@ is last by construction. That is why entry coverage and condition coverage came 
 why the two leaves array support did add (`quench`, `tf_magnet_cost`) bought no condition:
 both gate 1/11, and that one is `objf`, which needs all the others anyway.
 
+**What is left on `helias_5b` is not a long tail -- it is one feature.** The two nodes
+gating 7 of the 11 conditions, `.physics.plasma_composition` and
+`.physics.impurity_radiation_totals`, need the **same** capability stack, so the remaining
+residual splits cleanly:
+
+| | conditions |
+|---|---|
+| already emitting | 1 |
+| reachable via the three in-flight refusals (`electric_production`, `delta_eta_step`, `pchip`) | 3 |
+| **gated by the species-array stack** | **7** |
+
+**Even if every other refusal is resolved, this configuration caps at 4/11.** That is the
+number that decides whether "SAND in Warp" is reachable, and it is one feature away rather
+than nine.
+
+The stack, scoped against the real bodies rather than guessed:
+
+1. a **resolver** rule for a leaf passed *by value* into a same-class helper --
+   `PlasmaCompositionIgnited.__call__` calls `self._composition(plasma_composition_ignited, ...)`,
+   which `_find_value_passed` refuses by design; accepting it means treating `_composition`
+   (a `cottax` method, not a `models` function) as the leaf, with `arm` monomorphised;
+2. **fixed-length array as N named scalars** end-to-end -- `_composition` does
+   `jnp.stack([...])` over 12 scalars plus 2 placeholders, then destructures
+   `results[4][H_INDEX]` and splices `results[:4]`/`results[5:]`. N = 14 and every index is
+   a literal, so it is SSA-expansible, but it needs slice-sums, `.at[i].set()` and
+   literal-index reads -- a different feature from "type this parameter `wp.array`";
+3. **unrolling `jax.vmap`** over the 14 species (mechanical once 2 exists);
+4. **2-D tables plus a log-interp variant** -- `calculate_average_charge_at_temp` is
+   `jnp.interp(jnp.log(x), jnp.log(xp), fp)` against each species' own 200-point table, from
+   genuinely `(14, 200)` `DataStructure` fields, where `wp_interp_N` is 1-D only;
+5. `impurity_radiation_totals` additionally needs a Simpson integration over a profile grid.
+
+Two hazards specific to this stack, both of which produce a *plausible* wrong number rather
+than a crash: a slice-sum reassociated into a different order changes the last bits, and an
+off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
+0.000e+00 is the only signal that separates them from success.
+
 **`delta_eta_step` is not the ambiguous case its own error message claims, and the
 message was about to justify building a registry for it.** The refusal names four calls --
 `calculate_p_{div,shld}_heat_deposited_mw`, `calculate_p_fw_blkt_{coolant_pump,heat_deposited}_mw`
