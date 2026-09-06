@@ -1,4 +1,4 @@
-"""`functional_process/fluid_properties.py` equals `process/core/coolprop_interface.py`.
+"""`functional_process/_vendor/fluid_properties.py` equals `process/core/coolprop_interface.py`.
 
 §23.2's rule -- **vendor for runtime, assert equality in tests** -- applied to the one
 piece of vendored *behaviour* in the port. The wrapper is a verbatim copy, so the
@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from functional_process import fluid_properties as ported
+from functional_process._vendor import fluid_properties as ported
 from functional_process.cottax.tfcoil.quench import (
     QUENCH_HELIUM_PRESSURE_PA,
     helium_properties_at_quench_nodes,

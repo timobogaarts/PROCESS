@@ -380,7 +380,7 @@ def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
     return values as a **static** field. See that class for the decision and its guard.
 
     150 `PropsSI` calls the first time a `(temp_he_peak, temp_quench_max)` pair is seen
-    and none afterwards -- `functional_process/fluid_properties.py` memoises on
+    and none afterwards -- `functional_process/_vendor/fluid_properties.py` memoises on
     `(T, P, fluid)` with `functools.cache`, and the grid is a pure function of those two
     numbers.
     """
@@ -389,7 +389,7 @@ def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
             temp_he_peak=temp_he_peak, temp_quench_max=temp_quench_max
         )
     )
-    # The wrapper is vendored (`functional_process/fluid_properties.py`, a verbatim copy
+    # The wrapper is vendored (`functional_process/_vendor/fluid_properties.py`, a verbatim copy
     # of `process/core/coolprop_interface.py`, equality-tested against it in
     # `functional_process/tests/test_fluid_properties.py`), so this call no longer needs
     # `process` -- §23.6, the last runtime PROCESS import in the port.
@@ -398,7 +398,7 @@ def helium_properties_at_quench_nodes(*, temp_he_peak, temp_quench_max):
     # module needed no `process`; it is here now because `import CoolProp` costs ~3 s
     # (measured) and only a tokamak assembly ever wants the table. Do not lift it to
     # module scope.
-    from functional_process.fluid_properties import FluidProperties  # noqa: PLC0415
+    from functional_process._vendor.fluid_properties import FluidProperties  # noqa: PLC0415
 
     states = [
         FluidProperties.of(

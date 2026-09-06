@@ -73,3 +73,6 @@ process/_version.py
 
 # Generated DSM/XDSM visualisations -- regenerate with `render_xdsm.py` / `sand.py`.
 functional_process/*.html
+
+# Generated Warp source -- regenerate with `functional_process/cottax/warp/`.
+functional_process/warp/

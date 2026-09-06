@@ -18,7 +18,7 @@ environment), and the check is a normal test rather than a manual ritual.
    Importing `indat` only ever proved the *stellarator* path, because that is the machine
    `GRAPH` is: the tokamak arm calls `_quench_helium_table`, which was the port's last
    runtime `process` import (`process.core.coolprop_interface`). That wrapper is now
-   vendored as `functional_process/fluid_properties.py` and equality-tested in
+   vendored as `functional_process/_vendor/fluid_properties.py` and equality-tested in
    `test_fluid_properties.py`, so the tokamak arm runs PROCESS-free and this file says so
    by running it rather than by asserting an import list.
 
@@ -111,7 +111,7 @@ in the port and was the only runtime `process` import left in it."""
 _ASSEMBLY_PROBE = (
     _PROBE.split("root = pathlib.Path", 1)[0]
     + """
-import functional_process.fluid_properties  # the vendored wrapper itself
+import functional_process._vendor.fluid_properties  # the vendored wrapper itself
 
 from functional_process.cottax.indat import graph_for, machine_from_indat
 

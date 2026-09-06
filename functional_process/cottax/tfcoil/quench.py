@@ -54,7 +54,7 @@ record), one call to `calculate_quench_protection_current_density` makes exactly
 
 The zero is the important number. The CoolProp wrapper -- PROCESS's
 `process/core/coolprop_interface.py`, vendored verbatim as
-`functional_process/fluid_properties.py` -- memoises each
+`functional_process/_vendor/fluid_properties.py` -- memoises each
 property on its input tuple (`@cache`), and the quadrature grid depends only on `tftmp`
 and `temp_tf_conductor_quench_max` -- **neither is written by any model and neither is an
 iteration variable** (`grep` over `process/models/**` finds no assignment to either;
