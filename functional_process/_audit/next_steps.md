@@ -127,8 +127,24 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    `_audit/declaration_census.py` is the tool nearest to it.
    Probes: `_audit/rss_per_program.py`, `_audit/hlo_anatomy.py`.
 
-- **`vacuum.py:474` (`solve_duct_geometry`) blocks every off-the-shelf jax-native
-  optimiser, and is now the highest-value item here** (§55, 2026-09-06). It was filed as
+- **`vacuum.py:316-399` (`solve_duct_geometry`): the conversion is investigated,
+  prototyped and recommended -- it just needs writing** (§55, §58, §59, 2026-09-06).
+  **Necessary, not optional**: `optimistix/_solver/gauss_newton.py:176` uses `jax.jacrev`
+  and offers no `jac` override, so *every* off-the-shelf `optimistix` solver is
+  reverse-mode and none can run on this graph today. The node is a **discrete first-fit
+  selection** (first `k` where `ceff_i_init * 0.9**k` fits between the TF coils), not a
+  root find, so the goal is transposability rather than smoothness; `max_outer = 64` is a
+  plain Python default and therefore a compile-time constant. A `vmap`-64-plus-`argmax`
+  prototype agrees to **5.55e-17** on six real captured calls and five edge cases, is
+  `jax.grad`-able where the loop raises, emits **smaller** HLO (81 201 against 85 846
+  chars), costs 1.22x at `k = 0` and is **2.6x faster** at `k = 63` -- the feared 20x
+  arithmetic penalty does not appear. Demonstrated end to end: `optimistix.BFGS` raises on
+  the current code and, with the prototype swapped in and nothing else changed, converges
+  the real `helias_5b` MDF graph to 1.6e-6 of VMCON with zero custom optimiser code.
+  **To do**: write it, with a docstring caveat parallel to `solve_duct_diameter`'s -- the
+  recovered gradient is the honest a.e. derivative of a piecewise-smooth selection, not a
+  smoothing of a discontinuity.
+  *(Superseded detail, kept for the reasoning:)* It was filed as
   "the sole remaining reverse-mode AD blocker", which undersold it by a lot: it is a
   `lax.while_loop` with dynamic bounds, so it has a JVP and **no transpose rule**, and
   every gradient-based `optimistix` solver takes its gradient by `jax.linear_transpose` --

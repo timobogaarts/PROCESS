@@ -1101,6 +1101,7 @@ other solver first is unmeasured speculation.
 > **The last third is CORRECTED by §57.** The size chain down to the instruction
 > count stands; "11 MB of machine code, ~250 MB resident" does not -- the machine
 > code is 5.8 MB and the retained figure is not a per-program property.
+> The Jacobian multiplier is also corrected there (§59): measured 2.4x, not 5.6x.
 
 §50 and §51 measured pieces; this is the whole chain on one configuration, because
 "70 000 instructions for 244 nodes" is the right thing to be suspicious about and the
@@ -1387,3 +1388,133 @@ delta to a *single program*. glibc's allocator does not work that way, and neith
 the arena first (§50) nor trimming it on both sides (here) makes it work that way. The
 measurements that held up all avoided the attribution entirely -- end-to-end pass peaks
 (§45), `/proc/self/maps` executable pages, and instruction counts.
+
+## 58. A genuinely constrained forward-mode method works -- on the easy problem (2026-09-06)
+
+§55's penalty-Adam result was not a constrained solve: a quadratic penalty is an
+unconstrained approximation, which is why it left `max|eq| = 1.7e-3` and a violated
+inequality on `stellarator_helias`. The proper test is an augmented Lagrangian with real
+multiplier updates (`lambda += rho*c_eq`, `mu = max(0, mu + rho*c_ineq)`), inner
+minimisation by a damped Newton step whose gradient **and Hessian** both come from
+`jacfwd(jacfwd(...))` -- forward-over-forward, no transpose anywhere.
+
+**`helias_5b` MDF: it works, and it is a real constrained solve.**
+
+| | AL + forward-mode Newton | VMCON |
+|---|---|---|
+| `objf` | **0.7642155163** | 0.764215516 |
+| difference | **2.97e-10** | -- |
+| `max\|eq\|` | **2.4e-14 to 2.3e-13** | -- |
+| `min ie` | -3.650 (feasible with margin) | -- |
+| cost | 120 Newton steps, 98.0 s (untuned) | 4 iterations |
+
+Converged to 9 s.f. by outer iteration 3-4. The equality residual is driven to machine
+epsilon rather than traded against the objective -- which is exactly what separates this
+from §55's penalty run, and it is the number to check first on any such claim.
+
+A scaled variant (`1/x_start`, VMCON's own conditioning, plus a trust-region cap) reaches
+the same precision in 60 steps / 83.3 s. The scaling is **not optional**: `flat_start`
+spans ~7 to ~2.1e20 (density in m^-3), and on `stellarator_helias` an unscaled Newton step
+drove the model's *own* inner MDA solve past `max_steps` -- a hard
+`EquinoxRuntimeError` inside the model before any line search could reject the point.
+
+**`stellarator_helias` MDF: it does not converge, and it stalls rather than crawls.**
+`objf` improves once (0.732 -> 0.875 at outer 0->1) and is then **bit-identical for
+thirteen further outer iterations** while `rho` grows 1 -> 1e8. Final `objf = 0.875` against
+VMCON's `1.21848284` -- **0.343 away** -- with `max|eq| = 0.099` and `c24` violated by
+`+0.0208`. A stuck outer loop: the backtracking line search rejects every trial step once
+the AL landscape steepens at `trust = 0.3`, `damping = 1e-6`, 6 inner steps. Untried:
+smaller trust region, more inner steps, better-conditioned damping, slacks or an active set
+for the twelve inequalities.
+
+**And the crude method beats the good one there.** Penalty-Adam reached `objf` within
+6.3e-4 on this problem; AL+Newton is 0.343 away. That is a statement about tuning, not
+about the methods -- but it is worth recording that the *genuinely constrained* method is
+currently worse on the 8-variable/14-condition case while being nine orders better on the
+3-variable/4-condition one.
+
+**Not re-checked**: whether the AL version is still `jit`/`scan`-able and
+`jacfwd`-differentiable end to end. Only the inner Newton solve is jitted; the outer loop
+is a Python `for`. The Hessian adds a second `jacfwd` layer and differentiating the solve
+would add a third, so the expectation is "yes but expensive" -- **inference, not
+measurement**.
+
+### The fact that decides the vacuum question
+
+`optimistix`'s least-squares route was not attempted, but the question behind it has a
+one-line answer, read directly from the installed source:
+`optimistix/_solver/gauss_newton.py:176` computes its Jacobian with **`jax.jacrev`**, and
+there is no user-facing `jac` argument on `GaussNewton`/`LevenbergMarquardt` to override
+it. So the least-squares solvers are reverse-mode like the rest, and fixing the
+`vacuum.py` `while_loop` is **necessary** for any off-the-shelf `optimistix` route, not
+merely convenient.
+
+## 59. The vacuum node: discrete, statically bounded, and cheaper to fix than to keep (2026-09-06)
+
+`solve_duct_geometry` (`models/vacuum/vacuum.py:316-399`) is the port's last reverse-mode
+blocker and, per §55, the reason no off-the-shelf jax-native optimiser can run on this
+graph.
+
+**What it does.** For one gas species it repeatedly re-solves `solve_duct_diameter` -- a
+genuine Newton root find -- at a shrinking target conductance `ceff_i_init * 0.9**k`,
+checks whether the resulting duct fits between adjacent TF coils (`a1_new < a1max`), and
+**stops at the first `k` that fits**; it gives up with `nflag = 1` if shrinking would drop
+`ceff` below `1.1 * s_i`. A faithful port of PROCESS's own
+`Vacuum._newton_method_duct_diameter` outer `while True` (`process/models/vacuum.py:460`),
+unbounded there and capped at 64 here.
+
+**It is genuinely discrete, and that settles the goal.** The output is a *selection* among
+candidates, so crossing a threshold changes which candidate's answer is returned -- a jump
+in **value**, not merely in gradient. Its sibling `solve_duct_diameter` is the opposite: a
+true root of a smooth equation, hence smooth by the implicit function theorem, which is why
+the `stop_gradient`-plus-one-live-Newton-step treatment applies there and cannot transfer
+here. So *"make it differentiable"* is the wrong goal; *"make it transposable, with the
+honest a.e. derivative of a piecewise-smooth selection"* is right -- the same thing one
+gets differentiating through any `argmax`.
+
+**`max_outer = 64` is a plain Python default**, i.e. a compile-time constant, so the
+`vmap`-all-candidates-then-`argmax` conversion is available.
+
+**The prototype, measured on real inputs.** Six real per-species calls captured from
+`helias_5b` and `stellarator_helias` at their converged points (**every one hits `k = 0`**
+-- the first candidate fits), plus five synthetic edge cases (`k = 5`, `k = 63`,
+never-fits, floor-triggered `nflag = 1`):
+
+| | result |
+|---|---|
+| agreement with the `while_loop` | **max \|diff\| = 5.55e-17** -- float64 round-off |
+| `jax.grad` downstream, current code | raises `Reverse-mode differentiation does not work for lax.while_loop` |
+| `jax.grad` downstream, prototype | **succeeds**, matching `jacfwd` to the same precision |
+| HLO text | 85 846 chars (loop) -> **81 201** (vmap) -- *smaller* |
+| runtime at `k = 0` (the real case) | 45.1 us -> 55.0 us (**1.22x slower**) |
+| runtime at `k = 63` (worst case) | 133-138 us -> **~52 us (2.6x faster)** |
+
+**The feared ~20x arithmetic cost does not appear.** `vmap` batches the 64 candidate Newton
+solves rather than duplicating them, and beats sequential `while_loop` dispatch outright
+once the loop runs more than a few trips. The HLO gets *smaller*.
+
+**And it unlocks `optimistix`, demonstrated end to end rather than argued.** On the real
+assembled `helias_5b` MDF graph (159 nodes, 3 design variables, 5 conditions) with a
+penalty objective built from its actual `condition_map`, `optimistix.minimise(BFGS(...))`:
+
+- **current code**: raises the filed `ValueError` after 3.45 s of tracing;
+- **prototype monkeypatched in, nothing else changed**: runs, and in 60 steps converges to
+  `objf = 0.7642142560891302` against VMCON's `0.764215516` (1.6e-6), equalities ~1e-11,
+  both inequalities feasible. **Off-the-shelf gradient-based solver, zero custom optimiser
+  code.**
+
+**Recommendation: make the change.** It reproduces PROCESS's answers to round-off on every
+case tested, is transposable, costs the same or less at every trip count measured, and is
+confirmed to unlock the library on a real graph rather than a toy. One caveat belongs in
+the docstring if it lands, parallel to `solve_duct_diameter`'s own: the recovered gradient
+is the honest a.e. derivative of a piecewise-smooth selection, **not** a smoothing of a
+genuinely discontinuous function.
+
+**Correction to §54's arithmetic.** That section put the Jacobian program at "~5.6x" the
+value program, which was inferred from the *ordering* of `st_regression` SAND's compiled
+programs, not measured. Measured directly through `host_cache.bind`'s three programs on
+`stellarator_helias` MDF (8 unknowns, 15 conditions): **values 514 064 chars, jacobian
+1 247 635, fused 1 252 549** -- so the Jacobian program is **2.4x** the value program, and
+the fused pair costs **0.4 %** more than the Jacobian alone, which is why
+`VmconDriver.fused` defaults to `True`. The direction §54 claimed is confirmed; the
+multiplier was a guess and is now a measurement on a named configuration.
