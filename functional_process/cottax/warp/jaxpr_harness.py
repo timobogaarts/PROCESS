@@ -5,11 +5,12 @@ it against JAX evaluating the identical sub-DAG.
 
     python -m functional_process.cottax.warp.jaxpr_harness helias_5b
 
-The emitter is unchanged -- it was always the part that was right. What changed beneath
-it is where a node's `@wp.func` comes from: `jaxpr_backend` traces the node and emits its
-jaxpr, where `resolve.py` used to AST-match the node against "the function it really
-is". The `JaxprLeaf` entries this feeds in are deliberately the shape `emit.py` already
-consumed (empty `order` -> positional binding; empty `statics`; `output_index=None`).
+A node's `@wp.func` comes from tracing the node and emitting its jaxpr. There used to be
+a resolver that AST-matched the node against "the function it really is" and transpiled
+that function's source; it is gone, along with the concessions the emitter carried for
+it (frozen statics, a prelude of wrapper locals, an `output_index` selecting one element
+of a wider return). What reaches `emit.py` now is a node name, a function name, its
+reads and its owns.
 
 The whole-kernel agreement number here is a WEAKER check than
 `jaxpr_validate.validate`, and is reported alongside it rather than instead of it: one
@@ -33,7 +34,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .emit import EmitError, build_kernel_source
-from .jaxpr_backend import jaxpr_leaves
+from .jaxpr_backend import jaxpr_leaves, module_preamble, warp_init
 
 AGREEMENT_RTOL = 1e-12
 GEN_DIR = "functional_process/warp"
@@ -65,11 +66,12 @@ def eval_subdag_jax(entries, defs_by_node, env):
     earlier nodes produced. `env` is `{path_str: value}` seeded with the unknowns and
     boundary. Returns the extended env.
 
-    Deliberately NOT `reference.py`: that module mirrors the resolver's concessions
-    (statics, preludes, output_index), and this path has none of them -- the node's
-    `fn` called on its `reads` in order is the whole computation. An agreement check is
-    only worth what the two sides' being the same computation is worth, and this is the
-    shortest statement of "the same computation" available.
+    The node's `fn` called on its `reads` in order is the whole computation -- there is
+    no separate reference evaluator to keep in step, which is itself a consequence of
+    the resolver's removal: the old path needed one (`reference.py`) precisely because
+    its emitter made concessions that had to be mirrored somewhere. An agreement check
+    is only worth what the two sides' being the same computation is worth, and this is
+    the shortest statement of "the same computation" available.
     """
     env = dict(env)
     for e in entries:
@@ -85,16 +87,17 @@ def eval_subdag_jax(entries, defs_by_node, env):
 
 
 def main(config: str):
-    import warp as wp
+    wp = warp_init()
 
     from functional_process.cottax import native as _native
     from functional_process.cottax.sand_harness import ground_truth as _gt
     from .assemble import _assemble
 
-    drive, _ = _assemble(config)
+    drive, _, mda_env = _assemble(config)
     cold = _native.native_reference(
         f"tests/regression/input_files/{config}.IN.DAT").cold
-    entries, refused, _ = jaxpr_leaves(config, drive=drive, cold=cold)
+    entries, refused, _ = jaxpr_leaves(config, drive=drive, cold=cold,
+                                       mda_env=mda_env)
     n_nodes = len(entries) + len(refused)
     print(f"[jaxpr-harness] {config}: {n_nodes} drive nodes, {len(entries)} emitted "
           f"from their jaxpr, {len(refused)} refused")
@@ -109,68 +112,94 @@ def main(config: str):
         try:
             probe[var] = jnp.asarray(_gt(cold, var))
         except Exception:
-            probe[var] = jnp.asarray(0.0)
+            probe[var] = jnp.asarray(mda_env[var]) if var in mda_env \
+                else jnp.asarray(0.0)
     conditions = tuple(c.path_str()
                        for c in drive.condition_map(probe).conditions)
     print(f"[jaxpr-harness] live shape: {len(unknowns)} unknowns, "
           f"{len(boundary)} boundary, {len(conditions)} conditions")
 
-    # Real input values. Every read an emitted node has is scalar by construction
-    # (`jaxpr_backend` refuses an array-shaped parameter), so every unknown/boundary
-    # column an included node actually reads carries a scalar. An array-valued
-    # boundary path nothing reads still needs SOME number in its column; it is given
-    # 0.0 and named below, so no unread array is silently flattened into a value a
-    # node might later depend on.
-    # `raw` is what the Warp columns carry (float64 throughout -- the kernel's ABI);
-    # `native` keeps each value's OWN dtype, which is what the JAX side must be fed.
-    # An integer-typed read (an array index, a species selector) is exactly
-    # representable in a float64 column and converted back inside the emitted
-    # function, but handing float64 to JAX where an index is required is a TypeError
-    # -- and it is a bug in the reference harness, not in the generated code.
-    raw, native, array_boundary_unread = {}, {}, []
+    # Real input values.
+    # `native` keeps each value's OWN dtype and shape, which is what the JAX side must
+    # be fed. An integer-typed read (an array index, a species selector) is exactly
+    # representable in a float64 column and converted back inside the emitted function,
+    # but handing float64 to JAX where an index is required is a TypeError -- and it is
+    # a bug in the reference harness, not in the generated code.
+    # `raw` is what the Warp SCALAR columns carry (float64 throughout -- the kernel's
+    # ABI). An array-valued boundary path has no scalar column: it binds its own
+    # `wp.array` parameter and is packed into a `vec{n}f` at the top of the kernel
+    # (`emit.build_kernel_source`'s `array_vars`).
+    # The value comes from PROCESS's own ground truth where there is one and from the
+    # completed MDA run's env otherwise -- the profile grid and every other context
+    # variable PROCESS never stores. `nan` remains the last resort, so an unsupplied
+    # value is loud rather than plausible.
+    raw, native, unsupplied = {}, {}, []
     for p, var in list(zip(unknowns, drive.unknowns)) + list(zip(boundary, drive.context)):
         try:
             v = np.asarray(_gt(cold, var))
         except Exception:
-            v = np.asarray(np.nan)
+            v = np.asarray(mda_env[var]) if var in mda_env else np.asarray(np.nan)
+            if var not in mda_env:
+                unsupplied.append(p)
         native[p] = v
-        if v.size != 1:
-            array_boundary_unread.append(p)
-            raw[p] = 0.0
-        else:
-            raw[p] = float(v.reshape(()))
+        raw[p] = float(v.reshape(())) if v.size == 1 else np.nan
 
-    wp.init()
+    # Which VarPaths are array-valued, and how long -- taken from the emitted
+    # signatures, which came from the trace, so this is the graph's own answer rather
+    # than a guess. Two nodes disagreeing about one path's length is a hard stop: it
+    # would mean one of them was traced at the wrong shape.
+    array_vars: dict = {}
+    for e in entries:
+        for pth, n in e.array_sizes().items():
+            if array_vars.setdefault(pth, n) != n:
+                raise SystemExit(f"[jaxpr-harness] {pth!r} is length {array_vars[pth]} "
+                                 f"in one node's signature and {n} in {e.node!r}")
+    # A boundary array's real value must be exactly as long as the signature says.
+    array_boundary_vals = {}
+    for pth in [b for b in boundary if b in array_vars]:
+        v = np.asarray(native[pth], dtype=float).reshape(-1)
+        if v.size != array_vars[pth]:
+            raise SystemExit(f"[jaxpr-harness] boundary {pth!r} has {v.size} real "
+                             f"elements but the kernel binds {array_vars[pth]}")
+        array_boundary_vals[pth] = v
+    print(f"[jaxpr-harness] {len(array_vars)} array-valued VarPaths "
+          f"({len(array_boundary_vals)} of them boundary inputs); "
+          f"{len(unsupplied)} inputs with no value at all")
+
     bad: dict = {}
     kernel = None
     for round_no in range(MAX_ROUNDS):
         usable, blocked, available = prefix_closure(entries, unknowns, boundary, bad)
-        # An included node must not read an array-valued boundary path -- it cannot,
-        # since it would have refused, but assert it rather than assume it.
+        # An included node must not read a value nothing could supply.
         for e in usable:
             for p in e.inputs:
-                if p in array_boundary_unread:
+                if p in unsupplied:
                     raise SystemExit(
-                        f"[jaxpr-harness] node {e.node!r} reads array-valued boundary "
-                        f"{p!r} through a scalar column -- refusing to launch")
+                        f"[jaxpr-harness] node {e.node!r} reads {p!r}, for which "
+                        f"neither PROCESS nor the MDA env has a value -- refusing "
+                        f"to launch")
         reachable = tuple(c for c in conditions if c in available)
 
+        live_arrays = {pth: n for pth, n in array_vars.items()
+                       if any(pth in e.inputs or pth in e.outputs for e in usable)}
         func_src = "\n\n".join(dict.fromkeys(e.source for e in usable))
         try:
             kernel_src, mapper = build_kernel_source(
                 usable, unknowns, boundary, reachable,
-                kernel_name=f"{config}_jaxpr_subdag")
+                kernel_name=f"{config}_jaxpr_subdag", array_vars=live_arrays)
         except EmitError as exc:
             print(f"[jaxpr-harness] round {round_no}: kernel assembly failed: {exc}")
             return
         module_src = ('"""GENERATED by functional_process/cottax/warp/jaxpr_backend '
-                      '-- do not hand-edit."""\nimport warp as wp\n\n'
+                      '-- do not hand-edit."""\n' + module_preamble(usable) + "\n\n"
                       + func_src + "\n\n" + kernel_src)
         os.makedirs(GEN_DIR, exist_ok=True)
         path = f"{GEN_DIR}/_jaxpr_subdag_{config}.py"
         with open(path, "w") as f:
             f.write(module_src)
 
+        scalar_boundary = [b for b in boundary if b not in live_arrays]
+        live_array_boundary = [b for b in boundary if b in live_arrays]
         spec = importlib.util.spec_from_file_location(
             f"_jaxpr_subdag_{config}_{round_no}", path)
         gen = importlib.util.module_from_spec(spec)
@@ -178,9 +207,16 @@ def main(config: str):
             spec.loader.exec_module(gen)
             k = getattr(gen, f"{config}_jaxpr_subdag")
             x = wp.array(np.ones((2, len(unknowns))), dtype=wp.float64, device="cpu")
-            p_arr = wp.array(np.ones((2, len(boundary))), dtype=wp.float64, device="cpu")
+            probe_inputs = [x]
+            if scalar_boundary:
+                probe_inputs.append(wp.array(np.ones((2, len(scalar_boundary))),
+                                             dtype=wp.float64, device="cpu"))
+            for b in live_array_boundary:
+                probe_inputs.append(wp.array(np.ones(live_arrays[b]),
+                                             dtype=wp.float64, device="cpu"))
             r = wp.zeros((2, len(reachable)), dtype=wp.float64, device="cpu")
-            wp.launch(k, dim=2, inputs=[x, p_arr, r], device="cpu")
+            probe_inputs.append(r)
+            wp.launch(k, dim=2, inputs=probe_inputs, device="cpu")
             wp.synchronize()
         except Exception as exc:
             failing = _failing_func(str(exc))
@@ -221,10 +257,16 @@ def main(config: str):
     jax_vals = np.array([float(np.asarray(jax_env[c]).reshape(())) for c in reachable])
 
     x = wp.array(np.array([[raw[p] for p in unknowns]]), dtype=wp.float64, device="cpu")
-    p_arr = wp.array(np.array([[raw[p] for p in boundary]]), dtype=wp.float64,
-                     device="cpu")
+    launch_inputs = [x]
+    if scalar_boundary:
+        launch_inputs.append(wp.array(np.array([[raw[p] for p in scalar_boundary]]),
+                                      dtype=wp.float64, device="cpu"))
+    for b in live_array_boundary:
+        launch_inputs.append(wp.array(array_boundary_vals[b], dtype=wp.float64,
+                                      device="cpu"))
     r = wp.zeros((1, len(reachable)), dtype=wp.float64, device="cpu")
-    wp.launch(kernel, dim=1, inputs=[x, p_arr, r], device="cpu")
+    launch_inputs.append(r)
+    wp.launch(kernel, dim=1, inputs=launch_inputs, device="cpu")
     wp.synchronize()
     warp_vals = r.numpy()[0]
 
@@ -248,6 +290,8 @@ def main(config: str):
         "refused": [{"node": n, "why": w} for n, w in refused],
         "warp_codegen_excluded": bad,
         "total_eqns_covered": sum(e.n_eqns for e in usable),
+        "array_vars": dict(sorted(live_arrays.items())),
+        "array_boundary_inputs": list(live_array_boundary),
     }
     with open(f"{GEN_DIR}/jaxpr_subdag_{config}.json", "w") as f:
         json.dump(result, f, indent=2, default=str)

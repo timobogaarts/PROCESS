@@ -1,10 +1,10 @@
 """`_assemble(config)`: a configuration's `IN.DAT` to its SAND `Drive`.
 
-Split out of `leaves.py` so the **jaxpr backend imports none of the resolver**. The
-assembly (PROCESS run -> `machine_from_indat` -> `graph_for` -> `mda_env` ->
-`sand.assemble` -> `sand.sand_schedule` -> `sand.sand_shape`) is shared by both
-back-ends and has nothing to do with how a node becomes a `@wp.func`; `leaves.py`
-re-exports it so its own callers are unaffected.
+Split out of the old `leaves.py` so the **jaxpr backend imported none of the resolver**,
+and kept when the resolver went: the assembly (PROCESS run -> `machine_from_indat` ->
+`graph_for` -> `mda_env` -> `sand.assemble` -> `sand.sand_schedule` ->
+`sand.sand_shape`) has nothing to do with how a node becomes a `@wp.func`, and it is
+what the whole package starts from.
 """
 import jax
 
@@ -18,8 +18,16 @@ from functional_process.cottax.sand_harness import mda_env, reference_run
 
 
 def _assemble(config: str):
-    """`(drive, report)` for `config` -- the bare stem of a
-    `tests/regression/input_files/<config>.IN.DAT`."""
+    """`(drive, report, env)` for `config` -- the bare stem of a
+    `tests/regression/input_files/<config>.IN.DAT`.
+
+    `env` is the completed MDA run's own output env (`VarPath -> value`), which
+    `mda_env` computes on the way to the `Drive` and this used to throw away. It is the
+    only source of a real value for a context variable that has neither a native answer
+    nor a `DataStructure` field -- the 201-point profile grid among them -- so the
+    jaxpr backend traces at the shapes the graph actually produces rather than at a
+    scalar placeholder (`jaxpr_backend.node_values`).
+    """
     path = _resolve(f"tests/regression/input_files/{config}.IN.DAT")
     is_reference = path == _resolve(REFERENCE_INPUT_FILE)
     reference = reference_run(str(path))
@@ -35,4 +43,4 @@ def _assemble(config: str):
     combined, report = sand_assemble(reference, driven, env, switch_values=switch_values)
     schedule = sand.sand_schedule(combined, None, bounds=reference.bounds)
     shape = sand.sand_shape(schedule)
-    return shape["drive"], report
+    return shape["drive"], report, env

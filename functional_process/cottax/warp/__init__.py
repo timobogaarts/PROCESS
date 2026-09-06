@@ -2,63 +2,76 @@
 
 **The generator, not the generated.** This package reads the assembled graph and emits
 Warp source; the emitted `@wp.func` bodies and kernels are **not committed** -- they are
-derived, they would be a five-figure diff on every regeneration, and the generator plus its
-self-validation is the thing worth reviewing. Regenerate into `functional_process/warp/`
-(gitignored) rather than reading it out of the repository.
+derived, they would be a five-figure diff on every regeneration, and the generator plus
+its self-validation is the thing worth reviewing. Regenerate into
+`functional_process/warp/` (gitignored) rather than reading it out of the repository.
 
 Why it lives under `cottax/` rather than beside the models: it **imports cottax** to read
-the graph, and `tests/test_cottax_boundary.py` asserts that only things under `cottax/` do.
-The generated output imports nothing but `warp`, so it may live outside.
+the graph, and `tests/test_cottax_boundary.py` asserts that only things under `cottax/`
+do. The generated output imports nothing but `warp`, so it may live outside.
+
+**One node, one `@wp.func`, emitted from the node's own jaxpr.** There used to be a
+second way of getting there -- a *resolver* that matched each graph node against "the
+function it really is" in `functional_process/models/**`, then transpiled that function's
+Python source. It is gone (deleted 2026-09-07). Its whole taxonomy of refusals --
+`Composition`, `self.<attr>`, "ambiguous among 4 candidate calls", arity mismatch,
+non-literal exponents, switch-valued index bounds -- was a taxonomy of *Python shapes*,
+not a property of the physics being ported, and tracing dissolves every one of them by
+construction: `jax.make_jaxpr(node.fn)(*reads)` returns straight-line primitives applied
+to typed values, with every static decision already resolved against the concrete
+configuration. There is nothing left to match, so there is nothing left to get wrong
+about matching.
 
 The pieces, in the order they run:
 
-- `resolve.py` -- **the resolver**: each graph node to the leaf function it delegates to,
-  with its arguments in signature order and its frozen switch values as literals. Guarded
-  by an **arity invariant**: a resolved leaf's return arity must equal the node's declared
-  output count, or the node is refused -- unless the wrapper's own code provably selects
-  one literal element of a wider return (`_subscript_select_index`), in which case that
-  derived index is carried as `output_index`. That check caught three silent
-  mis-resolutions (`_audit/optimise_design.md` §94). It also handles a wrapper that
-  computes locals before the call that produces the node's outputs (a `PreludeCall`), and
-  binds frozen sequence-valued arguments.
-- `scalarise.py` -- for a node whose leaf is passed BY VALUE into an array-assembling
-  helper, expands its whole `__call__` -- helper, arm, `jax.vmap` and all -- into one flat
-  straight-line function of exactly the node's declared parameters. Used by the resolver
-  when no existing function's parameter list can be laid against the node's `VarPath`s.
-- `leaves.py` / `combined.py` -- a config's SAND Drive to a topologically ordered list of
-  `Leaf` and `StructuralOp` entries, via the resolver.
-- `transpile.py` -- one `models/**` function to one `@wp.func`. `jnp.X` to `wp.X`, every
-  numeric literal to `wp.float64(n)` (Warp is strictly typed and does not promote), an
-  annotated signature, and a return annotation **only** when the body returns a single
-  value. **It refuses rather than guesses**: an unrecognised construct raises `Unsupported`
-  and the function goes to the hand-written registry. A transpiler that silently
-  mistranslates one physics formula is worse than one that covers less and says so.
-- `leaf_funcs.py` -- **the leaf-function builder**: drives `transpile.py` over every
-  distinct function a leaf list needs, plus the transitive same-module helper closure,
-  higher-order monomorphisation, list-literal table lookups, sequence-static
-  monomorphisation, and the hand-written `REGISTRY` (including `gamma`/`gammaln`, which
-  Warp has no builtin for at all).
-- `leaf_funcs_arrays.py` -- the same builder extended for array-valued parameters,
-  `jnp.interp`/`searchsorted`, per-species 2-D tables, and built (scalarised) leaves. Only
-  a leaf `leaf_funcs.py` refuses for an array-shaped reason is retried through it.
-- `emit.py` -- **the kernel emitter**: the leaves in topological order, as one kernel,
-  with the unknowns and boundary as `wp.array2d` columns and array/table inputs as their
-  own parameters.
-- `reference.py` -- the same sub-DAG evaluated in JAX. Every emitter concession is
-  mirrored here, because an agreement check can only ever say the two engines agree with
-  each other; its value rests entirely on their being the same computation.
-- `harness.py` -- **the harness**: builds the maximal prefix-closed, fully-emittable
-  sub-DAG for one config, compiles it, compares it against `reference.py` and times it.
-  Run from the repository root:
+- `assemble.py` -- one configuration's `IN.DAT` to its SAND `Drive`, and to the
+  completed MDA run's own output env. That env is not incidental: a `Drive`'s context
+  includes variables with no `DataStructure` field and no native answer (the 201-point
+  profile grid among them), and everything the graph produces is grounded by the graph.
+- `jaxpr_backend.py` -- **the backend**: trace each node at concrete values, walk the
+  jaxpr, emit one `@wp.func`. Arrays are SCALARISED (one Warp local per element), so
+  every shape primitive is index arithmetic done by the generator and nothing but scalar
+  float64 arithmetic survives to runtime; an array crossing a *node boundary* becomes
+  one fixed-length `wp.types.vector`. **It refuses rather than guesses**: a primitive
+  with no entry, a shape change that is not provably the identity, a `scan` too long to
+  unroll, a body too large to compile -- each raises a `Refusal` naming what it is.
+  Where a primitive's meaning is intricate rather than absent (`gather`, `scatter`), the
+  derived index map is proved against `lax.gather`/`lax.scatter` themselves before a
+  line is emitted.
+- `emit.py` -- **the kernel emitter**: the nodes in topological order, as one kernel,
+  with the unknowns and scalar boundary as `wp.array2d` columns and each array-valued
+  boundary as its own `wp.array` parameter.
+- `jaxpr_validate.py` -- **per-node validation**: every emitted `@wp.func` against its
+  own `defn.fn` in JAX, at the same inputs, swept over several draws. This is the check
+  the backend is worth having: a whole-sub-DAG comparison certifies forty functions with
+  one number and gives a free pass to any node whose contribution cancels or is swamped.
 
-      python -m functional_process.cottax.warp.harness helias_5b
+      python -m functional_process.cottax.warp.jaxpr_validate helias_5b
+
+- `prim_check.py` -- **the primitive-table check**: every scalar primitive the backend
+  maps, Warp against XLA, over a hostile argument set (both signed zeros, both
+  infinities, a NaN, 1e-300 and 1e300). Per-node validation only ever reaches a
+  primitive at arguments that node's physics produces; this reaches the arguments a
+  *converging* solver wanders into. It has found three live defects, each of which
+  returned a plausible finite number: `wp.max`/`wp.min`/`wp.clamp` discarding a NaN
+  XLA propagates, `wp.sign(0.0)` answering `+1` where XLA answers `0`, and
+  `wp.asin`/`wp.acos` clamping their argument into [-1, 1] where XLA returns NaN.
+
+      python -m functional_process.cottax.warp.prim_check
+
+- `jaxpr_harness.py` -- **the end-to-end harness**: the maximal prefix-closed sub-DAG of
+  one config's Drive, compiled as one kernel and compared against JAX evaluating the
+  identical sub-DAG. Weaker than per-node validation, and reported alongside it rather
+  than instead of it; its job is to show that the pieces COMPOSE.
+
+      python -m functional_process.cottax.warp.jaxpr_harness helias_5b
 
 - `mapper.py`, `regcheck.py` -- `VarPath`-to-identifier minting, and CUDA register/spill
   measurement via the driver API.
 
-**Self-validating**, which is what makes 700 generated functions reviewable at all: every
-emitted `@wp.func` has its JAX original beside it, so the generator is checked per function
-on random inputs rather than by reading its output. `harness.AGREEMENT_RTOL` (1e-12) is the
-gate; the worst relative difference is reported as a number regardless, because the number
-is the evidence and the gate is only a summary of it.
+**Self-validating**, which is what makes hundreds of generated functions reviewable at
+all: every emitted `@wp.func` has its JAX original beside it, so the generator is checked
+per function on random inputs rather than by reading its output. `AGREEMENT_RTOL` (1e-12)
+is the gate; the worst relative difference is reported as a number regardless, because
+the number is the evidence and the gate is only a summary of it.
 """
