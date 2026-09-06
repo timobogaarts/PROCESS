@@ -2533,7 +2533,7 @@ sparsity result: the port has structural information other tools must reverse-en
 | | why it matters |
 |---|---|
 | **Shape plumbing disappears** | Warp is scalar-native (built for particles/robotics), so §50's 41.6 % `broadcast_in_dim`/`reshape`/`slice` never exists. That category is an artefact of wrapping scalars into tensors. |
-| **AD comes free** | Warp generates adjoint code source-to-source. §63's largest unpriced cost was that reverse mode is "a real compiler feature" someone would have to write. |
+| **AD comes free** | Warp generates adjoint code source-to-source -- §63's largest unpriced cost. **But see §80: this is an advantage over a hand-written C codegen path, NOT over JAX, which has had adjoints all along.** |
 | **Batching is native** | `wp.launch(kernel, dim=n_points)`, one thread per scan point -- exactly `process/core/scan.py`'s shape, and §71 measured the GPU crossover at **~256 points, 3.4x by 4096**. |
 | **CPU backend too** | Warp compiles to C++ via clang, so the whole thing is testable without a GPU. |
 
@@ -2965,3 +2965,87 @@ Work function. Read from Warp's docs, not run: everything in the previous subsec
 wrapper count inside that 95-node block (extrapolated from the 150->147 whole-graph pattern,
 **counting it is the first 30 minutes of stage 1**), and whether padded batching realises
 §71's crossover for real scans.
+
+## 80. The Warp spike, run (2026-09-06)
+
+§79 sized a 5-8 day stage 1. This is the *stage 0* micro-spike, done in an afternoon:
+`warp-lang 1.17.0` installed into `process_port_gpu` (157 MB; the CPU audit env untouched),
+two **real** port functions transpiled -- `pure_formulas.rether` and
+`_fast_alpha_fraction_ward`, the latter including the smoothed Ward kink -- composed in one
+`@wp.kernel`, and run against the identical JAX arithmetic.
+
+### Two mechanical findings, and the second is a real addition to the cost
+
+**1. It is a rewrite, not a wrap.** Warp compiles the **source** of the decorated function,
+parsing its AST; `jnp.sqrt` must become `wp.sqrt`. You cannot decorate an existing jnp
+function and have it work. §74's "write each leaf once as a `@wp.func`" is right, but the
+word "wrap" would be wrong.
+
+**2. Warp is strictly typed and does not promote.** `1.0` is a **float32** literal, so
+`1.0 + alphan` against a `wp.float64` is a compile error:
+
+```
+RuntimeError: Input types must be the same, got ['float32', 'float64']
+```
+
+**Every numeric constant in a float64 kernel must be written `wp.float64(1.0)`.** PROCESS
+is float64 throughout, so this is pervasive -- it applies to every literal in all 335
+functions. §76's census classified bodies by their *jnp constructs* and did not consider
+literal typing at all, so **this is work the census did not price.** It is mechanical and a
+transpiler can do it, but it must be in the transpiler's spec.
+
+### Performance: the scalar-native-CUDA hypothesis holds, on the GPU only
+
+Per point, microseconds, same arithmetic, same inputs:
+
+| batch | JAX CPU | JAX GPU | Warp CPU | **Warp GPU** |
+|---:|---:|---:|---:|---:|
+| 1 | **23.55** | 205.85 | 31.27 | 38.38 |
+| 256 | **0.0961** | 0.5612 | 0.1415 | 0.1437 |
+| 4 096 | 0.0358 | 0.0433 | 0.0338 | **0.0093** |
+| 65 536 | 0.0109 | 0.0080 | 0.0276 | **0.0041** |
+
+- **Warp GPU beats JAX GPU 4.7x at 4 096 and 1.95x at 65 536**, and beats the best JAX
+  number of any backend by **3.9x** and **2.7x** respectively. The reasoning behind the
+  hypothesis -- one kernel with everything in registers, against XLA's many kernels with
+  global-memory round-trips between them -- is supported.
+- **And it holds despite this card's 1/16.4 FP64 penalty (§70)**, which makes it more
+  impressive rather than less.
+- **But Warp CPU is *slower* than JAX CPU** -- 0.0276 against 0.0109 at 65 536, a 2.5x
+  loss. XLA's CPU vectoriser beats Warp's CPU codegen on this arithmetic. **So the CPU
+  runtime win that §63's compile-time numbers might have suggested does not appear.**
+- At batch 1 everything is overhead and JAX CPU wins.
+
+### Agreement
+
+**max relative difference 3.27e-13**, roughly half the 4 096 points bit-identical, same on
+both devices. Well inside any tolerance that matters (regression is 5 %, the harness's bars
+~1e-6). **Caveat, and it is mine**: the transpile rewrote `te**1.5` as `te * sqrt(te)` and
+`(1+alphan)**2` as `(1+alphan)*(1+alphan)` -- mathematically equal, differently rounded --
+so part of that 3e-13 is transcription rather than Warp. A real transpiler should preserve
+the expression form and this check should be redone against one.
+
+### Compile time, and why it does not extrapolate
+
+Warp took **2.54 s** to build the CPU module and **0.66 s** the CUDA one, against JAX's
+0.05-0.14 s. Warp compiles a whole C++/CUDA module through clang/nvcc; JAX traced two
+functions. **For two functions JAX wins and it means nothing** -- the interesting number is
+the 95-node block, where §63's bound predicts the ordering reverses. Not measured.
+
+### Correction to §74 and §79: "free adjoints" oversold it
+
+Both sections list source-to-source adjoint generation as a Warp advantage. **Against a
+hand-written C codegen path (§63) that is true and it was the largest unpriced cost there.
+Against JAX it is not an advantage at all** -- JAX has had adjoints the whole time, and
+§59's work made reverse mode work on this graph. The honest list of what Warp offers *over
+the status quo* is: **scalar-native code generation with no shape plumbing, and native CUDA
+kernels that keep intermediates in registers.** The GPU numbers above are that advantage.
+Adjoints are table stakes, not a differentiator.
+
+### What this changes about the plan
+
+**Stage 0 is done and it passed.** §79's stage 1 -- the 95-node `helias_5b` SAND `Drive` --
+remains the gate, and is now better specified: the transpiler must handle literal typing,
+and the payoff to look for is **GPU throughput at batch**, not CPU runtime and not compile
+time. Nothing here contradicts §79's 5-8 day estimate for that stage; the friction found
+was in typing rather than in the arithmetic, which is the cheaper kind.
