@@ -248,6 +248,30 @@ is last by construction. That is why entry coverage and condition coverage came 
 why the two leaves array support did add (`quench`, `tf_magnet_cost`) bought no condition:
 both gate 1/11, and that one is `objf`, which needs all the others anyway.
 
+**`Composition` nodes resolve, and the check that makes it trustworthy is the negative
+control.** Four distinct nodes, eight instances: `.buildings.sizing` (a named local),
+`.availability.electric_production` (two inline calls in argument position, materialised as
+preludes), `.tokamak.build.tf_outboard_mid` (a tuple-unpacked local) and `.power.delta_eta_step`
+(index 4 **derived** from the name's position in the unpack target list, exactly as the
+constraint fix derives one from a literal subscript). Agreement 0.000e+00 throughout, and a
+binding diff against the untouched resolver shows **0 changed and 0 lost** among the
+89/117/150 previously-resolved entries -- purely additive.
+
+The negative control is why 0.000e+00 counts as evidence here rather than decoration.
+Binding `shh` to `.build.z_tf_inside_half` -- its own dominant argument, the most plausible
+wrong substitute -- gives **2.409e-02**: comfortably passable as noise under any loose
+tolerance, which is precisely the failure this whole class was refused to avoid. Binding a
+prelude local to the same-named *parameter* instead gives 5.018e+00. Python's own shadowing
+rule is honoured by statement position (`_Frame.local_at(name, pos)`), which matters because
+`DeltaEtaStep.step` opens with `p_fw_blkt_coolant_pump_mw = calculate_...(..., p_fw_blkt_coolant_pump_mw)`,
+where the argument is the parameter and every later reference is the local.
+
+An unrelated real bug fell out: `_source_and_params` read only `fdef.args.args`, so a
+keyword-only signature (`def _masses(self, *, len_tf_coil, ...)`) looked **zero-parameter**
+and every argument failed to bind. That is why
+`superconducting_tf_coil_areas_and_masses` was refused, and it was never a `Composition`
+node at all.
+
 **What is left on `helias_5b` is not a long tail -- it is one feature.** The two nodes
 gating 7 of the 11 conditions, `.physics.plasma_composition` and
 `.physics.impurity_radiation_totals`, need the **same** capability stack, so the remaining
@@ -256,12 +280,12 @@ residual splits cleanly:
 | | conditions |
 |---|---|
 | already emitting | 1 |
-| reachable via the three in-flight refusals (`electric_production`, `delta_eta_step`, `pchip`) | 3 |
-| **gated by the species-array stack** | **7** |
+| reachable without the species stack (`wp_width_r_min`, via `pchip`) | 1 |
+| **gated by the species-array stack** | **9** |
 
-**Even if every other refusal is resolved, this configuration caps at 4/11.** That is the
-number that decides whether "SAND in Warp" is reachable, and it is one feature away rather
-than nine.
+**Even if every other refusal is resolved, this configuration caps at 2/11** -- a correction
+to the 4/11 first recorded here, see below. That is the number that decides whether "SAND in
+Warp" is reachable, and it is one feature away rather than nine.
 
 The stack, scoped against the real bodies rather than guessed:
 
@@ -284,6 +308,26 @@ Two hazards specific to this stack, both of which produce a *plausible* wrong nu
 than a crash: a slice-sum reassociated into a different order changes the last bits, and an
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
+
+**Correction: the per-condition table above was a lower bound, and "three conditions are
+one node away" was wrong.** `cond_holes.py` stopped *at* each hole and named the node owning
+it, without recursing into that node's own reads -- so it reported the frontier, not the
+requirement. Resolving the named node does not make the condition emittable if the node
+itself reads another hole. Recursing through the refused nodes (`cond_closure.py`) gives the
+set that must **all** be resolved:
+
+| blocker | gates (transitive) | was reported |
+|---|---|---|
+| `.physics.plasma_composition` | **9/11** | 7/11 |
+| `calculate_parabolic_profile_values` (`gamma`) | **9/11** | 4/11 |
+| `.physics.impurity_radiation_totals` | **5/11** | 3/11 |
+| `.buildings.sizing`, `.availability.electric_production` | 2/11 each | 1/11 |
+| `intersect_residual` (`pchip`) | 1/11 | 1/11 |
+
+Only **one** condition, `^cond.stellarator.wp_width_r_min`, is genuinely reachable without
+the species stack, and it needs `pchip`. `c16` and `delta_eta` looked one node away and are
+not: their named blockers read `plasma_composition` and `impurity_radiation_totals`
+themselves. The `gamma` leaf turns out to matter as much as `plasma_composition`.
 
 **`delta_eta_step` is not the ambiguous case its own error message claims, and the
 message was about to justify building a registry for it.** The refusal names four calls --
