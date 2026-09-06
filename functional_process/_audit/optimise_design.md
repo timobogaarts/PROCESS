@@ -3815,6 +3815,17 @@ already the point where occupancy starts to bite on `sm_75`.
 helpers. **A three-function registry entry, not a transpiler feature** -- exactly the shape
 the registry exists for.
 
+### Re-verified after the resolver changed underneath it
+
+§94's arity invariant landed while this was being measured, correcting three nodes. **None
+of the three is in the 18-entry closure** -- checked by set membership and by listing all
+eighteen -- and a full re-run against the corrected resolver reproduces every number byte
+for byte. In fact the measurement had *already* been taken after the fix landed; what was
+missing was the confirmation, not the correctness. **A number computed against a
+since-corrected dependency is not safe until someone checks which version it saw**, and in
+a session with five silent-subset failures on the record that check costs less than the
+doubt does.
+
 ### What this establishes, and what it does not
 
 **Establishes**: the generated pipeline produces a Warp kernel that is bit-identical to JAX
