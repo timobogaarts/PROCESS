@@ -63,6 +63,31 @@ import; harmless), `numpy 2.5.2`, `pytest 9.1.1`. **`tests/unit` → 846 passed;
 changed something, suspect the env before the code. The rebuild reproduced both numbers exactly, so the
 `jax` 0.11.0 → 0.11.1 drift is inert as far as either suite can see.
 
+### `process_port_gpu` — the env for the Warp/GPU work
+
+**`process_port` cannot run any of it**: it has no `warp`, and its `jax` is CPU-only. The
+Warp transpiler, the emitted kernels and every GPU timing number live in a *second* env:
+
+```bash
+G=~/miniconda/envs/process_port_gpu/bin/python
+```
+
+Verified 2026-09-06: `warp 1.17.0`, `jax 0.11.1` **with** a CUDA jaxlib
+(`jax.devices()` -> `CudaDevice(id=0)`, a Quadro T1000, 4 GiB, sm_75), `process`
+`0.0.1.dev1585+g7291828db` and `cottax 0.1.0` **both editable** against `~/PROCESS` and
+`~/jaxgraph` -- so the same "is cottax still editable?" check above applies here too, and
+for the same reason.
+
+Two things that have each cost real time:
+
+- **Read the sentence at the top of this section before debugging a `ModuleNotFoundError:
+  No module named 'warp'`.** It is not a broken env; it is the wrong one. This file
+  previously said only "`process_port` is the env for this work", which is what sent
+  someone looking for a lost install.
+- **`export JAX_PLATFORMS=cpu XLA_PYTHON_CLIENT_PREALLOCATE=false` for correctness runs.**
+  JAX preallocates most of the card by default, and on a 4 GiB device that produced an OOM
+  which was then confidently misattributed to memory fragmentation.
+
 `graphviz` is deliberately **not** installed: the Python binding came in via cottax's
 `viz` extra but the `dot` executable did not, so `cottax.visualization.render` raises.
 `to_dot` still works and `draw` falls back to its own layered layout — see
