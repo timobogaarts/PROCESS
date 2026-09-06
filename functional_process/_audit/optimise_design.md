@@ -3174,3 +3174,57 @@ above as a fix.**
 Also untested: a monotone-cubic interpolant (C1, so no kinks at all -- but a divergence from
 PROCESS's own piecewise-linear scheme), and whether the finer grid changes the `c62`
 interaction §49 found.
+
+### §81 continued: the registry, and coverage after one afternoon's table entries
+
+The right architecture is **transpile by default, with a registry of hand-written
+overrides** -- the same shape as the port's own unit registry, and the escape hatch is the
+only place a human writes Warp:
+
+```python
+REGISTRY: dict[str, str] = {
+    "safe_sqrt": '''@wp.func
+def safe_sqrt(x: wp.float64) -> wp.float64:
+    return wp.sqrt(wp.max(x, wp.float64(0.0)))''',
+}
+```
+
+Anything the transpiler refuses either has a registry entry or goes on the to-do list. It
+never guesses.
+
+**Coverage after extending the table** with the §81 gaps -- `clip`->`clamp`, `isinf`,
+`round`, `trunc`, `degrees` as a multiply, and `asarray`/`array` treated as **identity**
+(a coercion a statically-typed kernel does not need):
+
+| | before | after |
+|---|---:|---:|
+| transpiled cleanly | 405 / 501 (80.8 %) | **420 / 501 (83.8 %)** |
+| refused | 96 | 81 |
+
+And the residue is now almost pure signal: **74 of the 81 refusals are array constructors
+or reductions** -- `stack` 15, `zeros` 14, `zeros_like` 11, `sum` 11, `arange` 6, `max` 4,
+`take`/`repeat`/`interp`/`broadcast_to`/`atleast_1d` the rest. That is the genuinely
+array-valued population, and it is what the registry is for.
+
+**End to end, verified.** The *generated* source for `_fast_alpha_fraction_ward` compiles in
+Warp unmodified and agrees with the JAX original:
+
+```
+warp : [0.19282124   0.00026853  ]
+jax  : [0.19282124034257048, 0.0002685253535502736]
+```
+
+So the loop closes: JAX function -> transpiler -> Warp source -> compiled kernel ->
+matching numbers, with no hand editing in between.
+
+**One thing that did not work, recorded so nobody repeats it.** Scoping the emit to
+`stellarator_helias`'s block specifically needs resolving each graph node to its leaf
+function, and a quick AST walk over `ImplementedFunction.fn` resolved only **4 of 154**.
+`g.nodes` is `NodePath`s and `g.definitions` maps them to `ImplementedFunction`s whose `.fn`
+is the wrapper's callable -- but the wrappers are not uniformly the thin
+`return calculate_x(...)` shape that walk assumes. **§76's census already solved this**
+(AST-parsing the wrapper *class*'s `__call__` plus one level of helper expansion, 335
+functions across seven configs); reuse that rather than the shortcut above. The coverage
+numbers here are therefore over the **whole** model layer, not the stellarator block --
+which is the more useful denominator anyway, since the registry is written once for all
+configurations.

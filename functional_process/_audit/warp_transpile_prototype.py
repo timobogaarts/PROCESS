@@ -18,7 +18,11 @@ import ast, inspect, re, textwrap
 DIRECT = {"sqrt", "exp", "log", "sin", "cos", "tan", "tanh", "abs", "sign",
           "floor", "ceil", "pow", "atan", "asin", "acos", "sinh", "cosh"}
 TERNARY = {"where", "select"}   # jnp.where(c, a, b) -> wp.where(c, a, b)
-RENAME = {"maximum": "max", "minimum": "min", "where": "where", "power": "pow", "arctan": "atan",
+IDENTITY = {"asarray", "array", "float64", "double"}
+"""Coercions that vanish inside a statically-typed kernel: `jnp.asarray(x)` -> `x`."""
+
+RENAME = {"maximum": "max", "minimum": "min", "where": "where", "clip": "clamp",
+          "isinf": "isinf", "isnan": "isnan", "round": "round", "trunc": "trunc", "power": "pow", "arctan": "atan",
           "arcsin": "asin", "arccos": "acos", "log10": "log10", "fabs": "abs"}
 
 
@@ -46,6 +50,15 @@ class ToWarp(ast.NodeTransformer):
         f = node.func
         if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) \
                 and f.value.id in ("jnp", "np"):
+            if f.attr in IDENTITY and len(node.args) == 1:
+                return node.args[0]        # a coercion that a typed kernel does not need
+            if f.attr == "degrees":
+                return ast.BinOp(left=node.args[0], op=ast.Mult(),
+                                 right=ast.Call(
+                                     func=ast.Attribute(ast.Name("wp", ast.Load()),
+                                                        "float64", ast.Load()),
+                                     args=[ast.Constant(57.29577951308232)],
+                                     keywords=[]))
             name = RENAME.get(f.attr, f.attr)
             if f.attr not in DIRECT and f.attr not in RENAME:
                 raise Unsupported(f"jnp.{f.attr}")
