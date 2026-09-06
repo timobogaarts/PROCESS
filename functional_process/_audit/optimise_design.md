@@ -309,6 +309,37 @@ than a crash: a slice-sum reassociated into a different order changes the last b
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
 
+**cottax already exposes exactly the interface the port needs, and the resolver exists
+because that was not noticed.** A node's `__call__` *is* a pure function of its declared
+inputs -- the `From(...)` defaults are ordinary parameters:
+
+```python
+def __call__(self, rminor=From(physics), kappa=From(physics)):
+    return calculate_z_plasma_xpoint(rminor, kappa)
+```
+
+Census of every node body in the Drive (`scratchpad/species/shape_census.py`):
+
+| shape | `helias_5b` | `large_tokamak_nof` |
+|---|---|---|
+| **one line, `return f(...)`** | **82 (86 %)** | **142 (80 %)** |
+| straight-line, 1-2 statements | 4 | 5 |
+| `_NormalisedResidual` wrappers (`Assign`/`Expr`/`Return`) | 4 | 26 |
+| builtin (`operator.sub` behind `Compare`) | 3 | 3 |
+| **has a branch** | **1** (`.Objective`) | **1** |
+
+One branch in the entire graph. So the translation target could simply **be** `__call__`,
+with whatever it calls transpiled recursively into further `@wp.func`s -- Warp device
+functions call device functions, so nothing needs inlining for its own sake. That is:
+transpiler + recursion + emitter. **No resolver, and no expander except where arrays
+genuinely demand one.**
+
+The resolver was built to look *past* the wrapper and find `calculate_z_plasma_xpoint`,
+which is a reasonable instinct if the goal is to reuse the per-unit audit records keyed to
+`functional_process/models/**` -- but it is not required for code generation, and it is what
+turned a translation problem into a program-identification problem. The whole refusal
+taxonomy in this document is downstream of that one choice.
+
 **The resolver was the wrong architecture, and it generated most of this work.** The
 tracked transpiler is **154 lines** and does its job. The resolver is **820** and exists
 solely to answer *"which underlying function IS this node?"* -- because `defn.fn` is a
