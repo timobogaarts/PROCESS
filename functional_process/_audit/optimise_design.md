@@ -323,9 +323,16 @@ node -- is preserved rather than flattened into one giant jaxpr:
 | configuration | node definitions | traced | distinct primitives | total eqns | median eqns/node |
 |---|---|---|---|---|---|
 | `helias_5b` | 95 | **91 (96 %)** | 44 | 2704 | 12 |
-| `large_tokamak_nof` | 178 | **153 (86 %)** | 53 | 4724 | 5 |
+| `large_tokamak_nof` | 178 | **164 (92 %)** | 54 | 8155 | 6 |
 
-Against 48 % / 52 % for the AST expander, and 34 % / 26 % of *entries* for the resolver. The
+Against 48 % / 52 % for the AST expander, and 34 % / 26 % of *entries* for the resolver.
+(`large_tokamak_nof` first read 86 %; the missing 11 were a scalar `1.0` handed to an
+array-valued read by the census's own fallback, tracing as "0-dimensional but 1 indexed"
+and looking exactly like a tracing failure. **Second time this session a wrong harness
+manufactured a wall of plausible failures** -- the first was reading parameter names off the
+`VarPath` instead of the signature. Supplying the declared shape gives 92 %, and raises that
+config's equation count from 4724 to 8155, so the array-shaped share is larger than the
+first number suggested.) The
 primitive histogram is dominated by trivial scalar arithmetic (`mul` 664, `add` 524,
 `select_n` 211, `convert_element_type` 210, `div` 190, `sub` 173); the genuinely array-shaped
 tail -- `dynamic_slice`, `slice`, `broadcast_in_dim`, `stack`, `argmax`, `reduce_sum`, `scan`,
