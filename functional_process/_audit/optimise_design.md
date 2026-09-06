@@ -208,6 +208,58 @@ established and not assumed. `Composition` is the biggest lever on the stellarat
 a plausible same-named boundary variable would compute the wrong thing while looking like
 float noise.
 
+**Entries are the wrong denominator; conditions are the residual.** Array support added 6
+entries on `helias_5b` and moved no condition, and the `self.<attr>` work resolved 5 more
+node-instances and moved neither entries nor conditions -- "the denominator grew, the
+numerator did not". Both are explained by the same measurement, which is per-CONDITION
+rather than per-entry (`scratchpad/reach/cond_holes.py`): it walks each condition's cone
+through the resolved **entries** from the unknown/boundary supply, so it reports what
+actually decides `prefix_closure` instead of a structural over-approximation. (The
+structural version over-counts badly -- it claimed all 5 refused nodes gate all 11
+conditions, which cannot be right when one condition already emits.)
+
+`helias_5b`, every condition and exactly what it still needs:
+
+| condition | needs |
+|---|---|
+| `^cond^cond.physics.temp_plasma_ion_vol_avg_kev` | **nothing -- the 1/11 that emits** |
+| `^cond.constraints.c16` | `.availability.electric_production`, and nothing else |
+| `^cond^cond.power.delta_eta` | `.power.delta_eta_step`, and nothing else |
+| `^cond.stellarator.wp_width_r_min` | `intersect_residual` (`pchip`), and nothing else |
+| `^cond.physics.proton_rate_density` | `.physics.plasma_composition` |
+| `^cond.physics.fusden_alpha_total` | `.physics.plasma_composition` |
+| `^cond.fwbs.f_ster_div_single` | `plasma_composition` + `impurity_radiation_totals` |
+| `^cond.constraints.c24`, `c84` | `plasma_composition` + `calculate_parabolic_profile_values` |
+| `^cond.constraints.c2` | those two + `impurity_radiation_totals` |
+| `^cond.numerics.objf` | everything -- 21 holes, 3 unemittable leaves |
+
+Ranked by conditions gated, which is the order the work is worth doing in:
+
+| blocker | gates | kind |
+|---|---|---|
+| `.physics.plasma_composition` | **7/11** | array-assembling helper |
+| `calculate_parabolic_profile_values` | **4/11** | unresolved global `gamma` |
+| `.physics.impurity_radiation_totals` | 3/11 | was `self.imp_indices`; now array subscript |
+| `.availability.electric_production` | 2/11 | `Composition` |
+| `buildings.sizing`, `delta_eta_step`, `intersect_residual`, `quench`, `tf_magnet_cost` | 1/11 each | mixed |
+
+So three of the eleven conditions are **one node away each**, and `objf` -- the objective --
+is last by construction. That is why entry coverage and condition coverage came apart, and
+why the two leaves array support did add (`quench`, `tf_magnet_cost`) bought no condition:
+both gate 1/11, and that one is `objf`, which needs all the others anyway.
+
+**A `self.<attr>` sequence-static mechanism exists** and is exercised end-to-end against
+Warp at 0.000e+00, resolving `imp_indices`, `coefficients` and `den_helium_at_nodes`.
+Constancy was established from declarations rather than intent: `eqx.field(static=True)`
+puts a field in the pytree **treedef**, so it cannot be traced or mutated by a
+transformation, and a different value is a structurally different graph -- checkable in one
+line rather than inferred from control flow. `self.topology` was left alone deliberately:
+it is a structured record, and every leaf that takes it uses it only to slice array
+parameters, so all seven nodes are refused on independent array grounds and rendering it
+would buy nothing. The mechanism refuses `jnp`/`numpy` arrays outright even inside a
+static field, where they are genuinely constant -- a refusal, not a wrong read, pending
+array support.
+
 **Open**: widening past ~38 nodes; whether the adjoint spill is fatal or merely costly;
 `jnp.interp`/`searchsorted` and array-valued lookup tables; and the arity-mismatched
 constraint nodes (`constraint_11/32/34/35/65/82/83` forward to `eq`/`leq`/`geq`, four
