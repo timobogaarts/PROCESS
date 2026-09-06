@@ -3426,3 +3426,73 @@ derivative jumps outright rather than shrinking them -- and is being tested sepa
 
 **Not reached**: crossing-burst counts per N, and the global `maximum`/`minimum` switch
 sweep pointed at the stellarator rather than the tokamaks.
+
+## 87. A C1 interpolant: smaller intervention, same deeper gap (2026-09-06)
+
+§86 left the resolution increase as "causal, incomplete, and not a fix". The
+better-motivated alternative -- **raising resolution shrinks the kinks, a C1 interpolant
+removes them** -- was tested with a JAX-traceable Fritsch-Carlson monotone cubic (validated
+against `scipy.interpolate.PchipInterpolator` to <1e-9 and against finite-difference
+gradients), runtime-patched into `intersect_residual` at the **original N = 200**.
+
+**Both drivers converge, no cap.**
+
+| driver | iterations | `objf` | `max\|eq\|` | `min ie` |
+|---|---:|---|---:|---:|
+| VMCON | 43 | 1.21844143 | 1.10e-06 | -4.48e-10 |
+| SLSQP | 99 | 1.21831738 | 6.44e-10 | -8.92e-12 |
+
+**And it is much the smaller intervention**, which was the point:
+
+| | crossing point moves | `objf` shift |
+|---|---:|---:|
+| C1 at N = 200 | 0.7169721730 -> 0.7169141045, **8.1e-05 relative** | -- |
+| resolution N = 500 | -- | 1.06e-03 |
+| resolution N = 2 000 | -- | 1.71e-03 |
+
+An order of magnitude less perturbation to the model for the same removal of the cap.
+
+**But it does not close the deeper gap.** SLSQP against VMCON **at the same C1 interpolant**
+is `|1.21844143 - 1.21831738| / 1.21844143 = 1.02e-04` -- **not smaller** than
+piecewise-linear's 4.0e-05, and comparable to N = 500's 6.5e-05. So C1 removes the kink and
+lets SLSQP converge at the original resolution, and the two drivers still land on different
+points. **§86's "not a fix" verdict survives**: whatever separates SLSQP from VMCON here is
+not the interpolation kink.
+
+**Two honesty notes, both the agent's own and both right.** The unpatched control run
+converged in 140 iterations rather than capping -- which does not match §82's documented cap
+for the same nominal seed, and is exactly what §86's chaos finding predicts: **a single
+unperturbed draw is not evidence at N = 200.** By the same token, **the single converged C1
+run could itself be a lucky draw.** The ulp-perturbation sweep §86 used has not been run on
+the C1 arm, and until it has, this is one draw. That is the bounded next step.
+
+### The transpiler tail: two of my own hypotheses refuted
+
+- **`MISC-JNP` was mislabeled.** The recorded reason is only the *first* `Unsupported` the
+  AST walk hits, so 8 of 9 were not "small table additions" at all -- underneath sit
+  `lax.while_loop`/`scan`, or `jax.grad`/`jax.vmap` called **inside** the body
+  (`calculate_n_cycle`, `solve_duct_diameter`, `solve_duct_geometry`,
+  `_solve_vacuum_pumping_old`). Only `_divwade_hldiv_base` was the expected shape; it now
+  transpiles, compiles and is **bit-identical** to JAX. **A refusal reason is a first
+  symptom, not a diagnosis** -- worth remembering before reading any of these bucket counts
+  as work estimates.
+- **`DEFAULTS`: my hypothesis was wrong for all six.** I suggested the emitter supplies every
+  argument explicitly so defaults never need to exist. It does not hold: the defaults are a
+  `PFCoilTopology` **dataclass** (graph-assembly data, not a port), an Optional-array
+  sentinel that a downstream branch tests for, a static precondition in a function that
+  `raise`s and returns a 2-tuple, and a config reader that reads JSON at assembly time and
+  is documented as "not a node, and not traced". Two are genuinely droppable (`steps=8`,
+  `max_iter`/`tol`) and both of those functions are refused for unrelated reasons anyway.
+  **Leave `DEFAULTS` refused.**
+
+### And a fix of mine that is still unverified
+
+§85 fixed the multi-return annotation -- do not stamp `-> wp.float64` on a function whose
+body returns a tuple. **It has still never been exercised.** The tuple-aware validator
+(written for exactly this) reports **138 single-return agreeing at worst 0.000e+00** and
+**148 multi-return failing codegen**, with the error still reading *"annotated as `float64`
+but the code returns 2 values"* -- i.e. the emitted module was regenerated through a
+`transpile.py` that does not carry the fix, because three agents were editing that file
+concurrently and the emitter's import path did not pick up the isolated copy. **The fix is
+written in `_audit/warp_transpile_prototype.py` and remains untested.** Stated plainly
+rather than counted as done -- which is the whole of §85's lesson, and I nearly repeated it.
