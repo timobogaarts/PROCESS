@@ -2504,7 +2504,8 @@ was eliminated.
 
 ## 74. NVIDIA Warp as a codegen target -- a design note, nothing measured (2026-09-06)
 
-**This section contains no measurements of its own.** It is a design argument that existed
+**This section contains no measurements of its own** (§76 supplies them: 335 live leaf
+functions of which 92 % are mechanical, and the CoolProp caveat below is measured away). It is a design argument that existed
 only in a session transcript, written down because every number it leans on *is* measured
 elsewhere in this file and the argument is the thing that would otherwise be lost.
 
@@ -2656,3 +2657,97 @@ since it would change physics that is doing its job.
   Benign-looking, unexamined.
 - **`blankets/hcpb.py:499`**, `a = b = 0.3` exactly on both -- a clamp against a literal
   constant, so it never moves. Harmless.
+
+## 76. How much work is a Warp port? Counted (2026-09-06)
+
+§74 argued the Warp reframing -- write each leaf as a `@wp.func`, codegen only the kernel
+that calls them in graph order -- without sizing it. The observation that makes it sizeable
+is that `functional_process/models/**` is **already separate** from `functional_process/cottax/**`,
+so nothing is annotated in place and the wrapping is generated. The question is therefore
+just: **how many leaf functions, and how convertible are their bodies?**
+
+Counted by building all seven reference machines, resolving each `ImplementedFunction`
+node's wrapper to the plain function it delegates to in `models/**`, AST-parsing that
+function plus one level of same-module helpers, and pattern-matching for Warp-relevant
+constructs. **No Warp installed, no Warp code written.**
+
+### The denominator
+
+| | count |
+|---|---:|
+| module-level functions in `models/**` | **850** |
+| **reached by the seven configs' graphs** | **335** (332 in `models/**` + 3 inline in wrappers) |
+
+**39 %.** The rest is either swept into a live function's own classification as a helper, or
+genuinely unreached by any reference configuration today.
+
+### The classification, and the surprise
+
+| bucket | count | share |
+|---|---:|---:|
+| **Trivial** -- scalar arithmetic, `exp`/`log`/`sqrt`/`tanh`, comparisons | 237 | **71 %** |
+| **Easy** -- `where`/`min`/`max`, plain `if`/`for` with static trip counts | 70 | 21 % |
+| **Work** -- array-valued intermediates, `interp`, `scan`, `scipy` | 28 | 8 % |
+| **Blocker** | **0** | **0 %** |
+
+**Blocker = 0, and it is verified rather than inferred.** CoolProp is genuinely present in
+the port (`tfcoil/quench.py`, `blankets/hcpb.py`, `fw.py`, `engineering/*`), and §74 carried
+"the non-traceable nodes still need an answer" as an open caveat. Measured by counting
+`PropsSI` calls per phase:
+
+```
+large_tokamak_nof      assembly 150   cold solve 0   warm solve 0
+stellarator_helias     assembly   0   cold solve 0   warm solve 0
+```
+
+**150 calls at machine assembly, zero inside any solve.** `quench.py` evaluates its helium
+table eagerly in NumPy at assembly (`indat.py`), memoised, and hands the result to the node
+as a **static** field; `hcpb.py` and `fw.py` document their CoolProp branches as dead on the
+live switch settings, which the stellarator's zero confirms. No `pure_callback` and no
+`process` import reaches a live node either. **So the known blocker is already outside the
+graph** -- for these seven machines. §74's caveat is answered, with that scope.
+
+### The work is 10 functions, not 28
+
+Of the 28 "Work" functions, weighted by how many configurations reach them:
+
+| configs | count | what |
+|---:|---:|---|
+| **7/7** | **3** | the `vmap`-over-`interp` impurity/charge-state pair, `calculate_profile_grid` |
+| **5/7** | **7** | tokamak-universal: PF equilibrium currents/waveform/placement/turn-currents, bootstrap fraction, pedestal profile (`scipy` Simpson), PF power supplies |
+| 3/7 | 8 | large-tokamak family: CS flux swing, plasma-initiation currents, PF-CS inductance, TF D-shape inductance (a real `lax.scan`) |
+| 2/7 | 10 | narrow variants: no-CS PF family, stellarator quench (`interp`, 2 tables) and neoclassics, picture-frame TF stress |
+
+**Ten are load-bearing regardless of scope**; the other eighteen bite only when that
+topology is targeted. The hardest single item is the impurity/charge-state pair -- `jax.vmap`
+over a `jnp.interp`-based per-species function, live on all seven.
+
+### Emitter size: §74's "~250 call sites" checks out, with a correction to why
+
+| configuration | nodes | leaf nodes | distinct wrappers *in that graph* |
+|---|---:|---:|---:|
+| stellarators | 154 | 150 | 147 |
+| tokamaks | 244-249 | 241-245 | 239-242 |
+
+So the emitter is **~150 (stellarator) to ~245 (tokamak) call sites** -- §74's figure is
+right. But **within one graph there is almost no deduplication** (150 -> 147): a
+configuration rarely calls the same leaf twice. **The saving is portfolio-wide**: 1 513 leaf
+occurrences summed across all seven graphs collapse to **335 distinct bodies**, because
+tokamak and stellarator share costs, power, availability, vacuum, buildings and most of
+physics -- exactly as `total_process.py` claims. §74 implied a within-graph effect; it is a
+cross-configuration one. The 26 non-`ImplementedFunction` nodes are `RootFind`/`FixedPoint`
+drivers that reference other nodes' residuals and own no body, so they add no conversion
+burden.
+
+### Honest answer, and the uncertainty
+
+**92 % of the live layer is mechanical, and the real work is a named list of ten.** That is
+a much smaller project than §74's prose implied.
+
+**Biggest uncertainty, stated plainly**: this is a static AST census with one level of
+helper expansion, **not** a Warp-compatibility check. Warp's typed subset is stricter than
+"does it call `jnp.array`", so some Easy-bucket functions will need adjustment once someone
+actually emits them, and two Work-bucket items (`tf_stress_*`,
+`calculate_pf_coil_power_supplies`) have multi-helper chains not expanded past one level
+that could hide further Work-bucket helpers. Treat 237/70/28 as the right order of
+magnitude and the right *shape*, not as exact.
