@@ -257,17 +257,93 @@ def jcrit_from_material_gl_rebco(t_helium, b_max):
     return j_crit_sc * 1.0e-6
 
 
+def _pchip_slopes(xp, fp):
+    """Fritsch-Carlson slopes: the tangents that make a cubic Hermite monotone.
+
+    A **monotone** cubic, deliberately, rather than a natural spline: a spline can
+    overshoot between knots and put a bump where the tabulated data says none, which on a
+    physical table is a fabricated feature. Fritsch-Carlson chooses tangents that cannot.
+    """
+    h = xp[1:] - xp[:-1]
+    delta = (fp[1:] - fp[:-1]) / h
+
+    w1 = 2.0 * h[1:] + h[:-1]
+    w2 = h[1:] + 2.0 * h[:-1]
+    same_sign = delta[:-1] * delta[1:] > 0.0
+    harmonic = (w1 + w2) / (
+        w1 / jnp.where(delta[:-1] == 0, 1.0, delta[:-1])
+        + w2 / jnp.where(delta[1:] == 0, 1.0, delta[1:])
+    )
+    d_interior = jnp.where(same_sign, harmonic, 0.0)
+
+    def _edge(h0, h1, d0, d1):
+        d = ((2.0 * h0 + h1) * d0 - h0 * d1) / (h0 + h1)
+        d = jnp.where(jnp.sign(d) != jnp.sign(d0), 0.0, d)
+        d = jnp.where(
+            (jnp.sign(d0) != jnp.sign(d1)) & (jnp.abs(d) > 3.0 * jnp.abs(d0)),
+            3.0 * d0,
+            d,
+        )
+        return d
+
+    d_first = _edge(h[0], h[1], delta[0], delta[1])
+    d_last = _edge(h[-1], h[-2], delta[-1], delta[-2])
+    return jnp.concatenate([d_first[None], d_interior, d_last[None]])
+
+
+def pchip_interp(x, xp, fp):
+    """Monotone cubic interpolation. **C1**, unlike `jnp.interp`.
+
+    Flat extrapolation outside `[xp[0], xp[-1]]`, matching `jnp.interp`'s default.
+    Validated against `scipy.interpolate.PchipInterpolator` to better than 1e-9 over
+    twenty random tables, and against finite-difference gradients.
+    """
+    d = _pchip_slopes(xp, fp)
+    n = xp.shape[0]
+    xc = jnp.clip(x, xp[0], xp[-1])
+    i = jnp.clip(jnp.searchsorted(xp, xc, side="right") - 1, 0, n - 2)
+    x0, x1 = xp[i], xp[i + 1]
+    y0, y1 = fp[i], fp[i + 1]
+    d0, d1 = d[i], d[i + 1]
+    h = x1 - x0
+    t = (xc - x0) / h
+    t2 = t * t
+    t3 = t2 * t
+    return (
+        (2.0 * t3 - 3.0 * t2 + 1.0) * y0
+        + (t3 - 2.0 * t2 + t) * h * d0
+        + (-2.0 * t3 + 3.0 * t2) * y1
+        + (t3 - t2) * h * d1
+    )
+
+
 def intersect_residual(x, x1, y1, x2, y2):
     """What vanishes at the intersection of two tabulated `(x, y)` curves.
 
-    `residual(x) = y1_interp(x) - y2_interp(x)`, using the same piecewise-linear
-    interpolation PROCESS's own `intersect` uses (`np.interp` there, `jnp.interp` here
-    -- both linear, both defined identically off the same tabulated points). This *is*
-    the defining equation `intersect` below solves, and what `TestIntersect.residual` in
-    `test_coils.py` plugs both PROCESS's answer and the port's answer back into, per
-    `_audit/test_harness.md`'s tier-2 pass criterion.
+    `residual(x) = y1_interp(x) - y2_interp(x)`, and it *is* the defining equation
+    `intersect` below solves -- what `TestIntersect.residual` in `test_coils.py` plugs
+    both PROCESS's answer and the port's answer back into, per `_audit/test_harness.md`'s
+    tier-2 pass criterion.
+
+    **A deliberate divergence from PROCESS, and the one place this file is not a
+    transcription** (`_audit/deliberate_divergences.md`). PROCESS interpolates linearly
+    (`np.interp`), and so did this until 2026-09-06. Piecewise-linear interpolation makes
+    this residual **only piecewise smooth**: its derivative jumps at every one of the
+    ~200 tabulated breakpoints, and `stellarator_helias`'s SAND arm exposes exactly this
+    quantity to the outer SQP as a residual equality. The measured consequence was an arm
+    that converged on 8 of 10 +-ulp draws with a 235-429 iteration spread and **two hard
+    caps at 500** (`_audit/optimise_design.md` §86).
+
+    A monotone cubic is **C1**, so the derivative jumps do not exist. Same ten draws,
+    same resolution: **10 of 10 converge in 83-101 iterations**, and VMCON takes exactly
+    43 on every draw (§88). The crossing point moves by **8.1e-05 relative** -- an order
+    of magnitude less than the alternative of raising the sample count, which perturbs
+    `objf` by 1.06e-03 and does not remove the kinks anyway (§87).
+
+    **What this does not fix**: SLSQP and VMCON still settle on points 1.0e-04 apart,
+    stably across all ten draws. That gap is not the interpolation and is still open.
     """
-    return jnp.interp(x, x1, y1) - jnp.interp(x, x2, y2)
+    return pchip_interp(x, x1, y1) - pchip_interp(x, x2, y2)
 
 
 def _intersect_newton_polish(x, x1, y1, x2, y2, steps=8):

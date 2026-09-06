@@ -1378,9 +1378,51 @@ def test_st_coil_matches_process_end_to_end():
         "tfcryoarea": data.tfcoil.tfcryoarea,
         "toroidalgap": data.tfcoil.toroidalgap,
     }
+    # **The C1 interpolant's declared divergence, and only these fields.**
+    # `intersect_residual` interpolates with a monotone cubic where PROCESS interpolates
+    # linearly -- a deliberate change, recorded in `_audit/deliberate_divergences.md`
+    # with its receipt (`optimise_design.md` §89: 10/10 ulp draws converge in 83-101
+    # iterations where piecewise-linear gives 8/10 with two hard caps). A different
+    # interpolant through the same tabulated points is a different function, so the
+    # crossing moves 8.1e-05 relative and propagates through the winding-pack geometry
+    # to everything below.
+    #
+    # **Listed by name and held to a stated bound rather than loosening `rtol` for
+    # everything.** Measured worst is 7.2e-04 (`m_tf_coil_superconductor`); the bound is
+    # 2e-03, so a genuine regression in any of these still fails, and every field NOT in
+    # this list is still checked at float64 round-off.
+    C1_AFFECTED = {
+        "dr_tf_wp_with_insulation",
+        "a_tf_inboard_total",
+        "j_tf_coil_full_area",
+        "r_b_tf_inboard_peak_symmetric",
+        "a_tf_leg_outboard",
+        "a_tf_coil_inboard_case",
+        "dr_tf_inboard",
+        "dr_tf_outboard",
+        "tfocrn",
+        "tficrn",
+        "m_tf_coil_case",
+        "m_tf_coil_wp_insulation",
+        "m_tf_coil_superconductor",
+        "m_tf_coil_copper",
+        "m_tf_wp_steel_conduit",
+        "m_tf_coil_wp_turn_insulation",
+        "m_tf_coil_conductor",
+        "m_tf_coils_total",
+        "coppera_m2",
+        "v_tf_coil_dump_quench_kv",
+        "max_force_density",
+        "sig_tf_wp",
+    }
     mismatches = [
         f"  {name}: port={ported[name]!r} process={reference!r}"
         for name, reference in checks.items()
-        if not np.isclose(ported[name], reference, rtol=1e-9, atol=1e-12)
+        if not np.isclose(
+            ported[name],
+            reference,
+            rtol=2e-3 if name in C1_AFFECTED else 1e-9,
+            atol=1e-12,
+        )
     ]
     assert not mismatches, "\n".join(["st_coil value mismatch:", *mismatches])

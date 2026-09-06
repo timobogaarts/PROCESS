@@ -86,7 +86,41 @@ PROCESS silently continues.
 returned. **Why**: the staleness is bounded by the loop's own 1 % convergence tolerance and
 is an artefact of assignment order, not intent. Flagged in `_audit/units/.../vacuum.md`.
 
-### 7. `helias_5b.IN.DAT` -- `icc = 11` removed
+### 7. `intersect_residual` -- a C1 monotone cubic where PROCESS interpolates linearly
+
+`models/stellarator/coils/coils.py`. `pchip_interp` (Fritsch-Carlson) replaces `jnp.interp`
+in the residual `intersect` solves.
+
+**Why**: piecewise-linear interpolation makes that residual only *piecewise* smooth -- its
+derivative jumps at every one of ~200 tabulated breakpoints -- and `stellarator_helias`'s
+SAND arm exposes exactly that residual to the outer SQP as an equality.
+
+**Receipt** (`optimise_design.md` §86, §89), ten +-ulp draws at the original resolution:
+
+| | piecewise-linear | C1 |
+|---|---|---|
+| SLSQP | 8/10, 235-429 iterations, **2 hard caps** | **10/10, 83-101** |
+| VMCON | -- | 10/10, **exactly 43 every draw** |
+
+**Cost, and it is the largest in this file.** A different interpolant through the same
+points is a different function: the crossing moves **8.1e-05** relative, propagating to
+~**5e-04** on TF coil masses, areas and current densities, and to **149 cold-state rows**
+(76 on `helias_5b`, 73 on `stellarator_helias`) recorded in `cold_start.ACCEPTED` under
+`C1_INTERPOLANT`. Well inside the 5 % regression tolerance; five orders outside what the
+port's own tier-3 faithfulness test asks, so that test now names the 22 affected fields
+explicitly and holds them to 2e-03 while everything else stays at `rtol = 1e-9`.
+
+**Scope**: **stellarator-only**. `intersect` has no tokamak caller and no tokamak row moved
+-- checked, not assumed.
+
+**What it does not fix**: SLSQP and VMCON still settle 1.0e-04 apart, stably across all ten
+draws. That gap survives this change and the resolution alternative alike, and is open.
+
+**The alternative it was chosen over**: raising `_N_WINDING_PACK_SAMPLES`. That perturbs
+`objf` by 1.06e-03 -- an order of magnitude more -- and does not remove the kinks, only
+shrink them; §86's sweep is non-monotone, with N = 1500 still capping.
+
+### 8. `helias_5b.IN.DAT` -- `icc = 11` removed
 
 An **input file**, not a model. Constraint 11 (`rbld == rmajor`) is a tautology on the
 stellarator build path: `dr_bore = rmajor - S` then `rbld = dr_bore + S` over the same ten
@@ -115,12 +149,5 @@ Recorded so the reasoning is not re-derived.
   `dr_tf_plasma_case` to become a design variable -- a degree of freedom PROCESS does not
   have -- to give the optimiser something to act on. A change to the problem statement, for
   a kink that is currently costing no solver anything.
-- **A C1 (monotone cubic) interpolant in `intersect_residual`** (`optimise_design.md` §89).
-  Verified robust -- 10/10 ulp draws converge in 83-101 iterations where piecewise-linear
-  gives 8/10 with two hard caps -- and it is an order of magnitude cheaper than the
-  alternative of raising the sample count. **Not landed**: it shifts TF coil masses, areas
-  and current densities by ~5e-04 against PROCESS, breaking a tier-3 faithfulness test at
-  `rtol = 1e-9`, and it buys convergence only for `SlsqpDriver`, which is a second opinion
-  rather than the production driver. Patch kept at `scratchpad/mem/coils_C1.py.patch`.
 - **Smoothing the TF case clamp.** Wrong in kind: unlike the Ward kink, this one is real
   geometry (an arc's sagitta) doing its job.
