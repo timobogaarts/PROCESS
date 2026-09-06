@@ -73,7 +73,11 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    the QP is where it manifests, non-smoothness is why -- and it explains §68's
    backend-flip, since 1 ulp upstream can move the crossing across a breakpoint.
    **Next**: measure whether the trajectory actually crosses breakpoints and how often, the
-   direct analogue of the Ward measurement. **The verdict is architectural**:
+   direct analogue of the Ward measurement. **And separately (§73): a real, unexplained
+   gradient anomaly on `large_tokamak_nof` MDF** -- `jacfwd` disagrees with a central FD
+   *of the port's own function* by up to 3.2e-02 at the converged point, localised to
+   `.build.dr_cs` and `.build.dr_bore`, with a step-size profile matching neither a kink
+   nor an implicit-solve mismatch. Bisect `build.py:916`'s ripple `jnp.maximum` first. **The verdict is architectural**:
    `wp_width_r_min` is a SAND-only exposure of an inner root find that MDF solves
    internally -- which is why the same file under MDF converges under SLSQP in 27 -- and
    SAND hands it to the outer SQP to compete in one scalar merit function against a

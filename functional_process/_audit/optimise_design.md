@@ -2338,3 +2338,80 @@ guard; note `sqrt` of a negative gives `nan`, not `inf`, so the `isinf` kludge m
 every case -- inherited, not new), `stresses.py`'s elliptic integrals near `m -> 1` (real
 singularity, attainability unclear), and several `maximum`/`minimum` clamps at fixed small
 constants, which are numerical floors rather than physical crossings.
+
+## 73. A real gradient anomaly on `large_tokamak_nof`, partially characterised (2026-09-06)
+
+The §72 sweep, run to completion on more configurations, found **48 gradient-agreement
+violations at `large_tokamak_nof` MDF's converged point** -- against the harness's own
+Richardson-extrapolated FD at `Tier1Contract`'s `allowed = 25 x error_bar`. All 48 trace to
+**2 of 20 design variables**, `.build.dr_cs` and `.build.dr_bore`, each disagreeing across
+9-12 of 27 conditions, by 100-1500x the allowed tolerance.
+
+That was reported as the session's strongest finding. **It is real but it is not yet
+understood, and two checks were needed before it could be written down as anything.**
+
+### It is not PROCESS's FD scheme
+
+The obvious deflation -- `jacfwd` differentiates the block with its inner solve implicit
+while PROCESS's FD re-runs a pipeline converged only to `rtol = 1e-6`, so the two measure
+different things -- **does not hold.** Finite-differencing the **port's own** block
+evaluation (central, through `drivers.scaled_problem`'s `evaluate`) reproduces the same
+disagreement on the same variables and largely the same conditions:
+
+| condition / variable | `jacfwd` | central FD (same function) | relative |
+|---|---:|---:|---:|
+| `c32` / `dr_bore` | -0.471039 | -0.455907 | **3.21e-02** |
+| `c31` / `dr_bore` | -0.604695 | -0.587011 | 2.92e-02 |
+| `c65` / `dr_cs` | -0.051089 | -0.049920 | 2.29e-02 |
+| `c36` / `dr_bore` | -7.37663 | -7.36540 | 1.52e-03 |
+
+So the anomaly is **internal to the port**, not an artefact of comparing against PROCESS.
+
+### But the step-size sweep matches neither explanation
+
+The decisive test between "kink" and "loose inner solve" is how the disagreement behaves as
+the FD step shrinks: a kink straddled by large steps disappears once the step fits on one
+side; an implicit-versus-re-solved derivative is roughly step-independent. Measured:
+
+| `h` | `c31`/`dr_bore` | `c32`/`dr_bore` | `c65`/`dr_cs` | `c36`/`dr_bore` |
+|---:|---:|---:|---:|---:|
+| 1e-03 | 2.937e-02 | 3.226e-02 | 2.326e-02 | 1.530e-03 |
+| 1e-04 | 2.935e-02 | 3.225e-02 | 2.323e-02 | 1.528e-03 |
+| 1e-05 | 2.924e-02 | 3.212e-02 | 2.289e-02 | 1.522e-03 |
+| 1e-06 | 2.873e-02 | 3.156e-02 | 2.000e-02 | 1.496e-03 |
+| 1e-07 | 1.805e-02 | 1.983e-02 | 8.937e-04 | 9.399e-04 |
+| 1e-08 | **1.128e-03** | **1.239e-03** | 8.962e-04 | 5.869e-05 |
+
+**Flat across three decades, then a collapse between 1e-6 and 1e-8.** That is neither
+signature. A central difference on a smooth function has `O(h^2)` truncation error, so
+1e-3 -> 1e-6 should improve by 1e6 and does not. A straddled kink's secant slope varies
+with `h` rather than sitting flat. And a purely implicit-versus-re-solved mismatch should
+not collapse at all.
+
+The shape is what a **switch at a fixed distance of order 1e-7 in scaled coordinates**
+would produce -- every step larger than that crosses it, every smaller step does not -- but
+that is a reading of the shape, **not a located cause**. It could equally be an inner
+driver changing iteration count above some perturbation size.
+
+### What is and is not established
+
+**Established**: a real, reproducible, above-threshold disagreement between the port's
+analytic gradient and a finite difference *of the port's own function*, at a converged point
+of the production tokamak configuration, localised to two build variables; converging to
+~1e-3 as `h -> 1e-8` rather than being an outright wrong derivative.
+
+**Not established**: the cause, and whether it matters. The 48-violation count is measured
+against a threshold calibrated for **unit** functions in the Tier-1 harness; applying it to
+a whole converged MDF block with inner drivers is a different test whose expected behaviour
+nobody has characterised, so "48 violations" may not carry its usual meaning here.
+
+**The next step is a bisection, not more sweeping**: `dr_cs` and `dr_bore` both feed
+`r_tf_inboard_*` (`build.py:538`, checked -- a clean division, no kink) and propagate through
+the confirmed physics<->build<->TF SCC to `build.py:916-940`'s
+`jnp.maximum(r_tf_outboard_mid_unrippled, r_tf_outboard_midmin)` -- the ripple switch
+flagged statically in §72. Evaluating *that* expression's two arguments along the same
+perturbation would confirm or eliminate it in one run. **Not done.**
+
+**Also from the same sweep, for the record**: `large_tokamak_eval` (root find, 2 x 2) is
+clean, joining `stellarator_helias` MDF (8 x 15) and `helias_5b` MDF (3 x 5) at zero
+findings. Three configurations remain unmeasured.
