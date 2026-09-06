@@ -2286,7 +2286,9 @@ non-smooth by construction, in two independent ways**, both verified by reading 
    whenever the crossing moves across one of the ~200 interpolation breakpoints. This is a
    structural analogue of an `argmax` kink, not a numerical artefact.
 2. **`calculate.py:797`**: `wp_width_r_min = jnp.maximum(dx_tf_turn_general**2, wp_width_r_min)`
-   -- a hard floor clamp applied immediately downstream of (1). A second kink, at the clamp.
+   -- a hard floor clamp applied immediately downstream of (1). **§82 measured this and it
+   is NOT live**: a ~200x margin between the two arguments, winner never flips on either
+   arm. Only mechanism (1) is real on this configuration.
 
 **This completes a mechanism that has been half-explained since §47.** The chain:
 
@@ -3104,3 +3106,71 @@ stage 5 can reuse it rather than inventing a second comparator.
 transcription caveat stands: the prototype leaves `**` alone rather than rewriting `x ** 1.5`
 into `x * sqrt(x)`, which is right -- the manual spike's rewrite of exactly that was part of
 its 3.27e-13 disagreement. Preserving expression form is a feature, not an omission.
+
+## 82. The stellarator knife-edge, measured -- and §72 was half wrong (2026-09-06)
+
+§72 said `wp_width_r_min` is non-smooth **two ways**: `intersect()`'s piecewise-linear
+crossing, and `calculate.py:797`'s `jnp.maximum` clamp. Instrumented both with runtime
+`jax.debug.callback` hooks on `stellarator_helias`, SLSQP on both arms.
+
+### The clamp is not live at all
+
+`dx_tf_turn_general**2 = 0.003136` constant against `wp_width_r_min` in `[0.62, 0.74]` --
+a **~200x margin**, relative gap pinned at 0.995-0.996, winner never flips on either arm.
+**§72's second mechanism does not exist on this configuration.** The whole knife-edge here
+is the interpolation kink.
+
+### The Ward signature does *not* transfer, and the zigzag is real anyway
+
+| | Ward (§47) | this site, SAND |
+|---|---:|---:|
+| crossing rate | 46 % of steps | **0.5 %** (21 of 4 011 calls) |
+| closest approach | 5.5e-08 | **2.09 % of an interval width** (5.78e-04) |
+
+So the headline numbers that made Ward actionable are absent -- **and the trajectory shape
+still matches §47 exactly**: a decaying period-2 zigzag straddling the boundary between
+breakpoint intervals **20 and 21** over calls 18-42 (`21, 20, 21, 20, ...`), which then
+**locks onto interval 20 permanently**. The remaining ~3 970 calls -- 99 % of the run --
+never cross again, converging toward a near-fixed `x = 0.7078943051`.
+
+**That is why the aggregate rate is 0.5 %**: the crossing happens in a short early burst and
+then stops. An average over the whole run hides it. Ward's 46 % was a *sustained* crossing;
+this is a transient one that does its damage and then latches.
+
+### And the clean confirmation: exposure, not the kink
+
+**MDF crosses breakpoints on 59.2 % of calls -- over 100x SAND's rate -- and converges in
+27 iterations to `objf = 1.21848284` exactly, `max|eq| = 4.9e-10`.**
+
+MDF crosses this kink constantly and does not care, because it converges the root find
+*inside* every evaluation and the outer solver only ever sees the converged value. SAND
+crosses it a hundred times less often and caps at 500, because it hands the outer SQP a
+residual that is non-differentiable there. **§72's conclusion is confirmed, by the arm that
+crosses more and suffers less.**
+
+### A fix that works, and a control that was not run
+
+Raising the interpolation resolution (`_N_WINDING_PACK_SAMPLES`,
+`models/stellarator/coils/calculate.py:530`, runtime patch only):
+
+| samples | status | iterations | `objf` | vs VMCON `1.21848284` | `max\|eq\|` |
+|---:|---|---:|---|---:|---:|
+| 200 (baseline) | cap(500) | 501 | 1.218434089 | 4.9e-05 | 7.7e-05 |
+| 500 | **converged** | 92 | 1.218368727 | 1.06e-03 | 7.3e-12 |
+| 2 000 | **converged** | 105 | 1.218311345 | 1.71e-03 | 3.2e-12 |
+
+**The 500-cap disappears outright**, and `max|eq|` improves seven orders to machine
+precision. That is strong causal evidence that the piecewise-linear resolution *is* the
+mechanism.
+
+**But the comparison column is apples to oranges, and this matters.** Changing the sample
+count changes the **discretisation**, so at N = 500 and N = 2 000 the solver is converging a
+*different model*. Drifting 1.06e-03 from VMCON's N = 200 answer is not error -- it is a
+different problem's answer, and a finer grid is presumably the *more* accurate one. **The
+missing control is VMCON at the same N**, which would separate "SLSQP now converges" from
+"the model moved". **Not run, and it is the first thing to do before anyone reads the table
+above as a fix.**
+
+Also untested: a monotone-cubic interpolant (C1, so no kinks at all -- but a divergence from
+PROCESS's own piecewise-linear scheme), and whether the finer grid changes the `c62`
+interaction §49 found.
