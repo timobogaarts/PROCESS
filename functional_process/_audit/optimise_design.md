@@ -3825,3 +3825,61 @@ spill, and with the adjoint generated automatically alongside.
 remaining unresolved nodes clear and the four named gaps close, and nothing here says the
 ratios hold at 89 nodes rather than 18 -- a bigger kernel amortises its overhead better
 *and* uses more registers, and those pull in opposite directions.
+
+## 94. The arity invariant: three mis-resolutions, and a guarantee (2026-09-06)
+
+§92 found the resolver picking the **first** `functional_process.models` call in a wrapper
+rather than the one producing the node's declared outputs -- `.buildings.sizing` bound to
+`calculate_shield_height` (1 return) against **12** declared outputs, and it failed
+*silently*, caught only by Warp's `TypeError: object of type 'Var' has no len()`.
+
+**The fix asked for was the invariant, not the case**: *a resolved leaf's return arity must
+equal the node's declared output count.* Both numbers were already in hand.
+
+### It caught three, not one
+
+| | `helias_5b` (94) | `stellarator_helias` (123) |
+|---|---:|---:|
+| resolved before | 88 | 116 |
+| **resolved after** | **85** | **113** |
+| newly `Unresolved` | 2 | 2 |
+| newly `Composition` | 1 | 1 |
+
+- **`.buildings.sizing`** -- the known case. Now correctly refuses: `calculate_bldgs` *does*
+  match arity, but its `shh` argument is a prelude-local rather than a wrapper parameter, so
+  the node comes back `Unresolved` rather than as a wrong `Leaf`.
+- **`.availability.electric_production`** -- **a second instance of the same bug**, which
+  nobody had found and which would have failed the same silent way.
+- **`.power.delta_eta_step`** -- a new **`Composition`** category. Its wrapper is a five-call
+  pipeline whose real output comes from `_, _, _, _, x = calculate_delta_eta(...)`, while
+  three *other* calls in the body each also happen to return exactly one value. Ambiguous by
+  arity alone, so it is reported as a composition rather than picked between.
+
+**Counts going down is the correct direction.** A smaller set that is right beats a larger
+one containing silent errors, and the invariant now holds across **all 198 resolved leaves
+on both configurations, zero violations**.
+
+### What the arity check had to see through
+
+Counting `len(elts)` on a literal tuple is not enough. `_return_arity` handles
+`return other_leaf(...)` (recursive, cycle-guarded), `return jnp.where(...)` (confidently 1,
+by the codebase's scalar-typed convention), `return f(...)[:12]` (a literal slice), and
+`return (a, b, *other_leaf(...))` (starred unpack). **An unrecognised call stays `None` --
+unknown, never guessed as 1** -- which is why `constraint_84`'s `return geq(...)`, really
+four values, does not silently resolve.
+
+### And the input question, answered
+
+Selection being wrong did **not** mean arguments were mixed across calls: `_bind_args`
+always read from whichever call was selected, self-consistently, so a wrong selection
+carried a wrong-but-coherent argument list. Now that selection is arity-correct, arguments
+follow by construction. §93's "argument ordering needed no correction across 64 compiled
+functions" was real rather than luck -- **though those 64 are worth re-checking against
+`Leaf.fn` now that the resolver has changed underneath them**, which is exactly what §93's
+own measurement needs too.
+
+**This is the fifth silent-subset failure in this file** (§85, §88, §90, §92, and now this),
+and the first one caught by a *stated invariant* rather than by a downstream crash. That is
+the difference worth generalising: `test_registry_coverage.py` exists because a registry
+without a coverage check drifts; a resolver without an arity check does the same thing more
+quietly.
