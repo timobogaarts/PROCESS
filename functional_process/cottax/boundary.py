@@ -311,9 +311,8 @@ class Inert:
     input in the ancestor cone, on the reasoning that a condition inert because of the
     file's own problem statement would have an empty one and a condition inert because
     of a missing producer would not. It is never empty. Every chain ends at the
-    boundary, so `helias_5b`'s `.Constraint11` -- which is inert purely because its
-    three iteration variables are the temperature, the density and `hfact`, none of
-    which moves a stellarator's radial build -- listed twenty-five perfectly ordinary
+    boundary, so `helias_5b`'s `.Constraint11` -- inert for a reason sharper than the one
+    written here at the time, see below -- listed twenty-five perfectly ordinary
     inputs (`.build.dr_blkt_inboard`, `.tfcoil.tftmp`, ...) and looked exactly like a
     defect. The cone size is kept as `cone` for scale; the *direct* operands are what
     separates the two:
@@ -340,7 +339,16 @@ class Inert:
     cone: int
     """How many boundary inputs are in the whole ancestor cone. Scale, not evidence --
     see `frozen`. `st_regression`'s `.Objective` has 1; `helias_5b`'s `.Constraint11`
-    has 25."""
+    had 25.
+
+    **`.Constraint11` no longer exists on `helias_5b`** (removed from the input file
+    2026-09-06). It is kept as this field's example because it is the one that made the
+    point, and because the reason it was inert turned out to be sharper than "its three
+    iteration variables cannot move a radial build": `rbld` is computed *from* `rmajor`
+    with derivative exactly 1, so `rbld == rmajor` is an identity and **no** choice of
+    iteration variables could have made it bind (`_audit/optimise_design.md` §52). The
+    original wording, preserved above, is a good record of a plausible reading that a
+    measurement later replaced."""
 
 
 def _frozen(graph: Graph, design: Iterable[VarPath]) -> set[VarPath]:

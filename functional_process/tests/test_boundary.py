@@ -838,12 +838,21 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
     (`optimise_design.md` §26, §27.4). It has a tokamak producer since 2026-09-02 --
     `models/physics/current_drive.py::FusionGain`, `.tokamak.current_drive.fusion_gain`,
     a port of the source's own last line (`current_drive.py:2301-2308`) -- so the census
-    is now **clean on six of seven**, and this assertion is what would say so if the
+    is now **clean on all seven**, and this assertion is what would say so if the
     node were ever unregistered again.
 
-    `helias_5b`'s `.Constraint11` is the *other* kind and is deliberately still
-    reported: nothing is missing there, the file's three iteration variables simply do
-    not move a stellarator's radial build.
+    **`helias_5b`'s `.Constraint11` left this list on 2026-09-06, and it is the third
+    kind.** It was reported here for a whole session with the explanation that "nothing
+    is missing, the file's three iteration variables simply do not move a stellarator's
+    radial build" -- a plausible reading that turned out to be too weak. `rbld` is
+    computed *from* `rmajor` with derivative exactly 1 (`st_build`: `dr_bore = rmajor - S`
+    then `rbld = dr_bore + S` over the same `S`), so `rbld == rmajor` is an **identity**
+    and no choice of iteration variables could have made that constraint bind
+    (`optimise_design.md` §52). `icc = 11` has been removed from `helias_5b.IN.DAT`
+    accordingly. So this row did not become clean by gaining a producer, like the three
+    above -- it became clean because the constraint was **structurally meaningless on
+    this device class** and should never have been listed. The check found it either way,
+    which is the argument for keeping the census.
 
     **`.Constraint56` and `.Constraint67` left this list on 2026-09-01**
     (`optimise_design.md` §29). They were the same defect on constraints -- both
@@ -855,7 +864,7 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
     """
     expected = {
         "stellarator_helias": set(),
-        "helias_5b": {".Constraint11"},
+        "helias_5b": set(),
         "large_tokamak_nof": set(),
         "large_tokamak_eval": set(),
         "low_aspect_ratio_DEMO": set(),

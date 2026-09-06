@@ -416,9 +416,13 @@ def test_exactly_the_two_eval_files_state_a_root_find():
     - *"no `i_figure_merit`"* is **necessary but not sufficient** on these seven -- it
       does single out the same two files, but only because a file in evaluation mode has
       no reason to name one. Nothing stops it naming one anyway.
-    - *"square"* is **not even necessary**: `helias_5b` states 3 equalities against 3
+    - *"square"* is **not even necessary**: `helias_5b` states **2** equalities against 3
       iteration variables and PROCESS runs VMCON on it. Squareness is a consequence of
       the mode, which is why `mdf.assemble` checks it as a consistency test instead.
+      (It stated 3 until 2026-09-06, when `icc = 11` was removed as structurally inert on
+      the stellarator build path -- `_audit/optimise_design.md` §52. The counterexample
+      got *stronger*: the file is now visibly non-square and still not an evaluation run,
+      where before it was square and the point had to be made about the mode instead.)
     """
     root = Path(__file__).resolve().parents[2] / "tests/regression/input_files"
     problems = {
@@ -441,5 +445,6 @@ def test_exactly_the_two_eval_files_state_a_root_find():
 
     # The counterexample that rules out "square" as the discriminator.
     helias = problems["helias_5b"]
-    assert helias.n_equality_constraints == len(helias.ixc) == 3
+    assert helias.n_equality_constraints == 2
+    assert len(helias.ixc) == 3
     assert not helias.is_evaluation

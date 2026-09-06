@@ -9,13 +9,19 @@
 
 *---------------Constraint Equations---------------*
 
-n_equality_constraints = 3               *number of equalities
+n_equality_constraints = 2               *number of equalities
 
 
 *--------------- equalities
 icc = 2                 *Global power balance (consistency equation)
-icc = 11                *Radial build (consistency equation)
 icc = 16                *Net electric power lower limit
+* icc = 11 removed 2026-09-06: on the stellarator build path `rbld` is computed FROM
+* `rmajor` (`st_build`: dr_bore = rmajor - S, then rbld = dr_bore + S over the same S),
+* so `rbld == rmajor` is an identity and this equation can never bind. Its Jacobian row
+* is exactly zero, which made scipy's SLSQP refuse the equality block outright while
+* VMCON's QP tolerated it. It remains correct on TOKAMAK configurations, where `rbld`
+* is summed outward from `r_sh_inboard_out` and does not contain `rmajor`.
+* See functional_process/_audit/optimise_design.md sections 46, 48 and 52.
 
 
 *-------------- inequalities
