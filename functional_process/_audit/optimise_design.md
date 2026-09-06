@@ -1011,3 +1011,76 @@ PROCESS could have reported that, because a satisfied constraint looks exactly l
 working one -- it took a solver that factorises the equality block on its own (scipy) to
 turn it into a visible error. That is the rewrite's case in miniature: the structure was
 always there to be read, and nothing read it.
+
+## 53. Should SAND expose the root find? The knob exists, and using it is worse (2026-09-06)
+
+§49 ended on a design question rather than a bug: `wp_width_r_min` is a SAND-only exposure
+of an inner root find that MDF solves internally, so should SAND expose it at all?
+
+**The knob already exists and was built for this question.** `sand.sand_graph(graph,
+skip=(), keep=())` -- `keep` leaves a named problem un-lifted, staying a declared problem
+driven by its own algorithm and invoked as an inner `Drive` once per outer condition
+evaluation (paired with `sand_schedule(nest=True)`). Its docstring asks, in as many words,
+whether *"SAND's trouble on `stellarator_helias` [is] the conditioning of one lifted row,
+or the lift itself"*. Nobody had answered it.
+
+**The rule SAND implements today** is: lift **every** declared problem into the combined
+`Optimise`, with no discrimination by problem type -- a `FixedPoint` becomes a residual
+equality via `Residualise` (`g(u) - u`), an `ImplicitFunction` is folded in via `Combine`.
+Two exceptions are *detected* rather than chosen: `degenerate_fixed_points` and
+`array_valued_problems` are dropped automatically.
+
+**Nesting it does not work, and fails harder than the disease.** Structurally the variant
+built exactly as documented -- unknowns 14 -> 13, equalities 8 -> 7, `wp_width_r_min` on
+its own `SeededNewtonDriver`. Numerically:
+
+- with optimistix's defaults, the **first** outer Jacobian evaluation raised *"The maximum
+  number of steps was reached in the nonlinear solver"* -- the outer SQP never ran;
+- patched permissive (`max_steps=4096`, `throw=False`), the outer solve managed **one**
+  iteration and stopped at `objf = 1.03e23`, `max|eq| = 4055`, `min ie = -47870`.
+
+So it is not a slow crawl but a blow-up, against an intact SAND arm that at least stays in
+a bounded, physically sane region for its whole 500-iteration cap. **The "answer-preserving"
+expectation this experiment was set up to check is refuted**, and there is no converged
+nested answer to compare against VMCON's `1.21848284`.
+
+**Why, as the best-supported explanation and not a verified one.** Under MDF the *whole*
+coupled system is converged jointly at every trial point, so the inner root find only ever
+sees a self-consistent state. Under SAND-with-`keep`, the other five couplings remain free
+SQP variables and can be arbitrarily inconsistent at an early trial point, so the nested
+`Intersect` is handed inputs MDF would never present -- landing it in the flat region
+`SeededNewtonDriver`'s own docstring records (residual exactly flat below `x ~ 0.1`) where
+Newton cannot move. Confirming this would mean nesting all six, which is MDF. Not done.
+
+**`wp_width_r_min` is structurally the odd one out, and this part is solid.** Of the six
+coupling equalities SAND introduces here, it is the **only one that is not a residualised
+`FixedPoint`**: `Intersect` is an `ImplicitFunction` (`stellarator/coils/coils.py:229`),
+while `IonVolAvgTemperature` (`physics/plasma_profiles.py:164`) and `DeltaEtaStep`
+(`power/thermal_cryo.py:314`) are `FixedPointFunction`s, and `f_ster_div_single` plus the
+two rate-density self-loops are `FixedPointCut`/self-loop residuals. Two independent
+properties already on record attach to it and to nothing else here:
+`VmconDriver.condition_scale`'s *"the only one whose units are genuinely not its
+unknown's"* (a `FixedPoint` residual `g(u) - u` is definitionally in `u`'s units; an
+`ImplicitFunction`'s condition need not be), and the flat region above. And empirically,
+**none of the other five appeared among the oscillating conditions at all**.
+
+**Candidate rule**: *expose `FixedPoint` residuals -- same units as their unknown,
+generically full-rank once degenerate and array-valued cases are screened -- and keep
+genuine `RootFind`/`ImplicitFunction` problems driven internally.* Consistent with
+everything measured, and **it is one `RootFind` against five `FixedPoint`s on one
+configuration.**
+
+**A wrinkle the experiment did not cover.** This graph declares **two**
+`ImplicitFunction`s, not one: `^problem.stellarator.coils.intersect` and
+`^problem.vacuum.duct_diameter_root_find` (`vacuum/vacuum.py:123`). Only the first shows
+up among SAND's six exposed couplings, so either the vacuum one is already being dropped
+by the degenerate/array-valued screens or it is excluded some other way. **Unchecked** --
+and it matters, because a rule of the form "keep every `ImplicitFunction` internal" would
+touch both, and one of them is apparently already internal for reasons nobody has stated.
+
+**`low_aspect_ratio_DEMO` was not reached** -- the intended cross-check. Its graph is 247
+nodes against the stellarator's 154 and it did not finish compiling inside the time box.
+Worth flagging from the reference table alone, and only as a question: that arm's
+pathology is the *opposite* shape, with **VMCON** slow (79 iterations against SLSQP's 17)
+rather than SLSQP. Whether that is a different mechanism or the same one striking the
+other solver first is unmeasured speculation.

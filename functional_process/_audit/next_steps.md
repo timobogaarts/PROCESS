@@ -68,8 +68,20 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    `wp_width_r_min` is a SAND-only exposure of an inner root find that MDF solves
    internally -- which is why the same file under MDF converges under SLSQP in 27 -- and
    SAND hands it to the outer SQP to compete in one scalar merit function against a
-   near-active `c62`. **Open, and a design question rather than a bug**: whether SAND
-   should expose this coupling to the outer solver at all. Costs one row of twenty-four,
+   near-active `c62`. **[investigated -- §53]** The knob already exists
+   (`sand_graph(keep=...)` + `sand_schedule(nest=True)`, whose docstring asks this exact
+   question) and **using it is worse**: nesting the `Intersect` blows up on the first
+   outer Jacobian (`objf = 1.03e23`, `max|eq| = 4055`), because SAND's other five
+   couplings stay free and can hand it a state MDF would never produce. `wp_width_r_min`
+   is nonetheless structurally the odd one out -- the only one of the six that is an
+   `ImplicitFunction` rather than a residualised `FixedPoint`. **Candidate rule**: expose
+   `FixedPoint` residuals, keep genuine `RootFind`s internal -- on a sample of one against
+   five, on one configuration. **Open**: (i) the graph declares a *second*
+   `ImplicitFunction`, `^problem.vacuum.duct_diameter_root_find`, which does *not* appear
+   among SAND's exposed couplings for reasons nobody has stated -- check why before
+   generalising any rule; (ii) `low_aspect_ratio_DEMO`'s SAND arm as the cross-check (79
+   VMCON iterations against MDF's 11, and the *opposite* shape -- VMCON slow, SLSQP fine),
+   not reached because that graph is 247 nodes and did not finish compiling in the box. Costs one row of twenty-four,
    under the non-production driver.
 3. **[closed] The whole-matrix OOM is resident compiled executables; the existing trim is
    the right fix** (§45, §50). Post-trim the floor **saturates** rather than leaking
