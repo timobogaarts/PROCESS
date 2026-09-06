@@ -1725,3 +1725,178 @@ two-component equality silently truncates it to one row: `n_eq_constraints` came
 where the block declares `2`. The first run looked exactly like a divergence -- hit a
 bound, `max|eq| = 1.32` -- and was solving an under-constrained problem. Pass
 `np.zeros(n_eq)` / `np.full(n_ineq, np.inf)` explicitly.
+
+## 63. Codegen: what a plain C compiler does with the same arithmetic (2026-09-06)
+
+The idea worth pricing: rather than lowering the graph to XLA -- which turns 28 101
+StableHLO ops into 70 065 HLO instructions in 1 648 fusion kernels (§50) -- **emit the
+block as one straight-line scalar function and hand it to an ordinary compiler.** The
+graph is already an explicit dataflow IR, which is the thing you would need; that is the
+rewrite's own thesis cashed out, since no such emission is possible from PROCESS's
+imperative call order.
+
+Before designing anything, the cheap bound: generate straight-line C with the measured op
+mix (~50 % multiply/add, ~13 % divide, ~12 % transcendental, no shape plumbing) and time
+`gcc`.
+
+| ops | source | `-O0` | `-O1` | `-O2` | object (`-O2`) |
+|---:|---:|---|---|---|---:|
+| 7 000 | 235 KB | -- | -- | 3.0 s / 116 MB | 284 KB |
+| 28 000 | 994 KB | **3.4 s / 242 MB** | 6.3 s / 260 MB | 10.0 s / 388 MB | 816 KB |
+| 70 000 | 2.55 MB | -- | -- | 42.7 s / 1228 MB | 1.91 MB |
+
+**Against XLA on the real block: 15 s and ~870 MB** (§54, §60).
+
+Three things fall out, and the second is the one that stops this being a slam dunk.
+
+1. **At `-O0`, 28 000 ops cost 3.4 s and 242 MB -- about 4.4x faster and 3.6x smaller than
+   XLA.** And a scalar codegen would emit **fewer** than 28 000: §50 measured 41.6 % of the
+   StableHLO as shape plumbing (`broadcast_in_dim` alone 27.9 %), which exists only because
+   scalars are being wrapped into tensors. Emitting scalars directly deletes that category
+   outright, leaving ~16 400 real arithmetic ops. Interpolating: **~2 s and ~150 MB.**
+2. **This is not "compilers beat XLA".** At `-O2` and 70 000 ops, `gcc` costs **42.7 s and
+   1.23 GB** -- considerably *worse* than XLA on the equivalent program. Straight-line code
+   of this size is hard for any optimising compiler; several LLVM/GCC passes are
+   superlinear in basic-block length. The win above comes from **emitting less** and
+   **optimising less**, not from the compiler being better.
+3. **`-O0` is defensible here in a way it usually is not.** The generated function is one
+   flat basic block with no loops, so most of what `-O2` buys -- unrolling, licm,
+   vectorisation -- has nothing to act on. What is lost is CSE and algebraic
+   simplification, and both are *better done on the cottax graph itself*, where they are
+   graph rewrites over named nodes rather than pattern matches over emitted text.
+
+**What this does not price, and none of it is small**: derivatives (forward mode over ~8
+design variables is 9x the arithmetic, inline and mechanical; reverse mode is a real
+compiler feature), the non-traceable nodes (CoolProp), correctness plumbing against the
+JAX path, and the GPU variant where 28k live values would spill registers badly. It also
+says nothing about *runtime*, only compile.
+
+**The honest summary**: the compile-side prize is real and roughly **an order of
+magnitude**, it comes from the graph being explicit enough to emit narrowly, and the
+first decisive experiment is small -- emit C for one block's **value** function, compile
+`-O0`, and check bitwise agreement and timing against the JAX path. Everything after that
+(derivatives, GPU, batching) is contingent on that number.
+
+## 64. `slsqp_jax`'s divergence is the solver, not the problem (2026-09-06)
+
+§62 read the `stellarator_helias` stall as "QP subproblem becoming locally infeasible with
+five constraints simultaneously near-active in eight dimensions". **That reading is wrong
+on both halves.** Three independent measurements:
+
+1. **The linearised subproblem is feasible.** Built at the stall point directly from
+   `jax.jacfwd` -- 2 equalities, 12 inequalities, box bounds, no trust region, no QP
+   objective -- and solved with `scipy.optimize.linprog` (HiGHS). **A step exists with zero
+   violation**: `A_eq d + c_eq = [0, -2.2e-16]`, all twelve inequalities satisfied, `d`
+   inside its box.
+2. **VMCON steps out of the identical point.** Seeded with `mdf.seed(..., design_values=stall_x)`,
+   `VmconDriver` goes `objf` 1.2221 -> 1.2185 in three iterations with `max|eq|`
+   4.4e-3 -> 1e-4 -> 8e-6, heading for its own 1.21848284. No local infeasibility.
+3. **The failure is budget-invariant, and starts at step 1.** `slsqp_jax`'s verbose trace
+   reports `QP ok: False` with `QPiter` pinned at the cap on **every step from the first**,
+   plus `QPcyc: 2` (active-set cycling). Raising the budget **10x** (200x100 against 20x20)
+   produces a **bitwise-identical trajectory** -- same `f`, same step sizes
+   (9.537e-07, 4.883e-04, 1.221e-04, 3.052e-05). So it is not a budget shortfall; the
+   active-set QP cycles regardless.
+
+**And the arithmetic never supported §62's reading either.** At the stall: 2 equalities
+plus inequalities within 1e-2 gives 3, and **0** within 1e-4 -- at most 5 against `n = 8`.
+Not over-determined. The "10 constraints against 8 unknowns" in the verbose trace is
+`slsqp_jax`'s *own* working-set bookkeeping during its failed cycling near step 1, not the
+true active set.
+
+So the residual failure is `slsqp_jax`'s projected-CG/active-set QP layer on an
+8-variable, 14-condition problem -- **not** model chaos, **not** a rank collapse, and not a
+property of the problem. §62's other half stands: the kink smoothing and the `icc = 11`
+removal moved the stall from a trust-box corner 0.34 away to a near-feasible point 3.6e-3
+away.
+
+*(Not independently reproduced here, unlike most findings in this file: three converging
+measurements on a third-party package's limitation, where the conclusion changes none of
+this port's code.)*
+
+## 65. `jaxipm` cannot be used, for two independent structural reasons (2026-09-06)
+
+Evaluated after §58 established that a genuinely constrained forward-mode method works on
+the easy problem and stalls on the hard one, and that `optimistix`'s solvers are all
+reverse-mode. `jaxipm` (arXiv 2606.26341, *"Scaling Nonlinear Optimization: Many Problems
+One GPU"*) is a GPU-batched IPOPT in JAX -- interior-point, so it does no active-set
+identification and might have sailed past §64's failure mode entirely.
+
+It cannot run here, for two reasons that are independent and neither of which is a fight
+worth having:
+
+1. **Its sparse KKT solve is cuDSS-only, with no CPU path in the source.** Every core
+   module does an unguarded `from spineax import cudss`; the import fails with
+   `ImportError: libcudss.so.0`. Its README requires **CUDA 13** (this machine has 12.6)
+   plus the cuDSS/cuBLAS/cuSPARSE/NCCL stack.
+2. **Its derivative front end cannot consume this graph, and this would remain fatal with
+   a GPU.** `jaxipm` uses **no JAX autodiff at all** -- it goes `jax.make_jaxpr` ->
+   `jax2sympy` -> symbolic `sympy.diff` -> back to JAX, in order to extract exact sparsity
+   for the KKT system. Of **63 distinct primitives** in `helias_5b` MDF's objective jaxpr,
+   **23 have no translation rule**, including `while`, `scan`, `cond`, `custom_jvp_call`,
+   `linear_solve`, `stop_gradient` -- and cottax's own batching primitives `unvmap_any`,
+   `unvmap_max`, `nonbatchable`, `select_if_vmap`. Those are structural to how cottax
+   works, not incidental, and `helias_5b` is the *smallest* problem in the matrix.
+
+**Env intact**: installs were `--no-deps` pure-Python (`jaxipm`, `spineax`, `jax2sympy`,
+`sympy`, `sympy2jax`); `jax`/`jaxlib`/`numpy` unchanged, `cottax` still editable under
+`~/jaxgraph/src`, `-k "driver or importer"` still 94 passed.
+
+**Side finding worth keeping**: on the real `helias_5b` `condition_map`, `jax.jit`,
+`jax.grad`, `jax.jacfwd` and `jax.jacrev` all work -- independent confirmation that §59's
+reverse-mode fix holds on an assembled block.
+
+## 66. The constraint census: why more conditions than variables is fine (2026-09-06)
+
+The question worth asking of any of these blocks: *how can there be more constraints than
+optimiser variables?* Answered by measurement, from the input files and from the assembled
+graphs, which agree exactly.
+
+**Only equalities consume degrees of freedom.** Per file, `ixc` / `icc` /
+`n_equality_constraints`, and the graph-side split confirmed identical on all seven:
+
+| configuration | unknowns | obj | eq | ineq | DOF left |
+|---|---:|---:|---:|---:|---:|
+| `helias_5b` | 3 | 1 | 2 | 2 | 1 |
+| `stellarator_helias` | 8 | 1 | 2 | 12 | 6 |
+| `st_regression` | 14 | 1 | 3 | 15 | 11 |
+| `low_aspect_ratio_DEMO` | 19 | 1 | 4 | 21 | 15 |
+| `large_tokamak_nof` | 20 | 1 | 3 | 23 | 17 |
+| `large_tokamak_eval` | 2 | -- | 2 | 23 | **0** |
+| `spherical_tokamak_eval` | 3 | -- | 3 | 15 | **0** |
+
+The two zero-DOF rows are the two `i_process_run_mode = -2` files -- **root finds, not
+optimisations** -- and they are exactly square by construction. SAND adds coupling unknowns
+and an equal number of residual equalities, leaving the PROCESS-native inequality count
+untouched.
+
+**No arm is over-determined at its solution.** Equalities plus *active* inequalities
+against unknowns, at the converged point:
+
+| configuration | arm | active set | unknowns |
+|---|---|---:|---:|
+| `stellarator_helias` | MDF | 2 + 4 = **6** | 8 |
+| `stellarator_helias` | SAND | 8 + 4 = 12 | 14 |
+| `helias_5b` | MDF | 2 + 0 = 2 | 3 |
+| `large_tokamak_nof` | MDF | 3 + 7 = 10 | 20 |
+| `low_aspect_ratio_DEMO` | SAND | 11 + 10 = 21 | 26 |
+| `st_regression` | MDF | 3 + 4 = 7 | 14 |
+
+Worst margin in the matrix is 21 of 26. So an over-determined KKT system explains no
+observed stall anywhere -- consistent with §64.
+
+**`icc = 11` was the only inert constraint.** Zero rows fail the
+`_name_singular_equalities` test on any arm, at cold start or converged point, and
+`boundary --inert` independently reports zero structurally-inert driven conditions on all
+seven files. No inequality is slack by a suspicious margin either -- the largest are O(1)
+to O(14) in scaled units, nothing near the orders-of-magnitude gap that would suggest a
+units or wiring defect. **Caveat, as inference**: a topological reachability test would not
+catch an *algebraic-cancellation* tautology like `c11` -- that needed the numeric Jacobian
+(§46, §52) -- so "zero" here is reassuring rather than a proof for switch branches outside
+this matrix.
+
+**One finding nobody was looking for**: the two root-find files evaluate their inequalities
+and **violate most of them** -- 20 of 23 on `large_tokamak_eval`, 14 of 15 on
+`spherical_tokamak_eval`. PROCESS's `fsolve` mode reports them and enforces none. That is
+the source's design, not a port defect, but it is worth knowing before anyone reads an
+evaluation run's constraint output as a feasibility statement.

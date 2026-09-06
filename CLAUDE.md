@@ -56,7 +56,8 @@ matters most for bit-level work: a silent switch of cottax underneath a measurem
 the kind of thing that produces an irreproducible number and a confident wrong
 explanation. Verified state at creation
 (rebuilt 2026-08-18 after the env was lost): `process 0.0.1.dev1186+g769950de1`,
-`cottax 0.1.0`, `jax 0.11.1` (CPU — no CUDA jaxlib, and jax warns about that on every
+`cottax 0.1.0`, `jax` **0.11.0** (recorded here as 0.11.1 until 2026-09-06, when the env
+was checked directly and read 0.11.0; CPU — no CUDA jaxlib, and jax warns about that on every
 import; harmless), `numpy 2.5.2`, `pytest 9.1.1`. **`tests/unit` → 846 passed;
 `~/jaxgraph` → 740 passed, 3 skipped.** If either number moves without you having
 changed something, suspect the env before the code. The rebuild reproduced both numbers exactly, so the
@@ -72,6 +73,40 @@ only if rendering is actually wanted.
 this env must `jax.config.update("jax_enable_x64", True)` before any array is created, or
 diffs against PROCESS show precision loss that reads like a porting bug
 (`functional_process/_audit/traceability_policy.md` §Precision).
+
+### `process_port_gpu` -- the same env on CUDA
+
+Built 2026-09-06, on request, to measure whether the GPU helps. **It does not, for a
+single solve** -- see below and `_audit/optimise_design.md` §63.
+
+```bash
+PYG=~/miniconda/envs/process_port_gpu/bin/python
+conda create -n process_port_gpu python=3.12 -y
+$PYG -m pip install -e "$HOME/PROCESS[test]"
+$PYG -m pip install -e "$HOME/jaxgraph[dev,viz]"
+$PYG -m pip install --upgrade "jax[cuda12]"     # last, so nothing downgrades it
+```
+
+**Intended to match `process_port`'s `jax`/`jaxlib` so a CPU/GPU comparison is a
+comparison of backends, and it does NOT, quite**: `jax[cuda12]` pulled **0.11.1** while
+`process_port` is actually on **0.11.0** -- which is also a correction to this file, which
+claimed 0.11.1 for the CPU env (verified 2026-09-06: `process_port` is 0.11.0). The prior
+evidence is that this drift is inert -- the rebuild note below records both suites
+reproducing their counts exactly across it -- but a strict comparison should pin the GPU
+env with `pip install "jax[cuda12]==0.11.0"` first. Both installs editable, same as above;
+validated at creation with `tests/unit` -> **846 passed**, the identical count `CLAUDE.md`
+records for the CPU env, and `cottax.__file__` under `~/jaxgraph/src`. 6.5 GB on disk.
+
+Hardware: **Quadro T1000, 4 GB VRAM** with ~0.5 GB already taken by the display. Always
+run with `XLA_PYTHON_CLIENT_PREALLOCATE=false` -- XLA grabs 75 % of VRAM by default, which
+on this card leaves nothing.
+
+**Do not expect a speedup.** The port's blocks are ~28k *scalar* operations with ~100 KB
+of runtime buffers and essentially no arithmetic intensity, and a cold row is ~97 %
+compilation; none of that is what a GPU is for. Measured on `helias_5b` MDF, identical
+answer to every digit: cold 13.55 s (CPU) -> 15.57 s (GPU), warm 0.136 s -> 0.227 s. The
+plausible win is **batching** -- `vmap` over many independent solves, which is the shape of
+`process/core/scan.py` -- and that is untested.
 
 ### Commands
 
