@@ -187,8 +187,13 @@ history.)
 - **jax dispatch floor**: ~0.26 ms for a bare `jax.jit(x * 2.0)` call — the floor beneath
   any per-call timing measured in this file. (§31.14)
 - **HLO cost**: ~52 StableHLO lines per assembled node (55/node before a vectorisation
-  pass on the tokamak); ~200 bytes of peak RSS per character of pre-optimisation
-  StableHLO a row lowers. (§31.2, §31.16)
+  pass on the tokamak). RSS per character of pre-optimisation StableHLO is **not a single
+  rate**: the large modules split into an expensive class at **97-437 B/char** (median
+  ~262) and a cheap one at **5-46 B/char**, and a row's cost is carried by the two
+  expensive ones -- `large_tokamak_nof` SAND lowers a 1.33 M-character module for 7.9 MB
+  beside a 3.14 M-character one for 934.5 MB. §31.16's "~200 B/char" is the expensive
+  class's average and must not be multiplied by a row's total HLO. Small programs cost
+  1-2 MB each regardless of size (allocator granularity). (§31.2, §31.16, §45)
 - **Compile cache, cold vs. warm**: stellarator row 60s → 27s, tokamak row 146s → 50s —
   but only ~1.2% of peak RSS, so the persistent compilation cache is a speed lever, not a
   memory one (the OOM risk is unaffected). (§31.16)

@@ -432,3 +432,225 @@ not this table" — was about a factor of two between two honest measurements. T
 larger version of the same mistake: a mean over a distribution whose top two samples are
 compiles.
 
+
+## 45. Where the memory goes: two programs a row, and a floor that saturates (2026-09-06)
+
+`next_steps.md`'s open item 3 asked for a measurement before a theory. A whole-matrix
+pass had died with `LLVM ERROR: Unable to allocate section memory` on a request for
+**63 bytes**, so the failure was XLA's CPU section allocator having nothing left to map
+rather than one oversized program, and what was unknown was the resident cost **per
+compiled program**, whether `jax.clear_caches()` returns it, and why a few dozen programs
+a configuration exhaust a 15 GB box.
+
+Measured by patching the one entry point `phase_timing` already names for compilation
+(`compiler.backend_compile_and_load`) and recording, per program, the `VmRSS` delta
+across the compile call and the character count of the StableHLO module handed to it,
+then running `run_warm_matrix.measure` per row with `VmRSS` sampled before, after, and
+after `clear_caches` + `gc.collect()` + `malloc_trim(0)`. Probe:
+`_audit/rss_per_program.py`. VMCON, all seven configurations in one process each time, in
+`CONFIGURATIONS` order (MB; `large_tokamak_eval` and `spherical_tokamak_eval` state no
+SAND arm):
+
+| configuration | arm | programs | grown by compiles | before | after | **trimmed** | HWM |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `stellarator_helias` | MDF | 26 | 621 | 392 | 1091 | 594 | 1091 |
+| `helias_5b` | MDF | 24 | 408 | 594 | 1027 | 605 | 1091 |
+| `large_tokamak_nof` | MDF | 24 | 1221 | 605 | 1954 | 752 | 1955 |
+| `large_tokamak_eval` | MDF | 20 | 703 | 752 | 1511 | 796 | 1955 |
+| `low_aspect_ratio_DEMO` | MDF | 24 | 1217 | 796 | 2113 | 845 | 2156 |
+| `spherical_tokamak_eval` | MDF | 17 | 709 | 845 | 1602 | 879 | 2156 |
+| `st_regression` | MDF | 21 | 796 | 879 | 1727 | **851** | 2156 |
+| `stellarator_helias` | SAND | 33 | 616 | 392 | 1087 | 575 | 1087 |
+| `helias_5b` | SAND | 34 | 374 | 575 | 971 | 580 | 1087 |
+| `large_tokamak_nof` | SAND | 40 | 1377 | 580 | 2091 | 712 | 2091 |
+| `low_aspect_ratio_DEMO` | SAND | 40 | 1419 | 717 | 2209 | 769 | 2226 |
+| `st_regression` | SAND | 34 | 957 | 770 | 1766 | **766** | 2226 |
+
+**1. Two programs a row hold almost all of it.** Every row's growth is concentrated in
+two multi-megabyte modules: on `st_regression` MDF they are 447 MB and 444 MB of a 920 MB
+row, and the other 19 programs cost 29 MB between them. The small programs -- the 200-450
+character scalar reshapes §39 counted -- cost **1-2 MB each regardless of size**, which is
+allocator granularity rather than module content. That per-program floor is ~30 MB at 20
+programs a row: not the problem.
+
+**2. The floor saturates; it does not leak.** Post-trim, MDF goes
+594 -> 605 -> 752 -> 796 -> 845 -> 879 -> **851** and SAND
+575 -> 580 -> 712 -> 769 -> **766**: both climb for three or four rows and then flatten,
+with the last row *below* the one before it. Peak RSS over a seven-configuration pass is
+**2.16 GB** (MDF) and **2.23 GB** (SAND). So `clear_caches` + `malloc_trim` does bound the
+pass, the residue is a plateau and not an accumulation, and the original OOM is explained
+by its absence: `run_warm_matrix` runs **four** measurements per configuration (two arms x
+two drivers), and without the trim each leaves its ~1 GB resident, which reaches 15 GB
+somewhere in the fourth configuration -- exactly where it died. `large_tokamak_nof` SAND,
+the row named in that failure, now peaks at 2.09 GB and trims back to 712 MB.
+
+### Correction: StableHLO character count is not the predictor it was taken for
+
+§31.16 is quoted in `tried_and_rejected.md` as **~200 bytes of peak RSS per character of
+pre-optimisation StableHLO**, and this measurement says that constant is an average over
+one *class* of module rather than a property of modules. The 24 large programs here split
+cleanly in two:
+
+- **expensive**, 97-437 B/char (median ~262) -- the two per row that carry the growth;
+- **cheap**, 5-46 B/char -- a third multi-megabyte module present in every SAND row.
+  `large_tokamak_nof` SAND lowers a **1 331 233**-character module that costs **7.9 MB**,
+  next to a 3 143 770-character one that costs **934.5 MB**. That is a 50x spread in
+  B/char between two modules in the same row.
+
+So a module's character count predicts its resident cost only within a class, and the
+~200 B/char figure should be read as "the expensive class averages ~260, and some large
+modules cost almost nothing" -- not as a rate to multiply a row's total HLO by. What
+distinguishes the two classes was not investigated; the cheap ones are the SAND-only
+third module, which is a lead, not an answer.
+
+**What this closes and what it does not.** Item 3 is answered: the mechanism is resident
+compiled executables, the workaround already in both runners is the correct fix rather
+than a papering-over, and a pass is bounded with it at ~2.2 GB. What it does *not* say is
+that a row's 1 GB is necessary. The lever is the two expensive modules, which is a
+lowering question (§31.2's ~52 StableHLO lines per assembled node), not an allocator one.
+
+## 46. `helias_5b`'s singular LSQ subproblem: an equality with nothing to solve (2026-09-06)
+
+`next_steps.md`'s open item 1: `helias_5b` fails under SLSQP on **both** arms at iteration
+1 with scipy status 6, *"Singular matrix C in LSQ subproblem"*, while VMCON converges the
+same configuration. Nobody had looked at **which** constraints are dependent. Diagnosed
+by hooking `drivers.scaled_problem` -- the one builder both drivers go through -- and
+reading the Jacobian at the first point either driver evaluates.
+
+**One row, and it is exactly zero.** MDF arm, three design variables
+(`ixc = 4, 6, 10` -> `.physics.temp_plasma_electron_vol_avg_kev`,
+`.physics.nd_plasma_electrons_vol_avg`, `.physics.hfact`), six condition rows:
+
+| condition | \|row\| | value |
+|---|---:|---:|
+| `^cond.numerics.objf` | 2.010e-01 | +7.583e-01 |
+| `^cond.constraints.c2` | 8.275e-01 | -6.870e-03 |
+| **`^cond.constraints.c11`** | **0.000e+00** | **+1.110e-16** |
+| `^cond.constraints.c16` | 3.932e+00 | +1.161e-01 |
+| `^cond.constraints.c84` | 6.828e+00 | -3.452e+00 |
+| `^cond.constraints.c24` | 1.366e+00 | -1.097e-01 |
+
+`c11`'s three entries are `'0.0', '0.0', '0.0'` by `repr`, not "small" -- **exact**, not a
+conditioning artefact. Its residual is already `1.1e-16`, so the constraint is satisfied
+and carries no gradient. The **equality block alone** -- `[c2, c11, c16]`, which is the
+matrix scipy factorises for its LSQ search direction -- is therefore 3x3 of **rank 2**,
+smallest singular value 4.1e-17. SAND is the same story one size up: 9x9, rank 8,
+smallest singular value 3.3e-15, same row. The **full** matrix stays full column rank in
+both arms (MDF 6x3 rank 3, singular values 8.00 / 0.791 / 3.15e-02), which is why the zero
+row is invisible to anything that does not factorise the equalities on their own.
+
+**Why the row is zero, structurally.** PROCESS constraint 11 is the radial-build
+consistency equation, `rbld == rmajor`. In `helias_5b`'s graph `.physics.rmajor` is in
+`graph.unowned_inputs` -- a boundary input, a constant for this configuration -- and
+`.build.rbld` is produced by `.stellarator.build` from inputs disjoint from all three
+iteration variables. So the residual is constant with respect to every column the problem
+has. The zero row is guaranteed by construction.
+
+**And it is the input file's defect, faithfully ported.** `helias_5b.IN.DAT` lists
+`icc = 11` and does **not** list `ixc = 3` (`rmajor`, `iteration_variables.py:47`). Its
+sibling `stellarator_helias.IN.DAT` is the exact complement: `ixc = 3` present, `icc = 11`
+absent. So one file gives the optimiser the major radius as a design variable without the
+consistency equation that would pin it, and the other states the consistency equation
+without the variable it exists to determine. PROCESS itself sees the same zero row --
+finite differences over the same three `ixc` move that residual no more than AD does --
+and its VMCON tolerates it, so nothing flagged it in twenty years of use.
+
+**Half of this was already written down, and the link was not.**
+`drivers._refuse_inert_objective`'s docstring names this very row -- *"`helias_5b`'s
+equality 11 compares a radial build against `.physics.rmajor` on a file whose three
+iteration variables are the temperature, the density and `hfact`"* -- as its example of a
+zero row that is deliberately **named and not refused on**, because a constraint the
+design cannot steer is common and often intended. So the zero row was known. What was not
+known is that it is the whole of scipy's *"Singular matrix C in LSQ subproblem"*, and
+therefore that "named and not refused on" has a cost: it is fine for VMCON and fatal for
+SLSQP. The policy is still right -- refusing here would fail a configuration VMCON solves
+correctly -- but the diagnosis should reach the user through the error rather than through
+this file.
+
+**Verdict: SLSQP is right and VMCON is permissive.** `pyvmcon` reaches its step through a
+`cvxpy` QP that never needs the equality Jacobian to be independent on its own, and the
+constraint being already satisfied means nothing forces the issue; scipy's SLSQP
+factorises that block densely and aborts the moment it meets a zero row. The failure is a
+solver exposing a pre-existing structural defect in the problem statement, not a port bug
+and not a scaling bug -- **an equality that is present in name only.**
+
+**Secondary, and not the cause.** In the SAND arm the inequality rows `c84` (lower beta
+limit) and `c24` (upper beta limit) are exactly anti-parallel, `cos = -1.0` -- they are
+two bounds on the same `beta_total_vol_avg`, and the scaled rows differ by a factor of
+exactly 5. Neither is near its bound at the cold start (`-3.452` and `-0.110`), so neither
+is plausibly in SLSQP's working set at the failing iteration.
+
+**Rejected on the way: an apparent rank collapse in the *unscaled* SAND Jacobian**
+(rank 3 of 9). The unknown columns span ~20 orders of magnitude in absolute units
+(`nd_plasma_electrons_vol_avg` column norm 7e-3 against
+`temp_plasma_ion_vol_avg_kev`'s 2.6e17), so `numpy.linalg.matrix_rank`'s default tolerance
+swamps genuine O(1) singular values. A units artefact in the diagnostic, not a second
+degeneracy -- the scaled matrix, which is what both drivers actually condition on, has
+only the one exact zero row.
+
+## 47. `stellarator_helias` SAND under SLSQP: a period-2 cycle on one residual (2026-09-06)
+
+`next_steps.md`'s open item 2: this arm hits the 500-iteration cap at 4 019 block calls
+where VMCON converges in 24, with `nfev/nit` of 7.0 against 1.1-1.5 everywhere SLSQP
+converges. The question was what the line search is failing to make progress on.
+Instrumented by monkey-patching `run_cold_matrix._recorder` and `SAND_MAX_ITER`
+in-process and running the existing `build_sand`/`solve_sand` capped at 120 iterations
+(33-36 s), which reproduces the ratio: **785 evaluations / 120 iterations = 6.54**.
+
+**It oscillates *and* creeps, in ramp-and-reset cycles.** The per-iteration evaluation
+count is not flat noise -- it climbs from 1-2 to 10-11 and then resets, with resets at
+iterations ~18, ~39, ~62 and ~102. Inside each ramp, one equality residual and two
+inequalities lock into a clean **period-2 zigzag**: `^cond.stellarator.wp_width_r_min`
+alternates `-0.0152, -0.0052, -0.0163, -0.0050, -0.0144, -0.0046, ...` while `c62`
+alternates feasible (~0) and violated (~0.03-0.04) on the opposite parity, with `c35`
+along for the ride. The envelope does shrink -- the low branch goes -0.0163 -> -0.0144 ->
+... -> -0.0067 over ~20 iterations -- so this is not a stalled cycle, it is a decaying one
+at a rate nowhere near reaching 1e-8 within 500 steps. The objective drifts inside
+`[1.2182, 1.2188]` for the entire tail, which is why the capped row still reports
+`objf = 1.21846128` against the converged `1.21848284`.
+
+`wp_width_r_min` is a named suspect independently: `drivers.py`'s own docstring flags it
+as *"the only one whose units are genuinely not its unknown's"*.
+
+**Three candidate causes, all measured and all rejected.**
+
+- **Not a bound.** None of the 8 bounded design unknowns approach a bound across 120
+  iterations; the closest is `f_nd_alpha_thermal_electron` at 6.4 % of its range, and
+  most sit at 15-85 %. An active-set thrash on a bound was the obvious reading of
+  "7 evaluations per iteration" and it is wrong.
+- **Not the Jacobian.** Central finite differences (`h = 1e-6`, all 14 columns) against
+  the analytic `jacfwd` Jacobian at three points along both the SLSQP and the VMCON
+  trajectory agree to a max relative error of 1e-4-1e-6, median 0 -- FD truncation, not a
+  defect. Expected, and worth the five minutes to remove from the board.
+- **Not the scale spread, which was the leading hypothesis and is falsified by its own
+  control.** Verified independently by capturing `driver.condition_scale` and
+  `scaled_problem`'s design `scale` on both configurations' SAND arms:
+
+  | configuration | SLSQP | design scale ratio | condition scale ratio |
+  |---|---|---:|---:|
+  | `stellarator_helias` | cap(500), 501 it | 2.18e+22 | 7.49e+19 |
+  | `large_tokamak_nof` | converged, 13 it | **1.97e+23** | 3.51e+18 |
+
+  The configuration that converges in thirteen iterations has a design-scale spread an
+  order of magnitude **wider**. A large ratio is therefore not sufficient, and "SLSQP's
+  single penalty parameter cannot serve conditions spread over twenty decades" -- stated
+  in this file as the thing to test -- does not survive being tested.
+
+**What the contrast with VMCON actually shows.** VMCON hits the *same* conditions, harder:
+at iteration 2, after the largest step of its run (`||dx|| = 0.92`), `wp_width_r_min`
+spikes to **52.46** and `c62` to 2.1-2.8. It then walks them down with further large,
+well-aimed steps -- `wp_width_r_min`: 52.46, -0.47, 0.002, -0.028, -0.43, -0.003, 0.0005 --
+and by iteration ~13 both are at 1e-4-1e-5 with `||dx||` damping geometrically (0.018,
+0.012, 0.012, 0.0045, 0.0016, ... 2e-4 by iteration 24). SLSQP never takes that step. The
+paths separate at iteration 1-2, and from there SLSQP makes small steps that settle into
+the decaying cycle above.
+
+**Hypothesis, labelled as one.** The mechanism consistent with all of the above is that
+`wp_width_r_min` and `c62` are a genuinely *conflicting* pair -- improving one worsens the
+other -- and that SLSQP's single scalar merit-function penalty cannot authorise the large
+step that trades them off, where VMCON's per-constraint Lagrange multipliers can. That is
+a statement about the pair, not about the magnitude of any scale factor, and it explains
+why the scale-spread control comes out the way it does: `large_tokamak_nof` has worse
+spread and no such pair. **It is not established.** The test that would establish it is to
+re-run with `c62` dropped, or with the two conditions rescaled relative to each other, and
+see whether the cycle disappears; that has not been done.

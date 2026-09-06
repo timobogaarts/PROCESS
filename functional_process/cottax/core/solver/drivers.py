@@ -28,6 +28,8 @@ candidate for `PicardDriver` -- it answers any `FixedPoint`, generically, the sa
 `functional_process.cottax.sand` assembles.
 """
 
+import warnings
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -444,6 +446,57 @@ def _refuse_inert_objective(jacobian, conditions: ConditionMap) -> None:
         "seed while PROCESS computes a live value. "
         "`$PY -m functional_process.cottax.boundary --inert --input <IN.DAT>` names the path "
         "without running anything; see `_audit/optimise_design.md` §26."
+    )
+
+
+def _name_singular_equalities(jacobian, conditions: ConditionMap, meq: int) -> None:
+    """Warn naming the equality rows behind scipy's *"Singular matrix C"*, if any.
+
+    `scipy.optimize.minimize(method="SLSQP")` factorises the **equality block alone**
+    for its LSQ search direction and returns status 6 the moment that factorisation
+    meets a dependent row. The status is an integer with no names in it, and a message
+    cannot survive the trace (`SlsqpDriver.reports` says why `Status` is an integer), so
+    the diagnosis is emitted here, on the host, at the point of failure.
+
+    **Warns rather than raises, and only on the failure path.** The sibling guard
+    `_refuse_inert_objective` states the policy this follows: a constraint the design
+    cannot steer is common and often intended, and refusing on one would fail
+    configurations VMCON solves correctly -- `helias_5b` is exactly that, and its
+    equality 11 was already named in that function's docstring years before anyone
+    connected it to this status code (`_audit/optimise_design.md` §46).
+
+    Reports two things, because they are different failures: a row that is
+    **identically zero** (a constraint no design variable moves at all -- `helias_5b`'s
+    `c11`, `rbld == rmajor` on a file that lists `icc = 11` without `ixc = 3`), and a
+    rank deficiency with no zero row (two constraints that are the same equation, or a
+    combination of others). Rank is computed on the equality block only, since that is
+    the matrix scipy actually factorises -- the full Jacobian is routinely full rank
+    while this block is not.
+    """
+    jacobian = np.asarray(jacobian, dtype=float)
+    block = jacobian[1 : 1 + meq]
+    if block.size == 0:
+        return
+    names = [c.path_str() for c in conditions.conditions][1 : 1 + meq]
+    zero = [n for n, row in zip(names, block, strict=True) if not np.any(row != 0.0)]
+    rank = int(np.linalg.matrix_rank(block))
+    if not zero and rank == min(block.shape):
+        return  # scipy said singular, this point does not show why -- say nothing
+    detail = (
+        f"identically zero row(s): {zero}"
+        if zero
+        else f"no zero row, but rank {rank} of {min(block.shape)}"
+    )
+    warnings.warn(
+        f"SLSQP reported a singular LSQ subproblem, and the equality block "
+        f"({block.shape[0]}x{block.shape[1]}) is degenerate at this point -- {detail}. "
+        f"An equality whose row is identically zero is one the design variables "
+        f"{[u.path_str() for u in conditions.unknowns]} cannot move: it is satisfied "
+        f"or not by the boundary values alone. `pyvmcon` tolerates such a row and "
+        f"scipy does not, so this is a statement about the problem rather than about "
+        f"the solver; see `_audit/optimise_design.md` §46.",
+        RuntimeWarning,
+        stacklevel=2,
     )
 
 
@@ -973,6 +1026,10 @@ class SlsqpDriver(AbstractDriver):
                 options={"maxiter": max_iter, "ftol": tolerance},
                 callback=on_step,
             )
+            if int(result.status) == 6:  # "Singular matrix C in LSQ subproblem"
+                _name_singular_equalities(
+                    jacobian_at(np.asarray(result.x, dtype=float)), live, meq
+                )
             # No `self.last_result = ...`: an `eqx.Module` is frozen, and a driver that
             # mutated itself would not survive being reused across blocks anyway. What
             # the solver said is `reports`' job now, and the mutable `Outcome` sink that
