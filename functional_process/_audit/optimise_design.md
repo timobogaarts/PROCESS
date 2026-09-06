@@ -309,6 +309,36 @@ than a crash: a slice-sum reassociated into a different order changes the last b
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
 
+**jaxpr is the right IR, and the argument is not aesthetic.** The whole session's cost has
+been a taxonomy of *Python shapes* -- `self.<attr>`, non-literal exponents, switch-valued
+index bounds, tuple unpacking, `del`, keyword-only arguments, branches. **Tracing dissolves
+every one of them by construction**: a jaxpr contains only primitives applied to typed
+values, with every static decision already resolved against the concrete configuration. Not
+one entry in that taxonomy survives contact with `jax.make_jaxpr`.
+
+Measured before committing to it (`scratchpad/jaxpr/census.py`), tracing each node's own
+`__call__` separately so node structure -- and therefore the emitter, and one `@wp.func` per
+node -- is preserved rather than flattened into one giant jaxpr:
+
+| configuration | node definitions | traced | distinct primitives | total eqns | median eqns/node |
+|---|---|---|---|---|---|
+| `helias_5b` | 95 | **91 (96 %)** | 44 | 2704 | 12 |
+| `large_tokamak_nof` | 178 | **153 (86 %)** | 53 | 4724 | 5 |
+
+Against 48 % / 52 % for the AST expander, and 34 % / 26 % of *entries* for the resolver. The
+primitive histogram is dominated by trivial scalar arithmetic (`mul` 664, `add` 524,
+`select_n` 211, `convert_element_type` 210, `div` 190, `sub` 173); the genuinely array-shaped
+tail -- `dynamic_slice`, `slice`, `broadcast_in_dim`, `stack`, `argmax`, `reduce_sum`, `scan`,
+`cond` -- is small and is the real remaining work. A whole configuration is under 5000
+primitive operations.
+
+**The honest limits.** Tracing bakes in the configuration, so a jaxpr is per-config -- which
+suits a code generator and would not suit a general library. Names are lost, so generated
+code reads as `a:f64[] = mul b c`; keeping one jaxpr per node rather than one per graph is
+what keeps that navigable. And it does **not** solve array intermediates: `_simpson`'s
+201-element grids are as unrepresentable in a per-thread scalar kernel after tracing as
+before. Tracing removes the accidental difficulty, not the essential one.
+
 **cottax already exposes exactly the interface the port needs, and the resolver exists
 because that was not noticed.** A node's `__call__` *is* a pure function of its declared
 inputs -- the `From(...)` defaults are ordinary parameters:
