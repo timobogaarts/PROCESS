@@ -135,6 +135,35 @@ emitter materialises all four returns even though three are discarded. **The fix
 monomorphisation** -- the same technique already used for function-valued parameters:
 emit a specialised single-return variant per selected index. Not done.
 
+**Array-valued parameters and `jnp.interp` now transpile.** The shape decision is
+*derived*: the primary source is the bound `VarPath`'s own `DataStructure` field
+annotation (`CostData.ucsc: list[float]` against `PhysicsData.rminor: float`) -- static,
+no live value needed. A ground-truth value is a fallback only for a genuinely derived port
+with no such field. The load-bearing detail is that "classify or refuse" is asked **only
+of a parameter the body actually subscripts**: asking it of every dynamic parameter
+regressed a large part of the closure, because most scalar parameters are graph-derived
+and have no field of their own -- refused for a question their own body never asks.
+`jnp.interp` is exact, one `wp_interp_N` per distinct table length built from
+`jax._src.numpy.lax_numpy._interp`'s own body, with a static `for k in range(N)` -- the
+only loop shape Warp differentiates correctly.
+
+Agreement stays **0.000e+00**; `helias_5b` 18 -> **24**/89 entries and `stellarator_helias`
+29 -> **35**/117. `large_tokamak_nof` is unchanged because it reaches none of these leaves.
+
+**Two results that did not go the right way, recorded because they are the ones that
+matter.** First, **no config gained a condition** -- 1/11, 1/21 and 2/33 are all unmoved.
+Entry coverage rose and the SAND residual did not, which is the metric that decides
+whether any of this is a residual yet. Second, **the backward spill grew with coverage**:
+`helias_5b` 0 -> **592 B**, `stellarator_helias` 320 -> **912 B**. Whether the adjoint
+spill is fatal was already open; this is the first evidence it scales with the thing we
+are trying to increase, and it bears on SAND *optimisation* rather than evaluation.
+
+`pchip_interp` (the C1 interpolant) was **not** attempted, for two separately sufficient
+reasons: `_pchip_slopes` does whole-array slice arithmetic (`xp[1:] - xp[:-1]`, boolean
+masks, `concatenate`), a different feature from indexing; and its tables
+(`.stellarator.wp_width_r`/`.lhs`/`.rhs`) have **no ground-truth value at all**, being
+produced upstream of this SAND block.
+
 **What is actually blocking coverage is the resolver, not the transpiler.** "71 of 89
 entries blocked" was hiding the shape of the problem, because the emittable subset is
 grown PREFIX-CLOSED -- an entry joins only if every input is already available, so one
