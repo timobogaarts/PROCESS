@@ -2837,3 +2837,131 @@ changes iteration counts, and changes what PROCESS's regression reference contai
 same conversation `icc = 11`'s removal needed (§52, where the answer turned out to be a
 single metadata row). It is a change to the problem statement, not a refactor, and belongs
 upstream rather than in the port alone.
+
+## 78. De-ratcheting the TF case is free (2026-09-06)
+
+§77 identified the input arm's self-read as a ratchet with a non-unique fixed point, and
+predicted that fixing it alone would not remove the kink. **Both halves tested.**
+
+Replaced `dr_tf_plasma_case_from_input`'s self-read with the **file's** stated value (0.06
+on both affected configurations) -- turning `x <- max(x, m)` into the ordinary explicit
+`max(0.06, m)` -- and re-solved:
+
+| configuration | | status | it | `objf` |
+|---|---|---|---:|---|
+| `large_tokamak_nof` | as-is | converged | 7 | 1.60000000001 |
+| | de-ratcheted | converged | 7 | 1.60000000001 |
+| `low_aspect_ratio_DEMO` | as-is | converged | 11 | -0.40631273195 |
+| | de-ratcheted | converged | 11 | -0.40631273195 |
+
+**`objf` bit-identical on both** (compared as `float.hex()`), iteration counts identical,
+`max_eq` and `min_ie` identical to every digit (2.396e-06 / -1.218e-06 and
+7.327e-15 / 9.264e-12 respectively).
+
+**So the ratchet is numerically inert**, which §75's measurement already implied without
+anyone drawing the conclusion: the entering value was equal to the geometric minimum
+bit-for-bit, so it had *tracked* the minimum rather than latching above it at some earlier,
+larger iterate. The path-dependence is real and the fixed point is genuinely non-unique,
+but on these two configurations the iteration lands on the same point either way.
+
+**Which makes the fix free.** Removing the self-read costs nothing numerically, deletes a
+degenerate fixed point (`x = max(x, m)` holds for every `x >= m`), and turns a
+`FixedPointFunction` into an ordinary explicit function -- one fewer node in the driven set.
+It is a strictly-simplifying change with a measured zero-difference receipt.
+
+**And it does not remove the kink**, as §77 predicted: `max(0.06, m)` is still active,
+because the geometry still demands more than 0.06. The knife-edge needs the constraint
+promotion, not the de-ratchet. Two separate changes, and this is the cheap one.
+
+**Not done here.** It is a change to a ported model body whose faithfulness to PROCESS is
+the port's whole contract -- and PROCESS *does* ratchet, by virtue of re-running the
+pipeline over a mutated `DataStructure`. Making the port stop ratcheting is a deliberate
+divergence from the source, defensible on the evidence above but not something to slip in
+as a refactor. It belongs in the same conversation as §77's constraint promotion.
+
+## 79. A staged plan for the Warp path, with costs (2026-09-06)
+
+§76 sized the conversion; this sizes the *project*. Two things were measured for it that
+did not exist in the record, both PROCESS-free across all seven configurations:
+
+**MDF nests 3-6 separately driven blocks per configuration** (35 across the seven), while
+**SAND collapses to exactly one `Drive`, on all seven without exception.** That is not a
+hopeful reading of §74's argument -- it is what the graphs do. It is also by construction:
+`sand.sand_shape`'s docstring says *"The **one** `Drive`'s size"* and it takes
+`next(step for step in schedule.steps if isinstance(step, Drive))`. The single `Drive`'s
+interior is 95-184 nodes of pure dataflow, because `Residualise`+`Combine` turn every
+`FixedPoint` into a residual condition of the outer problem before scheduling. **SAND is
+the target; MDF is not.**
+
+And: **`helias_5b`'s SAND `Drive` (95 nodes, the smallest across all seven) already contains
+`impurity_radiation_totals`** -- §76's "hardest single item", a `vmap` over `jnp.interp`.
+**No configuration, however small, lets the first milestone dodge a Work-bucket function.**
+
+### The stages
+
+| stage | what | effort | confidence |
+|---|---|---:|---|
+| **0** | micro-spike: ~10-15 Trivial `@wp.func`s, hand-stitched kernel, CPU-only, one input point | 2-3 d | high |
+| **1** | **the decisive experiment**: emit `helias_5b`'s **SAND** `Drive` (95 nodes) as one straight-line kernel; bitwise + timing against the JAX `Drive` | **5-8 d** | **low** |
+| **2** | the `@wp.func` layer: an AST transpiler for the 237 Trivial + 70 Easy, plus the **10 load-bearing** Work functions hand-ported, plus a drift test | 16-23 d | medium |
+| **3** | the kernel emitter: `Blocking.ordered_graph()` and the `In`/`Out` ports already exist; a `VarPath -> identifier` mapper and declared port shapes/dtypes do not | 4-8 d | medium |
+| **4** | derivatives | 4-9 d | medium |
+| **5** | validation: a `WarpContract` tier reusing the Richardson-bar logic | 2-4 d | medium-high |
+| | **total, one engineer, to all seven SAND kernels emitting, differentiating and validated** | **~33-55 d (7-11 weeks)** | |
+
+**Stage 1 is the gate.** None of stages 2-5 (~26-44 days) should be spent before its number
+exists. It is deliberately structured so the expensive part is *behind* the cheap decisive
+one, and it must not be routed around if it fails -- an interp gradient coming back wrong,
+or Warp's typed subset choking on the ~90 bodies in that block, is the answer.
+
+**Note the brief's own naive reading was wrong and the plan corrects it**: `helias_5b` **MDF**
+is smaller by variable count (3 unknowns, 5 conditions) but is exactly the nested-solve
+shape §74 argues against. `helias_5b` **SAND** is larger by node count and is the actual
+straight-line block the thesis rests on.
+
+### Three things read from Warp's documentation rather than assumed
+
+- **`wp.grad(func)` computes all partials of a `@wp.func` in one launch**, which the docs
+  frame as the efficient alternative to one `wp.Tape` backward pass per Jacobian row. For
+  SAND that is the difference between 1 launch and 11-34 (the condition counts). **This is
+  the mechanism to build toward**, and it needs the residual expressed as `@wp.func` calls,
+  which stages 2-3 already produce.
+- **Dynamic loops are not replayed in the backward pass** -- a documented gotcha, and it
+  would have bitten the interpolation functions. It does not, and §76's own CoolProp finding
+  is why: the tables are evaluated at assembly and handed in as **static** fields, so the
+  loop bound is a Python int at trace time and the loop can be written in Warp's *static*
+  form, which **is** correctly differentiated. **That is an acceptance criterion for
+  whoever ports the impurity function, not a hope.**
+- **Warp ships `gradcheck()`/`jacobian_fd()`** -- the same AD-versus-FD idea the Tier-1
+  harness implements. Reuse it and feed the result through the existing Richardson-bar
+  reporting rather than building a second comparator.
+
+**Do not try to get a Hessian from Warp** -- no second-order support was found documented.
+That matches §74's "kernel = evaluation, host = optimisation": Warp supplies value and
+Jacobian, VMCON keeps its quasi-Newton approximation on the host.
+
+### What it pays, and when
+
+**Two separable wins, and only one needs a GPU.**
+
+1. **Compile-time, at N=1, CPU only.** §63's bound: ~4.4x faster and ~3.6x smaller than XLA
+   at `-O0`, and §74's reframing means emitting ~150-245 call sites rather than 28k ops.
+   Free adjoints replace what §63 called the largest unpriced cost. **This pays immediately
+   and is what stages 0-5 are sized for.**
+2. **GPU batching, gated at >=256 points, evaluation-only.** §71's crossover, 3.4x by 4096,
+   *despite* §70's 1/16.4 FP64 penalty. But §71 is explicit that it measured *evaluation*,
+   not a batched solve -- realising it needs either a shared/padded outer iteration count
+   across the batch (**an untested assumption about convergence uniformity across a sweep**)
+   or `jaxipm`'s iteration-level batching (§67: unreachable here). **A single solve gets
+   nothing: it is 2.4-12x slower on this GPU, measured.** The payoff exists only for
+   `scan.py`-shaped sweeps of hundreds to thousands of points, and any budget against it
+   must state its hardware assumption.
+
+### Confidence
+
+Measured: the MDF-versus-SAND driver counts, and that the smallest SAND block contains a
+Work function. Read from Warp's docs, not run: everything in the previous subsection.
+**Guesses, flagged**: stage 1's day count (entirely friction nobody has hit), the distinct-
+wrapper count inside that 95-node block (extrapolated from the 150->147 whole-graph pattern,
+**counting it is the first 30 minutes of stage 1**), and whether padded batching realises
+§71's crossover for real scans.
