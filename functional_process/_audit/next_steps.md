@@ -125,6 +125,24 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    genuinely repeated structure -- **unmeasured**. Count the nodes whose `fn` is the same
    callable applied to different `VarPath`s; that is a graph question, and
    `_audit/declaration_census.py` is the tool nearest to it.
+
+   **[§60, 2026-09-06] Measured one program per process, which is the only way the
+   question is well posed** -- harvest each program's StableHLO bytecode from the compile
+   hook, recompile it in a fresh interpreter with nothing before it; cross-checks against
+   the independent `/proc/self/maps` route to the same number. Peak is **~157 MB fixed +
+   ~11 KB per post-optimisation HLO instruction** (867 MB for the largest). Split:
+   **54 % transient LLVM codegen workspace** (reclaimed by `malloc_trim` with the
+   executable still alive), **30 % held by the live executable** (returns when the last
+   reference is dropped), and a **~142 MB size-independent residue** that survives
+   everything -- of which `mallinfo2.uordblks` says only **~14 MB is genuinely live**.
+   The rest is glibc free-list below the arena high-water mark that `malloc_trim` cannot
+   return, so **it is a tuning problem, not a hard cost**. One real lever:
+   **`MALLOC_ARENA_MAX=1`, peak -32 % (867 -> 586 MB, reproducible), compile time +57 %**
+   because a single arena serialises malloc across XLA's compile threads;
+   `--xla_cpu_parallel_codegen_split_count=1` does nothing. **Still open**: which arena and
+   allocation class holds the unreturned ~128 MB (needs `malloc_info` XML or heap walking,
+   beyond `mallinfo2`'s aggregates). Every per-program figure in §45/§50/§54 is superseded
+   by §60's; §45's *whole-configuration* numbers are a different measurement and stand.
    Probes: `_audit/rss_per_program.py`, `_audit/hlo_anatomy.py`.
 
 - **[DONE 2026-09-06] `vacuum.py` (`solve_duct_geometry`) is a `vmap` selection, and
