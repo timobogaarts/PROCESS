@@ -3603,3 +3603,79 @@ it should the trade ever look right -- if SLSQP became a production driver, or i
 3. The **SLSQP/VMCON 1e-04 gap is reproducible and is not the interpolation** -- it survives
    both interventions and all ten draws. That is the open question, and it is a question
    about the two solvers' KKT points, not about the model.
+
+## 90. Correction: four subpackages were invisible to every sweep (2026-09-06)
+
+§81, §84 and §88 all reported transpiler coverage against a denominator of **501-527
+functions**, swept with `pkgutil.walk_packages` over `functional_process.models`. **That
+function does not descend into namespace packages** -- directories with no `__init__.py` --
+and **four of them were therefore never seen at all**: `physics/`, `costs/`, `blankets/`,
+`engineering/`.
+
+The real denominator is **853**, which lands within 3 of §76's independently-derived 850 --
+that census walked the assembled graphs rather than the filesystem and was right all along.
+**Three published coverage figures were measuring a subset without saying so.**
+
+### The corrected numbers, on a merged transpiler
+
+The two diverged copies are merged (§88's loose end): the tracked prototype's multi-return
+fix plus the scratchpad's coverage work -- `jnp.pi`/`math.*`/builtin `abs`, literal-indexed
+tuples, globals resolved against the **defining** module, an `enum.Enum` exclusion so
+`IntEnum` members are not silently inlined as ints, `zeros_like`/`ones_like` to scalars.
+
+| | before | **corrected** |
+|---|---:|---:|
+| functions swept | 501-527 | **853** |
+| transpile cleanly | 326-420 | **757 (88.7 %)** |
+| emitted as one module | 323-378 | **686 `@wp.func` + 77 constants** |
+| mis-annotated multi-return | 151 -> 0 | **0** |
+| **validated bit-identical** | 186 (124 single + 62 multi) | **455 (323 single + 132 multi)** |
+| worst relative difference | 0.000e+00 | **3.18e-15** |
+
+**455 functions agreeing, zero disagreements**, at a worst relative difference of 3.18e-15 --
+float round-off, not the exact 0.0 of the smaller sample, and three orders under the 1e-9
+bar.
+
+**That is the fourth correction to this measurement in one day**, and the pattern is now
+unmistakable: an unconditional return annotation, a validator that skipped what it could not
+drive, a "compiled" claim that was module loading, a path rewrite pointing at the wrong
+copy, and now an enumerator that silently skipped a third of the codebase. **Every one
+inflated confidence by hiding a subset rather than by being wrong about what it measured.**
+The measurements that survived -- §76's census, this merged sweep -- both enumerate from the
+*graph* or the *filesystem* directly rather than trusting a convenience API.
+
+## 91. The SAND leaves resolve (2026-09-06)
+
+§88's blocker -- a naive AST walk resolving 4 of 154 nodes -- is cleared. The resolver
+generalises §76's census approach and had to see through **three wrapper shapes** beyond the
+plain `return calculate_x(a, b)` it assumed: equinox's `BoundMethod` (not a real Python bound
+method), `.fn`-field wrappers (`_NormalisedResidual`/`_Metric`, which every constraint and
+objective node uses), and a leaf passed as a *value* into a helper rather than called.
+
+Ordered by `sand_shape(...)["drive"].body.subgraph.topological_order` -- the block with its
+`Optimise` node removed, confirmed acyclic per §79:
+
+| | `helias_5b` | `stellarator_helias` |
+|---|---:|---:|
+| Drive interior nodes | 94 | 123 |
+| resolved to a leaf | **78 (83 %)** | **106 (86 %)** |
+| structural (comparison/sign, no leaf expected) | 4 | 4 |
+| unresolved | 12 | 13 |
+| **resolved leaves having a `@wp.func`** | **75/78 (96 %)** | **93/106 (88 %)** |
+
+**Why the unresolved are unresolved**, each reported rather than guessed at:
+
+- **Switch-parameterised constraints and the objective** -- the leaf takes a static switch
+  (`ireactor`, `istell`) frozen at assembly with **no `VarPath`**, and the `Leaf` contract
+  had no slot for a compile-time constant. **Escalated rather than fabricated**, which was
+  the right call; the contract now carries a `statics` field for exactly this.
+- **Genuinely array-valued** (`plasma_composition`, `winding_pack_intersect_inputs`) --
+  §76's Work bucket, no positional `VarPath` list to state without re-deriving the array
+  construction.
+- **Own-field and literal arguments** (`self.imp_indices`, `self.sbar`, a literal `0.0`) --
+  static configuration baked into the wrapper instance, not a graph read. Also `statics`.
+- One honest miss needing a second level of helper expansion.
+
+The few "resolved but no `@wp.func`" leaves are mostly `constraint_<id>`/`objective_metric_<id>`
+living in `cottax/core/solver/`, **outside the transpiler's `models/**` sweep by design** --
+a scope question, not a failure.
