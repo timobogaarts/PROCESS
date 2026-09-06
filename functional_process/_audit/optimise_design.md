@@ -3307,3 +3307,122 @@ advantage over JAX), but it is visible here rather than taken on trust.
   autodiff**, which for this port is disqualifying on its own.
 
 **None of these has been tried.** Named so the choice is visible rather than defaulted into.
+
+## 85. Correction to §84: "323 compiled" was measuring the wrong thing (2026-09-06)
+
+§84 reported **"323 `@wp.func` emitted as one Warp module ... the whole module builds in
+2.44 s"** and treated that as a gate cleared. **It was not.** Two independent problems, one
+found by an agent working the array bucket and one by checking its report.
+
+### `wp.load_module` on a file with no kernels compiles almost nothing
+
+Warp codegens a `@wp.func` when something **reaches** it -- a `@wp.kernel` that calls it.
+`warp_all.py` contained 383 `@wp.func` and **zero kernels**, so loading it exercised the
+Python decorators and little else. The 2.44 s was module *loading*, not code generation, and
+§84 should not have called it "it compiles".
+
+**Measured properly** -- generate a one-line kernel per function and load *that*:
+
+| | codegen |
+|---|---:|
+| single-return, sampled 17 | **13 ok** |
+| multi-return, sampled 14 | **0 ok** |
+
+### And 151 of 385 emitted functions were mis-annotated, invisibly
+
+`transpile()` stamped `fdef.returns = wp.float64` unconditionally. **151 of 385 emitted
+functions return a tuple**, so every one carried a return annotation contradicting its body:
+
+```
+WarpCodegenError: The function `_avail_from_blanket_lifetime` has its return type
+annotated as `float64` but the code returns 5 values.
+```
+
+**The validator could not see it.** `validate.py` calls `float(jax_fn(*vals))` on the
+**JAX reference first**, which raises on a tuple -- so every multi-return function landed in
+"skipped" *before* Warp was ever asked to compile it. §84's headline "115 validated
+bit-identical" is therefore true **only of single-return functions**, and it was never a
+sample of the module.
+
+The annotation is fixed (do not annotate the return when the body returns a tuple; Warp
+infers multi-return itself), which also lifted 60 functions out of refusal -- 326 -> 386
+transpiled, 201 -> 117 refused. **But multi-return functions still do not codegen in the
+probe above**, and whether that is the emitted code or the probe's own kernel (which needs
+tuple unpacking, `a, b = fn(...)`, and does not do it) is **not yet determined**. Stated as
+unknown rather than resolved in either direction.
+
+### What §84's numbers should have said
+
+- **383 functions emit** as syntactically valid Warp source. True, and worth having.
+- **13 of 17 sampled single-return functions codegen.** A real but much narrower claim.
+- **151 multi-return functions are unverified**, and were unverified when §84 called them
+  compiled.
+- **115 validated bit-identical stands** -- that check did run end to end -- but it covers
+  only single-return functions and is not representative of the module.
+
+**The lesson is the validator's, not the transpiler's.** A harness that silently *skips*
+what it cannot drive will report success on the subset it can reach and say nothing about
+the rest. §84's skip count (170) was sitting there the whole time and I read it as harness
+friction rather than as the thing hiding the failure.
+
+## 86. Is the resolution fix causal or lucky? Both, in different ways (2026-09-06)
+
+§82 raised the `intersect` sample count from 200 and the 500-iteration cap disappeared;
+the doubt was whether that is causal or a lucky landing on a still-chaotic arm. Tested with
+the measurement that settled Ward: perturb the cold start by whole ulps and look at the
+spread.
+
+**A harness bug had to be fixed first, and it would have inverted the answer.**
+`native.NativeState` keeps **two independent stores** for a boundary value -- a flat
+`(area, name)` dict and each `_Area`'s own `name` dict -- populated at construction and
+never synced, while every real read goes through the `_Area` copy. A perturbation written
+to the flat dict alone **never reaches the solve**, and the first attempt duly returned
+bit-identical results across 0, +-1 and +-2 ulps -- which reads exactly like "not chaotic".
+Caught, both stores written, and the fix verified to reach the solve before any number
+below was trusted. **This is a live port defect and belongs in `next_steps.md`.**
+
+### The perturbation test: the fix is real
+
+Ten draws (+-1..+-5 ulp on `.physics.rmajor`), SLSQP, cap 500:
+
+| N | outcome |
+|---:|---|
+| **200** | **8/10 converge** at 235, 267, 304, 254, 281, 308, 264, 429 iterations -- a wide, unpredictable spread -- and **2/10 hit the cap** |
+| **500** | **10/10 converge**, 89-96 iterations (tight) |
+| **2 000** | **10/10 converge**, 98-134 iterations |
+
+N = 200 is a genuine Ward-style chaotic signature. N = 500 and 2 000 are robust under every
+perturbation tried. **So it is not two lucky points -- the mechanism is causal.**
+
+### But the sweep is not monotone, so the kink is narrowed rather than removed
+
+N in {200 ... 3000}, single seed: **200 caps, 250-1000 all converge, 1500 caps** (badly,
+`max|eq| = 1.6e-4`), **2000 and 3000 converge**. A follow-up at N = 1500 shows its natural
+seed caps while +-1/+-2 ulp draws converge in 112-167 -- i.e. the same "unlucky exact seed"
+event N = 200's baseline was. **Higher resolution shrinks the kinks; it does not eliminate
+them, and specific points in resolution space still land on a crossing.**
+
+### And the control §82 asked for does not vindicate the fix
+
+SLSQP against **VMCON at the same N** -- the honest comparison, since changing N changes the
+model:
+
+| N | SLSQP `objf` | VMCON `objf` | relative |
+|---:|---|---|---:|
+| 200 | 1.218434089 (capped) | 1.218482842 (24 it) | 4.00e-05 |
+| 500 | 1.218368727 (92 it) | 1.218447998 (26 it) | 6.51e-05 |
+| 2 000 | 1.218311345 (105 it) | 1.218441862 (46 it) | 1.07e-04 |
+
+**They agree to about four significant figures, not nine -- and the disagreement grows with
+resolution.** Both satisfy their own residual criteria and land on *different points*. So
+"SLSQP converges at N = 500" is true and is not the same as "the arm is solved": it settles
+somewhere KKT-satisfying that is not where the production driver settles, at every
+resolution tested.
+
+**Verdict**: causal, incomplete, and not a fix. Raising the resolution turns a chaotic arm
+into a reliably-convergent one, which is real; it neither removes the kink nor brings SLSQP
+to VMCON's answer. **A C1 interpolant is the better-motivated intervention** -- it removes
+derivative jumps outright rather than shrinking them -- and is being tested separately.
+
+**Not reached**: crossing-burst counts per N, and the global `maximum`/`minimum` switch
+sweep pointed at the stellarator rather than the tokamaks.

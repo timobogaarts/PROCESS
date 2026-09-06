@@ -99,7 +99,18 @@ def transpile(fn, name=None):
     for a in list(args.args) + list(args.kwonlyargs) + list(args.posonlyargs):
         a.annotation = f64
     args.kwonlyargs = list(args.kwonlyargs)
-    fdef.returns = f64
+    # **Only annotate the return when there IS one value.** Warp infers multi-return
+    # correctly on its own, and stamping `-> float64` on a function that returns a tuple
+    # is a compile error Warp only raises when the function is actually codegen'd --
+    # i.e. never, if nothing calls it. 151 of 385 emitted functions were mis-annotated
+    # this way and the validator could not see it, because its JAX reference call
+    # (`float(fn(...))`) raises on a tuple and skips the function first.
+    returns_tuple = any(
+        isinstance(n, ast.Return) and isinstance(n.value, ast.Tuple)
+        for n in ast.walk(fdef)
+    )
+    if not returns_tuple:
+        fdef.returns = f64
     fdef.name = name or fdef.name
     fdef.decorator_list = [ast.Attribute(value=ast.Name("wp", ast.Load()),
                                          attr="func", ctx=ast.Load())]

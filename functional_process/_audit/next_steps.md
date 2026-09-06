@@ -26,6 +26,13 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
 
 ## Open
 
+**[defect, found 2026-09-06 -- §86] `native.NativeState` keeps two unsynced stores for a
+boundary value**: a flat `(area, name)` dict and each `_Area`'s own `name` dict, populated
+at construction and never reconciled, while every real read goes through the `_Area` copy.
+Writing only the flat one silently does nothing -- a perturbation study got bit-identical
+results across +-2 ulps and would have concluded "not chaotic" for entirely the wrong
+reason. Anything that writes boundary values must write both, or the two should be merged.
+
 **Deliberate divergences from PROCESS are registered in
 `_audit/deliberate_divergences.md`** -- seven behavioural entries, each with the
 receipt that makes it safe, plus a "considered and not done" section. It is an
