@@ -2582,3 +2582,77 @@ Nothing has been installed, written or measured. The decisive first step is the 
 it, and check bitwise agreement and timing against the JAX path.** Warp changes what that
 emitter is written in and hands back derivatives for free; it does not change that this
 number gates everything after it.
+
+## 75. §73's anomaly located: an active clamp, not a defect (2026-09-06)
+
+§73 recorded a reproducible gradient anomaly on the tokamak inboard radial-build variables
+and could not attribute it; §72's leading suspect was measured and eliminated. Located now,
+and the answer changes what it means.
+
+**Method**: rather than guess the next site, patch `jnp.maximum`/`jnp.minimum` **globally**,
+attribute every call to its first frame inside `functional_process/models/`, record both
+arguments with a runtime `jax.debug.callback`, and find the sites whose **winner flips**
+under perturbations of the implicated design variables. 48 distinct switch sites on
+`large_tokamak_nof`.
+
+**One site sits on its own tie on both configurations:**
+
+| configuration | site | `a` | `b` | relative gap | flips at |
+|---|---|---:|---:|---:|---:|
+| `large_tokamak_nof` | `tfcoil/base.py:192` | 0.0714836 | 0.0714836 | **4.13e-10** | `h = 1e-6` |
+| `low_aspect_ratio_DEMO` | `tfcoil/base.py:192` | 0.0728348 | 0.0728348 | **0.00e+00** (bit-identical) | `h = 1e-8` |
+
+That site is `dr_tf_plasma_case_from_input`:
+
+```python
+return jnp.maximum(
+    dr_tf_plasma_case,                                   # the input value
+    dr_tf_plasma_case_minimum(r_tf_inboard_in, dr_tf_inboard, n_tf_coils),
+)
+```
+
+with `dr_tf_plasma_case_minimum = (r_tf_inboard_in + dr_tf_inboard) * (1 - cos(pi/n_tf_coils))`.
+**`dr_cs`, `dr_bore` and `dr_tf_inboard` all feed `r_tf_inboard_in`/`dr_tf_inboard`**, so
+they move the clamp's second argument directly -- which is exactly why §73's anomaly is
+localised to those three variables and no others, on both tokamaks and on neither
+stellarator.
+
+### And this is almost certainly not a defect
+
+**Unlike the Ward kink, the clamp is *supposed* to be active here.** Ward was a
+`sqrt(x - 0.65)` singularity -- a modelling artefact with no physical meaning at the
+crossing. This is a geometric floor: the TF plasma-side case cannot be thinner than the
+winding pack's corner geometry requires, and **a cost-minimising optimiser will drive it
+onto that floor and sit there.** Converging exactly onto an active `maximum` is what a
+correct solution looks like, not a symptom.
+
+The consequence for the measurement is then straightforward and not a port bug: at an
+active clamp the derivative is **one-sided**. `jacfwd` reports one side; a **symmetric**
+finite difference straddles the tie and reports a blend of both. They disagree by
+construction, and neither is wrong for its own definition. That is the whole of §73's
+"48 violations".
+
+**So the harness's AD-versus-FD comparison will flag every active clamp**, and reading its
+output requires knowing that. §73 hedged that "48 violations against a threshold calibrated
+for unit functions" might not carry its usual meaning; the hedge was right, for a sharper
+reason than the one offered.
+
+**Left open, and it is a real question rather than this one**: `dr_tf_plasma_case_from_input`
+is a **`FixedPointFunction`** -- the entering `dr_tf_plasma_case` is the same variable the
+result is written back to (its own docstring says so). A fixed point sitting exactly on a
+clamp is a more delicate object than either alone, and nobody has checked whether that
+composition is well-posed at the tie. That is worth a look; smoothing the clamp is not,
+since it would change physics that is doing its job.
+
+### The other sites, for the record
+
+- **`pfcoil/fields.py:90`**, `jnp.minimum(4 r r' / d, _S_MAX)` -- flips on both
+  configurations, with the raw argument at exactly `1` against `_S_MAX = 0.999999`. This is
+  the elliptic-integral guard doing its job (the raw value reaches 1 when a test point
+  coincides with a current loop, where `log(1/t)` would diverge). Active, expected, same
+  one-sided-derivative story.
+- **`pfcoil/currents.py:188`** in `_solv()` -- the most flips on `low_aspect_ratio_DEMO`
+  (17), with `a = b = 0` exactly. A clamp against zero where the quantity *is* zero.
+  Benign-looking, unexamined.
+- **`blankets/hcpb.py:499`**, `a = b = 0.3` exactly on both -- a clamp against a literal
+  constant, so it never moves. Harmless.

@@ -73,8 +73,18 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    the QP is where it manifests, non-smoothness is why -- and it explains §68's
    backend-flip, since 1 ulp upstream can move the crossing across a breakpoint.
    **Next**: measure whether the trajectory actually crosses breakpoints and how often, the
-   direct analogue of the Ward measurement. **And separately (§73): a real, unexplained
-   gradient anomaly on `large_tokamak_nof` MDF** -- `jacfwd` disagrees with a central FD
+   direct analogue of the Ward measurement. **And separately: [LOCATED -- §75] the gradient anomaly on the tokamak inboard build is
+   an ACTIVE CLAMP, not a defect** -- `tfcoil/base.py:192`'s
+   `jnp.maximum(dr_tf_plasma_case, dr_tf_plasma_case_minimum(...))` sits on its own tie
+   (relative gap 4.1e-10 on `large_tokamak_nof`, **bit-identical** on
+   `low_aspect_ratio_DEMO`) because a cost-minimising optimiser drives the TF case onto its
+   geometric floor and stays there. At an active clamp the derivative is one-sided, so
+   `jacfwd` and a *symmetric* FD disagree by construction. **Implication worth carrying:
+   the harness's AD-vs-FD check will flag every active clamp.** Do NOT smooth it -- the
+   physics is doing its job. **Still open**: `dr_tf_plasma_case_from_input` is a
+   `FixedPointFunction` whose input is the variable it writes back, so it is a fixed point
+   sitting exactly on a clamp; whether that composition is well-posed at the tie is
+   unchecked. Superseded framing: -- `jacfwd` disagrees with a central FD
    *of the port's own function* by up to 3.2e-02 at the converged point, localised to
    `.build.dr_cs` and `.build.dr_bore`, with a step-size profile matching neither a kink
    nor an implicit-solve mismatch. Bisect `build.py:916`'s ripple `jnp.maximum` first. **The verdict is architectural**:
