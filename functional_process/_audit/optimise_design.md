@@ -3496,3 +3496,52 @@ but the code returns 2 values"* -- i.e. the emitted module was regenerated throu
 concurrently and the emitter's import path did not pick up the isolated copy. **The fix is
 written in `_audit/warp_transpile_prototype.py` and remains untested.** Stated plainly
 rather than counted as done -- which is the whole of §85's lesson, and I nearly repeated it.
+
+## 88. The multi-return fix, verified (2026-09-06)
+
+§85 wrote the fix -- do not stamp `-> wp.float64` on a function whose body returns a tuple
+-- and §87 had to record it as **still unverified**, because the emitted module kept coming
+back mis-annotated. **The cause was mine and mundane**: rebuilding in an "isolated"
+directory, my path rewrite left `sys.path.insert(0, S)` -- a *variable* still pointing at
+the shared directory -- so the emitter kept importing the unfixed transpiler while I read
+the output as evidence about the fixed one. Three agents editing one file concurrently made
+that easy to miss and hard to see.
+
+Rebuilt from the **tracked** prototype in a directory nothing else touches:
+
+```
+emitted 326 @wp.func + 65 constants
+multi-return: 117, mis-annotated: 0
+```
+
+### And they validate
+
+Tuple-aware validation (the harness §85 called for, driving `r0, r1 = fn(...)` rather than
+`float(fn(...))`):
+
+| | count |
+|---|---:|
+| agree (single-return) | 124 |
+| **agree (multi-return)** | **62** |
+| codegen failed | 59 |
+| skipped: arity / JAX raised / non-finite / array-valued | 47 / 17 / 16 / 3 |
+| **worst agreeing relative difference** | **0.000e+00** |
+
+**186 functions validated bit-identical against their JAX originals, 62 of them
+multi-return** -- against §84's headline of 115, which covered only single-return functions
+and was measured by a harness that could not see the other half.
+
+**This closes §85's correction.** The chain was: an unconditional return annotation, a
+validator that skipped what it could not drive, a "compiled" claim that was really module
+loading, and finally a path rewrite that pointed at the wrong copy. Each hid the next.
+
+### A loose end worth naming
+
+The solo rebuild emits **326** where the shared copy emits **378**, because three agents
+improved the *scratchpad* `transpile.py` -- `jnp.pi`/`math.*`/builtin `abs`, literal-indexed
+tuples, resolving globals against the defining module rather than the discovering one, an
+`enum.Enum` exclusion -- and **none of that is in the tracked
+`_audit/warp_transpile_prototype.py`.** The tracked file has the multi-return fix; the
+scratchpad copy has the coverage work. **Neither is complete, and merging them is the next
+concrete task**, along with the `zeros_like`/`ones_like` scalar rule and the two-store
+`NativeState` defect (§86) that is unrelated but equally unlanded.
