@@ -2462,3 +2462,42 @@ variable sets, overlapping constraint sets.
 under an optimisation arm, and is not a property of the harness's threshold applied to any
 converged block -- four other converged blocks pass it cleanly. That last point matters,
 because §73 hedged on exactly it.
+
+### The sweep completed: all seven configurations, and two findings that are probably artefacts
+
+| configuration | arm | findings |
+|---|---|---|
+| `large_tokamak_nof` | MDF | **48** -- `dr_cs`, `dr_bore` |
+| `low_aspect_ratio_DEMO` | MDF | **24** -- `dr_tf_inboard`, `dr_cs` |
+| `st_regression` | MDF | 9 -- see below |
+| `stellarator_helias` | MDF | 0 |
+| `helias_5b` | MDF | 0 |
+| `large_tokamak_eval` | root find | 0 |
+| `spherical_tokamak_eval` | root find | 0 |
+
+`st_regression`'s nine are **structurally unlike** the build-variable cluster, and both
+groups are more likely measurement artefacts than defects. Recorded because the reasoning
+is worth not re-deriving, not because they are findings:
+
+- **`c11` disagrees by a near-identical ~3.1e-7 *absolute* across four unrelated design
+  variables** (`dr_cs`, `dr_bore`, `dr_tf_nose_case`, `dr_tf_wp_with_insulation`) -- a
+  direction-independent bias, not a derivative blow-up, and large only *relative* to a very
+  tight local error bar. **Likely cancellation, and here the constraint's own history
+  explains it**: `c11` is `rbld - rmajor`, a difference of two O(m) quantities that the
+  solve has pinned to ~0 (`max_eq = 2.9e-15`). Finite-differencing such a difference carries
+  absolute error ~`eps * |rbld| / h`, which a Richardson bar computed on the FD *of the
+  difference* will underestimate. (§52 established this same constraint is a tautology on
+  the stellarator build path; on a tokamak it is live, which is why it appears here and not
+  on the stellarators.) **Hypothesis, untested.**
+- **`c62` disagrees at `.physics.f_nd_plasma_separatrix_greenwald`, whose value is
+  `0.0010000000507170005`** -- i.e. sitting exactly on its lower bound of 1e-3. PROCESS's
+  FD perturbs `x * (1 +- epsfcn)` symmetrically, so the backward probe goes **below the
+  bound**, into a region the model was never meant to evaluate. **Probably a probe artefact
+  of extrapolating past a box constraint**, and a bound-respecting one-sided FD would settle
+  it. Worth noting the coincidence, though: `c62` is the same constraint implicated in
+  §47-49's `stellarator_helias` SAND cycle.
+
+**Neither changes the headline.** The reproducible, cross-configuration, large-relative
+disagreement on the tokamak **inboard radial-build variables** remains the one finding that
+is not explained away, and the one whose cause is still unlocated after the ripple switch
+was eliminated.
