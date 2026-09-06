@@ -26,6 +26,11 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
 
 ## Open
 
+**Deliberate divergences from PROCESS are registered in
+`_audit/deliberate_divergences.md`** -- seven behavioural entries, each with the
+receipt that makes it safe, plus a "considered and not done" section. It is an
+initial keyword-swept register, not proven complete.
+
 **The three of 2026-09-06 -- diagnosed, then acted on** (`optimise_design.md` §45-§50).
 
 1. **[closed, repair identified] `helias_5b`'s "Singular matrix C in LSQ subproblem" is
