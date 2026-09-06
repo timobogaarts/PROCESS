@@ -24,6 +24,17 @@ works on the whole tokamak graph's scalar objective except for one node (see
 per call; compiled-call caching lives in `core/solver/host_cache.py`; the boundary
 provider distinguishes `input`/`guess`/`stated` boundary categories.
 
+**A Warp code-generation path exists and works** (`cottax/warp/`, 3493 lines). Each cottax
+node is traced to a jaxpr and emitted as one `@wp.func`; `emit.py` assembles them into a
+single kernel `f(unknowns[], boundary[]) -> conditions[]`. It covers 6/11, 12/21 and 16/33
+SAND conditions on `helias_5b`, `stellarator_helias` and `large_tokamak_nof`, agreeing with
+JAX to 4.3e-16 / 6.7e-16 / 2.7e-15 against a 1e-12 gate, with every emitted node
+individually validated against `defn.fn` over 8 draws. The design, the measurements and the
+open items are in `optimise_design.md`; this file stays about the JAX driver/graph layer.
+Two things there are worth knowing here: adjoint codegen currently defaults **off** (~60x
+compile cost, so the module cannot be `wp.Tape`d), and array-valued intermediates are the
+dominant remaining refusal class.
+
 ## Open
 
 **[defect, found 2026-09-06 -- §86] `native.NativeState` keeps two unsynced stores for a
