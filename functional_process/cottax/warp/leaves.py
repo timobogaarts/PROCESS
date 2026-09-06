@@ -21,12 +21,10 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
-from functional_process.cottax import sand
-from functional_process.cottax.indat import REFERENCE_INPUT_FILE, graph_for, machine_from_indat
-from functional_process.cottax.run_cold_matrix import _resolve
-from functional_process.cottax.sand_harness import assemble as sand_assemble
-from functional_process.cottax.sand_harness import mda_env, reference_run
-
+# `_assemble` moved to `assemble.py` (shared with the jaxpr backend, which imports
+# none of the resolver) and is re-exported here: `combined.py` and this module's own
+# callers import it from `leaves`.
+from .assemble import _assemble  # noqa: F401
 from .resolve import Composition, Structural, Unresolved, resolve
 
 
@@ -143,27 +141,6 @@ def _stringify_prelude(prelude) -> tuple:
         dataclasses.replace(pc, inputs=tuple(v.path_str() for v in pc.inputs))
         for pc in prelude
     )
-
-
-def _assemble(config: str):
-    """`(drive, report)` for `config` -- the bare stem of a
-    `tests/regression/input_files/<config>.IN.DAT`."""
-    path = _resolve(f"tests/regression/input_files/{config}.IN.DAT")
-    is_reference = path == _resolve(REFERENCE_INPUT_FILE)
-    reference = reference_run(str(path))
-    machine = machine_from_indat(str(path))
-    machine_graph = None if is_reference else graph_for(machine)
-    driven, env = mda_env(reference, graph=machine_graph)
-    cold = reference.cold
-    switch_values = (
-        None
-        if is_reference
-        else sand.switch_values_for(cold, reference.icc, reference.i_figure_merit)
-    )
-    combined, report = sand_assemble(reference, driven, env, switch_values=switch_values)
-    schedule = sand.sand_schedule(combined, None, bounds=reference.bounds)
-    shape = sand.sand_shape(schedule)
-    return shape["drive"], report
 
 
 def sand_leaves(config: str) -> list:
