@@ -1603,3 +1603,125 @@ runners are currently neither since `malloc_trim` between rows already bounds th
 **Still not established**: which arena and which allocation class the ~128 MB of
 unreturned-but-free memory belongs to. `mallinfo2` gives aggregates only; answering it
 needs `malloc_info` XML or heap walking.
+
+## 61. Reverse mode: what it costs, and why checkpointing is the wrong tool here (2026-09-06)
+
+§59 made reverse-mode AD possible on the port's graph for the first time. What it costs
+was unmeasured, and the natural worry -- reverse mode stores the forward pass, so does
+this need `jax.checkpoint`? -- deserved a number rather than a guess.
+
+Measured **one mode per process** (§60's discipline), on two real MDF blocks. Reverse and
+forward agree: the Jacobian checksums match to 1 ulp
+(`80.58773110605564` against `...571`).
+
+### Compile cost -- this is where reverse mode is expensive
+
+| config | mode | compile | peak RSS | HLO chars |
+|---|---|---:|---:|---:|
+| `helias_5b` (3 unknowns, 5 conditions) | values | 2.27 s | 177 MB | 632 782 |
+| | `jacfwd` | 6.52 s | 179 MB | 1 063 494 |
+| | `jacrev` | 7.59 s | **259 MB** | 1 172 115 |
+| | `grad` (scalar) | 5.82 s | 203 MB | 1 043 833 |
+| `stellarator_helias` (8 unknowns, 15 conditions) | values | 2.12 s | 162 MB | 678 267 |
+| | `jacfwd` | 7.63 s | 324 MB | 1 417 483 |
+| | `jacrev` | **21.95 s** | **1081 MB** | 1 621 536 |
+| | `grad` (scalar) | 15.84 s | 694 MB | 1 388 303 |
+
+On the larger block `jacrev` costs **2.9x the compile time and 3.3x the peak RSS** of
+`jacfwd`, for only 14 % more HLO. So the expense is not the emitted program -- it is what
+XLA does with it.
+
+**And forward mode is the right choice for these Jacobians anyway**: a Jacobian of `n`
+inputs to `m` outputs costs `n` forward passes or `m` reverse ones, and both blocks have
+`m > n` (5 > 3, 15 > 8). Reverse mode's case is the **scalar objective**, `grad`, which is
+one pass against `n` -- and that is what `optimistix.BFGS` uses, which is why §59's
+unblocking matters even though `jacfwd` wins on the full Jacobian.
+
+### Runtime cost -- reverse mode does store the forward pass, and it does not matter
+
+`Compiled.memory_analysis()` reports what the **program** needs when it runs, as opposed
+to what compiling it cost:
+
+| config | mode | temp | peak |
+|---|---|---:|---:|
+| `stellarator_helias` | values | 105.3 KB | 111.3 KB |
+| | `jacfwd` | 339.4 KB | 112.2 KB |
+| | `jacrev` | **1758.7 KB** | 112.4 KB |
+| | `grad` | 385.9 KB | 111.3 KB |
+| | `grad` + `checkpoint` | 458.4 KB | **67.1 KB** |
+
+Reverse mode's temp buffer is **5.2x forward's** -- exactly the "stores the forward pass"
+cost, now measured rather than assumed. **And the absolute number is 1.7 MB.** Runtime
+memory is four orders of magnitude below compile memory here, so it is not a constraint on
+anything.
+
+### `jax.checkpoint` works exactly as designed, and is the wrong tool
+
+| | runtime peak | compile time | compile peak RSS |
+|---|---|---|---|
+| `grad` | 111.3 KB | 15.84 s | 694 MB |
+| `grad` + `checkpoint` | **67.1 KB (-40 %)** | 17.78 s (+12 %) | **780 MB (+12 %)** |
+
+It does what it promises: a **40 % cut in the program's runtime peak**. But it buys 44 KB
+and costs 86 MB of compile memory and 2 s of compile time -- and on `helias_5b`
+`jacrev_ckpt` is worse still, 259 -> 361 MB peak (+39 %) and 7.59 -> 9.61 s (+27 %).
+
+**The reason is structural, not a tuning failure.** `checkpoint` trades memory for
+recomputation *at runtime*, and expresses that trade by emitting the recomputation as
+extra graph -- which is more for XLA to compile. This port's bottleneck is compilation of
+a graph of ~28k scalar operations (§50, §54); its runtime buffers are ~100 KB. Optimising
+the small side by enlarging the large one is a straight loss.
+
+**So: no checkpointing.** The hypothesis was reasonable and the measurement says no. If a
+future block ever has genuinely large intermediates -- an array-valued model rather than
+this scalar one -- the calculus flips, and the numbers above are the baseline to
+re-measure against.
+
+## 62. `slsqp_jax` retried: one config fixed, one still diverging for a different reason (2026-09-06)
+
+`slsqp_jax` (installed) was tried around 2026-09-02 as an in-graph SQP and abandoned: its
+apparent 136 ms/iteration turned out to be a QP budget artefact (5 000 projected-CG
+iterations per step, §31.11), and it reported `Nonlinear solve diverged` at **step 18** on
+`stellarator_helias`. The hypothesis worth testing was that the divergence was **the
+problem being chaotic**, not the package -- since then the Ward square-root kink was
+smoothed and `icc = 11` was removed (§52).
+
+Retried with `qp_max_iter = 20, qp_max_cg_iter = 20` (§31.11 found 20x20 bitwise-identical
+to the 100x50 default at ~8x lower cost), VMCON's `1/x_start` design scaling, and
+**`jax.jacfwd` only**. Worth noting: **no vacuum monkeypatch was needed** -- forward mode
+was never blocked, which is consistent with §59's account that the `while_loop` blocked
+only *reverse* mode.
+
+| config | vars | steps | `objf` | vs VMCON | `max\|eq\|` | `min ie` |
+|---|---:|---:|---|---:|---:|---:|
+| `helias_5b` MDF | 3 | **2** | 0.764215525 | **9.3e-09** | 2.25e-07 | +0.070 feasible |
+| `stellarator_helias` MDF | 8 | 19 | 1.222089621 | 3.6e-03 | 4.42e-03 | -1.2e-04 |
+
+**`helias_5b` is a clean win** -- two steps, near-machine agreement, genuinely feasible.
+Its baseline was re-derived rather than read from `reference_warm_matrix.txt`, whose row
+predates the `icc = 11` removal.
+
+**`stellarator_helias` still diverges, at essentially the same step (19 against 18), but
+from a far better place.** `slsqp_jax` reports *"converged to a minimum-constraint-violation
+infeasible stationary point"* with `last_step_size = 1.9e-6` -- stalled, not blown up.
+`objf` is 3.6e-3 from the answer rather than 0.34, and the only violation is `c24` at
++1.2e-4, essentially on the boundary. **The Jacobian there is well conditioned**: stacking
+the two equality rows with the three near-active inequalities (`c24`, `c83`, `c35`) gives
+singular values `[5.59, 2.55, 0.72, 0.43, 0.035]`. **Not a rank collapse** -- so this is
+not §46's failure mode recurring. It looks like the QP subproblem becoming locally
+infeasible with five constraints simultaneously near-active in eight dimensions.
+
+**Verdict: the hypothesis is half right.** The kink smoothing and the `icc = 11` removal
+demonstrably helped -- the same run now stalls 3.6e-3 from the answer with a
+well-conditioned Jacobian instead of landing on a trust-box corner 0.34 away. But it still
+does not converge, at the same iteration count, and the remaining failure looks like this
+QP handling near a corner of the feasible region rather than chaos in the model. Same
+corner `pyvmcon`/OSQP has produced "non-convex KKT matrix" on elsewhere in this history.
+
+**A genuine API trap, recorded because it produced a convincing fake failure.**
+`slsqp_jax.compat.parse_constraints` infers a `NonlinearConstraint`'s component count from
+the **shape of `lb`/`ub`**, not from `fun`'s output. Passing scalar `0.0, 0.0` for a
+two-component equality silently truncates it to one row: `n_eq_constraints` came back `1`
+where the block declares `2`. The first run looked exactly like a divergence -- hit a
+bound, `max|eq| = 1.32` -- and was solving an under-constrained problem. Pass
+`np.zeros(n_eq)` / `np.full(n_ineq, np.inf)` explicitly.

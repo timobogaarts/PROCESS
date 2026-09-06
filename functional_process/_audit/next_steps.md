@@ -151,12 +151,25 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
   9.4 s to `objf = 0.7642142560891302` against VMCON's `0.764215516`, equalities at 4e-11
   and 2.5e-05, both inequalities feasible, **with no custom optimiser code**. Seven of
   eight comparison cases bit-identical, `nflag` right on all eight, and the eighth's 1 ulp
-  is the *old* loop's fusion context (see the code comment). **Now open instead**: (a)
-  reverse-mode **compile time and memory** are unmeasured -- the tangent tower is
-  replaced by a transpose and nobody knows what that costs here, nor whether
-  `jax.checkpoint` is needed on the big blocks; (b) `slsqp_jax` and the rest of
-  `optimistix` are now reachable and untried at scale; (c) `SlsqpDriver`/`VmconDriver`
-  remain `pure_callback`-based, so a *driver* built on this is still unwritten.
+  is the *old* loop's fusion context (see the code comment). **Now open instead**: (a) **[measured -- §61]**
+  reverse mode costs **2.9x the compile time and 3.3x the peak RSS** of forward on
+  `stellarator_helias` MDF (21.95 s / 1081 MB against 7.63 s / 324 MB) for only 14 % more
+  HLO, and its runtime temp buffer is 5.2x forward's -- **1.7 MB, four orders below
+  compile memory, so runtime is not a constraint**. `jax.checkpoint` does exactly what it
+  promises (runtime peak 111 -> 67 KB, -40 %) and is **the wrong tool here**: it buys
+  44 KB and costs 86 MB of compile memory, because it expresses its trade as extra graph
+  and this port's bottleneck is compiling ~28k scalar ops, not running them. Re-measure
+  only if a block ever has genuinely large intermediates. Note forward mode is the right
+  choice for these *Jacobians* anyway (`m > n` on both blocks); reverse mode's case is the
+  scalar `grad`, which is what `optimistix.BFGS` uses. (b) **[partly done -- §62]**
+  `slsqp_jax` now solves `helias_5b` MDF in **2 steps** to 9.3e-09 of VMCON, feasible;
+  `stellarator_helias` still diverges at step 19 but from 3.6e-3 away with a
+  **well-conditioned** Jacobian (singular values 5.59...0.035), so it is QP-subproblem
+  infeasibility near five simultaneously-active constraints, **not** a rank collapse and
+  not model chaos. The rest of `optimistix` is reachable and untried at scale.
+  (c) `SlsqpDriver`/`VmconDriver` remain `pure_callback`-based, so a *driver* built on any
+  of this is still unwritten -- and that is now the gating item, since everything it needs
+  exists.
   *(Superseded rationale, kept because it is the argument:)*
   **Necessary, not optional**: `optimistix/_solver/gauss_newton.py:176` uses `jax.jacrev`
   and offers no `jac` override, so *every* off-the-shelf `optimistix` solver is
