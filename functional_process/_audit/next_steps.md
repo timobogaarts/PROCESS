@@ -43,10 +43,17 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    status 6; its first spelling tested `!= 0.0` and was a false negative on exactly the
    variant-A case, now a relative `1e-10` test (§48). **Open**: (a) propose the
    `icc = 11` removal upstream -- it is PROCESS's input file, not the port's, and it
-   changes iteration counts in the regression data; (b) **not root-caused**: why promoting
-   `.physics.rmajor` to a design variable does not connect it to `.Constraint11`, when it
-   demonstrably reaches the objective, `c2` and `c16` (columns 1.07, 0.85, -3.75). That
-   wiring gap is a port question and the only genuinely unexplained thing left here.
+   changes iteration counts in the regression data; (b) **[answered -- §52]** `rbld` is
+   computed *from* `rmajor` with derivative **exactly 1**: `dr_bore = rmajor - S` and
+   `rbld = dr_bore + S` are two adjacent statements over the same ten terms, so
+   `rbld == rmajor` identically for any values. **Constraint 11 is a tautology on the
+   stellarator build path** and no choice of design variables can make it bind. It is
+   genuine on the tokamak, where `rbld` is summed outward from `r_sh_inboard_out` with no
+   `rmajor` in it (`d/d rmajor = 0.333`, residual -1.19e-02, live gradient). So the
+   upstream recommendation is **larger** than §48's: `icc = 11` should not be listed on
+   stellarator configurations at all -- not "`helias_5b` forgot `ixc = 3`", which §52
+   shows could not have helped. `stellarator_helias.IN.DAT` already omits it;
+   `helias_5b.IN.DAT` is the outlier.
 2. **[closed as architectural] `stellarator_helias` SAND under SLSQP cycles on a
    conflicting pair, and it is not fixable by rescaling** (§47, §49). The cycle is a
    decaying period-2 zigzag on `^cond.stellarator.wp_width_r_min` against `c62`; three
@@ -76,9 +83,20 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    load**, two thirds of a full compile, so the memory is the executable. **A §45
    correction was itself withdrawn**: the "expensive/cheap module classes" were compile
    *order*, not content -- with the arena trimmed first, every module is 171-351 B/char and
-   §31.16's ~200 stands. **Open**: the only real lever is emitting less HLO, and the 41.6 %
-   shape plumbing is where it would come from -- a vectorisation pass over structurally
-   similar nodes, extending §31.2's 55 -> 52 lines/node.
+   §31.16's ~200 stands. **The levers, all measured** (§51): XLA's own
+   optimiser *expands* the program 2.5x (28 101 -> 70 065 ops, 1 648 fusions) and the
+   broadcasts survive rather than folding, so they are real work; turning that optimiser
+   off saves **3.8 %** and is not a lever; MLIR bytecode is 21.6 % of the text but a more
+   compact IR changes nothing resident, matching §31.20's compile-cache result.
+   **Vectorising repeated structure is the lever**: 600 structurally identical scalar
+   nodes cost 809 768 chars and 186.2 MB, the same arithmetic over a length-600 array
+   costs **1 215 chars and 2.5 MB** with `max |diff| = 0.000e+00` -- 666x less IR, 74x
+   less memory. **Open, and it is the number that decides whether any of this is worth
+   doing**: `vmap` needs *identical* structure and the port's ~500 nodes are mostly
+   different formulas, so the achievable gain is bounded by how much of the graph is
+   genuinely repeated structure -- **unmeasured**. Count the nodes whose `fn` is the same
+   callable applied to different `VarPath`s; that is a graph question, and
+   `_audit/declaration_census.py` is the tool nearest to it.
    Probes: `_audit/rss_per_program.py`, `_audit/hlo_anatomy.py`.
 
 - **`vacuum.py:474` (`solve_duct_geometry`) is the sole remaining reverse-mode AD

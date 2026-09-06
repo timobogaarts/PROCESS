@@ -866,3 +866,148 @@ One band, **171-351 B/char**, no classes. §31.16's ~200 B/char stands and
 `tried_and_rejected.md` is restored to it. The lesson is narrower than the mistake: an RSS
 delta measures what the *allocator* did, not what the *program* costs, and the two agree
 only when the arena is empty first.
+
+## 51. Can the bloat be fixed? The mechanism, priced exactly (2026-09-06)
+
+§50 established *what* is in a 2.28 M-character module (28 106 ops, 41.6 % of them shape
+plumbing) and what it costs (~500 MB resident per loaded executable). The follow-up
+question is whether any of that is removable. Four candidate levers, all measured.
+
+### The broadcasts are not folded away -- XLA's optimiser makes the program bigger
+
+Comparing the op histogram before and after XLA's own passes, on the same module:
+
+| | before | after |
+|---|---:|---:|
+| total ops | 28 101 | **70 065** |
+| `broadcast_in_dim` / `broadcast` | 7 843 | **9 051** |
+| `constant` | 3 985 | 6 217 |
+| `parameter` | -- | 11 351 |
+| `fusion` | -- | 1 648 |
+| shape plumbing | 11 681 (41.6 %) | 16 565 (23.6 %) |
+
+Optimisation **expands** the program 2.5x: 1 648 fusion kernels, each printing its own
+parameters and its own copies of the constants it captures. The broadcasts survive and
+multiply. So they are not free -- something downstream really does emit code for them,
+and removing them at the source would remove real work rather than work XLA was going to
+delete anyway.
+
+### XLA's optimisation level is not the lever -- measured, ~4 %
+
+`st_regression` SAND, whole solve, three settings; the answer must not move and does not:
+
+| `XLA_FLAGS` | programs | compile | wall | biggest program | HWM | `objf` |
+|---|---:|---:|---:|---:|---:|---|
+| *(none)* | 34 | 25.30 s | 36.07 s | 747.8 MB | 1497.1 MB | -16.5885766807 |
+| `--xla_backend_optimization_level=0` | 34 | 24.11 s | 35.81 s | **719.4 MB** | 1478.5 MB | -16.5885766807 |
+| `--xla_llvm_disable_expensive_passes=true` | 34 | 31.72 s | 45.91 s | 749.8 MB | 1504.3 MB | -16.5885766807 |
+
+Turning XLA's optimiser off entirely saves **3.8 %** of peak. The memory is not in the
+passes; it is in the number of instructions LLVM must generate code for.
+
+### The serialised IR is 4.6x smaller than its text, and that buys nothing
+
+The module's MLIR **bytecode** -- what `jax.export` stores -- is **493 840 bytes against
+2 282 899 characters of text, 21.6 %**. (`jax.export` itself is unavailable in this env:
+`serialize()` raises `ImportError: Please install 'flatbuffers'`, so the bytecode was
+taken directly from `module.operation.write_bytecode`, which is the same payload.) But
+**serialised size is not what costs memory**: an `Exported` still holds StableHLO, so
+loading one compiles it again and arrives at the same ~500 MB. This matches §31.20's
+finding that the persistent compilation cache removes *all* compile time and 1.2 % of
+peak RSS. A more compact IR is a distribution and caching win, not a memory one.
+
+### Vectorising repeated structure is the lever, and it is worth about everything
+
+The controlled version of the port's shape: `N = 600` nodes each computing the same
+ten-op scalar recipe, written first as 600 separate scalar computations -- exactly how
+the port emits them -- and then as one computation over a length-600 array.
+
+| | StableHLO | bytecode | compile RSS | compile |
+|---|---:|---:|---:|---:|
+| 600 scalar nodes | **809 768 chars** | 127 169 B | **186.2 MB** | 2.39 s |
+| the same, vectorised | **1 215 chars** | 1 228 B | **2.5 MB** | 0.03 s |
+
+**666x less IR, 74x less memory, 80x faster to compile, and `max |diff| = 0.000e+00`** --
+the identical answer, bit for bit. So the mechanism behind §50's 41.6 % is real and its
+removal is worth roughly everything.
+
+**The honest caveat, and it is a large one.** Those 600 nodes are *structurally
+identical*, and `vmap` requires that. The port's ~500 nodes are mostly **different
+formulas**, and no amount of vectorisation merges two different equations. This
+experiment prices the mechanism; it does **not** price the port. The gain is bounded by
+how much of the graph is genuinely repeated structure -- arrays of impurities, coil turns,
+radial-build elements, per-element loops -- and **that fraction has not been measured**.
+Measuring it is the next step, and it is a graph question rather than a compiler one:
+count the nodes whose `fn` is the same callable applied to different `VarPath`s.
+
+Until that number exists, the defensible claim is narrow: **the 41.6 % shape plumbing is
+real work, XLA does not remove it, and where structure genuinely repeats it can be removed
+for free.** Not "the port's memory can be cut 74x".
+
+## 52. Constraint 11 is a tautology on the stellarator build path (2026-09-06)
+
+§48 left one thing unexplained: with `.physics.rmajor` promoted to a design variable,
+`c11`'s row stayed inert at 1.6e-16, even though `rmajor` demonstrably reaches the
+objective, `c2` and `c16`. The hypothesis was that `rbld` is itself computed *from*
+`rmajor` with derivative 1, so `c11 = rbld - rmajor` cancels identically. **Confirmed,
+and it is exact.**
+
+```
+d(.build.rbld)/d(.physics.rmajor)  = 1.0                (bit-exact)
+d(c11)/d(.physics.rmajor)          = -7.34e-18          (noise)
+rbld - rmajor                      = -3.55e-15          (zero)
+```
+
+**The algebra, and it is two adjacent statements in one function**
+(`functional_process/models/stellarator/build.py:143` and `:156`, and verbatim the same
+two in PROCESS's own `process/models/stellarator/build.py:48` and `:62`):
+
+```python
+dr_bore = rmajor - (dr_cs + dr_cs_tf_gap + dr_tf_inboard + dr_shld_vv_gap_inboard
+                    + dr_vv_inboard + dr_shld_inboard + dr_blkt_inboard
+                    + dr_fw_inboard + dr_fw_plasma_gap_inboard + rminor)
+rbld    = (dr_bore + dr_cs + dr_cs_tf_gap + dr_tf_inboard + dr_shld_vv_gap_inboard
+           + dr_vv_inboard + dr_shld_inboard + dr_blkt_inboard
+           + dr_fw_inboard + dr_fw_plasma_gap_inboard + rminor)
+```
+
+The ten terms are the same ten, in the same order. `rbld = (rmajor - S) + S = rmajor`
+for **any** values of any of them. `dr_bore` is solved for as whatever is left of `rmajor`
+after allocating every other radial element, and `rbld` then sums those same elements back
+on. Checked by reading both sources, not only by differentiating. PROCESS's own comment
+on the line reads `#  Radial build to centre of plasma (should be equal to
+data.physics.rmajor)` -- and on this path it is, identically, which is precisely why the
+equation asserting it can never bind.
+
+**The tokamak is different, and constraint 11 is real there.** `process/models/build.py:1863`
+builds `rbld` *outward* from `r_sh_inboard_out` through the shield/blanket/first-wall stack;
+`rmajor` does not appear in it, and `dr_bore` is an independent field with its own
+iteration variable (**ID 29**, `iteration_variables.py`). Measured on `large_tokamak_nof`,
+which already carries `icc = 11`, `ixc = 3` **and** `ixc = 29` -- i.e. correctly specified:
+
+```
+d(.build.rbld)/d(.physics.rmajor)  = 0.3333333333333333    (not 1)
+c11 residual                        = -1.186512e-02          (genuinely nonzero)
+d(c11)/d(.physics.rmajor)           = +8.481647e-02          (live)
+```
+
+**This changes the upstream recommendation, and enlarges it.** §48 concluded "drop
+`icc = 11` from `helias_5b`, which forgot `ixc = 3`". That is too small and, in its
+reasoning, wrong: adding `ixc = 3` cannot fix it, because **no** choice of design
+variables can give `c11` a nonzero row on this build formula. The correct statement is
+that **`icc = 11` is structurally meaningless on the stellarator build path and should not
+be listed on stellarator configurations at all**, while it remains correct and necessary
+on tokamak ones. `stellarator_helias.IN.DAT` is, by that reading, already right -- it omits
+`icc = 11` and frees `rmajor` -- and `helias_5b.IN.DAT` is the outlier.
+
+**Scope, stated honestly.** The identity was verified in the unconditional body of
+`calculate_build` / `st_build`, which every stellarator run in this port's MDF and SAND
+graphs goes through; it is not gated by `blktmodel` or `ipowerflow`, the two switches that
+routine does branch on. Other stellarator-mode branches were not exhaustively checked.
+
+**What this is worth beyond the port.** A constraint has been evaluated on every
+stellarator run, contributing a row to every Jacobian, and it cannot fail. Nothing in
+PROCESS could have reported that, because a satisfied constraint looks exactly like a
+working one -- it took a solver that factorises the equality block on its own (scipy) to
+turn it into a visible error. That is the rewrite's case in miniature: the structure was
+always there to be read, and nothing read it.
