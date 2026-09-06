@@ -309,6 +309,51 @@ than a crash: a slice-sum reassociated into a different order changes the last b
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
 
+**The jaxpr path crossed over and the resolver is gone.** Conditions roughly tripled to
+quadrupled on every configuration, all compiling in round 0 with **zero Warp-codegen
+exclusions**:
+
+| configuration | entries | conditions | worst rel. diff |
+|---|---|---|---|
+| `helias_5b` | 32 -> **43**/94 | 1 -> **6**/11 | 4.3e-16 |
+| `stellarator_helias` | 49 -> **62**/123 | 7 -> **12**/21 | 6.7e-16 |
+| `large_tokamak_nof` | 47 -> **101**/177 | 4 -> **16**/33 | 2.7e-15 |
+
+Per-node validation over 8 draws: 92, 120 and 166 passing, **zero failures**. `-6129` lines;
+the module is **3493** against roughly 9600.
+
+**The second-order effect is the one worth recording.** With the identification taxonomy
+gone, the work stopped being *cataloguing refusals* and became *finding real bugs* -- four
+of them, every one producing a plausible number rather than crashing:
+
+- `jnp.stack(axis=1)` read `dimension` (a `concatenate` parameter), defaulted to 0, and
+  silently **transposed** a (22, 6) output;
+- `wp.max`/`min`/`clamp` **swallow NaN** where XLA propagates, turning an honest NaN out of a
+  secant root-find into a *finite wrong answer* at 3 of 8 draws;
+- `wp.sign(0.0)` is +1 against XLA's 0 (66/484 arguments);
+- `wp.asin`/`acos` clamp to [-1, 1] where XLA returns NaN (264/484).
+
+The last three came from `prim_check.py`, which sweeps every mapped primitive against XLA
+over hostile arguments and now reports no unexpected divergence. That check is the general
+form of the `DIRECT`-map finding recorded above, and it is what the single-point agreement
+gate could never have produced.
+
+Three specifics made the crossover. `bitcast_convert_type` is **not** emitted as a general
+bitcast -- Warp 1.17 exposes no float-to-int reinterpretation at all -- so the
+`bitcast`-then-`shift_right_arithmetic 63` **pair** is fused into a `_signbit` helper,
+licensed by a use-count proof that fires only when the bitcast has exactly one consumer.
+The value-supply gap was `_assemble` computing the MDA output env and **discarding it**,
+leaving the 201-point profile grid a scalar so `_simpson` raised. Array-valued intermediates
+bind as **one fixed-length Warp vector per `VarPath`**, not N flattened columns: flattening
+would put 610 parameters on `fusion_rates` alone, spends the scarce ABI resource on values
+that never leave the kernel, and -- decisively -- a scalarised array cannot be subscripted,
+which every runtime-indexed `gather` needs.
+
+**Open, and it bears on the whole reason for choosing Warp**: adjoint codegen defaults
+**off**, because it costs ~60x compile time (~35 min against 35.1 s on a 1.36 MB module).
+Forward values are byte-identical, but the built module cannot be `wp.Tape`d. Being
+measured.
+
 **jaxpr is the right IR, and the argument is not aesthetic.** The whole session's cost has
 been a taxonomy of *Python shapes* -- `self.<attr>`, non-literal exponents, switch-valued
 index bounds, tuple unpacking, `del`, keyword-only arguments, branches. **Tracing dissolves
