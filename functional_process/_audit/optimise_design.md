@@ -3679,3 +3679,67 @@ Ordered by `sand_shape(...)["drive"].body.subgraph.topological_order` -- the blo
 The few "resolved but no `@wp.func`" leaves are mostly `constraint_<id>`/`objective_metric_<id>`
 living in `cottax/core/solver/`, **outside the transpiler's `models/**` sweep by design** --
 a scope question, not a failure.
+
+## 92. The emitter: mechanics proven, one configuration two nodes short (2026-09-06)
+
+Stage 1 of §79's plan, in progress. Two halves built against a fixed interface -- a
+`Leaf` contract of `(node, fn, inputs, outputs, module, statics, order)` -- so the resolver
+and the emitter could be developed in parallel without the shared-file contention that cost
+§88 hours.
+
+### The mechanics are proven end to end
+
+A hand-wired kernel over **real** port functions (`rether` -> stored thermal energy ->
+`_fast_alpha_fraction_ward`) compiles and runs on **both `cpu` and `cuda:0`** and agrees
+with JAX to **4.9e-16 / 1.6e-16** worst relative difference -- the residual being `**`
+rounding, exactly the caveat §80 recorded.
+
+That validates the whole chain at once: argument ordering, multi-return tuple unpacking,
+`^`-minted path names, the boundary/unknown split, module-global constant resolution, and
+helper stitching. **Two things needed no correction anywhere**: `Leaf.inputs` in signature
+order across 64 real functions, and the `VarPath` -> Warp identifier mapper, with zero
+collisions on dotted paths, `^`-minted names and bracket indices.
+
+### The resolver, after the `statics` extension
+
+The largest unresolved group was constraints and objectives taking a **static switch frozen
+at assembly** -- `ireactor`, `istell`, `self.i_p_coolant_pumping` -- which have no `VarPath`
+and which the contract had no slot for. Rather than fabricate a fake input, that was
+escalated; the contract gained `statics` (name/frozen-scalar pairs, accepted **only** for a
+bare literal or a name resolving to `int`/`float`/`bool`/`IntEnum`) and `order` (every
+parameter in signature order, so interleaved calls reconstruct by name).
+
+| | `helias_5b` (94 interior) | `stellarator_helias` (123) |
+|---|---:|---:|
+| resolved | 78 -> **88** | 106 -> **116** |
+| structural (`Compare`, no leaf expected) | 4 | 4 |
+| **unresolved** | 12 -> **2** | 13 -> **3** |
+| resolved leaves with a `@wp.func` | 75 -> **79** | 93 -> **97** |
+
+**A real bug fell out of wiring it**: `self.<field>` reads were being resolved against the
+wrapper's *class* rather than its *instance*, silently failing every static-self-field case.
+
+**What stays unresolved, and why it should**: `.physics.plasma_composition` and
+`.stellarator.coils.winding_pack_intersect_inputs` are array-valued (the leaf is passed as a
+value into a `jnp.stack`-assembling helper), and `.physics.impurity_radiation_totals` takes
+`self.imp_indices`, a **14-element tuple** -- correctly refused rather than rendered as a
+fake single literal. All three are §76 Work-bucket items.
+
+### What is not done, stated plainly
+
+**No real-configuration kernel compiles end to end yet, so there is no residual-vector
+agreement measurement for any real SAND block** -- and therefore no timing, and no check of
+whether the tokamaks come nearly free off the shared leaves. The blocker is a small set of
+Work-bucket gaps, dominated by **list-literal table lookups** (`[a, b, c, d][idx]`,
+`ast.List` unsupported in a kernel) in several cost functions. Per-function Warp codegen on
+`helias_5b`'s needs: **64 of 85 clean**.
+
+**An offer that was declined, and the reason.** The emitter proposed building a kernel from
+only the clean functions with stubs for the rest, to obtain *a* compile and *a* timing
+number. Refused: that measures a program which does not compute the residual, and this file
+now carries **four** corrections (§85, §88, §90) whose common shape was a number that looked
+good because it quietly covered a subset. **A missing number is better than one that needs a
+footnote saying it is not the real block.**
+
+The remaining arithmetic on `helias_5b` is **88 resolved + 4 structural = 92 of 94**, with
+two understood gaps. That is what "nearly there" looks like when the gaps are named.
