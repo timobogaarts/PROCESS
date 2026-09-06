@@ -1900,3 +1900,149 @@ and **violate most of them** -- 20 of 23 on `large_tokamak_eval`, 14 of 15 on
 `spherical_tokamak_eval`. PROCESS's `fsolve` mode reports them and enforces none. That is
 the source's design, not a port defect, but it is worth knowing before anyone reads an
 evaluation run's constraint output as a feasibility statement.
+
+## 67. `jaxipm`, second pass: the sparsity blocker dissolves, the driver wall does not (2026-09-06)
+
+§65 rejected `jaxipm` for two reasons. Both were assumptions worth testing rather than
+re-asserting, and testing them changed one verdict completely.
+
+### Blocker 2 is soluble, and the reason is the rewrite's own thesis
+
+§65's reading was "its derivative front end is `jax2sympy`, and 23 of 63 primitives in our
+jaxpr have no translation". True, but it frames the problem backwards. **`jaxipm` uses a
+CAS to *recover* the KKT sparsity pattern — and recovery is only necessary because a jaxpr
+has lost it.** Which condition reads which unknown is exactly what a cottax `Graph`
+declares. We never lose it, so we never need to recover it.
+
+Reading the source bears that out. `jaxipm.initialization.initialize_common_problem` calls
+`jax2sympy` in two places: `get_sparsity_pattern` (lines 243-248, **unconditional**,
+building the six COO arrays) and `sparse_jacobian_sym`/`sparse_hessian_sym` (lines 277-282,
+the derivative *values*, already skippable through the existing `override_sparse_funcs`
+argument). Both bottom out in `jaxpr_to_sympy_expressions`, which is where the 23
+primitives bite — so `override_sparse_funcs` alone is not enough, as had been hoped.
+
+**But `get_sparsity_pattern` is bound by a plain `from ... import` into
+`jaxipm.initialization`'s namespace, so it is monkeypatchable from outside** — no fork.
+Supply the pattern from the graph, the values through `override_sparse_funcs` with
+`jax.jacfwd` and `jacfwd(jacfwd(...))`, and `jax2sympy` is bypassed entirely. A real,
+near-supported path.
+
+### The sparsity pattern check, which is worth keeping regardless
+
+Structural pattern from `Graph.readers`/`.descendants` against the numerical pattern from
+`jax.jacfwd` at four points (the primed cold start plus three ±2 % perturbations,
+log-scaled to avoid a huge-magnitude variable reading as a false zero), on `helias_5b` MDF
+(3 unknowns x 5 conditions):
+
+**14 of 15 entries agree.** The one disagreement is the objective against `hfact`, where
+the graph shows a reachable path and the analytic partial is exactly `0.0` at every
+sampled point. **Structure over-declares and never under-declares** — the safe direction
+for a KKT pattern, since a wrongly-dense entry costs a little work and a wrongly-sparse one
+gives a wrong step. (The disagreement also reads as correct physics: `helias_5b` minimises
+`i_figure_merit = 7`, capital cost, which this configuration computes from geometry and
+masses; `hfact` is a confinement multiplier and enters through the power-balance and
+net-electric constraints, not through cost.)
+
+**So the port has a validated conservative sparsity pattern available to any sparse
+solver, derived structurally and cross-checked numerically.** That outlives `jaxipm`.
+
+### Blocker 1 is real, and is a driver-version wall
+
+`nvidia-cudss-cu12` is a genuine CUDA-12 build — `readelf` shows it needs only
+`libcublas.so.12` and no `libcudart` at all — so §65's "needs CUDA 13" was indeed a
+packaging assumption about *that* library. It was also not the binding constraint.
+**`spineax`'s own prebuilt native extension (`pbatch_solve.abi3.so`) is independently
+linked against `libcudart.so.13` and `libcublas.so.13`**, whatever cuDSS is supplied, and
+its README states CUDA 13 flatly with no CUDA-12 build path.
+
+Closed empirically rather than by reading: staging `libcudss.so.0` (cu12) plus cu13
+`libcudart`/`libcublas` on `LD_LIBRARY_PATH` makes `import spineax.cudss` **succeed**, and
+the first real call then fails at runtime with
+
+```
+INTERNAL: spineax token: cudaGetDevice failed:
+CUDA driver version is insufficient for CUDA runtime version
+```
+
+CUDA 13 requires driver >= 580.65.06; this machine has **560.35.03**. That is a
+root-plus-reboot system upgrade, not a packaging question, so `helias_5b` and
+`stellarator_helias` were never reached.
+
+**Verdict: a second negative, but a better-grounded one.** The sparsity-injection idea
+holds up under inspection and would likely have worked; the wall is the NVIDIA driver on
+this machine. If that driver is ever upgraded, this is worth exactly one more attempt, and
+the two hooks needed are now identified by line number.
+
+**Env verified after**: CPU `process_port` untouched (no installs); GPU env's temporary
+packages uninstalled, `jax.devices()` -> `[CudaDevice(id=0)]`, `cottax.__file__` under
+`~/jaxgraph/src`, `tests/unit` -> **846 passed**; disk back to ~29 GB free after ~525 MB of
+scratch downloads were deleted.
+
+## 68. The matrix on a GPU: same answers, 2.4x slower, and one row that disagrees (2026-09-06)
+
+Built `process_port_gpu` (`CLAUDE.md` § the environment) and ran the warm matrix on a
+**Quadro T1000, 4 GB VRAM**, `XLA_PYTHON_CLIENT_PREALLOCATE=false`. The CPU side was
+**re-run** rather than compared against the published file, which predated both today's
+`icc = 11` removal and the `vacuum.py` conversion. Published as
+`reference_warm_matrix.txt` (CPU) and `reference_warm_matrix_gpu.txt` (GPU).
+
+**Caveat on control**: the CPU env is jax **0.11.0** and the GPU env is **0.11.1**. Prior
+evidence says that drift is inert (both suites reproduce their counts across it), but this
+is a backend comparison with a patch-version confound, not a clean one.
+
+### 23 of 24 rows: identical iteration counts, identical `objf`
+
+| configuration | arm | drv | it | CPU s | GPU s | GPU/CPU | CPU ms/call | GPU ms/call |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| `stellarator_helias` | MDF | VMCON | 41 | 0.726 | 1.541 | 2.12x | 2.12 | 9.76 |
+| `helias_5b` | MDF | VMCON | 4 | 0.135 | 0.241 | 1.79x | 1.97 | 10.04 |
+| `large_tokamak_nof` | MDF | VMCON | 7 | 0.424 | 1.200 | 2.83x | 11.20 | 31.28 |
+| `low_aspect_ratio_DEMO` | MDF | VMCON | 11 | 0.581 | 2.351 | **4.05x** | 15.30 | 84.60 |
+| `low_aspect_ratio_DEMO` | SAND | VMCON | 79 | 2.594 | 15.067 | **5.81x** | 7.98 | 72.38 |
+| `low_aspect_ratio_DEMO` | SAND | SLSQP | 17 | 0.381 | 3.444 | **9.04x** | 2.63 | 33.94 |
+| `st_regression` | MDF | VMCON | 10 | 0.329 | 0.563 | 1.71x | 4.49 | 8.41 |
+
+**Median 2.41x slower, min 0.81x, max 9.04x** over the 23 rows converging on both. The one
+sub-1.0 row (`large_tokamak_nof` MDF SLSQP) is CPU-side noise -- its *per-call* cost still
+goes 2.77 -> 12.60 ms.
+
+**And the ratio grows with the graph.** `low_aspect_ratio_DEMO` is the biggest
+configuration (247 nodes, 19 unknowns, 25 constraints) and the worst by a wide margin,
+4.05-9.04x, while `st_regression` and `helias_5b` sit at 1.7-2.2x. That is the expected
+signature: per-call cost is launch overhead over ~1 648 tiny kernels, so more graph means
+more overhead and no more parallelism to recover it. Per-call goes from **0.8-15 ms on CPU
+to 3.8-85 ms on GPU**.
+
+**Nothing here is a GPU indictment** -- it is the workload being the wrong shape, as
+predicted before the measurement: ~28k *scalar* ops, ~100 KB of runtime buffers, no
+arithmetic intensity, and ~97 % of a cold row is compilation. The plausible win remains
+**batching** (`vmap` over independent scan points), which this matrix does not test.
+
+### The one row that disagrees, and what it says
+
+```
+stellarator_helias SAND SLSQP    CPU: 501 iters, cap(500), objf 1.21843409
+                                 GPU: 129 iters, converged, objf 1.21890181
+```
+
+Nothing about that configuration changed today. What differs is the backend's floating
+point -- different fusion, different FMA contraction, last-bit differences compounding
+through the trajectory. On the GPU the arm escapes the period-2 cycle of §47 and converges
+in 129 iterations, to a point **3.5e-4 from VMCON's `1.21848284`** rather than to VMCON's
+answer.
+
+**A second, independent sign of the same sensitivity**: the CPU value for that row moved
+from the previously published `1.21846128` to `1.21843409` on this re-run, with the only
+intervening change being the `vacuum.py` `while_loop` -> `vmap` conversion (§59) -- which
+is bit-identical on seven of eight test cases and 1 ulp on the eighth. **Every converging
+row's `objf` is unchanged by that conversion; only the capped, non-converged one drifts.**
+
+So: §47 recorded that before the Ward-kink smoothing this arm swung between 87 and 333
+iterations on a +-1 ulp draw. The smoothing removed the kink, and this says the underlying
+sensitivity is still there -- a change of *backend*, or a 1-ulp change in one unrelated
+node, is enough to move it between cycling at the cap and converging elsewhere.
+
+**That corroborates §64 from a new direction.** If the failure were geometric -- a genuinely
+infeasible corner -- a last-bit nudge would not rescue it. An active-set QP cycling near a
+corner is exactly the kind of thing a tiny numerical difference knocks loose. Two
+independent lines now say the same: the problem is fine, the QP layer is not.

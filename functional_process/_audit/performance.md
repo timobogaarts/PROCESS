@@ -10,6 +10,14 @@ $PY -m functional_process.cottax.run_cold_matrix --native --compare-process
 $PY -m functional_process.cottax.run_cold_matrix --native --compare-process --slsqp
 ```
 
+
+> **Updated 2026-09-06.** `reference_warm_matrix.txt` has been re-measured: the table it
+> held predated the `icc = 11` removal (§52) and the `vacuum.py` conversion (§59).
+> `helias_5b`'s two SLSQP rows now **converge** where they read `stopped`. A GPU twin is
+> published as `reference_warm_matrix_gpu.txt` -- **the GPU is a median 2.41x slower**,
+> up to 9x on the largest configuration, with identical answers on 23 of 24 rows
+> (`_audit/optimise_design.md` §68).
+
 ## Read the warm matrix, not the cold one, for anything about speed
 
 A cold row measures assembly, tracing, lowering, compilation and the solve. **Compilation

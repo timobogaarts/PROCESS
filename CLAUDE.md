@@ -77,7 +77,7 @@ diffs against PROCESS show precision loss that reads like a porting bug
 ### `process_port_gpu` -- the same env on CUDA
 
 Built 2026-09-06, on request, to measure whether the GPU helps. **It does not, for a
-single solve** -- see below and `_audit/optimise_design.md` §63.
+single solve** -- see below and `_audit/optimise_design.md` §68.
 
 ```bash
 PYG=~/miniconda/envs/process_port_gpu/bin/python

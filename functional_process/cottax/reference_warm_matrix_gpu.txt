@@ -1,0 +1,36 @@
+# Measured in the `process_port_gpu` env (CUDA 12, Quadro T1000, jax 0.11.1) with
+# XLA_PYTHON_CLIENT_PREALLOCATE=false. The CPU twin is `reference_warm_matrix.txt`
+# (jax 0.11.0 -- the versions do NOT match; see CLAUDE.md).
+# GPU is SLOWER: median 2.41x wall over the 23 rows converging on both backends.
+# See `_audit/optimise_design.md` §68.
+#
+WARM MATRIX -- assembled once, compiled once, then measured. Seconds unless stated.
+`XLA` is summed over every block-program call; `host` is the rest of the solve, which is
+the optimiser's own cost. See this module's docstring for why the cold matrix cannot answer this.
+
+configuration          arm  driver    it     status            objf     wall      XLA     host  calls  ms/call
+--------------------------------------------------------------------------------------------------------------
+stellarator_helias     MDF  VMCON     41  converged      1.21848284    1.541    0.801    0.740     81    9.756
+stellarator_helias     MDF  SLSQP     27  converged      1.21848284    0.604    0.418    0.186     65    5.979
+stellarator_helias     SAND VMCON     24  converged      1.21848284    0.876    0.324    0.552     47    6.621
+stellarator_helias     SAND SLSQP    129  converged      1.21890181    4.491    3.755    0.736    871    3.978
+helias_5b              MDF  VMCON      4  converged     0.764215516    0.241    0.071    0.170      7   10.037
+helias_5b              MDF  SLSQP      5  converged     0.764215516    0.232    0.072    0.160      8    8.996
+helias_5b              SAND VMCON      7  converged     0.764215517    0.370    0.099    0.271     13    7.191
+helias_5b              SAND SLSQP      8  converged     0.764215517    0.270    0.083    0.187     14    6.172
+large_tokamak_nof      MDF  VMCON      7  converged             1.6    1.200    0.412    0.788     13   31.283
+large_tokamak_nof      MDF  SLSQP      8  converged             1.6    0.595    0.303    0.292     15   12.599
+large_tokamak_nof      SAND VMCON     10  converged             1.6    0.812    0.324    0.488     19   16.742
+large_tokamak_nof      SAND SLSQP     13  converged             1.6    0.649    0.314    0.336     26    8.743
+large_tokamak_eval     MDF  VMCON      3  converged               -    0.241    0.000    0.241      0    0.000
+large_tokamak_eval     MDF  SLSQP      3  converged               -    0.299    0.000    0.299      0    0.000
+low_aspect_ratio_DEMO  MDF  VMCON     11  converged    -0.406312732    2.351    1.795    0.556     21   84.600
+low_aspect_ratio_DEMO  MDF  SLSQP     12  converged    -0.406312732    1.629    1.328    0.300     22   64.279
+low_aspect_ratio_DEMO  SAND VMCON     79  converged    -0.399155447   15.067   11.498    3.570    157   72.380
+low_aspect_ratio_DEMO  SAND SLSQP     17  converged    -0.399155367    3.444    2.309    1.135     52   33.937
+spherical_tokamak_eval MDF  VMCON      2  converged               -    0.212    0.000    0.212      0    0.000
+spherical_tokamak_eval MDF  SLSQP      2  converged               -    0.217    0.000    0.217      0    0.000
+st_regression          MDF  VMCON     10  converged     -16.5885767    0.563    0.161    0.402     19    8.407
+st_regression          MDF  SLSQP     10  converged     -16.5885767    0.399    0.118    0.281     19    6.620
+st_regression          SAND VMCON     10  converged     -16.5885767    0.610    0.143    0.467     19    7.380
+st_regression          SAND SLSQP     10  converged     -16.5885767    0.417    0.088    0.329     19    3.813
