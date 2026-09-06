@@ -70,3 +70,6 @@ process/_version.py
 
 # scratch pickles from measurement probes -- never belong in the tree
 *.pkl
+
+# Generated DSM/XDSM visualisations -- regenerate with `render_xdsm.py` / `sand.py`.
+functional_process/*.html

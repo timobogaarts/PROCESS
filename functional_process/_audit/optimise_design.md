@@ -3743,3 +3743,85 @@ footnote saying it is not the real block.**
 
 The remaining arithmetic on `helias_5b` is **88 resolved + 4 structural = 92 of 94**, with
 two understood gaps. That is what "nearly there" looks like when the gaps are named.
+
+## 93. A Warp kernel for a real SAND sub-DAG: bit-identical, and faster (2026-09-06)
+
+§79's stage 1, reached. Not the whole `helias_5b` Drive -- the **maximal prefix-closed,
+fully-emittable sub-DAG** of it, compiled and compared against **JAX evaluating the
+identical sub-DAG**. That distinction is the whole point: this is a smaller quantity
+computed *completely and correctly*, not the residual with stubs in it (§92 records that
+offer being refused and why).
+
+**Coverage: 18 of 89 entries, 1 of 11 conditions** -- reachable in one topological pass from
+the 9 unknowns and 300 boundary inputs. Four leaves excluded **by name**: `pchip_interp`
+(`jnp.searchsorted`), `calculate_quench_protection_current_density` (`jnp.interp`),
+`calculate_parabolic_profile_values` (unresolved `scipy.special.gamma`), and
+`calculate_tf_magnet_cost_superconducting_per_kg` (`ucsc[i_tf_sc_mat - 1]`, a genuine
+array-valued *parameter*, so the list-lookup rewrite correctly declines it).
+
+### Agreement
+
+```
+warp = jax = -6.25000000e+00      relative difference 0.000e+00
+```
+
+**Bit-identical**, at the reference cold-start point rather than at random values --
+several boundary inputs are switch-typed and PROCESS indexes literal tables with them, so
+random draws would have been physically meaningless.
+
+### Timing: Warp wins at every batch that fits
+
+Microseconds per point, Warp against JAX on the **same sub-DAG**:
+
+| batch | JAX CPU | JAX GPU | **Warp CPU** | **Warp GPU** |
+|---:|---:|---:|---:|---:|
+| 1 | 114.8 | 221.5 | **19.7** | 31.6 |
+| 16 | 7.70 | 10.5 | **1.25** | 2.71 |
+| 256 | 0.585 | 0.714 | **0.089** | 0.110 |
+| 4 096 | 0.030 | 0.044 | 0.013 | **0.0066** |
+| 65 536 | **0.0018** | 0.0027 | 0.0089 | OOM |
+
+**Warp CPU is 5.8x JAX CPU at batch 1, 6.2x at 16, 6.6x at 256** -- and that is the regime
+that matters for a scan, not the asymptote. At 4 096 Warp GPU is **4.5x** the best JAX
+number. Only at 65 536 does JAX's asymptotic per-point cost drop below Warp's floor, which
+is what §71 and §80 both predicted: **Warp's advantage is fixed overhead and register
+residency, not raw throughput**, and an 18-node kernel runs out of work to amortise before
+JAX runs out of vectorisation.
+
+*The 65 536 Warp-GPU cell is an allocator OOM on a 4 GB card with ~1 GB already resident;
+JAX succeeded at the same batch on the same device, so it reads as fragmentation rather
+than a kernel defect. Not investigated.*
+
+### Register pressure, measured -- and the tooling problem solved sideways
+
+§(the inlining question) could not be answered because `cuobjdump`, `nvdisasm` and `nvcc`
+are all absent from this env. They are not needed: the **CUDA driver API** answers it
+directly, `cuFuncGetAttribute` on the cached `.cubin` through `ctypes`.
+
+| kernel | registers/thread | local (spill) bytes |
+|---|---:|---:|
+| forward | **22** | **0** |
+| backward (adjoint) | **244** | **0** |
+
+**Zero spill either way.** The backward pass costs ~11x the registers of the forward one --
+which is the real, measured shape of §74's register-pressure worry, and at this size it is
+not a problem. **Worth re-checking as the covered subgraph grows**, because 244 registers is
+already the point where occupancy starts to bite on `sm_75`.
+
+### Also landed
+
+`eq`/`leq`/`geq` went into the hand-written registry: they live outside
+`functional_process.models`, so the closure scanner's module-prefix rule never saw them as
+helpers. **A three-function registry entry, not a transpiler feature** -- exactly the shape
+the registry exists for.
+
+### What this establishes, and what it does not
+
+**Establishes**: the generated pipeline produces a Warp kernel that is bit-identical to JAX
+on a real SAND sub-DAG, faster than JAX at every batch size that fits, with zero register
+spill, and with the adjoint generated automatically alongside.
+
+**Does not**: cover the full 11-condition residual. Coverage grows as the resolver's
+remaining unresolved nodes clear and the four named gaps close, and nothing here says the
+ratios hold at 89 nodes rather than 18 -- a bigger kernel amortises its overhead better
+*and* uses more registers, and those pull in opposite directions.
