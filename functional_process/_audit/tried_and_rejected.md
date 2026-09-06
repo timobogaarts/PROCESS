@@ -193,9 +193,14 @@ history.)
   this into an expensive and a cheap class was **withdrawn the same day**: it was compile
   *order*, not module content (§50). Related and worth knowing: a module of 2.28 M
   characters is ~28k ops of which **41.6 % are pure shape plumbing** (`broadcast_in_dim`
-  alone is 27.9 %), its optimised HLO text is **larger** than its input (422 %), and its
-  executable serialises to **11 MB** yet costs **~500 MB to load** -- so the resident cost
-  is the executable, not the compiler. (§31.2, §31.16, §45, §50)
+  alone is 27.9 %), and its optimised HLO text is **larger** than its input (422 %).
+  **Its machine code is 5.8 MB**, ~87-165 bytes per post-optimisation HLO instruction
+  (`/proc/self/maps` executable pages). `LoadedExecutable.serialize()`'s 11 MB is the
+  optimised **HLO** in protobuf, not code -- 1.20x the HLO text, opcode names visible in
+  the blob -- so do not read it as an executable size, and note that deserialising one
+  re-runs codegen. **Per-program resident cost is not a well-defined quantity** and
+  attempts to measure it produced two retracted findings; use pass-level peaks.
+  (§31.2, §31.16, §45, §50, §57)
 - **Compile cache, cold vs. warm**: stellarator row 60s → 27s, tokamak row 146s → 50s —
   but only ~1.2% of peak RSS, so the persistent compilation cache is a speed lever, not a
   memory one (the OOM risk is unaffected). (§31.16)

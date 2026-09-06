@@ -103,11 +103,12 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    (MDF 594 -> ... -> 851 MB; SAND 575 -> ... -> 766), and a seven-configuration pass peaks
    at 2.16 GB (MDF) / 2.23 GB (SAND). The original 63-byte failure was the trim's absence:
    four measurements a configuration, ~1 GB each left resident, reaching 15 GB in the
-   fourth. **Anatomy** (§50): the largest module is 2.28 M characters = 28 106 ops, of
-   which **41.6 % is pure shape plumbing** (`broadcast_in_dim` alone 27.9 %) -- the
-   signature of a scalar-valued graph in an array language; optimised HLO text is *larger*
-   than the input (422 %); the executable **serialises to 11 MB but costs ~500 MB to
-   load**, two thirds of a full compile, so the memory is the executable. **A §45
+   fourth. **Anatomy** (§50, §54, corrected by §57): the largest module is
+   2.28 M characters = 28 106 ops, of which **41.6 % is pure shape plumbing**
+   (`broadcast_in_dim` alone 27.9 %) -- the signature of a scalar-valued graph in an array
+   language. `jacfwd` then roughly sextuples it (the model alone is ~21 ops/node) and
+   XLA's fusion pass takes it to 70 065 instructions. Its **machine code is 5.8 MB**,
+   ~87-165 B per instruction; `serialize()`'s 11 MB is the optimised **HLO**, not code. **A §45
    correction was itself withdrawn**: the "expensive/cheap module classes" were compile
    *order*, not content -- with the arena trimmed first, every module is 171-351 B/char and
    §31.16's ~200 stands. **The levers, all measured** (§51): XLA's own

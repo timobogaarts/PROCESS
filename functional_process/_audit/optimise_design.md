@@ -783,6 +783,11 @@ twenty-four under a driver that is not the production one.
 
 ## 50. What is in a 2.3-million-character module, and what comes out (2026-09-06)
 
+> **Two claims here are CORRECTED by §57**: `serialize()` returns the optimised HLO,
+> not machine code (so "the executable serialises to 11 MB" is measuring the wrong
+> object), and the per-program resident figures are allocator-order artefacts. The
+> op histogram and the optimised-HLO expansion stand.
+
 §45 measured memory per compiled program without ever looking inside one. Two questions
 follow directly and both have clean answers: what is the intermediate representation
 *doing* with millions of characters, and how big is the thing it produces. Probe:
@@ -1093,6 +1098,10 @@ other solver first is unmeasured speculation.
 
 ## 54. The size chain, end to end: 244 nodes to 500 MB (2026-09-06)
 
+> **The last third is CORRECTED by §57.** The size chain down to the instruction
+> count stands; "11 MB of machine code, ~250 MB resident" does not -- the machine
+> code is 5.8 MB and the retained figure is not a per-program property.
+
 §50 and §51 measured pieces; this is the whole chain on one configuration, because
 "70 000 instructions for 244 nodes" is the right thing to be suspicious about and the
 answer is that it is not 244 nodes' worth of anything.
@@ -1301,3 +1310,80 @@ unconverged one. **Not verified**, and it is the question a real fix would have 
 **Negative results, recorded so nobody repeats them**: rescaling `c62` or `wp_width_r_min`
 (§49) does not work; nesting without the seed fix fails identically at every rung; nesting
 every problem is not buildable through `sand_graph` today.
+
+## 57. Correction: `serialize()` is HLO, the machine code is 6 MB, and "the memory is the executable" is wrong (2026-09-06)
+
+§50 reported *"the executable serialises to 11.0 MB"* and §54 concluded *"the resident cost
+is the executable, not the compiler's workspace"*. Both are wrong, and the question that
+exposed them was the obvious one: **why would an 11 MB program need 250 MB of RAM?** It
+does not. The two numbers were never measuring the same object.
+
+**`LoadedExecutable.serialize()` returns the optimised HLO, not code.** The blob has no
+object-file magic -- it opens `\x8fA\x08\x03\x12\tpjrt_ifrt`, protobuf wire format -- and
+it contains, as plain text, **12 214** occurrences of `fusion`, **15 063** of `broadcast`,
+**11 364** of `parameter` and **12 434** of `constant`: HLO instruction opcodes, in counts
+matching the optimised module. Its size is **1.20x the optimised HLO text**, and that
+ratio holds across every program measured (1.14-1.71). So the 11 MB is XLA's *input to
+code generation*, serialised. This also explains the 1.9 s deserialise in §54: loading one
+re-runs LLVM codegen, which is why it costs hundreds of megabytes rather than mapping a
+finished binary.
+
+**The actual machine code is 5.8 MB.** Measured by counting anonymous **executable**
+(`r-x`) mappings in `/proc/self/maps` across the compile, which is where a JIT puts code:
+
+| StableHLO chars | post-opt instrs | machine code | bytes / instruction |
+|---:|---:|---:|---:|
+| 2 282 899 | 70 065 | **5.8 MB** | 87 |
+| 1 498 177 | 28 003 | 4.1 MB | 154 |
+| 1 055 811 | 20 169 | 3.2 MB | 164 |
+| 499 628 | 8 575 | 0.9 MB | 106 |
+| 177 529 | 1 190 | 0.2 MB | 145 |
+
+**87-165 bytes of machine code per post-optimisation HLO instruction** -- stable, and
+entirely unremarkable for compiled scalar arithmetic. There is no 20x expansion anywhere;
+that number came from dividing a serialised-HLO size by a figure that was mostly not code.
+
+**And "retained per program" does not survive scrutiny either.** The same run's
+retained-RSS column, after `malloc_trim(0)` on both sides of each compile:
+
+| post-opt instrs | kept | kept / instruction |
+|---:|---:|---:|
+| 70 065 | 309.7 MB | 4.53 KB |
+| 28 003 | 203.4 MB | 7.44 KB |
+| 20 169 | 49.3 MB | 2.51 KB |
+| 8 575 | 10.3 MB | 1.23 KB |
+| 1 190 | **-11.9 MB** | -- |
+
+A **negative** row, and a 6x spread. So retained RSS is *still* order-dependent even with
+the arena trimmed on both sides -- the same class of artefact §50's withdrawn "two
+classes" finding was, one level subtler: trimming before and after a compile does not stop
+a later compile reusing what an earlier one left. **Per-program retained cost is not a
+well-defined quantity here**, and §54's table of it should be read as what one particular
+ordering did, not as a property.
+
+### What actually stands, after three corrections to the same measurement
+
+1. **Peak during compile is real and large**: ~750 MB for the largest program, ~15 s. This
+   has been stable across every method used and is what the OOM was about.
+2. **The pass-level floor plateaus**: §45's whole-configuration numbers (~850 MB, peak
+   2.2 GB over seven configurations) were measured end-to-end rather than per program, and
+   are unaffected by any of this.
+3. **Machine code is small** -- 5.8 MB for the biggest program, ~87-165 B per instruction.
+4. **What the other ~300 MB is, is not established.** It is not code, and it is not
+   cleanly attributable per program. A plausible reading -- 70 065 instructions at ~4 KB
+   apiece would be the in-memory `HloModule` XLA keeps alive to serve `hlo_modules()` --
+   fits the largest row and **does not fit the others**, so it is a hypothesis with one
+   supporting point and three against. **Not established, and stated here so nobody
+   quotes it.**
+
+**The lever is unchanged and the reason for it is now better founded**: instruction count
+drives both the compile peak and the code size, XLA's fusion pass *raises* the instruction
+count 2.5x, and the only way to emit fewer is §51's vectorisation question -- still bounded
+by an unmeasured repeated-structure fraction.
+
+**Method note, since this is the third correction to one measurement.** Every wrong answer
+here came from the same mistake in a different costume: attributing a *process-level* RSS
+delta to a *single program*. glibc's allocator does not work that way, and neither trimming
+the arena first (§50) nor trimming it on both sides (here) makes it work that way. The
+measurements that held up all avoided the attribution entirely -- end-to-end pass peaks
+(§45), `/proc/self/maps` executable pages, and instruction counts.
