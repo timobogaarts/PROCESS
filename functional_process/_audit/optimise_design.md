@@ -2192,3 +2192,149 @@ with graph size -- but its *reason* was partly wrong, and the corrected reason p
 somewhere more actionable: on hardware with real FP64 throughput the picture could differ
 substantially, and that is worth knowing before anyone writes off GPU work on the strength
 of these numbers.
+
+## 71. Batching: the GPU wins, and the crossover is at ~256 points (2026-09-06)
+
+§68 and §70 measured single solves, where the GPU is a median 2.4x slower, and both said
+the plausible win was **batching** -- `vmap` over many independent points, which is the
+shape of `process/core/scan.py` and the premise of the `jaxipm` paper. That was asserted
+and untested. Tested now.
+
+`vmap` over the `stellarator_helias` MDF condition evaluation (8 unknowns, 15 conditions),
+identical code both backends, warm, mean of 5 calls. **Milliseconds per point:**
+
+| batch | CPU | GPU | winner |
+|---:|---:|---:|---|
+| 1 | 0.865 | 10.738 | CPU **12.4x** |
+| 4 | 0.342 | 2.121 | CPU 6.2x |
+| 16 | 0.196 | 0.557 | CPU 2.8x |
+| 64 | 0.143 | 0.245 | CPU 1.7x |
+| **256** | **0.150** | **0.140** | **GPU 1.07x -- crossover** |
+| 1024 | 0.176 | 0.075 | **GPU 2.3x** |
+| 4096 | 0.203 | **0.060** | **GPU 3.4x** |
+
+**The two curves go in opposite directions.** The CPU bottoms out around 64 points at
+0.143 ms and then gets *worse* -- 0.203 ms at 4096, a 42 % regression, which is cache
+pressure as the working set outgrows L2/L3. The GPU improves monotonically the whole way,
+0.865 -> 0.060 ms, and **had not stopped improving at 4096**.
+
+Batching speedup from the same backend's own single-point cost: **CPU 6.1x at best, GPU
+78.7x at 256 and still climbing.** That gap is the whole story -- the CPU has no
+parallelism left to find and the GPU has barely started.
+
+**Compile cost is essentially flat in batch size**: 4.3-5.1 s (CPU) and 5.7-6.2 s (GPU)
+across a 64x range of batch sizes. So batching is nearly free at compile time -- you pay
+one compile per *shape*, not per point, which is what makes a scan sweep viable at all.
+
+**And this is despite the FP64 penalty.** §70 measured this card running float64 at
+**1/16.4** of float32, and PROCESS is float64 throughout; the 3.4x above is what survives
+that. On a card with 1/2 FP64 the crossover would move sharply left and the asymptote
+sharply down.
+
+### What this does and does not establish
+
+**Does**: the model evaluation batches well, the GPU wins decisively past a few hundred
+points, and the crossover is low enough (~256) to be reachable by a realistic scan.
+`process/core/scan.py` sweeps one input over many points, each an independent solve --
+exactly this shape.
+
+**Does not**: this is the **evaluation**, not the solve. Both drivers are host-side
+`jax.pure_callback`s and `_sqp_callback`'s docstring is explicit that *"`vmap` over this is
+sequential"* -- neither library vectorises, so a batch of *solves* is a host-side loop
+today. Realising the number above needs a jax-native solver, which is precisely what §55,
+§58 and §67 have been circling. It also does not address that points in a batch converge at
+different rates; the `jaxipm` paper's "iteration-level batching" (replace finished problems
+mid-batch) is the published answer to that, and is the part of that work most worth
+stealing even though the solver itself is unreachable here (§67).
+
+**So the single-solve numbers were never the interesting question, and the batched ones
+justify the direction**: the reason to want a jax-native constrained solver is not that it
+beats VMCON on one problem -- it does not -- but that it is the only thing that can turn a
+scan into one batched program.
+
+## 72. The knife-edge hunt: `wp_width_r_min` is non-smooth by construction (2026-09-06)
+
+Chasing knife-edge behaviour has been the highest-yield thread in this port -- it found the
+Ward `sqrt` kink the optimiser sat 5.5e-08 from and crossed on 46 % of steps, and the
+`x ** p`-at-zero defect that put 46 non-finite cells in a Jacobian. §68's finding that a
+*backend change* flips `stellarator_helias` SAND between capping and converging said the
+sensitivity had not gone away. So: hunt systematically.
+
+### The numerical sweep found nothing at the converged MDF points
+
+Using the harness's own detector -- `_harness/finite_difference.fd_gradient_with_error`
+(Richardson-extrapolated FD with an honest per-point error bar) against `jax.jacfwd`, at
+`Tier1Contract`'s `allowed = 25 x error_bar` -- at each configuration's **converged** point,
+every condition against every design coordinate:
+
+- `stellarator_helias` MDF, 8 x 15: **0 findings**
+- `helias_5b` MDF, 3 x 5: **0 findings**
+- `large_tokamak_nof`: solved, analysis incomplete at the time box; four configurations not
+  reached.
+
+A genuine negative on what was checked: **the Ward smoothing holds**, and the converged MDF
+points are smooth to the harness's own error bars.
+
+### The real finding is structural, and it explains six earlier sections
+
+`wp_width_r_min` -- the SAND coupling unknown at the centre of §47's period-2 cycle -- **is
+non-smooth by construction, in two independent ways**, both verified by reading the source:
+
+1. **`coils.py:296-333`, `intersect()`**: the crossing of two `jnp.interp`
+   **piecewise-linear** curves, found by bisection plus a Newton polish. The crossing point
+   is continuous in its inputs but only **piecewise**-smooth -- there is a derivative kink
+   whenever the crossing moves across one of the ~200 interpolation breakpoints. This is a
+   structural analogue of an `argmax` kink, not a numerical artefact.
+2. **`calculate.py:797`**: `wp_width_r_min = jnp.maximum(dx_tf_turn_general**2, wp_width_r_min)`
+   -- a hard floor clamp applied immediately downstream of (1). A second kink, at the clamp.
+
+**This completes a mechanism that has been half-explained since §47.** The chain:
+
+- `wp_width_r_min` is piecewise-smooth with kinks, by construction.
+- **MDF never exposes it**: it is an inner `RootFind` converged inside every evaluation, so
+  the outer solver sees only its converged value -- which is why `stellarator_helias` MDF
+  converges under SLSQP in 27 iterations.
+- **SAND exposes it** as an unknown with a residual equality, so the outer SQP is handed a
+  **non-smooth constraint** -- which is why the same file's SAND arm caps at 500.
+- An active-set SQP assumes smoothness in exactly the place this violates it, and cycles
+  (§64, §69); VMCON's per-constraint multipliers tolerate it (§47).
+- And a 1-ulp change anywhere upstream can move the crossing across a breakpoint, which is
+  why a **backend change** flips the outcome (§68).
+
+**So §64 and §69 were right that the QP layer is where it manifests, and incomplete about
+why.** It is not only that `slsqp_jax`'s active-set QP is weak -- it is that SAND hands it a
+problem that is not differentiable at the points it cares about. Both are true and they
+compose. §56's refutation of the "expose `FixedPoint`s, keep `RootFind`s internal" rule
+stands on its own evidence, but this supplies the property that rule was groping for:
+**not "is it a `RootFind`" but "is its residual smooth".**
+
+**The obvious follow-up, not done**: probe the SAND arm at this specific site -- does the
+trajectory actually cross interpolation breakpoints, and how often? That is the direct
+analogue of the Ward measurement (5.5e-08 away, crossed on 46 % of steps) which turned that
+kink from a suspicion into a fix.
+
+### Static sweep: one confirmed-attainable kink and four candidates
+
+Already known and excluded: the Ward kink (smoothed), `x ** p` at zero (fixed), and
+`sqrt(jnp.maximum(0, x))` -- **zero remaining occurrences** in `models/`, docstrings only.
+
+**Confirmed attainable, and sitting exactly on it**: the divertor tie at
+`divertor.py:296-302`, `f_p_div_lower == 0.5`, deliberately documented and unsmoothed.
+**`spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` both set `f_p_div_lower = 0.5`
+exactly** (verified), so those runs sit precisely on the tie at *every* evaluation, not
+merely near it at a solution.
+
+Candidates, ranked by attainability, none yet shown to be reached:
+
+| site | expression | why it could be hit |
+|---|---|---|
+| `build.py:916-940` | `maximum(r_tf_outboard_mid_unrippled, r_tf_outboard_midmin)` | PROCESS's "ripple too large, move the TF leg" switch; a ripple-constrained optimum sits *on* it |
+| `pfcoil/superconductor.py:313,382` | `maximum(abs(b_pf_coil_peak), abs(bpf2))` | inner/outer coil-edge field selection feeding `j_crit`; PF optimisation plausibly balances the two |
+| `physics.py`, `force_positive_separatrix_power` | `p /= 1 - exp(-p)` | reproduces PROCESS's own `0/0 -> nan` at `p == 0`, **unsmoothed** unlike the Ward kink |
+| `confinement_time.py:1571-1580` | `minimum` of two confinement scalings | live only if `i_confinement_time` selects that model; which configurations do is unchecked |
+
+Deprioritised with reasons: `pfcoil/geometry.py:339`'s `sqrt(r^2 - z^2)` (inherited PROCESS
+guard; note `sqrt` of a negative gives `nan`, not `inf`, so the `isinf` kludge may not catch
+every case -- inherited, not new), `stresses.py`'s elliptic integrals near `m -> 1` (real
+singularity, attainability unclear), and several `maximum`/`minimum` clamps at fixed small
+constants, which are numerical floors rather than physical crossings.

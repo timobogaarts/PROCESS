@@ -64,7 +64,16 @@ provider distinguishes `input`/`guess`/`stated` boundary categories.
    0.31 %**, so it relaxes the problem rather than fixing it. **Two condition-rescalings,
    opposite targets, 100x each, both still cap**, which kills the cheap fix. The two share
    no physical quantity (`c62` is a helium-ash confinement-time floor; `wp_width_r_min` is
-   a TF winding-pack geometric root find). **The verdict is architectural**:
+   a TF winding-pack geometric root find). **[mechanism completed -- §72]** `wp_width_r_min` is **non-smooth by construction**:
+   `coils.py:296-333` finds the crossing of two `jnp.interp` piecewise-linear curves by
+   bisection (a kink whenever the crossing moves across one of ~200 breakpoints), and
+   `calculate.py:797` then clamps it with `jnp.maximum`. MDF converges it internally so the
+   outer solver never sees the kinks; SAND exposes it and hands the outer SQP a
+   non-differentiable constraint. That composes with §64/§69 rather than replacing them --
+   the QP is where it manifests, non-smoothness is why -- and it explains §68's
+   backend-flip, since 1 ulp upstream can move the crossing across a breakpoint.
+   **Next**: measure whether the trajectory actually crosses breakpoints and how often, the
+   direct analogue of the Ward measurement. **The verdict is architectural**:
    `wp_width_r_min` is a SAND-only exposure of an inner root find that MDF solves
    internally -- which is why the same file under MDF converges under SLSQP in 27 -- and
    SAND hands it to the outer SQP to compete in one scalar merit function against a
