@@ -5017,13 +5017,33 @@ class _FuncEmitter:
     def _dynamic_slice(self, eqn, args, okind, oshape):
         """`dynamic_slice(operand, *start_indices)`.
 
-        Two cases, both exact:
+        Three cases, all exact:
         - every start index is compile-time known -> the generator does the indexing
           and the output is a plain re-selection of the operand's locals;
-        - a start index is a runtime value -> emit an exhaustive `wp.where` chain over
-          every legal start, with XLA's own clamp (`start` is clamped into
-          `[0, dim - slice_size]`) applied. The chain is exact because the operand's
-          shape is fixed at trace time, so "every legal start" is a finite, known set.
+        - a runtime start into a float operand a Warp identifier can SUBSCRIPT
+          (`_vec_local`) -> `ident[base + k]`, one expression per output element;
+        - anything else -> an exhaustive `wp.where` chain over every legal start, with
+          XLA's own clamp (`start` is clamped into `[0, dim - slice_size]`) applied. The
+          chain is exact because the operand's shape is fixed at trace time, so "every
+          legal start" is a finite, known set.
+
+        **The subscript case is the one that matters, and it was missing.** A runtime
+        `x[i]` is a subscript, not a case analysis: `_vec_local` either hands back an
+        identifier the value already IS (`array_ident` -- a `vec{n}f` parameter, a
+        `wp.array` constant global, a vector a loop nest wrote) at no cost at all, or
+        materialises one memoised copy. The chain pays 199 `wp.where` per read of a
+        200-point table instead, and `.stellarator.coils.intersect` reads three of them
+        at a runtime index twenty-six times: 5,200 selects in 26 lines of 6.7 kB each,
+        176 kB -- 63 % of that function and 26 % of the whole emitted module -- for what
+        is `a1[i]`. It arises wherever a tabulated quantity is interpolated at a solved-
+        for abscissa; here it is `pchip_interp`'s six `xp[i]`/`fp[i]`/`d[i]` reads, per
+        curve, per bisection and Newton evaluation.
+
+        The index is XLA's: `start` clamped into `[0, dim - slice_size]` per axis, then
+        the row-major flat offset of output element `k`, which is
+        `sum_ax (clamped[ax] + off_k[ax]) * stride[ax]` -- the `clamped` part hoisted
+        into one local since it does not depend on `k`. Same arithmetic the chain
+        enumerates, evaluated instead of searched.
         """
         operand, starts = args[0], args[1:]
         sizes = tuple(eqn.params["slice_sizes"])
@@ -5041,13 +5061,8 @@ class _FuncEmitter:
             return [self._coerce(operand.exprs[i], operand.kind, okind)
                     for i in np.asarray(sel).reshape(-1)]
 
-        # Runtime start(s): enumerate the legal start tuples.
-        ranges = [range(0, operand.shape[ax] - sizes[ax] + 1)
-                  for ax in range(len(sizes))]
-        n_cases = int(np.prod([len(r) for r in ranges]))
-        if n_cases > 512:
-            raise Refusal(f"dynamic_slice with a runtime index and {n_cases} legal "
-                          f"start positions (cap 512)")
+        # Runtime start(s). XLA clamps each into `[0, dim - slice_size]`; both the
+        # subscript and the chain below need that, so it is emitted once, first.
         clamped = []
         for ax, s in enumerate(starts):
             hi = operand.shape[ax] - sizes[ax]
@@ -5056,10 +5071,40 @@ class _FuncEmitter:
                 f"    {c} = wp.clamp({self._to_int(s.exprs[0], s.kind)}, "
                 f"wp.int32(0), wp.int32({hi}))")
             clamped.append(c)
+
+        n_out = int(np.prod(oshape)) if oshape else 1
+        if operand.kind == _F and okind == _F:
+            try:
+                ident = self._vec_local(operand)
+            except Refusal:
+                ident = None                 # too wide, or not a float vector
+            if ident is not None:
+                strides, acc = [], 1
+                for d in reversed(operand.shape):
+                    strides.insert(0, acc)
+                    acc *= int(d)
+                base = self._fresh()
+                self.lines.append(
+                    "    " + base + " = " + " + ".join(
+                        f"wp.int32({strides[ax]}) * {clamped[ax]}" if strides[ax] != 1
+                        else clamped[ax] for ax in range(len(strides))))
+                out = []
+                for k in range(n_out):
+                    off = np.unravel_index(k, sizes) if sizes else ()
+                    c = int(sum(int(off[ax]) * strides[ax] for ax in range(len(off))))
+                    out.append(f"{ident}[{base} + {c}]" if c else f"{ident}[{base}]")
+                return out
+
+        # Neither: enumerate the legal start tuples.
+        ranges = [range(0, operand.shape[ax] - sizes[ax] + 1)
+                  for ax in range(len(sizes))]
+        n_cases = int(np.prod([len(r) for r in ranges]))
+        if n_cases > 512:
+            raise Refusal(f"dynamic_slice with a runtime index and {n_cases} legal "
+                          f"start positions (cap 512)")
         import itertools
 
         out = []
-        n_out = int(np.prod(oshape)) if oshape else 1
         for k in range(n_out):
             expr = None
             for combo in itertools.product(*ranges):

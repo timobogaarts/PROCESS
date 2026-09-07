@@ -54,6 +54,30 @@ tokamak (also `pedestal_temperature_profile`, 443 -> 46); coverage is unchanged 
 three and so is every SAND residual, to the digit -- the nest emits the same device `log`
 in the same order, so there is no host arithmetic and no numerical change to have.
 
+**A runtime `dynamic_slice` is emitted as a subscript, not a case analysis**
+(`_dynamic_slice`, 2026-09-07). It used to enumerate every legal start position as a
+`wp.where` cascade -- exact, but 199 selects for one read of a 200-point table.
+`.stellarator.coils.intersect` does twenty-six such reads (`pchip_interp`'s six
+`xp[i]`/`fp[i]`/`d[i]` lookups, per curve, per bisection and Newton evaluation) and spent
+176 kB on them, in 26 lines of 6.7 kB each: 63 % of that function and 26 % of the whole
+emitted module, for what is `a1[i]`. `_vec_local` already had the answer -- a `vec{n}f`
+parameter, a `wp.array` constant global and a vector a nest wrote are all subscriptable,
+and `array_ident` hands the identifier back with no copy -- so the runtime branch now
+computes XLA's own clamped flat index once and reads `ident[base + k]`. Measured:
+`helias_5b` 642.9 -> 427.0 kB (-33.6 %), `stellarator_helias` 664.7 -> 448.6 kB (-32.5 %),
+`.stellarator.coils.intersect` 280.2 -> 79.4 kB. `large_tokamak_nof` is untouched (it has
+no `intersect`), and every SAND residual and per-node validation figure on all three is
+unchanged. **Bytes, not lines, is the metric for this backend**: `intersect`'s line count
+went UP (2,499 -> 2,927) while its size fell by 72 %, because the cascades were single
+enormous lines.
+
+**Note that `.tokamak.cicc_superconducting_tf_coil.tf_stress` grazes the validation gate**
+-- `worst_rel=1.646e-12` against `AGREEMENT_RTOL = 1e-12`, the only FAIL on any config.
+It is **pre-existing and unrelated to the two 2026-09-07 codegen changes**: re-running the
+identical validation with the subscript path disabled reproduces 1.646e-12 to every digit.
+It is a tolerance graze on the largest node in the graph, not a wrong answer, and it is
+unexamined.
+
 ## Open
 
 **[defect, found 2026-09-06 -- §86] `native.NativeState` keeps two unsynced stores for a
