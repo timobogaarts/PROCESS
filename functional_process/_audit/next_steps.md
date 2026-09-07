@@ -24,16 +24,35 @@ works on the whole tokamak graph's scalar objective except for one node (see
 per call; compiled-call caching lives in `core/solver/host_cache.py`; the boundary
 provider distinguishes `input`/`guess`/`stated` boundary categories.
 
-**A Warp code-generation path exists and works** (`cottax/warp/`, 3493 lines). Each cottax
-node is traced to a jaxpr and emitted as one `@wp.func`; `emit.py` assembles them into a
-single kernel `f(unknowns[], boundary[]) -> conditions[]`. It covers 6/11, 12/21 and 16/33
-SAND conditions on `helias_5b`, `stellarator_helias` and `large_tokamak_nof`, agreeing with
-JAX to 4.3e-16 / 6.7e-16 / 2.7e-15 against a 1e-12 gate, with every emitted node
-individually validated against `defn.fn` over 8 draws. The design, the measurements and the
-open items are in `optimise_design.md`; this file stays about the JAX driver/graph layer.
-Two things there are worth knowing here: adjoint codegen currently defaults **off** (~60x
-compile cost, so the module cannot be `wp.Tape`d), and array-valued intermediates are the
-dominant remaining refusal class.
+**A Warp code-generation path exists and works** (`cottax/warp/`). Each cottax node is
+traced to a jaxpr and emitted as one `@wp.func`; `emit.py` assembles them into a single
+kernel `f(unknowns[], boundary[]) -> conditions[]`. **Forward SAND is complete on both
+stellarators** -- 11/11 conditions on `helias_5b` and 21/21 on `stellarator_helias`, zero
+refusals, agreeing with JAX to 7.3e-16 and 2.1e-15 against a 1e-12 gate --  and
+`large_tokamak_nof` reaches 27/33 at 2.7e-13 with three named refusals (two `svd`, one
+non-unique `scatter`). Every emitted node is individually validated against `defn.fn` over
+8 draws. The design, the measurements and the open items are in `optimise_design.md`; this
+file stays about the JAX driver/graph layer. Two things there are worth knowing here:
+adjoint codegen currently defaults **off** (~60x compile cost, so the module cannot be
+`wp.Tape`d), and reverse mode is refuted rather than merely untested (`tried_and_rejected.md`).
+
+**Fusion is gated on source lines as well as on equation count** (`MIN_FUSED_LINES`,
+2026-09-07). `MIN_FUSED_EQNS` weighs a candidate nest by how many equations it fuses,
+which is the right axis for the arithmetic the machinery saves and the wrong one for what
+actually binds: NVRTC's memory scales with the source it is handed. One wide equation is
+worth a loop on its own. `.physics.plasma_composition`'s `log` at shape (14, 200) --
+`jnp.interp`'s log-x axis vmapped over the fourteen impurity species -- planned cleanly as
+`group=1 mat=1` and was dropped for having one equation, emitting 2,800 `wp.log(a18[i])`
+statements plus 2,800 more filling the `vec2800f` the lookup reads. The same log over the
+same constant table already fused to ten lines in `.physics.impurity_radiation_totals`,
+whose 191-equation family carried it past the threshold, so this was a cost-model gap with
+a working reference in the same module rather than a missing capability. Measured, on the
+three tracked configs: `helias_5b` 16,495 -> 10,900 lines (-33.9 %), `stellarator_helias`
+17,172 -> 11,577 (-32.6 %), `large_tokamak_nof` 29,144 -> 23,152 (-20.6 %). Exactly one
+node changes on the stellarators (`plasma_composition`, 8,009 -> 2,414) and two on the
+tokamak (also `pedestal_temperature_profile`, 443 -> 46); coverage is unchanged on all
+three and so is every SAND residual, to the digit -- the nest emits the same device `log`
+in the same order, so there is no host arithmetic and no numerical change to have.
 
 ## Open
 
@@ -347,34 +366,12 @@ initial keyword-swept register, not proven complete.
   and inequalities — "multidisciplinary feasible" taken literally, a third point beyond
   today's MDF and SAND formulations.
 - **`IFE.IN.DAT` is out of scope** — `.ife.*` has no unit in `unit_registry.md`.
-- **`plasma_composition` is 46.6 % of the emitted Warp module (8,009 of 17,172 lines),
-  and 5,600 of its lines are ONE equation the fusion planner declined.** The equation is
-  `log` at shape `(14, 200)` -- `jnp.interp`'s log-x axis inside
-  `calculate_average_charge_at_temp`, vmapped over the 14 species. It emits 2,800
-  `t = wp.log(a18[i])` statements plus 2,800 `t2972[i] = t` statements filling one
-  `vec2800f` (21.9 KB of per-thread locals) that a runtime-indexed gather reads. The
-  *same* `log` over the *same* constant table fuses correctly in
-  `.physics.impurity_radiation_totals` -- `for k1 in range(14): for k2 in range(200)`,
-  ten lines -- so this is a planner cost-model gap, not a missing capability, and there
-  is a working reference implementation in the same module. The cause is exact and was
-  measured, not inferred: instrumenting `_plan_chain` shows `plasma_composition`'s 201
-  equations are 106 at size 1, 82 at size 14, 13 at size 12, and **exactly one** at
-  2,800, while `impurity_radiation_totals` has 191 equations in that family and gets its
-  `(14, 200)` nest. A one-equation nest saves no arithmetic under `_plan_for_shape`'s
-  payoff model, so it is not planned -- but the model has no term for SOURCE LINES, and
-  source lines are what NVRTC is OOM-killed on. **Fix**: plan a nest for a lone
-  elementwise equation when its width alone makes the unrolled form cost `2n` lines
-  (`n` statements plus `n` vector fills) against a loop's three. Expected 8,009 ->
-  ~2,410 lines, module 17,172 -> ~11,570 (-33 %), with **no numerical change whatever**:
-  the same device `log`, the same order, no host folding, so `_fold_exact`'s deliberate
-  exclusion of float results is not touched. Only one node in the config shows this
-  pattern -- a module-wide scan for statements reading only constant-array parameters
-  finds 2,800, all of them here.
 - **`impurity_radiation_totals` copies two constant globals into per-thread vectors for
   no reason** -- 44.8 KB of its 111.2 KB. Its nest writes four `vec2800f`, and `t3`/`t4`
   are `t3[200*k1+k2] = a17[200*k1+k2]` / `t4[...] = a18[...]`, verbatim reads of the two
   `wp.array` constant globals. `array_ident` exists precisely to hand the global's
   identifier back instead of copying (`_vec_local`), but it propagates only through
   equations whose emitted `exprs` are literally the operand's own, and the nest's
-  materialisation is not one of those. Independent of the item above; together they are
-  most of the module's 170.4 KB of per-thread vector locals.
+  materialisation is not one of those. Independent of `MIN_FUSED_LINES` (§Landed),
+  which cut source lines and left every byte of this: the module still carries 170.4 KB
+  of per-thread vector locals, and this node is 111.2 KB of it.

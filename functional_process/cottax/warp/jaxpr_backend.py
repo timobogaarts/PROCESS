@@ -1261,8 +1261,36 @@ costs a few statements of overhead and gives up the constant folding that scalar
 gets for free. A chain of shorter values is left exactly as it was."""
 
 MIN_FUSED_EQNS = 4
-"""Do not build a loop nest for fewer equations than this. A one-equation "chain" is a
-loop around a single statement -- strictly worse than the unrolled form it replaces."""
+"""Do not build a loop nest for fewer equations than this **unless it is wide enough to
+pay for itself in source lines alone** (`MIN_FUSED_LINES`). A one-equation "chain" is a
+loop around a single statement, and at the widths this threshold was written for that is
+strictly worse than the unrolled form it replaces: the loop costs a header and gives up
+the constant folding scalarisation gets for free."""
+
+MIN_FUSED_LINES = 256
+"""...and this is the width at which that stops being true. A nest of `k` equations
+materialising `m` outputs costs, unrolled, `size * (k + m)` statements -- `size` per
+equation plus `size` more per vector fill -- against `k + m` plus a header or two as a
+loop. `MIN_FUSED_EQNS` weighs only `k`, which is the right axis for the arithmetic the
+fusion machinery was built to save and the wrong one for the resource that actually
+binds here: NVRTC's memory, which scales with the SOURCE it is handed.
+
+`.physics.plasma_composition` is the case that forced the distinction. Its one `log` at
+shape (14, 200) -- `jnp.interp`'s log-x axis inside `calculate_average_charge_at_temp`,
+vmapped over the fourteen impurity species -- plans cleanly as `group=1 mat=1` and was
+then dropped for having one equation, emitting 2,800 `wp.log(a18[i])` statements and
+2,800 more filling the `vec2800f` the lookup reads: 5,600 of the node's 8,009 lines, and
+46.6 % of the whole module, for one equation. The SAME log over the SAME constant table
+already fuses to ten lines in `.physics.impurity_radiation_totals`, whose 191-equation
+(14, 201) family carries it past `MIN_FUSED_EQNS` -- so the machinery was always able to
+emit this, and `_chain_exit`'s own docstring already describes exactly this waste ("5,600
+statements to compute and 5,602 to copy, against 14 for the nest"). Only the arithmetic
+count stood in the way.
+
+256 is deliberately far below the case that motivates it (5,600) and above what the
+existing gate already admits (`MIN_FUSED_EQNS` equations at `FUSE_MIN_ELEMENTS`, 96), so
+it changes nothing about plans that already pass and cannot turn a narrow chain -- where
+the folding argument above is real -- into a loop."""
 
 MAX_FUSE_PROBE = 8192
 """Cap on the number of elements `_template` will probe. The probe is O(elements) in
@@ -1872,7 +1900,7 @@ def _plan_chain(eqns, outrefs, veto=frozenset(), known=None):
             reds = [ix for ix in red_by_size.get(size, ()) if ix not in claimed]
             plan = _plan_for_shape(shape, eqns, live, producer, consumers,
                                    out_ids, reds, size_of)
-            if plan is None or len(plan.group_ixs) < MIN_FUSED_EQNS:
+            if plan is None or not _nest_worth_it(plan):
                 continue
             if best is None or len(plan.group_ixs) > len(best.group_ixs):
                 best = plan
@@ -1881,6 +1909,27 @@ def _plan_chain(eqns, outrefs, veto=frozenset(), known=None):
         plans.append(best)
         claimed |= best.group_ixs | set(best.reduce_roots)
     return plans
+
+
+def _nest_worth_it(plan) -> bool:
+    """Is `plan` worth emitting as a loop rather than leaving unrolled?
+
+    Two independent reasons it can be, and either suffices. Enough EQUATIONS
+    (`MIN_FUSED_EQNS`) is the arithmetic one: a chain long enough that keeping its
+    intermediates in scalar temporaries saves real work. Enough LINES
+    (`MIN_FUSED_LINES`) is the code-size one: `size * (k + m)` statements is what the
+    unrolled form of `k` equations materialising `m` vectors actually costs, and past a
+    few hundred that is worth a loop header on its own even when `k` is 1.
+
+    `m` is counted because a materialised output is a second statement per element -- the
+    vector fill the unrolled path pays and the nest writes directly (`_chain_exit`).
+    Nothing here decides whether the nest is CORRECT; that is `_template`'s and
+    `_plan_for_shape`'s work, both unchanged, and this only ever admits a plan they
+    already built and proved.
+    """
+    if len(plan.group_ixs) >= MIN_FUSED_EQNS:
+        return True
+    return plan.size * (len(plan.group_ixs) + len(plan.mat_roots)) >= MIN_FUSED_LINES
 
 
 def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_of):
