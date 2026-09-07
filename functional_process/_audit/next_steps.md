@@ -24,200 +24,63 @@ works on the whole tokamak graph's scalar objective except for one node (see
 per call; compiled-call caching lives in `core/solver/host_cache.py`; the boundary
 provider distinguishes `input`/`guess`/`stated` boundary categories.
 
-**A Warp code-generation path exists and works** (`cottax/warp/`). Each cottax node is
-traced to a jaxpr and emitted as one `@wp.func`; `emit.py` assembles them into a single
-kernel `f(unknowns[], boundary[]) -> conditions[]`. **Forward SAND is complete on both
-stellarators** -- 11/11 conditions on `helias_5b` and 21/21 on `stellarator_helias`, zero
-refusals, agreeing with JAX to 7.3e-16 and 2.1e-15 against a 1e-12 gate --  and
-`large_tokamak_nof` reaches 27/33 at 2.7e-13 with three named refusals (two `svd`, one
-non-unique `scatter`). Every emitted node is individually validated against `defn.fn` over
-8 draws. The design, the measurements and the open items are in `optimise_design.md`; this
-file stays about the JAX driver/graph layer. Two things there are worth knowing here:
-adjoint codegen currently defaults **off** (~60x compile cost, so the module cannot be
-`wp.Tape`d), and reverse mode is refuted rather than merely untested (`tried_and_rejected.md`).
+**The Warp code-generation path works, and the experiment is ARCHIVED** (`cottax/warp/`,
+closed 2026-09-07). Every cottax node is traced to a jaxpr and emitted as one `@wp.func`;
+`emit.py` assembles them into one kernel `f(unknowns[], boundary[]) -> conditions[]`. It
+is correct and complete on both stellarators and was stopped there deliberately, not
+because it broke. Full narrative and per-measurement reasoning are in
+`optimise_design.md` and in git history (`git log -- functional_process/cottax/warp/`);
+what is worth carrying forward is only this:
 
-**Fusion is gated on source lines as well as on equation count** (`MIN_FUSED_LINES`,
-2026-09-07). `MIN_FUSED_EQNS` weighs a candidate nest by how many equations it fuses,
-which is the right axis for the arithmetic the machinery saves and the wrong one for what
-actually binds: NVRTC's memory scales with the source it is handed. One wide equation is
-worth a loop on its own. `.physics.plasma_composition`'s `log` at shape (14, 200) --
-`jnp.interp`'s log-x axis vmapped over the fourteen impurity species -- planned cleanly as
-`group=1 mat=1` and was dropped for having one equation, emitting 2,800 `wp.log(a18[i])`
-statements plus 2,800 more filling the `vec2800f` the lookup reads. The same log over the
-same constant table already fused to ten lines in `.physics.impurity_radiation_totals`,
-whose 191-equation family carried it past the threshold, so this was a cost-model gap with
-a working reference in the same module rather than a missing capability. Measured, on the
-three tracked configs: `helias_5b` 16,495 -> 10,900 lines (-33.9 %), `stellarator_helias`
-17,172 -> 11,577 (-32.6 %), `large_tokamak_nof` 29,144 -> 23,152 (-20.6 %). Exactly one
-node changes on the stellarators (`plasma_composition`, 8,009 -> 2,414) and two on the
-tokamak (also `pedestal_temperature_profile`, 443 -> 46); coverage is unchanged on all
-three and so is every SAND residual, to the digit -- the nest emits the same device `log`
-in the same order, so there is no host arithmetic and no numerical change to have.
+- **Forward SAND is complete on both stellarators**: 11/11 conditions on `helias_5b`,
+  21/21 on `stellarator_helias`, zero refusals, agreeing with JAX to 7.3e-16 and 2.1e-15
+  against a 1e-12 gate. `large_tokamak_nof` reaches 27/33 at 2.7e-13 with three named
+  refusals (two `svd`, one non-unique `scatter`). Every emitted node is individually
+  validated against `defn.fn` over 8 draws. **Reverse mode is refuted, not untested**
+  (`tried_and_rejected.md`), and adjoint codegen defaults off (~60x compile).
+- **It runs on the GPU and beats JAX when batched**, which was the whole thesis and is
+  now tested rather than asserted. On a 31-node prefix at n=65,536, Warp-CUDA 2.53 us/pt
+  against JAX-CPU 5.16, agreement 0.000e+00; on a 64-node prefix 10.18 against 20.95. The
+  ratio is flat at ~2.05x across graph sizes and Warp is still falling at 65,536 while
+  JAX is flat.
+- **The full 123-node graph compiles (69 s, 1.98 MB cubin) but will not LAUNCH**, and the
+  reason is per-thread local memory, not source size: 294,040 bytes/thread at 255
+  registers, which the driver reserves for the device's maximum resident threads
+  regardless of launch `dim` -- 4.2 GB against 2.65 GB free on a 4 GB T1000. Measured
+  `local_bytes` by prefix: 31 -> 25,832 (launches), 64 -> 76,776 (launches), 96 ->
+  307,512, 123 -> 294,040 (neither launches; note it is not monotone). **The reservation
+  scales with SM count**, so an A100 would want 65 GB and an H100 79.5 GB for this
+  kernel: bigger hardware makes it worse.
+- **69 % of the per-thread vector memory is thread-invariant** -- 119.4 kB of 174.3 kB is
+  a function of constant-array parameters and literals alone, so 14,336 threads each hold
+  a private copy of identical tables. Five vectors of 21.9 kB:
+  `impurity_radiation_totals`'s `t3`/`t4` (verbatim copies of `wp.array` globals) and
+  `t5`/`t6` (their logs), plus `plasma_composition`'s log table.
+- **Two hypotheses were tested and REFUTED**, which is the part most likely to be
+  re-invented. (i) Program size thrashing the instruction cache: it predicts Warp
+  degrading against JAX as the graph grows, and the ratio is flat (2.04x at 31 nodes,
+  2.06x at 64). (ii) Array intermediates costing Warp time that JAX's vectorised form
+  avoids: adding `impurity_radiation_totals`, the most array-heavy node in the graph,
+  moves the ratio not at all. The arrays are a **launchability** problem, not a
+  throughput one. What differs between the two systems is not who vectorises but WHERE
+  the array lives: `jax.vmap` makes a (201,) profile one shared `(n, 201)` buffer that is
+  streamed and mostly fused away, while Warp gives every thread its own `vec201f` that
+  any runtime index forces into local memory.
+- **Why JAX wins on CPU**: `cmd_bench`'s JAX side is `jit(vmap(...))`, so XLA vectorises
+  the whole sub-DAG over the batch; Warp puts one thread on each point and gets no
+  cross-point vectorisation at all. That axis difference, not code quality, is the ~8x.
+- **If resumed, the fix is to split the mega-kernel into several launches** -- cottax's
+  own `Blocking`, applied to codegen. `local_bytes` becomes the max over kernels rather
+  than the sum (the 64-node prefix measures 76.8 kB and launches comfortably), the
+  intermediates cross in global memory as XLA's do, the extra launches cost ~10 us
+  against 0.67 s, and extrapolating the two measured prefixes the 2x win survives.
+  Hoisting the 119.4 kB of thread-invariant arrays to `wp.array` globals is a smaller
+  independent lever. Tiling the batch inside a thread is reimplementing XLA and is not.
 
-**A runtime `dynamic_slice` is emitted as a subscript, not a case analysis**
-(`_dynamic_slice`, 2026-09-07). It used to enumerate every legal start position as a
-`wp.where` cascade -- exact, but 199 selects for one read of a 200-point table.
-`.stellarator.coils.intersect` does twenty-six such reads (`pchip_interp`'s six
-`xp[i]`/`fp[i]`/`d[i]` lookups, per curve, per bisection and Newton evaluation) and spent
-176 kB on them, in 26 lines of 6.7 kB each: 63 % of that function and 26 % of the whole
-emitted module, for what is `a1[i]`. `_vec_local` already had the answer -- a `vec{n}f`
-parameter, a `wp.array` constant global and a vector a nest wrote are all subscriptable,
-and `array_ident` hands the identifier back with no copy -- so the runtime branch now
-computes XLA's own clamped flat index once and reads `ident[base + k]`. Measured:
-`helias_5b` 642.9 -> 427.0 kB (-33.6 %), `stellarator_helias` 664.7 -> 448.6 kB (-32.5 %),
-`.stellarator.coils.intersect` 280.2 -> 79.4 kB. `large_tokamak_nof` is untouched (it has
-no `intersect`), and every SAND residual and per-node validation figure on all three is
-unchanged. **Bytes, not lines, is the metric for this backend**: `intersect`'s line count
-went UP (2,499 -> 2,927) while its size fell by 72 %, because the cascades were single
-enormous lines.
-
-**Note that `.tokamak.cicc_superconducting_tf_coil.tf_stress` grazes the validation gate**
--- `worst_rel=1.646e-12` against `AGREEMENT_RTOL = 1e-12`, the only FAIL on any config.
-It is **pre-existing and unrelated to the two 2026-09-07 codegen changes**: re-running the
-identical validation with the subscript path disabled reproduces 1.646e-12 to every digit.
-It is a tolerance graze on the largest node in the graph, not a wrong answer, and it is
-unexamined.
-
-**The Warp kernel now COMPILES for CUDA, RUNS on the GPU, and beats JAX when batched**
-(2026-09-07). All three are new; the previous state was an NVRTC process OOM-killed at
-11.4 GB with nothing to show.
-
-- **Compile**: the full 123-node `stellarator_helias` kernel compiles for `sm_75` in 69 s
-  under a 7 GB cgroup cap and writes a 1.98 MB cubin. What unblocked it was source size --
-  `MIN_FUSED_LINES` and the `_dynamic_slice` subscript path above, together 0.89 MB ->
-  0.52 MB of emitted Warp -- since NVRTC's cost is per-function optimisation, not module
-  bytes.
-- **Launch is the new wall, and it is a different resource**: `local_bytes` per thread,
-  read off the cubin with `cuFuncGetAttribute` (`regcheck.py`). The full kernel wants
-  **294,040 bytes/thread** at 255 registers, and the driver reserves that for the device's
-  maximum resident threads regardless of launch `dim` -- 294,040 x 14,336 = 4.2 GB against
-  2.65 GB free on a 4 GB T1000 with a desktop on it. The budget is therefore
-  **~185 kB/thread**, and neither codegen change moved it (174.9 kB of `vec{n}f` locals
-  before, 174.9 kB after; the subscript path actually added 4.5 kB by materialising two
-  vectors the cascades used to read in place).
-- **It is CUMULATIVE, not one node.** `.physics.impurity_radiation_totals` holds 111.2 kB
-  of the 174.9 kB, but a 32-node prefix INCLUDING it launches, and a 64-node prefix
-  launches; 96 and 112 do not. The ceiling on this card is somewhere in 64-96 of the 123
-  nodes. One mega-kernel means every node's locals coexist, and that is the structural
-  cost of the single-kernel design rather than any one node's fault.
-- **The first GPU numbers, on the 31-node prefix** (2/21 conditions -- a sub-kernel, not
-  the SAND residual), Warp-CUDA against JAX-CPU, agreement 0.000e+00 at every checked
-  batch:
-
-  | n | warp us/pt | jax us/pt |
-  |---|---|---|
-  | 1 | 2681.2 | 30.8 |
-  | 256 | 33.6 | 4.0 |
-  | 4096 | **4.4** | 5.9 |
-  | 16384 | **2.8** | 5.7 |
-  | 65536 | **2.5** | 5.2 |
-
-  Cold compile 9.2 s. **This is the first time Warp wins anything**, and it is the shape
-  the design predicted: Warp falls 600x across the sweep as launch overhead amortises and
-  is still falling at 65,536, while JAX is flat at 5-6 us/pt. `_audit/optimise_design.md`
-  S70's "the plausible win is batching -- and that is untested" is now tested. Two caveats
-  kept explicit: JAX is on CPU here (the production path, but not a backend-vs-backend
-  comparison), and this is a quarter of the graph.
-- **Why the whole graph does not launch, and why a bigger card is not the answer.**
-`local_bytes` against launch outcome, all at 255 registers (the sm_75 cap), read off each
-cubin:
-
-| nodes | local_bytes | launches |
-|---|---|---|
-| 31 | 25,832 | yes |
-| 32 | 25,832 | yes |
-| 64 | 76,776 | yes |
-| 96 | 307,512 | no |
-| 112 | 307,624 | no |
-| 123 | 294,040 | no |
-
-The model that fits: the driver reserves `local_bytes x max_resident_threads` on the
-device, independent of launch `dim`. sm_75 is 1024 threads/SM and this card has 14 SMs, so
-14,336 threads -- 76,776 x 14,336 = 1.10 GB (launches, against 2.65 GB free) and
-294,040 x 14,336 = 4.22 GB (does not). Note it is **not monotone in node count**: 96 nodes
-wants MORE than 123, because the register allocator's spill choices are not monotone
-either. **The reservation grows with the card**, which is the uncomfortable part: an A100
-(108 SMs x 2048) would reserve 65 GB for this kernel and an H100 (132 x 2048) 79.5 GB.
-Bigger hardware makes this worse, not better, so cutting `local_bytes` is mandatory
-whatever the card. The natural fix is the one the cottax design already implies -- split
-the mega-kernel into several launches with intermediates in global memory between them,
-rather than holding every node's live values in one thread at once.
-
-**Next lever is per-thread local memory, not source size.** The 44.8 kB of
-  `impurity_radiation_totals` that is verbatim copies of constant globals is the cleanest
-  target and its cause is now pinned: the copies are `gather` equations whose emitted
-  exprs ARE the operand's, but `_eqn`'s `array_ident` propagation requires a
-  SINGLE-argument equation, and a gather has two. The provable condition is only
-  `tuple(exprs) == some_arg.exprs`, which holds at any arity. That relaxation would not by
-  itself be enough -- 294 kB has to reach 185 kB -- but it is free of any numerical
-  question.
-
-**Why JAX beats Warp on CPU, and Warp beats JAX on GPU -- the axis, not the backend**
-(measured 2026-09-07). `cmd_bench`'s JAX side is
-`jax.jit(jax.vmap(jf, in_axes=(0, 0) + (None,) * n_arrs))`: XLA sees the whole sub-DAG as
-`n`-wide arrays and emits AVX loops over the batch, executing the ~28k-operation program
-once per SIMD lane group with intermediates as contiguous arrays in L1/L2. Warp's model is
-one THREAD per batch point: each thread runs the entire program alone, and its CPU backend
-gets no cross-point vectorisation at all. Four float64 lanes of AVX2 plus the cache and
-call-overhead difference is the ~8x the notebook measures on CPU -- an axis difference, not
-a code-quality one.
-
-On GPU that axis finally pays, but only 2x, and the reasons are all measured or already
-recorded: **float64 runs at 1/16 rate on this card** (76.6 against 1254.7 GFLOP/s,
-S70), **255 registers/thread is the hardware cap** so occupancy is ~8 warps of 32 (25 %),
-and **294 kB/thread of spill** means every intermediate past those 255 registers is a DRAM
-round trip that 25 % occupancy cannot hide. Warp-GPU wins by 2x while running at a small
-fraction of the card.
-
-**A program-size/i-cache hypothesis was tested and REFUTED.** If the mega-kernel's size
-were thrashing the instruction cache, Warp would degrade against JAX as the graph grows.
-It does not: at n=65,536 the Warp/JAX ratio is 2.04x on the 31-node prefix and 2.06x on the
-64-node prefix, flat, while both sides grow by the same ~4x from 31 to 64 nodes (the second
-half carries `fusion_rates`, `impurity_radiation_totals` and `vacuum_old`). Whatever else
-is wrong, per-thread program size is not differentially hurting Warp.
-
-| n=65,536 | warp us/pt | jax us/pt | ratio |
-|---|---|---|---|
-| 31 nodes | 2.53 | 5.16 | 2.04x |
-| 64 nodes | 10.18 | 20.95 | 2.06x |
-
-**69 % of the per-thread vector memory is THREAD-INVARIANT** (measured 2026-09-07):
-119.4 kB of 174.3 kB, on `stellarator_helias`. Every one of the 14,336 resident threads
-keeps a private copy of the same tables -- 1.7 GB of the 4.2 GB local-memory reservation
-spent on 119 kB of duplicated data. The five offenders are 21.9 kB each:
-`impurity_radiation_totals`'s `t3`/`t4` (verbatim copies of the two `wp.array` constant
-globals) and `t5`/`t6` (their logs), plus `plasma_composition`'s log table. All five are
-functions of constant-array parameters and literals ALONE, so all five are computable
-once per device rather than once per thread.
-
-**This is where the array-heavy nodes actually hurt, and it is not where one would
-guess.** The obvious hypothesis -- that big array intermediates cost Warp time that JAX's
-vectorised form avoids -- is not supported by the differential: going from the 31-node to
-the 64-node prefix ADDS `impurity_radiation_totals`, the single most array-heavy node in
-the graph, and the Warp/JAX ratio at n=65,536 does not move (2.04x -> 2.06x). Both sides do
-the same arithmetic and pay for it in proportion. (One comparison, and the prefix adds
-other nodes too, so this bounds the effect rather than excluding it.) What differs is
-WHERE the array lives: under `vmap` a (201,) profile becomes one shared `(n, 201)` buffer
-that is streamed with unit stride and that XLA fuses out of existence wherever it can,
-while in Warp it is a per-thread `vec201f` that any runtime index forces out of registers
-into local memory -- replicated across every resident thread. So the array cost is a
-LAUNCHABILITY problem, not a throughput one.
-
-**Three levers, if this is ever resumed:**
-
-1. **Hoist thread-invariant arrays to `wp.array` globals** -- the 119.4 kB above.
-   `_constant_varpaths` already does exactly this for constant INPUTS; the gap is constant
-   INTERMEDIATES. A tiny prologue kernel filling them on device sidesteps the host-versus-
-   device arithmetic question that `_fold_exact` deliberately avoids.
-2. **Split the mega-kernel into several launches** -- the structural fix, and the one the
-   cottax `Blocking` decomposition already implies. Each kernel's live set is its own
-   nodes, so `local_bytes` is the MAX over kernels rather than the sum: the 64-node prefix
-   measures 76.8 kB and launches comfortably, so two or three such kernels cover the
-   graph. Intermediates cross in global memory, which is what XLA does between fusions
-   anyway, and the extra launches cost ~10 us against 0.67 s at n=65,536. Extrapolating
-   the two measured prefixes, the ~2x win over JAX survives the split.
-3. **Change the parallel axis** (tile the batch inside a thread, so one thread does SIMD
-   over points). This is reimplementing what XLA already does and is not worth it.
+**`.tokamak.cicc_superconducting_tf_coil.tf_stress` grazes the validation gate** --
+`worst_rel=1.646e-12` against `AGREEMENT_RTOL = 1e-12`, the only FAIL on any config, on
+the largest node in the graph. Pre-existing and unexamined: it reproduces to every digit
+with the 2026-09-07 codegen changes disabled.
 
 ## Open
 
