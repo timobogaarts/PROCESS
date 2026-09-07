@@ -9,6 +9,7 @@ constraint function through `ConstraintManager` -- the same closure that's actua
 wired into the solver, not a re-implementation of it.
 """
 
+from functional_process.cottax._harness.process_reference import data_reference
 import pytest
 
 from functional_process.cottax._harness import (
@@ -125,30 +126,7 @@ def _evaluate(constraint_id, data):
     )
 
 
-def _reference_constraint_1(
-    beta_fast_alpha,
-    beta_beam,
-    nd_plasma_electrons_vol_avg,
-    temp_plasma_electron_density_weighted_kev,
-    nd_plasma_ions_total_vol_avg,
-    temp_plasma_ion_density_weighted_kev,
-    b_plasma_total,
-    beta_total_vol_avg,
-):
-    data = DataStructure()
-    data.physics.beta_fast_alpha = beta_fast_alpha
-    data.physics.beta_beam = beta_beam
-    data.physics.nd_plasma_electrons_vol_avg = nd_plasma_electrons_vol_avg
-    data.physics.temp_plasma_electron_density_weighted_kev = (
-        temp_plasma_electron_density_weighted_kev
-    )
-    data.physics.nd_plasma_ions_total_vol_avg = nd_plasma_ions_total_vol_avg
-    data.physics.temp_plasma_ion_density_weighted_kev = (
-        temp_plasma_ion_density_weighted_kev
-    )
-    data.physics.b_plasma_total = b_plasma_total
-    data.physics.beta_total_vol_avg = beta_total_vol_avg
-    return _evaluate(1, data)
+_reference_constraint_1 = data_reference(lambda d: _evaluate(1, d))
 
 
 class TestConstraint1(Tier1Contract):
@@ -199,34 +177,7 @@ class TestConstraint1(Tier1Contract):
     }
 
 
-def _reference_constraint_2(
-    i_rad_loss,
-    i_plasma_ignited,
-    pden_electron_transport_loss_mw,
-    pden_ion_transport_loss_mw,
-    pden_plasma_rad_mw,
-    pden_plasma_core_rad_mw,
-    f_p_alpha_plasma_deposited,
-    pden_alpha_total_mw,
-    pden_non_alpha_charged_mw,
-    pden_plasma_ohmic_mw,
-    p_hcd_injected_total_mw,
-    vol_plasma,
-):
-    data = DataStructure()
-    data.physics.i_rad_loss = i_rad_loss
-    data.physics.i_plasma_ignited = i_plasma_ignited
-    data.physics.pden_electron_transport_loss_mw = pden_electron_transport_loss_mw
-    data.physics.pden_ion_transport_loss_mw = pden_ion_transport_loss_mw
-    data.physics.pden_plasma_rad_mw = pden_plasma_rad_mw
-    data.physics.pden_plasma_core_rad_mw = pden_plasma_core_rad_mw
-    data.physics.f_p_alpha_plasma_deposited = f_p_alpha_plasma_deposited
-    data.physics.pden_alpha_total_mw = pden_alpha_total_mw
-    data.physics.pden_non_alpha_charged_mw = pden_non_alpha_charged_mw
-    data.physics.pden_plasma_ohmic_mw = pden_plasma_ohmic_mw
-    data.current_drive.p_hcd_injected_total_mw = p_hcd_injected_total_mw
-    data.physics.vol_plasma = vol_plasma
-    return _evaluate(2, data)
+_reference_constraint_2 = data_reference(lambda d: _evaluate(2, d))
 
 
 class TestConstraint2(Tier1Contract):
@@ -273,24 +224,7 @@ class TestConstraint2(Tier1Contract):
     fuzz_fixed = {"i_rad_loss": 0, "i_plasma_ignited": 0}
 
 
-def _reference_constraint_3(
-    i_plasma_ignited,
-    pden_ion_transport_loss_mw,
-    pden_ion_electron_equilibration_mw,
-    f_p_alpha_plasma_deposited,
-    f_pden_alpha_ions_mw,
-    p_hcd_injected_ions_mw,
-    vol_plasma,
-):
-    data = DataStructure()
-    data.physics.i_plasma_ignited = i_plasma_ignited
-    data.physics.pden_ion_transport_loss_mw = pden_ion_transport_loss_mw
-    data.physics.pden_ion_electron_equilibration_mw = pden_ion_electron_equilibration_mw
-    data.physics.f_p_alpha_plasma_deposited = f_p_alpha_plasma_deposited
-    data.physics.f_pden_alpha_ions_mw = f_pden_alpha_ions_mw
-    data.current_drive.p_hcd_injected_ions_mw = p_hcd_injected_ions_mw
-    data.physics.vol_plasma = vol_plasma
-    return _evaluate(3, data)
+_reference_constraint_3 = data_reference(lambda d: _evaluate(3, d))
 
 
 class TestConstraint3(Tier1Contract):
@@ -327,30 +261,7 @@ class TestConstraint3(Tier1Contract):
     fuzz_fixed = {"i_plasma_ignited": 0}
 
 
-def _reference_constraint_4(
-    i_rad_loss,
-    i_plasma_ignited,
-    pden_electron_transport_loss_mw,
-    pden_plasma_rad_mw,
-    pden_plasma_core_rad_mw,
-    f_p_alpha_plasma_deposited,
-    f_pden_alpha_electron_mw,
-    pden_ion_electron_equilibration_mw,
-    p_hcd_injected_electrons_mw,
-    vol_plasma,
-):
-    data = DataStructure()
-    data.physics.i_rad_loss = i_rad_loss
-    data.physics.i_plasma_ignited = i_plasma_ignited
-    data.physics.pden_electron_transport_loss_mw = pden_electron_transport_loss_mw
-    data.physics.pden_plasma_rad_mw = pden_plasma_rad_mw
-    data.physics.pden_plasma_core_rad_mw = pden_plasma_core_rad_mw
-    data.physics.f_p_alpha_plasma_deposited = f_p_alpha_plasma_deposited
-    data.physics.f_pden_alpha_electron_mw = f_pden_alpha_electron_mw
-    data.physics.pden_ion_electron_equilibration_mw = pden_ion_electron_equilibration_mw
-    data.current_drive.p_hcd_injected_electrons_mw = p_hcd_injected_electrons_mw
-    data.physics.vol_plasma = vol_plasma
-    return _evaluate(4, data)
+_reference_constraint_4 = data_reference(lambda d: _evaluate(4, d))
 
 
 class TestConstraint4(Tier1Contract):
@@ -392,20 +303,7 @@ class TestConstraint4(Tier1Contract):
     fuzz_fixed = {"i_rad_loss": 0, "i_plasma_ignited": 0}
 
 
-def _reference_constraint_5(
-    i_density_limit,
-    nd_plasma_electron_line,
-    nd_plasma_electrons_vol_avg,
-    nd_plasma_electrons_max,
-    f_nd_plasma_electron_limit_max,
-):
-    data = DataStructure()
-    data.physics.i_density_limit = i_density_limit
-    data.physics.nd_plasma_electron_line = nd_plasma_electron_line
-    data.physics.nd_plasma_electrons_vol_avg = nd_plasma_electrons_vol_avg
-    data.physics.nd_plasma_electrons_max = nd_plasma_electrons_max
-    data.constraints.f_nd_plasma_electron_limit_max = f_nd_plasma_electron_limit_max
-    return _evaluate(5, data)
+_reference_constraint_5 = data_reference(lambda d: _evaluate(5, d))
 
 
 class TestConstraint5(Tier1Contract):
@@ -440,11 +338,7 @@ class TestConstraint5(Tier1Contract):
     fuzz_fixed = {"i_density_limit": int(DensityLimitModel.GREENWALD)}
 
 
-def _reference_constraint_6(beta_poloidal_eps, beta_poloidal_eps_max):
-    data = DataStructure()
-    data.physics.beta_poloidal_eps = beta_poloidal_eps
-    data.physics.beta_poloidal_eps_max = beta_poloidal_eps_max
-    return _evaluate(6, data)
+_reference_constraint_6 = data_reference(lambda d: _evaluate(6, d))
 
 
 class TestConstraint6(Tier1Contract):
@@ -467,12 +361,7 @@ class TestConstraint6(Tier1Contract):
     }
 
 
-def _reference_constraint_7(i_plasma_ignited, nd_beam_ions_out, nd_beam_ions):
-    data = DataStructure()
-    data.physics.i_plasma_ignited = i_plasma_ignited
-    data.physics.nd_beam_ions_out = nd_beam_ions_out
-    data.physics.nd_beam_ions = nd_beam_ions
-    return _evaluate(7, data)
+_reference_constraint_7 = data_reference(lambda d: _evaluate(7, d))
 
 
 class TestConstraint7(Tier1Contract):
@@ -529,11 +418,7 @@ def test_constraint_7_raises_when_ignited():
         constraint_7(int(PlasmaIgnitionModel.IGNITED), 1.0e18, 1.0e18)
 
 
-def _reference_constraint_8(pflux_fw_neutron_mw, pflux_fw_neutron_max_mw):
-    data = DataStructure()
-    data.physics.pflux_fw_neutron_mw = pflux_fw_neutron_mw
-    data.constraints.pflux_fw_neutron_max_mw = pflux_fw_neutron_max_mw
-    return _evaluate(8, data)
+_reference_constraint_8 = data_reference(lambda d: _evaluate(8, d))
 
 
 class TestConstraint8(Tier1Contract):
@@ -558,11 +443,7 @@ class TestConstraint8(Tier1Contract):
     }
 
 
-def _reference_constraint_9(p_fusion_total_mw, p_fusion_total_max_mw):
-    data = DataStructure()
-    data.physics.p_fusion_total_mw = p_fusion_total_mw
-    data.constraints.p_fusion_total_max_mw = p_fusion_total_max_mw
-    return _evaluate(9, data)
+_reference_constraint_9 = data_reference(lambda d: _evaluate(9, d))
 
 
 class TestConstraint9(Tier1Contract):
@@ -587,11 +468,7 @@ class TestConstraint9(Tier1Contract):
     }
 
 
-def _reference_constraint_11(rbld, rmajor):
-    data = DataStructure()
-    data.build.rbld = rbld
-    data.physics.rmajor = rmajor
-    return _evaluate(11, data)
+_reference_constraint_11 = data_reference(lambda d: _evaluate(11, d))
 
 
 class TestConstraint11(Tier1Contract):
@@ -642,11 +519,7 @@ class TestConstraint12(Tier1Contract):
     }
 
 
-def _reference_constraint_13(t_plant_pulse_burn, t_burn_min):
-    data = DataStructure()
-    data.times.t_plant_pulse_burn = t_plant_pulse_burn
-    data.constraints.t_burn_min = t_burn_min
-    return _evaluate(13, data)
+_reference_constraint_13 = data_reference(lambda d: _evaluate(13, d))
 
 
 class TestConstraint13(Tier1Contract):
@@ -667,15 +540,7 @@ class TestConstraint13(Tier1Contract):
     }
 
 
-def _reference_constraint_14(
-    n_beam_decay_lengths_core, n_beam_decay_lengths_core_required
-):
-    data = DataStructure()
-    data.current_drive.n_beam_decay_lengths_core = n_beam_decay_lengths_core
-    data.current_drive.n_beam_decay_lengths_core_required = (
-        n_beam_decay_lengths_core_required
-    )
-    return _evaluate(14, data)
+_reference_constraint_14 = data_reference(lambda d: _evaluate(14, d))
 
 
 class TestConstraint14(Tier1Contract):
@@ -704,14 +569,7 @@ class TestConstraint14(Tier1Contract):
     }
 
 
-def _reference_constraint_15(
-    p_plasma_separatrix_mw, p_l_h_threshold_mw, f_h_mode_margin
-):
-    data = DataStructure()
-    data.physics.p_plasma_separatrix_mw = p_plasma_separatrix_mw
-    data.physics.p_l_h_threshold_mw = p_l_h_threshold_mw
-    data.constraints.f_h_mode_margin = f_h_mode_margin
-    return _evaluate(15, data)
+_reference_constraint_15 = data_reference(lambda d: _evaluate(15, d))
 
 
 class TestConstraint15(Tier1Contract):
@@ -743,11 +601,7 @@ class TestConstraint15(Tier1Contract):
     }
 
 
-def _reference_constraint_16(p_plant_electric_net_mw, p_plant_electric_net_required_mw):
-    data = DataStructure()
-    data.heat_transport.p_plant_electric_net_mw = p_plant_electric_net_mw
-    data.constraints.p_plant_electric_net_required_mw = p_plant_electric_net_required_mw
-    return _evaluate(16, data)
+_reference_constraint_16 = data_reference(lambda d: _evaluate(16, d))
 
 
 class TestConstraint16(Tier1Contract):
@@ -776,21 +630,7 @@ class TestConstraint16(Tier1Contract):
     }
 
 
-def _reference_constraint_17(
-    istell,
-    f_p_plasma_separatrix_rad,
-    f_p_plasma_separatrix_rad_max,
-    psolradmw,
-    p_plasma_heating_total_mw,
-):
-    """Call PROCESS's `constraint_equation_17` through the port's signature."""
-    data = DataStructure()
-    data.stellarator.istell = istell
-    data.physics.f_p_plasma_separatrix_rad = f_p_plasma_separatrix_rad
-    data.constraints.f_p_plasma_separatrix_rad_max = f_p_plasma_separatrix_rad_max
-    data.physics.psolradmw = psolradmw
-    data.physics.p_plasma_heating_total_mw = p_plasma_heating_total_mw
-    return _evaluate(17, data)
+_reference_constraint_17 = data_reference(lambda d: _evaluate(17, d))
 
 
 class TestConstraint17(Tier1Contract):
@@ -839,11 +679,7 @@ class TestConstraint17(Tier1Contract):
     fuzz_fixed = {"istell": 1}
 
 
-def _reference_constraint_18(pflux_div_heat_load_mw, pflux_div_heat_load_max_mw):
-    data = DataStructure()
-    data.divertor.pflux_div_heat_load_mw = pflux_div_heat_load_mw
-    data.divertor.pflux_div_heat_load_max_mw = pflux_div_heat_load_max_mw
-    return _evaluate(18, data)
+_reference_constraint_18 = data_reference(lambda d: _evaluate(18, d))
 
 
 class TestConstraint18(Tier1Contract):
@@ -868,12 +704,7 @@ class TestConstraint18(Tier1Contract):
     }
 
 
-def _reference_constraint_19(p_cp_resistive_mw, p_tf_leg_resistive_mw, mvalim):
-    data = DataStructure()
-    data.tfcoil.p_cp_resistive_mw = p_cp_resistive_mw
-    data.tfcoil.p_tf_leg_resistive_mw = p_tf_leg_resistive_mw
-    data.constraints.mvalim = mvalim
-    return _evaluate(19, data)
+_reference_constraint_19 = data_reference(lambda d: _evaluate(19, d))
 
 
 class TestConstraint19(Tier1Contract):
@@ -899,11 +730,7 @@ class TestConstraint19(Tier1Contract):
     }
 
 
-def _reference_constraint_20(radius_beam_tangency, radius_beam_tangency_max):
-    data = DataStructure()
-    data.current_drive.radius_beam_tangency = radius_beam_tangency
-    data.current_drive.radius_beam_tangency_max = radius_beam_tangency_max
-    return _evaluate(20, data)
+_reference_constraint_20 = data_reference(lambda d: _evaluate(20, d))
 
 
 class TestConstraint20(Tier1Contract):
@@ -928,11 +755,7 @@ class TestConstraint20(Tier1Contract):
     }
 
 
-def _reference_constraint_21(rminor, rminor_min):
-    data = DataStructure()
-    data.physics.rminor = rminor
-    data.build.rminor_min = rminor_min
-    return _evaluate(21, data)
+_reference_constraint_21 = data_reference(lambda d: _evaluate(21, d))
 
 
 class TestConstraint21(Tier1Contract):
@@ -950,14 +773,7 @@ class TestConstraint21(Tier1Contract):
     fuzz_bounds = {"rminor": (0.01, 5.0), "rminor_min": (0.01, 2.0)}
 
 
-def _reference_constraint_22(
-    p_l_h_threshold_mw, f_l_mode_margin, p_plasma_separatrix_mw
-):
-    data = DataStructure()
-    data.physics.p_l_h_threshold_mw = p_l_h_threshold_mw
-    data.constraints.f_l_mode_margin = f_l_mode_margin
-    data.physics.p_plasma_separatrix_mw = p_plasma_separatrix_mw
-    return _evaluate(22, data)
+_reference_constraint_22 = data_reference(lambda d: _evaluate(22, d))
 
 
 class TestConstraint22(Tier1Contract):
@@ -989,20 +805,7 @@ class TestConstraint22(Tier1Contract):
     }
 
 
-def _reference_constraint_23(
-    rminor,
-    dr_fw_plasma_gap_outboard,
-    dr_fw_outboard,
-    dr_blkt_outboard,
-    f_r_conducting_wall,
-):
-    data = DataStructure()
-    data.physics.rminor = rminor
-    data.build.dr_fw_plasma_gap_outboard = dr_fw_plasma_gap_outboard
-    data.build.dr_fw_outboard = dr_fw_outboard
-    data.build.dr_blkt_outboard = dr_blkt_outboard
-    data.physics.f_r_conducting_wall = f_r_conducting_wall
-    return _evaluate(23, data)
+_reference_constraint_23 = data_reference(lambda d: _evaluate(23, d))
 
 
 class TestConstraint23(Tier1Contract):
@@ -1040,25 +843,7 @@ class TestConstraint23(Tier1Contract):
     }
 
 
-def _reference_constraint_24(
-    i_beta_component,
-    istell,
-    beta_total_vol_avg,
-    beta_thermal_vol_avg,
-    beta_beam,
-    beta_toroidal_vol_avg,
-    beta_vol_avg_max,
-):
-    """Call PROCESS's `constraint_equation_24` through the port's signature."""
-    data = DataStructure()
-    data.physics.i_beta_component = i_beta_component
-    data.stellarator.istell = istell
-    data.physics.beta_total_vol_avg = beta_total_vol_avg
-    data.physics.beta_thermal_vol_avg = beta_thermal_vol_avg
-    data.physics.beta_beam = beta_beam
-    data.physics.beta_toroidal_vol_avg = beta_toroidal_vol_avg
-    data.physics.beta_vol_avg_max = beta_vol_avg_max
-    return _evaluate(24, data)
+_reference_constraint_24 = data_reference(lambda d: _evaluate(24, d))
 
 
 class TestConstraint24(Tier1Contract):
@@ -1125,11 +910,7 @@ class TestConstraint24(Tier1Contract):
     fuzz_fixed = {"i_beta_component": int(BetaComponentLimits.TOTAL), "istell": 0}
 
 
-def _reference_constraint_25(b_tf_inboard_peak_with_ripple, b_tf_inboard_max):
-    data = DataStructure()
-    data.tfcoil.b_tf_inboard_peak_with_ripple = b_tf_inboard_peak_with_ripple
-    data.constraints.b_tf_inboard_max = b_tf_inboard_max
-    return _evaluate(25, data)
+_reference_constraint_25 = data_reference(lambda d: _evaluate(25, d))
 
 
 class TestConstraint25(Tier1Contract):
@@ -1154,12 +935,7 @@ class TestConstraint25(Tier1Contract):
     }
 
 
-def _reference_constraint_26(j_cs_flat_top_end, j_cs_critical_flat_top_end, fjohc):
-    data = DataStructure()
-    data.pf_coil.j_cs_flat_top_end = j_cs_flat_top_end
-    data.pf_coil.j_cs_critical_flat_top_end = j_cs_critical_flat_top_end
-    data.constraints.fjohc = fjohc
-    return _evaluate(26, data)
+_reference_constraint_26 = data_reference(lambda d: _evaluate(26, d))
 
 
 class TestConstraint26(Tier1Contract):
@@ -1191,12 +967,7 @@ class TestConstraint26(Tier1Contract):
     }
 
 
-def _reference_constraint_27(j_cs_pulse_start, j_cs_critical_pulse_start, fjohc0):
-    data = DataStructure()
-    data.pf_coil.j_cs_pulse_start = j_cs_pulse_start
-    data.pf_coil.j_cs_critical_pulse_start = j_cs_critical_pulse_start
-    data.constraints.fjohc0 = fjohc0
-    return _evaluate(27, data)
+_reference_constraint_27 = data_reference(lambda d: _evaluate(27, d))
 
 
 class TestConstraint27(Tier1Contract):
@@ -1228,12 +999,7 @@ class TestConstraint27(Tier1Contract):
     }
 
 
-def _reference_constraint_28(i_plasma_ignited, big_q_plasma, big_q_plasma_min):
-    data = DataStructure()
-    data.physics.i_plasma_ignited = i_plasma_ignited
-    data.current_drive.big_q_plasma = big_q_plasma
-    data.constraints.big_q_plasma_min = big_q_plasma_min
-    return _evaluate(28, data)
+_reference_constraint_28 = data_reference(lambda d: _evaluate(28, d))
 
 
 class TestConstraint28(Tier1Contract):
@@ -1276,15 +1042,14 @@ def test_constraint_28_ported_raises_when_ignited():
 def test_constraint_28_reference_raises_when_ignited():
     """Same precondition, checked against PROCESS's own registered function."""
     with pytest.raises(ProcessValueError):
-        _reference_constraint_28(int(PlasmaIgnitionModel.IGNITED), 15.0, 10.0)
+        _reference_constraint_28(
+            i_plasma_ignited=int(PlasmaIgnitionModel.IGNITED),
+            big_q_plasma=15.0,
+            big_q_plasma_min=10.0,
+        )
 
 
-def _reference_constraint_29(rmajor, rminor, rinboard):
-    data = DataStructure()
-    data.physics.rmajor = rmajor
-    data.physics.rminor = rminor
-    data.build.rinboard = rinboard
-    return _evaluate(29, data)
+_reference_constraint_29 = data_reference(lambda d: _evaluate(29, d))
 
 
 class TestConstraint29(Tier1Contract):
@@ -1306,11 +1071,7 @@ class TestConstraint29(Tier1Contract):
     }
 
 
-def _reference_constraint_30(p_hcd_injected_total_mw, p_hcd_injected_max):
-    data = DataStructure()
-    data.current_drive.p_hcd_injected_total_mw = p_hcd_injected_total_mw
-    data.current_drive.p_hcd_injected_max = p_hcd_injected_max
-    return _evaluate(30, data)
+_reference_constraint_30 = data_reference(lambda d: _evaluate(30, d))
 
 
 class TestConstraint30(Tier1Contract):
@@ -1335,11 +1096,7 @@ class TestConstraint30(Tier1Contract):
     }
 
 
-def _reference_constraint_31(sig_tf_case, sig_tf_case_max):
-    data = DataStructure()
-    data.tfcoil.sig_tf_case = sig_tf_case
-    data.tfcoil.sig_tf_case_max = sig_tf_case_max
-    return _evaluate(31, data)
+_reference_constraint_31 = data_reference(lambda d: _evaluate(31, d))
 
 
 class TestConstraint31(Tier1Contract):
@@ -1370,11 +1127,7 @@ class TestConstraint31(Tier1Contract):
     }
 
 
-def _reference_constraint_32(sig_tf_wp, sig_tf_wp_max):
-    data = DataStructure()
-    data.tfcoil.sig_tf_wp = sig_tf_wp
-    data.tfcoil.sig_tf_wp_max = sig_tf_wp_max
-    return _evaluate(32, data)
+_reference_constraint_32 = data_reference(lambda d: _evaluate(32, d))
 
 
 class TestConstraint32(Tier1Contract):
@@ -1395,12 +1148,7 @@ class TestConstraint32(Tier1Contract):
     }
 
 
-def _reference_constraint_33(j_tf_wp, j_tf_wp_critical, f_j_tf_wp_critical_max):
-    data = DataStructure()
-    data.tfcoil.j_tf_wp = j_tf_wp
-    data.tfcoil.j_tf_wp_critical = j_tf_wp_critical
-    data.constraints.f_j_tf_wp_critical_max = f_j_tf_wp_critical_max
-    return _evaluate(33, data)
+_reference_constraint_33 = data_reference(lambda d: _evaluate(33, d))
 
 
 class TestConstraint33(Tier1Contract):
@@ -1441,11 +1189,7 @@ class TestConstraint33(Tier1Contract):
     }
 
 
-def _reference_constraint_34(v_tf_coil_dump_quench_kv, v_tf_coil_dump_quench_max_kv):
-    data = DataStructure()
-    data.tfcoil.v_tf_coil_dump_quench_kv = v_tf_coil_dump_quench_kv
-    data.tfcoil.v_tf_coil_dump_quench_max_kv = v_tf_coil_dump_quench_max_kv
-    return _evaluate(34, data)
+_reference_constraint_34 = data_reference(lambda d: _evaluate(34, d))
 
 
 class TestConstraint34(Tier1Contract):
@@ -1474,11 +1218,7 @@ class TestConstraint34(Tier1Contract):
     }
 
 
-def _reference_constraint_35(j_tf_wp, j_tf_wp_quench_heat_max):
-    data = DataStructure()
-    data.tfcoil.j_tf_wp = j_tf_wp
-    data.tfcoil.j_tf_wp_quench_heat_max = j_tf_wp_quench_heat_max
-    return _evaluate(35, data)
+_reference_constraint_35 = data_reference(lambda d: _evaluate(35, d))
 
 
 class TestConstraint35(Tier1Contract):
@@ -1499,13 +1239,7 @@ class TestConstraint35(Tier1Contract):
     }
 
 
-def _reference_constraint_36(
-    temp_tf_superconductor_margin, temp_tf_superconductor_margin_min
-):
-    data = DataStructure()
-    data.tfcoil.temp_tf_superconductor_margin = temp_tf_superconductor_margin
-    data.tfcoil.temp_tf_superconductor_margin_min = temp_tf_superconductor_margin_min
-    return _evaluate(36, data)
+_reference_constraint_36 = data_reference(lambda d: _evaluate(36, d))
 
 
 class TestConstraint36(Tier1Contract):
@@ -1534,11 +1268,7 @@ class TestConstraint36(Tier1Contract):
     }
 
 
-def _reference_constraint_37(eta_cd_norm_hcd_primary, eta_cd_norm_hcd_primary_max):
-    data = DataStructure()
-    data.current_drive.eta_cd_norm_hcd_primary = eta_cd_norm_hcd_primary
-    data.constraints.eta_cd_norm_hcd_primary_max = eta_cd_norm_hcd_primary_max
-    return _evaluate(37, data)
+_reference_constraint_37 = data_reference(lambda d: _evaluate(37, d))
 
 
 class TestConstraint37(Tier1Contract):
@@ -1563,11 +1293,7 @@ class TestConstraint37(Tier1Contract):
     }
 
 
-def _reference_constraint_39(temp_fw_peak, temp_fw_max):
-    data = DataStructure()
-    data.fwbs.temp_fw_peak = temp_fw_peak
-    data.fwbs.temp_fw_max = temp_fw_max
-    return _evaluate(39, data)
+_reference_constraint_39 = data_reference(lambda d: _evaluate(39, d))
 
 
 class TestConstraint39(Tier1Contract):
@@ -1588,11 +1314,7 @@ class TestConstraint39(Tier1Contract):
     }
 
 
-def _reference_constraint_40(p_hcd_injected_total_mw, p_hcd_injected_min_mw):
-    data = DataStructure()
-    data.current_drive.p_hcd_injected_total_mw = p_hcd_injected_total_mw
-    data.constraints.p_hcd_injected_min_mw = p_hcd_injected_min_mw
-    return _evaluate(40, data)
+_reference_constraint_40 = data_reference(lambda d: _evaluate(40, d))
 
 
 class TestConstraint40(Tier1Contract):
@@ -1617,15 +1339,7 @@ class TestConstraint40(Tier1Contract):
     }
 
 
-def _reference_constraint_41(
-    t_plant_pulse_plasma_current_ramp_up, t_current_ramp_up_min
-):
-    data = DataStructure()
-    data.times.t_plant_pulse_plasma_current_ramp_up = (
-        t_plant_pulse_plasma_current_ramp_up
-    )
-    data.constraints.t_current_ramp_up_min = t_current_ramp_up_min
-    return _evaluate(41, data)
+_reference_constraint_41 = data_reference(lambda d: _evaluate(41, d))
 
 
 class TestConstraint41(Tier1Contract):
@@ -1654,11 +1368,7 @@ class TestConstraint41(Tier1Contract):
     }
 
 
-def _reference_constraint_42(t_plant_pulse_total, t_cycle_min):
-    data = DataStructure()
-    data.times.t_plant_pulse_total = t_plant_pulse_total
-    data.constraints.t_cycle_min = t_cycle_min
-    return _evaluate(42, data)
+_reference_constraint_42 = data_reference(lambda d: _evaluate(42, d))
 
 
 class TestConstraint42(Tier1Contract):
@@ -1771,13 +1481,7 @@ class TestConstraint44(Tier1Contract):
     fuzz_fixed = {"i_tf_sup": int(TFConductorModel.SUPERCONDUCTING)}
 
 
-def _reference_constraint_45(itart, q95, q95_min):
-    """Call PROCESS's `constraint_manager_45` through the port's signature."""
-    data = DataStructure()
-    data.physics.itart = itart
-    data.physics.q95 = q95
-    data.physics.q95_min = q95_min
-    return _evaluate(45, data)
+_reference_constraint_45 = data_reference(lambda d: _evaluate(45, d))
 
 
 class TestConstraint45(Tier1Contract):
@@ -1798,14 +1502,7 @@ class TestConstraint45(Tier1Contract):
     fuzz_fixed = {"itart": 1}
 
 
-def _reference_constraint_46(itart, eps, plasma_current, c_tf_total):
-    """Call PROCESS's `constraint_equation_46` through the port's signature."""
-    data = DataStructure()
-    data.physics.itart = itart
-    data.physics.eps = eps
-    data.physics.plasma_current = plasma_current
-    data.tfcoil.c_tf_total = c_tf_total
-    return _evaluate(46, data)
+_reference_constraint_46 = data_reference(lambda d: _evaluate(46, d))
 
 
 class TestConstraint46(Tier1Contract):
@@ -1834,12 +1531,7 @@ class TestConstraint46(Tier1Contract):
     fuzz_fixed = {"itart": 1}
 
 
-def _reference_constraint_48(beta_poloidal_vol_avg, beta_poloidal_max):
-    """Call PROCESS's `constraint_equation_48` through the port's signature."""
-    data = DataStructure()
-    data.physics.beta_poloidal_vol_avg = beta_poloidal_vol_avg
-    data.constraints.beta_poloidal_max = beta_poloidal_max
-    return _evaluate(48, data)
+_reference_constraint_48 = data_reference(lambda d: _evaluate(48, d))
 
 
 class TestConstraint48(Tier1Contract):
@@ -1860,12 +1552,7 @@ class TestConstraint48(Tier1Contract):
     }
 
 
-def _reference_constraint_51(vs_plasma_ramp_required, vs_cs_pf_total_ramp):
-    """Call PROCESS's `constraint_equation_51` through the port's signature."""
-    data = DataStructure()
-    data.physics.vs_plasma_ramp_required = vs_plasma_ramp_required
-    data.pf_coil.vs_cs_pf_total_ramp = vs_cs_pf_total_ramp
-    return _evaluate(51, data)
+_reference_constraint_51 = data_reference(lambda d: _evaluate(51, d))
 
 
 class TestConstraint51(Tier1Contract):
@@ -1890,12 +1577,7 @@ class TestConstraint51(Tier1Contract):
     }
 
 
-def _reference_constraint_53(flu_tf_neutron_fast_peak, flu_tf_neutron_fast_max):
-    """Call PROCESS's `constraint_equation_53` through the port's signature."""
-    data = DataStructure()
-    data.fwbs.flu_tf_neutron_fast_peak = flu_tf_neutron_fast_peak
-    data.constraints.flu_tf_neutron_fast_max = flu_tf_neutron_fast_max
-    return _evaluate(53, data)
+_reference_constraint_53 = data_reference(lambda d: _evaluate(53, d))
 
 
 class TestConstraint53(Tier1Contract):
@@ -1924,12 +1606,7 @@ class TestConstraint53(Tier1Contract):
     }
 
 
-def _reference_constraint_54(ptfnucpm3, ptfnucmax):
-    """Call PROCESS's `constraint_equation_54` through the port's signature."""
-    data = DataStructure()
-    data.fwbs.ptfnucpm3 = ptfnucpm3
-    data.constraints.ptfnucmax = ptfnucmax
-    return _evaluate(54, data)
+_reference_constraint_54 = data_reference(lambda d: _evaluate(54, d))
 
 
 class TestConstraint54(Tier1Contract):
@@ -1947,15 +1624,7 @@ class TestConstraint54(Tier1Contract):
     fuzz_bounds = {"ptfnucpm3": (1.0e-5, 5.0e-3), "ptfnucmax": (1.0e-4, 5.0e-3)}
 
 
-def _reference_constraint_56(
-    p_plasma_separatrix_rmajor_mw, p_plasma_separatrix_rmajor_max_mw
-):
-    data = DataStructure()
-    data.physics.p_plasma_separatrix_rmajor_mw = p_plasma_separatrix_rmajor_mw
-    data.constraints.p_plasma_separatrix_rmajor_max_mw = (
-        p_plasma_separatrix_rmajor_max_mw
-    )
-    return _evaluate(56, data)
+_reference_constraint_56 = data_reference(lambda d: _evaluate(56, d))
 
 
 class TestConstraint56(Tier1Contract):
@@ -1984,11 +1653,7 @@ class TestConstraint56(Tier1Contract):
     }
 
 
-def _reference_constraint_59(f_p_beam_shine_through, f_p_beam_shine_through_max):
-    data = DataStructure()
-    data.current_drive.f_p_beam_shine_through = f_p_beam_shine_through
-    data.constraints.f_p_beam_shine_through_max = f_p_beam_shine_through_max
-    return _evaluate(59, data)
+_reference_constraint_59 = data_reference(lambda d: _evaluate(59, d))
 
 
 class TestConstraint59(Tier1Contract):
@@ -2013,13 +1678,7 @@ class TestConstraint59(Tier1Contract):
     }
 
 
-def _reference_constraint_60(
-    temp_cs_superconductor_margin, temp_cs_superconductor_margin_min
-):
-    data = DataStructure()
-    data.pf_coil.temp_cs_superconductor_margin = temp_cs_superconductor_margin
-    data.tfcoil.temp_cs_superconductor_margin_min = temp_cs_superconductor_margin_min
-    return _evaluate(60, data)
+_reference_constraint_60 = data_reference(lambda d: _evaluate(60, d))
 
 
 class TestConstraint60(Tier1Contract):
@@ -2048,11 +1707,7 @@ class TestConstraint60(Tier1Contract):
     }
 
 
-def _reference_constraint_61(f_t_plant_available, f_t_plant_available_min):
-    data = DataStructure()
-    data.costs.f_t_plant_available = f_t_plant_available
-    data.costs.f_t_plant_available_min = f_t_plant_available_min
-    return _evaluate(61, data)
+_reference_constraint_61 = data_reference(lambda d: _evaluate(61, d))
 
 
 class TestConstraint61(Tier1Contract):
@@ -2077,13 +1732,7 @@ class TestConstraint61(Tier1Contract):
     }
 
 
-def _reference_constraint_62(
-    f_t_alpha_energy_confinement, f_t_alpha_energy_confinement_min
-):
-    data = DataStructure()
-    data.physics.f_t_alpha_energy_confinement = f_t_alpha_energy_confinement
-    data.constraints.f_t_alpha_energy_confinement_min = f_t_alpha_energy_confinement_min
-    return _evaluate(62, data)
+_reference_constraint_62 = data_reference(lambda d: _evaluate(62, d))
 
 
 class TestConstraint62(Tier1Contract):
@@ -2112,11 +1761,7 @@ class TestConstraint62(Tier1Contract):
     }
 
 
-def _reference_constraint_63(n_iter_vacuum_pumps, n_tf_coils):
-    data = DataStructure()
-    data.vacuum.n_iter_vacuum_pumps = n_iter_vacuum_pumps
-    data.tfcoil.n_tf_coils = n_tf_coils
-    return _evaluate(63, data)
+_reference_constraint_63 = data_reference(lambda d: _evaluate(63, d))
 
 
 class TestConstraint63(Tier1Contract):
@@ -2137,15 +1782,7 @@ class TestConstraint63(Tier1Contract):
     }
 
 
-def _reference_constraint_64(
-    n_charge_plasma_effective_vol_avg, n_charge_plasma_effective_vol_avg_max
-):
-    data = DataStructure()
-    data.physics.n_charge_plasma_effective_vol_avg = n_charge_plasma_effective_vol_avg
-    data.constraints.n_charge_plasma_effective_vol_avg_max = (
-        n_charge_plasma_effective_vol_avg_max
-    )
-    return _evaluate(64, data)
+_reference_constraint_64 = data_reference(lambda d: _evaluate(64, d))
 
 
 class TestConstraint64(Tier1Contract):
@@ -2174,11 +1811,7 @@ class TestConstraint64(Tier1Contract):
     }
 
 
-def _reference_constraint_65(vv_stress_quench, max_vv_stress):
-    data = DataStructure()
-    data.superconducting_tfcoil.vv_stress_quench = vv_stress_quench
-    data.tfcoil.max_vv_stress = max_vv_stress
-    return _evaluate(65, data)
+_reference_constraint_65 = data_reference(lambda d: _evaluate(65, d))
 
 
 class TestConstraint65(Tier1Contract):
@@ -2199,11 +1832,7 @@ class TestConstraint65(Tier1Contract):
     }
 
 
-def _reference_constraint_66(peakpoloidalpower, maxpoloidalpower):
-    data = DataStructure()
-    data.pf_power.peakpoloidalpower = peakpoloidalpower
-    data.pf_power.maxpoloidalpower = maxpoloidalpower
-    return _evaluate(66, data)
+_reference_constraint_66 = data_reference(lambda d: _evaluate(66, d))
 
 
 class TestConstraint66(Tier1Contract):
@@ -2218,11 +1847,7 @@ class TestConstraint66(Tier1Contract):
     ]
 
 
-def _reference_constraint_67(pflux_fw_rad_max_mw, pflux_fw_rad_max):
-    data = DataStructure()
-    data.constraints.pflux_fw_rad_max_mw = pflux_fw_rad_max_mw
-    data.constraints.pflux_fw_rad_max = pflux_fw_rad_max
-    return _evaluate(67, data)
+_reference_constraint_67 = data_reference(lambda d: _evaluate(67, d))
 
 
 class TestConstraint67(Tier1Contract):
@@ -2237,28 +1862,7 @@ class TestConstraint67(Tier1Contract):
     ]
 
 
-def _reference_constraint_68(
-    i_q95_fixed,
-    p_plasma_separatrix_mw,
-    b_plasma_toroidal_on_axis,
-    q95,
-    q95_fixed,
-    aspect,
-    rmajor,
-    p_div_bt_q_aspect_rmajor_mw,
-    p_div_bt_q_aspect_rmajor_max_mw,
-):
-    data = DataStructure()
-    data.constraints.i_q95_fixed = i_q95_fixed
-    data.physics.p_plasma_separatrix_mw = p_plasma_separatrix_mw
-    data.physics.b_plasma_toroidal_on_axis = b_plasma_toroidal_on_axis
-    data.physics.q95 = q95
-    data.constraints.q95_fixed = q95_fixed
-    data.physics.aspect = aspect
-    data.physics.rmajor = rmajor
-    data.physics.p_div_bt_q_aspect_rmajor_mw = p_div_bt_q_aspect_rmajor_mw
-    data.constraints.p_div_bt_q_aspect_rmajor_max_mw = p_div_bt_q_aspect_rmajor_max_mw
-    return _evaluate(68, data)
+_reference_constraint_68 = data_reference(lambda d: _evaluate(68, d))
 
 
 class TestConstraint68(Tier1Contract):
@@ -2296,20 +1900,7 @@ class TestConstraint68(Tier1Contract):
     ]
 
 
-def _reference_constraint_72(
-    i_tf_bucking,
-    i_tf_inside_cs,
-    stress_shear_cs_peak,
-    sig_tf_cs_bucked,
-    stress_cs_steel_max,
-):
-    data = DataStructure()
-    data.tfcoil.i_tf_bucking = i_tf_bucking
-    data.build.i_tf_inside_cs = i_tf_inside_cs
-    data.pf_coil.stress_shear_cs_peak = stress_shear_cs_peak
-    data.tfcoil.sig_tf_cs_bucked = sig_tf_cs_bucked
-    data.pf_coil.stress_cs_steel_max = stress_cs_steel_max
-    return _evaluate(72, data)
+_reference_constraint_72 = data_reference(lambda d: _evaluate(72, d))
 
 
 class TestConstraint72(Tier1Contract):
@@ -2339,14 +1930,7 @@ class TestConstraint72(Tier1Contract):
     ]
 
 
-def _reference_constraint_73(
-    p_plasma_separatrix_mw, p_l_h_threshold_mw, p_hcd_injected_total_mw
-):
-    data = DataStructure()
-    data.physics.p_plasma_separatrix_mw = p_plasma_separatrix_mw
-    data.physics.p_l_h_threshold_mw = p_l_h_threshold_mw
-    data.current_drive.p_hcd_injected_total_mw = p_hcd_injected_total_mw
-    return _evaluate(73, data)
+_reference_constraint_73 = data_reference(lambda d: _evaluate(73, d))
 
 
 class TestConstraint73(Tier1Contract):
@@ -2371,11 +1955,7 @@ class TestConstraint73(Tier1Contract):
     ]
 
 
-def _reference_constraint_74(temp_croco_quench, temp_croco_quench_max):
-    data = DataStructure()
-    data.tfcoil.temp_croco_quench = temp_croco_quench
-    data.tfcoil.temp_croco_quench_max = temp_croco_quench_max
-    return _evaluate(74, data)
+_reference_constraint_74 = data_reference(lambda d: _evaluate(74, d))
 
 
 class TestConstraint74(Tier1Contract):
@@ -2392,11 +1972,7 @@ class TestConstraint74(Tier1Contract):
     ]
 
 
-def _reference_constraint_75(coppera_m2, tf_coppera_m2_max):
-    data = DataStructure()
-    data.rebco.coppera_m2 = coppera_m2
-    data.superconducting_tfcoil.tf_coppera_m2_max = tf_coppera_m2_max
-    return _evaluate(75, data)
+_reference_constraint_75 = data_reference(lambda d: _evaluate(75, d))
 
 
 class TestConstraint75(Tier1Contract):
@@ -2460,11 +2036,7 @@ class TestConstraint76(Tier1Contract):
     ]
 
 
-def _reference_constraint_77(c_tf_turn, c_tf_turn_max):
-    data = DataStructure()
-    data.tfcoil.c_tf_turn = c_tf_turn
-    data.tfcoil.c_tf_turn_max = c_tf_turn_max
-    return _evaluate(77, data)
+_reference_constraint_77 = data_reference(lambda d: _evaluate(77, d))
 
 
 class TestConstraint77(Tier1Contract):
@@ -2485,11 +2057,7 @@ class TestConstraint77(Tier1Contract):
     }
 
 
-def _reference_constraint_78(fzactual, fzmin):
-    data = DataStructure()
-    data.reinke.fzactual = fzactual
-    data.reinke.fzmin = fzmin
-    return _evaluate(78, data)
+_reference_constraint_78 = data_reference(lambda d: _evaluate(78, d))
 
 
 class TestConstraint78(Tier1Contract):
@@ -2510,14 +2078,7 @@ class TestConstraint78(Tier1Contract):
     }
 
 
-def _reference_constraint_79(
-    b_cs_peak_flat_top_end, b_cs_peak_pulse_start, b_cs_limit_max
-):
-    data = DataStructure()
-    data.pf_coil.b_cs_peak_flat_top_end = b_cs_peak_flat_top_end
-    data.pf_coil.b_cs_peak_pulse_start = b_cs_peak_pulse_start
-    data.pf_coil.b_cs_limit_max = b_cs_limit_max
-    return _evaluate(79, data)
+_reference_constraint_79 = data_reference(lambda d: _evaluate(79, d))
 
 
 class TestConstraint79(Tier1Contract):
@@ -2555,11 +2116,7 @@ class TestConstraint79(Tier1Contract):
     }
 
 
-def _reference_constraint_80(p_plasma_separatrix_mw, p_plasma_separatrix_min_mw):
-    data = DataStructure()
-    data.physics.p_plasma_separatrix_mw = p_plasma_separatrix_mw
-    data.constraints.p_plasma_separatrix_min_mw = p_plasma_separatrix_min_mw
-    return _evaluate(80, data)
+_reference_constraint_80 = data_reference(lambda d: _evaluate(80, d))
 
 
 class TestConstraint80(Tier1Contract):
@@ -2588,11 +2145,7 @@ class TestConstraint80(Tier1Contract):
     }
 
 
-def _reference_constraint_81(nd_plasma_electron_on_axis, nd_plasma_pedestal_electron):
-    data = DataStructure()
-    data.physics.nd_plasma_electron_on_axis = nd_plasma_electron_on_axis
-    data.physics.nd_plasma_pedestal_electron = nd_plasma_pedestal_electron
-    return _evaluate(81, data)
+_reference_constraint_81 = data_reference(lambda d: _evaluate(81, d))
 
 
 class TestConstraint81(Tier1Contract):
@@ -2621,12 +2174,7 @@ class TestConstraint81(Tier1Contract):
     }
 
 
-def _reference_constraint_82(toroidalgap, dx_tf_inboard_out_toroidal):
-    """Call PROCESS's `constraint_equation_82` through the port's signature."""
-    data = DataStructure()
-    data.tfcoil.toroidalgap = toroidalgap
-    data.tfcoil.dx_tf_inboard_out_toroidal = dx_tf_inboard_out_toroidal
-    return _evaluate(82, data)
+_reference_constraint_82 = data_reference(lambda d: _evaluate(82, d))
 
 
 class TestConstraint82(Tier1Contract):
@@ -2647,12 +2195,7 @@ class TestConstraint82(Tier1Contract):
     }
 
 
-def _reference_constraint_83(available_radial_space, required_radial_space):
-    """Call PROCESS's `constraint_equation_83` through the port's signature."""
-    data = DataStructure()
-    data.build.available_radial_space = available_radial_space
-    data.build.required_radial_space = required_radial_space
-    return _evaluate(83, data)
+_reference_constraint_83 = data_reference(lambda d: _evaluate(83, d))
 
 
 class TestConstraint83(Tier1Contract):
@@ -2675,11 +2218,7 @@ class TestConstraint83(Tier1Contract):
     }
 
 
-def _reference_constraint_84(beta_total_vol_avg, beta_vol_avg_min):
-    data = DataStructure()
-    data.physics.beta_total_vol_avg = beta_total_vol_avg
-    data.physics.beta_vol_avg_min = beta_vol_avg_min
-    return _evaluate(84, data)
+_reference_constraint_84 = data_reference(lambda d: _evaluate(84, d))
 
 
 class TestConstraint84(Tier1Contract):
@@ -2700,17 +2239,7 @@ class TestConstraint84(Tier1Contract):
     }
 
 
-def _reference_constraint_85(
-    i_cp_lifetime, cplife, cplife_input, life_div_fpy, life_blkt_fpy, life_plant
-):
-    data = DataStructure()
-    data.costs.i_cp_lifetime = i_cp_lifetime
-    data.costs.cplife = cplife
-    data.costs.cplife_input = cplife_input
-    data.costs.life_div_fpy = life_div_fpy
-    data.fwbs.life_blkt_fpy = life_blkt_fpy
-    data.costs.life_plant = life_plant
-    return _evaluate(85, data)
+_reference_constraint_85 = data_reference(lambda d: _evaluate(85, d))
 
 
 class TestConstraint85(Tier1Contract):
@@ -2747,11 +2276,7 @@ class TestConstraint85(Tier1Contract):
     fuzz_fixed = {"i_cp_lifetime": 1}
 
 
-def _reference_constraint_86(dx_tf_turn_general, t_turn_tf_max):
-    data = DataStructure()
-    data.tfcoil.dx_tf_turn_general = dx_tf_turn_general
-    data.tfcoil.t_turn_tf_max = t_turn_tf_max
-    return _evaluate(86, data)
+_reference_constraint_86 = data_reference(lambda d: _evaluate(86, d))
 
 
 class TestConstraint86(Tier1Contract):
@@ -2772,11 +2297,7 @@ class TestConstraint86(Tier1Contract):
     }
 
 
-def _reference_constraint_87(p_cryo_plant_electric_mw, p_cryo_plant_electric_max_mw):
-    data = DataStructure()
-    data.heat_transport.p_cryo_plant_electric_mw = p_cryo_plant_electric_mw
-    data.heat_transport.p_cryo_plant_electric_max_mw = p_cryo_plant_electric_max_mw
-    return _evaluate(87, data)
+_reference_constraint_87 = data_reference(lambda d: _evaluate(87, d))
 
 
 class TestConstraint87(Tier1Contract):
@@ -2802,11 +2323,7 @@ class TestConstraint87(Tier1Contract):
     }
 
 
-def _reference_constraint_88(str_wp, str_wp_max):
-    data = DataStructure()
-    data.tfcoil.str_wp = str_wp
-    data.tfcoil.str_wp_max = str_wp_max
-    return _evaluate(88, data)
+_reference_constraint_88 = data_reference(lambda d: _evaluate(88, d))
 
 
 class TestConstraint88(Tier1Contract):
@@ -2829,11 +2346,7 @@ class TestConstraint88(Tier1Contract):
     }
 
 
-def _reference_constraint_89(copperaoh_m2, copperaoh_m2_max):
-    data = DataStructure()
-    data.rebco.copperaoh_m2 = copperaoh_m2
-    data.rebco.copperaoh_m2_max = copperaoh_m2_max
-    return _evaluate(89, data)
+_reference_constraint_89 = data_reference(lambda d: _evaluate(89, d))
 
 
 class TestConstraint89(Tier1Contract):
@@ -2853,14 +2366,7 @@ class TestConstraint89(Tier1Contract):
     }
 
 
-def _reference_constraint_90(n_cycle, n_cycle_min, ibkt_life, bkt_life_csf, bktcycles):
-    data = DataStructure()
-    data.cs_fatigue.n_cycle = n_cycle
-    data.cs_fatigue.n_cycle_min = n_cycle_min
-    data.costs.ibkt_life = ibkt_life
-    data.cs_fatigue.bkt_life_csf = bkt_life_csf
-    data.costs.bktcycles = bktcycles
-    return _evaluate(90, data)
+_reference_constraint_90 = data_reference(lambda d: _evaluate(90, d))
 
 
 class TestConstraint90(Tier1Contract):
@@ -2919,19 +2425,7 @@ class TestConstraint90(Tier1Contract):
     fuzz_fixed = {"ibkt_life": 0, "bkt_life_csf": 0.0}
 
 
-def _reference_constraint_91(
-    i_plasma_ignited,
-    p_hcd_primary_extra_heat_mw,
-    powerht_constraint,
-    powerscaling_constraint,
-):
-    """Call PROCESS's `constraint_equation_91` through the port's signature."""
-    data = DataStructure()
-    data.physics.i_plasma_ignited = i_plasma_ignited
-    data.current_drive.p_hcd_primary_extra_heat_mw = p_hcd_primary_extra_heat_mw
-    data.stellarator.powerht_constraint = powerht_constraint
-    data.stellarator.powerscaling_constraint = powerscaling_constraint
-    return _evaluate(91, data)
+_reference_constraint_91 = data_reference(lambda d: _evaluate(91, d))
 
 
 class TestConstraint91(Tier1Contract):
@@ -2975,14 +2469,7 @@ class TestConstraint91(Tier1Contract):
     fuzz_fixed = {"i_plasma_ignited": int(PlasmaIgnitionModel.NON_IGNITED)}
 
 
-def _reference_constraint_92(
-    f_plasma_fuel_deuterium, f_plasma_fuel_tritium, f_plasma_fuel_helium3
-):
-    data = DataStructure()
-    data.physics.f_plasma_fuel_deuterium = f_plasma_fuel_deuterium
-    data.physics.f_plasma_fuel_tritium = f_plasma_fuel_tritium
-    data.physics.f_plasma_fuel_helium3 = f_plasma_fuel_helium3
-    return _evaluate(92, data)
+_reference_constraint_92 = data_reference(lambda d: _evaluate(92, d))
 
 
 class TestConstraint92(Tier1Contract):

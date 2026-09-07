@@ -20,6 +20,7 @@ is right to carry one read; the adapter makes them agree here too. Recorded as d
 **D4** in `base.md`.
 """
 
+from functional_process.cottax._harness.process_reference import process_reference
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
@@ -801,38 +802,13 @@ class TestTfStoredMagneticEnergy(Tier1Contract):
 # ---------------------------------------------------------------------------
 
 
-def _reference_generic_area_and_masses(
-    r_tf_inboard_out,
-    r_tf_inboard_in,
-    rad_tf_coil_inboard_toroidal_half,
-    tan_theta_coil,
-    len_tf_coil,
-    r_tf_inboard_mid,
-    r_tf_outboard_mid,
-):
-    """`generic_tf_coil_area_and_masses` through a `DataStructure`.
-
-    Every field the source reads is set from an argument of the port's signature and
-    nothing else is touched, which is the audit's "no hidden `data` read" claim as an
-    executable check rather than an assertion.
-    """
-    model = _tfcoil()
-    model.data.build.r_tf_inboard_out = r_tf_inboard_out
-    model.data.build.r_tf_inboard_in = r_tf_inboard_in
-    model.data.build.r_tf_inboard_mid = r_tf_inboard_mid
-    model.data.build.r_tf_outboard_mid = r_tf_outboard_mid
-    model.data.tfcoil.len_tf_coil = len_tf_coil
-    model.data.superconducting_tfcoil.rad_tf_coil_inboard_toroidal_half = (
-        rad_tf_coil_inboard_toroidal_half
+_reference_generic_area_and_masses = process_reference(
+    _tfcoil, "generic_tf_coil_area_and_masses", (
+        "tfcoil.tfocrn",
+        "tfcoil.tficrn",
+        "tfcoil.tfcryoarea",
     )
-    model.data.superconducting_tfcoil.tan_theta_coil = tan_theta_coil
-
-    model.generic_tf_coil_area_and_masses()
-    return (
-        model.data.tfcoil.tfocrn,
-        model.data.tfcoil.tficrn,
-        model.data.tfcoil.tfcryoarea,
-    )
+)
 
 
 class TestGenericTfCoilAreaAndMasses(Tier1Contract):

@@ -11,6 +11,7 @@ deterministically (`ireactor`/`ife`/`ifueltyp`/`itart`/`i_tf_sup`/`i_vacuum_pump
 values), since fuzzing alone would only hit every branch by chance.
 """
 
+from functional_process.cottax._harness.process_reference import process_reference
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
@@ -70,416 +71,173 @@ def _make_costs():
     return costs
 
 
-def _reference_convert_fpy_to_calendar(
-    life_blkt_fpy, life_plant, f_t_plant_available, life_div_fpy, itart, cplife
-):
-    costs = _make_costs()
-    costs.data.fwbs.life_blkt_fpy = life_blkt_fpy
-    costs.data.costs.life_plant = life_plant
-    costs.data.costs.f_t_plant_available = f_t_plant_available
-    costs.data.costs.life_div_fpy = life_div_fpy
-    costs.data.physics.itart = itart
-    costs.data.costs.cplife = cplife
-    costs.convert_fpy_to_calendar()
-    return (
-        costs.data.fwbs.life_blkt,
-        costs.data.costs.cdrlife_cal,
-        costs.data.costs.life_div,
-        costs.data.costs.cplife_cal,
+_reference_convert_fpy_to_calendar = process_reference(
+    _make_costs, "convert_fpy_to_calendar", (
+        "fwbs.life_blkt",
+        "costs.cdrlife_cal",
+        "costs.life_div",
+        "costs.cplife_cal",
     )
+)
 
 
-def _reference_structures_cost(
-    csi,
-    lsa,
-    cland,
-    ucrb,
-    rbvol,
-    UCMB,
-    rmbvol,
-    UCWS,
-    wsvol,
-    UCTR,
-    triv,
-    UCEL,
-    elevol,
-    UCAD,
-    admvol,
-    UCCO,
-    convol,
-    UCSH,
-    shovol,
-    UCCR,
-    cryvol,
-    ireactor,
-    cturbb,
-):
-    costs = _make_costs()
-    costs.data.costs.csi = csi
-    costs.data.costs.lsa = lsa
-    costs.data.costs.cland = cland
-    costs.data.costs.ucrb = ucrb
-    costs.data.buildings.rbvol = rbvol
-    costs.data.costs.UCMB = UCMB
-    costs.data.buildings.rmbvol = rmbvol
-    costs.data.costs.UCWS = UCWS
-    costs.data.buildings.wsvol = wsvol
-    costs.data.costs.UCTR = UCTR
-    costs.data.buildings.triv = triv
-    costs.data.costs.UCEL = UCEL
-    costs.data.buildings.elevol = elevol
-    costs.data.costs.UCAD = UCAD
-    costs.data.buildings.admvol = admvol
-    costs.data.costs.UCCO = UCCO
-    costs.data.buildings.convol = convol
-    costs.data.costs.UCSH = UCSH
-    costs.data.buildings.shovol = shovol
-    costs.data.costs.UCCR = UCCR
-    costs.data.buildings.cryvol = cryvol
-    costs.data.costs.ireactor = ireactor
-    costs.data.costs.cturbb = cturbb
-    costs.acc21()
-    c = costs.data.costs
-    return (
-        c.c211,
-        c.c212,
-        c.c213,
-        c.c2141,
-        c.c2142,
-        c.c214,
-        c.c215,
-        c.c216,
-        c.c2171,
-        c.c2172,
-        c.c2173,
-        c.c2174,
-        c.c217,
-        c.c21,
+_reference_structures_cost = process_reference(
+    _make_costs, "acc21", (
+        "costs.c211",
+        "costs.c212",
+        "costs.c213",
+        "costs.c2141",
+        "costs.c2142",
+        "costs.c214",
+        "costs.c215",
+        "costs.c216",
+        "costs.c2171",
+        "costs.c2172",
+        "costs.c2173",
+        "costs.c2174",
+        "costs.c217",
+        "costs.c21",
     )
+)
 
 
-def _reference_indirect_costs(cfind, lsa, cdirt, cowner, fcontng):
-    costs = _make_costs()
-    costs.data.costs.cfind = cfind
-    costs.data.costs.lsa = lsa
-    costs.data.costs.cdirt = cdirt
-    costs.data.costs.cowner = cowner
-    costs.data.costs.fcontng = fcontng
-    costs.acc9()
-    return costs.data.costs.cindrt, costs.data.costs.ccont
-
-
-def _reference_reactor_structure_cost(gsmass, UCGSS, lsa, fkind):
-    costs = _make_costs()
-    costs.data.structure.gsmass = gsmass
-    costs.data.costs.UCGSS = UCGSS
-    costs.data.costs.lsa = lsa
-    costs.data.costs.fkind = fkind
-    costs.acc2214()
-    return costs.data.costs.c2214
-
-
-def _reference_vacuum_vessel_assembly_cost(m_vv, uccryo, lsa, fkind):
-    costs = _make_costs()
-    costs.data.fwbs.m_vv = m_vv
-    costs.data.costs.uccryo = uccryo
-    costs.data.costs.lsa = lsa
-    costs.data.costs.fkind = fkind
-    costs.acc2223()
-    return costs.data.costs.c2223
-
-
-def _reference_divertor_cost(ife, a_div_surface_total, ucdiv, fkind, ifueltyp):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.divertor.a_div_surface_total = a_div_surface_total
-    costs.data.costs.ucdiv = ucdiv
-    costs.data.costs.fkind = fkind
-    costs.data.costs.ifueltyp = ifueltyp
-    costs.acc2215()
-    return costs.data.costs.c2215, costs.data.costs.divcst
-
-
-def _reference_vacuum_system_cost(
-    i_vacuum_pump_type,
-    n_vac_pumps_high,
-    UCCPMP,
-    UCTPMP,
-    n_vv_vacuum_ducts,
-    UCBPMP,
-    dlscal,
-    UCDUCT,
-    dia_vv_vacuum_ducts,
-    UCVALV,
-    m_vv_vacuum_duct_shield,
-    UCVDSH,
-    UCVIAC,
-    fkind,
-):
-    costs = _make_costs()
-    costs.data.vacuum.i_vacuum_pump_type = i_vacuum_pump_type
-    costs.data.vacuum.n_vac_pumps_high = n_vac_pumps_high
-    costs.data.costs.UCCPMP = UCCPMP
-    costs.data.costs.UCTPMP = UCTPMP
-    costs.data.vacuum.n_vv_vacuum_ducts = n_vv_vacuum_ducts
-    costs.data.costs.UCBPMP = UCBPMP
-    costs.data.vacuum.dlscal = dlscal
-    costs.data.costs.UCDUCT = UCDUCT
-    costs.data.vacuum.dia_vv_vacuum_ducts = dia_vv_vacuum_ducts
-    costs.data.costs.UCVALV = UCVALV
-    costs.data.vacuum.m_vv_vacuum_duct_shield = m_vv_vacuum_duct_shield
-    costs.data.costs.UCVDSH = UCVDSH
-    costs.data.costs.UCVIAC = UCVIAC
-    costs.data.costs.fkind = fkind
-    costs.acc224()
-    c = costs.data.costs
-    return c.c2241, c.c2242, c.c2243, c.c2244, c.c2245, c.c2246, c.c224
-
-
-def _reference_tf_coil_power_conditioning_cost(
-    uctfps,
-    tfckw,
-    tfcmw,
-    i_tf_sup,
-    uctfbr,
-    n_tf_coils,
-    c_tf_turn,
-    v_tf_coil_dump_quench_kv,
-    uctfsw,
-    UCTFDR,
-    e_tf_magnetic_stored_total_gj,
-    UCTFGR,
-    UCTFIC,
-    uctfbus,
-    m_tf_bus,
-    ucbus,
-    len_tf_bus,
-    fkind,
-):
-    costs = _make_costs()
-    costs.data.costs.uctfps = uctfps
-    costs.data.tfcoil.tfckw = tfckw
-    costs.data.tfcoil.tfcmw = tfcmw
-    costs.data.tfcoil.i_tf_sup = i_tf_sup
-    costs.data.costs.uctfbr = uctfbr
-    costs.data.tfcoil.n_tf_coils = n_tf_coils
-    costs.data.tfcoil.c_tf_turn = c_tf_turn
-    costs.data.tfcoil.v_tf_coil_dump_quench_kv = v_tf_coil_dump_quench_kv
-    costs.data.costs.uctfsw = uctfsw
-    costs.data.costs.UCTFDR = UCTFDR
-    costs.data.tfcoil.e_tf_magnetic_stored_total_gj = e_tf_magnetic_stored_total_gj
-    costs.data.costs.UCTFGR = UCTFGR
-    costs.data.costs.UCTFIC = UCTFIC
-    costs.data.costs.uctfbus = uctfbus
-    costs.data.tfcoil.m_tf_bus = m_tf_bus
-    costs.data.costs.ucbus = ucbus
-    costs.data.tfcoil.len_tf_bus = len_tf_bus
-    costs.data.costs.fkind = fkind
-    costs.acc2251()
-    c = costs.data.costs
-    return c.c22511, c.c22512, c.c22513, c.c22514, c.c22515, c.c2251
-
-
-def _reference_pf_coil_power_conditioning_cost(
-    ucpfps,
-    peakmva,
-    ucpfic,
-    pfckts,
-    ucpfb,
-    spfbusl,
-    acptmax,
-    ucpfbs,
-    srcktpm,
-    ucpfbk,
-    vpfskv,
-    ucpfdr1,
-    ensxpfm,
-    ucpfcb,
-    fkind,
-):
-    costs = _make_costs()
-    costs.data.costs.ucpfps = ucpfps
-    costs.data.heat_transport.peakmva = peakmva
-    costs.data.costs.ucpfic = ucpfic
-    costs.data.pf_power.pfckts = pfckts
-    costs.data.costs.ucpfb = ucpfb
-    costs.data.pf_power.spfbusl = spfbusl
-    costs.data.pf_power.acptmax = acptmax
-    costs.data.costs.ucpfbs = ucpfbs
-    costs.data.pf_power.srcktpm = srcktpm
-    costs.data.costs.ucpfbk = ucpfbk
-    costs.data.pf_power.vpfskv = vpfskv
-    costs.data.costs.ucpfdr1 = ucpfdr1
-    costs.data.pf_power.ensxpfm = ensxpfm
-    costs.data.costs.ucpfcb = ucpfcb
-    costs.data.costs.fkind = fkind
-    costs.acc2252()
-    c = costs.data.costs
-    return c.c22521, c.c22522, c.c22523, c.c22524, c.c22525, c.c22526, c.c22527, c.c2252
-
-
-def _reference_reactor_cooling_system_cost(
-    uchts,
-    i_blkt_coolant_type,
-    p_fw_div_heat_deposited_mw,
-    p_blkt_nuclear_heat_total_mw,
-    p_shld_nuclear_heat_mw,
-    lsa,
-    fkind,
-    UCPHX,
-    n_primary_heat_exchangers,
-    p_plant_primary_heat_mw,
-):
-    costs = _make_costs()
-    costs.data.costs.uchts = uchts
-    costs.data.fwbs.i_blkt_coolant_type = i_blkt_coolant_type
-    costs.data.heat_transport.p_fw_div_heat_deposited_mw = p_fw_div_heat_deposited_mw
-    costs.data.fwbs.p_blkt_nuclear_heat_total_mw = p_blkt_nuclear_heat_total_mw
-    costs.data.fwbs.p_shld_nuclear_heat_mw = p_shld_nuclear_heat_mw
-    costs.data.costs.lsa = lsa
-    costs.data.costs.fkind = fkind
-    costs.data.costs.UCPHX = UCPHX
-    costs.data.heat_transport.n_primary_heat_exchangers = n_primary_heat_exchangers
-    costs.data.heat_transport.p_plant_primary_heat_mw = p_plant_primary_heat_mw
-    costs.acc2261()
-    c = costs.data.costs
-    return c.cpp, c.chx, c.c2261
-
-
-def _reference_fuelling_system_cost(ucf1, fkind):
-    costs = _make_costs()
-    costs.data.costs.ucf1 = ucf1
-    costs.data.costs.fkind = fkind
-    costs.acc2271()
-    return costs.data.costs.c2271
-
-
-def _reference_nuclear_building_ventilation_cost(UCNBV, volrci, wsvol, fkind):
-    costs = _make_costs()
-    costs.data.costs.UCNBV = UCNBV
-    costs.data.buildings.volrci = volrci
-    costs.data.buildings.wsvol = wsvol
-    costs.data.costs.fkind = fkind
-    costs.acc2274()
-    return costs.data.costs.c2274
-
-
-def _reference_instrumentation_and_control_cost(uciac, fkind):
-    costs = _make_costs()
-    costs.data.costs.uciac = uciac
-    costs.data.costs.fkind = fkind
-    costs.acc228()
-    return costs.data.costs.c228
-
-
-def _reference_maintenance_equipment_cost(ucme, fkind):
-    costs = _make_costs()
-    costs.data.costs.ucme = ucme
-    costs.data.costs.fkind = fkind
-    costs.acc229()
-    return costs.data.costs.c229
-
-
-def _reference_turbine_plant_equipment_cost(
-    ireactor, ucturb, i_blkt_coolant_type, p_plant_electric_gross_mw
-):
-    costs = _make_costs()
-    costs.data.costs.ireactor = ireactor
-    costs.data.costs.ucturb = ucturb
-    costs.data.fwbs.i_blkt_coolant_type = i_blkt_coolant_type
-    costs.data.heat_transport.p_plant_electric_gross_mw = p_plant_electric_gross_mw
-    costs.acc23()
-    return costs.data.costs.c23
-
-
-def _reference_switchyard_cost(UCSWYD, lsa):
-    costs = _make_costs()
-    costs.data.costs.UCSWYD = UCSWYD
-    costs.data.costs.lsa = lsa
-    costs.acc241()
-    return costs.data.costs.c241
-
-
-def _reference_transformers_cost(
-    UCPP, pacpmw, UCAP, p_plant_electric_base_total_mw, lsa
-):
-    costs = _make_costs()
-    costs.data.costs.UCPP = UCPP
-    costs.data.heat_transport.pacpmw = pacpmw
-    costs.data.costs.UCAP = UCAP
-    costs.data.heat_transport.p_plant_electric_base_total_mw = (
-        p_plant_electric_base_total_mw
+_reference_indirect_costs = process_reference(
+    _make_costs, "acc9", (
+        "costs.cindrt",
+        "costs.ccont",
     )
-    costs.data.costs.lsa = lsa
-    costs.acc242()
-    return costs.data.costs.c242
+)
 
 
-def _reference_low_voltage_cost(UCLV, tlvpmw, lsa):
-    costs = _make_costs()
-    costs.data.costs.UCLV = UCLV
-    costs.data.heat_transport.tlvpmw = tlvpmw
-    costs.data.costs.lsa = lsa
-    costs.acc243()
-    return costs.data.costs.c243
+_reference_reactor_structure_cost = process_reference(
+    _make_costs, "acc2214", "costs.c2214"
+)
 
 
-def _reference_diesel_generators_cost(UCDGEN, lsa):
-    costs = _make_costs()
-    costs.data.costs.UCDGEN = UCDGEN
-    costs.data.costs.lsa = lsa
-    costs.acc244()
-    return costs.data.costs.c244
+_reference_vacuum_vessel_assembly_cost = process_reference(
+    _make_costs, "acc2223", "costs.c2223"
+)
 
 
-def _reference_auxiliary_facility_power_cost(UCAF, lsa):
-    costs = _make_costs()
-    costs.data.costs.UCAF = UCAF
-    costs.data.costs.lsa = lsa
-    costs.acc245()
-    return costs.data.costs.c245
+_reference_divertor_cost = process_reference(
+    _make_costs, "acc2215", (
+        "costs.c2215",
+        "costs.divcst",
+    )
+)
 
 
-def _reference_electric_plant_equipment_cost(c241, c242, c243, c244, c245):
-    costs = _make_costs()
-    costs.data.costs.c241 = c241
-    costs.data.costs.c242 = c242
-    costs.data.costs.c243 = c243
-    costs.data.costs.c244 = c244
-    costs.data.costs.c245 = c245
-    costs.acc24()
-    return costs.data.costs.c24
+_reference_vacuum_system_cost = process_reference(
+    _make_costs, "acc224", (
+        "costs.c2241",
+        "costs.c2242",
+        "costs.c2243",
+        "costs.c2244",
+        "costs.c2245",
+        "costs.c2246",
+        "costs.c224",
+    )
+)
 
 
-def _reference_misc_plant_equipment_cost(ucmisc, lsa):
-    costs = _make_costs()
-    costs.data.costs.ucmisc = ucmisc
-    costs.data.costs.lsa = lsa
-    costs.acc25()
-    return costs.data.costs.c25
+_reference_tf_coil_power_conditioning_cost = process_reference(
+    _make_costs, "acc2251", (
+        "costs.c22511",
+        "costs.c22512",
+        "costs.c22513",
+        "costs.c22514",
+        "costs.c22515",
+        "costs.c2251",
+    )
+)
 
 
-def _reference_heat_rejection_cost(
-    ireactor,
-    p_fusion_total_mw,
-    p_hcd_electric_total_mw,
-    tfcmw,
-    p_plant_primary_heat_mw,
-    p_plant_electric_gross_mw,
-    uchrs,
-    lsa,
-):
-    costs = _make_costs()
-    costs.data.costs.ireactor = ireactor
-    costs.data.physics.p_fusion_total_mw = p_fusion_total_mw
-    costs.data.heat_transport.p_hcd_electric_total_mw = p_hcd_electric_total_mw
-    costs.data.tfcoil.tfcmw = tfcmw
-    costs.data.heat_transport.p_plant_primary_heat_mw = p_plant_primary_heat_mw
-    costs.data.heat_transport.p_plant_electric_gross_mw = p_plant_electric_gross_mw
-    costs.data.costs.uchrs = uchrs
-    costs.data.costs.lsa = lsa
-    costs.acc26()
-    return costs.data.costs.c26
+_reference_pf_coil_power_conditioning_cost = process_reference(
+    _make_costs, "acc2252", (
+        "costs.c22521",
+        "costs.c22522",
+        "costs.c22523",
+        "costs.c22524",
+        "costs.c22525",
+        "costs.c22526",
+        "costs.c22527",
+        "costs.c2252",
+    )
+)
+
+
+_reference_reactor_cooling_system_cost = process_reference(
+    _make_costs, "acc2261", (
+        "costs.cpp",
+        "costs.chx",
+        "costs.c2261",
+    )
+)
+
+
+_reference_fuelling_system_cost = process_reference(
+    _make_costs, "acc2271", "costs.c2271"
+)
+
+
+_reference_nuclear_building_ventilation_cost = process_reference(
+    _make_costs, "acc2274", "costs.c2274"
+)
+
+
+_reference_instrumentation_and_control_cost = process_reference(
+    _make_costs, "acc228", "costs.c228"
+)
+
+
+_reference_maintenance_equipment_cost = process_reference(
+    _make_costs, "acc229", "costs.c229"
+)
+
+
+_reference_turbine_plant_equipment_cost = process_reference(
+    _make_costs, "acc23", "costs.c23"
+)
+
+
+_reference_switchyard_cost = process_reference(
+    _make_costs, "acc241", "costs.c241"
+)
+
+
+_reference_transformers_cost = process_reference(
+    _make_costs, "acc242", "costs.c242"
+)
+
+
+_reference_low_voltage_cost = process_reference(
+    _make_costs, "acc243", "costs.c243"
+)
+
+
+_reference_diesel_generators_cost = process_reference(
+    _make_costs, "acc244", "costs.c244"
+)
+
+
+_reference_auxiliary_facility_power_cost = process_reference(
+    _make_costs, "acc245", "costs.c245"
+)
+
+
+_reference_electric_plant_equipment_cost = process_reference(
+    _make_costs, "acc24", "costs.c24"
+)
+
+
+_reference_misc_plant_equipment_cost = process_reference(
+    _make_costs, "acc25", "costs.c25"
+)
+
+
+_reference_heat_rejection_cost = process_reference(
+    _make_costs, "acc26", "costs.c26"
+)
 
 
 class TestConvertFpyToCalendar(Tier1Contract):
@@ -1193,76 +951,36 @@ def _neutralise(costs, *names):
         setattr(costs, name, lambda: None)
 
 
-def _reference_first_wall_cost(
-    ife, lsa, UCFWA, UCFWS, a_fw_total, UCFWPS, fkind, ifueltyp
-):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.costs.lsa = lsa
-    costs.data.costs.UCFWA = UCFWA
-    costs.data.costs.UCFWS = UCFWS
-    costs.data.first_wall.a_fw_total = a_fw_total
-    costs.data.costs.UCFWPS = UCFWPS
-    costs.data.costs.fkind = fkind
-    costs.data.costs.ifueltyp = ifueltyp
-    costs.acc2211()
-    return costs.data.costs.c2211, costs.data.costs.fwallcst
-
-
-def _reference_blanket_cost(
-    ife,
-    lsa,
-    m_blkt_beryllium,
-    ucblbe,
-    m_blkt_li2o,
-    ucblli2o,
-    m_blkt_steel_total,
-    ucblss,
-    m_blkt_vanadium,
-    ucblvd,
-    fkind,
-    ifueltyp,
-):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.costs.lsa = lsa
-    costs.data.fwbs.m_blkt_beryllium = m_blkt_beryllium
-    costs.data.costs.ucblbe = ucblbe
-    costs.data.fwbs.m_blkt_li2o = m_blkt_li2o
-    costs.data.costs.ucblli2o = ucblli2o
-    costs.data.fwbs.m_blkt_steel_total = m_blkt_steel_total
-    costs.data.costs.ucblss = ucblss
-    costs.data.fwbs.m_blkt_vanadium = m_blkt_vanadium
-    costs.data.costs.ucblvd = ucblvd
-    costs.data.costs.fkind = fkind
-    costs.data.costs.ifueltyp = ifueltyp
-    costs.acc2212()
-    c = costs.data.costs
-    return (
-        c.c22121,
-        c.c22122,
-        c.c22123,
-        c.c22124,
-        c.c22125,
-        c.c22126,
-        c.c22127,
-        c.c2212,
-        c.blkcst,
+_reference_first_wall_cost = process_reference(
+    _make_costs, "acc2211", (
+        "costs.c2211",
+        "costs.fwallcst",
     )
+)
 
 
-def _reference_shield_cost(ife, lsa, whtshld, ucshld, wpenshld, ucpens, fkind):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.costs.lsa = lsa
-    costs.data.fwbs.whtshld = whtshld
-    costs.data.costs.ucshld = ucshld
-    costs.data.fwbs.wpenshld = wpenshld
-    costs.data.costs.ucpens = ucpens
-    costs.data.costs.fkind = fkind
-    costs.acc2213()
-    c = costs.data.costs
-    return c.c22131, c.c22132, c.c2213
+_reference_blanket_cost = process_reference(
+    _make_costs, "acc2212", (
+        "costs.c22121",
+        "costs.c22122",
+        "costs.c22123",
+        "costs.c22124",
+        "costs.c22125",
+        "costs.c22126",
+        "costs.c22127",
+        "costs.c2212",
+        "costs.blkcst",
+    )
+)
+
+
+_reference_shield_cost = process_reference(
+    _make_costs, "acc2213", (
+        "costs.c22131",
+        "costs.c22132",
+        "costs.c2213",
+    )
+)
 
 
 def _reference_reactor_cost(c2211, c2212, c2213, c2214, c2215):
@@ -1433,50 +1151,20 @@ def _reference_magnets_cost(ife, c2221, c2222, c2223):
     return costs.data.costs.c222
 
 
-def _reference_power_injection_cost(
-    ife,
-    ucech,
-    p_hcd_ecrh_injected_total_mw,
-    i_hcd_primary,
-    uclh,
-    ucich,
-    p_hcd_lowhyb_injected_total_mw,
-    ucnbi,
-    p_beam_injected_mw,
-    ifueltyp,
-    fcdfuel,
-    fkind,
-):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.costs.ucech = ucech
-    costs.data.current_drive.p_hcd_ecrh_injected_total_mw = p_hcd_ecrh_injected_total_mw
-    costs.data.current_drive.i_hcd_primary = i_hcd_primary
-    costs.data.costs.uclh = uclh
-    costs.data.costs.ucich = ucich
-    costs.data.current_drive.p_hcd_lowhyb_injected_total_mw = (
-        p_hcd_lowhyb_injected_total_mw
+_reference_power_injection_cost = process_reference(
+    _make_costs, "acc223", (
+        "costs.c2231",
+        "costs.c2232",
+        "costs.c2233",
+        "costs.c223",
+        "costs.cdcost",
     )
-    costs.data.costs.ucnbi = ucnbi
-    costs.data.current_drive.p_beam_injected_mw = p_beam_injected_mw
-    costs.data.costs.ifueltyp = ifueltyp
-    costs.data.costs.fcdfuel = fcdfuel
-    costs.data.costs.fkind = fkind
-    costs.acc223()
-    c = costs.data.costs
-    return c.c2231, c.c2232, c.c2233, c.c223, c.cdcost
+)
 
 
-def _reference_energy_storage_cost(
-    i_pulsed_plant, istore, p_plant_electric_net_mw, fkind
-):
-    costs = _make_costs()
-    costs.data.pulse.i_pulsed_plant = i_pulsed_plant
-    costs.data.pulse.istore = istore
-    costs.data.heat_transport.p_plant_electric_net_mw = p_plant_electric_net_mw
-    costs.data.costs.fkind = fkind
-    costs.acc2253()
-    return costs.data.costs.c2253
+_reference_energy_storage_cost = process_reference(
+    _make_costs, "acc2253", "costs.c2253"
+)
 
 
 def _reference_power_conditioning_cost(ife, c2251, c2252, c2253):
@@ -1490,83 +1178,40 @@ def _reference_power_conditioning_cost(ife, c2251, c2252, c2253):
     return costs.data.costs.c225
 
 
-def _reference_auxiliary_component_cooling_cost(
-    ife,
-    lsa,
-    UCAHTS,
-    p_hcd_electric_loss_mw,
-    p_cryo_plant_electric_mw,
-    vachtmw,
-    p_tritium_plant_electric_mw,
-    fachtmw,
-    fkind,
-):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.costs.lsa = lsa
-    costs.data.costs.UCAHTS = UCAHTS
-    costs.data.heat_transport.p_hcd_electric_loss_mw = p_hcd_electric_loss_mw
-    costs.data.heat_transport.p_cryo_plant_electric_mw = p_cryo_plant_electric_mw
-    costs.data.heat_transport.vachtmw = vachtmw
-    costs.data.heat_transport.p_tritium_plant_electric_mw = p_tritium_plant_electric_mw
-    costs.data.heat_transport.fachtmw = fachtmw
-    costs.data.costs.fkind = fkind
-    costs.acc2262()
-    return costs.data.costs.cppa, costs.data.costs.c2262
+_reference_auxiliary_component_cooling_cost = process_reference(
+    _make_costs, "acc2262", (
+        "costs.cppa",
+        "costs.c2262",
+    )
+)
 
 
-def _reference_cryogenic_system_cost(lsa, uccry, temp_tf_cryo, helpow, fkind):
-    costs = _make_costs()
-    costs.data.costs.lsa = lsa
-    costs.data.costs.uccry = uccry
-    costs.data.tfcoil.temp_tf_cryo = temp_tf_cryo
-    costs.data.heat_transport.helpow = helpow
-    costs.data.costs.fkind = fkind
-    costs.acc2263()
-    return costs.data.costs.c2263
+_reference_cryogenic_system_cost = process_reference(
+    _make_costs, "acc2263", "costs.c2263"
+)
 
 
-def _reference_heat_transport_system_cost(c2261, c2262, c2263):
-    costs = _make_costs()
-    costs.data.costs.c2261 = c2261
-    costs.data.costs.c2262 = c2262
-    costs.data.costs.c2263 = c2263
-    costs.acc226()
-    return costs.data.costs.c226
+_reference_heat_transport_system_cost = process_reference(
+    _make_costs, "acc226", "costs.c226"
+)
 
 
-def _reference_fuel_processing_cost(ife, rndfuel, m_fuel_amu, UCFPR, fkind):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.physics.rndfuel = rndfuel
-    costs.data.physics.m_fuel_amu = m_fuel_amu
-    costs.data.costs.UCFPR = UCFPR
-    costs.data.costs.fkind = fkind
-    costs.acc2272()
-    return costs.data.physics.wtgpd, costs.data.costs.c2272
+_reference_fuel_processing_cost = process_reference(
+    _make_costs, "acc2272", (
+        "physics.wtgpd",
+        "costs.c2272",
+    )
+)
 
 
-def _reference_atmospheric_recovery_cost(
-    f_plasma_fuel_tritium, UCDTC, volrci, wsvol, fkind
-):
-    costs = _make_costs()
-    costs.data.physics.f_plasma_fuel_tritium = f_plasma_fuel_tritium
-    costs.data.costs.UCDTC = UCDTC
-    costs.data.buildings.volrci = volrci
-    costs.data.buildings.wsvol = wsvol
-    costs.data.costs.fkind = fkind
-    costs.acc2273()
-    return costs.data.costs.c2273
+_reference_atmospheric_recovery_cost = process_reference(
+    _make_costs, "acc2273", "costs.c2273"
+)
 
 
-def _reference_fuel_handling_cost(c2271, c2272, c2273, c2274):
-    costs = _make_costs()
-    costs.data.costs.c2271 = c2271
-    costs.data.costs.c2272 = c2272
-    costs.data.costs.c2273 = c2273
-    costs.data.costs.c2274 = c2274
-    costs.acc227()
-    return costs.data.costs.c227
+_reference_fuel_handling_cost = process_reference(
+    _make_costs, "acc227", "costs.c227"
+)
 
 
 def _reference_fusion_power_island_cost(
@@ -1633,86 +1278,16 @@ def _reference_constructed_cost(cdirt, cindrt, ccont):
     return costs.data.costs.concost
 
 
-def _reference_cost_of_electricity(
-    ife,
-    itart,
-    p_plant_electric_net_mw,
-    f_t_plant_available,
-    t_plant_pulse_burn,
-    t_plant_pulse_total,
-    concost,
-    fcap0,
-    fcr0,
-    discount_rate,
-    life_blkt,
-    fwallcst,
-    blkcst,
-    cfind,
-    lsa,
-    fcap0cp,
-    ifueltyp,
-    life_blkt_fpy,
-    life_plant,
-    life_div,
-    divcst,
-    life_div_fpy,
-    cplife_cal,
-    cpstcst,
-    cplife,
-    cdrlife_cal,
-    cdcost,
-    fcdfuel,
-    ucoam,
-    ucfuel,
-    f_plasma_fuel_helium3,
-    wtgpd,
-    uche3,
-    ucwst,
-    decomf,
-    dintrt,
-    dtlife,
-):
-    costs = _make_costs()
-    costs.data.ife.ife = ife
-    costs.data.physics.itart = itart
-    costs.data.heat_transport.p_plant_electric_net_mw = p_plant_electric_net_mw
-    costs.data.costs.f_t_plant_available = f_t_plant_available
-    costs.data.times.t_plant_pulse_burn = t_plant_pulse_burn
-    costs.data.times.t_plant_pulse_total = t_plant_pulse_total
-    costs.data.costs.concost = concost
-    costs.data.costs.fcap0 = fcap0
-    costs.data.costs.fcr0 = fcr0
-    costs.data.costs.discount_rate = discount_rate
-    costs.data.fwbs.life_blkt = life_blkt
-    costs.data.costs.fwallcst = fwallcst
-    costs.data.costs.blkcst = blkcst
-    costs.data.costs.cfind = cfind
-    costs.data.costs.lsa = lsa
-    costs.data.costs.fcap0cp = fcap0cp
-    costs.data.costs.ifueltyp = ifueltyp
-    costs.data.fwbs.life_blkt_fpy = life_blkt_fpy
-    costs.data.costs.life_plant = life_plant
-    costs.data.costs.life_div = life_div
-    costs.data.costs.divcst = divcst
-    costs.data.costs.life_div_fpy = life_div_fpy
-    costs.data.costs.cplife_cal = cplife_cal
-    costs.data.costs.cpstcst = cpstcst
-    costs.data.costs.cplife = cplife
-    costs.data.costs.cdrlife_cal = cdrlife_cal
-    costs.data.costs.cdcost = cdcost
-    costs.data.costs.fcdfuel = fcdfuel
-    costs.data.costs.ucoam = ucoam
-    costs.data.costs.ucfuel = ucfuel
-    costs.data.physics.f_plasma_fuel_helium3 = f_plasma_fuel_helium3
-    costs.data.physics.wtgpd = wtgpd
-    costs.data.costs.uche3 = uche3
-    costs.data.costs.ucwst = ucwst
-    costs.data.costs.decomf = decomf
-    costs.data.costs.dintrt = dintrt
-    costs.data.costs.dtlife = dtlife
-    costs.coelc()
-    c = costs.data.costs
-    return c.moneyint, c.capcost, c.coecap, c.coeoam, c.coefuelt, c.coe
+_reference_cost_of_electricity = process_reference(
+    _make_costs, "coelc", (
+        "costs.moneyint",
+        "costs.capcost",
+        "costs.coecap",
+        "costs.coeoam",
+        "costs.coefuelt",
+        "costs.coe",
+    )
+)
 
 
 # `.costs.cfind`/`ucoam`/`ucwst` defaults, `cost_variables.py`; `ucsc`/`sc_mat_cost_0`/

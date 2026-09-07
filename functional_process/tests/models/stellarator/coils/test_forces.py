@@ -6,6 +6,7 @@ still a real check (both port and reference run PROCESS's own arithmetic on the 
 random points), just with no independently-validated legacy point to anchor it.
 """
 
+from functional_process.cottax._harness.process_reference import data_reference
 from functional_process.cottax._harness import Tier1Contract
 from functional_process.cottax.stellarator.coils.forces import (
     calculate_centering_force_avg_mn,
@@ -63,22 +64,7 @@ def _reference_max_force_density(
     return data.tfcoil.max_force_density
 
 
-def _reference_max_force_density_mnm(
-    stella_config_max_force_density_mnm,
-    f_st_i_total,
-    f_st_n_coils,
-    b_tf_inboard_peak_symmetric,
-    stella_config_wp_bmax,
-):
-    data = DataStructure()
-    data.stellarator_config.stella_config_max_force_density_mnm = (
-        stella_config_max_force_density_mnm
-    )
-    data.stellarator.f_st_i_total = f_st_i_total
-    data.stellarator.f_st_n_coils = f_st_n_coils
-    data.tfcoil.b_tf_inboard_peak_symmetric = b_tf_inboard_peak_symmetric
-    data.stellarator_config.stella_config_wp_bmax = stella_config_wp_bmax
-    return _process_forces.calculate_max_force_density_mnm(data)
+_reference_max_force_density_mnm = data_reference(lambda d: _process_forces.calculate_max_force_density_mnm(d))
 
 
 def _reference_maximum_stress(max_force_density, dr_tf_wp_with_insulation):

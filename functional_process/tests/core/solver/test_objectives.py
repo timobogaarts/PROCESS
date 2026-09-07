@@ -10,6 +10,7 @@ port's own `objective_metric_<id>` functions compute (see `objectives.py`'s modu
 docstring: sign is applied by the caller, not folded into these functions).
 """
 
+from functional_process.cottax._harness.process_reference import data_reference
 import pytest
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
@@ -36,105 +37,52 @@ from process.core.solver.objectives import objective_function
 from process.models.availability import AvailabilityModel
 
 
-def _reference_1(rmajor):
-    data = DataStructure()
-    data.physics.rmajor = rmajor
-    return objective_function(1, data)
+_reference_1 = data_reference(lambda d: objective_function(1, d))
 
 
-def _reference_3(pflux_fw_neutron_mw):
-    data = DataStructure()
-    data.physics.pflux_fw_neutron_mw = pflux_fw_neutron_mw
-    return objective_function(3, data)
+_reference_3 = data_reference(lambda d: objective_function(3, d))
 
 
-def _reference_4(tfcmw, srcktpm):
-    data = DataStructure()
-    data.tfcoil.tfcmw = tfcmw
-    data.pf_power.srcktpm = srcktpm
-    return objective_function(4, data)
+_reference_4 = data_reference(lambda d: objective_function(4, d))
 
 
-def _reference_5(big_q_plasma):
-    data = DataStructure()
-    data.current_drive.big_q_plasma = big_q_plasma
-    return objective_function(5, data)
+_reference_5 = data_reference(lambda d: objective_function(5, d))
 
 
-def _reference_6(coe):
-    data = DataStructure()
-    data.costs.coe = coe
-    return objective_function(6, data)
+_reference_6 = data_reference(lambda d: objective_function(6, d))
 
 
-def _reference_7(cdirt, concost, ireactor):
-    data = DataStructure()
-    data.costs.cdirt = cdirt
-    data.costs.concost = concost
-    data.costs.ireactor = ireactor
-    return objective_function(7, data)
+_reference_7 = data_reference(lambda d: objective_function(7, d))
 
 
-def _reference_8(aspect):
-    data = DataStructure()
-    data.physics.aspect = aspect
-    return objective_function(8, data)
+_reference_8 = data_reference(lambda d: objective_function(8, d))
 
 
-def _reference_9(pflux_div_heat_load_mw):
-    data = DataStructure()
-    data.divertor.pflux_div_heat_load_mw = pflux_div_heat_load_mw
-    return objective_function(9, data)
+_reference_9 = data_reference(lambda d: objective_function(9, d))
 
 
-def _reference_10(b_plasma_toroidal_on_axis):
-    data = DataStructure()
-    data.physics.b_plasma_toroidal_on_axis = b_plasma_toroidal_on_axis
-    return objective_function(10, data)
+_reference_10 = data_reference(lambda d: objective_function(10, d))
 
 
-def _reference_11(p_hcd_injected_total_mw):
-    data = DataStructure()
-    data.current_drive.p_hcd_injected_total_mw = p_hcd_injected_total_mw
-    return objective_function(11, data)
+_reference_11 = data_reference(lambda d: objective_function(11, d))
 
 
-def _reference_14(t_plant_pulse_burn):
-    data = DataStructure()
-    data.times.t_plant_pulse_burn = t_plant_pulse_burn
-    return objective_function(14, data)
+_reference_14 = data_reference(lambda d: objective_function(14, d))
 
 
-def _reference_15(i_plant_availability, f_t_plant_available):
-    data = DataStructure()
-    data.costs.i_plant_availability = i_plant_availability
-    data.costs.f_t_plant_available = f_t_plant_available
-    return objective_function(15, data)
+_reference_15 = data_reference(lambda d: objective_function(15, d))
 
 
-def _reference_16(rmajor, t_plant_pulse_burn):
-    data = DataStructure()
-    data.physics.rmajor = rmajor
-    data.times.t_plant_pulse_burn = t_plant_pulse_burn
-    return objective_function(16, data)
+_reference_16 = data_reference(lambda d: objective_function(16, d))
 
 
-def _reference_17(p_plant_electric_net_mw):
-    data = DataStructure()
-    data.heat_transport.p_plant_electric_net_mw = p_plant_electric_net_mw
-    return objective_function(17, data)
+_reference_17 = data_reference(lambda d: objective_function(17, d))
 
 
-def _reference_18():
-    data = DataStructure()
-    return objective_function(18, data)
+_reference_18 = data_reference(lambda d: objective_function(18, d))
 
 
-def _reference_19(big_q_plasma, t_plant_pulse_burn):
-    data = DataStructure()
-    data.current_drive.big_q_plasma = big_q_plasma
-    data.times.t_plant_pulse_burn = t_plant_pulse_burn
-    return objective_function(19, data)
+_reference_19 = data_reference(lambda d: objective_function(19, d))
 
 
 class TestObjectiveMetric1(Tier1Contract):
