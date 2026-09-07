@@ -115,11 +115,26 @@ already-diverged trajectories rather than driving the divergence.
 
 ## Reverse-mode AD
 
-The only remaining blocker for a whole-graph reverse-mode gradient is
-**`models/vacuum/vacuum.py:474`** (`solve_duct_geometry`, a `lax.while_loop` search, not
-a solve — genuinely hard to convert, not merely unconverted). With it stood down behind a
-`stop_gradient` stand-in (not a landed fix), `jax.grad` of the scalar objective works
-across the whole tokamak graph and agrees with `jax.jacfwd` to `2.0e-14`. (§33.7; the
+**Resolved — this section was stale and misled a reader on 2026-09-07.** It said the
+only remaining blocker was `models/vacuum/vacuum.py:474`, `solve_duct_geometry`'s
+`lax.while_loop`. **That function has no `while_loop` any more**: it was converted to a
+`lax.scan` over `max_outer` candidates (line 429) precisely for reverse-mode AD, and line
+474 now lands on a comment. The one surviving `lax.while_loop` in the file is
+`solve_duct_diameter`'s Newton at line 305, and **reverse mode works through it** —
+verified directly, `jax.grad` against `jax.jacfwd` on all five parameters agrees to
+**2.8e-16**. It works because the loop runs entirely under `stop_gradient` and the tangent
+comes from one live Newton step afterwards, so no tangent ever enters the loop and no
+transpose rule is needed. `jax.grad` of the scalar objective works across the whole
+tokamak graph and agrees with `jax.jacfwd` to `2.0e-14`; the `stop_gradient` stand-in this
+section described as "not a landed fix" is landed.
+
+**What is still blocked is Warp, for an unrelated reason.** Warp does not need to
+differentiate the loop, it needs to *evaluate* it by emitting a fixed number of
+instructions, and a data-dependent trip count gives it none — `stop_gradient` is
+irrelevant to that. So `.vacuum.vacuum_old` refuses in the Warp backend while being
+perfectly differentiable in JAX. Do not "fix" the model for it: §31.13 measured that
+converting this loop to a masked scan costs ~25,600 scalar steps per solve against a few
+hundred today, because the two loops nest. (§33.7; the
 other two `while_loop`s that used to block this — `cs_fatigue` and
 `solve_duct_diameter` — are already converted/repaired, see `optimise_design.md`
 history.)
