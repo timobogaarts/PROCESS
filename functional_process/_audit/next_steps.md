@@ -78,6 +78,55 @@ identical validation with the subscript path disabled reproduces 1.646e-12 to ev
 It is a tolerance graze on the largest node in the graph, not a wrong answer, and it is
 unexamined.
 
+**The Warp kernel now COMPILES for CUDA, RUNS on the GPU, and beats JAX when batched**
+(2026-09-07). All three are new; the previous state was an NVRTC process OOM-killed at
+11.4 GB with nothing to show.
+
+- **Compile**: the full 123-node `stellarator_helias` kernel compiles for `sm_75` in 69 s
+  under a 7 GB cgroup cap and writes a 1.98 MB cubin. What unblocked it was source size --
+  `MIN_FUSED_LINES` and the `_dynamic_slice` subscript path above, together 0.89 MB ->
+  0.52 MB of emitted Warp -- since NVRTC's cost is per-function optimisation, not module
+  bytes.
+- **Launch is the new wall, and it is a different resource**: `local_bytes` per thread,
+  read off the cubin with `cuFuncGetAttribute` (`regcheck.py`). The full kernel wants
+  **294,040 bytes/thread** at 255 registers, and the driver reserves that for the device's
+  maximum resident threads regardless of launch `dim` -- 294,040 x 14,336 = 4.2 GB against
+  2.65 GB free on a 4 GB T1000 with a desktop on it. The budget is therefore
+  **~185 kB/thread**, and neither codegen change moved it (174.9 kB of `vec{n}f` locals
+  before, 174.9 kB after; the subscript path actually added 4.5 kB by materialising two
+  vectors the cascades used to read in place).
+- **It is CUMULATIVE, not one node.** `.physics.impurity_radiation_totals` holds 111.2 kB
+  of the 174.9 kB, but a 32-node prefix INCLUDING it launches, and a 64-node prefix
+  launches; 96 and 112 do not. The ceiling on this card is somewhere in 64-96 of the 123
+  nodes. One mega-kernel means every node's locals coexist, and that is the structural
+  cost of the single-kernel design rather than any one node's fault.
+- **The first GPU numbers, on the 31-node prefix** (2/21 conditions -- a sub-kernel, not
+  the SAND residual), Warp-CUDA against JAX-CPU, agreement 0.000e+00 at every checked
+  batch:
+
+  | n | warp us/pt | jax us/pt |
+  |---|---|---|
+  | 1 | 2681.2 | 30.8 |
+  | 256 | 33.6 | 4.0 |
+  | 4096 | **4.4** | 5.9 |
+  | 16384 | **2.8** | 5.7 |
+  | 65536 | **2.5** | 5.2 |
+
+  Cold compile 9.2 s. **This is the first time Warp wins anything**, and it is the shape
+  the design predicted: Warp falls 600x across the sweep as launch overhead amortises and
+  is still falling at 65,536, while JAX is flat at 5-6 us/pt. `_audit/optimise_design.md`
+  S70's "the plausible win is batching -- and that is untested" is now tested. Two caveats
+  kept explicit: JAX is on CPU here (the production path, but not a backend-vs-backend
+  comparison), and this is a quarter of the graph.
+- **Next lever is per-thread local memory, not source size.** The 44.8 kB of
+  `impurity_radiation_totals` that is verbatim copies of constant globals is the cleanest
+  target and its cause is now pinned: the copies are `gather` equations whose emitted
+  exprs ARE the operand's, but `_eqn`'s `array_ident` propagation requires a
+  SINGLE-argument equation, and a gather has two. The provable condition is only
+  `tuple(exprs) == some_arg.exprs`, which holds at any arity. That relaxation would not by
+  itself be enough -- 294 kB has to reach 185 kB -- but it is free of any numerical
+  question.
+
 ## Open
 
 **[defect, found 2026-09-06 -- §86] `native.NativeState` keeps two unsynced stores for a
