@@ -67,6 +67,11 @@ Three things make that safe rather than plausible:
   and replans; a `Refusal` inside a nest falls back to emitting the node fully
   scalarised. Fusion can make a node that refused emit; it cannot make a node that
   emitted refuse. `WARP_FUSE=0` runs the whole backend the old way for comparison.
+- **A nest is seeded wherever the chain ENDS, and iterated over a factorisation of its
+  element count rather than over one declared shape** (`_chain_exit`,
+  `_factorisations`). Both were added for
+  `.tokamak.cicc_superconducting_tf_coil.tf_stress`; each function's docstring carries
+  the argument for why widening it cannot make a nest wrong.
 
 Measured on the three configurations, `.tokamak.bootstrap_current` goes from 146,530
 statements (refused) to **779**, `.physics.fusion_rates` from 47,502 to **452**, and the
@@ -77,6 +82,31 @@ validation is UNCHANGED by fusion wherever the node set is the same: on `helias_
 bit-exact nodes and the same worst relative difference to every digit, and on
 `large_tokamak_nof` (which gains `bootstrap_current`, so its seeded draw sequence
 shifts) the set of nodes that are not bit-exact is identical.
+
+**`.tokamak.cicc_superconducting_tf_coil.tf_stress`: 158,642 statements to 14,703.**
+It has no `scan` and no reduction and returns five scalars, so under the original rule
+-- seed a nest at an all-axes `reduce_sum`/`reduce_prod` or at a value the node returns
+-- the planner found nothing to seed on and emitted NO nest at all. Four things were
+wrong, and the instrumentation found them in this order:
+
+1. **The seed set was too narrow** (`_chain_exit`). Its 1500-element chains end in
+   `reduce_max`/`argmax`/`scatter-mul`, none of which was a seed. Any value the chain
+   hands to an equation `_template` could not prove element-wise is a root, because the
+   consumer has to read it somewhere anyway.
+2. **A computed array index was opaque** (`_fold_exact`, `_const_prop`). `arr[idx]`
+   lowers to `iota -> lt/add/select_n -> gather`; the `iota` was known but the
+   comparison and the select produced no compile-time value, so six lookups of a
+   3-element per-layer array reached `_gather`'s RUNTIME branch: 45,024 statements, and
+   six opaque cuts through the middle of the chain. Integer and boolean values are
+   folded exactly now (float ones deliberately are not).
+3. **The nest's iteration shape was a shape rather than a factorisation**
+   (`_factorisations`). Those lookups read `k // 500`, which is affine over a
+   `(3, 500)` nest and over nothing at all over a flat 1500-iteration loop.
+4. **Eleven equations, 19,500 statements, were dead** (`_drop_dead`) -- a fully
+   computed 1500-element stress chain the node does not return.
+
+`.physics.impurity_radiation_totals` benefits from (2) and (4) as well (483,128 ->
+404,560) and still refuses, for the reason below.
 
 **What a nest still cannot drive, and why `.physics.impurity_radiation_totals` remains
 refused.** Its `jnp.interp` alternates chain, table lookup, chain, table lookup: the
@@ -95,17 +125,23 @@ these three configurations they changed the emitted statement count of exactly z
 nodes, and emission code no node exercises is emission code `jaxpr_validate` never
 checks.
 
-**Where the remaining size is, measured rather than guessed.** With nests and the vector
-memo in place the largest function is `.tokamak.cs_coil.temperature_margin` at 14,382
-statements, and NOTHING in it is array-shaped: every one of its 394 equations is a
-scalar, and the whole of it is two `lax.scan`s that `_scan` UNROLLS. A nest cannot help
-there, because there is no iteration index to fuse along -- the fix is the other
-direction, emitting a scan as a runtime `for` loop over a carry held in Warp locals
-instead of one copy of the body per step. That is not done here because it would break
-the invariant the rest of this emitter rests on -- that a name, once bound, is never
-reassigned (`_materialise`, `_TRIVIAL`) -- and a loop-carried variable is exactly a
-reassignment. It is the next thing worth doing, and it is worth about 14,000 statements
-on `large_tokamak_nof` and 7,000 more on
+**Where the remaining size is, measured rather than guessed.** With nests, the vector
+memo, constant folding and dead-equation elimination in place the three configurations
+emit 75,650 / 13,302 / 13,892 statements and the largest functions are
+`.tokamak.pf_coil.peak_field` at **18,224**, `tf_stress` at 14,703 and
+`.tokamak.cs_coil.temperature_margin` at 12,110 -- so `MAX_NODE_LINES` (24,000) has
+about a third again as much headroom as the largest node needs, and lowering it below
+18,300 would start refusing a node that emits today.
+
+Nothing in `.tokamak.cs_coil.temperature_margin` is array-shaped: every one of its
+equations is a scalar, and the whole of it is two `lax.scan`s that `_scan` UNROLLS. A
+nest cannot help there, because there is no iteration index to fuse along -- the fix is
+the other direction, emitting a scan as a runtime `for` loop over a carry held in Warp
+locals instead of one copy of the body per step. That is not done here because it would
+break the invariant the rest of this emitter rests on -- that a name, once bound, is
+never reassigned (`_materialise`, `_TRIVIAL`) -- and a loop-carried variable is exactly
+a reassignment. It is the next thing worth doing, and it is worth about 12,000
+statements on `large_tokamak_nof` and 6,000 more on
 `.tokamak.cicc_superconducting_tf_coil.tf_superconductor_temperature_margin`.
 """
 from __future__ import annotations
@@ -292,8 +328,9 @@ def _check_size(aval, where: str):
 _INT32_MIN, _INT32_MAX = -(2 ** 31), 2 ** 31 - 1
 
 
-def _fold_exact(eqn, args, okind, oshape):
-    """`eqn`'s result as a concrete array -- or `None`.
+def _fold_exact(eqn, opvals, okind, oshape):
+    """`eqn`'s result as a concrete array -- or `None`. `opvals` is one array (or
+    `None`) per operand, in order.
 
     Folded ONLY when the result is integer- or boolean-valued and every operand is an
     integer or boolean value this generator already knows (`Value.vals`). Under that
@@ -331,18 +368,18 @@ def _fold_exact(eqn, args, okind, oshape):
     n = int(np.prod(oshape)) if oshape else 1
     if n < 1 or n > MAX_ELEMENTS:
         return None
-    if len(args) != len(eqn.invars) or not args:
+    if len(opvals) != len(eqn.invars):
         return None
     ops = []
-    for v, a in zip(eqn.invars, args):
-        if a.vals is None:
+    for v, a in zip(eqn.invars, opvals):
+        if a is None:
             return None
         k = _kind(v.aval)
         if k not in (_I, _B):
             return None
         vshape = tuple(v.aval.shape)
         vsize = int(np.prod(vshape)) if vshape else 1
-        arr = np.asarray(a.vals)
+        arr = np.asarray(a)
         if arr.size != vsize:
             return None
         arr = arr.reshape(vshape)
@@ -720,13 +757,18 @@ compile, and it refused `.tokamak.bootstrap_current` (146,530 statements) and
 `.physics.impurity_radiation_totals` (435,304) outright.
 
 It is 24,000 now because the emitted code is smaller, not because anything was
-loosened. With loop nests and one copy of each materialised vector
-(`_vec_local`'s memo) the largest function in any of the three configurations is
-**14,382 statements** (`.tokamak.cs_coil.temperature_margin`, `large_tokamak_nof`);
-`helias_5b` as a whole is 18,709 statements against 99,565 before, and
-`.physics.fusion_rates` alone went from 47,502 to 452. 24,000 leaves two thirds again
-as much headroom as the largest node needs and still refuses, loudly, anything that
-goes back to being unrolled by accident.
+loosened. With loop nests, one copy of each materialised vector (`_vec_local`'s memo),
+constant folding (`_fold_exact`) and dead-equation elimination (`_drop_dead`), the
+largest function in any of the three configurations is **18,224 statements**
+(`.tokamak.pf_coil.peak_field`, `large_tokamak_nof`), then `tf_stress` at 14,703 and
+`.tokamak.cs_coil.temperature_margin` at 12,110; the three configurations total 75,650
+/ 13,302 / 13,892 statements, and `.physics.fusion_rates` alone went from 47,502 to
+452. 24,000 leaves about a third again as much headroom as the largest node needs and
+still refuses, loudly, anything that goes back to being unrolled by accident.
+
+**Do not lower it below 18,300** without re-measuring: `.tokamak.pf_coil.peak_field`
+is the binding node now, not `cs_coil.temperature_margin`, and it is close enough to
+the cap that the margin is one node's worth, not a comfortable factor.
 
 Raising it costs compile time and nothing else -- but note that compile time here is not
 linear in the cap, and that with ADJOINTS on the same modules cost about sixty times as
@@ -903,6 +945,12 @@ MAX_CHAIN_NESTS = 6
 past a handful the values crossing between them cost more storage than the unrolling
 they save."""
 
+MAX_CHAIN_FACTORISATIONS = 4
+"""How many ways one element count may be split into nested loops before the planner
+stops looking (`_factorisations`). Each is a whole extra `_plan_for_shape`, and the
+candidates come from the shapes the jaxpr itself carries, so the useful ones are the
+first few."""
+
 MAX_CHAIN_REPLANS = 8
 """How many equations a node may veto out of its loop nest before fusion is abandoned
 for that node. Each veto strictly shrinks the plan, so this only bounds work."""
@@ -927,12 +975,20 @@ _NO_FUSE = frozenset({
     # important entries: with per-occurrence slots a whole `reduce_sum` WOULD present
     # as one uniform template (n_out = 1, and every operand element an occurrence), and
     # inlining it into a loop body is exactly the unrolling this transform exists to
-    # remove. `gather`/`scatter` are excluded because a static one's index map is
-    # usually not affine in the loop index and a dynamic one reads its operand at a
-    # position only the running code knows -- see the note at the end of this module's
-    # docstring for what a nest would have to do about that, and why the attempt was
-    # abandoned rather than half-landed.
-    "gather", "scatter", "scatter_add", "dynamic_slice", "dynamic_update_slice",
+    # remove.
+    #
+    # `gather` is NOT on this list any more, and the reason it was is worth keeping:
+    # "a static one's index map is usually not affine in the loop index and a dynamic
+    # one reads its operand at a position only the running code knows". The second half
+    # still holds and is still enforced -- a dynamic gather materialises a vector, and
+    # `_template` rejects any equation that does (`sb.vecs`). The first half turned out
+    # to be an assumption about the loop's SHAPE rather than about the gather: the six
+    # lookups in `.tokamak.cicc_superconducting_tf_coil.tf_stress` read a 3-element
+    # per-layer array at `k // 500`, which is not affine over a flat 1500-iteration
+    # loop and is exactly `k_0` over the (3, 500) iteration factorisation of the same
+    # 1500 elements. `_affine_index` decides that per nest, against the whole index
+    # map, so nothing here has to guess.
+    "scatter", "scatter_add", "dynamic_slice", "dynamic_update_slice",
     "triangular_solve", "dot_general", "sort", "argsort", "top_k",
     "conv_general_dilated", "cumsum", "cumsum_p", "cumprod", "cummax", "cummin",
     "cumlogsumexp", "reduce_sum", "reduce_prod", "reduce_max", "reduce_min",
@@ -1009,7 +1065,68 @@ class _ChainVeto(Exception):
         self.ix = ix
 
 
-def _template(eqn):
+def _drop_dead(eqns, outrefs):
+    """`eqns` without the equations whose results nothing reads.
+
+    Every primitive this backend emits is a pure function of its operands -- there is
+    no store, no output argument, no I/O -- so an equation none of whose results is
+    read, directly or transitively, by an `outref` cannot change any value the node
+    returns. Dropping it is therefore not an optimisation with a correctness argument
+    attached; the emitted function computes the same tuple either way.
+
+    It is not hypothetical dead code. A jaxpr is what JAX traced, not what the
+    model's author wrote: an inner `jit` returning several quantities of which the
+    caller uses one leaves the rest, fully computed, in the flat list.
+    `.tokamak.cicc_superconducting_tf_coil.tf_stress` carried an eleven-equation
+    1500-element stress chain that nothing reads at all -- 19,500 of its statements,
+    a fifth of `MAX_NODE_LINES`, for a value the node does not return. The fusion
+    planner is why it matters now rather than before: a dead chain has no consumer,
+    so it is not a `_chain_exit` and not an output, so no nest is ever seeded on it,
+    so it was the one part of the node that stayed fully unrolled no matter how well
+    the rest fused.
+    """
+    live = {id(o) for o in outrefs}
+    keep = []
+    for e in reversed(eqns):
+        if not any(id(ov) in live for ov in e.outvars):
+            continue
+        keep.append(e)
+        for v in e.invars:
+            live.add(id(v))
+    keep.reverse()
+    return keep
+
+
+def _const_prop(eqns, env) -> dict:
+    """`{id(var) -> ndarray}` for every value of the flat equation list this generator
+    can know before it emits anything: the bound constants, plus everything
+    `_fold_exact` can derive from them (integer and boolean values only -- see there).
+
+    The walk itself already folds these, one equation at a time, as it goes
+    (`_eqn`). This pass exists because the PLANNER runs first and needs the same facts:
+    `_template` cannot tell a statically-indexed `gather` from a runtime-indexed one
+    without knowing whether the index array is a constant, and the answer decides
+    whether a chain is cut in two at every array lookup or driven as one loop.
+    """
+    known: dict = {}
+    for v, val in env.items():
+        if getattr(val, "vals", None) is not None:
+            known[id(v)] = np.asarray(val.vals)
+    for e in eqns:
+        if len(e.outvars) != 1 or _nested(e) is not None:
+            continue
+        out = e.outvars[0]
+        if id(out) in known:
+            continue
+        oshape = tuple(out.aval.shape)
+        r = _fold_exact(e, [known.get(id(v)) for v in e.invars],
+                        _kind(out.aval), oshape)
+        if r is not None:
+            known[id(out)] = r
+    return known
+
+
+def _template(eqn, known=None):
     """`(lines, expr, slots)` proving that EVERY output element of `eqn` is the same
     scalar program over the same number of operand elements -- or `None`.
 
@@ -1049,6 +1166,17 @@ def _template(eqn):
     An equation that emits storage of its own (`_vec_local`, from a runtime-indexed
     `gather`) is rejected outright: its statements are not per-element and hoisting
     them into the loop body would recompute a whole vector per iteration.
+
+    **`known` is what separates a static `gather` from a dynamic one.** The sandbox
+    operands carry the concrete values `_const_prop` proved, so `_gather` resolves a
+    constant index array exactly as it does in the real walk -- into a plain
+    re-selection of the operand's elements, which is one occurrence per output element
+    and therefore a perfectly ordinary template whose alignment `_emit_chain` then
+    proves or vetoes like any other. A gather whose index is NOT known takes
+    `_gather`'s runtime branch instead, which materialises a vector, which sets
+    `sb.vecs`, which is already rejected below -- so no new judgement is being made
+    about which gathers are safe: the same `sb.vecs` test that has always separated
+    them does it.
     """
     name = eqn.primitive.name
     if name in _NO_FUSE or len(eqn.outvars) != 1:
@@ -1064,7 +1192,8 @@ def _template(eqn):
         if sz > MAX_FUSE_PROBE:
             return None
         args.append(Value(tuple(f"§{i}·{j}" for j in range(sz)),
-                          _kind(v.aval), tuple(v.aval.shape)))
+                          _kind(v.aval), tuple(v.aval.shape),
+                          None if known is None else known.get(id(v))))
     sb = _FuncEmitter()
     try:
         exprs, _ = sb._expr(name, eqn, args, _kind(out.aval), oshape)
@@ -1203,17 +1332,88 @@ class _ChainPlan:
     per-plan cycle check computes on the way to proving the plan schedulable at all."""
 
 
-def _plan_chain(eqns, outrefs, veto=frozenset()):
+def _chain_exit(ov, tmpl, consumers) -> bool:
+    """Does `ov` LEAVE the element-wise chain -- is it read by an equation `_template`
+    could not prove element-wise?
+
+    Such a value is a nest ROOT exactly as a reduction operand or a node output is: the
+    consumer has to read it somewhere, `_plan_for_shape`'s fixpoint will make it a
+    materialised output, and everything upstream of it is chain that a loop can drive.
+
+    Before this, a nest could only be seeded by an all-axes `reduce_sum`/`reduce_prod`
+    or by a value the NODE ITSELF returns, and that is what left
+    `.tokamak.cicc_superconducting_tf_coil.tf_stress` with no plan at all: it is 1,220
+    equations over 169,129 elements with no `scan` and no reduction, and every one of
+    its five outputs is a scalar. Its 1500-element chains terminate in `reduce_max` /
+    `argmax` / `scatter-mul` -- none of them a seed under the old rule -- so the
+    planner saw nothing to build a nest around and the node refused at 158,642
+    statements.
+
+    Widening the SEED set cannot make a nest wrong. A seed only says where the backward
+    closure starts; every proof stays where it was -- `_template` still has to show the
+    equation is one scalar program per element, `_plan_for_shape`'s fixpoint still
+    decides what is materialised and still pushes out anything that would make the
+    unit graph cyclic, and `_emit_chain`'s discovery still vetoes any operand whose
+    index map is not affine in the loop indices.
+    """
+    return any(c not in tmpl for c in consumers.get(id(ov), ()))
+
+
+def _factorisations(size, eqns, cap=MAX_CHAIN_FACTORISATIONS):
+    """Candidate loop-nest factorisations of `size` elements, flat one first.
+
+    A nest is a loop per axis over values held FLAT, row-major, so its `shape` is not
+    the shape of anything it computes -- it is only how `size` iterations are split
+    into nested loops. Membership in a nest is by element COUNT (`_plan_for_shape`),
+    and the factorisation reaches exactly two places: `_affine_index`, which fits an
+    operand's index map in the loop variables and then checks the fit against the whole
+    map, and `flat_idx = sum(strides[d] * k_d)`, which is the row-major flat index and
+    therefore enumerates 0 .. size-1 once each for ANY factorisation whose product is
+    `size`. So the choice cannot change what the nest computes; it can only change
+    which index maps are expressible without a division.
+
+    The candidates are not invented: they are the shapes the jaxpr itself carries for
+    values of this element count (size-1 axes dropped, which change nothing), plus the
+    flat `(size,)`. That is what makes `(3, 500)` available to
+    `.tokamak.cicc_superconducting_tf_coil.tf_stress`, whose 1500-element chain reads
+    six 3-element per-layer arrays at `k // 500` -- affine in `k_0` there and in
+    nothing at all when the 1500 iterations are one flat loop.
+
+    **The MOST refined factorisation is offered first**, and that ordering is a
+    consequence rather than a preference: a map that `_affine_index` can fit over the
+    flat loop, `pos = c + t * k`, is fitted over any refinement of it as
+    `c + sum_d (t * strides[d]) * k_d`, which is the same number for every element
+    because `sum_d strides[d] * k_d` IS `k`. So a finer factorisation expresses
+    everything a coarser one does and sometimes more, at the cost of a loop header.
+    It matters that the finer one is TRIED first: a plan is retracted one equation at
+    a time (`_ChainVeto`), the retraction is global, and a gather vetoed out of the
+    flat attempt would no longer be there for the refined attempt to keep.
+    """
+    seen = {(size,)}
+    out = []
+    for e in eqns:
+        for v in list(e.invars) + list(e.outvars):
+            sh = tuple(int(x) for x in v.aval.shape if int(x) != 1)
+            if len(sh) < 2 or int(np.prod(sh)) != size:
+                continue
+            if sh not in seen:
+                seen.add(sh)
+                out.append(sh)
+    out.sort(key=lambda sh: -len(sh))
+    return (out + [(size,)])[:cap]
+
+
+def _plan_chain(eqns, outrefs, veto=frozenset(), known=None):
     """The fusion plans for one flattened jaxpr: a list, possibly empty.
 
-    One nest per ITERATION SHAPE, taken greedily largest-payoff first, with each nest
-    planned against a world in which the ones already taken no longer exist. Greedy is
-    sound here rather than merely convenient: `_plan_for_shape` treats every equation
-    outside the nest it is building as external, so a value the NEXT nest will want is
-    already a materialised output of the previous one -- the plans cannot disagree
-    about who stores what.
+    One nest per ITERATION FACTORISATION, taken greedily largest-payoff first, with
+    each nest planned against a world in which the ones already taken no longer exist.
+    Greedy is sound here rather than merely convenient: `_plan_for_shape` treats every
+    equation outside the nest it is building as external, so a value the NEXT nest will
+    want is already a materialised output of the previous one -- the plans cannot
+    disagree about who stores what.
 
-    A second shape is worth having and this is what it costs. `.physics.fusion_rates`
+    A second nest is worth having and this is what it costs. `.physics.fusion_rates`
     is two families at once, a 201-point profile and the 100-interval Simpson rule
     over it, and with one nest only the profile fused: 192 equations in the nest and
     ~80 more left unrolled at 100 elements each. What crosses between the two nests is
@@ -1226,7 +1426,7 @@ def _plan_chain(eqns, outrefs, veto=frozenset()):
     for ix, e in enumerate(eqns):
         if ix in veto:
             continue
-        t = _template(e)
+        t = _template(e, known)
         if t is not None:
             tmpl[ix] = t
     if not tmpl:
@@ -1250,7 +1450,7 @@ def _plan_chain(eqns, outrefs, veto=frozenset()):
     # nest shape (its reduced axes would have to be the innermost loops and its
     # accumulator would live one level up); nothing in these three configurations
     # presents one at the head of a chain, so it is not emitted.
-    red_by_shape: dict = {}
+    red_by_size: dict = {}
     for ix, e in enumerate(eqns):
         if e.primitive.name not in _FUSABLE_REDUCE:
             continue
@@ -1263,21 +1463,30 @@ def _plan_chain(eqns, outrefs, veto=frozenset()):
             continue
         if size_of(a) < FUSE_MIN_ELEMENTS or size_of(a) > MAX_FUSE_PROBE:
             continue
-        red_by_shape.setdefault(tuple(a.aval.shape), []).append(ix)
+        red_by_size.setdefault(size_of(a), []).append(ix)
 
-    shapes = set(red_by_shape)
+    sizes = set(red_by_size)
     for o in outrefs:
         if id(o) in producer and producer[id(o)] in tmpl \
                 and FUSE_MIN_ELEMENTS <= size_of(o) <= MAX_FUSE_PROBE \
                 and _kind(o.aval) == _F:
-            shapes.add(tuple(o.aval.shape))
+            sizes.add(size_of(o))
+    # ... and the element count of every value a chain HANDS OUT. See `_chain_exit`.
+    for ix, e in enumerate(eqns):
+        ov = e.outvars[0] if len(e.outvars) == 1 else None
+        if ov is None or ix not in tmpl or _kind(ov.aval) != _F:
+            continue
+        if FUSE_MIN_ELEMENTS <= size_of(ov) <= MAX_FUSE_PROBE \
+                and _chain_exit(ov, tmpl, consumers):
+            sizes.add(size_of(ov))
+    cands = [(sz, sh) for sz in sorted(sizes) for sh in _factorisations(sz, eqns)]
 
     plans, claimed = [], set()
     for _ in range(MAX_CHAIN_NESTS):
         best = None
         live = {ix: t for ix, t in tmpl.items() if ix not in claimed}
-        for shape in shapes:
-            reds = [ix for ix in red_by_shape.get(shape, ()) if ix not in claimed]
+        for size, shape in cands:
+            reds = [ix for ix in red_by_size.get(size, ()) if ix not in claimed]
             plan = _plan_for_shape(shape, eqns, live, producer, consumers,
                                    out_ids, reds, size_of)
             if plan is None or len(plan.group_ixs) < MIN_FUSED_EQNS:
@@ -1292,6 +1501,15 @@ def _plan_chain(eqns, outrefs, veto=frozenset()):
 
 
 def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_of):
+    """One nest over the `shape` factorisation, or `None`.
+
+    Membership is by ELEMENT COUNT, not by declared shape: a nest holds every value
+    flat and row-major, and `shape` says only how its `prod(shape)` iterations are
+    split into nested loops (`_factorisations`). Testing the declared shape instead
+    would reject a `(1500,)` chain from the `(3, 500)` factorisation of the same 1500
+    elements -- the same elements in the same order, and the only factorisation in
+    which that chain's array lookups are affine.
+    """
     size = int(np.prod(shape)) if shape else 1
     seeds = []
     for ix in reds:
@@ -1300,7 +1518,9 @@ def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_
         ov = e.outvars[0] if len(e.outvars) == 1 else None
         if ov is None or ix not in tmpl:
             continue
-        if tuple(ov.aval.shape) == shape and id(ov) in out_ids:
+        if size_of(ov) != size:
+            continue
+        if id(ov) in out_ids or _chain_exit(ov, tmpl, consumers):
             seeds.append(ov)
     if not seeds:
         return None
@@ -1335,9 +1555,9 @@ def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_
                    if producer.get(id(eqns[ix].invars[0])) in group}
         mat = {vid: v for vid, v in mat.items() if producer.get(vid) in group}
         # Anything the nest computes but something outside reads must be written
-        # somewhere. If it has the nest's own shape it becomes a materialised output;
-        # otherwise the equation leaves the nest and is emitted scalarised, which puts
-        # its value back where the outside can read it.
+        # somewhere. If it has the nest's own element count it becomes a materialised
+        # output; otherwise the equation leaves the nest and is emitted scalarised,
+        # which puts its value back where the outside can read it.
         changed = False
         for ix in sorted(group):
             ov = eqns[ix].outvars[0]
@@ -1348,7 +1568,7 @@ def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_
                           for c in consumers.get(id(ov), ())))
             if not ext:
                 continue
-            if tuple(ov.aval.shape) == shape and _kind(ov.aval) == _F:
+            if size_of(ov) == size and _kind(ov.aval) == _F:
                 mat[id(ov)] = ov
             else:
                 group.discard(ix)
@@ -1599,8 +1819,11 @@ class _FuncEmitter:
                 return self._flatten(jaxpr, consts, args)
 
             veto: set = set()
+            # Recomputed after every rewind: `_flatten` mints fresh `_FVar`s, so a
+            # `known` table keyed by the old ones would silently miss every entry.
+            known = _const_prop(eqns, env) if _FUSION else {}
             for _ in range(MAX_CHAIN_REPLANS):
-                plans = _plan_chain(eqns, outrefs, veto)
+                plans = _plan_chain(eqns, outrefs, veto, known)
                 if not plans:
                     return self._walk(env, eqns, outrefs, ())
                 try:
@@ -1608,6 +1831,7 @@ class _FuncEmitter:
                 except _ChainVeto as v:
                     veto.add(v.ix)
                     eqns, env, outrefs = rewind()
+                    known = _const_prop(eqns, env)
                 except Refusal:
                     eqns, env, outrefs = rewind()
                     return self._walk(env, eqns, outrefs, ())
@@ -1721,7 +1945,7 @@ class _FuncEmitter:
             env[fv] = a
             top.append(fv)
         outrefs = go(jaxpr, consts, top)
-        return eqns, env, outrefs
+        return _drop_dead(eqns, outrefs), env, outrefs
 
     # -- the fused loop nest --------------------------------------------------
 
@@ -1772,12 +1996,21 @@ class _FuncEmitter:
         is what put 146,530 statements in `.tokamak.bootstrap_current` and 435,304 in
         `.physics.impurity_radiation_totals`.
 
-        One loop per axis of the iteration shape, in the shape's own order, and every
+        One loop per axis of the iteration FACTORISATION, in its own order, and every
         reduction the nest terminates in consumes ALL of them -- so there is exactly
         one accumulator per reduction and it lives outside the whole nest.
+
+        `plan.shape` is a factorisation of `plan.size` and nothing else: every value
+        the nest touches is held flat and row-major, addressed by
+        `flat_idx = sum(strides[d] * k_d)`, which for any factorisation whose product
+        is `plan.size` enumerates 0 .. size-1 exactly once. The assertion below is that
+        product; it is what the rest of this function's correctness rests on.
         """
         shape = list(plan.shape) if plan.shape else [1]
         n = plan.size
+        if int(np.prod(shape)) != n:
+            raise Refusal(f"fused loop factorisation {tuple(plan.shape)} does not "
+                          f"multiply to {n} iterations")
         strides, acc_s = [], 1
         for x in reversed(shape):
             strides.insert(0, acc_s)
@@ -2094,6 +2327,18 @@ class _FuncEmitter:
         if len(args) == 1 and args[0].array_ident is not None \
                 and tuple(exprs) == args[0].exprs:
             ident = args[0].array_ident
+        if vals is None:
+            # An integer/boolean result computed from integer/boolean values the
+            # generator already knows IS a value the generator knows (`_fold_exact`).
+            # Substituting the literals is what makes a computed index array static,
+            # and a static index is what turns a `gather` from one runtime statement
+            # per element into a re-selection of locals that costs nothing.
+            folded = _fold_exact(eqn, [a.vals for a in args], okind, oshape)
+            if folded is not None:
+                vals = folded
+                exprs = [_fmt_scalar(x, okind)
+                         for x in np.asarray(folded).reshape(-1).tolist()]
+                ident = None
         env[out] = self._materialise(exprs, okind, oshape, vals, array_ident=ident)
 
     # -- scan ---------------------------------------------------------------
