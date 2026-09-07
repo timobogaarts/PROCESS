@@ -99,17 +99,32 @@ def _validation_kernel(entry, index: int) -> str:
     before the call, and an array-valued return is unpacked back into its slice
     afterwards -- so a node with array ports is checked by exactly the same sweep as a
     scalar one, rather than being reported unbindable.
+
+    A CONSTANT read (`entry.const_inputs`, Change 1) binds a `wp.array` parameter
+    instead, one per node rather than packed from `inp` -- the assembled kernel passes
+    such a node's own function a `wp.array` directly, and this validation kernel must
+    call the SAME function the SAME way or it is not validating what gets emitted.
+    Every thread in ONE launch would share that one array, which is wrong for a sweep
+    where each draw perturbs the read independently -- so a node with any constant
+    read is validated with ONE launch PER DRAW instead of one batched launch (see
+    `validate`), and this kernel only ever sees `dim=1`.
     """
     in_sizes = entry.input_sizes or (1,) * len(entry.inputs)
     out_sizes = entry.output_sizes or (1,) * len(entry.outputs)
     in_off, _ = flat_layout(in_sizes)
     out_off, _ = flat_layout(out_sizes)
+    const_pos = {i for i, p in enumerate(entry.inputs) if p in entry.const_inputs}
     lines = ["@wp.kernel",
              f"def check_{index}(inp: wp.array2d(dtype=wp.float64), "
-             f"out: wp.array2d(dtype=wp.float64)):",
+             + "".join(f"c{i}: wp.array(dtype=wp.float64), "
+                       for i in sorted(const_pos))
+             + "out: wp.array2d(dtype=wp.float64)):",
              "    tid = wp.tid()"]
     args = []
     for i, (n, base) in enumerate(zip(in_sizes, in_off)):
+        if i in const_pos:
+            args.append(f"c{i}")
+            continue
         if n == 1:
             args.append(f"inp[tid, {base}]")
             continue
@@ -267,22 +282,52 @@ def validate(config: str, verbose: bool = True):
                             "n_compared": 0, "n_out": n_out})
             continue
 
-        inp = wp.array(
-            np.array([np.concatenate([np.asarray(v, dtype=float).reshape(-1)
-                                      for v in row]) for row in rows]),
-            dtype=wp.float64, device="cpu")
-        assert inp.shape[1] == n_in_cols
-        out = wp.zeros((len(rows), n_out_cols), dtype=wp.float64, device="cpu")
+        const_pos = sorted(j for j, p in enumerate(e.inputs) if p in e.const_inputs)
         kern = getattr(mod, f"check_{i}")
-        try:
-            wp.launch(kern, dim=len(rows), inputs=[inp, out], device="cpu")
-            wp.synchronize()
-        except Exception as exc:
-            results.append({"node": e.node, "verdict": "WARP-ERROR",
-                            "worst_rel": np.nan, "n_compared": 0, "n_out": n_out,
-                            "detail": str(exc)[:200]})
-            continue
-        wout = out.numpy()
+        if const_pos:
+            # A CONSTANT read binds a `wp.array` GLOBAL, shared by every thread in one
+            # launch -- wrong for a sweep where each draw perturbs it independently. One
+            # launch per draw instead, `dim=1`, each with its own array (see
+            # `_validation_kernel`).
+            wout = np.full((len(rows), n_out_cols), np.nan)
+            warp_err = None
+            for r, row in enumerate(rows):
+                inp_row = wp.array(
+                    np.concatenate([np.asarray(v, dtype=float).reshape(-1)
+                                    for v in row])[None, :],
+                    dtype=wp.float64, device="cpu")
+                c_args = [wp.array(np.asarray(row[j], dtype=float).reshape(-1),
+                                   dtype=wp.float64, device="cpu") for j in const_pos]
+                out_row = wp.zeros((1, n_out_cols), dtype=wp.float64, device="cpu")
+                try:
+                    wp.launch(kern, dim=1, inputs=[inp_row, *c_args, out_row],
+                             device="cpu")
+                    wp.synchronize()
+                except Exception as exc:
+                    warp_err = str(exc)[:200]
+                    break
+                wout[r] = out_row.numpy()[0]
+            if warp_err is not None:
+                results.append({"node": e.node, "verdict": "WARP-ERROR",
+                                "worst_rel": np.nan, "n_compared": 0, "n_out": n_out,
+                                "detail": warp_err})
+                continue
+        else:
+            inp = wp.array(
+                np.array([np.concatenate([np.asarray(v, dtype=float).reshape(-1)
+                                          for v in row]) for row in rows]),
+                dtype=wp.float64, device="cpu")
+            assert inp.shape[1] == n_in_cols
+            out = wp.zeros((len(rows), n_out_cols), dtype=wp.float64, device="cpu")
+            try:
+                wp.launch(kern, dim=len(rows), inputs=[inp, out], device="cpu")
+                wp.synchronize()
+            except Exception as exc:
+                results.append({"node": e.node, "verdict": "WARP-ERROR",
+                                "worst_rel": np.nan, "n_compared": 0, "n_out": n_out,
+                                "detail": str(exc)[:200]})
+                continue
+            wout = out.numpy()
 
         rel = np.abs(wout - jax_out) / np.maximum(np.abs(jax_out), 1e-300)
         # Both engines NaN/inf at a draw is a property of the perturbed input, not a

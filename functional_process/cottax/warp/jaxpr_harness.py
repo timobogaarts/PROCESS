@@ -154,6 +154,11 @@ def main(config: str):
             if array_vars.setdefault(pth, n) != n:
                 raise SystemExit(f"[jaxpr-harness] {pth!r} is length {array_vars[pth]} "
                                  f"in one node's signature and {n} in {e.node!r}")
+    # CONSTANT array VarPaths (Change 1) -- unreachable from any unknown, so ONE
+    # `wp.array` global suffices for the whole batch instead of a per-thread `vec{n}f`.
+    # Every node's own `const_inputs` agrees by construction (`_constant_varpaths` is
+    # computed once, per config, not per node).
+    const_arrays = {pth for e in entries for pth in e.const_inputs if pth in array_vars}
     # A boundary array's real value must be exactly as long as the signature says.
     array_boundary_vals = {}
     for pth in [b for b in boundary if b in array_vars]:
@@ -163,8 +168,10 @@ def main(config: str):
                              f"elements but the kernel binds {array_vars[pth]}")
         array_boundary_vals[pth] = v
     print(f"[jaxpr-harness] {len(array_vars)} array-valued VarPaths "
-          f"({len(array_boundary_vals)} of them boundary inputs); "
-          f"{len(unsupplied)} inputs with no value at all")
+          f"({len(array_boundary_vals)} of them boundary inputs, "
+          f"{len(const_arrays)} of those CONSTANT across the batch -- global "
+          f"wp.array, no per-thread copy); {len(unsupplied)} inputs with no value at "
+          f"all")
 
     bad: dict = {}
     kernel = None
@@ -182,11 +189,13 @@ def main(config: str):
 
         live_arrays = {pth: n for pth, n in array_vars.items()
                        if any(pth in e.inputs or pth in e.outputs for e in usable)}
+        live_const = frozenset(p for p in const_arrays if p in live_arrays)
         func_src = "\n\n".join(dict.fromkeys(e.source for e in usable))
         try:
             kernel_src, mapper = build_kernel_source(
                 usable, unknowns, boundary, reachable,
-                kernel_name=f"{config}_jaxpr_subdag", array_vars=live_arrays)
+                kernel_name=f"{config}_jaxpr_subdag", array_vars=live_arrays,
+                const_arrays=live_const)
         except EmitError as exc:
             print(f"[jaxpr-harness] round {round_no}: kernel assembly failed: {exc}")
             return
@@ -199,7 +208,13 @@ def main(config: str):
             f.write(module_src)
 
         scalar_boundary = [b for b in boundary if b not in live_arrays]
-        live_array_boundary = [b for b in boundary if b in live_arrays]
+        # Kernel parameter order matches `build_kernel_source` exactly: varying array
+        # boundary bufs first, then constant (global) array boundary bufs.
+        varying_array_boundary = [b for b in boundary
+                                  if b in live_arrays and b not in live_const]
+        const_array_boundary = [b for b in boundary
+                                if b in live_arrays and b in live_const]
+        live_array_boundary = varying_array_boundary + const_array_boundary
         spec = importlib.util.spec_from_file_location(
             f"_jaxpr_subdag_{config}_{round_no}", path)
         gen = importlib.util.module_from_spec(spec)
@@ -292,6 +307,7 @@ def main(config: str):
         "total_eqns_covered": sum(e.n_eqns for e in usable),
         "array_vars": dict(sorted(live_arrays.items())),
         "array_boundary_inputs": list(live_array_boundary),
+        "const_array_boundary_inputs": list(const_array_boundary),
     }
     with open(f"{GEN_DIR}/jaxpr_subdag_{config}.json", "w") as f:
         json.dump(result, f, indent=2, default=str)

@@ -99,6 +99,14 @@ class JaxprLeaf:
     helpers: tuple[str, ...] = ()
     vec_lengths: tuple[int, ...] = ()
 
+    const_inputs: frozenset = frozenset()
+    """Subset of `inputs` this node's own `@wp.func` binds as a `wp.array` GLOBAL
+    parameter rather than a `vec{n}f` value, because `_constant_varpaths` proved the
+    VarPath unreachable from any unknown. A caller assembling the kernel (`emit.py`)
+    must bind these the same way `array_boundary` already binds a boundary array: one
+    shared `wp.array`, not a per-thread local -- see `build_kernel_source`'s
+    `const_arrays` parameter."""
+
     def dependencies(self) -> tuple:
         return self.inputs
 
@@ -170,12 +178,21 @@ class Value:
     `vals` carries compile-time-known values when there are any (a literal, a jaxpr
     const, or the result of a pure shape rearrangement of one). It is what lets a
     `dynamic_slice` with a constant start index resolve statically instead of refusing.
+
+    `array_ident` names a Warp identifier that is ALREADY indexable at runtime --
+    either a `wp.array` GLOBAL parameter (a constant array, Change 1) or a `vec{n}f`
+    local/parameter -- when `exprs` is exactly `f"{array_ident}[0]", f"{array_ident}[1]",
+    ...` in order, i.e. this Value is an untouched read of that identifier and nothing
+    has been computed from it yet. It licenses `_vec_local` to hand back `array_ident`
+    directly instead of materialising a fresh copy: a runtime-indexed operand needs
+    something subscriptable, and this one already is.
     """
 
     exprs: tuple[str, ...]
     kind: str
     shape: tuple[int, ...]
     vals: object = None          # np.ndarray of `shape`, or None
+    array_ident: str | None = None
 
     @property
     def size(self) -> int:
@@ -633,17 +650,26 @@ class _FuncEmitter:
         self._n += 1
         return f"t{self._n}"
 
-    _TRIVIAL = re.compile(r"^(?:[A-Za-z_]\w*|wp\.(?:float64|int32)\([^()]*\)"
+    _TRIVIAL = re.compile(r"^(?:[A-Za-z_]\w*(?:\[\d+\])?|wp\.(?:float64|int32)\([^()]*\)"
                           r"|True|False)$")
-    """An expression that is already a name or a literal. Re-binding one to a fresh
-    local is pure source bloat -- and source size is not free here: a fully unrolled
-    201-point profile node emits tens of thousands of statements and Warp's own codegen
-    is what pays for them (a 2.3 MB module measured at 17 minutes to compile). Every
-    local this skips is an identical value under a different name; nothing in this
-    emitter ever reassigns a name it has bound, and a `@wp.func` parameter is not
-    assignable, so substituting the name is exactly equivalent."""
+    """An expression that is already a name, a literal, or a LITERAL-INDEXED subscript
+    of one (`ident[7]`). Re-binding one to a fresh local is pure source bloat -- and
+    source size is not free here: a fully unrolled 201-point profile node emits tens of
+    thousands of statements and Warp's own codegen is what pays for them (a 2.3 MB
+    module measured at 17 minutes to compile). Every local this skips is an identical
+    value under a different name; nothing in this emitter ever reassigns a name it has
+    bound, and a `@wp.func` parameter is not assignable, so substituting the name is
+    exactly equivalent.
 
-    def _materialise(self, exprs, kind, shape, vals=None) -> Value:
+    The subscript case matters specifically for a `vec{n}f`/`wp.array` PARAMETER
+    (Change 1's constant globals, and any array-valued parameter): before this, a pure
+    shape rearrangement of one (`squeeze`, `reshape`, ...) re-bound EVERY element to a
+    fresh local regardless -- `ident[0]` through `ident[2799]`, one statement each, for
+    no reason but that the string wasn't a bare name. A literal index into a name is
+    exactly as cheap to read again as a local is to read once, so it never needs
+    binding either."""
+
+    def _materialise(self, exprs, kind, shape, vals=None, array_ident=None) -> Value:
         """Bind each element expression to its own Warp local. Doing this at every
         equation (rather than substituting expressions into each other) keeps the
         emitted source linear in the jaxpr's size instead of exponential in its
@@ -656,7 +682,7 @@ class _FuncEmitter:
             n = self._fresh()
             self.lines.append(f"    {n} = {e}")
             names.append(n)
-        return Value(tuple(names), kind, tuple(shape), vals)
+        return Value(tuple(names), kind, tuple(shape), vals, array_ident=array_ident)
 
     # -- operand access -----------------------------------------------------
 
@@ -838,7 +864,22 @@ class _FuncEmitter:
         args = [self._read(env, v) for v in eqn.invars]
 
         exprs, vals = self._expr(name, eqn, args, okind, oshape)
-        env[out] = self._materialise(exprs, okind, oshape, vals)
+        # `array_ident` propagates PROVABLY, not by primitive name: whenever this
+        # equation's computed `exprs` are LITERALLY the operand's own `exprs` (a
+        # `squeeze`/`reshape`/`expand_dims`/... that only changes the declared shape,
+        # never the flat element order -- `_IDENTITY_FLAT` in `_expr`), the operand's
+        # own subscriptable identifier is still exactly what every element reads, so a
+        # later runtime-indexed use (`_gather`'s `_vec_local`) can keep reading it
+        # directly instead of materialising one more copy. A single-input equation is
+        # required (an n-ary one has no ONE operand to inherit from), and the equality
+        # is checked against the ACTUAL exprs produced, not assumed from the primitive
+        # name -- so this is correct for exactly the ops that qualify today and stays
+        # correct if the primitive set changes without this comment being updated.
+        ident = None
+        if len(args) == 1 and args[0].array_ident is not None \
+                and tuple(exprs) == args[0].exprs:
+            ident = args[0].array_ident
+        env[out] = self._materialise(exprs, okind, oshape, vals, array_ident=ident)
 
     # -- scan ---------------------------------------------------------------
 
@@ -1367,7 +1408,16 @@ class _FuncEmitter:
     def _vec_local(self, v: Value) -> str:
         """Materialise `v` into one `vec{n}f` local and return its identifier -- what a
         runtime index needs, since a scalarised array is a set of unrelated locals and
-        cannot be subscripted."""
+        cannot be subscripted.
+
+        Unless `v` is ALREADY subscriptable: `array_ident` names a `wp.array`/`vec{n}f`
+        identifier this Value is an untouched read of (see `Value`), and that
+        identifier is handed back directly -- no fresh local, no copy. This is what
+        makes a runtime-indexed lookup against a CONSTANT global table (Change 1) free:
+        the table is one `wp.array` kernel parameter regardless of how many places
+        index into it."""
+        if v.array_ident is not None:
+            return v.array_ident
         n = v.size
         if n > MAX_VEC_ELEMENTS:
             raise Refusal(f"runtime-indexed operand of {n} elements "
@@ -1968,7 +2018,8 @@ class EmitInfo:
     declarations the generated module must carry."""
 
 
-def emit_node(fn, func_name: str, values, n_outputs: int) -> EmitInfo:
+def emit_node(fn, func_name: str, values, n_outputs: int,
+              const_mask: tuple[bool, ...] | None = None) -> EmitInfo:
     """The `@wp.func` text for one node, and how to bind it.
 
     Raises `Refusal` (naming the primitive or shape) rather than emitting anything it
@@ -1991,6 +2042,16 @@ def emit_node(fn, func_name: str, values, n_outputs: int) -> EmitInfo:
     runtime `int32`, which is what `_gather` uses. It also costs one identifier in the
     caller regardless of length, so a wrong length is a compile error rather than a
     silent permutation.
+
+    `const_mask`, aligned with `values`/`jaxpr.invars` positionally, marks a read as
+    CONSTANT across the whole batch (see `_constant_varpaths`): its parameter is a
+    `wp.array(dtype=wp.float64)` GLOBAL instead of a `vec{n}f` VALUE. Nothing about the
+    body changes -- element access is still `a{i}[j]`, which indexes a `wp.array` just
+    as natively as it indexes a vector -- so the only difference this makes is at the
+    two boundaries: no per-thread copy is needed to construct the argument, and a
+    runtime-indexed use (`_gather`'s `_vec_local`) can read the parameter directly
+    rather than materialising one more copy of it. Defaults to "nothing is constant",
+    which reduces this to the previous behaviour exactly.
     """
     try:
         closed = trace_node(fn, values, force_float=True)
@@ -2001,6 +2062,9 @@ def emit_node(fn, func_name: str, values, n_outputs: int) -> EmitInfo:
         # exception is real and propagates.
         closed = trace_node(fn, values, force_float=False)
     jaxpr, consts = closed.jaxpr, list(closed.consts)
+    if const_mask is not None and len(const_mask) != len(jaxpr.invars):
+        raise Refusal(f"const_mask has {len(const_mask)} entries for "
+                      f"{len(jaxpr.invars)} parameters")
 
     em = _FuncEmitter()
     params, args, in_sizes, vec_lengths = [], [], [], set()
@@ -2020,9 +2084,15 @@ def emit_node(fn, func_name: str, values, n_outputs: int) -> EmitInfo:
                 # backend has not proved anything about. Refused rather than cast.
                 raise Refusal(f"parameter {i} is an array of kind {k!r}, shape "
                               f"{shape} -- only float64 arrays cross a node boundary")
+            if const_mask is not None and const_mask[i]:
+                params.append(f"{p}: wp.array(dtype=wp.float64)")
+                args.append(Value(tuple(f"{p}[{j}]" for j in range(n)), _F, shape,
+                                  array_ident=p))
+                continue
             vec_lengths.add(n)
             params.append(f"{p}: {vec_name(n)}")
-            args.append(Value(tuple(f"{p}[{j}]" for j in range(n)), _F, shape))
+            args.append(Value(tuple(f"{p}[{j}]" for j in range(n)), _F, shape,
+                              array_ident=p))
             continue
         # Every SCALAR parameter is `wp.float64` regardless of the traced kind: that is
         # the kernel's ABI (`emit.py` binds every scalar argument from a float64
@@ -2165,6 +2235,55 @@ def node_values(cold, defn, real_values=None, mda_env=None):
     return out
 
 
+def _constant_varpaths(sub, unknowns: set, boundary: set) -> set:
+    """Every VarPath in `sub` (`drive.body.subgraph`) that the unknowns cannot reach --
+    computed STRUCTURALLY, by walking `reads`/`owns` on `sub.definitions`, never by
+    inspecting a value and never by a path looking table-shaped.
+
+    Walks the FULL graph of node definitions, not just the resolved `entries` a
+    particular emission run produced: an earlier version of this analysis
+    (`scratchpad/arrays2/hoist.py`) built its producer map from resolved entries alone,
+    so a REFUSED node's output had no producer and silently defaulted to "does not
+    vary" -- answering the exact question being asked with an artefact of what
+    happened to trace. Here a VarPath with no owning definition (an artefact of the
+    same kind, or truly nothing in this subgraph produces it) is NOT assumed constant:
+    unresolvable provenance is treated as VARYING, because being constant is a claim
+    that needs a proof chain back to a boundary or nothing, and the absence of a chain
+    is not that proof.
+    """
+    owner = {}
+    for defn in sub.definitions.values():
+        for v in getattr(defn, "owns", ()) or ():
+            owner[v.path_str()] = defn
+
+    memo: dict = {}
+
+    def varies(var: str) -> bool:
+        if var in unknowns:
+            return True
+        if var in boundary:
+            return False
+        if var in memo:
+            return memo[var]
+        memo[var] = True                      # cycle guard: unresolved -> assume varies
+        defn = owner.get(var)
+        if defn is None:
+            r = True                          # no owner found -> cannot prove constant
+        else:
+            r = any(varies(x.path_str()) for x in (getattr(defn, "reads", ()) or ()))
+        memo[var] = r
+        return r
+
+    const = set()
+    for defn in sub.definitions.values():
+        for v in (tuple(getattr(defn, "reads", ()) or ())
+                  + tuple(getattr(defn, "owns", ()) or ())):
+            p = v.path_str()
+            if p not in const and not varies(p):
+                const.add(p)
+    return const
+
+
 def jaxpr_leaves(config: str, drive=None, cold=None, real_values=None, mda_env=None):
     """`(entries, refused, drive)` for one config's SAND Drive.
 
@@ -2185,6 +2304,10 @@ def jaxpr_leaves(config: str, drive=None, cold=None, real_values=None, mda_env=N
             f"tests/regression/input_files/{config}.IN.DAT").cold
 
     sub = drive.body.subgraph
+    unknown_paths = {u.path_str() for u in drive.unknowns}
+    boundary_paths = {v.path_str() for v in drive.context}
+    const_paths = _constant_varpaths(sub, unknown_paths, boundary_paths)
+
     entries, refused = [], []
     for i, name in enumerate(sub.topological_order):
         defn = sub[name]
@@ -2195,8 +2318,10 @@ def jaxpr_leaves(config: str, drive=None, cold=None, real_values=None, mda_env=N
             continue
         vals = node_values(cold, defn, real_values, mda_env)
         func_name = _sanitise(node, i)
+        read_paths = tuple(v.path_str() for v in defn.reads)
+        const_mask = tuple(p in const_paths for p in read_paths)
         try:
-            info = emit_node(fn, func_name, vals, len(defn.owns))
+            info = emit_node(fn, func_name, vals, len(defn.owns), const_mask=const_mask)
         except Refusal as exc:
             refused.append((node, f"refused: {exc}"))
             continue
@@ -2207,7 +2332,7 @@ def jaxpr_leaves(config: str, drive=None, cold=None, real_values=None, mda_env=N
             JaxprLeaf(
                 node=node,
                 fn=func_name,
-                inputs=tuple(v.path_str() for v in defn.reads),
+                inputs=read_paths,
                 outputs=tuple(v.path_str() for v in defn.owns),
                 source=info.source,
                 n_eqns=info.n_eqns,
@@ -2215,6 +2340,14 @@ def jaxpr_leaves(config: str, drive=None, cold=None, real_values=None, mda_env=N
                 output_sizes=info.output_sizes,
                 helpers=info.helpers,
                 vec_lengths=info.vec_lengths,
+                # Only array-valued (n > 1) constant reads actually got a `wp.array`
+                # parameter in `info` -- `emit_node` only consults `const_mask` in that
+                # branch, a scalar constant stays the ordinary `wp.float64` column. A
+                # scalar path here would tell a caller (`_validation_kernel`,
+                # `build_kernel_source`) to bind a `wp.array` that was never emitted.
+                const_inputs=frozenset(
+                    p for p, c, n in zip(read_paths, const_mask, info.input_sizes)
+                    if c and n > 1),
             )
         )
     return entries, refused, drive

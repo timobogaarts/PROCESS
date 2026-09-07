@@ -28,20 +28,31 @@ def build_kernel_source(
     conditions: tuple,
     kernel_name: str = "sand_residual",
     array_vars: dict | None = None,
+    const_arrays: frozenset | None = None,
 ) -> tuple[str, IdentifierMapper]:
     """`array_vars`: `{VarPath: n}` for every path in this kernel whose value is an
     ARRAY of `n` float64s -- the jaxpr backend's convention, where an array-valued read
     or owned value crosses a node boundary as one `vec{n}f`
     (`jaxpr_backend.emit_node`). A path here that is also a boundary input binds one
-    extra `wp.array(dtype=wp.float64)` kernel parameter (`<ident>_buf`, one object
-    shared by every thread) and is packed into its vector local at the top of the
-    kernel; a path produced by a node needs nothing at all, because the call that
-    produces it already returns the vector. It defaults to empty, which reduces this to
-    the scalar-only kernel exactly.
+    extra `wp.array(dtype=wp.float64)` kernel parameter (`<ident>_buf`).
+
+    `const_arrays`: the subset of `array_vars` (necessarily also boundary -- see
+    `jaxpr_backend`'s constant-VarPath classifier) that is provably CONSTANT across the
+    whole batch -- unreachable from any unknown. Those bind their `wp.array` kernel
+    parameter and are left exactly that: ONE array, in global read-only memory, shared
+    by every thread and indexed at the point of use inside whichever node needs an
+    element (`jaxpr_backend.emit_node`'s matching `const_mask` gave those nodes a
+    `wp.array` parameter too, not a `vec{n}f`, so the identifiers line up with no
+    unpacking at all). A path here that is NOT constant is genuinely per-thread and
+    still gets the old treatment: unpacked row-major into a `vec{n}f` LOCAL at the top
+    of the kernel, which is what every consuming call expects.
+
+    Both default to empty, which reduces this to the scalar-only kernel exactly.
 
     Returns `(source, mapper)` -- the mapper is returned so a caller can translate its
     own arrays' column order back to VarPaths."""
     array_vars = array_vars or {}
+    const_arrays = const_arrays or frozenset()
     mapper = IdentifierMapper()
     lines: list[str] = []
     lines.append("    tid = wp.tid()")
@@ -54,10 +65,18 @@ def build_kernel_source(
     scalar_boundary = [p for p in boundary if p not in array_vars]
     for i, path in enumerate(scalar_boundary):
         lines.append(f"    {mapper.get(path)} = p[tid, {i}]")
-    # A boundary path whose value is an array: one `wp.array` parameter, unpacked
-    # row-major into the `vec{n}f` local every consuming call expects. The unpack is
-    # `n` lines once per kernel, not per use.
-    array_var_boundary = [p for p in boundary if p in array_vars]
+
+    # CONSTANT array boundary: one wp.array kernel parameter, read directly at the
+    # point of use inside each consuming node's own `@wp.func` -- no per-thread copy,
+    # no vec{n}f local, nothing at all in this kernel body beyond the parameter itself.
+    global_array_boundary = [p for p in boundary if p in array_vars and p in const_arrays]
+    global_array_bufs = {p: mapper.get_buf(p) for p in global_array_boundary}
+
+    # VARYING array boundary (unchanged): one `wp.array` parameter, unpacked row-major
+    # into the `vec{n}f` local every consuming call expects. The unpack is `n` lines
+    # once per kernel, not per use.
+    array_var_boundary = [p for p in boundary
+                          if p in array_vars and p not in const_arrays]
     array_var_bufs = {p: f"{mapper.get(p)}_buf" for p in array_var_boundary}
     for path in array_var_boundary:
         n = array_vars[path]
@@ -98,6 +117,8 @@ def build_kernel_source(
         params.append("p: wp.array2d(dtype=wp.float64)")
     for path in array_var_boundary:
         params.append(f"{array_var_bufs[path]}: wp.array(dtype=wp.float64)")
+    for path in global_array_boundary:
+        params.append(f"{global_array_bufs[path]}: wp.array(dtype=wp.float64)")
     params.append("r: wp.array2d(dtype=wp.float64)")
     sig = f"@wp.kernel\ndef {kernel_name}({', '.join(params)}):\n"
 

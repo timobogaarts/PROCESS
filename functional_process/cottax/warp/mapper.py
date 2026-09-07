@@ -54,3 +54,24 @@ class IdentifierMapper:
 
     def items(self):
         return self._path_to_id.items()
+
+    def get_buf(self, path: str) -> str:
+        """Like `get`, but mints an identifier suffixed `_buf` and reserves it
+        directly -- for a VarPath that binds ONE GLOBAL `wp.array` kernel parameter
+        (shared, read-only, across the whole launch) rather than a per-thread local.
+
+        Must be called before any `get(path)` for the same path (it raises if `path`
+        is already mapped to something else), so a caller can never end up with two
+        different identifiers for one VarPath -- one path, one binding, always.
+        """
+        if path in self._path_to_id:
+            raise ValueError(f"{path!r} already mapped to {self._path_to_id[path]!r}")
+        base = self._sanitize(path) + "_buf"
+        ident = base
+        n = 0
+        while ident in self._used:
+            n += 1
+            ident = f"{base}__{n}"
+        self._used.add(ident)
+        self._path_to_id[path] = ident
+        return ident
