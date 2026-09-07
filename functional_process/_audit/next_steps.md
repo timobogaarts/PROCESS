@@ -118,7 +118,32 @@ unexamined.
   S70's "the plausible win is batching -- and that is untested" is now tested. Two caveats
   kept explicit: JAX is on CPU here (the production path, but not a backend-vs-backend
   comparison), and this is a quarter of the graph.
-- **Next lever is per-thread local memory, not source size.** The 44.8 kB of
+- **Why the whole graph does not launch, and why a bigger card is not the answer.**
+`local_bytes` against launch outcome, all at 255 registers (the sm_75 cap), read off each
+cubin:
+
+| nodes | local_bytes | launches |
+|---|---|---|
+| 31 | 25,832 | yes |
+| 32 | 25,832 | yes |
+| 64 | 76,776 | yes |
+| 96 | 307,512 | no |
+| 112 | 307,624 | no |
+| 123 | 294,040 | no |
+
+The model that fits: the driver reserves `local_bytes x max_resident_threads` on the
+device, independent of launch `dim`. sm_75 is 1024 threads/SM and this card has 14 SMs, so
+14,336 threads -- 76,776 x 14,336 = 1.10 GB (launches, against 2.65 GB free) and
+294,040 x 14,336 = 4.22 GB (does not). Note it is **not monotone in node count**: 96 nodes
+wants MORE than 123, because the register allocator's spill choices are not monotone
+either. **The reservation grows with the card**, which is the uncomfortable part: an A100
+(108 SMs x 2048) would reserve 65 GB for this kernel and an H100 (132 x 2048) 79.5 GB.
+Bigger hardware makes this worse, not better, so cutting `local_bytes` is mandatory
+whatever the card. The natural fix is the one the cottax design already implies -- split
+the mega-kernel into several launches with intermediates in global memory between them,
+rather than holding every node's live values in one thread at once.
+
+**Next lever is per-thread local memory, not source size.** The 44.8 kB of
   `impurity_radiation_totals` that is verbatim copies of constant globals is the cleanest
   target and its cause is now pinned: the copies are `gather` equations whose emitted
   exprs ARE the operand's, but `_eqn`'s `array_ident` propagation requires a
@@ -126,6 +151,35 @@ unexamined.
   `tuple(exprs) == some_arg.exprs`, which holds at any arity. That relaxation would not by
   itself be enough -- 294 kB has to reach 185 kB -- but it is free of any numerical
   question.
+
+**Why JAX beats Warp on CPU, and Warp beats JAX on GPU -- the axis, not the backend**
+(measured 2026-09-07). `cmd_bench`'s JAX side is
+`jax.jit(jax.vmap(jf, in_axes=(0, 0) + (None,) * n_arrs))`: XLA sees the whole sub-DAG as
+`n`-wide arrays and emits AVX loops over the batch, executing the ~28k-operation program
+once per SIMD lane group with intermediates as contiguous arrays in L1/L2. Warp's model is
+one THREAD per batch point: each thread runs the entire program alone, and its CPU backend
+gets no cross-point vectorisation at all. Four float64 lanes of AVX2 plus the cache and
+call-overhead difference is the ~8x the notebook measures on CPU -- an axis difference, not
+a code-quality one.
+
+On GPU that axis finally pays, but only 2x, and the reasons are all measured or already
+recorded: **float64 runs at 1/16 rate on this card** (76.6 against 1254.7 GFLOP/s,
+S70), **255 registers/thread is the hardware cap** so occupancy is ~8 warps of 32 (25 %),
+and **294 kB/thread of spill** means every intermediate past those 255 registers is a DRAM
+round trip that 25 % occupancy cannot hide. Warp-GPU wins by 2x while running at a small
+fraction of the card.
+
+**A program-size/i-cache hypothesis was tested and REFUTED.** If the mega-kernel's size
+were thrashing the instruction cache, Warp would degrade against JAX as the graph grows.
+It does not: at n=65,536 the Warp/JAX ratio is 2.04x on the 31-node prefix and 2.06x on the
+64-node prefix, flat, while both sides grow by the same ~4x from 31 to 64 nodes (the second
+half carries `fusion_rates`, `impurity_radiation_totals` and `vacuum_old`). Whatever else
+is wrong, per-thread program size is not differentially hurting Warp.
+
+| n=65,536 | warp us/pt | jax us/pt | ratio |
+|---|---|---|---|
+| 31 nodes | 2.53 | 5.16 | 2.04x |
+| 64 nodes | 10.18 | 20.95 | 2.06x |
 
 ## Open
 
