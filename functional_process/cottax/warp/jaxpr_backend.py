@@ -769,6 +769,15 @@ HELPER_ORDER = ("_nanc", "_dd_fma", "_xla_log1p", "_xla_lgamma", "_lgamma",
 `_xla_log1p` while sorting before it."""
 
 
+_HELPER_CALL = re.compile(
+    r"\b(" + "|".join(re.escape(n) for n in
+                      sorted(HELPERS, key=len, reverse=True)) + r")\s*\(")
+"""A CALL to one of `HELPERS` in emitted source. Longest name first, so `_signbit` is
+not matched as `_sign` followed by `bit`. Used by `_emit_chain` to recover the helpers a
+`_template`-built loop body calls, which the sandbox emitter that built that text
+recorded and then discarded -- see the note at the end of `_emit_chain`."""
+
+
 def helper_closure(names) -> list[str]:
     """`names` plus everything they transitively call, in a valid emission order."""
     want, queue = set(), list(names)
@@ -855,6 +864,43 @@ def warp_init(enable_backward: bool | None = None):
     than left to whoever reads the gradient. It is announced when it fires, because a
     node silently changing size between two runs is exactly the kind of thing that
     produces an unreproducible measurement.
+
+    **The `@wp.func` workaround does not lift this interlock, and it was tried rather
+    than assumed** (2026-09-07). Warp's documentation suggests moving a dynamic loop's
+    body into a `@wp.func` so that it is replayed in the backward pass. Measured on a
+    bare reproducer -- a nonlinear scalar recurrence `c <- sqrt(c*c + x)/(1 + c)`,
+    `wp.Tape` on the CPU backend against `jax.grad` of the identical arithmetic, with
+    central finite differences siding with `jax.grad` to between 6.4e-11 and 3.7e-10
+    across these rows -- so the disagreement is Warp's, not a question of which
+    reference to believe:
+
+        range(16) inline    (unrolled)  rel 1.524e-16     <- correct
+        range(17) inline    (dynamic)   rel 4.51506e-01
+        range(17) @wp.func  (dynamic)   rel 1.69588e-02   <- still wrong
+        range(64) inline    (dynamic)   rel 4.51506e-01
+        range(64) @wp.func  (dynamic)   rel 1.69588e-02   <- still wrong
+
+    It moves the wrong answer; it does not make it right, and it cannot. The argument a
+    `@wp.func`'s adjoint recomputes its forward pass from is the loop-carried local,
+    which at reverse time still holds the value it had when the FORWARD loop finished --
+    the same stale carry the inline replay reads, one call frame further in. The
+    threshold is exactly `max_unroll` (16 correct, 17 wrong), and raising `max_unroll`
+    past the trip count does restore the exact adjoint (`range(64)` at `max_unroll=128`:
+    rel **0**) -- by unrolling, which is `WARP_LOOP=0` with extra steps and none of the
+    code-size saving the loop exists for. A LINEAR carry is exact either way (rel 0 at
+    `range(64)`), which is the "harmless recurrence" case `_LOOPS` already claimed.
+
+    **There is one route that keeps the loop AND gets the adjoint right, and it is not
+    implemented here**: hold the carry in a `wp.array` indexed by the loop counter
+    (`hist[i + 1] = f(hist[i], x)`) instead of in a Warp local. The reverse pass then
+    reads each iteration's carry back out of memory rather than replaying against the
+    final value, and it is exact -- `range(64)`, rel **0** against `jax.grad`, where the
+    inline local-carry form of the same recurrence is 45.15 % out. A `wp.vec` is NOT a
+    substitute for the `wp.array` (same shape, `range(64)`: rel 1688.5). It is unbuilt
+    for cost, not doubt: it needs a per-thread scratch buffer of `bound + 1` slots per
+    carry threaded through the kernel signature, which changes forward emission and
+    every caller of `build_kernel_source`, to buy code size on the three nodes that use
+    a runtime loop at all -- nodes that already have a correct unrolled fallback.
     """
     global _LOOPS
     import os as _os
@@ -1070,7 +1116,65 @@ _FUSION = __import__("os").environ.get("WARP_FUSE", "1") not in ("0", "", "false
 nests existed. It is here so a measurement can be repeated on both paths in the same
 interpreter with nothing else changed -- a fused and an unrolled node are supposed to
 be the same arithmetic in a different shape, and that is a claim to check rather than
-assert."""
+assert.
+
+**A FUSED NODE'S REVERSE-MODE ADJOINT IS WRONG, and forward values are exact, so
+nothing in this repository was catching it (2026-09-07).** Measured on the real emitted
+`@wp.func` for `.physics.fusion_rates` under `helias_5b` -- one launch taped, one
+reverse pass, `d(w . outputs)/d(inputs)` against `jax.grad` of `defn.fn` contracted with
+the same random `w`:
+
+    forward   815 outputs   worst rel 3.345e-16
+    ADJOINT   409 inputs    worst rel 4.741e-01
+
+and a CENTRAL FINITE DIFFERENCE of Warp's OWN forward kernel sides with `jax.grad`, not
+with `wp.Tape` (worst columns: `wp.Tape` 2.312e-02 and 2.283e-02 away from that
+difference quotient, `jax.grad` 1.698e-10 and 8.321e-11). So this is Warp's adjoint
+being wrong about Warp's own function, not a disagreement between two references.
+
+**The mechanism, read off the generated C++ rather than guessed.** In a backward kernel
+Warp emits, for a loop it did not unroll, only the loop HEADER in the forward section;
+the body appears once, inside that loop's own reverse block, as its replay. So a
+`vec{n}f` a nest fills is still the all-zero `wp::vec_t<n, float64>()` while any LATER
+statement's reverse runs -- and reverse order puts later statements first. `adj_extract`
+needs no value and survives, which is why the adjoint is not simply zero; but a product's
+adjoint with respect to its OTHER factor is `adj_other += adj_ret * v[m]`, and that
+quietly takes `v[m] == 0`. One whole path through the graph is dropped.
+
+`adjoint_probe` isolates it in eight lines, and the pair is the point -- the SAME `vec`
+built by the SAME loop:
+
+    v[k] = x*x*(k+1) in one loop, SUMMED in the next       range(64)  rel 0
+    v[k] = x*x*(k+1) in one loop, MULTIPLIED by x in the next  range(64)  rel 3.333e-01
+    ... and the multiplied form at range(8), which Warp unrolls    rel 4.672e-16
+
+**So the interlock question is now open, not settled.** `warp_init(enable_backward=True)`
+turns `_LOOPS` off and does NOT turn this off, and that is no longer defensible as a
+decision on evidence -- the evidence now says a fused nest whose output is consumed
+multiplicatively has a wrong adjoint. It is left ON deliberately and visibly rather than
+flipped here, because flipping it is not free and the trade belongs to whoever is buying
+gradients: `WARP_FUSE=0` REFUSES `.physics.fusion_rates` outright (404,560 statements
+unrolled against a 24,000 `MAX_NODE_LINES` cap), so "adjoints off fusion" is a coverage
+loss, not a slower build. Raising Warp's `max_unroll` past the trip count fixes the
+adjoint (`range(64)` at `max_unroll=128`: rel 0) and is the same unrolling by another
+name. Nodes whose nest output is only SUMMED or RETURNED are unaffected and were
+measured so: `.physics.profiles.parameterisation.parabolic_temperature_profile`
+**4.557e-16** and `.physics.profiles.density_profile` **6.661e-16**, both `range(201)`
+nests.
+
+Two further Warp adjoint bugs found alongside, neither of them emitted by this backend:
+
+  * `wp::adj_assign_inplace` (`warp/native/vec.h:936`) is `adj_value += adj_v[idx]` and
+    never zeroes `adj_v[idx]`, so an assignment does not CONSUME the destination's
+    adjoint the way overwriting it must. It needs no loop at all: `v[0] = x;
+    v[0] = v[0] * v[0]` differentiates to **3.6** where `d(x*x)/dx` at 1.3 is **2.6** --
+    the seed leaks past the assignment into whatever produced the slot's previous value
+    (1.0 + 2.6 = 3.6, exactly). This backend declares every `vec` local fresh and
+    assigns every slot once (`_vec_local`, `_emit_chain`'s `mat_roots`, the
+    function-return packing in `emit.py`), and a static scan of the emitted source for
+    all three configurations confirms no slot is written twice anywhere.
+  * a `reduce_prod` accumulator in a nest above `max_unroll` -- see `_FUSABLE_REDUCE`.
+    Latent: no `*` accumulator appears in any of the three configurations."""
 
 _LOOP_ENV = __import__("os").environ.get("WARP_LOOP")
 _LOOPS = _LOOP_ENV is None or _LOOP_ENV not in ("0", "", "false", "False")
@@ -1099,7 +1203,15 @@ away from `jax.grad`**, while the SAME node emitted unrolled agrees with `jax.gr
 unaffected and identical either way (`jaxpr_validate` reports the same worst relative
 difference to every digit on all three configurations), so this costs nothing to a
 module built the way `warp_init` builds one by default; it costs everything to a
-`wp.Tape` through one of these nodes."""
+`wp.Tape` through one of these nodes.
+
+**The interlock STAYS, on evidence, and the evidence is now a file you can run**:
+`adjoint_probe.py` reproduces the cliff, the linear-carry exemption, the failed
+`@wp.func` workaround and the working `wp.array` checkpoint in a few lines of Warp with
+no PROCESS in it. `warp_init` records the numbers. Nothing found since makes the runtime
+loop safe to leave on under `enable_backward`; what changed is only that the reason is
+now attributable to `max_unroll` and to a stale carry, rather than to `vec` (which was
+the previous, incorrect, diagnosis -- see `_scan_loop_ok`)."""
 
 MIN_SCAN_LOOP_SAVING = 64
 """How many statements the loop form of a carry-only `scan` must save over the unrolled
@@ -1201,7 +1313,21 @@ into one scalar in flat element order, which is EXACTLY the association `_reduce
 already emits for an all-axes reduction -- so a fused sum is bit-identical to the
 unrolled one it replaces, not merely close. `reduce_max`/`reduce_min` are excluded
 because their identity element interacts with NaN, and `_max`/`_min` reproduce XLA's
-NaN rule for a pairwise compare, not for a compare against an initial infinity."""
+NaN rule for a pairwise compare, not for a compare against an initial infinity.
+
+**`reduce_prod` is forward-safe and ADJOINT-unsafe above `max_unroll`, and nothing here
+prevents it.** The emitted accumulator `a = (a * e)` is loop-carried, and unlike
+`a = (a + e)` its partial derivative w.r.t. `e` *is* the carry -- exactly the case
+Warp's non-unrolled backward pass gets wrong (`warp_init`). Measured on the emitted
+shape (`adjoint_probe`), `wp.Tape` against `jax.grad`: `range(8)` (unrolled) rel **0**;
+`range(20)` (dynamic) 61.2923 against 22.1254, rel **1.77023**; `range(64)` (dynamic)
+2.4153e18 against 3.3237e10, rel **7.267e7** -- it compounds with the trip count, as a
+product of stale factors would. The matching `reduce_sum` nest is exact at every one of
+those (rel 0 throughout). This is LATENT, not live: a static
+scan of the emitted source for all three configurations (2026-09-07) finds every
+dynamic-loop carried scalar to be a `+` accumulator and no `*` accumulator anywhere, so
+no guard is emitted for a case that does not occur. A nest that terminates in a
+`reduce_prod` over more than `max_unroll` (16) iterations would need one."""
 
 _TMPNAME = re.compile(r"\bt\d+\b")
 _TOK = re.compile(r"§(\d+)·(\d+)|\b(t\d+)\b")
@@ -2559,6 +2685,9 @@ class _FuncEmitter:
             vecs[id(v)] = nm
 
         # ---- the nest -------------------------------------------------------------
+        nest_start = len(self.lines)
+        """Where the nest's own statements begin, so the device helpers they call can be
+        recovered from the emitted TEXT below. See the note at the end of this method."""
         for d in range(len(shape)):
             self.lines.append("    " + "    " * d
                               + f"for {ivars[d]} in range({shape[d]}):")
@@ -2613,6 +2742,39 @@ class _FuncEmitter:
             size = int(np.prod(v.aval.shape)) if v.aval.shape else 1
             env[v] = Value(tuple(f"{nm}[{j}]" for j in range(size)), _F,
                            tuple(v.aval.shape), array_ident=nm)
+
+        # ---- device helpers the nest calls ----------------------------------------
+        # `_template` runs `_expr` in a SANDBOX `_FuncEmitter` and keeps only the text
+        # it produced; a `HELPERS` device function that `_expr` recorded on the sandbox
+        # (`_max`, `_sign`, `_lgamma`, ...) is recorded on `sb.helpers` and thrown away
+        # with it. `_emit_chain` then instantiates that text into the loop body, so the
+        # emitted source CALLS a helper this node never declared.
+        #
+        # It is invisible in a whole-config module and loud in any other: the preamble
+        # emits `HELPERS[h]` for the UNION of every entry's `helpers`
+        # (`module_preamble`), and in all three configurations some scalarised node
+        # happens to declare each helper anyway. Build a module from a SUBSET of the
+        # nodes -- a per-node adjoint check, `measure --max-entries n` -- and Warp fails
+        # at codegen with `Referencing undefined symbol: _max`. That is how this was
+        # found, building a three-node module to tape a fused nest.
+        #
+        # Its reach, measured over the emitted source of all three configurations
+        # (which helper does a function call ONLY from inside a loop body?): FOUR
+        # functions, all of them `_max`/`_min` -- `parabolic_temperature_profile` under
+        # `helias_5b` and `stellarator_helias`, `winding_pack_intersect_inputs` under
+        # `stellarator_helias`, `tf_coil_quench_heat_current_density` under
+        # `large_tokamak_nof`. In each configuration some other node declares the same
+        # helper, so the union is unchanged and the assembled module is byte-identical
+        # with and without this loop -- which is the point: nothing that was ever built
+        # changes, and a module that could not be built now can be.
+        #
+        # Recovered from the emitted text rather than from `_template`, because the text
+        # is what the compiler sees: whatever route put a helper call into the body, the
+        # declaration follows it. Names only -- `helper_closure` pulls in `_nanc` and the
+        # rest of the transitive dependencies at preamble time.
+        for ln in self.lines[nest_start:]:
+            for h in _HELPER_CALL.findall(ln):
+                self.helpers.add(h)
 
     def _eqn(self, env, eqn) -> None:
         name = eqn.primitive.name
@@ -2870,12 +3032,31 @@ class _FuncEmitter:
 
         - **Carry only.** No `xs` operands and no `ys` results. An `xs` slice and a `ys`
           row are addressed by the step index, so a runtime loop needs them in something
-          runtime-indexable -- a `vec{n}f`, which is exactly the shape whose ADJOINT
-          Warp gets wrong (measured: a `vec` written inside a static-`range` loop
-          differentiates to 635 where finite differences say 35, while the scalar-carry
-          loop this path does emit agrees with finite differences to 8.5e-10). Every
-          scan in this graph that is worth looping is carry-only, so the restriction
-          costs nothing here and keeps the emitted shape to the one that was checked.
+          runtime-indexable -- a `vec{n}f` READ at the loop index inside the same loop
+          that writes it, which is a shape whose adjoint Warp gets catastrophically
+          wrong. The restriction stands; the REASON recorded here until 2026-09-07 did
+          not, and the correction matters because it changes which other shapes are
+          suspect. It said "a `vec` written inside a static-`range` loop differentiates
+          to 635 where finite differences say 35". Measured directly (`adjoint_probe`,
+          `wp.Tape` on the CPU backend against `jax.grad` on the identical arithmetic):
+
+          * a `vec` WRITTEN inside a `range` loop, each slot once, never read there --
+            which is exactly what `_emit_chain` emits -- has an exact adjoint OF ITS
+            OWN, at `range(8)` (unrolled) and `range(64)` (dynamic) alike: relative
+            difference to `jax.grad` **0** in both. (That is not the same as the node
+            being differentiable: what a non-unrolled loop PRODUCES reads as zero in
+            every later statement's adjoint, so a downstream PRODUCT loses a path --
+            `_FUSION` has the measurement and the generated C++ that shows why.)
+          * the same `vec` also READ at the loop index inside that loop is exact while
+            Warp unrolls the loop (`range(8)`, rel **1.524e-16**) and wrong once it does
+            not (`range(64)`: `wp.Tape` 307.705 against `jax.grad` 0.182127, rel
+            **1688.5**).
+
+          So the hazard is not "vec" and not "static loop"; it is a loop-carried READ in
+          a loop Warp did not unroll -- the same `max_unroll` cliff `_LOOPS` documents,
+          reached through a vector instead of a scalar. Every scan in this graph that is
+          worth looping is carry-only, so the restriction costs nothing here and keeps
+          the emitted shape to the one that was checked.
         - **No UNSIGNED carry.** `_kind` maps every integer dtype onto Warp's `int32`,
           and unrolling gets away with that because `_fold_exact` evaluates integer
           equations in numpy at their true dtype and folds the answer. A loop cannot:
@@ -3167,10 +3348,17 @@ class _FuncEmitter:
 
         The carry is held in SCALAR Warp locals, one per element, even where it is
         array-valued -- 64 of them per carry at `.vacuum.vacuum_old`'s call site. A
-        `vec{n}f` would be fewer statements, and is rejected because a `vec` written
-        inside a static-`range` loop is the one shape whose ADJOINT Warp gets wrong
-        (measured: 635 against a finite-difference 35, where the scalar-local loop
-        agrees to 8.5e-10).
+        `vec{n}f` would be fewer statements, and stays rejected -- but see
+        `_scan_loop_ok` for the corrected reason. It is NOT that "a `vec` written inside
+        a static-`range` loop" is wrong; a write-only `vec` is exact both unrolled and
+        dynamic (measured 0 against `jax.grad`). It is that a `vec` READ at the loop
+        index inside the loop that writes it is exact only while Warp unrolls the loop
+        (`range(8)`: 1.524e-16) and is wrong once it does not (`range(64)`: `wp.Tape`
+        307.705 against `jax.grad` 0.182127, rel 1688.5). The scalar-local form here has
+        the same exposure through its own carries, which is why the `_LOOPS` interlock
+        turns this whole path off when adjoints are on -- holding the carry in scalars
+        rather than a `vec` does not buy a correct adjoint, it only avoids adding a
+        second broken shape on top of the first.
         """
         cond, cond_consts, body, body_consts, cn, bn, n_carry = self._while_split(eqn)
         args = [self._read(env, v) for v in eqn.invars]
