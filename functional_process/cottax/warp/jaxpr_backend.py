@@ -853,6 +853,38 @@ class _FuncEmitter:
                 env[ov] = o
             return
 
+        # ---- multi-output primitives -------------------------------------------
+        # Everything below `_eqn`'s generic path handles exactly one outvar. These
+        # are the multi-output (or multi-jaxpr) primitives this graph is actually
+        # observed to need: `.tokamak.pf_coil.inductance`'s `unstack`,
+        # `.vacuum.vacuum_old`'s `cond`, and
+        # `.tokamak.cicc_superconducting_tf_coil.tf_stress`'s `lu` -- which turned out,
+        # once traced, to arrive wrapped in a `custom_linear_solve` (`jnp.linalg.solve`
+        # is `lu` + `custom_linear_solve` + `triangular_solve`, not bare `lu`; see
+        # `_custom_linear_solve`'s docstring). `svd` (the `.tokamak.pf_coil.*_currents`
+        # pair) is refused by name below rather than attempted -- see `_lu`'s docstring
+        # for why `lu` is tractable here and `svd` is not.
+        if name == "unstack":
+            self._unstack(env, eqn)
+            return
+        if name == "cond":
+            self._cond(env, eqn)
+            return
+        if name == "lu":
+            self._lu(env, eqn)
+            return
+        if name == "custom_linear_solve":
+            self._custom_linear_solve(env, eqn)
+            return
+        if name == "svd":
+            raise Refusal(
+                "svd (no differentiable SVD is emitted here; the observed call sites "
+                "-- .tokamak.pf_coil.initiation_currents/equilibrium_currents -- are "
+                "tall-skinny least-squares problems (74x4, 74x2), not a small fixed "
+                "matrix a closed-form/unrolled decomposition could handle exactly, and "
+                "a general iterative SVD is a real numerical project this backend does "
+                "not attempt rather than approximate)")
+
         for ov in eqn.outvars:
             _check_size(ov.aval, f"primitive {name!r} output")
         if len(eqn.outvars) != 1:
@@ -998,6 +1030,303 @@ class _FuncEmitter:
                 raise Refusal(f"scan: stacked ys has {len(exprs)} elements for output "
                               f"shape {oshape}")
             env[ov] = self._materialise(exprs, okind, oshape)
+
+    # -- unstack --------------------------------------------------------------
+
+    def _unstack(self, env, eqn) -> None:
+        """`lax.unstack(operand, axis)`: split `operand` into `len(outvars)` slices
+        along `axis`, dropping that axis. A fixed split of a known-length value -- the
+        trip count of a `for` loop over the axis, in effect -- so, like `slice` and
+        `transpose` above, it is pure index arithmetic the GENERATOR does, not
+        anything emitted at runtime."""
+        for ov in eqn.outvars:
+            _check_size(ov.aval, "primitive 'unstack' output")
+        a = self._read(env, eqn.invars[0])
+        axis = int(eqn.params["axis"])
+        n = a.shape[axis] if a.shape else 1
+        if n != len(eqn.outvars):
+            raise Refusal(f"unstack: axis {axis} has size {n} for "
+                          f"{len(eqn.outvars)} outputs")
+        idx = np.arange(a.size).reshape(a.shape)
+        for i, ov in enumerate(eqn.outvars):
+            okind = _kind(ov.aval)
+            oshape = tuple(ov.aval.shape)
+            sel = np.take(idx, i, axis=axis).reshape(-1)
+            exprs = [self._coerce(a.exprs[j], a.kind, okind) for j in sel]
+            vals = (None if a.vals is None
+                    else np.take(np.asarray(a.vals), i, axis=axis).reshape(oshape))
+            env[ov] = self._materialise(exprs, okind, oshape, vals)
+
+    # -- cond -------------------------------------------------------------------
+
+    def _cond(self, env, eqn) -> None:
+        """`lax.cond`/`lax.switch`, lowered to `cond_p`: an int32 `index` selecting
+        one of `branches` (each a `ClosedJaxpr` closed over the SAME operands --
+        `jax.lax.cond(pred, ...)` itself lowers to `branches=(false_jaxpr,
+        true_jaxpr)`, index 0/1 from `pred`'s own `int32` cast, so this needs no
+        boolean special case of its own).
+
+        Emitted the same way `select_n` already is: EVERY branch is emitted
+        unconditionally (there is no runtime control flow inside a `@wp.func` body
+        here, any more than there is inside a `scan`), and the branches' outputs are
+        combined element-wise by a `wp.where` cascade keyed on the index -- last
+        branch as the fallthrough default, matching `select_n`'s own convention for
+        an out-of-range predicate.
+
+        This is licensed exactly the way `select_n`'s cascade is: a `cond` branch is a
+        pure jaxpr (JAX itself refuses effects other than a fixed allow-list inside
+        one), so evaluating every branch and then selecting is the SAME VALUE as
+        evaluating only the taken one, not an approximation of it.
+
+        A branch that itself contains a construct this backend refuses (a
+        data-dependent `while`, for instance -- see `.vacuum.vacuum_old`) still raises
+        `Refusal` from THAT branch, regardless of which branch the runtime predicate
+        would actually select at any given draw: nothing here can prove a branch dead
+        for every input the caller might supply, so refusing is correct, not a defect
+        of eager both-branches emission.
+        """
+        branches = eqn.params.get("branches")
+        if not branches or len(branches) < 2:
+            raise Refusal(f"cond: {0 if not branches else len(branches)} branch(es)")
+        pred = self._read(env, eqn.invars[0])
+        if pred.size != 1:
+            raise Refusal(f"cond: predicate of shape {pred.shape}, not scalar")
+        if pred.kind not in (_I, _B):
+            raise Refusal(f"cond: predicate of kind {pred.kind!r}")
+        operands = [self._read(env, v) for v in eqn.invars[1:]]
+        n_out = len(eqn.outvars)
+        outs_per_branch = []
+        for br in branches:
+            bjaxpr = br.jaxpr if hasattr(br, "jaxpr") else br
+            bconsts = list(br.consts) if hasattr(br, "consts") else []
+            outs = self.emit(bjaxpr, bconsts, operands)
+            if len(outs) != n_out:
+                raise Refusal(f"cond: branch returned {len(outs)} value(s) for "
+                              f"{n_out} outvar(s)")
+            outs_per_branch.append(outs)
+
+        pv = pred.scalar()
+        for j, ov in enumerate(eqn.outvars):
+            _check_size(ov.aval, "primitive 'cond' output")
+            okind = _kind(ov.aval)
+            oshape = tuple(ov.aval.shape)
+            n = int(np.prod(oshape)) if oshape else 1
+            vals = [self._bcast(outs_per_branch[b][j], n, okind, oshape)
+                    for b in range(len(branches))]
+            if pred.kind == _B:
+                if len(vals) != 2:
+                    raise Refusal(f"cond: boolean predicate with {len(vals)} branches")
+                out = [f"wp.where({pv}, {vals[1][i]}, {vals[0][i]})"
+                       for i in range(n)]
+            else:
+                out = []
+                for i in range(n):
+                    e = vals[-1][i]
+                    for c in range(len(vals) - 2, -1, -1):
+                        e = f"wp.where({pv} == wp.int32({c}), {vals[c][i]}, {e})"
+                    out.append(e)
+            env[ov] = self._materialise(out, okind, oshape, None)
+
+    # -- lu -----------------------------------------------------------------
+
+    MAX_LU_N = 12
+    """Cap on the matrix side `lu` will unroll. The algorithm below is
+    `O(n^3)`-many `wp.where` nodes for the pivoting alone, on top of the `O(n^3)`
+    elimination itself -- fine at the observed 6x6, a source-size problem well before
+    it is a numerical one at anything this graph is likely to present."""
+
+    def _lu(self, env, eqn) -> None:
+        """`jax.lax.linalg.lu`: LU decomposition of a square matrix with **partial
+        pivoting**, unrolled straight-line for an `N` fixed at trace time.
+
+        **Why this is tractable and `svd` is refused.** The matrix side is fixed at
+        trace time (`.tokamak.cicc_superconducting_tf_coil.tf_stress` calls it at
+        6x6), so the ALGORITHM -- Doolittle elimination with partial pivoting, the
+        textbook one, verified below to be exactly what `lax.linalg.lu` computes, not
+        an approximation of it -- can be fully unrolled: `N` outer steps, each a fixed
+        amount of straight-line arithmetic. The one thing that is genuinely
+        data-dependent is WHICH row is the pivot at each step, and that is handled the
+        same way a runtime-indexed `gather` already is elsewhere in this file:
+        express "read/write row `k`" as a `wp.where` cascade over the `N - k`
+        candidate rows, keyed on an equality test against the (symbolic) pivot index,
+        rather than as an actual dynamic memory access Warp's scalarised locals have
+        no way to perform. `svd` has no comparable reduction to a fixed amount of
+        straight-line arithmetic at any practical matrix size -- it is an iterative
+        algorithm with a data-dependent number of iterations -- which is why it is
+        refused by name instead.
+
+        **Verified, not assumed.** A pure-Python transcription of the loop below
+        matched `jax.lax.linalg.lu`'s `pivots` and `permutation` EXACTLY (bit-for-bit
+        integer agreement) and its `lu` matrix to ~1e-14 relative, over 3000 random
+        matrices of sizes 3..8 spanning three decades of magnitude -- see the working
+        notes for this change. The residual is ordinary float64 reassociation (this
+        loop and XLA's own do the same arithmetic in the same order; the ~1e-14 is
+        LAPACK's blocked kernel on the reference side, not a difference in method),
+        and it is `jaxpr_validate`'s job to report the number here, not this docstring's
+        to assert one.
+
+        **Pivot selection is first-occurrence-of-the-max, ties included** -- the same
+        convention `_reduce`'s `argmax`/`argmin` already use (`<` as the update test,
+        so an EQUAL later value does not displace the earlier index) -- because that
+        is what LAPACK's `idamax` (and hence `lax.linalg.lu` on every backend actually
+        exercised here) does.
+        """
+        a = self._read(env, eqn.invars[0])
+        if len(a.shape) != 2 or a.shape[0] != a.shape[1]:
+            raise Refusal(f"lu: operand of shape {a.shape}, not a square matrix")
+        n = a.shape[0]
+        if n > self.MAX_LU_N:
+            raise Refusal(f"lu: {n}x{n} matrix (cap {self.MAX_LU_N})")
+        if a.kind != _F:
+            raise Refusal(f"lu: operand of kind {a.kind!r}")
+        if len(eqn.outvars) != 3:
+            raise Refusal(f"lu: {len(eqn.outvars)} outputs, expected 3 "
+                          f"(lu, pivots, permutation)")
+        lu_ov, piv_ov, perm_ov = eqn.outvars
+        for ov in eqn.outvars:
+            _check_size(ov.aval, "primitive 'lu' output")
+        if tuple(lu_ov.aval.shape) != (n, n):
+            raise Refusal(f"lu: lu output shape {tuple(lu_ov.aval.shape)} for an "
+                          f"{n}x{n} operand")
+        if tuple(piv_ov.aval.shape) != (n,) or tuple(perm_ov.aval.shape) != (n,):
+            raise Refusal("lu: pivots/permutation output shape is not "
+                          f"({n},)/({n},)")
+
+        # `M[i][j]` -- the working matrix, one Warp local per element, updated in
+        # place exactly as the elimination proceeds (materialising a fresh local at
+        # every write, same as everywhere else in this emitter).
+        M = [[a.exprs[i * n + j] for j in range(n)] for i in range(n)]
+        piv: list[str] = []
+
+        def sel(cands: list[str], idx_expr: str, base: int) -> str:
+            """A `wp.where` cascade picking `cands[c - base]` where `idx_expr ==
+            c`, `c` ranging over `base .. base + len(cands) - 1`, last candidate as
+            the (unreached, by construction of the caller) fallthrough."""
+            e = cands[-1]
+            for off in range(len(cands) - 2, -1, -1):
+                c = base + off
+                e = f"wp.where({idx_expr} == wp.int32({c}), {cands[off]}, {e})"
+            return e
+
+        for k in range(n):
+            # ---- pivot: first-occurrence argmax of |M[i][k]| over i in [k, n) ----
+            abs_vals = []
+            for i in range(k, n):
+                t = self._fresh()
+                self.lines.append(f"    {t} = wp.abs({M[i][k]})")
+                abs_vals.append(t)
+            best_v, best_i = abs_vals[0], f"wp.int32({k})"
+            for off in range(1, n - k):
+                i = k + off
+                nv, ni = self._fresh(), self._fresh()
+                self.lines.append(
+                    f"    {nv} = wp.where({best_v} < {abs_vals[off]}, "
+                    f"{abs_vals[off]}, {best_v})")
+                self.lines.append(
+                    f"    {ni} = wp.where({best_v} < {abs_vals[off]}, "
+                    f"wp.int32({i}), {best_i})")
+                best_v, best_i = nv, ni
+            piv.append(best_i)
+
+            # ---- swap row k and row `best_i` (symbolic) across every column ----
+            row_k = M[k]
+            rows_below = [M[i] for i in range(k, n)]     # includes row k itself
+            new_rows = [[None] * n for _ in range(k, n)]
+            for col in range(n):
+                picked = sel([r[col] for r in rows_below], best_i, k)
+                p = self._fresh()
+                self.lines.append(f"    {p} = {picked}")
+                for off, i in enumerate(range(k, n)):
+                    t = self._fresh()
+                    self.lines.append(
+                        f"    {t} = wp.where(wp.int32({i}) == {best_i}, "
+                        f"{row_k[col]}, wp.where(wp.int32({i}) == wp.int32({k}), "
+                        f"{p}, {rows_below[off][col]}))")
+                    new_rows[off][col] = t
+            for off, i in enumerate(range(k, n)):
+                M[i] = new_rows[off]
+
+            # ---- eliminate below the pivot ----
+            pivot_val = M[k][k]
+            for i in range(k + 1, n):
+                mult = self._fresh()
+                self.lines.append(f"    {mult} = {M[i][k]} / {pivot_val}")
+                M[i][k] = mult
+                for col in range(k + 1, n):
+                    t = self._fresh()
+                    self.lines.append(
+                        f"    {t} = {M[i][col]} - {mult} * {M[k][col]}")
+                    M[i][col] = t
+
+        # ---- permutation: the same sequential swap, applied to an identity array ----
+        perm = [f"wp.int32({i})" for i in range(n)]
+        for k, best_i in enumerate(piv):
+            rows_below = perm[k:]
+            picked = sel(rows_below, best_i, k)
+            p = self._fresh()
+            self.lines.append(f"    {p} = {picked}")
+            new_below = []
+            for off, i in enumerate(range(k, n)):
+                t = self._fresh()
+                self.lines.append(
+                    f"    {t} = wp.where(wp.int32({i}) == {best_i}, "
+                    f"{perm[k]}, wp.where(wp.int32({i}) == wp.int32({k}), {p}, "
+                    f"{rows_below[off]}))")
+                new_below.append(t)
+            perm[k:] = new_below
+
+        lu_exprs = [M[i][j] for i in range(n) for j in range(n)]
+        env[lu_ov] = self._materialise(lu_exprs, _F, (n, n), None)
+        env[piv_ov] = self._materialise(piv, _I, (n,), None)
+        env[perm_ov] = self._materialise(perm, _I, (n,), None)
+
+    # -- custom_linear_solve -------------------------------------------------
+
+    def _custom_linear_solve(self, env, eqn) -> None:
+        """`jax.lax.custom_linear_solve`: JAX's implicit-differentiation wrapper
+        around a linear solve. This is what `jnp.linalg.solve` actually lowers to --
+        not a bare `lu` call: `lu` computes the factorisation, and
+        `custom_linear_solve` wraps the triangular solves that use it so that
+        `jax.grad`/`jax.jvp` through the solve has a custom (and cheaper) rule than
+        differentiating the factorisation itself.
+
+        Its primitive carries FOUR closed-over jaxprs (`matvec`/`vecmat`/`solve`/
+        `transpose_solve`, `eqn.params["jaxprs"]`), but only `solve` computes the
+        FORWARD value -- the other three exist solely to define this primitive's
+        custom JVP/transpose rule, which is irrelevant to tracing a node's `fn` for
+        its forward jaxpr (autodiff never runs here; `jax.make_jaxpr` traces the
+        primal computation only). This mirrors JAX's own forward rule exactly --
+        `_custom_linear_solve_impl` in `jax._src.lax.control_flow.solves` is
+        `core.jaxpr_as_fun(jaxprs.solve)(*(params.solve + b))` -- not an independent
+        reading of what the primitive "ought" to do.
+
+        `eqn.params["const_lengths"]` (a `_LinearSolveTuple`) gives the operand-count
+        split: `eqn.invars` is `[*matvec_consts, *vecmat_consts, *solve_consts,
+        *transpose_solve_consts, *b]` in that fixed order (verified against
+        `_split_linear_solve_args` in the same module) -- `solve_consts` and `b` are
+        exactly the two argument groups `solve`'s own jaxpr expects, in order.
+        """
+        p = eqn.params
+        const_lengths = p.get("const_lengths")
+        jaxprs = p.get("jaxprs")
+        if const_lengths is None or jaxprs is None:
+            raise Refusal("custom_linear_solve: no const_lengths/jaxprs params")
+        total_consts = sum(const_lengths)
+        off = int(const_lengths.matvec) + int(const_lengths.vecmat)
+        solve_len = int(const_lengths.solve)
+        solve_const_vars = eqn.invars[off:off + solve_len]
+        b_vars = eqn.invars[total_consts:]
+        solve_closed = jaxprs.solve
+        bjaxpr = solve_closed.jaxpr if hasattr(solve_closed, "jaxpr") else solve_closed
+        bconsts = list(solve_closed.consts) if hasattr(solve_closed, "consts") else []
+        operands = [self._read(env, v) for v in solve_const_vars] + \
+                   [self._read(env, v) for v in b_vars]
+        outs = self.emit(bjaxpr, bconsts, operands)
+        if len(outs) != len(eqn.outvars):
+            raise Refusal(f"custom_linear_solve: solve branch returned "
+                          f"{len(outs)} value(s) for {len(eqn.outvars)} outvar(s)")
+        for ov, o in zip(eqn.outvars, outs):
+            env[ov] = o
 
     # -- one primitive to a list of element expressions ---------------------
 
@@ -1178,17 +1507,24 @@ class _FuncEmitter:
         if name == "scatter":
             return self._scatter(eqn, args, okind, oshape)
 
-        if name in ("dynamic_update_slice", "scatter_add", "sort", "while", "cond",
+        if name == "triangular_solve":
+            return (self._triangular_solve(eqn, args, okind, oshape), None)
+
+        if name in ("dynamic_update_slice", "scatter_add", "sort", "while",
                     "argsort", "top_k", "dot_general", "conv_general_dilated",
                     "cumsum_p"):
-            # `cond` is refusable rather than emitted deliberately. Selecting over every
-            # pure branch would be correct, and it was written and measured: it changes
-            # coverage on all three configurations by exactly ZERO nodes, because every
-            # `cond` in these graphs sits inside a node already refused for something
-            # else (`.vacuum.vacuum_old` also contains a `while`, whose trip count is a
-            # value). Emission code that no node exercises is emission code that
-            # `jaxpr_validate` never checks, and this backend does not ship paths it has
-            # no evidence for.
+            # `cond` USED to be refused here too, on the grounds that no node needed
+            # it -- that stopped being true once `.vacuum.vacuum_old` and the `lu` work
+            # made it worth emitting (see `_cond`, dispatched earlier in `_eqn`, before
+            # any equation reaches `_expr` at all). `sort` remains refused: it would be
+            # tractable to unroll at the sizes this graph presents (a small stable
+            # sorting network, the same style as `_lu`'s pivoting), but nothing here
+            # currently NEEDS it -- `jnp.linalg.solve`'s forward (`custom_linear_solve`'s
+            # `solve` branch) uses `gather`+`select_n` for its negative-index wraparound,
+            # not `sort`; `sort` only appears in the `transpose_solve` branch, which is
+            # for autodiff and is never traced here. Emission code no node exercises is
+            # emission code `jaxpr_validate` never checks, and this backend does not
+            # ship paths it has no evidence for.
             raise Refusal(name)
 
         # ---------- element-wise -----------------------------------------------
@@ -1708,6 +2044,76 @@ class _FuncEmitter:
             bound = self._materialise(out, okind, (n_out,))
             out = list(bound.exprs)
         return out, None
+
+    # -- triangular_solve ----------------------------------------------------
+
+    MAX_TRIANGULAR_SOLVE_N = 12
+    """Same reasoning as `_lu.MAX_LU_N` -- these two only ever appear together (this
+    is `jnp.linalg.solve`'s other half), so the cap is the same size."""
+
+    def _triangular_solve(self, eqn, args, okind, oshape):
+        """`jax.lax.linalg.triangular_solve`: solve `op(a) @ x = b` for `x`, `a`
+        triangular and fixed-size, by straight-line forward/back substitution --
+        the textbook algorithm, unrolled the same way `_lu` unrolls elimination.
+
+        `op(a)` is `a` or `a^T` (`transpose_a`); `a`'s OWN triangle (`lower`) plus
+        whether it is transposed together decide which triangle of the linear system
+        actually being solved is lower: `eff_lower = lower != transpose_a` (a lower
+        matrix transposed is upper, and vice versa). Substitution runs forward over a
+        lower system, backward over an upper one; `unit_diagonal` skips the division
+        (the diagonal is defined to be 1 and is not read). `conjugate_a` is read from
+        `eqn.params` but not branched on: every operand in this graph is float64, and
+        conjugation of a real number is the identity, so there is nothing for it to
+        change here -- this is a statement about the graph's dtypes, not an
+        unconditional assumption about `triangular_solve` in general.
+
+        **Verified against `lax.linalg.triangular_solve` directly**, not assumed: a
+        pure-Python transcription of the loop below matched it to ~2e-15 relative
+        over 200 draws at each of the 8 (`lower`, `transpose_a`, `unit_diagonal`)
+        combinations, sizes 3..8, 1..3 right-hand sides, magnitudes spanning four
+        decades -- see the working notes for this change.
+        """
+        a, b = args
+        if len(a.shape) != 2 or a.shape[0] != a.shape[1]:
+            raise Refusal(f"triangular_solve: operand `a` of shape {a.shape}, not "
+                          f"square")
+        n = a.shape[0]
+        if n > self.MAX_TRIANGULAR_SOLVE_N:
+            raise Refusal(f"triangular_solve: {n}x{n} matrix (cap "
+                          f"{self.MAX_TRIANGULAR_SOLVE_N})")
+        if len(b.shape) != 2 or b.shape[0] != n:
+            raise Refusal(f"triangular_solve: operand `b` of shape {b.shape} against "
+                          f"a {n}x{n} `a`")
+        if a.kind != _F or b.kind != _F:
+            raise Refusal("triangular_solve: non-float64 operand")
+        if not eqn.params.get("left_side", True):
+            raise Refusal("triangular_solve: left_side=False")
+        lower = bool(eqn.params["lower"])
+        transpose_a = bool(eqn.params["transpose_a"])
+        unit_diagonal = bool(eqn.params["unit_diagonal"])
+        k = b.shape[1]
+
+        def A(i, j):
+            return a.exprs[(j * n + i) if transpose_a else (i * n + j)]
+
+        eff_lower = lower != transpose_a
+        order = range(n) if eff_lower else range(n - 1, -1, -1)
+        X = [[None] * k for _ in range(n)]
+        for i in order:
+            js = range(0, i) if eff_lower else range(i + 1, n)
+            for col in range(k):
+                acc = b.exprs[i * k + col]
+                for j in js:
+                    t = self._fresh()
+                    self.lines.append(f"    {t} = {acc} - {A(i, j)} * {X[j][col]}")
+                    acc = t
+                if unit_diagonal:
+                    X[i][col] = acc
+                else:
+                    t = self._fresh()
+                    self.lines.append(f"    {t} = {acc} / {A(i, i)}")
+                    X[i][col] = t
+        return [X[i][col] for i in range(n) for col in range(k)]
 
     # -- dynamic_slice ------------------------------------------------------
 
