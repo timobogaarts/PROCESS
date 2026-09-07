@@ -115,56 +115,33 @@ is stated here instead. Caps: MDF 800, SAND 500.
 
 Where the boundary values come from
 -----------------------------------
-Until 2026-08-31 every value in every row came from PROCESS's `DataStructure` after
-`init_process` -- the seed. `provider.py` classified that boundary but nothing consumed
-it, so "271-360 of 303-397 paths are answered independently" was a property of a
-classification and not of a solve. It is now a property of a solve: `_boundary_seed`
-copies the seed, hands it to `provider.install`, and every downstream reader
-(`mdf.seed`, `mda_env`, `run_sand_harness._seed`) is given that copy instead. The
-seeding machinery is untouched -- what moves is its *input*.
+**Natively, and only natively.** There is no `DataStructure` in a row at all, and no
+PROCESS run to seed from: the env is `native.native_state` -- `importer.read_indat`'s
+values over a vendored table of PROCESS's dataclass defaults -- and the problem is
+`native.native_reference`'s, off `indat.problem_from_indat` and the vendored
+`ITERATION_VARIABLES` bounds.
 
-Four modes, `--provider` (the default), `--provider-strict`, `--seed` and `--native`:
+Until 2026-09-07 there were four modes: `--provider` (the default), `--provider-strict`,
+`--seed` and `--native`. The first three all installed into a copy of PROCESS's seed and
+measured *how much* of the boundary need not come from PROCESS; they existed to move that
+number, and `--native` is where it arrived. Keeping three ways to be partly seeded, one
+of them the default, meant every row carried a `seed` column asking which of them it was.
+`provider.py`, its seven pinned classifications and `test_provider.py` went with them
+(`_audit/README.md`); `git log --diff-filter=D` finds them.
 
-- **`--provider`** writes only the independently answered paths the seed *agrees* with,
-  so the substitution is inert by construction and the table stays comparable with every
-  row ever measured. The number it reports is real anyway: those values are read out of
-  the input file and the dataclass defaults, and deleting the seed for them would change
-  nothing. Its honesty rests on the disagreements being pinned and named
-  (`reference_provider_*.txt`'s `off` rows), not on their being absent.
-- **`--provider-strict`** takes the provider at its word at the `off` rows too. That is
-  the experiment: a row that moves under it is a boundary value `init.py` supplies and
-  the file does not.
-- **`--seed`** is the old path exactly, kept so the two can be diffed.
-- **`--native`** has no `DataStructure` in it at all, and no PROCESS run. The env is
-  `native.native_state` -- `importer.read_indat`'s values over a vendored table of
-  PROCESS's dataclass defaults -- and the problem is `native.native_reference`'s, off
-  `indat.problem_from_indat` and the vendored `ITERATION_VARIABLES` bounds. The other
-  three modes all *install into* a copy of PROCESS's seed, so they measure how much of
-  the boundary need not come from PROCESS; this one measures what happens when none of
-  it does.
-
-  **It is strictly weaker than `--provider-strict`, and that is the measurement.** The
-  provider answers a `derived` path from the seed; a native state has nothing to fall
-  back to and answers it with the bare dataclass default, so `init.py`'s and
-  `st_init`'s writes are simply absent. §22.7 measured that taking the provider at its
-  word at 13 `off` paths costs four of seven configurations their solve; a native row
-  starts from 12-24 wrong paths, not 5-8. A native row that *does* solve is therefore
-  worth more than a `--provider` row that does, and a native row that does not is a
-  work list keyed to `_audit/init_audit.md`, which is what this mode is for.
-
-  The SAND column carries one caveat -- `native.NativeReference` -- because with no
-  converged run there is no warm env for `sand.residual_condition_scales` **or for
-  `sand_harness.assemble`'s degeneracy test**, so a native SAND row is a differently
-  scaled and sometimes differently *shaped* problem from the same file's `--provider`
-  row, while the MDF rows are directly comparable. `_audit/optimise_design.md` §27
-  measures both and shows they are the whole of the difference: the two modes' boundary
-  values are bit-identical on all seven files.
+The SAND column carries one caveat -- `native.NativeReference` -- because with no
+converged run there is no warm env for `sand.residual_condition_scales` **or for
+`sand_harness.assemble`'s degeneracy test**, so a native SAND row is a differently scaled
+and sometimes differently *shaped* problem than a seeded one would be, while the MDF rows
+were directly comparable. `_audit/optimise_design.md` §27 measured both and showed they
+are the whole of the difference: the two modes' boundary values were bit-identical on all
+seven files.
 
 Seeding and scoring are two axes, and `--compare-process` is the second one
 --------------------------------------------------------------------------
 Until 2026-09-01 a `--native` row's `PRO`, `PRO objf`, `d objf` and `worst dx` cells were
-blank **by construction**, and that was the only remaining reason to run `--provider` at
-all. The coupling was never real. `sand_harness.reference_run` is disk-cached and costs
+blank **by construction**, and that was the only remaining reason to run a
+partly-seeded mode at all. The coupling was never real. `sand_harness.reference_run` is disk-cached and costs
 ~4.6 s cold and ~0.01 s warm, and scoring a finished solve against PROCESS's converged
 answer needs that answer *loaded*, not *used as a seed*.
 
@@ -180,7 +157,6 @@ prints the two facts in two places -- a `seed` column for where the start came f
 
 from __future__ import annotations
 
-import copy
 import sys
 import time
 import traceback
@@ -199,7 +175,6 @@ from functional_process.cottax import phase_timing  # noqa: E402
 from functional_process.cottax import (  # noqa: E402
     mdf,
     native,
-    provider,
     sand,
 )
 from functional_process.cottax.core.solver.drivers import (  # noqa: E402
@@ -235,29 +210,13 @@ from functional_process.cottax.sand_harness import (  # noqa: E402
     run_schedule,
 )
 
-CONFIGURATIONS = (
-    "tests/regression/input_files/stellarator_helias.IN.DAT",
-    "tests/regression/input_files/helias_5b.IN.DAT",
-    "tests/regression/input_files/large_tokamak_nof.IN.DAT",
-    "tests/regression/input_files/large_tokamak_eval.IN.DAT",
-    "tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT",
-    "tests/regression/input_files/spherical_tokamak_eval.IN.DAT",
-    "tests/regression/input_files/st_regression.IN.DAT",
-)
-"""Every `tests/regression/input_files/*.IN.DAT` except `IFE.IN.DAT`.
+CONFIGURATIONS = native.CONFIGURATIONS
+"""Re-exported. The list and `stem` live in `native.py` -- this runner is one caller
+of the configuration list, not its owner, and the modules that need it should not have
+to import a 1,900-line runner to get it. Kept as a name here because four callers
+(`run_warm_matrix`, `boundary`, `test_boundary`, `_audit/rss_per_program`) already read
+it off this module."""
 
-`IFE` is `ife == 1`, a whole unported device -- `.ife.*` has no unit in
-`unit_registry.md` at all (`_audit/next_steps.md` §20.4) -- so it is not a row that could
-become a number by any amount of running. Everything else is a row whether or not it
-assembles, and the day this file was written is the argument for that: the two spherical
-tokamaks refused on `tf_stress_arm == (0, 1, 0)` at the start of the run and
-**assembled by the end of it**, because the `extended_plane_strain` port landed in the
-same working tree while the pass was going. A runner whose configuration list encoded
-today's verdict would have needed an edit to notice; this one needed a re-run.
-
-Ordered stellarators first, then the four tokamaks, so that a truncated run still has
-the rows whose numbers other records quote.
-"""
 
 SAND_TOLERANCE = None
 """`VmconDriver`'s own default, which is what `run_sand_harness.py`'s Stage C uses.
@@ -267,22 +226,6 @@ solves are each compared against their own harness's published number, and a tol
 this file chose would make both rows new measurements of a problem nobody has run.
 `run_mdf_harness.TOLERANCE`'s own docstring records why MDF's is tighter than PROCESS's.
 """
-
-
-PROVIDER, PROVIDER_STRICT, SEED_ONLY = "provider", "provider-strict", "seed"
-NATIVE = "native"
-"""The four boundary-value modes; see this module's docstring. `PROVIDER` is the
-default because it is the only one that is simultaneously a measurement and inert."""
-
-SEED_LABEL = {
-    PROVIDER: "prov",
-    PROVIDER_STRICT: "strict",
-    SEED_ONLY: "seed",
-    NATIVE: "nat",
-}
-"""What the `seed` column prints. **Seeding and comparison are two axes, not one**, and
-this column exists so that no reader can take a filled `PRO objf` cell as evidence that
-PROCESS supplied the starting state -- see `run_one`'s `compare` argument."""
 
 
 @dataclass
@@ -296,9 +239,6 @@ class Row:
     """
 
     name: str
-    seed_mode: str = PROVIDER
-    """Where this row's **starting state** came from -- one of the four boundary modes.
-    Printed as the `seed` column, and deliberately independent of `compared`."""
     compared: bool = False
     """Was PROCESS run for this row's `PRO`/`PRO objf`/`d objf`/`worst dx` cells?
 
@@ -322,15 +262,15 @@ class Row:
     `phase_timing`. Empty when the patches did not install (see `phase_timing.install`),
     which `render` reports rather than papering over."""
     boundary: dict = field(default_factory=dict)
-    """`provider.installed`'s counts for this configuration, plus `mode` and the paths
-    the provider was allowed to move. Empty when the provider was not consulted."""
+    """`_native_counts` for this configuration: how many boundary places the native
+    state answered, and from where."""
     omitted_paths: tuple = ()
-    """`NATIVE` only: the places this run asked for and the native state could not
+    """The places this run asked for and the native state could not
     answer, so each was seeded `0.0`. The work list, per configuration."""
     root_find: bool = False
     """Does this file state a root find (`i_process_run_mode = -2`) rather than an
     optimisation? Read off the file's own text (`importer.Problem.is_evaluation`), so it
-    is the same answer in every boundary mode including `NATIVE`."""
+    is read from the file's own text, not from any solved state."""
     process_objf: float | None = None
     """PROCESS's own converged objective, `objective_function(i_figure_merit, data)`.
 
@@ -420,39 +360,6 @@ def _recorder(trace):
         ))
 
     return record
-
-
-def _boundary_seed(reference, path, mode):
-    """`(cold, counts, moved)` -- the `DataStructure` this configuration's solves seed
-    from, with the provider's answers written over the seed's where it has them.
-
-    A **copy** of `reference.cold`, so the run's own PROCESS state is untouched and the
-    two modes are comparable within one process. Nothing in `mda.py`/`mdf.py`/`sand.py`
-    is involved: they go on reading a `DataStructure` through `ground_truth`, and the
-    only thing that changed is which one they are handed. That is deliberate -- the
-    seeding machinery is shared with three other harnesses and is not this file's to
-    rewrite.
-
-    `SEED_ONLY` returns `reference.cold` itself and no counts, which is the code path
-    every row before 2026-08-31 was measured on.
-
-    **The provider is asked about `driven_graph(graph_for(machine_from_indat(...)))`,
-    which for `stellarator_helias` is not quite the graph that file's row solves** -- the
-    reference file deliberately runs `graph=None`, i.e. `graph_for()`. The two boundaries
-    are not guaranteed identical, and the consequence is bounded in the safe direction: a
-    path the provider answers that this row does not read is a write nobody reads, and a
-    path this row reads that the provider does not answer keeps the seed's value, which
-    is the pre-existing behaviour. Worth removing when `boundary` is asked of the solved
-    graph rather than of the assembled one; not worth special-casing here.
-    """
-    if mode == SEED_ONLY:
-        return reference.cold, {}, ()
-    answers = provider.answers_for(str(path))
-    cold = copy.deepcopy(reference.cold)
-    counts, moved = provider.install(
-        answers, cold, disagreeing=(mode == PROVIDER_STRICT)
-    )
-    return cold, {**counts, "mode": mode}, moved
 
 
 @dataclass
@@ -1052,32 +959,15 @@ def _headline(refusal) -> str:
     return f"{text[:_HEADLINE].rstrip()} [...] (run `machine_from_indat` for the rest)"
 
 
-def compares_by_default(mode: str) -> bool:
-    """Does `mode` score its rows against PROCESS unless told not to?
-
-    Yes for the three modes that already run PROCESS to build their seed -- the
-    comparison is then free. No for `NATIVE`, which is the mode whose whole claim is
-    that PROCESS is not in the path, so paying 4.6 s a row for it is a choice the caller
-    makes with `--compare-process` rather than one this file makes for them.
-    """
-    return mode != NATIVE
-
-
-def run_one(path, mode=PROVIDER, compare=None, optimiser=None) -> Row:
+def run_one(path, compare=None, optimiser=None) -> Row:
     """One configuration: assembly verdict, PROCESS, cold MDF, cold SAND.
 
     Nothing here raises. Each of the five phases records what it got and the next one
     runs anyway where it can -- a formulation that fails to build does not stop the other
     from solving, because the two failures are independent evidence. `mode` selects where
-    the boundary values come from; see `_boundary_seed` and this module's docstring.
+    the boundary values come from natively; see this module's docstring.
 
-    The provider's answer is built **after** the PROCESS run, because it needs the seed
-    to diff against, and its cost is one `cold_state` -- disk-cached, and already paid by
-    `boundary.computed_by_process`. A provider failure is a row like any other: the
-    configuration falls back to the seed and says so, since a matrix that lost six rows
-    to a classifier would be a worse instrument than one that lost a column.
-
-    **`NATIVE` takes a different second phase and seeds from no PROCESS object at all.**
+    **A row seeds from no PROCESS object at all.**
     The other three modes need `reference_run` for the seed they start from; a native row
     starts from `native.native_state` and states its problem with
     `native.native_reference`.
@@ -1085,7 +975,8 @@ def run_one(path, mode=PROVIDER, compare=None, optimiser=None) -> Row:
     **Seeding and comparison are separate axes, and `compare` is the second one.** Until
     2026-09-01 they were one: a `--native` row had `process_objf = None` *by
     construction*, so `PRO objf`, `d objf` and `worst dx` were blank, and that was the
-    only reason `--provider` still existed. It was never a real coupling. `reference_run`
+    only reason a partly-seeded mode still existed. It was never a real coupling.
+    `reference_run`
     is disk-cached (~4.6 s a row, and 0.01 s once warm), and scoring a solve against
     PROCESS's converged answer requires *having* that answer, not *having started from*
     it -- so `compare=True` loads it as an **oracle** and nothing else. It is never
@@ -1093,20 +984,20 @@ def run_one(path, mode=PROVIDER, compare=None, optimiser=None) -> Row:
     called `oracle` rather than `reference` precisely so that a future edit that leaks it
     into the solve path has to rename it first.
 
-    `compare` defaults to `compares_by_default(mode)` -- free where PROCESS already ran,
-    opt-in on `NATIVE` via `--compare-process`.
+    `compare` defaults to `False` -- PROCESS does not run for a native row, so scoring
+    against it is opt-in, via `--compare-process`.
     """
     began = time.perf_counter()
     if compare is None:
-        compare = compares_by_default(mode)
+        compare = False
     name = path.name[: -len(".IN.DAT")] if path.name.endswith(".IN.DAT") else path.stem
-    row = Row(name=name, seed_mode=mode, compared=bool(compare))
+    row = Row(name=name, compared=bool(compare))
     # The file's own problem type, read from its text before anything else runs: a file
     # stating `i_process_run_mode = -2` is a **root find over its equalities**, which is
     # what PROCESS answers it with (`scipy.optimize.fsolve`, no objective, the
     # inequalities evaluated once at the answer). It is read here rather than off a
-    # `ReferenceRun` so that every boundary mode -- `NATIVE` included, which runs no
-    # PROCESS -- gets the same answer from the same place.
+    # `ReferenceRun`, which a native row does not build: the file's own text is the
+    # only thing that answers this, and it answers it whether PROCESS runs or not.
     row.root_find = read_indat(str(path)).problem.is_evaluation
     print(f"\n=== {name} ", "=" * 40, flush=True)
     if row.root_find:
@@ -1131,120 +1022,50 @@ def run_one(path, mode=PROVIDER, compare=None, optimiser=None) -> Row:
         print(f"  ASSEMBLY REFUSED: {row.note}")
         return row
 
-    if mode == NATIVE:
-        try:
-            reference = native.native_reference(str(path))
-        except Exception as failure:  # noqa: BLE001 -- a row, not an exit
-            row.note = f"native env failed: {type(failure).__name__}: {failure}"
-            row.seconds = time.perf_counter() - began
-            print(f"  {row.note}")
-            traceback.print_exc()
-            return row
-        cold = reference.cold
-        row.n_ixc, row.n_icc = len(reference.ixc), len(reference.icc)
-        row.boundary = _native_counts(cold, mode)
-        print(
-            f"  native: {row.boundary['written']} value(s) from the file and the "
-            f"vendored defaults ({row.boundary['indat']} indat / "
-            f"{row.boundary['defaults']} defaults), 0 from PROCESS; "
-            f"{len(reference.ixc)} ixc, {len(reference.icc)} icc "
-            f"({reference.n_equality} eq), i_figure_merit {reference.i_figure_merit}"
-        )
-        switch_values = None if is_reference else switch_values_from_indat(str(path))
-        oracle = None
-        if compare:
-            # **Scoring only.** Loaded after the native reference is already built and
-            # never passed to anything that assembles, seeds or solves -- see this
-            # function's docstring on why the name is `oracle`.
-            try:
-                oracle = reference_run(str(path))
-            except Exception as failure:  # noqa: BLE001 -- an empty column, not a lost row
-                row.compared = False
-                print(
-                    f"  compare: PROCESS run failed, PRO columns stay blank -- "
-                    f"{type(failure).__name__}: {failure}"
-                )
-            else:
-                row.process_iterations = oracle.solver_iterations
-                row.process_objf = _process_objective(oracle, row.root_find)
-                said = (
-                    "formed no objective (evaluation mode)"
-                    if row.root_find
-                    else repr(row.process_objf)
-                )
-                print(
-                    f"  compare: PROCESS {said} in {oracle.solver_iterations} "
-                    f"iteration(s) -- SCORING ONLY, this row is seeded natively"
-                )
-        return _solve_both(
-            row,
-            reference,
-            machine_graph,
-            switch_values,
-            cold,
-            began,
-            oracle=oracle,
-            optimiser=optimiser,
-        )
-
     try:
-        reference = reference_run(str(path))
+        reference = native.native_reference(str(path))
     except Exception as failure:  # noqa: BLE001 -- a row, not an exit
-        row.note = f"PROCESS run failed: {type(failure).__name__}: {failure}"
+        row.note = f"native env failed: {type(failure).__name__}: {failure}"
         row.seconds = time.perf_counter() - began
         print(f"  {row.note}")
         traceback.print_exc()
         return row
-    row.n_ixc = len(reference.ixc)
-    row.n_icc = len(reference.icc)
-    # These three modes seed *from* `reference`, so PROCESS ran whatever `compare` says.
-    # `compare=False` still suppresses the comparison columns -- the axes are separate in
-    # both directions, and `--no-compare-process` is how a reader asks for the port's own
-    # numbers with nothing of PROCESS's answer beside them.
-    oracle = reference if compare else None
-    if oracle is not None:
-        row.process_iterations = oracle.solver_iterations
-        row.process_objf = _process_objective(oracle, row.root_find)
-    print(
-        f"  PROCESS: {reference.solver_iterations} "
-        f"{'fsolve' if row.root_find else 'VMCON'} iterations in "
-        f"{reference.solve_seconds:.1f} s, conv "
-        f"{reference.convergence_parameter:.2e}; "
-        f"{len(reference.ixc)} ixc, {len(reference.icc)} icc "
-        f"({reference.n_equality} eq), objf "
-        + (
-            "none formed (evaluation mode)"
-            if row.root_find
-            else ("not compared" if oracle is None else f"{row.process_objf!r}")
-        )
-    )
     cold = reference.cold
-    try:
-        cold, row.boundary, moved = _boundary_seed(reference, path, mode)
-    except Exception as failure:  # noqa: BLE001 -- a row, not an exit
-        row.boundary = {"mode": f"FAILED: {type(failure).__name__}: {failure}"}
-        print(f"  boundary: PROVIDER FAILED -- {row.boundary['mode']}")
-        traceback.print_exc()
-    else:
-        if row.boundary:
+    row.n_ixc, row.n_icc = len(reference.ixc), len(reference.icc)
+    row.boundary = _native_counts(cold)
+    print(
+        f"  native: {row.boundary['written']} value(s) from the file and the "
+        f"vendored defaults ({row.boundary['indat']} indat / "
+        f"{row.boundary['defaults']} defaults), 0 from PROCESS; "
+        f"{len(reference.ixc)} ixc, {len(reference.icc)} icc "
+        f"({reference.n_equality} eq), i_figure_merit {reference.i_figure_merit}"
+    )
+    switch_values = None if is_reference else switch_values_from_indat(str(path))
+    oracle = None
+    if compare:
+        # **Scoring only.** Loaded after the native reference is already built and
+        # never passed to anything that assembles, seeds or solves -- see this
+        # function's docstring on why the name is `oracle`.
+        try:
+            oracle = reference_run(str(path))
+        except Exception as failure:  # noqa: BLE001 -- an empty column, not a lost row
+            row.compared = False
             print(
-                f"  boundary: {row.boundary['written']} of "
-                f"{row.boundary['supplied']} value(s) from the provider, "
-                f"{row.boundary['from_process'] + row.boundary['held']} from the seed, "
-                f"{row.boundary['nothing']} `None` in both"
-                + (f" -- {len(moved)} moved" if moved else "")
+                f"  compare: PROCESS run failed, PRO columns stay blank -- "
+                f"{type(failure).__name__}: {failure}"
             )
-            for name, value, seeded in moved:
-                print(f"    moved {name}: seed {seeded!r} -> provider {value!r}")
-
-    if not is_reference:
-        # Read off the same `DataStructure` the values come from: a switch the provider
-        # disagreed with would change the graph, not just a number, and that has to be
-        # visible rather than suppressed. None of the pinned `off` rows is a switch.
-        switch_values = sand.switch_values_for(
-            cold, reference.icc, reference.i_figure_merit
-        )
-
+        else:
+            row.process_iterations = oracle.solver_iterations
+            row.process_objf = _process_objective(oracle, row.root_find)
+            said = (
+                "formed no objective (evaluation mode)"
+                if row.root_find
+                else repr(row.process_objf)
+            )
+            print(
+                f"  compare: PROCESS {said} in {oracle.solver_iterations} "
+                f"iteration(s) -- SCORING ONLY, this row is seeded natively"
+            )
     return _solve_both(
         row,
         reference,
@@ -1269,7 +1090,7 @@ def _solve_both(
 ):
     """Cold MDF and cold SAND for one configuration, each a row rather than an exit.
 
-    Factored out of `run_one` when `NATIVE` arrived: the two modes differ entirely in
+    Factored out of `run_one` when the native mode arrived: the modes differed in
     *where the four arguments come from* and not at all in what is done with them, and a
     second copy of this loop would be the place a difference crept in unnoticed.
 
@@ -1287,7 +1108,7 @@ def _solve_both(
     because MDF is the one that is PROCESS's own problem.
 
     **`oracle` is the comparison side and `reference` is the seeding side.** They are the
-    same object for the three provider/seed modes and *different* objects for
+    same object for the seeded modes and *different* objects for
     `--native --compare-process`, which is exactly why they are two parameters: `oracle`
     reaches `_against_process` and nothing else, and `reference` reaches every build and
     every solve. `oracle is None` leaves the `PRO` columns blank.
@@ -1362,7 +1183,7 @@ def _solve_both(
     return row
 
 
-def _native_counts(state, mode) -> dict:
+def _native_counts(state) -> dict:
     """`installed`-shaped counts for a native row, so the boundary block still adds up.
 
     The columns mean what they meant, with the seed's two gone: `written` is every place
@@ -1373,7 +1194,6 @@ def _native_counts(state, mode) -> dict:
     """
     sources = state.sources
     return {
-        "mode": mode,
         "paths": len(sources),
         "supplied": len(sources),
         "independent": len(sources),
@@ -1389,7 +1209,6 @@ def _native_counts(state, mode) -> dict:
 
 _COLUMNS = (
     ("configuration", 22, "{}"),
-    ("seed", 6, "{}"),
     ("form", 5, "{}"),
     ("graph", 6, "{}"),
     ("nodes", 6, "{}"),
@@ -1443,11 +1262,9 @@ def render(rows) -> str:
             lines.append(
                 _cell(row.name, 22)
                 + " "
-                + _cell(SEED_LABEL.get(row.seed_mode, row.seed_mode), 6)
-                + " "
                 + " ".join(
                     _cell("REFUSED" if i == 0 else None, w)
-                    for i, (_h, w, _f) in enumerate(_COLUMNS[2:])
+                    for i, (_h, w, _f) in enumerate(_COLUMNS[1:])
                 )
             )
             notes.append(f"{row.name}: ASSEMBLY REFUSED -- {row.note}")
@@ -1467,7 +1284,6 @@ def render(rows) -> str:
             lines.append(
                 " ".join([
                     _cell(row.name, 22),
-                    _cell(SEED_LABEL.get(row.seed_mode, row.seed_mode), 6),
                     _cell(form, 5),
                     _cell(row.graph_nodes, 6),
                     _cell(store["nodes"], 6),
@@ -1673,19 +1489,15 @@ def _boundary_block(rows) -> list[str]:
     measured = [row for row in rows if row.boundary.get("supplied")]
     if not measured:
         return []
-    modes = sorted({str(row.boundary.get("mode")) for row in measured})
     block = [
         "",
         (
-            f"BOUNDARY VALUES -- mode {'/'.join(modes)}; `supplied` is every boundary "
-            "path but the"
+            "BOUNDARY VALUES -- `supplied` is every boundary path but the `solver` and "
+            "`guess`"
         ),
-        (
-            "`solver` and `guess` rows, which no provider could answer (`paths` is the "
-            "raw total)."
-        ),
+        "rows, which no boundary state answers (`paths` is the raw total).",
         "",
-        "         configuration  provider   seed   held  none  supplied  paths",
+        "         configuration    native   seed   held  none  supplied  paths",
     ]
     for row in measured:
         have = row.boundary
@@ -1806,7 +1618,6 @@ PORT_FILES = (
     "mda_harness.py",
     "indat.py",
     "native.py",
-    "provider.py",
     "importer.py",
     "run_cold_matrix.py",
     "core/solver/drivers.py",
@@ -1824,7 +1635,7 @@ changed in either can move a cell (it did not, this time -- see `optimise_design
 §40 -- but the header would not have known that without these two names in the list)."""
 
 
-def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
+def provenance(argv=(), compare=None) -> list[str]:
     """The header every table carries: **which tree state these rows were measured on.**
 
     Emitted by `checkpoint`, not hand-written on top afterwards -- which is the whole
@@ -1872,7 +1683,8 @@ def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
         "# the table -- a re-run overwrites it, this header included.",
         "#",
         f"# MEASURED {when}.",
-        f"# SEEDED    `--{mode}` -- where every starting value came from.",
+        "# SEEDED    natively -- every starting value came from the input file and "
+        "the vendored defaults, none from PROCESS.",
         # A third axis, and it belongs beside the other two rather than only inside the
         # echoed command line: two tables that differ in nothing but this are the point
         # of having the flag, and a reader who cannot see which is which has neither.
@@ -1888,7 +1700,7 @@ def provenance(mode=PROVIDER, argv=(), compare=None) -> list[str]:
             )
         ),
         (
-            "#   These are TWO AXES. A `--native` row that is scored still had no "
+            "#   These are TWO AXES. A scored row still had no "
             "PROCESS object"
         ),
         (
@@ -1975,7 +1787,7 @@ def _return_freed_memory_to_the_os() -> None:
         pass
 
 
-def checkpoint(rows, out=OUT, mode=PROVIDER, argv=(), compare=None) -> None:
+def checkpoint(rows, out=OUT, argv=(), compare=None) -> None:
     """Write the table as it stands. Called after every configuration; see `OUT`.
 
     Failing to write the checkpoint must never lose the row that was just computed, so
@@ -1985,51 +1797,34 @@ def checkpoint(rows, out=OUT, mode=PROVIDER, argv=(), compare=None) -> None:
     """
     try:
         Path(out).write_text(
-            "\n".join(provenance(mode, argv, compare)) + render(rows) + "\n",
+            "\n".join(provenance(argv, compare)) + render(rows) + "\n",
             encoding="utf-8",
         )
     except OSError as failure:  # pragma: no cover -- reported, never fatal
         print(f"  (could not checkpoint to {out}: {failure})", flush=True)
 
 
-def _mode(argv) -> str:
-    """The **seeding** mode named on the command line; `PROVIDER` by default.
-
-    Comparison is `_compare`'s axis, not this one.
-    """
-    for flag, mode in (
-        ("--seed", SEED_ONLY),
-        ("--native", NATIVE),
-        ("--provider-strict", PROVIDER_STRICT),
-        ("--provider", PROVIDER),
-    ):
-        if flag in argv:
-            return mode
-    return PROVIDER
-
-
-def _compare(argv, mode: str) -> bool:
+def _compare(argv) -> bool:
     """Should the rows be **scored against PROCESS**? An axis of its own.
 
-    `--compare-process` and `--no-compare-process` set it explicitly; otherwise
-    `compares_by_default(mode)` decides, which is `True` wherever PROCESS already ran to
-    build the seed and `False` on `--native`. The pairing this exists for is
-    `--native --compare-process`: seeded with no `DataStructure` anywhere in the solve
-    path, scored against PROCESS's converged answer, and the two facts reported in two
-    different places on the table.
+    `--compare-process` and `--no-compare-process` set it explicitly; otherwise it is
+    `False`, because a native row runs no PROCESS and scoring against one costs a run
+    (`sand_harness.reference_run`, disk-cached: ~4.6 s cold, ~0.01 s warm). The pairing
+    this exists for is `--compare-process`: seeded with no `DataStructure` anywhere in
+    the solve path, scored against PROCESS's converged answer, and the two facts
+    reported in two different places on the table.
     """
     if "--no-compare-process" in argv:
         return False
-    if "--compare-process" in argv:
-        return True
-    return compares_by_default(mode)
+    return "--compare-process" in argv
 
 
 def main(argv=None, out=OUT):
     """Walk the configurations, run both formulations cold on each, print the table.
 
     `--input <path>` may be repeated and replaces the default list entirely; with none
-    given every entry of `CONFIGURATIONS` runs. `--out <path>` moves the checkpoint file;
+    given every entry of `native.CONFIGURATIONS` runs. `--out <path>` moves the
+    checkpoint file;
     the table is written there after **each** configuration, so an interrupted run leaves
     every row it finished (see `OUT`).
     `--seed`/`--provider`/`--provider-strict`/`--native` choose where the boundary values
@@ -2058,9 +1853,8 @@ def main(argv=None, out=OUT):
     chosen = [argv[i + 1] for i, a in enumerate(argv) if a == "--input"]
     if "--out" in argv:
         out = argv[argv.index("--out") + 1]
-    paths = [_resolve(p) for p in (chosen or CONFIGURATIONS)]
-    mode = _mode(argv)
-    compare = _compare(argv, mode)
+    paths = [_resolve(p) for p in (chosen or native.CONFIGURATIONS)]
+    compare = _compare(argv)
     optimiser = SlsqpDriver if "--slsqp" in argv else None
     # Patch jax's trace/lower/compile entry points before the first graph is built, so no
     # phase is missed. Idempotent, and a `False` costs the timing block, not the run.
@@ -2069,7 +1863,7 @@ def main(argv=None, out=OUT):
     if cache_dir:
         _enable_compilation_cache(cache_dir)
     print(
-        f"seeding: {mode}    scored against PROCESS: {compare}    "
+        f"seeding: native    scored against PROCESS: {compare}    "
         f"optimiser: {'SLSQP' if optimiser else 'VMCON'}    "
         f"phase timing: {'on' if timed else 'UNAVAILABLE (jax internals moved)'}"
     )
@@ -2082,8 +1876,8 @@ def main(argv=None, out=OUT):
     began = time.perf_counter()
     rows: list[Row] = []
     for path in paths:
-        rows.append(run_one(path, mode, compare, optimiser=optimiser))
-        checkpoint(rows, out, mode, argv, compare)
+        rows.append(run_one(path, compare, optimiser=optimiser))
+        checkpoint(rows, out, argv, compare)
         print(f"  (checkpointed {len(rows)} of {len(paths)} row(s) to {out})")
         # Configurations are independent, and jax caches every executable it compiles
         # for the life of the process. A whole pass therefore accumulates all seven
@@ -2110,7 +1904,7 @@ def main(argv=None, out=OUT):
         # **This clearing is not what makes a repeated solve slow**, and it is regularly
         # mistaken for it. A *row* is one configuration and the next row is a different
         # graph, so nothing here could have been a hit. What destroys the repeated-solve
-        # regime is re-*assembly*, which `functional_process.cottax.session` exists to avoid;
+        # regime is re-*assembly*, which `functional_process.cottax.session` avoids;
         # `_audit/optimise_design.md` §32.2 separates the two and exonerates this line.
         jax.clear_caches()
         _return_freed_memory_to_the_os()

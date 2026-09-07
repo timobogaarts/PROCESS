@@ -38,3 +38,18 @@ any record verbatim. Citations elsewhere in the tree that name a record by path 
   every docstring in it is now its own first sentence. What a quantity means and why a
   formula is what it is belongs in `models/`, which the node file imports from; why a
   port was written the way it was belongs in its commit. 32,815 → 21,775 lines.
+- **`provider.py`, `test_provider.py` and the seven `reference_provider_*.txt` pins**
+  (~4,000 lines), and with them the `--provider`, `--provider-strict` and `--seed`
+  modes of `run_cold_matrix` and `session`. The provider existed to move one number --
+  how much of the boundary need not come from PROCESS's seed -- and `--native` is where
+  that number arrived. Keeping three ways to be *partly* seeded, one of them the
+  default, meant every row carried a `seed` column asking which of them it was.
+  `CONFIGURATIONS` and `stem` moved to `native.py`, which is where they belonged;
+  `run_cold_matrix.CONFIGURATIONS` is a re-export for its four existing callers.
+
+  **`reference_cold_matrix.txt` is now stale in two ways** and wants a re-run: it was
+  measured at `a8f98e35`, several declaration-changing commits ago, and it still has the
+  `seed` column that no longer exists. Its rows differ from a fresh `helias_5b` by one
+  node / one condition / one equality, which is `ba84ce1d`'s recovered declarations and
+  not this cleanup -- the assembled graph is byte-identical, node for node, to the
+  session's starting commit.

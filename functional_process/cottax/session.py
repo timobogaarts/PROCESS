@@ -123,7 +123,6 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 from functional_process.cottax import native  # noqa: E402
-from functional_process.cottax import sand as sand_module  # noqa: E402
 from functional_process.cottax.importer import read_indat  # noqa: E402
 from functional_process.cottax.indat import (  # noqa: E402
     REFERENCE_INPUT_FILE,
@@ -132,18 +131,14 @@ from functional_process.cottax.indat import (  # noqa: E402
     switch_values_from_indat,
 )
 from functional_process.cottax.run_cold_matrix import (  # noqa: E402
-    NATIVE,
-    SEED_LABEL,
     MdfBuild,
     SandBuild,
-    _boundary_seed,
     build_mdf,
     build_sand,
     solve_mdf,
     solve_sand,
 )
 from functional_process.cottax.run_mda_harness import _resolve  # noqa: E402
-from functional_process.cottax.sand_harness import reference_run  # noqa: E402
 
 
 @dataclass
@@ -170,7 +165,6 @@ class Session:
     machine_graph: object = None
     switch_values: object = None
     root_find: bool = False
-    seed_mode: str = NATIVE
     boundary: dict = field(default_factory=dict)
     mdf_build: MdfBuild | None = None
     sand_build: SandBuild | None = None
@@ -235,14 +229,11 @@ class Session:
         )
 
 
-def open_session(path, mode: str = NATIVE, optimiser=None) -> Session:
+def open_session(path, optimiser=None) -> Session:
     """Everything `run_cold_matrix.run_one` does before it first touches a solver.
 
-    `mode` is that module's seeding axis, unchanged and with the same four values --
-    `NATIVE` here rather than `PROVIDER`, because a session is a *repeated* solve and
-    `--native` is `run_cold_matrix`'s own intended default table
-    (`reference_cold_matrix.txt` is generated with it). The three PROCESS-seeded modes
-    run PROCESS once, at open time, and are disk-cached like every other caller's.
+    Seeded natively, which since 2026-09-07 is the only way anything in this port is
+    seeded: no `DataStructure`, no PROCESS run.
 
     Unlike `run_one` this **raises** rather than recording a row: a session is
     interactive, its caller is present, and a refusal that came back as a dataclass field
@@ -262,24 +253,10 @@ def open_session(path, mode: str = NATIVE, optimiser=None) -> Session:
     machine_graph = None if is_reference else graph_for(machine)
     root_find = read_indat(str(path)).problem.is_evaluation
 
-    if mode == NATIVE:
-        reference = native.native_reference(str(path))
-        cold = reference.cold
-        switch_values = None if is_reference else switch_values_from_indat(str(path))
-        boundary: dict = {"mode": mode}
-    else:
-        reference = reference_run(str(path))
-        cold, boundary, _moved = _boundary_seed(reference, path, mode)
-        # Read off the same `DataStructure` the values come from, exactly as
-        # `run_cold_matrix.run_one` does: a switch the provider disagreed with would
-        # change the graph, not just a number.
-        switch_values = (
-            None
-            if is_reference
-            else sand_module.switch_values_for(
-                cold, reference.icc, reference.i_figure_merit
-            )
-        )
+    reference = native.native_reference(str(path))
+    cold = reference.cold
+    switch_values = None if is_reference else switch_values_from_indat(str(path))
+    boundary: dict = {}
     return Session(
         optimiser=optimiser,
         name=name,
@@ -289,7 +266,6 @@ def open_session(path, mode: str = NATIVE, optimiser=None) -> Session:
         machine_graph=machine_graph,
         switch_values=switch_values,
         root_find=root_find,
-        seed_mode=mode,
         boundary=boundary,
     )
 
@@ -383,9 +359,8 @@ def render(live: Session, measured, arm: str) -> str:
     lines = [
         "",
         (
-            f"REPEATED SOLVE -- {live.name} {arm.upper()}, seed "
-            f"{SEED_LABEL.get(live.seed_mode, live.seed_mode)}, one process, "
-            f"nothing cleared"
+            f"REPEATED SOLVE -- {live.name} {arm.upper()}, seeded natively, "
+            f"one process, nothing cleared"
         ),
         "",
         "  solve   seconds  compiles   RSS/GiB   SQP it            objf   answer",
@@ -424,7 +399,7 @@ def render(live: Session, measured, arm: str) -> str:
 
 
 def main(argv=None):
-    """`--input <path>` (repeatable), `--repeat N`, `--arm mdf|sand|both`, `--seed-mode`.
+    """`--input <path>` (repeatable), `--repeat N`, `--arm mdf|sand|both`.
 
     Prints one series per configuration per arm. With no `--input` it runs the reference
     stellarator and `large_tokamak_nof`, which are the two configurations
@@ -437,10 +412,9 @@ def main(argv=None):
     ]
     repeats = int(argv[argv.index("--repeat") + 1]) if "--repeat" in argv else 6
     arm = argv[argv.index("--arm") + 1] if "--arm" in argv else "mdf"
-    mode = argv[argv.index("--seed-mode") + 1] if "--seed-mode" in argv else NATIVE
     arms = ("mdf", "sand") if arm == "both" else (arm,)
     for name in inputs:
-        live = open_session(name, mode=mode)
+        live = open_session(name)
         for one in arms:
             if one == "sand" and live.root_find:
                 print(f"\n{live.name}: no SAND arm (root find) -- skipped")

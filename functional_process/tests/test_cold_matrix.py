@@ -23,6 +23,9 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
+from cottax.spec import VarPath  # noqa: E402
+from jax.tree_util import GetAttrKey  # noqa: E402
+
 from functional_process.cottax.core.solver.drivers import (  # noqa: E402
     VMCON_CONVERGED,
     VMCON_NON_FINITE,
@@ -30,31 +33,20 @@ from functional_process.cottax.core.solver.drivers import (  # noqa: E402
     NonFiniteProblemError,
     _refuse_non_finite,
 )
-from cottax.spec import VarPath  # noqa: E402
-from jax.tree_util import GetAttrKey  # noqa: E402
-
 from functional_process.cottax.mda_harness import EXPLAINED_DISAGREEMENTS  # noqa: E402
 from functional_process.cottax.run_cold_matrix import (  # noqa: E402
     CONFIGURATIONS,
     EXPLAINED_OBJECTIVE_READS,
-    NATIVE,
     PORT_FILES,
-    PROVIDER,
-    PROVIDER_STRICT,
-    SEED_ONLY,
     Row,
     _against_process,
     _blank,
-    _boundary_seed,
     _cell,
-    _compare,
     _headline,
-    _mode,
     _process_objective,
     _status,
     _trace_tail,
     checkpoint,
-    compares_by_default,
     provenance,
     render,
 )
@@ -253,29 +245,6 @@ def test_every_configuration_gets_one_line_per_formulation(form):
 
 
 # ========================================================== where the values come from
-def test_the_default_mode_is_the_provider_and_a_flag_overrides_it():
-    """`--seed` is the pre-2026-08-31 path exactly, kept so the two can be diffed; it
-    wins over the others so that "just give me the old numbers" cannot be half-applied.
-    """
-    assert _mode([]) == PROVIDER
-    assert _mode(["--provider-strict"]) == PROVIDER_STRICT
-    assert _mode(["--seed"]) == SEED_ONLY
-    assert _mode(["--seed", "--provider-strict"]) == SEED_ONLY
-
-
-def test_the_seed_mode_hands_back_the_run_s_own_cold_structure_untouched():
-    """Not a copy and not a provider answer: `--seed` must be the same object the old
-    code path passed, or the mode that exists to reproduce previous rows would be a
-    fourth thing nobody has measured.
-    """
-
-    class _Reference:
-        cold = object()
-
-    reference = _Reference()
-    cold, counts, moved = _boundary_seed(reference, "unread.IN.DAT", SEED_ONLY)
-    assert cold is reference.cold
-    assert (counts, moved) == ({}, ())
 
 
 def test_the_boundary_block_is_absent_until_something_measured_one():
@@ -286,14 +255,13 @@ def test_the_boundary_block_is_absent_until_something_measured_one():
 
 
 def test_the_boundary_block_s_columns_close():
-    """`provider + seed + held + none == supplied` is the arithmetic that says no path
-    went missing between the classification and the solve, so the table prints all five.
+    """`native + seed + held + none == supplied` is the arithmetic that says no path
+    went missing between the boundary state and the solve, so the table prints all five.
     """
     row = Row(
         name="x",
         assembles=True,
         boundary={
-            "mode": PROVIDER,
             "paths": 303,
             "supplied": 289,
             "written": 258,
@@ -303,36 +271,27 @@ def test_the_boundary_block_s_columns_close():
         },
     )
     block = render([row])
-    assert "BOUNDARY VALUES -- mode provider" in block
+    assert "BOUNDARY VALUES" in block
     assert "258" in block
     assert "289" in block
     assert "303" in block
 
 
 # ======================================================================== `--native`
-def test_native_is_a_fourth_mode_and_the_seed_still_wins_over_it():
-    """`--seed` stays the mode that cannot be half-applied, for the reason above; the new
-    flag sits between it and the two provider modes.
-    """
-    from functional_process.cottax.run_cold_matrix import NATIVE
-
-    assert _mode(["--native"]) == NATIVE
-    assert _mode(["--seed", "--native"]) == SEED_ONLY
-    assert _mode(["--native", "--provider-strict"]) == NATIVE
 
 
 def test_a_native_row_reports_no_value_from_process_at_all():
     """The one number a native row exists to state. `written == supplied` and
     `from_process == 0` are true **by construction** -- there is no seed in a native run
-    to fall back to -- so a non-zero `from_process` here would mean the mode had grown a
-    PROCESS dependency without anyone noticing.
+    to fall back to -- so a non-zero `from_process` here would mean a PROCESS dependency
+    had grown without anyone noticing.
     """
-    from functional_process.cottax.run_cold_matrix import NATIVE, _native_counts
+    from functional_process.cottax.run_cold_matrix import _native_counts
 
     class _State:
         sources = {("a", "b"): "indat", ("a", "c"): "defaults", ("d", "e"): "defaults"}
 
-    counts = _native_counts(_State(), NATIVE)
+    counts = _native_counts(_State())
     assert counts["from_process"] == counts["held"] == counts["nothing"] == 0
     assert counts["written"] == counts["supplied"] == counts["paths"] == 3
     assert (counts["indat"], counts["defaults"]) == (1, 2)
@@ -351,7 +310,8 @@ def test_a_place_the_native_state_could_not_answer_reaches_the_notes():
     )
     text = render([row])
     assert "UNANSWERED NATIVELY" in text
-    assert ".physics.made_up" in text and ".build.also_made_up" in text
+    assert ".physics.made_up" in text
+    assert ".build.also_made_up" in text
 
 
 # ------------------------------- the "matches PROCESS" columns (§24.10)
@@ -484,15 +444,14 @@ def test_the_table_carries_its_own_provenance_header(tmp_path):
     checkpoint(
         [Row(name="helias_5b", assembles=True)],
         out,
-        PROVIDER,
-        ["--provider"],
+        ["--native"],
         compare=True,
     )
     text = out.read_text()
     assert text.startswith("# Generated by")
     assert "MEASURED" in text
     assert "TREE: HEAD" in text
-    assert "SEEDED    `--provider`" in text
+    assert "SEEDED    natively" in text
     assert "COLD MATRIX" in text
     assert "helias_5b" in text
 
@@ -508,24 +467,20 @@ def test_the_header_states_seeding_and_scoring_as_two_separate_lines(tmp_path):
     """
     out = tmp_path / "matrix.txt"
     checkpoint(
-        [Row(name="helias_5b", seed_mode=NATIVE, compared=True, assembles=True)],
+        [Row(name="helias_5b", compared=True, assembles=True)],
         out,
-        NATIVE,
         ["--native", "--compare-process"],
         compare=True,
     )
     text = out.read_text()
-    assert "SEEDED    `--native`" in text
+    assert "SEEDED    natively" in text
     assert "SCORED    against PROCESS's converged answer" in text
     assert "TWO AXES" in text
-    # and the row itself carries the seeding mode, not the scoring one
-    assert " nat " in text
 
     off = tmp_path / "off.txt"
     checkpoint(
-        [Row(name="helias_5b", seed_mode=NATIVE, assembles=True)],
+        [Row(name="helias_5b", assembles=True)],
         off,
-        NATIVE,
         ["--native"],
         compare=False,
     )
@@ -559,22 +514,6 @@ def test_a_permuted_ixc_blanks_the_dx_column_rather_than_comparing_the_wrong_var
     _against_process(store, _Reference([1, 2], {1: 10.0, 2: 20.0}), 1.0, ixc=[2, 1])
     assert store["dx"] is None
     assert store["dobjf"] == pytest.approx(1.0)
-
-
-def test_comparing_is_free_where_process_ran_and_opt_in_where_it_did_not():
-    """The default is not a preference, it is a cost: the three seeding modes that build
-    their start out of `reference_run` have PROCESS's answer in hand already, and
-    `--native` is the mode whose claim is that PROCESS is not in the path.
-    """
-    assert compares_by_default(PROVIDER)
-    assert compares_by_default(PROVIDER_STRICT)
-    assert compares_by_default(SEED_ONLY)
-    assert not compares_by_default(NATIVE)
-    # the flags override in both directions, on every mode
-    assert _compare(["--native", "--compare-process"], NATIVE)
-    assert not _compare(["--provider", "--no-compare-process"], PROVIDER)
-    assert _compare(["--provider"], PROVIDER)
-    assert not _compare(["--native"], NATIVE)
 
 
 def test_the_header_names_uncommitted_edits_and_does_not_claim_the_commit():

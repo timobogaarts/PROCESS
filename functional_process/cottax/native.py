@@ -50,6 +50,7 @@ answers are wrong -- and this one is what a run actually reads.
 
 from __future__ import annotations
 
+import pathlib
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
@@ -1024,7 +1025,9 @@ def _pedestal_temperature_bound(ixc, state, low: float, high: float):
     tuple
         `(low, high)`, moved if the branch fires and unchanged otherwise.
     """
-    from functional_process.cottax.indat import ST_INIT_I_PLASMA_PEDESTAL  # noqa: PLC0415
+    from functional_process.cottax.indat import (
+        ST_INIT_I_PLASMA_PEDESTAL,
+    )
 
     if 4 not in {int(i) for i in ixc}:
         return low, high
@@ -1139,3 +1142,33 @@ def native_reference(input_file: str) -> NativeReference:
         i_figure_merit=int(problem.i_figure_merit or 7),
         bounds=native_bounds(ixc, imported, state),
     )
+
+
+CONFIGURATIONS = (
+    "tests/regression/input_files/stellarator_helias.IN.DAT",
+    "tests/regression/input_files/helias_5b.IN.DAT",
+    "tests/regression/input_files/large_tokamak_nof.IN.DAT",
+    "tests/regression/input_files/large_tokamak_eval.IN.DAT",
+    "tests/regression/input_files/low_aspect_ratio_DEMO.IN.DAT",
+    "tests/regression/input_files/spherical_tokamak_eval.IN.DAT",
+    "tests/regression/input_files/st_regression.IN.DAT",
+)
+"""Every `tests/regression/input_files/*.IN.DAT` except `IFE.IN.DAT`.
+
+`IFE` is `ife == 1`, a whole unported device -- `.ife.*` has no unit in
+`unit_registry.md` at all (`_audit/next_steps.md` §20.4) -- so it is not a row that could
+become a number by any amount of running. Everything else is a row whether or not it
+assembles, and the day this file was written is the argument for that: the two spherical
+tokamaks refused on `tf_stress_arm == (0, 1, 0)` at the start of the run and
+**assembled by the end of it**, because the `extended_plane_strain` port landed in the
+same working tree while the pass was going. A runner whose configuration list encoded
+today's verdict would have needed an edit to notice; this one needed a re-run.
+
+Ordered stellarators first, then the four tokamaks, so that a truncated run still has
+the rows whose numbers other records quote.
+"""
+
+
+def stem(input_file: str) -> str:
+    """`.../helias_5b.IN.DAT` -> `helias_5b`, the name a configuration is known by."""
+    return pathlib.PurePath(input_file).name.removesuffix(".IN.DAT")

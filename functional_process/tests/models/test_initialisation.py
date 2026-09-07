@@ -30,7 +30,7 @@ jax.config.update("jax_enable_x64", True)
 from functional_process.cottax import indat  # noqa: E402
 from functional_process.cottax.cold_start import cold_state  # noqa: E402
 from functional_process.cottax.indat import graph_for, machine_from_indat  # noqa: E402
-from functional_process.cottax.provider import CONFIGURATIONS, stem  # noqa: E402
+from functional_process.cottax.native import CONFIGURATIONS, stem  # noqa: E402
 from functional_process.vocabulary import (  # noqa: E402
     SuperconductorModel,
     TFConductorModel,
