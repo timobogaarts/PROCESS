@@ -309,6 +309,74 @@ than a crash: a slice-sum reassociated into a different order changes the last b
 off-by-one in a literal species index lands on a neighbour of similar magnitude. Bit-exact
 0.000e+00 is the only signal that separates them from success.
 
+**Reverse mode works, and the autodiff thesis survives contact with a real kernel.**
+`WARP_ENABLE_BACKWARD=1` builds the full-coverage `helias_5b` kernel (43 entries, 112,829
+jaxpr equations), `wp.Tape` records it, and six reverse passes give the full 6x9 Jacobian.
+No adjoint-pass refusal on anything the forward pass accepted.
+
+| comparison | worst rel |
+|---|---|
+| Warp adjoint vs `jax.jacfwd` | **5.692e-12** |
+| Warp adjoint vs `jax.jacrev` | 6.833e-12 |
+| **`jax.jacrev` vs `jax.jacfwd`, Warp not involved** | **1.141e-12** |
+
+That last row is the attribution and the reason the first is acceptable: JAX's own two AD
+modes disagree by 1.1e-12 on this problem, so ~1e-12 is the intrinsic reverse-vs-forward
+accumulation spread and Warp sits within ~5x of it. The **sparsity pattern is exact** -- 38
+of 54 entries are zero in JAX and zero in Warp, worst absolute difference 0.000e+00.
+
+**The 60x compile figure was wrong: it is 11-14x**, and for an instructive reason -- the
+*forward* baseline grew from 35.1 s to 180-259 s as coverage rose, so the multiplier
+collapsed while the absolute backward cost (42 and 46 min) barely moved. Measured on two
+configs, neither extrapolated. Run time is negligible either way: 0.3 ms forward, 0.9-1.6 ms
+per reverse pass, and a module is compiled once per hash and cached (a second run: 1.1 s).
+
+**Registers are the real warning, and they have moved a long way.** Against the recorded
+22-24 forward / 244-255 backward with 0-912 B spill:
+
+| kernel | regs | spill |
+|---|---|---|
+| forward, 10 entries | 255 | 20,920 B |
+| forward, 27 entries | 255 | **111,248 B** |
+| backward, 10 entries | 255 | 40,024 B |
+
+**The forward kernel is now itself register-saturated** -- 255 is the sm_75 ceiling -- with
+spill growing 5.3x from 10 to 27 entries. Reverse mode is not what broke this; forward did.
+
+**And the GPU build, not the arithmetic, is what runs out of room.** At full coverage NVRTC
+was OOM-killed twice on the 29.9 MB `.cu`, once at **12.5 GB RSS / 40 GB VM after 32 minutes
+alone** on a 15 GB machine. That is a *host RAM* limit in the CUDA compiler, not the card's
+4 GiB. There is therefore no full-coverage GPU number, and none was fabricated. Since the
+backward build triples the generated C++ (3.10x on both configs), a full-coverage backward
+CUDA build is well outside this machine.
+
+**Batching flips the CPU/GPU verdict, which the single-solve comparison had settled the
+other way.** On reduced cuts where CUDA does build (identical kernel both sides, agreement
+0.000e+00):
+
+| batch | 10 entries CPU -> GPU | 27 entries CPU -> GPU |
+|---|---|---|
+| 1 | 46.9 -> 1629.0 us/pt | 154.0 -> 3921.5 |
+| 256 | 12.2 -> 9.4 | 96.9 -> 16.8 |
+| 65536 | 11.97 -> **0.85** | 96.5 -> **2.60** |
+
+GPU loses ~35x at batch 1 on launch overhead, crosses over between 16 and 256, and at 65536
+is **14.1x faster at 10 entries and 37.1x at 27** -- **the advantage grows with kernel
+size**. This is the first measurement of the batched case and it goes opposite to
+`optimise_design` §68's single-solve result (13.55 -> 15.57 s cold, 0.136 -> 0.227 s warm).
+
+**On CPU, Warp loses to JAX by 7.6x** -- 144.6 against 19.0 us/pt at 65536, verified
+independently. Warp's CPU per-point cost is **flat** (one thread per point, run serially,
+1.27 ns per jaxpr equation) so batching buys it nothing there, while JAX vectorises across
+the batch. This **reverses** the earlier record of Warp being 5.8-6.6x faster on CPU, which
+was taken at 18-37 entries.
+
+One caveat kept in view rather than buried: in the reduced-cut runs only 1-2 conditions are
+reachable and XLA dead-code-eliminates nearly everything (0.017 us/pt for 12k equations,
+not physically possible), while Warp executes the whole kernel. **Those JAX columns are not
+a baseline**; only the full-coverage row, where 6 conditions keep the work live, is an
+honest Warp-vs-JAX comparison.
+
 **The jaxpr path crossed over and the resolver is gone.** Conditions roughly tripled to
 quadrupled on every configuration, all compiling in round 0 with **zero Warp-codegen
 exclusions**:
