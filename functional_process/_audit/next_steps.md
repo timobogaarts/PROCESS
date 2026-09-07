@@ -347,3 +347,34 @@ initial keyword-swept register, not proven complete.
   and inequalities — "multidisciplinary feasible" taken literally, a third point beyond
   today's MDF and SAND formulations.
 - **`IFE.IN.DAT` is out of scope** — `.ife.*` has no unit in `unit_registry.md`.
+- **`plasma_composition` is 46.6 % of the emitted Warp module (8,009 of 17,172 lines),
+  and 5,600 of its lines are ONE equation the fusion planner declined.** The equation is
+  `log` at shape `(14, 200)` -- `jnp.interp`'s log-x axis inside
+  `calculate_average_charge_at_temp`, vmapped over the 14 species. It emits 2,800
+  `t = wp.log(a18[i])` statements plus 2,800 `t2972[i] = t` statements filling one
+  `vec2800f` (21.9 KB of per-thread locals) that a runtime-indexed gather reads. The
+  *same* `log` over the *same* constant table fuses correctly in
+  `.physics.impurity_radiation_totals` -- `for k1 in range(14): for k2 in range(200)`,
+  ten lines -- so this is a planner cost-model gap, not a missing capability, and there
+  is a working reference implementation in the same module. The cause is exact and was
+  measured, not inferred: instrumenting `_plan_chain` shows `plasma_composition`'s 201
+  equations are 106 at size 1, 82 at size 14, 13 at size 12, and **exactly one** at
+  2,800, while `impurity_radiation_totals` has 191 equations in that family and gets its
+  `(14, 200)` nest. A one-equation nest saves no arithmetic under `_plan_for_shape`'s
+  payoff model, so it is not planned -- but the model has no term for SOURCE LINES, and
+  source lines are what NVRTC is OOM-killed on. **Fix**: plan a nest for a lone
+  elementwise equation when its width alone makes the unrolled form cost `2n` lines
+  (`n` statements plus `n` vector fills) against a loop's three. Expected 8,009 ->
+  ~2,410 lines, module 17,172 -> ~11,570 (-33 %), with **no numerical change whatever**:
+  the same device `log`, the same order, no host folding, so `_fold_exact`'s deliberate
+  exclusion of float results is not touched. Only one node in the config shows this
+  pattern -- a module-wide scan for statements reading only constant-array parameters
+  finds 2,800, all of them here.
+- **`impurity_radiation_totals` copies two constant globals into per-thread vectors for
+  no reason** -- 44.8 KB of its 111.2 KB. Its nest writes four `vec2800f`, and `t3`/`t4`
+  are `t3[200*k1+k2] = a17[200*k1+k2]` / `t4[...] = a18[...]`, verbatim reads of the two
+  `wp.array` constant globals. `array_ident` exists precisely to hand the global's
+  identifier back instead of copying (`_vec_local`), but it propagates only through
+  equations whose emitted `exprs` are literally the operand's own, and the nest's
+  materialisation is not one of those. Independent of the item above; together they are
+  most of the module's 170.4 KB of per-thread vector locals.
