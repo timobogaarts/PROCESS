@@ -105,25 +105,47 @@ wrong, and the instrumentation found them in this order:
 4. **Eleven equations, 19,500 statements, were dead** (`_drop_dead`) -- a fully
    computed 1500-element stress chain the node does not return.
 
-`.physics.impurity_radiation_totals` benefits from (2) and (4) as well (483,128 ->
-404,560) and still refuses, for the reason below.
+**`.physics.impurity_radiation_totals`: 483,128 statements to 716.** It benefits from
+(2) and (4) above as well (483,128 -> 404,560), and the rest of it is `jnp.interp`
+alternating chain, table lookup, chain, table lookup: the lookups are `gather`s whose
+index is computed by the chain and whose operand is a (14, 200) table the node itself
+builds. Four things, and again the instrumentation found them in this order -- the
+first two are the ones the earlier note predicted, the last two are not:
 
-**What a nest still cannot drive, and why `.physics.impurity_radiation_totals` remains
-refused.** Its `jnp.interp` alternates chain, table lookup, chain, table lookup: the
-lookups are `gather`s whose index is computed by the chain and whose operand is a
-(14, 200) table the node itself builds. Driving them inside the nest needs three things
-this module does not have -- a `gather` template whose index is a runtime value rather
-than an index map, a `scan` unrolled into the flat equation list (its bracket search is
-8 steps of a carry batched at the full 14x201 width), and reductions over a SUBSET of
-the axes, since it sums over species at each of 201 points. All three were built and
-measured: with them the node still refuses, because the interleaving makes the nest and
-the equations between its parts mutually dependent, and the plan then cuts itself down
-until the reduction it was built for has left it. Splitting one nest into several by
-that dependence is the missing piece, and it is a scheduling problem, not a primitive
-one. The three mechanisms were removed again rather than left in place unexercised: on
-these three configurations they changed the emitted statement count of exactly zero
-nodes, and emission code no node exercises is emission code `jaxpr_validate` never
-checks.
+1. **A batched binary search, unrolled at the full array width** (`_inline_scan_ok`).
+   `jnp.searchsorted`'s bracket search is a carry-only `scan`, 8 steps of a 24-equation
+   body over a (14, 201) carry, and `_scan` unrolls it by re-entering `emit` once per
+   step -- so each step is planned in its own little world and no nest ever spans it.
+   **265,722 of the node's 404,560 statements.** `_flatten` unrolls such a scan into
+   the FLAT equation list instead, where the planner sees 8 x 24 ordinary element-wise
+   equations and the surrounding nest absorbs them.
+2. **A `gather` whose index is a runtime value** (`_Tmpl.vecs`, `_vec_local`'s sandbox
+   branch). Fourteen of them, 39,396 statements, each cutting the chain in two. A nest
+   can drive one after all: the operand is read WHOLE, so it is hoisted into one vector
+   before the loop headers and subscripted inside -- which is what the scalarised path
+   already does per element, one copy of the vector instead of `size` copies of
+   everything upstream of it. What is NOT hand-waved is the window base: a batched
+   lookup reads row `s` of the table at output element `(s, j)`, so the base varies
+   from element to element, and it is carried as an index map (`_Tmpl.voff`) that
+   `_affine_index` fits and then verifies against the whole map, exactly like every
+   other one.
+3. **The table itself was not a nest root** (`_chain_exit`). A value read only at a
+   runtime index has no consumer `_template` rejects, so nothing seeded a nest on it:
+   the two (14, 200) `log` tables were scalarised (5,600 statements) and then copied
+   element by element into a `vec2800f` for the lookup (5,602 more) -- worse than the
+   unrolled form, two statements per element where it paid one. Reading a value whole
+   at a runtime index IS leaving the chain, so it seeds a nest, which writes it
+   straight into the vector the lookup reads: **14 statements**.
+4. **Ejecting the wrong end of the dependence** (`_plan_for_shape`). A lookup's operand
+   cannot be a value the same nest is in the middle of computing, and pushing the
+   LOOKUP out unravels the nest around it -- the fourteen lookups came out first and
+   took 243 of 303 equations with them, one `ext` cascade at a time, leaving a
+   60-equation nest with 21 materialised (14, 201) intermediates (472 KB per thread).
+   It is the PRODUCER that leaves, and by (3) it lands in a nest of its own.
+
+The third mechanism the earlier note predicted -- reductions over a SUBSET of the axes
+-- turned out not to be needed. The sum over species at each of 201 points reads a
+(14, 201) value the nest materialises anyway, so it is 201 ordinary statements.
 
 **Control flow: `scan` and `while` as RUNTIME loops** (`_scan_loop`, `_while`). A nest
 fuses along an ARRAY axis and can do nothing for a node whose every equation is a
@@ -780,11 +802,17 @@ which this note used to name as the largest function anywhere at 14,382 -- is 70
 `large_tokamak_nof` as a whole is 40,693 against 67,331.
 
 **24,000 cannot come down, and the reason is no longer a scan.** The largest function in
-any of the three configurations is now `.tokamak.pf_coil.peak_field` at **19,744**
-statements, which no loop touches: it is genuinely 19,744 distinct scalar equations, not
-`length` copies of one body. Next largest is `.vacuum.vacuum_old` at 10,619. So the cap
-has about 21 % headroom over the node that needs the most, and lowering it would refuse
-a node that emits correctly today.
+any of the three configurations is `.tokamak.pf_coil.peak_field` at **18,224**
+statements, which no loop touches: it is genuinely that many distinct scalar equations,
+not `length` copies of one body. Next largest are
+`.tokamak.cicc_superconducting_tf_coil.tf_stress` at 14,703 and
+`.physics.plasma_composition` at 8,006. So the cap has about 24 % headroom over the node
+that needs the most, and lowering it would refuse a node that emits correctly today.
+
+Whole-config totals, every node emitted from its jaxpr: `helias_5b` **16,213**
+statements over 94 nodes (0 refused), `stellarator_helias` **16,803** over 123 (0
+refused), `large_tokamak_nof` **53,188** over 174 (3 refused -- two `svd` and one
+`scatter` without `unique_indices`).
 
 Raising it costs compile time and nothing else -- but note that compile time here is not
 linear in the cap, and that with ADJOINTS on the same modules cost about sixty times as
@@ -937,6 +965,75 @@ def _scan_split(eqn):
                                                                         False))
 
 
+def _inline_scan_ok(eqn) -> bool:
+    """Whether `_flatten` unrolls this `scan` into the FLAT equation list, where the
+    fusion planner can see its body, instead of leaving it to `_scan`.
+
+    `_scan` unrolls too -- by re-entering `emit` once per step -- and that is exactly
+    the problem: each step is planned in its own little world, so a scan whose body is
+    one element-wise program at the full array width gets `length` separate nests, or
+    more usually none at all. Unrolled HERE the same equations are ordinary members of
+    the one flat list, and a nest that already spans the arithmetic around the scan
+    absorbs them. `.physics.impurity_radiation_totals`'s `jnp.interp` is a batched
+    binary search: 8 steps of a 24-equation body over (14, 201), **265,722 statements**
+    of the node's 404,560, and the same equations inside the nest are 8 x 24 lines.
+
+    Unrolling here emits exactly what `_scan_unrolled` emits -- the same body against
+    the carry the previous step produced -- so nothing about the arithmetic changes.
+    What changes is only which pass gets to look at it.
+
+    **The conditions are narrow on purpose, so this cannot take a scan away from
+    `_scan_loop`.** A loop is strictly better than any unrolling when it is available
+    (one copy of the body instead of `length`), so this fires only where
+    `_scan_loop_ok` would already have said no for a reason visible in the equation:
+
+    - **Carry only**, no `xs` and no `ys` -- the same shape `_scan_loop_ok` requires,
+      because an `xs` slice threaded through a flat list is fine but a `ys` row is a
+      value the flat list has to stack, which is the unrolled form's cost either way.
+    - **An UNSIGNED carry**, which is precisely `_scan_loop_ok`'s dtype refusal. So
+      every scan a runtime loop could take is left for `_scan` to measure, unchanged.
+    - **A carry wide enough for a nest to drive** (`FUSE_MIN_ELEMENTS`). A narrow carry
+      -- `.physics.plasma_composition`'s 2-element threefry -- has no array axis to
+      fuse along, and unrolling it in the flat list would only move statements around.
+
+    Off entirely under `WARP_FUSE=0`, since with no planner to see the body there is
+    nothing to be gained and the A/B has to be an A/B of one thing.
+    """
+    if not _FUSION or eqn.primitive.name != "scan":
+        return False
+    try:
+        _body, _bc, num_consts, num_carry, length, _rev = _scan_split(eqn)
+    except Refusal:
+        return False
+    if length < 2 or num_carry < 1:
+        return False
+    if len(eqn.invars) != num_consts + num_carry:
+        return False                                        # has xs
+    if len(eqn.outvars) != num_carry:
+        return False                                        # has ys
+    if not any(np.issubdtype(np.dtype(v.aval.dtype), np.unsignedinteger)
+               for v in eqn.outvars):
+        return False                                        # a loop is available
+    return max((int(np.prod(v.aval.shape)) if v.aval.shape else 1)
+               for v in eqn.outvars) >= FUSE_MIN_ELEMENTS
+
+
+def _count_uses(eqns, outrefs) -> dict:
+    """`{variable -> number of times it is consumed}` over one flattened equation list.
+
+    Recounted after every retraction (`emit`), never carried across one: `_flatten`
+    mints fresh `_FVar`s each time, so a table from a previous attempt answers 0 to
+    every question.
+    """
+    uses: dict = {}
+    for e in eqns:
+        for v in e.invars:
+            uses[v] = uses.get(v, 0) + 1
+    for o in outrefs:
+        uses[o] = uses.get(o, 0) + 1
+    return uses
+
+
 class _FVar:
     """One variable of the flattened equation list. Carries an aval and nothing else;
     identity is the name."""
@@ -1068,11 +1165,15 @@ _NO_FUSE = frozenset({
     # inlining it into a loop body is exactly the unrolling this transform exists to
     # remove.
     #
-    # `gather` is NOT on this list any more, and the reason it was is worth keeping:
-    # "a static one's index map is usually not affine in the loop index and a dynamic
-    # one reads its operand at a position only the running code knows". The second half
-    # still holds and is still enforced -- a dynamic gather materialises a vector, and
-    # `_template` rejects any equation that does (`sb.vecs`). The first half turned out
+    # `gather` is NOT on this list any more, and neither half of the reason it was
+    # survived: "a static one's index map is usually not affine in the loop index and a
+    # dynamic one reads its operand at a position only the running code knows". The
+    # second half is true and turned out not to be a reason -- a position only the
+    # running code knows is fine as long as the thing being read exists as a vector by
+    # then, so the operand is hoisted whole before the loop headers and subscripted
+    # inside (`_Tmpl.vecs`, `_vec_local`'s sandbox branch). What is still enforced is
+    # that the read is of ONE WHOLE operand: anything else sets `sb.vecs` and
+    # `_template` rejects it as it always did. The first half turned out
     # to be an assumption about the loop's SHAPE rather than about the gather: the six
     # lookups in `.tokamak.cicc_superconducting_tf_coil.tf_stress` read a 3-element
     # per-layer array at `k // 500`, which is not affine over a flat 1500-iteration
@@ -1104,12 +1205,27 @@ NaN rule for a pairwise compare, not for a compare against an initial infinity."
 
 _TMPNAME = re.compile(r"\bt\d+\b")
 _TOK = re.compile(r"§(\d+)·(\d+)|\b(t\d+)\b")
-_INST = re.compile(r"§(\d+)|#(\d+)")
+_INST = re.compile(r"§(\d+)|#(\d+)|@(\d+)|(«»)")
+_SENTINEL = re.compile(r"§(\d+)·(\d+)$")
 
 
-def _instantiate(s: str, sub, names) -> str:
-    """A template with `§i` replaced by operand `i`'s scalar expression and `#n` by
-    the local bound for the template's own `n`-th statement."""
+def _instantiate(s: str, sub, names, vecs=None, off=None) -> str:
+    """A template with `§i` replaced by operand `i`'s scalar expression, `#n` by the
+    local bound for the template's own `n`-th statement, `@i` by the identifier of the
+    whole-operand vector the nest hoisted for operand `i` (`_vec_local`), and `«»` by
+    the WINDOW BASE of a runtime-indexed `gather` at this element.
+
+    `@i` keeps the equation's ORIGINAL operand index -- unlike `§`, which is renumbered
+    per occurrence by `_template`'s canonicalisation -- because there is nothing to
+    align: the read is of the whole operand at a position only the running code knows,
+    so `_emit_chain` looks the operand up as `eqn.invars[i]` directly.
+
+    `«»` is the one part of such a gather that DOES vary from element to element: a
+    batched lookup reads row `s` of the table at output element `(s, j)`, so the
+    scalarised path emits a different `wp.int32(200 * s)` per element. It is a genuine
+    index map, and `_emit_chain` fits and verifies it with `_affine_index` exactly as
+    it does every other one, rather than admitting a per-element literal into what is
+    supposed to be one uniform program."""
     def rep(m):
         if m.group(1) is not None:
             e = sub[int(m.group(1))]
@@ -1117,7 +1233,17 @@ def _instantiate(s: str, sub, names) -> str:
                 raise Refusal("chain template references an operand the index map "
                               "reported unused")
             return e
-        return names[int(m.group(2))]
+        if m.group(2) is not None:
+            return names[int(m.group(2))]
+        if m.group(3) is not None:
+            if vecs is None or int(m.group(3)) not in vecs:
+                raise Refusal("chain template references a runtime-indexed operand "
+                              "the nest did not hoist")
+            return vecs[int(m.group(3))]
+        if off is None:
+            raise Refusal("chain template references a gather window base the nest "
+                          "did not fit")
+        return off
     return _INST.sub(rep, s)
 
 
@@ -1132,11 +1258,21 @@ class _Tmpl:
     from element `slots[o][1][k]` of operand `slots[o][0][k]`. Everything a chain node
     depends on goes through it, so `_emit_chain`'s discovery never has to know which
     primitive it is looking at.
+
+    `vecs` is the one thing alignment cannot express: the operand indices this
+    equation reads at a RUNTIME position (`@i`, a `gather` whose index is computed in
+    the loop body). There is no index map to align, so the whole operand is hoisted
+    into one vector outside the nest and subscripted inside it -- which is exactly what
+    the scalarised path already does per element, one copy of the vector instead of
+    `size` copies of everything upstream of it.
     """
 
     slots: tuple
     lines: tuple = ()
     expr: str = ""
+    vecs: tuple = ()
+    voff: object = None
+    """The runtime gather's window base per output element (`«»`), or `None`."""
 
 
 class _Bad(Exception):
@@ -1254,9 +1390,16 @@ def _template(eqn, known=None):
     arithmetic) instead of restating them, and it cannot drift from what the scalarised
     path emits, because it IS what the scalarised path emits.
 
-    An equation that emits storage of its own (`_vec_local`, from a runtime-indexed
-    `gather`) is rejected outright: its statements are not per-element and hoisting
-    them into the loop body would recompute a whole vector per iteration.
+    An equation that emits storage of its own is rejected outright (`sb.vecs`): its
+    statements are not per-element and hoisting them into the loop body would recompute
+    a whole vector per iteration. A runtime-indexed `gather` is the one thing that used
+    to land there and no longer does -- in the sandbox `_vec_local` NAMES the operand
+    (`@i`) instead of copying it, so the equation presents as an ordinary per-element
+    program plus a record of which operand the nest must hoist (`_Tmpl.vecs`) and where
+    each element's window starts (`_Tmpl.voff`). Both are decided by the same machinery
+    as everything else: the operand index must be one whole operand or the sandbox
+    refuses, and the window base is an index map `_emit_chain` fits with
+    `_affine_index` and verifies elementwise.
 
     **`known` is what separates a static `gather` from a dynamic one.** The sandbox
     operands carry the concrete values `_const_prop` proved, so `_gather` resolves a
@@ -1286,12 +1429,18 @@ def _template(eqn, known=None):
                           _kind(v.aval), tuple(v.aval.shape),
                           None if known is None else known.get(id(v))))
     sb = _FuncEmitter()
+    sb._vec_sandbox = True
     try:
         exprs, _ = sb._expr(name, eqn, args, _kind(out.aval), oshape)
     except Refusal:
         return None
     if sb.vecs or len(exprs) != n_out:
         return None
+    voff = None
+    if sb._sandbox_off is not None:
+        if len(sb._sandbox_off) != n_out:
+            return None
+        voff = np.asarray(sb._sandbox_off, dtype=np.int64)
     defs, order = {}, {}
     for p, ln in enumerate(sb.lines):
         s = ln.strip()
@@ -1345,7 +1494,8 @@ def _template(eqn, known=None):
     for o in range(n_slots):
         slots.append((np.array([r[o][0] for r in reads], dtype=np.int64),
                       np.array([r[o][1] for r in reads], dtype=np.int64)))
-    return _Tmpl(slots=tuple(slots), lines=tuple(canon0[:-1]), expr=canon0[-1])
+    return _Tmpl(slots=tuple(slots), lines=tuple(canon0[:-1]), expr=canon0[-1],
+                 vecs=tuple(sorted(sb._sandbox_vecs)), voff=voff)
 
 
 def _schedule_units(eqns, plans):
@@ -1423,9 +1573,9 @@ class _ChainPlan:
     per-plan cycle check computes on the way to proving the plan schedulable at all."""
 
 
-def _chain_exit(ov, tmpl, consumers) -> bool:
+def _chain_exit(ov, tmpl, consumers, eqns=None) -> bool:
     """Does `ov` LEAVE the element-wise chain -- is it read by an equation `_template`
-    could not prove element-wise?
+    could not prove element-wise, or read WHOLE at a runtime index?
 
     Such a value is a nest ROOT exactly as a reduction operand or a node output is: the
     consumer has to read it somewhere, `_plan_for_shape`'s fixpoint will make it a
@@ -1446,8 +1596,24 @@ def _chain_exit(ov, tmpl, consumers) -> bool:
     decides what is materialised and still pushes out anything that would make the
     unit graph cyclic, and `_emit_chain`'s discovery still vetoes any operand whose
     index map is not affine in the loop indices.
+
+    **A runtime-indexed operand (`_Tmpl.vecs`) leaves the chain too**, and for the
+    plainest version of the same reason: the consumer reads the WHOLE of it at a
+    position only the running code knows, so it has to exist as a vector before the
+    consumer's nest begins. Left unseeded such a value is worse than merely unfused --
+    it is scalarised AND then copied element by element into a `vec{n}f` for the
+    lookup, two statements per element where the unrolled path paid one. On
+    `.physics.impurity_radiation_totals` those are the two (14, 200) `log` tables
+    `jnp.interp` reads: 5,600 statements to compute and 5,602 to copy, against 14 for
+    the nest that writes them straight into the vector the lookup reads.
     """
-    return any(c not in tmpl for c in consumers.get(id(ov), ()))
+    for c in consumers.get(id(ov), ()):
+        t = tmpl.get(c)
+        if t is None:
+            return True
+        if eqns is not None and any(eqns[c].invars[i] is ov for i in t.vecs):
+            return True
+    return False
 
 
 def _factorisations(size, eqns, cap=MAX_CHAIN_FACTORISATIONS):
@@ -1568,7 +1734,7 @@ def _plan_chain(eqns, outrefs, veto=frozenset(), known=None):
         if ov is None or ix not in tmpl or _kind(ov.aval) != _F:
             continue
         if FUSE_MIN_ELEMENTS <= size_of(ov) <= MAX_FUSE_PROBE \
-                and _chain_exit(ov, tmpl, consumers):
+                and _chain_exit(ov, tmpl, consumers, eqns):
             sizes.add(size_of(ov))
     cands = [(sz, sh) for sz in sorted(sizes) for sh in _factorisations(sz, eqns)]
 
@@ -1611,7 +1777,7 @@ def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_
             continue
         if size_of(ov) != size:
             continue
-        if id(ov) in out_ids or _chain_exit(ov, tmpl, consumers):
+        if id(ov) in out_ids or _chain_exit(ov, tmpl, consumers, eqns):
             seeds.append(ov)
     if not seeds:
         return None
@@ -1645,6 +1811,23 @@ def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_
         red_set = {ix for ix in reds
                    if producer.get(id(eqns[ix].invars[0])) in group}
         mat = {vid: v for vid, v in mat.items() if producer.get(vid) in group}
+        # A runtime-indexed operand (`_Tmpl.vecs`) is read WHOLE, hoisted into one
+        # vector before the loop headers, so it cannot be a value this nest is in the
+        # middle of computing. It is the PRODUCER that leaves, not the equation that
+        # reads it: pushing out the lookup instead unravels the nest around it -- on
+        # `.physics.impurity_radiation_totals` the fourteen `jnp.interp` lookups came
+        # out first and took 243 of the 303 equations with them, one `ext` cascade at
+        # a time, leaving a 60-equation nest with 21 materialised (14, 201)
+        # intermediates. Ejected, the producer becomes a `_chain_exit` and gets a nest
+        # of its own, which writes straight into the vector the lookup reads.
+        drop = {p for ix in group for i in tmpl[ix].vecs
+                if (p := producer.get(id(eqns[ix].invars[i]))) is not None
+                and p in group}
+        if drop:
+            group -= drop
+            for ix in drop:
+                mat.pop(id(eqns[ix].outvars[0]), None)
+            continue
         # Anything the nest computes but something outside reads must be written
         # somewhere. If it has the nest's own element count it becomes a materialised
         # output; otherwise the equation leaves the nest and is emitted scalarised,
@@ -1740,6 +1923,14 @@ class _FuncEmitter:
         """Fixed-length vector types this BODY needs (a runtime-indexed `gather`
         materialises its operand into one). `emit_node` unions these with the lengths
         the signature needs, and `module_preamble` declares them."""
+        self._vec_sandbox = False
+        """True only inside `_template`'s throw-away emitter: `_vec_local` then NAMES
+        the operand (`@i`) instead of materialising it. See `_vec_local`."""
+        self._sandbox_vecs: set = set()
+        """Operand indices `_vec_local` named while `_vec_sandbox` was set."""
+        self._sandbox_off: list | None = None
+        """Per output element window base of the runtime `gather` the sandbox saw
+        (`«»`), or `None` if it saw none. See `_gather` and `_instantiate`."""
         self._concrete: dict = {}
         """`{Var: ndarray}` of jaxpr variables `emit_node` proved data-independent
         (see `_invariant_vars`) -- empty unless this node actually has a `scatter`
@@ -1958,13 +2149,7 @@ class _FuncEmitter:
         # object for every call site of the same traced function, so a `jit[name=
         # signbit]` reached twice would count each of its variables twice and no fusion
         # would ever fire. (It did not, on `parabolic_profile_values`, until this.)
-        uses: dict = {}
-        for e in eqns:
-            for v in e.invars:
-                uses[v] = uses.get(v, 0) + 1
-        for o in outrefs:
-            uses[o] = uses.get(o, 0) + 1
-        outer_uses, self._uses = self._uses, uses
+        outer_uses, self._uses = self._uses, _count_uses(eqns, outrefs)
         outer_bits, self._bits = self._bits, {}
         try:
             mark = (len(self.lines), self._n, set(self.helpers), set(self.vecs),
@@ -1982,7 +2167,18 @@ class _FuncEmitter:
                 self._vec_memo.clear()
                 self._vec_memo.update(mark[5])
                 self._bits = {}
-                return self._flatten(jaxpr, consts, args)
+                eqns2, env2, outrefs2 = self._flatten(jaxpr, consts, args)
+                # `_flatten` mints FRESH `_FVar`s, so the consumption table has to be
+                # recounted here too. Leaving it keyed on the retracted list's
+                # variables makes every lookup miss and read 0, and the one place that
+                # asks -- `_eqn`'s `bitcast_convert_type` -> `shift_right_arithmetic`
+                # pair, which fuses only when the bitcast has exactly ONE consumer --
+                # then refuses a `signbit` it had emitted a moment earlier. That is a
+                # safe failure (a named refusal, never a wrong value) but a real one:
+                # it is what `.tokamak.pf_coil.turn_currents` was refusing on, having
+                # replanned once.
+                self._uses = _count_uses(eqns2, outrefs2)
+                return eqns2, env2, outrefs2
 
             veto: set = set()
             # Recomputed after every rewind: `_flatten` mints fresh `_FVar`s, so a
@@ -2082,6 +2278,19 @@ class _FuncEmitter:
                     raise Refusal(f"unbound jaxpr variable {v}") from None
 
             for eqn in j.eqns:
+                if _inline_scan_ok(eqn):
+                    body, body_consts, nconst, ncarry, length, _rev = _scan_split(eqn)
+                    cargs = [ref(v) for v in eqn.invars[:nconst]]
+                    carry = [ref(v) for v in eqn.invars[nconst:nconst + ncarry]]
+                    for _step in range(length):
+                        carry = go(body, body_consts, cargs + carry)
+                        if len(carry) != ncarry:
+                            raise Refusal(
+                                f"scan: body returned {len(carry)} value(s) for "
+                                f"{ncarry} carry and no ys")
+                    for ov, o in zip(eqn.outvars, carry):
+                        m[ov] = o
+                    continue
                 nest = _nested(eqn)
                 if nest is not None:
                     sub, sub_consts = nest
@@ -2191,6 +2400,9 @@ class _FuncEmitter:
         requester: dict = {}
         """Which equation first asked for a given value: the one to veto if that value
         turns out not to be readable at the loop index."""
+        need_vec: set = set()
+        """`(equation index, operand index)` the nest must hoist into a vector before
+        the loop, because the body reads it at a runtime position."""
         stack = []
 
         def key_of(var, pos):
@@ -2236,6 +2448,10 @@ class _FuncEmitter:
             stack.append((var, pos, True))
             for d in deps:
                 stack.append((d[1], d[2], False))
+            # A runtime-indexed operand is not followed: it is read whole, from
+            # outside, and every element of it has to exist before the nest starts.
+            for i in plan.tmpl[ix].vecs:
+                need_vec.add((ix, i))
 
         # ---- leaves: decide, DRY, how each is read at the loop index ---------------
         # Nothing is emitted in this pass. A leaf that cannot be read at the loop index
@@ -2279,7 +2495,44 @@ class _FuncEmitter:
                 raise _ChainVeto(req, why)
             plan_leaf[k] = ("index", v, idx)
 
+        # ---- runtime-indexed operands: hoistable? and is the window base affine? ---
+        # Same discipline, one level up: nothing is emitted here either. A vector the
+        # nest cannot hoist, or a window base `_affine_index` cannot fit, vetoes the
+        # equation that asked for it rather than being approximated.
+        for ix, i in sorted(need_vec):
+            v = env.get(eqns[ix].invars[i])
+            if v is None:
+                raise Refusal("chain runtime-indexed operand is not bound "
+                              "(scheduling)")
+            if v.array_ident is None:
+                if v.kind != _F:
+                    raise _ChainVeto(ix, f"a runtime-indexed operand of kind "
+                                         f"{v.kind!r}")
+                if v.size > MAX_VEC_ELEMENTS:
+                    raise _ChainVeto(ix, f"a runtime-indexed operand of {v.size} "
+                                         f"elements (cap {MAX_VEC_ELEMENTS})")
+        plan_off: dict = {}
+        for k in post:
+            kind, var, pos, info = nodes[k]
+            if kind != "eqn":
+                continue
+            ix = info[0]
+            t = plan.tmpl[ix]
+            if t.voff is None or not t.vecs:
+                continue
+            limit = max(int(np.prod(eqns[ix].invars[i].aval.shape))
+                        if eqns[ix].invars[i].aval.shape else 1 for i in t.vecs)
+            e = self._affine_index(np.asarray(t.voff)[pos], ivars, shape, strides,
+                                   limit)
+            if e is None:
+                raise _ChainVeto(ix, "a gather window base that is not affine in the "
+                                     "loop indices")
+            plan_off[k] = e
+
         # ---- from here on the nest is emitted; no veto may be raised --------------
+        vecnames: dict = {}
+        for ix, i in sorted(need_vec):
+            vecnames[(ix, i)] = self._vec_local(env[eqns[ix].invars[i]])
         leaf_expr: dict = {}
         for k, how in plan_leaf.items():
             leaf_expr[k] = (how[1] if how[0] == "scalar"
@@ -2325,12 +2578,15 @@ class _FuncEmitter:
             ix, deps = info
             t = plan.tmpl[ix]
             sub = [val[d[0]] for d in deps]
+            vsub = {i: vecnames[(ix, i)] for i in t.vecs}
+            off = plan_off.get(k)
             names: list = []
             for rhs in t.lines:
                 nm = self._fresh()
-                self.lines.append(f"{body_ind}{nm} = {_instantiate(rhs, sub, names)}")
+                self.lines.append(
+                    f"{body_ind}{nm} = {_instantiate(rhs, sub, names, vsub, off)}")
                 names.append(nm)
-            e = _instantiate(t.expr, sub, names)
+            e = _instantiate(t.expr, sub, names, vsub, off)
             if not self._TRIVIAL.match(e):
                 nm = self._fresh()
                 self.lines.append(f"{body_ind}{nm} = {e}")
@@ -2625,9 +2881,13 @@ class _FuncEmitter:
           equations in numpy at their true dtype and folds the answer. A loop cannot:
           its carry is a runtime local, so the arithmetic really is emitted, and
           `uint32` shifts and rotations are not `int32` shifts and rotations. This is
-          `.physics.plasma_composition`'s and `.physics.impurity_radiation_totals`'s
-          threefry, whose carry is `uint32` -- refused here by dtype rather than left
-          to be caught by whichever primitive happens to be unimplemented.
+          `.physics.plasma_composition`'s threefry and
+          `.physics.impurity_radiation_totals`'s `jnp.searchsorted` bracket search,
+          both of which carry `uint32` -- refused here by dtype rather than left to be
+          caught by whichever primitive happens to be unimplemented. A carry-only scan
+          this refuses and whose carry is WIDE is unrolled into the flat equation list
+          instead of step by step, so the fusion planner can reach its body
+          (`_inline_scan_ok`); a narrow one is left exactly as it was.
         - **Both forms non-degenerate**: at least one carry and at least two steps.
 
         `reverse` is not consulted, and that is a statement rather than an oversight:
@@ -3757,7 +4017,28 @@ class _FuncEmitter:
         identifier is handed back directly -- no fresh local, no copy. This is what
         makes a runtime-indexed lookup against a CONSTANT global table (Change 1) free:
         the table is one `wp.array` kernel parameter regardless of how many places
-        index into it."""
+        index into it.
+
+        **In `_template`'s sandbox it names the operand instead of materialising it.**
+        The sandbox's operands are sentinels (`§i·j`), so there is nothing to copy and
+        no vector to declare; what the template needs to record is only WHICH operand
+        is read at a runtime position, and `@i` is that record. The marker is minted
+        only for a value that is the whole of one operand in its own element order --
+        anything else (a slice of one, a mixture of two) is refused, because
+        `_emit_chain` hoists the operand by looking `eqn.invars[i]` up and there would
+        be nothing for it to hoist. Outside the sandbox this branch is dead.
+        """
+        if self._vec_sandbox:
+            m = _SENTINEL.match(v.exprs[0]) if v.exprs else None
+            if m is None or v.exprs != tuple(f"§{m.group(1)}·{j}"
+                                             for j in range(v.size)):
+                raise Refusal("chain template: a runtime-indexed operand that is not "
+                              "one whole operand of the equation")
+            if v.kind != _F:
+                raise Refusal(f"runtime-indexed operand of kind {v.kind!r} -- only "
+                              f"float64 vectors are materialised")
+            self._sandbox_vecs.add(int(m.group(1)))
+            return f"@{m.group(1)}"
         if v.array_ident is not None:
             return v.array_ident
         n = v.size
@@ -3843,10 +4124,24 @@ class _FuncEmitter:
         if okind != _F:
             raise Refusal(f"gather with a runtime index and a {okind!r} result")
         vec = self._vec_local(operand)
+        sandbox = self._vec_sandbox
+        if sandbox:
+            if self._sandbox_off is not None:
+                raise Refusal("chain template: two runtime-indexed gathers in one "
+                              "equation")
+            self._sandbox_off = []
         exprs = []
         for base, startpos in rows:
             const = sum(base[d] * op_strides[d] for d in range(len(base)))
-            terms = [f"wp.int32({const})"]
+            if sandbox:
+                # The window base varies from element to element for a BATCHED gather
+                # (row `s` of the table at output element `(s, j)`), so it cannot be a
+                # literal in a template that has to be one program. Recorded as an
+                # index map instead; `_emit_chain` fits and verifies it.
+                self._sandbox_off.append(const)
+                terms = ["«»"]
+            else:
+                terms = [f"wp.int32({const})"]
             guards = []
             for d, sp in enumerate(startpos):
                 if sp is None:
