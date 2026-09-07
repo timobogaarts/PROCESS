@@ -181,6 +181,44 @@ is wrong, per-thread program size is not differentially hurting Warp.
 | 31 nodes | 2.53 | 5.16 | 2.04x |
 | 64 nodes | 10.18 | 20.95 | 2.06x |
 
+**69 % of the per-thread vector memory is THREAD-INVARIANT** (measured 2026-09-07):
+119.4 kB of 174.3 kB, on `stellarator_helias`. Every one of the 14,336 resident threads
+keeps a private copy of the same tables -- 1.7 GB of the 4.2 GB local-memory reservation
+spent on 119 kB of duplicated data. The five offenders are 21.9 kB each:
+`impurity_radiation_totals`'s `t3`/`t4` (verbatim copies of the two `wp.array` constant
+globals) and `t5`/`t6` (their logs), plus `plasma_composition`'s log table. All five are
+functions of constant-array parameters and literals ALONE, so all five are computable
+once per device rather than once per thread.
+
+**This is where the array-heavy nodes actually hurt, and it is not where one would
+guess.** The obvious hypothesis -- that big array intermediates cost Warp time that JAX's
+vectorised form avoids -- is not supported by the differential: going from the 31-node to
+the 64-node prefix ADDS `impurity_radiation_totals`, the single most array-heavy node in
+the graph, and the Warp/JAX ratio at n=65,536 does not move (2.04x -> 2.06x). Both sides do
+the same arithmetic and pay for it in proportion. (One comparison, and the prefix adds
+other nodes too, so this bounds the effect rather than excluding it.) What differs is
+WHERE the array lives: under `vmap` a (201,) profile becomes one shared `(n, 201)` buffer
+that is streamed with unit stride and that XLA fuses out of existence wherever it can,
+while in Warp it is a per-thread `vec201f` that any runtime index forces out of registers
+into local memory -- replicated across every resident thread. So the array cost is a
+LAUNCHABILITY problem, not a throughput one.
+
+**Three levers, if this is ever resumed:**
+
+1. **Hoist thread-invariant arrays to `wp.array` globals** -- the 119.4 kB above.
+   `_constant_varpaths` already does exactly this for constant INPUTS; the gap is constant
+   INTERMEDIATES. A tiny prologue kernel filling them on device sidesteps the host-versus-
+   device arithmetic question that `_fold_exact` deliberately avoids.
+2. **Split the mega-kernel into several launches** -- the structural fix, and the one the
+   cottax `Blocking` decomposition already implies. Each kernel's live set is its own
+   nodes, so `local_bytes` is the MAX over kernels rather than the sum: the 64-node prefix
+   measures 76.8 kB and launches comfortably, so two or three such kernels cover the
+   graph. Intermediates cross in global memory, which is what XLA does between fusions
+   anyway, and the extra launches cost ~10 us against 0.67 s at n=65,536. Extrapolating
+   the two measured prefixes, the ~2x win over JAX survives the split.
+3. **Change the parallel axis** (tile the batch inside a thread, so one thread does SIMD
+   over points). This is reimplementing what XLA already does and is not worth it.
+
 ## Open
 
 **[defect, found 2026-09-06 -- §86] `native.NativeState` keeps two unsynced stores for a
