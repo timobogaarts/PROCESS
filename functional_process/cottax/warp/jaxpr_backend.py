@@ -38,6 +38,75 @@ Design notes that matter:
   `_integer_pow`) rather than calling `wp.pow`, so `x**2` is `x*x` on both sides.
 - **`squeeze`/`broadcast_in_dim`/`reshape` are the identity only when both sides hold
   exactly one element**, which is a proof, not a convention. A real broadcast refuses.
+
+**Loop nests (`_plan_chain`, `_emit_chain`).** Scalarisation alone emits one statement
+per array ELEMENT per equation, and that product is not bounded by anything physical: a
+935-equation node over 201-point profiles is 146,530 statements
+(`.tokamak.bootstrap_current`, which therefore did not emit at all), and a 227-equation
+node over (14, 201) is 435,304. Where a run of equations is provably ALIGNED with one
+iteration index -- every output element the same scalar program over one element of each
+operand -- the whole run is emitted instead as ONE loop whose body is scalar throughout,
+terminating in an accumulator (a reduction) or a write into a vector (a value something
+outside the nest reads). Nothing in between is stored, which is the point: the naive fix,
+one local array per intermediate, would trade the statement count for 22 KB of
+per-thread storage per (14, 201) intermediate and lose more than it won.
+
+Three things make that safe rather than plausible:
+
+- **Alignment is derived, never assumed.** `_template` runs THIS MODULE'S OWN `_expr` on
+  sentinel operands and reads the data dependence off the expressions it produced, then
+  requires every output element's program to be identical after canonicalisation. So the
+  nest emits exactly what the scalarised path would have emitted, and every proof `_expr`
+  already makes (`_bcast`'s shape check, `slice`'s index arithmetic,
+  `broadcast_in_dim`'s axis map) is inherited rather than restated. A primitive that is
+  not element-wise fails the check by construction.
+- **Every index expression is proved elementwise.** `_affine_index` fits `c + sum_d t_d *
+  k_d` and then compares the prediction against the whole index map. Anything that form
+  cannot express is refused, not approximated.
+- **A plan that does not fit is retracted, not forced.** `_ChainVeto` drops one equation
+  and replans; a `Refusal` inside a nest falls back to emitting the node fully
+  scalarised. Fusion can make a node that refused emit; it cannot make a node that
+  emitted refuse. `WARP_FUSE=0` runs the whole backend the old way for comparison.
+
+Measured on the three configurations, `.tokamak.bootstrap_current` goes from 146,530
+statements (refused) to **779**, `.physics.fusion_rates` from 47,502 to **452**, and the
+total emitted statements of a whole configuration fall by 61-74 % on top of what
+`_vec_local`'s memo already saves (`helias_5b`: 99,565 -> 71,555 -> 18,709). Per-node
+validation is UNCHANGED by fusion wherever the node set is the same: on `helias_5b` and
+`stellarator_helias`, `WARP_FUSE=0` and `WARP_FUSE=1` report the same passes, the same
+bit-exact nodes and the same worst relative difference to every digit, and on
+`large_tokamak_nof` (which gains `bootstrap_current`, so its seeded draw sequence
+shifts) the set of nodes that are not bit-exact is identical.
+
+**What a nest still cannot drive, and why `.physics.impurity_radiation_totals` remains
+refused.** Its `jnp.interp` alternates chain, table lookup, chain, table lookup: the
+lookups are `gather`s whose index is computed by the chain and whose operand is a
+(14, 200) table the node itself builds. Driving them inside the nest needs three things
+this module does not have -- a `gather` template whose index is a runtime value rather
+than an index map, a `scan` unrolled into the flat equation list (its bracket search is
+8 steps of a carry batched at the full 14x201 width), and reductions over a SUBSET of
+the axes, since it sums over species at each of 201 points. All three were built and
+measured: with them the node still refuses, because the interleaving makes the nest and
+the equations between its parts mutually dependent, and the plan then cuts itself down
+until the reduction it was built for has left it. Splitting one nest into several by
+that dependence is the missing piece, and it is a scheduling problem, not a primitive
+one. The three mechanisms were removed again rather than left in place unexercised: on
+these three configurations they changed the emitted statement count of exactly zero
+nodes, and emission code no node exercises is emission code `jaxpr_validate` never
+checks.
+
+**Where the remaining size is, measured rather than guessed.** With nests and the vector
+memo in place the largest function is `.tokamak.cs_coil.temperature_margin` at 14,382
+statements, and NOTHING in it is array-shaped: every one of its 394 equations is a
+scalar, and the whole of it is two `lax.scan`s that `_scan` UNROLLS. A nest cannot help
+there, because there is no iteration index to fuse along -- the fix is the other
+direction, emitting a scan as a runtime `for` loop over a carry held in Warp locals
+instead of one copy of the body per step. That is not done here because it would break
+the invariant the rest of this emitter rests on -- that a name, once bound, is never
+reassigned (`_materialise`, `_TRIVIAL`) -- and a loop-carried variable is exactly a
+reassignment. It is the next thing worth doing, and it is worth about 14,000 statements
+on `large_tokamak_nof` and 7,000 more on
+`.tokamak.cicc_superconducting_tf_coil.tf_superconductor_temperature_margin`.
 """
 from __future__ import annotations
 
@@ -552,23 +621,27 @@ def helper_closure(names) -> list[str]:
 # array-valued VarPaths: one fixed-length Warp vector per length
 # ---------------------------------------------------------------------------
 
-MAX_NODE_LINES = 60000
+MAX_NODE_LINES = 24000
 """Cap on the number of statements in ONE emitted `@wp.func`.
 
-Everything here is fully unrolled, so a node's source is the product of its jaxpr size
-and its arrays' lengths -- and that product is not bounded by anything physical.
-`.physics.impurity_radiation_totals` interpolates 14 species against 201 profile points
-over 200-point tables, and its own binary search unrolls with it: **483,266 statements,
-22 MB in one function**, measured. Warp compiles a generated module through clang,
-superlinearly.
+The cap exists because a node's source is the product of its jaxpr size and its arrays'
+lengths, and that product is not bounded by anything physical. It USED to be 60,000,
+which is where the three configurations' modules landed at 4-5 MB and a minutes-scale
+compile, and it refused `.tokamak.bootstrap_current` (146,530 statements) and
+`.physics.impurity_radiation_totals` (435,304) outright.
 
-60,000 is where the three configurations' modules land at 4-5 MB and a minutes-scale
-compile with `warp_init`'s default (adjoints off). It is a budget, not a boundary of
-what is correct: everything under it emits and validates identically, and the cap is a
-REFUSAL, named like any other, rather than a silent truncation or a switch to some
-approximate emission. Raising it costs compile time and nothing else -- but note that
-compile time here is not linear in the cap, and that with ADJOINTS on the same modules
-cost about sixty times as much again (`warp_init`).
+It is 24,000 now because the emitted code is smaller, not because anything was
+loosened. With loop nests and one copy of each materialised vector
+(`_vec_local`'s memo) the largest function in any of the three configurations is
+**14,382 statements** (`.tokamak.cs_coil.temperature_margin`, `large_tokamak_nof`);
+`helias_5b` as a whole is 18,709 statements against 99,565 before, and
+`.physics.fusion_rates` alone went from 47,502 to 452. 24,000 leaves two thirds again
+as much headroom as the largest node needs and still refuses, loudly, anything that
+goes back to being unrolled by accident.
+
+Raising it costs compile time and nothing else -- but note that compile time here is not
+linear in the cap, and that with ADJOINTS on the same modules cost about sixty times as
+much again (`warp_init`).
 """
 
 MAX_VEC_ELEMENTS = 4096
@@ -620,6 +693,621 @@ def vec_decls(lengths) -> str:
                      for n in sorted(set(lengths)))
 
 
+# ---------------------------------------------------------------------------
+# the flattened equation list
+# ---------------------------------------------------------------------------
+
+
+MAX_SCAN_STEPS = 512
+"""Cap on a scan's trip count. The loop is UNROLLED, so the emitted body appears once
+per step; a longer scan is a named refusal rather than a source explosion."""
+
+
+def _scan_split(eqn):
+    """`(body, body_consts, num_consts, num_carry, length, reverse)` for a `scan`,
+    every part of it checked rather than assumed.
+
+    One function so that `_FuncEmitter._scan` (which unrolls the scan into scalarised
+    equations) and `_flatten` (which unrolls a carry-only scan into the flat equation
+    list, where the fusion planner can reach it) read the SAME split. Two transcriptions
+    of a version-dependent parameter layout is two chances to slice the operands in the
+    wrong places, and a scan sliced wrongly computes a plausible wrong number.
+    """
+    p = eqn.params
+    closed = p["jaxpr"]
+    body = closed.jaxpr
+    body_consts = list(closed.consts)
+    length = int(p["length"])
+    # jax <= 0.10 spelled the split as `num_consts`/`num_carry`; 0.11 carries it as
+    # the group structure of `ft_in = (consts, carry, xs)` / `ft_out = (carry, ys)`.
+    # Read whichever is present rather than assuming a version -- and then CHECK the
+    # split against the equation's own arity below, so a third spelling fails loudly
+    # instead of silently slicing the operands in the wrong places.
+    if "num_consts" in p:
+        num_consts, num_carry = int(p["num_consts"]), int(p["num_carry"])
+    else:
+        # `FlatTree.__len__` counts LEAVES, not groups, and `__repr__` prints the
+        # groups -- so `len(ft_in)` is the operand count and `ft_in.elts` is the
+        # `(consts, carry, xs)` split. Read the split from `elts`; the shape
+        # cross-check below is what actually licenses it.
+        ft_in, ft_out = p["ft_in"], p["ft_out"]
+        gin = getattr(ft_in, "elts", ft_in)
+        gout = getattr(ft_out, "elts", ft_out)
+        if len(gin) != 3 or len(gout) != 2:
+            raise Refusal(f"scan: unrecognised ft_in/ft_out grouping "
+                          f"({len(gin)}/{len(gout)} groups)")
+        num_consts, num_carry = len(gin[0]), len(gin[1])
+        if (num_consts + num_carry + len(gin[2]) != len(eqn.invars)
+                or len(gout[0]) != num_carry
+                or num_carry + len(gout[1]) != len(eqn.outvars)):
+            raise Refusal("scan: ft_in/ft_out groups do not account for the "
+                          "equation's operands and results")
+    # The body takes the consts, the carry, and ONE slice of each `xs` -- so it has
+    # exactly as many parameters as the equation has operands.
+    if len(body.invars) != len(eqn.invars):
+        raise Refusal(f"scan: body takes {len(body.invars)} argument(s) for "
+                      f"{len(eqn.invars)} operand(s)")
+    # Cross-check the split against the shapes, so a scan whose grouping this reads
+    # wrongly refuses instead of slicing the wrong operands: a const or a carry
+    # passes into the body unchanged, and an `xs` loses a leading axis of `length`.
+    # Same for the results: a carry comes out at the body's own shape, a `ys`
+    # gains that leading axis. The two disagree in RANK, so the check is decisive.
+    for i, (v, bv) in enumerate(zip(eqn.invars, body.invars)):
+        want = tuple(bv.aval.shape) if i < num_consts + num_carry \
+            else (length,) + tuple(bv.aval.shape)
+        if tuple(v.aval.shape) != want:
+            raise Refusal(f"scan: operand {i} has shape {tuple(v.aval.shape)} "
+                          f"where the const/carry/xs split implies {want}")
+    for i, (v, bv) in enumerate(zip(eqn.outvars, body.outvars)):
+        want = tuple(bv.aval.shape) if i < num_carry \
+            else (length,) + tuple(bv.aval.shape)
+        if tuple(v.aval.shape) != want:
+            raise Refusal(f"scan: result {i} has shape {tuple(v.aval.shape)} "
+                          f"where the carry/ys split implies {want}")
+    if length > MAX_SCAN_STEPS:
+        raise Refusal(f"scan of {length} steps (cap {MAX_SCAN_STEPS}) -- the "
+                      f"loop is unrolled")
+    return body, body_consts, num_consts, num_carry, length, bool(p.get("reverse",
+                                                                        False))
+
+
+class _FVar:
+    """One variable of the flattened equation list. Carries an aval and nothing else;
+    identity is the name."""
+
+    __slots__ = ("aval",)
+
+    def __init__(self, aval):
+        self.aval = aval
+
+    def __repr__(self):
+        return f"<{np.dtype(self.aval.dtype).name}{list(self.aval.shape)}>"
+
+
+class _FEqn:
+    """One equation of the flattened list. Duck-types `jax.extend.core.JaxprEqn`
+    closely enough that `_eqn` and every primitive handler take it unchanged."""
+
+    __slots__ = ("primitive", "invars", "outvars", "params")
+
+    def __init__(self, primitive, invars, outvars, params):
+        self.primitive = primitive
+        self.invars = invars
+        self.outvars = outvars
+        self.params = params
+
+
+# ---------------------------------------------------------------------------
+# fusion: axis-aligned element-wise chains as loop nests
+# ---------------------------------------------------------------------------
+
+_FUSION = __import__("os").environ.get("WARP_FUSE", "1") not in ("0", "", "false",
+                                                                "False")
+"""`WARP_FUSE=0` emits every node fully scalarised, as this backend did before loop
+nests existed. It is here so a measurement can be repeated on both paths in the same
+interpreter with nothing else changed -- a fused and an unrolled node are supposed to
+be the same arithmetic in a different shape, and that is a claim to check rather than
+assert."""
+
+MAX_CHAIN_NESTS = 6
+"""How many loop nests one node may carry. Each one is a separate iteration shape, and
+past a handful the values crossing between them cost more storage than the unrolling
+they save."""
+
+MAX_CHAIN_REPLANS = 8
+"""How many equations a node may veto out of its loop nest before fusion is abandoned
+for that node. Each veto strictly shrinks the plan, so this only bounds work."""
+
+FUSE_MIN_ELEMENTS = 24
+"""Below this many elements a value is cheaper unrolled than looped: the loop nest
+costs a few statements of overhead and gives up the constant folding that scalarisation
+gets for free. A chain of shorter values is left exactly as it was."""
+
+MIN_FUSED_EQNS = 4
+"""Do not build a loop nest for fewer equations than this. A one-equation "chain" is a
+loop around a single statement -- strictly worse than the unrolled form it replaces."""
+
+MAX_FUSE_PROBE = 8192
+"""Cap on the number of elements `_template` will probe. The probe is O(elements) in
+string work per equation, so this bounds generation time; it is the same number as
+`MAX_ELEMENTS` because it bounds the same thing."""
+
+_NO_FUSE = frozenset({
+    # Primitives an output element of which is NOT a bounded scalar program over a few
+    # elements of the operands, or that emit storage of their own. Reductions are the
+    # important entries: with per-occurrence slots a whole `reduce_sum` WOULD present
+    # as one uniform template (n_out = 1, and every operand element an occurrence), and
+    # inlining it into a loop body is exactly the unrolling this transform exists to
+    # remove. `gather`/`scatter` are excluded because a static one's index map is
+    # usually not affine in the loop index and a dynamic one reads its operand at a
+    # position only the running code knows -- see the note at the end of this module's
+    # docstring for what a nest would have to do about that, and why the attempt was
+    # abandoned rather than half-landed.
+    "gather", "scatter", "scatter_add", "dynamic_slice", "dynamic_update_slice",
+    "triangular_solve", "dot_general", "sort", "argsort", "top_k",
+    "conv_general_dilated", "cumsum", "cumsum_p", "cumprod", "cummax", "cummin",
+    "cumlogsumexp", "reduce_sum", "reduce_prod", "reduce_max", "reduce_min",
+    "reduce_and", "reduce_or", "argmax", "argmin", "iota", "while", "scan",
+    "cond", "lu", "custom_linear_solve", "unstack", "svd", "bitcast_convert_type",
+    "shift_right_arithmetic",
+})
+
+MAX_TEMPLATE_SLOTS = 32
+"""Cap on the operand references ONE output element may make. It is what stops a
+primitive whose element really is a small fan-in (`select_n` over a handful of cases)
+from being confused with one whose fan-in is the array length -- the latter inlined
+into a loop body would reproduce the unrolling, one loop deeper."""
+
+_FUSABLE_REDUCE = frozenset({"reduce_sum", "reduce_prod"})
+"""The reductions a loop nest may terminate in. `reduce_sum`/`reduce_prod` accumulate
+into one scalar in flat element order, which is EXACTLY the association `_reduce`
+already emits for an all-axes reduction -- so a fused sum is bit-identical to the
+unrolled one it replaces, not merely close. `reduce_max`/`reduce_min` are excluded
+because their identity element interacts with NaN, and `_max`/`_min` reproduce XLA's
+NaN rule for a pairwise compare, not for a compare against an initial infinity."""
+
+_TMPNAME = re.compile(r"\bt\d+\b")
+_TOK = re.compile(r"§(\d+)·(\d+)|\b(t\d+)\b")
+_INST = re.compile(r"§(\d+)|#(\d+)")
+
+
+def _instantiate(s: str, sub, names) -> str:
+    """A template with `§i` replaced by operand `i`'s scalar expression and `#n` by
+    the local bound for the template's own `n`-th statement."""
+    def rep(m):
+        if m.group(1) is not None:
+            e = sub[int(m.group(1))]
+            if e is None:
+                raise Refusal("chain template references an operand the index map "
+                              "reported unused")
+            return e
+        return names[int(m.group(2))]
+    return _INST.sub(rep, s)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Tmpl:
+    """How ONE equation is computed for ONE element inside a loop nest.
+
+    `lines` and `expr` are a straight-line scalar program, `#n` naming the local bound
+    for this template's own n-th statement and `§o` its o-th operand read.
+
+    `slots` is the alignment record: the o-th operand read of output element k comes
+    from element `slots[o][1][k]` of operand `slots[o][0][k]`. Everything a chain node
+    depends on goes through it, so `_emit_chain`'s discovery never has to know which
+    primitive it is looking at.
+    """
+
+    slots: tuple
+    lines: tuple = ()
+    expr: str = ""
+
+
+class _Bad(Exception):
+    pass
+
+
+class _ChainVeto(Exception):
+    """One equation the plan claimed but the loop nest cannot actually drive at the
+    elements the roots ask for -- a `concatenate` whose requested range crosses a block
+    boundary, an operand whose index map is not affine in the loop indices. It names the
+    equation; `emit` replans without it, so the equation is emitted scalarised and its
+    output becomes an ordinary operand of the nest. Raised only during the nest's dry
+    discovery pass, before anything has been emitted."""
+
+    def __init__(self, ix: int, why: str):
+        super().__init__(f"equation {ix}: {why}")
+        self.ix = ix
+
+
+def _template(eqn):
+    """`(lines, expr, slots)` proving that EVERY output element of `eqn` is the same
+    scalar program over the same number of operand elements -- or `None`.
+
+    The proof is not a table of "primitives that are element-wise". It is obtained by
+    running the emitter's own `_expr` on sentinel operands, in a sandbox whose output
+    is thrown away, and then reading the data dependence straight off the expressions
+    it produced: output element k's program is sliced out of the sandbox's statements
+    by its own dependency closure, canonicalised (statement locals renumbered by first
+    appearance, every sentinel `§i·j` collapsed to a bare occurrence marker), and
+    required to be IDENTICAL to element 0's. What that establishes is **uniformity** --
+    every output element runs the same straight-line program, with the same number of
+    operand reads in the same places -- so ONE loop body computes all of them. If any
+    element's program differs in shape (an `iota` with a different literal, a `select_n`
+    whose predicate folded one way here and the other way there) the canonical forms
+    differ and the equation is rejected.
+
+    **Alignment is recorded per occurrence, not per operand**: the o-th operand read of
+    element k comes from element `slots[o].idx[k]` of operand `slots[o].which[k]`. Two
+    things need that generality. `concatenate` reads a DIFFERENT operand at different
+    output elements while running the same program -- collapsing it to one map per
+    operand would reject it, and rejecting it is what left 11,000 statements outside
+    the nest on `.tokamak.bootstrap_current`, because its central-difference gradient
+    is built as `concatenate([one_sided_lo, interior, one_sided_hi])` and then sliced
+    straight back down to `interior`. And `integer_pow`/`square` read one element
+    twice, which per-operand maps could only express by accident.
+
+    Whether a given occurrence is USABLE is not decided here: it depends on which
+    elements the consumer actually asks for, and that is `_emit_chain`'s discovery
+    (an occurrence whose operand is not constant over the requested elements vetoes the
+    equation there). This function only proves the program is one program.
+
+    So this inherits every proof `_expr` already makes (`_bcast`'s shape check,
+    `slice`'s index arithmetic, `broadcast_in_dim`'s axis map, `concatenate`'s block
+    arithmetic) instead of restating them, and it cannot drift from what the scalarised
+    path emits, because it IS what the scalarised path emits.
+
+    An equation that emits storage of its own (`_vec_local`, from a runtime-indexed
+    `gather`) is rejected outright: its statements are not per-element and hoisting
+    them into the loop body would recompute a whole vector per iteration.
+    """
+    name = eqn.primitive.name
+    if name in _NO_FUSE or len(eqn.outvars) != 1:
+        return None
+    out = eqn.outvars[0]
+    oshape = tuple(out.aval.shape)
+    n_out = int(np.prod(oshape)) if oshape else 1
+    if n_out < 1 or n_out > MAX_FUSE_PROBE:
+        return None
+    args = []
+    for i, v in enumerate(eqn.invars):
+        sz = int(np.prod(v.aval.shape)) if v.aval.shape else 1
+        if sz > MAX_FUSE_PROBE:
+            return None
+        args.append(Value(tuple(f"§{i}·{j}" for j in range(sz)),
+                          _kind(v.aval), tuple(v.aval.shape)))
+    sb = _FuncEmitter()
+    try:
+        exprs, _ = sb._expr(name, eqn, args, _kind(out.aval), oshape)
+    except Refusal:
+        return None
+    if sb.vecs or len(exprs) != n_out:
+        return None
+    defs, order = {}, {}
+    for p, ln in enumerate(sb.lines):
+        s = ln.strip()
+        lhs, sep, rhs = s.partition(" = ")
+        if not sep or not _TMPNAME.fullmatch(lhs):
+            return None
+        defs[lhs] = rhs
+        order[lhs] = p
+
+    canon0 = None
+    reads: list = []          # per element: [(operand, element), ...] in text order
+    for k in range(n_out):
+        need, stack = set(), _TMPNAME.findall(exprs[k])
+        while stack:
+            nm = stack.pop()
+            if nm in need:
+                continue
+            if nm not in defs:
+                return None
+            need.add(nm)
+            stack.extend(_TMPNAME.findall(defs[nm]))
+        seq = sorted(need, key=order.__getitem__)
+        ren = {nm: f"#{i}" for i, nm in enumerate(seq)}
+        seen_reads: list = []
+
+        def rep(m, seen_reads=seen_reads, ren=ren):
+            if m.group(1) is not None:
+                seen_reads.append((int(m.group(1)), int(m.group(2))))
+                return f"§{len(seen_reads) - 1}"
+            nm = m.group(3)
+            if nm not in ren:
+                raise _Bad
+            return ren[nm]
+
+        try:
+            canon = tuple(_TOK.sub(rep, s) for s in
+                          [defs[nm] for nm in seq] + [exprs[k]])
+        except _Bad:
+            return None
+        if len(seen_reads) > MAX_TEMPLATE_SLOTS:
+            return None
+        if canon0 is None:
+            canon0 = canon
+        elif canon != canon0:
+            return None
+        reads.append(seen_reads)
+    n_slots = len(reads[0])
+    if any(len(r) != n_slots for r in reads):
+        return None
+    slots = []
+    for o in range(n_slots):
+        slots.append((np.array([r[o][0] for r in reads], dtype=np.int64),
+                      np.array([r[o][1] for r in reads], dtype=np.int64)))
+    return _Tmpl(slots=tuple(slots), lines=tuple(canon0[:-1]), expr=canon0[-1])
+
+
+def _schedule_units(eqns, plans):
+    """A topological order of `[("e", eqn_index) | ("p", plan_index)]`, or `None` if
+    the units are not a DAG.
+
+    Ties are broken by the smallest equation index in the unit, so the emitted source
+    stays as close to the original order as the dependencies allow -- which is what
+    makes a diff of the generated module readable.
+    """
+    import heapq
+
+    unit: dict = {}
+    for p_i, p in enumerate(plans):
+        for ix in p.group_ixs | set(p.reduce_roots):
+            if ix in unit:
+                return None                      # two plans claiming one equation
+            unit[ix] = ("p", p_i)
+    producer = {}
+    for ix, e in enumerate(eqns):
+        for ov in e.outvars:
+            producer[id(ov)] = ix
+
+    def uid(ix):
+        return unit.get(ix, ("e", ix))
+
+    keys: dict = {}
+    for ix in range(len(eqns)):
+        u = uid(ix)
+        keys[u] = min(keys.get(u, ix), ix)
+    succ: dict = {u: set() for u in keys}
+    indeg = {u: 0 for u in keys}
+    for ix, e in enumerate(eqns):
+        u = uid(ix)
+        for v in e.invars:
+            pix = producer.get(id(v))
+            if pix is None:
+                continue
+            w = uid(pix)
+            if w != u and u not in succ[w]:
+                succ[w].add(u)
+                indeg[u] += 1
+    heap = [(keys[u], u) for u in keys if indeg[u] == 0]
+    heapq.heapify(heap)
+    out = []
+    while heap:
+        _, u = heapq.heappop(heap)
+        out.append(u)
+        for w in sorted(succ[u], key=keys.__getitem__):
+            indeg[w] -= 1
+            if indeg[w] == 0:
+                heapq.heappush(heap, (keys[w], w))
+    if len(out) != len(keys):
+        return None
+    return out
+
+
+@dataclasses.dataclass
+class _ChainPlan:
+    shape: tuple
+    size: int
+    group_ixs: set = dataclasses.field(default_factory=set)
+    """Flat-equation indices emitted INSIDE the nest."""
+    owner: dict = dataclasses.field(default_factory=dict)
+    """`id(var) -> equation index` for every value the nest computes."""
+    tmpl: dict = dataclasses.field(default_factory=dict)
+    """`equation index -> _Tmpl`."""
+    reduce_roots: list = dataclasses.field(default_factory=list)
+    """Equation indices of the reductions the nest accumulates."""
+    mat_roots: list = dataclasses.field(default_factory=list)
+    """Values the nest must write into a vector because something outside reads them."""
+    late: set = dataclasses.field(default_factory=set)
+    """Equations that consume the nest. Unused since the schedule became a proper
+    unit-level topological sort (`_schedule_units`); kept because it is what the
+    per-plan cycle check computes on the way to proving the plan schedulable at all."""
+
+
+def _plan_chain(eqns, outrefs, veto=frozenset()):
+    """The fusion plans for one flattened jaxpr: a list, possibly empty.
+
+    One nest per ITERATION SHAPE, taken greedily largest-payoff first, with each nest
+    planned against a world in which the ones already taken no longer exist. Greedy is
+    sound here rather than merely convenient: `_plan_for_shape` treats every equation
+    outside the nest it is building as external, so a value the NEXT nest will want is
+    already a materialised output of the previous one -- the plans cannot disagree
+    about who stores what.
+
+    A second shape is worth having and this is what it costs. `.physics.fusion_rates`
+    is two families at once, a 201-point profile and the 100-interval Simpson rule
+    over it, and with one nest only the profile fused: 192 equations in the nest and
+    ~80 more left unrolled at 100 elements each. What crosses between the two nests is
+    materialised -- but it is exactly the values Simpson's rule integrates, which the
+    reduction has to read at 100 separate indices anyway.
+    """
+    if not eqns or not _FUSION:
+        return []
+    tmpl: dict = {}
+    for ix, e in enumerate(eqns):
+        if ix in veto:
+            continue
+        t = _template(e)
+        if t is not None:
+            tmpl[ix] = t
+    if not tmpl:
+        return []
+
+    producer = {}
+    for ix, e in enumerate(eqns):
+        for ov in e.outvars:
+            producer[id(ov)] = ix
+    consumers: dict = {}
+    for ix, e in enumerate(eqns):
+        for v in e.invars:
+            consumers.setdefault(id(v), set()).add(ix)
+    out_ids = {id(o) for o in outrefs}
+
+    def size_of(v):
+        return int(np.prod(v.aval.shape)) if v.aval.shape else 1
+
+    # Candidate reductions: an ALL-AXES float sum/product over a big operand -- one
+    # accumulator for the whole nest. A reduction over some of the axes is a different
+    # nest shape (its reduced axes would have to be the innermost loops and its
+    # accumulator would live one level up); nothing in these three configurations
+    # presents one at the head of a chain, so it is not emitted.
+    red_by_shape: dict = {}
+    for ix, e in enumerate(eqns):
+        if e.primitive.name not in _FUSABLE_REDUCE:
+            continue
+        a = e.invars[0]
+        if _kind(a.aval) != _F or _kind(e.outvars[0].aval) != _F:
+            continue
+        axes = e.params.get("axes")
+        if axes is None or tuple(sorted(int(x) for x in axes)) != \
+                tuple(range(len(a.aval.shape))):
+            continue
+        if size_of(a) < FUSE_MIN_ELEMENTS or size_of(a) > MAX_FUSE_PROBE:
+            continue
+        red_by_shape.setdefault(tuple(a.aval.shape), []).append(ix)
+
+    shapes = set(red_by_shape)
+    for o in outrefs:
+        if id(o) in producer and producer[id(o)] in tmpl \
+                and FUSE_MIN_ELEMENTS <= size_of(o) <= MAX_FUSE_PROBE \
+                and _kind(o.aval) == _F:
+            shapes.add(tuple(o.aval.shape))
+
+    plans, claimed = [], set()
+    for _ in range(MAX_CHAIN_NESTS):
+        best = None
+        live = {ix: t for ix, t in tmpl.items() if ix not in claimed}
+        for shape in shapes:
+            reds = [ix for ix in red_by_shape.get(shape, ()) if ix not in claimed]
+            plan = _plan_for_shape(shape, eqns, live, producer, consumers,
+                                   out_ids, reds, size_of)
+            if plan is None or len(plan.group_ixs) < MIN_FUSED_EQNS:
+                continue
+            if best is None or len(plan.group_ixs) > len(best.group_ixs):
+                best = plan
+        if best is None:
+            break
+        plans.append(best)
+        claimed |= best.group_ixs | set(best.reduce_roots)
+    return plans
+
+
+def _plan_for_shape(shape, eqns, tmpl, producer, consumers, out_ids, reds, size_of):
+    size = int(np.prod(shape)) if shape else 1
+    seeds = []
+    for ix in reds:
+        seeds.append(eqns[ix].invars[0])
+    for ix, e in enumerate(eqns):
+        ov = e.outvars[0] if len(e.outvars) == 1 else None
+        if ov is None or ix not in tmpl:
+            continue
+        if tuple(ov.aval.shape) == shape and id(ov) in out_ids:
+            seeds.append(ov)
+    if not seeds:
+        return None
+
+    # Backward closure over equations `_template` proved element-wise.
+    group: set = set()
+    stack = list(seeds)
+    while stack:
+        v = stack.pop()
+        ix = producer.get(id(v))
+        if ix is None or ix in group or ix not in tmpl:
+            continue
+        group.add(ix)
+        # An occurrence may read a different operand at different output elements
+        # (`concatenate`), so the closure follows EVERY operand any occurrence can
+        # reach. Over-reaching here is safe -- `_emit_chain`'s discovery resolves the
+        # actual operand per element and vetoes the equation if it is not constant --
+        # while under-reaching would leave a producer outside the nest and materialise
+        # it for nothing.
+        for which, _idx in tmpl[ix].slots:
+            for i in np.unique(which).tolist():
+                stack.append(eqns[ix].invars[int(i)])
+    if not group:
+        return None
+
+    mat: dict = {}
+    for _ in range(64):
+        # A reduction only counts as part of the nest while its operand is still
+        # computed there; one whose chain has been pushed out is an ordinary equation
+        # again, and treating it as internal would understate who reads what.
+        red_set = {ix for ix in reds
+                   if producer.get(id(eqns[ix].invars[0])) in group}
+        mat = {vid: v for vid, v in mat.items() if producer.get(vid) in group}
+        # Anything the nest computes but something outside reads must be written
+        # somewhere. If it has the nest's own shape it becomes a materialised output;
+        # otherwise the equation leaves the nest and is emitted scalarised, which puts
+        # its value back where the outside can read it.
+        changed = False
+        for ix in sorted(group):
+            ov = eqns[ix].outvars[0]
+            if id(ov) in mat:
+                continue
+            ext = (id(ov) in out_ids
+                   or any(c not in group and c not in red_set
+                          for c in consumers.get(id(ov), ())))
+            if not ext:
+                continue
+            if tuple(ov.aval.shape) == shape and _kind(ov.aval) == _F:
+                mat[id(ov)] = ov
+            else:
+                group.discard(ix)
+                changed = True
+        if changed:
+            continue
+        # A unit-level cycle: an equation outside the nest that both consumes the nest
+        # and feeds it. Emitting the nest as one statement would need it in two places
+        # at once, so the equations that depend on the outside-of-the-nest part are
+        # pushed out until the schedule is a DAG again.
+        gout = set(mat) | {id(eqns[ix].outvars[0]) for ix in red_set}
+        late: set = set()
+        work = [c for vid in gout for c in consumers.get(vid, ())
+                if c not in group and c not in red_set]
+        while work:
+            c = work.pop()
+            if c in late:
+                continue
+            late.add(c)
+            for ov in eqns[c].outvars:
+                work.extend(x for x in consumers.get(id(ov), ())
+                            if x not in group and x not in red_set and x not in late)
+        bad = {ix for ix in group
+               if any(producer.get(id(v)) in late for v in eqns[ix].invars)}
+        if bad:
+            group -= bad
+            for ix in bad:
+                mat.pop(id(eqns[ix].outvars[0]), None)
+            continue
+        if not group:
+            return None
+        live_mat = [v for vid, v in mat.items() if producer.get(vid) in group]
+        if not red_set and not live_mat:
+            return None
+        # Every equation of `group` is claimed by the nest, including any the pruning
+        # left unreachable from a root: `_emit_chain` walks BACK from the roots and so
+        # emits only what is reached, and the fixpoint above has already proved that an
+        # unreached one has no consumer outside the nest either. Dropping them from
+        # `group_ixs` instead would be the bug: an unreached equation emitted
+        # scalarised could read a value that only exists inside the nest.
+        return _ChainPlan(shape=tuple(shape), size=size, group_ixs=set(group),
+                          owner={id(eqns[ix].outvars[0]): ix for ix in group},
+                          tmpl={ix: tmpl[ix] for ix in group},
+                          reduce_roots=sorted(red_set), mat_roots=live_mat,
+                          late=late)
+    return None
+
+
 class _FuncEmitter:
     """Walks one node's jaxpr and produces the body of one `@wp.func`.
 
@@ -641,10 +1329,21 @@ class _FuncEmitter:
         self._bits: dict = {}
         """A `bitcast_convert_type` output held back for its sole `>> 63` consumer --
         see `_eqn`. Never read by anything else, by construction of `_uses`."""
+        self._vec_memo: dict = {}
+        """`(length, element expressions) -> the vector local already holding them`.
+        See `_vec_local`."""
+        self._vec_idents: set = set()
+        """Identifiers of `vec{n}f` LOCALS this body built. Only these may be returned
+        in place of a copy (`emit_node`): a `wp.array` constant-global parameter is
+        also `array_ident`-tagged and is not a vector."""
         self.vecs: set[int] = set()
         """Fixed-length vector types this BODY needs (a runtime-indexed `gather`
         materialises its operand into one). `emit_node` unions these with the lengths
         the signature needs, and `module_preamble` declares them."""
+        self._concrete: dict = {}
+        """`{Var: ndarray}` of jaxpr variables `emit_node` proved data-independent
+        (see `_invariant_vars`) -- empty unless this node actually has a `scatter`
+        without `unique_indices`. `_scatter`'s only reader."""
 
     def _fresh(self) -> str:
         self._n += 1
@@ -765,19 +1464,18 @@ class _FuncEmitter:
 
     def emit(self, jaxpr, consts, args: list[Value]) -> list[Value]:
         """Emit `jaxpr` with `jaxpr.invars` bound to `args` and `jaxpr.constvars` to
-        `consts`. Returns one `Value` per outvar."""
-        env: dict = {}
-        if len(consts) != len(jaxpr.constvars):
-            raise Refusal(f"jaxpr has {len(jaxpr.constvars)} constvars but "
-                          f"{len(consts)} consts")
-        for cv, cval in zip(jaxpr.constvars, consts):
-            _check_size(cv.aval, "jaxpr const")
-            env[cv] = _const_value(cval, _kind(cv.aval))
-        if len(args) != len(jaxpr.invars):
-            raise Refusal(f"jaxpr takes {len(jaxpr.invars)} arguments but "
-                          f"{len(args)} were supplied")
-        for iv, a in zip(jaxpr.invars, args):
-            env[iv] = a
+        `consts`. Returns one `Value` per outvar.
+
+        The jaxpr is FLATTENED first (`_flatten`: nesting primitives inlined, literals
+        and constvars bound as ordinary values), then a fusion plan is computed over
+        the flat equation list (`_plan_chain`), then the flat list is emitted. With no
+        plan this is exactly the previous straight walk.
+
+        A `Refusal` raised while emitting a FUSED plan retracts the plan and re-emits
+        the same jaxpr scalarised, so fusion can never turn a node that used to emit
+        into a node that refuses -- it can only make one that used to refuse emit.
+        """
+        eqns, env, outrefs = self._flatten(jaxpr, consts, args)
         # Consumption counts for THIS jaxpr, so `_eqn` can prove a value has exactly
         # one consumer before fusing it into that consumer.
         #
@@ -786,20 +1484,391 @@ class _FuncEmitter:
         # signbit]` reached twice would count each of its variables twice and no fusion
         # would ever fire. (It did not, on `parabolic_profile_values`, until this.)
         uses: dict = {}
-        for e in jaxpr.eqns:
+        for e in eqns:
             for v in e.invars:
-                if not isinstance(v, Literal):
-                    uses[v] = uses.get(v, 0) + 1
-        for o in jaxpr.outvars:
-            if not isinstance(o, Literal):
-                uses[o] = uses.get(o, 0) + 1
+                uses[v] = uses.get(v, 0) + 1
+        for o in outrefs:
+            uses[o] = uses.get(o, 0) + 1
         outer_uses, self._uses = self._uses, uses
+        outer_bits, self._bits = self._bits, {}
         try:
-            for eqn in jaxpr.eqns:
-                self._eqn(env, eqn)
-            return [self._read(env, o) for o in jaxpr.outvars]
+            mark = (len(self.lines), self._n, set(self.helpers), set(self.vecs),
+                    set(self._vec_idents), dict(self._vec_memo))
+
+            def rewind():
+                del self.lines[mark[0]:]
+                self._n = mark[1]
+                self.helpers.clear()
+                self.helpers.update(mark[2])
+                self.vecs.clear()
+                self.vecs.update(mark[3])
+                self._vec_idents.clear()
+                self._vec_idents.update(mark[4])
+                self._vec_memo.clear()
+                self._vec_memo.update(mark[5])
+                self._bits = {}
+                return self._flatten(jaxpr, consts, args)
+
+            veto: set = set()
+            for _ in range(MAX_CHAIN_REPLANS):
+                plans = _plan_chain(eqns, outrefs, veto)
+                if not plans:
+                    return self._walk(env, eqns, outrefs, ())
+                try:
+                    return self._walk(env, eqns, outrefs, plans)
+                except _ChainVeto as v:
+                    veto.add(v.ix)
+                    eqns, env, outrefs = rewind()
+                except Refusal:
+                    eqns, env, outrefs = rewind()
+                    return self._walk(env, eqns, outrefs, ())
+            eqns, env, outrefs = rewind()
+            return self._walk(env, eqns, outrefs, ())
         finally:
             self._uses = outer_uses
+            self._bits = outer_bits
+
+    def _walk(self, env, eqns, outrefs, plans) -> list[Value]:
+        """Emit the flat equation list, each plan's equations replaced by one loop
+        nest, in an order derived from the dependencies rather than assumed.
+
+        The order is a topological sort of UNITS -- a nest counts as one -- because a
+        nest is one statement in the emitted source and every value it reads has to
+        exist by then. The original equation order is a topological sort of equations,
+        which is not the same thing once a nest collapses many of them into one place;
+        scheduling by it is what would put a nest's operand after the nest. A plan that
+        cannot be scheduled (two nests that each read the other) is dropped rather than
+        forced, and the emitted code is the same code one nest fewer.
+        """
+        plans = list(plans or ())
+        while True:
+            if not plans:
+                for eqn in eqns:
+                    self._eqn(env, eqn)
+                return [self._read(env, o) for o in outrefs]
+            order = _schedule_units(eqns, plans)
+            if order is not None:
+                break
+            plans.pop()
+        for kind, payload in order:
+            if kind == "e":
+                self._eqn(env, eqns[payload])
+            else:
+                self._emit_chain(env, eqns, plans[payload])
+        return [self._read(env, o) for o in outrefs]
+
+    # -- flattening ---------------------------------------------------------
+
+    def _flatten(self, jaxpr, consts, args: list[Value]):
+        """`(eqns, env, outrefs)` -- one linear `_FEqn` list with every nesting
+        primitive inlined, every `Literal` and constvar already bound in `env`, and
+        every variable a fresh `_FVar` unique to its call site.
+
+        Inlining here rather than during the walk is what makes fusion possible at
+        all: a chain of element-wise arithmetic in this graph routinely passes through
+        a `jit[name=diff]` or a `jit[name=_where]`, and a chain that stops at every
+        such boundary is not a chain. It also makes the walk's own bookkeeping honest
+        -- `self._uses` is now counted over the equations that are actually emitted,
+        not over a nested jaxpr object JAX may share between two call sites.
+        """
+        eqns: list = []
+        env: dict = {}
+
+        def bind_const(aval, val) -> _FVar:
+            _check_size(aval, "jaxpr const")
+            fv = _FVar(aval)
+            env[fv] = _const_value(val, _kind(aval))
+            return fv
+
+        def go(j, cvals, argrefs):
+            if len(cvals) != len(j.constvars):
+                raise Refusal(f"jaxpr has {len(j.constvars)} constvars but "
+                              f"{len(cvals)} consts")
+            if len(argrefs) != len(j.invars):
+                raise Refusal(f"jaxpr takes {len(j.invars)} arguments but "
+                              f"{len(argrefs)} were supplied")
+            m: dict = {}
+            for cv, cval in zip(j.constvars, cvals):
+                m[cv] = bind_const(cv.aval, cval)
+            for iv, a in zip(j.invars, argrefs):
+                m[iv] = a
+
+            def ref(v):
+                if isinstance(v, Literal):
+                    _check_size(v.aval, "literal")
+                    return bind_const(v.aval, v.val)
+                try:
+                    return m[v]
+                except KeyError:
+                    raise Refusal(f"unbound jaxpr variable {v}") from None
+
+            for eqn in j.eqns:
+                nest = _nested(eqn)
+                if nest is not None:
+                    sub, sub_consts = nest
+                    outs = go(sub, sub_consts, [ref(v) for v in eqn.invars])
+                    if len(outs) != len(eqn.outvars):
+                        raise Refusal(
+                            f"{eqn.primitive.name}: nested jaxpr returned "
+                            f"{len(outs)} value(s) for {len(eqn.outvars)} outvar(s)")
+                    for ov, o in zip(eqn.outvars, outs):
+                        m[ov] = o
+                    continue
+                ins = [ref(v) for v in eqn.invars]
+                outs = []
+                for ov in eqn.outvars:
+                    fv = _FVar(ov.aval)
+                    m[ov] = fv
+                    outs.append(fv)
+                eqns.append(_FEqn(eqn.primitive, ins, outs, eqn.params))
+            return [ref(o) for o in j.outvars]
+
+        top = []
+        if len(args) != len(jaxpr.invars):
+            raise Refusal(f"jaxpr takes {len(jaxpr.invars)} arguments but "
+                          f"{len(args)} were supplied")
+        for iv, a in zip(jaxpr.invars, args):
+            fv = _FVar(iv.aval)
+            env[fv] = a
+            top.append(fv)
+        outrefs = go(jaxpr, consts, top)
+        return eqns, env, outrefs
+
+    # -- the fused loop nest --------------------------------------------------
+
+    def _affine_index(self, pos, ivars, ls, strides, limit: int):
+        """A Warp index expression reproducing `pos` EXACTLY over the whole iteration
+        space, or `None`.
+
+        The only form admitted is `c + sum_d t_d * k_d` over the loop nest's own index
+        variables -- no division, no modulus, nothing whose Warp integer semantics
+        would have to be assumed. The coefficients are READ OFF `pos` (at the flat
+        offset where index `d` advances by one) and then the whole predicted map is
+        compared against `pos` element by element. That comparison is the proof: a map
+        this form cannot express is rejected, never approximated, so an operand that is
+        not genuinely aligned with the loop index becomes a refusal rather than a
+        plausible wrong number.
+        """
+        pos = np.asarray(pos)
+        if pos.min() < 0 or pos.max() >= limit:
+            return None
+        c = int(pos[0])
+        coef = []
+        for d in range(len(ls)):
+            coef.append(0 if ls[d] == 1 else int(pos[strides[d]]) - c)
+        grid = np.indices(tuple(ls)).reshape(len(ls), -1)
+        pred = np.full(pos.shape, c, dtype=np.int64)
+        for d, t in enumerate(coef):
+            if t:
+                pred = pred + t * grid[d]
+        if not np.array_equal(pred, pos):
+            return None
+        terms = []
+        for d, t in enumerate(coef):
+            if t == 0:
+                continue
+            terms.append(ivars[d] if t == 1 else f"{t} * {ivars[d]}")
+        if c or not terms:
+            terms.append(str(c))
+        return " + ".join(terms)
+
+    def _emit_chain(self, env, eqns, plan) -> None:
+        """Emit `plan` as one loop nest whose body is scalar throughout.
+
+        Nothing inside the nest is stored: every intermediate is one Warp local with a
+        live range of a few statements, and the only arrays that exist are the ones
+        that must (a value the node returns, a value a later equation indexes at
+        runtime, an operand the plan could not prove aligned). That is the whole point
+        of the transform -- the alternative, one local per element per intermediate,
+        is what put 146,530 statements in `.tokamak.bootstrap_current` and 435,304 in
+        `.physics.impurity_radiation_totals`.
+
+        One loop per axis of the iteration shape, in the shape's own order, and every
+        reduction the nest terminates in consumes ALL of them -- so there is exactly
+        one accumulator per reduction and it lives outside the whole nest.
+        """
+        shape = list(plan.shape) if plan.shape else [1]
+        n = plan.size
+        strides, acc_s = [], 1
+        for x in reversed(shape):
+            strides.insert(0, acc_s)
+            acc_s *= x
+        ivars = ["k" + self._fresh()[1:] for _ in shape]
+        base = np.arange(n, dtype=np.int64)
+
+        # ---- discovery: every (value, index map) the roots need -------------------
+        nodes: dict = {}
+        post: list = []
+        seen: set = set()
+        requester: dict = {}
+        """Which equation first asked for a given value: the one to veto if that value
+        turns out not to be readable at the loop index."""
+        stack = []
+
+        def key_of(var, pos):
+            return (id(var), pos.tobytes())
+
+        roots = []
+        for ix in plan.reduce_roots:
+            roots.append((eqns[ix].invars[0], base))
+        for v in plan.mat_roots:
+            roots.append((v, base))
+        for var, pos in roots:
+            stack.append((var, pos, False))
+        while stack:
+            var, pos, expanded = stack.pop()
+            k = key_of(var, pos)
+            if expanded:
+                post.append(k)
+                continue
+            if k in seen:
+                continue
+            seen.add(k)
+            ix = plan.owner.get(id(var))
+            if ix is None:
+                nodes[k] = ("leaf", var, pos, requester.get(k))
+                post.append(k)
+                continue
+            deps = []
+            for which, idx in plan.tmpl[ix].slots:
+                w = which[pos]
+                w0 = int(w[0])
+                if not bool(np.all(w == w0)):
+                    # `concatenate` (or a `pad`) whose requested elements straddle two
+                    # of its blocks: one loop body cannot read two different operands
+                    # at the same statement. Refused here, not resolved by picking one.
+                    raise _ChainVeto(ix, "an operand read that is not the same operand "
+                                          "over the elements the nest asks for")
+                dv = eqns[ix].invars[w0]
+                dpos = idx[pos]
+                dk = key_of(dv, dpos)
+                requester.setdefault(dk, ix)
+                deps.append((dk, dv, dpos))
+            nodes[k] = ("eqn", var, pos, (ix, deps))
+            stack.append((var, pos, True))
+            for d in deps:
+                stack.append((d[1], d[2], False))
+
+        # ---- leaves: decide, DRY, how each is read at the loop index ---------------
+        # Nothing is emitted in this pass. A leaf that cannot be read at the loop index
+        # vetoes the equation that asked for it, and a veto has to be raised before the
+        # nest has put a single statement in `self.lines`.
+        plan_leaf: dict = {}
+        for k in post:
+            kind, var, pos, req = nodes[k]
+            if kind != "leaf":
+                continue
+            v = env.get(var)
+            if v is None:
+                raise Refusal("chain leaf is not bound (scheduling)")
+            c0 = int(pos[0])
+            if bool(np.all(pos == c0)):
+                if c0 >= v.size:
+                    raise Refusal("chain leaf index out of range")
+                plan_leaf[k] = ("scalar", v.exprs[c0])
+                continue
+            if v.vals is not None:
+                sel = np.asarray(v.vals).reshape(-1)
+                if int(pos.max()) < sel.size:
+                    picked = sel[pos]
+                    if picked.size and bool((picked == picked.reshape(-1)[0]).all()):
+                        plan_leaf[k] = ("scalar",
+                                        _fmt_scalar(picked.reshape(-1)[0], v.kind))
+                        continue
+            idx = self._affine_index(pos, ivars, shape, strides, v.size)
+            why = None
+            if idx is None:
+                why = "an operand whose index map is not affine in the loop indices"
+            elif v.array_ident is None and v.kind != _F:
+                # `_vec_local` materialises float64 vectors only; an integer or boolean
+                # operand read at a runtime index has nowhere to live.
+                why = f"an operand of kind {v.kind!r} read at a runtime index"
+            elif v.size > MAX_VEC_ELEMENTS:
+                why = f"an operand of {v.size} elements read at a runtime index"
+            if why is not None:
+                if req is None:
+                    raise Refusal(f"fused loop over {plan.shape}: {why}")
+                raise _ChainVeto(req, why)
+            plan_leaf[k] = ("index", v, idx)
+
+        # ---- from here on the nest is emitted; no veto may be raised --------------
+        leaf_expr: dict = {}
+        for k, how in plan_leaf.items():
+            leaf_expr[k] = (how[1] if how[0] == "scalar"
+                            else f"{self._vec_local(how[1])}[{how[2]}]")
+
+        # ---- accumulators and materialised outputs --------------------------------
+        accs: dict = {}
+        for ix in plan.reduce_roots:
+            nm = self._fresh()
+            init = ("wp.float64(0.0)" if eqns[ix].primitive.name == "reduce_sum"
+                    else "wp.float64(1.0)")
+            self.lines.append(f"    {nm} = {init}")
+            accs[ix] = nm
+        vecs: dict = {}
+        for v in plan.mat_roots:
+            size = int(np.prod(v.aval.shape)) if v.aval.shape else 1
+            if size > MAX_VEC_ELEMENTS:
+                raise Refusal(f"fused output of {size} elements "
+                              f"(cap {MAX_VEC_ELEMENTS})")
+            self.vecs.add(size)
+            nm = self._fresh()
+            self._vec_idents.add(nm)
+            self.lines.append(f"    {nm} = {vec_name(size)}()")
+            vecs[id(v)] = nm
+
+        # ---- the nest -------------------------------------------------------------
+        for d in range(len(shape)):
+            self.lines.append("    " + "    " * d
+                              + f"for {ivars[d]} in range({shape[d]}):")
+        body_ind = "    " + "    " * len(shape)
+
+        val: dict = {}
+        for k in post:
+            kind, var, pos, info = nodes[k]
+            if kind == "leaf":
+                e = leaf_expr[k]
+                if not self._TRIVIAL.match(e):
+                    nm = self._fresh()
+                    self.lines.append(f"{body_ind}{nm} = {e}")
+                    e = nm
+                val[k] = e
+                continue
+            ix, deps = info
+            t = plan.tmpl[ix]
+            sub = [val[d[0]] for d in deps]
+            names: list = []
+            for rhs in t.lines:
+                nm = self._fresh()
+                self.lines.append(f"{body_ind}{nm} = {_instantiate(rhs, sub, names)}")
+                names.append(nm)
+            e = _instantiate(t.expr, sub, names)
+            if not self._TRIVIAL.match(e):
+                nm = self._fresh()
+                self.lines.append(f"{body_ind}{nm} = {e}")
+                e = nm
+            val[k] = e
+
+        flat_idx = " + ".join(
+            (ivars[d] if strides[d] == 1 else f"{strides[d]} * {ivars[d]}")
+            for d in range(len(shape)) if shape[d] != 1) or "0"
+        for ix in plan.reduce_roots:
+            e = val[key_of(eqns[ix].invars[0], base)]
+            op = "+" if eqns[ix].primitive.name == "reduce_sum" else "*"
+            self.lines.append(f"{body_ind}{accs[ix]} = ({accs[ix]} {op} {e})")
+        for v in plan.mat_roots:
+            e = val[key_of(v, base)]
+            self.lines.append(f"{body_ind}{vecs[id(v)]}[{flat_idx}] = {e}")
+
+        # ---- bind what the nest produced ------------------------------------------
+        for ix in plan.reduce_roots:
+            ov = eqns[ix].outvars[0]
+            env[ov] = Value((accs[ix],), _F, tuple(ov.aval.shape))
+        for v in plan.mat_roots:
+            nm = vecs[id(v)]
+            size = int(np.prod(v.aval.shape)) if v.aval.shape else 1
+            env[v] = Value(tuple(f"{nm}[{j}]" for j in range(size)), _F,
+                           tuple(v.aval.shape), array_ident=nm)
 
     def _eqn(self, env, eqn) -> None:
         name = eqn.primitive.name
@@ -828,8 +1897,14 @@ class _FuncEmitter:
                           "is emitted)")
         if name == "shift_right_arithmetic" and eqn.invars[0] in self._bits:
             a = self._bits.pop(eqn.invars[0])
-            shift = eqn.invars[1]
-            if not (isinstance(shift, Literal) and int(shift.val) == 63):
+            # The shift amount is read from its bound VALUE, not from a `Literal`
+            # instance check: `_flatten` binds every literal as an ordinary constant
+            # value, so `isinstance(..., Literal)` is no longer how a compile-time
+            # constant presents itself here. `vals is not None` is the same proof --
+            # it is exactly "this value is known to the generator".
+            sv = self._read(env, eqn.invars[1])
+            if sv.vals is None or sv.size != 1 or \
+                    int(np.asarray(sv.vals).reshape(-1)[0]) != 63:
                 raise Refusal("shift_right_arithmetic on a bit pattern by a shift "
                               "other than 63")
             self.helpers.add("_signbit")
@@ -884,6 +1959,25 @@ class _FuncEmitter:
                 "matrix a closed-form/unrolled decomposition could handle exactly, and "
                 "a general iterative SVD is a real numerical project this backend does "
                 "not attempt rather than approximate)")
+        if name == "while":
+            # `lax.while_loop`'s trip count is a VALUE, not a jaxpr parameter -- unlike
+            # `scan`, whose static `length` is exactly what licenses unrolling it
+            # (`_scan`'s docstring). If a loop's bound were knowable at trace time, JAX
+            # would have lowered it to a `scan`, not a `while`; the mere presence of a
+            # `while` primitive is itself the evidence that this backend cannot prove
+            # a fixed bound, so this refuses unconditionally rather than trying to
+            # unroll to `cond_jaxpr`'s (data-dependent) cap.
+            #
+            # The one call site this graph is observed to reach, `.vacuum.vacuum_old`'s
+            # `solve_duct_diameter` (`functional_process/models/vacuum/vacuum.py`), is
+            # a Newton iteration whose own docstring records the trip count taking six
+            # different values (6-11) within a single `stellarator_helias` SAND solve,
+            # against a 100-iteration cap -- genuinely data-dependent, not merely
+            # unproved. Warp differentiates only static-bound loops correctly, so this
+            # stays refused rather than guessing a bound.
+            raise Refusal("while (data-dependent trip count -- lax.while_loop has no "
+                          "static length to unroll, unlike scan; see this branch's "
+                          "comment for the call site this was checked against)")
 
         for ov in eqn.outvars:
             _check_size(ov.aval, f"primitive {name!r} output")
@@ -915,10 +2009,6 @@ class _FuncEmitter:
 
     # -- scan ---------------------------------------------------------------
 
-    MAX_SCAN_STEPS = 512
-    """Cap on a scan's trip count. The loop is UNROLLED, so the emitted body appears
-    once per step; a longer scan is a named refusal rather than a source explosion."""
-
     def _scan(self, env, eqn) -> None:
         """`lax.scan`, **unrolled**.
 
@@ -931,62 +2021,7 @@ class _FuncEmitter:
 
         `while` stays refused: its trip count is a value, and nothing here can bound it.
         """
-        p = eqn.params
-        closed = p["jaxpr"]
-        body = closed.jaxpr
-        body_consts = list(closed.consts)
-        length = int(p["length"])
-        # jax <= 0.10 spelled the split as `num_consts`/`num_carry`; 0.11 carries it as
-        # the group structure of `ft_in = (consts, carry, xs)` / `ft_out = (carry, ys)`.
-        # Read whichever is present rather than assuming a version -- and then CHECK the
-        # split against the equation's own arity below, so a third spelling fails loudly
-        # instead of silently slicing the operands in the wrong places.
-        if "num_consts" in p:
-            num_consts, num_carry = int(p["num_consts"]), int(p["num_carry"])
-        else:
-            # `FlatTree.__len__` counts LEAVES, not groups, and `__repr__` prints the
-            # groups -- so `len(ft_in)` is the operand count and `ft_in.elts` is the
-            # `(consts, carry, xs)` split. Read the split from `elts`; the shape
-            # cross-check below is what actually licenses it.
-            ft_in, ft_out = p["ft_in"], p["ft_out"]
-            gin = getattr(ft_in, "elts", ft_in)
-            gout = getattr(ft_out, "elts", ft_out)
-            if len(gin) != 3 or len(gout) != 2:
-                raise Refusal(f"scan: unrecognised ft_in/ft_out grouping "
-                              f"({len(gin)}/{len(gout)} groups)")
-            num_consts, num_carry = len(gin[0]), len(gin[1])
-            if (num_consts + num_carry + len(gin[2]) != len(eqn.invars)
-                    or len(gout[0]) != num_carry
-                    or num_carry + len(gout[1]) != len(eqn.outvars)):
-                raise Refusal("scan: ft_in/ft_out groups do not account for the "
-                              "equation's operands and results")
-        # The body takes the consts, the carry, and ONE slice of each `xs` -- so it has
-        # exactly as many parameters as the equation has operands.
-        if len(body.invars) != len(eqn.invars):
-            raise Refusal(f"scan: body takes {len(body.invars)} argument(s) for "
-                          f"{len(eqn.invars)} operand(s)")
-        # Cross-check the split against the shapes, so a scan whose grouping this reads
-        # wrongly refuses instead of slicing the wrong operands: a const or a carry
-        # passes into the body unchanged, and an `xs` loses a leading axis of `length`.
-        # Same for the results: a carry comes out at the body's own shape, a `ys`
-        # gains that leading axis. The two disagree in RANK, so the check is decisive.
-        for i, (v, bv) in enumerate(zip(eqn.invars, body.invars)):
-            want = tuple(bv.aval.shape) if i < num_consts + num_carry \
-                else (length,) + tuple(bv.aval.shape)
-            if tuple(v.aval.shape) != want:
-                raise Refusal(f"scan: operand {i} has shape {tuple(v.aval.shape)} "
-                              f"where the const/carry/xs split implies {want}")
-        for i, (v, bv) in enumerate(zip(eqn.outvars, body.outvars)):
-            want = tuple(bv.aval.shape) if i < num_carry \
-                else (length,) + tuple(bv.aval.shape)
-            if tuple(v.aval.shape) != want:
-                raise Refusal(f"scan: result {i} has shape {tuple(v.aval.shape)} "
-                              f"where the carry/ys split implies {want}")
-        reverse = bool(p.get("reverse", False))
-        if length > self.MAX_SCAN_STEPS:
-            raise Refusal(f"scan of {length} steps (cap {self.MAX_SCAN_STEPS}) -- the "
-                          f"loop is unrolled")
-
+        body, body_consts, num_consts, num_carry, length, reverse = _scan_split(eqn)
         args = [self._read(env, v) for v in eqn.invars]
         const_args = args[:num_consts]
         carry = list(args[num_consts:num_consts + num_carry])
@@ -1507,16 +2542,25 @@ class _FuncEmitter:
         if name == "scatter":
             return self._scatter(eqn, args, okind, oshape)
 
+        if name == "scatter-mul":
+            return self._scatter_mul(eqn, args, okind, oshape)
+
+        if name == "dot_general":
+            return (self._dot_general(eqn, args, okind, oshape), None)
+
         if name == "triangular_solve":
             return (self._triangular_solve(eqn, args, okind, oshape), None)
 
-        if name in ("dynamic_update_slice", "scatter_add", "sort", "while",
-                    "argsort", "top_k", "dot_general", "conv_general_dilated",
+        if name in ("dynamic_update_slice", "scatter_add", "sort",
+                    "argsort", "top_k", "conv_general_dilated",
                     "cumsum_p"):
             # `cond` USED to be refused here too, on the grounds that no node needed
             # it -- that stopped being true once `.vacuum.vacuum_old` and the `lu` work
             # made it worth emitting (see `_cond`, dispatched earlier in `_eqn`, before
-            # any equation reaches `_expr` at all). `sort` remains refused: it would be
+            # any equation reaches `_expr` at all). `while` is dispatched earlier too
+            # now, for the same reason `cond` is -- see `_eqn`'s `name == "while"`
+            # branch for why it stays refused regardless. `sort` remains refused: it
+            # would be
             # tractable to unroll at the sizes this graph presents (a small stable
             # sorting network, the same style as `_lu`'s pivoting), but nothing here
             # currently NEEDS it -- `jnp.linalg.solve`'s forward (`custom_linear_solve`'s
@@ -1590,8 +2634,9 @@ class _FuncEmitter:
             for r in range(n_out):
                 grp = [self._coerce(a.exprs[i], a.kind, okind) for i in moved[r]]
                 e = grp[0]
-                for g in grp[1:]:
+                for j, g in enumerate(grp[1:]):
                     e = f"{fn}({e}, {g})"
+                    e = self._break_chain(e, len(grp) - 1, j)
                 out.append(e)
             return (out, None)
 
@@ -1610,10 +2655,33 @@ class _FuncEmitter:
         for r in range(n_out):
             grp = [self._coerce(a.exprs[i], a.kind, okind) for i in moved[r]]
             e = grp[0]
-            for g in grp[1:]:
+            for j, g in enumerate(grp[1:]):
                 e = f"({e}{op}{g})"
+                e = self._break_chain(e, len(grp) - 1, j)
             out.append(e)
         return (out, None)
+
+    MAX_EXPR_NESTING = 64
+    """How deep a left-nested accumulation may get before it is broken by a local.
+
+    Not a style preference. A reduction over n elements builds one expression nested n
+    deep, and **CPython's own parser refuses to read more than about 200 levels** --
+    `too many nested parentheses`, raised while IMPORTING the generated module, with a
+    line number and no function name, so it presents as a whole-module codegen failure
+    rather than as anything attributable to a node. The reduction that reaches it is
+    `.physics.profiles.parameterisation.pedestal_temperature_profile`'s `reduce_min`
+    over 201 profile points, which nests exactly 201 `_min(` deep -- one over the line.
+    Breaking the chain into locals changes the NAMES, never the association: the
+    partial results are the same partial results in the same order, so the value is
+    bit-identical to the nested form."""
+
+    def _break_chain(self, e: str, total: int, j: int) -> str:
+        """Bind `e` to a local every `MAX_EXPR_NESTING` steps of an accumulation."""
+        if total <= self.MAX_EXPR_NESTING or (j + 1) % self.MAX_EXPR_NESTING:
+            return e
+        nm = self._fresh()
+        self.lines.append(f"    {nm} = {e}")
+        return nm
 
     # -- gather -------------------------------------------------------------
 
@@ -1688,30 +2756,46 @@ class _FuncEmitter:
         return rows, op_strides, hi
 
     @staticmethod
-    def _apply_gather_map(rows, op_strides, hi, idx_flat):
-        """`rows` applied to one concrete flattened `start_indices` array."""
+    def _apply_gather_map(rows, op_strides, hi, idx_flat, fill: bool = False):
+        """`rows` applied to one concrete flattened `start_indices` array.
+
+        Returns one `(src, valid)` pair per row. `fill=False` (CLIP/PROMISE_IN_BOUNDS)
+        always clamps and is always `valid` -- the previous behaviour exactly. `fill=
+        True` (FILL_OR_DROP) still computes the CLAMPED `src` (so a caller has some
+        in-range position to read even when it is about to discard it), but marks the
+        row invalid whenever the RAW, unclamped index actually fell outside
+        `[0, hi[d]]` on any dimension -- the caller substitutes the primitive's
+        `fill_value` there instead of reading `src`.
+        """
         out = []
         for base, startpos in rows:
-            src = 0
+            src, valid = 0, True
             for d, (b, sp) in enumerate(zip(base, startpos)):
-                v = b if sp is None else b + min(max(int(idx_flat[sp]), 0), hi[d])
-                src += v * op_strides[d]
-            out.append(src)
+                if sp is None:
+                    src += b * op_strides[d]
+                    continue
+                raw = int(idx_flat[sp])
+                if fill and not (0 <= raw <= hi[d]):
+                    valid = False
+                src += (b + min(max(raw, 0), hi[d])) * op_strides[d]
+            out.append((src, valid))
         return out
 
     def _check_gather_map(self, rows, op_strides, hi, operand_shape, indices_shape,
-                          dnums, slice_sizes, mode, out_shape):
+                          dnums, slice_sizes, mode, out_shape, fill_value=None):
         """Prove the derived map by DIFFERENTIAL TEST against `lax.gather` itself.
 
         The map above is a transcription of XLA's gather semantics, and a transcription
         is exactly the kind of thing that is plausible and wrong. So it is not trusted:
         the gather is run for real, on an operand whose value at every position IS that
         position, over several random in-bounds index draws (plus deliberately
-        out-of-range ones under `CLIP`, where clamping is the defined behaviour). Any
-        disagreement is a named refusal, not a warning.
+        out-of-range ones under `CLIP` or `FILL_OR_DROP`, where clamping or filling,
+        respectively, is the defined behaviour). Any disagreement is a named refusal,
+        not a warning.
         """
         from jax import lax
 
+        fill = "FILL_OR_DROP" in str(mode)
         n_op = int(np.prod(operand_shape))
         probe = jnp.arange(n_op, dtype=jnp.float64).reshape(operand_shape)
         rng = np.random.default_rng(0xC0FFEE)
@@ -1725,21 +2809,26 @@ class _FuncEmitter:
                 idx[tuple(sl)] = rng.integers(0, hi[d] + 1,
                                               size=idx[tuple(sl)].shape)
             draws.append(idx)
-        if str(mode).endswith("CLIP"):
+        if str(mode).endswith("CLIP") or fill:
             wild = draws[0].copy()
             wild[...] = 10 ** 6
             draws.extend((wild, -wild))
         for idx in draws:
             got = np.asarray(lax.gather(
                 probe, jnp.asarray(idx, dtype=jnp.int32), dnums,
-                tuple(slice_sizes), mode=mode)).reshape(-1)
-            want = self._apply_gather_map(rows, op_strides, hi, idx.reshape(-1))
-            if got.shape[0] != len(want) or np.any(got != np.asarray(want,
-                                                                    dtype=float)):
+                tuple(slice_sizes), mode=mode,
+                fill_value=fill_value)).reshape(-1)
+            pairs = self._apply_gather_map(rows, op_strides, hi, idx.reshape(-1),
+                                           fill=fill)
+            want = np.asarray(
+                [(float(fill_value) if fill and not ok else float(src))
+                 for src, ok in pairs])
+            mismatch = (got != want) & ~(np.isnan(got) & np.isnan(want))
+            if got.shape[0] != want.shape[0] or np.any(mismatch):
                 raise Refusal(
                     "gather: the derived index map disagrees with lax.gather at "
                     f"dimension_numbers={dnums}, slice_sizes={tuple(slice_sizes)}, "
-                    f"mode={mode}")
+                    f"mode={mode}, fill_value={fill_value}")
 
     def _vec_local(self, v: Value) -> str:
         """Materialise `v` into one `vec{n}f` local and return its identifier -- what a
@@ -1761,8 +2850,25 @@ class _FuncEmitter:
         if v.kind != _F:
             raise Refusal(f"runtime-indexed operand of kind {v.kind!r} -- only float64 "
                           f"vectors are materialised")
+        # Two values whose element EXPRESSIONS are the same strings are the same
+        # vector, and one copy will do. That is a proof rather than a hope: every
+        # expression here is either a literal or a name this emitter bound exactly
+        # once and never reassigns, and every vector local lives at function scope, so
+        # the earlier one is in scope and holds the same bits.
+        #
+        # It is not a micro-optimisation. `.physics.plasma_composition` interpolates
+        # ELEVEN times against one (14, 200) table and built the table again for each:
+        # 11 x vec2800f, 246 KB of per-thread storage and 28,000 statements, for ten
+        # copies of one array. It is the largest single per-thread allocation in every
+        # configuration measured.
+        key = (n, v.exprs)
+        hit = self._vec_memo.get(key)
+        if hit is not None:
+            return hit
         self.vecs.add(n)
         name = self._fresh()
+        self._vec_idents.add(name)
+        self._vec_memo[key] = name
         self.lines.append(f"    {name} = {vec_name(n)}()")
         for i, e in enumerate(v.exprs):
             self.lines.append(f"    {name}[{i}] = {e}")
@@ -1775,8 +2881,14 @@ class _FuncEmitter:
         operand's locals -- no runtime work at all. A runtime index needs something
         subscriptable, which a scalarised array is not, so the operand is materialised
         into a `vec{n}f` and indexed natively (Warp indexes a vector with a runtime
-        `int32`). `FILL_OR_DROP` is refused: its out-of-bounds behaviour is a fill
-        value, not a clamp, and nothing here can prove the indices are in bounds.
+        `int32`).
+
+        `FILL_OR_DROP` is emitted with its ACTUAL semantics -- an out-of-bounds read
+        returns `fill_value`, not a clamp -- rather than either refusing or silently
+        substituting the CLIP behaviour. This backend does not attempt to prove
+        in-boundness from the surrounding computation (that would be reasoning about
+        the model, not the primitive); instead every element gets its own runtime
+        bounds guard, mirroring `_scatter`'s guarded `wp.where` for the same mode.
         """
         if len(args) != 2:
             raise Refusal(f"gather: {len(args)} operands")
@@ -1784,23 +2896,31 @@ class _FuncEmitter:
         dnums = eqn.params["dimension_numbers"]
         slice_sizes = tuple(int(s) for s in eqn.params["slice_sizes"])
         mode = eqn.params.get("mode")
-        if "FILL_OR_DROP" in str(mode):
-            raise Refusal("gather in FILL_OR_DROP mode (out-of-bounds fills rather "
-                          "than clamps, and in-boundness is not provable here)")
+        fill = "FILL_OR_DROP" in str(mode)
+        fill_value = eqn.params.get("fill_value")
+        if fill and fill_value is None:
+            raise Refusal("gather in FILL_OR_DROP mode with no fill_value -- refusing "
+                          "rather than guessing a default")
         operand_shape = tuple(eqn.invars[0].aval.shape)
         indices_shape = tuple(eqn.invars[1].aval.shape)
         rows, op_strides, hi = self._gather_map(
             operand_shape, indices_shape, dnums, slice_sizes, oshape)
         self._check_gather_map(rows, op_strides, hi, operand_shape, indices_shape,
-                               dnums, slice_sizes, mode, oshape)
+                               dnums, slice_sizes, mode, oshape, fill_value=fill_value)
 
         if indices.vals is not None:
-            src = self._apply_gather_map(rows, op_strides, hi,
-                                         np.asarray(indices.vals).reshape(-1))
-            exprs = [self._coerce(operand.exprs[s], operand.kind, okind) for s in src]
-            vals = (None if operand.vals is None else
-                    np.asarray(operand.vals).reshape(-1)[np.asarray(src)]
-                    .reshape(oshape))
+            pairs = self._apply_gather_map(rows, op_strides, hi,
+                                           np.asarray(indices.vals).reshape(-1),
+                                           fill=fill)
+            fill_expr = _fmt_scalar(fill_value, okind) if fill else None
+            exprs = [(self._coerce(operand.exprs[src], operand.kind, okind) if ok
+                      else fill_expr) for src, ok in pairs]
+            vals = None
+            if operand.vals is not None:
+                flat_op = np.asarray(operand.vals, dtype=float).reshape(-1)
+                vals = np.asarray(
+                    [(flat_op[src] if ok else float(fill_value))
+                     for src, ok in pairs]).reshape(oshape)
             return exprs, vals
 
         if okind != _F:
@@ -1810,13 +2930,24 @@ class _FuncEmitter:
         for base, startpos in rows:
             const = sum(base[d] * op_strides[d] for d in range(len(base)))
             terms = [f"wp.int32({const})"]
+            guards = []
             for d, sp in enumerate(startpos):
                 if sp is None:
                     continue
                 e = self._coerce(indices.exprs[sp], indices.kind, _I)
-                terms.append(f"wp.int32({op_strides[d]}) * wp.min(wp.max({e}, "
+                s = self._fresh()
+                self.lines.append(f"    {s} = {e}")
+                terms.append(f"wp.int32({op_strides[d]}) * wp.min(wp.max({s}, "
                              f"wp.int32(0)), wp.int32({hi[d]}))")
-            exprs.append(f"{vec}[{' + '.join(terms)}]")
+                if fill:
+                    guards.append(f"({s} >= wp.int32(0) and {s} <= "
+                                  f"wp.int32({hi[d]}))")
+            read = f"{vec}[{' + '.join(terms)}]"
+            if fill and guards:
+                ok = " and ".join(guards)
+                exprs.append(f"wp.where({ok}, {read}, {_fmt_scalar(fill_value, okind)})")
+            else:
+                exprs.append(read)
         return exprs, None
 
     # -- scatter ------------------------------------------------------------
@@ -1946,14 +3077,56 @@ class _FuncEmitter:
                     "scatter: the derived index map disagrees with lax.scatter at "
                     f"dimension_numbers={dnums}, mode={mode}")
 
+    def _scatter_index_proof(self, eqn, indices, rows, op_strides, hi, clip):
+        """`unique_indices=False`, but possibly wrongly conservative: PROVE the actual
+        indices are both a compile-time CONSTANT and COLLISION-FREE, rather than
+        refusing outright -- see `jnp.diag_indices(n)`, `.tokamak.pf_coil.inductance`'s
+        call site. JAX sets `unique_indices` from what the CALLER declared
+        (`.at[...].set(...)`'s own `unique_indices` kwarg, default `False`), not from
+        anything it proves about the indices -- so `False` here means "not asserted",
+        not "actually collides".
+
+        Two independent proofs, both required, neither assumed:
+
+        1. **Constant.** `emit_node` already evaluated this node's jaxpr for real (not
+           reasoned about) at its reference point AND at `_INVARIANCE_DRAWS`
+           independently jittered ones (`_invariant_vars`); only a variable that came
+           out IDENTICAL at every one of them is in `self._concrete`. A value that is
+           genuinely independent of every read passes this by construction; one that
+           depends on any read generically will not survive even one jitter.
+        2. **Collision-free.** A constant array can still repeat an index
+           (`[0, 0, 1]`), so the concrete value is run through the SAME
+           `_apply_scatter_map`/`clip`-or-drop logic the runtime path uses, and every
+           VALID target is checked for a duplicate.
+
+        Returns an `indices` `Value` carrying the proved concrete array as `.vals` (so
+        the rest of `_scatter` runs its ordinary static-index path unchanged), or
+        `None` if either proof fails -- the caller refuses.
+        """
+        var = eqn.invars[1]
+        cval = np.asarray(var.val) if isinstance(var, Literal) \
+            else self._concrete.get(var)
+        if cval is None:
+            return None
+        flat = np.asarray(cval).reshape(-1)
+        targets = self._apply_scatter_map(rows, op_strides, hi, flat, clip)
+        valid = [t for t, ok in targets if ok]
+        if len(valid) != len(set(valid)):
+            return None
+        return Value(tuple(_fmt_scalar(x, indices.kind) for x in flat.tolist()),
+                     indices.kind, indices.shape, flat.reshape(indices.shape))
+
     def _scatter(self, eqn, args, okind, oshape):
-        """`lax.scatter` (overwrite), for `unique_indices=True` only.
+        """`lax.scatter` (overwrite).
 
         With unique indices every destination is written at most once, so the result is
         a per-element choice between the operand's value and one update's -- no
         accumulation, and no question about the order two writes to one cell would
-        take. `scatter_add` and a non-unique `scatter` are refused rather than given an
-        order this backend would be inventing.
+        take. `scatter_add` and a scatter with a combining function are refused rather
+        than given an order this backend would be inventing. A scatter WITHOUT
+        `unique_indices` declared is refused too, UNLESS `_scatter_index_proof` can
+        prove its actual indices are both constant and collision-free -- see its
+        docstring.
 
         Static indices resolve entirely in the generator. A runtime index becomes one
         `wp.where` per (update, destination) pair, guarded by the same in-bounds test
@@ -1962,9 +3135,6 @@ class _FuncEmitter:
         """
         if len(args) != 3:
             raise Refusal(f"scatter: {len(args)} operands")
-        if not eqn.params.get("unique_indices"):
-            raise Refusal("scatter without unique_indices (two updates to one cell "
-                          "would need a write order this backend does not define)")
         if eqn.params.get("update_jaxpr") is not None:
             raise Refusal("scatter with a combining function")
         operand, indices, updates = args
@@ -1981,6 +3151,17 @@ class _FuncEmitter:
             operand_shape, indices_shape, updates_shape, dnums)
         self._check_scatter_map(rows, op_strides, hi, operand_shape, indices_shape,
                                 updates_shape, dnums, mode, clip)
+
+        if not eqn.params.get("unique_indices"):
+            proved = self._scatter_index_proof(eqn, indices, rows, op_strides, hi,
+                                               clip)
+            if proved is None:
+                raise Refusal(
+                    "scatter without unique_indices (two updates to one cell would "
+                    "need a write order this backend does not define, and this call "
+                    "site's indices could not be proven both compile-time-constant "
+                    "and collision-free)")
+            indices = proved
 
         n_out = operand.size
         out = [self._coerce(e, operand.kind, okind) for e in operand.exprs]
@@ -2044,6 +3225,273 @@ class _FuncEmitter:
             bound = self._materialise(out, okind, (n_out,))
             out = list(bound.exprs)
         return out, None
+
+    # -- scatter-mul ----------------------------------------------------------
+
+    def _check_scatter_mul_map(self, rows, op_strides, hi, operand_shape,
+                               indices_shape, updates_shape, dnums, mode):
+        """`_check_scatter_map`'s differential-test discipline, applied to
+        `lax.scatter_mul` -- the dimension_numbers/mode index arithmetic `_scatter_map`
+        derives is IDENTICAL between plain `scatter` and `scatter-mul` (only the
+        combinator differs), so this reuses it and only changes what "applying a row"
+        means: multiply into the target rather than overwrite it."""
+        from jax import lax
+
+        clip = "CLIP" in str(mode)
+        n_up = int(np.prod(updates_shape)) if updates_shape else 1
+        operand = jnp.ones(operand_shape, dtype=jnp.float64)
+        updates = jnp.arange(2.0, 2.0 + n_up, dtype=jnp.float64).reshape(updates_shape)
+        rng = np.random.default_rng(0x5CA11ED)
+        ivd = len(indices_shape) - 1
+        draws = []
+        for _ in range(4):
+            idx = np.zeros(indices_shape, dtype=np.int64)
+            for k, d in enumerate(tuple(int(x) for x in
+                                        dnums.scatter_dims_to_operand_dims)):
+                sl = [slice(None)] * len(indices_shape)
+                sl[ivd] = k
+                idx[tuple(sl)] = rng.integers(0, hi[d] + 1, size=idx[tuple(sl)].shape)
+            draws.append(idx)
+        wild = np.zeros(indices_shape, dtype=np.int64) + 10 ** 6
+        draws.extend((wild, -wild))
+        for idx in draws:
+            got = np.asarray(lax.scatter_mul(
+                operand, jnp.asarray(idx, dtype=jnp.int32), updates, dnums,
+                unique_indices=True, mode=mode)).reshape(-1)
+            want = np.ones(int(np.prod(operand_shape)) if operand_shape else 1)
+            for u, (tgt, valid) in enumerate(
+                    self._apply_scatter_map(rows, op_strides, hi, idx.reshape(-1),
+                                            clip)):
+                if valid:
+                    want[tgt] *= np.asarray(updates).reshape(-1)[u]
+            if got.shape[0] != want.shape[0] or np.any(got != want):
+                raise Refusal(
+                    "scatter-mul: the derived index map disagrees with "
+                    f"lax.scatter_mul at dimension_numbers={dnums}, mode={mode}")
+
+    def _scatter_mul(self, eqn, args, okind, oshape):
+        """`lax.scatter_mul` -- `x.at[...].multiply(y)`, and `x.at[...].divide(y)`
+        (JAX lowers `.divide` to a `scatter-mul` into a `ones_like` array, followed by
+        an elementwise divide the ordinary `div` path already handles).
+
+        Refuses everything except the one shape this graph is observed to need: a
+        SINGLE shared runtime index tuple (the whole `scatter_indices` operand holds
+        exactly one index vector -- no batching) whose window lands on a CONTIGUOUS,
+        naturally-ordered run of flat operand positions
+        (`.tokamak.cicc_superconducting_tf_coil.tf_stress`'s
+        `sig_tf_r.at[wp_slice].multiply(fac_sig_r)`, `wp_slice` a runtime-offset,
+        compile-time-SIZED window). That shape is special-cased rather than reusing
+        `_scatter`'s per-(update, destination)-pair `wp.where` chain, because here it
+        would be `n_updates * n_out` pairs -- 500 * 1500 = 750000 for `tf_stress`, far
+        past `MAX_SCATTER_PAIRS`/`MAX_NODE_LINES`. The window shape makes every row's
+        RUNTIME target `base(row) + offset` for a SINGLE shared `offset` (batch size
+        1), so the map inverts to one `wp.where` per OUTPUT element (`n_out`, not
+        `n_updates * n_out`): `offset` is computed once, and which update (if any)
+        lands on output `j` is arithmetic (`j - offset - base(0)`), not a search.
+        """
+        if len(args) != 3:
+            raise Refusal(f"scatter-mul: {len(args)} operands")
+        if not eqn.params.get("unique_indices"):
+            raise Refusal("scatter-mul without unique_indices")
+        uj = eqn.params.get("update_jaxpr")
+        if uj is None or len(uj.eqns) != 1 or uj.eqns[0].primitive.name != "mul" \
+                or len(uj.invars) != 2 or len(uj.outvars) != 1:
+            raise Refusal("scatter-mul: update_jaxpr is not a bare binary multiply -- "
+                          "refusing rather than assuming what it combines")
+        operand, indices, updates = args
+        dnums = eqn.params["dimension_numbers"]
+        mode = eqn.params.get("mode")
+        clip = "CLIP" in str(mode)
+        fill = "FILL_OR_DROP" in str(mode)
+        if not clip and not fill and "PROMISE_IN_BOUNDS" not in str(mode):
+            raise Refusal(f"scatter-mul in mode {mode}")
+        operand_shape = tuple(eqn.invars[0].aval.shape)
+        indices_shape = tuple(eqn.invars[1].aval.shape)
+        updates_shape = tuple(eqn.invars[2].aval.shape)
+        if int(np.prod(indices_shape)) != len(dnums.scatter_dims_to_operand_dims):
+            raise Refusal("scatter-mul: more than one scatter index tuple (a "
+                          "batched scatter-mul is not the shape this backend "
+                          "special-cases)")
+        rows, op_strides, hi = self._scatter_map(
+            operand_shape, indices_shape, updates_shape, dnums)
+        self._check_scatter_mul_map(rows, op_strides, hi, operand_shape,
+                                    indices_shape, updates_shape, dnums, mode)
+
+        n_updates = len(rows)
+        base_flat = [sum(b * s for b, s in zip(base, op_strides))
+                    for base, _ in rows]
+        if n_updates == 0 or any(base_flat[r] - base_flat[r - 1] != 1
+                                 for r in range(1, n_updates)):
+            raise Refusal("scatter-mul: update rows do not land on a contiguous, "
+                          "naturally-ordered run of operand positions -- refusing "
+                          "rather than searching every (update, destination) pair")
+        d0 = base_flat[0]
+        startpos = rows[0][1]           # identical for every row (batch size 1)
+        n_out = operand.size
+
+        if indices.vals is not None:
+            off, oob = 0, False
+            flat_idx = np.asarray(indices.vals).reshape(-1)
+            for d, sp in enumerate(startpos):
+                if sp is None:
+                    continue
+                raw = int(flat_idx[sp])
+                if not (0 <= raw <= hi[d]):
+                    oob = True
+                off += min(max(raw, 0), hi[d]) * op_strides[d]
+            exprs = [self._coerce(e, operand.kind, okind) for e in operand.exprs]
+            if not (fill and oob):
+                for r in range(n_updates):
+                    j = d0 + off + r
+                    upd = self._coerce(updates.exprs[r], updates.kind, okind)
+                    exprs[j] = f"({exprs[j]} * {upd})"
+            return exprs, None
+
+        if okind != _F:
+            raise Refusal(f"scatter-mul with a runtime index and a {okind!r} result")
+        updvec = self._vec_local(updates)
+        terms, guards = [], []
+        for d, sp in enumerate(startpos):
+            if sp is None:
+                continue
+            e = self._coerce(indices.exprs[sp], indices.kind, _I)
+            s = self._fresh()
+            self.lines.append(f"    {s} = {e}")
+            terms.append(f"wp.int32({op_strides[d]}) * wp.min(wp.max({s}, "
+                         f"wp.int32(0)), wp.int32({hi[d]}))")
+            if fill:
+                guards.append(f"({s} >= wp.int32(0) and {s} <= wp.int32({hi[d]}))")
+        off_name = self._fresh()
+        self.lines.append(f"    {off_name} = " + " + ".join(terms))
+        ok_name = None
+        if guards:
+            ok_name = self._fresh()
+            self.lines.append(f"    {ok_name} = " + " and ".join(guards))
+        exprs = []
+        for j in range(n_out):
+            base_expr = self._coerce(operand.exprs[j], operand.kind, okind)
+            lo = f"({off_name} + wp.int32({d0}))"
+            hi_excl = f"({off_name} + wp.int32({d0 + n_updates}))"
+            in_window = f"(wp.int32({j}) >= {lo} and wp.int32({j}) < {hi_excl})"
+            r_expr = f"(wp.int32({j}) - {lo})"
+            r_clamped = (f"wp.min(wp.max({r_expr}, wp.int32(0)), "
+                        f"wp.int32({n_updates - 1}))")
+            cond = in_window if ok_name is None else f"({ok_name} and {in_window})"
+            exprs.append(f"wp.where({cond}, ({base_expr} * {updvec}[{r_clamped}]), "
+                         f"{base_expr})")
+        return exprs, None
+
+    # -- dot_general ------------------------------------------------------------
+
+    def _dot_general_map(self, lhs_shape, rhs_shape, lc, rc, lb, rb, oshape):
+        """One list of `(lhs_flat_index, rhs_flat_index)` contraction-term pairs per
+        FLAT output position, for `lax.dot_general`'s general (batch dims first, then
+        LHS free dims, then RHS free dims) output layout. Shared between `_dot_general`
+        (which turns each row into a sum-of-products expression) and
+        `_check_dot_general` (which sums the same pairs over CONCRETE probe arrays and
+        compares to `lax.dot_general` itself) -- the map is proved once, the same way
+        `_gather_map`/`_scatter_map` are."""
+        l_free = [d for d in range(len(lhs_shape)) if d not in lc and d not in lb]
+        r_free = [d for d in range(len(rhs_shape)) if d not in rc and d not in rb]
+        contract_sizes = [lhs_shape[d] for d in lc]
+        n_contract = int(np.prod(contract_sizes)) if contract_sizes else 1
+        l_idx = np.arange(int(np.prod(lhs_shape))).reshape(lhs_shape)
+        r_idx = np.arange(int(np.prod(rhs_shape))).reshape(rhs_shape)
+        n_out = int(np.prod(oshape)) if oshape else 1
+        nb, nl = len(lb), len(l_free)
+        rows = []
+        for o_flat in range(n_out):
+            oi = np.unravel_index(o_flat, oshape) if oshape else ()
+            batch_pos, l_pos, r_pos = oi[:nb], oi[nb:nb + nl], oi[nb + nl:]
+            pairs = []
+            for c_flat in range(n_contract):
+                ci = np.unravel_index(c_flat, contract_sizes) if contract_sizes else ()
+                l_full = [0] * len(lhs_shape)
+                for j, d in enumerate(lb):
+                    l_full[d] = int(batch_pos[j])
+                for j, d in enumerate(l_free):
+                    l_full[d] = int(l_pos[j])
+                for j, d in enumerate(lc):
+                    l_full[d] = int(ci[j])
+                r_full = [0] * len(rhs_shape)
+                for j, d in enumerate(rb):
+                    r_full[d] = int(batch_pos[j])
+                for j, d in enumerate(r_free):
+                    r_full[d] = int(r_pos[j])
+                for j, d in enumerate(rc):
+                    r_full[d] = int(ci[j])
+                pairs.append((int(l_idx[tuple(l_full)]), int(r_idx[tuple(r_full)])))
+            rows.append(pairs)
+        return rows
+
+    def _check_dot_general(self, lhs_shape, rhs_shape, lc, rc, lb, rb, rows):
+        """Prove `_dot_general_map` by DIFFERENTIAL TEST against `lax.dot_general`
+        itself, over several random draws -- the same discipline
+        `_check_gather_map`/`_check_scatter_map` apply to an index map, applied here
+        to a contraction map. A loose tolerance is deliberate: this proves the MAP
+        (which elements get multiplied and summed into which output), not bit-exact
+        summation order, which `jaxpr_validate`'s whole-kernel agreement number
+        (`AGREEMENT_RTOL`) is what actually gates."""
+        from jax import lax
+
+        rng = np.random.default_rng(0xD07A6E)
+        for _ in range(3):
+            a = rng.standard_normal(lhs_shape)
+            b = rng.standard_normal(rhs_shape)
+            got = np.asarray(lax.dot_general(
+                jnp.asarray(a), jnp.asarray(b), ((lc, rc), (lb, rb)))).reshape(-1)
+            aflat, bflat = a.reshape(-1), b.reshape(-1)
+            want = np.array([sum(aflat[li] * bflat[ri] for li, ri in pairs)
+                             for pairs in rows])
+            if got.shape[0] != want.shape[0] or \
+                    not np.allclose(got, want, rtol=1e-9, atol=1e-9):
+                raise Refusal(
+                    "dot_general: the derived contraction map disagrees with "
+                    f"lax.dot_general at dimension_numbers={((lc, rc), (lb, rb))}")
+
+    def _dot_general(self, eqn, args, okind, oshape):
+        """`lax.dot_general`, fully scalarised: every operand element is already its
+        own expression, so a contraction is `n_out` independent inner-product sums --
+        no runtime work, the same strategy every other shape primitive in this backend
+        uses. Handles arbitrary contracting/batch dimensions (`_dot_general_map` is
+        general); this graph's own call site (`.power.pf_coil_power`) is a plain
+        (7,8)x(8,6)/(7,8)x(8,) matrix-vector product with no batch dims, verified by
+        `_check_dot_general` rather than assumed from the shape. `precision` and
+        `preferred_element_type` do not affect this: every element is already float64
+        and this backend never emits anything but exact float64 arithmetic.
+        """
+        if len(args) != 2:
+            raise Refusal(f"dot_general: {len(args)} operands")
+        lhs, rhs = args
+        if not lhs.shape or not rhs.shape:
+            raise Refusal("dot_general: scalar operand")
+        (lc, rc), (lb, rb) = eqn.params["dimension_numbers"]
+        lc, rc, lb, rb = tuple(lc), tuple(rc), tuple(lb), tuple(rb)
+        lhs_shape, rhs_shape = tuple(lhs.shape), tuple(rhs.shape)
+        if [lhs_shape[d] for d in lc] != [rhs_shape[d] for d in rc]:
+            raise Refusal("dot_general: contracting dimension sizes do not match")
+        if [lhs_shape[d] for d in lb] != [rhs_shape[d] for d in rb]:
+            raise Refusal("dot_general: batch dimension sizes do not match")
+        l_free = [d for d in range(len(lhs_shape)) if d not in lc and d not in lb]
+        r_free = [d for d in range(len(rhs_shape)) if d not in rc and d not in rb]
+        want_shape = (tuple(lhs_shape[d] for d in lb) + tuple(lhs_shape[d] for d in l_free)
+                     + tuple(rhs_shape[d] for d in r_free))
+        if want_shape != tuple(oshape):
+            raise Refusal(f"dot_general: derived output shape {want_shape} does not "
+                          f"match the declared {tuple(oshape)}")
+        rows = self._dot_general_map(lhs_shape, rhs_shape, lc, rc, lb, rb, oshape)
+        self._check_dot_general(lhs_shape, rhs_shape, lc, rc, lb, rb, rows)
+
+        out = []
+        for pairs in rows:
+            terms = [f"({self._coerce(lhs.exprs[li], lhs.kind, okind)} * "
+                    f"{self._coerce(rhs.exprs[ri], rhs.kind, okind)})"
+                    for li, ri in pairs]
+            e = terms[0]
+            for t in terms[1:]:
+                e = f"({e} + {t})"
+            out.append(e)
+        return out
 
     # -- triangular_solve ----------------------------------------------------
 
@@ -2386,6 +3834,93 @@ class _FuncEmitter:
 # ---------------------------------------------------------------------------
 
 
+def _concrete_env(jaxpr, consts, invals) -> dict:
+    """`{Var: ndarray}` for every variable `jaxpr` binds, from a REAL, eager
+    evaluation at concrete `invals`/`consts` -- `eqn.primitive.bind(...)`, the exact
+    mechanism JAX's own eager mode uses, not a hand-derived reinterpretation of any
+    primitive's semantics.
+
+    Used ONLY as a proof aid for `_scatter`'s `unique_indices=False` case (see
+    `_scatter_index_proof`): it never influences what code gets emitted for a value
+    that isn't proved constant, and it is never consulted for code generation itself
+    -- `Value.vals`/`.exprs` remain the only things `_materialise` ever sees.
+
+    Best-effort: if any equation's concrete `bind` fails (nothing here is expected
+    to, since every primitive this graph traces already runs under ordinary JAX
+    execution), evaluation stops and whatever was resolved so far is returned --
+    silently narrowing what can be proved, never wrongly claiming a value is
+    constant.
+    """
+    env: dict = {}
+    for v, c in zip(jaxpr.constvars, consts):
+        env[v] = c
+    for v, a in zip(jaxpr.invars, invals):
+        env[v] = a
+
+    def read(v):
+        return v.val if isinstance(v, Literal) else env[v]
+
+    for eqn in jaxpr.eqns:
+        try:
+            in_vals = [read(v) for v in eqn.invars]
+            out = eqn.primitive.bind(*in_vals, **eqn.params)
+        except Exception:
+            break
+        if not eqn.primitive.multiple_results:
+            out = [out]
+        for v, o in zip(eqn.outvars, out):
+            env[v] = o
+    return env
+
+
+def _jittered(values, draw: int):
+    """`values` perturbed for the `draw`-th independence check `_invariant_vars`
+    runs. Integer/boolean-valued reads are left untouched -- perturbing what is
+    genuinely an index would risk an out-of-range read failing `_concrete_env`
+    outright (narrowing the proof) rather than testing anything about data
+    dependence; every float read is nudged by a distinct, fixed, non-zero amount so
+    a truly data-INDEPENDENT variable comes out identical and a data-dependent one
+    (generically) does not."""
+    out = []
+    for v in values:
+        a = np.asarray(v)
+        if np.issubdtype(a.dtype, np.integer) or a.dtype == np.bool_:
+            out.append(a)
+        else:
+            out.append(a * (1.0 + 1.0e-3 * (draw + 1)) + 1.0e-6 * (draw + 1))
+    return out
+
+
+_INVARIANCE_DRAWS = 3
+"""Independent jittered re-evaluations `_invariant_vars` requires to agree, beyond
+the reference point -- the same "several draws, not one" discipline
+`_check_gather_map`/`_check_scatter_map` already apply to an index MAP; this applies
+it to whether one equation's VALUE is data-dependent at all."""
+
+
+def _invariant_vars(jaxpr, consts, values, force_float: bool) -> dict:
+    """`{Var: ndarray}`, restricted to variables that evaluated to the EXACT SAME
+    value at the reference point and at `_INVARIANCE_DRAWS` independently jittered
+    ones -- i.e. variables proved data-INDEPENDENT by direct experiment, not by
+    reasoning about the jaxpr's shape. See `_concrete_env`."""
+    cast = (lambda vs: [jnp.asarray(v, dtype=jnp.float64) for v in vs]) if force_float \
+        else (lambda vs: [jnp.asarray(v) for v in vs])
+    try:
+        envs = [_concrete_env(jaxpr, consts, cast(values))]
+        for k in range(_INVARIANCE_DRAWS):
+            envs.append(_concrete_env(jaxpr, consts, cast(_jittered(values, k))))
+    except Exception:
+        return {}
+    ref = envs[0]
+    others = envs[1:]
+    out = {}
+    for v, val in ref.items():
+        if all(v in e and np.array_equal(np.asarray(e[v]), np.asarray(val))
+               for e in others):
+            out[v] = np.asarray(val)
+    return out
+
+
 def trace_node(fn, values, force_float: bool = True) -> ClosedJaxpr:
     """`jax.make_jaxpr` of `fn` at `values`.
 
@@ -2459,6 +3994,7 @@ def emit_node(fn, func_name: str, values, n_outputs: int,
     rather than materialising one more copy of it. Defaults to "nothing is constant",
     which reduces this to the previous behaviour exactly.
     """
+    force_float = True
     try:
         closed = trace_node(fn, values, force_float=True)
     except Exception:
@@ -2466,6 +4002,7 @@ def emit_node(fn, func_name: str, values, n_outputs: int,
         # (array indices), and JAX refuses a float64 tracer where an index is
         # required. Re-trace at the values' own dtypes. If THAT fails too, the
         # exception is real and propagates.
+        force_float = False
         closed = trace_node(fn, values, force_float=False)
     jaxpr, consts = closed.jaxpr, list(closed.consts)
     if const_mask is not None and len(const_mask) != len(jaxpr.invars):
@@ -2473,6 +4010,14 @@ def emit_node(fn, func_name: str, values, n_outputs: int,
                       f"{len(jaxpr.invars)} parameters")
 
     em = _FuncEmitter()
+    # `_scatter`'s only use for this: proving a `unique_indices=False` call site's
+    # indices are actually a data-independent constant (see `_invariant_vars`).
+    # Computed only when a top-level `scatter` equation without `unique_indices`
+    # actually appears -- every other node (including the largest jaxprs this
+    # backend handles, tens of thousands of equations) pays nothing for it.
+    if any(eqn.primitive.name == "scatter" and not eqn.params.get("unique_indices")
+           for eqn in jaxpr.eqns):
+        em._concrete = _invariant_vars(jaxpr, consts, values, force_float)
     params, args, in_sizes, vec_lengths = [], [], [], set()
     for i, iv in enumerate(jaxpr.invars):
         shape = tuple(iv.aval.shape)
@@ -2532,6 +4077,16 @@ def emit_node(fn, func_name: str, values, n_outputs: int,
                           f"{o.shape} (cap {MAX_VEC_ELEMENTS})")
         n = o.size
         vec_lengths.add(n)
+        if o.kind == _F and o.array_ident in em._vec_idents:
+            # The value is ALREADY exactly one `vec{n}f` local this body built (a fused
+            # loop nest's output, or a materialised runtime-indexed operand) and
+            # nothing has been computed from it since -- that is what `array_ident`
+            # asserts. Copying it element by element into a second vector of the same
+            # length would be n statements to produce a bit-identical value.
+            ret.append(o.array_ident)
+            ret_types.append(vec_name(n))
+            out_sizes.append(n)
+            continue
         name = f"o{j}"
         em.lines.append(f"    {name} = {vec_name(n)}()")
         for e_i, e in enumerate(o.exprs):
