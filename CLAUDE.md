@@ -164,12 +164,19 @@ Built and green; the design and the reasoning behind every choice live in
 `functional_process/_audit/test_harness.md` (§ As built), which is the file to read
 before touching it. The short version:
 
-- **A unit's three files share a stem at the same relative path in three trees**:
-  `density_limits.py` (the port) in `functional_process/`, `density_limits.md` (the audit
-  record) under `functional_process/_audit/units/`, and `test_density_limits.py` (the
-  case) under `functional_process/tests/`. What binds a record to its unit is its row in
-  `_audit/unit_registry.md`, which names the path explicitly and is enforced by the
-  meta-tests in `functional_process/tests/test_registry_coverage.py` — not adjacency.
+- **A unit is two files sharing a stem at the same relative path in two trees**:
+  `density_limits.py` (the port) in `functional_process/`, and `test_density_limits.py`
+  (the case) under `functional_process/tests/`. What binds them is the unit's row in
+  `_audit/unit_registry.md`.
+- **There is no third file, and writing one is a regression.** A unit used to carry a
+  per-unit audit record under `_audit/units/`; all 88 were deleted on 2026-09-07
+  (`functional_process/_audit/README.md`), 32,075 lines. The derivation of a port — which
+  PROCESS lines were read, what the reads-set turned out to be, which branch was dead —
+  belongs in the **commit that makes the port**, where git keeps it at no cost to a
+  reader of the finished tree. A record is recoverable with
+  `git log --diff-filter=D -- functional_process/_audit/units/` and
+  `git show <commit>^:<path>`. The `audit_record` field on a case survives as the unit's
+  *identity string*, not as a path to a file.
 - **Tier is a base class.** A case declares `audit_record`/`reference`/`ported`/`samples`
   and subclasses `Tier1Contract` or `Tier2Contract`; it writes no test functions. Tier 2
   has no value-agreement test *by construction*, because PROCESS's answer is not ground
@@ -184,7 +191,7 @@ before touching it. The short version:
 `_audit/unit_registry.md` is the authoritative per-unit status and
 `_audit/next_steps.md` the priority-ordered punch list — read those, not this paragraph,
 for what is ported. Roughly: most of `models/stellarator/**` and three `models/physics/`
-units are ported and harness-tested; the rest is audit records or still pending.
+units are ported and harness-tested; the rest is still pending.
 
 `hatch` envs are declared in `pyproject.toml` (`tests`, `tests-unit`, `tests-regression`,
 `tests-integration`, `tests-examples`) but `hatch` is not on `PATH` — invoke `pytest`

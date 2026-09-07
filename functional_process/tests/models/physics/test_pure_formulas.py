@@ -288,7 +288,7 @@ class TestFastAlphaBetaWard(TestFastAlphaBetaIpdg89):
                 "relative bound is expressible"
             ),
         ),
-        record="units/models/physics/pure_formulas.md",
+        record="deliberate_divergences.md#1-ward_kink_smoothing",
     )
 
     samples = [

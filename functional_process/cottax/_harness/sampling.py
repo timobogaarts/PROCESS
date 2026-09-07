@@ -20,8 +20,6 @@ from types import MappingProxyType
 
 import numpy as np
 
-from process.core.solver.iteration_variables import ITERATION_VARIABLES
-
 _LOG_UNIFORM_SPAN = 100.0
 """Bounds spanning more than this factor are sampled log-uniformly.
 
@@ -85,6 +83,13 @@ def bounds_from_iteration_variables(*names):
         If a name is not a declared iteration variable.
     """
     by_name = {}
+    # Deferred: this is the only thing in `_harness` that needs PROCESS installed, and
+    # importing it at module scope made `_harness/__init__` -- and so every module that
+    # touches the harness -- unimportable without it (`test_process_free_import`).
+    from process.core.solver.iteration_variables import (  # noqa: PLC0415
+        ITERATION_VARIABLES,
+    )
+
     for var in ITERATION_VARIABLES.values():
         key = var.target_name or var.name
         by_name.setdefault(key, (var.lower_bound, var.upper_bound))

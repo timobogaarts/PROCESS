@@ -27,14 +27,11 @@ that are actually in scope.
 
 ## Layout
 
-- `_audit/` — the meta-documents, flat: schema, naming convention, JAX-traceability
-  policy, the unit registry (master list of what's in/out of scope and its status), and
-  `test_harness.md` (the four-tier validation design, and what of it is built).
-- `_audit/units/` — the per-unit audit records, mirroring this tree record for record:
-  one `<name>.md` at the path corresponding to its source file (or, for constraints/
-  switches, one record per registry entry under `core/solver/`). They are bound to their
-  units by `_audit/unit_registry.md`, which names each record's path, not by sitting next
-  to the module — see `_audit/test_harness.md` § As built for why that changed.
+- `_audit/` — the working documents, flat: naming convention, JAX-traceability policy,
+  the unit registry (master list of what's in/out of scope and its status),
+  `test_harness.md` (the four-tier validation design, and what of it is built), and
+  `tried_and_rejected.md`. See `_audit/README.md`; the 88 per-unit records that used to
+  live under `_audit/units/` were deleted on 2026-09-07 and resolve out of git history.
 - `_harness/` — the validation machinery: tier contracts, PROCESS's finite-difference
   scheme and its error bar, sampling, tolerances. Design and rationale in
   `_audit/test_harness.md` § As built.
@@ -58,20 +55,22 @@ that are actually in scope.
 
 ## Adding a unit
 
-One unit is one stem, three files at the same relative path in three trees:
-`<name>.md` (audit record, first) under `_audit/units/`, `<name>.py` (the port) here, and
-`test_<name>.py` (the case) under `../tests/functional_process/`. So the record for
-`models/stellarator/density_limits.py` is
-`_audit/units/models/stellarator/density_limits.md` and its case is
-`../tests/functional_process/models/stellarator/test_density_limits.py`. Add the record's
-path to `_audit/unit_registry.md` as you write it — that row, not the file's location, is
-what binds record to unit, and `test_registry_coverage.py` fails on a record the registry
-does not name and on a registry row whose record is missing.
+One unit is one stem, two files at the same relative path in two trees: `<name>.py` (the
+port) here, and `test_<name>.py` (the case) under `../tests/functional_process/`. Add a
+row to `_audit/unit_registry.md` naming the unit and its status — that row is the unit's
+identity, and `test_registry_coverage.py` fails on a `final` unit with no case module.
+
+**Do not write a per-unit audit record.** That convention was retired on 2026-09-07
+(`_audit/README.md`): the derivation of a port — which PROCESS lines were read, what the
+reads-set turned out to be, which branch was dead — belongs in the commit that makes the
+port, where git keeps it for free, not in a file a reader of the finished thing has to
+step around. What the port's own docstring should carry is what it does and why it is
+correct.
 
 The case declares the PROCESS reference, the port, and the sample points, then subclasses
-the contract for the tier its record assigns — it does not write test functions. Its
-`audit_record` is the record's path relative to `_audit/units/`, i.e. the mirrored path,
-the same string in every tree. Copy
+the contract for its tier — it does not write test functions. Its `audit_record` field is
+the unit's mirrored path, the same string in every tree, and is now an identity rather
+than a file that exists. Copy
 `../tests/functional_process/models/stellarator/test_density_limits.py`; it is the worked
 example.
 

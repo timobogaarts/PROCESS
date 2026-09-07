@@ -12,7 +12,6 @@ jax.config.update("jax_enable_x64", True)
 
 from functional_process.cottax import sand
 from functional_process.cottax.indat import REFERENCE_INPUT_FILE, graph_for, machine_from_indat
-from functional_process.cottax.run_cold_matrix import _resolve
 from functional_process.cottax.sand_harness import assemble as sand_assemble
 from functional_process.cottax.sand_harness import mda_env, reference_run
 
@@ -28,6 +27,12 @@ def _assemble(config: str):
     jaxpr backend traces at the shapes the graph actually produces rather than at a
     scalar placeholder (`jaxpr_backend.node_values`).
     """
+    # Deferred: `run_cold_matrix` imports `process` at module scope, and this module is
+    # the jaxpr backend's entry point -- `test_process_free_import` requires every
+    # `functional_process` module to IMPORT without PROCESS installed, whatever it needs
+    # to RUN. The import moved here rather than the test being relaxed.
+    from functional_process.cottax.run_cold_matrix import _resolve  # noqa: PLC0415
+
     path = _resolve(f"tests/regression/input_files/{config}.IN.DAT")
     is_reference = path == _resolve(REFERENCE_INPUT_FILE)
     reference = reference_run(str(path))

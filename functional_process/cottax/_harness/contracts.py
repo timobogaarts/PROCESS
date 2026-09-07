@@ -83,13 +83,11 @@ class PortContract:
     Attributes
     ----------
     audit_record :
-        Path of the unit's audit record, relative to `functional_process/_audit/units/`
-        — the record tree, which mirrors the package layout, as does the
-        `functional_process/tests/` tree this case lives in. Records and cases each moved
-        out of the package into their own mirror, so this stays the package-relative path
-        it always was; only the root it resolves against moved. Resolved by
-        `conftest.py`'s `audit_root`. Checked for existence, so a port whose record was
-        moved or never written fails loudly.
+        The unit's IDENTITY: its package-relative path, the same string in every tree —
+        `_audit/unit_registry.md`'s row, this case, and the port itself. It used to name
+        a per-unit record file under `_audit/units/` and was checked for existence; those
+        88 records were deleted on 2026-09-07 (`_audit/README.md`) and the path is now a
+        name rather than a location, so only its presence is required.
     reference :
         The PROCESS-side callable, adapted to the port's signature. Where PROCESS's
         function takes a `DataStructure`, the adapter that binds one lives in the unit's
@@ -130,19 +128,17 @@ class PortContract:
         """Arguments to differentiate with respect to, for one sample."""
         return tuple(k for k in sample.kwargs if k not in cls.static_argnames)
 
-    def test_audit_record_exists(self, audit_root):
-        """The unit's audit record must exist.
+    def test_unit_is_identified(self):
+        """The case names the unit it is a case for.
 
-        `_audit/test_harness.md` makes the audit a precondition of the test, not a
-        parallel activity: the true signature is not known until the record's
-        implicit-io classifications are resolved. This check is what stops that from
-        being an honour system.
+        Formerly `test_audit_record_exists`, which also required the named record to be
+        a file on disk. The records are gone (`_audit/README.md`) and the string is now
+        the unit's identity — what ties this case to its registry row and its port — so
+        what is left to check is that it is declared at all.
         """
         assert self.audit_record is not None, (
             f"{type(self).__name__} must declare `audit_record`"
         )
-        record = audit_root / self.audit_record
-        assert record.is_file(), f"audit record not found: {record}"
 
 
 class Tier1Contract(PortContract):
