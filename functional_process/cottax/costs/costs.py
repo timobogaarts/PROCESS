@@ -1,41 +1,5 @@
 """Pure-functional port of a self-contained subset of `process/models/costs/costs.py`
 (the 1990-style cost model, registry unit #18).
-
-**Scope note**: `unit_registry.md` row 18 nominally scopes this unit to the whole of
-`Costs.run()`/`.output()` (43 methods, ~3000 lines). Per this dispatch's own guidance
-("costs code is likely to be extensively entangled... it's entirely plausible most of
-your output this pass is audit records, not ported code") and the standing practice of
-porting what is genuinely self-contained rather than an entire file at once (see
-`physics.py`'s chunked treatment), this file ports 23 of the 43 methods: every one that is
-loop-free (or has only a Python-level, compile-time-constant-length loop — none of the
-23 do), calls no other `Model`, and needs no `scipy`. See `costs.md` for the full
-per-method audit, including the remaining 20 methods (audit-only: TF/PF magnet costs,
-power injection, first-wall/blanket/shield costs, thermal storage, `coelc`, and the
-dynamic-length `n_cs_pf_coils` loop in `acc2222`, none of which are blockers of the
-finding this dispatch was mainly sent to resolve — see the switches note below).
-
-**`i_cost_model` finding (the main ask of this dispatch)**: `.costs.i_cost_model` is
-**never read inside this file or `costs_2015.py`** (confirmed by grep — zero hits in
-either file). It is resolved one layer up, in `process/main.py`'s `Models.costs`
-`@property`, which picks a whole `Model` instance (`Costs()`/`Costs2015()`/a custom
-model) *before* any model runs — exactly the precedent `_audit/schema.md`'s own
-`## switches touched` template names ("a `@property` on `Models` picking a model
-instance before any model runs -- see `i_cost_model` / `Models.costs` in
-`process/main.py` for the precedent"). `stellarator.py` itself never branches on
-`i_cost_model` either: it calls `self.costs.run()`/`.output()` on whatever was already
-injected. So this **is** a genuine topology-changing switch, and the two arms are
-**disjoint subgraphs, not a shared-body-with-a-branch case**: `costs.py` writes 114
-distinct `.costs.*` fields, `costs_2015.py` writes only `.costs_2015.s_cost`/`s_cref`/
-`s_k`/`s_kref`/`s_cost_factor` (a 100-slot array) plus a handful of `.costs_2015.*`
-scalars -- the *only* two `VarPath`s both files write are `.costs.coe` and
-`.costs.concost`, PROCESS's own two "final" cost outputs that feed the objective
-function and every other unit's cost-dependent read. That is exactly the shape
-`configuration.py`'s `Switch.check_arms_are_exclusive` wants from a real pair of
-`Alternative`s (they must own at least one output in common, or they are not
-alternatives at all) -- so this is the third real `TOPOLOGY_SWITCHES` entry after
-`isthtr`/`ipowerflow`/`i_plasma_pedestal`, confirming `next_steps.md` §4c's prediction.
-Not wired into `total_process.TOPOLOGY_SWITCHES` here -- that is reserved for the
-consolidation pass, per this dispatch's boundary.
 """
 
 import equinox as eqx
@@ -775,11 +739,7 @@ class AuxiliaryFacilityPowerCost(ExplicitFunction):
 
 
 class ElectricPlantEquipmentCost(ExplicitFunction):
-    """cottax node: `calculate_electric_plant_equipment_cost` (Account 24, total).
-
-    Reads the five sub-account nodes' own outputs -- an ordinary graph edge, matching
-    `Costs.acc24`'s own call order (`acc241`..`acc245` before `acc24`).
-    """
+    """cottax node: `calculate_electric_plant_equipment_cost` (Account 24, total)."""
 
     c24 = OutputInto(costs)
 
@@ -942,16 +902,7 @@ class ReactorCost(ExplicitFunction):
 
 
 class TfMagnetCostSuperconducting(ExplicitFunction):
-    """The Account 222.1 superconducting-TF family (`.tfcoil.i_tf_sup == 1`). One
-    occupant per `.costs.supercond_cost_model` value.
-
-    The switch was an `eqx.field(static=True)` here until `_audit/next_steps.md`
-    §14.2's binding policy. Its two arms are two one-line strand-cost formulas over
-    **disjoint** fields -- `.costs.ucsc` + `.tfcoil.m_tf_coil_superconductor` against
-    `.costs.sc_mat_cost_0` + `.tfcoil.j_crit_str_0` + `.tfcoil.j_crit_str_tf` -- so one
-    node carrying the switch declared three edges the reference run does not make
-    (`_audit/switch_kwarg_survey.md` §3, `live (3)`).
-    """
+    """The Account 222.1 superconducting-TF family (`.tfcoil.i_tf_sup == 1`)."""
 
     c22211 = OutputInto(costs)
     c22212 = OutputInto(costs)
@@ -964,9 +915,6 @@ class TfMagnetCostSuperconducting(ExplicitFunction):
 class TfMagnetCostSuperconductingPerKg(TfMagnetCostSuperconducting):
     """`.costs.supercond_cost_model == PER_KG` (0) -- PROCESS's own default
     (`cost_variables.py:552`) and the reference run's.
-
-    **Three reads leave with this occupant**: `.costs.sc_mat_cost_0`,
-    `.tfcoil.j_crit_str_0`, `.tfcoil.j_crit_str_tf`.
     """
 
     def __call__(
@@ -1017,9 +965,6 @@ class TfMagnetCostSuperconductingPerKg(TfMagnetCostSuperconducting):
 class TfMagnetCostSuperconductingPerKam(TfMagnetCostSuperconducting):
     """`.costs.supercond_cost_model == PER_KAM` (1) -- strand cost scaled by critical
     current density.
-
-    **Two reads leave with this occupant**: `.costs.ucsc` and
-    `.tfcoil.m_tf_coil_superconductor`.
     """
 
     def __call__(
@@ -1071,8 +1016,7 @@ class TfMagnetCostSuperconductingPerKam(TfMagnetCostSuperconducting):
 
 class TfMagnetCostResistive(ExplicitFunction):
     """cottax node: `calculate_tf_magnet_cost_resistive` (Account 222.1,
-    `.tfcoil.i_tf_sup != 1`). Ported but **not registered** -- see the function's own
-    docstring and `total_process.py`'s `.costs.i_cost_model` switch comment.
+    `.tfcoil.i_tf_sup != 1`).
     """
 
     c22211 = OutputInto(costs)
@@ -1097,37 +1041,7 @@ class TfMagnetCostResistive(ExplicitFunction):
 
 
 class PfMagnetCost(ExplicitFunction):
-    """The Account 222.2 PF-magnet family. **Four occupants** -- one per
-    `.costs.supercond_cost_model` value times one per `.build.iohcl` value.
-
-    `supercond_cost_model` was an `eqx.field(static=True)` here and the node was
-    unregistered because of it (`_audit/cost_boundary_inputs.md` §13.2): its two arms
-    read **disjoint** strand-cost fields -- `.costs.ucsc` + `.tfcoil.dcond` against
-    `.costs.sc_mat_cost_0` + `.tfcoil.j_crit_str_0` + `.pf_coil.j_crit_str_pf` +
-    `.pf_coil.j_crit_str_cs` -- so one node carrying the switch declared four edges the
-    reference run does not make, and one of those four (`.pf_coil.j_crit_str_pf`) had no
-    producer at all. Both are fixed: the family is here and
-    `models/pfcoil/superconductor.py::PFStrandCriticalCurrentDensity` owns the field.
-
-    **`iohcl` was the second such kwarg and it was live, not hypothetical**
-    (`_audit/switch_consultation_audit.md` §2). It was pinned to
-    `CentralSolenoidConfiguration.PRESENT` while both tracked spherical tokamaks set
-    `iohcl = 0`, so the same assembled machine held a PF coil *system* with eight coils
-    and no solenoid (`indat._pf_coil_system_deviations` reads the switch correctly) and
-    a PF magnet *cost* for six coils plus a solenoid. Splitting the family on it is
-    `next_steps.md` §14.2's rule -- no switch is a static kwarg -- and the reads agree
-    independently: four fields (`.pf_coil.i_cs_superconductor`,
-    `.pf_coil.a_cs_cable_space`, `.pf_coil.f_a_cs_void`, `.pf_coil.fcuohsu`, and on the
-    `PER_KAM` arm `.pf_coil.j_crit_str_cs` as a fifth) are read *only* inside the CS
-    block, and `a_cs_cable_space` is `unwritten` on both ST files -- a declared edge to
-    a field the run never fills.
-
-    `n_cs_pf_coils` stays a static field and is **not** a switch: it is the topology's
-    coil count, `naming_convention.md`'s static-kwarg category, threaded from the same
-    `PFCoilTopology` the PF coil system is built from (7 with a solenoid, 8 without).
-    `i_pf_conductor` also stays -- it branches inside *every* arm rather than between
-    them.
-    """
+    """The Account 222.2 PF-magnet family."""
 
     n_cs_pf_coils: int = eqx.field(static=True)
     i_pf_conductor: PFConductorModel = eqx.field(static=True)
@@ -1143,13 +1057,6 @@ class PfMagnetCostPerKgWithCentralSolenoid(PfMagnetCost):
     """`supercond_cost_model == PER_KG` (0) with a central solenoid -- the whole
     calculation, and **no ports**: the two conductor densities are the only thing its
     occupants differ in, and each declares its own.
-
-    Abstract in use rather than by `ABC`: `ExplicitFunction._signature_of` reads
-    `__call__`'s signature only, so a class with no `__call__` declares no reads and is
-    never bound. The shape is `PFCoilMasses._masses`'s and `CoilsMass`'s.
-
-    **Four reads leave with the `PER_KAM` sibling**: `.costs.sc_mat_cost_0`,
-    `.tfcoil.j_crit_str_0`, `.pf_coil.j_crit_str_pf`, `.pf_coil.j_crit_str_cs`.
     """
 
     def _cost(
@@ -1179,12 +1086,7 @@ class PfMagnetCostPerKgWithCentralSolenoid(PfMagnetCost):
         fncmass,
         fkind,
     ):
-        """The account, given this occupant's two conductor densities.
-
-        Not a port surface -- `_params` reads `__call__`'s signature only, so what each
-        occupant declares is still its own parameter list, and the only entries that
-        differ between them are the two `.tfcoil.dcond[k]` elements.
-        """
+        """The account, given this occupant's two conductor densities."""
         return calculate_pf_magnet_cost_per_kg(
             self.n_cs_pf_coils,
             self.i_pf_conductor,
@@ -1218,27 +1120,7 @@ class PfMagnetCostPerKgWithCentralSolenoid(PfMagnetCost):
 class PfMagnetCostPerKg(PfMagnetCostPerKgWithCentralSolenoid):
     """`supercond_cost_model == PER_KG` (0) with a central solenoid, on the
     `(i_pf_superconductor, i_cs_superconductor) = (3, 1)` pair -- NbTi PF coils, ITER
-    Nb3Sn CS. `indat._pf_coil_system_arm` arm `0`, and PROCESS's own default
-    (`cost_variables.py:552`) with the reference tokamaks' materials
-    (`large_tokamak_nof`, `large_tokamak_eval`).
-
-    **`.tfcoil.dcond` is read by element here, not whole** (2026-08-31), which is what
-    makes this class a material occupant at all. `pfcoil/masses.py` and
-    `tfcoil/superconducting.py` already read the same array by element, so a node
-    reading it whole named one storage location two ways and
-    `cottax.tools.pytree.check_antichain` refuses to write such a pytree back --
-    measured as 2 violations on `large_tokamak_nof`/`large_tokamak_eval`, 2 on
-    `low_aspect_ratio_DEMO` and 1 on `spherical_tokamak_eval`, and it was the entire
-    blocker to running the MDA through `cottax.boundary.run`.
-    `models/physics/radiation_power.py`'s `f_nd_impurity_electron_array` is the
-    standing precedent.
-
-    **`.costs.ucsc` stays whole and both `i_*_superconductor` switches stay ordinary
-    reads.** Nothing reads `.costs.ucsc` by element, so no antichain question arises
-    there, and the switches still index that cost table -- the case
-    `naming_convention.md` leaves as a read, exactly as `.tfcoil.i_tf_sc_mat` is for
-    Account 222.1. The occupant split here is forced by *where a value is stored*, not
-    by what a switch selects, and saying so is why the reads stay.
+    Nb3Sn CS.
     """
 
     def __call__(
@@ -1299,14 +1181,6 @@ class PfMagnetCostPerKg(PfMagnetCostPerKgWithCentralSolenoid):
 class PfMagnetCostPerKgCsWstNb3Sn(PfMagnetCostPerKgWithCentralSolenoid):
     """The same arm on the `(3, 5)` pair -- NbTi PF coils, WST Nb3Sn CS,
     `low_aspect_ratio_DEMO.IN.DAT`'s materials, `indat._pf_coil_system_arm` arm `1`.
-
-    One read differs from `PfMagnetCostPerKg` and nothing else does: the CS conductor
-    density is `.tfcoil.dcond[4]` instead of `.tfcoil.dcond[0]`. That is exactly the
-    difference between `PFCoilMassesCsWstNb3Sn` and `PFCoilMasses`, and it is the same
-    switch pair resolved by the same predicate -- the two nodes read the same storage
-    and now name it the same way. The two elements hold the same 6080 kg/m^3 today and
-    the split is still the point (`pfcoil/masses.py`'s
-    `I_CS_SUPERCONDUCTOR_WST_NB3SN`).
     """
 
     def __call__(
@@ -1367,17 +1241,6 @@ class PfMagnetCostPerKgCsWstNb3Sn(PfMagnetCostPerKgWithCentralSolenoid):
 class PfMagnetCostPerKgNoCentralSolenoid(PfMagnetCost):
     """`supercond_cost_model == PER_KG` (0) on a machine with `.build.iohcl == 0` --
     both tracked spherical tokamaks.
-
-    **Four reads leave with the sibling above**: `.pf_coil.i_cs_superconductor`,
-    `.pf_coil.a_cs_cable_space`, `.pf_coil.f_a_cs_void` and `.pf_coil.fcuohsu`. All four
-    are read only inside `acc2222`'s `iohcl == 1` block, and `a_cs_cable_space` has no
-    producer on a machine with no solenoid at all.
-
-    `i_pf_superconductor = 9` (Hazelton/Zhai REBCO tape) on both tracked spherical
-    tokamaks, so the one conductor density this arm needs is `.tfcoil.dcond[8]` --
-    read by element for `PfMagnetCostPerKg`'s reason, and the same element
-    `PFCoilMassesNoCentralSolenoid` reads. There is no CS density: with no solenoid
-    the whole CS block is skipped, so this occupant is not split further.
     """
 
     def __call__(
@@ -1432,16 +1295,6 @@ class PfMagnetCostPerKgNoCentralSolenoid(PfMagnetCost):
 class PfMagnetCostPerKam(PfMagnetCost):
     """`supercond_cost_model == PER_KAM` (1) with a central solenoid -- strand cost
     scaled by critical current density.
-
-    **Two reads leave with this occupant**: `.costs.ucsc` and `.tfcoil.dcond`.
-
-    Written although no tracked file selects it, for
-    `CSCriticalCurrentDensitiesWstNb3Sn`'s reason: the registry this slot is keyed on is
-    `.costs.supercond_cost_model`'s, `TF_MAGNET_COST_SUPERCONDUCTING` is already total
-    over both its values, and a `PF_MAGNET_COST` that refused arm `1` would make
-    `supercond_cost_model = 1` assemble a TF coil and then fail on the PF coils -- a new
-    slot narrowing the set of files the port accepts. The same argument makes the
-    `iohcl` split total: all four combinations exist.
     """
 
     def __call__(
@@ -1504,13 +1357,7 @@ class PfMagnetCostPerKam(PfMagnetCost):
 
 
 class PfMagnetCostPerKamNoCentralSolenoid(PfMagnetCost):
-    """`supercond_cost_model == PER_KAM` (1) on a machine with `.build.iohcl == 0`.
-
-    **Five reads leave with the sibling above** -- the `PER_KG` pair's four plus
-    `.pf_coil.j_crit_str_cs`, which only this arm's CS strand cost needs. Written for
-    the same totality reason `PfMagnetCostPerKam` is: refusing one of the four
-    combinations would let a file assemble its TF coils and then fail on its PF coils.
-    """
+    """`supercond_cost_model == PER_KAM` (1) on a machine with `.build.iohcl == 0`."""
 
     def __call__(
         self,
@@ -1615,56 +1462,19 @@ class PowerInjectionCost(ExplicitFunction):
 
 
 class EnergyStorageCost(ExplicitFunction):
-    """The family owning `.costs.c2253` (Account 225.3): one occupant per arm.
-
-    `i_pulsed_plant` and `istore` were `eqx.field(static=True)` kwargs on one node
-    declaring two reads. **At the tree's own value both reads are dead**: with
-    `i_pulsed_plant == 0` the body sets `c2253 = 0.0`, scales zero by
-    `p_plant_electric_net_mw`, multiplies by `fkind` and returns zero -- so the graph
-    carried a `.heat_transport -> .costs` edge and a `.costs.fkind` edge that no run
-    makes. The unpulsed occupant below reads nothing at all, which is the same statement
-    made structurally.
-    """
+    """The family owning `.costs.c2253` (Account 225.3): one occupant per arm."""
 
     c2253 = OutputInto(costs)
 
 
 class EnergyStorageCostUnpulsed(EnergyStorageCost, StatesValues):
     """`i_pulsed_plant == 0`: no storage, so `.costs.c2253` is zero and nothing is read.
-
-    A zero-input node, the same shape as `StellaratorMachineConfig` -- and the same
-    open policy question (`next_steps.md` §2, "this node always/only produces
-    literals"). It is a node here because something must own the field: an unowned
-    `.costs.c2253` would be a boundary input read from the `DataStructure`, which is the
-    defect this port exists to remove, not a simplification.
-
-    The zero is **stated** and not a literal in the body, so it reaches the compiled
-    program as an argument rather than as a constant XLA is free to fold the readers of
-    (`models/stated.py`, `_audit/optimise_design.md` §28, §34): `.costs.c2253` -- account
-    225.3 (M$) -- is read at `^stated.costs.c2253` and supplied through the env.
     """
 
 
 class EnergyStorageCostPulsed(EnergyStorageCost):
     """`i_pulsed_plant == 1`: an ELECTROWATT thermal-storage design, scaled by net
-    electric power. One occupant per `.pulse.istore` value.
-
-    **`istore` was a static kwarg here and is not any more.** `switch_kwarg_survey.md`
-    band (c) argued it should stay one, because options 1 and 2 are two itemised literal
-    sums (`costs.py:2617-2643` and `:2645-2682`) over the *same* two variables, so
-    splitting invents no edge and the two occupants are indistinguishable by ports.
-    `_audit/next_steps.md` §14.2 withdrew that position: a switch value selects an
-    occupant whatever its reads, and `test_occupants_of_one_slot_differ` now asserts a
-    distinct occupant **class** rather than distinct ports. This slot is the case that
-    policy was restated for, and the gap it leaves is named in that test's docstring --
-    nothing catches a family whose occupants differ only in a literal, because from
-    outside they do not differ at all.
-
-    The literal moved out of the node with the switch: each occupant calls its own arm
-    function, so no integer and no module constant decides anything inside a body.
-
-    Option 3 is the contrast case and is `UNPORTED`: it reads three variables the others
-    do not, so it is a different occupant, not a different literal.
+    electric power.
     """
 
 
@@ -1771,9 +1581,7 @@ class HeatTransportSystemCost(ExplicitFunction):
 
 
 class FuelProcessingCost(ExplicitFunction):
-    """cottax node: `calculate_fuel_processing_cost` (Account 2272). Sole producer of
-    `.physics.wtgpd`.
-    """
+    """cottax node: `calculate_fuel_processing_cost` (Account 2272)."""
 
     wtgpd = OutputInto(physics)
     c2272 = OutputInto(costs)
@@ -1878,23 +1686,8 @@ class ConstructedCost(ExplicitFunction):
 
 
 class CostOfElectricity(ExplicitFunction):
-    """The `Costs.coelc` family -- sole producer of `.costs.coe`, the
-    `i_figure_merit == 6` objective. One occupant per `.physics.itart` value.
-
-    **Four switches were static kwargs on this one class and none is now**
-    (`_audit/next_steps.md` §14.2). Three of them decided nothing this node computes and
-    are answered by the slot instead: `ireactor`/`ipnet` jointly decide whether the node
-    *exists* (`_cost_of_electricity_arm`, and `costs.py:82-83` is the reason), and `ife`
-    is refused once for all seven Account-22x nodes at assembly
-    (`indat.py`'s `_ife_cost_accounts_arm`). The fourth, `itart`, is a real branch: the
-    centrepost replacement cost of `costs.py:2769-2783` exists only on a spherical
-    tokamak, and one class carrying the switch had to declare
-    `.costs.cplife_cal`/`.cpstcst`/`.cplife` on a machine that reads none of them.
-
-    The `__check_init__` that used to assert `ireactor == 1 and ipnet == 0` is gone with
-    the fields: arm 1 of the slot exists only where they hold, so there is nothing left
-    to contradict. That containment is the same one `EcrhDensityLimit` has inside
-    `ProfileParameterisationParabolic`.
+    """The `Costs.coelc` family -- sole producer of `.costs.coe`, the `i_figure_merit ==
+    6` objective.
     """
 
     moneyint = OutputInto(costs)
@@ -1908,12 +1701,6 @@ class CostOfElectricity(ExplicitFunction):
 class CostOfElectricityConventionalAspectRatio(CostOfElectricity):
     """`.physics.itart == 0` -- the reference run's, and PROCESS's own default
     (`physics_variables.py:994`).
-
-    **Three reads leave with this occupant**: `.costs.cplife_cal`, `.costs.cpstcst` and
-    `.costs.cplife`. The last is the one that mattered structurally -- it is owned by
-    `availability.cplife_avail`'s `FixedPoint`, which is the identity map on this
-    machine (`_audit/switch_kwarg_survey.md` §4.7), so the cost of electricity was
-    declared to depend on a driven quantity that determines nothing.
     """
 
     def __call__(
@@ -1990,11 +1777,6 @@ class CostOfElectricityConventionalAspectRatio(CostOfElectricity):
 class CostOfElectricitySphericalTokamak(CostOfElectricity):
     """`.physics.itart == 1` -- the spherical tokamak, which additionally pays to
     replace its centrepost (`costs.py:2769-2783`).
-
-    **The three reads its sibling does not make** are `.costs.cplife_cal`,
-    `.costs.cpstcst` and `.costs.cplife`. Written and registered although no tracked
-    input assembles it yet: without it, dropping those three reads from the conventional
-    arm would have deleted a branch PROCESS has rather than filed it.
     """
 
     def __call__(

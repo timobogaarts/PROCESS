@@ -1,10 +1,4 @@
-"""The cost model's namespace -- which cost nodes this machine has, and their
-settings.
-
-The nodes themselves are in `costs.py`; this module is the naming scope that groups
-them, and it sits beside them for that reason (`model_tree_design.md` §11). It
-carries no switch: which occupant fills a switched slot is `indat.py`'s answer,
-never a subsystem's.
+"""The cost model's namespace -- which cost nodes this machine has, and their settings.
 """
 
 import dataclasses
@@ -138,25 +132,7 @@ class Costs(ModelNamespace):
     )  # Account 222.2
     """Account 222.2, **restored 2026-08-30**, and the third device-decided slot -- and
     the only one that is device-decided *and* switched, so both mechanisms meet on it.
-
-    `machine_from_indat` fills it with `None` on a stellarator for
-    `reactor_structure_cost`'s reason (`caller.py:272-275` returns before
-    `pfcoil.run()`, so every `.pf_coil.*` read keeps its dataclass default and the node
-    would compute an exact zero out of a subsystem the device does not have), and on a
-    tokamak with the `.costs.supercond_cost_model` occupant `PF_MAGNET_COST` names.
-
-    **Two things had to land before it could, and only one of them was a producer.** The
-    refusal recorded in `_audit/cost_boundary_inputs.md` §13.2 was not the stale kind
-    Account 225.2's slot documents below: every read the *live* arm makes was already
-    owned when it was written. What was wrong was the node -- one class carrying
-    `supercond_cost_model` as a static kwarg over two arms with disjoint strand-cost
-    reads, so registering it would have declared four edges the reference run does not
-    make. Splitting it into `PfMagnetCostPerKg`/`PerKam` removes three of those four
-    from the live arm; the fourth, `.pf_coil.j_crit_str_pf`, is a field PROCESS computes
-    (`superconpf`, `pfcoil.py:900-904`) that nothing owned, so
-    `.tokamak.pf_coil.strand_critical_current` was written for it in the same commit.
-    Registering without that would have taken `.costs.c2222` off the missing-producer pin
-    and put `.pf_coil.j_crit_str_pf` on it -- a hole moved, not filled."""
+    """
     # **Account 225.2 (PF coil power conditioning) had no slot here, and 221.4 (reactor
     # structure) and 222.2 (PF magnets) above had none, deliberately. A stellarator
     # has no PF coil system and no separately-accounted reactor structure, so this tree
@@ -204,26 +180,7 @@ class Costs(ModelNamespace):
     pf_coil_power_conditioning_cost: PfCoilPowerConditioningCost | None = (
         dataclasses.field(kw_only=True)
     )  # Account 225.2
-    """Account 225.2, **restored 2026-08-30**, and the second device-decided slot.
-
-    Deleted by `model_tree_design.md` §8 step 4c with the note above
-    `vacuum_vessel_assembly_cost`, which said the split would come back "when the
-    tokamak arrives" and named the prerequisite exactly: `power.py`'s `Power.pfpwr`.
-    That landed the same day as `.power.pf_coil_power`, and all seven of this node's
-    reads -- `.pf_power.pfckts`/`spfbusl`/`acptmax`/`vpfskv`/`ensxpfm`/`srcktpm` and
-    `.heat_transport.peakmva` -- are owned by it.
-
-    **The refusal that preceded this was correct when it was made and stale by the time
-    it was read.** It was written in a worktree that could not see `Power.pfpwr`
-    landing in a sibling worktree the same afternoon, and reasoned that registering the
-    node would trade one pinned missing-producer row for four. With `pfpwr` in place it
-    trades one row for none. Recorded because it is the cost of parallel work on one
-    shared boundary list, and because `boundary.unproduced_but_computed` is what made
-    the staleness visible rather than anyone re-reading the note.
-
-    `None` on a stellarator for `reactor_structure_cost`'s reason: `stellarator.py`
-    never calls `Power.run`, so there is no PF coil power supply to condition and the
-    node would compute an exact zero from a subsystem the device does not have."""
+    """Account 225.2, **restored 2026-08-30**, and the second device-decided slot."""
     # (the deleted-slot note above `vacuum_vessel_assembly_cost` is now historical) **`energy_storage_cost` below is deliberately
     # *kept*** even though its outputs are zero too: it is zero because of
     # `i_pulsed_plant`, a switch, not because of a subsystem this device lacks. A pulsed
@@ -236,11 +193,8 @@ class Costs(ModelNamespace):
     energy_storage_cost: EnergyStorageCost = dataclasses.field(kw_only=True)
     """Account 225.3, and **the reads follow the arm.** At `i_pulsed_plant == 0` this
     account is identically zero and reads nothing; at `== 1` it scales an itemised
-    literal by net electric power. One node carrying the switch declared both reads
-    unconditionally, so the graph claimed a `.heat_transport -> .costs` edge that the
-    reference run does not make. `large_tokamak_eval.IN.DAT` sets `i_pulsed_plant = 1`,
-    which is why this is one of the four values `_audit/tokamak_scope.md` found the tree
-    contradicting."""
+    literal by net electric power.
+    """
     power_conditioning_cost: PowerConditioningCost = (
         PowerConditioningCost()
     )  # Account 225 total
@@ -301,40 +255,6 @@ class Costs(ModelNamespace):
     cost_of_electricity: CostOfElectricity | None = dataclasses.field(kw_only=True)
     """Whether this run has a cost of electricity at all, and if so which centrepost
     treatment -- `.costs.ireactor`, `.costs.ipnet` and `.physics.itart` jointly
-    (`cost_variables.py:521`/`:515`, `physics_variables.py:994`; defaults `1`, `0`, `0`).
-    `.costs.coe`, `coecap`, `coeoam`, `coefuelt`, `moneyint`, `capcost`.
-
-    **A node-existence condition, not a branch, and now spelled as one.**
-    `Costs.run()` calls `coelc()` only when `ireactor == 1 and ipnet == 0`
-    (`costs.py:82-83`); on any other pair PROCESS leaves all six fields at whatever they
-    already held, and `CostOfElectricity.__check_init__` says so outright -- *"this node
-    must not exist"*. It existed anyway: `ireactor` drove the
-    `availability.electric_production` slot while this constructor kwarg said
-    `CALCULATED` regardless, so `ireactor = 0` assembled `PowerProfilesOverTime` (which
-    computes no `.heat_transport.p_plant_electric_net_mw`) *and* a `CostOfElectricity`
-    reading it. One switch, two answers.
-
-    **`None` is the occupant of the other arm, and that is what `None` is for.** Step 4b
-    removed all four `| None`s, two as unreachable and two as configurations this port
-    cannot honestly assemble -- none of the four was a case where *PROCESS itself*
-    computes nothing. This one is: at `ireactor == 0` the six fields simply keep their
-    entering values, which is exactly what an absent occupant means (cottax:
-    *"an unproduced slot: it assembles nothing, and whatever read its outputs surfaces
-    as a boundary input. Absence, spelled as absence."*). Refusing the value instead
-    would have made a ported, registered occupant -- `PowerProfilesOverTime` --
-    unreachable, which is the defect step 4c had just finished removing from
-    `BlanketShieldPowerExponential`.
-
-    **`ireactor`, `ipnet`, `ife` and `itart` were all static kwargs on the occupant and
-    none is now** (`_audit/next_steps.md` §14.2). The first two are what select this
-    slot's arm, so restating them on the occupant was a second answer to a question the
-    slot had already answered; `ife` is refused once at assembly for all seven
-    Account-22x nodes. The fourth, `itart`, was the one that cost the graph something:
-    `costs.py:2769-2783`'s centrepost replacement cost exists only at `itart == 1`, so a
-    single node carrying the switch read `.costs.cplife_cal`, `.costs.cpstcst` and
-    `.costs.cplife` on a machine that reads none of them -- and `.costs.cplife` is owned
-    by a `FixedPoint` that is the identity map here. It is a third arm of this slot now,
-    not a kwarg, and the previous note's "both `itart` arms are implemented in one
-    function ... a deliberate size-aware deviation" is withdrawn with the policy that
-    allowed it.
+    (`cost_variables.py:521`/`:515`, `physics_variables.py:994`; defaults `1`, `0`,
+    `0`).
     """

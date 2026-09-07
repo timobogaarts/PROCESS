@@ -1,19 +1,4 @@
-"""Pure-functional port of `st_div` (registry unit #4, `divertor.py`).
-
-Audit record: `functional_process/_audit/units/models/stellarator/divertor.md`. `st_div`
-is a single 239-line module with one computational function and one purely-reporting
-`output()` (its arguments are already-computed locals, no further computation) -- the
-whole file is tier-1, self-contained, and has no internal solve or switches, so it is
-ported in full.
-
-`Divertor` below is the `cottax` node (`ExplicitFunction`, see `_audit/schema.md`'s
-"cottax node" section). `.divertor.a_div_surface_total` is the field chunk 1E2's audit
-(`stellarator_E2_fwbs_neutronics.md`) found `st_fwbs` falling back to a hardcoded `50.0`
-for on its first call, because `st_fwbs` runs before `st_div` in the pipeline
-(`stellarator.py`'s `run()`) -- confirmed here as the real, unconditional producer of
-that field. That first-call fallback is a call-*order* problem in `st_fwbs`/`run()`, not
-anything about this file: `st_div` itself has no missing input and no internal state.
-"""
+"""Pure-functional port of `st_div` (registry unit #4, `divertor.py`)."""
 
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import (

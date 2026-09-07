@@ -26,3 +26,15 @@ any record verbatim. Citations elsewhere in the tree that name a record by path 
 
 `schema.md`, which specified the record format, went with them. This is the same move
 `next_steps_archive.md` records for the numbered state snapshots, and for the same reason.
+
+## Also deleted on 2026-09-07
+
+- **`cottax/warp/`** (11 modules, 8,174 lines) and `warp_stellarator_helias.ipynb`. The
+  experiment was archived in `next_steps.md` § Landed — its findings, its two refuted
+  hypotheses and the resumption plan are all there — and the code went with the
+  narrative rather than sitting in the tree as a second, unexercised backend. Nothing
+  tracked imported it. `git log --diff-filter=D -- functional_process/cottax/warp/`.
+- **The per-unit records' prose in `cottax/`'s node files.** The node layer is a wrapper:
+  every docstring in it is now its own first sentence. What a quantity means and why a
+  formula is what it is belongs in `models/`, which the node file imports from; why a
+  port was written the way it was belongs in its commit. 32,815 → 21,775 lines.

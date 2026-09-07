@@ -1,81 +1,4 @@
-"""Pure-functional port of `process/models/blankets/hcpb.py`'s `CCFE_HCPB`.
-
-Registry unit #13, **extended for the tokamak** (`_audit/tokamak_boundary.md`
-§`.tokamak.ccfe_hcpb`, the single biggest attributable gap at 16 boundary reads). Read
-`functional_process/_audit/units/models/blankets/hcpb.md` first -- it carries the
-evidence for every read/write attribution below.
-
-**What changed relative to the original three-function port.** Unit #13 ported
-`nuclear_heating_blanket`, `nuclear_heating_shield` and `nuclear_heating_magnets` because
-they were the sole blocker on the *stellarator*'s `st_fwbs` S2, where they are reachable
-only through `blanket_neutronics()` -- a path with a live PROCESS `TypeError` (see the
-record's open question #1). A tokamak reaches them directly from
-`CCFE_HCPB.run()` (`caller.py:345`), so this file now ports the whole tokamak call path:
-`run()`'s own renormalisation block, `component_masses`, `nuclear_heating_fw` and
-`powerflow_calc` alongside the original three. Three things about the originals moved:
-
-1. `.fwbs.f_a_fw_coolant_inboard`/`_outboard` are **no longer owned by the magnets
-   node** -- `FirstWallCoolantVoidFractions` owns them. That is what dissolves the one
-   real cycle in this model; see that class's docstring.
-2. The four `nuclear_heating_*` nodes now own **minted `_unnormalised` names under
-   `.ccfe_hcpb`**, not the real `.fwbs` fields. `run()` overwrites all four
-   (`hcpb.py:220-264`) and the overwritten value is what every downstream consumer reads,
-   so the raw and the final are two different quantities that PROCESS happens to store in
-   one slot. The original record already flagged this for `p_tf_nuclear_heat_mw`; it is
-   true of all four.
-3. `itart` is no longer a traced argument selecting a branch with `jnp.where`. Under
-   `next_steps.md` §14.2 a switch value selects an occupant class, so the shield and
-   magnets functions are one function per arm.
-
-**Switches met on this path, and what this port answers** (values from
-`tests/regression/input_files/large_tokamak_eval.IN.DAT`, read out of the assembled
-`DataStructure`, `tokamak_call_surface.md` §"The reference run"):
-
-| switch | value here | ported | note |
-|---|---|---|---|
-| `.physics.itart` | 0 | **both arms** | `itart == 1` written 2026-08-27, see below |
-| `.tfcoil.i_tf_sup` | 1 | the superconducting cell | new on this path 2026-08-27: the
-centrepost chain reads it, and cuts it two different ways |
-| `.divertor.n_divertors` | 1 | **both arms** | `== 2` written 2026-08-27, see below |
-| `.fwbs.i_p_coolant_pumping` | 3 | `MECHANICAL_WITH_PRESSURE_DROP` | `0`/`1`
-unported; `2` is CoolProp-bound |
-| `.fwbs.i_blkt_coolant_type` | 1 (`HELIUM`) | only arm reachable | `run()` assigns
-`HELIUM` unconditionally at `hcpb.py:45`, so `powerflow_calc`'s `WATER` arm (`:793`,
-CoolProp) is **dead code** for `CCFE_HCPB`, not merely dormant |
-| `.fwbs.i_blanket_type` | 1 (`CCFE_HCPB`) | this whole file | `== 5` routes to
-`blankets/dcll.py` |
-
-Nothing here reaches CoolProp: the only CoolProp site inside `CCFE_HCPB` is
-`powerflow_calc:794`, behind the dead `WATER` arm above (`tokamak_call_surface.md` §D
-records the same three modules as "dormant"; for this one it is stronger than dormant).
-
-2026-08-27 (the double-null wave): this file's two `n_divertors` slots gained their
-`== 2` occupants -- `DivertorSurfaceAndPlateMassDoubleNull` (`hcpb.py:360-361`, the
-factor of two on `a_div_surface_total`) and
-`NuclearHeatingRenormalisationDoubleNullConventional` (`hcpb.py:213-217`, the different
-`f_geom_blanket`).
-
-2026-08-27 (the centrepost wave): `itart == 1` is ported and registered. The chain
-`hcpb.py:1008-1287` -- `st_cp_angle_fraction`, `st_tf_centrepost_fast_neut_flux`,
-`st_centrepost_nuclear_heating` -- becomes one occupant,
-`CentrepostNeutronicsSphericalTokamakSuperconducting`, and the renormalisation's
-`(n_divertors, itart)` square gains its two `itart == 1` cells. Three consequences worth
-carrying:
-
-1. **`.tfcoil.i_tf_sup` is a switch of this file now.** Two of the three centrepost
-   routines read it and *partition it differently* -- `{1}` vs `{0, 2}` for the neutron
-   flux, `{2}` vs `{0, 1}` for the nuclear heating -- so the slot is keyed on a joint
-   `(itart, i_tf_sup)` arm. Only the `(1, 1)` cell is written; both input files select
-   it.
-2. **Two mints.** `.ccfe_hcpb.f_geom_cp` is a `run()` local that crosses a node
-   boundary; `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit` is the MCNP fit value PROCESS
-   stores in `.fwbs.p_cp_shield_nuclear_heat_mw` at `:137` and overwrites at `:267`.
-3. **`.build.r_sh_inboard_out` was a boundary input with no producer** when this
-   cluster landed -- `build.py:1858` accumulates it outwards from the bore, a chain the
-   port did not own. It does now: `models/build.py`'s
-   `VacuumVesselAndShieldRadiiTfOutsideCs` (2026-08-29) owns those three lines, so this
-   read has a real edge and the note stands only as history.
-"""
+"""Pure-functional port of `process/models/blankets/hcpb.py`'s `CCFE_HCPB`."""
 
 import jax.numpy as jnp
 from cottax.interfaces.pytree_namespace_module import ExplicitFunction, From, OutputInto
@@ -196,10 +119,7 @@ __all__ = [
 
 
 class FirstWallCoolantVoidFractions(ExplicitFunction):
-    """cottax node: `calculate_fw_coolant_void_fractions`.
-
-    The node that makes the rest of this file acyclic -- see the function's docstring.
-    """
+    """cottax node: `calculate_fw_coolant_void_fractions`."""
 
     f_a_fw_coolant_inboard = OutputInto(fwbs)
     f_a_fw_coolant_outboard = OutputInto(fwbs)
@@ -218,17 +138,11 @@ class FirstWallCoolantVoidFractions(ExplicitFunction):
 class DivertorSurfaceAndPlateMass(ExplicitFunction):
     """The family that owns `.divertor.a_div_surface_total` and `.divertor.m_div_plate`:
     one occupant per `n_divertors` arm of `component_masses`' `hcpb.py:353-367`.
-
-    `.divertor.a_div_surface_total` is read by `.costs.divertor_cost` -- one of the
-    sixteen boundary variables this slot owes. Both arms are written (2026-08-27); the
-    slot is total.
     """
 
 
 class DivertorSurfaceAndPlateMassSingleNull(DivertorSurfaceAndPlateMass):
-    """cottax node: `calculate_divertor_surface_and_plate_mass_single_null`.
-    `n_divertors == 1`.
-    """
+    """cottax node: `calculate_divertor_surface_and_plate_mass_single_null`."""
 
     a_div_surface_total = OutputInto(divertor)
     m_div_plate = OutputInto(divertor)
@@ -253,10 +167,7 @@ class DivertorSurfaceAndPlateMassSingleNull(DivertorSurfaceAndPlateMass):
 
 
 class DivertorSurfaceAndPlateMassDoubleNull(DivertorSurfaceAndPlateMass):
-    """cottax node: `calculate_divertor_surface_and_plate_mass_double_null`.
-    `n_divertors == 2` -- live on `spherical_tokamak_eval.IN.DAT` and
-    `st_regression.IN.DAT`.
-    """
+    """cottax node: `calculate_divertor_surface_and_plate_mass_double_null`."""
 
     a_div_surface_total = OutputInto(divertor)
     m_div_plate = OutputInto(divertor)
@@ -281,14 +192,7 @@ class DivertorSurfaceAndPlateMassDoubleNull(DivertorSurfaceAndPlateMass):
 
 
 class ComponentMasses(ExplicitFunction):
-    """cottax node: `calculate_component_masses`.
-
-    Unswitched: nothing left in this body branches once the divertor pair is elsewhere.
-    Owns four of the slot's sixteen boundary variables -- `.fwbs.m_blkt_beryllium`,
-    `.fwbs.m_blkt_li2o`, `.fwbs.m_blkt_steel_total` (all read by `.costs.blanket_cost`),
-    `.fwbs.whtshld` (`.costs.shield_cost`, `.buildings.sizing`) and `.fwbs.wpenshld`
-    (`.costs.shield_cost`).
-    """
+    """cottax node: `calculate_component_masses`."""
 
     m_fw_blkt_div_coolant_total = OutputInto(fwbs)
     fwclfr = OutputInto(fwbs)
@@ -361,13 +265,6 @@ class ComponentMasses(ExplicitFunction):
 class NuclearHeatingMagnets(ExplicitFunction):
     """The family that owns the nine `nuclear_heating_magnets` outputs: one occupant per
     value of `.physics.itart` (`hcpb.py:495-575`).
-
-    Both arms are written and, since 2026-08-27, both are registered. They own the same
-    nine fields and read unequal sets -- the conventional arm reads
-    `.build.dr_blkt_inboard`, `.build.dr_shld_inboard` and `.tfcoil.m_tf_coils_total`;
-    the spherical one reads `.tfcoil.whttflgs` instead of the last of those and
-    neither of the first two, because a spherical machine's inboard blanket and shield
-    are the centrepost's business.
     """
 
 
@@ -383,9 +280,7 @@ class NuclearHeatingMagnetsConventional(NuclearHeatingMagnets):
     x_shield = OutputInto(ccfe_hcpb)
     tfc_nuc_heating = OutputInto(ccfe_hcpb)
     p_tf_nuclear_heat_mw_unnormalised = OutputInto(ccfe_hcpb)
-    """Minted. `.fwbs.p_tf_nuclear_heat_mw` is the *renormalised* value
-    (`hcpb.py:255-264`) and is owned by
-    `NuclearHeatingRenormalisationSingleNullConventional`."""
+    """Minted."""
 
     def __call__(
         self,
@@ -435,10 +330,7 @@ class NuclearHeatingMagnetsConventional(NuclearHeatingMagnets):
 
 
 class NuclearHeatingMagnetsSphericalTokamak(NuclearHeatingMagnets):
-    """cottax node: `calculate_nuclear_heating_magnets_spherical_tokamak`. `itart == 1`.
-
-    Registered 2026-08-27, once the centrepost chain this machine also needs existed.
-    """
+    """cottax node: `calculate_nuclear_heating_magnets_spherical_tokamak`."""
 
     armour_density = OutputInto(ccfe_hcpb)
     fw_density = OutputInto(ccfe_hcpb)
@@ -526,21 +418,11 @@ class NuclearHeatingBlanket(ExplicitFunction):
 class NuclearHeatingShield(ExplicitFunction):
     """The family that owns the four `nuclear_heating_shield` outputs: one occupant per
     value of `.physics.itart` (`hcpb.py:748-769`).
-
-    The arms own the same four fields and differ by one read:
-    `.build.dr_shld_inboard` enters the average shield thickness on a conventional
-    machine and does not on a spherical one, where the inboard shield is the centrepost's
-    and is accounted separately. Both registered since 2026-08-27.
     """
 
 
 class NuclearHeatingShieldConventional(NuclearHeatingShield):
-    """cottax node: `nuclear_heating_shield_conventional`. `itart == 0`.
-
-    `shield_density`/`x_blanket` are `NuclearHeatingMagnetsConventional`'s own outputs --
-    an ordinary graph edge, magnets before shield, matching the call order
-    `CCFE_HCPB.run()` uses (`hcpb.py:155` then `:174`).
-    """
+    """cottax node: `nuclear_heating_shield_conventional`."""
 
     p_shld_nuclear_heat_mw_unnormalised = OutputInto(ccfe_hcpb)
     """Minted; `.fwbs.p_shld_nuclear_heat_mw` is the renormalised value."""
@@ -568,10 +450,7 @@ class NuclearHeatingShieldConventional(NuclearHeatingShield):
 
 
 class NuclearHeatingShieldSphericalTokamak(NuclearHeatingShield):
-    """cottax node: `nuclear_heating_shield_spherical_tokamak`. `itart == 1`.
-
-    Registered 2026-08-27, with the centrepost chain.
-    """
+    """cottax node: `nuclear_heating_shield_spherical_tokamak`."""
 
     p_shld_nuclear_heat_mw_unnormalised = OutputInto(ccfe_hcpb)
     exp_shield1 = OutputInto(ccfe_hcpb)
@@ -599,42 +478,11 @@ class CentrepostNeutronics(ExplicitFunction):
     """The family that owns `run()`'s centrepost block (`hcpb.py:103-148`): one occupant
     per cell of the joint `(itart, i_tf_sup)` arm PROCESS's three `st_*` routines cut
     between them.
-
-    **The arms do not own the same set, and the difference is one field.**
-    `CentrepostNeutronicsAbsent` owns `.fwbs.p_cp_shield_nuclear_heat_mw`, because on the
-    conventional arm the two writes PROCESS makes to it (`:146` and `:267`) are both
-    `0.0` -- a `redundant-duplicate-write` resolved by picking one owner. On a spherical
-    machine they differ, `:267` wins, and the field belongs to the renormalisation
-    occupant instead; this family's spherical member mints the earlier value as
-    `.ccfe_hcpb.p_cp_shield_nuclear_heat_mw_fit`. Partial overlap by construction, the
-    same shape `.fwbs.i_p_coolant_pumping`'s arms have in this file.
-
-    **Why the arm is joint.** `st_tf_centrepost_fast_neut_flux` splits `i_tf_sup` as
-    `{1}` against `{0, 2}` (`hcpb.py:1114`); `st_centrepost_nuclear_heating` splits it as
-    `{2}` against `{0, 1}` (`:1192`). Two different partitions of one switch inside one
-    straight-line block, so no single integer names the occupant and
-    `indat._centrepost_neutronics_arm` derives one from the pair.
     """
 
 
 class CentrepostNeutronicsAbsent(CentrepostNeutronics, StatesValues):
-    """cottax node: `calculate_centrepost_neutronics_absent`. `itart == 0`.
-
-    Reads nothing -- the same shape as `i_pulsed_plant`'s unpulsed occupant
-    (`next_steps.md` §14.4), and legitimate for the same reason: on this arm PROCESS's
-    own source is four literal assignments.
-
-    The four are **stated** rather than produced in the body: a zero built during the
-    trace is a compile-time constant, and §25 measured XLA deleting the subexpressions
-    such a zero multiplies (`models/stated.py`, `_audit/optimise_design.md` §28, §34).
-    The unit (`calculate_centrepost_neutronics_absent`) still states them, through
-    `indat.STATED_VALUES`.
-
-    `carried_all` used to hold the four together, because the ported function hands them
-    back as one tuple and four fields would have restated four literals the unit already
-    states. Stating them keeps that: the four are one `default_factory` row in
-    `indat.STATED_VALUES`, zipped onto the four outputs in declaration order.
-    """
+    """cottax node: `calculate_centrepost_neutronics_absent`."""
 
     pnuc_cp_tf = OutputInto(fwbs)
     p_cp_shield_nuclear_heat_mw = OutputInto(fwbs)
@@ -644,15 +492,6 @@ class CentrepostNeutronicsAbsent(CentrepostNeutronics, StatesValues):
 
 class CentrepostNeutronicsSphericalTokamakSuperconducting(CentrepostNeutronics):
     """cottax node: `calculate_centrepost_neutronics_spherical_tokamak_superconducting`.
-    `itart == 1` and `i_tf_sup == 1`.
-
-    Owns the mint `.ccfe_hcpb.f_geom_cp` -- a *local* in PROCESS's `run()` (`:120`) that
-    two later statements read (`:216`, `:268`). Once those statements are a different
-    node, the local crosses a node boundary and has to be named.
-
-    `.build.r_sh_inboard_out` is a **boundary input with no producer in this port**; see
-    the pure function's docstring for why `.build.r_shld_inboard_inner` is not a
-    substitute for it.
     """
 
     f_geom_cp = OutputInto(ccfe_hcpb)
@@ -660,8 +499,7 @@ class CentrepostNeutronicsSphericalTokamakSuperconducting(CentrepostNeutronics):
     neut_flux_cp = OutputInto(fwbs)
     pnuc_cp_tf = OutputInto(fwbs)
     p_cp_shield_nuclear_heat_mw_fit = OutputInto(ccfe_hcpb)
-    """Minted. `.fwbs.p_cp_shield_nuclear_heat_mw` is `run():267`'s *later* value and is
-    owned by the spherical renormalisation; this is the MCNP fit PROCESS overwrites."""
+    """Minted."""
     pnuc_cp = OutputInto(fwbs)
 
     def __call__(
@@ -690,31 +528,12 @@ class CentrepostNeutronicsSphericalTokamakSuperconducting(CentrepostNeutronics):
 class NuclearHeatingRenormalisation(ExplicitFunction):
     """The family that owns the four renormalised nuclear-heating powers: one occupant
     per cell of the `(n_divertors, itart)` pair `hcpb.py:195-276` branches on.
-
-    Owns four of the slot's sixteen boundary variables:
-    `.fwbs.p_fw_nuclear_heat_total_mw`, `.fwbs.p_blkt_nuclear_heat_total_mw`,
-    `.fwbs.p_shld_nuclear_heat_mw` and `.fwbs.p_tf_nuclear_heat_mw`.
-
-    **`.fwbs.p_tf_nuclear_heat_mw` has a second producer in the tree**, and it is worth
-    naming rather than discovering later: `models/stellarator/tf_nuclear_heating.py`'s
-    `ScTfCoilNuclearHeating` owns the same `VarPath`. There is no conflict on a
-    tokamak -- that node is a slot of `Stellarator`'s `blktmodel`/`ipowerflow` switch
-    (`models/stellarator/namespace.py:186`) and a `TokamakProcess` has no `Stellarator`
-    namespace at all -- but the two are alternative producers of one field on two
-    different devices, and any future machine that assembled both would have to choose.
-
-    **All four cells are written** since 2026-08-27 (the centrepost wave). The two
-    `itart == 1` cells own a fifth field the conventional two do not,
-    `.fwbs.p_cp_shield_nuclear_heat_mw`, and read two more,
-    `.ccfe_hcpb.f_geom_cp` and `.fwbs.pnuc_cp_tf`; see
-    `calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak` for why
-    that is the same fact three times over.
     """
 
 
 class NuclearHeatingRenormalisationSingleNullConventional(NuclearHeatingRenormalisation):
-    """cottax node: `calculate_nuclear_heating_renormalisation_single_null_conventional`.
-    `n_divertors == 1` and `itart == 0`.
+    """cottax node:
+    `calculate_nuclear_heating_renormalisation_single_null_conventional`.
     """
 
     pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
@@ -746,13 +565,8 @@ class NuclearHeatingRenormalisationSingleNullConventional(NuclearHeatingRenormal
 
 
 class NuclearHeatingRenormalisationDoubleNullConventional(NuclearHeatingRenormalisation):
-    """cottax node: `calculate_nuclear_heating_renormalisation_double_null_conventional`.
-    `n_divertors == 2` and `itart == 0`.
-
-    Written 2026-08-27 with the rest of the double-null wave. Note that the two
-    spherical-tokamak input files that motivated that wave do **not** select it: they
-    set `itart = 1`, so this slot refuses on `('itart_hcpb', 1)` before `n_divertors` is
-    consulted. A conventional-aspect-ratio double-null machine is what reaches it.
+    """cottax node:
+    `calculate_nuclear_heating_renormalisation_double_null_conventional`.
     """
 
     pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
@@ -788,17 +602,6 @@ class NuclearHeatingRenormalisationSingleNullSphericalTokamak(
 ):
     """cottax node:
     `calculate_nuclear_heating_renormalisation_single_null_spherical_tokamak`.
-    `n_divertors == 1` and `itart == 1`.
-
-    Owns `.fwbs.p_cp_shield_nuclear_heat_mw`, which the conventional arms leave to
-    `CentrepostNeutronicsAbsent`, and reads `.ccfe_hcpb.f_geom_cp` and
-    `.fwbs.pnuc_cp_tf` from `CentrepostNeutronicsSphericalTokamakSuperconducting`.
-
-    Written with its double-null sibling; neither spherical-tokamak input file selects
-    *this* cell (both are `i_single_null = 0`), but `hcpb.py:215`'s
-    `n_divertors * f_ster_div_single` is a multiplication rather than a branch, so
-    writing one cell of the row and not the other would leave a hole with no argument
-    behind it.
     """
 
     pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
@@ -839,10 +642,6 @@ class NuclearHeatingRenormalisationDoubleNullSphericalTokamak(
 ):
     """cottax node:
     `calculate_nuclear_heating_renormalisation_double_null_spherical_tokamak`.
-    `n_divertors == 2` and `itart == 1`.
-
-    **The cell `spherical_tokamak_eval.IN.DAT` and `st_regression.IN.DAT` select.**
-    Both set `itart = 1` and `i_single_null = 0`.
     """
 
     pnuc_tot_blk_sector = OutputInto(ccfe_hcpb)
@@ -879,11 +678,7 @@ class NuclearHeatingRenormalisationDoubleNullSphericalTokamak(
 
 
 class FirstWallRadiationPowers(ExplicitFunction):
-    """cottax node: `calculate_first_wall_radiation_powers`. Unswitched.
-
-    Owns two of the slot's sixteen boundary variables, `.fwbs.p_fw_hcd_rad_total_mw` and
-    `.fwbs.p_fw_rad_total_mw`.
-    """
+    """cottax node: `calculate_first_wall_radiation_powers`."""
 
     p_fw_hcd_rad_total_mw = OutputInto(fwbs)
     p_fw_rad_total_mw = OutputInto(fwbs)
@@ -912,14 +707,7 @@ class FirstWallRadiationPowers(ExplicitFunction):
 
 
 class PumpingPowerMechanicalWithPressureDrop(ExplicitFunction):
-    """cottax node: `calculate_pumping_power_mechanical_with_pressure_drop`.
-
-    `.fwbs.i_p_coolant_pumping == 3` (`MECHANICAL_WITH_PRESSURE_DROP`). Owns two of the
-    slot's sixteen boundary variables (`.heat_transport.p_shld_coolant_pump_mw`,
-    `.heat_transport.p_div_coolant_pump_mw`) and
-    `.primary_pumping.p_fw_blkt_coolant_pump_mw`, which is what this arm produces
-    *instead of* the other two the boundary table asks for.
-    """
+    """cottax node: `calculate_pumping_power_mechanical_with_pressure_drop`."""
 
     p_fw_blkt_coolant_pump_mw = OutputInto(primary_pumping)
     p_shld_coolant_pump_mw = OutputInto(heat_transport)

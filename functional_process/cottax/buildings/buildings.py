@@ -1,42 +1,4 @@
 """Pure-functional port of `process/models/buildings.py`'s `Buildings.run()` (unit #15).
-
-Audit record: `functional_process/_audit/units/models/buildings.md`. `run()` is a short
-preamble (TF coil envelope geometry, unconditional) followed by a dispatch, keyed by
-`.buildings.i_bldgs_size`, to exactly one of `bldgs` (`BuildingsModel.ITER_1992`, the
-legacy model) or `bldgs_sizes` (`BuildingsModel.CHAPMAN_2024`). All three pieces are
-tier-1: no internal solve, no calls into another `Model`, no loops.
-
-- `calculate_tf_coil_envelope` -- `run()`'s own unconditional body. Feeds both branches
-  below (`tfro`/`tfri`/`tf_vertical_dim`/`tfmtn` into `bldgs`, `tf_radial_dim`/
-  `tf_vertical_dim` into `bldgs_sizes`).
-- `calculate_bldgs` -- the `ITER_1992` branch. Returns both what `bldgs()` writes onto
-  `self.data.buildings.*` directly (`wrbi`, `a_plant_floor_effective`, `admvol`,
-  `shovol`, `convol`, `volnucb`) and its own return tuple (`cryv`, `vrci`, `rbv`,
-  `rmbv`, `wsv`, `elev`) -- which `run()` (not `bldgs()` itself) stores onto
-  `.buildings.cryvol`/`.volrci`/`.rbvol`/`.rmbvol`/`.wsvol`/`.elevol`. See the audit
-  record's data-footprint table for why those two naming layers differ.
-- `calculate_bldgs_sizes` -- the `CHAPMAN_2024` branch. Only 5 of its many locals are
-  real `data` writes (`reactor_hall_l`/`_w`/`_h`, `a_plant_floor_effective`,
-  `volnucb`); everything else accumulated along the way (footprints/volumes of ~25
-  individual buildings) is consumed only by the source's `if output:` reporting block
-  and is not returned here -- same "local-intermediate, not a port" reasoning as
-  `build.py`'s `awall`.
-
-Two switches, both kept static/traced rather than split (deliberate policy deviations,
-documented in the audit record):
-- `is_neutral_beam` (`bldgs_sizes` only) -- derived outside the traced function from
-  `.current_drive.i_hcd_primary` via `CurrentDriveModel(...).method ==
-  CurrentDriveMethodType.NEUTRAL_BEAM`, since that enum lookup cannot itself be traced.
-  A static field on `BldgsSizes`, same shape as `density_limits.py`'s
-  `EcrhDensityLimit.i_plasma_pedestal`.
-- `i_tf_sup` (`bldgs_sizes`'s centre-post branch only) -- an ordinary traced argument
-  selected with `jnp.where`, matching `unit_registry.md`'s `.physics.itart` precedent.
-
-One real PROCESS bug found, not fixed (see the audit record's "open questions"):
-`calculate_bldgs_sizes`'s inboard/outboard shield-blanket-first-wall hot-cell storage
-divides `life_plant` by itself (`hcomp_req_supply`), always yielding exactly `1.0`
-rather than scaling by a per-component replacement lifetime the way the divertor/
-centre-post calculations two sections later correctly do.
 """
 
 import equinox as eqx
@@ -68,14 +30,7 @@ from functional_process.vocabulary import (
 
 
 class TfCoilEnvelope(ExplicitFunction):
-    """cottax node: `calculate_tf_coil_envelope`, ports declared.
-
-    No real `data` writes -- see module docstring. `tfro`/`tfri`/`tf_radial_dim`/
-    `tf_vertical_dim`/`tfmtn` are minted `VarPath`s under `.buildings.*` (invented,
-    same reasoning as `build.py`'s `a_fw_total_unadjusted`: PROCESS never stores these,
-    they are locals in `run()`), so that this node has somewhere to write its outputs
-    for `Bldgs`/`BldgsSizes` to read from.
-    """
+    """cottax node: `calculate_tf_coil_envelope`, ports declared."""
 
     tfro = OutputInto(buildings)
     tfri = OutputInto(buildings)
@@ -210,11 +165,7 @@ class Bldgs(ExplicitFunction):
 
 
 class BldgsSizes(ExplicitFunction):
-    """cottax node: `calculate_bldgs_sizes`. Instantiate iff `i_bldgs_size ==
-    CHAPMAN_2024`.
-
-    `i_hcd_primary` is a static field (not an `FromExactly`) -- see module docstring.
-    """
+    """cottax node: `calculate_bldgs_sizes`."""
 
     i_hcd_primary: CurrentDriveModel = eqx.field(static=True)
 

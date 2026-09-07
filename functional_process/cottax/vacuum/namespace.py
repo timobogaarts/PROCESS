@@ -1,7 +1,4 @@
-"""The vacuum subsystem's namespace.
-
-Beside the nodes it names (`model_tree_design.md` §11).
-"""
+"""The vacuum subsystem's namespace."""
 
 from cottax.interfaces.pytree_namespace_module import ModelNamespace
 

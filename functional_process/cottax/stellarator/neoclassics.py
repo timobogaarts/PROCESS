@@ -1,26 +1,5 @@
-"""Pure-functional port of `process/models/stellarator/neoclassics.py` (registry unit #7).
-
-Audit record: `functional_process/_audit/units/models/stellarator/neoclassics.md`.
-
-Only two functions are ported *and* validated by the harness here:
-`calculate_profile_values` (`init_profile_values_from_PROCESS`) and
-`calculate_effective_thermal_diffusivity` (`st_calc_eff_chi`) — both take only scalar
-`data.physics.*`/`data.stellarator*.*` arguments, so `Tier1Contract`'s per-argument
-`jax.jacfwd`-vs-finite-difference check (which differentiates one named kwarg at a time
-via `float(sample.kwargs[name])`) applies to them unchanged.
-
-The rest of the file's pure functions (`calculate_kt` through `calculate_q_flux`) are
-also ported below -- faithful, tier-1, no internal solve -- but are **not** wrapped in a
-`cottax` node and have no test file yet. Every one of them takes at least one
-species-array argument (`densities`/`temperatures`/etc., always length 4: e, D, T, alpha)
-rather than a scalar, and the harness's `Tier1Contract` has no scheme for differentiating
-an array-valued argument -- `_jacobian`/`_reference_along` call `float(sample.kwargs[name])`,
-which raises on anything but a 0-d/1-element value. This is a harness gap, not a property
-of these functions (they are exactly as pure and exactly as tier-1 as the two that are
-tested) -- see `neoclassics.md`'s open questions for the finding and what closing it
-would need (a per-component fuzz+differentiate scheme, most likely). Do not add these to
-`total_process.py` until that lands: an untested node in the graph would misrepresent
-"ported" as "validated."
+"""Pure-functional port of `process/models/stellarator/neoclassics.py` (registry unit
+#7).
 """
 
 import equinox as eqx
@@ -66,33 +45,11 @@ from functional_process.vocabulary import (
 
 
 class ProfileValues(ExplicitFunction):
-    """cottax node: `calculate_profile_values`, unchanged, ports declared.
-
-    Mints under `.neoclassics.*` -- the source stores this call's four outputs there
-    (`init_neoclassics`), even though the `rho=0.6` argument used at that one call site
-    is itself a literal, not read from `data` (see `neoclassics.md`).
-
-    That literal is `rho`, below. It was previously bound as
-    `FromExactly(neoclassics.r_eff)`, which was a **wrong answer, not a coverage
-    gap**: `.neoclassics.r_eff` is declared `= 0.0` in
-    `process/data_structure/neoclassics_variables.py:87` and PROCESS never assigns it
-    anywhere -- the real argument is `init_neoclassics`'s local parameter `r_effin`,
-    passed the literal `0.6` at `process/models/stellarator/neoclassics.py:290`. The
-    port therefore evaluated every profile on axis instead of at mid-radius:
-    `dr_densities` came out identically `-0.0` against PROCESS's `-6.1e19`. Found by
-    `_audit/boundary_inputs_audit.md` §6.1 and invisible to the MDA harness until its
-    §6.2 array-comparison hole was closed, because all four outputs are arrays.
-    """
+    """cottax node: `calculate_profile_values`, unchanged, ports declared."""
 
     rho: float = eqx.field(static=True, default=0.6)
     """Normalised radius the neoclassical profiles are evaluated at -- PROCESS's own
     literal at its one call site, hoisted to a graph-assembly-time fact.
-
-    Static rather than an `FromExactly` because there is no field to read it from: it is a
-    modelling choice about where to sample, and the only `DataStructure` field with the
-    right name (`.neoclassics.r_eff`) is a permanently-zero placeholder. Same move as
-    `ImpurityRadiationTotals.imp_indices`, and declared in
-    `mda_harness.STATIC_KWARGS_WITHOUT_BACKING_FIELD` for the same reason.
     """
 
     densities = OutputInto(neoclassics)
@@ -127,11 +84,8 @@ class ProfileValues(ExplicitFunction):
 
 
 class EffectiveThermalDiffusivity(ExplicitFunction):
-    """cottax node: `calculate_effective_thermal_diffusivity`, unchanged, ports declared.
-
-    `.neoclassics.chi_process_e` is an invented `VarPath`: `st_calc_eff_chi`'s return
-    value is a local in `calc_neoclassics` (`chi_PROCESS_e`), never stored to `data` --
-    same situation as `EcrhDensityLimit`'s outputs, see that module's docstring.
+    """cottax node: `calculate_effective_thermal_diffusivity`, unchanged, ports
+    declared.
     """
 
     chi_process_e = OutputInto(neoclassics)

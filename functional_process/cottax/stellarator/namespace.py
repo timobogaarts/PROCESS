@@ -1,63 +1,4 @@
-"""The device's own namespaces -- its coils, its FWBS, and `Stellarator` itself.
-
-Beside the nodes they name (`model_tree_design.md` §11): twenty of this package's
-modules used to be imported into `total_process.py` for no reason but to be named
-in a slot here. `BlanketShieldPowerExponential` is an *occupant of a switched
-slot*; which occupant a machine gets is `indat.py`'s answer, and nothing here reads
-a switch.
-
-**Update, later pass**: `coils/coils.py`'s `intersect` is now registered, as `Intersect`
-(an `ImplicitFunction`/`RootFind` pair) -- see below, near `WindingPackIntersectInputs`/
-`WindingPackTotalSizePost`. The old `WindingPackJTfWp`/monolithic-
-`winding_pack_total_size` registration this paragraph used to describe is gone; see that
-registration's own comment
-for the replacement and why the whole `j_tf_wp` self-loop turned out not to need a
-`FixedPointFunction` at all.
-
-Still not included despite being ported: `coils/calculate.py`'s `st_coil` itself -- a
-real tier-3 orchestrator, not self-contained, still audit-only.
-`physics/superconductors.py` (unit #22) and `physics/impurity_radiation.py`'s two leaf
-functions (unit #23) -- every real call site's arguments are locals inside a
-not-yet-wired unit (`plasma_composition`, itself registered in
-`models/physics/namespace.py`, but its impurity-array locals stay per-index minted
-paths, not a whole-array edge into `impurity_radiation.py`'s own leaves).
-`coils/coils.py`'s `jcrit_from_material` (unit #10, an 8-way switch on `i_tf_sc_mat`,
-one `ExplicitFunction` node per branch) --
-**investigated and still not registered, for a structural reason, not an oversight**:
-its `FromExactly`s (`.tfcoil.t_helium`/`b_max`) are per-sample locals of
-`winding_pack_curves`'s 200-point sampling loop (`b_max = b_max_k[k]`, an array, not a
-scalar), and PROCESS has exactly one real call site for the whole dispatch, inside that
-same sampling loop (confirmed: `grep`ing `process/models/stellarator/coils/calculate.py`
-for `jcrit_from_material` finds only its own `jcrit_vector[k] = jcrit_from_material(...)`
-per-sample assignment) -- there is no single-point scalar call site for these 8 nodes to
-bind to as written, so registering them would assert a wiring that does not exist in
-PROCESS, not merely one this pass hasn't gotten to yet. `calculate.py` keeps its own
-eight `jcrit_*` functions rather than calling these 8 nodes' underlying functions
-directly, for the same reason `calculate.md` documents: it deliberately diverges from
-`coils.py`'s own `jcrit_from_material` on the REBCO branch (`coils.py` reproduces a real
-PROCESS call-site bug there; `calculate.py`'s local copy sidesteps it so this port has
-*a* working REBCO branch) -- collapsing the two would either regress REBCO or stop
-reproducing the bug faithfully, so they stay two independent implementations, documented
-as such, not one deduplicated further. **What `i_tf_sc_mat` does reach is the
-`winding_pack_intersect_inputs` slot below**, whose eight occupants are `calculate.py`'s
-own (`_audit/next_steps.md` §14.5) -- the switch selects a class there, at the one call
-site the dispatch really has.
-
-`blankets/hcpb.py` (unit #13) is ported (3/3 in-scope functions, 3 `ExplicitFunction`
-nodes) but **deliberately still not registered here**: all three are only ever called
-from `stellarator.py`'s `blanket_neutronics()`, itself only reached under
-`.fwbs.blktmodel == 1` (S2 of the `st_fwbs` synthesis, `stellarator_E_fwbs_synthesis.md`,
-`next_steps.md` §3) -- the `blktmodel == 1` arm's own live call-site bug
-(`blanket_neutronics()` calls two `hcpb.py` `@staticmethod`s with zero arguments) blocks
-it, not a registration decision. **The other two of S2's three arms are now wired**, as
-a joint `Switch` below (`ExponentialAttenuationBlanketShieldPower`/
-`DetailedPowerflowBlanketShieldPower`) -- see that `Switch`'s own docstring for why a
-single joint switch over `.fwbs.blktmodel`/`.heat_transport.ipowerflow` together, not a
-plain `.fwbs.blktmodel` switch, is what the real 3-arm dispatch needs, and for the
-`ScTfCoilNuclearHeating` registration bug this wiring found and fixed along the way
-(unconditional registration was wrong for PROCESS's own default configuration, same
-of bug already fixed once for `EcrhDensityLimit`).
-"""
+"""The device's own namespaces -- its coils, its FWBS, and `Stellarator` itself."""
 
 import dataclasses
 
@@ -159,13 +100,6 @@ from functional_process.cottax.stellarator.tf_nuclear_heating import (
 
 class BlanketShieldPowerExponential(ModelNamespace):
     """Exponential-attenuation blanket/shield power: `blktmodel == 0 & ipowerflow == 0`.
-
-    That is arm **1** of `_blanket_shield_power_arm`, `st_fwbs`'s
-    `stellarator.py:683-729`. This docstring used to say "the `blktmodel == 1`
-    occupant", which was simply wrong -- `blktmodel == 1` is `blanket_neutronics()`,
-    the arm that has no occupant at all (arm 0, `UNPORTED`). The mislabelling and the
-    inverted key derivation it belonged to were fixed together; see
-    `_blanket_shield_power_arm`.
     """
 
     # Over the line length and left that way -- see `Physics`'s own note: the slot
@@ -187,11 +121,7 @@ class BlanketShieldPowerExponential(ModelNamespace):
 
 
 class StellaratorCoils(ModelNamespace):
-    """The modular-coil set: geometry, current, casing, ports, structure, cryogenics.
-
-    A third level because a real SCC lives here (`model_tree_design.md` §4's criterion
-    for a sub-namespace), not because `coils/calculate.py` is one file.
-    """
+    """The modular-coil set: geometry, current, casing, ports, structure, cryogenics."""
 
     # unit #9, coils/calculate.py
     coil_toroidal_thickness: CoilToroidalThickness = CoilToroidalThickness()
@@ -234,11 +164,7 @@ class StellaratorCoils(ModelNamespace):
     coils_mass: CoilsMass = dataclasses.field(kw_only=True)
     """The TF coil masses -- one occupant per `.tfcoil.i_tf_sc_mat` value, keyed by
     `indat.COILS_MASS_MATERIAL`.
-
-    **This slot's switch was answered by a module constant until
-    `_audit/next_steps.md` §14.2**, so no instrument in the port could see it: a
-    material other than ITER Nb3Sn assembled the right winding-pack occupant next door
-    and a coil-mass node still reading `.tfcoil.dcond[0]`."""
+    """
     # unit #11, coils/forces.py
     max_force_density: MaxForceDensity = MaxForceDensity()
     maximum_stress: MaximumStress = MaximumStress()
@@ -274,17 +200,7 @@ class StellaratorCoils(ModelNamespace):
     )
     """The pre-`intersect` curves, on `.tfcoil.i_tf_sc_mat` -- one occupant per
     superconductor, `WINDING_PACK_MATERIAL` in `indat.py`.
-
-    A slot since `_audit/next_steps.md` §14.5, where it was an
-    `i_tf_sc_mat=SuperconductorModel.ITER_NB3SN` constructor kwarg on a single node that
-    branched internally. The eight branches read different `.tfcoil.*` fields, so that
-    node declared six reads dead at this run's value -- and one of them,
-    `.tfcoil.j_tf_wp`, was the **sole back-edge closing the four-node coils SCC**
-    (`_audit/switch_kwarg_survey.md` §4.6). Only the Bi-2212 occupant reads it; with
-    every other material the driven block is `Intersect` and its own `^problem`, which
-    is the cycle the model genuinely has. This is the sub-namespace's reason for
-    existing (`model_tree_design.md` §4) getting smaller, and it is measured, not
-    claimed."""
+    """
     intersect: Intersect = Intersect()
     winding_pack_total_size_post: WindingPackTotalSizePost = WindingPackTotalSizePost()
 
@@ -300,39 +216,11 @@ class StellaratorFwbs(ModelNamespace):
     """Blanket/shield power deposition, on `.fwbs.blktmodel` x `.heat_transport.
     ipowerflow` x `.fwbs.i_p_coolant_pumping` jointly -- one slot, three integers,
     resolved by `_blanket_shield_power_arm` in `machine_from_indat`.
-
-    A **ragged** family, which is allowed and deliberate: the arm-1 occupant
-    (`blktmodel == 0 & ipowerflow == 0`) is a two-node namespace (it also owns the
-    TF-coil nuclear heating), the arm-2 one (`blktmodel == 0 & ipowerflow == 1 &
-    i_p_coolant_pumping == 1`, PROCESS's own default and the reference run) a single
-    node, and the arm-3 one (the same at `i_p_coolant_pumping == 0`, `helias_5b`) a
-    single node owning **four fields fewer** -- the coolant pumping powers, which that
-    value of the switch makes run inputs rather than computed values. Occupants of one
-    slot need not have equal shape or equal output sets; what checks the consequences is
-    the boundary postcondition, not a shape rule.
-
-    The third integer joined on 2026-08-31 and it was a live defect, not a refinement:
-    the arm-2 occupant was assembled for `helias_5b` too, and answered `16.8 MW` of
-    FW+blanket pumping power where that file states `176.0`.
-
-    Arm 0 -- `blktmodel == 1`, at either `ipowerflow` -- is refused: it is
-    `blanket_neutronics()`, which calls `hcpb.nuclear_heating_*`, unported. Arm 4 --
-    `i_p_coolant_pumping` mechanical, at `ipowerflow == 1` -- is refused because
-    PROCESS itself raises there. That is also
-    why the `| None` this annotation used to carry was **dead**: every arm outside the
-    registry is in `UNPORTED`, and they raise -- absence was never reachable.
     """
 
     blanket_masses: BlanketComponentMasses = dataclasses.field(kw_only=True)
     """Blanket component masses, on `.fwbs.blktmodel` x `.fwbs.blkttype` jointly,
     resolved by `_blanket_mass_arm`.
-
-    Only arm 2 -- `blktmodel == 0` with a solid breeder, `blkttype not in {1, 2}`,
-    which is PROCESS's own default and the reference run -- has an occupant; the
-    liquid-breeder sub-arm (1) and the `blktmodel != 0` mass arm (0) are refused with
-    their reasons in `UNPORTED`. Same dead `| None` as the slot above, for the same
-    reason: arms `0` and `1` are the only others `_blanket_mass_arm` can return and
-    both raise.
     """
 
     # `st_fwbs` S1/S5 (`stellarator_E_fwbs_synthesis.md`), portable now, no blocker.
@@ -359,60 +247,21 @@ class StellaratorFwbs(ModelNamespace):
 
 
 class Stellarator(ModelNamespace):
-    """Everything device-specific: the machine's own geometry, coils, and FWBS.
-
-    `.stellarator.*` is not just the `stellarator.py` module -- several nodes here own
-    `.build.*`/`.tfcoil.*` fields, because the *model* that computes them is the
-    stellarator's, whatever area PROCESS files the field under.
-    """
+    """Everything device-specific: the machine's own geometry, coils, and FWBS."""
 
     machine_config: StellaratorMachineConfig = dataclasses.field(kw_only=True)
-    """The 34 `.stellarator_config.stella_config_*` fields, for whichever machine.
-
-    Filled at every `.stellarator.istell` a stellarator has -- `1`-`5` from
-    `preset_config.py`'s hardcoded tables (Helias 5b/4/3, W7-X 30/50), `6` from a
-    `stella_conf.json` -- and never at `istell == 0`, which is a **tokamak** and has no
-    counterpart namespace in this tree. That is why this slot needs no `| None`: it used
-    to hold one for the tokamak, and the tokamak is gone.
-
-    **The occupant is the same node in all six cases**, and only its static payload
-    differs, because which table or file was read changes no field's identity and no
-    node's reads (`preset_config.md` § "switches touched"). So this slot is not keyed on
-    `istell` at all; `indat.machine_config_for_istell` resolves the payload before the
-    constructor runs.
-
-    A node with **no inputs**: the machine config is strictly upstream of every design
-    variable, so it adds a source to the DAG and no cycle. **This is what makes the graph
-    runnable from a cold `DataStructure`** -- before it, these 34 fields were unowned
-    boundary inputs seeded from a converged run, and stepped cold they were all `0.0`,
-    making `.tfcoil.n_tf_coils` zero and the first division by it emit non-finite values
-    in 16 blocks.
-    """
+    """The 34 `.stellarator_config.stella_config_*` fields, for whichever machine."""
 
     heating: EcrhHeating | LowhybHeating = dataclasses.field(kw_only=True)
-    """Which auxiliary heating model runs (`.stellarator.isthtr`, default 1 = ECRH).
-
-    The NBI arm (`isthtr == 3`) is refused: `st_heat`'s NBI branch calls
-    `current_drive.culnbi()`, a model this port has not audited.
-    """
+    """Which auxiliary heating model runs (`.stellarator.isthtr`, default 1 = ECRH)."""
 
     fw_area: AFwTotalNoPowerflow | AFwTotalWithPowerflow = dataclasses.field(
         kw_only=True
     )
-    """First-wall area (`.heat_transport.ipowerflow`, default 1).
-
-    **The switch that decides whether the graph has a cycle**, which is why it is a slot
-    and could never have been one node branching internally:
-    `AFwTotalWithPowerflow` reads `.fwbs.f_ster_div_single`, which `divertor` owns, while
-    `divertor` reads `.first_wall.a_fw_total`, which both occupants own -- so
-    `ipowerflow != 0` has a genuine two-node SCC and `ipowerflow == 0` is acyclic.
-    `test_machine.py` asserts both halves.
-    """
+    """First-wall area (`.heat_transport.ipowerflow`, default 1)."""
 
     coils: StellaratorCoils = dataclasses.field(kw_only=True)
-    """The coil sub-namespace. No default any more, because one of its members is a slot
-    (`winding_pack_intersect_inputs`, on `.tfcoil.i_tf_sc_mat`) and a namespace holding a
-    slot cannot be default-constructed -- the same reason `fwbs` below has none."""
+    """The coil sub-namespace."""
 
     fwbs: StellaratorFwbs = dataclasses.field(kw_only=True)
 
@@ -485,33 +334,19 @@ class Stellarator(ModelNamespace):
     neutron_wall_load: NeutronWallLoad = dataclasses.field(kw_only=True)
     """Neutron wall load -- one occupant per arm of `.physics.i_pflux_fw_neutron` x
     `.heat_transport.ipowerflow` (`indat.py`'s `_wall_load_arm`).
-
-    **Both switches were static kwargs here and neither is now**
-    (`_audit/next_steps.md` §14.2). Threading them (step 4d) fixed the coherence half of
-    the defect -- `ipowerflow` already decides `fw_area` and, jointly with `blktmodel`,
-    `fwbs.blanket_shield_power`, and an `ipowerflow = 0` machine used to assemble
-    `AFwTotalNoPowerflow` and `BlanketShieldPowerExponential` alongside two nodes still
-    saying `COMPREHENSIVE_2014` -- but left the reads half: the node declared all three
-    arms' fields, four of which are dead at this machine's values, and one of the four
-    (`.first_wall.a_fw_total`) is `fw_area`'s own output.
     """
     heating_and_radiation_power: HeatingAndRadiationPower = dataclasses.field(
         kw_only=True
     )
     """Heating power, SOL radiation split and alpha power to the wall -- one occupant
     per `.physics.i_plasma_ignited` value.
-
-    **The switch was a static kwarg here and is a slot now** (`_audit/next_steps.md`
-    §14.2). The note it replaces recorded the check made before flipping its *value*
-    from PROCESS's bare default to the file's -- "the IGNITED arm reads a strict subset
-    of the inputs, nothing new to wire" -- and that subset is the defect: the node
-    declared `.current_drive.p_hcd_injected_total_mw`, a cross-subsystem edge no ignited
-    run makes."""
+    """
     radiated_wall_load_and_fraction: RadiatedWallLoadAndFraction = dataclasses.field(
         kw_only=True
     )
     """Radiated wall load and radiation fraction -- the same three arms as
-    `neutron_wall_load` above, from the same `_wall_load_arm` dispatch."""
+    `neutron_wall_load` above, from the same `_wall_load_arm` dispatch.
+    """
     thermal_energy_totals: ThermalEnergyTotals = ThermalEnergyTotals()
     # `geometry.py` (chunk 1C of unit #1). `DefaultAspectRatio` is the
     # `1 not in data.numerics.ixc` conditional-ownership case (module docstring): the

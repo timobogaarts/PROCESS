@@ -1,16 +1,5 @@
 """Pure-functional port of the AC/electric-production sub-unit of
 `process/models/power.py` (registry unit #14, chunk C).
-
-Audit record: `functional_process/_audit/units/models/power/electric_production.md`.
-Covers `Power.acpow` (696-813), `Power.power_profiles_over_time` (2632-2825) and
-`Power.plant_electric_production` (1631-1772) -- see the audit record's data-footprint
-table for the full trace.
-
-All three are tier-1: no internal iteration, no calls into any other model. The time
-axis `power_profiles_over_time` builds is always exactly 7 points (`PulseTimings.
-total_pulse_cumulative` is `len()` of a fixed 7-tuple of cumulative sums over the six
-phase durations, never data-dependent in length) -- so every array in this chunk has
-a static, compile-time-known shape; there is no dynamic-shape difficulty here at all.
 """
 
 import equinox as eqx
@@ -99,12 +88,6 @@ __all__ = [
 class Acpow(ExplicitFunction):
     """The `calculate_acpow` family -- one occupant per
     `.pf_power.i_pf_energy_storage_source` value.
-
-    **The switch was an `eqx.field(static=True)` here and is gone**
-    (`_audit/next_steps.md` §14.2). The two arms' reads are **complementary**: the line
-    arm reads `.heat_transport.peakmva` and not `fmgdmw`, the flywheel arm the reverse.
-    One node carrying the switch declared both, so exactly one edge was invented either
-    way -- the smallest and cleanest case in `switch_kwarg_survey.md` band (b3).
     """
 
     pacpmw = OutputInto(heat_transport)
@@ -112,10 +95,7 @@ class Acpow(ExplicitFunction):
 
 
 class AcpowLine(Acpow):
-    """`i_pf_energy_storage_source == LINE` (2) -- the reference run's.
-
-    **One read leaves with this occupant**: `.heat_transport.fmgdmw`.
-    """
+    """`i_pf_energy_storage_source == LINE` (2) -- the reference run's."""
 
     def __call__(
         self,
@@ -145,8 +125,6 @@ class AcpowLine(Acpow):
 class AcpowMotorGeneratorFlywheel(Acpow):
     """`i_pf_energy_storage_source == MGF` (1) -- all power from motor-generator
     flywheel units, PROCESS's own default (`pf_power_variables.py:18`).
-
-    **Reads `.heat_transport.fmgdmw` and not `.heat_transport.peakmva`.**
     """
 
     def __call__(
@@ -234,61 +212,8 @@ class PowerProfilesOverTime(ExplicitFunction):
 
 class PlantElectricProductionReactor(ExplicitFunction):
     """The `calculate_plant_electric_production` family at `ireactor == 1` -- one
-    occupant per `(itart, i_tf_sup)` x `(i_blkt_dual_coolant,
-    i_p_coolant_pumping)` arm pair.
-
-    **Why this exists as a separate class, and why `PlantElectricProduction` above is
-    not registerable.** `PlantElectricProduction` declares
-    `p_plant_electric_gross_mw` / `p_turbine_loss_mw` / `p_plant_electric_recirc_mw` /
-    `p_plant_electric_net_mw` / `f_p_plant_electric_recirc` as both `Output`s and
-    `FromExactly`s, so `to_graph` refuses it outright (*"reads [...], which it also owns"*,
-    confirmed directly -- `total_process.py`'s own comment records the same refusal).
-    That is not a modelling cycle: it is PROCESS's conditional-ownership
-    pass-through, and it exists **only on the `ireactor == 0` arm**. Read
-    `calculate_plant_electric_production`'s body: all five are assigned inside
-    `if ireactor == 1:`, before `power_profiles_over_time` consumes
-    `p_plant_electric_gross_mw`/`p_plant_electric_net_mw`, so on that arm not one of
-    the five entering values is ever read. `.costs.ireactor` is a static switch
-    (`process/main.py` resolves the cost model once per run; it is neither an
-    iteration variable nor a scan variable), so which arm is live is a
-    graph-assembly-time fact -- exactly `machine_from_indat`'s category. This class is
-    the `ireactor == 1` arm with the five dead reads simply not declared, which makes
-    it an ordinary acyclic node owning all 23 fields.
-
-    **The five dead parameters are passed as `jnp.nan`, deliberately.** They are
-    provably overwritten before use on this arm, so any value would do; `nan` is the
-    one that makes a future edit which *starts* reading them fail loudly (a `nan`
-    reaching `.heat_transport.p_plant_electric_net_mw` is caught by the very first
-    comparison in `mda_harness.compare`) instead of silently substituting a zero.
-
-    `ireactor` is therefore **not** a static field here -- it is structural, spent by
-    picking this class over the `ireactor == 0` arm, which is
-    `PowerProfilesOverTime` (whose 13 outputs are a strict subset of this node's, and
-    which reads the two carried-over values as boundary inputs, exactly as PROCESS's
-    `ireactor == 0` run does).
-
-    Registering this closes `.heat_transport.p_plant_electric_net_mw`'s producer gap,
-    which matters beyond its own value: `CostOfElectricity` reads that field, so
-    without a producer `.costs.coe` -- this run's own objective -- was a function of a
-    *boundary input* rather than of the design variables along that whole path, and
-    constraint 16 (net electric power, an equality in
-    `stellarator_helias.IN.DAT`) had no live argument at all.
-
-    **All four switches were `eqx.field(static=True)`s here and none is now**
-    (`_audit/next_steps.md` §14.2). They gate two things and nothing else: whether the
-    centrepost coolant pump draws electric power (`itart == 1 and i_tf_sup == 0`) and
-    whether the liquid breeder has its own turbine efficiency
-    (`i_blkt_dual_coolant > 0 and i_p_coolant_pumping == MECHANICAL`). Both conditions
-    are joint, so this is two arm indices rather than four switches, and the four
-    occupants below are their product.
-
-    **Three reads leave with the conventional/single-coolant occupant**:
-    `.tfcoil.p_cp_coolant_pump_elec`, `.heat_transport.etath_liq` and
-    `.power.p_blkt_liquid_breeder_heat_deposited_mw`. The first is the `.tfcoil ->
-    .power` edge `switch_kwarg_survey.md` §3 records as `live (1)` for `itart`; the
-    other two are its `live (2)` for `i_blkt_dual_coolant`. Both were reported "(joint)"
-    there because neither switch decides them alone -- which is exactly why the two arm
-    indices are joint here too.
+    occupant per `(itart, i_tf_sup)` x `(i_blkt_dual_coolant, i_p_coolant_pumping)` arm
+    pair.
     """
 
     p_cp_coolant_pump_elec_mw = OutputInto(power)
@@ -345,12 +270,8 @@ class PlantElectricProductionReactor(ExplicitFunction):
         t_plant_pulse_plasma_current_ramp_down,
         t_plant_pulse_dwell,
     ):
-        """The twenty-three outputs, given the two quantities the four arms
-        disagree about.
-
-        Not a port surface: `_params` reads `__call__`'s signature only
-        (`ExplicitFunction._signature_of`), so what each occupant declares is
-        still its own parameter list.
+        """The twenty-three outputs, given the two quantities the four arms disagree
+        about.
         """
         return calculate_plant_electric_production_reactor(
             p_cp_coolant_pump_elec_mw,
@@ -384,12 +305,8 @@ class PlantElectricProductionReactor(ExplicitFunction):
 
 
 class PlantElectricProductionSingleCoolant(PlantElectricProductionReactor):
-    """No resistive centrepost, one coolant -- the reference run's and the
-    conventional tokamak's (`itart = 0`, `i_blkt_dual_coolant = 0`).
-
-    Declares **none** of `.tfcoil.p_cp_coolant_pump_elec`,
-    `.power.p_blkt_liquid_breeder_heat_deposited_mw`,
-    `.heat_transport.etath_liq`.
+    """No resistive centrepost, one coolant -- the reference run's and the conventional
+    tokamak's (`itart = 0`, `i_blkt_dual_coolant = 0`).
     """
 
     def __call__(
@@ -525,11 +442,7 @@ class PlantElectricProductionLiquidBreeder(PlantElectricProductionReactor):
 class PlantElectricProductionResistiveCentrepostSingleCoolant(
     PlantElectricProductionReactor
 ):
-    """Resistive centrepost (`itart == 1` and `i_tf_sup == 0`), one coolant.
-
-    Reads `.tfcoil.p_cp_coolant_pump_elec`, which the two conventional
-    occupants do not.
-    """
+    """Resistive centrepost (`itart == 1` and `i_tf_sup == 0`), one coolant."""
 
     def __call__(
         self,

@@ -1,10 +1,4 @@
-"""PF-coil graph declarations.
-
-The package's constants and shape types (`PFLocation`, `PFCoilTopology`, the coil
-counts and indices) are physics, not graph, so they live in
-`functional_process.models.pfcoil` now and are re-exported here -- every module that
-reached them through this package still does.
-"""
+"""PF-coil graph declarations."""
 
 from functional_process.models.pfcoil import *  # noqa: F403
 from functional_process.models.pfcoil import (  # noqa: F401

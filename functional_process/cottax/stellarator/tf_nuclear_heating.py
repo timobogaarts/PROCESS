@@ -1,23 +1,4 @@
 """Pure-functional port of `Stellarator.sc_tf_coil_nuclear_heating_iter90` (chunk 1F).
-
-Audit record:
-`functional_process/_audit/units/models/stellarator/tf_nuclear_heating.md`.
-Ports only the SUPERCONDUCTING branch of the source's `i_tf_sup` switch -- per
-`core/solver/switches.md`'s `i_tf_sup` entry (split, high confidence, three independent
-data points including this unit) and `naming_convention.md`'s "switches are not ports":
-the resistive branch takes no inputs and always returns ten zeros, so it is not a
-computation to port, it is the absence of this node in the graph once `i_tf_sup` selects
-a non-superconducting coil (see the record's open questions).
-
-`ishmat` (source: "stainless steel coil casing is assumed") is hardcoded to the stainless
-column of `coef`/`decay`; the unused tungsten column is dropped entirely rather than kept
-as a dead second index, per the record's note.
-
-`ScTfCoilNuclearHeating` below is the `cottax` node. Its output `VarPath`s are
-best-effort, not existing PROCESS storage: the source never writes 8 of its 10 return
-values to `self.data` (see the record's "cottax node" section) -- `.fwbs.*` is inferred
-from the two fields that *are* stored elsewhere in `st_fwbs`, flagged there for whoever
-audits 1E1/1E2 to confirm.
 """
 
 import jax.numpy as jnp  # noqa: F401

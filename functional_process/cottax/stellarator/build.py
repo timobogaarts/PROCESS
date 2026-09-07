@@ -1,26 +1,4 @@
 """Pure-functional port of `process/models/stellarator/build.py`'s `st_build` (unit #2).
-
-Audit record: `functional_process/_audit/units/models/stellarator/build.md`. The source
-is one straight-line function gated by two switches, `.fwbs.blktmodel` and
-`.heat_transport.ipowerflow`. Both are split per `_audit/traceability_policy.md`'s
-default and `_audit/naming_convention.md`'s "switches are not ports" -- see the record
-for the reasoning. Three tier-1 functions result:
-
-- `calculate_blktmodel_blanket_thickness` -- the `blktmodel > 0` preamble. Only
-  instantiated as a node when `blktmodel > 0`; when it isn't, `dr_blkt_inboard`/
-  `dr_blkt_outboard` are plain external inputs to `calculate_build` instead (this is
-  `conditional-ownership-by-run-config`, the same pattern as `.physics.aspect` in
-  `geometry.md` -- a graph-assembly-time decision, not resolved here).
-- `calculate_build` -- everything the source runs unconditionally. Reads
-  `dr_blkt_inboard`/`dr_blkt_outboard` as ordinary explicit args regardless of where
-  they came from, which is exactly what the source does too (it never branches on
-  `blktmodel` again after the preamble). Returns `a_fw_total_unadjusted`, an invented
-  intermediate (not a real PROCESS field) rather than the final `.first_wall.a_fw_total`,
-  since which of the two functions below owns that name is an `ipowerflow` graph-assembly
-  choice, not something `calculate_build` should decide for itself.
-- `calculate_a_fw_total_no_powerflow` / `calculate_a_fw_total_with_powerflow` -- the
-  `ipowerflow` split. Whichever is wired to `calculate_build`'s output owns
-  `.first_wall.a_fw_total`.
 """
 
 from cottax.interfaces.pytree_namespace_module import (
@@ -46,10 +24,7 @@ from functional_process.models.stellarator.build import (
 
 
 class BlktmodelBlanketThickness(ExplicitFunction):
-    """cottax node: `calculate_blktmodel_blanket_thickness`, ports declared.
-
-    Only instantiate this node when `blktmodel > 0` -- see module docstring.
-    """
+    """cottax node: `calculate_blktmodel_blanket_thickness`, ports declared."""
 
     dr_blkt_inboard = OutputInto(build)
     dr_blkt_outboard = OutputInto(build)
@@ -79,17 +54,7 @@ class BlktmodelBlanketThickness(ExplicitFunction):
 
 
 class Build(ExplicitFunction):
-    """cottax node: `calculate_build`, ports declared.
-
-    `dr_blkt_inboard`/`dr_blkt_outboard` read from wherever the `blktmodel`
-    graph-assembly choice puts them -- `BlktmodelBlanketThickness`'s outputs, or an
-    external input, per module docstring.
-
-    **Does not own `.build.z_tf_inside_half`** -- `calculate_build`'s own Returns
-    docstring explains why: real PROCESS has two independent writers of that field,
-    and this port's own comparison against a converged PROCESS run showed the other
-    one (`coils/calculate.py`'s `ZTfInsideHalf`) is the one whose value survives.
-    """
+    """cottax node: `calculate_build`, ports declared."""
 
     dz_blkt_upper = OutputInto(build)
     dr_fw_inboard = OutputInto(build)

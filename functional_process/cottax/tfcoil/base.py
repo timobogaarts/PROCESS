@@ -1,69 +1,6 @@
 """Pure-functional port of `process/models/tfcoil/base.py` -- the device-agnostic TF
 coil layer that `SuperconductingTFCoil.run_base_superconducting_tf` reaches by
 inheritance.
-
-Audit record: `functional_process/_audit/units/models/tfcoil/base.md`.
-
-**Scope is the minimal closure of `.tokamak.cicc_superconducting_tf_coil`'s ten boundary
-reads** (`_audit/tokamak_boundary.md`), not the whole file. In scope and ported here:
-`circumference`, `tf_global_geometry` (split three ways, see below), `tf_current`,
-`tf_coil_shape_inner`, `tf_coil_self_inductance`, `tf_stored_magnetic_energy`,
-`generic_tf_coil_area_and_masses`, plus the one inline formula
-`run_base_tf` writes for `.tfcoil.r_b_tf_inboard_peak`
-(`process/models/tfcoil/base.py:166-171`).
-
-Deliberately **out** of scope, with reasons:
-
-- `tf_field_and_force` (`base.py:1623`) -- feeds only `stresscl`; none of the ten
-  boundary reads depends on it, and it carries three more switches (`i_tf_sup`,
-  `itart`, `i_cp_joints`).
-- `stresscl` and the elasticity helpers (`base.py:2222-4670`) -- `numba.njit`,
-  ~2400 lines, and every output is a stress, none of which is on the boundary.
-- `cntrpst` (`base.py:1211`) -- the TART centrepost, `itart == 1` only.
-- `he_density`/`he_cp`/`he_visco`/`he_th_cond`/`al_th_cond` (`base.py:1827-2065`) --
-  CoolProp-backed property lookups reached only from `cntrpst`. **They are not on this
-  slot's CoolProp path**; see `functional_process/cottax/tfcoil/quench.py` for the one
-  that is.
-
-## `tf_global_geometry` is three nodes here, not one
-
-`process/models/tfcoil/base.py:214-372` computes eleven quantities under three
-independent switches, and the three groups of outputs are disjoint -- nothing computed
-after a branch is read by another branch. Splitting is therefore semantics-preserving
-and removes two invented edges the composite node would have declared:
-
-| group | switch | node(s) here |
-|---|---|---|
-| the nine unconditional geometry outputs (only `a_tf_inboard_total` branches) | `i_tf_case_geom` | `TfGlobalGeometryCircularCase` / `TfGlobalGeometryStraightCase` |
-| `.tfcoil.dr_tf_plasma_case` | `i_f_dr_tf_plasma_case` | `DrTfPlasmaCaseFromInput` / `DrTfPlasmaCaseFromFraction` |
-| `.tfcoil.dx_tf_side_case_min` | `tfc_sidewall_is_fraction` | `DxTfSideCaseMinFromFraction` only -- see below |
-
-**`tfc_sidewall_is_fraction == False` gets no node at all.** The branch is
-`dx_tf_side_case_min = data.tfcoil.dx_tf_side_case_min` (`base.py:358`) -- a verbatim
-read-back of the field it is about to be written to, i.e. an identity. Conditional
-ownership, exactly the shape `models/power/thermal_cryo.py`'s
-`calculate_p_fw_blkt_coolant_pump_mw` records: on that arm the field is a run input and
-nothing produces it. `large_tokamak_eval.IN.DAT` does not set `tfc_sidewall_is_fraction`,
-so it takes the `False` default (`tfcoil_variables.py:95`) and this is the live arm.
-
-**`.tfcoil.dr_tf_plasma_case` is a genuine self-loop on the `False` arm**, and unlike
-the sidewall one it is *not* an identity: `base.py:328` reads the entering value and
-`base.py:333-340` raises it to `(r_tf_inboard_in + dr_tf_inboard) * (1 - cos(pi/n))`
-when it is below that. `DrTfPlasmaCaseFromInput` is therefore a `FixedPointFunction`
-(`step`, minting `^cond.tfcoil.dr_tf_plasma_case`), which is what cottax's "a node may
-not read what it owns" requires. Its fixed point is reached in one step because
-`jnp.maximum(x, m)` is idempotent in `x` and `m` does not depend on `x`; at the
-reference point the clamp binds (`dr_tf_plasma_case` defaults to `0.0`,
-`tfcoil_variables.py:77`, and is not in the input file) so the derivative with respect
-to its own entering value is exactly zero there.
-
-## A PROCESS defect, ported faithfully
-
-`base.py:344-346` calls `logger.error("dr_tf_plasma_case too small to accommodate the
-WP, forced to minimum value")` **unconditionally** -- it sits outside the `if` at 333
-whose body it describes. Logging only, no value effect, so the port drops it (a pure
-function does not log); recorded in `base.md` as defect **D1** rather than silently
-fixed.
 """
 
 from cottax.interfaces.pytree_namespace_module import (
@@ -103,20 +40,11 @@ from functional_process.models.tfcoil.base import (
 
 
 class TfGlobalGeometry(ExplicitFunction):
-    """The family that owns `tf_global_geometry`'s nine unswitched outputs.
-
-    One occupant per `i_tf_case_geom` value. The two arms' reads-sets are identical
-    (both read the same five fields); they are still separate classes, because a switch
-    selects an occupant and never a static kwarg -- `_audit/next_steps.md` §14.2, and
-    the `istore` precedent it names for two arms differing only in a literal.
-    """
+    """The family that owns `tf_global_geometry`'s nine unswitched outputs."""
 
 
 class TfGlobalGeometryCircularCase(TfGlobalGeometry):
     """`i_tf_case_geom == TFPlasmaCaseType.CIRCULAR` (0) -- `large_tokamak_eval`'s arm.
-
-    The input file does not set `i_tf_case_geom`, so it takes the `0` default
-    (`process/data_structure/tfcoil_variables.py:234`).
     """
 
     rad_tf_coil_inboard_toroidal_half = OutputInto(superconducting_tfcoil)
@@ -178,12 +106,6 @@ class TfGlobalGeometryStraightCase(TfGlobalGeometry):
 
 class DrTfPlasmaCaseFromInput(FixedPointFunction):
     """`i_f_dr_tf_plasma_case == False` -- `large_tokamak_eval`'s arm, and a self-loop.
-
-    `step` reads the entering `.tfcoil.dr_tf_plasma_case` and writes the minted
-    `^cond.tfcoil.dr_tf_plasma_case`; the `FixedPoint` this class also declares reads
-    that copy and owns the real path, so neither piece reads what it owns. See the
-    module docstring for why the loop is real (a clamp, not an identity) and why it
-    closes in one step.
     """
 
     dr_tf_plasma_case = OutputInto(tfcoil)
@@ -204,13 +126,7 @@ class DrTfPlasmaCaseFromInput(FixedPointFunction):
 
 
 class DrTfPlasmaCaseFromFraction(ExplicitFunction):
-    """`i_f_dr_tf_plasma_case == True`: a plain node, no loop.
-
-    The fraction arm never reads the entering `.tfcoil.dr_tf_plasma_case`, so this one
-    is an `ExplicitFunction` where its sibling has to be a `FixedPointFunction` -- the
-    clearest possible demonstration that the loop is a property of one *arm*, not of
-    the quantity.
-    """
+    """`i_f_dr_tf_plasma_case == True`: a plain node, no loop."""
 
     dr_tf_plasma_case = OutputInto(tfcoil)
 
@@ -230,10 +146,7 @@ class DrTfPlasmaCaseFromFraction(ExplicitFunction):
 
 
 class DxTfSideCaseMinFromFraction(ExplicitFunction):
-    """`tfc_sidewall_is_fraction == True`.
-
-    The `False` arm has no node -- see the module docstring.
-    """
+    """`tfc_sidewall_is_fraction == True`."""
 
     dx_tf_side_case_min = OutputInto(tfcoil)
 
@@ -298,15 +211,7 @@ class TfCurrent(ExplicitFunction):
 
 
 class TfCoilShape(ExplicitFunction):
-    """The family that owns `.tfcoil.len_tf_coil` and the arc arrays.
-
-    Three switches decide it -- `i_tf_shape`, `itart`, `i_single_null` -- and the arms
-    read genuinely different variables (`r_cp_top` on the two `itart == 1` arms,
-    `z_tf_top` on all but the D-shape double-null one, `r_tf_outboard_mid` on the
-    picture frame). Three occupants are written: the two `i_tf_shape == D_SHAPE`,
-    `itart == 0` arms and the `i_tf_shape == PICTURE_FRAME`, `itart == 1` one the two
-    ST regression files take. See `base.md` for the UNPORTED list.
-    """
+    """The family that owns `.tfcoil.len_tf_coil` and the arc arrays."""
 
 
 class TfCoilShapeDShapeSingleNull(TfCoilShape):
@@ -340,10 +245,7 @@ class TfCoilShapeDShapeSingleNull(TfCoilShape):
 
 
 class TfCoilShapeDShapeDoubleNull(TfCoilShape):
-    """`i_tf_shape == 1`, `itart == 0`, `i_single_null == 0`.
-
-    Does not read `z_tf_top`.
-    """
+    """`i_tf_shape == 1`, `itart == 0`, `i_single_null == 0`."""
 
     len_tf_coil = OutputInto(tfcoil)
     tfa = OutputInto(tfcoil)
@@ -371,19 +273,7 @@ class TfCoilShapeDShapeDoubleNull(TfCoilShape):
 
 
 class TfCoilShapePictureFrameTart(TfCoilShape):
-    """`i_tf_shape == 2`, `itart == 1` -- both ST regression files' arm.
-
-    The reads-set is the measurement: it reads `.build.r_cp_top` and
-    `.build.r_tf_outboard_mid`, which neither D-shape sibling touches, and reads
-    **neither** `.physics.rmajor` nor `.physics.rminor`, which both siblings do. A
-    single node carrying `i_tf_shape`/`itart` as static kwargs would have declared all
-    four edges on every arm; three of the four would have been invented.
-
-    `.build.r_cp_top` has **no producer in this port** -- `process/models/build.py`'s
-    `calculate_radial_build` writes it at `:1750-1813` and that slice is not ported --
-    so it enters the ST graphs as a declared boundary input. See `base.md`'s dated
-    section; it is a lost producer, recorded as one, not stubbed.
-    """
+    """`i_tf_shape == 2`, `itart == 1` -- both ST regression files' arm."""
 
     len_tf_coil = OutputInto(tfcoil)
     tfa = OutputInto(tfcoil)
@@ -415,11 +305,7 @@ class TfCoilSelfInductance(ExplicitFunction):
 
 
 class TfCoilSelfInductanceDShape(TfCoilSelfInductance):
-    """`itart == 0` and `i_tf_shape == 1` -- the reference arm.
-
-    Reads three things; the composite PROCESS function takes nine, and the other six
-    belong to the sibling arm. That gap is the measurement this split exists to make.
-    """
+    """`itart == 0` and `i_tf_shape == 1` -- the reference arm."""
 
     ind_tf_coil = OutputInto(tfcoil)
 

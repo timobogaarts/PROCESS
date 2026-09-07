@@ -1,11 +1,5 @@
 """Pure-functional port of `process/models/stellarator/coils/quench.py` (registry #14).
-
-Audit record: `functional_process/_audit/units/models/stellarator/coils/quench.md`. The
-source's `calculate_quench_protection` orchestrates one sub-call
-(`calculate_vv_max_force_density_from_W7X_scaling`) plus two already-pure functions
-(`max_dump_voltage`, `calculate_quench_protection_current_density`), chained through
-straight-line, unconditional `data` reads/writes -- `local-intermediate` throughout,
-same treatment as `mass.py`'s 8-step chain."""
+"""
 
 import jax.numpy as jnp  # noqa: F401
 from cottax.interfaces.pytree_namespace_module import (
@@ -33,14 +27,7 @@ from functional_process.models.stellarator.coils.quench import (
 
 
 class QuenchProtection(ExplicitFunction):
-    """cottax node: `calculate_quench_protection`, unchanged, ports declared.
-
-    `f_vv_actual` mints an invented `.superconducting_tfcoil.f_vv_actual` -- the source
-    never stores it either, it is returned by `calculate_quench_protection` only to be
-    forwarded straight into `coils/output.py`'s `write(...)` for the printout (confirmed
-    by grep of `coils/calculate.py`). `vv_stress_quench` shares its area since the
-    source assigns it there (`data.superconducting_tfcoil.vv_stress_quench`).
-    """
+    """cottax node: `calculate_quench_protection`, unchanged, ports declared."""
 
     f_vv_actual = OutputInto(superconducting_tfcoil)
     vv_stress_quench = OutputInto(superconducting_tfcoil)

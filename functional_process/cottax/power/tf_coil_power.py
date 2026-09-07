@@ -1,23 +1,5 @@
 """Pure-functional port of the TF coil power conversion sub-unit of
 `process/models/power.py` (registry unit #14, chunk A).
-
-Audit record: `functional_process/_audit/units/models/power/tf_coil_power.md`. Covers
-`Power.tfpwr` (2117-2287), `Power.tfpwcall` (2291-2330) and `Power.tfcpwr`
-(2332-2629) -- see the audit record's data-footprint table for the full trace.
-
-`Power.tfpwr` dispatches on the topology-changing switch `.tfcoil.i_tf_sup` to one of
-two essentially disjoint computations, same shape as `vacuum.py`'s
-`.vacuum.i_vacuum_pumping` dispatch (see `vacuum.md`):
-
-- **`i_tf_sup != 1`** (resistive TF coil) -- straight-line algebra, no calls.
-  `calculate_tf_power_resistive` below.
-- **`i_tf_sup == 1`** (superconducting TF coil) -- `tfpwcall` folds `ettfmj`/`itfka`
-  into `tfcpwr`'s call, itself straight-line algebra (one real branch, on whether the
-  TF leg resistance `rptfc` is exactly zero -- see that function's docstring).
-  `calculate_tf_power_superconducting` below.
-
-Both are tier-1: no `self.data` access once ported, no internal iteration, no calls
-into any other model.
 """
 
 import jax.numpy as jnp
@@ -61,13 +43,7 @@ __all__ = [
 
 
 class TfPowerResistive(ExplicitFunction):
-    """cottax node: `calculate_tf_power_resistive`.
-
-    Only reached when `.tfcoil.i_tf_sup != 1` -- a topology-changing switch resolved
-    at graph-assembly time, per `_audit/naming_convention.md`, not represented as a
-    field on this node (same convention as `vacuum.py`'s `VacuumPumpingSimple`/
-    `calculate_vacuum_pumping_old` split on `.vacuum.i_vacuum_pumping`).
-    """
+    """cottax node: `calculate_tf_power_resistive`."""
 
     m_tf_bus = OutputInto(tfcoil)
     vtfkv = OutputInto(tfcoil)
@@ -107,10 +83,7 @@ class TfPowerResistive(ExplicitFunction):
 
 
 class TfPowerSuperconducting(ExplicitFunction):
-    """cottax node: `calculate_tf_power_superconducting`.
-
-    Only reached when `.tfcoil.i_tf_sup == 1` -- see `TfPowerResistive`'s docstring.
-    """
+    """cottax node: `calculate_tf_power_superconducting`."""
 
     tfckw = OutputInto(tfcoil)
     len_tf_bus = OutputInto(tfcoil)

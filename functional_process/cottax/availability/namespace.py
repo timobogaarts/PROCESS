@@ -1,7 +1,4 @@
-"""The availability subsystem's namespace.
-
-Beside the nodes it names (`model_tree_design.md` §11).
-"""
+"""The availability subsystem's namespace."""
 
 import dataclasses
 
@@ -20,12 +17,7 @@ class Availability(ModelNamespace):
     electric_production: PowerProfilesOverTime | PlantElectricProductionReactor = (
         dataclasses.field(kw_only=True)
     )
-    """Net electric power over the pulse cycle (`.costs.ireactor`, default 1).
-
-    `ireactor == 1` is the reactor arm, which owns `.heat_transport.
-    p_plant_electric_net_mw` -- the field constraint 16 reads. `ireactor == 0` computes
-    the power *profiles* only.
-    """
+    """Net electric power over the pulse cycle (`.costs.ireactor`, default 1)."""
 
     # `PowerProfilesOverTime`/`PlantElectricProductionReactor` are the two arms of the
     # `.costs.ireactor` slot below, not unswitched members -- see that slot.
@@ -55,21 +47,8 @@ class Availability(ModelNamespace):
     avail: Avail = dataclasses.field(kw_only=True)
     """Component lifetimes and the pulse-cycle factors -- one occupant per
     `.costs.ibkt_life` value.
-
-    **`ibkt_life` was a static kwarg here and is a slot now; `itart` was one and is
-    gone entirely** (`_audit/next_steps.md` §14.2). The second is not a family: the only
-    `itart`-gated output of `calculate_avail` is `cplife_mod`, which this node discards,
-    so the switch decided nothing here and the honest conversion was to delete it -- and
-    with it the `.costs.cplife` read whose only consumer was that discarded output."""
+    """
     cplife_avail: CplifeAvail | None = dataclasses.field(kw_only=True)
     """The centrepost lifetime, or **nothing at all** -- `.physics.itart` and
     `.tfcoil.i_tf_sup` jointly.
-
-    **This slot deleted a driven block.** It held a `FixedPointFunction` carrying both
-    switches; `calculate_cplife_next`'s `itart != 1` arm is `return cplife`, so on a
-    conventional machine the step was the identity map and the `FixedPoint` that owned
-    `^cond.costs.cplife` determined nothing (`switch_kwarg_survey.md` §4.7). Neither
-    spherical arm reads `.costs.cplife`, so the self-reference existed only where the
-    body was a pass-through -- i.e. only where the field is an **input**. Absence,
-    spelled as absence, exactly as `power.cryo_q_nuc` spells `inuclear`'s
-    (`_audit/next_steps.md` §14.4)."""
+    """

@@ -1,25 +1,5 @@
 """Pure-functional port of `st_fwbs`'s S1 and S5 sub-computations (see
 `stellarator_E_fwbs_synthesis.md`).
-
-Both are self-contained tier-1 chunks the synthesis record already classified as
-"portable now, no audit blocker, just execution" -- ported directly rather than queued,
-per `unit_registry.md`'s standing practice for a confirmed self-contained tier-1 chunk.
-
-- **S1** `fw_blanket_shield_geometry_setup` (`process/models/stellarator/stellarator.py`
-  515-605): first wall/blanket/shield areas and volumes, `life_fw_fpy`, the neutron
-  power lost through first-wall holes (`pnucloss`), and the neutron peaking factor
-  (`wallpf`, a straight lookup off `stellarator_config`). One real branch, on
-  `.heat_transport.ipowerflow`.
-- **S5** `cryostat_and_vv_geometry` (1282-1330): cryostat and vacuum-vessel geometry and
-  masses. No branches. `dewmkg` is a real downstream dependency -- chunk 1D's already-
-  registered `StructureMasses` node (`structure.py`) reads it.
-
-Neither calls into another model (`self.hcpb`/`self.physics`/etc.) -- both are pure
-`self.data` arithmetic, confirmed by reading `st_fwbs`'s full body (422-1682) for any
-sub-model reference in these two line ranges: none. `local-intermediate` classification
-applies to `vol_shld_inboard`/`vol_shld_outboard` (S1) -- computed, summed into
-`vol_shld_total`, never themselves written to `data` -- so they are not ported as
-separate return values, same convention `structure.py` uses.
 """
 
 import jax.numpy as jnp  # noqa: F401
@@ -115,11 +95,7 @@ class FwBlanketShieldGeometry(ExplicitFunction):
 
 
 class CryostatAndVvGeometry(ExplicitFunction):
-    """cottax node: `calculate_cryostat_and_vv_geometry` (S5), unchanged.
-
-    `dewmkg` is a real downstream dependency: `structure.py`'s
-    `StructureMasses` node already declares `dewmkg=From(fwbs)`.
-    """
+    """cottax node: `calculate_cryostat_and_vv_geometry` (S5), unchanged."""
 
     r_cryostat_inboard = OutputInto(fwbs)
     vol_cryostat = OutputInto(fwbs)

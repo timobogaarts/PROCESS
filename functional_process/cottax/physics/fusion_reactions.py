@@ -1,22 +1,4 @@
-"""Pure-functional port of `process/models/physics/fusion_reactions.py`.
-
-Registry unit #19.
-
-Audit record: `functional_process/_audit/units/models/physics/fusion_reactions.md`.
-Read it first, especially "cottax node" for why `.deuterium_branching()` gets no node
-of its own (its only externally-visible effect has no `VarPath` until
-`.set_physics_variables()` runs) and "tier signal" for why `beam_fusion()`/
-`beam_reaction_rate_coefficient()` are **not** ported: PROCESS's own
-`scipy.integrate.quad` answer there is bounded to ~1e-6 relative accuracy (measured,
-not assumed -- replacing it with fixed-order Gauss-Legendre quadrature at up to 256
-nodes plateaus at the same disagreement, the signature of the integrand's own kinks
-rather than of quadrature error), four orders outside this harness's tier-1
-`rtol=1e-12` value bar, and it is not JAX-traceable as written regardless.
-
-Everything else in `beam_fusion`'s dependency chain -- everything the `quad` call does
-not touch -- is ported below as plain functions with no cottax node, ready for whenever
-that blocker is resolved.
-"""
+"""Pure-functional port of `process/models/physics/fusion_reactions.py`."""
 
 from cottax.interfaces.pytree_namespace_module import (
     ExplicitFunction,
@@ -56,26 +38,6 @@ class FusionRates(ExplicitFunction):
     """cottax node: `calculate_fusion_rates`, fusing all three in-scope
     `FusionReactionRate` methods (`.deuterium_branching()`, `.calculate_fusion_rates()`,
     `.set_physics_variables()`) -- see the audit record's "cottax node" section for why.
-
-    **Two reused minted `VarPath`s**: `temp_plasma_electron_profile_kev`/
-    `nd_plasma_electron_profile` are the same array objects
-    `functional_process.cottax.physics.plasma_profiles.ProfileFactors` already minted
-    those names for (`teprofile.profile_y`/`neprofile.profile_y` off the same
-    `PlasmaProfile` instance) -- not a new mint.
-
-    **A third reused minted `VarPath`, not a new mint.** This class's own earlier
-    draft minted a fresh `.physics.profile_x` here on the reasoning that neither
-    `teprofile.profile_x` nor `neprofile.profile_x` had an existing `VarPath` -- true
-    at the time, but `profiles.py`'s `ProfileGrid` (a source node, no inputs) already
-    mints exactly this grid as `.physics.radius_plasma_profile_norm`, and
-    `radiation_power.py`'s own node already reads it under that name. The two are the
-    same array (`np.arange(n_plasma_profile_elements)`, normalised by
-    `Profile.normalise_profile_x()`, verified in `plasma_profiles.py`'s own test
-    stub) -- confirmed directly, not assumed, by the block-by-block MDA-vs-PROCESS
-    comparison harness surfacing `.physics.profile_x` as an ungrounded boundary input
-    duplicating an already-real one. Fixed by reading `radius_plasma_profile_norm`
-    here too, same as `radiation_power.py` -- three consumers of one mint now, not
-    two plus a stray duplicate. See the audit record's data-footprint table.
     """
 
     pden_plasma_alpha_mw = OutputInto(physics)
@@ -122,13 +84,7 @@ class FusionRates(ExplicitFunction):
 
 
 class SetFusionPowers(ExplicitFunction):
-    """cottax node: `set_fusion_powers`, unchanged, ports declared.
-
-    `.physics.p_beam_alpha_mw` currently has no producer node in the graph -- it is
-    written by `beam_fusion`, which is not ported (see module docstring). See the audit
-    record's data-footprint table; not a reason to withhold this node, which only needs a
-    value to arrive at that `VarPath`, not a specific producer.
-    """
+    """cottax node: `set_fusion_powers`, unchanged, ports declared."""
 
     pden_neutron_total_mw = OutputInto(physics)
     p_plasma_alpha_mw = OutputInto(physics)
