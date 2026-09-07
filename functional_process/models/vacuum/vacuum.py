@@ -145,11 +145,18 @@ def calculate_vacuum_pumping_simple(
 # the resulting duct doesn't physically fit in the space between adjacent TF coils
 # (`a1 < a1max`), until it fits or the shrunk conductance drops below the actual
 # required speed (`nflag = 1`, "space limited", logged but not raised). Both loops are
-# data-dependent in their iteration count -- no faithful `jax`-traceable translation as
-# fixed-count Python loops -- so this port uses `jax.lax.while_loop` throughout instead
-# (see `vacuum.md`'s JAX-difficulty flags for why that's fine here: `Tier2Contract`
-# never differentiates the port, so `while_loop`'s lack of autodiff support is not a
-# constraint).
+# data-dependent in their iteration count in PROCESS. **Only one of them still is here.**
+# `solve_duct_geometry` is now a `lax.scan` over all `max_outer` candidates plus an
+# `argmax` (see its body), converted for reverse-mode AD; `solve_duct_diameter` keeps its
+# `lax.while_loop` because the early exit is worth it and its derivative does not go
+# through the loop at all (see that function's docstring).
+#
+# **Reverse mode works through both**, verified 2026-09-07: `jax.grad` against
+# `jax.jacfwd` agrees to `2.8e-16` on `solve_duct_diameter` and `1.5e-16` on
+# `solve_duct_geometry`. The older claim here -- that `while_loop`'s lack of autodiff
+# support "is not a constraint" because `Tier2Contract` never differentiates the port --
+# was true of the harness and false of the port, and is superseded twice over: the port
+# does differentiate these, and they now differentiate cleanly.
 
 
 def duct_conductance(diameter, l1, l2, l3, xmult_i):
@@ -472,8 +479,9 @@ def solve_duct_geometry(l1, l2, l3, xmult_i, ceff_i_init, a1max, s_i, max_outer=
 # reads pre-computed residual values, it does not compute them itself.
 #
 # **Structural addition only, same discipline as `Intersect`/`DuctDiameterRootFind`
-# themselves**: `solve_duct_geometry`'s eager `jax.lax.while_loop` below is unchanged and
-# still the tested, correct path; this declaration is a second, parallel representation
+# themselves**: `solve_duct_geometry`'s own eager implementation is unchanged and still
+# the tested, correct path (it is a `lax.scan` over the candidates, not the `while_loop`
+# this comment used to name -- the conversion landed after this was written); this declaration is a second, parallel representation
 # proving the shape is real and drivable (see `test_vacuum.py`'s test-only driver), not a
 # replacement. See `vacuum.md` for the fuller writeup.
 

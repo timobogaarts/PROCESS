@@ -246,6 +246,15 @@ initial keyword-swept register, not proven complete.
   **To do**: write it, with a docstring caveat parallel to `solve_duct_diameter`'s -- the
   recovered gradient is the honest a.e. derivative of a piecewise-smooth selection, not a
   smoothing of a discontinuity.
+  **DONE, verified 2026-09-07.** The `vmap`-over-64-candidates conversion this entry
+  called for has landed: `solve_duct_geometry` is a `lax.scan` plus `argmax`, and
+  `jax.grad` now agrees with `jax.jacfwd` to `1.5e-16` on it and `2.8e-16` on
+  `solve_duct_diameter`. **There is no remaining reverse-mode AD blocker in the port.**
+  The `optimistix` prize below should therefore be collectable without custom optimiser
+  code; that has not been re-tried since. (Warp is a separate matter: it must *evaluate*
+  a loop by emitting a fixed instruction count, which a data-dependent trip count denies
+  it, so `.vacuum.vacuum_old` still refuses there while being perfectly differentiable.)
+
   *(Superseded detail, kept for the reasoning:)* It was filed as
   "the sole remaining reverse-mode AD blocker", which undersold it by a lot: it is a
   `lax.while_loop` with dynamic bounds, so it has a JVP and **no transpose rule**, and

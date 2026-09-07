@@ -289,6 +289,95 @@ def _check_size(aval, where: str):
     return n
 
 
+_INT32_MIN, _INT32_MAX = -(2 ** 31), 2 ** 31 - 1
+
+
+def _fold_exact(eqn, args, okind, oshape):
+    """`eqn`'s result as a concrete array -- or `None`.
+
+    Folded ONLY when the result is integer- or boolean-valued and every operand is an
+    integer or boolean value this generator already knows (`Value.vals`). Under that
+    restriction folding is not an approximation of the emitted code, it is the same
+    arithmetic: integer `+`/`*`/`<`/`select` are exact in both `numpy` and Warp, so the
+    literal this substitutes is bit-for-bit the value the unfolded expression would
+    have computed at runtime. **Float results are deliberately excluded**, because
+    `numpy`'s `log`/`exp`/`div` and the device's are allowed to differ in the last
+    ulp and a folded float would silently become a DIFFERENT number from the one the
+    kernel would have produced.
+
+    The evaluation is `eqn.primitive.bind` -- JAX's own definition of the primitive,
+    on concrete arrays -- rather than a second transcription of each primitive's
+    semantics here. A primitive `bind` cannot evaluate eagerly (or that returns
+    something of the wrong shape or dtype) folds to nothing and the ordinary emission
+    path runs.
+
+    Every operand AND the result must fit in `int32`, because that is the integer type
+    the emitted code uses. A value outside it is left unfolded, so this can never
+    disagree with what the unfolded code computes by folding at a wider width than the
+    kernel runs at.
+
+    What this is FOR: `jnp.take`/`arr[idx]` with a computed index array lowers to
+    `iota -> lt/add/select_n` (Python's negative-index normalisation) `-> gather`. The
+    `iota` is known, but `lt` and `select_n` produced no `vals`, so the index reaching
+    `_gather` was opaque and every one of those equations -- and the gather itself --
+    was emitted as one runtime statement per element.
+    `.tokamak.cicc_superconducting_tf_coil.tf_stress` spent 45,024 of its 158,642
+    statements on exactly that, for six lookups of a 3-element per-layer array, and the
+    opaque gathers cut the surrounding 1500-element chain into pieces too small for a
+    loop nest to be worth planning.
+    """
+    if okind not in (_I, _B):
+        return None
+    n = int(np.prod(oshape)) if oshape else 1
+    if n < 1 or n > MAX_ELEMENTS:
+        return None
+    if len(args) != len(eqn.invars) or not args:
+        return None
+    ops = []
+    for v, a in zip(eqn.invars, args):
+        if a.vals is None:
+            return None
+        k = _kind(v.aval)
+        if k not in (_I, _B):
+            return None
+        vshape = tuple(v.aval.shape)
+        vsize = int(np.prod(vshape)) if vshape else 1
+        arr = np.asarray(a.vals)
+        if arr.size != vsize:
+            return None
+        arr = arr.reshape(vshape)
+        if k == _B:
+            ops.append(arr.astype(bool))
+            continue
+        if not np.issubdtype(arr.dtype, np.integer):
+            if not np.all(arr == np.rint(arr)):
+                return None
+        wide = arr.astype(np.int64)
+        if wide.size and (int(wide.min()) < _INT32_MIN or int(wide.max()) > _INT32_MAX):
+            return None
+        ops.append(wide.astype(np.dtype(v.aval.dtype)))
+    try:
+        res = eqn.primitive.bind(*ops, **eqn.params)
+    except Exception:
+        return None
+    if isinstance(res, (list, tuple)):
+        return None
+    try:
+        res = np.asarray(res)
+    except Exception:
+        return None
+    if res.shape != tuple(oshape):
+        return None
+    if okind == _B:
+        return res.astype(bool) if res.dtype == np.dtype(bool) else None
+    if not np.issubdtype(res.dtype, np.integer):
+        return None
+    wide = res.astype(np.int64)
+    if wide.size and (int(wide.min()) < _INT32_MIN or int(wide.max()) > _INT32_MAX):
+        return None
+    return res
+
+
 # ---------------------------------------------------------------------------
 # nested-jaxpr primitives
 # ---------------------------------------------------------------------------
