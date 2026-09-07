@@ -125,24 +125,33 @@ these three configurations they changed the emitted statement count of exactly z
 nodes, and emission code no node exercises is emission code `jaxpr_validate` never
 checks.
 
-**Where the remaining size is, measured rather than guessed.** With nests, the vector
-memo, constant folding and dead-equation elimination in place the three configurations
-emit 75,650 / 13,302 / 13,892 statements and the largest functions are
-`.tokamak.pf_coil.peak_field` at **18,224**, `tf_stress` at 14,703 and
-`.tokamak.cs_coil.temperature_margin` at 12,110 -- so `MAX_NODE_LINES` (24,000) has
-about a third again as much headroom as the largest node needs, and lowering it below
-18,300 would start refusing a node that emits today.
+**Control flow: `scan` and `while` as RUNTIME loops** (`_scan_loop`, `_while`). A nest
+fuses along an ARRAY axis and can do nothing for a node whose every equation is a
+scalar. Three of them -- `.tokamak.cs_coil.temperature_margin` (14,382 statements),
+`.tokamak.cicc_superconducting_tf_coil.tf_superconductor_temperature_margin` (7,187) and
+`tf_coil_self_inductance` (6,221) -- were nothing but `lax.scan`s unrolled `length`
+times, and `.vacuum.vacuum_old` refused outright on a `lax.while_loop`. Both now emit as
+a `for` loop over a carry held in Warp locals: 706, 349 and 97 statements, and
+`vacuum_old` emits.
 
-Nothing in `.tokamak.cs_coil.temperature_margin` is array-shaped: every one of its
-equations is a scalar, and the whole of it is two `lax.scan`s that `_scan` UNROLLS. A
-nest cannot help there, because there is no iteration index to fuse along -- the fix is
-the other direction, emitting a scan as a runtime `for` loop over a carry held in Warp
-locals instead of one copy of the body per step. That is not done here because it would
-break the invariant the rest of this emitter rests on -- that a name, once bound, is
-never reassigned (`_materialise`, `_TRIVIAL`) -- and a loop-carried variable is exactly
-a reassignment. It is the next thing worth doing, and it is worth about 12,000
-statements on `large_tokamak_nof` and 6,000 more on
-`.tokamak.cicc_superconducting_tf_coil.tf_superconductor_temperature_margin`.
+**The invariant the rest of this emitter rests on is narrowed, not dropped.** A name,
+once bound, is still never reassigned -- except the `c{n}` carry locals, which are
+declared before the loop and written in exactly one place, an epilogue at the bottom of
+the body after every statement that reads them, through temporaries so that the whole
+carry updates simultaneously. Inside one iteration the body is still straight-line
+single-assignment code, so `_materialise`, `_TRIVIAL` and the fusion alignment proof
+(`_template`) see exactly what they saw before. Nothing computed inside a loop escapes
+it: the carry locals are the only values bound after it, and `_loop_body` scopes
+`_vec_memo`/`_vec_idents` to the body so no vector built inside can be read outside.
+
+Which form a scan takes is MEASURED, not predicted: both are emitted and the smaller
+kept (`MIN_SCAN_LOOP_SAVING`), because unrolling is strictly better informed --
+`.physics.plasma_composition`'s 8-step threefry folds away entirely when unrolled, while
+`.vacuum.vacuum_old`'s 4-step species loop is 42,000 statements unrolled and 10,600
+looped. A `while` gets a bound PROVED from its own condition (`_while_bound`: a conjunct
+`counter < N` on a carry the body advances by one from a known start) and refuses when
+no such bound can be read, so the emitted loop computes what the `while` computes for
+every input rather than for the inputs someone sampled.
 """
 from __future__ import annotations
 
@@ -465,7 +474,14 @@ _UNARY = {
 }
 """jax primitive -> a Warp builtin with the same one-argument meaning."""
 
-_BINARY_OP = {"add": "+", "sub": "-", "mul": "*", "div": "/"}
+_BINARY_OP = {"add": "+", "add_any": "+", "sub": "-", "mul": "*", "div": "/"}
+"""jax primitive -> the Warp infix operator with the same meaning.
+
+`add_any` is `jax`'s `ad_util.add_any_p`, which autodiff emits where it is summing
+cotangents and does not care about the type-promotion rules `add` carries. On the
+concrete float64/int32 operands this backend deals in it IS `add` -- same operands, same
+result -- and the only reason it appears at all is that `.vacuum.vacuum_old`'s Newton
+step differentiates its own residual with `jax.value_and_grad` inside the loop body."""
 _CMP_OP = {"eq": "==", "ne": "!=", "lt": "<", "le": "<=", "gt": ">", "ge": ">="}
 _TOTAL_ORDER_CMP = {"lt_to": "_lt_to", "le_to": "_le_to", "eq_to": "_eq_to"}
 _BOOL_OP = {"and": "and", "or": "or"}
@@ -757,18 +773,18 @@ compile, and it refused `.tokamak.bootstrap_current` (146,530 statements) and
 `.physics.impurity_radiation_totals` (435,304) outright.
 
 It is 24,000 now because the emitted code is smaller, not because anything was
-loosened. With loop nests, one copy of each materialised vector (`_vec_local`'s memo),
-constant folding (`_fold_exact`) and dead-equation elimination (`_drop_dead`), the
-largest function in any of the three configurations is **18,224 statements**
-(`.tokamak.pf_coil.peak_field`, `large_tokamak_nof`), then `tf_stress` at 14,703 and
-`.tokamak.cs_coil.temperature_margin` at 12,110; the three configurations total 75,650
-/ 13,302 / 13,892 statements, and `.physics.fusion_rates` alone went from 47,502 to
-452. 24,000 leaves about a third again as much headroom as the largest node needs and
-still refuses, loudly, anything that goes back to being unrolled by accident.
+loosened. With loop nests and one copy of each materialised vector
+(`_vec_local`'s memo) `.physics.fusion_rates` alone went from 47,502 statements to 452,
+and with runtime scan loops (`_scan_loop`) `.tokamak.cs_coil.temperature_margin` --
+which this note used to name as the largest function anywhere at 14,382 -- is 706, and
+`large_tokamak_nof` as a whole is 40,693 against 67,331.
 
-**Do not lower it below 18,300** without re-measuring: `.tokamak.pf_coil.peak_field`
-is the binding node now, not `cs_coil.temperature_margin`, and it is close enough to
-the cap that the margin is one node's worth, not a comfortable factor.
+**24,000 cannot come down, and the reason is no longer a scan.** The largest function in
+any of the three configurations is now `.tokamak.pf_coil.peak_field` at **19,744**
+statements, which no loop touches: it is genuinely 19,744 distinct scalar equations, not
+`length` copies of one body. Next largest is `.vacuum.vacuum_old` at 10,619. So the cap
+has about 21 % headroom over the node that needs the most, and lowering it would refuse
+a node that emits correctly today.
 
 Raising it costs compile time and nothing else -- but note that compile time here is not
 linear in the cap, and that with ADJOINTS on the same modules cost about sixty times as
@@ -800,7 +816,19 @@ def warp_init(enable_backward: bool | None = None):
     Neither affects the forward values these harnesses measure. Set
     `WARP_ENABLE_BACKWARD=1` (or pass `enable_backward=True`) to build the
     differentiable module and pay the sixty-fold compile.
+
+    **Turning adjoints ON turns RUNTIME LOOPS off** (`_LOOPS`), unless `WARP_LOOP` says
+    otherwise explicitly. Warp's backward pass reconstructs a non-unrolled loop's
+    intermediates by replaying its body against the carry's *current* values, which is
+    wrong whenever the body's derivatives depend on the carry -- measured at 43.7 %
+    against `jax.grad` on `tf_coil_self_inductance`, where the unrolled form of the same
+    node agrees to 6.59e-16. The two options are therefore genuinely exclusive and the
+    choice is made HERE, at the one place that knows which module is being built, rather
+    than left to whoever reads the gradient. It is announced when it fires, because a
+    node silently changing size between two runs is exactly the kind of thing that
+    produces an unreproducible measurement.
     """
+    global _LOOPS
     import os as _os
 
     import warp as wp
@@ -809,6 +837,13 @@ def warp_init(enable_backward: bool | None = None):
         enable_backward = _os.environ.get("WARP_ENABLE_BACKWARD", "0") not in (
             "0", "", "false", "False")
     wp.config.enable_backward = bool(enable_backward)
+    if enable_backward and _LOOP_ENV is None:
+        if _LOOPS:
+            print("[jaxpr] adjoints requested: emitting every scan UNROLLED and "
+                  "refusing `while` again (WARP_LOOP off -- Warp's backward pass "
+                  "through a non-unrolled loop is wrong for a body whose derivative "
+                  "depends on the carry; see `_LOOPS`). Set WARP_LOOP=1 to override.")
+        _LOOPS = False
     wp.init()
     return wp
 
@@ -939,6 +974,62 @@ nests existed. It is here so a measurement can be repeated on both paths in the 
 interpreter with nothing else changed -- a fused and an unrolled node are supposed to
 be the same arithmetic in a different shape, and that is a claim to check rather than
 assert."""
+
+_LOOP_ENV = __import__("os").environ.get("WARP_LOOP")
+_LOOPS = _LOOP_ENV is None or _LOOP_ENV not in ("0", "", "false", "False")
+"""Whether `scan` and `while` may be emitted as RUNTIME loops (`_scan_loop`, `_while`).
+
+`WARP_LOOP=0` unrolls every `scan` and refuses every `while`, as this backend did before
+those existed. Deliberately a SEPARATE switch from `WARP_FUSE`: the two transforms answer
+different questions (a nest turns one array-shaped equation into a loop over its
+elements; a runtime scan loop turns `length` copies of a body into one), and the A/B that
+matters for a loop is "the same arithmetic, once per iteration instead of `length` times"
+-- a comparison that has to be runnable with fusion held fixed, or the two changes cannot
+be attributed separately.
+
+**`warp_init(enable_backward=True)` turns this OFF unless `WARP_LOOP` was set
+explicitly, and that interlock is not caution -- it is a measurement.** Warp's backward
+pass for a loop it did not unroll (`max_unroll`, default 16) REPLAYS the forward body
+inside the reverse loop, reconstructing intermediates from the loop-carried variables'
+values at that point rather than from the values they held on that iteration. Where the
+body's partial derivatives do not depend on the carry -- a linear recurrence -- that is
+harmless, and a synthetic 50-step probe of exactly this emitted shape agreed with finite
+differences to 8.5e-10. Where they do, it is wrong: on the real
+`.tokamak.cicc_superconducting_tf_coil.tf_coil_self_inductance` (two 100-step loops whose
+body divides by and takes square roots of the carry) `wp.Tape` gives a gradient **43.7 %
+away from `jax.grad`**, while the SAME node emitted unrolled agrees with `jax.grad` to
+**6.59e-16** -- and the finite difference sides with `jax.grad`. Forward values are
+unaffected and identical either way (`jaxpr_validate` reports the same worst relative
+difference to every digit on all three configurations), so this costs nothing to a
+module built the way `warp_init` builds one by default; it costs everything to a
+`wp.Tape` through one of these nodes."""
+
+MIN_SCAN_LOOP_SAVING = 64
+"""How many statements the loop form of a carry-only `scan` must save over the unrolled
+form before `_scan` keeps it.
+
+**Unrolling is the default and the loop has to earn its place**, because unrolling is
+strictly better informed: every step sees the previous step's `Value.vals`, so a scan
+over a compile-time-known carry folds away entirely (`_fold_exact`) and a `gather` at a
+carry-derived index resolves statically, where a loop's carry is a runtime local the
+generator knows nothing about. Both forms are therefore emitted and MEASURED (`_scan`),
+and this is the margin below which the tie goes to the better-informed one. It is a
+margin rather than zero so a scan whose two forms come out the same size is not
+converted for nothing.
+
+The measured spread is wide enough that the exact value hardly matters: on these three
+configurations the loop wins by 6,124, 6,838 and 13,676 statements on the three nodes it
+takes, and the scans it declines it declines by thousands the other way."""
+
+MAX_WHILE_STEPS = 256
+"""Cap on the PROVED trip-count bound of a `while` (`_while_bound`).
+
+Unlike `MIN_SCAN_LOOP_SAVING` this is not about source size -- the body is emitted once
+whatever the bound is -- it is about RUNTIME. The emitted loop always runs to its bound
+(a converged lane simply stops changing), so the bound is paid on every evaluation:
+`.vacuum.vacuum_old`'s Newton is proved at 100 and observed to need 12, so seven eighths
+of that work is a no-op that buys exactness. A bound in the thousands would not be worth
+that trade, and this turns one into a named refusal rather than a slow kernel."""
 
 MAX_CHAIN_NESTS = 6
 """How many loop nests one node may carry. Each one is a separate iteration shape, and
@@ -1692,6 +1783,81 @@ class _FuncEmitter:
             names.append(n)
         return Value(tuple(names), kind, tuple(shape), vals, array_ident=array_ident)
 
+    # -- speculative emission ------------------------------------------------
+
+    def _mark(self):
+        """A snapshot of every piece of emitter state a speculative emission can move,
+        so that a `Refusal` part-way through one can be undone exactly.
+
+        `emit` already does this inline for a fused plan; this is the same snapshot
+        named, for `_scan`/`_while`, which speculate on a runtime loop and fall back to
+        unrolling. `env` is deliberately NOT part of it: every speculative path here
+        reads `env` and writes it only on success."""
+        return (len(self.lines), self._n, set(self.helpers), set(self.vecs),
+                set(self._vec_idents), dict(self._vec_memo), dict(self._bits))
+
+    def _rewind(self, mark) -> None:
+        del self.lines[mark[0]:]
+        self._n = mark[1]
+        self.helpers.clear()
+        self.helpers.update(mark[2])
+        self.vecs.clear()
+        self.vecs.update(mark[3])
+        self._vec_idents.clear()
+        self._vec_idents.update(mark[4])
+        self._vec_memo.clear()
+        self._vec_memo.update(mark[5])
+        self._bits = dict(mark[6])
+
+    def _loop_body(self, thunk):
+        """Run `thunk` (which emits into `self.lines`), returning
+        `(result, body_lines)` with those lines REMOVED from `self.lines` again so the
+        caller can put them inside a loop.
+
+        Two pieces of emitter state have to be scoped to the body rather than shared
+        with the code around it, and both for the same reason: they memoise a VALUE
+        against an identifier, and an identifier defined inside a loop does not exist
+        outside it.
+
+        - `_vec_memo` maps element expressions to the vector local already holding them
+          (`_vec_local`). A hit from outside the loop is fine (that local is in scope);
+          a hit from inside the loop, used after it, would read a dead name.
+        - `_vec_idents` licenses `emit_node` to RETURN a vector local instead of copying
+          it. A vector built inside the loop must never be returned that way.
+
+        Both are therefore saved, cleared, and restored -- so the body may build its own
+        vectors and none of them leaks into the enclosing scope."""
+        saved_memo, saved_idents = dict(self._vec_memo), set(self._vec_idents)
+        self._vec_memo.clear()
+        mark = len(self.lines)
+        try:
+            result = thunk()
+        finally:
+            self._vec_memo.clear()
+            self._vec_memo.update(saved_memo)
+            self._vec_idents.clear()
+            self._vec_idents.update(saved_idents)
+        body_lines = self.lines[mark:]
+        del self.lines[mark:]
+        return result, body_lines
+
+    def _carry_local(self, expr: str, frm: str, kind: str) -> str:
+        """Declare one loop-carried Warp local holding `expr` coerced to `kind`, and
+        return its name.
+
+        The constructor call is not decoration. Warp's codegen treats a name first bound
+        to a literal as a compile-time CONSTANT and rejects assigning to it inside a
+        loop ("Error mutating a constant ... use the following syntax: pi = float(3.141)
+        to declare a dynamic variable"), which is exactly what a carry initialised from
+        `True` or from a folded constant would hit. Wrapping the initialiser in the
+        type's constructor makes it a runtime variable in every case, and pins the
+        carry's Warp type at its declaration so a body that produced a different one is
+        a compile error rather than a silent promotion."""
+        ctor = {_F: "wp.float64", _I: "wp.int32", _B: "wp.bool"}[kind]
+        nm = "c" + self._fresh()[1:]
+        self.lines.append(f"    {nm} = {ctor}({self._coerce(expr, frm, kind)})")
+        return nm
+
     # -- operand access -----------------------------------------------------
 
     def _read(self, env, v) -> Value:
@@ -2282,24 +2448,11 @@ class _FuncEmitter:
                 "a general iterative SVD is a real numerical project this backend does "
                 "not attempt rather than approximate)")
         if name == "while":
-            # `lax.while_loop`'s trip count is a VALUE, not a jaxpr parameter -- unlike
-            # `scan`, whose static `length` is exactly what licenses unrolling it
-            # (`_scan`'s docstring). If a loop's bound were knowable at trace time, JAX
-            # would have lowered it to a `scan`, not a `while`; the mere presence of a
-            # `while` primitive is itself the evidence that this backend cannot prove
-            # a fixed bound, so this refuses unconditionally rather than trying to
-            # unroll to `cond_jaxpr`'s (data-dependent) cap.
-            #
-            # The one call site this graph is observed to reach, `.vacuum.vacuum_old`'s
-            # `solve_duct_diameter` (`functional_process/models/vacuum/vacuum.py`), is
-            # a Newton iteration whose own docstring records the trip count taking six
-            # different values (6-11) within a single `stellarator_helias` SAND solve,
-            # against a 100-iteration cap -- genuinely data-dependent, not merely
-            # unproved. Warp differentiates only static-bound loops correctly, so this
-            # stays refused rather than guessing a bound.
-            raise Refusal("while (data-dependent trip count -- lax.while_loop has no "
-                          "static length to unroll, unlike scan; see this branch's "
-                          "comment for the call site this was checked against)")
+            if not _LOOPS:
+                raise Refusal("while (WARP_LOOP=0: no runtime loop is emitted, and a "
+                              "data-dependent trip count cannot be unrolled)")
+            self._while(env, eqn)
+            return
 
         for ov in eqn.outvars:
             _check_size(ov.aval, f"primitive {name!r} output")
@@ -2344,7 +2497,8 @@ class _FuncEmitter:
     # -- scan ---------------------------------------------------------------
 
     def _scan(self, env, eqn) -> None:
-        """`lax.scan`, **unrolled**.
+        """`lax.scan`: a runtime `for` loop where that is provably equivalent
+        (`_scan_loop`), and **unrolled** otherwise.
 
         A scan's trip count is a jaxpr parameter, not a value -- it is fixed the moment
         the node is traced, which is the same fact that lets an array be scalarised.
@@ -2353,10 +2507,60 @@ class _FuncEmitter:
         which is exactly what the scan computes. `reverse` changes the ORDER the steps
         run in, never where a `ys` row is stored, so both are tracked separately.
 
-        `while` stays refused: its trip count is a value, and nothing here can bound it.
+        Unrolling is also what put ~28,000 statements into three of this graph's nodes
+        (see `MAX_NODE_LINES`), so a scan that `_scan_loop_ok` admits is ALSO emitted as
+        one `for` loop over Warp locals, and **the smaller of the two is kept**. Which
+        one that is, is measured here rather than predicted: unrolling is strictly
+        better informed (every step sees the previous step's `Value.vals`, so a scan
+        over a compile-time-known carry can fold away to nothing) and a rule guessing
+        from the trip count alone would get `.physics.plasma_composition`'s 8-step
+        threefry and `.vacuum.vacuum_old`'s 4-step species loop the wrong way round --
+        one folds, the other is 42,000 statements. Emitting both costs one extra pass
+        over the loop body, which is `1/length` of the unrolled emission this already
+        did.
+
+        A `Refusal` from the loop path falls back to unrolling, so the loop can only
+        make a node that refused emit; it cannot make a node that emitted refuse -- the
+        same rule fusion follows.
+
+        `while` is emitted by `_while` under a proved trip-count bound, and refused when
+        no such bound can be read off the loop's own condition.
         """
         body, body_consts, num_consts, num_carry, length, reverse = _scan_split(eqn)
         args = [self._read(env, v) for v in eqn.invars]
+        if _LOOPS and self._scan_loop_ok(eqn, args, num_consts, num_carry, length):
+            mark = self._mark()
+            loop_out = None
+            try:
+                loop_out = self._scan_loop(eqn, body, body_consts, num_consts,
+                                           num_carry, length, args)
+            except Refusal:
+                self._rewind(mark)
+            if loop_out is not None:
+                loop_text = self.lines[mark[0]:]
+                loop_state = self._mark()
+                self._rewind(mark)
+                try:
+                    self._scan_unrolled(env, eqn, body, body_consts, num_consts,
+                                        num_carry, length, reverse, args)
+                    unrolled = len(self.lines) - mark[0]
+                except Refusal:
+                    self._rewind(mark)
+                    unrolled = None
+                if unrolled is None or unrolled - len(loop_text) >= MIN_SCAN_LOOP_SAVING:
+                    self._rewind(mark)
+                    self.lines.extend(loop_text)
+                    self._rewind(loop_state)      # state only: the lines are back
+                    for ov, v in zip(eqn.outvars, loop_out):
+                        env[ov] = v
+                return
+        self._scan_unrolled(env, eqn, body, body_consts, num_consts, num_carry,
+                            length, reverse, args)
+
+    def _scan_unrolled(self, env, eqn, body, body_consts, num_consts, num_carry,
+                       length, reverse, args) -> None:
+        """The scan emitted as `length` copies of its body -- the original path, and
+        still the one that runs unless `_scan` measures the loop to be smaller."""
         const_args = args[:num_consts]
         carry = list(args[num_consts:num_consts + num_carry])
         xs = args[num_consts + num_carry:]
@@ -2399,6 +2603,385 @@ class _FuncEmitter:
                 raise Refusal(f"scan: stacked ys has {len(exprs)} elements for output "
                               f"shape {oshape}")
             env[ov] = self._materialise(exprs, okind, oshape)
+
+    # -- scan as a runtime loop -----------------------------------------------
+
+    def _scan_loop_ok(self, eqn, args, num_consts, num_carry, length) -> bool:
+        """Whether this `scan` may be emitted as a runtime `for` loop at all.
+
+        Not an economic question -- `_scan` decides that by measuring both forms. These
+        are the conditions under which the loop is *provably* the same computation:
+
+        - **Carry only.** No `xs` operands and no `ys` results. An `xs` slice and a `ys`
+          row are addressed by the step index, so a runtime loop needs them in something
+          runtime-indexable -- a `vec{n}f`, which is exactly the shape whose ADJOINT
+          Warp gets wrong (measured: a `vec` written inside a static-`range` loop
+          differentiates to 635 where finite differences say 35, while the scalar-carry
+          loop this path does emit agrees with finite differences to 8.5e-10). Every
+          scan in this graph that is worth looping is carry-only, so the restriction
+          costs nothing here and keeps the emitted shape to the one that was checked.
+        - **No UNSIGNED carry.** `_kind` maps every integer dtype onto Warp's `int32`,
+          and unrolling gets away with that because `_fold_exact` evaluates integer
+          equations in numpy at their true dtype and folds the answer. A loop cannot:
+          its carry is a runtime local, so the arithmetic really is emitted, and
+          `uint32` shifts and rotations are not `int32` shifts and rotations. This is
+          `.physics.plasma_composition`'s and `.physics.impurity_radiation_totals`'s
+          threefry, whose carry is `uint32` -- refused here by dtype rather than left
+          to be caught by whichever primitive happens to be unimplemented.
+        - **Both forms non-degenerate**: at least one carry and at least two steps.
+
+        `reverse` is not consulted, and that is a statement rather than an oversight:
+        with no `xs` to read and no `ys` to place, the two directions apply the same
+        body to the same carry the same number of times, so they compute the same
+        thing.
+        """
+        if length < 2 or num_carry < 1:
+            return False
+        if len(eqn.invars) != num_consts + num_carry:
+            return False                                   # has xs
+        if len(eqn.outvars) != num_carry:
+            return False                                   # has ys
+        for v in eqn.outvars:
+            dt = np.dtype(v.aval.dtype)
+            if np.issubdtype(dt, np.unsignedinteger):
+                return False
+            try:
+                _check_size(v.aval, "scan carry")
+            except Refusal:
+                return False
+        return True
+
+    def _scan_loop(self, eqn, body, body_consts, num_consts, num_carry, length,
+                   args) -> list:
+        """Emit a carry-only `scan` as `for _ in range(length):` over Warp locals.
+
+        **The invariant this backend rests on -- a name, once bound, is never reassigned
+        -- is kept, and narrowed rather than dropped.** Inside the loop body the
+        emitter is unchanged: every value still gets its own fresh `t{n}`, `_materialise`
+        still substitutes trivial expressions, and a fused nest still plans against
+        straight-line single-assignment code. The ONLY reassigned names in the emitted
+        source are the `c{n}` carry locals, and they are written in exactly one place --
+        the epilogue at the bottom of the body, after every statement that reads them.
+        So within one iteration the body still reads like the unrolled code it replaces;
+        what changed is only that the iteration repeats.
+
+        The epilogue computes every new carry into a fresh temporary FIRST and assigns
+        the carries only afterwards. That is not tidiness: `carry_out[j]` may be the
+        expression `c3` itself (an identity pass-through, which `_materialise`'s
+        `_TRIVIAL` substitution makes common), and carry `i`'s new value may read carry
+        `j`'s old one. Assigning as they are computed would make the loop sequential in
+        a way `scan` is not; the temporaries make the whole carry update simultaneous,
+        which is what `scan` means.
+
+        An ARRAY-valued carry becomes one scalar Warp local per element, not a
+        `vec{n}f`, for the adjoint reason `_scan_loop_ok` gives.
+
+        Two things the loop gives up against unrolling, both stated because they are the
+        reason a `Refusal` here falls back and the reason `_scan` measures rather than
+        assumes: the carry's `Value.vals` becomes `None` (the generator no longer knows
+        the carry, so nothing downstream of it folds), and a construct inside the body
+        that needed a compile-time-known carry -- a `gather` at a carry-derived index,
+        say -- will refuse where the unrolled form resolved it statically.
+
+        Returns one `Value` per result; the caller binds them only if it keeps this
+        form.
+        """
+        const_args = args[:num_consts]
+        carry_in = args[num_consts:num_consts + num_carry]
+        kinds = [_kind(v.aval) for v in eqn.outvars]
+        shapes = [tuple(v.aval.shape) for v in eqn.outvars]
+        names = [[self._carry_local(e, v.kind, k) for e in v.exprs]
+                 for v, k in zip(carry_in, kinds)]
+
+        # The body sees the carry as bare Warp locals of known kind and UNKNOWN value:
+        # `vals=None` is what stops `_fold_exact` folding the first iteration's carry
+        # into every iteration.
+        body_args = list(const_args) + [Value(tuple(nm), k, sh)
+                                        for nm, k, sh in zip(names, kinds, shapes)]
+        outs, body_lines = self._loop_body(
+            lambda: self.emit(body, body_consts, body_args))
+        if len(outs) != num_carry:
+            raise Refusal(f"scan: body returned {len(outs)} value(s) for {num_carry} "
+                          f"carry and no ys")
+
+        tmps: list = []
+        for o, k, nm_row in zip(outs, kinds, names):
+            if o.size != len(nm_row):
+                raise Refusal(f"scan: body returned {o.size} element(s) for a carry of "
+                              f"{len(nm_row)}")
+            row = []
+            for e in o.exprs:
+                nm = self._fresh()
+                body_lines.append(f"    {nm} = {self._coerce(e, o.kind, k)}")
+                row.append(nm)
+            tmps.append(row)
+        for nm_row, tmp_row in zip(names, tmps):
+            for nm_c, nm_t in zip(nm_row, tmp_row):
+                body_lines.append(f"    {nm_c} = {nm_t}")
+
+        ivar = "k" + self._fresh()[1:]
+        self.lines.append(f"    for {ivar} in range({length}):")
+        self.lines.extend("    " + ln for ln in body_lines)
+
+        return [Value(tuple(nm), k, sh)
+                for nm, k, sh in zip(names, kinds, shapes)]
+
+    # -- while ----------------------------------------------------------------
+
+    def _while_split(self, eqn):
+        """`(cond, cond_consts, body, body_consts, cond_nconsts, body_nconsts,
+        n_carry)` for a `while`, with every part checked against the equation's own
+        arity rather than assumed -- same discipline, and for the same reason, as
+        `_scan_split`."""
+        p = eqn.params
+        cond_closed, body_closed = p["cond_jaxpr"], p["body_jaxpr"]
+        cn, bn = int(p["cond_nconsts"]), int(p["body_nconsts"])
+        cond, body = cond_closed.jaxpr, body_closed.jaxpr
+        n_carry = len(eqn.outvars)
+        if len(eqn.invars) != cn + bn + n_carry:
+            raise Refusal(f"while: {len(eqn.invars)} operands for {cn} cond consts + "
+                          f"{bn} body consts + {n_carry} carry")
+        if len(cond.invars) != cn + n_carry or len(cond.outvars) != 1:
+            raise Refusal(f"while: cond takes {len(cond.invars)} argument(s) and "
+                          f"returns {len(cond.outvars)}")
+        if len(body.invars) != bn + n_carry or len(body.outvars) != n_carry:
+            raise Refusal(f"while: body takes {len(body.invars)} argument(s) and "
+                          f"returns {len(body.outvars)}")
+        # A carry keeps its aval across the loop; that is what makes one set of Warp
+        # locals able to hold it. Checked, not assumed.
+        for i, ov in enumerate(eqn.outvars):
+            for who, v in (("operand", eqn.invars[cn + bn + i]),
+                           ("cond argument", cond.invars[cn + i]),
+                           ("body argument", body.invars[bn + i]),
+                           ("body result", body.outvars[i])):
+                if tuple(v.aval.shape) != tuple(ov.aval.shape) \
+                        or _kind(v.aval) != _kind(ov.aval):
+                    raise Refusal(f"while: carry {i}'s {who} has aval {v.aval} where "
+                                  f"the result has {ov.aval}")
+        return (cond, list(cond_closed.consts), body, list(body_closed.consts),
+                cn, bn, n_carry)
+
+    def _while_bound(self, eqn, cond, body, cn, bn, n_carry, init) -> int:
+        """A PROVED cap on how many times a `while`'s body can run, or a `Refusal`.
+
+        Nothing here estimates. The proof is the standard bounded-counter argument, and
+        it needs all four of its parts to be visible in the jaxpr:
+
+        1. the loop condition is a CONJUNCTION (`and`, through boolean
+           `convert_element_type`s) of conditions, one of which is `lt(x, N)` or
+           `le(x, N)` against an integer literal `N`;
+        2. `x` is one of the loop's own carries, passed straight into the condition
+           (not computed from it);
+        3. the body's result for that carry is exactly `x + 1`;
+        4. that carry's INITIAL value is known to this generator (`Value.vals`).
+
+        Given all four: the condition can only hold while `x < N`, and every iteration
+        in which it holds raises `x` by exactly one from a known start, so the body can
+        run at most `N - max(x_0)` times. Under a batched predicate (`jax`'s
+        `_while_lowering`) the update is masked per lane, which only ever runs a lane's
+        counter FEWER times, so the same number bounds every lane.
+
+        The bound is the loop's own cap, so the emitted loop is not an approximation of
+        the `while` under some assumption about the data -- it computes the same values
+        for every input the `while` accepts. It is deliberately NOT the smaller bound a
+        sweep suggests: `.vacuum.vacuum_old`'s Newton needs a median of 12 iterations
+        and a maximum of 14 over a 400-draw sweep, but a sweep is not a proof, and a
+        bound taken from one would be a guess that fails silently on the draw that
+        needed 15.
+        """
+        by_var = {}
+        for e in body.eqns:
+            for ov in e.outvars:
+                by_var[ov] = e
+        cond_by_var = {}
+        for e in cond.eqns:
+            for ov in e.outvars:
+                cond_by_var[ov] = e
+
+        # (1) the conjuncts of the condition.
+        conjuncts, stack, seen = [], [cond.outvars[0]], set()
+        while stack:
+            v = stack.pop()
+            if isinstance(v, Literal) or id(v) in seen:
+                continue
+            seen.add(id(v))
+            e = cond_by_var.get(v)
+            if e is None:
+                conjuncts.append(v)
+                continue
+            if e.primitive.name == "and":
+                stack.extend(e.invars)
+            elif e.primitive.name == "convert_element_type" \
+                    and np.dtype(e.outvars[0].aval.dtype) == np.dtype(bool) \
+                    and np.dtype(e.invars[0].aval.dtype) == np.dtype(bool):
+                stack.append(e.invars[0])
+            else:
+                conjuncts.append(v)
+
+        best = None
+        for v in conjuncts:
+            e = cond_by_var.get(v)
+            if e is None or e.primitive.name not in ("lt", "le"):
+                continue
+            x, n = e.invars
+            # (2) `x` is a carry, straight in.
+            slot = None
+            for i in range(n_carry):
+                if cond.invars[cn + i] is x:
+                    slot = i
+            if slot is None or _kind(x.aval) != _I:
+                continue
+            if not isinstance(n, Literal) or n.aval.shape != () \
+                    or _kind(n.aval) != _I:
+                continue
+            cap = int(np.asarray(n.val).reshape(()))
+            # (3) the body advances that carry by exactly one.
+            be = by_var.get(body.outvars[slot])
+            if be is None or be.primitive.name not in ("add", "add_any"):
+                continue
+            operands = list(be.invars)
+            if not any(o is body.invars[bn + slot] for o in operands):
+                continue
+            step = [o for o in operands if o is not body.invars[bn + slot]]
+            if len(step) != 1 or not isinstance(step[0], Literal) \
+                    or int(np.asarray(step[0].val).reshape(-1)[0]) != 1 \
+                    or np.asarray(step[0].val).size != 1:
+                continue
+            # (4) the counter's start is known.
+            v0 = init[slot].vals
+            if v0 is None:
+                continue
+            start = int(np.asarray(v0).reshape(-1).max())
+            trips = max(cap - start + (1 if e.primitive.name == "le" else 0), 0)
+            best = trips if best is None else min(best, trips)
+
+        if best is None:
+            raise Refusal(
+                "while: no trip-count bound could be PROVED from the loop condition "
+                "(this backend emits a `while` only as a `for` to a bound it can read "
+                "off the jaxpr -- a conjunct `counter < N` on a carry the body advances "
+                "by exactly one from a known start; anything else would be a guess "
+                "about the data)")
+        if best > MAX_WHILE_STEPS:
+            raise Refusal(f"while: proved trip-count bound {best} exceeds "
+                          f"MAX_WHILE_STEPS ({MAX_WHILE_STEPS})")
+        return best
+
+    def _while(self, env, eqn) -> None:
+        """`lax.while_loop`, as a `for` to a PROVED bound with the body predicated on
+        the loop's own condition.
+
+        This is not an approximation of the `while`; it is `jax`'s own lowering of it.
+        `_while_lowering` (jax `_src/lax/control_flow/loops.py`) emits, for a BATCHED
+        predicate, exactly `carry = select(cond(carry), body(carry), carry)` inside an
+        `hlo.WhileOp` whose condition is `reduce_or(cond(carry))` -- the body is not
+        masked in the jaxpr, the LOWERING masks it. The unbatched case is the same
+        statement with a scalar predicate. So the emitted form here,
+
+            for _ in range(bound):
+                p = cond(carry); n = body(carry); carry = where(p, n, carry)
+
+        differs from the `while` in one respect only: it always takes `bound`
+        iterations rather than stopping. That is harmless because the condition is a
+        pure function of the carry (plus loop-invariant consts): once a lane's
+        predicate is false its carry is frozen, so its predicate stays false and every
+        further iteration is a no-op on it. `_while_bound` then supplies a bound the
+        loop's own condition proves, so no input exists for which this stops early.
+
+        The freeze is measured, not only argued: `.vacuum.vacuum_old` emitted at the
+        proved bound of 100 and at an artificially capped 20 -- five times the 12
+        iterations the Newton actually needs, still a fifth of the cap -- returns
+        BIT-IDENTICAL values at all 8 of `jaxpr_validate`'s draws. If the mask were
+        inverted, or the carry update not simultaneous, or the predicate read after the
+        carry was written, the two would differ.
+
+        The predicate is array-shaped at the one call site this graph has (64 candidate
+        ducts under a `vmap`). A SCALAR predicate is the degenerate case of the same
+        prefix rule below and is emitted by the same three lines -- but nothing in these
+        three configurations exercises it, so it is asserted by reading `_while_lowering`
+        rather than by a passing check.
+
+        The name invariant is kept exactly as `_scan_loop` keeps it: SSA inside the
+        body, reassignment confined to the `c{n}` carry locals, written once at the
+        bottom after every read, through temporaries so the update is simultaneous.
+
+        The carry is held in SCALAR Warp locals, one per element, even where it is
+        array-valued -- 64 of them per carry at `.vacuum.vacuum_old`'s call site. A
+        `vec{n}f` would be fewer statements, and is rejected because a `vec` written
+        inside a static-`range` loop is the one shape whose ADJOINT Warp gets wrong
+        (measured: 635 against a finite-difference 35, where the scalar-local loop
+        agrees to 8.5e-10).
+        """
+        cond, cond_consts, body, body_consts, cn, bn, n_carry = self._while_split(eqn)
+        args = [self._read(env, v) for v in eqn.invars]
+        cond_args = args[:cn]
+        body_args = args[cn:cn + bn]
+        init = args[cn + bn:]
+        bound = self._while_bound(eqn, cond, body, cn, bn, n_carry, init)
+
+        kinds = [_kind(v.aval) for v in eqn.outvars]
+        shapes = [tuple(v.aval.shape) for v in eqn.outvars]
+        for ov in eqn.outvars:
+            _check_size(ov.aval, "while carry")
+        names = [[self._carry_local(e, v.kind, k) for e in v.exprs]
+                 for v, k in zip(init, kinds)]
+        # The carry is a Warp local whose value this generator does not know:
+        # `vals=None`, so nothing downstream of it folds against the initial value.
+        carry_vals = [Value(tuple(nm), k, sh)
+                      for nm, k, sh in zip(names, kinds, shapes)]
+
+        def emit_both():
+            preds = self.emit(cond, cond_consts, list(cond_args) + carry_vals)
+            outs = self.emit(body, body_consts, list(body_args) + carry_vals)
+            return preds, outs
+
+        (preds, outs), body_lines = self._loop_body(emit_both)
+        if len(preds) != 1:
+            raise Refusal(f"while: cond returned {len(preds)} values")
+        pred = preds[0]
+        pshape = tuple(cond.outvars[0].aval.shape)
+        if pred.size != (int(np.prod(pshape)) if pshape else 1):
+            raise Refusal(f"while: predicate of shape {pshape} has {pred.size} "
+                          f"elements")
+        pexprs = [self._coerce(e, pred.kind, _B) for e in pred.exprs]
+
+        tmps: list = []
+        for i in range(n_carry):
+            o = outs[i]
+            if o.size != len(names[i]):
+                raise Refusal(f"while: body returned {o.size} element(s) for a carry "
+                              f"of {len(names[i])}")
+            # `_pred_bcast_select_hlo`'s rule: the predicate's shape is a PREFIX of the
+            # carry's, and it is broadcast along the trailing axes. Anything else is a
+            # shape this backend has not been shown and will not guess at.
+            if pshape != tuple(shapes[i][:len(pshape)]):
+                raise Refusal(f"while: predicate of shape {pshape} against a carry of "
+                              f"shape {shapes[i]} -- not a leading-axis prefix")
+            if pshape:
+                sel = np.broadcast_to(
+                    np.arange(pred.size).reshape(
+                        pshape + (1,) * (len(shapes[i]) - len(pshape))),
+                    shapes[i]).reshape(-1)
+            else:
+                sel = np.zeros(o.size, dtype=np.int64)
+            row = []
+            for j, e in enumerate(o.exprs):
+                nm = self._fresh()
+                body_lines.append(
+                    f"    {nm} = wp.where({pexprs[int(sel[j])]}, "
+                    f"{self._coerce(e, o.kind, kinds[i])}, {names[i][j]})")
+                row.append(nm)
+            tmps.append(row)
+        for i in range(n_carry):
+            for nm_c, nm_t in zip(names[i], tmps[i]):
+                body_lines.append(f"    {nm_c} = {nm_t}")
+
+        ivar = "k" + self._fresh()[1:]
+        self.lines.append(f"    for {ivar} in range({bound}):")
+        self.lines.extend("    " + ln for ln in body_lines)
+
+        for i, ov in enumerate(eqn.outvars):
+            env[ov] = Value(tuple(names[i]), kinds[i], shapes[i])
 
     # -- unstack --------------------------------------------------------------
 
