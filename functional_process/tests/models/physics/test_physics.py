@@ -19,6 +19,7 @@ recorded as this unit's weak point in the audit record's "tier signal", not pape
 over.
 """
 
+import functools
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, fuzz_samples, legacy_sample
@@ -51,25 +52,15 @@ _FIELDS = PlasmaFields()
 _I_PLASMA_CURRENT_AMPERES = 4
 
 
-def _reference_surface_averaged_poloidal_field_amperes(cur_plasma, len_plasma_poloidal):
-    """`PlasmaFields.calculate_surface_averaged_poloidal_field` on its Ampere arm.
-
-    The five arguments held fixed here are the *evidence* for the split: they are read
-    only by the `PENG_DIVERTOR_SCALING` arm (`plasma_fields.py:86-93`), so their values
-    are arbitrary and the reference is invariant under them. Set to
-    `large_tokamak_eval`-scale numbers anyway, so that a regression in the branch test
-    itself shows up as a value mismatch rather than a `nan`.
-    """
-    return _FIELDS.calculate_surface_averaged_poloidal_field(
-        i_plasma_current=_I_PLASMA_CURRENT_AMPERES,
-        cur_plasma=cur_plasma,
-        q95=3.5,
-        aspect=3.0,
-        b_plasma_toroidal_on_axis=5.7,
-        kappa=1.85,
-        triang=0.5,
-        len_plasma_poloidal=len_plasma_poloidal,
-    )
+_reference_surface_averaged_poloidal_field_amperes = functools.partial(
+    _FIELDS.calculate_surface_averaged_poloidal_field,
+    i_plasma_current=_I_PLASMA_CURRENT_AMPERES,
+    q95=3.5,
+    aspect=3.0,
+    b_plasma_toroidal_on_axis=5.7,
+    kappa=1.85,
+    triang=0.5,
+)
 
 
 class TestSurfaceAveragedPoloidalFieldAmperes(Tier1Contract):

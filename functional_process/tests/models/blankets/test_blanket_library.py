@@ -31,6 +31,7 @@ staticmethod's own parameter list, so there is nothing to poison. That is a stro
 guarantee than a poisoned argument, not a weaker one.
 """
 
+import functools
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
@@ -129,58 +130,21 @@ def _blanket_library():
     return model
 
 
-def _reference_blkt_half_height_single_null(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    dz_blkt_upper,
-    z_plasma_xpoint_upper,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_plasma_gap_outboard,
-    dr_fw_inboard,
-    dr_fw_outboard,
-):
-    """`calculate_blkt_half_height` at `n_divertors == 1`.
-
-    `n_divertors` is supplied by the adapter, not by the port: it selected the occupant.
-    """
-    return CCFE_HCPB.calculate_blkt_half_height(
-        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
-        dz_xpoint_divertor=dz_xpoint_divertor,
-        dz_divertor=dz_divertor,
-        z_plasma_xpoint_upper=z_plasma_xpoint_upper,
-        dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
-        dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
-        dr_fw_inboard=dr_fw_inboard,
-        dr_fw_outboard=dr_fw_outboard,
-        dz_blkt_upper=dz_blkt_upper,
-        n_divertors=1,
-    )
+_reference_blkt_half_height_single_null = functools.partial(
+    CCFE_HCPB.calculate_blkt_half_height,
+    n_divertors=1,
+)
 
 
-def _reference_blkt_half_height_double_null(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    dz_blkt_upper,
-):
-    """`calculate_blkt_half_height` at `n_divertors == 2`.
-
-    The five parameters this arm does not read are passed as `nan`, not `0.0` -- see the
-    module docstring. PROCESS's signature still demands values for them.
-    """
-    return CCFE_HCPB.calculate_blkt_half_height(
-        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
-        dz_xpoint_divertor=dz_xpoint_divertor,
-        dz_divertor=dz_divertor,
-        z_plasma_xpoint_upper=np.nan,
-        dr_fw_plasma_gap_inboard=np.nan,
-        dr_fw_plasma_gap_outboard=np.nan,
-        dr_fw_inboard=np.nan,
-        dr_fw_outboard=np.nan,
-        dz_blkt_upper=dz_blkt_upper,
-        n_divertors=2,
-    )
+_reference_blkt_half_height_double_null = functools.partial(
+    CCFE_HCPB.calculate_blkt_half_height,
+    z_plasma_xpoint_upper=np.nan,
+    dr_fw_plasma_gap_inboard=np.nan,
+    dr_fw_plasma_gap_outboard=np.nan,
+    dr_fw_inboard=np.nan,
+    dr_fw_outboard=np.nan,
+    n_divertors=2,
+)
 
 
 def _reference_elliptical_blkt_areas(**kwargs):

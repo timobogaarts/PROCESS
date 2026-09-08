@@ -16,6 +16,7 @@ was computed by calling it, so a regression in its output would show up as a val
 mismatch downstream.
 """
 
+import functools
 import pytest
 from cottax.interfaces.pytree_namespace_module import Output, to_graph
 from cottax.problem import FixedPoint
@@ -379,8 +380,7 @@ class TestUUnplannedBop(Tier1Contract):
     fuzz_bounds = {"t_plant_operational_total_yrs": (5.0, 40.0)}
 
 
-def _reference_u_unplanned_hcd():
-    return Availability.calc_u_unplanned_hcd()
+_reference_u_unplanned_hcd = functools.partial(Availability.calc_u_unplanned_hcd)
 
 
 class TestUUnplannedHcd(Tier1Contract):

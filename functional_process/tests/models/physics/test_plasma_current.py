@@ -45,6 +45,7 @@ verbatim: finite in value and `nan` in derivative at zero field. See the audit r
 **D6** for the repair that exists and why the port does not apply it.
 """
 
+import functools
 from types import MappingProxyType
 
 from functional_process.cottax._harness import Sample, Tier1Contract, legacy_sample
@@ -79,70 +80,28 @@ _I_IND_PLASMA_INTERNAL_NORM_WESSON = 1
 _I_PLASMA_CURRENT_FIESTA = 9
 
 
-def _reference_plasma_current_ipdg89(
-    eps, kappa95, triang95, rminor, rmajor, q95, b_plasma_toroidal_on_axis
-):
-    """`PlasmaCurrent.calculate_plasma_current` at `i_plasma_current = 4`.
-
-    The seven arguments the IPDG89 arm does not touch are pinned to
-    `large_tokamak_eval`-plausible constants (`triang = +0.5`, keeping PROCESS's
-    negative-triangularity guard quiet). If any of them were in fact read, this
-    contract's value test would fail the moment fuzzing moved the seven it does declare.
-    """
-    return PlasmaCurrent().calculate_plasma_current(
-        alphaj=1.0,
-        alphap=0.0,
-        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-        eps=eps,
-        i_plasma_current=_I_PLASMA_CURRENT_IPDG89,
-        kappa=1.85,
-        kappa95=kappa95,
-        pres_plasma_on_axis=0.0,
-        len_plasma_poloidal=24.081367139525412,
-        q95=q95,
-        rmajor=rmajor,
-        rminor=rminor,
-        triang=0.5,
-        triang95=triang95,
-    )
+_reference_plasma_current_ipdg89 = functools.partial(
+    PlasmaCurrent().calculate_plasma_current,
+    alphaj=1.0,
+    alphap=0.0,
+    i_plasma_current=_I_PLASMA_CURRENT_IPDG89,
+    kappa=1.85,
+    pres_plasma_on_axis=0.0,
+    len_plasma_poloidal=24.081367139525412,
+    triang=0.5,
+)
 
 
-def _reference_plasma_current_fiesta(
-    eps, kappa, triang, rminor, rmajor, q95, b_plasma_toroidal_on_axis
-):
-    """`PlasmaCurrent.calculate_plasma_current` at `i_plasma_current = 9`.
-
-    The same "close the `data` back-door" adapter as the IPDG89 one above, with the
-    complementary pin set: this arm reads the **separatrix** `kappa`/`triang`, so it is
-    `kappa95`/`triang95` that are pinned to constants here, and if the FIESTA arm in fact
-    read either of them the value test would fail the moment fuzzing moved the seven
-    arguments it does declare. The two adapters together are the evidence that the
-    family's two occupants have genuinely different read sets and not merely different
-    constants.
-
-    `triang` is a *live* argument here rather than a pinned `+0.5`, and every sample and
-    fuzz bound keeps it strictly positive: `plasma_current.py:305-309` raises for
-    `triang < 0` at every `i_plasma_current` except `8`, so a negative point has no
-    PROCESS answer to agree with, and `triang == 0` is where `triang ** 0.060` has an
-    infinite derivative (the port's `safe_pow` makes it `0` there; PROCESS's own finite
-    difference cannot be asked what it should be).
-    """
-    return PlasmaCurrent().calculate_plasma_current(
-        alphaj=1.0,
-        alphap=0.0,
-        b_plasma_toroidal_on_axis=b_plasma_toroidal_on_axis,
-        eps=eps,
-        i_plasma_current=_I_PLASMA_CURRENT_FIESTA,
-        kappa=kappa,
-        kappa95=1.6517857142857142,
-        pres_plasma_on_axis=0.0,
-        len_plasma_poloidal=24.081367139525412,
-        q95=q95,
-        rmajor=rmajor,
-        rminor=rminor,
-        triang=triang,
-        triang95=0.3333333333333333,
-    )
+_reference_plasma_current_fiesta = functools.partial(
+    PlasmaCurrent().calculate_plasma_current,
+    alphaj=1.0,
+    alphap=0.0,
+    i_plasma_current=_I_PLASMA_CURRENT_FIESTA,
+    kappa95=1.6517857142857142,
+    pres_plasma_on_axis=0.0,
+    len_plasma_poloidal=24.081367139525412,
+    triang95=0.3333333333333333,
+)
 
 
 def _reference_ind_plasma_internal_norm_wesson(alphaj):

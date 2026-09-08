@@ -35,6 +35,7 @@ occupant (`DShapedShieldVolumes`). Its adapter **poisons** `.physics.rmajor`,
 alongside it, and a `nan` executes that claim rather than asserting it.
 """
 
+import functools
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
@@ -51,46 +52,22 @@ from process.models.build import FwBlktVVShape
 from process.models.shield import Shield
 
 
-def _reference_half_height_double_null(
-    z_plasma_xpoint_lower, dz_xpoint_divertor, dz_divertor
-):
-    return Shield.calculate_shield_half_height(
-        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
-        dz_xpoint_divertor=dz_xpoint_divertor,
-        dz_divertor=dz_divertor,
-        n_divertors=2,
-        z_plasma_xpoint_upper=0.0,
-        dr_fw_plasma_gap_inboard=0.0,
-        dr_fw_plasma_gap_outboard=0.0,
-        dr_fw_inboard=0.0,
-        dr_fw_outboard=0.0,
-        dz_blkt_upper=0.0,
-    )
+_reference_half_height_double_null = functools.partial(
+    Shield.calculate_shield_half_height,
+    n_divertors=2,
+    z_plasma_xpoint_upper=0.0,
+    dr_fw_plasma_gap_inboard=0.0,
+    dr_fw_plasma_gap_outboard=0.0,
+    dr_fw_inboard=0.0,
+    dr_fw_outboard=0.0,
+    dz_blkt_upper=0.0,
+)
 
 
-def _reference_half_height_single_null(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    z_plasma_xpoint_upper,
-    dr_fw_plasma_gap_inboard,
-    dr_fw_plasma_gap_outboard,
-    dr_fw_inboard,
-    dr_fw_outboard,
-    dz_blkt_upper,
-):
-    return Shield.calculate_shield_half_height(
-        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
-        dz_xpoint_divertor=dz_xpoint_divertor,
-        dz_divertor=dz_divertor,
-        n_divertors=1,
-        z_plasma_xpoint_upper=z_plasma_xpoint_upper,
-        dr_fw_plasma_gap_inboard=dr_fw_plasma_gap_inboard,
-        dr_fw_plasma_gap_outboard=dr_fw_plasma_gap_outboard,
-        dr_fw_inboard=dr_fw_inboard,
-        dr_fw_outboard=dr_fw_outboard,
-        dz_blkt_upper=dz_blkt_upper,
-    )
+_reference_half_height_single_null = functools.partial(
+    Shield.calculate_shield_half_height,
+    n_divertors=1,
+)
 
 
 def _run_shield(

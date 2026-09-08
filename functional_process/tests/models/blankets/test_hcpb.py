@@ -26,6 +26,7 @@ second point per contract read out of the assembled `DataStructure` after four
 check that the sample is on the operating point and not near it.
 """
 
+import functools
 from functional_process.cottax._harness import Tier1Contract, Tolerance, legacy_sample
 from functional_process.cottax.blankets.hcpb import (
     calculate_centrepost_angle_fraction,
@@ -169,65 +170,25 @@ def _reference_nuclear_heating_magnets_spherical_tokamak(**kwargs):
     return _read_magnets(model)
 
 
-def _reference_nuclear_heating_fw(
-    m_fw_total, fw_armour_u_nuc_heating, p_fusion_total_mw
-):
-    """`nuclear_heating_fw`, already a bare `@staticmethod`."""
-    return CCFE_HCPB.nuclear_heating_fw(
-        m_fw_total=m_fw_total,
-        fw_armour_u_nuc_heating=fw_armour_u_nuc_heating,
-        p_fusion_total_mw=p_fusion_total_mw,
-    )
+_reference_nuclear_heating_fw = functools.partial(CCFE_HCPB.nuclear_heating_fw)
 
 
-def _reference_nuclear_heating_blanket(m_blkt_total, p_fusion_total_mw):
-    """`nuclear_heating_blanket`, already a bare `@staticmethod`."""
-    return CCFE_HCPB.nuclear_heating_blanket(
-        m_blkt_total=m_blkt_total, p_fusion_total_mw=p_fusion_total_mw
-    )
+_reference_nuclear_heating_blanket = functools.partial(
+    CCFE_HCPB.nuclear_heating_blanket,
+)
 
 
-def _reference_nuclear_heating_shield_conventional(
-    dr_shld_outboard,
-    dr_shld_inboard,
-    shield_density,
-    whtshld,
-    x_blanket,
-    p_fusion_total_mw,
-):
-    """`nuclear_heating_shield` at `itart == 0`.
-
-    The switch is the adapter's, not a port of the function under test.
-    """
-    return CCFE_HCPB.nuclear_heating_shield(
-        itart=0,
-        dr_shld_outboard=dr_shld_outboard,
-        dr_shld_inboard=dr_shld_inboard,
-        shield_density=shield_density,
-        whtshld=whtshld,
-        x_blanket=x_blanket,
-        p_fusion_total_mw=p_fusion_total_mw,
-    )
+_reference_nuclear_heating_shield_conventional = functools.partial(
+    CCFE_HCPB.nuclear_heating_shield,
+    itart=0,
+)
 
 
-def _reference_nuclear_heating_shield_spherical_tokamak(
-    dr_shld_outboard, shield_density, whtshld, x_blanket, p_fusion_total_mw
-):
-    """`nuclear_heating_shield` at `itart == 1`.
-
-    `dr_shld_inboard` is not a parameter of the port on this arm, so the adapter supplies
-    a deliberately absurd value: if the ported function had kept the read, the two would
-    disagree by a mile rather than by a rounding error.
-    """
-    return CCFE_HCPB.nuclear_heating_shield(
-        itart=1,
-        dr_shld_outboard=dr_shld_outboard,
-        dr_shld_inboard=1.0e6,
-        shield_density=shield_density,
-        whtshld=whtshld,
-        x_blanket=x_blanket,
-        p_fusion_total_mw=p_fusion_total_mw,
-    )
+_reference_nuclear_heating_shield_spherical_tokamak = functools.partial(
+    CCFE_HCPB.nuclear_heating_shield,
+    itart=1,
+    dr_shld_inboard=1000000.0,
+)
 
 
 def _seed_component_masses(model, **kwargs):
@@ -496,16 +457,7 @@ def _run_renormalisation(
     return data
 
 
-def _reference_centrepost_angle_fraction(z_cp_top, r_cp_mid, r_cp_top, rmajor):
-    """`CCFE_HCPB.st_cp_angle_fraction` (`hcpb.py:1008-1080`), called directly.
-
-    A `@staticmethod` with no `self.data` access at all, so the adapter is a bare
-    forward -- the cheapest kind of reference there is, and the one that leaves no room
-    for the test to differ from the source.
-    """
-    return CCFE_HCPB.st_cp_angle_fraction(
-        z_cp_top=z_cp_top, r_cp_mid=r_cp_mid, r_cp_top=r_cp_top, rmajor=rmajor
-    )
+_reference_centrepost_angle_fraction = functools.partial(CCFE_HCPB.st_cp_angle_fraction)
 
 
 def _reference_centrepost_fast_neutron_flux_superconducting(

@@ -15,6 +15,7 @@ are held at the sample's own baseline values, so the slice is a projection and n
 different point.
 """
 
+import functools
 import dataclasses
 
 import numpy as np
@@ -428,15 +429,13 @@ def _reference_peak_b_kovari(
     )
 
 
-def _reference_peak_b_flat(b_tf_inboard_peak_symmetric):
-    """The `else` arm, at a coil count outside {16, 18, 20}."""
-    return _sctfcoil().peak_b_tf_inboard_with_ripple(
-        n_tf_coils=17,
-        dx_tf_wp_primary_toroidal=1.3,
-        dr_tf_wp_no_insulation=0.5,
-        r_tf_wp_inboard_centre=3.79,
-        b_tf_inboard_peak_symmetric=b_tf_inboard_peak_symmetric,
-    )
+_reference_peak_b_flat = functools.partial(
+    _sctfcoil().peak_b_tf_inboard_with_ripple,
+    n_tf_coils=17,
+    dx_tf_wp_primary_toroidal=1.3,
+    dr_tf_wp_no_insulation=0.5,
+    r_tf_wp_inboard_centre=3.79,
+)
 
 
 def _ported_peak_b_16(**kwargs):

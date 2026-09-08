@@ -20,6 +20,7 @@ is right to carry one read; the adapter makes them agree here too. Recorded as d
 **D4** in `base.md`.
 """
 
+import functools
 from functional_process.cottax._harness.process_reference import process_reference
 import numpy as np
 
@@ -466,64 +467,29 @@ class TestTfCurrent(Tier1Contract):
 # ---------------------------------------------------------------------------
 
 
-def _reference_shape_inner_single_null(
-    r_tf_inboard_out,
-    rmajor,
-    rminor,
-    r_tf_outboard_in,
-    z_tf_inside_half,
-    z_tf_top,
-    dr_tf_inboard,
-):
-    """`tf_coil_shape_inner` at `i_tf_shape = 1`, `itart = 0`, `i_single_null = 1`.
-
-    `r_cp_top`, `r_tf_outboard_mid` and `r_tf_inboard_mid` are `0.0`: the D-shape /
-    non-TART branch (`process/models/tfcoil/base.py:498-526`) never reads them, and
-    passing them as arguments would declare reads the ported occupant does not have.
-    """
-    return _tfcoil().tf_coil_shape_inner(
-        i_tf_shape=1,
-        itart=0,
-        i_single_null=1,
-        r_tf_inboard_out=r_tf_inboard_out,
-        r_cp_top=0.0,
-        rmajor=rmajor,
-        rminor=rminor,
-        r_tf_outboard_in=r_tf_outboard_in,
-        z_tf_inside_half=z_tf_inside_half,
-        z_tf_top=z_tf_top,
-        dr_tf_inboard=dr_tf_inboard,
-        dr_tf_outboard=0.0,
-        r_tf_outboard_mid=0.0,
-        r_tf_inboard_mid=0.0,
-    )
+_reference_shape_inner_single_null = functools.partial(
+    _tfcoil().tf_coil_shape_inner,
+    i_tf_shape=1,
+    itart=0,
+    i_single_null=1,
+    r_cp_top=0.0,
+    dr_tf_outboard=0.0,
+    r_tf_outboard_mid=0.0,
+    r_tf_inboard_mid=0.0,
+)
 
 
-def _reference_shape_inner_double_null(
-    r_tf_inboard_out,
-    rmajor,
-    rminor,
-    r_tf_outboard_in,
-    z_tf_inside_half,
-    dr_tf_inboard,
-):
-    """The same, at `i_single_null = 0`. `z_tf_top` is not read on this arm."""
-    return _tfcoil().tf_coil_shape_inner(
-        i_tf_shape=1,
-        itart=0,
-        i_single_null=0,
-        r_tf_inboard_out=r_tf_inboard_out,
-        r_cp_top=0.0,
-        rmajor=rmajor,
-        rminor=rminor,
-        r_tf_outboard_in=r_tf_outboard_in,
-        z_tf_inside_half=z_tf_inside_half,
-        z_tf_top=0.0,
-        dr_tf_inboard=dr_tf_inboard,
-        dr_tf_outboard=0.0,
-        r_tf_outboard_mid=0.0,
-        r_tf_inboard_mid=0.0,
-    )
+_reference_shape_inner_double_null = functools.partial(
+    _tfcoil().tf_coil_shape_inner,
+    i_tf_shape=1,
+    itart=0,
+    i_single_null=0,
+    r_cp_top=0.0,
+    z_tf_top=0.0,
+    dr_tf_outboard=0.0,
+    r_tf_outboard_mid=0.0,
+    r_tf_inboard_mid=0.0,
+)
 
 
 _SHAPE_SAMPLE = {
@@ -575,40 +541,17 @@ class TestTfCoilShapeDShapeDoubleNull(Tier1Contract):
     samples = [legacy_sample("tf_coil_shape-d-double-null", **_SHAPE_SAMPLE)]
 
 
-def _reference_shape_inner_picture_frame_tart(
-    r_cp_top,
-    r_tf_outboard_in,
-    z_tf_inside_half,
-    z_tf_top,
-    dr_tf_inboard,
-    r_tf_outboard_mid,
-):
-    """`tf_coil_shape_inner` at `i_tf_shape = 2`, `itart = 1`.
-
-    Five arguments are pinned at `0.0` and each pin is a claim the reference checks:
-    `r_tf_inboard_out` and `r_tf_inboard_mid` are read only on the `itart == 0`
-    sub-branches (`process/models/tfcoil/base.py:554`, `:572`), `rmajor`/`rminor` only
-    on the D-shape branches, and `dr_tf_outboard` only on the D-shape/`itart == 1` one.
-    `i_single_null` is passed as `0` -- the picture frame does not consult it at all, so
-    either value would do, and `0` is what both ST files set. A port that secretly read
-    any of the five would disagree by value here.
-    """
-    return _tfcoil().tf_coil_shape_inner(
-        i_tf_shape=2,
-        itart=1,
-        i_single_null=0,
-        r_tf_inboard_out=0.0,
-        r_cp_top=r_cp_top,
-        rmajor=0.0,
-        rminor=0.0,
-        r_tf_outboard_in=r_tf_outboard_in,
-        z_tf_inside_half=z_tf_inside_half,
-        z_tf_top=z_tf_top,
-        dr_tf_inboard=dr_tf_inboard,
-        dr_tf_outboard=0.0,
-        r_tf_outboard_mid=r_tf_outboard_mid,
-        r_tf_inboard_mid=0.0,
-    )
+_reference_shape_inner_picture_frame_tart = functools.partial(
+    _tfcoil().tf_coil_shape_inner,
+    i_tf_shape=2,
+    itart=1,
+    i_single_null=0,
+    r_tf_inboard_out=0.0,
+    rmajor=0.0,
+    rminor=0.0,
+    dr_tf_outboard=0.0,
+    r_tf_inboard_mid=0.0,
+)
 
 
 class TestTfCoilShapePictureFrameTart(Tier1Contract):
@@ -685,21 +628,14 @@ def _reference_self_inductance_d_shape(dr_tf_inboard, r_tf_arc, z_tf_arc):
     )
 
 
-def _reference_self_inductance_picture_frame(
-    z_tf_inside_half, dr_tf_outboard, r_tf_outboard_mid, r_tf_inboard_mid
-):
-    """`tf_coil_self_inductance`'s `else`: the closed form."""
-    return TFCoil.tf_coil_self_inductance(
-        dr_tf_inboard=1.208,
-        r_tf_arc=np.zeros(3),
-        z_tf_arc=np.zeros(3),
-        itart=0,
-        i_tf_shape=0,
-        z_tf_inside_half=z_tf_inside_half,
-        dr_tf_outboard=dr_tf_outboard,
-        r_tf_outboard_mid=r_tf_outboard_mid,
-        r_tf_inboard_mid=r_tf_inboard_mid,
-    )
+_reference_self_inductance_picture_frame = functools.partial(
+    TFCoil.tf_coil_self_inductance,
+    dr_tf_inboard=1.208,
+    r_tf_arc=np.zeros(3),
+    z_tf_arc=np.zeros(3),
+    itart=0,
+    i_tf_shape=0,
+)
 
 
 class TestTfCoilSelfInductanceDShape(Tier1Contract):

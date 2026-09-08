@@ -30,6 +30,7 @@ select). The composite's adapter poisons a *third* field, `.physics.triang`, whi
 `fw.py` reads at `:82` only, inside the elliptical area call.
 """
 
+import functools
 import numpy as np
 
 from functional_process.cottax._harness import Tier1Contract, legacy_sample
@@ -50,28 +51,10 @@ from process.core.model import DataStructure
 from process.models.fw import FirstWall
 
 
-def _reference_first_wall_half_height(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    dz_blkt_upper,
-    z_plasma_xpoint_upper,
-    dz_fw_plasma_gap,
-    dr_fw_inboard,
-    dr_fw_outboard,
-):
-    """`FirstWall.calculate_first_wall_half_height` at `n_divertors == 1`."""
-    return FirstWall.calculate_first_wall_half_height(
-        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
-        dz_xpoint_divertor=dz_xpoint_divertor,
-        dz_divertor=dz_divertor,
-        dz_blkt_upper=dz_blkt_upper,
-        z_plasma_xpoint_upper=z_plasma_xpoint_upper,
-        dz_fw_plasma_gap=dz_fw_plasma_gap,
-        n_divertors=1,
-        dr_fw_inboard=dr_fw_inboard,
-        dr_fw_outboard=dr_fw_outboard,
-    )
+_reference_first_wall_half_height = functools.partial(
+    FirstWall.calculate_first_wall_half_height,
+    n_divertors=1,
+)
 
 
 class TestCalculateFirstWallHalfHeight(Tier1Contract):
@@ -95,30 +78,12 @@ class TestCalculateFirstWallHalfHeight(Tier1Contract):
     }
 
 
-def _reference_first_wall_half_height_double_null(
-    z_plasma_xpoint_lower,
-    dz_xpoint_divertor,
-    dz_divertor,
-    dz_blkt_upper,
-    dr_fw_inboard,
-    dr_fw_outboard,
-):
-    """`FirstWall.calculate_first_wall_half_height` at `n_divertors == 2`.
-
-    The two parameters this arm does not read go in as `nan` -- see the module
-    docstring.
-    """
-    return FirstWall.calculate_first_wall_half_height(
-        z_plasma_xpoint_lower=z_plasma_xpoint_lower,
-        dz_xpoint_divertor=dz_xpoint_divertor,
-        dz_divertor=dz_divertor,
-        dz_blkt_upper=dz_blkt_upper,
-        z_plasma_xpoint_upper=np.nan,
-        dz_fw_plasma_gap=np.nan,
-        n_divertors=2,
-        dr_fw_inboard=dr_fw_inboard,
-        dr_fw_outboard=dr_fw_outboard,
-    )
+_reference_first_wall_half_height_double_null = functools.partial(
+    FirstWall.calculate_first_wall_half_height,
+    z_plasma_xpoint_upper=np.nan,
+    dz_fw_plasma_gap=np.nan,
+    n_divertors=2,
+)
 
 
 class TestCalculateFirstWallHalfHeightDoubleNull(Tier1Contract):
@@ -165,20 +130,10 @@ class TestCalculateEllipticalFirstWallAreas(Tier1Contract):
     }
 
 
-def _reference_first_wall_coverage_factors(
-    f_ster_div_single,
-    f_a_fw_outboard_hcd,
-    a_fw_inboard_full_coverage,
-    a_fw_outboard_full_coverage,
-):
-    """`FirstWall.apply_first_wall_coverage_factors` at `n_divertors == 1`."""
-    return FirstWall.apply_first_wall_coverage_factors(
-        n_divertors=1,
-        f_ster_div_single=f_ster_div_single,
-        f_a_fw_outboard_hcd=f_a_fw_outboard_hcd,
-        a_fw_inboard_full_coverage=a_fw_inboard_full_coverage,
-        a_fw_outboard_full_coverage=a_fw_outboard_full_coverage,
-    )
+_reference_first_wall_coverage_factors = functools.partial(
+    FirstWall.apply_first_wall_coverage_factors,
+    n_divertors=1,
+)
 
 
 class TestApplyFirstWallCoverageFactors(Tier1Contract):
@@ -203,20 +158,10 @@ class TestApplyFirstWallCoverageFactors(Tier1Contract):
     }
 
 
-def _reference_first_wall_coverage_factors_double_null(
-    f_ster_div_single,
-    f_a_fw_outboard_hcd,
-    a_fw_inboard_full_coverage,
-    a_fw_outboard_full_coverage,
-):
-    """`FirstWall.apply_first_wall_coverage_factors` at `n_divertors == 2`."""
-    return FirstWall.apply_first_wall_coverage_factors(
-        n_divertors=2,
-        f_ster_div_single=f_ster_div_single,
-        f_a_fw_outboard_hcd=f_a_fw_outboard_hcd,
-        a_fw_inboard_full_coverage=a_fw_inboard_full_coverage,
-        a_fw_outboard_full_coverage=a_fw_outboard_full_coverage,
-    )
+_reference_first_wall_coverage_factors_double_null = functools.partial(
+    FirstWall.apply_first_wall_coverage_factors,
+    n_divertors=2,
+)
 
 
 class TestApplyFirstWallCoverageFactorsDoubleNull(Tier1Contract):
