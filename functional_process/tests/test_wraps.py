@@ -12,8 +12,10 @@ import pytest
 jax.config.update("jax_enable_x64", True)
 
 from cottax.interfaces.pytree_namespace_module import (  # noqa: E402
+    ExplicitFunction,
     From,
     FromExactly,
+    ModelNamespace,
     Output,
     OutputInto,
     to_graph,
@@ -153,3 +155,57 @@ def test_an_arm_overrides_only_the_formula():
     assert Arm()(c_plasma=1.2e7, rminor=2.0) == calculate_greenwald_density_limit(
         c_plasma=1.2e7, rminor=2.0
     )
+
+
+def test_a_declared_node_takes_its_nested_name_from_its_slot():
+    """`.physics.greenwald_density_limit`, exactly as the hand-written form does.
+
+    The node's own class name is only the fallback for a declaration nothing placed
+    (`_class_name`); a node in a `ModelNamespace` slot is named by the slot, and nesting
+    the namespaces nests the name. This is the property a call form
+    (`X = wrap(...)`) would have had to supply by hand, and it is why the form stayed a
+    class.
+    """
+
+    class Written(ExplicitFunction):
+        """The same node, hand-written."""
+
+        def __call__(
+            self,
+            plasma_current=From(physics),  # noqa: B008 -- this IS the declaration
+            rminor=From(physics),  # noqa: B008
+        ):
+            return calculate_greenwald_density_limit(
+                c_plasma=plasma_current, rminor=rminor
+            )
+
+        nd7 = Output(physics.nd_plasma_electron_max_array[6])
+
+    class Declared(WrapsFunction):
+        """The same node, declared."""
+
+        fn = calculate_greenwald_density_limit
+
+        c_plasma = FromExactly(physics.plasma_current)
+        rminor = From(physics)
+
+        nd7 = Output(physics.nd_plasma_electron_max_array[6])
+
+    def machine(node_class):
+        class Physics(ModelNamespace):
+            """The subsystem."""
+
+            greenwald_density_limit: node_class = node_class()
+
+        class Machine(ModelNamespace):
+            """The device."""
+
+            physics: Physics = Physics()
+
+        return Machine()
+
+    for node_class in (Written, Declared):
+        graph = to_graph(machine(node_class))
+        assert [n.path_str() for n in graph.nodes] == [
+            ".physics.greenwald_density_limit"
+        ], node_class.__name__
