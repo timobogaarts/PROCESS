@@ -403,3 +403,20 @@ initial keyword-swept register, not proven complete.
   materialisation is not one of those. Independent of `MIN_FUSED_LINES` (§Landed),
   which cut source lines and left every byte of this: the module still carries 170.4 KB
   of per-thread vector locals, and this node is 111.2 KB of it.
+- **The remaining 333 `_reference_*` adapters (8,802 lines) are not another pattern, and
+  this was measured rather than assumed.** Every one was run against the exact matcher
+  and its first failing condition recorded: seventeen distinct reasons, the largest 58
+  adapters / 633 lines -- 7 % of the total. The line-heavy ones are "a local bound to
+  something else" (38 / 1,720), "does not open with `obj = F(...)`" (44 / 1,406), "poke
+  value is not the bare same-named parameter" (47 / 1,566), defaults or `**kwargs` (54 /
+  1,233), "not every parameter is poked" (41 / 994). Three further rules were written and
+  landed on the way (`functools.partial` for keyword-forwarding with a pinned switch, 22;
+  a factory taking arguments; a pure `**kwargs` pass-through, 7) and each returned less
+  than the one before. What is left is not boilerplate: it is **fixture data** (the
+  pinned literals a PROCESS method needs before it will run), **type coercion**
+  (`float(x)` / `np.asarray(x, dtype=float)`, because the port hands JAX arrays to numpy
+  code), and **semantics** (`data.pf_coil.vs_cs_pf_total_pulse = -vs_cs_pf_total_pulse`
+  is a documented sign convention, not noise). A generic adapter would hide all three.
+  **Do not write a fourth codemod for this**; the remaining 8,802 lines are the cost of
+  having a real oracle, and the ~1,100 lines two more rules might reach are not worth
+  making the fixtures less explicit.

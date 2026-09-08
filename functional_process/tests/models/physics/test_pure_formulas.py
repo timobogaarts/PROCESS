@@ -202,9 +202,7 @@ class TestCalaculateStoredThermalEnergy(Tier1Contract):
     ]
 
 
-def _reference_fast_alpha_beta(**kwargs):
-    """Call `PlasmaBeta.fast_alpha_beta` (a static method) through the port's signature."""
-    return PlasmaBeta.fast_alpha_beta(**kwargs)
+_reference_fast_alpha_beta = PlasmaBeta.fast_alpha_beta
 
 
 class TestFastAlphaBetaIpdg89(Tier1Contract):

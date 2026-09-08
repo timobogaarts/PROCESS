@@ -76,12 +76,12 @@ functional_process/*.html
 # ...except the four the Pages workflow publishes. `.github/workflows/pages.yml` copies
 # these out of a bare `actions/checkout` and has no build step ("Copying five committed
 # files cannot fail"), so an untracked one is a broken deploy, not a missing nicety.
-# c3b82552 added the rule above and deleted these four in the same commit -- collateral
-# to a Warp change -- and every push to `main` has failed at `cp` since 2026-09-06.
-!functional_process/dsm_provenance_uncut.html
-!functional_process/dsm_scc_uncut.html
-!functional_process/dsm_provenance_uncut_tokamak.html
-!functional_process/dsm_scc_uncut_tokamak.html
+# They live beside `render_xdsm.py`, which is what writes them (`OUTDIR` is its own
+# directory), and that is the path the workflow must name.
+!functional_process/cottax/dsm_provenance_uncut.html
+!functional_process/cottax/dsm_scc_uncut.html
+!functional_process/cottax/dsm_provenance_uncut_tokamak.html
+!functional_process/cottax/dsm_scc_uncut_tokamak.html
 
 # Generated Warp source -- regenerate with `functional_process/cottax/warp/`.
 functional_process/warp/

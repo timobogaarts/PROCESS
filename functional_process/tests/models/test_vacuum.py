@@ -1181,12 +1181,7 @@ class TestCalculateVacuumVesselOutputsDoubleNull(Tier1Contract):
     }
 
 
-def _reference_dshaped_vessel_volumes(**kwargs):
-    """`VacuumVessel.calculate_dshaped_vessel_volumes`, already a bare
-    `@staticmethod` -- no adapter, and no `nan` poisoning possible or needed: PROCESS's
-    own D-shaped signature simply has no `rmajor`/`rminor`/`triang` parameters.
-    """
-    return VacuumVessel.calculate_dshaped_vessel_volumes(**kwargs)
+_reference_dshaped_vessel_volumes = VacuumVessel.calculate_dshaped_vessel_volumes
 
 
 class TestCalculateDshapedVesselVolumes(Tier1Contract):

@@ -13,6 +13,12 @@ name: Publish DSM pages
 # and neither `hatch` nor `mkdocs` is installed in the `process_port` env, so that step
 # was never verifiable locally. Copying five committed files cannot fail for a reason
 # nobody can reproduce.
+#
+# It can fail if they stop being committed, which is what happened twice: c3b82552 put
+# `functional_process/*.html` in .gitignore and deleted the four DSM pages in the same
+# commit, and 3e893635 moved `render_xdsm.py` into `cottax/` so that its `OUTDIR`
+# (`Path(__file__).parent`) started writing beside itself while these paths still named
+# the old location. **The paths below must be where `render_xdsm.py` writes.**
 
 on:
   push:
@@ -44,10 +50,10 @@ jobs:
       - name: Collect the uncut-graph DSM pages
         run: |
           mkdir -p site
-          cp functional_process/dsm_provenance_uncut.html site/
-          cp functional_process/dsm_scc_uncut.html site/
-          cp functional_process/dsm_provenance_uncut_tokamak.html site/
-          cp functional_process/dsm_scc_uncut_tokamak.html site/
+          cp functional_process/cottax/dsm_provenance_uncut.html site/
+          cp functional_process/cottax/dsm_scc_uncut.html site/
+          cp functional_process/cottax/dsm_provenance_uncut_tokamak.html site/
+          cp functional_process/cottax/dsm_scc_uncut_tokamak.html site/
           cp documentation/source/dsm_index.html site/index.html
       - name: Upload the site
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9

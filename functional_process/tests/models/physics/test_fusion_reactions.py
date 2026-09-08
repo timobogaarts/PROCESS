@@ -141,9 +141,7 @@ def _reference_calculate_fusion_rates(
     )
 
 
-def _reference_set_fusion_powers(**kwargs):
-    """Call PROCESS's `set_fusion_powers` through the port's signature."""
-    return reactions.set_fusion_powers(**kwargs)
+_reference_set_fusion_powers = reactions.set_fusion_powers
 
 
 def _reference_alpha_power_beam(beam_target_reaction_rate_value):

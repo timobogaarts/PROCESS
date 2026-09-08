@@ -246,7 +246,7 @@ function show(e, html) {
 }
 /* Everything between the two markers below is *pure*: it reads `D` and `esc` and touches
    no DOM, no event and no layout. That is what makes the wording testable without a
-   browser -- `tests/functional_process/test_dsm_tooltips.py` slices this block out of a
+   browser -- `functional_process/tests/test_dsm_tooltips.py` slices this block out of a
    rendered page by those markers, evaluates it beside the page's own `D`, and asserts on
    the literal string. Keep it that way: anything here that reached for `tip` or an event
    would take the tooltip's text back out of reach of the only check there is on it. */

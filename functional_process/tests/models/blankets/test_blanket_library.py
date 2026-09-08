@@ -147,14 +147,10 @@ _reference_blkt_half_height_double_null = functools.partial(
 )
 
 
-def _reference_elliptical_blkt_areas(**kwargs):
-    """`calculate_elliptical_blkt_areas`, already a bare `@staticmethod`."""
-    return CCFE_HCPB.calculate_elliptical_blkt_areas(**kwargs)
+_reference_elliptical_blkt_areas = CCFE_HCPB.calculate_elliptical_blkt_areas
 
 
-def _reference_elliptical_blkt_volumes(**kwargs):
-    """`calculate_elliptical_blkt_volumes`, already a bare `@staticmethod`."""
-    return CCFE_HCPB.calculate_elliptical_blkt_volumes(**kwargs)
+_reference_elliptical_blkt_volumes = CCFE_HCPB.calculate_elliptical_blkt_volumes
 
 
 def _reference_apply_coverage_factors_single_null(
@@ -441,14 +437,10 @@ class TestApplyCoverageFactorsDoubleNull(Tier1Contract):
     fuzz_bounds = _COVERAGE_FUZZ
 
 
-def _reference_dshaped_blkt_areas(**kwargs):
-    """`calculate_dshaped_blkt_areas`, already a bare `@staticmethod`."""
-    return CCFE_HCPB.calculate_dshaped_blkt_areas(**kwargs)
+_reference_dshaped_blkt_areas = CCFE_HCPB.calculate_dshaped_blkt_areas
 
 
-def _reference_dshaped_blkt_volumes(**kwargs):
-    """`calculate_dshaped_blkt_volumes`, already a bare `@staticmethod`."""
-    return CCFE_HCPB.calculate_dshaped_blkt_volumes(**kwargs)
+_reference_dshaped_blkt_volumes = CCFE_HCPB.calculate_dshaped_blkt_volumes
 
 
 class TestDshapedBlktAreas(Tier1Contract):
