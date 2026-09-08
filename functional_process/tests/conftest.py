@@ -159,15 +159,7 @@ def audit_root():
 
 @pytest.fixture(scope="session")
 def reads_only_its_own_statement():
-    """Assert a `models/stated.StatesValues` reads exactly `^stated.<each output>`.
-
-    The structural claim the family rests on, in one place: a stating node names no
-    variable of its own, so its reads are a *function* of its writes and there is
-    nowhere a stray edge could enter. Used by the unit tests of the eight declarations
-    that were `CarriesValues` before `_audit/optimise_design.md` §34; `test_stated.py`
-    asks it of every one of them at once, and these ask it beside their own arm's
-    evidence.
-    """
+    """Assert a `models/stated.StatesValues` reads exactly `^stated.<each output>`."""
     from functional_process.cottax.stated import stated_port
 
     def check(node):

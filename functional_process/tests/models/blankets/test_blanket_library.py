@@ -383,12 +383,6 @@ class TestBlktInboardPoloidalPlasmaAngle(Tier1Contract):
     """`calculate_blkt_inboard_poloidal_plasma_angle` ->
     `BlanketLibrary.calculate_blkt_inboard_poloidal_plasma_angle`, unchanged.
 
-    Added 2026-08-30 with the producer. A `@staticmethod` with the same three
-    parameters, so the reference is PROCESS's own callable with no adapter at all --
-    which makes the point about why this one was missing: the *function* was always
-    trivially portable, and what was absent was anyone asking whether the field it
-    writes had an owner (see the port function's docstring).
-
     The legacy point is `large_tokamak_eval` at convergence and reproduces PROCESS's own
     `deg_blkt_inboard_poloidal_plasma = 127.79709387998703`.
 

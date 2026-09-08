@@ -630,14 +630,6 @@ class TestRadiatedWallLoadScaledPlasmaSurface(Tier1Contract):
     """`calculate_radiated_wall_load_scaled_plasma_surface` -> real `FirstWall.run()`
     at `i_pflux_fw_neutron == 1` (`fw.py:130-144`).
 
-    The legacy points are PROCESS's own converged answers on the two files where
-    constraint 67 is active and this port had no producer:
-    `.constraints.pflux_fw_rad_max_mw` was frozen at `0.0` against a bound of `1.2`
-    where PROCESS reads `0.36324` (`st_regression`) and `0.49896`
-    (`spherical_tokamak_eval`) -- `optimise_design.md` §26.2, rank 5. Neither is
-    binding at PROCESS's answer, so what the freeze cost was a zero Jacobian row and a
-    report that said `0.0`.
-
     `f_fw_rad_max` is `1.0` on both files, so the two outputs coincide there; the fuzz
     box moves it away from 1 so the peaking factor is actually exercised.
     `a_plasma_surface` is bounded away from zero -- PROCESS divides by it with no guard.

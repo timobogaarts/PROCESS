@@ -461,13 +461,6 @@ class TestTfTopHeightSingleNull(Tier1Contract):
     """`calculate_tf_top_height_single_null` vs
     `Build.calculate_vertical_build:826-841`.
 
-    `.build.z_tf_top` and `.build.dz_tf_upper_lower_midplane` had **no producer at all**
-    in this port until 2026-08-30 -- both sat frozen at the cold `0.0` while PROCESS
-    computed `8.656` m and `-1.234` m on `large_tokamak_nof`
-    (`missing_producers_tokamak.txt`). `z_tf_top` is read by
-    `models/tfcoil/base.py::TfCoilShapeDShapeSingleNull`, which places the coil's arcs
-    from it, so the cold graph drew a TF coil whose top was on the midplane.
-
     The offset is checked alongside the height rather than separately because it is a
     *difference* of the two vertical stacks and the interesting failure is a sign or a
     dropped term, which a test of the height alone cannot see.
@@ -552,12 +545,7 @@ def _reference_dz_blkt_upper(dr_blkt_inboard, dr_blkt_outboard):
 
 
 class TestDzBlktUpper(Tier1Contract):
-    """`calculate_dz_blkt_upper` vs `calculate_radial_build:1664-1667`.
-
-    Landed 2026-08-30 as `calculate_tf_top_height_single_null`'s missing dependency, and
-    a `missing_producers_tokamak.txt` row in its own right (`models/fw.py` and
-    `models/vacuum/vacuum.py` read it too).
-    """
+    """`calculate_dz_blkt_upper` vs `calculate_radial_build:1664-1667`."""
 
     audit_record = "models/build.md"
     reference = _reference_dz_blkt_upper
@@ -917,15 +905,6 @@ class TestOutboardBuildChain(Tier1Contract):
     `calculate_dr_shld_vv_gap_outboard` and `calculate_dr_tf_inner_bore` in one diff,
     because PROCESS has no boundary inside that stretch to compare against.
 
-    **`calculate_dr_tf_inner_bore` joined this contract on 2026-08-30 rather than
-    getting one of its own**, and the reason is the same one that created the contract:
-    two of its four arguments (`.build.r_tf_outboard_mid`, `.build.dr_tf_outboard`) are
-    produced *inside* this stretch and cannot be set on `data` independently -- at
-    `i_tf_sup == 1` the source makes `dr_tf_outboard` equal to `dr_tf_inboard`, so a
-    sample naming them separately is unreachable through PROCESS. Adding it here tests
-    it at the post-ripple radius, which is where PROCESS's own surviving write
-    (`:1949-1955`) is taken.
-
     Switches pinned by the baseline: `i_tf_sup = 1`, `i_tf_shape = 1`,
     `blktmodel = 0`, `140 not in ixc`.
 
@@ -1240,12 +1219,6 @@ class TestRCpTop(Tier1Contract):
     is: it pins the *write set* (that this arm writes `r_cp_top` and leaves
     `.build.f_r_cp` alone, which the three refused arms do not -- see the `assert` in
     the sibling contract below) and it gives the gradient check a row to look at.
-
-    The legacy value is `st_regression.IN.DAT` at PROCESS's own solution, where
-    `r_cp_top == r_tf_inboard_out == 1.3405301988363134` -- one of the four frozen
-    boundary paths `optimise_design.md` §26.2 found, and the only one this port's own
-    pins had already reported (`reference_provider_st_regression.txt`'s single
-    `computed` row).
     """
 
     audit_record = "models/build.md"

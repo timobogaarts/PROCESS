@@ -426,11 +426,6 @@ class TestThermalBeta(Tier1Contract):
 class TestCoulombLogarithmIonElectron(Tier1Contract):
     """`ln(Lambda)_ie = 31.3 - ln(n_e)/2 + ln(T_e[eV])`, `physics.py:279-283`.
 
-    Added 2026-08-30 with the `.physics.dlamie` producer. The reference is transcribed
-    rather than called because PROCESS writes these two lines inline in `Physics.run`
-    with no staticmethod around them -- which is precisely why the field had no producer
-    here (see the port function's docstring).
-
     The legacy point is `large_tokamak_eval` at convergence, and it reproduces PROCESS's
     own `dlamie = 17.834316405099152` on that run.
     """
@@ -449,10 +444,6 @@ class TestCoulombLogarithmIonElectron(Tier1Contract):
 
 class TestPfluxPlasmaSurfaceNeutronAvgMw(Tier1Contract):
     """`pflux = p_neutron_total_mw / a_plasma_surface`, `physics.py:835-837`.
-
-    Added 2026-08-30 with the producer. The legacy point is `large_tokamak_eval` at
-    convergence and reproduces PROCESS's `1.0911547345980364` there; the value the pin
-    quotes (`0.71479842`) is `large_tokamak_nof`'s, a different run of a different file.
 
     The fuzz bounds keep `a_plasma_surface` well away from zero: the division has no
     guard in PROCESS and none here, and a surface area of zero is not a plasma.

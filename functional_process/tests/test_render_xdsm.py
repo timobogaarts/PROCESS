@@ -91,14 +91,6 @@ def test_grouped_uncut_writes_the_machine_suffixed_pair(monkeypatch, tmp_path):
 def test_the_reference_stellarator_has_exactly_two_genuinely_coupled_uncut_sccs():
     """Pinned so a future edit to `physics`/`stellarator` membership is forced to
     re-check rather than silently leave `_audit/uncut_graph.md`'s census stale.
-
-    Measured 2026-09-01: 144 total blocks, 2 with more than one *real* (non-minted)
-    member -- the 6-node density/fusion/composition cycle inside `physics`
-    (`fusion_power_totals_mw`, `fusion_rates`, `fusion_totals_no_beam`,
-    `plasma_composition`, `density_profile`, `parabolic_on_axis_densities`) and the
-    2-node `stellarator.divertor`/`stellarator.fw_area` cycle -- exactly the two
-    `mda.CUTS` was built to close (`proton_rate_density` + `fusden_alpha_total` for the
-    first, `f_ster_div_single` for the second).
     """
     declared, _ = machine_graph()
     blocking = Blocking.scc(declared)
@@ -115,14 +107,6 @@ def test_the_reference_tokamak_has_exactly_three_genuinely_coupled_uncut_sccs():
     one, enlarged by the pedestal profile arm), a 4-node TF build/winding-pack cycle,
     and a 9-node PF-coil/volt-second/burn-time cycle -- matching `mda.CUTS`'s own
     accounting of which cuts land on `large_tokamak_eval.IN.DAT`.
-
-    The block **total** moved `223 -> 227` on 2026-09-02 and the coupled structure did
-    not: the four nodes that arrived since it was pinned (`.tokamak.build.r_cp_top`,
-    `.tokamak.physics.psep_over_r_metric`, `.tokamak.radiated_wall_load` and
-    `.tokamak.current_drive.fusion_gain`) are acyclic, so each is its own singleton
-    block. The assertions this test is *about* -- three coupled
-    SCCs of sizes `[4, 8, 9]` -- never moved, which is the reason to keep the total here
-    rather than drop it: it is the line that notices a port landing.
     """
     declared = graph_for(machine_from_indat(TOKAMAK_INPUT_FILE))
     blocking = Blocking.scc(declared)

@@ -462,12 +462,6 @@ class TestPFStrandCriticalCurrentDensityHazeltonZhaiRebco(Tier1Contract):
     """`calculate_pf_strand_critical_current_density_hazelton_zhai_rebco` ->
     `superconpf(isumat=9)`'s third return times `1 - fcupfsu`.
 
-    Owed since 2026-08-30 (`_audit/next_steps.md` §20.5 item 2). The REBCO-tape PF arm
-    both spherical tokamaks set (`spherical_tokamak_eval.IN.DAT:235`,
-    `st_regression.IN.DAT:1670`), and the sibling of
-    `TestPFStrandCriticalCurrentDensity`, which is the same block of `pfcoil()` with the
-    `OLD_LUBELL_NBTI` arm.
-
     **Distinct from `TestHijcRebco`**, which covers the same fit in
     `functional_process/tests/models/physics/test_superconductors.py`. That contract
     tests `hijc_rebco` against `process.models.superconductors.hijc_rebco` -- the

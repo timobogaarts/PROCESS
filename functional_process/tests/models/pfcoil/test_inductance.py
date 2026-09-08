@@ -396,9 +396,6 @@ class TestCalculatePfPlasmaInductancesNoCentralSolenoid(Tier1Contract):
     """`calculate_pf_plasma_inductances_no_central_solenoid` -> `PFCoil.induct(False)`
     at `iohcl = 0`, on the spherical tokamaks' eight-coil topology.
 
-    Owed since 2026-08-30 (`_audit/next_steps.md` §20.5 item 1): the function was
-    verified bit-exact in a scratch script and nothing in the test tree held it.
-
     **Three of `induct`'s four blocks survive here and the fourth is absence, not a
     zero.** The CS/plasma block, the CS self-inductance and the CS/PF block are all
     guarded on `iohcl != 0`, so the matrix this returns has the plasma self-inductance,

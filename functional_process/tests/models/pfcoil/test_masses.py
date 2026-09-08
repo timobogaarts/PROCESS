@@ -659,16 +659,6 @@ class TestPFCoilChain(Tier1Contract):
 class TestPFCoilChainCsWstNb3Sn(Tier1Contract):
     """The same chain against `pfcoil()` at `i_cs_superconductor = 5` (WST Nb3Sn CS).
 
-    The occupant under test is `masses.PFCoilMassesCsWstNb3Sn`, whose entire difference
-    from `PFCoilMasses` is reading `.tfcoil.dcond[4]` instead of `.tfcoil.dcond[0]` as
-    the CS conductor density -- so the ported side is unchanged and the discrimination
-    is all in the reference: PROCESS runs with the switch at 5, `den_cs_conductor` is
-    planted in `dcond[4]` only, and every other element is `_DCOND_POISON`. If PROCESS
-    at this switch value read any element but `[4]` -- or if the occupant's binding
-    were the baked `dcond[0]` a `FromExactly` default would silently keep
-    (`_audit/next_steps.md` §14.11, the `CoilsMass` lesson) -- every sample would
-    disagree, in sign as well as magnitude.
-
     The inputs are the same converged `large_tokamak_eval` point: the chain is a pure
     function and the (3, 5) pair does not change its domain, only which array slot one
     scalar comes from. `den_cs_conductor = 6080` is also `dcond[4]`'s true value.

@@ -69,14 +69,7 @@ def test_the_cheap_key_agrees_with_the_partition():
 
 
 def test_two_independently_built_equal_blocks_have_equal_keys():
-    """The key is by *value*, which is the only reason anything hits at all.
-
-    Two `eqx.partition`s of the same block compare equal and hash differently (§31.14),
-    so a by-value key is forced -- and it has to recognise a block rebuilt from scratch,
-    because that is what `_sqp_callback`/`mdf.condition_map` hand `bind` on every solve.
-    This used to be the memo's key; since §37 it is jax's, which needs the same property
-    and hashes as well as compares -- so `_Structure` wraps it and memoises the hash.
-    """
+    """The key is by *value*, which is the only reason anything hits at all."""
     first, _ = host_cache._flat_key((_block(), _unravel()))
     second, _ = host_cache._flat_key((_block(), _unravel()))
     assert first == second
@@ -121,12 +114,6 @@ def _compiles(fn):
 def test_a_second_bind_of_an_equal_block_compiles_nothing(monkeypatch):
     """The point of §37: a re-assembled block is a **jax cache hit**, with no memo.
 
-    `_BOUND` could never do this. It compared `(treedef, static)` and a re-assembled
-    block's `static` never matched, because the bodies held `functools.partial`s that
-    compare by identity (§34.8a measured six such leaves of 4902; §35 removed them). Now
-    the structure token is a `static_argnums` argument that compares **by value**, so two
-    independently built equal blocks are one entry in jax's own cache.
-
     Counted rather than timed, because a wall clock on a loaded machine cannot tell a
     trace from a cache hit reliably and the compile count is the claim worth pinning.
     """
@@ -164,13 +151,7 @@ def test_a_structurally_different_block_is_its_own_program():
 
 
 def test_binding_holds_no_state():
-    """There is nothing left to grow, which is the other half of deleting the memo.
-
-    `_BOUND` had to be bounded (`_BOUND_LIMIT = 16`, with eviction) because a loop that
-    re-assembled appended two entries a solve without limit (§32.2). Nothing here
-    accumulates: `bind` returns three closures over an argument and this module holds no
-    container at all.
-    """
+    """There is nothing left to grow, which is the other half of deleting the memo."""
     assert not hasattr(host_cache, "_BOUND")
     assert not hasattr(host_cache, "_BOUND_LIMIT")
     assert not hasattr(host_cache, "_Bound")

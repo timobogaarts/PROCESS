@@ -866,11 +866,6 @@ def test_the_family_head_cannot_be_instantiated():
 def test_each_occupant_assembles_and_owns_the_same_four_varpaths(material, occupant):
     """Every occupant is a drop-in for the slot: same four outputs, `.tfcoil.j_tf_wp`
     owned by none of them (that is `WindingPackTotalSizePost`'s).
-
-    `.stellarator.wp_width_r_min_guess` is one of the four, which it was not before
-    §14.5: `intersect`'s `xin` is a real thing this node computes, and owning it is what
-    lets `mda.supply_starts` point the `RootFind`'s `Start` at it instead of leaving a
-    `^guess.*` at the boundary for a driver-side fallback to re-derive.
     """
     node = occupant()
     graph = to_graph(node)
@@ -988,11 +983,6 @@ def test_the_combined_cycle_forms_on_bi2212_and_on_no_other_material():
     `WindingPackTotalSizePost`, read by that occupant alone). With every other material
     the read is not declared at all and what is left is `Intersect`'s own
     `ImplicitFunction`/`RootFind` pair -- the cycle the model genuinely has.
-
-    This test used to assert the four-node cycle unconditionally, because one node
-    carried `i_tf_sc_mat` as a static kwarg and declared all eight branches' reads. It
-    was pinning an invented edge (`_audit/switch_kwarg_survey.md` §4.6,
-    `_audit/next_steps.md` §14.5).
     """
     post = WindingPackTotalSizePost()
 

@@ -240,17 +240,6 @@ def test_the_pf_magnet_cost_landed_without_moving_its_hole():
     is on the pin -- which is the whole claim, because closing the first *without* the
     second would have been a hole moved rather than filled.
 
-    Account 222.2 was ported and tested long before it was registered, and the refusal
-    (`_audit/cost_boundary_inputs.md` §13.2) was about the node's shape and not about a
-    missing producer: one class carrying `.costs.supercond_cost_model` as a static kwarg,
-    over two arms whose strand-cost reads are disjoint. Registering it as one node would
-    have declared `.costs.sc_mat_cost_0`, `.tfcoil.j_crit_str_0`,
-    `.pf_coil.j_crit_str_cs` and `.pf_coil.j_crit_str_pf` on a run whose `PER_KG` arm
-    reads none of them -- and the last of those four is a field `superconpf` computes
-    (`1.1017899e9` A/m^2 on this machine) that nothing owned, so `.costs.c2222` would
-    have come off the pin and `.pf_coil.j_crit_str_pf` gone on. The split makes the live
-    arm honest; `PFStrandCriticalCurrentDensity` makes the other arm's read producible.
-
     The stellarator half is `reactor_structure_cost`'s argument exactly:
     `caller.py:272-275` returns before `pfcoil.run()`, so every `.pf_coil.*` field the
     account reads keeps its dataclass default and the node would compute an exact zero
@@ -377,38 +366,6 @@ def test_st_regression_s_objective_is_inert_and_the_other_six_files_are_clean():
     """**The measurement, and the whole point of the check.** Assembly only -- no
     PROCESS run, no seed, no solve -- so the seven-configuration census is seven graph
     builds.
-
-    **The name is kept and the expectation has moved, on purpose.** `st_regression`'s
-    `.Objective` was the row this check was written for: `objective_metric_5` reads
-    `.current_drive.big_q_plasma`, which for a whole session was owned only by
-    `models/stellarator/heating.py` and so was a frozen boundary input on this tokamak
-    (`optimise_design.md` §26, §27.4). It has a tokamak producer since 2026-09-02 --
-    `models/physics/current_drive.py::FusionGain`, `.tokamak.current_drive.fusion_gain`,
-    a port of the source's own last line (`current_drive.py:2301-2308`) -- so the census
-    is now **clean on all seven**, and this assertion is what would say so if the
-    node were ever unregistered again.
-
-    **`helias_5b`'s `.Constraint11` left this list on 2026-09-06, and it is the third
-    kind.** It was reported here for a whole session with the explanation that "nothing
-    is missing, the file's three iteration variables simply do not move a stellarator's
-    radial build" -- a plausible reading that turned out to be too weak. `rbld` is
-    computed *from* `rmajor` with derivative exactly 1 (`st_build`:
-    `dr_bore = rmajor - S` then `rbld = dr_bore + S` over the same `S`), so
-    `rbld == rmajor` is an **identity** and no choice of iteration variables could
-    have made that constraint bind (`optimise_design.md` §52). `icc = 11` has been
-    removed from `helias_5b.IN.DAT`
-    accordingly. So this row did not become clean by gaining a producer, like the three
-    above -- it became clean because the constraint was **structurally meaningless on
-    this device class** and should never have been listed. The check found it either way,
-    which is the argument for keeping the census.
-
-    **`.Constraint56` and `.Constraint67` left this list on 2026-09-01**
-    (`optimise_design.md` §29). They were the same defect on constraints -- both
-    operands frozen, i.e. a `leq` between two constants -- and both now have producers
-    (`.tokamak.physics.psep_over_r_metric`, `.tokamak.radiated_wall_load`).
-    **This assertion is the check's own regression test in both directions**: it caught
-    the defect when the two constraints and the objective were inert, and it now pins
-    that none of the three is.
     """
     expected = {
         "stellarator_helias": set(),
@@ -442,13 +399,6 @@ def test_an_evaluation_file_s_inequalities_are_reported_and_not_driven():
     `spherical_tokamak_eval` used to carry the proof: its `.Constraint56` read a frozen
     `0.0` against a bound of `40` where PROCESS at its own answer reads `40.28`, i.e. a
     violated constraint the port printed as satisfied.
-
-    **That file's reported-only list is empty as of 2026-09-01** -- the first
-    configuration's to be (`optimise_design.md` §29.6) -- so the *separation* is
-    asserted on `large_tokamak_eval`, which still has eight, and
-    `spherical_tokamak_eval` now pins the fix. Both halves are kept: dropping the
-    spherical assertion would lose the regression test for exactly the defect the wave
-    closed.
     """
     root = Path(TOKAMAK_INPUT_FILE).parent
     graph, design, driven, reported = problem_graph(
@@ -466,13 +416,6 @@ def test_an_evaluation_file_s_inequalities_are_reported_and_not_driven():
 def test_owned_elsewhere_finds_big_q_plasma_and_is_a_lead_not_a_verdict():
     """The cheap cross-configuration discriminator: a path this graph reads, does not
     own, and another configuration's graph *does* own.
-
-    **It found `big_q_plasma`, and the lead was right** -- the node existed in
-    `models/stellarator/heating.py`, every one of its four operands was already on the
-    tokamak graph, and the fix was a registration plus a two-line port of the tokamak's
-    own line (`current_drive.py:2301-2308` → `FusionGain`, 2026-09-02). So the row this
-    test was named for is *gone*, and its absence is now the assertion: `big_q_plasma`
-    is owned here.
 
     `.physics.aspect` is what keeps the instrument honest and stays asserted -- a
     stellarator output and a genuine tokamak *input*, so `owned_elsewhere` ranks work

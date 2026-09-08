@@ -585,11 +585,6 @@ def test_croco_namespace_is_a_sibling_of_the_cable_in_conduit_one():
 def test_a_croco_machine_assembles_with_the_croco_namespace(tmp_path):
     """`i_tf_turn_type = 2` builds `CrocoSuperconductingTfCoil`, and nothing else moves.
 
-    The measurement `_refuse_unported_switch` was added for, run the other way round:
-    until 2026-08-29 a CroCo input assembled **silently as cable-in-conduit**, and the
-    point of the refusal was that the namespace should change with the switch. It does
-    now, so this checks the change rather than the refusal.
-
     Built from the reference tokamak rather than from an ST file because the two tracked
     ST files still do not assemble -- they refuse on the PF coil system and on
     `i_tf_stress_model`, neither of which is anything to do with the turn.
@@ -623,12 +618,7 @@ def test_a_croco_machine_assembles_with_the_croco_namespace(tmp_path):
 
 
 def test_croco_nodes_own_the_tape_stack(tmp_path):
-    """The CroCo nodes produce the `*croco*`/`*hts_tape*` fields, not read them.
-
-    `next_steps.md` §18.5 counted nineteen such fields with no producer anywhere in the
-    port; this checks the ones `run` actually computes now have one, which is the
-    property `missing_producers_tokamak.txt` exists to protect.
-    """
+    """The CroCo nodes produce the `*croco*`/`*hts_tape*` fields, not read them."""
     from functional_process.cottax.boundary import TOKAMAK_INPUT_FILE
     from functional_process.cottax.indat import graph_for
 

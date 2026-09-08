@@ -31,10 +31,6 @@ def _reference_divertor_heat_flux_split(
     """Call PROCESS's `single_divertor_angle` property plus `incident_neutron_power` and
     `incident_radiation_power` through the port's signature -- exactly `Divertor.run()`'s
     own preamble (`process/models/divertor.py:41-56`), composed rather than re-derived.
-
-    `incident_radiation_power` joined this composition on 2026-08-30, when
-    `.fwbs.p_div_rad_total_mw` turned out to be a missing producer read by four nodes of
-    the assembled machine (see the port function's docstring).
     """
     data = DataStructure()
     data.blanket.deg_blkt_inboard_poloidal_plasma = deg_blkt_inboard_poloidal_plasma

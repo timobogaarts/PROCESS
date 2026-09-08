@@ -60,12 +60,7 @@ def _trace(*entries):
 
 
 def test_the_configuration_list_is_every_reference_file_but_ife():
-    """The list is the point of the runner, so it is pinned rather than trusted.
-
-    `IFE.IN.DAT` is excluded on purpose (a whole unported device, `_audit/next_steps.md`
-    §20.4); everything else in `tests/regression/input_files` is a row, including the two
-    that are expected to refuse today.
-    """
+    """The list is the point of the runner, so it is pinned rather than trusted."""
     root = Path(__file__).resolve().parents[2] / "tests/regression/input_files"
     on_disk = {p.name for p in root.glob("*.IN.DAT")}
     listed = {Path(c).name for c in CONFIGURATIONS}
@@ -457,14 +452,7 @@ def test_the_table_carries_its_own_provenance_header(tmp_path):
 
 
 def test_the_header_states_seeding_and_scoring_as_two_separate_lines(tmp_path):
-    """A reader must never take a filled `PRO objf` for "seeded from PROCESS".
-
-    The two axes were one until 2026-09-01 -- a `--native` row had `process_objf = None`
-    by construction -- and that conflation was the only surviving reason to run
-    `--provider` at all (`_audit/optimise_design.md` §27). The header says both things
-    and says they are two, and the `seed` column repeats the first one on every line, so
-    the mistake needs three separate misreadings rather than one.
-    """
+    """A reader must never take a filled `PRO objf` for "seeded from PROCESS"."""
     out = tmp_path / "matrix.txt"
     checkpoint(
         [Row(name="helias_5b", compared=True, assembles=True)],
@@ -536,14 +524,6 @@ def test_the_header_names_uncommitted_edits_and_does_not_claim_the_commit():
 def test_a_root_find_file_gets_one_row_and_the_table_says_why():
     """An evaluation-mode file has no MDF/SAND split, and the single line must read as a
     decision rather than as a missing measurement.
-
-    This test previously pinned the opposite: SAND assembled an `Optimise` on the
-    `_eval` files, reported an `objf` beside a `PRO objf` of `none`, and the table
-    labelled that mismatch. The label was right about the mismatch and wrong about the
-    remedy -- MDF-against-SAND is a split between two ways of distributing an
-    *optimisation*, and a file stating `i_process_run_mode = -2` states none, so the
-    second row was never a second reading of the same problem. It is gone, and what
-    replaces it is the argument for its absence.
     """
     store = _blank()
     store.update(built=True, iterations=3, status="conv", dx=3.6e-09)

@@ -109,14 +109,6 @@ def test_each_raw_cycle_is_fully_broken_by_its_own_cuts_and_no_fewer():
 def test_each_raw_cycle_is_fully_broken_on_the_tokamak_too():
     """The same property on `large_tokamak_eval.IN.DAT` -- three raw cycles, eight cuts
     between them, none of them redundant.
-
-    Worth its own test rather than a second loop inside the first, because the two
-    machines fail differently and the message should say which. The tokamak's density
-    cycle is 8 nodes to the stellarator's 6 (`i_plasma_pedestal = 1` puts
-    `pedestal_profile_values`/`ne_profile_integral` in the profile slot) and needs the
-    third cut `mda.CUTS` documents; its build/winding-pack cycle and the merged
-    PF-coil/volt-second/burn-time cycle (nine nodes since 2026-08-27, see
-    `mda.CUTS`) have no stellarator counterpart at all.
     """
     _assert_every_raw_cycle_is_cut_sufficiently_and_minimally(
         graph_for(machine_from_indat(TOKAMAK_INPUT_FILE)), "tokamak"
@@ -380,14 +372,6 @@ def test_every_root_find_unknown_has_a_starting_guess_that_does_not_need_data():
     and `optimistix` aborts -- taking the **whole schedule** down, not just its own
     block. A new `RootFind` with neither kind of guess would reintroduce that the moment
     anyone ran the port cold.
-
-    **Two mechanisms, and the supplied one is the better half.** `Intersect`'s guess is
-    computed by PROCESS itself, so the occupant of `winding_pack_intersect_inputs` owns
-    it and `Supply` points the `Start` port at it (`_audit/next_steps.md` §14.5) -- no
-    `data`, no block context, no fallback. `d_duct`'s cannot be: PROCESS writes a
-    literal and nothing computes it. Accepting either is what makes this test the
-    question it means to ask ("can this block start cold?") rather than a check that one
-    particular table has a row.
     """
     graph = driven_graph()
     blocking = Blocking.scc(graph)
@@ -411,13 +395,6 @@ def test_the_intersect_start_is_supplied_by_the_winding_pack_occupant():
     """`Supply`, in place: `^guess.stellarator.wp_width_r_min` is not a boundary input of
     the driven graph -- the `Start` port reads `.stellarator.wp_width_r_min_guess`, which
     the `winding_pack_intersect_inputs` occupant owns.
-
-    The sharp end of §14.5. `ROOT_FIND_SEEDS` used to derive this guess from
-    `.stellarator.r_coil_minor` read out of the block's *context*, and `r_coil_minor` was
-    only in that context because a switch kwarg made the pre-`intersect` node declare
-    `.tfcoil.j_tf_wp` on every material -- the invented edge that closed the block. With
-    the occupant split there is no such edge and no such context; with `Supply` there
-    does not need to be one.
     """
     graph = driven_graph()
     (problem,) = [
@@ -443,10 +420,6 @@ def test_every_superconductor_schedules_and_only_bi2212_keeps_its_guess():
     `^guess.stellarator.wp_width_r_min` a boundary input, which is the honest answer for
     a guess that is not available until the solve computing it has run. With the other
     seven the supply lands and the port leaves the boundary.
-
-    Every one of the eight builds a `Schedule`, which is the check that the skip is a
-    skip and not a latent `schedule_for` refusal waiting for someone to select that
-    material (`_audit/next_steps.md` §14.5).
     """
     for material, occupant in WINDING_PACK_MATERIAL.items():
         machine = eqx.tree_at(

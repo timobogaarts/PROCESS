@@ -910,12 +910,7 @@ def _area_holding(data, name):
 
 
 class TestSwitchValuesWithoutProcess:
-    """`switch_values_from_indat` answers what `sand.switch_values_for` answers.
-
-    §23.6 item 2 named `switch_values_for(data, icc, i_figure_merit)`'s `DataStructure`
-    as one of the two things still holding the solve path to PROCESS. This is the
-    measurement that it no longer has to be.
-    """
+    """`switch_values_from_indat` answers what `sand.switch_values_for` answers."""
 
     def test_the_name_set_is_sands_own(self):
         """A switch added to the ported constraint/objective surface with no default
@@ -988,12 +983,7 @@ class TestSwitchValuesWithoutProcess:
 
 
 class TestPresenceFlagsFromTheText:
-    """The two `init.py` presence flags, which no value and no node can answer.
-
-    Neither is a declared PROCESS input, so the old `switches.get(...)` scan looked for
-    names an `IN.DAT` cannot contain and could only ever return `0`
-    (`_audit/init_audit.md` §3).
-    """
+    """The two `init.py` presence flags, which no value and no node can answer."""
 
     @pytest.mark.parametrize("stem", CONFIGURATIONS)
     def test_both_flags_equal_process(self, stem):
@@ -1114,16 +1104,6 @@ def test_no_pinned_switch_contradicts_its_own_input_file(stem):
     `COHERENCE_CASES` names. This one asks the blunt question of all seven tracked
     configurations at once, needs no case list, and costs seven assemblies and no
     PROCESS run.
-
-    It exists because that narrowness let a live wrong answer stand
-    (`_audit/switch_consultation_audit.md` §2). `PfMagnetCost` pinned
-    `iohcl=CentralSolenoidConfiguration.PRESENT` while `spherical_tokamak_eval` and
-    `st_regression` both set `iohcl = 0`, so Account 222.2 costed six PF coils plus a
-    central solenoid those machines do not have -- 404.67 against PROCESS's 425.36 on
-    the first, 502.80 against 528.81 on the second -- while the *same* assembled
-    machine's `_pf_coil_system_arm` read the switch correctly and picked the
-    eight-coil, no-solenoid topology. Both files sat in `reference_cold_matrix.txt` as
-    converged the whole time.
 
     `machine_survey.survey` had computed the answer and thrown it away behind an `elif`
     that only ran for switches *not* in `factory_fields()`; `iohcl` was in both. That

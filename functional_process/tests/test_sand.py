@@ -176,11 +176,6 @@ def test_iteration_variable_path_is_processs_own_accessor():
 def test_array_indexed_iteration_variables_get_a_sequence_key():
     """IDs 125-136 address one element of `f_nd_impurity_electron_array`.
 
-    This test asserted the opposite until 2026-08-30 -- that such a variable is
-    *refused* -- because `Graph.__check_init__` rejects an output lying inside a
-    variable another node reads whole, and `_audit/optimise_design.md` §1.3 recorded
-    that every consumer of impurity fractions read the whole array.
-
     The premise expired without the refusal noticing. `radiation_power.py` now reads the
     array as fourteen individual index-addressed ports, so nothing reads the enclosing
     array and the containment rule has nothing to object to. The cost of the stale
@@ -344,13 +339,7 @@ def test_constraint_16_is_an_equality_despite_its_geq_body():
 
 
 def test_an_unassemblable_constraint_raises_rather_than_being_dropped():
-    """Silently solving 13 of PROCESS's 14 constraints is a different problem.
-
-    Constraint 76 is the standing instance: its `f_nd_impurity_electrons` argument is
-    an *array element* (`_audit/optimise_design.md` §3), which name-based resolution
-    cannot reach. It is asserted to be the only unassemblable one of the ~82 ported
-    constraints, so this test also records that fact rather than merely using it.
-    """
+    """Silently solving 13 of PROCESS's 14 constraints is a different problem."""
     unassemblable = sorted(
         cid
         for name in dir(ported_constraints)
@@ -383,13 +372,6 @@ def test_a_maximise_run_is_a_negation_node_and_not_a_sign():
     """`Optimise` minimises, so a negative `i_figure_merit` (PROCESS's "maximise") has to
     become a negation -- not a flag on the driver, which would make its `drives` claim a
     lie, and not a field on `Optimise`, which has none.
-
-    **Since §36 it is not a field on the *body* either.** `_SignedMetric` carried
-    `np.sign(i_figure_merit)`, which is a direction stored where no reader of the graph
-    can see it; the direction is a `.ObjectiveNegated` node now, so the DSM shows
-    `-metric` being minimised. What must not move is the *value*: `^cond.numerics.objf`
-    is still PROCESS's own signed figure of merit, which is the number every report and
-    every `reference_cold_matrix.txt` `objf` cell carries.
     """
     from functional_process.cottax.indat import objective_selection
 
@@ -1509,16 +1491,7 @@ def _chain_fixed_point(second):
 
 
 def test_a_multi_node_cycles_residual_is_measured_and_not_guessed():
-    """`d(g(u) - u)/du` on a two-node body is `3 * second - 1`, exactly.
-
-    The regression guard for `_audit/optimise_design.md` §16.7: the body used to be the
-    conditions' **direct** producers, which here is `B` alone, so `A`'s edge from the
-    unknown was either missing (the derivative then comes out `-1` for every `second`,
-    i.e. always "healthy") or unrunnable (`_run_acyclic` raises, and the old bare
-    `except Exception: continue` filed the block as healthy too). Both failures are
-    caught by asserting the *number*, which is why this checks the Jacobian and not
-    merely that the call returned.
-    """
+    """`d(g(u) - u)/du` on a two-node body is `3 * second - 1`, exactly."""
     from functional_process.cottax.sand import fixed_point_residuals
 
     for second, expected in ((0.25, 3.0 * 0.25 - 1.0), (2.0, 3.0 * 2.0 - 1.0)):

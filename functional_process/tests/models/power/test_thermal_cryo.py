@@ -604,12 +604,7 @@ _SIX_SELF_LOOP_VARPATHS = (
 
 
 def _component_thermal_powers():
-    """The node as `machine_from_indat` builds it -- three static switches, not five.
-
-    `i_blanket_type` and `secondary_cycle_liq` left with the reads they fed: both
-    reached only `calculate_plant_thermal_efficiency`/`_2`, whose results this node
-    discards (`_audit/next_steps.md` §14.2).
-    """
+    """The node as `machine_from_indat` builds it -- three static switches, not five."""
     return ComponentThermalPowers(
         i_p_coolant_pumping=PumpingPowerModelTypes.USER_INPUT,
         i_blkt_dual_coolant=BlanketDualCoolantModel.SINGLE_COOLANT_SOLID_BREEDER,
@@ -620,13 +615,6 @@ def _component_thermal_powers():
 def test_component_thermal_powers_neither_owns_nor_reads_five_of_the_six():
     """**This test asserted the opposite of its second half until this pass, and the
     change is the finding.**
-
-    All six `VarPath`s below are owned by their own occupant family. This node used to
-    *read* all six as well -- and `switch_kwarg_survey.md` §6 measured what that cost:
-    the node recomputed five of them internally and **discarded** the results, so it
-    declared itself a consumer of four fixed points it does not consume. Only
-    `.primary_pumping.p_fw_blkt_coolant_pump_mw` is genuinely used (the pump totals
-    sum it), and it is the one still read.
     """
     node = _component_thermal_powers()
     owned = {o.var.path_str() for o in node.outputs}
@@ -1029,10 +1017,6 @@ def test_eta_turbine_pass_through_arms_have_no_occupant(
 ):
     """`.heat_transport.eta_turbine` is an **input** wherever PROCESS's body is
     `return eta_turbine`, and the tree says so with an empty slot.
-
-    This is the reference run's own case (`USER_INPUT`), and it is what
-    `switch_kwarg_survey.md` §4.7 asked to be made visible: the `FixedPoint` that was
-    driven here determined nothing, on a variable `.costs.coe` depends on.
     """
     arm = _eta_turbine_arm(i_thermal_electric_conversion, i_blanket_type)
     assert ETA_TURBINE[arm] is None
@@ -1229,12 +1213,6 @@ _CRYO_SWITCH_COMBOS = [
 def test_cryo_cannot_be_a_plain_node():
     """`Cryo` stays unregistered because `cottax` will not build it -- the same
     position `PlantThermalEfficiency` is in, and the reason the split below exists.
-
-    `Power.cryo` reads `.fwbs.qnuc` (the incumbent, kept when `inuclear == 1`) and
-    writes it (when `inuclear == 0 and i_tf_sup == 1`), which is `_audit/
-    next_steps.md` §5's Shape B: *"a node may not read what it owns"*, a hard
-    construction error rather than a style preference. Asserted by construction here,
-    not merely stated in a comment.
     """
     with pytest.raises(ValueError, match="which it also owns"):
         to_graph(
@@ -1282,10 +1260,6 @@ def test_cryo_split_nodes_all_assemble(i_tf_sup, i_pf_conductor, inuclear):
 def test_cryo_split_ownership_is_a_partition():
     """The three nodes own exactly the nine `VarPath`s `Power.calculate_cryo_loads`
     writes, with no overlap.
-
-    Overlap would be an ownership collision `Graph` rejects; a gap would leave a field
-    PROCESS computes on this run's path as a boundary input, which is the defect
-    `_audit/boundary_inputs_audit.md` §4c (b9)/(b10) records.
     """
     qnuc_node = CryoQNucStep(
         i_tf_sup=TFConductorModel.SUPERCONDUCTING,
@@ -1445,17 +1419,7 @@ def test_cryo_q_nuc_step_gradient(i_tf_sup, inuclear, expected_grad):
 
 
 def test_cryo_q_loads_has_no_self_read_on_either_computing_arm():
-    """**The replacement for `test_cryo_q_loads_step_gradient`.**
-
-    That test pinned `d(qss_next)/d(qss)` -- and every other diagonal entry -- at
-    exactly `0` where `Power.cryo` runs and exactly `1` where it does not: per switch
-    combination, the node either ignored the four fields it owned or was the identity in
-    all four. Both halves are structural facts about the switch, not numerical ones, and
-    the split states them directly (`_audit/next_steps.md` §14.2): the two computing
-    occupants declare none of the four as reads, and the non-computing arm has no
-    occupant at all, so `.power.qss`/`qac`/`qcl`/`qmisc` are boundary inputs there --
-    which is what "the identity map" meant.
-    """
+    """**The replacement for `test_cryo_q_loads_step_gradient`.**"""
     owned = {".power.qss", ".power.qac", ".power.qcl", ".power.qmisc"}
     for arm in (0, 1):
         node = CRYO_Q_LOADS[arm]()

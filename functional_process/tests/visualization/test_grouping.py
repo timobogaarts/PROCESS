@@ -107,17 +107,11 @@ def test_a_minted_name_inherits_the_group_of_what_it_was_minted_over():
 
 
 def test_a_name_minted_over_a_variable_place_is_ungrouped():
-    """
-    `^problem.physics.proton_rate_density` is minted over a `VarPath`, not over a node.
+    """`^problem.physics.proton_rate_density` is minted over a `VarPath`, not over a node.
 
     Its second key spells `.physics`, which is a place in the caller's data structure and
     not a position in a model tree -- reading it as a group would file the node under a
     group that does not exist.
-
-    **Asked of the graph, not of the key kind.** This used to rely on `GetAttrKey`
-    meaning "a variable place"; `model_tree_design.md` §8 step 3 made a `GetAttrKey` the
-    spelling of a machine *slot* too, so the kind cannot separate the two any more. What
-    can is whether the unminted name is itself a node -- which is what `among` asks.
     """
     minted = NodePath((
         MintKey("problem"),

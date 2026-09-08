@@ -387,12 +387,7 @@ def test_no_value_is_nan():
 
 
 def test_the_run_mode_is_read_off_the_file_and_says_which_problem_it_states():
-    """`i_process_run_mode` is the discriminator PROCESS itself uses.
-
-    `main.run_scan` reads it and nothing else: `1` keeps VMCON, `-2` replaces the solver
-    with `scipy.optimize.fsolve` over the equalities alone. Reading it here is what let
-    the port stop building an `Optimise` for the two `_eval` files (§24.10).
-    """
+    """`i_process_run_mode` is the discriminator PROCESS itself uses."""
     root = Path(__file__).resolve().parents[2] / "tests/regression/input_files"
     stated = {
         p.name[: -len(".IN.DAT")]: read_indat(p).problem.i_process_run_mode
@@ -423,17 +418,6 @@ def test_exactly_the_two_eval_files_state_a_root_find():
     Three properties, and only the **first** is the discriminator: PROCESS branches on
     `i_process_run_mode` alone (`main.py:449-462`). The other two are checked here
     because both were proposed as the test and both are wrong:
-
-    - *"no `i_figure_merit`"* is **necessary but not sufficient** on these seven -- it
-      does single out the same two files, but only because a file in evaluation mode has
-      no reason to name one. Nothing stops it naming one anyway.
-    - *"square"* is **not even necessary**: `helias_5b` states **2** equalities against 3
-      iteration variables and PROCESS runs VMCON on it. Squareness is a consequence of
-      the mode, which is why `mdf.assemble` checks it as a consistency test instead.
-      (It stated 3 until 2026-09-06, when `icc = 11` was removed as structurally inert on
-      the stellarator build path -- `_audit/optimise_design.md` §52. The counterexample
-      got *stronger*: the file is now visibly non-square and still not an evaluation run,
-      where before it was square and the point had to be made about the mode instead.)
     """
     root = Path(__file__).resolve().parents[2] / "tests/regression/input_files"
     problems = {

@@ -1211,14 +1211,7 @@ def test_branch_node_to_graph_assembles(node):
 
 
 def test_avail_and_cplife_avail_compose_without_ownership_conflict():
-    """The intended full wiring, and what the switch split changed about it.
-
-    `CplifeAvailSuperconducting` owns `.costs.cplife`; `Avail` **no longer reads it at
-    all** -- `calculate_avail`'s only consumer of that field is `cplife_mod`, which this
-    node discards, so under `_audit/next_steps.md` §14.2's no-dead-reads rule the read
-    is gone. The two therefore compose into an acyclic graph with no coupling between
-    them, where the pre-split pair was cyclic through the `FixedPoint`.
-    """
+    """The intended full wiring, and what the switch split changed about it."""
     cplife_node = CplifeAvailSuperconducting()
     avail_node = AvailNeutronFluence()
     graph = to_graph(cplife_node, avail_node)

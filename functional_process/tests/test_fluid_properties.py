@@ -79,12 +79,7 @@ def _states(temperature):
 
 
 def test_the_nine_properties_are_the_whole_surface():
-    """`_NINE_PROPERTIES` names every property on both classes.
-
-    Without this, adding a property upstream would leave the sweep below quietly
-    incomplete -- the §23.5 shape of defect, where an equality test passes because it
-    never looked.
-    """
+    """`_NINE_PROPERTIES` names every property on both classes."""
     for cls in (ported.FluidProperties, reference.FluidProperties):
         exposed = {
             name

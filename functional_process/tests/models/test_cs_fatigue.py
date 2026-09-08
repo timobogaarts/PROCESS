@@ -112,14 +112,6 @@ class TestSurfaceStressIntensityFactor(Tier1Contract):
 class TestNCycle(Tier1Contract):
     """`calculate_n_cycle` -> `CsFatigue.ncycle`, `lax.while_loop` for the Python one.
 
-    **Tier 1, with the gradient checks structurally excused** -- the disposition
-    `cs_fatigue.md`'s open question 1 settled on 2026-08-27 and this pass carries out.
-    Tier 1 is right for the *value*: `delta` is a fixed module constant, so the loop's
-    termination is deterministic and PROCESS's answer is exact for that discretisation
-    rather than an approximation to something else, which is the one thing Tier 2's
-    "PROCESS may not have converged" contract exists to handle and there is nothing here
-    for it to handle.
-
     The excuse is `static_argnames` covering **every** argument, so `diff_argnames` is
     empty and `_jacobians` returns without tracing. That is a heavier hammer than
     `inductance.md`'s `noh`, where three arguments are excused because they jointly

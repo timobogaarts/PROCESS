@@ -195,12 +195,7 @@ def test_probe_covered_the_whole_model_layer(probe):
 
 
 def test_importing_the_model_layer_does_not_load_coolprop(probe):
-    """The lazy import in `quench.py` is still lazy.
-
-    `import CoolProp` costs ~3 s (measured 2026-08-31) and only a tokamak *assembly*
-    wants a helium table. Vendoring the wrapper made it possible to import it eagerly;
-    this asserts nobody did.
-    """
+    """The lazy import in `quench.py` is still lazy."""
     line = next(
         line for line in probe.stdout.splitlines() if line.startswith("COOLPROP")
     )
@@ -214,11 +209,7 @@ def test_assembly_probe_ran(assembly_probe):
 
 @pytest.mark.parametrize("name", _ASSEMBLY_CASES)
 def test_tokamak_assembles_with_process_blocked(assembly_probe, name):
-    """§23.6: a tokamak and a spherical tokamak build a full graph with no `process`.
-
-    This is the claim §23.5 could not make. It went through `_quench_helium_table` and
-    therefore through CoolProp, live, in a process where `import process` raises.
-    """
+    """§23.6: a tokamak and a spherical tokamak build a full graph with no `process`."""
     lines = assembly_probe.stdout.splitlines()
     assert not [line for line in lines if line.startswith("FAIL " + name)], "\n".join(
         lines

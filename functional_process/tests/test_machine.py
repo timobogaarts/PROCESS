@@ -113,13 +113,6 @@ def _costs(entry):
     `reactor_structure_cost`, `pf_coil_power_conditioning_cost` and `pf_magnet_cost`,
     all three `None` here -- so it cannot be default-constructed. Built with the
     reference machine's.
-
-    The third joined when `.costs.supercond_cost_model` stopped being an
-    `eqx.field(static=True)` (`_audit/next_steps.md` §14.2); the last three when
-    Accounts 221.4, 225.2 and 222.2 came back as *device*-decided slots (2026-08-30),
-    which is why all three are `None` on the reference machine -- a stellarator has no
-    reactor structure to cost, no PF coil system to cost, and never calls `Power.run`,
-    so it has no PF coil power supply to condition either.
     """
     return entry(
         cost_of_electricity=REFERENCE_MACHINE.costs.cost_of_electricity,
@@ -141,13 +134,6 @@ def _profile_parameterisation(entry):
     `st_d_limit_ecrh` is reached only from `st_phys`. So it cannot be
     default-constructed either; built with the reference (stellarator) machine's, which
     is the arm these swap tests are about.
-
-    The pedestal arm has a slot of its own too since 2026-08-27 --
-    `pedestal_separatrix`, `.physics.i_nd_plasma_pedestal_separatrix`'s two inverse
-    occupants, a switch nested under this one. Built with PROCESS's own default
-    (`GREENWALD_FRACTION`), which is what both reference files select; the swap tests
-    here are about the *outer* switch, and `test_a_refused_value_says_why` covers the
-    inner one on its own.
     """
     if entry is ProfileParameterisationPedestal:
         return entry(pedestal_separatrix=PedestalSeparatrixDensities())
@@ -831,12 +817,6 @@ def test_swapping_an_occupant_orphans_only_what_is_recorded():
     """**The swap contract**: swap the occupant, rebuild, and account for every read
     that lost its owner.
 
-    `next_steps.md` §12.2 designed this and nothing implemented it until
-    `functional_process/cottax/boundary.py`. The hazard is *partial overlap* -- an occupant
-    owning a subset of what it replaces, leaving the difference with no producer and its
-    consumers silently reading PROCESS's `DataStructure`. Same defect class as a missing
-    producer: eight recorded instances, none ever found by a check.
-
     **The first run of this check found that every multi-arm slot in the tree has one**
     -- six slots, thirty-seven reads. That is not a bug list yet and the test does not
     pretend it is one: under `isthtr = 2` there is no ECRH power to compute, and PROCESS
@@ -846,12 +826,6 @@ def test_swapping_an_occupant_orphans_only_what_is_recorded():
     default and a read served by nothing look identical from inside the graph. They stop
     looking identical exactly when the boundary becomes declared rather than implied,
     which is where this port is going.
-
-    So it is pinned rather than asserted away: the set is recorded, a **new** overlap
-    fails, and the recorded ones are a work list with a name. Deliberately *not*
-    asserted: that two occupants own the same set. §12.2 rejects that outright --
-    `i_cost_model`'s arms genuinely compute different things and forcing a common set
-    means inventing fields that exist only to satisfy a test.
     """
     orphans = _swap_orphans()
     if os.environ.get("FP_WRITE_SWAP_PIN"):
@@ -985,22 +959,6 @@ def test_a_silent_indat_is_still_refused_but_no_longer_on_istell(tmp_path):
        though `i_cost_model`'s default is refused too and the constructor would reach it.
        That ordering is the property the old name was really guarding, and it is the half
        of the old test that had nothing to do with the tokamak.
-
-       **The probe changed from a refusal to a typo, because there are no refused
-       `istell` values left** (2026-08-30): `1`-`5`, the five machine presets, build
-       `StellaratorProcess` now, so the only `istell` that can fail is one PROCESS has
-       never had. `7` therefore raises `ValueError` from `_slot_occupant`'s "not a known
-       value" branch rather than `NotImplementedError` from its `UNPORTED` branch. The
-       error *class* is weaker evidence about the port's frontier and exactly as strong
-       about the ordering, which is all this assertion was ever for -- a bare file whose
-       `istell` were read second would report `i_cost_model == 1` instead, as the first
-       assertion above shows it does when `istell` is absent.
-    3. **The default device is the one PROCESS names.** Given only the switches whose
-       PROCESS defaults this port refuses, a file that never mentions `istell` builds a
-       `TokamakProcess` -- not a `StellaratorProcess`, and not an error. It is a real
-       tokamak now rather than an empty one: fourteen of `Tokamak`'s twenty-five slots
-       are filled, so this assertion exercises the whole tokamak factory and not just
-       the device branch.
     """
     indat = tmp_path / "IN.DAT"
     indat.write_text("")
@@ -1082,16 +1040,6 @@ def test_reference_machine_is_what_the_factory_builds():
 
 def test_a_switch_that_decides_two_slots_decides_both(tmp_path):
     """`i_tf_turns_integer` reaches *both* of its consequences, not just one.
-
-    The bug class this closes (2026-08-27, `low_aspect_ratio_DEMO.IN.DAT`): the factory
-    read `i_tf_turns_integer` for the `i_tf_wp_geom` `UNSET` resolution, so
-    `machine_survey` truthfully reported *"the factory dispatches on it"* -- while the
-    turn-geometry slot never consulted it and silently kept the averaged occupant. The
-    port then computed a square 0.0568 m turn where PROCESS's converged answer is a
-    0.0547 x 0.0591 m rectangle, 4e-2 on the turn dimensions and 42 % on
-    `m_tf_coil_superconductor` through a near-cancellation. `next_steps.md` §14.11's
-    failure mode, in its survey-blind variant: a switch is "dispatched on" only when
-    **every** slot it decides is dispatched.
 
     Two assertions per arm, one per consequence, plus the real file that found it.
     """
@@ -1184,16 +1132,7 @@ def test_the_skip_list_holds_no_entry_that_is_now_ported():
 
 
 def test_the_tf_inboard_radii_arms_are_refused_through_their_real_integers(tmp_path):
-    """`tf_inboard_radii_arm`'s two refused arms, reached the way a file reaches them.
-
-    The arm index itself is a `DERIVED_UNPORTED_KEYS` entry no file can set, so this is
-    the per-integer coverage that skip defers to: `i_tf_inside_cs = 1` selects arm -1
-    (TF inside the CS), still refused, over the tokamak baseline. Added with the
-    cold-boundary wave's `TfInboardRadiiTfOutsideCs` (2026-08-27); the `-2`
-    (`i_cs_precomp = 0`) case it originally asserted refused was ported the same day
-    (`TfInboardRadiiNoCsPrecomp`, the ST frontier wave), so that integer is asserted to
-    assemble instead -- the same file, one flip of one switch, both dispositions pinned.
-    """
+    """`tf_inboard_radii_arm`'s two refused arms, reached the way a file reaches them."""
     for extra, arm in ((("i_tf_inside_cs", 1), -1),):
         indat = tmp_path / f"TOK_{extra[0]}.DAT"
         indat.write_text(
@@ -1296,12 +1235,6 @@ CONVENTIONAL_PF_SWITCHES = {
 def test_both_ported_pf_coil_systems_deviate_on_nothing():
     """The two supported PF configurations are each accepted whole, and named.
 
-    Until 2026-08-30 the spherical tokamaks' configuration deviated on **five** of the
-    dimensions this function checks (`-1`, `-2`, `-3`, `-6`, `-7`) and this test pinned
-    that tuple, with a docstring saying it would shrink the day one of the five was
-    ported. All five are ported, so it is empty; what the test pins now is the pair of
-    accepted configurations and the arm each resolves to.
-
     `-1` is gone from the dimensions altogether. `.build.iohcl` used to be refused when
     zero; it is now the *family selector* -- `-2`, `-6` and `-7` are each measured
     against the occupant set written for this machine's own `iohcl`, which is what keeps
@@ -1337,13 +1270,6 @@ def test_both_ported_pf_coil_systems_deviate_on_nothing():
 
 def test_the_pf_coil_refusal_still_names_every_deviating_dimension(tmp_path):
     """A file that misses on several PF dimensions at once is told about all of them.
-
-    `_pf_coil_system_arm` short-circuits -- it returns the first refused dimension and
-    never evaluates the rest -- which is correct for *choosing* an occupant and wrong
-    for *sizing* the work, and `consolidation_round_3.md` §5 is about exactly that. The
-    spherical tokamaks used to be this test's subject and are now accepted, so the
-    subject is the mixed configuration instead: no central solenoid, but a conventional
-    machine's coil topology, superconductors and outside-TF placement.
 
     Reached through `machine_from_indat` rather than through the helper, because the
     point is what a *user* sees: one `NotImplementedError` whose first paragraph is
@@ -1522,16 +1448,6 @@ def test_the_seed_nodes_account_for_every_moved_node_count(stem):
 
 def test_the_presence_flags_swap_two_nodes_and_add_none(tmp_path):
     """Why the two spherical tokamaks still count 234 after gaining a producer.
-
-    `init.py:925-930`'s two presence flags were stuck at `False` on every file
-    (`init_audit.md` §3) and are now read from the text, which flips both on four of
-    the seven. That changes two slots at once and the changes cancel:
-
-    - `DX_TF_SIDE_CASE_MIN[True]` is a node where `[False]` is `None` -- **+1**, and it
-      is the missing producer `.tfcoil.dx_tf_side_case_min` (`next_steps.md` §22.6).
-    - `DR_TF_PLASMA_CASE[True]` is an `ExplicitFunction` where `[False]` is a
-      `FixedPointFunction` -- a node that reads what it owns, so it mints a second
-      `^problem` node for its own cut. **-1**.
 
     Net zero on the two spherical tokamaks, and *neither* half of that is a coincidence
     worth trusting silently, which is why it is asserted rather than left to the total.

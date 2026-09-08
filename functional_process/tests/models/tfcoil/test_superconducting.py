@@ -1026,14 +1026,6 @@ class TestSuperconductingTfCoilAreasAndMassesConventionalWstNb3sn(Tier1Contract)
     `den_tf_sc_material` is planted in `dcond[4]` alone, and every other element is
     `_DCOND_POISON`.
 
-    Why it is not redundant with the case above, given that `dcond[4] == dcond[0] ==
-    6080.0`: **that equality is the reason it is needed.** Until 2026-08-27 both
-    `itart` occupants read `dcond[0]` at every value of the switch, and
-    `low_aspect_ratio_DEMO` (`IN.DAT:910`, `i_tf_sc_mat = 5`) assembled the wrong element
-    and got the right number anyway. No value test on this machine could have seen that.
-    This one fails unless PROCESS's read *moves with the switch*, which is the claim the
-    two occupants make and the claim the old baked constant broke.
-
     Same converged `baseline_2018` point as the reference case: the material does not
     change the function's domain, only which array slot one scalar comes from.
     """

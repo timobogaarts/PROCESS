@@ -147,15 +147,6 @@ def test_cottax_states_mdf_structurally(problem):
 def test_the_undriven_nesting_is_refused_for_want_of_an_assign():
     """`nested_blocking` attaches no drivers, so `schedule_for` refuses it -- and the
     refusal names the missing `Assign`, not the nesting.
-
-    **This test used to claim the opposite** (`test_cottax_cannot_run_that_nesting`:
-    *"`schedule_for` ignores `Blocking.inner`, so it refuses"*), and it passed for years
-    of the port's life because its regex was `r"declares|problem"`, which the driver
-    message matches on the word "problem". The claim was falsified upstream and the test
-    could not see it. So the message is matched exactly here, and
-    `test_cottax_runs_that_nesting_once_the_drivers_are_assigned` is the other half:
-    together they say *why* it refuses, which is the thing a loose regex threw away.
-    `_audit/in_graph_rootfind.md` §1.
     """
     nested, _name, _report = mdf.nested_blocking(
         REFERENCE_IXC, REFERENCE_ICC, REFERENCE_N_EQUALITY, REFERENCE_FIGURE_OF_MERIT
@@ -264,16 +255,7 @@ def cold_run(problem):
 
 @pytest.mark.tier4
 def test_the_conditions_are_finite_at_a_cold_start(cold_run):
-    """Every condition is a real number at the input file's own values.
-
-    The property that costs SAND a seeding rule and MDF nothing. A SAND condition map
-    holds the coupling variables at whatever guess it was given, and seeded from a cold
-    `DataStructure`'s `0.0`s that made 20 of its 24 conditions `nan`
-    (`_audit/optimise_design.md` §10.6); it now cold-starts because
-    `run_sand_harness._seed` hands those unknowns a completed MDA run instead. An MDF map
-    has no coupling unknowns to seed -- it computes them -- so there is nothing to get
-    right here, which is what this test pins.
-    """
+    """Every condition is a real number at the input file's own values."""
     conditions, start = cold_run
     values = np.asarray([float(np.asarray(v)) for v in conditions(*start)])
     assert np.all(np.isfinite(values)), dict(
@@ -378,14 +360,7 @@ def test_one_pass_of_the_schedule_is_idempotent(problem, cold_run):
 
 
 def test_the_harness_distinguishes_a_cap_from_a_driver_that_gave_up():
-    """`run_mdf_harness._why_it_stopped` separates the two ways "not converged" happens.
-
-    Both were live at once and were read as one thing for three days
-    (`_audit/optimise_design.md` §14): C2 was a solve stopped two-thirds of the way
-    through by `MAX_ITER`, C3 is `pyvmcon` raising `QSPSolverException` at 60 and
-    `VmconDriver` keeping the point. Raising the cap fixes exactly one of them, so the
-    report has to name which.
-    """
+    """`run_mdf_harness._why_it_stopped` separates the two ways "not converged" happens."""
     # 523 measured for C2; the cap must clear it with margin, as `SAND_MAX_ITER`'s does.
     assert MAX_ITER > 523
 
@@ -459,23 +434,7 @@ def _array_fixed_point(max_iter):
 
 
 def test_inner_residuals_reports_an_array_valued_inner_unknown():
-    """One row, reduced to the worst element by relative gap -- not a `TypeError`.
-
-    The regression guard for `_audit/optimise_design.md` §16.7's third defect:
-    `float(np.asarray(env[unknown]))` raises `TypeError: only 0-dimensional arrays can be
-    converted to Python scalars` on any array unknown, so the one instrument for "did the
-    MDA converge" had **never run on a tokamak**. Measured against the closed-form
-    residual, so a reduction that merely returned *some* element -- or the mean, or the
-    norm -- fails this too.
-
-    **The off-fixed-point env is written by hand, not manufactured by under-budgeting the
-    driver.** It used to be the latter, and that stopped being possible when
-    `PicardDriver` became a subclass of `cottax.drivers.PicardDriver`: that driver
-    **raises** rather than returning an unconverged iterate (§31.27), which is the very
-    silence this instrument was built to detect. Setting the unknown directly tests the
-    same reduction against the same closed form, and is honest about the fact that the
-    driver can no longer produce this state.
-    """
+    """One row, reduced to the worst element by relative gap -- not a `TypeError`."""
     schedule, out, u, rate, offset = _array_fixed_point(max_iter=500)
     env = dict(out)
     # Deliberately off the fixed point, and by a *different* relative amount per element
@@ -575,13 +534,7 @@ def test_a_root_find_drives_the_equalities_and_nothing_else(square_problem):
 
 
 def test_a_root_find_forms_no_objective_at_all(square_problem):
-    """Not "an objective nobody reads" -- no objective node in the graph.
-
-    `_Fsolve.solve` ends `self.objf = None` and the output writer omits the
-    figure-of-merit line entirely. A node computing `numerics.py:154`'s default of `7`
-    would be inventing a quantity PROCESS never forms, which is exactly the paper-over
-    §24.10 was opened to remove.
-    """
+    """Not "an objective nobody reads" -- no objective node in the graph."""
     assert square_problem.report["objective"] is None
     assert not any(
         v.path_str() == "^cond.numerics.objf" for v in square_problem.conditions
@@ -605,12 +558,7 @@ def test_the_inequalities_survive_for_reporting_but_are_not_driven(square_proble
 
 
 def test_the_condition_roles_are_residuals_not_an_objective_and_bounds(square_problem):
-    """`RootFind.condition_roles` is `(Residual,) * n`, and the map must say so.
-
-    The roles travel on the driver seam (`_audit/optimise_design.md` §8), so a map that
-    still claimed `(Objective, Equality, ...)` would hand a root find to a driver as an
-    optimisation with a constraint standing in for the objective.
-    """
+    """`RootFind.condition_roles` is `(Residual,) * n`, and the map must say so."""
     env = dict.fromkeys(square_problem.eager.inputs, jnp.asarray(1.0))
     conditions = mdf.condition_map(square_problem, env)
     assert conditions.roles == (Residual,) * len(square_problem.conditions)
@@ -707,13 +655,6 @@ def test_the_blocking_drives_the_cycle_and_not_the_whole_graph(in_graph):
     residual evaluation runs every node; with it inside, `Blocking.scc` puts in the block
     exactly what is coupled to it, everything upstream runs once before and everything
     downstream once after.
-
-    **The bound is loose on purpose, because the fraction is a property of the run and
-    not of the formulation** [measured, `_audit/in_graph_rootfind.md` §2]: 61 of 169 here
-    (this fixture root-finds the reference stellarator's first two `ixc`, which reach
-    deep into the coil set), against 39 of 260 on `spherical_tokamak_eval` and 35 of 272
-    on `large_tokamak_eval` -- the two files that actually state this problem. A tighter
-    assertion would be pinning one configuration's reachability and calling it a law.
     """
     assert len(in_graph.block) < len(in_graph.graph.nodes) / 2
     assert in_graph.index > 0, "nothing upstream of the loop -- wrong graph"
@@ -821,17 +762,7 @@ def test_a_place_already_bound_is_refused(square_problem):
 def test_the_verdict_and_the_whole_schedule_jit_are_not_alternatives(
     square_problem,
 ):
-    """The verdict is reported **and** the schedule still hashes -- by construction now.
-
-    This used to be a trade: `MdfNewtonDriver.outcome` was a plain `dict`, a driver is a
-    field of the graph, `Schedule.__hash__` reaches it through `Graph.__hash__`, and
-    `sand_harness.run_schedule` keys its whole-jit verdict on the schedule -- so asking
-    for the step count cost 856/993 XLA compiles instead of 5, for the same answer
-    (`_audit/in_graph_rootfind.md` §6). `Outcome` -- a `dict` hashed by identity --
-    closed it by making the sink hashable; `DriverOut` closes it by there being no sink:
-    the verdict is a value the driver returns and a name the node owns, so nothing
-    mutable is a driver field at all.
-    """
+    """The verdict is reported **and** the schedule still hashes -- by construction now."""
     built = mdf.in_graph_root_find(square_problem)
     assert hash(built.schedule)
     assert built.steps({}) is None, "nothing has run yet, so the env holds no verdict"
@@ -938,13 +869,6 @@ def test_the_in_graph_root_find_gives_the_same_answer(name):
     agree with each other to roundoff.
 
     Two comparisons, and they answer different questions:
-
-    - **against PROCESS** (`reference.converged`) says the port still solves the problem
-      PROCESS states, to §24.10's measured `3.29e-12` / `3.64e-09`.
-    - **against the outer driver**, at the same primed env, says the *restructuring*
-      moved nothing -- which is the stronger claim, since both arms share every model,
-      every inner driver and every seed and differ only in where the problem is stated.
-      Measured at `~1e-15`, i.e. XLA reassociation and nothing else.
 
     Not marked `tier4` for the MDA's sake but for PROCESS's: `reference_run` is disk
     cached, and a cold cache costs one ~95 s solve per file.

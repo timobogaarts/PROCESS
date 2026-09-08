@@ -40,13 +40,6 @@ class TestEuDemoReAttachmentMetric(Tier1Contract):
     """`P_sep*B_t / (q95*A*R0)`, `exhaust.py:150-192`. No adapter -- the static takes no
     `self.data` access either.
 
-    The legacy point is `large_tokamak_eval` at PROCESS's own solution, and it is worth
-    naming what it is: **the point at which constraint 68 is violated**. PROCESS's
-    converged `p_div_bt_q_aspect_rmajor_mw = 10.4949` against the file's bound of 10,
-    normalised residual `+4.949e-02` -- one of the two inequalities the evaluation-mode
-    run reports and does not enforce (`optimise_design.md` §11.1). So the value test
-    here is a direct diff against the number the SAND Stage A comparison uses.
-
     No PROCESS unit test exists for this static, so the rest is fuzz. `q95`, `aspect`
     and `rmajor` are bounded away from zero: the source divides by their product with
     no guard and PROCESS would produce an `inf` too, which is faithful but not an
@@ -70,16 +63,6 @@ class TestEuDemoReAttachmentMetric(Tier1Contract):
 
 class TestPsepOverRMetric(Tier1Contract):
     """`P_sep / R0`, `exhaust.py:127-147`. No adapter -- another bare static.
-
-    **Both legacy points are PROCESS's own converged answer on a file where
-    constraint 56 is active, and both are worth naming.** `st_regression` sits at
-    `39.99999999988` against a bound of `40` -- the constraint is *active*, exactly on
-    its bound, and it is the single most binding constraint of that problem;
-    `spherical_tokamak_eval` reads `40.2816` against the same bound, i.e. PROCESS
-    **violates** it at its own answer (evaluation mode, so nothing enforces it). Until
-    2026-09-01 this port had no producer for the path at all and read a frozen `0.0`,
-    which the `leq` reported as satisfied with the whole of its margin to spare
-    (`optimise_design.md` §26.3 ranks 2 and 3, §29 for what porting it moved).
 
     The `p_plasma_separatrix_mw` written down here is PROCESS's *converged* field --
     i.e. post-KLUDGE. The node reads the pre-KLUDGE mint

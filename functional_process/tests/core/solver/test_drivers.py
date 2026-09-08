@@ -89,15 +89,6 @@ def test_picard_driver_drives_a_real_fixed_point_function_node():
     fixed point does not depend on the starting guess and Picard reaches it in exactly
     one step. Ground truth is one direct call to `step`, not a hardcoded number, since
     the point of this regime is that any entering value gives the same answer.
-
-    **This test used to drive `TempTurbineCoolantInStep`, which no longer exists.**
-    That node was a `FixedPointFunction` only because
-    `calculate_plant_thermal_efficiency` passes the entering value through on some arms
-    of `i_thermal_electric_conversion` x `i_blanket_type` x `secondary_cycle_liq`;
-    splitting those switches into occupants showed the pass-through arms are "the field
-    is an input" and the computing arms read nothing they own, so the fixed point was an
-    artefact of the switch (`_audit/next_steps.md` §14.2). `CryoQNucStep` is the nearest
-    surviving instance of the same shape and the same zero self-gradient.
     """
     node = CryoQNucStep(
         i_tf_sup=TFConductorModel.SUPERCONDUCTING,

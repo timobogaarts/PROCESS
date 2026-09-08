@@ -738,14 +738,7 @@ _reference_constraint_31 = data_reference(lambda d: _evaluate(31, d))
 
 
 class TestConstraint31(Tier1Contract):
-    """`constraint_equation_31` -> `constraint_31`.
-
-    See `batch3.md`/`constraint_31`'s own docstring: `sig_tf_case` is never populated
-    by a real stellarator run (its only PROCESS producer, `tfcoil/superconducting.py`,
-    is never called when `istell != 0`). Ported and tested as a pure arithmetic
-    function regardless -- the port faithfully reproduces PROCESS's formula, the hole
-    is in what data ever reaches it on a real run, not in this function.
-    """
+    """`constraint_equation_31` -> `constraint_31`."""
 
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_31
@@ -775,16 +768,7 @@ _reference_constraint_33 = data_reference(lambda d: _evaluate(33, d))
 
 
 class TestConstraint33(Tier1Contract):
-    """`constraint_equation_33` -> `constraint_33`.
-
-    See `batch3.md`/`constraint_33`'s own docstring: `j_tf_wp_critical` has the same
-    "never populated on a real stellarator run" hole as constraint 31's `sig_tf_case`.
-    Sample values here are still nonzero (unlike constraint 31's dedicated
-    `stellarator-default` sample) since `j_tf_wp_critical == 0.0` would make the bound
-    identically zero and every `fuzz` sample's `normalised_residual` a division by
-    zero -- the pure function is tested faithfully across its domain regardless of
-    which of that domain a real stellarator run ever visits.
-    """
+    """`constraint_equation_33` -> `constraint_33`."""
 
     audit_record = "core/solver/constraints.md"
     reference = _reference_constraint_33

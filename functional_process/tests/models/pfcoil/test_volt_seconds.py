@@ -243,9 +243,6 @@ def _ported_pf_volt_seconds_no_central_solenoid(ind_plasma_row, c_pf_coil_turn_r
 class TestCalculatePfVoltSecondsNoCentralSolenoid(Tier1Contract):
     """`calculate_pf_volt_seconds_no_central_solenoid` -> `PFCoil.vsec` at `iohcl = 0`.
 
-    Owed since 2026-08-30 (`_audit/next_steps.md` §20.5 item 1); verified bit-exact in a
-    scratch script with nothing in the test tree holding it.
-
     **The absent CS is absence here too.** `vsec`'s two CS statements are guarded, and
     the port's answer is the PF sums alone -- so a port that had read the CS's row of the
     matrix as zeros would agree on the number and disagree on the read set. What

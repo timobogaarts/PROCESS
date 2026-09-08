@@ -169,17 +169,9 @@ def test_the_large_tokamak_is_three_new_decisions():
 
 
 def test_an_unknown_row_says_which_of_three_reasons_it_is():
-    """ "`unknown`" means "no slot dispatches on it", and that is three different
+    """"`unknown`" means "no slot dispatches on it", and that is three different
     situations. The report used to call all three "the port has never read it", which
     is false for **every** `unknown` row this file produces.
-
-    Two of the three are read, just not by the machine tree: the constraint/objective
-    layer binds `i_beta_component` and `i_plant_availability` as static kwargs, and a
-    node declares `.heat_transport.i_shld_primary_heat` as an ordinary `In` -- the
-    latter being `switch_kwarg_survey.md` §0's "declared port carrying a switch integer"
-    seen from a second direction, i.e. work rather than absence. The verdict is
-    deliberately left as `unknown` for all three (the counts above are cited from
-    `next_steps.md`); only the sentence changes.
     """
     detail = {r.name: r.detail for r in survey(TOKAMAK) if r.verdict == "unknown"}
     assert set(detail) == {
@@ -223,13 +215,6 @@ def test_the_report_no_longer_names_a_first_deliverable():
 
 def test_a_value_with_no_occupant_and_no_recorded_reason_is_not_reported_as_dispatched():
     """The blind spot the ST closing wave found, pinned.
-
-    `_slot_occupant` has **two** failure modes and this module used to check one. A value
-    in `UNPORTED` is a refusal with a reason; a value in neither the registry nor
-    `UNPORTED` is a `ValueError`, and until 2026-08-29 it reported as *"the factory
-    dispatches on it"* -- true of the field, false of the value. That is how
-    `i_beta_norm_max = 0` survived a re-survey whose entire purpose was to enumerate what
-    both spherical tokamaks still needed.
 
     Asserted on a value that is deliberately absent from a registry today rather than on
     `i_beta_norm_max` itself, which the same wave gave an occupant: pinning the fixed case

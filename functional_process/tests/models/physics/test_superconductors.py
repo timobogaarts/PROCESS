@@ -215,11 +215,6 @@ class TestWesternSuperconductingNb3Sn(Tier1Contract):
 class TestHijcRebco(Tier1Contract):
     """`hijc_rebco` -> the same, unchanged.
 
-    Legacy sample is `test_hijc_rebco`'s case verbatim. The ninth material, ported
-    2026-08-30 as `models/tfcoil/croco.py`'s critical surface -- `i_tf_sc_mat == 9` is
-    what both tracked spherical tokamaks set, and nothing on the cable-in-conduit side
-    ever reaches this fit.
-
     **PROCESS's two-arm `cur_critical` is one expression in the port** and the fuzz range
     exercises both sides of the seam it replaces: `b_conductor` spans below and above
     `b_critical`, which is the branch PROCESS writes as two formulas differing only in

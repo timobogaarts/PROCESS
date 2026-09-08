@@ -81,12 +81,6 @@ def test_the_seed_and_the_expectation_are_different_structures():
     comparison passes without the port computing anything. `cold_state` returns *two*
     structures -- `seed`, as `init_process` left it, and `process`, after one pipeline
     pass -- and they differ on exactly the fields PROCESS computes.
-
-    Checked on `.physics.beta_poloidal_vol_avg`, which is the field that made this
-    concrete: it was the first of the twenty-two missing producers to be found and land
-    (`_audit/optimise_design.md` §16.6), and it is `0.0` in the seed against `1.087` in
-    PROCESS's cold answer. A future refactor that quietly seeded from `process` would
-    make this equality hold and every cold check vacuous.
     """
     state = cold_state(_path_of(TOKAMAK_NOF))
     assert state.seed is not state.process
@@ -127,20 +121,6 @@ def test_process_s_cold_state_is_settled_far_below_every_disagreement(reports):
     before a row of the pin can be called the port's fault, PROCESS's own cold state has
     to be shown to be *finished* -- otherwise the port, which drives its blocks, is
     simply the more converged of the two.
-
-    `ColdState.drift` runs PROCESS's own map `EXTRA_PASSES` further times and reports
-    the largest relative motion. Measured 2026-08-30: exactly zero on
-    `low_aspect_ratio_DEMO` and `large_tokamak_eval`, `7.00e-07` on `stellarator_helias`
-    and `2.74e-08` on `large_tokamak_nof`.
-
-    **Tightened 2026-09-04, and it is stricter than what it replaced.** This used to
-    test the *smallest* disagreement per configuration -- `drift * 10 < min(rel_diff)` --
-    which has two faults. It checked only one row and let every row above it ride free;
-    and one small, deliberate, fully explained disagreement made the whole
-    configuration's pin uninterpretable, including rows a hundred times above the drift
-    that were perfectly attributable. `stellarator_helias` was already thin on the old
-    rule (its smallest was `1.17e-06` against a `7.00e-07` drift, a 1.7x margin), so the
-    fault was latent rather than hypothetical.
 
     Now **every** row must individually clear `drift * 10` **or** carry an `ACCEPTED`
     reason. Rows that clear it keep the original guarantee unchanged; rows that do not
@@ -236,13 +216,6 @@ def test_the_same_cause_reaches_the_error_bucket_as_a_shape(reports):
 def test_every_pinned_disagreement_has_a_reason(reports):
     """**A pinned disagreement with no explanation is the failure this stage exists to
     end.**
-
-    In a bare list of paths, a row somebody chased and a row nobody looked at read
-    identically -- which is how twenty-two missing producers survived weeks of a harness
-    reporting 983 of 1039 variables agreeing (`_audit/optimise_design.md` §16.3(b)).
-    `ACCEPTED` is keyed on `(configuration, path)` because the cause is per-machine:
-    `.costs.coe` is off by `3.4e-02` on the stellarator through the report-pass geometry
-    and by `2.2e-04` on `large_tokamak_nof` through `noh`.
     """
     unexplained = {
         name: check_reasons(report)
@@ -302,8 +275,6 @@ def test_the_cold_pin_is_exact(reports):
     regenerate at the moment it is cheap, rather than as a silent drift that makes the
     number stop meaning anything.
 
-    Measured 2026-08-30, at the state this file was written in:
-
     | configuration | agreements | disagreements | output-pass-only |
     |---|---|---|---|
     | `stellarator_helias` | 453 | 49 | 2 |
@@ -331,9 +302,6 @@ def test_the_pin_never_lists_a_configuration_that_does_not_assemble():
     exists" that assembled fine**, and both times the refusal was stale rather than
     wrong-at-the-time. It now asserts the positive -- every tracked file is in -- so a
     file dropping out is the failure rather than a docstring quietly going out of date.
-
-    `helias_5b` joined on 2026-09-02: its 49 real disagreements were covered exactly by
-    the two causes the reference stellarator already carried, with nothing left over.
 
     `spherical_tokamak_eval` and `st_regression` joined the same day, and only after two
     port defects they alone exposed were **fixed rather than pinned** -- the PF topology

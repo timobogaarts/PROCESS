@@ -54,13 +54,6 @@ def test_the_old_floor_hid_the_rho_bug_and_the_new_one_does_not():
     four values below. The two Joule-valued fields are 71 % and 100 % wrong and the old
     `atol=1e-9` reports **both as agreements**; at `atol=0.0` both are disagreements,
     and the harness sees 4 of that bug's fields instead of 2.
-
-    This is the whole argument, and it is not the one the removal was first made on.
-    On the code as it stands `atol` is inert -- 0 of 499 agreements depend on it -- and
-    that reads as "the trap was never sprung". It is inert only because this bug was
-    fixed by another route. **A guard that currently catches nothing has not thereby
-    been shown to be unnecessary**; the measurement that settles its worth is taken
-    with the defect present (`_audit/next_steps.md` §11.7).
     """
     hidden_by_the_old_floor = [
         (1.999686e-15, 1.170517e-15),  # .neoclassics.temperatures[0], 71 % off
@@ -82,13 +75,7 @@ def test_the_old_floor_hid_the_rho_bug_and_the_new_one_does_not():
 
 
 def test_the_three_sub_floor_fields_are_checked_now_that_rho_is_right():
-    """With the bug fixed these agree **bit-exactly**, so they need no floor.
-
-    §11.6 item 6 called them "not actually checked by anything". That was true while
-    `rho` was wrong and is not true now -- the values are the reference run's own, port
-    and `data` alike, identical to every digit. Pinned so the claim is a number rather
-    than a recollection.
-    """
+    """With the bug fixed these agree **bit-exactly**, so they need no floor."""
     for got, expected in (
         (6.426511641e-23, 6.426511641e-23),  # .physics.sigmav_dt_average
         (1.170517108e-15, 1.170517108e-15),  # .neoclassics.temperatures[0], Joules
